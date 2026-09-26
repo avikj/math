@@ -352,6 +352,7 @@ static bool is_value(Term t) {
   }
 }
 static Term fce_apply(Term nm, unsigned side, Term by, Term v);
+static bool lam_drops(Term f);
 static bool is_coordinate(Term v);
 static bool blocked(Term s);
 static Term case_restrict(Term cs, Term name, unsigned side, Term by, Term scrut);
@@ -373,14 +374,14 @@ static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
   #define FCE_(x) fce_raw(side, nm, (x), by)
   #define WAIT_(x) (self && HEAP[loc(self)+1] == (x) && HEAP[loc(self)] == nm && ext(self) == side ? self : FCE_(x))
   if (CHECK_MODE) { Term args[64]; uint32_t n; Term h = spine(v, args, &n);   /* the checker's substitution passes through a neutral spine headed by a definition */
-    if (tag(h) == T_REF && n > 0 && (ivar || tag(nm) == T_VAR)) { receipt(R_FCE_PUSH); for (uint32_t i = 0; i < n; i++) args[i] = FCE_(args[i]); return whnf(apps(h, args, n)); } }
+    if (tag(h) == T_REF && n > 0 && (ivar || tag(nm) == T_VAR)) { receipt(R_DUP_NODE); for (uint32_t i = 0; i < n; i++) args[i] = FCE_(args[i]); return whnf(apps(h, args, n)); } }
   v = whnf(v);                                                        /* the runtime's face meets a value: every rule below is at an active pair */
-  if (!ivar && tag(nm) != T_VAR && REWRITE_HOOK && REWRITE_HOOK(nm, v)) { receipt(R_FCE_ANNIHILATE); return whnf(by); }
+  if (!ivar && tag(nm) != T_VAR && REWRITE_HOOK && REWRITE_HOOK(nm, v)) { receipt(R_DUP_SUP_EQUAL); return whnf(by); }
   switch (tag(v)) {
     case T_SUP: {
       Term sn = whnf(HEAP[loc(v)]);
       if (ivar && tag(sn) == T_IVAR && loc(sn) == name) {
-        receipt(R_FCE_ANNIHILATE);
+        receipt(R_DUP_SUP_EQUAL);
         if (side < 2) { Term r = whnf(HEAP[loc(v) + 1 + side]);
           while (tag(r) == T_SUP && tag(whnf(HEAP[loc(r)])) == T_IVAR && loc(whnf(HEAP[loc(r)])) == name) r = whnf(HEAP[loc(r) + 1 + side]);   /* the same name again inside: already decided */
           return r; }
@@ -390,56 +391,56 @@ static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
         if (tag(b) == T_IVAR) return node3(T_SUP, 0, b, HEAP[loc(v) + 1], HEAP[loc(v) + 2]);
         fprintf(stderr, "hyper: connection on a choice name\n"); exit(2);
       }
-      receipt(R_FCE_COMMUTE);                       /* δᵢδⱼ = δⱼδᵢ */
+      receipt(R_DUP_SUP_DIFFERENT);                       /* δᵢδⱼ = δⱼδᵢ */
       return node3(T_SUP, 0, sn, FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2]));
     }
-    case T_LAM: receipt(R_FCE_PUSH); return fce_closure(T_LAM, nm, side, by, v);
-    case T_PLM: receipt(R_FCE_PUSH); return fce_closure(T_PLM, nm, side, by, v);
-    case T_IVAR: if (ivar && loc(v) == name) { receipt(R_FCE_ANNIHILATE); return side < 2 ? mk(side ? T_I1 : T_I0, 0, 0) : iwhnf(by); }
+    case T_LAM: receipt(lam_drops(v) ? R_DUP_LAM_ERASED : R_DUP_LAM_USED); return fce_closure(T_LAM, nm, side, by, v);
+    case T_PLM: receipt(R_DUP_LAM_USED); return fce_closure(T_PLM, nm, side, by, v);
+    case T_IVAR: if (ivar && loc(v) == name) { receipt(R_DUP_SUP_EQUAL); return side < 2 ? mk(side ? T_I1 : T_I0, 0, 0) : iwhnf(by); }
                  receipt(R_FCE_SHARE); return v;
     case T_IDNF: if (!ivar) { receipt(R_FCE_SHARE); return v; }
-                 receipt(R_FCE_ANNIHILATE); return side < 2 ? face_subst_interval(v, name, side) : isub_interval(v, name, by);
+                 receipt(R_DUP_SUP_EQUAL); return side < 2 ? face_subst_interval(v, name, side) : isub_interval(v, name, by);
     case T_INOT: case T_IAND: case T_IOR: {           /* a neutral interval formula: canonicalise if possible, else pass inside */
       Term w = iwhnf(v);
       if (tag(w) != tag(v)) return fce_apply(nm, side, by, w);
-      receipt(R_FCE_PUSH);
+      receipt(R_DUP_NODE);
       if (tag(v) == T_INOT) return whnf(node1(T_INOT, 0, FCE_(HEAP[loc(v)])));
       return whnf(node2(tag(v), 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]))); }
-    case T_VAR: if (tag(nm) == T_VAR && loc(v) == loc(nm)) { receipt(R_FCE_ANNIHILATE); return side < 2 ? mk(side ? T_I1 : T_I0, 0, 0) : whnf(by); }   /* the coordinate itself */
+    case T_VAR: if (tag(nm) == T_VAR && loc(v) == loc(nm)) { receipt(R_DUP_SUP_EQUAL); return side < 2 ? mk(side ? T_I1 : T_I0, 0, 0) : whnf(by); }   /* the coordinate itself */
                 if (is_coordinate(v)) return WAIT_(v);                                                 /* a coordinate with no value yet: the face waits for it */
                 receipt(R_FCE_SHARE); return v;                                                        /* another atom */
     case T_CTR: {
       uint32_t ar = ctr_arity(v);
       if (ar == 0) { receipt(R_FCE_SHARE); return v; }
-      receipt(R_FCE_PUSH);
+      receipt(R_DUP_NODE);
       Loc l = alloc(ar);
       for (uint32_t i = 0; i < ar; i++) HEAP[l+i] = FCE_(HEAP[loc(v)+i]);
       return mk(T_CTR, ext(v), l);
     }
-    case T_GLU: case T_GLUE: { receipt(R_FCE_PUSH);   /* a face may decide the Glue: reduce again */
+    case T_GLU: case T_GLUE: { receipt(R_DUP_NODE);   /* a face may decide the Glue: reduce again */
       return whnf(node2(tag(v), 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]))); }
     case T_NUM: case T_ERA: case T_REF: case T_I0: case T_I1: receipt(R_FCE_SHARE); return v;
     /* a substitution commutes with everything: it passes into a stuck spine or a canonical composite */
-    case T_APP:  receipt(R_FCE_PUSH); return whnf(node2(T_APP, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1])));
+    case T_APP:  receipt(R_DUP_NODE); return whnf(node2(T_APP, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1])));
     case T_CASE: if (!CHECK_MODE && blocked(v)) return WAIT_(v);    /* blocked on a coordinate: the face waits on the one shared cell */
-                 receipt(R_FCE_PUSH); return whnf(case_restrict(v, nm, side, by, FCE_(HEAP[loc(v)])));
-    case T_HELIM: receipt(R_FCE_PUSH);
+                 receipt(R_DUP_NODE); return whnf(case_restrict(v, nm, side, by, FCE_(HEAP[loc(v)])));
+    case T_HELIM: receipt(R_DUP_NODE);
       return whnf(helim_restrict(v, nm, side, by, HEAP[loc(v)] ? FCE_(HEAP[loc(v)]) : 0, FCE_(HEAP[loc(v)+3])));
-    case T_TRP:  receipt(R_FCE_PUSH); return whnf(node4(T_TRP, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2]), FCE_(HEAP[loc(v)+3])));
-    case T_PAP:  receipt(R_FCE_PUSH); return whnf(node4(T_PAP, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2]), FCE_(HEAP[loc(v)+3])));
-    case T_FCASE: receipt(R_FCE_PUSH); return whnf(node4(T_FCASE, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2]), FCE_(HEAP[loc(v)+3])));
-    case T_REFLECT: receipt(R_FCE_PUSH); return whnf(node2(T_REFLECT, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1])));
-    case T_HCM:  receipt(R_FCE_PUSH); return whnf(node3(T_HCM, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2])));
-    case T_OP2:  receipt(R_FCE_PUSH); return whnf(node2(T_OP2, ext(v), FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1])));
-    case T_UNIFY: receipt(R_FCE_PUSH); return whnf(node3(T_UNIFY, ext(v), FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), side < 2 ? restrict_push(HEAP[loc(v)+2], nm, side, 0) : HEAP[loc(v)+2]));
-    case T_BOTH:  receipt(R_FCE_PUSH); return whnf(node4(T_BOTH, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), HEAP[loc(v)+2], side < 2 ? restrict_push(HEAP[loc(v)+3], nm, side, 0) : HEAP[loc(v)+3]));
-    case T_OP1:  receipt(R_FCE_PUSH); return whnf(node1(T_OP1, ext(v), FCE_(HEAP[loc(v)])));
-    case T_POUT: receipt(R_FCE_PUSH); return whnf(node1(T_POUT, 0, FCE_(HEAP[loc(v)])));
-    case T_PROJ: receipt(R_FCE_PUSH); return whnf(node2(T_PROJ, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1])));
-    case T_UNGLUE: receipt(R_FCE_PUSH); return whnf(node1(T_UNGLUE, 0, FCE_(HEAP[loc(v)])));
+    case T_TRP:  receipt(R_DUP_NODE); return whnf(node4(T_TRP, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2]), FCE_(HEAP[loc(v)+3])));
+    case T_PAP:  receipt(R_DUP_NODE); return whnf(node4(T_PAP, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2]), FCE_(HEAP[loc(v)+3])));
+    case T_FCASE: receipt(R_DUP_NODE); return whnf(node4(T_FCASE, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2]), FCE_(HEAP[loc(v)+3])));
+    case T_REFLECT: receipt(R_DUP_NODE); return whnf(node2(T_REFLECT, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1])));
+    case T_HCM:  receipt(R_DUP_NODE); return whnf(node3(T_HCM, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2])));
+    case T_OP2:  receipt(R_DUP_NODE); return whnf(node2(T_OP2, ext(v), FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1])));
+    case T_UNIFY: receipt(R_DUP_NODE); return whnf(node3(T_UNIFY, ext(v), FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), side < 2 ? restrict_push(HEAP[loc(v)+2], nm, side, 0) : HEAP[loc(v)+2]));
+    case T_BOTH:  receipt(R_DUP_NODE); return whnf(node4(T_BOTH, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), HEAP[loc(v)+2], side < 2 ? restrict_push(HEAP[loc(v)+3], nm, side, 0) : HEAP[loc(v)+3]));
+    case T_OP1:  receipt(R_DUP_NODE); return whnf(node1(T_OP1, ext(v), FCE_(HEAP[loc(v)])));
+    case T_POUT: receipt(R_DUP_NODE); return whnf(node1(T_POUT, 0, FCE_(HEAP[loc(v)])));
+    case T_PROJ: receipt(R_DUP_NODE); return whnf(node2(T_PROJ, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1])));
+    case T_UNGLUE: receipt(R_DUP_NODE); return whnf(node1(T_UNGLUE, 0, FCE_(HEAP[loc(v)])));
     case T_FCE: {                                    /* a face already waiting on a stuck term: at the same name the earlier face has spent it; at another, both wait */
       Term inner = whnf(HEAP[loc(v)]);
-      if (ivar && tag(inner) == T_IVAR && loc(inner) == name && ext(v) < 2) { receipt(R_FCE_ANNIHILATE); return v; }
+      if (ivar && tag(inner) == T_IVAR && loc(inner) == name && ext(v) < 2) { receipt(R_DUP_SUP_EQUAL); return v; }
       return WAIT_(v); }
     default: /* stuck: the face map waits */ return WAIT_(v);
   }
@@ -743,7 +744,7 @@ static Term unify_step(Term t) {
     if (SCRUT == 0 && FORCE_LEFT && ext(t) <= FORCE_KIND) {            /* forced: a side stuck on a coordinate is forced in turn, at this identity's kind */
       unsigned k0 = CUR_KIND; CUR_KIND = ext(t);
       if (ext(t) && ((tag(x0) == T_CASE && blocked(x0) && decide_question(x0, y, faces)) || (tag(y0) == T_CASE && blocked(y0) && decide_question(y0, x, faces)))) { CUR_KIND = k0; continue; }   /* a bare question: the residual is its first asker */
-      Term x2 = force(x0), y2 = x2 == x0 ? force(y0) : y0;
+      Term x2 = force(x0), y2 = x2 == x0 ? force(y0) : y0;             /* the term's order: an identity's sides are not two independent demands, a dead one ends the other */
       CUR_KIND = k0;
       if (x2 != x0) { HEAP[loc(t)] = x2; continue; }
       if (y2 != y0) { HEAP[loc(t)+1] = y2; continue; } }
@@ -1756,18 +1757,18 @@ void print_term(Term t, int depth) { force_fields(t, depth); print_rec(t, depth)
 /* §6: the census of receipts. Every interaction left one receipt in the trace; the census is its fold
    by rule (AdiBija: every analyzer is a fold over the trace). Definitional unfolding and the face map's
    sharing are shown apart, as the receipts name them. */
-const char *RULE_NAME[R_COUNT] = { "", "beta", "app-sup", "app-plm", "fce-annihilate", "fce-commute", "fce-push",
-    "fce-share", "case", "case-sup", "op2", "op2-sup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "op1", "pout", "split", "unify" };
+const char *RULE_NAME[R_COUNT] = { "", "beta", "appSup", "app-plm", "dupSupEqual", "dupSupDifferent", "dupLamUsed", "dupLamErased", "dupNode",
+    "fce-share", "case", "appMatSup", "op2", "op2-sup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "op1", "pout", "split", "unify" };
 void print_trace(uint64_t from) {           /* the derivation as data: each step a rule at a node */
   for (uint64_t i = from; i < TRACE_LEN; i++) printf("%s%s@%u", i > from ? " " : "", RULE_NAME[TRACE[i]], TRACE_NODE[i]);
   printf("\n");
 }
 void print_census(void) {
   const char **names = RULE_NAME;
-  uint64_t count[R_COUNT] = {0};
-  for (uint64_t i = 0; i < TRACE_LEN; i++) if (TRACE[i] < R_COUNT) count[TRACE[i]]++;
+  uint64_t count[R_COUNT] = {0}, words[R_COUNT] = {0};   /* by event: the interactions and the heap words they allocated (the two receivers of Charge) */
+  for (uint64_t i = 0; i < TRACE_LEN; i++) if (TRACE[i] < R_COUNT) { count[TRACE[i]]++; words[TRACE[i]] += (i + 1 < TRACE_LEN ? TRACE_HEAP[i+1] : HEAP_LEN) - TRACE_HEAP[i]; }
   fprintf(stderr, "- Census:");
-  for (unsigned r = 1; r < R_COUNT; r++) if (count[r]) fprintf(stderr, " %s=%llu", names[r], (unsigned long long)count[r]);
+  for (unsigned r = 1; r < R_COUNT; r++) if (count[r]) fprintf(stderr, " %s=%llu/%lluw", names[r], (unsigned long long)count[r], (unsigned long long)words[r]);
   fprintf(stderr, "\n");
 }
 

@@ -143,6 +143,14 @@ them.
   that could have been written without reading the checked term it is about is
   not allowed here. Nineteen of twenty-one rules once cited theorems that did
   not exist; the table that exposed it is the reason this gate exists.
+- **Inventing the cost model.** This file once said the proved count needed a
+  face that "acts only at a superposition of its own name", never copying a
+  constructor. The ledger's alphabet says the opposite: a duplicator meeting a
+  node is the event `dupNode`, charged one interaction and the node's words
+  (`research/sat_fibre/InteractionLedger.agda:16` `dupNode`, `:35`
+  `localCharge`). A day was spent building a runtime around the invented
+  sentence before it was checked against the cited line. The count's status is
+  decided by the diamond and the schedule check, not by removing events.
 - **Reading instead of building.** The object is fixed by items 1 to 5 and the
   modules they cite. A further module is read when its probe is being written,
   and the probe reproduces it by running.
@@ -206,11 +214,8 @@ them.
      already fix.
    - The printer prunes: a superposition with a dead side is its other side,
      with both dead it is `*`.
-   What is not the geodesic yet: `sort` for three elements takes 42,859
-   interactions and 613 rounds (`HYPER_CENSUS=1`). Identical questions asked at
-   two code sites (`sorted`'s and `isort`'s comparison of the same two
-   coordinates) are two cells and two splits; rounds re-inspect the demand
-   path; faces on values are pushed by copying. These are step 5.
+   The cost of `sort` for three elements is 37,159 interactions and 544
+   rounds (`HYPER_CENSUS=1`, step 5 names the events).
 3. The trace of a run and the leaves of a superposition as terms; the four modes
    removed and their probes rewritten as programs. **Written**: `(trace e)` and
    `(leaves e)` (§3); `main.c` has `run`, `bend`, `check`, `interact`;
@@ -254,25 +259,39 @@ them.
    asked it; `sortCost` is `cost3`, the greatest event count over the leaves of
    `trace` (503 for three inputs), the machine's own charge for the world with
    the longest path, comparisons and the splits, unifications and face maps
-   that carry the worlds alike. What it is not yet: the charge of a *concrete*
-   run of `sort` on a representative of that leaf, which counts no split; the
-   two agree in the comparisons and differ in the machinery, which is step 5.
-5. Every rule at an active pair, bodies as nets: the count becomes the proved
-   geodesic. The one rule that fires on a non-value goes. **Begun**: the face
-   pushed into the arguments of a stuck spine headed by a definition, before the
-   definition unfolds, is gone from the run; every face rule of the run is at a
-   value. The checker keeps it as its substitution through a neutral spine (five
-   corpus files check only with it). The measure to
-   beat, `sort A` for A = [3,1,2] (`HYPER_CENSUS=1`): 37,159 interactions, of
-   which face maps are 28,268 (push 14,062, share 5,836, annihilate 4,979,
-   commute 3,391), beta 2,090, case 1,310, case over a superposition 1,369,
-   unify 2,891, split 156. The faces are the worlds' bookkeeping: a restriction
-   on a frame wraps every lookup through it in a face, and a face meeting a
-   constructor copies it into its fields. The proved count needs the face to be
-   a projection that acts only at a superposition of its own name, and the body
-   of a match instantiated once for all sides of a superposition, so a
-   reduction that does not depend on the side is paid once. That is the
-   remaining content of this step.
+   that carry the worlds alike. A leaf's charge is the declaration's: its comparisons and the splits,
+   unifications and face maps that carry its world are all events of the
+   ledger's alphabet, so a concrete run of `isort` on a representative, which
+   makes none of them, is a different object with a smaller charge.
+5. Every rule at an active pair, bodies as nets: the count is the ledger's and
+   invariant under the schedules. **Written.** The ledger asks a runtime for one
+   thing: a correspondence from its transitions to the event alphabet
+   (`research/sat_fibre/InteractionLedger.agda:13` `Event`; the comment above
+   `heap-monotone-prefix` says the theorem does not invent that mapping). The
+   receipts of the superposition algebra now carry the alphabet's own names:
+   a face meeting a superposition of its name is `dupSupEqual`, of another name
+   `dupSupDifferent`, a closure `dupLamUsed` or `dupLamErased` (the binder never
+   read), a constructor or any other node `dupNode`; an application over a
+   superposition is `appSup`, a match over one `appMatSup` (`:31` to `:36`,
+   `localCharge`). The census prints each event's count and the heap words it
+   allocated, the two receivers of `Charge` (`:20`), so the run's ledger is the
+   fold `interactionTotal-is-length` (`:74`) over these events. For `sort A`,
+   A = [3,1,2]: 37,159 interactions; `dupNode` 11,666, `dupSupEqual` 4,979,
+   `dupSupDifferent` 3,391, `dupLamUsed` 2,396, `appMatSup` 1,369, `beta` 2,090,
+   `case` 1,310, `unify` 2,891, `split` 156, the rest atoms shared. Every rule
+   of the run fires at an active pair: the one rule that fired on a non-value
+   (the face pushed into a stuck spine before the definition unfolded) is gone
+   from the run and kept for the checker alone, as its substitution through a
+   neutral spine. The diamond is measured as §3 says: `sort-A`, `sort-dup`,
+   `n-run2` and `c-isort3` give the same value in the same count when the
+   right of two independent demands is served first or a coin decides
+   (`test.sh`). What the check covers is independent demands. The two sides of
+   an identity are not two independent demands: a side that dies ends the
+   other, so their order is the term's (`x ≡ y` forces `x` first), and a run
+   that forced them in the other order is a different question with a different
+   count (`n-run2`: 10,241 against 10,250). The hypothesis of `RandomDescent`
+   for this loop's step relation is an Agda obligation and is not discharged
+   here; nothing in this file claims it is.
 6. The chart move under a checked path.
 7. The Bend dialect's grammar as a book with its certificate; parallel demand
    over the one arena.
@@ -422,7 +441,9 @@ of one object to its normal form has the same length; `:53`
 `normalization-is-geodesic`. As written: every rule appends its receipt to
 `TRACE`, with the node it fired on and the heap length at that moment; a run
 prints `- Itrs:` (the interactions) and `- Words:` (the heap words allocated),
-the two components of `Charge`; `HYPER_CENSUS=1` prints the receipts by rule.
+the two components of `Charge`; `HYPER_CENSUS=1` prints each event's count and
+the heap words it allocated, the events of the superposition algebra under the
+ledger's own names (`dupNode`, `dupSupEqual`, `appSup`, …; step 5).
 **The trace is a term**: `(trace e)` runs `e` to its normal form and is the
 pair of the value and the list of its events, each event the rule's name as a
 constructor carrying the words it allocated (`#beta{4}`), so the trace lives
