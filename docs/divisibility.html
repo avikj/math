@@ -208,7 +208,7 @@ $$
 A \wedge (B \vee C) = (A \wedge B) \vee (A \wedge C)
 $$
 <ul>
-<li>Every chain is distributive; a product of chains is distributive but not totally ordered. Divisibility is that product: distributive, with 2 and 3 incomparable (machine-checked, <code>--safe</code>).</li>
+<li>Every chain is distributive; a product of chains is distributive but not totally ordered. Divisibility is that product: distributive, with 2 and 3 incomparable.</li>
 </ul>
 
 <h2><span class="n">3.</span> The map d ↦ n/d reflects every axis; it swaps gcd with lcm, and is a true complement exactly when n is squarefree</h2>
@@ -299,7 +299,7 @@ $$
 $$
 <ul>
 <li>μ vanishing off the squarefree divisors is §4 again: only the ¬¬-stable part carries a sign, a repeated prime contributes 0. On the subset algebra of §3, μ = (−1)<sup>#primes</sup> is inclusion–exclusion itself — whole minus atoms plus pairs minus triples.</li>
-<li>One instance to run: the identity function n ↦ n is the sum of Euler's totient over divisors (∑<sub>d ∣ n</sub> φ(d) = n), so inverting the identity by the rule above returns φ. The same back-substitution, nothing new (machine-checked, <code>--safe</code>):</li>
+<li>One instance to run: the identity function n ↦ n is the sum of Euler's totient over divisors (∑<sub>d ∣ n</sub> φ(d) = n), so inverting the identity by the rule above returns φ. The same back-substitution, nothing new:</li>
 </ul>
 $$
 \varphi(n) = \sum_{d \mid n} \mu(n/d)\, d \qquad \sum_{d \mid n} \varphi(d) = n
@@ -340,7 +340,7 @@ $$
 \mathrm{RH} \iff \forall n \ge 1 : \ \Big(\textstyle\sum_{k \le \delta(n)} \tfrac{1}{k} - \tfrac{n^2}{2}\Big)^{2} < 36\,n^{3}
 $$
 <ul>
-<li>Every instance is a decided bit you can watch: the Goldbach counts at 4, 6, 8 and the Riemann test at 1, 2, 3 all come out positive (machine-checked, <code>refl</code>). One kernel, decided pointwise; what stays open is only the quantifier over the whole infinite list — for Goldbach and Riemann "no 0 ever" (Π₁), for twins "a 1 forever" (Π₂). The conjectures differ only in the shape of the section left open.</li>
+<li>Every instance is a decided bit you can watch: the Goldbach counts at 4, 6, 8 and the Riemann test at 1, 2, 3 all come out positive by direct evaluation. One kernel, decided pointwise; what stays open is only the quantifier over the whole infinite list — for Goldbach and Riemann "no 0 ever" (Π₁), for twins "a 1 forever" (Π₂). The conjectures differ only in the shape of the section left open.</li>
 </ul>
 
 <h2><span class="n">7.</span> Independence is a property of the finite list of proofs; the diagonal that keeps it open is one construction no program escapes</h2>
@@ -362,6 +362,8 @@ $$
 <li>Take g = ¬ on {0, 1} (no fixed point: ¬0 = 1, ¬1 = 0). The escaping d answers the opposite of what the machine indexed by a would answer on its own code, and no program realizes it. Cantor (no surjection A → 2<sup>A</sup>) and Halting (no machine decides its own halting) are this one escape with A and B chosen. Gödel is the same diagonal, but reaching it needs one classical ingredient not built here — the arithmetization that lets a sentence speak of its own proofs (the diagonal lemma) — after which g = ¬ gives the sentence asserting its own unprovability.</li>
 <li>The prime conjectures of §6 are not known to sit here: none is known to be independent, and no diagonal is known to obstruct them. §6 established only the weaker shared shape — decided at every instance, open only in the quantifier over the whole list — a gap a finite computation cannot cross, but not a proven independence.</li>
 </ul>
+
+<p class="src">Every step above is elementary; the whole is machine-checked and executable.</p>
 
 </main>
 <script src="./vendor/katex/katex.min.js"></script>
