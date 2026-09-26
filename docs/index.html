@@ -114,9 +114,9 @@ $$
 \ell(g) + \ell(g^{-1}) = \ell(e) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals are} \ge 0)
 $$
 <ul>
-<li>So a <strong>reversible net effect is free on this axis</strong>: <code>transport</code> and every isomorphism carry no additive cost — this is where Landauer's principle sits (§5). (<code>Laghava</code>, checked.)</li>
+<li>So a <strong>reversible net effect is free on this axis</strong>: the reversible effects are exactly the invertible ones, so they form a group, and on a group the grading vanishes (above) — <code>transport</code> and every isomorphism carry no additive cost. This is where Landauer's principle sits (§5). (<code>Laghava</code>, checked.)</li>
 <li><strong>Length is not that grading.</strong> Minimum length over a fixed set of primitive steps is only <em>subadditive</em> — strict under cancellation — and is <em>positive on reversible operations</em>: bringing cell <code>n</code> to the head is reversible with minimum length exactly <code>n</code> (§5). Reversible ≠ free in steps.</li>
-<li>Both are <strong>relative to the observation</strong>: what is erased is measured against what the inference keeps — keep the fibre (§1) and nothing is erased — and the length charged is the steps the <em>requested</em> output forces, not those to reconstruct a whole trace.</li>
+<li>Both are <strong>relative to the observation</strong>: erasure is the collapse of a fibre — losing which input produced the output — so keep the fibre (§1) and nothing is erased; and the length charged is the steps the <em>requested</em> output forces, not those to reconstruct a whole trace.</li>
 </ul>
 <h2><span class="n">4.</span> The diagonal</h2>
 <ul>
@@ -137,9 +137,9 @@ $$
 <li>Contrapositive: <code>g</code> with no fixed point ⇒ no <code>A → (A → B)</code> is onto.</li>
 </ul>
 <ul>
-<li><strong>Cantor.</strong> <code>B = 2</code>, <code>g = ¬</code> (negation has no fixed point): no surjection <code>A ↠ (A → 2) = 𝒫(A)</code>.</li>
-<li><strong>Gödel.</strong> <code>B =</code> provability values, <code>g =</code> negation: no provability predicate is point-surjective onto the sentences, and the missing fixed point is the sentence asserting its own unprovability.</li>
-<li><strong>Halting.</strong> <code>B = 2</code>, <code>g = ¬</code> on the universal machine's diagonal: no machine decides its own halting.</li>
+<li><strong>Cantor.</strong> <code>B = 2</code>, <code>g = ¬</code>: negation swaps <code>true</code> and <code>false</code>, so it has no fixed point, and <code>(A → 2)</code> is <code>𝒫(A)</code> by characteristic functions — no surjection <code>A ↠ 𝒫(A)</code>.</li>
+<li><strong>Gödel.</strong> Number the sentences by <code>A</code> and let <code>e</code> send a sentence to its provability predicate (a map to provability values <code>B</code>); <code>g =</code> negation. No such <code>e</code> is point-surjective, and the fixed point it misses is the sentence asserting its own unprovability — the diagonal at this <code>(B, g)</code>.</li>
+<li><strong>Halting.</strong> <code>B = 2</code>; the universal machine gives <code>e : A → (A → 2)</code> (run code <code>a</code> on input <code>a</code>), a halting-decider would complete it to a point-surjection, and <code>g = ¬</code> on the diagonal has no fixed point — no machine decides its own halting.</li>
 </ul>
 <p>One lemma; the walls are its instances.</p>
 <h2><span class="n">5.</span> Complete inference is deterministic and step-optimal</h2>
