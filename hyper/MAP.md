@@ -76,8 +76,8 @@ path at a data type between a term with coordinates and a concrete term is
 coordinate against term as a binding, superposed at the faces the path lives
 under. A case on a coordinate is not stuck: it becomes a
 **superposition over the constructors of its type**, each side restricting the
-coordinate, with fresh coordinates for the fields; this is exactly what the
-checker already does when a match on a coordinate restricts its frame. Sides on
+coordinate, with fresh coordinates for the fields, the constructors read from
+the type's declaration and nowhere else. Sides on
 which a predicate reduces to False are annihilated by the face map. The
 survivors are the fibre. It has one point because the fibre is contractible, and
 that point is B. No enumeration of Nat happens: a coordinate is split only when
@@ -94,8 +94,8 @@ and **a superposition collapses to the list of its leaves as a term**, so `cost`
 is a fold, `max` over the leaves is a fold, and `sortCost n` is the decision-tree
 bound, computed, minimal on every branch by the geodesic. For all n at once the
 declaration is a Π over an inductive type, whose canonical inhabitant is by that
-type's eliminator, so the inference is by induction and the checker confirms it
-on the same loop.
+type's eliminator: the value at each constructor is a point of the codomain
+there, and the recursive field is the function itself at that field.
 
 The core therefore owes the language exactly these, each derived from type
 structure and none written per type:
@@ -109,8 +109,7 @@ structure and none written per type:
 - every rule fires at an active pair and bodies are shared as nets, so the
   count is the proved geodesic and shared prefixes across branches are paid once;
 - a proved equivalence between charts lets the collapse run in the cheaper chart
-  under its certificate;
-- the checker on the same loop verifies every inferred body against its type.
+  under its certificate.
 
 Nothing in this list names lists, numbers, sorting or cost.
 
@@ -122,14 +121,13 @@ them.
 - **Building an interface instead of the language.** Subcommands that compute
   what a corpus module proves (a census mode, a joint mode, a meet mode) are
   organs. The constructions belong in the language as terms over the two
-  primitives above, and the runtime has one entry: reduce, with check on the
-  same loop. The modes this branch once had are gone; their probes are
-  programs (step 3).
+  primitives above, and the runtime has one entry: reduce. The modes this
+  branch once had are gone; their probes are programs.
 - **Building the runtime someone else already has.** An efficient interaction
   net exists (HVM). A cubical fork of Bend on it exists
   (`collab/bend2-interactive-cubical`). This directory is not a faster one of
-  those. It is the language in §0, and the fork is its first dialect and its
-  value oracle.
+  those and owes them nothing. It is the language in §0; a Bend front end is a
+  syntax layer if it is ever wanted.
 - **Importing the toy's frame.** `formal/cubical/Kernel/` is a first-order
   term-rewriting kernel whose own theorems show its `install` fires at exactly
   one term (`formal/cubical/Kernel/Vyapti_TheInstalledOperationHasNoneSoTheKernelMemorisesAndTheSchemaIsWhatMakesItGeneralise.agda:113`
@@ -149,156 +147,78 @@ them.
   node is the event `dupNode`, charged one interaction and the node's words
   (`research/sat_fibre/InteractionLedger.agda:16` `dupNode`, `:35`
   `localCharge`). A day was spent building a runtime around the invented
-  sentence before it was checked against the cited line. The count's status is
-  decided by the diamond and the schedule check, not by removing events.
-- **Reading instead of building.** The object is fixed by items 1 to 5 and the
-  modules they cite. A further module is read when its probe is being written,
-  and the probe reproduces it by running.
+  sentence before it was checked against the cited line.
+- **Scheduling the mathematics.** The runtime once had kinds and rounds deciding
+  when a residual identity may ask a port, a cap, a derived-coordinate special
+  case, tables of the constructors of four types, a hash identifying two stuck
+  matches, a knob perturbing the order of demands, and a checker with the
+  Bend dialect's built-ins. Every one filled a hole left by another. §5 of
+  `NOTES.md`: order is a certificate or data, never a policy; the constructors
+  of a type are its declaration; one point is one point. All of it is deleted;
+  what remains is the rule in §0.3.
+- **Running instead of reading.** A change made to see what it does is a
+  change made without knowing what the code is. Every line here is derived from
+  the mathematics first and compiled second; the suite is not the standard, and
+  a green suite around a wrong construction is itself the error.
 
-## 0.3 Order of work
+## 0.3 What is written
 
-1. Coordinates at run time and the case on a coordinate as a superposition with
-   restriction. Everything else is expressed through this. **Written**: a
-   declaration `(def x : T)` with no body is one coordinate of `T`, created on
-   first demand and shared by every reference; a match that asks a coordinate
-   writes into the coordinate's own slot the superposition of the match's
-   constructors, each with fresh coordinates for its fields, one line at a fresh
-   bound name per choice, so every holder sees the same correlated superposition
-   and the match then commutes over it by the ordinary rule (`R_SPLIT`;
-   `t/coord.hyper`).
-2. Unification at data types as the reduction of a path with coordinates.
-   **Written** (`t/sort.hyper`: `sort`'s specification, its only text, prints
-   `[1,2,3]` for A = [3,1,2]; the fibre of `isort` over `[1,2]` prints as the
-   superposition of its two points; an empty fibre prints `*`). What the core
-   does, and nothing per type:
-   - A coordinate of an identity type is the identity cell (`T_UNIFY`) between
-     its two sides; a coordinate of a Σ is a pair of coordinates. The identity
-     reduces lazily: `REFL` when the sides agree, `*` when constructors or
-     numerals differ, constructor against constructor as a conjunction of the
-     fields' identities (`T_BOTH`), coordinate against term as a **binding**
-     written into the coordinate's slot, superposed at every face the identity
-     lives under (the other side of each face a fresh coordinate), so every
-     holder sees the binding exactly where it holds; a superposed side
-     distributes, and a name the identity's faces already fix is projected, not
-     distributed.
-   - **Forcing.** A cell is forced when demanded at the top; the scrutinee of a
-     match and the sides of an identity are inspected, not forced. Splitting
-     happens only under force, so the outermost eliminator facing a stuck term
-     is the one that decomposes: a coordinate is split only as far as it is
-     asked. The top resolves in **rounds** of one split each (`resolve`), so a
-     split anywhere is followed by inspection everywhere and a side that dies
-     cheaply is reached before another split is made.
-   - A match whose scrutinee is **stuck on a coordinate** (`leq h h'` with `h`
-     free) does not split `h`. The stuck term itself becomes the superposition,
-     over the constructors the match lists, of each constructor under the
-     identity of the computation with it (`under` in the prelude: the
-     language's own J), its fields fresh **derived** coordinates. The stuck cell
-     is marked with the superposition, so every holder meets the same split and
-     the same worlds, and the computation moves to one fresh cell shared by every
-     residual. A match on `under(p, v)` commutes to `under(p, match v)`; an
-     identity with `under(p, v)` on a side is `p ∧ (v ≡ y)`.
-   - A **derived** coordinate is never split: asking it forces the identity that
-     defines it. Only a free port (a declared unknown, a field of a coordinate's
-     split) is split.
-   - Residuals have a **kind**: the specification is kind 0, the identity a
-     stuck match leaves behind while a cell of kind k is forced is kind k+1. A
-     round forces kind ≤ k, and k rises only when a round moved nothing, so the
-     residual of a comparison is explored only when what it constrains is
-     otherwise undetermined, and a comparison between free naturals is never
-     enumerated while the data can still decide.
-   - Coordinates carry the **world** (faces) they live in; a binding under a face
-     of that world is written plainly, under the opposite side it is `*`. A face
-     on a coordinate with no value, or on a match blocked on one, **waits** on
-     the one shared cell rather than copying it. A match, an identity and a
-     conjunction each project a superposition at a name their frame or faces
-     already fix.
-   - The printer prunes: a superposition with a dead side is its other side,
-     with both dead it is `*`.
-   The cost of `sort` for three elements is 37,159 interactions and 544
-   rounds (`HYPER_CENSUS=1`, step 5 names the events).
-3. The trace of a run and the leaves of a superposition as terms; the four modes
-   removed and their probes rewritten as programs. **Written**: `(trace e)` and
-   `(leaves e)` (§3); `main.c` has `run`, `bend`, `check`, `interact`;
-   `t/census.hyper`, `t/jiva.hyper`, `t/meet.hyper` are programs over declared
-   fibres, `trace` and `leaves`, and reproduce every check the modes made. Not
-   yet a term: the cost of one leaf of a superposed run. The ledger is the
-   run's; a leaf's own charge needs the receipts attributed to the world they
-   fired in, which the trace does not record. That is what `sortCost` needs
-   (step 4).
-4. A declaration with no body is inferred: `sort` as the first test, its type its
-   only text; `sortCost n` for small n against the decision-tree bound as the
-   second. **Written, first half**: `sort : Π (L : List Nat). Σ B. …` is declared
-   with no body (`t/sort.hyper`, `sort-A`); an unknown function applied is the
-   coordinate of its codomain at the argument, one per (function, argument), so
-   the same argument asks the same question. Along free coordinates the run is
-   the decision tree: `isort` of three unknowns is six leaves (`n-isort3`), and
-   `(trace e)` over a superposed run gives each leaf the events that fired in
-   its world or above it (`trace_over`; `HYPER_SPLITS=1` shows each split). A
-   stuck question is identified by its code and the identities of what its code
-   reads, so one comparison asked at two sites is one split (`n-two-asks`).
-   Inside `trace` and `leaves` a residual does not ask a port (`KIND_CAP`): the
-   leaves stay the classes of inputs, printed as a value under its identities.
-   The innermost eliminator not facing a bare port is the one that decomposes: a
-   match on a match on a comparison asks the comparison. A residual whose
-   question was split (under another cell, or before its ports were bound) is
-   marked with that split, its identity read under its own faces and the frame's
-   restrictions, so a comparison split as `leq b1 a` and the same comparison
-   after `b1 := h2, a := h3` are one question (`n-run2`: the two arrangements,
-   no leaf with contradictory residuals). A bare residual on a question no match
-   has split splits it itself, along the constructors of the answer it requires
-   (`decide_question`). A match's scrutinee word is never rewritten with a
-   reduct that is still an identity: it may be a child of the match's own body,
-   and writing it closes a cycle. A residual whose question, as now understood,
-   has no registered split registers its own split under that key, so the second
-   residual on the question meets the first (`HYPER_SPLITS=1` checks every leaf's
-   residuals for contradiction). **Written, second half**: the declaration `sort`
-   along three free inputs resolves to exactly the six arrangements, no leaf with
-   contradictory residuals (`count3`); the decision tree of `isort` along three
-   free coordinates is exact, six leaves with 2, 3, 2, 2, 3, 3 comparisons and 3
-   at most (`c-isort3`), each comparison one split whatever the world that first
-   asked it; `sortCost` is `cost3`, the greatest event count over the leaves of
-   `trace` (503 for three inputs), the machine's own charge for the world with
-   the longest path, comparisons and the splits, unifications and face maps
-   that carry the worlds alike. A leaf's charge is the declaration's: its comparisons and the splits,
-   unifications and face maps that carry its world are all events of the
-   ledger's alphabet, so a concrete run of `isort` on a representative, which
-   makes none of them, is a different object with a smaller charge.
-5. Every rule at an active pair, bodies as nets: the count is the ledger's and
-   invariant under the schedules. **Written.** The ledger asks a runtime for one
-   thing: a correspondence from its transitions to the event alphabet
-   (`research/sat_fibre/InteractionLedger.agda:13` `Event`; the comment above
-   `heap-monotone-prefix` says the theorem does not invent that mapping). The
-   receipts of the superposition algebra now carry the alphabet's own names:
-   a face meeting a superposition of its name is `dupSupEqual`, of another name
-   `dupSupDifferent`, a closure `dupLamUsed` or `dupLamErased` (the binder never
-   read), a constructor or any other node `dupNode`; an application over a
-   superposition is `appSup`, a match over one `appMatSup` (`:31` to `:36`,
-   `localCharge`). The census prints each event's count and the heap words it
-   allocated, the two receivers of `Charge` (`:20`), so the run's ledger is the
-   fold `interactionTotal-is-length` (`:74`) over these events. For `sort A`,
-   A = [3,1,2]: 37,159 interactions; `dupNode` 11,666, `dupSupEqual` 4,979,
-   `dupSupDifferent` 3,391, `dupLamUsed` 2,396, `appMatSup` 1,369, `beta` 2,090,
-   `case` 1,310, `unify` 2,891, `split` 156, the rest atoms shared. Every rule
-   of the run fires at an active pair: the one rule that fired on a non-value
-   (the face pushed into a stuck spine before the definition unfolded) is gone
-   from the run and kept for the checker alone, as its substitution through a
-   neutral spine. The diamond is measured as §3 says: `sort-A`, `sort-dup`,
-   `n-run2` and `c-isort3` give the same value in the same count when the
-   right of two independent demands is served first or a coin decides
-   (`test.sh`). What the check covers is independent demands. The two sides of
-   an identity are not two independent demands: a side that dies ends the
-   other, so their order is the term's (`x ≡ y` forces `x` first), and a run
-   that forced them in the other order is a different question with a different
-   count (`n-run2`: 10,241 against 10,250). The diamond of `RandomDescent` is
-   a theorem of nets; a runtime whose count depends on which of two independent
-   demands fires first is not a net, and that is a defect to remove, never a
-   proof left to write.
-6. The chart move under a checked path.
-7. The Bend dialect's grammar as a book with its certificate; parallel demand
-   over the one arena.
+One rule at a match, and everything else is the cubical type theory it runs in.
 
-The sections below describe the substrate as it stands.
+**The rule.** A match demands the head of its scrutinee. The scrutinee is
+inspected, not forced: evaluation runs through β and constructor selection and
+stops at a match facing a point whose head is not yet a constructor, because
+binding that point's output is the act of the match that faces it. A
+coordinate's head is the superposition of its type's declared constructors,
+written into the coordinate's own slot, one line at a fresh bound name per
+choice, each side's fields fresh coordinates of that side's world
+(`constructor_superposition`). A computation's head is bound at its output: the
+same superposition, each constructor under the identity of the computation with
+it (`split_stuck`; `under` in the prelude is J), the computation moved to one
+cell shared by every residual, the identity decided when demanded. A point of
+an identity type is the identity cell between its sides; a point of a Σ is a
+pair of points; a point of a one-constructor type is that constructor. An
+identity's sides are inspected; when the identity is itself demanded a side
+whose head is not a constructor is forced, the first side first, a dead side
+ending the other. A conjunction inspects both sides before forcing either, so a
+binding one side makes is met before a port is asked on the other.
 
+**The identity of a point.** A function has one value per argument
+(`formal/cubical/theorems/residue/Sambandha_TheRelationalProgramWithUniqueAnswersIsTheMapSoAllThreePresentationsCollapseOntoOneFunction.agda:92`
+`relational-programs-are-maps`). A free function applied to a superposed
+argument distributes; applied to anything else it is the point of its codomain
+there, one per argument (`pi_apply`, `point_at`), the argument compared by its
+canonical form over coordinates as it stands now (`same_point`): a coordinate by
+its cell, a constructor by its id and fields, a closure or a match by its code
+and the slots the code reads. Nothing is hashed and no depth cut identifies;
+where the comparison gives out it says different, which under-shares and never
+mis-shares. The point carries what it is a function of, and asking it re-reads
+the argument as it stands: a superposed argument distributes the point, a bound
+one meets the point registered first. Two stuck computations that are the same
+point split once, by the same comparison.
+
+**Unification** at data types: `REFL` when the sides agree, `*` when
+constructors or numerals differ, constructor against constructor as a
+conjunction of the fields' identities, coordinate against term as a binding
+written into the coordinate's slot, superposed at every face the identity lives
+under so every holder sees the binding exactly where it holds; a superposed side
+distributes; a name the identity's faces already fix is projected. Coordinates
+carry the world they live in; a binding under the opposite side of one of its
+faces is `*`.
+
+**The presentation.** `(trace e)` is the value with the ledger's events over
+it, each leaf of a superposed run with the events that fired in its world or
+above it; `(leaves e)` is the list of a superposition's leaves, dead sides
+dropped; the printer prunes a superposition with a dead side to its other side
+and both dead to `*`, and cuts at depth. The receipts carry the ledger's names
+(`research/sat_fibre/InteractionLedger.agda:13` `data Event`).
+
+**Not exercised.** `sort L` with `L` free, `sortCost n` with `n` free, and the
+equivalence between the two charts of `sort` declared with no body, resolve, if
+they resolve, by the rule above and nothing added: the free function's point at
+the free argument, its Σ split into typed coordinates, the identity forcing
+`isort L`, and `L` splitting along its constructors. No number in this file is
+a measurement of the present runtime.
 
 ## Read order
 
@@ -326,34 +246,19 @@ reduction. `formal/cubical/Kernel/DescentNote_WhatThisIsAndHowToDescendIntoTheMe
 `univalence-acts` is that fact as one term, and the descent note names it as the
 whole reason the rest is possible.
 
-The substrate is `cell.c`, `cell.h`, `read.c`, `verify.c` and the two rule files.
-It reduces Bend2's dialect: every `.bend` under `collab/bend2-interactive-cubical`
-is checked and emitted by Bend2 (`bend F --to-hyper`, `src/Target/Hyper.hs` in
-`cubical-paths.patch`), run by `hyper bend`, and its value compared with Bend2's
-own normaliser (`bendtest.sh`: 124 programs agree, 12 skipped because the oracle
-itself does not run them). `verify.c` checks the same books and agrees with
-Bend2's checker verdict by verdict (`checktest.sh`: 3862 definitions over 150
-files, the must-fail probes included). `test.sh` holds the checks of the
-substrate's own probes, its ledger, its schedules and its census.
-
-What the substrate provides: cells over bound dimension names, frames with
-descent, the face map (a dimension's endpoint, a choice name's side, a
-coordinate's substitution), the interval as the free De Morgan algebra in
-canonical form, transp and hcomp with regularity as an occurs check, Glue and
-ua, higher inductive types by a schema (constructor boundaries read from their
-types), fixed points, four numeric kinds, superpositions at bound names, and a
+The substrate is `cell.c`, `cell.h`, `read.c`, `main.c` and `prelude.hyper`.
+What it provides: cells over bound dimension names, frames with descent, the
+face map (a dimension's endpoint, a choice name's side, a coordinate's
+substitution), the interval as the free De Morgan algebra in canonical form,
+transp and hcomp with regularity as an occurs check, Glue and ua, inductive and
+higher inductive types by one schema (a constructor's boundary is its declared
+type; Unit, Bool, Nat and List are declared in the prelude like any other),
+fixed points, numerals, superpositions at bound names, free points, and a
 reader for its own text. Nothing is erased inside a run: a demanded node is
 marked with its result once reduced (`T_IND`) and every holder sees the value.
-The checker is bidirectional over static code with coordinates and rewrites via
-the face map. The corpus's machine runs on cubical Agda; this evaluator exists
-so that the machine can run without Agda or HVM, and it is the part of this
-directory that is not itself the corpus.
-
-Deviations from the mathematics, recorded: a non-variable scrutinee rewrites the
-goal but not the context; a definition unfolds under conversion by its head
-first; the branch-wise comparison of two stuck eliminators is bounded; a face
-map passes through an application of a closed name into its arguments before
-the name unfolds, the one rule that fires on a node that is not a value.
+The corpus's machine runs on cubical Agda; this evaluator exists so that the
+machine can run without Agda, and it is the part of this directory that is not
+itself the corpus.
 
 ## 2. The primitive: interaction
 
@@ -371,7 +276,7 @@ first step. `LIFECYCLE.rst`: do not begin by assuming two independent machines
 exchanging messages; start from the joint interaction and establish which
 projections, dependencies and transports it admits.
 
-Its instances, each a checked module, each computed by one mode of `hyper`:
+Its instances, each a checked module, each a program here:
 
 **A typed point and a typed map** (`fibre/src/Fibre/CorpusInteraction.agda`,
 whole: `:16` `Point`, `:22` `Question`, `:25` `target`, `:28` `Receipt`, `:38`
@@ -426,9 +331,6 @@ by the universal family, and a tower of such families flattens to one
 `flatten`). `CHU_LOSSLESS_INTERACTION.md` is the reading; the census of a map out of a
 product domain, resolved pointwise, is the Chu matrix with its fibres.
 
-`hyper check FILE` is `verify.c` on every definition; `hyper bend FILE` runs
-`b/main` in Bend2's presentation, for the oracle.
-
 ## 3. The trace, and what a computation costs
 
 Two measures, both corpus quantities, and they measure different things.
@@ -451,14 +353,12 @@ constructor carrying the words it allocated (`#beta{4}`), so the trace lives
 over the result as in `fibre-of-run`, `interactionTotal` is `length` and
 `ledger` is a fold, both written in the language (`t/meet.hyper`).
 `(leaves e)` is the list of the leaves of `e`'s superposition, dead sides
-dropped (`t/census.hyper`); `HYPER_SCHEDULE` serves the right of two independent demands
-first, or a coin per choice, and `test.sh` and `bendtest.sh` require the same
-value and the same count under the schedules (the diamond, measured, since the
-hypothesis of `RandomDescent` is not discharged for this loop's step relation).
-Definitional unfolding is not an event. The sharing regimes (`bendtest.sh`,
-`bench_*_sup` against `bench_*_sep`; `t/ua.hyper`, a transport used k times)
-are the reason a runtime exists at all: the superposition is one line over N
-values and its cost is what the ledger shows.
+dropped (`t/census.hyper`). The diamond of `RandomDescent` is a theorem of nets;
+a runtime whose count depends on which of two independent demands fires first
+is not a net, and that is a defect to remove, never a proof left to write.
+Definitional unfolding is not an event. Sharing is the reason a runtime exists
+at all: the superposition is one line over N values and its cost is what the
+ledger shows (`t/ua.hyper`, a transport used k times).
 
 **The census: what a question loses.**
 `fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:90`
@@ -547,13 +447,11 @@ this runtime does not model.
 
     hyper/cell.h             the word layout, tags, frames, constructors, the receipts
     hyper/cell.c             the substrate: heap, frames, instantiation, the interval, the face map,
-                             case trees, the HIT schema, numbers, transp, hcomp, Glue, the loop, the ledger, printers
+                             case trees, the schema, numbers, transp, hcomp, Glue, the loop, the rule
+                             at a match, unification, the identity of a point, the ledger, the printer
     hyper/read.c             the reader for the kernel's own text
-    hyper/verify.c           the checker on the same loop
-    hyper/main.c             run | bend | check | interact
-    hyper/prelude.hyper 158  the Kan rows, Glue, transpEquiv, the HIT rows, as data
-    hyper/bend.hyper     45  the Bend2 dialect's rows
-    hyper/test.sh            the substrate's checks
-    hyper/bendtest.sh        values against Bend2's normaliser
-    hyper/checktest.sh       verdicts against Bend2's checker
-    hyper/cite.sh            every identifier this file names is on the line it cites
+    hyper/main.c             run | interact
+    hyper/prelude.hyper      the data types, the Kan rows, Glue, transpEquiv, the schema's rows, as data
+    hyper/test.sh            probes; not the standard
+    hyper/cite.sh            every identifier this file and NOTES.md name is on the line it cites
+    hyper/NOTES.md           what the system is, read from the formal sources

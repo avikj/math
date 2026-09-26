@@ -267,7 +267,7 @@ conservation account of presentation.
 `hyper` is the substrate of §9 without Bend2 in the loop: cells over bound
 dimension names, faces, the interval, transp, hcomp, Glue and ua, inductive and
 higher inductive types by schema, fixed points, superpositions at bound names,
-free ports, a checker on the same loop, the ledger. Its declaration mechanism
+free ports, the ledger. Its declaration mechanism
 (`MAP.md` §0.1) is §1 run forward: an unknown is a coordinate (a point of a
 cell), a match on a coordinate is a superposition over its constructors (the
 cube's dimension made explicit), a path at a data type with coordinates decides
@@ -282,20 +282,21 @@ derived-coordinate shortcut that never split a field; tables of the
 constructors of Unit, Bool, Nat and List; a schedule knob. §5 says order is
 either a certificate or data, never a policy, and §9 says the constructors of a
 type are its declaration, so `prelude.hyper` declares the four and the runtime
-and checker read them there. What remains is one rule at a match: the
+reads them there. Also deleted: the checker and the Bend dialect, oracle and
+presentation, numeric labels, debug scaffolding. What remains is one rule at a match: the
 scrutinee is inspected, not forced; a coordinate's head is the superposition of
 its type's constructors; a computation's head is bound at its output, the
 constructors superposed with the identity retained (the fibre law read at the
 output, §1), and one point splits once. Identity sides are inspected and forced
 only by what faces them.
 
-What `hyper` has never done: resolve a Π-typed declaration along a free
-argument. `sort L` for free `L`, `sortCost n` for free `n`, the equivalence
-between the two charts of `sort` declared with no body. The mechanism is
-`pi_apply` (the codomain's coordinate at the argument, the inductive hypothesis
-at a field), the split of a port along its constructors, and unification; all
-three exist. Whether they resolve those declarations once the scheduler is gone
-is the test of whether the core is the construction.
+What `hyper` has never exercised: a Π-typed declaration along a free argument,
+`sort L` for free `L`, `sortCost n` for free `n`, the equivalence between the
+two charts of `sort` declared with no body. By the rule they need nothing added:
+the free function's point at the argument (one per argument, compared by
+current form), its Σ split into typed coordinates, the identity forcing
+`isort L`, and `L` splitting along its constructors. `MAP.md` §0.3 states the
+rule and the identity of a point.
 
 ## 11. What Bend and HVM are here
 
@@ -309,6 +310,28 @@ non-contractible fibre, not because HVM is the target. The Bend ports under
 them is a specification the runtime owes. Compatibility with Bend syntax or
 SupGen as a frontend is worth attention only where it is instrumental.
 
-*(Reading continues in the mathematics: `AdiBija`, `Universal`, `EqualitySplit`,
-the Jiva bodies, the Uniqueness body, the Kernel §4 module bodies, Encounter
-§4-9, MyhillNerode, Samvada, TransportDivScale, AnswerIsProjectionAtOutputSize.)*
+## 12. Read since, and what it said
+
+`Universal` (fibre and formal): the fibre law is the object classifier; both
+bindings totalise to the domain and the loss lives in the partition, never the
+total; invisible over the base iff every fibre contractible, and the projection,
+not a mere equivalence, is what says so. `EqualitySplit`: contractible splits as
+embedding × split surjection, so the two refusals (crowded, empty) are
+orthogonal and each is exhibited alone. `Transport_TheMachineIsItsCompletedSelf`:
+`transport (ua (lossless f))` computes the completed step by `uaβ`.
+`CompressionIsTransport`: the only cost is the non-contractible fibre.
+`VerifyIsDecide`: decide and verify are the two directions of one equivalence,
+unique by `Uniqueness`. `Uniqueness`: the completions of a map form a
+contractible type, eight explicit equivalences; lawful steps are the maps.
+`Prashna`: the interactive machine strictly contains the Turing machine and
+determinism is the contractibility forced by receipt events. `Sambandha`: a
+relation with unique answers is the graph of its execution; the program space is
+the function space. `Reflection`: behaviour is a set quotient of code with
+infinite fibres while the lossless trace is a point. `Vikarna`: no table is
+every table; universality is up to encoding and the diagonal escapes.
+`EkaVidhih`: descent is free in the bind-b direction and needs a section in the
+bind-a direction. `LawfulStep`, `AReadingIsACollapse`: a reading is a collapse
+with its kept middle and owed residual, the residue is exactly the fibre of the
+step. `TheFibreIsTheSubject`: the obstruction and the orbit are one fact read
+twice.
+

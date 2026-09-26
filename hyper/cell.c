@@ -480,7 +480,8 @@ static uint64_t branch_drops(uint32_t first_br, uint32_t br, Term fr, uint32_t f
    the presentation's generic elements (under a binder being printed) are not marked and are never split. */
 /* a coordinate: a slot pointing at itself, its type, and the world (faces) it lives in, so that a binding made under
    faces of that world is written plainly and a binding under the opposite side of one of them is an empty world */
-static Term coordinate_in(Term type, Term world) { Loc l = alloc(4); HEAP[l] = 0; HEAP[l+1] = mk(T_VAR, 0xFFFFFF, l); HEAP[l+2] = type; HEAP[l+3] = world; return HEAP[l+1]; }
+static Term coordinate_in(Term type, Term world) { Loc l = alloc(5); HEAP[l] = 0; HEAP[l+1] = mk(T_VAR, 0xFFFFFF, l); HEAP[l+2] = type; HEAP[l+3] = world; HEAP[l+4] = 0; return HEAP[l+1]; }
+static Term coordinate_def(Term c) { return HEAP[loc(c)+4]; }   /* what the point is a function of: a free function at an argument, or nothing */
 Term coordinate(Term type) { return coordinate_in(type, 0); }
 static int world_side(Term world, Loc name) { for (Term f = world; tag(f); f = HEAP[loc(f)]) if (loc(whnf(HEAP[loc(f)+1])) == name) return (int)ext(f); return -1; }
 static bool is_coordinate(Term v) { return tag(v) == T_VAR && ext(v) == 0xFFFFFF && tag(HEAP[loc(v)+1]) == T_VAR && loc(HEAP[loc(v)+1]) == loc(v); }
@@ -532,7 +533,7 @@ static Term refl_cell(void) { return mk(T_CTR, ctr_ext(C_REFL, 0), alloc(1)); }
    yet a constructor.  Binding that point's output is the act of what faces it, never of the inspection. */
 static int INSPECT;
 static Term inspect(Term t) { INSPECT++; Term r = whnf(t); INSPECT--; return r; }
-/* a small map from pairs of words to a term, for the questions the machine asks once */
+/* a small map from pairs of words to a term: the world a side of a superposition opens, one per (world, name, side) */
 typedef struct { uint64_t k1, k2; Term v; } MemoCell; static MemoCell *MEMO; static uint32_t MEMO_N;
 static Term *memo_slot(uint64_t k1, uint64_t k2) {
   if (!MEMO) MEMO = calloc(1u << 20, sizeof *MEMO);
@@ -542,17 +543,63 @@ static Term *memo_slot(uint64_t k1, uint64_t k2) {
     if (c->k1 == k1 && c->k2 == k2) return &c->v;
     h++; }
 }
-/* the point an argument is: its cell, inspected (a coordinate is its slot; anything else the cell it stands at) */
-static Term peel(Term v, Term *faces);
-static uint64_t arg_identity(Term x) { Term v = inspect(x); Term q = 0; v = peel(v, &q); return (uint64_t)loc(v) << 8 | tag(v); }
-/* an unknown function applied: the coordinate of its codomain at the argument.  The same argument asks the same
-   question, so the coordinate is one per (function, argument): a free port fires once. */
+/* ---- the identity of a point ------------------------------------------------------------------------------
+   A function has one value per argument (Sambandha: the relational program with unique answers is the map).  Two
+   terms are the same point when their canonical forms over coordinates agree NOW: a coordinate by its cell, a
+   constructor by its id and fields, a numeral by its value, a closure or a match by its code and the slots the code
+   reads, a face by its name, side and target, a superposition by its name and sides.  Nothing is hashed and no depth
+   cut identifies: where the comparison gives out it says "different", which under-shares and never mis-shares. */
+static bool same_point(Term a, Term b, int depth);
+static bool same_frame(Term fa, Term fb, uint32_t code, int depth) {
+  for (;;) {
+    while (tag(fa) == T_RESTRICT || tag(fb) == T_RESTRICT) {       /* the faces on a closure are part of what it is */
+      if (tag(fa) != T_RESTRICT || tag(fb) != T_RESTRICT || ext(fa) != ext(fb)) return false;
+      if (loc(whnf(HEAP[loc(fa)+1])) != loc(whnf(HEAP[loc(fb)+1]))) return false;
+      if (ext(fa) == 2 && !same_point(HEAP[loc(fa)+2], HEAP[loc(fb)+2], depth)) return false;
+      fa = HEAP[loc(fa)]; fb = HEAP[loc(fb)]; }
+    if (!tag(fa) || !tag(fb)) return !tag(fa) && !tag(fb);
+    if (tag(fa) != tag(fb) || ext(fa) != ext(fb)) return false;
+    if (code_uses(code, ext(fa))) { if (tag(fa) == T_DIM) { if (loc(fa) != loc(fb)) return false; } else if (!same_point(HEAP[loc(fa)+1], HEAP[loc(fb)+1], depth)) return false; }
+    fa = HEAP[loc(fa)]; fb = HEAP[loc(fb)]; }
+}
+static bool same_point(Term a, Term b, int depth) {
+  if (depth <= 0) return false;
+  a = inspect(a); b = inspect(b);
+  if (tag(a) != tag(b)) return false;
+  if (loc(a) == loc(b) && tag(a) != T_I0 && tag(a) != T_I1) return true;
+  switch (tag(a)) {
+    case T_I0: case T_I1: case T_ERA: return true;
+    case T_VAR: case T_IVAR: case T_REF: return false;                 /* a coordinate, a name, a definition: by its cell, compared above */
+    case T_NUM: return ext(a) == ext(b) && HEAP[loc(a)] == HEAP[loc(b)];
+    case T_CTR: if (ext(a) != ext(b)) return false; for (uint32_t i = 0; i < ctr_arity(a); i++) if (!same_point(HEAP[loc(a)+i], HEAP[loc(b)+i], depth-1)) return false; return true;
+    case T_SUP: return loc(whnf(HEAP[loc(a)])) == loc(whnf(HEAP[loc(b)])) && same_point(HEAP[loc(a)+1], HEAP[loc(b)+1], depth-1) && same_point(HEAP[loc(a)+2], HEAP[loc(b)+2], depth-1);
+    case T_FCE: return ext(a) == ext(b) && loc(whnf(HEAP[loc(a)])) == loc(whnf(HEAP[loc(b)])) && same_point(HEAP[loc(a)+1], HEAP[loc(b)+1], depth-1) && (ext(a) != 2 || same_point(HEAP[loc(a)+2], HEAP[loc(b)+2], depth-1));
+    case T_APP: case T_PROJ: return same_point(HEAP[loc(a)], HEAP[loc(b)], depth-1) && same_point(HEAP[loc(a)+1], HEAP[loc(b)+1], depth-1);
+    case T_OP2: return ext(a) == ext(b) && same_point(HEAP[loc(a)], HEAP[loc(b)], depth-1) && same_point(HEAP[loc(a)+1], HEAP[loc(b)+1], depth-1);
+    case T_OP1: return ext(a) == ext(b) && same_point(HEAP[loc(a)], HEAP[loc(b)], depth-1);
+    case T_LAM: case T_PLM: return loc(HEAP[loc(a)]) == loc(HEAP[loc(b)]) && same_frame(HEAP[loc(a)+1], HEAP[loc(b)+1], loc(HEAP[loc(a)]), depth-1);
+    case T_CASE: return loc(HEAP[loc(a)+1]) == loc(HEAP[loc(b)+1]) && same_point(HEAP[loc(a)], HEAP[loc(b)], depth-1) && same_frame(HEAP[loc(a)+2], HEAP[loc(b)+2], loc(HEAP[loc(a)+1]), depth-1);
+    default: return false;
+  }
+}
+/* the points a free function has been asked at: (function, argument, point), the argument compared by its form now */
+typedef struct { Term f, x, p; } PointAt; static PointAt *POINTS; static uint32_t NPOINTS, POINTS_CAP;
+static Term point_at(Term f, Term x, Term T) {
+  for (uint32_t i = 0; i < NPOINTS; i++) if (loc(POINTS[i].f) == loc(f) && same_point(POINTS[i].x, x, 32)) return POINTS[i].p;
+  if (NPOINTS == POINTS_CAP) { POINTS_CAP = POINTS_CAP ? 2 * POINTS_CAP : 1024; POINTS = realloc(POINTS, POINTS_CAP * sizeof *POINTS); }
+  Term p = coordinate_in(app2(HEAP[loc(T)+1], x), 0); HEAP[loc(p)+4] = app2(f, x);
+  POINTS[NPOINTS++] = (PointAt){ f, x, p }; return p;
+}
+/* a free function applied: at a superposed argument it distributes (the value at each side, under that face); at any
+   other argument it is the point of its codomain there, one per argument.  0 when f is not of a Π type. */
 static Term pi_apply(Term f, Term x) {
   Term T = coordinate_type(f); if (!T) return 0; T = whnf(T);
   if (tag(T) != T_CTR || ctr_id(T) != C_PI) return 0;
-  Term *slot = memo_slot(loc(f), arg_identity(x));
-  if (!*slot) *slot = coordinate_in(app2(HEAP[loc(T)+1], x), 0);
-  return *slot;
+  Term xw = inspect(x);
+  if (tag(xw) == T_SUP) { receipt(R_APP_SUP); Term nm = HEAP[loc(xw)]; Loc name = loc(whnf(nm));
+    return node3(T_SUP, 0, nm, app2(f, fce3(0, name, HEAP[loc(xw)+1], 0)), app2(f, fce3(1, name, HEAP[loc(xw)+2], 0))); }
+  if (tag(xw) == T_ERA) return xw;
+  return point_at(f, xw, T);
 }
 /* the coordinate under a chain of waiting faces, the faces collected onto `faces` */
 static Term peel(Term v, Term *faces) {
@@ -700,6 +747,9 @@ static Term both_step(Term t) {
 }
 /* a coordinate asked for its value: an identity type is decided, a Σ is a pair, a one-constructor type is that constructor; other types wait for a match */
 static Term coordinate_asked(Term c) {
+  if (coordinate_def(c)) {                                             /* a free function's value at an argument: read the argument as it is now */
+    Term d = coordinate_def(c); Term v = whnf(d);                      /* a superposed argument distributes; a bound one meets the point registered first */
+    if (!(is_coordinate(v) && loc(v) == loc(c))) { HEAP[loc(c)+1] = v; return v; } }
   Term T = coordinate_type(c); if (!T) return c; T = whnf(T);
   if (tag(T) != T_CTR) return c;
   if (ctr_id(T) == C_EQL || ctr_id(T) == C_PATH) { Term r = unify_cell(HEAP[loc(T)+1], HEAP[loc(T)+2], 0); HEAP[loc(c)+1] = r; return r; }
@@ -733,8 +783,10 @@ static unsigned cell_words(unsigned g) {
    coordinates of that side's world) under the identity of the computation with it.  The computation moves to a
    fresh cell shared by every residual; the stuck cell is marked with the superposition, so every holder of the cell
    meets the same split and the same worlds. */
+typedef struct { Term s1, r; } StuckSplit; static StuckSplit *SPLITS_; static uint32_t NSPLITS, SPLITS_CAP;
 static Term split_stuck(Term s, Term cs) {
   if (tag(HEAP[loc(s)]) == T_IND) return HEAP[loc(s)+1];               /* split already: its superposition */
+  for (uint32_t i = 0; i < NSPLITS; i++) if (same_point(SPLITS_[i].s1, s, 32)) { HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = SPLITS_[i].r; return SPLITS_[i].r; }   /* the same point: its split */
   unsigned n = cell_words(tag(s)); Loc l = alloc(n); for (unsigned i = 0; i < n; i++) HEAP[l+i] = HEAP[loc(s)+i];
   Term s1 = mk(tag(s), ext(s), l);
   Term world = tag(s) == T_CASE ? frame_faces(HEAP[loc(s)+2]) : 0;
@@ -746,6 +798,8 @@ static Term split_stuck(Term s, Term cs) {
     if (i + 1 < k) w = restrict_push(w, names[i], 0, 0);
     Term side[64]; case_points(cs, side, w); Term a = side[i];
     r = r ? node3(T_SUP, 0, names[i], under(unify_cell(s1, a, w), a), r) : under(unify_cell(s1, a, w), a); }
+  if (NSPLITS == SPLITS_CAP) { SPLITS_CAP = SPLITS_CAP ? 2 * SPLITS_CAP : 1024; SPLITS_ = realloc(SPLITS_, SPLITS_CAP * sizeof *SPLITS_); }
+  SPLITS_[NSPLITS++] = (StuckSplit){ s1, r };
   HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = r;
   return r;
 }
