@@ -54,15 +54,11 @@ enum Tag {
   T_PROJ,      /* ext = field index, loc → [x]      ● x  (fst/snd of any constructor) */
   T_HELIM,     /* loc → [scrut, code, frame, motive]  ● scrut; scrut 0 = a function awaiting its point;
                   motive ERA = the recursor (stuck on a composite)                                    */
-  T_CFIELDS,   /* loc → [x]        the fields of a constructor cell, as a list (reflection)           */
+  T_CFIELDS,   /* loc → [x]        the fields of a constructor cell, as a list                        */
   T_CWITH,     /* loc → [x, list]  the constructor of x rebuilt with these fields                     */
-  T_REFLECT,   /* loc → [x, T]     x made η-long at the type T (a coordinate reflected at its type, §7) */
   T_PAP,       /* loc → [p, i, a, b]  p @ i knowing the endpoints a, b: a literal i selects one; a symbolic i
                   stays a cell a later face decides (a reduction that forgot the boundary would not commute) */
-  T_ETYPE,     /* loc → [P, elim, ty, u]  the type of a HIT eliminator branch at a cell u of type ty (checkBranches.etype) */
-  T_ETERM,     /* loc → [elim, ty, u]     the eliminator applied along the path structure of ty (checkBranches.eterm)     */
-  /* judgments and the interaction */
-  T_CHK,       /* loc → [type, term]                                   */
+  /* the interaction */
   T_ASK,       /* loc → [q, k]                      a free port        */
   T_UNIFY,     /* loc → [x, y, faces]   the identity x ≡ y between data terms, decided by unification under the branch's faces */
   T_BOTH,      /* loc → [p, q, last forced, faces]  both identities hold: fair, either dead side kills */
@@ -103,8 +99,8 @@ enum Op { OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD, OP_EQ, OP_NE, OP_LT, OP_LE, OP
 enum STag {
   S_VAR = 1, S_LAM, S_APP, S_REF, S_ERA, S_SUP, S_PLM, S_DIM, S_FCE,
   S_I0, S_I1, S_IVAR, S_INOT, S_IAND, S_IOR,
-  S_CTR, S_NUM, S_OP2, S_TRP, S_HCM, S_CASE, S_BRANCH, S_CHK, S_ASK, S_LET, S_PROJ, S_GLU, S_GLUE, S_UNGLUE, S_FCASE, S_GBASE, S_GFACES, S_ISUB,
-  S_HELIM, S_CFIELDS, S_CWITH, S_FIX, S_OP1, S_POUT, S_LABEL, S_REFLECT, S_ETYPE, S_ETERM, S_PAP, S_TRACE, S_LEAVES
+  S_CTR, S_NUM, S_OP2, S_TRP, S_HCM, S_CASE, S_BRANCH, S_ASK, S_LET, S_PROJ, S_GLU, S_GLUE, S_UNGLUE, S_FCASE, S_GBASE, S_GFACES, S_ISUB,
+  S_HELIM, S_CFIELDS, S_CWITH, S_FIX, S_OP1, S_POUT, S_PAP, S_TRACE, S_LEAVES
 };
 enum NumKind { N_U64 = 0, N_I64, N_F64, N_CHR };
 enum Op1 { OP1_NOT, OP1_NEG, OP1_TOCHAR };
@@ -149,7 +145,7 @@ typedef struct CtorInfo {
   bool     is_hit;     /* this constructor id names a higher inductive TYPE */
   uint32_t nparams;    /* … with this many parameters */
   bool     carries;    /* its constructors carry the parameters as leading fields (the emitter's convention);
-                          otherwise endpoints are read with opaque placeholders for them (the checker's built-ins) */
+                          otherwise the parameters are not fields of its constructors */
   uint32_t hit;        /* for a constructor of a HIT: the type's id (0 otherwise) */
   int      type_def;   /* the book entry holding its closed type: Pi params. Pi fields. T ps | Path … */
   uint32_t nfields, dim;
@@ -169,7 +165,6 @@ extern int RULE_TRP[256], RULE_HCM[256];   /* prelude rule per type constructor 
 int  book_find(const char *name);
 const char *ctor_name(uint32_t id);
 uint32_t ctor_intern(const char *name, uint32_t arity);
-Term label_name(uint32_t k);
 /* the cell constructors and frame operations, shared with verify.c */
 Term node1(unsigned t, uint32_t e, Term a);
 Term node2(unsigned t, uint32_t e, Term a, Term b);
@@ -202,12 +197,8 @@ Term fields_list(Term ctr);
 /* the DNF cells of a face formula: each cell is a list of (name, side) literals; returns the count, -1 if not an interval */
 typedef struct FaceCell { uint32_t n; Loc name[32]; unsigned side[32]; } FaceCell;
 int face_cells(Term phi, FaceCell *out, int max);
-extern bool CHECK_MODE;                          /* δ reflects a typed definition at its type (§7) */
-extern bool (*REWRITE_HOOK)(Term old, Term v);   /* a semantic rewrite: does the cell v equal old? (verify.c) */           /* the one global choice name of a numeric label (the Bend dialect) */
-void print_bend(Term t, int depth);    /* Bend2's own presentation of a value */
-void collapse_print(Term t);
 int  collapse_leaves(Term t, Term *out, int max);   /* the leaves of a superposition, in collapse order */
-char *term_string(Term t, int depth);           /* one line per branch, in Bend2's collapse order */
+char *term_string(Term t, int depth);           /* a value as its printed text */
 void print_census(void);               /* §6: the receipts by rule (the trace is the retained history) */
 
 

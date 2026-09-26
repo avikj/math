@@ -9,7 +9,7 @@
  *          | (ctr Name ARGS…)            | (num N)                 | (op2 OP A B)
  *          | i0 | i1 | (inot A) | (iand A B) | (ior A B)
  *          | (trp LINE R S X)            | (case S (Ctor (x…) BODY) … (_ () BODY)?)
- *          | (chk T X)                   | (ask Q K)
+ *                            | (ask Q K)
  * A dimension used by `sup`/`fce` and not bound by plm/dim is bound implicitly
  * at the definition's top: fresh per instantiation (the capture fix).
  */
@@ -77,11 +77,6 @@ static unsigned op1code(const char *s) {
   if (!strcmp(s, "not")) return OP1_NOT; if (!strcmp(s, "neg")) return OP1_NEG; if (!strcmp(s, "tochar")) return OP1_TOCHAR;
   fprintf(stderr, "hyper: unknown op1 %s\n", s); exit(2);
 }
-/* a name position: a numeral is a global label (one choice name shared by every use), else a bound name */
-static uint32_t label_code(const char *a) {
-  for (const char *c = a; *c; c++) if (!isdigit((unsigned char)*c)) return 0;
-  return snode(S_LABEL, (uint32_t)strtoul(a, 0, 10), 0, 0, 0, 0);
-}
 static uint32_t term(void) {
   skip();
   if (!peek('(')) {
@@ -101,15 +96,12 @@ static uint32_t term(void) {
   else if (!strcmp(h, "let")) { char *x = atom(); uint32_t v = term();
      scope[depth].name = x; scope[depth].dim = false; depth++; uint32_t b = term(); depth--; r = snode(S_LET, 0, v, b, 0, 0); }
   else if (!strcmp(h, "app")) { uint32_t f = term(); r = f; while (!peek(')')) { uint32_t x = term(); r = snode(S_APP, 0, r, x, 0, 0); } }
-  else if (!strcmp(h, "sup")) { char *i = atom(); uint32_t lb = label_code(i); uint32_t a = term(), b = term(); r = snode(S_SUP, lb ? 0 : dim_level(i), a, b, 0, lb); }
-  else if (!strcmp(h, "fce")) { char *i = atom(); uint32_t lb = label_code(i); char *s = atom(); uint32_t t = term(); r = snode(S_FCE, (uint32_t)atoi(s), lb ? 0 : dim_level(i), t, 0, lb); }
+  else if (!strcmp(h, "sup")) { char *i = atom(); uint32_t a = term(), b = term(); r = snode(S_SUP, dim_level(i), a, b, 0, 0); }
+  else if (!strcmp(h, "fce")) { char *i = atom(); char *s = atom(); uint32_t t = term(); r = snode(S_FCE, (uint32_t)atoi(s), dim_level(i), t, 0, 0); }
   else if (!strcmp(h, "fix")) { char *x = atom(); r = bind_and_parse(x, false, S_FIX); }
   else if (!strcmp(h, "op1")) { char *o = atom(); uint32_t a = term(); r = snode(S_OP1, op1code(o), a, 0, 0, 0); }
   else if (!strcmp(h, "pout")) { uint32_t a = term(); r = snode(S_POUT, 0, a, 0, 0, 0); }
   else if (!strcmp(h, "pap")) { uint32_t a = term(), b = term(), c2 = term(), d2 = term(); r = snode(S_PAP, 0, a, b, c2, d2); }
-  else if (!strcmp(h, "reflect")) { uint32_t a = term(), b = term(); r = snode(S_REFLECT, 0, a, b, 0, 0); }
-  else if (!strcmp(h, "etype")) { uint32_t a = term(), b = term(), c2 = term(), d2 = term(); r = snode(S_ETYPE, 0, a, b, c2, d2); }
-  else if (!strcmp(h, "eterm")) { uint32_t a = term(), b = term(), c2 = term(); r = snode(S_ETERM, 0, a, b, c2, 0); }
   else if (!strcmp(h, "chr")) { char *n = atom(); r = snode(S_NUM, N_CHR, 0,0,0,0); CODE[r].num = strtoull(n, 0, 10); }
   else if (!strcmp(h, "i64")) { char *n = atom(); r = snode(S_NUM, N_I64, 0,0,0,0); CODE[r].num = (uint64_t)strtoll(n, 0, 10); }
   else if (!strcmp(h, "f64")) { char *n = atom(); r = snode(S_NUM, N_F64, 0,0,0,0); CODE[r].num = strtoull(n, 0, 10); }
@@ -128,7 +120,7 @@ static uint32_t term(void) {
             r = snode(S_CTR, ctr_ext(ctor_intern(n, ar), ar), 0,0,0,0); CODE[r].kids = KIDS_LEN;
             for (uint32_t i = 0; i < ar; i++) KIDS[KIDS_LEN++] = k[i]; } }
   else if (!strcmp(h, "proj")) { uint32_t i = term(), x = term(); r = snode(S_PROJ, 0, i, x, 0, 0); }
-  else if (!strcmp(h, "isub")) { char *k = atom(); uint32_t lb = label_code(k); uint32_t by = term(), T = term(); r = snode(S_ISUB, 0, lb ? 0 : dim_level(k), by, T, lb); }
+  else if (!strcmp(h, "isub")) { char *k = atom(); uint32_t by = term(), T = term(); r = snode(S_ISUB, 0, dim_level(k), by, T, 0); }
   else if (!strcmp(h, "glue-base")) { uint32_t g = term(); r = snode(S_GBASE, 0, g, 0, 0, 0); }
   else if (!strcmp(h, "glue-fs"))   { uint32_t g = term(); r = snode(S_GFACES, 0, g, 0, 0, 0); }
   else if (!strcmp(h, "face-case")) { uint32_t p = term(), a = term(), b = term(), c2 = term(); r = snode(S_FCASE, 0, p, a, b, c2); }
@@ -137,7 +129,6 @@ static uint32_t term(void) {
   else if (!strcmp(h, "unglue")) { uint32_t g = term(); r = snode(S_UNGLUE, 0, g, 0, 0, 0); }
   else if (!strcmp(h, "hcm")) { uint32_t A = term(), base = term(), fs = term(); r = snode(S_HCM, 0, A, base, fs, 0); }
   else if (!strcmp(h, "trp")) { uint32_t L = term(), a = term(), b = term(), x = term(); r = snode(S_TRP, 0, L, a, b, x); }
-  else if (!strcmp(h, "chk")) { uint32_t T = term(), x = term(); r = snode(S_CHK, 0, T, x, 0, 0); }
   else if (!strcmp(h, "ask")) { uint32_t q = term(), k = term(); r = snode(S_ASK, 0, q, k, 0, 0); }
   else if (!strcmp(h, "trace")) { uint32_t a = term(); r = snode(S_TRACE, 0, a, 0, 0, 0); }
   else if (!strcmp(h, "leaves")) { uint32_t a = term(); r = snode(S_LEAVES, 0, a, 0, 0, 0); }
@@ -236,7 +227,6 @@ static void read_hit(void) {
     uint32_t dim, npi = count_pis(body, &dim);
     uint32_t cid = ctor_intern(c, npi - np);
     CINFO[cid].hit = hid; CINFO[cid].type_def = id; CINFO[cid].nfields = npi - np; CINFO[cid].dim = dim;
-    if (getenv("HYPER_DEBUG")) fprintf(stderr, "hit %s ctor %s fields %u dim %u\n", T, c, npi - np, dim);
   }
   expect(')');
 }
@@ -245,7 +235,6 @@ static void register_name(const char *name) {
   static uint32_t cap; if (!BOOK) { cap = 256; BOOK = calloc(cap, sizeof(Def)); }
   if (BOOK_LEN >= cap) { cap *= 2; BOOK = realloc(BOOK, cap * sizeof(Def)); }
   if (book_find(name) >= 0) { fprintf(stderr, "hyper: duplicate definition %s\n", name); exit(2); }
-  if (getenv("HYPER_DEBUG")) fprintf(stderr, "reg %s\n", name);
   BOOK[BOOK_LEN].unknown = false; BOOK[BOOK_LEN].coord = 0;
   BOOK[BOOK_LEN++].name = name;
 }

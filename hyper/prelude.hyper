@@ -157,10 +157,3 @@
       (let ln (plm i (hit-field-ty (inst-pis cty (ctr-fields (app L i))) (map (lam d (app d i)) done)))
       (let a1 (lam i (trp ln r i a))
       (ctr Cons (app a1 s) (trp/hit-go L r s cty rest (snoc done a1))))))))))))))
-
-; ---- §7: coordinates are η-long at their types; the eliminator's branch types (checkBranches) ----
-(def konst (lam b (lam _ b)))
-(def eta-pi (lam f (lam B (lam y (reflect (app f y) (app B y))))))
-(def eta-path (lam p (lam L (lam a (lam b (plm i (reflect (pap p i a b) (app L i))))))))
-(def eline (lam P (lam elim (lam L (lam u (lam i (etype P elim (app L i) (app u i))))))))
-(def eterm-line (lam elim (lam L (lam u (plm j (eterm elim (app L j) (app u j)))))))
