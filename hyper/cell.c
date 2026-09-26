@@ -139,7 +139,6 @@ Term inst(uint32_t c, Term fr) {
     case S_ISUB:{ bool d; Term nm = n->d ? inst(n->d, fr) : frame_lookup(fr, n->a, &d);   /* (isub k by T): T[k := by] */
                   return fce_raw(2, nm, inst(n->c, fr), inst(n->b, fr)); }
     case S_FIX: { Term f = frame_push(fr, 0); HEAP[loc(f)+1] = inst(n->a, f); return HEAP[loc(f)+1]; }   /* μx. body: a knot in the heap */
-    case S_POUT: return node1(T_POUT, 0, inst(n->a, fr));
     case S_PAP: return node4(T_PAP, 0, inst(n->a, fr), inst(n->b, fr), inst(n->c, fr), inst(n->d, fr));
     case S_I0:  return mk(T_I0, 0, 0);
     case S_I1:  return mk(T_I1, 0, 0);
@@ -414,7 +413,6 @@ static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
     case T_HCM:  receipt(R_DUP_NODE); return whnf(node3(T_HCM, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2])));
     case T_UNIFY: receipt(R_DUP_NODE); return whnf(node3(T_UNIFY, ext(v), FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), side < 2 ? restrict_push(HEAP[loc(v)+2], nm, side, 0) : HEAP[loc(v)+2]));
     case T_BOTH:  receipt(R_DUP_NODE); return whnf(node4(T_BOTH, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]), HEAP[loc(v)+2], side < 2 ? restrict_push(HEAP[loc(v)+3], nm, side, 0) : HEAP[loc(v)+3]));
-    case T_POUT: receipt(R_DUP_NODE); return whnf(node1(T_POUT, 0, FCE_(HEAP[loc(v)])));
     case T_PROJ: receipt(R_DUP_NODE); return whnf(node2(T_PROJ, 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1])));
     case T_UNGLUE: receipt(R_DUP_NODE); return whnf(node1(T_UNGLUE, 0, FCE_(HEAP[loc(v)])));
     case T_FCE: {                                    /* a face already waiting on a stuck term: at the same name the earlier face has spent it; at another, both wait */
@@ -504,6 +502,12 @@ uint32_t type_constructors(Term T, Term *alts, uint32_t max, Term world) {
     if (c == id || CINFO[c].hit != id) continue; if (CINFO[c].dim) return 0;
     Term a = ctor_point(c, 0, T, world); if (!a) return 0; alts[k++] = a; }
   return k;
+}
+/* a declared type with no constructor at all */
+static bool type_empty(Term T) {
+  if (!T) return false; T = whnf(T); if (tag(T) != T_CTR || !CINFO[ctr_id(T)].is_hit) return false;
+  for (uint32_t c = 1; c < C_USER_BASE + NCTORS; c++) if (c != ctr_id(T) && CINFO[c].hit == ctr_id(T)) return false;
+  return true;
 }
 /* the constructors a match lists, as points of `world`: the type of a point no declaration types */
 static uint32_t case_points(Term cs, Term *alts, Term world) {
@@ -615,7 +619,7 @@ static bool under_faces(Term s, Term *p, Term *v) {
 static bool blocked(Term s) {                                          /* stuck on a coordinate along its spine */
   for (int i = 0; i < 64; i++) switch (tag(s)) {
     case T_VAR: return is_coordinate(s);
-    case T_CASE: case T_APP: case T_POUT: case T_UNGLUE: s = HEAP[loc(s)]; break;
+    case T_CASE: case T_APP: case T_UNGLUE: s = HEAP[loc(s)]; break;
     case T_FCE: case T_PROJ: s = HEAP[loc(s)+1]; break;
     case T_UNIFY: case T_BOTH: return true;
     default: return false;
@@ -899,7 +903,7 @@ static bool code_mentions(uint32_t c, uint32_t lvl) {
     case S_SUP: return (!n->d && n->ext == lvl) || code_mentions(n->a, lvl) || code_mentions(n->b, lvl);
     case S_FCE: return (!n->d && n->a == lvl) || code_mentions(n->b, lvl);
     case S_ISUB: return (!n->d && n->a == lvl) || code_mentions(n->b, lvl) || code_mentions(n->c, lvl);
-    case S_FIX: case S_POUT: return code_mentions(n->a, lvl);
+    case S_FIX: return code_mentions(n->a, lvl);
     case S_PAP: return code_mentions(n->a, lvl) || code_mentions(n->b, lvl) || code_mentions(n->c, lvl) || code_mentions(n->d, lvl);
     case S_VAR: case S_REF: case S_ERA: case S_I0: case S_I1: return false;
     case S_CTR: { uint32_t ar = n->ext & 0xFF; if (ar <= 4) { uint32_t k[4]={n->a,n->b,n->c,n->d}; for (uint32_t i=0;i<ar;i++) if (code_mentions(k[i],lvl)) return true; return false; }
@@ -962,7 +966,7 @@ static bool occurs_v(Loc name, Term t, int depth, Visited *vs) {   /* regularity
     case T_APP: case T_IAND: case T_IOR: case T_ASK: case T_PROJ: case T_CWITH: case T_GLU: case T_GLUE:
       return OCC(HEAP[loc(t)]) || OCC(HEAP[loc(t)+1]);
     case T_FCE: return OCC(HEAP[loc(t)]) || OCC(HEAP[loc(t)+1]) || (ext(t) == 2 && OCC(HEAP[loc(t)+2]));
-    case T_INOT: case T_UNGLUE: case T_GBASE: case T_GFACES: case T_POUT: case T_CFIELDS: return OCC(HEAP[loc(t)]);
+    case T_INOT: case T_UNGLUE: case T_GBASE: case T_GFACES: case T_CFIELDS: return OCC(HEAP[loc(t)]);
     case T_TRP: case T_FCASE: case T_PAP: for (int i = 0; i < 4; i++) if (OCC(HEAP[loc(t)+i])) return true; return false;
     case T_HCM: for (int i = 0; i < 3; i++) if (OCC(HEAP[loc(t)+i])) return true; return false;
     case T_VAR: return false;                          /* a generic element (its own slot) */
@@ -971,11 +975,7 @@ static bool occurs_v(Loc name, Term t, int depth, Visited *vs) {   /* regularity
   #undef OCC
 }
 bool occurs_cell(Loc name, Term t) { return occurs(name, t, 24); }
-static bool is_rigid_type(uint32_t id) {
-  return id == C_NAT || id == C_BOOL || id == C_UNIT || id == C_EMPTY || id == C_SET;
-}
 static Term glu_collapse(Term t);
-static uint32_t C_ITV_ID;                              /* the constructor id of the interval type */
 Term app2(Term f, Term a) { return node2(T_APP, 0, f, a); }
 /* a natural number is a point of the inductive type Nat and nothing else */
 static Term nat_cell(uint64_t n) { Term r = mk(T_CTR, ctr_ext(C_ZER, 0), alloc(1)); while (n--) r = node1(T_CTR, ctr_ext(C_SUC, 1), r); return r; }
@@ -994,7 +994,6 @@ static Term trp_step(Term t) {
   switch (tag(T)) {
     case T_CTR: {
       uint32_t id = ctr_id(T);
-      if (is_rigid_type(id)) { receipt(R_TRP); return whnf(x); }
       if (id < 256 && RULE_TRP[id] >= 0) { receipt(R_TRP); return whnf(app2(app2(app2(app2(ref_of(RULE_TRP[id]), L), r), s), x)); }
       if (CINFO[id].is_hit) {                       /* a HIT whose parameters move: push into the constructor, field by field */
         Term xw = whnf(x); Term ivs[64]; uint32_t n; Term h = whnf(spine(xw, ivs, &n));
@@ -1046,32 +1045,24 @@ static Term hcm_step(Term t) {
   switch (tag(Aw)) {
     case T_CTR: {
       uint32_t id = ctr_id(Aw);
-      if (id == C_NAT || id == C_BOOL || id == C_UNIT || id == C_LIST) {
-        /* constructor-headed: the cap and every tube at a fresh dimension carry one constructor */
-        Term b = whnf(base); if (tag(b) != T_CTR) { HEAP[loc(t)+1] = b; HEAP[loc(t)+2] = live; return t; }
+      if (CINFO[id].is_hit) {                       /* a constructor-headed composite in a declared type: the cap's constructor, each field
+                                                       the composite of the fields along its own dependent type line (CCHM: the rule for N,
+                                                       and the Σ rule iterated over the constructor's telescope); the row is hcm/ctr */
+        Term b = whnf(base); if (tag(b) != T_CTR || CINFO[ctr_id(b)].hit != id || CINFO[ctr_id(b)].dim) { HEAP[loc(t)+1] = b; HEAP[loc(t)+2] = live; return t; }
         Term k = dim_push(0); bool same = true;
         for (Term fs = live; tag(fs) == T_CTR && ctr_id(fs) == C_CONS; fs = HEAP[loc(fs)+1]) {
           Term u = HEAP[loc(HEAP[loc(fs)])+1]; Term uk = whnf(app2(u, mk(T_IVAR,0,loc(k))));
           if (tag(uk) != T_CTR || ctr_id(uk) != ctr_id(b)) { same = false; break; }
         }
         if (!same) { HEAP[loc(t)+1] = b; HEAP[loc(t)+2] = live; return t; }
+        int d = book_find("hcm/ctr"); if (d < 0) { HEAP[loc(t)+1] = b; HEAP[loc(t)+2] = live; return t; }
         receipt(R_HCM);
-        uint32_t ar = ctr_arity(b); if (ar == 0) return b;
-        Loc l = alloc(ar);
-        for (uint32_t i = 0; i < ar; i++) {
-          /* field i: hcomp of the fields, tubes projected by a case on the constructor */
-          Term fl = mk(T_CTR, ctr_ext(C_NIL,0), alloc(1)), *ft = &fl;
-          for (Term fs = live; tag(fs) == T_CTR && ctr_id(fs) == C_CONS; fs = HEAP[loc(fs)+1]) {
-            Term face = HEAP[loc(fs)]; Term phi = HEAP[loc(face)], u = HEAP[loc(face)+1];
-            Term sel = node2(T_APP, 0, app2(ref_of(book_find("tube-field")), nat_cell(i)), u);
-            Term cell = node2(T_CTR, ctr_ext(C_CONS,2), node2(T_CTR, ctr_ext(C_FACE,2), phi, sel), fl); *ft = cell; ft = &HEAP[loc(cell)+1];
-          }
-          *ft = mk(T_CTR, ctr_ext(C_NIL,0), alloc(1));
-          Term fieldTy = (id == C_LIST && i == 0) ? HEAP[loc(Aw)] : Aw;   /* List: head at the element type, tail at the list */
-          if (id == C_NAT) fieldTy = Aw;
-          HEAP[l+i] = node3(T_HCM, 0, fieldTy, HEAP[loc(b)+i], fl);
-        }
-        return mk(T_CTR, ext(b), l);
+        uint32_t np = hit_nparams_carried(b);
+        Term params = nil_cell(); if (np) { for (uint32_t i = np; i-- > 0;) params = cons_cell(HEAP[loc(b)+i], params); } else params = fields_list(Aw);
+        Term fields = nil_cell(); for (uint32_t i = ctr_arity(b); i-- > np;) fields = cons_cell(HEAP[loc(b)+i], fields);
+        Term fs = app2(app2(app2(app2(ref_of(d), ref_of(CINFO[ctr_id(b)].type_def)), params), fields), live);
+        if (np) { int ap = book_find("append"); fs = ap >= 0 ? app2(app2(ref_of(ap), params), fs) : fs; }
+        return whnf(ctr_with(ctr_id(b), fs));
       }
       if (id < 256 && RULE_HCM[id] >= 0) { receipt(R_HCM); return whnf(app2(app2(app2(ref_of(RULE_HCM[id]), Aw), base), live)); }
       HEAP[loc(t)] = Aw; HEAP[loc(t)+2] = live; return t;                    /* HIT: canonical */
@@ -1123,7 +1114,6 @@ void load_prelude(void) {
     snprintf(buf, sizeof buf, "hcm/%s", names[i]); d = book_find(buf); if (d >= 0 && id < 256) RULE_HCM[id] = d;
   }
   RULE_TRP[0] = book_find("trp/sup"); RULE_HCM[0] = book_find("hcm/sup");
-  C_ITV_ID = ctor_intern("Itv", 0);
 }
 
 
@@ -1132,7 +1122,7 @@ void load_prelude(void) {
 static Term prune(Term t); static Term trace_over(Term v, uint64_t from); static Term lift(Term t, int depth); static uint32_t side_world(Term sup, unsigned side); static bool world_within(uint32_t w, uint32_t of);
 static bool node_redex(unsigned g) {
   switch (g) { case T_APP: case T_FCE: case T_PROJ: case T_CASE: case T_TRP: case T_HCM: case T_HELIM:
-    case T_UNGLUE: case T_GBASE: case T_GFACES: case T_FCASE: case T_CFIELDS: case T_CWITH: case T_PAP: case T_POUT: case T_UNIFY: case T_BOTH: case T_TRACE: case T_LEAVES: return true;
+    case T_UNGLUE: case T_GBASE: case T_GFACES: case T_FCASE: case T_CFIELDS: case T_CWITH: case T_PAP: case T_UNIFY: case T_BOTH: case T_TRACE: case T_LEAVES: return true;
     default: return false; }
 }
 static Term whnf_(Term t);
@@ -1248,6 +1238,7 @@ static Term whnf_(Term t) {
             Term pf = 0; Term s = peel(s0, &pf);
             if (is_coordinate(s)) {                    /* a coordinate asked by a match: the superposition of its type's constructors */
               if (INSPECT) { if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }
+              if (type_empty(coordinate_type(s))) { receipt(R_SPLIT); HEAP[loc(s) + 1] = mk(T_ERA, 0, 0); return mk(T_ERA, 0, 0); }   /* a type with no constructor: no point */
               receipt(R_SPLIT); HEAP[loc(s) + 1] = constructor_superposition(t, s); continue; }
             { Term p, v; if (under_faces(s0, &p, &v)) { receipt(R_CASE); t = under(restrict_proof(p, frame_faces(HEAP[loc(t)+2])), node3(T_CASE, 0, v, HEAP[loc(t)+1], HEAP[loc(t)+2])); continue; } }   /* J commutes out, the identity read in this match's world */
             if (proof_cell(s)) {                       /* a match on an identity: the identity is decided when the match is asked */
@@ -1279,18 +1270,6 @@ static Term whnf_(Term t) {
       }
       case T_UNIFY: { Term r = unify_step(t); if (!r) return t; t = r; continue; }
       case T_BOTH:  { Term r = both_step(t);  if (!r) return t; t = r; continue; }
-      case T_POUT: {                                  /* whnfPOut: a system on a true face is that branch */
-        Term u = whnf(HEAP[loc(t)]);
-        if (tag(u) == T_SUP) { receipt(R_CASE_SUP); return node3(T_SUP, 0, HEAP[loc(u)], node1(T_POUT, 0, HEAP[loc(u)+1]), node1(T_POUT, 0, HEAP[loc(u)+2])); }
-        if (tag(u) == T_CTR && ctr_arity(u) == 1 && !strcmp(ctor_name(ctr_id(u)), "Sys")) {
-          for (Term fs = whnf(HEAP[loc(u)]); tag(fs) == T_CTR && ctr_id(fs) == C_CONS; fs = whnf(HEAP[loc(fs)+1])) {
-            Term face = whnf(HEAP[loc(fs)]); Term phi = ican(HEAP[loc(face)]);
-            if (tag(phi) == T_I1) { receipt(R_POUT); t = HEAP[loc(face)+1]; goto next; }
-          }
-        }
-        HEAP[loc(t)] = u; return t;
-        next: continue;
-      }
       case T_INOT: case T_IAND: case T_IOR: return ican(t);
       case T_PROJ: {
         Term i = HEAP[loc(t)], x = whnf(HEAP[loc(t)+1]); int k = nat_of(i);
@@ -1403,7 +1382,6 @@ static void print_rec(Term t, int depth) {
   if (depth <= 0) { receipt(R_ERASE); printf("…"); return; }   /* §3.3: the printer cuts a port */
   t = whnf(t); if (tag(t) == T_SUP) t = prune(t);
   switch (tag(t)) {
-    case T_POUT: printf("pout("); print_rec(HEAP[loc(t)], depth-1); printf(")"); break;
     case T_CTR: { uint32_t ar = ctr_arity(t); printf("#%s", ctor_name(ctr_id(t)));
       if (ar) { printf("{"); for (uint32_t i = 0; i < ar; i++) { if (i) printf(","); print_rec(HEAP[loc(t)+i], depth-1); } printf("}"); }
       else printf("{}"); break; }
@@ -1458,7 +1436,7 @@ void print_term(Term t, int depth) { print_rec(t, depth); }
    by rule (AdiBija: every analyzer is a fold over the trace). Definitional unfolding and the face map's
    sharing are shown apart, as the receipts name them. */
 const char *RULE_NAME[R_COUNT] = { "", "beta", "appSup", "app-plm", "dupSupEqual", "dupSupDifferent", "dupLamUsed", "dupLamErased", "dupNode",
-    "fce-share", "case", "appMatSup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "pout", "split", "unify" };
+    "fce-share", "case", "appMatSup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "split", "unify" };
 void print_trace(uint64_t from) {           /* the derivation as data: each step a rule at a node */
   for (uint64_t i = from; i < TRACE_LEN; i++) printf("%s%s@%u", i > from ? " " : "", RULE_NAME[TRACE[i]], TRACE_NODE[i]);
   printf("\n");

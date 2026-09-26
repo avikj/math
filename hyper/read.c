@@ -91,7 +91,6 @@ static uint32_t term(void) {
   else if (!strcmp(h, "sup")) { char *i = atom(); uint32_t a = term(), b = term(); r = snode(S_SUP, dim_level(i), a, b, 0, 0); }
   else if (!strcmp(h, "fce")) { char *i = atom(); char *s = atom(); uint32_t t = term(); r = snode(S_FCE, (uint32_t)atoi(s), dim_level(i), t, 0, 0); }
   else if (!strcmp(h, "fix")) { char *x = atom(); r = bind_and_parse(x, false, S_FIX); }
-  else if (!strcmp(h, "pout")) { uint32_t a = term(); r = snode(S_POUT, 0, a, 0, 0, 0); }
   else if (!strcmp(h, "pap")) { uint32_t a = term(), b = term(), c2 = term(), d2 = term(); r = snode(S_PAP, 0, a, b, c2, d2); }
   else if (!strcmp(h, "ref")) { char *n = atom(); int d = book_find(n); if (d < 0) { fprintf(stderr, "hyper: no def %s\n", n); exit(2); } r = snode(S_REF, (uint32_t)d, 0,0,0,0); }
   else if (!strcmp(h, "era")) r = snode(S_ERA, 0,0,0,0,0);

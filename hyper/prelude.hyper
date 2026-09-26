@@ -4,6 +4,7 @@
 
 ;  the data types of the core, declared: a type's constructors are its declaration and nothing else knows them.
 ;  A coordinate of such a type, asked by a match, is the superposition of these constructors (fields fresh coordinates).
+(hit Empty ())
 (hit Unit () (Tt : (ctr Unit)))
 (hit Bool () (False : (ctr Bool)) (True : (ctr Bool)))
 (hit Nat () (Zer : (ctr Nat)) (Suc : (ctr Pi (ctr Nat) (lam n (ctr Nat)))))
@@ -71,8 +72,23 @@
   (sup J (hcm (fce J 0 A) (fce J 0 base) (fce J 0 faces))
          (hcm (fce J 1 A) (fce J 1 base) (fce J 1 faces))))))))
 
-; project field i (a point of Nat) of a constructor-headed tube: used by the constructor-headed hcomp rule
-(def tube-field (lam i (lam u (plm k (proj i (app u k))))))
+; ---- a constructor-headed composite in a declared type (whnfHCm on a constructor) -----------------------
+;   CCHM: comp in N is 0 on 0 and suc of the composite on suc; on a constructor with a telescope it is the Σ rule
+;   iterated: field i is the heterogeneous composite along its declared type at the fillers of the earlier fields.
+(def field-tubes (lam i (lam tubes (app map-faces (lam u (plm k (proj i (app u k)))) tubes))))
+; the filler of a heterogeneous composite along P, at j (CCHM: fill from comp by the connection i ∧ j)
+(def comp-fill (lam P (lam base (lam faces (lam j
+  (comp (plm i (app P (iand i j))) base
+        (ctr Cons (ctr Face (inot j) (plm k base))
+                  (app map-faces (lam u (plm k (app u (iand k j)))) faces))))))))
+(def hcm/ctr (lam cty (lam params (lam fields (lam tubes (hcm/ctr-go cty params fields tubes 0 (ctr Nil)))))))
+(def hcm/ctr-go (lam cty (lam params (lam fields (lam tubes (lam i (lam done
+  (case fields
+    (Nil () (ctr Nil))
+    (Cons (a rest)
+      (let ln (plm j (hit-field-ty (inst-pis cty params) (map (lam d (app d j)) done)))
+      (let fl (lam j (comp-fill ln a (field-tubes i tubes) j))
+      (ctr Cons (app fl i1) (hcm/ctr-go cty params rest tubes (ctr Suc i) (snoc done fl)))))))))))))
 
 ; ---- equivalences as cells (the corpus's coherent form) --------------------------------------
 ;   Equiv A B = Pair f (lam y (Pair (Pair x p) contr))   : f, and for each y the centre (x, p : Path (f x) y) and the contraction
