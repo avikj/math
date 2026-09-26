@@ -5,7 +5,7 @@
 ; the endpoint of a path constructor is read from its type
 (def loop0 (app (ctr loop) i0))
 ; the eliminator computes on a path constructor at a symbolic interval
-(def wind (hrec _ (base () (num 1)) (loop () (plm j (num 2)))))
+(def wind (hrec _ (base () 1) (loop () (plm j 2))))
 (def at-sym (dim i (app wind (app (ctr loop) i))))
 (def at-0   (app wind (app (ctr loop) i0)))
 ; a face on a stuck spine passes into it: loop @ i, then i := 0, is base

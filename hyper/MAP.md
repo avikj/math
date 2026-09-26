@@ -213,12 +213,16 @@ dropped; the printer prunes a superposition with a dead side to its other side
 and both dead to `*`, and cuts at depth. The receipts carry the ledger's names
 (`research/sat_fibre/InteractionLedger.agda:13` `data Event`).
 
-**Not exercised.** `sort L` with `L` free, `sortCost n` with `n` free, and the
-equivalence between the two charts of `sort` declared with no body, resolve, if
-they resolve, by the rule above and nothing added: the free function's point at
-the free argument, its Σ split into typed coordinates, the identity forcing
-`isort L`, and `L` splitting along its constructors. No number in this file is
-a measurement of the present runtime.
+**Declared, never run.** `t/sort.hyper` now states what was never exercised:
+`sort` at a free list (`sort-free`); a list of `n` free naturals as the point
+of a declared free function `lists : Π n. Σ l. length l ≡ n` at `n`, whose
+proof splits `l` to length `n` with fresh coordinates for its elements
+(`list-of`); `sortCost n` as the greatest event count over the leaves of
+`sort`'s run along it, at `3` and at a free `n` (`sortCost-n`); and the two
+charts of `sort` declared equivalent with no body (`chart`), the cheap chart's
+centre transported along `ua` of it (`chart-move`). Each resolves, if it
+resolves, by the rule above and nothing added. No number in this file is a
+measurement of the present runtime, and `test.sh` is not the standard.
 
 ## Read order
 
