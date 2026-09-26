@@ -494,30 +494,41 @@ static uint64_t branch_drops(uint32_t first_br, uint32_t br, Term fr, uint32_t f
    type in a third word; the presentation's and the checker's generic elements are not marked and are never split. */
 /* a coordinate: a slot pointing at itself, its type, and the world (faces) it lives in, so that a binding made under
    faces of that world is written plainly and a binding under the opposite side of one of them is an empty world */
-static Term coordinate_in(Term type, Term world) { Loc l = alloc(5); HEAP[l] = 0; HEAP[l+1] = mk(T_VAR, 0xFFFFFF, l); HEAP[l+2] = type; HEAP[l+3] = world; HEAP[l+4] = 0; return HEAP[l+1]; }
-/* a derived coordinate: a field of the constructor a stuck scrutinee is identified with.  Its value comes from that
-   identity, so it is never split; asking it forces the identity.  A free port (no definition) is split. */
-static Term coordinate_def(Term c) { return HEAP[loc(c)+4]; }
-static void define_fields(Term alt, Term def) { for (uint32_t i = 0; i < ctr_arity(alt); i++) HEAP[loc(HEAP[loc(alt)+i])+4] = def; }
-static unsigned FORCE_KIND;
-static void force_def(Term c) {                          /* asking a derived coordinate is asking its identity, at the asker's priority */
-  Term d = coordinate_def(c); unsigned fk = FORCE_KIND; if (FORCE_KIND < ext(d)) FORCE_KIND = ext(d);
-  whnf(d); FORCE_KIND = fk;
-}
+static Term coordinate_in(Term type, Term world) { Loc l = alloc(4); HEAP[l] = 0; HEAP[l+1] = mk(T_VAR, 0xFFFFFF, l); HEAP[l+2] = type; HEAP[l+3] = world; return HEAP[l+1]; }
 Term coordinate(Term type) { return coordinate_in(type, 0); }
 static int world_side(Term world, Loc name) { for (Term f = world; tag(f); f = HEAP[loc(f)]) if (loc(whnf(HEAP[loc(f)+1])) == name) return (int)ext(f); return -1; }
 static bool is_coordinate(Term v) { return tag(v) == T_VAR && ext(v) == 0xFFFFFF && tag(HEAP[loc(v)+1]) == T_VAR && loc(HEAP[loc(v)+1]) == loc(v); }
 Term coordinate_type(Term v) { return HEAP[loc(v)+2]; }
-/* the constructors of a type, from its structure (the theory's own type formers), with the types of their fields */
-static uint32_t type_shape(Term T, uint32_t *cids, uint32_t *ars, Term ftypes[][4]) {
-  T = whnf(T); if (tag(T) != T_CTR) return 0;
-  switch (ctr_id(T)) {
-    case C_UNIT: cids[0] = C_TT; ars[0] = 0; return 1;
-    case C_BOOL: cids[0] = C_FALSE; ars[0] = 0; cids[1] = C_TRUE; ars[1] = 0; return 2;
-    case C_NAT:  cids[0] = C_ZER; ars[0] = 0; cids[1] = C_SUC; ars[1] = 1; ftypes[1][0] = T; return 2;
-    case C_LIST: cids[0] = C_NIL; ars[0] = 0; cids[1] = C_CONS; ars[1] = 2; ftypes[1][0] = HEAP[loc(T)]; ftypes[1][1] = T; return 2;
-    default: return 0;
-  }
+/* the constructors of a data type, from its declaration alone: every constructor whose declared type ends in T, each
+   with fresh coordinates for its fields, typed by that declaration at T's parameters, living in `world`.  Nothing is
+   per type.  A type with a path constructor has no such list (0). */
+/* a point of a constructor: its fields fresh coordinates of `world`, typed by the constructor's declaration at the
+   parameters of T (fresh coordinates of their own types when no T is given, carried as leading fields when the type
+   carries them); a constructor of no declared type has `ar` untyped fields */
+static Term ctor_point(uint32_t cid, uint32_t ar, Term T, Term world) {
+  uint32_t hid = CINFO[cid].hit;
+  if (!hid || CINFO[cid].dim) { Loc l = alloc(ar ? ar : 1); for (uint32_t i = 0; i < ar; i++) HEAP[l+i] = coordinate_in(0, world); return mk(T_CTR, ctr_ext(cid, ar), l); }
+  uint32_t np = CINFO[hid].nparams, carried = CINFO[hid].carries ? np : 0, nf = CINFO[cid].nfields;
+  Term ty = inst(BOOK[CINFO[cid].type_def].code, 0); Loc l = alloc(carried + nf ? carried + nf : 1);
+  for (uint32_t i = 0; i < np; i++) { ty = whnf(ty); if (tag(ty) != T_CTR || ctr_id(ty) != C_PI) return 0;
+    Term par = T ? HEAP[loc(T)+i] : coordinate_in(HEAP[loc(ty)], world); if (i < carried) HEAP[l+i] = par; ty = app2(HEAP[loc(ty)+1], par); }
+  for (uint32_t i = 0; i < nf; i++) { ty = whnf(ty); if (tag(ty) != T_CTR || ctr_id(ty) != C_PI) return 0;
+    HEAP[l+carried+i] = coordinate_in(HEAP[loc(ty)], world); ty = app2(HEAP[loc(ty)+1], HEAP[l+carried+i]); }
+  return mk(T_CTR, ctr_ext(cid, carried + nf), l);
+}
+uint32_t type_constructors(Term T, Term *alts, uint32_t max, Term world) {
+  T = whnf(T); if (tag(T) != T_CTR) return 0; uint32_t id = ctr_id(T); if (!CINFO[id].is_hit) return 0; uint32_t k = 0;
+  for (uint32_t c = 1; c < C_USER_BASE + NCTORS && k < max; c++) {
+    if (c == id || CINFO[c].hit != id) continue; if (CINFO[c].dim) return 0;
+    Term a = ctor_point(c, 0, T, world); if (!a) return 0; alts[k++] = a; }
+  return k;
+}
+/* the constructors a match lists, as points of `world`: the type of a point no declaration types */
+static uint32_t case_points(Term cs, Term *alts, Term world) {
+  uint32_t code = loc(HEAP[loc(cs)+1]); uint32_t k = 0;
+  for (uint32_t br = CODE[code].b; br && k < 64; br = CODE[br].c) { SNode *b = &CODE[br]; if (b->ext == 0xFFFFFF) continue; alts[k++] = ctor_point(b->ext, b->a, 0, world); }
+  if (k == 0) { fprintf(stderr, "hyper: a match with no constructor asked a point\n"); exit(3); }
+  return k;
 }
 /* a coordinate of a Σ type asked for its value is a pair of coordinates, the second typed at the first */
 static Term sigma_split(Term T, Term world) {
@@ -530,8 +541,12 @@ static Term sigma_split(Term T, Term world) {
    written as a superposition correlated with that branch, the other side a fresh coordinate, so every holder of the
    coordinate sees the binding exactly where it holds. */
 static Term refl_cell(void) { return mk(T_CTR, ctr_ext(C_REFL, 0), alloc(1)); }
-static Term scrut(Term t); static bool refers(Term from, Loc target, int depth); static void cycle_trap(const char *where, Term cell, Term newv);
-static bool SPLITS;                                      /* HYPER_SPLITS=1: each split as it happens, and each leaf's residuals checked for contradiction, to stderr */
+static bool refers(Term from, Loc target, int depth); static void cycle_trap(const char *where, Term cell, Term newv);
+/* inspection (the fibre law at a match).  The scrutinee of a match and the sides of an identity are INSPECTED, not
+   forced: evaluation runs through β and constructor selection and stops at a match facing a point whose head is not
+   yet a constructor.  Binding that point's output is the act of what faces it, never of the inspection. */
+static int INSPECT;
+static Term inspect(Term t) { INSPECT++; Term r = whnf(t); INSPECT--; return r; }
 /* a small map from pairs of words to a term, for the questions the machine asks once */
 typedef struct { uint64_t k1, k2; Term v; } MemoCell; static MemoCell *MEMO; static uint32_t MEMO_N;
 static Term *memo_slot(uint64_t k1, uint64_t k2) {
@@ -545,16 +560,17 @@ static Term *memo_slot(uint64_t k1, uint64_t k2) {
 /* the identity of a term as a question's part: a coordinate by its cell, a constant by its value, a function by its
    code and the identities of what its frame holds (its own fixed point counted as itself), a stuck match by its
    question; anything else has none */
-static bool question_key_d(Term s, int depth, uint64_t *k1, uint64_t *k2); static Term peel(Term v, Term *faces); static bool question_key(Term s, uint64_t *k1, uint64_t *k2); static int world_side(Term world, Loc name); static Term frame_faces(Term fr); static bool known_split(Term s, Term faces); static int frame_side(Term fr, Loc name); static bool decide_question(Term x, Term y, Term faces); static Term split_stuck(Term s, Term *alts, uint32_t k);
+static Term peel(Term v, Term *faces); static Term frame_faces(Term fr); static int frame_side(Term fr, Loc name);
+static bool question_key_d(Term s, int depth, uint64_t *k1, uint64_t *k2); static bool known_split(Term s, Term faces); static Term split_stuck(Term s, Term cs);
 static Term KEY_FACES, KEY_FRAME;                        /* the faces (and the frame's restrictions) an identity is read under: a superposed slot is its side there */
 static Term frame_slot_raw(Term f, uint32_t lvl) { for (;;) { if (tag(f) == T_RESTRICT) { f = HEAP[loc(f)]; continue; } if (ext(f) == lvl) return HEAP[loc(f)+1]; f = HEAP[loc(f)]; } }
 static bool term_identity(Term v, int depth, uint64_t *id) {
   if (depth < 0) return false;
-  v = scrut(v);
+  v = inspect(v);
   for (;;) { Term q = 0; v = peel(v, &q);                            /* a port under waiting faces is the port */
     if (tag(v) != T_SUP) break; Term nm = whnf(HEAP[loc(v)]); if (tag(nm) != T_IVAR) break;
     int w = world_side(KEY_FACES, loc(nm)); if (w < 0) w = frame_side(KEY_FRAME, loc(nm));
-    if (w < 0) break; v = scrut(HEAP[loc(v) + 1 + w]); }
+    if (w < 0) break; v = inspect(HEAP[loc(v) + 1 + w]); }
   if (is_coordinate(v)) { *id = (uint64_t)loc(v) << 8 | 1; return true; }
   if (tag(v) == T_CTR && ctr_arity(v) == 0) { *id = (uint64_t)ctr_id(v) << 8 | 2; return true; }
   if (tag(v) == T_NUM) { *id = HEAP[loc(v)] << 8 | 3; return true; }
@@ -569,7 +585,7 @@ static bool term_identity(Term v, int depth, uint64_t *id) {
   if (tag(v) == T_CASE) { uint64_t a, b; if (!question_key_d(v, depth - 1, &a, &b)) return false; *id = a ^ (b << 1); return true; }
   *id = (uint64_t)loc(v) << 8 | 5; return true;                        /* anything else: by its cell */
 }
-static uint64_t arg_identity(Term x) { uint64_t id; if (term_identity(x, 3, &id)) return id; return (uint64_t)loc(scrut(x)) << 8 | 5; }
+static uint64_t arg_identity(Term x) { uint64_t id; if (term_identity(x, 3, &id)) return id; return (uint64_t)loc(inspect(x)) << 8 | 5; }
 /* an unknown function applied: the coordinate of its codomain at the argument.  The same argument asks the same
    question, so the coordinate is one per (function, argument): a free port fires once. */
 static Term pi_apply(Term f, Term x) {
@@ -579,46 +595,20 @@ static Term pi_apply(Term f, Term x) {
   if (!*slot) *slot = coordinate_in(app2(HEAP[loc(T)+1], x), 0);
   return *slot;
 }
-/* forcing.  A cell is forced when its value is demanded at the top; the scrutinee of a match and the sides of an
-   identity are inspected, not forced.  Splitting a coordinate, and the superposition of a match whose scrutinee is
-   stuck, happen only under force: the outermost eliminator facing a stuck term is the one that decomposes, along
-   its own constructors, so a coordinate is split only as far as it is asked. */
-static int SCRUT; static int FORCE_LEFT;                 /* one split per round: the top resolves in rounds, so a split anywhere is followed by
-                                                            inspection everywhere before the next, and a side that dies cheaply is reached */
-static Term scrut(Term t) { SCRUT++; Term r = whnf(t); SCRUT--; return r; }
-/* the top-level demand: rounds of one split each until a value, or nothing left to split */
-/* the kind of an identity: 0 the specification, k+1 a residual of a match met while forcing a cell of kind k.
-   A round forces cells of kind ≤ FORCE_KIND; the kind rises only when a round moved nothing, and falls back to 0
-   on any move, so the residual of a match is explored only when what it constrains is otherwise undetermined. */
-static unsigned CUR_KIND, MAX_KIND, KIND_CAP = ~0u;   /* KIND_CAP 0: a residual does not ask a port (the run of a term, its trace, its leaves) */
-uint64_t ROUNDS;
-Term resolve(Term t) {
-  FORCE_KIND = 0;
-  for (;;) { FORCE_LEFT = 1; ROUNDS++; Term r = whnf(t);
-    if (is_value(r)) return r;
-    if (!FORCE_LEFT) { FORCE_KIND = 0; t = r; continue; }
-    if (FORCE_KIND >= MAX_KIND) return r;
-    FORCE_KIND++; t = r; }
-}
 /* the coordinate under a chain of waiting faces, the faces collected onto `faces` */
 static Term peel(Term v, Term *faces) {
-  Term w = v; while (tag(w) == T_FCE && ext(w) < 2 && tag(HEAP[loc(w)]) == T_IVAR) w = scrut(HEAP[loc(w)+1]);
+  Term w = v; while (tag(w) == T_FCE && ext(w) < 2 && tag(HEAP[loc(w)]) == T_IVAR) w = inspect(HEAP[loc(w)+1]);
   if (!is_coordinate(w)) return v;                                    /* only a coordinate's faces are collected; anything else keeps them */
-  while (tag(v) == T_FCE) { *faces = restrict_push(*faces, HEAP[loc(v)], ext(v), 0); v = scrut(HEAP[loc(v)+1]); }
+  while (tag(v) == T_FCE) { *faces = restrict_push(*faces, HEAP[loc(v)], ext(v), 0); v = inspect(HEAP[loc(v)+1]); }
   return v;
 }
 static bool proof_cell(Term t) { return tag(t) == T_UNIFY || tag(t) == T_BOTH; }
-static unsigned proof_kind(Term t) {                      /* the kind of an identity; of a conjunction, the greater of its sides' */
-  if (tag(t) == T_UNIFY) return ext(t);
-  if (tag(t) == T_BOTH) { unsigned a = proof_kind(HEAP[loc(t)]), b = proof_kind(HEAP[loc(t)+1]); return a > b ? a : b; }
-  return 0;
-}
-static bool proof_case(Term s) { return tag(s) == T_CASE && proof_cell(scrut(HEAP[loc(s)])); }   /* a match on an undecided identity: its one branch is Refl */
+static bool proof_case(Term s) { return tag(s) == T_CASE && proof_cell(inspect(HEAP[loc(s)])); }   /* a match on an undecided identity: its one branch is Refl */
 static Term refl_body(Term cs);
 /* a match on an identity, possibly under waiting faces: the identity and the branch, each under the same faces */
 static bool under_faces(Term s, Term *p, Term *v) {
   Term chain[64]; unsigned n = 0; Term w = s;
-  while (tag(w) == T_FCE && n < 64) { chain[n++] = w; w = scrut(HEAP[loc(w)+1]); }
+  while (tag(w) == T_FCE && n < 64) { chain[n++] = w; w = inspect(HEAP[loc(w)+1]); }
   if (!proof_case(w)) return false;
   *p = HEAP[loc(w)]; *v = refl_body(w);
   for (unsigned i = n; i-- > 0;) { *p = fce_raw(ext(chain[i]), HEAP[loc(chain[i])], *p, HEAP[loc(chain[i])+2]); *v = fce_raw(ext(chain[i]), HEAP[loc(chain[i])], *v, HEAP[loc(chain[i])+2]); }
@@ -635,6 +625,13 @@ static bool blocked(Term s) {                                          /* stuck 
   }
   return false;
 }
+/* a point whose head is not yet a constructor, forced: bound at its output by the match facing it (below); a bare
+   coordinate is not forced here, the match facing it splits it */
+static Term force(Term v) {
+  Term w = v; while (tag(w) == T_FCE) w = whnf(HEAP[loc(w)+1]);
+  if (is_coordinate(w) || !blocked(w)) return v;
+  Term r = whnf(w); return r == w ? v : whnf(v);
+}
 /* a binding made under the faces of a branch is written as a superposition correlated with that branch, the other
    side of each face a fresh coordinate, so every holder of the coordinate sees the binding exactly where it holds */
 static Term BIND_FS[64]; static unsigned BIND_N; static Term BIND_T;
@@ -644,9 +641,8 @@ static Term bind_wrap(Term v, unsigned i, Term world) {   /* outermost face firs
   Term in = bind_wrap(v, i + 1, restrict_push(world, nm, side, 0)), out = coordinate_in(BIND_T, restrict_push(world, nm, !side, 0));
   return node3(T_SUP, 0, nm, side ? out : in, side ? in : out);
 }
-static uint64_t BIND_GEN = 1;                            /* rises at every binding and every split: a residual meets a split only after one of these */
 static Term bind_under(Term c, Term v, Term faces) {
-  BIND_GEN++; Term world = HEAP[loc(c)+3]; BIND_N = 0; BIND_T = coordinate_type(c);
+  Term world = HEAP[loc(c)+3]; BIND_N = 0; BIND_T = coordinate_type(c);
   for (Term f = faces; tag(f) && BIND_N < 64; f = HEAP[loc(f)]) {   /* a face of the coordinate's own world is already in force; one face per name */
     Loc name = loc(whnf(HEAP[loc(f)+1])); int w = world_side(world, name);
     if (w >= 0) { if ((unsigned)w != ext(f)) return mk(T_ERA, 0, 0); continue; }
@@ -656,17 +652,11 @@ static Term bind_under(Term c, Term v, Term faces) {
   { Term w = bind_wrap(v, 0, world); if (getenv("HYPER_BT") && refers(w, loc(c), 8)) { fprintf(stderr, "[cycle at bind]\n"); void *bt[40]; int n = backtrace(bt, 40); backtrace_symbols_fd(bt, n, 2); exit(7); } HEAP[loc(c) + 1] = w; } return refl_cell();
 }
 static bool mentions(Term t, Loc c, int depth) {
-  if (depth <= 0) return false; t = scrut(t);
+  if (depth <= 0) return false; t = inspect(t);
   if (tag(t) == T_VAR) return loc(t) == c;
   if (tag(t) == T_CTR) { for (uint32_t i = 0; i < ctr_arity(t); i++) if (mentions(HEAP[loc(t)+i], c, depth-1)) return true; return false; }
   if (tag(t) == T_SUP) return mentions(HEAP[loc(t)+1], c, depth-1) || mentions(HEAP[loc(t)+2], c, depth-1);
   return false;
-}
-/* force a term blocked on a coordinate, through any faces waiting on it; a bare coordinate is not forced here */
-static Term force(Term v) {
-  Term w = v; while (tag(w) == T_FCE) w = whnf(HEAP[loc(w)+1]);
-  if (is_coordinate(w) || !blocked(w)) return v;
-  Term r = whnf(w); return r == w ? v : whnf(v);
 }
 static Term faces_cat(Term a, Term b) { for (Term f = b; tag(f); f = HEAP[loc(f)]) if (world_side(a, loc(whnf(HEAP[loc(f)+1]))) < 0) a = restrict_push(a, HEAP[loc(f)+1], ext(f), 0); return a; }
 /* an identity read in a world: its faces extended, its sides under them (thin, they wait on what is stuck) */
@@ -695,8 +685,7 @@ static void cycle_trap(const char *where, Term cell, Term newv) {
   if (refers(newv, loc(cell), 6)) { fprintf(stderr, "[cycle at %s]\n", where); void *bt[40]; int n = backtrace(bt, 40); backtrace_symbols_fd(bt, n, 2); exit(7); }
 }
 static void cycle_trap(const char *where, Term cell, Term newv);
-static Term unify_cell(Term x, Term y, Term faces, unsigned kind) { if (kind > MAX_KIND) MAX_KIND = kind;
-  return node3(T_UNIFY, kind, x, y, faces); }
+static Term unify_cell(Term x, Term y, Term faces) { return node3(T_UNIFY, 0, x, y, faces); }
 static Term both_cell(Term p, Term q, Term faces) { return node4(T_BOTH, 0, p, q, 0, faces); }   /* [p, q, which side was forced last, the faces it lives under] */
 /* v under the identity p: the language's own J, `under` in the prelude */
 static int under_id(void) { static int id = -1; if (id < 0) id = book_find("under"); return id; }
@@ -708,23 +697,23 @@ static Term refl_body(Term cs) { return case_select(cs, refl_cell()); }
 /* unification: the identity type between two data terms, decided.  REFL when the terms can be made equal by binding
    coordinates, ERA when constructors or numerals disagree, a superposition of these when a side is superposed (each
    side face-mapped into its branch), a match on an identity commuted to a conjunction, and otherwise a wait; a
-   forced identity whose side is stuck on a coordinate forces that side. */
+   side stuck on a coordinate is the term's: the match facing the coordinate splits it. */
 static Term unify_step(Term t) {
   for (;;) {
     Term faces = HEAP[loc(t)+2], fx = faces, fy = faces;
-    Term x0 = scrut(HEAP[loc(t)]), y0 = scrut(HEAP[loc(t)+1]);
+    Term x0 = inspect(HEAP[loc(t)]), y0 = inspect(HEAP[loc(t)+1]);
     Term x = peel(x0, &fx), y = peel(y0, &fy);
     if (tag(x) == T_ERA || tag(y) == T_ERA) return mk(T_ERA, 0, 0);
     if (tag(x0) == T_SUP || tag(y0) == T_SUP) { bool xs = tag(x0) == T_SUP; Term sp = xs ? x0 : y0, ot = xs ? y0 : x0; Term nm = whnf(HEAP[loc(sp)]);
       receipt(R_UNIFY);
       int w = tag(nm) == T_IVAR ? world_side(faces, loc(nm)) : -1;    /* the name already fixed by this identity's faces: that side alone */
       if (w >= 0) { HEAP[loc(t) + (xs ? 0 : 1)] = HEAP[loc(sp) + 1 + w]; HEAP[loc(t) + (xs ? 1 : 0)] = fce_raw((unsigned)w, nm, ot, 0); continue; }
-      Term a = xs ? unify_cell(HEAP[loc(sp)+1], fce_raw(0, nm, ot, 0), restrict_push(faces, nm, 0, 0), ext(t)) : unify_cell(fce_raw(0, nm, ot, 0), HEAP[loc(sp)+1], restrict_push(faces, nm, 0, 0), ext(t));
-      Term b = xs ? unify_cell(HEAP[loc(sp)+2], fce_raw(1, nm, ot, 0), restrict_push(faces, nm, 1, 0), ext(t)) : unify_cell(fce_raw(1, nm, ot, 0), HEAP[loc(sp)+2], restrict_push(faces, nm, 1, 0), ext(t));
+      Term a = xs ? unify_cell(HEAP[loc(sp)+1], fce_raw(0, nm, ot, 0), restrict_push(faces, nm, 0, 0)) : unify_cell(fce_raw(0, nm, ot, 0), HEAP[loc(sp)+1], restrict_push(faces, nm, 0, 0));
+      Term b = xs ? unify_cell(HEAP[loc(sp)+2], fce_raw(1, nm, ot, 0), restrict_push(faces, nm, 1, 0)) : unify_cell(fce_raw(1, nm, ot, 0), HEAP[loc(sp)+2], restrict_push(faces, nm, 1, 0));
       return node3(T_SUP, 0, nm, a, b); }
     { Term p, v;                                                       /* (v under p) ≡ y  is  p ∧ v ≡ y */
-      if (under_faces(x0, &p, &v)) { receipt(R_UNIFY); return both_cell(restrict_proof(p, faces), unify_cell(v, y0, faces, ext(t)), faces); }
-      if (under_faces(y0, &p, &v)) { receipt(R_UNIFY); return both_cell(restrict_proof(p, faces), unify_cell(x0, v, faces, ext(t)), faces); } }
+      if (under_faces(x0, &p, &v)) { receipt(R_UNIFY); return both_cell(restrict_proof(p, faces), unify_cell(v, y0, faces), faces); }
+      if (under_faces(y0, &p, &v)) { receipt(R_UNIFY); return both_cell(restrict_proof(p, faces), unify_cell(x0, v, faces), faces); } }
     bool cx = is_coordinate(x), cy = is_coordinate(y);
     if (cx && cy && loc(x) == loc(y)) return refl_cell();
     if (cx) { receipt(R_UNIFY); if (mentions(y, loc(x), 64)) return mk(T_ERA, 0, 0); return bind_under(x, y0, fx); }
@@ -732,20 +721,14 @@ static Term unify_step(Term t) {
     if (tag(x) == T_CTR && tag(y) == T_CTR) { receipt(R_UNIFY);
       if (ctr_id(x) != ctr_id(y) || ctr_arity(x) != ctr_arity(y)) return mk(T_ERA, 0, 0);
       uint32_t ar = ctr_arity(x); if (ar == 0) return refl_cell();
-      Term r = unify_cell(HEAP[loc(x)+ar-1], HEAP[loc(y)+ar-1], faces, ext(t));
-      for (uint32_t i = ar - 1; i-- > 0;) r = both_cell(unify_cell(HEAP[loc(x)+i], HEAP[loc(y)+i], faces, ext(t)), r, faces);
+      Term r = unify_cell(HEAP[loc(x)+ar-1], HEAP[loc(y)+ar-1], faces);
+      for (uint32_t i = ar - 1; i-- > 0;) r = both_cell(unify_cell(HEAP[loc(x)+i], HEAP[loc(y)+i], faces), r, faces);
       return r; }
     if (tag(x) == T_NUM && tag(y) == T_NUM) { receipt(R_UNIFY); return (ext(x) == ext(y) && HEAP[loc(x)] == HEAP[loc(y)]) ? refl_cell() : mk(T_ERA, 0, 0); }
-    if (ext(t) && (blocked(x0) || blocked(y0))) {                       /* a residual whose question is split: decided there; asked again only after a binding */
-      Term *seen = memo_slot((uint64_t)loc(t) << 8 | 0xA5, 0xA5);
-      if (*seen != (Term)BIND_GEN) { *seen = (Term)BIND_GEN;
-        if (blocked(x0) && known_split(x, faces)) continue;
-        if (blocked(y0) && known_split(y, faces)) continue; } }
-    if (SCRUT == 0 && FORCE_LEFT && ext(t) <= FORCE_KIND) {            /* forced: a side stuck on a coordinate is forced in turn, at this identity's kind */
-      unsigned k0 = CUR_KIND; CUR_KIND = ext(t);
-      if (ext(t) && ((tag(x0) == T_CASE && blocked(x0) && decide_question(x0, y, faces)) || (tag(y0) == T_CASE && blocked(y0) && decide_question(y0, x, faces)))) { CUR_KIND = k0; continue; }   /* a bare question: the residual is its first asker */
+    if (INSPECT == 0) {                                                /* forced: a side whose head is not yet a constructor is bound at its output */
+      if (blocked(x0) && known_split(x, faces)) continue;              /* the point is split already: its worlds */
+      if (blocked(y0) && known_split(y, faces)) continue;
       Term x2 = force(x0), y2 = x2 == x0 ? force(y0) : y0;             /* the term's order: an identity's sides are not two independent demands, a dead one ends the other */
-      CUR_KIND = k0;
       if (x2 != x0) { HEAP[loc(t)] = x2; continue; }
       if (y2 != y0) { HEAP[loc(t)+1] = y2; continue; } }
     cycle_trap("unify x", t, x0); cycle_trap("unify y", t, y0);
@@ -753,12 +736,12 @@ static Term unify_step(Term t) {
   }
 }
 /* both identities hold.  Each side is inspected to its head before either is forced, so a dead side kills the branch
-   whatever the other is doing; a superposed side distributes, and the side forced last goes second in each branch,
-   so forcing alternates between the two and a side that dies in finitely many steps is reached. */
+   whatever the other is doing and a binding the other side makes is met before a port is asked; a superposed side
+   distributes. */
 static Term both_step(Term t) {
   for (;;) {
-    Term p = scrut(HEAP[loc(t)]); if (tag(p) == T_ERA) return p;
-    Term q = scrut(HEAP[loc(t)+1]); if (tag(q) == T_ERA) return q;
+    Term p = inspect(HEAP[loc(t)]); if (tag(p) == T_ERA) return p;
+    Term q = inspect(HEAP[loc(t)+1]); if (tag(q) == T_ERA) return q;
     if (tag(p) == T_CTR && ctr_id(p) == C_REFL) return q;
     if (tag(q) == T_CTR && ctr_id(q) == C_REFL) return p;
     if (tag(p) == T_SUP || tag(q) == T_SUP) {                        /* a superposed side distributes; a name this conjunction's faces fix is projected */
@@ -770,72 +753,44 @@ static Term both_step(Term t) {
                                  ps ? both_cell(HEAP[loc(sp)+2], fce_raw(1, nm, ot, 0), f1) : both_cell(fce_raw(1, nm, ot, 0), HEAP[loc(sp)+2], f1)); }
     cycle_trap("both p", t, p); cycle_trap("both q", t, q);
     HEAP[loc(t)] = p; HEAP[loc(t)+1] = q;
-    if (SCRUT == 0 && FORCE_LEFT) {                                  /* forced: the side not forced last goes first */
-      unsigned f = (unsigned)HEAP[loc(t)+2] ^ 1; HEAP[loc(t)+2] = f;
-      Term a = whnf(HEAP[loc(t)+f]); if (a != HEAP[loc(t)+f]) { HEAP[loc(t)+f] = a; continue; }
-      Term b = whnf(HEAP[loc(t)+(f^1)]); if (b != HEAP[loc(t)+(f^1)]) { HEAP[loc(t)+(f^1)] = b; continue; } }
+    if (INSPECT == 0) {                                                /* forced: each side in turn; a side that moves is met again by both */
+      Term a = whnf(p); if (a != p) { HEAP[loc(t)] = a; continue; }
+      Term b = whnf(q); if (b != q) { HEAP[loc(t)+1] = b; continue; } }
     return 0;
   }
 }
-/* a coordinate asked for its value: an identity type is decided, a Σ is a pair, Unit is its point; other types wait for a match */
+/* a coordinate asked for its value: an identity type is decided, a Σ is a pair, a one-constructor type is that constructor; other types wait for a match */
 static Term coordinate_asked(Term c) {
   Term T = coordinate_type(c); if (!T) return c; T = whnf(T);
   if (tag(T) != T_CTR) return c;
-  if (ctr_id(T) == C_EQL || ctr_id(T) == C_PATH) { Term r = unify_cell(HEAP[loc(T)+1], HEAP[loc(T)+2], 0, 0); HEAP[loc(c)+1] = r; return r; }
+  if (ctr_id(T) == C_EQL || ctr_id(T) == C_PATH) { Term r = unify_cell(HEAP[loc(T)+1], HEAP[loc(T)+2], 0); HEAP[loc(c)+1] = r; return r; }
   if (ctr_id(T) == C_SIG) { receipt(R_SPLIT); Term p = sigma_split(T, HEAP[loc(c)+3]); HEAP[loc(c)+1] = p; return p; }
-  if (ctr_id(T) == C_UNIT) { HEAP[loc(c)+1] = mk(T_CTR, ctr_ext(C_TT, 0), alloc(1)); return HEAP[loc(c)+1]; }
+  { Term alts[2]; if (type_constructors(T, alts, 2, HEAP[loc(c)+3]) == 1) { HEAP[loc(c)+1] = alts[0]; return alts[0]; } }   /* one constructor: the point is it, its fields fresh */
   return c;
 }
-/* the constructors a match lists, each with fresh coordinates for its fields (typed when the type's shape is known) */
-static uint32_t match_alts(Term cs, Term type, Term *alts, Term world) {
-  uint32_t code = loc(HEAP[loc(cs) + 1]); SNode *n = &CODE[code]; uint32_t k = 0;
-  uint32_t cids[8], ars[8]; Term ftypes[8][4] = {{0}}; uint32_t ns = type ? type_shape(type, cids, ars, ftypes) : 0;
-  if (ns) {                                                          /* the type's own constructors, fields typed */
-    for (uint32_t j = 0; j < ns; j++) { Loc l = alloc(ars[j] ? ars[j] : 1);
-      for (uint32_t i = 0; i < ars[j]; i++) HEAP[l + i] = coordinate_in(ftypes[j][i], world);
-      alts[k++] = mk(T_CTR, ctr_ext(cids[j], ars[j]), l); }
-  } else for (uint32_t br = n->b; br && k < 64; br = CODE[br].c) {   /* untyped: the constructors the match lists */
-    SNode *b = &CODE[br]; if (b->ext == 0xFFFFFF) continue;          /* the default branch names no constructor */
-    uint32_t ar = b->a; Loc l = alloc(ar ? ar : 1);
-    for (uint32_t i = 0; i < ar; i++) HEAP[l + i] = coordinate_in(0, world);                 /* fresh coordinates for the fields */
-    alts[k++] = mk(T_CTR, ctr_ext(b->ext, ar), l);
-  }
-  if (k == 0) { fprintf(stderr, "hyper: a match with no constructor asked a coordinate\n"); exit(3); }
-  return k;
-}
-/* the fields of an alternative, as fresh coordinates of the given world */
-static Term alt_in(Term alt, Term world) {
-  uint32_t ar = ctr_arity(alt); Loc l = alloc(ar ? ar : 1);
-  for (uint32_t i = 0; i < ar; i++) HEAP[l+i] = coordinate_in(coordinate_type(HEAP[loc(alt)+i]), world);
-  return mk(T_CTR, ext(alt), l);
-}
+/* a coordinate asked by a match: the superposition of its type's constructors, one line at a fresh bound name per
+   choice, each constructor's fields fresh coordinates of the world that choice makes; written into the coordinate's
+   own slot so every holder meets the same correlated superposition.  0 when the type has no constructor list. */
+static uint32_t points_of(Term cs, Term T, Term *alts, Term world) { uint32_t k = T ? type_constructors(T, alts, 64, world) : 0; return k ? k : case_points(cs, alts, world); }
 static Term constructor_superposition(Term cs, Term coord) {
-  Term alts[64]; uint32_t k = match_alts(cs, coordinate_type(coord), alts, 0); Term world = HEAP[loc(coord)+3];
-  Term names[64]; for (uint32_t i = 0; i + 1 < k; i++) names[i] = mk(T_IVAR, 0, loc(dim_push(0)));   /* a line at a fresh bound name per choice */
+  Term T = coordinate_type(coord), world = HEAP[loc(coord)+3]; Term alts[64]; uint32_t k = points_of(cs, T, alts, world);
+  Term names[64]; for (uint32_t i = 0; i + 1 < k; i++) names[i] = mk(T_IVAR, 0, loc(dim_push(0)));
   Term r = 0;
   for (uint32_t i = k; i-- > 0;) {
     Term w = world; for (uint32_t j = 0; j < i && j + 1 < k; j++) w = restrict_push(w, names[j], 1, 0);
     if (i + 1 < k) w = restrict_push(w, names[i], 0, 0);
-    Term a = alt_in(alts[i], w);
-    r = r ? node3(T_SUP, 0, names[i], a, r) : a; }
+    Term side[64]; points_of(cs, T, side, w);
+    r = r ? node3(T_SUP, 0, names[i], side[i], r) : side[i]; }
   return r;
 }
-/* a match whose scrutinee is stuck on a coordinate: the superposition, over the constructors it lists, of its branches,
-   each under the identity of the scrutinee with that constructor (fields fresh coordinates).  The identity is not
-   forced here; it is a J around the branch, decided when the branch is demanded or conjoined when it is unified. */
 /* the faces in force on a frame: the world its bodies live in */
 static int frame_side(Term fr, Loc name) { for (Term f = fr; tag(f); f = HEAP[loc(f)]) if (tag(f) == T_RESTRICT && ext(f) < 2 && loc(whnf(HEAP[loc(f)+1])) == name) return (int)ext(f); return -1; }
-static Term split_stuck_new(Term s, Term *alts, uint32_t k);
 static Term frame_faces(Term fr) { Term w = 0; for (Term f = fr; tag(f); f = HEAP[loc(f)]) if (tag(f) == T_RESTRICT && ext(f) < 2) w = restrict_push(w, HEAP[loc(f)+1], ext(f), 0); return w; }
 static unsigned cell_words(unsigned g) {
   switch (g) { case T_CASE: case T_FCE: case T_HCM: case T_UNIFY: return 3; case T_BOTH: case T_HELIM: case T_TRP: case T_PAP: case T_FCASE: return 4; default: return 2; }
 }
-/* a term stuck on a coordinate, asked for its constructor: it becomes the superposition, over the constructors the
-   asking match lists, of each constructor (fields fresh derived coordinates) under the identity of the computation
-   with it.  The computation moves to a fresh cell and is shared by every residual; the stuck cell is marked with the
-   superposition, so every holder meets the same split and the same worlds. */
-/* the identity of a stuck match as a question: its code and the identities of the slots the code reads.  Two matches
-   with one key are one question to the free ports, and share one split. */
+/* the identity of a stuck match as a point: its code and the identities of the slots the code reads.  Two matches
+   with one identity are one point, and one point is split once (the coordinate principle: a port fires once). */
 static bool question_key_d(Term s, int depth, uint64_t *k1, uint64_t *k2) {
   if (tag(s) != T_CASE || depth < 0) return false;
   uint32_t code = loc(HEAP[loc(s)+1]); Term fr = HEAP[loc(s)+2]; uint64_t h1 = code * 0x9E3779B97F4A7C15ull, h2 = code;
@@ -847,56 +802,38 @@ static bool question_key_d(Term s, int depth, uint64_t *k1, uint64_t *k2) {
   *k1 = h1; *k2 = h2; return true;
 }
 static bool question_key(Term s, uint64_t *k1, uint64_t *k2) { return question_key_d(s, 6, k1, k2); }
+/* a stuck match that is a point already split: it is that split (its worlds), so a copy of the point meets no new one */
 static bool known_split(Term s, Term faces) {
-  while (tag(s) == T_FCE && ext(s) < 2 && tag(HEAP[loc(s)]) == T_IVAR) { faces = restrict_push(faces, HEAP[loc(s)], ext(s), 0); s = scrut(HEAP[loc(s)+1]); }   /* the faces waiting on it are its world too */
+  while (tag(s) == T_FCE && ext(s) < 2 && tag(HEAP[loc(s)]) == T_IVAR) { faces = restrict_push(faces, HEAP[loc(s)], ext(s), 0); s = inspect(HEAP[loc(s)+1]); }   /* the faces waiting on it are its world too */
   uint64_t k1, k2; KEY_FACES = faces; bool ok = tag(s) == T_CASE && !proof_case(s) && question_key(s, &k1, &k2); KEY_FACES = 0;
   if (!ok) return false;
   Term *slot = memo_slot(k1, k2 ^ 0x51); Term own = *memo_slot((uint64_t)loc(s) << 8 | 0xC0, 0xC0);
-  if (!*slot) { if (own) { *slot = own; BIND_GEN++; } return false; }  /* the question as now understood is answered by this residual's own split: registered under this key */
-  if (own == *slot) return false;                                      /* not its own split: a cycle */
+  if (!*slot) { if (own) *slot = own; return false; }                  /* the point as now understood is this computation's own split: registered under this identity */
+  if (own == *slot) return false;                                      /* its own split: nothing new */
   HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = *slot; return true;
 }
-/* the constructors a constructor's type has (the shapes the core knows), fields fresh coordinates */
-static uint32_t ctor_alts(uint32_t id, Term *alts) {
-  uint32_t cids[8], ars[8]; Term ftypes[8][4] = {{0}}; uint32_t T = id == C_TRUE || id == C_FALSE ? C_BOOL : id == C_ZER || id == C_SUC ? C_NAT : id == C_TT ? C_UNIT : id == C_NIL || id == C_CONS ? C_LIST : 0;
-  if (!T) return 0;
-  Term ty = T == C_LIST ? node1(T_CTR, ctr_ext(C_LIST, 1), coordinate(0)) : mk(T_CTR, ctr_ext(T, 0), alloc(1));
-  uint32_t k = type_shape(ty, cids, ars, ftypes);
-  for (uint32_t j = 0; j < k; j++) { Loc l = alloc(ars[j] ? ars[j] : 1); for (uint32_t i = 0; i < ars[j]; i++) HEAP[l+i] = coordinate(ftypes[j][i]); alts[j] = mk(T_CTR, ctr_ext(cids[j], ars[j]), l); }
-  return k;
-}
-/* a residual on a question no match has split: the residual is the question's first asker, and splits it along the
-   constructors of the answer it requires, so every later residual on the question meets one set of worlds */
-static bool decide_question(Term x, Term y, Term faces) {
-  while (tag(x) == T_FCE && ext(x) < 2 && tag(HEAP[loc(x)]) == T_IVAR) { faces = restrict_push(faces, HEAP[loc(x)], ext(x), 0); x = scrut(HEAP[loc(x)+1]); }   /* under its waiting faces */
-  if (tag(x) != T_CASE || tag(y) != T_CTR || tag(HEAP[loc(x)]) == T_IND || proof_case(x)) return false;   /* a match on an identity is not a question; a split cell is done */
-  if (*memo_slot((uint64_t)loc(x) << 8 | 0xC0, 0xC0)) return false;    /* the computation a split keeps: deciding it is that split */
-  uint64_t k1, k2; KEY_FACES = faces; bool ok = question_key(x, &k1, &k2); KEY_FACES = 0;
-  if (!ok || *memo_slot(k1, k2 ^ 0x51)) return false;
-  Term alts[8]; uint32_t k = ctor_alts(ctr_id(y), alts); if (!k) return false;
-  receipt(R_SPLIT); FORCE_LEFT--; if (SPLITS) fprintf(stderr, "decide k%u/%u\n", CUR_KIND, FORCE_KIND);
-  KEY_FACES = faces; split_stuck(x, alts, k); KEY_FACES = 0; return true;   /* registered under the same identity */
-}
-static Term split_stuck(Term s, Term *alts, uint32_t k) {
+/* a computation whose head is not yet a constructor, asked by a match for its head: the fibre law read at its
+   output.  It becomes the superposition, over the constructors the match lists, of each constructor (fields fresh
+   coordinates of that side's world) under the identity of the computation with it.  The computation moves to a
+   fresh cell shared by every residual; the stuck cell is marked with the superposition, so every holder meets the
+   same split and the same worlds; and the split is registered under the point's identity. */
+static Term split_stuck(Term s, Term cs) {
   if (tag(HEAP[loc(s)]) == T_IND) return HEAP[loc(s)+1];               /* split already: its superposition */
-  { uint64_t k1, k2; if (question_key(s, &k1, &k2)) { Term *slot = memo_slot(k1, k2 ^ 0x51); if (*slot) { HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = *slot; return *slot; }
-      Term r = split_stuck_new(s, alts, k); *slot = r; BIND_GEN++; return r; } }
-  return split_stuck_new(s, alts, k);
-}
-static Term split_stuck_new(Term s, Term *alts, uint32_t k) {
+  uint64_t k1, k2; Term *slot = 0;
+  if (question_key(s, &k1, &k2)) { slot = memo_slot(k1, k2 ^ 0x51); if (*slot) { HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = *slot; return *slot; } }
   unsigned n = cell_words(tag(s)); Loc l = alloc(n); for (unsigned i = 0; i < n; i++) HEAP[l+i] = HEAP[loc(s)+i];
   Term s1 = mk(tag(s), ext(s), l); Term *own = memo_slot((uint64_t)l << 8 | 0xC0, 0xC0);
   Term world = tag(s) == T_CASE ? frame_faces(HEAP[loc(s)+2]) : 0;
+  Term alts[64]; uint32_t k = case_points(cs, alts, world);
   Term names[64]; for (uint32_t i = 0; i + 1 < k; i++) names[i] = mk(T_IVAR, 0, loc(dim_push(0)));
   Term r = 0;
   for (uint32_t i = k; i-- > 0;) {
     Term w = world; for (uint32_t j = 0; j < i && j + 1 < k; j++) w = restrict_push(w, names[j], 1, 0);
     if (i + 1 < k) w = restrict_push(w, names[i], 0, 0);
-    Term a = alt_in(alts[i], w), res = unify_cell(s1, a, w, CUR_KIND + 1); define_fields(a, res);
-    Term side = under(res, a);
-    r = r ? node3(T_SUP, 0, names[i], side, r) : side; }
-  if (k == 1) r = node3(T_SUP, 0, mk(T_IVAR, 0, loc(dim_push(0))), r, mk(T_ERA, 0, 0));
-  *own = r; HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = r;
+    Term side[64]; case_points(cs, side, w); Term a = side[i];
+    r = r ? node3(T_SUP, 0, names[i], under(unify_cell(s1, a, w), a), r) : under(unify_cell(s1, a, w), a); }
+  if (k == 1) r = node3(T_SUP, 0, mk(T_IVAR, 0, loc(dim_push(0))), r, mk(T_ERA, 0, 0));   /* one constructor is still a world */
+  *own = r; if (slot) *slot = r; HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = r;
   return r;
 }
 
@@ -1301,25 +1238,6 @@ void load_prelude(void) {
   C_UAU = ctor_intern("UaU", 6); C_ITV_ID = ctor_intern("Itv", 0);
 }
 
-/* ---- §9 the schedule: which of two independent demands is served first ----------------------------- */
-/* HYPER_SCHEDULE=right serves the right one, a number seeds a coin per choice, the default is left.  The
-   redex bag is the only scheduler, so the normal form and the count must not depend on it (Krama, §10.7). */
-static unsigned SCHED; static uint64_t SCHED_RNG;
-void sched_init(void) { SPLITS = getenv("HYPER_SPLITS") != 0; if (getenv("HYPER_CAP")) KIND_CAP = (unsigned)atoi(getenv("HYPER_CAP")); const char *s = getenv("HYPER_SCHEDULE"); if (!s || !*s) return;
-  if (!strcmp(s, "right")) SCHED = 1; else { SCHED = 2; SCHED_RNG = strtoull(s, 0, 10) * 2654435761ull + 88172645463325252ull; } }
-static bool right_first(void) {
-  if (SCHED < 2) return SCHED;
-  SCHED_RNG ^= SCHED_RNG << 13; SCHED_RNG ^= SCHED_RNG >> 7; SCHED_RNG ^= SCHED_RNG << 17; return SCHED_RNG & 1;
-}
-/* a projection demands every field: under a schedule other than the default they are forced in its order
-   first, each written back into its field, and the printer then meets values */
-void force_fields(Term t, int depth) {
-  if (depth <= 0 || !SCHED) return; t = whnf(t);
-  if (tag(t) == T_CTR) { uint32_t ar = ctr_arity(t); bool rev = right_first();
-    for (uint32_t k = 0; k < ar; k++) { uint32_t i = rev ? ar - 1 - k : k; HEAP[loc(t)+i] = whnf(HEAP[loc(t)+i]); force_fields(HEAP[loc(t)+i], depth-1); } }
-  else if (tag(t) == T_SUP) { bool rev = right_first(); uint32_t f = rev ? 2 : 1, g = rev ? 1 : 2;
-    HEAP[loc(t)+f] = whnf(HEAP[loc(t)+f]); force_fields(HEAP[loc(t)+f], depth-1); HEAP[loc(t)+g] = whnf(HEAP[loc(t)+g]); force_fields(HEAP[loc(t)+g], depth-1); }
-}
 
 /* ---- the loop (§3): weak head, demanded interaction ---------------------- */
 static uint64_t WHNF_STEPS;
@@ -1348,8 +1266,7 @@ static Term whnf_(Term t) {
       case T_VAR: {                                   /* a coordinate: force once, write back */
         Loc slot = loc(t) + 1; Term v = HEAP[slot];
         if (tag(v) == T_VAR && loc(v) == loc(t)) {            /* a generic element: its own slot */
-          if (!CHECK_MODE && is_coordinate(t)) { Term r = coordinate_asked(t); if (r != t) { t = r; continue; }
-            if (SCRUT == 0 && FORCE_LEFT && coordinate_def(t)) { force_def(t); if (!is_coordinate(t)) continue; } }
+          if (!CHECK_MODE && is_coordinate(t)) { Term r = coordinate_asked(t); if (r != t) { t = r; continue; } }
           return t; }
         v = whnf(v); HEAP[slot] = v; return v;
       }
@@ -1422,7 +1339,7 @@ static Term whnf_(Term t) {
           }
           case T_VAR: if (!CHECK_MODE && is_coordinate(f)) { Term r = pi_apply(f, x); if (r) { t = r; continue; } }   /* an unknown function: its value there is a coordinate */
                       HEAP[loc(t)] = f; return t;
-          case T_CASE: if (!CHECK_MODE && proof_case(f)) { receipt(R_CASE); t = under(scrut(HEAP[loc(f)]), node2(T_APP, 0, refl_body(f), x)); continue; }   /* J commutes out of an application */
+          case T_CASE: if (!CHECK_MODE && proof_case(f)) { receipt(R_CASE); t = under(inspect(HEAP[loc(f)]), node2(T_APP, 0, refl_body(f), x)); continue; }   /* J commutes out of an application */
                        HEAP[loc(t)] = f; return t;
           default: HEAP[loc(t)] = f; return t;        /* stuck spine */
         }
@@ -1461,7 +1378,7 @@ static Term whnf_(Term t) {
         return fce_apply(nm, ext(t), HEAP[loc(t) + 2], HEAP[loc(t) + 1]);
       }
       case T_CASE: {
-        Term s0 = scrut(HEAP[loc(t)]);
+        Term s0 = inspect(HEAP[loc(t)]);
         if (tag(s0) == T_ERA) return s0;                     /* a dead scrutinee: the match is dead */
         switch (tag(s0)) {
           case T_CTR: receipt(R_CASE); t = case_select(t, s0); continue;
@@ -1475,53 +1392,44 @@ static Term whnf_(Term t) {
           default: {
             if (CHECK_MODE) { if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }   /* the checker keeps its coordinates neutral and restricts frames per branch */
             Term pf = 0; Term s = peel(s0, &pf);
-            if (is_coordinate(s)) {                    /* a coordinate asked by a match: split when forced, along the match's constructors */
-              if (SCRUT || !FORCE_LEFT) { if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }
-              if (coordinate_def(s)) { force_def(s); if (is_coordinate(s)) { if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; } continue; }   /* derived: its identity decides it */
-              if (CUR_KIND > KIND_CAP) { if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }   /* under the cap a residual does not ask a port; the specification may */
-              receipt(R_SPLIT); FORCE_LEFT--; if (SPLITS) fprintf(stderr, "port %s k%u/%u\n", ctor_name(CODE[CODE[loc(HEAP[loc(t)+1])].b].ext), CUR_KIND, FORCE_KIND); HEAP[loc(s) + 1] = constructor_superposition(t, s); continue; }
+            if (is_coordinate(s)) {                    /* a coordinate asked by a match: the superposition of its type's constructors */
+              if (INSPECT) { if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }
+              receipt(R_SPLIT); HEAP[loc(s) + 1] = constructor_superposition(t, s); continue; }
             { Term p, v; if (under_faces(s0, &p, &v)) { receipt(R_CASE); t = under(restrict_proof(p, frame_faces(HEAP[loc(t)+2])), node3(T_CASE, 0, v, HEAP[loc(t)+1], HEAP[loc(t)+2])); continue; } }   /* J commutes out, the identity read in this match's world */
-            if (proof_cell(s)) {                       /* a match on an identity: the identity is decided when the match is forced */
-              if (SCRUT || !FORCE_LEFT) { if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }
+            if (proof_cell(s)) {                       /* a match on an identity: the identity is decided when the match is asked */
+              if (INSPECT) { if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }
               Term s2 = whnf(s0); if (s2 != s0) { if (!proof_cell(s2)) HEAP[loc(t)] = s2; continue; }   /* a reduct that is still an identity is reached through the memo, not written: it may be a child of this match's own body */
-              if (proof_kind(s) > FORCE_KIND) { if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }
-              /* undecided at this kind: the one branch is what it is under the identity; its superposition is the
-                 match's, a side under the identity at that face; a dead branch is dead */
+              /* undecided: the one branch is what it is under the identity; its superposition is the match's, a side
+                 under the identity at that face; a dead branch is dead */
               Term b = whnf(refl_body(t));
               if (tag(b) == T_ERA) return b;
               if (tag(b) == T_SUP) { Term nm = whnf(HEAP[loc(b)]); receipt(R_CASE_SUP);
                 return node3(T_SUP, 0, nm, under(fce_raw(0, nm, s0, 0), HEAP[loc(b)+1]), under(fce_raw(1, nm, s0, 0), HEAP[loc(b)+2])); }
               if (loc(HEAP[loc(t)+1]) != under_case()) { t = under(s0, b); continue; }
               if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }
-            if (SCRUT == 0 && FORCE_LEFT && blocked(s)) {
-              /* the innermost eliminator not facing a bare port is the one that decomposes: a match on a match on a
-                 comparison asks the comparison, not the constructor of its result; a match on a match on a port asks here */
+            if (INSPECT == 0 && blocked(s)) {          /* a match on a computation whose head is not yet a constructor: its output is bound */
+              /* at the innermost computation not facing a bare port: a match on a match on a comparison asks the comparison, not the constructor of its result */
               Term q = 0; Term in = peel(s, &q); Term deeper = tag(in) == T_CASE ? HEAP[loc(in)] : 0; Term dq = 0;
               if (deeper && tag(peel(deeper, &dq)) == T_CASE) { Term s2 = whnf(s0); if (s2 != s0) { HEAP[loc(t)] = s2; continue; } }
-              if (known_split(s0, 0)) continue;          /* the question is split already: its worlds, no new split */
-              receipt(R_SPLIT); FORCE_LEFT--; if (SPLITS) fprintf(stderr, "stuck %s k%u/%u\n", ctor_name(CODE[CODE[loc(HEAP[loc(t)+1])].b].ext), CUR_KIND, FORCE_KIND); Term alts[64]; uint32_t k = match_alts(t, 0, alts, 0); HEAP[loc(t)] = split_stuck(s0, alts, k); continue; }
+              if (known_split(s0, 0)) continue;          /* the point is split already: its worlds, no new split */
+              receipt(R_SPLIT); HEAP[loc(t)] = split_stuck(s0, t); continue; }
             if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t;
           }
         }
       }
       case T_TRACE: {                                 /* the run of e as a term: (value, events), each event the rule and the words it allocated
                                                          (research/sat_fibre/InteractionLedger.agda: Trace, Charge; the trace lives over the result) */
-        uint64_t from = TRACE_LEN; unsigned cap = KIND_CAP, fk = FORCE_KIND; int sc = SCRUT, fl = FORCE_LEFT;   /* a demand of its own */
-        KIND_CAP = 0; SCRUT = 0; Term v = nf(HEAP[loc(t)], 256); Term r = trace_over(v, from);
-        KIND_CAP = cap; FORCE_KIND = fk; SCRUT = sc; FORCE_LEFT = fl;
+        uint64_t from = TRACE_LEN; int in = INSPECT; INSPECT = 0; Term v = nf(HEAP[loc(t)], 256); Term r = trace_over(v, from); INSPECT = in;   /* a demand of its own */
         return r;
       }
       case T_LEAVES: {                                /* the leaves of a superposition as a list, dead sides dropped */
-        static Term out[1 << 14]; unsigned cap = KIND_CAP, fk = FORCE_KIND; int sc = SCRUT, fl = FORCE_LEFT;
-        KIND_CAP = 0; SCRUT = 0; int n = collapse_leaves(HEAP[loc(t)], out, 1 << 14);
-        KIND_CAP = cap; FORCE_KIND = fk; SCRUT = sc; FORCE_LEFT = fl;
+        static Term out[1 << 14]; int in = INSPECT; INSPECT = 0; int n = collapse_leaves(HEAP[loc(t)], out, 1 << 14); INSPECT = in;
         Term l = nil_cell(); for (int i = n; i-- > 0;) l = cons_cell(out[i], l);
         return l;
       }
       case T_UNIFY: { Term r = unify_step(t); if (!r) return t; t = r; continue; }
       case T_BOTH:  { Term r = both_step(t);  if (!r) return t; t = r; continue; }
       case T_OP2: {
-        if (right_first()) HEAP[loc(t)+1] = whnf(HEAP[loc(t)+1]);   /* §9: the other schedule serves the right operand first */
         Term a = whnf(HEAP[loc(t)]);
         if (tag(a) == T_SUP) { receipt(R_OP2_SUP); Loc name = loc(whnf(HEAP[loc(a)])); Term b = HEAP[loc(t)+1];
           return node3(T_SUP, 0, HEAP[loc(a)],
@@ -1564,7 +1472,7 @@ static Term whnf_(Term t) {
         if (tag(x) == T_GLU && tag(i) == T_NUM && HEAP[loc(i)] < 2) { receipt(R_CASE); erase_ports(1); return whnf(HEAP[loc(x) + HEAP[loc(i)]]); }
         if (tag(i) == T_NUM && tag(x) == T_CTR && HEAP[loc(i)] < ctr_arity(x)) { receipt(R_CASE); erase_ports(ctr_arity(x) - 1); return whnf(HEAP[loc(x) + HEAP[loc(i)]]); }   /* the field is a held port: it fires once */
         if (tag(x) == T_SUP) { receipt(R_CASE_SUP); return node3(T_SUP, 0, HEAP[loc(x)], node2(T_PROJ,0,i,HEAP[loc(x)+1]), node2(T_PROJ,0,i,HEAP[loc(x)+2])); }
-        if (!CHECK_MODE && proof_case(x)) { receipt(R_CASE); t = under(scrut(HEAP[loc(x)]), node2(T_PROJ, 0, i, refl_body(x))); continue; }   /* J commutes out of a projection */
+        if (!CHECK_MODE && proof_case(x)) { receipt(R_CASE); t = under(inspect(HEAP[loc(x)]), node2(T_PROJ, 0, i, refl_body(x))); continue; }   /* J commutes out of a projection */
         HEAP[loc(t)] = i; HEAP[loc(t)+1] = x; return t;
       }
       case T_GBASE: { Term g = whnf(HEAP[loc(t)]);
@@ -1606,15 +1514,15 @@ Term generic(Term fr) {              /* a fresh generic element: a slot that poi
 /* the normal form as the top demands it: rounds of splits, dead sides pruned, into every field */
 Term nf(Term t, int depth) {
   if (depth <= 0) return t;
-  t = resolve(t); if (tag(t) == T_SUP) t = prune(t);
+  t = whnf(t); if (tag(t) == T_SUP) t = prune(t);
   if (proof_case(t)) {                                  /* a value under an undecided identity: its body is normalised, its superpositions are the leaf's */
-    Term p = scrut(HEAP[loc(t)]), b = lift(nf(refl_body(t), depth-1), depth-1);
+    Term p = inspect(HEAP[loc(t)]), b = lift(nf(refl_body(t), depth-1), depth-1);
     if (tag(b) == T_ERA) return b;
     if (tag(b) == T_SUP) { Term nm = whnf(HEAP[loc(b)]); return nf(node3(T_SUP, 0, nm, under(fce_raw(0, nm, p, 0), HEAP[loc(b)+1]), under(fce_raw(1, nm, p, 0), HEAP[loc(b)+2])), depth); }
     return whnf(under(p, b)); }
   switch (tag(t)) {
     case T_CTR: for (uint32_t i = 0; i < ctr_arity(t); i++) { Term f = nf(HEAP[loc(t)+i], depth-1); HEAP[loc(t)+i] = f;
-        if (proof_case(f)) { HEAP[loc(t)+i] = refl_body(f); return nf(under(scrut(HEAP[loc(f)]), t), depth); } }   /* a field under an identity: the value is */
+        if (proof_case(f)) { HEAP[loc(t)+i] = refl_body(f); return nf(under(inspect(HEAP[loc(f)]), t), depth); } }   /* a field under an identity: the value is */
       return t;
     case T_SUP: { uint32_t w = WORLD;
       WORLD = side_world(t, 0); HEAP[loc(t)+1] = nf(HEAP[loc(t)+1], depth-1); WORLD = side_world(t, 1); HEAP[loc(t)+2] = nf(HEAP[loc(t)+2], depth-1); WORLD = w;
@@ -1624,28 +1532,8 @@ Term nf(Term t, int depth) {
 }
 /* the trace over a value: at each leaf of the superposition (the value lifted), the events that fired in that leaf's
    world or any world above it, so a shared prefix is every leaf's and a side's own work is its own */
-/* a leaf's residuals as (question, constructor); a contradiction is a leaf that should be dead */
-static uint64_t LK1[256], LK2[256]; static unsigned LKIND[256];
-static int leaf_constraints(Term p, uint64_t *ks, uint32_t *cs, int n, int max) {
-  if (n >= max) return n;
-  p = scrut(p);
-  if (tag(p) == T_BOTH) { n = leaf_constraints(HEAP[loc(p)], ks, cs, n, max); return leaf_constraints(HEAP[loc(p)+1], ks, cs, n, max); }
-  if (tag(p) != T_UNIFY) return n;
-  Term x = HEAP[loc(p)], y = scrut(HEAP[loc(p)+1]), faces = HEAP[loc(p)+2]; x = scrut(x);
-  while (tag(x) == T_FCE && ext(x) < 2 && tag(HEAP[loc(x)]) == T_IVAR) { faces = restrict_push(faces, HEAP[loc(x)], ext(x), 0); x = scrut(HEAP[loc(x)+1]); }
-  if (tag(x) != T_CASE || tag(y) != T_CTR) return n;
-  uint64_t k1, k2; KEY_FACES = faces; bool ok = question_key(x, &k1, &k2); KEY_FACES = 0; if (!ok) return n;
-  ks[n] = k1 ^ (k2 << 1); cs[n] = ctr_id(y); LK1[n] = k1; LK2[n] = k2; LKIND[n] = ext(p); return n + 1;
-}
-static void leaf_check(Term v) {
-  uint64_t ks[256]; uint32_t cs[256]; int n = 0;
-  for (Term t = v; tag(t) == T_CASE && proof_case(t); t = scrut(refl_body(t))) n = leaf_constraints(scrut(HEAP[loc(t)]), ks, cs, n, 256);
-  int conflicts = 0; for (int i = 0; i < n; i++) for (int j = i + 1; j < n; j++) if (ks[i] == ks[j] && cs[i] != cs[j]) { conflicts++;
-    fprintf(stderr, "[conflict: %s (kind %u) vs %s (kind %u), question split registered: %d]\n", ctor_name(cs[i]), LKIND[i], ctor_name(cs[j]), LKIND[j], *memo_slot(LK1[i], LK2[i] ^ 0x51) != 0); }
-  fprintf(stderr, "[leaf: %d constraints, %d conflicts]\n", n, conflicts);
-}
 static Term trace_over(Term v, uint64_t from) {
-  v = lift(v, 256); if (SPLITS && tag(v) != T_SUP && tag(v) != T_ERA) leaf_check(v);
+  v = lift(v, 256);
   if (tag(v) == T_SUP) { uint32_t w = WORLD; Term nm = HEAP[loc(v)];
     WORLD = side_world(v, 0); Term a = trace_over(HEAP[loc(v)+1], from); WORLD = side_world(v, 1); Term b = trace_over(HEAP[loc(v)+2], from); WORLD = w;
     return node3(T_SUP, 0, nm, a, b); }
@@ -1686,7 +1574,7 @@ static uint32_t side_world(Term sup, unsigned side) {
 static bool world_within(uint32_t w, uint32_t of) { for (;;) { if (w == of) return true; if (!w) return false; w = WPARENT[w]; } }
 /* a superposition with a dead side is its other side; with both dead it is dead (an empty fibre) */
 static Term prune(Term t) {
-  t = resolve(t); if (tag(t) != T_SUP) return t;
+  t = whnf(t); if (tag(t) != T_SUP) return t;
   uint32_t w = WORLD;
   WORLD = side_world(t, 0); Term a = prune(HEAP[loc(t)+1]); WORLD = side_world(t, 1); Term b = prune(HEAP[loc(t)+2]); WORLD = w;
   HEAP[loc(t)+1] = a; HEAP[loc(t)+2] = b;
@@ -1696,7 +1584,7 @@ static Term prune(Term t) {
 }
 static void print_rec(Term t, int depth) {
   if (depth <= 0) { receipt(R_ERASE); printf("…"); return; }   /* §3.3: the printer cuts a port */
-  t = resolve(t); if (tag(t) == T_SUP) t = prune(t);
+  t = whnf(t); if (tag(t) == T_SUP) t = prune(t);
   switch (tag(t)) {
     case T_NUM: print_num(t); break;
     case T_OP1: printf("(op%u ", ext(t)); print_rec(HEAP[loc(t)], depth-1); printf(")"); break;
@@ -1724,13 +1612,13 @@ static void print_rec(Term t, int depth) {
     case T_REF: printf("@%s", BOOK[loc(t)].name); break;
     case T_APP: printf("("); print_rec(HEAP[loc(t)], depth-1); printf(" "); print_rec(HEAP[loc(t)+1], depth-1); printf(")"); break;
     case T_FCE: printf("[i%u:=", loc(whnf(HEAP[loc(t)]))); if (ext(t) < 2) printf("%u", ext(t)); else print_rec(HEAP[loc(t)+2], depth-1); printf("]"); print_rec(HEAP[loc(t)+1], depth-1); break;
-    case T_CASE: if (proof_case(t)) { printf("("); print_rec(refl_body(t), depth-1); printf(" under "); print_rec(scrut(HEAP[loc(t)]), depth-1); printf(")"); break; }   /* a value under an undecided identity */
+    case T_CASE: if (proof_case(t)) { printf("("); print_rec(refl_body(t), depth-1); printf(" under "); print_rec(inspect(HEAP[loc(t)]), depth-1); printf(")"); break; }   /* a value under an undecided identity */
                  { uint32_t code = loc(HEAP[loc(t)+1]); Term fr = HEAP[loc(t)+2]; printf("case%u(", code); print_rec(HEAP[loc(t)], depth-1);   /* a stuck match: its scrutinee and what its code reads */
-                   SCRUT++; for (uint32_t lvl = 0; lvl < frame_depth(fr); lvl++) if (code_uses(code, lvl)) { bool dim; Term v = frame_lookup(fr, lvl, &dim); if (dim) continue; v = whnf(v); if (tag(v) == T_LAM || tag(v) == T_PLM) continue; printf(";"); print_rec(v, depth-1); } SCRUT--;
-                   printf(")"); break; }
-    case T_UNIFY: SCRUT++; printf("("); print_rec(HEAP[loc(t)], depth-1); printf(" ≡ "); print_rec(HEAP[loc(t)+1], depth-1); printf(")"); SCRUT--;   /* an undecided identity: its sides as they stand, not asked */
+                   INSPECT++; for (uint32_t lvl = 0; lvl < frame_depth(fr); lvl++) if (code_uses(code, lvl)) { bool dim; Term v = frame_lookup(fr, lvl, &dim); if (dim) continue; v = whnf(v); if (tag(v) == T_LAM || tag(v) == T_PLM) continue; printf(";"); print_rec(v, depth-1); }
+                   INSPECT--; printf(")"); break; }
+    case T_UNIFY: INSPECT++; printf("("); print_rec(HEAP[loc(t)], depth-1); printf(" ≡ "); print_rec(HEAP[loc(t)+1], depth-1); printf(")"); INSPECT--;   /* an undecided identity: its sides as they stand, not asked */
       break;
-    case T_BOTH: SCRUT++; printf("("); print_rec(HEAP[loc(t)], depth-1); printf(" ∧ "); print_rec(HEAP[loc(t)+1], depth-1); printf(")"); SCRUT--; break;
+    case T_BOTH: INSPECT++; printf("("); print_rec(HEAP[loc(t)], depth-1); printf(" ∧ "); print_rec(HEAP[loc(t)+1], depth-1); printf(")"); INSPECT--; break;
     case T_HELIM: printf("helim("); if (HEAP[loc(t)]) print_rec(HEAP[loc(t)], depth-1); else printf("_"); printf(")"); break;
     case T_CFIELDS: printf("fields("); print_rec(HEAP[loc(t)], depth-1); printf(")"); break;
     case T_REFLECT: printf("reflect("); print_rec(HEAP[loc(t)], depth-1); printf(")"); break;
@@ -1752,7 +1640,7 @@ static void print_rec(Term t, int depth) {
     default: printf("?%u", tag(t));
   }
 }
-void print_term(Term t, int depth) { force_fields(t, depth); print_rec(t, depth); }
+void print_term(Term t, int depth) { print_rec(t, depth); }
 
 /* §6: the census of receipts. Every interaction left one receipt in the trace; the census is its fold
    by rule (AdiBija: every analyzer is a fold over the trace). Definitional unfolding and the face map's
@@ -1913,7 +1801,7 @@ void print_bend(Term t, int depth) { pb(t, depth); }
    branches are printed breadth-first, left before right (Core.Collapse.flatten). */
 static Term lift(Term t, int depth) {
   if (depth <= 0) return t;
-  t = resolve(t); if (tag(t) == T_SUP) t = prune(t);
+  t = whnf(t); if (tag(t) == T_SUP) t = prune(t);
   switch (tag(t)) {
     case T_SUP: return t;
     case T_CTR: {
@@ -1948,7 +1836,6 @@ char *term_string(Term t, int depth) {
   return buf;
 }
 void collapse_print(Term t) {
-  force_fields(t, 256);
   Term q[1 << 16]; uint32_t head = 0, tail = 0; q[tail++] = t;
   while (head < tail) {
     Term v = lift(q[head++], 256);

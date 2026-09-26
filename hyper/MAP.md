@@ -289,9 +289,10 @@ them.
    an identity are not two independent demands: a side that dies ends the
    other, so their order is the term's (`x ≡ y` forces `x` first), and a run
    that forced them in the other order is a different question with a different
-   count (`n-run2`: 10,241 against 10,250). The hypothesis of `RandomDescent`
-   for this loop's step relation is an Agda obligation and is not discharged
-   here; nothing in this file claims it is.
+   count (`n-run2`: 10,241 against 10,250). The diamond of `RandomDescent` is
+   a theorem of nets; a runtime whose count depends on which of two independent
+   demands fires first is not a net, and that is a defect to remove, never a
+   proof left to write.
 6. The chart move under a checked path.
 7. The Bend dialect's grammar as a book with its certificate; parallel demand
    over the one arena.

@@ -2,6 +2,13 @@
 ; The dispatch (which row fires, regularity, r ≡ s, true/false faces, constructor-headed composites)
 ; is in cell.c; these are the rows, transcribed once from Core/WHNF.hs.  A type is a CTR cell.
 
+;  the data types of the core, declared: a type's constructors are its declaration and nothing else knows them.
+;  A coordinate of such a type, asked by a match, is the superposition of these constructors (fields fresh coordinates).
+(hit Unit () (Tt : (ctr Unit)))
+(hit Bool () (False : (ctr Bool)) (True : (ctr Bool)))
+(hit Nat () (Zer : (ctr Nat)) (Suc : (ctr Pi (ctr Nat) (lam n (ctr Nat)))))
+(hit List (~ A) (Nil : (ctr Pi (ctr Set) (lam A (ctr List A)))) (Cons : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam h (ctr Pi (ctr List A) (lam t (ctr List A)))))))))
+
 (def pi-dom  (lam T (case T (Pi (A B) A))))
 (def pi-cod  (lam T (case T (Pi (A B) B))))
 (def sig-fst (lam T (case T (Sig (A B) A))))

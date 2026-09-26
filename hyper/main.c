@@ -59,7 +59,6 @@ static void load_next_to_exe(const char *exe, const char *name) {
 }
 int main(int argc, char **argv) {
   { struct rlimit rl; if (!getrlimit(RLIMIT_STACK, &rl)) { rl.rlim_cur = rl.rlim_max == RLIM_INFINITY ? (rlim_t)4 << 30 : rl.rlim_max; setrlimit(RLIMIT_STACK, &rl); } }   /* deep terms recurse deep */
-  sched_init();
   if (argc < 3) { fprintf(stderr, "usage: hyper run FILE [DEF] | hyper bend FILE | hyper check FILE | hyper interact FILE [DEF]\n"); return 1; }
   bool bend = !strcmp(argv[1], "bend") || !strcmp(argv[1], "check");
   bool inter = !strcmp(argv[1], "interact");
@@ -73,9 +72,9 @@ int main(int argc, char **argv) {
   const char *entry = argc > 3 ? argv[3] : (bend ? "b/main" : "main");
   int id = book_find(entry); if (id < 0) { fprintf(stderr, "hyper: no %s\n", entry); return 1; }
   Term r = run_def((uint32_t)id);
-  if (bend) { collapse_print(r); fprintf(stderr, "- Itrs: %llu\n- Words: %u\n- Rounds: %llu\n", (unsigned long long)ITRS, (unsigned)HEAP_LEN, (unsigned long long)ROUNDS); if (getenv("HYPER_CENSUS")) print_census(); return 0; }
+  if (bend) { collapse_print(r); fprintf(stderr, "- Itrs: %llu\n- Words: %u\n", (unsigned long long)ITRS, (unsigned)HEAP_LEN); if (getenv("HYPER_CENSUS")) print_census(); return 0; }
   print_term(r, 64); printf("\n");
-  printf("- Itrs: %llu\n- Words: %u\n", (unsigned long long)ITRS, (unsigned)HEAP_LEN); if (getenv("HYPER_CENSUS")) printf("- Rounds: %llu\n", (unsigned long long)ROUNDS);
+  printf("- Itrs: %llu\n- Words: %u\n", (unsigned long long)ITRS, (unsigned)HEAP_LEN);
   if (getenv("HYPER_CENSUS")) print_census();
   if (getenv("HYPER_TRACE")) { printf("- Trace: "); print_trace(0); }
   return 0;

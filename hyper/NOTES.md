@@ -276,12 +276,18 @@ the fibre (§2), the census over inputs is §3, the trace is §2's trace, and th
 count is §6's ledger. The step relation must be a net (§6), the presentation a
 compact cube expanded only on demand (§6), the chart move §7.
 
-What in `hyper/cell.c` is mine and not this: a scheduler of kinds and rounds
-deciding when a residual identity may ask a port; a derived-coordinate shortcut
-asking an identity instead of splitting a field; tables of the constructors of
-Unit, Bool, Nat and List. These are opinions about order and organs; §5 says
-order is either a certificate or data, never a policy, and §9 says the
-constructors of a type are its declaration.
+What was in `hyper/cell.c` and was not this, now deleted: a scheduler of
+kinds and rounds deciding when a residual identity may ask a port; a
+derived-coordinate shortcut that never split a field; tables of the
+constructors of Unit, Bool, Nat and List; a schedule knob. §5 says order is
+either a certificate or data, never a policy, and §9 says the constructors of a
+type are its declaration, so `prelude.hyper` declares the four and the runtime
+and checker read them there. What remains is one rule at a match: the
+scrutinee is inspected, not forced; a coordinate's head is the superposition of
+its type's constructors; a computation's head is bound at its output, the
+constructors superposed with the identity retained (the fibre law read at the
+output, §1), and one point splits once. Identity sides are inspected and forced
+only by what faces them.
 
 What `hyper` has never done: resolve a Π-typed declaration along a free
 argument. `sort L` for free `L`, `sortCost n` for free `n`, the equivalence

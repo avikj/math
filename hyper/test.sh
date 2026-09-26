@@ -68,11 +68,6 @@ checkn t/erase.hyper and-t   '#True{}' 3
 checkn t/erase.hyper const   '7' 2
 checkn t/erase.hyper dflt    '3' 3
 checkn t/erase.hyper carry   '1' 2
-# §9 schedules: the redex bag is the only scheduler; serving the right demand first, or a coin per choice, gives
-# the same value in the same count on every probe above (a fresh dimension's printed name is gauge, not value)
-for pair in t/basic.hyper:main t/sup.hyper:dist t/sup.hyper:matchsup t/kan.hyper:reg t/kan.hyper:hc-nat t/kan.hyper:pitrp t/ua.hyper:fwd-true t/setcomp.hyper:via-pi t/hit.hyper:helim-sq t/hit.hyper:merid-t t/erase.hyper:and-f t/sort.hyper:sort-A t/sort.hyper:sort-dup t/sort.hyper:n-run2 t/sort.hyper:c-isort3; do
-  f=${pair%%:*}; d=${pair##*:}; a=$(./hyper run $f $d 2>&1 | grep -v Words | tr '\n' ' '); b=$(HYPER_SCHEDULE=right ./hyper run $f $d 2>&1 | grep -v Words | tr '\n' ' '); c=$(HYPER_SCHEDULE=7 ./hyper run $f $d 2>&1 | grep -v Words | tr '\n' ' ')
-  if [ "$a" = "$b" ] && [ "$a" = "$c" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL schedule $f $d: [$a] [$b] [$c]"; fi; done
 # the census of a question (Fibre.WholePartialDesa), as programs: Σ a. f a ≡ b declared with no witness, its points asked.
 # f : Unit → Bool is one point at True and none at False; g : Bool → Unit is two points at Tt (a bit lost); g∘f is one point
 # (the sequential diagnostic would add the losses and be wrong); `leaves` is the census as a list.

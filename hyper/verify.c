@@ -551,11 +551,7 @@ static bool check_case(uint32_t c, Term fr, Term goal) {
   }
   /* a constructor-indexed match: branches by constructor id, fields bound as coordinates */
   struct { uint32_t cid; uint32_t nf; Term ftypes[4]; bool dep; } shape[8]; uint32_t ns = 0;
-  if (is_ctr(xT, C_UNIT)) { shape[ns++] = (typeof(shape[0])){ C_TT, 0, {0}, false }; }
-  else if (is_ctr(xT, C_BOOL)) { shape[ns++] = (typeof(shape[0])){ C_FALSE, 0, {0}, false }; shape[ns++] = (typeof(shape[0])){ C_TRUE, 0, {0}, false }; }
-  else if (is_ctr(xT, C_NAT)) { shape[ns++] = (typeof(shape[0])){ C_ZER, 0, {0}, false }; shape[ns++] = (typeof(shape[0])){ C_SUC, 1, { ctr0(C_NAT) }, false }; }
-  else if (is_ctr(xT, C_LIST)) { Term A = HEAP[loc(xT)]; shape[ns++] = (typeof(shape[0])){ C_NIL, 0, {0}, false }; shape[ns++] = (typeof(shape[0])){ C_CONS, 2, { A, xT }, false }; }
-  else if (is_ctr(xT, C_SIG)) { shape[ns++] = (typeof(shape[0])){ C_PAIR, 2, { HEAP[loc(xT)], HEAP[loc(xT)+1] }, true }; }
+  if (is_ctr(xT, C_SIG)) { shape[ns++] = (typeof(shape[0])){ C_PAIR, 2, { HEAP[loc(xT)], HEAP[loc(xT)+1] }, true }; }
   else if (is_ctr(xT, C_EQL)) { shape[ns++] = (typeof(shape[0])){ C_REFL, 0, {0}, false }; }
   else if (is_ctr(xT, named("Sub", 3))) { shape[ns++] = (typeof(shape[0])){ named("InS", 1), 1, { HEAP[loc(xT)] }, false }; }
   else if (is_ctr(xT, C_ENUM)) {
@@ -571,7 +567,12 @@ static bool check_case(uint32_t c, Term fr, Term goal) {
     if (uncovered) { uint32_t df = BRANCH(0xFFFFFF); if (!df) return fail_ci("incomplete match"); if (!check(CODE[df].b, fr, goal)) return false; }
     return true;
   }
-  else return fail_mis(ctr0(C_NAT), xT);
+  else {                                           /* a declared data type: its constructors, from the declaration */
+    Term alts[8]; uint32_t k = type_constructors(xT, alts, 8, 0); if (!k) return fail_mis(ctr0(C_NAT), xT);
+    for (uint32_t i = 0; i < k; i++) { uint32_t nf = ctr_arity(alts[i]); if (nf > 4) return fail_ci("constructor arity > 4");
+      shape[ns] = (typeof(shape[0])){ ctr_id(alts[i]), nf, {0}, false };
+      for (uint32_t j = 0; j < nf; j++) shape[ns].ftypes[j] = coordinate_type(HEAP[loc(alts[i])+j]);
+      ns++; } }
   for (uint32_t i = 0; i < ns; i++) {
     uint32_t br = BRANCH(shape[i].cid);
     if (!br) { if (BRANCH(0xFFFFFF)) continue; return fail_ci("incomplete match"); }

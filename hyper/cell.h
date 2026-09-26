@@ -130,7 +130,7 @@ extern SNode   *CODE;   extern uint32_t CODE_LEN;
 extern uint32_t *KIDS;  extern uint32_t KIDS_LEN;
 extern Def     *BOOK;   extern uint32_t BOOK_LEN;
 extern const char **BNAMES; extern uint32_t BNAMES_LEN;   /* field names of case branches (S_BRANCH.num = index), for presentation */
-extern uint64_t ITRS, ROUNDS;
+extern uint64_t ITRS;
 extern uint32_t *TRACE; extern uint64_t TRACE_LEN;   /* receipts: rule ids */
 extern Loc      *TRACE_NODE;                          /* the node each receipt fired on */
 extern Loc      *TRACE_HEAP;                          /* the heap length at each receipt: the words an event allocated are the gap to the next */
@@ -183,8 +183,9 @@ Term dim_push(Term parent);
 Term restrict_push(Term parent, Term name, unsigned side, Term by);
 Term generic(Term fr);
 Term coordinate(Term type);
-Term resolve(Term t);            /* the top-level demand: rounds of one split each */
+
 Term coordinate_type(Term v);
+uint32_t type_constructors(Term T, Term *alts, uint32_t max, Term world);   /* the constructors of a data type from its declaration, fields fresh coordinates */
 Term frame_lookup(Term f, uint32_t lvl, bool *is_dim);
 bool frame_is_dim(Term f, uint32_t lvl);
 bool code_uses(uint32_t c, uint32_t lvl);
@@ -208,6 +209,6 @@ void collapse_print(Term t);
 int  collapse_leaves(Term t, Term *out, int max);   /* the leaves of a superposition, in collapse order */
 char *term_string(Term t, int depth);           /* one line per branch, in Bend2's collapse order */
 void print_census(void);               /* §6: the receipts by rule (the trace is the retained history) */
-void sched_init(void);                 /* §9: HYPER_SCHEDULE, which of two independent demands is served first */
-void force_fields(Term t, int depth);
+
+
 #endif
