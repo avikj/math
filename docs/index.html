@@ -85,23 +85,24 @@
 <ul>
 <li>A <strong>type</strong> is a set of values (<code>a : A</code>); a <strong>function</strong> <code>f : A → B</code> maps values to values. A <strong>pair type</strong> <code>Σ (a : A) (P a)</code> holds pairs <code>(a , w)</code> with <code>w : P a</code>.</li>
 <li>Equality is a type: <code>x = y</code> is the type of <strong>proofs</strong> that <code>x</code> equals <code>y</code>; <code>refl : x = x</code>. A proof is a value you keep.</li>
-<li><strong>Contractible</strong> = isomorphic to the one-element type: one element, and any two elements equal.</li>
-<li><strong>Fact:</strong> <code>Σ (y : A) (x = y)</code> — the values <code>y : A</code> equal to <code>x</code>, each with its proof — is contractible: exactly one, <code>(x , refl)</code>. This <em>is</em> the eliminator of <code>=</code> (path induction, <code>J</code>): the contraction sends every <code>(y, p : x = y)</code> to <code>(x , refl)</code>, so a family on those pairs is fixed by its value there and transported outward — to act on every proof <code>x = y</code> it suffices to act at <code>refl</code>.</li>
-<li>Equivalently, <strong>substitution:</strong> a proof <code>p : x = y</code> gives <code>transport p : P x → P y</code> and its inverse, with <code>transport refl = id</code>. A program that runs, reversible — lossless.</li>
+<li><strong>Contractible</strong> = isomorphic to the one-element type — equivalently, inhabited with any two elements equal (the map to the point is invertible exactly when some element maps back and all elements agree).</li>
+<li><strong>Substitution (transport).</strong> A proof <code>p : x = y</code> gives <code>transport p : P x → P y</code> for any family <code>P</code>, invertible by <code>transport</code> along the reverse of <code>p</code>, with <code>transport refl = id</code> — a reversible, lossless program.</li>
+<li><strong>Fact:</strong> <code>Σ (y : A) (x = y)</code> — the values <code>y : A</code> equal to <code>x</code>, each with its proof — is contractible: one point <code>(x , refl)</code>, with a path to every <code>(y, p)</code>.</li>
+<li><strong>Path induction (<code>J</code>).</strong> To act on every <code>(y, p : x = y)</code> it therefore suffices to act at <code>(x , refl)</code>: transport the value there along that pair's path back to <code>(x , refl)</code>. This <em>is</em> the eliminator of <code>=</code> — and <code>transport</code> is exactly <code>J</code> on a family that ignores the proof, so the two are one thing.</li>
 <li>§1 is this fact with <code>x</code> replaced by a function's output.</li>
 </ul>
 <h2><span class="n">1.</span> Partition by output</h2>
 <ul>
 <li><code>f : A → B</code>; the fibre over <code>b</code> is <code>f⁻¹(b) = Σ (a) (f a = b)</code> — each input with the proof it maps to <code>b</code>, kept.</li>
-<li><code>A ≅ Σ (b : B) f⁻¹(b)</code>, by <code>a ↦ (f a, a, refl)</code>. Nothing lost.</li>
-<li>This lossless completion is <em>unique</em> — the completions of <code>f</code> form a contractible type (<code>Ekatva</code>, checked). A completion is a family <code>T</code> over <code>B</code> with <code>A ≅ Σ (b) T(b)</code> lying over <code>f</code>; unwound, that fixes at each output <code>b</code> a type equivalent to <code>f⁻¹(b)</code>, and the space of types equivalent to a fixed one is contractible (univalence — exactly one, up to a path). So <code>T</code> is forced to be the fibre family: the decomposition is not a chosen encoding.</li>
+<li><code>A ≅ Σ (b : B) f⁻¹(b)</code>, by <code>a ↦ (f a, (a, refl))</code> with inverse <code>(b, (a, p)) ↦ a</code>; both round trips are <code>refl</code> (the return uses <code>p : f a = b</code>). Nothing lost.</li>
+<li>This lossless completion is <em>unique</em> — the completions of <code>f</code> form a contractible type (<code>Ekatva</code>, checked). A completion is a family <code>T</code> over <code>B</code> with an equivalence <code>A ≅ Σ (b) T(b)</code> lying over <code>f</code>; comparing fibres over each <code>b</code>, it restricts to <code>f⁻¹(b) ≅ T(b)</code>. So a completion is a choice, at each <code>b</code>, of a type equivalent to <code>f⁻¹(b)</code> — and the space of types equivalent to a fixed one is contractible (univalence, §2: <code>Σ (X) (X ≅ Y)</code> has one point up to a path). A product of contractible choices is contractible, so <code>T</code> is forced to be the fibre family: the decomposition is not a chosen encoding.</li>
 <li>Every decomposition below is this: group by output, keep the fibre.</li>
 </ul>
 <h2><span class="n">2.</span> Isomorphism is substitution</h2>
 <ul>
 <li><code>A ≅ B</code> (isomorphism): maps both ways with proofs they cancel — runnable in both directions.</li>
-<li>Equivalently: every fibre <code>f⁻¹(b)</code> is contractible (§0) — the inverse <code>g</code> centers it at <code>(g b, ·)</code>, and the cancellation laws contract every other <code>(a, p : f a = b)</code> onto that center.</li>
-<li>Univalence: <code>A ≅ B ⇒ A = B</code>, and <code>transport</code> along it <em>is</em> <code>f</code>, executing. Isomorphic structures interchange by a program, losslessly.</li>
+<li>Equivalently: every fibre <code>f⁻¹(b)</code> is contractible (§0) — an inverse <code>g</code> centers it at <code>(g b, ·)</code>, and the cancellation laws contract every <code>(a, p : f a = b)</code> onto that center; conversely, choosing the center of each fibre <em>is</em> an inverse. A two-sided inverse and contractible fibres are the same condition.</li>
+<li><strong>Univalence:</strong> <code>A ≅ B ⇒ A = B</code>, and <code>transport</code> along that equality <em>is</em> the isomorphism, executing (its computation rule). Hence the space of types equal to — so, here, equivalent to — a fixed one is contractible, the fact §1 used. Isomorphic structures interchange by a program, losslessly.</li>
 </ul>
 <h2><span class="n">3.</span> The effect can be free; the steps are not</h2>
 <ul>
