@@ -484,12 +484,14 @@ static uint64_t branch_drops(uint32_t first_br, uint32_t br, Term fr, uint32_t f
   memo_put(b, base, v); return v;
 }
 
-/* ---- a coordinate asked by a match ---------------------------------------------------------------------
-   A coordinate is a generic element: a slot that points to itself.  When an eliminator asks it which
-   constructor it is, it becomes the superposition of the constructors the eliminator lists, each with fresh
-   coordinates for its fields, written into its own slot so that every holder of the coordinate sees the same
-   correlated superposition; the match then commutes over it by the ordinary rule and each side carries the
-   face that decided it.  Nothing here names a type: the constructors are the eliminator's own branches. */
+/* ---- the fibre law at a match (MAP.md §0.1) --------------------------------------------------------------
+   A coordinate is a free point: a slot that points to itself, with its type.  A match demands the head of its
+   scrutinee.  A coordinate's head is the superposition of its type's declared constructors, each with fresh
+   coordinates for its fields, written into its own slot so every holder meets the same correlated superposition;
+   the match commutes over it and each side carries the face that decided it.  A computation's head is bound at
+   its output: the same superposition, each constructor under the identity of the computation with it, the
+   identity decided when demanded.  A scrutinee is inspected, not forced: binding an output is the act of the
+   match that faces the point. */
 /* a run-time coordinate: a declared unknown or a field of one.  Its frame is marked (level 0xFFFFFF) and carries its
    type in a third word; the presentation's and the checker's generic elements are not marked and are never split. */
 /* a coordinate: a slot pointing at itself, its type, and the world (faces) it lives in, so that a binding made under
@@ -557,35 +559,9 @@ static Term *memo_slot(uint64_t k1, uint64_t k2) {
     if (c->k1 == k1 && c->k2 == k2) return &c->v;
     h++; }
 }
-/* the identity of a term as a question's part: a coordinate by its cell, a constant by its value, a function by its
-   code and the identities of what its frame holds (its own fixed point counted as itself), a stuck match by its
-   question; anything else has none */
-static Term peel(Term v, Term *faces); static Term frame_faces(Term fr); static int frame_side(Term fr, Loc name);
-static bool question_key_d(Term s, int depth, uint64_t *k1, uint64_t *k2); static bool known_split(Term s, Term faces); static Term split_stuck(Term s, Term cs);
-static Term KEY_FACES, KEY_FRAME;                        /* the faces (and the frame's restrictions) an identity is read under: a superposed slot is its side there */
-static Term frame_slot_raw(Term f, uint32_t lvl) { for (;;) { if (tag(f) == T_RESTRICT) { f = HEAP[loc(f)]; continue; } if (ext(f) == lvl) return HEAP[loc(f)+1]; f = HEAP[loc(f)]; } }
-static bool term_identity(Term v, int depth, uint64_t *id) {
-  if (depth < 0) return false;
-  v = inspect(v);
-  for (;;) { Term q = 0; v = peel(v, &q);                            /* a port under waiting faces is the port */
-    if (tag(v) != T_SUP) break; Term nm = whnf(HEAP[loc(v)]); if (tag(nm) != T_IVAR) break;
-    int w = world_side(KEY_FACES, loc(nm)); if (w < 0) w = frame_side(KEY_FRAME, loc(nm));
-    if (w < 0) break; v = inspect(HEAP[loc(v) + 1 + w]); }
-  if (is_coordinate(v)) { *id = (uint64_t)loc(v) << 8 | 1; return true; }
-  if (tag(v) == T_CTR && ctr_arity(v) == 0) { *id = (uint64_t)ctr_id(v) << 8 | 2; return true; }
-  if (tag(v) == T_NUM) { *id = HEAP[loc(v)] << 8 | 3; return true; }
-  if (tag(v) == T_REF) { *id = (uint64_t)loc(v) << 8 | 4; return true; }
-  if (tag(v) == T_LAM || tag(v) == T_PLM) { uint32_t code = loc(HEAP[loc(v)]); uint64_t h = (uint64_t)code << 8 | 6; if (depth <= 0) { *id = h; return true; }
-    for (Term f = HEAP[loc(v)+1]; tag(f); f = HEAP[loc(f)]) { if (tag(f) == T_RESTRICT || !code_uses(code, ext(f))) continue;   /* only what the body reads */
-      if (tag(f) == T_DIM) return false;
-      Term w = HEAP[loc(f)+1]; uint64_t sub;
-      if (tag(w) == T_LAM && loc(HEAP[loc(w)]) == code) sub = 7; else if (!term_identity(w, depth - 1, &sub)) return false;
-      h = (h ^ sub) * 0xC2B2AE3D27D4EB4Full; }
-    *id = h; return true; }
-  if (tag(v) == T_CASE) { uint64_t a, b; if (!question_key_d(v, depth - 1, &a, &b)) return false; *id = a ^ (b << 1); return true; }
-  *id = (uint64_t)loc(v) << 8 | 5; return true;                        /* anything else: by its cell */
-}
-static uint64_t arg_identity(Term x) { uint64_t id; if (term_identity(x, 3, &id)) return id; return (uint64_t)loc(inspect(x)) << 8 | 5; }
+/* the point an argument is: its cell, inspected (a coordinate is its slot; anything else the cell it stands at) */
+static Term peel(Term v, Term *faces);
+static uint64_t arg_identity(Term x) { Term v = inspect(x); Term q = 0; v = peel(v, &q); return (uint64_t)loc(v) << 8 | tag(v); }
 /* an unknown function applied: the coordinate of its codomain at the argument.  The same argument asks the same
    question, so the coordinate is one per (function, argument): a free port fires once. */
 static Term pi_apply(Term f, Term x) {
@@ -726,8 +702,6 @@ static Term unify_step(Term t) {
       return r; }
     if (tag(x) == T_NUM && tag(y) == T_NUM) { receipt(R_UNIFY); return (ext(x) == ext(y) && HEAP[loc(x)] == HEAP[loc(y)]) ? refl_cell() : mk(T_ERA, 0, 0); }
     if (INSPECT == 0) {                                                /* forced: a side whose head is not yet a constructor is bound at its output */
-      if (blocked(x0) && known_split(x, faces)) continue;              /* the point is split already: its worlds */
-      if (blocked(y0) && known_split(y, faces)) continue;
       Term x2 = force(x0), y2 = x2 == x0 ? force(y0) : y0;             /* the term's order: an identity's sides are not two independent demands, a dead one ends the other */
       if (x2 != x0) { HEAP[loc(t)] = x2; continue; }
       if (y2 != y0) { HEAP[loc(t)+1] = y2; continue; } }
@@ -789,40 +763,15 @@ static Term frame_faces(Term fr) { Term w = 0; for (Term f = fr; tag(f); f = HEA
 static unsigned cell_words(unsigned g) {
   switch (g) { case T_CASE: case T_FCE: case T_HCM: case T_UNIFY: return 3; case T_BOTH: case T_HELIM: case T_TRP: case T_PAP: case T_FCASE: return 4; default: return 2; }
 }
-/* the identity of a stuck match as a point: its code and the identities of the slots the code reads.  Two matches
-   with one identity are one point, and one point is split once (the coordinate principle: a port fires once). */
-static bool question_key_d(Term s, int depth, uint64_t *k1, uint64_t *k2) {
-  if (tag(s) != T_CASE || depth < 0) return false;
-  uint32_t code = loc(HEAP[loc(s)+1]); Term fr = HEAP[loc(s)+2]; uint64_t h1 = code * 0x9E3779B97F4A7C15ull, h2 = code;
-  for (uint32_t lvl = 0; lvl < frame_depth(fr); lvl++) if (code_uses(code, lvl)) {
-    if (frame_is_dim(fr, lvl)) return false;
-    Term kf = KEY_FRAME; KEY_FRAME = fr; uint64_t id; bool ok = term_identity(frame_slot_raw(fr, lvl), depth - 1, &id); KEY_FRAME = kf;   /* the slot itself, read in this frame's world */
-    if (!ok) return false;
-    h1 = (h1 ^ id) * 0xC2B2AE3D27D4EB4Full; h2 = h2 * 31 + lvl + id; }
-  *k1 = h1; *k2 = h2; return true;
-}
-static bool question_key(Term s, uint64_t *k1, uint64_t *k2) { return question_key_d(s, 6, k1, k2); }
-/* a stuck match that is a point already split: it is that split (its worlds), so a copy of the point meets no new one */
-static bool known_split(Term s, Term faces) {
-  while (tag(s) == T_FCE && ext(s) < 2 && tag(HEAP[loc(s)]) == T_IVAR) { faces = restrict_push(faces, HEAP[loc(s)], ext(s), 0); s = inspect(HEAP[loc(s)+1]); }   /* the faces waiting on it are its world too */
-  uint64_t k1, k2; KEY_FACES = faces; bool ok = tag(s) == T_CASE && !proof_case(s) && question_key(s, &k1, &k2); KEY_FACES = 0;
-  if (!ok) return false;
-  Term *slot = memo_slot(k1, k2 ^ 0x51); Term own = *memo_slot((uint64_t)loc(s) << 8 | 0xC0, 0xC0);
-  if (!*slot) { if (own) *slot = own; return false; }                  /* the point as now understood is this computation's own split: registered under this identity */
-  if (own == *slot) return false;                                      /* its own split: nothing new */
-  HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = *slot; return true;
-}
 /* a computation whose head is not yet a constructor, asked by a match for its head: the fibre law read at its
    output.  It becomes the superposition, over the constructors the match lists, of each constructor (fields fresh
    coordinates of that side's world) under the identity of the computation with it.  The computation moves to a
-   fresh cell shared by every residual; the stuck cell is marked with the superposition, so every holder meets the
-   same split and the same worlds; and the split is registered under the point's identity. */
+   fresh cell shared by every residual; the stuck cell is marked with the superposition, so every holder of the cell
+   meets the same split and the same worlds. */
 static Term split_stuck(Term s, Term cs) {
   if (tag(HEAP[loc(s)]) == T_IND) return HEAP[loc(s)+1];               /* split already: its superposition */
-  uint64_t k1, k2; Term *slot = 0;
-  if (question_key(s, &k1, &k2)) { slot = memo_slot(k1, k2 ^ 0x51); if (*slot) { HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = *slot; return *slot; } }
   unsigned n = cell_words(tag(s)); Loc l = alloc(n); for (unsigned i = 0; i < n; i++) HEAP[l+i] = HEAP[loc(s)+i];
-  Term s1 = mk(tag(s), ext(s), l); Term *own = memo_slot((uint64_t)l << 8 | 0xC0, 0xC0);
+  Term s1 = mk(tag(s), ext(s), l);
   Term world = tag(s) == T_CASE ? frame_faces(HEAP[loc(s)+2]) : 0;
   Term alts[64]; uint32_t k = case_points(cs, alts, world);
   Term names[64]; for (uint32_t i = 0; i + 1 < k; i++) names[i] = mk(T_IVAR, 0, loc(dim_push(0)));
@@ -832,8 +781,7 @@ static Term split_stuck(Term s, Term cs) {
     if (i + 1 < k) w = restrict_push(w, names[i], 0, 0);
     Term side[64]; case_points(cs, side, w); Term a = side[i];
     r = r ? node3(T_SUP, 0, names[i], under(unify_cell(s1, a, w), a), r) : under(unify_cell(s1, a, w), a); }
-  if (k == 1) r = node3(T_SUP, 0, mk(T_IVAR, 0, loc(dim_push(0))), r, mk(T_ERA, 0, 0));   /* one constructor is still a world */
-  *own = r; if (slot) *slot = r; HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = r;
+  HEAP[loc(s)] = mk(T_IND, 0, 0); HEAP[loc(s)+1] = r;
   return r;
 }
 
@@ -1408,10 +1356,6 @@ static Term whnf_(Term t) {
               if (loc(HEAP[loc(t)+1]) != under_case()) { t = under(s0, b); continue; }
               if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t; }
             if (INSPECT == 0 && blocked(s)) {          /* a match on a computation whose head is not yet a constructor: its output is bound */
-              /* at the innermost computation not facing a bare port: a match on a match on a comparison asks the comparison, not the constructor of its result */
-              Term q = 0; Term in = peel(s, &q); Term deeper = tag(in) == T_CASE ? HEAP[loc(in)] : 0; Term dq = 0;
-              if (deeper && tag(peel(deeper, &dq)) == T_CASE) { Term s2 = whnf(s0); if (s2 != s0) { HEAP[loc(t)] = s2; continue; } }
-              if (known_split(s0, 0)) continue;          /* the point is split already: its worlds, no new split */
               receipt(R_SPLIT); HEAP[loc(t)] = split_stuck(s0, t); continue; }
             if (!proof_cell(s0)) HEAP[loc(t)] = s0; return t;
           }
