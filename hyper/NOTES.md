@@ -283,7 +283,8 @@ constructors of Unit, Bool, Nat and List; a schedule knob. §5 says order is
 either a certificate or data, never a policy, and §9 says the constructors of a
 type are its declaration, so `prelude.hyper` declares the four and the runtime
 reads them there. Also deleted: the checker and the Bend dialect, oracle and
-presentation, numeric labels, debug scaffolding. What remains is one rule at a match: the
+presentation, numeric labels, debug scaffolding, machine numerals and their
+operations (a numeral is a point of `Nat`). What remains is one rule at a match: the
 scrutinee is inspected, not forced; a coordinate's head is the superposition of
 its type's constructors; a computation's head is bound at its output, the
 constructors superposed with the identity retained (the fibre law read at the

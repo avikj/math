@@ -198,7 +198,7 @@ one meets the point registered first. Two stuck computations that are the same
 point split once, by the same comparison.
 
 **Unification** at data types: `REFL` when the sides agree, `*` when
-constructors or numerals differ, constructor against constructor as a
+constructors differ, constructor against constructor as a
 conjunction of the fields' identities, coordinate against term as a binding
 written into the coordinate's slot, superposed at every face the identity lives
 under so every holder sees the binding exactly where it holds; a superposed side
@@ -253,8 +253,9 @@ substitution), the interval as the free De Morgan algebra in canonical form,
 transp and hcomp with regularity as an occurs check, Glue and ua, inductive and
 higher inductive types by one schema (a constructor's boundary is its declared
 type; Unit, Bool, Nat and List are declared in the prelude like any other),
-fixed points, numerals, superpositions at bound names, free points, and a
-reader for its own text. Nothing is erased inside a run: a demanded node is
+fixed points, superpositions at bound names, free points, and a reader for its
+own text in which a numeral is the point `Suc`ⁿ `Zer` of `Nat` and nothing
+else: there are no machine numbers, and the ledger's counts are that type too. Nothing is erased inside a run: a demanded node is
 marked with its result once reduced (`T_IND`) and every holder sees the value.
 The corpus's machine runs on cubical Agda; this evaluator exists so that the
 machine can run without Agda, and it is the part of this directory that is not
@@ -447,7 +448,7 @@ this runtime does not model.
 
     hyper/cell.h             the word layout, tags, frames, constructors, the receipts
     hyper/cell.c             the substrate: heap, frames, instantiation, the interval, the face map,
-                             case trees, the schema, numbers, transp, hcomp, Glue, the loop, the rule
+                             case trees, the schema, transp, hcomp, Glue, the loop, the rule
                              at a match, unification, the identity of a point, the ledger, the printer
     hyper/read.c             the reader for the kernel's own text
     hyper/main.c             run | interact

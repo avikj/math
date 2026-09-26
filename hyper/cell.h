@@ -36,9 +36,6 @@ enum Tag {
   T_IDNF,      /* ext = ncubes, loc → cubes: [nlits, lit…]…  canonical interval (antichain of cubes) */
   /* data; a type is a CTR cell with a reserved constructor id */
   T_CTR,       /* ext = ctor id (16) | arity (8), loc → fields         */
-  T_NUM,       /* ext = kind (N_U64, N_I64, N_F64, N_CHR), loc → [u64 bits] */
-  T_OP2,       /* ext = op, loc → [a, b]            ● a then ● b       */
-  T_OP1,       /* ext = op, loc → [a]               ● a                */
   T_POUT,      /* loc → [u]  pout of a system: the branch of a true face; stuck otherwise */
   /* Kan */
   T_TRP,       /* loc → [line, r, s, x]             ● line            */
@@ -83,33 +80,28 @@ static inline Loc      loc(Term t) { return (Loc)t; }
 enum Ctor {
   C_USER = 0,        /* user constructors are looked up by name, ids ≥ C_USER_BASE */
   C_SET = 1, C_PI, C_SIG, C_PATH, C_EQL, C_NAT, C_BOOL, C_UNIT, C_EMPTY, C_LIST,
-  C_ENUM, C_NUMTY, C_GLU, C_PAIR, C_REFL, C_CONS, C_NIL, C_FACE, C_ZER, C_SUC, C_TRUE, C_FALSE, C_TT, C_GFACE,
+  C_GLU, C_PAIR, C_REFL, C_CONS, C_NIL, C_FACE, C_ZER, C_SUC, C_TRUE, C_FALSE, C_TT, C_GFACE,
   C_USER_BASE = 64
 };
 static inline uint32_t ctr_ext(uint32_t id, uint32_t arity) { return (id << 8) | (arity & 0xFF); }
 static inline uint32_t ctr_id(Term t)    { return ext(t) >> 8; }
 static inline uint32_t ctr_arity(Term t) { return ext(t) & 0xFF; }
 
-/* ---- ops ---------------------------------------------------------------- */
-enum Op { OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD, OP_EQ, OP_NE, OP_LT, OP_LE, OP_GT, OP_GE,
-          OP_AND, OP_OR, OP_XOR, OP_LSH, OP_RSH, OP_POW, OP_COUNT };
 
 /* ---- static code (the BOOK) ------------------------------------------- */
 /* Static terms live in an immutable arena; binders are de Bruijn levels.  */
 enum STag {
   S_VAR = 1, S_LAM, S_APP, S_REF, S_ERA, S_SUP, S_PLM, S_DIM, S_FCE,
   S_I0, S_I1, S_IVAR, S_INOT, S_IAND, S_IOR,
-  S_CTR, S_NUM, S_OP2, S_TRP, S_HCM, S_CASE, S_BRANCH, S_ASK, S_LET, S_PROJ, S_GLU, S_GLUE, S_UNGLUE, S_FCASE, S_GBASE, S_GFACES, S_ISUB,
-  S_HELIM, S_CFIELDS, S_CWITH, S_FIX, S_OP1, S_POUT, S_PAP, S_TRACE, S_LEAVES
+  S_CTR, S_TRP, S_HCM, S_CASE, S_BRANCH, S_ASK, S_LET, S_PROJ, S_GLU, S_GLUE, S_UNGLUE, S_FCASE, S_GBASE, S_GFACES, S_ISUB,
+  S_HELIM, S_CFIELDS, S_CWITH, S_FIX, S_POUT, S_PAP, S_TRACE, S_LEAVES
 };
-enum NumKind { N_U64 = 0, N_I64, N_F64, N_CHR };
-enum Op1 { OP1_NOT, OP1_NEG, OP1_TOCHAR };
 typedef struct SNode {
   uint8_t  tag;
   uint32_t ext;        /* level / op / ctor ext / side / count */
   uint32_t a, b, c, d; /* child indices into the arena (0 = none) */
   uint32_t kids;       /* S_CTR with arity > 4: index into KIDS of `arity` children */
-  uint64_t num;        /* S_NUM */
+  uint64_t num;        /* S_BRANCH: the index of its field names */
 } SNode;
 
 typedef struct Def {
@@ -137,8 +129,8 @@ void print_trace(uint64_t from);                      /* the receipts from index
    (Event: dupSupEqual, dupSupDifferent, dupLamUsed, dupLamErased, dupNode, appSup, appMatSup): the correspondence from
    this loop's transitions to that alphabet, which the ledger asks a runtime to supply.  The rest are this machine's own. */
 enum RuleId { R_BETA = 1, R_APP_SUP, R_APP_PLM, R_DUP_SUP_EQUAL, R_DUP_SUP_DIFFERENT, R_DUP_LAM_USED, R_DUP_LAM_ERASED, R_DUP_NODE,
-              R_FCE_SHARE, R_CASE, R_CASE_SUP, R_OP2, R_OP2_SUP, R_ERASE, R_TRP, R_HCM,
-              R_HCON, R_HELIM, R_HELIM_SUP, R_HELIM_HCM, R_OP1, R_POUT, R_SPLIT, R_UNIFY, R_COUNT };
+              R_FCE_SHARE, R_CASE, R_CASE_SUP, R_ERASE, R_TRP, R_HCM,
+              R_HCON, R_HELIM, R_HELIM_SUP, R_HELIM_HCM, R_POUT, R_SPLIT, R_UNIFY, R_COUNT };
 
 /* ---- the HIT schema (§4): nothing per HIT is hardcoded; a constructor's boundary IS its type ---- */
 typedef struct CtorInfo {

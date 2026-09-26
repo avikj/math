@@ -71,7 +71,7 @@
   (sup J (hcm (fce J 0 A) (fce J 0 base) (fce J 0 faces))
          (hcm (fce J 1 A) (fce J 1 base) (fce J 1 faces))))))))
 
-; project field i (a number literal) of a constructor-headed tube: used by the constructor-headed hcomp rule
+; project field i (a point of Nat) of a constructor-headed tube: used by the constructor-headed hcomp rule
 (def tube-field (lam i (lam u (plm k (proj i (app u k))))))
 
 ; ---- equivalences as cells (the corpus's coherent form) --------------------------------------
