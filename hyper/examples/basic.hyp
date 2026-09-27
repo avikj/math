@@ -1,0 +1,15 @@
+// β is a fold at label 0: (\x x) applied to a function
+id = \x x;
+main = (id id);
+
+// a value used twice is shared; Church numerals: two applied to two is four
+two = \f \x (f (f x));
+four = (two two);
+
+// a fold along a user name: the faces of {t f}#i taken along i are t and f
+true = \t \f t;
+false = \t \f f;
+swap = let {a b}#i = {true false}#i; {b a}#k;
+
+// different names commute: taking faces along i of something superposed along j
+cross = let {a b}#i = {true false}#j; {a b}#k;
