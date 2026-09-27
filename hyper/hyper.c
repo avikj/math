@@ -224,9 +224,11 @@ static Term whnf(Term t) {
 
 /* ---- collapse: a superposition's leaves, the empty ones gone ----------------------------------------------------- */
 static Term lift(Term t);
+static int ORDER;                                                 /* HYPER_ORDER=1: another schedule */
 static Term lift_ctr(Term v) {                                    /* a field's superposition taken to the node's top */
   int ar = CT[LAB(v)].arity;
-  for (int i = 0; i < ar; i++) {
+  for (int k = 0; k < ar; k++) {
+    int i = ORDER ? ar - 1 - k : k;                               /* the order fields are demanded: a schedule */
     Term f = lift(H[LOC(v) + i]); H[LOC(v) + i] = f;
     if (TAG(f) == ERA) return f;
     if (TAG(f) == SUP) {
@@ -245,7 +247,7 @@ static Term *LEAVES; static u32 NLEAF, CLEAF;
 static void collapse(Term t) {
   t = lift(t);
   if (TAG(t) == ERA) return;
-  if (TAG(t) == SUP) { collapse(H[LOC(t)]); collapse(H[LOC(t) + 1]); return; }
+  if (TAG(t) == SUP) { Term x = H[LOC(t)], y = H[LOC(t) + 1]; if (ORDER) { collapse(y); collapse(x); } else { collapse(x); collapse(y); } return; }
   if (NLEAF == CLEAF) { CLEAF = CLEAF ? CLEAF * 2 : 64; LEAVES = realloc(LEAVES, CLEAF * sizeof *LEAVES); }
   LEAVES[NLEAF++] = t;
 }
@@ -382,6 +384,7 @@ static void read_file(const char *path) {
 int main(int argc, char **argv) {
   { struct rlimit rl; if (!getrlimit(RLIMIT_STACK, &rl)) { rl.rlim_cur = rl.rlim_max; setrlimit(RLIMIT_STACK, &rl); } }
   if (argc < 2) { fprintf(stderr, "usage: hyper FILE…\n"); return 1; }
+  ORDER = getenv("HYPER_ORDER") != 0;
   for (int i = 1; i < argc; i++) read_file(argv[i]);
   for (int d = 0; d < NDF; d++) if (!DF[d].body) { fprintf(stderr, "hyper: @%s is used but not declared\n", DF[d].name); return 2; }
   USE = calloc(NB + 1, sizeof *USE); NEXTUSE = calloc(NB + 1, sizeof *NEXTUSE); UCAP = NB;
