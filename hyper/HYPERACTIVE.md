@@ -1,50 +1,34 @@
 # Hyperactive
 
-One store of cells, with folding as the only operation.
+This is the net that Bend2's `--to-hvm4-full` emits into, plus one addition: a declaration with no body is a coordinate of its type.
 
-- **Cells.** A cell is a construction: a symbol and its parts, with the parts read through the folds. Building a construction that already exists gives that cell.
-- **Declarations are cells in the same store.**
-  - `l = r` is the cell `=(l, r)`.
-  - `l = r when p = q, p # q` is the cell `when(=(l, r), =(p, q), #(p, q))`.
-  - A variable is a cell wired to each place it occurs in its declaration.
-  - A declaration's own cells are open and are never folded.
-- **Every identity applies at every instance of its shape, once.**
-  - A closed cell headed by an identity's left-side symbol is an instance. The identity's right side, with its variables wired to that cell's parts, is folded with it, and its premises are instances too.
-  - A cell headed by a premise's left-side symbol, once the premise holds, folds the identity's left side, but only where that cell already exists.
-- **Folding.** Cells made equal are one class, and everything built on them is read again.
-- **Constructors.** A symbol that is no identity's left side is a constructor.
-  - Two constructors with the same symbol in one class have their parts identified.
-  - With different symbols, the case is empty.
-- **Cases.** `S in a b …;` makes S range over those constructors.
-- **Presentation.** `ac`, `idem` and `unit` say how parts are presented.
-  - `R*` in a pattern is the remaining parts of a sum.
-  - `p*` stands for every part: each part meets `p`, and `q*` on the right side is `q` at each part.
-
-Files:
-- `order.eq`: ≤ by its identities (reflexive, transitive, antisymmetric, total), and the values `elem(n)`.
-- `sorted.eq`: a bag as the sum of singletons; *sorted* as "each element is less than all following"; `main = present(bag(input))`.
-- `sat.eq`: `or` and `neg`.
+Everything else is a program in the book, reduced by the same rules. That includes the cubical operations (`coe`, `hcomp`, `ua`, Glue), the fibre law, the whole process, and every domain.
 
 ```
-hyper order.eq sorted.eq NUMBERS
-hyper sat.eq FORMULA.cnf
+TERM = VAR | LAM | APP | SUP L | DP0 L | DP1 L | ERA | CTR c | MAT T | REF d | NUM | OP2 | CRD T
+
+DUP meets LAM             dupLam            both copies are lambdas; the binder becomes &L{x0,x1}
+DUP meets SUP, same L     dupSupEqual       route: the two sides are the two copies
+DUP meets SUP, other L    dupSupDifferent   cross: both copies superposed at the other label
+DUP meets CTR/MAT         dupNode           both copies are the node, its parts duplicated
+APP of LAM                beta
+APP of SUP                appSup
+APP of MAT to CTR         match
+APP of MAT to SUP         appMatSup
+APP of MAT to CRD, or DUP meets CRD   expand: in place, the coordinate becomes the superposition of its
+                                      type's constructors, with fresh coordinates as their fields
+collapse: the leaves of the result; the empty ones (&{}) are gone
 ```
 
-Diagnostics:
-- `HYPER_TRACE=1` prints every fold.
-- `HYPER_DEBUG=1` prints every identity tried at a cell.
+Usage: `hyper FILE…` prints each leaf of `@main`, then the receipt (interactions, heap words, and a count for each rule).
 
-## What comes out
+- `sort.hyper` declares what "sorted" means. `@B : List` has no body, and `@main` keeps `B` where `spec input B` holds.
+- `sat.hyper` does the same with `@X, @Y : Bool` under XOR.
 
-**Sorting** (random permutations). The output is ordered at every size. Every one of the n(n−1) relations `le(a, b)` between two values is folded, each exactly once.
-
-| n | relations | first folded by: values | transitivity | antisymmetry | totality |
-|---|---|---|---|---|---|
-| 3 | 6 | 3 | 0 | 1 | 2 |
-| 8 | 56 | 27 | 1 | 8 | 20 |
-| 16 | 240 | 118 | 2 | 16 | 104 |
-| 32 | 992 | 374 | 122 | 230 | 266 |
-
-The run time grows faster than the fold count. Most of it is spent re-matching sums whose parts changed. That is a cost of this implementation, not of the network.
-
-**3-SAT.** Results are correct. Satisfiable results are checked against every clause. Cases: 20 variables take 6, 50 take 1,769.
+| input | leaves | result | interactions |
+|---|---|---|---|
+| `[]` | 1 | `[]` | 66 |
+| `[2,1,1]` | 1 | `[1,1,2]` | 10,119 |
+| `[3,1,2]` | 1 | `[1,2,3]` | 17,355 |
+| `[4,2,3,1]` | 1 | `[1,2,3,4]` | 207,819 |
+| XOR(x, y) | 2 | `(F,T)`, `(T,F)` | 75 |

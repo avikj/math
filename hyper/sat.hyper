@@ -1,0 +1,7 @@
+type Bool { F, T }
+@xor = λ{#F: λb b; #T: λ{#F: #T; #T: #F}}
+@keep = λ{#F: λb &{}; #T: λb b}
+type R { R(x: Bool, y: Bool) }
+@X : Bool
+@Y : Bool
+@main = !x = @X; !y = @Y; (@keep (@xor x y) #R{x, y})

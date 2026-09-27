@@ -1,587 +1,275 @@
 /* hyper.c: Hyperactive.
  *
- * One store of cells; one operation, folding.
+ * The net that Bend2's --to-hvm4-full emits into, and the one thing a declaration adds: a declaration with no
+ * body is a coordinate of its type.  Nothing else is here.  Everything cubical (coe, hcomp, ua, Glue), the fibre
+ * law (descend/ascend), the whole process (react), and every domain (order, lists, formulas) are programs in the
+ * book, reduced by these rules.
  *
- * A cell is a construction: a symbol and its parts, the parts read through the folds.  Building a construction
- * that already exists gives that cell.  A symbol with no parts is a cell too.
+ *   TERM  = VAR loc | LAM loc | APP loc | SUP L loc | DP0 L loc | DP1 L loc | ERA
+ *         | CTR c loc | MAT T loc | REF d | NUM n | OP2 op loc | CRD T loc
  *
- * The declarations are cells in the same store.  `l = r` is the cell =(l, r); `l = r when p = q, p # q` is the
- * cell when(=(l, r), =(p, q), #(p, q)).  An uppercase name is a variable: a cell wired to every place it occurs
- * in its declaration.  A cell that contains a variable is open: it is a declaration's own, and it is not folded.
+ *   whnf, one interaction per rule:
+ *     DUP meets LAM             dupLam            both copies are lambdas; the binder becomes &L{x0,x1}
+ *     DUP meets SUP, same L     dupSupEqual       route: the two sides are the two copies (one bit)
+ *     DUP meets SUP, other L    dupSupDifferent   cross: both copies superposed at the other label
+ *     DUP meets CTR/MAT/…       dupNode           both copies are the node, its parts duplicated
+ *     APP of LAM                beta
+ *     APP of SUP                appSup
+ *     APP of MAT to CTR         match
+ *     APP of MAT to SUP         appMatSup
+ *     APP of MAT to CRD / DUP meets CRD   expand: the coordinate becomes, in place, the superposition of its
+ *                                         type's constructors with fresh coordinates for their fields
+ *   collapse: the leaves of the result's superposition, the empty ones (&{}) gone.
  *
- * An identity holds at every instance of its shape.  A closed cell with the symbol of an identity's left side
- * is such an instance: the identity's right side, with its variables wired to the cell's parts, is folded with
- * it; its premises are instances too.  A cell with the symbol of a premise's left side, once the premise holds,
- * folds the identity's left side where that cell exists.  Every identity, at every instance, once.
+ * Surface: `type T { C, D(f: U, …) }`;  `@d = term`;  `@d : T` (no body: a coordinate of T);
+ *   λx t  |  λ{#C: t; #D: t}  |  (f a …)  |  (op a b)  |  &L{a, b}  |  &{}  |  #C{a, …}  |  @d  |  ?T  |  n
+ *   |  !x = t; u  (let).  A variable used k > 1 times is duplicated k − 1 times, each at a fresh label.
  *
- * Folding: two cells made equal are one class; everything built on them is read again, and a construction that
- * now coincides with another is that other.  A symbol that is no identity's left side and has no cases is a
- * constructor, its own value; two constructors in one class with the same symbol have their parts identified,
- * with different symbols the case is empty.  `S in a b …;` makes S range over those constructors, each case
- * folded on its own.  The result is what remains when nothing more folds.
- *
- * How parts are presented: `ac f;` flat and unordered, `idem f;` once each, `unit f e;` without e.  A sum of a
- * free commutative monoid (ac, not idem) that is one class with another is one after their common parts are
- * taken from both; a sum that is the unit has every part the unit.  In a pattern, R* is the remaining parts of
- * an ac construction, and p* stands for every part: each part meets p, and a right side's q* is q at each.
- *
- * usage: hyper FILE… NUMBERS | FORMULA.cnf
- *   NUMBERS: the list `input` = cons(elem(v0), cons(elem(v1), … nil)), each v the construction suc(…suc(zero)).
- *            The result is the class of `main`, read as cons/nil.
- *   FORMULA.cnf: DIMACS.  x1 … xn are declared `in true false`; each clause or(…) is folded with true. */
+ * usage: hyper FILE…   (prints each leaf of @main, then the receipt) */
 #include <ctype.h>
-#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/resource.h>
 
-#define NONE 0xFFFFFFFFu
-typedef uint32_t u32;
+typedef uint64_t Term; typedef uint32_t u32; typedef uint64_t u64;
+enum { VAR = 1, LAM, APP, SUP, DP0, DP1, ERA, CTR, MAT, REF, NUM, OP2, CRD };
+#define SUBB (1ull << 63)
+static inline Term mk(u32 tag, u32 lab, u32 loc) { return (Term)tag << 56 | (Term)(lab & 0xFFFFFF) << 32 | loc; }
+static inline u32 TAG(Term t) { return (u32)(t >> 56) & 0x7F; }
+static inline u32 LAB(Term t) { return (u32)(t >> 32) & 0xFFFFFF; }
+static inline u32 LOC(Term t) { return (u32)t; }
 
-/* ---- symbols ---------------------------------------------------------------------------------------------- */
-typedef struct { char *name; uint8_t ac, idem, defined, var, rest; u32 unit, *cases, ncases, *anc, nanc; } Sym;
-static Sym *SY; static u32 NSY;
-static u32 sym(const char *s) {
-  for (u32 i = 0; i < NSY; i++) if (!strcmp(SY[i].name, s)) return i;
-  SY = realloc(SY, (NSY + 1) * sizeof *SY); memset(&SY[NSY], 0, sizeof *SY);
-  SY[NSY].name = strdup(s); SY[NSY].unit = NONE;
-  return NSY++;
+/* ---- heap ------------------------------------------------------------------------------------------------ */
+static u64 *H; static u64 HLEN, HCAP;
+static u32 alloc(u32 n) {
+  if (HLEN + n > HCAP) { HCAP = HCAP ? HCAP * 2 : 1 << 20; while (HLEN + n > HCAP) HCAP *= 2; H = realloc(H, HCAP * 8); }
+  u32 l = (u32)HLEN; HLEN += n; memset(H + l, 0, n * 8); return l;
 }
+static u32 LABELS = 1u << 16;                                     /* fresh labels; the file's own are below */
+static u32 fresh_label(void) { return LABELS++ & 0xFFFFFF; }
 
-/* ---- the store ---------------------------------------------------------------------------------------------- */
-typedef struct {
-  u32 sym, n, *arg, parent, size, value, *uses, nuses, cuses, next, how;
-  uint64_t fired; uint8_t queued, open;
-} Cell;
-static Cell *C; static u32 NC, CCAP;
-static int EMPTY;
-static uint64_t FOLDS;
+/* ---- the receipt ------------------------------------------------------------------------------------------ */
+enum { R_BETA, R_APPSUP, R_APPERA, R_MATCH, R_APPMATSUP, R_DUPLAM, R_DUPSUPEQ, R_DUPSUPDIFF, R_DUPNODE,
+       R_DUPATOM, R_OP, R_OPSUP, R_EXPAND, R_REF, R_N };
+static const char *RNAME[R_N] = { "beta", "appSup", "appEra", "match", "appMatSup", "dupLam", "dupSupEqual",
+  "dupSupDifferent", "dupNode", "dupAtom", "op", "opSup", "expand", "ref" };
+static u64 RC[R_N], ITRS;
+static inline void itr(int r) { RC[r]++; ITRS++; }
 
-typedef struct { u32 kind, cell; uint64_t old; } Tr;              /* what a case changes */
-static Tr *TR; static u32 NTR, CTR, INCASE;
-static void trail(u32 kind, u32 cell, uint64_t old) {
-  if (!INCASE) return;
-  if (NTR == CTR) { CTR = CTR ? CTR * 2 : 4096; TR = realloc(TR, CTR * sizeof *TR); }
-  TR[NTR++] = (Tr){ kind, cell, old };
+/* ---- the book: types, constructors, definitions ------------------------------------------------------------ */
+typedef struct { char *name; int type, idx, arity; int ftype[16]; } Ctor;
+typedef struct { char *name; int nctor; int ctor[32]; } Type;
+static Ctor CT[4096]; static int NCT; static Type TY[512]; static int NTY;
+static int find_type(const char *s) { for (int i = 0; i < NTY; i++) if (!strcmp(TY[i].name, s)) return i; return -1; }
+static int find_ctor(const char *s) { for (int i = 0; i < NCT; i++) if (!strcmp(CT[i].name, s)) return i; return -1; }
+
+enum { K_VAR, K_LAM, K_APP, K_SUP, K_ERA, K_CTR, K_MAT, K_REF, K_NUM, K_OP2, K_CRD };
+typedef struct Ast { int k; u32 x; struct Ast *a, *b, **kids; int n; } Ast;
+static Ast *node(int k) { Ast *t = calloc(1, sizeof *t); t->k = k; return t; }
+typedef struct { char *name; Ast *body; } Def;
+static Def DF[4096]; static int NDF;
+static int def_id(const char *s) {
+  for (int i = 0; i < NDF; i++) if (!strcmp(DF[i].name, s)) return i;
+  DF[NDF].name = strdup(s); DF[NDF].body = 0; return NDF++;
 }
+static int *BUSES; static int NB, CB;                              /* each binder's number of uses */
+static int new_binder(void) { if (NB == CB) { CB = CB ? CB * 2 : 1024; BUSES = realloc(BUSES, CB * sizeof *BUSES); } BUSES[NB] = 0; return NB++; }
 
-static u32 find(u32 c) { while (C[c].parent != c) c = C[c].parent; return c; }
-static u32 val(u32 c) { return C[find(c)].value; }
-
-static u32 *TAB, TCAP, TUSED;
-static uint64_t hkey(u32 s, u32 n, const u32 *a) {
-  uint64_t h = (s + 1) * 0x9E3779B97F4A7C15ull;
-  for (u32 i = 0; i < n; i++) h = (h ^ (a[i] + 1)) * 0xC2B2AE3D27D4EB4Full;
-  return h ^ (h >> 31);
+/* ---- instantiating a definition: its variables' duplications at fresh labels --------------------------------- */
+static Term **USE; static int *NEXTUSE; static int UCAP;
+static Term dup_of(Term v, u32 L, Term *r1) { u32 e = alloc(2); H[e] = v; *r1 = mk(DP1, L, e); return mk(DP0, L, e); }
+static void bind(int b, Term v) {
+  int k = BUSES[b]; NEXTUSE[b] = 0;
+  USE[b] = realloc(USE[b], (k > 0 ? k : 1) * sizeof(Term));
+  if (k <= 1) { USE[b][0] = v; return; }
+  Term cur = v;
+  for (int j = 0; j < k - 1; j++) { Term r1; USE[b][j] = dup_of(cur, fresh_label(), &r1); cur = r1; }
+  USE[b][k - 1] = cur;
 }
-static u32 lookup(u32 s, u32 n, const u32 *a) {
-  for (uint64_t h = hkey(s, n, a) & (TCAP - 1); TAB[h]; h = (h + 1) & (TCAP - 1)) {
-    Cell *x = &C[TAB[h] - 1]; if (x->sym != s || x->n != n) continue;
-    u32 k = 0; while (k < n && find(x->arg[k]) == a[k]) k++;
-    if (k == n) return TAB[h] - 1;
+static Term inst(Ast *t) {
+  switch (t->k) {
+    case K_VAR: return USE[t->x][NEXTUSE[t->x]++];
+    case K_LAM: { u32 l = alloc(1); bind((int)t->x, mk(VAR, 0, l)); H[l] = inst(t->a); return mk(LAM, 0, l); }
+    case K_APP: { u32 l = alloc(2); Term f = inst(t->a), a = inst(t->b); H[l] = f; H[l + 1] = a; return mk(APP, 0, l); }
+    case K_SUP: { u32 l = alloc(2); Term a = inst(t->a), b = inst(t->b); H[l] = a; H[l + 1] = b; return mk(SUP, t->x, l); }
+    case K_ERA: return mk(ERA, 0, 0);
+    case K_CTR: { int ar = CT[t->x].arity; u32 l = alloc(ar ? ar : 1); for (int i = 0; i < ar; i++) { Term f = inst(t->kids[i]); H[l + i] = f; } return mk(CTR, t->x, l); }
+    case K_MAT: { int n = TY[t->x].nctor; u32 l = alloc(n); for (int i = 0; i < n; i++) { Term f = t->kids[i] ? inst(t->kids[i]) : mk(ERA, 0, 0); H[l + i] = f; } return mk(MAT, t->x, l); }
+    case K_REF: return mk(REF, t->x, 0);
+    case K_NUM: return mk(NUM, 0, t->x);
+    case K_OP2: { u32 l = alloc(2); Term a = inst(t->a), b = inst(t->b); H[l] = a; H[l + 1] = b; return mk(OP2, t->x, l); }
+    case K_CRD: { u32 l = alloc(1); return mk(CRD, t->x, l); }
   }
-  return NONE;
-}
-static void insert_key(u32 c, u32 n, const u32 *a) {
-  if (2 * (TUSED + 1) >= TCAP) {
-    free(TAB); TCAP *= 2; TAB = calloc(TCAP, 4); TUSED = 0;
-    for (u32 d = 0; d < NC; d++) {
-      if (d == c) continue;
-      u32 b[C[d].n + 1]; for (u32 k = 0; k < C[d].n; k++) b[k] = find(C[d].arg[k]);
-      uint64_t h = hkey(C[d].sym, C[d].n, b) & (TCAP - 1); while (TAB[h]) h = (h + 1) & (TCAP - 1);
-      TAB[h] = d + 1; TUSED++;
-    }
-  }
-  uint64_t h = hkey(C[c].sym, n, a) & (TCAP - 1); while (TAB[h]) h = (h + 1) & (TCAP - 1);
-  TAB[h] = c + 1; TUSED++;
-}
-static void rebuild_table(void) {
-  memset(TAB, 0, TCAP * 4ul); TUSED = 0;
-  for (u32 c = 0; c < NC; c++) { u32 b[C[c].n + 1]; for (u32 k = 0; k < C[c].n; k++) b[k] = find(C[c].arg[k]); insert_key(c, C[c].n, b); }
-}
-static void add_use(u32 cls, u32 c) {
-  Cell *x = &C[cls]; trail(3, cls, x->nuses);
-  if (x->nuses == x->cuses) { x->cuses = x->cuses ? x->cuses * 2 : 4; x->uses = realloc(x->uses, x->cuses * 4ul); }
-  x->uses[x->nuses++] = c;
+  return mk(ERA, 0, 0);
 }
 
-static u32 *Q, NQ, CQ;
-static void queue(u32 c) {
-  if (C[c].queued || C[c].open) return;
-  C[c].queued = 1;
-  if (NQ == CQ) { CQ = CQ ? CQ * 2 : 4096; Q = realloc(Q, CQ * 4ul); }
-  Q[NQ++] = c;
+/* ---- the coordinate: the superposition of its type's constructors ------------------------------------------- */
+static Term ctor_with_fresh_fields(int c) {
+  int ar = CT[c].arity; u32 l = alloc(ar ? ar : 1);
+  for (int i = 0; i < ar; i++) { u32 s = alloc(1); H[l + i] = mk(CRD, (u32)CT[c].ftype[i], s); }
+  return mk(CTR, (u32)c, l);
+}
+static void expand(Term crd) {
+  Type *T = &TY[LAB(crd)];
+  Term acc = ctor_with_fresh_fields(T->ctor[T->nctor - 1]);
+  for (int i = T->nctor - 2; i >= 0; i--) {
+    u32 l = alloc(2); H[l] = ctor_with_fresh_fields(T->ctor[i]); H[l + 1] = acc; acc = mk(SUP, fresh_label(), l);
+  }
+  if (T->nctor == 0) acc = mk(ERA, 0, 0);
+  H[LOC(crd)] = acc | SUBB;
+  itr(R_EXPAND);
 }
 
-static int cmpu(const void *a, const void *b) { u32 x = *(const u32 *)a, y = *(const u32 *)b; return x < y ? -1 : x > y; }
-
-static u32 S_EACH_ = NONE;
-/* the parts as the declarations present them; returns the class the construction is when it is one part */
-static u32 present(u32 s, u32 n, const u32 *args, u32 **out, u32 *m_out) {
-  u32 cap = n + 8, *a = malloc(cap * 4ul), m = 0;
-  for (u32 i = 0; i < n; i++) {
-    u32 x = find(args[i]);
-    if (SY[s].ac) {
-      u32 v = C[x].value;
-      if (v != NONE && C[v].sym == s) {
-        if (m + C[v].n >= cap) { cap = (m + C[v].n) * 2 + 8; a = realloc(a, cap * 4ul); }
-        for (u32 k = 0; k < C[v].n; k++) a[m++] = find(C[v].arg[k]);
-        continue;
-      }
-      if (SY[s].unit != NONE && v != NONE && C[v].sym == SY[s].unit && C[v].n == 0) continue;
-    }
-    if (m == cap) { cap *= 2; a = realloc(a, cap * 4ul); }
-    a[m++] = x;
-  }
-  if (SY[s].ac) {
-    qsort(a, m, 4, cmpu);
-    if (SY[s].idem) { u32 w = 0; for (u32 i = 0; i < m; i++) if (!w || a[w - 1] != a[i]) a[w++] = a[i]; m = w; }
-  }
-  *out = a; *m_out = m;
-  if (SY[s].ac && m == 1 && !(SY[C[a[0]].sym].var && SY[C[a[0]].sym].rest) && C[a[0]].sym != S_EACH_) return a[0];
-  return NONE;                          /* a pattern's lone R* or p* stands for many parts, not for one */
+/* ---- reduction ------------------------------------------------------------------------------------------------- */
+static Term whnf(Term t);
+static Term node_copy(Term v, u32 L, Term *r1) {                  /* a node's two copies, its parts duplicated */
+  u32 tg = TAG(v), n = 0;
+  if (tg == CTR) n = (u32)CT[LAB(v)].arity; else if (tg == MAT) n = (u32)TY[LAB(v)].nctor; else if (tg == APP || tg == OP2) n = 2;
+  u32 a = alloc(n ? n : 1), b = alloc(n ? n : 1);
+  for (u32 i = 0; i < n; i++) { Term x1; H[a + i] = dup_of(H[LOC(v) + i], L, &x1); H[b + i] = x1; }
+  *r1 = mk(tg, LAB(v), b); return mk(tg, LAB(v), a);
 }
-
-/* an ac construction is a value once every part is: until then a part may yet be the unit or another sum */
-static int ac_known(u32 c) {
-  if (!SY[C[c].sym].ac) return 1;
-  for (u32 k = 0; k < C[c].n; k++) {                                /* and presented flat, without the unit */
-    u32 v = C[find(C[c].arg[k])].value;
-    if (v == NONE || C[v].sym == C[c].sym || (C[v].sym == SY[C[c].sym].unit && C[v].n == 0)) return 0;
-  }
-  return 1;
+static Term apply_fields(Term f, Term ctr) {
+  int ar = CT[LAB(ctr)].arity;
+  for (int i = 0; i < ar; i++) { u32 l = alloc(2); H[l] = f; H[l + 1] = H[LOC(ctr) + i]; f = mk(APP, 0, l); }
+  return f;
 }
-
-static u32 construct(u32 s, u32 n, const u32 *args, int create) {
-  u32 *a, m; u32 one = present(s, n, args, &a, &m);
-  if (one != NONE) { free(a); return one; }
-  if (SY[s].ac && m == 0 && SY[s].unit != NONE) { free(a); return construct(SY[s].unit, 0, 0, create); }
-  u32 e = lookup(s, m, a);
-  if (e != NONE) { free(a); return find(e); }
-  if (!create) { free(a); return NONE; }
-  if (NC == CCAP) { CCAP = CCAP ? CCAP * 2 : 1 << 16; C = realloc(C, CCAP * sizeof *C); }
-  u32 c = NC++; Cell *x = &C[c]; memset(x, 0, sizeof *x);
-  x->sym = s; x->n = m; x->arg = a; x->parent = c; x->size = 1; x->next = c; x->how = NONE;
-  x->open = SY[s].var;
-  for (u32 i = 0; i < m; i++) { if (C[a[i]].open) x->open = 1; add_use(a[i], c); }
-  x->value = x->open || SY[s].defined || !ac_known(c) ? NONE : c;     /* a constructor is its own value */
-  insert_key(c, m, a);
-  queue(c);
-  return c;
-}
-static u32 atom(const char *s) { return construct(sym(s), 0, 0, 1); }
-
-/* ---- folding ----------------------------------------------------------------------------------------------- */
-static u32 *PEND, NPEND, CPEND;
-static void pend(u32 a, u32 b) {
-  if (NPEND + 2 > CPEND) { CPEND = CPEND ? CPEND * 2 : 1024; PEND = realloc(PEND, CPEND * 4ul); }
-  PEND[NPEND++] = a; PEND[NPEND++] = b;
-}
-static void reread(u32 u) {
-  u32 *a, m; u32 one = present(C[u].sym, C[u].n, C[u].arg, &a, &m);
-  if (one != NONE) { free(a); if (find(one) != find(u)) pend(u, one); return; }
-  if (SY[C[u].sym].ac && m == 0 && SY[C[u].sym].unit != NONE) { free(a); pend(u, construct(SY[C[u].sym].unit, 0, 0, 1)); return; }
-  u32 e = lookup(C[u].sym, m, a);
-  if (e == NONE) {
-    if (m == C[u].n) insert_key(u, m, a);
-    else pend(u, construct(C[u].sym, m, a, 1));
-  } else if (find(e) != find(u)) pend(u, e);
-  free(a);
-}
-static void drain(void);
-static void merge(u32 a, u32 b) {
-  if (C[a].open || C[b].open) return;
-  pend(a, b);
-  drain();
-}
-static void drain(void) {
-  while (NPEND) {
-    u32 y = find(PEND[--NPEND]), x = find(PEND[--NPEND]);
-    if (x == y) continue;
-    FOLDS++;
-    if (C[x].size > C[y].size) { u32 t = x; x = y; y = t; }
-    u32 vx = C[x].value, vy = C[y].value, ny = C[y].nuses;
-    trail(0, x, C[x].parent); C[x].parent = y;
-    trail(1, y, C[y].size); C[y].size += C[x].size;
-    trail(4, x, C[x].next); trail(4, y, C[y].next);
-    { u32 t = C[x].next; C[x].next = C[y].next; C[y].next = t; }
-    if (vy == NONE && vx != NONE) { trail(2, y, vy); C[y].value = vx; }
-    if (vx != NONE && vy != NONE && vx != vy) {
-      if (C[vx].sym != C[vy].sym || (C[vx].n != C[vy].n && !SY[C[vx].sym].ac)) { if (!EMPTY) { trail(5, 0, 0); EMPTY = 1; } }
-      else if (!SY[C[vx].sym].ac) for (u32 k = 0; k < C[vx].n; k++) pend(C[vx].arg[k], C[vy].arg[k]);
-    }
-    for (u32 i = 0; i < C[x].nuses; i++) add_use(y, C[x].uses[i]);
-    for (u32 i = 0; i < C[x].nuses; i++) { reread(C[x].uses[i]); queue(C[x].uses[i]); }
-    if (vy == NONE && vx != NONE) for (u32 i = 0; i < ny; i++) { reread(C[y].uses[i]); queue(C[y].uses[i]); }
-    u32 m = x; do { queue(m); m = C[m].next; } while (m != x);
-    if (vy == NONE && vx != NONE) { u32 k = y; do { queue(k); k = C[k].next; } while (k != y); }
-  }
-}
-
-/* ---- the declarations, as cells ------------------------------------------------------------------------------ */
-static u32 *DECL, NDECL; static int *DLINE; static uint64_t *DUSED;
-static u32 S_EQ, S_WHEN, S_APART, S_EACH;
-static u32 d_eq(u32 d) { return C[d].sym == S_WHEN ? C[d].arg[0] : d; }            /* its =(l, r) */
-static u32 d_lhs(u32 d) { return C[d_eq(d)].arg[0]; }
-static u32 d_rhs(u32 d) { return C[d_eq(d)].arg[1]; }
-static u32 d_np(u32 d) { return C[d].sym == S_WHEN ? C[d].n - 1 : 0; }
-static u32 d_prem(u32 d, u32 k) { return C[d].arg[1 + k]; }
-/* the parts of a declaration's cells are read from the cells themselves, not through classes: a declaration's
-   own cells are open and never folded */
-
-typedef struct { u32 n; u32 var[32], cls[32]; u32 *list[32], nlist[32]; uint8_t rest[32]; } Env;
-static int env_get(Env *e, u32 v) { for (u32 i = 0; i < e->n; i++) if (e->var[i] == v) return (int)i; return -1; }
-static void env_set(Env *e, u32 v, u32 cls, int rest) { e->var[e->n] = v; e->cls[e->n] = cls; e->rest[e->n] = (uint8_t)rest; e->list[e->n] = 0; e->nlist[e->n] = 0; e->n++; }
-static int is_var(u32 p) { return SY[C[p].sym].var && C[p].n == 0; }
-static int is_rest(u32 p) { return is_var(p) && SY[C[p].sym].rest; }
-static int is_each(u32 p) { return C[p].sym == S_EACH; }
-
-static u32 build(u32 p, Env *e, int create) {
-  if (!C[p].open) return find(p);                                  /* a closed cell of a declaration is itself */
-  if (is_var(p)) { int i = env_get(e, C[p].sym); return i < 0 ? NONE : e->cls[i]; }
-  u32 s = C[p].sym, cap = 64, *a = malloc(cap * 4ul), m = 0;
-  for (u32 i = 0; i < C[p].n; i++) {
-    u32 q = C[p].arg[i];
-    if (m + 64 >= cap) { cap *= 2; a = realloc(a, cap * 4ul); }
-    if (is_rest(q)) {                                               /* the remaining parts, placed as parts */
-      int j = env_get(e, C[q].sym); if (j < 0) { free(a); return NONE; }
-      u32 r = find(e->cls[j]), v = C[r].value;
-      if (e->rest[j] && v != NONE && C[v].sym == s && SY[s].ac) {
-        while (m + C[v].n >= cap) { cap *= 2; a = realloc(a, cap * 4ul); }
-        for (u32 k = 0; k < C[v].n; k++) a[m++] = C[v].arg[k];
-        continue;
-      }
-      if (SY[s].unit != NONE && v != NONE && C[v].sym == SY[s].unit) continue;
-      a[m++] = r; continue;
-    }
-    if (is_each(q)) {                                               /* q at each part the list variable ranges over */
-      u32 inner = C[q].arg[0]; int j = -1;
-      for (u32 t = 0; t < e->n; t++) if (e->list[t]) { j = (int)t; break; }
-      if (j < 0) { free(a); return NONE; }
-      u32 v = e->var[j], nl = e->nlist[j], *lst = e->list[j];
-      while (m + nl >= cap) { cap *= 2; a = realloc(a, cap * 4ul); }
-      for (u32 t = 0; t < nl; t++) {
-        Env e2 = *e; e2.list[j] = 0; e2.cls[j] = lst[t]; (void)v;
-        u32 x = build(inner, &e2, create); if (x == NONE) { free(a); return NONE; }
-        a[m++] = x;
-      }
-      continue;
-    }
-    u32 x = build(q, e, create); if (x == NONE) { free(a); return NONE; }
-    a[m++] = x;
-  }
-  u32 r = construct(s, m, a, create); free(a); return r;
-}
-
-typedef int (*K)(Env *, void *);
-static int match_cls(u32 p, u32 cls, Env *e, K k, void *ctx);
-static int match_cell(u32 p, u32 c, Env *e, K k, void *ctx);
-static int match_parts(u32 p, const u32 *parts, u32 n, uint64_t used, u32 i, Env *e, K k, void *ctx) {
-  u32 pn = C[p].n;
-  if (i == pn) return (n == 0 || used == (n >= 64 ? ~0ull : (1ull << n) - 1)) ? k(e, ctx) : 0;
-  u32 q = C[p].arg[i];
-  if (is_rest(q)) {
-    u32 rem[64], m = 0; for (u32 j = 0; j < n; j++) if (!(used >> j & 1)) rem[m++] = parts[j];
-    u32 r = construct(C[p].sym, m, rem, 1);
-    int j = env_get(e, C[q].sym);
-    if (j >= 0) return find(e->cls[j]) == find(r) ? k(e, ctx) : 0;
-    Env e2 = *e; env_set(&e2, C[q].sym, r, 1); return k(&e2, ctx);
-  }
-  if (is_each(q)) {                                                 /* every remaining part meets q's pattern */
-    u32 inner = C[q].arg[0], lv = NONE;
-    for (u32 t = 0; t < C[inner].n; t++) if (is_var(C[inner].arg[t])) { lv = C[C[inner].arg[t]].sym; break; }
-    if (lv == NONE && is_var(inner)) lv = C[inner].sym;
-    u32 *lst = malloc((n + 1) * 4ul), nl = 0;
-    for (u32 j = 0; j < n; j++) {
-      if (used >> j & 1) continue;
-      u32 got = NONE;
-      int one(Env *ee, void *cc) { (void)cc; int t = env_get(ee, lv); if (t >= 0) got = ee->cls[t]; return 1; }
-      Env e1 = *e; if (!match_cls(inner, parts[j], &e1, one, 0) || got == NONE) { free(lst); return 0; }
-      lst[nl++] = got;
-    }
-    Env e2 = *e; env_set(&e2, lv, NONE, 0); e2.list[e2.n - 1] = lst; e2.nlist[e2.n - 1] = nl;
-    return k(&e2, ctx);                                              /* the list lives as long as the instance */
-  }
-  for (u32 j = 0; j < n; j++) {
-    if (used >> j & 1) continue;
-    if (!SY[C[p].sym].ac && j != i) continue;
-    int inner(Env *ee, void *cc) { (void)cc; return match_parts(p, parts, n, used | 1ull << j, i + 1, ee, k, ctx); }
-    if (match_cls(q, parts[j], e, inner, 0)) return 1;
-  }
-  return 0;
-}
-static int shape_fits(u32 p, u32 n) {
-  u32 pn = C[p].n; int open_end = pn && (is_rest(C[p].arg[pn - 1]) || is_each(C[p].arg[pn - 1]));
-  return n <= 64 && (open_end ? n + 1 >= pn : n == pn);
-}
-static int match_cell(u32 p, u32 c, Env *e, K k, void *ctx) {
-  if (!C[p].open) return find(p) == find(c) ? k(e, ctx) : 0;
-  if (is_var(p)) {
-    int j = env_get(e, C[p].sym);
-    if (j < 0) { Env e2 = *e; env_set(&e2, C[p].sym, find(c), 0); return k(&e2, ctx); }
-    return find(e->cls[j]) == find(c) ? k(e, ctx) : 0;
-  }
-  if (C[c].sym != C[p].sym || !shape_fits(p, C[c].n)) return 0;
-  return match_parts(p, C[c].arg, C[c].n, 0, 0, e, k, ctx);
-}
-static int match_cls(u32 p, u32 cls, Env *e, K k, void *ctx) {
-  cls = find(cls);
-  if (!C[p].open || is_var(p)) return match_cell(p, cls, e, k, ctx);
-  u32 v = C[cls].value, s = C[p].sym;
-  if (SY[s].ac && C[p].n && (is_rest(C[p].arg[C[p].n - 1]) || is_each(C[p].arg[C[p].n - 1])) && v != NONE && C[v].sym != s) {
-    int unit = SY[s].unit != NONE && C[v].sym == SY[s].unit && C[v].n == 0;  /* one part, or none: a sum all the same */
-    u32 one[1] = { cls };
-    return match_parts(p, one, unit ? 0 : 1, 0, 0, e, k, ctx);
-  }
-  if (v != NONE) return match_cell(p, v, e, k, ctx);
-  u32 m = cls; do { if (C[m].sym == C[p].sym && match_cell(p, m, e, k, ctx)) return 1; m = C[m].next; } while (m != cls);
-  return 0;
-}
-
-static int apart(u32 a, u32 b) {
-  u32 x = val(a), y = val(b);
-  if (x == NONE || y == NONE || find(x) == find(y)) return 0;
-  if (C[x].sym != C[y].sym || C[x].n != C[y].n) return 1;
-  if (SY[C[x].sym].ac) return 0;
-  for (u32 k = 0; k < C[x].n; k++) if (apart(C[x].arg[k], C[y].arg[k])) return 1;
-  return 0;
-}
-/* the premises other than `skip`; a premise that is fully wired is an instance and is built; one with a
-   variable not yet wired meets the cells already built on a wired part */
-static int premises(u32 d, u32 i, int skip, Env *e, K k, void *ctx) {
-  if (i == d_np(d)) return k(e, ctx);
-  if ((int)i == skip) return premises(d, i + 1, skip, e, k, ctx);
-  u32 pr = d_prem(d, i), l = C[pr].arg[0], r = C[pr].arg[1];
-  if (C[pr].sym == S_APART) {
-    u32 a = build(l, e, 0), b = build(r, e, 0);
-    return a != NONE && b != NONE && apart(a, b) && premises(d, i + 1, skip, e, k, ctx);
-  }
-  int unbound = 0, anchor = -1;
-  for (u32 j = 0; j < C[l].n; j++) {
-    u32 q = C[l].arg[j];
-    if (is_var(q) && env_get(e, C[q].sym) < 0) unbound = 1;
-    else if (is_var(q) && anchor < 0) anchor = (int)j;
-  }
-  if (!unbound) {
-    u32 c = build(l, e, 1), t = build(r, e, 1);
-    return c != NONE && t != NONE && find(c) == find(t) && premises(d, i + 1, skip, e, k, ctx);
-  }
-  if (anchor < 0) return 0;
-  u32 cls = find(e->cls[env_get(e, C[C[l].arg[anchor]].sym)]);
-  for (u32 u = 0; u < C[cls].nuses; u++) {
-    u32 cell = C[cls].uses[u];
-    if (C[cell].sym != C[l].sym || C[cell].open) continue;
-    int then(Env *ee, void *cc) {
-      (void)cc; u32 t = build(r, ee, 0);
-      return t != NONE && find(t) == find(cell) && premises(d, i + 1, skip, ee, k, ctx);
-    }
-    if (match_cell(l, cell, e, then, 0)) return 1;
+static Term app(Term f, Term a) { u32 l = alloc(2); H[l] = f; H[l + 1] = a; return mk(APP, 0, l); }
+static u32 opcalc(u32 op, u32 a, u32 b) {
+  switch (op) {
+    case '+': return a + b; case '-': return a - b; case '*': return a * b; case '/': return b ? a / b : 0; case '%': return b ? a % b : 0;
+    case '=': return a == b; case '!': return a != b; case '<': return a < b; case '>': return a > b; case 'l': return a <= b; case 'g': return a >= b;
   }
   return 0;
 }
 
-static int TRACE, DEBUG;
-static void show(u32 c, int depth);
-static void fold_with(u32 di, u32 target, Env *e) {
-  u32 d = DECL[di], r = build(d_rhs(d), e, 1);
-  if (r == NONE || find(r) == find(target)) return;
-  DUSED[di]++;
-  if (TRACE) { printf("  [%d] ", DLINE[di]); show(target, 0); printf("  =  "); show(r, 0); printf("\n"); }
-  if (C[target].how == NONE) { trail(6, target, NONE); C[target].how = di; }
-  merge(target, r);
-}
-
-/* sums of a free commutative monoid */
-static void cancel(u32 c) {
-  u32 s = C[c].sym, r = find(c), m = r;
-  do {
-    u32 d = m; m = C[m].next;
-    if (d != c && C[d].sym == s) {
-      u32 *a, na, *b, nb;
-      u32 oa = present(s, C[c].n, C[c].arg, &a, &na), ob = present(s, C[d].n, C[d].arg, &b, &nb);
-      if (oa == NONE && ob == NONE) {
-        u32 x[na + 1], y[nb + 1], nx = 0, ny = 0, i = 0, j = 0, common = 0;
-        while (i < na || j < nb) {
-          if (i < na && j < nb && a[i] == b[j]) { i++; j++; common++; }
-          else if (j >= nb || (i < na && a[i] < b[j])) x[nx++] = a[i++];
-          else y[ny++] = b[j++];
+static Term whnf(Term t) {
+  for (;;) {
+    switch (TAG(t)) {
+      case VAR: { u64 s = H[LOC(t)]; if (s & SUBB) { t = s & ~SUBB; continue; } return t; }
+      case CRD: { u64 s = H[LOC(t)]; if (s & SUBB) { t = s & ~SUBB; continue; } return t; }
+      case REF: { itr(R_REF); t = inst(DF[LAB(t)].body); continue; }
+      case DP0: case DP1: {
+        u32 e = LOC(t), L = LAB(t); int side = TAG(t) == DP1;
+        u64 s = H[e + side]; if (s & SUBB) { t = s & ~SUBB; continue; }
+        Term v = whnf(H[e]), r0, r1;
+        switch (TAG(v)) {
+          case CRD: expand(v); H[e] = v; continue;                  /* the one coordinate, then its copies */
+          case LAM: {
+            itr(R_DUPLAM);
+            u32 m = LOC(v), l0 = alloc(1), l1 = alloc(1); Term body = H[m], b1;
+            u32 sl = alloc(2); H[sl] = mk(VAR, 0, l0); H[sl + 1] = mk(VAR, 0, l1);
+            H[m] = mk(SUP, L, sl) | SUBB;
+            H[l0] = dup_of(body, L, &b1); H[l1] = b1;
+            r0 = mk(LAM, 0, l0); r1 = mk(LAM, 0, l1); break;
+          }
+          case SUP: {
+            if (LAB(v) == L) { itr(R_DUPSUPEQ); r0 = H[LOC(v)]; r1 = H[LOC(v) + 1]; break; }
+            itr(R_DUPSUPDIFF);
+            Term a1, b1, a0 = dup_of(H[LOC(v)], L, &a1), b0 = dup_of(H[LOC(v) + 1], L, &b1);
+            u32 s0 = alloc(2), s1 = alloc(2); H[s0] = a0; H[s0 + 1] = b0; H[s1] = a1; H[s1 + 1] = b1;
+            r0 = mk(SUP, LAB(v), s0); r1 = mk(SUP, LAB(v), s1); break;
+          }
+          case CTR: case MAT: itr(R_DUPNODE); r0 = node_copy(v, L, &r1); break;
+          case NUM: case ERA: itr(R_DUPATOM); r0 = r1 = v; break;
+          default: return t;                                        /* a duplication of something stuck */
         }
-        if (common) { u32 p = construct(s, nx, x, 1), q = construct(s, ny, y, 1); if (find(p) != find(q)) merge(p, q); }
+        H[e] = r0 | SUBB; H[e + 1] = r1 | SUBB;
+        t = side ? r1 : r0; continue;
       }
-      free(a); free(b);
-      if (EMPTY) return;
-    }
-  } while (m != r);
-  if (SY[s].unit != NONE) {
-    u32 v = C[r].value;
-    if (v != NONE && C[v].sym == SY[s].unit && C[v].n == 0) {
-      u32 e = construct(SY[s].unit, 0, 0, 1);
-      for (u32 k = 0; k < C[c].n && !EMPTY; k++) if (find(C[c].arg[k]) != find(e)) merge(C[c].arg[k], e);
-    }
-  }
-}
-
-/* the premise instances already made: a set of (cell, declaration, premise) */
-static uint64_t *SEEN; static u32 SCAP, SUSED;
-static int seen(uint64_t k) {
-  if (!SCAP) return 0;
-  for (u32 h = (u32)(k * 0x9E3779B97F4A7C15ull >> 32) & (SCAP - 1); SEEN[h]; h = (h + 1) & (SCAP - 1)) if (SEEN[h] == k + 1) return 1;
-  return 0;
-}
-static void see_raw(uint64_t k) {
-  u32 h = (u32)(k * 0x9E3779B97F4A7C15ull >> 32) & (SCAP - 1); while (SEEN[h] && SEEN[h] != ~0ull) h = (h + 1) & (SCAP - 1);
-  SEEN[h] = k + 1; SUSED++;
-}
-static void see(uint64_t k) {
-  if (2 * (SUSED + 1) >= SCAP) {
-    uint64_t *old = SEEN; u32 oc = SCAP; SCAP = SCAP ? SCAP * 2 : 1 << 12; SEEN = calloc(SCAP, 8); SUSED = 0;
-    for (u32 i = 0; i < oc; i++) if (old[i] && old[i] != ~0ull) see_raw(old[i] - 1);
-    free(old);
-  }
-  see_raw(k); trail(8, 0, k);
-}
-static void unsee(uint64_t k) {
-  for (u32 h = (u32)(k * 0x9E3779B97F4A7C15ull >> 32) & (SCAP - 1); SEEN[h]; h = (h + 1) & (SCAP - 1)) if (SEEN[h] == k + 1) { SEEN[h] = ~0ull; return; }
-}
-
-static void examine(u32 c) {
-  if (C[c].open) return;
-  u32 s = C[c].sym;
-  if (!SY[s].defined && SY[s].ac && !SY[s].idem) cancel(c);
-  if (!SY[s].defined && ac_known(c)) {
-    u32 r = find(c);
-    if (C[r].value == NONE) { trail(2, r, NONE); C[r].value = c; u32 m = r; do { queue(m); m = C[m].next; } while (m != r);
-      for (u32 i = 0; i < C[r].nuses; i++) { reread(C[r].uses[i]); queue(C[r].uses[i]); } drain(); }
-    else if (C[r].value != c) {
-      u32 w = C[r].value;
-      if (C[w].sym != C[c].sym || C[w].n != C[c].n) { if (!EMPTY) { trail(5, 0, 0); EMPTY = 1; } return; }
-      if (!SY[s].ac) { for (u32 k = 0; k < C[c].n; k++) pend(C[c].arg[k], C[w].arg[k]); merge(c, w); }
-    }
-  }
-  for (u32 a = 0; a < SY[s].nanc && !EMPTY; a++) {
-    u32 code = SY[s].anc[a], di = code >> 4, d = DECL[di]; int which = (int)(code & 15) - 1;
-    if (which < 0) {                                                  /* an instance of the left side */
-      if (C[c].fired >> di & 1) continue;
-      Env e; memset(&e, 0, sizeof e); Env got; int ok = 0;
-      int done(Env *ee, void *cc) { (void)cc; got = *ee; ok = 1; return 1; }
-      int prem(Env *ee, void *cc) { (void)cc; return premises(d, 0, -1, ee, done, 0); }
-      int matched = match_cell(d_lhs(d), c, &e, prem, 0);
-      if (DEBUG) { printf("  ? [%d] ", DLINE[di]); show(c, 0); printf("  %s\n", ok ? "holds" : "no"); }
-      if (!matched || !ok) continue;
-      trail(7, c, C[c].fired); C[c].fired |= 1ull << di;
-      fold_with(di, c, &got);
-    } else {                                                          /* an instance of a premise, holding */
-      u32 pr = d_prem(d, (u32)which);
-      if (!C[C[pr].arg[1]].open && find(C[pr].arg[1]) != find(c)) continue;          /* not holding yet */
-      uint64_t key = (uint64_t)c << 12 | code;
-      if (seen(key)) continue;                                        /* this instance, once */
-      see(key);
-      Env e; memset(&e, 0, sizeof e);
-      int after(Env *ee, void *cc) {
-        (void)cc;
-        int done(Env *e3, void *c3) {
-          (void)c3; u32 target = build(d_lhs(d), e3, 0);
-          if (target != NONE) fold_with(di, target, e3);
-          return 0;
+      case APP: {
+        u32 l = LOC(t); Term f = whnf(H[l]), a = H[l + 1];
+        switch (TAG(f)) {
+          case LAM: { itr(R_BETA); u32 m = LOC(f); Term body = H[m]; H[m] = a | SUBB; t = body; continue; }
+          case SUP: {
+            itr(R_APPSUP); Term a1, a0 = dup_of(a, LAB(f), &a1);
+            u32 s = alloc(2); H[s] = app(H[LOC(f)], a0); H[s + 1] = app(H[LOC(f) + 1], a1); return mk(SUP, LAB(f), s);
+          }
+          case ERA: itr(R_APPERA); return f;
+          case MAT: {
+            H[l] = f; Term v = whnf(a);
+            switch (TAG(v)) {
+              case CTR: { itr(R_MATCH); t = apply_fields(H[LOC(f) + CT[LAB(v)].idx], v); continue; }
+              case SUP: {
+                itr(R_APPMATSUP); Term m1, m0 = dup_of(f, LAB(v), &m1);
+                u32 s = alloc(2); H[s] = app(m0, H[LOC(v)]); H[s + 1] = app(m1, H[LOC(v) + 1]); return mk(SUP, LAB(v), s);
+              }
+              case ERA: itr(R_APPERA); return v;
+              case CRD: expand(v); H[l + 1] = v; continue;
+              default: H[l] = f; H[l + 1] = v; return t;
+            }
+          }
+          default: H[l] = f; return t;
         }
-        u32 t = build(C[pr].arg[1], ee, 0);
-        if (t == NONE || find(t) != find(c)) return 0;
-        return premises(d, 0, which, ee, done, 0);
       }
-      match_cell(C[pr].arg[0], c, &e, after, 0);
+      case OP2: {
+        u32 l = LOC(t); Term a = whnf(H[l]), b = whnf(H[l + 1]);
+        if (TAG(a) == ERA || TAG(b) == ERA) return mk(ERA, 0, 0);
+        if (TAG(a) == SUP || TAG(b) == SUP) {
+          itr(R_OPSUP); int onA = TAG(a) == SUP; Term s = onA ? a : b, o = onA ? b : a, o1, o0 = dup_of(o, LAB(s), &o1);
+          u32 x = alloc(2), y = alloc(2), z = alloc(2);
+          if (onA) { H[x] = H[LOC(s)]; H[x + 1] = o0; H[y] = H[LOC(s) + 1]; H[y + 1] = o1; }
+          else { H[x] = o0; H[x + 1] = H[LOC(s)]; H[y] = o1; H[y + 1] = H[LOC(s) + 1]; }
+          H[z] = mk(OP2, LAB(t), x); H[z + 1] = mk(OP2, LAB(t), y); return mk(SUP, LAB(s), z);
+        }
+        if (TAG(a) == NUM && TAG(b) == NUM) { itr(R_OP); return mk(NUM, 0, opcalc(LAB(t), LOC(a), LOC(b))); }
+        H[l] = a; H[l + 1] = b; return t;
+      }
+      default: return t;
     }
   }
-}
-static void propagate(void) { while (NQ && !EMPTY) { u32 c = Q[--NQ]; C[c].queued = 0; examine(c); } }
-
-/* ---- cases --------------------------------------------------------------------------------------------------- */
-static void restore(u32 mark, u32 cells) {
-  while (NTR > mark) {
-    Tr t = TR[--NTR];
-    switch (t.kind) {
-      case 0: C[t.cell].parent = (u32)t.old; break;
-      case 1: C[t.cell].size = (u32)t.old; break;
-      case 2: C[t.cell].value = (u32)t.old; break;
-      case 3: C[t.cell].nuses = (u32)t.old; break;
-      case 4: C[t.cell].next = (u32)t.old; break;
-      case 5: EMPTY = 0; break;
-      case 6: C[t.cell].how = (u32)t.old; break;
-      case 7: C[t.cell].fired = t.old; break;
-      case 8: unsee(t.old); break;
-    }
-  }
-  for (u32 c = cells; c < NC; c++) free(C[c].arg), free(C[c].uses);
-  NC = cells;
-  for (u32 i = 0; i < NQ; i++) if (Q[i] < NC) C[Q[i]].queued = 0;
-  NQ = 0; NPEND = 0; rebuild_table();
-}
-static u32 *CASEV, NCASEV; static uint64_t CASES, EMPTIES, SHARED;
-static u32 *CONS, NCONS;
-typedef struct { uint64_t a, b; } Key;
-static Key *EMPTYSET; static u32 ECAP, EUSED;
-static u32 name_of(u32 c) { u32 r = find(c), m = r, best = r; do { if (m < best) best = m; m = C[m].next; } while (m != r); return best; }
-static int cmpk(const void *x, const void *y) { const Key *a = x, *b = y; return a->a < b->a ? -1 : a->a > b->a ? 1 : a->b < b->b ? -1 : a->b > b->b; }
-/* what a case leaves of the constraints: each one no true part satisfies, as its parts not yet a constructor */
-static Key what_remains(void) {
-  Key *cl = malloc((NCONS + 1) * sizeof *cl); u32 m = 0, T = sym("true");
-  for (u32 i = 0; i < NCONS; i++) {
-    u32 c = CONS[i], lit[64], k = 0; int sat = 0;
-    for (u32 j = 0; j < C[c].n && !sat; j++) {
-      u32 v = val(C[c].arg[j]);
-      if (v == NONE) { if (k < 64) lit[k++] = name_of(C[c].arg[j]); }
-      else if (C[v].sym == T) sat = 1;
-    }
-    if (sat) continue;
-    qsort(lit, k, 4, cmpu);
-    Key h = { 0x243F6A8885A308D3ull, 0x13198A2E03707344ull };
-    for (u32 j = 0; j < k; j++) { h.a = (h.a ^ lit[j]) * 0x100000001B3ull; h.b = (h.b + lit[j] + 1) * 0x9E3779B97F4A7C15ull; h.b ^= h.b >> 29; }
-    cl[m++] = h;
-  }
-  qsort(cl, m, sizeof *cl, cmpk);
-  Key r = { 0xA4093822299F31D0ull, 0x082EFA98EC4E6C89ull }, prev = { 0, 0 };
-  for (u32 i = 0; i < m; i++) {
-    if (i && cl[i].a == prev.a && cl[i].b == prev.b) continue;
-    prev = cl[i]; r.a = (r.a ^ cl[i].a) * 0x100000001B3ull; r.b = (r.b ^ cl[i].b) * 0xC2B2AE3D27D4EB4Full; r.b ^= r.b >> 31;
-  }
-  free(cl); return r;
-}
-static int known_empty(Key k) {
-  if (!ECAP) return 0;
-  for (u32 h = (u32)k.a & (ECAP - 1); EMPTYSET[h].a | EMPTYSET[h].b; h = (h + 1) & (ECAP - 1))
-    if (EMPTYSET[h].a == k.a && EMPTYSET[h].b == k.b) return 1;
-  return 0;
-}
-static void keep_empty(Key k) {
-  if (2 * (EUSED + 1) >= ECAP) {
-    Key *old = EMPTYSET; u32 oc = ECAP; ECAP = ECAP ? ECAP * 2 : 1 << 12; EMPTYSET = calloc(ECAP, sizeof *EMPTYSET); EUSED = 0;
-    for (u32 i = 0; i < oc; i++) if (old[i].a | old[i].b) keep_empty(old[i]);
-    free(old);
-  }
-  u32 h = (u32)k.a & (ECAP - 1); while (EMPTYSET[h].a | EMPTYSET[h].b) h = (h + 1) & (ECAP - 1);
-  EMPTYSET[h] = k; EUSED++;
-}
-static int cases(void) {
-  propagate();
-  if (EMPTY) { EMPTIES++; return 0; }
-  u32 v = NONE; for (u32 i = 0; i < NCASEV; i++) if (val(CASEV[i]) == NONE) { v = CASEV[i]; break; }
-  if (v == NONE) return 1;
-  Key k = what_remains();
-  if (known_empty(k)) { SHARED++; return 0; }
-  Sym *s = &SY[C[v].sym];
-  for (u32 j = 0; j < s->ncases; j++) {
-    u32 mark = NTR, cells = NC; INCASE++;
-    CASES++; merge(v, construct(s->cases[j], 0, 0, 1));
-    if (cases()) return 1;
-    restore(mark, cells); INCASE--;
-  }
-  keep_empty(k);
-  return 0;
 }
 
-/* ---- reading: the files become cells ----------------------------------------------------------------------- */
+/* ---- collapse: a superposition's leaves, the empty ones gone ----------------------------------------------------- */
+static Term lift(Term t);
+static Term lift_ctr(Term v) {                                    /* a field's superposition taken to the node's top */
+  int ar = CT[LAB(v)].arity;
+  for (int i = 0; i < ar; i++) {
+    Term f = lift(H[LOC(v) + i]); H[LOC(v) + i] = f;
+    if (TAG(f) == ERA) return f;
+    if (TAG(f) == SUP) {
+      u32 L = LAB(f), a = alloc(ar), b = alloc(ar);
+      for (int j = 0; j < ar; j++) {
+        if (j == i) { H[a + j] = H[LOC(f)]; H[b + j] = H[LOC(f) + 1]; continue; }
+        Term x1; H[a + j] = dup_of(H[LOC(v) + j], L, &x1); H[b + j] = x1;
+      }
+      u32 s = alloc(2); H[s] = mk(CTR, LAB(v), a); H[s + 1] = mk(CTR, LAB(v), b); return mk(SUP, L, s);
+    }
+  }
+  return v;
+}
+static Term lift(Term t) { t = whnf(t); return TAG(t) == CTR ? lift_ctr(t) : t; }
+static Term *LEAVES; static u32 NLEAF, CLEAF;
+static void collapse(Term t) {
+  t = lift(t);
+  if (TAG(t) == ERA) return;
+  if (TAG(t) == SUP) { collapse(H[LOC(t)]); collapse(H[LOC(t) + 1]); return; }
+  if (NLEAF == CLEAF) { CLEAF = CLEAF ? CLEAF * 2 : 64; LEAVES = realloc(LEAVES, CLEAF * sizeof *LEAVES); }
+  LEAVES[NLEAF++] = t;
+}
+static void show(FILE *o, Term t, int d) {
+  t = whnf(t);
+  if (d > 64) { fputs("…", o); return; }
+  switch (TAG(t)) {
+    case NUM: fprintf(o, "%u", LOC(t)); return;
+    case ERA: fputs("&{}", o); return;
+    case LAM: fputs("λ", o); return;
+    case SUP: fprintf(o, "&%u{", LAB(t)); show(o, H[LOC(t)], d + 1); fputs(",", o); show(o, H[LOC(t) + 1], d + 1); fputs("}", o); return;
+    case CTR: {
+      Ctor *c = &CT[LAB(t)]; fprintf(o, "#%s", c->name);
+      if (c->arity) { fputs("{", o); for (int i = 0; i < c->arity; i++) { if (i) fputs(",", o); show(o, H[LOC(t) + i], d + 1); } fputs("}", o); }
+      return;
+    }
+    case CRD: fprintf(o, "?%s", TY[LAB(t)].name); return;
+    default: fputs("<stuck>", o); return;
+  }
+}
+
+/* ---- reading ------------------------------------------------------------------------------------------------------ */
 static const char *S; static size_t P; static int LINE;
+static void die(const char *m) { fprintf(stderr, "hyper: %s at line %d\n", m, LINE); exit(2); }
 static void ws(void) {
   for (;;) {
     while (isspace((unsigned char)S[P])) { if (S[P] == '\n') LINE++; P++; }
@@ -589,184 +277,120 @@ static void ws(void) {
     return;
   }
 }
-static char *word(void) {
-  ws(); size_t s = P; while (isalnum((unsigned char)S[P]) || S[P] == '_') P++;
-  if (s == P) { fprintf(stderr, "hyper: expected a name at line %d\n", LINE); exit(2); }
+static int peek(const char *s) { ws(); return !strncmp(S + P, s, strlen(s)); }
+static int eat(const char *s) { if (peek(s)) { P += strlen(s); return 1; } return 0; }
+static void need(const char *s) { if (!eat(s)) { char m[64]; snprintf(m, sizeof m, "expected '%s'", s); die(m); } }
+static char *name(void) {
+  ws(); size_t s = P; while (isalnum((unsigned char)S[P]) || S[P] == '_' || S[P] == '\'') P++;
+  if (s == P) die("expected a name");
   char *w = malloc(P - s + 1); memcpy(w, S + s, P - s); w[P - s] = 0; return w;
 }
-static int SCOPE;                                                   /* a variable is its declaration's own */
-static u32 cellp(void) {
-  char *name = word();
-  if (isupper((unsigned char)name[0])) {
-    char nm[256]; int rest = S[P] == '*'; if (rest) P++;
-    snprintf(nm, sizeof nm, "%s'%d", name, SCOPE);
-    u32 s = sym(nm); SY[s].var = 1; SY[s].rest = (uint8_t)rest;
-    return construct(s, 0, 0, 1);
-  }
-  u32 s = sym(name), a[64], n = 0; ws();
-  if (S[P] == '(') {
-    P++;
-    for (;;) {
-      ws(); if (S[P] == ')') { P++; break; }
-      u32 x = cellp();
-      if (S[P] == '*') { P++; x = construct(S_EACH, 1, &x, 1); }        /* at each part */
-      a[n++] = x; ws(); if (S[P] == ',') P++;
-    }
-  }
-  return construct(s, n, a, 1);
+typedef struct { char *name; int b; } Scope;
+static Scope SC[4096]; static int NSC;
+static Ast *term(void);
+static Ast *lam_after_binder(void) {
+  char *x = name(); int b = new_binder();
+  SC[NSC++] = (Scope){ x, b };
+  Ast *body = term(); NSC--;
+  Ast *t = node(K_LAM); t->x = (u32)b; t->a = body; return t;
 }
-static int keyword(const char *k) { ws(); size_t n = strlen(k); if (!strncmp(S + P, k, n) && isspace((unsigned char)S[P + n])) { P += n; return 1; } return 0; }
-static void expect(char c) { ws(); if (S[P] != c) { fprintf(stderr, "hyper: expected '%c' at line %d\n", c, LINE); exit(2); } P++; }
+static Ast *term(void) {
+  ws();
+  if (eat("λ{") || eat("\\{")) {                                   /* a match on the constructors of one type */
+    Ast *arms[32] = { 0 }; int T = -1;
+    while (!eat("}")) {
+      need("#"); char *c = name(); int ci = find_ctor(c); if (ci < 0) die("unknown constructor");
+      if (T < 0) T = CT[ci].type; else if (CT[ci].type != T) die("constructors of two types in one match");
+      need(":"); arms[CT[ci].idx] = term(); eat(";");
+    }
+    if (T < 0) die("empty match");
+    Ast *t = node(K_MAT); t->x = (u32)T; t->n = TY[T].nctor; t->kids = calloc(t->n, sizeof *t->kids);
+    for (int i = 0; i < t->n; i++) t->kids[i] = arms[i];
+    return t;
+  }
+  if (eat("λ") || eat("\\")) return lam_after_binder();
+  if (eat("&{}")) return node(K_ERA);
+  if (eat("&")) {
+    u32 L; ws(); if (isdigit((unsigned char)S[P])) L = (u32)strtoul(S + P, 0, 10), P += strspn(S + P, "0123456789"); else { char *n = name(); L = 0; for (char *q = n; *q; q++) L = L * 131 + (unsigned char)*q; L %= 60000; }
+    need("{"); Ast *a = term(); eat(","); Ast *b = term(); need("}");
+    Ast *t = node(K_SUP); t->x = L; t->a = a; t->b = b; return t;
+  }
+  if (eat("#")) {
+    char *c = name(); int ci = find_ctor(c); if (ci < 0) die("unknown constructor");
+    Ast *t = node(K_CTR); t->x = (u32)ci; t->n = CT[ci].arity; t->kids = calloc(t->n ? t->n : 1, sizeof *t->kids);
+    if (eat("{")) { for (int i = 0; i < t->n; i++) { t->kids[i] = term(); eat(","); } need("}"); }
+    else if (t->n) die("constructor needs its fields");
+    return t;
+  }
+  if (eat("@")) { char *n = name(); Ast *t = node(K_REF); t->x = (u32)def_id(n); return t; }
+  if (eat("?")) { char *n = name(); int T = find_type(n); if (T < 0) die("unknown type"); Ast *t = node(K_CRD); t->x = (u32)T; return t; }
+  if (eat("!")) {                                                  /* !x = v; body */
+    char *x = name(); need("="); Ast *v = term(); need(";");
+    int b = new_binder(); SC[NSC++] = (Scope){ x, b }; Ast *body = term(); NSC--;
+    Ast *l = node(K_LAM); l->x = (u32)b; l->a = body;
+    Ast *t = node(K_APP); t->a = l; t->b = v; return t;
+  }
+  if (eat("(")) {
+    static const char *ops[] = { "<=", ">=", "==", "!=", "+", "-", "*", "/", "%", "<", ">" };
+    static const char opc[] = { 'l', 'g', '=', '!', '+', '-', '*', '/', '%', '<', '>' };
+    for (int i = 0; i < 11; i++) if (peek(ops[i]) && isspace((unsigned char)S[P + strlen(ops[i])])) {
+      P += strlen(ops[i]); Ast *a = term(), *b = term(); need(")");
+      Ast *t = node(K_OP2); t->x = (u32)opc[i]; t->a = a; t->b = b; return t;
+    }
+    Ast *f = term();
+    while (!eat(")")) { Ast *a = term(); Ast *t = node(K_APP); t->a = f; t->b = a; f = t; }
+    return f;
+  }
+  if (isdigit((unsigned char)S[P])) { Ast *t = node(K_NUM); t->x = (u32)strtoul(S + P, 0, 10); P += strspn(S + P, "0123456789"); return t; }
+  char *x = name();
+  for (int i = NSC - 1; i >= 0; i--) if (!strcmp(SC[i].name, x)) { BUSES[SC[i].b]++; Ast *t = node(K_VAR); t->x = (u32)SC[i].b; return t; }
+  die("unbound variable"); return 0;
+}
 static void read_file(const char *path) {
   FILE *f = fopen(path, "rb"); if (!f) { perror(path); exit(1); }
   fseek(f, 0, SEEK_END); long len = ftell(f); fseek(f, 0, SEEK_SET);
   char *src = malloc((size_t)len + 1); if (fread(src, 1, (size_t)len, f) != (size_t)len) { perror(path); exit(1); }
-  src[len] = 0; fclose(f);
-  S = src; P = 0; LINE = 1;
+  src[len] = 0; fclose(f); S = src; P = 0; LINE = 1;
   for (ws(); S[P]; ws()) {
-    if (keyword("ac")) { u32 s = sym(word()); SY[s].ac = 1; expect(';'); continue; }
-    if (keyword("idem")) { u32 s = sym(word()); SY[s].idem = 1; expect(';'); continue; }
-    if (keyword("unit")) { u32 s = sym(word()), e = sym(word()); SY[s].unit = e; expect(';'); continue; }
-    size_t save = P; int sl = LINE; char *w = word(); ws();
-    if (keyword("in")) {
-      u32 s = sym(w); SY[s].defined = 1;
-      for (ws(); S[P] != ';'; ws()) { u32 k = sym(word()); SY[s].cases = realloc(SY[s].cases, (SY[s].ncases + 1) * 4ul); SY[s].cases[SY[s].ncases++] = k; }
-      expect(';'); continue;
+    if (eat("type")) {
+      char *n = name(); int T = NTY++; TY[T].name = n; TY[T].nctor = 0; need("{");
+      /* constructors first, field types after: a type may mention itself */
+      size_t save = P; int sl = LINE;
+      while (!eat("}")) {
+        char *c = name(); int ci = NCT++; CT[ci].name = c; CT[ci].type = T; CT[ci].idx = TY[T].nctor; CT[ci].arity = 0;
+        TY[T].ctor[TY[T].nctor++] = ci;
+        if (eat("(")) { while (!eat(")")) { name(); need(":"); name(); CT[ci].arity++; eat(","); } }
+        eat(",");
+      }
+      P = save; LINE = sl;
+      for (int k = 0; !eat("}"); k++) {
+        int ci = TY[T].ctor[k]; name();
+        if (eat("(")) { int j = 0; while (!eat(")")) { name(); need(":"); char *ft = name(); CT[ci].ftype[j] = find_type(ft); if (CT[ci].ftype[j] < 0) die("unknown field type"); j++; eat(","); } }
+        eat(",");
+      }
+      continue;
     }
-    P = save; LINE = sl; SCOPE++;
-    int line = LINE;
-    u32 parts[16], np = 0, l = cellp(); expect('='); u32 r = cellp();
-    u32 lr[2] = { l, r }; parts[np++] = construct(S_EQ, 2, lr, 1);
-    if (keyword("when")) for (;;) {
-      u32 p = cellp(); ws(); u32 kind = S_EQ;
-      if (S[P] == '#') { P++; kind = S_APART; } else expect('=');
-      u32 q = cellp(), pq[2] = { p, q }; parts[np++] = construct(kind, 2, pq, 1);
-      ws(); if (S[P] == ',') { P++; continue; } break;
+    need("@"); char *n = name(); int d = def_id(n);
+    if (eat(":")) {                                                /* no body: a coordinate of its type */
+      char *tn = name(); int T = find_type(tn); if (T < 0) die("unknown type");
+      Ast *t = node(K_CRD); t->x = (u32)T; DF[d].body = t; eat(";"); continue;
     }
-    expect(';');
-    u32 d = np == 1 ? parts[0] : construct(S_WHEN, np, parts, 1);
-    DECL = realloc(DECL, (NDECL + 1) * 4ul); DLINE = realloc(DLINE, (NDECL + 1) * sizeof *DLINE);
-    DUSED = realloc(DUSED, (NDECL + 1) * sizeof *DUSED);
-    DECL[NDECL] = d; DLINE[NDECL] = line; DUSED[NDECL] = 0; NDECL++;
-    if (NDECL > 64) { fprintf(stderr, "hyper: more than 64 declarations\n"); exit(2); }
+    need("="); NSC = 0; DF[d].body = term(); eat(";");
   }
-}
-/* each symbol reaches the declarations whose left side, or a premise's left side, it heads */
-static void anchors(void) {
-  for (u32 i = 0; i < NDECL; i++) {
-    u32 d = DECL[i], l = d_lhs(d);
-    if (!is_var(l)) {
-      Sym *s = &SY[C[l].sym]; s->defined = 1;
-      s->anc = realloc(s->anc, (s->nanc + 1) * 4ul); s->anc[s->nanc++] = i << 4;
-    }
-    for (u32 k = 0; k < d_np(d); k++) {
-      u32 pr = d_prem(d, k), pl = C[pr].arg[0];
-      if (C[pr].sym != S_EQ || is_var(pl) || !C[pl].open) continue;
-      Sym *s = &SY[C[pl].sym];
-      s->anc = realloc(s->anc, (s->nanc + 1) * 4ul); s->anc[s->nanc++] = i << 4 | (k + 1);
-    }
-  }
-  /* a closed cell built while reading is an instance too; its value is read again now that symbols are known */
-  for (u32 c = 0; c < NC; c++) if (!C[c].open) { C[c].value = SY[C[c].sym].defined || !ac_known(c) ? NONE : c; queue(c); }
-}
-
-static void show(u32 c, int depth) {
-  u32 v = val(c); u32 x = v != NONE ? v : find(c);
-  if (depth > 8) { fputs("…", stdout); return; }
-  fputs(SY[C[x].sym].name, stdout);
-  if (C[x].n) { putchar('('); for (u32 i = 0; i < C[x].n; i++) { if (i) putchar(','); show(C[x].arg[i], depth + 1); } putchar(')'); }
-}
-static void report_declarations(void) {
-  printf("- declarations used (line: times):");
-  for (u32 i = 0; i < NDECL; i++) if (DUSED[i]) printf(" %d:%llu", DLINE[i], (unsigned long long)DUSED[i]);
-  printf("\n");
 }
 
 int main(int argc, char **argv) {
   { struct rlimit rl; if (!getrlimit(RLIMIT_STACK, &rl)) { rl.rlim_cur = rl.rlim_max; setrlimit(RLIMIT_STACK, &rl); } }
-  if (argc < 3) { fprintf(stderr, "usage: hyper FILE… NUMBERS|FORMULA.cnf\n"); return 1; }
-  TCAP = 1 << 16; TAB = calloc(TCAP, 4); TRACE = getenv("HYPER_TRACE") != 0; DEBUG = getenv("HYPER_DEBUG") != 0;
-  S_EQ = sym("="); S_WHEN = sym("when"); S_APART = sym("#"); S_EACH = S_EACH_ = sym("each");
-  const char *in = argv[argc - 1]; size_t il = strlen(in);
-  int cnf = il > 4 && !strcmp(in + il - 4, ".cnf");
-  u32 T = 0, bools[2]; u32 nv = 0;
-  FILE *g = fopen(in, "r"); if (!g) { perror(in); return 1; }
-  if (cnf) {                                                        /* the variables' cases, before the files */
-    char line[1 << 16];
-    while (fgets(line, sizeof line, g)) if (line[0] == 'p') { sscanf(line, "p cnf %u", &nv); break; }
-    bools[0] = sym("true"); bools[1] = sym("false");
-    for (u32 i = 1; i <= nv; i++) { char nm[32]; snprintf(nm, sizeof nm, "x%u", i); u32 s = sym(nm); SY[s].cases = bools; SY[s].ncases = 2; SY[s].defined = 1; }
-  }
-  for (int i = 1; i < argc - 1; i++) read_file(argv[i]);
-  if (!cnf) { u32 s = sym("input"); SY[s].defined = 1; }             /* the data is an identity too */
-  anchors();
-  if (cnf) {
-    T = atom("true"); atom("false");
-    CASEV = malloc((nv + 1) * 4ul);
-    for (u32 i = 1; i <= nv; i++) { char nm[32]; snprintf(nm, sizeof nm, "x%u", i); CASEV[NCASEV++] = atom(nm); }
-    char line[1 << 16]; u32 ncl = 0, lits[4096], nl = 0; int *cl = 0; u32 csz = 0, ccap = 0;
-    u32 OR = sym("or"), NEG = sym("neg");
-    while (fgets(line, sizeof line, g)) {
-      if (line[0] == 'c' || line[0] == '%' || line[0] == 'p') continue;
-      for (char *t = strtok(line, " \t\n"); t; t = strtok(0, " \t\n")) {
-        int l = atoi(t);
-        if (csz == ccap) { ccap = ccap ? ccap * 2 : 1024; cl = realloc(cl, ccap * sizeof *cl); } cl[csz++] = l;
-        if (l == 0) { u32 c = construct(OR, nl, lits, 1); CONS = realloc(CONS, (NCONS + 1) * 4ul); CONS[NCONS++] = c; merge(c, T); ncl++; nl = 0; continue; }
-        u32 x = CASEV[(l > 0 ? l : -l) - 1]; lits[nl++] = l > 0 ? x : construct(NEG, 1, &x, 1);
-      }
-    }
-    fclose(g);
-    int sat = cases(), ok = 1;
-    if (sat) {
-      int any = 0;
-      for (u32 i = 0; i < csz; i++) {
-        int l = cl[i]; if (l == 0) { if (!any) ok = 0; any = 0; continue; }
-        u32 v = val(CASEV[(l > 0 ? l : -l) - 1]); int b = v != NONE && C[v].sym == sym("true");
-        if ((l > 0) == b) any = 1;
-      }
-    }
-    printf("- variables: %u\n- clauses: %u\n- %s%s\n- cases folded: %llu\n- empty cases: %llu\n- remainders already empty: %llu\n- folds: %llu\n- cells: %u\n",
-           nv, ncl, sat ? "satisfiable" : "unsatisfiable", sat ? (ok ? " (the case satisfies every clause)" : " (THE CASE FAILS A CLAUSE)") : "",
-           (unsigned long long)CASES, (unsigned long long)EMPTIES, (unsigned long long)SHARED, (unsigned long long)FOLDS, NC);
-    report_declarations();
-    return 0;
-  }
-  long long v; u32 n = 0, cap = 0, *el = 0; long long *vals = 0;
-  u32 SUC = sym("suc"), ELEM = sym("elem"), CONSS = sym("cons"), zero = atom("zero");
-  while (fscanf(g, "%lld", &v) == 1) {
-    if (n == cap) { cap = cap ? cap * 2 : 64; el = realloc(el, cap * 4ul); vals = realloc(vals, cap * sizeof *vals); }
-    u32 x = zero; for (long long k = 0; k < v; k++) x = construct(SUC, 1, &x, 1);
-    el[n] = construct(ELEM, 1, &x, 1); vals[n] = v; n++;
-  }
-  fclose(g);
-  u32 list = atom("nil");
-  for (u32 i = n; i-- > 0;) { u32 a2[2] = { el[i], list }; list = construct(CONSS, 2, a2, 1); }
-  merge(atom("input"), list);
-  u32 m = atom("main");
-  propagate();
-  u32 SN = sym("nil"), k = 0; int ordered = 1; long long prev = -1;
-  u32 t = val(m);
-  while (t != NONE && C[t].sym == CONSS) {
-    u32 h = find(C[t].arg[0]); long long hv = -1;
-    for (u32 i = 0; i < n; i++) if (find(el[i]) == h) { hv = vals[i]; break; }
-    if (hv < prev) ordered = 0;
-    if (n <= 40) printf("%s%lld", k ? " " : "", hv);
-    prev = hv; k++; t = val(C[t].arg[1]);
-  }
-  if (n <= 40) printf("\n");
-  if (getenv("HYPER_SHOW")) { show(m, 0); putchar('\n'); }
-  /* the relations between two values, and the declaration each folded by first */
-  u32 LE = sym("le"), rel = 0, *by = calloc(NDECL + 1, 4);
-  uint8_t *isel = calloc(NC, 1); for (u32 i = 0; i < n; i++) isel[find(el[i])] = 1;
-  for (u32 c = 0; c < NC; c++)
-    if (C[c].sym == LE && C[c].n == 2 && !C[c].open && isel[find(C[c].arg[0])] && isel[find(C[c].arg[1])] && find(C[c].arg[0]) != find(C[c].arg[1])) {
-      rel++; by[C[c].how == NONE ? NDECL : C[c].how]++;
-    }
-  double lg = 0; for (u32 i = 2; i <= n; i++) lg += log2((double)i);
-  printf("- n: %u\n- presented: %u\n- ordered: %s\n- log2 n!: %.1f\n- relations le(a, b) between two values: %u (n(n-1) = %u; first folded by line:",
-         n, k, ordered && k == n && t != NONE && C[t].sym == SN ? "yes" : "NO", lg, rel, n * (n - 1));
-  for (u32 i = 0; i <= NDECL; i++) if (by[i]) printf(" %d:%u", i < NDECL ? DLINE[i] : -1, by[i]);
-  printf(")\n- folds: %llu\n- cells: %u%s\n", (unsigned long long)FOLDS, NC, EMPTY ? "\n- EMPTY: two constructors in one class" : "");
-  report_declarations();
+  if (argc < 2) { fprintf(stderr, "usage: hyper FILE…\n"); return 1; }
+  for (int i = 1; i < argc; i++) read_file(argv[i]);
+  for (int d = 0; d < NDF; d++) if (!DF[d].body) { fprintf(stderr, "hyper: @%s is used but not declared\n", DF[d].name); return 2; }
+  USE = calloc(NB + 1, sizeof *USE); NEXTUSE = calloc(NB + 1, sizeof *NEXTUSE); UCAP = NB;
+  int m = -1; for (int d = 0; d < NDF; d++) if (!strcmp(DF[d].name, "main")) m = d;
+  if (m < 0) { fprintf(stderr, "hyper: no @main\n"); return 2; }
+  collapse(mk(REF, (u32)m, 0));
+  for (u32 i = 0; i < NLEAF; i++) { show(stdout, LEAVES[i], 0); putchar('\n'); }
+  printf("- leaves: %u\n- interactions: %llu\n- heap words: %llu\n-", NLEAF, (unsigned long long)ITRS, (unsigned long long)HLEN);
+  for (int r = 0; r < R_N; r++) if (RC[r]) printf(" %s %llu", RNAME[r], (unsigned long long)RC[r]);
+  printf("\n");
   return 0;
 }

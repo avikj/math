@@ -1,0 +1,28 @@
+// What sorted means, and the declaration whose body is not written.
+type Bool { F, T }
+type Nat { Z, S(p: Nat) }
+type List { N, C(h: Nat, t: List) }
+type Del { No, Ok(rest: List) }
+
+@and = λ{#F: λb #F; #T: λb b}
+@if  = λ{#F: λa λb b; #T: λa λb a}
+@le  = λ{#Z: λb #T; #S: λp λ{#Z: #F; #S: λq (@le p q)}}
+@eq  = λ{#Z: λ{#Z: #T; #S: λq #F}; #S: λp λ{#Z: #F; #S: λq (@eq p q)}}
+
+// the same length, then the same elements: each of A taken from B once
+@len = λ{#N: λ{#N: #T; #C: λh λt #F}; #C: λx λxs λ{#N: #F; #C: λy λys (@len xs ys)}}
+@del = λx λ{#N: #No; #C: λy λys (@if (@eq x y) #Ok{ys} (@cons y (@del x ys)))}
+@cons = λy λ{#No: #No; #Ok: λr #Ok{#C{y, r}}}
+@perm = λ{#N: λB #T; #C: λx λxs λB (@permK xs (@del x B))}
+@permK = λxs λ{#No: #F; #Ok: λr (@perm xs r)}
+
+// sorted: each element less than all following
+@below = λx λ{#N: #T; #C: λy λys (@and (@le x y) (@below x ys))}
+@sorted = λ{#N: #T; #C: λh λt (@and (@below h t) (@sorted t))}
+
+@spec = λA λB (@and (@len A B) (@and (@perm A B) (@sorted B)))
+@keep = λ{#F: λb &{}; #T: λb b}
+
+// B has no body: a coordinate of List
+@B : List
+@main = !B = @B; (@keep (@spec @input B) B)
