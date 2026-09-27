@@ -1,58 +1,63 @@
 # Hyperactive
 
-Constructive mathematics, implemented as it is stated in `docs/index.html`.
+Constructive mathematics, implemented as `docs/index.html` states it.
 
-## The object and the operation
+## One object, one operation
 
-- **The object is an identification.** `Σ y. (x = y)` is one point: `(x, refl)` (§0).
+- **The object is an identification.** `Σ y. (x = y)` is one point, `(x, refl)` (§0).
 - **The operation is folding.** What is identified is one cell. J, transport and substitution are this one act.
-- **Congruence is not a second operation.** A path is a map out of the interval, so `f` applied to a path is `f ∘ p`. When parts fold, what is built from them is built from the one part.
+- **Congruence is part of folding.** A cell built from folded parts is built from the one part. This is `f ∘ p`, the definition of applying a map to a path, not a second step.
 
-## The store
+## One store
 
-- **Cells by construction.** A cell is identified by its construction, read through the folds. Building the same construction twice gives the same cell.
-- **Folding is union.** A construction whose parts have folded is looked up through them, so it meets the one cell.
+- **A cell is its construction** `(kind, part, part)`, with the parts read through the folds. Building a construction that already exists gives that cell.
+- **Folding is union.**
+- **Identities apply at construction.** A construction that an identity makes equal to an existing cell is that cell from birth.
 
-## Order is an identification
+## The constructions
 
-`a ≤ b` is `min(a, b) = a`: the lattice (`docs/divisibility.html`). Its identities fold like any other identification:
+| cell | is |
+|---|---|
+| `ELEM(v)` | an element of `V`; its value is its construction |
+| `EMPTY`, `ONE(x)`, `UNION(A, B)` | finite sets; `UNION` is disjoint union (Numbers: addition) |
+| `MIN2(a, b)` | the meet of two elements. Order is this cell: `a ≤ b` is `MIN2(a, b)` folded into `a` |
+| `LEAST(S)` | the least element of S |
+| `REST(S)` | S without its least element |
 
-- **Idempotence:** `min(a, a) = a`.
-- **Commutativity:** `min(a, b)` and `min(b, a)` are one construction.
-- **Bottom:** `min(⊥, x) = ⊥` and `max(⊥, x) = x`.
-- **Transitivity is associativity:**
-  - Given `min(a, b) = a` and `min(b, c) = b`,
-  - `min(a, c) = min(min(a, b), c) = min(a, min(b, c)) = min(a, b) = a`.
-  - A relation already reachable through folded relations *is* that composite: the same cell.
-- **New relations.** A relation not yet reachable is new: one fold that reads the order of two values. The new relations are the witness.
+## The identities
+
+- **Unit of union:** `UNION(EMPTY, B) = B` and `UNION(A, EMPTY) = A`.
+- **Singletons:** `LEAST(ONE x) = x` and `REST(ONE x) = EMPTY`.
+- **Idempotence and commutativity:** `MIN2(a, a) = a`, and `MIN2(a, b) = MIN2(b, a)` is one construction.
+- **Associativity of the meet:** `LEAST(UNION(A, B)) = MIN2(LEAST A, LEAST B)`.
+- **Removing the least:** `REST(UNION(A, B))` is `UNION(REST A, B)` if that meet is `LEAST A`, and `UNION(A, REST B)` otherwise.
+- **Transitivity is associativity:** `MIN2(a, c) = a` when `a ≤ b` and `b ≤ c` are folded. That meet is their composite, and nothing new is made.
+
+A `MIN2` of two distinct elements, when no fold and no composite of folds identifies it, is a **new relation**. That is the one place an element's value is read, and each new relation is one part of the witness.
 
 ## `sort` is its definition
 
-The elements are a finite set labelled into `V`.
-- **The domain.** `Fin n` is built by disjoint union (Numbers: addition is disjoint union).
-- **The union.** Let `a` and `b` be the ordered presentations of the two parts. The ordered presentation of their union is, by the lattice alone:
+The ordered presentation of S is `LEAST(S)` followed by the ordered presentation of `REST(S)`. The set is `Fin n` labelled into `V`, and `Fin n` is built as the union of halves.
 
-  ```
-  c_k = min over i + j = k of max(a_i, b_j)        (a_0 = b_0 = ⊥)
-  ```
+## Worked out from the construction, then run
 
-- **Evaluation.** The cells of this definition are built and folded until each `c_k` is one value. Nothing in `hyper.c` names a strategy.
+- **Per union.** At a union of sizes p and q, the new relations number at most p + q − 1. Over the construction of `Fin n` that is at most n⌈log₂ n⌉ − n + 1, which is log₂ n! + O(n).
+- **Cells.** O(n log n).
+- **Composites.** None. Every meet this definition builds is between two elements not yet related.
+- **`2 0 3`, by hand.** `MIN2(0,3)` folds to 0. `MIN2(2,0)` folds to 0. `MIN2(2,3)` folds to 2. That is 3 new relations.
 
-`hyper FILE` reads the elements from FILE, whitespace-separated, and prints:
-- the ordered presentation;
-- the number of new relations;
-- ⌈log₂ n!⌉;
-- the number of folds and cells.
+| input | ordered | new relations | log₂ n! | n⌈log₂ n⌉−n+1 | composites | folds | cells |
+|---|---|---|---|---|---|---|---|
+| `2 0 3` | yes | 3 | 2.6 | 4 | 0 | 9 | 19 |
+| `5 3 9 1 7 2 8 6` | yes | 17 | 15.3 | 17 | 0 | 51 | 85 |
+| 100 random | yes | 536 | 524.8 | 601 | 0 | 1 608 | 2 345 |
+| 1 000 random | yes | 8 721 | 8 529.4 | 9 001 | 0 | 26 163 | 36 885 |
+| 10 000 random | yes | 120 405 | 118 458.1 | 130 001 | 0 | 361 215 | 501 621 |
 
-## Measured
+## Scope
 
-| input | ordered | new relations | ⌈log₂ n!⌉ | folds | cells |
-|---|---|---|---|---|---|
-| `2 0 3` | yes: `0 2 3` | 3 | 3 | 6 | 10 |
-| `5 3 9 1 7 2 8 6` | yes | 17 | 16 | 56 | 65 |
-| 100 random | yes | 536 | 525 | 9 900 | 10 001 |
-| 1 000 random | yes | 8 721 | 8 530 | 999 000 | 1 000 001 |
+A definition's text is read as written. Each construction folds by the identities as it is built. The definition above has as many cells as its witness.
 
-**The new relations are within 2% of log₂ n! at every size.** Nothing is folded twice: a relation reachable through folded relations is never made again.
+## Usage
 
-**The cells and folds are quadratic.** The definition `min over i+j=k of max(a_i, b_j)` is written out in full: |A|·|B| cells per union, each folded. The witness is n log n. The store holds the whole formula, and most of it folds to cells that already exist. For the same reason, 10 000 elements did not finish in two minutes.
+`hyper FILE`, where FILE lists the elements separated by whitespace.
