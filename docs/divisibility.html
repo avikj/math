@@ -351,6 +351,26 @@ $$
 $$
 <ul>
 <li>μ vanishing off the squarefree divisors is §4 again: only the ¬¬-stable part carries a sign, a repeated prime contributes 0. On the subset algebra of §3, μ = (−1)<sup>#primes</sup> is inclusion–exclusion itself — whole minus atoms plus pairs minus triples.</li>
+</ul>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- μ on one prime axis, forced by inversion: μ(p⁰)=1, μ(p¹)=−1, 0 after.
+mu : ℕ → ℤ
+mu zero          = pos 1
+mu (suc zero)    = negsuc 0
+mu (suc (suc _)) = pos 0
+
+-- cumulative sum Σ_{i≤k} μ(pⁱ).
+cum : ℕ → ℤ
+cum zero    = mu zero
+cum (suc k) = cum k + mu (suc k)
+
+-- the forcing condition: 1 at the bottom, 0 above — inclusion–exclusion.
+cum-vanishes : (k : ℕ) → cum (suc k) ≡ pos 0
+cum-vanishes zero    = refl
+cum-vanishes (suc k) = cong (_+ pos 0) (cum-vanishes k)</code></pre>
+<figcaption>On one axis, <code>1 + μ(p) = 0</code> forces <code>μ(p) = −1</code> and <code>μ(pᵏ) = 0</code> for <code>k ≥ 2</code>; the partial sums are <code>1</code> at the bottom and <code>0</code> above — the Möbius/inclusion–exclusion condition, verbatim, <code>--safe</code>. Axes multiply, giving <code>(−1)</code> per distinct prime and <code>0</code> on a repeat.</figcaption>
+</details>
+<ul>
 <li>One instance to run: the identity function n ↦ n is the sum of Euler's totient over divisors (∑<sub>d ∣ n</sub> φ(d) = n), so inverting the identity by the rule above returns φ. The same back-substitution, nothing new:</li>
 </ul>
 $$
