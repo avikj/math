@@ -120,6 +120,23 @@ The runtime is `hyper/hyper.c`, about 300 lines. Nothing else exists.
 
 Popping redexes in the opposite order (a throwaway build, not part of the runtime) gives the same normal forms and the same counts. That is what the diamond predicts.
 
-## 7. Next
+## 7. `sort` for n = 3: measured
 
-`sort` as its type, in this language: finite sets, the multiset projection, and order written as the element's wiring. It gets the same treatment: work it by hand, then run it, and compare its count with ⌈log₂ n!⌉.
+The examples are `examples/sort3.hyp` and `examples/sort3-shared.hyp`, with input `x = [2, 0, 3]`.
+- **Values.** Values are points of a four-element order. `le` is a comparison that costs a constant number of steps.
+- **The type as written.** `relabel x` is the fibre of the multiset projection over `[x]`: all six relabellings, superposed along five names. `keep` erases every relabelling that is not ordered.
+
+| file | result | steps | erased |
+|---|---|---|---|
+| `sort3.hyp` | `[0, 2, 3]`: the other five relabellings are erased | 2821 | 847 |
+| `sort3-shared.hyp` (each comparison between two positions written once and shared by hand) | `[0, 2, 3]` | 1086 | 413 |
+
+**The answer is right. The count is far from the bound.** ⌈log₂ 3!⌉ = 3 comparisons would do. Both files compare inside every relabelling: 12 comparisons, or 6 when shared. Three reasons, each a gap between this runtime and §3 of this file:
+
+1. **The reader shares only named variables.** §3 says every isomorphic subterm is one cell from the moment it is built. The reader does not do that: `le a b`, written in several relabellings, becomes several cells. Sharing those comparisons by hand took the cost from 2821 to 1086 steps. Folding equal subterms as they are built is not implemented.
+2. **The identities of order are not in these terms.** With `le b a` equal to `not (le a b)` (antisymmetry) and transitivity available as terms, an implied comparison would be the same cell as one already made. As written, each ordered pair is computed separately.
+3. **The fibre is built first and cut afterwards.** All six relabellings exist before any comparison is made. For the cut to take ⌈log₂ n!⌉ comparisons, each comparison has to act on the fibre itself, halving it.
+
+## 8. Next
+
+Folding at construction (reason 1): a node whose label and whose wired-in contents equal those of an existing node is that node. It belongs in `link` and `node`, the runtime's two existing operations, with no new mechanism. Then order's identities (reason 2) and the fibre cut by comparison (reason 3), measured against ⌈log₂ n!⌉ the same way.

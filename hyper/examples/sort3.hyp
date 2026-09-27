@@ -1,0 +1,23 @@
+// sort, as its type, for n = 3:  y = x ∘ σ  (the fibre of the multiset projection)  and  y ordered.
+// Values are points of a four-element order; a value is the selector of its position.
+T = \t \f t;
+F = \t \f f;
+v0 = \a \b \c \d a;
+v1 = \a \b \c \d b;
+v2 = \a \b \c \d c;
+v3 = \a \b \c \d d;
+le = \u \w (u (w T T T T) (w F T T T) (w F F T T) (w F F F T));
+and = \p \q (p q F);
+
+// the input
+x = \k (k v2 v0 v3);
+
+// the fibre of the multiset projection over [x]: the relabellings of x, all at once
+relabel = \x (x \a \b \c
+  {{\k (k a b c) \k (k a c b)}#r {{\k (k b a c) \k (k b c a)}#s {\k (k c a b) \k (k c b a)}#t}#u}#v);
+
+// the order condition cuts the fibre: a relabelling that is not ordered is erased
+ordered = \y (y \p \q \r (and (le p q) (le q r)));
+keep = \y (ordered y y *);
+
+main = (keep (relabel x));
