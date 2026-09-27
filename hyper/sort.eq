@@ -1,3 +1,11 @@
+// Numbers: zero and suc.  Order is defined by equations on them; min selects one of its two arguments.
+le(zero, Y) = true;
+le(suc(X), zero) = false;
+le(suc(X), suc(Y)) = le(X, Y);
+if(true, A, B) = A;
+if(false, A, B) = B;
+min(X, Y) = if(le(X, Y), X, Y);
+
 // The finite set: empty is the unit of disjoint union.
 union(empty, B) = B;
 union(A, empty) = A;
