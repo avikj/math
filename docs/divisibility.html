@@ -328,6 +328,23 @@ $$
 <ul>
 <li>That is the largest classical part sitting inside, and d ↦ ¬¬d is the map onto it (the name is "Booleanization", Glivenko). Divisibility is intuitionistic in general and is the Boolean logic of §3 exactly on these ¬¬-stable divisors — for squarefree n, all of them.</li>
 </ul>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- One axis with cap (suc m′): Heyting negation, the largest exponent
+-- disjoint from e. ¬0 = full, ¬(≥1) = 0.
+hneg : ℕ → ℕ → ℕ
+hneg m′ zero    = suc m′
+hneg m′ (suc _) = zero
+
+-- ¬¬ rounds any present prime up to full power (forgetting by how much).
+neg-neg-full : (m′ k : ℕ) → hneg m′ (hneg m′ (suc k)) ≡ suc m′
+neg-neg-full m′ k = refl
+
+-- Glivenko: triple negation collapses to single — so ¬¬ lands in the classical part.
+triple-neg : (m′ e : ℕ) → hneg m′ (hneg m′ (hneg m′ e)) ≡ hneg m′ e
+triple-neg m′ zero    = refl
+triple-neg m′ (suc k) = refl</code></pre>
+<figcaption>On an axis with a middle, <code>¬</code> is not a complement: <code>¬¬</code> rounds a present prime up to full power (<code>neg-neg-full</code>), so <code>¬¬d = d</code> only at <code>0</code> or full — the Boolean part — and triple negation collapses to single (Glivenko). Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
 
 <h2><span class="n">5.</span> Summing over the divisors below is triangular; back-substituting it is the Möbius function — inclusion–exclusion</h2>
 <ul>
