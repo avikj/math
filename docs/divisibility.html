@@ -411,7 +411,29 @@ e(a_0)(a_0) = h(a_0) = d(a_0) = g\big(e(a_0)(a_0)\big)
 $$
 <ul>
 <li>— so e(a₀)(a₀) is fixed by g. Contrapositive: if g has no fixed point, no single e enumerates all of A → B, and d escapes every row.</li>
-<li>Take g = ¬ on {0, 1} (no fixed point: ¬0 = 1, ¬1 = 0). The escaping d answers the opposite of what the machine indexed by a would answer on its own code, and no program realizes it. Cantor (no surjection A → 2<sup>A</sup>), Halting (no machine decides its own halting), Russell, Tarski's undefinability of truth, and Rice's theorem are this one escape with A and B chosen — there is one such construction, not a family of impossibility theorems. Gödel is the same diagonal, arithmetized — and the arithmetization is built, not invoked. Sentences are coded by numbers, and substitution sub(m, n) = ⌜(formula m)(n̄)⌝ is primitive recursive, hence represented by a formula — every primitive-recursive function is, by induction on its build: base functions are formulas, composition and recursion stay first-order by bounded quantification over the finite run. Given any ψ, set δ(x) := ψ(sub(x, x)) and let d = ⌜δ⌝; then G := δ(d̄) has sub(d, d) = ⌜G⌝ by construction, so G ↔ ψ(⌜G⌝) — the diagonal lemma, which is the e / d / g construction above with e = sub, the row taken at its own code. Take ψ = ¬Prov, where Prov(⌜G⌝) is the Σ₁ predicate <em>a proof exists</em> from the listable proofs above: then G ↔ ¬Prov(⌜G⌝) says <em>I am unprovable</em>, unprovable if T is consistent, hence true. The self-reference is sub applied to its own code, nothing more.</li>
+<li>Take g = ¬ on {0, 1} (no fixed point: ¬0 = 1, ¬1 = 0). The escaping d answers the opposite of what the machine indexed by a would answer on its own code, and no program realizes it. Cantor (no surjection A → 2<sup>A</sup>), Halting (no machine decides its own halting), Russell, Tarski's undefinability of truth, and Rice's theorem are this one escape with A and B chosen — there is one such construction, not a family of impossibility theorems. Gödel is the same diagonal, arithmetized — and the arithmetization is built, not invoked. Sentences are coded by numbers, and substitution sub(m, n) = ⌜(formula m)(n̄)⌝ is primitive recursive, hence represented by a formula — every primitive-recursive function is, by induction on its build: base functions are formulas, composition and recursion stay first-order by bounded quantification over the finite run. Given any ψ, set δ(x) := ψ(sub(x, x)) and let d = ⌜δ⌝; then G := δ(d̄) has sub(d, d) = ⌜G⌝ by construction, so G ↔ ψ(⌜G⌝) — the diagonal lemma, which is the e / d / g construction above with e = sub, the row taken at its own code. Take ψ = ¬Prov, where Prov(⌜G⌝) is the Σ₁ predicate <em>a proof exists</em> from the listable proofs above: then G ↔ ¬Prov(⌜G⌝) says <em>I am unprovable</em>, unprovable if T is consistent, hence true. The self-reference is sub applied to its own code, nothing more.
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- e is point-surjective: every observation A → B is a row of e.
+PtSurj : (A → (A → B)) → Type
+PtSurj {A = A} {B = B} e = (g : A → B) → Σ[ a ∈ A ] e a ≡ g
+
+-- feed a its own row, bend by g.
+twist : (A → (A → B)) → (B → B) → (A → B)
+twist e g a = g (e a a)
+
+-- a point-surjective e forces every g : B → B a fixed point.
+lawvere : (e : A → (A → B)) → PtSurj e → (g : B → B) → Σ[ b ∈ B ] g b ≡ b
+lawvere e surj g = e a₀ a₀ , sym (funExt⁻ (surj (twist e g) .snd) a₀)
+  where a₀ = surj (twist e g) .fst
+
+-- g = not has no fixed point, so no e enumerates all of A → Bool (Cantor et al.).
+cantor : (e : A → (A → Bool)) → ¬ PtSurj e
+cantor e surj = not-no-fix (lawvere e surj not .fst) (lawvere e surj not .snd)
+  where not-no-fix : (b : Bool) → ¬ (not b ≡ b)
+        not-no-fix true  p = true≢false (sym p)
+        not-no-fix false p = true≢false p</code></pre>
+<figcaption>The one construction §7 rests on: a point-surjective <code>e</code> forces every <code>g</code> a fixed point (<code>lawvere</code>), so a fixed-point-free <code>g = not</code> refutes every <code>e</code> (<code>cantor</code>) — Cantor, Halting, Russell, Tarski, Rice, and (arithmetized) Gödel are its instances. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
 <li>The prime conjectures of §6 are not known to sit here: none is known to be independent, and no diagonal is known to obstruct them. §6 established only the weaker shared shape — decided at every instance, open only in the quantifier over the whole list — a gap a finite computation cannot cross, but not a proven independence.</li>
 </ul>
 
