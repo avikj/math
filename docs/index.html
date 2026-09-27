@@ -157,7 +157,7 @@ module _ (G : Type) (_·_ : G → G → G) (e : G) (inv : G → G)
 </ul>
 <h2><span class="n">4.</span> The diagonal</h2>
 <ul>
-<li><code>e : A → (A → B)</code> is <strong>onto</strong>: every <code>h : A → B</code> equals <code>e a</code> for some <code>a</code>.</li>
+<li>Picture <code>e : A → (A → B)</code> as a table whose row <code>a</code> is the function <code>e a</code>; reading row <code>a</code> at its own index gives <code>e a a</code> (the diagonal). Say <code>e</code> is <strong>onto</strong> when every function <code>h : A → B</code> appears as some row: <code>h = e a</code> for some <code>a</code>.</li>
 <li>Then every <code>g : B → B</code> has a fixed point:</li>
 </ul>
 $$
