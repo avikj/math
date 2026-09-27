@@ -91,7 +91,7 @@ static void bind(int b, Term v) {
 static Term inst(Ast *t) {
   switch (t->k) {
     case K_VAR: return USE[t->x][NEXTUSE[t->x]++];
-    case K_LAM: { u32 l = alloc(1); bind((int)t->x, mk(VAR, 0, l)); H[l] = inst(t->a); return mk(LAM, 0, l); }
+    case K_LAM: { u32 l = alloc(1); bind((int)t->x, mk(VAR, 0, l)); Term b = inst(t->a); H[l] = b; return mk(LAM, 0, l); }
     case K_APP: { u32 l = alloc(2); Term f = inst(t->a), a = inst(t->b); H[l] = f; H[l + 1] = a; return mk(APP, 0, l); }
     case K_SUP: { u32 l = alloc(2); Term a = inst(t->a), b = inst(t->b); H[l] = a; H[l + 1] = b; return mk(SUP, t->x, l); }
     case K_ERA: return mk(ERA, 0, 0);
@@ -115,7 +115,7 @@ static void expand(Term crd) {
   Type *T = &TY[LAB(crd)];
   Term acc = ctor_with_fresh_fields(T->ctor[T->nctor - 1]);
   for (int i = T->nctor - 2; i >= 0; i--) {
-    u32 l = alloc(2); H[l] = ctor_with_fresh_fields(T->ctor[i]); H[l + 1] = acc; acc = mk(SUP, fresh_label(), l);
+    Term c = ctor_with_fresh_fields(T->ctor[i]); u32 l = alloc(2); H[l] = c; H[l + 1] = acc; acc = mk(SUP, fresh_label(), l);
   }
   if (T->nctor == 0) acc = mk(ERA, 0, 0);
   H[LOC(crd)] = acc | SUBB;
@@ -128,7 +128,7 @@ static Term node_copy(Term v, u32 L, Term *r1) {                  /* a node's tw
   u32 tg = TAG(v), n = 0;
   if (tg == CTR) n = (u32)CT[LAB(v)].arity; else if (tg == MAT) n = (u32)TY[LAB(v)].nctor; else if (tg == APP || tg == OP2) n = 2;
   u32 a = alloc(n ? n : 1), b = alloc(n ? n : 1);
-  for (u32 i = 0; i < n; i++) { Term x1; H[a + i] = dup_of(H[LOC(v) + i], L, &x1); H[b + i] = x1; }
+  for (u32 i = 0; i < n; i++) { Term x1, x0 = dup_of(H[LOC(v) + i], L, &x1); H[a + i] = x0; H[b + i] = x1; }
   *r1 = mk(tg, LAB(v), b); return mk(tg, LAB(v), a);
 }
 static Term apply_fields(Term f, Term ctr) {
@@ -162,7 +162,7 @@ static Term whnf(Term t) {
             u32 m = LOC(v), l0 = alloc(1), l1 = alloc(1); Term body = H[m], b1;
             u32 sl = alloc(2); H[sl] = mk(VAR, 0, l0); H[sl + 1] = mk(VAR, 0, l1);
             H[m] = mk(SUP, L, sl) | SUBB;
-            H[l0] = dup_of(body, L, &b1); H[l1] = b1;
+            { Term b0 = dup_of(body, L, &b1); H[l0] = b0; H[l1] = b1; }
             r0 = mk(LAM, 0, l0); r1 = mk(LAM, 0, l1); break;
           }
           case SUP: {
@@ -185,7 +185,7 @@ static Term whnf(Term t) {
           case LAM: { itr(R_BETA); u32 m = LOC(f); Term body = H[m]; H[m] = a | SUBB; t = body; continue; }
           case SUP: {
             itr(R_APPSUP); Term a1, a0 = dup_of(a, LAB(f), &a1);
-            u32 s = alloc(2); H[s] = app(H[LOC(f)], a0); H[s + 1] = app(H[LOC(f) + 1], a1); return mk(SUP, LAB(f), s);
+            Term f0 = H[LOC(f)], f1 = H[LOC(f) + 1], x0 = app(f0, a0), x1 = app(f1, a1); u32 s = alloc(2); H[s] = x0; H[s + 1] = x1; return mk(SUP, LAB(f), s);
           }
           case ERA: itr(R_APPERA); return f;
           case MAT: {
@@ -194,7 +194,7 @@ static Term whnf(Term t) {
               case CTR: { itr(R_MATCH); t = apply_fields(H[LOC(f) + CT[LAB(v)].idx], v); continue; }
               case SUP: {
                 itr(R_APPMATSUP); Term m1, m0 = dup_of(f, LAB(v), &m1);
-                u32 s = alloc(2); H[s] = app(m0, H[LOC(v)]); H[s + 1] = app(m1, H[LOC(v) + 1]); return mk(SUP, LAB(v), s);
+                Term v0 = H[LOC(v)], v1 = H[LOC(v) + 1], x0 = app(m0, v0), x1 = app(m1, v1); u32 s = alloc(2); H[s] = x0; H[s + 1] = x1; return mk(SUP, LAB(v), s);
               }
               case ERA: itr(R_APPERA); return v;
               case CRD: expand(v); H[l + 1] = v; continue;
@@ -233,7 +233,7 @@ static Term lift_ctr(Term v) {                                    /* a field's s
       u32 L = LAB(f), a = alloc(ar), b = alloc(ar);
       for (int j = 0; j < ar; j++) {
         if (j == i) { H[a + j] = H[LOC(f)]; H[b + j] = H[LOC(f) + 1]; continue; }
-        Term x1; H[a + j] = dup_of(H[LOC(v) + j], L, &x1); H[b + j] = x1;
+        Term x1, x0 = dup_of(H[LOC(v) + j], L, &x1); H[a + j] = x0; H[b + j] = x1;
       }
       u32 s = alloc(2); H[s] = mk(CTR, LAB(v), a); H[s + 1] = mk(CTR, LAB(v), b); return mk(SUP, L, s);
     }
@@ -251,7 +251,7 @@ static void collapse(Term t) {
 }
 static void show(FILE *o, Term t, int d) {
   t = whnf(t);
-  if (d > 64) { fputs("…", o); return; }
+  if (d > 100000) { fputs("…", o); return; }
   switch (TAG(t)) {
     case NUM: fprintf(o, "%u", LOC(t)); return;
     case ERA: fputs("&{}", o); return;

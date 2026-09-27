@@ -22,13 +22,19 @@ collapse: the leaves of the result; the empty ones (&{}) are gone
 
 Usage: `hyper FILE…` prints each leaf of `@main`, then the receipt (interactions, heap words, and a count for each rule).
 
-- `sort.hyper` declares what "sorted" means. `@B : List` has no body, and `@main` keeps `B` where `spec input B` holds.
-- `sat.hyper` does the same with `@X, @Y : Bool` under XOR.
+- `sort.hyper` declares *sorted* as "each element is less than all following". Given A, nothing is open, so nothing is superposed or filtered. The bag is presented as its least element and the remainder (S ≅ (⋀S, S∖⋀S), the fibre law at `least`), and B is read off that presentation.
+- `sat.hyper` has an assignment that really is open: `@X, @Y : Bool` are coordinates, and XOR keeps its fibre over true.
 
-| input | leaves | result | interactions |
-|---|---|---|---|
-| `[]` | 1 | `[]` | 66 |
-| `[2,1,1]` | 1 | `[1,1,2]` | 10,119 |
-| `[3,1,2]` | 1 | `[1,2,3]` | 17,355 |
-| `[4,2,3,1]` | 1 | `[1,2,3,4]` | 207,819 |
-| XOR(x, y) | 2 | `(F,T)`, `(T,F)` | 75 |
+| input | result | interactions |
+|---|---|---|
+| `[]` | `[]` | 8 |
+| `[2,1,1]` | `[1,1,2]` | 170 |
+| `[3,1,2]` | `[1,2,3]` | 189 |
+| `[4,2,3,1]` | `[1,2,3,4]` | 374 |
+| permutation of 1…8 | sorted | 2,508 |
+| permutation of 1…16 | sorted | 21,484 |
+| permutation of 1…32 | sorted | 208,753 |
+| permutation of 1…64 | sorted | 2,659,761 |
+| XOR(x, y) | `(F,T)`, `(T,F)` (2 leaves) | 75 |
+
+**The count, derived for this presentation.** `least` over k elements makes k − 1 comparisons, so all levels together make n(n−1)/2. A comparison `le a b` costs min(a, b) + 1 matches. Each comparison also duplicates the two unary values it compares, and a duplication costs one `dupNode` per constructor. The total is therefore Θ(n² · v̄), where v̄ is the average value. For a permutation of 1…n that is Θ(n³), which matches the table: `dupNode` is 2,304,771 of the 2,659,761 interactions at n = 64. No superposition rule fires.
