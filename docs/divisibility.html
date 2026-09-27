@@ -58,6 +58,20 @@
   }
   code::before,code::after{content:""}
   a{color:var(--accent)}
+  details.proof{margin:.85rem 0 1.3rem; border:1px solid var(--math-rule);
+    border-radius:8px; background:var(--math-bg); overflow:hidden}
+  details.proof>summary{cursor:pointer; padding:.5rem .9rem; font-size:.9rem;
+    color:var(--accent); font-weight:650; list-style:none; user-select:none}
+  details.proof>summary::-webkit-details-marker{display:none}
+  details.proof>summary::before{content:"▸\00a0"; font-size:.85em}
+  details.proof[open]>summary::before{content:"▾\00a0"}
+  details.proof>summary:hover{text-decoration:underline}
+  details.proof pre{margin:0; padding:.75rem .95rem; border-top:1px solid var(--math-rule);
+    overflow-x:auto; font-size:.795rem; line-height:1.5; color:var(--fg);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  details.proof pre code{background:none; border:none; padding:0; font-size:1em}
+  details.proof figcaption{padding:.5rem .95rem 0; color:var(--muted);
+    font-size:.8rem; line-height:1.45}
   .diagrams{display:flex; flex-wrap:wrap; gap:18px 30px; justify-content:center;
             align-items:flex-end; margin:1.6rem 0 .5rem}
   figure.diagram{margin:0; text-align:center; flex:0 1 auto}
@@ -246,6 +260,22 @@ $$
 <ul>
 <li>For squarefree n each axis is just {0, 1}: a divisor is a choice of subset of the primes, ∧ is intersection, ∨ is union, ¬ is set-complement. That is the algebra of subsets of a k-element set — the truth tables on k independent yes/no atoms. Divisibility of a squarefree number and the propositional logic on its primes are one object; the cube of §2 (n = 30) is the case k = 3.</li>
 </ul>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- Squarefree n: a divisor is a subset of the primes, ∧/∨/¬ = and/or/complement.
+-- The Boolean algebra is these three identities, each by cases on one atom.
+not-involutive : (a : Bool) → not (not a) ≡ a
+not-involutive true  = refl
+not-involutive false = refl
+
+deMorgan : (a b : Bool) → not (a and b) ≡ (not a) or (not b)
+deMorgan true  b = refl
+deMorgan false b = refl
+
+distrib : (a b c : Bool) → (a and (b or c)) ≡ ((a and b) or (a and c))
+distrib true  b c = refl
+distrib false b c = refl</code></pre>
+<figcaption>On one prime axis a divisor is a bit; <code>∧, ∨, ¬</code> are <code>and, or, not</code>, and De&nbsp;Morgan, distributivity, and the involution hold by cases — the squarefree case is the Boolean algebra on <code>k</code> such atoms. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
 
 <h2><span class="n">4.</span> A repeated prime puts a middle on an axis; there excluded middle fails, and the negation that remains is intuitionistic</h2>
 <ul>
