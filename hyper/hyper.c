@@ -61,7 +61,7 @@ static inline void itr(int r) { RC[r]++; ITRS++; }
 /* ---- the book: types, constructors, definitions ------------------------------------------------------------ */
 typedef struct { char *name; int type, idx, arity; int ftype[16]; } Ctor;
 typedef struct { char *name; int nctor; int ctor[32]; } Type;
-static Ctor CT[4096]; static int NCT; static Type TY[512]; static int NTY;
+static Ctor CT[4096]; static int NCT; static u64 DUPCT[4096]; static Type TY[512]; static int NTY;
 static int find_type(const char *s) { for (int i = 0; i < NTY; i++) if (!strcmp(TY[i].name, s)) return i; return -1; }
 static int find_ctor(const char *s) { for (int i = 0; i < NCT; i++) if (!strcmp(CT[i].name, s)) return i; return -1; }
 
@@ -69,7 +69,7 @@ enum { K_VAR, K_LAM, K_APP, K_SUP, K_ERA, K_CTR, K_MAT, K_REF, K_NUM, K_OP2, K_C
 typedef struct Ast { int k; u32 x; struct Ast *a, *b, **kids; int n; } Ast;
 static Ast *node(int k) { Ast *t = calloc(1, sizeof *t); t->k = k; return t; }
 typedef struct { char *name; Ast *body; } Def;
-static Def DF[4096]; static int NDF;
+static Def DF[4096]; static int NDF; static u64 REFS[4096];
 static int def_id(const char *s) {
   for (int i = 0; i < NDF; i++) if (!strcmp(DF[i].name, s)) return i;
   DF[NDF].name = strdup(s); DF[NDF].body = 0; return NDF++;
@@ -150,7 +150,7 @@ static Term whnf(Term t) {
     switch (TAG(t)) {
       case VAR: { u64 s = H[LOC(t)]; if (s & SUBB) { t = s & ~SUBB; continue; } return t; }
       case CRD: { u64 s = H[LOC(t)]; if (s & SUBB) { t = s & ~SUBB; continue; } return t; }
-      case REF: { itr(R_REF); t = inst(DF[LAB(t)].body); continue; }
+      case REF: { itr(R_REF); REFS[LAB(t)]++; t = inst(DF[LAB(t)].body); continue; }
       case DP0: case DP1: {
         u32 e = LOC(t), L = LAB(t); int side = TAG(t) == DP1;
         u64 s = H[e + side]; if (s & SUBB) { t = s & ~SUBB; continue; }
@@ -172,7 +172,7 @@ static Term whnf(Term t) {
             u32 s0 = alloc(2), s1 = alloc(2); H[s0] = a0; H[s0 + 1] = b0; H[s1] = a1; H[s1 + 1] = b1;
             r0 = mk(SUP, LAB(v), s0); r1 = mk(SUP, LAB(v), s1); break;
           }
-          case CTR: case MAT: itr(R_DUPNODE); r0 = node_copy(v, L, &r1); break;
+          case CTR: case MAT: itr(R_DUPNODE); if (TAG(v) == CTR) DUPCT[LAB(v)]++; r0 = node_copy(v, L, &r1); break;
           case NUM: case ERA: itr(R_DUPATOM); r0 = r1 = v; break;
           default: return t;                                        /* a duplication of something stuck */
         }
@@ -395,5 +395,7 @@ int main(int argc, char **argv) {
   printf("- leaves: %u\n- interactions: %llu\n- heap words: %llu\n-", NLEAF, (unsigned long long)ITRS, (unsigned long long)HLEN);
   for (int r = 0; r < R_N; r++) if (RC[r]) printf(" %s %llu", RNAME[r], (unsigned long long)RC[r]);
   printf("\n");
+  if (getenv("HYPER_REFS")) { printf("- copies by constructor:"); for (int c = 0; c < NCT; c++) if (DUPCT[c]) printf(" #%s %llu", CT[c].name, (unsigned long long)DUPCT[c]); printf("\n"); }
+  if (getenv("HYPER_REFS")) { printf("- unfoldings:"); for (int d = 0; d < NDF; d++) if (REFS[d]) printf(" @%s %llu", DF[d].name, (unsigned long long)REFS[d]); printf("\n"); }
   return 0;
 }

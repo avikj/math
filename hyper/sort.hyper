@@ -1,20 +1,39 @@
-// Sorted: each element is less than all following.  Given A, that fixes B: its first element is the one
-// below all others of A's bag, and the rest is the same over what remains.  Nothing is open, so nothing is
-// superposed and nothing is filtered: the bag is presented as its least element and the remainder
-// (S ≅ (⋀S, S∖⋀S), the fibre law at "least"), and B is read off that presentation.
+// Sorted: each element is less than all following.  Given A, B is determined: its first element is the meet of
+// A's bag, and the rest is the same over what remains.
+//
+// Both the numbers and the bag are in their digit charts, not in unary (TransportDivScale: unary is the
+// exponential home chart, digits the linear one).  A number is its binary digits, most significant first, at a
+// fixed width.  A bag of n is a disjoint union of halves (addition is disjoint union), so its meet is the meet
+// of the halves' meets.  The meet is lossless: each node keeps which side won, which is the fibre of the
+// comparison, so removing the meet re-reads only the one side it came from.
 type Bool { F, T }
-type Nat { Z, S(p: Nat) }
-type List { N, C(h: Nat, t: List) }
-type Least { None, One(m: Nat, rest: List) }
+type Bits { E, O(b: Bits), I(b: Bits) }
+type List { N, C(h: Bits, t: List) }
+type Bag { Z, One(x: Bits), Two(m: Bits, w: Bool, l: Bag, r: Bag) }   // w = T: the meet m came from l
 
-@le = λ{#Z: λb #T; #S: λp λ{#Z: #F; #S: λq (@le p q)}}
+@le = λ{#E: λb #T; #O: λa λ{#E: #T; #O: λb (@le a b); #I: λb #T}; #I: λa λ{#E: #T; #O: λb #F; #I: λb (@le a b)}}
 
-// a bag as its least element and what remains
-@least = λ{#N: #None; #C: λx λxs (@put x (@least xs))}
-@put = λx λ{#None: #One{x, #N}; #One: λm λr (@keep x m r (@le x m))}
-@keep = λx λm λr λ{#T: #One{x, #C{m, r}}; #F: #One{m, #C{x, r}}}
+// the meet of two bags: each side's top is read while the side is kept (a ↦ (f a, a)), never copied whole;
+// the side that won is kept with the meet
+@join = λ{#Z: λr r; #One: λx λr (@jr x (λk #One{k}) r); #Two: λm λw λa λb λr (@jr m (λk #Two{k, w, a, b}) r)}
+@jr = λx λrx λr (@jk r x rx)
+@jk = λ{#Z: λx λrx (rx x); #One: λy λx λrx (@cmp x rx y (λk #One{k})); #Two: λm λw λc λd λx λrx (@cmp x rx m (λk #Two{k, w, c, d}))}
+@cmp = λa λra λb λrb (@pick (@le a b) a b ra rb)
+@pick = λ{#T: λa λb λra λrb #Two{a, #T, (ra a), (rb b)}; #F: λa λb λra λrb #Two{b, #F, (ra a), (rb b)}}
+@two = λl λr (@join l r)
 
-@present = λS (@presentK (@least S))
-@presentK = λ{#None: #N; #One: λm λr #C{m, (@present r)}}
+// what remains after the meet: only the side it came from is re-read
+@rest = λ{#Z: #Z; #One: λx #Z; #Two: λm λw λl λr (@restW w l r)}
+@restW = λ{#T: λl λr (@two (@rest l) r); #F: λl λr (@two l (@rest r))}
 
-@main = (@present @input)
+// the list read as a bag of halves: split by alternation, which halves the length
+@bag = λ{#N: #Z; #C: λh λt (@bagC h t)}
+@bagC = λh λ{#N: #One{h}; #C: λh2 λt2 (@bagP (@split #C{h, #C{h2, t2}}))}
+type Pair { P(a: List, b: List) }
+@split = λ{#N: #P{#N, #N}; #C: λh λt (@splitC h (@split t))}
+@splitC = λh λ{#P: λa λb #P{#C{h, b}, a}}
+@bagP = λ{#P: λa λb (@two (@bag a) (@bag b))}
+
+@present = λ{#Z: #N; #One: λx #C{x, #N}; #Two: λm λw λl λr #C{m, (@present (@restW w l r))}}
+
+@main = (@present (@bag @input))
