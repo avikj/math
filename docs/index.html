@@ -275,7 +275,13 @@ $$
 $$
 <ul>
 <li>Check: <code>i ∂_t F = i ∂_t E − ∂_t B = i(∇×B) + ∇×E = ∇×(E + iB) = ∇×F</code>, using the two Maxwell equations; splitting real and imaginary parts gives them back. Classical electromagnetism and single-particle quantum mechanics are the same equation.</li>
-<li><code>‖F‖² = ⟨E+iB, E+iB⟩ = ‖E‖² + ‖B‖²</code> — the Hermitian cross terms <code>±i⟨E,B⟩</code> cancel; and <code>d/dt ‖F‖² = 0</code> since the generator (<code>× i</code> after <code>∇×</code>) is skew-adjoint. The conserved energy — length preserved, i.e. unitary.</li>
+<li><code>‖F‖² = ⟨E+iB, E+iB⟩ = ‖E‖² + ‖B‖²</code> — the Hermitian cross terms <code>±i⟨E,B⟩</code> cancel. Conservation is forced, not named: from <code>∂_t F = −i∇×F</code>,</li>
+</ul>
+$$
+\tfrac{d}{dt}\,\lVert F\rVert^2 \;=\; 2\,\mathrm{Re}\,\langle F,\ \partial_t F\rangle \;=\; 2\,\mathrm{Re}\,\langle F,\ -i\,\nabla\times F\rangle \;=\; 2\,\mathrm{Im}\,\langle F,\ \nabla\times F\rangle \;=\; 0,
+$$
+<ul>
+<li>because curl is self-adjoint — <code>∫ F·(∇×F) = ∫ (∇×F)·F</code> by parts with no boundary term — so <code>⟨F, ∇×F⟩</code> is real and its imaginary part vanishes. The generator <code>−i∇×</code> is therefore skew-adjoint: the flow preserves length, i.e. is unitary.</li>
 </ul>
 <h2>Search</h2>
 $$
