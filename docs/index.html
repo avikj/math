@@ -136,7 +136,22 @@ $$
 \ell(g) + \ell(g^{-1}) = \ell(e) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals are} \ge 0)
 $$
 <ul>
-<li>So a <strong>reversible net effect is free on this axis</strong>: the reversible effects are the invertible elements of that monoid, so they form a group, and on a group the grading vanishes (above) — <code>transport</code> and every isomorphism carry no additive cost. This is where Landauer's principle sits (§5).</li>
+<li>So a <strong>reversible net effect is free on this axis</strong>: the reversible effects are the invertible elements of that monoid, so they form a group, and on a group the grading vanishes (above) — <code>transport</code> and every isomorphism carry no additive cost. This is where Landauer's principle sits (§5).
+<details class="proof"><summary>the checked term</summary>
+<pre><code>+≡0→≡0 : (m n : ℕ) → m + n ≡ 0 → m ≡ 0
++≡0→≡0 zero    n p = refl
++≡0→≡0 (suc m) n p = rec (snotz p)
+
+module _ (G : Type) (_·_ : G → G → G) (e : G) (inv : G → G)
+  (invr : (g : G) → g · inv g ≡ e)
+  (ℓ : G → ℕ) (ℓe : ℓ e ≡ 0) (ℓ· : (g h : G) → ℓ (g · h) ≡ ℓ g + ℓ h) where
+
+  -- ℓ g + ℓ g⁻¹ = ℓ (g · g⁻¹) = ℓ e = 0, and a natural sum is 0 only at 0.
+  grading-vanishes : (g : G) → ℓ g ≡ 0
+  grading-vanishes g = +≡0→≡0 (ℓ g) (ℓ (inv g))
+    (sym (ℓ· g (inv g)) ∙ cong ℓ (invr g) ∙ ℓe)</code></pre>
+<figcaption>Any additive cost <code>ℓ</code> (a monoid map to <code>(ℕ,+)</code> with <code>ℓ e = 0</code>) vanishes on a group: <code>ℓ g + ℓ g⁻¹ = ℓ e = 0</code>, and a natural sum is <code>0</code> only when each summand is. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
 <li><strong>Length is not that grading.</strong> Minimum length over a fixed set of primitive steps is only <em>subadditive</em> — strict under cancellation — and is <em>positive on reversible operations</em>: reading input at depth <code>n</code> is reversible yet has minimum length exactly <code>n</code> (§5). Reversible ≠ free in steps.</li>
 <li>Both are <strong>relative to the observation</strong>: erasure is the collapse of a fibre — losing which input produced the output — so keep the fibre (§1) and nothing is erased; and the length charged is the steps the <em>requested</em> output forces, not those to reconstruct a whole trace.</li>
 </ul>
