@@ -224,6 +224,28 @@ $$
 <ul>
 <li>Every chain is distributive; a product of chains is distributive but not totally ordered. Divisibility is that product: distributive, with 2 and 3 incomparable.</li>
 </ul>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- One prime axis is a chain; meet and join are min and max.
+mn : ℕ → ℕ → ℕ
+mn zero    _       = zero
+mn (suc _) zero    = zero
+mn (suc a) (suc b) = suc (mn a b)
+
+mx : ℕ → ℕ → ℕ
+mx zero    b       = b
+mx (suc a) zero    = suc a
+mx (suc a) (suc b) = suc (mx a b)
+
+-- Distributivity on the chain, by induction — the whole lattice is this,
+-- one coordinate at a time.
+distrib : (a b c : ℕ) → mn a (mx b c) ≡ mx (mn a b) (mn a c)
+distrib zero    b       c       = refl
+distrib (suc a) zero    zero    = refl
+distrib (suc a) zero    (suc c) = refl
+distrib (suc a) (suc b) zero    = refl
+distrib (suc a) (suc b) (suc c) = cong suc (distrib a b c)</code></pre>
+<figcaption>On one exponent axis, gcd/lcm are <code>min</code>/<code>max</code>; the distributive law holds by induction, base cases by <code>refl</code>. True per coordinate, it is true of the vectors — divisibility is a product of chains. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
 
 <h2><span class="n">3.</span> The map d ↦ n/d reflects every axis; it swaps gcd with lcm, and is a true complement exactly when n is squarefree</h2>
 <ul>
