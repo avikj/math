@@ -138,7 +138,7 @@ $$
 </ul>
 <ul>
 <li><strong>Cantor.</strong> <code>B = 2</code>, <code>g = ¬</code>: negation swaps <code>true</code> and <code>false</code>, so it has no fixed point, and <code>(A → 2)</code> is <code>𝒫(A)</code> by characteristic functions — no surjection <code>A ↠ 𝒫(A)</code>.</li>
-<li><strong>Gödel.</strong> Number the sentences by <code>A</code> and let <code>e</code> enumerate the predicates on them (maps <code>A → B</code> of provability values); <code>g =</code> negation. No such <code>e</code> reaches every predicate, and the one it misses is the sentence asserting its own unprovability — the diagonal at this <code>(B, g)</code>.</li>
+<li><strong>Gödel.</strong> Number the sentences by <code>A</code> and let <code>e</code> enumerate the predicates on them (maps <code>A → B</code> of provability values); <code>g =</code> negation. No such <code>e</code> reaches every predicate, and the one it misses is the sentence asserting its own unprovability — the diagonal at this <code>(B, g)</code>, once arithmetization lets a sentence speak of its own proofs.</li>
 <li><strong>Halting.</strong> <code>B = 2</code>; the universal machine gives <code>e : A → (A → 2)</code> (run code <code>a</code> on input <code>a</code>), a halting-decider would complete it to a point-surjection, and <code>g = ¬</code> on the diagonal has no fixed point — no machine decides its own halting.</li>
 </ul>
 <p>One lemma; the walls are its instances. Russell's paradox, Tarski's undefinability of truth, and Rice's theorem are the same diagonal at their own <code>(B, g)</code>; the recursion theorem is its positive reading, where <code>g</code> keeps a fixed point. There is no family of impossibility theorems — there is this one, read at different points.</p>
