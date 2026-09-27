@@ -123,6 +123,29 @@ d \mid \gcd(a,b) \iff d \mid a \ \text{ and }\ d \mid b
 \qquad
 \operatorname{lcm}(a,b) \mid m \iff a \mid m \ \text{ and }\ b \mid m
 $$
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- The order on one exponent axis, and meet as min.
+le : ℕ → ℕ → Type
+le zero    _       = Unit
+le (suc _) zero    = ⊥
+le (suc m) (suc n) = le m n
+
+mn : ℕ → ℕ → ℕ
+mn zero    _       = zero
+mn (suc _) zero    = zero
+mn (suc a) (suc b) = suc (mn a b)
+
+-- The universal property of the meet, per axis:
+-- e ≤ min(a,b)  ⟺  e ≤ a and e ≤ b.  Both directions, by induction.
+into : (e a b : ℕ) → le e (mn a b) → (le e a × le e b)
+into zero    a       b       _ = tt , tt
+into (suc e) (suc a) (suc b) p = let (l , r) = into e a b p in l , r
+
+from : (e a b : ℕ) → le e a → le e b → le e (mn a b)
+from zero    a       b       _ _ = tt
+from (suc e) (suc a) (suc b) l r = from e a b l r</code></pre>
+<figcaption><code>d ∣ gcd(a,b) ⟺ d ∣ a and d ∣ b</code> is, per prime axis, <code>e ≤ min(a,b) ⟺ e ≤ a and e ≤ b</code> — the meet's universal property, both directions by induction. This is what fixes gcd, no formula needed. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
 
 <h2><span class="n">2.</span> Unique factorization is distributivity: one chain per prime</h2>
 <ul>
