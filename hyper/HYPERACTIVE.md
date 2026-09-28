@@ -2,40 +2,37 @@
 
 This is the net that Bend2's `--to-hvm4-full` emits into, plus one addition: a declaration with no body is a coordinate of its type.
 
-Everything else is a program in the book, reduced by the same rules. That includes the cubical operations (`coe`, `hcomp`, `ua`, Glue), the fibre law, the whole process, and every domain.
+A coordinate is a slot and its type. Its type is a term: a data type `T`, `Σ x: A. B`, `Π x: A. B`, or `(≡ x y)`. When something asks the coordinate for its value (a match, an application, or collecting the leaves), the slot is written in place according to its type:
 
-```
-TERM = VAR | LAM | APP | SUP L | DP0 L | DP1 L | ERA | CTR c | MAT T | REF d | NUM | OP2 | CRD T
+| type | value written |
+|---|---|
+| T | T's constructors, superposed, with fresh coordinates as fields |
+| Σ A F | the pair (a, b), where b : F a |
+| Π A F | λx. the coordinate of F x |
+| x ≡ y | x and y unified |
 
-DUP meets LAM             dupLam            both copies are lambdas; the binder becomes &L{x0,x1}
-DUP meets SUP, same L     dupSupEqual       route: the two sides are the two copies
-DUP meets SUP, other L    dupSupDifferent   cross: both copies superposed at the other label
-DUP meets CTR/MAT         dupNode           both copies are the node, its parts duplicated
-APP of LAM                beta
-APP of SUP                appSup
-APP of MAT to CTR         match
-APP of MAT to SUP         appMatSup
-APP of MAT to CRD, or DUP meets CRD   expand: in place, the coordinate becomes the superposition of its
-                                      type's constructors, with fresh coordinates as their fields
-collapse: the leaves of the result; the empty ones (&{}) are gone
-```
+Unification:
+- Two constructors unify field by field; different constructors give `&{}`.
+- A superposed side distributes over the other.
+- A coordinate is bound in the branch that reached it. Its slot becomes one superposition per choice label on the way: the value on the side taken, and a fresh coordinate of its type on the other side. Copy labels (duplications of one variable) bind both copies.
+
+This is the reference core's rule at a match (`fb8e64afd:hyper/cell.c`: `coordinate_asked`, `unify_step`, `bind_under`), translated into the net.
 
 Usage: `hyper FILE…` prints each leaf of `@main`, then the receipt (interactions, heap words, and a count for each rule).
 
-- `sort.hyper` declares *sorted* as "each element is less than all following". Given A, B is determined: its first element is the meet of A's bag, and the rest is the same over what remains. Both numbers and the bag are in their digit charts, not unary (TransportDivScale: unary is the exponential chart).
-  - A number is its binary digits.
-  - A bag is a disjoint union of halves.
-  - The meet is lossless: each node keeps the side that won, so removing the meet re-reads only that side.
-  - Each side's top is read while the side is kept, never copied.
-- `sat.hyper`: the assignment really is open. `@X, @Y : Bool` are coordinates, and XOR keeps its fibre over true.
+- **`sat.hyper`**: `@sat : Σ x: Bool. Σ y: Bool. (≡ (@xor x y) #T)`. Two leaves, 48 interactions.
+- **`sort.hyper`**: the declaration and nothing else: `@sort : Π A: List. Σ B: List. (× (@Perm A B) (@Sorted B))`.
+  - `Perm`: B's head is taken out of A, and B's tail is a permutation of what remains.
+  - `Sorted`: each element ≤ all following.
+  - `@main = (@sort @A)` prints the one point: B together with its proofs.
 
-| n (a permutation of 0…n−1) | sorted | comparisons | ⌈log₂ n!⌉ | interactions |
-|---|---|---|---|---|
-| 8 | yes | 17 | 16 | 1,618 |
-| 64 | yes | 305 | 296 | 31,262 |
-| 256 | yes | 1,721 | 1,684 | 190,630 |
-| 1024 | yes | 8,949 | 8,769 | 1,072,890 |
+| n (a permutation of 0…n−1) | B | interactions |
+|---|---|---|
+| 3 | sorted | 5,749 |
+| 4 | sorted | 30,178 |
+| 5 | sorted | 204,249 |
+| 6 | sorted | 1,734,870 |
 
-The counts are the same under both schedules (`HYPER_ORDER=1`). Comparisons are log₂ n! + about 0.18n. Each comparison reads w = log₂ n digits, so the interaction count is Θ(n log n · w).
+The reference core took 37,159 interactions for [3,1,2]. Growth here is factorial: under this schedule, `Perm` is completed before `Sorted` is read, so every arrangement is built and then refused.
 
-Diagnostics: `HYPER_REFS=1` prints unfoldings per definition and copies per constructor.
+Under `HYPER_ORDER=1`, `Sorted` is read first over an unbound B, and collection does not terminate. So the count is not schedule-invariant here: collecting the leaves over an unbounded superposition is outside the one-step diamond.
