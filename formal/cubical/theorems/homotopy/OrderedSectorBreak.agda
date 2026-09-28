@@ -126,7 +126,7 @@ module _ (R : CommRing ℓ) where
 
  private
    -- The three ring identities the file uses.  Each is discharged by the
-   -- solver on the quantified goal, per BUILD.md's convention.
+   -- solver on the quantified goal, per BUILD.md (absent from this repository)'s convention.
    diag0 : (h x : ⟨ R ⟩) → h · (x - x) ≡ 0r
    diag0 _ _ = solve! R
 

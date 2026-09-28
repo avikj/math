@@ -23,15 +23,15 @@
 --
 --   That erase-or-retain choice is the stated hypothesis of this
 --   repository's addition-chain cache lane, put plainest at
---   notes/ADDITION_CHAIN_PROCESS_MEMORY.md §4 ("The persistence
+--   notes/ADDITION_CHAIN_PROCESS_MEMORY.md (absent from this repository) §4 ("The persistence
 --   boundary": if the runtime discards every intermediate, both
 --   histories become (6,{6}) and no probe separates them).
 --
 -- ────────────────────────────────────────────────────────────────────
 -- WHAT IS CHECKED HERE
 --
---   notes/FLEET_BREAKER_PASS_2026_08_14.md §6.4 refutes the
---   recommendation of notes/EXACT_PREDICTIVE_QUANTUM_MEMORY_NO_GO.md §5
+--   notes/FLEET_BREAKER_PASS_2026_08_14.md (absent from this repository) §6.4 refutes the
+--   recommendation of notes/EXACT_PREDICTIVE_QUANTUM_MEMORY_NO_GO.md (absent from this repository) §5
 --   ("compile exact cache histories to their profile quotient") by
 --   exhibiting a HOMOMETRIC PAIR: two caches, both reachable from {1},
 --   with equal distance profiles on the declared family T = {11}, which

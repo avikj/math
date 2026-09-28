@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- GaugeOrbitClasses
 --
--- TARGET.md's headline is "make the parity barrier a theorem about
+-- TARGET.md (absent from this repository)'s headline is "make the parity barrier a theorem about
 -- OBSERVABLE CLASSES".  `ParitySeparator` and `ChargeCriterion` deliver a
 -- theorem about ONE PAIR: the all-plus assignment σ₊ and its total gauge
 -- flip.  Everything they say is correct; but a statement about one orbit
@@ -17,7 +17,7 @@
 --
 -- Sign assignments σ : ℕ → Bool are not just a set with a distinguished
 -- involution on it.  They are a TORSOR over the gauge group
--- G = (ℕ → Bool, pointwise ·) — the full torus of `GAUGE.md` §F.1, of
+-- G = (ℕ → Bool, pointwise ·) — the full torus of `GAUGE.md` (absent from this repository) §F.1, of
 -- which `ParitySeparator.flip` is the single element (−1,−1,−1,…).  Once
 -- that is said, the right lemma is not `flip-law` but the bilinearity of
 -- `val` in its sign argument:
@@ -84,7 +84,7 @@
 --
 --   §7 proves the concatenated form `val σ (m ++ (k ++ k)) ≡ val σ m`,
 --   which is the core and avoids permutation machinery.
--- * Nothing about Goldbach, twin primes, W3, or `BARRIER.md` Problem 2.
+-- * Nothing about Goldbach, twin primes, W3, or `BARRIER.md` (absent from this repository) Problem 2.
 -- * `ChargeCriterion` is NOT refuted.  Every statement in it is true as
 --   written; §6 refutes only an over-reading its wording invites.
 --
@@ -359,7 +359,7 @@ classes-⇒ (n ∷ qs) σ σ' e =
 --
 -- Nevertheless it separates, at every base point, the pair (σ, τ₀ ⋆ σ)
 -- where τ₀ flips exactly one prime.  The single-prime flip is a perfectly
--- ordinary element of `GAUGE.md`'s torus; it was simply never the
+-- ordinary element of `GAUGE.md` (absent from this repository)'s torus; it was simply never the
 -- adversary, because the word "parity" fixes attention on the diagonal
 -- element.
 --
@@ -410,7 +410,7 @@ probe-6-class-collapse σ = obs-agree⋆ τ₋ σ probe-6 τ₋-is-neutral-for-p
 -- sent to +1 by EVERY sign assignment — so a query at a square is
 -- invisible to the entire gauge group at once.
 --
--- The consequence is the one that bears on TARGET.md §2's W4.  W4 asks
+-- The consequence is the one that bears on TARGET.md (absent from this repository) §2's W4.  W4 asks
 -- "how much archimedean input, at what depth, buys how much parity
 -- information".  At the exact algebraic layer that quantity does not
 -- exist: separating power is not increased by making a query bigger, by

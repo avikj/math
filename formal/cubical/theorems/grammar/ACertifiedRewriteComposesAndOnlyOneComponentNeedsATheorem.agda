@@ -39,7 +39,7 @@
 --
 -- ────────────────────────────────────────────────────────────────────
 -- ON THE COST CONVENTION, because it is a live hazard on this line.
--- The cost vector is compared with `StrictlyDominates`, which is the
+-- The cost vector is compared with `StrictlyDominatedBy`, which is the
 -- BENEFIT reading — higher is better.  §39–47's "complexity" is a cost,
 -- lower is better, so applying this to it requires the flip, and the
 -- flip is SOUND BUT NOT FAITHFUL: it needs a cap above every cost ever
@@ -60,7 +60,7 @@ open import Cubical.Data.Sigma using (_×_ ; _,_ ; fst ; snd)
 open import Cubical.Relation.Nullary using (¬_)
 
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (StrictlyDominates)
+  using (StrictlyDominatedBy)
 open import ANonEmptyArchiveHasANonEmptyStratum
   using (⊏-irrefl ; ⊏-trans)
 
@@ -77,7 +77,7 @@ module _ {Sys B Prov : Type}
   Certified : Sys → Sys → Type
   Certified d e =
       (sem e ≡ sem d)                              -- boundary preserved
-    × (StrictlyDominates (cost d) (cost e))        -- strictly improved
+    × (StrictlyDominatedBy (cost d) (cost e))        -- strictly improved
     × (M d → M e)                                  -- state migration
     × List Prov                                    -- provenance
 

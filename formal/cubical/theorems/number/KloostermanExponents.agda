@@ -432,7 +432,7 @@ split-strictly-worse q r h =
 -- 9. Numeric certificates.  These replay, as kernel facts, every number of the
 --    audit report.  Cross-references are to the JSON
 --    report data/egb_circulation_0002/
---      PRIME_MOBIUS_KLOOSTERMAN_PARAMETER_AUDIT_REPORT_2026-08-16.json.
+--      PRIME_MOBIUS_KLOOSTERMAN_PARAMETER_AUDIT_REPORT_2026-08-16.json (absent from this repository).
 ------------------------------------------------------------------------------
 
 -- ---- check UNSPLIT-BALANCED-COMPARISON, audit (5.1): ρ = 0, φ = 0. --------

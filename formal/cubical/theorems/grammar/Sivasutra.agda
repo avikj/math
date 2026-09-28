@@ -9,7 +9,7 @@
 -- INTERVAL from a starting sound up to (and excluding) a marker: e.g. `a`
 -- = a i u; `aK` = a i u  ; `aC` = all the vowels.  This is the device
 -- that lets any needed phonological class be named by two letters, and it
--- is why INDIC_FORMAL_TRADITIONS_MAP.md §1.1 records the iva-stra
+-- is why INDIC_FORMAL_TRADITIONS_MAP.md (absent from this repository) §1.1 records the iva-stra
 -- ordering as an interval representation of an intersection-closed family
 -- (Petersen's optimality theorem is that deeper object).
 --
@@ -140,7 +140,7 @@ aC = refl
 --  K  C and has no fifth, so four is the minimum and this order attains it.
 --
 -- What is proved is a lower bound and its attainment on the vowel subfamily.
--- `interactive/Pratyahara_TheIntervalDecisionProcedure.hs` decides nameability
+-- `interactive/Pratyahara_TheIntervalDecisionProcedure.hs` (absent from this repository) decides nameability
 -- against the line (no table) and computes the bound over all fourteen
 -- stras: width 14 over the 294 classes the line can name, width 11 over the
 -- ~30 the grammar uses.

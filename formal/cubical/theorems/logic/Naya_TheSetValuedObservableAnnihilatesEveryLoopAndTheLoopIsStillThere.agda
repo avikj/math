@@ -19,7 +19,7 @@
 --      on `F`: not continuity, not computability, not naturality.
 --   २  लोपाभावः   -- the loop is nevertheless not `refl`.
 --   ३  the package: a nonzero charged sector on which every set-valued
---      standpoint has expectation exactly zero.  This is `GAUGE.md`
+--      standpoint has expectation exactly zero.  This is `GAUGE.md` (absent from this repository)
 --      Theorem F's MECHANISM at the grain of the identification graph:
 --      an invariant observable annihilates what the symmetry moves, and
 --      the annihilation is an invariance, not a deficiency of effort.

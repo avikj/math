@@ -5,12 +5,12 @@
 --
 -- D0026 §14.1's finite acceptance core, discharged in one module
 -- D0026 §§2.2, 2.4, 2.5, 14.1
--- (`collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md`).
+-- (`collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md` (absent from this repository)).
 --
 -- CONTENTS
 --
 --   §1  _⊖_, TrefoilAlgebra    the two abelian telescope identities, at a
---                              VARIABLE CommRing (per BUILD.md's rule:
+--                              VARIABLE CommRing (per BUILD.md (absent from this repository)'s rule:
 --                              state ring identities over an arbitrary
 --                              ring, instantiate afterwards), by solve!
 --   §2  General                D0026 §2.2's trefoil identity
@@ -80,7 +80,7 @@
 -- duplicated here; consumers should import the modules above for it.
 --
 -- Rigor boundary: everything below is exact finite/symbolic
--- computation or algebra — the kind of object CLAUDE.md licenses
+-- computation or algebra — the kind of object CLAUDE.md (absent from this repository) licenses
 -- unconditionally.  Nothing here is a measurement, and no claim about
 -- ℝ-valued profiles, infinite carriers, or the middle nucleus is made.
 ------------------------------------------------------------------------
@@ -119,7 +119,7 @@ _⊖_ : ℤ → ℤ → ℤ
 x ⊖ y = x +ℤ (-ℤ y)
 
 -- The two abelian-group shuffles behind D0026 §2.2/§2.5, at a variable
--- CommRing per BUILD.md (only + and − occur; degree 1, solver-trivial).
+-- CommRing per BUILD.md (absent from this repository) (only + and − occur; degree 1, solver-trivial).
 -- Both right-hand sides are the ternary telescope P − A − B − C.
 module TrefoilAlgebra (R : CommRing ℓ) where
   open CommRingStr (snd R)

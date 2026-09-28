@@ -2,13 +2,13 @@
 
 ------------------------------------------------------------------------
 -- ऋजु-कुटिल — the straight and the bent.  The licensing theorem behind the
--- machine's convexity certificate (runtime/physics/geodesic.py): on a
+-- machine's convexity certificate (runtime/physics/geodesic.py (absent from this repository)): on a
 -- discrete family, STRICT CONVEXITY forces once-weakly-rising ⟹
 -- strictly-rising-forever — no plateau, no second dip — so the extracted
 -- minimum is the ONLY stationary point, and "cost-minimal route" may be
 -- read as "physical ray".  Fermat is stationarity (δOPL = 0); extraction
 -- is minimisation; minimal ⟹ stationary always, and the converse is
--- exactly what this theorem licenses.  The mirror maximum (geodesic.py's
+-- exactly what this theorem licenses.  The mirror maximum (geodesic.py (absent from this repository)'s
 -- own counterexample) violates the hypothesis, not the theorem.
 --
 -- STATED WITHOUT SUBTRACTION.  Over ℕ the second difference is not a
@@ -30,12 +30,12 @@
 --       finished: nothing later is smaller, so no stationary point
 --       other than the minimum exists.
 --
--- The certificate in geodesic.py checks the hypothesis (every interior
+-- The certificate in geodesic.py (absent from this repository) checks the hypothesis (every interior
 -- second difference > 0, exact Surd signs); this term is the implication
 -- it then invokes.  Declared there, proved here.
 --
 -- This term proves the
--- implication for ℕ-VALUED families.  geodesic.py's OPL values are exact
+-- implication for ℕ-VALUED families.  geodesic.py (absent from this repository)'s OPL values are exact
 -- Surds (quadratic irrationals); the implication at Surd values has the
 -- same proof shape over any cancellative ordered additive structure but
 -- is not itself this term.  "Declared there, proved here" holds at ℕ.

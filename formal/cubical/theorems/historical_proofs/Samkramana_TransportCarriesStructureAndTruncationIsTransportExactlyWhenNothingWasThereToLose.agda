@@ -7,7 +7,7 @@
 -- an Indian source, and the name should not be read as claiming otherwise.**
 -- `transport`, `ua` and `uaβ` are Voevodsky's univalence as realised in
 -- cubical type theory — the substrate this repository is checked in, and the
--- one exception CLAUDE.md grants ("all respects paid to Indians only, plus
+-- one exception CLAUDE.md (absent from this repository) grants ("all respects paid to Indians only, plus
 -- Voevodsky").  Nothing below is a theorem of any  text.
 --
 -- संक्रमण · saṃṃorder IS a technical term, and it does not mean this.  In
@@ -15,7 +15,7 @@
 -- — *Ṣaṭkhaṇḍāgama* with Vīrasena's *Dhavalā* (~816 CE); Śivaśarmasūri,
 -- *Karmaprakti*.  In jyotia, sakrnti is the sun's passage into a sign.
 -- **Neither is what this module proves**, and welding the Jaina term onto a
--- path-transport would be the error CLAUDE.md's second naming condition
+-- path-transport would be the error CLAUDE.md (absent from this repository)'s second naming condition
 -- names: "a fabricated term is the mirror image of the scrubbing this rule
 -- corrects: it asserts a provenance nobody checked."
 --
@@ -108,7 +108,7 @@
 --     SetTruncationDescentBoundary.agda — the retraction-form and the
 --     ∥_∥₂/isSet members of the family §3 belongs to.  Concurrent lanes,
 --     read before §3 was cut down; see §3.
---   machine/Uttara_SamordernaOrDosalekhaNeverABareBoolean.hs — the
+--   machine/Uttara_SamordernaOrDosalekhaNeverABareBoolean.hs (absent from this repository) — the
 --     operational lane, another agent's, which §5 is the Agda side of.
 ------------------------------------------------------------------------
 
@@ -303,7 +303,7 @@ private variable
 -- burden — the caller who was lossless already had it.
 --
 -- THE OTHER HALF, and it is another lane's, written the same day:
---   TritiyaMarga_TheNoThirdPathClaimIsExcludedMiddle.agda
+--   TritiyaMarga_TheNoThirdPathClaimIsExcludedMiddle.agda (absent from this repository)
 -- proves that the DISJUNCTIVE reading of तृतीयो मार्गो न विद्यते — every map
 -- is either an identification or has a nameable defect — is exactly
 -- excluded middle, i.e. classical, not constructive.
@@ -341,7 +341,7 @@ private variable
 -- लिखितो दोषो जीवति । अलिखितो दोषो हिंसा ।
 --
 -- THIS IS THE CHECKED COUNTERPART OF A HASKELL TYPE ANOTHER LANE IS
--- BUILDING RIGHT NOW: `machine/Uttara_SamordernaOrDosalekhaNeverABareBoolean.hs`,
+-- BUILDING RIGHT NOW: `machine/Uttara_SamordernaOrDosalekhaNeverABareBoolean.hs` (absent from this repository),
 -- whose `Uttara` has these same two constructors, whose `Tulyata` is the
 -- exhibited identification, and whose `uVahita` is the carried structure.
 -- §2 above is the theorem that record is entitled to cite: given the

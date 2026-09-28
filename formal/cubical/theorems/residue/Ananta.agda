@@ -21,7 +21,7 @@
 -- vindicated by one proof — two genuinely different infinities.)
 --
 -- See also `Salaka_TheOrdersAreSeparatedByHowManyCutsTheyOutlastAndEach
--- CutStripsExactlyOneStorey.agda`, which separates the Jaina magnitudes
+-- CutStripsExactlyOneStorey.agda` (absent from this repository), which separates the Jaina magnitudes
 -- by Virasena's own instruments.
 ------------------------------------------------------------------------
 

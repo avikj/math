@@ -7,7 +7,7 @@
 -- ON THE NAME.  The mathematics here is group actions, torsors, and
 -- invariant orders — Galois/Jordan/Baer/Grothendieck-era European
 -- algebra.  There is no Indian source term for this object and none is
--- invented, per CLAUDE.md's file-naming note 2.  The interpretive frame
+-- invented, per CLAUDE.md (absent from this repository)'s file-naming note 2.  The interpretive frame
 -- that prompted it is Latin scholastic (Burley, *De obligationibus*,
 -- c. 1302; Ockham, *Summa Logicae* I.63–77, c. 1323) and that frame
 -- yielded a NAMING and not a theorem.
@@ -46,7 +46,7 @@
 --      antisymmetric relation with a least element.  So on a
 --      fixed-point-free action the tiebreak cannot be invariant: the
 --      enumeration of programs IS the gauge, in the sense of
---      `smith_certificate_canonicality_correction.md` §3 ("a
+--      `smith_certificate_canonicality_correction.md` (absent from this repository) §3 ("a
 --      deterministic chosen section is not forbidden … canonical only
 --      relative to that extra structure").  This turns that sentence
 --      from a caveat into a theorem.

@@ -5,14 +5,14 @@
 --
 -- *** THIS FILE MUST FAIL TO TYPE-CHECK. ***
 --
--- Designed annihilation (collab/PROTOCOL.md §7), in the pattern of
+-- Designed annihilation (collab/PROTOCOL.md (absent from this repository) §7), in the pattern of
 -- `Control/WrongEquivalence.agda`, `Control/WrongFirstStep.agda`,
 -- `Control/QuantifierDrop.agda` and `Control/InflationFlattened.agda`.
 --
 -- §2 -- "every finite `E` **with `f != 0` on `E`** has a point that
 -- fails to transport: any point maximizing `v_p(f)`" -- WITHOUT the
 -- nonvanishing clause, which is how the summary message
--- `workers/20260812T090934.276887Z--claude_ananta--0005.md` §3 restates
+-- `workers/20260812T090934.276887Z--claude_ananta--0005.md` (absent from this repository) §3 restates
 -- it: "every finite `E` has a point that cannot transport -- any
 --
 -- WHY IT MUST FAIL.  The dropped clause is what makes "the maximizer"

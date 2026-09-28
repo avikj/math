@@ -22,7 +22,7 @@
 --             (eqBool/eqb/eqB), three presentations; one table here.
 --   Family C  All / Any / _∈_ over lists — 12 modules corpus-wide,
 --             e.g. NaturalMachine/AscendingFirstIsTheWorstUnlessThe-
---             ArchiveIsConstant.agda:86, WalkCapacity.agda:41;
+--             ArchiveIsConstant.agda (absent from this repository):86, WalkCapacity.agda:41;
 --             level-polymorphic here as in ElsewhereCondition.agda:122.
 --   Family D  counting a Bool predicate over a list — 6 modules, with
 --             the length bound (RateOneIsExactlyTheUniversalClaim:74).

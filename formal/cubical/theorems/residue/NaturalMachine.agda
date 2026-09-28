@@ -199,7 +199,7 @@ import TwoProjections
 import ConeOrder
 import ParitySeparator
 import ChargeCriterion
--- and the class theorem TARGET.md's headline promised: Signs is a TORSOR
+-- and the class theorem TARGET.md (absent from this repository)'s headline promised: Signs is a TORSOR
 -- over the gauge torus, not a set with a distinguished involution, so the
 -- fibres of the transcript map are exactly the COSETS of the annihilator
 -- subgroup of the query set.  `flip` is one group element among many; the
@@ -425,7 +425,7 @@ import CarryChartBridge
 -- digit tower maps strictly through raw words to the same carry reduction,
 -- with normalization used only as a stagewise projection.
 import FixedCarryChart
--- and the composition, WALK_FORCING_LAW.md statement (2) as a term: the
+-- and the composition, WALK_FORCING_LAW.md (absent from this repository) statement (2) as a term: the
 -- walk installs exactly the prime powers, in increasing order.
 import WalkPrimePowers
 -- and the trajectory form of the same law.
@@ -714,7 +714,7 @@ import ChuDefect
 -- homometric pair proves the Bridge alone cannot do that work; a gamed
 -- evaluator's records can be quarantined without touching anything else.
 import SelfImprovement
--- The three decision rules of machine/MathMachine.hs, modelled and proved:
+-- The three decision rules of machine/MathMachine.hs (absent from this repository), modelled and proved:
 -- the flow trichotomy is total, exclusive, and decay closes without growth;
 -- the growth gate must not fire on a collapsed test set, because the defect
 -- is monotone in the assignment list; and the min-plus chooser over growth
@@ -859,7 +859,7 @@ import Vacuity
 -- The birth from the fourth position: what an avaktavya bears, and the two
 -- laws that keep it from being a tie-breaker (§1 it decides, §2 it can say
 -- only what the contenders already said).  Wired to the running scheduler
--- in machine/AvaktavyaPrasava_TheFourthPositionBearsTheRuleThatDecidesIt.hs.
+-- in machine/AvaktavyaPrasava_TheFourthPositionBearsTheRuleThatDecidesIt.hs (absent from this repository).
 import AvaktavyaPrasava_TheBornStandpointDecidesAndAssertsOnlyWhatAllAsserted
 
 ------------------------------------------------------------------------

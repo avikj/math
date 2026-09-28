@@ -7,13 +7,13 @@
 -- WHAT THIS IS.  machinery/crystal/'s engine issued IMPOSSIBLE for the
 -- identity-map interpretation between the theories `left-zero`
 -- (x·y = x) and `right-zero` (x·y = y): completion of the joint theory
--- collapses the carrier, and models.py confirmed by finite search that
+-- collapses the carrier, and models.py (absent from this repository) confirmed by finite search that
 -- every joint model on domains of size 2 and 3 is trivial.
 -- Both of those are testimony — a Python run a
 -- reader must trust.  This module is the same verdict as PERCEPTION:
 -- a kernel-checked term, for every carrier and every size at once.
 --
--- DefectIsNowPriced.md (receipt R2): one verdict transported converts
+-- DefectIsNowPriced.md (absent from this repository) (receipt R2): one verdict transported converts
 -- the engine from parallel authority to conjecture generator.  This is
 -- that transport.  The engine PROPOSED; the kernel now DISPOSES.
 --

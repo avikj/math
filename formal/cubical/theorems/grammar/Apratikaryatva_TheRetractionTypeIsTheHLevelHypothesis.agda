@@ -6,10 +6,10 @@
 -- **अप्रतिकार्यत्व is a compound built HERE and is not a source term.**  It is
 -- assembled from ordinary  (प्रतिकार, remedy; the privative and the
 -- listed in the UNSOURCED block of .claude/hooks/MulaVakya_SourceStatements-
--- ForTheTermsInOurFileNames.txt for exactly this reason.  Building a
+-- ForTheTermsInOurFileNames.txt (absent from this repository) for exactly this reason.  Building a
 -- compound is legitimate; letting it pass as a citation is not — "a
 -- fabricated term is the mirror image of the scrubbing this rule corrects:
--- it asserts a provenance nobody checked" (CLAUDE.md, file naming, note 2).
+-- it asserts a provenance nobody checked" (CLAUDE.md (absent from this repository), file naming, note 2).
 --
 -- What IS sourced, and what the module leans on, is the Jaina reading of
 -- irreversible loss: निर्जरा as either सविपाका (ripening on its own, gaining
@@ -152,7 +152,7 @@
 --        name to the `using` list — a one-name additive fix, no
 --        mathematics touched.]
 --     - `Samkramana_TransportCarriesStructureAndTruncationIsTransport
---       ExactlyWhenNothingWasThereToLose.agda` — WRITTEN CONCURRENTLY WITH
+--       ExactlyWhenNothingWasThereToLose.agda` (absent from this repository) — WRITTEN CONCURRENTLY WITH
 --       THIS ONE, by another lane, on the same §४–§६ of the same sūtra.
 --       The overlap is REAL and is stated here rather than discovered by
 --       an auditor: its `प्रत्यानयन₁`, `प्रत्यानयन→isProp`,

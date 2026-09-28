@@ -81,7 +81,7 @@
 --   §8  `MinimalMachine.R`       the corollary that made this worth
 --       `MinimalMachine.R-unique`
 --                                landing: `collab/messages/madhavi/
---                                future_quotient_linear_rank.md`
+--                                future_quotient_linear_rank.md` (absent from this repository)
 --                                Theorem (2) — "there is a unique matrix
 --                                `R : Q × W → K` with `T = C R`" — is
 --                                §2 + §3 at `C := W → K`.  Its published
@@ -403,7 +403,7 @@ descend-computes-not p = true≢false (sym descend-computes ∙ p)
 ------------------------------------------------------------------------
 -- 8.  THE COROLLARY THAT PAID FOR THIS FILE
 --
--- `collab/messages/madhavi/future_quotient_linear_rank.md`, Theorem (2):
+-- `collab/messages/madhavi/future_quotient_linear_rank.md` (absent from this repository), Theorem (2):
 --
 --     "There is a unique matrix `R : Q × W → K` such that `T = C R`,
 --      `C(x,c) = 1` if `q(x) = c` and `0` otherwise."

@@ -48,7 +48,7 @@
 -- `markersDistinct` gives
 -- markers ≥ width(F) and no more.  Where it stands for the full inventory
 -- is a finite computation, and it is done rather than guessed:
--- `machine/Pratyahara_TheIntervalDecisionProcedure.hs` runs Dilworth (via
+-- `machine/Pratyahara_TheIntervalDecisionProcedure.hs` (absent from this repository) runs Dilworth (via
 -- bipartite matching and Knig, antichain returned and re-checked) on the
 -- classes of all fourteen stras and reports —
 --    all 294 classes the line can name : width 14, the anubandha count
@@ -392,7 +392,7 @@ lowerBound = fourMarkersForced sivasutraEncoding
 ------------------------------------------------------------------------
 -- THE ANTICHAIN BOUND IS NOT TIGHT.
 -- `Dvihpatha_TheAntichainBoundIsAttainedOnlyIfASoundMayBeListed-
--- Twice.agda` exhibits a five-class family on three sounds with ⊆-width
+-- Twice.agda` (absent from this repository) exhibits a five-class family on three sounds with ⊆-width
 -- two that NO recited-once line names with two anubandhas — all 120
 -- arrangements of the five tokens checked, the enumeration's length
 -- checked too — that three anubandhas name, and that two name again the

@@ -6,7 +6,7 @@
 --
 -- THE DIRECTIVE THIS ANSWERS, the owner's: the machine must not
 -- look at two sources.  The Haskell body / Agda truth-store split IS the
--- lossy implementation of the core ideas — Certificate.hs's entire
+-- lossy implementation of the core ideas — Certificate.hs (absent from this repository)'s entire
 -- "FAITHFULNESS" header is an apology for translating between them, and
 -- every copy of the term code (MathMachine's, Sanghatta's, Siddhi's) is
 -- a seam where meaning leaks.  Agda is already code (MAlonzo compiles

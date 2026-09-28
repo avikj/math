@@ -2,18 +2,18 @@
 
 -- MachineLibrary.agda
 --
--- WHAT THIS IS.  `machine/MathMachine.hs` discovers arithmetic identities,
--- certifies each through an Agda gate (`machine/Certificate.hs`), installs it
--- as a rewrite rule, and logs a line to `machine/library.txt` /
--- `machine/library.snapshot.txt`.  The certificate module it writes is a temp
+-- WHAT THIS IS.  `machine/MathMachine.hs` (absent from this repository) discovers arithmetic identities,
+-- certifies each through an Agda gate (`machine/Certificate.hs` (absent from this repository)), installs it
+-- as a rewrite rule, and logs a line to `machine/library.txt` (absent from this repository) /
+-- `machine/library.snapshot.txt` (absent from this repository).  The certificate module it writes is a temp
 -- file that is deleted after typechecking: the proof term evaporates and only
 -- the log line survives.  This module is the retained form.  Every theorem
--- below carries, in the comment above it, the exact `library.snapshot.txt`
+-- below carries, in the comment above it, the exact `library.snapshot.txt` (absent from this repository)
 -- line it corresponds to, verbatim.
 --
 -- THE MATHEMATICAL POINT: TWO RECURSIONS, ONE FUNCTION.
 --
--- The engine's `vocabulary` (MathMachine.hs:606-617) defines its operations by
+-- The engine's `vocabulary` (MathMachine.hs (absent from this repository):606-617) defines its operations by
 -- recursion on the SECOND argument:
 --
 --     x + 0     = x            x * 0     = 0
@@ -26,7 +26,7 @@
 --     s n + m   = s (n + m)    s n · m   = m + n · m
 --
 -- These are the same two functions on ℕ, but *different definitional
--- behaviour*, and the difference is exactly what `machine/library.txt`'s
+-- behaviour*, and the difference is exactly what `machine/library.txt` (absent from this repository)'s
 -- annotations record: five of the engine's lines are marked
 -- `[induction on x; kernel refl]` — the engine needed an induction, the Agda
 -- gate got them by `refl`, because first-argument recursion makes them hold
@@ -43,7 +43,7 @@
 -- THE FALSIFIER, RUN.  The paragraph above is a checkable claim, so it was
 -- checked rather than asserted.  A scratch module was assembled mechanically:
 -- second-argument definitions of `_+_` and `_·_` transcribed from
--- MathMachine.hs:612-617, the four Section 1 lemmas restated with proof
+-- MathMachine.hs (absent from this repository):612-617, the four Section 1 lemmas restated with proof
 -- `refl`, and then Sections 2 and 4 of this file appended VERBATIM — all 17
 -- `L01`…`L17` plus `+-assoc`, `zeroAdd`, `sucAdd`, `addComm`, `zeroMul`,
 -- `sucMul`, `mulComm`, unedited.  It typechecks `--cubical --safe`, exit 0.
@@ -68,7 +68,7 @@ open import Cubical.Data.Nat.Base using (ℕ; zero; suc; _+_; _·_)
 -- ---------------------------------------------------------------------------
 -- 1.  The engine's defining equations, as lemmas
 --
--- These four are the engine's `symDefs` for `+` and `*` (MathMachine.hs:612-617).
+-- These four are the engine's `symDefs` for `+` and `*` (MathMachine.hs (absent from this repository):612-617).
 -- They are definitional for the engine and theorems for Agda; below this point
 -- they are the ONLY facts about `_+_` and `_·_` that any proof uses.
 -- ---------------------------------------------------------------------------
@@ -98,7 +98,7 @@ addSuc (suc a) b = cong suc (addSuc a b)
     ∙ cong suc (+-assoc a b c)
     ∙ sym (cong (a +_) (addSuc b c) ∙ addSuc a (b + c))
 
--- library.snapshot.txt:1
+-- library.snapshot.txt (absent from this repository):1
 --   x                    = (0+x)                    [induction on x]
 zeroAdd : (a : ℕ) → zero + a ≡ a
 zeroAdd zero    = addZero zero
@@ -107,7 +107,7 @@ zeroAdd (suc a) = addSuc zero a ∙ cong suc (zeroAdd a)
 L01 : (x : ℕ) → x ≡ zero + x
 L01 x = sym (zeroAdd x)
 
--- library.snapshot.txt:3
+-- library.snapshot.txt (absent from this repository):3
 --   (s(x)+y)             = s((x+y))                 [induction on y]
 sucAdd : (a b : ℕ) → suc a + b ≡ suc (a + b)
 sucAdd a zero    = addZero (suc a) ∙ sym (cong suc (addZero a))
@@ -117,12 +117,12 @@ sucAdd a (suc b) =
 L03 : (x y : ℕ) → suc x + y ≡ suc (x + y)
 L03 = sucAdd
 
--- library.snapshot.txt:2
+-- library.snapshot.txt (absent from this repository):2
 --   s(x)                 = (s(0)+x)                 [induction on x]
 L02 : (x : ℕ) → suc x ≡ suc zero + x
 L02 x = sym (sucAdd zero x ∙ cong suc (zeroAdd x))
 
--- library.snapshot.txt:4
+-- library.snapshot.txt (absent from this repository):4
 --   (x+y)                = (y+x)                    [induction on x]
 addComm : (a b : ℕ) → a + b ≡ b + a
 addComm a zero    = addZero a ∙ sym (zeroAdd a)
@@ -131,17 +131,17 @@ addComm a (suc b) = addSuc a b ∙ cong suc (addComm a b) ∙ sym (sucAdd b a)
 L04 : (x y : ℕ) → x + y ≡ y + x
 L04 = addComm
 
--- library.snapshot.txt:5
+-- library.snapshot.txt (absent from this repository):5
 --   (x+(x+y))            = (y+(x+x))                [induction on y]
 L05 : (x y : ℕ) → x + (x + y) ≡ y + (x + x)
 L05 x y = sym (+-assoc x x y) ∙ addComm (x + x) y
 
--- library.snapshot.txt:6
+-- library.snapshot.txt (absent from this repository):6
 --   (x+(y+y))            = (y+(x+y))                [induction on x]
 L06 : (x y : ℕ) → x + (y + y) ≡ y + (x + y)
 L06 x y = sym (+-assoc x y y) ∙ addComm (x + y) y
 
--- library.snapshot.txt:7
+-- library.snapshot.txt (absent from this repository):7
 --   (x+(y+z))            = (y+(x+z))                [induction on x]
 -- The left-exchange law; with associativity and commutativity it is the whole
 -- of the engine's additive normalisation.
@@ -173,7 +173,7 @@ mulSuc (suc a) b =
 -- 4.  Multiplicative theory, from the four defining equations only
 -- ---------------------------------------------------------------------------
 
--- library.snapshot.txt:8
+-- library.snapshot.txt (absent from this repository):8
 --   0                    = (0*x)                    [induction on x]
 zeroMul : (a : ℕ) → zero · a ≡ zero
 zeroMul zero    = mulZero zero
@@ -182,7 +182,7 @@ zeroMul (suc a) = mulSuc zero a ∙ cong (_+ zero) (zeroMul a) ∙ addZero zero
 L08 : (x : ℕ) → zero ≡ zero · x
 L08 x = sym (zeroMul x)
 
--- library.snapshot.txt:10
+-- library.snapshot.txt (absent from this repository):10
 --   (s(x)*y)             = (y+(x*y))                [induction on y]
 sucMul : (a b : ℕ) → suc a · b ≡ b + (a · b)
 sucMul a zero =
@@ -198,12 +198,12 @@ sucMul a (suc b) =
 L10 : (x y : ℕ) → suc x · y ≡ y + (x · y)
 L10 = sucMul
 
--- library.snapshot.txt:9
+-- library.snapshot.txt (absent from this repository):9
 --   x                    = (s(0)*x)                 [induction on x]
 L09 : (x : ℕ) → x ≡ suc zero · x
 L09 x = sym (sucMul zero x ∙ cong (x +_) (zeroMul x) ∙ addZero x)
 
--- library.snapshot.txt:17  — the engine's headline line
+-- library.snapshot.txt (absent from this repository):17  — the engine's headline line
 --   (x*y)                = (y*x)                    [induction on x]
 mulComm : (a b : ℕ) → a · b ≡ b · a
 mulComm a zero    = mulZero a ∙ sym (zeroMul a)
@@ -216,22 +216,22 @@ mulComm a (suc b) =
 L17 : (x y : ℕ) → x · y ≡ y · x
 L17 = mulComm
 
--- library.snapshot.txt:11
+-- library.snapshot.txt (absent from this repository):11
 --   (s(x)*y)             = (y+(y*x))                [induction on x]
 L11 : (x y : ℕ) → suc x · y ≡ y + (y · x)
 L11 x y = sucMul x y ∙ cong (y +_) (mulComm x y)
 
--- library.snapshot.txt:12
+-- library.snapshot.txt (absent from this repository):12
 --   (x*(x*y))            = (x*(y*x))                [induction on x]
 L12 : (x y : ℕ) → x · (x · y) ≡ x · (y · x)
 L12 x y = cong (x ·_) (mulComm x y)
 
--- library.snapshot.txt:13
+-- library.snapshot.txt (absent from this repository):13
 --   (x*(y*z))            = (x*(z*y))                [induction on y]
 L13 : (x y z : ℕ) → x · (y · z) ≡ x · (z · y)
 L13 x y z = cong (x ·_) (mulComm y z)
 
--- library.snapshot.txt:14
+-- library.snapshot.txt (absent from this repository):14
 --   s((x*c0(x)))         = s((c0(x)*x))             [induction on x]
 -- `c0` is the engine's Skolem constant-former: a symbol standing for a
 -- previously installed unary term.  It is *not* a fixed function, so the
@@ -240,12 +240,12 @@ L13 x y z = cong (x ·_) (mulComm y z)
 L14 : (c0 : ℕ → ℕ) (x : ℕ) → suc (x · c0 x) ≡ suc (c0 x · x)
 L14 c0 x = cong suc (mulComm x (c0 x))
 
--- library.snapshot.txt:15
+-- library.snapshot.txt (absent from this repository):15
 --   s((x*c0(y)))         = s((c0(y)*x))             [induction on x]
 L15 : (c0 : ℕ → ℕ) (x y : ℕ) → suc (x · c0 y) ≡ suc (c0 y · x)
 L15 c0 x y = cong suc (mulComm x (c0 y))
 
--- library.snapshot.txt:16
+-- library.snapshot.txt (absent from this repository):16
 --   s(s((x*y)))          = s(s((y*x)))              [induction on x]
 -- Recorded by the engine as a separate discovery from line 17 because its
 -- search is over term shapes, not over statements modulo congruence.  Here it

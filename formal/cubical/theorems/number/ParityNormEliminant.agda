@@ -10,7 +10,7 @@
 -- every later stage (the coefficient boxes, the 1591-solution
 -- enumeration, the 18 surviving quintic candidates, the 62/46/26/24
 -- quartic filtration) rests on those four being right.  Each is a finite
--- exact identity over an arbitrary commutative ring, so under CLAUDE.md
+-- exact identity over an arbitrary commutative ring, so under CLAUDE.md (absent from this repository)
 -- it is provable rather than measurable, and it is proved here.
 --
 -- Everything is stated over an arbitrary CommRing, not over Z.  That is

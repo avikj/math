@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- NaturalMachine.OracleSeparation
 --
--- TARGET.md §2 W3 (= `notes/BARRIER.md` §2's closing sentence / Problem 1),
+-- TARGET.md (absent from this repository) §2 W3 (= `notes/BARRIER.md` (absent from this repository) §2's closing sentence / Problem 1),
 -- at the sharpest form the finite parity model admits.  W3 IS TWO
 -- QUESTIONS WITH OPPOSITE ANSWERS, and both answers are landed here as
 -- checked terms.

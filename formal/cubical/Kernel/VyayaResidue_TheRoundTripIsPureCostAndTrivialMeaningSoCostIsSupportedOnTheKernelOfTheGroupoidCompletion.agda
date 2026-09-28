@@ -20,7 +20,7 @@
 --   §2  MEANING ON THE ROUND TRIP IS THE TRIVIAL PATH — for every ρ,
 --       derivation-sound (d ⊕ revD d) ρ ≡ refl, because it is a loop
 --       and meaning lands in a set.
---   §3  THEREFORE revD IS A DAGGER, NOT AN INVERSE: whenever len d > 0,
+--   §3  THEREFORE revD IS A REVERSAL, NOT AN INVERSE: whenever len d > 0,
 --       d ⊕ revD d ≢ done.  Reversal flips direction; it does not
 --       cancel.  This is the exact crack — a group inverse would give
 --       length 0, and cost forbids it (Laghava, one category down).
@@ -66,7 +66,9 @@ roundTripMeaningTrivial {a} d ρ =
   isSetℕ (eval a ρ) (eval a ρ) (derivation-sound (d ++ revD d) ρ) refl
 
 ------------------------------------------------------------------------
--- ३ · revD is a dagger, not an inverse: a nonempty round trip is not
+-- ३ · revD is a reversal, not an inverse (and not a dagger either:
+--     revD (revD d) is not d as data, since `reverse (reverse s)` is a
+--     distinct constructor application): a nonempty round trip is not
 --     the identity derivation.  A group inverse would force length 0.
 ------------------------------------------------------------------------
 

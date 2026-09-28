@@ -5,7 +5,7 @@
 --
 -- Half of the universal property `FrontierList` §6 names.
 --
--- CLAUDE.md: this lane has no LCM module, so lcm facts are stated by the
+-- CLAUDE.md (absent from this repository): this lane has no LCM module, so lcm facts are stated by the
 -- universal property.  For `prodOf (frontierList k)` that is two halves:
 --
 --   (a) every m ≤ k divides it;
@@ -96,6 +96,6 @@ frontier-divides ((p , i) ∷ es) (pp , rest) (fresh , dist) N (d , ds) =
 --     (`PrimeCofactorCoprime`).
 --
 -- With both halves in place, `prodOf (frontierList k)` satisfies the
--- universal property of lcm(1 … k), which is how CLAUDE.md requires lcm
+-- universal property of lcm(1 … k), which is how CLAUDE.md (absent from this repository) requires lcm
 -- facts be stated in a lane with no LCM module.
 ------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- TheLastCutHasOneRowWhenItsSeparatorIsInhabited
 --
--- `interactive/SelfArchitecture.hs` §4 states "one order-independent exact
+-- `interactive/SelfArchitecture.hs` (absent from this repository) §4 states "one order-independent exact
 -- fact, checked here rather than assumed":
 --
 --   "every topological order ends at a module with no dependents, and at

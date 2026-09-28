@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- S06NoWrap
 --
--- The exact no-wrap boundary of notes/RATIONAL_PAIR_CHANNEL.md §3.
+-- The exact no-wrap boundary of notes/RATIONAL_PAIR_CHANNEL.md (absent from this repository) §3.
 --
 -- The finite Fourier projectors (3.1)-(3.2) of that note compute the
 -- pushforward of a graded coefficient along ℤ ↠ ℤ/q.  They recover the

@@ -38,7 +38,7 @@
 --   `tot (a,b) = a ⊕ b`, vocabulary {swap, mix} (unary + binary).  Every
 --   claim in §2–§5 is about that world only.  The finite counts are
 --   exhaustive over its four states and are `refl`; they are exact
---   symbolic computation, hence proof (CLAUDE.md), not measurement.
+--   symbolic computation, hence proof (CLAUDE.md (absent from this repository)), not measurement.
 --
 --
 -- THE FOUR THINGS DELIVERED
@@ -88,7 +88,7 @@
 --                               with first factor the term-visible charge
 --                               and second factor the residue no term
 --                               reaches (`hidden-varies-in-class`).  The
---                               "endpoint × fibre" of THE_MACHINE.md, as
+--                               "endpoint × fibre" of THE_MACHINE.md (absent from this repository), as
 --                               an equivalence rather than a picture.
 --
 -- Read with: ProjectionChargeAudit2 (Descends ≃ Respects — §5 instantiates
@@ -528,7 +528,7 @@ gauge-merged : (x : State) → x ≈ gaugeFlip x
 gauge-merged (a , b) = sym (⊕-flip a b)
 
 -- (d) The world splits: visible × hidden.  `tot` is the term-visible
--- coordinate; the second bit is the residue.  This is THE_MACHINE.md's
+-- coordinate; the second bit is the residue.  This is THE_MACHINE.md (absent from this repository)'s
 -- "states with hidden structure (endpoint × fiber)" as an equivalence.
 hidden : State → Bool
 hidden (a , b) = b
@@ -630,5 +630,5 @@ ann-nonmembers = refl , refl
 -- torsor under a computable group is a theorem about THIS world (and,
 -- in the corpus, about the stabilizer tower R0032/33/36/37); in general
 -- the residual is only "the quotient", with no group promised.  Saying
--- otherwise would be exactly the overclaim CLAUDE.md was written about.
+-- otherwise would be exactly the overclaim CLAUDE.md (absent from this repository) was written about.
 ------------------------------------------------------------------------

@@ -37,7 +37,7 @@
 --
 --   §2  THE FRAGMENT, NATIVE.  The engine's vocabulary (le, max, with
 --       _+_, _·_ from the library) defined by the SAME clauses the kernel's
---       emitter uses (machine/Certificate.hs, preambleCore, transcribed) —
+--       emitter uses (machine/Certificate.hs (absent from this repository), preambleCore, transcribed) —
 --       so judgmental normalisation IS the rewriter, with η, sym and
 --       composition that the external one lacked.
 --
@@ -84,7 +84,7 @@ private
     base = subst (PathP (λ i → a ≡ q i) refl) (lUnit q) (λ i j → q (i ∧ j))
 
 ------------------------------------------------------------------------
--- §2  The fragment, in the kernel's own clauses (Certificate.hs
+-- §2  The fragment, in the kernel's own clauses (Certificate.hs (absent from this repository)
 --     preambleCore, transcribed exactly; _+_ , _·_ are the library's).
 ------------------------------------------------------------------------
 

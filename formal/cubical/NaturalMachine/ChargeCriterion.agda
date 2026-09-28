@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- NaturalMachine.ChargeCriterion
 --
--- W2 of `TARGET.md`: the parity barrier as a DECIDABLE TEST on a method,
+-- W2 of `TARGET.md` (absent from this repository): the parity barrier as a DECIDABLE TEST on a method,
 -- rather than as a caution about methods.
 --
 -- `ParitySeparator` proved one direction — a parity-neutral observer
@@ -25,7 +25,7 @@
 --     argument has odd Ω, a separator exists and the barrier says nothing
 --     about you.
 --
--- WHY THE CONVERSE IS THE CONTENT.  `GAUGE.md` §F.4 closes with
+-- WHY THE CONVERSE IS THE CONTENT.  `GAUGE.md` (absent from this repository) §F.4 closes with
 -- "formalizing which probes carry charge is the continuation of this
 -- line."  A one-directional no-go formalizes which probes DON'T.  The
 -- converse is what turns the classification into a decision, and it is

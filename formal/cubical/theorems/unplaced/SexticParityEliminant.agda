@@ -117,7 +117,7 @@ module Sextic {ℓ} (R : CommRing ℓ) where
   thrice : A → A
   thrice x = x + x + x
 
-  -- The displayed thirteen-term polynomial in SEXTIC_OBSTRUCTION.md.
+  -- The displayed thirteen-term polynomial in SEXTIC_OBSTRUCTION.md (absent from this repository).
   D : A → A → A → A → A → A
   D a b c d e =
       a · a · a

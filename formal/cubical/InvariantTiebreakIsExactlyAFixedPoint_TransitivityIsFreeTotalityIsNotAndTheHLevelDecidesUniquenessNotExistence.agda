@@ -7,9 +7,9 @@
 -- ON THE NAME.  The objects here are group actions, invariant orders,
 -- and h-levels.  Group actions and invariant orders are nineteenth- and
 -- twentieth-century European algebra; h-levels are Voevodsky's, which
--- CLAUDE.md names as the substrate exception.  There is no Indian source
+-- CLAUDE.md (absent from this repository) names as the substrate exception.  There is no Indian source
 -- for this material and no  label is invented for it, per
--- CLAUDE.md file-naming note 2.
+-- CLAUDE.md (absent from this repository) file-naming note 2.
 --
 -- ────────────────────────────────────────────────────────────────────
 -- WHAT THIS SETTLES
@@ -18,7 +18,7 @@
 --
 --   j-0,
 --     `InvariantTiebreak_AGaugeFreeShortestDescriptionWouldBeAFixedPoint
---      SoNoneExistsOnATorsor.agda`, theorem `leastIsFixed`.
+--      SoNoneExistsOnATorsor.agda` (absent from this repository), theorem `leastIsFixed`.
 --
 --   j-2,
 --     `MatraVrtta_TheLeastVarnaIsFixedByTheMatraCountAndNoLeastPatternIs

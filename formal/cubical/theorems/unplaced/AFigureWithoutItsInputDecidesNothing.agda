@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- AFigureWithoutItsInputDecidesNothing
 --
--- `interactive/ObstructionCensus.hs` prints published figures next to
+-- `interactive/ObstructionCensus.hs` (absent from this repository) prints published figures next to
 -- recomputed ones as a regression guard, and then says exactly why that
 -- guard is weaker than it looks:
 --

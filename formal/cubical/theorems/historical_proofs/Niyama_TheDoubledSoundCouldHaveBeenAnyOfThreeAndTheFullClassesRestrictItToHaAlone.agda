@@ -12,7 +12,7 @@
 -- The term names the SHAPE of this file's result.
 --
 -- WHERE THIS STANDS.  `Vyavaya_TheAttestedTrioForcesATwiceRecitedSound-
--- AndPaninisChoiceIsHa.agda` proved: no line reciting h, y,  once each
+-- AndPaninisChoiceIsHa.agda` (absent from this repository) proved: no line reciting h, y,  once each
 -- names three classes restricting to the {h y }-cycle; so ONE OF the
 -- three must be said twice.  That the
 -- repeated one is ha is Pini's choice.  This file examines the choice

@@ -4,8 +4,8 @@
 -- The certificate language, widened to multiplication.       S4, D0026 §4
 --
 -- WHY THIS IS A SEPARATE MODULE.  `NaturalMachine.RewriteCertificate` is
--- the live soundness perimeter of the Haskell gate: `MathMachine.hs` →
--- `Certificate.hs` → (S1) `InductionSearch.hs` emit modules that import it,
+-- the live soundness perimeter of the Haskell gate: `MathMachine.hs` (absent from this repository) →
+-- `Certificate.hs` (absent from this repository) → (S1) `InductionSearch.hs` (absent from this repository) emit modules that import it,
 -- and `induction-sound` there is the semantic warrant for installing a
 -- rewrite rule.  `Tm` is a closed datatype,
 -- so a constructor cannot be added from outside; the only conservative move
@@ -40,16 +40,16 @@
 -- `haskell-mul-suc`).  So `mul-zero`/`mul-suc` below introduce NO new
 -- trusted input: they are the machine's own axioms, re-indexed by their
 -- endpoints.  `mod`, `div`, `Omega`, `omega`, `musq` — the demands standing
--- in `machine/thoughts.math` — have no `symSem` and no `symDefs` at all;
+-- in `machine/thoughts.math` (absent from this repository) — have no `symSem` and no `symDefs` at all;
 -- each would be a new trusted input, and each is strictly downstream of a
 -- comparison/remainder primitive.  See `machine/patches/S4-certificate-
--- vocabulary.md` §3 for the dependency chain.
+-- vocabulary.md` (absent from this repository) §3 for the dependency chain.
 --
 -- SCOPE FENCE ON THE LIBRARY LEMMAS.  `+-comm`, `0≡m·0` and `·-suc` are
 -- imported and used ONLY in `step-sound`, i.e. only to interpret the
 -- calculus in ℕ.  They are NOT steps of the calculus: `Step` has no
 -- commutation constructor, so an emitted certificate still cannot cite
--- them.  This is exactly the boundary `machine/CERTIFICATE_REACH.md` §2
+-- them.  This is exactly the boundary `machine/CERTIFICATE_REACH.md` (absent from this repository) §2
 -- insists on — the engine's contribution must not collapse from proof to
 -- discovery because the library already knew the theorem.
 ------------------------------------------------------------------------
@@ -171,7 +171,7 @@ eval (mul l r) ρ = eval l ρ · eval r ρ
 -- rewrite calculus: its exact checked endpoints are pointwise equal on ℕ.
 --
 -- The two multiplicative base cases are the only place the argument-order
--- mismatch of `machine/CERTIFICATE_REACH.md` §1 is paid for.  Cubical's
+-- mismatch of `machine/CERTIFICATE_REACH.md` (absent from this repository) §1 is paid for.  Cubical's
 -- `_·_` recurses on its FIRST argument and states its laws as `0 ≡ m · 0`
 -- and `m · suc n ≡ m + m · n`; MathMachine's `*` recurses on its SECOND and
 -- writes `x * 0 = 0`, `x * s y = x * y + x`.  The whole cost of that is one
@@ -312,7 +312,7 @@ one-times-one-sound = derivation-sound one-times-one
 -- and `mul-suc` BACKWARDS to refold `0 + x` into `x * 1`, and (iii) applies
 -- the induction hypothesis under a `suc` context.
 --
--- That is precisely the class `Certificate.hs`'s eleven-shape skeleton
+-- That is precisely the class `Certificate.hs` (absent from this repository)'s eleven-shape skeleton
 -- (`refl`, `ih`, `cong suc`, `cong (_+ k)`, …) cannot express.
 -- The additive calculus
 -- could not state this theorem at all.

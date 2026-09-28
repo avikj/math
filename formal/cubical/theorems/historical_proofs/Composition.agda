@@ -38,7 +38,7 @@
 -- NO SOLVER.  Every proof below is a hand chain over the CommRing
 -- structure plus `RingTheory`/`CommRingTheory`.  This is deliberate.
 -- `CayleyPairChart` records the `1r`-inside-`solve!` hazard, and
--- BUILD.md records that the repository's solver spelling (`solve!`) is
+-- BUILD.md (absent from this repository) records that the repository's solver spelling (`solve!`) is
 -- v0.9-only while some containers still carry cubical v0.5 (`solve`).
 -- A solver-free module is the one presentation that is stable across
 -- both surfaces, and it costs about sixty lines of chaining.

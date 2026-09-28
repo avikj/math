@@ -4,7 +4,7 @@
 -- DeclaredRootedProfiles
 --
 -- A bounded exact refinement of Delta 25 T25.F
--- (`collab/upstream/raw/D0025-eternal-golden-braid-indras-net.txt`).  A rooted
+-- (`collab/upstream/raw/D0025-eternal-golden-braid-indras-net.txt` (absent from this repository)).  A rooted
 -- profile is a declared
 -- family of state observations, with a possibly different observation type
 -- at each root.  Local state maps act contravariantly on the whole family.

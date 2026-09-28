@@ -5,7 +5,7 @@
 --
 -- Prime-Pair Atlas Delta 20, T20.4: behavioural apartness, machine-checked.
 --
--- The repository's kernel (formal/lean/Pairfield/MyhillNerodeMinimalMachine.lean)
+-- The repository's kernel (formal/lean/Pairfield/MyhillNerodeMinimalMachine.lean (absent from this repository))
 -- formalises SAMENESS: NerodeCongruence x y = ∀ w, behavior x w = behavior y w.
 -- It contains no notion of distinction beyond the negation of that.
 --

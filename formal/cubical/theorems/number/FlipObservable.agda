@@ -55,7 +55,7 @@
 --   own ladder is width 2 — one bit above what was granted.
 --
 -- THE FLIP (imported semantics, typed here): the det-flip involution
--- of machinery/charge_information_obstruction.py, (U,V) ↦ (F·U, V·F)
+-- of machinery/charge_information_obstruction.py (absent from this repository), (U,V) ↦ (F·U, V·F)
 -- with F = diag(1,-1), acting on the U-side payload h = U·U₀⁻¹ as
 -- h ↦ F·h, i.e. bottom row negated.  `flipAsMul` proves the typed
 -- action IS left multiplication by diag(1,-1); `flipInvol` that it is

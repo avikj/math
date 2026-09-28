@@ -8,7 +8,7 @@
 --
 --   * The universal property used below is the nLab's, verbatim, from the
 --     page `cokernel` — GitHub mirror `ncatlab/nlab-content`, path
---     `pages/3/3/0/1/1033/content.md` (the mirror stores pages by numeric
+--     `pages/3/3/0/1/1033/content.md` (absent from this repository) (the mirror stores pages by numeric
 --     id; the human-readable title is in the sibling file `name`).  The
 --     page's second Remark, in a category with a zero object:
 --

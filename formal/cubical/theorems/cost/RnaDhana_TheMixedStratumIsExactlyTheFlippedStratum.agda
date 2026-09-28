@@ -72,7 +72,7 @@ open import OrderAstiNasti_TheFourthCornerCannotLiveOverAnEnumerableDecidableIns
 open import EveryRemainderMemberIsStrictlyDominated using (anyToMember)
 open import OneStepCoverageAndDisjointnessOfTheLayer using (Mem)
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (dec≤ ; decNeg ; filterDec ; StrictlyDominates ; IsParetoMaximal
+  using (dec≤ ; decNeg ; filterDec ; StrictlyDominatedBy ; IsParetoMaximal
         ; decIsParetoMaximal ; stratum)
 open import FlippingACostCoordinateIsSoundButNotFaithful
   using (Vec ; Dom)
@@ -168,8 +168,8 @@ mixedMaximalIff ds cs vs ab u ub = fwd , bwd
 
     fwd : MixedMaximal ds vs u → IsParetoMaximal (f u) (map f vs)
     fwd mm anyP
-      with anyToMember (λ z → StrictlyDominates (f u) (f z)) vs
-             (anyMapBack f (StrictlyDominates (f u)) vs anyP)
+      with anyToMember (λ z → StrictlyDominatedBy (f u) (f z)) vs
+             (anyMapBack f (StrictlyDominatedBy (f u)) vs anyP)
     ... | (z , memZ , (le , ¬le)) =
       mm (memberToAny (MixedStrict ds u) z vs memZ
            ( flipCapsReflect ds cs u z (boundedAtMember ds cs vs z ab memZ) le
@@ -178,7 +178,7 @@ mixedMaximalIff ds cs vs ab u ub = fwd , bwd
     bwd : IsParetoMaximal (f u) (map f vs) → MixedMaximal ds vs u
     bwd pm anyM with anyToMember (MixedStrict ds u) vs anyM
     ... | (z , memZ , (duz , ¬dzu)) =
-      pm (memberToAny (StrictlyDominates (f u)) (f z) (map f vs)
+      pm (memberToAny (StrictlyDominatedBy (f u)) (f z) (map f vs)
            (memberMaps f vs z memZ)
            ( flipCapsIsSound ds cs u z duz
            , (λ le → ¬dzu (flipCapsReflect ds cs z u ub le))))

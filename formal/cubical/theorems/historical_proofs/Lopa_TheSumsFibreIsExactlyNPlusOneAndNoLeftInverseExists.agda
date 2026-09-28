@@ -22,7 +22,7 @@
 --
 -- `machine/Setubandha_…hs` built the graph of the corpus's checked
 -- identifications; every edge in it is invertible.
--- `machine/Lopa_TheIrreversibleEdgesAreTheOtherGraphAndTheyRunOneWay.hs`
+-- `machine/Lopa_TheIrreversibleEdgesAreTheOtherGraphAndTheyRunOneWay.hs` (absent from this repository)
 -- built the other graph — 1054 one-way edges over 474 nodes, against 88
 -- invertible edges over 120 — and 1036 of those 1054 came back UNDECIDED
 -- because no syntactic rule can name a fibre.

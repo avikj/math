@@ -7,7 +7,7 @@
 -- WHAT THIS DISCHARGES.
 --
 -- It discharges the LOCAL half of the exclusive-resource frontier
--- (docs/build/ExclusiveResourceOrdering_ResearchDesign.md §2.2, Candidate B):
+-- (docs/build/ExclusiveResourceOrdering_ResearchDesign.md (absent from this repository) §2.2, Candidate B):
 -- once two individually-valid spends of one source are in ONE merged view,
 -- the double-spend is NEVER SILENT.  `verdict` is a TOTAL, decidable function
 -- returning either

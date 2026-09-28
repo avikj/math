@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- ChargeCriterion
 --
--- W2 of `TARGET.md`: the parity barrier as a DECIDABLE TEST on a method,
+-- W2 of `TARGET.md` (absent from this repository): the parity barrier as a DECIDABLE TEST on a method,
 -- rather than as a caution about methods.
 --
 -- `ParitySeparator` proved one direction — a parity-neutral observer

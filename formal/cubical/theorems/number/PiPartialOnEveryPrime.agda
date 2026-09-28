@@ -27,7 +27,7 @@
 --     model assumes (unique factorisation, and nothing else).
 --
 -- The source displays (lines 390, 393 of
--- `collab/upstream/raw/D0020-owner-fifth-transmission-2026-08-15.md`):
+-- `collab/upstream/raw/D0020-owner-fifth-transmission-2026-08-15.md` (absent from this repository)):
 --
 --     Π_∂(ν) := μ(ν)² − π₁(ν),      π₁(ν) := ω(ν) − 1
 --     ⎡ 1 ≤ Ω(ν) ≤ 2 ⇒ Π_∂(ν) = (1 − λ(ν))/2 − 𝟙_℘(ν) ⎤

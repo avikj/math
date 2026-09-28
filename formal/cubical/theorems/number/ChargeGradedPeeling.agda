@@ -18,7 +18,7 @@
 --
 --
 -- WHAT IS CHECKED (every `refl` is a finite exhaustive verification
--- over the 30-element domain, performed by the typechecker; CLAUDE.md
+-- over the 30-element domain, performed by the typechecker; CLAUDE.md (absent from this repository)
 -- §"Exact / certified symbolic computation is proof")
 --
 --   §2  `peel∈`            peeling stays inside the domain [1,30].

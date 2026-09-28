@@ -14,11 +14,11 @@
 -- identity functor therefore cannot factor through that singleton.
 -- The note's stated replay is
 --
---     python3 machinery/higher_coequalizer_boundary.py
+--     python3 machinery/higher_coequalizer_boundary.py (absent from this repository)
 --
--- and `CLAUDE.md` (owner, 2026-08-13) says a Python script that prints
+-- and `CLAUDE.md` (absent from this repository) (owner, 2026-08-13) says a Python script that prints
 -- a number is exactly the thing that stands in for an error analysis
--- nobody did.  Per `CLAUDE.md`'s standing rule — *before running any
+-- nobody did.  Per `CLAUDE.md` (absent from this repository)'s standing rule — *before running any
 -- computation, write down the theorem it would replace, then prove it*
 -- — the theorem that replay is standing in for is §1 below.  It needs
 -- no group, no finiteness, no Smith normal form and no fixed point:

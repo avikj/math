@@ -12,9 +12,9 @@
 --
 -- ग्रेड · शब्द, declared.  No edition of any of the above was opened by
 -- me.  The attribution and date are carried from
--- `notes/SakalaVikalaDesa_TheFibreIsTheLossAndAnEmptyFibreIsAvaktavyamNotNasti.md`,
+-- `notes/SakalaVikalaDesa_TheFibreIsTheLossAndAnEmptyFibreIsAvaktavyamNotNasti.md` (absent from this repository),
 -- which itself carries them from
--- `notes/ANEKANTA_THE_MACHINE_HAS_THREE_STANDPOINTS.md`, and are owed at
+-- `notes/ANEKANTA_THE_MACHINE_HAS_THREE_STANDPOINTS.md` (absent from this repository), and are owed at
 -- verse level.  Nothing below is claimed to have been proved by
 -- Malliea or anyone in that line.  What IS claimed is what that note
 -- claims: the distinction they draw is finer than the one this library
@@ -23,7 +23,7 @@
 ------------------------------------------------------------------------
 -- WHY THIS MODULE EXISTS.  It repairs a defect in its neighbour.
 --
--- `Sesa_TheResidualIsTheOtherProjectionOfTheSameGraph` (this library,
+-- `Residue_TheResidualIsTheOtherProjectionOfTheSameGraph` (this library,
 -- earlier today) built a TWO-VALUED test — `isContr (शेष f b)` or not —
 -- and wrote in its own header "there is no third reading".  That sentence
 -- is a दुर्नय, and `Saptabhangi.दुर्नयः` is the proof of why: a two-valued

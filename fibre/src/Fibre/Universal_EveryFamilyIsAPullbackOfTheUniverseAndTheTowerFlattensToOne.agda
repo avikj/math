@@ -56,7 +56,7 @@
 --   §6  …and the converse is about the PROJECTION, not about the mere
 --       existence of an equivalence.  `Σ Bool Br ≃ Bool` holds for a family
 --       whose fibres are one EMPTY and one CROWDED: the census's two
---       failures (नास्ति and नष्टि — `SakalaVikalaDesa`) cancel
+--       failures (नास्ति and नष्टि — `WholePartialDesa`) cancel
 --       numerically, and an abstract equivalence sees neither.  "Invisible"
 --       has to mean invisible OVER THE BASE, and §5's statement does.
 --
@@ -253,7 +253,7 @@ module _ {A : Type ℓa} (B : A → Type ℓb) where
 -- that is empty over one point and two-valued over the other.  The total
 -- space is equivalent to the base — and neither fibre is contractible: one
 -- is नास्ति (no source at all), the other नष्टि (crowded).  The census of
--- `SakalaVikalaDesa` separates those two failures; an abstract equivalence
+-- `WholePartialDesa` separates those two failures; an abstract equivalence
 -- adds them up and reports nothing.
 --
 -- So "the fibre law holds here" is never established by producing SOME

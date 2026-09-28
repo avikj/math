@@ -62,7 +62,7 @@ private
 -- 1.  Losslessness, as this corpus means it
 --
 -- The observation separates the inputs it is run on.  This is exactly
--- `WALK_FORCING_LAW.md`'s "the observation n ↦ (n mod m) is injective on
+-- `WALK_FORCING_LAW.md` (absent from this repository)'s "the observation n ↦ (n mod m) is injective on
 -- the walked prefix".
 ------------------------------------------------------------------------
 
@@ -90,7 +90,7 @@ lossless-needs-room n Y obs inj =
 --
 -- The walk's outcome space at frontier k is the residues modulo cap k,
 -- of which there are exactly cap k.  So by §2 any lossless walk over the
--- prefix [0, n] has cap k ≥ n+1 — which is `WALK_FORCING_LAW.md`'s
+-- prefix [0, n] has cap k ≥ n+1 — which is `WALK_FORCING_LAW.md` (absent from this repository)'s
 -- invariant `lcm(S) > n`, now derived as a bound on every scheme rather
 -- than stated as a property of one.
 --

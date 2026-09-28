@@ -9,7 +9,7 @@
 -- structure — only for its defining property, that the element carrying
 -- one point to another is exactly one.
 --
--- WHAT IT PROVES, and why it is here.  runtime/atlas/residual.py's
+-- WHAT IT PROVES, and why it is here.  runtime/atlas/residual.py (absent from this repository)'s
 -- Torsor checks a group action FREE and TRANSITIVE by exhaustion, and
 -- Torsor.translate(p, q) returns «the unique g with g·p = q» — RAISING
 -- if the number of such g is not exactly one.  That raise is a
@@ -25,11 +25,11 @@
 --       (अदृष्टं तन्तुः एकम् — the fibre is a singleton), not a runtime
 --       check.  free + transitive ⟺ the orbit map's fibres are singletons.
 --
--- So residual.py's exhaustive regularity check is provably redundant
+-- So residual.py (absent from this repository)'s exhaustive regularity check is provably redundant
 -- given the free + transitive it already checks — the general form of
 -- Torsor.translate's uniqueness, for EVERY (group, action).
 --
--- Sources for the mathematics: runtime/atlas/residual.py (Torsor,
+-- Sources for the mathematics: runtime/atlas/residual.py (absent from this repository) (Torsor,
 -- FiniteGroup).
 ------------------------------------------------------------------------
 

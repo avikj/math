@@ -88,7 +88,7 @@
 --   * `NaturalMachine/WalkJumps.agda` (this corpus) — `IsPrime`, in the
 --     all-divisors form, which is exactly the form this proof produces.
 --   * mathlib4 (Lean),
---     `Mathlib/Data/Nat/Prime/Defs.lean:124` and `:368`:
+--     `Mathlib/Data/Nat/Prime/Defs.lean (absent from this repository):124` and `:368`:
 --     `Nat.prime_def_le_sqrt : Prime p ↔ 2 ≤ p ∧ ∀ m, 2 ≤ m → m ≤ sqrt p
 --     → ¬ m ∣ p`, and `Nat.minFac_sq_le_self`.  PROVED-grade prior art,
 --     The X = n case (`roughSplitSelf` below) is

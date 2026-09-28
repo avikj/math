@@ -61,7 +61,7 @@
 --                     so deletion and non-appearance are not the same
 --                     operation.
 --
--- THE WITNESSES ARE NOT INVENTED.  They are what `machine/Astadhyayi.hs`
+-- THE WITNESSES ARE NOT INVENTED.  They are what `machine/Astadhyayi.hs` (absent from this repository)
 -- computes.  `n ~ lyu` derives `nayana`, and its `barrierAudit` prints
 --
 --     6.1.78 is conditioned on the sounds, so it read the dea e and
@@ -354,7 +354,7 @@ darsana-cannot-see r = cong r same-surface
 -- OBSERVE, and neither is a statement about what the form is.  §2 is the
 -- first as a factorisation theorem; §5–6 is the second as a separation.
 --
--- The engine in machine/Astadhyayi.hs runs on exactly this, and the
+-- The engine in machine/Astadhyayi.hs (absent from this repository) runs on exactly this, and the
 -- correspondence is stated with the engine's own names:
 --
 --   `Varna` here          → there the item and a PARALLEL channel `Prov`,

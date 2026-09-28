@@ -37,8 +37,17 @@
 -- claim about all its instances whose correctness is checked ONCE,
 -- abstractly, after which it fires everywhere unexamined.  The kernel's
 -- alternative is `apply-checked`, which TRANSPORTS the certificate to the
--- site: every firing arrives carrying a proof about that firing.  "Cannot
--- generalise" and "cannot be wrong at a site" are one sentence read twice.
+-- site: every firing arrives carrying a proof about that firing.
+--
+-- SUPERSEDED READING.  This paragraph once argued that "cannot generalise"
+-- and "cannot be wrong at a site" are one sentence read twice.  They are
+-- not: kernel-flat/TheControlCarriesItsInstanceAndLocusSoOneTheoremFiresAtAClass
+-- builds `pervading`, whose `apply-checked` transports an INSTANTIATED,
+-- WOVEN derivation to every site it fires at (structural `sub-derivation`
+-- and `weave-derivation`).  So a schema can fire at a class AND carry a
+-- certificate about each firing.  The theorems below (§1–§4) are about
+-- `NativeOperation` and remain true; the claim that the restriction is
+-- forced by soundness is withdrawn.
 --
 -- AND THIS IS THE FIBRE LAW CHOOSING ITS BINDING.  `fibre/src/Fibre/
 -- Carrier.agda`: for f : A → B, bind the OUTPUT and the fibre is

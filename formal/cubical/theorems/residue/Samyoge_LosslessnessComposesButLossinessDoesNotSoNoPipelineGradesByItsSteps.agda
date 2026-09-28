@@ -41,7 +41,7 @@
 -- A SECOND NEIGHBOUR, AND IT NARROWS THIS MODULE.S TITLE.
 --
 -- `BhittiSankrama_WallsTransportAlongFordsSoEveryFordRetiresCandidatesFor
--- Free.agda` (another seat, 2026-08-23) proves
+-- Free.agda` (absent from this repository) (another seat, 2026-08-23) proves
 --
 --     भित्ति-संक्रमः : (A ≃ B) → ¬ (B ≃ C) → ¬ (A ≃ C)
 --
@@ -71,7 +71,7 @@
 --
 -- A NEIGHBOUR, FOUND AFTER THIS WAS WRITTEN AND NAMED HERE RATHER THAN
 -- LEFT FOR A READER TO DISCOVER.  `Parampara_TheChainOfThreeIsPricedAnd
--- TheLossesDoNotAddBecauseAnAbsenceSitsInTheMiddleFibre.agda` in this
+-- TheLossesDoNotAddBecauseAnAbsenceSitsInTheMiddleFibre.agda` (absent from this repository) in this
 -- same lane found the non-additivity FIRST and went deeper than §३ does:
 -- it prices an explicit chain of three, fibre by fibre, and names the
 -- MECHANISM -- an अभाव sitting in the middle fibre, with both its

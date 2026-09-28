@@ -19,7 +19,7 @@
 -- gone (anicca).  The condition of a knot is a DISTINCTION: an observation
 -- that, at two places, either factors through (sees them as one —
 -- absorbed, nothing arises) or splits (sees them as two — a knot forms).
--- This is the corpus's own descent law, which `runtime/CRYSTAL.md` §3.2
+-- This is the corpus's own descent law, which `runtime/CRYSTAL.md` (absent from this repository) §3.2
 -- states as "a collision is not a failure; it is a specification of the
 -- missing distinction," and it is the Buddha's arising said in the same
 -- breath: the knot is the missing distinction made present, and it stands

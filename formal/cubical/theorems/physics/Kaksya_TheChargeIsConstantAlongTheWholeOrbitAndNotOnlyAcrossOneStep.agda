@@ -7,7 +7,7 @@
 --
 -- ────────────────────────────────────────────────────────────────────
 -- WHAT THIS IS.  In `Dhruva_TheSymmetryLivesInTheFibreAndWithoutALossThere
--- IsNoSymmetry.agda` § the conserved quantity is `f` itself: `���`
+-- IsNoSymmetry.agda` (absent from this repository) § the conserved quantity is `f` itself: `���`
 -- says exactly that `f` is Φ-invariant, so `f` descends to the orbits 
 -- "the charge is a function on the quotient, not on the cover".
 --

@@ -38,15 +38,21 @@
 -- ESTABLISHED (§२): for propositional truncation, EVERY fibre is
 -- equivalent to the whole source.  Not merely non-contractible, and not
 -- merely large: the fibre IS the source, so nothing whatsoever downstream
--- of the map can see which point it came from.  That is what makes
--- truncation अप्रतिकार्या rather than merely lossy.
+-- of the map can see which point it came from.
+--
+-- NOT ESTABLISHED: that this is what makes truncation अप्रतिकार्या.  §३
+-- below and `SapeksaNirapeksa_…` refute the proposed criterion — it holds
+-- of the one-bit map `Bool → Unit` too, because it reads only the
+-- propositionality of the TARGET.  What the scale wants is uniform in A:
+-- there is no function `(A : Type) → ∥ A ∥₁ → A` (HoTT book Ex. 3.11);
+-- no per-map fibre criterion reaches that quantifier.
 --
 -- ────────────────────────────────────────────────────────────────────
 -- THE TERM.  अवच्छेदक — Nyāya's "delimitor", the property that fixes the
 -- exact extent of a relation or an absence (Gaṅgeśa, तत्त्वचिन्तामणि,
 -- 14th c., and the Navya-Nyya technical apparatus after him; the
 -- corpus's own `interactive/Abhava_TheAbsenceCarriesItsPratiyoginAndItsSearched
--- Domain.hs` and `AbhavaAvacchedaka.agda` use it in that sense).
+-- Domain.hs` (absent from this repository) and `AbhavaAvacchedaka.agda` use it in that sense).
 -- The word is taken for one property — that a relation is
 -- not stated until its extent is — which is exactly what the seam was
 -- missing and what §२ supplies.

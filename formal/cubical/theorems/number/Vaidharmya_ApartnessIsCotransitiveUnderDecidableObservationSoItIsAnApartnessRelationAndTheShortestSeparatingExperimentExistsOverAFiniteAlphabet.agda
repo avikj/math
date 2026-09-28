@@ -4,10 +4,10 @@
 -- वैधर्म्यम् · apartness is cotransitive, so it is an apartness relation;
 -- and over a finite alphabet the shortest separating experiment exists.
 --
--- notes/DISTINCTION_CARRIES_WITNESSES.md (main), §6 "Successor seeds":
+-- notes/DISTINCTION_CARRIES_WITNESSES.md (absent from this repository) (main), §6 "Successor seeds":
 --
 --   "1. `PROVE`: `d_sep`, the shortest separating experiment, under
---    decidable `Obs`.  This is what `natural_crystal.py` actually
+--    decidable `Obs`.  This is what `natural_crystal.py` (absent from this repository) actually
 --    computes, and the Lean lane already has `BehavioralBFS.lean` doing
 --    Hopcroft-style distinguishing-word search.  Porting that to the
 --    apartness type would close the loop between the README's prose, the
@@ -49,7 +49,7 @@
 --       distinguishing word, by exhaustive layers.
 --
 -- WHAT IS NOT PROVED: that Apart is decidable (it is not, without a
--- bound); anything about natural_crystal.py; Delta 21's evaluation
+-- bound); anything about natural_crystal.py (absent from this repository); Delta 21's evaluation
 -- morphism.  --guardedness only because BehavioralApartness carries it.
 -- The indexed membership type `_∈_` draws UnsupportedIndexedMatch
 -- warnings (matches on `here`/`there` use injectivity of `_∷_`), as the

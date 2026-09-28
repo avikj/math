@@ -13,7 +13,7 @@
 -- the theorem in this file; he stated the rule, and this is what the rule
 -- costs to execute.
 --
--- WHY THIS FILE EXISTS.  `machine/Nalanda.hs`, `chooseM`, enumerates the
+-- WHY THIS FILE EXISTS.  `machine/Nalanda.hs` (absent from this repository), `chooseM`, enumerates the
 -- residue class m = r + t·n only over
 --
 --     t ∈ [t₀ − 2 .. t₀ + 2],       t₀ = (⌊√D⌋ − r) div n

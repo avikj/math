@@ -18,7 +18,7 @@
 --
 -- WHY THIS IS AN ASSET CLASS AND NOT A CURIOSITY.  A floor is a proved
 -- lower bound on the toll of every crossing — which is exactly what a
--- BARRIER is.  TARGET.md's parity theorem (ParitySeparator,
+-- BARRIER is.  TARGET.md (absent from this repository)'s parity theorem (ParitySeparator,
 -- ChargeCriterion) has this same shape one storey up: every method whose
 -- queries are parity-neutral pays the parity bit — a floor on the
 -- observable graph.  Bombieri's sieve barrier, the depth barrier, the

@@ -5,11 +5,11 @@
 --
 -- *** THIS FILE MUST FAIL TO TYPE-CHECK. ***
 --
--- Designed annihilation (collab/PROTOCOL.md §7), in the pattern of
+-- Designed annihilation (collab/PROTOCOL.md (absent from this repository) §7), in the pattern of
 -- `Control/QuantifierDrop.agda`, `Control/InflationFlattened.agda` and
 -- `Control/MaximizerWithoutNonvanishing.agda`.
 --
--- `collab/messages/0533-codex-automata-adaptive-horizon-red-return.md`
+-- `collab/messages/0533-codex-automata-adaptive-horizon-red-return.md` (absent from this repository)
 -- argues "state `0` is fixed by both actions, **so** states `1`, `2`,
 -- `3` are unreachable from the DFA start" — without the premise
 -- `start = 0`.  Asserted below: the conclusion of

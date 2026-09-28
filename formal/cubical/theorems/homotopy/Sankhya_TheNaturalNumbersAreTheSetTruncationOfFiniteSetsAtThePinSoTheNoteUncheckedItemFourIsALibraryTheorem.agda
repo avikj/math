@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- सङ्ख्या · the natural numbers are the set truncation of the finite sets
 --
--- notes/NATURAL_MACHINE.md (main), §7.3 "UNCHECKED — stated in this note,
+-- notes/NATURAL_MACHINE.md (absent from this repository) (main), §7.3 "UNCHECKED — stated in this note,
 -- not in Agda", item 4:
 --
 --   "4. **"ℕ ≃ ∥FinSet∥₀."** Not proved. `card≡MereEq` + `card-Fin` say

@@ -59,7 +59,7 @@
 -- and the mathematics of the distinction is Apollonius's, not this
 -- corpus's and not an Indian source's — hence no  label is
 -- attached to the general layer in §1, which carries the English name
--- only (CLAUDE.md file-naming note 2).  Books V–VII of the *Conics*
+-- only (CLAUDE.md (absent from this repository) file-naming note 2).  Books V–VII of the *Conics*
 -- survive only in the Arabic of Thbit ibn Qurra and the Ban Ms
 -- (Baghdad, 9th c.); Book VIII is lost.  Named because that is the
 -- transmission chain, and because the grep above found Thbit ibn Qurra

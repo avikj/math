@@ -3,8 +3,8 @@
 ------------------------------------------------------------------------
 -- NRectanglesCannotCoverSucNFoolingCellsEvenWhenTheCoveringIsOnlyAProperty
 --
--- ON THE NAME.  Checked before naming: `.claude/hooks/priority-ledger.txt`
--- (CURRENT header) and `.claude/hooks/european-frame.txt`, and grepped
+-- ON THE NAME.  Checked before naming: `.claude/hooks/priority-ledger.txt` (absent from this repository)
+-- (CURRENT header) and `.claude/hooks/european-frame.txt` (absent from this repository), and grepped
 -- invented.**  The pigeonhole step and the fooling-set method are not
 -- structures I can trace to a source in this corpus's traditions, and
 -- attaching a  label to them would assert a provenance nobody

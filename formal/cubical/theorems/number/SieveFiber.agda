@@ -6,7 +6,7 @@
 -- THE SIEVE FIBRE AT THE √X HORIZON, AND WHAT DOES AND DOES NOT
 -- DESCEND ALONG IT.
 --
--- This is the experiment named in `collab/upstream/raw/U0006.txt`
+-- This is the experiment named in `collab/upstream/raw/U0006.txt` (absent from this repository)
 -- (the human owner's relayed proposal, §"The first Cubical Agda
 -- experiment I'd actually run is tiny"), run as checked Agda for the
 -- first time.  The proposal, in its own words:
@@ -36,7 +36,7 @@
 -- WHAT IS CHECKED (every `refl` below is a finite exhaustive
 -- verification over the 30-element domain, performed by the
 -- typechecker; §"Exact / certified symbolic computation is proof",
--- CLAUDE.md):
+-- CLAUDE.md (absent from this repository)):
 --
 --   §4  `roughSplit`      ε REALLY IS ONE BIT.  For every n ≤ 30 the
 --                         rough part is 1 or a single prime > 5.  This

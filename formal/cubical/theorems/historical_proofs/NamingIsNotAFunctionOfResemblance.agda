@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- NamingIsNotAFunctionOfResemblance
 --
--- `machine/Upamana.hs` states an operative test and builds its whole
+-- `machine/Upamana.hs` (absent from this repository) states an operative test and builds its whole
 -- design on it.  The test's core is checkable, and this is it: no
 -- invariant of the resemblance relation computes the naming.  So a
 -- similarity cannot be DERIVED into a naming — it has to come from
@@ -43,7 +43,7 @@
 -- collapsing the grounds, so neither is adjudicated here.
 --
 -- SOURCING.  Every attribution above
--- is carried from `machine/Upamana.hs`, which sources and dates them in
+-- is carried from `machine/Upamana.hs` (absent from this repository), which sources and dates them in
 -- its §0.
 --
 ------------------------------------------------------------------------
@@ -122,7 +122,7 @@ namingDoesNotFactorThroughResemblance =
     sameResemblance differentNaming
 
 ------------------------------------------------------------------------
--- 3.  What this earns for `machine/Upamana.hs`
+-- 3.  What this earns for `machine/Upamana.hs` (absent from this repository)
 --
 -- That module quarantines DERIVED similarities from STATED ones and says
 -- the quarantine is what stops anumna being laundered as upamna.  §2

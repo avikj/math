@@ -12,9 +12,9 @@
 -- Gabhira — गभीर, deep; here the p-adic DEPTH, how MUCH a prime divides,
 -- which the drop-COUNT (how MANY invariant factors it divides) throws away.
 -- Plain ; compound; no source claimed.  Ported from
--- machine/Gabhira_TheIntegerCutPriceHasAFibreAndItIsThePAdicDepthTheDropCountDiscards.hs
+-- machine/Gabhira_TheIntegerCutPriceHasAFibreAndItIsThePAdicDepthTheDropCountDiscards.hs (absent from this repository)
 -- to a --safe checked term, differential-tested byte-identical to
--- the Haskell (RECIPE.md).  The mathematics is
+-- the Haskell (RECIPE.md (absent from this repository)).  The mathematics is
 -- Smith normal form over ℤ; the reading (the price function has its own
 -- fibre) is this corpus's, movement 65.
 

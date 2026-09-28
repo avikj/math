@@ -72,7 +72,7 @@ open import EveryRemainderMemberIsStrictlyDominated
   using (anyToMember)
 open import OneStepCoverageAndDisjointnessOfTheLayer using (Mem)
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (StrictlyDominates ; IsParetoMaximal)
+  using (StrictlyDominatedBy ; IsParetoMaximal)
 open import ANonEmptyArchiveHasANonEmptyStratum using (maximalExists)
 open import FlippingACostCoordinateIsSoundButNotFaithful
   using (Vec ; Dom)
@@ -137,10 +137,10 @@ mixedMaximalExists ds cs v vs ab
     notBeaten : MixedMaximal ds (v ∷ vs) u
     notBeaten anyStrict with anyToMember (MixedStrict ds u) (v ∷ vs) anyStrict
     ... | (z , memZ , (domUZ , notDomZU)) =
-      maxM (memberToAny (StrictlyDominates m) (flipWithCaps ds cs z)
+      maxM (memberToAny (StrictlyDominatedBy m) (flipWithCaps ds cs z)
              (map (flipWithCaps ds cs) (v ∷ vs))
              (memberMaps (flipWithCaps ds cs) (v ∷ vs) z memZ)
-             (subst (λ t → StrictlyDominates t (flipWithCaps ds cs z)) equ
+             (subst (λ t → StrictlyDominatedBy t (flipWithCaps ds cs z)) equ
                ( flipCapsIsSound ds cs u z domUZ
                , (λ le → notDomZU
                    (flipCapsReflect ds cs z u

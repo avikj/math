@@ -16,7 +16,7 @@
 -- This module is that independently specified event algebra, checked.
 -- It proves the operational claims the strike left standing, and it
 -- claims NOTHING about prāgabhāva or pradhvaṃsābhāva — the struck
--- reading is quoted in ABHAVA.md where it lives, with its strike.
+-- reading is quoted in ABHAVA.md (absent from this repository) where it lives, with its strike.
 --
 -- The theorems, in the repository's own vocabulary:
 --
@@ -41,7 +41,7 @@
 -- temporal characterisations (andi/snta for prior absence,
 -- sdi/ananta for posterior) is exactly the struck question, and this
 -- module supplies no evidence either way.  If someone reopens it, the
--- study to check is named in ABHAVA.md A1 (Matilal 1968).
+-- study to check is named in ABHAVA.md (absent from this repository) A1 (Matilal 1968).
 ------------------------------------------------------------------------
 
 module Lekha_TheAppendOnlyFoldAbsorbsRefutationAndABooleanCannotCarryIt where

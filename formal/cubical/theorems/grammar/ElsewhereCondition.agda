@@ -91,7 +91,7 @@ private
 -- §0  Guarded rule systems
 --
 -- A rule is identified with its guard: the decidable predicate cutting out
--- the inputs it applies to.  (`runtime/panini/conflict.py` reaches the same
+-- the inputs it applies to.  (`runtime/panini/conflict.py` (absent from this repository) reaches the same
 -- predicate syntactically, through pattern subsumption; the extensional
 -- version is what the principle is about, and is what is proved here.)
 ------------------------------------------------------------------------

@@ -37,14 +37,14 @@
 --   That is the ORBIT question.  This file is the VISIT-COUNT question,
 --   which is disjoint from it: how often each position is struck in `n`
 --   steps, and what a readout of that data does and does not determine.
---   `notes/SEED78_THE_CYCLOTOMIC_COMMA.md` carries the Pythagorean comma as
+--   `notes/SEED78_THE_CYCLOTOMIC_COMMA.md` (absent from this repository) carries the Pythagorean comma as
 --   an exact lattice residue; nothing here touches it.
 --
 -- THE CORPUS OBJECT BEING CHECKED.
 --
 --   `collab/upstream/raw/2026-08-16-packages/EGB_COMPREHENSIVE_INDEX_V3_PACKAGE/`
---   `EGB_REPETITION_STRUCTURE_REVERIFY_V3.json` reports, of the artifact
---   `ETERNAL_GOLDEN_BRAID_100K_FIELD_BOOK_DELTA_36_2026-08-14.md`
+--   `EGB_REPETITION_STRUCTURE_REVERIFY_V3.json` (absent from this repository) reports, of the artifact
+--   `ETERNAL_GOLDEN_BRAID_100K_FIELD_BOOK_DELTA_36_2026-08-14.md` (absent from this repository)
 --   (312254 bytes, 7242 lines, 450 numbered diamonds):
 --
 --       template_cycle_length : 24
@@ -60,7 +60,7 @@
 --   Darwin — variation plus selection plus time explains the appearance of
 --   design.  Ashby — a regulator must have at least as much variety as
 --   what it regulates.  On the drawn material the two disagree, and the
---   disagreement is sharp on `machine/race-variants.sh`, whose own footer
+--   disagreement is sharp on `machine/race-variants.sh` (absent from this repository), whose own footer
 --   prints "PRIMARY METRIC DID NOT SEPARATE THE VARIANTS" and, separately,
 --   that the kernel gate "certifies by `refl` over {0, s, +, *} only".
 --   Darwin's lens reads a flat table as a shortage of variation or of
@@ -200,8 +200,8 @@ readout-phase-1 = calana 29 (sarana 450 (calana 1 zeros24))
 -- Positions 0..17 are struck 19 times, positions 18..23 are struck 18
 -- times.  In the artifact's 1-based template numbering that is
 -- templates 1..18 ↦ 19 and templates 19..24 ↦ 18, which is exactly the
--- `template_counts` table of EGB_REPETITION_STRUCTURE_REVERIFY_V3.json.
--- Finite exhaustive computation, hence proof (CLAUDE.md, "The rule" §3).
+-- `template_counts` table of EGB_REPETITION_STRUCTURE_REVERIFY_V3.json (absent from this repository).
+-- Finite exhaustive computation, hence proof (CLAUDE.md (absent from this repository), "The rule" §3).
 egb-template-counts :
   readout-phase-0
   ≡ ( 19 , 19 ∷ 19 ∷ 19 ∷ 19 ∷ 19 ∷ 19 ∷ 19 ∷ 19 ∷ 19 ∷

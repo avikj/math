@@ -5,7 +5,7 @@
 --
 -- THE CONSERVED QUANTITY OF SMITH PATH HOLONOMY.
 --
--- FORM.md §3 proves the events form a REGULAR torsor: the payload
+-- FORM.md (absent from this repository) §3 proves the events form a REGULAR torsor: the payload
 -- ranges over the whole stabilizer, "invisible to the endpoint".
 -- Read together they suggest that on the cokernel nothing at all is
 -- conserved.  Something is.

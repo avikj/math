@@ -24,7 +24,7 @@
 -- ────────────────────────────────────────────────────────────────────
 -- WHAT THIS IS ABOUT, and where it comes from in this repository.
 --
--- `collab/messages/goldbach-machine/direct-minor-shadow.md`
+-- `collab/messages/goldbach-machine/direct-minor-shadow.md` (absent from this repository)
 -- Theorem 4.1 and Proposition 4.2 construct, for a
 -- prime r ≡ 3 (mod 4) dividing an even N with N > 2r, the two
 -- nonnegative prime-supported weights
@@ -34,7 +34,7 @@
 -- and prove that BOTH self-convolutions vanish at N while
 -- R_ϑ(N) = ½ (ϑ_{r,+} * ϑ_{r,−})(N).   The engine is χ_r(−1) = −1: the
 -- complementation n ↦ N − n reverses the character's sign.
--- `mixed-sector-prescribed-center.md` Theorem 5.1 runs the same move with
+-- `mixed-sector-prescribed-center.md` (absent from this repository) Theorem 5.1 runs the same move with
 -- two characters, one visible and one hidden.
 --
 -- This module isolates the algebra of that engine at k characters
@@ -58,7 +58,7 @@
 --                    place `odd` is used.
 --
 -- What `vanish` says about the shadow: the self-annihilating weights of
--- direct-minor-shadow.md are not k separate accidents.  They are the
+-- direct-minor-shadow.md (absent from this repository) are not k separate accidents.  They are the
 -- diagonal s = t of one pairing law, and the law also kills every partly
 -- agreeing pair — 4^k − 2^k of the 4^k ordered pairs.
 --
@@ -157,7 +157,7 @@ flipSign false false = refl
 -- σ is the complementation a ↦ N − a.
 -- An `OddChar` is a two-valued character whose value σ reverses: this is
 -- exactly χ_r(−1) = −1 together with r | N, and it is the whole
--- arithmetic input of direct-minor-shadow.md Theorem 4.1.
+-- arithmetic input of direct-minor-shadow.md (absent from this repository) Theorem 4.1.
 record OddChar {A : Type ℓ} (σ : A → A) : Type ℓ where
   constructor oddChar
   field
@@ -226,7 +226,7 @@ Agree ((_ , s , t) ∷ xs) = (s ≡ t) ⊎ Agree xs
 --
 -- Consequence, and it is the reason this file exists: of the 4^k ordered
 -- pairs of sectors, only the 2^k conjugate pairs (s , ¬s) can pair.  The
--- vanishing self-convolutions of direct-minor-shadow.md are the case
+-- vanishing self-convolutions of direct-minor-shadow.md (absent from this repository) are the case
 -- s = t at k = 1, which is `here refl`.
 vanish : {A : Type ℓ} {σ : A → A} (E : Cell σ) (a : A)
        → Agree E → paired E a ≡ pos 0
@@ -300,7 +300,7 @@ twoPow (suc n) = pos 2 · twoPow n
 -- On a conjugate pair the antidiagonal product is 2^k times the left
 -- sector's own weight — pointwise, at every a.
 --
--- At k = 1 this is the factor ½ of direct-minor-shadow.md (32):
+-- At k = 1 this is the factor ½ of direct-minor-shadow.md (absent from this repository) (32):
 -- summing over the antidiagonal, (ϑ₊ * ϑ₋)(N) = 2·(ϑ * ϑ)(N).
 -- At k ≥ 2 the right-hand side still carries the left sector's own sign
 -- vector s, which is what the k = 1 statement cannot see, and which is
@@ -329,7 +329,7 @@ conjugate ((c , s , t) ∷ xs) a (q , hs) =
 --
 -- Summing this over the antidiagonal gives
 -- (ϑ₊ * ϑ₋)(N) + (ϑ₋ * ϑ₊)(N) = 4·(ϑ * ϑ)(N), i.e. the ½ of
--- direct-minor-shadow.md (32) — and it is pinned here BEFORE any
+-- direct-minor-shadow.md (absent from this repository) (32) — and it is pinned here BEFORE any
 -- summation, so the factor cannot be a bookkeeping slip in the sum.
 oneCharSum : {A : Type ℓ} {σ : A → A} (c : OddChar σ) (a : A)
   →   paired ((c , true  , false) ∷ []) a

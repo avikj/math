@@ -3,12 +3,12 @@
 ------------------------------------------------------------------------
 -- NaturalMachine.InterfaceSeparation
 --
--- W3 of `TARGET.md` §2 = `notes/BARRIER.md` §2's closing demand:
+-- W3 of `TARGET.md` (absent from this repository) §2 = `notes/BARRIER.md` (absent from this repository) §2's closing demand:
 --
 --     "a proof that no WL post-processing Φ can simulate that interface
 --      — i.e., a separation, not just a classification."
 --
--- The interface in question is `BARRIER.md`'s third presentation:
+-- The interface in question is `BARRIER.md` (absent from this repository)'s third presentation:
 -- FUNCTIONAL-EQUATION ACCESS, "a(np) = a(n)a(p) used as a *constraint*,
 -- not a value", which is the interface Tao's entropy decrement consumes
 -- and which the windowed-linear class WL declines by construction —
@@ -16,7 +16,7 @@
 --
 -- THE ANSWER IS A DICHOTOMY, AND THE DICHOTOMY IS THE RESULT.  W3 is not
 -- one question.  It is two, with OPPOSITE answers, and which one you are
--- asking is fixed by a single modelling choice that `BARRIER.md` makes
+-- asking is fixed by a single modelling choice that `BARRIER.md` (absent from this repository) makes
 -- silently:
 --
 --   * PROMISED MODEL — the hidden object is a completely multiplicative
@@ -48,7 +48,7 @@
 --
 -- WHY THIS IS NOT A MODEL CHOSEN TO MAKE A THEOREM EASY.  Both models
 -- are formalised here and both theorems are proved; neither is assumed.
--- The hostile reader's move is named in `notes/INTERFACE_SEPARATION.md`
+-- The hostile reader's move is named in `notes/INTERFACE_SEPARATION.md` (absent from this repository)
 -- §6 and it is the right one: attack the claim that a finite-query
 -- oracle model is the right home for entropy decrement at all, since
 -- that argument's actual input is an AVERAGED statement over all n at
@@ -113,14 +113,14 @@ open import NaturalMachine.ChargeCriterion using (Separates ; neutral⇒no-separ
 -- An interface on a hidden object of type O is a map O → A: the whole
 -- transcript it produces.  Post-processing is any function A → B, with
 -- no computability, continuity or measurability demanded — this is
--- `BARRIER.md` Proposition B3's "arbitrary, even non-computable Φ",
+-- `BARRIER.md` (absent from this repository) Proposition B3's "arbitrary, even non-computable Φ",
 -- taken literally, and it is the strongest form of the hypothesis.
 --
 -- Hence simulation is not a complexity statement; it is a statement
 -- about PARTITIONS.  I simulates J exactly when I's transcript refines
 -- J's, and the only way to refute it is to exhibit a COLLISION of I
 -- that J splits.  Because the object space here is free — arbitrary
--- sign assignments on the primes, `TARGET.md` §3's whole reason to
+-- sign assignments on the primes, `TARGET.md` (absent from this repository) §3's whole reason to
 -- attack parity rather than ζ — collisions can be constructed, not
 -- hunted for.  That is the diagonalisation, and §4 performs it.
 ------------------------------------------------------------------------
@@ -185,7 +185,7 @@ cancel σ m n =
 -- On the promised class the functional equation is an identity, so its
 -- defect is constantly +1 and the empty transcript simulates it.  This
 -- is the trivial half and it is stated because it is the half a reader
--- of `BARRIER.md` §2 will assume away: the note's third presentation is
+-- of `BARRIER.md` (absent from this repository) §2 will assume away: the note's third presentation is
 -- described as accessing "a(np) = a(n)a(p) … as a constraint", and a
 -- constraint that always holds is not an access.
 ------------------------------------------------------------------------
@@ -313,7 +313,7 @@ derived-oracle-simulated qs =
 -- neutral, and by `ChargeCriterion.neutral⇒no-separator` still admits no
 -- separator at all.
 --
--- This is the sharp form of `TARGET.md` §4b's asymmetry ("charge lives
+-- This is the sharp form of `TARGET.md` (absent from this repository) §4b's asymmetry ("charge lives
 -- in what a method reads, and no amount of computation on neutral
 -- readings manufactures it"): the functional equation is a computation
 -- on neutral readings, and it is now proved not to manufacture charge.
@@ -357,7 +357,7 @@ fe-closure-cannot-separate qs all ds =
 -- §5  UNPROMISED MODEL: the separation, proved by construction.
 --
 -- Drop the promise — take the hidden object to be an arbitrary ±1
--- sequence, which is what `BARRIER.md`'s "black-box sequence" says
+-- sequence, which is what `BARRIER.md` (absent from this repository)'s "black-box sequence" says
 -- verbatim — and the FE query stops being an identity.  Now it is one
 -- honest bit, and the value interface cannot get it unless it reads the
 -- product point.
@@ -367,7 +367,7 @@ fe-closure-cannot-separate qs all ds =
 -- agree on every query of Ω ≠ 2 — an unbounded set, containing every
 -- prime, every prime power of odd exponent, every window [1,X] read
 -- through Ω-graded probes — and disagree on the single FE instance
--- (p, q).  This is `TARGET.md` §3's point cashed: the object space is
+-- (p, q).  This is `TARGET.md` (absent from this repository) §3's point cashed: the object space is
 -- free, so the diagonalisation that is unavailable against ζ is
 -- available here.
 ------------------------------------------------------------------------
@@ -455,7 +455,7 @@ fe-simulated-when-product-queried m n =
 -- The functional-equation query is nonconstant on sequences and constant
 -- on multiplicative ones.  Hence its entire information content is the
 -- promise, and any separation theorem built on it separates hypotheses,
--- not channels.  This is the sentence the note argues `BARRIER.md` §2
+-- not channels.  This is the sentence the note argues `BARRIER.md` (absent from this repository) §2
 -- should carry in place of "outside the interface of WL by construction".
 ------------------------------------------------------------------------
 

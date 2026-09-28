@@ -10,9 +10,9 @@
 --
 -- SYĀT — THE CLAIM, EXACTLY OF THE SOURCE.  Nothing below is Āryabhaṭa's.  The
 -- *ryabhaya* is unopened by me; the citation is carried from
--- `.claude/hooks/MulaVakya_SourceStatementsForTheTermsInOurFileNames.txt`
+-- `.claude/hooks/MulaVakya_SourceStatementsForTheTermsInOurFileNames.txt` (absent from this repository)
 -- row 77 and from the header of
--- `formal/cubical/NaturalMachine/SankramanaSesa_EveryTransportOwesItsResidual.agda`,
+-- `formal/cubical/NaturalMachine/SankramanaSesa_EveryTransportOwesItsResidual.agda` (absent from this repository),
 -- and is owed at verse level.  The term names the OBJECT — what a step
 -- keeps rather than throws away — and the mathematics is the total space
 -- of a fibration (HoTT 4.8.2).
@@ -73,7 +73,7 @@
 -- below are therefore about the CROWDED arm only, and §5's `Bool → Unit`
 -- is level २ of a five-level scale, not "the obstruction".
 --
--- The repair is `Fibre.SakalaVikalaDesa_…` in this library: the
+-- The repair is `Fibre.WholePartialDesa_…` in this library: the
 -- diagnosis is a CENSUS — a function `B → देश f b` whose constructors
 -- carry their evidence — and not a verdict about the map.  It also
 -- contains the refutation, as a computed term, of the sequential

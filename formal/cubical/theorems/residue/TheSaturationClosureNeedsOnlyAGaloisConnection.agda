@@ -160,7 +160,7 @@ module Polarity {X Y : Type} (K : X → Y → Type) where
 -- kernel are paid AT ONE CUT, with real min-plus data, in
 -- `MinPlusResiduationIsAGaloisConnectionAtOneCut`:
 --
---   ∸-adjˡ / ∸-adjʳ   K ∸ ψ ≤ φ ⟺ K ≤ φ + ψ, which v0.5 does not ship
+--   ∸-adjˡ / ∸-adjʳ   K ∸ ψ ≤ φ ⟺ K ≤ φ + ψ, which the pinned cubical (v0.9) does not ship in this form
 --   galFwd / galBwd   both directions for `u = d = (K ∸_)`, and they
 --                     are the SAME statement once `+` is commuted
 --   MinPlusCut        `module Galois` instantiated — antitonicity,

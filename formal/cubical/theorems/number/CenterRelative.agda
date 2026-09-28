@@ -302,7 +302,7 @@ Pair≡CR : Pair ≡ CR
 Pair≡CR = ua Pair≃CR
 
 ------------------------------------------------------------------------
--- 7.  Controls (PROTOCOL.md §7: a claim ships with its own falsifiers)
+-- 7.  Controls (PROTOCOL.md (absent from this repository) §7: a claim ships with its own falsifiers)
 ------------------------------------------------------------------------
 
 -- Control 1 — the cone is inhabited, so thm16-4 is not vacuous.

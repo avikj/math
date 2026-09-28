@@ -6,7 +6,7 @@
 -- atlas's, the name is this module's.)  The complement of Sthana: that
 -- module built the positional word whose addition arrives WITH NO CARRY
 -- RULE; this one proves the carry cannot be dispensed with.  It is
--- runtime/atlas/residual.py's splitting_exponent_argument (ATLAS_OF_N
+-- runtime/atlas/residual.py (absent from this repository)'s splitting_exponent_argument (ATLAS_OF_N
 -- Prop. 2.11: the carry class vanishes iff the extension splits iff the
 -- exponents agree), at its minimal instance b = 2, one digit — checked.
 --
@@ -28,7 +28,7 @@
 --       essential — the receipt of the tenfold is the carry, and reading
 --       the digits separately is the unreceipted compression that loses it.
 --
--- Sources for the mathematics: runtime/atlas/residual.py
+-- Sources for the mathematics: runtime/atlas/residual.py (absent from this repository)
 -- Prop. 2.11; ryabhaa, ryabhaya Gaitapda 2 (499) for sthna.
 ------------------------------------------------------------------------
 

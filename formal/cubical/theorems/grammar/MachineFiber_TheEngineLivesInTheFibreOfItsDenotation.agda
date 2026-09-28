@@ -5,12 +5,12 @@
 --
 -- (the engine lives in the fibre of its own denotation.)
 --
--- `Tantujala_TheFibreHasThreeVerdictsAndIsContrMergesTwoOfThem` states the
+-- `Fiberjala_TheFibreHasThreeVerdictsAndIsContrMergesTwoOfThem` states the
 -- criterion: WHICH SIDE OF `f a ≡ b` IS BOUND.  Bind b and you have
 -- `singl`, एकम् always and free.  Bind a and you have `fiber`, which is
 -- any of the three — रिक्तम्, एकम्, बहु.
 --
--- `interactive/MathMachine.hs` is a fibre navigator and did not know it.  Its
+-- `interactive/MathMachine.hs` (absent from this repository) is a fibre navigator and did not know it.  Its
 -- denotation map is ⟦_⟧, terms to meanings, and every organ it has is a
 -- response to one of the three verdicts on that map's fibres:
 --

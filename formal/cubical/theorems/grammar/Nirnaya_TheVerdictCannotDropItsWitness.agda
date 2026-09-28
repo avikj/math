@@ -8,8 +8,8 @@
 -- inhabitants, and there is no section, so the loss is not repairable
 -- §६ द्वौ मार्गौ).  अविशेषः, below, is that in one line.
 --
--- The four positions are the ones interactive/Obstruction.hs arrived at
--- (ANEKANTA.md §19) and this file adds the two the machine did
+-- The four positions are the ones interactive/Obstruction.hs (absent from this repository) arrived at
+-- (ANEKANTA.md (absent from this repository) §19) and this file adds the two the machine did
 -- not have: सिद्ध, which carries its derivation, and अवक्तव्यम्, which is
 -- what a disagreement of standpoints returns instead of an error or an
 -- average.  Each carries what makes it the verdict it is:
@@ -79,12 +79,23 @@ open import Cubical.Relation.Nullary using (¬_)
 
 module सन्दर्भ (E : Type) (योग्य : List E → Type) (शब्दकोश : ℕ → Type) where
 
+  -- a claim: two sides, and the symbols it MENTIONS.  The symbol list is
+  -- what lets the two syntactic verdicts below be ABOUT this claim: a
+  -- unification failure or a silencing symbol must occur in it, or the
+  -- verdict would be inhabited for every claim at once (the bare-label
+  -- defect AnekantaTransitional's 2026-08-18 repair removed from भङ्ग).
   record वाद : Type where
-    constructor _≐_
+    constructor वादः
     field
-      वाम   : E → ℕ
-      दक्षिण : E → ℕ
+      वाम     : E → ℕ
+      दक्षिण   : E → ℕ
+      चिह्नानि : List ℕ
   open वाद public
+
+  -- membership, as a recursive family (no index-position matching)
+  _∈ल_ : ℕ → List ℕ → Type
+  n ∈ल []       = ⊥
+  n ∈ल (m ∷ ms) = (n ≡ m) ⊎ (n ∈ल ms)
 
   -- every point of a list satisfies P, as data rather than as a claim
   सर्वे : (E → Type) → List E → Type
@@ -115,8 +126,10 @@ module सन्दर्भ (E : Type) (योग्य : List E → Type) (श
     सिद्धः      : ((e : E) → वाम c e ≡ दक्षिण c e) → निर्णयः c
     खण्डितः     : (e : E) → ¬ (वाम c e ≡ दक्षिण c e) → निर्णयः c
     अविरुद्धः    : विषयः c → निर्णयः c
-    निर्धर्मी    : (i j : ℕ) → ¬ (i ≡ j) → निर्णयः c
-    तूष्णीम्     : (चिह्नम् : ℕ) → ¬ (शब्दकोश चिह्नम्) → निर्णयः c
+    निर्धर्मी    : (i j : ℕ) → i ∈ल चिह्नानि c → j ∈ल चिह्नानि c
+                → ¬ (i ≡ j) → निर्णयः c
+    तूष्णीम्     : (चिह्नम् : ℕ) → चिह्नम् ∈ल चिह्नानि c
+                → ¬ (शब्दकोश चिह्नम्) → निर्णयः c
 
   ----------------------------------------------------------------------
   -- ३ · कोटिः — the label, and the ONLY way to hold one is to project it
@@ -131,8 +144,8 @@ module सन्दर्भ (E : Type) (योग्य : List E → Type) (श
   भङ्गः (सिद्धः _)      = क-सिद्धः
   भङ्गः (खण्डितः _ _)   = क-खण्डितः
   भङ्गः (अविरुद्धः _)    = क-अविरुद्धः
-  भङ्गः (निर्धर्मी _ _ _) = क-निर्धर्मी
-  भङ्गः (तूष्णीम् _ _)    = क-तूष्णीम्
+  भङ्गः (निर्धर्मी _ _ _ _ _) = क-निर्धर्मी
+  भङ्गः (तूष्णीम् _ _ _)    = क-तूष्णीम्
 
   ----------------------------------------------------------------------
   -- ४ · अवक्तव्यम् — what two disagreeing standpoints return.  Not an error
@@ -147,7 +160,8 @@ module सन्दर्भ (E : Type) (योग्य : List E → Type) (श
       पूर्वः  : निर्णयः c
       अपरः   : निर्णयः c
       विरोधः : ¬ (भङ्गः पूर्वः ≡ भङ्गः अपरः)
-      गर्भः   : वाद
+      गर्भः   : वाद   -- NOT constrained by the type: the reading "the next
+                      -- naya is born from the शेष" is not enforced here
   open अवक्तव्यम् public
 
   -- what the machine actually returns
@@ -198,7 +212,7 @@ open सन्दर्भ ℕ (λ _ → Unit) (λ _ → Unit)
 
 -- x ≐ 0 : refuted at 1, refuted at 2, and those are different refutations.
 मिथ्या : वाद
-मिथ्या = (λ e → e) ≐ (λ _ → 0)
+मिथ्या = वादः (λ e → e) (λ _ → 0) (0 ∷ [])
 
 एकेन : निर्णयः मिथ्या
 एकेन = खण्डितः 1 snotz

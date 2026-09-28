@@ -9,7 +9,7 @@
 -- `loss/…/Carrier.agda` gives `A ≃ Carrier f` for every f because
 -- `singl (f a)` is CONTRACTIBLE.  That is one of three grades, and
 -- `Bhagahara_TheExactDivisionCarriesItsWitnessAndSixTurnsReachOneAt
--- SixtyOne.agda` names the middle one, in the case that matters:
+-- SixtyOne.agda` (absent from this repository) names the middle one, in the case that matters:
 --
 --     "For the क्षेप the fibre is `singl` — contractible — because the
 --      roots determine it TOTALLY: every pair has a क्षेप.  For the भागहार
@@ -31,7 +31,7 @@
 --
 -- THE H-LEVEL OF THE FIBRE DOES NOT TRACK UNDOABILITY.  `Bahupratyanayana
 -- _TheObstructionToUndoingIsTwoDistinctSourcesNotTwoFibrePointsAndThe
--- CircleIsNotAnInstance.agda` exhibits it: `एकवृत्तम् : Unit → S¹`,
+-- CircleIsNotAnInstance.agda` (absent from this repository) exhibits it: `एकवृत्तम् : Unit → S¹`,
 -- `tt ↦ base`, HAS a retraction, and its fibre over `base` is `ΩS¹ ≃ ℤ`.
 -- So it sits at बहु and is undoable.  Its many fibre points differ only in
 -- their WITNESS; their SOURCE is one point.  A LOOP IS NOT A COLLISION.

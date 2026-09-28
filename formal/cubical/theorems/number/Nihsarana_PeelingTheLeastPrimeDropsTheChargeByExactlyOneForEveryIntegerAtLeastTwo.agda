@@ -4,7 +4,7 @@
 -- Nihsarana — PEELING THE LEAST PRIME DROPS THE CHARGE BY EXACTLY ONE,
 -- FOR EVERY INTEGER n ≥ 2.
 --
--- SOURCE.  notes/CHARGE_TOWER_MONODROMY.md (branch main), lines 193–196,
+-- SOURCE.  notes/CHARGE_TOWER_MONODROMY.md (absent from this repository) (branch main), lines 193–196,
 -- verbatim:
 --
 --   **Stated, not proved:** that $\Omega(n/p^-(n)) = \Omega(n) - 1$ for all

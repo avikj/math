@@ -187,7 +187,7 @@ module _ (R : CommRing ℓ) where
 
   private
    -- The solver takes the QUANTIFIED goal, never the intro'd one — the
-   -- same convention `BUILD.md` records for `NatSolver`.
+   -- same convention `BUILD.md` (absent from this repository) records for `NatSolver`.
    step : (h x : ⟨ R ⟩) → h · ((1r + 1r) · x) ≡ (h + h) · x
    step _ _ = solve! R
 

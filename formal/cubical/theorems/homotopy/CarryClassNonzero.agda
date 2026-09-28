@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- CarryClassNonzero
 --
--- ATLAS_OF_N.md Proposition 2.11, the cohomological half:
+-- ATLAS_OF_N.md (absent from this repository) Proposition 2.11, the cohomological half:
 --
 --     for every base b ≥ 2, every n ≥ 1, and EVERY digit section
 --     s : ℤ/bⁿ → ℤ/bⁿ⁺¹ whatever, the carry class

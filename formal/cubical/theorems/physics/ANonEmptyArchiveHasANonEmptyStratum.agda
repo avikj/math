@@ -56,7 +56,7 @@ open import OrderAstiNasti_TheFourthCornerCannotLiveOverAnEnumerableDecidableIns
 open import AParetoFitnessHasNoBestAndEveryScalarisationAddsADecision
   using (_≼_ ; ≼-refl ; ≼-trans)
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (StrictlyDominates ; IsParetoMaximal ; decStrictlyDominates
+  using (StrictlyDominatedBy ; IsParetoMaximal ; decStrictlyDominatedBy
         ; stratum ; stratumKeepsEveryMaximal)
 
 ------------------------------------------------------------------------
@@ -67,12 +67,12 @@ open import TheParetoStratumIsDecidableAndTheFilterIsExact
 -- would otherwise be missed.
 ------------------------------------------------------------------------
 
-⊏-irrefl : (v : List ℕ) → ¬ StrictlyDominates v v
+⊏-irrefl : (v : List ℕ) → ¬ StrictlyDominatedBy v v
 ⊏-irrefl v (_ , ¬le) = ¬le (≼-refl v)
 
 ⊏-trans :
   (u v w : List ℕ)
-  → StrictlyDominates u v → StrictlyDominates v w → StrictlyDominates u w
+  → StrictlyDominatedBy u v → StrictlyDominatedBy v w → StrictlyDominatedBy u w
 ⊏-trans u v w (uv , ¬vu) (vw , ¬wv) =
   ≼-trans u v w uv vw , λ wu → ¬wv (≼-trans w u v wu uv)
 
@@ -98,7 +98,7 @@ maximalExists :
 maximalExists x [] =
   x , (inl refl , λ where (inl sd) → ⊏-irrefl x sd)
 maximalExists x (y ∷ ys) with maximalExists y ys
-... | (m , (mem , max)) with decStrictlyDominates m x
+... | (m , (mem , max)) with decStrictlyDominatedBy m x
 ...   | no ¬beat = m , (inr mem , λ where
                           (inl sd)  → ¬beat sd
                           (inr rest) → max rest)

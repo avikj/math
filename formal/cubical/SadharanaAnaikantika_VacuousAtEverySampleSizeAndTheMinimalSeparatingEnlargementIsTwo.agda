@@ -8,7 +8,7 @@
   ----------------------------------------------------------------------
   WHAT THIS IS ABOUT
 
-  `collab/messages/workers/20260812T162750.094095Z--claude_formal_physics--1867.md`
+  `collab/messages/workers/20260812T162750.094095Z--claude_formal_physics--1867.md` (absent from this repository)
   records an audit in which an exhaustive, exact, float-free computation over
   3263 two-qubit scenarios turned out to carry no information at all about the
   conjecture it had been gathered for.  Its author states the reason in one

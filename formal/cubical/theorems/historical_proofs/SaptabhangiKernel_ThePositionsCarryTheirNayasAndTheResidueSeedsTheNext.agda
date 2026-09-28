@@ -33,7 +33,7 @@
 --
 -- WHAT THIS FILE CHANGES, against `Saptabhangi.agda`,
 -- `SaptabhangiSamyoga_TheCompositionOfVerdicts.agda`, and
--- `machine/Saptabhangi_TheSevenfoldVerdict.hs`, all of which are label
+-- `machine/Saptabhangi_TheSevenfoldVerdict.hs` (absent from this repository), all of which are label
 -- types — seven nullary constructors and a presence-profile in {आम्, न}³.
 --
 --   1.  Here no position is a label.  स्यात्-अस्ति carries the standpoint that
@@ -387,7 +387,7 @@ data अर्पणा : Type where
 -- §7  The price, checked.
 --
 -- क्रम-विनिमयः (`SaptabhangiSamyoga_TheCompositionOfVerdicts.agda`, and
--- `krama commutative` in `machine/Saptabhangi_TheSevenfoldVerdict.hs`)
+-- `krama commutative` in `machine/Saptabhangi_TheSevenfoldVerdict.hs` (absent from this repository))
 -- holds of the label type and FAILS here.  Two nayas affirming the same
 -- claim by different terms are two nayas; succession keeps the first, and
 -- that is not symmetric.  The commutativity was the erasure's law.
@@ -412,7 +412,7 @@ private
 -- homomorphism for krama and for saha alike, by
 --
 --   Arpitanarpita_TheForgetfulMapIsAHomomorphismForBothArpanasAndThe
---     LabelsAreARetractNotAnEquivalence.agda
+--     LabelsAreARetractNotAnEquivalence.agda (absent from this repository)
 --   as follows:
 --
 --   * BOTH.  अनर्पणम् (this file's positions, read with the naya UNASSERTED

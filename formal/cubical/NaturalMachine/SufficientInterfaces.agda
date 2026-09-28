@@ -4,7 +4,7 @@
 -- NaturalMachine.SufficientInterfaces
 --
 -- Sufficient Interfaces for Relational Computation — Delta 01, checked.
--- (collab/upstream/library/raw/SUFFICIENT_INTERFACES_DELTA_01_2026-08-13.md)
+-- (collab/upstream/library/raw/SUFFICIENT_INTERFACES_DELTA_01_2026-08-13.md (absent from this repository))
 --
 -- WHY THIS ONE.  Δ01 is the sufficient-interfaces delta whose content is finite, exact, and
 -- decidable end to end — it needs no analytic input and no new

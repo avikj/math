@@ -6,9 +6,9 @@
 -- ibn-al-haytham (Claude Opus 5), 2026-08-14.
 --
 -- SUCCESSOR TO, AND PARTIAL REFUTATION OF, a reading of
--- `collab/swarm/2026-08-14/swarm-0814-02-admissible-modes-are-right-adjoints.md`
+-- `collab/swarm/2026-08-14/swarm-0814-02-admissible-modes-are-right-adjoints.md` (absent from this repository)
 -- (module `theorems/ModeAdjoint.agda`, which this file IMPORTS and does not
--- edit).  Both concern OBLIGATION.md's transfer modes: maps t : S -> S on a
+-- edit).  Both concern OBLIGATION.md (absent from this repository)'s transfer modes: maps t : S -> S on a
 -- meet-semilattice with top that preserve binary meets and TOP ("admissible").
 --
 -- swarm-0814-02 proved: the note's list (identity / constant TOP / clamp) is
@@ -20,7 +20,7 @@
 --      meet-semilattice with top, every unary polynomial of the equational
 --      theory ACUI -- every term built from the variable, parameters, and
 --      the meet -- is a clamp  s |-> s /\ c  or a constant.  So
---      OBLIGATION.md Prop. O2.3's list is exactly the set of unary
+--      OBLIGATION.md (absent from this repository) Prop. O2.3's list is exactly the set of unary
 --      ACUI-polynomials, and its standing obligation was really "check that
 --      each new mode is TERM-DEFINABLE".  Combined with S02's theta this
 --      gives  `theta-not-polynomial`: theta is not the interpretation of ANY
@@ -40,7 +40,7 @@
 --      list.
 --
 --  (C) THE GENERATION CLAIM IS NOT FREE ORDER THEORY -- it needs
---      distributivity, which OBLIGATION.md Definition 2 grants ("S is a
+--      distributivity, which OBLIGATION.md (absent from this repository) Definition 2 grants ("S is a
 --      product of chains") and never uses.  On the non-distributive
 --      five-element lattice M3 (bottom, three pairwise-incomparable atoms,
 --      top) the IDENTITY is admissible and is NOT any finite pointwise meet
@@ -92,7 +92,7 @@ module Terms
   ----------------------------------------------------------------
   -- 0a.  The equational theory ACUI, as a term syntax in one variable
   --      with parameters.  This is precisely the signature whose unary
-  --      polynomials OBLIGATION.md Prop. O2.3 enumerates.
+  --      polynomials OBLIGATION.md (absent from this repository) Prop. O2.3 enumerates.
   ----------------------------------------------------------------
 
   data Tm : Type ℓ where
@@ -218,7 +218,7 @@ module T3 = Terms _∧₃_ top ∧₃-idem ∧₃-comm ∧₃-assoc ∧₃-unit
 
 -- THEOREM A (three-chain instance).  The missing mode of swarm-0814-02 is
 -- outside the whole ACUI polynomial clone, not merely outside a list of
--- three.  Hence no enlargement of OBLIGATION.md's list by further
+-- three.  Hence no enlargement of OBLIGATION.md (absent from this repository)'s list by further
 -- term-definable modes can ever be exhaustive.
 θ-not-polynomial : (t : T3.Tm) → ((s : Three) → θ s ≡ T3.⟦ t ⟧ s) → ⊥
 θ-not-polynomial = T3.notPolynomial θ θ-not-clamp′ θ-not-const
@@ -411,7 +411,7 @@ module T4 = Terms _∧₄_ d3 ∧₄-idem ∧₄-comm ∧₄-assoc ∧₄-unit
 -- The positive half of the same witness: psi IS a pointwise meet of two
 -- thresholds.  chi-a tests "s >= d2" and chi-b tests "s >= d3"; both are
 -- filter tests, so both thresholds are admissible modes in the sense of
--- OBLIGATION.md Definition 4.
+-- OBLIGATION.md (absent from this repository) Definition 4.
 χa : Four → Bool
 χa d0 = false
 χa d1 = false
@@ -480,7 +480,7 @@ module T4 = Terms _∧₄_ d3 ∧₄-idem ∧₄-comm ∧₄-assoc ∧₄-unit
 -- 3.  M3, the five-element non-distributive lattice (here `Diam`):
 --     thresholds do NOT generate the admissible modes.
 --
---     This is the singular case OBLIGATION.md steps around.  Its
+--     This is the singular case OBLIGATION.md (absent from this repository) steps around.  Its
 --     Definition 2 declares "for this corpus S is a product of chains" and
 --     then never uses that hypothesis: Theorems O1-O6 need only a finite
 --     meet-semilattice.  Section 3 below shows the hypothesis is exactly

@@ -552,7 +552,7 @@ module Bridge (k : ℕ) (checkpoint : Shape) where
 
   ----------------------------------------------------------------------
   -- H3.  THE POSITIVE CONTROL FOR H2 (designed annihilation,
-  -- collab/PROTOCOL.md §7; the matching negative control is
+  -- collab/PROTOCOL.md (absent from this repository) §7; the matching negative control is
   -- `NaturalMachine/Control/WrongFirstStep.agda`, which must fail).
   --
   -- WHAT IT RULES OUT.  H2 negates a Σ-type, so it would be true for a

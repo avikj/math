@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- BhavanaKrida — भावनाक्रीडा, the composition as something a child holds.
 --
--- WHAT THIS IS FOR.  `Bhavana.agda` proves Brahmagupta's identity over an
+-- WHAT THIS IS FOR.  `Bhavana.agda` (absent from this repository) proves Brahmagupta's identity over an
 -- arbitrary commutative ring.  That is the law.  This module is not the law
 -- again: it is the law made into an OBJECT, so that the invariant lives in
 -- the TYPE and an unlawful card is not a thing you can build.

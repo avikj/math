@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- SmithSignControl
 --
--- Designed annihilation for the Smith capability (collab/PROTOCOL.md §7),
+-- Designed annihilation for the Smith capability (collab/PROTOCOL.md (absent from this repository) §7),
 -- in the corpus's C1/C2 idiom.
 --
 --   S1  The native capability EVALUATES.  `normalMatrix` applied to a closed

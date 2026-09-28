@@ -49,7 +49,7 @@
 --
 --                              SameProfile S a b ≡ (a mod lcm S ≡ b mod lcm S).
 --
---                            This is `WALK_STATE_IS_ITS_LCM.md` §1's
+--                            This is `WALK_STATE_IS_ITS_LCM.md` (absent from this repository) §1's
 --                            headline — "the sensor list is a redundant
 --                            presentation of one number" — in the
 --                            presentation the note uses and SensorNerode
@@ -401,7 +401,7 @@ nerode-residue : (S : List ℕ) → Positive S → (a b : ℕ)
 nerode-residue S pos a b = profile≡Ind S pos a b ∙ nerode! S a b
 
 -- THE COLLAPSE.  The whole vector of residues is one residue.  This is
--- `WALK_STATE_IS_ITS_LCM.md` §1's headline sentence, as a type equality,
+-- `WALK_STATE_IS_ITS_LCM.md` (absent from this repository) §1's headline sentence, as a type equality,
 -- with no divisibility anywhere in it.
 profile-collapses : (S : List ℕ) → Positive S → (a b : ℕ)
                   → SameProfile S a b

@@ -153,7 +153,7 @@ saturated-factors = decode , law
 -- transcript over machine states, the Jain सप्तभङ्गी over standpoints.
 --
 -- This one is about a TYPE SIGNATURE in this repository, and it says
--- something the other five could not: the discipline in CLAUDE.md — that
+-- something the other five could not: the discipline in CLAUDE.md (absent from this repository) — that
 -- a computed instance must not stand in for a theorem — has a mechanical
 -- shadow.  Where the return type of a fuelled function is bare data, the
 -- adequacy claim provably cannot ride along, so it will be carried by a

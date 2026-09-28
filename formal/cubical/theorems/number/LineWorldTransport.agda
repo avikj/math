@@ -29,7 +29,7 @@
 --     `g = c₁ + c₂·s (mod 5)`, and transport holds iff the target unit
 --     `-u = -1 = 4` lies in `{ t·g : t ∈ ℤ/5 }` — decided here by FINITE
 --     EXHAUSTIVE SEARCH over the five `t`, so every statement below is a
---     closed computation and every proof is `refl` (CLAUDE.md: exact /
+--     closed computation and every proof is `refl` (CLAUDE.md (absent from this repository): exact /
 --     certified symbolic computation is proof; no fitting, no sampling).
 --
 -- HEADLINE TERMS

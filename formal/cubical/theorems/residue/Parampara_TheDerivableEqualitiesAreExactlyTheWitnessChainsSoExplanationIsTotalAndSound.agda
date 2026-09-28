@@ -2,7 +2,7 @@
 
 ------------------------------------------------------------------------
 -- परम्परा — the unbroken lineage of transmission.  The e-graph's proof
--- forest (runtime/kernel/egraph.py, L2: "every union stores the
+-- forest (runtime/kernel/egraph.py (absent from this repository), L2: "every union stores the
 -- justification, so any derived equality can emit a checkable path") rests
 -- on one theorem, declared there and proved here:
 --

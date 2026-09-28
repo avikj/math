@@ -9,7 +9,7 @@
 -- accounts of what a standpoint IS, for centuries, in print, and neither
 -- conceded.  Every modern treatment I am aware of resolves this by
 -- blending them into one "Indic" toolkit -- which discards the dispute,
--- and the dispute is the content.  CLAUDE.md names that as the mining
+-- and the dispute is the content.  CLAUDE.md (absent from this repository) names that as the mining
 -- move one level up: not extracting results from a tradition, but
 -- extracting vocabulary from several and flattening them into a register
 -- none of them would recognise.

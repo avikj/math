@@ -7,7 +7,7 @@
 -- one-sided closure (एक eka "one" + पार्श्व pārśva "side" + संवरण
 -- savaraa "closing, shutting").
 --
--- SOURCE.  collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md
+-- SOURCE.  collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md (absent from this repository)
 -- §2.4 "One-sided closure can destroy associativity", captured
 -- 2026-08-16, `content_origin: direct-user`, SHA-256 in
 -- collab/upstream/catalog.jsonl.  §2.4 marks itself
@@ -29,14 +29,14 @@
 --      assumptions."
 --
 -- Clause one is discharged in
--- `EqualityPramanena_TheTrefoilLawIsExactlyPAssociativity.agda`.  This
+-- `EqualityPramanena_TheTrefoilLawIsExactlyPAssociativity (absent from this repository).agda` (absent from this repository).  This
 -- module discharges the clause named "the exact counterexample", and
 -- with it the Isbell conjugates and one-sided closure it is stated in
 -- terms of.
 --
 -- WHAT IS CHECKED.  Everything below is a finite exhaustive computation
 -- on a four-element carrier with integer weights, decided by `refl` in
--- the kernel.  Per CLAUDE.md, exact/certified symbolic computation IS
+-- the kernel.  Per CLAUDE.md (absent from this repository), exact/certified symbolic computation IS
 -- proof; no floating point, no measurement, no fitted quantity appears.
 ------------------------------------------------------------------------
 

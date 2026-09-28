@@ -51,7 +51,8 @@
 --
 --   §4  every-substitution-is-enabled, all-collapse-to-one-output
 --       The fibre reading, which is why the substitution witness may not be
---       thrown away.  `apply` does not consume `u`.  For a schema whose
+--       thrown away.  `apply` reads `u` only through the right-hand side, so
+--       when that side has no `var` the witness is unused.  For a schema whose
 --       left-hand side contains no `var`, the enabled set at its one context
 --       is a whole copy of `Tm` and every member emits the same output: the
 --       fibre over an emission is infinite.  `GenerativeKernel.run-targets`
@@ -240,7 +241,8 @@ no-native-operation-does-this op c₀ c₁ =
   ctx₀≢ctx₁ (enabled-set-is-subsingleton op c₀ c₁)
 
 ------------------------------------------------------------------------
--- §4.  THE FIBRE.  `apply` never consumes `u`, so the enabled set maps
+-- §4.  THE FIBRE.  When the right-hand side has no `var`, `apply` ignores
+-- `u` (it computes `subVar u rhs` = rhs), so the enabled set maps
 -- many-to-one onto emissions.  When the schema's left-hand side contains no
 -- `var`, every substitution is enabled at one and the same context and all
 -- of them emit the same term: the fibre over that emission is a whole copy

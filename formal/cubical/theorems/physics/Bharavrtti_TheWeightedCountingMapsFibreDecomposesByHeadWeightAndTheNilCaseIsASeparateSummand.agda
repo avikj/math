@@ -92,7 +92,7 @@ module _ {X : Type ℓ} (w : X → ℕ) where
 -- rather than truncate -- gives a statement with no monus, no guard, and
 -- no side condition: the fibre is a coproduct of SHIFTED fibres.
 --
--- `ANEKANTA.md` §7's lesson, on a different object: a statement forced
+-- `ANEKANTA.md` (absent from this repository) §7's lesson, on a different object: a statement forced
 -- into the poorer language got stronger, because the guard was an
 -- artefact of the subtraction and not of the mathematics.
 ------------------------------------------------------------------------

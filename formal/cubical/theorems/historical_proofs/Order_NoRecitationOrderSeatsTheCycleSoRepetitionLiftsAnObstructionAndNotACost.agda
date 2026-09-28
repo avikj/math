@@ -65,9 +65,9 @@
 --        śaL = ś ṣ s h                          ↾ {h y ś} = {ś h}
 --        yaR = y v r l … k p ś ṣ s              ↾ {h y ś} = {y ś}
 --
---     (sets recomputed from the fourteen stras, `machine/Astadhyayi.hs`
+--     (sets recomputed from the fourteen stras, `machine/Astadhyayi.hs` (absent from this repository)
 --     sivasutraTable; names from the attested list in
---     `machine/Pratyahara_TheIntervalDecisionProcedure.hs`.)  h stands in
+--     `machine/Pratyahara_TheIntervalDecisionProcedure.hs` (absent from this repository).)  h stands in
 --     sūtra 5 (ha ya va ra Ṭ) and again in sūtra 14 (ha L) — before y, and
 --     after ś — which is precisely the seat no single order provides.  So
 --     the second h is not economy.  It is what makes the list nameable at
@@ -259,7 +259,7 @@ seats line = allL (names line) चक्रम्
 ------------------------------------------------------------------------
 -- THE RESTRICTION STEP.
 -- `Vyavaya_TheAttestedTrioForcesATwiceRecitedSoundAndPaninis-
--- ChoiceIsHa.agda` proves the restriction step: on the
+-- ChoiceIsHa.agda` (absent from this repository) proves the restriction step: on the
 -- full fourteen-stra line (all 57 tokens, encoded), a, aL, yaR
 -- compute by refl and restrict to exactly the cycle above — and the
 -- impossibility is proved over ALL lines reciting h y  once each, via

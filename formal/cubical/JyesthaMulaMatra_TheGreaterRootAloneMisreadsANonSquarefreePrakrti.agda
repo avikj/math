@@ -16,12 +16,12 @@
 -- for every non-square prakti: Jayadeva (~950, surviving only in
 -- Udayadivkara's commentary *Sundar*), in full with worked praktis
 -- 61, 67, 103 in Bhskara II, *Bjagaita*, 1150.  "Pell's equation" is
--- Euler's misattribution, ~1730; see notes/NOT_PELL_IT_IS_VARGAPRAKRITI.md.
+-- Euler's misattribution, ~1730; see notes/NOT_PELL_IT_IS_VARGAPRAKRITI.md (absent from this repository).
 --
 -- ────────────────────────────────────────────────────────────────────
 -- WHAT THIS MODULE IS FOR
 --
--- `collab/swarm/2026-08-14/swarm-0814-08-chebyshev-weight-pell.md` §3
+-- `collab/swarm/2026-08-14/swarm-0814-08-chebyshev-weight-pell.md` (absent from this repository) §3
 -- gives a search-free test for whether a solution is the least one:
 --
 --   (x,y) is least  ⟺  for no prime p < B is there an integer u ≥ 2
@@ -130,7 +130,7 @@ and-snd false b p = ⊥.rec (true≢false (sym p))
 -- A bounded universal quantifier, and the fact that its `true` really
 -- means "at every point of the range".  Without All≤-sound a `refl` on
 -- the fold would be a sample; with it, the fold is a finite exhaustive
--- verification, which CLAUDE.md counts as proof.
+-- verification, which CLAUDE.md (absent from this repository) counts as proof.
 All≤ : (ℕ → Bool) → ℕ → Bool
 All≤ f zero    = f zero
 All≤ f (suc n) = f (suc n) and All≤ f n

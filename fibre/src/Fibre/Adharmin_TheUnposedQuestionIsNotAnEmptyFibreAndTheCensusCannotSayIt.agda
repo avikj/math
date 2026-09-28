@@ -7,10 +7,10 @@
 -- predicated.  Nyya's term, and the thing an inference must have before
 -- it can have a पक्ष at all.  अधर्मिन् / निर्धर्मिन्, as used here, is not a
 -- term I can source to a text: it is this repository's own compound,
--- introduced in `interactive/Obstruction.hs` (`data Sthana = Position Bhanga
+-- introduced in `interactive/Obstruction.hs` (absent from this repository) (`data Sthana = Position Bhanga
 -- | ADharmin`, and `Nirdharmin` in its `Verdict`) for the case where the
 -- question has no subject, so no bhaga is available and none is forced.
--- Per CLAUDE.md's naming rule note 2, that is stated rather than
+-- Per CLAUDE.md (absent from this repository)'s naming rule note 2, that is stated rather than
 -- back-attributed: the Nyāya debt is धर्मिन्; the negated compound and
 -- everything below are the repository's and this file's.
 --
@@ -18,13 +18,13 @@
 -- WHY THIS MODULE EXISTS.  Its neighbour repaired a collapse and
 -- committed the same collapse one level up.
 --
--- `SakalaVikalaDesa_…` (this library) replaced a two-valued test
+-- `WholePartialDesa_…` (this library) replaced a two-valued test
 -- with a three-valued census — empty / contractible / crowded — because
 -- `isContr` was merging नास्ति with नष्टि.  That was right.
 --
 -- It is also incomplete in exactly the way it accused `isContr` of being,
 -- and the corpus has had the missing case in a type since before either
--- module was written.  `interactive/Obstruction.hs` carries FOUR outcomes:
+-- module was written.  `interactive/Obstruction.hs` (absent from this repository) carries FOUR outcomes:
 --
 --     asti · nāsti · avaktavya · ADharmin
 --
@@ -58,9 +58,9 @@
 -- "nothing lost" with "the loss" — and every one of those merges is the
 -- durnaya the census exists to refuse.
 --
--- §2 is proved here from scratch over four names.  `formal/cubical/` is
--- pinned to Agda 2.8.0 with cubical v0.9 and this library to 2.6.3 with
--- v0.5; nothing is imported across the two trees.
+-- §2 is proved here from scratch over four names.  Both `formal/cubical/`
+-- and this library are pinned to Agda 2.8.0 with cubical v0.9 (see the
+-- .agda-lib files); nothing is imported across the two trees.
 --
 -- Nirnaya's header carries a FIFTH name, तूष्णीम् — "the symbol outside
 -- the vocabulary that silenced this naya" — which is neither an unposed
@@ -187,7 +187,7 @@ data चतुष्कम् : Type₀ where
 ------------------------------------------------------------------------
 -- 3.  मौनं न निषेधः — silence is not denial.
 --
--- The operative corollary, and the one `Obstruction.hs` states in prose:
+-- The operative corollary, and the one `Obstruction.hs` (absent from this repository) states in prose:
 -- a naya declining to try is not a naya denying.  In the census's terms,
 -- अधर्मिन् is not नास्ति — the unposed question is not the empty fibre,
 -- and it is not the crowded one either.  Any verdict that cannot tell

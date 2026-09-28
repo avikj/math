@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- द्विकं लङ्गरम् · two is the anchor
 --
--- notes/PARITY_RIGIDITY.md (main), "Prime-prefix consequence: 2 is the
+-- notes/PARITY_RIGIDITY.md (absent from this repository) (main), "Prime-prefix consequence: 2 is the
 -- anchor":
 --
 --   "It contains the single even point 0; every other exponent is odd.
@@ -154,7 +154,7 @@ odd-difference-involves-two p h pp pq eh = go (dichotomy (evenb p))
 ------------------------------------------------------------------------
 
 -- c X h : the number of ordered pairs (p, p + h) of primes with p + h ≤ X,
--- i.e. the coefficient c_{P_X}(h) of notes/PARITY_RIGIDITY.md for h > 0.
+-- i.e. the coefficient c_{P_X}(h) of notes/PARITY_RIGIDITY.md (absent from this repository) for h > 0.
 c : ℕ → ℕ → ℕ
 c X h = Σ≤ X (λ p → a p · a (p + h) · ind (leb (p + h) X))
 

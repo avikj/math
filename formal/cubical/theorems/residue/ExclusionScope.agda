@@ -12,10 +12,10 @@
 -- answer is negative.
 --
 -- The repository's semantics for "what a term/probe/channel means" is
--- fixed by `runtime/render/channel.py`: a channel is a function on a
+-- fixed by `runtime/render/channel.py` (absent from this repository): a channel is a function on a
 -- declared language, and its content is the PARTITION it induces
 -- ("the partition of L induced by encode is a coarsening of equality").
--- Probes in `machinery/active_observer_design.py` are likewise partitions of a
+-- Probes in `machinery/active_observer_design.py` (absent from this repository) are likewise partitions of a
 -- finite set, i.e. equivalence relations.  So the ambient lattice here
 -- is Eq(X), not the powerset P(X).
 --
@@ -42,7 +42,7 @@
 --     then shows this operator does NOT survive admitting one further
 --     equivalence (parity) that the vocabulary did not list.
 --
--- Theorem 4 is the formal content of `INDIC_FORMAL_TRADITIONS_MAP.md`
+-- Theorem 4 is the formal content of `INDIC_FORMAL_TRADITIONS_MAP.md` (absent from this repository)
 -- §2.3's warning about `Obstruction.agda`: a residual drawn from a
 -- fixed finite vocabulary IS an exclusion operator, but only on the
 -- Boolean algebra of that vocabulary's index set — the pre-given
@@ -99,7 +99,7 @@ _⊓_ : {X : Type₀} → Rel X → Rel X → Rel X
        (λ h k → tr e (fst h) (fst k) , tr f (snd h) (snd k))
 
 -- Kernels are the canonical equivalence relations: `ker c` is exactly
--- what `runtime/render/channel.py` calls the fibre partition of a
+-- what `runtime/render/channel.py` (absent from this repository) calls the fibre partition of a
 -- channel `c`.  Being an equivalence is path algebra, nothing more.
 ker : {X Y : Type₀} → (X → Y) → Rel X
 ker f x y = f x ≡ f y

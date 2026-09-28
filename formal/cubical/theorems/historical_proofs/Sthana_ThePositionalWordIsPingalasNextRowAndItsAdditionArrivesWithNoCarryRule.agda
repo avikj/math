@@ -15,7 +15,7 @@
 -- WHAT THIS MODULE IS.  A SECOND CAUSEWAY, ROUTED, NOT BUILT.
 --
 -- `machine/Setubandha_TheCheckedIdentificationsAreEdgesAndTheIsolatedNodes
--- AreTheFrontier.hs` reports the largest component of this corpus's
+-- AreTheFrontier.hs` (absent from this repository) reports the largest component of this corpus's
 -- identification graph: 10 nodes, diameter 3, hub `ℕ` at degree 7.  Among
 -- its pairs at DISTANCE 2 is
 --
@@ -24,7 +24,7 @@
 --
 -- and the two banks had never been joined: nothing in this corpus puts
 -- Piṅgala's प्रस्तार and a base-b positional numeral in one statement.
--- `Setubandha_ThePrastarasNextRow…` walked the OTHER distance-2 route out
+-- `Setubandha_ThePrastarasNextRow…` (absent from this repository) walked the OTHER distance-2 route out
 -- of छन्दस्, through `ℕ` to `Tally`.  This file walks this one, reusing
 -- that route's own lemma rather than reproving it, so the two causeways
 -- share a span.

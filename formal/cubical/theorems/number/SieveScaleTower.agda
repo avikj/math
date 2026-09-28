@@ -63,7 +63,7 @@
 --                                    with Ω = 2; at z=2 the rough part
 --                                    of 15 is 15, with Ω = 2.  So
 --                                    "ε ∈ Bool" is horizon-relative, in
---                                    exactly the way `CLAUDE.md`'s
+--                                    exactly the way `CLAUDE.md` (absent from this repository)'s
 --                                    HOLOGRAM §7 corollary warns about.
 --                                    the same relativity in X at fixed
 --                                    z; this is the z-direction of it,

@@ -11,7 +11,7 @@
 --     function-definition is a separable WF-recursion landing and is
 --     NOT claimed here.
 --
--- and notes/OFFDIAGONAL_NO_GO_UNIQUENESS.md (branch main) records:
+-- and notes/OFFDIAGONAL_NO_GO_UNIQUENESS.md (absent from this repository) (branch main) records:
 --
 --     Existence (the Thue–Morse function itself) left open.
 --

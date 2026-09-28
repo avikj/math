@@ -18,11 +18,12 @@
 -- (kernel pairs), ker B circulation (flow), three unmerged cubical
 -- descent lemmas, the Lean strict-refinement iff, the reversibility
 -- price, and the weighted-functional repair.  Twelve proofs, no shared
--- statement.  This module is the shared statement, checked, over an
--- ARBITRARY state space and an ARBITRARY family of Boolean queries —
--- and then ParitySeparator's barrier is derived as an instance, so the
--- claim "these are one theorem" is itself a type that checks rather
--- than a synthesis a reader must trust.
+-- statement.  This module states the shared law, checked, over an
+-- ARBITRARY state space and an ARBITRARY family of Boolean queries, and
+-- derives ONE of the twelve (ParitySeparator's barrier) as an instance.
+-- The other eleven are not re-derived here, so "these are one theorem"
+-- is checked for that one instance only; for the rest it is still a
+-- reading, not a term.
 --
 -- Contents (no holes, no postulates, --safe):
 --

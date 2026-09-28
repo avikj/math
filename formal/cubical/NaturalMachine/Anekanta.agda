@@ -10,7 +10,7 @@
 -- not neutrality.  It is a positive claim — that there is a standpoint
 -- from which the object simply IS what it is — and it is the exact form
 -- of what this corpus elsewhere calls epistemic violence: mistaking one
--- view for the object (`README`, `notes/THE_BARRIER_IS_A_MIRROR.md`).
+-- view for the object (`README`, `notes/THE_BARRIER_IS_A_MIRROR.md` (absent from this repository)).
 --
 -- The Jain analysis replaces it.  A नय (naya) is a standpoint.  A
 -- proposition is not a type but a FAMILY over standpoints, and the

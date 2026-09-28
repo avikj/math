@@ -1,7 +1,7 @@
 {-# OPTIONS --cubical --safe --no-import-sorts #-}
 
 ------------------------------------------------------------------------
--- KramaSaha_TheFourthCornerIWasNamingIsTheSequentialPosition
+-- KramaSaha_TheFourthCornerIWasNamingIsTheSequentialPosition (absent from this repository)
 --
 -- क्रम / सह (युगपद्) — krama, in sequence; saha or yugapad, at once.
 -- The distinction is the Jaina one, from the saptabhag literature

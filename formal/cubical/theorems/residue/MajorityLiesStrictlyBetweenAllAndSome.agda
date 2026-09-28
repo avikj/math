@@ -6,7 +6,7 @@
 -- Majority is stated here, and the three claim-shapes are separated by two
 -- populations: majority holds where the universal claim fails, and
 -- fails where the existential holds.  So the tolerances are strictly
--- ordered and `DARWIN_GODEL_MATH.md` §7's mixture of a label criterion
+-- ordered and `DARWIN_GODEL_MATH.md` (absent from this repository) §7's mixture of a label criterion
 -- with rate thresholds is a mixture of genuinely different strengths,
 -- not a stylistic one.
 --

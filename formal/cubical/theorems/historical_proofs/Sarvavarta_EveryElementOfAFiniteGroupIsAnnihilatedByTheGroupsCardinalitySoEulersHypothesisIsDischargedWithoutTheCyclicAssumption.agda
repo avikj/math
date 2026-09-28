@@ -8,7 +8,7 @@
 --
 -- ────────────────────────────────────────────────────────────────────
 -- `Avarta_TheGeneratorsOrderAnnihilatesEveryPowerSoEulersHypothesisIs
--- DischargedOnACyclicGroup.agda` proves `यूलर-सिद्धिः` for a group GIVEN
+-- DischargedOnACyclicGroup.agda` (absent from this repository) proves `यूलर-सिद्धिः` for a group GIVEN
 -- as cyclic.
 -- Lagrange is in this corpus: `theorems/unplaced/
 -- SubgroupIndex.agda` proves, for a group `G` with `finG : isFinSet ⟨ G ⟩`

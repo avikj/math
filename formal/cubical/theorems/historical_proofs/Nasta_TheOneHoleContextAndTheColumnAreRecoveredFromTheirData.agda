@@ -31,7 +31,7 @@
 --           Not free: it is exactly the statement that f is an
 --           identification.
 --
--- `machine/Lopa_TheIrreversibleEdgesAreTheOtherGraphAndTheyRunOneWay.hs`
+-- `machine/Lopa_TheIrreversibleEdgesAreTheOtherGraphAndTheyRunOneWay.hs` (absent from this repository)
 -- grades the corpus's declarations into an invertible road and a road
 -- of one-way edges, and `--queue` emits the latter.  Every edge on that
 -- queue is a receipt whose ADDRESS STATUS IS UNKNOWN — the census does

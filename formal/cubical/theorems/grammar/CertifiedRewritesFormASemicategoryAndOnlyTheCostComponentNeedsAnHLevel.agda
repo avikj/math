@@ -3,8 +3,8 @@
 ------------------------------------------------------------------------
 -- CertifiedRewritesFormASemicategoryAndOnlyTheCostComponentNeedsAnHLevel
 --
--- ON THE NAME.  Checked before naming: `.claude/hooks/priority-ledger.txt`
--- (CURRENT header) and `.claude/hooks/european-frame.txt`; `formal/` and
+-- ON THE NAME.  Checked before naming: `.claude/hooks/priority-ledger.txt` (absent from this repository)
+-- (CURRENT header) and `.claude/hooks/european-frame.txt` (absent from this repository); `formal/` and
 -- invented.**  A semicategory law over certified rewrites has no Indian
 -- source I have established; the h-level machinery is Voevodsky's
 -- substrate, which this repository declares a tool and not a frame.
@@ -27,7 +27,7 @@
 --   isProp≼                 the product order on fitness vectors is
 --                           proposition-valued, by induction — `Unit`,
 --                           `⊥`, and `isProp≤` at the leaves
---   isPropStrictlyDominates hence so is strict domination
+--   isPropStrictlyDominatedBy hence so is strict domination
 --   composeIsAssociative    `composeCertified` is associative
 --
 -- **AND THE FOUR COMPONENTS PAY FOUR DIFFERENT PRICES, WHICH IS THE
@@ -39,7 +39,7 @@
 --   cost        an H-LEVEL, and **this is the only component that could
 --               have failed**: two bracketings of `⊏-trans` are two
 --               different proof terms, and nothing makes them equal
---               except `StrictlyDominates` being a proposition.  It is
+--               except `StrictlyDominatedBy` being a proposition.  It is
 --               one, and §1 proves it rather than assuming it
 --   migration   DEFINITIONAL — `λ m → mig₃ (mig₂ (mig₁ m))` either way,
 --               so `refl`
@@ -76,7 +76,7 @@ open import Cubical.Relation.Nullary using (¬_ ; isProp¬)
 open import AParetoFitnessHasNoBestAndEveryScalarisationAddsADecision
   using (_≼_)
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (StrictlyDominates)
+  using (StrictlyDominatedBy)
 open import ACertifiedRewriteComposesAndOnlyOneComponentNeedsATheorem
   using (Certified ; composeCertified)
 
@@ -90,9 +90,9 @@ isProp≼ []       (_ ∷ _)  = isProp⊥
 isProp≼ (_ ∷ _)  []       = isProp⊥
 isProp≼ (x ∷ xs) (y ∷ ys) = isProp× isProp≤ (isProp≼ xs ys)
 
-isPropStrictlyDominates :
-  (v w : List ℕ) → isProp (StrictlyDominates v w)
-isPropStrictlyDominates v w =
+isPropStrictlyDominatedBy :
+  (v w : List ℕ) → isProp (StrictlyDominatedBy v w)
+isPropStrictlyDominatedBy v w =
   isProp× (isProp≼ v w) (isProp¬ (w ≼ v))
 
 ------------------------------------------------------------------------
@@ -122,5 +122,5 @@ module _ {Sys B Prov : Type}
     ΣPathP
       ( assoc s₃ s₂ s₁
       , ΣPathP
-          ( isPropStrictlyDominates (cost d) (cost g) _ _
+          ( isPropStrictlyDominatedBy (cost d) (cost g) _ _
           , ΣPathP (refl , ++-assoc p₁ p₂ p₃) ) )

@@ -51,7 +51,7 @@ open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_)
 open import Cubical.Data.Unit using (Unit ; tt)
 
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (StrictlyDominates ; stratum)
+  using (StrictlyDominatedBy ; stratum)
 open import TheRemainderIsStrictlyShorterSoTheStratificationHasAMeasure
   using (remainder)
 open import TheStratificationTerminatesOnItsOwnLength
@@ -70,7 +70,7 @@ open import EveryRemainderMemberIsBeatenByAStratumMember
 Beats : List (List ℕ) → List (List ℕ) → Type
 Beats ys zs =
   (v : List ℕ) → Mem v zs
-  → Σ[ w ∈ List ℕ ] (Mem w ys × StrictlyDominates v w)
+  → Σ[ w ∈ List ℕ ] (Mem w ys × StrictlyDominatedBy v w)
 
 AllBeaten : List (List ℕ) → List (List (List ℕ)) → Type
 AllBeaten ys []         = Unit
@@ -87,7 +87,7 @@ Ordered (ys ∷ sss) = AllBeaten ys sss × Ordered sss
 headBeatsEveryLaterStratum :
   (n : ℕ) (xs : List (List ℕ)) (v : List ℕ)
   → MemSome v (strata n (remainder xs))
-  → Σ[ w ∈ List ℕ ] (Mem w (stratum xs) × StrictlyDominates v w)
+  → Σ[ w ∈ List ℕ ] (Mem w (stratum xs) × StrictlyDominatedBy v w)
 headBeatsEveryLaterStratum n xs v k =
   everyRemainderMemberIsBeatenByAStratumMember xs v
     (strataSound n (remainder xs) v k)
@@ -95,7 +95,7 @@ headBeatsEveryLaterStratum n xs v k =
 beatsFromTheUnion :
   (ys : List (List ℕ)) (sss : List (List (List ℕ)))
   → ((v : List ℕ) → MemSome v sss
-       → Σ[ w ∈ List ℕ ] (Mem w ys × StrictlyDominates v w))
+       → Σ[ w ∈ List ℕ ] (Mem w ys × StrictlyDominatedBy v w))
   → AllBeaten ys sss
 beatsFromTheUnion ys []         h = tt
 beatsFromTheUnion ys (zs ∷ sss) h =

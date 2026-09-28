@@ -5,11 +5,11 @@
 -- OnlyWhatAllAsserted
 --
 -- The two laws of the birth in
--- `machine/AvaktavyaPrasava_TheFourthPositionBearsTheRuleThatDecidesIt.hs`,
+-- `machine/AvaktavyaPrasava_TheFourthPositionBearsTheRuleThatDecidesIt.hs` (absent from this repository),
 -- as theorems rather than as sites checked one at a time.
 --
 -- WHAT THE HASKELL DOES.  The scheduler
--- (`machine/Vipratisedha_ConflictIsDecidedByMetaruleNotByListPosition.hs`)
+-- (`machine/Vipratisedha_ConflictIsDecidedByMetaruleNotByListPosition.hs` (absent from this repository))
 -- reaches the fourth position, अवक्तव्य, when several rules contend for one
 -- item and no metarule ranks them.  Its `Avaktavya` carries the residue
 -- -- the contending offers, entire -- and from that residue a new standpoint

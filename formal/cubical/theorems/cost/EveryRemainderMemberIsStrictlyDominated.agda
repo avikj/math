@@ -23,9 +23,9 @@
 --                by a member OF `xs`
 --
 -- **The double negation is the whole difficulty and it is decidable
--- away.**  `IsParetoMaximal v xs` is `¬ Any (StrictlyDominates v) xs`,
+-- away.**  `IsParetoMaximal v xs` is `¬ Any (StrictlyDominatedBy v) xs`,
 -- so failing it gives `¬ ¬ Any …`, not `Any …`.  The dominator is
--- recovered only because `decAny decStrictlyDominates` makes that `Any`
+-- recovered only because `decAny decStrictlyDominatedBy` makes that `Any`
 -- DECIDABLE, hence stable.
 ------------------------------------------------------------------------
 
@@ -43,7 +43,7 @@ open import Cubical.Relation.Nullary using (¬_ ; Dec ; yes ; no ; Dec→Stable)
 open import OrderAstiNasti_TheFourthCornerCannotLiveOverAnEnumerableDecidableInstanceSet
   using (Any ; decAny)
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (StrictlyDominates ; decStrictlyDominates ; IsParetoMaximal
+  using (StrictlyDominatedBy ; decStrictlyDominatedBy ; IsParetoMaximal
         ; decIsParetoMaximal)
 open import TheRemainderIsStrictlyShorterSoTheStratificationHasAMeasure
   using (filterOut ; remainder)
@@ -95,9 +95,9 @@ everyRemainderMemberIsStrictlyDominated :
   (xs : List (List ℕ)) (v : List ℕ)
   → Any (λ y → y ≡ v) (remainder xs)
   → Σ[ w ∈ List ℕ ]
-      ((Any (λ y → y ≡ w) xs) × StrictlyDominates v w)
+      ((Any (λ y → y ≡ w) xs) × StrictlyDominatedBy v w)
 everyRemainderMemberIsStrictlyDominated xs v mem =
-  anyToMember (StrictlyDominates v) xs dominated
+  anyToMember (StrictlyDominatedBy v) xs dominated
   where
     notMaximal : ¬ IsParetoMaximal v xs
     notMaximal =
@@ -109,7 +109,7 @@ everyRemainderMemberIsStrictlyDominated xs v mem =
                                          (λ u → decIsParetoMaximal u xs) xs)
         mem
 
-    dominated : Any (StrictlyDominates v) xs
+    dominated : Any (StrictlyDominatedBy v) xs
     dominated =
-      Dec→Stable (decAny (StrictlyDominates v) (decStrictlyDominates v) xs)
+      Dec→Stable (decAny (StrictlyDominatedBy v) (decStrictlyDominatedBy v) xs)
                  notMaximal

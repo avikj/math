@@ -6,7 +6,7 @@
 -- TERM.  क्रम (succession, sequence) is carried from the corpus's
 -- saptabhag lane (Umsvti, *Tattvrthastra*; Samantabhadra;
 -- Akalaṅka; Siddhasena Divākara — as cited by `Saptabhangi.agda` and
--- `KramaSaha_TheOrderOfStandpointsIsTheChargeItself.agda`, whose
+-- `OrderSaha_TheOrderOfStandpointsIsTheChargeItself.agda` (absent from this repository), whose
 -- theorems this file uses as a lens and does not restate).  The
 -- compound - means "the rule of succession".
 --
@@ -16,7 +16,7 @@
 --       ⟹  the law does not factor through the carrier alone.
 --
 -- UPSTREAM, in this corpus:
--- `VakraValaya_TheSameCarrierTwoLawsOfSuccession…` proved समः/भेदः at
+-- `VakraValaya_TheSameCarrierTwoLawsOfSuccession…` (absent from this repository) proved समः/भेदः at
 -- π₁ itself — torus loops commute, Klein loops do not, through
 -- `windingKlein` — over the ONE stratum-3 carrier ℤ × ℤ.  This module
 -- is the structure-fibre PACKAGING of that separation: the two group

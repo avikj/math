@@ -14,7 +14,7 @@
 --   "installed cognition reduces to `refl`; description needs a proof
 --    from outside"
 --
--- and its exhibit is `BhedaAvatarana.एकपदे : भेद (suc a)(suc b) ≡
+-- and its exhibit is `BhedaDescent.एकपदे : भेद (suc a)(suc b) ≡
 -- गभीर (भेद a b)`, which is `refl`, where the same equation for a
 -- `discreteℕ`-driven descent is not.
 --

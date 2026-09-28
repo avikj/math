@@ -41,7 +41,7 @@
 -- matrix sees: the parity, and nothing else.
 --
 -- So the three verdicts of `Tantujala_TheFibreHasThreeVerdictsAndIsContr-
--- MergesTwoOfThem.agda` are not the whole story at a lossy map.  A fibre
+-- MergesTwoOfThem.agda` (absent from this repository) are not the whole story at a lossy map.  A fibre
 -- with MANY points still admits an exact statement of WHAT IS RECOVERED,
 -- and here it is a quotient group.  नष्टि is not "everything is lost":
 -- §४ of अहिंसा-सूत्र-विस्तारः says यत् तिष्ठति, कः नश्यति — the THAT
@@ -155,7 +155,7 @@ open CommRingStr (ℤCommRing .snd)
 -- THE LEAN COUNTERPART.
 --
 -- `formal/pairfield/Pairfield/YugmaPurana_TheEvenPaddingIsForcedAndThe-
--- DeterminantSaysWhy.lean` proves §२–§४ again over `IntMat2`, natively, and
+-- DeterminantSaysWhy.lean` (absent from this repository) proves §२–§४ again over `IntMat2`, natively, and
 -- states the tightness at the two Lean sites:
 --   · `DiagonalEuclidTranscript.det_leftWord`  — det of an n-letter Euclidean
 --     word is (−1)^n, the counterpart of `KuttakaValli.detReplay`;

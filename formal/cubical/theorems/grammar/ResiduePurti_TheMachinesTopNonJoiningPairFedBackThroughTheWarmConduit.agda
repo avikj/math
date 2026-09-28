@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- शेष-पूर्ति — the filling of a remainder the machine asked for itself.
 --
--- interactive/sanghatta-report-latest.txt lists the non-joining critical
+-- interactive/sanghatta-report-latest.txt (absent from this repository) lists the non-joining critical
 -- pairs of the installed rules, smallest first, and the top row is
 --     x    max(x,0)
 -- i.e. the rewriter cannot join x with max x 0.  This module is that pair

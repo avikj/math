@@ -15,7 +15,7 @@
 -- contains two different actions, the product is strictly finer than q.
 --
 -- The random stimulus was batch-02 anchor #2, an exact byte interval in the
--- retired `coupled_encounter_engine.py`.  It landed on `meet_smith`, where a
+-- retired `coupled_encounter_engine.py` (absent from this repository).  It landed on `meet_smith`, where a
 -- scalar residual fibre containing two certified action kinds causes the
 -- runtime to add an action-origin sensor.  The bytes nominate this theorem;
 -- they are not evidence for it.  Certification is the checked term below.

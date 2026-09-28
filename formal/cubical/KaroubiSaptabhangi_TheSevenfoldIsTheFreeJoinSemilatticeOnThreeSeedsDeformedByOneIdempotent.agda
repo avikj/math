@@ -11,7 +11,7 @@
 -- structure below is the splitting of an idempotent and it would be
 -- dishonest to give that a  label it does not have.  Everything
 -- else here is `Saptabhangi`'s and `SaptabhangiSamyoga`'s vocabulary.
--- Per CLAUDE.md's file-naming rule, note 2: where the mathematics
+-- Per CLAUDE.md (absent from this repository)'s file-naming rule, note 2: where the mathematics
 -- originates elsewhere, say so rather than inventing a term.
 --
 ------------------------------------------------------------------------

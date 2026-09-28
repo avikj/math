@@ -1,7 +1,7 @@
 {-# OPTIONS --cubical --safe --no-import-sorts #-}
 
 -- A finite, checked DSO seam extracted from the random byte anchor in
--- `notes/RESEARCH_SYSTEM.md` (offset 8522): a local choice is not safe to
+-- `notes/RESEARCH_SYSTEM.md` (absent from this repository) (offset 8522): a local choice is not safe to
 -- erase until its continuation has been observed.
 
 module NaturalMachine.DSOBellmanFinite where

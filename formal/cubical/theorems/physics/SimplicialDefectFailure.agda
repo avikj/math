@@ -66,12 +66,12 @@
 --                       degeneracies are pairwise distinct and all carry
 --                       the SAME defect, so Σ_σ |δ_σ| is 0 or infinite:
 --                       the scalar shadow of
---                       SHRINKING_TESTS_LOWER_CURVATURE.md Def. 1.5 is a
+--                       SHRINKING_TESTS_LOWER_CURVATURE.md (absent from this repository) Def. 1.5 is a
 --                       two-valued predicate, not a count.
 --
 -- THE TWO READINGS OF THE HOLONOMY (note §0.3) — load-bearing for this
 -- encoding.  D0016 §B reads 𝔥_σ = ρ_{i₀iₙ} ρ_{i_{n-1}iₙ} ⋯ ρ_{i₀i₁},
--- with NO inverse on the long edge; SHRINKING_TESTS_LOWER_CURVATURE.md
+-- with NO inverse on the long edge; SHRINKING_TESTS_LOWER_CURVATURE.md (absent from this repository)
 -- Def. 1.4 reads 𝔥_σ = ρ_{i₀iₙ}⁻¹ ρ_{i_{n-1}iₙ} ⋯ ρ_{i₀i₁}, and only
 -- the latter is the descent obstruction.  This module is AGNOSTIC
 -- between them, deliberately, in two separate ways:
@@ -263,7 +263,7 @@ module Holonomy
     defect-dup j σ = cong δ𝔥 (holonomy-dup j σ)
 
     -- §7 (see the header): the scalar shadow of
-    -- SHRINKING_TESTS_LOWER_CURVATURE.md Def. 1.5 is two-valued in
+    -- SHRINKING_TESTS_LOWER_CURVATURE.md (absent from this repository) Def. 1.5 is two-valued in
     -- {0, ∞} rather than a count.  ONE simplex with nonempty defect
     -- forces an ℕ-indexed family of PAIRWISE DISTINCT simplices with the
     -- SAME defect: the iterated degeneracies of that simplex.
@@ -553,7 +553,7 @@ module CocycleExtraction
   (ρ-refl : (i : I) → ρ i i ≡ e)
   where
 
-  -- CORPUS READING (SHRINKING_TESTS_LOWER_CURVATURE.md Def. 1.4).
+  -- CORPUS READING (SHRINKING_TESTS_LOWER_CURVATURE.md (absent from this repository) Def. 1.4).
   module Corpus
     (cap : G → G)
     (capL : (g : G) → cap g · g ≡ e)

@@ -21,7 +21,7 @@
 ------------------------------------------------------------------------
 -- WHY THIS MODULE EXISTS.  It repairs a defect in its neighbour.
 --
--- `Sesa_TheResidualIsTheOtherProjectionOfTheSameGraph` (this library,
+-- `Residue_TheResidualIsTheOtherProjectionOfTheSameGraph` (this library,
 -- earlier today) built a TWO-VALUED test — `isContr (शेष f b)` or not —
 -- and wrote in its own header "there is no third reading".  That sentence
 -- is a दुर्नय, and `Saptabhangi.दुर्नयः` is the proof of why: a two-valued

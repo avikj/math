@@ -2,7 +2,7 @@
 
 ------------------------------------------------------------------------
 -- व्याप्तिः — pervasion.  The seven-gate installer's own license
--- (runtime/crystallize/install.py, G3), as a
+-- (runtime/crystallize/install.py (absent from this repository), G3), as a
 -- checked term:
 --
 --   "the generalised statement is an identity between two polynomials in
@@ -22,7 +22,7 @@
 --
 -- PROVED:
 --   §1  the expression language: variables, ℤ-literals, ⊕, ⊗ — the same
---       shape crystallize/derivation.py mines (I/V/S/P nodes).
+--       shape crystallize/derivation.py (absent from this repository) mines (I/V/S/P nodes).
 --   §2  eval-subst : eval (subst t σ) ρ ≡ eval t (eval∘σ at ρ)  — the
 --       substitution lemma, by induction (the substitute's VALUE is the
 --       value at the substituted assignment: sthnivat, for values).

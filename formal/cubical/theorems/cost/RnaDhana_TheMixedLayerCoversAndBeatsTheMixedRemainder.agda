@@ -64,7 +64,7 @@ open import EveryRemainderMemberIsStrictlyDominated using (anyToMember)
 open import OneStepCoverageAndDisjointnessOfTheLayer
   using (Mem ; memberSplits ; noMemberInBoth)
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (filterDec ; StrictlyDominates)
+  using (filterDec ; StrictlyDominatedBy)
 open import TheStratificationCoversAndItsStrataArePairwiseDisjoint
   using (filterDecSubset)
 open import EveryRemainderMemberIsBeatenByAStratumMember
@@ -136,6 +136,6 @@ mixedRemainderIsBeaten ds cs vs ab u memU
         , flipCapsReflect ds cs u z
             (boundedAtMember ds cs vs z ab
               (filterDecSubset (MixedMaximal ds vs) (decMixedMaximal ds vs) vs z memZ))
-            (fst (subst (StrictlyDominates (flipWithCaps ds cs u)) (sym eqz) sd))
-        , (λ dzu → snd (subst (StrictlyDominates (flipWithCaps ds cs u)) (sym eqz) sd)
+            (fst (subst (StrictlyDominatedBy (flipWithCaps ds cs u)) (sym eqz) sd))
+        , (λ dzu → snd (subst (StrictlyDominatedBy (flipWithCaps ds cs u)) (sym eqz) sd)
                      (flipCapsIsSound ds cs z u dzu))

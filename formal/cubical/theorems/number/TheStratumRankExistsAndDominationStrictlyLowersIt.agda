@@ -60,7 +60,7 @@ open import OrderAstiNasti_TheFourthCornerCannotLiveOverAnEnumerableDecidableIns
   using (memberToAny)
 open import OneStepCoverageAndDisjointnessOfTheLayer using (Mem)
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (StrictlyDominates ; IsParetoMaximal ; decIsParetoMaximal)
+  using (StrictlyDominatedBy ; IsParetoMaximal ; decIsParetoMaximal)
 open import TheRemainderIsStrictlyShorterSoTheStratificationHasAMeasure
   using (lengthL ; filterOut ; remainder ; theRemainderIsStrictlyShorter)
 open import TheStratificationTerminatesOnItsOwnLength
@@ -105,7 +105,7 @@ rank (suc n) (x ∷ xs) v with decIsParetoMaximal v (x ∷ xs)
 rankDominatorIsSmaller :
   (n : ℕ) (xs : List (List ℕ)) (v w : List ℕ)
   → lengthL xs ≤ n
-  → Mem v xs → Mem w xs → StrictlyDominates v w
+  → Mem v xs → Mem w xs → StrictlyDominatedBy v w
   → rank n xs w < rank n xs v
 rankDominatorIsSmaller zero    xs       v w h memV memW sd =
   ⊥.rec (subst (Mem v) (lengthZeroGivesNil xs h) memV)
@@ -113,7 +113,7 @@ rankDominatorIsSmaller (suc n) []       v w h memV memW sd = ⊥.rec memV
 rankDominatorIsSmaller (suc n) (x ∷ xs) v w h memV memW sd
   with decIsParetoMaximal v (x ∷ xs)
 ... | yes vmax =
-  ⊥.rec (vmax (memberToAny (StrictlyDominates v) w (x ∷ xs) memW sd))
+  ⊥.rec (vmax (memberToAny (StrictlyDominatedBy v) w (x ∷ xs) memW sd))
 ... | no ¬vmax with decIsParetoMaximal w (x ∷ xs)
 ...   | yes _    = suc-≤-suc zero-≤
 ...   | no ¬wmax =

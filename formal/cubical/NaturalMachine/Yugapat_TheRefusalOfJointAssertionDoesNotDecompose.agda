@@ -14,7 +14,7 @@
 -- below, not rebuilt**, and nothing here is a claim about their
 -- theorem.
 --
--- `KramaSaha_TheFourthCornerIWasNamingIsTheSequentialPosition`
+-- `KramaSaha_TheFourthCornerIWasNamingIsTheSequentialPosition` (absent from this repository)
 -- concluded:
 --
 --   "this formalism, as it stands, cannot express avaktavya at all:

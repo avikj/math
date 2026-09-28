@@ -5,7 +5,7 @@
 --
 -- *** THIS FILE MUST FAIL TO TYPE-CHECK. ***
 --
--- Designed annihilation (collab/PROTOCOL.md §7), companion to the
+-- Designed annihilation (collab/PROTOCOL.md (absent from this repository) §7), companion to the
 -- hypothesis-carrying module `AtomicSatisfaction`
 -- (module `SameResponses`, which exits 0 under the pin).
 --
@@ -13,7 +13,7 @@
 -- prose (line 29) and in neither the Theorem (line 59), the title, nor
 -- the Status line.  §2 of the draw traces the drop one artifact
 -- downstream: `collab/messages/0410-codex-skein-atomic-satisfaction-
--- result.md` states the equivalence "for a proposed probe translation
+-- result.md` (absent from this repository) states the equivalence "for a proposed probe translation
 -- `tau:Q->Q'` and state reduction `s:X'->X`" with no mention of the
 -- hypothesis at all.
 --

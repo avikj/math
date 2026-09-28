@@ -5,7 +5,7 @@
 --
 -- THE GRADING THAT SATISFACTION CANNOT SEE.
 --
--- `runtime/panini/cakravala.py` verifies every Pell solution by
+-- `runtime/panini/cakravala.py` (absent from this repository) verifies every Pell solution by
 -- substitution and says, in its own docstring, that this is the failure
 -- such a check *cannot* see: "the answer is true and wrong" -- a pair
 -- (x,y) with x^2 - D y^2 = 1 that is not the fundamental solution.  Its

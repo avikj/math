@@ -41,7 +41,7 @@
 -- the positivity of cap proved here.  So `next : ℕ → ℕ` is a function
 -- and the walk COMPUTES: `next-5 : next 5 ≡ 7` and its siblings below
 -- are `refl`, i.e. the install stream 2, 3, 4, 5, 7 evaluated by the
--- kernel.  Exact symbolic computation, hence proof (CLAUDE.md), not
+-- kernel.  Exact symbolic computation, hence proof (CLAUDE.md (absent from this repository)), not
 -- measurement.
 --
 -- WHERE THE COMPUTATION STOPS, and why that is the theorem again.  The

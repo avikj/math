@@ -7,7 +7,7 @@
 --
 -- F23 recorded a stationary false model for the five-window correlation
 -- algebra used in the nonzero-(a,b,c) case of Tao–Teräväinen's Theorem
--- 1.14.  Its evidence artifact was `code/exp53_window5_polytope.py`.  This
+-- 1.14.  Its evidence artifact was `code/exp53_window5_polytope.py` (absent from this repository).  This
 -- module redoes every finite, exact assertion that script made, as terms
 -- the Agda kernel checks.  Nothing here is floating point and nothing is
 -- a search: each `refl` is a finite exhaustive verification over the 32

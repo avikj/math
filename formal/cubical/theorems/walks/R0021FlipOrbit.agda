@@ -4,7 +4,7 @@
 -- R0021FlipOrbit
 --
 -- INDEPENDENT AUDIT OF R0021, CLAUSES (B) AND (D)
---   (collab/discovery/claims/R0021-window5-stationary-countermodel.md;
+--   (collab/discovery/claims/R0021-window5-stationary-countermodel.md (absent from this repository);
 --    the finite table itself is already kernel-checked in
 --    `Window5Walsh.agda`, which this module imports and extends)
 --
@@ -25,7 +25,7 @@
 -- re-derived independently of the packet, plus the hand proofs of the
 -- two continuous steps as comments.  Every `refl` below is a finite
 -- exhaustive verification the typechecker normalises — the certificate
--- class CLAUDE.md admits as proof.  Rationals are cleared to integers
+-- class CLAUDE.md (absent from this repository) admits as proof.  Rationals are cleared to integers
 -- exactly as in Window5Walsh (m96 = 96·μ at the vertex).
 --
 ------------------------------------------------------------------------

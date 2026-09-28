@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- OneCounterexampleRefutesALabelButNotAnExistential
 --
--- `DARWIN_GODEL_MATH.md` §7 lists its criteria, with one that is different in kind from the others:
+-- `DARWIN_GODEL_MATH.md` (absent from this repository) §7 lists its criteria, with one that is different in kind from the others:
 --
 --   "any artifact labeled kernel-checked or independently replayed fails
 --    a clean replay.  One such authority-label error is a boundary

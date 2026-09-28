@@ -46,7 +46,7 @@
 -- frontiers 4, 5, 7.
 --
 -- QUOTED, not re-proved here:
---   * the losslessness criterion lcm(S) > n (CRT) — `WALK_FORCING_LAW.md`;
+--   * the losslessness criterion lcm(S) > n (CRT) — `WALK_FORCING_LAW.md` (absent from this repository);
 --   * that an injective map out of a set of n+1 elements needs at least
 --     n+1 targets (pigeonhole), which is what makes lcm(S) > n a LOWER
 --     bound and hence makes "optimal" mean something.
@@ -59,7 +59,7 @@
 --     the walk's state is its workload, its bit-size is that workload's
 --     logarithm, and the interesting question was never "why so big" but
 --     "why does losslessness force lcm at all" — which
---     `WALK_FORCING_LAW.md` answers by CRT and which nothing in this
+--     `WALK_FORCING_LAW.md` (absent from this repository) answers by CRT and which nothing in this
 --     thread improved on.
 ------------------------------------------------------------------------
 

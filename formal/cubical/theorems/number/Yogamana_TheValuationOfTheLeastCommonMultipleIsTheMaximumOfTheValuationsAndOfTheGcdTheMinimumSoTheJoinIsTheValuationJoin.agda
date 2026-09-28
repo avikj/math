@@ -9,7 +9,7 @@
 -- ────────────────────────────────────────────────────────────────────
 -- SOURCE, quoted verbatim.
 --
--- notes/ARITHMETIC_LIFE_ADVERSARIAL_AUDIT.md (branch main), item 2:
+-- notes/ARITHMETIC_LIFE_ADVERSARIAL_AUDIT.md (absent from this repository) (branch main), item 2:
 --
 --   "2. **PROVE** — the join now rests on `gcd·lcm = ab`. State the
 --    corresponding valuation form `v(lcm) = max(v(a),v(b))` and connect
@@ -18,7 +18,7 @@
 --    keeps this from extending to the additive side, and the two notes
 --    should cite each other."
 --
--- notes/VALUATION_FORMATION_UNIVERSALITY.md, on its universal property:
+-- notes/VALUATION_FORMATION_UNIVERSALITY.md (absent from this repository), on its universal property:
 --
 --   "Let `N+` be the positive integers under multiplication and let
 --    `N^(P)` be the finitely supported prime-indexed exponent vectors

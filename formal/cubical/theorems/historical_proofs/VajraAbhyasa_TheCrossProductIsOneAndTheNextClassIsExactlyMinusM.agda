@@ -47,7 +47,7 @@
 --
 -- WHAT IT DOES NOT BUY, and this is not a hedge — it is a checked negative.
 -- The minimisation does NOT always pick a unique member.
--- `Dvaidha_TheVaranaTiesExactlyWhenDIsASumOfTwoSquares` exhibits the tie, in
+-- `Dvaidha_TheVaranaTiesExactlyWhenDIsASumOfTwoSquares` (absent from this repository) exhibits the tie, in
 -- the kernel, at D = 58 turn 1 — on a class that IS the −m mod k' this file
 -- proves — and characterises exactly when a tie can occur.  So after this
 -- file the gap between the state box and determinism is one thing and not

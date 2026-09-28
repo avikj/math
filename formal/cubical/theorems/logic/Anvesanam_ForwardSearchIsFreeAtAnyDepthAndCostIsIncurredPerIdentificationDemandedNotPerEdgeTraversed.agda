@@ -24,6 +24,12 @@
 -- search here is not the set of nodes reached.  It is the set of
 -- identifications owed.
 --
+-- SCOPE.  `अन्वेषणम्` is the trail of ONE deterministic map `step : A → A`
+-- iterated n times, which has exactly one run, so its contractibility is
+-- the uniqueness of that run.  A search over a graph (several edges out
+-- of a node, a choice at each step) is NOT formalised here, and nothing
+-- below says that branching exploration is free.
+--
 -- AND THE ROUTER'S CORRECTNESS CONDITION, which is `Anupalabdhi_…agda`
 -- read at a search: a router that reports "unreachable" because it did
 -- not find a route has produced no term.  Absence of a route is a Π over
@@ -76,7 +82,7 @@ module _ {A : Type ℓ} (step : A → A) where
 --
 -- §२ says nothing about whether any particular target is REACHED; it
 -- prices the exploration, not the answer.  Reachability is a fibre
--- question, its three verdicts are `Tantutrayam_…agda`'s, and its empty
+-- question, its three verdicts are `Tantutrayam_…agda` (absent from this repository)'s, and its empty
 -- case is `Anupalabdhi_…agda`'s Π over the whole field.  A search that
 -- conflates "I explored and did not arrive" with "there is no route" has
 -- produced the one verdict this corpus has no witness for.

@@ -4,7 +4,7 @@
 -- Laghava
 --
 -- लाघव — brevity, the grammarian's governing criterion — as a measure on
--- INVARIANT.md` states in prose and proves nowhere.
+-- INVARIANT.md` (absent from this repository) states in prose and proves nowhere.
 --
 -- ────────────────────────────────────────────────────────────────────
 -- THE CLAIM

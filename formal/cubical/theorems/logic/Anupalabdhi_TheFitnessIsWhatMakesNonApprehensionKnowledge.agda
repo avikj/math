@@ -30,7 +30,7 @@
 -- durnaya — a standpoint mistaken for a thing.  The two constructions and the
 -- exchange between them are kept apart, and the collision is exhibited rather
 -- than settled, in
--- `interactive/Abhava_TheAbsenceCarriesItsPratiyoginAndItsSearchedDomain.hs`.
+-- `interactive/Abhava_TheAbsenceCarriesItsPratiyoginAndItsSearchedDomain.hs` (absent from this repository).
 --
 -- WHY IT MATTERS HERE.
 -- `Obstruction.Aviruddha` carries the assignments searched precisely so that

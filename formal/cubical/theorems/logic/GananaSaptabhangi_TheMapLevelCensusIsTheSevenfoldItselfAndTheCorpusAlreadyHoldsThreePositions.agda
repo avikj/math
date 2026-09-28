@@ -4,7 +4,7 @@
 -- गणना-सप्तभङ्गी — the map-level census IS the sevenfold, and the corpus
 -- already holds witnesses of three distinct positions.
 --
--- `SakalaVikalaDesa` made the census a term — but
+-- `WholePartialDesa` made the census a term — but
 -- PER POINT: three constructors (अवक्तव्यम् / सकलादेश / विकलादेश) at each b.
 -- A MAP's character is which of the three kinds occur anywhere across its
 -- codomain — a selection from three seeds — and the non-empty selections
@@ -150,6 +150,12 @@ asNat-अस्ति-अवक्तव्यम् = asNat-अस्ति , a
 
 ------------------------------------------------------------------------
 --   .  The selection "none of the three" is the empty
--- selection, excluded for inhabited B exactly as Saptabhangi's कुतः-सप्त
--- excludes the empty combination: 2³ − 1.  The count is the theorem.
+-- selection.  For FINITE maps with DECIDABLE equality every fibre is empty,
+-- contractible or crowded, so for inhabited B the empty selection is
+-- excluded and the count is 2³ − 1, as in Saptabhangi's कुतः-सप्त.  Outside
+-- that setting the exclusion is NOT a theorem: for sets it holds only up to
+-- double negation, and for higher types it fails — `S¹ → Unit` has an
+-- inhabited, non-contractible fibre with no two provably distinct points,
+-- so it realises the empty selection over an inhabited codomain.  No term
+-- below claims the exclusion; this is its scope.
 ------------------------------------------------------------------------

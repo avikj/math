@@ -26,7 +26,7 @@
 --
 --   §३  THE RECEIPT.  What the edge retains is priced: the fibre
 --       quotient is EXACTLY ℤ/2, by `YugmaPurana_TheValliRecoversIts-
---       LengthModuloTwoAndNoFurther.agda` — its चिह्नं-दैर्घ्यात् is the
+--       LengthModuloTwoAndNoFurther.agda` (absent from this repository) — its चिह्नं-दैर्घ्यात् is the
 --       coarse form (length determines sign) which the toll here refines
 --       (parity already determines it, `शुल्कम्-चिह्नं-दैर्घ्यात्-अनुसारि`),
 --       and its विषम-पूरणम् is why no coarser edge than parity can carry

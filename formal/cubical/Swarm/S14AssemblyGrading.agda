@@ -8,7 +8,7 @@
 --   (a) ryabhaa's vall, typed in `KuttakaValli` as a monoid
 --       morphism  replay : List ℤ → M₂(ℤ)  with  det ∘ replay = ±1;
 --
---   (b) the Smith/Hermite assembly of `machinery/bijective_smith_assembly.py`,
+--   (b) the Smith/Hermite assembly of `machinery/bijective_smith_assembly.py` (absent from this repository),
 --       whose bijection  Φ(L) = (c , L/c)  splits an index-m sublattice
 --       of ℤ² into its content c (first Smith invariant, c² ∣ m) and a
 --       primitive lattice of index n = m/c², yielding

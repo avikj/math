@@ -23,7 +23,7 @@
 -- structures, in order to measure the difference exactly.
 --
 -- THE OBJECT.  `KirchhoffIncidence_GraphLaplacianIsDivGradAndSummationBy
--- PartsIsExact.agda` and, at the far end,
+-- PartsIsExact.agda` (absent from this repository) and, at the far end,
 -- `NaturalMachine/FiniteGraphCohomology.agda`.  Nothing in either is
 -- modified, and nothing in either is wrong; what is reported here is what
 -- the library already had.
@@ -489,7 +489,7 @@ module Refutation where
 --   3. `Cubical.Categories.Abelian.Base` DOES define `IsKernel`,
 --      `IsCokernel` with their universal properties, and `PreAbCategory`.
 --      But `Cubical/Categories/Abelian/Instances/` contains exactly one
---      file, `Terminal.agda`, and `Cubical/Categories/Additive/Instances/`
+--      file, `Terminal.agda` (absent from this repository), and `Cubical/Categories/Additive/Instances/`
 --      likewise.  `Cubical.Categories.Instances.AbGroups` builds the
 --      category of abelian groups but does NOT show it preadditive.  So
 --      the universal property of the cokernel is definable and has no

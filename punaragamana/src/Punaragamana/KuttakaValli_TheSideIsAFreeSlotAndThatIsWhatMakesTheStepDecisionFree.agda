@@ -47,10 +47,10 @@
 --
 -- DEFECT, written rather than hidden.  `उत्थान-भेद` (the round trip
 -- उत्थान (भेद a b) ≡ (a , b)) is the same statement as `पुनरागमनम्` in
--- `formal/cubical/Punaragamana.agda`, and is reproved here.  That is a
+-- `formal/cubical/Punaragamana.agda` (absent from this repository), and is reproved here.  That is a
 -- duplication.  It is deliberate: this library takes no dependency
 -- outside itself, and the alternative — importing across the repository
--- — would make `check.sh` no longer check what it says it checks.
+-- — would make `check.sh` (absent from this repository) no longer check what it says it checks.
 --
 -- SECOND DEFECT.  `वल्ली` is the SUBTRACTIVE step (anthyphairesis), not
 -- the division step a … a mod b.  The 
@@ -234,7 +234,7 @@ data त्रिक् : Type where
 गभीर-उत्थान (दक्षिण d k) = refl
 
 -- the round trip.  See DEFECT in the header: this is `पुनरागमनम्` of
--- formal/cubical/Punaragamana.agda, reproved so the library stays standalone.
+-- formal/cubical/Punaragamana.agda (absent from this repository), reproved so the library stays standalone.
 उत्थान-भेद : (a b : ℕ) → उत्थान (भेद a b) ≡ (a , b)
 उत्थान-भेद zero    zero    = refl
 उत्थान-भेद zero    (suc b) = refl
@@ -310,7 +310,7 @@ data त्रिक् : Type where
 बुन t = unfold वल्ली-कुट्टक (अवतरण t)
 
 ------------------------------------------------------------------------
--- IT RUNS.  §१७ of notes/AHIMSA_SUTRA_VISTARA.md works 137 and 60.
+-- IT RUNS.  §१७ of notes/AHIMSA_SUTRA_VISTARA.md (absent from this repository) works 137 and 60.
 -- Each holds by refl, so Agda must actually execute the descent.
 --
 --   (137,60) → (77,60) → (17,60) → (17,43) → (17,26) → (17,9)

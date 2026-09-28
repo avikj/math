@@ -13,7 +13,7 @@
 --
 -- This module is the merged organ:
 -- the note's "1048 triples, zero disagreements" table is a CHECKED TERM
--- (finite exhaustive verification is proof, CLAUDE.md).
+-- (finite exhaustive verification is proof, CLAUDE.md (absent from this repository)).
 --
 -- One definition (headDepth); every other predicate below is a
 -- threshold reading of it.

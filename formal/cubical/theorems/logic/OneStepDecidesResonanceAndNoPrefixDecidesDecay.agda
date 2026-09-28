@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- OneStepDecidesResonanceAndNoPrefixDecidesDecay
 --
--- `interactive/QuestionMachine.hs` opens by saying "Agda holds the theorems;
+-- `interactive/QuestionMachine.hs` (absent from this repository) opens by saying "Agda holds the theorems;
 -- this holds the run. Every function here has a checked counterpart …
 -- Nothing is measured: the output is a replay of statements that are
 -- already proved."  One of its functions is not a replay, and the two

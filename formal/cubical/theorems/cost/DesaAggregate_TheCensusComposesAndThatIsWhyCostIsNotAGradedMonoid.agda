@@ -13,7 +13,7 @@
 --
 -- WHAT IS BUILT HERE.  The Σ-law is about FIBRES.  Its
 -- lift to the CENSUS is the whole content of "what does
--- a route cost".  `SakalaVikalaDesa` §3 exhibits the cancellation as three
+-- a route cost".  `WholePartialDesa` §3 exhibits the cancellation as three
 -- hand-computed instances on Unit/Bool and reads the moral off them.  Here
 -- it is the general mechanism, and the instances become corollaries.
 --
@@ -46,7 +46,7 @@
 -- that neither census records.  The correct object is not a weight but the
 -- Σ itself: cost is a SECTION over the codomain, and composition is
 -- dependent sum, not addition.  Dijkstra has no formulation here; the
--- routing target is `isEquiv`, which `SakalaVikalaDesa` §4 already
+-- routing target is `isEquiv`, which `WholePartialDesa` §4 already
 -- identifies as "every point of the census is सकलादेश".
 ------------------------------------------------------------------------
 

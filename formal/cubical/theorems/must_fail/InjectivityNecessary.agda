@@ -5,12 +5,12 @@
 --
 -- *** THIS FILE MUST FAIL TO TYPE-CHECK. ***
 --
--- Designed annihilation (collab/PROTOCOL.md §7), companion to
+-- Designed annihilation (collab/PROTOCOL.md (absent from this repository) §7), companion to
 -- `ComparisonNeedNotBeInjective` (exit 0 under the pin).
 --
--- `OBSERVER_REVISION_IS_ATOMIC_SATISFACTION.md` §4 writes "injectivity
+-- `OBSERVER_REVISION_IS_ATOMIC_SATISFACTION.md` (absent from this repository) §4 writes "injectivity
 -- of `j_q` is **needed**", and
--- `collab/messages/0469-atomic-satisfaction-is-response-square.md`
+-- `collab/messages/0469-atomic-satisfaction-is-response-square.md` (absent from this repository)
 -- hardens that into a report that the Agda checks the comparison maps
 -- "**must be** injective for the backwards implication".  Two
 -- assertions, the two ways this modality-drop shows up in prose:

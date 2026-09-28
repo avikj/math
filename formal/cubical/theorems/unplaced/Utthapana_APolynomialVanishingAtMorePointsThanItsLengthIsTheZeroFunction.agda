@@ -6,7 +6,7 @@
 -- value and computing; the theorem below is stated for the runtime's G7
 -- gate).
 --
--- crystallize/install.py G7 decides a polynomial
+-- crystallize/install.py (absent from this repository) G7 decides a polynomial
 -- identity "by exact evaluation on an integer grid whose size is a
 -- complete bound for the degree" — the completeness of that grid is the
 -- gate's license.  Its univariate core,

@@ -3,7 +3,7 @@
 -- The walk's forcing law, statement (1): a least non-divisor of L is a
 -- prime power.
 --
--- Paper proof (WALK_FORCING_LAW.md): if q is least with q ∤ L and
+-- Paper proof (WALK_FORCING_LAW.md (absent from this repository)): if q is least with q ∤ L and
 -- q = a·b, gcd(a,b)=1, 1<a,b<q, then minimality gives a ∣ L and b ∣ L,
 -- and coprime divisors multiply, so q = ab ∣ L — contradiction.
 --

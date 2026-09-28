@@ -7,7 +7,7 @@
 -- ────────────────────────────────────────────────────────────────────
 -- SOURCES, quoted verbatim.
 --
--- (1) notes/MULTIPLE_REMAINDER_DESCENT.md (branch main).  Its setting:
+-- (1) notes/MULTIPLE_REMAINDER_DESCENT.md (absent from this repository) (branch main).  Its setting:
 --
 --   Let m_1,…,m_n be positive integers, put
 --       P = ∏_i m_i,   L = lcm(m_1,…,m_n),
@@ -29,9 +29,9 @@
 --   each hide 6 source states, and the pairwise-coprime family `(3,4,5)`,
 --   which reconstructs all 60 states exactly."
 --
--- (2) notes/DESCENT_ALONG_ONE_MAP_IS_UNOBSTRUCTED.md, §9 successor seed 2:
+-- (2) notes/DESCENT_ALONG_ONE_MAP_IS_UNOBSTRUCTED.md (absent from this repository), §9 successor seed 2:
 --
---   "PROVE — the multi-map case. `MULTIPLE_REMAINDER_DESCENT.md` is a cover
+--   "PROVE — the multi-map case. `MULTIPLE_REMAINDER_DESCENT.md` (absent from this repository) is a cover
 --    of `Z/P` by `{Z/mᵢ}`; its Theorem (compatible tuples glue; fibre `P/L`)
 --    is a `H⁰`/`H¹` statement for the nerve of that cover. The theorem here
 --    says the one-map case is empty, so the finite-cover case is where the

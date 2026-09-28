@@ -88,7 +88,7 @@
 --     before writing a module for thread T, grep the latch's import
 --     list for T's own name.
 --
--- It is not added to `.claude/hooks/source-coverage.sh` here, because
+-- It is not added to `.claude/hooks/source-coverage.sh` (absent from this repository) here, because
 -- hook changes are the owner's to approve and a previous design of mine
 -- was rejected for being built before it was agreed.  It is written
 -- down as a proposal, at the site where its absence cost something.

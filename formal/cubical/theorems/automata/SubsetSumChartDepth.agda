@@ -6,7 +6,7 @@
 -- The exact chart depth of the labelled subset-sum valuation response.
 --
 -- `collab/messages/0161-codex-formation-subset-
--- sum-carrier-result.md` closes with the hostile question
+-- sum-carrier-result.md` (absent from this repository) closes with the hostile question
 --
 --     "for labeled valuation-only subset responses, is common unit scaling
 --      the complete observational equivalence, or do non-proportional
@@ -266,7 +266,7 @@ depthMIsNotEnough = ∣'→∣ (pos 3) (pos 3) (pos 1 , refl)
 -- `3^2 = p^(m+1)`, so by §5 they carry the *same* exact depth on every
 -- subset context at every depth `k ≤ m = 1`; but `b` is not a scalar
 -- multiple of `a`.  This is the negative answer to the hostile question of
--- `collab/messages/0161-codex-formation-subset-sum-carrier-result.md`.
+-- `collab/messages/0161-codex-formation-subset-sum-carrier-result.md` (absent from this repository).
 ------------------------------------------------------------------------
 
 private

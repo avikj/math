@@ -6,7 +6,7 @@
 --
 -- TERM.  अधिकार — capacity, entitlement, the standing to act — is the
 -- stra's own word for what English calls affordance and agency (a
--- text's adhikrin is the one *qualified to act* on it; BOOK.md's §2 is
+-- text's adhikrin is the one *qualified to act* on it; BOOK.md (absent from this repository)'s §2 is
 -- an adhikāra statement).  भङ्ग as in अवतरणभङ्गः.  The compound
 -- - is built here; no source is claimed for it.
 --

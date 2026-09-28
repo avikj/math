@@ -9,7 +9,7 @@
 -- others and may be struck.
 --
 -- ────────────────────────────────────────────────────────────────────
--- THE SOURCE, VERBATIM (notes/SEED66_CRT_SYNCHRONISATION.md, §2 and §8).
+-- THE SOURCE, VERBATIM (notes/SEED66_CRT_SYNCHRONISATION.md (absent from this repository), §2 and §8).
 --
 --   > **Theorem Y.** (a) $2^{\omega}\mid n-1$; hence $\omega\le s$.
 --   > (b) For $b\in C$, the values taken by the common $v$ in the

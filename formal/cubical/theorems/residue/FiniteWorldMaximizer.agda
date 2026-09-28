@@ -47,7 +47,7 @@
 --     "point maximizing `v_p(f)`" the theorem's proof names.
 --
 -- Everything below is a closed computation or a two-case induction on
--- ℕ; there is no fitting and no sampling (CLAUDE.md).
+-- ℕ; there is no fitting and no sampling (CLAUDE.md (absent from this repository)).
 -- It contains exactly the step the summary broke — that
 -- the maximizer exists — and nothing else.
 --

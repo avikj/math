@@ -19,8 +19,8 @@
 --             machine's split fiber, as an obstruction, over ALL
 --             instances at once rather than an enumerated window.
 --
--- Companion: machinery/descent_formation_machine.py (finite shadow),
--- machinery/core_knowledge.py (claims verified by the finite shadow).
+-- Companion: machinery/descent_formation_machine.py (absent from this repository) (finite shadow),
+-- machinery/core_knowledge.py (absent from this repository) (claims verified by the finite shadow).
 ------------------------------------------------------------------------
 
 module DescentLaw where

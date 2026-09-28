@@ -5,7 +5,7 @@
 --
 -- The Peres-Mermin incidence graph, in the proof language.
 --
--- Source of the claims: `machinery/pm_torus.py`, whose four assertions
+-- Source of the claims: `machinery/pm_torus.py` (absent from this repository), whose four assertions
 -- were established by exact finite computation in Python
 -- (the 9 observables of the Peres-Mermin square, the 6 contexts, and the
 -- incidence map δ : F₂⁹ → F₂⁶ whose cokernel carries the obstruction).
@@ -198,7 +198,7 @@ data Ctx : Type₀ where
   R0 R1 R2 C0 C1 C2 : Ctx
 
 -- The physical datum: which row and which column each observable lies
--- in.  Transcribed from the grid of machinery/pm_torus.py
+-- in.  Transcribed from the grid of machinery/pm_torus.py (absent from this repository)
 --   [[XI, IX, XX], [IY, YI, YY], [XY, YX, ZZ]].
 pmContexts : Obs → Ctx × Ctx
 pmContexts XI = (R0 , C0)

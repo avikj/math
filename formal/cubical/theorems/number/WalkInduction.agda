@@ -24,7 +24,7 @@
 --                        the induction along the walk.
 --   reach-capacity(ii) : every reachable state's lcm IS an lcm of
 --                        range1 (its frontier).  This is the Agda form
---                        of runtime/walk.py's capacity_certificate:
+--                        of runtime/walk.py (absent from this repository)'s capacity_certificate:
 --                        the walk is at the capacity of its own
 --                        frontier at every step, not merely at the end.
 --   reach-capacity-≡   : the same as an equation between numbers,

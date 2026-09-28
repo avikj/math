@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- OracleCharge
 --
--- Reading `BARRIER.md` §3 Problem 2 — the
+-- Reading `BARRIER.md` (absent from this repository) §3 Problem 2 — the
 -- oracle model separating VALUE queries from FUNCTIONAL-EQUATION queries
 -- — against `ChargeCriterion`.  The prediction there was "they should be
 -- the same distinction stated twice; if they are not, the difference is
@@ -38,14 +38,14 @@
 --
 -- So three things said in three places are one thing:
 --
---   BARRIER.md   "entropy decrement ∉ WL by the interface it consumes"
---   GAUGE.md     "parity-sensitive conclusions require coupling to
+--   BARRIER.md (absent from this repository)   "entropy decrement ∉ WL by the interface it consumes"
+--   GAUGE.md (absent from this repository)     "parity-sensitive conclusions require coupling to
 --                 something outside the neutral sector"
 --   ChargeGrading/ChargeCriterion (here): the FE primitive is a degree-1
 --                 shift; degree-1 shifts are parity-moving; parity-moving
 --                 queries are exactly the separating ones.
 --
--- What was DEFINITIONAL in BARRIER.md ("outside WL by construction")
+-- What was DEFINITIONAL in BARRIER.md (absent from this repository) ("outside WL by construction")
 -- becomes STRUCTURAL here: the FE interface does not happen to sit
 -- outside the neutral class, it CANNOT sit inside it.
 -- W3 asks whether value queries can SIMULATE FE queries;
@@ -141,7 +141,7 @@ fe⇒separator p n = odd⇒separator (FEPair p n) (fe-has-charge p n)
 -- Value queries CAN be confined to the neutral sector — probe-6 from
 -- `ChargeCriterion` is a nonempty value-query set with provably no
 -- separator.  FE queries cannot be so confined: §3.  That asymmetry is
--- the oracle-model distinction of BARRIER.md §3 Problem 2, derived
+-- the oracle-model distinction of BARRIER.md (absent from this repository) §3 Problem 2, derived
 -- rather than defined.
 ------------------------------------------------------------------------
 
@@ -162,7 +162,7 @@ value-can-hide = probe-6 , probe-6-cannot , nonempty
 -- prime.  So the FE interface is not merely "somewhere charged": its
 -- transported datum is the generator of the charged sector.  This is the
 -- exact sense in which entropy decrement "accesses a's functional
--- equation" (BARRIER.md): each use reads one prime's sign.
+-- equation" (BARRIER.md (absent from this repository)): each use reads one prime's sign.
 ------------------------------------------------------------------------
 
 fe-ratio-is-the-sign : (σ : Signs) (p : ℕ) (n : Number)

@@ -5,7 +5,7 @@
 --
 -- **carrying cannot be removed by any choice of digit set.**
 --
--- Statement being formalized (ATLAS_OF_N.md §2.4(iii)).  For b ≥ 2, n ≥ 1
+-- Statement being formalized (ATLAS_OF_N.md (absent from this repository) §2.4(iii)).  For b ≥ 2, n ≥ 1
 -- the truncation
 --
 --     0 → bⁿℤ/bⁿ⁺¹ℤ → ℤ/bⁿ⁺¹ --π--> ℤ/bⁿ → 0
@@ -449,7 +449,7 @@ module Cyclic (N' e' f : ℕ) (div : suc N' ≡ suc (suc e') · f) where
 -- 4.  Corollary 2.11.1: for b ≥ 2 and n ≥ 1, no digit set is carry-free
 ------------------------------------------------------------------------
 
--- b = 2 + k, n = 1 + n′.  The two hypotheses of ATLAS_OF_N.md §2.4(iii)
+-- b = 2 + k, n = 1 + n′.  The two hypotheses of ATLAS_OF_N.md (absent from this repository) §2.4(iii)
 -- are exactly these two `suc` patterns.
 module BasePower (k n' : ℕ) where
 
@@ -480,7 +480,7 @@ module BasePower (k n' : ℕ) where
   M≡b : M ≡ b ^ (suc n)
   M≡b = cong (_· b) (bpow≡ n) ∙ ·-comm (b ^ n) b
 
-  -- COROLLARY 2.11.1 (ATLAS_OF_N.md §2.4(iii)).  For every b ≥ 2, every
+  -- COROLLARY 2.11.1 (ATLAS_OF_N.md (absent from this repository) §2.4(iii)).  For every b ≥ 2, every
   -- n ≥ 1, and EVERY function s : ℤ/bⁿ → ℤ/bⁿ⁺¹ that is a section of
   -- truncation — i.e. every choice of digit set whatever — it is false
   -- that all carries vanish.  Carrying is a property of the extension,

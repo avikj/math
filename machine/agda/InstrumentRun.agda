@@ -5,10 +5,11 @@
 --
 -- The --safe cubical core proves the self-improvement object converges
 -- (SelfImprovingCrystal: the run reaches a fixed point, meaning held to
--- identity by bisim).  This module is the IO membrane (a `mukha`): it
--- EXECUTES a concrete instance of exactly that shape — a measure that
--- strictly descends to its fixed point — and prints the witness, so the
--- claim is not only typechecked but run.
+-- identity by bisim).  This module is an IO membrane (a `mukha`) that runs
+-- an ILLUSTRATIVE instance of the same shape — a measure that strictly
+-- descends to its fixed point — and prints the witness.  It is NOT linked
+-- to SelfImprovingCrystal: it shows that compiled Agda executes a
+-- descending run, not that the cubical object converges.
 --
 -- Self-contained (Agda.Builtin only) so `agda -c` compiles it through
 -- GHC/MAlonzo to a standalone executable with no library entanglement.
@@ -59,7 +60,7 @@ witness =
   "  policy: measure n -> n-1 (strictly descending), fixed point 0\n" ++
   "  from measure 100, after 100 steps at fixed point = " ++ bool (atFixedPoint (iterate 100 100)) ++ "\n" ++
   "  from measure 100, after  50 steps at fixed point = " ++ bool (atFixedPoint (iterate 50 100)) ++ "\n" ++
-  "  => convergence executed, not merely typechecked.\n"
+  "  => a descending run executed (illustrative; not the cubical object).\n"
 
 postulate putStr' : String → IO ⊤
 {-# FOREIGN GHC import qualified Data.Text.IO as TIO #-}

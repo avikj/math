@@ -10,7 +10,7 @@
 --
 -- Together with `FrontierDivides.frontier-divides` (the other half) this
 -- is the universal property of `prodOf (frontierList k)` as the lcm of
--- 1 … k, which CLAUDE.md requires be stated that way because cubical
+-- 1 … k, which CLAUDE.md (absent from this repository) requires be stated that way because cubical
 -- v0.5 has no LCM module.
 --
 -- ────────────────────────────────────────────────────────────────────
@@ -208,6 +208,6 @@ five-divides = frontier-divides-hard 8 5 (suc-≤-suc zero-≤) (3 , refl)
 --
 -- So `prodOf (frontierList k)` IS lcm(1 … k), stated by its universal
 -- property because this lane has no LCM module — which is what
--- CLAUDE.md asks for, and it is now a theorem rather than a `refl` at
+-- CLAUDE.md (absent from this repository) asks for, and it is now a theorem rather than a `refl` at
 -- k = 8.
 ------------------------------------------------------------------------

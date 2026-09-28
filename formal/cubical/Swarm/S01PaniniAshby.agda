@@ -16,7 +16,7 @@
 --            internal states.
 --
 -- The two lenses disagree about `collab/messages/workers/
--- 20260812T144712.509661Z--codex_quantum_process--0007.md`, which
+-- 20260812T144712.509661Z--codex_quantum_process--0007.md` (absent from this repository), which
 -- exhibits three Smith states sharing the visible scalar residual 1 but
 -- demanding three different next constructor actions, and concludes
 --     next action ≠ f(scalar remainder).

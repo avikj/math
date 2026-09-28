@@ -1,7 +1,7 @@
 {-# OPTIONS --cubical --safe --no-import-sorts #-}
 
 -- शेष-सञ्चय, the checked half.  Parent note:
--- notes/SesaSancaya_TheAlignmentNumberIsAMinimalTotalRemainderAndTheKnobGainIsAWrapCount.md
+-- notes/SesaSancaya_TheAlignmentNumberIsAMinimalTotalRemainderAndTheKnobGainIsAWrapCount.md (absent from this repository)
 -- (compound built there; ea is ryabhaa's kept remainder,
 -- Āryabhaṭīya gaṇita 32–33, 499 CE — the kuṭṭaka's disposal rule; what
 -- is claimed of the source is the NAME and the rule "keep the

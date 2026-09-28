@@ -53,7 +53,7 @@
 -- gains what the difference says and loses nothing, because by
 -- `Apavada.Reformulation` the denotation is untouched.  The scarcity
 -- reading of this quantity was withdrawn in
--- `notes/THE_BARRIER_BELONGS_TO_THE_LINE.md` §24 and is withdrawn here
+-- `notes/THE_BARRIER_BELONGS_TO_THE_LINE.md` (absent from this repository) §24 and is withdrawn here
 -- too; the name `TransportPrice` is kept only because the thread that
 -- asked the question used it, and `loop-is-free` is the theorem that
 -- makes the objection precise.

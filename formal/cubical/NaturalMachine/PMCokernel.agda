@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- NaturalMachine.PMCokernel
 --
--- WHAT THIS PROVES.  `notes/PM_SECTION_VS_COCYCLE.md` ends with:
+-- WHAT THIS PROVES.  `notes/PM_SECTION_VS_COCYCLE.md` (absent from this repository) ends with:
 -- "The natural checked target: `coker(δ) ≅ F₂` and the exactness step —
 -- pure finite linear algebra over F₂, no matrices over ℤ[i] needed."
 -- This module is that target, carried out on the PHYSICAL index sets
@@ -334,7 +334,7 @@ image-is-even-total y (x , q) = subst (λ z → total z ≡ false) q (parity-δ 
 --
 -- s = (+,+,+ | +,+,−): the three rows and the first two columns
 -- multiply to +1, the third column to −1.  Additively over 𝔽₂ that is
--- (0,0,0,0,0,1) — transcribed from notes/PM_SECTION_VS_COCYCLE.md,
+-- (0,0,0,0,0,1) — transcribed from notes/PM_SECTION_VS_COCYCLE.md (absent from this repository),
 -- where it is derived from the exact Weyl cocycle.  It is the only
 -- physical input to this module.
 ------------------------------------------------------------------------

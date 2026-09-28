@@ -10,7 +10,7 @@
 -- (bhvan, "production, bringing-into-being") is his name for the
 -- composition that multiplies it: ब्राह्मस्फुटसिद्धान्त १८.६४–६५, 628 CE.
 -- The identity itself is checked over a commutative ring in
--- `Bhavana.agda` and subtraction-free over ℕ in `BhavanaSemiring.agda`;
+-- `Bhavana.agda` (absent from this repository) and subtraction-free over ℕ in `BhavanaSemiring.agda` (absent from this repository);
 -- it is NOT re-proved here.  The descent that ITERATES it is the
 -- cakravāla — Jayadeva ~950 CE, Bhāskara II, बीजगणित, 1150 CE.
 --

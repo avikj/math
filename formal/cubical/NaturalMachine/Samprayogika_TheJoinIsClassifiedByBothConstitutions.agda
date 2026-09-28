@@ -105,7 +105,7 @@ compare (suc m) (suc n) = compare m n
 -- 3.  The two organisms, placed, with the evidence for each placement
 --------------------------------------------------------------------------
 
--- machine/MathMachine.hs.
+-- machine/MathMachine.hs (absent from this repository).
 --   प्रमाण अश्व  — it takes the entire term space at once: 637,852 terms in
 --                 one round at vocabulary 8, horizon 7.
 --   वेग चण्ड     — every round acts on everything it can see, and the

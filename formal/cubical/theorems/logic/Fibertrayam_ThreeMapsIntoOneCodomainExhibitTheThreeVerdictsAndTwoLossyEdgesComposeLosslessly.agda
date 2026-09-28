@@ -20,7 +20,7 @@
 -- image dodges the second edge's collapse.  README movement 2 names
 -- `Unit→Bool→Unit` as the checked cancellation; this is that term.
 --
--- RELATION TO `Parampara_...agda`.
+-- RELATION TO `Parampara_...agda` (absent from this repository).
 -- That module also finds that losses do not add along a
 -- chain, by a DIFFERENT mechanism -- an ABSENCE sitting in the middle fibre
 -- -- over three maps rather than two.  Section 2 here is the other mechanism

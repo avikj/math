@@ -15,7 +15,7 @@
 --   fullCountGivesAll     and is forced by it
 --
 -- Together: `count xs ≡ length xs` and `All isTrue xs` are the same
--- claim.  So `DARWIN_GODEL_MATH.md` §7's label criterion is not a
+-- claim.  So `DARWIN_GODEL_MATH.md` (absent from this repository) §7's label criterion is not a
 -- different KIND of criterion from its thresholds — it is the threshold
 -- at 1, where the tolerance is zero.  §4 exhibits a population where a
 -- strictly lower threshold survives a failure that kills the Π, which is

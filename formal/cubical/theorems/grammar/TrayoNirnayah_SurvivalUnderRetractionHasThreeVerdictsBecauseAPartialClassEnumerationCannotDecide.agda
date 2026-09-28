@@ -8,14 +8,14 @@
 -- asti / nāsti / avaktavya — Umāsvāti, *Tattvārthasūtra* 5.32; the third
 -- position is what a standpoint yields when it cannot yet decide.)
 --
--- WHAT IT PROVES, and why it is here.  runtime/propagate/invalidate.py's
+-- WHAT IT PROVES, and why it is here.  runtime/propagate/invalidate.py (absent from this repository)'s
 -- survival rule (README §0-§1): a consequence dies under the retraction
 -- of a fact x iff EVERY homotopy class of its justification passes
 -- through x; a surviving class is one whose leaf-multiset avoids x.  The
 -- decision is computed from a class enumeration that MAY BE INCOMPLETE,
 -- and its result type is deliberately three-valued — SURVIVES / DEAD /
 -- UNDECIDED — with recompute.apply refusing to act on UNDECIDED
--- (SCALE.md §5.1; STATUS.md failure mode #1 is exactly a boolean guess
+-- (SCALE.md (absent from this repository) §5.1; STATUS.md failure mode #1 is exactly a boolean guess
 -- here).  This module proves that the third verdict is IRREDUCIBLE:
 --
 --   §0  a class is characterised, for the retraction of x, by one bit —
@@ -39,7 +39,7 @@
 -- the honest receipt that the fibre was not enumerated.
 --
 -- Sources for the mathematics: runtime/propagate/README.md §0-§1,
--- invalidate.survival; runtime/SCALE.md §5.1; runtime/STATUS.md.
+-- invalidate.survival; runtime/SCALE.md (absent from this repository) §5.1; runtime/STATUS.md.
 ------------------------------------------------------------------------
 
 module TrayoNirnayah_SurvivalUnderRetractionHasThreeVerdictsBecauseAPartialClassEnumerationCannotDecide where

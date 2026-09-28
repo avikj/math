@@ -12,7 +12,7 @@
 --   `Laghava.laghava-is-not-semantic` — लाघव is not a function of the
 --       denotation (Pini's criterion, and why it had to exist).
 --   `TranscriptDescent.collisionObstructsDecoder` — the barrier B3 of
---       BARRIER.md, ` FactorsThrough`.
+--       BARRIER.md (absent from this repository), ` FactorsThrough`.
 --
 -- All three have the shape
 --
@@ -84,7 +84,7 @@ avaktavya-does-not-factor (v , agrees) =
 --
 --   avaktavya   ¬ Σ[ v ] (∀ φ → denotes v φ ≡ joint φ)          here
 --   लाघव        ¬ Σ[ f ] (∀ e → f (eval e) ≡ size e)            Laghava
---   the barrier ¬ Σ[ d ] (∀ x → d (blur x) ≡ observable x)      BARRIER.md B3
+--   the barrier ¬ Σ[ d ] (∀ x → d (blur x) ≡ observable x)      BARRIER.md (absent from this repository) B3
 --
 -- One shape, three traditions, and the middle one is the only place this
 -- corpus had noticed it.  `TranscriptDescent.collisionObstructsDecoder`

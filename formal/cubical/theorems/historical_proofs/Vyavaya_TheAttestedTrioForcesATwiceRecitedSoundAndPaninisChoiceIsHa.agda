@@ -568,7 +568,7 @@ eqℕ (suc m₀) (suc n₀) = eqℕ m₀ n₀
 -- THE CHOICE OF HA WAS NOT ONE.
 -- `Niyama_The-
 -- DoubledSoundCouldHaveBeenAnyOfThreeAndTheFullClassesRestrictItToHa-
--- Alone.agda` proves the trio also restricts to 3-cycles on {h v } and
+-- Alone.agda` (absent from this repository) proves the trio also restricts to 3-cycles on {h v } and
 -- on {h y } (by refl, from this file's own stretches), and proves the
 -- impossibility parametrically over any triple.  Case on the doubled
 -- sound: ya-doubling dies on {h v }, a-doubling on {h y }, anything

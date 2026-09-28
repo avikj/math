@@ -4,7 +4,7 @@
 -- TransmissionRefutations
 --
 -- Three displays of the owner's fifth transmission
--- (`collab/upstream/raw/D0020-owner-fifth-transmission-2026-08-15.md`),
+-- (`collab/upstream/raw/D0020-owner-fifth-transmission-2026-08-15.md` (absent from this repository)),
 -- here as terms rather than as one reader's arithmetic.
 --
 -- SECTION A  §8's Π_∂ identity.  Archive line 393:

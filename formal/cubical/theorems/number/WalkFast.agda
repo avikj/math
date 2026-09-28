@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- WalkFast
 --
--- THE THEOREM REPLACES THE COMPUTATION.  This is CLAUDE.md's central
+-- THE THEOREM REPLACES THE COMPUTATION.  This is CLAUDE.md (absent from this repository)'s central
 -- rule applied to the walk's own execution, and it is the first place in
 -- the walk lane where a proved theorem buys a superexponential speedup
 -- rather than merely recording one.

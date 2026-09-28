@@ -10,7 +10,7 @@
 -- THE HYPOTHESIS RSA RESTS ON, DISCHARGED ON A CYCLIC GROUP.
 --
 -- `Bijamula_TheRSAPrivateKeyIsThePulverizersWitnessAndDecryptionIs
--- PingalasExponentiation.agda` isolates RSA to one fact and says so
+-- PingalasExponentiation.agda` (absent from this repository) isolates RSA to one fact and says so
 -- exactly:
 --
 --     "SO THE ONLY NUMBER THEORY IN RSA IS `pow x φ ≡ ε`.  Everything

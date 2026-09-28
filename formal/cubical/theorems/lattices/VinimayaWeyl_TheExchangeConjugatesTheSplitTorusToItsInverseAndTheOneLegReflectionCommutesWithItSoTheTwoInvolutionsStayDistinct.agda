@@ -4,7 +4,7 @@
 -- विनिमयः · the exchange conjugates the split torus to its inverse
 --
 -- Prime-Pair Atlas Delta 17 (owner transmission D0017, held in git
--- history at zzz/collab/upstream/raw/D0017-prime-pair-atlas-delta-17.txt),
+-- history at zzz/collab/upstream/raw/D0017-prime-pair-atlas-delta-17.txt (absent from this repository)),
 -- verbatim:
 --
 --   "17.3 Weyl group
@@ -19,7 +19,7 @@
 --      - Weyl/exchange: preserves split norm Q;
 --      - one-leg sign reflection: swaps positive/negative norm sectors ..."
 --
--- notes/DELTA17_SPLIT_TORUS_AUDIT.md (main): "§17.2–17.5 torus/Weyl.
+-- notes/DELTA17_SPLIT_TORUS_AUDIT.md (absent from this repository) (main): "§17.2–17.5 torus/Weyl.
 -- T17.3, T17.5, T17.8 are not formalised." and its seed "PROVE: T17.5,
 -- the Weyl conjugation, as a 2×2 matrix identity over ℤ. Cheap
 -- (M2Unimodular.agda already has the toolkit)".

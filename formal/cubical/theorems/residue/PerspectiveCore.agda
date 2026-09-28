@@ -104,10 +104,10 @@ restricts-suff e A₊ B₊ h = Σ-cong-equiv e h
 -- lying OVER `e` forces the predicates to correspond.
 restricts-nec :
   (e : A ≃ B) (A₊ : A → Type ℓ'') (B₊ : B → Type ℓ'')
-  → ((x : Σ A A₊) → Σ B B₊)
-  → ((x : Σ A A₊) → (a : A) → x .fst ≡ a → A₊ a → B₊ (equivFun e a))
+  → (f : Σ A A₊ → Σ B B₊)
+  → ((x : Σ A A₊) → f x .fst ≡ equivFun e (x .fst))
   → (a : A) → A₊ a → B₊ (equivFun e a)
-restricts-nec e A₊ B₊ _ over a p = over (a , p) a refl p
+restricts-nec e A₊ B₊ f over a p = subst B₊ (over (a , p)) (f (a , p) .snd)
 
 -- C14.7.  The obstruction to restriction, named as an object: a point of
 -- the sector whose image leaves the sector.  This is what "the sector

@@ -15,7 +15,7 @@
 -- itself: stras 5 and 14).
 --
 -- WHAT THIS FILE IS ABOUT.  `PratyaharaLaghava_TheMarkerCountIsForcedBy-
--- TheAntichain.agda` proves the lower bound: classes ending at one marker
+-- TheAntichain.agda` (absent from this repository) proves the lower bound: classes ending at one marker
 -- form a ⊆-chain, so a ⊆-antichain of width w forces w distinct markers.
 -- `markersDistinct` gives markers ≥ width(F) and no more, and a Haskell
 -- computation reports width 14 over the 294 classes the iva-stra line can name against

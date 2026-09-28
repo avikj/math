@@ -2,7 +2,7 @@
 
 -- The walk's CAPACITY theorem (companion: WalkForcing).
 --
--- Statement (WALK_FORCING_LAW.md, "resolution of the costed fiber"):
+-- Statement (WALK_FORCING_LAW.md (absent from this repository), "resolution of the costed fiber"):
 --   any lossless sensor family whose addresses are all <= k has lcm
 --   dividing lcm(1..k).
 -- Hence e^psi(k) is the CAPACITY of frontier k -- the largest prefix any

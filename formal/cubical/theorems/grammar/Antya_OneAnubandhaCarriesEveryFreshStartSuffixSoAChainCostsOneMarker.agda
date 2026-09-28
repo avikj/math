@@ -11,7 +11,7 @@
 -- about how much ONE antya can denote.
 --
 -- WHAT CALLED THIS FILE.  `Dvihpatha_TheAntichainBoundIsAttainedOnlyIf-
--- ASoundMayBeListedTwice.agda` settles a five-class family by checking all
+-- ASoundMayBeListedTwice.agda` (absent from this repository) settles a five-class family by checking all
 -- 120 arrangements: ⊆-width two, cost three recited-once, cost two once a
 -- sound may be recited twice.  That is an instance and it is decided, but
 -- an exhaustion says nothing about a sixth class or a fourth sound.  The

@@ -15,7 +15,7 @@
 -- WHAT IT PROVES, and why it is here.  Vahita_… checked the carry
 -- extension  0 → ℤ/b → ℤ/b^{n+1} → ℤ/b^n → 0  does not split at its
 -- MINIMAL instance (b = 2, one digit) by the kernel-of-forgetting.
--- runtime/atlas/residual.py's splitting_exponent_argument computes the
+-- runtime/atlas/residual.py (absent from this repository)'s splitting_exponent_argument computes the
 -- GENERAL certificate — ATLAS_OF_N §8 Prop. 2.11: the class vanishes
 -- iff the extension splits iff the two exponents agree — but only per
 -- (b, n) it is handed.  This module proves that certificate for EVERY
@@ -37,7 +37,7 @@
 -- the count is exactly why it cannot be — visibility of the top place
 -- is not manufacturable by keeping the digits apart.
 --
--- Sources for the mathematics: runtime/atlas/residual.py
+-- Sources for the mathematics: runtime/atlas/residual.py (absent from this repository)
 -- Prop. 2.11.  Complements Vahita_…  (the b=2,n=1 group instance).
 ------------------------------------------------------------------------
 
@@ -90,7 +90,7 @@ open import Cubical.Data.Nat.Divisibility
 --     b^{n+1} (§2).  by_exponent = exponent_lhs < exponent_rhs holds
 --     UNCONDITIONALLY in (b, n), so the carry class never vanishes: the
 --     extension never splits.  This is the general form of
---     residual.py's per-instance splitting_exponent_argument.
+--     residual.py (absent from this repository)'s per-instance splitting_exponent_argument.
 ------------------------------------------------------------------------
 
 घातविच्छेदः : (b n : ℕ) → 1 < b → b ^ (suc n) < b ^ (suc (suc n))

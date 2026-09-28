@@ -3,8 +3,8 @@
 ------------------------------------------------------------------------
 -- TheTwoDirectionsUpgradeToAnEquivalenceBecauseBothSidesArePropositions
 --
--- ON THE NAME.  Checked before naming: `.claude/hooks/priority-ledger.txt`
--- (CURRENT header) and `.claude/hooks/european-frame.txt`; `formal/` and
+-- ON THE NAME.  Checked before naming: `.claude/hooks/priority-ledger.txt` (absent from this repository)
+-- (CURRENT header) and `.claude/hooks/european-frame.txt` (absent from this repository); `formal/` and
 -- invented.**  Counting how many members of a finite collection satisfy
 -- a predicate is Jaina enumerative territory (*Anuyogadvra*,
 -- *Sthnga*) and I have NOT established that as the source of

@@ -18,7 +18,7 @@
 -- WHAT THIS REFUTES.
 --
 -- (recoverable only by outside supply) and ४ (नष्टिः, अप्रतिकार्या) are
--- both crowded fibres; `Loss.SakalaVikalaDesa_…` refuses a fourth
+-- both crowded fibres; `Loss.WholePartialDesa_…` refuses a fourth
 -- constructor for `देश` because no criterion separated them.  The note
 -- proposes one, in two halves:
 --

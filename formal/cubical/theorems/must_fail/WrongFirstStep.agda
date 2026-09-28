@@ -5,7 +5,7 @@
 --
 -- *** THIS FILE MUST FAIL TO TYPE-CHECK. ***
 --
--- Designed annihilation (collab/PROTOCOL.md §7), in the pattern of
+-- Designed annihilation (collab/PROTOCOL.md (absent from this repository) §7), in the pattern of
 -- `NaturalMachine/Control/WrongEquivalence.agda`: the statement below is
 -- FALSE, and the point of the file is to exhibit that the type-checker
 -- catches it rather than waving it through.

@@ -6,7 +6,7 @@
 -- THE PERES–MERMIN SIGN VECTOR, DERIVED.
 --
 -- The one physical input to the entire Peres–Mermin development was
--- a trusted printout of `machinery/pm_section_cocycle.py`.  This module
+-- a trusted printout of `machinery/pm_section_cocycle.py` (absent from this repository).  This module
 -- removes that dependency: §3 computes the six line products from the
 -- operator algebra and §4 proves the resulting vector EQUAL to
 -- `PMCokernel.s`, pointwise, by `refl`.  Nothing downstream changes;

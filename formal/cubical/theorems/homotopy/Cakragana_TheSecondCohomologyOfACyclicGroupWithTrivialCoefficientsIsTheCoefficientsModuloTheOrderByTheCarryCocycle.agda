@@ -29,12 +29,12 @@
 --         subgroup of ℤ/bⁿ⁺¹, not `ℤ/b`; neither the isomorphism
 --         bⁿℤ/bⁿ⁺¹ ≅ ℤ/b nor the computation of H² as A/mA is constructed.
 --
--- (2) notes/FOUR_REPAIR_MODES.md (main), the seed:
+-- (2) notes/FOUR_REPAIR_MODES.md (absent from this repository) (main), the seed:
 --
 --       2. **`PROVE`** — Construct $H^2(\mathbb Z/m;A)\cong A/mA$
 --          constructively, discharging §4.1's $\Gamma_\circlearrowleft$.
 --
--- (3) notes/ATLAS_OF_N.md (main):
+-- (3) notes/ATLAS_OF_N.md (absent from this repository) (main):
 --
 --       Building $H^2$ of a cyclic group constructively, and identifying
 --       it with $A/mA$, remains open.

@@ -5,7 +5,7 @@
 -- abelian group; Bool and ℤ/n are instances; the transcript descends
 -- injectively to the quotient by the annihilator.
 --
--- SOURCE.  `notes/CHARGE_EXTRACTION_SHOULD_BE_CYCLIC.md` (branch main),
+-- SOURCE.  `notes/CHARGE_EXTRACTION_SHOULD_BE_CYCLIC.md` (absent from this repository) (branch main),
 -- §(b), verbatim:
 --
 --   - `GaugeOrbitClasses.agda` generalizes by replacing $\mathrm{Bool}$-valued

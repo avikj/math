@@ -106,7 +106,7 @@
 -- It is NOT part of the checked build.  `agda` does not
 -- import it, and nothing else may: the directory `NaturalMachine/Control/`
 -- is excluded from the root aggregate exactly so that its contents are
--- allowed to fail.  `scripts/check-agda-closure.sh` enforces that.
+-- allowed to fail.  `scripts/check-agda-closure.sh` (absent from this repository) enforces that.
 ------------------------------------------------------------------------
 
 module WrongFirstStepNoTactic where

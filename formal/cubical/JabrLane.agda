@@ -16,8 +16,8 @@ module JabrLane where
 ------------------------------------------------------------------------
 -- The antidiagonal sector pairing of an odd-character family: which
 -- (ℤ/2)^k-isotypic sectors can pair at all.  Isolates the algebra of
--- collab/messages/goldbach-machine/direct-minor-shadow.md Thm 4.1 /
--- Prop 4.2 and mixed-sector-prescribed-center.md Thm 5.1 at k characters.
+-- collab/messages/goldbach-machine/direct-minor-shadow.md (absent from this repository) Thm 4.1 /
+-- Prop 4.2 and mixed-sector-prescribed-center.md (absent from this repository) Thm 5.1 at k characters.
 ------------------------------------------------------------------------
 
 import Muqabala_TheAntidiagonalSectorPairingIsSupportedOnConjugates

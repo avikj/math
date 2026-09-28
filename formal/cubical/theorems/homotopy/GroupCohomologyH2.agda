@@ -8,7 +8,7 @@
 -- **nonzero element**.
 --
 -- This is successor step 1 of `CarryObstruction`'s own list, and the
--- remaining half of ATLAS_OF_N.md §7's formalization pair: that module
+-- remaining half of ATLAS_OF_N.md (absent from this repository) §7's formalization pair: that module
 -- proved `[c_n] ≠ 0` "stated without the group it lives in".  Here the
 -- group is constructed.
 --

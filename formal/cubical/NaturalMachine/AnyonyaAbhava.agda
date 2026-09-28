@@ -208,7 +208,7 @@ categories-agree-when-decidable dT q t dC =
 ------------------------------------------------------------------------
 -- 8.  CORRECTION FROM READING.
 --
--- `notes/JAINA_PRAMANA_NAYA_NIKSEPA.md` sets down the Jaina scheme in
+-- `notes/JAINA_PRAMANA_NAYA_NIKSEPA.md` (absent from this repository) sets down the Jaina scheme in
 -- its own order, and reading it end to end makes two defects in this
 -- module visible that no amount of checking would have caught.
 --
@@ -288,7 +288,7 @@ categories-agree-when-decidable dT q t dC =
 ------------------------------------------------------------------------
 -- 10.  THE NAME, AGAINST AN AUDIT THAT WAS ALREADY IN THE REPOSITORY
 --
--- `notes/ABHAVA.md` §2 carries a primary-text audit (Annambhaa,
+-- `notes/ABHAVA.md` (absent from this repository) §2 carries a primary-text audit (Annambhaa,
 -- `Tarkasagraha` §§57 and 80, the provenance and its limits recorded
 -- there).  Its table reads, for
 -- the fourth kind:
@@ -312,7 +312,7 @@ categories-agree-when-decidable dT q t dC =
 ------------------------------------------------------------------------
 -- PRIOR ART.
 --
--- `notes/ABHAVA.md` A6 locates arXiv:2605.12548, *Cubical Type Theoretic
+-- `notes/ABHAVA.md` (absent from this repository) A6 locates arXiv:2605.12548, *Cubical Type Theoretic
 -- Navya-Nyya* (Panday & Ghosh), whose stated content includes DEPENDENT
 -- DELIMITATION (avacchedaka) and TYPED ABSENCE (abhva) in cubical type
 -- theory — the same substrate and the same notions this module touches.

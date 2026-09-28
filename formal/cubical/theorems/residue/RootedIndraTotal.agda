@@ -89,5 +89,5 @@ reweave-all-roots action view root = refl
 -- proves the opposite half for the object rather than the invariant:
 -- for EVERY depth there are two nets agreeing at every depth below it
 -- and differing at it, so no finite observation depth determines the
--- net.  That is `interactive/IndraNet.hs`'s own disclaimer, checked.
+-- net.  That is `interactive/IndraNet.hs` (absent from this repository)'s own disclaimer, checked.
 ------------------------------------------------------------------------

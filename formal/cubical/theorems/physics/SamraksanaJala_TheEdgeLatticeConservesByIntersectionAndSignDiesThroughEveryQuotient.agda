@@ -2,7 +2,7 @@
 
 ------------------------------------------------------------------------
 -- संरक्षण-जालम् — the conservation-net.  The crystal's L1 typed-edge lattice
--- (runtime/CRYSTAL.md §1, runtime/kernel/edges.py) made a checked term: what
+-- (runtime/CRYSTAL.md (absent from this repository) §1, runtime/kernel/edges.py (absent from this repository)) made a checked term: what
 -- each kind of transport CONSERVES, that a composite conserves the
 -- INTERSECTION of its parts, and the consequence the whole machine is built
 -- to respect — sign (parity, order data) survives only the Order edge and
@@ -12,12 +12,12 @@
 -- boundary plainly: only Eq (proof paths), Iso (round-trip) and β are
 -- genuinely machine-checked; for Quotient, Embed, Implies, Approx, Refine,
 -- Interp, Dual the checker verifies only that a certificate was DECLARED,
--- not that the mathematics holds.  edges.py's PRESERVES dict is that
+-- not that the mathematics holds.  edges.py (absent from this repository)'s PRESERVES dict is that
 -- declaration.  This module is the mathematics behind it: the preservation
 -- table, the intersection law, and the parity-blindness corollary, as terms
 -- the kernel checks — declared certificate ⟶ proved theorem.
 --
--- THE FACTS (edges.py verbatim):
+-- THE FACTS (edges.py (absent from this repository) verbatim):
 --   • Eq conserves everything (the identity transport).
 --   • Iso conserves everything EXCEPT presentation and sign — Galois
 --     conjugation a+b√2 ↦ a−b√2 is a field iso of ℚ(√2) that exchanges its
@@ -28,7 +28,7 @@
 --     to its named ordering (the avacchedaka/limitor).
 --
 -- CHECKED:
---   §1  the preservation table _⊨_ : Kind → Tag → Bool (edges.py PRESERVES).
+--   §1  the preservation table _⊨_ : Kind → Tag → Bool (edges.py (absent from this repository) PRESERVES).
 --   §2  sign's carriers are exactly Eq and Order (onlyEqAndOrderCarrySign).
 --   §3  composition conserves the intersection (pathPreserves = fold of &).
 --   §4  PARITY BLINDNESS: any path containing a Quotient conserves sign ≡
@@ -45,7 +45,7 @@ open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.Relation.Nullary using (¬_)
 
 ------------------------------------------------------------------------
--- the eleven edge kinds and the ten preservation tags (edges.py KINDS,
+-- the eleven edge kinds and the ten preservation tags (edges.py (absent from this repository) KINDS,
 -- ALL_PROPERTIES).
 data Kind : Type where
   eq iso embed quotient implies approx refine interp dual order conjecture : Kind
@@ -56,7 +56,7 @@ data Tag : Type where
 
 ------------------------------------------------------------------------
 -- §1 · THE PRESERVATION TABLE.  k ⊨ t : "kind k conserves tag t."  This is
--- edges.py's PRESERVES dict, transcribed.  Catch-alls default to false; the
+-- edges.py (absent from this repository)'s PRESERVES dict, transcribed.  Catch-alls default to false; the
 -- listed rows are the true entries.
 _⊨_ : Kind → Tag → Bool
 eq         ⊨ _            = true            -- the identity conserves all
@@ -108,7 +108,7 @@ orderCarriesSign  = refl
 ------------------------------------------------------------------------
 -- §3 · COMPOSITION CONSERVES THE INTERSECTION.  A path of transports
 -- conserves a tag iff every step does — the AND-fold, "the only lattice in
--- the kernel" (edges.py).  The empty path is the identity (Eq), conserving
+-- the kernel" (edges.py (absent from this repository)).  The empty path is the identity (Eq), conserving
 -- all.
 _&_ : Bool → Bool → Bool
 true  & b = b

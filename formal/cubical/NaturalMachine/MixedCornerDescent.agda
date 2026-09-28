@@ -8,7 +8,7 @@
 -- have to meet, with nothing arithmetic smuggled in.
 --
 -- WHERE THIS COMES FROM.  The owner's delta
--- `collab/upstream/library/raw/ETERNAL_GOLDEN_BRAID_THEOREM_FACTORY_IV_2026-08-14.md`
+-- `collab/upstream/library/raw/ETERNAL_GOLDEN_BRAID_THEOREM_FACTORY_IV_2026-08-14.md` (absent from this repository)
 -- §X ("The mixed radius–charge compiler") sets e = Ω − 1 ∈ {0,1}, takes
 -- the state space V_R = {1,…,R} × {0,1} with (r,0) an exact prime pair at
 -- radius r and (r,1) a prime–semiprime pair at radius r, target (1,0),

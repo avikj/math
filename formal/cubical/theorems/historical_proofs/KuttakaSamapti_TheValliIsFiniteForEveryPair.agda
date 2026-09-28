@@ -232,7 +232,7 @@ private
 -- With f ≥ b the bounded run always finishes.  So `b` is a BOUND — a number
 -- carrying a proof that it is never reached — and not a GUESS, a number
 -- carrying a hope.  That distinction is the whole difference between this
--- and `machine/Nalanda.hs`'s `n > 400`.
+-- and `machine/Nalanda.hs` (absent from this repository)'s `n > 400`.
 ------------------------------------------------------------------------
 
 समाप्तम्? : {a b : ℕ} → शेष-वल्ली a b → Type

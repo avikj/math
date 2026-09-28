@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- Swarm.S07LeadingDigit
 --
--- `notes/REFINING_DILATION.md` (Theorem Q) prices the coherent
+-- `notes/REFINING_DILATION.md` (absent from this repository) (Theorem Q) prices the coherent
 -- environment register of a refining organism at
 --
 --     d_E(t) = ⌈ t / p^D(t) ⌉ ,   D(t) = ⌊ log_p t ⌋ ,
@@ -137,7 +137,7 @@ bracket-reset {q} h = h , subst (q ≤_) (sym (+-zero q)) ≤-refl
 --     distribution over {1..N} depends on N only through {log_p N},
 --     and no natural density exists (p ≥ 3).  The logarithmic density
 --     is the Haar average over this invariance — that is Theorem 3 of
---     collab/swarm/2026-08-14/swarm-0814-07-leading-digit-bubble.md.
+--     collab/swarm/2026-08-14/swarm-0814-07-leading-digit-bubble.md (absent from this repository).
 ------------------------------------------------------------------------
 
 scale-inv : ∀ {p'} → Bracket q t e → Bracket (q · suc p') (t · suc p') e

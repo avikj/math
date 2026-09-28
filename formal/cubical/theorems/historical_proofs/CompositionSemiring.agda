@@ -9,14 +9,14 @@
 --     (x₁² − D y₁²)(x₂² − D y₂²)
 --        = (x₁x₂ + D y₁y₂)² − D(x₁y₂ + x₂y₁)²
 --
--- the multiplicativity of the norm form N(x,y) = x² − D y².  `Bhavana.agda`
+-- the multiplicativity of the norm form N(x,y) = x² − D y².  `Bhavana.agda` (absent from this repository)
 -- carries it over ℤ.  This file is about ℕ, and about a fact that is not a
 -- restatement of Brahmagupta but a consequence of putting him in a place he
 -- was not working in.
 --
 -- BHĀVANĀ AS STATED IS FALSE OVER ℕ.  Monus is truncated: where both true
 -- norms are negative, each side flattens to 0 and the identity fails.  The
--- witness, found by exhaustive search in machine/thoughts.bhavana.math, is
+-- witness, found by exhaustive search in machine/thoughts.bhavana.math (absent from this repository), is
 -- (x₁,y₁,x₂,y₂) = (0,1,0,1): the true norms are (−1,−1) at D = 1, so the
 -- left side is 0 ∸ 0 = 0 while the right side is 1.
 --

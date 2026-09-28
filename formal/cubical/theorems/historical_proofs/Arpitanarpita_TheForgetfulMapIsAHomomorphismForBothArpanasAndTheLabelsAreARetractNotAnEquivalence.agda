@@ -31,7 +31,7 @@
 --     — a position is a LABEL and its presence-profile in {आम्, न}³ is all
 --       there is.  There क्रम-योग is commutative and सह-योग destroys which
 --       two seeds it consumed.
---   `SaptabhangiGarbha_ThePositionsCarryTheirNayasAnd…`
+--   `SaptabhangiGarbha_ThePositionsCarryTheirNayasAnd…` (absent from this repository)
 --     — a position is a RECORD carrying the standpoints and their
 --       witnesses.  There the fourth position destroys nothing
 --       (`अवक्तव्यम्-अ-लुप्तम्`) and क्रमार्पणम् is NOT commutative, which that

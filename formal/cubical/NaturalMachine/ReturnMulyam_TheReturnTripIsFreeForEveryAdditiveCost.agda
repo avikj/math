@@ -17,7 +17,7 @@
 --
 --     पुनः (बुन v) = बुन (अवतरण (Φ (उत्थान v)))
 --
--- descend, act below, ascend.  `Punaragamanam_TheStepIsAConjugation…`
+-- descend, act below, ascend.  `Punaragamanam_TheStepIsAConjugation…` (absent from this repository)
 -- and `VivekaPramana_TheRemainderIsLawful…` establish that the ascent
 -- and descent are an equivalence and that a remainder carried through
 -- the step survives — `अलोपः` there proves it for all n by structural

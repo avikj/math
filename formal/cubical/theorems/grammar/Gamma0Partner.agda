@@ -17,7 +17,7 @@
 -- plus exactly two hypothesis rewrites (det, unimodularity).
 --
 -- Python finite shadow: chk gamma0-stabilizer in
--- machinery/core_knowledge.py (the iff, on windows); this module is
+-- machinery/core_knowledge.py (absent from this repository) (the iff, on windows); this module is
 -- the forward direction over ALL of ℤ.  The converse (integrality of
 ------------------------------------------------------------------------
 

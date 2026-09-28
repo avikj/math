@@ -8,7 +8,7 @@
 --  residual is exactly what was said at once.)
 --
 -- ON THE NAME.  गर्भ is taken from AvaktavyaPrasava's own quotation of
--- `notes/AHIMSA_SUTRA_VISTARA.md` §३ — अवक्तव्ये शेषो वसति । शेषो गर्भः, न
+-- `notes/AHIMSA_SUTRA_VISTARA.md` (absent from this repository) §३ — अवक्तव्ये शेषो वसति । शेषो गर्भः, न
 -- विफलता — "in the avaktavya the residue dwells; the residue is a WOMB,
 -- not a failure."  This module is that sentence read as a fibre, which is
 -- what it already was.
@@ -47,10 +47,11 @@
 --       `सङ्क्षेपः-अस्ति` (§2.2) derives ¬((t : समावेश) → जिह्वाभेदः t ≡ t)
 --       FROM `सह-असङ्गतिः`.  Collapse is not observed; it is entailed.
 --
---       Stated without : **associativity is path-independence, and
---       path-independence of a collapsing operation is exactly the
---       contractibility of the fibre it collapses along.**  A non-associative
---       merge and a crowded fibre are one fact.
+--       What is proved is ONE direction: no collapse ⇒ associative, so
+--       non-associative ⇒ some collapse.  The converse is false:
+--       `Arpitanarpita` §८ shows सहार्पणम् is non-associative on records
+--       that retain both seeds, where nothing is collapsed.  Non-
+--       associativity is not the same fact as a crowded fibre.
 --
 --   §3  AND THE RESIDUAL IS WHAT WAS SAID AT ONCE.  §3.1 characterises the
 --       fibre without the equivalence: a profile lands on the fourth

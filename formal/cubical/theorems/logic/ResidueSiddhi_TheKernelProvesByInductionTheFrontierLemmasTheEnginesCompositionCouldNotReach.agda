@@ -5,7 +5,7 @@
 -- engine's composition could not reach.  The machine proposes its own
 -- ea; the kernel disposes.
 --
--- WHAT THIS IS.  The live engine (`interactive/MathMachine.hs`, its memory in
+-- WHAT THIS IS.  The live engine (`interactive/MathMachine.hs` (absent from this repository), its memory in
 -- `interactive/library.terms`) discovers true equations over ℕ by enumeration
 -- and composition, tagging each with its prama (anumna) and its naya
 -- (trace replay, or induction).  Its own instruments name what it cannot

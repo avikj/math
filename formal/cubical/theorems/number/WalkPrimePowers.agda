@@ -1,6 +1,6 @@
 {-# OPTIONS --cubical --safe --no-import-sorts #-}
 
--- WALK_FORCING_LAW.md STATEMENT (2), composed:
+-- WALK_FORCING_LAW.md (absent from this repository) STATEMENT (2), composed:
 --
 --     the walk installs exactly the prime powers, in increasing order.
 --
@@ -144,7 +144,7 @@ prime-powers-are-installed q ipp@(p , a , pp , 0<a , pa≡q) =
 --   its image contains every prime power              (prime-powers-are-installed)
 --
 -- i.e. `install` is the increasing enumeration of the prime powers, and
--- it is the walk's own execution.  Statement (2) of WALK_FORCING_LAW.md,
+-- it is the walk's own execution.  Statement (2) of WALK_FORCING_LAW.md (absent from this repository),
 -- as a term.
 --
 -- It also COMPUTES, through WalkBridge's `next-1 .. next-5`: the stream

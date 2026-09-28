@@ -17,7 +17,7 @@
 -- That is precisely the shape this repository's checked core already
 -- formalises (MyhillNerodeMinimalMachine, 
 -- ExcursionReturn §2): two states agreeing on all admitted observations
--- but separated by the task.  runtime/CRYSTAL.md §3.2 calls such a pair a
+-- but separated by the task.  runtime/CRYSTAL.md (absent from this repository) §3.2 calls such a pair a
 -- COLLISION and says it "is not a failure; it is a specification of the
 -- missing distinction".  This module supplies the arithmetic instance.
 --
@@ -151,7 +151,7 @@ sep-5-35 = record
   }
 
 -- The prime-SQUARE case, which is this repository's own obstruction:
--- `collab/FAILURES.md` F30 / Theorem T5 records that under residue-
+-- `collab/FAILURES.md` (absent from this repository) F30 / Theorem T5 records that under residue-
 -- divisibility certificates every omitted prime q is falsified by q².
 -- Delta 22's semiprime rs and the corpus's q² are the same separator
 -- shape with s = r, and putting them side by side is the point: F30 is

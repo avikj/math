@@ -45,10 +45,10 @@
 -- ====================================================================
 -- THE OBJECT: HOW BIG IS A MEMORY, AND THE TWO ANSWERS.
 --
--- `notes/CONTEXTUAL_QUANTUM_DIMENSION.md` (codex-quantum-process,
+-- `notes/CONTEXTUAL_QUANTUM_DIMENSION.md` (absent from this repository) (codex-quantum-process,
 -- 2026-08-12), broadcast as
 -- `collab/messages/0313-codex-quantum-process-contextual-quantum-
--- dimension-result.md`, prices one finite process two ways:
+-- dimension-result.md` (absent from this repository), prices one finite process two ways:
 --
 --   k = cdim  -- the minimum number of contexts whose joint response
 --                separates every class.  How many exclusions pin a
@@ -103,8 +103,8 @@ open import Cubical.Relation.Nullary using (¬_)
 -- A FAMILY is a set of admitted contexts, each an observable on the
 -- carrier with its own observation type.  This is the corpus's existing
 -- object: a probe is a total response map (`machinery/
--- active_observer_design.py`), a channel's content is its fibre
--- partition (`runtime/render/channel.py`), and a standpoint is an
+-- active_observer_design.py` (absent from this repository)), a channel's content is its fibre
+-- partition (`runtime/render/channel.py` (absent from this repository)), and a standpoint is an
 -- observable `q : X → Y` (`NaturalMachine.ExclusionRecoversGround-
 -- AtAPrice`).  The one addition is that the INDEX is part of the data,
 -- because the whole question below is whether the size of the index is
@@ -345,7 +345,7 @@ p₀-par-sep x y u =
 -- HOW NARROW.  This is a verdict about ONE question about ONE object,
 -- and it is not a ranking of two men or two positions.  Dignga's
 -- number is real and it is not memory: `notes/CONTEXTUAL_QUANTUM_-
--- DIMENSION.md` already priced it as interrogation cost, and the three
+-- DIMENSION.md` (absent from this repository) already priced it as interrogation cost, and the three
 -- families above are three interrogation designs for one memory, which
 -- is a fact about designs and not a defect in any of them.  A term
 -- fixed by its contrast is a perfectly good term; it is just not a
@@ -359,7 +359,7 @@ p₀-par-sep x y u =
 -- the trade `Q ≤ m^k` prices and which no theorem above bounds from
 -- below for a GIVEN family; and Dignga's own scope analysis of "the
 -- other" (synonyms, sub- and superordinates), which
--- `notes/EXCLUSION_IS_NOT_AN_OPERATOR.md` §3 also records as OPEN.
+-- `notes/EXCLUSION_IS_NOT_AN_OPERATOR.md` (absent from this repository) §3 also records as OPEN.
 ------------------------------------------------------------------------
 
 -- The two answers, side by side, as one checked object.

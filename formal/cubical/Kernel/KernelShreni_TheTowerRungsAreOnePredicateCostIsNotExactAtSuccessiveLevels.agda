@@ -35,8 +35,16 @@
 --       rung n+1's failure visible.
 --
 -- Two consecutive
--- rungs are the SAME predicate at successive degrees, so the tower's
--- step is one type re-instantiated, not a sequence of coincidences.
+-- rungs are instances of the SAME predicate at successive degrees.
+--
+-- WHAT THIS DOES NOT SHOW.  `NotExact ∂ V` is fully generic — every
+-- non-factorisation statement is an instance of it for a suitable ∂ — so
+-- two instances do not by themselves make a tower.  A Postnikov step would
+-- need a map from the rung-n data to the rung-(n+1) data (a k-invariant)
+-- under which the second failure is the image of the first; that map is
+-- not constructed here, and the coning reading of KernelDhara it leans on
+-- is withdrawn there.  The two checked facts stand; the tower is a
+-- proposal, not yet a theorem.
 ------------------------------------------------------------------------
 
 module Kernel.KernelShreni_TheTowerRungsAreOnePredicateCostIsNotExactAtSuccessiveLevels where

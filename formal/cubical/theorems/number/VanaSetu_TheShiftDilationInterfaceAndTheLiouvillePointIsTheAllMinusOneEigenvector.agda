@@ -8,28 +8,28 @@
 --
 --   §1  THE SHIFT–DILATION INTERFACE.  On sequences X = ℕ → A with the
 --       shift (σ x)(n) = x(n+1) and the dilations (D_m x)(n) = x(m·n),
---       FOREST.md §1 states the exact commutation that governs the whole
+--       FOREST.md (absent from this repository) §1 states the exact commutation that governs the whole
 --       program — the multiplicative dilations do NOT preserve the
 --       additive shift, and the exact defect is:
 --
 --           σ ∘ D_m  ≡  D_m ∘ σ^m                    (checked here)
 --
 --       i.e. shifting a dilated sequence by one is dilating a sequence
---       shifted by m.  This is the σ D_m = D_m σ^m of FOREST.md/DIRECT.md,
+--       shifted by m.  This is the σ D_m = D_m σ^m of FOREST.md (absent from this repository)/DIRECT.md (absent from this repository),
 --       and it is the reason M (the multiplicative eigenvectors) is not
 --       shift-invariant — the interface the whole Liouville question
 --       turns on.
 --
 --   §2  THE LIOUVILLE POINT IS AN EIGENVECTOR OF EVERY DILATION.  For a
 --       completely multiplicative sign sequence (x(m·n) = x(m)·x(n),
---       here over the sign group (Bool, xor) with -1 = true), FOREST.md's
+--       here over the sign group (Bool, xor) with -1 = true), FOREST.md (absent from this repository)'s
 --       characterisation D_p λ = -λ becomes, exactly: if x(m) = -1 then
 --       D_m x = -x pointwise.  The Liouville function is the point with
 --       x(p) = -1 at every prime; §2 proves the eigen-relation from
 --       complete multiplicativity alone, at ANY m with x(m) = -1, no
 --       primality needed for the algebra.
 --
--- TERM.  The forest and its objects are the corpus's (FOREST.md).
+-- TERM.  The forest and its objects are the corpus's (FOREST.md (absent from this repository)).
 -- Signs live in
 -- (Bool, _xor_): false = +1, true = -1, so multiplication of signs is
 -- xor and "negate" is `not`.  Exact, finite, --safe.

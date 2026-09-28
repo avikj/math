@@ -455,7 +455,7 @@ _ : count 5 ≡ 32
 _ = refl
 
 -- Virahka's list, and the duration-12 count that
--- notes/PROSODIC_RECURRENCE_LEARNER.md states in prose (233).
+-- notes/PROSODIC_RECURRENCE_LEARNER.md (absent from this repository) states in prose (233).
 _ : matra 6 ≡ 13
 _ = refl
 

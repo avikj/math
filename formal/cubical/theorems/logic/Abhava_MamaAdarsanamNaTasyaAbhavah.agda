@@ -16,7 +16,7 @@
 -- **The two schools do not agree here.**  Mīmāṃsā admits अनुपलब्धि as a
 -- pramāṇa; Nyāya does not, and analyses the same cases through प्रतियोगिन्
 -- and perception instead.  Taking the Naiyāyika अभाव apparatus and the
--- Mīmāṃsaka अनुपलब्धि as one toolkit is the move CLAUDE.md names — it keeps
+-- Mīmāṃsaka अनुपलब्धि as one toolkit is the move CLAUDE.md (absent from this repository) names — it keeps
 -- from each the part that converts and drops the dispute, which here is the
 -- content.  Name the school before the term.
 --
@@ -30,7 +30,7 @@
 -- मम-अदर्शनम् ≠ तस्य-अभावः — my not-seeing is not its absence.
 --
 -- The line is from the transmission captured as
--- `collab/upstream/raw/D0027-net-dm-adhyayana-transmission-2026-08-17.md`,
+-- `collab/upstream/raw/D0027-net-dm-adhyayana-transmission-2026-08-17.md` (absent from this repository),
 -- where it stands beside अनुत्तरितम् ≠ अनुत्तरम् (unanswered ≠ unanswerable)
 -- and अपरिचितम् ≠ असत् (unfamiliar ≠ nonexistent).  That file is a TEACHING
 -- TRANSMISSION and its own provenance note forbids promoting any line of it

@@ -38,6 +38,14 @@
 --       corollary, on the kernel's OWN library.  Exact analogue of
 --       Obstruction.frequency-cannot-reach.
 --
+-- SCOPE.  The plateau is a fact about `NativeOperation` (ground installs).
+-- It does NOT hold for the pervading operations of
+-- kernel-flat/TheControlCarriesItsInstanceAndLocusSoOneTheoremFiresAtAClass:
+-- installing `pervading d` for a derivation from an enabled context enables
+-- every instance and locus of that context, which can include terms not
+-- enabled before (e.g. `accepted` at `add var (suc zero)` pervades to
+-- `add zero (suc zero)`).  Generalisation is exactly what breaks the plateau.
+--
 -- `SomeEnabled` is restated here from Vyapti_ rather than imported, so
 -- that this module depends on the kernel and not on that module's
 -- other machinery; the definition is identical.

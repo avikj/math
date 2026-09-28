@@ -30,7 +30,7 @@
 --     what widening finds.  That step turns on the unequal-split certificate,
 --     which is what §३ below makes checkable.
 --
--- Three standpoints, one object.  `machinery/orderings_cubic.py` holds the
+-- Three standpoints, one object.  `machinery/orderings_cubic.py` (absent from this repository) holds the
 -- arithmetic exactly; a term is the form that survives the carrier, so the
 -- argument is put in the form that transports.
 --
@@ -126,7 +126,7 @@ private
 -- K = ℚ[x]/(x³ − 4x − 1), disc = 229 prime hence non-square hence Gal = S₃,
 -- so K is NOT Galois, Aut(K/ℚ) = 1, and 229 > 0 gives r₁ = 3.  The form
 -- ⟨1, −α⟩ is definite at two orderings and indefinite at the third —
--- decided by integer comparison in `machinery/orderings_cubic.py`, Sturm
+-- decided by integer comparison in `machinery/orderings_cubic.py` (absent from this repository), Sturm
 -- sequences over ℚ, no root ever approximated.
 --
 -- Here that arithmetic enters as DATA, not as a claim: the verdict vector is
@@ -137,7 +137,7 @@ private
 data त्रि-क्रमः : Type where          -- the three orderings σ₁ σ₂ σ₃
   σ₁ σ₂ σ₃ : त्रि-क्रमः
 
--- ⟨1, −α⟩ : definite, definite, indefinite  (orderings_cubic.py, exact)
+-- ⟨1, −α⟩ : definite, definite, indefinite  (orderings_cubic.py (absent from this repository), exact)
 निश्चितम् : त्रि-क्रमः → Bool
 निश्चितम् σ₁ = true
 निश्चितम् σ₂ = true
@@ -147,9 +147,12 @@ data त्रि-क्रमः : Type where          -- the three orderings �
 विषमः : निश्चितम् σ₁ ≡ निश्चितम् σ₃ → ⊥
 विषमः p = true≢false p
 
--- Hence no symmetry permutes the three orderings of this cubic.
--- This is `Aut(K/ℚ) = 1` arrived at from the verdict alone, without computing
--- the automorphism group — the direction weaver's note argued and did not check.
+-- Hence no transitive family of VERDICT-PRESERVING self-maps acts on the
+-- three orderings.  This is NOT `Aut(K/ℚ) = 1` from the verdict: a field
+-- automorphism moves α, so it need not preserve the verdict of ⟨1, −α⟩.
+-- The cyclic cubic x³ − 3x + 1 has Aut = C₃ transitive on its three
+-- orderings and can still give an unequal split for such a form.
+-- Aut(K/ℚ) = 1 here comes from disc = 229 being a non-square, not from §३.
 घने-न-समाचारः : सङ्क्रमकः निश्चितम् → ⊥
 घने-न-समाचारः = विषम-भेद-प्रमाणम् निश्चितम् σ₁ σ₃ विषमः
 

@@ -19,7 +19,7 @@
 -- WHAT THIS FILE IS.  The general construction, and that instantiation,
 -- with the three incidence identities proved to hold AT EVERY JEWEL.
 --
--- WHY IT IS SEPARATE FROM THE MACHINE.  `machine/MathMachine.hs`
+-- WHY IT IS SEPARATE FROM THE MACHINE.  `machine/MathMachine.hs` (absent from this repository)
 -- generates its own term algebra over {0,s,+,*,∸,max,le,gcd} and proves
 -- theorems inside it.  That is a closed toy universe: its jewels are
 -- things it invented, and no result in this repository can enter it.

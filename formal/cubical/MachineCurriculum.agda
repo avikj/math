@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- MachineCurriculum — the lemmas the engine asked for, answered.
 --
--- These are not chosen by a person.  `machine/Obstruction.hs` reads the
+-- These are not chosen by a person.  `machine/Obstruction.hs` (absent from this repository) reads the
 -- kernel's REFUSALS out of machine/machine.log, recovers the residual (the
 -- pair of terms at which Agda's computation stalled), triages out the
 -- refutable and the degenerate, and ranks what survives by how many

@@ -38,7 +38,7 @@
 --                     dropping one evaluator's evaluations keeps exactly
 --                     the others, and invents no genotype.
 --
--- WHICH ECOLOGY.md CLAIMS THIS COVERS
+-- WHICH ECOLOGY.md (absent from this repository) CLAIMS THIS COVERS
 --
 --   * "Genotype ≠ phenotype ... Performance must never contaminate
 --     identity" (§ "The one early design decision")            -> §2.
@@ -131,7 +131,7 @@ module Population
   where
 
   -- An observation: who was measured, where, by whom, and what came out.
-  -- ECOLOGY.md's 6-tuple with the model/task coordinates elided; the three
+  -- ECOLOGY.md (absent from this repository)'s 6-tuple with the model/task coordinates elided; the three
   -- coordinates that carry the argument are subject, evaluator, score.
   record Evaluation : Type₀ where
     constructor evaluation
@@ -475,7 +475,7 @@ module Population
 -- Therefore the transport rule with the Bridge and the agreement but
 -- without the invariance hypothesis is refutable, and no rule converting
 -- finite-environment agreement into score invariance can exist.  This is
--- ECOLOGY.md's "observation is not isomorphism ... Homometric examples are
+-- ECOLOGY.md (absent from this repository)'s "observation is not isomorphism ... Homometric examples are
 -- the reason, not an edge case", checked.
 ------------------------------------------------------------------------
 
@@ -555,7 +555,7 @@ agreement-is-not-invariance :
     → (e : ℕ) → σ h₀ e ≡ σ h₁ e )
 agreement-is-not-invariance rule = scores-differ (rule g₀ g₁ agree₀₁ 0)
 
--- The escape is real but environment-relative, exactly as ECOLOGY.md says.
+-- The escape is real but environment-relative, exactly as ECOLOGY.md (absent from this repository) says.
 -- A declared list that also fingerprints the hidden coordinate DOES tell
 -- this pair apart.  The claim is not that observation is useless; it is
 -- that which pairs a test list merges is a property of the list, never of

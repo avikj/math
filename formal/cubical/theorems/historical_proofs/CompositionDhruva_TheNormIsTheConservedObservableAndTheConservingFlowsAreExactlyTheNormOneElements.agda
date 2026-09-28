@@ -11,7 +11,7 @@
 --   (कुट्टकाध्याय).  Brahmagupta states the composition of two
 --   solutions of the वर्गप्रकृति x² − D y² = k, in both the समास
 --   ("sum") and अन्तर ("difference") forms.  The algebra itself is
---   checked in this repository in `Bhavana.agda` (`bhavana`,
+--   checked in this repository in `Bhavana.agda` (absent from this repository) (`bhavana`,
 --   `bhavanaMinus`), over an arbitrary commutative ring, and is
 --   imported here rather than restated.
 --
@@ -65,7 +65,7 @@
 --
 -- ────────────────────────────────────────────────────────────────────
 -- NO SOLVER.  Every step is a hand chain over the CommRing structure,
--- for the reason `Bhavana.agda` gives: `solve!` is a v0.9 spelling and
+-- for the reason `Bhavana.agda` (absent from this repository) gives: `solve!` is a v0.9 spelling and
 -- this container carries an older cubical, where "Not in scope: solve!"
 -- is container skew and not a mathematical verdict.
 ------------------------------------------------------------------------

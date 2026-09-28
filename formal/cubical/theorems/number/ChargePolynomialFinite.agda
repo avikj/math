@@ -10,7 +10,7 @@
 -- polynomial) and §5.9 (Chen-envelope prime projector).
 --
 -- WHY THIS ROUTE AND NOT A VOCABULARY EXTENSION.
--- `interactive/patches/S4-certificate-vocabulary.md` §3.4 finds that
+-- `interactive/patches/S4-certificate-vocabulary.md` (absent from this repository) §3.4 finds that
 -- Ω, ω, μ² are *not* a vocabulary problem for the
 -- Natural Machine.  Ω(n) = 1 + Ω(n / lpf(n)) has an argument that is not
 -- a subterm of the left-hand side, so LPO cannot orient it at all
@@ -18,7 +18,7 @@
 -- descent to follow, and adding `Omega` as a `Tm` constructor buys
 -- nothing because no `Step` could ever fire on it.  S4 §3.4's
 -- recommendation is option (ii): serve the D0026 §5 consumers by FINITE
--- INSTANCES checked by exhaustive `refl`, which `CLAUDE.md` rates as
+-- INSTANCES checked by exhaustive `refl`, which `CLAUDE.md` (absent from this repository) rates as
 -- proof outright ("a finite exhaustive verification ... produces
 -- mathematical objects, not measurements").  That is what is below.
 --
@@ -172,7 +172,7 @@
 --     a lens poset, with ω(N) counting the prime frontier.  Same lattice,
 --     different functional (minimal sufficient charts, not μ * t^Ω).  It
 --     is the closest prior art in the corpus and it does not overlap.
---   `interactive/patches/S4-certificate-vocabulary.md` §3.4 — the finding
+--   `interactive/patches/S4-certificate-vocabulary.md` (absent from this repository) §3.4 — the finding
 --     quoted above.
 --
 ------------------------------------------------------------------------

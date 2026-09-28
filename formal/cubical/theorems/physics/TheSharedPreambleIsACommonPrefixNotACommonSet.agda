@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- TheSharedPreambleIsACommonPrefixNotACommonSet
 --
--- `interactive/TraceLibrary.hs` computes the shared helper preamble of its
+-- `interactive/TraceLibrary.hs` (absent from this repository) computes the shared helper preamble of its
 -- trace records as `foldr1 lcp` — the longest common PREFIX.
 --
 -- Why the prefix and not the intersection is the right meet, checked:

@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- घात-भेद-भङ्ग — WHICH factor of समता-द्विधा the discrete log breaks.
 --
--- `Sesa_TheOneWayFunction…` proves the discrete log `powg` is a
+-- `Sesa_TheOneWayFunction…` (absent from this repository) proves the discrete log `powg` is a
 -- NON-equivalence (`घातः-न-तुल्यता : ¬ isEquiv powg`), via
 -- `GhataTantu.तन्तुः-द्विपदः : ¬ isContr (fiber powg εC)`.
 --

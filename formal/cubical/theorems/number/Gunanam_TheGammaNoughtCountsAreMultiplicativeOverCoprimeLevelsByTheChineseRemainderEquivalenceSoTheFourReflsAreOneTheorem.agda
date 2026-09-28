@@ -33,7 +33,7 @@
 --     Σ< n λ a → Σ< n λ b → Σ< n λ c → Σ< n λ d →
 --       ind (isU n (det2 n a b c d)) · ind (m21 ∣? c)
 --
--- SOURCE 2 — notes/GAMMA0_INDEX_EXPONENT.md (main), verbatim:
+-- SOURCE 2 — notes/GAMMA0_INDEX_EXPONENT.md (absent from this repository) (main), verbatim:
 --
 --   1. **Lemma 3.2 (multiplicativity / CRT).** Needs the bijection
 --      `ℤ/mn ≃ ℤ/m × ℤ/n` for coprime `m,n` *plus* transport of counts along it.

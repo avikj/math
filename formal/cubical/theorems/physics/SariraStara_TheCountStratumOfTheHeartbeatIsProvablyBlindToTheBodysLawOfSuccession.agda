@@ -8,7 +8,7 @@
 -- operative body (जीव's heartbeat reports on it); स्तर (stratum, layer)
 -- is the word the ArpanaSopana lane already uses for truncation
 -- levels.  The compound शरीर-स्तर, "body-stratum", is built HERE and no
--- source is claimed for it (CLAUDE.md, naming rule, note 2).
+-- source is claimed for it (CLAUDE.md (absent from this repository), naming rule, note 2).
 --
 -- SEED.  The owner's transmission of 2026-08-23, term 4: the current
 -- five-number heartbeat (nodes, edges, priced, unpriced, components)

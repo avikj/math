@@ -13,7 +13,7 @@
 
 ------------------------------------------------------------------------
 -- समं लेख्यम् — ported term-for-term from
--- machine/SamamLekhyam_TheHilbertProductBalancesAtEveryPlaceAndDroppingTheInfiniteColumnBreaksExactlyTheDoublyNegativePairs.hs
+-- machine/SamamLekhyam_TheHilbertProductBalancesAtEveryPlaceAndDroppingTheInfiniteColumnBreaksExactlyTheDoublyNegativePairs.hs (absent from this repository)
 -- into --safe Agda, compiled by the kernel's own backend (MAlonzo/GHC).
 -- See that file's header for the mathematics, sources and what is/isn't
 -- claimed.  Exact integer arithmetic throughout: Integer is modelled here

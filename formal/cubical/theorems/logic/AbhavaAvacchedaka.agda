@@ -11,12 +11,12 @@
 --   anuyogin    — the locus: where it is absent;
 --   avacchedaka — the LIMITOR: the mode/aspect under which the
 --                 counterpositive is taken.
--- The operative doctrine (ABHAVA.md §1): CHANGE THE LIMITOR AND YOU CHANGE
+-- The operative doctrine (ABHAVA.md (absent from this repository) §1): CHANGE THE LIMITOR AND YOU CHANGE
 -- THE ABSENCE.  "The absence of THIS pot" and "the absence of POTS AS SUCH"
 -- are different absences with different truth conditions.
 --
 -- THE POINT, per this repository's own naming audit
--- (INDIC_FORMAL_TRADITIONS_MAP.md §3.3, §6.3): the tradition's own
+-- (INDIC_FORMAL_TRADITIONS_MAP.md (absent from this repository) §3.3, §6.3): the tradition's own
 -- formalizers — Ganeri, Bhattacharyya, and Panday–Ghosh (Cubical Type
 -- Theoretic Navya-Nyāya) — establish that the avacchedaka delimiting a
 -- pratiyogin is a TYPE-LEVEL BINDER, not a free variable, which is exactly
@@ -103,7 +103,7 @@ limitor-load-bearing =
 
 ------------------------------------------------------------------------
 -- This record delimits the pratiyogin and leaves the anuyogin bare.
--- `INDIC_FORMAL_TRADITIONS_MAP.md` §3.3 names that as half of a gap: in
+-- `INDIC_FORMAL_TRADITIONS_MAP.md` (absent from this repository) §3.3 names that as half of a gap: in
 -- Navya-Nyya the pratiyogit and the anuyogit carry DISTINCT
 -- avacchedakas.  The second slot is added, and proved not derivable from
 -- the first, in

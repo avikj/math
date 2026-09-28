@@ -403,7 +403,7 @@ module षष्ट्येकम् where
 -- ७ · एकोननवत्यधिकनवदशशतम् — D = 1989, and the citation §7 of the header
 -- corrects, checked in the kernel rather than asserted.
 --
--- `machine/Nalanda.hs`'s turn cap is justified by "the pairs (P, Q) with
+-- `machine/Nalanda.hs` (absent from this repository)'s turn cap is justified by "the pairs (P, Q) with
 -- 0 < P < √D and 0 < Q < 2√D".  The cakravāla's own multiplier does not
 -- obey the first: for D = 1989 the reactor's turn 0 is (44, 1, −53) and
 -- the rule selects m = 62, with 62² = 3844 and D = 1989 — so m² is nearly

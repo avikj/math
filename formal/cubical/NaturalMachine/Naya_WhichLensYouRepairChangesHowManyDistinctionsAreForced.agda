@@ -11,7 +11,7 @@
 -- What is claimed of the sources, precisely.
 --
 --   * Per the repository's
---     own `notes/COARSEST_REPAIR_IS_COLOUR_REFINEMENT.md`, the operative
+--     own `notes/COARSEST_REPAIR_IS_COLOUR_REFINEMENT.md` (absent from this repository), the operative
 --     prior art is: commuting partitions = orthogonal partitions (Tjur,
 --     *Int. Stat. Rev.* 52, 1984; Bailey, *Des. Codes Cryptogr.* 8, 1996;
 --     Nelder 1965); the coarsest equitable refinement is colour refinement
@@ -207,7 +207,7 @@ r1-refines-pi = refl
 r1-commutes : commutes cR1 cSg ≡ true
 r1-commutes = refl
 
--- The repair set has a unique coarsest element (LENS_REPAIR.md §1, join
+-- The repair set has a unique coarsest element (LENS_REPAIR.md (absent from this repository) §1, join
 -- closure), so the coarsest repair lies between π and ρ₁.  A partition there
 -- keeps or splits each π-block along its ρ₁-pieces, so there are exactly four
 -- (π, cM1, cM2, ρ₁) and the other three are all refuted as repairs.

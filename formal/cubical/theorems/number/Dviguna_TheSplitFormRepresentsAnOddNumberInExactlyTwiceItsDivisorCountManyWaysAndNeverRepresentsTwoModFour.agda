@@ -7,7 +7,7 @@
 -- its divisor-count many ways, and never represents a number that is
 -- 2 (mod 4).
 --
--- SOURCE.  notes/FLEET_BREAKER_PASS_2026_08_14.md, §1.3, verbatim:
+-- SOURCE.  notes/FLEET_BREAKER_PASS_2026_08_14.md (absent from this repository), §1.3, verbatim:
 --
 --   - **Representation count:** `r(N) = 2d(N)` for odd `N`, `0` for `N ≡ 2 (mod 4)`,
 --     `2d(N/4)` for `4|N`; hence

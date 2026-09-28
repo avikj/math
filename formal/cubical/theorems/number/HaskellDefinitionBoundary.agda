@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- The Haskell explorer's defining equations are proof-search axioms.
 --
--- MathMachine.hs uses computation to falsify conjectures, then rewriting
+-- MathMachine.hs (absent from this repository) uses computation to falsify conjectures, then rewriting
 -- and induction to prove survivors.  That architecture only means anything
 -- if every defining rewrite agrees with the computation semantics.  Its old
 -- positive-positive gcd rule did not:
@@ -54,7 +54,7 @@ expectedDefinitionManifest =
   ∷ []
 
 ------------------------------------------------------------------------
--- Every primitive defining equation currently admitted by MathMachine.hs.
+-- Every primitive defining equation currently admitted by MathMachine.hs (absent from this repository).
 -- The Haskell firewall searches for counterexamples; these are universal
 -- terms checked by Agda.
 ------------------------------------------------------------------------
@@ -108,7 +108,7 @@ haskell-le-suc-zero x = refl
 haskell-le-suc : (x y : ℕ) → leFlag (suc x) (suc y) ≡ leFlag x y
 haskell-le-suc x y = refl
 
--- The only gcd rewrites admitted by MathMachine.hs.
+-- The only gcd rewrites admitted by MathMachine.hs (absent from this repository).
 
 haskell-gcd-zero-right : (x : ℕ) → gcd x zero ≡ x
 haskell-gcd-zero-right x = isGCD→gcd≡ (zeroGCD x)

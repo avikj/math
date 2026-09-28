@@ -30,7 +30,7 @@
 --      `isContrPartner` — given a witness the partner type is
 --      contractible: the partner is not a choice.
 --
--- TORSOR.md` Theorem 1 gets uniqueness from "over ℚ, HDK = D forces
+-- TORSOR.md` (absent from this repository) Theorem 1 gets uniqueness from "over ℚ, HDK = D forces
 -- K = D⁻¹H⁻¹D".  That step leaves ℤ, inverts D and inverts H.  §2 below
 -- reaches the same conclusion with NO division, NO inverse and NO
 -- passage to ℚ: it eliminates one unknown between two entries of the
@@ -44,7 +44,7 @@
 --                  (H,K)·(H',K') = (H·H', K'·K).  Pure associativity,
 --                  no hypotheses on D or on unimodularity at all.  This
 --                  is the precision that `collab/messages/0440-fleet-
---                  blind-r0033-audit-verdict.md` recorded in prose from
+--                  blind-r0033-audit-verdict.md` (absent from this repository) recorded in prose from
 --                  a Python audit ("the pair set is a group under the
 --                  GL×GLᵒᵖ law, not the componentwise product"); here it
 --                  is a checked term.

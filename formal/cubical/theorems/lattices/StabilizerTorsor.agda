@@ -1,9 +1,9 @@
 {-# OPTIONS --cubical --guardedness --safe --no-import-sorts #-}
 
 -- StabilizerTorsor: the checked core of R0027
--- (collab/discovery/claims/R0027-invariant-schema-envelope.md, eq (3) of
+-- (collab/discovery/claims/R0027-invariant-schema-envelope.md (absent from this repository), eq (3) of
 -- thread in collab/messages/0342 and corrected in
--- collab/messages/shilpin/smith_certificate_canonicality_correction.md).
+-- collab/messages/shilpin/smith_certificate_canonicality_correction.md (absent from this repository)).
 --
 -- For a group G acting on a set X and points x y : X, the transporter
 --

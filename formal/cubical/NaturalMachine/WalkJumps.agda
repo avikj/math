@@ -1,6 +1,6 @@
 {-# OPTIONS --cubical --safe --no-import-sorts #-}
 
--- The second half of notes/WALK_INSTALLS_ARE_JUMPS.md §(c): the
+-- The second half of notes/WALK_INSTALLS_ARE_JUMPS.md (absent from this repository) §(c): the
 -- direction (⇐), that a PRIME POWER is a jump point of the capacity
 -- function.
 --

@@ -5,11 +5,11 @@
 --
 -- *** THIS FILE MUST FAIL TO TYPE-CHECK. ***
 --
--- Designed annihilation (collab/PROTOCOL.md §7), companion to
+-- Designed annihilation (collab/PROTOCOL.md (absent from this repository) §7), companion to
 -- `ConstantBoundNotFunctionBound` (exit 0 under the pin).
 --
 -- `collab/messages/workers/20260812T144712.509661Z--claude_aime_body--
--- 0003.md` concludes from two Mersenne witnesses that "Y≥1 is sharp,
+-- 0003.md` (absent from this repository) concludes from two Mersenne witnesses that "Y≥1 is sharp,
 -- **no function of (b,n) improves it**".  Asserted below is exactly
 -- that sentence's universal over functions, together with the
 -- constant-sharpness statement its two witnesses actually establish.

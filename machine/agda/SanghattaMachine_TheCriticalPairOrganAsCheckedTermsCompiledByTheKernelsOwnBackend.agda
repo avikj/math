@@ -26,8 +26,18 @@
 --
 -- --safe means: every recursion the Haskell left unbounded (the parser,
 -- unification's worklist, matching, one rewrite step) is here bounded by
--- explicit fuel, structural on the fuel.  Fuel exhaustion is a defect the
--- differential test catches, not a silent wrong answer.
+-- explicit fuel, structural on the fuel.  STATED PLAINLY: at the type level
+-- fuel exhaustion is NOT distinguished from failure — `unify`, `matchT`,
+-- `step` and `parseT` return `nothing` in both cases, and `normal` returns
+-- whatever term it reached after 400 steps.  The fuel constants are only
+-- set large enough for library.terms; a three-outcome result (finished /
+-- failed / out of fuel) would make the distinction a term.
+--
+-- ORIENTATION IS BY SIZE (`size r ≥ size l` becomes r → l), which is not a
+-- reduction order: equal-size equations such as commutativity are oriented
+-- and can loop.  The critical-pair lemma needs termination, so the
+-- NON-JOINING count below is meaningful only where `normal` really reached
+-- normal forms; with a reduction order (LPO/KBO) it would be exact.
 ------------------------------------------------------------------------
 
 module SanghattaMachine_TheCriticalPairOrganAsCheckedTermsCompiledByTheKernelsOwnBackend where

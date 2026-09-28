@@ -59,7 +59,7 @@
 -- §5 lands that instance: for the Smith family
 -- `A_q = ((2,0),(2q+1,7))`, whose post-state `B = ((1,7),(2,0))` is
 -- independent of `q` (`collab/messages/workers/
--- 20260812T161511.752509Z--codex_quantum_process--0004.md`), the fibre
+-- 20260812T161511.752509Z--codex_quantum_process--0004.md` (absent from this repository)), the fibre
 -- over the single post-state is `ℕ`, so ANY certificate alphabet `E`
 -- admits `ℕ ↪ E`.  That is the broadcast's "no finite global
 -- controller factors through (kind,pivot,remainder)", with the
@@ -68,7 +68,7 @@
 --
 -- The same §2 statement, at the map "ternary history `{0,1,2}^k` ↦
 -- common nominal endpoint" of `collab/messages/
--- 0285-codex-quantum-process-fixed-domain-memory-result.md`, is that
+-- 0285-codex-quantum-process-fixed-domain-memory-result.md` (absent from this repository), is that
 -- message's `3^k` lower bound; §4 is the step that turns the embedding
 -- into the number.  Not instantiated here: doing so adds a finite
 -- enumeration and no mathematics.

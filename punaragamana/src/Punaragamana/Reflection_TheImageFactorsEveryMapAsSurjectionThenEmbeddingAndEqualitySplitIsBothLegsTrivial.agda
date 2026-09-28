@@ -5,11 +5,11 @@
 --
 -- प्रतिबिम्ब (pratibimba) — reflection, image.  The compound is CHOSEN
 -- here, descriptively; no source is claimed for it (the same standing as
--- `Carrier` and `SamataDvidha`'s own names).
+-- `Carrier` and `EqualitySplit`'s own names).
 ------------------------------------------------------------------------
 -- WHY THIS MODULE EXISTS.
 --
--- `SamataDvidha` proved, fibrewise, that being an equivalence is a
+-- `EqualitySplit` proved, fibrewise, that being an equivalence is a
 -- PRODUCT of two independent obligations:
 --
 --     ((b : B) → isContr (शेष f b))  ≃  भेदः f  ×  छादनम् f
@@ -29,7 +29,7 @@
 --
 --   द्वितीय-चरण is an equivalence  ⟺  f is surjective  (isSurjection f)
 --   प्रथम-चरण  is an equivalence  ⟺  f is an embedding  (भेदः f, up to
---                                    `SamataDvidha.भेदः→embedding`)
+--                                    `EqualitySplit.भेदः→embedding`)
 --
 -- and both together are exactly `isEquiv≃isEmbedding×isSurjection`
 -- (`Cubical.Functions.Surjection`), which is `समता≃भेद×छादन` composed with
@@ -37,8 +37,8 @@
 -- COINCIDE precisely when भेदः f holds — i.e. exactly when the fibres are
 -- already propositions, truncation is idempotent (`propTruncIdempotent≃`)
 -- and "merely inhabited" and "inhabited" are the same obligation.  So
--- SamataDvidha's per-point product and Image's map factorisation are the
--- SAME theorem, read at two different granularities: SamataDvidha reads it
+-- EqualitySplit's per-point product and Image's map factorisation are the
+-- SAME theorem, read at two different granularities: EqualitySplit reads it
 -- fibre-by-fibre with the UNtruncated छादनम्; the factorisation reads it as
 -- one map with the TRUNCATED isSurjection, and §3 is exactly the bridge
 -- between the two granularities.
@@ -57,10 +57,10 @@
 --   1.  the missing converse `isEquiv (द्वितीय-चरण f) ≃ isSurjection f`
 --       (the library states the first-leg case; not the second-leg case);
 --   2.  the bridge छादनम् f ≃ isSurjection f UNDER भेदः f — the exact
---       identification between SamataDvidha's untruncated obligation and
+--       identification between EqualitySplit's untruncated obligation and
 --       Image's truncated one;
 --   3.  `प्रथम-चरण-equiv≃भेदः`, restating the library's embedding-onto-image
---       facts through भेदः so they compose with SamataDvidha directly,
+--       facts through भेदः so they compose with EqualitySplit directly,
 --       exhibiting `प्रतिबिम्ब`'s factorisation and `समता-द्विधा`'s product
 --       as the same theorem at two granularities.
 ------------------------------------------------------------------------
@@ -164,7 +164,7 @@ module _ {A B : Type ℓ} (f : A → B) where
   ------------------------------------------------------------------------
   -- 5.  प्रथम-चरण IS an equivalence  ⟺  f IS an embedding.
   --     (Library's `isEquivEmbeddingOntoImage` / `isEmbeddingFromIsEquivToImage`,
-  --     restated through भेदः so it composes with SamataDvidha directly.)
+  --     restated through भेदः so it composes with EqualitySplit directly.)
   ------------------------------------------------------------------------
 
   प्रथम-चरण-equiv≃भेदः : isEquiv प्रथम-चरण ≃ भेदः f

@@ -4,10 +4,10 @@
 -- S05AsiddhaNewton
 --
 -- Companion prose:
--- collab/swarm/2026-08-14/swarm-0814-05-asiddha-newton.md
+-- collab/swarm/2026-08-14/swarm-0814-05-asiddha-newton.md (absent from this repository)
 --
 -- THE OBJECT.  The Newton–Hensel doubling map of the broadcast
--- collab/messages/workers/20260812T090836.491254Z--codex_arithmetic_life--0001.md
+-- collab/messages/workers/20260812T090836.491254Z--codex_arithmetic_life--0001.md (absent from this repository)
 --
 --     N a x = x · (2 - a · x)
 --

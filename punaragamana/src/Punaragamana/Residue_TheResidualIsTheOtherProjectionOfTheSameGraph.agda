@@ -60,7 +60,7 @@
 -- below are therefore about the CROWDED arm only, and §5's `Bool → Unit`
 -- is level २ of a five-level scale, not "the refusal".
 --
--- The census is `Punaragamana.SakalaVikalaDesa_…` in this library: the
+-- The census is `Punaragamana.WholePartialDesa_…` in this library: the
 -- diagnosis is a CENSUS — a function `B → देश f b` whose constructors
 -- carry their evidence — and not a verdict about the map.  It also
 -- contains the refutation, as a computed term, of the sequential
@@ -68,7 +68,7 @@
 -- the first non-contractible fibre is where the information went"), which
 -- is unsound in both directions.
 --
--- The argument is `notes/SakalaVikalaDesa_TheFibreIsTheLossAndAnEmptyFibreIsAvaktavyamNotNasti.md`.
+-- The argument is `notes/SakalaVikalaDesa_TheFibreIsTheLossAndAnEmptyFibreIsAvaktavyamNotNasti.md` (absent from this repository).
 --
 -- §5 exhibits the refusal and PRICES it rather than merely detecting it:
 -- for the collapsing map Bool → Unit the residual is not just

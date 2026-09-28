@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- ObligationMinCut
 --
--- Executes OBLIGATION.md §7 (the min-cut extraction specified there)
+-- Executes OBLIGATION.md (absent from this repository) §7 (the min-cut extraction specified there)
 -- for the tractable self-application subgraph: the 1-neighbourhood
 -- own model of its dependency structure applied to the note that defines it.
 --
@@ -36,8 +36,8 @@ open import Cubical.Data.Sum            using (_⊎_; inl; inr)
 ------------------------------------------------------------------------
 -- §1  The extracted network.
 --
--- Vertices.  s⋆ = super-source, t⋆ = super-sink; O = OBLIGATION.md,
--- H = THRESHOLD_GENERATION_DICHOTOMY.md, R = RESEARCH_SYSTEM.md.
+-- Vertices.  s⋆ = super-source, t⋆ = super-sink; O = OBLIGATION.md (absent from this repository),
+-- H = THRESHOLD_GENERATION_DICHOTOMY.md (absent from this repository), R = RESEARCH_SYSTEM.md (absent from this repository).
 -- O and H are the open-obligation packets (mechanical openness grep hits);
 -- R is a conduit source but carries no open obligation, so no s⋆→R edge.
 -- Target set T = { O }: the note whose soundness §7 is certifying.

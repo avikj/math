@@ -22,7 +22,7 @@
 --       unreceipted compression this corpus forbids (the detour's
 --       receipt: consumed twice, once forward, once back).
 --
--- The path language mirrors the kernel's proof forest (kernel/egraph.py):
+-- The path language mirrors the kernel's proof forest (kernel/egraph.py (absent from this repository)):
 -- axiom leaves, refl, symmetry, transitivity, congruence context.
 ------------------------------------------------------------------------
 

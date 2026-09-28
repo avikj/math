@@ -6,7 +6,7 @@
 -- A Pareto stratification EXISTS constructively for an arbitrary
 -- archive: the decision on `≼` exists, and with it the stratum is not
 -- merely a specification but a computed list.  That matters for
--- `DARWIN_GODEL_MATH.md` §5.2 in a way
+-- `DARWIN_GODEL_MATH.md` (absent from this repository) §5.2 in a way
 -- `AParetoFitnessHasNoBestAndEveryScalarisationAddsADecision` could not
 -- say: §5.2's controller "first selects a Pareto stratum S" and samples
 -- inside it, and a controller cannot select what it cannot compute.
@@ -18,7 +18,7 @@
 --
 --   dec≤ / dec≼             the product order on fitness vectors is
 --                           decidable, from `splitℕ-≤` alone
---   decStrictlyDominates    hence so is strict domination
+--   decStrictlyDominatedBy    hence so is strict domination
 --   decIsParetoMaximal      hence so is Pareto-maximality against a
 --                           finite archive, reusing `decAny`
 --   filterDec               the stratum, as a list
@@ -83,23 +83,25 @@ decNeg (no ¬b) = yes ¬b
 -- 2.  Hence Pareto-maximality against a finite archive is decidable
 ------------------------------------------------------------------------
 
-StrictlyDominates : List ℕ → List ℕ → Type
-StrictlyDominates v w = (v ≼ w) × (¬ (w ≼ v))
+-- `StrictlyDominatedBy v w`: w beats v (v ≼ w, and not the reverse).  The
+-- name was `StrictlyDominates`, which read the arguments backwards.
+StrictlyDominatedBy : List ℕ → List ℕ → Type
+StrictlyDominatedBy v w = (v ≼ w) × (¬ (w ≼ v))
 
-decStrictlyDominates : (v w : List ℕ) → Dec (StrictlyDominates v w)
-decStrictlyDominates v w with dec≼ v w
+decStrictlyDominatedBy : (v w : List ℕ) → Dec (StrictlyDominatedBy v w)
+decStrictlyDominatedBy v w with dec≼ v w
 ... | no ¬p = no (λ r → ¬p (fst r))
 ... | yes p with decNeg (dec≼ w v)
 ...   | yes ¬q = yes (p , ¬q)
 ...   | no ¬¬q = no (λ r → ¬¬q (snd r))
 
 IsParetoMaximal : List ℕ → List (List ℕ) → Type
-IsParetoMaximal v xs = ¬ Any (StrictlyDominates v) xs
+IsParetoMaximal v xs = ¬ Any (StrictlyDominatedBy v) xs
 
 decIsParetoMaximal :
   (v : List ℕ) (xs : List (List ℕ)) → Dec (IsParetoMaximal v xs)
 decIsParetoMaximal v xs =
-  decNeg (decAny (StrictlyDominates v) (decStrictlyDominates v) xs)
+  decNeg (decAny (StrictlyDominatedBy v) (decStrictlyDominatedBy v) xs)
 
 ------------------------------------------------------------------------
 -- 3.  The stratum, as a computed list
@@ -172,6 +174,6 @@ stratumKeepsEveryMaximal xs v =
 --   stratumIsNonEmpty    hence `stratum (x ∷ xs)` has a member
 --
 -- The decision that makes the induction constructive is
--- `decStrictlyDominates` above; without it this would need excluded
+-- `decStrictlyDominatedBy` above; without it this would need excluded
 -- middle, which is the point of having proved decidability first.
 ------------------------------------------------------------------------

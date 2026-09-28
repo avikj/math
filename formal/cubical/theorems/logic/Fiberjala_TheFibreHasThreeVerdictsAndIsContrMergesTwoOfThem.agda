@@ -204,7 +204,7 @@ isEquiv.equiv-proof (सकलादेश-प्रत्यागमः f g) =
 -- ७ · शेषः — what a census still cannot say, and it is not on this axis.
 --
 -- रिक्तम् is "the question was posed and the answer is nowhere".  It is NOT
--- "no question was posed" — `interactive/Obstruction.hs` carries that as a
+-- "no question was posed" — `interactive/Obstruction.hs` (absent from this repository) carries that as a
 -- separate constructor (`Sthana = Position Bhanga | ADharmin`, "x != y has
 -- no subject, so no bhanga"), and `Saptabhangi.समावेश-भेदः` puts it in the
 -- types as the `⊎ Unit`: सप्तभङ्गी plus one void profile, अ-प्रतिपादनम्.

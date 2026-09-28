@@ -56,7 +56,7 @@
 -- §6 discharges the side condition,
 -- which is that a SINGLE n making `maximal` hold for all q ≤ Q exists:
 -- `divFact` proves q ∣ Q! for every 1 ≤ q ≤ Q, so the modulus P_Q of
--- METHOD.md §1(i) is inhabited and the theorem is not vacuous.
+-- METHOD.md (absent from this repository) §1(i) is inhabited and the theorem is not vacuous.
 --
 -- NON-VACUITY CONTROLS: §7, all `refl` over ℕ, plus a control showing
 -- the `maximal` hypothesis of §5 is load-bearing (dropping it makes the
@@ -149,7 +149,7 @@ module Weighted
     corner : R
     corner = (A ⊗ A) ⊗ w 2
 
-    -- S(Q) of METHOD.md §1, truncated: Σ_{2≤m≤K'+1} f(m) w(1+m)
+    -- S(Q) of METHOD.md (absent from this repository) §1, truncated: Σ_{2≤m≤K'+1} f(m) w(1+m)
     S : ℕ → R
     S K' = sumFrom 2 K' (λ m → f m ⊗ w (1 + m))
 
@@ -221,7 +221,7 @@ module Weighted
 
 ------------------------------------------------------------------------------
 -- §6.  The modulus exists.  `maximal` above is asked of every q ≤ Q at ONE
--- argument n; METHOD.md §1(i) attains it at n ≡ 0 mod P_Q.  Such an n
+-- argument n; METHOD.md (absent from this repository) §1(i) attains it at n ≡ 0 mod P_Q.  Such an n
 -- exists: Q! is divisible by every 1 ≤ q ≤ Q.  Proved, not assumed.
 ------------------------------------------------------------------------------
 

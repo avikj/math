@@ -12,7 +12,7 @@
 -- so the deletion min-max FAILS, and it fails at the smallest place a
 -- conjunctive premise can be put.
 --
--- WHAT THIS IS ABOUT.  `notes/REVISION_DERIVATION_HYPERGRAPH.md` proves
+-- WHAT THIS IS ABOUT.  `notes/REVISION_DERIVATION_HYPERGRAPH.md` (absent from this repository) proves
 -- the exact deletion law for a finite AND/OR derivation hypergraph:
 --
 --     v ∈ Cl_D(I)   ⟺   some minimal support S of v has S ∩ D = ∅,
@@ -34,23 +34,23 @@
 -- independent supports, and the question of what survives when supports
 -- are removed — is samplava's object, and the module is named for it.
 --
--- PRIOR ART, searched before writing (per CLAUDE.md), all on disk:
---   * `notes/HISTORY_DIGEST.md` attributes the deletion law itself to de
+-- PRIOR ART, searched before writing (per CLAUDE.md (absent from this repository)), all on disk:
+--   * `notes/HISTORY_DIGEST.md` (absent from this repository) attributes the deletion law itself to de
 --     Kleer's ATMS label semantics (1986), "essentially verbatim".  The
 --     law is used, and independently
 --     re-verified on this instance (`deletion-law`).
---   * `notes/PROOF_SUPPORT_COMPLEMENTARITY.md` proves the retention-side
+--   * `notes/PROOF_SUPPORT_COMPLEMENTARITY.md` (absent from this repository) proves the retention-side
 --     observable q_v is submodular iff every minimal support is a
 --     singleton.  DIFFERENT statement, and §5 of the companion message
 --     shows the two failures are independent: on the unary fragment
 --     q_v is already non-submodular while the deletion min-max is still
 --     integral.
---   * `notes/OBLIGATION_S7_MINCUT.md` + `formal/cubical/ObligationMinCut.agda`
+--   * `notes/OBLIGATION_S7_MINCUT.md` (absent from this repository) + `formal/cubical/ObligationMinCut.agda`
 --     compute an audit burden as an exact max-flow/min-cut in a
 --     DIGRAPH.  That is the unary fragment, where the min-max holds.
 --
 -- METHOD.  Everything below is closed Boolean/ℕ computation over the 64
--- deletion sets, discharged by `refl`.  CLAUDE.md: "a finite exhaustive
+-- deletion sets, discharged by `refl`.  CLAUDE.md (absent from this repository): "a finite exhaustive
 -- verification … produces mathematical objects, not measurements."  No
 -- floating point, no fitting, no sampling.
 ------------------------------------------------------------------------

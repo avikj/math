@@ -115,7 +115,7 @@ branching f e k n p q = ¬-<-zero (subst (0 <_) q (expand-positive f e k n p))
 --       What decides it is `Contracting f`, this module's own
 --       hypothesis.
 --
--- Compare `machine/QuestionMachine.hs`, whose `flowVerdict` branches
+-- Compare `machine/QuestionMachine.hs` (absent from this repository), whose `flowVerdict` branches
 -- on 64 iterates with no hypothesis on f, and whose header describes the
 -- file as a replay of proved statements.  That one function is not; the
 -- gap is exactly the hypothesis this module requires and a run cannot

@@ -69,7 +69,7 @@ open import Cubical.Data.Bool using (Bool ; true ; false ; not ; false≢true)
 open import Cubical.Relation.Nullary using (¬_)
 
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (StrictlyDominates)
+  using (StrictlyDominatedBy)
 open import ANonEmptyArchiveHasANonEmptyStratum
   using (⊏-irrefl ; ⊏-trans)
 open import MigrationNeedsALawAndTheLawIsNotFree
@@ -92,14 +92,14 @@ module _ {Sys B O Prov : Type}
   LCertified d e =
     Σ[ mg ∈ (M d → M e) ]
         (sem e ≡ sem d)
-      × (StrictlyDominates (cost d) (cost e))
+      × (StrictlyDominatedBy (cost d) (cost e))
       × (Lawful M obs d e mg)
       × (List Prov)
 
   mig : {d e : Sys} → LCertified d e → (M d → M e)
   mig c = fst c
 
-  improves : {d e : Sys} → LCertified d e → StrictlyDominates (cost d) (cost e)
+  improves : {d e : Sys} → LCertified d e → StrictlyDominatedBy (cost d) (cost e)
   improves c = fst (snd (snd c))
 
   law : {d e : Sys} (c : LCertified d e) → Lawful M obs d e (mig c)
@@ -138,7 +138,7 @@ module _ {Sys B O Prov : Type}
   chainTransportsEveryInvariant g c m = cong g (chainMovesNoObservation c m)
 
   chainImproves :
-    {d e : Sys} (c : Chain d e) → StrictlyDominates (cost d) (cost e)
+    {d e : Sys} (c : Chain d e) → StrictlyDominatedBy (cost d) (cost e)
   chainImproves c = improves (chainCertified c)
 
   noSelfChain : (d : Sys) → ¬ Chain d d
@@ -166,7 +166,7 @@ stateB _ = Bool
 obsB : (d : Bool) → stateB d → Bool
 obsB _ b = b
 
-costImproves : StrictlyDominates (costB true) (costB false)
+costImproves : StrictlyDominatedBy (costB true) (costB false)
 costImproves = (zero-≤ , tt) , λ z → ¬-<-zero (fst z)
 
 anUnlawfulFourComponentCertificate : Certified {Prov = ℕ} semB costB stateB true false

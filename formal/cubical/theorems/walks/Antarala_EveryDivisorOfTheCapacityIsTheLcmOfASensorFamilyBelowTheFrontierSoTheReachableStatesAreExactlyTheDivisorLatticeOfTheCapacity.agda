@@ -9,7 +9,7 @@
 -- of the lattice between its bottom 1 and its top cap(k), which the
 -- source note's table names "interior".
 --
--- SOURCE.  notes/WALK_STATE_IS_ITS_LCM.md ("The walk's Nerode state is
+-- SOURCE.  notes/WALK_STATE_IS_ITS_LCM.md (absent from this repository) ("The walk's Nerode state is
 -- its lcm, and its state space is a divisor lattice"), §2:
 --
 --   "**Theorem.** The set of lcms achievable by sensor families all of

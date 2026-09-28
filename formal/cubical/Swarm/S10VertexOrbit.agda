@@ -5,7 +5,7 @@
 --
 -- THE FEASIBLE VERTEX OF A ROOT CAGE IS ESSENTIALLY UNIQUE.
 --
--- Context.  `notes/SHARP_CAGE_DOES_NOT_MAKE_DEGREE_TEN_TRACTABLE.md` and
+-- Context.  `notes/SHARP_CAGE_DOES_NOT_MAKE_DEGREE_TEN_TRACTABLE.md` (absent from this repository) and
 -- `natural_machine_cpu_loop_rust/cage.rs` bound the Vieta coefficients of a
 -- totally nonreal degree-2m divisor with unit constant term by maximizing
 -- each elementary symmetric function e_k over the LOG-POLYTOPE

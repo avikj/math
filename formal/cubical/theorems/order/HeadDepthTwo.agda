@@ -53,7 +53,7 @@
 --
 -- Kernel certificates: all odd b < 256, all 1 ≤ a ≤ 8 (1024 pairs),
 -- checked terms by refl — finite exhaustive verification is proof
--- (CLAUDE.md).  Style and helpers mirror HeadDepthMerge.agda; the
+-- (CLAUDE.md (absent from this repository)).  Style and helpers mirror HeadDepthMerge.agda; the
 -- general statements are the one-liners above.
 ------------------------------------------------------------------------
 

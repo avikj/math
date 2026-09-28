@@ -11,7 +11,7 @@
 --
 --     अलोपः : (n : ℕ) (v : विवेक) → शेषः (क्रम n (बुन v)) ≡ शेषः v
 --
--- `interactive/MathMachine.hs` makes a claim of the same shape and has no
+-- `interactive/MathMachine.hs` (absent from this repository) makes a claim of the same shape and has no
 -- such theorem.  Its round installs proved equations as rewrite rules and
 -- re-normalises its whole term space with them; its entire argument for
 -- why that is safe is per-rule — each rule passed a kernel.  Nothing says

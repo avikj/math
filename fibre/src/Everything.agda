@@ -3,7 +3,7 @@
 -- Punarāgamana · Everything
 --
 -- The single entry point: typechecking this module typechecks the library.
--- check.sh drives exactly this file, so a module that is not reachable from
+-- check.sh (absent from this repository) drives exactly this file, so a module that is not reachable from
 -- here is verified by nothing.
 
 module Everything where
@@ -28,7 +28,7 @@ open import Fibre.Avaccheda_TheTruncationsFibreIsTheWholeSourceSoTheSeamConjectu
 
 -- …and the census's own collapse, one level up.  A fourth outcome exists
 -- that `देश` structurally cannot express — the question with no subject —
--- and `interactive/Obstruction.hs` has carried it in a type all along while
+-- and `interactive/Obstruction.hs` (absent from this repository) has carried it in a type all along while
 -- the Agda lane has never had it.  Silence is not denial.
 open import Fibre.Adharmin_TheUnposedQuestionIsNotAnEmptyFibreAndTheCensusCannotSayIt
 
@@ -125,3 +125,11 @@ open import Fibre.CorpusInteraction
 
 -- Mechanical bridge from the active Agda namespace to one raw checked value.
 open import Fibre.CorpusReflection
+
+-- The corpus-namespace utilities and the universal-family module: checked
+-- on their own and now reachable from here, so this file's green covers
+-- them too.
+open import Fibre.CorpusNorm
+open import Fibre.CorpusRefs
+open import Fibre.CorpusLoci
+open import Fibre.Universal_EveryFamilyIsAPullbackOfTheUniverseAndTheTowerFlattensToOne

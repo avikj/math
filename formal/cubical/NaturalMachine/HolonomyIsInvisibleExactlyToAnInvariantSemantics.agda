@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- NaturalMachine.HolonomyIsInvisibleExactlyToAnInvariantSemantics
 --
--- `notes/DEPENDENT_SYSTEM_OPTIMIZATION_DELTA_28.md` §36–38 closes:
+-- `notes/DEPENDENT_SYSTEM_OPTIMIZATION_DELTA_28.md` (absent from this repository) §36–38 closes:
 --
 --   "Even flat architectures can carry interface holonomy h : Z ≃ Z
 --    around loops in architecture space — harmless for boundary

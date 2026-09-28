@@ -7,7 +7,7 @@
 -- at the type level.
 --
 -- WHERE THIS COMES FROM.  The owner's delta
--- `collab/upstream/library/raw/ETERNAL_GOLDEN_BRAID_THEOREM_FACTORY_IV_2026-08-14.md`
+-- `collab/upstream/library/raw/ETERNAL_GOLDEN_BRAID_THEOREM_FACTORY_IV_2026-08-14.md` (absent from this repository)
 -- §XI observes that the two extractions defining the hard corner of the
 -- prime-pair field — P_r (radius one) and P_c (factorization charge one)
 -- — commute as operators, P_r P_c = P_c P_r, so the twin corner is NOT
@@ -18,7 +18,7 @@
 -- because "a nonnegative field may place all exact-prime mass at radius
 -- two and all radius-one mass at charge two."  The true problem is a
 -- marginal-to-joint lower-bound problem.  Factory I sibling
--- (`UNIVALENT_PERSPECTIVAL_THEOREM_FACTORY_DELTA_14_2026-08-13.md` §A,
+-- (`UNIVALENT_PERSPECTIVAL_THEOREM_FACTORY_DELTA_14_2026-08-13.md` (absent from this repository) §A,
 -- T14.6/C14.7) carries the same shape one level up: an ambient
 -- equivalence restricts to a sector precisely when the sector predicate
 -- is invariant — selection, not conjugation, is where information dies.

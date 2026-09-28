@@ -7,7 +7,7 @@
 -- into a BOUNDED sequence of local contributions, and the uniqueness of
 -- that bounded sequence.
 --
--- Setting (see collab/swarm/2026-08-14/swarm-0814-12-cyclotomic-comb.md).
+-- Setting (see collab/swarm/2026-08-14/swarm-0814-12-cyclotomic-comb.md (absent from this repository)).
 -- Fix an odd prime p and an integer a with p ∤ a; let d = ord_p(a) and
 -- e = v_p(a^d − 1) ≥ 1.  Lifting-the-exponent says
 --

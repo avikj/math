@@ -24,7 +24,7 @@
 --
 -- **`All` IS DELIBERATELY ABSENT.**  There are three definitions —
 -- `TheParetoStratumIsDecidableAndTheFilterIsExact.All`,
--- `KramaAstiNasti_AnEnumerableRemedySetKillsTheFourthCorner.All`
+-- `OrderAstiNasti_AnEnumerableRemedySetKillsTheFourthCorner.All`
 -- (identical), `EveryRemainderMemberIsStrictlyDominated.AllL` (same
 -- again, different name), and `RateOneIsExactlyTheUniversalClaim.All`
 -- (a different, `Bool`-specific thing).  Re-exporting one would pick a

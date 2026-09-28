@@ -45,7 +45,7 @@
 --
 -- WHAT THIS BUYS.  Each turn of a concrete run can now be certified by
 -- INSTANTIATING this theorem at that turn's numbers, in arithmetic the
--- kernel actually computes.  `interactive/NalandaEmit.hs` does exactly that.
+-- kernel actually computes.  `interactive/NalandaEmit.hs` (absent from this repository) does exactly that.
 -- The alternative — emitting `refl` for each turn — would prove only that
 -- the generator's arithmetic agrees with the kernel's, and would not tie the
 -- run to Brahmagupta's law at all.

@@ -23,7 +23,7 @@
 -- LIBERATION IS THE EQUIVALENCE.  निर्जरा (śedding, Tattvārthasūtra ch. 9) is
 -- losing nothing AND missing nothing; मोक्षः (ch. 10) is that the freed
 -- cognition is an equivalence — केवलज्ञानम्, complete apprehension, every
--- object grasped whole at once (Kevalajnana.agda: अहानि × अन्यूनता → isEquiv).
+-- object grasped whole at once (Kevalajnana.agda (absent from this repository): अहानि × अन्यूनता → isEquiv).
 -- And then, by univalence, the liberated soul's holding and the world are
 -- LITERALLY ONE PATH:  धारणा ≡ विषयः.  The knower and the known are the same
 -- object — the whole world seen as itself, in one term, कैवल्य-दर्शनम्.

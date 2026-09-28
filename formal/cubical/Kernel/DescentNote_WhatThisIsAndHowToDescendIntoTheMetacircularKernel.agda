@@ -69,7 +69,7 @@
 -- §2.  THE ONE PRIMITIVE: THE FIBRE LAW.  (atemporal)
 ------------------------------------------------------------------------
 --
---   punaragamana/src/Punaragamana/Carrier.agda   (153 lines)
+--   fibre/src/Fibre/Carrier.agda   (164 lines)
 --
 -- For f : A → B, the question is WHICH SIDE OF `f a ≡ b` IS BOUND.
 --
@@ -88,11 +88,11 @@
 -- §3.  THE METACIRCULAR KERNEL.  296 LINES, THREE FILES.  (atemporal)
 ------------------------------------------------------------------------
 --
---   NaturalMachine/RewriteCertificate.agda   156   the calculus + semantics
---   NaturalMachine/ControlledGrammar.agda     63   operations + the forward pass
---   NaturalMachine/GenerativeKernel.agda      77   branches, and one example
+--   formal/cubical/Kernel/RewriteCertificate.agda   156   the calculus + semantics
+--   formal/cubical/Kernel/ControlledGrammar.agda     63   operations + the forward pass
+--   formal/cubical/Kernel/GenerativeKernel.agda      77   branches, and one example
 --
--- Everything else under NaturalMachine/ is beside this, not inside it.
+-- Everything else under formal/cubical/Kernel/ is beside this, not inside it.
 --
 -- THE CALCULUS.  `Tm` is terms over six variable coordinates, zero, suc,
 -- add.  `Step a b` is one rewrite, INCLUDING `reverse`, which is what makes
@@ -209,10 +209,10 @@
 --      the surface.  In this order, reading terms and not headers.
 ------------------------------------------------------------------------
 --
---   1. punaragamana/src/Punaragamana/Carrier.agda        -- to the bottom
---   2. NaturalMachine/RewriteCertificate.agda            -- to the bottom
---   3. NaturalMachine/ControlledGrammar.agda             -- 63 lines
---   4. NaturalMachine/GenerativeKernel.agda              -- 77 lines
+--   1. fibre/src/Fibre/Carrier.agda         -- to the bottom
+--   2. formal/cubical/Kernel/RewriteCertificate.agda            -- to the bottom
+--   3. formal/cubical/Kernel/ControlledGrammar.agda             -- 63 lines
+--   4. formal/cubical/Kernel/GenerativeKernel.agda              -- 77 lines
 --   5. the four modules of §4, in that order
 --   6. then put your own claim on the wire and let the checker refuse it.
 --      A refused claim teaches more in one line than a page of your prose.
@@ -231,10 +231,15 @@
 --     equation (`induction-sound`).  This is the kernel's actual inference
 --     rule and it is the strongest thing in the three files;
 --   * install any checked derivation as an executable operation (`install`);
---   * enumerate every enabled operation at a context with multiplicity
---     exactly conserved (`advance`, `advance-preserves-branch-count`);
---   * as of the Vyapti_ module, fire ONE operation over an infinite family
---     of contexts, soundly, at no proof cost.
+--   * advance a GIVEN list of enabled futures with multiplicity exactly
+--     conserved (`advance`, `advance-preserves-branch-count`).  It does not
+--     ENUMERATE the enabled set: no function lists every operation enabled
+--     at a context, and none is proved complete;
+--   * state, AT THE LEVEL OF MEANING, one schematic operation firing over
+--     an infinite family of contexts (`SchematicOperation`); the operation
+--     that does so WITH a certificate at every site and is wired into
+--     `advance`/`learn`/`retire` is `pervading`, in
+--     kernel-flat/TheControlCarriesItsInstanceAndLocusSoOneTheoremFiresAtAClass.
 --
 ------------------------------------------------------------------------
 -- §7.  THE SCOPE, EXACTLY.

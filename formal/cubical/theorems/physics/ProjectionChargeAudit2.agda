@@ -92,7 +92,7 @@ module Descent {ℓX ℓR ℓC : Level}
            (funExt (SQ.elimProp (λ z → setC (f z) (g z))
                                 (λ x → p x ∙ sym (q x))))
 
-  -- The boxed criterion of CUBICAL_QUOTIENT_AUDIT.md §1, as an equivalence
+  -- The boxed criterion of CUBICAL_QUOTIENT_AUDIT.md (absent from this repository) §1, as an equivalence
   -- of propositions: descending is exactly respecting.
   descentCriterion : Descends ≃ Respects
   descentCriterion =
@@ -140,7 +140,7 @@ totalChargeDescends = GaugeDescent.respects→descends totalChargeRespects
 
 -- ---------------------------------------------------------------------------
 -- Statements-to-prove toward the remaining open edge
--- (CUBICAL_QUOTIENT_AUDIT.md §5: when a genuinely higher object is
+-- (CUBICAL_QUOTIENT_AUDIT.md (absent from this repository) §5: when a genuinely higher object is
 -- justified).  Each is a checked-Agda target, not prose:
 --
 -- 1. Free-action collapse (the §5 kill criterion, positive form): for a

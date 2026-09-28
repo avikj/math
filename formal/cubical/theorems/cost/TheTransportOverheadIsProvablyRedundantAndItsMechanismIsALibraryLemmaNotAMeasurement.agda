@@ -6,10 +6,10 @@
 -- ON THE NAME.  **No tradition term is claimed and none is invented.**
 -- Univalence, `ua` and transport are Voevodsky's and the cubical
 -- library's — the substrate this repository is checked in, which
--- `CLAUDE.md` explicitly exempts from the framing rule ("tools are not
+-- `CLAUDE.md` (absent from this repository) explicitly exempts from the framing rule ("tools are not
 -- frames").  There is no Indian source for this statement and inventing
 -- a  label would assert a provenance nobody checked.  Checked
--- before naming: `.claude/hooks/priority-ledger.txt` (CURRENT header)
+-- before naming: `.claude/hooks/priority-ledger.txt` (absent from this repository) (CURRENT header)
 -- grepped first.
 --
 -- ────────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@
 --
 -- So the mechanism was never measured; it was already proved, upstream,
 -- and the module cites it while calling the result execution-decided.
--- `CLAUDE.md`'s rule applies exactly: *"No claim of the form 'measured
+-- `CLAUDE.md` (absent from this repository)'s rule applies exactly: *"No claim of the form 'measured
 -- slope ≈ x' survives if the slope is derivable."*  §2 below derives the
 -- structure the slope comes from.
 --

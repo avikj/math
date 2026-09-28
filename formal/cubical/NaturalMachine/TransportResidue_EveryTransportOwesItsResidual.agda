@@ -33,7 +33,7 @@
 -- obligation attached, and the obligation is stated in the same breath.
 --
 -- WHICH SCHOOL, SAID AT THE SITE, because the two readings of this same
--- `ua` are opposed and `notes/UNIVALENCE_IS_NISVABHAVA_COMPUTATIONAL.md`
+-- `ua` are opposed and `notes/UNIVALENCE_IS_NISVABHAVA_COMPUTATIONAL.md` (absent from this repository)
 -- holds both without blending them.  Read from Madhyamaka (Ngrjuna,
 -- *Mlamadhyamakakrik* 24.18; *Vigrahavyvartan* 29), univalence is
 -- nisvabhva: a type has no own-being over its equivalences, and the

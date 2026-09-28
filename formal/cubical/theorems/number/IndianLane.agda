@@ -40,7 +40,7 @@ import CakravalaDescent
 -- wheel turns inside a fixed window.
 import CakravalaBound
 
--- EMITTED BY THE REACTOR (machine/NalandaEmit.hs) and checked here: the
+-- EMITTED BY THE REACTOR (machine/NalandaEmit.hs (absent from this repository)) and checked here: the
 -- cakravala's answer for D = 61 as a term, not a printed number.
 import CakravalaWitness
 
@@ -72,7 +72,7 @@ import ElsewhereCondition
 -- hence no RPO/KBO/polynomial/matrix interpretation, hence no Knuth-Bendix
 -- completion.  Asiddhatva terminates it anyway, by constraining which
 -- rules may OBSERVE which outputs rather than by a decreasing measure.
--- The witness is not invented: it is what machine/Astadhyayi.hs does
+-- The witness is not invented: it is what machine/Astadhyayi.hs (absent from this repository) does
 -- deriving vk from vc, and what its asiddhaAudit refuses.
 import Asiddhatva
 
@@ -118,7 +118,7 @@ import PrastaraPankti
 -- the number is EXACTLY seven; Mallisena, Sydvdamajar (1292) for
 -- sakaldea against vikaldea.  avaktavyam is proved well-defined,
 -- decidable, realised, and NOT the denotation of any single standpointed
--- utterance -- which is what machine/Obstruction.hs was groping toward
+-- utterance -- which is what machine/Obstruction.hs (absent from this repository) was groping toward
 -- when it invented `Unparsed`.
 import SaptabhangiNaya
 
@@ -154,7 +154,7 @@ import LosslessReturn
 -- Two correctors.
 --
 -- `NaturalMachine/SamayikaAndNityaAreIndependent.agda` and
--- `NaturalMachine/TheFourthCornerIsRefutedUnderPointwiseStability.agda`.
+-- `NaturalMachine/TheFourthCornerIsRefutedUnderPointwiseStability.agda` (absent from this repository).
 --
 -- In general:
 -- an aggregate is not only a list of what to check.  It is the only place
@@ -182,7 +182,7 @@ import Tantrayukti_ARetractionThatIsNotStrictIsNotARetraction
 -- already in this corpus, and exhibits the incompatibility WITHOUT
 -- resolving it.  Modern treatments blend the two schools
 -- into one "Indic" toolkit, which discards the dispute, and the dispute
--- is the content — CLAUDE.md's mining directive, one level up.
+-- is the content — CLAUDE.md (absent from this repository)'s mining directive, one level up.
 --
 -- Dignāga, Pramāṇasamuccaya (c. 480–540); Dharmakīrti, Pramāṇavārttika
 -- (c. 600–660); Śāntarakṣita, Tattvasaṅgraha (c. 750).  Against Umāsvāti,

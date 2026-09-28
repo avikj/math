@@ -7,7 +7,7 @@
 -- tantu, thread (ordinary ; the weaver's word for continuity,
 -- attested of the sacrificial line in the gveda).
 -- The compound is built here for U0022
--- (collab/upstream/raw/U0022.txt).  What is
+-- (collab/upstream/raw/U0022.txt (absent from this repository)).  What is
 -- taken is the exact position being checked: the jīva persists AND changes —
 -- against both the eternalist and the annihilationist reading — and this
 -- module is that position as theorems about one term.

@@ -42,7 +42,7 @@
 -- corollary and a different (dual) lemma also in the frame.  "Checked
 -- three times" overstates by one and misidentifies one.
 --
--- CHECKED ON THE PIN.  `formal/cubical/check.sh` with NM_MODULES set to
+-- CHECKED ON THE PIN.  `formal/cubical/check.sh` (absent from this repository) with NM_MODULES set to
 -- this module printed "RUNNING AGAINST THE PIN" (agda 2.8.0 at
 -- /root/Agda-2.8.0/…, cubical /root/agda-libs/cubical-v0.9), EXIT=0
 -- (errors: 0, warning lines: 0), CHECKSH_EXIT=0 read unpiped.  Scope,

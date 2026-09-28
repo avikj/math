@@ -110,7 +110,7 @@ inhomogeneous a b g k run =
   in  (x · k) , (y · k) , (ringStepL a b k x y ∙ cong (_· k) p)
 
 ------------------------------------------------------------------------
--- The answer is a family (KUTTAKA_SOLUTION_FAMILY.md, stated there only in
+-- The answer is a family (KUTTAKA_SOLUTION_FAMILY.md (absent from this repository), stated there only in
 -- prose): from one solution of a·x + b·y ≡ g, every (x₀ + t·b , y₀ − t·a)
 -- is again a solution — the t·b and t·a cancel.  (The finest step uses
 -- b/g, a/g; this coarser b, a family is already infinite and exact.)

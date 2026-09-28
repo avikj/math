@@ -31,7 +31,7 @@
 --
 -- Consequence for the endeavor: the human↔machine bridge cannot be
 -- string-to-term; it must be derivation-to-term — carry the vyutpatti,
--- not the spelling.  The Adhyy engine (interactive/Astadhyayi.hs)
+-- not the spelling.  The Adhyy engine (interactive/Astadhyayi.hs (absent from this repository))
 -- already holds the lost material alongside the surface (sthnivadbhva,
 -- lopa channels); this module is the abstract statement of WHY that
 -- design is forced: recover-from-surface is exactly a section of a map
@@ -53,7 +53,7 @@ open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.Data.Sigma using (Σ; _,_; _×_)
 
 -- A minimal derivational syntax: roots and one layer of affixation.
--- (The real tree is interactive/Astadhyayi.hs's; two constructors suffice
+-- (The real tree is interactive/Astadhyayi.hs (absent from this repository)'s; two constructors suffice
 -- for the theorems, which are about the SHAPE of the situation.)
 data Dhatu : Type₀ where
   dhA dhB : Dhatu

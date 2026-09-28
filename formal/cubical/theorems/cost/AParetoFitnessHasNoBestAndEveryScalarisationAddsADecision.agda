@@ -144,7 +144,7 @@ scalarisationDecidesAnIncomparablePair =
 -- `TheParetoStratumIsDecidableAndTheFilterIsExact`:
 --
 --   dec≤ / dec≼≼           from `splitℕ-≤` alone
---   decStrictlyDominates
+--   decStrictlyDominatedBy
 --   decIsParetoMaximal     against a finite archive, reusing `decAny`
 --   stratum                the maximal layer, as a COMPUTED list
 --   stratumOnlyKeepsMaximal / stratumKeepsEveryMaximal

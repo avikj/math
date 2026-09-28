@@ -11,7 +11,7 @@
 -- COULD NOT FIND.
 --
 -- `Bhedanirnaya_TwoTestersForSamenessOnNumberAndTheTransportThatMoves
--- TheoremsBetweenThem.agda` identified `ResidueGlue.eqℕ` with
+-- TheoremsBetweenThem.agda` (absent from this repository) identified `ResidueGlue.eqℕ` with
 -- `Obstruction.eqℕ` — two modules that had each written
 -- the same four clauses, whose theorems PRINT alike and are NOT the same
 -- type, since the two `eqℕ` do not reduce to a common form at variable

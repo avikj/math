@@ -4,7 +4,7 @@
 -- MatchingPenniesSeparator
 --
 -- Source: owner Delta 30,
--- `collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md`.
+-- `collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md` (absent from this repository).
 --
 -- THE POINT OF THE MODULE, stated before any code.
 --

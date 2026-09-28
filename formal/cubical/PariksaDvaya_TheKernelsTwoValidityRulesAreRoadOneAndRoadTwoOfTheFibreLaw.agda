@@ -7,7 +7,7 @@
 -- the universal decomposition A ≃ Σ[b] fiber f b — not prose in a markdown
 -- node.
 --
--- THE KERNEL, IN ITS OWN WORDS.  kernel/nodes/006-fork-discharged.md proves
+-- THE KERNEL, IN ITS OWN WORDS.  kernel/nodes/006-fork-discharged.md (absent from this repository) proves
 -- the two candidate validity rules detect DISJOINT, EXHAUSTIVE error
 -- classes, forced by node 001's content/gauge split:
 --   002 — validity by decidable check: catches derivation-internal error,

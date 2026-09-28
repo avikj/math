@@ -20,7 +20,7 @@
 -- namely that an absence may be inferred only when the thing is such
 -- that it WOULD have been apprehended had it been there.
 --
--- `interactive/Yogyata.hs` states it, sources it, names the dispute, and applies
+-- `interactive/Yogyata.hs` (absent from this repository) states it, sources it, names the dispute, and applies
 -- it to this repository's own import graph — every inertness verdict
 -- there carries the domain searched.  This module is the type-theoretic
 -- half of the same condition.

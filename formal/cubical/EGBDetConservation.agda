@@ -47,7 +47,7 @@ open import Cubical.Algebra.Monoid
 -- `natSolve`: its line 34 is `open EqualityToNormalform renaming (solve to
 -- natSolve)` WITHOUT `public`, so both names stop at that module's boundary.
 -- The public entry point is the macro `solveℕ!`, re-exported by
--- Cubical.Tactics.NatSolver, and the library's own Examples.agda gives the
+-- Cubical.Tactics.NatSolver, and the library's own Examples.agda (absent from this repository) gives the
 -- idiom: the macro fills the goal, so the variables must be bound on the
 -- left-hand side.
 open import Cubical.Tactics.NatSolver using (solveℕ!)

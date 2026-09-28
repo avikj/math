@@ -9,13 +9,13 @@
 -- Two documents in this corpus make opposite claims about
 -- when a numerical summary of a state determines that state's future:
 --
---   * collab/discovery/claims/R0019-exposed-point-rigidity.md, statement
+--   * collab/discovery/claims/R0019-exposed-point-rigidity.md (absent from this repository), statement
 --     (E): weights w_n > 0 summable, |c_n| ≤ 1, and Σ w_n c_n = Σ w_n
 --     forces c_n = 1 for EVERY n.  One scalar pins down an infinite
 --     object.  Its proof obligation 1 reads, in full, "E by termwise
 --     nonnegativity after taking real parts".
 --
---   * collab/messages/0249-codex-formation-cache-option-result.md: the
+--   * collab/messages/0249-codex-formation-cache-option-result.md (absent from this repository): the
 --     caches {1,2,4,5} and {1,2,3,6} have the SAME scalar summary
 --     (queries, additions, retained-count) = (·,3,4) yet marginal costs
 --     (1,0) and (0,1) on the declared targets (3,4).  "A router merging

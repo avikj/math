@@ -6,7 +6,7 @@
 -- A PORT IS NOT A NEW KIND OF CONSTRAINT.  It is the same constraint at
 -- a bigger point.
 --
--- `machinery/situated_constructor_port.py` (legacy, read not run) claims
+-- `machinery/situated_constructor_port.py` (absent from this repository) (legacy, read not run) claims
 -- to be "a three-point executable theorem": a live *port* — a supplied
 -- relation `g ▸ c ≡ r` on top of the endpoint relation `g ▸ s ≡ t` —
 -- "trivializes a constructor torsor without canonizing it", certified by

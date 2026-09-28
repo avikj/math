@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- LogonEchein_TheArchimedeanConditionIsIndependentOfOrderAdditionAndALeastPositive
 --
--- NAMING, STATED FIRST BECAUSE CLAUDE.md's FILE-NAMING NOTE 2 REQUIRES IT.
+-- NAMING, STATED FIRST BECAUSE CLAUDE.md (absent from this repository)'s FILE-NAMING NOTE 2 REQUIRES IT.
 --
 -- The mathematics in this module originates with Eudoxus of Cnidus, as
 -- transmitted in Euclid, *Elements* Book V, definition 4:

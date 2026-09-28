@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- FailClosedForgetsOnlyTheReasonForDistrust
 --
--- `interactive/KernelProbe.hs` collapses two distinct situations into one
+-- `interactive/KernelProbe.hs` (absent from this repository) collapses two distinct situations into one
 -- verdict on purpose — "absence and failure share the same grade,
 -- fail-closed" — and grades CAPABILITY, not soundness.  The collapse is
 -- exactly one-sided, and this says in which direction:

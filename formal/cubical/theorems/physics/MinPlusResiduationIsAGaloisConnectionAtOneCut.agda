@@ -24,7 +24,7 @@
 -- WHAT IS PROVED
 --
 --   ∸-adjˡ / ∸-adjʳ     the monus adjunction, K ∸ ψ ≤ φ  ⟺  K ≤ φ + ψ,
---                       which cubical v0.5 does not ship
+--                       which the pinned cubical (v0.9) does not ship in this form
 --   galFwd / galBwd     both directions of the contravariant adjunction
 --                       for `u = d = (K ∸_)` under the reversed order —
 --                       and both are the SAME statement, since the two
@@ -63,7 +63,7 @@ open import TheSaturationClosureNeedsOnlyAGaloisConnection
   using (module Galois)
 
 ------------------------------------------------------------------------
--- 1.  The monus adjunction, which v0.5 does not ship
+-- 1.  The monus adjunction, which the pinned cubical (v0.9) does not ship in this form
 ------------------------------------------------------------------------
 
 ∸-adjˡ : (K ψ φ : ℕ) → K ∸ ψ ≤ φ → K ≤ φ + ψ

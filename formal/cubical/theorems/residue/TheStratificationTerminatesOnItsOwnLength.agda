@@ -92,9 +92,9 @@ theStratificationTerminates xs = fuelSuffices (lengthL xs) xs ≤-refl
 --                                     `xs`
 --
 -- THE DOUBLE NEGATION IS THE WHOLE DIFFICULTY AND IT IS DECIDED AWAY.
--- `IsParetoMaximal v xs` is `¬ Any (StrictlyDominates v) xs`, so failing
+-- `IsParetoMaximal v xs` is `¬ Any (StrictlyDominatedBy v) xs`, so failing
 -- it gives `¬ ¬ Any …`.  The dominator is recovered only because
--- `decAny decStrictlyDominates` makes that `Any` decidable, hence
+-- `decAny decStrictlyDominatedBy` makes that `Any` decidable, hence
 -- stable.
 --
 ------------------------------------------------------------------------

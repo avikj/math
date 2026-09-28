@@ -32,7 +32,7 @@
 --
 -- This is **samāsa-bhāvanā at D = −1** — Brāhmasphuṭasiddhānta ch. 18,
 -- 628 CE, the composition law whose whole content is that the norm is
--- multiplicative.  `Bhavana.agda` in this repository already checks the
+-- multiplicative.  `Bhavana.agda` (absent from this repository) in this repository already checks the
 -- general D; this module takes D = −1, which is the case that is a
 -- CIRCLE, and asks what the circle's additive law does to the chart.
 --
@@ -85,7 +85,7 @@
 -- Everything below is proved over an ARBITRARY commutative ring, so it
 -- holds over ℤ, over ℚ, and over every ring the repository may later
 -- want.  Ring identities go through the CommRingSolver — exact symbolic
--- computation, which CLAUDE.md admits as proof; nothing is measured.
+-- computation, which CLAUDE.md (absent from this repository) admits as proof; nothing is measured.
 ------------------------------------------------------------------------
 
 module NaturalMachine.PythagoreanTransition where

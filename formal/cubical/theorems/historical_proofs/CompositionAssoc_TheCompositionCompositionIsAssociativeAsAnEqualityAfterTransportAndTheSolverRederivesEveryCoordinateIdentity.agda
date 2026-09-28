@@ -4,7 +4,7 @@
 -- BhavanaAssoc — associativity of bhāvanā as an EQUALITY AFTER TRANSPORT,
 -- with every coordinate identity rederived by the ring solver.
 --
--- THE SETTING.  In `BhavanaGenerative.agda` the two associations of the
+-- THE SETTING.  In `BhavanaGenerative.agda` (absent from this repository) the two associations of the
 -- composition live at DIFFERENT norm indices,
 -- `Sol D (k₁ · (k₂ · k₃))` and `Sol D ((k₁ · k₂) · k₃)`, so `≡` cannot even
 -- be written between them without first bringing the indices together.

@@ -7,7 +7,7 @@
 -- improves it.  The quantifier the summary moved, made a type.
 --
 -- `collab/messages/workers/20260812T144712.509661Z--claude_aime_body--
--- 0003.md`):
+-- 0003.md` (absent from this repository)):
 --
 --   "Φ₇(2)=127 prime … Φ₁₇(2)=131071 prime … So Y≥1 is sharp, **no
 --    function of (b,n) improves it**."

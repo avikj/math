@@ -5,7 +5,7 @@
 --
 -- The cyclic method's step, as a checked term.
 --
--- `Bhavana.agda` has the composition law and the two divisibility
+-- `Bhavana.agda` (absent from this repository) has the composition law and the two divisibility
 -- conversions; this file supplies the STEP — the thing that makes
 -- the method cyclic — and nothing more.
 --

@@ -1,13 +1,16 @@
 {-# OPTIONS --cubical --guardedness --safe --no-import-sorts #-}
 
 ------------------------------------------------------------------------
--- विपर्यास — transposition.  The kernel is a DAGGER, not a groupoid.
+-- विपर्यास — transposition.  The kernel carries a contravariant,
+-- grade-preserving transpose, and is not a groupoid.
 --
 -- WHAT THIS IS.  The kernel's `reverse` is a constructor of Step, which
 -- is the passage from functions to CORRESPONDENCES: a function has no
 -- transpose, a correspondence does.  This file constructs the transpose
--- on whole derivations and proves the three laws that make it a dagger
--- structure on the strict category of derivations —
+-- on whole derivations and proves the laws it does satisfy on the strict
+-- category of derivations.  (A dagger in the strict sense also needs
+-- d†† = d; §4 refutes that on the nose, so this is a dagger only up to
+-- meaning — the name in the title is kept for continuity.) —
 --
 --   §2  daṇḍa : Derivation x y → Derivation y x, with daṇḍa (done) = done
 --       and CONTRAVARIANT functoriality proved:

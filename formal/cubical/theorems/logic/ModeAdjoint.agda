@@ -7,7 +7,7 @@
 --
 -- The admissible-mode classification for the obligation calculus of
 --
--- OBLIGATION.md Definition 4 requires every edge transfer
+-- OBLIGATION.md (absent from this repository) Definition 4 requires every edge transfer
 -- t : S -> S to be monotone with t(TOP) = TOP; Theorem O2 buys exactness
 -- (sigma* = MOP) from binary-meet preservation; Proposition O2.3 asserts
 -- that "every transfer arising from Definition 4 is one of: the identity,
@@ -38,7 +38,7 @@
 --       theta-not-clamp.)
 --
 -- Consequence, stated in the note's own vocabulary: obligation 1 of
--- OBLIGATION.md Section 9 is not "permanently open".  Admissibility is a
+-- OBLIGATION.md (absent from this repository) Section 9 is not "permanently open".  Admissibility is a
 -- closed condition -- preservation of binary meets -- and the admissible
 -- modes are closed under composition and pointwise meet (comp-Adm,
 -- meet-Adm), i.e. they form a monoid and a meet-semilattice, not a list to
@@ -137,7 +137,7 @@ module Modes
     , (cong (λ z → z ∧ (u TOP)) qt ∙ cong (TOP ∧_) qu ∙ ∧-unit TOP)
 
   ----------------------------------------------------------------
-  -- 1b. CLAMP COLLAPSE.  OBLIGATION.md's VALUE mode is illegal or trivial.
+  -- 1b. CLAMP COLLAPSE.  OBLIGATION.md (absent from this repository)'s VALUE mode is illegal or trivial.
   ----------------------------------------------------------------
 
   clamp : S → S → S
@@ -327,7 +327,7 @@ decode {x} p = subst (Code x) p (encode x)
 ------------------------------------------------------------------------
 -- 3. The statement, packaged.
 --
--- OBLIGATION.md Prop. O2.3 lists identity / constant-TOP / clamp and
+-- OBLIGATION.md (absent from this repository) Prop. O2.3 lists identity / constant-TOP / clamp and
 -- concludes distributivity.  The conclusion is true; the list is not
 -- exhaustive, and one of its three entries is illegal under the note's
 -- own Definition 4 unless it degenerates to the identity.

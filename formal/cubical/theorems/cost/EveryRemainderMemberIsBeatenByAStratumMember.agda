@@ -72,7 +72,7 @@ open import Cubical.Relation.Nullary using (¬_ ; Dec ; yes ; no)
 open import OrderAstiNasti_TheFourthCornerCannotLiveOverAnEnumerableDecidableInstanceSet
   using (Any ; memberToAny)
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (filterDec ; StrictlyDominates ; decStrictlyDominates
+  using (filterDec ; StrictlyDominatedBy ; decStrictlyDominatedBy
         ; IsParetoMaximal ; stratum ; stratumKeepsEveryMaximal)
 open import TheRemainderIsStrictlyShorterSoTheStratificationHasAMeasure
   using (remainder)
@@ -111,7 +111,7 @@ memberIntoFilter P d (x ∷ xs) a (inr r) p | no _ =
 ------------------------------------------------------------------------
 
 above : List ℕ → List (List ℕ) → List (List ℕ)
-above v xs = filterDec (StrictlyDominates v) (decStrictlyDominates v) xs
+above v xs = filterDec (StrictlyDominatedBy v) (decStrictlyDominatedBy v) xs
 
 maximalOfNonEmpty :
   (ys : List (List ℕ)) (a : List ℕ) → Mem a ys
@@ -125,13 +125,13 @@ maximalOfNonEmpty (y ∷ ys) a _ = maximalExists y ys
 
 aboveMaximalIsGloballyMaximal :
   (v : List ℕ) (xs : List (List ℕ)) (w : List ℕ)
-  → StrictlyDominates v w
+  → StrictlyDominatedBy v w
   → IsParetoMaximal w (above v xs) → IsParetoMaximal w xs
 aboveMaximalIsGloballyMaximal v xs w vw maxA anyxs
-  with anyToMember (StrictlyDominates w) xs anyxs
+  with anyToMember (StrictlyDominatedBy w) xs anyxs
 ... | (z , mz , wz) =
-  maxA (memberToAny (StrictlyDominates w) z (above v xs)
-         (memberIntoFilter (StrictlyDominates v) (decStrictlyDominates v)
+  maxA (memberToAny (StrictlyDominatedBy w) z (above v xs)
+         (memberIntoFilter (StrictlyDominatedBy v) (decStrictlyDominatedBy v)
                            xs z mz (⊏-trans v w z vw wz))
          wz)
 
@@ -141,22 +141,22 @@ aboveMaximalIsGloballyMaximal v xs w vw maxA anyxs
 
 theDominatorCanBeChosenMaximal :
   (xs : List (List ℕ)) (v u : List ℕ)
-  → Mem u xs → StrictlyDominates v u
-  → Σ[ w ∈ List ℕ ] (Mem w (stratum xs) × StrictlyDominates v w)
+  → Mem u xs → StrictlyDominatedBy v u
+  → Σ[ w ∈ List ℕ ] (Mem w (stratum xs) × StrictlyDominatedBy v w)
 theDominatorCanBeChosenMaximal xs v u mu vu
   with maximalOfNonEmpty (above v xs) u
-         (memberIntoFilter (StrictlyDominates v) (decStrictlyDominates v)
+         (memberIntoFilter (StrictlyDominatedBy v) (decStrictlyDominatedBy v)
                            xs u mu vu)
 ... | (w , mw , maxw) =
     w
   , stratumKeepsEveryMaximal xs w
-      (filterDecSubset (StrictlyDominates v) (decStrictlyDominates v) xs w mw)
+      (filterDecSubset (StrictlyDominatedBy v) (decStrictlyDominatedBy v) xs w mw)
       (aboveMaximalIsGloballyMaximal v xs w
-        (memberOfFilterSatisfies (StrictlyDominates v)
-                                 (decStrictlyDominates v) xs w mw)
+        (memberOfFilterSatisfies (StrictlyDominatedBy v)
+                                 (decStrictlyDominatedBy v) xs w mw)
         maxw)
-  , memberOfFilterSatisfies (StrictlyDominates v)
-                            (decStrictlyDominates v) xs w mw
+  , memberOfFilterSatisfies (StrictlyDominatedBy v)
+                            (decStrictlyDominatedBy v) xs w mw
 
 ------------------------------------------------------------------------
 -- 5.  ORDER, one step
@@ -165,7 +165,7 @@ theDominatorCanBeChosenMaximal xs v u mu vu
 everyRemainderMemberIsBeatenByAStratumMember :
   (xs : List (List ℕ)) (v : List ℕ)
   → Mem v (remainder xs)
-  → Σ[ w ∈ List ℕ ] (Mem w (stratum xs) × StrictlyDominates v w)
+  → Σ[ w ∈ List ℕ ] (Mem w (stratum xs) × StrictlyDominatedBy v w)
 everyRemainderMemberIsBeatenByAStratumMember xs v mem
   with everyRemainderMemberIsStrictlyDominated xs v mem
 ... | (u , mu , vu) = theDominatorCanBeChosenMaximal xs v u mu vu

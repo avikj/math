@@ -9,11 +9,11 @@
 -- called production, because what Brahmagupta states is that from two
 -- solutions you MAKE a third.
 --
--- WHAT WAS HERE BEFORE AND WHY IT WAS HALF THE RULE.  `Bhavana.agda` proves
+-- WHAT WAS HERE BEFORE AND WHY IT WAS HALF THE RULE.  `Bhavana.agda` (absent from this repository) proves
 --
 --     N D a₁ b₁ · N D a₂ b₂ ≡ N D (bhA …) (bhB …)
 --
--- over an arbitrary commutative ring, and `BhavanaSemiring.agda` proves the
+-- over an arbitrary commutative ring, and `BhavanaSemiring.agda` (absent from this repository) proves the
 -- subtraction-free form over ℕ.  Both are true and neither produces
 -- anything.  They are equations between coordinates.  A reader holding two
 -- solutions of x² − D y² = k must still assemble the third by hand and
@@ -28,7 +28,7 @@
 -- Read the type as the theorem.  It says composition of solutions exists and
 -- that the norm multiplies, and it says so in the only place that cannot rot:
 -- the obligation travels WITH the pair, so a composite that does not satisfy
--- its equation is not expressible.  The identity in `Bhavana.agda` is what
+-- its equation is not expressible.  The identity in `Bhavana.agda` (absent from this repository) is what
 -- pays for the type; having been paid, the caller turns a handle.
 --
 -- The unit-norm solutions are then closed under the operation, and iterating
@@ -84,7 +84,7 @@ module Generative (CR : CommRing ℓ) where
   -- 2.  समासभावना — composition by addition.  THE OPERATION.
   --
   -- Brahmagupta's own coordinates, `bhA` and `bhB`, unchanged from
-  -- `Bhavana.agda`.  What is new is that the result is a `Sol`, so the norm
+  -- `Bhavana.agda` (absent from this repository).  What is new is that the result is a `Sol`, so the norm
   -- obligation is discharged once here rather than at every use.
   ----------------------------------------------------------------------
 

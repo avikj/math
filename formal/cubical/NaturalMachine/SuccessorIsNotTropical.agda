@@ -189,5 +189,5 @@ join-does-not-follow p =
 -- homomorphism from the parameter chart to the triple chart, so Euclid's
 -- parametrisation IS the transition, with no defect.
 --
--- See notes/THE_BARRIER_BELONGS_TO_THE_LINE.md.
+-- See notes/THE_BARRIER_BELONGS_TO_THE_LINE.md (absent from this repository).
 ------------------------------------------------------------------------

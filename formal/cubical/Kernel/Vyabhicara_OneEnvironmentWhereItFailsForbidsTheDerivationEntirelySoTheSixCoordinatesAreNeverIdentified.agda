@@ -12,7 +12,7 @@
 --
 --     अनैकान्तिकः सव्यभिचारः     anaikāntikaḥ savyabhicāraḥ
 --
--- GRETIL's `sa_gautama-nyAyasUtra.txt` line 204 reads `1.2.5:
+-- GRETIL's `sa_gautama-nyAyasUtra.txt` (absent from this repository) line 204 reads `1.2.5:
 -- anaikntika savyabhicra`, and line 200 is 1.2.4, the hetvbhsa
 -- list.
 --

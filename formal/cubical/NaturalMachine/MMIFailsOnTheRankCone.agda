@@ -6,7 +6,7 @@
 -- Monogamy of mutual information fails on a three-party entropy vector
 -- that a linear configuration realises.  This decides the conjecture
 -- of `notes/SESA_THE_ALIGNMENT_DEFECT_IS_A_FIBRE_AND_WHEN_IT_
--- IS_MUTUAL_INFORMATION.md` §4, whether the linear/rank cone satisfies
+-- IS_MUTUAL_INFORMATION.md` (absent from this repository) §4, whether the linear/rank cone satisfies
 -- MMI.  It does not: not at four or five variables but at three, on
 -- a one-dimensional space.
 --

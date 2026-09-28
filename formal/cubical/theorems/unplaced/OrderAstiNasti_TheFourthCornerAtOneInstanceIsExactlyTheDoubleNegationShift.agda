@@ -161,10 +161,10 @@ fourthCornerRefutesPointwiseStability Q corner stab =
 
 ------------------------------------------------------------------------
 -- ON THE NAME.
--- `KramaSaha_TheFourthCornerIWasNamingIsTheSequentialPosition` proves
+-- `KramaSaha_TheFourthCornerIWasNamingIsTheSequentialPosition` (absent from this repository) proves
 -- this line's "fourth corner" is a product of two independent
 -- negations and that simultaneous refusal collapses into the
 -- sequential pair, so the position is the THIRD bhaṅga —
 -- स्यात्-अस्ति-नास्ति, asserted क्रमेण — and not avaktavya.  See also
--- `KramaAstiNasti_TheFourthCornerCannotLiveOverAnEnumerableDecidableInstanceSet`.
+-- `OrderAstiNasti_TheFourthCornerCannotLiveOverAnEnumerableDecidableInstanceSet`.
 ------------------------------------------------------------------------

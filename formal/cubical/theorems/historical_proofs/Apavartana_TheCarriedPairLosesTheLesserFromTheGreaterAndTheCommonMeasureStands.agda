@@ -67,7 +67,7 @@
 -- The invariance of §4 is in this corpus already.  `Gurutama` (∣-योग, and
 -- the descent's result divides both inputs),
 -- `GurutamaSiddha` (∣-अन्तर, महत्, सिद्धः — the FULL gcd theorem for the fuelled
--- descent, for every pair), `Apavartana_TwoPresentationsOfDividesAnd…` (the
+-- descent, for every pair), `Apavartana_TwoPresentationsOfDividesAnd…` (absent from this repository) (the
 -- difference law crossing between the truncated and untruncated presentations)
 -- and `KuttakaSamapti_TheValliIsFiniteForEveryPair` (termination, and the
 -- greatest-common-divisor property over ℤ) are all already in this directory
@@ -131,7 +131,7 @@
 -- 4. `_∣_` HERE IS THE UNTRUNCATED Σ, so it is not a proposition, and two
 --    proofs that म measures न need not be equal.  §4's statements are
 --    therefore about EXHIBITED quotients, not about a subsingleton of
---    evidence.  `Apavartana_TwoPresentations…` §4 in this directory is where
+--    evidence.  `Apavartana_TwoPresentations…` (absent from this repository) §4 in this directory is where
 --    that difference is the mathematics; here it is only a choice, made to
 --    match `Gurutama` and to keep the file free of the truncation eliminator.
 ------------------------------------------------------------------------

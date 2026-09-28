@@ -10,7 +10,7 @@
 -- proof-relevant payload for that stratum is exactly `Z × Bool`.
 --
 -- The successor seed asks for the general stratum.  The curriculum layer
--- (runtime/curriculum, `test_curriculum.py`) meanwhile asserts that
+-- (runtime/curriculum, `test_curriculum.py` (absent from this repository)) meanwhile asserts that
 -- POSITIONAL NOTATION costs exactly three choices — a finite quotient
 -- (the base), a torsor (endianness) and a cocycle (the carry) — i.e. the
 -- same "one integer and one sign, plus a carry" vocabulary.
@@ -38,7 +38,7 @@
 --     theorem is stratum-local and does not extend along the carry.
 --
 -- This is the model-side form of
--- machinery/formation_sufficiency.py's "minimality need not transport":
+-- machinery/formation_sufficiency.py (absent from this repository)'s "minimality need not transport":
 -- the old chart survives restriction, not extension.
 --
 -- Everything below is a finite exhaustive verification (9 words) plus

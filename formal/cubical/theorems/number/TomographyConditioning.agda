@@ -64,7 +64,7 @@
 --   * κ_DFT ≤ κ_fac, i.e. 1 ≤ 2^R, generally in R (`oneLEpow`).
 --
 -- WHAT IS INSTANCE-CERTIFIED BY refl (finite exact computation is
--- proof, CLAUDE.md), and why:
+-- proof, CLAUDE.md (absent from this repository)), and why:
 --
 --   * `pochRow-1` … `pochRow-6`: the actual coefficient rows
 --     |c_m|·R! = s(R,m), so a reader can see the object the general

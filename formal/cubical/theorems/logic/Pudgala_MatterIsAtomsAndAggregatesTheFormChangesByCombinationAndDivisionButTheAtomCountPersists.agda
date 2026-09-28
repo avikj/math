@@ -8,7 +8,7 @@
 -- SOURCE.  Umāsvāti, *Tattvārthasūtra*, adhyāya 5 (~2nd–5th c. CE):
 --   5.23  spara-rasa-gandha-varavanta pudgal
 --         — matter has touch, taste, smell, colour (it is corporeal, rūpī,
---           unlike dharma/adharma/ka/kla; `DharmaAdharma.agda`).
+--           unlike dharma/adharma/ka/kla; `DharmaAdharma.agda` (absent from this repository)).
 --   5.25  aṇavaḥ skandhāś ca — pudgala exists as ATOMS (paramāṇu) and as
 --         AGGREGATES (skandha).
 --   5.26  saṅghāta-bhedebhya utpadyante — aggregates arise from combination

@@ -12,7 +12,7 @@
 -- the result to the store), re-read (the store feeds the next
 -- utterance).  This module is the UTTER power as a checked term: a total
 -- function from the machine's own refusal list (the Sanghatta
--- non-joining pairs, machine/sanghatta-report-2026-08-23.txt — the
+-- non-joining pairs, machine/sanghatta-report-2026-08-23.txt (absent from this repository) — the
 -- exact theorems the rewriter told itself it needs) to candidate
 -- kernel modules.  It is compiled by MAlonzo — the extraction lane
 -- this directory already runs (RewriteDynamics → ExtractedRewrite) —

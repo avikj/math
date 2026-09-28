@@ -17,7 +17,7 @@
 --
 --   finite-multiplicative   divisibility data.  Probe class SIEVE_d.
 --                           Parity-protected: λ and μ exactly invisible,
---                           by the gauge no-go (`GAUGE.md` Theorem F).
+--                           by the gauge no-go (`GAUGE.md` (absent from this repository) Theorem F).
 --   additive-windowed       windowed-linear, WL_d(L,r).  Bulk-blind.
 --   global-multiplicative   the functional equation used as a CONSTRAINT
 --                           rather than as a value — Tao's entropy
@@ -94,7 +94,7 @@ open import Saptabhangi
         )
 
 ------------------------------------------------------------------------
--- १ · प्रस्तुतिः — the three presentations of BARRIER.md §2, as a type,
+-- १ · प्रस्तुतिः — the three presentations of BARRIER.md (absent from this repository) §2, as a type,
 --     and the identification of each with a seed.
 --
 --     The names are the interfaces, not the methods: a presentation is
@@ -140,7 +140,7 @@ data प्रस्तुति : Type where
 ------------------------------------------------------------------------
 -- ३ · चत्वारो न लिखिताः — THE FOUR THE TABLE DOES NOT LIST.
 --
---     BARRIER.md's table has three rows, one per singleton.  The
+--     BARRIER.md (absent from this repository)'s table has three rows, one per singleton.  The
 --     counting forces four more, and here they are as terms.  Each is
 --     named by the position it occupies, so the correspondence is
 --     checkable rather than asserted.

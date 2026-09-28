@@ -4,7 +4,7 @@
 -- ArityOfRepair
 --
 -- The DELTA on NaturalMachine.FillabilityCertificate, for
--- notes/FILLABILITY_AS_SUCCESS.md (seed 177).
+-- notes/FILLABILITY_AS_SUCCESS.md (absent from this repository) (seed 177).
 --
 -- That module formalises the note's §2–§4: the two fillability
 -- predicates, their strict separation (A∞), the decision procedure that

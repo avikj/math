@@ -15,7 +15,7 @@
 -- may ignore the void places of a vector; where it fails, it may not,
 -- and the failure is sharp in both directions.
 --
--- WHAT THIS MODULE IS FOR.  `notes/ACTION_MONOID_CHARACTER_CLOSURE.md`
+-- WHAT THIS MODULE IS FOR.  `notes/ACTION_MONOID_CHARACTER_CLOSURE.md` (absent from this repository)
 -- states the diagonal cyclic-space theorem over a field, and gives its
 -- boundary as:
 --
@@ -289,7 +289,7 @@ module Sharp (Rng : CommRing ℓ) where
 --
 -- The two DISTINCT multiplier values here are 0 and 2, whose difference
 -- is 2, which is not invertible in ℤ.  So this instance sits strictly
--- outside the hypothesis `ACTION_MONOID_CHARACTER_CLOSURE.md` names as
+-- outside the hypothesis `ACTION_MONOID_CHARACTER_CLOSURE.md` (absent from this repository) names as
 -- the boundary ("distinct values need not have unit differences"), and
 -- the annihilator statement holds here anyway.
 

@@ -25,7 +25,7 @@
 ------------------------------------------------------------------------
 -- WHY THIS MODULE EXISTS.
 --
--- `Sesa` proves the graph Γf has two projections: मूल-प्रक्षेप (to A,
+-- `Residue_…` proves the graph Γf has two projections: मूल-प्रक्षेप (to A,
 -- always an equivalence) and लक्ष्य-प्रक्षेप (to B, an equivalence iff f
 -- is).  It gets from `Carrier f ≃ Σ[ b ] शेष f b` (`ग्राह`) and
 -- `Carrier f ≃ A` (`मूल-प्रक्षेप-समता`) SEPARATELY.  Nowhere in that
@@ -93,7 +93,7 @@ module _ {A B : Type ℓ} (f : A → B) where
   --
   -- `descend f a` is the canonical Carrier-valued reading of `a` (§ in
   -- `Carrier`, un-pattern-matched by design so it stays computational).
-  -- Pushing it through `ग्राह` — `Sesa`'s graph equivalence, built by
+  -- Pushing it through `ग्राह` — `Residue_…`'s graph equivalence, built by
   -- composing `Carrier-as-Σ` with the source/target swap `स्वप्` — lands
   -- on EXACTLY `equivFun समग्र-समता a`, by `refl`: both sides unfold to
   -- the literal pair `f a , (a , refl)`.  So the direct route and the

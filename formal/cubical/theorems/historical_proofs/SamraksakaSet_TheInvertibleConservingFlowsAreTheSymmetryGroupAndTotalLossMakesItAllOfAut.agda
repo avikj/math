@@ -39,7 +39,7 @@
 -- TERMS.  संरक्षक and गण as in `SamraksakaGana` (गण attested as the
 -- gaapha's device, Pini, Adhyy ~500 BCE; the application to
 -- flows built in this corpus).  समूह for "group" follows this corpus's
--- own precedent (`BhavanaSamuha.agda`); it is MODERN mathematical
+-- own precedent (`BhavanaSamuha.agda` (absent from this repository)); it is MODERN mathematical
 -- , and no classical text is claimed for it.  व्युत्क्रम for the
 -- inverse follows `BhavanaSamuha`'s use for the conjugate inverse
 -- (a,−b).  The compound संरक्षकसमूह is built here.

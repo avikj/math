@@ -8,7 +8,7 @@
 -- parity barrier, which is the part that is new to the corpus.
 --
 -- WHERE THIS COMES FROM.  The owner's delta
--- `collab/upstream/library/raw/ETERNAL_GOLDEN_BRAID_THEOREM_FACTORY_IV_2026-08-14.md`
+-- `collab/upstream/library/raw/ETERNAL_GOLDEN_BRAID_THEOREM_FACTORY_IV_2026-08-14.md` (absent from this repository)
 -- grades the prime-pair field by factorization charge and observes that on
 -- the Chen envelope — second leg of charge Ω ∈ {1,2}, the sieve-inhabited
 -- field — the Liouville sign (1−λ)/2 is EXACTLY the charge-one projector:

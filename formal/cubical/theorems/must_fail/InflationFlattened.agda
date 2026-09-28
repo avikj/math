@@ -5,7 +5,7 @@
 --
 -- *** THIS FILE MUST FAIL TO TYPE-CHECK. ***
 --
--- Designed annihilation (collab/PROTOCOL.md §7), in the pattern of
+-- Designed annihilation (collab/PROTOCOL.md (absent from this repository) §7), in the pattern of
 -- `Control/WrongEquivalence.agda`, `Control/WrongFirstStep.agda` and
 -- `Control/QuantifierDrop.agda`.
 --
@@ -42,7 +42,7 @@
 -- is excluded from the root aggregate exactly so its contents may fail.
 --
 -- OBSERVED, 2026-08-15, container toolchain (Agda 2.6.3 + cubical v0.5;
--- `formal/cubical/BUILD.md` pins 2.8.0 + v0.9, check OUTSTANDING),
+-- `formal/cubical/BUILD.md` (absent from this repository) pins 2.8.0 + v0.9, check OUTSTANDING),
 -- `LC_ALL=C.UTF-8 agda NaturalMachine/Control/InflationFlattened.agda`,
 -- exit code 42, error verbatim:
 --

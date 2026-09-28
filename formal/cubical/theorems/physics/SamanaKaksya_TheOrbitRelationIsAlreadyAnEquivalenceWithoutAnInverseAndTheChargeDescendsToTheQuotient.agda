@@ -206,7 +206,7 @@ module _ {A B : Type ℓ} (f : A → B) (Φ : A → A) (e : isEquiv Φ) where
 -- The converse of §४ — that `अवतीर्णः` is injective, i.e. equal charge
 -- implies one orbit — is the subject of
 -- `Sankramana_TheFibreIsOneOrbitExactlyWhenTheChargeIs
--- InjectiveAndOneSidedReachabilityIsStrictlyStronger.agda`.  `Kaksya`
+-- InjectiveAndOneSidedReachabilityIsStrictlyStronger.agda` (absent from this repository).  `Kaksya`
 -- §'s one-sided `���` is SUFFICIENT and NOT NECESSARY:
 -- `A = Bool`, `B = Unit`, `f = λ _ → tt`, `Φ = λ _ → true`.  Every pair
 -- meets at stations `(1,1)`, so `अवतीर्णः` is an equivalence, while
@@ -217,7 +217,7 @@ module _ {A B : Type ℓ} (f : A → B) (Φ : A → A) (e : isEquiv Φ) where
 --
 -- `समानकक्ष्या` is not valued in propositions — the meeting stations are
 -- data.  `SamagamaSthana_TheOrbitRelationIsNeverAPropositionAtAPointAndThe
--- TruncationLosesTheStations.agda` §१ proves that `समानकक्ष्या Φ a a` is
+-- TruncationLosesTheStations.agda` (absent from this repository) §१ proves that `समानकक्ष्या Φ a a` is
 -- not a proposition for EVERY `A`, EVERY `Φ` and EVERY `a`, because the
 -- diagonal meetings `(0,0,refl)` and `(1,1,refl)` are always there.
 --§  there proves the station ωᵀωᵀmapωω does not factor through `_`, and

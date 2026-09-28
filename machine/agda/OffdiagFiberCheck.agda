@@ -13,9 +13,9 @@
 
 ------------------------------------------------------------------------
 -- OffdiagFiberCheck — exact exhaustive verification of the fiber statement
--- in notes/OFFDIAGONAL_NO_GO_FIBER.md.
+-- in notes/OFFDIAGONAL_NO_GO_FIBER.md (absent from this repository).
 --
--- Ported term-for-term from machine/OffdiagFiberCheck.hs into --safe Agda,
+-- Ported term-for-term from machine/OffdiagFiberCheck.hs (absent from this repository) into --safe Agda,
 -- compiled by the kernel's own backend (MAlonzo/GHC).  All lists involved
 -- are of fixed, small, statically-known size (≤ 16 elements), so every
 -- recursion below is structural on its argument list — no fuel needed.

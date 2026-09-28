@@ -8,7 +8,7 @@
 -- This is the checked witness of Wolfram's core multicomputational
 -- principle (a branch is not identified with another branch, ever) — and
 -- it is exactly why the corpus's proof-relevant e-graph KEEPS distinct
--- paths (CRYSTAL.md L2: "distinct automorphisms survive as distinct
+-- paths (CRYSTAL.md (absent from this repository) L2: "distinct automorphisms survive as distinct
 -- paths").  In a set (an h-set) all paths collapse; the circle is NOT a
 -- set, and winding is the invariant that tells the branches apart.
 

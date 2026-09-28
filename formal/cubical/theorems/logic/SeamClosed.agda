@@ -4,7 +4,7 @@
 -- SeamClosed — the flagship residual, proved, from the machine's own
 -- discarded work.
 --
--- THE CLAIM THIS FILE SETTLES.  `interactive/Obstruction.hs` opens by quoting the
+-- THE CLAIM THIS FILE SETTLES.  `interactive/Obstruction.hs` (absent from this repository) opens by quoting the
 -- obligation that the whole obstruction seam was built around:
 --
 --     x != x + 0 · x  of type ℕ   when checking that refl has type x ≡ 1 · x
@@ -69,7 +69,7 @@ flagshipResidual x = sym (addZero x)
 --
 -- The goal the kernel handed back was `x ≡ 1 · x`.  Agda unfolds `1 · x` to
 -- `x + 0 · x`, which is where it stopped.  With the residual in hand the
--- parent is immediate — which is the property `Obstruction.hs`'s header
+-- parent is immediate — which is the property `Obstruction.hs` (absent from this repository)'s header
 -- claims for a residual ("prove `x + 0 · x ≡ x` and the parent closes").
 ------------------------------------------------------------------------
 

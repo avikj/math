@@ -36,11 +36,11 @@
 -- PROVENANCE OF THE MATHEMATICS.  Not Indian and not Carolinian; it is
 -- this repository's, from three artifacts:
 --
---   * notes/DSO_QUERY_EXTENSION_BOUNDARY.md, whose two tables give the
+--   * notes/DSO_QUERY_EXTENSION_BOUNDARY.md (absent from this repository), whose two tables give the
 --     numbers [1,1] / [2,4] / [1,1,101] / [2,4,0], used here
 --     verbatim.  It states the
 --     phenomenon in prose and executes it as a GHC regression
---     (`checkDSOQueryExtension` in machine/MathMachine.hs, returning
+--     (`checkDSOQueryExtension` in machine/MathMachine.hs (absent from this repository), returning
 --     `Left ["true/direct"]`).  This module
 --     checks it.
 --   * the observation
@@ -50,7 +50,7 @@
 --     {s₁,s₂} is a fiber of it, and `full` splits the fiber.
 --     The bound is exact for this three-state witness, not for all
 --     Smith states; §4 is why.
---   * machinery/test_changed_domain_separation.py: the
+--   * machinery/test_changed_domain_separation.py (absent from this repository): the
 --     minimal changed domain is not a function of the block graph, nor
 --     of the labelled block graph.  Same shape: a coarse invariant that
 --     is not a sufficient statistic for the question asked of it.
@@ -59,7 +59,7 @@
 -- standpoint (naya) — against *sakalādeśa*, the total statement, which
 -- is prama.  Malliea, *Sydvdamajar*, 1292 CE; the distinction is
 -- already carried in this corpus by notes/ANEKANTA_THE_MACHINE_HAS_
--- THREE_STANDPOINTS.md and formal/cubical/SaptabhangiNaya.agda, which
+-- THREE_STANDPOINTS.md (absent from this repository) and formal/cubical/SaptabhangiNaya.agda, which
 -- use it for expressibility and the seven-fold predication.  The object
 -- here is different: an ORDERING VERDICT issued under a partial
 -- standpoint.  The word
@@ -311,7 +311,7 @@ dominates-ext-same p q c h =
 ------------------------------------------------------------------------
 -- 4.  The refutation, on the note's own numbers
 --
--- notes/DSO_QUERY_EXTENSION_BOUNDARY.md, its two tables.  Active
+-- notes/DSO_QUERY_EXTENSION_BOUNDARY.md (absent from this repository), its two tables.  Active
 -- dependencies ["answer"] give two contexts, goal and robustness:
 --
 --     false/direct  [1,1]      sole surviving class

@@ -3,10 +3,10 @@
 ------------------------------------------------------------------------
 -- NaturalMachine.LineWorldTransport
 --
--- The line-world transport criterion of `notes/ENCOUNTERED_WORLDS.md`
+-- The line-world transport criterion of `notes/ENCOUNTERED_WORLDS.md` (absent from this repository)
 -- §3.5, WITH ITS HYPOTHESIS ON THE OBSERVABLE MADE PART OF THE TYPE.
 --
--- SOURCE STATEMENT (`notes/ENCOUNTERED_WORLDS.md:121-124`, verbatim):
+-- SOURCE STATEMENT (`notes/ENCOUNTERED_WORLDS.md (absent from this repository):121-124`, verbatim):
 --
 --   **Corollary (line worlds).** For `f = X+Y` and `E = {(a, sa)}`, the
 --   tangent set is `span{(1,s)}` and `grad f|_L (t) = t(1+s)`.  So `E`

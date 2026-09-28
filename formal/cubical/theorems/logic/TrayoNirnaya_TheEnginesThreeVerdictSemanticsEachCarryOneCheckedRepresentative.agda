@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- «त्रयो निर्णयाः,नन द्वौ ।» — three verdicts, never two.
 --
--- machinery/crystal/models.py gives the engine's three verdict classes
+-- machinery/crystal/models.py (absent from this repository) gives the engine's three verdict classes
 -- their semantic readings:
 --
 --   SUCCEEDED        every model of T is a model of S

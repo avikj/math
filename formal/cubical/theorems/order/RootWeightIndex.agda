@@ -22,7 +22,7 @@
 -- the sublattice.
 --
 -- WHY THIS IS NOT PEDANTRY.  T17.24 is load-bearing: it is cited by
--- `SINGULAR_SERIES_LOCAL_FACTOR_IS_A_ROOT_SUBSYSTEM_RANK.md`, whose
+-- `SINGULAR_SERIES_LOCAL_FACTOR_IS_A_ROOT_SUBSYSTEM_RANK.md` (absent from this repository), whose
 -- 108,596-instance exact verification of ν_p(H) = k − rank Φ_p(H) is a
 -- statement about the ROOT system.  A note resting on a lattice named
 -- wrongly is a note whose ranks might be off by the index.  (They are

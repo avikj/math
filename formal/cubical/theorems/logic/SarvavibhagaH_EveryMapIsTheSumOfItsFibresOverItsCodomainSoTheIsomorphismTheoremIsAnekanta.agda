@@ -32,12 +32,12 @@
 --   §1  सर्वविभागः : (A ≃ Σ B (fiber f)) for every f — the universal
 --       decomposition, constructed (a ↦ (f a, a, refl), inverse the first
 --       projection), both round-trips checked.
---   §2  लोपे-एकम् : f is INJECTIVE (loses nothing) iff every fibre is a
---       proposition — the fibre IS the loss, exactly (`Abhijnana` on any
---       map).  When the fibre is contractible the receipt is free; when it
---       is not, the standpoint is genuinely blind.
---   §3  आच्छादनम् : f is SURJECTIVE iff every fibre is inhabited — the
---       quotient (image) is all of B iff nothing in B is unseen.
+--   §2  अलुप्तः : the predicate "every fibre is a proposition" (f is an
+--       embedding), and one direction: it implies f is injective
+--       (`अलुप्त→एकैकः`).  The converse needs B to be a set; it is not
+--       proved here.
+--   §3  आच्छादकः : the predicate "every fibre has a chosen point" (split
+--       surjectivity).  A definition only; no theorem is stated about it.
 --
 -- No postulates, no holes, --safe.
 ------------------------------------------------------------------------
@@ -74,17 +74,20 @@ Iso.leftInv  (सर्वविभाग-समरूपः f) a           = re
 सर्वविभागः f = isoToEquiv (सर्वविभाग-समरूपः f)
 
 ------------------------------------------------------------------------
--- §2  लोपे-एकम् — the map loses nothing (is injective) iff every fibre is
---     a proposition.  The fibre is exactly the loss.
+-- §2  लोपे-एकम् — every fibre a proposition (f an embedding) implies f is
+--     injective.  The converse holds when B is a set; not proved here.
 ------------------------------------------------------------------------
 
--- injective, stated fibre-wise: any two points of one fibre coincide
+-- any two points of one fibre coincide
 अलुप्तः : (f : A → B) → Type _
 अलुप्तः {A = A} f = (b : _) → isProp (fiber f b)
 
+अलुप्त→एकैकः : (f : A → B) → अलुप्तः f → (a a' : A) → f a ≡ f a' → a ≡ a'
+अलुप्त→एकैकः f h a a' p = cong fst (h (f a') (a , p) (a' , refl))
+
 ------------------------------------------------------------------------
--- §3  आच्छादनम् — the quotient (image) is all of B iff every fibre is
---     inhabited (surjective): nothing in the codomain is unseen.
+-- §3  आच्छादनम् — every fibre has a chosen point (split surjectivity).
+--     A definition only.
 ------------------------------------------------------------------------
 
 आच्छादकः : (f : A → B) → Type _

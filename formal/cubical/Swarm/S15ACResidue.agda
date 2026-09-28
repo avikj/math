@@ -5,7 +5,7 @@
 --
 -- WHAT THIS SETTLES
 --
--- `runtime/execute/acmatch.py` opens with a 113-line docstring headed
+-- `runtime/execute/acmatch.py` (absent from this repository) opens with a 113-line docstring headed
 -- "THE SEMANTICS, STATED BEFORE THE CODE".  It permits an AC residue at
 -- the ROOT of a pattern and forbids one at every INNER AC node, and it
 -- gives this reason:

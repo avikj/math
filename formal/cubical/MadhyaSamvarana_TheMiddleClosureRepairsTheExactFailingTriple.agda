@@ -11,7 +11,7 @@
 -- file is written to is the owner's own constitutional maxim,
 -- समता प्रमाणेन — equivalence by proof, not resemblance (D0026 §10.6).
 --
--- SOURCE.  collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md
+-- SOURCE.  collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md (absent from this repository)
 -- §2.5 "Two-sided contextual saturation repairs composition", captured
 -- 2026-08-16, `content_origin: direct-user`.  §2.5 marks itself
 -- "↳ Exact theorem in the inherited middle-type calculus; ◆ contextual

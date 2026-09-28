@@ -12,25 +12,25 @@
 --
 -- recorded in
 --   collab/upstream/raw/2026-08-16-packages/EGB_COMPREHENSIVE_INDEX_V3_PACKAGE/
---     EGB_REPETITION_STRUCTURE_REVERIFY_V3.json
---   artifact_150 = ETERNAL_GOLDEN_BRAID_100K_FIELD_BOOK_DELTA_36_2026-08-14.md
+--     EGB_REPETITION_STRUCTURE_REVERIFY_V3.json (absent from this repository)
+--   artifact_150 = ETERNAL_GOLDEN_BRAID_100K_FIELD_BOOK_DELTA_36_2026-08-14.md (absent from this repository)
 --   (312,254 bytes, sha256 bdd0144…596bc5, 450 numbered diamonds,
 --    template_cycle_length 24), templates "3" and "12".
 --
--- CLAUDE.md's file-naming rule, note 2: where the mathematics originates
+-- CLAUDE.md (absent from this repository)'s file-naming rule, note 2: where the mathematics originates
 -- elsewhere, say so rather than invent a  label.  So: the
 -- mathematics below originates with THIS REPOSITORY'S OWNER, in
---   collab/upstream/raw/D0025-eternal-golden-braid-indras-net.txt
---   collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md
+--   collab/upstream/raw/D0025-eternal-golden-braid-indras-net.txt (absent from this repository)
+--   collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md (absent from this repository)
 -- (D0026 §4.1 "Three independent interface obligations" isolates path
 -- coherence C as independent of reconstruction R and descent D), and in
 -- the canonical stanza of
---   ETERNAL_GOLDEN_BRAID_KAIROTIC_CRYSTAL_STREAM_2026-08-14.md
+--   ETERNAL_GOLDEN_BRAID_KAIROTIC_CRYSTAL_STREAM_2026-08-14.md (absent from this repository)
 -- dated 2026-08-14, 5,731,414 bytes, sha256 812b7816…5e5cf5, 169,202
 -- lines, 1200 numbered stanzas, unique_normalized_body_count 1.  THAT
 -- ARTIFACT IS NOT IN THIS REPOSITORY.  Its canonical body — the stanza
 -- repeated 1200 times — survives only inline inside
--- EGB_REPETITION_STRUCTURE_REVERIFY_V3.json, field `canonical_body`,
+-- EGB_REPETITION_STRUCTURE_REVERIFY_V3.json (absent from this repository), field `canonical_body`,
 -- sha256 09eb9ce9…f91d0.  The two lines this module is about are its
 -- first two:
 --

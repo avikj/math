@@ -68,7 +68,7 @@
 --
 --
 -- PRIOR ART IN THIS CORPUS, consumed and credited (searched BEFORE
--- writing, per `CLAUDE.md`).
+-- writing, per `CLAUDE.md` (absent from this repository)).
 --
 --   `NaturalMachine/GaugeOrbitClasses.agda` — the character law `val-⋆`,
 --     the annihilator subgroup qs^⊥ = `AllNeutral · qs`, and the class
@@ -156,7 +156,7 @@ private
 -- Note what happens to the Lean typeclass burden.  `Finset (List A)`
 -- becomes a plain `List Test` — nothing below deduplicates, so
 -- `DecidableEq A` is not needed.  `Fintype (State M)` has NO image at
--- all: `State` here is the free space {±1}^P of `TARGET.md` §3.  That
+-- all: `State` here is the free space {±1}^P of `TARGET.md` (absent from this repository) §3.  That
 -- missing hypothesis is not an oversight; §5 is what it costs.
 ------------------------------------------------------------------------
 
@@ -444,7 +444,7 @@ probe-neutral-not-charged (_ , c) = true≢false (τ₋charged→odd (0 ∷ 1 �
 -- can shrink the annihilator without touching τ₋.
 --
 -- Locus: `Signs = ℕ → Bool` with the full gauge group acting, i.e. the
--- free state space of `TARGET.md` §3.  Instance: t = p₀p₁ (Ω = 2, hence
+-- free state space of `TARGET.md` (absent from this repository) §3.  Instance: t = p₀p₁ (Ω = 2, hence
 -- parity-neutral) and τ = τ₀.
 --
 -- WHAT EXACTLY FAILS TO TRANSPORT, named.  In Lean, `State M` is the

@@ -19,11 +19,11 @@
 -- ────────────────────────────────────────────────────────────────────
 -- RELATED MODULES, none re-derived here
 --
---   `formal/cubical/NaturalMachine/Abhava.agda`, `notes/NO_BARE_ABSENCES.md`
+--   `formal/cubical/NaturalMachine/Abhava.agda`, `notes/NO_BARE_ABSENCES.md` (absent from this repository)
 --       — abhāva with pratiyogin; the absence tower; `dec-collapses`.
 --   `formal/cubical/AbhavaAvacchedaka.agda`
 --       — the avacchedaka as a genuine dependent binder, load-bearing.
---   `notes/EVERY_OBSTRUCTION_HERE_IS_EXACT.md`
+--   `notes/EVERY_OBSTRUCTION_HERE_IS_EXACT.md` (absent from this repository)
 --       — **withdraws** Abhava's reading: `¬-always-stable` needs no
 --         hypothesis, so the absence tower is two-tall for every `A`,
 --         and decidability lands on the PRATIYOGIN, not on the absence.
@@ -286,7 +286,7 @@ module Counting {A : Type ℓ} (_≟_ : Discrete A) where
 ------------------------------------------------------------------------
 -- 4.  MARKOV'S PRINCIPLE FOR THIS PRATIYOGIN IS DISCHARGED, NOT ASSUMED.
 --
---     `notes/EVERY_OBSTRUCTION_HERE_IS_EXACT.md`: the absence `¬A` is
+--     `notes/EVERY_OBSTRUCTION_HERE_IS_EXACT.md` (absent from this repository): the absence `¬A` is
 --     always stable, and what is at issue is recoverability of the
 --     COUNTERPOSITIVE.  `WhereTheTowerCanStillBeThree` §5: for a
 --     Σ-shaped counterpositive that is exactly a search question.

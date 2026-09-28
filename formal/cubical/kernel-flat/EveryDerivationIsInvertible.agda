@@ -5,12 +5,14 @@
 --
 -- Ledger entries A and C, made a term. Because `reverse` is a `Step`
 -- constructor, every `Derivation a b` runs backwards: `revD` builds the
--- inverse derivation `Derivation b a` by reversing each step and
--- reassembling in the opposite order. The calculus is a groupoid at the
--- operational level, and the inverse is GRADE-PRESERVING: reversing a
--- route costs exactly what the route cost (`len-revD`). This is
--- losslessness/ahimsa as a checked term, not a remark: no derivation is a
--- one-way street, and reversal adds no cost.
+-- reversed derivation `Derivation b a` by reversing each step and
+-- reassembling in the opposite order.  The reversal is GRADE-PRESERVING:
+-- reversing a route costs exactly what the route cost (`len-revD`).  It is
+-- an inverse only up to MEANING (`revD-sound`): as data, `d ++ revD d` has
+-- length 2·len d and is not `done`, and `revD (revD d)` is not `d`
+-- (`reverse (reverse s)` is a different constructor application).  So the
+-- calculus is a category with formal reverses, a groupoid only after its
+-- meaning is taken; see Kernel/Syat_… and Kernel/VyayaResidue_….
 ------------------------------------------------------------------------
 
 module EveryDerivationIsInvertible where
@@ -34,7 +36,7 @@ len-++ : {a b c : Tm} (d : Derivation a b) (e : Derivation b c)
 len-++ (done _)        e = refl
 len-++ (then-step _ d) e = cong suc (len-++ d e)
 
--- THE INVERSE DERIVATION : every derivation runs backwards.
+-- THE REVERSED DERIVATION : every derivation runs backwards.
 revD : {a b : Tm} → Derivation a b → Derivation b a
 revD (done x)        = done x
 revD (then-step s d) = revD d ++ then-step (reverse s) (done _)
@@ -49,7 +51,7 @@ len-revD (then-step s d) =
   ∙ +-suc (len d) zero
   ∙ cong suc (+-zero (len d))
 
--- SEMANTICALLY THE INVERSE : the reversed derivation's meaning is the
+-- SEMANTICALLY (ONLY) THE INVERSE : the reversed derivation's meaning is the
 -- inverse path. Robust because meaning lands in ℕ (a set): the two paths
 -- eval b ρ ≡ eval a ρ are forced equal.
 revD-sound : {a b : Tm} (d : Derivation a b) (ρ : Env)

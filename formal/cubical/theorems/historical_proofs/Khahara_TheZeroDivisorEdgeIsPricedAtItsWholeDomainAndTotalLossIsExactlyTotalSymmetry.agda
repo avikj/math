@@ -22,7 +22,7 @@
 -- The arithmetic rule is *लीलावती* ४५–४७, whose verse 47 worked example
 -- (63 → 14) cannot be solved without it.  The preceding statement is
 -- ब्रह्मगुप्त, *ब्राह्मस्फुटसिद्धान्त* १८.३४–३५ (628).  Citation as given
--- in `.claude/hooks/MulaVakya_SourceStatementsForTheTermsInOurFileNames.txt`
+-- in `.claude/hooks/MulaVakya_SourceStatementsForTheTermsInOurFileNames.txt` (absent from this repository)
 -- line 190, including its LIMIT: Bhskara does not distinguish n0 from
 -- 00, and read as an arithmetic on a field the rule fails.  No
 -- manuscript was opened here either.
@@ -242,7 +242,7 @@ module _ {A : Type ℓ} {B : Type ℓ'} (f : A → B) where
 --     R1 is the special case target = Unit.  R5 subsumes it and would
 --     have decided this edge.  How many of the 1062 UNDECIDED it decides
 --     is NOT estimated here — a count without a run is the fitted
---     constant CLAUDE.md opens with.
+--     constant CLAUDE.md (absent from this repository) opens with.
 --
 --     The companion move is
 --     `Chandomudra_ThePratyayasFibresWereWrittenInProseAndTheCensusCalledThemUndecided`,

@@ -6,12 +6,12 @@
 -- THE TRANSLATION.  Two documents in this repository state the same
 -- theorem in vocabularies that do not cite each other:
 --
---   notes/LEAN_SMITH_CERTIFICATE_GATE.md
+--   notes/LEAN_SMITH_CERTIFICATE_GATE.md (absent from this repository)
 --     an untrusted producer submits A, L, R, d₁, d₂; the checker
 --     accepts exactly when diag(d₁,d₂) = L A R, |det L| = |det R| = 1,
 --     0 ≤ dᵢ, d₁ ∣ d₂.
 --
---   collab/messages/workers/…--codex_arithmetic_life--0002.md
+--   collab/messages/workers/…--codex_arithmetic_life--0002.md (absent from this repository)
 --     for a z ≡ b (mod m), g = gcd(a,m) is the COMPLETE obstruction:
 --     g ∤ b ⇒ unsolvable, g ∣ b ⇒ solvable, and the residue lifts
 --     exactly g ways.

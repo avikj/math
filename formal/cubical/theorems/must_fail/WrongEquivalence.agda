@@ -5,7 +5,7 @@
 --
 -- *** THIS FILE MUST FAIL TO TYPE-CHECK. ***
 --
--- It is a designed-annihilation control (collab/PROTOCOL.md §7): it
+-- It is a designed-annihilation control (collab/PROTOCOL.md (absent from this repository) §7): it
 -- asserts the equivalence ℕ ≃ Word for RAW digit words, dropping the
 -- canonicity hypothesis.  That statement is false --- `Controls.C1`
 -- proves it false --- and the point of this file is to exhibit that the

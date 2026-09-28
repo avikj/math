@@ -4,7 +4,7 @@
 -- GterTwoCoordinate
 --
 -- D0026 §7.3, Deltas 37–38,
--- `collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md`
+-- `collab/upstream/raw/D0026-owner-egb-core-transmission-v2-2026-08-16.md` (absent from this repository)
 -- lines 2456–2700.
 --
 -- WHAT IS BEING SETTLED.  D0026 §7.3 asserts, with no proof and no

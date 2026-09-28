@@ -91,7 +91,7 @@
 --     "approximate"; the projector exactly computes a different
 --     functional, and `aliased` names it.
 --
---   * Instances (refl, i.e. exact finite computation, which CLAUDE.md
+--   * Instances (refl, i.e. exact finite computation, which CLAUDE.md (absent from this repository)
 --     rates as proof).  The coefficients come from the note's §1: from
 --     a_z(d) = z^ρ (z-1)^j with ρ = Ω(d)-ω(d), j = ω(d), the module
 --     defines `kappa` by the structural recursion of (z-1)^{j+1} =

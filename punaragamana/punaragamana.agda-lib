@@ -1,8 +1,8 @@
 name: punaragamana
 include: src
--- agda/cubical v0.5 declares `name: cubical-0.5` in its own cubical.agda-lib,
+-- agda/cubical v0.9 declares `name: cubical-0.9` in its own cubical.agda-lib,
 -- so the version is part of the library's identifier and not merely a comment.
--- Depending on `cubical-0.5` therefore makes the pin a hard resolution
+-- Depending on `cubical-0.9` therefore makes the pin a hard resolution
 -- constraint: a checkout of any other release fails to resolve at all, rather
 -- than resolving and then failing somewhere deep in a proof.
 depend: cubical-0.9

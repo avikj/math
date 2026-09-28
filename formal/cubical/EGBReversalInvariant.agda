@@ -7,7 +7,7 @@
 -- achromatic data.
 --
 -- The corpus's one symmetry that every colored ray reports identically
--- is the reflection/reversal ℤ/2.  notes/CROSS_LENS.md §3 records the
+-- is the reflection/reversal ℤ/2.  notes/CROSS_LENS.md (absent from this repository) §3 records the
 -- join nobody used: "four vocabularies, one symmetry, no cross-citation"
 -- — the "up to reflection" of every rigidity theorem
 -- (PARITY_RIGIDITY Thm A′′), the pairing Res(g, g(−x)) behind the whole
@@ -33,7 +33,7 @@
 --   * just-inj       : Cubical/Data/Maybe/Properties.agda (library)
 --   * true≢false, false≢true : Cubical/Data/Bool/Properties.agda (library)
 --   The library has NO length-rev (checked: only length-map at
---   Properties.agda:178); length-snoc and length-rev below are the only
+--   Properties.agda (absent from this repository):178); length-snoc and length-rev below are the only
 --   inductions this file performs.
 ------------------------------------------------------------------------
 

@@ -36,7 +36,14 @@
 -- the index list to be pure shape, and then a matrix is just a profile
 -- of profiles (`Rows`), which is what `UpP` consumes.
 --
--- **AND THE OBSTRUCTION IS THE EMPTY ROW SET, PRECISELY.**  The right
+-- **SUPERSEDED — kept for the record.**  The paragraph below claimed the
+-- empty row set obstructs the right adjoint.  It does not: the burden side
+-- is ordered by `_⊑p_` (reverse ≤), so the `⊑p`-GREATEST profile under a
+-- vacuous constraint is the ≤-LEAST, all zeros, which ℕ has; see
+-- `TheTwoSidedCutNeedsNoInfinityBecauseTheEmptyMeetIsZero`.  The error was
+-- reading "largest" in ≤ instead of in ⊑p.
+--
+-- (Original:) **AND THE OBSTRUCTION IS THE EMPTY ROW SET, PRECISELY.**  The right
 -- adjoint must send a residual profile ψ to the LARGEST burden profile
 -- φ with `UpP bs φ ⊑p ψ`; componentwise that is `maxᵢ (bᵢⱼ ∸ ψᵢ)`.
 -- With no rows the constraint is vacuous, so the largest such φ is

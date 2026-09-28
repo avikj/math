@@ -7,7 +7,7 @@
 --
 ------------------------------------------------------------------------
 -- ON THE NAME.  **No  term is claimed and none is invented**, per
--- CLAUDE.md's file-naming rule, note 2.  The method this module formalises
+-- CLAUDE.md (absent from this repository)'s file-naming rule, note 2.  The method this module formalises
 -- is Greek and the file leads with the source's own words for it.
 --
 -- Archimedes' quadratures close by eliminating both inequalities: the
@@ -71,7 +71,7 @@
 ------------------------------------------------------------------------
 -- THE OWNER TRANSMISSION THIS MODULE CHECKS.
 --
--- `collab/upstream/library/raw/SUFFICIENT_INTERFACES_DELTA_02_2026-08-13.md`,
+-- `collab/upstream/library/raw/SUFFICIENT_INTERFACES_DELTA_02_2026-08-13.md` (absent from this repository),
 -- quoted, not paraphrased:
 --
 --   §0  "Strict submultiplicativity already occurs in the smallest
@@ -217,7 +217,7 @@ hits-⊗ h h' (a , a') =
 ------------------------------------------------------------------------
 -- 2.  Finite machinery, and Delta 02's Theorems 1 and 2 as checked terms.
 --
--- Exhaustive Boolean verification decided by `refl`.  Under CLAUDE.md's
+-- Exhaustive Boolean verification decided by `refl`.  Under CLAUDE.md (absent from this repository)'s
 -- rule this is certified symbolic computation, i.e. proof, not measurement.
 ------------------------------------------------------------------------
 

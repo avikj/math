@@ -15,7 +15,7 @@
 -- WHAT THIS MODULE ADDS.  The arithmetic core of that no-go needs none of
 -- it.  Strip the C*-algebra and what is left is a statement about two
 -- completely multiplicative ±1 functions that no neutral observation can
--- tell apart — a COLLISION, in the sense `runtime/CRYSTAL.md` §3.2 gives
+-- tell apart — a COLLISION, in the sense `runtime/CRYSTAL.md` (absent from this repository) §3.2 gives
 -- the word: "not a failure; it is a specification of the missing
 -- distinction."  `EndogenousHorizon` already carries that
 -- shape for trial division (Delta 22 T22.4).  This module carries it for
@@ -36,7 +36,7 @@
 -- the two observation vectors are not merely close, they are equal.
 --
 -- WHY THE FLIP IS THE RIGHT ADVERSARY.  σ ↦ σ' is the gauge action of
--- the element (-1,-1,-1,…) of GAUGE.md §F.1's torus — the single group
+-- the element (-1,-1,-1,…) of GAUGE.md (absent from this repository) §F.1's torus — the single group
 -- element whose character is exactly the parity grading.  So this is
 -- Theorem F's mechanism, at the one point of the torus that matters,
 -- with the equilibrium argument replaced by an equality of finite lists.
@@ -202,7 +202,7 @@ no-decision σ qs all decide (yes , no) =
 ------------------------------------------------------------------------
 -- §5  The collision specifies its repair.
 --
--- CRYSTAL.md §3.2: a collision is a specification of the missing
+-- CRYSTAL.md (absent from this repository) §3.2: a collision is a specification of the missing
 -- distinction.  Here the missing distinction is exhibited — a single
 -- odd-Ω query separates, for every σ.  So the barrier is not "nothing
 -- works"; it is "exactly the charged queries work", which is the form

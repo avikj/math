@@ -59,7 +59,7 @@ open import Cubical.Data.Bool using (Bool ; true ; false ; false≢true)
 open import Cubical.Relation.Nullary using (¬_)
 
 open import TheParetoStratumIsDecidableAndTheFilterIsExact
-  using (StrictlyDominates)
+  using (StrictlyDominatedBy)
 open import ANonEmptyArchiveHasANonEmptyStratum
   using (⊏-irrefl ; ⊏-trans)
 open import TheReachableLawDoesNotComposeWithoutPreservation
@@ -83,7 +83,7 @@ module _ {Sys B O Prov : Type}
   RCertified d e =
     Σ[ mg ∈ (M d → M e) ]
         (sem e ≡ sem d)
-      × (StrictlyDominates (cost d) (cost e))
+      × (StrictlyDominatedBy (cost d) (cost e))
       × (LawfulOn M obs R d e mg)
       × (Preserves M obs R d e mg)
       × (List Prov)

@@ -2,7 +2,7 @@
 
 ------------------------------------------------------------------------
 -- तपस् — a MINTED fibre receipt.  Emitted by
--- machine/Tapas_TheTemplateIsTheProofShapeAndEveryNonMatchIsAWrittenRefusal.hs
+-- machine/Tapas_TheTemplateIsTheProofShapeAndEveryNonMatchIsAWrittenRefusal.hs (absent from this repository)
 -- from template T-TABLE-BOOL-NAT.
 --
 -- THE EDGE:

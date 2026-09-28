@@ -23,7 +23,7 @@
 -- says every gauge-charged observable has equilibrium expectation exactly
 -- zero, which is the sieve parity barrier.
 --
--- BillIsItsGradedForm.md` claims those are one charge, and marks the claim an
+-- BillIsItsGradedForm.md` (absent from this repository) claims those are one charge, and marks the claim an
 -- IDENTIFICATION exhibited on index sets and signs rather than a checked map.
 -- This module removes that qualification for the algebraic half, on a list of
 -- places rather than `Fin n → Bool`:
@@ -100,7 +100,7 @@ open import Cubical.Data.Int
 --
 --     charge  =  − Ω · λ
 --
--- one line of the Lean lane's tensor and one line of GAUGE.md's graded
+-- one line of the Lean lane's tensor and one line of GAUGE.md (absent from this repository)'s graded
 -- object, shown to be the same function of the places.
 
 ओजयुग्म-नियमः : (bs : List Bool)

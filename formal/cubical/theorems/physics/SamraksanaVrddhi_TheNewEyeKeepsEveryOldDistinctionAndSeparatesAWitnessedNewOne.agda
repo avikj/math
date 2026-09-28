@@ -6,7 +6,7 @@
 -- (both ordinary ; vddhi is also Pini's technical name for
 -- the strengthened vowel grade, Aṣṭādhyāyī 1.1.1 vṛddhir ādaic — taken
 -- here ONLY in its ordinary sense of increase).  Compound built here for
--- U0023 (collab/upstream/raw/U0023.txt).
+-- U0023 (collab/upstream/raw/U0023.txt (absent from this repository)).
 --
 -- THE OTHER HALF OF THE ADMISSION GATE.  ApurvaIndriyam (imported)
 -- checked the NOVELTY criterion: one blind pair separated by a proposal

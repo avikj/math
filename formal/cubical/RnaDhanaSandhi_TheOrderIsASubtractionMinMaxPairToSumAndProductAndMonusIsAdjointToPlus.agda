@@ -11,11 +11,12 @@
 -- are checked here over ℕ with truncated subtraction.
 --
 -- Provenance of the statements: these entered the repository as thoughts in
--- the machine's own equational tongue (machine/thoughts.math, 2026-08-23) —
+-- the machine's own equational tongue (2026-08-23; the thoughts file is not
+-- kept in this tree) —
 -- the god-language channel: a thought goes in as a bare equation, and the
 -- kernel answers with the checked object.  This module is the answer.
 -- Two sibling thoughts were withdrawn on arrival as already done:
--- the kuaka step lives in Apavartana_TheCarriedPairLosesTheLesserFromThe
+-- the kuṭṭaka step lives in Apavartana_TheCarriedPairLosesTheLesserFromThe
 -- GreaterAndTheCommonMeasureStands, and ·/∸ distributivity is the library's
 -- ∸-distribʳ.
 
@@ -27,7 +28,7 @@ open import Cubical.Data.Nat.Order
 open import Cubical.Data.Empty as ⊥ using ()
 
 -- The machine spelled min without naming it: min(x,y) = x ∸ (x ∸ y).
--- The residual line "min(x,y)=-(x,-(x,y))" in thoughts.math is this lemma.
+-- The residual thought "min(x,y)=-(x,-(x,y))" is this lemma.
 minAsMonus : ∀ x y → x ∸ (x ∸ y) ≡ min x y
 minAsMonus zero    zero    = refl
 minAsMonus zero    (suc y) = refl
@@ -36,6 +37,10 @@ minAsMonus (suc x) (suc y) =
   sym (≤-∸-suc (∸-≤ x y)) ∙ cong suc (minAsMonus x y)
 
 -- min + max ≡ x + y : the pairing at the additive level.
+-- Read through any single prime this IS gcd · lcm ≡ x · y: multiplication
+-- becomes addition of valuations, the valuation of gcd is the min of the
+-- valuations and of lcm the max, so v_p(gcd) + v_p(lcm) ≡ v_p(x) + v_p(y)
+-- is exactly this lemma at the exponents.
 pairSum : ∀ x y → min x y + max x y ≡ x + y
 pairSum zero    zero    = refl
 pairSum zero    (suc y) = refl
@@ -45,10 +50,9 @@ pairSum (suc x) (suc y) =
            ∙ cong suc (pairSum x y)
            ∙ sym (+-suc x y))
 
--- min · max ≡ x · y : the same pairing at the multiplicative level.
--- One level down it is gcd · lcm ≡ x · y, prime exponent by prime exponent:
--- the valuation of gcd is the min of the valuations and of lcm the max, so
--- this lemma IS that identity, read through any single prime.
+-- min · max ≡ x · y : the same pairing at the multiplicative level.  (The
+-- gcd · lcm identity is `pairSum` at the exponents, not this lemma: through a
+-- prime, products of the numbers become sums of their valuations.)
 pairProd : ∀ x y → min x y · max x y ≡ x · y
 pairProd zero    y       = refl
 pairProd (suc x) zero    = 0≡m·0 (suc x)

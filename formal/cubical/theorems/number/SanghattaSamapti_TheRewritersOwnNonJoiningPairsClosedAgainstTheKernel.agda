@@ -8,7 +8,7 @@
 -- interactive/Sanghatta ran Knuth–Bendix over interactive/library.terms: 174
 -- rules, 829 critical pairs, 399 NON-JOINING — equations the rewriter
 -- provably cannot close by rewriting alone, printed to
--- interactive/sanghatta-report-2026-08-23.txt.  The machine named exactly
+-- interactive/sanghatta-report-2026-08-23.txt (absent from this repository).  The machine named exactly
 -- what it needs.  This module takes the batch and closes it against the
 -- kernel: each non-joining pair, over the same ℕ signature (s/0, +, ·,
 -- monus, le, max, gcd), proved as a theorem.  What the rewriter cannot

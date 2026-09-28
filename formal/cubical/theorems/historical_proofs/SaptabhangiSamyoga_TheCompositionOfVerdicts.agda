@@ -412,11 +412,11 @@ x न्यूनः y = क्रम-योग x y ≡ y
 ------------------------------------------------------------------------
 -- ९ · यत् एतत् वदति, यन्त्रे ।
 --
--- machine/Saptabhangi_TheSevenfoldVerdict.hs एतान् एव नियमान् वहति, तत्रैव
+-- machine/Saptabhangi_TheSevenfoldVerdict.hs (absent from this repository) एतान् एव नियमान् वहति, तत्रैव
 -- स्रोतांसि लिखित्वा ।  तत्र `order`, `saha`, `Sthana` — अत्रत्यानि नामानि ।।
 -- यत् तत्र न अस्ति : मेलनम् ।  यतो न विद्यते — तत् एव अत्र प्रमाणितम् ।
 --
--- (machine/Saptabhangi_TheSevenfoldVerdict.hs carries these same laws.
+-- (machine/Saptabhangi_TheSevenfoldVerdict.hs (absent from this repository) carries these same laws.
 -- What it does not carry is a meet, because there is not one — that is the
 -- theorem above, and it is the reason the Haskell type exposes no `bottom`,
 -- no `mempty`, and no `Ord`.)
@@ -451,7 +451,7 @@ x न्यूनः y = क्रम-योग x y ≡ y
 -- for order, for saha, or for neither is checked in
 --
 --   Arpitanarpita_TheForgetfulMapIsAHomomorphismForBothArpanasAndThe
---     LabelsAreARetractNotAnEquivalence.agda
+--     LabelsAreARetractNotAnEquivalence.agda (absent from this repository)
 --
 -- and the answer is BOTH, exhaustively, 49 cases each, for every S and
 -- every P.  Further: the map has a SECTION (अर्पणम्, Tattvārthasūtra 5.31's

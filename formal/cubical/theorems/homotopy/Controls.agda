@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- Controls
 --
--- Designed annihilation (collab/PROTOCOL.md §7).
+-- Designed annihilation (collab/PROTOCOL.md (absent from this repository) §7).
 --
 -- A claim ships with the apparatus that would destroy it.  The three
 -- controls for this development are:

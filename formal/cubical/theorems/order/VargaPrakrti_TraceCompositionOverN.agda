@@ -16,14 +16,14 @@
 --
 -- THE FORM.   N(x, y) = x² + T·x·y − C·y²,  Δ = T² + 4C.
 --
---   T = 0, C = D  is  x² − D y²  — Brahmagupta's, and `Nalanda.hs`'s.
+--   T = 0, C = D  is  x² − D y²  — Brahmagupta's, and `Nalanda.hs` (absent from this repository)'s.
 --   T = 1, C = (Δ−1)/4  is the principal form of a discriminant
 --                Δ ≡ 1 (mod 4), i.e. the norm form of the MAXIMAL order
 --                ℤ[(1+√Δ)/2], which contains ℤ[√Δ] with index 2 and which
 --                x² − D y² = 1 cannot see.
 --
 -- WHY ℕ AND WHY SUBTRACTION-FREE.
--- `BhavanaSemiring.agda`: bhvan as classically written
+-- `BhavanaSemiring.agda` (absent from this repository): bhvan as classically written
 -- is FALSE over ℕ because monus truncates, and moving every negative term
 -- across makes it true with no hypothesis and makes it a commutative-
 -- SEMIRING identity — no induction, no ordering, no case split on a sign.
@@ -68,18 +68,18 @@ open import Cubical.Tactics.NatSolver using (solveℕ!)
 ------------------------------------------------------------------------
 -- BRAHMAGUPTA'S TWO COORDINATES, TRANSCRIBED RATHER THAN IMPORTED.
 --
--- `BhavanaSemiring.agda` defines exactly `cx` and `cy` below and this file
--- would import them.  It cannot: `BhavanaSemiring.agda`, `CakravalaNat
+-- `BhavanaSemiring.agda` (absent from this repository) defines exactly `cx` and `cy` below and this file
+-- would import them.  It cannot: `BhavanaSemiring.agda` (absent from this repository), `CakravalaNat
 -- .agda` and `Brahmagupta.agda` DO NOT CHECK under the toolchain
--- `BUILD.md` pins (Agda 2.8.0, cubical v0.9).  They call
+-- `BUILD.md` (absent from this repository) pins (Agda 2.8.0, cubical v0.9).  They call
 -- `Cubical.Tactics.NatSolver.Reflection.solve`, the point-free solver of
 -- cubical v0.5, which v0.9 replaced with the hole macro `solveℕ!`.  The
 -- error is `[NotInScope] solve`, reproducible in one command:
 --
---     cd formal/cubical && agda BhavanaSemiring.agda
+--     cd formal/cubical && agda BhavanaSemiring.agda (absent from this repository)
 --
 -- This file stands alone: the two coordinates below
--- are transcribed verbatim from `BhavanaSemiring.agda` so that the
+-- are transcribed verbatim from `BhavanaSemiring.agda` (absent from this repository) so that the
 -- containment claim — that the generalisation at T = 0 IS Brahmagupta's
 -- statement — is a checked term here.
 ------------------------------------------------------------------------

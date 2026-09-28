@@ -324,21 +324,20 @@ open import Saptabhangi
 -- pattern over n instances until something downstream of it is computed,
 -- so here is the third, and it changes the shape of the claim.
 --
--- 0÷0 is NOT सामयिक.  No resource resolves it: for EVERY candidate value
--- there is a competing value satisfying the same defining condition.  In
--- the vocabulary of §1 that makes it  too.  [was "the same pole as avaktavyam";
+-- 0÷0 is नित्य: for EVERY candidate value there is a competing value
+-- satisfying the same defining condition (`शून्यहरः-नित्यम्` below).  That
+-- does NOT show it is not सामयिक — §9 proves the two properties independent
+-- (`bothHold` is सामयिक AND नित्य at once) — so on the सामयिक column 0÷0 is
+-- NOT SHOWN either way, and this file earlier recorded it as "no" without a
+-- term.  What does separate 0÷0 from the fourth bhaṅga is the other axis,
+-- the one §6 exhibited: 0÷0's whole situation is denotable in a single
+-- utterance (`शून्यहरः-सर्वत्र`), and avaktavyam's is not
+-- (`no-single-vacana`).  The table, with only what is proved:
 --
--- So the सामयिक/नित्य axis does NOT separate 0÷0 from the fourth bhaṅga,
--- and whatWhat separates them is the
--- other axis, the one §6 actually exhibited: 00's whole situation is
--- denotable in a single utterance (`शून्यहरः-सर्वत्र`), and avaktavyam's is
--- not (`no-single-vacana`).  Two axes, three structures, each pair
--- separated by at least one:
---
---                        सामयिक?    sayable in one utterance?
+--                        सामयिक?     sayable in one utterance?
 --   अनुक्तम् (Satyayantra)   yes             --
---   00                     no             yes
---   अवक्तव्यम् (4th bhaṅga)  no             no
+--   0÷0                    not shown       yes
+--   अवक्तव्यम् (4th bhaṅga)  no              no
 ------------------------------------------------------------------------
 
 शून्यहरः-नित्यम् :

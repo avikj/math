@@ -31,7 +31,7 @@
 --
 --  2. trivializeAut       A CHOSEN repair f₀ trivialises the torsor:
 --                         Aut y ≃ CatIso S x y, a ↦ f₀ ⋆ a.  This is
---                         FOUR_REPAIR_MODES.md Thm 3 ("the set of
+--                         FOUR_REPAIR_MODES.md (absent from this repository) Thm 3 ("the set of
 --                         completions is empty or a V^Γ-torsor; a lift
 --                         must be chosen") as the special case where the
 --                         group is Aut of the repaired object — the
@@ -183,7 +183,7 @@ module _ (S : Category ℓ ℓ') where
 ------------------------------------------------------------------------
 -- 2.  A chosen repair trivialises the torsor.
 --
---     This is FOUR_REPAIR_MODES.md Thm 3's "chosen lift" as a special
+--     This is FOUR_REPAIR_MODES.md (absent from this repository) Thm 3's "chosen lift" as a special
 --     case: with a lift f₀ chosen, the repairs are IN BIJECTION with the
 --     group; without one there is a torsor and no distinguished point.
 ------------------------------------------------------------------------

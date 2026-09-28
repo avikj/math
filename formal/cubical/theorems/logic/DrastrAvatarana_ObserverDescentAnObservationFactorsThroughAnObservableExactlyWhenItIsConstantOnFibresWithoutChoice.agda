@@ -4,8 +4,8 @@
 -- an observable exactly when it is constant on the observable's fibres,
 -- and the factorization is built without choice.
 --
--- SOURCE.  notes/LEAN_TO_CUBICAL_PORT_MAP.md (branch main), §3.3
--- "`FiniteInformation` → `NaturalMachine/ObserverDescent.agda`
+-- SOURCE.  notes/LEAN_TO_CUBICAL_PORT_MAP.md (absent from this repository) (branch main), §3.3
+-- "`FiniteInformation` → `NaturalMachine/ObserverDescent.agda` (absent from this repository)
 -- (proposed)", whose code sketch reads verbatim:
 --
 --   module ObserverDescent {ℓx ℓy ℓt} {X : Type ℓx} {Y : Type ℓy} {T : Type ℓt} where
@@ -51,7 +51,7 @@
 --
 -- The same note's standing queue (§5) carries the entry, verbatim:
 --
---   - `PROVE` (port rank 3): `ObserverDescent.agda` per §3.3 — choice-free
+--   - `PROVE` (port rank 3): `ObserverDescent.agda` (absent from this repository) per §3.3 — choice-free
 --     factorization through `Image`; success test: no `∥∥`-escape other than
 --     `rec→Set`.
 --

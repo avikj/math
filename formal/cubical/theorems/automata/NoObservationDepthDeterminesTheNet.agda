@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- NoObservationDepthDeterminesTheNet
 --
--- `interactive/IndraNet.hs` says of itself that it "exposes only finite
+-- `interactive/IndraNet.hs` (absent from this repository) says of itself that it "exposes only finite
 -- observations of a guarded lazy stream" and is "an implementation of
 -- the finite/productive bridge, not a claim that arbitrary
 -- self-containing universes have been constructed."  Two things follow,

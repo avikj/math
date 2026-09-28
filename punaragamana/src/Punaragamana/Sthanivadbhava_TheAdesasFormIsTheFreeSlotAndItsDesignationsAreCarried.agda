@@ -108,7 +108,7 @@
 --
 ------------------------------------------------------------------------
 -- DEFECTS, WRITTEN RATHER THAN HIDDEN.  (§६ द्वौ मार्गौ of
--- notes/AHIMSA_SUTRA_VISTARA.md: where the transport does not exist the
+-- notes/AHIMSA_SUTRA_VISTARA.md (absent from this repository): where the transport does not exist the
 -- defect is written; there is no third road.)
 --
 -- 1. `आदेश` IS NOT LITERALLY `descend`, and cannot be — different
@@ -142,7 +142,7 @@
 --
 -- 3. THE RULE IS A FUNCTION वर्ण → वर्णरूप.  Real sūtras read a word, an
 --    environment, and the त्रिपादी's असिद्धत्व stratification (§४६ of
---    notes/AHIMSA_SUTRA_VISTARA.md: what is asiddha is not seen; the
+--    notes/AHIMSA_SUTRA_VISTARA.md (absent from this repository): what is asiddha is not seen; the
 --    later rule's result is invisible to the earlier).  A one-vara rule
 --    has no environment and no stratum, so the orbit below is the
 --    trajectory of ONE site under ONE rule and not a derivation of the
@@ -152,7 +152,7 @@
 --
 -- 4. Nothing here imports outside `Punaragamana`: the vocabulary वर्ण /
 --    आदेश / AnalVidhi is redefined rather than imported from
---    `formal/cubical`, so the library stays standalone and `check.sh`
+--    `formal/cubical`, so the library stays standalone and `check.sh` (absent from this repository)
 --    keeps checking what it says it checks.  That duplication is
 --    deliberate, and it is the same trade the कुट्टक module records.
 ------------------------------------------------------------------------

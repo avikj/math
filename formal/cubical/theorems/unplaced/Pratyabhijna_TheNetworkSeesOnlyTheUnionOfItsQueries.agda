@@ -59,7 +59,7 @@
 --     implies the other and their conjunction is exactly `isContr`.
 --
 --     The empty / one / many trichotomy this exposes is graded elsewhere:
---     vyamNotNasti.md already grades it in five levels and shows that
+--     vyamNotNasti.md (absent from this repository) already grades it in five levels and shows that
 --     `isContr`'s two-valued verdict merges the two ENDS.  This module
 --     supplies only the network instance of its rows ० and १.
 ------------------------------------------------------------------------

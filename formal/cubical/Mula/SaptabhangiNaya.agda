@@ -50,7 +50,7 @@
 --
 -- WHY IT IS IN THIS REPOSITORY.
 --
--- `machine/Obstruction.hs` opens by observing that the kernel's verdict was
+-- `machine/Obstruction.hs` (absent from this repository) opens by observing that the kernel's verdict was
 -- a Bool collapsing at least three distinct things, and replaces it with a
 -- three-valued type.  The doctrine says the collapse goes further than
 -- that, and says by how much.  Two facts from `machine/machine.log`, both

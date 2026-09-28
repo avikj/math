@@ -118,7 +118,7 @@
 --   * v0.5 skew: `isEmbeddingFstΣProp` (Cubical.Data.Sigma.Properties)
 --     is stated POINTWISE — `{u v : Σ A B} → isEquiv (cong fst)` — not
 --     as `isEmbedding fst`, so `sideUsed↪C` wraps it in `λ _ _ →`.
---     Reapply the inverse if cubical is upgraded (cf. BUILD.md).
+--     Reapply the inverse if cubical is upgraded (cf. BUILD.md (absent from this repository)).
 --
 -- LINE-COUNT LEDGER.
 -- The map's §1(b) criterion is "the Cubical port is shorter".  For this

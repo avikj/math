@@ -5,7 +5,7 @@
 -- and dhana (asset) ARE the two signs; the sign of an integer is the datum
 -- an ORDERING carries, that no quotient forgets *to*, and that the sign
 -- conjugation reverses.  This is the crystal's Order-edge fact
--- (runtime/CRYSTAL.md §1) and POSITIVITY_HAS_A_PLACE's "the ordering is the
+-- (runtime/CRYSTAL.md (absent from this repository) §1) and POSITIVITY_HAS_A_PLACE's "the ordering is the
 -- avacchedaka (limitor)", made elementary and exact over ℤ.
 --
 -- THE CONVERGENCE (the reading).
@@ -15,9 +15,9 @@
 --                          (POSITIVITY_HAS_A_PLACE; Artin–Schreier 1927)
 --   • Galois conjugation swaps the orderings ⟹ (Iso;Order) unlicensed
 --   • the runtime carries sign on exactly one of eleven edges, Order, and
---     no path through a Quotient delivers it        (runtime/CRYSTAL.md §1)
+--     no path through a Quotient delivers it        (runtime/CRYSTAL.md (absent from this repository) §1)
 --   • the sieve's parity charge (−1,…,−1) is invisible to every averaging
---                                                              (TARGET.md)
+--                                                              (TARGET.md (absent from this repository))
 --
 -- CHECKED over ℤ (Cubical.Data.Int):
 --   §1  the sign conjugation neg (−_) is an involution — the Iso edge.

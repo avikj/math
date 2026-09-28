@@ -147,7 +147,7 @@
 --
 -- 5. Nothing here imports outside `Punaragamana`: the vocabulary वर्ण /
 --    आदेश / AnalVidhi is redefined rather than imported from
---    `formal/cubical`, so the library stays standalone and `check.sh`
+--    `formal/cubical`, so the library stays standalone and `check.sh` (absent from this repository)
 --    keeps checking what it says it checks.  That duplication is
 --    deliberate, and it is the same trade the कुट्टक module records.
 ------------------------------------------------------------------------

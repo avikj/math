@@ -26,7 +26,7 @@
 --   * `shiftInv` fixes ONE shift of ONE vector at ONE prime;
 --   * the eight r = 2 rows fix p^m ∈ {2,3,4,5,7,8,9,11};
 --   * the non-negativity of the exponent G − E, asserted in
---     GAMMA0_FLAG_INDEX.md §5 ("G_p − E_p = Σ_{u<t} r_u r_t (f_t − f_u − 1)
+--     GAMMA0_FLAG_INDEX.md (absent from this repository) §5 ("G_p − E_p = Σ_{u<t} r_u r_t (f_t − f_u − 1)
 --     ≥ 0"), has no counterpart in the module at all — yet `idxLocal` is
 --     defined as an exact division, so without it the definition is not even
 --     known to be the intended integer.
@@ -274,7 +274,7 @@ crossE-runLens (x ∷ xs) (bs , ss) =
     runsGo-crossE x 1 xs bs ss
   ∙ cong (_+ crossPairs xs) (·-identityˡ (gtAll x xs))
 
--- THEOREM (every rank).  The exact form of GAMMA0_FLAG_INDEX.md §5:
+-- THEOREM (every rank).  The exact form of GAMMA0_FLAG_INDEX.md (absent from this repository) §5:
 --     G  =  E + Σ_{u<t} r_u r_t (f_t − f_u − 1).
 G≡E+excess : (e : List ℕ) → Sorted e
            → pairGaps e ≡ crossE (runLens e) + gapExcess e

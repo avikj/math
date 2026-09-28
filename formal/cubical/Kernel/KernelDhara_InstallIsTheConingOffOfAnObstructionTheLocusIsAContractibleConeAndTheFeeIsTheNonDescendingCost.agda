@@ -5,9 +5,20 @@
 --
 -- `install` (SthapanaVarga), the act
 -- by which a theorem of the kernel becomes a structure map of the
--- kernel, is the same act as CONING OFF an obstruction and thereby
--- climbing the Postnikov tower one level (garbha.dhara).  This module
--- makes the load-bearing half of that identification a checked term.
+-- kernel, was proposed to be the same act as CONING OFF an obstruction and
+-- thereby climbing the Postnikov tower one level (garbha.dhara).
+--
+-- WHAT IS AND IS NOT ESTABLISHED.  Checked below: the locus of `install d`
+-- is contractible, each locus point gives a spoke into the mapping cone of
+-- the source POINT-map `Unit → Tm`, and the locus is a proposition.  NOT
+-- established, and false as stated: that this kills an obstruction.  A
+-- cone on a map from `Unit` kills no class — a point carries none — so
+-- coning off the source point adds a contractible whisker and nothing
+-- more.  Killing a class needs a cone on a map from a SPHERE or cycle
+-- representing it; in this corpus that act is
+-- `Vyakhya_TheQuotientByAnExplanationIsLosslessForEveryExactEvaluatorAndKillsTheDepthClass`
+-- (the 2-cell filling the diamond), not `install`.  The terms below are
+-- correct; the Postnikov reading is withdrawn.
 --
 -- WHAT CONING-OFF IS.  To cone off a map g : X → Y (Cubical's
 -- HITs.MappingCones.Cone) is to glue a hub to Y with one spoke to each

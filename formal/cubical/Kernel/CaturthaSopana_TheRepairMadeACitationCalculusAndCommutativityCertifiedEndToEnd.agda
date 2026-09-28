@@ -12,10 +12,14 @@
 -- making it.  This module makes the repair
 -- in the kernel's own philosophy: `install` turns a
 -- theorem into a move, so let the certificate layer do the same — a step
--- may CITE an established pointwise theorem, carrying that theorem's own
--- soundness as the constructor's argument.  Nothing is trusted: the
--- citation IS its proof, so the calculus stays --safe and the soundness
--- theorem below consumes it directly.
+-- may CITE a lemma that was itself CERTIFIED BELOW this level, carrying the
+-- lower certificate (an `InductionCertificate` on `var` or an
+-- `InductionCertificateY` on `yvar`) as the constructor's argument.  The
+-- citation is object-level data, so a `CCert` is replayable and is checked
+-- by the kernel's own soundness theorems, not only by Agda's meta-level.
+-- (A citation constructor accepting an arbitrary meta-level proof of the
+-- pointwise equation would make the citation closure coincide with truth
+-- in ℕ, and the third rung of the stair below would say nothing.)
 --
 -- THREE PIECES, then the prize:
 --
@@ -24,7 +28,8 @@
 --       needed until commutativity asked for it;
 --   §2  the citation calculus: `CStep`/`CDeriv` (hypothesis-free) and
 --       `CHypStep`/`CHypDeriv` (hypothesis at the predecessor), each
---       sound; a `CCert` whose base and step live in these;
+--       sound; a citation carries a LOWER-LEVEL CERTIFICATE, never a
+--       bare pointwise proof; a `CCert` whose base and step live in these;
 --   §3  the two lemmas, each certified BELOW this level:
 --         0 + y = y            by a Y-certificate       (underivable)
 --         (suc x) + y = suc (x + y)   by a Y-certificate
@@ -110,7 +115,8 @@ inductionY-sound {lhs} {rhs} cert (env x₀ n z₀ u₀ v₀ w₀) = go n
 
 data CStep : Tm → Tm → Type₀ where
   c-lift : {x y : Tm} → Step x y → CStep x y
-  c-cite : (l r : Tm) → ((ρ : Env) → eval l ρ ≡ eval r ρ) → CStep l r
+  c-citeX : {l r : Tm} → InductionCertificate l r → CStep l r
+  c-citeY : {l r : Tm} → InductionCertificateY l r → CStep l r
   c-suc  : {x y : Tm} → CStep x y → CStep (suc x) (suc y)
   c-addL : {x y : Tm} → CStep x y → (z : Tm) → CStep (add x z) (add y z)
   c-addR : (z : Tm) → {x y : Tm} → CStep x y → CStep (add z x) (add z y)
@@ -121,7 +127,8 @@ data CDeriv : Tm → Tm → Type₀ where
 
 cstep-sound : {a b : Tm} → CStep a b → (ρ : Env) → eval a ρ ≡ eval b ρ
 cstep-sound (c-lift p)     ρ = step-sound p ρ
-cstep-sound (c-cite l r π) ρ = π ρ
+cstep-sound (c-citeX cert)  ρ = induction-sound cert ρ
+cstep-sound (c-citeY cert)  ρ = inductionY-sound cert ρ
 cstep-sound (c-suc p)      ρ = cong suc (cstep-sound p ρ)
 cstep-sound (c-addL p t)   ρ = cong (_+ eval t ρ) (cstep-sound p ρ)
 cstep-sound (c-addR t p)   ρ = cong (eval t ρ +_) (cstep-sound p ρ)
@@ -232,11 +239,10 @@ suc-left-everywhere = inductionY-sound suc-left-certY
 
 comm-cert : CCert (add var yvar) (add yvar var)
 CCert.baseC comm-cert =
-  c-then (c-cite (add zero yvar) yvar zero-left-everywhere)
+  c-then (c-citeY zero-left-certY)
     (c-then (c-lift (reverse (add-zero yvar))) (c-done (add yvar zero)))
 CCert.stepC comm-cert =
-  ch-then (ch-lift (c-cite (add (suc var) yvar) (suc (add var yvar))
-                           suc-left-everywhere))
+  ch-then (ch-lift (c-citeY suc-left-certY))
     (ch-then (ch-suc ch-hyp)
       (ch-then (ch-lift (c-lift (reverse (add-suc yvar var))))
         (ch-done (add yvar (suc var)))))

@@ -85,10 +85,12 @@
 --                             out of the universe is an
 --                             equivalence-invariant, so no invariance
 --                             hypothesis is needed at all: `cong I (ua e)`
---                             is the whole proof.  C15.74's "search for
---                             invariants is dual to search for
---                             equivalences" is therefore not two search
---                             problems but one.
+--                             is the whole proof.  This makes the
+--                             SOUNDNESS of invariant-based separation
+--                             free; it does not make FINDING a separating
+--                             invariant the same search as finding an
+--                             equivalence (graph invariants vs. graph
+--                             isomorphism are the standard contrast).
 --
 --  * **Not novel.**  Structure identity, stabilisers, kernel pairs and
 --    contravariant refutation are standard.  The contribution is that the
@@ -191,9 +193,12 @@ noEquiv→badFibre :
   {f : A → B} → (isEquiv f → ⊥) → ((b : B) → isContr (fiber f b)) → ⊥
 noEquiv→badFibre notE allContr = notE (record { equiv-proof = allContr })
 
--- C15.82, as the object it hands back: a failed equivalence yields a
--- specific fibre that is not contractible, and that fibre IS the
--- reconstruction question.  Named so a lane can quote it.
+-- C15.82, stated with its scope: `noEquiv→badFibre` yields only
+-- ¬ (∀ b → isContr (fiber f b)) — constructively ¬¬ Σ b, not a b in hand.
+-- LOCATING the bad fibre is search; turning the refutation into a named
+-- site costs at least Markov's Principle in general
+-- (`TritiyaMarga_TheWrittenDefectCostsMarkovsPrinciple`).  `FailedAt` is
+-- the predicate a site satisfies once someone has found it.
 FailedAt : (f : A → B) (b : B) → Type _
 FailedAt f b = isContr (fiber f b) → ⊥
 
@@ -342,8 +347,9 @@ refute-transport e f = f ∘ invEq e
 -- Sharper than the directive states it.  Delta 15 asks for an
 -- *equivalence-invariant* `I`; under univalence there is no such side
 -- condition to check, because every function out of the universe is one.
--- `cong I (ua e)` is the entire proof, and the "dual searches" of C15.74
--- collapse into one.
+-- `cong I (ua e)` is the entire proof.  What collapses is the SIDE
+-- CONDITION on I, not the search for one: finding a separating invariant
+-- remains a separate problem from finding an equivalence.
 ------------------------------------------------------------------------
 
 invariant-separates :

@@ -16,7 +16,7 @@
 -- ────────────────────────────────────────────────────────────────────
 -- WHAT THIS MODULE ADDS, AND TO WHAT
 --
--- `notes/ENCOUNTERED_WORLDS.md` §3.5 states, and proves:
+-- `notes/ENCOUNTERED_WORLDS.md` (absent from this repository) §3.5 states, and proves:
 --
 --   **Theorem.**  If `T_E(x)` is a linear subspace `L ⊆ (ℤ/p)^n`, then
 --   transport at `x` ⟺ `grad f(x)|_L` is not identically zero.
@@ -25,7 +25,7 @@
 --   tangent set is `span{(1,s)}` and `grad f|_L (t) = t(1+s)`.  So `E`
 --   transports **iff `s ≠ -1 (mod p)`**.
 --
--- `notes/FULL_READ_DRAW_5.md` §C2 records that a summary message dropped
+-- `notes/FULL_READ_DRAW_5.md` (absent from this repository) §C2 records that a summary message dropped
 -- the two words "For `f = X+Y`" under a Theorem quantified over all
 -- integral `f`.  `NaturalMachine.LineWorldTransport` makes the corollary's
 -- hypothesis part of a type, and exhibits ONE counterexample to the
@@ -106,7 +106,7 @@
 -- live.  `Obs` is the quantification domain of the must-fail control
 -- `Control/QuantifierDrop.agda`, whose designed failure is pinned to a
 -- verbatim error message under two toolchains
--- (`notes/PIN_SWEEP_NATURALMACHINE.md` §4, Agda 2.8.0 + cubical v0.9;
+-- (`notes/PIN_SWEEP_NATURALMACHINE.md` (absent from this repository) §4, Agda 2.8.0 + cubical v0.9;
 -- and the container, Agda 2.6.3 + cubical v0.5).  Adding constructors to
 -- `Obs` changes how `transports f s` reduces on an open `f` and can move
 -- or destroy that error site.  So this module IMPORTS `Slope`, `mod5`,

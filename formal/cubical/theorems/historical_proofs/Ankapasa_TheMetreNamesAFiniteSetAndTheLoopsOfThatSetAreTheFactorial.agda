@@ -14,7 +14,7 @@
 -- WHAT THIS MODULE IS.
 --
 -- `machine/Setubandha_TheCheckedIdentificationsAreEdgesAndTheIsolatedNodes
--- AreTheFrontier.hs` reports `Decategorification.π₀FinSet`
+-- AreTheFrontier.hs` (absent from this repository) reports `Decategorification.π₀FinSet`
 -- at degree 1: joined to the hub `ℕ` and to nothing else.  It is at
 -- distance 2 from
 -- `Pingala.छन्दस्`:

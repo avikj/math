@@ -14,7 +14,7 @@
 -- is worked in Gaṅgeśa, *Tattvacintāmaṇi*, c. 1325 CE, whose कारणतावाद is
 -- where the exclusion tests are argued.
 --
--- AND THE SCHOOL IS NAMED BEFORE THE TERM IS USED, per CLAUDE.md: this is
+-- AND THE SCHOOL IS NAMED BEFORE THE TERM IS USED, per CLAUDE.md (absent from this repository): this is
 -- Nyya vocabulary, not Jaina.  A Jaina logician would not describe the
 -- situation this way at all — for anekāntavāda the two candidate readings
 -- of "the map back" would be two nayas to be indexed and held together,

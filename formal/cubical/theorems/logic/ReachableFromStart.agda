@@ -4,7 +4,7 @@
 -- ReachableFromStart
 --
 -- The unreachability verdict of
--- `collab/messages/0533-codex-automata-adaptive-horizon-red-return.md`
+-- `collab/messages/0533-codex-automata-adaptive-horizon-red-return.md` (absent from this repository)
 -- WITH THE PREMISE IT LEANS ON MADE PART OF THE TYPE.
 --
 --

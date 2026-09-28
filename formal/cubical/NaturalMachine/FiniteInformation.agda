@@ -8,7 +8,7 @@
 --
 -- Rank-3 port of the Lean development `formal/pairfield/Pairfield/
 -- FiniteInformation.lean` (130 lines), per the spec in
--- notes/LEAN_TO_CUBICAL_PORT_MAP.md §3.3.  The statements are
+-- notes/LEAN_TO_CUBICAL_PORT_MAP.md (absent from this repository) §3.3.  The statements are
 -- deliberately distribution-free: no probability law is chosen, the
 -- content is factorization through an observable and exact
 -- reconstruction after adding side data.

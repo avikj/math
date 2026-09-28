@@ -12,7 +12,7 @@
 {-# OPTIONS --cubical --safe #-}
 
 ------------------------------------------------------------------------
--- Punarāgamana · प्रतिबिम्ब
+-- Punarāgamana · संयोगशेष
 --
 -- ON THE NAME.  संयोग (saṃyoga), "conjunction / composition", is a
 -- standard technical term across  grammar and Nyya-Vaieika
@@ -21,11 +21,11 @@
 -- compounding word, not cited for a specific technical sense from a
 -- particular Nyāya text — no source is claimed for THIS compound,
 -- `संयोगशेष`, which is built here from साहित्य already in this library
--- (`Punaragamana.Carrier`'s `fibre`, `Punaragamana.Sesa…`'s `शेष`).
+-- (`Punaragamana.Carrier`'s `fibre`, `Punaragamana.Residue_…`'s `शेष`).
 --
 -- WHAT THIS MODULE ADDS.
 --
--- `Sesa_TheResidualIsTheOtherProjectionOfTheSameGraph` proves शेष f b is
+-- `Residue_TheResidualIsTheOtherProjectionOfTheSameGraph` proves शेष f b is
 -- what a single map f forgets over a point b.  It says nothing about two
 -- maps composed.  This module supplies exactly that, and the answer is
 -- the ordinary "fibre of a composite is a fibre of fibres" fact (HoTT

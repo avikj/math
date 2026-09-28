@@ -74,7 +74,7 @@ module Kernel.Nirapeksa_NeitherUnqualifiedFormSurvivesAndTheTwoSchoolsFourthPosi
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (znots)
 open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
-open import Cubical.Data.Sigma using (_×_ ; _,_)
+open import Cubical.Data.Sigma using (_×_ ; _,_ ; Σ-syntax)
 import Cubical.Data.Empty as E
 
 open import RewriteCertificate
@@ -141,3 +141,13 @@ saptabhangi-shape :
   (¬ ((ρ : Env) → eval var ρ ≡ eval yvar ρ))
   × (¬ ((ρ : Env) → ¬ (eval var ρ ≡ eval yvar ρ)))
 saptabhangi-shape = no-unqualified-assertion , no-unqualified-denial
+
+-- and the same configuration WITH its witnesses, so the packaged object
+-- does not drop what §1 exhibits: a respect where it holds and a respect
+-- where it fails, each named.  Constructively this is strictly stronger
+-- than `saptabhangi-shape`, which records only the two refutations.
+saptabhangi-witnessed :
+  (Σ[ ρ ∈ Env ] (eval var ρ ≡ eval yvar ρ))
+  × (Σ[ ρ ∈ Env ] (¬ (eval var ρ ≡ eval yvar ρ)))
+saptabhangi-witnessed = (diagonal , asti) , (off-diagonal , nasti)
+

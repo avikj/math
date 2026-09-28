@@ -541,7 +541,7 @@ claimR-refuted = claimR-ha-nameable , claimR-loses-haL , claimR-loses-haŚ
 -- implies the other.
 --
 -- IT DOES CONSTRAIN A READING ALREADY IN THIS CORPUS.
--- `notes/INDIC_FORMAL_TRADITIONS_MAP.md` §1.1 records the iva-stras as
+-- `notes/INDIC_FORMAL_TRADITIONS_MAP.md` (absent from this repository) §1.1 records the iva-stras as
 -- "an interval representation of an intersection-closed set family over
 -- a linear order".  Read as a statement about the required family that
 -- is the received claim and nothing here disturbs it.  Read as a

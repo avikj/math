@@ -165,11 +165,22 @@ allMaps (suc na) nb =
 -- `singl (f a)` being contractible — for each a exactly one b = f a).
 ------------------------------------------------------------------------
 
-graphSize : Map → Nat
-graphSize f = lengthL f
+-- the image of a at position a (0 when out of range; never used there)
+at : Map → Nat → Nat
+at []       _       = 0
+at (b ∷ _)  zero    = b
+at (_ ∷ bs) (suc a) = at bs a
 
-angelHolds : Map → Bool
-angelHolds f = graphSize f ==N lengthL f
+-- the graph, computed as a SUBSET of A × B (not read off the list shape):
+-- every pair (a , b) with f a = b.  Counting it is a genuine check that
+-- each a meets exactly one b.
+graphSize : Nat → Map → Nat
+graphSize nb f =
+  lengthL (concatMapL (λ a → filterL (λ b → at f a ==N b) (rangeUp nb))
+                      (rangeUp (lengthL f)))
+
+angelHolds : Nat → Map → Bool
+angelHolds nb f = graphSize nb f ==N lengthL f
 
 ------------------------------------------------------------------------
 -- DEVIL · road two.  The fibre census, three-valued.
@@ -282,7 +293,7 @@ nMaps : Nat
 nMaps = sumL (mapL (λ ab → lengthL (mapsOf ab)) BoundsList)
 
 angelAll : Bool
-angelAll = andAll (concatMapL (λ ab → mapL angelHolds (mapsOf ab)) BoundsList)
+angelAll = andAll (concatMapL (λ ab → mapL (angelHolds (snd ab)) (mapsOf ab)) BoundsList)
 
 polesAll : Bool
 polesAll = andAll (concatMapL (λ ab → mapL (polesAgree (snd ab)) (mapsOf ab)) BoundsList)

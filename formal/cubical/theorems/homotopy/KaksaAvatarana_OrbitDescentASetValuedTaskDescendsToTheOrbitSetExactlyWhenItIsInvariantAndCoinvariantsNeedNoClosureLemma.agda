@@ -7,10 +7,10 @@
 -- ORBIT DESCENT: a set-valued task descends to the orbit set exactly
 -- when it is invariant, and coinvariants need no closure lemma.
 --
--- SOURCE (quoted verbatim).  `notes/LEAN_TO_CUBICAL_PORT_MAP.md` on
+-- SOURCE (quoted verbatim).  `notes/LEAN_TO_CUBICAL_PORT_MAP.md` (absent from this repository) on
 -- branch `main`, §3.2:
 --
---   ### 3.2 `HolonomyDescent` → `NaturalMachine/OrbitDescent.agda` (proposed)
+--   ### 3.2 `HolonomyDescent` → `NaturalMachine/OrbitDescent.agda` (absent from this repository) (proposed)
 --
 --   Imports: `Cubical.HITs.SetQuotients as SQ`, `Cubical.Algebra.Group.Base`,
 --   `Cubical.Algebra.AbGroup.Base`, `Cubical.Relation.Binary.Base`,
@@ -78,7 +78,7 @@
 --
 -- and its §5 queue entry:
 --
---   - `PROVE` (port rank 2): `OrbitDescent.agda` per §3.2 — orbit descent +
+--   - `PROVE` (port rank 2): `OrbitDescent.agda` (absent from this repository) per §3.2 — orbit descent +
 --     coinvariants on raw HIT quotients; success test: no closure lemma anywhere
 --     in the file.
 --

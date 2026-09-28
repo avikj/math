@@ -3,8 +3,8 @@
 ------------------------------------------------------------------------
 -- CurvatureIsNonVacuousBecauseHereIsOnePointOffTheImage
 --
--- ON THE NAME.  Checked before naming: `.claude/hooks/priority-ledger.txt`
--- (CURRENT header) and `.claude/hooks/european-frame.txt`; `formal/` and
+-- ON THE NAME.  Checked before naming: `.claude/hooks/priority-ledger.txt` (absent from this repository)
+-- (CURRENT header) and `.claude/hooks/european-frame.txt` (absent from this repository); `formal/` and
 -- invented.**  The content is Δ 28 §36–38's, i.e. this corpus's own,
 -- plus the pasting of two squares, which is standard in any category; I
 -- have established no Indian source for either and will not attach a

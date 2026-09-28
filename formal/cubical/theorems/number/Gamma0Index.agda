@@ -194,8 +194,14 @@ cnt4 n m21 m31 m41 m32 m42 m43 =
 --
 --     cnt n 1…1  ≡  idxLocal p exps  ·  cnt n (ratios)
 --
--- says exactly:  |GLᵣ(ℤ/n)| = [GLᵣ(ℤ):Γ₀(D)] · |image of Γ₀(D) in GLᵣ(ℤ/n)|,
--- with the index supplied by the closed formula and nothing else.
+-- says:  |GLᵣ(ℤ/n)| = [GLᵣ(ℤ):Γ₀(D)] · |H|,  where H ⊆ GLᵣ(ℤ/n) is the
+-- subgroup cut out by the same divisibility conditions, with the index
+-- supplied by the closed formula and nothing else.
+-- H is NOT the image of Γ₀(D): GLᵣ(ℤ) reduces only onto the det ±1 part
+-- of GLᵣ(ℤ/n).  The ratio still equals the index because H contains the
+-- diagonal matrices of every unit determinant, so both GLᵣ(ℤ/n) and H
+-- split evenly over the determinant; that step is the note's, not
+-- checked here.
 ------------------------------------------------------------------------------
 
 -- 4a.  r = 2, D = diag(1, p^m).  Index = ψ(p^m) = p^(m−1)(p+1).

@@ -10,11 +10,11 @@
 ------------------------------------------------------------------------
 -- WHY THIS MODULE EXISTS.
 --
--- `Sesa_TheResidualIsTheOtherProjectionOfTheSameGraph` states in its
+-- `Residue_TheResidualIsTheOtherProjectionOfTheSameGraph` states in its
 -- header, as prose:
 --
 --     `isContr (शेष f b)` fails in two OPPOSITE ways —
---       the fibre is EMPTY   — nothing was lost, अवक्तव्यम्, धनात्मकम्;
+--       the fibre is EMPTY   — nothing was lost, नास्ति, धनात्मकम्;
 --       the fibre is CROWDED — two points not identified, नष्टि, हिंसा.
 --     — and this module calls both of them "not an equivalence".
 --
@@ -44,7 +44,7 @@
 --
 --   * CROWDED  (नष्टि)      = the LEFT factor fails — some fibre is not a
 --                            prop — f is not an embedding.
---   * EMPTY    (अवक्तव्यम्)  = the RIGHT factor fails — some fibre is
+--   * EMPTY    (नास्ति)     = the RIGHT factor fails — some fibre is
 --                            uninhabited — f is not surjective.
 --
 -- §4 witnesses the orthogonality with two smallest maps:
@@ -52,6 +52,11 @@
 --   बिन्दुः  : Unit → Bool    embeds (all fibres prop), misses false → only RIGHT fails
 -- Each is a checked term, so the independence is proved, not asserted.
 ------------------------------------------------------------------------
+
+-- (Label note: this library's older Residue module names the empty arm
+-- अवक्तव्यम्; fibre/src/Fibre/Residue_… corrects it to नास्ति — अवक्तव्यम्
+-- is the fourth bhaṅga, earned only by joint assertion.  The empty arm is
+-- named नास्ति here to match.)
 
 module Punaragamana.EqualitySplit_TheContractibleFibreSplitsAsEmbeddingTimesSurjectionAndTheEmptyAndCrowdedRefusalsAreTheTwoFactorsFailingApart where
 

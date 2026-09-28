@@ -3,14 +3,14 @@
 ------------------------------------------------------------------------
 -- NaturalMachine.OracleQueries
 --
--- TARGET.md §6 item 2, answered — and answered in the negative.
+-- TARGET.md (absent from this repository) §6 item 2, answered — and answered in the negative.
 --
 -- THE QUESTION.  `ChargeCriterion` proves: a query set separates the
 -- all-plus sign assignment from its gauge flip IFF it contains a query
--- of odd Ω.  `notes/BARRIER.md` §3 Problem 2 asks for an oracle model
+-- of odd Ω.  `notes/BARRIER.md` (absent from this repository) §3 Problem 2 asks for an oracle model
 -- distinguishing VALUE queries ("what is a(n)?") from FUNCTIONAL-EQUATION
 -- queries ("a(mn)=a(m)a(n), used as a constraint and not as a value").
--- TARGET.md §6 predicts these are "the same distinction stated twice",
+-- TARGET.md (absent from this repository) §6 predicts these are "the same distinction stated twice",
 -- and says that if they are not, the difference is the finding.
 --
 -- THEY ARE NOT THE SAME, AND THE DIFFERENCE IS EXACT.  A
@@ -43,7 +43,7 @@
 -- flip, the conserved quantity is χ, and the functional equation is a
 -- gauge-invariant relation, so it conserves χ identically.
 --
--- WHAT THIS SAYS ABOUT `BARRIER.md`.  That note's §2 visibility table
+-- WHAT THIS SAYS ABOUT `BARRIER.md` (absent from this repository).  That note's §2 visibility table
 -- credits row 3, "functional-equation access", with being "the one known
 -- access to Chowla-grade (bulk) content", and its own honesty ledger §4
 -- says row 3 rests on "reading Tao's published argument through this lens
@@ -177,7 +177,7 @@ square-const : (σ : Signs) (n : Number) → val σ (n ++ n) ≡ true
 square-const σ n = val-++ σ n n ∙ ·-idem (val σ n)
 
 ------------------------------------------------------------------------
--- §2  The oracle of BARRIER.md §3 Problem 2.
+-- §2  The oracle of BARRIER.md (absent from this repository) §3 Problem 2.
 --
 --   `value n`   — "what is a(n)?"           (a value query)
 --   `fequ m n`  — "is a(mn) = a(m)a(n)?"    (a functional-equation query,
@@ -210,7 +210,7 @@ obsQ σ qs = map (ans σ) qs
 -- function, at every pair of arguments.  So the FE oracle is not merely
 -- parity-blind: it is blind to EVERYTHING, distinguishing no two members
 -- of the class at all.  This is the strongest possible failure of
--- TARGET.md §6's predicted identification — the FE side of BARRIER's
+-- TARGET.md (absent from this repository) §6's predicted identification — the FE side of BARRIER's
 -- distinction is not the charged side, it is a degenerate sub-case of the
 -- neutral side.
 ------------------------------------------------------------------------

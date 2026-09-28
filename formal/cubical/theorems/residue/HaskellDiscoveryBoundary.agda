@@ -1,7 +1,7 @@
 {-# OPTIONS --cubical --guardedness --safe --no-import-sorts #-}
 
 ------------------------------------------------------------------------
--- The deterministic five-round output of interactive/MathMachine.hs, promoted
+-- The deterministic five-round output of interactive/MathMachine.hs (absent from this repository), promoted
 -- from strings to a typed arithmetic object.
 --
 -- Haskell emits its live discoveries as a temporary Agda module.  That

@@ -42,10 +42,10 @@
 --
 -- DEFECT, written rather than hidden.  `-` (the round trip
 -- उत्थान (भेद a b) ≡ (a , b)) is the same statement as `पुनरागमनम्` in
--- `formal/cubical/Punaragamana.agda`, and is reproved here.  That is a
+-- `formal/cubical/Punaragamana.agda` (absent from this repository), and is reproved here.  That is a
 -- duplication.  It is deliberate: this library takes no dependency
 -- outside itself, and the alternative — importing across the repository
--- — would make `check.sh` no longer check what it says it checks.
+-- — would make `check.sh` (absent from this repository) no longer check what it says it checks.
 --
 -- `वल्ली` is the SUBTRACTIVE step (anthyphairesis), not
 -- the division step a … a mod b.
@@ -230,7 +230,7 @@ data त्रिक् : Type where
 गभीर-उत्थान (दक्षिण d k) = refl
 
 -- the round trip.  this is `पुनरागमनम्` of
--- formal/cubical/Punaragamana.agda, reproved so the library stays standalone.
+-- formal/cubical/Punaragamana.agda (absent from this repository), reproved so the library stays standalone.
 उत्थान-भेद : (a b : ℕ) → उत्थान (भेद a b) ≡ (a , b)
 उत्थान-भेद zero    zero    = refl
 उत्थान-भेद zero    (suc b) = refl

@@ -13,7 +13,7 @@
 -- Mahbhya ~150 BCE.
 --
 -- THE WITNESS IS NOT INVENTED.  It is what the engine in `machine/
--- Astadhyayi.hs` actually does when it derives `vk` ("speech") from the
+-- Astadhyayi.hs` (absent from this repository) actually does when it derives `vk` ("speech") from the
 -- stem `vc`, and its `asiddhaAudit` prints the refusal:
 --
 --     vc  --8.2.30 co ku-->          vk

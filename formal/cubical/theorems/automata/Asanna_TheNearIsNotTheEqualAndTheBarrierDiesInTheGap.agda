@@ -25,9 +25,9 @@
 -- answers — its own header says "not close, equal" — because its whole
 -- proof is `cong decide` applied to an equality of transcripts.  An
 -- analytic barrier lemma does not deliver equality.  It delivers
--- agreement to within ε: `BARRIER.md`'s own Corollary B2 asks only that
+-- agreement to within ε: `BARRIER.md` (absent from this repository)'s own Corollary B2 asks only that
 -- σ_k − σ_k′ be "annihilated at that resolution", with mismatch
--- O((δL)^{2p−1}), and `BARRIER_ERROR_WINDOW.md` Theorem U1 puts the
+-- O((δL)^{2p−1}), and `BARRIER_ERROR_WINDOW.md` (absent from this repository) Theorem U1 puts the
 -- window's error term E at C_E X₀^{−1/2} Θ_φ(L/2), a NONZERO quantity
 -- that depends on the configuration through the (k−1)-fold wave layer
 -- 𝒵_{k−1}.  Two configurations agreeing under the blur therefore give
@@ -49,7 +49,7 @@
 --
 --   §४  **The gap is real, and here is a counterexample.**  Near
 --       blindness ALONE — with the arbitrary post-processing that
---       `BARRIER.md`'s Proposition B3 explicitly insists on ("even
+--       `BARRIER.md` (absent from this repository)'s Proposition B3 explicitly insists on ("even
 --       non-computable") — implies NO obstruction whatever.  One state
 --       space of two points, one query, answers 1 and 0, tolerance
 --       "differ by at most one": the pair is near-blind and the head
@@ -60,9 +60,9 @@
 -- things, and this module's content is that there is no third:
 --
 --   (a) EXACT agreement of the full observable, not of the blur — which
---       is `BARRIER_SMOOTH_TERM.md`'s corrected B2′ (every lower-arity
+--       is `BARRIER_SMOOTH_TERM.md` (absent from this repository)'s corrected B2′ (every lower-arity
 --       layer, at precision εX^{−r/2}), and is a strictly stronger
---       demand than B2 as `BARRIER.md` still states it; or
+--       demand than B2 as `BARRIER.md` (absent from this repository) still states it; or
 --
 --   (b) a MODULUS on Φ — a bound on how far a WL post-processing may
 --       amplify a sub-resolution difference.  §२'s `Respects` is the
@@ -141,7 +141,7 @@ module Def (X : Type ℓ) (V : Type ℓ)
   NearBlind []       x y = Unit*
   NearBlind (o ∷ os) x y = (o x ≈ o y) × NearBlind os x y
 
-  -- Post-processing, arbitrary: `BARRIER.md` Prop. B3's Φ.
+  -- Post-processing, arbitrary: `BARRIER.md` (absent from this repository) Prop. B3's Φ.
   Separates : List Query → X → X → Type ℓ
   Separates os x y =
     Σ[ decide ∈ (List V → V) ] (decide (obs os x) # decide (obs os y))
@@ -227,7 +227,7 @@ module समता (X : Type ℓ) (V : Type ℓ) (_#_ : V → V → Type ℓ) w
 ------------------------------------------------------------------------
 -- ४ · The gap, as a checked counterexample.
 --
--- Drop hypothesis (i) — which is exactly what `BARRIER.md` Prop. B3
+-- Drop hypothesis (i) — which is exactly what `BARRIER.md` (absent from this repository) Prop. B3
 -- does when it insists Φ be arbitrary and even non-computable — and
 -- near-blindness implies nothing at all.
 --
@@ -278,11 +278,11 @@ open Def Bool ℕ _≈₁_ _≠₁_
 -- blindness the obstruction holds for any irreflexive separation and
 -- any decoder whatever, and §३ re-derives it from §२.
 --
--- `METHOD.md` §3 item 1 does not reduce to a formal half plus an
+-- `METHOD.md` (absent from this repository) §3 item 1 does not reduce to a formal half plus an
 -- analytic half.  The analytic half must additionally produce ONE of
 --
---   (a) exact layerwise agreement — B2′ of `BARRIER_SMOOTH_TERM.md`,
---       which `BARRIER.md`'s Corollary B2 does not state; or
---   (b) a modulus on WL post-processing — which `BARRIER.md`'s
+--   (a) exact layerwise agreement — B2′ of `BARRIER_SMOOTH_TERM.md` (absent from this repository),
+--       which `BARRIER.md` (absent from this repository)'s Corollary B2 does not state; or
+--   (b) a modulus on WL post-processing — which `BARRIER.md` (absent from this repository)'s
 --       Proposition B3 currently rules out by construction.
 ------------------------------------------------------------------------

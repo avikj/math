@@ -13,14 +13,14 @@
 
 ------------------------------------------------------------------------
 -- मेरु-प्रस्तारः — ported from machine/MeruPrastara_TheSignedArrayIsOne
--- ProductAndTheZetaDualityIsAShiftOfOne.hs.  The default (no-argument) report of that
+-- ProductAndTheZetaDualityIsAShiftOfOne.hs (absent from this repository).  The default (no-argument) report of that
 -- program, term for term, as a --safe checked value compiled by the
 -- kernel's own backend (MAlonzo/GHC).  प्रस्तार is Piṅgala's word for the
 -- systematic laying-out of metres (Chandastra 8, ~300 BCE; Halyudha's
 -- Mtasajvan, 10th c., names the meru); the sign on the array is the
 -- Mbius sign.  The identity behind this
 -- display: formal/cubical/MulaShakti_TheMarkingParameterIsAPowerAndThe
--- ZetaTwistIsTranslationByOne.agda.
+-- ZetaTwistIsTranslationByOne.agda (absent from this repository).
 ------------------------------------------------------------------------
 
 module MeruPrastara where

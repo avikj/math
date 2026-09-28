@@ -10,7 +10,7 @@
 -- source is claimed for it.
 --
 -- SEED.  The machine asked for this itself.  जीव's mass map
--- (machine/Jiva_TheMachineComputesItsOwnMetric.hs) scored the join of the component at
+-- (machine/Jiva_TheMachineComputesItsOwnMetric.hs (absent from this repository)) scored the join of the component at
 -- `Punaragamana.Sthanivadbhava….स्थानिवत्` to the number component at
 -- 2970 — its second-highest curvature-removal candidate.  A join, in
 -- the graph's own terms, is a checked identification.  Here it is:

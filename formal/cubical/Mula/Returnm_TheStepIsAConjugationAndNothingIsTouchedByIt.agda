@@ -22,7 +22,7 @@
 -- TEXT AND DATE for the three-slot गभीर (पक्षः, परिमाणम्, शेषः): the
 -- structure is Āryabhaṭa's कुट्टक, *Āryabhaṭīya*, गणितपाद 32–33, 499 CE,
 -- whose instruction is "शेषं रक्ष" — keep the remainder.  Carried here
--- from the header of `Punaragamana.agda` in this directory, which states
+-- from the header of `Punaragamana.agda` (absent from this repository) in this directory, which states
 -- that the earlier भेद kept only half of it, dropping which side the
 -- remainder fell on and the shared magnitude at identity.
 --
@@ -30,7 +30,7 @@
 -- that the *Āryabhaṭīya* has been opened by me — it has not; the citation
 -- is carried from the neighbouring module and is owed at verse level.
 -- Not that Φ means anything: it is suc on two slots.  Not that this
--- replaces `Punaragamana.agda`, which is untouched.
+-- replaces `Punaragamana.agda` (absent from this repository), which is untouched.
 ------------------------------------------------------------------------
 
 module Mula.Returnm_TheStepIsAConjugationAndNothingIsTouchedByIt where

@@ -35,7 +35,7 @@
 --   other module does not use.
 --
 -- The estimate is unavailable in this lane, and quoting it would be the
--- error CLAUDE.md forbids.
+-- error CLAUDE.md (absent from this repository) forbids.
 ------------------------------------------------------------------------
 
 module TheDerivationIsDenseToo where

@@ -5,12 +5,12 @@
 --
 -- *** THIS FILE MUST FAIL TO TYPE-CHECK. ***
 --
--- Designed annihilation (collab/PROTOCOL.md §7), in the pattern of
+-- Designed annihilation (collab/PROTOCOL.md (absent from this repository) §7), in the pattern of
 -- `Control/WrongEquivalence.agda` and `Control/WrongFirstStep.agda`.
 --
 -- WHAT IT ASSERTS.  The line-world corollary of
 -- `s != -1 (mod p)`" — QUANTIFIED OVER ALL OBSERVABLES, which is how the
--- summary message `workers/20260812T090934.276887Z--claude_ananta--0005.md`
+-- summary message `workers/20260812T090934.276887Z--claude_ananta--0005.md` (absent from this repository)
 -- §5 restates it after dropping the note's two words "For `f = X+Y`"
 -- under a Theorem stated for every integral `f`
 --
@@ -33,7 +33,7 @@
 -- import it, and nothing else may: the directory `NaturalMachine/Control/`
 -- is excluded from the root aggregate exactly so its contents may fail.
 --
--- Under the pinned toolchain of `formal/cubical/BUILD.md` (Agda 2.8.0 +
+-- Under the pinned toolchain of `formal/cubical/BUILD.md` (absent from this repository) (Agda 2.8.0 +
 -- cubical v0.9) and under Agda 2.6.3 + cubical v0.5 alike, the file fails
 -- at 80,26-41 for the intended mathematical reason.  Under
 -- `LC_ALL=C.UTF-8 agda NaturalMachine/Control/QuantifierDrop.agda`,

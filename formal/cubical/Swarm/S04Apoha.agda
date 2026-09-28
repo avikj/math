@@ -35,7 +35,7 @@
 --
 -- Why this repository: upstream U0006 asks for the quotient X/~_O and
 -- whether a datum descends to it; `collab/messages/shilpin/
--- persistent_workers_emergent_object.md` builds a certificate complex
+-- persistent_workers_emergent_object.md` (absent from this repository) builds a certificate complex
 -- whose stored proofs ARE shortest separating words.  The theorems below
 -- say that such a complex is complete at every finite observation level
 -- (`Finite.¬ind→sep`), that its stored witnesses survive refinement

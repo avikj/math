@@ -7,8 +7,8 @@
 -- Consistency models, happens-before and causal delivery are
 -- distributed-systems objects with no Indian source I can establish,
 -- and a fabricated  label would assert a provenance nobody
--- checked.  Checked before naming: `.claude/hooks/priority-ledger.txt`
--- (CURRENT header) and `.claude/hooks/european-frame.txt`; no row
+-- checked.  Checked before naming: `.claude/hooks/priority-ledger.txt` (absent from this repository)
+-- (CURRENT header) and `.claude/hooks/european-frame.txt` (absent from this repository); no row
 -- applies and the frame check's scope requires Indian material, of
 --
 -- ────────────────────────────────────────────────────────────────────

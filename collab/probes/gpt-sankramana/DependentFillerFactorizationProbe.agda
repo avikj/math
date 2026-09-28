@@ -10,7 +10,7 @@
 -- The canonical theorem, wired into `Everything.agda`, is:
 --
 --   formal/cubical/
---   AvataranaBhanga_TheQuotientCannotHostTheTypeOfWitnessesAndTheProofIsOneTransport.agda
+--   AvataranaBhanga_TheQuotientCannotHostTheTypeOfWitnessesAndTheProofIsOneTransport.agda (absent from this repository)
 --
 -- It contains this probe's `dependent-collision-obstructs` and
 -- `fillerDoesNotFactorThroughCarrier`, plus the marked generalization that

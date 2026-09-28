@@ -128,7 +128,7 @@ convergent xs q =
 --
 -- A repeated block replays to the power of its compiled matrix, so
 -- "compile b once, invoke r times" is CERTIFIED equal to the full
--- expansion — the typed foundation under KUTTAKA_TRACE_MACRO.md,
+-- expansion — the typed foundation under KUTTAKA_TRACE_MACRO.md (absent from this repository),
 -- whose exact gain law (m-1)(r-1) > 1 prices when to install it.
 
 rep : ℕ → Valli → Valli

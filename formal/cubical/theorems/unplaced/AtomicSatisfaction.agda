@@ -2,8 +2,9 @@
 
 ------------------------------------------------------------------------
 -- Atomic observation is preserved exactly when the response square
--- commutes.  A changed response type admits the same biconditional only
--- when its comparison map is injective.
+-- commutes.  For a changed response type, an injective comparison map
+-- is SUFFICIENT for the same biconditional (`square→satisfaction`
+-- takes it as a hypothesis).  It is not shown to be necessary.
 ------------------------------------------------------------------------
 
 module AtomicSatisfaction where
