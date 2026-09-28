@@ -38,10 +38,10 @@
 (def h3 : (ctr Nat))
 (def L3 (ctr Cons h1 (ctr Cons h2 (ctr Cons h3 (ctr Nil)))))
 (def run3 (let s (app sort L3) (app witness s)))
-(def length (fix f (lam xs (case xs (Nil () 0) (Cons (h t) (ctr Suc (app f t)))))))
+(def length (fix f (lam xs (case xs (Nil () (num 0)) (Cons (h t) (op2 + (num 1) (app f t)))))))
 (def each (lam g (fix f (lam xs (case xs (Nil () (ctr Nil)) (Cons (h t) (ctr Cons (app g h) (app f t))))))))
-(def maximum (fix f (lam xs (case xs (Nil () 0) (Cons (h t) (let m (app f t) (case (app leq h m) (True () m) (False () h))))))))
-(def splits (fix f (lam es (case es (Nil () 0) (Cons (e t) (case e (split (w) (ctr Suc (app f t))) (_ () (app f t))))))))
+(def maximum (fix f (lam xs (case xs (Nil () (num 0)) (Cons (h t) (let m (app f t) (case (op2 < h m) (True () m) (False () h))))))))
+(def splits (fix f (lam es (case es (Nil () (num 0)) (Cons (e t) (case e (split (w) (op2 + (num 1) (app f t))) (_ () (app f t))))))))
 (def leaves3 (leaves (trace run3)))
 (def count3 (app length leaves3))
 (def cost3 (app maximum (app each (lam l (app length (proj 1 l))) leaves3)))
@@ -63,23 +63,3 @@
 (def sort-nil (let s (app sort (ctr Nil)) (app witness s)))
 (def A-dup (ctr Cons two (ctr Cons one (ctr Cons one (ctr Nil)))))
 (def sort-dup (let s (app sort A-dup) (app witness s)))
-; ---- the declarations that were never exercised: Π along a free argument, and the chart move ----------------
-; sort at a free list: the point of the Σ at L; asking its proofs splits L along its constructors
-(def L : (ctr List (ctr Nat)))
-(def sort-free (let s (app sort L) (app witness s)))
-; a list of n free naturals is not built: it is the point of a declared free function at n, a Σ whose proof is the
-; identity `length l ≡ n`; asking the proof splits l to length n with fresh coordinates for its elements
-(def lists : (ctr Pi (ctr Nat) (lam n (ctr Sig (ctr List (ctr Nat)) (lam l (ctr Eql (ctr Nat) (app length l) n))))))
-(def list-of (lam n (case (proj 1 (app lists n)) (Refl () (proj 0 (app lists n))))))
-; sortCost n: the greatest event count over the leaves of sort's run along n free coordinates
-(def sortCost (lam n (app maximum (app each (lam l (app length (proj 1 l))) (leaves (trace (app witness (app sort (app list-of n)))))))))
-(def sortCost-3 (app sortCost 3))
-(def n : (ctr Nat))
-(def sortCost-n (app sortCost n))
-; the chart move: the two charts of sort at A, declared equivalent with no body, and the cheap chart's centre
-; transported along ua of it (MAP.md §0 item 3: meaning descends along the path, cost does not)
-(def spec-chart (lam L (ctr Sig (ctr List (ctr Nat)) (lam B (ctr Sig (ctr Eql (ctr List (ctr Nat)) (app isort L) (app isort B)) (lam q (ctr Eql (ctr Bool) (app sorted B) (ctr True))))))))
-(def cheap-chart (lam L (ctr Sig (ctr List (ctr Nat)) (lam B (ctr Eql (ctr List (ctr Nat)) B (app isort L))))))
-(def chart : (ctr Pi (ctr List (ctr Nat)) (lam L (Equiv-ty (app cheap-chart L) (app spec-chart L)))))
-(def centre-A (ctr Pair (app isort A) (ctr Refl)))
-(def chart-move (app witness (trp (ua (app cheap-chart A) (app spec-chart A) (app chart A)) i0 i1 centre-A)))

@@ -1,0 +1,35 @@
+; checker probes (verify.c): each definition must check; coordinates are η-long at their types,
+; matches rewrite the goal and the context, faces restrict, path applications keep their boundary
+
+(def b/t1_id : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam x A)))) = (lam A (lam x x)))
+(def b/t1_k : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi A (lam x (ctr Pi B (lam y A)))))))) = (lam A (lam B (lam x (lam y x)))))
+(def b/t1_tr : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Path (lam _ (ctr Set)) A B) (lam p (ctr Pi A (lam x B)))))))) = (lam A (lam B (lam p (lam x (trp (lam i (app p i)) i0 i1 x))))))
+(def b/t1_neg : (ctr Pi (ctr Bool) (lam x (ctr Bool))) = (lam x (case x (False () (ctr True)) (True () (ctr False)))))
+(def b/t1_negLnv : (ctr Pi (ctr Bool) (lam x (ctr Path (lam _ (ctr Bool)) (app (ref b/t1_neg) (app (ref b/t1_neg) x)) x))) = (lam x (case x (False () (plm _ (ctr False))) (True () (plm _ (ctr True))))))
+(def b/t3_t : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam a (ctr Pi (ctr Path (lam _ A) a a) (lam p (ctr Path (lam _ A) (app p i1) a))))))) = (lam A (lam a (lam p (plm _ a)))))
+(def b/t3_u : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam a (ctr Pi (ctr Sig A (lam x (ctr Path (lam _ A) x a))) (lam w (ctr Path (lam _ A) (case w (Pair (x p) (app p i1))) a))))))) = (lam A (lam a (lam w (plm _ a)))))
+(def b/t5_t5 : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam a (ctr Pi A (lam x (ctr Pi (ctr Path (lam _ A) x a) (lam p
+  (ctr Path (lam _ (ctr Sig A (lam y (ctr Path (lam _ A) y a)))) (ctr Pair a (plm _ a)) (ctr Pair x p))))))))))
+  = (lam A (lam a (lam x (lam p (plm i (ctr Pair (app p (inot i)) (plm j (app p (ior (inot i) j))))))))))
+(def b/t5_t6 : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam a (ctr Pi A (lam x (ctr Pi (ctr Path (lam _ A) x a) (lam p
+  (ctr Path (lam _ (ctr Path (lam _ A) a a)) (plm _ a) (plm _ a))))))))))
+  = (lam A (lam a (lam x (lam p (plm i (plm j (app p (ior i1 j)))))))))
+(def b/t5_t7 : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam a (ctr Pi A (lam x (ctr Pi (ctr Path (lam _ A) x a) (lam p
+  (ctr Path (lam _ A) a a)))))))))
+  = (lam A (lam a (lam x (lam p (plm i (app p (ior i1 i))))))))
+(def b/t8_t8 : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam a (ctr Pi A (lam x (ctr Pi (ctr Path (lam _ A) x a) (lam p
+  (ctr Path (lam _ A) a x))))))))) = (lam A (lam a (lam x (lam p (plm i (app p (inot i))))))))
+(def b/t8_t9 : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam a (ctr Pi A (lam x (ctr Pi (ctr Path (lam _ A) x a) (lam p
+  (ctr Path (lam _ (ctr Sig A (lam y A))) (ctr Pair x a) (ctr Pair a a)))))))))) = (lam A (lam a (lam x (lam p (plm i (ctr Pair (app p i) a)))))))
+(def b/t8_t10 : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam a (ctr Pi A (lam x (ctr Pi (ctr Path (lam _ A) x a) (lam p
+  (ctr Path (lam _ (ctr Sig A (lam y A))) (ctr Pair a a) (ctr Pair x a)))))))))) = (lam A (lam a (lam x (lam p (plm i (ctr Pair (app p (inot i)) a)))))))
+(def b/tF_T : (ctr Pi (ctr Nat) (lam x (ctr Set))) = (lam x (ctr Sig (ctr Bool) (lam c (case c (True () (ctr Nat)) (False () (ctr Unit)))))))
+(def b/tF_f : (ctr Pi (ctr Nat) (lam x (ctr Pi (app (ref b/tF_T) x) (lam e (app (ref b/tF_T) x))))) = (lam x (lam e e)))
+(def b/tF_U : (ctr Pi (ctr Nat) (lam x (ctr Set))) = (lam x (ctr Sig (ctr Bool) (lam c (case c (True () (ctr Sig (ctr Nat) (lam n (app (ref b/tF_U) n)))) (False () (ctr Unit)))))))
+(def b/tF_g : (ctr Pi (ctr Nat) (lam x (ctr Pi (app (ref b/tF_U) x) (lam e (app (ref b/tF_U) x))))) = (lam x (lam e e)))
+(def b/tF_h : (ctr Pi (ctr Nat) (lam x (ctr Pi (app (ref b/tF_U) x) (lam e (ctr Nat))))) = (lam x (lam e (case e (Pair (c r) (case c (True () (case r (Pair (n rest) (app (app (ref b/tF_h) n) rest)))) (False () (ctr Zer))))))))
+(def b/tG_t : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Pi A (lam _ (ctr Sig A (lam _ A)))) (lam f (ctr Pi A (lam a (ctr Path (lam _ A) (case (app f a) (Pair (c d) c)) (case (app f a) (Pair (c d) c))))))))) = (lam A (lam f (lam a (case (app f a) (Pair (c d) (plm _ c)))))))
+(def b/tH_g : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Sig A (lam _ A)) (lam p A)))) = (lam A (lam p (case p (Pair (c d) c)))))
+(def b/tH_t1 : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi B (lam _ (ctr Sig A (lam _ A)))) (lam h (ctr Pi B (lam b (ctr Path (lam _ A) (case (app h b) (Pair (c d) c)) (case (app h b) (Pair (c d) c))))))))))) = (lam A (lam B (lam h (lam b (case (app h b) (Pair (c d) (plm _ c))))))))
+(def b/tH_t2 : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi B (lam _ (ctr Sig A (lam _ A)))) (lam h (ctr Pi B (lam b (ctr Path (lam _ A) (app (app (ref b/tH_g) A) (app h b)) (app (app (ref b/tH_g) A) (app h b))))))))))) = (lam A (lam B (lam h (lam b (case (app h b) (Pair (c d) (plm _ c))))))))
+(def b/tH_t3 : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi B (lam _ (ctr Sig A (lam _ A)))) (lam h (ctr Pi (ctr Pi A (lam _ B)) (lam f (ctr Pi A (lam a (ctr Path (lam _ A) (app (app (ref b/tH_g) A) (app h (app f a))) (app (app (ref b/tH_g) A) (app h (app f a)))))))))))))) = (lam A (lam B (lam h (lam f (lam a (case (app h (app f a)) (Pair (c d) (plm _ c)))))))))
