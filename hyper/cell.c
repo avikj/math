@@ -368,6 +368,7 @@ static Term fce_closure(unsigned ctag, Term name, unsigned side, Term by, Term c
 /* the face map / substitution at a name: an interval name (faces and interval substitution), a choice
    name (endpoints and renaming), a coordinate (a VAR atom: substitution by a term), or, under the
    checker's hook, any cell (a semantic rewrite: what equals `nm` becomes `by`) */
+static bool pi_coordinate(Term f);
 static Term FCE_SELF;                                   /* the face node being reduced: a face that waits is that node again, not a copy */
 static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
   bool ivar = tag(nm) == T_IVAR; Loc name = loc(nm); Term self = FCE_SELF; FCE_SELF = 0;
@@ -407,7 +408,8 @@ static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
       if (tag(v) == T_INOT) return whnf(node1(T_INOT, 0, FCE_(HEAP[loc(v)])));
       return whnf(node2(tag(v), 0, FCE_(HEAP[loc(v)]), FCE_(HEAP[loc(v)+1]))); }
     case T_VAR: if (tag(nm) == T_VAR && loc(v) == loc(nm)) { receipt(R_DUP_SUP_EQUAL); return side < 2 ? mk(side ? T_I1 : T_I0, 0, 0) : whnf(by); }   /* the coordinate itself */
-                if (is_coordinate(v)) return WAIT_(v);                                                 /* a coordinate with no value yet: the face waits for it */
+                if (is_coordinate(v) && !pi_coordinate(v)) return WAIT_(v);                            /* a coordinate with no value yet: the face waits for it */
+                if (is_coordinate(v)) { receipt(R_FCE_SHARE); return v; }                             /* an unknown function is never bound whole: its points carry their worlds */
                 receipt(R_FCE_SHARE); return v;                                                        /* another atom */
     case T_CTR: {
       uint32_t ar = ctr_arity(v);
@@ -572,6 +574,7 @@ static bool term_identity(Term v, int depth, uint64_t *id) {
 static uint64_t arg_identity(Term x) { uint64_t id; if (term_identity(x, 3, &id)) return id; return (uint64_t)loc(scrut(x)) << 8 | 5; }
 /* an unknown function applied: the coordinate of its codomain at the argument.  The same argument asks the same
    question, so the coordinate is one per (function, argument): a free port fires once. */
+static bool pi_coordinate(Term f) { Term T = coordinate_type(f); if (!T) return false; T = whnf(T); return tag(T) == T_CTR && ctr_id(T) == C_PI; }
 static Term pi_apply(Term f, Term x) {
   Term T = coordinate_type(f); if (!T) return 0; T = whnf(T);
   if (tag(T) != T_CTR || ctr_id(T) != C_PI) return 0;

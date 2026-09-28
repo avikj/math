@@ -70,7 +70,7 @@ checkn t/erase.hyper dflt    '3' 3
 checkn t/erase.hyper carry   '1' 2
 # §9 schedules: the redex bag is the only scheduler; serving the right demand first, or a coin per choice, gives
 # the same value in the same count on every probe above (a fresh dimension's printed name is gauge, not value)
-for pair in t/basic.hyper:main t/sup.hyper:dist t/sup.hyper:matchsup t/kan.hyper:reg t/kan.hyper:hc-nat t/kan.hyper:pitrp t/ua.hyper:fwd-true t/setcomp.hyper:via-pi t/hit.hyper:helim-sq t/hit.hyper:merid-t t/erase.hyper:and-f t/sort.hyper:sort-A t/sort.hyper:sort-dup t/sort.hyper:n-run2 t/sort.hyper:c-isort3; do
+for pair in t/basic.hyper:main t/sup.hyper:dist t/sup.hyper:matchsup t/kan.hyper:reg t/kan.hyper:hc-nat t/kan.hyper:pitrp t/ua.hyper:fwd-true t/setcomp.hyper:via-pi t/hit.hyper:helim-sq t/hit.hyper:merid-t t/erase.hyper:and-f t/sort.hyper:sort-A t/sort.hyper:sort-dup t/sort.hyper:n-run2 t/sort.hyper:c-isort3 t/sort.hyper:chart-move; do
   f=${pair%%:*}; d=${pair##*:}; a=$(./hyper run $f $d 2>&1 | grep -v Words | tr '\n' ' '); b=$(HYPER_SCHEDULE=right ./hyper run $f $d 2>&1 | grep -v Words | tr '\n' ' '); c=$(HYPER_SCHEDULE=7 ./hyper run $f $d 2>&1 | grep -v Words | tr '\n' ' ')
   if [ "$a" = "$b" ] && [ "$a" = "$c" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL schedule $f $d: [$a] [$b] [$c]"; fi; done
 # the census of a question (Fibre.WholePartialDesa), as programs: Σ a. f a ≡ b declared with no witness, its points asked.
@@ -122,6 +122,11 @@ check t/sort.hyper none '*'
 check t/sort.hyper head '#Suc{#Zer{}}'
 # §0.3 step 4: sort is a declaration with a Π type and no body; applied to A it is the coordinate of the Σ at A.
 check t/sort.hyper sort-A '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
+# MAP §0.3 step 6: the chart move.  The equivalence's forward map is the proof (the same B, its identities decided
+# by unification); the cheap chart's centre transported along its ua is sort's point, far below resolving the type
+check t/sort.hyper direct '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
+check t/sort.hyper chart-move '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
+got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 363') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL chart-move count: $got";; esac
 # the run along free coordinates: isort of three unknowns has six arrangements, each a leaf with its own events;
 # one comparison asked twice is one question and one split
 check t/sort.hyper n-isort3 '6'
