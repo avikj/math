@@ -122,11 +122,10 @@ check t/sort.hyper none '*'
 check t/sort.hyper head '#Suc{#Zer{}}'
 # §0.3 step 4: sort is a declaration with a Π type and no body; applied to A it is the coordinate of the Σ at A.
 check t/sort.hyper sort-A '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
-# MAP §0.3 step 6: the chart move.  The equivalence's forward map is the proof (the same B, its identities decided
-# by unification); the cheap chart's centre transported along its ua is sort's point, far below resolving the type
-check t/sort.hyper direct '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
+# MAP §0.3 step 6: the chart move.  Carrier isort with isoToEquiv of descend/ascend; transport along its ua is descend
+# (uaβ), so the carried image is sort's point, with no coordinate, far below resolving the type
 check t/sort.hyper chart-move '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
-got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 363') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL chart-move count: $got";; esac
+got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 173') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL chart-move count: $got";; esac
 # the run along free coordinates: isort of three unknowns has six arrangements, each a leaf with its own events;
 # one comparison asked twice is one question and one split
 check t/sort.hyper n-isort3 '6'

@@ -292,15 +292,16 @@ them.
    count (`n-run2`: 10,241 against 10,250). The hypothesis of `RandomDescent`
    for this loop's step relation is an Agda obligation and is not discharged
    here; nothing in this file claims it is.
-6. The chart move under a checked path. **Written** (`t/sort.hyper`, `chart-move`). The two charts of `sort` at
-   A: `cheap-chart`, `Σ B. B ≡ isort A`, with centre `(isort A, refl)`; and `spec-chart`, the specification.
-   The equivalence's forward map is the proof. It sends `(B, p)` to `(B, proofs B)`, where `proofs` is declared
-   with no body, so its point at B is the Σ of the two identities at B, decided by unification once B is known.
-   The cheap centre transported along `ua` of it (`trp` over the Glue line) is `[1,2,3]` in 363 interactions,
-   against 37,159 for resolving the type (`sort-A`); the forward map alone (`direct`) is 255. The count is the
-   same under the three schedules. What the core needed: an interval face meeting an unknown function passes
-   through it, as through a definition. A Π coordinate is never bound whole; its points at arguments carry
-   their own worlds, so waiting on the function blocked every application of it under a transport.
+6. The chart move under a checked path. **Written, run; the path is not yet checked** (`t/sort.hyper`, `chart-move`).
+   The cheap chart is `Carrier isort` (`fibre/src/Fibre/Carrier.agda`): a list, its image under `isort`, and the
+   witness. `descend a = (a, isort a, refl)` and `ascend c = base c`, and the two round trips are an iso. The
+   prelude's `iso-to-equiv` is agda/cubical's `isoToIsEquiv`, term for term (`fill0`, `fill2`, `sq`, `sq1`,
+   `lemIso`), and it makes the iso an equivalence. Transport of A along its `ua` is `descend A` (uaβ), and the
+   carried image is `[1,2,3]` in 173 interactions, against 37,159 for resolving the type (`sort-A`), with no
+   coordinate, split or unification. It is the same under the three schedules.
+   **Open:** `b/sort_at_A` states the specification at that B, `(B, (refl, refl))`, but `hyper check` rejects it
+   because `isort`, `sorted`, the carrier and the prelude's Kan operations are untyped definitions. The checked
+   path needs them typed.
 7. The Bend dialect's grammar as a book with its certificate; parallel demand
    over the one arena.
 

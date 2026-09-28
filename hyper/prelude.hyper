@@ -75,6 +75,38 @@
 (def isContrSingl (lam A (lam y (ctr Pair (ctr Pair y (plm _ y))
                                           (lam w (case w (Pair (x p) (plm i (ctr Pair (app p (inot i)) (plm j (app p (ior (inot i) j))))))))))))
 (def idequiv (lam A (ctr Pair (lam x x) (lam y (isContrSingl A y)))))
+;   an isomorphism is an equivalence: agda/cubical Cubical.Foundations.Isomorphism.isoToIsEquiv, term for term.
+;   f : A → B, g : B → A, s y : f (g y) ≡ y (rightInv), t x : g (f x) ≡ x (leftInv).
+;   fill0 i = hfill (λ k → λ { (i = i1) → t x0 k ; (i = i0) → g y }) (inS (g (p0 (~ i))))
+(def iso-fill0 (lam A (lam g (lam t (lam y (lam x0 (lam p0 (lam i (lam j
+  (hfill A (app g (app p0 (inot i)))
+         (ctr Cons (ctr Face i (plm k (app (app t x0) k))) (ctr Cons (ctr Face (inot i) (plm k (app g y))) (ctr Nil))) j))))))))))
+;   fill2 i = hfill (λ k → λ { (i = i1) → fill1 k i1 ; (i = i0) → fill0 k i1 }) (inS (g y))
+(def iso-fill2 (lam A (lam g (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1 (lam i (lam j
+  (hfill A (app g y)
+         (ctr Cons (ctr Face i (plm k (iso-fill0 A g t y x1 p1 k i1))) (ctr Cons (ctr Face (inot i) (plm k (iso-fill0 A g t y x0 p0 k i1))) (ctr Nil))) j))))))))))))
+;   sq i j = hcomp (λ k → λ { (i = i1) → fill1 j (~ k) ; (i = i0) → fill0 j (~ k) ; (j = i1) → t (fill2 i i1) (~ k) ; (j = i0) → g y }) (fill2 i j)
+(def iso-sq (lam A (lam g (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1 (lam i (lam j
+  (hcm A (iso-fill2 A g t y x0 p0 x1 p1 i j)
+       (ctr Cons (ctr Face i (plm k (iso-fill0 A g t y x1 p1 j (inot k))))
+       (ctr Cons (ctr Face (inot i) (plm k (iso-fill0 A g t y x0 p0 j (inot k))))
+       (ctr Cons (ctr Face j (plm k (app (app t (iso-fill2 A g t y x0 p0 x1 p1 i i1)) (inot k))))
+       (ctr Cons (ctr Face (inot j) (plm k (app g y))) (ctr Nil)))))))))))))))))
+;   sq1 i j = hcomp (λ k → λ { (i = i1) → s (p1 (~ j)) k ; (i = i0) → s (p0 (~ j)) k ; (j = i1) → s (f (p i)) k ; (j = i0) → s y k }) (f (sq i j))
+(def iso-sq1 (lam A (lam B (lam f (lam g (lam s (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1 (lam i (lam j
+  (hcm B (app f (iso-sq A g t y x0 p0 x1 p1 i j))
+       (ctr Cons (ctr Face i (plm k (app (app s (app p1 (inot j))) k)))
+       (ctr Cons (ctr Face (inot i) (plm k (app (app s (app p0 (inot j))) k)))
+       (ctr Cons (ctr Face j (plm k (app (app s (app f (iso-fill2 A g t y x0 p0 x1 p1 i i1))) k)))
+       (ctr Cons (ctr Face (inot j) (plm k (app (app s y) k))) (ctr Nil))))))))))))))))))))
+;   lemIso i = (p i , λ j → sq1 i (~ j)),  p i = fill2 i i1
+(def iso-lem (lam A (lam B (lam f (lam g (lam s (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1
+  (plm i (ctr Pair (iso-fill2 A g t y x0 p0 x1 p1 i i1)
+                   (plm j (iso-sq1 A B f g s t y x0 p0 x1 p1 i (inot j)))))))))))))))))
+;   equiv-proof y = ((g y , s y) , λ (x , p) → lemIso y (g y) x (s y) p)
+(def iso-to-equiv (lam A (lam B (lam f (lam g (lam s (lam t
+  (ctr Pair f (lam y (ctr Pair (ctr Pair (app g y) (app s y))
+                               (lam w (case w (Pair (x p) (iso-lem A B f g s t y (app g y) (app s y) x p))))))))))))))
 
 ; ---- Glue (GLUE.md): the type former for univalence ------------------------------------------
 ;   (Glue A faces) with faces a list of (ctr GFace phi T e), e : Equiv T A
