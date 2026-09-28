@@ -1,0 +1,25 @@
+; गणना (fibre/src/Fibre/WholePartialDesa_…): the census of a question is the resolution of its fibre.
+; Σ a. f a ≡ b is declared with no witness; its proof is asked, and the points are asked along their type.
+; One point prints as itself (सकलादेश), none as * (नास्ति), two or more as their superposition (विकलादेश), and
+; `leaves` gives the same census as a list.
+(def not (lam b (case b (True () (ctr False)) (False () (ctr True)))))
+(def always-true (lam u (ctr True)))      ; Unit → Bool
+(def forget (lam b (ctr Tt)))             ; Bool → Unit
+(def compose (lam u (app forget (app always-true u))))   ; Unit → Unit
+(def ask-bool (lam b (case b (True () (ctr True)) (False () (ctr False)))))
+(def ask-unit (lam u (case u (Tt () (ctr Tt)))))
+; always-true at True: one point; at False: none (a name Unit cannot utter)
+(def f1 : (ctr Sig (ctr Unit) (lam u (ctr Eql (ctr Bool) (app always-true u) (ctr True)))))
+(def at-true (case (proj 1 f1) (Refl () (app ask-unit (proj 0 f1)))))
+(def f2 : (ctr Sig (ctr Unit) (lam u (ctr Eql (ctr Bool) (app always-true u) (ctr False)))))
+(def at-false (case (proj 1 f2) (Refl () (app ask-unit (proj 0 f2)))))
+; forget at Tt: two points, both shown (a bit lost)
+(def g1 : (ctr Sig (ctr Bool) (lam b (ctr Eql (ctr Unit) (app forget b) (ctr Tt)))))
+(def forget-at-tt (case (proj 1 g1) (Refl () (app ask-bool (proj 0 g1)))))
+(def census-forget (leaves forget-at-tt))
+; compose at Tt: one point; the sequential diagnostic would add the two losses and be wrong
+(def h1 : (ctr Sig (ctr Unit) (lam u (ctr Eql (ctr Unit) (app compose u) (ctr Tt)))))
+(def compose-at-tt (case (proj 1 h1) (Refl () (app ask-unit (proj 0 h1)))))
+; not at True: one point, False
+(def n1 : (ctr Sig (ctr Bool) (lam b (ctr Eql (ctr Bool) (app not b) (ctr True)))))
+(def not-at-true (case (proj 1 n1) (Refl () (proj 0 n1))))

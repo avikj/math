@@ -1,0 +1,13 @@
+(def not (lam b (case b (True () (ctr False)) (False () (ctr True)))))
+(def not-equiv (ctr Pair not (lam y (ctr Pair (ctr Pair (not y) (plm _ y))
+                                              (lam w (case w (Pair (x p) (plm i (ctr Pair (not (app p (inot i))) (plm j (app p (ior (inot i) j))))))))))))
+(def negPath (ua (ctr Bool) (ctr Bool) not-equiv))
+; a composite in the universe: negPath then negPath, as hcomp in Set (= Glue with transpEquiv)
+(def negneg (plm i (hcm (ctr Set) (app negPath i) (ctr Cons (ctr Face i (plm k (app negPath k))) (ctr Nil)))))
+(def via-negneg-t (trp negneg i0 i1 (ctr True)))
+(def via-negneg-f (trp negneg i0 i1 (ctr False)))
+; the inverse line
+(def via-inv (trp (plm i (app negPath (inot i))) i0 i1 (ctr True)))
+; a Pi line of ua: (Bool → Bool) along negPath in both places, applied to not
+(def via-pi (app (trp (plm i (ctr Pi (app negPath i) (lam _ (app negPath i)))) i0 i1 not) (ctr True)))
+(def main via-negneg-t)

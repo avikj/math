@@ -1,0 +1,38 @@
+; the joint state (formal/cubical/theorems/logic/Jiva_…): two parts are projections of one joint J; the comparison
+; तुलना j = (p j, q j); independence is the comparison being an equivalence, entanglement its fibre; a living step
+; refuses to descend to a marginal.  Each is the resolution of a declared fibre.
+(def bool2 (ctr Sig (ctr Bool) (lam a (ctr Bool))))
+(def left (lam j (proj 0 j)))
+(def right (lam j (proj 1 j)))
+(def eq-bool (lam a (lam b (case a (True () b) (False () (case b (True () (ctr False)) (False () (ctr True))))))))
+(def ask-bool (lam b (case b (True () (ctr True)) (False () (ctr False)))))
+(def ask-pair (lam j (ctr Pair (app ask-bool (proj 0 j)) (app ask-bool (proj 1 j)))))
+; the product joint: the fibre of the comparison over (True, False) is one point
+(def prod-fib : (ctr Sig bool2 (lam j (ctr Eql bool2 (ctr Pair (app left j) (app right j)) (ctr Pair (ctr True) (ctr False))))))
+(def product-at-tf (case (proj 1 prod-fib) (Refl () (app ask-pair (proj 0 prod-fib)))))
+; the diagonal joint (both parts read the one bit): the fibre over (True, False) is empty — entangled
+(def diag-fib : (ctr Sig (ctr Bool) (lam b (ctr Eql bool2 (ctr Pair b b) (ctr Pair (ctr True) (ctr False))))))
+(def diagonal-at-tf (case (proj 1 diag-fib) (Refl () (app ask-bool (proj 0 diag-fib)))))
+(def diag-fib2 : (ctr Sig (ctr Bool) (lam b (ctr Eql bool2 (ctr Pair b b) (ctr Pair (ctr True) (ctr True))))))
+(def diagonal-at-tt (case (proj 1 diag-fib2) (Refl () (app ask-bool (proj 0 diag-fib2)))))
+; a joint over Unit × Unit with a hidden bit: the fibre over (Tt, Tt) has two points the marginals cannot see
+(def unit (lam j (ctr Tt)))
+(def unit2 (ctr Sig (ctr Unit) (lam a (ctr Unit))))
+(def hid-fib : (ctr Sig (ctr Bool) (lam b (ctr Eql unit2 (ctr Pair (app unit b) (app unit b)) (ctr Pair (ctr Tt) (ctr Tt))))))
+(def hidden-at-tt (case (proj 1 hid-fib) (Refl () (app ask-bool (proj 0 hid-fib)))))
+; the living step: the visible part is rewritten by consulting the hidden part (controlled not)
+(def xor (lam a (lam b (case a (False () b) (True () (case b (False () (ctr True)) (True () (ctr False))))))))
+(def cnot (lam j (case j (Pair (a b) (ctr Pair (app xor a b) b)))))
+; the dead step: not on the visible part alone
+(def not (lam a (case a (False () (ctr True)) (True () (ctr False)))))
+(def dead (lam j (case j (Pair (a b) (ctr Pair (app not a) b)))))
+; जीवति: two configurations agree at p and disagree at p ∘ step.  The witness is a declared fibre; a point refutes descent.
+(def refuses (lam step (lam p (ctr Sig bool2 (lam j (ctr Sig bool2 (lam k (ctr Sig (ctr Eql (ctr Bool) (app p j) (app p k)) (lam e (ctr Eql (ctr Bool) (app eq-bool (app p (app step j)) (app p (app step k))) (ctr False)))))))))))
+(def w1 : (app refuses cnot left))
+(def cnot-left (case (proj 1 (proj 1 w1)) (Pair (e d) (case e (Refl () (case d (Refl () (ctr Pair (app ask-pair (proj 0 w1)) (app ask-pair (proj 0 (proj 1 w1)))))))))))
+(def w2 : (app refuses cnot right))
+(def cnot-right (case (proj 1 (proj 1 w2)) (Pair (e d) (case e (Refl () (case d (Refl () (ctr Pair (app ask-pair (proj 0 w2)) (app ask-pair (proj 0 (proj 1 w2)))))))))))
+(def w3 : (app refuses dead left))
+(def dead-left (case (proj 1 (proj 1 w3)) (Pair (e d) (case e (Refl () (case d (Refl () (ctr Pair (app ask-pair (proj 0 w3)) (app ask-pair (proj 0 (proj 1 w3)))))))))))
+(def w4 : (app refuses dead right))
+(def dead-right (case (proj 1 (proj 1 w4)) (Pair (e d) (case e (Refl () (case d (Refl () (ctr Pair (app ask-pair (proj 0 w4)) (app ask-pair (proj 0 (proj 1 w4)))))))))))

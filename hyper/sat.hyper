@@ -1,5 +1,0 @@
-// the assignment is declared, not searched for: a point of Σ x. Σ y. xor x y ≡ T
-type Bool { F, T }
-@xor = λ{#F: λb b; #T: λ{#F: #T; #T: #F}}
-@sat : Σ x: Bool. Σ y: Bool. (≡ (@xor x y) #T)
-@main = @sat

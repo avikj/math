@@ -1,0 +1,7 @@
+; a declaration with a type and no body is a coordinate of its type; a match asks it and it becomes the
+; superposition of the constructors the match lists, correlated across every holder
+(def b : (ctr Bool))
+(def n : (ctr Nat))
+(def pick (case b (True () 1) (False () 2)))
+(def pair (ctr Pair (case b (True () 1) (False () 2)) b))
+(def depth (case n (Zer () 0) (Suc (m) (case m (Zer () 1) (Suc (k) 2)))))
