@@ -24,7 +24,9 @@
 -- questions — Goldbach, gaps, pairs — are questions about the successor;
 -- and the successor is the one map with no expression there.  The
 -- "parity barrier" is a chart incompatibility, and `disjoint-support`
--- below is its whole content.
+-- below is its whole content — for ℕ with the successor only; §5 scopes
+-- this reading, and the incompatibility belongs to the line, not to
+-- arithmetic carrying two structures.
 --
 -- Nothing here is deep.  `gcd(n, n+1) = 1` is known to every schoolchild
 -- who has thought about it for a minute.  What is not standard is
@@ -167,7 +169,9 @@ join-does-not-follow p =
 ------------------------------------------------------------------------
 -- 5.  Scope of §4.
 --
--- The theorem is about ℕ **with the
+-- The header and §4 read `disjoint-support` as "the parity barrier is a
+-- chart incompatibility" and call it "its whole content".  That reading
+-- is scoped: the theorem is about ℕ **with the
 -- successor**, whose generator 1 is a unit and therefore multiplicatively
 -- invisible by construction.  It is not a theorem about arithmetic
 -- carrying two structures.
@@ -186,4 +190,6 @@ join-does-not-follow p =
 -- itself" — is answered there by `gen-hom`: squaring is a monoid
 -- homomorphism from the parameter chart to the triple chart, so Euclid's
 -- parametrisation IS the transition, with no defect.
+--
+-- See notes/THE_BARRIER_BELONGS_TO_THE_LINE.md (absent from this repository).
 ------------------------------------------------------------------------

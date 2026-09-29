@@ -9,6 +9,8 @@
 -- mark.  Root notion in Gautama, *Nyāyasūtra* (~2nd c. CE), under अनुमान;
 -- the definitional apparatus (the vyāptivāda, and the उपाधि that defeats a
 -- proposed pervasion) is Navya-Nyya, Gagea, *Tattvacintmai* (~1325).
+-- The 12-century gap is stated because filing the later apparatus under the
+-- sūtrakāra is the error this corpus struck in its own Pāṇini row.
 --
 -- What is borrowed is one
 -- distinction they drew sharply and that this kernel's types do not: a

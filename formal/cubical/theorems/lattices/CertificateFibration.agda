@@ -5,6 +5,8 @@
 --
 -- THE CERTIFICATE IS THE FIBRE COORDINATE.
 --
+-- `notes/ONLINE_SMITH_CERTIFICATE_REVERSIBILITY.md` (absent from this
+-- repository) proves, of a map
 -- `f : X → Y` between finite sets:
 --
 --     "The fiber bound is elementary.  Basis inputs with the same

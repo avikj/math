@@ -5,7 +5,11 @@
 --
 -- THE CONSERVED QUANTITY OF SMITH PATH HOLONOMY.
 --
--- FORM.md (absent from this repository) §3 proves the events form a REGULAR torsor: the payload
+-- notes/SMITH_PATH_HOLONOMY.md (absent from this repository) §3 lets `G`
+-- be the group of automorphisms of coker(D) induced by target holonomies
+-- U_p U_{p₀}⁻¹ and asks which cokernel data descend.
+-- notes/RANK_R_PAYLOAD_NORMAL_FORM.md (absent from this repository) §3
+-- proves the events form a REGULAR torsor: the payload
 -- ranges over the whole stabilizer, "invisible to the endpoint".
 -- Read together they suggest that on the cokernel nothing at all is
 -- conserved.  Something is.
@@ -32,6 +36,11 @@
 --                 2 ∉ {±1} mod 5, so the holonomy map
 --                 Γ₀(D) → Aut(coker D) is NOT surjective.
 --                 The proof forces 5 ∣ 3 and refutes that in ℕ.
+--
+-- The exact image (it is the full preimage of {±1} under
+-- det : Aut(coker D) → (ℤ/d₁)ˣ, for every D and every rank) is proved
+-- in collab/swarm/2026-08-14/swarm-0814-11-holonomy-determinant.md
+-- (absent from this repository), not here.
 --
 -- Conventions follow Gamma0Partner / Gamma0Converse: D = diag(d₁,
 -- q·d₁); Γ₀(q) = integer matrices whose lower-left entry is q·k.

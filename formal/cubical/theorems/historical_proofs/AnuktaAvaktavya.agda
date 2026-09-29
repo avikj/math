@@ -264,7 +264,10 @@ open import SaptabhangiNaya
 --   an undecidability, and identifies its shape as a FAILURE TO FACTOR,
 --   ¬ Σ[ decoder ] ((x : _) → decoder (coarse x) ≡ fine x) -- the same
 --   shape as Pini's lghava criterion and as the analytic lane's open
---   barrier problem.
+--   barrier problem.  §6 calls this an "expressibility failure" as
+--   though it were an observation; it was already a term, and sharper.
+--   (That file's header credits `Saptabhangi.no-single-vacana`; the
+--   theorem is in `SaptabhangiNaya`, which is what it actually imports.)
 --
 --   `Saptabhangi.agda` proves `क्रम-सह-भेदः`: the bhaṅga reached by
 --   krama-arpaṇa is not the bhaṅga reached by saha-arpaṇa.  And `दुर्नयः`:
@@ -349,17 +352,36 @@ open import Saptabhangi
 
 ------------------------------------------------------------------------
 -- 9.  THE TWO AXES ARE INDEPENDENT, NOT DUAL.
+--
+-- Earlier sections call the two modalities "opposite" (header), speak of
+-- "the pole it actually occupies" (§4) and call the two defects
+-- "opposite" (§6).  All of that treats सामयिक and नित्य as opposites, and
+-- treats non-uniqueness and inexpressibility the same way.  Both readings
+-- are wrong, as the two modules below prove:
+--
 --   `NaturalMachine/SamayikaAndNityaAreIndependent.agda` — the swap of ∃
 --   and ∀ is NOT a negation.  `bothHold` exhibits a single `bad` that is
---   सामयिक AND नित्य at once; `samayikaWithoutNitya` and
---   `nityaWithoutSamayika` give the other two corners.  Neither predicate
---   implies the other and neither implies the other's negation.  What each
---   DOES refute is the other's STRONG failure, which is a different and
---   weaker relation than duality.
+--   सामयिक AND नित्य at once (matching i r = (i ≡ r) on Bool);
+--   `samayikaWithoutNitya` (bad = ⊥) and `nityaWithoutSamayika`
+--   (bad = Unit) give the other two corners.  Neither predicate implies
+--   the other and neither implies the other's negation.  What each DOES
+--   refute is the other's STRONG failure — नित्य refutes a universal
+--   remedy, सामयिक refutes an invincible instance — and those two cannot
+--   both hold, which is why the fourth corner has no strong witness.  That
+--   is a different and weaker relation than duality.  That module says
+--   nothing about the WORDS अनुक्तम् and अवक्तव्यम्, about the saptabhaṅgī,
+--   or about which module here uses which.
 --
 --   `NaturalMachine/NonUniquenessAndInexpressibilityAreIndependent.agda` —
---   the same, over four realised corners, for §6's other axis.  So the two
---   defects are not two readings of one thing at any strength.
+--   the same, over four realised corners, for §6's other axis: the
+--   UNIQUENESS failure (0÷0) and the EXPRESSIBILITY failure (avaktavyam).
+--   So the two defects are not two readings of one thing at any strength.
+--   The types locate the asymmetry: non-uniqueness is a property of the
+--   CONTENT alone, inexpressibility of the content AND the MEDIUM.  It
+--   deliberately does NOT put अनुक्तम् on that carrier, for the reason
+--   d909db0d gives: the remedies live in different types, and forcing all
+--   three onto one carrier would be the collapse being diagnosed.  Two are
+--   compared because two are comparable.
 --
 -- The three-way separation of sections 1, 6 and 8 stands: the
 -- three structures ARE distinct, and each pair is separated by at least

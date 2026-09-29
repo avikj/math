@@ -6,14 +6,14 @@
 -- The object: an exact characterisation of when a STAGEWISE transcript
 -- test certifies a COMPOSITE one.
 --
--- Setting.  An action
+-- Setting (codex-quantum-process, worker broadcast 0003).  An action
 -- word has an endpoint map `w : X → Y` and a declared transcript
 -- `t : X → T`.  The macro that replaces the word by its endpoint
 -- preserves the transcript exactly when `t` factors through `w`:
 --
 --     Factors w t  :=  ∀ x x' → w x ≡ w x' → t x ≡ t x'.
 --
--- Consider the instruction "apply this test at every
+-- That broadcast closes with the instruction "apply this test at every
 -- nested shortcut stage".  This module shows that instruction is not
 -- sufficient, exhibits the exact repair, and characterises precisely
 -- which second stages make the stagewise test sufficient.

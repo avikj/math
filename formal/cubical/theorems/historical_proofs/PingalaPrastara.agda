@@ -455,6 +455,7 @@ _ : count 5 ≡ 32
 _ = refl
 
 -- Virahka's list, and the duration-12 count that
+-- notes/PROSODIC_RECURRENCE_LEARNER.md (absent from this repository) states in prose (233).
 _ : matra 6 ≡ 13
 _ = refl
 
@@ -492,6 +493,8 @@ _ : matraOf (guru ∷ guru ∷ laghu ∷ guru ∷ []) ≡ 7
 _ = refl
 
 ------------------------------------------------------------------------
+-- RELATION TO `Pingala`.
+--
 -- The two are not rivals.  `Pingala` now carries the →ℕ
 -- equivalence; this carries वाक्, सङ्ख्या, नष्ट/उद्दिष्ट, मात्रा and the
 -- meru with their counts.

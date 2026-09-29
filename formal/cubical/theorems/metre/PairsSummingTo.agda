@@ -122,6 +122,9 @@ pairsFin (suc n) =
 
 ------------------------------------------------------------------------
 -- 5.  So the antidiagonal index set has n+1 elements, structurally.
+--
+-- That is ingredient (i).  Ingredient (ii) — that the library's sum over
+-- this FinSet is `Sankalita.AD` — is a reindexing.
 ------------------------------------------------------------------------
 
 ------------------------------------------------------------------------

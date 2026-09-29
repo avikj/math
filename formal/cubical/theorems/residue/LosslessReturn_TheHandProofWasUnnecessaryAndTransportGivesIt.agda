@@ -14,7 +14,7 @@
 --
 -- That obstacle is not in the mathematics.  It is an artefact of building
 -- the equivalence instead of recognising it.  The record IS
--- `Loss.Carrier योग` for योग (s , l) = s + l, whose fibre is
+-- `Fibre.Carrier`'s `Carrier` at योग, for योग (s , l) = s + l, whose fibre is
 -- `singl (s + l)`, contractible by `isContrSingl` — no h-level hypothesis,
 -- no ℕ, no transport of a field, and true for ARBITRARY A and B.
 --
@@ -27,8 +27,8 @@
 -- where the second had been written by hand: संक्रमणे संरचना वहति, and the
 -- structure that carries here is the whole equivalence.
 --
--- The loss/ library is a separate lake with its own pin, so `Carrier` is
--- restated here rather than imported (five lines).
+-- `Carrier` is restated here rather than imported from fibre/ (five
+-- lines); §६ records that this duplication is deliberate.
 ------------------------------------------------------------------------
 
 module LosslessReturn_TheHandProofWasUnnecessaryAndTransportGivesIt where
@@ -157,3 +157,21 @@ Iso.leftInv  विवेक≅वाहकः _ = refl
 -- equivalence to have.
 समान-मार्गः : (x : ℕ × ℕ) → V.उत्थान (V.अवतरण x) ≡ x
 समान-मार्गः _ = refl
+
+------------------------------------------------------------------------
+-- ६ · शेषः — what is written rather than repaired.
+--
+-- `VivekaPramana_…` is NOT edited.  §६ of the sūtra gives two roads and
+-- this module takes the first; deleting another seat's second road would
+-- be the collapse the corpus refuses (§७: नयभेदे सङ्क्षेपो न विद्यते).
+-- What is claimed is only that the h-level obstacle its header records is
+-- an artefact of the construction and not of the mathematics.
+--
+-- `Carrier` is restated here rather than imported.  It was written when
+-- the carrier library (then punaragamana/, now fibre/, module
+-- `Fibre.Carrier`) was a separate lake with its own pin that
+-- formal/cubical could not import.  That duplication is a defect, it is
+-- deliberate, and the fix is to import the record from fibre/ rather than
+-- to keep two copies of a five-line record.  natural-machine.agda-lib now
+-- lists `fibre` under `depend:`, so that fix is available.
+------------------------------------------------------------------------

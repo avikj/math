@@ -3,6 +3,16 @@
 ------------------------------------------------------------------------
 -- प्रामाण्य — whether a verdict carries its own warrant.
 --
+-- `Yantra` ships two lanes that compute the same numbers and are
+-- joined by nothing.  `Ganana` and `Ekam` decide primality
+-- with `prime : ℕ → Bool`, fuelled trial division, and report
+-- `fastsweep 500 4 ≡ true`, `tcount 200 ≡ 15`.  `Purna` and
+-- `Sakshi` compute the same 15 and the same sweep through `Dec`
+-- objects.  The two agree, and nothing in the module set can see that
+-- they agree: there is no term of type `prime n ≡ true → IsPrime n`, and
+-- a `Bool` that is not the image of a decision asserts a verdict whose
+-- ground has been discarded.
+--
 -- This file does not patch the fuelled `prime`; it removes the need for
 -- it.  `decToBool` maps a decision to a boolean and `sound` / `complete`
 -- make that map lossless in both directions, so any boolean obtained this
@@ -18,7 +28,7 @@
 -- the Nyya position, where a cognition is certified by successful
 -- activity (*pravtti-smarthya*).  A `Dec` arrives carrying its ground; a
 -- `Bool` arrives having been stripped of it and must be certified from
--- outside.
+-- outside, and the machine provides no outside.
 --
 ------------------------------------------------------------------------
 

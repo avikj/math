@@ -3,17 +3,22 @@
 ------------------------------------------------------------------------
 -- InflationVersusSubgroup
 --
+-- Thm 3.5 of `notes/EIGHT_CLASSES_COLLAPSE_TO_FOUR_SLOTS.md` (absent from
+-- this repository) WITH ITS
 -- QUALIFIER MADE PART OF THE TYPE: the enlargement it is about is
 -- enlargement ALONG A QUOTIENT, and the other reading of "enlargement"
 -- — a subgroup inclusion Γ ≤ G — has no map for the theorem to be
 -- about.
 --
--- §3.5, verbatim):
+-- SOURCE STATEMENT (`notes/EIGHT_CLASSES_COLLAPSE_TO_FOUR_SLOTS.md`
+-- (absent from this repository) §3.5, verbatim):
 --
 --   *Let N ⊴ G act trivially on V, and let Γ = G/N.  Then inflation
 --   inf : H¹(Γ,V) → H¹(G,V) is injective.  Hence enlarging the symmetry
 --   group from Γ to G never kills a nonzero class.*
 --
+-- The audit `notes/FULL_READ_DRAW_5.md` (absent from this repository)
+-- §D7 records that §0's table
 -- keeps the qualifier ("enlarging the symmetry group along a quotient")
 -- and that §2.8, §3.5's own Reading, §4's rejection row and §5.5 all
 -- drop it: "symmetry enlargement: Thm 3.5 proves this is **not a repair

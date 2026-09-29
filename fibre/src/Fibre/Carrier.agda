@@ -36,7 +36,9 @@
 -- judged to resemble it by prose.
 --
 -- ON THE NAME.  `punarāgamana` (पुनरागमन), "coming back again / return", is
--- used here as the name of this module family.
+-- used here as the name of this module family.  It is not being cited from a
+-- particular text for a particular technical sense: the compound is chosen
+-- here, and no source is claimed for it.
 --
 -- TWO IMPLEMENTATION FACTS, load-bearing, do not regress them:
 --
