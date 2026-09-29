@@ -1,0 +1,35 @@
+// sort : Π (A : List Nat). Σ (B : List Nat). (multiset A ≡ multiset B) × Sorted B
+//
+// No sorting algorithm.  The domain of B is superposed, every coordinate under its own label: the list's shape at
+// position p under label 2p, its element under 2p+1.  B is shared between the proposition and the readout (one
+// cloned binder), the proposition is reduced once over the superposition, and every branch where it is 0 erases.
+// A rejected prefix erases its whole unbounded subtree in one step: a list longer than A dies at `@rem(x, [])`,
+// an element larger than every element of A dies at `@eq` without its tail being forced.  What survives the
+// collapse is the fibre of the specification over A.
+
+// the domain: every natural, every list of naturals
+@nat = λ&l. &(l){0n, 1n+@nat(l)}
+@gen = λ&p. &(p*2){[], @nat(p*2+1) <> @gen(p+1)}
+
+// the proposition, as decidable predicates (1 / 0)
+@eq  = λ{0n: λ{0n: 1; 1n+: λb. 0}; 1n+: λa. λ{0n: 0; 1n+: λb. @eq(a, b)}}
+@le  = λ{0n: λb. 1; 1n+: λa. λ{0n: 0; 1n+: λb. @le(a, b)}}
+
+// multiset A ≡ multiset B: take each element of B out of A; nothing may be missing or left over
+@rem     = λ&x. λ{[]: #None; <>: λ&a. λas. @rem_hit(@eq(x, a), x, a, as)}
+@rem_hit = λ{0: λx. λa. λas. @rem_on(a, @rem(x, as)); _: λc. λx. λa. λas. #Some{as}}
+@rem_on  = λa. λ{#None: #None; #Some: λr. #Some{a <> r}}
+@perm    = λA. λB. @perm_b(B, A)
+@perm_b  = λ{[]: λA. @null(A); <>: λb. λbs. λA. @perm_r(@rem(b, A), bs)}
+@perm_r  = λ{#None: λbs. 0; #Some: λA. λbs. @perm(A, bs)}
+@null    = λ{[]: 1; <>: λa. λas. 0}
+
+// Sorted B
+@sorted  = λ{[]: 1; <>: λx. λxs. @sorted1(xs, x)}
+@sorted1 = λ{[]: λx. 1; <>: λ&y. λys. λx. (@le(x, y) .&. @sorted1(ys, y))}
+
+@spec = λA. λ&B. (@perm(A, B) .&. @sorted(B))
+@keep = λ{0: λb. &{}; _: λc. λb. b}
+
+@A = [3n, 1n, 2n]
+@main = !&B = @gen(1); @keep(@spec(@A, B), B)
