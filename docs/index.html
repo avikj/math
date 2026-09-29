@@ -130,13 +130,13 @@ $$
 <ul>
 <li>A computation carries two costs: the <strong>effect</strong> — the net transformation it achieves — and the <strong>length</strong> — its number of primitive steps. They diverge.</li>
 <li>Effects compose (<code>∘</code>), identity <code>id</code>. An <strong>effect-cost</strong> is a homomorphism <code>ℓ : (effects, ∘, id) → (ℕ, +)</code>: <code>ℓ(id) = 0</code>, <code>ℓ(g ∘ h) = ℓ g + ℓ h</code>.</li>
-<li>A <strong>reversible</strong> effect is invertible — some <code>g⁻¹</code> with <code>g ∘ g⁻¹ = id</code> — so the reversible effects form a group, and on a group <code>ℓ</code> vanishes:</li>
+<li>A <strong>reversible</strong> effect is invertible (<code>g ∘ g⁻¹ = id</code>); the reversible effects form a group, and <code>ℓ</code> is <code>0</code> on every one of them — a sum of naturals is <code>0</code> only if each is:</li>
 </ul>
 $$
 \ell(g) + \ell(g^{-1}) = \ell(\mathrm{id}) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals} \ge 0)
 $$
 <ul>
-<li><code>transport</code> and every isomorphism therefore have effect-cost <code>0</code>; only an irreversible step — one collapsing distinct inputs to a single output — can carry cost. Landauer's principle, here a theorem (§5).
+<li>So <strong>cost separates no two reversible effects</strong> — no gradient inside the group; <code>transport</code> and every isomorphism sit at <code>0</code>. Cost appears only on <em>leaving</em> the group: an irreversible, non-invertible effect. Landauer's principle, here a theorem (§5).
 <details class="proof"><summary>the checked term</summary>
 <pre><code>+≡0→≡0 : (m n : ℕ) → m + n ≡ 0 → m ≡ 0
 +≡0→≡0 zero    n p = refl
@@ -153,7 +153,7 @@ module _ (G : Type) (_·_ : G → G → G) (e : G) (inv : G → G)
 <figcaption>Any additive cost <code>ℓ</code> (a monoid map to <code>(ℕ,+)</code> with <code>ℓ e = 0</code>) vanishes on a group: <code>ℓ g + ℓ g⁻¹ = ℓ e = 0</code>, and a natural sum is <code>0</code> only when each summand is. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
 </details>
 <li><strong>Length</strong> is only subadditive, not a homomorphism — <code>len(g ∘ h) ≤ len g + len h</code>, strict when steps cancel — and it is positive on reversible effects: reading an input at depth <code>n</code> costs <code>n</code> steps, reversible or not (§5).</li>
-<li>The information an irreversible step destroys is exactly the <strong>fibre it collapses</strong> (§1): keep the fibre, nothing is erased, effect-cost <code>0</code>; length is charged only for the requested output.</li>
+<li>An irreversible effect is non-injective: it sends a whole <strong>fibre</strong> <code>f⁻¹(b)</code> — several inputs — to one output <code>b</code>, destroying <em>which point</em> of the fibre the input was: <code>log₂|f⁻¹(b)|</code> bits (a fibre of size <code>2ᵏ</code> costs <code>k</code>). Retain the pre-image instead — replace <code>f</code> by <code>a ↦ (f a, a)</code>, injective hence reversible — and the cost is <code>0</code>. The price is in discarding the fibre, not in the answer <code>b</code>; length (above) is charged only for the requested output.</li>
 </ul>
 <h2><span class="n">4.</span> The diagonal</h2>
 <ul>
