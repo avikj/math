@@ -132,17 +132,10 @@ them.
 
 ## 0.3 What exists
 
-1. **The net. Copied, not written** (`net.c`). It is HVM4 `6defdfc` `src/hvm.c`, taken literally, with the receipt by rule that `research/sat_fibre/build_profile.py` adds: same-label and different-label `DUP-SUP` are receipted apart, and `SAT_PROFILE` is printed at exit.
-2. **The SAT fibre results, reproduced exactly. Written** (`satcheck.py`, 282 of 282). The elementary suite, the NP families with their budget exits, the colour frames, and the frozen cost model `T_short(n) = 9·2^n + 16n − 4`, `T_reverse(n) = n + 30` with every rule count, for n = 1..18. Outputs, interactions, heap words and every rule count all match.
-3. **The cubical layer as net programs. Not written here.** Bend2's `--to-hvm4-full` emits transport, hcomp, Glue and `ua` as net definitions. That emitter is in the Bend2 fork, not in this directory.
-4. **The language. Nothing written.** No declaration of §0 reaches the net: there is no path from `sort : Π A. Σ B. …` or `sortCost` to a net program.
+Nothing of the language. No runtime, no net, no declaration of §0 resolves.
 
 ## Files
 
-    hyper/net.c          the interaction net (HVM4 6defdfc src/hvm.c with the receipt by rule)
-    hyper/satcheck.py    research/sat_fibre reproduced exactly on `hyper`: outputs, interactions, heap, rules
-    hyper/test.sh        builds hyper, runs satcheck and cite.sh
+    hyper/MAP.md         this file: the task
+    hyper/NOTES.md       readings of the corpus
     hyper/cite.sh        every identifier this file and NOTES.md name is on the line it cites
-    hyper/NET.md         the net, explained section by section
-
-Usage: `hyper FILE [-s] [-C|-C1|-CN]` reduces `@main` and prints its collapsed normal form; `-s` prints the interactions and heap words.
