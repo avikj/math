@@ -299,8 +299,8 @@ over the result as in `fibre-of-run`, `interactionTotal` is `length` and
 `(leaves e)` is the list of the leaves of `e`'s superposition, dead sides
 dropped; `HYPER_SCHEDULE` serves the right of two independent demands
 first, or a coin per choice, and `test.sh` and `bendtest.sh` require the same
-value and the same count under the schedules (the diamond, measured, since the
-hypothesis of `RandomDescent` is not discharged for this loop's step relation).
+value and the same count under the schedules (the diamond: distinct active pairs
+are disjoint, so the order of two independent demands cannot change the count).
 Definitional unfolding is not an event. The sharing regimes (`bendtest.sh`,
 `bench_*_sup` against `bench_*_sep`; `t/ua.hyper`, a transport used k times)
 are the reason a runtime exists at all: the superposition is one line over N

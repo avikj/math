@@ -144,20 +144,11 @@ encoding on this HVM runtime. It explains why duplication work must remain
 visible in the cost receiver.
 [Primary paper](https://www.cs.unibo.it/~asperti/PAPERS/p303-asperti.pdf).
 
-**Demand belongs in the state whose geodesic is being measured.**
+**Demand is part of the object whose geodesic is measured.**
 
-`AND-ZER` returns zero without normalizing its right operand. For any
-right-hand computation of k steps, a context-closed term relation permitting
-that computation before the outer rule admits a k+1-step route, while firing
-the outer rule first takes one step. This is a quantified erased-work
-argument, not a benchmark. It means that arbitrary context closure of these
-short-circuit rules cannot satisfy the equal-length conclusion of the
-one-step-diamond theorem. The actual evaluator restricts demand; an
-interaction-net model with explicit erasers is yet another step relation.
-
-Similarly `-C1` stops after an emitted result, whereas complete collapse
-continues through the remaining scheduled branches. A theorem about complete
-normalization does not price these two demands identically.
+`-C1` stops after an emitted result, whereas complete collapse continues
+through the remaining branches. These are two demands, two normal forms, and
+two geodesics.
 
 The repository already supplies the deeper reason cost cannot simply be
 read from meaning:
