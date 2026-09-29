@@ -126,17 +126,17 @@ partition f = isoToEquiv (iso fwd bwd rinv (λ _ → refl))
 $$
 (A \simeq B)\ \simeq\ (A = B), \qquad \mathsf{ua} : (A \simeq B) \longrightarrow (A = B), \qquad \mathrm{transport}^{\,\mathsf{ua}(e)} \;=\; e
 $$
-<h2><span class="n">3.</span> The effect can be free; the steps are not</h2>
+<h2><span class="n">3.</span> Keeping the fibre is free; the steps are not</h2>
 <ul>
-<li>Everything so far moved data losslessly — <code>transport</code> and every isomorphism are bijections, invertible both ways (§2). So the next question is forced: what does running a computation cost? A step's price has two parts, and keeping the fibre settles one of them completely.</li>
-<li><strong>First part — the information a step destroys.</strong> Write <code>ℓ(g)</code> for the bits an effect <code>g</code> (a step's net transformation) irreversibly loses — the bits it cannot recover, which by Landauer is the heat it must dissipate, <code>kT ln 2</code> per bit. Destroyed bits add under composition, so <code>ℓ(g ∘ h) = ℓ g + ℓ h</code> and <code>ℓ(id) = 0</code>: a homomorphism <code>(effects, ∘, id) → (ℕ, +)</code>.</li>
-<li>A step that <em>keeps its fibre</em> is a bijection (§1–2): the input stays recoverable, so it destroys nothing and <code>ℓ(g) = 0</code>. The group law forces it independently — reversible effects are invertible, and a sum of naturals is <code>0</code> only if each is:</li>
+<li>Running <code>f</code> can destroy exactly one thing: <em>which input produced the output</em>. That is the fibre <code>f⁻¹(b)</code> (§1) — the inputs that land on <code>b</code>.</li>
+<li>Keep the fibre — §1's completion <code>a ↦ (f a, a)</code> — and <code>f</code> is a bijection: nothing is destroyed, it runs backward as well as forward, and by Landauer it dissipates no heat. Collapse a fibre of <code>2ᵏ</code> inputs onto one output and you destroy the <code>k</code> bits that said which input it was — <code>k · kT ln 2</code> of heat. The whole information cost of a step is <code>log₂|f⁻¹(b)|</code>, and it is <code>0</code> exactly when the fibre is kept.</li>
+<li>In general any additive cost <code>ℓ</code> vanishes on every reversible step — they form a group, and a sum of naturals is <code>0</code> only if each is:</li>
 </ul>
 $$
 \ell(g) + \ell(g^{-1}) = \ell(\mathrm{id}) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals} \ge 0)
 $$
 <ul>
-<li>So <strong>everything built so far is free on this axis</strong> — <code>transport</code> and every isomorphism destroy nothing, and no information-cost separates one lossless step from another. Cost appears only where a step <em>fails</em> to keep its fibre. Landauer's principle, here a theorem (§5).
+<li>So <code>transport</code> and every isomorphism destroy nothing and cost nothing; the only price a step ever pays is the fibre it throws away. Landauer's principle, here a theorem (§5).
 <details class="proof"><summary>the checked term</summary>
 <pre><code>+≡0→≡0 : (m n : ℕ) → m + n ≡ 0 → m ≡ 0
 +≡0→≡0 zero    n p = refl
@@ -152,8 +152,7 @@ module _ (G : Type) (_·_ : G → G → G) (e : G) (inv : G → G)
     (sym (ℓ· g (inv g)) ∙ cong ℓ (invr g) ∙ ℓe)</code></pre>
 <figcaption>Any additive cost <code>ℓ</code> (a monoid map to <code>(ℕ,+)</code> with <code>ℓ e = 0</code>) vanishes on a group: <code>ℓ g + ℓ g⁻¹ = ℓ e = 0</code>, and a natural sum is <code>0</code> only when each summand is. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
 </details>
-<li>Failing to keep it means a non-injective step: it collapses a <strong>fibre</strong> <code>f⁻¹(b)</code> — several inputs — onto one output <code>b</code>, losing which of its <code>|f⁻¹(b)|</code> points the input was, exactly <code>log₂|f⁻¹(b)|</code> bits (size <code>2ᵏ</code> → <code>k</code>). Keep the pre-image — <code>a ↦ (f a, a)</code>, a bijection again — and it is back to <code>0</code>. The information price is the fibre you discard, nothing else.</li>
-<li><strong>Second part — length</strong>, the number of steps, and losslessness does not touch it: reading an input at depth <code>n</code> takes <code>n</code> steps, bijection or not (only subadditive, <code>len(g ∘ h) ≤ len g + len h</code>, charged for the requested output). So the two parts split exactly here — keeping the fibre zeroes the information cost and leaves the length. The effect can be free; the steps are not.</li>
+<li><strong>Time is the other axis, and keeping the fibre does not touch it.</strong> Reversible or not, an output that must read input <code>n</code> steps deep takes <code>n</code> steps. So the lossless construction of §§1–2 pays none of the only fundamental cost — destroyed information — and its sole remaining price is the steps it runs, which §5 shows is itself the minimum.</li>
 </ul>
 <h2><span class="n">4.</span> The diagonal</h2>
 <ul>
