@@ -64,8 +64,6 @@ enum Tag {
   /* judgments and the interaction */
   T_CHK,       /* loc → [type, term]                                   */
   T_ASK,       /* loc → [q, k]                      a free port        */
-  T_UNIFY,     /* loc → [x, y, faces]   the identity x ≡ y between data terms, decided by unification under the branch's faces */
-  T_BOTH,      /* loc → [p, q, last forced, faces]  both identities hold: fair, either dead side kills */
   T_TRACE,     /* loc → [e]   the run of e to its normal form, as a term: the value with the ledger's events over it */
   T_LEAVES,    /* loc → [e]   the leaves of e's superposition, as a list */
   T_IND,       /* word 0 of a reduced node: word 1 holds its result (§3: a demanded port fires once, every holder sees the value) */
@@ -121,8 +119,7 @@ typedef struct Def {
   uint32_t    code;    /* static index of the body */
   uint32_t    type;    /* static index of the type, 0 if none */
   uint32_t    ndims;   /* implicit dimension binders at the top */
-  bool        unknown; /* declared with a type and no body: a coordinate of its type, created once on demand */
-  Term        coord;   /* that coordinate, once created */
+  bool        unknown; /* declared with a type and no body: checked as a type, never run */
 } Def;
 /* ---- the machine ----------------------------------------------------- */
 extern Term    *HEAP;   extern Loc HEAP_LEN;
@@ -130,7 +127,7 @@ extern SNode   *CODE;   extern uint32_t CODE_LEN;
 extern uint32_t *KIDS;  extern uint32_t KIDS_LEN;
 extern Def     *BOOK;   extern uint32_t BOOK_LEN;
 extern const char **BNAMES; extern uint32_t BNAMES_LEN;   /* field names of case branches (S_BRANCH.num = index), for presentation */
-extern uint64_t ITRS, ROUNDS;
+extern uint64_t ITRS;
 extern uint32_t *TRACE; extern uint64_t TRACE_LEN;   /* receipts: rule ids */
 extern Loc      *TRACE_NODE;                          /* the node each receipt fired on */
 extern Loc      *TRACE_HEAP;                          /* the heap length at each receipt: the words an event allocated are the gap to the next */
@@ -142,7 +139,7 @@ void print_trace(uint64_t from);                      /* the receipts from index
    this loop's transitions to that alphabet, which the ledger asks a runtime to supply.  The rest are this machine's own. */
 enum RuleId { R_BETA = 1, R_APP_SUP, R_APP_PLM, R_DUP_SUP_EQUAL, R_DUP_SUP_DIFFERENT, R_DUP_LAM_USED, R_DUP_LAM_ERASED, R_DUP_NODE,
               R_FCE_SHARE, R_CASE, R_CASE_SUP, R_OP2, R_OP2_SUP, R_ERASE, R_TRP, R_HCM,
-              R_HCON, R_HELIM, R_HELIM_SUP, R_HELIM_HCM, R_OP1, R_POUT, R_SPLIT, R_UNIFY, R_COUNT };
+              R_HCON, R_HELIM, R_HELIM_SUP, R_HELIM_HCM, R_OP1, R_POUT, R_COUNT };
 
 /* ---- the HIT schema (§4): nothing per HIT is hardcoded; a constructor's boundary IS its type ---- */
 typedef struct CtorInfo {
@@ -182,9 +179,6 @@ Term frame_push(Term parent, Term slot);
 Term dim_push(Term parent);
 Term restrict_push(Term parent, Term name, unsigned side, Term by);
 Term generic(Term fr);
-Term coordinate(Term type);
-Term resolve(Term t);            /* the top-level demand: rounds of one split each */
-Term coordinate_type(Term v);
 Term frame_lookup(Term f, uint32_t lvl, bool *is_dim);
 bool frame_is_dim(Term f, uint32_t lvl);
 bool code_uses(uint32_t c, uint32_t lvl);

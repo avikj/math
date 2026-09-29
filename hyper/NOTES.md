@@ -77,7 +77,7 @@ and existence is the whole of the work", so a search may stop at the first hit
 and owes no comparison. Crowded: nothing an algorithm could return.
 
 **Reading for `hyper`.** The printer's `*` is `नास्ति`, one point is `सकलादेश`,
-a superposition of two is `विकलादेश`; `t/census.hyper` reproduces `संहति-गणना`. The
+a superposition of two is `विकलादेश`. The
 middle grade names exactly where `sort`'s cost goes: its fibre is a proposition
 (sorted permutations are unique), so once one leaf is live the run owes nothing
 to the rest of the tree. The branch today exhausts the tree instead.

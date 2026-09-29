@@ -1,6 +1,5 @@
-; the declaration is the program: sort's specification, its only text, resolved by coordinates, splits and unification.
-; Peano naturals; the multiset of a list is represented by its insertion-sorted form, so the specification says only
-; that B has A's multiset and is sorted.  Nothing below is a sorting algorithm for B.
+; sort's two charts at A (fibre/src/Fibre/Carrier.agda).  Peano naturals; isort, and sorted: each element no
+; greater than the next.
 (def leq (fix f (lam a (lam b (case a (Zer () (ctr True)) (Suc (a1) (case b (Zer () (ctr False)) (Suc (b1) (app f a1 b1)))))))))
 (def insert (fix f (lam x (lam l (case l (Nil () (ctr Cons x (ctr Nil))) (Cons (h t) (case (app leq x h) (True () (ctr Cons x l)) (False () (ctr Cons h (app f x t))))))))))
 (def isort (fix f (lam l (case l (Nil () (ctr Nil)) (Cons (h t) (app insert h (app f t)))))))
@@ -9,60 +8,6 @@
 (def two (ctr Suc one))
 (def three (ctr Suc two))
 (def A (ctr Cons three (ctr Cons one (ctr Cons two (ctr Nil)))))
-; the specification: Σ B : List Nat. (isort A ≡ isort B) × (sorted B ≡ True)
-(def spec : (ctr Sig (ctr List (ctr Nat)) (lam B (ctr Sig (ctr Eql (ctr List (ctr Nat)) (app isort A) (app isort B)) (lam q (ctr Eql (ctr Bool) (app sorted B) (ctr True)))))))
-; asking for the proofs is what resolves B; the value is B
-(def main (case (proj 1 spec) (Pair (q s) (case q (Refl () (case s (Refl () (proj 0 spec))))))))
-; the fibre of isort over [1,2] is not contractible: both orders sort to it, and B prints as their superposition
-(def L12 (ctr Cons one (ctr Cons two (ctr Nil))))
-(def B2 : (ctr List (ctr Nat)))
-(def q2 : (ctr Eql (ctr List (ctr Nat)) (app isort B2) L12))
-(def perms (case q2 (Refl () B2)))
-; an empty fibre: no x puts insert x [y] at [1]
-(def x3 : (ctr Nat))
-(def y3 : (ctr Nat))
-(def q3 : (ctr Eql (ctr List (ctr Nat)) (app insert x3 (ctr Cons y3 (ctr Nil))) (ctr Cons one (ctr Nil))))
-(def none (case q3 (Refl () x3)))
-; one point: the head that insert puts at [1]
-(def x4 : (ctr Nat))
-(def q4 : (ctr Eql (ctr List (ctr Nat)) (app insert x4 (ctr Nil)) (ctr Cons one (ctr Nil))))
-(def head (case q4 (Refl () x4)))
-; sort itself is the declaration: a Π type with no body.  Applied to A it is the coordinate of the Σ at A.
-(def sort : (ctr Pi (ctr List (ctr Nat)) (lam L (ctr Sig (ctr List (ctr Nat)) (lam B (ctr Sig (ctr Eql (ctr List (ctr Nat)) (app isort L) (app isort B)) (lam q (ctr Eql (ctr Bool) (app sorted B) (ctr True)))))))))
-(def witness (lam s (case (proj 1 s) (Pair (q p) (case q (Refl () (case p (Refl () (proj 0 s)))))))))
-(def sort-A (let s (app sort A) (app witness s)))
-; sortCost: sort presented along a list of free coordinates.  Each undetermined comparison splits, the residual
-; carried; the leaves are the arrangements; the trace over the superposition gives each leaf its own events.
-(def h1 : (ctr Nat))
-(def h2 : (ctr Nat))
-(def h3 : (ctr Nat))
-(def L3 (ctr Cons h1 (ctr Cons h2 (ctr Cons h3 (ctr Nil)))))
-(def run3 (let s (app sort L3) (app witness s)))
-(def length (fix f (lam xs (case xs (Nil () (num 0)) (Cons (h t) (op2 + (num 1) (app f t)))))))
-(def each (lam g (fix f (lam xs (case xs (Nil () (ctr Nil)) (Cons (h t) (ctr Cons (app g h) (app f t))))))))
-(def maximum (fix f (lam xs (case xs (Nil () (num 0)) (Cons (h t) (let m (app f t) (case (op2 < h m) (True () m) (False () h))))))))
-(def splits (fix f (lam es (case es (Nil () (num 0)) (Cons (e t) (case e (split (w) (op2 + (num 1) (app f t))) (_ () (app f t))))))))
-(def leaves3 (leaves (trace run3)))
-(def count3 (app length leaves3))
-(def cost3 (app maximum (app each (lam l (app length (proj 1 l))) leaves3)))
-(def comparisons3 (app maximum (app each (lam l (app splits (proj 1 l))) leaves3)))
-(def L2f (ctr Cons h2 (ctr Cons h3 (ctr Nil))))
-(def n-isort2 (app length (leaves (trace (app isort L2f)))))
-(def n-isort3 (app length (leaves (trace (app isort L3)))))
-(def c-isort3 (app maximum (app each (lam l (app splits (proj 1 l))) (leaves (trace (app isort L3))))))
-(def run2 (let s (app sort L2f) (app witness s)))
-(def n-run2 (app length (leaves (trace run2))))
-(def n-sorted2 (app length (leaves (trace (app sorted L2f)))))
-(def sp3 (app each (lam l (app splits (proj 1 l))) (leaves (trace (app isort L3)))))
-(def ask-bool (lam b (case b (True () (ctr True)) (False () (ctr False)))))
-(def two-asks (ctr Pair (app ask-bool (app leq h2 h3)) (app ask-bool (app leq h2 h3))))
-(def n-two-asks (app length (leaves (trace two-asks))))
-(def two-asks-b (ctr Pair (app ask-bool (app leq h2 h3)) (app ask-bool (app leq h3 h2))))
-(def n-two-asks-b (app length (leaves (trace two-asks-b))))
-; the empty list, and a list with a repeated element
-(def sort-nil (let s (app sort (ctr Nil)) (app witness s)))
-(def A-dup (ctr Cons two (ctr Cons one (ctr Cons one (ctr Nil)))))
-(def sort-dup (let s (app sort A-dup) (app witness s)))
 ; step 6: the chart move under a checked path (fibre/src/Fibre/Carrier.agda).  The cheap chart is Carrier isort:
 ; a list with its image under isort and the witness.  descend a = (a, isort a, refl); ascend c = base c; the two
 ; round trips make an iso, and isoToEquiv (prelude) makes it an equivalence.  Transport along its ua is descend

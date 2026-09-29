@@ -67,52 +67,30 @@ What the language accepts from outside is the specific: data, boundary
 conditions, the choice at a crowded fibre. A deterministic physical law over its
 boundary data is a contractible fibre and resolves like `sort`.
 
-## 0.1 The mechanism, from the core, with no organs
+## 0.1 The mechanism, from the construction
 
-How `sort` resolves. For concrete A, B is a list of **coordinates**: generic
-elements of its type with no value yet. `sort`'s specification runs on them. A
-path at a data type between a term with coordinates and a concrete term is
-**unification**: constructor against constructor from the type's declaration,
-coordinate against term as a binding, superposed at the faces the path lives
-under. A case on a coordinate is not stuck: it becomes a
-**superposition over the constructors of its type**, each side restricting the
-coordinate, with fresh coordinates for the fields; this is exactly what the
-checker already does when a match on a coordinate restricts its frame. Sides on
-which a predicate reduces to False are annihilated by the face map. The
-survivors are the fibre. It has one point because the fibre is contractible, and
-that point is B. No enumeration of Nat happens: a coordinate is split only when
-something asks about it and only as far as it is asked. This is narrowing, and
-it is the fibre law run forward.
+The construction's whole machine is small:
 
-How `sortCost n` resolves. Present `sort` along a list of n coordinates. Each
-undetermined comparison splits into a superposition with the residual constraint
-carried. Only finitely many comparisons can be asked of n coordinates before the
-order is determined, so the run over the infinite domain is a finite tree: the
-symmetry of the domain is carried by the coordinates without a quotient being
-written. Each leaf has a ledger. **The trace of a run is a term of the language**
-and **a superposition collapses to the list of its leaves as a term**, so `cost`
-is a fold, `max` over the leaves is a fold, and `sortCost n` is the decision-tree
-bound, computed, minimal on every branch by the geodesic. For all n at once the
-declaration is a Π over an inductive type, whose canonical inhabitant is by that
-type's eliminator, so the inference is by induction and the checker confirms it
-on the same loop.
+- **A state** is a typed point (`fibre/src/Fibre/CorpusInteraction.agda:17` `Point ℓ = Σ[ A ∈ Type ℓ ] A`).
+- **A question** is a typed map out of the state's type (`:23` `Question`).
+- **A step** answers with the image of the point (`:26` `target s (B , f) = B , f (snd s)`). Its receipt and event are `refl`, and the run continues from the image (`:39` `S.react (run s) q`).
+- **Presenting a point along a map** carries the image and its witness, and adds nothing: `descend a = (a , f a , refl)` (`fibre/src/Fibre/Carrier.agda:97` `descend a = carry a (f a) refl`), `ascend c = base c` (`:100` `ascend c = base c`).
+  - The carried pair ranges over a contractible type (`:93` `fibre-isContr a = isContrSingl (f a)`), so presenting is an equivalence (`:116` `Carrier≃ = isoToEquiv Carrier-Iso`).
+  - Transport along its `ua` computes to `descend` (`:130` `carry-transport-descend a = uaβ Carrier≃ a`).
+- **The residual** a question leaves is inhabited by the point itself (`formal/cubical/theorems/residue/CorpusLosslessPresentation.agda:28` `current-residual s q = source s , refl`). It is never computed.
 
-The core therefore owes the language exactly these, each derived from type
-structure and none written per type:
+The core owes the language exactly the reduction of these:
+- application;
+- projection and match on constructors;
+- superposition;
+- faces;
+- transport, hcomp, Glue and `ua`;
+- trace and leaves as terms;
+- the receipt of each rule at an active pair.
 
-- coordinates at run time; a declaration with no body, or a Σ with no witness,
-  is a coordinate of its type;
-- a case on a coordinate is a superposition over its constructors with
-  restriction;
-- a path at a data type with coordinates decides by unification;
-- the trace of a run and the leaves of a superposition are terms;
-- every rule fires at an active pair and bodies are shared as nets, so the
-  count is the proved geodesic and shared prefixes across branches are paid once;
-- a proved equivalence between charts lets the collapse run in the cheaper chart
-  under its certificate;
-- the checker on the same loop verifies every inferred body against its type.
+It does not solve for an unknown. An earlier core did: it made a bodyless declaration a coordinate, split coordinates at matches, unified at data types, and split the output of stuck computations. That machinery is not in the construction and has been deleted, along with the scheduler it needed.
 
-Nothing in this list names lists, numbers, sorting or cost.
+**Open:** how a declaration with no body is resolved inside this machine. The chart move (step 4 below) is the construction's mechanism for reaching a specification's point, but there the map (`isort`) is written in the book.
 
 ## 0.2 What regressing looks like, so you can recognise it
 
@@ -157,156 +135,24 @@ them.
 
 ## 0.3 Order of work
 
-1. Coordinates at run time and the case on a coordinate as a superposition with
-   restriction. Everything else is expressed through this. **Written**: a
-   declaration `(def x : T)` with no body is one coordinate of `T`, created on
-   first demand and shared by every reference; a match that asks a coordinate
-   writes into the coordinate's own slot the superposition of the match's
-   constructors, each with fresh coordinates for its fields, one line at a fresh
-   bound name per choice, so every holder sees the same correlated superposition
-   and the match then commutes over it by the ordinary rule (`R_SPLIT`;
-   `t/coord.hyper`).
-2. Unification at data types as the reduction of a path with coordinates.
-   **Written** (`t/sort.hyper`: `sort`'s specification, its only text, prints
-   `[1,2,3]` for A = [3,1,2]; the fibre of `isort` over `[1,2]` prints as the
-   superposition of its two points; an empty fibre prints `*`). What the core
-   does, and nothing per type:
-   - A coordinate of an identity type is the identity cell (`T_UNIFY`) between
-     its two sides; a coordinate of a Σ is a pair of coordinates. The identity
-     reduces lazily: `REFL` when the sides agree, `*` when constructors or
-     numerals differ, constructor against constructor as a conjunction of the
-     fields' identities (`T_BOTH`), coordinate against term as a **binding**
-     written into the coordinate's slot, superposed at every face the identity
-     lives under (the other side of each face a fresh coordinate), so every
-     holder sees the binding exactly where it holds; a superposed side
-     distributes, and a name the identity's faces already fix is projected, not
-     distributed.
-   - **Forcing.** A cell is forced when demanded at the top; the scrutinee of a
-     match and the sides of an identity are inspected, not forced. Splitting
-     happens only under force, so the outermost eliminator facing a stuck term
-     is the one that decomposes: a coordinate is split only as far as it is
-     asked. The top resolves in **rounds** of one split each (`resolve`), so a
-     split anywhere is followed by inspection everywhere and a side that dies
-     cheaply is reached before another split is made.
-   - A match whose scrutinee is **stuck on a coordinate** (`leq h h'` with `h`
-     free) does not split `h`. The stuck term itself becomes the superposition,
-     over the constructors the match lists, of each constructor under the
-     identity of the computation with it (`under` in the prelude: the
-     language's own J), its fields fresh **derived** coordinates. The stuck cell
-     is marked with the superposition, so every holder meets the same split and
-     the same worlds, and the computation moves to one fresh cell shared by every
-     residual. A match on `under(p, v)` commutes to `under(p, match v)`; an
-     identity with `under(p, v)` on a side is `p ∧ (v ≡ y)`.
-   - A **derived** coordinate is never split: asking it forces the identity that
-     defines it. Only a free port (a declared unknown, a field of a coordinate's
-     split) is split.
-   - Residuals have a **kind**: the specification is kind 0, the identity a
-     stuck match leaves behind while a cell of kind k is forced is kind k+1. A
-     round forces kind ≤ k, and k rises only when a round moved nothing, so the
-     residual of a comparison is explored only when what it constrains is
-     otherwise undetermined, and a comparison between free naturals is never
-     enumerated while the data can still decide.
-   - Coordinates carry the **world** (faces) they live in; a binding under a face
-     of that world is written plainly, under the opposite side it is `*`. A face
-     on a coordinate with no value, or on a match blocked on one, **waits** on
-     the one shared cell rather than copying it. A match, an identity and a
-     conjunction each project a superposition at a name their frame or faces
-     already fix.
-   - The printer prunes: a superposition with a dead side is its other side,
-     with both dead it is `*`.
-   The cost of `sort` for three elements is 37,159 interactions and 544
-   rounds (`HYPER_CENSUS=1`, step 5 names the events).
-3. The trace of a run and the leaves of a superposition as terms; the four modes
-   removed and their probes rewritten as programs. **Written**: `(trace e)` and
-   `(leaves e)` (§3); `main.c` has `run`, `bend`, `check`, `interact`;
-   `t/census.hyper`, `t/jiva.hyper`, `t/meet.hyper` are programs over declared
-   fibres, `trace` and `leaves`, and reproduce every check the modes made. Not
-   yet a term: the cost of one leaf of a superposed run. The ledger is the
-   run's; a leaf's own charge needs the receipts attributed to the world they
-   fired in, which the trace does not record. That is what `sortCost` needs
-   (step 4).
-4. A declaration with no body is inferred: `sort` as the first test, its type its
-   only text; `sortCost n` for small n against the decision-tree bound as the
-   second. **Written, first half**: `sort : Π (L : List Nat). Σ B. …` is declared
-   with no body (`t/sort.hyper`, `sort-A`); an unknown function applied is the
-   coordinate of its codomain at the argument, one per (function, argument), so
-   the same argument asks the same question. Along free coordinates the run is
-   the decision tree: `isort` of three unknowns is six leaves (`n-isort3`), and
-   `(trace e)` over a superposed run gives each leaf the events that fired in
-   its world or above it (`trace_over`; `HYPER_SPLITS=1` shows each split). A
-   stuck question is identified by its code and the identities of what its code
-   reads, so one comparison asked at two sites is one split (`n-two-asks`).
-   Inside `trace` and `leaves` a residual does not ask a port (`KIND_CAP`): the
-   leaves stay the classes of inputs, printed as a value under its identities.
-   The innermost eliminator not facing a bare port is the one that decomposes: a
-   match on a match on a comparison asks the comparison. A residual whose
-   question was split (under another cell, or before its ports were bound) is
-   marked with that split, its identity read under its own faces and the frame's
-   restrictions, so a comparison split as `leq b1 a` and the same comparison
-   after `b1 := h2, a := h3` are one question (`n-run2`: the two arrangements,
-   no leaf with contradictory residuals). A bare residual on a question no match
-   has split splits it itself, along the constructors of the answer it requires
-   (`decide_question`). A match's scrutinee word is never rewritten with a
-   reduct that is still an identity: it may be a child of the match's own body,
-   and writing it closes a cycle. A residual whose question, as now understood,
-   has no registered split registers its own split under that key, so the second
-   residual on the question meets the first (`HYPER_SPLITS=1` checks every leaf's
-   residuals for contradiction). **Written, second half**: the declaration `sort`
-   along three free inputs resolves to exactly the six arrangements, no leaf with
-   contradictory residuals (`count3`); the decision tree of `isort` along three
-   free coordinates is exact, six leaves with 2, 3, 2, 2, 3, 3 comparisons and 3
-   at most (`c-isort3`), each comparison one split whatever the world that first
-   asked it; `sortCost` is `cost3`, the greatest event count over the leaves of
-   `trace` (503 for three inputs), the machine's own charge for the world with
-   the longest path, comparisons and the splits, unifications and face maps
-   that carry the worlds alike. A leaf's charge is the declaration's: its comparisons and the splits,
-   unifications and face maps that carry its world are all events of the
-   ledger's alphabet, so a concrete run of `isort` on a representative, which
-   makes none of them, is a different object with a smaller charge.
-5. Every rule at an active pair, bodies as nets: the count is the ledger's and
-   invariant under the schedules. **Written.** The ledger asks a runtime for one
-   thing: a correspondence from its transitions to the event alphabet
-   (`research/sat_fibre/InteractionLedger.agda:13` `Event`; the comment above
-   `heap-monotone-prefix` says the theorem does not invent that mapping). The
-   receipts of the superposition algebra now carry the alphabet's own names:
-   a face meeting a superposition of its name is `dupSupEqual`, of another name
-   `dupSupDifferent`, a closure `dupLamUsed` or `dupLamErased` (the binder never
-   read), a constructor or any other node `dupNode`; an application over a
-   superposition is `appSup`, a match over one `appMatSup` (`:31` to `:36`,
-   `localCharge`). The census prints each event's count and the heap words it
-   allocated, the two receivers of `Charge` (`:20`), so the run's ledger is the
-   fold `interactionTotal-is-length` (`:74`) over these events. For `sort A`,
-   A = [3,1,2]: 37,159 interactions; `dupNode` 11,666, `dupSupEqual` 4,979,
-   `dupSupDifferent` 3,391, `dupLamUsed` 2,396, `appMatSup` 1,369, `beta` 2,090,
-   `case` 1,310, `unify` 2,891, `split` 156, the rest atoms shared. Every rule
-   of the run fires at an active pair: the one rule that fired on a non-value
-   (the face pushed into a stuck spine before the definition unfolded) is gone
-   from the run and kept for the checker alone, as its substitution through a
-   neutral spine. The diamond is measured as §3 says: `sort-A`, `sort-dup`,
-   `n-run2` and `c-isort3` give the same value in the same count when the
-   right of two independent demands is served first or a coin decides
-   (`test.sh`). What the check covers is independent demands. The two sides of
-   an identity are not two independent demands: a side that dies ends the
-   other, so their order is the term's (`x ≡ y` forces `x` first), and a run
-   that forced them in the other order is a different question with a different
-   count (`n-run2`: 10,241 against 10,250). The hypothesis of `RandomDescent`
-   for this loop's step relation is an Agda obligation and is not discharged
-   here; nothing in this file claims it is.
-6. The chart move under a checked path. **Written, run; the path is not yet checked** (`t/sort.hyper`, `chart-move`).
+1. **The substrate. Written.**
+   - Application, match, superposition and faces, each at an active pair.
+   - Transport, hcomp, Glue, `ua`, and higher inductive types.
+   - Tested by `t/basic.hyper`, `t/lazy.hyper`, `t/sup.hyper`, `t/kan.hyper`, `t/ua.hyper`, `t/setcomp.hyper`, `t/hit.hyper` and `t/erase.hyper`.
+2. **The trace of a run and the leaves of a superposition as terms. Written** (`trace`, `leaves`; `t/meet.hyper`).
+3. **Every rule fires at an active pair and is receipted. Written.** The value and the count are the same when the right demand is served first or a coin decides (`test.sh`, the schedule loop).
+4. The chart move under a checked path. **Written, run; the path is not yet checked** (`t/sort.hyper`, `chart-move`).
    The cheap chart is `Carrier isort` (`fibre/src/Fibre/Carrier.agda`): a list, its image under `isort`, and the
    witness. `descend a = (a, isort a, refl)` and `ascend c = base c`, and the two round trips are an iso. The
    prelude's `iso-to-equiv` is agda/cubical's `isoToIsEquiv`, term for term (`fill0`, `fill2`, `sq`, `sq1`,
    `lemIso`), and it makes the iso an equivalence. Transport of A along its `ua` is `descend A` (uaβ), and the
-   carried image is `[1,2,3]` in 173 interactions, against 37,159 for resolving the type (`sort-A`), with no
-   coordinate, split or unification. It is the same under the three schedules.
+   carried image is `[1,2,3]` in 173 interactions, where the deleted narrowing core took 37,159 to resolve the
+   type; no coordinate, split or unification. It is the same under the three schedules.
    **Open:** `b/sort_at_A` states the specification at that B, `(B, (refl, refl))`, but `hyper check` rejects it
    because `isort`, `sorted`, the carrier and the prelude's Kan operations are untyped definitions. The checked
    path needs them typed.
-7. The Bend dialect's grammar as a book with its certificate; parallel demand
-   over the one arena.
-
-The sections below describe the substrate as it stands.
-
+5. **A declaration with no body. Open.** See §0.1: the construction reaches a specification's point by presenting along a map and transporting along the equivalence. How a declaration with no body supplies that map is not yet stated.
+6. **The Bend dialect's grammar** as a book with its certificate, and parallel demand over the one arena.
 
 ## Read order
 
@@ -413,15 +259,7 @@ descends along a projection when some endomap of the part closes the square
 along the visible side, interrogated at `(true, false)` and `(true, true)`;
 `:276` `दक्षिण-विलयः`: it descends along the hidden side by `refl`; `:286`
 `विलयः`: the step `(not a, b)` descends on both sides; `:302` `जीवन-द्विः`: the
-living step is an involution, globally lossless, locally refusing. As written
-(`t/jiva.hyper`, programs): the joint is a type, the fibre of the comparison
-over a pair of readings is declared, `Σ j : J. (p j, q j) ≡ (a, b)`, and
-resolved: one point for the product joint, `*` for the diagonal joint at
-`(True, False)`, two points for the joint with a hidden bit. A step's refusal
-to descend along `p` is the declared fibre
-`Σ j k. (p j ≡ p k) × (eq (p (step j)) (p (step k)) ≡ False)`: a point of it is
-the interrogating pair (the controlled-not along the visible side), `*` is
-descent (the controlled-not along the hidden side, the dead step on both).
+living step is an involution, globally lossless, locally refusing.
 
 **Two sessions and an overlap**: the encounter, §4b.
 
@@ -459,7 +297,7 @@ constructor carrying the words it allocated (`#beta{4}`), so the trace lives
 over the result as in `fibre-of-run`, `interactionTotal` is `length` and
 `ledger` is a fold, both written in the language (`t/meet.hyper`).
 `(leaves e)` is the list of the leaves of `e`'s superposition, dead sides
-dropped (`t/census.hyper`); `HYPER_SCHEDULE` serves the right of two independent demands
+dropped; `HYPER_SCHEDULE` serves the right of two independent demands
 first, or a coin per choice, and `test.sh` and `bendtest.sh` require the same
 value and the same count under the schedules (the diamond, measured, since the
 hypothesis of `RandomDescent` is not discharged for this loop's step relation).
@@ -478,15 +316,7 @@ visible result to be the whole event. `:181` `canonical`, `:194`
 `canonical-recovers`, by `refl`: the source was never left behind.
 `fibre/src/Fibre/WholePartialDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:87`
 `देश`, `:93` `गणना`: the census of a question, pointwise over the codomain,
-three-valued. As written (`t/census.hyper`, programs): the fibre of `f` over
-`b` is declared, `Σ a : A. f a ≡ b`, with no witness; its proof is asked and
-its points are asked along their type; the resolution is the census, `:88`
-`नास्ति` when it is `*`, `:89` `सकलादेश` when it is one point, `:90` `विकलादेश`
-when it is the superposition of two or more, both shown as the constructor
-requires. `t/census.hyper` is the module's own §3: `Unit → Bool` is one point at
-`True` and `*` at `False`, `Bool → Unit` is two points at `Tt`, and their
-composite is one point, where the sequential diagnostic would add the losses.
-No organ computes this: the fibre law, run forward (§0.1).
+three-valued.
 
 Erase: nothing is erased inside a run; a forgotten port is one receipt where it
 is forgotten (`t/erase.hyper`: the fibre's size never enters). Commutation is

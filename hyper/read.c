@@ -199,7 +199,7 @@ static void read_def(void) {
   expect(')');
   /* wrap: MAX_IMPLICIT dim binders (unused ones cost one frame each at δ); the type likewise */
   for (uint32_t i = 0; i < MAX_IMPLICIT; i++) { if (body) body = snode(S_DIM, 0, body, 0, 0, 0); if (type) type = snode(S_DIM, 0, type, 0, 0, 0); }
-  BOOK[id].code = body; BOOK[id].type = type; BOOK[id].ndims = 0; BOOK[id].unknown = unknown; BOOK[id].coord = 0;
+  BOOK[id].code = body; BOOK[id].type = type; BOOK[id].ndims = 0; BOOK[id].unknown = unknown;
 }
 /* (hit T (p…) (c : TYPE)…): a higher inductive type. Each constructor's closed type, Pi over the
    parameters then its fields, ends in T or in a Path into T whose nesting is the constructor's
@@ -246,7 +246,7 @@ static void register_name(const char *name) {
   if (BOOK_LEN >= cap) { cap *= 2; BOOK = realloc(BOOK, cap * sizeof(Def)); }
   if (book_find(name) >= 0) { fprintf(stderr, "hyper: duplicate definition %s\n", name); exit(2); }
   if (getenv("HYPER_DEBUG")) fprintf(stderr, "reg %s\n", name);
-  BOOK[BOOK_LEN].unknown = false; BOOK[BOOK_LEN].coord = 0;
+  BOOK[BOOK_LEN].unknown = false;
   BOOK[BOOK_LEN++].name = name;
 }
 static void skip_form(void) {      /* skip one balanced form from the current '(' */

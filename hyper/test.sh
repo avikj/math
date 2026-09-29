@@ -70,18 +70,9 @@ checkn t/erase.hyper dflt    '3' 3
 checkn t/erase.hyper carry   '1' 2
 # §9 schedules: the redex bag is the only scheduler; serving the right demand first, or a coin per choice, gives
 # the same value in the same count on every probe above (a fresh dimension's printed name is gauge, not value)
-for pair in t/basic.hyper:main t/sup.hyper:dist t/sup.hyper:matchsup t/kan.hyper:reg t/kan.hyper:hc-nat t/kan.hyper:pitrp t/ua.hyper:fwd-true t/setcomp.hyper:via-pi t/hit.hyper:helim-sq t/hit.hyper:merid-t t/erase.hyper:and-f t/sort.hyper:sort-A t/sort.hyper:sort-dup t/sort.hyper:n-run2 t/sort.hyper:c-isort3 t/sort.hyper:chart-move; do
+for pair in t/basic.hyper:main t/sup.hyper:dist t/sup.hyper:matchsup t/kan.hyper:reg t/kan.hyper:hc-nat t/kan.hyper:pitrp t/ua.hyper:fwd-true t/setcomp.hyper:via-pi t/hit.hyper:helim-sq t/hit.hyper:merid-t t/erase.hyper:and-f t/sort.hyper:chart-move; do
   f=${pair%%:*}; d=${pair##*:}; a=$(./hyper run $f $d 2>&1 | grep -v Words | tr '\n' ' '); b=$(HYPER_SCHEDULE=right ./hyper run $f $d 2>&1 | grep -v Words | tr '\n' ' '); c=$(HYPER_SCHEDULE=7 ./hyper run $f $d 2>&1 | grep -v Words | tr '\n' ' ')
   if [ "$a" = "$b" ] && [ "$a" = "$c" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL schedule $f $d: [$a] [$b] [$c]"; fi; done
-# the census of a question (Fibre.WholePartialDesa), as programs: Σ a. f a ≡ b declared with no witness, its points asked.
-# f : Unit → Bool is one point at True and none at False; g : Bool → Unit is two points at Tt (a bit lost); g∘f is one point
-# (the sequential diagnostic would add the losses and be wrong); `leaves` is the census as a list.
-check t/census.hyper at-true '#Tt{}'
-check t/census.hyper at-false '*'
-got=$(./hyper run t/census.hyper forget-at-tt | head -1); case "$got" in '&'*'{#False{},#True{}}') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL census forget: $got";; esac
-check t/census.hyper census-forget '#Cons{#False{},#Cons{#True{},#Nil{}}}'
-check t/census.hyper compose-at-tt '#Tt{}'
-check t/census.hyper not-at-true '#False{}'
 # the encounter of two peers (kernel-flat/TheEncounterOfTwoPeers…), as a program over `trace`: two terms that reach one
 # normal form; τ = mine ⊕ rev theirs has their lengths' sum; the round trip τ ⊕ rev τ is twice it; a third term has no meeting
 check t/meet.hyper meeting '#True{}'
@@ -97,49 +88,10 @@ if [ "$lv" = "26" ] && [ "$lv" = "$rv" ] && [ "$ln" -eq "$rn" ] && [ "$lt" != "$
 # the trace as a term: the two schedules of the crossing give the same value and the same events
 l=$(./hyper run t/meet.hyper crossing | head -1); r=$(HYPER_SCHEDULE=right ./hyper run t/meet.hyper crossing | head -1)
 if [ "$l" = '#Pair{26,#Cons{#op2{2},#Cons{#op2{2},#Cons{#op2{1},#Nil{}}}}}' ] && [ "$l" = "$r" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL crossing trace: $l $r"; fi
-# the joint state (theorems/logic/Jiva_…), as programs: the fibre of the comparison ⟨p,q⟩ over a pair of readings is
-# declared and resolved: one point for the product, none for the diagonal at (True,False), two for the hidden bit; a
-# living step has a witness pair that agrees at p and disagrees after the step, a dead step has none
-check t/jiva.hyper product-at-tf '#Pair{#True{},#False{}}'
-check t/jiva.hyper diagonal-at-tf '*'
-check t/jiva.hyper diagonal-at-tt '#True{}'
-got=$(./hyper run t/jiva.hyper hidden-at-tt | head -1); case "$got" in '&'*'{#False{},#True{}}') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL joint hidden: $got";; esac
-got=$(./hyper run t/jiva.hyper cnot-left | head -1); case "$got" in '&'*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL living step: $got";; esac
-check t/jiva.hyper cnot-right '*'
-check t/jiva.hyper dead-left '*'
-check t/jiva.hyper dead-right '*'
-# §0.3 step 1: a declaration with a type and no body is a coordinate; a match asks it and it becomes the superposition of
-# the match's constructors, correlated across every holder (one label on both sides of pair), split only as far as asked
-got=$(./hyper run t/coord.hyper pick | head -1); case "$got" in '&'*'{2,1}') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL coord pick: $got";; esac
-got=$(./hyper run t/coord.hyper pair | head -1); l1=$(echo "$got" | sed -n 's/^#Pair{&\([0-9]*\){2,1},&\([0-9]*\){#False{},#True{}}}$/\1 \2/p')
-if [ -n "$l1" ] && [ "${l1% *}" = "${l1#* }" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL coord pair: $got"; fi
-got=$(./hyper run t/coord.hyper depth | head -1); case "$got" in '&'*'{0,&'*'{1,2}}') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL coord depth: $got";; esac
-# §0.3 step 2: the declaration is the program.  sort's specification, its only text, resolves B for A = [3,1,2];
-# the fibre of isort over [1,2] has two points and prints as their superposition; an empty fibre prints as *.
-check t/sort.hyper main '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
-got=$(./hyper run t/sort.hyper perms | head -1); case "$got" in '&'*'{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Nil{}}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Zer{}},#Nil{}}}}') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort perms: $got";; esac
-check t/sort.hyper none '*'
-check t/sort.hyper head '#Suc{#Zer{}}'
-# §0.3 step 4: sort is a declaration with a Π type and no body; applied to A it is the coordinate of the Σ at A.
-check t/sort.hyper sort-A '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
 # MAP §0.3 step 6: the chart move.  Carrier isort with isoToEquiv of descend/ascend; transport along its ua is descend
 # (uaβ), so the carried image is sort's point, with no coordinate, far below resolving the type
 check t/sort.hyper chart-move '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
 got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 173') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL chart-move count: $got";; esac
-# the run along free coordinates: isort of three unknowns has six arrangements, each a leaf with its own events;
-# one comparison asked twice is one question and one split
-check t/sort.hyper n-isort3 '6'
-check t/sort.hyper n-isort2 '2'
-check t/sort.hyper n-two-asks '2'
-check t/sort.hyper n-two-asks-b '4'
-# the decision tree of isort along three free coordinates: comparisons per leaf, and at most three
-check t/sort.hyper sp3 '#Cons{2,#Cons{3,#Cons{2,#Cons{2,#Cons{3,#Cons{3,#Nil{}}}}}}}'
-check t/sort.hyper c-isort3 '3'
-# the declaration sort along free inputs: the two arrangements for two, the six for three, no contradictory leaf
-check t/sort.hyper n-run2 '2'
-check t/sort.hyper count3 '6'
-check t/sort.hyper sort-nil '#Nil{}'
-check t/sort.hyper sort-dup '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Nil{}}}}'
 # every identifier MAP.md names is on the line it cites
 if ./cite.sh >/dev/null; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL cite: $(./cite.sh | tail -3 | tr '\n' ' ')"; fi
 echo "pass=$pass fail=$fail"; [ $fail -eq 0 ]
