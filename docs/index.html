@@ -128,9 +128,9 @@ $$
 $$
 <h2><span class="n">3.</span> The effect can be free; the steps are not</h2>
 <ul>
-<li>A computation carries two costs: the <strong>effect</strong> — the net transformation it achieves — and the <strong>length</strong> — its number of primitive steps. They diverge.</li>
-<li>Effects compose (<code>∘</code>), identity <code>id</code>. An <strong>effect-cost</strong> is a homomorphism <code>ℓ : (effects, ∘, id) → (ℕ, +)</code>: <code>ℓ(id) = 0</code>, <code>ℓ(g ∘ h) = ℓ g + ℓ h</code>.</li>
-<li>A <strong>reversible</strong> effect is invertible (<code>g ∘ g⁻¹ = id</code>); the reversible effects form a group, and <code>ℓ</code> is <code>0</code> on every one of them — a sum of naturals is <code>0</code> only if each is:</li>
+<li>Running a computation spends two independent things, and conflating them is the confusion this section removes. <strong>Length</strong>: the number of primitive steps — time. <strong>Effect-cost</strong>: the information the computation <em>irreversibly destroys</em> — the bits it can never recover, which by Landauer is the heat it must dissipate, <code>kT ln 2</code> per bit. That is all "cost" means here: steps spent, and bits destroyed.</li>
+<li>Write <code>ℓ(g)</code> for the bits an <strong>effect</strong> <code>g</code> destroys (an effect being the net transformation a step makes). Composing effects (<code>∘</code>, identity <code>id</code>) accumulates destroyed bits, so <code>ℓ(g ∘ h) = ℓ g + ℓ h</code> and <code>ℓ(id) = 0</code> — doing nothing destroys nothing: <code>ℓ</code> is a homomorphism <code>(effects, ∘, id) → (ℕ, +)</code>.</li>
+<li>A <strong>reversible</strong> effect is a bijection — invertible, <code>g ∘ g⁻¹ = id</code> — so it destroys nothing (the input is recoverable) and <code>ℓ(g) = 0</code>. The group law forces it anyway: a sum of naturals is <code>0</code> only if each is:</li>
 </ul>
 $$
 \ell(g) + \ell(g^{-1}) = \ell(\mathrm{id}) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals} \ge 0)
