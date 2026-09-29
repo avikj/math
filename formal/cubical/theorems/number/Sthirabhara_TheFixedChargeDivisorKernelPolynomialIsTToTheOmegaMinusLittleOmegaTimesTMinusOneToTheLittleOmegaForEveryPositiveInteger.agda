@@ -131,7 +131,7 @@ open import MobiusPhi_TheDivisorSumOfMobiusTimesCofactorIsEulersTotientForEveryP
         ; if-and ; addN≡+ ; pos-if)
 open import Drdha_TheFirmNumbersProductIsEveryPositiveIntegerAndTheirMembershipIsDecidedByDivision
   using (दृढम् ; वधः ; सर्वे ; विभाजनम् ; युक्लिड-वाक्यम् ; वध-++ ; सर्वे-++)
-open import Uniqueness_TheFirmFactorisationIsUniqueTwoPrimeListsWithOneProductAreAPermutationSoTheValuationIsWellDefinedAndPermIsExactlySameCount
+open import Ekatva_TheFirmFactorisationIsUniqueTwoPrimeListsWithOneProductAreAPermutationSoTheValuationIsWellDefinedAndPermIsExactlySameCount
   using (एकत्वम् ; वध-धनः)
 open import TheUsualReasonsMadeExplicitTheInductivePermutationRelationEmbedsInAdjacentTranspositions
   using (Insert ; here ; there ; Perm ; pnil ; pcons)

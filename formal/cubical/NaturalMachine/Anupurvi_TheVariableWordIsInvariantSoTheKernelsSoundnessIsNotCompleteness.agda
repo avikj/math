@@ -71,7 +71,7 @@ open import Cubical.Data.Empty using (⊥) renaming (rec to ⊥rec)
 open import Cubical.Relation.Nullary using (¬_)
 open import Cubical.Data.Sigma using (_×_ ; _,_)
 
-open import NaturalMachine.RewriteCertificate
+open import Kernel.RewriteCertificate
 
 ------------------------------------------------------------------------
 -- §1.  THE WORD.  The variable occurrences, left to right.

@@ -80,7 +80,7 @@ open import Cubical.Relation.Nullary using (¬_)
 open import Sha256 using (sha256 ; sW ; forceWs)
 open import Vishvayantra_TheTuringStepIsTheVisibleProjectionOfTheLosslessStepAndTheKeptFibreIsTheSource
   using (lossless)
-open import Uniqueness_LosslessnessIsAPropertyTheCompletionsOfAMapFormAContractibleTypeAndTheMachinesIsUnique
+open import Ekatva_LosslessnessIsAPropertyTheCompletionsOfAMapFormAContractibleTypeAndTheMachinesIsUnique
   using (Lossless ; losslessness-is-a-property)
 
 Bits : Type

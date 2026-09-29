@@ -62,7 +62,7 @@ open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.ParitySeparator
+open import ParitySeparator
 
 ------------------------------------------------------------------------
 -- §1  The Chen envelope.

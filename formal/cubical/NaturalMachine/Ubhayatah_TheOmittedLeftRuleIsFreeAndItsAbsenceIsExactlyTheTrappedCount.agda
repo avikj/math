@@ -6,7 +6,7 @@
 -- TERM.  उभयतः, on both sides / in both directions.  An ordinary adverb,
 -- chosen here; no source is claimed and nothing below is anyone's theorem.
 --
--- THE OMISSION.  `RewriteCertificate.Step` lifts a successor out of the
+-- THE OMISSION.  `Kernel.RewriteCertificate.Step` lifts a successor out of the
 -- RIGHT operand:
 --
 --     add-suc : Step (add x (suc y)) (suc (add x y))
@@ -67,7 +67,7 @@ open import Cubical.Data.Nat.Properties using (snotz)
 open import Cubical.Data.Empty using (⊥)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.RewriteCertificate
+open import Kernel.RewriteCertificate
 open import NaturalMachine.Baddha_TheTrappedSuccessorIsAThirdConservationLawAndItRefutesTheCompleteInvariantConjecture
   using (trapped)
 
@@ -87,7 +87,7 @@ data Derivation² : Tm → Tm → Type₀ where
 -- §2.  THE OMITTED RULE IS SOUND, AND IT IS FREE.
 --
 -- `refl`.  ℕ's addition recurses on the left, so `suc a + b` IS
--- `suc (a + b)`.  Compare `RewriteCertificate.step-sound`, where the
+-- `suc (a + b)`.  Compare `Kernel.RewriteCertificate.step-sound`, where the
 -- `add-suc` clause is the one that must call `+-suc`.
 ------------------------------------------------------------------------
 

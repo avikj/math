@@ -16,7 +16,7 @@
 -- THE SYNTHESIS OF THE THREE READINGS, AS ONE LEMMA.
 --
 --   Vyapti_    NativeOperation.control-sound : Control t → t ≡ source
---   Residue_      RewriteCertificate.derivation-sound : D a b → eval a ρ ≡ eval b ρρ
+--   Residue_      Kernel.RewriteCertificate.derivation-sound : D a b → eval a ρ ≡ eval b ρρ
 --   Ankapasa_  and the repair is to categorify the codomain.
 --
 -- Every soundness field of this kernel is a map into an identity type of a

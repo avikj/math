@@ -397,7 +397,7 @@ is not a meta-level feedback mechanism attached outside the calculus. The produc
 
 The law is therefore metacircular in the literal mathematical sense: its transformations are inhabitants of the domain on which the law acts.
 
-**Checked:** [`IntrinsicProductiveInstall.agda`](../formal/cubical/kernel/IntrinsicProductiveInstall.agda), [`ProductiveIndraNet.agda`](../formal/cubical/NaturalMachine/ProductiveIndraNet.agda), [`LIFECYCLE.rst`](../LIFECYCLE.rst).
+**Checked:** [`IntrinsicProductiveInstall.agda`](../formal/cubical/kernel/IntrinsicProductiveInstall.agda), [`ProductiveIndraNet.agda`](../formal/cubical/theorems/unplaced/ProductiveIndraNet.agda), [`LIFECYCLE.rst`](../LIFECYCLE.rst).
 
 ---
 

@@ -45,8 +45,8 @@ open import Cubical.Relation.Nullary using (¬_)
 open import Cubical.Foundations.Equiv using (isEquiv ; equivFun)
 open import EqualitySplit_TheContractibleFibreSplitsAsEmbeddingTimesSurjectionInTheTransportLane
   using (भेदः ; छादनम् ; समता≃भेद×छादन)
-open import NaturalMachine.TransportResidue_EveryTransportOwesItsResidual using (शेष)
-open import GhataFiber_TheDiscreteLogIsTheFibreOfPingalasPowerAndShorsPeriodQueryIsWhatReadsIt
+open import TransportResidue_EveryTransportOwesItsResidual using (शेष)
+open import GhataFiber_TheDiscreteLogIsTheFiberOfPingalasPowerAndShorsPeriodQueryIsWhatReadsIt
   using (powg ; εC ; शून्यः ; त्रयः)
 open import BijamulaKrida_AConcreteKeypairRunsInACyclicGroupWhereTheModThatExhaustsTheHeapIsNotNeeded
   using (C₃ ; e₀ ; g ; g²)

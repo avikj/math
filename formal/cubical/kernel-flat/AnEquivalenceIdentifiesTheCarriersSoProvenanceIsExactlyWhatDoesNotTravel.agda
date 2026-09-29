@@ -86,7 +86,7 @@ open import Cubical.Data.Empty using (⊥)
 open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_ ; fst ; snd)
 
-open import RewriteCertificate using (Tm)
+open import Kernel.RewriteCertificate using (Tm)
 open import HidingAndHardnessAreOneFibreSoTwoWitnessesForbidExtraction
   using (extraction-from-an-existence-forces-uniqueness)
 

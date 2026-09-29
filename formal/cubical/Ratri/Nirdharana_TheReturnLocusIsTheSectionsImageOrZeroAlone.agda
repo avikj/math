@@ -73,7 +73,7 @@ module PingalaReturn = Return parity aksara parity-sections-aksara
 -- so the return locus of ones ∘ sum is exactly the all-ones words —
 -- which is why [2] could not return (Anirdharita_S13OptionSpread_…).
 
-open import Swarm.S13OptionSpread using (sum; ones)
+open import OptionSpread using (sum; ones)
 
 sum-sections-ones : (n : ℕ) → sum (ones n) ≡ n
 sum-sections-ones zero    = refl

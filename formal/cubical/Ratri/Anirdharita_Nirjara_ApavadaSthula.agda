@@ -17,7 +17,7 @@ module Ratri.Anirdharita_Nirjara_ApavadaSthula where
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Bool using (Bool; true; false; true≢false)
 open import Cubical.Data.Empty as Empty using (⊥)
-open import NaturalMachine.Nirjara_SheddingAPrimitiveCostsLaghava
+open import Nirjara_SheddingAPrimitiveCostsLaghava
   using (Laghu; cara'; mita'; yoga'; apavada; sthula)
 
 -- The composite keeps the provenance stamp:

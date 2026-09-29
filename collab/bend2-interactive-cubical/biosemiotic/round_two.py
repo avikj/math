@@ -8,7 +8,7 @@
       METRE as the readout computes the coarsest future-preserving quotient.  Measured:
       how many (metre, tempo) states are identified by their futures — i.e. whether the
       tempo fibre is ever separated by what comes next.
-  §H  REVERSAL (EGBReversalInvariant): list reversal is the ℤ/2 involution; a reading is
+  §H  REVERSAL (theorems/primes/pair_field/ReversalInvariant): list reversal is the ℤ/2 involution; a reading is
       achromatic (blind) or chromatic (sighted) to it; the fixed locus is the palindromes.
       Measured on codas: which readings are reversal-blind, and the repertoire's own
       arrow of time — a metre against its reversal (GGLL vs LLGG).

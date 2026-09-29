@@ -8,10 +8,10 @@ open import Cubical.Data.Nat using (ℕ)
 import Cubical.Data.Nat as Nat
 open import Cubical.Data.List using (List ; [] ; _∷_ ; length)
 
-open import RewriteCertificate
-open import ControlledGrammar
-import GenerativeKernel as Example
-import TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation as Dialogue
+open import Kernel.RewriteCertificate
+open import Kernel.ControlledGrammar
+import Kernel.GenerativeKernel as Example
+import Kernel.Interaction_TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation as Dialogue
 import TheGenerativeLoopOnTheKernelsOwnTermsACertifiedNormalizerEmitsDerivationsSoLearnCallsInstall as Normalize
 
 future : {a b : Tm} → Derivation a b → EnabledFuture a

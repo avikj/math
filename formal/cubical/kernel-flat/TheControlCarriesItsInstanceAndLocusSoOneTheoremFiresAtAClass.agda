@@ -21,7 +21,7 @@
 -- THE SITUATION IT ANSWERS.  Two records stood side by side and only one
 -- of them was wired to anything:
 --
---   `ControlledGrammar.NativeOperation` — what `install` produces, what
+--   `Kernel.ControlledGrammar.NativeOperation` — what `install` produces, what
 --     `EnabledFuture` / `advance` / `Branch` / `merge` / `retire` are all
 --     typed against.  `TheInstalledTheoremHasExactlyOneLocus…` proves it
 --     can never pervade: `control-sound : Control t → t ≡ source` forces
@@ -95,11 +95,11 @@ open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.Data.Sum using (_⊎_ ; inl ; inr) renaming (rec to ⊎rec)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import RewriteCertificate
-open import ControlledGrammar using (NativeOperation ; install)
+open import Kernel.RewriteCertificate
+open import Kernel.ControlledGrammar using (NativeOperation ; install)
 open import TheInstalledTheoremHasExactlyOneLocusSoCapabilityGrowsByOneNotByAClass
   using (eka-adhikarana)
-open import TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
+open import Kernel.Interaction_TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
   using (Session)
 open import TheCountingSemanticsIsADecategorificationAndTheBitItDropsIsASymmetry
   using (TEnv ; ⟦_⟧ ; derivation-equiv)
@@ -220,7 +220,7 @@ operation-is-sound op t c ρ = derivation-sound (apply-checked op t c) ρ
 -- §4.  THREE INSTANCES OF ONE RECORD — and the embedding.
 ------------------------------------------------------------------------
 
--- GROUND.  Instance `var`, locus `root`: exactly `ControlledGrammar.install`.
+-- GROUND.  Instance `var`, locus `root`: exactly `Kernel.ControlledGrammar.install`.
 ground : {a b : Tm} → Derivation a b → Operation
 Operation.lhs           (ground {a} d) = a
 Operation.rhs           (ground {b = b} d) = b
@@ -476,7 +476,7 @@ merge-is-idempotent L t e = ⊎rec (λ x → x) (λ x → x) (join-splits L L t 
 ------------------------------------------------------------------------
 -- §10.  THE CONTRAST, exhibited.
 --
--- `RewriteCertificate.accepted` is the kernel's own theorem, unchanged.
+-- `Kernel.RewriteCertificate.accepted` is the kernel's own theorem, unchanged.
 -- Installed as a pervading operation it is a ONE-ELEMENT library that is
 -- enabled at `plug l (subVar u (add var (suc zero)))` for every `u` and
 -- every `l` — an infinite family, from one theorem, with the certificate
@@ -541,7 +541,7 @@ operation-is-an-equivalence op t c σ = derivation-equiv (apply-checked op t c) 
 -- §12.  THE BRANCHES NOW DIFFER IN THEIR TARGET, WHICH THEY NEVER DID.
 --
 -- `eka-adhikarana` gave every NativeOperation at most one locus, so the
--- futures at a seed all emitted the same term: `GenerativeKernel.run-
+-- futures at a seed all emitted the same term: `Kernel.GenerativeKernel.run-
 -- targets` is `target₀ ∷ target₀ ∷ []` — two proof-relevant HISTORIES, one
 -- output.  `advance-preserves-branch-count` conserved a multiplicity whose
 -- members were indistinguishable downstream.

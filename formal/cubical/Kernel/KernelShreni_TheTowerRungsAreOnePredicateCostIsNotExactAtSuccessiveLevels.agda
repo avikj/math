@@ -56,8 +56,8 @@ open import Cubical.Data.Sigma using (Σ-syntax ; _,_ ; _×_)
 open import Cubical.Data.Empty using (⊥)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import RewriteCertificate using (Tm ; Step ; Derivation)
-open import GenerativeKernel using (seed ; target₀)
+open import Kernel.RewriteCertificate using (Tm ; Step ; Derivation)
+open import Kernel.GenerativeKernel using (seed ; target₀)
 
 private variable ℓ ℓ' ℓ'' : Level
 

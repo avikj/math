@@ -23,7 +23,7 @@ open import Cubical.Data.Nat using (ℕ ; zero ; suc ; _+_ ; snotz)
 open import Cubical.Data.Sigma using (Σ-syntax ; _,_ ; fst ; snd ; Σ-contractSnd)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 open import WindingCostIsUnarySize using (unary)
 
 -- a fixed environment; `unary n` is closed, so its value is env-independent

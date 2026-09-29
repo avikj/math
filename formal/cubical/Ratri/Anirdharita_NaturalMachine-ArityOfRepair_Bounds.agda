@@ -5,7 +5,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat
 open import Cubical.Data.Bool
 open import Cubical.Data.Empty
-open import NaturalMachine.ArityOfRepair
+open import ArityOfRepair
 
 censusR0 censusR1 : Bounds
 censusR0 = record { lo = 0 ; hi = 0 }

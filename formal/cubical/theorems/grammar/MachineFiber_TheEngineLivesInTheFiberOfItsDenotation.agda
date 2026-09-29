@@ -58,7 +58,7 @@ open import Cubical.Relation.Nullary using (¬_)
 open import Alopa_TheEngineNeverTouchesTheMeaning
   using (Term ; var ; op ; Env ; eval ; Rule ; lhs ; normalize ; अलोपः)
 
-open import Fiberjala_TheFiberHasThreeVerdictsAndIsContrMergesTwoOfThem
+open import Fiberjala_TheFibreHasThreeVerdictsAndIsContrMergesTwoOfThem
   using (रिक्तम् ; एकम् ; बहु ; वहनम् ; प्रतिबिम्बम् ; वहनम्-सदा-एकम् ; प्रतिबिम्बम्-तन्तुः)
 
 ------------------------------------------------------------------------

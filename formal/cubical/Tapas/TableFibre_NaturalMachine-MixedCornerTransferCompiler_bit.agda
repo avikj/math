@@ -7,7 +7,7 @@
 --
 -- THE EDGE:
 --   ⟨lib⟩.Bool  ⟶  ⟨lib⟩.ℕ
---   « NaturalMachine.MixedCornerTransferCompiler.bit
+--   « MixedCornerTransferCompiler.bit
 --
 -- WHAT IS PROVED.  The map is the two-clause table false ↦ 0
 --   , true ↦ 1, an INJECTION into ℕ:
@@ -29,7 +29,7 @@ open import Cubical.Data.Empty using (⊥)
 open import Cubical.Data.Sigma using (_,_)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.MixedCornerTransferCompiler using (bit)
+open import MixedCornerTransferCompiler using (bit)
 
 -- the three distinctness facts, one discriminator shape
 neq-f-t : ¬ Path ℕ 0 1

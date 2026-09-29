@@ -104,8 +104,8 @@ open import Cubical.Data.Bool using (Bool ; true ; false ; not ; true≢false)
 open import Cubical.Data.List using (List ; [] ; _∷_ ; map ; _++_)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.ParitySeparator
-open import NaturalMachine.ChargeCriterion using (Separates ; neutral⇒no-separator)
+open import ParitySeparator
+open import ChargeCriterion using (Separates ; neutral⇒no-separator)
 
 ------------------------------------------------------------------------
 -- §0  What an oracle separation IS, once post-processing is arbitrary.

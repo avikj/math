@@ -19,7 +19,7 @@
 --     apply-sound : (t : Tm) (c : Control t) (ρ : Env)
 --                 → eval t ρ ≡ eval (apply t c) ρ
 --
--- ControlledGrammar.NativeOperation carries `apply-checked`, a DERIVATION:
+-- Kernel.ControlledGrammar.NativeOperation carries `apply-checked`, a DERIVATION:
 --
 --     apply-checked : (t : Tm) (c : Control t) → Derivation t (apply t c)
 --
@@ -34,7 +34,7 @@
 module Kernel.Adesa_SubstitutionIsAdmissibleOnDerivationsSoASchemaCanCarryACertificateAndNotOnlyAMeaning where
 
 open import Cubical.Foundations.Prelude
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 
 ------------------------------------------------------------------------
 -- §1.  One rewrite survives substitution, structurally, all six

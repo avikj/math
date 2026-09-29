@@ -83,7 +83,7 @@ open import Kernel.Interaction_TheKernelIsAnInteractiveSystemAndTheSessionRetire
   using (_⊕_)
 open import Kernel.Avirodha_TheKernelIsAReversibleGroupoidWhoseJoinIsConflictFreeSoConsensusOnMeaningIsVacuous
   using (⊕-assoc ; ⊕-unitˡ ; ⊕-unitʳ)
-open import Mula.Machine_TheComputerIsTheGroupoidOfProofsOfTransportNotTheMonoidOfIrreversibleSteps
+open import Machine_TheComputerIsTheGroupoidOfProofsOfTransportNotTheMonoidOfIrreversibleSteps
   using (MonoidMachine)
 
 private

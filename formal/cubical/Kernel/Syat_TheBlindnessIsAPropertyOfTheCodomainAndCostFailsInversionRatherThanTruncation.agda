@@ -78,8 +78,8 @@ open import Cubical.Data.Nat using (ℕ ; zero ; suc ; _+_ ; +-suc ; +-zero)
 
 open import Cubical.Foundations.GroupoidLaws using (assoc ; rCancel ; lUnit)
 
-open import RewriteCertificate
-open import GenerativeKernel using (direct-history ; detour-history)
+open import Kernel.RewriteCertificate
+open import Kernel.GenerativeKernel using (direct-history ; detour-history)
 
 private
   variable

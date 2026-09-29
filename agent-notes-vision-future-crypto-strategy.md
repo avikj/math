@@ -308,10 +308,10 @@ Each numbered step is not a new codebase — it is one more `E` fed to the *same
 - **TrtiyoMargo** — `…/TrtiyoMargoNaVidyate_EachStepIsATransportOrASilenceWithItsWitnessAndTheLimitIsNoThirdRoad.agda`: `HaltsAt(n,m) ⊔ ¬HaltsAt(n,m)` decided+witnessed at every finite depth; `Diverges(m) = ∏ₙ ¬HaltsAt(n,m)` (no third road).
 - **AdiBija** — `formal/cubical/kernel/AdiBija_…AllPathsThroughASystemAreEnumeratedByOneRecursor.agda`: derivation object initial; every reading its unique fold.
 - **Vivarana** — `formal/cubical/kernel/Vivarana_TheElucidatorDecomposesAnyObjectOnTheAtomIntoItsCompleteReadingAndEachComponentIsTheUniqueFold.agda`: one object in → full receiver-record out, each field the unique fold.
-- **QuestionMachine** — `formal/cubical/NaturalMachine/KFlow.agda`: every question resolves ∧ question space never final.
+- **QuestionMachine** — `formal/cubical/theorems/walks/KFlow.agda`: every question resolves ∧ question space never final.
 - **InvariantTiebreak** — `formal/cubical/InvariantTiebreakIsExactlyAFixedPoint_….agda`: invariant least element ⟹ fixed point; fixed-point-free action ⟹ ¬canonical invariant tiebreak.
-- **cadence / EndObstruction** — `formal/cubical/NaturalMachine/EndObstruction.agda`: Lawvere diagonal produces an observable outside every current quotation; `cadence-reopens` builds the door, `cadence-never-closes` reopens after each extension.
-- **ControlledGrammar** — `formal/cubical/NaturalMachine/ControlledGrammar.agda`: installed op carries checked derivation + control type proving the firing site applies; execution requires the witness; branch multiplicity preserved.
+- **cadence / EndObstruction** — `formal/cubical/theorems/automata/EndObstruction.agda`: Lawvere diagonal produces an observable outside every current quotation; `cadence-reopens` builds the door, `cadence-never-closes` reopens after each extension.
+- **ControlledGrammar** — `formal/cubical/Kernel/ControlledGrammar.agda`: installed op carries checked derivation + control type proving the firing site applies; execution requires the witness; branch multiplicity preserved.
 - **UTM/Code/Beh** — `Code = List(Q×S×Q×S×Move)`; `uStep` total (missing rule = fixed point = silence in `Maybe`); `Code → Beh` quotient with infinite fibres (padding `ℕ ↪ Code`).
 
 ### XIII.1 — The theoretical difficulties were absorbed into the object (not defeated)

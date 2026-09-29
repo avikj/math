@@ -294,7 +294,7 @@ A smoke request is included in `infra/smoke_requests.jsonl`. The substantive Can
 {-# OPTIONS --cubical --guardedness --safe --no-import-sorts #-}
 module Candidate where
 open import Cubical.Foundations.Prelude
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 import TheGenerativeLoopOnTheKernelsOwnTermsACertifiedNormalizerEmitsDerivationsSoLearnCallsInstall as N
 
 demo : Tm

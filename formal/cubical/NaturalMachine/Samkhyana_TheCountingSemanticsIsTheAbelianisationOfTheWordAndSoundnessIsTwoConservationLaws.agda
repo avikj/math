@@ -68,7 +68,7 @@ open import Cubical.Data.Nat.Properties using (+-assoc ; +-comm ; +-suc ; +-zero
 open import Cubical.Data.List using (List ; [] ; _∷_ ; _++_)
 open import Cubical.Data.Sigma using (_×_ ; _,_)
 
-open import NaturalMachine.RewriteCertificate
+open import Kernel.RewriteCertificate
 open import NaturalMachine.Anupurvi_TheVariableWordIsInvariantSoTheKernelsSoundnessIsNotCompleteness
   using (VarName ; vx ; vy ; vz ; vu ; vv ; vw ; word ; derivation-preserves-word)
 

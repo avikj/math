@@ -15,7 +15,7 @@ module Ratri.Anirdharita_InflationVersusSubgroup_InclProj where
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Bool using (Bool; true; false; true≢false)
 open import Cubical.Data.Empty as Empty using (⊥)
-open import NaturalMachine.InflationVersusSubgroup using (Z4; z0; z1; z2; z3; proj; incl)
+open import InflationVersusSubgroup using (Z4; z0; z1; z2; z3; proj; incl)
 
 -- The composite moves z1:
 composite-lands : incl (proj z1) ≡ z2

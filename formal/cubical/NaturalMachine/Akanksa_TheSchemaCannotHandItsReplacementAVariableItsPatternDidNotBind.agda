@@ -88,7 +88,7 @@ open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Sigma using (Σ-syntax ; _,_ ; fst ; snd)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.RewriteCertificate
+open import Kernel.RewriteCertificate
 
 ------------------------------------------------------------------------
 -- §1.  DEGREE — how many times the substitutable coordinate occurs.

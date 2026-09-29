@@ -16,7 +16,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ; suc; snotz; znots)
 open import Cubical.Data.Int using (ℤ; pos; injPos)
 open import Cubical.Data.Empty as Empty using (⊥)
-open import NaturalMachine.ChargeTwoHistories
+open import ChargeTwoHistories
   using (augment; relative; sign; augment-sign; relative-sign)
 
 one : ℤ

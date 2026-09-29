@@ -3,7 +3,7 @@
 ------------------------------------------------------------------------
 -- TheGenerativeLoopOnTheKernelsOwnTerms.  The proved-terminating generative learner runs on
 -- `ObstructionSubstrate.Tm`, a DIFFERENT datatype from the metacircular
--- kernel's `RewriteCertificate.Tm`, with no `Tm`-morphism sending
+-- kernel's `Kernel.RewriteCertificate.Tm`, with no `Tm`-morphism sending
 -- `propose ↦ install`.
 --
 -- WHY NOT A MORPHISM.  A total faithful `Tm`-morphism is blocked twice:
@@ -51,8 +51,8 @@ module TheGenerativeLoopOnTheKernelsOwnTermsACertifiedNormalizerEmitsDerivations
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Sigma using (Σ ; _,_ ; fst ; snd)
 
-open import RewriteCertificate
-open import ControlledGrammar using (NativeOperation ; install)
+open import Kernel.RewriteCertificate
+open import Kernel.ControlledGrammar using (NativeOperation ; install)
 
 ------------------------------------------------------------------------
 -- Derivation transitivity and the three congruences — each structural on

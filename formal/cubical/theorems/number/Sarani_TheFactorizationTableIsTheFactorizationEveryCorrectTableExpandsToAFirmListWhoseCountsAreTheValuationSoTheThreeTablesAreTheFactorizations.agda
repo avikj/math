@@ -83,7 +83,7 @@ open import ChargePolynomialFinite
         ; f12 ; f30 ; f360 ; value-12 ; value-30 ; value-360 ; wf-12 ; wf-30 ; wf-360 )
 open import Drdha_TheFirmNumbersProductIsEveryPositiveIntegerAndTheirMembershipIsDecidedByDivision
   using (दृढम् ; वधः ; सर्वे ; वध-++ ; सर्वे-++ ; दृढत्वम् ; विभाजनम्)
-open import Uniqueness_TheFirmFactorisationIsUniqueTwoPrimeListsWithOneProductAreAPermutationSoTheValuationIsWellDefinedAndPermIsExactlySameCount
+open import Ekatva_TheFirmFactorisationIsUniqueTwoPrimeListsWithOneProductAreAPermutationSoTheValuationIsWellDefinedAndPermIsExactlySameCount
   using (module Bahulya ; एकत्वम् ; एकत्व-गणना ; मानम् ; मान-निश्चयः)
 open import TheUsualReasonsMadeExplicitTheInductivePermutationRelationEmbedsInAdjacentTranspositions
   using (Perm)

@@ -447,7 +447,7 @@ agrees with the Python table).
   keeps 280 classes: every frequent metre's tempo variants are separated
   by their futures (GGLL's four bins into four blocks). The fibre carries
   state along the run; metre alone is not a safe quotient.
-- **The arrow of time (`EGBReversalInvariant`).** Every scalar reading is
+- **The arrow of time (`theorems/primes/pair_field/ReversalInvariant`).** Every scalar reading is
   reversal-blind; the metre is blind only on its 1,794 palindromes
   (24.7 %), the exact shape on 7 codas. GGLL occurs 3,661 times, LLGG 0:
   the whales' metres front-load the long intervals.

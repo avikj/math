@@ -30,12 +30,12 @@
 --
 -- THE ROUTE (BFS-shortest in the landed invertible graph):
 --   1.  FactoryVICoolingKill.CoolingCountermodel
---         —⟨ Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.DETERMINED (≃) ⟩→
---       Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.CensusBase
+--         —⟨ Ratri.Nirdharita_Agda-Builtin-Nat_.DETERMINED (≃) ⟩→
+--       Ratri.Nirdharita_Agda-Builtin-Nat_.CensusBase
 --       file: formal/cubical/Ratri/Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.agda
---   2.  Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.CensusBase
---         —⟨ Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.censusContract (≃), crossed backwards by invEquiv ⟩→
---       Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.censusΣ
+--   2.  Ratri.Nirdharita_Agda-Builtin-Nat_.CensusBase
+--         —⟨ Ratri.Nirdharita_Agda-Builtin-Nat_.censusContract (≃), crossed backwards by invEquiv ⟩→
+--       Ratri.Nirdharita_Agda-Builtin-Nat_.censusΣ
 --       file: formal/cubical/Ratri/Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.agda
 --
 -- THE TOLL: 2 edge(s).  On this stratum — road one,
@@ -59,7 +59,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Foundations.Equiv
 open import Cubical.Foundations.Univalence
 
-import Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA
+import Ratri.Nirdharita_Agda-Builtin-Nat_
 import FactoryVICoolingKill
 
 open import Cubical.Data.Sigma
@@ -89,10 +89,10 @@ sourceTheorem =
 
 -- The composed causeway.  Each factor is a landed edge, crossed in the
 -- direction BFS chose; compEquiv chains them; nothing else happens.
-marga : FactoryVICoolingKill.CoolingCountermodel ≃ Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.censusΣ
-marga = compEquiv Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.DETERMINED (invEquiv (Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.censusContract))
+marga : FactoryVICoolingKill.CoolingCountermodel ≃ Ratri.Nirdharita_Agda-Builtin-Nat_.censusΣ
+marga = compEquiv Ratri.Nirdharita_Agda-Builtin-Nat_.DETERMINED (invEquiv (Ratri.Nirdharita_Agda-Builtin-Nat_.censusContract))
 
 -- The transported theorem: P held at the source; ua marga
 -- carries it to the target.  This term is the transaction.
-transported : P (Ratri.Nirdharita_Agda-Builtin-Nat_NirdharanaPoneA_NirdharanaPoneA.censusΣ)
+transported : P (Ratri.Nirdharita_Agda-Builtin-Nat_.censusΣ)
 transported = subst P (ua marga) sourceTheorem

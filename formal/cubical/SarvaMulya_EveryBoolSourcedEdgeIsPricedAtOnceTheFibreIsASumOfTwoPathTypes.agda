@@ -127,11 +127,11 @@ module _ {B : Type ℓ} (f : Bool → B) (b : B) where
 -- parameterized family — is priced by instantiation.
 ------------------------------------------------------------------------
 
-open import NaturalMachine.FiniteOccupancyChannelNoGo using (asNat)
-open import NaturalMachine.DSOFinite
+open import FiniteOccupancyChannelNoGo using (asNat)
+open import DSOFinite
   using (bellman ; CostRelation ; Continuation)
-open import NaturalMachine.DSOBellmanFinite using () renaming (K to bellmanK)
-open import NaturalMachine.PointedReindexOrbitObstruction using (prime)
+open import DSOBellmanFinite using () renaming (K to bellmanK)
+open import PointedReindexOrbitObstruction using (prime)
 
 असंख्या-मूल्यम् : (n : ℕ) → Mulya asNat n
 असंख्या-मूल्यम् n = निर्णयः asNat n discreteℕ

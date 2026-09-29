@@ -14,7 +14,7 @@ module ClosedAdditionCostIsLinear where
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; zero ; suc)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 open import WindingCostIsUnarySize using (unary ; iterSuc ; len ; underSuc ; len-underSuc)
 
 -- reduce (unary a + unary b) to sucᵇ (unary a), its normal form

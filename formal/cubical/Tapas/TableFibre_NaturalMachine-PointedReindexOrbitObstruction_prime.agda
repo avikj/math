@@ -7,7 +7,7 @@
 --
 -- THE EDGE:
 --   ⟨lib⟩.Bool  ⟶  ⟨lib⟩.ℕ
---   « NaturalMachine.PointedReindexOrbitObstruction.prime
+--   « PointedReindexOrbitObstruction.prime
 --
 -- WHAT IS PROVED.  The map is the two-clause table false ↦ 2
 --   , true ↦ 3, an INJECTION into ℕ:
@@ -29,7 +29,7 @@ open import Cubical.Data.Empty using (⊥)
 open import Cubical.Data.Sigma using (_,_)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.PointedReindexOrbitObstruction using (prime)
+open import PointedReindexOrbitObstruction using (prime)
 
 -- the three distinctness facts, one discriminator shape
 neq-f-t : ¬ Path ℕ 2 3

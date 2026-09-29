@@ -73,7 +73,7 @@ In Martin-Löf's vocabulary: a judgment's evidence and a proposition's truth are
 
 **What you proved.** The distributivity of Π over Σ is definitional: `Ekatva.ΠΣ-swap` has both round trips `refl`, and `SvaTantuVasa` uses the library's `Σ-Π-Iso` ("the type-theoretic axiom of choice, definitional in this substrate") to identify the conserving flows of any observable with the sections of its fibre family. On the other side:
 
-- `NaturalMachine/FiniteInformation` removes every use of `Classical.choose` from a Lean development by replacing it with elimination of a truncation into a set (`rec→Set`), paying `isSet T` instead of choice; where the literal statement genuinely needs choice, it is kept with the choice made a visible hypothesis (`targetFiber-injects-side-given-choice`).
+- `theorems/number/FiniteInformation` removes every use of `Classical.choose` from a Lean development by replacing it with elimination of a truncation into a set (`rec→Set`), paying `isSet T` instead of choice; where the literal statement genuinely needs choice, it is kept with the choice made a visible hypothesis (`targetFiber-injects-side-given-choice`).
 - `Apratikaryatva` §5: reading "every map is either an equivalence or has a nameable defect" as a disjunction is **exactly** excluded middle, proved in both directions on the family of maps out of propositions.
 - `TritiyaMarga`: the written defect costs at least Markov's principle.
 

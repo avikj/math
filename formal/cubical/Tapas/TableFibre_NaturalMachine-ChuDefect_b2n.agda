@@ -7,7 +7,7 @@
 --
 -- THE EDGE:
 --   ⟨lib⟩.Bool  ⟶  ⟨lib⟩.ℕ
---   « NaturalMachine.ChuDefect.b2n
+--   « ChuDefect.b2n
 --
 -- WHAT IS PROVED.  The map is the two-clause table false ↦ 0
 --   , true ↦ 1, an INJECTION into ℕ:
@@ -29,7 +29,7 @@ open import Cubical.Data.Empty using (⊥)
 open import Cubical.Data.Sigma using (_,_)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.ChuDefect using (b2n)
+open import ChuDefect using (b2n)
 
 -- the three distinctness facts, one discriminator shape
 neq-f-t : ¬ Path ℕ 0 1

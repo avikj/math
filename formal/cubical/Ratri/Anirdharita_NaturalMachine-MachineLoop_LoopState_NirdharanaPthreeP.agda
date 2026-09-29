@@ -5,7 +5,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat
 open import Cubical.Data.Bool
 open import Cubical.Data.Empty
-open import NaturalMachine.MachineLoop
+open import MachineLoop
 
 censusR0 censusR1 : LoopState
 censusR0 = record { vocab = 0 ; horizon = 0 ; invented = 0 }

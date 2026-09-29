@@ -158,7 +158,7 @@ open import TheCountingSemanticsIsADecategorificationAndTheBitItDropsIsASymmetry
 -- guarantee.
 ------------------------------------------------------------------------
 
-open import TheKernelIsAReversibleGroupoidWhoseJoinIsConflictFreeSoConsensusOnMeaningIsVacuous
+open import Kernel.Avirodha_TheKernelIsAReversibleGroupoidWhoseJoinIsConflictFreeSoConsensusOnMeaningIsVacuous
   using (two-nodes-cannot-disagree ; merge-is-idempotent)
 
 ------------------------------------------------------------------------

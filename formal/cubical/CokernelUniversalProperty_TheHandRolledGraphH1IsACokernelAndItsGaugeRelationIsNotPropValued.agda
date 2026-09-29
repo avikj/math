@@ -111,7 +111,7 @@ open import Cubical.HITs.PropositionalTruncation as PT
 open import Cubical.Algebra.AbGroup.Base
   using (AbGroup ; AbGroupStr ; makeAbGroup)
 
-open import NaturalMachine.FiniteGraphCohomology using (module Graph)
+open import FiniteGraphCohomology using (module Graph)
 
 open BinaryRelation
 

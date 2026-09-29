@@ -41,10 +41,10 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; zero ; suc ; _+_ ; isSetℕ ; snotz)
 open import Cubical.Data.Empty as Empty using (⊥)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
   using (Tm ; Derivation ; done ; Env ; eval ; derivation-sound)
 open import EveryDerivationIsInvertible using (len ; _++_ ; revD ; len-++ ; len-revD)
-open import GenerativeKernel using (direct-history)
+open import Kernel.GenerativeKernel using (direct-history)
 
 ------------------------------------------------------------------------
 -- १ · Cost on the round trip is 2·len d.

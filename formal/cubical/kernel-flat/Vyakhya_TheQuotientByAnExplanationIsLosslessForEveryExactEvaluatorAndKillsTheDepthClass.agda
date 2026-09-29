@@ -48,7 +48,7 @@ open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_ ; fst ; snd)
 open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.HITs.SetQuotients using (_/_ ; [_] ; eq/ ; rec)
 
-open import RewriteCertificate using (Tm ; Derivation)
+open import Kernel.RewriteCertificate using (Tm ; Derivation)
 open import MulyaVinimaya_TheValueOfATraceIsItsPairingWithAnEvaluatorPotentialsTelescopeAndADepthEvaluatorHasNonzeroCycleIntegral
   using ( Evaluator ; ∫ ; d′ ; telescope
         ; गभीरता ; t₀ ; nf ; scheduleA ; scheduleB ; depthA ; depthB )

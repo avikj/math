@@ -43,9 +43,9 @@ module Nirvyaja_TheReceiptIsSpentAtGenerationAndTheReplayNeedsNone where
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Sigma using (_×_ ; _,_ ; fst ; snd)
 
-open import RewriteCertificate
-open import ControlledGrammar
-open import TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
+open import Kernel.RewriteCertificate
+open import Kernel.ControlledGrammar
+open import Kernel.Interaction_TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
 
 ------------------------------------------------------------------------
 -- §1.  GENERATION PAYS THE RECEIPT.

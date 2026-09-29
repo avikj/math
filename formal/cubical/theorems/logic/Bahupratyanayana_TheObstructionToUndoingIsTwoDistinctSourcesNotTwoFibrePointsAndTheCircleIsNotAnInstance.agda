@@ -66,7 +66,7 @@ open import Cubical.Data.Int using (ℤ ; pos)
 open import Cubical.Relation.Nullary using (¬_)
 open import Cubical.HITs.S1 using (S¹ ; base ; loop ; winding)
 
-open import GhataFiber_TheDiscreteLogIsTheFibreOfPingalasPowerAndShorsPeriodQueryIsWhatReadsIt
+open import GhataFiber_TheDiscreteLogIsTheFiberOfPingalasPowerAndShorsPeriodQueryIsWhatReadsIt
   using (powg ; εC ; शून्यः ; त्रयः)
 open import BijamulaKrida_AConcreteKeypairRunsInACyclicGroupWhereTheModThatExhaustsTheHeapIsNotNeeded
   using (C₃)

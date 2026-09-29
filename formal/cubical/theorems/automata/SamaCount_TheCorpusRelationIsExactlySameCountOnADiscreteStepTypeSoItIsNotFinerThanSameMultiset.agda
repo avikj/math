@@ -21,7 +21,7 @@ open import OrderIndependenceTransfersAlongAnyNumberOfSteps using (Step)
 open import PairwiseCommutationGivesEveryOrder using (_~_ ; ~nil ; ~cons ; ~swap ; ~trans)
 open import TheUsualReasonsMadeExplicitTheInductivePermutationRelationEmbedsInAdjacentTranspositions
   using (_≈_ ; ≈nil ; ≈cons ; ≈swap ; ≈trans ; toCorpusRelation ; permIsAnAdjacentChain)
-open import Uniqueness_TheFirmFactorisationIsUniqueTwoPrimeListsWithOneProductAreAPermutationSoTheValuationIsWellDefinedAndPermIsExactlySameCount
+open import Ekatva_TheFirmFactorisationIsUniqueTwoPrimeListsWithOneProductAreAPermutationSoTheValuationIsWellDefinedAndPermIsExactlySameCount
   using (module Bahulya)
 
 module _ {S T : Type} (C : S → T) where

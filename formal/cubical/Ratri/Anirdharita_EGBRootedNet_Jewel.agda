@@ -5,7 +5,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat
 open import Cubical.Data.Bool
 open import Cubical.Data.Empty
-open import EGBRootedNet
+open import RootedNet
 
 censusR0 censusR1 : Jewel
 censusR0 = record { centre = 0 ; radius = 0 }

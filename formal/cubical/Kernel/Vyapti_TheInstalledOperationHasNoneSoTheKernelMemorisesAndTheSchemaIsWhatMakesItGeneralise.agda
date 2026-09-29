@@ -21,7 +21,7 @@
 ------------------------------------------------------------------------
 -- WHAT THIS IS ABOUT
 --
--- `ControlledGrammar.NativeOperation` is the kernel's unit of learned
+-- `Kernel.ControlledGrammar.NativeOperation` is the kernel's unit of learned
 -- behaviour, and `install : Derivation lhs rhs → NativeOperation` is how a
 -- theorem the machine proved becomes a move the machine can make.  That is
 -- the metacircular step: proofs become the generative library, so the
@@ -42,7 +42,7 @@
 --       Consequently the coverage of a whole library is finite while `Tm` is
 --       not: the heights of the terms a library can fire on are literally
 --       the finitely many heights of its sources.  Exhibited on the kernel's
---       OWN library (`GenerativeKernel.run`'s two operations, whose common
+--       OWN library (`Kernel.GenerativeKernel.run`'s two operations, whose common
 --       source is `add var (suc zero)`): the term `suc (suc (suc zero))` has
 --       no enabled future, so `form` returns [] there and the generative
 --       loop has nothing to do.
@@ -64,7 +64,7 @@
 --       when that side has no `var` the witness is unused.  For a schema whose
 --       left-hand side contains no `var`, the enabled set at its one context
 --       is a whole copy of `Tm` and every member emits the same output: the
---       fibre over an emission is infinite.  `GenerativeKernel.run-targets`
+--       fibre over an emission is infinite.  `Kernel.GenerativeKernel.run-targets`
 --       exhibits the two-element case of this (two histories, one target);
 --       here it is unbounded.  Collapsing that fibre is the loss the carrier
 --       law prices, and the reason `advance` refuses to dedupe.
@@ -255,7 +255,7 @@ no-native-operation-does-this op c₀ c₁ =
 -- many-to-one onto emissions.  When the schema's left-hand side contains no
 -- `var`, every substitution is enabled at one and the same context and all
 -- of them emit the same term: the fibre over that emission is a whole copy
--- of `Tm`.  `GenerativeKernel.run-targets` is the two-element case of
+-- of `Tm`.  `Kernel.GenerativeKernel.run-targets` is the two-element case of
 -- exactly this, and it is why `advance` is forbidden to dedupe.
 ------------------------------------------------------------------------
 

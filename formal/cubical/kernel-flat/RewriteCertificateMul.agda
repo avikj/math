@@ -60,7 +60,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat
   using (ℕ ; zero ; suc ; _+_ ; _·_ ; +-zero ; +-suc ; +-comm ; 0≡m·0 ; ·-suc)
 
-import RewriteCertificate as A
+import Kernel.RewriteCertificate as A
 
 ------------------------------------------------------------------------
 -- 1. Syntax

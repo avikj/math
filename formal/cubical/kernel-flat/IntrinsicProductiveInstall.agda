@@ -6,7 +6,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Bool using (Bool ; false ; true ; true≢false)
 open import Cubical.Data.List using ([] ; _∷_)
 
-open import RewriteCertificate using
+open import Kernel.RewriteCertificate using
   (Tm ; var ; zero ; suc ; add)
 import IntrinsicRewrite as IR
 open import FiniteIndraWeave using

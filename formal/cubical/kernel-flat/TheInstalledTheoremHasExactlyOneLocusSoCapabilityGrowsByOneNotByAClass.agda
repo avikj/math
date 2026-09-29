@@ -12,7 +12,7 @@
 ------------------------------------------------------------------------
 -- WHY THIS FILE EXISTS, and it is not a limitation being recorded.
 --
--- `ControlledGrammar.NativeOperation` carries an OPEN field:
+-- `Kernel.ControlledGrammar.NativeOperation` carries an OPEN field:
 --
 --     Control       : Tm → Type₀            -- the caller supplies this
 --     control-sound : {t : Tm} → Control t → t ≡ source
@@ -85,8 +85,8 @@ open import Cubical.Data.Bool using (Bool ; true ; false ; true≢false)
 open import Cubical.Data.Empty using (⊥)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import RewriteCertificate using (Tm ; zero ; suc ; Derivation)
-open import ControlledGrammar using (NativeOperation ; install)
+open import Kernel.RewriteCertificate using (Tm ; zero ; suc ; Derivation)
+open import Kernel.ControlledGrammar using (NativeOperation ; install)
 
 open NativeOperation
 

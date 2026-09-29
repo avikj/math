@@ -39,7 +39,7 @@ open import Cubical.Relation.Nullary using (¬_)
 
 import Jiva_TheSoulIsCognitionBoundByKarmaAndLiberationIsTheEquivalenceThatSeesTheWorldAsItself as J
 import Dhruva_TheSymmetryLivesInTheFibreAndWithoutALossThereIsNoSymmetry as D
-import Apunaragamana_TheCompositionOrbitStrictlyGrowsSoItNeverReturnsAndThatIsTheGenerativity as Ap
+import NoReturn_TheCompositionOrbitStrictlyGrowsSoItNeverReturnsAndThatIsTheGenerativity as Ap
 
 ------------------------------------------------------------------------
 -- १ · कैवल्य-स्थैर्यम् — the liberated soul is still.

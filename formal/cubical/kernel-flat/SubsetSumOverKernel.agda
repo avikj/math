@@ -37,7 +37,7 @@ open import Cubical.Data.List using (List ; [] ; _∷_)
 open import Cubical.Data.Sigma using (Σ ; _,_)
 open import Cubical.Relation.Nullary using (Dec)
 
-open import RewriteCertificate using (Tm ; zero ; suc ; add ; eval ; Env)
+open import Kernel.RewriteCertificate using (Tm ; zero ; suc ; add ; eval ; Env)
 open import WindingCostIsUnarySize using (unary)
 
 ------------------------------------------------------------------------

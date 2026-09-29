@@ -66,8 +66,8 @@ open import Cubical.Data.FinSet using (FinSet ; card)
 open import Cubical.Data.FinSet.Constructors using (isFinSet×)
 open import Cubical.Data.FinSet.Cardinality using (cardEquiv)
 
-import PraksepaFiber_TheFibreOfAProjectionIsTheDiscardedFactor as प्र
-import CountFiber_TheFibreOfAFiniteSourceMapIsFiniteAndItsCardinalityIsTheReceipt as स
+import PraksepaFiber_TheFiberOfAProjectionIsTheDiscardedFactor as प्र
+import CountFiber_TheFiberOfAFiniteSourceMapIsFiniteAndItsCardinalityIsTheReceipt as स
 
 private variable ℓ : Level
 

@@ -77,7 +77,7 @@ open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Sigma using (_×_ ; _,_ ; Σ-syntax)
 import Cubical.Data.Empty as E
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 
 private
   variable

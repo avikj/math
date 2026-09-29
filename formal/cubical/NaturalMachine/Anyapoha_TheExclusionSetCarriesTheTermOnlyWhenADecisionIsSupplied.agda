@@ -92,7 +92,7 @@ open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Empty as ⊥ using (⊥)
 open import Cubical.Relation.Nullary using (¬_ ; Dec ; yes ; no)
 
-open import NaturalMachine.Pythagoras_RatioIsTheInvariantAndLengthIsThePresentation
+open import Pythagoras_RatioIsTheInvariantAndLengthIsThePresentation
   using (Sounding ; SameInterval ; SameInterval-refl)
 
 private

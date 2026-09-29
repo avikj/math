@@ -70,7 +70,7 @@ open import Cubical.Data.Unit using (Unit ; tt ; isPropUnit)
 open import Cubical.Functions.Embedding using (isEmbedding ; hasPropFibers ; hasPropFibers→isEmbedding ; isEmbedding→hasPropFibers)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import Punaragamana.Residue_TheResidualIsTheOtherProjectionOfTheSameGraph
+open import Fibre.Residue_TheResidualIsTheOtherProjectionOfTheSameGraph
   using (शेष)
 
 private

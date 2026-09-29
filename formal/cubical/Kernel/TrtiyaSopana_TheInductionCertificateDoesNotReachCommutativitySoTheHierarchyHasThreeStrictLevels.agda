@@ -52,7 +52,7 @@ open import Cubical.Data.Bool using (Bool ; true ; false ; true≢false)
 open import Cubical.Data.Sigma using (_×_ ; _,_)
 import Cubical.Data.Empty as E
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 open import Kernel.Naya_EvalIsOneStandpointAndASecondOneProvesTheInductionRuleIsStrictlyStrongerThanTheRewriteClosure
   using (Atom ; aX ; aY ; aM ; W ; ⟦_⟧ ; derivation-model ; hd)
 

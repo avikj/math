@@ -52,7 +52,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; zero ; suc ; _+_)
 open import Cubical.Data.Sigma using (_×_ ; _,_)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 
 ------------------------------------------------------------------------
 -- §1.  Induction on the second coordinate.

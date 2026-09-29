@@ -43,9 +43,9 @@ open import Cubical.Data.Nat using (ℕ ; zero ; suc ; znots ; injSuc ; isSetℕ
 open import Cubical.Data.Int using (ℤ ; pos)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
   using (Tm ; Derivation ; Env ; eval ; derivation-sound)
-open import GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
+open import Kernel.GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
 open import MulyaVinimaya_TheValueOfATraceIsItsPairingWithAnEvaluatorPotentialsTelescopeAndADepthEvaluatorHasNonzeroCycleIntegral
   using (गभीरता)
 open import AdiBija_TheKernelIsInitialEveryReadingIsItsUniqueFoldSoAllPathsThroughASystemAreEnumeratedByOneRecursor

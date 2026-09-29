@@ -44,7 +44,7 @@ open import Cubical.Data.Nat using (isSetℕ)
 import Cubical.Data.Nat as N
 open import Cubical.Data.Empty using (⊥)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 open import Viparyasa_TheTransposeIsAContravariantGradePreservingDaggerAndTheGradeForbidsItFromEverBeingAnInverse
   using (_⊕_ ; ⊕-unitr ; dairghya ; dairghya-⊕)
 

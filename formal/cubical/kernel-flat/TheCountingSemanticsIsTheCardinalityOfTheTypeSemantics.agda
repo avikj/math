@@ -36,7 +36,7 @@ open import Cubical.Data.Sum using (_⊎_)
 open import Cubical.Data.Sum.Properties using (⊎-equiv)
 open import Cubical.Data.SumFin using (Fin ; SumFin⊎≃)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 open import TheCountingSemanticsIsADecategorificationAndTheBitItDropsIsASymmetry
   using (TEnv ; tenv ; ⟦_⟧)
 

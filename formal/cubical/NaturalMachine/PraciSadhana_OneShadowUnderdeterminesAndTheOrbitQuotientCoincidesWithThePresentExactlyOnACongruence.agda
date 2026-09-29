@@ -101,12 +101,12 @@ open import Cubical.Data.Sigma using (_×_ ; _,_ ; fst ; snd ; ΣPathP)
 open import Cubical.Data.List using (List)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.ParitySeparator using (Signs ; Number ; obs)
-open import NaturalMachine.ChargeCriterion using (probe-6)
-open import NaturalMachine.GaugeOrbitClasses
+open import ParitySeparator using (Signs ; Number ; obs)
+open import ChargeCriterion using (probe-6)
+open import GaugeOrbitClasses
   using (Gauge ; _⋆_ ; AllNeutral ; obs-agree⋆ ; τ₋
         ; τ₋-is-neutral-for-probe-6)
-open import NaturalMachine.PhysicalLearningCore
+open import PhysicalLearningCore
   using (Phase ; Action ; evolve ; Port ; population ; coherent ; observe)
   renaming (flip to flipAction)
 

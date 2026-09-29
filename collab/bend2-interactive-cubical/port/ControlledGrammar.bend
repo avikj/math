@@ -1,4 +1,4 @@
-# formal/cubical/kernel-flat/ControlledGrammar.agda, in Bend.
+# formal/cubical/Kernel/ControlledGrammar.agda, in Bend.
 import RewriteCertificate
 
 type NativeOperation:

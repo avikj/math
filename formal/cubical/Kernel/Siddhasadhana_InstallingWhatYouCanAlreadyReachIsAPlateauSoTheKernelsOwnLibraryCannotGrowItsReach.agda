@@ -59,9 +59,9 @@ open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Empty using (⊥)
 open import Cubical.Data.Nat using (ℕ)
 
-open import RewriteCertificate
-open import ControlledGrammar
-open import GenerativeKernel using (direct-operation ; detour-operation)
+open import Kernel.RewriteCertificate
+open import Kernel.ControlledGrammar
+open import Kernel.GenerativeKernel using (direct-operation ; detour-operation)
 open import Cubical.Data.Bool using (Bool ; true ; false ; true≢false)
 
 ------------------------------------------------------------------------

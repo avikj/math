@@ -34,7 +34,7 @@
   layout.className = 'graph-layout';
   root.append(controls, layout);
   const address = new URL(location.href);
-  input.value = address.searchParams.get('module') || 'RewriteCertificate';
+  input.value = address.searchParams.get('module') || 'Kernel.RewriteCertificate';
   function render() {
     const chosen = input.value.trim();
     layout.replaceChildren();

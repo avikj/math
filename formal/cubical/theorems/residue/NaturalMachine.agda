@@ -235,7 +235,7 @@ import HaskellDiscoveryBoundary
 import DatumSensitivePayload
 import RealizedPayloadCapability
 import ProofLabelNoGo
-import RewriteCertificate
+import Kernel.RewriteCertificate
 -- S4 (D0026_BUILD_QUEUE §4): the same certificate language widened to
 -- multiplication, as a conservative MIRROR of the module above rather than
 -- an edit to it — the gate lane owns the live perimeter.  Listed here on
@@ -245,8 +245,8 @@ import RewriteCertificateMul
 -- Execution and semantic preservation are eliminations of one intrinsically
 -- indexed rewrite run; no external candidate/validation seam is involved.
 import IntrinsicRewrite
-import ControlledGrammar
-import GenerativeKernel
+import Kernel.ControlledGrammar
+import Kernel.GenerativeKernel
 import FiniteIndraWeave
 import ProductiveIndraNet
 import RootedIndraTotal
@@ -1045,7 +1045,7 @@ import WitnessNumberIsUnbounded
 import Yugapat_TheDenialOfJointAssertionDoesNotDecompose
 
 import Alopa_TheEngineNeverTouchesTheMeaning
-import MachineFiber_TheEngineLivesInTheFibreOfItsDenotation
+import MachineFiber_TheEngineLivesInTheFiberOfItsDenotation
 
 import ActionResidualCoordinateFibers
 import CompositionalMagmaFactorization
@@ -1063,12 +1063,12 @@ import TranslationPeakObservability
 import WalkStreamHypothesisBoundary
 
 -- The four readings of the metacircular kernel's soundness fields.
-import TheInstalledOperationHasNoPervasionSoTheKernelMemorises
-import TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainder
+import Kernel.Vyapti_TheInstalledOperationHasNoneSoTheKernelMemorisesAndTheSchemaIsWhatMakesItGeneralise
+import Kernel.Residue_TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainderAndNoSemanticCriterionSelectsTheShortOne
 import TheCountingSemanticsIsADecategorificationAndTheBitItDropsIsASymmetry
-import TheWholeDerivationTypeIsOneFibreSoSoundnessIsNeverAnEquivalence
-import TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
-import TheKernelIsAReversibleGroupoidWhoseJoinIsConflictFreeSoConsensusOnMeaningIsVacuous
+import Kernel.Asesa_TheWholeDerivationTypeIsOneFibreSoSoundnessIsNeverAnEquivalence
+import Kernel.Interaction_TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
+import Kernel.Avirodha_TheKernelIsAReversibleGroupoidWhoseJoinIsConflictFreeSoConsensusOnMeaningIsVacuous
 
 -- Two items of WhatThisIsAndHowToDescend… §8, on the
 -- kernel's own terms:

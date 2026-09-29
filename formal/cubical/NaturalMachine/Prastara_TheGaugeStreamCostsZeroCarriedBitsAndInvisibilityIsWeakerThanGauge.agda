@@ -63,7 +63,7 @@ open import Cubical.Data.Sigma using (Σ-syntax ; _,_ ; _×_)
 open import Cubical.Data.List using (List ; [] ; _∷_)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.FiniteGraphCohomology using (module Graph)
+open import FiniteGraphCohomology using (module Graph)
 
 ------------------------------------------------------------------------
 -- §0.  Two facts about xor, so §1 and §2 are arithmetic-free.

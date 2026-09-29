@@ -47,7 +47,7 @@ open import Cubical.Data.Int using (ℤ ; pos ; _+_ ; -_ ; _-_)
 open import Cubical.Data.Int.Properties
   using (+Comm ; +Assoc ; minusPlus ; -Cancel ; -Cancel' ; pos0+)
 
-open import RewriteCertificate using (Tm ; Step ; reverse ; Derivation ; done ; then-step)
+open import Kernel.RewriteCertificate using (Tm ; Step ; reverse ; Derivation ; done ; then-step)
 open import EveryDerivationIsInvertible using (_++_ ; revD)
 open import MulyaVinimaya_TheValueOfATraceIsItsPairingWithAnEvaluatorPotentialsTelescopeAndADepthEvaluatorHasNonzeroCycleIntegral
   using (Evaluator ; ∫ ; d′)

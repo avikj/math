@@ -43,7 +43,7 @@ module Viparyasa_TheTransposeIsAContravariantGradePreservingDaggerAndTheGradeFor
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Empty using (⊥)
 import Cubical.Data.Nat as N
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 
 private
   variable

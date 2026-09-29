@@ -71,7 +71,7 @@ open import Cubical.Data.Bool using (Bool ; true ; false ; _and_)
 open import Cubical.Data.List using (List ; [] ; _∷_ ; length)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.ParitySeparator using (Number ; Ω ; sgn)
+open import ParitySeparator using (Number ; Ω ; sgn)
 open import NaturalMachine.ChenProjector
   using (projector ; prime-leg ; semiprime-leg)
 

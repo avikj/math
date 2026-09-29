@@ -54,7 +54,7 @@ open import Cubical.Data.Int.Properties using (+Comm ; +Assoc ; minusPlus ; -Can
 open import Cubical.Data.Sigma using (Σ-syntax ; _,_)
 open import Cubical.Data.Empty as Empty using (⊥)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
   using (Tm ; var ; zero ; suc ; add ; Step ; add-zero ; add-suc ; suc-step
         ; add-left ; add-right ; reverse ; Derivation ; done ; then-step)
 

@@ -48,7 +48,7 @@ open import Cubical.Data.Unit using (Unit ; tt)
 open import Cubical.Data.Empty as Empty using ()
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.FiniteOccupancyChannelNoGo using (asNat ; bothNat)
+open import FiniteOccupancyChannelNoGo using (asNat ; bothNat)
 
 ------------------------------------------------------------------------
 -- असंख्या-सङ्केतः asNat — the edge that never forgets.

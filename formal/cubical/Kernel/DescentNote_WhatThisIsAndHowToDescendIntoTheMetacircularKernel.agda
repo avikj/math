@@ -88,9 +88,9 @@
 -- §3.  THE METACIRCULAR KERNEL.  296 LINES, THREE FILES.  (atemporal)
 ------------------------------------------------------------------------
 --
---   formal/cubical/Kernel/RewriteCertificate.agda   156   the calculus + semantics
---   formal/cubical/Kernel/ControlledGrammar.agda     63   operations + the forward pass
---   formal/cubical/Kernel/GenerativeKernel.agda      77   branches, and one example
+--   formal/cubical/Kernel/Kernel.RewriteCertificate.agda   156   the calculus + semantics
+--   formal/cubical/Kernel/Kernel.ControlledGrammar.agda     63   operations + the forward pass
+--   formal/cubical/Kernel/Kernel.GenerativeKernel.agda      77   branches, and one example
 --
 -- Everything else under formal/cubical/Kernel/ is beside this, not inside it.
 --
@@ -118,7 +118,7 @@
 --
 --     advance-preserves-branch-count : length (advance fs) ≡ length fs
 --
--- no dedupe, no sort, no quotient.  `GenerativeKernel.run-targets` exhibits
+-- no dedupe, no sort, no quotient.  `Kernel.GenerativeKernel.run-targets` exhibits
 -- the point in three lines: two different derivations, one output.
 --
 ------------------------------------------------------------------------
@@ -210,9 +210,9 @@
 ------------------------------------------------------------------------
 --
 --   1. fibre/src/Fibre/Carrier.agda         -- to the bottom
---   2. formal/cubical/Kernel/RewriteCertificate.agda            -- to the bottom
---   3. formal/cubical/Kernel/ControlledGrammar.agda             -- 63 lines
---   4. formal/cubical/Kernel/GenerativeKernel.agda              -- 77 lines
+--   2. formal/cubical/Kernel/Kernel.RewriteCertificate.agda            -- to the bottom
+--   3. formal/cubical/Kernel/Kernel.ControlledGrammar.agda             -- 63 lines
+--   4. formal/cubical/Kernel/Kernel.GenerativeKernel.agda              -- 77 lines
 --   5. the four modules of §4, in that order
 --   6. then put your own claim on the wire and let the checker refuse it.
 --      A refused claim teaches more in one line than a page of your prose.

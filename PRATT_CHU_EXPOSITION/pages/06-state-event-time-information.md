@@ -14,7 +14,7 @@ The four-phase algebra, quarter-turn, global charge, and exhausted cellwise cent
 
 ## Canonical checked construction
 
-Residual/phase: [`ActionResidualPhase.agda`](../../formal/cubical/theorems/residue/ActionResidualPhase.agda). Causal/geodesic and Z/4 theorem ledger: [`PNP_GEODESIC_REDUCTION_20260916.md`](../../research/PNP_GEODESIC_REDUCTION_20260916.md). Chu-facing bridge: [`ChuDefect.agda`](../../formal/cubical/NaturalMachine/ChuDefect.agda).
+Residual/phase: [`ActionResidualPhase.agda`](../../formal/cubical/theorems/residue/ActionResidualPhase.agda). Causal/geodesic and Z/4 theorem ledger: [`PNP_GEODESIC_REDUCTION_20260916.md`](../../research/PNP_GEODESIC_REDUCTION_20260916.md). Chu-facing bridge: [`ChuDefect.agda`](../../formal/cubical/theorems/order/ChuDefect.agda).
 
 ## External coordinates
 

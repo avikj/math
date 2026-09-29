@@ -20,7 +20,7 @@ module EveryDerivationIsInvertible where
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; zero ; suc ; _+_ ; +-suc ; +-zero ; isSetℕ)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 
 len : {a b : Tm} → Derivation a b → ℕ
 len (done _)        = zero

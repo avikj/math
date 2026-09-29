@@ -44,7 +44,7 @@ open import Cubical.Data.SumFin using (Fin ; fzero ; fsuc)
 
 open import SamaVibhaga_TransitiveSymmetryNormalizationAndUniqueDivisionForceTheUniformMeasure
   using (total ; गुणः ; समभारिन् ; समविभागः)
-open import UniquenessMatraDvaya_TheSymmetricTwoOutcomeBornWeightIsForcedToHalfExactlyOverAUniquelyHalvingCarrier
+open import EkatvaMatraDvaya_TheSymmetricTwoOutcomeBornWeightIsForcedToHalfExactlyOverAUniquelyHalvingCarrier
   using (द्विमात्रिन्)
 
 private

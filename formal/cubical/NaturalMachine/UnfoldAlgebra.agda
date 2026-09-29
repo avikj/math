@@ -122,13 +122,13 @@ open import Cubical.Data.Sigma
 open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.Obstruction
+open import ObstructionSubstrate
 open Obstruction
-open import NaturalMachine.WitnessPolicy
+open import WitnessPolicy
   using (size ; unfold-hit ; unfold-miss ; degenerate ; inform)
-open import NaturalMachine.GenerativeLoop
+open import GenerativeLoop
   using (delta ; deficit ; gapAt ; gaps ; Over→deficit0)
-open import NaturalMachine.TermFreeMonoid
+open import TermFreeMonoid
   using (rec ; rec-unique ; rec-additive
         ; plug-assoc ; plug-unit-l ; +-assoc′ ; +-unit-l)
 

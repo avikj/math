@@ -61,8 +61,8 @@ open import Cubical.Foundations.Isomorphism
 open import Cubical.Foundations.Equiv
 open import Cubical.Data.Sigma
 
-open import Punaragamana.Carrier
-open import Punaragamana.Residue_TheResidualIsTheOtherProjectionOfTheSameGraph
+open import Fibre.Carrier
+open import Fibre.Residue_TheResidualIsTheOtherProjectionOfTheSameGraph
 
 private
   variable

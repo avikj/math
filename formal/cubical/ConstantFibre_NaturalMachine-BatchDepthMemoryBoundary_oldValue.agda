@@ -6,8 +6,8 @@
 -- from template T-CONST-BOOL.
 --
 -- THE EDGE:
---   NaturalMachine.BatchDepthMemoryBoundary.Old  ⟶  ⟨lib⟩.Bool
---   « NaturalMachine.BatchDepthMemoryBoundary.oldValue
+--   BatchDepthMemoryBoundary.Old  ⟶  ⟨lib⟩.Bool
+--   « BatchDepthMemoryBoundary.oldValue
 --
 -- WHAT IS PROVED, following the structure of
 -- Lopa_TheSumsFibreIsExactlyNPlusOneAndNoLeftInverseExists:
@@ -34,7 +34,7 @@ open import Cubical.Data.Empty using (⊥)
 open import Cubical.Data.Sigma using (_,_ ; fst ; snd)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.BatchDepthMemoryBoundary using (Old ; oldValue)
+open import BatchDepthMemoryBoundary using (Old ; oldValue)
 
 -- §1 · over the value: the fibre is the whole domain.
 over-value : fiber oldValue false ≃ Old

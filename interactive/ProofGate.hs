@@ -2034,7 +2034,7 @@ untranslatableReason defs eq@(l, r) =
 --       witness, whose reconstructed module agda re-checks to the same
 --       theorem (`replayCert`).
 --
--- The Agda side these land in is NaturalMachine.RewriteCertificate: a checked
+-- The Agda side these land in is Kernel.RewriteCertificate: a checked
 -- `candidate : lhs ≡ rhs` is exactly the hypothesis of `derivation-sound` /
 -- `induction-sound` there, i.e. the semantic warrant that the endpoints
 -- denote pointwise-equal functions ℕ → ℕ.

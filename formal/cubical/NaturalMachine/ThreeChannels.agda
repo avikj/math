@@ -51,7 +51,7 @@ open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.ParitySeparator using (Number ; Ω)
+open import ParitySeparator using (Number ; Ω)
 open import NaturalMachine.ChenProjector using (Envelope)
 
 ------------------------------------------------------------------------

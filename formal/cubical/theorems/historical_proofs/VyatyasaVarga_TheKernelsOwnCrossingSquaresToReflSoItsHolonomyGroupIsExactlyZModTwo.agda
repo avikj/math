@@ -72,7 +72,7 @@ open import Cubical.Data.Empty using (⊥)
 open import Cubical.Data.Unit using (Unit ; tt)
 open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 
-open import RewriteCertificate using (Tm ; var ; add)
+open import Kernel.RewriteCertificate using (Tm ; var ; add)
 open import TheCountingSemanticsIsADecategorificationAndTheBitItDropsIsASymmetry
   using ( TEnv ; ⟦_⟧ ; Step⁺ ; add-comm ; Derivation⁺ ; done⁺ ; then⁺
         ; derivation⁺-equiv ; σ₁ ; comm-loop ; comm-path

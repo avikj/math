@@ -20,7 +20,7 @@ open import Cubical.Data.Sigma
 open import Cubical.Data.Sum using (_⊎_; inl; inr)
 open import Cubical.Data.Unit using (Unit; tt)
 open import Cubical.Relation.Nullary using (¬_; yes; no)
-open import Swarm.S04Apoha using (MP; Witnessed; MP→Witnessed; Witnessed→MP)
+open import Apoha using (MP; Witnessed; MP→Witnessed; Witnessed→MP)
 
 private
   variable

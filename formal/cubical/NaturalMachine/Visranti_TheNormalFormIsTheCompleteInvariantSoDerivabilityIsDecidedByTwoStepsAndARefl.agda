@@ -74,7 +74,7 @@ module NaturalMachine.Visranti_TheNormalFormIsTheCompleteInvariantSoDerivability
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Sigma using (_×_ ; _,_)
 
-open import NaturalMachine.RewriteCertificate
+open import Kernel.RewriteCertificate
 
 ------------------------------------------------------------------------
 -- §1.  THE NORMAL FORM.
@@ -225,7 +225,7 @@ seed-and-target-agree = refl
 rebuilt : Derivation (add var (suc zero)) (suc var)
 rebuilt = normalises (add var (suc zero)) ⊕ revD (normalises (suc var))
 
--- AND IT REPRODUCES THE HAND-WRITTEN ONE.  `RewriteCertificate.accepted` is
+-- AND IT REPRODUCES THE HAND-WRITTEN ONE.  `Kernel.RewriteCertificate.accepted` is
 -- the derivation a person wrote into the kernel by hand.  `rebuilt` was
 -- synthesised from the two endpoints alone.  Same term, on the nose.
 synthesis-reproduces-the-hand-written-proof : rebuilt ≡ accepted

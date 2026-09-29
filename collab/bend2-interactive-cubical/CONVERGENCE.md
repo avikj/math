@@ -821,7 +821,7 @@ the content, so the index is usable without reading the names as words.)*
 Fiber law: `theorems/CompressionIsTransportSoTheOnlyCostIsTheNonContractibleFibre`,
 `fibre/src/Fibre/Carrier`, the uniqueness/`Ekatva` module. Cost & thermodynamics:
 `theorems/cost/{Yantra…, AvarohaNisedha…, BharaGana…, GhataLekha…}`,
-`NaturalMachine/Laghava`, `kernel/{AnswerIsProjectionAtOutputSize, VyayaSesa…}`.
+`theorems/grammar/Laghava`, `kernel/{AnswerIsProjectionAtOutputSize, VyayaSesa…}`.
 SHA/complexity: `Sha256`, `Sha256{Lossless,PeqNP,Parimana,Sesa,Sthana,Varga,N}`,
 `GhataBhedaBhanga…`, `kernel/{SubsetSumOverKernel, HidingAndHardnessAreOneFibre…}`,
 `Kernel/Syat…`, `theorems/cost/{Chala…, AParetoFitness…}`,

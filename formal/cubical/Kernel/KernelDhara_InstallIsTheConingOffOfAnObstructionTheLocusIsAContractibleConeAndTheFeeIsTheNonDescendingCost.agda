@@ -66,8 +66,8 @@ open import Cubical.Data.Sigma using (Σ-syntax ; _,_ ; fst ; snd)
 open import Cubical.HITs.MappingCones using (Cone ; inj ; hub ; spoke)
 open import Cubical.Data.Unit using (Unit ; tt)
 
-open import RewriteCertificate using (Tm ; Derivation)
-open import ControlledGrammar using (NativeOperation ; install)
+open import Kernel.RewriteCertificate using (Tm ; Derivation)
+open import Kernel.ControlledGrammar using (NativeOperation ; install)
 open NativeOperation
 
 ------------------------------------------------------------------------

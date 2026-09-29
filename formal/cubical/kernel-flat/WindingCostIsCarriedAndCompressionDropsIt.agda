@@ -17,7 +17,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; suc)
 open import Cubical.Data.Sigma using (_×_ ; _,_)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 open import WindingCostIsUnarySize using (unary ; iterSuc ; len ; addTower ; winding-cost-is-unary-size)
 open import TheCompressionIsTheForgetfulProjection using (compress ; ρ₀)
 

@@ -81,7 +81,7 @@ open import YugmaPurana_TheValliRecoversItsLengthModuloTwoAndNoFurther
   using (चिह्नं-दैर्घ्यात्)
 
 -- THE TOLL-GATE PREDICATE, imported from the corpus's own toll office.
-open import NaturalMachine.FiniteInformation
+open import FiniteInformation
   using ( FactorsThrough ; FiberConstant
         ; fiberConstant→factorsThrough ; factorsThrough→fiberConstant )
 

@@ -20,7 +20,7 @@ module WindingCostIsUnarySize where
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; zero ; suc)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 
 -- the symbolic (unary) representation of n : a suc-tower of height n
 unary : ℕ → Tm

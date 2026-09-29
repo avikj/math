@@ -37,9 +37,9 @@ module PvsNPGapLivesInTheForgetfulProjection where
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; zero ; suc ; isSetℕ)
 
-open import RewriteCertificate
-open import ControlledGrammar
-open import GenerativeKernel
+open import Kernel.RewriteCertificate
+open import Kernel.ControlledGrammar
+open import Kernel.GenerativeKernel
 
 ------------------------------------------------------------------------
 -- §1.  THE CARRIED MODEL HAS NO GAP: THE ANSWER IS PROJECTION.

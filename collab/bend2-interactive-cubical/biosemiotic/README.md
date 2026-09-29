@@ -321,7 +321,7 @@ found the tempo is what a receiver re-expresses, this says the tempo is
 what the sender's own next coda depends on: the fibre carries state along
 the run, and `ker P` (metre only) is not a safe reading of the machine.
 
-### 8.9 The arrow of time in the repertoire (`EGBReversalInvariant`)
+### 8.9 The arrow of time in the repertoire (`theorems/primes/pair_field/ReversalInvariant`)
 
 List reversal is the ℤ/2 involution on codas. A reading is blind to it or
 sighted; its fixed locus is the palindromic metres.

@@ -361,8 +361,8 @@ meet the Bend/HVM local interaction calculus with native sharing/superposition a
 - `formal/cubical/theorems/residue/Ekatva_LosslessnessIsAPropertyTheCompletionsOfAMapFormAContractibleTypeAndTheMachinesIsUnique.agda`
 - `formal/cubical/theorems/residue/VerifyIsDecide_ThereIsNoGapBetweenFindingAndCheckingBecauseBothAreProjectionsOfOneEquivalence.agda`
 - `formal/cubical/theorems/residue/ActionResidualPhase.agda`
-- `formal/cubical/NaturalMachine/ChuAdvance.agda`
-- `formal/cubical/NaturalMachine/ChuDefect.agda`
+- `formal/cubical/theorems/residue/ChuAdvance.agda`
+- `formal/cubical/theorems/order/ChuDefect.agda`
 - `formal/cubical/theorems/logic/ObsBridge.agda`
 - `LIFECYCLE.rst`
 - `collab/bend2-interactive-cubical/CONVERGENCE.md`

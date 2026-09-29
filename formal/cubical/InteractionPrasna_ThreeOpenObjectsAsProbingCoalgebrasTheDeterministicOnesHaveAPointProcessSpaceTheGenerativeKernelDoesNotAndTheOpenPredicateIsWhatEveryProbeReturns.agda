@@ -335,11 +335,11 @@ module NavierStokes where
 
 module Kernel where
   open import Cubical.Data.Nat using (znots ; injSuc)
-  open import RewriteCertificate using (Tm ; Derivation ; done ; then-step ; reverse ; add-suc ; var ; add)
+  open import Kernel.RewriteCertificate using (Tm ; Derivation ; done ; then-step ; reverse ; add-suc ; var ; add)
     renaming (zero to tzero ; suc to tsuc)
-  open import ControlledGrammar using (CheckedFuture)
+  open import Kernel.ControlledGrammar using (CheckedFuture)
   open CheckedFuture
-  open import GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
+  open import Kernel.GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
 
   -- the self-extension coalgebra: query = a checked future (a target with
   -- its Derivation); observation = the target; and THE EVENT DATUM IS THE

@@ -5,7 +5,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat
 open import Cubical.Data.Bool
 open import Cubical.Data.Empty
-open import Ratri.Nirdharita_VivekaPramana_TheRemainderIsLawfulAndTheNetBeats_NirdharanaPoneC
+open import Ratri.Nirdharita_VivekaPramana_TheRemainderIsLawfulAndTheNetBeats_
 
 censusR0 censusR1 : CensusBase
 censusR0 = record { सम = 0 ; वाम = 0 }

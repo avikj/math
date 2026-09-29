@@ -6,8 +6,8 @@
 -- from template T-CONST-BOOL.
 --
 -- THE EDGE:
---   NaturalMachine.DependentOptimizationFibration.Configuration  ⟶  ⟨lib⟩.Bool
---   « NaturalMachine.DependentOptimizationFibration.semantics
+--   DependentOptimizationFibration.Configuration  ⟶  ⟨lib⟩.Bool
+--   « DependentOptimizationFibration.semantics
 --
 -- WHAT IS PROVED, following the structure of
 -- Lopa_TheSumsFibreIsExactlyNPlusOneAndNoLeftInverseExists:
@@ -34,7 +34,7 @@ open import Cubical.Data.Empty using (⊥)
 open import Cubical.Data.Sigma using (_,_ ; fst ; snd)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.DependentOptimizationFibration using (Configuration ; semantics)
+open import DependentOptimizationFibration using (Configuration ; semantics)
 
 -- §1 · over the value: the fibre is the whole domain.
 over-value : fiber semantics false ≃ Configuration

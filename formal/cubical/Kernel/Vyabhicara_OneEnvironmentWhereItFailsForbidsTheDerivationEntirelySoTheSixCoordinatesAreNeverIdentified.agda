@@ -72,7 +72,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; zero ; suc ; znots)
 import Cubical.Data.Empty as E
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
 
 ------------------------------------------------------------------------
 -- §1.  THE INSTRUMENT.  `derivation-sound` says a derivation holds at

@@ -19,7 +19,7 @@
 --
 -- `Vyapti_…` read `NativeOperation.control-sound` and found the kernel
 -- cannot generalise.  This module reads the other soundness field --
--- `RewriteCertificate.derivation-sound` -- and finds something that no
+-- `Kernel.RewriteCertificate.derivation-sound` -- and finds something that no
 -- schema repairs, because it is not a defect:
 --
 --     derivation-sound : Derivation a b → (ρ : Env) → eval a ρ ≡ eval b ρ
@@ -33,7 +33,7 @@
 --
 -- That is not a limitation of `eval`; §4 proves it of EVERY function of the
 -- meaning.  And it is exactly the fact that makes the kernel's one
--- conservation law -- `ControlledGrammar.advance-preserves-branch-count`,
+-- conservation law -- `Kernel.ControlledGrammar.advance-preserves-branch-count`,
 -- multiplicity preserved with no dedupe, no sort, no quotient -- the load
 -- bearing line it is.  What that law protects is precisely what the
 -- semantics cannot see.

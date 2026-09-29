@@ -55,8 +55,8 @@ open import Cubical.Data.Nat
 open import Cubical.Data.Sigma using (Σ-syntax ; _,_)
 import Cubical.Data.Empty as E
 
-open import RewriteCertificate
-open import TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainder
+open import Kernel.RewriteCertificate
+open import Kernel.Residue_TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainderAndNoSemanticCriterionSelectsTheShortOne
   using (len ; soundness-is-constant)
 
 ------------------------------------------------------------------------

@@ -20,7 +20,7 @@ module IntrinsicRewrite where
 
 open import Cubical.Foundations.Prelude
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
   using (Tm ; var ; zero ; suc ; add ; Step ; add-zero ; add-suc ; suc-step
         ; add-left ; add-right ; Env ; eval ; step-sound)
 

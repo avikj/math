@@ -18,7 +18,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat
 open import Cubical.Data.List using (List; []; _∷_)
 open import Cubical.Data.Empty as Empty using (⊥)
-open import Swarm.S13OptionSpread using (sum; ones)
+open import OptionSpread using (sum; ones)
 
 -- The two inhabitants of one fibre of the summary.
 state₁ state₂ : List ℕ

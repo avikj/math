@@ -222,7 +222,7 @@ The operative pieces are already represented in the formal development.
 - `fibre/src/Fibre/Samvada_TheOrbitIsTheOneQueryCaseOfTheInteractiveCoalgebraAndTheDemandIsWhatDiffers.agda` gives the interactive coalgebra `react` with successor, observation, event, and continuation.
 - `fibre/src/Fibre/Nucleus.agda` supplies carrier/orbit and coinductive transport structure.
 - `LIFECYCLE.rst` gives the integrated reading: live process, retained transition residual, and reusable operation are aspects of one encounter and its continuation rather than separate perception, storage, training, and action modules.
-- Explicit Chu-facing formal work already includes `formal/cubical/NaturalMachine/ChuAdvance.agda`, `formal/cubical/NaturalMachine/ChuDefect.agda`, and `formal/cubical/theorems/logic/ObsBridge.agda`.
+- Explicit Chu-facing formal work already includes `formal/cubical/theorems/residue/ChuAdvance.agda`, `formal/cubical/theorems/order/ChuDefect.agda`, and `formal/cubical/theorems/logic/ObsBridge.agda`.
 
 The top-level mathematical point is therefore not that several known theories can be placed next to one another. It is that the checked lossless fibre law supplies the canonical completion of the defining Chu evaluation, and the rest of the construction retains exactly the higher identity, transport, continuation, and re-entry structure that ordinary evaluation forgets.
 

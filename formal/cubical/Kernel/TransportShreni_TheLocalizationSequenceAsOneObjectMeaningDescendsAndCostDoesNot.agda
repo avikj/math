@@ -82,8 +82,8 @@ module Localization {X : Type ℓ} {Y : Type ℓ'} (isSetY : isSet Y)
 -- The kernel instance: f = derivation-sound, c = len.
 ------------------------------------------------------------------------
 
-open import RewriteCertificate using (Tm ; Derivation ; Env ; eval ; derivation-sound)
-open import GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
+open import Kernel.RewriteCertificate using (Tm ; Derivation ; Env ; eval ; derivation-sound)
+open import Kernel.GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
 open import ForgetfulCompressionPricesTheDrop using (len ; 2≢4 ; meaning-agrees)
 
 Meaning : Type

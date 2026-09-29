@@ -63,7 +63,7 @@ open import Cubical.Data.Unit using (Unit ; tt ; isSetUnit)
 open import Cubical.Data.Empty using (⊥)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import Punaragamana.Residue_TheResidualIsTheOtherProjectionOfTheSameGraph
+open import Fibre.Residue_TheResidualIsTheOtherProjectionOfTheSameGraph
   using (शेष)
 
 private

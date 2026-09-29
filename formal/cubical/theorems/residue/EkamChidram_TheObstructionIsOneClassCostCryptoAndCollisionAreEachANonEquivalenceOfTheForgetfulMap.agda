@@ -45,10 +45,10 @@ open import Cubical.Data.Sigma using (Σ ; Σ-syntax ; _,_ ; _×_ ; fst ; snd)
 open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import RewriteCertificate using (Tm ; Derivation ; Env ; eval ; derivation-sound)
-open import GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
+open import Kernel.RewriteCertificate using (Tm ; Derivation ; Env ; eval ; derivation-sound)
+open import Kernel.GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
 open import ForgetfulCompressionPricesTheDrop using (len ; 2≢4 ; meaning-agrees)
-open import GhataFiber_TheDiscreteLogIsTheFibreOfPingalasPowerAndShorsPeriodQueryIsWhatReadsIt
+open import GhataFiber_TheDiscreteLogIsTheFiberOfPingalasPowerAndShorsPeriodQueryIsWhatReadsIt
   using (powg)
 open import Residue_TheOneWayFunctionIsExactlyANonEquivalenceAndCryptoLivesInTheResidualUnivalenceCannotErase
   using (घातः-न-तुल्यता)

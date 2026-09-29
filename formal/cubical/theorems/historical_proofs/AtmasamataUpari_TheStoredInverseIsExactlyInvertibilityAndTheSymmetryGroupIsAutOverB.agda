@@ -91,7 +91,7 @@ open import Khahara_TheZeroDivisorEdgeIsPricedAtItsWholeDomainAndTotalLossIsExac
   using (सर्व-नाशः)
 open import SamanaKaksya_TheOrbitRelationIsAlreadyAnEquivalenceWithoutAnInverseAndTheChargeDescendsToTheQuotient
   using (व्युत्क्रम-संरक्षणम्)
-open import SvaFiberVasa_TheConservingFlowsOfAnyObservableAreTheSectionsOfItsOwnFibres
+open import SvaFiberVasa_TheConservingFlowsOfAnyObservableAreTheSectionsOfItsOwnFibers
   using (ध्रुव-बिन्दुः)
 open import SamraksakaGana_TheConservingFlowsFormAGanaAndTheSectionIdentificationPreservesItByRefl
   using (प्रवाहः ; _∘प्र_ ; एकः ; module गणे)

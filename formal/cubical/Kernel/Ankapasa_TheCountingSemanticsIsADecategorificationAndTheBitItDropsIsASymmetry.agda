@@ -18,7 +18,7 @@
 -- THE THIRD READING OF THE SAME LINE, AND THE ONE THAT BUILDS.
 --
 -- `Vyapti_…` read `NativeOperation.control-sound`: the kernel memorises.
--- `Residue_⟦`   read `RewriteCertificate.derivation-sound`: the derivation
+-- `Residue_⟦`   read `Kernel.RewriteCertificate.derivation-sound`: the derivation
 --            carries no meaning, so all of it is remainder.
 --
 -- Both are one fact.  Each soundness field lands in an identity type of a

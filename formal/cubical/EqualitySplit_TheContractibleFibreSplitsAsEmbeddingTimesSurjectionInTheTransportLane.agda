@@ -30,7 +30,7 @@ open import Cubical.Foundations.HLevels
 open import Cubical.Data.Sigma
 open import Cubical.Functions.Embedding using (isEmbedding ; hasPropFibers ; hasPropFibers→isEmbedding ; isEmbedding→hasPropFibers)
 
-open import NaturalMachine.TransportResidue_EveryTransportOwesItsResidual using (शेष ; अलोप-लक्षणम्)
+open import TransportResidue_EveryTransportOwesItsResidual using (शेष ; अलोप-लक्षणम्)
 
 private
   variable

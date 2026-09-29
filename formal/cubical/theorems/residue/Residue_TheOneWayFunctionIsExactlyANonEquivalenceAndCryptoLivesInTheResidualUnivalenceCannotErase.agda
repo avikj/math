@@ -70,7 +70,7 @@ open import Cubical.Data.Nat using (ℕ)
 open import Cubical.Data.Sigma using (Σ ; _,_ ; fst ; snd)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import GhataFiber_TheDiscreteLogIsTheFibreOfPingalasPowerAndShorsPeriodQueryIsWhatReadsIt
+open import GhataFiber_TheDiscreteLogIsTheFiberOfPingalasPowerAndShorsPeriodQueryIsWhatReadsIt
   using (powg ; εC ; तन्तुः-द्विपदः)
 
 private

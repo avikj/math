@@ -12,7 +12,7 @@
 -- THE THIRD READING OF THE SAME LINE, AND THE ONE THAT BUILDS.
 --
 -- `TheInstalledOperationHasNoPervasion…` read `NativeOperation.control-sound`: the kernel memorises.
--- `TheDerivationCarriesNoMeaning…`   read `RewriteCertificate.derivation-sound`: the derivation
+-- `TheDerivationCarriesNoMeaning…`   read `Kernel.RewriteCertificate.derivation-sound`: the derivation
 --            carries no meaning, so all of it is remainder.
 --
 -- Both are one fact.  Each soundness field lands in an identity type of a
@@ -75,8 +75,8 @@ open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Sum.Properties
   using (⊎-equiv ; ⊎-swap-≃ ; ⊎-assoc-≃ ; ⊎-IdR-⊥-≃)
 
-open import RewriteCertificate
-open import GenerativeKernel using (direct-history ; detour-history)
+open import Kernel.RewriteCertificate
+open import Kernel.GenerativeKernel using (direct-history ; detour-history)
 
 private
   variable

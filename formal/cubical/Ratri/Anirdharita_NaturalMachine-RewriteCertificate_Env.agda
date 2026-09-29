@@ -5,7 +5,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat
 open import Cubical.Data.Bool
 open import Cubical.Data.Empty
-open import NaturalMachine.RewriteCertificate
+open import Kernel.RewriteCertificate
 
 censusR0 censusR1 : Env
 censusR0 = record { x = 0 ; y = 0 ; z = 0 ; u = 0 ; v = 0 ; w = 0 }

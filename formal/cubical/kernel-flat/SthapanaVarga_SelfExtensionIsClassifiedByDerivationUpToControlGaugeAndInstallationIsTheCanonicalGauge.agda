@@ -56,8 +56,8 @@ open import Cubical.Foundations.Isomorphism using (Iso ; iso ; isoToEquiv)
 open import Cubical.Foundations.Equiv using (_≃_)
 open import Cubical.Data.Sigma using (Σ-syntax ; _,_ ; fst ; snd)
 
-open import RewriteCertificate using (Tm ; Derivation)
-open import ControlledGrammar using (NativeOperation ; install)
+open import Kernel.RewriteCertificate using (Tm ; Derivation)
+open import Kernel.ControlledGrammar using (NativeOperation ; install)
 
 open NativeOperation
 

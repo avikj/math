@@ -72,7 +72,7 @@
 -- the square, which is the stanza's own next display, δ_◊ = h∘f − k∘g.
 --
 -- PRIOR ART IN THIS REPOSITORY:
---   EGBCycleHolonomy.agda — holonomy of a 3-cycle of equivalences; the
+--   CycleHolonomy.agda — holonomy of a 3-cycle of equivalences; the
 --     trivial cycle is idEquiv, and (not,not,not) on Bool is a NONtrivial
 --     witness.  That is the ⇒ direction plus a curvature witness.
 --   NaturalMachine/GlobalSmithAtlasFlatness.agda — global charts give

@@ -60,7 +60,7 @@ open import Cubical.Data.List using (List ; [] ; _∷_)
 open import Cubical.Data.Empty using (⊥) renaming (rec to ⊥rec)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.RewriteCertificate
+open import Kernel.RewriteCertificate
 open import NaturalMachine.Anupurvi_TheVariableWordIsInvariantSoTheKernelsSoundnessIsNotCompleteness
   using (VarName ; word ; step-preserves-word ; derivation-preserves-word)
 open import NaturalMachine.Samkhyana_TheCountingSemanticsIsTheAbelianisationOfTheWordAndSoundnessIsTwoConservationLaws

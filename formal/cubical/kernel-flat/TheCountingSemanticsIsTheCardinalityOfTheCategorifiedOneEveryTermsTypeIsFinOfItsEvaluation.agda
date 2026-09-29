@@ -45,7 +45,7 @@ open import Cubical.Data.Sum.Properties
   using (⊎-equiv ; ⊎-swap-≃ ; ⊎-assoc-≃ ; ⊎-IdR-⊥-≃)
 open import Cubical.Data.SumFin using (Fin)   -- Fin 0 = ⊥ ; Fin (suc n) = Unit ⊎ Fin n
 
-open import RewriteCertificate using (Tm ; var ; yvar ; zvar ; uvar ; vvar ; wvar
+open import Kernel.RewriteCertificate using (Tm ; var ; yvar ; zvar ; uvar ; vvar ; wvar
                                      ; zero ; suc ; add ; Env ; env ; eval)
 open import TheCountingSemanticsIsADecategorificationAndTheBitItDropsIsASymmetry
   using (TEnv ; tenv ; ⟦_⟧)

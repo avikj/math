@@ -126,12 +126,12 @@ open import Cubical.Foundations.HLevels using (isOfHLevelRespectEquiv)
 open import Cubical.HITs.PropositionalTruncation using (∥_∥₁ ; ∣_∣₁ ; squash₁ ; rec)
 open import Cubical.Data.Empty using (⊥)
 
-open import RewriteCertificate
-open import GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
-open import TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainder
+open import Kernel.RewriteCertificate
+open import Kernel.GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
+open import Kernel.Residue_TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainderAndNoSemanticCriterionSelectsTheShortOne
   using (direct≢detour ; derivations-are-not-a-proposition
         ; soundness-factors-through-truncation)
-open import TheWholeDerivationTypeIsOneFibreSoSoundnessIsNeverAnEquivalence
+open import Kernel.Asesa_TheWholeDerivationTypeIsOneFibreSoSoundnessIsNeverAnEquivalence
   using (fibre-is-everything ; Meaning ; isPropMeaning ; sound
         ; the-whole-derivation-type-is-one-fibre
         ; soundness-is-not-an-equivalence-at-the-kernels-own-seed)

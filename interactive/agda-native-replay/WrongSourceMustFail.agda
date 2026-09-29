@@ -4,8 +4,8 @@
 module WrongSourceMustFail where
 
 open import Cubical.Foundations.Prelude
-open import RewriteCertificate
-open import ControlledGrammar
+open import Kernel.RewriteCertificate
+open import Kernel.ControlledGrammar
 
 wrong-source : EnabledFuture zero
 EnabledFuture.operation wrong-source = install accepted

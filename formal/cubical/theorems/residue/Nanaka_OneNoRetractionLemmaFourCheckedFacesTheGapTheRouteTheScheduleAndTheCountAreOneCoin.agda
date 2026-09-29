@@ -66,8 +66,8 @@ open import Cubical.Data.Bool using (Bool ; true ; false)
 open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.HITs.SetQuotients using ([_])
 
-open import RewriteCertificate using (Tm ; Derivation ; Env ; eval ; derivation-sound)
-open import GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
+open import Kernel.RewriteCertificate using (Tm ; Derivation ; Env ; eval ; derivation-sound)
+open import Kernel.GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
 open import Vishvayantra_TheTuringStepIsTheVisibleProjectionOfTheLosslessStepAndTheKeptFibreIsTheSource
   using (Machine ; uStep)
 open import Nasha_TheVisibleStepDestroysInformationAndTheCompletedStepCannotByConstruction

@@ -87,15 +87,15 @@ open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_ ; fst ; snd)
 open import Cubical.Data.List using (List ; [] ; _∷_)
 
-open import RewriteCertificate
-open import ControlledGrammar
-open import TheInstalledOperationHasNoPervasionSoTheKernelMemorises
+open import Kernel.RewriteCertificate
+open import Kernel.ControlledGrammar
+open import Kernel.Vyapti_TheInstalledOperationHasNoneSoTheKernelMemorisesAndTheSchemaIsWhatMakesItGeneralise
   using (SomeEnabled)
-open import TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainder
+open import Kernel.Residue_TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainderAndNoSemanticCriterionSelectsTheShortOne
   using (len ; meanings-are-equal)
-open import TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
+open import Kernel.Interaction_TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
   using (_⊕_ ; Session ; session ; demand ; every-operation-that-exists-is-sound)
-open import TheKernelIsAReversibleGroupoidWhoseJoinIsConflictFreeSoConsensusOnMeaningIsVacuous
+open import Kernel.Avirodha_TheKernelIsAReversibleGroupoidWhoseJoinIsConflictFreeSoConsensusOnMeaningIsVacuous
   using (rev ; ⊕-assoc ; merge ; join-keeps-the-left ; round-trip-is-the-identity)
 
 open Session

@@ -89,9 +89,9 @@
 -- §3.  THE METACIRCULAR KERNEL.  296 LINES, THREE FILES.  (atemporal)
 ------------------------------------------------------------------------
 --
---   formal/cubical/kernel-flat/RewriteCertificate.agda   156   the calculus + semantics
---   formal/cubical/kernel-flat/ControlledGrammar.agda     63   operations + the forward pass
---   formal/cubical/kernel-flat/GenerativeKernel.agda      77   branches, and one example
+--   formal/cubical/kernel-flat/Kernel.RewriteCertificate.agda   156   the calculus + semantics
+--   formal/cubical/kernel-flat/Kernel.ControlledGrammar.agda     63   operations + the forward pass
+--   formal/cubical/kernel-flat/Kernel.GenerativeKernel.agda      77   branches, and one example
 --
 -- Everything else under formal/cubical/kernel-flat/ is beside this, not inside it.
 --
@@ -119,7 +119,7 @@
 --
 --     advance-preserves-branch-count : length (advance fs) ≡ length fs
 --
--- no dedupe, no sort, no quotient.  `GenerativeKernel.run-targets` exhibits
+-- no dedupe, no sort, no quotient.  `Kernel.GenerativeKernel.run-targets` exhibits
 -- the point in three lines: two different derivations, one output.
 --
 ------------------------------------------------------------------------
@@ -210,9 +210,9 @@
 ------------------------------------------------------------------------
 --
 --   1. fibre/src/Fibre/Carrier.agda         -- to the bottom
---   2. formal/cubical/kernel-flat/RewriteCertificate.agda            -- to the bottom
---   3. formal/cubical/kernel-flat/ControlledGrammar.agda             -- 63 lines
---   4. formal/cubical/kernel-flat/GenerativeKernel.agda              -- 77 lines
+--   2. formal/cubical/kernel-flat/Kernel.RewriteCertificate.agda            -- to the bottom
+--   3. formal/cubical/kernel-flat/Kernel.ControlledGrammar.agda             -- 63 lines
+--   4. formal/cubical/kernel-flat/Kernel.GenerativeKernel.agda              -- 77 lines
 --   5. the four modules of §4, in that order
 --   6. then put your own claim on the wire and let the checker answer it.
 --      The obligation that comes back teaches more in one line than a
@@ -279,22 +279,22 @@ open import Cubical.Data.Bool using (Bool ; true ; false ; notEquiv)
 open import Cubical.Data.Nat using (ℕ)
 open import Cubical.Data.List using (List ; length)
 
-open import RewriteCertificate
-open import ControlledGrammar
+open import Kernel.RewriteCertificate
+open import Kernel.ControlledGrammar
 
-open import TheInstalledOperationHasNoPervasionSoTheKernelMemorises
+open import Kernel.Vyapti_TheInstalledOperationHasNoneSoTheKernelMemorisesAndTheSchemaIsWhatMakesItGeneralise
   using (enabled-set-is-subsingleton ; no-native-operation-does-this
         ; SchematicOperation ; kernel-cannot-reach-a-tower)
-open import TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainder
+open import Kernel.Residue_TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainderAndNoSemanticCriterionSelectsTheShortOne
   using (every-semantic-criterion-is-blind ; cost-does-not-factor
         ; derivations-are-not-a-proposition)
 open import TheCountingSemanticsIsADecategorificationAndTheBitItDropsIsASymmetry
   using (comm-loop-is-a-nontrivial-loop-in-the-universe
         ; no-counting-criterion-separates ; derivation-equiv)
-open import TheWholeDerivationTypeIsOneFibreSoSoundnessIsNeverAnEquivalence
+open import Kernel.Asesa_TheWholeDerivationTypeIsOneFibreSoSoundnessIsNeverAnEquivalence
   using (the-whole-derivation-type-is-one-fibre
         ; soundness-is-not-an-equivalence-at-the-kernels-own-seed)
-open import TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
+open import Kernel.Interaction_TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation
   using (demand ; any-demand-is-safe ; learn ; Session ; step ; retire
         ; session-sound ; every-operation-that-exists-is-sound)
 

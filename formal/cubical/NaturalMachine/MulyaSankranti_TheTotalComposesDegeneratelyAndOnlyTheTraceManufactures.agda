@@ -72,8 +72,8 @@ open import Cubical.Foundations.HLevels using (isPropΠ)
 open import Cubical.Data.Nat using (ℕ ; isSetℕ) renaming (zero to nzero ; suc to nsuc ; _+_ to _+ℕ_)
 open import Cubical.Data.Sigma using (_×_ ; _,_)
 
-open import NaturalMachine.RewriteCertificate
-open import NaturalMachine.GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
+open import Kernel.RewriteCertificate
+open import Kernel.GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
 
 private
   variable

@@ -46,7 +46,7 @@ open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; zero ; suc)
 open import Cubical.Data.Int using (ℤ ; pos ; _+_)
 
-open import RewriteCertificate
+open import Kernel.RewriteCertificate
   using (Tm ; Step ; Derivation ; done ; then-step ; Env ; eval ; step-sound
         ; derivation-sound)
 

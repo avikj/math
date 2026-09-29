@@ -115,7 +115,7 @@ open import Cubical.Data.List using (List; []; _∷_; length; map)
 open import Cubical.Data.Sigma using (Σ; _,_; fst; snd; _×_)
 open import Cubical.Data.Empty using (⊥)
 
-open import NaturalMachine.Vacuity
+open import Vacuity
   using (Claim; Obj; Val; inv; apart; CollisionPair; SeparatedPair; TotallyVacuous)
 
 ------------------------------------------------------------------------

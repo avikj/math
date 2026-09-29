@@ -123,7 +123,7 @@ open import Cubical.Data.Bool.Properties using (true≢false)
 open import Cubical.Data.Sigma
 open import Cubical.Relation.Nullary using (¬_)
 
-open import NaturalMachine.LineWorldTransport
+open import LineWorldTransport
   using (Slope ; s0 ; s1 ; s2 ; s3 ; s4 ; val ; mod5 ; eqℕ ; attains ; crit)
 
 private

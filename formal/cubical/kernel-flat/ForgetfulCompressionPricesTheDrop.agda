@@ -19,8 +19,8 @@ open import Cubical.Data.Nat using (ℕ ; zero ; suc ; isSetℕ ; injSuc ; znots
 open import Cubical.Data.Sigma using (_×_ ; _,_)
 open import Cubical.Relation.Nullary using (¬_)
 
-open import RewriteCertificate
-open import GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
+open import Kernel.RewriteCertificate
+open import Kernel.GenerativeKernel using (seed ; target₀ ; direct-history ; detour-history)
 
 len : {a b : Tm} → Derivation a b → ℕ
 len (done _)        = zero

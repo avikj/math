@@ -48,7 +48,7 @@ open import Cubical.Data.SumFin using (Fin)
 open import Cubical.Data.SumFin.Properties using (SumFin≃Fin)
 open import Cubical.Data.Fin.Properties using (Fin-inj)
 
-open import RewriteCertificate using (Tm ; Derivation ; Env ; eval ; derivation-sound)
+open import Kernel.RewriteCertificate using (Tm ; Derivation ; Env ; eval ; derivation-sound)
 open import TheCountingSemanticsIsADecategorificationAndTheBitItDropsIsASymmetry
   using (⟦_⟧ ; derivation-equiv)
 open import TheCountingSemanticsIsTheCardinalityOfTheCategorifiedOneEveryTermsTypeIsFinOfItsEvaluation
