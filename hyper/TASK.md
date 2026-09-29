@@ -30,17 +30,13 @@ states that HVM4 violates the specification in three ways.
      (`SETTLED_BY_THE_CORPUS.md` §4 item 6).
    - `sortCost` needs the collapse as data.
 
-A fourth follows from item 7 of the same section: a proved identity is installed as a rule during reduction. HVM4's
-rule set is fixed.
-
 Bend2's core adds `Set : Set` and one-step untyped conversion (`STATE_OF_THE_WORK.md` I.4).
 
 The language `hyper/` is meant to hold is the runtime `SETTLED_BY_THE_CORPUS.md` §4 specifies ("hvm5/bend3"):
 - **agents:** LAM/APP, labelled DUP/SUP, and constructors for cells;
 - **the checker:** folded in as net programs;
 - **labels:** named by coordinates;
-- **collapse:** a value;
-- **install:** a proved identity becomes a rule.
+- **collapse:** a value.
 
 The lane already supplies the Kan rules as net programs (`RUNTIME_FULL.md`: the prelude is Core.WHNF's cubical
 reduction written for HVM4). It also supplies the checker's rules, including DUP-of-goal, in `cubical-paths.patch`.
