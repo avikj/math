@@ -132,7 +132,7 @@ them.
 
 ## 0.3 What exists
 
-Nothing of the language. No runtime, no net, no declaration of §0 resolves.
+The cubical language on the net is `collab/bend2-interactive-cubical/`: `cubical-paths.patch` to Bend2, whose `--to-hvm4-full` keeps the interval, paths, types, `coe`, `hcomp`, Glue and HIT cells as runtime data on HVM4, verified by `suite.sh` and `verify_conductive_entry.sh`; its state is `STATE_OF_THE_WORK.md` and the runtime the theorems dictate is `SETTLED_BY_THE_CORPUS.md` §4. Nothing in `hyper/` adds to it.
 
 ## Files
 
