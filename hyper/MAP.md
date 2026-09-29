@@ -138,4 +138,5 @@ The cubical language on the net is `collab/bend2-interactive-cubical/`: `cubical
 
     hyper/MAP.md         this file: the task
     hyper/NOTES.md       readings of the corpus
+    hyper/TASK.md        the task, and every file of the construction that makes it elementary
     hyper/cite.sh        every identifier this file and NOTES.md name is on the line it cites
