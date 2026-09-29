@@ -8,7 +8,8 @@
 -- `IsPrime` is defined here (cubical v0.5 has no primality in the
 -- library).  Primality of a given numeral is therefore a proof
 -- obligation; `isPrime2` and `isPrime3` discharge it for 2 and 3 by
--- finite case analysis.
+-- finite case analysis; `PrimalityDecision.decIsPrime` decides
+-- primality in general.
 --
 -- METHOD, and why no p-adic valuation appears.  A valuation function
 -- v_p : ℕ → ℕ is painful in cubical v0.5 (no well-founded division, no

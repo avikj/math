@@ -24,6 +24,10 @@
 --   1.1.5   क्ङिति च                 kṅiti ca — no guṇa/vṛddhi after an
 --           affix marked k or , a marking 1.3.9 has already erased.
 --
+-- CLAIMED OF THE SOURCE: form, sthnin and designation are the
+-- three distinctions 1.1.56 turns on, and its अल्/अनल् exception splits
+-- one of the three off from the other two.
+--
 ------------------------------------------------------------------------
 -- WHICH SLOTS ARE BASE AND WHICH ARE CARRIED — answered by the
 -- mathematics rather than by preference.
@@ -58,8 +62,8 @@
 -- The fibre Σ[ p ] (निर्धारितम् x ≡ p) = singl (निर्धारितम् x) is
 -- contractible, so आधार ≃ स्थानिवत् and, by univalence, आधार ≡ स्थानिवत्.
 --
--- WHY THE PAIR AND NOT THE  ALONE.  The candidate this module was
--- The alternative `f (v , r) = रूपम् v`, carrying the स्थानी by itself.
+-- WHY THE PAIR AND NOT THE स्थानिन् ALONE.  The candidate this module was
+-- asked to check was `f (v , r) = रूपम् v`, carrying the स्थानी by itself.
 -- That is correct and it is not the whole of what is determined: सञ्ज्ञा
 -- is determined by the base in exactly the same way, and it is the
 -- quantity 1.1.56 is actually about — the substitute inherits the
@@ -116,8 +120,8 @@
 --    pair (स्थानी , सञ्ज्ञा) of the ādeśa's own output.  The two records
 --    hold the same information; neither is the other.
 --
--- 2. `आदेश-अन्धः` — the parent module's `anal-blind` — is
---    reproved from the factorisation.  What the
+-- 2. `आदेश-अन्धः` — the parent module's `anal-blind` — DID HAVE TO BE
+--    REPROVED, and the reason is worth more than the theorem.  What the
 --    Carrier gives for free is `वाहक-अन्धः`: two bases differing ONLY in
 --    the free slot have equal carried data, hence equal verdicts from any
 --    carried-reading rule, BY refl, with no factorisation lemma and no
@@ -136,10 +140,13 @@
 --
 -- 3. THE RULE IS A FUNCTION वर्ण → वर्णरूप.  Real sūtras read a word, an
 --    environment, and the त्रिपादी's असिद्धत्व stratification (§४६ of
+--    notes/AHIMSA_SUTRA_VISTARA.md (absent from this repository): what is asiddha is not seen; the
 --    later rule's result is invisible to the earlier).  A one-vara rule
 --    has no environment and no stratum, so the orbit below is the
 --    trajectory of ONE site under ONE rule and not a derivation of the
---    *Adhyy*.
+--    *Adhyy*.  Calling it a derivation would be a false
+--    advertisement; the step is called पदम् and प्रक्रिया occurs as a type
+--    abbreviation and in this header, never as a claim.
 --
 -- 4. THREE FORMS AND NO MORE — ī, its guṇa substitute e, and the a that
 --    6.1.78 would produce from e: the ones the derivation of नयन passes
@@ -440,7 +447,7 @@ CarriedVidhi A r = Σ (वर्णरूप × वर्णसञ्ज्ञ�
 पदम् नियम x = आदेश (snd x) (fst x) , नियम (आदेश (snd x) (fst x))
 
 ------------------------------------------------------------------------
--- ९ · THE LIFT, AND THE SQUARE.  B—oth are
+-- ९ · THE LIFT, AND THE SQUARE.  Neither is proved here — both are
 -- instances of the law, and `Φ-square` closes DEFINITIONALLY, by refl,
 -- for an opaque variable.
 ------------------------------------------------------------------------

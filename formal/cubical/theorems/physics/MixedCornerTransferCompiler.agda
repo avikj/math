@@ -142,7 +142,7 @@ compile-to-exact-radius-one {n} Witness seed fabric =
 -- 3. The two Factory IV seed interfaces over the 123-radius band
 ------------------------------------------------------------------------
 
--- These are interfaces.
+-- These are deliberately interfaces, not arithmetic theorems.
 module Finite123Seeds
   (Witness : ℕ → CornerState 123 → Type₀) where
 

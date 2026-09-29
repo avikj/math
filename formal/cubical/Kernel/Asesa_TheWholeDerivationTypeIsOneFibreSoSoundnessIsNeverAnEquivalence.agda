@@ -33,7 +33,7 @@
 --       its own soundness.
 --
 --   §3  THE CONTRAST WITH THE ONE PRIMITIVE, which is the point of doing
---       this in this repository.  `return/src/Return/Carrier.agda`
+--       this in this repository.  `fibre/src/Fibre/Carrier.agda`
 --       is the fibre law: for f : A → B, BIND THE OUTPUT and the fibre is
 --       `singl (f a)`, always contractible, so `A ≃ Carrier f` and the datum
 --       rides free; BIND THE INPUT and it is `fiber f b`, the exact loss.

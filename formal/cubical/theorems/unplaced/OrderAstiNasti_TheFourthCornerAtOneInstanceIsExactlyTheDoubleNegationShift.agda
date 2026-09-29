@@ -44,6 +44,13 @@
 -- whole question is whether the BADNESS is stable.  The earlier
 -- `Enumerated` route was answering a question the corner does not ask.
 --
+-- EXISTENCE.  DNS is not provable in this substrate and NOT
+-- refutable in it either; exhibiting a failure needs a model.  What
+-- changes is the STATUS of the question: it is no longer "is
+-- there an exotic configuration?" but "does this substrate validate DNS?",
+-- which is a question with a literature and an answer that depends on the
+-- metatheory.
+--
 -- The `Unit` instance set is a specialisation: the equivalence is
 -- proved for it and NOT for a general instance family, where
 -- `¬ सामयिक` does not reduce this way.

@@ -14,7 +14,7 @@
 -- of the coming-back to be trivial, and this module says so as terms.
 --
 --   पुनरागमन   the return exists: the datum is determined, rides free,
---             nothing is lost.  `loss/` states it for a map.
+--             nothing is lost.  `fibre/` states it for a map.
 --   holonomy   go around and return changed.  Stated for a loop.
 --
 -- Same object, opposite sign, two lanes of this repository.
@@ -59,7 +59,7 @@ private
     ℓ : Level
 
 ------------------------------------------------------------------------
--- १ · वाहकः — the law, five lines, as in loss/.
+-- १ · वाहकः — the law, five lines, as in fibre/.
 ------------------------------------------------------------------------
 
 record Carrier {A B : Type ℓ} (f : A → B) : Type ℓ where
@@ -97,7 +97,7 @@ module _ {A B : Type ℓ} (f : A → B) where
 --
 -- `H.Holonomy Z = Z ≃ Z`, that module's own definition.  Φ is the loop
 -- read as a map; the lift is the conjugation अवतरण ∘ Φ ∘ उत्थान, which is
--- the shape `loss/`'s Φ-carrier already has.
+-- the shape `fibre/`'s Φ-carrier already has.
 ------------------------------------------------------------------------
 
 module _ {B Z : Type₀} (sem : Z → B) (h : H.Holonomy Z) where

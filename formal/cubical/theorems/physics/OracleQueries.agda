@@ -7,6 +7,7 @@
 --
 -- THE QUESTION.  `ChargeCriterion` proves: a query set separates the
 -- all-plus sign assignment from its gauge flip IFF it contains a query
+-- of odd Ω.  `notes/BARRIER.md` (absent from this repository) §3 Problem 2 asks for an oracle model
 -- distinguishing VALUE queries ("what is a(n)?") from FUNCTIONAL-EQUATION
 -- queries ("a(mn)=a(m)a(n), used as a constraint and not as a value").
 -- TARGET.md (absent from this repository) §6 predicts these are "the same distinction stated twice",
@@ -83,6 +84,30 @@
 --   Gen-neutral               CONSERVATION: closure of neutral is neutral
 --   closure-no-separator      hence FE inference cannot manufacture a
 --                             separator from neutral readings
+--
+-- RELATION TO `InterfaceSeparation` (W3, BARRIER Problem 1),
+-- which arrives at the same core facts from the other assignment: its
+-- `fe-promised-constant` is `fe-const` here, its `fe-simulated-by-nothing`
+-- is `fe-simulated-by-constant`, its `sgn-++` is `charge-++`, and its
+-- `fe-closure-cannot-separate` is the `mul` half of `Gen-neutral`.
+-- Its W3 dichotomy (FE access is nonconstant on
+-- ARBITRARY ±1 sequences, hence its content is the multiplicativity promise
+-- itself) is proved there.
+--
+-- WHAT IS ONLY HERE:
+--   * `Gen` carries a DIVISION rule (`quo`) as well as multiplication.  Its
+--     `Deriv` is `var`/`unit`/`mul` only.  Division is exactly the rule a
+--     hostile reader reaches for — "divide a known argument by a known
+--     divisor and land on an odd one" — and it is the only rule whose
+--     neutrality needs cancellation in F₂ rather than closure under the
+--     product (`·-cancel`).  Closing that case is what makes the
+--     conservation law a statement about the GROUP the functional equation
+--     generates, not just the monoid.
+--   * `Gen-sound`: the closure really is a closure — two sign assignments
+--     agreeing on the basis agree on everything derived, division included —
+--     so `quo` is a licensed inference and not an extra assumption.
+--   * `p-two-ways`: the orthogonality witness that answers TARGET §6 item 2,
+--     which is a different question from W3.
 ------------------------------------------------------------------------
 
 module OracleQueries where

@@ -45,6 +45,13 @@
 -- comparison/remainder primitive.  See `machine/patches/S4-certificate-
 -- vocabulary.md` (absent from this repository) §3 for the dependency chain.
 --
+-- SCOPE FENCE ON THE LIBRARY LEMMAS.  `+-comm`, `0≡m·0` and `·-suc` are
+-- imported and used ONLY in `step-sound`, i.e. only to interpret the
+-- calculus in ℕ.  They are NOT steps of the calculus: `Step` has no
+-- commutation constructor, so an emitted certificate still cannot cite
+-- them.  This is exactly the boundary `machine/CERTIFICATE_REACH.md` (absent from this repository) §2
+-- insists on — the engine's contribution must not collapse from proof to
+-- discovery because the library already knew the theorem.
 ------------------------------------------------------------------------
 
 module RewriteCertificateMul where

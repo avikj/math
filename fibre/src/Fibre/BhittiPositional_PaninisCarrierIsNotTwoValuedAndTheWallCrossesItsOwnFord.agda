@@ -16,6 +16,11 @@
 -- So the retirement uses no new mathematics at the target: the ford that
 -- built स्थानिवत् is the ford its wall arrives over.  A bank's own
 -- construction receipt is what its impossibilities travel on.
+--
+-- PROVENANCE.  This retires ./jiva's fourth join candidate,
+-- 2616 ≈ [436 @ Bool] × [6 @ स्थानिवत्], floor-first.
+-- भित्ति-स्थानिवत् is built here; the distinctness of ए/अ is
+-- proved here in the source module's own coding style (its ई≢ए pattern).
 ------------------------------------------------------------------------
 
 module Fibre.BhittiPositional_PaninisCarrierIsNotTwoValuedAndTheWallCrossesItsOwnFord where
