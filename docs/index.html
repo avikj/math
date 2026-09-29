@@ -128,15 +128,15 @@ $$
 $$
 <h2><span class="n">3.</span> The effect can be free; the steps are not</h2>
 <ul>
-<li>Two costs, and on reversible processes they diverge: the <strong>effect</strong> achieved, and the <strong>length</strong> — the number of primitive steps taken.</li>
-<li>The <strong>net effects</strong> are the transformations a computation achieves, composed by doing one then the next (<code>∘</code>), with identity <code>id</code>. An <strong>additive effect-cost</strong> is a rule <code>ℓ</code> turning each effect into a number that adds up under composition — <code>ℓ(id) = 0</code> and <code>ℓ(g ∘ h) = ℓ g + ℓ h</code> (a homomorphism to <code>(ℕ, +)</code>).</li>
-<li>On a group it vanishes:</li>
+<li>One example shows why a computation has two separate costs. Swapping two values is reversible — swap again and you have exactly what you started with. Erasing a bit is not — once it's gone, you can't say which bit it was. Both take time and steps; only the erasure <em>destroys</em> anything. So there are two costs to track, and on reversible work they come fully apart: the <strong>effect</strong> — what the computation irreversibly does to information — and the <strong>length</strong> — how many primitive steps it runs.</li>
+<li>Make the effect-cost precise. An <strong>effect</strong> is the net transformation a step achieves; do one then the next to compose them (<code>∘</code>), and doing nothing is the identity <code>id</code>. Score effects by any rule <code>ℓ</code> that adds up under composition — <code>ℓ(id) = 0</code>, <code>ℓ(g ∘ h) = ℓ g + ℓ h</code> — so a two-step process costs the sum of its steps.</li>
+<li>A reversible effect has an undo: some <code>g⁻¹</code> with <code>g ∘ g⁻¹ = id</code>. Doing it and undoing it therefore costs <code>0</code>; and since these costs are naturals (never negative), each must already be <code>0</code>:</li>
 </ul>
 $$
-\ell(g) + \ell(g^{-1}) = \ell(e) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals are} \ge 0)
+\ell(g) + \ell(g^{-1}) = \ell(\mathrm{id}) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals are} \ge 0)
 $$
 <ul>
-<li>So a <strong>reversible net effect is free on this axis</strong>: a reversible effect is one with an undo (an inverse), and the effects-with-undos form a group (closed under composition, each with an inverse); on a group the cost vanishes (above) — <code>transport</code> and every isomorphism carry no additive cost. This is where Landauer's principle sits (§5).
+<li>So <strong>every reversible effect is free on this axis</strong> — swapping, <code>transport</code>, every isomorphism carry no effect-cost, and only steps that destroy information can carry any. That is Landauer's principle, here a theorem rather than a postulate (§5).
 <details class="proof"><summary>the checked term</summary>
 <pre><code>+≡0→≡0 : (m n : ℕ) → m + n ≡ 0 → m ≡ 0
 +≡0→≡0 zero    n p = refl
@@ -152,8 +152,8 @@ module _ (G : Type) (_·_ : G → G → G) (e : G) (inv : G → G)
     (sym (ℓ· g (inv g)) ∙ cong ℓ (invr g) ∙ ℓe)</code></pre>
 <figcaption>Any additive cost <code>ℓ</code> (a monoid map to <code>(ℕ,+)</code> with <code>ℓ e = 0</code>) vanishes on a group: <code>ℓ g + ℓ g⁻¹ = ℓ e = 0</code>, and a natural sum is <code>0</code> only when each summand is. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
 </details>
-<li><strong>Length is not that grading.</strong> Minimum length over a fixed set of primitive steps is only <em>subadditive</em> — strict under cancellation — and is <em>positive on reversible operations</em>: reading input at depth <code>n</code> is reversible yet has minimum length exactly <code>n</code> (§5). Reversible ≠ free in steps.</li>
-<li>Both are <strong>relative to the observation</strong>: erasure is the collapse of a fibre — losing which input produced the output — so keep the fibre (§1) and nothing is erased; and the length charged is the steps the <em>requested</em> output forces, not those to reconstruct a whole trace.</li>
+<li><strong>Length is the other cost, and reversibility does not make it free.</strong> To read an input buried <code>n</code> steps deep you must take <code>n</code> steps, undoable or not — so length stays positive exactly where effect-cost is zero. The two axes are genuinely separate (§5).</li>
+<li><strong>And "destroying information" has an exact meaning</strong>, from §1: it is collapsing a fibre — forgetting which input produced the output. Keep the fibre and nothing is destroyed, so nothing costs on the effect axis; and you are charged length only for the output you asked for, not for rebuilding the whole history.</li>
 </ul>
 <h2><span class="n">4.</span> The diagonal</h2>
 <ul>
