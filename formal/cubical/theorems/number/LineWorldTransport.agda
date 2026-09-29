@@ -3,7 +3,10 @@
 ------------------------------------------------------------------------
 -- LineWorldTransport
 --
+-- The line-world transport criterion of `notes/ENCOUNTERED_WORLDS.md` (absent from this repository)
 -- §3.5, WITH ITS HYPOTHESIS ON THE OBSERVABLE MADE PART OF THE TYPE.
+--
+-- SOURCE STATEMENT (`notes/ENCOUNTERED_WORLDS.md (absent from this repository):121-124`, verbatim):
 --
 --   **Corollary (line worlds).** For `f = X+Y` and `E = {(a, sa)}`, the
 --   tangent set is `span{(1,s)}` and `grad f|_L (t) = t(1+s)`.  So `E`
@@ -13,9 +16,11 @@
 -- corollary
 -- is FALSE: for `f = X` the restricted gradient is `grad f|_L(t) = t`,
 -- which is nonzero for every slope, so every line world transports and
--- the criterion `s ≢ -1` names the wrong set.
+-- the criterion `s ≢ -1` names the wrong set.  This defect has no
+-- lexical signature — the false sentence contains no wrong word, only a
+-- missing one — so the instrument for it is a type, not a grep.
 --
--- The full setting is `p`-adic
+-- THIS IS A MODEL, NOT THE FULL SETTING.  The full setting is `p`-adic
 -- encountered worlds over an arbitrary integral polynomial.  What is
 -- formalized here is the smallest finite model that still distinguishes
 -- `f = X+Y` from `f = X`, at the single prime `p = 5` that the note
@@ -31,6 +36,9 @@
 --     EXHAUSTIVE SEARCH over the five `t`, so every statement below is a
 --     closed computation and every proof is `refl` (CLAUDE.md (absent from this repository): exact /
 --     certified symbolic computation is proof; no fitting, no sampling).
+--
+-- The model makes the dropped hypothesis load-bearing, which is what the
+-- control `theorems/must_fail/QuantifierDrop.agda` exhibits.
 --
 -- HEADLINE TERMS
 --   line-world-XY            the corollary, hypothesis explicit in the type

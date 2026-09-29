@@ -1,7 +1,14 @@
 {-# OPTIONS --cubical --guardedness --safe #-}
 
 ------------------------------------------------------------------------
--- छाया — the shadow, and what is impossible about it.
+-- छाया — the shadow, and what is actually impossible about it.
+--
+-- A bare map
+-- ∥ A ∥₁ → A, EXISTS whenever A is inhabited, and this file exhibits one.
+-- What does not exist is a SECTION — a map that returns the witness it
+-- was given.  That is proved below, unconditionally, for any A carrying
+-- two distinct elements, and then instantiated at the Goldbach fibre of
+-- 10, which carries 3+7 and 5+5.
 --
 -- TERM.  छाया / *chāyā*, shadow, is `Prakasha`'s own coinage in
 -- this corpus for the truncated form (`G-chaya`), and is carried here for

@@ -12,6 +12,10 @@
 -- (magnitude), शेषः (remainder) — are the quantities that survive one
 -- round of the descent.
 --
+-- CLAIMED OF THE SOURCE: side, magnitude
+-- and remainder are the quantities his algorithm carries from one row of
+-- the वल्ली to the next, and dropping any one of them is what breaks it.
+--
 ------------------------------------------------------------------------
 -- WHICH SLOTS ARE BASE AND WHICH ARE CARRIED.
 --
@@ -40,17 +44,17 @@
 -- this decision-free step IS the Euclidean one in pair coordinates:
 -- (a , b) ↦ (a − b , b) when a > b, and (a , b − a) when b > a.
 --
--- DEFECT, written rather than hidden.  `-` (the round trip
+-- DEFECT, written rather than hidden.  `उत्थान-भेद` (the round trip
 -- उत्थान (भेद a b) ≡ (a , b)) is the same statement as `पुनरागमनम्` in
 -- `formal/cubical/Punaragamana.agda` (absent from this repository), and is reproved here.  That is a
 -- duplication.  It is deliberate: this library takes no dependency
 -- outside itself, and the alternative — importing across the repository
 -- — would make `check.sh` (absent from this repository) no longer check what it says it checks.
 --
--- `वल्ली` is the SUBTRACTIVE step (anthyphairesis), not
--- the division step a … a mod b.
--- getting it without a decision procedure is not done here.  The 
--- of the *ryabhaya* is the column of QUOTIENTS; what is formalised
+-- SECOND DEFECT.  `वल्ली` is the SUBTRACTIVE step (anthyphairesis), not
+-- the division step a … a mod b; getting the division step without a
+-- decision procedure is not done here.  The वल्ली
+-- of the *Āryabhaṭīya* is the column of QUOTIENTS; what is formalised
 -- below is the column of subtractions that produces them.  Anything
 -- below that says "वल्ली" means the subtractive column.
 ------------------------------------------------------------------------
@@ -229,7 +233,7 @@ data त्रिक् : Type where
 गभीर-उत्थान (वाम d k)   = refl
 गभीर-उत्थान (दक्षिण d k) = refl
 
--- the round trip.  this is `पुनरागमनम्` of
+-- the round trip.  See DEFECT in the header: this is `पुनरागमनम्` of
 -- formal/cubical/Punaragamana.agda (absent from this repository), reproved so the library stays standalone.
 उत्थान-भेद : (a b : ℕ) → उत्थान (भेद a b) ≡ (a , b)
 उत्थान-भेद zero    zero    = refl
@@ -274,8 +278,9 @@ data त्रिक् : Type where
 -- THE LIFT, AND THE SQUARE.
 --
 -- Φ-square is `refl`: it closes DEFINITIONALLY, for an opaque variable,
--- because Σ has eta and `descend` does not pattern match.
--- Both are instances of the law.
+-- because Σ has eta and `descend` does not pattern match.  Neither the
+-- lift nor the square is proved in this file — they are instances of
+-- the law.
 ------------------------------------------------------------------------
 
 वल्ली-कुट्टक : कुट्टक → कुट्टक
@@ -306,6 +311,7 @@ data त्रिक् : Type where
 बुन t = unfold वल्ली-कुट्टक (अवतरण t)
 
 ------------------------------------------------------------------------
+-- IT RUNS.  §१७ of notes/AHIMSA_SUTRA_VISTARA.md (absent from this repository) works 137 and 60.
 -- Each holds by refl, so Agda must actually execute the descent.
 --
 --   (137,60) → (77,60) → (17,60) → (17,43) → (17,26) → (17,9)

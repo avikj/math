@@ -80,6 +80,13 @@
 --                            recursion into a monoid is automatically
 --                            plug-additive.
 --
+--  * Not that `WitnessPolicy.plug-size` or
+--    `ProgressDefinition.plug-deficit` are wrong, or should be removed.
+--    They are correct and they are three lines each.  What §4 adds is the
+--    reason they hold, which is a property of the recursion scheme and
+--    not of `size` or `deficit`; the primed versions are re-derivations
+--    THROUGH the universal property, offered as the transition, not as
+--    replacements.
 --
 --  * Not that the free monoid is new mathematics.  It is not, by a very
 --    long way.  What is new is that this lane's `Tm` is now connected to

@@ -23,6 +23,11 @@
 --   composition against a chosen multiplier and divides through by the
 --   current क्षेप.
 --
+-- CLAIMED OF THE SOURCES: that a² − D b²
+-- is the quantity their algorithms carry alongside the pair of roots, and
+-- that it is a FUNCTION of that pair, which is why it belongs in the
+-- carried slot and not in the base.
+--
 ------------------------------------------------------------------------
 -- WHICH SLOTS ARE BASE AND WHICH ARE CARRIED.
 --
@@ -282,8 +287,9 @@ module _ (D : ℤ) where
                       (cong₂ _+_ (sym (-DistL· Y Z)) (sym (-DistLR· Y W)))
 
     --------------------------------------------------------------------
-    -- THE LIFT, AND THE SQUARE.  Both are instances of the law.
-    -- Φ-square is refl, definitionally, opaque argument.
+    -- THE LIFT, AND THE SQUARE.  Both are instances of the law; neither
+    -- is proved in this file.  Φ-square is refl, definitionally, opaque
+    -- argument.
     --------------------------------------------------------------------
 
     भावना-वर्गप्रकृति : वर्गप्रकृति → वर्गप्रकृति

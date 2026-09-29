@@ -18,13 +18,18 @@
 --
 -- WHAT THIS FILE IS.  The general construction, and that instantiation,
 -- with the three incidence identities proved to hold AT EVERY JEWEL.
+-- Nothing here is asserted: `--safe`, no postulates, no holes.
+--
+-- The jewel type below carries the centre/radius
+-- geometry only, exactly as `PairConic` carries the conic only.
 --
 -- WHY IT IS SEPARATE FROM THE MACHINE.  `machine/MathMachine.hs` (absent from this repository)
 -- generates its own term algebra over {0,s,+,*,∸,max,le,gcd} and proves
 -- theorems inside it.  That is a closed toy universe: its jewels are
 -- things it invented, and no result in this repository can enter it.
 -- This file starts from the other end — the objects the corpus actually
--- carries.
+-- carries — and is the first stone of the object D0025 §27 describes,
+-- where a local event reweaves the whole rather than lengthening a list.
 ------------------------------------------------------------------------
 
 module RootedNet where

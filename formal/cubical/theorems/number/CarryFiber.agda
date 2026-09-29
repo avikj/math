@@ -5,6 +5,7 @@
 --
 -- A precisely stated obstruction to transporting the R0032 chart.
 --
+-- R0032 (`Rank1DihedralChart.agda`, notes/SMITH_PATH_COORDINATE_TORSOR.md (absent from this repository))
 -- proves: for the rank-one Smith cell the complete transporter is a
 -- REGULAR D∞-torsor, charted by (U₀₀, det U) : Z × {±1}; the retained
 -- proof-relevant payload for that stratum is exactly `Z × Bool`.
@@ -38,6 +39,7 @@
 --     theorem is stratum-local and does not extend along the carry.
 --
 -- This is the model-side form of
+-- notes/OLD_LANGUAGE_CANNOT_DETERMINE_ITS_EXTENSION.md (absent from this repository) Theorem 1 and of
 -- machinery/formation_sufficiency.py (absent from this repository)'s "minimality need not transport":
 -- the old chart survives restriction, not extension.
 --

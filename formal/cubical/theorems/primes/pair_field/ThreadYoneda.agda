@@ -40,8 +40,10 @@
 --     on natural transformations.
 --
 -- WHY IT MATTERS HERE.  D0025 §16 is the operative sentence: a local
--- event must propagate through the whole Net by transport/naturality.
--- Naturality is that propagation.
+-- event must propagate through the whole Net by transport/naturality,
+-- and §27 identifies the absence of that propagation as the entire
+-- failure of the machine work.  Naturality is that propagation, and
+-- this file is where it stops being a word.
 ------------------------------------------------------------------------
 
 module ThreadYoneda where

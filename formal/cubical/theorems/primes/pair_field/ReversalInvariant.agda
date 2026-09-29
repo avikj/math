@@ -6,7 +6,9 @@
 -- Reversal as an involution whose invariants are exactly the
 -- achromatic data.
 --
--- The one symmetry that every colored ray reports identically
+-- The corpus's one symmetry that every colored ray reports identically
+-- is the reflection/reversal ℤ/2.  notes/CROSS_LENS.md (absent from this repository) §3 records the
+-- join nobody used: "four vocabularies, one symmetry, no cross-citation"
 -- — the "up to reflection" of every rigidity theorem
 -- (PARITY_RIGIDITY Thm A′′), the pairing Res(g, g(−x)) behind the whole
 -- factor-exclusion tower (PARITY_RESULTANT Thm 1b), the endian class of
@@ -30,7 +32,8 @@
 --   * cons-inj₁      : Cubical/Data/List/Properties.agda  (library)
 --   * just-inj       : Cubical/Data/Maybe/Properties.agda (library)
 --   * true≢false, false≢true : Cubical/Data/Bool/Properties.agda (library)
---   The library has no length-rev; length-snoc and length-rev below are the only
+--   The library has NO length-rev (checked: only length-map, in
+--   Cubical/Data/List/Properties.agda); length-snoc and length-rev below are the only
 --   inductions this file performs.
 ------------------------------------------------------------------------
 
@@ -54,7 +57,7 @@ private
 ------------------------------------------------------------------------
 -- (a) The involution.  This is the LIBRARY's theorem, re-exported under
 -- the ray's name with attribution: rev-rev in
--- Cubical/Data/List/Properties.agda.
+-- Cubical/Data/List/Properties.agda (lines 37–39 of the checked copy).
 -- Nothing is re-proved here.
 
 rev-involution : (xs : List A) → rev (rev xs) ≡ xs

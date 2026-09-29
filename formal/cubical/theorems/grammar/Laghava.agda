@@ -4,10 +4,15 @@
 -- Laghava
 --
 -- लाघव — brevity, the grammarian's governing criterion — as a measure on
+-- presentations, and the theorem `notes/LAGHAVA_COST_IS_NOT_A_UNIVALENT_
 -- INVARIANT.md` (absent from this repository) states in prose and proves nowhere.
 --
 -- ────────────────────────────────────────────────────────────────────
--- THE CLAIM
+-- THE CLAIM, AND WHY THE PROSE VERSION WAS TOO WEAK
+--
+-- That note says lāghava "is not a univalent invariant — it lives on the
+-- presentation, which univalence discards."  True, and understated.  What
+-- is proved below is sharper and needs no univalence at all:
 --
 --     laghava-is-not-semantic :
 --       ¬ Σ[ f ∈ (Denotation → ℕ) ] ((e : Expr) → f (eval e) ≡ size e)

@@ -11,6 +11,11 @@
 -- the extent of the search; an inference with an undetected updhi is not
 -- knowledge, however many instances stand behind it.
 --
+-- `Shodhita` and `Ekam` hold a gate at
+-- every step of a Mertens walk, `|M(k)|² ≤ k`, and report it as
+-- "the mertens fragment of RH" and "RH-fragment: |M(k)| ≤ √k for all
+-- k ≤ 400".  Two things are wrong with that label and one thing is right.
+--
 --   The gate is the MERTENS CONJECTURE, in its non-strict form: Mertens
 --   stated |M(x)| < √x, the gate here asks |M(k)|² ≤ k.  It was DISPROVED
 --   — Odlyzko and te Riele, "Disproof of the Mertens conjecture",
@@ -27,7 +32,7 @@
 --   it.  Calling the strong false statement a fragment of the weaker open
 --   one runs the implication backwards.
 --
---   The arithmetic: M(60) = −1 and M(100) = +1 are the
+--   What is right is the arithmetic.  M(60) = −1 and M(100) = +1 are the
 --   published values and they are recomputed below off the certified
 --   factorization, not off a boolean sieve.
 --

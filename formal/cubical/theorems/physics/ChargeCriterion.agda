@@ -25,8 +25,9 @@
 --     argument has odd Ω, a separator exists and the barrier says nothing
 --     about you.
 --
--- WHY THE CONVERSE IS THE CONTENT.  A one-directional no-go formalizes
--- which probes DON'T carry charge.  The
+-- WHY THE CONVERSE IS THE CONTENT.  `GAUGE.md` (absent from this repository) §F.4 closes with
+-- "formalizing which probes carry charge is the continuation of this
+-- line."  A one-directional no-go formalizes which probes DON'T.  The
 -- converse is what turns the classification into a decision, and it is
 -- also what stops the criterion from being vacuous: without it, "neutral
 -- ⇒ blind" would be consistent with everything being blind.

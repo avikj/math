@@ -82,7 +82,12 @@
 -- Size is not partial charge; there is no partial charge.
 --
 --
---   §7 proves the concatenated form `val σ (m ++ (k ++ k)) ≡ val σ m`,
+-- * No new arithmetic.  The content is that a completely multiplicative
+--   ±1 function reads exactly the SQUARE CLASS of its argument, which is
+--   classical (the square-class group ℚ^×_{>0}/(ℚ^×_{>0})², whose F₂-dual
+--   is the space of such functions).  Only the checked statement, and the
+--   scope witness of §6, are contributed.
+-- * §7 proves the concatenated form `val σ (m ++ (k ++ k)) ≡ val σ m`,
 --   which is the core and avoids permutation machinery.
 -- * Nothing about Goldbach, twin primes, W3, or `BARRIER.md` (absent from this repository) Problem 2.
 -- * `ChargeCriterion` is NOT refuted.  Every statement in it is true as
