@@ -20,7 +20,9 @@
 --
 --   * `Tm`      — unary constructor terms over a countable alphabet of
 --                 head shapes (a term language in which a definitional
---                 body and its unfolding are non-degenerate).
+--                 body and its unfolding are non-degenerate; that it is
+--                 the "smallest" such language is an informal judgement,
+--                 not a theorem, and nothing below depends on it).
 --   * `Vocab`   — the installed vocabulary, a list of head shapes; the
 --                 root matcher `Matches` and the full-term predicate
 --                 `Over` are Bool-membership tests against it.
@@ -217,7 +219,8 @@ match-mono V s (node c u) m = memb-mono c s V m
 
 -- T3: conservativity of the matcher.  Installing a new head changes
 -- matchability at NO other head — the path of types is by cong, not
--- assertion.
+-- assertion.  This is the model's rendering of gate D3: the new name
+-- constrains no old symbol.
 match-conservative : (V : Vocab) (s c : Shape) (u : Tm) → ¬ c ≡ s
                    → Matches (s ∷ V) (node c u) ≡ Matches V (node c u)
 match-conservative V s c u ¬p = cong (_≡ true) (memb-skip c s V ¬p)

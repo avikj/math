@@ -9,6 +9,17 @@
 -- The instruction the method is named for is *śeṣaṃ rakṣa* — keep the
 -- remainder — and recurse on it.
 --
+-- `Kuttaka` generates the vallī with a fuel constant
+-- (`valli 200 137 60`) and proves nothing about it; every claim in that
+-- module is `refl` on closed numerals.  It is the one module in the
+-- machine named for a descent law and the one module whose descent is
+-- not shown to descend.  This file removes the fuel: `valli` and
+-- `kuttaka` are defined by well-founded recursion on the remainder, so
+-- termination is the definition being accepted rather than a constant
+-- chosen large enough.  `kuttaka` returns the last nonzero remainder
+-- together with proofs that it divides both inputs, so the divisor and
+-- its certificate are one object.
+--
 ------------------------------------------------------------------------
 
 module KuttakaSamapti_TheValliTerminatesWithoutFuel where

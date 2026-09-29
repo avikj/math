@@ -22,9 +22,15 @@
 -- TEXT AND DATE for the three-slot गभीर (पक्षः, परिमाणम्, शेषः): the
 -- structure is Āryabhaṭa's कुट्टक, *Āryabhaṭīya*, गणितपाद 32–33, 499 CE,
 -- whose instruction is "शेषं रक्ष" — keep the remainder.  Carried here
--- from the header of `LosslessReturn.agda` in this directory, which states
+-- from the header of `theorems/walks/LosslessReturn.agda`, which states
 -- that the earlier भेद kept only half of it, dropping which side the
 -- remainder fell on and the shared magnitude at identity.
+--
+-- WHAT IS *NOT* CLAIMED.  Not that Āryabhaṭa proved anything below.  Not
+-- that the *Āryabhaṭīya* has been opened for this file — it has not; the
+-- citation is carried from the neighbouring module and is owed at verse
+-- level.  Not that Φ means anything: it is suc on two slots.  Not that
+-- this replaces `LosslessReturn.agda`, which is untouched.
 ------------------------------------------------------------------------
 
 module LosslessReturn_TheStepIsAConjugationAndNothingIsTouchedByIt where

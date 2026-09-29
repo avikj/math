@@ -25,7 +25,8 @@
 --                            at all
 --
 -- SOURCES, EARLIEST FIRST, for the doctrine that is being formalised; the
--- classification and the order/saha rule are theirs.
+-- classification and the order/saha rule are theirs (the theorems below
+-- are not claimed to be in any of them).
 --
 --   Bhagavat Stra (Viyha-pannatti), fifth Aga of the vetmbara canon;
 --     oldest strata pre-Common-Era, redacted at Valabhī c. 5th c. CE —

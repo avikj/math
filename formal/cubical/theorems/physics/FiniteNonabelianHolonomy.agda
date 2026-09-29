@@ -74,7 +74,7 @@ noncommuting p = lower (Sum.⊎Path.encode (fsuc fzero) fzero inner)
 
 -- A deliberately minimal conjugation-invariant loop observation.  It records
 -- only that a loop was observed; the point is that gauge invariance is checked
--- for the concrete nonabelian group.
+-- for the concrete nonabelian group; this is not a Wilson trace.
 loopObserved : ⟨ S₃ ⟩ → Unit
 loopObserved _ = tt
 

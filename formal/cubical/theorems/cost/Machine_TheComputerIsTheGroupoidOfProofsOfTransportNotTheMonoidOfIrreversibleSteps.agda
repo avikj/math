@@ -20,46 +20,18 @@
 -- those form a GROUPOID: composition, identity, AND a two-sided inverse,
 -- with the laws holding definitionally (the library proves each by
 -- `equivEq refl`).  Every program is invertible; every run can be run
--- backwards to exactly where it began; nothing is erased — and therefore
--- nothing dissipates: the heat of a step is exactly kT ln 2 times the bits
--- it forgets, and an equivalence forgets none.
+-- backwards to exactly where it began; nothing is erased.
 --
--- THE EXACT IDENTITY — information ↔ thermodynamics — stated as the result
--- it is.  "Nothing is erased" is §2's inverse laws, about types; its
--- physical content is not a separate register awaiting an implementation.
--- It is fixed, exactly, by one forced constant.  Three readings of ONE
--- object, the fibre:
---
---   • WHAT IS FORGOTTEN is the fibre.  For Φ : A → B the collision type
---     विस्मृतिः Φ (`Vyapti_TheLossOrderIsCoarsening…` §६) is empty exactly
---     when Φ is an equivalence: a contractible fibre carries nothing.
---   • ITS MEASURE is the fibre's symmetry content.  Decategorification keeps
---     a cardinality and drops the bijection (`Ankapasa_…TheBitItDropsIsA-
---     Symmetry`): the datum a step forgets is its automorphisms, of size
---     log of the fibre's groupoid cardinality — one bit per transposition.
---   • ITS HEAT is that measure times a forced constant.  Landauer
---     (NECESSITY: erasing b bits dissipates ≥ kT ln 2 · b) and Bennett
---     (SUFFICIENCY: logically-reversible computation attains it — only the
---     erasure costs) make the minimal dissipation an EQUALITY, not a bound:
---
---         Q_min  =  kT ln 2 · (bits forgotten)  =  kT · (entropy of the fibre).
---
--- So "erases nothing ⟺ equivalence" (types), "zero forgotten bits ⟺
--- contractible fibre" (information), and "zero heat ⟺ equivalence"
--- (thermodynamics) are the SAME statement.  kT ln 2 is the exact and only
--- conversion, forced by Landauer–Bennett, not modelled — which is WHY
--- information theory sits between computing and physics: the fibre IS the
--- entropy IS the heat / kT ln 2.  A groupoid of transports is THE reversible
--- machine because each step forgets nothing, hence dissipates nothing —
--- exactly, in joules; the monoid's missing inverse is precisely where the
--- fibre is non-empty and the kT ln 2 is paid.
---
--- Machine-checked here and in the cited files: the type and information
--- levels — the groupoid (§§2–4), the empty collision type (`Vyapti`), the
--- decategorification gap (`Ankapasa`).  The thermodynamic level is the
--- Landauer–Bennett identity that the information content equals; it needs no
--- implementation because the constant is forced.  This is a derivation of
--- the heat, and kT ln 2 is on this page.
+-- "Nothing is erased" is checked below (§2's inverse laws) and is a
+-- statement about types;
+-- "nothing dissipates" is a statement about a physical implementation,
+-- of which there is none here — no energy, no temperature, no entropy,
+-- no measure appears in this file.  Landauer's principle is the MOTIVE
+-- for asking which step is non-injective, and the precise typal content
+-- of "erases nothing" is `Vyapti_TheLossOrderIsCoarsening…agda` §६: the
+-- collision type `विस्मृतिः Φ` is empty when `Φ` is an equivalence.
+-- That is the whole of it.  No heat is derived and no physical constant
+-- is on this page.
 --
 -- The groupoid IS the computer, and the presence of the
 -- inverse — the one thing the monoid lacks — is the whole difference.
@@ -80,9 +52,7 @@
 --       turn (the machine is a functor from the groupoid to functions).
 --   §4  the contrast, as types: a MONOID interface has ∘ and id and no
 --       inverse field; the groupoid adds प्रतिलोमः.  The added field is
---       the reversibility — hence, by the identity above, the zero heat:
---       the monoid's missing inverse is exactly the non-empty fibre whose
---       kT ln 2 the groupoid never pays.
+--       the reversibility.  (NOT the heat — see above.)
 --
 -- WHY THIS IS THE RIGHT COMPUTER FOR COMPUTATIONAL SPACETIME.  Physics is
 -- reversible (unitary evolution, time-symmetric microdynamics); its state
@@ -174,8 +144,8 @@ _∥_ = compEquiv
 ------------------------------------------------------------------------
 -- §4  The contrast made into types: a monoid interface has sequencing and
 --     a no-op and no inverse; the groupoid adds प्रतिलोमः with its two
---     laws.  The added field is the reversibility — and, by the identity at
---     the top, the zero heat.  (Records, so the difference is structural.)
+--     laws.  The added field is the reversibility.  (NOT the heat: see the
+--     correction inset at the top.  Records, so the difference is structural.)
 ------------------------------------------------------------------------
 
 -- what a classical machine offers on its operations (one object, for

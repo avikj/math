@@ -129,7 +129,8 @@ resume-cheaper m n =
 --                     from a plan-determined seed.  DEFINITIONAL: this
 --                     is `refl` on both constructors, so it certifies
 --                     that `cost` was not chosen independently of
---                     `exec`.
+--                     `exec`, and nothing more.  It is not a work
+--                     measure for `sucC` itself.
 --   `cost-accounting` the saving is exactly the uncharged prefix.
 --                     Also `refl`.
 --   `no-improvement-at-empty-checkpoint`

@@ -132,4 +132,12 @@ corner-neither = selfIsUnique , selfIsExpressibleInOnlyId
 -- is the "boolean collapse, one level up", as a theorem rather
 -- than as a diagnosis.
 --
+-- `Inexpressible` is relative to a language, and corners 1 and 3 differ
+-- in the language, not in the content.  That is not a defect of the
+-- statement: expressibility IS language-relative, and the pair
+-- (all, constants) versus (all, onlyFalse) is exactly the demonstration
+-- that the uniqueness defect is untouched by changing what can be said.
+-- Non-uniqueness is a property of the content alone; inexpressibility is
+-- a property of the content AND the medium.  That asymmetry is the
+-- reason the two cannot be one word, and it is visible in the types.
 ------------------------------------------------------------------------

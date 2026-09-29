@@ -58,11 +58,11 @@
 -- and is rewritten by every engine run, so no commit fixes its bytes and no
 -- position in it names anything.  The quotations below ARE the object:
 --
---   as quoted:
+--   as quoted 2026-08-18:
 --     KERNEL-REJECT  x = (xmaxx)  ... refl has type x ≡ max x x
 --     KERNEL-ACCEPT  x = (xmaxx)  (induction on x, step = cong suc)
 --
---   and again, the same claim, both ways:
+--   as the log stands 2026-08-20 — the same claim, still both ways:
 --     KERNEL-ACCEPT round=0 x = (xmaxx)  (induction on x, step = cong suc, 4 agda calls)
 --     KERNEL-REJECT round=0 x = (xmaxx)  (4 agda calls) [naya=induction on x] kernel gate environment fault
 --

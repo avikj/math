@@ -185,7 +185,7 @@ categories-agree-when-decidable dT q t dC =
 -- TESTED, not assumed: that the Vaiśeṣika division of अभाव into
 -- संसर्ग and अन्योन्य is doing work.  It is.  One direction is free,
 -- the other costs a step of the negation tower, and the cost is
--- discharged by stability (`TheDelimitorNeedsOnlyStability`; decidability suffices) of the .
+-- discharged by stability (`TheDelimitorNeedsOnlyStability`; decidability suffices) of the प्रतियोगिन्.
 --
 -- The classical reader cannot see this.  With excluded middle §4's ¬¬
 -- evaporates, the two categories are interderivable at every delimitor,
@@ -193,4 +193,97 @@ categories-agree-when-decidable dT q t dC =
 -- looks like a dispute about nothing.  It is not: it is a dispute about
 -- a distinction that only a constructive setting can register.
 --
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+-- 8.  CORRECTION FROM READING.
+--
+-- `notes/JAINA_PRAMANA_NAYA_NIKSEPA.md` (absent from this repository) sets down the Jaina scheme in
+-- its own order, and reading it end to end makes two defects in this
+-- module visible that no amount of checking would have caught.
+--
+-- FIRST: TWO DARŚANAS ARE BEING USED AS ONE TOOLKIT.
+--
+-- अन्योन्याभाव with its प्रतियोगिन् and अनुयोगिन् is Nyāya-Vaiśeṣika.
+-- The सप्तभङ्गी with syāt-qualified asti/nāsti is Jaina.  These are
+-- rival schools that dispute each other's categories — Jaina logicians
+-- reject the Naiyāyika treatment of negation, and the Naiyāyikas reject
+-- anekāntavāda.  This thread has been drawing on both as though they
+-- were one box of instruments, which is precisely the selection habit
+-- the corpus's own directive warns against: taking from each tradition
+-- the part that converts, and never the dispute.
+--
+-- SECOND, AND SPECIFIC: THE GROUND IS MISSING.
+--
+--     Anyonya a b = ¬ (a ≡ b)
+--
+-- is bare negation.  The Jaina नास्ति is never that.  Every नास्ति is
+-- relative to a stated fourfold ground —
+--
+--     स्व-द्रव्य / पर-द्रव्य    own substance / another's
+--     स्व-क्षेत्र / पर-क्षेत्र    own field / another's
+--     स्व-काल / पर-काल        own time / another's
+--     स्व-भाव / पर-भाव        own state / another's
+--
+-- — and carries स्यात्.  A pot IS with respect to its own substance,
+-- place, time and state, and IS NOT with respect to another's; that is
+-- why the first two भङ्गs are not contradictory.  Unqualified negation
+-- is not a भङ्ग at all.
+--
+-- What this module actually defines is the Naiyāyika mutual absence,
+-- for which bare negation with a प्रतियोगिन् is right.  The `Abhāva`
+-- record supplies ONE delimitor; the Jaina scheme specifies FOUR, and the
+-- module never says which — or whether any — of the four its `q` is
+-- standing for.  Downstream, `TheFibreIsTheSubject`, `AsiddhatvaBreaksFactoring`,
+-- `AnuvrttiIsTheSameTrade`, `PratyaharaBuysTotalityWithLocality` and
+-- `TheSecondNaIsTheCollision` all use `Anyonya` and inherit this.
+--
+-- The theorems are unaffected: they are about bare negation and they
+-- prove what they say.  The NAMING is what is wrong, and in a thread
+-- whose whole subject is that a coarse label loses a distinction the
+-- finer object carries, that is not a small thing to have done.
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+-- 9.  WHERE THE DECIDABLE FORM OF §5 IS AVAILABLE
+--     (see `TheDelimitorNeedsOnlyStability`).
+--
+-- `Dec (Collision q t)` holds on a class of sites: for a two-point
+-- state space with `Discrete Y` and `Discrete T` it holds, by
+-- exhaustion over four pairs.
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+-- 10.  THE NAME, AGAINST AN AUDIT THAT WAS ALREADY IN THE REPOSITORY
+--
+-- `notes/ABHAVA.md` (absent from this repository) §2 carries a primary-text audit (Annambhaṭṭa,
+-- `Tarkasaṃgraha` §§57 and 80, the provenance and its limits recorded
+-- there).  Its table reads, for
+-- the fourth kind:
+--
+--     mutual absence | anyonyābhāva | difference: a is not b |
+--     "non-identity, NOT observational separation by itself"
+--
+-- and its closing line about four earlier equations is
+--
+--     "These four struck equations were modern constructions, not
+--      consequences of the fourfold."
+--
+-- §1 above is compatible with that: `Anyonya a b = ¬ (a ≡ b)` is
+-- non-identity and nothing more.  `Collision q t` — two states a coarse
+-- map identifies and a fine map separates — is observational
+-- separation, which is a different thing.
+--
+-- The theorems do not depend on the gloss.
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+-- PRIOR ART.
+--
+-- `notes/ABHAVA.md` (absent from this repository) A6 locates arXiv:2605.12548, *Cubical Type Theoretic
+-- Navya-Nyāya* (Panday & Ghosh), whose stated content includes DEPENDENT
+-- DELIMITATION (avacchedaka) and TYPED ABSENCE (abhāva) in cubical type
+-- theory — the same substrate and the same notions this module touches.
+--
+-- NO NOVELTY IS CLAIMED for anything in this module.
 ------------------------------------------------------------------------

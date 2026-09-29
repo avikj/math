@@ -3,6 +3,7 @@
 ------------------------------------------------------------------------
 -- ResidueGlue
 --
+-- The non-coprime gluing law of notes/MATHEMATICS_THAT_LEARNS.md (absent from this repository)
 -- (`glue-remainders 4 6`, retired Python) made checkable at its
 -- smallest honest instance:
 --

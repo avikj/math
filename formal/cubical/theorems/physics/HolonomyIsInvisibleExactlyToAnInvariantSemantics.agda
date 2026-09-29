@@ -3,6 +3,8 @@
 ------------------------------------------------------------------------
 -- HolonomyIsInvisibleExactlyToAnInvariantSemantics
 --
+-- `notes/DEPENDENT_SYSTEM_OPTIMIZATION_DELTA_28.md` (absent from this repository) §36–38 closes:
+--
 --   "Even flat architectures can carry interface holonomy h : Z ≃ Z
 --    around loops in architecture space — harmless for boundary
 --    semantics, load-bearing for caches, provenance, optimizer state,
@@ -46,6 +48,13 @@
 -- the SAME `h` — the invariance hypothesis and the transport are
 -- connected rather than merely parallel.  `notEquiv` is the standard
 -- witness that this content is not vacuous: a self-equivalence with no
+-- fixed point at `true`.
+--
+-- NO NOVELTY WHATSOEVER.  `ua`, `uaβ` and the `not` automorphism of
+-- `Bool` are the first examples in every cubical development, and
+-- Voevodsky's univalence axiom is the substrate this repository already
+-- runs on.  What is contributed is the identification of §36–38's two
+-- clauses as one statement.
 ------------------------------------------------------------------------
 
 module HolonomyIsInvisibleExactlyToAnInvariantSemantics where
