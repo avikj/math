@@ -388,10 +388,13 @@ this runtime does not model.
                              case trees, the HIT schema, numbers, transp, hcomp, Glue, the loop, the ledger, printers
     hyper/read.c             the reader for the kernel's own text
     hyper/verify.c           the checker on the same loop
-    hyper/main.c             run | bend | check | interact
+    hyper/main.c             run | bend | check | interact | net
+    hyper/net.c              the interaction net the SAT fibre results were computed on: HVM4 6defdfc src/hvm.c
+                             taken literally, with build_profile.py's receipt by rule (DUP-SUP-SAME/-DIFF)
     hyper/prelude.hyper 158  the Kan rows, Glue, transpEquiv, the HIT rows, as data
     hyper/bend.hyper     45  the Bend2 dialect's rows
     hyper/test.sh            the substrate's checks
+    hyper/satcheck.py        research/sat_fibre reproduced exactly on `hyper net`: outputs, interactions, heap, rules
     hyper/bendtest.sh        values against Bend2's normaliser
     hyper/checktest.sh       verdicts against Bend2's checker
     hyper/cite.sh            every identifier this file names is on the line it cites

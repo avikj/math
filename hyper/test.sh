@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # hyper/test.sh — the substrate's checks: values, and the ledger's count where a check is about cost.
 set -u; cd "$(dirname "$0")"
-gcc -std=gnu11 -O2 -Wall -Wno-misleading-indentation -Wno-unused-parameter -Wno-unused-function -o hyper cell.c read.c verify.c main.c -lm || exit 1
+gcc -std=gnu11 -O2 -w -c net.c -o net.o || exit 1
+gcc -std=gnu11 -O2 -Wall -Wno-misleading-indentation -Wno-unused-parameter -Wno-unused-function -o hyper cell.c read.c verify.c main.c net.o -lm || exit 1
 pass=0; fail=0
 check() { got=$(timeout 20 ./hyper run "$1" "$2" 2>&1 | head -1); if [ "$got" = "$3" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $1 $2: got '$got' want '$3'"; fi; }
 check t/basic.hyper main      '#Suc{#Suc{#Suc{#Suc{#Zer{}}}}}'
@@ -110,6 +111,9 @@ check t/sat.hyper synth-at '#Cons{#Pair{#True{},#False{}},#Nil{}}'
 for d in xor-true xor-false contradiction short reversed synth-at; do
   a=$(./hyper run t/sat.hyper $d | head -2); b=$(HYPER_SCHEDULE=right ./hyper run t/sat.hyper $d | head -2); c=$(HYPER_SCHEDULE=7 ./hyper run t/sat.hyper $d | head -2)
   if [ "$a" = "$b" ] && [ "$a" = "$c" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL schedule t/sat.hyper $d"; fi; done
+# the SAT fibre results (research/sat_fibre), reproduced exactly on the net: outputs, interactions, heap words and
+# every rule, for the elementary suite, the NP families, the colour frames and the frozen cost model at n = 1..18
+if python3 satcheck.py "$PWD/hyper" net > /tmp/satcheck.$$ 2>&1; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL satcheck: $(tail -3 /tmp/satcheck.$$ | tr '\n' ' ')"; fi; rm -f /tmp/satcheck.$$
 # every identifier MAP.md names is on the line it cites
 if ./cite.sh >/dev/null; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL cite: $(./cite.sh | tail -3 | tr '\n' ' ')"; fi
 echo "pass=$pass fail=$fail"; [ $fail -eq 0 ]
