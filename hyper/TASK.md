@@ -6,9 +6,45 @@ The task is Lafont/Lévy-optimal reduction of cubical cell complexes:
 2. **Fill and reduce all of its faces and identities.**
 
 Every piece of this is already constructed and checked in this repository. The mathematics is in `fibre/` and
-`formal/cubical/`. Its realisation on the net is in `collab/bend2-interactive-cubical/` ("the lane"). This file
-points to each piece. `hyper/` does not add to it. A week of work in `hyper/` (a separate runtime, `cell.c`, then a
-copy of HVM4) was built beside the lane instead of continuing it. That is why nothing moved.
+`formal/cubical/`. Its first dialect on a net is `collab/bend2-interactive-cubical/` ("the lane"): the Bend2 fork plus
+HVM4.
+
+## 0. Why a new language and runtime instead of the lane
+
+`hyper/MAP.md` §0.2 says the fork is this language's first dialect and value oracle, and that the runtime has one
+entry: reduce, with check on the same loop. `CORPUS_DIGEST.md`, in its "Design consequence" for the kernel lane,
+states that HVM4 violates the specification in three ways.
+
+1. **The checker is outside.** Bend2's Haskell checker runs before emission as a second evaluator.
+   - The corpus says verify is decide (`VerifyIsDecide_…`; `SETTLED_BY_THE_CORPUS.md` §4 item 8). Checking is the type
+     projection of the typed point, reduced by the same net.
+   - This is exactly what makes a declaration with no body a program. Checking `Σ B. P` against a superposed `B` is
+     the DUP-of-goal rule, and the survivors are the fibre.
+   - An outside checker demands a term, so a missing body is an error.
+2. **Labels are a budget.** HVM4 labels are 24 bits and static per binder, so a recursive unfolding reuses its label.
+   - The corpus says a label is the name of a coordinate: same label means same coordinate
+     (`SETTLED_BY_THE_CORPUS.md` §1, §4 item 3).
+   - A reused label conflates distinct coordinates.
+3. **Collapse is a printer.** HVM4's `-C` is a readback with a priority queue.
+   - The corpus says collapse conserves multiplicity and the fibre is a value that computation continues on
+     (`SETTLED_BY_THE_CORPUS.md` §4 item 6).
+   - `sortCost` needs the collapse as data.
+
+A fourth follows from item 7 of the same section: a proved identity is installed as a rule during reduction. HVM4's
+rule set is fixed.
+
+Bend2's core adds `Set : Set` and one-step untyped conversion (`STATE_OF_THE_WORK.md` I.4).
+
+The language `hyper/` is meant to hold is the runtime `SETTLED_BY_THE_CORPUS.md` §4 specifies ("hvm5/bend3"):
+- **agents:** LAM/APP, labelled DUP/SUP, and constructors for cells;
+- **the checker:** folded in as net programs;
+- **labels:** named by coordinates;
+- **collapse:** a value;
+- **install:** a proved identity becomes a rule.
+
+The lane already supplies the Kan rules as net programs (`RUNTIME_FULL.md`: the prelude is Core.WHNF's cubical
+reduction written for HVM4). It also supplies the checker's rules, including DUP-of-goal, in `cubical-paths.patch`.
+`hyper/` spent a week building beside those instead of starting from them.
 
 ## 1. An arbitrary expression is a cell complex
 
