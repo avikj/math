@@ -92,6 +92,24 @@ if [ "$l" = '#Pair{26,#Cons{#op2{2},#Cons{#op2{2},#Cons{#op2{1},#Nil{}}}}}' ] &&
 # (uaβ), so the carried image is sort's point, with no coordinate, far below resolving the type
 check t/sort.hyper chart-move '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
 got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 173') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL chart-move count: $got";; esac
+# witnessing a proposition (research/SAT_FIBRE_BEND_HVM_DEPLOYED_TECHNICAL_REPORT.md): the domain is one labelled
+# superposition shared by every occurrence, the proposition reduces once over it, a failing branch is erased, and the
+# collapse is the fibre.  XOR's fibre over True and over False; a contradiction's empty fibre
+check t/sat.hyper xor-true  '#Cons{#Pair{#False{},#True{}},#Cons{#Pair{#True{},#False{}},#Nil{}}}'
+check t/sat.hyper xor-false '#Cons{#Pair{#False{},#False{}},#Cons{#Pair{#True{},#True{}},#Nil{}}}'
+check t/sat.hyper contradiction '#Nil{}'
+# one proposition, two presentations (sat_fibre/REPORT.md §5): both empty; the order that meets the contradiction
+# first costs less, the other reproduces the cube before erasing it
+check t/sat.hyper short '#Nil{}'
+check t/sat.hyper reversed '#Nil{}'
+cs=$(./hyper run t/sat.hyper short | sed -n 2p); cr=$(./hyper run t/sat.hyper reversed | sed -n 2p)
+if [ "$cs" = "- Itrs: 314" ] && [ "$cr" = "- Itrs: 24" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL presentation counts: $cs / $cr"; fi
+# constructing a specified map (SUPGEN_DEMO.md): the candidates are one superposition, the specification erases
+# every other one, and the survivor is not, certified by the erasure of the alternatives
+check t/sat.hyper synth-at '#Cons{#Pair{#True{},#False{}},#Nil{}}'
+for d in xor-true xor-false contradiction short reversed synth-at; do
+  a=$(./hyper run t/sat.hyper $d | head -2); b=$(HYPER_SCHEDULE=right ./hyper run t/sat.hyper $d | head -2); c=$(HYPER_SCHEDULE=7 ./hyper run t/sat.hyper $d | head -2)
+  if [ "$a" = "$b" ] && [ "$a" = "$c" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL schedule t/sat.hyper $d"; fi; done
 # every identifier MAP.md names is on the line it cites
 if ./cite.sh >/dev/null; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL cite: $(./cite.sh | tail -3 | tr '\n' ' ')"; fi
 echo "pass=$pass fail=$fail"; [ $fail -eq 0 ]
