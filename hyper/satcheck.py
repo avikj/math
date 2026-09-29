@@ -14,7 +14,7 @@ interaction budget SAT_MAX_ITRS.  The run must reproduce what was recorded, not 
   and the frozen model for every n from 1 to 18:  T_short(n) = 9*2^n + 16n - 4,  T_reverse(n) = n + 30,
   with every rule count of the short presentation (cost_predictions.predicted_rules).
 
-usage: satcheck.py RUNTIME...        e.g.  satcheck.py ./hyper net     or  satcheck.py path/to/hvm-profile
+usage: satcheck.py RUNTIME...        e.g.  satcheck.py ./hyper     or  satcheck.py path/to/hvm-profile
 """
 import itertools, json, os, re, subprocess, sys, tempfile
 from pathlib import Path

@@ -4,8 +4,7 @@ Notes from reading, each sentence at a cited line; `cite.sh` checks this file
 as it checks `MAP.md`. The test of
 `formal/cubical/Kernel/DescentNote_WhatThisIsAndHowToDescendIntoTheMetacircularKernel.agda`
 (§0, frame 4) applies to every line: a sentence that could have been written without reading
-the term it is about is narration from prior. Where a section says what this
-means for `hyper/`, that is a reading, marked as such.
+the term it is about is narration from prior.
 
 The system is one construction, not parts. Everything below is the same Σ read
 from different ends, and the runtime's one job is to be that Σ computing.
@@ -56,10 +55,6 @@ different computation.
 the type of lossless completions of a fixed map is contractible; a lossless
 machine cannot be built two ways.
 
-**Reading for `hyper`.** `(trace e)` is the value with its events over it;
-`(leaves e)` over free inputs is the fibre family over values: each leaf is the
-class of inputs giving that value. Neither is a choice; both are forced.
-
 ## 3. The census, not a verdict
 
 `fibre/src/Fibre/WholePartialDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:87`
@@ -75,12 +70,6 @@ the census; the census is not recoverable from the verdict.
 nothing to search. Propositional: determined if it exists, "uniqueness is free
 and existence is the whole of the work", so a search may stop at the first hit
 and owes no comparison. Crowded: nothing an algorithm could return.
-
-**Reading for `hyper`.** The printer's `*` is `नास्ति`, one point is `सकलादेश`,
-a superposition of two is `विकलादेश`. The
-middle grade names exactly where `sort`'s cost goes: its fibre is a proposition
-(sorted permutations are unique), so once one leaf is live the run owes nothing
-to the rest of the tree. The branch today exhausts the tree instead.
 
 ## 4. Interaction is the operation
 
@@ -108,12 +97,6 @@ is the h-level of the event datum. A propositional receipt gives a contractible
 process (a service); a proof-relevant one gives a generator. The kernel is the
 only forward-non-trivial object among the four probed.
 
-**Reading for `hyper`.** `run` is the trivial query; `interact` is `react`
-with a question per line. A run over free inputs is not deterministic: its
-questions (which side of a split) are the environment's, and the space of runs
-is the space of answer streams, which is what the superposition holds all at
-once.
-
 ## 5. Order: commutation is the certificate, its failure is retained
 
 `fibre/src/Fibre/Order_CommutationIsTheProofThatTheOrderWasNeverThereAndItsFailureIsRetained.agda:93`
@@ -122,13 +105,6 @@ equals the normal form determined by the two counts; the word's sequence is
 discarded with a proof. `:111` `interleavings-agree`. `:141`
 `suc-double-not-commuting`, `:153` `order-survives`: where they do not commute,
 equal counts give different results, and the sequence is part of the answer.
-
-**Reading for `hyper`.** The schedule check is `interleavings-agree` measured:
-two independent demands in either order give the same value and count. The two
-sides of an identity do not commute (a dead side ends the other), so their order
-is data and the term's order is kept. Measured this session: forcing the sides
-in the other order changes the count; that is `order-survives`, not a defect
-to hide, and not a place a coin may choose.
 
 ## 6. Cost: the ledger, the geodesic, and what cost cannot be
 
@@ -168,14 +144,6 @@ is a compact product object, and exponential execution needs forced expansion
 into inequivalent cells. §11: do not infer cost from fibre cardinality or from
 dimension; distinguish reversible positive geodesic length from destruction.
 
-**Reading for `hyper`.** The count is the ledger's; the receipts now carry
-its names. The claim "the count is the geodesic" is the claim that the runtime
-is a net: every rule at an active pair, no rule whose outcome depends on which
-of two available pairs fires first. Independent demands are checked; the
-identity's sides are the term's order. The presentation tree over independent
-names is a compact cube, and a presentation that expands it (the printer
-descending every side) is the presentation's demand, not the object's cost.
-
 ## 7. The chart move is the fibre law read at the output
 
 The two charts of `sort` are §1's two readings of one Σ. `Σ B. B ≡ isort L`
@@ -187,14 +155,6 @@ equivalence between them is determined, and its `ua` transports the cheap
 centre to the expensive chart's point by `uaβ`. `MAP.md` §0 item 3 says it:
 meaning descends along the path, cost does not (Laghava); the minimum over
 charts is the object's cost; the only lever is a proof.
-
-Nothing here is written by a person. The equivalence is a declaration of a Σ
-type whose components are Π, Σ and identities; the Σ splits into coordinates,
-the identity is a unification cell, and the Π is inhabited at its argument's
-constructors with the recursive call as the inductive hypothesis (`MAP.md`
-§0.1, last sentence of the `sortCost` paragraph). `Anveshana` says why the cost
-then drops: uniqueness is free, existence is the work, and existence in the
-output-bound chart is `isort L` itself.
 
 ## 8. The kernel: proofs become moves, and the caller disposes
 
@@ -261,48 +221,3 @@ compile-time derivation companions were removed as second copies.
 order is a productive interactive process containing finite demanded histories
 whose constructed transformations return as operations; the fibre law is the
 conservation account of presentation.
-
-## 10. What `hyper/` is, in these terms
-
-`hyper` is the substrate of §9 without Bend2 in the loop: cells over bound
-dimension names, faces, the interval, transp, hcomp, Glue and ua, inductive and
-higher inductive types by schema, fixed points, superpositions at bound names,
-free ports, a checker on the same loop, the ledger. Its declaration mechanism
-(`MAP.md` §0.1) is §1 run forward: an unknown is a coordinate (a point of a
-cell), a match on a coordinate is a superposition over its constructors (the
-cube's dimension made explicit), a path at a data type with coordinates decides
-by cutting the cells where the sides disagree (unification), the survivors are
-the fibre (§2), the census over inputs is §3, the trace is §2's trace, and the
-count is §6's ledger. The step relation must be a net (§6), the presentation a
-compact cube expanded only on demand (§6), the chart move §7.
-
-What in `hyper/cell.c` is mine and not this: a scheduler of kinds and rounds
-deciding when a residual identity may ask a port; a derived-coordinate shortcut
-asking an identity instead of splitting a field; tables of the constructors of
-Unit, Bool, Nat and List. These are opinions about order and organs; §5 says
-order is either a certificate or data, never a policy, and §9 says the
-constructors of a type are its declaration.
-
-What `hyper` has never done: resolve a Π-typed declaration along a free
-argument. `sort L` for free `L`, `sortCost n` for free `n`, the equivalence
-between the two charts of `sort` declared with no body. The mechanism is
-`pi_apply` (the codomain's coordinate at the argument, the inductive hypothesis
-at a field), the split of a port along its constructors, and unification; all
-three exist. Whether they resolve those declarations once the scheduler is gone
-is the test of whether the core is the construction.
-
-## 11. What Bend and HVM are here
-
-Secondary. HVM4 was dropped; Bend2 has half the shape and the rest is fought.
-The ledger's alphabet in §6 is kept because it is the event alphabet of the
-fibre routing (same label annihilates, different labels commute, a node under a
-duplicator is copied), which `research/sat_fibre/InteractionLedger.agda:13` `data Event`
-states as mathematics and CONVERGENCE Part IV reads as the contractible and the
-non-contractible fibre, not because HVM is the target. The Bend ports under
-`collab/bend2-interactive-cubical/port/` are a syntax layer at most; nothing in
-them is a specification the runtime owes. Compatibility with Bend syntax or
-SupGen as a frontend is worth attention only where it is instrumental.
-
-*(Reading continues in the mathematics: `AdiBija`, `Universal`, `EqualitySplit`,
-the Jiva bodies, the Uniqueness body, the Kernel §4 module bodies, Encounter
-§4-9, MyhillNerode, Samvada, TransportDivScale, AnswerIsProjectionAtOutputSize.)*

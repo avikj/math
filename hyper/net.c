@@ -6,7 +6,7 @@
  * research/sat_fibre/build_profile.py makes to its profiling copy: DUP-SUP is split into DUP-SUP-SAME (same label:
  * route, no allocation) and DUP-SUP-DIFF (different label: cross, allocate); every interaction is receipted by
  * rule and the receipt is printed as SAT_PROFILE at exit; SAT_MAX_ITRS / SAT_MAX_HEAP stop a run with exit 124.
- * `main` is `net_main`, entered by `hyper net FILE [-s] [-C|-C1]`.
+ * Usage: `hyper FILE [-s] [-C|-C1|-CN]`.
  */
 // HVM4 Pure Runtime
 // =================
@@ -6415,7 +6415,7 @@ fn CliOpts parse_opts(int argc, char **argv) {
 }
 
 #ifndef HVM_NO_MAIN
-int net_main(int argc, char **argv) {
+int main(int argc, char **argv) {
   sat_init();
   if (argc <= 1) {
     cli_print_help(argv[0]);
