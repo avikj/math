@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# cite.sh — every identifier MAP.md and NOTES.md name must be on the line it cites.
+# cite.sh — every identifier MAP.md, NOTES.md and RUNTIME.md name must be on the line it cites.
 # A citation is `path:LINE` `ident`, or `:LINE` `ident` continuing the last path. Exit 1 on any miss.
 set -u; cd "$(dirname "$0")/.."
 python3 - <<'PY'
 import re, sys, os
 pat = re.compile(r"`([^`\n]*\.agda)(?::(\d+))?`(?:\s*`([^`\n]+)`)?|`:(\d+)`\s*`([^`\n]+)`")
 bad = 0; n = 0
-for doc in ('hyper/MAP.md', 'hyper/NOTES.md'):
+for doc in ('hyper/MAP.md', 'hyper/NOTES.md', 'hyper/RUNTIME.md'):
   s = open(doc, encoding='utf-8').read(); path = None
   for m in pat.finditer(s):
     if m.group(1):
