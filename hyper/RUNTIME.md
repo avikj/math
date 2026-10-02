@@ -23,7 +23,6 @@ each. Nothing else is added.
 - **Nothing is erased or pre-normalised.** Intervals, paths, types, `ua`, `hcomp`, Glue and HIT cells are all runtime
   cells. Source: `RUNTIME_FULL.md`, first table; `TYPED_POINT.md` "Cubical cells … are structure in the checked
   term. Erasing any of them is lossy."
-- **Ill-typed input is refused, and nothing is emitted.** Source: `TYPED_POINT.md`.
 
 ## 2. Cells
 
@@ -126,14 +125,19 @@ reference text.
   `a : G₀` and `b : G₁`, where `(G₀, G₁) = dup l G`. Source: `SETTLED_BY_THE_CORPUS.md` §1; `sup_dependent.bend` and
   its must-fail sibling.
 
-## 6. Checking runs on the same net
+## 6. There is no checking step
 
-- **The rule.** Checking is the type projection of the typed point, reduced by the same reducer, and conversion is a
-  path cell reducing. Source: `SETTLED_BY_THE_CORPUS.md` §4 item 8; `VerifyIsDecide_…`.
-- **Status: not written.** Today the Haskell checker (`Core.Check`) runs before emission, and
-  `SETTLED_BY_THE_CORPUS.md` §5 lists folding it into the net as labour.
-- **What it consists of.** `Core.Check`'s bidirectional rules, including the DUP-of-goal case, written as programs over
-  the emitted type cells `@T…`. Those cells are already emitted beside every definition.
+- **The point is the pair.** The object is the pair (A, a), and both are cells of one complex. Reducing the object
+  reduces both with the same rules. Nothing else inspects a against A. Source: `TYPED_POINT.md`, "the checked object
+  as a typed point"; `SETTLED_BY_THE_CORPUS.md` §4 item 8: finding and checking are the two directions of one
+  equivalence (`VerifyIsDecide_…`), and conversion is a path cell reducing.
+- **Typing a superposition is the same rule.** `&l{a, b} : G` is duplication at l meeting G (§5): `DUP-SUP` and
+  `DUP-NODE`, applied to the type cell.
+- **Witnessing a Σ is the same rule.** For `Σ b. P b` at the generic point (§8), P reduces on b's superposition. That
+  is the proposition reducing; no separate check of the witness happens afterwards.
+- **The lane's Haskell gate is an artefact of Bend.** In the lane, `Core.Check` runs before emission.
+  `SETTLED_BY_THE_CORPUS.md` §4 item 8 calls it the one second evaluator the lane still tolerates. It is not part of
+  this runtime.
 
 ## 7. Collapse is a value
 
