@@ -1,8 +1,8 @@
 name: Mathematical wiki
 
+# Auto-deploy disabled: Pages now serves docs/ via pages.yml.
+# Left runnable on demand only.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions:

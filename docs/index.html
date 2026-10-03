@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Respecting Equality</title>
+<meta name="description" content="Equality of types is equivalence (univalence), and it computes: from that one fact, complete inference runs deterministically and step-optimally.">
+<link rel="stylesheet" href="./vendor/katex/katex.min.css">
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1a1a1a; --muted:#606060; --rule:#e4e4e4;
+    --accent:#7a1f1f; --math-bg:#fafafa; --math-rule:#ececec;
+    --maxw:760px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#141414; --fg:#e8e8e6; --muted:#a0a0a0; --rule:#2a2a2a;
+      --accent:#d98a8a; --math-bg:#1c1c1c; --math-rule:#2a2a2a;
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:17px; line-height:1.6;
+    padding:0 20px;
+  }
+  main{max-width:var(--maxw); margin:0 auto; padding:56px 0 96px}
+  h1{
+    font-size:1.72rem; line-height:1.28; font-weight:650;
+    letter-spacing:-0.01em; margin:0 0 .35rem;
+  }
+  .byline{color:var(--muted); font-style:italic; margin:0 0 2.4rem; font-size:.98rem}
+  h2{
+    font-size:1.14rem; font-weight:650; line-height:1.35;
+    margin:2.9rem 0 1rem; padding-top:1.4rem; border-top:1px solid var(--rule);
+    letter-spacing:-0.005em;
+  }
+  h2 .n{color:var(--accent); font-variant-numeric:tabular-nums}
+  ul{margin:0; padding:0; list-style:none}
+  li{
+    position:relative; margin:0 0 .95rem; padding-left:1.15rem;
+  }
+  li::before{
+    content:""; position:absolute; left:.1rem; top:.72em;
+    width:5px; height:5px; border-radius:50%; background:var(--accent); opacity:.7;
+  }
+  .katex-display{
+    margin:1.15rem 0; padding:.7rem .9rem; overflow-x:auto; overflow-y:hidden;
+    background:var(--math-bg); border:1px solid var(--math-rule); border-radius:8px;
+  }
+  .katex{font-size:1.02em}
+  code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:.9em; background:var(--math-bg); border:1px solid var(--math-rule);
+    padding:.05em .35em; border-radius:4px;
+  }
+  code::before,code::after{content:""}
+  a{color:var(--accent)}
+  details.proof{margin:.85rem 0 1.3rem; border:1px solid var(--math-rule);
+    border-radius:8px; background:var(--math-bg); overflow:hidden}
+  details.proof>summary{cursor:pointer; padding:.5rem .9rem; font-size:.9rem;
+    color:var(--accent); font-weight:650; list-style:none; user-select:none}
+  details.proof>summary::-webkit-details-marker{display:none}
+  details.proof>summary::before{content:"▸\00a0"; font-size:.85em}
+  details.proof[open]>summary::before{content:"▾\00a0"}
+  details.proof>summary:hover{text-decoration:underline}
+  details.proof pre{margin:0; padding:.75rem .95rem; border-top:1px solid var(--math-rule);
+    overflow-x:auto; font-size:.795rem; line-height:1.5; color:var(--fg);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  details.proof pre code{background:none; border:none; padding:0; font-size:1em}
+  details.proof figcaption{padding:.5rem .95rem 0; color:var(--muted);
+    font-size:.8rem; line-height:1.45}
+  .kw{color:var(--accent); font-weight:600}
+  .cm{color:var(--muted); font-style:italic}
+  .src{margin-top:3.2rem; padding-top:1.3rem; border-top:1px solid var(--rule);
+       color:var(--muted); font-size:.9rem}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Respecting Equality: Complete Inference, Deterministic and Step-Optimal</h1>
+<p class="byline">Avik Jain</p>
+<p>This is one construction on how equality behaves in cubical type theory: equality of types <em>is</em> equivalence — Voevodsky's univalence — and it computes. No prior familiarity with either is assumed.</p>
+<p>From that one fact, each step forced by the last, the construction builds to a single result: complete inference — proving, computing, deciding, or answering any well-formed question — runs deterministically and in the fewest possible steps, a count forced by the answer itself, not chosen by any strategy. The natural numbers, the complex numbers and the field equations, and the exact form of the Gödel and Turing limits are stops it passes through, not the destination. Every step here is elementary, and the whole is machine-checked and runs.</p>
+<h2><span class="n">0.</span> The one fact</h2>
+<ul>
+<li>A <strong>type</strong> is a collection of values (<code>a : A</code>); a <strong>function</strong> <code>f : A → B</code> maps values to values. A <strong>pair type</strong> <code>Σ (a : A) (P a)</code> holds pairs <code>(a , w)</code> where the type of the second part, <code>P a</code>, may depend on the first — <code>P</code> a <em>family</em>, one type <code>P a</code> for each <code>a</code>.</li>
+<li>Equality is a type: <code>x = y</code> is the type of <strong>proofs</strong> that <code>x</code> equals <code>y</code>; <code>refl : x = x</code>. A proof is a value you keep.</li>
+<li><strong>The floor is one distinction.</strong> A proof of equality is a <em>path</em>, and a path is a map out of the interval <code>𝕀</code> — and <code>𝕀</code> is not assumed, it is built: the free bounded distributive lattice on two endpoints <code>0, 1</code>, carrying <em>meet</em> <code>∧</code>, <em>join</em> <code>∨</code>, and the involution <code>~</code> that swaps them (<code>~0 = 1</code>). That is the least structure in which a point can slide from one side to the other. A path <code>x = y</code> is a map <code>𝕀 → A</code> with <code>0 ↦ x</code>, <code>1 ↦ y</code>; <code>refl</code> is the constant map. Everything below — <code>transport</code>, <code>J</code> (the slide, built with <code>∧</code>), function extensionality, univalence (§2) — is built from this. The base is a single distinction and the algebra of combining it: <em>there is a difference</em>, and nothing less.</li>
+<li><strong>Contractible</strong> = has exactly one element, up to the equalities: some point exists, and every element is equal to it — so the whole type collapses onto that one point.</li>
+<li><strong>Substitution (transport).</strong> a proof <code>p : x = y</code> lets you carry any structure from <code>x</code> to <code>y</code>: for any family <code>P</code> it gives <code>transport p : P x → P y</code>, run backwards by transporting along the reversed path <code>~p</code>, and <code>transport refl = id</code> (moving nowhere changes nothing) — a reversible, lossless program.</li>
+<li><strong>Fact:</strong> <code>Σ (y : A) (x = y)</code> — the values <code>y : A</code> equal to <code>x</code>, each with its proof — is contractible, centre <code>(x , refl)</code>. the path from the centre to any <code>(y, p)</code> is built by sliding along <code>p</code> itself: at stage <code>t</code> sit at the point <code>p t</code>, holding as its proof the piece of <code>p</code> from <code>x</code> up to <code>t</code> (so you have shown <code>x = p t</code>); at <code>t = 0</code> that is <code>(x , refl)</code>, at <code>t = 1</code> it is <code>(y, p)</code>. One point, everything equal to it.</li>
+<li><strong>Path induction (<code>J</code>).</strong> To act on every <code>(y, p : x = y)</code> it therefore suffices to give the value at <code>(x , refl)</code> and transport it forward to <code>(y, p)</code> along the contraction path. This <em>is</em> the eliminator of <code>=</code> (its <code>J</code>: to prove something about all equal pairs, prove it at the centre) — and <code>transport</code> is exactly <code>J</code> for a goal <code>C(y, p)</code> that ignores the proof <code>p</code> (<code>C(y, p) = P y</code>), so the two are one thing. (The identity type's eliminator is its initiality as an inductive family — Awodey–Gambino–Sojakova 2012.)</li>
+<li>§1 is this fact with <code>x</code> replaced by a function's output.</li>
+</ul>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>singleton-contractible : (x : A) → isContr (Σ[ y ∈ A ] x ≡ y)
+singleton-contractible x = (x , refl) , λ (y , p) i → p i , λ j → p (i ∧ j)</code></pre>
+<figcaption>Centre <code>(x , refl)</code>; the second component is the contraction, sliding any <code>(y , p)</code> back along <code>p</code> — this <em>is</em> <code>J</code>. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code> against the cubical library; no postulates, no holes.</figcaption>
+</details>
+<h2><span class="n">1.</span> Partition by output</h2>
+<ul>
+<li>Take <code>f : A → B</code>. Write <code>f⁻¹(b)</code> for the <strong>inputs over</strong> <code>b</code> — the inputs that land on <code>b</code>, each kept with its proof that it does: <code>f⁻¹(b) = Σ (a) (f a = b)</code>.</li>
+<li>Then <code>A</code> matches its inputs grouped by output, losslessly — write <code>≅</code> for such a lossless match (maps both ways that cancel; defined in §2): <code>A ≅ Σ (b : B) f⁻¹(b)</code>, by <code>a ↦ (f a, (a, refl))</code> with inverse <code>(b, (a, p)) ↦ a</code>. Both round trips are <code>refl</code> (the return uses the kept proof <code>p : f a = b</code>): nothing is lost, only regrouped.</li>
+<li>And this grouping is the <em>only</em> lossless one. Call any other a completion: a family <code>T</code> assigning a type <code>T(b)</code> to each <code>b</code>, that reassembles <code>A</code> the same way — a match <code>A ≅ Σ (b) T(b)</code> that respects the output map (an input's <code>b</code> is unchanged). Respecting it forces the piece over each <code>b</code> to line up, so <code>T(b)</code> matches <code>f⁻¹(b)</code>. A completion is thus a choice, at each <code>b</code>, of a type matching <code>f⁻¹(b)</code> — and the types matching a fixed one collapse to a single point (univalence, §2: <code>Σ (X) (X ≅ Y)</code> is contractible). A per-<code>b</code> choice among one-point options is again one point (equal functions are equal wherever they agree — function extensionality, itself from §2). So <code>T</code> can only be the family <code>f⁻¹</code>: the decomposition is forced, not a chosen encoding.</li>
+<li>Every decomposition below is this: group by output, keep the inputs over each <code>b</code>.</li>
+</ul>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>partition : (f : A → B) → A ≃ (Σ[ b ∈ B ] fiber f b)
+partition f = isoToEquiv (iso fwd bwd rinv (λ _ → refl))
+  where
+  fwd  = λ a → f a , a , refl
+  bwd  = λ (b , a , _) → a
+  rinv = λ (b , a , p) i → p i , a , λ j → p (i ∧ j)</code></pre>
+<figcaption>The equivalence <code>A ≃ Σ (b : B) . f⁻¹(b)</code>; <code>fwd</code> sends <code>a</code> to its output with the <code>refl</code> witness, <code>bwd</code> reads the kept input back, and both round trips are <code>refl</code>. Verbatim, <code>--safe</code>.</figcaption>
+</details>
+<h2><span class="n">2.</span> Isomorphism is substitution</h2>
+<ul>
+<li><code>A ≅ B</code> (isomorphism, the lossless match promised in §1): maps both ways with proofs they cancel — runnable in both directions, nothing lost either way.</li>
+<li>Equivalently: <code>f⁻¹(b)</code> is contractible for every <code>b</code> (§0) — an inverse <code>g</code> centers it at <code>(g b, ·)</code>, and the cancellation laws contract every <code>(a, p : f a = b)</code> onto that center; conversely, choosing the center of each <code>f⁻¹(b)</code> <em>is</em> an inverse. A two-sided inverse and every <code>f⁻¹(b)</code> contractible are the same condition.</li>
+<li><strong>Univalence — a theorem, not an axiom.</strong> The primitive is the <em>interval</em>: a path <code>x = y</code> is a map out of it, and §0's contraction is one such map (the <code>i</code>, the <code>i ∧ j</code> in its checked term are the interval's own structure); paths can be joined end-to-end and pushed along one another (Kan composition — this is what runs <code>transport</code>). From an equivalence <code>A ≅ B</code>, a <em>Glue</em> type builds a type that equals <code>A</code> at one end and <code>B</code> at the other — a path <code>A = B</code> whose transport is exactly that equivalence. So <code>A ≅ B ⇒ A = B</code>, and it computes: <code>transport^{ua e} = e</code>. Hence the space of types equivalent to a fixed one is contractible — the fact §1 used — and isomorphic structures interchange by a program, losslessly. Voevodsky's axiom is here built from the interval and Glue (Cohen–Coquand–Huber–Mörtberg 2018).</li>
+</ul>
+$$
+(A \simeq B)\ \simeq\ (A = B), \qquad \mathsf{ua} : (A \simeq B) \longrightarrow (A = B), \qquad \mathrm{transport}^{\,\mathsf{ua}(e)} \;=\; e
+$$
+<h2><span class="n">3.</span> A step is reversible when its input can be recovered</h2>
+<ul>
+<li>A step is <strong>reversible</strong> when you can recover its input from its output — it runs backward as well as forward, losing nothing (§2). <code>transport</code> and every isomorphism are of this kind.</li>
+<li>A step is <strong>irreversible</strong> when several inputs share one output <code>b</code>: then <em>which</em> of them the input was is gone. That forgotten "which one" is the only thing a step can ever destroy — <code>log₂</code> of the number of inputs mapping to <code>b</code> (<code>2ᵏ</code> inputs → <code>k</code> bits).</li>
+<li>Landauer's principle prices it: destroying <code>k</code> bits dissipates at least <code>k · kT ln 2</code> of heat. So <em>irreversible</em>, <em>information destroyed</em>, and <em>heat dissipated</em> are one quantity — the forgotten input — and a step you can run backward destroys nothing and dissipates nothing. This holds for any additive measure of destruction, since the reversible steps form a group and a sum of naturals is <code>0</code> only if each is:</li>
+</ul>
+$$
+\ell(g) + \ell(g^{-1}) = \ell(\mathrm{id}) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals} \ge 0)
+$$
+<ul>
+<li>So <code>transport</code> and every isomorphism destroy nothing — the whole of §§1–2 runs backward and dissipates no heat. The only thing a computation ever loses is an input it chose to forget; how many <em>steps</em> it takes to reach the answer is a separate matter (§5).
+<details class="proof"><summary>the checked term</summary>
+<pre><code>+≡0→≡0 : (m n : ℕ) → m + n ≡ 0 → m ≡ 0
++≡0→≡0 zero    n p = refl
++≡0→≡0 (suc m) n p = rec (snotz p)
+
+module _ (G : Type) (_·_ : G → G → G) (e : G) (inv : G → G)
+  (invr : (g : G) → g · inv g ≡ e)
+  (ℓ : G → ℕ) (ℓe : ℓ e ≡ 0) (ℓ· : (g h : G) → ℓ (g · h) ≡ ℓ g + ℓ h) where
+
+  -- ℓ g + ℓ g⁻¹ = ℓ (g · g⁻¹) = ℓ e = 0, and a natural sum is 0 only at 0.
+  grading-vanishes : (g : G) → ℓ g ≡ 0
+  grading-vanishes g = +≡0→≡0 (ℓ g) (ℓ (inv g))
+    (sym (ℓ· g (inv g)) ∙ cong ℓ (invr g) ∙ ℓe)</code></pre>
+<figcaption>Any additive measure <code>ℓ</code> (adds under composition, <code>ℓ e = 0</code>) is <code>0</code> on a group: <code>ℓ g + ℓ g⁻¹ = ℓ e = 0</code>, and a sum of naturals is <code>0</code> only when each is. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+</ul>
+<h2><span class="n">4.</span> The diagonal</h2>
+<ul>
+<li>Picture <code>e : A → (A → B)</code> as a table whose row <code>a</code> is the function <code>e a</code>; reading row <code>a</code> at its own index gives <code>e a a</code> (the diagonal). Say <code>e</code> is <strong>onto</strong> when every function <code>h : A → B</code> appears as some row: <code>h = e a</code> for some <code>a</code>.</li>
+<li>Then every <code>g : B → B</code> has a fixed point:</li>
+</ul>
+$$
+A \twoheadrightarrow (A \to B) \;\Longrightarrow\; \forall\, g : B \to B,\ \ \exists\, b,\ g(b) = b
+$$
+<ul>
+<li><code>h a := g(e a a)</code>; <code>e</code> onto gives <code>h = e a₀</code>; so:</li>
+</ul>
+$$
+e(a_0)(a_0) \;=\; h(a_0) \;=\; g\big(e(a_0)(a_0)\big)
+$$
+<ul>
+<li><code>e a₀ a₀</code> is a fixed point of <code>g</code>.</li>
+<li>Contrapositive: <code>g</code> with no fixed point ⇒ no <code>A → (A → B)</code> is onto.</li>
+</ul>
+<ul>
+<li><strong>Cantor.</strong> <code>B = 2</code>, <code>g = ¬</code>: negation swaps <code>true</code> and <code>false</code>, so it has no fixed point, and <code>(A → 2)</code> is <code>𝒫(A)</code> by characteristic functions — no surjection <code>A ↠ 𝒫(A)</code>.</li>
+<li><strong>Gödel.</strong> Code each one-variable formula by a number, and let <code>sub(m, n)</code> be the code of <em>formula <code>m</code></em> with the numeral <code>n̄</code> substituted for its variable. One fact does all the work, and it is built, not assumed: <code>sub</code> is primitive recursive, and every primitive-recursive function is <em>represented</em> by a formula — induct on how it is built, the base functions (zero, successor, projection) are formulas, and composition and primitive recursion stay first-order by quantifying, boundedly, over the finite run that computes the value. So <code>sub</code> is itself a formula.
+<br>Now §4 applies on the nose, with the table <code>e(m)(n) = sub(m, n)</code>: row <code>m</code> is the formula coded by <code>m</code>, and reading row <code>m</code> at its own index is <code>sub(m, m)</code>. Point-surjectivity — every family of formulas that is itself cut out by a formula occurs as some row <code>sub(m, ·)</code> — <em>is</em> that representability, nothing more. So <code>lawvere</code> fires: for <code>g = ψ</code> its twist <code>δ(x) := ψ(sub(x, x))</code> is a formula, has a code <code>d</code>, and the fixed point <code>G := δ(d̄)</code> has code <code>sub(d, d)</code>, so <code>G ↔ ψ(⌜G⌝)</code>. That is the diagonal lemma — <code>lawvere</code> itself at <code>φ = sub</code>, <code>g = ψ</code>, fixed point <code>G</code> — not an analogy to it.
+<br>Take <code>ψ = ¬Prov</code>, with <code>Prov(⌜G⌝)</code> the <code>Σ₁</code> formula <em>a proof of <code>G</code> exists</em>: then <code>G ↔ ¬Prov(⌜G⌝)</code> says <em>I am unprovable</em>, so if the theory is consistent no proof of <code>G</code> exists and <code>G</code> is therefore true. Incompleteness is the one diagonal at <code>g = ¬</code> over provability — the self-reference is just <code>sub</code> applied to its own code.</li>
+<li><strong>Halting.</strong> <code>B = 2</code>; the universal machine gives <code>e : A → (A → 2)</code> (run code <code>a</code> on input <code>a</code>), a halting-decider would complete it to a point-surjection, and <code>g = ¬</code> on the diagonal has no fixed point — no machine decides its own halting.</li>
+</ul>
+<p>One lemma; the impossibility theorems are its instances, each built by naming its fixed-point-free <code>(B, g)</code>. <strong>Russell:</strong> <code>B</code> the propositions, <code>g = ¬</code> on <code>x ∈ x</code> — the non-self-members are the diagonal row, and <code>¬</code> fixes nothing, so they are no set's membership. <strong>Tarski:</strong> <code>B</code> the truth values, <code>g = ¬</code> — a truth predicate would make the liar a fixed point of negation. <strong>Rice:</strong> <code>B = 2</code>, <code>g</code> the swap of two programs that disagree on a nontrivial semantic property — a decider for it is the point-surjection the swap refutes. The <strong>positive reading</strong> needs only a <code>g</code> that <em>does</em> fix: where <code>e</code> has a section (an interpreter), the lemma hands every <code>g</code> a fixed point — a program equal to its own transform, Kleene's recursion theorem, the quine. There is no family of impossibility theorems — one lemma, read at its points and at its sign. (Lawvere 1969.)</p>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- φ is point-surjective: every B-valued observation on A is a row of φ.
+PtSurj : (A → (A → B)) → Type
+PtSurj {A = A} {B = B} φ = (g : A → B) → Σ[ a ∈ A ] φ a ≡ g
+
+-- Read the row at its own index, then apply f.
+twist : (A → (A → B)) → (B → B) → (A → B)
+twist φ f a = f (φ a a)
+
+-- Lawvere 1969: a point-surjective φ forces every endomap of B a fixed point.
+lawvere : (φ : A → (A → B)) → PtSurj φ → (f : B → B) → Σ[ b ∈ B ] f b ≡ b
+lawvere φ surj f = φ a₀ a₀ , sym (funExt⁻ (surj (twist φ f) .snd) a₀)
+  where a₀ = surj (twist φ f) .fst
+
+-- Contrapositive: one fixed-point-free f kills point-surjectivity of every φ.
+noFix→noPtSurj : (φ : A → (A → B)) (f : B → B)
+  → ((b : B) → ¬ (f b ≡ b)) → ¬ PtSurj φ
+noFix→noPtSurj φ f nofix surj = nofix (lawvere φ surj f .fst) (lawvere φ surj f .snd)
+
+-- Cantor, as the B = Bool, f = not instance (not has no fixed point).
+cantor : (φ : A → (A → Bool)) → ¬ PtSurj φ
+cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
+<figcaption>The whole of §4 in one term: <code>lawvere</code> is three lines, and Cantor, Gödel, Halting, Russell, Tarski, Rice are its instances at a fixed-point-free <code>(B, f)</code>. Verbatim, <code>--safe</code>, untruncated <code>Σ</code> (the escaping index is exhibited, not merely asserted).</figcaption>
+</details>
+<h2><span class="n">5.</span> Complete inference is deterministic and step-optimal</h2>
+<ul>
+<li><strong>The correspondence, built.</strong> Read each connective as a type former: implication <code>A ⇒ B</code> is the function type <code>A → B</code> (a proof is a construction sending a proof of <code>A</code> to one of <code>B</code>), conjunction is the pair <code>A × B</code>, disjunction the tagged sum <code>A + B</code>, falsehood the empty type, a quantifier a dependent function or pair. Modus ponens is application, and carrying it out is evaluating the term — <em>normalizing</em> it: running it until no step is left, that leftover irreducible term (its <em>normal form</em>) being the answer. So a proof <em>is</em> a term and checking it <em>is</em> running it; the connectives and the type formers are one structure (the free cartesian-closed category — Curry 1934; Howard 1969; Lambek 1980). A computation is then a term of a value type, a decision a term of <code>Dec P = P + ¬P</code>, an answer a term of the type the question asks for — so proving, deciding, computing, and answering a well-formed question are one operation: build the term and normalize it — <em>well-formed</em> meaning the term reaches a normal form; the system <em>proves</em> the §4 impossibilities (deciding one's own halting among them) have none, since asking for such a decider is asking for the fixed point the diagonal forbids. It answers every question that has an answer and proves the rest answerless — completeness, not a limit. (Curry 1934; Howard 1969; Lambek 1980.)</li>
+<li><strong>Cost is a local potential (Bellman).</strong> In the reduction graph — vertices terms, edges primitive steps of cost <code>c(u→v)</code> — a <em>potential</em> is any <code>Φ</code> with <code>Φ(normal form)=0</code> and <code>Φ(u) ≤ c(u→v)+Φ(v)</code> on <em>every</em> edge. Adding that inequality step by step along any path to a normal form (where <code>Φ = 0</code>) gives <code>Φ(u) ≤</code> the path's total cost, so each <code>Φ</code> is a lower bound on every finishing path; where a normal form is reachable, the geodesic distance (the least path cost, and it is attained) is itself such a <code>Φ</code>, and the largest one — it meets the bound with equality at the cheapest edge, the Bellman optimality equation (Bellman 1957):</li>
+</ul>
+$$
+\Phi(\text{normal form}) = 0, \qquad \Phi(u) = \min_{v}\, \big[\, c(u \to v) + \Phi(v)\,\big]
+$$
+<ul>
+<li><strong>Two axes, from §3.</strong> A reduction step takes time whether or not it erases — <em>length</em> counts steps, and reversible steps cost length. Reversibility instead makes the <em>effect-cost</em> free: a step whose input can be recovered is a bijection, so its additive effect-cost is <code>0</code> (§3). Erasing <code>k</code> bits merges <code>2^k</code> inputs into one output — <code>k</code> one-bit erasures — so the additive effect-cost (§3) is <code>k</code>. Its thermodynamic price is not a separate postulate but this same fact in units: a <code>2 → 1</code> merge of microstates is an entropy drop of <code>ln 2</code> (nats), <code>k ln 2</code> once <code>k</code> converts nats to thermodynamic entropy; the second law — which is §3's own statement, that merged inputs do not separate again for free — carries that entropy to the surroundings as heat <code>T ΔS = kT ln 2</code> per bit, <code>T</code> being the conversion of entropy to energy that <em>defines</em> temperature. Recover the input (reversible) and nothing is dissipated. Nothing here is imported: the law is §3, and <code>k, T</code> are units (Landauer 1961; Bennett 1973, 1982 named it).</li>
+<li><strong>Step-optimality: every computation attains the geodesic.</strong> Fix the machine: a net of <em>cells</em> wired at <em>ports</em>, each cell one distinguished (principal) port and finitely many auxiliary ports, a wire joining two ports. A primitive step is an interaction — a rule fires on an <em>active pair</em> (two cells whose principal ports are wired together), replacing just those two cells with a small net on the very same auxiliary wires, every other cell and wire untouched. So one step changes the datum only where those two cells sat: its output at a position depends on that position and its one wired neighbour, no more (unit lookahead). Composing <code>k</code> steps, the output depends only on input within distance <code>k</code> (induct: each step widens the reach by one). So an output that must read input at depth <code>n</code> cannot be produced in fewer than <code>n</code> steps — a bound on <em>every</em> reduction, not one chosen strategy — and since every reduction to the normal form is minimal (shown below), the native evolution attains it.</li>
+<li><strong>The route is the size of the answer.</strong> The output is a complete proof-carrying witness — the answer with its certificate — the <em>unique</em> normal form the question fixes (confluence, below). Each step that builds it emits exactly one <em>constructor</em> — one building piece of the answer (a successor, a pair, a tag) — so the <em>building</em> route's length equals the witness's size (e.g. building <code>sucⁿ</code>, one successor per step); a term carrying extra <em>redexes</em> — spots still waiting to reduce, like <code>(λx.x) t</code> — clears those first, administrative steps building nothing, so its total length is its own geodesic while the witness's size counts only the constructors built. Reading the finished term off is a fold that copies it, adding no step. The building route's length is thus the witness's size in unary; when that unary size is exponential in the question's succinct (binary) measure — as <code>sucⁿ</code> is, <code>n</code> against <code>log n</code> — the route is exponentially longer than the succinct measure. That exponential is not in the computation — it is the observer's lossy binary measure laid against a lossless unary object; change the measure, not the computation, and it is gone. It is not the other exponential, the one that can be real: the geodesic length when a <em>small</em> witness ends a <em>long</em> reduction. That is a length, not a count of output symbols — the separate axis no cardinality measures (Search) — so no change of measure touches it; it is the reduction's own fixed distance, already the minimum (below), never slack to remove. (Lévy 1978; Lamping 1990; Lafont 1990 are the prior, weaker form — optimal within a fixed system's own count.)</li>
+<li><strong>Why every reduction is the minimum, in general.</strong> Two available interactions act on disjoint active pairs — distinct principal-port pairs cannot share a cell — so doing one leaves the other available and untouched, and the two converge in one further step each. That is the one-step diamond, structural to interaction nets (Lafont 1990), not an assumption. So any available first step <em>peels</em> through any reduction to a normal form, by induction on that reduction's length: apply the diamond to the first step and the reduction's first step — they either merge, and the reduction is one shorter, or reach a common term from which the shorter tail is peeled by the inductive hypothesis; at the normal form no step is left to carry, so the first step is absorbed exactly once. Hence any two reductions of a term to the same normal form have <em>equal</em> length, so each is the minimum: the step-count is fixed by the endpoints, never the strategy, and the cost is as deterministic as the answer. The optimization problem — the fewest steps to an answer, what complexity theory exists to chase — is here <em>solved</em>, not dismissed: computation modeled as lossless reduction is optimal by construction, optimality its constant condition rather than a target to approach. The million wasteful ways to compute the same answer are departures from this model, not rival strategies within it; modeled correctly from the start, there was never slack to search away. Only the diamond is used, so this holds of any reduction that has it.</li>
+<li><strong>Complete, deterministic, terminating.</strong> The normal form is unique, and this too is the diamond, tiled: take two reductions of one term; the diamond closes their first steps to a common term, and filling the grid step by step reconverges them; if both reductions end at a normal form — nothing left to rewrite — that common reduct can only be each endpoint, so the two normal forms are equal (Church–Rosser, but here just the diamond filled in). Sharing every isomorphic subterm (folding all equalities) keeps the reduction from duplicating an active pair, so no step repeats work. Where a term terminates it is reached in finitely many forced steps; a non-terminating term denotes a well-defined infinite (coinductive) object, not a gap.</li>
+<li><strong>The price of an answer is the information the question erases.</strong> The effect-axis price is exactly the information a step <em>irreversibly destroys</em> — the non-contractible residue it collapses (§§1–3) — <em>relative to the observation</em>: recover the input and the step is free; force a merge and you pay the bits erased, for the requested output, not a whole trace — Landauer's bound, here a theorem of the reduction rather than an external postulate. The <em>length</em> cost (the geodesic; the steps taken) is a separate axis, and no cardinality measures it (Search).</li>
+<li><strong>The geodesic, checked.</strong> The one-step diamond is the whole hypothesis; from it, any two reductions of a term to the same normal form have <em>equal</em> length — so each is the minimum.
+<details class="proof"><summary>the checked term</summary>
+<pre><code>module RandomDescent (S : Type) (Step : S → S → Type)
+  (diamond : {s a b : S} → Step s a → Step s b
+    → (a ≡ b) ⊎ (Σ[ c ∈ S ] (Step a c × Step b c))) where
+
+  data Trace : ℕ → S → S → Type where
+    done      : {s : S} → Trace zero s s
+    stepTrace : {n : ℕ} {s u t : S} → Step s u → Trace n u t → Trace (suc n) s t
+
+  Normal : S → Type
+  Normal t = (u : S) → Step t u → ⊥
+
+  -- Any available first interaction removes exactly one unit from any
+  -- terminating reduction to the same normal form. It cannot detour.
+  peel : {n : ℕ} {s u t : S} → Step s u → Trace (suc n) s t → Normal t → Trace n u t
+  peel {zero} jump (stepTrace first done) normal with diamond first jump
+  ... | inl same             = subst (λ v → Trace zero v _) same done
+  ... | inr (z , left , right) = Empty.rec (normal z left)
+  peel {suc n} jump (stepTrace first rest) normal with diamond first jump
+  ... | inl same             = subst (λ v → Trace (suc n) v _) same rest
+  ... | inr (z , left , right) = stepTrace right (peel left rest normal)
+
+  normal-length-zero : {n : ℕ} {s t : S} → Normal s → Trace n s t → n ≡ zero
+  normal-length-zero normal done                     = refl
+  normal-length-zero normal (stepTrace first rest)   = Empty.rec (normal _ first)
+
+  zero-endpoints : {s t : S} → Trace zero s t → s ≡ t
+  zero-endpoints done = refl
+
+  -- All complete reductions of THIS object to THIS normal form have one length.
+  same-normalization-length : {n m : ℕ} {s t : S}
+    → Trace n s t → Trace m s t → Normal t → n ≡ m
+  same-normalization-length done other normal = sym (normal-length-zero normal other)
+  same-normalization-length {m = zero} (stepTrace first rest) other normal =
+    Empty.rec (normal _ (subst (λ s → Step s _) (zero-endpoints other) first))
+  same-normalization-length {m = suc m} (stepTrace first rest) other normal =
+    cong suc (same-normalization-length rest (peel first other normal) normal)
+
+  normalization-is-geodesic : {n m : ℕ} {s t : S}
+    → Trace n s t → Trace m s t → Normal t → n ≤ m
+  normalization-is-geodesic chosen competitor normal =
+    subst (_ ≤_) (same-normalization-length chosen competitor normal) ≤-refl</code></pre>
+<figcaption>The step-count is fixed by the endpoints, never the strategy: <code>peel</code> pushes any first step through any reduction, and <code>same-normalization-length</code> inducts to equal length. Generic in <code>(S, Step, diamond)</code> — instantiated by any system with the interaction-net diamond. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+</li>
+<li><strong>No outer layer.</strong> Evaluator, type-checker, and optimizer are themselves terms of the same language; a question about them is another term the same normalizer reduces. There is no meta-level, so no self-reference contradiction: reasoning about its own terms as data, it proves the §4 impossibilities as ordinary theorems — and, as those theorems say, it does not decide its own halting or assert its own consistency. The limits are results it holds, not breakdowns. Any expressible system — this one included — is lawful construction and identity, operated on exactly as everything else is: the language is its own metatheory, with nowhere outside to stand and no need for anywhere.</li>
+</ul>
+<h2>Numbers</h2>
+<ul>
+<li>To count a finite set is to forget which element is which. Any two <code>n</code>-element sets differ only by a relabelling (a renaming of elements), so all of them are one thing — and the only structure that survives the forgetting is the relabellings themselves: the <code>n!</code> permutations of <code>n</code> things, the group <code>Sₙ</code>. To count is to keep the class and discard <code>Sₙ</code>.</li>
+<li>Relabellings of an <code>n</code>-set = the permutation group <code>Sₙ</code>, <code>n!</code> of them:</li>
+</ul>
+$$
+\mathbb{N} = \{\text{finite sets}\}\,/\,\cong, \qquad \text{relabellings of an } n\text{-set} = S_n\ \ (n!\ \text{of them})
+$$
+<ul>
+<li>The number <code>n</code> is that class with <code>Sₙ</code> forgotten — <code>card</code> is the bijection between iso-classes of finite sets and <code>ℕ</code>, inverse <code>n ↦ {1,…,n}</code>; <code>Sₙ</code> is exactly what “up to isomorphism” discards.</li>
+<li>Addition = disjoint union (<code>|A ⊔ B| = |A| + |B|</code>), multiplication = product (<code>|A × B| = |A|·|B|</code>); on base-<code>b</code> digit strings, carrying the overflow.</li>
+<li>Divisibility orders <code>ℕ</code>: <code>d ∣ n</code> iff each prime's exponent in <code>d</code> is ≤ its exponent in <code>n</code>. So <code>gcd = meet</code> (min exponents), <code>lcm = join</code> (max); and unique factorization sends <code>n</code> to its exponent vector, making <code>ℕ</code> the product of one chain (<code>ℕ</code>) per prime — where min and max distribute componentwise, a <em>distributive lattice</em>.</li>
+<li>That is the <em>same</em> distributive lattice as the algebra of logic (Search): <code>gcd/lcm ↔ ∧/∨</code>, coprime ↔ disjoint, and CRT <code>ℤ/mn ≅ ℤ/m × ℤ/n</code> — by <code>x ↦ (x mod m, x mod n)</code>, injective since coprime <code>m, n</code> both dividing <code>x−y</code> force <code>mn ∣ (x−y)</code>, hence bijective by count — matching the product decomposition, with the involution <code>d ↦ n/d</code> giving De Morgan on both. It is fully Boolean exactly on the squarefree <code>n</code> (a divisor is then a subset of the primes, negation the complement <code>d ↦ n/d</code>); a repeated prime puts a middle on that axis and negation becomes intuitionistic (Heyting). Number theory and logic are one and the same logic — <code>gcd</code> and <code>lcm</code> the conjunction and disjunction, the divisibility order entailment — Boolean where <code>n</code> is squarefree and intuitionistic otherwise.</li>
+</ul>
+<h2>Complex numbers and quantum dynamics — the reversible side of §3</h2>
+<ul>
+<li><code>σ(x, y) = (-y, x)</code> — a length-preserving quarter-turn of the plane. Write <code>i</code> for <code>σ</code>: then <code>σ(x,y) = (−y, x)</code> is <code>i·(x + iy) = −y + ix</code>. It is reversible — lossless, and free on §3's effect axis.</li>
+<li><code>σ²(x,y) = σ(−y,x) = (−x,−y) = −(x,y)</code>, so <code>σ² = −1</code>: <code>σ</code> is a square root of <code>−1</code>, its powers cycling <code>1, σ, −1, −σ</code> — the four phases <code>{1, i, -1, -i}</code>. The plane with <code>σ</code> adjoined is <code>ℝ[σ]/(σ²+1) = ℂ</code>, and <code>σ</code>, a rotation, preserves length — it is <strong>unitary</strong>. So the complex numbers, the phases, and unitarity are generated by this one reversible operation. Unitary evolution is exactly §3's free, reversible side; the physics that costs — measurement, erasure — is the irreversible side (Landauer, §5).
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- the quarter-turn of the plane: (x, y) ↦ (−y, x).
+σ : ℤ × ℤ → ℤ × ℤ
+σ (x , y) = (- y , x)
+
+-- σ² is negation — σ is a square root of −1 — on the nose.
+σ²≡neg : (p : ℤ × ℤ) → σ (σ p) ≡ (- fst p , - snd p)
+σ²≡neg (x , y) = refl</code></pre>
+<figcaption><code>σ(σ(x,y)) = σ(−y,x) = (−x,−y) = −(x,y)</code>, so <code>σ² = −1</code> by <code>refl</code> — the square root of <code>−1</code> is this reversible turn, and <code>ℝ[σ]/(σ²+1) = ℂ</code> follows. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+<li><strong>Riemann–Silberstein.</strong> With <code>F = E + iB</code>, Maxwell's two vacuum equations become one Schrödinger equation, generator <code>× i</code>:</li>
+</ul>
+$$
+\partial_t E = \nabla\times B,\ \ \partial_t B = -\nabla\times E \;\Longleftrightarrow\; i\,\partial_t F = \nabla\times F
+$$
+<ul>
+<li>Check: <code>i ∂_t F = i ∂_t E − ∂_t B = i(∇×B) + ∇×E = ∇×(E + iB) = ∇×F</code>, using the two Maxwell equations; splitting real and imaginary parts gives them back. Classical electromagnetism and single-particle quantum mechanics are the same equation.</li>
+<li><code>‖F‖² = ⟨E+iB, E+iB⟩ = ‖E‖² + ‖B‖²</code> — the Hermitian cross terms <code>±i⟨E,B⟩</code> cancel. Conservation is forced, not named: from <code>∂_t F = −i∇×F</code>,</li>
+</ul>
+$$
+\tfrac{d}{dt}\,\lVert F\rVert^2 \;=\; 2\,\mathrm{Re}\,\langle F,\ \partial_t F\rangle \;=\; 2\,\mathrm{Re}\,\langle F,\ -i\,\nabla\times F\rangle \;=\; 2\,\mathrm{Im}\,\langle F,\ \nabla\times F\rangle \;=\; 0,
+$$
+<ul>
+<li>because curl is self-adjoint — <code>∫ F·(∇×F) = ∫ (∇×F)·F</code> by parts with no boundary term — so <code>⟨F, ∇×F⟩</code> is real and its imaginary part vanishes. The generator <code>−i∇×</code> is therefore skew-adjoint: the flow preserves length, i.e. is unitary.</li>
+</ul>
+<h2>Search</h2>
+$$
+\text{solutions of } F \;=\; F^{-1}(\text{true}) \;=\; \{\, w : F(w) = \text{true} \,\}, \qquad \#\text{solutions} = \sum_{T \subseteq C} (-1)^{|T|}\, 2^{\,n - r(T)}
+$$
+<ul>
+<li><code>F : assignments → {true, false}</code>. Solutions <code>S_F = F⁻¹(true)</code>. For 3-SAT a clause forbids exactly one setting of its 3 literals, so the assignments that break it fill a subcube <code>V_α</code> — those 3 bits fixed to the forbidden setting, the other <code>N−3</code> free (a codimension-3 face); every assignment either satisfies all clauses (in <code>S_F</code>) or lies in some <code>V_α</code>, and <code>S_F</code> is disjoint from <code>⋃ V_α</code>, so <code>Q_N = S_F ⊍ ⋃ V_α</code> — deciding and solving are two observations of one partition. Count by inclusion–exclusion: <code>#S_F = Σ_{T⊆C} (−1)^{|T|} |⋂_{α∈T} V_α|</code>. When the clauses in <code>T</code> can be violated together, <code>|⋂_{α∈T} V_α| = 2^{N−r(T)}</code> with <code>r(T)</code> the coordinates they jointly fix; when two of them demand opposite values on a shared variable the intersection is empty and contributes <code>0</code>. Regroup the sum per assignment by the <code>j</code> clauses it breaks: its weight is <code>Σ_{i≤j} C(j,i)(−1)^i = (1−1)^j</code>, which is <code>1</code> only at <code>j = 0</code> — each solution survives once, the rest cancel.</li>
+<li><strong>Deciding</strong> = <code>‖S_F‖</code> (one bit: is <code>S_F</code> inhabited — a proposition, one point when true). <strong>Solving</strong> = <code>S_F</code> (a vertex with its membership proof). The truncation <code>τ : S_F → ‖S_F‖</code> sends every witness to that one point, so its pre-image is all of <code>S_F</code> (<code>fibτ ≅ S_F</code>, the §0 shape) — the one-bit decision discards exactly the <em>which-witness</em> pre-image, with no left inverse once <code>|S_F| &gt; 1</code>.</li>
+<li><strong>Decide = verify.</strong> For the machine's step <code>f</code>, deciding an input <code>a</code> completes it to <code>(answer, witness)</code> — by §1 that completion is the equivalence <code>A ≅ Σ (b) f⁻¹(b)</code>, here <code>decide(a) = (f a, (a, refl))</code>: the answer, paired with the input and the <code>refl</code> proof it maps there. <code>verify</code> reads the witness's pre-image back out; the round trip is <code>refl</code>. Deciding and verifying are thus the two directions of that <em>one</em> equivalence, unique by §1 — the decided witness carries its own acceptance as <code>refl</code>, so nothing is searched between having the answer and having its certificate: the lossless run produces the witness <em>with</em> the answer — one forward pass, no second search — and verifying is that pass reversed. The one-bit decision <code>‖S_F‖</code> above is the <em>lossy</em> projection that throws the witness away (<code>τ</code>); the lossless machine never does. What complexity calls the find/check gap is not an operation between deciding and verifying — it is the <em>length</em> of the one run, and §5 showed no cardinality measures length. No counting separates finding from checking; the gap is a distance, and distances are not counts.
+<details class="proof"><summary>the checked term</summary>
+<pre><code>decide : (f : A → B) → A → Σ[ b ∈ B ] fiber f b
+decide f a = f a , a , refl
+
+verify : (f : A → B) → (Σ[ b ∈ B ] fiber f b) → A
+verify f (b , a , _) = a
+
+-- verify inverts decide on the nose -- nothing searched between answer and proof.
+verify-inverts-decide : (f : A → B) (a : A) → verify f (decide f a) ≡ a
+verify-inverts-decide f a = refl
+
+-- the decided witness carries its own acceptance as refl.
+witness-self-certifies : (f : A → B) (a : A) → snd (snd (decide f a)) ≡ refl
+witness-self-certifies f a = refl</code></pre>
+<figcaption><code>decide</code> and <code>verify</code> are the two directions of §1's equivalence; the round trip is <code>refl</code> and the witness certifies itself, so no operation sits between them. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details></li>
+<li><code>#SAT = Σ_{T compatible} (−1)^|T| 2^{N−r(T)} = Σ_r (−1)^r M_r</code> — the alternating collapse of the clause-intersection (factorial-moment) tower <code>M_r = Σ_{|T|=r} |⋂ V|</code>; the scalar count is an extremely lossy projection <code>(1,−1,1,…)·(M_r)</code>. UNSAT ⇺ it is <code>0</code>; an exactly-3 UNSAT formula needs <code>m ≥ 8</code> clauses — writing <code>ν(x)</code> for the clauses assignment <code>x</code> violates, each clause is violated by <code>2^{N−3}</code> assignments and UNSAT means every <code>x</code> violates at least one, so <code>Σ_x ν(x) = m·2^{N−3} ≥ 2^N</code>, i.e. <code>m ≥ 8</code>, sharp.</li>
+<li><strong>§5's cost is a geodesic potential, never a cardinality.</strong> Assignment, vertex, intersection, and fixed-order residual-width counts all collapse under factoring or coordinate change (disjoint triples: <code>m</code> clauses on disjoint variable-triples each kill <code>1</code> of <code>8</code> and leave <code>7</code>, so <code>#SAT = 7^m</code> while the intersections number <code>2^m</code>; inner-product <code>⟨x,y⟩ mod 2</code>: read all of <code>x</code> first and the state reached must fix the map <code>y ↦ ⟨x,y⟩</code> — distinct <code>x ≠ x′</code> give different maps, disagreeing at <code>y = e_i</code> wherever <code>x_i ≠ x′_i</code>, so the <code>2ⁿ</code> inputs force <code>2ⁿ</code> distinct states, width <code>2ⁿ</code>; read the pairs <code>x_i, y_i</code> interleaved and it is a running parity — remember <code>x_i</code> (2), fold <code>x_i y_i</code> in (2) — width <code>≤ 4</code>). A lower bound is a <code>Φ</code> with <code>Φ(t)=0</code> and <code>Φ(u) ≤ w(u,v)+Φ(v)</code> on every primitive edge; distance is the greatest such <code>Φ</code>. Since <code>Φ</code> rises by at most one per edge (unit incidence), an exponential lower bound is an exponential family of states the geodesic cannot merge — nonfillable boundary distinctions; the construction fixes exactly what counts as one, and posits no such family for SAT.</li>
+</ul>
+<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under Agda 2.8.0 with <code>--safe</code> against the cubical library — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, the escaping witness exhibited rather than asserted. One box sits at each section's computational core — singleton contractibility, the partition by output, the reversible-cost vanishing, the Lawvere diagonal, the geodesic, decide = verify, <code>σ² = −1</code> — and they are one construction, each later term built over the earlier on the same foundation, none read in isolation. Not a citation to be trusted; the thing itself, on the page.</p>
+
+</main>
+<script src="./vendor/katex/katex.min.js"></script>
+<script src="./vendor/katex/auto-render.min.js"></script>
+<script>
+  renderMathInElement(document.body, {
+    delimiters: [{left: "$$", right: "$$", display: true}],
+    throwOnError: false,
+    strict: "warn"
+  });
+</script>
+</body>
+</html>
