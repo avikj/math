@@ -4,7 +4,6 @@ on:
   pull_request:
     paths:
       - 'collab/bend2-interactive-cubical/cubical-paths.patch'
-      - 'collab/bend2-interactive-cubical/list-transport.patch'
       - 'collab/bend2-interactive-cubical/test_list_transport.py'
       - '.github/workflows/cubical-list-transport.yml'
   workflow_dispatch:
@@ -30,7 +29,7 @@ jobs:
           test "$(git hash-object "$RUNNER_TEMP/hvm.c")" = 83a85befcc52d4bda1a92cc6afd07ad4b3005b29
           cc -O2 -o "$RUNNER_TEMP/hvm" "$RUNNER_TEMP/hvm.c" -lm
           mkdir "$RUNNER_TEMP/list-transport-source"
-          cp "$RUNNER_TEMP/hvm.c" collab/bend2-interactive-cubical/{cubical-paths.patch,list-transport.patch,test_list_transport.py} "$RUNNER_TEMP/list-transport-source/"
+          cp "$RUNNER_TEMP/hvm.c" collab/bend2-interactive-cubical/{cubical-paths.patch,test_list_transport.py} "$RUNNER_TEMP/list-transport-source/"
       - name: Reproduce the old bug and test the fixed runtime
         run: python3 collab/bend2-interactive-cubical/test_list_transport.py --hvm "$RUNNER_TEMP/hvm"
       - name: Retain the exact sources used by the regression

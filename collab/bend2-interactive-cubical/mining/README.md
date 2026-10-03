@@ -50,12 +50,13 @@ An interrupted, rejected, or out-of-memory run is **not** an empty fibre.
 The existing `SUPGEN_DEMO.md` execution pattern is retained:
 
 ```hvm
-@btcCandidates = @btcAppend(@btcPrefixes, @btcNonces)
-@main = @btcKeep(@btcRun(@btcTarget, @btcCandidates))
+@btcCandidates = @DbtcAppend(@btcPrefixes, @btcNonces)
+@main = @btcKeep(@DbtcRun(@btcTarget, @btcCandidates))
 ```
 
 `btcPrefixes` is the supplied family of immutable 76-byte header prefixes.
-Each free nonce bit appears as one named native `&BTCnonceN{0,1}` choice.
+Each free nonce bit appears as one named native `&Nk{0,1}` choice (HVM4
+encodes a label name in 24 bits, four characters at most).
 The same candidate is passed through the hash/specification and retained in
 its receipt. No host loop expands candidate headers, selects nonce values,
 executes mining SHA calls, or invokes an external SAT/SMT solver.

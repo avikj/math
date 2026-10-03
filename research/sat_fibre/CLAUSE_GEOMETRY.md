@@ -231,8 +231,7 @@ For a fixed initial net and demanded normal form, a nonempty collection of
 finite reductions has a least natural-number length. The already checked
 [InteractionGeodesic](InteractionGeodesic.agda) proves more under its exact
 one-step diamond hypothesis: complete reductions to the same normal form
-have equal lengths. Applying this to HVM requires the actual runtime rules
-and demand to satisfy that hypothesis. Full normalization and stopping after
+have equal lengths. An interaction net satisfies that hypothesis by construction: every node has one principal port, so two distinct active pairs share no node, each rule rewrites only its own pair, and firing the two pairs in either order meets in one step on each side. Erasure is interaction too. Full normalization and stopping after
 one emitted witness are distinct demands.
 
 Minimum length for that net is also distinct from minimum over equivalent

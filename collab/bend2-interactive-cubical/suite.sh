@@ -22,7 +22,7 @@ BEND="${1:-$(cat /tmp/BENDBIN 2>/dev/null || echo bend)}"
 NONTOTAL="loop recon_bach streams coinduction_mustfail"
 
 MUSTFAIL="coinduction_mustfail erasure glue_mustfail hfill kan_mustfail quotient_mustfail sub_mustfail transp_mustfail partial_mustfail circle_mustfail truncation_mustfail hit_circle_mustfail hit_mustfail
-          silence_mustfail uaequiv_mustfail uaroundtrip"
+          silence_mustfail uaequiv_mustfail uaroundtrip gate_mustfail sup_dependent_mustfail"
 cd "$(dirname "$0")" || exit 1
 bad=0; n=0
 for f in *.bend; do
@@ -39,4 +39,16 @@ for f in *.bend; do
     { [ "$ko" -eq 0 ] && [ "$ok" -ge 1 ]; } || { echo "FAIL $nm ok=$ok ko=$ko"; bad=$((bad+1)); }
   fi
 done
+
+# The full target emits a checked entry as its typed point (A, a).
+cond_tmp=$(mktemp)
+if timeout 300 "$BEND" conductive_entry_smoke.bend --to-hvm4-full >"$cond_tmp" 2>/dev/null \
+   && grep -Fqx '@main = #Pair{@Tmain, @Dmain}' "$cond_tmp"; then
+  echo "TYPED-POINT ENTRY OK"
+else
+  echo "FAIL typed-point entry"
+  bad=$((bad+1))
+fi
+rm -f "$cond_tmp"
+
 echo "files=$n bad=$bad"; [ "$bad" -eq 0 ]

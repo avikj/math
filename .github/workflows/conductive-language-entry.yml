@@ -1,0 +1,120 @@
+name: Conductive language entry
+on:
+  pull_request:
+    paths:
+      - 'collab/bend2-interactive-cubical/**'
+      - 'research/sat_fibre/SATProcess.bend'
+      - '.github/workflows/conductive-language-entry.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-and-execute:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install pinned GHC and Cabal
+        uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.12.2'
+          cabal-version: '3.14.2.0'
+      - name: Bootstrap exact Cubical Bend2 and HVM runtimes
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash collab/bend2-interactive-cubical/mining/bootstrap.sh "$RUNNER_TEMP/conductive-build"
+          cat "$RUNNER_TEMP/conductive-build/build-identity.txt"
+      - name: Typecheck the law, its closure and the presentation under --total
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/conductive-build/env.sh"
+          export LC_ALL=C.UTF-8
+          cd collab/bend2-interactive-cubical/port
+          for m in FibreElement FibreCoalgebra ConductiveRuntime UniversalPresentation; do
+            "$BEND" "$m.bend" --total
+          done
+      - name: Typed-point root, fibre law, cells and check gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/conductive-build/env.sh"
+          bash collab/bend2-interactive-cubical/verify_conductive_entry.sh "$BEND" "$HVM"
+      - name: Map-valued and dependent entries are typed points
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/conductive-build/env.sh"
+          export LC_ALL=C.UTF-8
+          cd collab/bend2-interactive-cubical
+          "$BEND" conductive_map_smoke.bend --to-hvm4-full > "$RUNNER_TEMP/conductive-map.hvm4"
+          grep -Fqx '@main = #Pair{@Tmain, @Dmain}' "$RUNNER_TEMP/conductive-map.hvm4"
+          "$HVM" "$RUNNER_TEMP/conductive-map.hvm4" -s | tee "$RUNNER_TEMP/conductive-map.log"
+          head -1 "$RUNNER_TEMP/conductive-map.log" | grep -Fq '#Pair{#Pi{#Bool{},'
+          "$BEND" conductive_dependent_map_smoke.bend --to-hvm4-full > "$RUNNER_TEMP/conductive-dependent-map.hvm4"
+          grep -Fqx '@main = #Pair{@Tmain, @Dmain}' "$RUNNER_TEMP/conductive-dependent-map.hvm4"
+          "$HVM" "$RUNNER_TEMP/conductive-dependent-map.hvm4" -s | tee "$RUNNER_TEMP/conductive-dependent-map.log"
+          head -1 "$RUNNER_TEMP/conductive-dependent-map.log" | grep -Fq '#Pair{#Pi{#Set{},'
+      - name: Execute the canonical checked process and its point/question reading
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/conductive-build/env.sh"
+          export LC_ALL=C.UTF-8
+          cd collab/bend2-interactive-cubical
+          "$BEND" port/ConductiveRuntime.bend --to-hvm4-full > "$RUNNER_TEMP/conductive-runtime-source.hvm4"
+          "$HVM" "$RUNNER_TEMP/conductive-runtime-source.hvm4" -s | tee "$RUNNER_TEMP/conductive-runtime-source.log"
+          [ "$(head -1 "$RUNNER_TEMP/conductive-runtime-source.log")" = '#Pair{#Nat{},#Suc{#Suc{#Zer{}}}}' ]
+          "$BEND" port/UniversalPresentation.bend --to-hvm4-full > "$RUNNER_TEMP/universal-presentation.hvm4"
+          "$HVM" "$RUNNER_TEMP/universal-presentation.hvm4" -s | tee "$RUNNER_TEMP/universal-presentation.log"
+          [ "$(head -1 "$RUNNER_TEMP/universal-presentation.log")" = '#Pair{#Nat{},#Suc{#Suc{#Zer{}}}}' ]
+      - name: Run complete Cubical Bend suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/conductive-build/env.sh"
+          bash collab/bend2-interactive-cubical/suite.sh "$BEND"
+      - name: Compile and execute SAT through the full runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/conductive-build/env.sh"
+          export LC_ALL=C.UTF-8
+          cd research/sat_fibre
+          "$BEND" SATProcess.bend --to-hvm4-full > "$RUNNER_TEMP/SATProcess.hvm4"
+          grep -Fqx '@main = #Pair{@Tmain, @Dmain}' "$RUNNER_TEMP/SATProcess.hvm4"
+          ! grep -q '@DwholeProcess' "$RUNNER_TEMP/SATProcess.hvm4"
+          ! grep -q '@Dinteract' "$RUNNER_TEMP/SATProcess.hvm4"
+          "$HVM" "$RUNNER_TEMP/SATProcess.hvm4" -s | tee "$RUNNER_TEMP/sat-runtime.log"
+          # the XOR fibre, shared: (a, b, a xor b) over superposed a and b
+          head -1 "$RUNNER_TEMP/sat-runtime.log" | grep -Fq '#Pair{#reading{},#Pair{&L100{0,1},#Pair{&L101{0,1},#Pair{&L100{&L101{0,1},&L101{1,0}},#One{}}}}}'
+          "$BEND" sat_fibre.bend --to-hvm4-full > "$RUNNER_TEMP/sat_fibre.hvm4"
+          "$HVM" "$RUNNER_TEMP/sat_fibre.hvm4" -s | tee "$RUNNER_TEMP/sat-fibre.log"
+          [ "$(head -1 "$RUNNER_TEMP/sat-fibre.log")" = '#Pair{#Bool{},1}' ]
+      - name: Mining linker follows the typed namespace
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test collab/bend2-interactive-cubical/mining/transport-checks.mjs
+      - name: Retain exact generated/runtime evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: conductive-language-entry-evidence
+          path: |
+            ${{ runner.temp }}/conductive-build/build-identity.txt
+            ${{ runner.temp }}/conductive-build/bend-build.log
+            ${{ runner.temp }}/conductive-build/hvm-build.log
+            ${{ runner.temp }}/conductive-map.hvm4
+            ${{ runner.temp }}/conductive-dependent-map.hvm4
+            ${{ runner.temp }}/conductive-runtime-source.hvm4
+            ${{ runner.temp }}/universal-presentation.hvm4
+            ${{ runner.temp }}/SATProcess.hvm4
+            ${{ runner.temp }}/sat-runtime.log
+            ${{ runner.temp }}/sat_fibre.hvm4
+            ${{ runner.temp }}/sat-fibre.log
+          retention-days: 14
+          if-no-files-found: warn

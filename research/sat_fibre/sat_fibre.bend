@@ -9,7 +9,7 @@
 # Concrete instance (3 variables, 3 clauses):
 #   F(a,b,c) = (a | b | c) & (~a | b | ~c) & (a | ~b | c)
 
-def not(x: Bool) -> Bool:
+def bnot(x: Bool) -> Bool:
   match x:
     case True:  False
     case False: True
@@ -35,8 +35,8 @@ def F(x: Asg) -> Bool:
   match x:
     case (a, b, c):
       and2(clause(a, b, c),
-           and2(clause(not(a), b, not(c)),
-                clause(a, not(b), c)))
+           and2(clause(bnot(a), b, bnot(c)),
+                clause(a, bnot(b), c)))
 
 # ---- the fibre law object, instantiated on F ----
 def fiber(A: Set, B: Set, f: A -> B, y: B) -> Set:

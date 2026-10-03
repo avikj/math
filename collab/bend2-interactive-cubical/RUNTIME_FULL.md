@@ -11,8 +11,8 @@ does. `Target/HVM4Full.hs` (in `cubical-paths.patch`) emits Bend2 terms with
 |---|---|
 | interval | data: `#I0`, `#I1`, symbolic `#INot{i}`, `#IAnd{i,j}`, `#IOr{i,j}` (`@inot/@iand/@ior` evaluate when they can) |
 | value path `<i> t` | data `#PLm{λi. t}`; `p @ r` is `@pathAt(p, r)` |
-| universe path | data `#UaU{A,B,f,g}`, `#CompU{P,Q}` (`hcomp` in `Set`), endpoints by `@pL/@pR`, symbolic application `#At{p,i}` |
-| type | data: `#Bool`, `#Nat`, `#Set`, `#Pi{A,B}`, `#Sig{A,B}`, `#Path{A,u,v}`, … |
+| universe path | data `#UaU{A,B,f,g,gf,fg}` (both coherences kept beside the two maps), `#CompU{P,Q}` (`hcomp` in `Set`), endpoints by `@pL/@pR`, symbolic application `#At{p,i}` |
+| type | data: `#Bool`, `#Nat`, `#Set`, `#Pi{A,B}`, `#Sig{A,B}`, `#Path{A,u,v}`, `#Eql{A,x,y}`, `#Enum{syms}`, `#Num{kind}`, … — a type is a cell like any other, never abbreviated |
 | `coe(L, r, s, x)` | `@coe`: if `r`,`s` agree → `x`; else evaluate `L(#IMark)` and **dispatch on the type former at runtime**: rigid → `x`; `#Pi` → conjugate domain/codomain lines; `#Sig` → componentwise along the filled first component; `#Path` → the hcomp-conjugation square; `#At{p,i}` → `@coeU` on the universe path (`ua` → `f`/`g`; composite → sequential) |
 | `hcompN(A, faces, base)` | `@hcomp`: evaluates each face; a true face returns its tube's top; all-false returns the base; **otherwise it is stuck data `#HCm{A, faces, base}`** — partial knowledge, decided when a later application fixes the interval |
 | superposed line `&L{A i, B i}` | **no rule**: the `@coe` dispatch is a match, HVM4 commutes a match over a superposition, and the same-label dup of the transported value annihilates — the fibre routing (DUP-SUP) is the net's own interaction |
@@ -75,6 +75,61 @@ giving `eq/ @ i0 = [a]`, `@ i1 = [b]`), commuting over `Sup` natively. Verified:
 `qrec(qcl 3n, dbl) ⇒ 6`, `qrec(qeq(2n,2n,refl)@i0, dbl) ⇒ 4`; `minmachine`,
 `quotient`, `nerode_effective_closed` all emit and run.
 
+## Typed points: what the emitted program is
+
+The emitted object is the whole checked complex, not a value with its types
+stripped. `--to-hvm4-full` runs the checker first (the report goes to
+stderr, stdout is exactly the program) and emits nothing for an ill-typed
+book. Every definition `name : A = a` is emitted twice, in disjoint
+namespaces:
+
+    @Dname = <a>        the term
+    @Tname = <A>        its checked type, emitted by the same emitter
+
+and the root is the entry as a point of `Σ(A : Set). A`:
+
+    @main = #Pair{@Tmain, @Dmain}
+
+so `hvm p.hvm4 -s` prints `#Pair{<type>, <value>}` (e.g.
+`#Pair{#Nat{},#Suc{#Suc{#Zer{}}}}`). A map-valued entry is the point
+`(#Pi{…}, λ…)`; nothing is generated beside it. There is no runtime copy of
+the fibre law or its coinductive closure: `port/FibreCoalgebra.bend` and
+`port/ConductiveRuntime.bend` are ordinary checked programs going through
+this emitter (`verify_conductive_entry.sh`). Unary operations, unsolved
+metavariables, and floats are refused rather than miscompiled; `**` is
+`@pow`; a char is its code point.
+
+A HIT constructor is written bare (`@seg{a}`): it carries no parameters, and
+the checker reads them off the goal. They are cells of the checked term, so
+checking is two passes: a silent one records every bare constructor's
+parameters by its source span, the book is elaborated (`Core.Check.elabFills`,
+instantiating binders exactly as `check` does), and the reporting pass runs on
+the elaborated book. A declared endpoint that mentions a parameter
+(`@bot{f(a)}` in the cylinder of `f`) then computes with the actual `f`, in the
+normaliser and on the runtime (`hit_param_endpoint.bend`: 6 at both ends of
+the segment at 3, for `f = dbl`), where before it was an opaque placeholder in
+the one and an empty superposition in the other, which annihilated the whole
+value under collapse. A constructor that reaches emission without its
+parameters is refused, like any other cell the emitter cannot make complete.
+
+A superposed point of a dependent family is typed by the DUP of its goal at
+the value's label, which is the net's own DUP-SUP rule run on the type:
+`(&0{True, False}, &0{3n, ()}) : Σ b:Bool. F(b)` checks as `3n : F(True)`
+and `() : F(False)`, its typed point is
+`#Pair{#Sig{#Bool, λb. F b}, #Pair{&L0{1,0}, &L0{3,()}}}`, and `-C10` reads
+off exactly the two diagonal points, never `(3n, False)`
+(`sup_dependent.bend`; the different-label sibling is a must-fail). The
+same-label case is the contractible fibre and routes; a different label is
+an independent coordinate and must inhabit both fibres
+(`SETTLED_BY_THE_CORPUS.md` §1).
+
+One consequence to know: a typed point whose cells include a recursive
+function (a HIT parameterised by `dbl`, or a `main` that is `dbl`) has no
+finite normal form, and `hvm -s`, which normalises fully and expands every
+reference, does not terminate on it; the in-process normaliser prints such a
+reference by name. That is the printer, not the object: observe such a point
+through a map out of it, as the fibre law says, rather than printing the whole.
+
 ## Caveats
 
 - `coe` to a *symbolic* endpoint stays stuck (`@dir` = 2); the runtime
@@ -86,7 +141,7 @@ giving `eq/ @ i0 = [a]`, `@ i1 = [b]`), commuting over `Sup` natively. Verified:
   still computes (probe: `Σ b:(negPath@i). Nat` transports `(True, 3n)` to
   `3n` on the net). Note the checker rejects that probe's
   well-typedness anyway (`b : negPath@i` is not `Bool`), correctly.
-- Traces are inspectable data: `@main = @negNeg` prints
-  `#CompU{λi. …#At{#UaU{#Bool,#Bool,neg,neg}, i}…, λi. …}` — the composite
-  path itself, faces and all. Paths between universe paths are `#PLm` over
-  these.
+- Traces are inspectable data: the typed point of `negNeg` prints
+  `#Pair{#Path{…}, #CompU{λi. …#At{#UaU{#Bool,#Bool,neg,neg,…}, i}…, λi. …}}` — the
+  composite path itself, faces and all, beside its type. Paths between
+  universe paths are `#PLm` over these.

@@ -104,7 +104,8 @@ export function inputSource(job) {
   let label = 0;
   const balanced = values => {
     if (values.length === 1) return values[0];
-    const k = Math.floor(values.length/2), name = `BTCtemplate${label++}`;
+    // HVM4 encodes a label name in 24 bits: four base64 characters at most.
+    const k = Math.floor(values.length/2), name = `T${label++}`;
     return `&${name}{${balanced(values.slice(0,k))},${balanced(values.slice(k))}}`;
   };
   const prefixDefs = job.headers.map((h,i) => `@btcTemplate${i} = ${hvmBits(bitsOf(Buffer.from(h.slice(0,152),'hex')))}`);
@@ -112,17 +113,17 @@ export function inputSource(job) {
   const nonceBits = [];
   for (let byte = 0; byte < 4; ++byte) for (let bit = 7; bit >= 0; --bit) {
     const i = byte*8+bit, flag = 1n << BigInt(i);
-    nonceBits.push(mask & flag ? `&BTCnonce${i}{0,1}` : String(Number((base >> BigInt(i)) & 1n)));
+    nonceBits.push(mask & flag ? `&N${i}{0,1}` : String(Number((base >> BigInt(i)) & 1n)));
   }
   return '// Actual Bitcoin candidate family, held as one SUP value.\n' +
     prefixDefs.join('\n') + '\n' +
     `@btcPrefixes = ${balanced(job.headers.map((_,i) => '@btcTemplate'+i))}\n` +
     `@btcNonces = ${hvmBits(nonceBits)}\n` +
-    '@btcCandidates = @btcAppend(@btcPrefixes, @btcNonces)\n' +
+    '@btcCandidates = @DbtcAppend(@btcPrefixes, @btcNonces)\n' +
     `@btcTarget = ${hvmBits(bitsOf(Buffer.from(job.search_target,'hex')))}\n` +
     '// Existing SupGen keep/filter pattern: no host enumeration; failure is ERA.\n' +
     '@btcKeep = λ{#Pair: λbtcVerdict. λbtcReceipt. (λ{0: λbtcNo. &{}; _: λbtcYes. λ{#Pair: λbtcHeader. λbtcProof. #Hit{btcHeader, btcProof}}})(btcVerdict)(btcReceipt)}\n' +
-    '@main = @btcKeep(@btcRun(@btcTarget, @btcCandidates))\n';
+    '@main = @btcKeep(@DbtcRun(@btcTarget, @btcCandidates))\n';
 }
 export function gateSource() {
   const empty = Buffer.from(''), abc = Buffer.from('abc');
@@ -170,7 +171,7 @@ export function prepare(jobFile,out) {
   console.log(`Prepared ${job.candidate_count} candidates as ${fs.statSync(path.join(out,'input.hvm4')).size} bytes of native input, not enumerated headers.`);
 }
 export function link(compiled,input) {
-  requireThat(compiled.includes('FULL RUNTIME') && /^@coe\s*=/m.test(compiled) && /@btcRun\s*=/m.test(compiled), 'not the cubical full-runtime emitter output or missing btcRun');
+  requireThat(compiled.includes('FULL RUNTIME') && /^@coe\s*=/m.test(compiled) && /^@DbtcRun\s*=/m.test(compiled), 'not the cubical full-runtime emitter output or missing btcRun');
   requireThat((compiled.match(/^@main\s*=/gm)||[]).length===1, 'expected exactly one library main');
   return compiled.replace(/^@main\s*=/m,'@btcLibraryMain =')+'\n'+input;
 }
@@ -183,7 +184,7 @@ class Reader {
     const bits=[]; let n=0;
     for (;;) {
       this.ws();
-      if (this.s.startsWith('#Nil',this.p)) { this.p+=4; break; }
+      if (this.s.startsWith('#Nil',this.p)) { this.p+=4; if (this.s.startsWith('{}',this.p)) this.p+=2; break; }
       this.take('#Con'); this.take('{'); this.ws();
       const b=this.s[this.p++]; requireThat(b==='0'||b==='1','non-Boolean or unresolved bit in native output');
       bits.push(Number(b)); this.take(','); ++n;
@@ -209,7 +210,8 @@ export function validateHeader(job,header) {
 function readText(file) { requireThat(fs.statSync(file).size<=128*1024*1024,'output exceeds parser memory cap; raw output retained'); return stripAnsi(fs.readFileSync(file,'utf8')); }
 function checkNoise(noise) {
   for(const line of noise.split('\n').map(x=>x.trim()).filter(Boolean)) {
-    requireThat(/^[-=]/.test(line) && !/error|fail|stuck|invalid|usage/i.test(line),'unexpected runtime output: '+line.slice(0,160));
+    // `-C` annotates each collapsed result with its interaction count (`#N`, dimmed).
+    requireThat((/^[-=]/.test(line) || /^#\d+$/.test(line)) && !/error|fail|stuck|invalid|usage/i.test(line),'unexpected runtime output: '+line.slice(0,160));
   }
 }
 export function verifyGate(text) {

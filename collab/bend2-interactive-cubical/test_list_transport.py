@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Exercise the actual HVM prelude, without checker normalization hiding a bug.
 
+A universe path is the six-cell #UaU{A, B, f, g, gf, fg}: both coherences ride
+beside the two maps, as the full emitter keeps them.
+
 No third-party Python packages are needed. Supply a compiled HVM4 binary with
 --hvm. --check-only checks extraction and patch applicability, NOT execution.
 """
@@ -81,14 +84,17 @@ def coe(line: str, value: str, r: str = "#I0", s: str = "#I1") -> str:
 
 EXTRA = r"""
 @neg = λ{0: 1; λn. 0}
-@negPath = #UaU{#Bool, #Bool, @neg, @neg}
+@negLnv = λ{0: #PLm{λi. 0}; λn. #PLm{λi. 1}}
+@negPath = #UaU{#Bool, #Bool, @neg, @neg, @negLnv, @negLnv}
 @negLine = λi. #List{@pathAt(@negPath, i)}
 @idLine = λi. #List{#Bool}
 @nestedLine = λi. #List{#List{@pathAt(@negPath, i)}}
 @inverseLine = λi. #List{@pathAt(@negPath, @inot(i))}
 @doublePath = #CompU{λi. @pathAt(@negPath, i), λi. @pathAt(@negPath, i)}
 @doubleLine = λi. #List{@pathAt(@doublePath, i)}
-@rename = #UaU{#Bool, #Enum, λ{0: #Off; λn. #On}, λ{#Off: 0; #On: 1}}
+@renameLnv = λ{0: #PLm{λi. 0}; λn. #PLm{λi. 1}}
+@renameRnv = λ{#Off: #PLm{λi. #Off}; #On: #PLm{λi. #On}}
+@rename = #UaU{#Bool, #Enum, λ{0: #Off; λn. #On}, λ{#Off: 0; #On: 1}, @renameLnv, @renameRnv}
 @renameLine = λi. #List{@pathAt(@rename, i)}
 @head = λ{#Con: λh. λt. h; #Nil: 0}
 @loop = @loop
@@ -98,7 +104,8 @@ EXTRA = r"""
 @applyTrue = λ{#Nil: #Nil; #Con: λf. λtail. #Con{f(1), @applyTrue(tail)}}
 @cycle3 = λ{#Red: #Green; #Green: #Blue; #Blue: #Red}
 @uncycle3 = λ{#Red: #Blue; #Green: #Red; #Blue: #Green}
-@cyclePath = #UaU{#Enum, #Enum, @cycle3, @uncycle3}
+@cycleLnv = λ{#Red: #PLm{λi. #Red}; #Green: #PLm{λi. #Green}; #Blue: #PLm{λi. #Blue}}
+@cyclePath = #UaU{#Enum, #Enum, @cycle3, @uncycle3, @cycleLnv, @cycleLnv}
 @cycleLine = λi. #List{@pathAt(@cyclePath, i)}
 """
 
@@ -191,32 +198,25 @@ def main() -> None:
     parser.add_argument("--check-only", action="store_true")
     args = parser.parse_args()
     here = Path(__file__).resolve().parent
-    original = source_from_patch((here / "cubical-paths.patch").read_text(encoding="utf-8"))
+    source = source_from_patch((here / "cubical-paths.patch").read_text(encoding="utf-8"))
+    prelude = runtime_prelude(source)
+    assert "#List: λe. x;" not in prelude
+    assert "#List: λe. @coeList(L, r, s, e, x);" in prelude
+    print("PASS: canonical cubical patch contains parameterized List transport")
+    if args.check_only:
+        print("Native execution not run (--check-only)")
+        return
+    hvm = shutil.which(args.hvm or "hvm")
+    if hvm is None:
+        raise SystemExit("HVM4 not found; provide --hvm /path/to/hvm")
     with tempfile.TemporaryDirectory(prefix="list-coe-") as tmp:
         directory = Path(tmp)
-        fixed = apply_fix(original, here / "list-transport.patch", directory)
-        before, after = runtime_prelude(original), runtime_prelude(fixed)
-        assert "#List: λe. x;" in before
-        assert "#List: λe. x;" not in after
-        assert "#List: λe. @coeList(L, r, s, e, x);" in after
-        print("PASS: original prelude extracted; corrective patch applies")
-        if args.check_only:
-            print("Native execution not run (--check-only)")
-            return
-        hvm = shutil.which(args.hvm or "hvm")
-        if hvm is None:
-            raise SystemExit("HVM4 not found; provide --hvm /path/to/hvm")
-        # The baseline MUST exhibit the concrete wrong result, not merely fail
-        # to parse. This prevents unrelated build failures from passing a test.
-        baseline = evaluate(hvm, before, coe("@negLine", list_term("1")), directory / "before.hvm")
-        assert baseline == [canonical_output(list_term("1"))], baseline
-        print("PASS: baseline reproduces incorrect unchanged singleton")
         for name, expression, expected in cases():
-            actual = evaluate(hvm, after, expression, directory / f"{name}.hvm")
+            actual = evaluate(hvm, prelude, expression, directory / f"{name}.hvm")
             expected = [canonical_output(value) for value in expected]
             assert Counter(actual) == Counter(expected), f"{name}: got {actual}, expected {expected}"
             print(f"PASS: {name}")
-        print(f"PASS: {len(cases())} native HVM4 regression cases")
+    print(f"PASS: {len(cases())} native HVM4 regression cases")
 
 
 if __name__ == "__main__":

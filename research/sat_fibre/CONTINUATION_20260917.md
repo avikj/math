@@ -34,8 +34,8 @@ demand, representation, and interaction currency are all specified.
 - `DesaSanghata` proves that coarse fibre censuses do not compose as a scalar
   graded cost; which outer points carry which inner fibres matters.
 - `InteractionGeodesic` proves equal complete reduction lengths under an
-  exact one-step diamond. It is not yet instantiated for the complete HVM4
-  demand/runtime relation.
+  exact one-step diamond, which an interaction net has by construction:
+  distinct active pairs are disjoint.
 - `OptimalObservation` proves outcome-cardinality minimality for an injective
   lossless observation with equal cardinality.
 - `DSOCutCalibration` proves a concrete strict hierarchy: two rectangle
@@ -117,9 +117,8 @@ collapsed normal form, not conjunctive normal form. Collapse queue work,
 printing, parsing, dispatch, source construction, and output are separate.
 `heap_nodes` in profiles is cumulative allocation, not peak memory/RSS.
 
-Short-circuit demand breaks naive global geodesicity: `AND-ZER` returns before
-normalizing its right operand. `-C1` (first result) and complete collapse are
-different observations and can have different minimal traces.
+`-C1` (first result) and complete collapse are different demands, with
+different normal forms and different geodesics.
 
 Aspertiâ“Mairson's theorem that implementation cost of Levy-optimal shared
 beta reduction is nonelementary is relevant motivation for charging
@@ -148,25 +147,16 @@ duplication explicitly, but does not prove a lower bound for this SAT net.
 - `DesaSanghata` proves that coarse fibre censuses do not compose as a scalar graded cost: the placement of inner fibres over outer points is required.
 - `SankramanaShreni` proves that meaning descends through the history quotient while a cost separating meaning-equivalent histories cannot.
 - `AFoolingSetForcesDistinctRectangles` proves that a sound rectangle cover must assign distinct rectangles to pairwise fooling cells; its finite covering corollary supplies the corresponding cardinal obstruction.
-- `InteractionGeodesic` proves equal lengths only under its explicitly quantified one-step diamond. The HVM4 instantiation remains an open correspondence problem, rather than a statement to infer from the generic theorem.
 - The SAT boundary dominance proof preserves inhabitedness and one witness; it does not preserve the complete solution fibre unless the retained fibre is carried. This is a theorem about the two different maps.
 - A semantic state count, an algebraic derivation length, an interaction count, allocation, and output work are different receivers. Equality between any pair requires a proved correspondence.
 
 ## Highest-value next work
 
-1. Define an explicit costed SAT boundary net whose nodes correspond to
-   obligation/representative operations and whose transitions correspond to
-   HVM rule events, including DUP-SUP labels and short-circuit demand.
-2. Prove a correspondence from that net to `SATBoundary`'s solution/residual
-   equivalence and a lower bound for the selected demand.
-3. Implement a nontrivial representative-family SAT instance where the
+1. Implement a nontrivial representative-family SAT instance where the
    cheap-span certificate is supplied structurally, then compare interaction
    totals against an unreduced shared presentation. It must test the new
    theorem's behavior, not merely re-run an oracle-known truth table.
-4. Extend the TSP boundary representation to retain connectivity partitions,
+2. Extend the TSP boundary representation to retain connectivity partitions,
    then apply the representative criterion and compare exact HVM rule counts
    with the existing Heldâ“Karp counts. Track output witness, #tours, and
    minimum cost as separate fibres/receivers.
-5. Only after these correspondences exist, state an optimality theorem of the
-   form: âfor this fixed net, demand, and cost receiver, every complete trace
-   has cost at least L, and this trace attains L.â

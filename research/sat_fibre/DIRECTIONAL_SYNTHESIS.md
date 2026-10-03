@@ -40,9 +40,9 @@ representations additionally includes translation, certificate construction,
 execution, and output work.
 
 The universal fibre theorem proves semantic losslessness. It does not make
-these three geodesics equal. The missing bridge is a costed correspondence
-whose transitions are actual HVM/Bend rules and whose lower bound is stated
-for the same demand.
+these three geodesics equal. The first is `InteractionGeodesic` applied to the
+net, whose one-step diamond holds by construction: distinct active pairs are
+disjoint.
 
 ## Why clause overlap is the information core
 
@@ -75,20 +75,18 @@ W. This preserves inhabitedness and reconstructs a witness. For #SAT it is
 not lawful to discard W: its multiplicity is part of the fibre. The retained
 fibre supplied by `photon.Fibre.lossless` is exactly the missing data.
 
-## The runtime correspondence to prove
+## The runtime rules, read on the fibre
 
 An end-to-end theorem should define a typed net state containing the current
 boundary representation, retained obligation fibre, demand, HVM labels, and
 interaction/allocation ledger. The interpretation sends a net state to the
-corresponding SAT solution or residual family. Each HVM rule then needs a
-semantic commuting square and a cost recurrence.
+corresponding SAT solution or residual family.
 
 Equal-label `DUP-SUP` is branch projection in an already shared fibre.
 Different-label `DUP-SUP` is commuting transport that creates shared
 structures. `AND-ZER` and `OR-ONE` are erasing projections whose remaining
 fibre is not demanded. `APP-SUP`, `AND-SUP`, and `OR-SUP` distribute a
-continuation over a superposition and charge duplication work. Collapse
-scheduling is an observation policy, not an equality of complete traces.
+continuation over a superposition and charge duplication work.
 
 A lower bound can attach to a retained-distinction invariant: if two boundary
 states have separating future continuations, a faithful demanded decoder

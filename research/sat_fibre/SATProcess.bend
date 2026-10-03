@@ -1,4 +1,4 @@
-import WholeProcess
+import ../../collab/bend2-interactive-cubical/port/UniversalPresentation
 
 # A concrete configuration constraint: exactly one of two features is enabled.
 type Assignment:
@@ -12,31 +12,21 @@ def formula(a: Assignment) -> Bool:
       if x: if y: False else: True
       else: y
 
-# The carrier includes a path from the computed answer to the reading.
-def present(a: Assignment) -> Carrier(Assignment, Bool, formula):
-  carry_transport(Assignment, Bool, formula, a)
-
-def exact(a: Assignment) -> Path(Assignment, ascend(Assignment, Bool, formula, present(a)), a):
-  <_> a
-
 type Reading:
   case @reading:
     x: Bool
     y: Bool
     answer: Bool
 
-# Demand a second response from the retained continuation: recover the
-# assignment after asking whether it satisfies the formula.
+# SAT-specific code is now only the mathematical object, its proposition, and
+# the desired readout. The generic lossless/coinductive process is the language
+# presentation supplied by UniversalPresentation / the full target.
 def query(a: Assignment) -> Reading:
-  match interact(Assignment, a, wholeProcess(Assignment, a), Bool, formula):
-    case @wholeReply{value, source, next}:
-      match interact(Carrier(Assignment, Bool, formula), value, next,
-                     Assignment, lambda c. ascend(Assignment, Bool, formula, c)):
-        case @wholeReply{second, receipt, more}:
-          match result(Carrier(Assignment, Bool, formula), Assignment,
-                       lambda c. ascend(Assignment, Bool, formula, c), second):
-            case @assignment{x, y}:
-              @reading{x, y, result(Assignment, Bool, formula, value)}
+  answer = visible(Assignment, Bool, formula, a)
+  source = recover(Assignment, Bool, formula, a)
+  match source:
+    case @assignment{x, y}:
+      @reading{x, y, answer}
 
 def main() -> Reading:
   query(@assignment{&100{False, True}, &101{False, True}})

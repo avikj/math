@@ -41,7 +41,20 @@ record passed 'full cubical runtime retained; main is the existing SupGen keep/s
 # Full 64-round SHA + double-SHA Bitcoin vectors and actual native transport.
 # No known nonce is supplied to the search; it appears only in this gate.
 phase=conformance
-(cd "$OUT/source" && "$BEND" Gate.bend --to-hvm4-full) > "$OUT/gate.hvm4" 2> "$OUT/gate-emit.stderr"
+(cd "$OUT/source" && "$BEND" Gate.bend --to-hvm4-full) > "$OUT/gate.typed.hvm4" 2> "$OUT/gate-emit.stderr"
+# Full-runtime roots are typed points (#Pair{type,value}).  The conformance
+# verifier intentionally checks the value projection only, so retarget this
+# executable gate to the already-emitted checked value @Dmain.  The typed root
+# remains preserved in the retained gate.typed.hvm4 artifact.
+python3 - "$OUT/gate.typed.hvm4" "$OUT/gate.hvm4" <<'PY'
+import pathlib, re, sys
+src = pathlib.Path(sys.argv[1]).read_text()
+src, n = re.subn(r'(?m)^@main = ', '@typedGateMain = ', src, count=1)
+if n != 1:
+    raise SystemExit('expected exactly one typed @main gate root')
+src += '\n@main = @Dmain\n'
+pathlib.Path(sys.argv[2]).write_text(src)
+PY
 "$HVM" "$OUT/gate.hvm4" -s -C1 > "$OUT/gate.log" 2> "$OUT/gate.stderr"
 "$NODE" "$HERE/mining.mjs" gate "$OUT/gate.log"
 record passed

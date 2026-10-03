@@ -1176,3 +1176,24 @@ A coding agent should be able to execute this without conceptual research:
 15. Only then broaden to arbitrary existing mathematical programs.
 
 If step 3 cannot be implemented without changing Core, document the exact compiler limitation and make the smallest Core change that removes it. Do not branch into a redesign.
+
+
+# 41. Final implementation state
+
+The generic source-level process is no longer duplicated across applications,
+and the compiler carries no copy of it either.
+
+- `FibreCoalgebra.bend` explicitly defines the exact whole transition, typed continuation, visible projection, and two-observation source recovery.
+- `ConductiveRuntime.bend` and `UniversalPresentation.bend` are the canonical checked programs of that process: the first as the law and its closure, the second as the point/question reading.
+- `SATProcess.bend` no longer imports `WholeProcess` or spells `interact`; it contains only the SAT object/proposition/readout and uses the universal presentation.
+- `Target.HVM4Full` emits every checked definition twice, `@Dname` (the term) and `@Tname` (its checked type), and the root is the typed point `@main = #Pair{@Tmain, @Dmain}` of `Σ(A : Set). A`. Map-valued and dependent entries are ordinary typed points; nothing is generated beside them.
+- `--to-hvm4-full` runs the checker first and emits nothing for an ill-typed book.
+- Types are emitted as complete cells: an equality type keeps its carrier and endpoints, an enum keeps its symbols, a numeric type its kind, and `ua` keeps both coherences beside its two maps.
+- A HIT constructor carries its parameters: the checker reads them off the goal, records them by the constructor's source span, and the book is elaborated before the reporting check and before emission (`Core.Check.elabFills`). A declared endpoint that mentions a parameter computes with it on both evaluators, and a HIT value survives collapse; before, the runtime filled the missing cell with `&{}`, which annihilated the value under `-C`.
+
+What was tried and removed, and why, so it is not rediscovered:
+
+- A handwritten `@cf*` HVM prelude re-implementing `descend`/`observe`/`ascend`, with `@main` rewritten to the "conductive projection" of a retained `@sourceMain`. Provably the identity (`observe(id)` is the Yoneda retrieval of the point; every stage of the tower is equivalent to `A`), at a fixed interaction cost, and a second copy of mathematics that already exists as checked Bend. Deleted; the checked modules run through the ordinary emitter.
+- Compile-time `nativeDerivation`/`NativeStep` companions recording Core.WHNF head-reductions of each definition body, with fold-based "receivers" (length, endpoint, rules). `--to-hvm4-full` executes HVM4, not Core.WHNF, so the recorded derivation describes a different evaluator; a closed deterministic run's derivation is contractible, so it adds no information; and evaluating at compile time breaks productivity. Deleted. Native cost is the HVM interaction receipt of the typed root.
+
+The follow-up interface (`respond : all B. all f : A -> B. FibreObservation`) is source-level Bend and needs no compiler support beyond faithful emission.
