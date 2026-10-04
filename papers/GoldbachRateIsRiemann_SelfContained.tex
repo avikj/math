@@ -1,0 +1,539 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[hidelinks]{hyperref}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{proposition}[theorem]{Proposition}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Lam}{\Lambda}
+\newcommand{\re}{\operatorname{Re}}
+\newcommand{\im}{\operatorname{Im}}
+\newcommand{\res}{\operatorname{Res}}
+\newcommand{\lcm}{\operatorname{lcm}}
+\newcommand{\G}{\mathcal{G}}
+\newcommand{\RH}{\mathsf{RH}}
+\newcommand{\GR}{\mathsf{G}}
+\newcommand{\dd}{\,\mathrm{d}}
+
+\title{The dyadic Goldbach rate and the Riemann hypothesis are one proposition\\
+\large A self-contained proof of the biconditional}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+\noindent
+Let $\Lam$ be the von Mangoldt function, $R(N)=\sum_{a+b=N}\Lam(a)\Lam(b)$ the quantitative Goldbach count, and
+$\G(t)=t^{2}\sum_{N}R(N)e^{-Nt}$ its normalised Laplace transform.
+Write $\GR$ for the proposition
+``for every $\varepsilon>0$, $\G(2t)-\G(t)=O_\varepsilon(t^{1/2-\varepsilon})$ as $t\downarrow 0$''
+and $\RH$ for the Riemann hypothesis.
+We prove $\GR\Leftrightarrow\RH$.
+Hence any proof of either proposition is a proof of the other, and any refutation of either is a refutation of the other: the two have identical truth content.
+Every fact about $\zeta$, $\Gamma$ and the primes that the argument uses is proved in this file.
+The only inputs are the standard theorems of real and complex analysis listed in Section~\ref{sec:inputs}.
+\end{abstract}
+
+\section{Statement}\label{sec:statement}
+
+\begin{definition}[Arithmetic objects]
+For $n\ge 1$ let $\Lam(n)=\log p$ if $n=p^{k}$ for a prime $p$ and an integer $k\ge 1$, and $\Lam(n)=0$ otherwise.
+Let $\psi(x)=\sum_{n\le x}\Lam(n)$ for real $x\ge 1$.
+For $N\ge 2$ let
+\[
+R(N)=\sum_{\substack{a+b=N\\ a,b\ge 1}}\Lam(a)\Lam(b),
+\]
+the weighted ordered count of representations of $N$ as a sum of two prime powers.
+For $t>0$ let
+\[
+A(t)=\sum_{n\ge 1}\Lam(n)e^{-nt},\qquad
+G_R(t)=\sum_{N\ge 2}R(N)e^{-Nt},\qquad
+\G(t)=t^{2}G_R(t),\qquad
+r(t)=\G(2t)-\G(t).
+\]
+\end{definition}
+
+All series converge absolutely for $t>0$ since $0\le\Lam(n)\le\log n\le n$ and $R(N)\le N^{2}\cdot N=N^{3}$.
+
+\begin{lemma}\label{lem:square}
+For every $t>0$, $G_R(t)=A(t)^{2}$; hence $\G(t)=(tA(t))^{2}$.
+\end{lemma}
+\begin{proof}
+All terms are nonnegative, so by Tonelli
+\[
+A(t)^{2}=\sum_{a\ge1}\sum_{b\ge1}\Lam(a)\Lam(b)e^{-(a+b)t}=\sum_{N\ge2}e^{-Nt}\sum_{a+b=N}\Lam(a)\Lam(b).\qedhere
+\]
+\end{proof}
+
+\begin{definition}[The two propositions]
+\begin{itemize}
+\item[$\GR$:] For every $\varepsilon\in(0,\tfrac12)$ there exist $C_\varepsilon>0$ and $t_\varepsilon>0$ such that
+$|r(t)|\le C_\varepsilon\,t^{1/2-\varepsilon}$ for all $0<t\le t_\varepsilon$.
+\item[$\RH$:] The Riemann zeta function $\zeta(s)=\sum_{n\ge1}n^{-s}$ ($\re s>1$) has a meromorphic continuation to $\C$ (Theorem~\ref{thm:FE} below), and every zero $\rho$ of this continuation with $0<\re\rho<1$ satisfies $\re\rho=\tfrac12$.
+\end{itemize}
+\end{definition}
+
+\begin{theorem}[Main theorem]\label{thm:main}
+$\GR\iff\RH$.
+\end{theorem}
+
+\begin{corollary}\label{cor:truth}
+$\neg\GR\iff\neg\RH$.
+A proof of either proposition yields, through Sections~\ref{sec:forward} and~\ref{sec:reverse}, a proof of the other; a counterexample to either yields a refutation of the other.
+\end{corollary}
+\begin{proof}
+Immediate from Theorem~\ref{thm:main}, constructively: from $P\leftrightarrow Q$ one obtains $\neg P\leftrightarrow\neg Q$ by composing with the implications.
+\end{proof}
+
+\begin{remark}
+$\GR$ is a statement about the quantitative Goldbach field $R(N)$ through its Laplace transform.
+Section~\ref{sec:reverse} shows that the finite prefix $R(N)$, $N\le L$, determines the quantity at scale $t$ up to an error smaller than the critical rate once $L\gg t^{-1}\log(1/t)$, so $\GR$ is a statement about finite Goldbach data at every scale.
+Nothing in this file concerns the proposition ``$R(N)>0$ for all even $N\ge 4$'', which is a different proposition.
+\end{remark}
+
+\section{Inputs from analysis}\label{sec:inputs}
+
+The proof uses only the following standard results; nothing else is assumed.
+\begin{itemize}
+\item[(A1)] Cauchy's theorem and the residue theorem for rectangles; Cauchy's estimate\\ $|g'(z)|\le \max_{|w-z|=\delta}|g(w)|/\delta$.
+\item[(A2)] The identity theorem: two meromorphic functions on a connected open set that agree on a nonempty open subset agree everywhere. A nonvanishing holomorphic function on a convex open set has a holomorphic logarithm.
+The logarithmic derivative of a meromorphic function $h$ has simple poles exactly at the zeros and poles of $h$, with residue the order (positive at zeros, negative at poles).
+\item[(A3)] Holomorphic dependence on parameters: if $f(s,x)$ is holomorphic in $s$ for each $x$, measurable in $x$, and $|f(s,x)|\le g(x)$ with $\int g<\infty$ for $s$ in a neighbourhood of each point, then $s\mapsto\int f(s,x)\dd x$ is holomorphic there. A locally uniformly convergent series of holomorphic functions is holomorphic and may be differentiated termwise.
+\item[(A4)] Fubini and Tonelli.
+\item[(A5)] For a Schwartz function $\varphi$ on $\R$ with $\widehat{\varphi}(\xi)=\int_\R\varphi(u)e^{-2\pi i u\xi}\dd u$: Fourier inversion $\varphi(u)=\int_\R\widehat\varphi(\xi)e^{2\pi i u\xi}\dd\xi$, and Poisson summation $\sum_{n\in\Z}\varphi(n)=\sum_{n\in\Z}\widehat\varphi(n)$.
+\item[(A6)] The Schwarz lemma and the maximum principle.
+\item[(A7)] Unique factorisation of positive integers into primes.
+\end{itemize}
+
+\section{The Gamma function}\label{sec:gamma}
+
+\begin{definition}
+For $\re s>0$ let $\Gamma(s)=\int_0^\infty e^{-x}x^{s-1}\dd x$.
+\end{definition}
+
+\begin{lemma}\label{lem:gamma-basic}
+$\Gamma$ is holomorphic on $\re s>0$, $\Gamma(s+1)=s\Gamma(s)$, $\Gamma(1)=1$, $\Gamma(n)=(n-1)!$ for $n\ge1$.
+$\Gamma$ extends to a meromorphic function on $\C$ whose poles are exactly the simple poles at $0,-1,-2,\dots$.
+\end{lemma}
+\begin{proof}
+Holomorphy by (A3) with $g(x)=e^{-x}(x^{a-1}+x^{b-1})$ on $a\le\re s\le b$.
+Integration by parts gives $\Gamma(s+1)=s\Gamma(s)$, and $\Gamma(1)=1$.
+For $\re s>-n$ define $\Gamma(s)=\Gamma(s+n)/\bigl(s(s+1)\cdots(s+n-1)\bigr)$; the definitions agree on overlaps by the functional equation.
+The only singularities are at $s=-j$, $j\ge0$: choosing $n>j$, the numerator there is $\Gamma(n-j)=(n-j-1)!\ne0$ while the denominator has a simple zero, so each is a simple pole.
+\end{proof}
+
+\begin{lemma}[Beta integral]\label{lem:beta}
+For $\re a>0$, $\re b>0$:
+$\displaystyle \Gamma(a)\Gamma(b)=\Gamma(a+b)\int_0^1 v^{a-1}(1-v)^{b-1}\dd v$.
+\end{lemma}
+\begin{proof}
+$\Gamma(a)\Gamma(b)=\iint_{(0,\infty)^2}e^{-x-y}x^{a-1}y^{b-1}\dd x\dd y$ (absolutely convergent, (A4)).
+Substitute $x=wv$, $y=w(1-v)$ with $w>0$, $0<v<1$; the Jacobian is $w$, and the integral becomes
+$\int_0^\infty e^{-w}w^{a+b-1}\dd w\int_0^1 v^{a-1}(1-v)^{b-1}\dd v$.
+\end{proof}
+
+\begin{lemma}[Reflection]\label{lem:reflection}
+For all $s\in\C\setminus\Z$: $\Gamma(s)\Gamma(1-s)=\pi/\sin(\pi s)$.
+\end{lemma}
+\begin{proof}
+First let $0<\re s<1$. By Lemma~\ref{lem:beta} with $a=s$, $b=1-s$,
+$\Gamma(s)\Gamma(1-s)=\int_0^1 v^{s-1}(1-v)^{-s}\dd v$.
+Substituting $v=u/(1+u)$, $\dd v=\dd u/(1+u)^2$, $v^{s-1}(1-v)^{-s}=u^{s-1}(1+u)$, this equals
+$I(s)=\int_0^\infty \frac{u^{s-1}}{1+u}\dd u=\int_{\R}\frac{e^{sv}}{1+e^{v}}\dd v$ (with $u=e^{v}$).
+Let $g(z)=e^{sz}/(1+e^{z})$ and integrate over the rectangle with vertices $\pm T$, $\pm T+2\pi i$.
+Inside, $g$ has exactly one pole, at $z=i\pi$, where $1+e^{z}$ vanishes with derivative $e^{i\pi}=-1$, so $\res_{i\pi}g=-e^{i\pi s}$.
+The top edge contributes $-\int_{-T}^{T}g(v+2\pi i)\dd v=-e^{2\pi i s}\int_{-T}^{T}g(v)\dd v$.
+On the right edge $|g(T+iy)|\le e^{\sigma T}/(e^{T}-1)\to0$ since $\sigma=\re s<1$; on the left edge $|g(-T+iy)|\le e^{-\sigma T}/(1-e^{-T})\to0$ since $\sigma>0$.
+Letting $T\to\infty$: $(1-e^{2\pi i s})I(s)=2\pi i\,(-e^{i\pi s})$, so
+$I(s)=\dfrac{2\pi i}{e^{i\pi s}-e^{-i\pi s}}=\dfrac{\pi}{\sin\pi s}$.
+Both sides of the claimed identity are meromorphic on $\C$ and agree on the strip, so they agree on $\C\setminus\Z$ by (A2).
+\end{proof}
+
+\begin{corollary}\label{cor:gamma-nonzero}
+$\Gamma(s)\ne0$ for every $s\in\C$ that is not a pole; in particular $\Gamma(s)\ne 0$ for $\re s>0$, and $1/\Gamma$ is entire.
+\end{corollary}
+\begin{proof}
+If $s\notin\Z$ then $\Gamma(s)\Gamma(1-s)=\pi/\sin\pi s$ is finite and nonzero, so $\Gamma(s)\ne0$.
+If $s=n\ge1$ then $\Gamma(n)=(n-1)!\ne0$.
+Nonpositive integers are poles.
+Hence $1/\Gamma$ has no poles, and its zeros are the poles of $\Gamma$.
+\end{proof}
+
+\begin{lemma}[Decay on vertical strips]\label{lem:gamma-decay}
+For $0<a\le b<\infty$ there is $K=K(a,b)$ with $|\Gamma(\sigma+i\tau)|\le K/(1+\tau^{2})$ for all $a\le\sigma\le b$, $\tau\in\R$.
+\end{lemma}
+\begin{proof}
+Substituting $x=e^{u}$, $\Gamma(\sigma+i\tau)=\int_\R\varphi_\sigma(u)e^{i\tau u}\dd u$ with $\varphi_\sigma(u)=\exp(\sigma u-e^{u})$, a Schwartz function.
+Two integrations by parts give, for $\tau\neq0$, $\Gamma(\sigma+i\tau)=-\tau^{-2}\int_\R\varphi_\sigma''(u)e^{i\tau u}\dd u$, and
+$\varphi_\sigma''=\bigl((\sigma-e^{u})^{2}-e^{u}\bigr)\varphi_\sigma$, so
+\[
+|\Gamma(\sigma+i\tau)|\le\tau^{-2}\int_\R\bigl((\sigma-e^{u})^{2}+e^{u}\bigr)e^{\sigma u-e^{u}}\dd u
+=\tau^{-2}\bigl(\Gamma(\sigma+2)-(2\sigma-1)\Gamma(\sigma+1)+\sigma^{2}\Gamma(\sigma)\bigr),
+\]
+using $\int_\R e^{ku}e^{\sigma u-e^{u}}\dd u=\Gamma(\sigma+k)$.
+The right side is a continuous function of $\sigma\in[a,b]$, bounded by some $K_1$; also $|\Gamma(\sigma+i\tau)|\le\Gamma(\sigma)\le K_2$ on $[a,b]$.
+Take $K=2(K_1+K_2)$.
+\end{proof}
+
+\begin{lemma}[Cahen--Mellin integral]\label{lem:cahen-mellin}
+For $c>0$ and $x>0$:
+$\displaystyle e^{-x}=\frac{1}{2\pi}\int_\R\Gamma(c+i\tau)\,x^{-c-i\tau}\dd\tau$.
+\end{lemma}
+\begin{proof}
+With $\varphi_c(u)=\exp(cu-e^{u})$ as above, $\Gamma(c+i\tau)=\int_\R\varphi_c(u)e^{i\tau u}\dd u=\widehat{\varphi_c}(-\tau/2\pi)$.
+Fourier inversion (A5) gives $\varphi_c(u)=\frac{1}{2\pi}\int_\R\Gamma(c+i\tau)e^{-i\tau u}\dd\tau$.
+Put $u=\log x$: $x^{c}e^{-x}=\frac1{2\pi}\int_\R\Gamma(c+i\tau)x^{-i\tau}\dd\tau$.
+\end{proof}
+
+\section{The zeta function}\label{sec:zeta}
+
+\begin{lemma}[Euler product and logarithm]\label{lem:euler}
+For $\re s>1$ the series $L(s)=\sum_{p}\sum_{k\ge1}\frac{p^{-ks}}{k}=\sum_{n\ge2}\frac{\Lam(n)}{\log n}n^{-s}$ converges absolutely and locally uniformly, $\zeta(s)=\exp L(s)$, hence $\zeta(s)\neq0$, and
+\[
+-\frac{\zeta'}{\zeta}(s)=\sum_{n\ge1}\Lam(n)n^{-s}\qquad(\re s>1).
+\]
+Moreover $|L(2+i\tau)|\le L(2)=\log\zeta(2)<1$ for all real $\tau$.
+\end{lemma}
+\begin{proof}
+The two expressions for $L$ agree termwise: for $n=p^{k}$, $1/k=\log p/\log n=\Lam(n)/\log n$.
+Absolute convergence: $\sum_p\sum_k|p^{-ks}|/k\le\sum_{n\ge2}n^{-\sigma}<\infty$ for $\sigma=\re s>1$, locally uniformly, so $L$ is holomorphic (A3).
+For a fixed prime $p$, $\exp\bigl(\sum_k p^{-ks}/k\bigr)=(1-p^{-s})^{-1}$ by the power series of $-\log(1-z)$, $|z|<1$.
+Hence for a bound $P$, $\exp\bigl(\sum_{p\le P}\sum_k p^{-ks}/k\bigr)=\prod_{p\le P}\sum_{k\ge0}p^{-ks}=\sum_{n\in S_P}n^{-s}$, where $S_P$ is the set of positive integers all of whose prime factors are at most $P$; the last equality is (A7), the expansion of the finite product of absolutely convergent series.
+As $P\to\infty$ the left side tends to $\exp L(s)$ and the right side to $\zeta(s)$ (the omitted terms are bounded by $\sum_{n>P}n^{-\sigma}\to0$).
+Termwise differentiation (A3): $L'(s)=-\sum_p\sum_k(\log p)p^{-ks}=-\sum_{n}\Lam(n)n^{-s}$, and $\zeta'/\zeta=L'$.
+Finally $|L(2+i\tau)|\le\sum_p\sum_k p^{-2k}/k=L(2)=\log\zeta(2)$ and $\zeta(2)\le 1+\int_1^\infty x^{-2}\dd x=2<e$.
+\end{proof}
+
+\begin{lemma}[Continuation to $\re s>0$ and a growth bound]\label{lem:continuation}
+For every integer $N\ge1$ and every $s$ with $\re s>0$, $s\ne1$,
+\begin{equation}\label{eq:partial}
+\zeta(s)=\sum_{n\le N}n^{-s}+\frac{N^{1-s}}{s-1}-s\int_N^\infty\{x\}x^{-s-1}\dd x,
+\end{equation}
+where $\{x\}=x-\lfloor x\rfloor$; the right side defines a meromorphic continuation of $\zeta$ to $\re s>0$ whose only pole is simple, at $s=1$, with residue $1$.
+Consequently $-\zeta'/\zeta$ is meromorphic on $\re s>0$, with a simple pole of residue $1$ at $s=1$ and simple poles of residue $-m$ at each zero of $\zeta$ of multiplicity $m$, and no other poles.
+Moreover
+\begin{equation}\label{eq:growth}
+|\zeta(\sigma+i\tau)|\le 12\sqrt{|\tau|}\qquad\text{for }\tfrac12\le\sigma\le4,\ |\tau|\ge2.
+\end{equation}
+\end{lemma}
+\begin{proof}
+For $\re s>1$, Abel summation gives
+$\sum_{n>N}n^{-s}=\int_N^\infty x^{-s}\dd\lfloor x\rfloor=-N^{1-s}+s\int_N^\infty\lfloor x\rfloor x^{-s-1}\dd x$,
+and writing $\lfloor x\rfloor=x-\{x\}$, $s\int_N^\infty x^{-s}\dd x=sN^{1-s}/(s-1)$, so
+$\sum_{n>N}n^{-s}=N^{1-s}/(s-1)-s\int_N^\infty\{x\}x^{-s-1}\dd x$, which is \eqref{eq:partial}.
+The integral converges absolutely for $\re s>0$, dominated locally uniformly by $\int_N^\infty x^{-\sigma_0-1}\dd x$, hence is holomorphic there (A3); the continuation follows by (A2).
+With $N=1$, $\zeta(s)=\frac{s}{s-1}-s\int_1^\infty\{x\}x^{-s-1}\dd x$, so $(s-1)\zeta(s)\to1$ as $s\to1$.
+The statement about $-\zeta'/\zeta$ is (A2).
+
+For \eqref{eq:growth}: take $N=\lfloor|\tau|\rfloor$, so $|\tau|/2\le N\le|\tau|$.
+Then $|\sum_{n\le N}n^{-s}|\le\sum_{n\le N}n^{-1/2}\le 2\sqrt N\le2\sqrt{|\tau|}$;
+$|N^{1-s}/(s-1)|\le N^{1/2}/|\tau|\le 1$;
+and $|s\int_N^\infty\{x\}x^{-s-1}\dd x|\le|s|N^{-\sigma}/\sigma\le(4+|\tau|)\cdot2\cdot\sqrt{2/|\tau|}\le 9\sqrt{|\tau|}$ for $|\tau|\ge 2$.
+\end{proof}
+
+\begin{lemma}[No zeros on $\re s=1$]\label{lem:mertens}
+$\zeta(1+i\tau)\ne0$ for every real $\tau\ne0$. Together with Lemma~\ref{lem:euler}, $\zeta(s)\ne0$ for $\re s\ge1$, $s\ne1$.
+\end{lemma}
+\begin{proof}
+For $\sigma>1$ and real $\tau$, by Lemma~\ref{lem:euler},
+$\re L(\sigma+i\tau)=\sum_{n\ge2}\frac{\Lam(n)}{\log n}n^{-\sigma}\cos(\tau\log n)$.
+Since $3+4\cos\theta+\cos2\theta=2(1+\cos\theta)^{2}\ge0$,
+\[
+3L(\sigma)+4\re L(\sigma+i\tau)+\re L(\sigma+2i\tau)\ge0,\qquad\text{so}\qquad
+\zeta(\sigma)^{3}\,|\zeta(\sigma+i\tau)|^{4}\,|\zeta(\sigma+2i\tau)|\ge1 .
+\]
+Suppose $\zeta(1+i\tau_0)=0$ with $\tau_0\ne0$.
+By Lemma~\ref{lem:continuation}, $\zeta$ is holomorphic near $1+i\tau_0$ and near $1+2i\tau_0$, so there are constants with
+$|\zeta(\sigma+i\tau_0)|\le K(\sigma-1)$ and $|\zeta(\sigma+2i\tau_0)|\le K'$ for $1<\sigma\le2$,
+while $\zeta(\sigma)=\sigma/(\sigma-1)-\sigma\int_1^\infty\{x\}x^{-\sigma-1}\dd x\le\sigma/(\sigma-1)\le 2/(\sigma-1)$ by \eqref{eq:partial} with $N=1$, the subtracted integral being nonnegative for real $\sigma>1$.
+Then the product is at most $8K^{4}K'(\sigma-1)\to0$ as $\sigma\downarrow1$, a contradiction.
+\end{proof}
+
+\begin{lemma}[Gaussian transform and theta inversion]\label{lem:theta}
+For $x>0$ let $\theta(x)=\sum_{n\in\Z}e^{-\pi n^{2}x}$ and $\omega(x)=\sum_{n\ge1}e^{-\pi n^{2}x}$, so $\theta=1+2\omega$.
+Then $\theta(1/x)=\sqrt{x}\,\theta(x)$, and $0<\omega(x)\le 2e^{-\pi x}$ for $x\ge1$.
+\end{lemma}
+\begin{proof}
+Let $h(\xi)=\int_\R e^{-\pi u^{2}}e^{-2\pi i u\xi}\dd u$. Differentiating under the integral and integrating by parts,
+$h'(\xi)=\int_\R(-2\pi i u)e^{-\pi u^{2}}e^{-2\pi iu\xi}\dd u=i\int_\R\bigl(e^{-\pi u^{2}}\bigr)'e^{-2\pi iu\xi}\dd u=-2\pi\xi\,h(\xi)$,
+so $h(\xi)=h(0)e^{-\pi\xi^{2}}=e^{-\pi\xi^{2}}$.
+Scaling $u\mapsto u\sqrt{x}$, the function $f(u)=e^{-\pi xu^{2}}$ has $\widehat f(\xi)=x^{-1/2}e^{-\pi\xi^{2}/x}$.
+Poisson summation (A5) gives $\theta(x)=x^{-1/2}\theta(1/x)$.
+For $x\ge1$: $\omega(x)\le\sum_{n\ge1}e^{-\pi nx}=e^{-\pi x}/(1-e^{-\pi x})\le2e^{-\pi x}$.
+\end{proof}
+
+\begin{theorem}[Functional equation]\label{thm:FE}
+Let $\xi(s)=\pi^{-s/2}\Gamma(s/2)\zeta(s)$ for $\re s>1$. Then
+\begin{equation}\label{eq:xi}
+\xi(s)=\frac{1}{s(s-1)}+\int_1^\infty\omega(x)\bigl(x^{s/2-1}+x^{(1-s)/2-1}\bigr)\dd x ,
+\end{equation}
+where the integral is an entire function of $s$.
+Consequently $\zeta$ extends to a meromorphic function on $\C$, agreeing with Lemma~\ref{lem:continuation} on $\re s>0$, and
+\[
+\pi^{-s/2}\Gamma(s/2)\zeta(s)=\pi^{-(1-s)/2}\Gamma\bigl(\tfrac{1-s}{2}\bigr)\zeta(1-s)
+\]
+as meromorphic functions on $\C$.
+\end{theorem}
+\begin{proof}
+For $\re s>1$ and $n\ge1$, substituting $y=\pi n^{2}x$ gives $\int_0^\infty e^{-\pi n^{2}x}x^{s/2-1}\dd x=(\pi n^{2})^{-s/2}\Gamma(s/2)$.
+Summing over $n$ and interchanging, which is legitimate because
+\[
+\sum_{n\ge1}\int_0^\infty e^{-\pi n^2x}x^{\sigma/2-1}\dd x=\pi^{-\sigma/2}\Gamma(\sigma/2)\zeta(\sigma)<\infty ,
+\qquad\text{gives}\qquad
+\xi(s)=\int_0^\infty\omega(x)x^{s/2-1}\dd x .
+\]
+Split at $x=1$. In $\int_0^1$ substitute $x=1/y$ and use $\omega(1/y)=-\tfrac12+\tfrac{\sqrt y}{2}+\sqrt y\,\omega(y)$ (from Lemma~\ref{lem:theta}):
+\[
+\int_0^1\omega(x)x^{s/2-1}\dd x=\int_1^\infty\omega(1/y)\,y^{-s/2-1}\dd y
+=-\frac1s+\frac1{s-1}+\int_1^\infty\omega(y)y^{(1-s)/2-1}\dd y ,
+\]
+using $\int_1^\infty y^{-s/2-1}\dd y=2/s$ and $\int_1^\infty y^{-s/2-1/2}\dd y=2/(s-1)$ for $\re s>1$.
+Since $-1/s+1/(s-1)=1/(s(s-1))$, \eqref{eq:xi} follows.
+The integral in \eqref{eq:xi} is entire by (A3), since $\omega(x)\le2e^{-\pi x}$ dominates $x^{\sigma/2-1}+x^{(1-\sigma)/2-1}$ times $e^{-\pi x}$ locally uniformly.
+The right side of \eqref{eq:xi} is invariant under $s\mapsto1-s$, which is the functional equation for $\xi$.
+Define $\zeta(s)=\pi^{s/2}\xi(s)/\Gamma(s/2)$; by Corollary~\ref{cor:gamma-nonzero} the factor $1/\Gamma(s/2)$ is entire, so $\zeta$ is meromorphic on $\C$, and it agrees with the Dirichlet series on $\re s>1$, hence with Lemma~\ref{lem:continuation} on $\re s>0$ by (A2).
+\end{proof}
+
+\begin{corollary}[Symmetry of the zeros]\label{cor:symmetry}
+For $0<\re s<1$: $\zeta(s)=0\iff\zeta(1-s)=0$.
+\end{corollary}
+\begin{proof}
+If $0<\re s<1$ then $\re(s/2)>0$ and $\re((1-s)/2)>0$, so $\Gamma(s/2)$ and $\Gamma((1-s)/2)$ are finite and nonzero (Corollary~\ref{cor:gamma-nonzero}), as are the powers of $\pi$.
+Apply Theorem~\ref{thm:FE}.
+\end{proof}
+
+\section{A lower bound for \texorpdfstring{$\psi$}{psi}}\label{sec:cheb}
+
+\begin{lemma}\label{lem:psi-lcm}
+For every integer $n\ge1$, $\psi(n)=\log\lcm(1,2,\dots,n)$.
+\end{lemma}
+\begin{proof}
+By (A7), $\lcm(1,\dots,n)=\prod_{p\le n}p^{k_p}$ where $k_p=\max\{k:p^{k}\le n\}$, and $\log$ of this is $\sum_{p\le n}k_p\log p=\sum_{p^{k}\le n}\log p=\psi(n)$.
+\end{proof}
+
+\begin{lemma}\label{lem:nair}
+For integers $1\le m\le n$, $m\binom nm$ divides $\lcm(1,\dots,n)$. Consequently $\psi(2m)\ge 2m\log2-\log3$ for $m\ge1$, and $\psi(x)\ge x\log2-3$ for all real $x\ge2$.
+\end{lemma}
+\begin{proof}
+Let $I=\int_0^1 v^{m-1}(1-v)^{n-m}\dd v$. Expanding $(1-v)^{n-m}$ by the binomial theorem,
+$I=\sum_{j=0}^{n-m}\binom{n-m}{j}\frac{(-1)^{j}}{m+j}$, so $\lcm(1,\dots,n)\cdot I$ is an integer; it is positive since the integrand is positive.
+By Lemma~\ref{lem:beta} with $a=m$, $b=n-m+1$ and Lemma~\ref{lem:gamma-basic}, $I=\frac{(m-1)!\,(n-m)!}{n!}=\frac{1}{m\binom nm}$.
+Hence $\lcm(1,\dots,n)\cdot I=\lcm(1,\dots,n)/\bigl(m\binom nm\bigr)$ is a positive integer, which is the divisibility claim.
+Take $n=2m$: $\lcm(1,\dots,2m)\ge m\binom{2m}{m}\ge m\cdot\frac{4^{m}}{2m+1}\ge\frac{4^{m}}{3}$,
+because $4^{m}=\sum_{j=0}^{2m}\binom{2m}{j}\le(2m+1)\binom{2m}{m}$ and $m/(2m+1)\ge1/3$.
+By Lemma~\ref{lem:psi-lcm}, $\psi(2m)\ge2m\log2-\log3$.
+For real $x\ge2$ let $m=\lfloor x/2\rfloor\ge1$; then $\psi(x)\ge\psi(2m)\ge(x-2)\log2-\log3\ge x\log2-3$.
+\end{proof}
+
+\begin{lemma}\label{lem:Y-lower}
+Let $Y(t)=tA(t)$ and $c_0=\frac{\log 2}{2e}$, $t_0=\frac{\log2}{6}$. Then $Y(t)\ge c_0$ for all $0<t\le t_0$.
+\end{lemma}
+\begin{proof}
+For $0<t\le\tfrac12$, $A(t)\ge\sum_{n\le1/t}\Lam(n)e^{-nt}\ge e^{-1}\psi(1/t)\ge e^{-1}\bigl(\tfrac{\log2}{t}-3\bigr)$ by Lemma~\ref{lem:nair}, so $Y(t)\ge e^{-1}(\log2-3t)\ge e^{-1}\cdot\tfrac{\log2}{2}$ for $t\le t_0$.
+\end{proof}
+
+\section{Forward direction: \texorpdfstring{$\RH\Rightarrow\GR$}{RH implies G}}\label{sec:forward}
+
+Throughout this section assume $\RH$. By Lemmas~\ref{lem:euler} and~\ref{lem:mertens}, $\RH$ is equivalent to
+\begin{equation}\label{eq:RHprime}
+\zeta(s)\ne0\quad\text{for all }s\text{ with }\re s>\tfrac12 .
+\end{equation}
+
+\begin{lemma}[Mellin representation of $A$]\label{lem:mellin-A}
+For $t>0$ and $c>1$:
+$\displaystyle A(t)=\frac1{2\pi}\int_\R\Gamma(c+i\tau)\Bigl(-\frac{\zeta'}{\zeta}\Bigr)(c+i\tau)\,t^{-c-i\tau}\dd\tau$.
+\end{lemma}
+\begin{proof}
+By Lemma~\ref{lem:cahen-mellin} with $x=nt$, $e^{-nt}=\frac1{2\pi}\int_\R\Gamma(c+i\tau)n^{-c-i\tau}t^{-c-i\tau}\dd\tau$.
+Multiply by $\Lam(n)$ and sum. The interchange of sum and integral is justified by (A4), since
+$\sum_n\Lam(n)n^{-c}\int_\R|\Gamma(c+i\tau)|\dd\tau<\infty$ by Lemmas~\ref{lem:euler} and~\ref{lem:gamma-decay}.
+The inner sum is $-\zeta'/\zeta(c+i\tau)$ by Lemma~\ref{lem:euler}.
+\end{proof}
+
+\begin{lemma}[Borel--Carath\'eodory]\label{lem:BC}
+Let $f$ be holomorphic on an open set containing the closed disc $|z|\le R$, with $\re f(z)\le M$ for $|z|\le R$.
+Then for $0<r<R$ and $|z|\le r$,
+\[
+|f'(z)|\le\frac{4(R+r)}{(R-r)^{2}}\bigl(M-\re f(0)\bigr).
+\]
+\end{lemma}
+\begin{proof}
+Let $g=f-f(0)$ and $M_0=M-\re f(0)\ge\re g(0)=0$.
+If $M_0=0$ then $\re g\le0=\re g(0)$, so $\re g$ attains an interior maximum and $g$ is constant (A6); the bound is trivial.
+If $M_0>0$, put $\phi=g/(2M_0-g)$; the denominator has real part $\ge M_0>0$, and $|g|\le|2M_0-g|$ because this is equivalent to $\re g\le M_0$. So $\phi$ maps the disc into the closed unit disc with $\phi(0)=0$, and the Schwarz lemma gives $|\phi(z)|\le|z|/R$.
+Then $|g(z)|\le\frac{|z|}{R}(2M_0+|g(z)|)$, so $|g(z)|\le\frac{2M_0|z|}{R-|z|}$.
+On $|w|\le R_1=\frac{R+r}{2}$ this gives $|g(w)|\le\frac{2M_0(R+r)}{R-r}$, and Cauchy's estimate (A1) on the disc of radius $\frac{R-r}{2}$ about $z$ ($|z|\le r$) gives $|g'(z)|\le\frac{2M_0(R+r)}{R-r}\cdot\frac{2}{R-r}$.
+\end{proof}
+
+\begin{lemma}[Conditional bound for $\zeta'/\zeta$]\label{lem:cond-bound}
+Assume \eqref{eq:RHprime} and fix $\varepsilon\in(0,\tfrac12)$. Then for $\tfrac12+\varepsilon\le\sigma\le2$ and $|\tau|\ge4$,
+\[
+\Bigl|\frac{\zeta'}{\zeta}(\sigma+i\tau)\Bigr|\le\frac{144}{\varepsilon^{2}}\log(|\tau|+2).
+\]
+\end{lemma}
+\begin{proof}
+Fix $\tau$ with $|\tau|\ge4$ and let $R'=\tfrac32-\tfrac\varepsilon4$, $R=\tfrac32-\tfrac\varepsilon2$, $r=\tfrac32-\varepsilon$.
+Every $s$ with $|s-(2+i\tau)|<R'$ has $\re s>\tfrac12+\tfrac\varepsilon4$ and $|\im s|>|\tau|-\tfrac32\ge\tfrac52$, so by \eqref{eq:RHprime} and Lemma~\ref{lem:continuation} $\zeta$ is holomorphic and nonvanishing on this open disc.
+By (A2) there is a holomorphic $f$ on $|z|<R'$ with $e^{f(z)}=\zeta(2+i\tau+z)$; adjusting by a constant $2\pi ik$ we may take $f(0)=L(2+i\tau)$ (Lemma~\ref{lem:euler}), so $|f(0)|\le1$.
+For $|z|\le R$ the point $s=2+i\tau+z$ has $\tfrac12\le\re s\le4$ and $2\le|\im s|\le|\tau|+2$, so by \eqref{eq:growth}
+$\re f(z)=\log|\zeta(s)|\le\log12+\tfrac12\log(|\tau|+2)=:M$.
+Lemma~\ref{lem:BC} gives, for $|z|\le r$,
+\[
+|f'(z)|\le\frac{4(R+r)}{(R-r)^{2}}\bigl(M-\re f(0)\bigr)\le\frac{4(R+r)}{(R-r)^{2}}(M+1).
+\]
+Here $R-r=\varepsilon/2$ and $R+r\le3$, so $4(R+r)/(R-r)^{2}\le48/\varepsilon^{2}$.
+Since $|\tau|\ge4$, $\log(|\tau|+2)\ge\log6>1.79$, hence
+$M+1=\log12+1+\tfrac12\log(|\tau|+2)\le\bigl(\tfrac{\log 12+1}{1.79}+\tfrac12\bigr)\log(|\tau|+2)\le3\log(|\tau|+2)$.
+Therefore $|f'(z)|\le\frac{144}{\varepsilon^{2}}\log(|\tau|+2)$ for $|z|\le r$.
+For $\tfrac12+\varepsilon\le\sigma\le2$ the point $z=\sigma-2$ satisfies $|z|\le\tfrac32-\varepsilon=r$, and $f'(z)=\zeta'/\zeta(\sigma+i\tau)$.
+\end{proof}
+
+\begin{theorem}\label{thm:forward}
+Assume $\RH$. For every $\varepsilon\in(0,\tfrac12)$ there is $K_\varepsilon$ such that
+$|A(t)-1/t|\le K_\varepsilon t^{-1/2-\varepsilon}$ for all $t>0$.
+Consequently $\GR$ holds: $|r(t)|\le C_\varepsilon t^{1/2-\varepsilon}$ for $0<t\le\tfrac12$.
+\end{theorem}
+\begin{proof}
+Fix $\varepsilon$ and put $c_1=\tfrac12+\varepsilon$, $c=2$, $h(s)=\Gamma(s)\bigl(-\zeta'/\zeta\bigr)(s)t^{-s}$.
+On the closed strip $c_1\le\re s\le c$ the function $h$ is meromorphic with a single pole, at $s=1$ (Lemma~\ref{lem:continuation}, \eqref{eq:RHprime}, Corollary~\ref{cor:gamma-nonzero}), simple, with residue $\Gamma(1)\cdot1\cdot t^{-1}=1/t$.
+Apply the residue theorem (A1) to the rectangle with vertices $c_1\pm iT$, $c\pm iT$ for $T\ge4$:
+\[
+\int_{c-iT}^{c+iT}h\dd s-\int_{c_1-iT}^{c_1+iT}h\dd s+\int_{c_1}^{c}\bigl(h(\sigma-iT)-h(\sigma+iT)\bigr)\dd\sigma=\frac{2\pi i}{t}.
+\]
+On the horizontal edges, Lemmas~\ref{lem:gamma-decay} and~\ref{lem:cond-bound} give
+$|h(\sigma\pm iT)|\le\frac{K}{1+T^{2}}\cdot\frac{144}{\varepsilon^{2}}\log(T+2)\cdot\max(t^{-c},t^{-c_1})\to0$ as $T\to\infty$.
+By Lemma~\ref{lem:mellin-A} the first integral tends to $2\pi i\,A(t)$.
+On the line $\re s=c_1$, $|\zeta'/\zeta(c_1+i\tau)|$ is bounded by $\frac{144}{\varepsilon^2}\log(|\tau|+2)$ for $|\tau|\ge4$ and by its maximum on the compact segment $|\tau|\le4$ (where it is continuous: no zero and no pole lies on $\re s=c_1$), so with Lemma~\ref{lem:gamma-decay}
+$\int_\R|h(c_1+i\tau)|\dd\tau\le 2\pi K_\varepsilon\,t^{-c_1}$ for a constant $K_\varepsilon$ independent of $t$.
+Letting $T\to\infty$: $A(t)=\frac1t+E(t)$ with $E(t)=\frac1{2\pi}\int_\R h(c_1+i\tau)\dd\tau$ and $|E(t)|\le K_\varepsilon t^{-1/2-\varepsilon}$.
+
+For $0<t\le1$ this gives $|Y(t)-1|\le K_\varepsilon t^{1/2-\varepsilon}$ with $Y=tA$, hence by Lemma~\ref{lem:square}
+$|\G(t)-1|=|Y(t)-1|\,|Y(t)+1|\le K_\varepsilon(2+K_\varepsilon)t^{1/2-\varepsilon}$, and for $0<t\le\tfrac12$,
+$|r(t)|\le|\G(2t)-1|+|\G(t)-1|\le (1+\sqrt2)K_\varepsilon(2+K_\varepsilon)\,t^{1/2-\varepsilon}$.
+\end{proof}
+
+\section{Reverse direction: \texorpdfstring{$\GR\Rightarrow\RH$}{G implies RH}}\label{sec:reverse}
+
+Throughout this section assume $\GR$. Fix $\varepsilon\in(0,\tfrac12)$, write $\alpha=\tfrac12-\varepsilon$, and let $C_\varepsilon,t_\varepsilon$ be as in $\GR$.
+
+\subsection*{Step 1: the dyadic limit of $Y=tA$}
+
+Let $c_0,t_0$ be as in Lemma~\ref{lem:Y-lower} and $t_1=\min(t_0/2,\,t_\varepsilon)$.
+For $0<t\le t_1$ both $Y(t)$ and $Y(2t)$ are at least $c_0$, so by Lemma~\ref{lem:square}
+\[
+|Y(2t)-Y(t)|=\frac{|\G(2t)-\G(t)|}{Y(2t)+Y(t)}\le\frac{C_\varepsilon}{2c_0}\,t^{\alpha}.
+\]
+Hence for $0<t\le t_1$ and $K\ge1$,
+\[
+\bigl|Y(t)-Y(t2^{-K})\bigr|\le\sum_{k=1}^{K}\bigl|Y(t2^{-k+1})-Y(t2^{-k})\bigr|\le\frac{C_\varepsilon}{2c_0}t^{\alpha}\sum_{k\ge1}2^{-k\alpha}=C'\,t^{\alpha},
+\qquad C'=\frac{C_\varepsilon}{2c_0(2^{\alpha}-1)} .
+\]
+The sequence $K\mapsto Y(t2^{-K})$ is therefore Cauchy; let $\ell(t)$ be its limit. Then for $0<t\le t_1$:
+\begin{enumerate}
+\item[(i)] $|Y(t)-\ell(t)|\le C't^{\alpha}$;
+\item[(ii)] $\ell(t/2)=\ell(t)$, since both are the limit of the same sequence;
+\item[(iii)] $\ell(t)\ge c_0$, as a limit of values $\ge c_0$;
+\item[(iv)] $\ell$ is continuous on $(0,t_1]$: $Y$ is continuous (the series for $A$ converges uniformly on compact subsets of $(0,\infty)$), and $Y(t2^{-K})\to\ell(t)$ uniformly on $(0,t_1]$ because the tail of the telescoping sum is at most $C'(t2^{-K})^{\alpha}\le C't_1^{\alpha}2^{-K\alpha}$;
+\item[(v)] $\ell$ is bounded on $(0,t_1]$, by (ii) and continuity on $[t_1/2,t_1]$.
+\end{enumerate}
+Consequently, for $0<t\le t_1$,
+\begin{equation}\label{eq:A-ell}
+\Bigl|A(t)-\frac{\ell(t)}{t}\Bigr|=\frac{|Y(t)-\ell(t)|}{t}\le C'\,t^{\alpha-1}.
+\end{equation}
+
+\subsection*{Step 2: meromorphic continuation of $\Gamma\cdot(-\zeta'/\zeta)$ to $\re s>\tfrac12+\varepsilon$}
+
+For $\re s>1$, by Tonelli and $\int_0^\infty e^{-nt}t^{s-1}\dd t=\Gamma(s)n^{-s}$,
+\begin{equation}\label{eq:mellin}
+F(s):=\Gamma(s)\Bigl(-\frac{\zeta'}{\zeta}\Bigr)(s)=\int_0^\infty A(t)\,t^{s-1}\dd t .
+\end{equation}
+Split the integral at $t_1$ and insert $\ell$:
+\[
+F(s)=\underbrace{\int_0^{t_1}\Bigl(A(t)-\frac{\ell(t)}{t}\Bigr)t^{s-1}\dd t}_{I_1(s)}
++\underbrace{\int_0^{t_1}\ell(t)\,t^{s-2}\dd t}_{I_2(s)}
++\underbrace{\int_{t_1}^\infty A(t)\,t^{s-1}\dd t}_{I_3(s)}\qquad(\re s>1),
+\]
+each piece converging absolutely for $\re s>1$ (by \eqref{eq:A-ell}, by (v), and by $A(t)\le\sum_n ne^{-nt}=e^{-t}(1-e^{-t})^{-2}$).
+
+$I_1$ is holomorphic on $\re s>1-\alpha=\tfrac12+\varepsilon$: by \eqref{eq:A-ell} the integrand is bounded by $C't^{\alpha+\sigma-2}$, integrable on $(0,t_1]$ when $\sigma>1-\alpha$, locally uniformly in $\sigma$ (A3).
+
+$I_3$ is entire: for $t\ge t_1$, $A(t)\le e^{-t}(1-e^{-t_1})^{-2}$, so the integrand is dominated locally uniformly by $e^{-t}t^{\sigma-1}$ (A3).
+
+$I_2$ is computed exactly from the dyadic invariance (ii). For $\re s>1$, substituting $t=2^{-k}u$ on $[t_12^{-k-1},t_12^{-k}]$,
+\[
+I_2(s)=\sum_{k\ge0}\int_{t_12^{-k-1}}^{t_12^{-k}}\ell(t)t^{s-2}\dd t
+=\sum_{k\ge0}2^{-k(s-1)}\,\Phi(s)
+=\frac{\Phi(s)}{1-2^{1-s}},\qquad
+\Phi(s)=\int_{t_1/2}^{t_1}\ell(u)u^{s-2}\dd u ,
+\]
+where $\Phi$ is entire (continuous integrand on a compact interval, (A3)) and the geometric series converges since $|2^{1-s}|<1$.
+The right side is meromorphic on $\C$, with poles contained in the set
+\[
+Z=\{\,1+2\pi ik/\log2:\ k\in\Z\,\}=\{s:2^{1-s}=1\},
+\]
+all of which lie on the line $\re s=1$.
+
+Therefore $I_1+\Phi/(1-2^{1-s})+I_3$ is meromorphic on $\Omega_\varepsilon=\{\re s>\tfrac12+\varepsilon\}$ with poles in $Z$, and it agrees with $F$ on $\re s>1$.
+Since $F=\Gamma\cdot(-\zeta'/\zeta)$ is itself meromorphic on $\re s>0$ (Lemmas~\ref{lem:gamma-basic} and~\ref{lem:continuation}), the identity theorem (A2) gives:
+\begin{equation}\label{eq:poles}
+\text{every pole of }F\text{ in }\Omega_\varepsilon\text{ lies in }Z,\ \text{hence on }\re s=1 .
+\end{equation}
+
+\subsection*{Step 3: no zeros of $\zeta$ in $\re s>\tfrac12$}
+
+Suppose $\zeta(\rho)=0$ with $\rho\in\Omega_\varepsilon$, of multiplicity $m\ge1$. Then $\rho\ne1$, and by Lemma~\ref{lem:continuation} $-\zeta'/\zeta$ has a pole at $\rho$ with residue $-m\ne0$.
+By Corollary~\ref{cor:gamma-nonzero}, $\Gamma(\rho)\ne0$ and $\Gamma$ is holomorphic at $\rho$ ($\re\rho>0$), so $F=\Gamma\cdot(-\zeta'/\zeta)$ has a pole at $\rho$.
+By \eqref{eq:poles}, $\re\rho=1$. This contradicts Lemma~\ref{lem:mertens}.
+Hence $\zeta$ has no zero in $\Omega_\varepsilon$. Since $\varepsilon\in(0,\tfrac12)$ was arbitrary, $\zeta$ has no zero with $\re s>\tfrac12$.
+
+\subsection*{Step 4: conclusion}
+
+Let $\rho$ be a zero of $\zeta$ with $0<\re\rho<1$. By Step 3, $\re\rho\le\tfrac12$. By Corollary~\ref{cor:symmetry}, $1-\rho$ is also a zero with $0<\re(1-\rho)<1$, so $\re(1-\rho)\le\tfrac12$, i.e.\ $\re\rho\ge\tfrac12$. Hence $\re\rho=\tfrac12$. This is $\RH$. \qed
+
+\begin{remark}[Finite data suffice at each scale]
+Since $0\le\Lam(n)\le\log n$, $R(N)\le N\log^{2}N$. Let $0<t\le e^{-3}$, $\Lambda_t=\log(1/t)\ge3$ and $L=\lceil t^{-1}\Lambda_t\rceil$.
+The function $x\mapsto x\log^{2}x\,e^{-xt}$ is decreasing for $x\ge L$ (its logarithmic derivative is $1/x+2/(x\log x)-t<0$ once $tx\ge3$ and $x\ge e$), so
+\[
+t^{2}\sum_{N>L}R(N)e^{-Nt}\le t^{2}\!\int_{L}^\infty\! x\log^{2}x\,e^{-xt}\dd x
+=\int_{Lt}^\infty\! y\log^{2}(y/t)\,e^{-y}\dd y
+\le2\!\int_{\Lambda_t}^\infty\!\bigl(y^{2}+y\Lambda_t^{2}\bigr)e^{-y}\dd y
+\le 14\,t\,\Lambda_t^{3},
+\]
+using $\log^{2}(y/t)\le2(\log^{2}y+\Lambda_t^{2})$, $\log^{2}y\le y$ for $y>0$, and
+$\int_{\Lambda}^\infty(y^{2}+y\Lambda^{2})e^{-y}\dd y=(\Lambda^{3}+2\Lambda^{2}+2\Lambda+2)e^{-\Lambda}\le7\Lambda^{3}e^{-\Lambda}$ for $\Lambda\ge1$.
+This is $o(t^{1/2-\varepsilon})$ for every $\varepsilon<\tfrac12$.
+So $\GR$ is unchanged if $\G(t)$ is replaced by $t^{2}\sum_{N\le L}R(N)e^{-Nt}$: at each scale $t$ the proposition is decided, up to an error strictly below the critical rate, by the finite list $R(4),\dots,R(L)$.
+\end{remark}
+
+\section{Dependency map}
+
+\begin{center}
+\begin{tabular}{p{0.34\textwidth}p{0.6\textwidth}}
+Lemma \ref{lem:square} & Tonelli \\
+Lemmas \ref{lem:gamma-basic}--\ref{lem:cahen-mellin} & (A1), (A2), (A3), (A4), (A5), (A6): all properties of $\Gamma$ used \\
+Lemma \ref{lem:euler} & (A7): Euler product, $-\zeta'/\zeta=\sum\Lam(n)n^{-s}$ \\
+Lemma \ref{lem:continuation} & Abel summation: continuation to $\re s>0$, pole at $1$, growth \eqref{eq:growth} \\
+Lemma \ref{lem:mertens} & $3$--$4$--$1$ inequality: no zeros on $\re s=1$ \\
+Lemma \ref{lem:theta}, Theorem \ref{thm:FE}, Cor.\ \ref{cor:symmetry} & Gaussian transform, Poisson: functional equation, zero symmetry \\
+Lemmas \ref{lem:psi-lcm}--\ref{lem:Y-lower} & $\lcm$ and the Beta integral: $tA(t)\ge c_0$ \\
+Section \ref{sec:forward} & Mellin inversion, Borel--Carath\'eodory, contour shift: $\RH\Rightarrow\GR$ \\
+Section \ref{sec:reverse} & dyadic limit, exact dyadic Mellin sum, pole bookkeeping: $\GR\Rightarrow\RH$
+\end{tabular}
+\end{center}
+
+Neither direction uses the prime number theorem, zero-density estimates, the Hadamard product, or any bound on $R(N)$ beyond the trivial $R(N)\le N\log^{2}N$.
+The reverse direction does not need the limit $\ell$ to be the constant $1$; only its existence, positivity and dyadic invariance are used, and these follow from $\GR$ together with the elementary lower bound of Lemma~\ref{lem:nair}.
+
+\end{document}
