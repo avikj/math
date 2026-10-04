@@ -42,8 +42,8 @@ Write $\GR$ for the proposition
 and $\RH$ for the Riemann hypothesis.
 We prove $\GR\Leftrightarrow\RH$.
 Hence any proof of either proposition is a proof of the other, and any refutation of either is a refutation of the other: the two have identical truth content.
-Every fact about $\zeta$, $\Gamma$ and the primes that the argument uses is proved in this file.
-The only inputs are the standard theorems of real and complex analysis listed in Section~\ref{sec:inputs}.
+Everything used is proved in this file from the base stated in Section~\ref{sec:base}: the real and complex numbers with the exponential function, Riemann integration of continuous functions, and the Lebesgue convergence and Fubini theorems.
+On that base the file proves the needed complex analysis (Goursat, Cauchy, residues, the identity theorem, Schwarz, logarithms), Fourier analysis (Gaussian transform, inversion, Poisson summation), unique factorisation, the theory of $\Gamma$ (reflection formula, decay, Cahen--Mellin integral), and of $\zeta$ (Euler product, continuation, non-vanishing on $\re s=1$, functional equation), before the two directions of the theorem.
 \end{abstract}
 
 \section{Statement}\label{sec:statement}
@@ -99,23 +99,219 @@ Immediate from Theorem~\ref{thm:main}, constructively: from $P\leftrightarrow Q$
 
 \begin{remark}
 $\GR$ is a statement about the quantitative Goldbach field $R(N)$ through its Laplace transform.
-Section~\ref{sec:reverse} shows that the finite prefix $R(N)$, $N\le L$, determines the quantity at scale $t$ up to an error smaller than the critical rate once $L\gg t^{-1}\log(1/t)$, so $\GR$ is a statement about finite Goldbach data at every scale.
+Remark~\ref{rem:finite} shows that the finite prefix $R(N)$, $N\le L$, determines the quantity at scale $t$ up to an error smaller than the critical rate once $L\gg t^{-1}\log(1/t)$, so $\GR$ is a statement about finite Goldbach data at every scale.
 Nothing in this file concerns the proposition ``$R(N)>0$ for all even $N\ge 4$'', which is a different proposition.
 \end{remark}
 
-\section{Inputs from analysis}\label{sec:inputs}
+\section{The base}\label{sec:base}
 
-The proof uses only the following standard results; nothing else is assumed.
+Everything below is derived from the following, and from nothing else.
+
 \begin{itemize}
-\item[(A1)] Cauchy's theorem and the residue theorem for rectangles; Cauchy's estimate\\ $|g'(z)|\le \max_{|w-z|=\delta}|g(w)|/\delta$.
-\item[(A2)] The identity theorem: two meromorphic functions on a connected open set that agree on a nonempty open subset agree everywhere. A nonvanishing holomorphic function on a convex open set has a holomorphic logarithm.
-The logarithmic derivative of a meromorphic function $h$ has simple poles exactly at the zeros and poles of $h$, with residue the order (positive at zeros, negative at poles).
-\item[(A3)] Holomorphic dependence on parameters: if $f(s,x)$ is holomorphic in $s$ for each $x$, measurable in $x$, and $|f(s,x)|\le g(x)$ with $\int g<\infty$ for $s$ in a neighbourhood of each point, then $s\mapsto\int f(s,x)\dd x$ is holomorphic there. A locally uniformly convergent series of holomorphic functions is holomorphic and may be differentiated termwise.
-\item[(A4)] Fubini and Tonelli.
-\item[(A5)] For a Schwartz function $\varphi$ on $\R$ with $\widehat{\varphi}(\xi)=\int_\R\varphi(u)e^{-2\pi i u\xi}\dd u$: Fourier inversion $\varphi(u)=\int_\R\widehat\varphi(\xi)e^{2\pi i u\xi}\dd\xi$, and Poisson summation $\sum_{n\in\Z}\varphi(n)=\sum_{n\in\Z}\widehat\varphi(n)$.
-\item[(A6)] The Schwarz lemma and the maximum principle.
-\item[(A7)] Unique factorisation of positive integers into primes.
+\item[(B0)] \emph{Numbers and elementary functions.} The real and complex numbers; sequences and series; the complex exponential $\exp(z)=\sum z^{n}/n!$, which is complex differentiable with $\exp'=\exp$, satisfies $\exp(z+w)=\exp z\exp w$, $\exp z\ne0$, $|\exp z|=e^{\re z}$, and $\exp z=1$ iff $z\in2\pi i\Z$; $\cos$, $\sin$ defined by $\exp(i\theta)=\cos\theta+i\sin\theta$, so $\sin(\pi s)=0$ iff $s\in\Z$ and $e^{i\pi}=-1$; the real logarithm and real powers $x^{s}=\exp(s\log x)$ for $x>0$, with $|x^{s}|=x^{\re s}$; the inverse tangent, with $\arctan'(y)=1/(1+y^{2})$ and $\arctan(\pm1)=\pm\pi/4$; the binomial theorem and the geometric series. Connectedness: a locally constant function on a connected open subset of $\C$ is constant; an open disc, a convex open set and a punctured disc are connected.
+\item[(B1)] \emph{Riemann integration.} For continuous functions on compact intervals, and for absolutely convergent improper integrals: linearity, the fundamental theorem of calculus, integration by parts, substitution, the triangle inequality $|\int f|\le\int|f|$. Uniform convergence: a uniform limit of continuous functions is continuous and may be integrated termwise on compact intervals; the Weierstrass $M$-test; a series of $C^{1}$ functions whose termwise derivative series converges uniformly on compacts may be differentiated termwise; a power series converges absolutely and uniformly on compact subsets of its disc of convergence and defines a continuous function there. Differentiation under the integral sign for an integrand with continuous partial derivative on a compact rectangle.
+\item[(B2)] \emph{Lebesgue integration on $\R$ and $\R^{2}$.} Monotone and dominated convergence; Tonelli and Fubini; a function of two variables that is continuous in one and measurable in the other is jointly measurable; for continuous functions the Lebesgue integral agrees with the Riemann integral, absolutely convergent improper integrals included.
 \end{itemize}
+
+\begin{lemma}[Differentiation under the integral sign]\label{lem:param-diff}
+Let $I\subset\R$ be an open interval, $(X,\mu)$ a measure space, and $F:I\times X\to\C$ such that $F(\cdot,x)$ is $C^{1}$ for each $x$, $F(s,\cdot)$ and $\partial_sF(s,\cdot)$ are measurable for each $s$, and $|F(s,x)|+|\partial_sF(s,x)|\le g(x)$ on $I\times X$ with $\int g\dd\mu<\infty$.
+Then $f(s)=\int_XF(s,x)\dd\mu(x)$ is $C^{1}$ on $I$ with $f'(s)=\int_X\partial_sF(s,x)\dd\mu(x)$.
+\end{lemma}
+\begin{proof}
+For $h\ne0$ small, $\bigl(F(s+h,x)-F(s,x)\bigr)/h=\int_0^1\partial_sF(s+\theta h,x)\dd\theta$ is bounded by $g(x)$ and tends to $\partial_sF(s,x)$ as $h\to0$; dominated convergence gives the derivative, and the same theorem gives its continuity.
+\end{proof}
+
+\section{Complex analysis}\label{sec:complex}
+
+Throughout, $\Omega$ denotes an open subset of $\C$. A function $f:\Omega\to\C$ is \emph{holomorphic} if it is complex differentiable at every point of $\Omega$; no continuity of $f'$ is assumed.
+A \emph{path} is a piecewise $C^{1}$ map $\gamma:[a,b]\to\C$, with $\int_\gamma f=\int_a^b f(\gamma(t))\gamma'(t)\dd t$ for continuous $f$ on the image, length $L(\gamma)=\int_a^b|\gamma'|$, and the estimate $|\int_\gamma f|\le L(\gamma)\max_\gamma|f|$.
+If $F$ is holomorphic on an open set containing $\gamma$ and $F'=f$ is continuous, then $(F\circ\gamma)'=f(\gamma)\gamma'$ and (B1) gives $\int_\gamma f=F(\gamma(b))-F(\gamma(a))$; in particular $\int_\gamma f=0$ for closed $\gamma$.
+For $n\ge2$ and $a\notin\gamma$ this applies to $f(w)=(w-a)^{-n}$ with $F(w)=(w-a)^{1-n}/(1-n)$ on $\C\setminus\{a\}$.
+Segments $[z_0,z_1]$ are parametrised affinely; triangles and rectangles are traversed counterclockwise.
+
+\begin{lemma}[Goursat]\label{lem:goursat}
+Let $E\subset\Omega$ be finite, and let $f$ be continuous on $\Omega$ and holomorphic on $\Omega\setminus E$. Then $\int_{\partial T}f=0$ for every closed triangle $T\subset\Omega$.
+\end{lemma}
+\begin{proof}
+First suppose $T\cap E=\emptyset$. Put $I=|\int_{\partial T}f|$, and let $d,P$ be the diameter and perimeter of $T$.
+Joining the midpoints of the sides divides $T$ into four congruent triangles; the integrals over their boundaries sum to $\int_{\partial T}f$ (interior edges cancel), so one of them, $T_1$, has $|\int_{\partial T_1}f|\ge I/4$.
+Iterating gives $T\supset T_1\supset T_2\supset\cdots$ with $|\int_{\partial T_n}f|\ge4^{-n}I$, diameter $2^{-n}d$ and perimeter $2^{-n}P$.
+Let $z_0\in\bigcap_nT_n$. Since $f$ is differentiable at $z_0$, $f(z)=f(z_0)+f'(z_0)(z-z_0)+\eta(z)(z-z_0)$ with $\eta(z)\to0$ as $z\to z_0$.
+The affine part has a primitive, so $\int_{\partial T_n}f=\int_{\partial T_n}\eta(z)(z-z_0)\dd z$, whence
+$4^{-n}I\le 2^{-n}P\cdot2^{-n}d\cdot\sup_{T_n}|\eta|$, i.e.\ $I\le Pd\sup_{T_n}|\eta|\to0$.
+
+If $T$ meets $E$, subdivide $T$ (by segments from the points of $E\cap T$) into finitely many triangles each containing at most one point of $E$, and that point as a vertex; it suffices to treat such a triangle $T'$ with exceptional vertex $p$.
+Cutting off a small triangle $T''$ at $p$ by a segment parallel to the opposite side leaves pieces not meeting $E$, over which the integral vanishes, so $|\int_{\partial T'}f|=|\int_{\partial T''}f|\le L(\partial T'')\max_{T'}|f|$, which can be made arbitrarily small.
+\end{proof}
+
+\begin{lemma}[Primitives on convex sets; Cauchy's theorem]\label{lem:primitive}
+Let $U$ be convex and open, and let $f$ be continuous on $U$ with $\int_{\partial T}f=0$ for every closed triangle $T\subset U$ (by Lemma~\ref{lem:goursat} this holds if $f$ is holomorphic on $U$ minus a finite set).
+Fix $z_0\in U$ and put $F(z)=\int_{[z_0,z]}f$. Then $F$ is holomorphic on $U$ with $F'=f$, and $\int_\gamma f=0$ for every closed path $\gamma$ in $U$.
+\end{lemma}
+\begin{proof}
+For $z,z+h\in U$ the triangle with vertices $z_0,z,z+h$ lies in $U$, so $F(z+h)-F(z)=\int_{[z,z+h]}f=hf(z)+\int_{[z,z+h]}\bigl(f(w)-f(z)\bigr)\dd w$, and the last term is at most $|h|\max_{w\in[z,z+h]}|f(w)-f(z)|=o(|h|)$ by continuity of $f$.
+The second claim follows from the remark preceding Lemma~\ref{lem:goursat}, $F'=f$ being continuous.
+\end{proof}
+
+\begin{lemma}[Cauchy's integral formula on a disc; regularity]\label{lem:cauchy-disc}
+Let $E\subset\Omega$ be finite, $f$ continuous on $\Omega$ and holomorphic on $\Omega\setminus E$, and let the closed disc $\overline D=\{|w-a|\le r\}$ lie in $\Omega$. Then for $|z-a|<r$,
+\begin{equation}\label{eq:cif}
+f(z)=\frac1{2\pi i}\oint_{|w-a|=r}\frac{f(w)}{w-z}\dd w .
+\end{equation}
+Consequently: $f$ is holomorphic on all of $\Omega$ (the points of $E$ are removable); $f$ has complex derivatives of all orders, with
+$f^{(n)}(z)=\frac{n!}{2\pi i}\oint_{|w-a|=r}f(w)(w-z)^{-n-1}\dd w$; on the open disc $|z-a|<r$,
+\begin{equation}\label{eq:taylor}
+f(z)=\sum_{n\ge0}c_n(z-a)^{n},\qquad c_n=\frac{f^{(n)}(a)}{n!}=\frac1{2\pi i}\oint_{|w-a|=r}\frac{f(w)}{(w-a)^{n+1}}\dd w,
+\end{equation}
+the series converging absolutely and uniformly on compact subsets of the disc; and if $|f|\le M$ on $|w-a|=r$ then $|f^{(n)}(a)|\le n!\,M\,r^{-n}$ (Cauchy's estimates).
+\end{lemma}
+\begin{proof}
+Since $\overline D$ is compact in $\Omega$, some open disc $U\supset\overline D$ lies in $\Omega$.
+First let $z\notin E$, $|z-a|<r$, and define $g(w)=(f(w)-f(z))/(w-z)$ for $w\ne z$, $g(z)=f'(z)$.
+Then $g$ is continuous on $U$ and holomorphic on $U\setminus(E\cup\{z\})$, so Lemma~\ref{lem:primitive} gives $\oint_{|w-a|=r}g=0$, i.e.\ $\oint f(w)/(w-z)\dd w=f(z)\oint\dd w/(w-z)$.
+For $|z-a|<r=|w-a|$, $\frac1{w-z}=\sum_{n\ge0}\frac{(z-a)^{n}}{(w-a)^{n+1}}$ uniformly in $w$ on the circle, and with $w=a+re^{i\theta}$,
+$\oint(w-a)^{-n-1}\dd w=\int_0^{2\pi}ir^{-n}e^{-in\theta}\dd\theta$ equals $2\pi i$ for $n=0$ and $0$ for $n\ge1$. Hence $\oint\dd w/(w-z)=2\pi i$ and \eqref{eq:cif} holds for $z\notin E$.
+Both sides of \eqref{eq:cif} are continuous in $z$ on the open disc (the right side by (B1)), and $E$ is finite, so \eqref{eq:cif} holds for all $|z-a|<r$.
+
+Write $F_n(z)=\oint f(w)(w-z)^{-n}\dd w$. For $w$ on the circle and $z,z+h$ in a smaller concentric disc, $\bigl((w-z-h)^{-n}-(w-z)^{-n}\bigr)/h\to n(w-z)^{-n-1}$ uniformly in $w$ as $h\to0$ (expand the difference of powers), so $F_n$ is complex differentiable with $F_n'=nF_{n+1}$.
+Since $f=F_1/2\pi i$ on the disc, $f$ has derivatives of all orders there with the stated formula; as every point of $\Omega$ is the centre of such a disc, $f$ is holomorphic on $\Omega$.
+Inserting the uniformly convergent expansion of $1/(w-z)$ into \eqref{eq:cif} and integrating termwise gives \eqref{eq:taylor}; $c_n=f^{(n)}(a)/n!$ by the derivative formula at $z=a$; absolute and uniform convergence on $|z-a|\le\rho<r$ follows from $|c_n|\le Mr^{-n}$, which is also Cauchy's estimate.
+\end{proof}
+
+\begin{corollary}[Morera; Weierstrass; parameter integrals]\label{cor:morera}
+\begin{itemize}
+\item[(a)] If $f$ is continuous on $\Omega$ and $\int_{\partial T}f=0$ for every closed triangle $T\subset\Omega$, then $f$ is holomorphic.
+\item[(b)] If $f_n$ are holomorphic on $\Omega$ and $f_n\to f$ uniformly on compact subsets, then $f$ is holomorphic and $f_n^{(k)}\to f^{(k)}$ uniformly on compact subsets for every $k$. In particular a series of holomorphic functions converging uniformly on compacts is holomorphic and may be differentiated termwise.
+\item[(c)] Let $(X,\mu)$ be a measure space and $F:\Omega\times X\to\C$ with $F(\cdot,x)$ holomorphic for each $x$ and $F(s,\cdot)$ measurable for each $s$. Suppose every $s_0\in\Omega$ has a neighbourhood $V$ and an integrable $g$ with $|F(s,x)|\le g(x)$ on $V\times X$. Then $f(s)=\int_XF(s,x)\dd\mu(x)$ is holomorphic on $\Omega$.
+\end{itemize}
+\end{corollary}
+\begin{proof}
+(a) On each open disc $D\subset\Omega$, Lemma~\ref{lem:primitive} gives a holomorphic $G$ with $G'=f$; by Lemma~\ref{lem:cauchy-disc} $G$ has derivatives of all orders, so $f=G'$ is holomorphic on $D$.
+(b) $f$ is continuous, and $\int_{\partial T}f=\lim\int_{\partial T}f_n=0$, so $f$ is holomorphic by (a). For a closed disc $\{|w-a|\le r\}\subset\Omega$ and $|z-a|\le r/2$, the formula $f^{(k)}(z)-f_n^{(k)}(z)=\frac{k!}{2\pi i}\oint(f-f_n)(w)(w-z)^{-k-1}\dd w$ gives
+\[
+|f^{(k)}(z)-f_n^{(k)}(z)|\le k!\,2^{k+1}r^{-k}\max_{|w-a|=r}|f-f_n|\qquad(|z-a|\le r/2).
+\]
+(c) Continuity of $f$ at $s_0$: for $s_n\to s_0$ in $V$, $F(s_n,x)\to F(s_0,x)$ with domination $g$, so dominated convergence applies. For a closed triangle $T$ in a disc $V$ as in the hypothesis, $(t,x)\mapsto F(\gamma(t),x)\gamma'(t)$ (with $\gamma$ parametrising $\partial T$) is jointly measurable and dominated by $g(x)\max|\gamma'|$, so by Fubini $\int_{\partial T}f=\int_X\int_{\partial T}F(s,x)\dd s\dd\mu(x)=0$ by Lemma~\ref{lem:goursat}. Now apply (a).
+\end{proof}
+
+\begin{lemma}[Identity theorem; order of a zero]\label{lem:identity}
+Let $\Omega$ be connected and $f$ holomorphic on $\Omega$.
+\begin{itemize}
+\item[(a)] If the zero set of $f$ has an accumulation point in $\Omega$ (for instance if $f$ vanishes on a nonempty open subset), then $f\equiv0$. Hence two holomorphic functions on $\Omega$ that agree on a nonempty open subset agree everywhere.
+\item[(b)] If $f\not\equiv0$ and $f(a)=0$, there are a unique $m\ge1$ (the order of the zero) and a holomorphic $g$ on $\Omega$ with $f(z)=(z-a)^{m}g(z)$ and $g(a)\ne0$. Zeros of $f$ are isolated.
+\end{itemize}
+\end{lemma}
+\begin{proof}
+Let $Z=\{z\in\Omega:f^{(n)}(z)=0\text{ for all }n\ge0\}$. $Z$ is closed in $\Omega$ (each $f^{(n)}$ is continuous) and open (on a disc about a point of $Z$, \eqref{eq:taylor} gives $f\equiv0$).
+Let $a\in\Omega$ be an accumulation point of zeros and suppose $a\notin Z$; let $m$ be least with $c_m=f^{(m)}(a)/m!\ne0$ in \eqref{eq:taylor} on a disc $D$ about $a$.
+Then $g(z)=f(z)/(z-a)^{m}$ is holomorphic on $D\setminus\{a\}$ and $g(z)=\sum_{n\ge m}c_n(z-a)^{n-m}$ there, which by (B1) extends continuously to $a$ with value $c_m\ne0$; so $f=(z-a)^{m}g$ has no zero in a punctured neighbourhood of $a$, a contradiction. Thus $a\in Z$, $Z\ne\emptyset$, and connectedness gives $Z=\Omega$, i.e.\ $f\equiv0$.
+For (b), with $m$ and $g$ as above, $g$ is continuous on $D$ and holomorphic on $D\setminus\{a\}$ and also on $\Omega\setminus\{a\}$, hence holomorphic on $\Omega$ by Lemma~\ref{lem:cauchy-disc}; uniqueness of $m$ and isolation of zeros follow from $g(a)\ne0$.
+\end{proof}
+
+\begin{lemma}[Maximum principle; Schwarz lemma]\label{lem:maxmod}
+\begin{itemize}
+\item[(a)] Let $\Omega$ be connected and $f$ holomorphic on $\Omega$. If $|f|$ attains a maximum at a point of $\Omega$, or if $\re f$ attains a maximum at a point of $\Omega$, then $f$ is constant.
+\item[(b)] Let $f$ be holomorphic on an open set containing $\{|z|\le R\}$, with $f(0)=0$ and $|f|\le1$ on $|z|\le R$. Then $|f(z)|\le|z|/R$ for $|z|\le R$.
+\end{itemize}
+\end{lemma}
+\begin{proof}
+(a) Suppose $|f(z)|\le|f(a)|$ for all $z\in\Omega$, and let $\{|z-a|<R'\}\subset\Omega$. For $0<r<R'$, by \eqref{eq:taylor} the series $f(a+re^{i\theta})=\sum c_nr^{n}e^{in\theta}$ converges absolutely and uniformly in $\theta$, so the double series for $|f|^{2}=f\bar f$ may be integrated termwise; since $\int_0^{2\pi}e^{i(n-m)\theta}\dd\theta=2\pi\delta_{nm}$,
+\[
+\frac1{2\pi}\int_0^{2\pi}|f(a+re^{i\theta})|^{2}\dd\theta=\sum_{n\ge0}|c_n|^{2}r^{2n}\le|f(a)|^{2}=|c_0|^{2},
+\]
+so $c_n=0$ for $n\ge1$ and $f$ is constant on the disc, hence on $\Omega$ by Lemma~\ref{lem:identity}.
+If $\re f\le\re f(a)$ on $\Omega$, apply this to $e^{f}$: $|e^{f}|=e^{\re f}$ attains a maximum at $a$, so $e^{f}$ is constant, $f'e^{f}=0$, $f'\equiv0$; then $f$ is constant on every disc in $\Omega$ (integrate $f'$ along segments) and hence on $\Omega$ by connectedness.
+
+(b) $g(z)=f(z)/z$ for $z\ne0$, $g(0)=f'(0)$, is continuous and holomorphic off $0$, hence holomorphic by Lemma~\ref{lem:cauchy-disc}. On $|z|=R$, $|g|\le1/R$. If $\max_{|z|\le R}|g|$ were attained at an interior point, (a) on the disc $|z|<R$ would make $g$ constant there, and by continuity $|g|\equiv|g(z_1)|$ for some $|z_1|=R$; in all cases $\max_{|z|\le R}|g|\le1/R$.
+\end{proof}
+
+\begin{lemma}[Logarithms on convex sets]\label{lem:log}
+Let $U$ be convex and open and $f$ holomorphic and nowhere zero on $U$. For $z_0\in U$ and $\ell_0$ with $e^{\ell_0}=f(z_0)$ there is a holomorphic $F$ on $U$ with $e^{F}=f$ and $F(z_0)=\ell_0$. Any two holomorphic logarithms of $f$ on $U$ differ by a constant in $2\pi i\Z$.
+\end{lemma}
+\begin{proof}
+$f'/f$ is holomorphic on $U$ (Lemma~\ref{lem:cauchy-disc}), so by Lemma~\ref{lem:primitive} it has a primitive $F$, normalised by $F(z_0)=\ell_0$. Then $(fe^{-F})'=(f'-fF')e^{-F}=0$, so $fe^{-F}$ is constant, equal to $f(z_0)e^{-\ell_0}=1$.
+If $e^{F_1}=e^{F_2}=f$ then $F_1-F_2$ is continuous with values in $2\pi i\Z$ (B0), hence constant on the connected set $U$.
+\end{proof}
+
+\begin{definition}[Poles, meromorphic functions, residues]\label{def:mero}
+Let $S\subset\Omega$ be closed in $\Omega$ and discrete (no accumulation point in $\Omega$), and let $f$ be holomorphic on $\Omega\setminus S$.
+A point $a\in S$ is \emph{removable} if $f$ extends holomorphically to a neighbourhood of $a$, and a \emph{pole of order $m\ge1$} if $(z-a)^{m}f(z)$ extends holomorphically to a neighbourhood of $a$ with nonzero value at $a$.
+$f$ is \emph{meromorphic on $\Omega$} if every point of $S$ is removable or a pole; removable points are tacitly filled in, and the set of poles is still closed and discrete.
+\end{definition}
+
+\begin{lemma}[Local structure of meromorphic functions]\label{lem:mero}
+\begin{itemize}
+\item[(a)] If $f$ has a pole of order $m$ at $a$, there are unique $c_{-1},\dots,c_{-m}$, $c_{-m}\ne0$, and a holomorphic $h$ near $a$ with $f(z)=P_a(z)+h(z)$, $P_a(z)=\sum_{n=1}^{m}c_{-n}(z-a)^{-n}$. The \emph{principal part} $P_a$ is holomorphic on $\C\setminus\{a\}$ and $\res_af:=c_{-1}$ is the residue.
+\item[(b)] If $f,g$ are holomorphic on connected $\Omega$ and $g\not\equiv0$, then $f/g$ is meromorphic on $\Omega$; its poles are among the zeros of $g$.
+\item[(c)] If $h$ is meromorphic on connected $\Omega$ and $h\not\equiv0$, then $h'/h$ is meromorphic on $\Omega$, holomorphic away from the zeros and poles of $h$, with a simple pole of residue $m$ at every zero of order $m$ and a simple pole of residue $-m$ at every pole of order $m$.
+\item[(d)] If $f$ has a pole at $a$ and $u$ is holomorphic near $a$ with $u(a)\ne0$, then $uf$ has a pole at $a$.
+\item[(e)] If $\Omega$ is connected and $S\subset\Omega$ is closed and discrete, then $\Omega\setminus S$ is connected. Consequently two meromorphic functions on connected $\Omega$ that agree on a nonempty open subset have the same poles and agree everywhere else.
+\end{itemize}
+\end{lemma}
+\begin{proof}
+(a) Let $k(z)=(z-a)^{m}f(z)$, holomorphic near $a$ with $k(a)\ne0$, and expand $k=\sum_{j\ge0}k_j(z-a)^{j}$ by \eqref{eq:taylor}. Put $c_{-n}=k_{m-n}$ for $1\le n\le m$; then $f-P_a=(k(z)-\sum_{j<m}k_j(z-a)^{j})/(z-a)^{m}$, which is holomorphic off $a$ and, by (B1), extends continuously to $a$, hence is holomorphic near $a$ by Lemma~\ref{lem:cauchy-disc}. Uniqueness: two such decompositions give a principal part equal to a holomorphic function near $a$, forcing all its coefficients to vanish (multiply by $(z-a)^{m}$ and let $z\to a$ successively).
+(b) The zeros of $g$ form a closed discrete set (Lemma~\ref{lem:identity}). At a zero $a$ of order $m$, $g=(z-a)^{m}g_1$ with $g_1(a)\ne0$, so $(z-a)^{m}f/g=f/g_1$ is holomorphic near $a$: if $f/g_1$ has a zero of order $k$ at $a$ (with $k=0$ if $(f/g_1)(a)\ne0$), then $f/g=(z-a)^{k-m}\cdot(\text{holomorphic, nonzero at }a)$, which is a pole of order $m-k$ if $k<m$ and removable otherwise.
+(c) Near a zero $a$ of order $m$, $h=(z-a)^{m}g$ with $g(a)\ne0$ and $h'/h=m/(z-a)+g'/g$ with $g'/g$ holomorphic near $a$; near a pole of order $m$, $h=(z-a)^{-m}g$ and $h'/h=-m/(z-a)+g'/g$. Away from zeros and poles $h'/h$ is holomorphic. The zeros and poles of $h$ form a closed discrete set by Lemma~\ref{lem:identity}, applied on the connected set $\Omega\setminus\{\text{poles}\}$ (part (e)).
+(d) $(z-a)^{m}uf$ extends holomorphically with value $u(a)\cdot\lim_{z\to a}(z-a)^{m}f(z)\ne0$.
+(e) Suppose $\Omega\setminus S=V_1\sqcup V_2$ with $V_1,V_2$ open and nonempty. Each $a\in S$ has a punctured disc contained in $\Omega\setminus S$; being connected, it lies in $V_1$ or in $V_2$; assign $a$ to that side. The enlarged sets $V_1',V_2'$ are open, disjoint, nonempty, and cover $\Omega$, contradicting connectedness. For the consequence, apply Lemma~\ref{lem:identity} to the difference on the connected set $\Omega$ minus the union of the two pole sets; the difference is then $0$ there, so at each would-be pole it is removable with value $0$.
+\end{proof}
+
+\begin{lemma}[Cauchy's theorem and formula for rectangles]\label{lem:rect}
+Let $Q=[x_0,x_1]\times[y_0,y_1]\subset\C$ be a closed rectangle and $f$ holomorphic on an open set $\Omega\supset Q$.
+\begin{itemize}
+\item[(a)] $\oint_{\partial Q}f=0$.
+\item[(b)] For every $z$ in the interior of $Q$, $\oint_{\partial Q}\dfrac{f(w)}{w-z}\dd w=2\pi i\,f(z)$; in particular $\oint_{\partial Q}\dfrac{\dd w}{w-z}=2\pi i$.
+\end{itemize}
+\end{lemma}
+\begin{proof}
+(a) Every point of the compact set $Q$ has an open disc about it inside $\Omega$; by compactness there is $\delta>0$ such that every subset of $Q$ of diameter $<\delta$ lies in one such disc. Subdivide $Q$ into congruent subrectangles of diameter $<\delta$; each boundary integral vanishes by Lemma~\ref{lem:primitive} (a disc is convex), and interior edges cancel in the sum, which equals $\oint_{\partial Q}f$.
+
+(b) Fix $z$ in the interior and $\rho>0$ so small that the square $S_\rho=z+[-\rho,\rho]^{2}$ lies in the interior of $Q$.
+The two horizontal and two vertical lines through the sides of $S_\rho$ cut the closure of $Q\setminus S_\rho$ into eight closed rectangles $Q_1,\dots,Q_8$, none containing $z$. The function $w\mapsto f(w)/(w-z)$ is holomorphic on the open set $\Omega\setminus\{z\}\supset Q_j$, so by (a) its integral over each $\partial Q_j$ vanishes; summing, interior edges cancel and
+\[
+\oint_{\partial Q}\frac{f(w)}{w-z}\dd w=\oint_{\partial S_\rho}\frac{f(w)}{w-z}\dd w
+=\oint_{\partial S_\rho}\frac{f(w)-f(z)}{w-z}\dd w+f(z)\oint_{\partial S_\rho}\frac{\dd w}{w-z}.
+\]
+The first integrand is bounded on a neighbourhood of $z$ (it extends continuously by $f'(z)$) and $L(\partial S_\rho)=8\rho$, so the first integral tends to $0$ as $\rho\to0$; the second is independent of $\rho$ by the substitution $w=z+\rho w'$, which reduces it to the integral over the boundary of the unit square $[-1,1]^{2}$ of $\dd w'/w'$.
+Since the left side does not depend on $\rho$, it equals $f(z)\oint_{\partial[-1,1]^{2}}\dd w'/w'$.
+On the right side $w'=1+iy$, $-1\le y\le1$:
+\[
+\int_{-1}^{1}\frac{i\dd y}{1+iy}=\int_{-1}^{1}\frac{y+i}{1+y^{2}}\dd y=i\bigl(\arctan1-\arctan(-1)\bigr)=\frac{i\pi}{2},
+\]
+the real part vanishing by oddness. Multiplication by $i$ maps the unit square onto itself, carries each side onto the next in the counterclockwise order, and leaves $\dd w'/w'$ invariant; so each side contributes $i\pi/2$ and the total is $2\pi i$.
+\end{proof}
+
+\begin{lemma}[Residue theorem for rectangles]\label{lem:residue}
+Let $f$ be meromorphic on an open set $\Omega$ containing the closed rectangle $Q$, with no pole on $\partial Q$ and finitely many poles $a_1,\dots,a_k$ in the interior of $Q$. Then
+$\oint_{\partial Q}f=2\pi i\sum_{j=1}^{k}\res_{a_j}f$.
+\end{lemma}
+\begin{proof}
+Let $P_j$ be the principal part at $a_j$. By Lemma~\ref{lem:mero}(a), $g=f-\sum_jP_j$ is holomorphic on $\Omega$ (each $a_j$ is removable for $f-P_j$, and the other $P_i$ are holomorphic there), so $\oint_{\partial Q}g=0$ by Lemma~\ref{lem:rect}(a).
+For $n\ge2$ the term $(w-a_j)^{-n}$ has a primitive on $\C\setminus\{a_j\}$, so its integral over the closed path $\partial Q$ vanishes; and $\oint_{\partial Q}\dd w/(w-a_j)=2\pi i$ by Lemma~\ref{lem:rect}(b).
+\end{proof}
+
+\section{Arithmetic}\label{sec:arith}
+
+\begin{lemma}[B\'ezout; Euclid]\label{lem:euclid}
+\begin{itemize}
+\item[(a)] For integers $a,b$ not both $0$, the least positive element $d$ of $\{ax+by:x,y\in\Z\}$ divides $a$ and $b$, and every common divisor of $a$ and $b$ divides $d$.
+\item[(b)] If $p$ is prime and $p\mid ab$ then $p\mid a$ or $p\mid b$.
+\end{itemize}
+\end{lemma}
+\begin{proof}
+(a) Write $a=qd+r$ with $0\le r<d$; then $r=a-q(ax+by)$ is in the set, so $r=0$ by minimality; likewise $d\mid b$. A common divisor of $a,b$ divides $ax+by=d$.
+(b) If $p\nmid a$, the $d$ of (a) for $(p,a)$ is a positive divisor of $p$ other than $p$, so $d=1=px+ay$, and $b=pbx+aby$ is divisible by $p$.
+\end{proof}
+
+\begin{theorem}[Unique factorisation]\label{thm:uf}
+Every integer $n\ge1$ is a product of primes, uniquely up to order. Writing $v_p(n)$ for the number of factors $p$: $a\mid b$ iff $v_p(a)\le v_p(b)$ for every prime $p$; and for positive integers $a_1,\dots,a_r$, $\lcm(a_1,\dots,a_r)=\prod_p p^{\max_iv_p(a_i)}$.
+\end{theorem}
+\begin{proof}
+Existence by induction: $n=1$ is the empty product; otherwise the least divisor $p>1$ of $n$ is prime and $n/p<n$.
+Uniqueness by induction on $n$: if $p_1\cdots p_r=q_1\cdots q_s$, Lemma~\ref{lem:euclid}(b) gives $p_1\mid q_j$ for some $j$, so $p_1=q_j$; cancel and apply the induction hypothesis.
+If $a\mid b$ then $b=ac$ and $v_p(b)=v_p(a)+v_p(c)$ by uniqueness; conversely $\prod p^{v_p(b)-v_p(a)}$ is an integer $c$ with $ac=b$.
+Hence $m$ is a common multiple of the $a_i$ iff $v_p(m)\ge\max_iv_p(a_i)$ for all $p$, and the least such $m$ is the displayed product.
+\end{proof}
 
 \section{The Gamma function}\label{sec:gamma}
 
@@ -128,7 +324,7 @@ $\Gamma$ is holomorphic on $\re s>0$, $\Gamma(s+1)=s\Gamma(s)$, $\Gamma(1)=1$, $
 $\Gamma$ extends to a meromorphic function on $\C$ whose poles are exactly the simple poles at $0,-1,-2,\dots$.
 \end{lemma}
 \begin{proof}
-Holomorphy by (A3) with $g(x)=e^{-x}(x^{a-1}+x^{b-1})$ on $a\le\re s\le b$.
+Holomorphy by Corollary~\ref{cor:morera}(c) with $g(x)=e^{-x}(x^{a-1}+x^{b-1})$ on $a\le\re s\le b$.
 Integration by parts gives $\Gamma(s+1)=s\Gamma(s)$, and $\Gamma(1)=1$.
 For $\re s>-n$ define $\Gamma(s)=\Gamma(s+n)/\bigl(s(s+1)\cdots(s+n-1)\bigr)$; the definitions agree on overlaps by the functional equation.
 The only singularities are at $s=-j$, $j\ge0$: choosing $n>j$, the numerator there is $\Gamma(n-j)=(n-j-1)!\ne0$ while the denominator has a simple zero, so each is a simple pole.
@@ -139,26 +335,27 @@ For $\re a>0$, $\re b>0$:
 $\displaystyle \Gamma(a)\Gamma(b)=\Gamma(a+b)\int_0^1 v^{a-1}(1-v)^{b-1}\dd v$.
 \end{lemma}
 \begin{proof}
-$\Gamma(a)\Gamma(b)=\iint_{(0,\infty)^2}e^{-x-y}x^{a-1}y^{b-1}\dd x\dd y$ (absolutely convergent, (A4)).
+$\Gamma(a)\Gamma(b)=\iint_{(0,\infty)^2}e^{-x-y}x^{a-1}y^{b-1}\dd x\dd y$ (absolutely convergent, Fubini).
 Substitute $x=wv$, $y=w(1-v)$ with $w>0$, $0<v<1$; the Jacobian is $w$, and the integral becomes
 $\int_0^\infty e^{-w}w^{a+b-1}\dd w\int_0^1 v^{a-1}(1-v)^{b-1}\dd v$.
 \end{proof}
 
 \begin{lemma}[Reflection]\label{lem:reflection}
-For all $s\in\C\setminus\Z$: $\Gamma(s)\Gamma(1-s)=\pi/\sin(\pi s)$.
+For all $s\in\C\setminus\Z$: $\Gamma(s)\Gamma(1-s)=\pi/\sin(\pi s)$. In particular $\Gamma(\tfrac12)=\sqrt\pi$.
 \end{lemma}
 \begin{proof}
 First let $0<\re s<1$. By Lemma~\ref{lem:beta} with $a=s$, $b=1-s$,
 $\Gamma(s)\Gamma(1-s)=\int_0^1 v^{s-1}(1-v)^{-s}\dd v$.
 Substituting $v=u/(1+u)$, $\dd v=\dd u/(1+u)^2$, $v^{s-1}(1-v)^{-s}=u^{s-1}(1+u)$, this equals
 $I(s)=\int_0^\infty \frac{u^{s-1}}{1+u}\dd u=\int_{\R}\frac{e^{sv}}{1+e^{v}}\dd v$ (with $u=e^{v}$).
-Let $g(z)=e^{sz}/(1+e^{z})$ and integrate over the rectangle with vertices $\pm T$, $\pm T+2\pi i$.
-Inside, $g$ has exactly one pole, at $z=i\pi$, where $1+e^{z}$ vanishes with derivative $e^{i\pi}=-1$, so $\res_{i\pi}g=-e^{i\pi s}$.
+Let $g(z)=e^{sz}/(1+e^{z})$, meromorphic on $\C$ with poles where $e^{z}=-1$, i.e.\ at $z=i\pi(2k+1)$, and integrate over the rectangle with vertices $\pm T$, $\pm T+2\pi i$ (Lemma~\ref{lem:residue}; no pole lies on its boundary).
+Inside there is exactly one pole, $z=i\pi$, where $1+e^{z}$ vanishes with derivative $e^{i\pi}=-1$; so $g=e^{sz}/\bigl((z-i\pi)u(z)\bigr)$ with $u$ holomorphic, $u(i\pi)=-1$, and $\res_{i\pi}g=-e^{i\pi s}$.
 The top edge contributes $-\int_{-T}^{T}g(v+2\pi i)\dd v=-e^{2\pi i s}\int_{-T}^{T}g(v)\dd v$.
 On the right edge $|g(T+iy)|\le e^{\sigma T}/(e^{T}-1)\to0$ since $\sigma=\re s<1$; on the left edge $|g(-T+iy)|\le e^{-\sigma T}/(1-e^{-T})\to0$ since $\sigma>0$.
 Letting $T\to\infty$: $(1-e^{2\pi i s})I(s)=2\pi i\,(-e^{i\pi s})$, so
 $I(s)=\dfrac{2\pi i}{e^{i\pi s}-e^{-i\pi s}}=\dfrac{\pi}{\sin\pi s}$.
-Both sides of the claimed identity are meromorphic on $\C$ and agree on the strip, so they agree on $\C\setminus\Z$ by (A2).
+Both sides of the claimed identity are meromorphic on $\C$ and agree on the strip, so they agree on $\C\setminus\Z$ by Lemma~\ref{lem:mero}(e).
+At $s=\tfrac12$: $\Gamma(\tfrac12)^{2}=\pi$ and $\Gamma(\tfrac12)>0$.
 \end{proof}
 
 \begin{corollary}\label{cor:gamma-nonzero}
@@ -175,7 +372,7 @@ Hence $1/\Gamma$ has no poles, and its zeros are the poles of $\Gamma$.
 For $0<a\le b<\infty$ there is $K=K(a,b)$ with $|\Gamma(\sigma+i\tau)|\le K/(1+\tau^{2})$ for all $a\le\sigma\le b$, $\tau\in\R$.
 \end{lemma}
 \begin{proof}
-Substituting $x=e^{u}$, $\Gamma(\sigma+i\tau)=\int_\R\varphi_\sigma(u)e^{i\tau u}\dd u$ with $\varphi_\sigma(u)=\exp(\sigma u-e^{u})$, a Schwartz function.
+Substituting $x=e^{u}$, $\Gamma(\sigma+i\tau)=\int_\R\varphi_\sigma(u)e^{i\tau u}\dd u$ with $\varphi_\sigma(u)=\exp(\sigma u-e^{u})$, a smooth function all of whose derivatives are integrable (they are polynomials in $e^{u}$ times $\varphi_\sigma$).
 Two integrations by parts give, for $\tau\neq0$, $\Gamma(\sigma+i\tau)=-\tau^{-2}\int_\R\varphi_\sigma''(u)e^{i\tau u}\dd u$, and
 $\varphi_\sigma''=\bigl((\sigma-e^{u})^{2}-e^{u}\bigr)\varphi_\sigma$, so
 \[
@@ -187,13 +384,76 @@ The right side is a continuous function of $\sigma\in[a,b]$, bounded by some $K_
 Take $K=2(K_1+K_2)$.
 \end{proof}
 
-\begin{lemma}[Cahen--Mellin integral]\label{lem:cahen-mellin}
-For $c>0$ and $x>0$:
-$\displaystyle e^{-x}=\frac{1}{2\pi}\int_\R\Gamma(c+i\tau)\,x^{-c-i\tau}\dd\tau$.
+\section{Fourier analysis}\label{sec:fourier}
+
+For an integrable $f:\R\to\C$ put $\widehat f(\xi)=\int_\R f(u)e^{-2\pi iu\xi}\dd u$.
+
+\begin{lemma}[The Gaussian]\label{lem:gauss}
+$\int_\R e^{-\pi u^{2}}\dd u=1$, and for $x>0$, $\xi\in\R$:
+$\displaystyle\int_\R e^{-\pi xu^{2}}e^{-2\pi iu\xi}\dd u=x^{-1/2}e^{-\pi\xi^{2}/x}$.
 \end{lemma}
 \begin{proof}
-With $\varphi_c(u)=\exp(cu-e^{u})$ as above, $\Gamma(c+i\tau)=\int_\R\varphi_c(u)e^{i\tau u}\dd u=\widehat{\varphi_c}(-\tau/2\pi)$.
-Fourier inversion (A5) gives $\varphi_c(u)=\frac{1}{2\pi}\int_\R\Gamma(c+i\tau)e^{-i\tau u}\dd\tau$.
+Substituting $x=\pi u^{2}$ in $\Gamma(\tfrac12)=\int_0^\infty e^{-x}x^{-1/2}\dd x$ gives
+$\Gamma(\tfrac12)=2\sqrt\pi\int_0^\infty e^{-\pi u^{2}}\dd u$, so
+$\int_\R e^{-\pi u^{2}}\dd u=\Gamma(\tfrac12)/\sqrt\pi=1$ by Lemma~\ref{lem:reflection}.
+Let $h(\xi)=\int_\R e^{-\pi u^{2}}e^{-2\pi iu\xi}\dd u$. By Lemma~\ref{lem:param-diff} (domination by $2\pi|u|e^{-\pi u^{2}}$) and an integration by parts on $[-A,A]$ with $A\to\infty$,
+\[
+h'(\xi)=\int_\R(-2\pi iu)e^{-\pi u^{2}}e^{-2\pi iu\xi}\dd u
+=i\int_\R\bigl(e^{-\pi u^{2}}\bigr)'e^{-2\pi iu\xi}\dd u
+=i\int_\R e^{-\pi u^{2}}(2\pi i\xi)e^{-2\pi iu\xi}\dd u
+=-2\pi\xi\,h(\xi),
+\]
+so $(h(\xi)e^{\pi\xi^{2}})'=0$ and $h(\xi)=h(0)e^{-\pi\xi^{2}}=e^{-\pi\xi^{2}}$.
+For general $x$ substitute $u=v/\sqrt x$.
+\end{proof}
+
+\begin{lemma}[Fourier inversion]\label{lem:inversion}
+Let $f:\R\to\C$ be continuous, bounded and integrable, with $\widehat f$ integrable. Then $f(u)=\int_\R\widehat f(\xi)e^{2\pi iu\xi}\dd\xi$ for every $u\in\R$.
+\end{lemma}
+\begin{proof}
+For $\delta>0$ put $I_\delta(u)=\int_\R\widehat f(\xi)e^{-\pi\delta^{2}\xi^{2}}e^{2\pi iu\xi}\dd\xi$. Since $|f(y)|e^{-\pi\delta^{2}\xi^{2}}$ is integrable on $\R^{2}$, Fubini and Lemma~\ref{lem:gauss} (with $x=\delta^{2}$) give
+\[
+I_\delta(u)=\int_\R f(y)\Bigl(\int_\R e^{-\pi\delta^{2}\xi^{2}}e^{-2\pi i(y-u)\xi}\dd\xi\Bigr)\dd y
+=\int_\R f(y)\,\delta^{-1}e^{-\pi(y-u)^{2}/\delta^{2}}\dd y=\int_\R f(u+\delta v)e^{-\pi v^{2}}\dd v .
+\]
+As $\delta\to0$ the last integrand tends to $f(u)e^{-\pi v^{2}}$ pointwise and is dominated by $\sup|f|\,e^{-\pi v^{2}}$, so $I_\delta(u)\to f(u)$; and $I_\delta(u)\to\int\widehat f(\xi)e^{2\pi iu\xi}\dd\xi$ by dominated convergence with dominant $|\widehat f|$.
+\end{proof}
+
+\begin{lemma}[Fourier series of $C^{2}$ periodic functions]\label{lem:fourier-series}
+Let $F:\R\to\C$ be $C^{2}$ and $1$-periodic, and $c_k=\int_0^1F(x)e^{-2\pi ikx}\dd x$. Then $\sum_k|c_k|<\infty$ and $F(x)=\sum_{k\in\Z}c_ke^{2\pi ikx}$ for every $x$.
+\end{lemma}
+\begin{proof}
+Two integrations by parts (boundary terms cancel by periodicity) give $c_k=-(2\pi k)^{-2}\int_0^1F''(x)e^{-2\pi ikx}\dd x$, so $|c_k|\le\max|F''|/(4\pi^{2}k^{2})$ for $k\ne0$.
+Let $S_N(x)=\sum_{|k|\le N}c_ke^{2\pi ikx}=\int_{-1/2}^{1/2}F(x-y)D_N(y)\dd y$ with $D_N(y)=\sum_{|k|\le N}e^{2\pi iky}$ (substitute $y=x-x'$ and use periodicity).
+Summing the geometric progression, $D_N(y)=\sin\bigl((2N+1)\pi y\bigr)/\sin(\pi y)$ for $y\notin\Z$, and $\int_{-1/2}^{1/2}D_N=1$.
+Hence $S_N(x)-F(x)=\int_{-1/2}^{1/2}g_x(y)\sin\bigl((2N+1)\pi y\bigr)\dd y$ with $g_x(y)=(F(x-y)-F(x))/\sin(\pi y)$.
+Since $F(x-y)-F(x)=-y\int_0^1F'(x-ty)\dd t$ and $y/\sin(\pi y)$ extends to a $C^{1}$ function on $[-\tfrac12,\tfrac12]$, $g_x$ extends to a $C^{1}$ function there; one integration by parts gives
+\[
+|S_N(x)-F(x)|\le\frac{|g_x(\tfrac12)|+|g_x(-\tfrac12)|+\int_{-1/2}^{1/2}|g_x'|}{(2N+1)\pi}\longrightarrow0 .\qedhere
+\]
+\end{proof}
+
+\begin{lemma}[Poisson summation]\label{lem:poisson}
+Let $f\in C^{2}(\R)$ with $|f(u)|,|f'(u)|,|f''(u)|\le C/(1+u^{2})$ for all $u$. Then $\sum_{n\in\Z}f(n)=\sum_{n\in\Z}\widehat f(n)$, both series converging absolutely.
+\end{lemma}
+\begin{proof}
+For $x\in[-1,2]$ and $|n|\ge3$, $1+(x+n)^{2}\ge1+(|n|-2)^{2}$, so the series $\sum_nf(x+n)$, $\sum_nf'(x+n)$, $\sum_nf''(x+n)$ converge uniformly on $[-1,2]$, and likewise on every compact interval. By (B1), $F(x)=\sum_nf(x+n)$ is $C^{2}$ on $\R$, and it is $1$-periodic.
+Its Fourier coefficients are, by termwise integration of the uniformly convergent series on $[0,1]$,
+$c_k=\sum_n\int_0^1f(x+n)e^{-2\pi ikx}\dd x=\sum_n\int_n^{n+1}f(y)e^{-2\pi iky}\dd y=\widehat f(k)$.
+Lemma~\ref{lem:fourier-series} at $x=0$ gives $\sum_nf(n)=F(0)=\sum_kc_k=\sum_k\widehat f(k)$.
+\end{proof}
+
+\begin{corollary}[Cahen--Mellin integral]\label{lem:cahen-mellin}
+For $c>0$ and $x>0$:
+$\displaystyle e^{-x}=\frac{1}{2\pi}\int_\R\Gamma(c+i\tau)\,x^{-c-i\tau}\dd\tau$.
+\end{corollary}
+\begin{proof}
+With $\varphi_c(u)=\exp(cu-e^{u})$, continuous, bounded and integrable,
+$\widehat{\varphi_c}(\xi)=\int_\R e^{cu-e^{u}}e^{-2\pi i\xi u}\dd u=\Gamma(c-2\pi i\xi)$, which is integrable in $\xi$ by Lemma~\ref{lem:gamma-decay}.
+Lemma~\ref{lem:inversion} gives, with $\tau=-2\pi\xi$,
+\[
+\varphi_c(u)=\int_\R\Gamma(c-2\pi i\xi)e^{2\pi iu\xi}\dd\xi=\frac1{2\pi}\int_\R\Gamma(c+i\tau)e^{-i\tau u}\dd\tau .
+\]
 Put $u=\log x$: $x^{c}e^{-x}=\frac1{2\pi}\int_\R\Gamma(c+i\tau)x^{-i\tau}\dd\tau$.
 \end{proof}
 
@@ -208,11 +468,11 @@ Moreover $|L(2+i\tau)|\le L(2)=\log\zeta(2)<1$ for all real $\tau$.
 \end{lemma}
 \begin{proof}
 The two expressions for $L$ agree termwise: for $n=p^{k}$, $1/k=\log p/\log n=\Lam(n)/\log n$.
-Absolute convergence: $\sum_p\sum_k|p^{-ks}|/k\le\sum_{n\ge2}n^{-\sigma}<\infty$ for $\sigma=\re s>1$, locally uniformly, so $L$ is holomorphic (A3).
+Absolute convergence: $\sum_p\sum_k|p^{-ks}|/k\le\sum_{n\ge2}n^{-\sigma}<\infty$ for $\sigma=\re s>1$, locally uniformly, so $L$ is holomorphic (Corollary~\ref{cor:morera}(b)).
 For a fixed prime $p$, $\exp\bigl(\sum_k p^{-ks}/k\bigr)=(1-p^{-s})^{-1}$ by the power series of $-\log(1-z)$, $|z|<1$.
-Hence for a bound $P$, $\exp\bigl(\sum_{p\le P}\sum_k p^{-ks}/k\bigr)=\prod_{p\le P}\sum_{k\ge0}p^{-ks}=\sum_{n\in S_P}n^{-s}$, where $S_P$ is the set of positive integers all of whose prime factors are at most $P$; the last equality is (A7), the expansion of the finite product of absolutely convergent series.
+Hence for a bound $P$, $\exp\bigl(\sum_{p\le P}\sum_k p^{-ks}/k\bigr)=\prod_{p\le P}\sum_{k\ge0}p^{-ks}=\sum_{n\in S_P}n^{-s}$, where $S_P$ is the set of positive integers all of whose prime factors are at most $P$; the last equality is Theorem~\ref{thm:uf}, the expansion of the finite product of absolutely convergent series.
 As $P\to\infty$ the left side tends to $\exp L(s)$ and the right side to $\zeta(s)$ (the omitted terms are bounded by $\sum_{n>P}n^{-\sigma}\to0$).
-Termwise differentiation (A3): $L'(s)=-\sum_p\sum_k(\log p)p^{-ks}=-\sum_{n}\Lam(n)n^{-s}$, and $\zeta'/\zeta=L'$.
+Termwise differentiation (Corollary~\ref{cor:morera}(b)): $L'(s)=-\sum_p\sum_k(\log p)p^{-ks}=-\sum_{n}\Lam(n)n^{-s}$, and $\zeta'/\zeta=L'$.
 Finally $|L(2+i\tau)|\le\sum_p\sum_k p^{-2k}/k=L(2)=\log\zeta(2)$ and $\zeta(2)\le 1+\int_1^\infty x^{-2}\dd x=2<e$.
 \end{proof}
 
@@ -229,13 +489,12 @@ Moreover
 \end{equation}
 \end{lemma}
 \begin{proof}
-For $\re s>1$, Abel summation gives
-$\sum_{n>N}n^{-s}=\int_N^\infty x^{-s}\dd\lfloor x\rfloor=-N^{1-s}+s\int_N^\infty\lfloor x\rfloor x^{-s-1}\dd x$,
-and writing $\lfloor x\rfloor=x-\{x\}$, $s\int_N^\infty x^{-s}\dd x=sN^{1-s}/(s-1)$, so
-$\sum_{n>N}n^{-s}=N^{1-s}/(s-1)-s\int_N^\infty\{x\}x^{-s-1}\dd x$, which is \eqref{eq:partial}.
-The integral converges absolutely for $\re s>0$, dominated locally uniformly by $\int_N^\infty x^{-\sigma_0-1}\dd x$, hence is holomorphic there (A3); the continuation follows by (A2).
+For integers $M>N$ and $n\le x<n+1$ one has $\lfloor x\rfloor=n$, so $s\int_n^{n+1}\lfloor x\rfloor x^{-s-1}\dd x=n\bigl(n^{-s}-(n+1)^{-s}\bigr)$; summing over $N\le n<M$ and rearranging,
+$\sum_{N<n\le M}n^{-s}=M^{1-s}-N^{1-s}+s\int_N^M\lfloor x\rfloor x^{-s-1}\dd x$.
+For $\re s>1$ let $M\to\infty$ and write $\lfloor x\rfloor=x-\{x\}$, $s\int_N^\infty x^{-s}\dd x=sN^{1-s}/(s-1)$; this gives \eqref{eq:partial}.
+The integral converges absolutely for $\re s>0$, dominated locally uniformly by $\int_N^\infty x^{-\sigma_0-1}\dd x$, hence is holomorphic there (Corollary~\ref{cor:morera}(c)); the continuation is unique by Lemma~\ref{lem:mero}(e).
 With $N=1$, $\zeta(s)=\frac{s}{s-1}-s\int_1^\infty\{x\}x^{-s-1}\dd x$, so $(s-1)\zeta(s)\to1$ as $s\to1$.
-The statement about $-\zeta'/\zeta$ is (A2).
+The statement about $-\zeta'/\zeta$ is Lemma~\ref{lem:mero}(c).
 
 For \eqref{eq:growth}: take $N=\lfloor|\tau|\rfloor$, so $|\tau|/2\le N\le|\tau|$.
 Then $|\sum_{n\le N}n^{-s}|\le\sum_{n\le N}n^{-1/2}\le 2\sqrt N\le2\sqrt{|\tau|}$;
@@ -255,22 +514,18 @@ Since $3+4\cos\theta+\cos2\theta=2(1+\cos\theta)^{2}\ge0$,
 \zeta(\sigma)^{3}\,|\zeta(\sigma+i\tau)|^{4}\,|\zeta(\sigma+2i\tau)|\ge1 .
 \]
 Suppose $\zeta(1+i\tau_0)=0$ with $\tau_0\ne0$.
-By Lemma~\ref{lem:continuation}, $\zeta$ is holomorphic near $1+i\tau_0$ and near $1+2i\tau_0$, so there are constants with
+By Lemma~\ref{lem:continuation}, $\zeta$ is holomorphic on a neighbourhood of the segments $\{\sigma+i\tau_0\}$ and $\{\sigma+2i\tau_0\}$, $1\le\sigma\le2$, so there are constants with
 $|\zeta(\sigma+i\tau_0)|\le K(\sigma-1)$ and $|\zeta(\sigma+2i\tau_0)|\le K'$ for $1<\sigma\le2$,
 while $\zeta(\sigma)=\sigma/(\sigma-1)-\sigma\int_1^\infty\{x\}x^{-\sigma-1}\dd x\le\sigma/(\sigma-1)\le 2/(\sigma-1)$ by \eqref{eq:partial} with $N=1$, the subtracted integral being nonnegative for real $\sigma>1$.
 Then the product is at most $8K^{4}K'(\sigma-1)\to0$ as $\sigma\downarrow1$, a contradiction.
 \end{proof}
 
-\begin{lemma}[Gaussian transform and theta inversion]\label{lem:theta}
+\begin{lemma}[Theta inversion]\label{lem:theta}
 For $x>0$ let $\theta(x)=\sum_{n\in\Z}e^{-\pi n^{2}x}$ and $\omega(x)=\sum_{n\ge1}e^{-\pi n^{2}x}$, so $\theta=1+2\omega$.
 Then $\theta(1/x)=\sqrt{x}\,\theta(x)$, and $0<\omega(x)\le 2e^{-\pi x}$ for $x\ge1$.
 \end{lemma}
 \begin{proof}
-Let $h(\xi)=\int_\R e^{-\pi u^{2}}e^{-2\pi i u\xi}\dd u$. Differentiating under the integral and integrating by parts,
-$h'(\xi)=\int_\R(-2\pi i u)e^{-\pi u^{2}}e^{-2\pi iu\xi}\dd u=i\int_\R\bigl(e^{-\pi u^{2}}\bigr)'e^{-2\pi iu\xi}\dd u=-2\pi\xi\,h(\xi)$,
-so $h(\xi)=h(0)e^{-\pi\xi^{2}}=e^{-\pi\xi^{2}}$.
-Scaling $u\mapsto u\sqrt{x}$, the function $f(u)=e^{-\pi xu^{2}}$ has $\widehat f(\xi)=x^{-1/2}e^{-\pi\xi^{2}/x}$.
-Poisson summation (A5) gives $\theta(x)=x^{-1/2}\theta(1/x)$.
+The function $f(u)=e^{-\pi xu^{2}}$ satisfies the hypotheses of Lemma~\ref{lem:poisson}, and $\widehat f(\xi)=x^{-1/2}e^{-\pi\xi^{2}/x}$ by Lemma~\ref{lem:gauss}; Poisson summation gives $\theta(x)=x^{-1/2}\theta(1/x)$.
 For $x\ge1$: $\omega(x)\le\sum_{n\ge1}e^{-\pi nx}=e^{-\pi x}/(1-e^{-\pi x})\le2e^{-\pi x}$.
 \end{proof}
 
@@ -301,9 +556,9 @@ Split at $x=1$. In $\int_0^1$ substitute $x=1/y$ and use $\omega(1/y)=-\tfrac12+
 \]
 using $\int_1^\infty y^{-s/2-1}\dd y=2/s$ and $\int_1^\infty y^{-s/2-1/2}\dd y=2/(s-1)$ for $\re s>1$.
 Since $-1/s+1/(s-1)=1/(s(s-1))$, \eqref{eq:xi} follows.
-The integral in \eqref{eq:xi} is entire by (A3), since $\omega(x)\le2e^{-\pi x}$ dominates $x^{\sigma/2-1}+x^{(1-\sigma)/2-1}$ times $e^{-\pi x}$ locally uniformly.
+The integral in \eqref{eq:xi} is entire by Corollary~\ref{cor:morera}(c), since $\omega(x)\le2e^{-\pi x}$ dominates $x^{\sigma/2-1}+x^{(1-\sigma)/2-1}$ times $e^{-\pi x}$ locally uniformly.
 The right side of \eqref{eq:xi} is invariant under $s\mapsto1-s$, which is the functional equation for $\xi$.
-Define $\zeta(s)=\pi^{s/2}\xi(s)/\Gamma(s/2)$; by Corollary~\ref{cor:gamma-nonzero} the factor $1/\Gamma(s/2)$ is entire, so $\zeta$ is meromorphic on $\C$, and it agrees with the Dirichlet series on $\re s>1$, hence with Lemma~\ref{lem:continuation} on $\re s>0$ by (A2).
+Define $\zeta(s)=\pi^{s/2}\xi(s)/\Gamma(s/2)$; by Corollary~\ref{cor:gamma-nonzero} the factor $1/\Gamma(s/2)$ is entire, so $\zeta$ is meromorphic on $\C$, and it agrees with the Dirichlet series on $\re s>1$, hence with Lemma~\ref{lem:continuation} on $\re s>0$ by Lemma~\ref{lem:mero}(e).
 \end{proof}
 
 \begin{corollary}[Symmetry of the zeros]\label{cor:symmetry}
@@ -320,7 +575,7 @@ Apply Theorem~\ref{thm:FE}.
 For every integer $n\ge1$, $\psi(n)=\log\lcm(1,2,\dots,n)$.
 \end{lemma}
 \begin{proof}
-By (A7), $\lcm(1,\dots,n)=\prod_{p\le n}p^{k_p}$ where $k_p=\max\{k:p^{k}\le n\}$, and $\log$ of this is $\sum_{p\le n}k_p\log p=\sum_{p^{k}\le n}\log p=\psi(n)$.
+By Theorem~\ref{thm:uf}, $\lcm(1,\dots,n)=\prod_{p\le n}p^{k_p}$ where $k_p=\max_{j\le n}v_p(j)=\max\{k:p^{k}\le n\}$, and $\log$ of this is $\sum_{p\le n}k_p\log p=\sum_{p^{k}\le n}\log p=\psi(n)$.
 \end{proof}
 
 \begin{lemma}\label{lem:nair}
@@ -356,8 +611,8 @@ For $t>0$ and $c>1$:
 $\displaystyle A(t)=\frac1{2\pi}\int_\R\Gamma(c+i\tau)\Bigl(-\frac{\zeta'}{\zeta}\Bigr)(c+i\tau)\,t^{-c-i\tau}\dd\tau$.
 \end{lemma}
 \begin{proof}
-By Lemma~\ref{lem:cahen-mellin} with $x=nt$, $e^{-nt}=\frac1{2\pi}\int_\R\Gamma(c+i\tau)n^{-c-i\tau}t^{-c-i\tau}\dd\tau$.
-Multiply by $\Lam(n)$ and sum. The interchange of sum and integral is justified by (A4), since
+By Corollary~\ref{lem:cahen-mellin} with $x=nt$, $e^{-nt}=\frac1{2\pi}\int_\R\Gamma(c+i\tau)n^{-c-i\tau}t^{-c-i\tau}\dd\tau$.
+Multiply by $\Lam(n)$ and sum. The interchange of sum and integral is justified by Fubini, since
 $\sum_n\Lam(n)n^{-c}\int_\R|\Gamma(c+i\tau)|\dd\tau<\infty$ by Lemmas~\ref{lem:euler} and~\ref{lem:gamma-decay}.
 The inner sum is $-\zeta'/\zeta(c+i\tau)$ by Lemma~\ref{lem:euler}.
 \end{proof}
@@ -371,10 +626,10 @@ Then for $0<r<R$ and $|z|\le r$,
 \end{lemma}
 \begin{proof}
 Let $g=f-f(0)$ and $M_0=M-\re f(0)\ge\re g(0)=0$.
-If $M_0=0$ then $\re g\le0=\re g(0)$, so $\re g$ attains an interior maximum and $g$ is constant (A6); the bound is trivial.
-If $M_0>0$, put $\phi=g/(2M_0-g)$; the denominator has real part $\ge M_0>0$, and $|g|\le|2M_0-g|$ because this is equivalent to $\re g\le M_0$. So $\phi$ maps the disc into the closed unit disc with $\phi(0)=0$, and the Schwarz lemma gives $|\phi(z)|\le|z|/R$.
+If $M_0=0$ then $\re g\le0=\re g(0)$ on the disc $|z|<R$, so $g$ is constant there by Lemma~\ref{lem:maxmod}(a), and the bound is trivial.
+If $M_0>0$, put $\phi=g/(2M_0-g)$; the denominator has real part $\ge M_0>0$, and $|g|\le|2M_0-g|$ because this is equivalent to $\re g\le M_0$. So $\phi$ is holomorphic near the closed disc, maps it into the closed unit disc, and $\phi(0)=0$; Lemma~\ref{lem:maxmod}(b) gives $|\phi(z)|\le|z|/R$.
 Then $|g(z)|\le\frac{|z|}{R}(2M_0+|g(z)|)$, so $|g(z)|\le\frac{2M_0|z|}{R-|z|}$.
-On $|w|\le R_1=\frac{R+r}{2}$ this gives $|g(w)|\le\frac{2M_0(R+r)}{R-r}$, and Cauchy's estimate (A1) on the disc of radius $\frac{R-r}{2}$ about $z$ ($|z|\le r$) gives $|g'(z)|\le\frac{2M_0(R+r)}{R-r}\cdot\frac{2}{R-r}$.
+On $|w|\le R_1=\frac{R+r}{2}$ this gives $|g(w)|\le\frac{2M_0(R+r)}{R-r}$, and Cauchy's estimate (Lemma~\ref{lem:cauchy-disc}) on the disc of radius $\frac{R-r}{2}$ about $z$ ($|z|\le r$) gives $|g'(z)|\le\frac{2M_0(R+r)}{R-r}\cdot\frac{2}{R-r}$.
 \end{proof}
 
 \begin{lemma}[Conditional bound for $\zeta'/\zeta$]\label{lem:cond-bound}
@@ -386,7 +641,7 @@ Assume \eqref{eq:RHprime} and fix $\varepsilon\in(0,\tfrac12)$. Then for $\tfrac
 \begin{proof}
 Fix $\tau$ with $|\tau|\ge4$ and let $R'=\tfrac32-\tfrac\varepsilon4$, $R=\tfrac32-\tfrac\varepsilon2$, $r=\tfrac32-\varepsilon$.
 Every $s$ with $|s-(2+i\tau)|<R'$ has $\re s>\tfrac12+\tfrac\varepsilon4$ and $|\im s|>|\tau|-\tfrac32\ge\tfrac52$, so by \eqref{eq:RHprime} and Lemma~\ref{lem:continuation} $\zeta$ is holomorphic and nonvanishing on this open disc.
-By (A2) there is a holomorphic $f$ on $|z|<R'$ with $e^{f(z)}=\zeta(2+i\tau+z)$; adjusting by a constant $2\pi ik$ we may take $f(0)=L(2+i\tau)$ (Lemma~\ref{lem:euler}), so $|f(0)|\le1$.
+By Lemma~\ref{lem:log} there is a holomorphic $f$ on $|z|<R'$ with $e^{f(z)}=\zeta(2+i\tau+z)$ and $f(0)=L(2+i\tau)$ (Lemma~\ref{lem:euler}), so $|f(0)|\le1$.
 For $|z|\le R$ the point $s=2+i\tau+z$ has $\tfrac12\le\re s\le4$ and $2\le|\im s|\le|\tau|+2$, so by \eqref{eq:growth}
 $\re f(z)=\log|\zeta(s)|\le\log12+\tfrac12\log(|\tau|+2)=:M$.
 Lemma~\ref{lem:BC} gives, for $|z|\le r$,
@@ -407,8 +662,8 @@ Consequently $\GR$ holds: $|r(t)|\le C_\varepsilon t^{1/2-\varepsilon}$ for $0<t
 \end{theorem}
 \begin{proof}
 Fix $\varepsilon$ and put $c_1=\tfrac12+\varepsilon$, $c=2$, $h(s)=\Gamma(s)\bigl(-\zeta'/\zeta\bigr)(s)t^{-s}$.
-On the closed strip $c_1\le\re s\le c$ the function $h$ is meromorphic with a single pole, at $s=1$ (Lemma~\ref{lem:continuation}, \eqref{eq:RHprime}, Corollary~\ref{cor:gamma-nonzero}), simple, with residue $\Gamma(1)\cdot1\cdot t^{-1}=1/t$.
-Apply the residue theorem (A1) to the rectangle with vertices $c_1\pm iT$, $c\pm iT$ for $T\ge4$:
+On the open set $\re s>\tfrac12$ the function $h$ is meromorphic (Lemma~\ref{lem:mero}) with a single pole, at $s=1$ (Lemma~\ref{lem:continuation}, \eqref{eq:RHprime}, Corollary~\ref{cor:gamma-nonzero}), simple, with residue $\Gamma(1)\cdot1\cdot t^{-1}=1/t$.
+Apply Lemma~\ref{lem:residue} to the rectangle with vertices $c_1\pm iT$, $c\pm iT$ for $T\ge4$:
 \[
 \int_{c-iT}^{c+iT}h\dd s-\int_{c_1-iT}^{c_1+iT}h\dd s+\int_{c_1}^{c}\bigl(h(\sigma-iT)-h(\sigma+iT)\bigr)\dd\sigma=\frac{2\pi i}{t}.
 \]
@@ -467,9 +722,9 @@ F(s)=\underbrace{\int_0^{t_1}\Bigl(A(t)-\frac{\ell(t)}{t}\Bigr)t^{s-1}\dd t}_{I_
 \]
 each piece converging absolutely for $\re s>1$ (by \eqref{eq:A-ell}, by (v), and by $A(t)\le\sum_n ne^{-nt}=e^{-t}(1-e^{-t})^{-2}$).
 
-$I_1$ is holomorphic on $\re s>1-\alpha=\tfrac12+\varepsilon$: by \eqref{eq:A-ell} the integrand is bounded by $C't^{\alpha+\sigma-2}$, integrable on $(0,t_1]$ when $\sigma>1-\alpha$, locally uniformly in $\sigma$ (A3).
+$I_1$ is holomorphic on $\re s>1-\alpha=\tfrac12+\varepsilon$: by \eqref{eq:A-ell} the integrand is bounded by $C't^{\alpha+\sigma-2}$, integrable on $(0,t_1]$ when $\sigma>1-\alpha$, locally uniformly in $\sigma$ (Corollary~\ref{cor:morera}(c)).
 
-$I_3$ is entire: for $t\ge t_1$, $A(t)\le e^{-t}(1-e^{-t_1})^{-2}$, so the integrand is dominated locally uniformly by $e^{-t}t^{\sigma-1}$ (A3).
+$I_3$ is entire: for $t\ge t_1$, $A(t)\le e^{-t}(1-e^{-t_1})^{-2}$, so the integrand is dominated locally uniformly by $e^{-t}t^{\sigma-1}$ (Corollary~\ref{cor:morera}(c)).
 
 $I_2$ is computed exactly from the dyadic invariance (ii). For $\re s>1$, substituting $t=2^{-k}u$ on $[t_12^{-k-1},t_12^{-k}]$,
 \[
@@ -478,15 +733,15 @@ I_2(s)=\sum_{k\ge0}\int_{t_12^{-k-1}}^{t_12^{-k}}\ell(t)t^{s-2}\dd t
 =\frac{\Phi(s)}{1-2^{1-s}},\qquad
 \Phi(s)=\int_{t_1/2}^{t_1}\ell(u)u^{s-2}\dd u ,
 \]
-where $\Phi$ is entire (continuous integrand on a compact interval, (A3)) and the geometric series converges since $|2^{1-s}|<1$.
-The right side is meromorphic on $\C$, with poles contained in the set
+where $\Phi$ is entire (continuous integrand on a compact interval, Corollary~\ref{cor:morera}(c)) and the geometric series converges since $|2^{1-s}|<1$.
+The right side is meromorphic on $\C$ (Lemma~\ref{lem:mero}(b)), with poles contained in the set
 \[
 Z=\{\,1+2\pi ik/\log2:\ k\in\Z\,\}=\{s:2^{1-s}=1\},
 \]
 all of which lie on the line $\re s=1$.
 
 Therefore $I_1+\Phi/(1-2^{1-s})+I_3$ is meromorphic on $\Omega_\varepsilon=\{\re s>\tfrac12+\varepsilon\}$ with poles in $Z$, and it agrees with $F$ on $\re s>1$.
-Since $F=\Gamma\cdot(-\zeta'/\zeta)$ is itself meromorphic on $\re s>0$ (Lemmas~\ref{lem:gamma-basic} and~\ref{lem:continuation}), the identity theorem (A2) gives:
+Since $F=\Gamma\cdot(-\zeta'/\zeta)$ is itself meromorphic on $\re s>0$ (Lemmas~\ref{lem:gamma-basic} and~\ref{lem:continuation}), Lemma~\ref{lem:mero}(e) gives:
 \begin{equation}\label{eq:poles}
 \text{every pole of }F\text{ in }\Omega_\varepsilon\text{ lies in }Z,\ \text{hence on }\re s=1 .
 \end{equation}
@@ -494,7 +749,7 @@ Since $F=\Gamma\cdot(-\zeta'/\zeta)$ is itself meromorphic on $\re s>0$ (Lemmas~
 \subsection*{Step 3: no zeros of $\zeta$ in $\re s>\tfrac12$}
 
 Suppose $\zeta(\rho)=0$ with $\rho\in\Omega_\varepsilon$, of multiplicity $m\ge1$. Then $\rho\ne1$, and by Lemma~\ref{lem:continuation} $-\zeta'/\zeta$ has a pole at $\rho$ with residue $-m\ne0$.
-By Corollary~\ref{cor:gamma-nonzero}, $\Gamma(\rho)\ne0$ and $\Gamma$ is holomorphic at $\rho$ ($\re\rho>0$), so $F=\Gamma\cdot(-\zeta'/\zeta)$ has a pole at $\rho$.
+By Corollary~\ref{cor:gamma-nonzero}, $\Gamma(\rho)\ne0$ and $\Gamma$ is holomorphic at $\rho$ ($\re\rho>0$), so $F=\Gamma\cdot(-\zeta'/\zeta)$ has a pole at $\rho$ (Lemma~\ref{lem:mero}(d)).
 By \eqref{eq:poles}, $\re\rho=1$. This contradicts Lemma~\ref{lem:mertens}.
 Hence $\zeta$ has no zero in $\Omega_\varepsilon$. Since $\varepsilon\in(0,\tfrac12)$ was arbitrary, $\zeta$ has no zero with $\re s>\tfrac12$.
 
@@ -502,7 +757,7 @@ Hence $\zeta$ has no zero in $\Omega_\varepsilon$. Since $\varepsilon\in(0,\tfra
 
 Let $\rho$ be a zero of $\zeta$ with $0<\re\rho<1$. By Step 3, $\re\rho\le\tfrac12$. By Corollary~\ref{cor:symmetry}, $1-\rho$ is also a zero with $0<\re(1-\rho)<1$, so $\re(1-\rho)\le\tfrac12$, i.e.\ $\re\rho\ge\tfrac12$. Hence $\re\rho=\tfrac12$. This is $\RH$. \qed
 
-\begin{remark}[Finite data suffice at each scale]
+\begin{remark}[Finite data suffice at each scale]\label{rem:finite}
 Since $0\le\Lam(n)\le\log n$, $R(N)\le N\log^{2}N$. Let $0<t\le e^{-3}$, $\Lambda_t=\log(1/t)\ge3$ and $L=\lceil t^{-1}\Lambda_t\rceil$.
 The function $x\mapsto x\log^{2}x\,e^{-xt}$ is decreasing for $x\ge L$ (its logarithmic derivative is $1/x+2/(x\log x)-t<0$ once $tx\ge3$ and $x\ge e$), so
 \[
@@ -517,17 +772,17 @@ This is $o(t^{1/2-\varepsilon})$ for every $\varepsilon<\tfrac12$.
 So $\GR$ is unchanged if $\G(t)$ is replaced by $t^{2}\sum_{N\le L}R(N)e^{-Nt}$: at each scale $t$ the proposition is decided, up to an error strictly below the critical rate, by the finite list $R(4),\dots,R(L)$.
 \end{remark}
 
-\section{Dependency map}
+\section{Dependency map}\label{sec:map}
 
 \begin{center}
 \begin{tabular}{p{0.34\textwidth}p{0.6\textwidth}}
-Lemma \ref{lem:square} & Tonelli \\
-Lemmas \ref{lem:gamma-basic}--\ref{lem:cahen-mellin} & (A1), (A2), (A3), (A4), (A5), (A6): all properties of $\Gamma$ used \\
-Lemma \ref{lem:euler} & (A7): Euler product, $-\zeta'/\zeta=\sum\Lam(n)n^{-s}$ \\
-Lemma \ref{lem:continuation} & Abel summation: continuation to $\re s>0$, pole at $1$, growth \eqref{eq:growth} \\
-Lemma \ref{lem:mertens} & $3$--$4$--$1$ inequality: no zeros on $\re s=1$ \\
-Lemma \ref{lem:theta}, Theorem \ref{thm:FE}, Cor.\ \ref{cor:symmetry} & Gaussian transform, Poisson: functional equation, zero symmetry \\
-Lemmas \ref{lem:psi-lcm}--\ref{lem:Y-lower} & $\lcm$ and the Beta integral: $tA(t)\ge c_0$ \\
+Section \ref{sec:base} & the base: (B0) numbers and $\exp$, (B1) Riemann integration and uniform convergence, (B2) Lebesgue convergence theorems and Fubini \\
+Section \ref{sec:complex} & Goursat, primitives, Cauchy's formula and estimates, Morera, Weierstrass, parameter integrals, identity theorem, maximum principle, Schwarz, logarithms, meromorphic functions, rectangles, residues \\
+Section \ref{sec:arith} & B\'ezout, Euclid, unique factorisation, $\lcm$ \\
+Section \ref{sec:gamma} & $\Gamma$: functional equation, Beta integral, reflection, nonvanishing, vertical decay \\
+Section \ref{sec:fourier} & Gaussian transform, Fourier inversion, Fourier series, Poisson summation, Cahen--Mellin \\
+Section \ref{sec:zeta} & Euler product, continuation to $\re s>0$, growth, $3$--$4$--$1$, theta inversion, functional equation, zero symmetry \\
+Section \ref{sec:cheb} & $\psi(n)=\log\lcm(1..n)$, Nair's bound, $tA(t)\ge c_0$ \\
 Section \ref{sec:forward} & Mellin inversion, Borel--Carath\'eodory, contour shift: $\RH\Rightarrow\GR$ \\
 Section \ref{sec:reverse} & dyadic limit, exact dyadic Mellin sum, pole bookkeeping: $\GR\Rightarrow\RH$
 \end{tabular}
