@@ -105,28 +105,49 @@
 <p>This is one construction on how equality behaves in cubical type theory: equality of types <em>is</em> equivalence — Voevodsky's univalence — and it computes. No prior familiarity with either is assumed.</p>
 <p>From that one fact the construction builds to a single result: complete inference — proving, computing, deciding, or answering any well-formed question — runs deterministically and in the fewest possible steps: a count fixed by where the reduction starts and ends, never by which strategy walks between them. The exact form of the Gödel and Turing limits is a stop on the way (§4). The natural numbers, and the complex numbers with the field equations, are two readings of the finished construction, set out after it. The shape is worth knowing in advance: §§0–2 are one chain, each step from the one before, ending in univalence; §3 and §4 are two facts that chain does not give, each standing on its own; §5 is where all four are used. Every step is elementary, and at each one the computational core is machine-checked and runs — the boxed terms below, verbatim and checkable as printed.</p>
 <h2><span class="n">0.</span> The one fact</h2>
-<ul>
-<li>A <strong>type</strong> is a collection of values (<code>a : A</code>); a <strong>function</strong> <code>f : A → B</code> maps values to values. A <strong>pair type</strong> <code>Σ (a : A) (P a)</code> holds pairs <code>(a , w)</code> where the type of the second part, <code>P a</code>, may depend on the first — <code>P</code> a <em>family</em>, one type <code>P a</code> for each <code>a</code>.</li>
-<li>Equality is a type: <code>x = y</code> is the type of <strong>proofs</strong> that <code>x</code> equals <code>y</code>; <code>refl : x = x</code>. A proof is a value you keep.</li>
-<li><strong>The interval.</strong> A proof of equality is a <em>path</em>, and a path is a map out of the interval <code>𝕀</code> — which is not assumed but built: the free <em>De Morgan algebra</em> on one generator — a bounded distributive lattice, endpoints <code>0, 1</code>, carrying <em>meet</em> <code>∧</code>, <em>join</em> <code>∨</code>, and an order-reversing involution <code>~</code> that exchanges the endpoints (<code>~0 = 1</code>). Two of those are used directly below: <code>∧</code> builds the contraction in the Fact (the <code>i ∧ j</code> in its checked term), and <code>~</code> reverses a path. <code>∨</code> earns its place with the filling of §2, where a square is closed from two of its sides. A path <code>x = y</code> is a map <code>𝕀 → A</code> with <code>0 ↦ x</code>, <code>1 ↦ y</code>; <code>refl</code> is the constant map. Everything below — <code>transport</code>, <code>J</code> (the slide, built with <code>∧</code>), function extensionality, univalence (§2) — is built from this interval and one thing done with it: paths along it compose, and can be pushed along one another (the filling of §2), which each type former supplies for its own type rather than having it assumed. So the base is the interval and its operations, and no axiom is added about any type.</li>
-<li><strong>Contractible</strong> = some point exists, and every element is equal to it — so the whole type collapses onto that one point.</li>
-<li><strong>Substitution (transport).</strong> A proof <code>p : x = y</code> lets you carry any structure from <code>x</code> to <code>y</code>: for any family <code>P</code> it gives <code>transport p : P x → P y</code>, run backwards by transporting along the reversed path <code>λ i → p (~ i)</code>, and <code>transport refl = id</code> (moving nowhere changes nothing) — a reversible, lossless program.</li>
-<li><strong>Fact:</strong> <code>Σ (y : A) (x = y)</code> — the values <code>y : A</code> equal to <code>x</code>, each with its proof — is contractible, centre <code>(x , refl)</code>. The path from the centre to any <code>(y, p)</code> is built by sliding along <code>p</code> itself: at stage <code>t</code> sit at the point <code>p t</code>, holding as its proof the piece of <code>p</code> from <code>x</code> up to <code>t</code> (so you have shown <code>x = p t</code>); at <code>t = 0</code> that is <code>(x , refl)</code>, at <code>t = 1</code> it is <code>(y, p)</code>. One point, everything equal to it.</li>
-<li><strong>Path induction (<code>J</code>).</strong> To act on every <code>(y, p : x = y)</code> it therefore suffices to give the value at <code>(x , refl)</code> and transport it forward to <code>(y, p)</code> along the contraction path. This <em>is</em> the eliminator of <code>=</code> (its <code>J</code>: to prove something about all equal pairs, prove it at the centre) — and <code>transport</code> is exactly <code>J</code> for a goal <code>C(y, p)</code> that ignores the proof <code>p</code> (<code>C(y, p) = P y</code>), so the two are one thing. (The identity type's eliminator is its initiality as an inductive family — Awodey–Gambino–Sojakova 2012.)</li>
-<li>§1 is this fact with <code>x</code> replaced by a function's output.</li>
-</ul>
+
+<div class="st"><p><span class="lab">Definition 0.1</span> (type, function, dependent pair). A <em>type</em> is a collection of values, written <code>a : A</code>. A <em>function</em> <code>f : A → B</code> maps values to values. For a <em>family</em> <code>P</code> — one type <code>P a</code> for each <code>a : A</code> — the <em>dependent pair</em> <code>Σ[ a ∈ A ] P a</code> holds pairs <code>(a , w)</code> with <code>w : P a</code>.</p></div>
+
+<div class="st"><p><span class="lab">Definition 0.2</span> (identity type). Equality is a type: <code>x ≡ y</code> is the type of proofs that <code>x</code> equals <code>y</code>, with <code>refl : x ≡ x</code>. A proof is a value you keep.</p></div>
+
+<div class="st"><p><span class="lab">Definition 0.3</span> (the interval). <code>𝕀</code> is the free De Morgan algebra on one generator: a bounded distributive lattice with endpoints <code>0, 1</code>, meet <code>∧</code>, join <code>∨</code>, and an order-reversing involution <code>~</code> exchanging the endpoints (<code>~ 0 = 1</code>). It is built, not assumed.</p></div>
+
+<div class="st"><p><span class="lab">Definition 0.4</span> (path). A proof of <code>x ≡ y</code> is a map <code>p : 𝕀 → A</code> with <code>p 0 = x</code> and <code>p 1 = y</code>. <code>refl</code> is the constant map.</p></div>
+
+<div class="st"><p><span class="lab">Definition 0.5</span> (contractible). <code>A</code> is <em>contractible</em> when some point of it exists and every element is equal to that point — the whole type collapses onto it.</p></div>
+
+<div class="st"><p><span class="lab">Definition 0.6</span> (transport). For a family <code>P</code>, a proof <code>p : x ≡ y</code> gives <code>transport p : P x → P y</code>.</p></div>
+
+<div class="st"><p><span class="lab">Proposition 0.7.</span> <code>transport</code> is reversible and loses nothing: it runs backward along the reversed path <code>λ i → p (~ i)</code>, and <code>transport refl = id</code> — moving nowhere changes nothing.</p>
+<p class="pf"><span class="lab">Proof.</span> Reversal is <code>~</code> from 0.3 applied to the map of 0.4; <code>transport refl = id</code> because <code>refl</code> is the constant map. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 0.8</span> (the one fact). <code>Σ[ y ∈ A ] (x ≡ y)</code> — the values equal to <code>x</code>, each with its proof — is contractible, with centre <code>(x , refl)</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> The path from the centre to any <code>(y , p)</code> slides along <code>p</code> itself: at stage <code>t</code> sit at the point <code>p t</code>, holding as its proof the piece of <code>p</code> from <code>x</code> up to <code>t</code>, which shows <code>x ≡ p t</code>. At <code>t = 0</code> that is <code>(x , refl)</code>; at <code>t = 1</code> it is <code>(y , p)</code>. The piece of <code>p</code> up to <code>t</code> is <code>p</code> restricted by <code>∧</code> (0.3) — the <code>i ∧ j</code> of the term below. <span class="qed">∎</span></p></div>
+
 <details class="proof"><summary>the checked term</summary>
 <pre><code>singleton-contractible : (x : A) → isContr (Σ[ y ∈ A ] x ≡ y)
 singleton-contractible x = (x , refl) , λ (y , p) i → p i , λ j → p (i ∧ j)</code></pre>
 <figcaption>Centre <code>(x , refl)</code>; the second component is the contraction, sliding any <code>(y , p)</code> back along <code>p</code> — this <em>is</em> <code>J</code>. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code> against the cubical library; no postulates, no holes.</figcaption>
 </details>
+
+<div class="st"><p><span class="lab">Corollary 0.9</span> (path induction, <code>J</code>). To act on every <code>(y , p : x ≡ y)</code> it suffices to give the value at <code>(x , refl)</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Transport the value at the centre forward along the contraction path of 0.8. This is the eliminator of <code>≡</code>. <span class="qed">∎</span></p></div>
+
+<div class="rk"><p><span class="lab">Remark 0.10.</span> <code>transport</code> (0.6) is exactly <code>J</code> for a goal that ignores the proof — <code>C(y , p) = P y</code> — so 0.6 and 0.9 are one thing. (The identity type's eliminator is its initiality as an inductive family: Awodey–Gambino–Sojakova 2012.)</p></div>
+
+<div class="rk"><p><span class="lab">Remark 0.11</span> (what the base is). Everything below — <code>transport</code>, <code>J</code>, function extensionality, univalence (§2) — is built from 0.3 and one thing done with it: paths compose, and can be pushed along one another (the filling of 2.3), which each type former supplies for its own type. Of the interval's operations, <code>∧</code> builds the contraction in 0.8, <code>~</code> reverses a path in 0.7, and <code>∨</code> earns its place in 2.3, where a square is closed from two of its sides. No axiom is added about any type.</p></div>
+
+<div class="rk"><p><span class="lab">Remark 0.12.</span> §1 is 0.8 with <code>x</code> replaced by a function's output.</p></div>
+
 <h2><span class="n">1.</span> Partition by output</h2>
-<ul>
-<li>Take <code>f : A → B</code>. Write <code>f⁻¹(b)</code> for the <strong>inputs over</strong> <code>b</code> — the inputs that land on <code>b</code>, each kept with its proof that it does: <code>f⁻¹(b) = Σ (a) (f a = b)</code>.</li>
-<li>Then <code>A</code> matches its inputs grouped by output, losslessly — write <code>≅</code> for such a lossless match (maps both ways that cancel; defined in §2): <code>A ≅ Σ (b : B) f⁻¹(b)</code>, by <code>a ↦ (f a, (a, refl))</code> with inverse <code>(b, (a, p)) ↦ a</code>. Both round trips are <code>refl</code> (the return uses the kept proof <code>p : f a = b</code>): nothing is lost, only regrouped.</li>
-<li>And this grouping is the <em>only</em> lossless one. This is the one place §1 leans forward: the partition above needs nothing after it, while the uniqueness below uses §2 twice, for univalence and for function extensionality. Call any other a completion: a family <code>T</code> assigning a type <code>T(b)</code> to each <code>b</code>, that reassembles <code>A</code> the same way — a match <code>A ≅ Σ (b) T(b)</code> that respects the output map (an input's <code>b</code> is unchanged). Respecting it means the match leaves an input's <code>b</code> alone, so it carries the piece over each <code>b</code> to the piece over that same <code>b</code> — and the inputs over <code>b</code> on the right-hand side are exactly <code>T(b)</code>, so the match carries <code>f⁻¹(b)</code> onto <code>T(b)</code>. A completion is thus a choice, at each <code>b</code>, of a type matching <code>f⁻¹(b)</code> — and the types matching a fixed one collapse to a single point (univalence, §2: <code>Σ (X) (X ≅ Y)</code> is contractible). A per-<code>b</code> choice among one-point options is again one point (functions that agree at every argument are equal — function extensionality, itself from §2). So <code>T</code> can only be the family <code>f⁻¹</code>: the decomposition is forced, not a chosen encoding.</li>
-<li>Every decomposition below is this: group by output, keep the inputs over each <code>b</code>.</li>
-</ul>
+
+<div class="st"><p><span class="lab">Definition 1.1</span> (the inputs over an output). For <code>f : A → B</code> and <code>b : B</code>, write</p>
+<pre class="def"><code>f⁻¹(b)  =  Σ[ a ∈ A ] (f a ≡ b)</code></pre>
+<p>— the inputs that land on <code>b</code>, each kept with its proof that it does.</p></div>
+
+<div class="st"><p><span class="lab">Theorem 1.2</span> (partition by output). <code>A ≃ Σ[ b ∈ B ] f⁻¹(b)</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Forward <code>a ↦ (f a , (a , refl))</code>; backward <code>(b , (a , p)) ↦ a</code>. Both round trips are <code>refl</code>, the return using the kept proof <code>p : f a ≡ b</code>. Nothing is lost, only regrouped. <span class="qed">∎</span></p></div>
+
 <details class="proof"><summary>the checked term</summary>
 <pre><code>partition : (f : A → B) → A ≃ (Σ[ b ∈ B ] fiber f b)
 partition f = isoToEquiv (iso fwd bwd rinv (λ _ → refl))
@@ -136,26 +157,49 @@ partition f = isoToEquiv (iso fwd bwd rinv (λ _ → refl))
   rinv = λ (b , a , p) i → p i , a , λ j → p (i ∧ j)</code></pre>
 <figcaption>The equivalence <code>A ≃ Σ (b : B) . f⁻¹(b)</code>; <code>fwd</code> sends <code>a</code> to its output with the <code>refl</code> witness, <code>bwd</code> reads the kept input back, and both round trips are <code>refl</code>. Verbatim, <code>--safe</code>.</figcaption>
 </details>
+
+<div class="st"><p><span class="lab">Definition 1.3</span> (completion). A <em>completion</em> of <code>f</code> is a family <code>T</code> assigning a type <code>T(b)</code> to each <code>b</code>, together with an equivalence <code>A ≃ Σ[ b ∈ B ] T(b)</code> that respects the output map — an input's <code>b</code> is unchanged.</p></div>
+
+<div class="st"><p><span class="lab">Theorem 1.4</span> (the partition is the only one). Every completion of <code>f</code> is <code>f⁻¹</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Respecting the output map means the equivalence carries the piece over each <code>b</code> to the piece over that same <code>b</code>; by 1.2 the inputs over <code>b</code> on the right are exactly <code>T(b)</code>, so it carries <code>f⁻¹(b)</code> onto <code>T(b)</code>. A completion is therefore a choice, at each <code>b</code>, of a type equivalent to <code>f⁻¹(b)</code>. The types equivalent to a fixed one form a contractible type (2.4), and a per-<code>b</code> choice among contractible options is again contractible (2.5). So <code>T = f⁻¹</code>: the decomposition is forced, not a chosen encoding. <span class="qed">∎</span></p></div>
+
+<div class="rk"><p><span class="lab">Remark 1.5.</span> 1.2 needs nothing after it; 1.4 is the one place §1 leans forward, using §2 twice — once for 2.4 and once for 2.5. Every decomposition below is 1.2: group by output, keep the inputs over each <code>b</code>.</p></div>
+
 <h2><span class="n">2.</span> Isomorphism is substitution</h2>
-<ul>
-<li><code>A ≅ B</code> (isomorphism, the lossless match promised in §1): maps both ways with proofs they cancel — runnable in both directions, nothing lost either way. The displays and the checked terms write it <code>≃</code>, the same thing.</li>
-<li>The same thing can be said piece by piece: <code>f⁻¹(b)</code> is contractible for every <code>b</code> (§0) — an inverse <code>g</code> centers it at <code>(g b, ·)</code>, and the cancellation laws contract every <code>(a, p : f a = b)</code> onto that center; conversely, choosing the center of each <code>f⁻¹(b)</code> <em>is</em> an inverse. So a two-sided inverse and every <code>f⁻¹(b)</code> contractible imply each other. They are not the same <em>type</em>: being contractible-fibred is a property, true in at most one way, while an inverse is data that may be given differently — which is why the second is the one carried around.</li>
-<li><strong>Univalence — a theorem, not an axiom.</strong> The primitive is the <em>interval</em>: a path <code>x = y</code> is a map out of it, and §0's contraction is one such map (the <code>i</code>, the <code>i ∧ j</code> in its checked term are the interval's own structure); paths can be joined end-to-end and pushed along one another (Kan composition — this is what runs <code>transport</code>). From an equivalence <code>A ≅ B</code>, a <em>Glue</em> type builds a type that equals <code>A</code> at one end and <code>B</code> at the other — a path <code>A = B</code> whose transport is exactly that equivalence. So <code>A ≅ B ⇒ A = B</code>, and it computes: <code>transport^{ua e} = e</code>. Hence the space of types equivalent to a fixed one is contractible: it is §0's fact read at the universe, with <code>=</code> between types supplied by <code>ua</code>. That is the fact §1 used. And isomorphic structures interchange by a program, losslessly. Voevodsky's axiom is here built from the interval and Glue (Cohen–Coquand–Huber–Mörtberg 2018).</li>
-</ul>
+
+<div class="st"><p><span class="lab">Definition 2.1</span> (equivalence). <code>A ≃ B</code> is maps both ways with proofs that they cancel: runnable in both directions, nothing lost either way. This is the lossless match 1.2 asserts.</p></div>
+
+<div class="st"><p><span class="lab">Proposition 2.2</span> (two readings of one thing). <code>f</code> has a two-sided inverse if and only if <code>f⁻¹(b)</code> is contractible for every <code>b</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> An inverse <code>g</code> centres <code>f⁻¹(b)</code> at <code>(g b , ·)</code>, and the cancellation laws contract every <code>(a , p : f a ≡ b)</code> onto that centre (0.5). Conversely, choosing the centre of each <code>f⁻¹(b)</code> is an inverse. <span class="qed">∎</span></p></div>
+
+<div class="rk"><p><span class="lab">Remark 2.3.</span> The two sides of 2.2 are not the same type. Contractible-fibred is a <em>property</em>, true in at most one way; an inverse is <em>data</em>, which may be given differently. The second is the one carried around.</p></div>
+
+<div class="st"><p><span class="lab">Theorem 2.4</span> (univalence). <code>ua : (A ≃ B) → (A ≡ B)</code>, and it computes: <code>transport<sup>ua(e)</sup> = e</code>. Hence <code>Σ[ X ] (X ≃ Y)</code> is contractible.</p>
 $$
-(A \simeq B)\ \simeq\ (A = B), \qquad \mathsf{ua} : (A \simeq B) \longrightarrow (A = B), \qquad \mathrm{transport}^{\,\mathsf{ua}(e)} \;=\; e
+(A \simeq B)\ \simeq\ (A \equiv B), \qquad \mathsf{ua} : (A \simeq B) \longrightarrow (A \equiv B), \qquad \mathrm{transport}^{\,\mathsf{ua}(e)} \;=\; e
 $$
+<p class="pf"><span class="lab">Proof.</span> The primitive is 0.3: a path is a map out of the interval (0.4), and paths can be joined end-to-end and pushed along one another — Kan composition, which is what runs <code>transport</code>. From <code>e : A ≃ B</code> a <code>Glue</code> type builds a type equal to <code>A</code> at one end and <code>B</code> at the other, that is a path <code>A ≡ B</code> whose transport is <code>e</code>. Contractibility is then 0.8 read at the universe, with <code>≡</code> between types supplied by <code>ua</code>. Voevodsky's axiom, built from the interval and <code>Glue</code> (Cohen–Coquand–Huber–Mörtberg 2018). <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Corollary 2.5</span> (function extensionality). Functions that agree at every argument are equal.</p>
+<p class="pf"><span class="lab">Proof.</span> Given <code>h : (x : A) → f x ≡ g x</code>, the map <code>λ i x → h x i</code> is a path <code>f ≡ g</code> by 0.4 — the interval is pulled out of the argument. <span class="qed">∎</span></p></div>
+
+<div class="rk"><p><span class="lab">Remark 2.6.</span> By 2.4 isomorphic structures interchange by a program, losslessly. This is the fact 1.4 used.</p></div>
+
 <h2><span class="n">3.</span> A step is reversible when its input can be recovered</h2>
-<ul>
-<li>A step is <strong>reversible</strong> when you can recover its input from its output — it runs backward as well as forward, losing nothing (§2). <code>transport</code> and every isomorphism are of this kind.</li>
-<li>A step is <strong>irreversible</strong> when several inputs share one output <code>b</code>: then <em>which</em> of them the input was is gone. That forgotten "which one" is the only thing a step can ever destroy. Call its size the step's <strong>effect-cost</strong> — what the step costs in information, as against how many steps are taken, which §5 calls length. The effect-cost is the entropy of the input given the output: <code>log₂</code> of the number of inputs mapping to <code>b</code> when those are equally likely (<code>2ᵏ</code> inputs → <code>k</code> bits), and less when they are not — the count is the most it can be.</li>
-<li>Landauer's principle prices it: destroying <code>k</code> bits dissipates at least <code>k · k_B T ln 2</code> of heat (<code>k_B</code> Boltzmann's constant, <code>T</code> the temperature). So <em>information destroyed</em> and <em>heat dissipated</em> are the same quantity — the forgotten input — and a step you can run backward forgets nothing, so destroys and dissipates nothing. That last part — reversible costs nothing — is not special to counting bits. <em>Any</em> additive measure of destruction vanishes on the reversible steps, because each has an inverse and a sum of naturals is <code>0</code> only when each summand is — and that is all it takes, no associativity or other group law:</li>
-</ul>
+
+<div class="st"><p><span class="lab">Definition 3.1</span> (reversible). A step is <em>reversible</em> when some map sends its output back to its input, so it runs backward as well as forward, losing nothing (2.1). By 0.7, <code>transport</code> and every equivalence are of this kind.</p></div>
+
+<div class="st"><p><span class="lab">Definition 3.2</span> (effect-cost). A step is <em>irreversible</em> when several inputs share one output <code>b</code>: then <em>which</em> of them the input was is gone. That forgotten "which one" is the only thing a step can ever destroy. Its <em>effect-cost</em> is the entropy of the input given the output: <code>log₂</code> of the number of inputs mapping to <code>b</code> when those are equally likely (<code>2ᵏ</code> inputs give <code>k</code> bits), and less when they are not — the count is the most it can be. This is one of the two axes; the other is how many steps are taken, which 5.7 calls length.</p></div>
+
+<div class="st"><p><span class="lab">Proposition 3.3</span> (Landauer's principle). Destroying <code>k</code> bits dissipates at least <code>k · k_B T ln 2</code> of heat, with <code>k_B</code> Boltzmann's constant and <code>T</code> the temperature; a reversible step dissipates <code>0</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> 5.9, which derives it from 3.1 and 3.2. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 3.4</span> (reversibility costs nothing, for any measure). Let <code>ℓ</code> be any <code>ℕ</code>-valued measure that adds under composition with <code>ℓ e = 0</code>. Then <code>ℓ g = 0</code> wherever <code>g</code> has a right inverse — no group laws are used.</p>
 $$
 \ell(g) + \ell(g^{-1}) = \ell(\mathrm{id}) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals} \ge 0)
 $$
-<ul>
-<li>So <code>transport</code> and every isomorphism destroy nothing — every construction in §§1–2 runs backward and dissipates no heat. The only thing a computation ever loses is an input it chose to forget; how many <em>steps</em> it takes to reach the answer is a separate matter (§5).
+<p class="pf"><span class="lab">Proof.</span> A sum of naturals is <code>0</code> only when each summand is. <span class="qed">∎</span></p></div>
+
 <details class="proof"><summary>the checked term</summary>
 <pre><code>+≡0→≡0 : (m n : ℕ) → m + n ≡ 0 → m ≡ 0
 +≡0→≡0 zero    n p = refl
@@ -171,36 +215,32 @@ module _ (G : Type) (_·_ : G → G → G) (e : G) (inv : G → G)
     (sym (ℓ· g (inv g)) ∙ cong ℓ (invr g) ∙ ℓe)</code></pre>
 <figcaption>Any additive measure <code>ℓ</code> (adds under composition, <code>ℓ e = 0</code>) vanishes wherever an inverse exists: <code>ℓ g + ℓ g⁻¹ = ℓ e = 0</code>, and a sum of naturals is <code>0</code> only when each is. The hypotheses are an operation, a unit, and a right inverse for each element: no associativity, no left inverse, no group laws at all. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
 </details>
-</li>
-</ul>
+
+<div class="st"><p><span class="lab">Corollary 3.5.</span> <code>transport</code> and every equivalence destroy nothing: every construction in §§1–2 runs backward and dissipates no heat.</p>
+<p class="pf"><span class="lab">Proof.</span> 3.1 and 3.4, or 3.1 and 3.3 for the bit count alone. <span class="qed">∎</span></p></div>
+
+<div class="rk"><p><span class="lab">Remark 3.6.</span> The only thing a computation ever loses is an input it chose to forget. How many steps it takes to reach the answer is the other axis (3.2), treated in §5.</p></div>
+
 <h2><span class="n">4.</span> The diagonal</h2>
-<ul>
-<li>Picture <code>e : A → (A → B)</code> as a table whose row <code>a</code> is the function <code>e a</code>; reading row <code>a</code> at its own index gives <code>e a a</code> (the diagonal). Say <code>e</code> is <strong>onto</strong> when every function <code>h : A → B</code> appears as some row: given <code>h</code>, a row index <code>a</code> with <code>e a = h</code> is <em>produced</em>, not merely said to exist — which is why the <code>Σ</code> below and in the box is the untruncated one, and why the fixed point comes out as a value you can hold.</li>
-<li>Then every <code>g : B → B</code> has a fixed point:</li>
-</ul>
+
+<div class="st"><p><span class="lab">Definition 4.1</span> (point-surjective). Picture <code>e : A → (A → B)</code> as a table whose row <code>a</code> is the function <code>e a</code>; reading row <code>a</code> at its own index gives <code>e a a</code>, the <em>diagonal</em>. Call <code>e</code> <em>point-surjective</em> when every <code>h : A → B</code> appears as some row, with the row index <em>produced</em>:</p>
+<pre class="def"><code>onto e  =  (h : A → B) → Σ[ a ∈ A ] (e a ≡ h)</code></pre>
+<p>The <code>Σ</code> is untruncated, which is why the fixed point below comes out as a value you can hold.</p></div>
+
+<div class="st"><p><span class="lab">Theorem 4.2</span> (Lawvere 1969). If <code>e : A → (A → B)</code> is point-surjective then every <code>g : B → B</code> has a fixed point.</p>
 $$
 \Big(\forall\, h : A \to B.\ \ \Sigma\, a : A.\ \ e\,a = h\Big)
 \;\Longrightarrow\;
 \Big(\forall\, g : B \to B.\ \ \Sigma\, b : B.\ \ g\,b = b\Big)
 $$
-<ul>
-<li><code>h a := g(e a a)</code>; <code>e</code> onto gives <code>h = e a₀</code>; so:</li>
-</ul>
+<p class="pf"><span class="lab">Proof.</span> Put <code>h a := g (e a a)</code>. Point-surjectivity gives <code>a₀</code> with <code>e a₀ = h</code>, so</p>
 $$
 e(a_0)(a_0) \;=\; h(a_0) \;=\; g\big(e(a_0)(a_0)\big)
 $$
-<ul>
-<li><code>e a₀ a₀</code> is a fixed point of <code>g</code>.</li>
-<li>Contrapositive: <code>g</code> with no fixed point ⇒ no <code>A → (A → B)</code> is onto.</li>
-</ul>
-<ul>
-<li><strong>Cantor.</strong> <code>B = 2</code>, <code>g = ¬</code>: negation swaps <code>true</code> and <code>false</code>, so it has no fixed point, and <code>(A → 2)</code> is the <em>decidable</em> subsets of <code>A</code> by characteristic functions (not every subset: that would be maps into propositions) — so no <code>A → (A → 2)</code> is onto, which is Cantor's theorem.</li>
-<li><strong>Gödel.</strong> Code each one-variable formula by a number, and let <code>sub(m, n)</code> be the code of <em>formula <code>m</code></em> with the numeral <code>n̄</code> substituted for its variable. One fact does all the work, and it is built, not assumed: <code>sub</code> is primitive recursive, and every primitive-recursive function is <em>represented</em> by a formula — induct on how it is built, the base functions (zero, successor, projection) are formulas, and composition and primitive recursion stay first-order by quantifying, boundedly, over the finite run that computes the value. So <code>sub</code> is itself a formula.
-<br>Now §4 applies on the nose, with the table <code>e(m)(n) = sub(m, n)</code>: row <code>m</code> is the formula coded by <code>m</code>, and reading row <code>m</code> at its own index is <code>sub(m, m)</code>. Point-surjectivity — every family of formulas that is itself cut out by a formula occurs as some row <code>sub(m, ·)</code> — <em>is</em> that representability, nothing more. So <code>lawvere</code> fires: for <code>g = ψ</code> its twist <code>δ(x) := ψ(sub(x, x))</code> is a formula, has a code <code>d</code>, and the fixed point <code>G := δ(d̄)</code> has code <code>sub(d, d)</code>, so <code>G ↔ ψ(⌜G⌝)</code>. That is the diagonal lemma — <code>lawvere</code> itself at <code>φ = sub</code>, <code>g = ψ</code>, fixed point <code>G</code>. The <code>B</code> it fires over is the sentences taken <em>up to provable equivalence</em>, where <code>↔</code> is equality; <code>g b = b</code> read there is exactly <code>G ↔ ψ(⌜G⌝)</code>. So this is the theorem applied at a named <code>(B, g)</code>, not an analogy to it.
-<br>Take <code>ψ = ¬Prov</code>, with <code>Prov(⌜G⌝)</code> the formula <em>a proof of <code>G</code> exists</em> — one unbounded existential over a decidable check of the proof, which is what <code>Σ₁</code> names: then <code>G ↔ ¬Prov(⌜G⌝)</code> says <em>I am unprovable</em>, so if the theory is consistent no proof of <code>G</code> exists and <code>G</code> is therefore true. Incompleteness is the one diagonal at <code>g = ¬</code> over provability — the self-reference is just <code>sub</code> applied to its own code.</li>
-<li><strong>Halting.</strong> <code>B = 2</code>, and the decider is what would supply the point-surjection. Running code <code>a</code> on input <code>x</code> is partial, so it is no table of total functions; a total halting-decider <code>H</code> makes it one, since <code>φ(a)(x) := if H(a,x) then run(a,x) else 0</code> is then total. And every total computable <code>h : A → 2</code> is a row of it — take any program for <code>h</code>; it halts everywhere, so <code>H</code> never diverts it. That is point-surjectivity. Now §4 at <code>g = ¬</code>: the twist <code>δ(a) := ¬φ(a)(a)</code> is total and computable, so <code>δ = φ(d)</code> for some code <code>d</code>, and reading row <code>d</code> at its own index gives <code>φ(d)(d) = ¬φ(d)(d)</code> — which <code>¬</code>, having no fixed point, forbids. So no total <code>H</code> exists: nothing decides, of an arbitrary machine and input, whether it halts.</li>
-</ul>
-<p>One lemma; the impossibility theorems are its instances, each built by naming its fixed-point-free <code>(B, g)</code>. <strong>Russell:</strong> <code>B</code> the propositions, <code>g = ¬</code> on <code>x ∈ x</code> — the non-self-members are the diagonal row, and <code>¬</code> fixes nothing, so they are no set's membership. <strong>Tarski:</strong> <code>B</code> the truth values, <code>g = ¬</code> — a truth predicate would make the liar a fixed point of negation. The <strong>positive reading</strong> is the same implication where <code>g</code> <em>does</em> have fixed points: where <code>e</code> has a section (an interpreter), the lemma hands every <code>g</code> one — a program equal to its own transform, which is Kleene's recursion theorem, the quine. <strong>Rice</strong> sits on that side rather than among the fixed-point-free instances: suppose a decider for a nontrivial semantic property, and take programs <code>a</code> that has it and <code>b</code> that lacks it. The recursion theorem builds a program which reads its own code, runs the decider on it, and then behaves like <code>b</code> if the verdict is yes and like <code>a</code> if no — so either verdict is wrong about it, and no such decider exists. There is no family of impossibility theorems: one lemma, applied at a different <code>(B, g)</code> each time, and read in the other direction for the recursion theorem. (Lawvere 1969.)</p>
+<p class="pf">and <code>e a₀ a₀</code> is a fixed point of <code>g</code>. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Corollary 4.3</span> (contrapositive). If some <code>g : B → B</code> has no fixed point, no <code>e : A → (A → B)</code> is point-surjective.</p></div>
+
 <details class="proof"><summary>the checked term</summary>
 <pre><code>-- φ is point-surjective: every B-valued observation on A is a row of φ.
 PtSurj : (A → (A → B)) → Type
@@ -230,9 +270,35 @@ cantor : (φ : A → (A → Bool)) → ¬ PtSurj φ
 cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
 <figcaption>§4's lemma in one term — <code>lawvere</code> is three lines — with its contrapositive and Cantor as the checked instance. Gödel, Halting, Russell, Tarski and Rice are that same term at their own fixed-point-free <code>(B, g)</code>, each named in the text above. Verbatim, <code>--safe</code>, untruncated <code>Σ</code> (the escaping index is exhibited, not merely asserted).</figcaption>
 </details>
+
+<p>The impossibility theorems are 4.2 or 4.3 at a named <code>(B , g)</code>. Each instance below supplies only that naming.</p>
+
+<div class="st"><p><span class="lab">Corollary 4.4</span> (Cantor). No <code>e : A → (A → 2)</code> is point-surjective.</p>
+<p class="pf"><span class="lab">Proof.</span> 4.3 with <code>B = 2</code>, <code>g = ¬</code>: negation swaps <code>true</code> and <code>false</code>, so it has no fixed point. <code>(A → 2)</code> is the decidable subsets of <code>A</code> by characteristic functions — not every subset, which would be maps into propositions. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Lemma 4.5</span> (<code>sub</code> is a formula). Code each one-variable formula by a number and let <code>sub(m , n)</code> be the code of formula <code>m</code> with the numeral <code>n̄</code> substituted for its variable. Then <code>sub</code> is represented by a formula.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>sub</code> is primitive recursive, and every primitive-recursive function is represented by a formula: induct on how it is built — the base functions (zero, successor, projection) are formulas, and composition and primitive recursion stay first-order by quantifying, boundedly, over the finite run that computes the value. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Corollary 4.6</span> (the diagonal lemma, and Gödel). For every formula <code>ψ</code> there is a sentence <code>G</code> with <code>G ↔ ψ(⌜G⌝)</code>. Taking <code>ψ = ¬Prov</code>, if the theory is consistent then <code>G</code> is unprovable and true.</p>
+<p class="pf"><span class="lab">Proof.</span> 4.2 at the table <code>e(m)(n) = sub(m , n)</code>: row <code>m</code> is the formula coded by <code>m</code>, and reading row <code>m</code> at its own index is <code>sub(m , m)</code>. Point-surjectivity — every family of formulas itself cut out by a formula occurs as some row <code>sub(m , ·)</code> — is Lemma 4.5, nothing more. The <code>B</code> it fires over is the sentences taken up to provable equivalence, where <code>↔</code> is equality, so <code>g b = b</code> read there is exactly <code>G ↔ ψ(⌜G⌝)</code>. For <code>g = ψ</code> the twist <code>δ(x) := ψ(sub(x , x))</code> is a formula, has a code <code>d</code>, and the fixed point <code>G := δ(d̄)</code> has code <code>sub(d , d)</code>. With <code>ψ = ¬Prov</code>, where <code>Prov(⌜G⌝)</code> is the formula a proof of <code>G</code> exists — one unbounded existential over a decidable check of the proof, which is what <code>Σ₁</code> names — <code>G</code> says <em>I am unprovable</em>: if the theory is consistent no proof of <code>G</code> exists, and <code>G</code> is therefore true. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Corollary 4.7</span> (halting). No total <code>H</code> decides, of an arbitrary machine and input, whether it halts.</p>
+<p class="pf"><span class="lab">Proof.</span> Running code <code>a</code> on input <code>x</code> is partial, so it is no table of total functions; a total halting-decider <code>H</code> makes it one, since <code>φ(a)(x) := if H(a,x) then run(a,x) else 0</code> is then total. Every total computable <code>h : A → 2</code> is a row of it: take any program for <code>h</code>; it halts everywhere, so <code>H</code> never diverts it. That is point-surjectivity (4.1). Now 4.2 at <code>g = ¬</code>: the twist <code>δ(a) := ¬ φ(a)(a)</code> is total and computable, so <code>δ = φ(d)</code> for some code <code>d</code>, and reading row <code>d</code> at its own index gives <code>φ(d)(d) = ¬ φ(d)(d)</code>, which <code>¬</code>, having no fixed point, forbids. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Corollary 4.8</span> (Russell, Tarski). The non-self-members are no set's membership, and no truth predicate is definable.</p>
+<p class="pf"><span class="lab">Proof.</span> 4.3 twice. Russell: <code>B</code> the propositions, <code>g = ¬</code> on <code>x ∈ x</code> — the non-self-members are the diagonal row, and <code>¬</code> fixes nothing. Tarski: <code>B</code> the truth values, <code>g = ¬</code> — a truth predicate would make the liar a fixed point of negation. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 4.9</span> (Kleene's recursion theorem — the positive reading). Where <code>e</code> has a section, that is an interpreter, 4.2 hands every <code>g</code> a fixed point: a program equal to its own transform, the quine.</p>
+<p class="pf"><span class="lab">Proof.</span> 4.2 unchanged. 4.4–4.8 read it where <code>g</code> has no fixed point and conclude against <code>e</code>; here <code>e</code> is given and the conclusion is kept. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Corollary 4.10</span> (Rice). No decider exists for a nontrivial semantic property of programs.</p>
+<p class="pf"><span class="lab">Proof.</span> Suppose one, and take programs <code>a</code> that has the property and <code>b</code> that lacks it. By 4.9 build a program which reads its own code, runs the decider on it, and then behaves like <code>b</code> if the verdict is yes and like <code>a</code> if no. Either verdict is wrong about it. <span class="qed">∎</span></p></div>
+
+<div class="rk"><p><span class="lab">Remark 4.11.</span> There is no family of impossibility theorems: one lemma (4.2), applied at a different <code>(B , g)</code> each time, and read in the other direction for 4.9. Rice sits on that second side rather than among the fixed-point-free instances.</p></div>
+
 <h2><span class="n">5.</span> Complete inference is deterministic and step-optimal</h2>
 
-<p>§§0–2 supply substitution along an equality, §3 reversibility, §4 the diagonal. This section fixes a machine, defines two costs on it, and proves the result stated at the top.</p>
+<p>§§0–2 supply substitution along an equality (0.6, 2.4), §3 reversibility (3.1), §4 the diagonal (4.2). This section fixes a machine, defines two costs on it, and proves the result stated at the top.</p>
 
 <h3>5.1 Terms, proofs, questions</h3>
 
@@ -252,7 +318,7 @@ cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
 <div class="st"><p><span class="lab">Definition 5.2</span> (question, answer). A <em>computation</em> is a term of a value type, a <em>decision</em> a term of <code>Dec P = P ⊎ ¬ P</code>, an <em>answer</em> a term of the type the question asks for. The <em>answer</em> to a question is the normal form of that term.</p></div>
 
 <div class="st"><p><span class="lab">Proposition 5.3.</span> Proving, deciding, computing and answering are one operation: build the term, normalize it.</p>
-<p class="pf"><span class="lab">Proof.</span> Immediate from 5.1 and 5.2 — the four differ only in which type the term inhabits. <span class="qed">∎</span></p></div>
+<p class="pf"><span class="lab">Proof.</span> Immediate from 5.1 and 5.2: the four differ only in which type the term inhabits. <span class="qed">∎</span></p></div>
 
 <h3>5.2 The machine</h3>
 
@@ -275,13 +341,13 @@ Normal t = (u : S) → Step t u → ⊥</code></pre>
 
 <h3>5.3 Two costs</h3>
 
-<div class="st"><p><span class="lab">Definition 5.7</span> (the two axes). The <em>length</em> of a reduction is the number of steps it takes (5.6). Its <em>effect-cost</em> is the quantity §3 defines: the entropy of its input given its output.</p></div>
+<div class="st"><p><span class="lab">Definition 5.7</span> (the two axes). The <em>length</em> of a reduction is the number of steps it takes (5.6). Its <em>effect-cost</em> is the quantity 3.2 defines: the entropy of its input given its output.</p></div>
 
 <div class="st"><p><span class="lab">Proposition 5.8.</span> A reversible step has effect-cost <code>0</code> and length <code>1</code>. A step merging <code>2ᵏ</code> inputs into one output has effect-cost <code>k</code> and length <code>1</code>.</p>
-<p class="pf"><span class="lab">Proof.</span> A step whose input can be recovered is a bijection (§3), so one input shares each output and <code>log₂ 1 = 0</code>; a <code>2ᵏ</code>-fold merge gives <code>log₂ 2ᵏ = k</code>. Neither reading touches the step count. <span class="qed">∎</span></p></div>
+<p class="pf"><span class="lab">Proof.</span> A step whose input can be recovered is a bijection (3.1), so one input shares each output and <code>log₂ 1 = 0</code>; a <code>2ᵏ</code>-fold merge gives <code>log₂ 2ᵏ = k</code>. Neither reading touches the step count. <span class="qed">∎</span></p></div>
 
 <div class="st"><p><span class="lab">Proposition 5.9</span> (Landauer's bound, in units). A step of effect-cost <code>k</code> dissipates <code>k · k_B T ln 2</code> of heat, and a reversible step dissipates <code>0</code>.</p>
-<p class="pf"><span class="lab">Proof.</span> §3 read twice — once on the datum, once on the dynamics carrying it. A <code>2 → 1</code> merge of microstates is an entropy drop of <code>ln 2</code> nats, <code>k_B ln 2</code> once <code>k_B</code> converts nats to thermodynamic entropy. §3 splits the ambient dynamics into two cases. <em>Injective</em>: the two microstates the step merged stay distinct in it, so the distinction the datum lost is now in the surroundings, as heat <code>T ΔS</code>, with <code>T</code> the conversion of entropy to energy that <em>defines</em> temperature. <em>Non-injective</em>: it is a merging step itself, and §3 charges it the same <code>k</code> one level down. Both cases pay <code>k</code> bits; <code>k_B</code> and <code>T</code> convert that to joules. By 5.8 a reversible step has <code>k = 0</code>, so the drop is <code>0</code> and the heat is <code>0</code>. <span class="qed">∎</span> (Landauer 1961; Bennett 1973, 1982 named it.)</p></div>
+<p class="pf"><span class="lab">Proof.</span> 3.1 and 3.2 read twice — once on the datum, once on the dynamics carrying it. A <code>2 → 1</code> merge of microstates is an entropy drop of <code>ln 2</code> nats, <code>k_B ln 2</code> once <code>k_B</code> converts nats to thermodynamic entropy. 3.1 splits the ambient dynamics into two cases. <em>Injective</em>: the two microstates the step merged stay distinct in it, so the distinction the datum lost is now in the surroundings, as heat <code>T ΔS</code>, with <code>T</code> the conversion of entropy to energy that <em>defines</em> temperature. <em>Non-injective</em>: it is a merging step itself, and 3.2 charges it the same <code>k</code> one level down. Both cases pay <code>k</code> bits; <code>k_B</code> and <code>T</code> convert that to joules. By 5.8 a reversible step has <code>k = 0</code>, so the drop is <code>0</code> and the heat is <code>0</code>. <span class="qed">∎</span> (Landauer 1961; Bennett 1973, 1982 named it.)</p></div>
 
 <div class="rk"><p><span class="lab">Remark 5.10.</span> The price is relative to the observation: it is the bits erased for the requested output, not for a whole trace. The length cost is a separate axis, bounded by a potential (5.15) and by no count of solutions (Search).</p></div>
 
@@ -372,7 +438,7 @@ $$
 
 <div class="rk"><p><span class="lab">Remark 5.23</span> (what is solved). The optimization problem — the fewest steps to an answer, what complexity theory exists to chase — is here <em>solved</em>: computation modeled as lossless reduction is optimal by construction, optimality its standing condition. The million wasteful ways to compute the same answer are departures from this model, not rival strategies within it. Only 5.11 is used, so 5.13–5.19 hold of any reduction that has the diamond.</p></div>
 
-<div class="rk"><p><span class="lab">Remark 5.24</span> (sharing). Sharing is written into the net. A shared subterm is held by a <em>cell</em> — a duplicator, wired in at ports like every other cell — so it belongs to the net's syntax, in place before any reduction begins: no bookkeeping outside the net itself, and 5.11 used only the disjointness of active pairs, not sharing. Its price is charged: a duplicator's interactions are steps on the length axis exactly like the rest, and on the effect axis they are free by 5.8, since folding along an equality is transport (§2) and runs backward (§3). What sharing buys is the one thing claimed for it: an active pair is never duplicated, so no step repeats work.</p></div>
+<div class="rk"><p><span class="lab">Remark 5.24</span> (sharing). Sharing is written into the net. A shared subterm is held by a <em>cell</em> — a duplicator, wired in at ports like every other cell — so it belongs to the net's syntax, in place before any reduction begins: no bookkeeping outside the net itself, and 5.11 used only the disjointness of active pairs, not sharing. Its price is charged: a duplicator's interactions are steps on the length axis exactly like the rest, and on the effect axis they are free by 5.8, since folding along an equality is transport (0.6) and runs backward (0.7). What sharing buys is the one thing claimed for it: an active pair is never duplicated, so no step repeats work.</p></div>
 
 <div class="rk"><p><span class="lab">Remark 5.25</span> (termination). Where a term terminates it is reached in finitely many forced steps; a non-terminating term denotes a well-defined infinite (coinductive) object, not a gap.</p></div>
 
