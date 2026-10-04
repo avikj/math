@@ -74,6 +74,25 @@
     font-size:.8rem; line-height:1.45}
   .kw{color:var(--accent); font-weight:600}
   .cm{color:var(--muted); font-style:italic}
+  h3{font-size:1rem; font-weight:650; margin:2rem 0 .6rem; letter-spacing:-0.004em}
+  .st{margin:1.05rem 0}
+  .st>p{margin:0 0 .35rem}
+  .st>p:last-child{margin-bottom:0}
+  .lab{font-weight:650; color:var(--accent); font-variant-numeric:tabular-nums}
+  .st pre, pre.def{margin:.6rem 0 .2rem; padding:.7rem .9rem; overflow-x:auto;
+    background:var(--math-bg); border:1px solid var(--math-rule); border-radius:8px;
+    font-size:.795rem; line-height:1.5;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .st pre code, pre.def code{background:none; border:none; padding:0; font-size:1em}
+  .pf{margin:.3rem 0 0}
+  .pf>.lab{font-weight:600; font-style:italic; color:var(--muted)}
+  .pf .qed{color:var(--muted)}
+  .rk{margin:1.05rem 0}
+  .rk>.lab{font-weight:600; font-style:italic; color:var(--muted)}
+  table.dict{border-collapse:collapse; margin:.9rem 0; font-size:.95rem; width:100%}
+  table.dict td{padding:.26rem .5rem; border-bottom:1px solid var(--rule); vertical-align:top}
+  table.dict tr:last-child td{border-bottom:none}
+  table.dict td:first-child{white-space:nowrap; width:11.5em}
   .src{margin-top:3.2rem; padding-top:1.3rem; border-top:1px solid var(--rule);
        color:var(--muted); font-size:.9rem}
 </style>
@@ -212,21 +231,71 @@ cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
 <figcaption>§4's lemma in one term — <code>lawvere</code> is three lines — with its contrapositive and Cantor as the checked instance. Gödel, Halting, Russell, Tarski and Rice are that same term at their own fixed-point-free <code>(B, g)</code>, each named in the text above. Verbatim, <code>--safe</code>, untruncated <code>Σ</code> (the escaping index is exhibited, not merely asserted).</figcaption>
 </details>
 <h2><span class="n">5.</span> Complete inference is deterministic and step-optimal</h2>
-<ul>
-<li><strong>The correspondence, built.</strong> Read each connective as a type former: implication <code>A ⇒ B</code> is the function type <code>A → B</code> (a proof is a construction sending a proof of <code>A</code> to one of <code>B</code>), conjunction is the pair <code>A × B</code>, disjunction the tagged sum <code>A + B</code>, falsehood the empty type, a quantifier a dependent function or pair. Modus ponens is application, and carrying it out is evaluating the term — <em>normalizing</em> it: running it until no step is left, that leftover irreducible term (its <em>normal form</em>) being the answer. So a proof <em>is</em> a term and checking it <em>is</em> running it; the connectives and the type formers are one structure — with sums and the empty type in the list, the free <em>bi</em>cartesian closed category (Curry 1934; Howard 1969; Lambek 1980). A computation is then a term of a value type, a decision a term of <code>Dec P = P + ¬P</code>, an answer a term of the type the question asks for — so proving, deciding, computing, and answering a question are one operation: build the term and normalize it. There are two cases and no third. Either a normal form exists, and the reduction reaches it in the one step-count the endpoints fix, every route attaining it (the equal-length result below); or §4 <em>proves</em> there is none — a decider for one's own halting among them, since asking for one asks for the fixed point the diagonal forbids — and the question had no answer to find, which the system establishes rather than running out of time looking. <em>Well-formed</em> names the first case, and the reduction decides which case a question is in. What the dichotomy fixes is reachability, not length: where an answer exists, every reduction reaches it, and each takes the same number of steps. A long geodesic is a real price, charged honestly, and it is already the minimum.</li>
-<li><strong>Cost is a local potential (Bellman).</strong> In the reduction graph — vertices terms, edges primitive steps of cost <code>c(u→v)</code> — a <em>potential</em> is any <code>Φ</code> with <code>Φ(normal form)=0</code> and <code>Φ(u) ≤ c(u→v)+Φ(v)</code> on <em>every</em> edge. Adding that inequality step by step along any path to a normal form (where <code>Φ = 0</code>) gives <code>Φ(u) ≤</code> the path's total cost, so each <code>Φ</code> is a lower bound on every finishing path; where a normal form is reachable, the geodesic distance (the least path cost — attained, and by the equal-length result below attained by <em>every</em> reduction, so there is nothing to minimise over) is itself such a <code>Φ</code>, and the largest one — it meets the bound with equality at the cheapest edge, the Bellman optimality equation (Bellman 1957):</li>
-</ul>
+
+<p>§§0–2 supply substitution along an equality, §3 reversibility, §4 the diagonal. This section fixes a machine, defines two costs on it, and proves the result stated at the top.</p>
+
+<h3>5.1 Terms, proofs, questions</h3>
+
+<div class="st"><p><span class="lab">Definition 5.1</span> (the correspondence). Each connective is read as a type former:</p>
+<table class="dict">
+<tr><td><code>A ⇒ B</code></td><td><code>A → B</code>, the function type: a proof sends a proof of <code>A</code> to one of <code>B</code></td></tr>
+<tr><td><code>A ∧ B</code></td><td><code>A × B</code>, the pair</td></tr>
+<tr><td><code>A ∨ B</code></td><td><code>A ⊎ B</code>, the tagged sum</td></tr>
+<tr><td>falsehood</td><td><code>⊥</code>, the empty type</td></tr>
+<tr><td><code>∀ x. P x</code></td><td><code>(x : A) → P x</code>, the dependent function</td></tr>
+<tr><td><code>∃ x. P x</code></td><td><code>Σ[ x ∈ A ] P x</code>, the dependent pair</td></tr>
+<tr><td>modus ponens</td><td>application</td></tr>
+<tr><td>checking a proof</td><td><em>normalizing</em> its term: running it until no step is left</td></tr>
+</table>
+<p>With sums and the empty type in the list, the connectives and the type formers are one structure: the free bicartesian closed category (Curry 1934; Howard 1969; Lambek 1980).</p></div>
+
+<div class="st"><p><span class="lab">Definition 5.2</span> (question, answer). A <em>computation</em> is a term of a value type, a <em>decision</em> a term of <code>Dec P = P ⊎ ¬ P</code>, an <em>answer</em> a term of the type the question asks for. The <em>answer</em> to a question is the normal form of that term.</p></div>
+
+<div class="st"><p><span class="lab">Proposition 5.3.</span> Proving, deciding, computing and answering are one operation: build the term, normalize it.</p>
+<p class="pf"><span class="lab">Proof.</span> Immediate from 5.1 and 5.2 — the four differ only in which type the term inhabits. <span class="qed">∎</span></p></div>
+
+<h3>5.2 The machine</h3>
+
+<div class="st"><p><span class="lab">Definition 5.4</span> (net). A <em>cell</em> has one distinguished <em>principal</em> port and finitely many <em>auxiliary</em> ports. A <em>net</em> is a finite set of cells with a partial matching of their ports by <em>wires</em>. The <em>distance</em> between two cells is the number of wires on a shortest path between them.</p></div>
+
+<div class="st"><p><span class="lab">Definition 5.5</span> (interaction step). An <em>active pair</em> is two cells whose principal ports are wired to each other. For each pair of cell kinds a rule gives a net <code>R</code> on exactly the auxiliary wires of those two cells:</p>
 $$
-\Phi(\text{normal form}) = 0, \qquad \Phi(u) = \min_{v}\, \big[\, c(u \to v) + \Phi(v)\,\big]
+\dfrac{\;(c_1,c_2)\ \text{an active pair of}\ N \qquad (c_1,c_2) \longrightarrow R\;}{\;N \longrightarrow N[(c_1,c_2) := R]\;}
 $$
-<ul>
-<li><strong>Two axes, from §3.</strong> A reduction step takes time whether or not it erases — <em>length</em> counts steps, and reversible steps cost length. Reversibility instead makes the <em>effect-cost</em> free: a step whose input can be recovered is a bijection, so its additive effect-cost is <code>0</code> (§3). Erasing <code>k</code> bits merges <code>2^k</code> inputs into one output — <code>k</code> one-bit erasures — so the additive effect-cost (§3) is <code>k</code>. Its thermodynamic price is that same count in units, supplied by §3 read twice: once on the datum, once on the dynamics carrying it. A <code>2 → 1</code> merge of microstates is an entropy drop of <code>ln 2</code> (nats), <code>k_B ln 2</code> once <code>k_B</code> converts nats to thermodynamic entropy. Where that entropy goes is §3 again, on the ambient dynamics, which §3 splits into two cases. Injective: the two microstates the step merged stay distinct in it, so the distinction the datum lost is now in the surroundings, as heat, <code>T ΔS = k_B T ln 2</code> per bit, with <code>T</code> the conversion of entropy to energy that <em>defines</em> temperature. Non-injective: it is a merging step itself, and §3 charges it the same <code>k</code> one level down. Both cases pay <code>k</code> bits, and <code>k_B, T</code> convert that to joules. Recover the input and the entropy drop is <code>0</code>, so the heat is <code>0</code> (Landauer 1961; Bennett 1973, 1982 named it).</li>
-<li><strong>Step-optimality: every computation attains the geodesic.</strong> Fix the machine: a net of <em>cells</em> wired at <em>ports</em>, each cell one distinguished (principal) port and finitely many auxiliary ports, a wire joining two ports. A primitive step is an interaction — a rule fires on an <em>active pair</em> (two cells whose principal ports are wired together), replacing just those two cells with a small net on the very same auxiliary wires, every other cell and wire untouched. So one step changes the datum only where those two cells sat: its output at a position depends on that position and its one wired neighbour, no more (unit lookahead) — <em>distance</em> here being the net's own metric, the number of wires on a shortest path between two cells. Composing <code>k</code> steps, the output depends only on input within distance <code>k</code> of it in the net one started from (induct: one step reaches a wired neighbour, so each step widens the reach by exactly one). The rewriting does not let that slip: a rule replaces two cells by a net on their own auxiliary wires, and the cells it puts there can carry only what those two already held, so no interaction moves information further than one wire however the distances in the rewritten net come out. So an output that must read input at distance <code>n</code> from it cannot be produced in fewer than <code>n</code> steps — a bound on <em>every</em> reduction, not one chosen strategy — and since every reduction to the normal form is minimal (shown below), the native evolution attains the geodesic — not that its length is <code>n</code>, but that no reduction is shorter than the one it takes.</li>
-<li><strong>The building route is the size of the answer.</strong> The output is a complete proof-carrying witness — the answer with its certificate — the <em>unique</em> normal form the question fixes (confluence, below). Each step that builds it emits exactly one <em>constructor</em> — one building piece of the answer (a successor, a pair, a tag) — so the <em>building</em> route's length equals the witness's size (e.g. building <code>sucⁿ</code>, one successor per step); a term carrying extra <em>redexes</em> — spots still waiting to reduce, like <code>(λx.x) t</code> — clears those first, administrative steps building nothing, so its total length is its own geodesic while the witness's size counts only the constructors built. Reading the finished term off is a fold that copies it, adding no step. The building route's length is thus the witness's size in unary; when that unary size is exponential in the question's succinct (binary) measure — as <code>sucⁿ</code> is, <code>n</code> against <code>log n</code> — the route is exponentially longer than the succinct measure. That exponential is not in the computation — it is the observer's lossy binary measure laid against a lossless unary object; change the measure, not the computation, and it is gone. It is not the other exponential, the one that can be real: the geodesic length when a <em>small</em> witness ends a <em>long</em> reduction. That is a length, not a count of output symbols — the other axis, the one a potential bounds and a count of solutions does not (Search) — so no change of measure touches it; it is the reduction's own fixed distance, already the minimum (below). (Lévy 1978, Lamping 1990, Lafont 1990 state a different thing, not a weaker version of this one: there, optimality is a property a chosen sharing strategy has to be shown to have, counted in that system's own units. Here the diamond gives every reduction order the same length, so there is no strategy left to choose well.)</li>
-<li><strong>Why every reduction is the minimum, in general.</strong> Two available interactions act on disjoint active pairs — distinct principal-port pairs cannot share a cell — so doing one leaves the other available and untouched, and the two converge in one further step each. That is the one-step diamond, structural to interaction nets (Lafont 1990), not an assumption. So any available first step <em>peels</em> through any reduction to a normal form, by induction on that reduction's length: apply the diamond to the first step and the reduction's first step — they either merge, and the reduction is one shorter, or reach a common term from which the shorter tail is peeled by the inductive hypothesis; at the normal form no step is left to carry, so the first step is absorbed exactly once. Hence any two reductions of a term to the same normal form have <em>equal</em> length, so each is the minimum: the step-count is fixed by the endpoints, never the strategy, and the cost is as deterministic as the answer. The optimization problem — the fewest steps to an answer, what complexity theory exists to chase — is here <em>solved</em>: computation modeled as lossless reduction is optimal by construction, optimality its standing condition. The million wasteful ways to compute the same answer are departures from this model, not rival strategies within it. Only the diamond is used, so this holds of any reduction that has it.</li>
-<li><strong>Complete, deterministic, terminating.</strong> The normal form is unique, and this too is the diamond, tiled: take two reductions of one term; the diamond closes their first steps to a common term, and filling the grid step by step reconverges them; if both reductions end at a normal form — nothing left to rewrite — that common reduct can only be each endpoint, so the two normal forms are equal (Church–Rosser, but here just the diamond filled in). Sharing is written into the net. A shared subterm is held by a <em>cell</em> — a duplicator, wired in at ports like every other cell — so it belongs to the net's syntax, in place before any reduction begins — no bookkeeping outside the net itself; and the diamond just shown used only the disjointness of active pairs, not sharing. Its price is charged: a duplicator's interactions are steps, counted on the length axis exactly like the rest, and on the effect axis they are free, since folding along an equality is <code>transport</code> (§2) and runs backward (§3). What sharing buys is the one thing claimed for it: an active pair is never duplicated, so no step repeats work. Where a term terminates it is reached in finitely many forced steps; a non-terminating term denotes a well-defined infinite (coinductive) object, not a gap.</li>
-<li><strong>The price of an answer is the information the question erases.</strong> The effect-axis price is exactly the information a step <em>irreversibly destroys</em> — which of the inputs over that output it was (§§1–3) — <em>relative to the observation</em>: recover the input and the step is free; force a merge and you pay the bits erased, for the requested output, not a whole trace — Landauer's bound, as a theorem of the reduction rather than an external postulate. The <em>length</em> cost — the number of steps taken — is a separate axis, bounded by a <code>Φ</code> and not by any count of solutions (Search).</li>
-<li><strong>The geodesic, checked.</strong> The diamond is the only hypothesis the term below takes, and <code>peel</code> is the induction just given, written out.
+<p>Every other cell and wire of <code>N</code> is unchanged. Write <code>Step s t</code> for one such step.</p></div>
+
+<div class="st"><p><span class="lab">Definition 5.6</span> (trace, length, normal form).</p>
+<pre class="def"><code>data Trace : ℕ → S → S → Type where
+  done      : {s : S} → Trace zero s s
+  stepTrace : {n : ℕ} {s u t : S} → Step s u → Trace n u t → Trace (suc n) s t
+
+Normal : S → Type
+Normal t = (u : S) → Step t u → ⊥</code></pre>
+<p>The <em>length</em> of a trace is its index <code>n</code>.</p></div>
+
+<h3>5.3 Two costs</h3>
+
+<div class="st"><p><span class="lab">Definition 5.7</span> (the two axes). The <em>length</em> of a reduction is the number of steps it takes (5.6). Its <em>effect-cost</em> is the quantity §3 defines: the entropy of its input given its output.</p></div>
+
+<div class="st"><p><span class="lab">Proposition 5.8.</span> A reversible step has effect-cost <code>0</code> and length <code>1</code>. A step merging <code>2ᵏ</code> inputs into one output has effect-cost <code>k</code> and length <code>1</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> A step whose input can be recovered is a bijection (§3), so one input shares each output and <code>log₂ 1 = 0</code>; a <code>2ᵏ</code>-fold merge gives <code>log₂ 2ᵏ = k</code>. Neither reading touches the step count. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Proposition 5.9</span> (Landauer's bound, in units). A step of effect-cost <code>k</code> dissipates <code>k · k_B T ln 2</code> of heat, and a reversible step dissipates <code>0</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> §3 read twice — once on the datum, once on the dynamics carrying it. A <code>2 → 1</code> merge of microstates is an entropy drop of <code>ln 2</code> nats, <code>k_B ln 2</code> once <code>k_B</code> converts nats to thermodynamic entropy. §3 splits the ambient dynamics into two cases. <em>Injective</em>: the two microstates the step merged stay distinct in it, so the distinction the datum lost is now in the surroundings, as heat <code>T ΔS</code>, with <code>T</code> the conversion of entropy to energy that <em>defines</em> temperature. <em>Non-injective</em>: it is a merging step itself, and §3 charges it the same <code>k</code> one level down. Both cases pay <code>k</code> bits; <code>k_B</code> and <code>T</code> convert that to joules. By 5.8 a reversible step has <code>k = 0</code>, so the drop is <code>0</code> and the heat is <code>0</code>. <span class="qed">∎</span> (Landauer 1961; Bennett 1973, 1982 named it.)</p></div>
+
+<div class="rk"><p><span class="lab">Remark 5.10.</span> The price is relative to the observation: it is the bits erased for the requested output, not for a whole trace. The length cost is a separate axis, bounded by a potential (5.15) and by no count of solutions (Search).</p></div>
+
+<h3>5.4 Every reduction is the shortest</h3>
+
+<div class="st"><p><span class="lab">Lemma 5.11</span> (one-step diamond). If <code>Step s a</code> and <code>Step s b</code> then <code>a ≡ b</code>, or there is <code>c</code> with <code>Step a c</code> and <code>Step b c</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Two distinct active pairs are disjoint: distinct principal-port pairs cannot share a cell. By 5.5 each step leaves everything outside its own pair untouched, so doing one leaves the other available and untouched, and the two converge in one further step each. This is structural to interaction nets (Lafont 1990), not an assumption. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Lemma 5.12</span> (peel). <code>Step s u → Trace (suc n) s t → Normal t → Trace n u t</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Induction on the trace's length. Apply 5.11 to the given step and the trace's first step: either they merge, and the tail is the required trace, or they reach a common term, from which the inductive hypothesis peels the shorter tail. At a normal form no step is left to carry, so the given step is absorbed exactly once. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 5.13</span> (equal length). <code>Trace n s t → Trace m s t → Normal t → n ≡ m</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Induction on the first trace, peeling its first step through the second by 5.12. <span class="qed">∎</span></p></div>
+
 <details class="proof"><summary>the checked term</summary>
 <pre><code>module RandomDescent (S : Type) (Step : S → S → Type)
   (diamond : {s a b : S} → Step s a → Step s b
@@ -271,9 +340,44 @@ $$
     subst (_ ≤_) (same-normalization-length chosen competitor normal) ≤-refl</code></pre>
 <figcaption>The step-count is fixed by the endpoints, never the strategy: <code>peel</code> pushes any first step through any reduction, and <code>same-normalization-length</code> inducts to equal length. Generic in <code>(S, Step, diamond)</code> — instantiated by any system with the interaction-net diamond. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
 </details>
-</li>
-<li><strong>No outer layer.</strong> Evaluator, type-checker, and optimizer are themselves terms of the same language; a question about them is another term the same normalizer reduces. There is no meta-level, so no self-reference contradiction: reasoning about its own terms as data, it proves the §4 impossibilities as ordinary theorems — and, as those theorems say, it does not decide its own halting, and has a sentence it neither proves nor refutes. Any expressible system — this one included — is lawful construction and identity, operated on exactly as everything else is: the language is its own metatheory, standing nowhere outside itself.</li>
-</ul>
+
+<div class="st"><p><span class="lab">Corollary 5.14.</span> Every reduction of a term to its normal form has the same length, so each is the minimum: the step-count is fixed by the endpoints, never by the strategy, and the cost is as deterministic as the answer.</p>
+<p class="pf"><span class="lab">Proof.</span> 5.13 with <code>≤-refl</code>, as <code>normalization-is-geodesic</code> in the box. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 5.15</span> (Bellman). In the reduction graph — vertices terms, edges steps of cost <code>c(u→v)</code> — call <code>Φ</code> a <em>potential</em> when <code>Φ(normal form) = 0</code> and <code>Φ(u) ≤ c(u→v) + Φ(v)</code> on every edge. Then every potential is a lower bound on every finishing path, and where a normal form is reachable the geodesic distance is the greatest potential, satisfying</p>
+$$
+\Phi(\text{normal form}) = 0, \qquad \Phi(u) = \min_{v}\, \big[\, c(u \to v) + \Phi(v)\,\big]
+$$
+<p class="pf"><span class="lab">Proof.</span> Adding the edge inequality along any path to a normal form, where <code>Φ = 0</code>, gives <code>Φ(u) ≤</code> the path's total cost. The geodesic distance satisfies both conditions, so it is a potential, and it meets the bound with equality at the cheapest edge (Bellman 1957). By 5.14 it is attained by every reduction, so there is nothing to minimise over. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 5.16</span> (unit lookahead). An output that must read input at distance <code>n</code> from it cannot be produced in fewer than <code>n</code> steps — a bound on every reduction, not on one chosen strategy.</p>
+<p class="pf"><span class="lab">Proof.</span> By 5.5 one step changes the datum only where its two cells sat, so its output at a position depends on that position and its one wired neighbour. Composing <code>k</code> steps, the output depends only on input within distance <code>k</code> of it in the net one started from: one step reaches a wired neighbour, so each widens the reach by exactly one. The rewriting does not let that slip — a rule replaces two cells by a net on their own auxiliary wires, and the cells it puts there can carry only what those two already held, so no interaction moves information further than one wire, however the distances in the rewritten net come out. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Corollary 5.17</span> (step-optimality). The native evolution attains the geodesic: no reduction is shorter than the one it takes.</p>
+<p class="pf"><span class="lab">Proof.</span> 5.14. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 5.18</span> (unique normal form). A term has at most one normal form.</p>
+<p class="pf"><span class="lab">Proof.</span> 5.11, tiled. Take two reductions of one term; the diamond closes their first steps to a common term, and filling the grid step by step reconverges them. If both end at a normal form — nothing left to rewrite — that common reduct can only be each endpoint, so the two are equal. (Church–Rosser, here the diamond filled in.) <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Corollary 5.19</span> (the dichotomy). For every question there are two cases and no third. Either a normal form exists, and by 5.14 and 5.18 every reduction reaches that one answer in the one step-count the endpoints fix; or §4 proves there is none — a decider for one's own halting is among these, since asking for one asks for the fixed point the diagonal forbids — and the question had no answer to find, which the system establishes rather than running out of time looking.</p></div>
+
+<div class="rk"><p><span class="lab">Remark 5.20.</span> <em>Well-formed</em> names the first case, and the reduction decides which case a question is in. What 5.19 fixes is reachability, not length: a long geodesic is a real price, charged honestly, and by 5.14 it is already the minimum.</p></div>
+
+<h3>5.5 What the length counts</h3>
+
+<div class="st"><p><span class="lab">Proposition 5.21</span> (the building route is the size of the answer). The normal form is a complete proof-carrying witness — the answer with its certificate — and the steps that build it number exactly its constructors.</p>
+<p class="pf"><span class="lab">Proof.</span> Each building step emits exactly one constructor — one piece of the answer, a successor, a pair, a tag — so the building route's length equals the witness's size; building <code>sucⁿ</code> takes one successor per step. A term carrying extra <em>redexes</em> — spots still waiting to reduce, like <code>(λx.x) t</code> — clears those first, administrative steps building nothing, so its total length is its own geodesic by 5.14 while the witness's size counts only the constructors built. Reading the finished term off is a fold that copies it, adding no step. <span class="qed">∎</span></p></div>
+
+<div class="rk"><p><span class="lab">Remark 5.22</span> (two exponentials). By 5.21 the building route's length is the witness's size in unary. When that unary size is exponential in the question's succinct binary measure — as <code>sucⁿ</code> is, <code>n</code> against <code>log n</code> — the route is exponentially longer than the succinct measure. That exponential is the observer's lossy binary measure laid against a lossless unary object; change the measure, not the computation, and it is gone. The other exponential can be real: the geodesic length when a <em>small</em> witness ends a <em>long</em> reduction. That is a length, so no change of measure touches it; it is the reduction's own fixed distance, already the minimum by 5.14.</p></div>
+
+<div class="rk"><p><span class="lab">Remark 5.23</span> (what is solved). The optimization problem — the fewest steps to an answer, what complexity theory exists to chase — is here <em>solved</em>: computation modeled as lossless reduction is optimal by construction, optimality its standing condition. The million wasteful ways to compute the same answer are departures from this model, not rival strategies within it. Only 5.11 is used, so 5.13–5.19 hold of any reduction that has the diamond.</p></div>
+
+<div class="rk"><p><span class="lab">Remark 5.24</span> (sharing). Sharing is written into the net. A shared subterm is held by a <em>cell</em> — a duplicator, wired in at ports like every other cell — so it belongs to the net's syntax, in place before any reduction begins: no bookkeeping outside the net itself, and 5.11 used only the disjointness of active pairs, not sharing. Its price is charged: a duplicator's interactions are steps on the length axis exactly like the rest, and on the effect axis they are free by 5.8, since folding along an equality is transport (§2) and runs backward (§3). What sharing buys is the one thing claimed for it: an active pair is never duplicated, so no step repeats work.</p></div>
+
+<div class="rk"><p><span class="lab">Remark 5.25</span> (termination). Where a term terminates it is reached in finitely many forced steps; a non-terminating term denotes a well-defined infinite (coinductive) object, not a gap.</p></div>
+
+<div class="rk"><p><span class="lab">Remark 5.26</span> (no outer layer). Evaluator, type-checker and optimizer are themselves terms of the same language, and a question about them is another term the same normalizer reduces. There is no meta-level, so no self-reference contradiction: reasoning about its own terms as data, it proves the §4 impossibilities as ordinary theorems — and, as those theorems say, it does not decide its own halting, and has a sentence it neither proves nor refutes. Any expressible system, this one included, is lawful construction and identity, operated on exactly as everything else is: the language is its own metatheory, standing nowhere outside itself.</p></div>
+
 <h2>Numbers</h2>
 <ul>
 <li>To count a finite set is to forget which element is which. Any two <code>n</code>-element sets differ only by a relabelling (a renaming of elements), so all of them are one thing. What the forgetting throws away is exactly the relabellings — the <code>n!</code> permutations of <code>n</code> things, the group <code>Sₙ</code>. To count is to keep the class and discard <code>Sₙ</code>:</li>
