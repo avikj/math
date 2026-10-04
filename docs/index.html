@@ -103,7 +103,7 @@
 <h1>Respecting Equality: Complete Inference, Deterministic and Step-Optimal</h1>
 <p class="byline">Avik Jain</p>
 <p>This is one construction on how equality behaves in cubical type theory: equality of types <em>is</em> equivalence — Voevodsky's univalence — and it computes. No prior familiarity with either is assumed.</p>
-<p>From that one fact the construction builds to a single result: complete inference — proving, computing, deciding, or answering any well-formed question — runs deterministically and in the fewest possible steps: a count fixed by where the reduction starts and ends, never by which strategy walks between them. The exact form of the Gödel and Turing limits is a stop on the way (§4). The natural numbers, and the complex numbers with the field equations, are two readings of the finished construction, set out after it. The shape is worth knowing in advance: §§0–2 are one chain, each step from the one before, ending in univalence; §3 and §4 are two facts that chain does not give, each standing on its own; §5 is where all four are used. Every step is elementary, and at each one the computational core is machine-checked and runs — the boxed terms below, verbatim and checkable as printed.</p>
+<p>From that one fact the construction builds to a single result: complete inference — proving, computing, deciding, or answering any well-formed question — runs deterministically and in the fewest possible steps: a count fixed by where the reduction starts and ends, never by which strategy walks between them. The exact form of the Gödel and Turing limits is a stop on the way (§4). The natural numbers (§6) and the complex numbers with the field equations (§7) are two readings of the finished construction, and §8 reads it at search. The shape is worth knowing in advance: §§0–2 are one chain, each step from the one before, ending in univalence (2.4); §3 and §4 are two facts that chain does not give, each standing on its own (3.4, 4.2); §5 is where all four are used, and 5.13 is the result. Every step is elementary, and at each one the computational core is machine-checked and runs — the boxed terms below, verbatim and checkable as printed.</p>
 <h2><span class="n">0.</span> The one fact</h2>
 
 <div class="st"><p><span class="lab">Definition 0.1</span> (type, function, dependent pair). A <em>type</em> is a collection of values, written <code>a : A</code>. A <em>function</em> <code>f : A → B</code> maps values to values. For a <em>family</em> <code>P</code> — one type <code>P a</code> for each <code>a : A</code> — the <em>dependent pair</em> <code>Σ[ a ∈ A ] P a</code> holds pairs <code>(a , w)</code> with <code>w : P a</code>.</p></div>
@@ -268,7 +268,7 @@ not-no-fix false p = true≢false p
 -- Cantor, as the B = Bool, f = not instance (not has no fixed point).
 cantor : (φ : A → (A → Bool)) → ¬ PtSurj φ
 cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
-<figcaption>§4's lemma in one term — <code>lawvere</code> is three lines — with its contrapositive and Cantor as the checked instance. Gödel, Halting, Russell, Tarski and Rice are that same term at their own fixed-point-free <code>(B, g)</code>, each named in the text above. Verbatim, <code>--safe</code>, untruncated <code>Σ</code> (the escaping index is exhibited, not merely asserted).</figcaption>
+<figcaption>4.2 in one term — <code>lawvere</code> is three lines — with 4.3 and 4.4 as the checked instances. 4.6–4.8 and 4.10 are that same term at their own <code>(B, g)</code>. Verbatim, <code>--safe</code>, untruncated <code>Σ</code> (the escaping index is exhibited, not merely asserted).</figcaption>
 </details>
 
 <p>The impossibility theorems are 4.2 or 4.3 at a named <code>(B , g)</code>. Each instance below supplies only that naming.</p>
@@ -444,23 +444,34 @@ $$
 
 <div class="rk"><p><span class="lab">Remark 5.26</span> (no outer layer). Evaluator, type-checker and optimizer are themselves terms of the same language, and a question about them is another term the same normalizer reduces. There is no meta-level, so no self-reference contradiction: reasoning about its own terms as data, it proves the §4 impossibilities as ordinary theorems — and, as those theorems say, it does not decide its own halting, and has a sentence it neither proves nor refutes. Any expressible system, this one included, is lawful construction and identity, operated on exactly as everything else is: the language is its own metatheory, standing nowhere outside itself.</p></div>
 
-<h2>Numbers</h2>
-<ul>
-<li>To count a finite set is to forget which element is which. Any two <code>n</code>-element sets differ only by a relabelling (a renaming of elements), so all of them are one thing. What the forgetting throws away is exactly the relabellings — the <code>n!</code> permutations of <code>n</code> things, the group <code>Sₙ</code>. To count is to keep the class and discard <code>Sₙ</code>:</li>
-</ul>
+<h2><span class="n">6.</span> Numbers</h2>
+
+<div class="st"><p><span class="lab">Definition 6.1</span> (counting). To count a finite set is to forget which element is which. Any two <code>n</code>-element sets differ only by a relabelling, so all of them are one thing; what the forgetting throws away is exactly the relabellings, the <code>n!</code> permutations of <code>n</code> things. To count is to keep the class and discard <code>Sₙ</code>:</p>
 $$
 \mathbb{N} \;=\; \{\text{finite sets}\}\,/\,\cong, \qquad \mathrm{Aut}(\text{an } n\text{-element set}) \;=\; S_n
-$$
-<ul>
-<li>So <code>card</code> is the bijection between iso-classes of finite sets and <code>ℕ</code>, with inverse <code>n ↦ {1,…,n}</code>.</li>
-<li>Addition = disjoint union (<code>|A ⊎ B| = |A| + |B|</code>), multiplication = product (<code>|A × B| = |A|·|B|</code>). Written in base <code>b</code>, adding two digit strings is this disjoint union done place by place, carrying whatever overflows a place into the next.</li>
-<li>Divisibility orders <code>ℕ</code>: <code>d ∣ n</code> iff each prime's exponent in <code>d</code> is ≤ its exponent in <code>n</code>. So <code>gcd = meet</code> (min exponents), <code>lcm = join</code> (max); and unique factorization sends <code>n</code> to its exponent vector, making <code>ℕ</code> the product of one chain (<code>ℕ</code>) per prime — where min and max distribute componentwise, a <em>distributive lattice</em>.</li>
-<li>That is the <em>same</em> distributive lattice as the algebra of logic (Search): <code>gcd/lcm ↔ ∧/∨</code>, coprime ↔ disjoint, and CRT <code>ℤ/mn ≅ ℤ/m × ℤ/n</code> — by <code>x ↦ (x mod m, x mod n)</code>, injective since coprime <code>m, n</code> both dividing <code>x−y</code> force <code>mn ∣ (x−y)</code>, hence bijective by count — matching the product decomposition, with the order-reversing involution <code>d ↦ n/d</code> giving De Morgan on both. Being finite and distributive, the divisor lattice is a Heyting algebra for every <code>n</code>; what varies is whether that involution <em>is</em> the Heyting negation. On squarefree <code>n</code> it is — a divisor is a subset of the primes and <code>n/d</code> its complement — so the lattice is Boolean. A repeated prime breaks it: on <code>n = p²</code> the divisors are the chain <code>1 &lt; p &lt; p²</code>, where the Heyting negation of <code>p</code> is <code>1</code> and <code>¬¬p = p² ≠ p</code>, while the involution sends <code>p</code> to <code>n/p = p</code>. So number theory and logic are one and the same logic — <code>gcd</code> and <code>lcm</code> the conjunction and disjunction, the divisibility order entailment — Boolean exactly where <code>n</code> is squarefree, and properly intuitionistic otherwise.</li>
-</ul>
-<h2>Complex numbers and quantum dynamics — the reversible side of §3</h2>
-<ul>
-<li><code>σ(x, y) = (-y, x)</code> — a length-preserving quarter-turn of the plane. Write <code>i</code> for <code>σ</code>: then <code>σ(x,y) = (−y, x)</code> is <code>i·(x + iy) = −y + ix</code>. It is reversible — lossless, and free on §3's effect axis.</li>
-<li><code>σ²(x,y) = σ(−y,x) = (−x,−y) = −(x,y)</code>, so <code>σ² = −1</code>: <code>σ</code> is a square root of <code>−1</code>, its powers cycling <code>1, σ, −1, −σ</code> — the four phases <code>{1, i, -1, -i}</code>. The identity <code>σ² = −1</code> needs no analysis and holds over any ring — the box checks it on the integer lattice, where it is exact arithmetic — and adjoining <code>σ</code> to the reals by those same two lines is <code>ℝ[σ]/(σ²+1) = ℂ</code>. <code>σ</code>, a rotation, preserves length — it is <strong>unitary</strong>. So the complex numbers, the phases, and unitarity are generated by this one reversible operation. Unitary evolution is exactly §3's free, reversible side; the physics that costs — measurement, erasure — is the irreversible side (Landauer, §5).
+$$</div>
+
+<div class="st"><p><span class="lab">Proposition 6.2.</span> <code>card</code> is the bijection between iso-classes of finite sets and <code>ℕ</code>, with inverse <code>n ↦ {1,…,n}</code>.</p></div>
+
+<div class="st"><p><span class="lab">Proposition 6.3</span> (arithmetic). Addition is disjoint union and multiplication is product:</p>
+<pre class="def"><code>|A ⊎ B| = |A| + |B|        |A × B| = |A| · |B|</code></pre>
+<p>Written in base <code>b</code>, adding two digit strings is this disjoint union done place by place, carrying whatever overflows a place into the next.</p></div>
+
+<div class="st"><p><span class="lab">Proposition 6.4</span> (divisibility is a distributive lattice). <code>d ∣ n</code> iff each prime's exponent in <code>d</code> is <code>≤</code> its exponent in <code>n</code>. So <code>gcd</code> is the meet (minimum exponents) and <code>lcm</code> the join (maximum), and unique factorization sends <code>n</code> to its exponent vector, making <code>ℕ</code> the product of one chain per prime, where minimum and maximum distribute componentwise.</p></div>
+
+<div class="st"><p><span class="lab">Theorem 6.5</span> (number theory and logic are one lattice). The divisor lattice is the distributive lattice of 8.1's algebra: <code>gcd</code>/<code>lcm</code> are <code>∧</code>/<code>∨</code>, coprimality is disjointness, the divisibility order is entailment, and <code>d ↦ n/d</code> is an order-reversing involution giving De Morgan on both sides.</p>
+<p class="pf"><span class="lab">Proof.</span> The product decomposition of 6.4 matches the Chinese remainder theorem <code>ℤ/mn ≅ ℤ/m × ℤ/n</code> by <code>x ↦ (x mod m, x mod n)</code>: injective, since coprime <code>m, n</code> both dividing <code>x − y</code> force <code>mn ∣ (x − y)</code>, hence bijective by count. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Proposition 6.6</span> (Boolean exactly on the squarefree). Being finite and distributive, the divisor lattice of every <code>n</code> is a Heyting algebra. It is Boolean iff <code>n</code> is squarefree.</p>
+<p class="pf"><span class="lab">Proof.</span> What varies is whether the involution of 6.5 is the Heyting negation. On squarefree <code>n</code> it is: a divisor is a subset of the primes and <code>n/d</code> its complement. A repeated prime breaks it — on <code>n = p²</code> the divisors are the chain <code>1 &lt; p &lt; p²</code>, where the Heyting negation of <code>p</code> is <code>1</code> and <code>¬¬p = p² ≠ p</code>, while the involution sends <code>p</code> to <code>n/p = p</code>. So the lattice is Boolean on squarefree <code>n</code> and properly intuitionistic otherwise. <span class="qed">∎</span></p></div>
+
+<h2><span class="n">7.</span> Complex numbers and quantum dynamics — the reversible side of §3</h2>
+
+<div class="st"><p><span class="lab">Definition 7.1</span> (the quarter-turn). <code>σ(x , y) = (−y , x)</code>, a length-preserving quarter-turn of the plane. Write <code>i</code> for <code>σ</code>: then <code>σ(x,y) = (−y, x)</code> is <code>i·(x + iy) = −y + ix</code>. It is reversible, so free on the effect axis by 3.4.</p></div>
+
+<div class="st"><p><span class="lab">Proposition 7.2.</span> <code>σ² = −1</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>σ²(x,y) = σ(−y,x) = (−x,−y) = −(x,y)</code>. The identity needs no analysis and holds over any ring; the box checks it on the integer lattice, where it is exact arithmetic. <span class="qed">∎</span></p></div>
+
 <details class="proof"><summary>the checked term</summary>
 <pre><code>-- the quarter-turn of the plane: (x, y) ↦ (−y, x).
 σ : ℤ × ℤ → ℤ × ℤ
@@ -471,30 +482,51 @@ $$
 σ²≡neg (x , y) = refl</code></pre>
 <figcaption>By <code>refl</code>: <code>σ² = −1</code> is not proved here but <em>computed</em>, the two sides reducing to the same pair. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
 </details>
-</li>
-<li><strong>Riemann–Silberstein.</strong> With <code>F = E + iB</code> and units in which <code>c = 1</code> (otherwise <code>F = E + icB</code>, and a <code>c</code> rides along on the right), Maxwell's two vacuum equations become one Schrödinger equation, generator <code>× i</code>:</li>
-</ul>
+
+<div class="st"><p><span class="lab">Corollary 7.3.</span> The complex numbers, the four phases and unitarity are generated by this one reversible operation.</p>
+<p class="pf"><span class="lab">Proof.</span> By 7.2 the powers of <code>σ</code> cycle <code>1, σ, −1, −σ</code>, the phases <code>{1, i, −1, −i}</code>; adjoining <code>σ</code> to the reals by those same two lines is <code>ℝ[σ]/(σ²+1) = ℂ</code>; and <code>σ</code>, a rotation, preserves length, so it is unitary. Unitary evolution is exactly 3.1's free, reversible side; the physics that costs — measurement, erasure — is the irreversible side (3.2, 5.9). <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 7.4</span> (Riemann–Silberstein). With <code>F = E + iB</code> and units in which <code>c = 1</code> — otherwise <code>F = E + icB</code>, and a <code>c</code> rides along on the right — Maxwell's two vacuum equations are one Schrödinger equation:</p>
 $$
 \partial_t E = \nabla\times B,\ \ \partial_t B = -\nabla\times E \;\Longleftrightarrow\; i\,\partial_t F = \nabla\times F
 $$
-<ul>
-<li>Check: <code>i ∂_t F = i ∂_t E − ∂_t B = i(∇×B) + ∇×E = ∇×(E + iB) = ∇×F</code>, using the two Maxwell equations; splitting real and imaginary parts gives them back. Classical electromagnetism and single-particle quantum mechanics are the same equation.</li>
-<li><code>‖F‖² = ⟨E+iB, E+iB⟩ = ‖E‖² + ‖B‖²</code> — the Hermitian cross terms <code>±i⟨E,B⟩</code> cancel. Conservation is forced by that equation: from <code>∂_t F = −i∇×F</code>,</li>
-</ul>
+<p class="pf"><span class="lab">Proof.</span> <code>i ∂_t F = i ∂_t E − ∂_t B = i(∇×B) + ∇×E = ∇×(E + iB) = ∇×F</code>, using the two Maxwell equations; splitting real and imaginary parts gives them back. Classical electromagnetism and single-particle quantum mechanics are the same equation. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Lemma 7.5</span> (curl is self-adjoint). <code>∫ a·(∇×b) = ∫ (∇×a)·b</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Integrate <code>∇·(a×b) = b·(∇×a) − a·(∇×b)</code> over a domain with no boundary — a torus, or fields decaying at infinity — where the left side integrates to zero. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 7.6</span> (the flow is unitary). <code>‖F‖²</code> is conserved, and the generator <code>−i∇×</code> is skew-adjoint.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>‖F‖² = ⟨E+iB, E+iB⟩ = ‖E‖² + ‖B‖²</code>, the Hermitian cross terms <code>±i⟨E,B⟩</code> cancelling. From <code>∂_t F = −i∇×F</code> (7.4),</p>
 $$
 \tfrac{d}{dt}\,\lVert F\rVert^2 \;=\; 2\,\mathrm{Re}\,\langle F,\ \partial_t F\rangle \;=\; 2\,\mathrm{Re}\,\langle F,\ -i\,\nabla\times F\rangle \;=\; 2\,\mathrm{Im}\,\langle F,\ \nabla\times F\rangle \;=\; 0,
 $$
-<ul>
-<li>because curl is self-adjoint, which takes two fields to state: <code>∫ a·(∇×b) = ∫ (∇×a)·b</code>, got by integrating the identity <code>∇·(a×b) = b·(∇×a) − a·(∇×b)</code> over a domain with no boundary (a torus, or fields decaying at infinity), where the left side integrates to zero. At <code>a = b = F</code> that makes <code>⟨F, ∇×F⟩</code> real, so its imaginary part vanishes. The generator <code>−i∇×</code> is therefore skew-adjoint: the flow preserves length, i.e. is unitary.</li>
-</ul>
-<h2>Search</h2>
+<p class="pf">since 7.5 at <code>a = b = F</code> makes <code>⟨F, ∇×F⟩</code> real, so its imaginary part vanishes. A length-preserving flow is unitary. <span class="qed">∎</span></p></div>
+
+<h2><span class="n">8.</span> Search</h2>
+
+<div class="st"><p><span class="lab">Definition 8.1</span> (solutions). For <code>F : </code>assignments<code> → {true, false}</code>, the solutions are 1.1 at <code>b = true</code>:</p>
 $$
-\text{solutions of } F \;=\; F^{-1}(\text{true}) \;=\; \{\, w : F(w) = \text{true} \,\}, \qquad \#\text{solutions} = \sum_{T \subseteq C} (-1)^{|T|}\, 2^{\,N - r(T)}
+\text{solutions of } F \;=\; F^{-1}(\text{true}) \;=\; \{\, w : F(w) = \text{true} \,\}
 $$
-<ul>
-<li><code>F : assignments → {true, false}</code>. Solutions <code>S_F = F⁻¹(true)</code>. For 3-SAT a clause forbids exactly one setting of its 3 literals, so the assignments that break it fill a subcube <code>V_α</code> — those 3 bits fixed to the forbidden setting, the other <code>N−3</code> free (a codimension-3 face); every assignment either satisfies all clauses (in <code>S_F</code>) or lies in some <code>V_α</code>, and <code>S_F</code> is disjoint from <code>⋃ V_α</code>, so the whole cube splits, <code>Q_N = S_F ⊎ ⋃ V_α</code> with <code>Q_N</code> the <code>2^N</code> assignments — deciding and solving are two observations of one partition. Count by inclusion–exclusion: <code>#S_F = Σ_{T⊆C} (−1)^{|T|} |⋂_{α∈T} V_α|</code>. When the clauses in <code>T</code> can be violated together, <code>|⋂_{α∈T} V_α| = 2^{N−r(T)}</code> with <code>r(T)</code> the coordinates they jointly fix; when two of them demand opposite values on a shared variable the intersection is empty and contributes <code>0</code>. Regroup the sum per assignment by the <code>j</code> clauses it breaks: its weight is <code>Σ_{i≤j} C(j,i)(−1)^i = (1−1)^j</code>, which is <code>1</code> only at <code>j = 0</code> — each solution survives once, the rest cancel.</li>
-<li><strong>Deciding</strong> = <code>‖S_F‖</code>, writing <code>‖·‖</code> for the proposition <em>this is inhabited</em> — one bit, and when true it is a single point, every witness collapsed onto it. <strong>Solving</strong> = <code>S_F</code> (a vertex with its membership proof). The truncation <code>τ : S_F → ‖S_F‖</code> sends every witness to that one point, so its pre-image is all of <code>S_F</code>: that pre-image is <code>Σ (w : S_F) (τ w = pt)</code>, and <code>‖S_F‖</code> has any two of its points equal, so the equality component carries nothing and the pre-image is <code>S_F</code> itself — the one-bit decision discards exactly the <em>which-witness</em> pre-image, with no left inverse once <code>|S_F| &gt; 1</code>.</li>
-<li><strong>Decide = verify.</strong> For the machine's step <code>f</code>, deciding an input <code>a</code> completes it to <code>(answer, witness)</code> — by §1 that completion is the equivalence <code>A ≅ Σ (b) f⁻¹(b)</code>, here <code>decide(a) = (f a, (a, refl))</code>: the answer, paired with the input and the <code>refl</code> proof it maps there. <code>verify</code> reads the witness's pre-image back out; the round trip is <code>refl</code>. Deciding and verifying are thus the two directions of that <em>one</em> equivalence, unique by §1 — the decided witness carries its own acceptance as <code>refl</code>, so nothing is searched between having the answer and having its certificate: the lossless run produces the witness <em>with</em> the answer — one forward pass, no second search — and verifying is that pass reversed. The one-bit decision <code>‖S_F‖</code> above is the <em>lossy</em> projection that throws the witness away (<code>τ</code>); the lossless machine never does. So on the lossless machine there is no operation sitting between deciding and verifying for a gap to live in: they are one equivalence read two ways. What is left to ask of a problem is how many steps the output it asks for forces, and §5 fixed the form any answer to that must take — a lower bound on the step count is a <code>Φ</code> that is <code>0</code> at the normal form and, along every primitive step, exceeds the next <code>Φ</code> by at most that step's cost. The last bullet below is about which quantities meet that condition and which do not.
+<p>Write <code>S_F</code> for this type, and <code>Q_N</code> for the <code>2^N</code> assignments.</p></div>
+
+<div class="st"><p><span class="lab">Theorem 8.2</span> (the cube splits). <code>Q_N = S_F ⊎ ⋃<sub>α</sub> V_α</code>, where <code>V_α</code> is the subcube of assignments breaking clause <code>α</code>. Deciding and solving are two observations of this one partition.</p>
+<p class="pf"><span class="lab">Proof.</span> 1.2 at <code>F</code>. For 3-SAT a clause forbids exactly one setting of its three literals, so the assignments that break it fill a subcube <code>V_α</code> — those three bits fixed to the forbidden setting, the other <code>N−3</code> free, a codimension-3 face. Every assignment either satisfies all clauses, so lies in <code>S_F</code>, or lies in some <code>V_α</code>, and <code>S_F</code> is disjoint from <code>⋃ V_α</code>. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 8.3</span> (the count).</p>
+$$
+\#\text{solutions} \;=\; \sum_{T \subseteq C} (-1)^{|T|}\, 2^{\,N - r(T)}
+$$
+<p class="pf"><span class="lab">Proof.</span> Inclusion–exclusion on 8.2: <code>#S_F = Σ_{T⊆C} (−1)^{|T|} |⋂_{α∈T} V_α|</code>. When the clauses in <code>T</code> can be violated together, <code>|⋂_{α∈T} V_α| = 2^{N−r(T)}</code> with <code>r(T)</code> the coordinates they jointly fix; when two of them demand opposite values on a shared variable the intersection is empty and contributes <code>0</code>. Regrouping per assignment by the <code>j</code> clauses it breaks, its weight is <code>Σ_{i≤j} C(j,i)(−1)^i = (1−1)^j</code>, which is <code>1</code> only at <code>j = 0</code>: each solution survives once, the rest cancel. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Definition 8.4</span> (deciding, solving). <em>Solving</em> is <code>S_F</code> — a vertex with its membership proof. <em>Deciding</em> is <code>‖S_F‖</code>, writing <code>‖·‖</code> for the proposition that this is inhabited: one bit, and when true a single point, every witness collapsed onto it. The truncation is <code>τ : S_F → ‖S_F‖</code>.</p></div>
+
+<div class="st"><p><span class="lab">Theorem 8.5</span> (what the one bit discards). The pre-image of <code>τ</code> is <code>S_F</code> itself, and <code>τ</code> has no left inverse once <code>|S_F| &gt; 1</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>τ</code> sends every witness to the one point, so by 1.1 its pre-image is <code>Σ[ w ∈ S_F ] (τ w ≡ pt)</code>. Since <code>‖S_F‖</code> has any two of its points equal, the equality component carries nothing, and the pre-image is <code>S_F</code>. The one-bit decision therefore discards exactly the which-witness pre-image. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 8.6</span> (deciding and verifying are one equivalence). For the machine's step <code>f</code>, <code>decide(a) = (f a , (a , refl))</code> and <code>verify</code> reads the witness's pre-image back out; the round trip is <code>refl</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Deciding an input <code>a</code> completes it to an answer with a witness, and by 1.2 that completion is the equivalence <code>A ≃ Σ[ b ] f⁻¹(b)</code>, unique by 1.4. The two directions are <code>decide</code> and <code>verify</code>. The decided witness carries its own acceptance as <code>refl</code>, so the lossless run produces the witness with the answer in one forward pass, and verifying is that pass reversed: no operation sits between them for a gap to live in. <span class="qed">∎</span></p></div>
+
 <details class="proof"><summary>the checked term</summary>
 <pre><code>decide : (f : A → B) → A → Σ[ b ∈ B ] fiber f b
 decide f a = f a , a , refl
@@ -509,12 +541,23 @@ verify-inverts-decide f a = refl
 -- the decided witness carries its own acceptance as refl.
 witness-self-certifies : (f : A → B) (a : A) → snd (snd (decide f a)) ≡ refl
 witness-self-certifies f a = refl</code></pre>
-<figcaption><code>decide</code> and <code>verify</code> are the two directions of §1's equivalence; the round trip is <code>refl</code> and the witness certifies itself, so no operation sits between them. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
-</details></li>
-<li><code>#SAT = Σ_{T compatible} (−1)^|T| 2^{N−r(T)} = Σ_r (−1)^r M_r</code> — the alternating collapse of the clause-intersection (factorial-moment) tower <code>M_r = Σ_{|T|=r} |⋂ V|</code>; the scalar count is an extremely lossy projection <code>(1,−1,1,…)·(M_r)</code>. UNSAT iff it is <code>0</code>; an unsatisfiable formula whose every clause has exactly 3 literals needs <code>m ≥ 8</code> of them — writing <code>ν(x)</code> for the clauses assignment <code>x</code> violates, each clause is violated by <code>2^{N−3}</code> assignments and UNSAT means every <code>x</code> violates at least one, so <code>Σ_x ν(x) = m·2^{N−3} ≥ 2^N</code>, i.e. <code>m ≥ 8</code> — and sharp, since the eight clauses on three variables, one for each sign pattern, forbid all eight settings and so are unsatisfiable with exactly eight.</li>
-<li><strong>These counts are not such a <code>Φ</code>.</strong> Four counts get proposed as lower bounds — assignments, satisfying vertices, clause-intersections, and the width of a fixed-order pass (the number of distinct states a left-to-right reading has to keep). Each collapses under factoring or a change of coordinates (disjoint triples: <code>m</code> clauses on disjoint variable-triples each kill <code>1</code> of <code>8</code> and leave <code>7</code>, so <code>#SAT = 7^m</code> while the intersections number <code>2^m</code>; inner-product <code>⟨x,y⟩ mod 2</code>: read all of <code>x</code> first and the state reached must fix the map <code>y ↦ ⟨x,y⟩</code> — distinct <code>x ≠ x′</code> give different maps, disagreeing at <code>y = e_i</code>, the vector with a single <code>1</code> in place <code>i</code>, wherever <code>x_i ≠ x′_i</code>, so the <code>2ⁿ</code> inputs force <code>2ⁿ</code> distinct states, width <code>2ⁿ</code>; read the pairs <code>x_i, y_i</code> interleaved and it is a running parity — remember <code>x_i</code> (2), fold <code>x_i y_i</code> in (2) — width <code>≤ 4</code>). A lower bound is a <code>Φ</code> with <code>Φ(normal form) = 0</code> and <code>Φ(u) ≤ c(u→v)+Φ(v)</code> on every primitive edge, in §5's notation; distance is the greatest such <code>Φ</code>. With unit-cost primitive steps the defining inequality reads <code>Φ(u) ≤ 1 + Φ(v)</code>, so <code>Φ</code> can fall by at most one per step; an exponential lower bound is therefore a <code>Φ</code> that starts out exponential and still falls by at most one per step — equivalently, an exponentially large supply of obligations of which one step can discharge at most one. That is what such a proof has to exhibit. Nothing here exhibits one for SAT.</li>
-</ul>
-<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under Agda 2.8.0 with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. One box sits at each section's computational core — singleton contractibility, the partition by output, the reversible-cost vanishing, the Lawvere diagonal, the geodesic, <code>σ² = −1</code>, decide = verify — and each compiles on its own against the library, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
+<figcaption>8.6 as a term: <code>verify-inverts-decide</code> is the round trip, <code>witness-self-certifies</code> the <code>refl</code> the decided witness carries. Both hold by <code>refl</code>, so neither is proved here — each reduces to the other side. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+
+<div class="rk"><p><span class="lab">Remark 8.7.</span> <code>‖S_F‖</code> is the lossy projection that throws the witness away (8.5); the lossless machine never does. What is left to ask of a problem is how many steps the output it asks for forces, and 5.15 fixed the form any answer to that must take.</p></div>
+
+<div class="st"><p><span class="lab">Proposition 8.8</span> (the moment tower). <code>#SAT = Σ_{T compatible} (−1)^{|T|} 2^{N−r(T)} = Σ_r (−1)^r M_r</code>, the alternating collapse of the clause-intersection (factorial-moment) tower <code>M_r = Σ_{|T|=r} |⋂ V|</code>. The scalar count is the extremely lossy projection <code>(1,−1,1,…)·(M_r)</code>, and <code>F</code> is unsatisfiable iff it is <code>0</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Regroup 8.3 by <code>|T|</code>. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Proposition 8.9.</span> An unsatisfiable formula whose every clause has exactly three literals needs <code>m ≥ 8</code> clauses, and eight suffice.</p>
+<p class="pf"><span class="lab">Proof.</span> Write <code>ν(x)</code> for the clauses assignment <code>x</code> violates. Each clause is violated by <code>2^{N−3}</code> assignments, and unsatisfiability means every <code>x</code> violates at least one, so <code>Σ_x ν(x) = m·2^{N−3} ≥ 2^N</code>, that is <code>m ≥ 8</code>. Sharp: the eight clauses on three variables, one for each sign pattern, forbid all eight settings. <span class="qed">∎</span></p></div>
+
+<div class="st"><p><span class="lab">Theorem 8.10</span> (these counts are not potentials). None of the four counts proposed as lower bounds — assignments, satisfying vertices, clause-intersections, and the width of a fixed-order pass — is a potential in the sense of 5.15.</p>
+<p class="pf"><span class="lab">Proof.</span> Each collapses under factoring or a change of coordinates. <em>Disjoint triples</em>: <code>m</code> clauses on disjoint variable-triples each kill <code>1</code> of <code>8</code> and leave <code>7</code>, so <code>#SAT = 7^m</code> while the intersections number <code>2^m</code>. <em>Inner product</em> <code>⟨x,y⟩ mod 2</code>: read all of <code>x</code> first and the state reached must fix the map <code>y ↦ ⟨x,y⟩</code> — distinct <code>x ≠ x′</code> give different maps, disagreeing at <code>y = e_i</code>, the vector with a single <code>1</code> in place <code>i</code>, wherever <code>x_i ≠ x′_i</code> — so the <code>2ⁿ</code> inputs force <code>2ⁿ</code> distinct states, width <code>2ⁿ</code>; read the pairs <code>x_i, y_i</code> interleaved and it is a running parity, remembering <code>x_i</code> and folding <code>x_i y_i</code> in, width <code>≤ 4</code>. <span class="qed">∎</span></p></div>
+
+<div class="rk"><p><span class="lab">Remark 8.11</span> (what a lower-bound proof must exhibit). With unit-cost primitive steps, 5.15's inequality reads <code>Φ(u) ≤ 1 + Φ(v)</code>, so <code>Φ</code> can fall by at most one per step. An exponential lower bound is therefore a <code>Φ</code> that starts out exponential and still falls by at most one per step — equivalently, an exponentially large supply of obligations of which one step can discharge at most one. Nothing here exhibits one for SAT.</p></div>
+
+<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under Agda 2.8.0 with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. One box sits at each section's computational core — 0.8, 1.2, 3.4, 4.2, 5.13, 7.2, 8.6 — and each compiles on its own against the library, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
 
 </main>
 <script src="./vendor/katex/katex.min.js"></script>
