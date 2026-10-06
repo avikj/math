@@ -1,0 +1,1027 @@
+[
+  {
+    "name": "empty",
+    "variables": 0,
+    "clauses": [],
+    "assignments": 1,
+    "models": 1,
+    "residual_widths": [
+      1
+    ]
+  },
+  {
+    "name": "empty_clause",
+    "variables": 0,
+    "clauses": [
+      []
+    ],
+    "assignments": 1,
+    "models": 0,
+    "residual_widths": [
+      1
+    ]
+  },
+  {
+    "name": "xor",
+    "variables": 2,
+    "clauses": [
+      [
+        1,
+        2
+      ],
+      [
+        -1,
+        -2
+      ]
+    ],
+    "assignments": 4,
+    "models": 2,
+    "residual_widths": [
+      1,
+      2,
+      2
+    ]
+  },
+  {
+    "name": "contradiction",
+    "variables": 1,
+    "clauses": [
+      [
+        1
+      ],
+      [
+        -1
+      ]
+    ],
+    "assignments": 2,
+    "models": 0,
+    "residual_widths": [
+      1,
+      1
+    ]
+  },
+  {
+    "name": "simplified_unsat10",
+    "variables": 10,
+    "clauses": [
+      []
+    ],
+    "assignments": 1024,
+    "models": 0,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "simplified_true10",
+    "variables": 10,
+    "clauses": [],
+    "assignments": 1024,
+    "models": 1024,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "cycle4",
+    "variables": 4,
+    "clauses": [
+      [
+        1,
+        2
+      ],
+      [
+        -1,
+        -2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        -2,
+        -3
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        -3,
+        -4
+      ],
+      [
+        4,
+        1
+      ],
+      [
+        -4,
+        -1
+      ]
+    ],
+    "assignments": 16,
+    "models": 2,
+    "residual_widths": [
+      1,
+      2,
+      3,
+      3,
+      2
+    ]
+  },
+  {
+    "name": "cycle5",
+    "variables": 5,
+    "clauses": [
+      [
+        1,
+        2
+      ],
+      [
+        -1,
+        -2
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        -2,
+        -3
+      ],
+      [
+        3,
+        4
+      ],
+      [
+        -3,
+        -4
+      ],
+      [
+        4,
+        5
+      ],
+      [
+        -4,
+        -5
+      ],
+      [
+        5,
+        1
+      ],
+      [
+        -5,
+        -1
+      ]
+    ],
+    "assignments": 32,
+    "models": 0,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "tautology2",
+    "variables": 2,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ]
+    ],
+    "assignments": 4,
+    "models": 4,
+    "residual_widths": [
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "unique2",
+    "variables": 2,
+    "clauses": [
+      [
+        1
+      ],
+      [
+        2
+      ]
+    ],
+    "assignments": 4,
+    "models": 1,
+    "residual_widths": [
+      1,
+      2,
+      2
+    ]
+  },
+  {
+    "name": "late_unsat2",
+    "variables": 2,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2
+      ],
+      [
+        -2
+      ]
+    ],
+    "assignments": 4,
+    "models": 0,
+    "residual_widths": [
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "tautology4",
+    "variables": 4,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ],
+      [
+        3,
+        -3
+      ],
+      [
+        4,
+        -4
+      ]
+    ],
+    "assignments": 16,
+    "models": 16,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "unique4",
+    "variables": 4,
+    "clauses": [
+      [
+        1
+      ],
+      [
+        2
+      ],
+      [
+        3
+      ],
+      [
+        4
+      ]
+    ],
+    "assignments": 16,
+    "models": 1,
+    "residual_widths": [
+      1,
+      2,
+      2,
+      2,
+      2
+    ]
+  },
+  {
+    "name": "late_unsat4",
+    "variables": 4,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ],
+      [
+        3,
+        -3
+      ],
+      [
+        4
+      ],
+      [
+        -4
+      ]
+    ],
+    "assignments": 16,
+    "models": 0,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "tautology6",
+    "variables": 6,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ],
+      [
+        3,
+        -3
+      ],
+      [
+        4,
+        -4
+      ],
+      [
+        5,
+        -5
+      ],
+      [
+        6,
+        -6
+      ]
+    ],
+    "assignments": 64,
+    "models": 64,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "unique6",
+    "variables": 6,
+    "clauses": [
+      [
+        1
+      ],
+      [
+        2
+      ],
+      [
+        3
+      ],
+      [
+        4
+      ],
+      [
+        5
+      ],
+      [
+        6
+      ]
+    ],
+    "assignments": 64,
+    "models": 1,
+    "residual_widths": [
+      1,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ]
+  },
+  {
+    "name": "late_unsat6",
+    "variables": 6,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ],
+      [
+        3,
+        -3
+      ],
+      [
+        4,
+        -4
+      ],
+      [
+        5,
+        -5
+      ],
+      [
+        6
+      ],
+      [
+        -6
+      ]
+    ],
+    "assignments": 64,
+    "models": 0,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "tautology8",
+    "variables": 8,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ],
+      [
+        3,
+        -3
+      ],
+      [
+        4,
+        -4
+      ],
+      [
+        5,
+        -5
+      ],
+      [
+        6,
+        -6
+      ],
+      [
+        7,
+        -7
+      ],
+      [
+        8,
+        -8
+      ]
+    ],
+    "assignments": 256,
+    "models": 256,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "unique8",
+    "variables": 8,
+    "clauses": [
+      [
+        1
+      ],
+      [
+        2
+      ],
+      [
+        3
+      ],
+      [
+        4
+      ],
+      [
+        5
+      ],
+      [
+        6
+      ],
+      [
+        7
+      ],
+      [
+        8
+      ]
+    ],
+    "assignments": 256,
+    "models": 1,
+    "residual_widths": [
+      1,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ]
+  },
+  {
+    "name": "late_unsat8",
+    "variables": 8,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ],
+      [
+        3,
+        -3
+      ],
+      [
+        4,
+        -4
+      ],
+      [
+        5,
+        -5
+      ],
+      [
+        6,
+        -6
+      ],
+      [
+        7,
+        -7
+      ],
+      [
+        8
+      ],
+      [
+        -8
+      ]
+    ],
+    "assignments": 256,
+    "models": 0,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "tautology10",
+    "variables": 10,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ],
+      [
+        3,
+        -3
+      ],
+      [
+        4,
+        -4
+      ],
+      [
+        5,
+        -5
+      ],
+      [
+        6,
+        -6
+      ],
+      [
+        7,
+        -7
+      ],
+      [
+        8,
+        -8
+      ],
+      [
+        9,
+        -9
+      ],
+      [
+        10,
+        -10
+      ]
+    ],
+    "assignments": 1024,
+    "models": 1024,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "unique10",
+    "variables": 10,
+    "clauses": [
+      [
+        1
+      ],
+      [
+        2
+      ],
+      [
+        3
+      ],
+      [
+        4
+      ],
+      [
+        5
+      ],
+      [
+        6
+      ],
+      [
+        7
+      ],
+      [
+        8
+      ],
+      [
+        9
+      ],
+      [
+        10
+      ]
+    ],
+    "assignments": 1024,
+    "models": 1,
+    "residual_widths": [
+      1,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2
+    ]
+  },
+  {
+    "name": "late_unsat10",
+    "variables": 10,
+    "clauses": [
+      [
+        1,
+        -1
+      ],
+      [
+        2,
+        -2
+      ],
+      [
+        3,
+        -3
+      ],
+      [
+        4,
+        -4
+      ],
+      [
+        5,
+        -5
+      ],
+      [
+        6,
+        -6
+      ],
+      [
+        7,
+        -7
+      ],
+      [
+        8,
+        -8
+      ],
+      [
+        9,
+        -9
+      ],
+      [
+        10
+      ],
+      [
+        -10
+      ]
+    ],
+    "assignments": 1024,
+    "models": 0,
+    "residual_widths": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "name": "equality2",
+    "variables": 4,
+    "clauses": [
+      [
+        -1,
+        3
+      ],
+      [
+        1,
+        -3
+      ],
+      [
+        -2,
+        4
+      ],
+      [
+        2,
+        -4
+      ]
+    ],
+    "assignments": 16,
+    "models": 4,
+    "residual_widths": [
+      1,
+      2,
+      4,
+      3,
+      2
+    ],
+    "interleaved_widths": [
+      1,
+      2,
+      2,
+      3,
+      2
+    ]
+  },
+  {
+    "name": "equality3",
+    "variables": 6,
+    "clauses": [
+      [
+        -1,
+        4
+      ],
+      [
+        1,
+        -4
+      ],
+      [
+        -2,
+        5
+      ],
+      [
+        2,
+        -5
+      ],
+      [
+        -3,
+        6
+      ],
+      [
+        3,
+        -6
+      ]
+    ],
+    "assignments": 64,
+    "models": 8,
+    "residual_widths": [
+      1,
+      2,
+      4,
+      8,
+      5,
+      3,
+      2
+    ],
+    "interleaved_widths": [
+      1,
+      2,
+      2,
+      3,
+      2,
+      3,
+      2
+    ]
+  },
+  {
+    "name": "equality4",
+    "variables": 8,
+    "clauses": [
+      [
+        -1,
+        5
+      ],
+      [
+        1,
+        -5
+      ],
+      [
+        -2,
+        6
+      ],
+      [
+        2,
+        -6
+      ],
+      [
+        -3,
+        7
+      ],
+      [
+        3,
+        -7
+      ],
+      [
+        -4,
+        8
+      ],
+      [
+        4,
+        -8
+      ]
+    ],
+    "assignments": 256,
+    "models": 16,
+    "residual_widths": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      9,
+      5,
+      3,
+      2
+    ],
+    "interleaved_widths": [
+      1,
+      2,
+      2,
+      3,
+      2,
+      3,
+      2,
+      3,
+      2
+    ]
+  },
+  {
+    "name": "equality5",
+    "variables": 10,
+    "clauses": [
+      [
+        -1,
+        6
+      ],
+      [
+        1,
+        -6
+      ],
+      [
+        -2,
+        7
+      ],
+      [
+        2,
+        -7
+      ],
+      [
+        -3,
+        8
+      ],
+      [
+        3,
+        -8
+      ],
+      [
+        -4,
+        9
+      ],
+      [
+        4,
+        -9
+      ],
+      [
+        -5,
+        10
+      ],
+      [
+        5,
+        -10
+      ]
+    ],
+    "assignments": 1024,
+    "models": 32,
+    "residual_widths": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      17,
+      9,
+      5,
+      3,
+      2
+    ],
+    "interleaved_widths": [
+      1,
+      2,
+      2,
+      3,
+      2,
+      3,
+      2,
+      3,
+      2,
+      3,
+      2
+    ]
+  }
+]

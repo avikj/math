@@ -1,0 +1,14 @@
+; a superposition is a line; a face map picks a side (annihilate)
+(def pick0 (dim L (fce L 0 (sup L 1 2))))
+(def pick1 (dim L (fce L 1 (sup L 1 2))))
+; two instances of one definition never share a name: the face map at M passes inside
+(def pair (lam x (sup L x (op2 + x 1))))
+(def nocapture (dim M (fce M 1 (app pair 5))))
+; application distributes over a superposed function, the argument face-mapped at the same name
+(def dist (app (sup L (lam x (op2 + x 1)) (lam x (op2 * x 2))) 5))
+; a match commutes over a superposition
+(def not (lam b (case b (True () (ctr False)) (False () (ctr True)))))
+(def matchsup (app not (sup L (ctr True) (ctr False))))
+(def main (ctr Pair pick0 pick1))
+; a redex held by both sides of a distribution fires once: 3*4 is one row, not one per side (§3: a demanded port fires once)
+(def shared-redex (op2 + (sup 3 1 2) (op2 * 3 4)))

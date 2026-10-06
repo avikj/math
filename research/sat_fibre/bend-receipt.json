@@ -1,0 +1,55 @@
+{
+  "bend": "/Users/avikjain/metacircular-interaction-prototype/research/biology_exact/build/toolchain/Bend2-f026483/dist-newstyle/build/aarch64-osx/ghc-9.14.1/bend-0.1.0.0/x/bend/build/bend/bend",
+  "bend_sha256": "9862fb9a092411306eb13f50d44c8f6c1e9e3206cef6ff06f5466f951d87875a",
+  "hvm": "/Users/avikjain/metacircular-interaction-prototype/research/biology_exact/build/toolchain/hvm4",
+  "hvm_sha256": "db264e7cfdd56c86f86b0fd58af4d6064576de1dd30a6803717f25f02c8ee3a3",
+  "source_sha256": "89a92270f7f0ed5a53f84abc898e398efce7d8625f61899be96a8b11cc61bf55",
+  "imports": {
+    "ClosedAdditionCostIsLinear.bend": "ca9f9bdaca95df503393512530145481c7ef030a55189fe45555a2581ca45bad",
+    "WindingCostIsUnarySize.bend": "8b9e95b748c741b298b5b3d7491e18f261b59debd838debe2ab7c30733bf876b",
+    "CongruenceLiftsAreGradePreserving.bend": "da2e08640103082b2c32a63305e7d7d9caad5056bec4e49f9397ed1fbee443c0",
+    "HProp.bend": "0ad8e0585152da41f6f45eb4f56af13058529d9234649443ca556d4c9a9df275",
+    "HLevelOfInteraction.bend": "e31f79d437eecbfd63854913ae339527c06b9b1d168481dcc67497028ebab648",
+    "MyhillNerodeMinimalMachine.bend": "166531c2132faafff3699a0337b0fbc959ad4f3e40d86291125e61a19bed2a36",
+    "GenerativeKernel.bend": "af2a3d527a7ddce010ce2d5e6d7e68f475f73bfe6b9bf93ddab3bf7ff98502ee",
+    "WindingCostIsCarriedAndCompressionDropsIt.bend": "604eeea1345be32420aa41d1cc05097546ddf3954b1d99c6cf6f8dbe8f4d0cb2",
+    "RewriteCertificateMul.bend": "005ec8690c93a6c7d03a19e0e6703a9fffc2d520df573e655a6e3d8ef0b35f87",
+    "TheCompressionIsTheForgetfulProjection.bend": "e5fcd871c25d84a71b70da698e04b1e473b14cb305e90c558571ac2118d3992b",
+    "PvsNPGapLivesInTheForgetfulProjection.bend": "059507d782661d611b42d3fe25fba233f621f9f6c3ca5f381d9801d3181f7a4f",
+    "SetQuotient.bend": "c3c5165e965ef714a8245b61982d7edf41e6807e3e4e4b1d6aa68081fff56bc7",
+    "ForgetfulCompressionPricesTheDrop.bend": "6faf02949c97bd73604e765fb963856da7f235301b8ade83ed2746c0c8c42303",
+    "MultiplicationUnfoldsInLinearPeels.bend": "77d91b4191f048086dc8458ef6c1c22cc2967f23bcb4e09864aa420788e09fd0",
+    "RewriteCertificate.bend": "4169f3b4d6a87ee365172fad32824e60b4b17b8af0398b447e41e62825ccdbd3",
+    "SchematicOperation.bend": "0ead74af6862d813aa7762aee4d6ea8f6b687a847c3d6e538c3f22c35d745ba5",
+    "ControlledGrammar.bend": "87f19c31035615b6f9465e7801be4f0c98c4da382c8b8a9983144771b22ff96e",
+    "Effective.bend": "c6bbce60b7fbce3c1192c2ea1fe5982045940032ab07e01508ccdff10699f718",
+    "EveryDerivationIsInvertible.bend": "91a65eb767c325247d50a6c95ffb8e07c51a23b48e30aa6ca4707abdc9795b92",
+    "WholeProcess.bend": "99060dd25c77d7a14736d688105c8cb87de84e4187607a04d7c95fa29e9b97fc",
+    "Prelude.bend": "e33793582878eafa92425e6254d6a1f11fbffc737584a241b50a6f00417e4a8b",
+    "Prashna.bend": "4e09f25fd66bfdfe5662b68add74f47c1d9c1cdaf1db6a00eb49076c9cf72259",
+    "Carrier.bend": "884258d7a0035de372959c8f114c84b59440855a28fecda69dc451260b97b28b"
+  },
+  "readings": [
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      1,
+      1
+    ],
+    [
+      1,
+      0,
+      1
+    ],
+    [
+      1,
+      1,
+      0
+    ]
+  ],
+  "interactions": 1624
+}

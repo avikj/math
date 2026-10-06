@@ -1,0 +1,11 @@
+; §10.4 the capture probes: one definition used inside itself, names never captured
+;   cap4     = two two suc 0        (two at Nat→Nat applied to two at Nat)        = 4
+;   two∘two  = (λx. two (two x)) suc 0                                            = 4
+;   triple   = two two two suc 0                                                  = 16
+(def two (lam f (lam x (app f (app f x)))))
+(def suc (lam n (ctr Suc n)))
+(def main (app two two suc (ctr Zer)))
+(def nat (fix f (lam n (case n (Zer () 0) (Suc (m) (op2 + 1 (app f m)))))))
+(def cap4     (app nat (app two two suc (ctr Zer))))
+(def two-two  (app nat (app (lam x (app two (app two x))) suc (ctr Zer))))
+(def triple   (app nat (app two two two suc (ctr Zer))))

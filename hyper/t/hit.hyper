@@ -1,0 +1,34 @@
+; higher inductive types: the schema, with nothing per HIT hardcoded (MAP §4)
+(hit Circle ()
+  (base : (ctr Circle))
+  (loop : (ctr Path (plm _ (ctr Circle)) (ctr base) (ctr base))))
+; the endpoint of a path constructor is read from its type
+(def loop0 (app (ctr loop) i0))
+; the eliminator computes on a path constructor at a symbolic interval
+(def wind (hrec _ (base () (num 1)) (loop () (plm j (num 2)))))
+(def at-sym (dim i (app wind (app (ctr loop) i))))
+(def at-0   (app wind (app (ctr loop) i0)))
+; a face on a stuck spine passes into it: loop @ i, then i := 0, is base
+(def faced  (dim i (app wind (fce i 0 (app (ctr loop) i)))))
+; helim of a composite in the HIT is comp along the motive over the filler
+(def sq (dim i (hcm (ctr Circle) (ctr base) (ctr Cons (ctr Face i (plm j (app (ctr loop) j))) (ctr Nil)))))
+(def helim-sq (dim i (helim (lam _ (ctr Nat)) (hcm (ctr Circle) (ctr base) (ctr Cons (ctr Face i (plm j (app (ctr loop) j))) (ctr Nil)))
+                        (base () (ctr Zer)) (loop () (plm j (ctr Zer))))))
+; a superposed point of the circle
+(def sup-pt (app wind (sup m (ctr base) (app (ctr loop) i0))))
+
+; a parametrised HIT: the suspension. Its constructors carry the parameter (the emitter's convention).
+; Transport along Susp(negPath) pushes into merid's field.
+(hit Susp (A)
+  (north : (ctr Pi (ctr Set) (lam A (ctr Susp A))))
+  (south : (ctr Pi (ctr Set) (lam A (ctr Susp A))))
+  (merid : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam a (ctr Path (plm _ (ctr Susp A)) (ctr north A) (ctr south A))))))))
+(def not (lam b (case b (True () (ctr False)) (False () (ctr True)))))
+(def not-equiv (ctr Pair not (lam y (ctr Pair (ctr Pair (not y) (plm _ y))
+                                              (lam w (case w (Pair (x p) (plm i (ctr Pair (not (app p (inot i))) (plm j (app p (ior (inot i) j))))))))))))
+(def negPath (ua (ctr Bool) (ctr Bool) not-equiv))
+(def susp-line (plm i (ctr Susp (app negPath i))))
+(def merid-t (trp susp-line i0 i1 (ctr merid (ctr Bool) (ctr True))))
+(def merid-t0 (app (trp susp-line i0 i1 (ctr merid (ctr Bool) (ctr True))) i0))
+(def merid-t-j (dim j (app (trp susp-line i0 i1 (ctr merid (ctr Bool) (ctr True))) j)))
+(def main at-sym)

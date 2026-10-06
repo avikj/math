@@ -1,0 +1,3 @@
+; the machine that asks (MAP §5): a point, questions from the world, an ASK answered by the world
+(def main (ctr Pair (num 1) (ctr Pair (num 2) (num 3))))
+(def asks (ask (ctr Cons (chr 119) (ctr Cons (chr 104) (ctr Cons (chr 111) (ctr Nil)))) (lam who (ctr Pair who (num 7)))))

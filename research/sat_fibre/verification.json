@@ -1,0 +1,71 @@
+{
+  "timestamp_utc": "2026-09-16T19:04:14.193630+00:00",
+  "kind": "stored-evidence audit; no runtime or proof checker rerun",
+  "proof_modules_checked": 4,
+  "counts": {
+    "basic": {
+      "cases": 108,
+      "complete": 108,
+      "inconclusive": 0
+    },
+    "np": {
+      "cases": 120,
+      "complete": 99,
+      "inconclusive": 21
+    },
+    "cost": {
+      "cases": 12,
+      "complete": 12,
+      "inconclusive": 0
+    },
+    "color": {
+      "cases": 12,
+      "complete": 12,
+      "inconclusive": 0
+    },
+    "tsp": {
+      "cases": 32,
+      "complete": 30,
+      "inconclusive": 2
+    },
+    "bend": {
+      "cases": 1,
+      "complete": 1,
+      "inconclusive": 0
+    }
+  },
+  "total_cases": 285,
+  "total_complete": 262,
+  "provenance": {
+    "hvm": {
+      "path": "/Users/avikjain/metacircular-interaction-prototype/research/biology_exact/build/toolchain/hvm4",
+      "sha256": "db264e7cfdd56c86f86b0fd58af4d6064576de1dd30a6803717f25f02c8ee3a3"
+    },
+    "bend": {
+      "path": "/Users/avikjain/metacircular-interaction-prototype/research/biology_exact/build/toolchain/Bend2-f026483/dist-newstyle/build/aarch64-osx/ghc-9.14.1/bend-0.1.0.0/x/bend/build/bend/bend",
+      "sha256": "9862fb9a092411306eb13f50d44c8f6c1e9e3206cef6ff06f5466f951d87875a"
+    },
+    "profile": {
+      "path": "/private/tmp/sat-fibre-profile/hvm-profile",
+      "sha256": "65b3fe015d1dad04bb5a265ffa4391e773cf6b2f07801f31493b1dfbf0570600"
+    }
+  },
+  "sources_sha256": {
+    "research/sat_fibre/ColorFrame.agda": "ed9d4e491377c14aeab3c64effa5328a709fee99a73e93d5df17b5034404edb5",
+    "research/sat_fibre/InteractionGeodesic.agda": "3f01d99e234b69e1c086b5eb23216a7d7fb6ba4ad97cc12af13b1cdc346496e5",
+    "research/sat_fibre/README.md": "b825164ea843459ac89da66ab6d642e80ca90042c94f2b0fc36544bd772cadc2",
+    "research/sat_fibre/REPORT.md": "cd61077c9a3f131178a635264bb83f0cac33736604a886d7aaee7497214ee1e2",
+    "research/sat_fibre/SATFibre.agda": "bd28712b1390478281dd4be3ded51b5055bf0edb95b90b953c5574eec6f606c7",
+    "research/sat_fibre/SATProcess.bend": "89a92270f7f0ed5a53f84abc898e398efce7d8625f61899be96a8b11cc61bf55",
+    "research/sat_fibre/audit.py": "2de263c1d7220942ca8ddaca1730cfcbe402d06db45e0748427188dfba89e13b",
+    "research/sat_fibre/build_profile.py": "e7a5a35f6405428e6535b2405849977210fb140cfb4f8940247098aed68bf6b1",
+    "research/sat_fibre/check_bend.py": "fe6ec1eee8bab3d5b2e44c2a9a7e492aec35f96f06a0f98e11e632f40d1d401d",
+    "research/sat_fibre/color_experiment.py": "ae943f6eecd46b9c92624a454eaf86d5c545792f4bf6eeac0ec8e290329d62d1",
+    "research/sat_fibre/cost_predictions.py": "c566fc1e8e601f3ce27f92b04ee63224484f89e6736bac6c5114701f82a0e11d",
+    "research/sat_fibre/experiment.py": "e372fee4f9eefea9ab4e33bfffc22e67b34b028807e685a30452dd7cffb808c8",
+    "research/sat_fibre/np_experiment.py": "20780db5c539b7686a87ae037e72863391a28c153815b273a8acbb707bdba349",
+    "research/tsp_fibre/README.md": "04fef5ed6f4f1c766624aad2bd637dd8461e3b603988ec36d87ba4c6da69bc62",
+    "research/tsp_fibre/TropicalReduction.agda": "eb46a416258edf3c9ec9bf840a464e74dcc8dd57aaa8ec54578b183586becfaf",
+    "research/tsp_fibre/experiment.py": "85df7a866b6992c02703b5b611b918549371917e663642fe6ce61513861f541c"
+  }
+}

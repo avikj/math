@@ -1,0 +1,140 @@
+[
+  {
+    "n": 13,
+    "short": 73932,
+    "reverse": 43,
+    "short_rules": {
+      "AND-ONE": 25,
+      "AND-SUP": 14,
+      "AND-ZER": 2,
+      "APP-LAM": 8205,
+      "APP-MAT-NUM-MAT": 8192,
+      "APP-MAT-SUP": 8191,
+      "APP-SUP": 8191,
+      "DUP-LAM": 8191,
+      "DUP-NOD": 24613,
+      "DUP-SUP-DIFF": 8204,
+      "DUP-SUP-SAME": 13,
+      "OP2-NUM-NUM": 13,
+      "OP2-NUM-SUP": 13,
+      "OR-ONE": 25,
+      "OR-SUP": 26,
+      "OR-ZER": 14
+    }
+  },
+  {
+    "n": 14,
+    "short": 147676,
+    "reverse": 44,
+    "short_rules": {
+      "AND-ONE": 27,
+      "AND-SUP": 15,
+      "AND-ZER": 2,
+      "APP-LAM": 16398,
+      "APP-MAT-NUM-MAT": 16384,
+      "APP-MAT-SUP": 16383,
+      "APP-SUP": 16383,
+      "DUP-LAM": 16383,
+      "DUP-NOD": 49192,
+      "DUP-SUP-DIFF": 16397,
+      "DUP-SUP-SAME": 14,
+      "OP2-NUM-NUM": 14,
+      "OP2-NUM-SUP": 14,
+      "OR-ONE": 27,
+      "OR-SUP": 28,
+      "OR-ZER": 15
+    }
+  },
+  {
+    "n": 15,
+    "short": 295148,
+    "reverse": 45,
+    "short_rules": {
+      "AND-ONE": 29,
+      "AND-SUP": 16,
+      "AND-ZER": 2,
+      "APP-LAM": 32783,
+      "APP-MAT-NUM-MAT": 32768,
+      "APP-MAT-SUP": 32767,
+      "APP-SUP": 32767,
+      "DUP-LAM": 32767,
+      "DUP-NOD": 98347,
+      "DUP-SUP-DIFF": 32782,
+      "DUP-SUP-SAME": 15,
+      "OP2-NUM-NUM": 15,
+      "OP2-NUM-SUP": 15,
+      "OR-ONE": 29,
+      "OR-SUP": 30,
+      "OR-ZER": 16
+    }
+  },
+  {
+    "n": 16,
+    "short": 590076,
+    "reverse": 46,
+    "short_rules": {
+      "AND-ONE": 31,
+      "AND-SUP": 17,
+      "AND-ZER": 2,
+      "APP-LAM": 65552,
+      "APP-MAT-NUM-MAT": 65536,
+      "APP-MAT-SUP": 65535,
+      "APP-SUP": 65535,
+      "DUP-LAM": 65535,
+      "DUP-NOD": 196654,
+      "DUP-SUP-DIFF": 65551,
+      "DUP-SUP-SAME": 16,
+      "OP2-NUM-NUM": 16,
+      "OP2-NUM-SUP": 16,
+      "OR-ONE": 31,
+      "OR-SUP": 32,
+      "OR-ZER": 17
+    }
+  },
+  {
+    "n": 17,
+    "short": 1179916,
+    "reverse": 47,
+    "short_rules": {
+      "AND-ONE": 33,
+      "AND-SUP": 18,
+      "AND-ZER": 2,
+      "APP-LAM": 131089,
+      "APP-MAT-NUM-MAT": 131072,
+      "APP-MAT-SUP": 131071,
+      "APP-SUP": 131071,
+      "DUP-LAM": 131071,
+      "DUP-NOD": 393265,
+      "DUP-SUP-DIFF": 131088,
+      "DUP-SUP-SAME": 17,
+      "OP2-NUM-NUM": 17,
+      "OP2-NUM-SUP": 17,
+      "OR-ONE": 33,
+      "OR-SUP": 34,
+      "OR-ZER": 18
+    }
+  },
+  {
+    "n": 18,
+    "short": 2359580,
+    "reverse": 48,
+    "short_rules": {
+      "AND-ONE": 35,
+      "AND-SUP": 19,
+      "AND-ZER": 2,
+      "APP-LAM": 262162,
+      "APP-MAT-NUM-MAT": 262144,
+      "APP-MAT-SUP": 262143,
+      "APP-SUP": 262143,
+      "DUP-LAM": 262143,
+      "DUP-NOD": 786484,
+      "DUP-SUP-DIFF": 262161,
+      "DUP-SUP-SAME": 18,
+      "OP2-NUM-NUM": 18,
+      "OP2-NUM-SUP": 18,
+      "OR-ONE": 35,
+      "OR-SUP": 36,
+      "OR-ZER": 19
+    }
+  }
+]

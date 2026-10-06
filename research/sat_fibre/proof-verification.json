@@ -1,0 +1,90 @@
+[
+  {
+    "module": "research/sat_fibre/SATFibre.agda",
+    "source_sha256": "bd28712b1390478281dd4be3ded51b5055bf0edb95b90b953c5574eec6f606c7",
+    "command": [
+      "agda",
+      "--safe",
+      "--cubical",
+      "--guardedness",
+      "--no-import-sorts",
+      "-WnoUnsupportedIndexedMatch",
+      "--no-libraries",
+      "-i",
+      "research/sat_fibre",
+      "-i",
+      "formal/cubical/theorems/physics",
+      "-i",
+      "/Users/avikjain/.cache/cubical-v0.9",
+      "research/sat_fibre/SATFibre.agda"
+    ],
+    "exit_code": 0,
+    "log": "research/sat_fibre/agda-check.log"
+  },
+  {
+    "module": "research/sat_fibre/ColorFrame.agda",
+    "source_sha256": "ed9d4e491377c14aeab3c64effa5328a709fee99a73e93d5df17b5034404edb5",
+    "command": [
+      "agda",
+      "--safe",
+      "--cubical",
+      "--guardedness",
+      "--no-import-sorts",
+      "-WnoUnsupportedIndexedMatch",
+      "--no-libraries",
+      "-i",
+      "research/sat_fibre",
+      "-i",
+      "formal/cubical/theorems/physics",
+      "-i",
+      "/Users/avikjain/.cache/cubical-v0.9",
+      "research/sat_fibre/ColorFrame.agda"
+    ],
+    "exit_code": 0,
+    "log": "research/sat_fibre/color-agda-check.log"
+  },
+  {
+    "module": "research/sat_fibre/InteractionGeodesic.agda",
+    "source_sha256": "3f01d99e234b69e1c086b5eb23216a7d7fb6ba4ad97cc12af13b1cdc346496e5",
+    "command": [
+      "agda",
+      "--safe",
+      "--cubical",
+      "--guardedness",
+      "--no-import-sorts",
+      "-WnoUnsupportedIndexedMatch",
+      "--no-libraries",
+      "-i",
+      "research/sat_fibre",
+      "-i",
+      "formal/cubical/theorems/physics",
+      "-i",
+      "/Users/avikjain/.cache/cubical-v0.9",
+      "research/sat_fibre/InteractionGeodesic.agda"
+    ],
+    "exit_code": 0,
+    "log": "research/sat_fibre/geodesic-agda-check.log"
+  },
+  {
+    "module": "research/tsp_fibre/TropicalReduction.agda",
+    "source_sha256": "eb46a416258edf3c9ec9bf840a464e74dcc8dd57aaa8ec54578b183586becfaf",
+    "command": [
+      "agda",
+      "--safe",
+      "--cubical",
+      "--guardedness",
+      "--no-import-sorts",
+      "-WnoUnsupportedIndexedMatch",
+      "--no-libraries",
+      "-i",
+      "research/tsp_fibre",
+      "-i",
+      "formal/cubical/theorems/physics",
+      "-i",
+      "/Users/avikjain/.cache/cubical-v0.9",
+      "research/tsp_fibre/TropicalReduction.agda"
+    ],
+    "exit_code": 0,
+    "log": "research/tsp_fibre/agda-check.log"
+  }
+]

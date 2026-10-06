@@ -1,0 +1,26 @@
+; the encounter of two peers (formal/cubical/kernel-flat/TheEncounterOfTwoPeers…): two terms that reach one normal form.
+; A derivation is the trace of a run (research/sat_fibre/InteractionLedger.agda), here a term: `trace` gives the
+; value with its events over it.  τ = mine ⊕ rev theirs; the round trip τ ⊕ rev τ has twice its length.
+(def two (lam f (lam x (app f (app f x)))))
+(def suc (lam n (ctr Suc n)))
+(def a (app two suc (ctr Zer)))              ; A stands here
+(def b (ctr Suc (app suc (ctr Zer))))         ; B stands here: another term, the same value
+(def c (ctr Suc (ctr Suc (ctr Suc (ctr Zer)))))   ; a term with no meeting with a
+(def cat (fix f (lam xs (lam ys (case xs (Nil () ys) (Cons (h t) (ctr Cons h (app f t ys))))))))
+(def length (fix f (lam xs (case xs (Nil () (num 0)) (Cons (h t) (op2 + (num 1) (app f t)))))))
+(def rev (fix f (lam xs (case xs (Nil () (ctr Nil)) (Cons (h t) (app cat (app f t) (ctr Cons (ctr Rev h) (ctr Nil))))))))
+(def eq-nat (fix f (lam m (lam n (case m (Zer () (case n (Zer () (ctr True)) (Suc (n1) (ctr False)))) (Suc (m1) (case n (Zer () (ctr False)) (Suc (n1) (app f m1 n1)))))))))
+(def ta (trace a))
+(def tb (trace b))
+(def tc (trace c))
+(def meeting (app eq-nat (proj 0 ta) (proj 0 tb)))         ; True: one value
+(def no-meeting (app eq-nat (proj 0 ta) (proj 0 tc)))      ; False
+(def mine (app length (proj 1 ta)))
+(def theirs (app length (proj 1 tb)))
+(def tau (app cat (proj 1 ta) (app rev (proj 1 tb))))   ; τ = mine ⊕ rev theirs
+(def tau-length (app length tau))
+(def round (app cat tau (app rev tau)))                 ; the round trip: the meaning is refl, the object is not done
+(def round-length (app length round))
+; the crossing: two redexes that do not touch, contracted in either order
+(def cross (op2 + (op2 * 2 3) (op2 * 4 5)))
+(def crossing (trace cross))

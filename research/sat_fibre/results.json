@@ -1,0 +1,871 @@
+{
+  "hvm": "/Users/avikjain/metacircular-interaction-prototype/research/biology_exact/build/toolchain/hvm4",
+  "hvm_sha256": "db264e7cfdd56c86f86b0fd58af4d6064576de1dd30a6803717f25f02c8ee3a3",
+  "predictions_sha256": "542818c856aa96cf03aa2ff3964f989b593e7e209d8abcff2d4536f828716c9c",
+  "results": [
+    {
+      "name": "empty",
+      "mode": "answers",
+      "outputs": 1,
+      "interactions": 0,
+      "heap_nodes": 12,
+      "elapsed_seconds": 0.004823458999999974
+    },
+    {
+      "name": "empty",
+      "mode": "carrier",
+      "outputs": 1,
+      "interactions": 0,
+      "heap_nodes": 14,
+      "elapsed_seconds": 0.004373291999999973
+    },
+    {
+      "name": "empty",
+      "mode": "models",
+      "outputs": 1,
+      "interactions": 3,
+      "heap_nodes": 26,
+      "elapsed_seconds": 0.004509082999999969
+    },
+    {
+      "name": "empty",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 3,
+      "heap_nodes": 26,
+      "elapsed_seconds": 0.0035323749999999765
+    },
+    {
+      "name": "empty_clause",
+      "mode": "answers",
+      "outputs": 1,
+      "interactions": 1,
+      "heap_nodes": 16,
+      "elapsed_seconds": 0.004600666000000031
+    },
+    {
+      "name": "empty_clause",
+      "mode": "carrier",
+      "outputs": 1,
+      "interactions": 1,
+      "heap_nodes": 18,
+      "elapsed_seconds": 0.004164584000000027
+    },
+    {
+      "name": "empty_clause",
+      "mode": "models",
+      "outputs": 0,
+      "interactions": 3,
+      "heap_nodes": 27,
+      "elapsed_seconds": 0.0035436249999999947
+    },
+    {
+      "name": "empty_clause",
+      "mode": "first",
+      "outputs": 0,
+      "interactions": 3,
+      "heap_nodes": 27,
+      "elapsed_seconds": 0.003892708999999994
+    },
+    {
+      "name": "xor",
+      "mode": "answers",
+      "outputs": 4,
+      "interactions": 48,
+      "heap_nodes": 142,
+      "elapsed_seconds": 0.003088791000000035
+    },
+    {
+      "name": "xor",
+      "mode": "carrier",
+      "outputs": 4,
+      "interactions": 79,
+      "heap_nodes": 213,
+      "elapsed_seconds": 0.0026932499999999804
+    },
+    {
+      "name": "xor",
+      "mode": "models",
+      "outputs": 2,
+      "interactions": 114,
+      "heap_nodes": 289,
+      "elapsed_seconds": 0.0027000409999999864
+    },
+    {
+      "name": "xor",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 84,
+      "heap_nodes": 268,
+      "elapsed_seconds": 0.002818584000000013
+    },
+    {
+      "name": "contradiction",
+      "mode": "answers",
+      "outputs": 2,
+      "interactions": 19,
+      "heap_nodes": 77,
+      "elapsed_seconds": 0.006648125000000005
+    },
+    {
+      "name": "contradiction",
+      "mode": "carrier",
+      "outputs": 2,
+      "interactions": 31,
+      "heap_nodes": 107,
+      "elapsed_seconds": 0.00359329199999997
+    },
+    {
+      "name": "contradiction",
+      "mode": "models",
+      "outputs": 0,
+      "interactions": 30,
+      "heap_nodes": 115,
+      "elapsed_seconds": 0.0028522919999999785
+    },
+    {
+      "name": "contradiction",
+      "mode": "first",
+      "outputs": 0,
+      "interactions": 30,
+      "heap_nodes": 115,
+      "elapsed_seconds": 0.003448916000000024
+    },
+    {
+      "name": "simplified_unsat10",
+      "mode": "answers",
+      "outputs": 1,
+      "interactions": 11,
+      "heap_nodes": 108,
+      "elapsed_seconds": 0.004315417000000044
+    },
+    {
+      "name": "simplified_unsat10",
+      "mode": "carrier",
+      "outputs": 1024,
+      "interactions": 7192,
+      "heap_nodes": 17562,
+      "elapsed_seconds": 0.005541040999999969
+    },
+    {
+      "name": "simplified_unsat10",
+      "mode": "models",
+      "outputs": 0,
+      "interactions": 13,
+      "heap_nodes": 161,
+      "elapsed_seconds": 0.003251583999999974
+    },
+    {
+      "name": "simplified_unsat10",
+      "mode": "first",
+      "outputs": 0,
+      "interactions": 13,
+      "heap_nodes": 161,
+      "elapsed_seconds": 0.0030167910000000187
+    },
+    {
+      "name": "simplified_true10",
+      "mode": "answers",
+      "outputs": 1,
+      "interactions": 10,
+      "heap_nodes": 103,
+      "elapsed_seconds": 0.0033210419999999963
+    },
+    {
+      "name": "simplified_true10",
+      "mode": "carrier",
+      "outputs": 1024,
+      "interactions": 7191,
+      "heap_nodes": 17557,
+      "elapsed_seconds": 0.004163374999999969
+    },
+    {
+      "name": "simplified_true10",
+      "mode": "models",
+      "outputs": 1024,
+      "interactions": 6171,
+      "heap_nodes": 15524,
+      "elapsed_seconds": 0.0050875420000000005
+    },
+    {
+      "name": "simplified_true10",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 3121,
+      "heap_nodes": 15524,
+      "elapsed_seconds": 0.0039587079999999775
+    },
+    {
+      "name": "cycle4",
+      "mode": "answers",
+      "outputs": 8,
+      "interactions": 213,
+      "heap_nodes": 558,
+      "elapsed_seconds": 0.004399625000000018
+    },
+    {
+      "name": "cycle4",
+      "mode": "carrier",
+      "outputs": 16,
+      "interactions": 338,
+      "heap_nodes": 847,
+      "elapsed_seconds": 0.0030484590000000034
+    },
+    {
+      "name": "cycle4",
+      "mode": "models",
+      "outputs": 2,
+      "interactions": 369,
+      "heap_nodes": 915,
+      "elapsed_seconds": 0.00373158400000001
+    },
+    {
+      "name": "cycle4",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 293,
+      "heap_nodes": 821,
+      "elapsed_seconds": 0.0029499580000000303
+    },
+    {
+      "name": "cycle5",
+      "mode": "answers",
+      "outputs": 10,
+      "interactions": 275,
+      "heap_nodes": 718,
+      "elapsed_seconds": 0.003783208999999954
+    },
+    {
+      "name": "cycle5",
+      "mode": "carrier",
+      "outputs": 32,
+      "interactions": 517,
+      "heap_nodes": 1286,
+      "elapsed_seconds": 0.00293874999999999
+    },
+    {
+      "name": "cycle5",
+      "mode": "models",
+      "outputs": 0,
+      "interactions": 353,
+      "heap_nodes": 904,
+      "elapsed_seconds": 0.0034275420000000056
+    },
+    {
+      "name": "cycle5",
+      "mode": "first",
+      "outputs": 0,
+      "interactions": 353,
+      "heap_nodes": 904,
+      "elapsed_seconds": 0.007208582999999991
+    },
+    {
+      "name": "tautology2",
+      "mode": "answers",
+      "outputs": 4,
+      "interactions": 34,
+      "heap_nodes": 132,
+      "elapsed_seconds": 0.0036038330000000562
+    },
+    {
+      "name": "tautology2",
+      "mode": "carrier",
+      "outputs": 4,
+      "interactions": 65,
+      "heap_nodes": 203,
+      "elapsed_seconds": 0.0030874579999999874
+    },
+    {
+      "name": "tautology2",
+      "mode": "models",
+      "outputs": 4,
+      "interactions": 98,
+      "heap_nodes": 267,
+      "elapsed_seconds": 0.0037416250000000817
+    },
+    {
+      "name": "tautology2",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 69,
+      "heap_nodes": 249,
+      "elapsed_seconds": 0.0035726669999999183
+    },
+    {
+      "name": "unique2",
+      "mode": "answers",
+      "outputs": 3,
+      "interactions": 20,
+      "heap_nodes": 77,
+      "elapsed_seconds": 0.0031375419999999377
+    },
+    {
+      "name": "unique2",
+      "mode": "carrier",
+      "outputs": 4,
+      "interactions": 51,
+      "heap_nodes": 151,
+      "elapsed_seconds": 0.002794832999999941
+    },
+    {
+      "name": "unique2",
+      "mode": "models",
+      "outputs": 1,
+      "interactions": 67,
+      "heap_nodes": 198,
+      "elapsed_seconds": 0.003265917000000007
+    },
+    {
+      "name": "unique2",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 67,
+      "heap_nodes": 198,
+      "elapsed_seconds": 0.003432207999999992
+    },
+    {
+      "name": "late_unsat2",
+      "mode": "answers",
+      "outputs": 4,
+      "interactions": 37,
+      "heap_nodes": 140,
+      "elapsed_seconds": 0.002984207999999988
+    },
+    {
+      "name": "late_unsat2",
+      "mode": "carrier",
+      "outputs": 4,
+      "interactions": 68,
+      "heap_nodes": 211,
+      "elapsed_seconds": 0.003454917000000002
+    },
+    {
+      "name": "late_unsat2",
+      "mode": "models",
+      "outputs": 0,
+      "interactions": 64,
+      "heap_nodes": 215,
+      "elapsed_seconds": 0.0034723329999999386
+    },
+    {
+      "name": "late_unsat2",
+      "mode": "first",
+      "outputs": 0,
+      "interactions": 64,
+      "heap_nodes": 215,
+      "elapsed_seconds": 0.0064651249999999605
+    },
+    {
+      "name": "tautology4",
+      "mode": "answers",
+      "outputs": 16,
+      "interactions": 86,
+      "heap_nodes": 314,
+      "elapsed_seconds": 0.035012084
+    },
+    {
+      "name": "tautology4",
+      "mode": "carrier",
+      "outputs": 16,
+      "interactions": 211,
+      "heap_nodes": 579,
+      "elapsed_seconds": 0.019794250000000013
+    },
+    {
+      "name": "tautology4",
+      "mode": "models",
+      "outputs": 16,
+      "interactions": 364,
+      "heap_nodes": 847,
+      "elapsed_seconds": 0.04494987500000003
+    },
+    {
+      "name": "tautology4",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 177,
+      "heap_nodes": 625,
+      "elapsed_seconds": 0.004764708000000062
+    },
+    {
+      "name": "unique4",
+      "mode": "answers",
+      "outputs": 5,
+      "interactions": 48,
+      "heap_nodes": 157,
+      "elapsed_seconds": 0.0031202500000000466
+    },
+    {
+      "name": "unique4",
+      "mode": "carrier",
+      "outputs": 16,
+      "interactions": 173,
+      "heap_nodes": 455,
+      "elapsed_seconds": 0.0033144580000000756
+    },
+    {
+      "name": "unique4",
+      "mode": "models",
+      "outputs": 1,
+      "interactions": 147,
+      "heap_nodes": 412,
+      "elapsed_seconds": 0.0035425420000000374
+    },
+    {
+      "name": "unique4",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 147,
+      "heap_nodes": 412,
+      "elapsed_seconds": 0.0036838329999999697
+    },
+    {
+      "name": "late_unsat4",
+      "mode": "answers",
+      "outputs": 16,
+      "interactions": 89,
+      "heap_nodes": 322,
+      "elapsed_seconds": 0.005121790999999987
+    },
+    {
+      "name": "late_unsat4",
+      "mode": "carrier",
+      "outputs": 16,
+      "interactions": 214,
+      "heap_nodes": 587,
+      "elapsed_seconds": 0.00537674999999993
+    },
+    {
+      "name": "late_unsat4",
+      "mode": "models",
+      "outputs": 0,
+      "interactions": 204,
+      "heap_nodes": 567,
+      "elapsed_seconds": 0.005427875000000082
+    },
+    {
+      "name": "late_unsat4",
+      "mode": "first",
+      "outputs": 0,
+      "interactions": 204,
+      "heap_nodes": 567,
+      "elapsed_seconds": 0.005124000000000017
+    },
+    {
+      "name": "tautology6",
+      "mode": "answers",
+      "outputs": 64,
+      "interactions": 210,
+      "heap_nodes": 748,
+      "elapsed_seconds": 0.009847832999999917
+    },
+    {
+      "name": "tautology6",
+      "mode": "carrier",
+      "outputs": 64,
+      "interactions": 681,
+      "heap_nodes": 1711,
+      "elapsed_seconds": 0.00376079099999993
+    },
+    {
+      "name": "tautology6",
+      "mode": "models",
+      "outputs": 64,
+      "interactions": 1314,
+      "heap_nodes": 2795,
+      "elapsed_seconds": 0.0032782080000000047
+    },
+    {
+      "name": "tautology6",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 419,
+      "heap_nodes": 1537,
+      "elapsed_seconds": 0.005754667000000047
+    },
+    {
+      "name": "unique6",
+      "mode": "answers",
+      "outputs": 7,
+      "interactions": 84,
+      "heap_nodes": 253,
+      "elapsed_seconds": 0.006869000000000014
+    },
+    {
+      "name": "unique6",
+      "mode": "carrier",
+      "outputs": 64,
+      "interactions": 555,
+      "heap_nodes": 1387,
+      "elapsed_seconds": 0.005186457999999949
+    },
+    {
+      "name": "unique6",
+      "mode": "models",
+      "outputs": 1,
+      "interactions": 243,
+      "heap_nodes": 674,
+      "elapsed_seconds": 0.007280082999999937
+    },
+    {
+      "name": "unique6",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 243,
+      "heap_nodes": 674,
+      "elapsed_seconds": 0.006244750000000021
+    },
+    {
+      "name": "late_unsat6",
+      "mode": "answers",
+      "outputs": 64,
+      "interactions": 213,
+      "heap_nodes": 756,
+      "elapsed_seconds": 0.003606499999999957
+    },
+    {
+      "name": "late_unsat6",
+      "mode": "carrier",
+      "outputs": 64,
+      "interactions": 684,
+      "heap_nodes": 1719,
+      "elapsed_seconds": 0.004534958000000033
+    },
+    {
+      "name": "late_unsat6",
+      "mode": "models",
+      "outputs": 0,
+      "interactions": 668,
+      "heap_nodes": 1603,
+      "elapsed_seconds": 0.00352754200000005
+    },
+    {
+      "name": "late_unsat6",
+      "mode": "first",
+      "outputs": 0,
+      "interactions": 668,
+      "heap_nodes": 1603,
+      "elapsed_seconds": 0.00307774999999999
+    },
+    {
+      "name": "tautology8",
+      "mode": "answers",
+      "outputs": 256,
+      "interactions": 622,
+      "heap_nodes": 2190,
+      "elapsed_seconds": 0.0032397499999999857
+    },
+    {
+      "name": "tautology8",
+      "mode": "carrier",
+      "outputs": 256,
+      "interactions": 2447,
+      "heap_nodes": 5867,
+      "elapsed_seconds": 0.005464625000000001
+    },
+    {
+      "name": "tautology8",
+      "mode": "models",
+      "outputs": 256,
+      "interactions": 5000,
+      "heap_nodes": 10215,
+      "elapsed_seconds": 0.0038678329999999317
+    },
+    {
+      "name": "tautology8",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 1173,
+      "heap_nodes": 4497,
+      "elapsed_seconds": 0.004153708000000034
+    },
+    {
+      "name": "unique8",
+      "mode": "answers",
+      "outputs": 9,
+      "interactions": 128,
+      "heap_nodes": 365,
+      "elapsed_seconds": 0.0038393749999999782
+    },
+    {
+      "name": "unique8",
+      "mode": "carrier",
+      "outputs": 256,
+      "interactions": 1953,
+      "heap_nodes": 4783,
+      "elapsed_seconds": 0.0032053330000000324
+    },
+    {
+      "name": "unique8",
+      "mode": "models",
+      "outputs": 1,
+      "interactions": 355,
+      "heap_nodes": 984,
+      "elapsed_seconds": 0.003177834000000046
+    },
+    {
+      "name": "unique8",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 355,
+      "heap_nodes": 984,
+      "elapsed_seconds": 0.004220832999999979
+    },
+    {
+      "name": "late_unsat8",
+      "mode": "answers",
+      "outputs": 256,
+      "interactions": 625,
+      "heap_nodes": 2198,
+      "elapsed_seconds": 0.004125916999999979
+    },
+    {
+      "name": "late_unsat8",
+      "mode": "carrier",
+      "outputs": 256,
+      "interactions": 2450,
+      "heap_nodes": 5875,
+      "elapsed_seconds": 0.004032625000000012
+    },
+    {
+      "name": "late_unsat8",
+      "mode": "models",
+      "outputs": 0,
+      "interactions": 2428,
+      "heap_nodes": 5375,
+      "elapsed_seconds": 0.0029252499999999904
+    },
+    {
+      "name": "late_unsat8",
+      "mode": "first",
+      "outputs": 0,
+      "interactions": 2428,
+      "heap_nodes": 5375,
+      "elapsed_seconds": 0.0030964999999999465
+    },
+    {
+      "name": "tautology10",
+      "mode": "answers",
+      "outputs": 1024,
+      "interactions": 2186,
+      "heap_nodes": 7664,
+      "elapsed_seconds": 0.004328541999999991
+    },
+    {
+      "name": "tautology10",
+      "mode": "carrier",
+      "outputs": 1024,
+      "interactions": 9397,
+      "heap_nodes": 22119,
+      "elapsed_seconds": 0.004519165999999908
+    },
+    {
+      "name": "tautology10",
+      "mode": "models",
+      "outputs": 1024,
+      "interactions": 19630,
+      "heap_nodes": 39523,
+      "elapsed_seconds": 0.005498124999999909
+    },
+    {
+      "name": "tautology10",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 3951,
+      "heap_nodes": 15553,
+      "elapsed_seconds": 0.004533042000000043
+    },
+    {
+      "name": "unique10",
+      "mode": "answers",
+      "outputs": 11,
+      "interactions": 180,
+      "heap_nodes": 493,
+      "elapsed_seconds": 0.0034089999999999954
+    },
+    {
+      "name": "unique10",
+      "mode": "carrier",
+      "outputs": 1024,
+      "interactions": 7391,
+      "heap_nodes": 17987,
+      "elapsed_seconds": 0.0037559169999999975
+    },
+    {
+      "name": "unique10",
+      "mode": "models",
+      "outputs": 1,
+      "interactions": 483,
+      "heap_nodes": 1342,
+      "elapsed_seconds": 0.004168459000000069
+    },
+    {
+      "name": "unique10",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 483,
+      "heap_nodes": 1342,
+      "elapsed_seconds": 0.0035387080000000015
+    },
+    {
+      "name": "late_unsat10",
+      "mode": "answers",
+      "outputs": 1024,
+      "interactions": 2189,
+      "heap_nodes": 7672,
+      "elapsed_seconds": 0.0036901249999999886
+    },
+    {
+      "name": "late_unsat10",
+      "mode": "carrier",
+      "outputs": 1024,
+      "interactions": 9400,
+      "heap_nodes": 22127,
+      "elapsed_seconds": 0.004210667000000057
+    },
+    {
+      "name": "late_unsat10",
+      "mode": "models",
+      "outputs": 0,
+      "interactions": 9372,
+      "heap_nodes": 20091,
+      "elapsed_seconds": 0.005720041999999981
+    },
+    {
+      "name": "late_unsat10",
+      "mode": "first",
+      "outputs": 0,
+      "interactions": 9372,
+      "heap_nodes": 20091,
+      "elapsed_seconds": 0.00376295900000001
+    },
+    {
+      "name": "equality2",
+      "mode": "answers",
+      "outputs": 10,
+      "interactions": 114,
+      "heap_nodes": 316,
+      "elapsed_seconds": 0.006094582999999987
+    },
+    {
+      "name": "equality2",
+      "mode": "carrier",
+      "outputs": 16,
+      "interactions": 243,
+      "heap_nodes": 607,
+      "elapsed_seconds": 0.004874625000000021
+    },
+    {
+      "name": "equality2",
+      "mode": "models",
+      "outputs": 4,
+      "interactions": 318,
+      "heap_nodes": 757,
+      "elapsed_seconds": 0.003348874999999918
+    },
+    {
+      "name": "equality2",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 192,
+      "heap_nodes": 605,
+      "elapsed_seconds": 0.0033176249999999907
+    },
+    {
+      "name": "equality3",
+      "mode": "answers",
+      "outputs": 22,
+      "interactions": 216,
+      "heap_nodes": 580,
+      "elapsed_seconds": 0.006641208999999981
+    },
+    {
+      "name": "equality3",
+      "mode": "carrier",
+      "outputs": 64,
+      "interactions": 707,
+      "heap_nodes": 1709,
+      "elapsed_seconds": 0.00466945799999996
+    },
+    {
+      "name": "equality3",
+      "mode": "models",
+      "outputs": 8,
+      "interactions": 738,
+      "heap_nodes": 1743,
+      "elapsed_seconds": 0.003365708000000023
+    },
+    {
+      "name": "equality3",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 372,
+      "heap_nodes": 1129,
+      "elapsed_seconds": 0.002846750000000009
+    },
+    {
+      "name": "equality4",
+      "mode": "answers",
+      "outputs": 46,
+      "interactions": 390,
+      "heap_nodes": 1024,
+      "elapsed_seconds": 0.003168375000000001
+    },
+    {
+      "name": "equality4",
+      "mode": "carrier",
+      "outputs": 256,
+      "interactions": 2283,
+      "heap_nodes": 5467,
+      "elapsed_seconds": 0.004946000000000006
+    },
+    {
+      "name": "equality4",
+      "mode": "models",
+      "outputs": 16,
+      "interactions": 1658,
+      "heap_nodes": 3989,
+      "elapsed_seconds": 0.002980709000000026
+    },
+    {
+      "name": "equality4",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 661,
+      "heap_nodes": 1979,
+      "elapsed_seconds": 0.0027676250000000513
+    },
+    {
+      "name": "equality5",
+      "mode": "answers",
+      "outputs": 94,
+      "interactions": 708,
+      "heap_nodes": 1828,
+      "elapsed_seconds": 0.005041416999999937
+    },
+    {
+      "name": "equality5",
+      "mode": "carrier",
+      "outputs": 1024,
+      "interactions": 8115,
+      "heap_nodes": 19465,
+      "elapsed_seconds": 0.005513417000000076
+    },
+    {
+      "name": "equality5",
+      "mode": "models",
+      "outputs": 32,
+      "interactions": 3730,
+      "heap_nodes": 9267,
+      "elapsed_seconds": 0.0031482499999999636
+    },
+    {
+      "name": "equality5",
+      "mode": "first",
+      "outputs": 1,
+      "interactions": 1159,
+      "heap_nodes": 3445,
+      "elapsed_seconds": 0.0045822079999999765
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+; regularity: a line constant in its dimension transports as the identity (an occurs check)
+(def reg (trp (plm i (ctr Nat)) i0 i1 5))
+; a superposed line: face-map the value, transport each face along its own line
+(def suptrp (dim L (fce L 1 (trp (plm i (sup L (ctr Nat) (ctr Bool))) i0 i1 (sup L 3 (ctr True))))))
+; hcomp: a true face is that tube's top; no live face is the base
+(def hc-true (hcm (ctr Nat) 0 (ctr Cons (ctr Face i1 (plm k 7)) (ctr Nil))))
+(def hc-none (hcm (ctr Nat) 0 (ctr Cons (ctr Face i0 (plm k 7)) (ctr Nil))))
+; constructor-headed composite in Nat: Suc of the composite of the predecessors
+(def hc-nat (dim J (hcm (ctr Nat) (ctr Suc (ctr Zer)) (ctr Cons (ctr Face J (plm k (ctr Suc (ctr Zer)))) (ctr Nil)))))
+; transport along a Pi line whose domain is a superposed line: the argument goes backwards along the domain
+(def pitrp (dim L (app (fce L 1 (trp (plm i (ctr Pi (sup L (ctr Nat) (ctr Bool)) (lam _ (ctr Nat)))) i0 i1
+                                     (sup L (lam n (op2 + n 1)) (lam b 9))))
+                       (ctr True))))
+; the interval: absorption holds, complement does not (De Morgan, not Boolean)
+(def absorb (dim i (dim j (ior i (iand i j)))))
+(def nocompl (dim i (ior i (inot i))))
+(def demorgan (dim i (dim j (inot (iand i j)))))
+(def main (ctr Pair reg suptrp))

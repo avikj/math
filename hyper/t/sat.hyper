@@ -1,0 +1,37 @@
+; witnessing a proposition (research/SAT_FIBRE_BEND_HVM_DEPLOYED_TECHNICAL_REPORT.md, sat_fibre/SATProcess.bend):
+; the domain is one labelled superposition, one label per coordinate, shared by every occurrence; the proposition
+; reduces once over it; a failing branch is erased; the collapse is the fibre True(P) = Σ x. P x ≡ true.
+(def not (lam b (case b (True () (ctr False)) (False () (ctr True)))))
+(def and (lam a (lam b (case a (True () b) (False () (ctr False))))))
+(def or  (lam a (lam b (case a (True () (ctr True)) (False () b)))))
+(def xor (lam a (lam b (case a (True () (app not b)) (False () b)))))
+(def x (sup 0 (ctr False) (ctr True)))
+(def y (sup 1 (ctr False) (ctr True)))
+; the fibre over true and the fibre over false, from the one shared domain
+(def keep (lam p (lam v (case p (True () v) (False () (era))))))
+(def xor-true  (leaves (app keep (app xor x y) (ctr Pair x y))))
+(def xor-false (leaves (app keep (app not (app xor x y)) (ctr Pair x y))))
+; a contradiction: its fibre is empty
+(def contradiction (leaves (app keep (app and x (app not x)) x)))
+; one proposition, two presentations (sat_fibre/REPORT.md §5): F = (x0 ∨ ¬x0) ∧ … ∧ (x3 ∨ ¬x3) ∧ x4 ∧ ¬x4.
+; Short-circuit conjunction in this order reproduces the whole cube before the contradiction erases it; with the
+; clauses reversed the contradiction is met first.  Both are the empty fibre.
+(def x0 (sup 10 (ctr False) (ctr True)))
+(def x1 (sup 11 (ctr False) (ctr True)))
+(def x2 (sup 12 (ctr False) (ctr True)))
+(def x3 (sup 13 (ctr False) (ctr True)))
+(def x4 (sup 14 (ctr False) (ctr True)))
+(def taut (lam v (app or v (app not v))))
+(def short (leaves (app keep
+  (app and (app taut x0) (app and (app taut x1) (app and (app taut x2) (app and (app taut x3) (app and x4 (app not x4))))))
+  (ctr Pair x0 (ctr Pair x1 (ctr Pair x2 (ctr Pair x3 x4)))))))
+(def reversed (leaves (app keep
+  (app and (app not x4) (app and x4 (app and (app taut x3) (app and (app taut x2) (app and (app taut x1) (app taut x0))))))
+  (ctr Pair x0 (ctr Pair x1 (ctr Pair x2 (ctr Pair x3 x4)))))))
+; constructing a specified map (collab/bend2-interactive-cubical/SUPGEN_DEMO.md): the candidate maps Bool → Bool are
+; one superposition; the specification f False ≡ True ∧ f True ≡ False erases every other candidate; the survivor
+; is the map, certified by the erasure of the alternatives
+(def cand (sup 20 (lam b b) (sup 21 (lam b (app not b)) (sup 22 (lam b (ctr True)) (lam b (ctr False))))))
+(def spec (lam f (app and (app f (ctr False)) (app not (app f (ctr True))))))
+(def synth (leaves (app keep (app spec cand) (ctr OK cand))))
+(def synth-at (leaves (app keep (app spec cand) (ctr Pair (app cand (ctr False)) (app cand (ctr True))))))

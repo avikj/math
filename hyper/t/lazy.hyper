@@ -1,0 +1,4 @@
+; and(False, y): y is never demanded; nothing is erased inside the run
+(def loop (lam n (app loop n)))
+(def and (lam x (lam y (case x (False () (ctr False)) (True () y)))))
+(def main (app and (ctr False) (app loop 0)))
