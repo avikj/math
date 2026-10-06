@@ -276,3 +276,55 @@ Corrections recorded as standing:
 Next: stop narrating, write the term — the kernel yields the answer as a
 projection at cost bounded by the size of the answer object — and let --safe
 be the judge, reporting exactly what checks.
+
+------------------------------------------------------------------------
+[2026-10-06] ENTRY 6 — the evaluator frame, locked (session 01EHMJhX).
+Vocabulary settled with the owner; do not reopen these as questions.
+
+N. THE SYSTEM, NAMED CORRECTLY.
+   - COMPUTATIONAL MODEL: the mathematics itself — interaction with carried
+     identification; the cubical cell complex IS the data structure.
+   - EVALUATOR: the implemented system. It is a perfect deterministic
+     symbolic reasoner: receives a program (= dependent term, nothing
+     imperative), outputs a program. "Runtime" = evaluation of a given
+     declaration; "compilation" = evaluation prior to an input (partial
+     evaluation; HFT sense: execute everything decidable without input).
+   - MEMORY MODEL: the cell complex. Graded mass (routes/traces) is the only
+     resident storage; invertible structure is code/zero-byte (@0, h-level
+     computed, never a policy choice). Bytecode = the cell complex itself
+     (modulo a reversible ascii converter).
+   - INSTRUCTION SET: compose, transport (uaβ fires as a dynamic rule),
+     fill (hcomp), sym, substitute; exactly one priced discard.
+   - NO CHECKER/RUNTIME WALL. One evaluator; "checking" = evaluating with a
+     neutral value (NbE); ∀-instantiation resolves AT RUNTIME (definitional
+     by neutrals; inductive by constructing the derivation). The batch
+     phase split is an artifact; here it is a monotone specialization
+     lattice against partial knowledge (partially-known local states).
+   - GEODESIC OPERATION: declare the goal type; evaluation resolves it in
+     minimal steps because cost exists ONLY on the non-contractible residue
+     (Laghava dichotomy: cost and inverse cannot coexist). Example fixed
+     with owner: sorted-list declaration resolves in log2(n!) comparisons
+     because the ordering algebra (transitive closure) is invertible =
+     unpriceable; every comparison is forced to be informative. Determinism
+     of the route: Ekatva (completion space contractible).
+
+O. DIFFERENTIATOR VS HVM/BEND/E-GRAPHS (abstract 04 is the exact statement):
+   congruence closure / hash-consing / e-class dedup destroys derivation
+   structure; proof production provably NOT a function of the saturated
+   state. This model carries derivations DURING merging: rewriting without
+   matching, groupoid not reduction order, branch multiplicity conserved.
+   Interaction nets optimize the lossy frame; this evaluator never enters it.
+
+P. LANGUAGE/COGNITION (owner, confirmed in repo): the model IS the math of
+   language processing — ISC; recollection = cyclic conservative rewriting
+   between interface and memory (punaragamana); sthanivadbhava 1.1.56 = the
+   carrier law; 1.1.62 pratyayalope pratyayalakshanam = lossless erasure,
+   stated by Panini; pratyahara totality/locality tradeoff proved
+   (PratyaharaBuysTotalityWithLocality). No stochastic proposer anywhere in
+   the system: guessing is a symptom of discarded structure.
+
+Q. MISTAKES OF THIS SESSION, so they are not repeated: narrating from prior
+   instead of reading terms (NOTES §V predicted it); rule-library/trace-log
+   renderings of the primitive; "physics-shaped" instead of physics derived;
+   importing P=NP framing the repo never claims; inserting LLMs into the
+   architecture; treating evaluation-frame talk as a substitute for math.
