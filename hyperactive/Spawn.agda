@@ -29,6 +29,7 @@ module Spawn where
 
 open import Cubical.Foundations.Prelude
 open import Cubical.Data.Nat using (ℕ ; zero ; suc)
+open import Cubical.Data.Nat.Order using (_<_)
 open import Cubical.Data.Sigma
 open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.List using (List ; [] ; _∷_)
@@ -144,11 +145,19 @@ module SpawnMachine
   (Addr : Type) (_≟_ : Discrete Addr)
   (child : ℕ → Addr → Addr)
   (Ext : Addr → Addr → Type)                      -- Ext β α : β properly extends α
-  (child-inj : {k l : ℕ} {α β : Addr} → child k α ≡ child l β → α ≡ β)
+  (depth : Addr → ℕ)
+  -- child is injective in BOTH arguments (k∷α = l∷β ⟺ k≡l ∧ α≡β):
+  (child-inj : {k l : ℕ} {α β : Addr} → child k α ≡ child l β → (k ≡ l) × (α ≡ β))
+  -- a child properly extends its parent:
   (child-ext : (k : ℕ) (α : Addr) → Ext (child k α) α)
-  (ext-child : {β : Addr} {k : ℕ} {α : Addr} → Ext β (child k α) → Ext β α)
-  (ext-irrefl : {α : Addr} → Ext α α → ⊥)
+  -- Ext is transitive:
+  (ext-trans : {γ β α : Addr} → Ext γ β → Ext β α → Ext γ α)
+  -- what a child extends is the parent or something the parent extends:
   (ext-of-child : {k : ℕ} {α γ : Addr} → Ext (child k α) γ → (γ ≡ α) ⊎ Ext α γ)
+  -- well-foundedness: a child is one deeper, and extension strictly deepens.
+  -- (gives ext-irreflexivity and "no sibling extends a sibling" for free.)
+  (child-depth : (k : ℕ) (α : Addr) → depth (child k α) ≡ suc (depth α))
+  (ext-depth : {β α : Addr} → Ext β α → depth α < depth β)
   (rule : Env → Cell → Out × List Cell)
   where
 
