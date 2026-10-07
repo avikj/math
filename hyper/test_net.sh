@@ -55,6 +55,10 @@ pin declare '#Cons{#SPair{#SCons{#SVal{#Zer{}},#SCons{#SVal{#Suc{#Zer{}}},#SCons
 # tally (20 comparisons, 543): OP2-NUM-NUM is the count of comparisons, 69 = 32 + 17 + 20
 pin sort9 '#Pair{#Cons{#Cons{0,#Cons{1,#Cons{2,#Cons{3,#Nil{}}}}},#Nil{}},#Pair{#Cons{0,#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Cons{5,#Cons{6,#Cons{7,#Nil{}}}}}}}}},#Cons{0,#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Cons{5,#Cons{6,#Cons{7,#Nil{}}}}}}}}}}}' 2731
 c=$(./hyper net n/sort9.hvm4 -s 2>&1 | grep -oE '"OP2-NUM-NUM":[0-9]+' | sed 's/.*://'); if [ "$c" = 69 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL sort9 comparisons: $c want 69"; fi
+# the comparison as one cell per pair (n/sort9cell.hvm4): the whole line cut once touches every pair (6, 28); posed per
+# node it touches 5 at n=4 (merge's count), 22 balanced and 20 tally at n=8; 53 = 6 + 5 + 22 + 20 distinct pairs
+pin sort9cell '#Pair{#Cons{#Cons{#S{#Z{}},#Cons{#S{#S{#S{#Z{}}}},#Cons{#Z{},#Cons{#S{#S{#Z{}}},#Nil{}}}}},#Nil{}},#Pair{#Cons{#S{#Z{}},#Cons{#S{#S{#S{#Z{}}}},#Cons{#Z{},#Cons{#S{#S{#Z{}}},#Nil{}}}}},#Pair{#Cons{#S{#S{#S{#Z{}}}},#Cons{#S{#S{#S{#S{#S{#S{#Z{}}}}}}},#Cons{#S{#Z{}},#Cons{#S{#S{#S{#S{#Z{}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}},#Cons{#Z{},#Cons{#S{#S{#S{#S{#S{#Z{}}}}}},#Cons{#S{#S{#Z{}}},#Nil{}}}}}}}}},#Cons{#S{#S{#S{#Z{}}}},#Cons{#S{#S{#S{#S{#S{#S{#Z{}}}}}}},#Cons{#S{#Z{}},#Cons{#S{#S{#S{#S{#Z{}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}},#Cons{#Z{},#Cons{#S{#S{#S{#S{#S{#Z{}}}}}},#Cons{#S{#S{#Z{}}},#Nil{}}}}}}}}}}}}' 52144
+c=$(./hyper net n/sort9cell.hvm4 -s 2>&1 | grep -oE '"OP2-NUM-NUM":[0-9]+' | sed 's/.*://'); if [ "$c" = 53 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL sort9cell comparisons: $c want 53"; fi
 # an enumeration as a type (n/judgeenum.hvm4): the type, a symbol against it (and one not in it), a match with every
 # symbol covered (and one without), and the match evaluated
 pin judgeenum '#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{#Suc{#Zer{}},#Nil{}}}}}}}' 1627
