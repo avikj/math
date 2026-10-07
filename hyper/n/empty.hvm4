@@ -1,0 +1,7 @@
+// a contradiction: x and not x — the fibre is empty, as a value
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@not = λ{#T: #F; #F: #T}
+@and = λ{#T: λb. b; #F: λb. #F}
+@keep = λ{#T: λv. v; #F: λv. &{}}
+@x = &A{#F, #T}
+@main = %(@keep(@and(@x, @not(@x)), @x))

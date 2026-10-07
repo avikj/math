@@ -1,0 +1,4 @@
+// one coordinate used twice: the pair is correlated (same label) — two leaves, not four
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@x = &A{#F, #T}
+@main = %(#Pair{@x, @x})

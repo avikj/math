@@ -1,0 +1,3 @@
+// two independent coordinates: four leaves, in collapse order
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@main = %(#Pair{&A{#F, #T}, &B{#F, #T}})

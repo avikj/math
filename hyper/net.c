@@ -94,6 +94,7 @@ typedef struct {
 #define BJV 42  // Bjv(n): quoted lambda-bound variable (de Bruijn level)
 #define BJ0 43  // Bj0(n): quoted dup-bound variable (side 0, de Bruijn level)
 #define BJ1 44  // Bj1(n): quoted dup-bound variable (side 1, de Bruijn level)
+#define COL 45  // Col(x): the collapse of x as a value — the list of its leaves, multiplicity conserved (hyper: §6, the fibre is data)
 
 // LAM Ext Flags
 // =============
@@ -180,14 +181,15 @@ typedef struct __attribute__((aligned(256))) {
 static WnfBank WNF_BANK = {0};
 static u64 ITRS = 0;
 
-static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS" };
-static u64 SAT_COUNTS[60] = {0};
+static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL" };
+#define SAT_NRULES 64
+static u64 SAT_COUNTS[SAT_NRULES] = {0};
 static u64 SAT_BUDGET = 5000000;
 static u64 SAT_HEAP_BUDGET = 32000000;
 static void sat_report(void) {
   fprintf(stderr, "SAT_PROFILE {\"interactions\":%llu,\"heap_nodes\":%llu,\"rules\":{",
     (unsigned long long)ITRS, (unsigned long long)(HEAP_NEXT - 1));
-  for (int i = 0; i < 60; ++i) {
+  for (int i = 0; i < SAT_NRULES; ++i) {
     fprintf(stderr, "%s\"%s\":%llu", i ? "," : "", SAT_NAMES[i], (unsigned long long)SAT_COUNTS[i]);
   }
   fprintf(stderr, "}}\n");
@@ -204,7 +206,7 @@ static void sat_tick(const char *name) {
     fprintf(stderr, "SAT_LIMIT interactions\n");
     exit(124);
   }
-  for (int i = 0; i < 60; ++i) {
+  for (int i = 0; i < SAT_NRULES; ++i) {
     if (strcmp(name, SAT_NAMES[i]) == 0) { ++SAT_COUNTS[i]; return; }
   }
   fprintf(stderr, "unknown rule: %s\n", name);
@@ -347,6 +349,7 @@ static const u8 TERM_ARITY[TAG_MASK + 1] = {
   [BJV] = 0,
   [BJ0] = 0,
   [BJ1] = 0,
+  [COL] = 1,
 };
 
 fn u32 term_arity(Term t) {
@@ -631,6 +634,14 @@ fn Term term_new_inc(Term x) {
   u64 loc = heap_alloc(1);
   heap_set(loc, x);
   return term_new(0, INC, 0, loc);
+}
+
+// COL: %x - the collapse of x as a value
+// fields = [x]
+fn Term term_new_col(Term x) {
+  u64 loc = heap_alloc(1);
+  heap_set(loc, x);
+  return term_new(0, COL, 0, loc);
 }
 
 fn Term term_new_num(u32 n) {
@@ -1741,6 +1752,12 @@ fn void print_term_go(FILE *f, Term term, u32 depth, PrintState *st) {
     case INC: {
       u64 loc = term_val(term);
       fputs("↑", f);
+      print_term_at(f, HEAP[loc], depth, st);
+      break;
+    }
+    case COL: {
+      u64 loc = term_val(term);
+      fputs("%", f);
       print_term_at(f, HEAP[loc], depth, st);
       break;
     }
@@ -3544,11 +3561,19 @@ fn Term parse_term_inc(PState *s, u32 depth) {
   return term_new_inc(x);
 }
 
+// Parse COL: %x
+fn Term parse_term_col(PState *s, u32 depth) {
+  Term x = parse_term_atom(s, depth);
+  return term_new_col(x);
+}
+
 // Parse a single atom (no trailing operators or function calls)
 fn Term parse_term_atom(PState *s, u32 depth) {
   parse_skip(s);
   if (parse_match(s, "λ")) {
     return parse_term_lam(s, depth);
+  } else if (parse_match(s, "%")) {
+    return parse_term_col(s, depth);
   } else if (parse_match(s, "!")) {
     return parse_term_dup(s, depth);
   } else if (parse_match(s, "&")) {
@@ -4744,7 +4769,8 @@ __attribute__((cold, noinline)) static Term wnf_rebuild(Term cur, Term *stack, u
       case AND:
       case OR:
       case DSU:
-      case DDU: {
+      case DDU:
+      case COL: {
         u64 loc = term_val(frame);
         heap_set(loc + 0, cur);
         cur = frame;
@@ -4764,6 +4790,45 @@ __attribute__((cold, noinline)) static Term wnf_rebuild(Term cur, Term *stack, u
 
   WNF_S_POS = s_pos;
   return cur;
+}
+
+fn Term cnf(Term term);
+
+// ---- COL: the collapse as a value (hyper).  Each rule is one interaction.
+// %&{}
+// ------- COL-ERA
+// #Nil{}
+fn Term wnf_col_era(void) {
+  ITRS_INC("COL-ERA");
+  Term none[1];
+  return term_new_ctr(table_find("Nil", 3), 0, none);
+}
+// %&L{a, b}
+// ------------------ COL-SUP: both sides kept, in order
+// @lcat(%a, %b)
+fn Term wnf_col_sup(Term sup) {
+  ITRS_INC("COL-SUP");
+  u64  sup_loc = term_val(sup);
+  Term a = term_new_col(heap_read(sup_loc + 0));
+  Term b = term_new_col(heap_read(sup_loc + 1));
+  return term_new_app(term_new_app(term_new_ref(table_find("lcat", 4)), a), b);
+}
+// %↑x
+// ----- COL-INC
+// %x
+fn Term wnf_col_inc(Term inc) {
+  ITRS_INC("COL-INC");
+  return term_new_col(heap_read(term_val(inc)));
+}
+// %v   (v a value with no superposition at its top)
+// ------------------ COL-VAL
+// #Cons{v, #Nil{}}
+fn Term wnf_col_val(Term v) {
+  ITRS_INC("COL-VAL");
+  Term none[1];
+  Term nil = term_new_ctr(table_find("Nil", 3), 0, none);
+  Term args[2] = { v, nil };
+  return term_new_ctr(table_find("Cons", 4), 2, args);
 }
 
 __attribute__((hot)) fn Term wnf(Term term) {
@@ -4891,7 +4956,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
           case AND:
           case OR:
           case DSU:
-          case DDU: {
+          case DDU:
+          case COL: {
             next = wnf_alo_nod(alo_loc, ls_loc, len, book);
             goto enter;
           }
@@ -4927,6 +4993,14 @@ __attribute__((hot)) fn Term wnf(Term term) {
         Term a   = heap_read(loc + 0);
         stack[s_pos++] = next;
         next = a;
+        goto enter;
+      }
+
+      case COL: {
+        u64  loc = term_val(next);
+        Term x   = heap_read(loc + 0);
+        stack[s_pos++] = next;
+        next = x;
         goto enter;
       }
 
@@ -5119,6 +5193,27 @@ __attribute__((hot)) fn Term wnf(Term term) {
             default: {
               next = wnf_use_val(use, whnf);
               goto enter;
+            }
+          }
+        }
+
+        // -----------------------------------------------------------------------
+        // COL frame: (% □) - we reduced the value, dispatch the collapse rule
+        // -----------------------------------------------------------------------
+        case COL: {
+          switch (term_tag(whnf)) {
+            case ERA: { whnf = wnf_col_era(); continue; }
+            case SUP: { next = wnf_col_sup(whnf); goto enter; }
+            case INC: { next = wnf_col_inc(whnf); goto enter; }
+            default: {
+              WNF_S_POS = s_pos;                  /* the superpositions inside the value, lifted to its top (same label: correlated) */
+              Term t = cnf(whnf);
+              switch (term_tag(t)) {
+                case ERA: { whnf = wnf_col_era(); continue; }
+                case SUP: { next = wnf_col_sup(t); goto enter; }
+                case INC: { next = wnf_col_inc(t); goto enter; }
+                default:  { whnf = wnf_col_val(t); continue; }
+              }
             }
           }
         }
@@ -5893,6 +5988,7 @@ fn Term cnf_at(Term term, u32 depth) {
     case AND:
     case OR:
     case UNS:
+    case COL:
     case C01 ... C16: {
       u32 ari = term_arity(term);
       u64 loc = term_val(term);

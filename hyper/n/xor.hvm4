@@ -1,0 +1,9 @@
+// the SAT xor fibre as a value: the domain is one superposition per coordinate, the proposition runs once,
+// a failing branch erases, and % is the fibre True(P) as a list, multiplicity conserved
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@not = λ{#T: #F; #F: #T}
+@xor = λ{#T: λb. @not(b); #F: λb. b}
+@keep = λ{#T: λv. v; #F: λv. &{}}
+@x = &A{#F, #T}
+@y = &B{#F, #T}
+@main = %(@keep(@xor(@x, @y), #Pair{@x, @y}))
