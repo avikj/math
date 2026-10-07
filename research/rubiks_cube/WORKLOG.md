@@ -92,6 +92,11 @@ Measured interaction counts, target `@gU`, searching words of length exactly K:
     2                 324         520,935         1,608    0.019 s
     3               5,832      17,253,988         2,959    2.621 s
     4             104,976     165,492,171         1,576   14.597 s
+    5           1,889,568               -             -   killed
+
+Depth 5 was killed by the out-of-memory killer at 13.97 GB resident after 88
+seconds, with no output: the collapse builds the whole branch set in the heap
+rather than streaming it.
 
 The per-branch cost is flat at roughly 1,600-3,000 interactions, so the
 measured growth is the full 18-way tree: collapse enumerates every word and
