@@ -940,7 +940,9 @@ static Term whnf_(Term t) {
       }
       case T_REF: {                                   /* δ: the definition's own fresh dimensions */
         Def *d = &BOOK[loc(t)]; Term fr = 0;
-        if (d->unknown) { fprintf(stderr, "hyper: @%s is declared with no body\n", d->name); exit(2); }
+        if (d->unknown) {                            /* a declaration with no body: the census of the book at its type (MAP §0.3 step 5) */
+          int e = resolve_declaration(loc(t)); if (e < 0) exit(2);
+          d->code = BOOK[e].code; d->ndims = BOOK[e].ndims; d->unknown = false; receipt(R_DECLARE); }
         for (uint32_t i = 0; i < d->ndims; i++) fr = dim_push(fr);
         if (CHECK_MODE && d->type) { t = node2(T_REFLECT, 0, inst(d->code, fr), inst(d->type, 0)); continue; }   /* §7: a typed point is η-long at its type */
         t = inst(d->code, fr); continue;
@@ -1273,7 +1275,7 @@ void print_term(Term t, int depth) { force_fields(t, depth); print_rec(t, depth)
    by rule (AdiBija: every analyzer is a fold over the trace). Definitional unfolding and the face map's
    sharing are shown apart, as the receipts name them. */
 const char *RULE_NAME[R_COUNT] = { "", "beta", "appSup", "app-plm", "dupSupEqual", "dupSupDifferent", "dupLamUsed", "dupLamErased", "dupNode",
-    "fce-share", "case", "appMatSup", "op2", "op2-sup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "op1", "pout" };
+    "fce-share", "case", "appMatSup", "op2", "op2-sup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "op1", "pout", "declare" };
 void print_trace(uint64_t from) {           /* the derivation as data: each step a rule at a node */
   for (uint64_t i = from; i < TRACE_LEN; i++) printf("%s%s@%u", i > from ? " " : "", RULE_NAME[TRACE[i]], TRACE_NODE[i]);
   printf("\n");

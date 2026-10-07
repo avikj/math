@@ -97,6 +97,12 @@ got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 
 # HYPER_CHECK_ALL verifies every typed definition the file and the prelude carry, not only the book's
 got=$(./hyper check t/sort.hyper 2>&1 | tr -d '\033' | sed 's/\[[0-9;]*m//g'); case "$got" in '✓ sort_at_A') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL check sort_at_A: $got";; esac
 if HYPER_CHECK_ALL=1 ./hyper check t/sort.hyper 2>&1 | grep -q '✗'; then fail=$((fail+1)); echo "FAIL HYPER_CHECK_ALL t/sort.hyper"; else pass=$((pass+1)); fi
+# step 5: a declaration with no body is the census of the book at its type — one entry resolves, two refuse, none refuse
+check t/declare.hyper main '#True{}'
+got=$(./hyper run t/declare.hyper some-bool 2>&1); case "$got" in *विकलादेश*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL crowded declaration: $got";; esac
+got=$(./hyper run t/declare.hyper no-such 2>&1); case "$got" in *नास्ति*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL empty declaration: $got";; esac
+check t/sort.hyper b/sort_spec '#Pair{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}},#Pair{#Refl{},#Refl{}}}'
+got=$(./hyper run t/sort.hyper b/sort_spec | sed -n 2p); case "$got" in '- Itrs: 174') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort_spec count: $got";; esac
 # witnessing a proposition (research/SAT_FIBRE_BEND_HVM_DEPLOYED_TECHNICAL_REPORT.md): the domain is one labelled
 # superposition shared by every occurrence, the proposition reduces once over it, a failing branch is erased, and the
 # collapse is the fibre.  XOR's fibre over True and over False; a contradiction's empty fibre

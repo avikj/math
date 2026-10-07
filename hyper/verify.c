@@ -291,6 +291,27 @@ static bool eq_struct(Term u, Term v, int d) {
   }
 }
 bool equal(Term u, Term v) { memset(&EQV, 0, sizeof EQV); return eq(u, v, 0); }
+/* A declaration with a type and no body is resolved by the book, by type: the typed entries with a body whose
+   type converts to the declaration's are the fibre of the book over that type, and its census is the corpus's
+   three-valued one (fibre/src/Fibre/SakalaVikalaDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:111
+   देश): नास्ति, no entry, and the declaration stays a coordinate; सकलादेश, one entry, and the declaration IS it —
+   the identity available for its type, which §5.27 of the essay poses with the declaration and normalizes;
+   विकलादेश, two entries, and the fibre is crowded: which one is concrete information and enters through a free
+   port, never from the core.  The comparison is definitional and is not an event: the ledger is restored. */
+int resolve_declaration(uint32_t id) {
+  Def *d = &BOOK[id]; int found = -1, n = 0;
+  uint64_t itrs = ITRS, tl = TRACE_LEN; Term T = inst(d->type, 0);
+  for (uint32_t i = 0; i < BOOK_LEN; i++) {
+    if (i == id || BOOK[i].unknown || !BOOK[i].type || !BOOK[i].code) continue;
+    if (BOOK[i].ndims != d->ndims) continue;
+    if (equal(inst(BOOK[i].type, 0), T)) { if (found < 0) found = (int)i; n++; }
+  }
+  ITRS = itrs; TRACE_LEN = tl;
+  if (n == 1) return found;
+  if (n == 0) fprintf(stderr, "hyper: @%s is declared with no body, and the book has no entry of its type (नास्ति)\n", d->name);
+  else fprintf(stderr, "hyper: @%s is declared with no body, and the book has %d entries of its type (विकलादेश): the choice is not the core's\n", d->name, n);
+  return -1;
+}
 static bool rewrite_hook(Term old, Term v) { IN_HOOK++; bool r = eq(old, v, 0); IN_HOOK--;
   if (getenv("HYPER_HOOKDBG") && tag(v) == T_APP) { fprintf(stderr, "  [hook %d] ", r); print_term(old, 4); fprintf(stderr, "  ~  "); print_term(v, 4); fprintf(stderr, "\n"); }
   return r; }

@@ -90,7 +90,7 @@ The core owes the language exactly the reduction of these:
 
 It does not solve for an unknown. An earlier core did: it made a bodyless declaration a coordinate, split coordinates at matches, unified at data types, and split the output of stuck computations. That machinery is not in the construction and has been deleted, along with the scheduler it needed.
 
-**Open:** how a declaration with no body is resolved inside this machine. The chart move (step 4 below) is the construction's mechanism for reaching a specification's point, but there the map (`isort`) is written in the book.
+A declaration with no body is resolved by the book, by type (step 5 below): the typed entries whose type converts to the declaration's are the fibre of the book over that type, and the declaration is the one entry when there is one. The chart move (step 4) is the construction's mechanism for reaching a specification's point; the map (`isort`) is written in the book, and the declaration reaches it through the book.
 
 ## 0.2 What regressing looks like, so you can recognise it
 
@@ -161,7 +161,19 @@ them.
    `strip_scoped_faces`) — without it a restriction read through a frame re-wrapped a fix's closure afresh at every lookup
    and the coinductive memo never saw one pair twice; the memo reset per top-level comparison (`verify.c:138` `eq_reset`);
    `proj` inferred at a Sig (`verify.c:423`); a path accepted as a transport line (`verify.c:324`).
-5. **A declaration with no body. Open.** See §0.1: the construction reaches a specification's point by presenting along a map and transporting along the equivalence. How a declaration with no body supplies that map is not yet stated.
+5. **A declaration with no body. Written** (`verify.c` `resolve_declaration`, `cell.c` at `T_REF`; `t/declare.hyper`, `b/sort_spec` in
+   `t/sort.hyper`, `test.sh`). A declaration `name : T` with no body, when demanded, is the census of the book at `T`: the
+   typed entries with a body whose type converts to `T` (the checker's conversion, on the same loop) are the fibre of the
+   book over `T`, and the census is the corpus's three-valued one
+   (`fibre/src/Fibre/SakalaVikalaDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:111` `देश`):
+   `नास्ति`, no entry, and the declaration stays a coordinate (`hyper check` accepts it as one, `hyper run` refuses);
+   `सकलादेश`, one entry, and the declaration IS that entry, receipted as one interaction (`declare`) — the identity
+   available for its type, which the essay poses together with the declaration and normalizes (§5.27); `विकलादेश`, two
+   entries, and the fibre is crowded: which one is concrete information and enters through a free port, never from the
+   core (§0, item 5), so the run refuses and says so. The comparison is definitional and is not an event. Nothing is
+   solved for: no coordinate is split, nothing is unified, no output is narrowed. `b/sort_spec` declares the sort
+   specification at `A` with no body and resolves through `b/sort_at_A` to `([1,2,3], (refl, refl))` in 174 interactions,
+   the chart move's 173 and the one `declare`.
 6. **The Bend dialect's grammar** as a book with its certificate, and parallel demand over the one arena.
 
 ## Read order

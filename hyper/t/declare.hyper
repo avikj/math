@@ -1,0 +1,10 @@
+; a declaration with no body is the census of the book at its type (MAP §0.3 step 5): one entry, it is that entry;
+; none, it stays a coordinate; two, the fibre is crowded and the choice is not the core's.
+(def leq : (ctr Pi (ctr Nat) (lam a (ctr Pi (ctr Nat) (lam b (ctr Bool)))))
+  = (fix f (lam a (lam b (case a (Zer () (ctr True)) (Suc (a1) (case b (Zer () (ctr False)) (Suc (b1) (app f a1 b1)))))))))
+(def four : (ctr Nat) = (ctr Suc (ctr Suc (ctr Suc (ctr Suc (ctr Zer))))))
+(def flag : (ctr Bool) = (ctr True))
+(def le? : (ctr Pi (ctr Nat) (lam a (ctr Pi (ctr Nat) (lam b (ctr Bool))))))      ; one entry of this type: leq
+(def main : (ctr Bool) = (app le? (ctr Suc (ctr Zer)) four))
+(def some-bool : (ctr Bool))                                                      ; two entries: flag, main — crowded
+(def no-such : (ctr Pi (ctr Bool) (lam _ (ctr Unit))))                            ; no entry — empty

@@ -36,3 +36,4 @@
   = (proj 0 (proj 1 (trp (ua (ctr List (ctr Nat)) carrier-ty carrier-equiv) i0 i1 A))))
 (def b/sort_at_A : (ctr Sig (ctr List (ctr Nat)) (lam B (ctr Sig (ctr Eql (ctr List (ctr Nat)) (app isort A) (app isort B)) (lam q (ctr Eql (ctr Bool) (app sorted B) (ctr True))))))
   = (ctr Pair (ref chart-move) (ctr Pair (ctr Refl) (ctr Refl))))
+(def b/sort_spec : (ctr Sig (ctr List (ctr Nat)) (lam B (ctr Sig (ctr Eql (ctr List (ctr Nat)) (app isort A) (app isort B)) (lam q (ctr Eql (ctr Bool) (app sorted B) (ctr True)))))))
