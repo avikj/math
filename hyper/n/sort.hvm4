@@ -13,6 +13,9 @@
 //   proof is a value, its length is the number of comparisons made (9.9), and replaying it is verification (8.6).
 @cube = λ&c. λ{#Nil: λ&y. y; #Cons: λ&h. λ&t. λ{#Nil: #Cons{h, t}; #Cons: λ&h2. λ&t2. &(c){#Cons{h2, @cubeRest(#Cons{h, t}, t2)}, #Cons{h, @cubeRest(t, #Cons{h2, t2})}}}}
 @cubeRest = λ&x. λ&y. ! &c = ?; @cube(c, x, y)
+// 9.2 / 9.8 read off: the unrestricted coordinate over the whole set has n! vertices (the binomials multiply to n!)
+@rearr = λ{#Leaf: λ&a. #Cons{a, #Nil}; #Node: λ&l. λ&r. @cubeRest(@rearr(l), @rearr(r))}
+@vertices = λ&A. @lenN(%(@rearr(A)))
 // Sorted as the restriction of the cube: at each coordinate the face the head comparison names, recorded
 @sorted = λ{#Nil: λ&y. #Pair{y, #Nil}; #Cons: λ&h. λ&t. λ{#Nil: #Pair{#Cons{h, t}, #Nil};
   #Cons: λ&h2. λ&t2. ! &c = ?; ! &s = @le(h, h2);
@@ -46,4 +49,4 @@
 @C8 = #Node{#Leaf{@n5}, #Node{#Leaf{@n2}, #Node{#Leaf{@n7}, #Node{#Leaf{@n0}, #Node{#Leaf{@n3}, #Node{#Leaf{@n6}, #Node{#Leaf{@n1}, #Leaf{@n4}}}}}}}}
 @run = λ&A. (λ{#Pair: λ&b. λ&p. #Pair{@map(@tally, b), #Pair{@faces(p), @verify(A, #Pair{b, p})}}})(@sort(A))
 @map = λ&f. λ{#Nil: #Nil; #Cons: λ&h. λ&t. #Cons{f(h), @map(f, t)}}
-@main = #Pair{@run(@A4), #Pair{@run(@A8), @run(@C8)}}
+@main = #Pair{@vertices(@A4), #Pair{@run(@A4), #Pair{@run(@A8), @run(@C8)}}}

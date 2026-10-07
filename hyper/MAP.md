@@ -507,7 +507,7 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   is read by `%` as the fibre {3,5,4,6}.
 - **The declaration** (§9, `n/sort.hvm4`). `Σ B. (B is a rearrangement of A) × Sorted B` (9.15), A a finite set
   indexed by the cube (9.11), elements numerals. The rearrangements of a node are the interleavings of the
-  rearrangements of its halves (9.2, 9.8): `@cube` is that coordinate, one `?` per interleaving choice. `Sorted` is
+  rearrangements of its halves (9.2, 9.8): `@cube` is that coordinate, one `?` per interleaving choice; unrestricted, `%` reads 24 = 4! vertices at n = 4. `Sorted` is
   not a predicate that erases sides; unfolded at the head of an interleaving of two sorted runs it is decided by the
   one comparison the held order does not imply, between the two head candidates, and its outcome names the face of
   the cube at that coordinate (9.3, 9.6). `@sorted` creates the coordinate, builds its superposition, and takes that
