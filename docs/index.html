@@ -675,7 +675,7 @@ cost : Shape → ℕ
 cost one     = 0
 cost (l ⊕ r) = (size l + size r) + (cost l + cost r)
 
--- The other reading: each element pays once for every ⊕ above it.
+-- The same number again: each element pays once for every ⊕ above it.
 paid : ℕ → Shape → ℕ
 paid d one     = d
 paid d (l ⊕ r) = paid (suc d) l + paid (suc d) r
@@ -713,7 +713,7 @@ _ : cost bal8   ≡ 24
 _ = refl
 _ : cost chain8 ≡ 35
 _ = refl</code></pre>
-<figcaption>The two readings of the cost are one function: <code>cost</code> sums what each merge produces, <code>paid</code> charges each element its depth, and <code>cost≡depth</code> identifies them. The four figures above hold by <code>refl</code>. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+<figcaption>The same number twice: <code>cost</code> sums what each merge produces, <code>paid</code> charges each element its depth, and <code>cost≡depth</code> identifies them. The four figures above hold by <code>refl</code>. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
 </details>
 
 <div class="st" id="s9.8"><p><span class="lab">Theorem 9.8</span> (the information is fixed by the endpoints). A merge of runs of lengths <code>a</code> and <code>b</code> settles which of <code>C(a+b, a)</code> interleavings occurred, and along every way of writing <code>n</code> as a sum these binomials multiply to <code>n!</code> exactly.</p>
