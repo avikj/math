@@ -116,3 +116,102 @@ module SpawnStatus
   Inv : St → Type
   Inv s = (α : Addr) {c : Cell} → pending s α ≡ just c
         → (β : Addr) → Ext β α → pending s β ≡ nothing
+
+  ----------------------------------------------------------------------
+  -- Maybe/Cell helpers.
+  ----------------------------------------------------------------------
+  justInj : {x y : Cell} → just x ≡ just y → x ≡ y
+  justInj {x} p = cong unwrap p
+    where
+    unwrap : Maybe Cell → Cell
+    unwrap nothing  = x
+    unwrap (just c) = c
+
+  isPropFresh : (s : St) → isProp (Fresh s)
+  isPropFresh s = isPropΠ3 (λ x c _ → isOfHLevelMaybe 0 isSetOut (out s x) nothing)
+
+  ¬symA : {x y : Addr} → ¬ x ≡ y → ¬ y ≡ x
+  ¬symA np q = np (sym q)
+
+  headJust : {X Y : Type} (m : Maybe X) (k : X → Maybe Y) (y : Y)
+    → (m » k) ≡ just y → Σ[ x ∈ X ] m ≡ just x
+  headJust nothing  k y h = Empty.rec (¬nothing≡just h)
+  headJust (just x) k y h = x , refl
+
+  tailJust : {X Y : Type} (m : Maybe X) (g : X → Y) (y : Y)
+    → (m » (λ x → just (g x))) ≡ just y → Σ[ x ∈ X ] m ≡ just x
+  tailJust nothing  g y h = Empty.rec (¬nothing≡just h)
+  tailJust (just x) g y h = x , refl
+
+  ----------------------------------------------------------------------
+  -- Read-safety (out side): firing at β (out-write only at β, empty
+  -- there) leaves every resolved dep's out-value untouched.
+  ----------------------------------------------------------------------
+  AllAgree : (s' s : St) → List Addr → Type
+  AllAgree s' s []       = Unit*
+  AllAgree s' s (γ ∷ γs) = (out s' γ ≡ out s γ) × AllAgree s' s γs
+
+  reads-stable : (s' s : St) (γs : List Addr)
+    → AllAgree s' s γs → reads s' γs ≡ reads s γs
+  reads-stable s' s []       _          = refl
+  reads-stable s' s (γ ∷ γs) (oγ , rest) =
+    cong (_» (λ v → reads s' γs » λ vs → just (v ∷ vs))) oγ
+    ∙ cong (out s γ »_)
+        (funExt λ v → cong (_» (λ vs → just (v ∷ vs))) (reads-stable s' s γs rest))
+
+  agree : (s : St) (b : Active s) → out s (addr b) ≡ nothing
+    → (γs : List Addr) (vs : List Out) → reads s γs ≡ just vs
+    → AllAgree (fire s b) s γs
+  agree s b obn []       vs h = tt*
+  agree s b obn (γ ∷ γs) vs h = headAgree , agree s b obn γs ws eqr
+    where
+    k : Out → Maybe (List Out)
+    k v = reads s γs » λ ws → just (v ∷ ws)
+    hv : Σ[ v ∈ Out ] out s γ ≡ just v
+    hv = headJust (out s γ) k vs h
+    v  = fst hv
+    oγ = snd hv
+    h' : (reads s γs » λ ws → just (v ∷ ws)) ≡ just vs
+    h' = subst (λ m → (m » k) ≡ just vs) oγ h
+    hw : Σ[ ws ∈ List Out ] reads s γs ≡ just ws
+    hw = tailJust (reads s γs) (v ∷_) vs h'
+    ws  = fst hw
+    eqr = snd hw
+    γ≢β : ¬ γ ≡ addr b
+    γ≢β q = ¬nothing≡just (sym (cong (out s) q ∙ obn) ∙ oγ)
+    headAgree : out (fire s b) γ ≡ out s γ
+    headAgree = update-miss (addr b) γ (just (verdict s b)) (out s) (λ q → γ≢β (sym q))
+
+  ----------------------------------------------------------------------
+  -- Address domain of a pending batch (pending side).
+  ----------------------------------------------------------------------
+  kid-cases : (α : Addr) (cs : List Cell) (k : ℕ) (x : Addr)
+    → ¬ (find (kidBatch α k cs) x ≡ nothing) → Σ[ j ∈ ℕ ] x ≡ child j α
+  kid-cases α []       k x h = Empty.rec (h refl)
+  kid-cases α (c ∷ cs) k x h = go (child k α ≟ x)
+    where
+    go : Dec (child k α ≡ x) → Σ[ j ∈ ℕ ] x ≡ child j α
+    go (yes p) = k , sym p
+    go (no ¬p) = kid-cases α cs (suc k) x
+      (λ e → h (find-miss (child k α) x (just c) (kidBatch α (suc k) cs) ¬p ∙ e))
+
+  batch-cases : (α : Addr) (cs : List Cell) (x : Addr)
+    → ¬ (find (pendingBatch α cs) x ≡ nothing) → (x ≡ α) ⊎ (Σ[ j ∈ ℕ ] x ≡ child j α)
+  batch-cases α cs x h = go (α ≟ x)
+    where
+    go : Dec (α ≡ x) → (x ≡ α) ⊎ (Σ[ j ∈ ℕ ] x ≡ child j α)
+    go (yes p) = inl (sym p)
+    go (no ¬p) = inr (kid-cases α cs 0 x
+      (λ e → h (find-miss α x nothing (kidBatch α 0 cs) ¬p ∙ e)))
+
+  kid-nothing : (α : Addr) (cs : List Cell) (k : ℕ) (x : Addr)
+    → (∀ j → ¬ x ≡ child j α) → find (kidBatch α k cs) x ≡ nothing
+  kid-nothing α []       k x _  = refl
+  kid-nothing α (c ∷ cs) k x hc =
+    find-miss (child k α) x (just c) (kidBatch α (suc k) cs) (λ q → hc k (sym q))
+    ∙ kid-nothing α cs (suc k) x hc
+
+  batch-nothing : (α : Addr) (cs : List Cell) (x : Addr)
+    → ¬ x ≡ α → (∀ j → ¬ x ≡ child j α) → find (pendingBatch α cs) x ≡ nothing
+  batch-nothing α cs x ¬xα hc =
+    find-miss α x nothing (kidBatch α 0 cs) (¬symA ¬xα) ∙ kid-nothing α cs 0 x hc
