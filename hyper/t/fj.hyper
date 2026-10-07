@@ -33,7 +33,6 @@
 (def fj4 (app fjsort L4))
 (def fj8 (app fjsort L8))
 (def fj16 (app fjsort L16))
-(def sortedN (fix f (lam l (case l (Nil () (ctr True)) (Cons (h t) (case t (Nil () (ctr True)) (Cons (h2 t2) (case (op2 <= h h2) (True () (app f t)) (False () (ctr False))))))))))
 (def fjsort : (ctr Pi (ctr List (ctr Num)) (lam l (ctr List (ctr Num)))) = (lam l (app vals (app fj (app toks l)))))
 (def sortedN : (ctr Pi (ctr List (ctr Num)) (lam l (ctr Bool))) = (fix f (lam l (case l (Nil () (ctr True)) (Cons (h t) (case t (Nil () (ctr True)) (Cons (h2 t2) (case (op2 <= h h2) (True () (app f t)) (False () (ctr False))))))))))
 ; the declaration with no body on this chart
