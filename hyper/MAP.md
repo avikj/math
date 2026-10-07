@@ -528,7 +528,8 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
   restricted, for literal and bound interval variables alike; inconsistent cells are dropped. Coverage, agreement,
   `inS` and glue sections are checked on each cell of a symbolic face; Glue formation also requires adjacent faces to
   agree on their overlap, CCHM's partial-element condition the fork left unchecked (`n/judgehit.hvm4`, 32 cases).
-  Known assumption inherited from the lane's runtime: `coe` along `ua(f, g, …)` is `f` exactly, which is CCHM's rule
-  under regularity.
+  `ua e` is CCHM's Glue line `<i> Glue B [(~i, A, e), (i, B, idEquiv B)]` and transport along it is the Glue
+  transport rule, nothing else; the fork's shortcut rule (`coe` along `ua` = `fst e`) is removed, and the fork's
+  missing true-face arm at Glue formation (`Glue A [1 ↦ (T,e)] ≡ T`) is added. No assumption beyond CCHM remains.
 - **Not done:** the lane's eleven cubical programs re-run here (no Bend binary to emit them); parallel
   execution (this HVM4 is sequential; the diamond makes it legal).

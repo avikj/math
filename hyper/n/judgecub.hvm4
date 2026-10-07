@@ -10,7 +10,7 @@
         #Cons{@judge(#Pair{#Bool, #SPap{#SAnn{#SPlm{#STrue}, #SPath{#SBool, #STrue, #STrue}}, #SI1}}),  // 1
         #Cons{@judge(#Pair{#Bool, #SCoe{#SBool, #SI0, #SI1, #SFalse}}),                                // 1: a constant line
         #Cons{@judge(#Pair{#Nat, #SCoe{#SBool, #SI0, #SI1, #SFalse}}),                                 // 0: lands in Bool
-        #Cons{@judge(#Pair{#Path{λi. #Set, #Bool, #Bool}, #SUa{#SBool, #SBool, @idS, @idS, @reflS, @reflS}}), // 1
+        #Cons{@judge(#Pair{#Path{λi. #Set, #Bool, #Bool}, #SUa{#SBool, #SBool, @idEquivS}}), // 1
         #Cons{@judge(#Pair{#Nat, #SHcm{#SNat, #Cons{#SFace{#SI1, #SPlm{#SZer}}, #Nil}, #SZer}}),        // 1: the tube's i0 end is the base
         #Cons{@judge(#Pair{#Nat, #SHcm{#SNat, #Cons{#SFace{#SI1, #SPlm{#SSuc{#SZer}}}, #Nil}, #SZer}}), // 0: it is not
         #Cons{@judge(#Pair{#Set, #SGlue{#SBool, #Nil}}),                                                // 1

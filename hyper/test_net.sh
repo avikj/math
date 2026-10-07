@@ -21,11 +21,12 @@ pin fresh '#Pair{#Cons{#Cons{#F{},#Cons{#F{},#Cons{#F{},#Nil{}}}},#Cons{#Cons{#T
 # MAP §0 on the net: every arrangement of [3,1,2] as a line (one fresh coordinate per place), `sorted` run on it,
 # the one survivor read by %: nine comparisons, five dead sides
 pin sort3 '#Cons{#Cons{1,#Cons{2,#Cons{3,#Nil{}}}},#Nil{}}' 458
-# Block C: the cubical layer as net programs (n/cubical.hvm4, the lane's full-runtime prelude): coe dispatching at run
-# time on the universe path, hcomp deciding a face, transport along one shared superposed line read by %
-pin ua      '#Pair{#T{},#T{}}' 268
-pin hcnat   '#Suc{#Zer{}}' 25
-pin supline '#Cons{#T{},#Cons{#F{},#Nil{}}}' 269
+# Block C: the cubical layer as net programs (n/cubical.hvm4): ua is CCHM's Glue line and transport along it is the Glue
+# transport rule (no shortcut), a Glue at a true face is its partial type, hcomp deciding a face, transport along one
+# shared superposed line read by %
+pin ua '#Pair{#F{},#T{}}' 2858
+pin hcnat '#Suc{#Zer{}}' 25
+pin supline '#Cons{#F{},#Cons{#F{},#Nil{}}}' 1712
 # Block D: verify is decide — a typed point's judgment is one equation T === @infer(D) on the net (n/judge.hvm4):
 # Π, Σ, Bool, Nat, Eql/refl over quoted syntax; two must-fail cases reduce to 0; a superposed point against a
 # goal is a superposition of equations (EQL-SUP, no rule added), read by %
@@ -36,14 +37,14 @@ pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0
 # contraction (1: the endpoint rule for a typed neutral path, Σ η and path η), λp. <i> p @ i by path η, Bool/Nat/List
 # eliminators, fst/snd (and snd against the wrong type), and a superposed cubical point read by %.
 # The identity equivalence checks only with fresh labels per binder instantiation (the default; -L is HVM4's).
-pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}}}}}}}}}' 36725
+pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}}}}}}}}}' 57019
 # faces with a bound interval variable are decided per cell: the face-bearing parts of a type (Partial's carrier,
 # Sub's element, Glue's faces) are syntax suspended over the environment, so restriction to a cell is evaluation under
 # the environment restricted; inconsistent cells are dropped
 # the circle, Partial and systems (branches on their cells, agreement, coverage), transp with a cofibration — the line
 # constant on φ by the marker test: L at two markers equal on every cell (a moving line on φ=i1 fails, on φ=i0 passes,
 # a constant line under a binder passes) — Sub/inS/outS, the set quotient with its constructors and recursor (n/judgehit.hvm4)
-pin judgehit '#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Nil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}' 127756
+pin judgehit '#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Nil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}' 168971
 # MAP §0 on the net, with types (n/declare.hvm4): sort A = Σ B. (perm A B ≡ True) × (sorted B ≡ True) at A = [2,0,1];
 # D is the line of every arrangement with (refl, refl); the judgment runs once on the line (EQL commutes over it,
 # 49 EQL-SUP-L), five sides erase, and % is the fibre: the one point ([0,1,2], (refl, refl))

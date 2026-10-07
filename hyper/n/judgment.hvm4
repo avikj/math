@@ -59,7 +59,7 @@
   #SPlm: λ&b. #PLm{λ&i. @eval(#Cons{i, env}, b)};
   #SPap: λ&p. λ&r. @pap(@eval(env, p), @eval(env, r));
   #SCoe: λ&P. λ&r. λ&s. λ&t. @coe(λ&i. @eval(#Cons{i, env}, P), @eval(env, r), @eval(env, s), @eval(env, t));
-  #SUa: λ&a. λ&b. λ&f. λ&g. λ&gf. λ&fg. #UaU{@eval(env, a), @eval(env, b), @eval(env, f), @eval(env, g)};
+  #SUa: λ&a. λ&b. λ&e. @ua(@eval(env, a), @eval(env, b), @eval(env, e));
   #SHcm: λ&A. λ&fs. λ&x. @hcomp(@eval(env, A), @evalFaces(env, fs), @eval(env, x));
   #SGlue: λ&A. λ&fs. #Glue{@eval(env, A), @evalGFaces(env, fs)};
   #SGlb: λ&A. λ&fs. λ&x. @eval(env, x);
@@ -123,11 +123,9 @@
   #SPap: λ&p. λ&r. (λ{1: (λ{#SPlm: λ&b. @infer(#Cons{#Itv, ctx}, #Cons{@eval(env, r), env}, b); λ&q. (λ{#Path: λ&T. λ&a. λ&b. T(@eval(env, r)); λ&t. #Ill})(@infer(ctx, env, p))})(p); λ&q. #Ill})(@check(ctx, env, r, #Itv));
   // coe P r s t : P(s) — P a line of types, r s intervals, t : P(r)
   #SCoe: λ&P. λ&r. λ&s. λ&t. (λ{1: (λ{1: @eval(#Cons{@eval(env, s), env}, P); λ&q. #Ill})(@check(ctx, env, t, @eval(#Cons{@eval(env, r), env}, P))); λ&q. #Ill})(@andB(@check(#Cons{#Itv, ctx}, #Cons{@nam(?, #Itv), env}, P, #Set), @andB(@check(ctx, env, r, #Itv), @check(ctx, env, s, #Itv))));
-  // ua a b f g gf fg : Path Set a b
-  #SUa: λ&a. λ&b. λ&f. λ&g. λ&gf. λ&fg. ! &av = @eval(env, a); ! &bv = @eval(env, b); ! &fv = @eval(env, f); ! &gv = @eval(env, g);
-    (λ{1: #Path{λ&i. #Set, av, bv}; λ&q. #Ill})(@andB(@check(ctx, env, a, #Set), @andB(@check(ctx, env, b, #Set),
-      @andB(@check(ctx, env, f, #Pi{av, λ&x. bv}), @andB(@check(ctx, env, g, #Pi{bv, λ&y. av}),
-      @andB(@check(ctx, env, gf, #Pi{av, λ&x. #Path{λ&i. av, gv(fv(x)), x}}), @check(ctx, env, fg, #Pi{bv, λ&y. #Path{λ&i. bv, fv(gv(y)), y}})))))));
+  // ua A B e : Path Set A B for e : A ≃ B (CCHM: ua is the Glue line; the equivalence is the coherent one)
+  #SUa: λ&a. λ&b. λ&e. ! &av = @eval(env, a); ! &bv = @eval(env, b);
+    (λ{1: #Path{λi. #Set, av, bv}; λ&q. #Ill})(@andB(@check(ctx, env, a, #Set), @andB(@check(ctx, env, b, #Set), @check(ctx, env, e, @equivT(av, bv)))));
   // hcomp A fs x : A — x : A; each tube u on face φ is a line in A whose i0 end is x on every cell of φ;
   // tubes agree on the cells of φ ∧ ψ
   #SHcm: λ&A. λ&fs. λ&x. (λ{1: (λ{1: @eval(env, A); λ&q. #Ill})(@andB(@hcFaces(ctx, env, A, x, fs), @hcAdj(env, A, @pairs(fs)))); λ&q. #Ill})(@andB(@check(ctx, env, A, #Set), @check(ctx, env, x, @eval(env, A))));

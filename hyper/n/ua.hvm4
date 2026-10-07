@@ -1,5 +1,5 @@
 #include "cubical.hvm4"
-// transport along ua(not) in both directions, on the net: coe dispatches at run time on the universe path
-@notB = λ{#T: #F; #F: #T}
-@line = λi. @pathAt(#UaU{#Bool, #Bool, @notB, @notB}, i)
-@main = #Pair{@coe(@line, #I0, #I1, #F), @coe(@line, #I1, #I0, #F)}
+// transport along ua(e) in both directions, on the net: ua is CCHM's Glue line and coe along it is the Glue
+// transport rule (unglue at r, transport the base, the inverse at s from the fibre's centre, glue back)
+@line = λi. @pathAt(@ua(#Bool, #Bool, @idEquivV(#Bool)), i)
+@main = #Pair{@coe(@line, #I0, #I1, #F), @coe(@line, #I1, #I0, #T)}

@@ -96,11 +96,12 @@
   #QCl: λa. f(a);
   #At: λp. λi. (λ{#QEq: λa. λb. λw. @pathAt(rsp(a)(b)(w), i); λq. #QRec{q, t, f, rsp}})(p);
   λv. #QRec{v, t, f, rsp}})(x)
-// ---- Glue (boundary rules only, as in the checker): a true face selects its partial type / section
+// ---- Glue: a true face selects its partial type / section (CCHM: Glue A [1 ↦ (T,e)] ≡ T; the fork's runtime lacked the true-face arm at formation)
 @glueT = λA. λfs. @glueTGo(fs, #Nil, A)
 @glueTGo = λfs. λlive. λA. (λ{
   #Nil: λlive. λA. (λ{#Nil: λA. A; λlive. λA. #Glue{A, live}})(live)(A);
   #Cons: λ{#GFace: λphi. λT. λe. λrest. λlive. λA. (λ{
+    #I1: λT. λe. λrest. λlive. λA. T;
     #I0: λT. λe. λrest. λlive. λA. @glueTGo(rest, live, A);
     λp. λT. λe. λrest. λlive. λA. @glueTGo(rest, #Cons{#GFace{p, T, e}, live}, A)})(phi)(T)(e)(rest)(live)(A)}})(fs)(live)(A)
 @glueA = λ{#Glue: λA. λfs. A; λA. A}
@@ -167,7 +168,9 @@
 // direction of literal endpoints: 1 fwd, 0 bwd, 2 symbolic (stuck)
 @dir = λ{#I0: λ{#I1: 1; λs. 2}; #I1: λ{#I0: 0; λs. 2}; λr. λs. 2}
 @coeAt = λ&p. λ{#IMark: λr. λs. λx. @coeU(p, @dir(r, s), x); #INot: λ{#IMark: λr. λs. λx. @coeU(p, (1 - @dir(r, s)), x); λi. λr. λs. λx. #StuckCoe{#At{p, #INot{i}}, x}}; λi. λr. λs. λx. #StuckCoe{#At{p, i}, x}}
+// ua e : Path Set A B for e : A ≃ B is CCHM's Glue line  <i> Glue B [(~i, A, e), (i, B, idEquiv B)];  transport along it
+// is the Glue transport rule above, nothing else (hyper: the fork's #UaU shortcut rule, coe along ua = fst e, is removed)
+@ua = λ&A. λ&B. λ&e. #PLm{λ&i. @glueT(B, #Cons{#GFace{@inot(i), A, e}, #Cons{#GFace{i, B, @idEquivV(B)}, #Nil}})}
 @coeU = λ{
-  #UaU: λ&A. λ&B. λ&f. λ&g. λd. λ&x. (λ{1: f(x); 0: g(x); λn. #StuckCoeU{#UaU{A, B, f, g}, x}})(d);
   #CompU: λ&P. λ&Q. λ&d. λ&x. (λ{1: @coe(Q, #I0, #I1, @coe(P, #I0, #I1, x)); 0: @coe(P, #I1, #I0, @coe(Q, #I1, #I0, x)); λn. #StuckCoeU{#CompU{P, Q}, x}})(d);
   λv. λd. λx. #StuckCoeU{v, x}}
