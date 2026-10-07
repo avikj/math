@@ -28,4 +28,12 @@
         #Cons{@judge(#Pair{#Path{λi. @QV, #QCl{#T}, #QCl{#F}}, #SQEq{#STrue, #SFalse, #STt}}),       // 1
         #Cons{@judge(#Pair{#Path{λi. @QV, #QCl{#T}, #QCl{#T}}, #SQEq{#STrue, #SFalse, #STt}}),       // 0: wrong end
         #Cons{@judge(#Pair{#Nat, #SQRec{#SAnn{#SQCl{#STrue}, @Q}, #SNat, #SLam{#SZer}, #SLam{#SLam{#SLam{#SPlm{#SZer}}}}}}), // 1
-        #Nil}}}}}}}}}}}}}}}}}}}}}}}
+        // faces with a bound interval variable: coverage, agreement and the restriction to a cell are decided per cell
+        #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Partial{i, #Bool}}, #SLam{#SSys{#Cons{#SFace{#SVar{0}, #STrue}, #Nil}}}}),                       // 1: on i = i1 the branch's face holds
+        #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Partial{@ior(i, @inot(i)), #Bool}}, #SLam{#SSys{#Cons{#SFace{#SVar{0}, #STrue}, #Cons{#SFace{#SNot{#SVar{0}}, #SFalse}, #Nil}}}}}), // 1: two cells, each covered, no overlap
+        #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Partial{@ior(i, @inot(i)), #Bool}}, #SLam{#SSys{#Cons{#SFace{#SVar{0}, #STrue}, #Nil}}}}),        // 0: the cell i = i0 is uncovered
+        #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Sub{#Bool, i, #T}}, #SLam{#SInS{#STrue}}}),                                                   // 1
+        #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Sub{#Bool, i, #T}}, #SLam{#SInS{#SFalse}}}),                                                  // 0: not u on the cell i = i1
+        #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Glue{#Bool, #Cons{#GFace{i, #Bool, @idEquivV(#Bool)}, #Nil}}}, #SLam{#SGlb{#SBool, #Cons{#SFace{#SVar{0}, #STrue}, #Nil}, #STrue}}}), // 1: the section is carried to x on the cell
+        #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Glue{#Bool, #Cons{#GFace{i, #Bool, @idEquivV(#Bool)}, #Nil}}}, #SLam{#SGlb{#SBool, #Cons{#SFace{#SVar{0}, #STrue}, #Nil}, #SFalse}}}), // 0: it is not
+        #Nil}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}

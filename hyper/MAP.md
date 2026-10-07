@@ -522,5 +522,10 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
   the judgment `T === @infer(D)` runs once on the line, `EQL` commuting over it, five sides erase, and `%` is the
   fibre: the one point `([0,1,2], (refl, refl))` in 10,463 interactions. The book holds `perm`, `sorted` and the list.
 - Enumerations: the type, symbols against it, the match with coverage (`n/judgeenum.hvm4`).
+- **Faces decided per cell, exactly.** `transp`'s constancy on φ is the marker test (the line at two markers equal on
+  every cell, lambda bodies included). The face-bearing parts of a type (Partial's carrier, Sub's element, Glue's
+  faces) are syntax suspended over the environment, so restriction to a cell is evaluation under the environment
+  restricted, for literal and bound interval variables alike; inconsistent cells are dropped. Coverage, agreement,
+  `inS` and glue sections are checked on each cell of a symbolic face (`n/judgehit.hvm4`, the last seven cases).
 - **Not done:** the lane's eleven cubical programs re-run here (no Bend binary to emit them); parallel
   execution (this HVM4 is sequential; the diamond makes it legal).

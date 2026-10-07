@@ -36,18 +36,21 @@ pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0
 # contraction (1: the endpoint rule for a typed neutral path, Σ η and path η), λp. <i> p @ i by path η, Bool/Nat/List
 # eliminators, fst/snd (and snd against the wrong type), and a superposed cubical point read by %.
 # The identity equivalence checks only with fresh labels per binder instantiation (the default; -L is HVM4's).
-pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}}}}}}}}}' 36337
+pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}}}}}}}}}' 36541
+# faces with a bound interval variable are decided per cell: the face-bearing parts of a type (Partial's carrier,
+# Sub's element, Glue's faces) are syntax suspended over the environment, so restriction to a cell is evaluation under
+# the environment restricted; inconsistent cells are dropped
 # the circle, Partial and systems (branches on their cells, agreement, coverage), transp with a cofibration — the line
 # constant on φ by the marker test: L at two markers equal on every cell (a moving line on φ=i1 fails, on φ=i0 passes,
 # a constant line under a binder passes) — Sub/inS/outS, the set quotient with its constructors and recursor (n/judgehit.hvm4)
-pin judgehit '#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Nil{}}}}}}}}}}}}}}}}}}}}}}}}' 14861
+pin judgehit '#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Nil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}' 19736
 # MAP §0 on the net, with types (n/declare.hvm4): sort A = Σ B. (perm A B ≡ True) × (sorted B ≡ True) at A = [2,0,1];
 # D is the line of every arrangement with (refl, refl); the judgment runs once on the line (EQL commutes over it,
 # 49 EQL-SUP-L), five sides erase, and % is the fibre: the one point ([0,1,2], (refl, refl))
 pin declare '#Cons{#SPair{#SCons{#SZer{},#SCons{#SSuc{#SZer{}},#SCons{#SSuc{#SSuc{#SZer{}}},#SNil{}}}},#SPair{#SRefl{},#SRefl{}}},#Nil{}}' 10625
 # an enumeration as a type (n/judgeenum.hvm4): the type, a symbol against it (and one not in it), a match with every
 # symbol covered (and one without), and the match evaluated
-pin judgeenum '#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{#Suc{#Zer{}},#Nil{}}}}}}}' 1609
+pin judgeenum '#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{#Suc{#Zer{}},#Nil{}}}}}}}' 1615
 # the SAT fibre receipts, exactly as recorded (research/sat_fibre) under -L, the labels HVM4 gave them; the readback path is untouched
 if [ -z "$SKIP_SATCHECK" ]; then r=$(cd .. && python3 hyper/satcheck.py ./hyper/hyper net -L 2>&1 | tail -1); case "$r" in "satcheck pass=282 fail=0") pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL satcheck: $r";; esac; fi
 echo "pass=$pass fail=$fail"; [ "$fail" = 0 ]
