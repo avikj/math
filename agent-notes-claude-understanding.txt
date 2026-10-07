@@ -328,3 +328,60 @@ Q. MISTAKES OF THIS SESSION, so they are not repeated: narrating from prior
    renderings of the primitive; "physics-shaped" instead of physics derived;
    importing P=NP framing the repo never claims; inserting LLMs into the
    architecture; treating evaluation-frame talk as a substitute for math.
+
+------------------------------------------------------------------------
+[2026-10-07] ENTRY 7 — hyperactive machine: first VERIFIED artifacts.
+(session 01EHMJhX, branch claude/univalent-executable-math-gvqpo0)
+
+The evaluator work derived ground-up from docs/index.html §5 and the
+Laghava cost dichotomy, NOT inherited from the deleted net kernel or the
+bend2 lane. State of play, all facts (not narration):
+
+R. THE DIAMOND IS THE WHOLE SPEC. docs/index.html §5.13 (RandomDescent):
+   any (S, Step, diamond) with the one-step diamond has strategy-
+   independent reduction length = the geodesic = min steps. So the ONLY
+   obligation on the machine is: distinct available steps commute in one
+   step each. Build to that; everything else (min-steps inference) is
+   inherited by instantiation. A term machine with sharing does NOT have
+   the one-step diamond (β overlaps) — §5.11 says so — which is why the
+   machine is net-LIKE (disjoint local rewrites), arrived at from the
+   theorem, not from attachment to interaction nets.
+
+S. VERIFIED (hyperactive/, agda 2.8.0 --safe, EXIT 0, run via check.sh
+   from the agda-lib root):
+   - Diamond.agda: RandomDescent (verbatim essay §5); the slot-table
+     update algebra; the consuming (two-table) machine's diamond; the
+     shared-operand Eql instance (two Eql judgments sharing an operand —
+     the config linear nets can't host — verdicts by refl).
+   - ListAddr.agda: Addr = List ℕ, child = _∷_, Ext = proper-suffix,
+     depth = length; discharges the spawn axiom interface.
+   - Spawn.agda: batch-write algebra (writes-comm: disjoint-domain
+     batches commute), the spawning machine over the abstract address
+     interface, prefix-free invariant Inv.
+
+T. THE REAL MACHINE is MACHINE.md (page-proved, mechanization = next):
+   ONE Status table (empty | pending Cell | done Out). Cells declare
+   deps (addresses they read); fire consumes a pending site, writes its
+   done verdict (terminal/write-once), spawns children at k∷α. Diamond:
+   write/write disjoint by prefix-free + child-inj; read/write safe
+   because an available step reads only terminal done slots, so no now-
+   available step races an unfinished write (Kahn/monotone-dataflow
+   determinacy). Aggregation (Eql waiting on child Eqls) works WITHOUT
+   breaking the diamond. Supersedes Diamond.agda's two-table (deps=[])
+   case. LANGUAGE.md gives the cell/rule table (values, App, Eql-with-
+   aggregation = native checking incl. under binders via fresh neutrals,
+   Goal/no-body declarations, superposition+collapse, cubical cells).
+
+U. TOOLCHAIN LESSONS (cubical-0.9 / agda-2.8.0), do not relearn:
+   --guardedness is infective (all modules need it); isSet× in
+   Foundations.HLevels; isOfHLevelMaybe for Maybe-sets; discreteList in
+   Data.List; define `update` via decRec (reduces under goal-level with,
+   unlike with-defined); prove *-comm via a fixed-codomain helper that
+   cases on the Decs (never `with` the goal); avoid phantom implicits
+   (make state an explicit arg); Agda has no forward refs (helpers before
+   use). Build: `sh setup` (agda+cubical pin, ~40min from source);
+   check: hyperactive/check.sh.
+
+NEXT: StatusMachine.agda mechanizing MACHINE.md (the dataflow diamond),
+then the cell/rule instantiation of LANGUAGE.md, then the native runtime
+in a systems language instantiating this proven step discipline.
