@@ -95,7 +95,7 @@ check t/sort.hyper chart-move '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons
 got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 173') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL chart-move count: $got";; esac
 # step 4 closed: the specification b/sort_at_A checks under the typed path (prelude's iso tower, ua, the carrier, chart-move);
 # HYPER_CHECK_ALL verifies every typed definition the file and the prelude carry, not only the book's
-got=$(./hyper check t/sort.hyper 2>&1 | tr -d '\033' | sed 's/\[[0-9;]*m//g'); case "$got" in '✓ sort_at_A') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL check sort_at_A: $got";; esac
+got=$(./hyper check t/sort.hyper 2>&1 | tr -d '\033' | sed 's/\[[0-9;]*m//g'); case "$got" in *'✗'*) fail=$((fail+1)); echo "FAIL check t/sort.hyper: $got";; *'✓ sort_at_A'*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL check sort_at_A: $got";; esac
 if HYPER_CHECK_ALL=1 ./hyper check t/sort.hyper 2>&1 | grep -q '✗'; then fail=$((fail+1)); echo "FAIL HYPER_CHECK_ALL t/sort.hyper"; else pass=$((pass+1)); fi
 # step 5: a declaration with no body is the census of the book at its type — one entry resolves, two refuse, none refuse
 check t/declare.hyper main '#True{}'
