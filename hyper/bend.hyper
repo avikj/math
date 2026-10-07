@@ -41,5 +41,6 @@
           (@Quot/eq (a b w) (plm i (app (app (app (app resp a) b) w) i)))))))))
 
 ; the types the built-in recursors demand of their arguments (Core.Check TRec / QRec)
-(def isProp-ty (lam B (ctr Pi B (lam u (ctr Pi B (lam v (ctr Path (plm _ B) u v)))))))
+(def isProp-ty : (ctr Pi (ctr Set) (lam B (ctr Set)))
+  = (lam B (ctr Pi B (lam u (ctr Pi B (lam v (ctr Path (plm _ B) u v)))))))
 (def qresp-ty (lam A (lam R (lam f (lam B (ctr Pi A (lam a (ctr Pi A (lam b (ctr Pi (app (app R a) b) (lam _ (ctr Path (plm _ B) (app f a) (app f b)))))))))))))

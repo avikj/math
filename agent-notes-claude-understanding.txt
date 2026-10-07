@@ -411,3 +411,33 @@ V. CORRECTION — the hyperactive machine model (entries 6,7 / S,T,U above)
    the owner's actual material (sat_fibre, hyper/ kernel, corpus equality)
    so that any dynamic sub-structure / decomposition is FORCED by the
    math rather than invented. Do things right or not at all.
+
+========================================================================
+W. WHAT WAS ACTUALLY DONE (grounded; every claim checked by running).
+   The machine was never mine to design: docs/index.html §5.4–5.5 fixes
+   it as an interaction net, §5.11 gives the diamond structurally, and
+   hyper/ is the owner's running cubical net kernel (cell.c runtime,
+   verify.c checker on the same loop).  Work this session, all in hyper/:
+   - MAP §0.3 step 4 CLOSED: `hyper check t/sort.hyper` → ✓ sort_at_A,
+     program text unchanged, chart move still 173 interactions.  Needed:
+     type annotations on t/sort.hyper and the prelude's iso/ua tower
+     (isoToIsEquiv term for term, hfill written out with static faces),
+     and four conversion-completeness fixes in verify.c's eq (face through
+     a definition's spine before unfolding; coinductive assumption on two
+     closures of one code; a restriction on a closure whose code cannot
+     read the name is vacuous; the memo reset per top-level comparison),
+     plus proj inference and a Path accepted as a transport line.
+   - MAP §0.3 step 5 CLOSED: a bodyless declaration is the census of the
+     book at its type (SakalaVikalaDesa:111 देश): one entry → it is that
+     entry (receipt `declare`); none → coordinate; two → crowded, refused.
+     Nothing is solved for.  b/sort_spec declared with no body resolves to
+     ([1,2,3],(refl,refl)) in 174 = 173 + 1.
+   - cite.sh: 144 → 0 bad (modules relocated; two restored from main).
+   - t/mustfail.hyper: the rules' required rejections, gated.
+   - NOT verified here: checktest.sh/bendtest.sh (Bend2 only on GitHub,
+     unreachable).  Must run where Bend2 builds before the conversion
+     changes are settled.
+   Lessons: the owner's gates (test.sh counts, cite.sh) are the truth;
+   stdout is block-buffered when piped (verdict lines arrive after the
+   stderr trace — windowing on them is wrong); print quotas in debug
+   instrumentation get spent by earlier definitions.
