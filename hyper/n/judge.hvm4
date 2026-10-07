@@ -1,43 +1,5 @@
-// verify is decide: a typed point #Pair{T, D} is well formed when the one equation  T === @infer(D)  reduces to 1
-// on the same net.  D is quoted syntax (#S..), since a net value cannot be matched; @eval reads it into the
-// prelude's values; types are data.  EQL is an agent that commutes over superpositions, so a superposed point
-// against a goal is a superposition of equations with no rule added (the DUP of the goal).
-@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
-@nth = λ{#Cons: λh. λt. λ{0: h; _: λi. @nth(t, i - 1)}}
-// ---- eval: syntax to value, env a list of values (de Bruijn indices)
-@eval = λ&env. λ{
-  #SVar: λi. @nth(env, i);
-  #SLam: λb. λx. @eval(#Cons{x, env}, b);
-  #SApp: λf. λx. @eval(env, f)(@eval(env, x));
-  #STrue: #T; #SFalse: #F; #SZer: #Zer; #SSuc: λn. #Suc{@eval(env, n)};
-  #SPair: λa. λb. #Pair{@eval(env, a), @eval(env, b)};
-  #SRefl: #Refl;
-  #SBool: #Bool; #SNat: #Nat; #SSet: #Set;
-  #SPi: λA. λB. #Pi{@eval(env, A), λx. @eval(#Cons{x, env}, B)};
-  #SSig: λA. λB. #Sig{@eval(env, A), λx. @eval(#Cons{x, env}, B)};
-  #SEql: λT. λa. λb. #Eql{@eval(env, T), @eval(env, a), @eval(env, b)};
-  #SAnn: λt. λT. @eval(env, t)}
-// ---- infer: the type the rules assign; ctx the types of the variables, env their values (neutrals: #Nam{i})
-@infer = λ&ctx. λ&env. λ{
-  #SVar: λi. @nth(ctx, i);
-  #STrue: #Bool; #SFalse: #Bool; #SZer: #Nat;
-  #SSuc: λn. (λ{1: #Nat; λq. #Ill})(@check(ctx, env, n, #Nat));
-  #SBool: #Set; #SNat: #Set; #SSet: #Set;
-  #SApp: λf. λ&x. (λ{#Pi: λ&A. λB. (λ{1: B(@eval(env, x)); λq. #Ill})(@check(ctx, env, x, A)); λt. #Ill})(@infer(ctx, env, f));
-  #SAnn: λt. λ&T. (λ{1: @eval(env, T); λq. #Ill})(@check(ctx, env, t, @eval(env, T)));
-  #SPi: λ&A. λB. (λ{1: (λ{1: #Set; λq. #Ill})(@check(#Cons{@eval(env, A), ctx}, #Cons{#Nam{@len(ctx)}, env}, B, #Set)); λq. #Ill})(@check(ctx, env, A, #Set));
-  #SSig: λ&A. λB. (λ{1: (λ{1: #Set; λq. #Ill})(@check(#Cons{@eval(env, A), ctx}, #Cons{#Nam{@len(ctx)}, env}, B, #Set)); λq. #Ill})(@check(ctx, env, A, #Set));
-  #SEql: λ&T. λa. λb. (λ{1: (λ{1: #Set; λq. #Ill})(@check(ctx, env, b, @eval(env, T))); λq. #Ill})(@check(ctx, env, a, @eval(env, T)));
-  λs. #Ill}
-@len = λ{#Nil: 0; #Cons: λh. λt. (1 + @len(t))}
-// ---- check: a term against a type value; the introduction forms by their rule, the rest by the equation
-@check = λ&ctx. λ&env. λ&s. λ&T. (λ{
-  #SLam: λb. (λ{#Pi: λA. λB. ! &n = #Nam{@len(ctx)}; @check(#Cons{A, ctx}, #Cons{n, env}, b, B(n)); λt. 0})(T);
-  #SPair: λ&a. λb. (λ{#Sig: λA. λB. (λ{1: @check(ctx, env, b, B(@eval(env, a))); λq. 0})(@check(ctx, env, a, A)); λt. 0})(T);
-  #SRefl: (λ{#Eql: λX. λa. λb. (a === b); λt. 0})(T);
-  λt. (@infer(ctx, env, s) === T)})(s)
-// ---- the judgment of a typed point: one equation on the net
-@judge = λ{#Pair: λT. λD. @check(#Nil, #Nil, D, T)}
+#include "judgment.hvm4"
+// Π, Σ, Bool, Nat, Eql/refl; two must-fail cases; a superposed point against a goal read by %
 @main = #Cons{@judge(#Pair{#Pi{#Bool, λx. #Bool}, #SLam{#SVar{0}}}),
         #Cons{@judge(#Pair{#Bool, #SZer}),
         #Cons{@judge(#Pair{#Eql{#Bool, #T, #T}, #SRefl}),

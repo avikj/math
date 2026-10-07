@@ -495,8 +495,14 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
 - **Verify is decide.** `n/judge.hvm4`: a typed point `#Pair{T, D}` is well formed when the one equation
   `T === @infer(D)` reduces to 1 on the same net; `D` is quoted syntax read by `@eval` into the prelude's values.
   Π, Σ, Bool, Nat, Eql/refl; two must-fail cases reduce to 0; a superposed point against a goal is a superposition
-  of equations with no rule added (`EQL-SUP`), read by `%` as `[1,0]`. The remaining formers (Path, transp, hcomp,
-  Glue, constructors, match, HITs, the interval) are clauses of `@infer` still to write, against the lane's
-  `Core/WHNF.hs` and `Check.hs` line by line, with `cell.c` as the second oracle.
-- **Not done:** those clauses; the lane's eleven cubical programs re-run here (no Bend binary to emit them);
-  parallel execution (this HVM4 is sequential; the diamond makes it legal).
+  of equations with no rule added (`EQL-SUP`), read by `%` as `[1,0]`. `n/judgment.hvm4` carries the clauses, the
+  lane's `Core/Check.hs` rule by rule: the interval and its operations, `Path` formation, `<i> t` against a Path
+  with both ends, `p @ r` with the β case, `coe` along a line, `ua` with its six premises, `hcomp` with each tube's
+  i0 end checked against the base on every cell of its face (the face's DNF, the environment fixed on the cell)
+  and adjacent tubes compared on the cells of φ ∧ ψ, `Glue` formation with each face's equivalence against
+  `@equivT`, `glue` against its Glue type with the sections carried to the base by `e`, `unglue`.
+  `n/judgecub.hvm4` pins twelve cases including must-fails.
+- **Not done:** constructors beyond Bool/Nat, match, HITs and quotients, `Sub`/`Partial`, and the endpoint rule
+  for a neutral path (`p @ i1 ≡ y` from `p`'s type), which is why the identity equivalence's contraction fails to
+  check on a Glue face (pinned as 0); the lane's eleven cubical programs re-run here (no Bend binary to emit
+  them); parallel execution (this HVM4 is sequential; the diamond makes it legal).

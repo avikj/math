@@ -1,0 +1,110 @@
+#include "cubical.hvm4"
+// verify is decide: a typed point #Pair{T, D} is well formed when the one equation  T === @infer(D)  reduces to 1
+// on the same net.  D is quoted syntax (#S..), since a net value cannot be matched; @eval reads it into the
+// prelude's values; types are data.  EQL is an agent that commutes over superpositions, so a superposed point
+// against a goal is a superposition of equations with no rule added (the DUP of the goal).  The rules are the
+// lane's (collab/bend2-interactive-cubical, Core/Check.hs), clause by clause.
+@lcat = λ{#Nil: λ&ys. ys; #Cons: λ&h. λ&t. λ&ys. #Cons{h, @lcat(t, ys)}}
+@nth = λ{#Cons: λ&h. λ&t. λ{0: h; _: λ&i. @nth(t, i - 1)}}
+@setNth = λ{#Cons: λ&h. λ&t. λ{0: λ&v. #Cons{v, t}; _: λ&i. λ&v. #Cons{h, @setNth(t, i - 1, v)}}}
+@andB = λ{1: λ&b. b; _: λ&n. λ&b. 0}
+@all = λ&f. λ{#Nil: 1; #Cons: λ&h. λ&t. @andB(f(h), @all(f, t))}
+// ---- eval: syntax to value, env a list of values (de Bruijn indices); interval variables are values too
+@eval = λ&env. λ{
+  #SVar: λ&i. @nth(env, i);
+  #SLam: λ&b. λ&x. @eval(#Cons{x, env}, b);
+  #SApp: λ&f. λ&x. @eval(env, f)(@eval(env, x));
+  #STrue: #T; #SFalse: #F; #SZer: #Zer; #SSuc: λ&n. #Suc{@eval(env, n)};
+  #SPair: λ&a. λ&b. #Pair{@eval(env, a), @eval(env, b)};
+  #SRefl: #Refl;
+  #SBool: #Bool; #SNat: #Nat; #SSet: #Set; #SItv: #Itv;
+  #SPi: λ&A. λ&B. #Pi{@eval(env, A), λ&x. @eval(#Cons{x, env}, B)};
+  #SSig: λ&A. λ&B. #Sig{@eval(env, A), λ&x. @eval(#Cons{x, env}, B)};
+  #SEql: λ&T. λ&a. λ&b. #Eql{@eval(env, T), @eval(env, a), @eval(env, b)};
+  #SAnn: λ&t. λ&T. @eval(env, t);
+  #SI0: #I0; #SI1: #I1; #SNot: λ&r. @inot(@eval(env, r));
+  #SAnd: λ&r. λ&s. @iand(@eval(env, r), @eval(env, s)); #SOr: λ&r. λ&s. @ior(@eval(env, r), @eval(env, s));
+  #SPath: λ&T. λ&a. λ&b. #Path{λ&i. @eval(#Cons{i, env}, T), @eval(env, a), @eval(env, b)};
+  #SPlm: λ&b. #PLm{λ&i. @eval(#Cons{i, env}, b)};
+  #SPap: λ&p. λ&r. @pathAt(@eval(env, p), @eval(env, r));
+  #SCoe: λ&P. λ&r. λ&s. λ&t. @coe(λ&i. @eval(#Cons{i, env}, P), @eval(env, r), @eval(env, s), @eval(env, t));
+  #SUa: λ&a. λ&b. λ&f. λ&g. λ&gf. λ&fg. #UaU{@eval(env, a), @eval(env, b), @eval(env, f), @eval(env, g)};
+  #SHcm: λ&A. λ&fs. λ&x. @hcomp(@eval(env, A), @evalFaces(env, fs), @eval(env, x));
+  #SGlue: λ&A. λ&fs. #Glue{@eval(env, A), @evalGFaces(env, fs)};
+  #SGlb: λ&A. λ&fs. λ&x. @eval(env, x);
+  #SUnglue: λ&g. @unglue(@eval(env, g))}
+@evalFaces = λ&env. λ{#Nil: #Nil; #Cons: λ{#SFace: λ&p. λ&u. λ&rest. #Cons{#Face{@eval(env, p), @eval(env, u)}, @evalFaces(env, rest)}}}
+@evalGFaces = λ&env. λ{#Nil: #Nil; #Cons: λ{#SGFace: λ&p. λ&T. λ&e. λ&rest. #Cons{#GFace{@eval(env, p), @eval(env, T), @eval(env, e)}, @evalGFaces(env, rest)}}}
+// ---- the cells of a face: its DNF as lists of (variable index, endpoint) — literals are variables and their negations
+@dnf = λ{
+  #SI1: #Cons{#Nil, #Nil}; #SI0: #Nil;
+  #SVar: λ&i. #Cons{#Cons{#Lit{i, #I1}, #Nil}, #Nil};
+  #SNot: λ{#SVar: λ&i. #Cons{#Cons{#Lit{i, #I0}, #Nil}, #Nil}; #SI0: #Cons{#Nil, #Nil}; #SI1: #Nil; λ&r. #Nil};
+  #SAnd: λ&p. λ&q. @dnfProd(@dnf(p), @dnf(q));
+  #SOr: λ&p. λ&q. @lcat(@dnf(p), @dnf(q));
+  λ&r. #Nil}
+@dnfProd = λ{#Nil: λ&qs. #Nil; #Cons: λ&c. λ&cs. λ&qs. @lcat(@dnfWith(c, qs), @dnfProd(cs, qs))}
+@dnfWith = λ&c. λ{#Nil: #Nil; #Cons: λ&d. λ&ds. #Cons{@lcat(c, d), @dnfWith(c, ds)}}
+// the environment on a cell: its interval variables fixed at their endpoints
+@onCell = λ&env. λ{#Nil: env; #Cons: λ{#Lit: λ&i. λ&e. λ&rest. @onCell(@setNth(env, i, e), rest)}}
+@pairs = λ{#Nil: #Nil; #Cons: λ&h. λ&t. @lcat(@pairWith(h, t), @pairs(t))}
+@pairWith = λ&h. λ{#Nil: #Nil; #Cons: λ&x. λ&xs. #Cons{#Pair{h, x}, @pairWith(h, xs)}}
+// ---- infer: the type the rules assign; ctx the types of the variables, env their values (a neutral is #Nam{?})
+@infer = λ&ctx. λ&env. λ{
+  #SVar: λ&i. @nth(ctx, i);
+  #STrue: #Bool; #SFalse: #Bool; #SZer: #Nat;
+  #SSuc: λ&n. (λ{1: #Nat; λ&q. #Ill})(@check(ctx, env, n, #Nat));
+  #SBool: #Set; #SNat: #Set; #SSet: #Set; #SItv: #Set;
+  #SI0: #Itv; #SI1: #Itv;
+  #SNot: λ&r. (λ{1: #Itv; λ&q. #Ill})(@check(ctx, env, r, #Itv));
+  #SAnd: λ&r. λ&s. (λ{1: #Itv; λ&q. #Ill})(@andB(@check(ctx, env, r, #Itv), @check(ctx, env, s, #Itv)));
+  #SOr: λ&r. λ&s. (λ{1: #Itv; λ&q. #Ill})(@andB(@check(ctx, env, r, #Itv), @check(ctx, env, s, #Itv)));
+  #SApp: λ&f. λ&x. (λ{#Pi: λ&A. λ&B. (λ{1: B(@eval(env, x)); λ&q. #Ill})(@check(ctx, env, x, A)); λ&t. #Ill})(@infer(ctx, env, f));
+  #SAnn: λ&t. λ&T. (λ{1: @eval(env, T); λ&q. #Ill})(@check(ctx, env, t, @eval(env, T)));
+  #SPi: λ&A. λ&B. (λ{1: (λ{1: #Set; λ&q. #Ill})(@check(#Cons{@eval(env, A), ctx}, #Cons{#Nam{?}, env}, B, #Set)); λ&q. #Ill})(@check(ctx, env, A, #Set));
+  #SSig: λ&A. λ&B. (λ{1: (λ{1: #Set; λ&q. #Ill})(@check(#Cons{@eval(env, A), ctx}, #Cons{#Nam{?}, env}, B, #Set)); λ&q. #Ill})(@check(ctx, env, A, #Set));
+  #SEql: λ&T. λ&a. λ&b. (λ{1: (λ{1: #Set; λ&q. #Ill})(@check(ctx, env, b, @eval(env, T))); λ&q. #Ill})(@check(ctx, env, a, @eval(env, T)));
+  // Path T a b : Set — T a line of types, a at T(i0), b at T(i1)
+  #SPath: λ&T. λ&a. λ&b. (λ{1: (λ{1: #Set; λ&q. #Ill})(@andB(@check(ctx, env, a, @eval(#Cons{#I0, env}, T)), @check(ctx, env, b, @eval(#Cons{#I1, env}, T)))); λ&q. #Ill})(@check(#Cons{#Itv, ctx}, #Cons{#Nam{?}, env}, T, #Set));
+  #SPlm: λ&b. #Ill;
+  // p @ r : T(r); (<i> t) @ r is t at r
+  #SPap: λ&p. λ&r. (λ{1: (λ{#SPlm: λ&b. @infer(#Cons{#Itv, ctx}, #Cons{@eval(env, r), env}, b); λ&q. (λ{#Path: λ&T. λ&a. λ&b. T(@eval(env, r)); λ&t. #Ill})(@infer(ctx, env, p))})(p); λ&q. #Ill})(@check(ctx, env, r, #Itv));
+  // coe P r s t : P(s) — P a line of types, r s intervals, t : P(r)
+  #SCoe: λ&P. λ&r. λ&s. λ&t. (λ{1: (λ{1: @eval(#Cons{@eval(env, s), env}, P); λ&q. #Ill})(@check(ctx, env, t, @eval(#Cons{@eval(env, r), env}, P))); λ&q. #Ill})(@andB(@check(#Cons{#Itv, ctx}, #Cons{#Nam{?}, env}, P, #Set), @andB(@check(ctx, env, r, #Itv), @check(ctx, env, s, #Itv))));
+  // ua a b f g gf fg : Path Set a b
+  #SUa: λ&a. λ&b. λ&f. λ&g. λ&gf. λ&fg. ! &av = @eval(env, a); ! &bv = @eval(env, b); ! &fv = @eval(env, f); ! &gv = @eval(env, g);
+    (λ{1: #Path{λ&i. #Set, av, bv}; λ&q. #Ill})(@andB(@check(ctx, env, a, #Set), @andB(@check(ctx, env, b, #Set),
+      @andB(@check(ctx, env, f, #Pi{av, λ&x. bv}), @andB(@check(ctx, env, g, #Pi{bv, λ&y. av}),
+      @andB(@check(ctx, env, gf, #Pi{av, λ&x. #Path{λ&i. av, gv(fv(x)), x}}), @check(ctx, env, fg, #Pi{bv, λ&y. #Path{λ&i. bv, fv(gv(y)), y}})))))));
+  // hcomp A fs x : A — x : A; each tube u on face φ is a line in A whose i0 end is x on every cell of φ;
+  // tubes agree on the cells of φ ∧ ψ
+  #SHcm: λ&A. λ&fs. λ&x. (λ{1: (λ{1: @eval(env, A); λ&q. #Ill})(@andB(@hcFaces(ctx, env, A, x, fs), @hcAdj(env, @pairs(fs)))); λ&q. #Ill})(@andB(@check(ctx, env, A, #Set), @check(ctx, env, x, @eval(env, A))));
+  // Glue A [(φ,T,e)] : Set — A : Set; on φ a type T and an equivalence e : T ≃ A
+  #SGlue: λ&A. λ&fs. (λ{1: (λ{1: #Set; λ&q. #Ill})(@glueFaces(ctx, env, @eval(env, A), fs)); λ&q. #Ill})(@check(ctx, env, A, #Set));
+  // glue A [(φ,t)] x is inferable only when every face is false: then it is x : A
+  #SGlb: λ&A. λ&fs. λ&x. (λ{1: (λ{1: @eval(env, A); λ&q. #Ill})(@check(ctx, env, x, @eval(env, A))); λ&q. #Ill})(@all(λ{#SFace: λ&p. λ&t. (λ{#SI0: 1; λ&r. 0})(p)}, fs));
+  // unglue g : A for g : Glue A fs; a Glue with no live face is its base type
+  #SUnglue: λ&g. (λ{#Glue: λ&A. λ&fs. A; λ&t. t})(@infer(ctx, env, g));
+  λ&s. #Ill}
+@hcFaces = λ&ctx. λ&env. λ&A. λ&x. λ{#Nil: 1; #Cons: λ{#SFace: λ&p. λ&u. λ&rest.
+  @andB(@check(ctx, env, p, #Itv), @andB(@all(λ&cell. ! &e2 = @onCell(env, cell); ! &uv = @eval(e2, u);
+    @check(ctx, e2, u, #Path{λ&i. @eval(e2, A), @eval(e2, x), @pathAt(uv, #I1)}), @dnf(p)), @hcFaces(ctx, env, A, x, rest)))}}
+@hcAdj = λ&env. λ{#Nil: 1; #Cons: λ{#Pair: λ{#SFace: λ&p. λ&u. λ{#SFace: λ&q. λ&v. λ&rest.
+  @andB(@all(λ&cell. ! &e2 = @onCell(env, cell); (@eval(e2, u) === @eval(e2, v)), @dnf(#SAnd{p, q})), @hcAdj(env, rest))}}}}
+@glueFaces = λ&ctx. λ&env. λ&A. λ{#Nil: 1; #Cons: λ{#SGFace: λ&p. λ&T. λ&e. λ&rest.
+  @andB(@check(ctx, env, p, #Itv), @andB(@check(ctx, env, T, #Set), @andB(@check(ctx, env, e, @equivT(@eval(env, T), A)), @glueFaces(ctx, env, A, rest))))}}
+// ---- check: a term against a type value; the introduction forms by their rule, the rest by the equation
+@check = λ&ctx. λ&env. λ&s. λ&T. (λ{
+  #SLam: λ&b. (λ{#Pi: λ&A. λ&B. ! &n = #Nam{?}; @check(#Cons{A, ctx}, #Cons{n, env}, b, B(n)); λ&t. 0})(T);
+  #SPair: λ&a. λ&b. (λ{#Sig: λ&A. λ&B. (λ{1: @check(ctx, env, b, B(@eval(env, a))); λ&q. 0})(@check(ctx, env, a, A)); λ&t. 0})(T);
+  #SRefl: (λ{#Eql: λ&X. λ&a. λ&b. (a === b); λ&t. 0})(T);
+  // <i> t : Path T a b — t at a fresh i is a T(i), and its ends are a and b
+  #SPlm: λ&b. (λ{#Path: λ&Tl. λ&a. λ&b2. ! &n = #Nam{?};
+    @andB(@check(#Cons{#Itv, ctx}, #Cons{n, env}, b, Tl(n)), @andB((@eval(#Cons{#I0, env}, b) === a), (@eval(#Cons{#I1, env}, b) === b2))); λ&t. 0})(T);
+  // glue A [(φ,t)] x : Glue A [(φ,T,e)] — x : A; on a face that holds, its section is a T and e carries it to x
+  #SGlb: λ&A. λ&fs. λ&x. (λ{#Glue: λ&Av. λ&gfs. @andB(@check(ctx, env, x, Av), @glueSections(ctx, env, x, fs, gfs)); λ&t. 0})(T);
+  λ&t. (@infer(ctx, env, s) === T)})(s)
+@glueSections = λ&ctx. λ&env. λ&x. λ{#Nil: λ&g. 1; #Cons: λ{#SFace: λ&p. λ&t. λ&rest. λ{#Cons: λ{#GFace: λ&q. λ&Tv. λ&e. λ&grest.
+  @andB((λ{#I1: @andB(@check(ctx, env, t, Tv), (@fstP(e)(@eval(env, t)) === @eval(env, x))); #I0: 1; λ&r. 0})(@eval(env, p)), @glueSections(ctx, env, x, rest, grest))}; λ&g. 0}}}
+// ---- the judgment of a typed point: one equation on the net
+@judge = λ{#Pair: λ&T. λ&D. @check(#Nil, #Nil, D, T)}

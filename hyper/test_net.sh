@@ -29,7 +29,13 @@ pin supline '#Cons{#T{},#Cons{#F{},#Nil{}}}' 269
 # Block D: verify is decide — a typed point's judgment is one equation T === @infer(D) on the net (n/judge.hvm4):
 # Π, Σ, Bool, Nat, Eql/refl over quoted syntax; two must-fail cases reduce to 0; a superposed point against a
 # goal is a superposition of equations (EQL-SUP, no rule added), read by %
-pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}' 519
+pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}' 589
+# the cubical formers (n/judgecub.hvm4): plm against Path (and a wrong end), path application, coe along a constant
+# line (and a wrong target), ua of the identity, hcomp with a tube whose i0 end is the base (and one whose is not),
+# Glue with no face, glue/unglue, a Glue face whose equivalence proof is wrong (0: the contraction of the identity
+# equivalence needs the endpoint rule p @ i1 ≡ y for a neutral p, which @eval does not have yet), and a superposed
+# cubical point read by %.  ↑ is HVM4's collapse-priority wrapper on a value, not a value.
+pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{↑↑↑↑↑↑↑1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{↑↑↑↑↑↑↑↑0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}' 4331
 # the SAT fibre receipts, exactly as recorded (research/sat_fibre): the readback path is untouched
 if [ -z "$SKIP_SATCHECK" ]; then r=$(cd .. && python3 hyper/satcheck.py ./hyper/hyper net 2>&1 | tail -1); case "$r" in "satcheck pass=282 fail=0") pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL satcheck: $r";; esac; fi
 echo "pass=$pass fail=$fail"; [ "$fail" = 0 ]
