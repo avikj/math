@@ -1,8 +1,16 @@
 # Status — what was asked, what is delivered, where (all verified by running the patched binary)
 
-Build: `cubical-paths.patch` on DKormann/Bend2 @ f026483; GHC 9.12.2, cabal 3.18,
-`LC_ALL=C.utf8` (without it the binary aborts on any UTF-8 source and prints
-nothing). `bend f.bend` checks and runs; `bend check` is not a subcommand.
+Build: `cubical-paths.patch` **and** `cubical-paths-hvm4-tail.patch` on
+DKormann/Bend2 @ f026483; GHC 9.12.2, cabal 3.18, `LC_ALL=C.utf8` (without it
+the binary aborts on any UTF-8 source and prints nothing). `bend f.bend` checks
+and runs; `bend check` is not a subcommand.
+
+`cubical-paths.patch` is TRUNCATED at its last hunk: `src/Target/HVM4.hs` ends
+mid-definition, with `label` missing its `Sym` and catch-all clauses and `op2`
+absent entirely, so `Op2 o a b -> ... op2 o ...` at line 121 is a scope error
+and the tree does not compile. `cubical-paths-hvm4-tail.patch` supplies the
+missing tail, taken verbatim from the identical definitions in
+`src/Target/HVM4Full.hs`. Apply both, in that order.
 
 | Ask | Delivered | Evidence |
 |---|---|---|

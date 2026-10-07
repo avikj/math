@@ -1,0 +1,15 @@
+--- a/src/Target/HVM4.hs
++++ b/src/Target/HVM4.hs
+@@ -226,3 +226,12 @@
+   label :: Term -> String
+   label (Loc _ t)     = label t
+   label (Val (U64_V v)) = "L" ++ show v
++  label (Sym s)         = s
++  label _               = "L"
++
++  op2 :: NOp2 -> String
++  op2 o = case o of
++    ADD -> "+"; SUB -> "-"; MUL -> "*"; DIV -> "/"; MOD -> "%"
++    EQL -> "=="; NEQ -> "!="; LST -> "<"; GRT -> ">"; LEQ -> "<="; GEQ -> ">="
++    AND -> "&&"; OR -> "||"; XOR -> "^"; SHL -> "<<"; SHR -> ">>"
++    _   -> "+"
