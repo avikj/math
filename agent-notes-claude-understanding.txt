@@ -518,3 +518,16 @@ AB. ATTEMPT 3 — THE ARRANGEMENT CENSUS (t/order.hyper; verify.c
    shuffle: 670 comparisons (merge bound 769, log2 128! = 716), 10,279
    interactions (13·n·lg n).  perm by construction, Q run once as the
    certificate.  pass=190.
+
+AC. THE NET (hyper/net.c, test_net.sh, n/*.hvm4).  cell.c is not the machine:
+   closures and frames, order fixed by demand, no diamond.  net.c (HVM4
+   verbatim) is.  Added in C: COL (% collapse as a value, 4 rules) and
+   FRS (? fresh coordinate, 1 rule); nothing else.  As programs on the
+   net: the lane's cubical prelude (coe/hcomp/paths/Glue) runs (ua both
+   ways, hcomp Nat, a shared superposed line); declarations with no body
+   as lines (sort3, sat3, fresh vs static labels); the judgment of a typed
+   point as one equation T === @infer(D) over quoted syntax (Π Σ Bool Nat
+   Eql; must-fails; superposed point → superposition of equations by
+   EQL-SUP, no rule).  satcheck 282/282 intact.  Remaining: @infer for the
+   cubical formers (days, against the lane's Haskell), re-running the
+   lane's eleven programs (needs Bend to emit), parallel execution.

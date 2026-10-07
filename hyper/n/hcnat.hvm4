@@ -1,0 +1,3 @@
+#include "cubical.hvm4"
+// hcomp in Nat with one face that holds: the composite is that tube's top
+@main = @hcomp(#Nat, #Cons{#Face{#I1, #PLm{λk. #Suc{#Zer}}}, #Nil}, #Zer)

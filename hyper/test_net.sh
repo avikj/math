@@ -21,6 +21,15 @@ pin fresh '#Pair{#Cons{#Cons{#F{},#Cons{#F{},#Cons{#F{},#Nil{}}}},#Cons{#Cons{#T
 # MAP §0 on the net: every arrangement of [3,1,2] as a line (one fresh coordinate per place), `sorted` run on it,
 # the one survivor read by %: nine comparisons, five dead sides
 pin sort3 '#Cons{#Cons{1,#Cons{2,#Cons{3,#Nil{}}}},#Nil{}}' 458
+# Block C: the cubical layer as net programs (n/cubical.hvm4, the lane's full-runtime prelude): coe dispatching at run
+# time on the universe path, hcomp deciding a face, transport along one shared superposed line read by %
+pin ua      '#Pair{#T{},#T{}}' 268
+pin hcnat   '#Suc{#Zer{}}' 25
+pin supline '#Cons{#T{},#Cons{#F{},#Nil{}}}' 269
+# Block D: verify is decide — a typed point's judgment is one equation T === @infer(D) on the net (n/judge.hvm4):
+# Π, Σ, Bool, Nat, Eql/refl over quoted syntax; two must-fail cases reduce to 0; a superposed point against a
+# goal is a superposition of equations (EQL-SUP, no rule added), read by %
+pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}' 519
 # the SAT fibre receipts, exactly as recorded (research/sat_fibre): the readback path is untouched
 if [ -z "$SKIP_SATCHECK" ]; then r=$(cd .. && python3 hyper/satcheck.py ./hyper/hyper net 2>&1 | tail -1); case "$r" in "satcheck pass=282 fail=0") pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL satcheck: $r";; esac; fi
 echo "pass=$pass fail=$fail"; [ "$fail" = 0 ]

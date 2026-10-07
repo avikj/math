@@ -1,0 +1,5 @@
+#include "cubical.hvm4"
+// transport along ua(not) in both directions, on the net: coe dispatches at run time on the universe path
+@notB = λ{#T: #F; #F: #T}
+@line = λi. @pathAt(#UaU{#Bool, #Bool, @notB, @notB}, i)
+@main = #Pair{@coe(@line, #I0, #I1, #F), @coe(@line, #I1, #I0, #F)}

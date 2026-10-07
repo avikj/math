@@ -474,3 +474,29 @@ this runtime does not model.
     hyper/bendtest.sh        values against Bend2's normaliser
     hyper/checktest.sh       verdicts against Bend2's checker
     hyper/cite.sh            every identifier this file names is on the line it cites
+
+## The net (hyper/net.c, test_net.sh)
+
+`cell.c` is a closure evaluator with the ledger's vocabulary; it is not the machine of §5.4 and nothing in it has
+the one-step diamond. The machine is `net.c` (HVM4 verbatim, the net the SAT fibre receipts were computed on) with
+hyper's agents, and everything cubical as programs on it. State, every line pinned by `test_net.sh`:
+
+- **`%x`, the collapse as a value (COL).** On an erased world `#Nil`; on a superposition `@lcat` of both sides,
+  multiplicity conserved; on a value, the superpositions inside lifted to the top (same label correlated) and one
+  leaf. Four receipts. `n/xor` `n/same` `n/empty` `n/diff`. The `-C` readback is untouched: satcheck 282/282.
+- **`?`, a fresh coordinate (FRS).** One interaction, the next number; `&(?){a,b}` is `dim`. `n/fresh.hvm4` measures
+  HVM4's recorded defect (STATE_OF_THE_WORK I.4: labels static per binder) beside the fix: a static label under
+  recursion reads the eight Bool lists of length 3 as two leaves; a fresh label names each unfolding, eight leaves.
+- **A declaration with no body is a line.** `n/sort3.hvm4`: every arrangement of `[3,1,2]` as one line, `sorted` run on
+  it, the survivor read by `%`, 458 interactions, nine comparisons. `n/sat3.hvm4`: a 3-variable proposition's fibre.
+- **The cubical layer as net programs.** `n/cubical.hvm4` is the lane's full-runtime prelude (`coe`, `hcomp`, `hfill`,
+  paths, the interval, Glue), run here: transport along `ua(not)` both ways (`n/ua`, 268 interactions), `hcomp` in
+  Nat deciding a face (`n/hcnat`), transport along one shared superposed universe path read by `%` (`n/supline`).
+- **Verify is decide.** `n/judge.hvm4`: a typed point `#Pair{T, D}` is well formed when the one equation
+  `T === @infer(D)` reduces to 1 on the same net; `D` is quoted syntax read by `@eval` into the prelude's values.
+  Π, Σ, Bool, Nat, Eql/refl; two must-fail cases reduce to 0; a superposed point against a goal is a superposition
+  of equations with no rule added (`EQL-SUP`), read by `%` as `[1,0]`. The remaining formers (Path, transp, hcomp,
+  Glue, constructors, match, HITs, the interval) are clauses of `@infer` still to write, against the lane's
+  `Core/WHNF.hs` and `Check.hs` line by line, with `cell.c` as the second oracle.
+- **Not done:** those clauses; the lane's eleven cubical programs re-run here (no Bend binary to emit them);
+  parallel execution (this HVM4 is sequential; the diamond makes it legal).
