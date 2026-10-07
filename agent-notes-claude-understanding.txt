@@ -385,3 +385,29 @@ U. TOOLCHAIN LESSONS (cubical-0.9 / agda-2.8.0), do not relearn:
 NEXT: StatusMachine.agda mechanizing MACHINE.md (the dataflow diamond),
 then the cell/rule instantiation of LANGUAGE.md, then the native runtime
 in a systems language instantiating this proven step discipline.
+
+========================================================================
+V. CORRECTION — the hyperactive machine model (entries 6,7 / S,T,U above)
+   is SPECULATIVE and FROZEN. It was built from the essay + my own
+   reasoning and NEVER grounded against the owner's actual code: the
+   sat_fibre development (InteractionGeodesic / InteractionLedger /
+   ColorFrame / SATBoundary / RepresentativeContinuation), the hyper/ C
+   interaction-net kernel, or the corpus's real equality/decomposition
+   treatment. Two sub-claims survive with NO correctness question — both
+   machine-checked --safe EXIT 0 and copied/derived verbatim from fixed
+   sources, independent of the invented machine:
+     - Diamond.agda RandomDescent  (essay §5 min-steps theorem, verbatim)
+     - DecTable.agda               (point/batch update algebra over a
+                                    discrete index; pure library lemmas)
+   EVERYTHING ELSE I authored this session is scaffolding I invented and
+   cannot vouch for: the spawn apparatus (address-tree, child k α,
+   prefix-free Inv) is NOT uniquely forced by the math — it is guessed
+   structure, hence suspect; StatusMachine/SpawnStatus/Spawn/ListAddr,
+   MACHINE.md, LANGUAGE.md, STATUS.md, and evaluator/ embed that
+   unverified model. Per the owner's instruction, these files are removed
+   from the working tree so they do not pollute context; all are
+   preserved in git history on this branch (commits 99371..06722).
+   The next phase does NOT continue from this model. It starts by READING
+   the owner's actual material (sat_fibre, hyper/ kernel, corpus equality)
+   so that any dynamic sub-structure / decomposition is FORCED by the
+   math rather than invented. Do things right or not at all.
