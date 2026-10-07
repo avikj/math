@@ -8,6 +8,7 @@
  * lines and pairs, and two stuck eliminators with the same code convert when their frames do.
  * The rules are Bend2's Core.Check, one clause each, over the kernel's cells.                */
 #include "cell.h"
+bool occurs_cell(Loc name, Term t);
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -122,7 +123,11 @@ static bool eq_leaf(Term u, Term v, bool r) {   /* the innermost failing compari
 }
 static bool eq_(Term u, Term v, int d);
 static bool eq_struct(Term u, Term v, int d);
+static void eq_reset(void);
 static bool eq(Term u, Term v, int d) {
+  /* the coinductive memo is per top-level comparison: the check sites call eq at depth 0 directly (never
+     equal()), so without this it fills across the file and eq_seen, once full, refuses every assumption */
+  if (d == 0 && !IN_HOOK) eq_reset();
   bool r = eq_(u, v, d);
   if (!r && !IN_HOOK && d <= 14 && getenv("HYPER_EQDBG")) { fprintf(stderr, "  [eq d=%d] ", d); print_term(u, 4); fprintf(stderr, "  vs  "); print_term(v, 4); fprintf(stderr, "\n"); }
   return r;
@@ -130,6 +135,7 @@ static bool eq(Term u, Term v, int d) {
 /* pairs already under comparison: a revisit is the coinductive case and counts as equal (path ≃ bisimulation) */
 static struct { uint64_t k[1 << 14]; uint32_t n; } EQV;
 static uint64_t eq_key(Term u, Term v) { uint64_t k = ((uint64_t)loc(u) << 32) ^ (uint64_t)loc(v) ^ ((uint64_t)tag(u) << 56); return k ? k : 1; }
+static void eq_reset(void) { if (EQV.n) memset(&EQV, 0, sizeof EQV); }
 static bool eq_seen(Term u, Term v) {
   if (EQV.n > (1u << 13)) return false;
   uint64_t key = eq_key(u, v);
@@ -150,8 +156,63 @@ static bool same_head(Term u, Term v, int d) {
   for (uint32_t i = 0; i < nu; i++) if (!eq(au[i], av[i], d+1)) return false;
   return true;
 }
+/* Equal.sameHead through a face: a face map on a neutral spine headed by a definition is that spine with
+   the face on each argument (the rule fce_apply fires under CHECK_MODE), but compared before the rebuilt
+   application is reduced, so the head is still visible to same_head and the definition is not unfolded
+   into two closures of one fix that regenerate each other */
+/* the slot at a level, read raw: the frame's own cell, with no restriction applied on the way */
+static Term raw_slot(Term f, uint32_t lvl, bool *isd) {
+  for (;;) { if (!tag(f)) return 0; if (tag(f) == T_RESTRICT) { f = HEAP[loc(f)]; continue; } if (ext(f) == lvl) break; f = HEAP[loc(f)]; }
+  if (tag(f) == T_DIM) { *isd = true; return mk(T_IVAR, 0, loc(f)); }
+  *isd = false; return mk(T_VAR, lvl, loc(f));
+}
+/* a face (side 0/1, at a dimension) or a substitution (side 2, at a dimension or a coordinate) on a closure
+   is vacuous when no level its code reads can mention the name: a dimension level is another name; the slot
+   holding the closure itself (a fix's self-slot) is taken by coinduction; a term slot must not mention a
+   dimension name (occurs check), and for a coordinate name only the self-slot is admitted.  Without this, a
+   restriction read through a frame re-wraps the closure into a fresh object at every lookup, and the
+   coinductive memo of eq never sees the same pair twice (two closures of one fix regenerate each other). */
+static bool restriction_vacuous_on_closure(Term nm, Term w) {
+  uint32_t code = loc(HEAP[loc(w)]); Term fr = HEAP[loc(w)+1]; uint32_t n = next_depth(fr);
+  for (uint32_t l = 0; l < n; l++) {
+    if (!code_uses(code, l)) continue;
+    bool isd; Term slot = raw_slot(fr, l, &isd); if (!slot) return false;
+    if (isd) { if (tag(nm) == T_IVAR && loc(slot) == loc(nm)) return false; continue; }
+    Term sv = whnf(slot); if (sv == w) continue;
+    if (tag(nm) != T_IVAR) return false;
+    if (occurs_cell(loc(nm), sv)) return false;
+  }
+  return true;
+}
+static Term strip_scoped_faces(Term u) {
+  for (;;) {
+    if (tag(u) != T_FCE) return u;
+    Term nm = HEAP[loc(u)]; if (tag(nm) != T_IVAR && tag(nm) != T_VAR) return u;
+    Term w = HEAP[loc(u)+1]; if (tag(w) == T_VAR) w = whnf(w);
+    if ((tag(w) != T_LAM && tag(w) != T_PLM) || !restriction_vacuous_on_closure(nm, w)) return u;
+    u = w;
+  }
+}
+static Term fce_through_spine(Term u) {
+  Term nm = HEAP[loc(u)], target = HEAP[loc(u)+1], by = HEAP[loc(u)+2]; unsigned side = ext(u);
+  if (tag(nm) != T_IVAR && tag(nm) != T_VAR) return 0;
+  Term args[64]; uint32_t n; Term h = spine(target, args, &n);
+  if (tag(h) != T_REF || n == 0) return 0;
+  for (uint32_t i = 0; i < n; i++) h = app2(h, fce_raw(side, nm, args[i], by));
+  return h;
+}
 static bool eq_(Term u, Term v, int d) {
   if (u == v) return true;
+  if (tag(u) == T_FCE) { Term t = fce_through_spine(u); if (t) u = t; }
+  if (tag(v) == T_FCE) { Term t = fce_through_spine(v); if (t) v = t; }
+  /* a face at a dimension that does not occur in its target is the target (the regularity occurs check);
+     a restriction looked up through a frame wraps a fix's closure afresh at every lookup, so without this
+     the pair is never the same pair twice and the coinductive assumption cannot close it */
+  /* scope: a slot bound at a level shallower than a dimension's binding level cannot mention that dimension
+     (a restricted frame reads the slot as FCE(VAR)); the dimension's level is read off its DIM frame cell */
+  u = strip_scoped_faces(u); v = strip_scoped_faces(v);
+  if (tag(u) == T_FCE && ext(u) < 2 && tag(HEAP[loc(u)]) == T_IVAR && !occurs_cell(loc(HEAP[loc(u)]), HEAP[loc(u)+1])) u = HEAP[loc(u)+1];
+  if (tag(v) == T_FCE && ext(v) < 2 && tag(HEAP[loc(v)]) == T_IVAR && !occurs_cell(loc(HEAP[loc(v)]), HEAP[loc(v)+1])) v = HEAP[loc(v)+1];
   if ((tag(u) == T_APP || tag(u) == T_REF) && (tag(v) == T_APP || tag(v) == T_REF) && same_head(u, v, d)) return true;
   /* η-long forms of the same thing are the same thing: compare what was reflected before expanding it */
   if (tag(u) == T_REFLECT && tag(v) == T_REFLECT) return eq(HEAP[loc(u)], HEAP[loc(v)], d+1);
@@ -161,12 +222,18 @@ static bool eq_(Term u, Term v, int d) {
   u = whnf(u); v = whnf(v);
   if (u == v) return true;
   if (d > 65536) { if (getenv("HYPER_EQDBG")) fprintf(stderr, "  [eq] depth exceeded\n"); return false; }
-  bool track = (tag(u) == T_CTR || tag(u) == T_CASE || tag(u) == T_HELIM) && tag(u) == tag(v);
+  /* two closures of one code (a fix's self-slot holds one in each frame): the coinductive assumption as well */
+  bool same_clo = (tag(u) == T_LAM || tag(u) == T_PLM) && tag(u) == tag(v) && HEAP[loc(u)] == HEAP[loc(v)];
+  bool track = ((tag(u) == T_CTR || tag(u) == T_CASE || tag(u) == T_HELIM) && tag(u) == tag(v)) || same_clo;
   if (track) { if (eq_seen(u, v)) return true;         /* the coinductive assumption, on the current path */
     bool r = eq_struct(u, v, d); if (!r) eq_forget(u, v); return r; }
   return eq_struct(u, v, d);
 }
 static bool eq_struct(Term u, Term v, int d) {
+  /* two closures of one code convert when their frames convert at the levels the code reads; η-expanding
+     them instead would open each at a fresh atom, and a fix's self-slot would regenerate the pair forever */
+  if ((tag(u) == T_LAM || tag(u) == T_PLM) && tag(u) == tag(v) && HEAP[loc(u)] == HEAP[loc(v)])
+    return frames_eq(HEAP[loc(u)+1], HEAP[loc(v)+1], loc(HEAP[loc(u)]), 0, d);
   /* η: functions, lines, pairs; a body is opened uncomputed so a definition applied inside it is seen by its head */
   if (tag(u) == T_PLM || tag(v) == T_PLM) { Term k = ivar_of(dim_push(0));   /* a line: the fresh variable is a dimension (a λ over the interval too) */
     return eq(tag(u) == T_PLM || tag(u) == T_LAM ? open_closure(u, k) : app2(u, k), tag(v) == T_PLM || tag(v) == T_LAM ? open_closure(v, k) : app2(v, k), d+1); }
