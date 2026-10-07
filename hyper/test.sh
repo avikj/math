@@ -136,6 +136,31 @@ check t/mapless.hyper costs2    '#Cons{82,#Cons{40,#Cons{39,#Cons{81,#Nil{}}}}}'
 check t/mapless.hyper sortCost1 '28'
 check t/mapless.hyper sortCost2 '82'
 check t/mapless.hyper sortCost3 '1321'
+# the cheap chart (MAP §0 item 3): merge-insertion's worst case over every permutation is ceil(log2 n!) comparisons (n = 4, 5),
+# read off the ledger as op2 events; merge sort (t/msort.hyper) is n log n
+check t/fj.hyper fj4 '#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Nil{}}}}}'
+check t/fj.hyper fj8 '#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Cons{5,#Cons{6,#Cons{7,#Cons{8,#Nil{}}}}}}}}}'
+for pair in fj4:5 fj8:16 fj16:46; do d=${pair%%:*}; w=${pair#*:}; got=$(HYPER_CENSUS=1 ./hyper run t/fj.hyper $d 2>&1 | grep -oE 'op2=[0-9]+' | tr -dc 0-9); if [ "$got" = "$w" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $d comparisons: $got want $w"; fi; done
+worst=$(python3 - <<'PY2'
+import itertools, subprocess, math, re, os
+src=open('t/fj.hyper').read(); head=src[:src.index('(def L4 ')]
+def lst(xs):
+    s='(ctr Nil)'
+    for x in reversed(xs): s=f'(ctr Cons {x} {s})'
+    return s
+ok=True
+for n in (4,5):
+    worst=0
+    for p in itertools.permutations(range(1,n+1)):
+        open('/tmp/hyper-fj.hyper','w').write(head+f"(def X {lst(p)})\n(def run (app fjsort X))\n")
+        r=subprocess.run(['./hyper','run','/tmp/hyper-fj.hyper','run'],capture_output=True,text=True,env=dict(os.environ,HYPER_CENSUS='1'))
+        if [int(x) for x in re.findall(r'#Cons\{(\d+),', r.stdout)]!=sorted(p): ok=False
+        worst=max(worst,int(re.search(r'op2=(\d+)',r.stderr).group(1)))
+    if worst!=math.ceil(math.log2(math.factorial(n))): ok=False
+print('ok' if ok else 'bad')
+PY2
+); if [ "$worst" = "ok" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL merge-insertion worst case"; fi
+check t/msort.hyper ms8 '#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Cons{5,#Cons{6,#Cons{7,#Cons{8,#Nil{}}}}}}}}}'
 # the checker's conversion rules refuse what they must (t/mustfail.hyper): the verdicts, exactly
 got=$(./hyper check t/mustfail.hyper 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^[✓✗]' | tr '\n' ' ')
 want='✓ ok_id ✗ face_not_vacuous ✗ two_closures ✗ proj_not_sig ✗ path_wrong_family ✓ ok_declared : a coordinate of its type '

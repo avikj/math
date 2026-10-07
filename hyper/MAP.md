@@ -196,6 +196,16 @@ them.
    `sortCost 1, 2, 3 = 28, 82, 1321` interactions, with `costs2 = [82, 40, 39, 81]` for `[F,F], [F,T], [T,F], [T,T]`.
    A trace is of one run: taken over the superposition it carries every world's events, so the points come first
    and each is traced alone. Over Peano naturals no greatest exists (below) and the fibre is empty.
+   **The cheap chart, and the bound** (`t/msort.hyper`, `t/fj.hyper`). §0 item 3 says where cost moves: the minimal count
+   for an object is the minimum over its charts, and the only lever is a proof. Over the numeric kind a comparison is
+   one `op2` interaction and the ledger counts exactly the comparisons (`HYPER_CENSUS`). Merge sort as the chart is
+   `n log n`: worst case over every permutation 5, 8, 11, 14 at n = 4..7 (its n⌈lg n⌉ − 2^⌈lg n⌉ + 1). Merge-insertion
+   (Ford–Johnson) as the chart is the optimum: worst case over every permutation 5, 7, 10, 13 at n = 4..7, exactly
+   ⌈log₂ n!⌉ = S(n), and 46 at n = 16, which is S(16) — one above the information bound 45 that no comparison sort
+   reaches: S(12) = 30 against ⌈log₂ 12!⌉ = 29 (Wells), and above 11 the bound is not met by any algorithm, so it is not
+   a correctness criterion past n = 11 for any implementation. The declaration on a chart costs the chart plus the
+   census of the book's other candidates; the chart alone is the count above. One proof, 8 → 7 comparisons at n = 5:
+   that is the lever.
    **§0, with the map in the book.** `t/sort.hyper` with every identity and lemma removed — `isort` and `sorted` present only as
    data, and the lists — still resolves the bodyless `sort` at `[2,3,1,0]` to `([0,1,2,3], (refl, refl))` in 1338
    interactions (`test.sh`, the no-lemma run): the point is read off the book by the type's shape and the proofs are

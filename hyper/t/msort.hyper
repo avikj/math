@@ -1,0 +1,20 @@
+; the cheap chart (MAP §0 item 3: the minimal count for an object is the minimum over its charts, and the only
+; lever that changes cost is a proof): merge sort as the map in the book, over the numeric kind so a comparison
+; is one interaction (op2), and the comparisons are read off the ledger (HYPER_CENSUS: op2=…).
+(def split (fix f (lam l (case l (Nil () (ctr Pair (ctr Nil) (ctr Nil))) (Cons (h t) (case (app f t) (Pair (a b) (ctr Pair (ctr Cons h b) a))))))))
+(def merge (fix f (lam a (lam b (case a (Nil () b) (Cons (x xs) (case b (Nil () a) (Cons (y ys) (case (op2 <= x y) (True () (ctr Cons x (app f xs b))) (False () (ctr Cons y (app f a ys))))))))))))
+(def msort : (ctr Pi (ctr List (ctr Num)) (lam l (ctr List (ctr Num))))
+  = (fix f (lam l (case l (Nil () (ctr Nil)) (Cons (h t) (case t (Nil () l) (Cons (h2 t2) (case (app split l) (Pair (a b) (app merge (app f a) (app f b)))))))))))
+(def sortedN : (ctr Pi (ctr List (ctr Num)) (lam l (ctr Bool)))
+  = (fix f (lam l (case l (Nil () (ctr True)) (Cons (h t) (case t (Nil () (ctr True)) (Cons (h2 t2) (case (op2 <= h h2) (True () (app f t)) (False () (ctr False))))))))))
+; the declaration with no body, the chart in the book: the census finds msort's point (no isort anywhere here)
+(def sort : (ctr Pi (ctr List (ctr Num)) (lam A (ctr Sig (ctr List (ctr Num)) (lam B (ctr Sig (ctr Eql (ctr List (ctr Num)) (app msort A) (app msort B)) (lam q (ctr Eql (ctr Bool) (app sortedN B) (ctr True)))))))))
+(def L4 (ctr Cons 3 (ctr Cons 1 (ctr Cons 4 (ctr Cons 2 (ctr Nil))))))
+(def L8 (ctr Cons 8 (ctr Cons 3 (ctr Cons 6 (ctr Cons 1 (ctr Cons 7 (ctr Cons 2 (ctr Cons 5 (ctr Cons 4 (ctr Nil))))))))))
+(def L16 (ctr Cons 16 (ctr Cons 3 (ctr Cons 11 (ctr Cons 6 (ctr Cons 1 (ctr Cons 14 (ctr Cons 7 (ctr Cons 10 (ctr Cons 2 (ctr Cons 15 (ctr Cons 5 (ctr Cons 12 (ctr Cons 4 (ctr Cons 9 (ctr Cons 8 (ctr Cons 13 (ctr Nil))))))))))))))))))
+(def ms4 (app msort L4))
+(def sort4 (app sort L4))
+(def ms8 (app msort L8))
+(def sort8 (app sort L8))
+(def ms16 (app msort L16))
+(def sort16 (app sort L16))
