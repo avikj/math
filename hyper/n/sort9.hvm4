@@ -16,10 +16,12 @@
 // 9.6 Sorted, with the comparisons 9.3 says are implied never made: adjacent, by transitivity.
 @sorted = λ{#Nil: 1; #Cons: λ&h. λ{#Nil: 1; #Cons: λ&h2. λ&t. (λ{1: @sorted(#Cons{h2, t}); 0: 0})(h <= h2)}}
 @keep = λ&B. (λ{1: B; 0: &{}})(@sorted(B))
-// 9.3 a comparison is a restriction: on an interleaving of two sorted runs the coordinate at the two heads is
-// determined by their comparison (1 keeps "x first", 0 "y first"), and 9.6: Sorted on such an interleaving unfolds
-// to exactly that comparison — the inner premises are held by the runs, not remade.  So the restricted line is one
-// point, and 9.15: the fibre at a node is the restricted interleaving of the fibres of its halves.
+// 9.3 a comparison IS a restriction of the space of orderings, and what is held is the partial order, closed: a
+// comparison already implied is not a comparison.  Two sorted runs hold their orders; on their interleaving the only
+// comparison not implied is between the two heads, and its outcome is the coordinate (1 "x first", 0 "y first") —
+// not a free coordinate cut afterwards.  9.6: Sorted on such an interleaving unfolds to exactly that.  So the
+// restricted line is one point, and 9.15: the fibre at a node is the restricted interleaving of the fibres of its
+// halves.  The count OP2-NUM-NUM is then the number of comparisons in 9.9's sense: 5 at n=4, 17 at n=8.
 @interS = λ{#Nil: λ&y. y; #Cons: λ&h. λ&t. λ{#Nil: #Cons{h, t}; #Cons: λ&h2. λ&t2. (λ{1: #Cons{h, @interS(t, #Cons{h2, t2})}; 0: #Cons{h2, @interS(#Cons{h, t}, t2)}})(h <= h2)}}
 @sort = λ{#Leaf: λ&a. #Cons{a, #Nil}; #Node: λ&l. λ&r. @interS(@sort(l), @sort(r))}
 // three readings of the same declaration, for the ledger: the whole line cut once by Sorted (9.2 alone), and the

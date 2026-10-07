@@ -536,11 +536,12 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
   restricted interleaving of the fibres of its halves (9.15). Ledger: the whole line cut once by `Sorted` at n=4
   makes 32 comparisons; the declaration followed through 9.6/9.15 makes 5 at n=4 and 17 at n=8 on the balanced
   numeral (`log₂ 8! ≈ 15.3`, 9.9's bound within the linear term), 20 on the tally, 475 against 543 interactions:
-  the gap between a numeral and a tally (9.7, 9.11). On the net a merge does not re-emit the run left over when the
-  other empties (it is shared, not copied), so the interaction count sits below 9.7's `a + b` per merge; the
-  comparison count is the one 9.9 fixes. What the net does not do: derive the restriction 9.6 from `Sorted`'s
-  definition alone. `@interS` is that statement written as an entry; posed without it, the net cuts the whole
-  line (32 comparisons, not 5).
+  the gap between a numeral and a tally (9.7, 9.11). A comparison is a restriction of the space of orderings
+  (9.3) and what is held is the partial order, closed: a comparison already implied is not one. Two sorted runs
+  hold their orders, so on their interleaving the only comparison not implied is between the two heads, and its
+  outcome is the coordinate. That is what `@interS` is, and it is why the count is 9.9's. Generating the
+  interleaving as a free coordinate and cutting it by `Sorted` afterwards is a different and wrong definition of
+  comparison: it makes comparisons the held order already decides (32 at n=4 on the whole line).
 - Enumerations: the type, symbols against it, the match with coverage (`n/judgeenum.hvm4`).
 - **Faces decided per cell, exactly.** `transp`'s constancy on φ is the marker test (the line at two markers equal on
   every cell, lambda bodies included). The face-bearing parts of a type (Partial's carrier, Sub's element, Glue's
