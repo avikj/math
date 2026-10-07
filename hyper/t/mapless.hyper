@@ -19,3 +19,28 @@
 (def A2 (ctr Cons two (ctr Cons three (ctr Cons one (ctr Cons (ctr Zer) (ctr Nil))))))
 (def sort-A (app sort A))
 (def sort-A2 (app sort A2))
+
+; sortCost over a finite element type (Bool: False < True), by the same mechanism and over the machine's own cost:
+; the domain of all lists of length n is one superposed line, each leaf's cost is the length of its own trace
+; (research/sat_fibre/InteractionLedger.agda: a run's charge is its events), and the greatest is a fold over the leaves.
+; Over Peano naturals no greatest exists (t/sort.hyper, sort-B1/sort-B2): the fibre is empty there.
+(def leqB (lam a (lam b (case a (False () (ctr True)) (True () b)))))
+(def eqB (lam a (lam b (case a (False () (case b (False () (ctr True)) (True () (ctr False)))) (True () b)))))
+(def sortedB (fix f (lam l (case l (Nil () (ctr True)) (Cons (h t) (case t (Nil () (ctr True)) (Cons (h2 t2) (case (app leqB h h2) (True () (app f t)) (False () (ctr False))))))))))
+(def removeB (fix f (lam x (lam l (case l (Nil () (ctr None)) (Cons (h t) (case (app eqB x h) (True () (ctr Some t)) (False () (case (app f x t) (None () (ctr None)) (Some (r) (ctr Some (ctr Cons h r))))))))))))
+(def permB (fix f (lam a (lam b (case a (Nil () (case b (Nil () (ctr True)) (Cons (h t) (ctr False)))) (Cons (h t) (case (app removeB h b) (None () (ctr False)) (Some (r) (app f t r)))))))))
+(def keepB (lam A (lam B (case (app and (app permB A B) (app sortedB B)) (True () B) (False () (era))))))
+(def sortB (lam A (leaves (app keepB A (app build A A)))))
+; all Bool lists of length n, one line
+(def bools (fix f (lam n (case n (Zer () (ctr Nil)) (Suc (m) (ctr Cons (dim M (sup M (ctr False) (ctr True))) (app f m)))))))
+(def length (fix f (lam xs (case xs (Nil () (num 0)) (Cons (h t) (op2 + (num 1) (app f t)))))))
+(def cost (lam B (app length (proj 1 (trace (app sortB B))))))
+(def max (lam a (lam b (case (op2 > a b) (True () a) (False () b)))))
+(def greatest (fix f (lam xs (case xs (Nil () (num 0)) (Cons (h t) (app max h (app f t)))))))
+(def mapl (fix f (lam g (lam xs (case xs (Nil () (ctr Nil)) (Cons (h t) (ctr Cons (app g h) (app f g t))))))))
+; a trace is of one run: the domain's points first (its leaves), then each point's own cost
+(def sortCost (lam n (app greatest (app mapl cost (leaves (app bools n))))))
+(def costs2 (app mapl cost (leaves (app bools two))))
+(def sortCost1 (app sortCost one))
+(def sortCost2 (app sortCost two))
+(def sortCost3 (app sortCost three))

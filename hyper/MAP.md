@@ -189,6 +189,13 @@ them.
    is dead, and `leaves` are the fibre's points. `sort [3,1,2]` is one leaf, `[1,2,3]`, in 3430 interactions;
    `sort [2,3,1,0]` is `[0,1,2,3]` in 30449 — the exponential §5.22 calls real, charged honestly, and nothing written
    for sorting anywhere in the book. This, not the `isort` books, is the declaration being the program.
+   **`sortCost`, produced by the machine** (`t/mapless.hyper`): over a finite element type (`Bool`, `False < True`) the
+   greatest cost exists and the same mechanism finds it — the domain of all lists of length `n` is one superposed
+   line, its leaves are the points, each point's cost is the length of its own trace
+   (`research/sat_fibre/InteractionLedger.agda:74` `interactionTotal-is-length`), and the greatest is a fold over them:
+   `sortCost 1, 2, 3 = 28, 82, 1321` interactions, with `costs2 = [82, 40, 39, 81]` for `[F,F], [F,T], [T,F], [T,T]`.
+   A trace is of one run: taken over the superposition it carries every world's events, so the points come first
+   and each is traced alone. Over Peano naturals no greatest exists (below) and the fibre is empty.
    **§0, with the map in the book.** `t/sort.hyper` with every identity and lemma removed — `isort` and `sorted` present only as
    data, and the lists — still resolves the bodyless `sort` at `[2,3,1,0]` to `([0,1,2,3], (refl, refl))` in 1338
    interactions (`test.sh`, the no-lemma run): the point is read off the book by the type's shape and the proofs are

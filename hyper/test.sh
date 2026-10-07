@@ -131,6 +131,11 @@ check t/mapless.hyper sort-A  '#Cons{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}}
 check t/mapless.hyper sort-A2 '#Cons{#Cons{#Zer{},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}},#Nil{}}'
 got=$(./hyper run t/mapless.hyper sort-A | sed -n 2p); case "$got" in '- Itrs: 3430') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A count: $got";; esac
 got=$(./hyper run t/mapless.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 30449') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A2 count: $got";; esac
+# sortCost over a finite element type, by the machine over its own cost: the domain's leaves, each leaf's own trace, the greatest
+check t/mapless.hyper costs2    '#Cons{82,#Cons{40,#Cons{39,#Cons{81,#Nil{}}}}}'
+check t/mapless.hyper sortCost1 '28'
+check t/mapless.hyper sortCost2 '82'
+check t/mapless.hyper sortCost3 '1321'
 # the checker's conversion rules refuse what they must (t/mustfail.hyper): the verdicts, exactly
 got=$(./hyper check t/mustfail.hyper 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^[✓✗]' | tr '\n' ' ')
 want='✓ ok_id ✗ face_not_vacuous ✗ two_closures ✗ proj_not_sig ✗ path_wrong_family ✓ ok_declared : a coordinate of its type '
