@@ -111,7 +111,12 @@ done
 # MAP §0: the declaration is the program — sort with no body, at two lists, from the book, by the census at the point of demand
 check t/sort.hyper sort-A  '#Pair{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}},#Pair{#Refl{},#Refl{}}}'
 check t/sort.hyper sort-A2 '#Pair{#Cons{#Zer{},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}},#Pair{#Refl{},#Refl{}}}'
-got=$(./hyper run t/sort.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 750') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort-A2 count: $got";; esac
+got=$(./hyper run t/sort.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 1338') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort-A2 count: $got";; esac
+# MAP §0, generic: sort with no body is certified from the book for every A (the census at coordinates, the identities in the book)
+got=$(HYPER_CHECK_ALL=1 ./hyper check t/sort.hyper 2>&1 | tr -d '\033' | sed 's/\[[0-9;]*m//g'); case "$got" in *'✓ sort : resolved from the book at every argument'*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort not certified from the book";; esac
+# sortCost: over Peano naturals the cost of sorting two elements grows with their values — the greatest cost has no point
+c1=$(./hyper run t/sort.hyper sort-B1 | sed -n 2p | tr -dc 0-9); c2=$(./hyper run t/sort.hyper sort-B2 | sed -n 2p | tr -dc 0-9)
+if [ "$c2" -gt "$c1" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL sortCost unbounded: $c1 vs $c2"; fi
 # the checker's conversion rules refuse what they must (t/mustfail.hyper): the verdicts, exactly
 got=$(./hyper check t/mustfail.hyper 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^[✓✗]' | tr '\n' ' ')
 want='✓ ok_id ✗ face_not_vacuous ✗ two_closures ✗ proj_not_sig ✗ path_wrong_family ✓ ok_declared : a coordinate of its type '

@@ -184,15 +184,15 @@ static bool restriction_vacuous_on_closure(Term nm, Term w) {
   }
   return true;
 }
-static Term strip_scoped_faces(Term u) {
-  for (;;) {
-    if (tag(u) != T_FCE) return u;
-    Term nm = HEAP[loc(u)]; if (tag(nm) != T_IVAR && tag(nm) != T_VAR) return u;
-    Term w = HEAP[loc(u)+1]; if (tag(w) == T_VAR) w = whnf(w);
-    if ((tag(w) != T_LAM && tag(w) != T_PLM) || !restriction_vacuous_on_closure(nm, w)) return u;
-    u = w;
-  }
+static Term strip_scoped_faces_(Term u, int depth) {
+  if (tag(u) != T_FCE || depth > 32) return u;
+  Term nm = HEAP[loc(u)];                           /* a dimension, a coordinate, or a cell (the checker's semantic rewrite): the same question */
+  Term w = strip_scoped_faces_(HEAP[loc(u)+1], depth + 1);   /* inside out: the restrictions in force wrap one another */
+  if (tag(w) == T_VAR) w = whnf(w);
+  if ((tag(w) == T_LAM || tag(w) == T_PLM) && restriction_vacuous_on_closure(nm, w)) return w;
+  return u;
 }
+static Term strip_scoped_faces(Term u) { return strip_scoped_faces_(u, 0); }
 static Term fce_through_spine(Term u) {
   Term nm = HEAP[loc(u)], target = HEAP[loc(u)+1], by = HEAP[loc(u)+2]; unsigned side = ext(u);
   if (tag(nm) != T_IVAR && tag(nm) != T_VAR) return 0;
@@ -327,40 +327,50 @@ int resolve_declaration_q(uint32_t id, bool quiet) {
    book's entries are not events. */
 static Term ctr_refl(void) { return mk(T_CTR, ctr_ext(ctor_intern("Refl", 0), 0), alloc(1)); }
 static bool type_is(uint32_t i, Term T) { NO_COUNT = true; bool r = equal(inst(BOOK[i].type, 0), T); NO_COUNT = false; return r; }
+/* the candidates for a point of type T, from the book: refl when T is an equation whose sides convert; every
+   entry of type T; every book map f : X → T' at an argument of type X with T' ≡ T — the chart's map, written
+   in the book, and the identities, applied at the arguments */
+static int candidates(Term T, Term *args, uint32_t nargs, Term *out, int max) {
+  int n = 0; T = whnf(T);
+  if (is_ctr(T, C_EQL)) { if (equal(HEAP[loc(T)+1], HEAP[loc(T)+2])) { out[n++] = ctr_refl(); return n; } max = 1; }
+  for (uint32_t i = 0; i < BOOK_LEN && n < max; i++) {
+    if (BOOK[i].unknown || !BOOK[i].type || !BOOK[i].code || BOOK[i].ndims) continue;
+    NO_COUNT = true; Term ti = whnf(inst(BOOK[i].type, 0)); bool entry = equal(ti, T); NO_COUNT = false;
+    if (entry) { out[n++] = ref_of(i); continue; }
+    if (!is_ctr(ti, C_PI)) continue;
+    Term X = HEAP[loc(ti)], Y = HEAP[loc(ti)+1];
+    for (uint32_t a = 0; a < nargs && n < max; a++) {
+      NO_COUNT = true; bool dom = equal(X, args[nargs + a]); NO_COUNT = false; if (!dom) continue;
+      NO_COUNT = true; bool cod = equal(whnf(app2(Y, args[a])), T); NO_COUNT = false; if (!cod) continue;
+      out[n++] = app2(ref_of(i), args[a]);
+    }
+  }
+  return n;
+}
 static Term census_point(Term T, Term *args, uint32_t nargs, int depth, int *count);
-static void census_try(Term b, Term B, Term *args, uint32_t nargs, int depth, Term *pts, int *n) {
-  Term rest = app2(B, b); int cn = 0; Term r = census_point(rest, args, nargs, depth + 1, &cn);
-  if (cn != 1) return;
-  for (int k = 0; k < *n; k++) if (equal(HEAP[loc(pts[k])], b)) return;    /* the same point again */
-  if (*n < 64) pts[(*n)++] = node2(T_CTR, ctr_ext(C_PAIR, 2), b, r);
+static void census_add(Term p, Term *pts, int *n) {          /* points are counted up to conversion */
+  for (int k = 0; k < *n; k++) if (equal(pts[k], p)) return;
+  if (*n < 64) pts[(*n)++] = p;
 }
 static Term census_point(Term T, Term *args, uint32_t nargs, int depth, int *count) {
   *count = 0; if (depth > 8) return 0;
-  Term pts[64]; int n = 0;
-  T = whnf(T);
-  for (uint32_t i = 0; i < BOOK_LEN; i++)                              /* a whole entry of the type */
-    if (!BOOK[i].unknown && BOOK[i].type && BOOK[i].code && !BOOK[i].ndims && type_is(i, T)) {
-      Term b = ref_of(i); bool dup = false; for (int k = 0; k < n; k++) if (equal(pts[k], b)) dup = true;
-      if (!dup && n < 64) pts[n++] = b; }
-  if (is_ctr(T, C_EQL)) { if (!n && equal(HEAP[loc(T)+1], HEAP[loc(T)+2])) pts[n++] = ctr_refl(); }
-  else if (is_ctr(T, C_SIG) && !n) {
-    Term A = HEAP[loc(T)], B = HEAP[loc(T)+1]; Term Aw = whnf(A);
-    if (is_ctr(Aw, C_EQL)) { if (equal(HEAP[loc(Aw)+1], HEAP[loc(Aw)+2])) census_try(ctr_refl(), B, args, nargs, depth, pts, &n); }
-    else if (is_ctr(Aw, C_SIG)) { int cn = 0; Term p = census_point(A, args, nargs, depth + 1, &cn); if (cn == 1) census_try(p, B, args, nargs, depth, pts, &n); }
-    else for (uint32_t i = 0; i < BOOK_LEN; i++) {
-      if (BOOK[i].unknown || !BOOK[i].type || !BOOK[i].code || BOOK[i].ndims) continue;
-      Term ti = whnf(inst(BOOK[i].type, 0));
-      NO_COUNT = true; bool entry = equal(ti, A); NO_COUNT = false;
-      if (entry) { census_try(ref_of(i), B, args, nargs, depth, pts, &n); continue; }
-      if (!is_ctr(ti, C_PI)) continue;
-      Term X = HEAP[loc(ti)], Y = HEAP[loc(ti)+1];
-      for (uint32_t a = 0; a < nargs; a++) {                        /* a book map at an argument of its domain */
-        NO_COUNT = true; bool dom = equal(X, args[nargs + a]); NO_COUNT = false; if (!dom) continue;
-        Term cod = whnf(app2(Y, args[a])); NO_COUNT = true; bool codok = equal(cod, A); NO_COUNT = false; if (!codok) continue;
-        census_try(app2(ref_of(i), args[a]), B, args, nargs, depth, pts, &n);
-      }
+  Term pts[64]; int n = 0; T = whnf(T);
+  for (uint32_t i = 0; i < BOOK_LEN; i++)              /* a whole entry of the type is its point (uniqueness of the partition, §1.4) */
+    if (!BOOK[i].unknown && BOOK[i].type && BOOK[i].code && !BOOK[i].ndims && type_is(i, T)) census_add(ref_of(i), pts, &n);
+  if (n) { *count = n; return n == 1 ? pts[0] : 0; }
+  if (is_ctr(T, C_SIG)) {                             /* a specification: its first component from the book, the rest by the same census */
+    Term A = HEAP[loc(T)], B = HEAP[loc(T)+1]; Term cs[64]; int nc = candidates(A, args, nargs, cs, 64);
+    int inner = 0; Term sub = whnf(A);
+    if (nc == 0 && is_ctr(sub, C_SIG)) { Term p = census_point(A, args, nargs, depth + 1, &inner); if (inner == 1) cs[nc++] = p; }
+    for (int c = 0; c < nc; c++) {
+      int cn = 0; Term r = census_point(app2(B, cs[c]), args, nargs, depth + 1, &cn);
+      if (cn != 1) continue;
+      bool dup = false; for (int k = 0; k < n; k++) if (equal(HEAP[loc(pts[k])], cs[c])) dup = true;
+      if (!dup && n < 64) pts[n++] = node2(T_CTR, ctr_ext(C_PAIR, 2), cs[c], r);
     }
-  }
+  } else if (is_ctr(T, C_EQL)) {                    /* an equation is a proposition: one utterance carries all (सकलादेश), refl first */
+    Term cs[64]; int nc = candidates(T, args, nargs, cs, 64); if (nc) pts[n++] = cs[0];
+  } else { Term cs[64]; int nc = candidates(T, args, nargs, cs, 64); for (int c = 0; c < nc; c++) census_add(cs[c], pts, &n); }
   *count = n; return n == 1 ? pts[0] : 0;
 }
 /* a declaration applied to its arguments: peel its Π at each, then the census of the closed type.
@@ -410,6 +420,7 @@ static bool check_set(uint32_t c, Term fr) { return check(c, fr, SET); }
 static bool check_itv(uint32_t c, Term fr) { return check(c, fr, ITV); }
 static bool verify(uint32_t c, Term fr, Term goal) {
   Term T = infer(c, fr); if (!T) return false;
+  if (NRW) { T = apply_rw(T); goal = apply_rw(goal); }   /* read under the branch's equations, as the context is */
   memset(&EQV, 0, sizeof EQV);
   if (eq(T, goal, 0)) return true;
   { Term g = whnf(goal), t = whnf(T);                /* a path is a line: p : Path L a b is λi. p i : Π (i : Itv). L i */
@@ -773,6 +784,7 @@ static bool check_case(uint32_t c, Term fr, Term goal) {
 static bool check(uint32_t c, Term fr, Term goal) {
   SNode *n = &CODE[c]; CUR_CODE = c;
   if (getenv("HYPER_TRACE")) { fprintf(stderr, "%*scheck tag %u vs ", DBG_DEPTH*2, "", n->tag); print_term(goal, 6); fprintf(stderr, "\n"); }
+  if (NRW) goal = apply_rw(goal);                      /* a goal is read under the branch's equations, as the context is */
   goal = whnf(goal);
   switch (n->tag) {
     case S_ERA: return true;
@@ -952,7 +964,14 @@ int check_book(const char *prefix) {
     if (prefix && strncmp(BOOK[i].name, prefix, strlen(prefix))) continue;
     if (!BOOK[i].type) continue;
     if (BOOK[i].unknown) { NRW = 0; VERR = V_OK; Term fr = 0; uint32_t ty = skip_dims(BOOK[i].type, &fr);
-      if (check(ty, fr, SET)) printf("\x1b[32m✓ %s : a coordinate of its type\x1b[0m\n", BOOK[i].name + (prefix ? strlen(prefix) : 0)); else { bad++; report_err(BOOK[i].name + (prefix ? strlen(prefix) : 0)); }
+      if (!check(ty, fr, SET)) { bad++; report_err(BOOK[i].name + (prefix ? strlen(prefix) : 0)); continue; }
+      /* the census at coordinates: the declaration resolved from the book for every argument at once */
+      Term T = inst(BOOK[i].type, 0); Term both[128]; uint32_t na = 0; Term f2 = 0;
+      for (;;) { T = whnf(T); if (!is_ctr(T, C_PI) || na >= 64) break; f2 = bind_coord(f2, HEAP[loc(T)]); both[na] = var_of(f2); both[64 + na] = HEAP[loc(T)]; T = app2(HEAP[loc(T)+1], var_of(f2)); na++; }
+      for (uint32_t a = 0; a < na; a++) both[na + a] = both[64 + a];
+      int cn = 0; Term p = (is_ctr(T, C_SIG) || is_ctr(T, C_EQL)) ? census_point(T, both, na, 0, &cn) : 0; (void)p;
+      if (cn == 1) printf("\x1b[32m✓ %s : resolved from the book at every argument\x1b[0m\n", BOOK[i].name + (prefix ? strlen(prefix) : 0));
+      else printf("\x1b[32m✓ %s : a coordinate of its type%s\x1b[0m\n", BOOK[i].name + (prefix ? strlen(prefix) : 0), cn == 0 ? "" : " (crowded in the book)");
       continue; }
     NRW = 0; VERR = V_OK;
     Term fr = 0; uint32_t ty = skip_dims(BOOK[i].type, &fr);

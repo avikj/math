@@ -182,6 +182,16 @@ them.
    type waits for its arguments; a base result type is no specification and is refused. What is not here: the generic
    proof (`sort` checks as a coordinate of its type; the proof at every `A` is a theorem for the book, as is `sortCost`,
    which the same census serves the moment its identity is an entry).
+   **§0, generic.** The identities are in the book (`t/sort.hyper`): `isort-sorted : Π l. sorted (isort l) ≡ True` and
+   `isort-idem : Π A. isort A ≡ isort (isort A)`, by induction, each equation carried as a hypothesis matched against
+   `Refl` and every match on a variable (the checker rewrites a goal and the context at a variable, and reads every
+   type compared inside a branch under the branch's equations, `verify.c` `check`, `verify`); with them `hyper check`
+   certifies the bodyless `sort` by the same census at coordinates — `✓ sort : resolved from the book at every
+   argument` — the point `(isort A, (isort-idem A, isort-sorted A))` found by the type's shape, `refl` where the
+   sides convert and the book's identity where they do not. **`sortCost`** is settled by the machine: `leq a b` costs
+   `min(a, b) + 1` interactions over Peano naturals, so the cost of sorting a list of fixed length is unbounded in its
+   values (`sort-B1`, `sort-B2`: 1132 and 2652 interactions for two elements) and the greatest cost has no point — the
+   declaration's fibre is empty, नास्ति, which the census says rather than searches for.
 6. **The Bend dialect's grammar as a book with its certificate, and parallel demand over the one arena. Written.**
    *The dialect.* `bend.hyper`'s rows are the book; its certificate is the checker: `transp`, `isProp-ty` and
    `qresp-ty` carry their types and check under `HYPER_CHECK_ALL`, and the recursor rows `srec`, `trec`, `qrec` are typed
