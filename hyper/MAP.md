@@ -517,10 +517,17 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
   (each branch on its own cells, agreement on overlaps, coverage of φ), `pout`; `transp` with a cofibration (the line
   constant on φ, cell by cell); `Sub`/`inS`/`outS`; the set quotient with `[a]`, `eq/` against a Path whose line is
   the quotient, and its recursor.
-- **§0 with types, on the net** (`n/declare.hvm4`). `sort A = Σ B : List Nat. (perm A B ≡ True) × (sorted B ≡ True)`
-  as a type value; `D` the line of every arrangement of `A` (one fresh coordinate per place) with `(refl, refl)`;
-  the judgment `T === @infer(D)` runs once on the line, `EQL` commuting over it, five sides erase, and `%` is the
-  fibre: the one point `([0,1,2], (refl, refl))` in 10,463 interactions. The book holds `perm`, `sorted` and the list.
+- **§0 with types, on the net** (`n/declare.hvm4`). The declaration is the type alone:
+  `sort A = Σ B : List Nat. (perm A B && sorted B) ≡ True` at `A = [2,0,1]`; the book holds `perm`, `sorted` and
+  the list, nothing about arrangements or searching. Its point is `@any(T)`, the coordinate over the type: `Bool`
+  is two sides, `Nat` and `List` are infinite lazy lines (one fresh coordinate per choice), a Σ's second coordinate
+  is built from the first (the same choice, shared), the only coordinate over an equation is `refl`. The judgment
+  cuts the line: every rule fires on a finite prefix of `B`, a side dies where a rule fails (a wrong element, a
+  fourth element, an inversion), its tail never unfolded, and `%` is the fibre: the one point `([0,1,2], refl)`,
+  15,601 interactions. Two schedule facts make an infinite line readable finitely, and neither changes a verdict:
+  Σ-intro forces the dependent premise (the one carrying the specification) before the structural one, and a
+  specification refutes each infinite path on a finite prefix iff its own recursion is on the declared coordinate
+  (`perm` recurses on `B`; `sorted` alone has an infinite fibre, so it sits right of `&&`).
 - Enumerations: the type, symbols against it, the match with coverage (`n/judgeenum.hvm4`).
 - **Faces decided per cell, exactly.** `transp`'s constancy on φ is the marker test (the line at two markers equal on
   every cell, lambda bodies included). The face-bearing parts of a type (Partial's carrier, Sub's element, Glue's

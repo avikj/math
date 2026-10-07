@@ -177,7 +177,8 @@
   #SBif: λ&c. λ&t. λ&f. @andB(@check(ctx, env, c, #Bool), @andB(@check(ctx, env, t, T), @check(ctx, env, f, T)));
   #SNatM: λ&n. λ&z. λ&s. @andB(@check(ctx, env, n, #Nat), @andB(@check(ctx, env, z, T), @check(ctx, env, s, #Pi{#Nat, λ&m. T})));
   #SListM: λ&l. λ&n. λ&c. (λ{#List: λ&A. @andB(@check(ctx, env, n, T), @check(ctx, env, c, #Pi{A, λ&h. #Pi{#List{A}, λ&t. T}})); λ&t. 0})(@infer(ctx, env, l));
-  #SPair: λ&a. λ&b. (λ{#Sig: λ&A. λ&B. (λ{1: @check(ctx, env, b, B(@eval(env, a))); λ&q. 0})(@check(ctx, env, a, A)); λ&t. 0})(T);
+  // Σ-intro: both premises; the dependent one (b : B a, the one that carries a specification) is forced first, so a line over A is cut by its specification before the structural premise descends it
+  #SPair: λ&a. λ&b. (λ{#Sig: λ&A. λ&B. @andB(@check(ctx, env, b, B(@eval(env, a))), @check(ctx, env, a, A)); λ&t. 0})(T);
   #SRefl: (λ{#Eql: λ&X. λ&a. λ&b. @convT(X, a, b); λ&t. 0})(T);
   // <i> t : Path T a b — t at a fresh i is a T(i), and its ends are a and b
   #SPlm: λ&b. (λ{#Path: λ&Tl. λ&a. λ&b2. ! &n = @nam(?, #Itv);
