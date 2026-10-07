@@ -66,7 +66,7 @@
 --   W7 (Life 2025: bulk orchestration, the rulial ensemble)
 --      नियोजन-अनङ्कन        purpose ranks nothing inside the ensemble it
 --                          selects; and the orchestration ingredient is
---                          Jiva_*'s living step: no marginal endomap
+--                          Entanglement…'s living step: no marginal endomap
 --                          simulates the controlled-not (जीवति), which
 --                          is nevertheless a global equivalence
 --                          (सूचना-समीकरणम्) — consultation, not

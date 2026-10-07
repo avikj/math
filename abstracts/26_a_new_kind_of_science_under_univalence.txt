@@ -88,7 +88,7 @@ outside the image of the observation — the citation is to that
 theorem's actual content, agreement of states under reordering.
 
 The 2025–2026 writings extend the dictionary, and a second module
-(NKSRuliology2025To2026_*, same system, same pin) holds three more
+(TheAdvantageOfProofIsTheQuantifierTheMergedStateIsOneEmeAndPurposeRanksNothingInsideTheEnsemble, same system, same pin) holds three more
 sentences to terms.
 
 W5.  "We don't get any fundamental advantage by trying to make a proof
@@ -128,7 +128,7 @@ functions included — answers equally on all ensemble members, which is
 abstract 12's theorem arrived at from the November 2025 vocabulary.
 The orchestration half — mechanism-like patches fitted together, the
 step whose visible part consults its hidden part — is the living step
-of this branch's Jva module, where the consultation is proved: no
+of EntanglementIsTheFibreOfTheProductComparisonAndTheLivingStepRefusesToDescendToTheMarginals, where the consultation is proved: no
 marginal endomap simulates the controlled-not, and the refusal is
 located on the visible side while the environment side descends by
 refl.

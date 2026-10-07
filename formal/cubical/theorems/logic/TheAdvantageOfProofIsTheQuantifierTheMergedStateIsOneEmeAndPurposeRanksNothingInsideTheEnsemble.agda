@@ -4,7 +4,7 @@
 -- TheAdvantageOfProofIsTheQuantifierTheMergedStateIsOneEmeAndPurposeRanksNothingInsideTheEnsemble
 --
 -- The 2025–2026 ruliology corpus, held to terms.  This module continues
--- NKSUnivalence_* over the SAME multiway system (two updating events on
+-- Coordinatization… over the SAME multiway system (two updating events on
 -- unary strings) and answers three sentences from Wolfram's 2025–2026
 -- writings, each quoted verbatim:
 --
@@ -39,7 +39,7 @@
 -- effort of running is unbounded over the family, and that asymmetry
 -- IS the fundamental advantage.
 --
--- W6: THE MERGED STATE IS ONE EME (§२).  NKSUnivalence_* merged the
+-- W6: THE MERGED STATE IS ONE EME (§२).  Coordinatization… merged the
 -- branches with a propositional truncation — existence kept, identity
 -- withheld.  Wolfram's February 2026 sentence is stronger: merged IN
 -- THE OBJECT.  That is the set quotient, and it is also checked: under
@@ -61,18 +61,18 @@
 -- assessor that reads only purpose-achievement — any function out of
 -- the merged outcome, prop-valued fitness included — answers equally
 -- on all ensemble members (`niyojana-anankana`, the quotient form of
--- NKSUnivalence's baddha-drashta): selection BY the purpose cannot
+-- Coordinatization…'s baddha-drashta): selection BY the purpose cannot
 -- rank WITHIN the ensemble that achieves it, which is abstract 12's
 -- theorem (no scoring function of the outcome ranks the route) arrived
 -- at from Wolfram's November 2025 vocabulary.  The orchestration half
 -- of W7 — the step whose visible part consults its hidden part, the
 -- checkable ingredient of "patches fitted together" — is already a
--- checked term as Jiva_*'s living step, cited not re-proved.
+-- checked term as Entanglement…'s living step, cited not re-proved.
 --
 -- RELATION TO THE CORPUS.  Abstract 25's
 -- composition theorem is W5 at machine scale; abstract 12 is W7's
--- non-ranking in general; Jiva_* holds W7's orchestration ingredient;
--- NKSUnivalence_* holds the truncation half of W6 and the branch pair
+-- non-ranking in general; Entanglement… holds W7's orchestration ingredient;
+-- Coordinatization… holds the truncation half of W6 and the branch pair
 -- this module's quotient merges.  The set-quotient construction
 -- parallels abstract 25's Beh = Code/SameRun, one level down: there
 -- codes were quotiented by behaviour, here runs are quotiented by
