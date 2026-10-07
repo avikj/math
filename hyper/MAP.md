@@ -182,7 +182,14 @@ them.
    type waits for its arguments; a base result type is no specification and is refused. What is not here: the generic
    proof (`sort` checks as a coordinate of its type; the proof at every `A` is a theorem for the book, as is `sortCost`,
    which the same census serves the moment its identity is an entry).
-   **§0, the evidence.** `t/sort.hyper` with every identity and lemma removed — `isort` and `sorted` present only as
+   **§0 with no map in the book** (`t/mapless.hyper`): the construction's own mechanism for a specification over a
+   finite domain (§8, §5.24). `B` ranges over the lists of `A`'s length drawn from `A`'s own elements, built as one
+   superposed line — a choice at every position, each its own name (`dim`), the empty tail a dead side; the
+   specification (`perm A B` and `sorted B`, its vocabulary, no algorithm) runs on that line once, a side that fails it
+   is dead, and `leaves` are the fibre's points. `sort [3,1,2]` is one leaf, `[1,2,3]`, in 3430 interactions;
+   `sort [2,3,1,0]` is `[0,1,2,3]` in 30449 — the exponential §5.22 calls real, charged honestly, and nothing written
+   for sorting anywhere in the book. This, not the `isort` books, is the declaration being the program.
+   **§0, with the map in the book.** `t/sort.hyper` with every identity and lemma removed — `isort` and `sorted` present only as
    data, and the lists — still resolves the bodyless `sort` at `[2,3,1,0]` to `([0,1,2,3], (refl, refl))` in 1338
    interactions (`test.sh`, the no-lemma run): the point is read off the book by the type's shape and the proofs are
    the computation. Nothing written for sorting enters it. **The identities** `isort-sorted : Π l. sorted (isort l) ≡

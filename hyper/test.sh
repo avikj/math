@@ -104,7 +104,7 @@ got=$(./hyper run t/declare.hyper no-such 2>&1); case "$got" in *नास्त
 check t/sort.hyper b/sort_spec '#Pair{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}},#Pair{#Refl{},#Refl{}}}'
 got=$(./hyper run t/sort.hyper b/sort_spec | sed -n 2p); case "$got" in '- Itrs: 174') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort_spec count: $got";; esac
 # §9 parallel demand over the one arena: under HYPER_PARALLEL=4 the value, the count and the words are the sequential run's
-for pair in t/basic.hyper:main t/basic.hyper:triple t/sup.hyper:dist t/sup.hyper:matchsup t/kan.hyper:reg t/kan.hyper:hc-nat t/kan.hyper:pitrp t/ua.hyper:fwd-true t/setcomp.hyper:via-pi t/hit.hyper:helim-sq t/hit.hyper:merid-t t/erase.hyper:and-f t/sort.hyper:chart-move t/sort.hyper:b/sort_spec t/sort.hyper:sort-A2 t/declare.hyper:main; do
+for pair in t/basic.hyper:main t/basic.hyper:triple t/sup.hyper:dist t/sup.hyper:matchsup t/kan.hyper:reg t/kan.hyper:hc-nat t/kan.hyper:pitrp t/ua.hyper:fwd-true t/setcomp.hyper:via-pi t/hit.hyper:helim-sq t/hit.hyper:merid-t t/erase.hyper:and-f t/sort.hyper:chart-move t/sort.hyper:b/sort_spec t/sort.hyper:sort-A2 t/mapless.hyper:sort-A t/declare.hyper:main; do
   f=${pair%%:*}; d=${pair#*:}; base=$(timeout 60 ./hyper run "$f" "$d" 2>&1 | head -3); par=$(HYPER_PARALLEL=4 timeout 60 ./hyper run "$f" "$d" 2>&1 | head -3)
   if [ "$base" = "$par" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL parallel $pair:"; echo "  seq: $(echo "$base" | tr '\n' ' ')"; echo "  par: $(echo "$par" | tr '\n' ' ')"; fi
 done
@@ -125,6 +125,12 @@ PY2
 got=$(./hyper run /tmp/hyper-nolemma.hyper sort-A2 2>&1 | head -1)
 want='#Pair{#Cons{#Zer{},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}},#Pair{#Refl{},#Refl{}}}'
 if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL no-lemma sort: $got"; fi
+# MAP §0 with no map in the book (t/mapless.hyper): B over the lists drawn from A's elements as one superposed line,
+# the specification run on it once, the surviving leaves the fibre's points — no sorting algorithm anywhere
+check t/mapless.hyper sort-A  '#Cons{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}},#Nil{}}'
+check t/mapless.hyper sort-A2 '#Cons{#Cons{#Zer{},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}},#Nil{}}'
+got=$(./hyper run t/mapless.hyper sort-A | sed -n 2p); case "$got" in '- Itrs: 3430') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A count: $got";; esac
+got=$(./hyper run t/mapless.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 30449') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A2 count: $got";; esac
 # the checker's conversion rules refuse what they must (t/mustfail.hyper): the verdicts, exactly
 got=$(./hyper check t/mustfail.hyper 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^[✓✗]' | tr '\n' ' ')
 want='✓ ok_id ✗ face_not_vacuous ✗ two_closures ✗ proj_not_sig ✗ path_wrong_family ✓ ok_declared : a coordinate of its type '

@@ -1,0 +1,21 @@
+; MAP §0 with no map in the book: B ranges over the lists drawn from A's own elements, of A's length — one
+; superposed line (§5.24, §8) — the specification runs on it once, and the leaves that survive are the fibre's
+; points.  perm and sorted are the specification's vocabulary; no sorting algorithm is anywhere in this book.
+(def leq (fix f (lam a (lam b (case a (Zer () (ctr True)) (Suc (a1) (case b (Zer () (ctr False)) (Suc (b1) (app f a1 b1)))))))))
+(def sorted (fix f (lam l (case l (Nil () (ctr True)) (Cons (h t) (case t (Nil () (ctr True)) (Cons (h2 t2) (case (app leq h h2) (True () (app f t)) (False () (ctr False))))))))))
+(def eqn (fix f (lam a (lam b (case a (Zer () (case b (Zer () (ctr True)) (Suc (b1) (ctr False)))) (Suc (a1) (case b (Zer () (ctr False)) (Suc (b1) (app f a1 b1)))))))))
+; remove x from l: Some of the rest, or None
+(def remove (fix f (lam x (lam l (case l (Nil () (ctr None)) (Cons (h t) (case (app eqn x h) (True () (ctr Some t)) (False () (case (app f x t) (None () (ctr None)) (Some (r) (ctr Some (ctr Cons h r))))))))))))
+(def perm (fix f (lam a (lam b (case a (Nil () (case b (Nil () (ctr True)) (Cons (h t) (ctr False)))) (Cons (h t) (case (app remove h b) (None () (ctr False)) (Some (r) (app f t r)))))))))
+(def and (lam x (lam y (case x (False () (ctr False)) (True () y)))))
+; the domain: an element of l (a line over all of them; the empty tail is a dead side), and a list of l's length over them
+(def choose (fix f (lam l (case l (Nil () (era)) (Cons (h t) (dim M (sup M h (app f t))))))))
+(def build (fix f (lam n (lam l (case n (Nil () (ctr Nil)) (Cons (h r) (ctr Cons (app choose l) (app f r l))))))))
+; the specification over the domain: a side that fails it is dead
+(def keep (lam A (lam B (case (app and (app perm A B) (app sorted B)) (True () B) (False () (era))))))
+(def sort (lam A (leaves (app keep A (app build A A)))))
+(def one (ctr Suc (ctr Zer))) (def two (ctr Suc one)) (def three (ctr Suc two))
+(def A (ctr Cons three (ctr Cons one (ctr Cons two (ctr Nil)))))
+(def A2 (ctr Cons two (ctr Cons three (ctr Cons one (ctr Cons (ctr Zer) (ctr Nil))))))
+(def sort-A (app sort A))
+(def sort-A2 (app sort A2))

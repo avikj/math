@@ -463,3 +463,12 @@ X. THE JOB, FINISHED AS §0 STATES IT (all gated: test.sh 113/0, cite 191/0).
    a rewrite is a pass, so expose each equation's cell in order (sorted2,
    sorted3).  What I kept doing wrong: declaring "done" at the kernel
    boundary while the content (the identities) was the job.
+
+Y. THE DECLARATION IS THE PROGRAM, WITH NO MAP IN THE BOOK (t/mapless.hyper).
+   What I had called नास्ति was my laziness: the construction has the
+   mechanism — a specification over a finite domain is run once on the
+   domain as a superposition and its leaves are the points (§8, §5.24).
+   B over lists from A's elements, one superposed line (a name per choice,
+   `dim`), keep = spec, leaves: sort [3,1,2] = [[1,2,3]] in 3430 itrs,
+   sort [2,3,1,0] = [[0,1,2,3]] in 30449.  No isort.  The isort books and
+   the hand-written identities were the proxy; this is the thing.
