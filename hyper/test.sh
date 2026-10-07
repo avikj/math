@@ -117,6 +117,14 @@ got=$(HYPER_CHECK_ALL=1 ./hyper check t/sort.hyper 2>&1 | tr -d '\033' | sed 's/
 # sortCost: over Peano naturals the cost of sorting two elements grows with their values — the greatest cost has no point
 c1=$(./hyper run t/sort.hyper sort-B1 | sed -n 2p | tr -dc 0-9); c2=$(./hyper run t/sort.hyper sort-B2 | sed -n 2p | tr -dc 0-9)
 if [ "$c2" -gt "$c1" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL sortCost unbounded: $c1 vs $c2"; fi
+# §0 evidence: with every identity and lemma removed from the book, the bodyless sort still resolves at a list
+python3 - <<'PY2'
+s=open('t/sort.hyper').read(); i=s.index('; ===== the identities for the generic sort'); j=s.index('; sortCost:')
+open('/tmp/hyper-nolemma.hyper','w').write(s[:i]+s[j:])
+PY2
+got=$(./hyper run /tmp/hyper-nolemma.hyper sort-A2 2>&1 | head -1)
+want='#Pair{#Cons{#Zer{},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}},#Pair{#Refl{},#Refl{}}}'
+if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL no-lemma sort: $got"; fi
 # the checker's conversion rules refuse what they must (t/mustfail.hyper): the verdicts, exactly
 got=$(./hyper check t/mustfail.hyper 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^[✓✗]' | tr '\n' ' ')
 want='✓ ok_id ✗ face_not_vacuous ✗ two_closures ✗ proj_not_sig ✗ path_wrong_family ✓ ok_declared : a coordinate of its type '
