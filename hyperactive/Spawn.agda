@@ -1,4 +1,4 @@
-{-# OPTIONS --cubical --safe --no-import-sorts #-}
+{-# OPTIONS --cubical --safe --guardedness --no-import-sorts #-}
 
 ------------------------------------------------------------------------
 -- Spawn — the machine with cell-creating rules, and its diamond.
@@ -61,6 +61,23 @@ module ITables (I : Type) (_≟_ : Discrete I) {A : Type} where
   ... | no  _ = refl
 
   -- A batch of writes, applied right to left (later entries deeper).
+  -- Maybe discrimination, local and name-independent.
+  justInjA : {x y : A} → just x ≡ just y → x ≡ y
+  justInjA {x} p = cong unwrap p
+    where
+    unwrap : Maybe A → A
+    unwrap nothing  = x
+    unwrap (just a) = a
+
+  data Unit' : Type where tt' : Unit'
+
+  nothing≢justA : {x : A} → nothing ≡ just x → ⊥
+  nothing≢justA p = subst discr p tt'
+    where
+    discr : Maybe A → Type
+    discr nothing  = Unit'
+    discr (just _) = ⊥
+
   writes : List (I × A) → (I → A) → (I → A)
   writes []             f = f
   writes ((i , v) ∷ ws) f = update i v (writes ws f)
@@ -119,22 +136,6 @@ module ITables (I : Type) (_≟_ : Discrete I) {A : Type} where
     ... | inl n = Empty.rec (nothing≢justA (sym n ∙ fv))
     ... | inr n = Empty.rec (nothing≢justA (sym n ∙ fw))
 
-  -- Maybe discrimination, local and name-independent.
-  justInjA : {x y : A} {d : A} → just x ≡ just y → x ≡ y
-  justInjA {x} p = cong unwrap p
-    where
-    unwrap : Maybe A → A
-    unwrap nothing  = x
-    unwrap (just a) = a
-
-  data Unit' : Type where tt' : Unit'
-
-  nothing≢justA : {x : A} → nothing ≡ just x → ⊥
-  nothing≢justA p = subst discr p tt'
-    where
-    discr : Maybe A → Type
-    discr nothing  = Unit'
-    discr (just _) = ⊥
 
 ------------------------------------------------------------------------
 -- §2  The spawning machine over an abstract address structure.
