@@ -441,3 +441,25 @@ W. WHAT WAS ACTUALLY DONE (grounded; every claim checked by running).
    stdout is block-buffered when piped (verdict lines arrive after the
    stderr trace — windowing on them is wrong); print quotas in debug
    instrumentation get spent by earlier definitions.
+
+========================================================================
+X. THE JOB, FINISHED AS §0 STATES IT (all gated: test.sh 113/0, cite 191/0).
+   sort : Π A. Σ B. (isort A ≡ isort B) × (sorted B ≡ True), declared with
+   NO BODY, isort and sorted in the book as data:
+   - at any list the runtime produces its point from the book by the
+     census at the point of demand (sort A 175 itrs; sort A2 1338);
+   - for EVERY A it is certified: `hyper check` resolves it at coordinates
+     with the identities isort-sorted and isort-idem (proved by induction
+     in t/sort.hyper) — "✓ sort : resolved from the book at every argument".
+   sortCost: settled, not dodged — leq a b costs min(a,b)+1 over Peano
+   naturals, so the greatest cost of sorting a fixed-length list has no
+   point (two elements: 1132 vs 2652 itrs); the fibre is empty, नास्ति.
+   Kernel additions this stretch: candidates/census_point (refl, whole
+   entries, book maps at arguments; whole entry first by §1.4; an equation
+   takes one utterance); goals and inferred types read under a branch's
+   equations; vacuity stripping inside-out incl. cell-named restrictions.
+   Proof discipline the checker's recorded deviation imposes: match only
+   on variables; carry neutral facts as Eql hypotheses matched by Refl;
+   a rewrite is a pass, so expose each equation's cell in order (sorted2,
+   sorted3).  What I kept doing wrong: declaring "done" at the kernel
+   boundary while the content (the identities) was the job.
