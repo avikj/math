@@ -18,46 +18,6 @@ pin sat3  '#Cons{#Cons{#F{},#Cons{#T{},#Cons{#T{},#Nil{}}}},#Cons{#Cons{#T{},#Co
 # ? is a fresh number, the name of a coordinate (FRS): under recursion a static label reads every unfolding as one
 # coordinate (two leaves of the eight lists), a fresh label names each (eight leaves)
 pin fresh '#Pair{#Cons{#Cons{#F{},#Cons{#F{},#Cons{#F{},#Nil{}}}},#Cons{#Cons{#T{},#Cons{#T{},#Cons{#T{},#Nil{}}}},#Nil{}}},#Cons{#Cons{#F{},#Cons{#F{},#Cons{#F{},#Nil{}}}},#Cons{#Cons{#F{},#Cons{#F{},#Cons{#T{},#Nil{}}}},#Cons{#Cons{#F{},#Cons{#T{},#Cons{#F{},#Nil{}}}},#Cons{#Cons{#F{},#Cons{#T{},#Cons{#T{},#Nil{}}}},#Cons{#Cons{#T{},#Cons{#F{},#Cons{#F{},#Nil{}}}},#Cons{#Cons{#T{},#Cons{#F{},#Cons{#T{},#Nil{}}}},#Cons{#Cons{#T{},#Cons{#T{},#Cons{#F{},#Nil{}}}},#Cons{#Cons{#T{},#Cons{#T{},#Cons{#T{},#Nil{}}}},#Nil{}}}}}}}}}}' 165
-# MAP §0 on the net: every arrangement of [3,1,2] as a line (one fresh coordinate per place), `sorted` run on it,
-# the one survivor read by %: nine comparisons, five dead sides
-pin sort3 '#Cons{#Cons{1,#Cons{2,#Cons{3,#Nil{}}}},#Nil{}}' 458
-# Block C: the cubical layer as net programs (n/cubical.hvm4): ua is CCHM's Glue line and transport along it is the Glue
-# transport rule (no shortcut), a Glue at a true face is its partial type, hcomp deciding a face, transport along one
-# shared superposed line read by %
-pin ua '#Pair{#F{},#T{}}' 2858
-pin hcnat '#Suc{#Zer{}}' 25
-pin supline '#Cons{#F{},#Cons{#F{},#Nil{}}}' 1712
-# Block D: verify is decide — a typed point's judgment is one equation T === @infer(D) on the net (n/judge.hvm4):
-# Π, Σ, Bool, Nat, Eql/refl over quoted syntax; two must-fail cases reduce to 0; a superposed point against a
-# goal is a superposition of equations (EQL-SUP, no rule added), read by %
-pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}' 1299
-# the cubical formers (n/judgecub.hvm4), twenty cases: plm against Path (and a wrong end), path application, coe along a
-# constant line (and a wrong target), ua of the identity, hcomp with a tube whose i0 end is the base (and one whose is
-# not), Glue with no face, glue/unglue, a Glue face with a wrong contraction (0) and with the identity equivalence's
-# contraction (1: the endpoint rule for a typed neutral path, Σ η and path η), λp. <i> p @ i by path η, Bool/Nat/List
-# eliminators, fst/snd (and snd against the wrong type), and a superposed cubical point read by %.
-# The identity equivalence checks only with fresh labels per binder instantiation (the default; -L is HVM4's).
-pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}}}}}}}}}' 56989
-# faces with a bound interval variable are decided per cell: the face-bearing parts of a type (Partial's carrier,
-# Sub's element, Glue's faces) are syntax suspended over the environment, so restriction to a cell is evaluation under
-# the environment restricted; inconsistent cells are dropped
-# the circle, Partial and systems (branches on their cells, agreement, coverage), transp with a cofibration — the line
-# constant on φ by the marker test: L at two markers equal on every cell (a moving line on φ=i1 fails, on φ=i0 passes,
-# a constant line under a binder passes) — Sub/inS/outS, the set quotient with its constructors and recursor (n/judgehit.hvm4)
-pin judgehit '#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Nil{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}' 182879
-# index §9.15 on the net, with types (n/declare.hvm4): sort A = Σ B : Rearr A. Sorted B ≡ True at A = [2,0,1] indexed
-# as a tree; D = @any(Tspec): the coordinate over Rearr A is the relabellings, factored over the index (§9.2, §9.8: six
-# points, one fresh coordinate per interleaving choice), refl over the equation; the judgment cuts five sides and % is
-# the fibre: ([0,1,2], refl)
-pin declare '#Cons{#SPair{#SCons{#SVal{#Zer{}},#SCons{#SVal{#Suc{#Zer{}}},#SCons{#SVal{#Suc{#Suc{#Zer{}}}},#SNil{}}}},#SRefl{}},#Nil{}}' 4578
-# index §9 followed entry by entry on numbers (n/sort9.hvm4): the whole relabelling line cut once by Sorted at n=4, and the
-# declaration followed through 9.3/9.6/9.15 on the balanced numeral (n=8: 17 comparisons, 475 interactions) and on the
-# tally (20 comparisons, 543): OP2-NUM-NUM is the count of comparisons, 69 = 32 + 17 + 20
-pin sort9 '#Pair{#Cons{#Cons{0,#Cons{1,#Cons{2,#Cons{3,#Nil{}}}}},#Nil{}},#Pair{#Cons{0,#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Cons{5,#Cons{6,#Cons{7,#Nil{}}}}}}}}},#Cons{0,#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Cons{5,#Cons{6,#Cons{7,#Nil{}}}}}}}}}}}' 2731
-c=$(./hyper net n/sort9.hvm4 -s 2>&1 | grep -oE '"OP2-NUM-NUM":[0-9]+' | sed 's/.*://'); if [ "$c" = 69 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL sort9 comparisons: $c want 69"; fi
-# an enumeration as a type (n/judgeenum.hvm4): the type, a symbol against it (and one not in it), a match with every
-# symbol covered (and one without), and the match evaluated
-pin judgeenum '#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{#Suc{#Zer{}},#Nil{}}}}}}}' 1627
 # index 0.3 / 0.4 / 0.7 / 0.8 / 0.11 on the net (n/interval.hvm4): a path is &I{a,b}, a face is |0I / |1I, the interval's
 # operations are reparametrisations of a cube; all sixteen laws of 0.3 hold as vertex equality; the contraction of the
 # one fact reads (x, refl) at i=0 and (y, p) at i=1
@@ -66,6 +26,12 @@ pin interval '#Pair{[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],#Pair{#Pair{#A{},#A{}},#Pa
 # numerals is the k-cube; addition place by place with carries, comparison from the top as a cut; 3+5, the 2-cube + 3
 # as a fibre, 3 <= 5, and <= on the 2-cube read by %
 pin numeral '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}},#Pair{#Cons{#S{#S{#S{#Z{}}}},#Cons{#S{#S{#S{#S{#S{#Z{}}}}}},#Cons{#S{#S{#S{#S{#Z{}}}}},#Cons{#S{#S{#S{#S{#S{#S{#Z{}}}}}}},#Nil{}}}}},#Pair{#T{},#Cons{#T{},#Cons{#T{},#Cons{#T{},#Nil{}}}}}}}' 870
+# index §9 on the net (n/sort.hvm4): the declaration Σ B. (B is a rearrangement of A) × Sorted B, the input indexed by the
+# cube; the rearrangements as a cube with one named coordinate per interleaving choice (9.2, 9.8, 9.11), Sorted as the
+# restriction taking at each coordinate the face the head comparison names (9.3, 9.6), the faces kept as the permutation
+# (0.2, 3.6) and replayed as verification (8.6).  Elements are numerals (bits), nothing primitive.  Faces taken = comparisons
+# made: 5 at n=4, 17 at n=8 balanced, 20 on the tally (9.9); the balanced numeral is cheaper than the tally (9.7, 9.11)
+pin sort '#Pair{#Pair{#Cons{#Z{},#Cons{#S{#Z{}},#Cons{#S{#S{#Z{}}},#Cons{#S{#S{#S{#Z{}}}},#Nil{}}}}},#Pair{#S{#S{#S{#S{#S{#Z{}}}}}},1}},#Pair{#Pair{#Cons{#Z{},#Cons{#S{#Z{}},#Cons{#S{#S{#Z{}}},#Cons{#S{#S{#S{#Z{}}}},#Cons{#S{#S{#S{#S{#Z{}}}}},#Cons{#S{#S{#S{#S{#S{#Z{}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#Z{}}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}},#Nil{}}}}}}}}},#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}},1}},#Pair{#Cons{#Z{},#Cons{#S{#Z{}},#Cons{#S{#S{#Z{}}},#Cons{#S{#S{#S{#Z{}}}},#Cons{#S{#S{#S{#S{#Z{}}}}},#Cons{#S{#S{#S{#S{#S{#Z{}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#Z{}}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}},#Nil{}}}}}}}}},#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}},1}}}}' 12293
 # index 5.11 / 5.13 / 5.24 on net.c (n/diamond.hvm4): one term, eight normaliser schedules (-R), one ledger; the
 # seeded order is confirmed to differ (schedule_flips > 0) and the interaction count does not move
 d0=$(./hyper net n/diamond.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); dok=1

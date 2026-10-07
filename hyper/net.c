@@ -97,6 +97,8 @@ typedef struct {
 #define FRS 46  // Frs: a fresh number — the name of a new coordinate (hyper: dim)
 #define FA0 47  // Fa0(x) on coordinate L (ext): the face of x at L = 0 — restriction at every depth (hyper: a side is a face)
 #define FA1 48  // Fa1(x): the face at L = 1
+#define FAD 49  // Fad(side, lab, x): a face whose side and coordinate are terms — reduces to Fa0/Fa1 once both are values
+#define FDL 50  // Fdl(lab, x) with ext = side: the side known, the coordinate still a term
 #define COL 45  // Col(x): the collapse of x as a value — the list of its leaves, multiplicity conserved (hyper: §6, the fibre is data)
 
 // LAM Ext Flags
@@ -184,7 +186,7 @@ typedef struct __attribute__((aligned(256))) {
 static WnfBank WNF_BANK = {0};
 static u64 ITRS = 0;
 
-static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL" };
+static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL","FAD-SIDE","FDL-LAB" };
 #define SAT_NRULES ((int)(sizeof(SAT_NAMES) / sizeof(SAT_NAMES[0])))
 static u64 SAT_COUNTS[128] = {0};
 static u64 SCHED_FLIPS = 0;
@@ -360,6 +362,8 @@ static const u8 TERM_ARITY[TAG_MASK + 1] = {
   [FRS] = 0,
   [FA0] = 1,
   [FA1] = 1,
+  [FAD] = 3,
+  [FDL] = 2,
 };
 
 fn u32 term_arity(Term t) {
@@ -652,6 +656,20 @@ fn Term term_new_fac(u8 side, u32 lab, Term x) {
   u64 loc = heap_alloc(1);
   heap_set(loc, x);
   return term_new(0, side ? FA1 : FA0, lab, loc);
+}
+
+fn Term term_new_fad(Term side, Term lab, Term x) {
+  u64 loc = heap_alloc(3);
+  heap_set(loc + 0, side);
+  heap_set(loc + 1, lab);
+  heap_set(loc + 2, x);
+  return term_new(0, FAD, 0, loc);
+}
+fn Term term_new_fdl(u8 side, Term lab, Term x) {
+  u64 loc = heap_alloc(2);
+  heap_set(loc + 0, lab);
+  heap_set(loc + 1, x);
+  return term_new(0, FDL, side, loc);
 }
 
 fn Term term_new_col(Term x) {
@@ -1775,6 +1793,18 @@ fn void print_term_go(FILE *f, Term term, u32 depth, PrintState *st) {
       u64 loc = term_val(term);
       fputs("%", f);
       print_term_at(f, HEAP[loc], depth, st);
+      break;
+    }
+    case FAD: {
+      u64 loc = term_val(term);
+      fputs("|(", f); print_term_at(f, HEAP[loc], depth, st); fputs(")(", f); print_term_at(f, HEAP[loc + 1], depth, st); fputs(") ", f);
+      print_term_at(f, HEAP[loc + 2], depth, st);
+      break;
+    }
+    case FDL: {
+      u64 loc = term_val(term);
+      fputs(term_ext(term) ? "|1(" : "|0(", f); print_term_at(f, HEAP[loc], depth, st); fputs(") ", f);
+      print_term_at(f, HEAP[loc + 1], depth, st);
       break;
     }
     case FA0:
@@ -3603,6 +3633,16 @@ fn Term parse_term_atom(PState *s, u32 depth) {
     return parse_term_lam(s, depth);
   } else if (parse_match(s, "%")) {
     return parse_term_col(s, depth);
+  } else if (parse_peek(s) == '|' && parse_peek_at(s, 1) == '(') {
+    parse_advance(s);
+    parse_consume(s, "(");
+    Term side = parse_term(s, depth);
+    parse_consume(s, ")");
+    parse_consume(s, "(");
+    Term lab = parse_term(s, depth);
+    parse_consume(s, ")");
+    Term x = parse_term_atom(s, depth);
+    return term_new_fad(side, lab, x);
   } else if (parse_peek(s) == '|' && (parse_peek_at(s, 1) == '0' || parse_peek_at(s, 1) == '1')) {
     parse_advance(s);
     u8  side = parse_peek(s) == '1';
@@ -4823,7 +4863,9 @@ __attribute__((cold, noinline)) static Term wnf_rebuild(Term cur, Term *stack, u
       case DDU:
       case COL:
       case FA0:
-      case FA1: {
+      case FA1:
+      case FAD:
+      case FDL: {
         u64 loc = term_val(frame);
         heap_set(loc + 0, cur);
         cur = frame;
@@ -5012,7 +5054,9 @@ __attribute__((hot)) fn Term wnf(Term term) {
           case DDU:
           case COL:
           case FA0:
-          case FA1: {
+          case FA1:
+          case FAD:
+          case FDL: {
             next = wnf_alo_nod(alo_loc, ls_loc, len, book);
             goto enter;
           }
@@ -5054,7 +5098,9 @@ __attribute__((hot)) fn Term wnf(Term term) {
 
       case COL:
       case FA0:
-      case FA1: {
+      case FA1:
+      case FAD:
+      case FDL: {
         u64  loc = term_val(next);
         Term x   = heap_read(loc + 0);
         stack[s_pos++] = next;
@@ -5259,6 +5305,30 @@ __attribute__((hot)) fn Term wnf(Term term) {
               goto enter;
             }
           }
+        }
+
+        // -----------------------------------------------------------------------
+        // FAD frame: the side is a value (#F/#T or 0/1) — becomes FDL; FDL frame: the coordinate is a number — becomes FA0/FA1
+        // -----------------------------------------------------------------------
+        case FAD: {
+          u64 floc = term_val(frame);
+          int side = -1;
+          if (term_tag(whnf) == NUM) side = term_val(whnf) ? 1 : 0;
+          else if (term_tag(whnf) >= C00 && term_tag(whnf) <= C16) {
+            u32 nm = term_ext(whnf);
+            if (nm == table_find("T", 1)) side = 1; else if (nm == table_find("F", 1)) side = 0;
+          }
+          if (side < 0) { heap_set(floc, whnf); whnf = frame; continue; }     /* stuck: not a side */
+          ITRS_INC("FAD-SIDE");
+          next = term_new_fdl((u8)side, heap_read(floc + 1), heap_read(floc + 2));
+          goto enter;
+        }
+        case FDL: {
+          u64 floc = term_val(frame);
+          if (term_tag(whnf) != NUM) { heap_set(floc, whnf); whnf = frame; continue; }
+          ITRS_INC("FDL-LAB");
+          next = term_new_fac((u8)term_ext(frame), (u32)term_val(whnf), heap_read(floc + 1));
+          goto enter;
         }
 
         // -----------------------------------------------------------------------
@@ -6112,6 +6182,8 @@ fn Term cnf_at(Term term, u32 depth) {
     case COL:
     case FA0:
     case FA1:
+    case FAD:
+    case FDL:
     case C01 ... C16: {
       u32 ari = term_arity(term);
       u64 loc = term_val(term);

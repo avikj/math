@@ -1,0 +1,49 @@
+#include "bits.hvm4"
+// index §9 on the net: the declaration Σ B. (B is a rearrangement of A) × Sorted B (9.15), posed with the identities
+// the object has, and normalised.  Nothing here names a method.
+//
+// The input is a finite set indexed by the cube (9.11): a tree whose leaves are numerals (bits, n/bits.hvm4).
+// 9.2 / 9.8 / 9.11  the fibre of sort is the relabellings, and over a cube-indexed set it factors along the index:
+//   the rearrangements of a node are the interleavings of the rearrangements of its halves.  @cube is that
+//   coordinate: one named coordinate (?) per interleaving choice, Π C(a+b, a) = n! vertices.  Nothing is erased.
+// 9.3 / 9.6  a comparison is a restriction: Sorted, unfolded at the head of an interleaving of two sorted runs, is
+//   decided by the one comparison the held order does not imply, between the two head candidates; its outcome names
+//   the face of the cube at that coordinate.  @sorted takes that face (the dup on the coordinate projects it; the
+//   coordinate occurs nowhere deeper).  The faces taken are the permutation, kept with the answer (0.2, 3.6): the
+//   proof is a value, its length is the number of comparisons made (9.9), and replaying it is verification (8.6).
+@cube = λ&c. λ{#Nil: λ&y. y; #Cons: λ&h. λ&t. λ{#Nil: #Cons{h, t}; #Cons: λ&h2. λ&t2. &(c){#Cons{h2, @cubeRest(#Cons{h, t}, t2)}, #Cons{h, @cubeRest(t, #Cons{h2, t2})}}}}
+@cubeRest = λ&x. λ&y. ! &c = ?; @cube(c, x, y)
+// Sorted as the restriction of the cube: at each coordinate the face the head comparison names, recorded
+@sorted = λ{#Nil: λ&y. #Pair{y, #Nil}; #Cons: λ&h. λ&t. λ{#Nil: #Pair{#Cons{h, t}, #Nil};
+  #Cons: λ&h2. λ&t2. ! &c = ?; ! &s = @le(h, h2);
+    ! &(c){lo, hi} = @cube(c, #Cons{h, t}, #Cons{h2, t2});
+    (λ{#T: @keep(s, hi, @sorted(t, #Cons{h2, t2})); #F: @keep(s, lo, @sorted(#Cons{h, t}, t2))})(s)}}
+// the face taken: its head is the cube's head on that side; its tail is the restriction continued, with the face recorded
+@keep = λ&s. λ{#Cons: λ&h. λ&rest. λ{#Pair: λ&b. λ&w. #Pair{#Cons{h, b}, #Cons{s, w}}}}
+// the declaration at a node: the restricted interleaving of the declarations at its halves; at a leaf, the element
+@sort = λ{#Leaf: λ&a. #Pair{#Cons{a, #Nil}, #Leaf};
+  #Node: λ&l. λ&r. (λ{#Pair: λ&x. λ&px. (λ{#Pair: λ&y. λ&py. (λ{#Pair: λ&b. λ&w. #Pair{b, #Node{px, py, w}}})(@sorted(x, y))})(@sort(r))})(@sort(l))}
+// 8.6 decide = verify: the proof replayed names the faces without a comparison; the answer must come back
+@replay = λ{#Leaf: λ&a. λ&q. #Cons{a, #Nil}; #Node: λ&l. λ&r. λ{#Node: λ&pl. λ&pr. λ&w. @along(w, @replay(l, pl), @replay(r, pr))}}
+@along = λ{#Nil: λ&x. λ&y. @lcat(x, y); #Cons: λ&s. λ&w. λ{#Cons: λ&h. λ&t. λ{#Cons: λ&h2. λ&t2. (λ{#T: #Cons{h, @along(w, t, #Cons{h2, t2})}; #F: #Cons{h2, @along(w, #Cons{h, t}, t2)}})(s)}}}
+@verify = λ&A. λ{#Pair: λ&b. λ&p. (@replay(A, p) === b)}
+// comparisons made = faces taken
+@faces = λ{#Leaf: #Z; #Node: λ&l. λ&r. λ&w. @addN(@lenN(w), @addN(@faces(l), @faces(r)))}
+@lenN = λ{#Nil: #Z; #Cons: λ&h. λ&t. #S{@lenN(t)}}
+@addN = λ{#Z: λ&b. b; #S: λ&a. λ&b. #S{@addN(a, b)}}
+// numerals
+@n0 = #Nil
+@n1 = #Cons{#T, #Nil}
+@n2 = #Cons{#F, #Cons{#T, #Nil}}
+@n3 = #Cons{#T, #Cons{#T, #Nil}}
+@n4 = #Cons{#F, #Cons{#F, #Cons{#T, #Nil}}}
+@n5 = #Cons{#T, #Cons{#F, #Cons{#T, #Nil}}}
+@n6 = #Cons{#F, #Cons{#T, #Cons{#T, #Nil}}}
+@n7 = #Cons{#T, #Cons{#T, #Cons{#T, #Nil}}}
+// the set as a numeral (balanced: n in binary) and as a tally (the chain), 9.11
+@A4 = #Node{#Node{#Leaf{@n2}, #Leaf{@n0}}, #Node{#Leaf{@n3}, #Leaf{@n1}}}
+@A8 = #Node{#Node{#Node{#Leaf{@n5}, #Leaf{@n2}}, #Node{#Leaf{@n7}, #Leaf{@n0}}}, #Node{#Node{#Leaf{@n3}, #Leaf{@n6}}, #Node{#Leaf{@n1}, #Leaf{@n4}}}}
+@C8 = #Node{#Leaf{@n5}, #Node{#Leaf{@n2}, #Node{#Leaf{@n7}, #Node{#Leaf{@n0}, #Node{#Leaf{@n3}, #Node{#Leaf{@n6}, #Node{#Leaf{@n1}, #Leaf{@n4}}}}}}}}
+@run = λ&A. (λ{#Pair: λ&b. λ&p. #Pair{@map(@tally, b), #Pair{@faces(p), @verify(A, #Pair{b, p})}}})(@sort(A))
+@map = λ&f. λ{#Nil: #Nil; #Cons: λ&h. λ&t. #Cons{f(h), @map(f, t)}}
+@main = #Pair{@run(@A4), #Pair{@run(@A8), @run(@C8)}}

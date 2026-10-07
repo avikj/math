@@ -477,80 +477,55 @@ this runtime does not model.
 
 ## The net (hyper/net.c, test_net.sh)
 
-`cell.c` is a closure evaluator with the ledger's vocabulary; it is not the machine of §5.4 and nothing in it has
-the one-step diamond. The machine is `net.c` (HVM4 verbatim, the net the SAT fibre receipts were computed on) with
-hyper's agents, and everything cubical as programs on it. State, every line pinned by `test_net.sh`:
+The net is the complex. Read against `docs/index.html`: a coordinate is a label, a path is a superposition on it
+(0.4), a face is the restriction of a term to a side at every depth, a term with k fresh coordinates is a k-cube,
+same-label correlation is the diagonal, erasing a side removes a face, the collapse `%` reads the vertices as a
+value, and the ledger counts rule firings (5.5). Nothing in the book is a primitive number or a primitive
+comparison: a number is bits on coordinates (§6, 9.11) and a comparison is a cut (9.3). The machine is `net.c`:
+HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test_net.sh`:
 
-- **`%x`, the collapse as a value (COL).** On an erased world `#Nil`; on a superposition `@lcat` of both sides,
-  multiplicity conserved; on a value, the superpositions inside lifted to the top (same label correlated) and one
-  leaf. Four receipts. `n/xor` `n/same` `n/empty` `n/diff`. The `-C` readback is untouched: satcheck 282/282.
-- **`?`, a fresh coordinate (FRS).** One interaction, the next number; `&(?){a,b}` is `dim`. `n/fresh.hvm4` measures
-  HVM4's recorded defect (STATE_OF_THE_WORK I.4: labels static per binder) beside the fix: a static label under
-  recursion reads the eight Bool lists of length 3 as two leaves; a fresh label names each unfolding, eight leaves.
-- **A declaration with no body is a line.** `n/sort3.hvm4`: every arrangement of `[3,1,2]` as one line, `sorted` run on
-  it, the survivor read by `%`, 458 interactions, nine comparisons. `n/sat3.hvm4`: a 3-variable proposition's fibre.
-- **The cubical layer as net programs.** `n/cubical.hvm4` is the lane's full-runtime prelude (`coe`, `hcomp`, `hfill`,
-  paths, the interval, Glue), run here: transport along `ua(not)` both ways (`n/ua`, 268 interactions), `hcomp` in
-  Nat deciding a face (`n/hcnat`), transport along one shared superposed universe path read by `%` (`n/supline`).
-- **Verify is decide.** `n/judge.hvm4`: a typed point `#Pair{T, D}` is well formed when the one equation
-  `T === @infer(D)` reduces to 1 on the same net; `D` is quoted syntax read by `@eval` into the prelude's values.
-  Π, Σ, Bool, Nat, Eql/refl; two must-fail cases reduce to 0; a superposed point against a goal is a superposition
-  of equations with no rule added (`EQL-SUP`), read by `%` as `[1,0]`. `n/judgment.hvm4` carries the clauses, the
-  lane's `Core/Check.hs` rule by rule: the interval and its operations, `Path` formation, `<i> t` against a Path
-  with both ends, `p @ r` with the β case, `coe` along a line, `ua` with its six premises, `hcomp` with each tube's
-  i0 end checked against the base on every cell of its face (the face's DNF, the environment fixed on the cell)
-  and adjacent tubes compared on the cells of φ ∧ ψ, `Glue` formation with each face's equivalence against
-  `@equivT`, `glue` against its Glue type with the sections carried to the base by `e`, `unglue`.
-  `n/judgecub.hvm4` pins twelve cases including must-fails.
-- **Labels are coordinates, in the kernel.** HVM4 gave a duplication binder one static label per binder, so a
-  recursive unfolding reused it and distinct coordinates were read as one (the second of the three recorded
-  violations). Each instantiation of a binder now takes a fresh label (`wnf_alo_dup`, the entry's third word), the
-  default; `-L` keeps HVM4's discipline, under which the SAT receipts were recorded and still reproduce 282/282.
-  The identity equivalence's contraction on a Glue face checks only under the fresh discipline (`n/judgecub`, case 11).
-- **Neutrals are η-long by their type at creation** (`@nam`): a Π-typed neutral is the function that builds the
-  neutral application, a Σ-typed one the pair of its neutral projections, a Path-typed one the line whose ends are
-  its type's ends (the endpoint rule) and whose interior is the neutral application. HVM4 has no rule for a match
-  on a lambda, so values are never matched for their shape; conversion is type-directed instead (`@convT`): Π by a
-  fresh neutral, Σ componentwise, Path at `i0`, `i1` and a fresh neutral interval, the equation at base types.
-  Eliminators for Bool, Nat and List against a goal; `fst`/`snd`; List, Unit, Empty.
-- **HITs and the rest of CCHM** (`n/judgehit.hvm4`, twenty cases): the circle with `S1.rec`; `Partial`, systems
-  (each branch on its own cells, agreement on overlaps, coverage of φ), `pout`; `transp` with a cofibration (the line
-  constant on φ, cell by cell); `Sub`/`inS`/`outS`; the set quotient with `[a]`, `eq/` against a Path whose line is
-  the quotient, and its recursor.
-- **The declaration, on the net** (`n/declare.hvm4`, index §9.15). The declaration is the type alone:
-  `sort A = Σ B : Rearr A. Sorted B ≡ True` at `A = [2,0,1]`, indexed as a tree (§9.11); the book holds `Sorted`
-  (§9.6, adjacent: the comparisons §9.3 says are implied are never made) and nothing about arrangements or
-  searching. `Rearr A` is a type in the judgment (a list is a point iff it carries A's elements each once). Its
-  point is `@any(T)`, the coordinate over the type: over `Rearr A` it is the relabellings (§9.2), factored over the
-  index as the interleavings of the halves' relabellings (§9.8), one fresh coordinate per interleaving choice,
-  `n!` points; over an equation, `refl`. The judgment cuts five sides and `%` is the fibre, `([0,1,2], refl)`,
-  4,578 interactions. (The earlier form over `List Nat` enumerated an infinite line and cut it by a `perm`
-  predicate; §9.2 says the coordinate over "B is a rearrangement of A" is the relabellings themselves.) Σ-intro
-  forces the dependent premise, the one carrying the specification, before the structural one; neither order
-  changes a verdict.
-- **§9 followed entry by entry** (`n/sort9.hvm4`), on numbers, so that the net's `<=` is the comparison and the
-  ledger's `OP2-NUM-NUM` is the count §9.9 bounds. Each book entry is one statement: the input as a numeral (9.11);
-  the relabelling line factored over the index (9.2, 9.8); `Sorted` (9.6); and the restriction (9.3, 9.6): on an
-  interleaving of two sorted runs the coordinate at the two heads is determined by their comparison, the inner
-  premises held by the runs, so the restricted line at a node is one point and the fibre at a node is the
-  restricted interleaving of the fibres of its halves (9.15). Ledger: the whole line cut once by `Sorted` at n=4
-  makes 32 comparisons; the declaration followed through 9.6/9.15 makes 5 at n=4 and 17 at n=8 on the balanced
-  numeral (`log₂ 8! ≈ 15.3`, 9.9's bound within the linear term), 20 on the tally, 475 against 543 interactions:
-  the gap between a numeral and a tally (9.7, 9.11). A comparison is a restriction of the space of orderings
-  (9.3) and what is held is the partial order, closed: a comparison already implied is not one. Two sorted runs
-  hold their orders, so on their interleaving the only comparison not implied is between the two heads, and its
-  outcome is the coordinate. That is what `@interS` is, and it is why the count is 9.9's. Generating the
-  interleaving as a free coordinate and cutting it by `Sorted` afterwards is a different and wrong definition of
-  comparison: it makes comparisons the held order already decides (32 at n=4 on the whole line).
-- Enumerations: the type, symbols against it, the match with coverage (`n/judgeenum.hvm4`).
-- **Faces decided per cell, exactly.** `transp`'s constancy on φ is the marker test (the line at two markers equal on
-  every cell, lambda bodies included). The face-bearing parts of a type (Partial's carrier, Sub's element, Glue's
-  faces) are syntax suspended over the environment, so restriction to a cell is evaluation under the environment
-  restricted, for literal and bound interval variables alike; inconsistent cells are dropped. Coverage, agreement,
-  `inS` and glue sections are checked on each cell of a symbolic face; Glue formation also requires adjacent faces to
-  agree on their overlap, CCHM's partial-element condition the fork left unchecked (`n/judgehit.hvm4`, 32 cases).
-  `ua e` is CCHM's Glue line `<i> Glue B [(~i, A, e), (i, B, idEquiv B)]` and transport along it is the Glue
-  transport rule, nothing else; the fork's shortcut rule (`coe` along `ua` = `fst e`) is removed, and the fork's
-  missing true-face arm at Glue formation (`Glue A [1 ↦ (T,e)] ≡ T`) is added. No assumption beyond CCHM remains.
-- **Not done:** the lane's eleven cubical programs re-run here (no Bend binary to emit them); parallel
-  execution (this HVM4 is sequential; the diamond makes it legal).
+- **The diamond** (5.11, 5.13, 5.24). `-R n` makes the normaliser visit a node's fields in a seeded order, so which
+  copy of a shared sub-net forces it first changes from run to run; `n/diamond.hvm4` under eight schedules has one
+  ledger, 3,053, with the visiting order confirmed to differ. The inner strategy (needed redex first) is fixed; what
+  varies is the order among independent needs and shared forcing. HVM4's substitution of a variable is a global
+  map rather than a wire, so this is the diamond measured, not proved.
+- **`%x`, the collapse as a value (COL)**, and **`?`, a fresh coordinate (FRS)**: `n/xor` `n/same` `n/empty` `n/diff`
+  `n/sat3` `n/fresh`, as before. The SAT receipts (`-L`, HVM4's static labels) check 282/282.
+- **Faces (FA0/FA1, `|0I x` and `|1I x`; FAD, `|(side)(coord) x`).** The restriction of x to a side of a coordinate,
+  pushed through constructors, lambdas and other coordinates, consuming every occurrence of its own. HVM4's dup by
+  a label projects one level only; a face is the side at every depth, which is what the collapse's correlation
+  means. A named dup (`! &I{a,b}`) keeps its coordinate; only auto-dups get a fresh one per instantiation.
+- **The interval** (0.3, 0.4, 0.7, 0.8, 0.11; `n/interval.hvm4`). `&I{a,b}` is a path; its faces are `|0I`, `|1I`;
+  the operations of 0.3 are reparametrisations of a cube, each written once with faces alone: `i := ~i` swaps the
+  faces, `i := i ∧ j` is `&I{|0I c, &J{|0I c, |1I c}}`, `i := i ∨ j` is `&I{&J{|0I c, |1I c}, |1I c}`. All sixteen
+  laws of 0.3 hold as vertex equality, and the one fact's contraction `(p i, λ j → p (i ∧ j))` reads `(x, refl)` at
+  i = 0 and `(y, p)` at i = 1. On vertices the net's interval is Boolean: `i ∧ ~i` reads as 0, which 0.3's free
+  algebra does not force; nothing in the text uses that distinction (0.11 lists the three uses).
+- **Numbers** (6.1–6.3, 9.11; `n/bits.hvm4`, `n/numeral.hvm4`). Bool is one coordinate `&(?){#F,#T}`; a numeral is
+  its bits, least place first; the type of k-bit numerals is the k-cube. Addition is disjoint union place by place
+  with carries (6.3); comparison reads places from the top and stops at the first that differs. The 2-cube plus 3
+  is read by `%` as the fibre {3,5,4,6}.
+- **The declaration** (§9, `n/sort.hvm4`). `Σ B. (B is a rearrangement of A) × Sorted B` (9.15), A a finite set
+  indexed by the cube (9.11), elements numerals. The rearrangements of a node are the interleavings of the
+  rearrangements of its halves (9.2, 9.8): `@cube` is that coordinate, one `?` per interleaving choice. `Sorted` is
+  not a predicate that erases sides; unfolded at the head of an interleaving of two sorted runs it is decided by the
+  one comparison the held order does not imply, between the two head candidates, and its outcome names the face of
+  the cube at that coordinate (9.3, 9.6). `@sorted` creates the coordinate, builds its superposition, and takes that
+  face: the cube is never materialised beyond the coordinate being restricted, which is what a comparison costs. The
+  faces taken are the permutation, kept with the answer (0.2, 3.6); `@faces` counts them, `@verify` replays them
+  without a comparison and the answer comes back (8.6). Ledger:
+
+  | input | interactions | coordinates created = faces taken = comparisons |
+  |---|---|---|
+  | n=4, balanced | 1,159 | 5 (= ⌈log₂ 24⌉, 9.4) |
+  | n=8, balanced numeral | 5,236 | 17 (9.9's n log n − n + 1) |
+  | n=8, tally (chain) | 5,898 | 20 |
+
+  The shape is the input's numeral, not a policy (9.11), and the balanced one is cheaper on both axes (9.7).
+  What is posed, as 9.15 says it must be: the index as a cube, the factorisation of the rearrangements along it,
+  `Sorted`, and the comparison as a face. What is not in the book: any word for merging, any free line cut by a
+  predicate, any primitive. The leftover run at a merge is appended by pointer, so the interaction count sits
+  below 9.7's a + b per merge, which assumed one constructor emitted per element.
+- **Retired** (`hyper/old/`): the first construction layer, which implemented cubical type theory as an interpreter
+  of quoted syntax with the interval as data, and the sort readings over primitive numbers or a free line cut
+  afterwards. Kept as the record; nothing there is in the suite. `cell.c` and `verify.c` remain as before.
