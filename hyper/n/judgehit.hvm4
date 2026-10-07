@@ -1,6 +1,7 @@
 #include "judgment.hvm4"
 // the circle, Partial and systems, transp with a cofibration, Sub, and the set quotient
 @idS = #SLam{#SVar{0}}
+@idEquivS = #SPair{@idS, #SLam{#SPair{#SPair{#SVar{0}, #SPlm{#SVar{1}}}, #SLam{#SPlm{#SPair{#SPap{#SSnd{#SVar{1}}, #SNot{#SVar{0}}}, #SPlm{#SPap{#SSnd{#SVar{2}}, #SOr{#SNot{#SVar{1}}, #SVar{0}}}}}}}}}}
 @reflS = #SLam{#SPlm{#SVar{1}}}
 @R = #SLam{#SLam{#SUnit}}
 @Q = #SQuo{#SBool, @R}
@@ -36,4 +37,7 @@
         #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Sub{#Bool, i, #T}}, #SLam{#SInS{#SFalse}}}),                                                  // 0: not u on the cell i = i1
         #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Glue{#Bool, #Cons{#GFace{i, #Bool, @idEquivV(#Bool)}, #Nil}}}, #SLam{#SGlb{#SBool, #Cons{#SFace{#SVar{0}, #STrue}, #Nil}, #STrue}}}), // 1: the section is carried to x on the cell
         #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Glue{#Bool, #Cons{#GFace{i, #Bool, @idEquivV(#Bool)}, #Nil}}}, #SLam{#SGlb{#SBool, #Cons{#SFace{#SVar{0}, #STrue}, #Nil}, #SFalse}}}), // 0: it is not
-        #Nil}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+        // Glue formation requires adjacent faces to agree on their overlap: on i ∨ i (the same face twice) both faces must carry the same type
+        #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Set}, #SLam{#SGlue{#SBool, #Cons{#SGFace{#SVar{0}, #SBool, @idEquivS}, #Cons{#SGFace{#SVar{0}, #SBool, @idEquivS}, #Nil}}}}}),  // 1
+        #Cons{@judge(#Pair{#Pi{#Itv, λ&i. #Set}, #SLam{#SGlue{#SBool, #Cons{#SGFace{#SVar{0}, #SBool, @idEquivS}, #Cons{#SGFace{#SVar{0}, #SNat, @idEquivS}, #Nil}}}}}),   // 0: the types differ on the overlap
+        #Nil}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}

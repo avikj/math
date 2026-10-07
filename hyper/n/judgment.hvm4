@@ -132,7 +132,9 @@
   // tubes agree on the cells of φ ∧ ψ
   #SHcm: λ&A. λ&fs. λ&x. (λ{1: (λ{1: @eval(env, A); λ&q. #Ill})(@andB(@hcFaces(ctx, env, A, x, fs), @hcAdj(env, A, @pairs(fs)))); λ&q. #Ill})(@andB(@check(ctx, env, A, #Set), @check(ctx, env, x, @eval(env, A))));
   // Glue A [(φ,T,e)] : Set — A : Set; on φ a type T and an equivalence e : T ≃ A
-  #SGlue: λ&A. λ&fs. (λ{1: (λ{1: #Set; λ&q. #Ill})(@glueFaces(ctx, env, @eval(env, A), fs)); λ&q. #Ill})(@check(ctx, env, A, #Set));
+  // Glue A [(φ,T,e)] : Set — A : Set; on φ a type T and an equivalence e : T ≃ A; and on every cell of φ ∧ ψ two
+  // faces' types and equivalences agree (CCHM: the system of partial types is a partial element)
+  #SGlue: λ&A. λ&fs. (λ{1: (λ{1: #Set; λ&q. #Ill})(@andB(@glueFaces(ctx, env, @eval(env, A), fs), @glueAdj(env, @eval(env, A), @pairs(fs)))); λ&q. #Ill})(@check(ctx, env, A, #Set));
   // glue A [(φ,t)] x is inferable only when every face is false: then it is x : A
   #SGlb: λ&A. λ&fs. λ&x. (λ{1: (λ{1: @eval(env, A); λ&q. #Ill})(@check(ctx, env, x, @eval(env, A))); λ&q. #Ill})(@all(λ{#SFace: λ&p. λ&t. (λ{#SI0: 1; λ&r. 0})(p)}, fs));
   // unglue g : A for g : Glue A fs; a Glue with no live face is its base type
@@ -211,6 +213,8 @@
 // coverage: on every cell of φ (a face value) some branch's face is true under that cell
 @sysCover = λ&env. λ&p. λ&fs. @all(λ&cell. @anyTrue(@onCell(env, cell), fs), @dnfV(p))
 @anyTrue = λ&env. λ{#Nil: 0; #Cons: λ{#SFace: λ&q. λ&v. λ&rest. (λ{#I1: 1; λ&r. @anyTrue(env, rest)})(@eval(env, q))}}
+@glueAdj = λ&env. λ&A. λ{#Nil: 1; #Cons: λ{#Pair: λ{#SGFace: λ&p. λ&T. λ&e. λ{#SGFace: λ&q. λ&U. λ&d. λ&rest.
+  @andB(@all(λ&cell. ! &e2 = @onCell(env, cell); ! &Tc = @eval(e2, T); @andB((Tc === @eval(e2, U)), @convT(@equivT(Tc, A), @eval(e2, e), @eval(e2, d))), @dnf(#SAnd{p, q})), @glueAdj(env, A, rest))}}}}
 @glueSections = λ&ctx. λ&env. λ&Av. λ&x. λ{#Nil: λ&g. 1; #Cons: λ{#SFace: λ&p. λ&t. λ&rest. λ&gfs.
   @andB(@glueSection(ctx, env, Av, x, @eval(env, p), p, t, gfs), @glueSections(ctx, env, Av, x, rest, gfs))}}
 @glueSection = λ&ctx. λ&env. λ&Av. λ&x. λ&pv. λ&p. λ&t. λ{#Nil: 0; #Cons: λ{#GFace: λ&q. λ&Tv. λ&e. λ&grest.
