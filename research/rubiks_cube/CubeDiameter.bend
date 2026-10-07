@@ -272,32 +272,49 @@ def InG(g: Elt) -> Set:
         any b: Path(U64, sumMod(eo, 2), 0).
           Path(U64, parity(cp, 8), parity(ep, 12))
 
-# ---- Reaches(g, k) is the TYPE of ways g lies within k steps of the identity.
-#      Not a test returning a Bool: a type whose inhabitant carries the steps.
-#      Inhabited exactly when d(g) <= k.  This is the potential, stated.
+# ---- a step is reachability, by recursion on the step count ----
+#
+# Within(g, k) is the TYPE of ways g lies within k face turns of the identity.
+# The recursion is on k, structurally, and that is the whole difference from a
+# datatype carrying a path between k and its predecessor: at a concrete k the
+# family REDUCES.  A normaliser that reduces under binders unfolds the datatype
+# version forever, because the step count it matches on is bound; here the
+# index is matched and k is a literal, so the unfolding is finite.
+#
+# It is also linear in k, not exponential, because `act(s)` is stuck for a
+# bound s: the eighteen branches live in the inhabitant, not in the type.
 
-type Reaches(g: Elt, k: Nat):
-  case @here:
-    at: Path(Elt, g, identity())
-  case @onward:
-    pk: Nat
-    s: Gen
-    shape: Path(Nat, k, 1n + pk)
-    rest: Reaches(compose(g, act(s)), pk)
+type Or(A: Set, B: Set):
+  case @inl:
+    left: A
+  case @inr:
+    right: B
 
-# ---- the distance of g is d: reachable in d, and no k smaller works ----
+def Within(g: Elt, k: Nat) -> Set:
+  match k:
+    case 0n:
+      Path(Elt, g, identity())
+    case 1n + p:
+      Or(Path(Elt, g, identity()), any s: Gen. Within(compose(g, act(s)), p))
+
+# Exactly(g, k) spends every one of the k turns.
+
+def Exactly(g: Elt, k: Nat) -> Set:
+  match k:
+    case 0n:
+      Path(Elt, g, identity())
+    case 1n + p:
+      any s: Gen. Exactly(compose(g, act(s)), p)
+
+# ---- the distance of g is d: within d, and not within d - 1 ----
 
 def DistIs(g: Elt, d: Nat) -> Set:
-  any r: Reaches(g, d).
-    all k: Nat. all q: Reaches(g, k). LE(d, k)
-
-type LE(a: Nat, b: Nat):
-  case @leRefl:
-    same: Path(Nat, a, b)
-  case @leStep:
-    pb: Nat
-    shape: Path(Nat, b, 1n + pb)
-    rest: LE(a, pb)
+  match d:
+    case 0n:
+      Path(Elt, g, identity())
+    case 1n + p:
+      any reach: Within(g, 1n + p).
+        all closer: Within(g, p). Empty
 
 # ---- the diameter, as a type.  An inhabitant of Diameter(D) is God's number
 #      together with its certificate: an element of G at distance exactly D,
@@ -307,24 +324,30 @@ def Diameter(D: Nat) -> Set:
   any g: Elt.
     any inside: InG(g).
       any realises: DistIs(g, D).
-        all h: Elt. all alsoInside: InG(h). Reaches(h, D)
+        all h: Elt. all alsoInside: InG(h). Within(h, D)
 
 # ---- the question, posed.  20 in the face-turn metric.
 
 def twenty() -> Nat:
   1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+0n
 
-def GodsNumber() -> Set:
-  Diameter(twenty())
-
-# ---- the lower-bound half, also a type: the superflip is in G, and the claim
-#      that it is not within nineteen.
-
 def nineteen() -> Nat:
   1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+1n+0n
 
+def GodsNumber() -> Set:
+  Diameter(twenty())
+
+# ---- the lower-bound half: the superflip is not within nineteen.
+
 def SuperflipBeyondNineteen() -> Set:
-  all r: Reaches(superflip(), nineteen()). Empty
+  all closer: Within(superflip(), nineteen()). Empty
+
+# ---- the construction is inhabitable, and here is an inhabitant.  U lies one
+#      turn from the identity, by the inverse turn, and the receipt is refl
+#      because coordinates make "the same element" definitional.
+
+def uWithinOne() -> Within(gU(), 1n+0n):
+  @inr{(@sUi, <_> identity())}
 
 def main() -> Set:
   GodsNumber()

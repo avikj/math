@@ -39,17 +39,35 @@ but the chirality is not.
 `CubeDiameter.bend` states the diameter as a type and nothing else. There is
 no search in the file.
 
-    Reaches(g, k)   a type family whose inhabitant carries the k moves
-    LE(a, b)        a type
+    Within(g, k)    the type of ways g lies within k face turns of the identity
+    Exactly(g, k)   the same, spending every turn
     InG(g)          a sigma of three paths, not a boolean test
-    DistIs(g, d)    reachable in d, and no smaller k reaches
+    DistIs(g, d)    within d, and `Within(g, d-1) -> Empty`
     Diameter(D)     some g in G at distance exactly D, and every h in G within D
 
-`main` is `Diameter(twenty())`, and the checker accepts it, normalising to the
-statement itself:
+`Within` recurses on the step count structurally, and that is the whole
+difference from a datatype carrying a path between k and its predecessor: at a
+concrete k the family REDUCES. The first version was a datatype, and a
+normaliser that reduces under binders unfolds it forever, because the step
+count it matches on is bound. `Reaches(identity, 0)` did not terminate either,
+which is what named the defect: it was never search depth.
 
-    Sg:Elt. Sinside:InG(g). Srealises:(Sr:Reaches(g,20). Ak:Nat. Aq:Reaches(g,k). LE(20,k)).
-      Ah:Elt. AalsoInside:InG(h). Reaches(h,20)
+It is also linear in k rather than exponential, because `act(s)` is stuck for a
+bound s. The eighteen branches live in the inhabitant, not in the type.
+
+The checker now reduces `main = Diameter(twenty())` in full, to a finite,
+explicit twenty-level statement: twenty nested `Σs:Gen` under the `Or`, the
+accumulated `compose(...(compose(g, act(s)), ...), act(s))` at each level, and
+the identity written out in coordinates at every leaf. The negative half
+reduces alongside it, as a twenty-deep `∀closer: Or(...). Empty`.
+
+`uWithinOne : Within(gU(), 1n)` is in the file and checks `[total]`:
+
+    @inr{(@sUi, <_> identity())}
+
+U lies one turn from the identity, by the inverse turn, and the receipt is
+`refl` — because coordinates make "the same element" definitional rather than a
+question. The construction is inhabitable and this is an inhabitant.
 
 ## Handing it to the evaluator
 
@@ -58,18 +76,40 @@ statement itself:
 
 Measured, on the built toolchain:
 
-- `@twenty` normalises.
+- `@uWithinOne` normalises: `#Pair{#inr, #Pair{#Pair{#sUi, #One}, #PLm{λ_. identity}}}`.
+  The inhabitant runs natively.
 - `@InG(@superflip)` normalises in 22,497 interactions to
-  `Sig{Path{Num,0,0}, Sig{Path{Num,0,0}, Path{Num,0,0}}}`. The runtime
-  computed the three membership obligations of the superflip and reduced each
-  to a reflexivity: twist sum 0, flip sum 0, parities equal. Membership in G
-  is decided by the evaluator.
-- `@Reaches`, `@LE`, `@DistIs` and `@GodsNumber` do not terminate.
-  `@Reaches(@identity, 0)` does not terminate either, so this is not search
-  depth. Both families recur inside a match branch on a bound variable, and
-  the full-runtime normaliser reduces under binders, so it unfolds the
-  declaration forever rather than reaching a decision. Normalising a recursive
-  type family is not the same act as inhabiting it.
+  `Sig{Path{Num,0,0}, Sig{Path{Num,0,0}, Path{Num,0,0}}}`. The runtime computed
+  the superflip's three membership obligations and reduced each to a
+  reflexivity: twist sum 0, flip sum 0, parities equal. Membership in G is
+  decided by the evaluator.
+- `@compose(@gU)(@gU)` normalises in 10,453 interactions; `@Elt`, `@Gen`,
+  `@Or(#Unit)(#Unit)`, `@Within(@gU)(#Zer)` all normalise.
+- `@Within(@gU)(#Suc{#Zer})` does not terminate. Bisecting it: the diverging
+  term is `@compose(@gU)(q)` for a free `q`, and under that `@nth(q)(0)`.
+  `@nth` at a closed list is 28 interactions and correct.
+
+So the obstruction is not in the statement. It is in the runtime, and it is
+three lines wide — `OpenTermDivergence.hvm4`:
+
+    @loop = λxs. (λ{#Nil: 0; #Con: λh. λt. @loop(t)})(xs)
+    @peel = λxs. (λ{#Nil: 0; #Con: λh. λt. h})(xs)
+
+    @main = @loop(#Con{1,#Con{2,#Nil}})    ->  0, in 12 interactions
+    @main = #Sig{#Unit, λq. @loop(q)}      ->  does not terminate
+    @main = #Sig{#Unit, λq. @peel(q)}      ->  1 interaction, stays stuck, prints
+
+HVM4 expands a recursive definition's reference eagerly, without waiting for
+its match to be able to fire. It normalises closed terms and diverges on any
+open term whose free variable a recursive function scrutinises. A type family
+under a binder is exactly such a term: the family reaches `compose`, which
+reaches `permAt`, which reaches `nth`, on the bound element. The Bend checker
+reduces the same families without trouble, because its whnf is demand-driven.
+
+The consequence for inhabitant search is sharp: the native runtime cannot be
+handed a proposition with a free variable in it and asked to work under that
+variable. It can run any closed instance, which is what the superposition
+search below does.
 
 ## The search the runtime does have
 

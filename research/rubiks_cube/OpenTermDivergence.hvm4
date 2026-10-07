@@ -1,0 +1,21 @@
+// HVM4 expands a recursive definition's reference eagerly, without waiting for
+// its match to be able to fire.  So it normalises closed terms and diverges on
+// any open term whose free variable a recursive function scrutinises.
+//
+// This is the whole reason normalising a recursive TYPE FAMILY under a binder
+// diverges: the family's body reaches `compose`, which reaches `permAt`, which
+// reaches `nth`, on the bound element.  Nothing about the diameter statement is
+// at fault, and the Bend checker reduces Diameter(twenty()) in full.
+//
+// Measured with hvm4 @ 6defdfc:
+//
+//   @main = @loop(#Con{1,#Con{2,#Nil}})   ->  0, in 12 interactions
+//   @main = #Sig{#Unit, Lq. @loop(q)}     ->  does not terminate
+//   @main = #Sig{#Unit, Lq. @peel(q)}     ->  1 interaction, stays stuck, prints
+//
+// @loop and @peel differ only in the recursive call.
+
+@loop = λxs. (λ{#Nil: 0; #Con: λh. λt. @loop(t)})(xs)
+@peel = λxs. (λ{#Nil: 0; #Con: λh. λt. h})(xs)
+
+@main = #Sig{#Unit, λq. @peel(q)}
