@@ -128,7 +128,7 @@ a.x:hover,a.x:focus{color:var(--accent); border-bottom-color:var(--accent); outl
 <h1>Respecting Equality: Complete Inference, Deterministic and Step-Optimal</h1>
 <p class="byline">Avik Jain &middot; <a class="mail" href="mailto:avikj@berkeley.edu">avikj@berkeley.edu</a></p>
 <p>This is one construction on how equality behaves in cubical type theory: equality of types <em>is</em> equivalence — <a class="x" href="https://ncatlab.org/nlab/show/univalence+axiom">Voevodsky's univalence</a> — and it computes. No prior familiarity with either is assumed.</p>
-<p>From that one fact the construction builds to a single result: complete inference — proving, computing, deciding, or answering any well-formed question — runs deterministically and in the fewest possible steps: a count fixed by where the reduction starts and ends, never by which strategy walks between them. The exact form of the Gödel and Turing limits is a stop on the way (§4). The natural numbers (§6) and the complex numbers with the field equations (§7) are two readings of the finished construction, and §8 reads it at search. The shape is worth knowing in advance: §§0–2 are one chain, each step from the one before, ending in univalence (<a class="ref" href="#s2.4">2.4</a>); §3 and §4 are two facts that chain does not give, each standing on its own (<a class="ref" href="#s3.5">3.5</a>, <a class="ref" href="#s4.2">4.2</a>); §5 is where all four are used, and <a class="ref" href="#s5.13">equal length (5.13)</a> is the result. Every step is elementary, and at each one the computational core is machine-checked and runs — the boxed terms below, verbatim and checkable as printed.</p>
+<p>From that one fact the construction builds to a single result: complete inference — proving, computing, deciding, or answering any well-formed question — runs deterministically and in the fewest possible steps: a count fixed by where the reduction starts and ends, never by which strategy walks between them. The exact form of the Gödel and Turing limits is a stop on the way (§4). The natural numbers (§6) and the complex numbers with the field equations (§7) are two readings of the finished construction, §8 reads it at search, and §9 at ordering, where the relabellings §6 discards are recovered and both cost axes are counted. The shape is worth knowing in advance: §§0–2 are one chain, each step from the one before, ending in univalence (<a class="ref" href="#s2.4">2.4</a>); §3 and §4 are two facts that chain does not give, each standing on its own (<a class="ref" href="#s3.5">3.5</a>, <a class="ref" href="#s4.2">4.2</a>); §5 is where all four are used, and <a class="ref" href="#s5.13">equal length (5.13)</a> is the result. Every step is elementary, and at each one the computational core is machine-checked and runs — the boxed terms below, verbatim and checkable as printed.</p>
 <h2><span class="n">0.</span> The one fact</h2>
 
 <div class="st" id="s0.1"><p><span class="lab">Definition 0.1</span> (type, function, dependent pair). A <em>type</em> is a collection of values, written <code>a : A</code>. A <em>function</em> <code>f : A → B</code> maps values to values. For a <em>family</em> <code>P</code> — one type <code>P a</code> for each <code>a : A</code> — the <em>dependent pair</em> <code>Σ[ a ∈ A ] P a</code> holds pairs <code>(a , w)</code> with <code>w : P a</code>.</p></div>
@@ -628,7 +628,120 @@ witness-self-certifies f a = refl</code></pre>
 
 <div class="rk" id="s8.11"><p><span class="lab">Remark 8.11</span> (what a lower-bound proof must exhibit). With unit-cost primitive steps, <a class="ref" href="#s5.15">Bellman (5.15)</a>'s inequality reads <code>Φ(u) ≤ 1 + Φ(v)</code>, so <code>Φ</code> can fall by at most one per step. An exponential lower bound is therefore a <code>Φ</code> that starts out exponential and still falls by at most one per step — equivalently, an exponentially large supply of obligations of which one step can discharge at most one. Nothing here exhibits one for SAT.</p></div>
 
-<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Agda 2.8.0</a> with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. One box sits at each section's computational core — <a class="ref" href="#s0.8">the one fact (0.8)</a>, <a class="ref" href="#s1.2">the partition (1.2)</a>, <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>, <a class="ref" href="#s4.2">Lawvere (4.2)</a>, <a class="ref" href="#s5.13">equal length (5.13)</a>, <a class="ref" href="#s7.2">σ² = −1 (7.2)</a>, <a class="ref" href="#s8.6">decide = verify (8.6)</a> — and each compiles on its own against the library, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
+<h2><span class="n">9.</span> Ordering — what counting discards</h2>
+
+<div class="st" id="s9.1"><p><span class="lab">Definition 9.1</span> (sorting). To sort a finite set is to assign it indices matching its order — to compute the ordering, delivered as a sequence. The orderings of <code>n</code> elements number <code>n!</code>, and each comparison restricts which of them survive.</p></div>
+
+<div class="st" id="s9.2"><p><span class="lab">Theorem 9.2</span> (the fibre is the relabellings). The fibre of <code>sort</code> over a sorted sequence is the <code>n!</code> rearrangements of it: a list is a sorted list together with a permutation, and nothing besides.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s1.2">The partition (1.2)</a> at <code>sort</code>, whose fibre <a class="ref" href="#s1.1">(1.1)</a> over a sorted sequence is the inputs landing on it, and forced rather than chosen by <a class="ref" href="#s1.4">1.4</a>. <span class="qed">∎</span></p>
+<p class="pf"><a class="ref" href="#s6.1">Counting (6.1)</a> discards exactly these relabellings to reach the number; sorting recovers the one the order names. The two are one forgetting, run in opposite directions. Keep the permutation and the run destroys nothing <a class="ref" href="#s3.6">(3.6)</a>; deliver the sorted sequence alone and the <a class="ref" href="#s3.3">effect-cost (3.3)</a> is <code>log₂ n!</code>, the size of the fibre.</p></div>
+
+<div class="st" id="s9.3"><p><span class="lab">Proposition 9.3</span> (a comparison is a restriction). A comparison leaves exactly the orderings consistent with its outcome. Comparing two elements about which nothing is known leaves half, since exchanging them is a bijection between the orderings answering one way and those answering the other <a class="ref" href="#s2.6">(2.6)</a>. A comparison already implied leaves all of them and is never made: what is held is a partial order, so from <code>a &lt; b</code>, <code>b &lt; c</code>, <code>b &lt; d</code> the relations <code>a &lt; c</code> and <code>a &lt; d</code> are there already, the <code>n²</code> pairs never stored.</p></div>
+
+<div class="st" id="s9.4"><p><span class="lab">Proposition 9.4</span> (which comparison). Naming any still-unordered pair is not enough: a supply offering <code>(a,b)</code>, then <code>(a,c)</code>, then <code>(a,d)</code> spends <code>n−1</code> comparisons to learn only which element is least. The one that excludes most is wanted. Among four with <code>a &lt; b</code> known, comparing <code>c</code> with <code>d</code> halves again and leaves a quarter, while comparing <code>a</code> with <code>c</code> leaves a third when <code>a</code> wins — <code>a</code> least of three, one of three equally — so its worse outcome is worse. Fresh pairs are taken while any remain. With <code>a &lt; b</code> and <code>c &lt; d</code> the survivors are the <code>C(4,2) = 6</code> interleavings, and comparing the two least leaves three either way, where comparing <code>b</code> with <code>c</code> leaves five in one outcome, <code>b &lt; c</code> forcing <code>abcd</code> alone. The least are compared, and the result is one run whose least is below everything in both.</p></div>
+
+<div class="st" id="s9.5"><p><span class="lab">Theorem 9.5</span> (why the least halve). A comparison between two elements exchanged by a symmetry of what is already known splits the survivors exactly in half.</p>
+<p class="pf"><span class="lab">Proof.</span> The exchange carries orderings consistent with what is known to orderings consistent with it and swaps the two outcomes, so it is a bijection between them <a class="ref" href="#s2.6">(2.6)</a>, and two sets in bijection are equal halves of their union. Two runs of equal length are exchanged by the symmetry that interchanges them, which carries least to least. No symmetry of <code>a &lt; b</code>, <code>c &lt; d</code> exchanges <code>b</code> with <code>c</code>, which is why that comparison is lopsided. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s9.6"><p><span class="lab">Definition 9.6</span> (merge). Sortedness unfolds into one recursion, and merge is that unfolding:</p>
+<pre class="def"><code>Sorted(x)  =  head x ≤ every element of tail x  and  Sorted(tail x)
+
+merge(x, y)  =  head x ≤ head y  ?  head x ∷ merge(tail x, y)
+                                 :  head y ∷ merge(x, tail y)</code></pre>
+<p>A single comparison is merge running on two one-element runs. Sorting is the composition of merges and nothing else, beginning from the elements as runs of length one.</p></div>
+
+<div class="st" id="s9.7"><p><span class="lab">Theorem 9.7</span> (every <code>+</code> is a merge). Writing <code>n</code> as a sum is choosing the merges. Each <code>+</code> is one merge of two runs and costs the sum it produces, so the cost of sorting is the sum of the intermediate sums — equivalently, each element pays once for every <code>+</code> above it.</p>
+<pre class="def"><code>(1+1)+(1+1)        2, 2, 4              cost  8  =  n log₂ n
+1+(1+(1+1))        2, 3, 4              cost  9
+n = 8, balanced    2,2,2,2, 4,4, 8      cost 24  =  n log₂ n
+n = 8, chained     2,3,4,5,6,7,8        cost 35</code></pre>
+<p class="pf"><span class="lab">Proof.</span> A merge of runs of lengths <code>a</code> and <code>b</code> emits <code>a + b</code> elements, and under a rule set emitting one constructor per step <a class="ref" href="#s5.21">(5.21)</a> that is <code>a + b</code> steps: the sum it produces. Summing over the <code>+</code> signs counts each element once for each <code>+</code> standing above it, which is its depth. <span class="qed">∎</span></p></div>
+
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- A merge order is a way of writing n as a sum: every ⊕ is one merge.
+data Shape : Type where
+  one : Shape
+  _⊕_ : Shape → Shape → Shape
+
+size : Shape → ℕ
+size one     = 1
+size (l ⊕ r) = size l + size r
+
+-- Each merge costs the sum it produces: the total is the sum of the
+-- intermediate sums.
+cost : Shape → ℕ
+cost one     = 0
+cost (l ⊕ r) = (size l + size r) + (cost l + cost r)
+
+-- The other reading: each element pays once for every ⊕ above it.
+paid : ℕ → Shape → ℕ
+paid d one     = d
+paid d (l ⊕ r) = paid (suc d) l + paid (suc d) r
+
+paid≡ : (t : Shape) (d : ℕ) → paid d t ≡ cost t + d · size t
+paid≡ one d = solveℕ!
+paid≡ (l ⊕ r) d =
+    cong₂ _+_ (paid≡ l (suc d)) (paid≡ r (suc d))
+  ∙ step (cost l) (size l) (cost r) (size r) d
+  where
+    step : (cl sl cr sr d : ℕ)
+         → (cl + (suc d · sl)) + (cr + (suc d · sr))
+         ≡ ((sl + sr) + (cl + cr)) + d · (sl + sr)
+    step cl sl cr sr d = solveℕ!
+
+-- The sum of the intermediate sums IS the sum over elements of their depth.
+cost≡depth : (t : Shape) → cost t ≡ paid 0 t
+cost≡depth t = sym (paid≡ t 0 ∙ zero· (cost t) (size t))
+  where
+    zero· : (c s : ℕ) → c + 0 · s ≡ c
+    zero· c s = solveℕ!
+
+-- The four costs above, by refl.
+bal4 chain4 bal8 chain8 : Shape
+bal4   = (one ⊕ one) ⊕ (one ⊕ one)
+chain4 = one ⊕ (one ⊕ (one ⊕ one))
+bal8   = bal4 ⊕ bal4
+chain8 = one ⊕ (one ⊕ (one ⊕ (one ⊕ (one ⊕ (one ⊕ (one ⊕ one))))))
+
+_ : cost bal4   ≡ 8
+_ = refl
+_ : cost chain4 ≡ 9
+_ = refl
+_ : cost bal8   ≡ 24
+_ = refl
+_ : cost chain8 ≡ 35
+_ = refl</code></pre>
+<figcaption>The two readings of the cost are one function: <code>cost</code> sums what each merge produces, <code>paid</code> charges each element its depth, and <code>cost≡depth</code> identifies them. The four figures above hold by <code>refl</code>. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+
+<div class="st" id="s9.8"><p><span class="lab">Theorem 9.8</span> (the information is fixed by the endpoints). A merge of runs of lengths <code>a</code> and <code>b</code> settles which of <code>C(a+b, a)</code> interleavings occurred, and along every way of writing <code>n</code> as a sum these binomials multiply to <code>n!</code> exactly.</p>
+<p class="pf"><span class="lab">Proof.</span> An ordering of the whole is an ordering within each run together with the interleaving, so each merge contributes its binomial and the product telescopes to <code>n!</code>. <span class="qed">∎</span></p>
+<p class="pf">What is learned is fixed by where the sorting starts and ends, never by the shape — <a class="ref" href="#s5.13">equal length (5.13)</a> read on the other axis <a class="ref" href="#s5.7">(5.7)</a>. The shape decides only what each merge <em>pays</em> for what it settles: equal runs pay <code>2a</code> for nearly <code>2a</code> bits, a run against one element pays <code>a+1</code> for <code>log₂(a+1)</code>. That is the whole difference between the two sums of <a class="ref" href="#s9.7">9.7</a> — one quantity, distributed differently over the <code>+</code> signs.</p></div>
+
+<div class="rk" id="s9.9"><p><span class="lab">Remark 9.9</span> (a potential, exhibited). <code>log₂</code> of the orderings still consistent is a potential in the sense of <a class="ref" href="#s5.15">Bellman (5.15)</a>: zero exactly at the one ordering that survives, and falling by at most one per comparison, since a comparison has two outcomes and the larger side is at least half <a class="ref" href="#s9.3">(9.3)</a>. By <a class="ref" href="#s8.11">8.11</a> that is what an exponential lower bound must exhibit. Here it is exhibited and met: <code>log₂ n!</code> comparisons are necessary, and merging equal runs pays that to within a term linear in <code>n</code> — the per-merge gap between <code>a+b</code> paid and <code>log₂ C(a+b,a)</code> settled, summed over the sum.</p></div>
+
+<div class="st" id="s9.10"><p><span class="lab">Corollary 9.10</span> (the two smallest). Minimising the sum of the intermediate sums over the ways of writing <code>n</code> as a sum is solved by repeatedly adding the two smallest parts — <a class="x" href="https://doi.org/10.1109/JRPROC.1952.273898">Huffman 1952</a> — which for <code>n</code> units gives the balanced sum. This answers <a class="ref" href="#s9.4">9.4</a> from the cost side rather than the information side: the cheapest merge available is the one between the two smallest runs, and two fresh elements are the smallest there are.</p></div>
+
+<div class="st" id="s9.11"><p><span class="lab">Theorem 9.11</span> (the shape is the numeral). The balanced sum is the binary representation of <code>n</code>, and the chain is the tally.</p>
+<p class="pf"><span class="lab">Proof.</span> For <code>n = 2ᵏ</code> each element has a <code>k</code>-bit index, and the path from the root of the sum down to it spells that index: the first layer of merges joins indices differing in the last bit, the next those differing in the second-to-last. Resolving the ordering one layer at a time is resolving it one bit of the index at a time. For general <code>n</code> the runs are the 1-bits: <code>13 = 8 + 4 + 1</code>. Counting is merging — add elements one at a time, keep runs matching the binary form of the count, and each carry merges two equal runs into one twice the size, which is <a class="ref" href="#s6.3">6.3</a>'s carrying read at its cost. The chain <code>1+(1+(1+⋯))</code> is the same number in tally marks: no carries, one growing run. <span class="qed">∎</span></p>
+<p class="pf">The gap between the two costs is the gap between a tally and a numeral. Succession gives a line; place value gives a <code>log₂ n</code>-dimensional cube, which is what a base system has always been. A set indexed by the naturals already carries that structure, so there is no reason to prefer succession unless the input arrives as a line.</p></div>
+
+<div class="st" id="s9.12"><p><span class="lab">Proposition 9.12</span> (the space of orderings). Take the orderings as points, joining two when they differ by swapping neighbours in the sequence. For three elements the six close into a hexagon:</p>
+<pre class="def"><code>            abc
+          /     \
+       bac       acb
+        |         |
+       bca       cab
+          \     /
+            cba</code></pre>
+<p>The distance from an ordering to the sorted one is its number of out-of-order pairs, since each swap of an out-of-order neighbouring pair fixes exactly one. Every route therefore has the same length whatever order the swaps are taken in — <a class="ref" href="#s5.13">equal length (5.13)</a>, drawn. Two swaps at disjoint positions commute and their routes close a square, which is <a class="ref" href="#s5.11">the diamond (5.11)</a>; three sharing an element close the hexagon above, both sides again the same length. A comparison is a cut through this space, and one already implied is a cut that misses what remains.</p></div>
+
+<div class="st" id="s9.13"><p><span class="lab">Proposition 9.13</span> (comparisons and swaps). Comparisons count cuts and swaps count distance, and the counts differ: about <code>log₂ n!</code> comparisons are needed <a class="ref" href="#s9.9">(9.9)</a>, while the swaps are the out-of-order pairs <a class="ref" href="#s9.12">(9.12)</a>, of which there are at most the <code>n(n−1)/2</code> pairs. One comparison can authorise several swaps, and that is the whole of the gap — the two axes <a class="ref" href="#s5.7">(5.7)</a>, with both numbers in hand.</p>
+<p class="pf"><span class="lab">Proof.</span> In the set there are no swaps at all — comparisons add knowledge and the order is learned, not moved; swaps belong to the sequence presentation. At a single pair the two coincide: one comparison, one swap, one edge of <a class="ref" href="#s9.12">9.12</a>. Above that they part. Merging <code>[a,b]</code> with <code>[c,d]</code> and learning <code>c &lt; a</code> gives <code>c &lt; b</code> free from the <code>a &lt; b</code> already held, so one comparison authorises both swaps. Every swap is backed by a comparison made or inherited, and in a sorting that wastes nothing most are inherited. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s9.14"><p><span class="lab">Remark 9.14</span> (the declaration). Nothing above chooses a method. The declaration is <code>Σ[ B ] (B is a rearrangement of A) × Sorted B</code>, and by <a class="ref" href="#s9.2">9.2</a> the completion is forced, not searched for. Posing it with the identities available and normalising <a class="ref" href="#s5.27">(5.27)</a> is the sorting: merge is sortedness unfolded <a class="ref" href="#s9.6">(9.6)</a>, the shape is the numeral rather than a policy <a class="ref" href="#s9.11">(9.11)</a>, the information is fixed by the endpoints <a class="ref" href="#s9.8">(9.8)</a>, the cost is the sum of the intermediate sums <a class="ref" href="#s9.7">(9.7)</a>. The sums that cost more are not rival methods but the same number written another way, which is <a class="ref" href="#s5.23">5.23</a> at ordering.</p></div>
+
+<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Agda 2.8.0</a> with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. One box sits at each section's computational core — <a class="ref" href="#s0.8">the one fact (0.8)</a>, <a class="ref" href="#s1.2">the partition (1.2)</a>, <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>, <a class="ref" href="#s4.2">Lawvere (4.2)</a>, <a class="ref" href="#s5.13">equal length (5.13)</a>, <a class="ref" href="#s7.2">σ² = −1 (7.2)</a>, <a class="ref" href="#s8.6">decide = verify (8.6)</a>, <a class="ref" href="#s9.7">every + is a merge (9.7)</a> — and each compiles on its own against the library, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
 
 </main>
 <script src="./vendor/katex/katex.min.js"></script>
