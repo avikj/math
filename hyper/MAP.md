@@ -170,7 +170,24 @@ them.
    solved for: no coordinate is split, nothing is unified, no output is narrowed. `b/sort_spec` declares the sort
    specification at `A` with no body and resolves through `b/sort_at_A` to `([1,2,3], (refl, refl))` in 174 interactions,
    the chart move's 173 and the one `declare`.
-6. **The Bend dialect's grammar** as a book with its certificate, and parallel demand over the one arena.
+6. **The Bend dialect's grammar as a book with its certificate, and parallel demand over the one arena. Written.**
+   *The dialect.* `bend.hyper`'s rows are the book; its certificate is the checker: `transp`, `isProp-ty` and
+   `qresp-ty` carry their types and check under `HYPER_CHECK_ALL`, and the recursor rows `srec`, `trec`, `qrec` are typed
+   at their applications by the checker's own CRec/TRec/QRec rules with the motive read from the goal
+   (`verify.c:838`–`:857`); `t/dialect.hyper` exercises all three, with a must-fail, gated in `test.sh`.
+   *Parallel demand.* `HYPER_PARALLEL=N` serves independent demands on N workers over the one heap (`cell.c:33` `NPAR`).
+   A demanded node fires once: its claim, taken by compare-and-swap in `whnf` (`cell.c:987`), and a second demand of
+   the same node waits for the result instead of firing it again; allocation is an atomic bump on the one reservation
+   (`cell.c:54` `alloc`), a receipt an atomic slot in the reserved trace (`cell.c:74` `receipt`), and what a reduction
+   carries — the node under reduction, the world, the waiting face — is per thread. The independent demands are the
+   other operand of an `op2` and the fields of a value (`cell.c:931` `par_spawn`, a hint: every spawned demand would be
+   served anyway, so no interaction is added), the workers are started by `par_init` (`cell.c:948`) and the arena is
+   quiet before anything is printed (`cell.c:956` `par_drain`). The diamond fixes what the schedule may change —
+   nothing: `test.sh` requires, for fifteen runs, the sequential value, interaction count and words under four workers,
+   and eighty runs under eight workers and the coin schedule showed no difference. What differs is the order of the
+   receipts and, in the census, which event a word is attributed to; a run that traces itself as a term (`trace`) is
+   served on one thread, since its events are its own alone. A declaration's census comparison is not an event:
+   `verify.c:303` `NO_COUNT`.
 
 ## Read order
 

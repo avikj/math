@@ -297,16 +297,16 @@ bool equal(Term u, Term v) { memset(&EQV, 0, sizeof EQV); return eq(u, v, 0); }
    देश): नास्ति, no entry, and the declaration stays a coordinate; सकलादेश, one entry, and the declaration IS it —
    the identity available for its type, which §5.27 of the essay poses with the declaration and normalizes;
    विकलादेश, two entries, and the fibre is crowded: which one is concrete information and enters through a free
-   port, never from the core.  The comparison is definitional and is not an event: the ledger is restored. */
+   port, never from the core.  The comparison is definitional and is not an event: its receipts are not counted. */
 int resolve_declaration(uint32_t id) {
   Def *d = &BOOK[id]; int found = -1, n = 0;
-  uint64_t itrs = ITRS, tl = TRACE_LEN; Term T = inst(d->type, 0);
+  NO_COUNT = true; Term T = inst(d->type, 0);
   for (uint32_t i = 0; i < BOOK_LEN; i++) {
     if (i == id || BOOK[i].unknown || !BOOK[i].type || !BOOK[i].code) continue;
     if (BOOK[i].ndims != d->ndims) continue;
     if (equal(inst(BOOK[i].type, 0), T)) { if (found < 0) found = (int)i; n++; }
   }
-  ITRS = itrs; TRACE_LEN = tl;
+  NO_COUNT = false;
   if (n == 1) return found;
   if (n == 0) fprintf(stderr, "hyper: @%s is declared with no body, and the book has no entry of its type (नास्ति)\n", d->name);
   else fprintf(stderr, "hyper: @%s is declared with no body, and the book has %d entries of its type (विकलादेश): the choice is not the core's\n", d->name, n);
@@ -854,7 +854,7 @@ static bool check(uint32_t c, Term fr, Term goal) {
           if (!infer(sp[1], fr)) return false;
           if (!check(sp[2], fr, pi(A, konst(goal)))) return false;
           int d = book_find("qresp-ty"); if (d < 0) return fail_ci("qresp-ty");
-          return check(sp[3], fr, app2(app2(app2(app2(ref_of(d), A), R), cell(sp[2], fr)), goal)); }
+          return check(sp[3], fr, app2(app2(app2(app2(ref_of(d), A), R), goal), cell(sp[2], fr))); }   /* qresp-ty A R B f */
       }
       if (CODE[h].tag == S_CASE) {                     /* (app (case …) x): the case at the function type */
         Term xT = infer(sp[ns-1], fr); if (!xT) return false;

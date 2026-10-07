@@ -2,6 +2,8 @@
 #define _GNU_SOURCE
 #include <math.h>
 #include <sys/mman.h>
+#include <pthread.h>
+#include <sched.h>
 /* hyper — cell.c: the heap, frames, and the one loop: the substrate, a cubical type theory whose reduction
  * is demanded (weak head, at the active pair) and in which ua's β-rule reduces.
  * Every rule fires only at an active pair, only when demanded, and appends its receipt to the ledger
@@ -20,10 +22,20 @@ uint32_t *KIDS; uint32_t KIDS_LEN = 0;
 int RULE_TRP[256], RULE_HCM[256];
 Def     *BOOK;  uint32_t BOOK_LEN = 0;
 uint64_t ITRS = 0;
+/* ---- §9 parallel demand over the one arena (MAP §0.3 step 6) ----------------------------------------
+   HYPER_PARALLEL=N serves independent demands on N workers over the one heap.  A demanded node fires once:
+   CLAIM[loc] is its claim (0 free, 1 firing, 2 fired), taken by compare-and-swap in whnf, and a second
+   demand of the same node waits for the result instead of firing it again.  Allocation is an atomic bump
+   on the one reservation (a cell's address never changes), a receipt is an atomic slot in the trace, and
+   the state a reduction carries (the node under reduction, the world, the waiting face) is per thread.
+   The diamond fixes what the schedule may change: nothing.  The normal form, the interaction count and
+   the words allocated are those of the sequential run; only the order of the receipts differs. */
+int NPAR = 0; static uint8_t *CLAIM; __thread bool NO_COUNT; static bool node_redex(unsigned g);
+static pthread_mutex_t KMUT = PTHREAD_MUTEX_INITIALIZER;          /* the rare shared tables: worlds, constructor names */
 uint32_t *TRACE; uint64_t TRACE_LEN = 0; static uint64_t TRACE_CAP;
 
 /* ---- heap ------------------------------------------------------------- */
-Loc alloc(uint32_t n) {
+static void heap_init(void) {
   /* the heap is one reservation, committed lazily by the kernel's paging, so a cell's address never
      changes: every Loc and every pointer into HEAP stays valid for the whole run */
   if (!HEAP) {
@@ -34,9 +46,16 @@ Loc alloc(uint32_t n) {
     }
     if (!HEAP) { fprintf(stderr, "hyper: cannot reserve the heap\n"); exit(2); }
     HEAP_LEN = 1;                                                      /* address 0 is never a cell */
+    void *cm = mmap(NULL, (size_t)HEAP_CAP, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (cm == MAP_FAILED) { fprintf(stderr, "hyper: cannot reserve the claims\n"); exit(2); }
+    CLAIM = cm;
   }
-  if ((uint64_t)HEAP_LEN + n >= HEAP_CAP) { fprintf(stderr, "hyper: heap exhausted\n"); exit(2); }
-  Loc l = HEAP_LEN; HEAP_LEN += n; return l;
+}
+Loc alloc(uint32_t n) {
+  if (!HEAP) heap_init();
+  Loc l = __atomic_fetch_add(&HEAP_LEN, n, __ATOMIC_RELAXED);
+  if ((uint64_t)l + n >= HEAP_CAP) { fprintf(stderr, "hyper: heap exhausted\n"); exit(2); }
+  return l;
 }
 Term node1(unsigned t, uint32_t e, Term a)                 { Loc l = alloc(2); HEAP[l]=a; HEAP[l+1]=0; return mk(t,e,l); }   /* two words: room for the result once reduced */
 Term node2(unsigned t, uint32_t e, Term a, Term b)         { Loc l = alloc(2); HEAP[l]=a; HEAP[l+1]=b; return mk(t,e,l); }
@@ -47,14 +66,20 @@ Term fce_raw(unsigned side, Term name, Term target, Term by) { return node3(T_FC
 Term fce3(unsigned side, Loc name, Term target, Term by) { return fce_raw(side, mk(T_IVAR, 0, name), target, by); }
 
 static void print_rec(Term t, int depth);
-Loc *TRACE_NODE, *TRACE_HEAP; static Loc CUR_NODE;
-uint32_t *TRACE_WORLD; static uint32_t WORLD;         /* the world (side of a superposition) each receipt fired in; 0 the root */
+Loc *TRACE_NODE, *TRACE_HEAP; static __thread Loc CUR_NODE;
+uint32_t *TRACE_WORLD; static __thread uint32_t WORLD;         /* the world (side of a superposition) each receipt fired in; 0 the root */
 static uint32_t *WPARENT, NWORLD = 1, WCAP;            /* the tree of worlds */                 /* the node under reduction: each receipt names it (a Step's source) */
+static void *reserve(size_t bytes) { void *m = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+  if (m == MAP_FAILED) { fprintf(stderr, "hyper: cannot reserve the trace\n"); exit(2); } return m; }
 static void receipt(unsigned rule) {
-  ITRS++;
-  if (!TRACE) { TRACE_CAP = 1u << 16; TRACE = malloc(TRACE_CAP * sizeof(uint32_t)); TRACE_NODE = malloc(TRACE_CAP * sizeof(Loc)); TRACE_HEAP = malloc(TRACE_CAP * sizeof(Loc)); TRACE_WORLD = malloc(TRACE_CAP * sizeof(uint32_t)); }
-  if (TRACE_LEN >= TRACE_CAP) { TRACE_CAP *= 2; TRACE = realloc(TRACE, TRACE_CAP * sizeof(uint32_t)); TRACE_NODE = realloc(TRACE_NODE, TRACE_CAP * sizeof(Loc)); TRACE_HEAP = realloc(TRACE_HEAP, TRACE_CAP * sizeof(Loc)); TRACE_WORLD = realloc(TRACE_WORLD, TRACE_CAP * sizeof(uint32_t)); }
-  TRACE[TRACE_LEN] = rule; TRACE_NODE[TRACE_LEN] = CUR_NODE; TRACE_HEAP[TRACE_LEN] = HEAP_LEN; TRACE_WORLD[TRACE_LEN] = WORLD; TRACE_LEN++;
+  if (NO_COUNT) return;                                                /* a definitional comparison is not an event */
+  __atomic_fetch_add(&ITRS, 1, __ATOMIC_RELAXED);
+  if (!TRACE) { pthread_mutex_lock(&KMUT); if (!TRACE) { TRACE_CAP = (uint64_t)1 << 28;    /* one reservation each, committed as written */
+      TRACE_NODE = reserve(TRACE_CAP * sizeof(Loc)); TRACE_HEAP = reserve(TRACE_CAP * sizeof(Loc)); TRACE_WORLD = reserve(TRACE_CAP * sizeof(uint32_t));
+      uint32_t *tr = reserve(TRACE_CAP * sizeof(uint32_t)); __atomic_store_n(&TRACE, tr, __ATOMIC_RELEASE); } pthread_mutex_unlock(&KMUT); }
+  uint64_t i = __atomic_fetch_add(&TRACE_LEN, 1, __ATOMIC_RELAXED);
+  if (i >= TRACE_CAP) { fprintf(stderr, "hyper: trace exhausted\n"); exit(2); }
+  TRACE[i] = rule; TRACE_NODE[i] = CUR_NODE; TRACE_HEAP[i] = HEAP_LEN; TRACE_WORLD[i] = WORLD;
 }
 
 /* ---- constructor names --------------------------------------------- */
@@ -69,9 +94,11 @@ uint32_t ctor_intern(const char *name, uint32_t arity) {
   static const char *builtin[] = { "", "Set","Pi","Sig","Path","Eql","Nat","Bool","Unit","Empty","List","Enum","Num","Glue","Pair","Refl","Cons","Nil","Face","Zer","Suc","True","False","Tt","GFace" };
   for (uint32_t i = 1; i < sizeof builtin / sizeof *builtin; i++) if (!strcmp(builtin[i], name)) return i;
   for (uint32_t i = 0; i < NCTORS; i++) if (!strcmp(CTORS[i], name)) return C_USER_BASE + i;
+  pthread_mutex_lock(&KMUT);
+  for (uint32_t i = 0; i < NCTORS; i++) if (!strcmp(CTORS[i], name)) { pthread_mutex_unlock(&KMUT); return C_USER_BASE + i; }
   CTORS = realloc(CTORS, (NCTORS + 1) * sizeof *CTORS);
   CTORS[NCTORS] = strdup(name);
-  return C_USER_BASE + NCTORS++;
+  uint32_t id = C_USER_BASE + NCTORS++; pthread_mutex_unlock(&KMUT); return id;
 }
 const char *ctor_name(uint32_t id) {
   static const char *builtin[] = { "", "Set","Pi","Sig","Path","Eql","Nat","Bool","Unit","Empty","List","Enum","Num","Glue","Pair","Refl","Cons","Nil","Face","Zer","Suc","True","False","Tt","GFace" };
@@ -362,7 +389,7 @@ static Term fce_closure(unsigned ctag, Term name, unsigned side, Term by, Term c
 /* the face map / substitution at a name: an interval name (faces and interval substitution), a choice
    name (endpoints and renaming), a variable (a VAR atom: substitution by a term), or, under the
    checker's hook, any cell (a semantic rewrite: what equals `nm` becomes `by`) */
-static Term FCE_SELF;                                   /* the face node being reduced: a face that waits is that node again, not a copy */
+static __thread Term FCE_SELF;                                   /* the face node being reduced: a face that waits is that node again, not a copy */
 static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
   bool ivar = tag(nm) == T_IVAR; Loc name = loc(nm); Term self = FCE_SELF; FCE_SELF = 0;
   #define FCE_(x) fce_raw(side, nm, (x), by)
@@ -891,25 +918,61 @@ void load_prelude(void) {
 /* ---- §9 the schedule: which of two independent demands is served first ----------------------------- */
 /* HYPER_SCHEDULE=right serves the right one, a number seeds a coin per choice, the default is left.  The
    redex bag is the only scheduler, so the normal form and the count must not depend on it (Krama, §10.7). */
-static unsigned SCHED; static uint64_t SCHED_RNG;
+static unsigned SCHED; static __thread uint64_t SCHED_RNG; static uint64_t SCHED_SEED;
 void sched_init(void) { const char *s = getenv("HYPER_SCHEDULE"); if (!s || !*s) return;
-  if (!strcmp(s, "right")) SCHED = 1; else { SCHED = 2; SCHED_RNG = strtoull(s, 0, 10) * 2654435761ull + 88172645463325252ull; } }
+  if (!strcmp(s, "right")) SCHED = 1; else { SCHED = 2; SCHED_SEED = strtoull(s, 0, 10) * 2654435761ull + 88172645463325252ull; SCHED_RNG = SCHED_SEED; } }
 static bool right_first(void) {
   if (SCHED < 2) return SCHED;
   SCHED_RNG ^= SCHED_RNG << 13; SCHED_RNG ^= SCHED_RNG >> 7; SCHED_RNG ^= SCHED_RNG << 17; return SCHED_RNG & 1;
 }
+/* ---- §9 the pool: the workers that serve spawned demands ------------------------------------------- */
+static pthread_mutex_t QM = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t QC = PTHREAD_COND_INITIALIZER;
+static Term *Q; static unsigned QCAP = 1u << 14, QH, QT; static int BUSY; static bool QUIT; static unsigned NSPAWN;
+void par_spawn(Term t) {                                /* a hint: a demand that will be served anyway, offered to a worker */
+  if (!NPAR || !node_redex(tag(t)) || __atomic_load_n(&CLAIM[loc(t)], __ATOMIC_RELAXED)) return;
+  pthread_mutex_lock(&QM);
+  if (QT - QH < QCAP) { Q[QT++ % QCAP] = t; NSPAWN++; pthread_cond_signal(&QC); }
+  pthread_mutex_unlock(&QM);
+}
+static void *worker(void *arg) {
+  SCHED_RNG = SCHED_SEED ^ ((uint64_t)(uintptr_t)arg * 0x9E3779B97F4A7C15ull);
+  for (;;) {
+    pthread_mutex_lock(&QM);
+    while (QH == QT && !QUIT) pthread_cond_wait(&QC, &QM);
+    if (QH == QT) { pthread_mutex_unlock(&QM); return 0; }
+    Term t = Q[QH++ % QCAP]; BUSY++; pthread_mutex_unlock(&QM);
+    whnf(t);
+    pthread_mutex_lock(&QM); BUSY--; pthread_mutex_unlock(&QM);
+  }
+}
+void par_init(void) {
+  const char *s = getenv("HYPER_PARALLEL"); NPAR = s && *s ? atoi(s) : 0; if (NPAR <= 0) { NPAR = 0; return; }
+  for (uint32_t i = 1; i < CODE_LEN; i++) if (CODE[i].tag == S_TRACE) {   /* a run traced as a term is its own events alone: one thread */
+    fprintf(stderr, "hyper: parallel demand off: the book traces a run\n"); NPAR = 0; return; }
+  heap_init(); Q = malloc(QCAP * sizeof(Term));
+  pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at, (size_t)1 << 30);   /* deep terms recurse deep */
+  for (int i = 0; i < NPAR; i++) { pthread_t th; if (pthread_create(&th, &at, worker, (void *)(uintptr_t)(i + 1))) { fprintf(stderr, "hyper: cannot start a worker\n"); exit(2); } pthread_detach(th); }
+}
+void par_drain(void) {                                  /* every spawned demand served: the arena is quiet */
+  if (!NPAR) return;
+  for (;;) { pthread_mutex_lock(&QM); bool idle = QH == QT && BUSY == 0; pthread_mutex_unlock(&QM); if (idle) return; sched_yield(); }
+}
+unsigned par_spawned(void) { return NSPAWN; }
+
 /* a projection demands every field: under a schedule other than the default they are forced in its order
    first, each written back into its field, and the printer then meets values */
 void force_fields(Term t, int depth) {
-  if (depth <= 0 || !SCHED) return; t = whnf(t);
+  if (depth <= 0 || (!SCHED && !NPAR)) return; t = whnf(t);
   if (tag(t) == T_CTR) { uint32_t ar = ctr_arity(t); bool rev = right_first();
+    if (NPAR) for (uint32_t i = 0; i < ar; i++) par_spawn(HEAP[loc(t)+i]);
     for (uint32_t k = 0; k < ar; k++) { uint32_t i = rev ? ar - 1 - k : k; HEAP[loc(t)+i] = whnf(HEAP[loc(t)+i]); force_fields(HEAP[loc(t)+i], depth-1); } }
   else if (tag(t) == T_SUP) { bool rev = right_first(); uint32_t f = rev ? 2 : 1, g = rev ? 1 : 2;
+    if (NPAR) { par_spawn(HEAP[loc(t)+1]); par_spawn(HEAP[loc(t)+2]); }
     HEAP[loc(t)+f] = whnf(HEAP[loc(t)+f]); force_fields(HEAP[loc(t)+f], depth-1); HEAP[loc(t)+g] = whnf(HEAP[loc(t)+g]); force_fields(HEAP[loc(t)+g], depth-1); }
 }
 
 /* ---- the loop (§3): weak head, demanded interaction ---------------------- */
-static uint64_t WHNF_STEPS;
+static __thread uint64_t WHNF_STEPS;
 /* a node that a rule may fire on, and whose first word is a term (so the mark T_IND cannot be mistaken).
    REFLECT is not one: it is the checker's view of a typed point (§7), read by its cell, never marked. */
 static Term prune(Term t); static Term trace_over(Term v, uint64_t from); static Term lift(Term t, int depth); static uint32_t side_world(Term sup, unsigned side); static bool world_within(uint32_t w, uint32_t of);
@@ -922,6 +985,19 @@ static Term whnf_(Term t);
 /* a demanded port fires once: the node a holder points at is marked with its result, and every other holder
    of the same node meets the value (the sharing of §3 is at every port) */
 Term whnf(Term t) {
+  if (NPAR && node_redex(tag(t))) {                     /* the claim: fire once across the workers, or wait for the result */
+    Loc l = loc(t);
+    for (;;) {
+      uint8_t st = __atomic_load_n(&CLAIM[l], __ATOMIC_ACQUIRE);
+      if (st == 2) return HEAP[l+1];
+      uint8_t z = 0; if (st == 0 && __atomic_compare_exchange_n(&CLAIM[l], &z, 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) break;
+      sched_yield();
+    }
+    Loc outer = CUR_NODE; Term r = whnf_(t); CUR_NODE = outer;
+    if (r != t) { HEAP[l+1] = r; __atomic_store_n(&HEAP[l], mk(T_IND, 0, 0), __ATOMIC_RELEASE); __atomic_store_n(&CLAIM[l], 2, __ATOMIC_RELEASE); }
+    else __atomic_store_n(&CLAIM[l], 0, __ATOMIC_RELEASE);          /* stuck: nothing fired, the claim is returned */
+    return r;
+  }
   Loc outer = CUR_NODE; Term r = whnf_(t); CUR_NODE = outer;   /* a nested reduction names its own nodes; the outer resumes naming its own */
   if (r != t && node_redex(tag(t))) { HEAP[loc(t)] = mk(T_IND, 0, 0); HEAP[loc(t)+1] = r; }
   return r;
@@ -929,7 +1005,7 @@ Term whnf(Term t) {
 static Term whnf_(Term t) {
   for (;;) {
     CUR_NODE = loc(t);
-    if (node_redex(tag(t)) && tag(HEAP[loc(t)]) == T_IND) { t = HEAP[loc(t)+1]; continue; }   /* already fired: its result */
+    if (node_redex(tag(t)) && tag(__atomic_load_n(&HEAP[loc(t)], __ATOMIC_ACQUIRE)) == T_IND) { t = HEAP[loc(t)+1]; continue; }   /* already fired: its result */
     if (CHECK_MODE && ++WHNF_STEPS > 30000000 && getenv("HYPER_DEBUG")) { fprintf(stderr, "whnf: runaway at tag %u: ", tag(t)); print_rec(t, 5); fprintf(stderr, "\n"); fflush(stdout); exit(9); }
     switch (tag(t)) {
       case T_VAR: {                                   /* a variable: its slot, forced once and written back */
@@ -1064,12 +1140,14 @@ static Term whnf_(Term t) {
         return trace_over(v, from);
       }
       case T_LEAVES: {                                /* the leaves of a superposition as a list, dead sides dropped */
-        static Term out[1 << 14]; int n = collapse_leaves(HEAP[loc(t)], out, 1 << 14);
+        Term *out = malloc((1 << 14) * sizeof(Term)); int n = collapse_leaves(HEAP[loc(t)], out, 1 << 14);
         Term l = nil_cell(); for (int i = n; i-- > 0;) l = cons_cell(out[i], l);
-        return l;
+        free(out); return l;
       }
       case T_OP2: {
-        if (right_first()) HEAP[loc(t)+1] = whnf(HEAP[loc(t)+1]);   /* §9: the other schedule serves the right operand first */
+        bool rf = right_first();
+        if (NPAR) par_spawn(rf ? HEAP[loc(t)] : HEAP[loc(t)+1]);     /* §9: the other operand is an independent demand */
+        if (rf) HEAP[loc(t)+1] = whnf(HEAP[loc(t)+1]);               /* §9: the other schedule serves the right operand first */
         Term a = whnf(HEAP[loc(t)]);
         if (tag(a) == T_SUP) { receipt(R_OP2_SUP); Loc name = loc(whnf(HEAP[loc(a)])); Term b = HEAP[loc(t)+1];
           return node3(T_SUP, 0, HEAP[loc(a)],
@@ -1200,8 +1278,8 @@ static void print_num(Term t) {
 static uint32_t side_world(Term sup, unsigned side) {
   Term nm = whnf(HEAP[loc(sup)]); if (tag(nm) != T_IVAR) return WORLD;
   Term *slot = memo_slot((uint64_t)WORLD << 32 | loc(nm), 0x77 | (uint64_t)side << 8);
-  if (!*slot) { if (NWORLD >= WCAP) { WCAP = WCAP ? WCAP * 2 : 1024; WPARENT = realloc(WPARENT, WCAP * sizeof *WPARENT); WPARENT[0] = 0; }
-    WPARENT[NWORLD] = WORLD; *slot = (Term)NWORLD++; }
+  if (!*slot) { pthread_mutex_lock(&KMUT); if (!*slot) { if (NWORLD >= WCAP) { WCAP = WCAP ? WCAP * 2 : 1024; WPARENT = realloc(WPARENT, WCAP * sizeof *WPARENT); WPARENT[0] = 0; }
+    WPARENT[NWORLD] = WORLD; *slot = (Term)NWORLD++; } pthread_mutex_unlock(&KMUT); }
   return (uint32_t)*slot;
 }
 static bool world_within(uint32_t w, uint32_t of) { for (;;) { if (w == of) return true; if (!w) return false; w = WPARENT[w]; } }
@@ -1269,7 +1347,7 @@ static void print_rec(Term t, int depth) {
     default: printf("?%u", tag(t));
   }
 }
-void print_term(Term t, int depth) { force_fields(t, depth); print_rec(t, depth); }
+void print_term(Term t, int depth) { force_fields(t, depth); par_drain(); print_rec(t, depth); }
 
 /* §6: the census of receipts. Every interaction left one receipt in the trace; the census is its fold
    by rule (AdiBija: every analyzer is a fold over the trace). Definitional unfolding and the face map's
@@ -1475,4 +1553,4 @@ void collapse_print(Term t) {
   }
 }
 
-Term run_def(uint32_t id) { return whnf(mk(T_REF, 0, id)); }
+Term run_def(uint32_t id) { Term r = whnf(mk(T_REF, 0, id)); par_drain(); return r; }

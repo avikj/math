@@ -1,0 +1,11 @@
+; the Bend dialect's rows under the checker (bend.hyper is loaded by `hyper check`): each recursor row is
+; typed at its application by the checker's rule, the motive read from the goal (CRec / TRec / QRec)
+(def b/s1-const : (ctr Pi (ctr h/S1) (lam x (ctr Nat)))
+  = (lam x (srec x (ctr Zer) (plm _ (ctr Zer)))))
+(def b/trunc-out : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr h/Trunc A) (lam x (ctr Unit)))))
+  = (lam A (lam x (trec x (lam u (lam v (case u (Tt () (case v (Tt () (plm _ (ctr Tt)))))))) (lam a (ctr Tt))))))
+(def b/quot-const : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Pi A (lam _ (ctr Pi A (lam _ (ctr Set))))) (lam R (ctr Pi (ctr Unit) (lam s (ctr Pi (ctr h/Quot A R) (lam x (ctr Nat)))))))))
+  = (lam A (lam R (lam s (lam x (qrec x s (lam a (ctr Zer)) (lam a (lam b (lam w (plm _ (ctr Zer)))))))))))
+; must fail: the quotient recursor without the respect proof's shape (a non-path where a path is demanded)
+(def b/quot-bad : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Pi A (lam _ (ctr Pi A (lam _ (ctr Set))))) (lam R (ctr Pi (ctr Unit) (lam s (ctr Pi (ctr h/Quot A R) (lam x (ctr Nat)))))))))
+  = (lam A (lam R (lam s (lam x (qrec x s (lam a (ctr Zer)) (lam a (lam b (lam w (ctr Zer))))))))))

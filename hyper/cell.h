@@ -175,6 +175,8 @@ Term node4(unsigned t, uint32_t e, Term a, Term b, Term c, Term d);
 Term fce_raw(unsigned side, Term name, Term target, Term by);
 Term fce3(unsigned side, Loc name, Term target, Term by);
 int  resolve_declaration(uint32_t id);   /* verify.c: the census of the book at a bodyless declaration's type */
+extern int NPAR; extern __thread bool NO_COUNT;   /* parallel demand: the workers, and a comparison that is not an event */
+void par_init(void); void par_drain(void); void par_spawn(Term t); unsigned par_spawned(void);
 uint32_t next_depth(Term parent);
 Term frame_push(Term parent, Term slot);
 Term dim_push(Term parent);

@@ -40,7 +40,10 @@
   (hrec x (@Quot/cl (a) (app f a))
           (@Quot/eq (a b w) (plm i (app (app (app (app resp a) b) w) i)))))))))
 
-; the types the built-in recursors demand of their arguments (Core.Check TRec / QRec)
+; the types the built-in recursors demand of their arguments (Core.Check TRec / QRec); the recursor rows
+; themselves are typed at their applications by the checker's CRec/TRec/QRec rules (verify.c), with the
+; motive read from the goal: that rule is each row's certificate, and t/dialect.hyper exercises all three
 (def isProp-ty : (ctr Pi (ctr Set) (lam B (ctr Set)))
   = (lam B (ctr Pi B (lam u (ctr Pi B (lam v (ctr Path (plm _ B) u v)))))))
-(def qresp-ty (lam A (lam R (lam f (lam B (ctr Pi A (lam a (ctr Pi A (lam b (ctr Pi (app (app R a) b) (lam _ (ctr Path (plm _ B) (app f a) (app f b)))))))))))))
+(def qresp-ty : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Pi A (lam _ (ctr Pi A (lam _ (ctr Set))))) (lam R (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi A (lam _ B)) (lam f (ctr Set)))))))))
+  = (lam A (lam R (lam B (lam f (ctr Pi A (lam a (ctr Pi A (lam b (ctr Pi (app (app R a) b) (lam _ (ctr Path (plm _ B) (app f a) (app f b)))))))))))))
