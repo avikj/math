@@ -6,7 +6,7 @@ gcc -std=gnu11 -O2 -w -c net.c -o net.o || exit 1
 gcc -std=gnu11 -O2 -Wall -Wno-misleading-indentation -Wno-unused-parameter -Wno-unused-function -pthread -o hyper cell.c read.c verify.c main.c net.o -lm || exit 1
 pass=0; fail=0
 pin() { f=$1; want=$2; witrs=$3
-  got=$(./hyper net n/$f.hvm4 2>&1 | grep -v SAT_PROFILE | grep -v '^$' | head -1); itrs=$(./hyper net n/$f.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://')
+  got=$(./hyper net n/$f.hvm4 2>&1 | grep -v SAT_PROFILE | grep -v '^$' | head -1 | sed 's/↑//g'); itrs=$(./hyper net n/$f.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://')
   if [ "$got" = "$want" ] && [ "$itrs" = "$witrs" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $f: got '$got' ($itrs) want '$want' ($witrs)"; fi; }
 # Block A: the collapse as a value (COL, written %x): the fibre as a list, multiplicity conserved, dead sides dropped
 pin xor   '#Cons{#Pair{#F{},#T{}},#Cons{#Pair{#T{},#F{}},#Nil{}}}' 97
@@ -29,13 +29,14 @@ pin supline '#Cons{#T{},#Cons{#F{},#Nil{}}}' 269
 # Block D: verify is decide — a typed point's judgment is one equation T === @infer(D) on the net (n/judge.hvm4):
 # Π, Σ, Bool, Nat, Eql/refl over quoted syntax; two must-fail cases reduce to 0; a superposed point against a
 # goal is a superposition of equations (EQL-SUP, no rule added), read by %
-pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}' 589
-# the cubical formers (n/judgecub.hvm4): plm against Path (and a wrong end), path application, coe along a constant
-# line (and a wrong target), ua of the identity, hcomp with a tube whose i0 end is the base (and one whose is not),
-# Glue with no face, glue/unglue, a Glue face whose equivalence proof is wrong (0: the contraction of the identity
-# equivalence needs the endpoint rule p @ i1 ≡ y for a neutral p, which @eval does not have yet), and a superposed
-# cubical point read by %.  ↑ is HVM4's collapse-priority wrapper on a value, not a value.
-pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{↑↑↑↑↑↑↑1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{↑↑↑↑↑↑↑↑0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}' 4331
-# the SAT fibre receipts, exactly as recorded (research/sat_fibre): the readback path is untouched
-if [ -z "$SKIP_SATCHECK" ]; then r=$(cd .. && python3 hyper/satcheck.py ./hyper/hyper net 2>&1 | tail -1); case "$r" in "satcheck pass=282 fail=0") pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL satcheck: $r";; esac; fi
+pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}' 1090
+# the cubical formers (n/judgecub.hvm4), twenty cases: plm against Path (and a wrong end), path application, coe along a
+# constant line (and a wrong target), ua of the identity, hcomp with a tube whose i0 end is the base (and one whose is
+# not), Glue with no face, glue/unglue, a Glue face with a wrong contraction (0) and with the identity equivalence's
+# contraction (1: the endpoint rule for a typed neutral path, Σ η and path η), λp. <i> p @ i by path η, Bool/Nat/List
+# eliminators, fst/snd (and snd against the wrong type), and a superposed cubical point read by %.
+# The identity equivalence checks only with fresh labels per binder instantiation (the default; -L is HVM4's).
+pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}}}}}}}}}' 27243
+# the SAT fibre receipts, exactly as recorded (research/sat_fibre) under -L, the labels HVM4 gave them; the readback path is untouched
+if [ -z "$SKIP_SATCHECK" ]; then r=$(cd .. && python3 hyper/satcheck.py ./hyper/hyper net -L 2>&1 | tail -1); case "$r" in "satcheck pass=282 fail=0") pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL satcheck: $r";; esac; fi
 echo "pass=$pass fail=$fail"; [ "$fail" = 0 ]

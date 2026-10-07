@@ -502,7 +502,12 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
   and adjacent tubes compared on the cells of φ ∧ ψ, `Glue` formation with each face's equivalence against
   `@equivT`, `glue` against its Glue type with the sections carried to the base by `e`, `unglue`.
   `n/judgecub.hvm4` pins twelve cases including must-fails.
-- **Not done:** constructors beyond Bool/Nat, match, HITs and quotients, `Sub`/`Partial`, and the endpoint rule
-  for a neutral path (`p @ i1 ≡ y` from `p`'s type), which is why the identity equivalence's contraction fails to
-  check on a Glue face (pinned as 0); the lane's eleven cubical programs re-run here (no Bend binary to emit
-  them); parallel execution (this HVM4 is sequential; the diamond makes it legal).
+- **Labels are coordinates, in the kernel.** HVM4 gave a duplication binder one static label per binder, so a
+  recursive unfolding reused it and distinct coordinates were read as one (the second of the three recorded
+  violations). Each instantiation of a binder now takes a fresh label (`wnf_alo_dup`, the entry's third word), the
+  default; `-L` keeps HVM4's discipline, under which the SAT receipts were recorded and still reproduce 282/282.
+  The identity equivalence's contraction on a Glue face checks only under the fresh discipline (`n/judgecub`, case 11).
+- **Neutrals carry their type** (`#Nam{form, T}`), so `p @ i1` is `p`'s end from its Path type, and conversion has
+  Σ η and path η (`@conv`). Eliminators for Bool, Nat and List against a goal; `fst`/`snd`; List, Unit, Empty.
+- **Not done:** HITs and quotients, `Sub`/`Partial`, Enum; the lane's eleven cubical programs re-run here (no Bend
+  binary to emit them); parallel execution (this HVM4 is sequential; the diamond makes it legal).

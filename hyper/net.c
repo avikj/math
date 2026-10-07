@@ -229,6 +229,7 @@ static int ITRS_ENABLED = 1;
   } while (0)
 static u32 FRESH = 1;
 static u32 FRESH_COORD = 1 << 20;                /* run-time coordinates start above every static label */
+static int BOOK_LABELS = 0;                      /* -L: HVM4 verbatim, a binder's label static per binder (the SAT receipts were recorded so) */
 
 static int DEBUG          = 0;
 static int SILENT         = 0;
@@ -4089,6 +4090,7 @@ fn Term wnf_alo_cop(u64 ls, u32 len, Term book) {
     it = term_val(heap_read(it + 1));
   }
   u8 rtag = side == 0 ? DP0 : DP1;
+  if (it != 0 && !BOOK_LABELS) lab = (u32)term_val(heap_read(it + 2));   /* the coordinate this instantiation of the binder was given */
   return it != 0 ? term_new(0, rtag, lab, it) : term_new(0, tag, lab, lvl);
 }
 
@@ -4112,12 +4114,21 @@ fn Term wnf_alo_lam(u64 alo_loc, u64 ls_loc, u32 len, Term book) {
 // x' ← fresh
 // ! x' &L = @{s} v
 // @{x',s} t
+// hyper: a duplication binder's label is the name of a coordinate, so each instantiation of the binder takes a
+// fresh one (HVM4 kept the book's static label per binder, so a recursive unfolding reused its label and distinct
+// coordinates were read as one: STATE_OF_THE_WORK I.4).  The label lives in the binding entry's third word and the
+// DP0/DP1 copies read it from there.
+fn u32 fresh_label(void) {
+  if (FRESH_COORD >= EXT_MASK) { fprintf(stderr, "hyper: coordinates exhausted (24-bit labels)\n"); exit(2); }
+  return FRESH_COORD++;
+}
 fn Term wnf_alo_dup(u64 alo_loc, u64 ls_loc, u16 len, Term book) {
   u64 book_loc = term_val(book);
-  u64 bind_ent = heap_alloc(2);
+  u64 bind_ent = heap_alloc(BOOK_LABELS ? 2 : 3);           /* under -L the entry is HVM4's two words: the receipts count heap words */
   Term alo_v = term_new_alo_at(alo_loc, ls_loc, len, book_loc + 0);
   heap_set(bind_ent + 0, alo_v);
   heap_set(bind_ent + 1, term_new(0, NUM, 0, ls_loc));
+  if (!BOOK_LABELS) heap_set(bind_ent + 2, term_new(0, NUM, 0, fresh_label()));
   return term_new_alo(bind_ent, len + 1, book_loc + 1);
 }
 
@@ -6455,6 +6466,7 @@ fn void cli_print_help(const char *argv0) {
 
   fprintf(stdout, "Options:\n");
   cli_print_help_opt("-s", "--stats",        "Show statistics after evaluation");
+  cli_print_help_opt("-L", "--book-labels",  "A duplication binder keeps the book's static label (HVM4 verbatim); default: fresh per instantiation");
   cli_print_help_opt("-S", "--silent",       "Suppress result output");
   cli_print_help_opt("-C", "--collapse[=N]", "Collapse superpositions (limit N)");
   cli_print_help_opt("-D", "--step-by-step", "Trace each reduction step");
@@ -6487,6 +6499,8 @@ fn CliOpts parse_opts(int argc, char **argv) {
       opts.version = 1;
     } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--stats") == 0) {
       opts.stats = 1;
+    } else if (strcmp(argv[i], "-L") == 0 || strcmp(argv[i], "--book-labels") == 0) {
+      BOOK_LABELS = 1;
     } else if (strcmp(argv[i], "-S") == 0 || strcmp(argv[i], "--silent") == 0) {
       opts.silent = 1;
     } else if (strcmp(argv[i], "-D") == 0 || strcmp(argv[i], "--step-by-step") == 0) {
