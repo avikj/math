@@ -14,19 +14,19 @@
   #List: λ&A. &(?){#SNil, #SCons{@any(A), @any(#List{A})}};
   #Sig: λ&A. λ&B. ! &a = @any(A); #SPair{a, @any(B(@eval(#Nil, a)))};
   #Eql: λ&X. λ&u. λ&v. #SRefl;
+  #Rearr: λ&A. @rearr(A);
   λ&t. #SIll})(T)
-// the specification's vocabulary, on values: sorted, and perm as multiset equality.  Each recurses on the declared
-// coordinate B, so every rule fires on a finite prefix of B: a wrong element, or an element past A's length, kills
-// the world before B's tail is ever unfolded — that is what makes the infinite line over List Nat readable finitely.
+// index §9.2 / §9.8: the coordinate over Rearr A is the relabellings, and over a binary-indexed A it factors: the
+// rearrangements of a node are the interleavings of the rearrangements of its halves, one fresh coordinate per
+// interleaving choice — Π C(a+b, a) = n! points, nothing about sorting
+@rearr = λ{#Leaf: λ&a. #SCons{#SVal{a}, #SNil}; #Node: λ&l. λ&r. @inter(@rearr(l), @rearr(r))}
+@inter = λ{#SNil: λ&y. y; #SCons: λ&h. λ&t. λ{#SNil: #SCons{h, t}; #SCons: λ&h2. λ&t2. &(?){#SCons{h, @inter(t, #SCons{h2, t2})}, #SCons{h2, @inter(#SCons{h, t}, t2)}}}}
+// the specification's vocabulary, on values: Sorted (index §9.6), adjacent — the comparisons §9.3 says are implied
+// are never made
 @leqN = λ{#Zer: λ&b. #T; #Suc: λ&a. λ{#Zer: #F; #Suc: λ&b. @leqN(a, b)}}
-@eqN = λ{#Zer: λ{#Zer: #T; #Suc: λ&b. #F}; #Suc: λ&a. λ{#Zer: #F; #Suc: λ&b. @eqN(a, b)}}
 @sorted = λ{#Nil: #T; #Cons: λ&h. λ{#Nil: #T; #Cons: λ&h2. λ&t. (λ{#T: @sorted(#Cons{h2, t}); #F: #F})(@leqN(h, h2))}}
-@remove = λ&x. λ{#Nil: #Pair{#F, #Nil}; #Cons: λ&h. λ&t. (λ{#T: #Pair{#T, t}; #F: (λ{#Pair: λ&f. λ&r. #Pair{f, #Cons{h, r}}})(@remove(x, t))})(@eqN(x, h))}
-@andV = λ{#T: λ&b. b; #F: λ&b. #F}
-@perm = λ&a. λ{#Nil: (λ{#Nil: #T; #Cons: λ&h. λ&t. #F})(a); #Cons: λ&h. λ&t. (λ{#Pair: λ{#T: λ&r. @perm(r, t); #F: λ&r. #F}})(@remove(h, a))}
-// the declaration: sort A = Σ B : List Nat. (perm A B && sorted B) ≡ True, at A = [2, 0, 1].  The conjunction is
-// read left to right, as a Bool conjunction is; perm refutes every infinite path of the line on a finite prefix.
-@A = #Cons{#Suc{#Suc{#Zer}}, #Cons{#Zer, #Cons{#Suc{#Zer}, #Nil}}}
-@Tspec = #Sig{#List{#Nat}, λ&B. #Eql{#Bool, @andV(@perm(@A, B), @sorted(B)), #T}}
+// the declaration (index §9.15): sort A = Σ B : Rearr A. Sorted B ≡ True, at A = [2, 0, 1] indexed as a tree
+@A = #Node{#Node{#Leaf{#Suc{#Suc{#Zer}}}, #Leaf{#Zer}}, #Leaf{#Suc{#Zer}}}
+@Tspec = #Sig{#Rearr{@A}, λ&B. #Eql{#Bool, @sorted(B), #T}}
 // the declaration is the program: its point is the coordinate over its type, cut by its own judgment
 @main = %(@keep(@any(@Tspec)))

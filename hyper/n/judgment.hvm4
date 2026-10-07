@@ -7,6 +7,13 @@
 @lcat = λ{#Nil: λ&ys. ys; #Cons: λ&h. λ&t. λ&ys. #Cons{h, @lcat(t, ys)}}
 @nth = λ{#Cons: λ&h. λ&t. λ{0: h; _: λ&i. @nth(t, i - 1)}}
 @setNth = λ{#Cons: λ&h. λ&t. λ{0: λ&v. #Cons{v, t}; _: λ&i. λ&v. #Cons{h, @setNth(t, i - 1, v)}}}
+// Rearr A (index §9.2): the type of rearrangements of a binary-indexed set A of naturals.  A list is a point iff it
+// carries A's elements each once: it is walked, each element removed from A, and A must be empty at its end.
+@flat = λ{#Leaf: λ&a. λ&k. #Cons{a, k}; #Node: λ&l. λ&r. λ&k. @flat(l, @flat(r, k))}
+@eqNat = λ{#Zer: λ{#Zer: #T; #Suc: λ&b. #F}; #Suc: λ&a. λ{#Zer: #F; #Suc: λ&b. @eqNat(a, b)}}
+@takeOut = λ&x. λ{#Nil: #Pair{#F, #Nil}; #Cons: λ&h. λ&t. (λ{#T: #Pair{#T, t}; #F: (λ{#Pair: λ&f. λ&r. #Pair{f, #Cons{h, r}}})(@takeOut(x, t))})(@eqNat(x, h))}
+@isRearr = λ&A. @isRearrGo(@flat(A, #Nil))
+@isRearrGo = λ&a. λ{#Nil: (λ{#Nil: 1; #Cons: λ&h. λ&t. 0})(a); #Cons: λ&h. λ&t. (λ{#Pair: λ{#T: λ&r. @isRearrGo(r, t); #F: λ&r. 0}})(@takeOut(h, a))}
 @andB = λ{1: λ&b. b; _: λ&n. λ&b. 0}
 @all = λ&f. λ{#Nil: 1; #Cons: λ&h. λ&t. @andB(f(h), @all(f, t))}
 // ---- neutrals: a neutral is η-long by its type at creation (@nam).  A Π-typed neutral is the function that
@@ -40,7 +47,7 @@
   #SLam: λ&b. λ&x. @eval(#Cons{x, env}, b);
   #SApp: λ&f. λ&x. @app(@eval(env, f), @eval(env, x));
   #SFst: λ&p. @fst(@eval(env, p)); #SSnd: λ&p. @snd(@eval(env, p));
-  #SNil: #Nil; #SCons: λ&h. λ&t. #Cons{@eval(env, h), @eval(env, t)}; #STt: #Tt; #SUnit: #Unit; #SEmpty: #Empty; #SList: λ&A. #List{@eval(env, A)};
+  #SNil: #Nil; #SCons: λ&h. λ&t. #Cons{@eval(env, h), @eval(env, t)}; #STt: #Tt; #SUnit: #Unit; #SEmpty: #Empty; #SList: λ&A. #List{@eval(env, A)}; #SRearr: λ&a. #Rearr{@eval(env, a)};
   #SBif: λ&c. λ&t. λ&f. @bif(@eval(env, c), @eval(env, t), @eval(env, f));
   #SNatM: λ&n. λ&z. λ&s. @natm(@eval(env, n), @eval(env, z), @eval(env, s));
   #SListM: λ&l. λ&n. λ&c. @listm(@eval(env, l), @eval(env, n), @eval(env, c));
@@ -105,6 +112,7 @@
   #SSuc: λ&n. (λ{1: #Nat; λ&q. #Ill})(@check(ctx, env, n, #Nat));
   #SBool: #Set; #SNat: #Set; #SSet: #Set; #SItv: #Set; #SUnit: #Set; #SEmpty: #Set; #STt: #Unit;
   #SList: λ&A. (λ{1: #Set; λ&q. #Ill})(@check(ctx, env, A, #Set));
+  #SRearr: λ&a. #Set;
   #SFst: λ&p. (λ{#Sig: λ&A. λ&B. A; λ&t. #Ill})(@infer(ctx, env, p));
   #SSnd: λ&p. (λ{#Sig: λ&A. λ&B. B(@fst(@eval(env, p))); λ&t. #Ill})(@infer(ctx, env, p));
   #SI0: #Itv; #SI1: #Itv;
@@ -171,8 +179,8 @@
 // ---- check: a term against a type value; the introduction forms by their rule, the rest by the equation
 @check = λ&ctx. λ&env. λ&s. λ&T. (λ{
   #SLam: λ&b. (λ{#Pi: λ&A. λ&B. ! &n = @nam(?, A); @check(#Cons{A, ctx}, #Cons{n, env}, b, B(n)); λ&t. 0})(T);
-  #SNil: (λ{#List: λ&A. 1; λ&t. 0})(T);
-  #SCons: λ&h. λ&t. (λ{#List: λ&A. @andB(@check(ctx, env, h, A), @check(ctx, env, t, #List{A})); λ&t2. 0})(T);
+  #SNil: (λ{#List: λ&A. 1; #Rearr: λ&A. @isRearr(A, #Nil); λ&t. 0})(T);
+  #SCons: λ&h. λ&t. (λ{#List: λ&A. @andB(@check(ctx, env, h, A), @check(ctx, env, t, #List{A})); #Rearr: λ&A. @isRearr(A, @eval(env, #SCons{h, t})); λ&t2. 0})(T);
   // the eliminators against a goal: the scrutinee by its type, each branch against the goal
   #SBif: λ&c. λ&t. λ&f. @andB(@check(ctx, env, c, #Bool), @andB(@check(ctx, env, t, T), @check(ctx, env, f, T)));
   #SNatM: λ&n. λ&z. λ&s. @andB(@check(ctx, env, n, #Nat), @andB(@check(ctx, env, z, T), @check(ctx, env, s, #Pi{#Nat, λ&m. T})));

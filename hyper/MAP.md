@@ -517,17 +517,30 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
   (each branch on its own cells, agreement on overlaps, coverage of φ), `pout`; `transp` with a cofibration (the line
   constant on φ, cell by cell); `Sub`/`inS`/`outS`; the set quotient with `[a]`, `eq/` against a Path whose line is
   the quotient, and its recursor.
-- **§0 with types, on the net** (`n/declare.hvm4`). The declaration is the type alone:
-  `sort A = Σ B : List Nat. (perm A B && sorted B) ≡ True` at `A = [2,0,1]`; the book holds `perm`, `sorted` and
-  the list, nothing about arrangements or searching. Its point is `@any(T)`, the coordinate over the type: `Bool`
-  is two sides, `Nat` and `List` are infinite lazy lines (one fresh coordinate per choice), a Σ's second coordinate
-  is built from the first (the same choice, shared), the only coordinate over an equation is `refl`. The judgment
-  cuts the line: every rule fires on a finite prefix of `B`, a side dies where a rule fails (a wrong element, a
-  fourth element, an inversion), its tail never unfolded, and `%` is the fibre: the one point `([0,1,2], refl)`,
-  15,601 interactions. Two schedule facts make an infinite line readable finitely, and neither changes a verdict:
-  Σ-intro forces the dependent premise (the one carrying the specification) before the structural one, and a
-  specification refutes each infinite path on a finite prefix iff its own recursion is on the declared coordinate
-  (`perm` recurses on `B`; `sorted` alone has an infinite fibre, so it sits right of `&&`).
+- **The declaration, on the net** (`n/declare.hvm4`, index §9.15). The declaration is the type alone:
+  `sort A = Σ B : Rearr A. Sorted B ≡ True` at `A = [2,0,1]`, indexed as a tree (§9.11); the book holds `Sorted`
+  (§9.6, adjacent: the comparisons §9.3 says are implied are never made) and nothing about arrangements or
+  searching. `Rearr A` is a type in the judgment (a list is a point iff it carries A's elements each once). Its
+  point is `@any(T)`, the coordinate over the type: over `Rearr A` it is the relabellings (§9.2), factored over the
+  index as the interleavings of the halves' relabellings (§9.8), one fresh coordinate per interleaving choice,
+  `n!` points; over an equation, `refl`. The judgment cuts five sides and `%` is the fibre, `([0,1,2], refl)`,
+  4,578 interactions. (The earlier form over `List Nat` enumerated an infinite line and cut it by a `perm`
+  predicate; §9.2 says the coordinate over "B is a rearrangement of A" is the relabellings themselves.) Σ-intro
+  forces the dependent premise, the one carrying the specification, before the structural one; neither order
+  changes a verdict.
+- **§9 followed entry by entry** (`n/sort9.hvm4`), on numbers, so that the net's `<=` is the comparison and the
+  ledger's `OP2-NUM-NUM` is the count §9.9 bounds. Each book entry is one statement: the input as a numeral (9.11);
+  the relabelling line factored over the index (9.2, 9.8); `Sorted` (9.6); and the restriction (9.3, 9.6): on an
+  interleaving of two sorted runs the coordinate at the two heads is determined by their comparison, the inner
+  premises held by the runs, so the restricted line at a node is one point and the fibre at a node is the
+  restricted interleaving of the fibres of its halves (9.15). Ledger: the whole line cut once by `Sorted` at n=4
+  makes 32 comparisons; the declaration followed through 9.6/9.15 makes 5 at n=4 and 17 at n=8 on the balanced
+  numeral (`log₂ 8! ≈ 15.3`, 9.9's bound within the linear term), 20 on the tally, 475 against 543 interactions:
+  the gap between a numeral and a tally (9.7, 9.11). On the net a merge does not re-emit the run left over when the
+  other empties (it is shared, not copied), so the interaction count sits below 9.7's `a + b` per merge; the
+  comparison count is the one 9.9 fixes. What the net does not do: derive the restriction 9.6 from `Sorted`'s
+  definition alone. `@interS` is that statement written as an entry; posed without it, the net cuts the whole
+  line (32 comparisons, not 5).
 - Enumerations: the type, symbols against it, the match with coverage (`n/judgeenum.hvm4`).
 - **Faces decided per cell, exactly.** `transp`'s constancy on φ is the marker test (the line at two markers equal on
   every cell, lambda bodies included). The face-bearing parts of a type (Partial's carrier, Sub's element, Glue's
