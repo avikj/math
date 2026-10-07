@@ -343,15 +343,13 @@ cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
 <p class="pf"><span class="lab">Proof.</span> <code>goedelHalfOne</code> in the box. If <code>⊢ G</code> then D1 gives <code>⊢ Prov⌜G⌝</code>, and the forward half of <a class="ref" href="#s4.6">the fixed point (4.6)</a> gives <code>⊢ ¬Prov⌜G⌝</code>, contradicting consistency. <code>Prov(⌜G⌝)</code> is the formula a proof of <code>G</code> exists — one unbounded existential over a decidable proof-check, which is what <code>Σ₁</code> names — so <code>G</code>'s unprovability is its truth. <span class="qed">∎</span></p></div>
 
 <div class="st" id="s4.8"><p><span class="lab">Proposition 4.8</span> (the second conjunct is a further hypothesis). Consistency, D1 and the fixed point do not give <code>⊬ ¬G</code>.</p>
-<p class="pf"><span class="lab">Proof.</span> <code>noHalfTwo</code> runs any claimed derivation of <code>⊬ ¬G</code> against the four-sentence model <code>Wit</code> in the box — <code>⊤, ⊥, g, ¬g</code> with <code>Prov</code> constantly <code>⊤</code>. It is consistent, satisfies D1, and carries the fixed point at <code>g</code> (both directions vacuous, their sides <code>⊥</code>), yet <code>¬g</code> is provable — so no such derivation exists. <code>Wit</code> fails exactly where it must: <code>OmegaBad</code>, proving <code>Prov⌜g⌝</code> yet not <code>g</code> — consistent but <a class="x" href="https://en.wikipedia.org/wiki/%CE%A9-consistent_theory">ω-inconsistent</a>. (In a real arithmetic that gap is consistency surviving because the asserted proof is a nonstandard one no numeral names; <code>Wit</code> is the same separation stripped to four points and no arithmetic.) <span class="qed">∎</span></p></div>
+<p class="pf"><span class="lab">Proof.</span> <code>noHalfTwo</code> runs any claimed derivation of <code>⊬ ¬G</code> against the four-sentence model <code>Wit</code> in the box — <code>⊤, ⊥, g, ¬g</code> with <code>Prov</code> constantly <code>⊤</code>. It is consistent, satisfies D1, and carries the fixed point at <code>g</code> — whose forward arrow is vacuous not by accident but in every model of these hypotheses, which already force <code>⊬ g</code> (<code>fixIsAlwaysVacuous</code>, from <a class="ref" href="#s4.7">4.7</a>). What <code>Wit</code> alone adds is that <code>¬g</code> is provable — so no such derivation exists. <code>Wit</code> fails exactly where it must: <code>OmegaBad</code>, proving <code>Prov⌜g⌝</code> yet not <code>g</code> — consistent but <a class="x" href="https://en.wikipedia.org/wiki/%CE%A9-consistent_theory">ω-inconsistent</a>. (In a real arithmetic that gap is consistency surviving because the asserted proof is a nonstandard one no numeral names; <code>Wit</code> is the same separation stripped to four points and no arithmetic.) <span class="qed">∎</span></p></div>
 
-<div class="st" id="s4.9"><p><span class="lab">Theorem 4.9</span> (<a class="x" href="https://en.wikipedia.org/wiki/G%C3%B6del%27s_incompleteness_theorems">Gödel's first incompleteness theorem</a>). If the theory is also <a class="x" href="https://en.wikipedia.org/wiki/%CE%A9-consistent_theory">ω-consistent</a> — its logic carrying contraposition, double-negation elimination and transitivity internally — then <code>G</code> is independent: <code>⊬ G</code> and <code>⊬ ¬G</code>.</p>
+<div class="st" id="s4.9"><p><span class="lab">Theorem 4.9</span> (<a class="x" href="https://en.wikipedia.org/wiki/G%C3%B6del%27s_incompleteness_theorems">Gödel's first incompleteness theorem</a>). If the theory is also <a class="x" href="https://en.wikipedia.org/wiki/%CE%A9-consistent_theory">ω-consistent</a>, and its logic carries contraposition, double-negation elimination and transitivity internally, then <code>G</code> is independent: <code>⊬ G</code> and <code>⊬ ¬G</code>.</p>
 <p class="pf"><span class="lab">Proof.</span> <code>independenceFromRepresentability</code> in the box. The first conjunct is <a class="ref" href="#s4.7">4.7</a>. For the second, the backward half of <a class="ref" href="#s4.6">the fixed point (4.6)</a>, <code>¬Prov⌜G⌝ → G</code>, contraposed and cleared of its double negation (<code>internalFix</code>), gives <code>¬G → Prov⌜G⌝</code>; so <code>⊢ ¬G</code> would force <code>⊢ Prov⌜G⌝</code> alongside <code>⊬ G</code> (<a class="ref" href="#s4.7">4.7</a>) — the <code>OmegaBad</code> that <a class="ref" href="#s4.8">4.8</a> exhibits and ω-consistency forbids. <span class="qed">∎</span> (<a class="x" href="https://doi.org/10.2307/2269055">Rosser 1936</a> lowers ω-consistency to plain consistency by changing the fixed point.)</p></div>
 
 <details class="proof"><summary>the checked term — the Gödel construction (larger)</summary>
-<pre><code>private variable ℓ : Level
-
--- A theory: sentences, a derivability predicate Pf, negation, and the
+<pre><code>-- A theory: sentences, a derivability predicate Pf, negation, and the
 -- internal provability operator prov (already "the formula at a code").
 record Theory (ℓ : Level) : Type (ℓ-suc ℓ) where
   field
@@ -382,6 +380,12 @@ goedelHalfOne : (T : Theory ℓ) (G : Sent T)
   → Consistent T → HBL1 T → GoedelFix T G → ¬ Pf T G
 goedelHalfOne T G con d1 (fwd , _) pG = con (prov T G) (d1 G pG) (fwd pG)
 
+-- …so ⊬ G in EVERY such model, and the fixed point's forward arrow is
+-- vacuous there — not a quirk of Wit below. Only ⊢ ¬G can still vary.
+fixIsAlwaysVacuous : (T : Theory ℓ) (G : Sent T)
+  → Consistent T → HBL1 T → GoedelFix T G → (Pf T G → Pf T (neg T (prov T G)))
+fixIsAlwaysVacuous T G con d1 gf pG = Empty.rec (goedelHalfOne T G con d1 gf pG)
+
 -- Conjunct 2 (⊬ ¬G) does NOT follow: a four-sentence countermodel with
 -- consistency, D1 and the fixed point, in which ¬G is provable.
 data W : Type where wtop wbot wg wng : W
@@ -408,7 +412,7 @@ witCon wng  _ b = b
 witHBL1 : HBL1 Wit
 witHBL1 _ _ = tt
 witFix : GoedelFix Wit wg
-witFix = absurd , absurd
+witFix = Empty.rec , Empty.rec
 witProvesNegG : wPf (wneg wg)
 witProvesNegG = tt
 noHalfTwo :
@@ -466,7 +470,7 @@ module _ (T : Theory ℓ) (D : HasDiagonal T)
   independenceFromRepresentability con d1 notOmega =
       goedelHalfOne T G con d1 (diagonalGivesGoedelFix T D)
     , secondConjunct (goedelHalfOne T G con d1 (diagonalGivesGoedelFix T D)) notOmega</code></pre>
-<figcaption>The Gödel cluster <a class="ref" href="#s4.6">4.6</a>–<a class="ref" href="#s4.9">4.9</a> as one module, each term echoing its statement. <code>HasDiagonal</code> records what <a class="ref" href="#s4.5">representability (4.5)</a> provides — one-place formulas, their application, and the fixed point as a <em>pair of implications</em>, since <code>Theory</code> has no conjunction for a biconditional — and <code>diagonalGivesGoedelFix</code> reads that fixed point in the <code>¬Prov</code> form (<a class="ref" href="#s4.6">4.6</a>). <code>goedelHalfOne</code> is the first conjunct, three lines (<a class="ref" href="#s4.7">4.7</a>); the four-sentence <code>Wit</code> drives <code>noHalfTwo</code> (<a class="ref" href="#s4.8">4.8</a>); <code>independenceFromRepresentability</code> assembles both halves given ω-consistency (<a class="ref" href="#s4.9">4.9</a>). Self-contained; typechecks under Agda 2.8.0 <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9.</figcaption>
+<figcaption>The Gödel cluster <a class="ref" href="#s4.6">4.6</a>–<a class="ref" href="#s4.9">4.9</a> as one module, each term echoing its statement. <code>HasDiagonal</code> records what <a class="ref" href="#s4.5">representability (4.5)</a> provides — one-place formulas, their application, and the fixed point as a <em>pair of implications</em>, since <code>Theory</code> has no conjunction for a biconditional — and <code>diagonalGivesGoedelFix</code> reads that fixed point in the <code>¬Prov</code> form (<a class="ref" href="#s4.6">4.6</a>). <code>goedelHalfOne</code> is the first conjunct, three lines (<a class="ref" href="#s4.7">4.7</a>), and <code>fixIsAlwaysVacuous</code> reads off that it already empties <code>Pf G</code> in every such model; the four-sentence <code>Wit</code> drives <code>noHalfTwo</code> (<a class="ref" href="#s4.8">4.8</a>); <code>independenceFromRepresentability</code> assembles both halves given ω-consistency (<a class="ref" href="#s4.9">4.9</a>). Self-contained; typechecks under Agda 2.8.0 <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9.</figcaption>
 </details>
 
 <div class="st" id="s4.10"><p><span class="lab">Corollary 4.10</span> (<a class="x" href="https://doi.org/10.1112/plms/s2-42.1.230">halting</a>). No total <code>H</code> decides, of an arbitrary machine and input, whether it halts.</p>
