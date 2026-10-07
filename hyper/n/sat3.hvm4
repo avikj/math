@@ -5,4 +5,4 @@
 @or  = λ{#T: λb. #T; #F: λb. b}
 @keep = λ{#T: λv. v; #F: λv. &{}}
 @main = ! &x = &(0){#F, #T}; ! &y = &(1){#F, #T}; ! &z = &(2){#F, #T};
-  %(@keep(@and(@or(x, y), @and(@or(@not(y), z), @or(@not(x), @not(z)))), [x, y, z]))
+  %(@keep(@and(@or(x, y), @and(@or(@not(y), z), @or(@not(x), @not(z)))), #Cons{x, #Cons{y, #Cons{z, #Nil}}}))

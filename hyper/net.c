@@ -94,6 +94,7 @@ typedef struct {
 #define BJV 42  // Bjv(n): quoted lambda-bound variable (de Bruijn level)
 #define BJ0 43  // Bj0(n): quoted dup-bound variable (side 0, de Bruijn level)
 #define BJ1 44  // Bj1(n): quoted dup-bound variable (side 1, de Bruijn level)
+#define FRS 46  // Frs: a fresh number — the name of a new coordinate (hyper: dim)
 #define COL 45  // Col(x): the collapse of x as a value — the list of its leaves, multiplicity conserved (hyper: §6, the fibre is data)
 
 // LAM Ext Flags
@@ -181,9 +182,9 @@ typedef struct __attribute__((aligned(256))) {
 static WnfBank WNF_BANK = {0};
 static u64 ITRS = 0;
 
-static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL" };
-#define SAT_NRULES 64
-static u64 SAT_COUNTS[SAT_NRULES] = {0};
+static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM" };
+#define SAT_NRULES ((int)(sizeof(SAT_NAMES) / sizeof(SAT_NAMES[0])))
+static u64 SAT_COUNTS[128] = {0};
 static u64 SAT_BUDGET = 5000000;
 static u64 SAT_HEAP_BUDGET = 32000000;
 static void sat_report(void) {
@@ -227,6 +228,7 @@ static int ITRS_ENABLED = 1;
     } \
   } while (0)
 static u32 FRESH = 1;
+static u32 FRESH_COORD = 1 << 20;                /* run-time coordinates start above every static label */
 
 static int DEBUG          = 0;
 static int SILENT         = 0;
@@ -350,6 +352,7 @@ static const u8 TERM_ARITY[TAG_MASK + 1] = {
   [BJ0] = 0,
   [BJ1] = 0,
   [COL] = 1,
+  [FRS] = 0,
 };
 
 fn u32 term_arity(Term t) {
@@ -1759,6 +1762,10 @@ fn void print_term_go(FILE *f, Term term, u32 depth, PrintState *st) {
       u64 loc = term_val(term);
       fputs("%", f);
       print_term_at(f, HEAP[loc], depth, st);
+      break;
+    }
+    case FRS: {
+      fputs("?", f);
       break;
     }
   }
@@ -3574,6 +3581,8 @@ fn Term parse_term_atom(PState *s, u32 depth) {
     return parse_term_lam(s, depth);
   } else if (parse_match(s, "%")) {
     return parse_term_col(s, depth);
+  } else if (parse_match(s, "?")) {
+    return term_new(0, FRS, 0, 0);
   } else if (parse_match(s, "!")) {
     return parse_term_dup(s, depth);
   } else if (parse_match(s, "&")) {
@@ -4965,7 +4974,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
           case NUM:
           case REF:
           case ERA:
-          case ANY: {
+          case ANY:
+          case FRS: {
             next = book;
             goto enter;
           }
@@ -5002,6 +5012,12 @@ __attribute__((hot)) fn Term wnf(Term term) {
         stack[s_pos++] = next;
         next = x;
         goto enter;
+      }
+
+      case FRS: {                                   /* ? → the next number: a coordinate no other unfolding has */
+        ITRS_INC("FRS-NUM");
+        whnf = term_new_num(FRESH_COORD++);
+        goto apply;
       }
 
       case OR: {

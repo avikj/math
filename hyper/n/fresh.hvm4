@@ -1,8 +1,8 @@
 // a declaration with no body is a coordinate: the line over all Bool lists of length k.
 // HVM4's labels are static per binder, so a recursive unfolding reuses its label and the coordinates
-// are read as one (the recorded defect: STATE_OF_THE_WORK I.4).  A label computed at run time
-// (&(n){..}, DSU) names each unfolding's coordinate by its own number.
+// are read as one (the recorded defect: STATE_OF_THE_WORK I.4): @static(3) has two leaves.
+// `?` is a fresh number — the name of a coordinate no other unfolding has (dim): @fresh(3) has eight.
 @lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
-@static = λ{0: #Nil; _: λk. #Cons{&L{#F, #T}, @static(k)}}
-@fresh  = λ{0: λn. #Nil; _: λk. λ&n. #Cons{&(n){#F, #T}, @fresh(k, n + 1)}}
-@main = #Pair{%(@static(3)), %(@fresh(3, 0))}
+@static = λ{0: #Nil; _: λk. #Cons{&L{#F, #T}, @static(k - 1)}}
+@fresh  = λ{0: #Nil; _: λk. #Cons{&(?){#F, #T}, @fresh(k - 1)}}
+@main = #Pair{%(@static(3)), %(@fresh(3))}

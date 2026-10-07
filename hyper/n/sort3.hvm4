@@ -1,10 +1,9 @@
 // MAP §0 on the net: B over every arrangement of A (insertions, one fresh coordinate per place), the
 // specification `sorted` run on the line, the survivors read by %.  No sorting algorithm anywhere.
 @lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
-@leq = λa. λb. (a <= b)
-@sorted = λ{#Nil: #T; #Cons: λh. λ{#Nil: #T; #Cons: λ&h2. λt2. (λ{1: @sorted(#Cons{h2, t2}); 0: #F})(h <= h2)}}
+@sorted = λ{#Nil: #T; #Cons: λh. λ{#Nil: #T; #Cons: λ&h2. λt2. (λ{0: #F; _: λp. @sorted(#Cons{h2, t2})})(h <= h2)}}
 @keep = λ{#T: λv. v; #F: λv. &{}}
-@ins = λ&x. λ{#Nil: λn. [x]; #Cons: λ&h. λ&t. λ&n. &(n){#Cons{x, #Cons{h, t}}, #Cons{h, @ins(x, t, n + 1)}}}
-@perms = λ{#Nil: λn. #Nil; #Cons: λh. λt. λ&n. @ins(h, @perms(t, n + 10), n)}
+@ins = λ&x. λ{#Nil: #Cons{x, #Nil}; #Cons: λ&h. λ&t. &(?){#Cons{x, #Cons{h, t}}, #Cons{h, @ins(x, t)}}}
+@perms = λ{#Nil: #Nil; #Cons: λh. λt. @ins(h, @perms(t))}
 @spec = λ&p. @keep(@sorted(p), p)
-@main = %(@spec(@perms([3, 1, 2], 0)))
+@main = %(@spec(@perms(#Cons{3, #Cons{1, #Cons{2, #Nil}}})))
