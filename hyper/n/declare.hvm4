@@ -1,0 +1,25 @@
+#include "judgment.hvm4"
+// MAP §0 on the net, with types: a declaration with no body is a coordinate.  The typed point #Pair{T, D} has D a
+// line over the type's points (one fresh coordinate per choice); the judgment T === @infer(D) runs once on the
+// line (EQL commutes over superpositions), a side where it reduces to 0 is erased, and % is the fibre: the
+// points of the specification, as a value.  Nothing written for sorting, searching or solving.
+@keep = λ&D. (λ{1: D; λ&q. &{}})(@judge(#Pair{@Tspec, D}))
+// the points of a type, as syntax, lazily: Bool, Nat, and lists over Nat's literals 0..3
+@anyBool = &(?){#STrue, #SFalse}
+@anyNum = &(?){#SZer, &(?){#SSuc{#SZer}, &(?){#SSuc{#SSuc{#SZer}}, #SSuc{#SSuc{#SSuc{#SZer}}}}}}
+// every arrangement of a list of syntax elements, as a syntax line (insertions, one fresh coordinate per place)
+@perms = λ{#Nil: #SNil; #Cons: λ&h. λ&t. @insS(h, @perms(t))}
+@insS = λ&x. λ{#SNil: #SCons{x, #SNil}; #SCons: λ&h. λ&t. &(?){#SCons{x, #SCons{h, t}}, #SCons{h, @insS(x, t)}}}
+// the specification's vocabulary, on values: sorted, and perm as multiset equality (remove)
+@leqN = λ{#Zer: λ&b. #T; #Suc: λ&a. λ{#Zer: #F; #Suc: λ&b. @leqN(a, b)}}
+@eqN = λ{#Zer: λ{#Zer: #T; #Suc: λ&b. #F}; #Suc: λ&a. λ{#Zer: #F; #Suc: λ&b. @eqN(a, b)}}
+@sorted = λ{#Nil: #T; #Cons: λ&h. λ{#Nil: #T; #Cons: λ&h2. λ&t. (λ{#T: @sorted(#Cons{h2, t}); #F: #F})(@leqN(h, h2))}}
+@remove = λ&x. λ{#Nil: #Pair{#F, #Nil}; #Cons: λ&h. λ&t. (λ{#T: #Pair{#T, t}; #F: (λ{#Pair: λ&f. λ&r. #Pair{f, #Cons{h, r}}})(@remove(x, t))})(@eqN(x, h))}
+@perm = λ{#Nil: λ{#Nil: #T; #Cons: λ&h. λ&t. #F}; #Cons: λ&h. λ&t. λ&b. (λ{#Pair: λ{#T: λ&r. @perm(t, r); #F: λ&r. #F}})(@remove(h, b))}
+// the declaration: sort A = Σ B : List Nat. (perm A B ≡ True) × (sorted B ≡ True), at A = [2, 0, 1]
+@A = #Cons{#Suc{#Suc{#Zer}}, #Cons{#Zer, #Cons{#Suc{#Zer}, #Nil}}}
+@Tspec = #Sig{#List{#Nat}, λ&B. #Sig{#Eql{#Bool, @perm(@A, B), #T}, λ&q. #Eql{#Bool, @sorted(B), #T}}}
+// the line: every arrangement of A as syntax, each with (refl, refl) as its proofs
+@AS = #Cons{#SSuc{#SSuc{#SZer}}, #Cons{#SZer, #Cons{#SSuc{#SZer}, #Nil}}}
+@Dline = #SPair{@perms(@AS), #SPair{#SRefl, #SRefl}}
+@main = %(@keep(@Dline))

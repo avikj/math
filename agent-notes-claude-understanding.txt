@@ -531,3 +531,17 @@ AC. THE NET (hyper/net.c, test_net.sh, n/*.hvm4).  cell.c is not the machine:
    EQL-SUP, no rule).  satcheck 282/282 intact.  Remaining: @infer for the
    cubical formers (days, against the lane's Haskell), re-running the
    lane's eleven programs (needs Bend to emit), parallel execution.
+
+AD. THE NET, CONTINUED (hyper/n, test_net.sh pass=15 with satcheck).
+   net.c: a duplication binder's label is fresh per instantiation (the
+   second recorded violation closed; -L = HVM4 verbatim for satcheck).
+   judgment.hvm4: neutrals η-long by type at creation (@nam); HVM4 has
+   no rule for a match on a lambda, so conversion is type-directed
+   (@convT); all of CCHM's formers in @infer/@check: interval, Path,
+   plm, path app, coe, ua, hcomp (cells by DNF), Glue/glue/unglue,
+   circle + rec, Partial/systems/pout, transp with φ, Sub/inS/outS,
+   set quotient + rec, Bool/Nat/List eliminators.  judgecub (20 cases),
+   judgehit (20 cases) pinned.  declare.hvm4: §0 with types on the net —
+   the typed sort declaration's fibre read by % from the line of
+   arrangements, one point, 10,463 interactions.  Not done: Enum; the
+   lane's eleven programs re-run (no Bend binary); parallel execution.

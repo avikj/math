@@ -517,5 +517,9 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
   (each branch on its own cells, agreement on overlaps, coverage of φ), `pout`; `transp` with a cofibration (the line
   constant on φ, cell by cell); `Sub`/`inS`/`outS`; the set quotient with `[a]`, `eq/` against a Path whose line is
   the quotient, and its recursor.
+- **§0 with types, on the net** (`n/declare.hvm4`). `sort A = Σ B : List Nat. (perm A B ≡ True) × (sorted B ≡ True)`
+  as a type value; `D` the line of every arrangement of `A` (one fresh coordinate per place) with `(refl, refl)`;
+  the judgment `T === @infer(D)` runs once on the line, `EQL` commuting over it, five sides erase, and `%` is the
+  fibre: the one point `([0,1,2], (refl, refl))` in 10,463 interactions. The book holds `perm`, `sorted` and the list.
 - **Not done:** Enum; the lane's eleven cubical programs re-run here (no Bend binary to emit them); parallel
   execution (this HVM4 is sequential; the diamond makes it legal).
