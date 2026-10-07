@@ -168,8 +168,8 @@ them.
    entries, and the fibre is crowded: which one is concrete information and enters through a free port, never from the
    core (§0, item 5), so the run refuses and says so. The comparison is definitional and is not an event. Nothing is
    solved for: no coordinate is split, nothing is unified, no output is narrowed. `b/sort_spec` declares the sort
-   specification at `A` with no body and resolves through `b/sort_at_A` to `([1,2,3], (refl, refl))` in 174 interactions,
-   the chart move's 173 and the one `declare`.
+   specification at `A` with no body and resolves through `b/sort_at_A` to `([1,2,3], (refl, refl))` in 169 interactions,
+   the chart move's 168 and the one `declare`.
    **The census at the point of demand** (`verify.c` `resolve_applied`, `census_point`; `cell.c` at `T_APP`) is §0's
    test met in its runtime form: `sort : Π (A : List Nat). Σ B. (isort A ≡ isort B) × (sorted B ≡ True)` declared with no
    body (`t/sort.hyper`), applied to a list, is a closed `Σ`, the fibre of the specification over that list, and its
@@ -195,25 +195,36 @@ them.
    alternative first, so that what its comparisons kept decides the alternatives on one side without comparing.
    Measured (`HYPER_CENSUS`, `op2` is exactly the comparisons; the lists are literals, nothing else compares):
 
-   | n  | ascending | descending | shuffle (7i+3 mod n) | ⌈log₂ n!⌉ | n⌈lg n⌉ |
-   |----|-----------|------------|----------------------|-----------|---------|
-   | 8  | 17        | 7          | 16                   | 16        | 24      |
-   | 16 | 47        | 15         | 55                   | 45        | 64      |
-   | 32 | 121       | 31         | 141                  | 118       | 160     |
+   | n  | ascending | descending | shuffle (7i+3 mod n) | ⌈log₂ n!⌉ | n⌈lg n⌉ | interactions (asc / desc / shuffle) |
+   |----|-----------|------------|----------------------|-----------|---------|-------------------------------------|
+   | 8  | 17        | 7          | 16                   | 16        | 24      | 879 / 984 / 924                     |
+   | 16 | 47        | 15         | 54                   | 45        | 64      | 3,603 / 4,128 / 3,873               |
+   | 32 | 121       | 31         | 136                  | 118       | 160     | 14,619 / 16,944 / 15,804            |
 
-   Every measured count is within n⌈lg n⌉; the ascending case sits one above the information bound at n = 8 and
-   three above it at n = 32. Interactions in all (`Itrs`) are not n log n: 66,110 at n = 32 ascending and 409,028
-   descending, cubic, because `sorted` re-reads the whole prefix at every alternative and every re-read is recalls
-   and matches. The comparisons are the lossless part; the steps are charged as they fall. `sort [3,1,2]` is one
-   leaf, `[1,2,3]`, in 141 interactions and 2 comparisons; `sort [2,3,1,0]` is `[0,1,2,3]` in 300 and 5. An earlier
-   form of this book drew `B` from all lists over `A`'s elements and ran the specification on each whole list — every
-   comparison re-made in every world, exponential (3430 and 30449 interactions for the same two lists); that was the
-   erasure of what comparisons had told the machine, not a cost of sorting, and it is gone.
+   Every comparison count is within n⌈lg n⌉; the ascending case sits one above the information bound at n = 8 and
+   three above it at n = 32. The interactions in all are quadratic, about 15·n²: at every level the chain of k
+   alternatives is read whole (k cells exist, each is met once) and the one that survives is kept. What the
+   kernel does so that nothing is derived twice, each a rule of `cell.c`: the face map is the identity on a cell
+   holding nothing of its name (a closed constructor tree, a closure, a superposition at other names) and shares
+   it instead of copying; a variable read through several world restrictions is one face carrying the set,
+   taken in one walk; an application of a closure cell to a closed cell is derived once and recalled; a
+   superposition with an erased side is its other side wherever a rule meets it; and a match with `era` in a
+   branch — one that can kill a world — reads the chain of alternatives it meets whole and runs on each in
+   bisection order, keeping only the survivors, instead of commuting over the superposition and leaving every
+   world, dead or alive, for each later match to commute over again. Before those rules the same book cost
+   632,000 interactions at n = 32 descending (cubic: the faces re-copied the chain at every level and every
+   level's matches commuted over every earlier level's worlds). What remains quadratic is the list itself: a
+   chain of k alternatives is k cells, and reading it to its middle is k steps; fewer would need the
+   alternatives held as a balanced tree, a representation the declaration does not name. `sort [3,1,2]` is one
+   leaf, `[1,2,3]`, in 124 interactions and 2 comparisons; `sort [2,3,1,0]` is `[0,1,2,3]` in 228 and 5. An
+   earlier form of this book drew `B` from all lists over `A`'s elements and ran the specification on each
+   whole list — every comparison re-made in every world, exponential (3430 and 30449 interactions for the
+   same two lists); that was the erasure of what comparisons had told the machine, not a cost of sorting.
    **`sortCost`, produced by the machine** (`t/mapless.hyper`): over a finite element type (`{0,1}`) the greatest cost
    exists and the same mechanism finds it — the domain of all lists of length `n` is one superposed line, its leaves
    are the points, each point's cost is the length of its own trace
    (`research/sat_fibre/InteractionLedger.agda:74` `interactionTotal-is-length`), and the greatest is a fold over them:
-   `sortCost 1, 2, 3 = 18, 59, 270` interactions, with `costs2 = [59, 55, 55, 59]` for `[0,0], [0,1], [1,0], [1,1]`.
+   `sortCost 1, 2, 3 = 18, 58, 242` interactions, with `costs2 = [58, 54, 54, 58]` for `[0,0], [0,1], [1,0], [1,1]`.
    A trace is of one run: taken over the superposition it carries every world's events, so the points come first
    and each is traced alone. Over Peano naturals no greatest exists (below) and the fibre is empty.
    **Charts, measured** (`t/msort.hyper`, `t/fj.hyper`). Merge sort written as a map in the book counts its
@@ -221,7 +232,7 @@ them.
    at n = 4..7 and 46 at n = 16. These books contain the algorithm and are kept as measurements of the ledger only;
    the mapless book above needs neither.
    **§0, with the map in the book.** `t/sort.hyper` with every identity and lemma removed — `isort` and `sorted` present only as
-   data, and the lists — still resolves the bodyless `sort` at `[2,3,1,0]` to `([0,1,2,3], (refl, refl))` in 1338
+   data, and the lists — still resolves the bodyless `sort` at `[2,3,1,0]` to `([0,1,2,3], (refl, refl))` in 1333
    interactions (`test.sh`, the no-lemma run): the point is read off the book by the type's shape and the proofs are
    the computation. Nothing written for sorting enters it. **The identities** `isort-sorted : Π l. sorted (isort l) ≡
    True` and `isort-idem : Π A. isort A ≡ isort (isort A)` are hand-written inductions in the same file; with them

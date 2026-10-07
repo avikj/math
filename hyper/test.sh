@@ -92,7 +92,7 @@ if [ "$l" = '#Pair{26,#Cons{#op2{2},#Cons{#op2{2},#Cons{#op2{1},#Nil{}}}}}' ] &&
 # MAP §0.3 step 6: the chart move.  Carrier isort with isoToEquiv of descend/ascend; transport along its ua is descend
 # (uaβ), so the carried image is sort's point, with no coordinate, far below resolving the type
 check t/sort.hyper chart-move '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
-got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 173') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL chart-move count: $got";; esac
+got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 168') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL chart-move count: $got";; esac
 # step 4 closed: the specification b/sort_at_A checks under the typed path (prelude's iso tower, ua, the carrier, chart-move);
 # HYPER_CHECK_ALL verifies every typed definition the file and the prelude carry, not only the book's
 got=$(./hyper check t/sort.hyper 2>&1 | tr -d '\033' | sed 's/\[[0-9;]*m//g'); case "$got" in *'✗'*) fail=$((fail+1)); echo "FAIL check t/sort.hyper: $got";; *'✓ sort_at_A'*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL check sort_at_A: $got";; esac
@@ -102,7 +102,7 @@ check t/declare.hyper main '#True{}'
 got=$(./hyper run t/declare.hyper some-bool 2>&1); case "$got" in *विकलादेश*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL crowded declaration: $got";; esac
 got=$(./hyper run t/declare.hyper no-such 2>&1); case "$got" in *नास्ति*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL empty declaration: $got";; esac
 check t/sort.hyper b/sort_spec '#Pair{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}},#Pair{#Refl{},#Refl{}}}'
-got=$(./hyper run t/sort.hyper b/sort_spec | sed -n 2p); case "$got" in '- Itrs: 174') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort_spec count: $got";; esac
+got=$(./hyper run t/sort.hyper b/sort_spec | sed -n 2p); case "$got" in '- Itrs: 169') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort_spec count: $got";; esac
 # §9 parallel demand over the one arena: under HYPER_PARALLEL=4 the value, the count and the words are the sequential run's
 for pair in t/basic.hyper:main t/basic.hyper:triple t/sup.hyper:dist t/sup.hyper:matchsup t/kan.hyper:reg t/kan.hyper:hc-nat t/kan.hyper:pitrp t/ua.hyper:fwd-true t/setcomp.hyper:via-pi t/hit.hyper:helim-sq t/hit.hyper:merid-t t/erase.hyper:and-f t/sort.hyper:chart-move t/sort.hyper:b/sort_spec t/sort.hyper:sort-A2 t/mapless.hyper:sort-A t/declare.hyper:main; do
   f=${pair%%:*}; d=${pair#*:}; base=$(timeout 60 ./hyper run "$f" "$d" 2>&1 | head -3); par=$(HYPER_PARALLEL=4 timeout 60 ./hyper run "$f" "$d" 2>&1 | head -3)
@@ -111,7 +111,7 @@ done
 # MAP §0: the declaration is the program — sort with no body, at two lists, from the book, by the census at the point of demand
 check t/sort.hyper sort-A  '#Pair{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}},#Pair{#Refl{},#Refl{}}}'
 check t/sort.hyper sort-A2 '#Pair{#Cons{#Zer{},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}},#Pair{#Refl{},#Refl{}}}'
-got=$(./hyper run t/sort.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 1338') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort-A2 count: $got";; esac
+got=$(./hyper run t/sort.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 1333') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort-A2 count: $got";; esac
 # MAP §0, generic: sort with no body is certified from the book for every A (the census at coordinates, the identities in the book)
 got=$(HYPER_CHECK_ALL=1 ./hyper check t/sort.hyper 2>&1 | tr -d '\033' | sed 's/\[[0-9;]*m//g'); case "$got" in *'✓ sort : resolved from the book at every argument'*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort not certified from the book";; esac
 # sortCost: over Peano naturals the cost of sorting two elements grows with their values — the greatest cost has no point
@@ -130,14 +130,18 @@ if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAI
 # comparisons are kept (cell.c, retained comparisons) and the leaves read by bisection
 check t/mapless.hyper sort-A  '#Cons{#Cons{1,#Cons{2,#Cons{3,#Nil{}}}},#Nil{}}'
 check t/mapless.hyper sort-A2 '#Cons{#Cons{0,#Cons{1,#Cons{2,#Cons{3,#Nil{}}}}},#Nil{}}'
-got=$(./hyper run t/mapless.hyper sort-A | sed -n 2p); case "$got" in '- Itrs: 141') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A count: $got";; esac
-got=$(./hyper run t/mapless.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 300') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A2 count: $got";; esac
+got=$(./hyper run t/mapless.hyper sort-A | sed -n 2p); case "$got" in '- Itrs: 124') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A count: $got";; esac
+got=$(./hyper run t/mapless.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 228') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A2 count: $got";; esac
 # the comparisons (op2 on literal lists: exactly the comparisons) are within n·ceil(lg n) for ascending, descending and
 # shuffled input at n = 8, 16, 32 (bounds 24, 64, 160); the measured counts are pinned
-for pair in up8:17 down8:7 shuf8:16 up16:47 down16:15 shuf16:55 up32:121 down32:31 shuf32:141; do d=${pair%%:*}; w=${pair#*:}
+for pair in up8:17 down8:7 shuf8:16 up16:47 down16:15 shuf16:54 up32:121 down32:31 shuf32:136; do d=${pair%%:*}; w=${pair#*:}
   got=$(HYPER_CENSUS=1 ./hyper run t/mapless.hyper $d 2>&1 | grep -oE 'op2=[0-9]+' | sed 's/op2=//')
   n=${d//[a-z]/}; lg=0; p=1; while [ $p -lt $n ]; do p=$((p*2)); lg=$((lg+1)); done
   if [ "$got" = "$w" ] && [ "$got" -le $((n*lg)) ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $d comparisons: $got want $w (bound $((n*lg)))"; fi; done
+# the interactions in all: pinned, and within 17·n² (quadratic: the chain of n alternatives is read whole at every level)
+for pair in up8:879 down8:984 shuf8:924 up16:3603 down16:4128 shuf16:3873 up32:14619 down32:16944 shuf32:15804; do d=${pair%%:*}; w=${pair#*:}; n=${d//[a-z]/}
+  got=$(./hyper run t/mapless.hyper $d | sed -n 2p | sed 's/- Itrs: //')
+  if [ "$got" = "$w" ] && [ "$got" -le $((17*n*n)) ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $d interactions: $got want $w"; fi; done
 # every one of the nine sorts is the ascending list, one leaf
 for d in up8 down8 shuf8 up16 down16 shuf16 up32 down32 shuf32; do n=${d//[a-z]/}
   want=$(python3 -c "n=$n; s='#Nil{}'
@@ -145,10 +149,10 @@ for x in range(n-1,-1,-1): s='#Cons{%d,%s}'%(x,s)
 print('#Cons{'+s+',#Nil{}}')")
   got=$(./hyper run t/mapless.hyper $d | sed -n 1p); if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $d value"; fi; done
 # sortCost over a finite element type, by the machine over its own cost: the domain's leaves, each leaf's own trace, the greatest
-check t/mapless.hyper costs2    '#Cons{59,#Cons{55,#Cons{55,#Cons{59,#Nil{}}}}}'
+check t/mapless.hyper costs2    '#Cons{58,#Cons{54,#Cons{54,#Cons{58,#Nil{}}}}}'
 check t/mapless.hyper sortCost1 '18'
-check t/mapless.hyper sortCost2 '59'
-check t/mapless.hyper sortCost3 '270'
+check t/mapless.hyper sortCost2 '58'
+check t/mapless.hyper sortCost3 '242'
 # the cheap chart (MAP §0 item 3): merge-insertion's worst case over every permutation is ceil(log2 n!) comparisons (n = 4, 5),
 # read off the ledger as op2 events; merge sort (t/msort.hyper) is n log n
 check t/fj.hyper fj4 '#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Nil{}}}}}'
@@ -189,7 +193,7 @@ check t/sat.hyper contradiction '#Nil{}'
 check t/sat.hyper short '#Nil{}'
 check t/sat.hyper reversed '#Nil{}'
 cs=$(./hyper run t/sat.hyper short | sed -n 2p); cr=$(./hyper run t/sat.hyper reversed | sed -n 2p)
-if [ "$cs" = "- Itrs: 315" ] && [ "$cr" = "- Itrs: 25" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL presentation counts: $cs / $cr"; fi
+if [ "$cs" = "- Itrs: 224" ] && [ "$cr" = "- Itrs: 25" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL presentation counts: $cs / $cr"; fi
 # constructing a specified map (SUPGEN_DEMO.md): the candidates are one superposition, the specification erases
 # every other one, and the survivor is not, certified by the erasure of the alternatives
 check t/sat.hyper synth-at '#Cons{#Pair{#True{},#False{}},#Nil{}}'

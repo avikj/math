@@ -447,7 +447,7 @@ X. THE JOB, FINISHED AS §0 STATES IT (all gated: test.sh 113/0, cite 191/0).
    sort : Π A. Σ B. (isort A ≡ isort B) × (sorted B ≡ True), declared with
    NO BODY, isort and sorted in the book as data:
    - at any list the runtime produces its point from the book by the
-     census at the point of demand (sort A 175 itrs; sort A2 1338);
+     census at the point of demand (sort A 175 itrs; sort A2 1338, later 1333);
    - for EVERY A it is certified: `hyper check` resolves it at coordinates
      with the identities isort-sorted and isort-idem (proved by induction
      in t/sort.hyper) — "✓ sort : resolved from the book at every argument".
@@ -487,3 +487,21 @@ Z. COMPARISONS KEPT (cell.c retained comparisons; t/mapless.hyper rewritten).
    (Itrs) remain cubic: `sorted` re-reads the prefix at each alternative.
    `sort` still has the one-line body `leaves (perms A)`; the bodyless
    typed declaration resolves only through t/sort.hyper's census.
+
+AA. ATTEMPT 2 — STEPS (cell.c).  Z's book cost 632,000 interactions at
+   n = 32 descending: cubic, and all of it re-derivation.  Found by the
+   census, fixed by rules, each generic: the face map shares a cell with
+   nothing of its name in it (closed ctr trees, closures, sups at other
+   names, a REF whose body has no sup); a variable read through d world
+   restrictions is one set-face taken in one walk (frame_lookup), not d
+   nested faces each re-copying; an application of a closure cell to a
+   closed cell is derived once (recall); a sup with an erased side is its
+   other side at every rule; an erasing match (era in a branch) reads the
+   chain of alternatives whole and runs on each in bisection order, keeping
+   the survivors (resolve_erasing) — instead of commuting over the sup and
+   leaving every world for every later match to commute over again.
+   Now 14,619 / 16,944 / 15,804 at n = 32 (asc/desc/shuffle), ~15 n²;
+   comparisons unchanged (121 / 31 / 136).  Quadratic is the list: k
+   alternatives are k cells; reading to the middle is k steps.  Not the
+   essay's n log n.  pass=157.  Debug knob kept: HYPER_CMP prints each
+   literal comparison.

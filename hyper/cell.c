@@ -32,6 +32,7 @@ uint64_t ITRS = 0;
    the words allocated are those of the sequential run; only the order of the receipts differs. */
 int NPAR = 0; static uint8_t *CLAIM; __thread bool NO_COUNT; static bool node_redex(unsigned g);
 static pthread_mutex_t KMUT = PTHREAD_MUTEX_INITIALIZER;          /* the rare shared tables: worlds, constructor names */
+static pthread_mutex_t GMUT = PTHREAD_MUTEX_INITIALIZER;          /* the tables of closed cells and erasing matches, shared by the workers */
 uint32_t *TRACE; uint64_t TRACE_LEN = 0; static uint64_t TRACE_CAP;
 
 /* ---- heap ------------------------------------------------------------- */
@@ -144,6 +145,11 @@ Term frame_lookup(Term f, uint32_t lvl, bool *is_dim) {
   Term v;
   if (tag(f) == T_DIM) { *is_dim = true; v = mk(T_IVAR, 0, loc(f)); }
   else { *is_dim = false; v = mk(T_VAR, lvl, loc(f)); }   /* a VAR reads the slot lazily (§2: forced once, written back) */
+  if (nf > 1 && !CHECK_MODE) {                       /* every face at a choice: one face carrying the set, taken in one pass */
+    bool all = true; for (unsigned i = 0; i < nf; i++) if (ext(faces[i]) > 1 || tag(HEAP[loc(faces[i]) + 1]) != T_IVAR) all = false;
+    if (all) { Term chain = 0; for (unsigned i = nf; i-- > 0;) chain = node3(T_RESTRICT, ext(faces[i]), chain, HEAP[loc(faces[i]) + 1], 0);   /* nearest first */
+      return node3(T_FCE, 3, chain, v, 0); }
+  }
   for (unsigned i = nf; i-- > 0;) v = fce_raw(ext(faces[i]), HEAP[loc(faces[i]) + 1], v, HEAP[loc(faces[i]) + 2]);
   return v;
 }
@@ -375,6 +381,8 @@ static bool is_value(Term t) {
   }
 }
 static Term fce_apply(Term nm, unsigned side, Term by, Term v);
+static bool ground(Term t, int depth); static bool ground_at(Term t, Loc name, int depth); static Term fce_set_apply(Term chain, Term v); static Term live_side(Term sup); static Term peek(Term t); static bool erasing_case(uint32_t code); static Term resolve_erasing(Term cs, Term sup); static int frame_side(Term fr, Loc name);
+static bool frame_mentions(Term fr, uint32_t code, Loc name, int depth);
 static bool lam_drops(Term f);
 static Term case_restrict(Term cs, Term name, unsigned side, Term by, Term scrut);
 static Term case_select(Term cs, Term scrut);
@@ -400,6 +408,7 @@ static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
   if (!ivar && tag(nm) != T_VAR && REWRITE_HOOK && REWRITE_HOOK(nm, v)) { receipt(R_DUP_SUP_EQUAL); return whnf(by); }
   switch (tag(v)) {
     case T_SUP: {
+      { Term ls = live_side(v); if (ls) { receipt(R_ERASE); return fce_apply(nm, side, by, ls); } }
       Term sn = whnf(HEAP[loc(v)]);
       if (ivar && tag(sn) == T_IVAR && loc(sn) == name) {
         receipt(R_DUP_SUP_EQUAL);
@@ -412,10 +421,12 @@ static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
         if (tag(b) == T_IVAR) return node3(T_SUP, 0, b, HEAP[loc(v) + 1], HEAP[loc(v) + 2]);
         fprintf(stderr, "hyper: connection on a choice name\n"); exit(2);
       }
+      if (ivar && ground_at(v, name, 1 << 16)) { receipt(R_FCE_SHARE); return v; }   /* nothing of this name below: the face is the identity on it */
       receipt(R_DUP_SUP_DIFFERENT);                       /* δᵢδⱼ = δⱼδᵢ */
       return node3(T_SUP, 0, sn, FCE_(HEAP[loc(v)+1]), FCE_(HEAP[loc(v)+2]));
     }
-    case T_LAM: receipt(lam_drops(v) ? R_DUP_LAM_ERASED : R_DUP_LAM_USED); return fce_closure(T_LAM, nm, side, by, v);
+    case T_LAM: if (ivar && ground_at(v, name, 1 << 16)) { receipt(R_FCE_SHARE); return v; }
+                receipt(lam_drops(v) ? R_DUP_LAM_ERASED : R_DUP_LAM_USED); return fce_closure(T_LAM, nm, side, by, v);
     case T_PLM: receipt(R_DUP_LAM_USED); return fce_closure(T_PLM, nm, side, by, v);
     case T_IVAR: if (ivar && loc(v) == name) { receipt(R_DUP_SUP_EQUAL); return side < 2 ? mk(side ? T_I1 : T_I0, 0, 0) : iwhnf(by); }
                  receipt(R_FCE_SHARE); return v;
@@ -432,6 +443,7 @@ static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
     case T_CTR: {
       uint32_t ar = ctr_arity(v);
       if (ar == 0) { receipt(R_FCE_SHARE); return v; }
+      if (ivar ? ground_at(v, name, 1 << 16) : ground(v, 1 << 16)) { receipt(R_FCE_SHARE); return v; }   /* nothing in it for a face to meet: the face is the identity on it */
       receipt(R_DUP_NODE);
       Loc l = alloc(ar);
       for (uint32_t i = 0; i < ar; i++) HEAP[l+i] = FCE_(HEAP[loc(v)+i]);
@@ -465,6 +477,106 @@ static Term fce_apply(Term nm, unsigned side, Term by, Term v) {
   #undef WAIT_
 }
 
+
+
+/* a side already erased: the superposition is its other side (peeked, nothing is evaluated here) */
+static Term peek(Term t) { for (int g = 0; g < 1 << 12; g++) { if (node_redex(tag(t)) && tag(__atomic_load_n(&HEAP[loc(t)], __ATOMIC_ACQUIRE)) == T_IND) { t = HEAP[loc(t)+1]; continue; } return t; } return t; }
+static bool peek_dead(Term t, int depth) { t = peek(t); if (tag(t) == T_ERA) return true;
+  if (tag(t) == T_SUP && depth > 0) return peek_dead(HEAP[loc(t)+1], depth-1) && peek_dead(HEAP[loc(t)+2], depth-1); return false; }
+static Term live_side(Term sup) {
+  bool d0 = peek_dead(HEAP[loc(sup)+1], 64), d1 = peek_dead(HEAP[loc(sup)+2], 64);
+  if (d0 && d1) return mk(T_ERA, 0, 0);
+  if (d0) return HEAP[loc(sup)+2]; if (d1) return HEAP[loc(sup)+1]; return 0;
+}
+
+/* ---- an erasing match decides the worlds it meets ------------------------
+   A match with `era` in a branch can kill a world.  Meeting a superposition, instead of commuting over it
+   (which leaves every world standing, dead or not, for every later match to commute over again), it reads
+   the chain of alternatives whole, runs on each in bisection order (the middle first, so what one
+   alternative's comparisons kept decides its neighbours by recall), drops the worlds it erased, and is the
+   superposition of the worlds that survive — one value when one survives. */
+static uint8_t *ERASING; static uint32_t ERASING_LEN;
+static bool code_has_era(uint32_t c, int depth) {
+  if (!c || depth <= 0) return false; SNode *n = &CODE[c];
+  if (n->tag == S_ERA) return true;
+  if (n->tag == S_CTR) { uint32_t ar = n->ext & 0xFF; if (ar <= 4) { uint32_t k[4] = {n->a, n->b, n->c, n->d}; for (uint32_t i = 0; i < ar; i++) if (code_has_era(k[i], depth-1)) return true; return false; }
+    for (uint32_t i = 0; i < ar; i++) if (code_has_era(KIDS[n->kids + i], depth-1)) return true; return false; }
+  if (n->tag == S_NUM || n->tag == S_VAR || n->tag == S_REF || n->tag == S_IVAR || n->tag == S_LABEL) return false;
+  return code_has_era(n->a, depth-1) || code_has_era(n->b, depth-1) || code_has_era(n->c, depth-1) || code_has_era(n->d, depth-1);
+}
+static bool erasing_case(uint32_t code) {
+  pthread_mutex_lock(&GMUT);
+  if (ERASING_LEN < CODE_LEN) { ERASING = realloc(ERASING, CODE_LEN); memset(ERASING + ERASING_LEN, 0, CODE_LEN - ERASING_LEN); ERASING_LEN = CODE_LEN; }
+  if (!ERASING[code]) { SNode *n = &CODE[code]; bool e = false; for (uint32_t br = n->b; br; br = CODE[br].c) if (code_has_era(CODE[br].b, 64)) e = true; ERASING[code] = e ? 2 : 1; }
+  bool r = ERASING[code] == 2; pthread_mutex_unlock(&GMUT); return r;
+}
+static Term resolve_erasing(Term cs, Term sup) {
+  Term *alts = malloc((1 << 12) * sizeof(Term)), *nms = malloc((1 << 12) * sizeof(Term)), *res = malloc((1 << 12) * sizeof(Term));
+  int k = 0; Term v = sup;
+  for (;;) {                                                     /* the chain: left sides, then the last right side */
+    Term nm = whnf(HEAP[loc(v)]); if (tag(nm) != T_IVAR) { free(alts); free(nms); free(res); return 0; }
+    alts[k] = HEAP[loc(v)+1]; nms[k] = nm; k++;
+    Term r = whnf(HEAP[loc(v)+2]);
+    if (tag(r) == T_SUP && k < (1 << 12) - 1) { v = r; continue; }
+    alts[k] = r; nms[k] = 0; k++; break;
+  }
+  Term fr0 = HEAP[loc(cs)+2], code = HEAP[loc(cs)+1];
+  /* bisection order over the alternatives */
+  int *order = malloc(k * sizeof(int)), on = 0; { int lo[64], hi[64], sp = 0; lo[sp] = 0; hi[sp] = k - 1; sp++;
+    while (sp) { sp--; int l = lo[sp], h = hi[sp]; if (l > h) continue; int m = (l + h) / 2; order[on++] = m;
+      if (sp + 2 < 64) { lo[sp] = m + 1; hi[sp] = h; sp++; lo[sp] = l; hi[sp] = m - 1; sp++; } } }
+  int live = 0;
+  for (int oi = 0; oi < on; oi++) { int i = order[oi];
+    Term fr = fr0; for (int j = 0; j < i; j++) fr = restrict_push(fr, nms[j], 1, 0); if (i < k - 1) fr = restrict_push(fr, nms[i], 0, 0);   /* this world */
+    Term r = whnf(node3(T_CASE, 0, alts[i], code, fr));
+    if (tag(r) == T_ERA) receipt(R_ERASE); else live++;
+    res[i] = r; }
+  Term out;
+  if (live == 0) out = mk(T_ERA, 0, 0);
+  else { out = 0; for (int i = k; i-- > 0;) { if (tag(res[i]) == T_ERA) continue; out = out ? node3(T_SUP, 0, nms[i], res[i], out) : res[i]; } }
+  free(alts); free(nms); free(res); free(order); return out;
+}
+/* ---- a face carrying a set of choices ----------------------------------
+   A variable read through several world restrictions is one face carrying them all (frame_lookup), and the
+   face passes through a value in one walk: a superposition at a name in the set is its side, a cell holding
+   nothing of the set is shared, any other cell is copied once with the set on its parts. */
+static Term chain_side(Term chain, Loc name) { for (Term ch = chain; ch; ch = HEAP[loc(ch)]) if (loc(HEAP[loc(ch)+1]) == name) return (Term)(ext(ch) + 1); return 0; }
+static Term fset(Term chain, Term x) { return node3(T_FCE, 3, chain, x, 0); }
+static bool ground_chain(Term v, Term chain) { for (Term ch = chain; ch; ch = HEAP[loc(ch)]) if (!ground_at(v, loc(HEAP[loc(ch)+1]), 1 << 16)) return false; return true; }
+static Term chain_push(Term fr, Term chain) {                  /* the set onto a frame, farthest first so the nearest is on top */
+  Term cs[64]; unsigned n = 0; for (Term ch = chain; ch && n < 64; ch = HEAP[loc(ch)]) cs[n++] = ch;
+  for (unsigned i = n; i-- > 0;) fr = restrict_push(fr, HEAP[loc(cs[i])+1], ext(cs[i]), 0);
+  return fr;
+}
+static Term fce_set_apply(Term chain, Term v) {
+  v = whnf(v);
+  switch (tag(v)) {
+    case T_SUP: { { Term ls = live_side(v); if (ls) { receipt(R_ERASE); return fce_set_apply(chain, ls); } }
+      Term sn = whnf(HEAP[loc(v)]);
+      if (tag(sn) == T_IVAR) { Term s = chain_side(chain, loc(sn));
+        if (s) { receipt(R_DUP_SUP_EQUAL); return fce_set_apply(chain, HEAP[loc(v) + s]); }
+        if (ground_chain(v, chain)) { receipt(R_FCE_SHARE); return v; }
+        receipt(R_DUP_SUP_DIFFERENT); return node3(T_SUP, 0, sn, fset(chain, HEAP[loc(v)+1]), fset(chain, HEAP[loc(v)+2])); }
+      break; }
+    case T_CTR: { uint32_t ar = ctr_arity(v);
+      if (ar == 0 || ground_chain(v, chain)) { receipt(R_FCE_SHARE); return v; }
+      receipt(R_DUP_NODE); Loc l = alloc(ar); for (uint32_t i = 0; i < ar; i++) HEAP[l+i] = fset(chain, HEAP[loc(v)+i]);
+      return mk(T_CTR, ext(v), l); }
+    case T_LAM: case T_PLM:
+      if (ground_chain(v, chain)) { receipt(R_FCE_SHARE); return v; }
+      receipt(tag(v) == T_LAM && lam_drops(v) ? R_DUP_LAM_ERASED : R_DUP_LAM_USED);
+      return node2(tag(v), 0, HEAP[loc(v)], chain_push(HEAP[loc(v)+1], chain));
+    case T_CASE: receipt(R_DUP_NODE); return whnf(node3(T_CASE, 0, fset(chain, HEAP[loc(v)]), HEAP[loc(v)+1], chain_push(HEAP[loc(v)+2], chain)));
+    case T_IVAR: { Term s = chain_side(chain, loc(v)); if (s) { receipt(R_DUP_SUP_EQUAL); return mk(s == 2 ? T_I1 : T_I0, 0, 0); } receipt(R_FCE_SHARE); return v; }
+    case T_NUM: case T_ERA: case T_REF: case T_I0: case T_I1: case T_VAR: receipt(R_FCE_SHARE); return v;
+    case T_OP2: receipt(R_DUP_NODE); return whnf(node2(T_OP2, ext(v), fset(chain, HEAP[loc(v)]), fset(chain, HEAP[loc(v)+1])));
+    case T_OP1: receipt(R_DUP_NODE); return whnf(node1(T_OP1, ext(v), fset(chain, HEAP[loc(v)])));
+    default: break;
+  }
+  Term cs[64]; unsigned n = 0; for (Term ch = chain; ch && n < 64; ch = HEAP[loc(ch)]) cs[n++] = ch;   /* any other form: the faces one by one, farthest innermost */
+  for (unsigned i = n; i-- > 0;) v = fce_raw(ext(cs[i]), HEAP[loc(cs[i])+1], v, 0);
+  return whnf(v);
+}
 /* ---- opening a closure (β, path application) --------------------------- */
 Term open_closure(Term clo, Term arg) {
   uint32_t code = loc(HEAP[loc(clo)]);
@@ -609,6 +721,115 @@ static Term helim_select(Term he, Term head, Term *ivs, uint32_t nivs) {
   fprintf(stderr, "hyper: helim: no branch for %s\n", ctor_name(ctr_id(head))); exit(3);
 }
 
+
+/* ---- ground cells and retained applications ---------------------------------
+   A ground cell is a constructor tree of literals already built: no name occurs in it, so a face maps it to
+   itself (shared, not copied), and an application of one closure cell to one ground cell is one derivation —
+   the result is kept and a second demand of the same application is answered from it (a "recall").  Nothing the
+   machine derived about a value is derived again in another world of a superposition. */
+#define GR_N (1u << 22)
+static uint64_t *GR_SET;                                           /* open addressing over cell addresses known ground */
+static uint64_t gr_hash(uint64_t k) { k ^= k >> 33; k *= 0xff51afd7ed558ccdULL; k ^= k >> 33; return k; }
+static bool gr_has(Loc l) { if (!GR_SET) return false; uint64_t h = gr_hash(l) & (GR_N - 1); while (GR_SET[h]) { if (GR_SET[h] == (uint64_t)l + 1) return true; h = (h + 1) & (GR_N - 1); } return false; }
+static void gr_add(Loc l) { if (!GR_SET) GR_SET = calloc(GR_N, sizeof(uint64_t)); uint64_t h = gr_hash(l) & (GR_N - 1); while (GR_SET[h]) { if (GR_SET[h] == (uint64_t)l + 1) return; h = (h + 1) & (GR_N - 1); } GR_SET[h] = (uint64_t)l + 1; }
+static Loc *GR_BUSY; static uint32_t GR_NBUSY; static Loc GR_NAME; static bool GR_REL;                     /* cells under inspection: a knot that meets itself is closed */
+static uint64_t *GR_SET_AT;                                        /* (cell, name) pairs known to hold nothing of that name */
+static uint64_t gr_key_at(Loc l, Loc name) { return ((uint64_t)l << 32 | name) + 1; }
+static bool gr_has_at(Loc l, Loc name) { if (!GR_SET_AT) return false; uint64_t k = gr_key_at(l, name), h = gr_hash(k) & (GR_N - 1); while (GR_SET_AT[h]) { if (GR_SET_AT[h] == k) return true; h = (h + 1) & (GR_N - 1); } return false; }
+static void gr_add_at(Loc l, Loc name) { if (!GR_SET_AT) GR_SET_AT = calloc(GR_N, sizeof(uint64_t)); uint64_t k = gr_key_at(l, name), h = gr_hash(k) & (GR_N - 1); uint32_t n = 0; while (GR_SET_AT[h]) { if (GR_SET_AT[h] == k) return; h = (h + 1) & (GR_N - 1); if (++n > GR_N / 2) return; } GR_SET_AT[h] = k; }
+static bool node_redex(unsigned g);
+
+/* a definition whose body holds a superposition (or a label, a dimension, a face) anywhere: a reference to it is not closed */
+static uint8_t *DEF_SUPS; static uint32_t DEF_SUPS_LEN;
+static bool code_has_sup(uint32_t c, int depth) {
+  if (!c || depth <= 0) return depth <= 0; SNode *n = &CODE[c];
+  switch (n->tag) {
+    case S_SUP: case S_LABEL: case S_DIM: case S_FCE: case S_ISUB: case S_IVAR: return true;
+    case S_NUM: case S_VAR: case S_ERA: case S_I0: case S_I1: return false;
+    case S_REF: return false;                                  /* read through its own entry when met */
+    case S_CTR: { uint32_t ar = n->ext & 0xFF; if (ar <= 4) { uint32_t k[4] = {n->a, n->b, n->c, n->d}; for (uint32_t i = 0; i < ar; i++) if (code_has_sup(k[i], depth-1)) return true; return false; }
+      for (uint32_t i = 0; i < ar; i++) if (code_has_sup(KIDS[n->kids + i], depth-1)) return true; return false; }
+    default: return code_has_sup(n->a, depth-1) || code_has_sup(n->b, depth-1) || code_has_sup(n->c, depth-1) || code_has_sup(n->d, depth-1);
+  }
+}
+static bool def_has_sup(uint32_t id) {                           /* under GMUT: called from ground_ */
+  if (DEF_SUPS_LEN < BOOK_LEN) { DEF_SUPS = realloc(DEF_SUPS, BOOK_LEN); memset(DEF_SUPS + DEF_SUPS_LEN, 0, BOOK_LEN - DEF_SUPS_LEN); DEF_SUPS_LEN = BOOK_LEN; }
+  if (!DEF_SUPS[id]) DEF_SUPS[id] = (BOOK[id].unknown || code_has_sup(BOOK[id].code, 256)) ? 2 : 1;
+  return DEF_SUPS[id] == 2;
+}
+static bool ground_(Term t, int depth) {
+  if (depth <= 0) return false;
+  for (;;) {
+    switch (tag(t)) {
+      case T_NUM: case T_I0: case T_I1: case T_ERA: return true;
+      case T_REF: if (!def_has_sup(loc(t))) return true;                           /* its body holds no superposition */
+        GR_REL = true; return GR_NAME && label_of(GR_NAME) < 0;                    /* a fresh name (dim) cannot be in a body; a static label can */
+      case T_CTR: case T_LAM: break;
+      case T_APP: case T_OP2: case T_OP1: case T_CASE: case T_PROJ:                 /* a fired node: its result (the mark in word 0) */
+        if (tag(__atomic_load_n(&HEAP[loc(t)], __ATOMIC_ACQUIRE)) == T_IND) { t = HEAP[loc(t)+1]; continue; }
+        break;
+      case T_IVAR: GR_REL = true; return GR_NAME && loc(t) != GR_NAME;                 /* another name */
+      case T_VAR: GR_REL = true; return GR_NAME != 0;                                   /* an atom, not a name */
+      case T_SUP: if (!GR_NAME) return false; GR_REL = true; break;                 /* read relative to a name only */
+      case T_FCE: if (!GR_NAME) return false; GR_REL = true;
+        if (tag(__atomic_load_n(&HEAP[loc(t)], __ATOMIC_ACQUIRE)) == T_IND) { t = HEAP[loc(t)+1]; continue; }
+        break;
+      default: return false;                                   /* a form not read here */
+    }
+    Loc l = loc(t);
+    if (gr_has(l)) return true;
+    if (GR_NAME && gr_has_at(l, GR_NAME)) return true;
+    for (uint32_t i = 0; i < GR_NBUSY; i++) if (GR_BUSY[i] == l) return true;
+    if (!GR_BUSY) GR_BUSY = malloc((1 << 16) * sizeof(Loc));
+    if (GR_NBUSY >= (1 << 16)) return false;
+    GR_BUSY[GR_NBUSY++] = l; bool ok = true;
+    switch (tag(t)) {
+      case T_CTR: for (uint32_t i = 0; ok && i < ctr_arity(t); i++) ok = ground_(HEAP[l+i], depth-1); break;
+      case T_LAM: { Term fr = HEAP[l+1];                        /* the closure's frame: every slot closed, no binder of a dimension, no face taken */
+        for (int g = 0; ok && tag(fr) && g < 4096; g++) {
+          if (tag(fr) == T_FRAME) ok = ground_(HEAP[loc(fr)+1], depth-1);
+          else if (tag(fr) == T_DIM) { GR_REL = true; ok = loc(fr) != GR_NAME; }                 /* a binder of another dimension */
+          else if (tag(fr) == T_RESTRICT) { GR_REL = true; if (GR_NAME && loc(HEAP[loc(fr)+1]) == GR_NAME && ext(fr) < 2) break; } /* a face at the name already taken here: spent */
+          else ok = false;
+          fr = HEAP[loc(fr)]; }
+        break; }
+      case T_CASE: { Term fr = HEAP[l+2]; bool shielded = false;
+        for (int g = 0; ok && tag(fr) && g < 4096; g++) {
+          if (tag(fr) == T_FRAME) ok = ground_(HEAP[loc(fr)+1], depth-1);
+          else if (tag(fr) == T_DIM) { GR_REL = true; ok = loc(fr) != GR_NAME; }
+          else if (tag(fr) == T_RESTRICT) { GR_REL = true; if (GR_NAME && loc(HEAP[loc(fr)+1]) == GR_NAME && ext(fr) < 2) { shielded = true; break; } }   /* a face at the name already taken here */
+          else ok = false;
+          fr = HEAP[loc(fr)]; }
+        if (ok && !shielded) ok = ground_(HEAP[l], depth-1);
+        break; }
+      case T_OP1: ok = ground_(HEAP[l], depth-1); break;
+      case T_SUP: { Term nm = HEAP[l]; if (tag(nm) == T_IND) nm = HEAP[loc(nm)];
+        ok = tag(nm) == T_IVAR && loc(nm) != GR_NAME && ground_(HEAP[l+1], depth-1) && ground_(HEAP[l+2], depth-1); break; }
+      case T_FCE: { Term nm = HEAP[l]; if (tag(nm) == T_IND) nm = HEAP[loc(nm)];
+        if (ext(t) == 3) { bool in = false; for (Term ch = nm; ch; ch = HEAP[loc(ch)]) if (loc(HEAP[loc(ch)+1]) == GR_NAME) in = true;
+          ok = in || ground_(HEAP[l+1], depth-1); break; }                 /* a set face: the name spent if in the set */
+        if (tag(nm) != T_IVAR) { ok = false; break; }
+        if (loc(nm) == GR_NAME && ext(t) < 2) { ok = true; break; }       /* a face at this name already taken below: the name is spent there */
+        ok = loc(nm) != GR_NAME && ground_(HEAP[l+1], depth-1) && (ext(t) != 2 || ground_(HEAP[l+2], depth-1)); break; }
+      default: ok = ground_(HEAP[l], depth-1) && ground_(HEAP[l+1], depth-1); break;   /* APP, OP2, PROJ */
+    }
+    GR_NBUSY--;
+    if (ok && !GR_REL) gr_add(l); else if (ok && GR_NAME) gr_add_at(l, GR_NAME);
+    return ok;
+  }
+}
+
+static bool ground(Term t, int depth) { pthread_mutex_lock(&GMUT); GR_NBUSY = 0; GR_REL = false; GR_NAME = 0; bool r = ground_(t, depth); r = r && !GR_REL; pthread_mutex_unlock(&GMUT); return r; }   /* closed outright */
+static bool ground_at(Term t, Loc name, int depth) { pthread_mutex_lock(&GMUT); GR_NBUSY = 0; GR_REL = false; GR_NAME = name; bool r = ground_(t, depth); pthread_mutex_unlock(&GMUT); return r; }    /* nothing of this name in it */
+#define AM_N (1u << 22)
+typedef struct { uint64_t key; Term val; } AMem;
+static AMem *AMEM;
+static AMem *am_slot(uint64_t key) {
+  if (!AMEM) AMEM = calloc(AM_N, sizeof(AMem));
+  uint64_t h = gr_hash(key) & (AM_N - 1); uint32_t tries = 0;
+  while (AMEM[h].key && AMEM[h].key != key) { h = (h + 1) & (AM_N - 1); if (++tries > 64) return 0; }
+  return &AMEM[h];
+}
 /* ---- numbers ---------------------------------------------------------- */
 static Term boolc(bool b) { return mk(T_CTR, ctr_ext(b ? C_TRUE : C_FALSE, 0), alloc(1)); }
 
@@ -1133,9 +1354,24 @@ static Term whnf_(Term t) {
             exit(2); } }
         switch (tag(f)) {
           case T_ERA: return f;
-          case T_LAM: receipt(R_BETA); if (lam_drops(f)) receipt(R_ERASE); t = open_closure(f, x); continue;
+          case T_LAM: {
+            if (!NPAR && !CHECK_MODE) {            /* the application of this closure cell to this ground cell: derived once */
+              Term xv = peek(x);                   /* an argument already a value; nothing is forced here (§3.3: a port not demanded costs nothing) */
+              if (tag(xv) == T_NUM || (tag(xv) == T_CTR && ground(xv, 1 << 16))) {
+                uint64_t key = ((uint64_t)loc(f) << 32) ^ (uint64_t)loc(xv) ^ ((uint64_t)tag(xv) << 60) ^ ((uint64_t)ext(xv) << 40);
+                if (tag(xv) == T_NUM) key ^= HEAP[loc(xv)] * 0x9E3779B97F4A7C15ULL;
+                AMem *s = am_slot(key);
+                if (s && s->key == key) { receipt(R_RECALL); return s->val; }
+                receipt(R_BETA); if (lam_drops(f)) receipt(R_ERASE);
+                Term r = whnf(open_closure(f, xv));
+                if (s && !s->key) { s->key = key; s->val = r; }
+                return r;
+              }
+            }
+            receipt(R_BETA); if (lam_drops(f)) receipt(R_ERASE); t = open_closure(f, x); continue; }
           case T_PLM: receipt(R_APP_PLM); t = open_closure(f, x); continue;
           case T_SUP: {                               /* distribute; the argument face-mapped at the name */
+            { Term ls = live_side(f); if (ls) { receipt(R_ERASE); HEAP[loc(t)] = ls; continue; } }
             receipt(R_APP_SUP);
             Term nm = HEAP[loc(f)]; Loc name = loc(whnf(nm));
             Term x0 = fce3(0, name, x, 0), x1 = fce3(1, name, x, 0);
@@ -1181,6 +1417,7 @@ static Term whnf_(Term t) {
         if (tag(x) == T_CTR) { receipt(R_CASE); erase_ports(ctr_arity(x)); t = ctr_with(ctr_id(x), HEAP[loc(t)+1]); continue; }
         HEAP[loc(t)] = x; return t; }
       case T_FCE: {
+        if (ext(t) == 3) return fce_set_apply(HEAP[loc(t)], HEAP[loc(t) + 1]);
         Term nm = whnf(HEAP[loc(t)]);
         HEAP[loc(t)] = nm; FCE_SELF = t;
         return fce_apply(nm, ext(t), HEAP[loc(t) + 2], HEAP[loc(t) + 1]);
@@ -1191,7 +1428,10 @@ static Term whnf_(Term t) {
         switch (tag(s0)) {
           case T_CTR: receipt(R_CASE); t = case_select(t, s0); continue;
           case T_SUP: {                                /* a match commutes over a superposition; a name its frame fixes is projected */
+            { Term ls = live_side(s0); if (ls) { receipt(R_ERASE); HEAP[loc(t)] = ls; continue; } }   /* a dead side: the match is on the live one */
             Term nm = whnf(HEAP[loc(s0)]);
+            if (!CHECK_MODE && tag(nm) == T_IVAR && frame_side(HEAP[loc(t)+2], loc(nm)) < 0 && erasing_case(loc(HEAP[loc(t)+1]))) {
+              Term r = resolve_erasing(t, s0); if (r) return r; }   /* an erasing match decides the worlds it meets */
             { int w = tag(nm) == T_IVAR ? frame_side(HEAP[loc(t)+2], loc(nm)) : -1; if (w >= 0) { HEAP[loc(t)] = HEAP[loc(s0) + 1 + w]; continue; } }
             receipt(R_CASE_SUP);
             return node3(T_SUP, 0, nm, case_restrict(t, nm, 0, 0, HEAP[loc(s0)+1]),
@@ -1215,11 +1455,13 @@ static Term whnf_(Term t) {
         if (NPAR) par_spawn(rf ? HEAP[loc(t)] : HEAP[loc(t)+1]);     /* §9: the other operand is an independent demand */
         if (rf) HEAP[loc(t)+1] = whnf(HEAP[loc(t)+1]);               /* §9: the other schedule serves the right operand first */
         Term a = whnf(HEAP[loc(t)]);
+        if (tag(a) == T_SUP) { Term ls = live_side(a); if (ls) { receipt(R_ERASE); HEAP[loc(t)] = ls; continue; } }
         if (tag(a) == T_SUP) { receipt(R_OP2_SUP); Loc name = loc(whnf(HEAP[loc(a)])); Term b = HEAP[loc(t)+1];
           return node3(T_SUP, 0, HEAP[loc(a)],
             node2(T_OP2, ext(t), HEAP[loc(a)+1], fce3(0, name, b, 0)),
             node2(T_OP2, ext(t), HEAP[loc(a)+2], fce3(1, name, b, 0))); }
         Term b = whnf(HEAP[loc(t) + 1]);
+        if (tag(b) == T_SUP) { Term ls = live_side(b); if (ls) { receipt(R_ERASE); HEAP[loc(t)] = a; HEAP[loc(t)+1] = ls; continue; } }
         if (tag(b) == T_SUP) { receipt(R_OP2_SUP); Loc name = loc(whnf(HEAP[loc(b)]));
           return node3(T_SUP, 0, HEAP[loc(b)],
             node2(T_OP2, ext(t), fce3(0, name, a, 0), HEAP[loc(b)+1]),
