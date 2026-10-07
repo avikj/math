@@ -640,7 +640,7 @@ witness-self-certifies f a = refl</code></pre>
 
 <div class="st" id="s9.3"><p><span class="lab">Proposition 9.3</span> (a comparison is a restriction). A comparison leaves exactly the orderings consistent with its outcome. Comparing two elements about which nothing is known leaves half, since exchanging them is a bijection between the orderings answering one way and those answering the other <a class="ref" href="#s2.6">(2.6)</a>. A comparison already implied leaves all of them and is never made: what is held is a partial order, so from <code>a &lt; b</code>, <code>b &lt; c</code>, <code>b &lt; d</code> the relations <code>a &lt; c</code> and <code>a &lt; d</code> are there already, the <code>n²</code> pairs never stored.</p></div>
 
-<div class="st" id="s9.4"><p><span class="lab">Proposition 9.4</span> (which comparison). Naming any still-unordered pair is not enough: a supply offering <code>(a,b)</code>, then <code>(a,c)</code>, then <code>(a,d)</code> spends <code>n−1</code> comparisons to learn only which element is least. The one that excludes most is wanted. Of the twenty-four orderings of four elements, <code>a &lt; b</code> leaves twelve. Comparing <code>c</code> with <code>d</code> halves those to six; comparing <code>a</code> with <code>c</code> instead leaves eight when <code>a</code> wins — <code>a</code> least of three, one of three equally — so its worse outcome is worse than six. Fresh pairs are taken while any remain. With <code>a &lt; b</code> and <code>c &lt; d</code> the six survivors are the <code>C(4,2)</code> interleavings, and comparing the two least leaves three either way, where comparing <code>b</code> with <code>c</code> leaves five in one outcome, <code>b &lt; c</code> forcing <code>abcd</code> alone. The least are compared, and the result is one component with a known least, below everything in both.</p></div>
+<div class="st" id="s9.4"><p><span class="lab">Proposition 9.4</span> (which comparison). Naming any still-unordered pair is not enough: a supply offering <code>(a,b)</code>, then <code>(a,c)</code>, then <code>(a,d)</code> spends <code>n−1</code> comparisons to learn only which element is least. The one that excludes most is wanted. Of the twenty-four orderings of four elements, <code>a &lt; b</code> leaves twelve. Comparing <code>c</code> with <code>d</code> halves those to six; comparing <code>a</code> with <code>c</code> instead leaves eight when <code>a</code> wins — <code>a</code> least of three, one of three equally — so its worse outcome is worse than six. Fresh pairs are taken while any remain. With <code>a &lt; b</code> and <code>c &lt; d</code> the six survivors are the <code>C(4,2)</code> interleavings, and comparing the two least leaves three either way, where comparing <code>b</code> with <code>c</code> leaves five in one outcome, <code>b &lt; c</code> forcing <code>abcd</code> alone. The least are compared, and the result is one component with a known least, below everything in both. Five comparisons in all, and <code>⌈log₂ 24⌉ = 5</code>.</p></div>
 
 <div class="st" id="s9.5"><p><span class="lab">Theorem 9.5</span> (why the least halve). A comparison between two elements exchanged by a symmetry of what is already known splits the survivors exactly in half.</p>
 <p class="pf"><span class="lab">Proof.</span> The exchange carries orderings consistent with what is known to orderings consistent with it and swaps the two outcomes, so it is a bijection between them <a class="ref" href="#s2.6">(2.6)</a>, and two sets in bijection are equal halves of their union. Two runs of equal length are exchanged by the symmetry that interchanges them, which carries least to least. No symmetry of <code>a &lt; b</code>, <code>c &lt; d</code> exchanges <code>b</code> with <code>c</code>, which is why that comparison is lopsided. <span class="qed">∎</span></p>
@@ -700,29 +700,44 @@ cost≡depth t = sym (paid≡ t 0 ∙ zero· (cost t) (size t))
     zero· : (c s : ℕ) → c + 0 · s ≡ c
     zero· c s = solveℕ!
 
--- The four costs above, by refl.
-bal4 chain4 bal8 chain8 : Shape
-bal4   = (one ⊕ one) ⊕ (one ⊕ one)
+-- The balanced sum at every size: cost k · 2ᵏ, which is n log₂ n with the log removed.
+bal : ℕ → Shape
+bal zero    = one
+bal (suc k) = bal k ⊕ bal k
+
+size-bal : (k : ℕ) → size (bal k) ≡ 2 ^ k
+size-bal zero    = refl
+size-bal (suc k) = cong₂ _+_ (size-bal k) (size-bal k) ∙ double (2 ^ k)
+  where
+    double : (x : ℕ) → x + x ≡ 2 · x
+    double x = solveℕ!
+
+cost-bal : (k : ℕ) → cost (bal k) ≡ k · 2 ^ k
+cost-bal zero    = refl
+cost-bal (suc k) =
+    cong₂ (λ s c → (s + s) + (c + c)) (size-bal k) (cost-bal k)
+  ∙ step k (2 ^ k)
+  where
+    step : (k x : ℕ) → (x + x) + (k · x + k · x) ≡ suc k · (2 · x)
+    step k x = solveℕ!
+
+-- The chains, by refl.
+chain4 chain8 : Shape
 chain4 = one ⊕ (one ⊕ (one ⊕ one))
-bal8   = bal4 ⊕ bal4
 chain8 = one ⊕ (one ⊕ (one ⊕ (one ⊕ (one ⊕ (one ⊕ (one ⊕ one))))))
 
-_ : cost bal4   ≡ 8
-_ = refl
 _ : cost chain4 ≡ 9
-_ = refl
-_ : cost bal8   ≡ 24
 _ = refl
 _ : cost chain8 ≡ 35
 _ = refl</code></pre>
-<figcaption>The same number twice: <code>cost</code> sums what each merge produces, <code>paid</code> charges each element its depth, and <code>cost≡depth</code> identifies them. The four figures above hold by <code>refl</code>. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+<figcaption>The same number twice: <code>cost</code> sums what each merge produces, <code>paid</code> charges each element its depth, and <code>cost≡depth</code> identifies them. The balanced figures hold for every <code>k</code> by <code>cost-bal</code>, the chained ones by <code>refl</code>. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
 </details>
 
 <div class="st" id="s9.8"><p><span class="lab">Theorem 9.8</span> (the information is fixed by the endpoints). A merge of runs of lengths <code>a</code> and <code>b</code> settles which of <code>C(a+b, a)</code> interleavings occurred, and along every way of writing <code>n</code> as a sum these binomials multiply to <code>n!</code> exactly.</p>
 <p class="pf"><span class="lab">Proof.</span> An ordering of the whole is an ordering within each run together with the interleaving, so each merge contributes its binomial and the product telescopes to <code>n!</code>. <span class="qed">∎</span></p>
 <p class="pf">What is learned is fixed by where the sorting starts and ends, never by the shape — the pattern of <a class="ref" href="#s5.13">equal length (5.13)</a> on the other axis <a class="ref" href="#s5.7">(5.7)</a>, reached here by a counting telescope rather than by the diamond. The shape decides only what each merge <em>pays</em> for what it settles: equal runs pay <code>2a</code> for nearly <code>2a</code> bits, a run against one element pays <code>a+1</code> for <code>log₂(a+1)</code>. That is the whole difference between the two sums of <a class="ref" href="#s9.7">9.7</a> — one quantity, distributed differently over the <code>+</code> signs.</p></div>
 
-<div class="rk" id="s9.9"><p><span class="lab">Remark 9.9</span> (the shape of the obligation). Write <code>Φ</code> for <code>log₂</code> of the orderings still consistent. It is zero exactly at the one that survives, but it is not a potential in the sense of <a class="ref" href="#s5.15">Bellman (5.15)</a>, which asks <code>Φ(u) ≤ 1 + Φ(v)</code> on <em>every</em> edge: a comparison falling the unlikely way can drop it by much more, and with <code>a &lt; b</code>, <code>c &lt; d</code> the outcome <code>b &lt; c</code> takes it from <code>log₂ 6</code> to zero. What holds is the weaker, adversarial form — of a comparison’s two outcomes one leaves at least half, so one of them lowers <code>Φ</code> by at most one <a class="ref" href="#s9.3">(9.3)</a>. That bounds the deepest route rather than every route, and the bound is <code>log₂ n!</code> comparisons, which some orderings beat. It is the shape <a class="ref" href="#s8.11">8.11</a> describes — obligations of which a step discharges at most one — at a scale that is not exponential and is attained to within a term linear in <code>n</code>: the per-merge gap between what is paid and <code>log₂ C(a+b,a)</code> settled, summed over the sum. The count it bounds is comparisons, not the steps of <a class="ref" href="#s9.7">9.7</a>.</p></div>
+<div class="rk" id="s9.9"><p><span class="lab">Remark 9.9</span> (the shape of the obligation). Write <code>Φ</code> for <code>log₂</code> of the orderings still consistent. It is zero exactly at the one that survives, but it is not a potential in the sense of <a class="ref" href="#s5.15">Bellman (5.15)</a>, which asks <code>Φ(u) ≤ 1 + Φ(v)</code> on <em>every</em> edge: a comparison falling the unlikely way can drop it by much more, and with <code>a &lt; b</code>, <code>c &lt; d</code> the outcome <code>b &lt; c</code> takes it from <code>log₂ 6</code> to zero. What holds is the weaker, adversarial form — of a comparison’s two outcomes one leaves at least half, so one of them lowers <code>Φ</code> by at most one <a class="ref" href="#s9.3">(9.3)</a>. That bounds the deepest route rather than every route, and the bound is <code>log₂ n!</code> comparisons, which some orderings beat. It is the shape <a class="ref" href="#s8.11">8.11</a> describes — obligations of which a step discharges at most one — at a scale that is not exponential, and it is met: merging equal runs makes at most <code>n log₂ n − n + 1</code> comparisons for <code>n = 2ᵏ</code>, each of the <code>n − 1</code> merges making one fewer than the sum it produces — for <code>n = 4</code> that is <code>5 = ⌈log₂ 24⌉</code>, the bound met exactly, and for <code>n = 8</code> it is <code>17</code> against <code>16</code>. The count it bounds is comparisons, not the steps of <a class="ref" href="#s9.7">9.7</a>.</p></div>
 
 <div class="st" id="s9.10"><p><span class="lab">Corollary 9.10</span> (the two smallest). Minimising the sum of the intermediate sums over the ways of writing <code>n</code> as a sum is solved by repeatedly adding the two smallest parts — <a class="x" href="https://doi.org/10.1109/JRPROC.1952.273898">Huffman 1952</a> — which for <code>n</code> units gives the balanced sum. This answers <a class="ref" href="#s9.4">9.4</a> from the cost side rather than the information side: the cheapest merge available is the one between the two smallest runs, and two fresh elements are the smallest there are.</p></div>
 
@@ -740,7 +755,7 @@ _ = refl</code></pre>
        bca       cab
           \     /
             cba</code></pre>
-<p>The distance from an ordering to the sorted one is its number of out-of-order pairs, since each swap of an out-of-order neighbouring pair fixes exactly one. Every route therefore has the same length whatever order the swaps are taken in — not by <a class="ref" href="#s5.11">the diamond (5.11)</a>, which fails here, but because a count every step lowers by exactly one leaves the order nothing to change. Two swaps at disjoint positions do commute and their routes close a square, the diamond where it holds; three sharing an element close the hexagon above, where it does not — those two reconverge only after two further swaps on each side, not one — and both sides are still the same length. So the picture holds <a class="ref" href="#s5.13">5.13</a>’s conclusion by a second route, and shows the first one failing. A comparison is a cut through this space, and one already implied is a cut that misses what remains.</p></div>
+<p>The distance from an ordering to the sorted one is its number of out-of-order pairs, since each swap of an out-of-order neighbouring pair fixes exactly one. Every route therefore has the same length whatever order the swaps are taken in — not by <a class="ref" href="#s5.11">the diamond (5.11)</a>, which fails here, but by <a class="ref" href="#s5.15">Bellman (5.15)</a>: the out-of-order count is a potential that every swap meets with equality — the swap costs one and lowers the count by exactly one — and a potential met with equality on every edge makes every route a geodesic. Two swaps at disjoint positions do commute and their routes close a square, the diamond where it holds; three sharing an element close the hexagon above, where it does not — those two reconverge only after two further swaps on each side, not one — and both sides are still the same length. So the picture reaches <a class="ref" href="#s5.13">5.13</a>’s conclusion through <a class="ref" href="#s5.15">5.15</a>, and shows the diamond failing on the way. A comparison is a cut through this space, and one already implied is a cut that misses what remains.</p></div>
 
 <div class="st" id="s9.14"><p><span class="lab">Proposition 9.14</span> (comparisons and swaps). Comparisons count cuts and swaps count distance, and the counts differ: about <code>log₂ n!</code> comparisons are needed <a class="ref" href="#s9.9">(9.9)</a>, while the swaps are the out-of-order pairs <a class="ref" href="#s9.13">(9.13)</a>, of which there are at most the <code>n(n−1)/2</code> pairs. One comparison can authorise several swaps, and that is the whole of the gap — the two axes <a class="ref" href="#s5.7">(5.7)</a>, with both numbers in hand.</p>
 <p class="pf"><span class="lab">Proof.</span> In the set there are no swaps at all — comparisons add knowledge and the order is learned, not moved; swaps belong to the sequence presentation. At a single pair the two coincide: one comparison, one swap, one edge of <a class="ref" href="#s9.13">9.13</a>. Above that they part. Merging <code>[a,b]</code> with <code>[c,d]</code> and learning <code>c &lt; a</code> gives <code>c &lt; b</code> free from the <code>a &lt; b</code> already held, so one comparison authorises both swaps. Every swap is backed by a comparison made or inherited, and in a sorting that wastes nothing most are inherited. <span class="qed">∎</span></p></div>
