@@ -1,5 +1,7 @@
 #include "judgment.hvm4"
 // the circle, Partial and systems, transp with a cofibration, Sub, and the set quotient
+@idS = #SLam{#SVar{0}}
+@reflS = #SLam{#SPlm{#SVar{1}}}
 @R = #SLam{#SLam{#SUnit}}
 @Q = #SQuo{#SBool, @R}
 @QV = #Quo{#Bool, λ&a. λ&b. #Unit}
@@ -14,6 +16,9 @@
         #Cons{@judge(#Pair{#Partial{#I1, #Bool}, #SSys{#Cons{#SFace{#SI0, #STrue}, #Nil}}}),         // 0: the branches do not cover
         #Cons{@judge(#Pair{#Bool, #SPout{#SAnn{#SSys{#Cons{#SFace{#SI1, #STrue}, #Nil}}, #SPartial{#SI1, #SBool}}}}), // 1
         #Cons{@judge(#Pair{#Bool, #STrp{#SBool, #SI1, #STrue}}),                                     // 1: a constant line
+        #Cons{@judge(#Pair{#Bool, #STrp{#SPap{#SAnn{#SUa{#SBool, #SBool, @idS, @idS, @reflS, @reflS}, #SPath{#SSet, #SBool, #SBool}}, #SVar{0}}, #SI1, #STrue}}), // 0: the line moves on φ = i1
+        #Cons{@judge(#Pair{#Bool, #STrp{#SPap{#SAnn{#SUa{#SBool, #SBool, @idS, @idS, @reflS, @reflS}, #SPath{#SSet, #SBool, #SBool}}, #SVar{0}}, #SI0, #STrue}}), // 1: φ = i0, nothing required
+        #Cons{@judge(#Pair{#Pi{#Bool, λx. #Bool}, #STrp{#SPi{#SBool, #SBool}, #SI1, #SLam{#SVar{0}}}}), // 1: constant under a binder
         #Cons{@judge(#Pair{#Set, #SSub{#SBool, #SI1, #STrue}}),                                      // 1
         #Cons{@judge(#Pair{#Sub{#Bool, #I1, #T}, #SInS{#STrue}}),                                    // 1
         #Cons{@judge(#Pair{#Sub{#Bool, #I1, #T}, #SInS{#SFalse}}),                                   // 0: not u on φ
@@ -23,4 +28,4 @@
         #Cons{@judge(#Pair{#Path{λi. @QV, #QCl{#T}, #QCl{#F}}, #SQEq{#STrue, #SFalse, #STt}}),       // 1
         #Cons{@judge(#Pair{#Path{λi. @QV, #QCl{#T}, #QCl{#T}}, #SQEq{#STrue, #SFalse, #STt}}),       // 0: wrong end
         #Cons{@judge(#Pair{#Nat, #SQRec{#SAnn{#SQCl{#STrue}, @Q}, #SNat, #SLam{#SZer}, #SLam{#SLam{#SLam{#SPlm{#SZer}}}}}}), // 1
-        #Nil}}}}}}}}}}}}}}}}}}}}
+        #Nil}}}}}}}}}}}}}}}}}}}}}}}

@@ -135,10 +135,12 @@
   #SPartial: λ&p. λ&A. (λ{1: #Set; λ&q. #Ill})(@andB(@check(ctx, env, p, #Itv), @check(ctx, env, A, #Set)));
   #SSys: λ&fs. (λ{#Nil: #Ill; #Cons: λ{#SFace: λ&p. λ&v. λ&rest. #Partial{@eval(env, @joinFaces(p, rest)), @infer(ctx, env, v)}}})(fs);
   #SPout: λ&u. (λ{#Partial: λ&p. λ&A. (λ{#I1: A; λ&q. #Ill})(p); λ&t. t})(@infer(ctx, env, u));
-  // transp L φ x : L(i1) — x : L(i0), and L constant on φ: on every cell of φ its two ends convert
+  // transp L φ x : L(i1) — x : L(i0), and L constant on φ: on every cell of φ the interval does not occur in L,
+  // which is exactly that L at one marker and L at another are the same type (the marker occurs nowhere, lambda
+  // bodies included, iff the two evaluations are structurally equal)
   #STrp: λ&L. λ&p. λ&x. (λ{1: @eval(#Cons{#I1, env}, L); λ&q. #Ill})(@andB(@check(#Cons{#Itv, ctx}, #Cons{@nam(?, #Itv), env}, L, #Set),
     @andB(@check(ctx, env, p, #Itv), @andB(@check(ctx, env, x, @eval(#Cons{#I0, env}, L)),
-    @all(λ&cell. ! &e2 = @onCell(env, cell); @conv(@eval(#Cons{#I0, e2}, L), @eval(#Cons{#I1, e2}, L)), @dnf(p))))));
+    @all(λ&cell. ! &e2 = @onCell(env, cell); (@eval(#Cons{#IMark, e2}, L) === @eval(#Cons{#IMark2, e2}, L)), @dnf(p))))));
   // Sub A φ u : Set; inS x infers the vacuous restriction; outS s : A for s : Sub A φ u
   #SSub: λ&A. λ&p. λ&u. (λ{1: #Set; λ&q. #Ill})(@andB(@check(ctx, env, A, #Set), @andB(@check(ctx, env, p, #Itv), @check(ctx, env, u, @eval(env, A)))));
   #SInS: λ&x. #Sub{@infer(ctx, env, x), #I0, @eval(env, x)};
