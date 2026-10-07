@@ -298,7 +298,9 @@ bool equal(Term u, Term v) { memset(&EQV, 0, sizeof EQV); return eq(u, v, 0); }
    the identity available for its type, which §5.27 of the essay poses with the declaration and normalizes;
    विकलादेश, two entries, and the fibre is crowded: which one is concrete information and enters through a free
    port, never from the core.  The comparison is definitional and is not an event: its receipts are not counted. */
-int resolve_declaration(uint32_t id) {
+int resolve_declaration_q(uint32_t id, bool quiet);
+int resolve_declaration(uint32_t id) { return resolve_declaration_q(id, false); }
+int resolve_declaration_q(uint32_t id, bool quiet) {
   Def *d = &BOOK[id]; int found = -1, n = 0;
   NO_COUNT = true; Term T = inst(d->type, 0);
   for (uint32_t i = 0; i < BOOK_LEN; i++) {
@@ -308,9 +310,77 @@ int resolve_declaration(uint32_t id) {
   }
   NO_COUNT = false;
   if (n == 1) return found;
+  if (quiet) return -1;
   if (n == 0) fprintf(stderr, "hyper: @%s is declared with no body, and the book has no entry of its type (नास्ति)\n", d->name);
   else fprintf(stderr, "hyper: @%s is declared with no body, and the book has %d entries of its type (विकलादेश): the choice is not the core's\n", d->name, n);
   return -1;
+}
+/* The census at the point of demand (MAP §0): a declaration `name : Π a. Σ b. P a b` with no body, applied to
+   its arguments, is a closed `Σ b. P a b` — the fibre of the specification over the arguments — and its point
+   is read off the book by the type's own shape.  A whole entry of the type is a point (the census above).  A
+   `Σ (b : B). P` takes its first component from the book: every entry of type B, and every book map
+   f : X → B applied to an argument of type X (the chart's map, written in the book), and the rest P[b] by
+   the same census; an `Eql X u v` is `refl` when u and v convert — at a closed point the proof is the
+   computation itself (§8.6: the witness carries its own acceptance as refl).  Points are counted up to
+   conversion, three-valued as ever: one is the inhabitant; none, नास्ति; two distinct, विकलादेश.  The
+   work of trying a candidate is the computation and is counted; only the type comparisons that find the
+   book's entries are not events. */
+static Term ctr_refl(void) { return mk(T_CTR, ctr_ext(ctor_intern("Refl", 0), 0), alloc(1)); }
+static bool type_is(uint32_t i, Term T) { NO_COUNT = true; bool r = equal(inst(BOOK[i].type, 0), T); NO_COUNT = false; return r; }
+static Term census_point(Term T, Term *args, uint32_t nargs, int depth, int *count);
+static void census_try(Term b, Term B, Term *args, uint32_t nargs, int depth, Term *pts, int *n) {
+  Term rest = app2(B, b); int cn = 0; Term r = census_point(rest, args, nargs, depth + 1, &cn);
+  if (cn != 1) return;
+  for (int k = 0; k < *n; k++) if (equal(HEAP[loc(pts[k])], b)) return;    /* the same point again */
+  if (*n < 64) pts[(*n)++] = node2(T_CTR, ctr_ext(C_PAIR, 2), b, r);
+}
+static Term census_point(Term T, Term *args, uint32_t nargs, int depth, int *count) {
+  *count = 0; if (depth > 8) return 0;
+  Term pts[64]; int n = 0;
+  T = whnf(T);
+  for (uint32_t i = 0; i < BOOK_LEN; i++)                              /* a whole entry of the type */
+    if (!BOOK[i].unknown && BOOK[i].type && BOOK[i].code && !BOOK[i].ndims && type_is(i, T)) {
+      Term b = ref_of(i); bool dup = false; for (int k = 0; k < n; k++) if (equal(pts[k], b)) dup = true;
+      if (!dup && n < 64) pts[n++] = b; }
+  if (is_ctr(T, C_EQL)) { if (!n && equal(HEAP[loc(T)+1], HEAP[loc(T)+2])) pts[n++] = ctr_refl(); }
+  else if (is_ctr(T, C_SIG) && !n) {
+    Term A = HEAP[loc(T)], B = HEAP[loc(T)+1]; Term Aw = whnf(A);
+    if (is_ctr(Aw, C_EQL)) { if (equal(HEAP[loc(Aw)+1], HEAP[loc(Aw)+2])) census_try(ctr_refl(), B, args, nargs, depth, pts, &n); }
+    else if (is_ctr(Aw, C_SIG)) { int cn = 0; Term p = census_point(A, args, nargs, depth + 1, &cn); if (cn == 1) census_try(p, B, args, nargs, depth, pts, &n); }
+    else for (uint32_t i = 0; i < BOOK_LEN; i++) {
+      if (BOOK[i].unknown || !BOOK[i].type || !BOOK[i].code || BOOK[i].ndims) continue;
+      Term ti = whnf(inst(BOOK[i].type, 0));
+      NO_COUNT = true; bool entry = equal(ti, A); NO_COUNT = false;
+      if (entry) { census_try(ref_of(i), B, args, nargs, depth, pts, &n); continue; }
+      if (!is_ctr(ti, C_PI)) continue;
+      Term X = HEAP[loc(ti)], Y = HEAP[loc(ti)+1];
+      for (uint32_t a = 0; a < nargs; a++) {                        /* a book map at an argument of its domain */
+        NO_COUNT = true; bool dom = equal(X, args[nargs + a]); NO_COUNT = false; if (!dom) continue;
+        Term cod = whnf(app2(Y, args[a])); NO_COUNT = true; bool codok = equal(cod, A); NO_COUNT = false; if (!codok) continue;
+        census_try(app2(ref_of(i), args[a]), B, args, nargs, depth, pts, &n);
+      }
+    }
+  }
+  *count = n; return n == 1 ? pts[0] : 0;
+}
+/* a declaration applied to its arguments: peel its Π at each, then the census of the closed type.
+   status 1: the point; 0: still a Π, more arguments wanted; -1: none; -2: crowded */
+Term resolve_applied(Term ref, Term *args, uint32_t nargs, int *status) {
+  Def *d = &BOOK[loc(ref)]; Term T = inst(d->type, 0); Term both[128];   /* args, then their types */
+  for (uint32_t a = 0; a < nargs; a++) {
+    T = whnf(T); if (!is_ctr(T, C_PI)) { *status = -1; fprintf(stderr, "hyper: @%s applied beyond its type\n", d->name); return 0; }
+    both[a] = args[a]; both[nargs + a] = HEAP[loc(T)];
+    T = app2(HEAP[loc(T)+1], args[a]);
+  }
+  T = whnf(T); if (is_ctr(T, C_PI)) { *status = 0; return 0; }
+  if (!is_ctr(T, C_SIG) && !is_ctr(T, C_EQL)) { *status = -1;
+    fprintf(stderr, "hyper: @%s at its arguments is not a specification (a Σ or an equation): its point is a book entry of its own type, and there is none (नास्ति)\n", d->name); return 0; }
+  int n = 0; Term p = census_point(T, both, nargs, 0, &n);
+  if (n == 1) { *status = 1; return p; }
+  *status = n == 0 ? -1 : -2;
+  if (n == 0) fprintf(stderr, "hyper: @%s at its arguments has no point in the book (नास्ति)\n", d->name);
+  else fprintf(stderr, "hyper: @%s at its arguments has %d points in the book (विकलादेश): the choice is not the core's\n", d->name, n);
+  return 0;
 }
 static bool rewrite_hook(Term old, Term v) { IN_HOOK++; bool r = eq(old, v, 0); IN_HOOK--;
   if (getenv("HYPER_HOOKDBG") && tag(v) == T_APP) { fprintf(stderr, "  [hook %d] ", r); print_term(old, 4); fprintf(stderr, "  ~  "); print_term(v, 4); fprintf(stderr, "\n"); }

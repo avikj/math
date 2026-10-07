@@ -1017,7 +1017,9 @@ static Term whnf_(Term t) {
       case T_REF: {                                   /* δ: the definition's own fresh dimensions */
         Def *d = &BOOK[loc(t)]; Term fr = 0;
         if (d->unknown) {                            /* a declaration with no body: the census of the book at its type (MAP §0.3 step 5) */
-          int e = resolve_declaration(loc(t)); if (e < 0) exit(2);
+          Term ty = whnf(inst(d->type, 0)); bool map = tag(ty) == T_CTR && ctr_id(ty) == C_PI;
+          int e = map ? resolve_declaration_q(loc(t), true) : resolve_declaration(loc(t));
+          if (e < 0) { if (map) return t; exit(2); }               /* a map with no entry of its type resolves at its arguments (the application below) */
           d->code = BOOK[e].code; d->ndims = BOOK[e].ndims; d->unknown = false; receipt(R_DECLARE); }
         for (uint32_t i = 0; i < d->ndims; i++) fr = dim_push(fr);
         if (CHECK_MODE && d->type) { t = node2(T_REFLECT, 0, inst(d->code, fr), inst(d->type, 0)); continue; }   /* §7: a typed point is η-long at its type */
@@ -1065,6 +1067,13 @@ static Term whnf_(Term t) {
       }
       case T_APP: {
         Term f = whnf(HEAP[loc(t)]), x = HEAP[loc(t) + 1];
+        if (tag(f) == T_REF || tag(f) == T_APP) {           /* a declaration with no body at its arguments: the census at the point of demand */
+          Term args[64]; uint32_t n; Term h = spine(node2(T_APP, 0, f, x), args, &n);
+          if (tag(h) == T_REF && BOOK[loc(h)].unknown) {
+            int st; Term p = resolve_applied(h, args, n, &st);
+            if (st == 1) { receipt(R_DECLARE); t = p; continue; }
+            if (st == 0) return t;                            /* more arguments wanted: the partial application stands */
+            exit(2); } }
         switch (tag(f)) {
           case T_ERA: return f;
           case T_LAM: receipt(R_BETA); if (lam_drops(f)) receipt(R_ERASE); t = open_closure(f, x); continue;

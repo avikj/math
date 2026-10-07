@@ -37,3 +37,11 @@
 (def b/sort_at_A : (ctr Sig (ctr List (ctr Nat)) (lam B (ctr Sig (ctr Eql (ctr List (ctr Nat)) (app isort A) (app isort B)) (lam q (ctr Eql (ctr Bool) (app sorted B) (ctr True))))))
   = (ctr Pair (ref chart-move) (ctr Pair (ctr Refl) (ctr Refl))))
 (def b/sort_spec : (ctr Sig (ctr List (ctr Nat)) (lam B (ctr Sig (ctr Eql (ctr List (ctr Nat)) (app isort A) (app isort B)) (lam q (ctr Eql (ctr Bool) (app sorted B) (ctr True)))))))
+; MAP §0: the declaration is the program.  sort, with no body: at any A the runtime produces B from the book,
+; the proofs by refl at the point — the fibre's point read off the book by the type's shape (the census at the
+; point of demand), with isort and sorted in the book as data, no organ.
+(def sort : (ctr Pi (ctr List (ctr Nat)) (lam A (ctr Sig (ctr List (ctr Nat)) (lam B (ctr Sig (ctr Eql (ctr List (ctr Nat)) (app isort A) (app isort B)) (lam q (ctr Eql (ctr Bool) (app sorted B) (ctr True)))))))))
+(def A2 : (ctr List (ctr Nat))
+  = (ctr Cons two (ctr Cons three (ctr Cons one (ctr Cons (ctr Zer) (ctr Nil))))))
+(def sort-A  (app sort A))
+(def sort-A2 (app sort A2))

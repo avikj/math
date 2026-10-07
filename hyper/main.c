@@ -76,6 +76,7 @@ int main(int argc, char **argv) {
   const char *entry = argc > 3 ? argv[3] : (bend ? "b/main" : "main");
   int id = book_find(entry); if (id < 0) { fprintf(stderr, "hyper: no %s\n", entry); return 1; }
   Term r = run_def((uint32_t)id);
+  if (tag(r) == T_REF && BOOK[loc(r)].unknown) { resolve_declaration(loc(r)); return 2; }   /* a map declared with no body, unapplied: the census of its own type, said */
   if (bend) { collapse_print(r); par_drain(); fprintf(stderr, "- Itrs: %llu\n- Words: %u\n", (unsigned long long)ITRS, (unsigned)HEAP_LEN); if (getenv("HYPER_CENSUS")) print_census(); return 0; }
   print_term(r, 64); printf("\n");
   printf("- Itrs: %llu\n- Words: %u\n", (unsigned long long)ITRS, (unsigned)HEAP_LEN);

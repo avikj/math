@@ -170,6 +170,18 @@ them.
    solved for: no coordinate is split, nothing is unified, no output is narrowed. `b/sort_spec` declares the sort
    specification at `A` with no body and resolves through `b/sort_at_A` to `([1,2,3], (refl, refl))` in 174 interactions,
    the chart move's 173 and the one `declare`.
+   **The census at the point of demand** (`verify.c` `resolve_applied`, `census_point`; `cell.c` at `T_APP`) is §0's
+   test met in its runtime form: `sort : Π (A : List Nat). Σ B. (isort A ≡ isort B) × (sorted B ≡ True)` declared with no
+   body (`t/sort.hyper`), applied to a list, is a closed `Σ`, the fibre of the specification over that list, and its
+   point is read off the book by the type's shape: a `Σ (b : B). P` takes `b` from the book — an entry of type `B`,
+   or a book map into `B` at an argument of its domain (`isort`, in the book as data) — and `P[b]` by the same census,
+   an `Eql u v` being `refl` when `u` and `v` convert: at a closed point the proof is the computation (§8.6). Points are
+   counted up to conversion, three-valued as before. `sort A2` for `A2 = [2,3,1,0]` is `([0,1,2,3], (refl, refl))` in
+   750 interactions, the candidates tried and refused included — that trying is the computation and is counted; the
+   type comparisons that find the book's entries are not events. A map declared with no body and no entry of its own
+   type waits for its arguments; a base result type is no specification and is refused. What is not here: the generic
+   proof (`sort` checks as a coordinate of its type; the proof at every `A` is a theorem for the book, as is `sortCost`,
+   which the same census serves the moment its identity is an entry).
 6. **The Bend dialect's grammar as a book with its certificate, and parallel demand over the one arena. Written.**
    *The dialect.* `bend.hyper`'s rows are the book; its certificate is the checker: `transp`, `isProp-ty` and
    `qresp-ty` carry their types and check under `HYPER_CHECK_ALL`, and the recursor rows `srec`, `trec`, `qrec` are typed
