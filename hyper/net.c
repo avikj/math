@@ -95,6 +95,8 @@ typedef struct {
 #define BJ0 43  // Bj0(n): quoted dup-bound variable (side 0, de Bruijn level)
 #define BJ1 44  // Bj1(n): quoted dup-bound variable (side 1, de Bruijn level)
 #define FRS 46  // Frs: a fresh number — the name of a new coordinate (hyper: dim)
+#define FA0 47  // Fa0(x) on coordinate L (ext): the face of x at L = 0 — restriction at every depth (hyper: a side is a face)
+#define FA1 48  // Fa1(x): the face at L = 1
 #define COL 45  // Col(x): the collapse of x as a value — the list of its leaves, multiplicity conserved (hyper: §6, the fibre is data)
 
 // LAM Ext Flags
@@ -182,14 +184,15 @@ typedef struct __attribute__((aligned(256))) {
 static WnfBank WNF_BANK = {0};
 static u64 ITRS = 0;
 
-static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM" };
+static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL" };
 #define SAT_NRULES ((int)(sizeof(SAT_NAMES) / sizeof(SAT_NAMES[0])))
 static u64 SAT_COUNTS[128] = {0};
+static u64 SCHED_FLIPS = 0;
 static u64 SAT_BUDGET = 5000000;
 static u64 SAT_HEAP_BUDGET = 32000000;
 static void sat_report(void) {
-  fprintf(stderr, "SAT_PROFILE {\"interactions\":%llu,\"heap_nodes\":%llu,\"rules\":{",
-    (unsigned long long)ITRS, (unsigned long long)(HEAP_NEXT - 1));
+  fprintf(stderr, "SAT_PROFILE {\"interactions\":%llu,\"heap_nodes\":%llu,\"schedule_flips\":%llu,\"rules\":{",
+    (unsigned long long)ITRS, (unsigned long long)(HEAP_NEXT - 1), (unsigned long long)SCHED_FLIPS);
   for (int i = 0; i < SAT_NRULES; ++i) {
     fprintf(stderr, "%s\"%s\":%llu", i ? "," : "", SAT_NAMES[i], (unsigned long long)SAT_COUNTS[i]);
   }
@@ -229,7 +232,8 @@ static int ITRS_ENABLED = 1;
   } while (0)
 static u32 FRESH = 1;
 static u32 FRESH_COORD = 1 << 20;                /* run-time coordinates start above every static label */
-static int BOOK_LABELS = 0;                      /* -L: HVM4 verbatim, a binder's label static per binder (the SAT receipts were recorded so) */
+static int BOOK_LABELS = 0;
+static u64 SCHED_SEED = 0;                       /* -R n: the normaliser visits a node's fields in a seeded random order (a second schedule; 5.11/5.13: the ledger must not move) */                      /* -L: HVM4 verbatim, a binder's label static per binder (the SAT receipts were recorded so) */
 
 static int DEBUG          = 0;
 static int SILENT         = 0;
@@ -354,6 +358,8 @@ static const u8 TERM_ARITY[TAG_MASK + 1] = {
   [BJ1] = 0,
   [COL] = 1,
   [FRS] = 0,
+  [FA0] = 1,
+  [FA1] = 1,
 };
 
 fn u32 term_arity(Term t) {
@@ -642,6 +648,12 @@ fn Term term_new_inc(Term x) {
 
 // COL: %x - the collapse of x as a value
 // fields = [x]
+fn Term term_new_fac(u8 side, u32 lab, Term x) {
+  u64 loc = heap_alloc(1);
+  heap_set(loc, x);
+  return term_new(0, side ? FA1 : FA0, lab, loc);
+}
+
 fn Term term_new_col(Term x) {
   u64 loc = heap_alloc(1);
   heap_set(loc, x);
@@ -1762,6 +1774,15 @@ fn void print_term_go(FILE *f, Term term, u32 depth, PrintState *st) {
     case COL: {
       u64 loc = term_val(term);
       fputs("%", f);
+      print_term_at(f, HEAP[loc], depth, st);
+      break;
+    }
+    case FA0:
+    case FA1: {
+      u64 loc = term_val(term);
+      fputs(term_tag(term) == FA0 ? "|0" : "|1", f);
+      print_name(f, term_ext(term));
+      fputc(' ', f);
       print_term_at(f, HEAP[loc], depth, st);
       break;
     }
@@ -3582,6 +3603,13 @@ fn Term parse_term_atom(PState *s, u32 depth) {
     return parse_term_lam(s, depth);
   } else if (parse_match(s, "%")) {
     return parse_term_col(s, depth);
+  } else if (parse_peek(s) == '|' && (parse_peek_at(s, 1) == '0' || parse_peek_at(s, 1) == '1')) {
+    parse_advance(s);
+    u8  side = parse_peek(s) == '1';
+    parse_advance(s);
+    u32 lab  = parse_name_num(s);
+    Term x   = parse_term_atom(s, depth);
+    return term_new_fac(side, lab, x);
   } else if (parse_match(s, "?")) {
     return term_new(0, FRS, 0, 0);
   } else if (parse_match(s, "!")) {
@@ -4128,7 +4156,10 @@ fn Term wnf_alo_dup(u64 alo_loc, u64 ls_loc, u16 len, Term book) {
   Term alo_v = term_new_alo_at(alo_loc, ls_loc, len, book_loc + 0);
   heap_set(bind_ent + 0, alo_v);
   heap_set(bind_ent + 1, term_new(0, NUM, 0, ls_loc));
-  if (!BOOK_LABELS) heap_set(bind_ent + 2, term_new(0, NUM, 0, fresh_label()));
+  if (!BOOK_LABELS) {                                      /* an auto-dup (λ&x, ! &x) is a new coordinate per instantiation; a named one (! &I{a,b}) is the coordinate I */
+    u32 blab = term_ext(book);
+    heap_set(bind_ent + 2, term_new(0, NUM, 0, blab >= 0x800000u ? fresh_label() : blab));
+  }
   return term_new_alo(bind_ent, len + 1, book_loc + 1);
 }
 
@@ -4790,7 +4821,9 @@ __attribute__((cold, noinline)) static Term wnf_rebuild(Term cur, Term *stack, u
       case OR:
       case DSU:
       case DDU:
-      case COL: {
+      case COL:
+      case FA0:
+      case FA1: {
         u64 loc = term_val(frame);
         heap_set(loc + 0, cur);
         cur = frame;
@@ -4977,7 +5010,9 @@ __attribute__((hot)) fn Term wnf(Term term) {
           case OR:
           case DSU:
           case DDU:
-          case COL: {
+          case COL:
+          case FA0:
+          case FA1: {
             next = wnf_alo_nod(alo_loc, ls_loc, len, book);
             goto enter;
           }
@@ -5017,7 +5052,9 @@ __attribute__((hot)) fn Term wnf(Term term) {
         goto enter;
       }
 
-      case COL: {
+      case COL:
+      case FA0:
+      case FA1: {
         u64  loc = term_val(next);
         Term x   = heap_read(loc + 0);
         stack[s_pos++] = next;
@@ -5220,6 +5257,63 @@ __attribute__((hot)) fn Term wnf(Term term) {
             default: {
               next = wnf_use_val(use, whnf);
               goto enter;
+            }
+          }
+        }
+
+        // -----------------------------------------------------------------------
+        // FA0/FA1 frame: (|sL □) — the face of the value at coordinate L = s, at every depth
+        // -----------------------------------------------------------------------
+        case FA0:
+        case FA1: {
+          u8  side = term_tag(frame) == FA1;
+          u32 lab  = term_ext(frame);
+          switch (term_tag(whnf)) {
+            case SUP: {
+              u32 sl   = term_ext(whnf);
+              u64 sloc = term_val(whnf);
+              if (sl == lab) {                                   /* the coordinate itself: take the side, keep restricting */
+                ITRS_INC("FAC-SUP-SAME");
+                next = term_new_fac(side, lab, heap_read(sloc + side));
+                goto enter;
+              }
+              ITRS_INC("FAC-SUP-DIFF");                          /* another coordinate: the face of each of its sides */
+              whnf = term_new_sup(sl, term_new_fac(side, lab, heap_read(sloc + 0)), term_new_fac(side, lab, heap_read(sloc + 1)));
+              continue;
+            }
+            case LAM: {
+              ITRS_INC("FAC-LAM");
+              u64  lam_loc = term_val(whnf);
+              u32  lam_ext = term_ext(whnf);
+              Term bod     = heap_read(lam_loc);
+              u64  n       = heap_alloc(1);
+              heap_set(n, term_new_fac(side, lab, bod));
+              if (!(lam_ext & LAM_ERA_MASK)) heap_subst_var(lam_loc, term_new(0, VAR, 0, n));
+              whnf = term_new(0, LAM, lam_ext, n);
+              continue;
+            }
+            case INC: {
+              whnf = term_new_inc(term_new_fac(side, lab, heap_read(term_val(whnf))));
+              continue;
+            }
+            case C00 ... C16: {
+              ITRS_INC("FAC-NOD");
+              u32 ari = term_arity(whnf);
+              u64 src = term_val(whnf);
+              if (ari == 0) { continue; }
+              u64 dst = heap_alloc(ari);
+              for (u32 i = 0; i < ari; i++) heap_set(dst + i, term_new_fac(side, lab, heap_read(src + i)));
+              whnf = term_new(0, term_tag(whnf), term_ext(whnf), dst);
+              continue;
+            }
+            case NUM: case ERA: case NAM: case BJV: case BJ0: case BJ1: case REF: {
+              ITRS_INC("FAC-VAL");
+              continue;
+            }
+            default: {                                           /* stuck under the face: keep the agent on it */
+              heap_set(term_val(frame), whnf);
+              whnf = frame;
+              continue;
             }
           }
         }
@@ -6016,6 +6110,8 @@ fn Term cnf_at(Term term, u32 depth) {
     case OR:
     case UNS:
     case COL:
+    case FA0:
+    case FA1:
     case C01 ... C16: {
       u32 ari = term_arity(term);
       u64 loc = term_val(term);
@@ -6156,10 +6252,23 @@ fn void eval_normalize_go(Uset *seen, EvalNormalizeStack *stack, u64 loc) {
       return;
     }
 
-    for (u32 i = ari; i > 1; i--) {
-      eval_normalize_stack_push(stack, tloc + (i - 1));
+    if (SCHED_SEED == 0) {
+      for (u32 i = ari; i > 1; i--) {
+        eval_normalize_stack_push(stack, tloc + (i - 1));
+      }
+      loc = tloc;
+    } else {
+      u32 order[16]; for (u32 i = 0; i < ari; i++) order[i] = i;
+      for (u32 i = ari - 1; i > 0; i--) {
+        SCHED_SEED = SCHED_SEED * 6364136223846793005ULL + 1442695040888963407ULL;
+        u32 j = (u32)((SCHED_SEED >> 33) % (i + 1)); u32 t = order[i]; order[i] = order[j]; order[j] = t;
+      }
+      for (u32 i = ari; i > 1; i--) {
+        eval_normalize_stack_push(stack, tloc + order[i - 1]);
+      }
+      loc = tloc + order[0];
+      SCHED_FLIPS += (order[0] != 0);
     }
-    loc = tloc;
   }
 }
 
@@ -6466,6 +6575,7 @@ fn void cli_print_help(const char *argv0) {
 
   fprintf(stdout, "Options:\n");
   cli_print_help_opt("-s", "--stats",        "Show statistics after evaluation");
+  cli_print_help_opt("-R n", "--schedule n",  "Normalise with a seeded random field order (a second schedule of the same term)");
   cli_print_help_opt("-L", "--book-labels",  "A duplication binder keeps the book's static label (HVM4 verbatim); default: fresh per instantiation");
   cli_print_help_opt("-S", "--silent",       "Suppress result output");
   cli_print_help_opt("-C", "--collapse[=N]", "Collapse superpositions (limit N)");
@@ -6499,6 +6609,8 @@ fn CliOpts parse_opts(int argc, char **argv) {
       opts.version = 1;
     } else if (strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--stats") == 0) {
       opts.stats = 1;
+    } else if ((strcmp(argv[i], "-R") == 0 || strcmp(argv[i], "--schedule") == 0) && i + 1 < argc) {
+      SCHED_SEED = strtoull(argv[++i], NULL, 10);
     } else if (strcmp(argv[i], "-L") == 0 || strcmp(argv[i], "--book-labels") == 0) {
       BOOK_LABELS = 1;
     } else if (strcmp(argv[i], "-S") == 0 || strcmp(argv[i], "--silent") == 0) {

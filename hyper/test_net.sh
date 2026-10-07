@@ -58,6 +58,19 @@ c=$(./hyper net n/sort9.hvm4 -s 2>&1 | grep -oE '"OP2-NUM-NUM":[0-9]+' | sed 's/
 # an enumeration as a type (n/judgeenum.hvm4): the type, a symbol against it (and one not in it), a match with every
 # symbol covered (and one without), and the match evaluated
 pin judgeenum '#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{#Suc{#Zer{}},#Nil{}}}}}}}' 1627
+# index 0.3 / 0.4 / 0.7 / 0.8 / 0.11 on the net (n/interval.hvm4): a path is &I{a,b}, a face is |0I / |1I, the interval's
+# operations are reparametrisations of a cube; all sixteen laws of 0.3 hold as vertex equality; the contraction of the
+# one fact reads (x, refl) at i=0 and (y, p) at i=1
+pin interval '#Pair{[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],#Pair{#Pair{#A{},#A{}},#Pair{#B{},&J{#A{},#B{}}}}}' 2778
+# index 6.1–6.3 / 9.11 on the net (n/numeral.hvm4): Bool is one coordinate, a numeral is its bits, the type of k-bit
+# numerals is the k-cube; addition place by place with carries, comparison from the top as a cut; 3+5, the 2-cube + 3
+# as a fibre, 3 <= 5, and <= on the 2-cube read by %
+pin numeral '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}},#Pair{#Cons{#S{#S{#S{#Z{}}}},#Cons{#S{#S{#S{#S{#S{#Z{}}}}}},#Cons{#S{#S{#S{#S{#Z{}}}}},#Cons{#S{#S{#S{#S{#S{#S{#Z{}}}}}}},#Nil{}}}}},#Pair{#T{},#Cons{#T{},#Cons{#T{},#Cons{#T{},#Nil{}}}}}}}' 870
+# index 5.11 / 5.13 / 5.24 on net.c (n/diamond.hvm4): one term, eight normaliser schedules (-R), one ledger; the
+# seeded order is confirmed to differ (schedule_flips > 0) and the interaction count does not move
+d0=$(./hyper net n/diamond.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); dok=1
+for R in 1 2 3 5 8 13 21; do o=$(./hyper net n/diamond.hvm4 -s -R $R 2>&1); di=$(echo "$o" | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); fl=$(echo "$o" | grep -oE '"schedule_flips":[0-9]+' | sed 's/.*://'); [ "$di" = "$d0" ] && [ "$fl" != 0 ] || { dok=0; echo "FAIL diamond R=$R: $di flips=$fl want $d0"; }; done
+[ "$d0" = 3053 ] || { dok=0; echo "FAIL diamond: $d0 want 3053"; }; if [ $dok = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); fi
 # the SAT fibre receipts, exactly as recorded (research/sat_fibre) under -L, the labels HVM4 gave them; the readback path is untouched
 if [ -z "$SKIP_SATCHECK" ]; then r=$(cd .. && python3 hyper/satcheck.py ./hyper/hyper net -L 2>&1 | tail -1); case "$r" in "satcheck pass=282 fail=0") pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL satcheck: $r";; esac; fi
 echo "pass=$pass fail=$fail"; [ "$fail" = 0 ]

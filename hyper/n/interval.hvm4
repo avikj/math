@@ -1,0 +1,57 @@
+// index 0.3 / 0.4 / 0.7 / 0.8 / 0.11 on the net, with nothing added to it.
+// A path is a map out of a coordinate (0.4): &I{a, b} is p with p 0 = a, p 1 = b.  A face is the restriction
+// |0I / |1I (a side of the cube, at every depth).  The interval's operations (0.3) act by reparametrising a cube:
+//   i := 0, 1      |0I c, |1I c
+//   i := j         &J{|0I c, |1I c}                 (rename)
+//   i := ~i        &I{|1I c, |0I c}                 (0.7: reversal swaps the faces)
+//   i := i ∧ j     &I{|0I c, &J{|0I c, |1I c}}      (0.8: ∧ cuts a path off at a point)
+//   i := i ∨ j     &I{&J{|0I c, |1I c}, |1I c}      (2.4: ∨ closes a square from two of its sides)
+// Two cubes are the same cube when every vertex agrees; the laws of 0.3 are checked that way below.
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@p = &I{#A, #B}
+@renJ = λ&c. &J{|0I c, |1I c}
+@renK = λ&c. &K{|0I c, |1I c}
+@negI = λ&c. &I{|1I c, |0I c}
+@negJ = λ&c. &J{|1J c, |0J c}
+@andIJ = λ&c. &I{|0I c, &J{|0I c, |1I c}}
+@orIJ  = λ&c. &I{&J{|0I c, |1I c}, |1I c}
+@andJK = λ&c. &J{|0J c, &K{|0J c, |1J c}}
+@orJK  = λ&c. &J{&K{|0J c, |1J c}, |1J c}
+@andIK = λ&c. &I{|0I c, &K{|0I c, |1I c}}
+@orIK  = λ&c. &I{&K{|0I c, |1I c}, |1I c}
+// the eight vertices of a cube on I, J, K
+@verts = λ&c. [|0I |0J |0K c, |0I |0J |1K c, |0I |1J |0K c, |0I |1J |1K c, |1I |0J |0K c, |1I |0J |1K c, |1I |1J |0K c, |1I |1J |1K c]
+@same = λ&c. λ&d. (@verts(c) === @verts(d))
+// 0.3, each law as two reparametrisations of the one path p:
+@laws = [
+  // ∧ idempotent: p(i∧i) = p(i).  i := i∧j then j := i (rename J back onto I: the same coordinate, correlated)
+  @same(&I{|0I @p, &I{|0I @p, |1I @p}}, @p),
+  // ∨ idempotent
+  @same(&I{&I{|0I @p, |1I @p}, |1I @p}, @p),
+  // ∧ commutative: p(i∧j) = p(j∧i), the second being i := j∧i, &J{|0I c, &I{|0I c, |1I c}}
+  @same(@andIJ(@p), &J{|0I @p, &I{|0I @p, |1I @p}}),
+  // ∨ commutative: i := j∨i is &J{&I{|0I c, |1I c}, |1I c}
+  @same(@orIJ(@p), &J{&I{|0I @p, |1I @p}, |1I @p}),
+  // ∧ associative: p((i∧j)∧k) = p(i∧(j∧k))
+  @same(@andIK(@andIJ(@p)), @andIJ(@andIK(@p))),
+  // ∨ associative
+  @same(@orIK(@orIJ(@p)), @orIJ(@orIK(@p))),
+  // absorption: p(i ∧ (i ∨ j)) = p(i):  i := i∨j applied inside i := i∧(·)
+  @same(&I{|0I @p, @orIJ(@p)}, @p),
+  @same(&I{@andIJ(@p), |1I @p}, @p),
+  // distributivity: p(i ∧ (j ∨ k)) = p((i∧j) ∨ (i∧k))
+  @same(&I{|0I @p, @orJK(@renJ(@p))}, &I{|0I @p, &J{&K{|0I @p, |1I @p}, |1I @p}}),
+  // units: p(i ∨ 0) = p(i), p(i ∧ 1) = p(i)
+  @same(&I{|0I @p, |1I @p}, @p),
+  // ~0 = 1, ~1 = 0: the faces of the reversed path
+  (|0I @negI(@p) === |1I @p), (|1I @negI(@p) === |0I @p),
+  // ~~x = x
+  @same(@negI(@negI(@p)), @p),
+  // De Morgan: p(~(i∧j)) = p(~i ∨ ~j)
+  @same(@negI(@negJ(@andIJ(@p))), @orIJ(@negI(@p))),
+  // 0.7: transport along the constant line moves nothing; the reversed path runs the other way
+  @same(&I{#A, #A}, |0I &I{#A, &J{#A, #A}}), (|0I @negI(@p) === #B)]
+// 0.8, the one fact: the contraction λ (y, p) i → (p i, λ j → p (i ∧ j)) is the square #Pair{p, p(i∧j)};
+// at i = 0 it is (x, refl), at i = 1 it is (y, p)
+@contraction = #Pair{@p, @andIJ(@p)}
+@main = #Pair{@laws, #Pair{|0I @contraction, |1I @contraction}}

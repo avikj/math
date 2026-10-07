@@ -1,0 +1,27 @@
+// index 6.1–6.3 and 9.11 on the net, no primitive number anywhere.
+// Bool is one coordinate: &(?){#F, #T}.  A k-bit numeral is k bits, least place first; the type of k-bit numerals is
+// the k-cube, one fresh coordinate per place (9.11: place value is a log n-dimensional cube; a tally is a line).
+// Addition is disjoint union done place by place, carrying what overflows a place (6.3).  A comparison reads places
+// from the top and stops at the first that differs: it is a cut (9.3), and what it costs is the places read (5.16).
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@cube = λ{#Z: #Nil; #S: λ&k. #Cons{&(?){#F, #T}, @cube(k)}}
+// full adder on one place: (sum, carry)
+@fa = λ{#F: λ{#F: λ&c. #Pair{c, #F}; #T: λ{#F: #Pair{#T, #F}; #T: #Pair{#F, #T}}};
+       #T: λ{#F: λ{#F: #Pair{#T, #F}; #T: #Pair{#F, #T}}; #T: λ{#F: #Pair{#F, #T}; #T: #Pair{#T, #T}}}}
+@addc = λ&c. λ{#Nil: λ&y. (λ{#F: y; #T: @inc(y)})(c); #Cons: λ&a. λ&as. λ{#Nil: @addc(c, #Cons{a, as}, #Nil);
+         #Cons: λ&b. λ&bs. (λ{#Pair: λ&s. λ&c2. #Cons{s, @addc(c2, as, bs)}})(@fa(a, b, c))}}
+@inc = λ{#Nil: #Cons{#T, #Nil}; #Cons: λ{#F: λ&t. #Cons{#T, t}; #T: λ&t. #Cons{#F, @inc(t)}}}
+@add = @addc(#F)
+// x <= y, places read from the top: the tails decide unless they are equal, then the head
+@le = λ{#Nil: λ&y. #T; #Cons: λ&a. λ&as. λ{#Nil: #F; #Cons: λ&b. λ&bs. (λ{#Lt: #T; #Gt: #F; #Eq: @leBit(a, b)})(@cmp(as, bs))}}
+@cmp = λ{#Nil: λ&y. (λ{#T: #Lt; #F: #Eq})(@any1(y)); #Cons: λ&a. λ&as. λ{#Nil: (λ{#T: #Gt; #F: #Eq})(@any1(#Cons{a, as})); #Cons: λ&b. λ&bs. (λ{#Eq: @cmpBit(a, b); λ&r. r})(@cmp(as, bs))}}
+@any1 = λ{#Nil: #F; #Cons: λ{#T: λ&t. #T; #F: λ&t. @any1(t)}}
+@cmpBit = λ{#F: λ{#F: #Eq; #T: #Lt}; #T: λ{#F: #Gt; #T: #Eq}}
+@leBit = λ{#F: λ&b. #T; #T: λ{#F: #F; #T: #T}}
+// readback, for the pins only: a numeral as a tally (6.1's unary class), so the printed answer carries no primitive
+@tally = λ{#Nil: #Z; #Cons: λ{#F: λ&t. @dbl(@tally(t)); #T: λ&t. #S{@dbl(@tally(t))}}}
+@dbl = λ{#Z: #Z; #S: λ&n. #S{#S{@dbl(n)}}}
+@three = #Cons{#T, #Cons{#T, #Nil}}
+@five  = #Cons{#T, #Cons{#F, #Cons{#T, #Nil}}}
+// the 2-cube of numerals, added to itself place by place: the fibre of + over the cube, read by %
+@main = #Pair{@tally(@add(@three, @five)), #Pair{%(@tally(@add(@cube(#S{#S{#Z}}), @three))), #Pair{@le(@three, @five), %(@le(@cube(#S{#S{#Z}}), @three))}}}
