@@ -505,3 +505,16 @@ AA. ATTEMPT 2 — STEPS (cell.c).  Z's book cost 632,000 interactions at
    alternatives are k cells; reading to the middle is k steps.  Not the
    essay's n log n.  pass=157.  Debug knob kept: HYPER_CMP prints each
    literal comparison.
+
+AB. ATTEMPT 3 — THE ARRANGEMENT CENSUS (t/order.hyper; verify.c
+   arrangement_point, cell.c arrange_sigma).  The owner's derivation: the
+   output is an index assignment; a comparison between the minima of two
+   components assigns the next index; merge is that comparison repeated;
+   the index set has binary structure (n! = C(n,n/2)·(n/2)!²), so split by
+   halves and compose by heads — succession (my `ins`) was the wrong
+   decomposition, k touches per log k bits.  Now: sort typed, bodyless,
+   certified by the checker; the kernel reads the Σ's shape (perm A B ≡
+   True, Q B ≡ True), splits A by halves, composes with Q on pairs.  n=128
+   shuffle: 670 comparisons (merge bound 769, log2 128! = 716), 10,279
+   interactions (13·n·lg n).  perm by construction, Q run once as the
+   certificate.  pass=190.

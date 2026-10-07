@@ -182,44 +182,41 @@ them.
    type waits for its arguments; a base result type is no specification and is refused. What is not here: the generic
    proof (`sort` checks as a coordinate of its type; the proof at every `A` is a theorem for the book, as is `sortCost`,
    which the same census serves the moment its identity is an entry).
-   **§0 with no map in the book** (`t/mapless.hyper`): the construction's own mechanism for a specification over a
-   finite domain (§8, §5.24). `B` ranges over the arrangements of `A`'s elements, built as one superposed line — the
-   permutation set written as insertions (`ins`: an element at every place of a list, each place its own name;
-   `perms`: every element so placed) — and the specification runs on that line: `sorted`, its own word, with `keep`
-   holding the line to it as the arrangement is built (sound because a sorted list has sorted prefixes: a dead prefix
-   has no live extension); the leaves that survive are the fibre's points. No sorting algorithm is in the book.
-   What a comparison tells the machine is kept (`cell.c`, retained comparisons): a comparison of two literals is one
-   `op2` interaction whose order fact is kept with its transitive closure; across every world of the line the same
-   pair is compared once, and a pair the kept facts already order is answered from them — a `recall` receipt, not a
-   comparison. The leaves are read by bisection over each line's alternatives (`collapse_leaves`): the middle
-   alternative first, so that what its comparisons kept decides the alternatives on one side without comparing.
-   Measured (`HYPER_CENSUS`, `op2` is exactly the comparisons; the lists are literals, nothing else compares):
+   **§0, the declaration is the program** (`t/order.hyper`). Over the numeric kind, a comparison is one `op2`
+   interaction and the ledger counts exactly the comparisons. The book holds the specification's vocabulary and
+   nothing else: `leq` (the machine's comparison), `sorted`, `perm`, and lists. `sort` has a type and no body,
+   `Π A. Σ B. (perm A B ≡ True) × (sorted B ≡ True)`, and the checker certifies it (`✓ sort : the arrangement
+   census at every argument`). Its point is an assignment of indices to A's elements, and the kernel resolves it
+   as such (`verify.c` `arrangement_point`, `cell.c` `arrange_sigma`): the index set has the binary structure of
+   the naturals, so the carrier is split by halves — a hypercube of log n dimensions, not the list's succession —
+   each half is the same declaration, and two resolved halves compose by the one comparison the specification
+   leaves open, which of their two heads takes the next index. That comparison is `sorted` on the two-element
+   list: the specification merging singletons is the base comparison, and every comparison made assigns an
+   index (`compose` receipts, n⌈lg n⌉ of them). Nothing is written for sorting. `perm A B` holds by construction
+   (B is A's own cells rearranged); `sorted B` is run once on the result as its certificate; the point is
+   `(B, (refl, refl))`. Measured (`HYPER_CENSUS`):
 
-   | n  | ascending | descending | shuffle (7i+3 mod n) | ⌈log₂ n!⌉ | n⌈lg n⌉ | interactions (asc / desc / shuffle) |
-   |----|-----------|------------|----------------------|-----------|---------|-------------------------------------|
-   | 8  | 17        | 7          | 16                   | 16        | 24      | 879 / 984 / 924                     |
-   | 16 | 47        | 15         | 54                   | 45        | 64      | 3,603 / 4,128 / 3,873               |
-   | 32 | 121       | 31         | 136                  | 118       | 160     | 14,619 / 16,944 / 15,804            |
+   | n   | comparisons asc / desc / shuffle | n⌈lg n⌉ − 2^⌈lg n⌉ + 1 | ⌈log₂ n!⌉ | interactions asc / desc / shuffle |
+   |-----|----------------------------------|------------------------|-----------|-----------------------------------|
+   | 8   | 12 / 12 / 12                     | 17                     | 16        | 259 / 211 / 227                   |
+   | 16  | 32 / 32 / 47                     | 49                     | 45        | 643 / 515 / 757                   |
+   | 32  | 80 / 80 / 124                    | 129                    | 118       | 1,539 / 1,219 / 1,923             |
+   | 64  | 192 / 192 / 293                  | 321                    | 296       | 3,587 / 2,819 / 4,509             |
+   | 128 | 448 / 448 / 670                  | 769                    | 716       | 8,195 / 6,403 / 10,279            |
 
-   Every comparison count is within n⌈lg n⌉; the ascending case sits one above the information bound at n = 8 and
-   three above it at n = 32. The interactions in all are quadratic, about 15·n²: at every level the chain of k
-   alternatives is read whole (k cells exist, each is met once) and the one that survives is kept. What the
-   kernel does so that nothing is derived twice, each a rule of `cell.c`: the face map is the identity on a cell
-   holding nothing of its name (a closed constructor tree, a closure, a superposition at other names) and shares
-   it instead of copying; a variable read through several world restrictions is one face carrying the set,
-   taken in one walk; an application of a closure cell to a closed cell is derived once and recalled; a
-   superposition with an erased side is its other side wherever a rule meets it; and a match with `era` in a
-   branch — one that can kill a world — reads the chain of alternatives it meets whole and runs on each in
-   bisection order, keeping only the survivors, instead of commuting over the superposition and leaving every
-   world, dead or alive, for each later match to commute over again. Before those rules the same book cost
-   632,000 interactions at n = 32 descending (cubic: the faces re-copied the chain at every level and every
-   level's matches commuted over every earlier level's worlds). What remains quadratic is the list itself: a
-   chain of k alternatives is k cells, and reading it to its middle is k steps; fewer would need the
-   alternatives held as a balanced tree, a representation the declaration does not name. `sort [3,1,2]` is one
-   leaf, `[1,2,3]`, in 124 interactions and 2 comparisons; `sort [2,3,1,0]` is `[0,1,2,3]` in 228 and 5. An
-   earlier form of this book drew `B` from all lists over `A`'s elements and ran the specification on each
-   whole list — every comparison re-made in every world, exponential (3430 and 30449 interactions for the
-   same two lists); that was the erasure of what comparisons had told the machine, not a cost of sorting.
+   The comparisons are within merge sort's bound at every n, and the interactions are within 13·n⌈lg n⌉: log n
+   layers of composition, linear work in each. The loss against ⌈log₂ n!⌉ is exact and known: a head comparison
+   between components of sizes n and m splits the outcomes n:m, which is 1:1 only while the two are equal, so the
+   tail of each composition leaks; composing the two smallest components keeps that loss to O(n) in all.
+   **The record of the two decompositions that failed** (`t/mapless.hyper`, kept as it was measured): the same
+   specification over a line of arrangements built by *insertion* — the successor decomposition 1+(1+(1+…)) of
+   the index set, n dependent layers — costs quadratic interactions with the kernel's sharing rules and cubic
+   without them, and before those rules the comparisons themselves were re-made in every world, exponential.
+   Inserting into a chain of length k extracts log k bits for k touches; composing two halves extracts one bit
+   and one index per touch. The rules of `cell.c` that remove re-derivation (a face is the identity on a cell
+   holding nothing of its name; a variable read through several restrictions is one face carrying the set; an
+   application of a closure to a closed cell is derived once; a superposition with an erased side is its other
+   side; an erasing match decides the worlds it meets, in bisection order) stand and are measured there.
    **`sortCost`, produced by the machine** (`t/mapless.hyper`): over a finite element type (`{0,1}`) the greatest cost
    exists and the same mechanism finds it — the domain of all lists of length `n` is one superposed line, its leaves
    are the points, each point's cost is the length of its own trace

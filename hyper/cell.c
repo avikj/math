@@ -536,6 +536,44 @@ static Term resolve_erasing(Term cs, Term sup) {
   else { out = 0; for (int i = k; i-- > 0;) { if (tag(res[i]) == T_ERA) continue; out = out ? node3(T_SUP, 0, nms[i], res[i], out) : res[i]; } }
   free(alts); free(nms); free(res); free(order); return out;
 }
+
+/* ---- the arrangement census: a Σ over the arrangements of A under a predicate --------------------
+   The point of Σ B. perm A B × Q B is an assignment of indices to A's elements.  The index set has the binary
+   structure of the naturals, so the carrier is split by halves (a hypercube of log n dimensions), each half is
+   the same declaration, and two resolved halves compose by the one comparison the specification leaves open:
+   which of their two heads takes the next index.  That comparison is Q on the two-element list — Q merging
+   singletons is the base comparison — and every comparison made assigns an index.  Nothing is written for
+   sorting: Q is the book's own predicate, consulted on pairs.  perm A B holds by construction (B is A's own
+   cells rearranged); Q B is run once on the result as its certificate. */
+static Term arr_q;
+static bool before(Term x, Term y) {                     /* Q [x, y]: x takes the index before y */
+  Term l = cons_cell(x, cons_cell(y, nil_cell()));
+  Term r = whnf(app2(arr_q, l)); return tag(r) == T_CTR && ctr_id(r) == C_TRUE;
+}
+static void compose(Term *xs, int n, Term *ys, int m, Term *out) {   /* two resolved halves into one, by heads */
+  int i = 0, j = 0, k = 0;
+  while (i < n && j < m) { receipt(R_COMPOSE); if (before(xs[i], ys[j])) out[k++] = xs[i++]; else out[k++] = ys[j++]; }
+  while (i < n) { receipt(R_COMPOSE); out[k++] = xs[i++]; }
+  while (j < m) { receipt(R_COMPOSE); out[k++] = ys[j++]; }
+}
+static void arrange_rec(Term *a, int lo, int hi, Term *out) {       /* the hypercube: halves, then the composition */
+  int n = hi - lo; if (n <= 1) { if (n == 1) out[0] = a[lo]; return; }
+  int m = lo + n / 2; Term *l = malloc((m - lo) * sizeof(Term)), *r = malloc((hi - m) * sizeof(Term));
+  arrange_rec(a, lo, m, l); arrange_rec(a, m, hi, r); compose(l, m - lo, r, hi - m, out); free(l); free(r);
+}
+Term arrange_sigma(Term P, Term Q, Term A, int *why) {
+  Term els[1 << 16]; int n = 0; *why = 0;
+  for (Term l = whnf(A); ; l = whnf(HEAP[loc(l)+1])) {
+    if (tag(l) == T_CTR && ctr_id(l) == C_NIL) break;
+    if (!(tag(l) == T_CTR && ctr_id(l) == C_CONS) || n >= (1 << 16)) { *why = 1; return 0; }   /* not a finite list */
+    els[n++] = HEAP[loc(l)];
+  }
+  Term *out = malloc((n ? n : 1) * sizeof(Term)); arr_q = Q; arrange_rec(els, 0, n, out);
+  Term B = nil_cell(); for (int i = n; i-- > 0;) B = cons_cell(out[i], B); free(out);
+  Term q = whnf(app2(Q, B)); if (!(tag(q) == T_CTR && ctr_id(q) == C_TRUE)) { *why = 2; return 0; }   /* Q is not an order: no point this way */
+  Term refl = mk(T_CTR, ctr_ext(C_REFL, 0), alloc(1));
+  return node2(T_CTR, ctr_ext(C_PAIR, 2), B, node2(T_CTR, ctr_ext(C_PAIR, 2), refl, refl));
+}
 /* ---- a face carrying a set of choices ----------------------------------
    A variable read through several world restrictions is one face carrying them all (frame_lookup), and the
    face passes through a value in one walk: a superposition at a name in the set is its side, a cell holding
@@ -1662,7 +1700,7 @@ void print_term(Term t, int depth) { force_fields(t, depth); par_drain(); print_
    by rule (AdiBija: every analyzer is a fold over the trace). Definitional unfolding and the face map's
    sharing are shown apart, as the receipts name them. */
 const char *RULE_NAME[R_COUNT] = { "", "beta", "appSup", "app-plm", "dupSupEqual", "dupSupDifferent", "dupLamUsed", "dupLamErased", "dupNode",
-    "fce-share", "case", "appMatSup", "op2", "op2-sup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "op1", "pout", "declare", "recall" };
+    "fce-share", "case", "appMatSup", "op2", "op2-sup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "op1", "pout", "declare", "recall", "compose" };
 void print_trace(uint64_t from) {           /* the derivation as data: each step a rule at a node */
   for (uint64_t i = from; i < TRACE_LEN; i++) printf("%s%s@%u", i > from ? " " : "", RULE_NAME[TRACE[i]], TRACE_NODE[i]);
   printf("\n");

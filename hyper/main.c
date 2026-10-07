@@ -40,7 +40,7 @@ static int interact(const char *entry, bool bend) {
   int id = book_find(entry); if (id < 0) { fprintf(stderr, "hyper: no %s\n", entry); return 1; }
   uint64_t before = ITRS;
   Term root = answer_asks(mk(T_REF, 0, (uint32_t)id), bend);
-  if (bend) collapse_print(root); else { print_term(root, 64); printf("\n"); }
+  if (bend) collapse_print(root); else { print_term(root, 1024); printf("\n"); }
   printf("- Itrs: %llu\n", (unsigned long long)(ITRS - before)); fflush(stdout);
   for (char *line; (line = read_line(stdin)); ) {
     if (!*line || *line == ';') continue;
@@ -78,7 +78,7 @@ int main(int argc, char **argv) {
   Term r = run_def((uint32_t)id);
   if (tag(r) == T_REF && BOOK[loc(r)].unknown) { resolve_declaration(loc(r)); return 2; }   /* a map declared with no body, unapplied: the census of its own type, said */
   if (bend) { collapse_print(r); par_drain(); fprintf(stderr, "- Itrs: %llu\n- Words: %u\n", (unsigned long long)ITRS, (unsigned)HEAP_LEN); if (getenv("HYPER_CENSUS")) print_census(); return 0; }
-  print_term(r, 64); printf("\n");
+  print_term(r, 1024); printf("\n");
   printf("- Itrs: %llu\n- Words: %u\n", (unsigned long long)ITRS, (unsigned)HEAP_LEN);
   if (NPAR) printf("- Workers: %d, demands spawned: %u\n", NPAR, par_spawned());
   if (getenv("HYPER_CENSUS")) print_census();

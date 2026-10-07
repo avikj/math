@@ -375,6 +375,35 @@ static Term census_point(Term T, Term *args, uint32_t nargs, int depth, int *cou
 }
 /* a declaration applied to its arguments: peel its Π at each, then the census of the closed type.
    status 1: the point; 0: still a Π, more arguments wanted; -1: none; -2: crowded */
+
+/* Σ B : List X. (P A B ≡ True) × (Q B ≡ True), A one of the arguments: the point is the arrangement of A under Q
+   (cell.c arrange_sigma).  The shape is read off the type: the family applied to a generic B must be a Σ whose
+   first component is an equation between a two-argument application P a B and True, with a an argument of the
+   declaration, and whose second is an equation between Q B and True. */
+static bool arrangement_shape(Term T, Term *args, uint32_t nargs, Term *Pout, Term *Qout, int *aout) {
+  T = whnf(T); if (!is_ctr(T, C_SIG)) return 0;
+  Term dom = whnf(HEAP[loc(T)]); if (!is_ctr(dom, C_LIST)) return 0;
+  Term g = generic(0); Term Bv = HEAP[loc(g)+1];
+  Term body = whnf(app2(HEAP[loc(T)+1], Bv)); if (!is_ctr(body, C_SIG)) return 0;
+  Term e1 = whnf(HEAP[loc(body)]); if (!is_ctr(e1, C_EQL)) return 0;
+  Term r1 = whnf(HEAP[loc(e1)+2]); if (!(tag(r1) == T_CTR && ctr_id(r1) == C_TRUE)) return 0;
+  Term pa[64]; uint32_t pn; Term P = spine(HEAP[loc(e1)+1], pa, &pn); if (pn != 2) return 0;
+  Term bArg = whnf(pa[1]); if (!(tag(bArg) == T_VAR && loc(bArg) == loc(Bv))) return 0;
+  int ai = -1; for (uint32_t a = 0; a < nargs; a++) { NO_COUNT = true; bool e = equal(pa[0], args[a]); NO_COUNT = false; if (e) { ai = (int)a; break; } }
+  if (ai < 0) return 0;
+  Term g2 = generic(0); Term qv = HEAP[loc(g2)+1];
+  Term e2 = whnf(app2(HEAP[loc(body)+1], qv)); if (!is_ctr(e2, C_EQL)) return 0;
+  Term r2 = whnf(HEAP[loc(e2)+2]); if (!(tag(r2) == T_CTR && ctr_id(r2) == C_TRUE)) return 0;
+  Term qa[64]; uint32_t qn; Term Q = spine(HEAP[loc(e2)+1], qa, &qn); if (qn != 1) return 0;
+  Term qArg = whnf(qa[0]); if (!(tag(qArg) == T_VAR && loc(qArg) == loc(Bv))) return 0;
+  *Pout = P; *Qout = Q; *aout = ai; return true;
+}
+static Term arrangement_point(Term T, Term *args, uint32_t nargs) {
+  Term P, Q; int ai; if (!arrangement_shape(T, args, nargs, &P, &Q, &ai)) return 0;
+  int why; Term p = arrange_sigma(P, Q, args[ai], &why);
+  if (!p && why == 2) fprintf(stderr, "hyper: the arrangement of the argument does not satisfy its predicate: it is not an order\n");
+  return p;
+}
 Term resolve_applied(Term ref, Term *args, uint32_t nargs, int *status) {
   Def *d = &BOOK[loc(ref)]; Term T = inst(d->type, 0); Term both[128];   /* args, then their types */
   for (uint32_t a = 0; a < nargs; a++) {
@@ -385,6 +414,7 @@ Term resolve_applied(Term ref, Term *args, uint32_t nargs, int *status) {
   T = whnf(T); if (is_ctr(T, C_PI)) { *status = 0; return 0; }
   if (!is_ctr(T, C_SIG) && !is_ctr(T, C_EQL)) { *status = -1;
     fprintf(stderr, "hyper: @%s at its arguments is not a specification (a Σ or an equation): its point is a book entry of its own type, and there is none (नास्ति)\n", d->name); return 0; }
+  { Term p = arrangement_point(T, both, nargs); if (p) { *status = 1; return p; } }   /* Σ B. perm A B × Q B: the arrangement census */
   int n = 0; Term p = census_point(T, both, nargs, 0, &n);
   if (n == 1) { *status = 1; return p; }
   *status = n == 0 ? -1 : -2;
@@ -969,6 +999,7 @@ int check_book(const char *prefix) {
       Term T = inst(BOOK[i].type, 0); Term both[128]; uint32_t na = 0; Term f2 = 0;
       for (;;) { T = whnf(T); if (!is_ctr(T, C_PI) || na >= 64) break; f2 = bind_coord(f2, HEAP[loc(T)]); both[na] = var_of(f2); both[64 + na] = HEAP[loc(T)]; T = app2(HEAP[loc(T)+1], var_of(f2)); na++; }
       for (uint32_t a = 0; a < na; a++) both[na + a] = both[64 + a];
+      { Term P, Q; int ai; if (arrangement_shape(T, both, na, &P, &Q, &ai)) { printf("\x1b[32m✓ %s : the arrangement census at every argument\x1b[0m\n", BOOK[i].name + (prefix ? strlen(prefix) : 0)); continue; } }
       int cn = 0; Term p = (is_ctr(T, C_SIG) || is_ctr(T, C_EQL)) ? census_point(T, both, na, 0, &cn) : 0; (void)p;
       if (cn == 1) printf("\x1b[32m✓ %s : resolved from the book at every argument\x1b[0m\n", BOOK[i].name + (prefix ? strlen(prefix) : 0));
       else printf("\x1b[32m✓ %s : a coordinate of its type%s\x1b[0m\n", BOOK[i].name + (prefix ? strlen(prefix) : 0), cn == 0 ? "" : " (crowded in the book)");

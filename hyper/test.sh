@@ -111,7 +111,7 @@ done
 # MAP §0: the declaration is the program — sort with no body, at two lists, from the book, by the census at the point of demand
 check t/sort.hyper sort-A  '#Pair{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}},#Pair{#Refl{},#Refl{}}}'
 check t/sort.hyper sort-A2 '#Pair{#Cons{#Zer{},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}},#Pair{#Refl{},#Refl{}}}'
-got=$(./hyper run t/sort.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 1333') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort-A2 count: $got";; esac
+got=$(./hyper run t/sort.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 1335') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort-A2 count: $got";; esac
 # MAP §0, generic: sort with no body is certified from the book for every A (the census at coordinates, the identities in the book)
 got=$(HYPER_CHECK_ALL=1 ./hyper check t/sort.hyper 2>&1 | tr -d '\033' | sed 's/\[[0-9;]*m//g'); case "$got" in *'✓ sort : resolved from the book at every argument'*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort not certified from the book";; esac
 # sortCost: over Peano naturals the cost of sorting two elements grows with their values — the greatest cost has no point
@@ -153,6 +153,23 @@ check t/mapless.hyper costs2    '#Cons{58,#Cons{54,#Cons{54,#Cons{58,#Nil{}}}}}'
 check t/mapless.hyper sortCost1 '18'
 check t/mapless.hyper sortCost2 '58'
 check t/mapless.hyper sortCost3 '242'
+
+# MAP §0, the declaration is the program (t/order.hyper): sort with a type and no body over the numeric kind, resolved by
+# the arrangement census — halves, then the composition by the one comparison the specification leaves open; the book
+# holds leq, sorted, perm and lists.  The checker certifies the declaration; comparisons are within merge sort's
+# n·ceil(lg n) − 2^ceil(lg n) + 1 and interactions within 13·n·ceil(lg n); every count is pinned.
+got=$(HYPER_CHECK_ALL=1 ./hyper check t/order.hyper 2>&1 | grep -c "✓ sort : the arrangement census at every argument"); if [ "$got" = "1" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL order.hyper: sort not certified"; fi
+got=$(HYPER_CHECK_ALL=1 ./hyper check t/order.hyper 2>&1 | grep -c "✗"); if [ "$got" = "0" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL order.hyper: a definition fails to check"; fi
+check t/order.hyper sort-A '#Pair{#Cons{1,#Cons{2,#Cons{3,#Nil{}}}},#Pair{#Refl{},#Refl{}}}'
+for d in up8 down8 shuf8 up16 down16 shuf16 up32 down32 shuf32 up64 down64 shuf64 up128 down128 shuf128; do n=${d//[a-z]/}
+  want=$(python3 -c "n=$n; s='#Nil{}'
+for x in range(n-1,-1,-1): s='#Cons{%d,%s}'%(x,s)
+print('#Pair{'+s+',#Pair{#Refl{},#Refl{}}}')")
+  got=$(./hyper run t/order.hyper sort-$d | sed -n 1p); if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL order sort-$d value"; fi; done
+for pair in up8:12:259 down8:12:211 shuf8:12:227 up16:32:643 down16:32:515 shuf16:47:757 up32:80:1539 down32:80:1219 shuf32:124:1923 up64:192:3587 down64:192:2819 shuf64:293:4509 up128:448:8195 down128:448:6403 shuf128:670:10279; do
+  d=${pair%%:*}; r=${pair#*:}; w=${r%%:*}; wi=${r#*:}; n=${d//[a-z]/}; lg=0; p=1; while [ $p -lt $n ]; do p=$((p*2)); lg=$((lg+1)); done
+  got=$(HYPER_CENSUS=1 ./hyper run t/order.hyper sort-$d 2>&1 | grep -oE 'op2=[0-9]+' | sed 's/op2=//'); it=$(./hyper run t/order.hyper sort-$d | sed -n 2p | sed 's/- Itrs: //')
+  if [ "$got" = "$w" ] && [ "$got" -le $((n*lg - p + 1)) ] && [ "$it" = "$wi" ] && [ "$it" -le $((13*n*lg)) ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL order sort-$d: comparisons $got want $w (bound $((n*lg-p+1))), interactions $it want $wi (bound $((13*n*lg)))"; fi; done
 # the cheap chart (MAP §0 item 3): merge-insertion's worst case over every permutation is ceil(log2 n!) comparisons (n = 4, 5),
 # read off the ledger as op2 events; merge sort (t/msort.hyper) is n log n
 check t/fj.hyper fj4 '#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Nil{}}}}}'
