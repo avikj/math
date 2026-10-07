@@ -183,29 +183,43 @@ them.
    proof (`sort` checks as a coordinate of its type; the proof at every `A` is a theorem for the book, as is `sortCost`,
    which the same census serves the moment its identity is an entry).
    **§0 with no map in the book** (`t/mapless.hyper`): the construction's own mechanism for a specification over a
-   finite domain (§8, §5.24). `B` ranges over the lists of `A`'s length drawn from `A`'s own elements, built as one
-   superposed line — a choice at every position, each its own name (`dim`), the empty tail a dead side; the
-   specification (`perm A B` and `sorted B`, its vocabulary, no algorithm) runs on that line once, a side that fails it
-   is dead, and `leaves` are the fibre's points. `sort [3,1,2]` is one leaf, `[1,2,3]`, in 3430 interactions;
-   `sort [2,3,1,0]` is `[0,1,2,3]` in 30449 — the exponential §5.22 calls real, charged honestly, and nothing written
-   for sorting anywhere in the book. This, not the `isort` books, is the declaration being the program.
-   **`sortCost`, produced by the machine** (`t/mapless.hyper`): over a finite element type (`Bool`, `False < True`) the
-   greatest cost exists and the same mechanism finds it — the domain of all lists of length `n` is one superposed
-   line, its leaves are the points, each point's cost is the length of its own trace
+   finite domain (§8, §5.24). `B` ranges over the arrangements of `A`'s elements, built as one superposed line — the
+   permutation set written as insertions (`ins`: an element at every place of a list, each place its own name;
+   `perms`: every element so placed) — and the specification runs on that line: `sorted`, its own word, with `keep`
+   holding the line to it as the arrangement is built (sound because a sorted list has sorted prefixes: a dead prefix
+   has no live extension); the leaves that survive are the fibre's points. No sorting algorithm is in the book.
+   What a comparison tells the machine is kept (`cell.c`, retained comparisons): a comparison of two literals is one
+   `op2` interaction whose order fact is kept with its transitive closure; across every world of the line the same
+   pair is compared once, and a pair the kept facts already order is answered from them — a `recall` receipt, not a
+   comparison. The leaves are read by bisection over each line's alternatives (`collapse_leaves`): the middle
+   alternative first, so that what its comparisons kept decides the alternatives on one side without comparing.
+   Measured (`HYPER_CENSUS`, `op2` is exactly the comparisons; the lists are literals, nothing else compares):
+
+   | n  | ascending | descending | shuffle (7i+3 mod n) | ⌈log₂ n!⌉ | n⌈lg n⌉ |
+   |----|-----------|------------|----------------------|-----------|---------|
+   | 8  | 17        | 7          | 16                   | 16        | 24      |
+   | 16 | 47        | 15         | 55                   | 45        | 64      |
+   | 32 | 121       | 31         | 141                  | 118       | 160     |
+
+   Every measured count is within n⌈lg n⌉; the ascending case sits one above the information bound at n = 8 and
+   three above it at n = 32. Interactions in all (`Itrs`) are not n log n: 66,110 at n = 32 ascending and 409,028
+   descending, cubic, because `sorted` re-reads the whole prefix at every alternative and every re-read is recalls
+   and matches. The comparisons are the lossless part; the steps are charged as they fall. `sort [3,1,2]` is one
+   leaf, `[1,2,3]`, in 141 interactions and 2 comparisons; `sort [2,3,1,0]` is `[0,1,2,3]` in 300 and 5. An earlier
+   form of this book drew `B` from all lists over `A`'s elements and ran the specification on each whole list — every
+   comparison re-made in every world, exponential (3430 and 30449 interactions for the same two lists); that was the
+   erasure of what comparisons had told the machine, not a cost of sorting, and it is gone.
+   **`sortCost`, produced by the machine** (`t/mapless.hyper`): over a finite element type (`{0,1}`) the greatest cost
+   exists and the same mechanism finds it — the domain of all lists of length `n` is one superposed line, its leaves
+   are the points, each point's cost is the length of its own trace
    (`research/sat_fibre/InteractionLedger.agda:74` `interactionTotal-is-length`), and the greatest is a fold over them:
-   `sortCost 1, 2, 3 = 28, 82, 1321` interactions, with `costs2 = [82, 40, 39, 81]` for `[F,F], [F,T], [T,F], [T,T]`.
+   `sortCost 1, 2, 3 = 18, 59, 270` interactions, with `costs2 = [59, 55, 55, 59]` for `[0,0], [0,1], [1,0], [1,1]`.
    A trace is of one run: taken over the superposition it carries every world's events, so the points come first
    and each is traced alone. Over Peano naturals no greatest exists (below) and the fibre is empty.
-   **The cheap chart, and the bound** (`t/msort.hyper`, `t/fj.hyper`). §0 item 3 says where cost moves: the minimal count
-   for an object is the minimum over its charts, and the only lever is a proof. Over the numeric kind a comparison is
-   one `op2` interaction and the ledger counts exactly the comparisons (`HYPER_CENSUS`). Merge sort as the chart is
-   `n log n`: worst case over every permutation 5, 8, 11, 14 at n = 4..7 (its n⌈lg n⌉ − 2^⌈lg n⌉ + 1). Merge-insertion
-   (Ford–Johnson) as the chart is the optimum: worst case over every permutation 5, 7, 10, 13 at n = 4..7, exactly
-   ⌈log₂ n!⌉ = S(n), and 46 at n = 16, which is S(16) — one above the information bound 45 that no comparison sort
-   reaches: S(12) = 30 against ⌈log₂ 12!⌉ = 29 (Wells), and above 11 the bound is not met by any algorithm, so it is not
-   a correctness criterion past n = 11 for any implementation. The declaration on a chart costs the chart plus the
-   census of the book's other candidates; the chart alone is the count above. One proof, 8 → 7 comparisons at n = 5:
-   that is the lever.
+   **Charts, measured** (`t/msort.hyper`, `t/fj.hyper`). Merge sort written as a map in the book counts its
+   n⌈lg n⌉ − 2^⌈lg n⌉ + 1 (worst case 5, 8, 11, 14 at n = 4..7); merge-insertion written as a map counts 5, 7, 10, 13
+   at n = 4..7 and 46 at n = 16. These books contain the algorithm and are kept as measurements of the ledger only;
+   the mapless book above needs neither.
    **§0, with the map in the book.** `t/sort.hyper` with every identity and lemma removed — `isort` and `sorted` present only as
    data, and the lists — still resolves the bodyless `sort` at `[2,3,1,0]` to `([0,1,2,3], (refl, refl))` in 1338
    interactions (`test.sh`, the no-lemma run): the point is read off the book by the type's shape and the proofs are

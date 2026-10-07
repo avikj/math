@@ -1,46 +1,51 @@
-; MAP §0 with no map in the book: B ranges over the lists drawn from A's own elements, of A's length — one
-; superposed line (§5.24, §8) — the specification runs on it once, and the leaves that survive are the fibre's
-; points.  perm and sorted are the specification's vocabulary; no sorting algorithm is anywhere in this book.
-(def leq (fix f (lam a (lam b (case a (Zer () (ctr True)) (Suc (a1) (case b (Zer () (ctr False)) (Suc (b1) (app f a1 b1)))))))))
-(def sorted (fix f (lam l (case l (Nil () (ctr True)) (Cons (h t) (case t (Nil () (ctr True)) (Cons (h2 t2) (case (app leq h h2) (True () (app f t)) (False () (ctr False))))))))))
-(def eqn (fix f (lam a (lam b (case a (Zer () (case b (Zer () (ctr True)) (Suc (b1) (ctr False)))) (Suc (a1) (case b (Zer () (ctr False)) (Suc (b1) (app f a1 b1)))))))))
-; remove x from l: Some of the rest, or None
-(def remove (fix f (lam x (lam l (case l (Nil () (ctr None)) (Cons (h t) (case (app eqn x h) (True () (ctr Some t)) (False () (case (app f x t) (None () (ctr None)) (Some (r) (ctr Some (ctr Cons h r))))))))))))
-(def perm (fix f (lam a (lam b (case a (Nil () (case b (Nil () (ctr True)) (Cons (h t) (ctr False)))) (Cons (h t) (case (app remove h b) (None () (ctr False)) (Some (r) (app f t r)))))))))
-(def and (lam x (lam y (case x (False () (ctr False)) (True () y)))))
-; the domain: an element of l (a line over all of them; the empty tail is a dead side), and a list of l's length over them
-(def choose (fix f (lam l (case l (Nil () (era)) (Cons (h t) (dim M (sup M h (app f t))))))))
-(def build (fix f (lam n (lam l (case n (Nil () (ctr Nil)) (Cons (h r) (ctr Cons (app choose l) (app f r l))))))))
-; the specification over the domain: a side that fails it is dead
-(def keep (lam A (lam B (case (app and (app perm A B) (app sorted B)) (True () B) (False () (era))))))
-(def sort (lam A (leaves (app keep A (app build A A)))))
-(def one (ctr Suc (ctr Zer))) (def two (ctr Suc one)) (def three (ctr Suc two))
-(def A (ctr Cons three (ctr Cons one (ctr Cons two (ctr Nil)))))
-(def A2 (ctr Cons two (ctr Cons three (ctr Cons one (ctr Cons (ctr Zer) (ctr Nil))))))
+; MAP §0 with no map in the book.  B ranges over the lists drawn from A's elements — one superposed line
+; (§5.24, §8) — and the specification runs on that line: a side that fails it is dead, the leaves that
+; survive are the fibre's points.  No sorting algorithm is in this book: `sorted` is the specification's own
+; word, `ins`/`perms` is the permutation set written as insertions (every arrangement of A, each one
+; place of each element), and `keep` holds the line to the specification as the arrangement is built,
+; which is sound because a sorted list has sorted prefixes (a dead prefix has no live extension).
+; The comparisons are the machine's own (op2 on literals), and the machine keeps what a comparison
+; told it (cell.c, retained comparisons): a pair is compared once across all the worlds of the line, and
+; a pair the kept facts already order is answered from them (a "recall", not a comparison).  The leaves
+; are read by bisection over each line's alternatives (cell.c, collapse_leaves), so the comparisons of
+; the alternative in the middle decide the alternatives on one side of it without comparing.
+(def sorted (fix f (lam l (case l (Nil () (ctr True)) (Cons (h t) (case t (Nil () (ctr True)) (Cons (h2 t2) (case (op2 <= h h2) (True () (app f t)) (False () (ctr False))))))))))
+; x at every place of l: one line over the places, read left to right
+(def ins (fix f (lam x (lam l (case l (Nil () (ctr Cons x (ctr Nil))) (Cons (h t) (dim M (sup M (ctr Cons x (ctr Cons h t)) (ctr Cons h (app f x t))))))))))
+; the specification over a line: a side that fails it is dead
+(def keep (lam B (case (app sorted B) (True () B) (False () (era)))))
+; every arrangement of l's elements, held to the specification as it is built
+(def perms (fix f (lam l (case l (Nil () (ctr Nil)) (Cons (h t) (app keep (app ins h (app f t))))))))
+(def sort (lam A (leaves (app perms A))))
+(def A (ctr Cons (num 3) (ctr Cons (num 1) (ctr Cons (num 2) (ctr Nil)))))
+(def A2 (ctr Cons (num 2) (ctr Cons (num 3) (ctr Cons (num 0) (ctr Cons (num 1) (ctr Nil))))))
 (def sort-A (app sort A))
 (def sort-A2 (app sort A2))
-
-; sortCost over a finite element type (Bool: False < True), by the same mechanism and over the machine's own cost:
+; lists of length n, as literals (no arithmetic in the run): ascending, descending, and a shuffle i ↦ (7i+3) mod n;
+; the comparisons are counted against ceil(log2 n!) and n·ceil(log2 n)
+(def up8 (app sort (ctr Cons (num 0) (ctr Cons (num 1) (ctr Cons (num 2) (ctr Cons (num 3) (ctr Cons (num 4) (ctr Cons (num 5) (ctr Cons (num 6) (ctr Cons (num 7) (ctr Nil)))))))))))
+(def down8 (app sort (ctr Cons (num 7) (ctr Cons (num 6) (ctr Cons (num 5) (ctr Cons (num 4) (ctr Cons (num 3) (ctr Cons (num 2) (ctr Cons (num 1) (ctr Cons (num 0) (ctr Nil)))))))))))
+(def shuf8 (app sort (ctr Cons (num 3) (ctr Cons (num 2) (ctr Cons (num 1) (ctr Cons (num 0) (ctr Cons (num 7) (ctr Cons (num 6) (ctr Cons (num 5) (ctr Cons (num 4) (ctr Nil)))))))))))
+(def up16 (app sort (ctr Cons (num 0) (ctr Cons (num 1) (ctr Cons (num 2) (ctr Cons (num 3) (ctr Cons (num 4) (ctr Cons (num 5) (ctr Cons (num 6) (ctr Cons (num 7) (ctr Cons (num 8) (ctr Cons (num 9) (ctr Cons (num 10) (ctr Cons (num 11) (ctr Cons (num 12) (ctr Cons (num 13) (ctr Cons (num 14) (ctr Cons (num 15) (ctr Nil)))))))))))))))))))
+(def down16 (app sort (ctr Cons (num 15) (ctr Cons (num 14) (ctr Cons (num 13) (ctr Cons (num 12) (ctr Cons (num 11) (ctr Cons (num 10) (ctr Cons (num 9) (ctr Cons (num 8) (ctr Cons (num 7) (ctr Cons (num 6) (ctr Cons (num 5) (ctr Cons (num 4) (ctr Cons (num 3) (ctr Cons (num 2) (ctr Cons (num 1) (ctr Cons (num 0) (ctr Nil)))))))))))))))))))
+(def shuf16 (app sort (ctr Cons (num 3) (ctr Cons (num 10) (ctr Cons (num 1) (ctr Cons (num 8) (ctr Cons (num 15) (ctr Cons (num 6) (ctr Cons (num 13) (ctr Cons (num 4) (ctr Cons (num 11) (ctr Cons (num 2) (ctr Cons (num 9) (ctr Cons (num 0) (ctr Cons (num 7) (ctr Cons (num 14) (ctr Cons (num 5) (ctr Cons (num 12) (ctr Nil)))))))))))))))))))
+(def up32 (app sort (ctr Cons (num 0) (ctr Cons (num 1) (ctr Cons (num 2) (ctr Cons (num 3) (ctr Cons (num 4) (ctr Cons (num 5) (ctr Cons (num 6) (ctr Cons (num 7) (ctr Cons (num 8) (ctr Cons (num 9) (ctr Cons (num 10) (ctr Cons (num 11) (ctr Cons (num 12) (ctr Cons (num 13) (ctr Cons (num 14) (ctr Cons (num 15) (ctr Cons (num 16) (ctr Cons (num 17) (ctr Cons (num 18) (ctr Cons (num 19) (ctr Cons (num 20) (ctr Cons (num 21) (ctr Cons (num 22) (ctr Cons (num 23) (ctr Cons (num 24) (ctr Cons (num 25) (ctr Cons (num 26) (ctr Cons (num 27) (ctr Cons (num 28) (ctr Cons (num 29) (ctr Cons (num 30) (ctr Cons (num 31) (ctr Nil)))))))))))))))))))))))))))))))))))
+(def down32 (app sort (ctr Cons (num 31) (ctr Cons (num 30) (ctr Cons (num 29) (ctr Cons (num 28) (ctr Cons (num 27) (ctr Cons (num 26) (ctr Cons (num 25) (ctr Cons (num 24) (ctr Cons (num 23) (ctr Cons (num 22) (ctr Cons (num 21) (ctr Cons (num 20) (ctr Cons (num 19) (ctr Cons (num 18) (ctr Cons (num 17) (ctr Cons (num 16) (ctr Cons (num 15) (ctr Cons (num 14) (ctr Cons (num 13) (ctr Cons (num 12) (ctr Cons (num 11) (ctr Cons (num 10) (ctr Cons (num 9) (ctr Cons (num 8) (ctr Cons (num 7) (ctr Cons (num 6) (ctr Cons (num 5) (ctr Cons (num 4) (ctr Cons (num 3) (ctr Cons (num 2) (ctr Cons (num 1) (ctr Cons (num 0) (ctr Nil)))))))))))))))))))))))))))))))))))
+(def shuf32 (app sort (ctr Cons (num 3) (ctr Cons (num 10) (ctr Cons (num 17) (ctr Cons (num 24) (ctr Cons (num 31) (ctr Cons (num 6) (ctr Cons (num 13) (ctr Cons (num 20) (ctr Cons (num 27) (ctr Cons (num 2) (ctr Cons (num 9) (ctr Cons (num 16) (ctr Cons (num 23) (ctr Cons (num 30) (ctr Cons (num 5) (ctr Cons (num 12) (ctr Cons (num 19) (ctr Cons (num 26) (ctr Cons (num 1) (ctr Cons (num 8) (ctr Cons (num 15) (ctr Cons (num 22) (ctr Cons (num 29) (ctr Cons (num 4) (ctr Cons (num 11) (ctr Cons (num 18) (ctr Cons (num 25) (ctr Cons (num 0) (ctr Cons (num 7) (ctr Cons (num 14) (ctr Cons (num 21) (ctr Cons (num 28) (ctr Nil)))))))))))))))))))))))))))))))))))
+; sortCost over a finite element type ({0,1}), by the same mechanism and over the machine's own cost:
 ; the domain of all lists of length n is one superposed line, each leaf's cost is the length of its own trace
 ; (research/sat_fibre/InteractionLedger.agda: a run's charge is its events), and the greatest is a fold over the leaves.
 ; Over Peano naturals no greatest exists (t/sort.hyper, sort-B1/sort-B2): the fibre is empty there.
-(def leqB (lam a (lam b (case a (False () (ctr True)) (True () b)))))
-(def eqB (lam a (lam b (case a (False () (case b (False () (ctr True)) (True () (ctr False)))) (True () b)))))
-(def sortedB (fix f (lam l (case l (Nil () (ctr True)) (Cons (h t) (case t (Nil () (ctr True)) (Cons (h2 t2) (case (app leqB h h2) (True () (app f t)) (False () (ctr False))))))))))
-(def removeB (fix f (lam x (lam l (case l (Nil () (ctr None)) (Cons (h t) (case (app eqB x h) (True () (ctr Some t)) (False () (case (app f x t) (None () (ctr None)) (Some (r) (ctr Some (ctr Cons h r))))))))))))
-(def permB (fix f (lam a (lam b (case a (Nil () (case b (Nil () (ctr True)) (Cons (h t) (ctr False)))) (Cons (h t) (case (app removeB h b) (None () (ctr False)) (Some (r) (app f t r)))))))))
-(def keepB (lam A (lam B (case (app and (app permB A B) (app sortedB B)) (True () B) (False () (era))))))
-(def sortB (lam A (leaves (app keepB A (app build A A)))))
-; all Bool lists of length n, one line
-(def bools (fix f (lam n (case n (Zer () (ctr Nil)) (Suc (m) (ctr Cons (dim M (sup M (ctr False) (ctr True))) (app f m)))))))
+(def bits (fix f (lam n (case n (Zer () (ctr Nil)) (Suc (m) (ctr Cons (dim M (sup M (num 0) (num 1))) (app f m)))))))
 (def length (fix f (lam xs (case xs (Nil () (num 0)) (Cons (h t) (op2 + (num 1) (app f t)))))))
-(def cost (lam B (app length (proj 1 (trace (app sortB B))))))
+(def cost (lam B (app length (proj 1 (trace (app sort B))))))
 (def max (lam a (lam b (case (op2 > a b) (True () a) (False () b)))))
 (def greatest (fix f (lam xs (case xs (Nil () (num 0)) (Cons (h t) (app max h (app f t)))))))
 (def mapl (fix f (lam g (lam xs (case xs (Nil () (ctr Nil)) (Cons (h t) (ctr Cons (app g h) (app f g t))))))))
+(def one (ctr Suc (ctr Zer))) (def two (ctr Suc one)) (def three (ctr Suc two))
 ; a trace is of one run: the domain's points first (its leaves), then each point's own cost
-(def sortCost (lam n (app greatest (app mapl cost (leaves (app bools n))))))
-(def costs2 (app mapl cost (leaves (app bools two))))
+(def sortCost (lam n (app greatest (app mapl cost (leaves (app bits n))))))
+(def costs2 (app mapl cost (leaves (app bits two))))
 (def sortCost1 (app sortCost one))
 (def sortCost2 (app sortCost two))
 (def sortCost3 (app sortCost three))

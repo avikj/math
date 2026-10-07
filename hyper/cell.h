@@ -139,7 +139,7 @@ void print_trace(uint64_t from);                      /* the receipts from index
    this loop's transitions to that alphabet, which the ledger asks a runtime to supply.  The rest are this machine's own. */
 enum RuleId { R_BETA = 1, R_APP_SUP, R_APP_PLM, R_DUP_SUP_EQUAL, R_DUP_SUP_DIFFERENT, R_DUP_LAM_USED, R_DUP_LAM_ERASED, R_DUP_NODE,
               R_FCE_SHARE, R_CASE, R_CASE_SUP, R_OP2, R_OP2_SUP, R_ERASE, R_TRP, R_HCM,
-              R_HCON, R_HELIM, R_HELIM_SUP, R_HELIM_HCM, R_OP1, R_POUT, R_DECLARE, R_COUNT };
+              R_HCON, R_HELIM, R_HELIM_SUP, R_HELIM_HCM, R_OP1, R_POUT, R_DECLARE, R_RECALL, R_COUNT };
 
 /* ---- the HIT schema (§4): nothing per HIT is hardcoded; a constructor's boundary IS its type ---- */
 typedef struct CtorInfo {

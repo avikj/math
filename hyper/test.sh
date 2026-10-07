@@ -125,17 +125,30 @@ PY2
 got=$(./hyper run /tmp/hyper-nolemma.hyper sort-A2 2>&1 | head -1)
 want='#Pair{#Cons{#Zer{},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}},#Pair{#Refl{},#Refl{}}}'
 if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL no-lemma sort: $got"; fi
-# MAP §0 with no map in the book (t/mapless.hyper): B over the lists drawn from A's elements as one superposed line,
-# the specification run on it once, the surviving leaves the fibre's points — no sorting algorithm anywhere
-check t/mapless.hyper sort-A  '#Cons{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}},#Nil{}}'
-check t/mapless.hyper sort-A2 '#Cons{#Cons{#Zer{},#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}},#Nil{}}'
-got=$(./hyper run t/mapless.hyper sort-A | sed -n 2p); case "$got" in '- Itrs: 3430') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A count: $got";; esac
-got=$(./hyper run t/mapless.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 30449') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A2 count: $got";; esac
+# MAP §0 with no map in the book (t/mapless.hyper): B over the arrangements of A's elements as one superposed line,
+# the specification holding the line as it is built, the surviving leaves the fibre's points — no sorting algorithm anywhere;
+# comparisons are kept (cell.c, retained comparisons) and the leaves read by bisection
+check t/mapless.hyper sort-A  '#Cons{#Cons{1,#Cons{2,#Cons{3,#Nil{}}}},#Nil{}}'
+check t/mapless.hyper sort-A2 '#Cons{#Cons{0,#Cons{1,#Cons{2,#Cons{3,#Nil{}}}}},#Nil{}}'
+got=$(./hyper run t/mapless.hyper sort-A | sed -n 2p); case "$got" in '- Itrs: 141') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A count: $got";; esac
+got=$(./hyper run t/mapless.hyper sort-A2 | sed -n 2p); case "$got" in '- Itrs: 300') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL mapless sort-A2 count: $got";; esac
+# the comparisons (op2 on literal lists: exactly the comparisons) are within n·ceil(lg n) for ascending, descending and
+# shuffled input at n = 8, 16, 32 (bounds 24, 64, 160); the measured counts are pinned
+for pair in up8:17 down8:7 shuf8:16 up16:47 down16:15 shuf16:55 up32:121 down32:31 shuf32:141; do d=${pair%%:*}; w=${pair#*:}
+  got=$(HYPER_CENSUS=1 ./hyper run t/mapless.hyper $d 2>&1 | grep -oE 'op2=[0-9]+' | sed 's/op2=//')
+  n=${d//[a-z]/}; lg=0; p=1; while [ $p -lt $n ]; do p=$((p*2)); lg=$((lg+1)); done
+  if [ "$got" = "$w" ] && [ "$got" -le $((n*lg)) ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $d comparisons: $got want $w (bound $((n*lg)))"; fi; done
+# every one of the nine sorts is the ascending list, one leaf
+for d in up8 down8 shuf8 up16 down16 shuf16 up32 down32 shuf32; do n=${d//[a-z]/}
+  want=$(python3 -c "n=$n; s='#Nil{}'
+for x in range(n-1,-1,-1): s='#Cons{%d,%s}'%(x,s)
+print('#Cons{'+s+',#Nil{}}')")
+  got=$(./hyper run t/mapless.hyper $d | sed -n 1p); if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $d value"; fi; done
 # sortCost over a finite element type, by the machine over its own cost: the domain's leaves, each leaf's own trace, the greatest
-check t/mapless.hyper costs2    '#Cons{82,#Cons{40,#Cons{39,#Cons{81,#Nil{}}}}}'
-check t/mapless.hyper sortCost1 '28'
-check t/mapless.hyper sortCost2 '82'
-check t/mapless.hyper sortCost3 '1321'
+check t/mapless.hyper costs2    '#Cons{59,#Cons{55,#Cons{55,#Cons{59,#Nil{}}}}}'
+check t/mapless.hyper sortCost1 '18'
+check t/mapless.hyper sortCost2 '59'
+check t/mapless.hyper sortCost3 '270'
 # the cheap chart (MAP §0 item 3): merge-insertion's worst case over every permutation is ceil(log2 n!) comparisons (n = 4, 5),
 # read off the ledger as op2 events; merge sort (t/msort.hyper) is n log n
 check t/fj.hyper fj4 '#Cons{1,#Cons{2,#Cons{3,#Cons{4,#Nil{}}}}}'
@@ -172,11 +185,11 @@ check t/sat.hyper xor-true  '#Cons{#Pair{#False{},#True{}},#Cons{#Pair{#True{},#
 check t/sat.hyper xor-false '#Cons{#Pair{#False{},#False{}},#Cons{#Pair{#True{},#True{}},#Nil{}}}'
 check t/sat.hyper contradiction '#Nil{}'
 # one proposition, two presentations (sat_fibre/REPORT.md §5): both empty; the order that meets the contradiction
-# first costs less, the other reproduces the cube before erasing it
+# first costs less, the other reproduces the cube before erasing it (the leaf collector receipts each dead leaf: one more than prune)
 check t/sat.hyper short '#Nil{}'
 check t/sat.hyper reversed '#Nil{}'
 cs=$(./hyper run t/sat.hyper short | sed -n 2p); cr=$(./hyper run t/sat.hyper reversed | sed -n 2p)
-if [ "$cs" = "- Itrs: 314" ] && [ "$cr" = "- Itrs: 24" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL presentation counts: $cs / $cr"; fi
+if [ "$cs" = "- Itrs: 315" ] && [ "$cr" = "- Itrs: 25" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL presentation counts: $cs / $cr"; fi
 # constructing a specified map (SUPGEN_DEMO.md): the candidates are one superposition, the specification erases
 # every other one, and the survivor is not, certified by the erasure of the alternatives
 check t/sat.hyper synth-at '#Cons{#Pair{#True{},#False{}},#Nil{}}'

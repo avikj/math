@@ -611,6 +611,63 @@ static Term helim_select(Term he, Term head, Term *ivs, uint32_t nivs) {
 
 /* ---- numbers ---------------------------------------------------------- */
 static Term boolc(bool b) { return mk(T_CTR, ctr_ext(b ? C_TRUE : C_FALSE, 0), alloc(1)); }
+
+/* ---- retained comparisons ----------------------------------------------
+   A comparison of two literals is an interaction that yields an order fact; the fact is kept, with its
+   transitive closure, and a later comparison the kept facts already decide is answered from them (a
+   "recall" receipt, not a comparison).  Nothing a comparison told the machine is ever asked again:
+   across the worlds of a superposition the same pair is compared once, and a pair two kept facts
+   order is never compared at all. */
+#define RT_N 4096
+#define RT_W (RT_N / 64)
+static uint32_t RT_CNT; static uint64_t RT_VAL[RT_N]; static unsigned RT_KIND[RT_N];
+static uint64_t (*RT_LE)[RT_W], (*RT_LT)[RT_W];                 /* LE[u] ∋ v: u ≤ v is kept; LT[u] ∋ v: u < v is kept */
+#define RTB(S, i, j) (((S)[i][(j) >> 6] >> ((j) & 63)) & 1)
+#define RTS(S, i, j) ((S)[i][(j) >> 6] |= (uint64_t)1 << ((j) & 63))
+static int rt_node(unsigned kind, uint64_t v) {
+  for (uint32_t i = 0; i < RT_CNT; i++) if (RT_VAL[i] == v && RT_KIND[i] == kind) return (int)i;
+  if (RT_CNT >= RT_N) return -1;
+  if (!RT_LE) { RT_LE = calloc(RT_N, sizeof *RT_LE); RT_LT = calloc(RT_N, sizeof *RT_LT); }
+  RT_VAL[RT_CNT] = v; RT_KIND[RT_CNT] = kind; return (int)RT_CNT++;
+}
+static void rt_keep(int a, int b) {                               /* the fact a < b, closed transitively */
+  for (uint32_t u = 0; u < RT_CNT; u++) {
+    if (!((int)u == a || RTB(RT_LE, u, a))) continue;
+    for (int w = 0; w < RT_W; w++) { RT_LE[u][w] |= RT_LE[b][w]; RT_LT[u][w] |= RT_LE[b][w] | RT_LT[b][w]; }
+    RTS(RT_LE, u, b); RTS(RT_LT, u, b);
+  }
+}
+/* 1: the comparison is decided by kept facts (*out set); 0: it is not, compare and keep */
+static int rt_decide(unsigned op, int a, int b, bool *out) {
+  if (a < 0 || b < 0) return 0;
+  bool lt = RTB(RT_LT, a, b), gt = RTB(RT_LT, b, a), le = a == b || RTB(RT_LE, a, b), ge = a == b || RTB(RT_LE, b, a);
+  switch (op) {
+    case OP_LT: if (lt) { *out = true; return 1; } if (ge) { *out = false; return 1; } return 0;
+    case OP_LE: if (le) { *out = true; return 1; } if (gt) { *out = false; return 1; } return 0;
+    case OP_GT: if (gt) { *out = true; return 1; } if (le) { *out = false; return 1; } return 0;
+    case OP_GE: if (ge) { *out = true; return 1; } if (lt) { *out = false; return 1; } return 0;
+    case OP_EQ: if (a == b) { *out = true; return 1; } if (lt || gt) { *out = false; return 1; } return 0;
+    case OP_NE: if (a == b) { *out = false; return 1; } if (lt || gt) { *out = true; return 1; } return 0;
+  }
+  return 0;
+}
+static bool is_cmp(unsigned op) { return op == OP_LT || op == OP_LE || op == OP_GT || op == OP_GE || op == OP_EQ || op == OP_NE; }
+/* the comparison of two integer literals: recalled if kept facts decide it, else compared once and kept */
+static Term op2_retained(unsigned op, unsigned kind, uint64_t a, uint64_t b) {
+  pthread_mutex_lock(&KMUT);
+  int na = rt_node(kind, a), nb = rt_node(kind, b); bool r;
+  if (rt_decide(op, na, nb, &r)) { pthread_mutex_unlock(&KMUT); receipt(R_RECALL); return boolc(r); }
+  if (getenv("HYPER_CMP")) fprintf(stderr, "cmp %llu %llu\n", (unsigned long long)a, (unsigned long long)b);
+  bool less = kind == N_I64 ? (int64_t)a < (int64_t)b : a < b;    /* one comparison of the two literals: the order between them */
+  if (na >= 0 && nb >= 0 && a != b) { if (less) rt_keep(na, nb); else rt_keep(nb, na); }
+  pthread_mutex_unlock(&KMUT); receipt(R_OP2);
+  switch (op) {
+    case OP_LT: return boolc(a != b && less); case OP_LE: return boolc(a == b || less);
+    case OP_GT: return boolc(a != b && !less); case OP_GE: return boolc(a == b || !less);
+    case OP_EQ: return boolc(a == b); default: return boolc(a != b);
+  }
+}
+
 static Term op2_num(unsigned op, unsigned kind, uint64_t a, uint64_t b) {
   uint64_t r = 0;
   if (kind == N_F64) { double x, y, z = 0; memcpy(&x, &a, 8); memcpy(&y, &b, 8);
@@ -1167,6 +1224,7 @@ static Term whnf_(Term t) {
           return node3(T_SUP, 0, HEAP[loc(b)],
             node2(T_OP2, ext(t), fce3(0, name, a, 0), HEAP[loc(b)+1]),
             node2(T_OP2, ext(t), fce3(1, name, a, 0), HEAP[loc(b)+2])); }
+        if (tag(a) == T_NUM && tag(b) == T_NUM && ext(a) == ext(b) && ext(a) != N_F64 && is_cmp(ext(t))) return op2_retained(ext(t), ext(a), HEAP[loc(a)], HEAP[loc(b)]);
         if (tag(a) == T_NUM && tag(b) == T_NUM) { Term r = op2_num(ext(t), ext(a), HEAP[loc(a)], HEAP[loc(b)]); if (r) { receipt(R_OP2); return r; } }
         if (tag(a) == T_CTR && tag(b) == T_CTR && (ctr_id(a) == C_TRUE || ctr_id(a) == C_FALSE) && (ctr_id(b) == C_TRUE || ctr_id(b) == C_FALSE)) {
           Term r = op2_bool(ext(t), ctr_id(a) == C_TRUE, ctr_id(b) == C_TRUE); if (r) { receipt(R_OP2); return r; } }
@@ -1362,7 +1420,7 @@ void print_term(Term t, int depth) { force_fields(t, depth); par_drain(); print_
    by rule (AdiBija: every analyzer is a fold over the trace). Definitional unfolding and the face map's
    sharing are shown apart, as the receipts name them. */
 const char *RULE_NAME[R_COUNT] = { "", "beta", "appSup", "app-plm", "dupSupEqual", "dupSupDifferent", "dupLamUsed", "dupLamErased", "dupNode",
-    "fce-share", "case", "appMatSup", "op2", "op2-sup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "op1", "pout", "declare" };
+    "fce-share", "case", "appMatSup", "op2", "op2-sup", "erase", "trp", "hcm", "hcon", "helim", "helim-sup", "helim-hcm", "op1", "pout", "declare", "recall" };
 void print_trace(uint64_t from) {           /* the derivation as data: each step a rule at a node */
   for (uint64_t i = from; i < TRACE_LEN; i++) printf("%s%s@%u", i > from ? " " : "", RULE_NAME[TRACE[i]], TRACE_NODE[i]);
   printf("\n");
@@ -1534,16 +1592,70 @@ static Term lift(Term t, int depth) {
     default: return t;
   }
 }
-/* the leaves of a superposition tree, in collapse order; a value that is not superposed is one leaf */
-int collapse_leaves(Term t, Term *out, int max) {
-  Term q[1 << 12]; uint32_t head = 0, tail = 0; int n = 0; q[tail++] = t;
-  while (head < tail && n < max) {
-    Term v = lift(q[head++], 256);
-    if (tag(v) == T_SUP) { if (tail + 2 < (1u << 12)) { q[tail++] = HEAP[loc(v)+1]; q[tail++] = HEAP[loc(v)+2]; } continue; }
-    if (tag(v) == T_ERA) continue;
-    out[n++] = v;
+/* the leaves of a superposition tree; a value that is not superposed is one leaf.  A superposition's
+   right side that is itself a superposition continues a chain of alternatives; the chain is read whole
+   first (no alternative is entered), then entered by bisection — the middle alternative first, then the
+   middle of each half — so that what one alternative's comparisons kept decides its neighbours. */
+static Term *CL_OUT; static int CL_N, CL_MAX; static uint64_t *CL_KEY; static int CL_DEPTH; static int CL_PATH[64];
+/* lift without pruning: a dead side is dropped where it is met (an erase receipt, as prune leaves), so no
+   alternative is entered before its turn */
+static Term cl_lift(Term t, int depth) {
+  if (depth <= 0) return t;
+  t = whnf(t);
+  switch (tag(t)) {
+    case T_SUP: return t;
+    case T_CTR: {
+      for (uint32_t i = 0; i < ctr_arity(t); i++) {
+        Term f = cl_lift(HEAP[loc(t)+i], depth-1); HEAP[loc(t)+i] = f;
+        if (tag(f) == T_ERA) return f;
+        if (tag(f) == T_SUP) { Term nm = whnf(HEAP[loc(f)]); if (tag(nm) != T_IVAR) continue;
+          Loc name = loc(nm);
+          return node3(T_SUP, 0, nm, fce3(0, name, t, 0), fce3(1, name, t, 0)); }
+      }
+      return t; }
+    case T_APP: { Term x = cl_lift(HEAP[loc(t)+1], depth-1); HEAP[loc(t)+1] = x;
+      if (tag(x) == T_SUP) { Term nm = whnf(HEAP[loc(x)]); if (tag(nm) == T_IVAR) return node3(T_SUP, 0, nm, fce3(0, loc(nm), t, 0), fce3(1, loc(nm), t, 0)); }
+      return t; }
+    default: return t;
   }
-  return n;
+}
+static void cl_collect(Term t);
+static void cl_bisect(Term *alts, int lo, int hi) {
+  if (lo > hi) return; int m = (lo + hi) / 2;
+  if (CL_DEPTH < 64) CL_PATH[CL_DEPTH] = m;
+  CL_DEPTH++; cl_collect(alts[m]); CL_DEPTH--;
+  cl_bisect(alts, lo, m - 1); cl_bisect(alts, m + 1, hi);
+}
+static void cl_collect(Term t) {
+  Term v = cl_lift(t, 256);
+  if (tag(v) == T_ERA) { receipt(R_ERASE); return; }
+  if (tag(v) != T_SUP) {
+    if (CL_N < CL_MAX) { CL_OUT[CL_N] = v;                      /* the leaf's place in the tree, for the collapse order */
+      uint64_t *k = CL_KEY + (size_t)CL_N * 8; for (int i = 0; i < 8; i++) k[i] = 0;
+      for (int i = 0; i < CL_DEPTH && i < 64; i++) k[i / 4] |= (uint64_t)((CL_PATH[i] + 1) & 0xFFFF) << (48 - 16 * (i % 4));
+      CL_N++; }
+    return; }
+  Term *alts = malloc((1 << 12) * sizeof(Term)); int k = 0;
+  for (;;) { alts[k++] = HEAP[loc(v)+1]; Term r = cl_lift(HEAP[loc(v)+2], 256);
+    if (tag(r) == T_SUP && k < (1 << 12) - 1) { v = r; continue; }
+    alts[k++] = r; break; }
+  cl_bisect(alts, 0, k - 1); free(alts);
+}
+static int cl_cmp(const void *x, const void *y) {
+  const uint64_t *a = CL_KEY + (size_t)*(const int *)x * 8, *b = CL_KEY + (size_t)*(const int *)y * 8;
+  for (int i = 0; i < 8; i++) if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+  return 0;
+}
+int collapse_leaves(Term t, Term *out, int max) {
+  Term *so = CL_OUT; int sn = CL_N, sm = CL_MAX; uint64_t *sk = CL_KEY; int sd = CL_DEPTH; int path[64]; memcpy(path, CL_PATH, sizeof path);
+  CL_OUT = out; CL_N = 0; CL_MAX = max; CL_KEY = calloc((size_t)max * 8, sizeof(uint64_t)); CL_DEPTH = 0;
+  cl_collect(t);
+  int n = CL_N; int *ix = malloc(n * sizeof(int)); Term *tmp = malloc(n * sizeof(Term));
+  for (int i = 0; i < n; i++) ix[i] = i;
+  qsort(ix, n, sizeof(int), cl_cmp);                             /* the leaves in their left-to-right place, whatever order entered them */
+  for (int i = 0; i < n; i++) tmp[i] = out[ix[i]];
+  memcpy(out, tmp, n * sizeof(Term)); free(tmp); free(ix); free(CL_KEY);
+  CL_OUT = so; CL_N = sn; CL_MAX = sm; CL_KEY = sk; CL_DEPTH = sd; memcpy(CL_PATH, path, sizeof path); return n;
 }
 /* a value as its printed text, for comparison by identity of normal forms */
 char *term_string(Term t, int depth) {
