@@ -93,6 +93,10 @@ if [ "$l" = '#Pair{26,#Cons{#op2{2},#Cons{#op2{2},#Cons{#op2{1},#Nil{}}}}}' ] &&
 # (uaβ), so the carried image is sort's point, with no coordinate, far below resolving the type
 check t/sort.hyper chart-move '#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}}'
 got=$(./hyper run t/sort.hyper chart-move | sed -n 2p); case "$got" in '- Itrs: 173') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL chart-move count: $got";; esac
+# step 4 closed: the specification b/sort_at_A checks under the typed path (prelude's iso tower, ua, the carrier, chart-move);
+# HYPER_CHECK_ALL verifies every typed definition the file and the prelude carry, not only the book's
+got=$(./hyper check t/sort.hyper 2>&1 | tr -d '\033' | sed 's/\[[0-9;]*m//g'); case "$got" in '✓ sort_at_A') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL check sort_at_A: $got";; esac
+if HYPER_CHECK_ALL=1 ./hyper check t/sort.hyper 2>&1 | grep -q '✗'; then fail=$((fail+1)); echo "FAIL HYPER_CHECK_ALL t/sort.hyper"; else pass=$((pass+1)); fi
 # witnessing a proposition (research/SAT_FIBRE_BEND_HVM_DEPLOYED_TECHNICAL_REPORT.md): the domain is one labelled
 # superposition shared by every occurrence, the proposition reduces once over it, a failing branch is erased, and the
 # collapse is the fibre.  XOR's fibre over True and over False; a contradiction's empty fibre

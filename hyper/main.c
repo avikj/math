@@ -70,7 +70,7 @@ int main(int argc, char **argv) {
   if (bend) load_next_to_exe(argv[0], "bend.hyper");     /* the Bend2 dialect's rows */
   read_file(argv[2]);
   load_prelude();
-  if (!strcmp(argv[1], "check")) return check_book("b/") ? 1 : 0;
+  if (!strcmp(argv[1], "check")) return check_book(getenv("HYPER_CHECK_ALL") ? NULL : "b/") ? 1 : 0;
   if (inter) { const char *e = argc > 3 ? argv[3] : (book_find("b/main") >= 0 ? "b/main" : "main"); return interact(e, !strncmp(e, "b/", 2)); }
   const char *entry = argc > 3 ? argv[3] : (bend ? "b/main" : "main");
   int id = book_find(entry); if (id < 0) { fprintf(stderr, "hyper: no %s\n", entry); return 1; }

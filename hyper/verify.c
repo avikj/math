@@ -321,6 +321,8 @@ static bool verify(uint32_t c, Term fr, Term goal) {
   Term T = infer(c, fr); if (!T) return false;
   memset(&EQV, 0, sizeof EQV);
   if (eq(T, goal, 0)) return true;
+  { Term g = whnf(goal), t = whnf(T);                /* a path is a line: p : Path L a b is λi. p i : Π (i : Itv). L i */
+    if (is_ctr(g, C_PI) && is_ctr(whnf(HEAP[loc(g)]), C_ITV) && is_ctr(t, C_PATH)) { memset(&EQV, 0, sizeof EQV); if (eq(HEAP[loc(t)], HEAP[loc(g)+1], 0)) return true; } }
   return fail_mis(goal, T);
 }
 static uint32_t skip_dims(uint32_t c, Term *fr) { while (CODE[c].tag == S_DIM) { *fr = bind_dim(*fr); c = CODE[c].a; } return c; }
@@ -418,6 +420,14 @@ static Term infer(uint32_t c, Term fr) {
       if (CODE[n->b].tag == S_CTR && CINFO[CODE[n->b].ext >> 8].hit) {   /* a HIT constructor annotated with its HIT: its own type (Core.Check infer Chk/HCon) */
         Term T = whnf(cell(n->a, fr)); if (tag(T) == T_CTR && ctr_id(T) == CINFO[CODE[n->b].ext >> 8].hit) return infer(n->b, fr); }
       if (!check(n->b, fr, cell(n->a, fr))) return 0; return cell(n->a, fr); }
+    case S_PROJ: {                                    /* (proj i x): the i-th component of x's Sig type, the second along the first */
+      Term xT = infer(n->b, fr); if (!xT) return 0; xT = whnf(xT);
+      if (!is_ctr(xT, C_SIG)) { fail_mis(mk(T_CTR, ctr_ext(C_SIG, 2), alloc(2)), xT); return 0; }
+      Term i = whnf(cell(n->a, fr)); if (tag(i) != T_NUM) { fail_ci("proj: the index is not a numeral"); return 0; }
+      uint64_t k = HEAP[loc(i)];
+      if (k == 0) return HEAP[loc(xT)];
+      if (k == 1) return app2(HEAP[loc(xT)+1], proj(0, cell(n->b, fr)));
+      fail_ci("proj: index beyond a pair"); return 0; }
     case S_LAM: case S_PLM: case S_FIX: case S_ERA: case S_SUP: case S_CASE: fail_ci("cannot infer"); return 0;
     case S_FCE: { Term T = infer(n->b, fr); if (!T) return 0; Term nm = n->d ? cell(n->d, fr) : mk(T_IVAR, 0, 0); return fce_raw(n->ext, nm, T, 0); }
     case S_I0: case S_I1: return ITV;

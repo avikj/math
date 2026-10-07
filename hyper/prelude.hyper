@@ -72,42 +72,74 @@
 (def equiv-fun (lam e (proj 0 e)))
 (def equiv-inv (lam e (lam y (proj 0 (proj 0 (app (proj 1 e) y))))))          ; the centre's point
 (def equiv-sec (lam e (lam y (proj 1 (proj 0 (app (proj 1 e) y))))))          ; the centre's path  f (inv y) ≡ y
-(def isContrSingl (lam A (lam y (ctr Pair (ctr Pair y (plm _ y))
+(def isContrSingl : (ctr Pi (ctr Set) (lam A (ctr Pi A (lam y (isContr-ty (fiber-ty A A (lam x x) y))))))
+  = (lam A (lam y (ctr Pair (ctr Pair y (plm _ y))
                                           (lam w (case w (Pair (x p) (plm i (ctr Pair (app p (inot i)) (plm j (app p (ior (inot i) j))))))))))))
-(def idequiv (lam A (ctr Pair (lam x x) (lam y (isContrSingl A y)))))
+(def idequiv : (ctr Pi (ctr Set) (lam A (Equiv-ty A A)))
+  = (lam A (ctr Pair (lam x x) (lam y (isContrSingl A y)))))
 ;   an isomorphism is an equivalence: agda/cubical Cubical.Foundations.Isomorphism.isoToIsEquiv, term for term.
 ;   f : A → B, g : B → A, s y : f (g y) ≡ y (rightInv), t x : g (f x) ≡ x (leftInv).
-;   fill0 i = hfill (λ k → λ { (i = i1) → t x0 k ; (i = i0) → g y }) (inS (g (p0 (~ i))))
-(def iso-fill0 (lam A (lam g (lam t (lam y (lam x0 (lam p0 (lam i (lam j
-  (hfill A (app g (app p0 (inot i)))
-         (ctr Cons (ctr Face i (plm k (app (app t x0) k))) (ctr Cons (ctr Face (inot i) (plm k (app g y))) (ctr Nil))) j))))))))))
-;   fill2 i = hfill (λ k → λ { (i = i1) → fill1 k i1 ; (i = i0) → fill0 k i1 }) (inS (g y))
-(def iso-fill2 (lam A (lam g (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1 (lam i (lam j
-  (hfill A (app g y)
-         (ctr Cons (ctr Face i (plm k (iso-fill0 A g t y x1 p1 k i1))) (ctr Cons (ctr Face (inot i) (plm k (iso-fill0 A g t y x0 p0 k i1))) (ctr Nil))) j))))))))))))
+; A B : Set, f : A → B, g : B → A, s y : f (g y) ≡ y (rightInv), t x : g (f x) ≡ x (leftInv), y : B, x0 x1 : A,
+; p0 : f x0 ≡ y, p1 : f x1 ≡ y.  Each row is typed so the checker verifies it (MAP §0.3 step 4); hfill is
+; written out as the hcomp it is (prelude: derived, not primitive), with its faces static for the checker.
+;   fill0 i j = hfill (λ k → λ { (i = i1) → t x0 k ; (i = i0) → g y }) (inS (g (p0 (~ i)))) j
+(def iso-fill0 : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi A (lam _ B)) (lam f (ctr Pi (ctr Pi B (lam _ A)) (lam g
+  (ctr Pi (ctr Pi A (lam x (ctr Path (lam _ A) (app g (app f x)) x))) (lam t (ctr Pi B (lam y (ctr Pi A (lam x0 (ctr Pi (ctr Path (lam _ B) (app f x0) y) (lam p0
+  (ctr Pi (ctr Itv) (lam i (ctr Pi (ctr Itv) (lam j A))))))))))))))))))))
+  = (lam A (lam B (lam f (lam g (lam t (lam y (lam x0 (lam p0 (plm i (plm j
+      (hcm A (app g (app p0 (inot i)))
+        (ctr Cons (ctr Face (inot j) (plm k (app g (app p0 (inot i)))))
+        (ctr Cons (ctr Face i (plm k (app (app t x0) (iand k j))))
+        (ctr Cons (ctr Face (inot i) (plm k (app g y))) (ctr Nil))))))))))))))))
+;   fill2 i j = hfill (λ k → λ { (i = i1) → fill1 k i1 ; (i = i0) → fill0 k i1 }) (inS (g y)) j
+(def iso-fill2 : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi A (lam _ B)) (lam f (ctr Pi (ctr Pi B (lam _ A)) (lam g
+  (ctr Pi (ctr Pi A (lam x (ctr Path (lam _ A) (app g (app f x)) x))) (lam t (ctr Pi B (lam y
+  (ctr Pi A (lam x0 (ctr Pi (ctr Path (lam _ B) (app f x0) y) (lam p0 (ctr Pi A (lam x1 (ctr Pi (ctr Path (lam _ B) (app f x1) y) (lam p1
+  (ctr Pi (ctr Itv) (lam i (ctr Pi (ctr Itv) (lam j A))))))))))))))))))))))))
+  = (lam A (lam B (lam f (lam g (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1 (plm i (plm j
+      (hcm A (app g y)
+        (ctr Cons (ctr Face (inot j) (plm k (app g y)))
+        (ctr Cons (ctr Face i (plm k (iso-fill0 A B f g t y x1 p1 (iand k j) i1)))
+        (ctr Cons (ctr Face (inot i) (plm k (iso-fill0 A B f g t y x0 p0 (iand k j) i1))) (ctr Nil))))))))))))))))))
 ;   sq i j = hcomp (λ k → λ { (i = i1) → fill1 j (~ k) ; (i = i0) → fill0 j (~ k) ; (j = i1) → t (fill2 i i1) (~ k) ; (j = i0) → g y }) (fill2 i j)
-(def iso-sq (lam A (lam g (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1 (lam i (lam j
-  (hcm A (iso-fill2 A g t y x0 p0 x1 p1 i j)
-       (ctr Cons (ctr Face i (plm k (iso-fill0 A g t y x1 p1 j (inot k))))
-       (ctr Cons (ctr Face (inot i) (plm k (iso-fill0 A g t y x0 p0 j (inot k))))
-       (ctr Cons (ctr Face j (plm k (app (app t (iso-fill2 A g t y x0 p0 x1 p1 i i1)) (inot k))))
-       (ctr Cons (ctr Face (inot j) (plm k (app g y))) (ctr Nil)))))))))))))))))
+(def iso-sq : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi A (lam _ B)) (lam f (ctr Pi (ctr Pi B (lam _ A)) (lam g
+  (ctr Pi (ctr Pi A (lam x (ctr Path (lam _ A) (app g (app f x)) x))) (lam t (ctr Pi B (lam y
+  (ctr Pi A (lam x0 (ctr Pi (ctr Path (lam _ B) (app f x0) y) (lam p0 (ctr Pi A (lam x1 (ctr Pi (ctr Path (lam _ B) (app f x1) y) (lam p1
+  (ctr Pi (ctr Itv) (lam i (ctr Pi (ctr Itv) (lam j A))))))))))))))))))))))))
+  = (lam A (lam B (lam f (lam g (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1 (plm i (plm j
+      (hcm A (iso-fill2 A B f g t y x0 p0 x1 p1 i j)
+        (ctr Cons (ctr Face i        (plm k (iso-fill0 A B f g t y x1 p1 j (inot k))))
+        (ctr Cons (ctr Face (inot i) (plm k (iso-fill0 A B f g t y x0 p0 j (inot k))))
+        (ctr Cons (ctr Face j        (plm k (app (app t (iso-fill2 A B f g t y x0 p0 x1 p1 i i1)) (inot k))))
+        (ctr Cons (ctr Face (inot j) (plm k (app g y))) (ctr Nil)))))))))))))))))))
 ;   sq1 i j = hcomp (λ k → λ { (i = i1) → s (p1 (~ j)) k ; (i = i0) → s (p0 (~ j)) k ; (j = i1) → s (f (p i)) k ; (j = i0) → s y k }) (f (sq i j))
-(def iso-sq1 (lam A (lam B (lam f (lam g (lam s (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1 (lam i (lam j
-  (hcm B (app f (iso-sq A g t y x0 p0 x1 p1 i j))
-       (ctr Cons (ctr Face i (plm k (app (app s (app p1 (inot j))) k)))
-       (ctr Cons (ctr Face (inot i) (plm k (app (app s (app p0 (inot j))) k)))
-       (ctr Cons (ctr Face j (plm k (app (app s (app f (iso-fill2 A g t y x0 p0 x1 p1 i i1))) k)))
-       (ctr Cons (ctr Face (inot j) (plm k (app (app s y) k))) (ctr Nil))))))))))))))))))))
+(def iso-sq1 : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi A (lam _ B)) (lam f (ctr Pi (ctr Pi B (lam _ A)) (lam g
+  (ctr Pi (ctr Pi B (lam y (ctr Path (lam _ B) (app f (app g y)) y))) (lam s
+  (ctr Pi (ctr Pi A (lam x (ctr Path (lam _ A) (app g (app f x)) x))) (lam t (ctr Pi B (lam y
+  (ctr Pi A (lam x0 (ctr Pi (ctr Path (lam _ B) (app f x0) y) (lam p0 (ctr Pi A (lam x1 (ctr Pi (ctr Path (lam _ B) (app f x1) y) (lam p1
+  (ctr Pi (ctr Itv) (lam i (ctr Pi (ctr Itv) (lam j B))))))))))))))))))))))))))
+  = (lam A (lam B (lam f (lam g (lam s (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1 (plm i (plm j
+      (hcm B (app f (iso-sq A B f g t y x0 p0 x1 p1 i j))
+        (ctr Cons (ctr Face i        (plm k (app (app s (app p1 (inot j))) k)))
+        (ctr Cons (ctr Face (inot i) (plm k (app (app s (app p0 (inot j))) k)))
+        (ctr Cons (ctr Face j        (plm k (app (app s (app f (iso-fill2 A B f g t y x0 p0 x1 p1 i i1))) k)))
+        (ctr Cons (ctr Face (inot j) (plm k (app (app s y) k))) (ctr Nil))))))))))))))))))))
 ;   lemIso i = (p i , λ j → sq1 i (~ j)),  p i = fill2 i i1
-(def iso-lem (lam A (lam B (lam f (lam g (lam s (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1
-  (plm i (ctr Pair (iso-fill2 A g t y x0 p0 x1 p1 i i1)
-                   (plm j (iso-sq1 A B f g s t y x0 p0 x1 p1 i (inot j)))))))))))))))))
+(def iso-lem : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi A (lam _ B)) (lam f (ctr Pi (ctr Pi B (lam _ A)) (lam g
+  (ctr Pi (ctr Pi B (lam y (ctr Path (lam _ B) (app f (app g y)) y))) (lam s
+  (ctr Pi (ctr Pi A (lam x (ctr Path (lam _ A) (app g (app f x)) x))) (lam t (ctr Pi B (lam y
+  (ctr Pi A (lam x0 (ctr Pi (ctr Path (lam _ B) (app f x0) y) (lam p0 (ctr Pi A (lam x1 (ctr Pi (ctr Path (lam _ B) (app f x1) y) (lam p1
+  (ctr Path (lam _ (fiber-ty A B f y)) (ctr Pair x0 p0) (ctr Pair x1 p1))))))))))))))))))))))))
+  = (lam A (lam B (lam f (lam g (lam s (lam t (lam y (lam x0 (lam p0 (lam x1 (lam p1
+      (plm i (ctr Pair (iso-fill2 A B f g t y x0 p0 x1 p1 i i1)
+                       (plm j (iso-sq1 A B f g s t y x0 p0 x1 p1 i (inot j)))))))))))))))))
 ;   equiv-proof y = ((g y , s y) , λ (x , p) → lemIso y (g y) x (s y) p)
-(def iso-to-equiv (lam A (lam B (lam f (lam g (lam s (lam t
-  (ctr Pair f (lam y (ctr Pair (ctr Pair (app g y) (app s y))
-                               (lam w (case w (Pair (x p) (iso-lem A B f g s t y (app g y) (app s y) x p))))))))))))))
-
+(def iso-to-equiv : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi A (lam _ B)) (lam f (ctr Pi (ctr Pi B (lam _ A)) (lam g
+  (ctr Pi (ctr Pi B (lam y (ctr Path (lam _ B) (app f (app g y)) y))) (lam s
+  (ctr Pi (ctr Pi A (lam x (ctr Path (lam _ A) (app g (app f x)) x))) (lam t (Equiv-ty A B)))))))))))))
+  = (lam A (lam B (lam f (lam g (lam s (lam t
+      (ctr Pair f (lam y (ctr Pair (ctr Pair (app g y) (app s y))
+                                   (lam w (case w (Pair (x p) (iso-lem A B f g s t y (app g y) (app s y) x p))))))))))))))
 ; ---- Glue (GLUE.md): the type former for univalence ------------------------------------------
 ;   (Glue A faces) with faces a list of (ctr GFace phi T e), e : Equiv T A
 (def gface-phi (lam g (case g (GFace (phi T e) phi))))
@@ -115,7 +147,8 @@
 (def gface-e   (lam g (case g (GFace (phi T e) e))))
 (def map-gfaces (lam f (lam fs (case fs (Nil () (ctr Nil)) (Cons (h t) (ctr Cons (app f h) (map-gfaces f t)))))))
 ; ua e : Path Set A B  =  <i> Glue B [(~i, A, e), (i, B, idEquiv B)]
-(def ua (lam A (lam B (lam e (plm i (Glue B (ctr Cons (ctr GFace (inot i) A e)
+(def ua : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (Equiv-ty A B) (lam e (ctr Path (lam _ (ctr Set)) A B)))))))
+  = (lam A (lam B (lam e (plm i (Glue B (ctr Cons (ctr GFace (inot i) A e)
                                             (ctr Cons (ctr GFace i B (idequiv B)) (ctr Nil)))))))))
 ; transport along a Glue line (whnfCoe, Glu case).  The line's cells at r and s are Glue types.
 ;   a_r  := unglue_r x     (a true face at r selects e's function; no face: x; else unglue x)
@@ -150,9 +183,12 @@
                              (unglue-sel rest x (ctr True)))))))))
 ; ---- the universe: hcomp in Set is a Glue type (whnfHCm, Set case) --------------------------
 ;   fibre, contractibility and equivalence as type cells (the corpus's coherent Equiv)
-(def fiber-ty   (lam A (lam B (lam f (lam y (ctr Sig A (lam x (ctr Path (plm _ B) (app f x) y))))))))
-(def isContr-ty (lam X (ctr Sig X (lam c (ctr Pi X (lam x (ctr Path (plm _ X) c x)))))))
-(def Equiv-ty   (lam A (lam B (ctr Sig (ctr Pi A (lam _ B)) (lam f (ctr Pi B (lam y (isContr-ty (fiber-ty A B f y)))))))))
+(def fiber-ty : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Pi (ctr Pi A (lam _ B)) (lam f (ctr Pi B (lam y (ctr Set)))))))))
+  =   (lam A (lam B (lam f (lam y (ctr Sig A (lam x (ctr Path (plm _ B) (app f x) y))))))))
+(def isContr-ty : (ctr Pi (ctr Set) (lam X (ctr Set)))
+  = (lam X (ctr Sig X (lam c (ctr Pi X (lam x (ctr Path (plm _ X) c x)))))))
+(def Equiv-ty : (ctr Pi (ctr Set) (lam A (ctr Pi (ctr Set) (lam B (ctr Set)))))
+  =   (lam A (lam B (ctr Sig (ctr Pi A (lam _ B)) (lam f (ctr Pi B (lam y (isContr-ty (fiber-ty A B f y)))))))))
 ;   pathToEquiv of the reversed tube: the identity equivalence transported along k ↦ Equiv (u@1) (u@~k)
 (def transpEquiv (lam u (trp (plm k (Equiv-ty (app u i1) (app u (inot k)))) i0 i1 (idequiv (app u i1)))))
 (def face-to-gface (lam f (case f (Face (phi u) (ctr GFace phi (app u i1) (transpEquiv u))))))

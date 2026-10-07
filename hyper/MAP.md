@@ -141,16 +141,26 @@ them.
    - Tested by `t/basic.hyper`, `t/lazy.hyper`, `t/sup.hyper`, `t/kan.hyper`, `t/ua.hyper`, `t/setcomp.hyper`, `t/hit.hyper` and `t/erase.hyper`.
 2. **The trace of a run and the leaves of a superposition as terms. Written** (`trace`, `leaves`; `t/meet.hyper`).
 3. **Every rule fires at an active pair and is receipted. Written.** The value and the count are the same when the right demand is served first or a coin decides (`test.sh`, the schedule loop).
-4. The chart move under a checked path. **Written, run; the path is not yet checked** (`t/sort.hyper`, `chart-move`).
+4. The chart move under a checked path. **Written, run, and checked** (`t/sort.hyper`, `chart-move`; `hyper check t/sort.hyper` → `✓ sort_at_A`, `test.sh`).
    The cheap chart is `Carrier isort` (`fibre/src/Fibre/Carrier.agda`): a list, its image under `isort`, and the
    witness. `descend a = (a, isort a, refl)` and `ascend c = base c`, and the two round trips are an iso. The
    prelude's `iso-to-equiv` is agda/cubical's `isoToIsEquiv`, term for term (`fill0`, `fill2`, `sq`, `sq1`,
    `lemIso`), and it makes the iso an equivalence. Transport of A along its `ua` is `descend A` (uaβ), and the
    carried image is `[1,2,3]` in 173 interactions, where the deleted narrowing core took 37,159 to resolve the
    type; no coordinate, split or unification. It is the same under the three schedules.
-   **Open:** `b/sort_at_A` states the specification at that B, `(B, (refl, refl))`, but `hyper check` rejects it
-   because `isort`, `sorted`, the carrier and the prelude's Kan operations are untyped definitions. The checked
-   path needs them typed.
+   **Closed.** `b/sort_at_A` states the specification at that B, `(B, (refl, refl))`, and `hyper check` accepts it: every
+   definition on the path is typed, program text unchanged — `leq`, `insert`, `isort`, `sorted`, `A`, the carrier and its
+   two round trips (`t/sort.hyper`), and the prelude's `fiber-ty`, `isContr-ty`, `Equiv-ty`, `isContrSingl`, `idequiv`,
+   `ua` and the isoToIsEquiv tower `iso-fill0`, `iso-fill2`, `iso-sq`, `iso-sq1`, `iso-lem`, `iso-to-equiv`
+   (`prelude.hyper`), the tower's `hfill` written out as the hcomp it is with static faces so the checker reads them; the
+   run is unchanged at 173 interactions. `HYPER_CHECK_ALL=1 hyper check FILE` verifies every typed definition, the
+   prelude's included (`main.c:73`). What the checker needed, all in conversion (`verify.c`): a face on a spine headed by a
+   definition compared with the head still visible (`verify.c:196` `fce_through_spine`); two closures of one code compared
+   by their frames and taken coinductively (`verify.c:226` `same_clo`); a restriction on a closure whose code can read
+   nothing that mentions the name is the closure (`verify.c:175` `restriction_vacuous_on_closure`, `verify.c:187`
+   `strip_scoped_faces`) — without it a restriction read through a frame re-wrapped a fix's closure afresh at every lookup
+   and the coinductive memo never saw one pair twice; the memo reset per top-level comparison (`verify.c:138` `eq_reset`);
+   `proj` inferred at a Sig (`verify.c:423`); a path accepted as a transport line (`verify.c:324`).
 5. **A declaration with no body. Open.** See §0.1: the construction reaches a specification's point by presenting along a map and transporting along the equivalence. How a declaration with no body supplies that map is not yet stated.
 6. **The Bend dialect's grammar** as a book with its certificate, and parallel demand over the one arena.
 
