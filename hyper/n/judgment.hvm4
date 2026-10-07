@@ -68,7 +68,11 @@
   #STrp: λ&L. λ&p. λ&x. @transp(λi. @eval(#Cons{i, env}, L), @eval(env, p), @eval(env, x));
   #SSub: λ&A. λ&p. λ&u. #Sub{@eval(env, A), @eval(env, p), @eval(env, u)}; #SInS: λ&x. #InS{@eval(env, x)}; #SOutS: λ&s2. @outS(@eval(env, s2));
   #SQuo: λ&A. λ&R. #Quo{@eval(env, A), @eval(env, R)}; #SQCl: λ&a. #QCl{@eval(env, a)}; #SQEq: λ&a. λ&b. λ&w. #QEq{@eval(env, a), @eval(env, b), @eval(env, w)};
-  #SQRec: λ&x. λ&t. λ&f. λ&rsp. @qrec(@eval(env, x), @eval(env, t), @eval(env, f), @eval(env, rsp))}
+  #SQRec: λ&x. λ&t. λ&f. λ&rsp. @qrec(@eval(env, x), @eval(env, t), @eval(env, f), @eval(env, rsp));
+  #SEnum: λ&l. #Enum{l}; #SSym: λ&c. c; #SEnumM: λ&x. λ&arms. @enumm(@eval(env, x), @evalArms(env, arms))}
+@evalArms = λ&env. λ{#Nil: #Nil; #Cons: λ{#SArm: λ&c. λ&b. λ&rest. #Cons{#Arm{c, @eval(env, b)}, @evalArms(env, rest)}}}
+@enumm = λ&x. λ{#Nil: #NEnumM{x}; #Cons: λ{#Arm: λ&c. λ&b. λ&rest. (λ{1: b; λ&q. @enumm(x, rest)})((x === c))}}
+@member = λ&c. λ{#Nil: 0; #Cons: λ&h. λ&t. (λ{1: 1; λ&q. @member(c, t)})((c === h))}
 @evalFaces = λ&env. λ{#Nil: #Nil; #Cons: λ{#SFace: λ&p. λ&u. λ&rest. #Cons{#Face{@eval(env, p), @eval(env, u)}, @evalFaces(env, rest)}}}
 @evalGFaces = λ&env. λ{#Nil: #Nil; #Cons: λ{#SGFace: λ&p. λ&T. λ&e. λ&rest. #Cons{#GFace{@eval(env, p), @eval(env, T), @eval(env, e)}, @evalGFaces(env, rest)}}}
 // ---- the cells of a face: its DNF as lists of (variable index, endpoint) — literals are variables and their negations
@@ -141,6 +145,8 @@
   #SOutS: λ&s2. (λ{#Sub: λ&A. λ&p. λ&u. A; λ&t. t})(@infer(ctx, env, s2));
   // A / R : Set with R : A → A → Set
   #SQuo: λ&A. λ&R. (λ{1: #Set; λ&q. #Ill})(@andB(@check(ctx, env, A, #Set), @check(ctx, env, R, #Pi{@eval(env, A), λ&a. #Pi{@eval(env, A), λ&b. #Set}})));
+  // an enumeration {c1, …, cn} : Set; a symbol is checked against its enumeration (below)
+  #SEnum: λ&l. #Set;
   λ&s. #Ill}
 @hcFaces = λ&ctx. λ&env. λ&A. λ&x. λ{#Nil: 1; #Cons: λ{#SFace: λ&p. λ&u. λ&rest.
   @andB(@check(ctx, env, p, #Itv), @andB(@all(λ&cell. ! &e2 = @onCell(env, cell); ! &uv = @eval(e2, u);
@@ -172,6 +178,9 @@
   #SInS: λ&x. (λ{#Sub: λ&A. λ&p. λ&u. @andB(@check(ctx, env, x, A), @all(λ&cell. ! &e2 = @onCell(env, cell); @convT(A, @eval(e2, x), u), @dnfV(p))); λ&t. 0})(T);
   // [a] : A/R; eq/ a b w : Path (A/R) [a] [b]; A/R.rec x f rsp : B with f : Π A B and rsp : Π a b. R a b → Path B (f a) (f b)
   #SQCl: λ&a. (λ{#Quo: λ&A. λ&R. @check(ctx, env, a, A); λ&t. 0})(T);
+  // c : {…} when c is one of the symbols; a match on an enumeration against a goal: every symbol has an arm, each arm the goal
+  #SSym: λ&c. (λ{#Enum: λ&l. @member(c, l); λ&t. 0})(T);
+  #SEnumM: λ&x. λ&arms. (λ{#Enum: λ&l. @andB(@all(λ&c. @hasArm(c, arms), l), @armsCheck(ctx, env, l, T, arms)); λ&t. 0})(@infer(ctx, env, x));
   #SQEq: λ&a. λ&b. λ&w. (λ{#Path: λ&Tl. λ&e0. λ&e1. (λ{#Quo: λ&A. λ&R. @andB(@check(ctx, env, a, A), @andB(@check(ctx, env, b, A), @andB(@check(ctx, env, w, R(@eval(env, a))(@eval(env, b))),
     @andB(@convT(#Quo{A, R}, e0, #QCl{@eval(env, a)}), @convT(#Quo{A, R}, e1, #QCl{@eval(env, b)}))))); λ&t. 0})(Tl(#I0)); λ&t. 0})(T);
   #SQRec: λ&x. λ&t. λ&f. λ&rsp. (λ{#Quo: λ&A. λ&R. @andB(@conv(@eval(env, t), T), @andB(@check(ctx, env, f, #Pi{A, λ&a. T}),
@@ -179,6 +188,8 @@
   λ&t. @conv(@infer(ctx, env, s), T)})(s)
 // the cells of a face VALUE (I0/I1 or a neutral interval variable): for Sub's φ, which is a value in the type
 @dnfV = λ&p. (λ{#I1: #Cons{#Nil, #Nil}; #I0: #Nil; λ&q. #Cons{#Cons{#LitV{q, #I1}, #Nil}, #Nil}})(p)
+@hasArm = λ&c. λ{#Nil: 0; #Cons: λ{#SArm: λ&d. λ&b. λ&rest. (λ{1: 1; λ&q. @hasArm(c, rest)})((c === d))}}
+@armsCheck = λ&ctx. λ&env. λ&l. λ&T. λ{#Nil: 1; #Cons: λ{#SArm: λ&c. λ&b. λ&rest. @andB(@member(c, l), @andB(@check(ctx, env, b, T), @armsCheck(ctx, env, l, T, rest)))}}
 @sysBranches = λ&ctx. λ&env. λ&A. λ{#Nil: 1; #Cons: λ{#SFace: λ&q. λ&v. λ&rest. @andB(@check(ctx, env, q, #Itv), @andB(@all(λ&cell. ! &e2 = @onCell(env, cell); @check(ctx, e2, v, A), @dnf(q)), @sysBranches(ctx, env, A, rest)))}}
 @sysAgree = λ&env. λ&A. λ{#Nil: 1; #Cons: λ{#Pair: λ{#SFace: λ&q. λ&v. λ{#SFace: λ&r. λ&w. λ&rest. @andB(@all(λ&cell. ! &e2 = @onCell(env, cell); @convT(A, @eval(e2, v), @eval(e2, w)), @dnf(#SAnd{q, r})), @sysAgree(env, A, rest))}}}}
 @sysCover = λ&env. λ&p. λ&fs. (λ{#I1: @anyTrue(env, fs); #I0: 1; λ&q. @anyTrue(env, fs)})(p)

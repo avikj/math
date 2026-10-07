@@ -521,5 +521,6 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
   as a type value; `D` the line of every arrangement of `A` (one fresh coordinate per place) with `(refl, refl)`;
   the judgment `T === @infer(D)` runs once on the line, `EQL` commuting over it, five sides erase, and `%` is the
   fibre: the one point `([0,1,2], (refl, refl))` in 10,463 interactions. The book holds `perm`, `sorted` and the list.
-- **Not done:** Enum; the lane's eleven cubical programs re-run here (no Bend binary to emit them); parallel
+- Enumerations: the type, symbols against it, the match with coverage (`n/judgeenum.hvm4`).
+- **Not done:** the lane's eleven cubical programs re-run here (no Bend binary to emit them); parallel
   execution (this HVM4 is sequential; the diamond makes it legal).
