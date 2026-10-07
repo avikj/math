@@ -27,13 +27,11 @@ Why this is possible and not a wish, in the corpus's own checked terms:
 
 1. **The fibre law.** For any f : A → B, A ≃ Σ_b fib_f(b), and for any lossless
    factorisation of a computation the retained trace is forced to be the fibre
-   of its visible map (`fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:129`
-   `fibre-of-run`). A specification `Σ B. P A B` is a fibre. When it is
+   of its visible map (`fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:133` `fibre-of-run`). A specification `Σ B. P A B` is a fibre. When it is
    contractible its centre is determined by A, so B is inferrable, not guessed.
    When it is empty there is no B; when it is crowded the specification
    underdetermines. The census says which, pointwise, three-valued, never a
-   Boolean (`fibre/src/Fibre/WholePartialDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:87`
-   `देश`).
+   Boolean (`fibre/src/Fibre/SakalaVikalaDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:4` `देश`).
 2. **The geodesic.** Under the one-step diamond every complete reduction of an
    object to its normal form has the same length and no first move can lengthen
    it (`research/sat_fibre/InteractionGeodesic.agda:45` `same-normalization-length`,
@@ -43,8 +41,7 @@ Why this is possible and not a wish, in the corpus's own checked terms:
    because every path is the minimum. Cost is not a performance figure and the
    programmer never thinks about it.
 3. **Univalence computes.** A proved equivalence between two presentations is a
-   path in the universe and transport along it reduces (`fibre/src/Fibre/Carrier.agda:129`
-   `carry-transport-descend`). Meaning descends along it; cost does not. So the
+   path in the universe and transport along it reduces (`fibre/src/Fibre/Carrier.agda:118` `carry-transport-descend`). Meaning descends along it; cost does not. So the
    minimal count for an object is the minimum over its charts, and the only
    lever that changes cost is a proof.
 4. **Cost and inverse cannot coexist.** Only forgetting costs. Nothing is erased
@@ -54,12 +51,9 @@ Why this is possible and not a wish, in the corpus's own checked terms:
    `:74` `interactionTotal-is-length`).
 5. **Interaction is the operation.** A state faces a typed map and returns the
    successor, the observation, the event and the continuation
-   (`fibre/src/Fibre/Interaction_TheOrbitIsTheOneQueryCaseOfTheInteractiveCoalgebraAndTheDemandIsWhatDiffers.agda:81`
-   `react`). Two parts are projections of one joint
-   (`formal/cubical/theorems/logic/Jiva_EntanglementIsTheFibreOfTheProductComparisonAndTheLivingStepRefusesToDescendToTheMarginals.agda:134`
-   `तुलना`); two peers with an overlap compose one trace
-   (`formal/cubical/kernel-flat/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:164`
-   `interact`). What the runtime cannot infer is exactly the concrete, non-universal
+   (`fibre/src/Fibre/Samvada_TheOrbitIsTheOneQueryCaseOfTheInteractiveCoalgebraAndTheDemandIsWhatDiffers.agda:85` `react`). Two parts are projections of one joint
+   (`formal/cubical/theorems/logic/Jiva_EntanglementIsTheFibreOfTheProductComparisonAndTheLivingStepRefusesToDescendToTheMarginals.agda:137` `तुलना`); two peers with an overlap compose one trace
+   (`formal/cubical/kernel/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:166` `interact`). What the runtime cannot infer is exactly the concrete, non-universal
    information, and it enters through a free port.
 
 The universal part of mathematics is finite and already in the construction.
@@ -71,12 +65,12 @@ boundary data is a contractible fibre and resolves like `sort`.
 
 The construction's whole machine is small:
 
-- **A state** is a typed point (`fibre/src/Fibre/CorpusInteraction.agda:17` `Point ℓ = Σ[ A ∈ Type ℓ ] A`).
-- **A question** is a typed map out of the state's type (`:23` `Question`).
-- **A step** answers with the image of the point (`:26` `target s (B , f) = B , f (snd s)`). Its receipt and event are `refl`, and the run continues from the image (`:39` `S.react (run s) q`).
-- **Presenting a point along a map** carries the image and its witness, and adds nothing: `descend a = (a , f a , refl)` (`fibre/src/Fibre/Carrier.agda:97` `descend a = carry a (f a) refl`), `ascend c = base c` (`:100` `ascend c = base c`).
-  - The carried pair ranges over a contractible type (`:93` `fibre-isContr a = isContrSingl (f a)`), so presenting is an equivalence (`:116` `Carrier≃ = isoToEquiv Carrier-Iso`).
-  - Transport along its `ua` computes to `descend` (`:130` `carry-transport-descend a = uaβ Carrier≃ a`).
+- **A state** is a typed point (`fibre/src/Fibre/CorpusSamvada.agda:16` `Point ℓ = Σ[ A ∈ Type ℓ ] A`).
+- **A question** is a typed map out of the state's type (`:21` `Question`).
+- **A step** answers with the image of the point (`:25` `target s (B , f) = B , f (snd s)`). Its receipt and event are `refl`, and the run continues from the image (`:38` `S.react (run s) q`).
+- **Presenting a point along a map** carries the image and its witness, and adds nothing: `descend a = (a , f a , refl)` (`fibre/src/Fibre/Carrier.agda:86` `descend a = carry a (f a) refl`), `ascend c = base c` (`:89` `ascend c = base c`).
+  - The carried pair ranges over a contractible type (`:82` `fibre-isContr a = isContrSingl (f a)`), so presenting is an equivalence (`:105` `Carrier≃ = isoToEquiv Carrier-Iso`).
+  - Transport along its `ua` computes to `descend` (`:119` `carry-transport-descend a = uaβ Carrier≃ a`).
 - **The residual** a question leaves is inhabited by the point itself (`formal/cubical/theorems/residue/CorpusLosslessPresentation.agda:28` `current-residual s q = source s , refl`). It is never computed.
 
 The core owes the language exactly the reduction of these:
@@ -110,10 +104,8 @@ them.
   value oracle.
 - **Importing the toy's frame.** `formal/cubical/Kernel/` is a first-order
   term-rewriting kernel whose own theorems show its `install` fires at exactly
-  one term (`formal/cubical/Kernel/Vyapti_TheInstalledOperationHasNoneSoTheKernelMemorisesAndTheSchemaIsWhatMakesItGeneralise.agda:113`
-  `fires-only-at-source`) and cannot grow its reach
-  (`formal/cubical/Kernel/Siddhasadhana_InstallingWhatYouCanAlreadyReachIsAPlateauSoTheKernelsOwnLibraryCannotGrowItsReach.agda:96`
-  `install-chain-plateau`). Its vocabulary is not this language's design.
+  one term (`formal/cubical/Kernel/Vyapti_TheInstalledOperationHasNoneSoTheKernelMemorisesAndTheSchemaIsWhatMakesItGeneralise.agda:118` `fires-only-at-source`) and cannot grow its reach
+  (`formal/cubical/Kernel/Siddhasadhana_InstallingWhatYouCanAlreadyReachIsAPlateauSoTheKernelsOwnLibraryCannotGrowItsReach.agda:122` `install-chain-plateau`). Its vocabulary is not this language's design.
 - **Deleting the cost.** The interaction count is a corpus quantity (item 4).
   Removing it because a toy also counted was wrong and was reverted.
 - **Narrating from prior.** Every identifier in this file is cited to a file and
@@ -125,8 +117,7 @@ them.
   face that "acts only at a superposition of its own name", never copying a
   constructor. The ledger's alphabet says the opposite: a duplicator meeting a
   node is the event `dupNode`, charged one interaction and the node's words
-  (`research/sat_fibre/InteractionLedger.agda:16` `dupNode`, `:35`
-  `localCharge`). A day was spent building a runtime around the invented
+  (`research/sat_fibre/InteractionLedger.agda:16` `dupNode`, `:35` `localCharge`). A day was spent building a runtime around the invented
   sentence before it was checked against the cited line. The count's status is
   decided by the diamond and the schedule check, not by removing events.
 - **Reading instead of building.** The object is fixed by items 1 to 5 and the
@@ -179,10 +170,10 @@ them.
 ## Read order
 
 Read these before writing anything here, in this order: `fibre/src/Everything.agda`,
-`fibre/src/Fibre/CorpusInteraction.agda`, `fibre/src/Fibre/Carrier.agda`,
+`fibre/src/Fibre/CorpusSamvada.agda`, `fibre/src/Fibre/Carrier.agda`,
 `fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda`,
-`fibre/src/Fibre/Interaction_TheOrbitIsTheOneQueryCaseOfTheInteractiveCoalgebraAndTheDemandIsWhatDiffers.agda`,
-and §0 of `formal/cubical/Kernel/DescentNote_WhatThisIsAndHowToDescendIntoTheMetacircularKernel.agda`.
+`fibre/src/Fibre/Samvada_TheOrbitIsTheOneQueryCaseOfTheInteractiveCoalgebraAndTheDemandIsWhatDiffers.agda`,
+and §0 of `formal/cubical/Kernel/Avataranika_WhatThisIsAndHowToDescendIntoTheMetacircularKernel.agda`.
 Its test applies to every sentence of this file: a sentence that could have been
 written without reading the checked term it is about is narration from prior.
 Every identifier named below is cited as `file:line`, and `cite.sh` fails when
@@ -198,8 +189,7 @@ a question from the world is one too (§2). The files are `.hyper`, the binary i
 ## 1. The substrate
 
 A cubical type theory in which ua's β-rule reduces, with demanded (weak head)
-reduction. `formal/cubical/Kernel/DescentNote_WhatThisIsAndHowToDescendIntoTheMetacircularKernel.agda:304`
-`univalence-acts` is that fact as one term, and the descent note names it as the
+reduction. `formal/cubical/Kernel/Avataranika_WhatThisIsAndHowToDescendIntoTheMetacircularKernel.agda:407` `univalence-acts` is that fact as one term, and the descent note names it as the
 whole reason the rest is possible.
 
 The substrate is `cell.c`, `cell.h`, `read.c`, `verify.c` and the two rule files.
@@ -235,32 +225,28 @@ the name unfolds, the one rule that fires on a node that is not a value.
 
 Everything in this corpus is interaction, two-place at the least, and the
 runtime's one operation is the coalgebra's `react`:
-`fibre/src/Fibre/Interaction_TheOrbitIsTheOneQueryCaseOfTheInteractiveCoalgebraAndTheDemandIsWhatDiffers.agda:75`
-`ISC` (coinductive), `:81` `react : (q : Q w) → Σ[ w' ∈ W ] Σ[ o ∈ O w q w' ] (E w q w' o × ISC Q O E w')`:
+`fibre/src/Fibre/Samvada_TheOrbitIsTheOneQueryCaseOfTheInteractiveCoalgebraAndTheDemandIsWhatDiffers.agda:15` `ISC` (coinductive), `:85` `react : (q : Q w) → Σ[ w' ∈ W ] Σ[ o ∈ O w q w' ] (E w q w' o × ISC Q O E w')`:
 one encounter returns the successor, the observation, the proof-relevant event,
 and the continuation, which is again an interaction. Nothing is globally
 normalised; a finite demand of length n asks n questions and forces nothing else
-(`:99` `observe`). `:132` `det-observe`, `:139` `det-strategy-independent`: with
-the trivial question every strategy sees the same prefix of the orbit; `:172`
-`counter-demand-matters`: with a real question two strategies disagree at the
+(`:103` `observe`). `:136` `det-observe`, `:143` `det-strategy-independent`: with
+the trivial question every strategy sees the same prefix of the orbit; `:176` `counter-demand-matters`: with a real question two strategies disagree at the
 first step. `LIFECYCLE.rst`: do not begin by assuming two independent machines
 exchanging messages; start from the joint interaction and establish which
 projections, dependencies and transports it admits.
 
 Its instances, each a checked module, each computed by one mode of `hyper`:
 
-**A typed point and a typed map** (`fibre/src/Fibre/CorpusInteraction.agda`,
-whole: `:16` `Point`, `:22` `Question`, `:25` `target`, `:28` `Receipt`, `:38`
-`run`, `:41` `step`). A state is `(A, a) : Σ A. A`; a question is `(B, f)` with
+**A typed point and a typed map** (`fibre/src/Fibre/CorpusSamvada.agda`,
+whole: `:16` `Point`, `:22` `Question`, `:25` `target`, `:28` `Receipt`, `:38` `run`, `:40` `step`). A state is `(A, a) : Σ A. A`; a question is `(B, f)` with
 `f : A → B`; the answer is `(B, f a)`; the receipt is the path `target s q ≡ s'`,
 `refl` at the canonical step. The event is the residual:
 `formal/cubical/theorems/residue/CorpusLosslessPresentation.agda:19` `Residual`
 (`fiber (query s q) (query s q (source s))`), `:27` `current-residual`
 (`source s , refl`), and `formal/cubical/theorems/residue/CorpusSelfPresentation.agda:12`
 `present` returns the four together. The state carries its reading losslessly
-(`fibre/src/Fibre/CorpusInteraction.agda:47` `State`, `:82` `state≡carried`,
-by `fibre/src/Fibre/Carrier.agda:92` `fibre-isContr`, `:96` `descend`, `:115`
-`Carrier≃`, `:119` `Carrier≡`, `:129` `carry-transport-descend`). As written:
+(`fibre/src/Fibre/CorpusSamvada.agda:47` `State`, `:82` `state≡carried`,
+by `fibre/src/Fibre/Carrier.agda:81` `fibre-isContr`, `:85` `descend`, `:104` `Carrier≃`, `:108` `Carrier≡`, `:118` `carry-transport-descend`). As written:
 `hyper run FILE [DEF]` is the trivial query; `hyper interact FILE [DEF]` is
 `present`: the point, then each line of the world a question, the point
 presented along it, the new state `(q a, (a, refl))`; an `ASK` cell is a
@@ -269,29 +255,25 @@ question the point asks the world. The residual's census is a program (§3).
 **Two parts of one joint**
 (`formal/cubical/theorems/logic/Jiva_EntanglementIsTheFibreOfTheProductComparisonAndTheLivingStepRefusesToDescendToTheMarginals.agda`).
 A joint state is `J` with two projections, and everything is an officer of the
-comparison `:134` `तुलना`, `j ↦ (p j , q j)`: `:139` `स्वातन्त्र्यम्` (independence
-is the comparison being an equivalence), `:142` `संश्लेष-तन्तुः` (entanglement is
-its fibre family), `:149` `संकलनम्` (the joint is the sum of its entanglement
-fibres). `:164` `घटः-स्वतन्त्रः`: the product joint is independent. `:178`
-`रिक्तम्`: the diagonal joint has an empty fibre over `(true, false)`, a pair of
-marginal readings the whole never realises. `:207` `गूढौ-भिन्नौ`: the joint over
+comparison `:137` `तुलना`, `j ↦ (p j , q j)`: `:142` `स्वातन्त्र्यम्` (independence
+is the comparison being an equivalence), `:145` `संश्लेष-तन्तुः` (entanglement is
+its fibre family), `:152` `संकलनम्` (the joint is the sum of its entanglement
+fibres). `:167` `घटः-स्वतन्त्रः`: the product joint is independent. `:181` `रिक्तम्`: the diagonal joint has an empty fibre over `(true, false)`, a pair of
+marginal readings the whole never realises. `:210` `गूढौ-भिन्नौ`: the joint over
 `Unit × Unit` has two distinct residents over the one reading. A step on `J`
 descends along a projection when some endomap of the part closes the square
-(`:256` `युगलम्-उभयतः`); `:266` `जीवति`: the controlled-not refuses to descend
+(`:259` `युगलम्-उभयतः`); `:269` `जीवति`: the controlled-not refuses to descend
 along the visible side, interrogated at `(true, false)` and `(true, true)`;
-`:276` `दक्षिण-विलयः`: it descends along the hidden side by `refl`; `:286`
-`विलयः`: the step `(not a, b)` descends on both sides; `:302` `जीवन-द्विः`: the
+`:279` `दक्षिण-विलयः`: it descends along the hidden side by `refl`; `:289` `विलयः`: the step `(not a, b)` descends on both sides; `:305` `जीवन-द्विः`: the
 living step is an involution, globally lossless, locally refusing.
 
 **Two sessions and an overlap**: the encounter, §4b.
 
 **The fixed alphabet.** A Chu evaluation `e : A × X → K` retains `k`; the
 lossless interaction retains `fib_e(k)`, forced by
-`fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:129`
-`fibre-of-run`; the general interaction is a family `R : A × X → 𝒰` classified
+`fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:133` `fibre-of-run`; the general interaction is a family `R : A × X → 𝒰` classified
 by the universal family, and a tower of such families flattens to one
-(`fibre/src/Fibre/Universal_EveryFamilyIsAPullbackOfTheUniverseAndTheTowerFlattensToOne.agda:312`
-`flatten`). `CHU_LOSSLESS_INTERACTION.md` is the reading; the census of a map out of a
+(`fibre/src/Fibre/Visvarupa_EveryFamilyIsAPullbackOfTheUniverseAndTheTowerFlattensToOne.agda:312` `flatten`). `CHU_LOSSLESS_INTERACTION.md` is the reading; the census of a map out of a
 product domain, resolved pointwise, is the Chu matrix with its fibres.
 
 `hyper check FILE` is `verify.c` on every definition; `hyper bend FILE` runs
@@ -301,13 +283,11 @@ product domain, resolved pointwise, is the Chu matrix with its fibres.
 
 Two measures, both corpus quantities, and they measure different things.
 
-**The ledger: what a run costs.** `research/sat_fibre/InteractionLedger.agda:13`
-`Event`, `:20` `Charge` (`interactions`, `heapWords`), `:57` `Trace` (a run is a
+**The ledger: what a run costs.** `research/sat_fibre/InteractionLedger.agda:13` `Event`, `:20` `Charge` (`interactions`, `heapWords`), `:57` `Trace` (a run is a
 sequence of events), `:65` `interactionTotal`, `:74` `interactionTotal-is-length`.
 `research/sat_fibre/InteractionGeodesic.agda:14` `RandomDescent`, parametrised by
 a one-step `diamond`; `:45` `same-normalization-length`: every complete reduction
-of one object to its normal form has the same length; `:53`
-`normalization-is-geodesic`. As written: every rule appends its receipt to
+of one object to its normal form has the same length; `:53` `normalization-is-geodesic`. As written: every rule appends its receipt to
 `TRACE`, with the node it fired on and the heap length at that moment; a run
 prints `- Itrs:` (the interactions) and `- Words:` (the heap words allocated),
 the two components of `Charge`; `HYPER_CENSUS=1` prints each event's count and
@@ -329,22 +309,17 @@ are the reason a runtime exists at all: the superposition is one line over N
 values and its cost is what the ledger shows.
 
 **The census: what a question loses.**
-`fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:90`
-`Conservative` (`Trace : B → Type`, `whole : A ≃ Σ[ b ∈ B ] Trace b`); `:129`
-`fibre-of-run`: for any conservative factorisation the trace family is the
-homotopy fibre of the visible map it induces. `:159` `exact-when-contractible`,
-`:164` `contractible-when-exact`: the trace measures exactly the failure of the
-visible result to be the whole event. `:181` `canonical`, `:194`
-`canonical-recovers`, by `refl`: the source was never left behind.
-`fibre/src/Fibre/WholePartialDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:87`
-`देश`, `:93` `गणना`: the census of a question, pointwise over the codomain,
+`fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:94` `Conservative` (`Trace : B → Type`, `whole : A ≃ Σ[ b ∈ B ] Trace b`); `:133` `fibre-of-run`: for any conservative factorisation the trace family is the
+homotopy fibre of the visible map it induces. `:163` `exact-when-contractible`,
+`:168` `contractible-when-exact`: the trace measures exactly the failure of the
+visible result to be the whole event. `:185` `canonical`, `:198` `canonical-recovers`, by `refl`: the source was never left behind.
+`fibre/src/Fibre/SakalaVikalaDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:4` `देश`, `:117` `गणना`: the census of a question, pointwise over the codomain,
 three-valued.
 
 Erase: nothing is erased inside a run; a forgotten port is one receipt where it
 is forgotten (`t/erase.hyper`: the fibre's size never enters). Commutation is
 the certificate that an order was removable:
-`fibre/src/Fibre/Order_CommutationIsTheProofThatTheOrderWasNeverThereAndItsFailureIsRetained.agda:102`
-`serialisation`.
+`fibre/src/Fibre/Krama_CommutationIsTheProofThatTheOrderWasNeverThereAndItsFailureIsRetained.agda:106` `serialisation`.
 
 ## 4. What is not here, and why
 
@@ -354,10 +329,8 @@ first was an invented shape. The corpus's `install` is
 `formal/cubical/Kernel/ControlledGrammar.agda:27` `install`, from a
 `Derivation`, a trace of steps between two terms, to a `NativeOperation`, and
 its own theorems bound it:
-`formal/cubical/Kernel/Vyapti_TheInstalledOperationHasNoneSoTheKernelMemorisesAndTheSchemaIsWhatMakesItGeneralise.agda:113`
-`fires-only-at-source`, `:176` `kernel-cannot-reach-a-tower`,
-`formal/cubical/Kernel/Siddhasadhana_InstallingWhatYouCanAlreadyReachIsAPlateauSoTheKernelsOwnLibraryCannotGrowItsReach.agda:96`
-`install-chain-plateau`. In this runtime the derivation of a run is `TRACE`, and
+`formal/cubical/Kernel/Vyapti_TheInstalledOperationHasNoneSoTheKernelMemorisesAndTheSchemaIsWhatMakesItGeneralise.agda:118` `fires-only-at-source`, `:181` `kernel-cannot-reach-a-tower`,
+`formal/cubical/Kernel/Siddhasadhana_InstallingWhatYouCanAlreadyReachIsAPlateauSoTheKernelsOwnLibraryCannotGrowItsReach.agda:122` `install-chain-plateau`. In this runtime the derivation of a run is `TRACE`, and
 a node once fired is marked with its result (`T_IND`), which is what installing
 a run's derivation as a move amounts to here. A grammar's substitution is a
 Carrier instance with a base and a carried datum
@@ -366,20 +339,14 @@ not a parser.
 
 ## 4b. The encounter of two peers
 
-`formal/cubical/kernel-flat/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:123`
-`Peer` (a `Session`:
-`formal/cubical/kernel-flat/TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation.agda:170`
-`Session`, with `origin`, `here`, `trace : Derivation origin here`, `library`;
-`:155` `_⊕_`),
-`formal/cubical/kernel-flat/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:126`
-`Encounter` (`A B`, `meeting`, `mine : Derivation (here A) meeting`, `theirs :
+`formal/cubical/kernel/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:125` `Peer` (a `Session`:
+`formal/cubical/kernel/TheKernelIsAnInteractiveSystemAndTheSessionRetiresIntoOneOperation.agda:4` `Session`, with `origin`, `here`, `trace : Derivation origin here`, `library`;
+`:166` `_⊕_`),
+`formal/cubical/kernel/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:4` `Encounter` (`A B`, `meeting`, `mine : Derivation (here A) meeting`, `theirs :
 Derivation meeting (here B)`), `:138` `τ` (`mine ⊕ theirs`),
-`:148` `gain` (the three moves installed), `:153` `A′`, `:158` `B′`, `:164`
-`interact` (`A′ E , B′ E , τ E`), `:172` `receive`. Reversal is
-`formal/cubical/kernel-flat/TheKernelIsAReversibleGroupoidWhoseJoinIsConflictFreeSoConsensusOnMeaningIsVacuous.agda:119`
-`rev`, the length
-`formal/cubical/kernel-flat/TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainder.agda:126`
-`len`.
+`:150` `gain` (the three moves installed), `:155` `A′`, `:160` `B′`, `:166` `interact` (`A′ E , B′ E , τ E`), `:174` `receive`. Reversal is
+`formal/cubical/kernel/TheKernelIsAReversibleGroupoidWhoseJoinIsConflictFreeSoConsensusOnMeaningIsVacuous.agda:119` `rev`, the length
+`formal/cubical/kernel/TheDerivationCarriesNoMeaningAtAllSoAllOfItIsRemainder.agda:128` `len`.
 
 As written (`t/meet.hyper`, a program over `trace`): a derivation is the trace
 of a run as a term, `(trace a)` the value with its events over it; the two peers
@@ -387,20 +354,12 @@ meet when the values are equal (`eq-nat`), else there is no meeting; `mine` is
 A's events, `theirs` the reversal of B's (each step under `Rev`), `τ` their
 concatenation (`cat`), and the round trip `τ ⊕ rev τ`. Lengths are `length`, a
 fold in the language. `t/meet.hyper` computes the module's sections:
-`formal/cubical/kernel-flat/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:256`
-`the-two-results-need-not-agree` (the meeting is one value reached from two
-terms), `:341` `undo` (`rev τ`), `:380` `round-trip` with `:392`
-`the-round-trip-is-not-done` (2·len τ steps from `a` to `a`; the meaning is refl,
-the object is not done), `:409` `the-fabric-composes-strictly` (`cat`), `:444`
-`the-two-orders-differ` and `:448` `both-orders-cost-the-same` (the crossing:
+`formal/cubical/kernel/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:258` `the-two-results-need-not-agree` (the meeting is one value reached from two
+terms), `:344` `undo` (`rev τ`), `:383` `round-trip` with `:395` `the-round-trip-is-not-done` (2·len τ steps from `a` to `a`; the meaning is refl,
+the object is not done), `:412` `the-fabric-composes-strictly` (`cat`), `:447` `the-two-orders-differ` and `:451` `both-orders-cost-the-same` (the crossing:
 `cross` under the two schedules reaches the same value with the same events;
-the traces differ by the nodes they fire on, `HYPER_TRACE=1`), `:474`
-`the-scalar-is-additive` (`len (d ⊕ e) = len d + len e`). Not written: `:284`
-`what-crossed-is-what-B-had`, `:320` `the-pair-holds-it-after`, `:334`
-`the-prior-trace-is-a-prefix` (the session's library of moves: a construction
-to be written as a program when a probe needs it), `:483`
-`no-section-for-any-order-blind-projection` beyond the crossing, and `:542`
-`the-receipt-does-not-cross`, which needs a demanded evidence (`demand R d`)
+the traces differ by the nodes they fire on, `HYPER_TRACE=1`), `:477` `the-scalar-is-additive` (`len (d ⊕ e) = len d + len e`). Not written: `:286` `what-crossed-is-what-B-had`, `:322` `the-pair-holds-it-after`, `:337` `the-prior-trace-is-a-prefix` (the session's library of moves: a construction
+to be written as a program when a probe needs it), `:486` `no-section-for-any-order-blind-projection` beyond the crossing, and `:545` `the-receipt-does-not-cross`, which needs a demanded evidence (`demand R d`)
 this runtime does not model.
 
 ## 5. Files

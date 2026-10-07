@@ -2,7 +2,7 @@
 
 Notes from reading, each sentence at a cited line; `cite.sh` checks this file
 as it checks `MAP.md`. The test of
-`formal/cubical/Kernel/DescentNote_WhatThisIsAndHowToDescendIntoTheMetacircularKernel.agda`
+`formal/cubical/Kernel/Avataranika_WhatThisIsAndHowToDescendIntoTheMetacircularKernel.agda`
 (§0, frame 4) applies to every line: a sentence that could have been written without reading
 the term it is about is narration from prior. Where a section says what this
 means for `hyper/`, that is a reading, marked as such.
@@ -12,25 +12,22 @@ from different ends, and the runtime's one job is to be that Σ computing.
 
 ## 1. The one object: which side of `f a ≡ b` is bound
 
-`fibre/src/Fibre/Carrier.agda:65` `record Carrier`: for `f : A → B`, a point is
-`base : A`, `carried : B`, `witness : f base ≡ carried`. `:90` `fibre a = singl (f a)`,
-`:92` `fibre-isContr`. Binding the **output**, the fibre is contractible for
-every `f`, so `:115` `Carrier≃ : A ≃ Carrier`, `:120` `Carrier≡ = ua Carrier≃`,
-and `:129` `carry-transport-descend`: transport along that path computes
-`descend` (`:96` `descend : A → Carrier`), by `uaβ` (`:130` `uaβ`). The implementation facts in the header are about
+`fibre/src/Fibre/Carrier.agda:67` `record Carrier`: for `f : A → B`, a point is
+`base : A`, `carried : B`, `witness : f base ≡ carried`. `:79` `fibre a = singl (f a)`,
+`:81` `fibre-isContr`. Binding the **output**, the fibre is contractible for
+every `f`, so `:104` `Carrier≃ : A ≃ Carrier`, `:109` `Carrier≡ = ua Carrier≃`,
+and `:118` `carry-transport-descend`: transport along that path computes
+`descend` (`:85` `descend : A → Carrier`), by `uaβ` (`:119` `uaβ`). The implementation facts in the header are about
 reduction: Σ not Prod (η closes the square by `refl` on an opaque variable) and
 `descend` must not pattern match.
 
-`fibre/src/Fibre/Residue_TheResidualIsTheOtherProjectionOfTheSameGraph.agda:122`
-`शेष b = Σ[ a ∈ A ] (f a ≡ b)`: binding the **input**. `:134` `स्वप्`: the graph
-`Σ a. Σ b. f a ≡ b` read from either end, both round trips `refl`. `:155`
-`मूल-प्रक्षेप-समता`: the source projection is always an equivalence. `:182`
-`समता→निःशेषः`: the target projection is one exactly when every residual is
-contractible, because `isEquiv` is defined fibrewise. `:208` `शेष-सर्वैकम्≃Bool`:
+`fibre/src/Fibre/Sesa_TheResidualIsTheOtherProjectionOfTheSameGraph.agda:131` `शेष b = Σ[ a ∈ A ] (f a ≡ b)`: binding the **input**. `:143` `स्वप्`: the graph
+`Σ a. Σ b. f a ≡ b` read from either end, both round trips `refl`. `:164` `मूल-प्रक्षेप-समता`: the source projection is always an equivalence. `:191` `समता→निःशेषः`: the target projection is one exactly when every residual is
+contractible, because `isEquiv` is defined fibrewise. `:217` `शेष-सर्वैकम्≃Bool`:
 the smallest collapse, `Bool → Unit`, forgets exactly one bit, as a theorem.
 
 The descent note says the same in two lines
-(`formal/cubical/Kernel/DescentNote_WhatThisIsAndHowToDescendIntoTheMetacircularKernel.agda`, §1):
+(`formal/cubical/Kernel/Avataranika_WhatThisIsAndHowToDescendIntoTheMetacircularKernel.agda`, §1):
 bind the output and the fibre is `singl (f a)`, always contractible; bind the
 input and it is `fiber f b`, contractible exactly when `f` is an equivalence,
 "that is the exact loss".
@@ -41,19 +38,18 @@ composes the two into one statement, `A ≃ Σ b. शेष f b`, with forward m
 
 ## 2. The trace is forced to be the fibre
 
-`fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:90`
-`Conservative`: a trace family `Trace : B → Type` and `whole : A ≃ Σ b. Trace b`;
+`fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:94` `Conservative`: a trace family `Trace : B → Type` and `whole : A ≃ Σ b. Trace b`;
 `run` is read off the equivalence (`:99`), `trace a : Trace (run a)` (`:104`),
-the trace lives over the result. `:129` `fibre-of-run : (b : B) → fiber (run C) b ≃ T b`,
-five library equivalences, the last (`:150` `s5`) contracting the path
-component. `:159` `exact-when-contractible`, `:164` `contractible-when-exact`:
+the trace lives over the result. `:133` `fibre-of-run : (b : B) → fiber (run C) b ≃ T b`,
+five library equivalences, the last (`:154` `s5`) contracting the path
+component. `:163` `exact-when-contractible`, `:168` `contractible-when-exact`:
 the trace measures exactly the failure of the visible result to be the whole
-event. `:181` `canonical`, `:194` `canonical-recovers` by `refl`. `:240`
-`unitTrace` refutes the proviso: an equivalence not over `B` factorises a
+event. `:185` `canonical`, `:198` `canonical-recovers` by `refl`. `:244` `unitTrace` refutes the proviso: an equivalence not over `B` factorises a
 different computation.
 
-`formal/cubical/theorems/residue/Uniqueness_LosslessnessIsAPropertyTheCompletionsOfAMapFormAContractibleTypeAndTheMachinesIsUnique.agda`:
-the type of lossless completions of a fixed map is contractible; a lossless
+`fibre/src/Fibre/Trace_TheTraceFamilyIsForcedToBeTheFibreAndTheCarrierIsItsContractibleCase.agda:159` `trace-is-forced`:
+the trace family of any lossless completion of a fixed map is its fibre, so the
+type of lossless completions is contractible (the essay's 1.4); a lossless
 machine cannot be built two ways.
 
 **Reading for `hyper`.** `(trace e)` is the value with its events over it;
@@ -62,16 +58,14 @@ class of inputs giving that value. Neither is a choice; both are forced.
 
 ## 3. The census, not a verdict
 
-`fibre/src/Fibre/WholePartialDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:87`
-`data देश`: `नास्ति` (empty, with `¬ शेष f b`), `सकलादेश` (contractible),
-`विकलादेश` (two points and their distinctness). `:93` `गणना`: pointwise over
-the codomain. `:179` `संहति-गणना`: the composite of a step with an empty fibre
+`fibre/src/Fibre/SakalaVikalaDesa_TheFibreCensusIsATermAndItRefutesTheSequentialDiagnostic.agda:111` `data देश`: `नास्ति` (empty, with `¬ शेष f b`), `सकलादेश` (contractible),
+`विकलादेश` (two points and their distinctness). `:117` `गणना`: pointwise over
+the codomain. `:203` `संहति-गणना`: the composite of a step with an empty fibre
 and a step with a crowded one is contractible, so a sequential diagnostic is
-wrong in both directions. `:194` `सर्व-सकल→समता`: the verdict is the summary of
+wrong in both directions. `:218` `सर्व-सकल→समता`: the verdict is the summary of
 the census; the census is not recoverable from the verdict.
 
-`formal/cubical/theorems/residue/Anveshana_TheMiddleGradeIsWhereAnAlgorithmHasContentBecauseUniquenessIsFreeAndExistenceIsTheWork.agda:87`
-`सकल   = isContr (fiber f b)`, `:88` `एकाधिक = isProp  (fiber f b)`: three grades of a fibre. Contractible: exists and determined,
+`formal/cubical/theorems/residue/Anveshana_TheMiddleGradeIsWhereAnAlgorithmHasContentBecauseUniquenessIsFreeAndExistenceIsTheWork.agda:101` `सकल   = isContr (fiber f b)`, `:102` `एकाधिक = isProp  (fiber f b)`: three grades of a fibre. Contractible: exists and determined,
 nothing to search. Propositional: determined if it exists, "uniqueness is free
 and existence is the whole of the work", so a search may stop at the first hit
 and owes no comparison. Crowded: nothing an algorithm could return.
@@ -84,18 +78,16 @@ to the rest of the tree. The branch today exhausts the tree instead.
 
 ## 4. Interaction is the operation
 
-`fibre/src/Fibre/Interaction_TheOrbitIsTheOneQueryCaseOfTheInteractiveCoalgebraAndTheDemandIsWhatDiffers.agda:75`
-`ISC`, `:81` `react`: a question returns successor, observation, event and the
-continuation, coinductively. `:99` `observe`: n questions force nothing else.
-`:139` `det-strategy-independent`; `:172` `counter-demand-matters`: with a real
+`fibre/src/Fibre/Samvada_TheOrbitIsTheOneQueryCaseOfTheInteractiveCoalgebraAndTheDemandIsWhatDiffers.agda:15` `ISC`, `:85` `react`: a question returns successor, observation, event and the
+continuation, coinductively. `:103` `observe`: n questions force nothing else.
+`:143` `det-strategy-independent`; `:176` `counter-demand-matters`: with a real
 question two strategies disagree at the first step. The demand is what differs.
 
-`fibre/src/Fibre/CorpusInteraction.agda:17` `Point ℓ = Σ[ A ∈ Type ℓ ] A`, `:22` `Question`
+`fibre/src/Fibre/CorpusSamvada.agda:16` `Point ℓ = Σ[ A ∈ Type ℓ ] A`, `:22` `Question`
 is `Σ B. (A → B)`, `:28` `Receipt` the path, `:38` `run` reacts with `refl`,
-`:48` `State = C.Carrier read`: the state carries its reading.
+`:47` `State = C.Carrier read`: the state carries its reading.
 
-`formal/cubical/theorems/residue/Prasna_TheMachineThatAsksItsRunIsItsAnswerStreamAndSilenceOfQuestionsIsDeterminism.agda:129`
-`run-is-answers : (x : X) → IExec x ≃ Answers x`: a history carries nothing beyond the
+`formal/cubical/theorems/residue/Prasna_TheMachineThatAsksItsRunIsItsAnswerStreamAndSilenceOfQuestionsIsDeterminism.agda:129` `run-is-answers : (x : X) → IExec x ≃ Answers x`: a history carries nothing beyond the
 answers the environment supplied; receipts weigh nothing. `:166` `silence-is-determinism`:
 every question contractible makes the run contractible.
 `formal/cubical/theorems/residue/Niyati_TheMachineHasExactlyOneExecutionDeterminismIsContractibilityOfTheStream.agda`
@@ -116,11 +108,9 @@ once.
 
 ## 5. Order: commutation is the certificate, its failure is retained
 
-`fibre/src/Fibre/Order_CommutationIsTheProofThatTheOrderWasNeverThereAndItsFailureIsRetained.agda:93`
-`Commutes`, `:102` `serialisation`: for two commuting steps any interleaving
+`fibre/src/Fibre/Krama_CommutationIsTheProofThatTheOrderWasNeverThereAndItsFailureIsRetained.agda:97` `Commutes`, `:106` `serialisation`: for two commuting steps any interleaving
 equals the normal form determined by the two counts; the word's sequence is
-discarded with a proof. `:111` `interleavings-agree`. `:141`
-`suc-double-not-commuting`, `:153` `order-survives`: where they do not commute,
+discarded with a proof. `:115` `interleavings-agree`. `:145` `suc-double-not-commuting`, `:157` `order-survives`: where they do not commute,
 equal counts give different results, and the sequence is part of the answer.
 
 **Reading for `hyper`.** The schedule check is `interleavings-agree` measured:
@@ -142,8 +132,7 @@ ledger after supplying the correspondence from its transitions to `Event`.
 
 `research/sat_fibre/InteractionGeodesic.agda:14` `RandomDescent` with the
 one-step `diamond`; `:27` `peel`: any available first interaction removes
-exactly one unit from any terminating reduction to the same normal form; `:45`
-`same-normalization-length`; `:53` `normalization-is-geodesic`. Nets have the
+exactly one unit from any terminating reduction to the same normal form; `:45` `same-normalization-length`; `:53` `normalization-is-geodesic`. Nets have the
 diamond because active pairs are disjoint.
 
 `formal/cubical/theorems/grammar/Laghava_TheCostAndTheInverseCannotCoexistSoNoNontrivialGroupIsGradedAndTransportHasNoPrice.agda`:
@@ -199,11 +188,9 @@ output-bound chart is `isort L` itself.
 ## 8. The kernel: proofs become moves, and the caller disposes
 
 `formal/cubical/Kernel/RewriteCertificate.agda:8` `Tm`, `:14` `Step` including
-`reverse` (a groupoid, not an order), `:23` `Derivation`, `:55`
-`InductionCertificate` (base, and a step with the hypothesis only at the
+`reverse` (a groupoid, not an order), `:23` `Derivation`, `:55` `InductionCertificate` (base, and a step with the hypothesis only at the
 predecessor), `:133` `induction-sound`: a certificate becomes a universally
-quantified equation. `formal/cubical/Kernel/ControlledGrammar.agda:11`
-`NativeOperation` with `Control` a field the caller supplies, `:27` `install`,
+quantified equation. `formal/cubical/Kernel/ControlledGrammar.agda:11` `NativeOperation` with `Control` a field the caller supplies, `:27` `install`,
 `:56` `advance = map execute`, `:59` `advance-preserves-branch-count`: no
 dedupe, no sort, no quotient.
 
@@ -215,8 +202,7 @@ in a proposition so the whole derivation type is one fibre (Asesa). Descent
 note §7: ranking is the caller's act; the machine presents, the caller
 disposes; the system is interactive by theorem.
 
-`formal/cubical/kernel-flat/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:126`
-`record Encounter`, `:138` `τ`, `:164` `interact`: two locals in, two
+`formal/cubical/kernel/TheEncounterOfTwoPeersIsOneTraceAndNoScalarProjectionOfItHasASection.agda:128` `record Encounter`, `:138` `τ`, `:166` `interact`: two locals in, two
 locals and one trace out, no third party. §2: the two results need not agree
 and nothing is pending. §7: two encounters at disjoint sites in the two orders
 have the same endpoints, the same cost, provably different traces; §8: no
