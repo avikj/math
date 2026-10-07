@@ -472,3 +472,18 @@ Y. THE DECLARATION IS THE PROGRAM, WITH NO MAP IN THE BOOK (t/mapless.hyper).
    `dim`), keep = spec, leaves: sort [3,1,2] = [[1,2,3]] in 3430 itrs,
    sort [2,3,1,0] = [[0,1,2,3]] in 30449.  No isort.  The isort books and
    the hand-written identities were the proxy; this is the thing.
+
+Z. COMPARISONS KEPT (cell.c retained comparisons; t/mapless.hyper rewritten).
+   Y's book re-made every comparison in every world of the line: that was
+   the exponential, and it was the erasure of what comparisons had told
+   the machine, not a cost of sorting.  Now a literal comparison is one
+   op2 whose order fact is kept with its transitive closure; a pair is
+   compared once across all worlds and a pair the facts order is a
+   "recall".  B is the permutation set as insertions, held to `sorted` as
+   it is built; the leaves are read by bisection over each chain of
+   alternatives (collapse_leaves, no prune before a leaf's turn).  Counts
+   at n = 8/16/32: ascending 17/47/121, descending 7/15/31, shuffle
+   16/55/141; n·ceil(lg n) = 24/64/160; ceil(log2 n!) = 16/45/118.  Steps
+   (Itrs) remain cubic: `sorted` re-reads the prefix at each alternative.
+   `sort` still has the one-line body `leaves (perms A)`; the bodyless
+   typed declaration resolves only through t/sort.hyper's census.
