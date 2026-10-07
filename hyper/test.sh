@@ -103,6 +103,10 @@ got=$(./hyper run t/declare.hyper some-bool 2>&1); case "$got" in *विकल�
 got=$(./hyper run t/declare.hyper no-such 2>&1); case "$got" in *नास्ति*) pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL empty declaration: $got";; esac
 check t/sort.hyper b/sort_spec '#Pair{#Cons{#Suc{#Zer{}},#Cons{#Suc{#Suc{#Zer{}}},#Cons{#Suc{#Suc{#Suc{#Zer{}}}},#Nil{}}}},#Pair{#Refl{},#Refl{}}}'
 got=$(./hyper run t/sort.hyper b/sort_spec | sed -n 2p); case "$got" in '- Itrs: 174') pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL sort_spec count: $got";; esac
+# the checker's conversion rules refuse what they must (t/mustfail.hyper): the verdicts, exactly
+got=$(./hyper check t/mustfail.hyper 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E '^[✓✗]' | tr '\n' ' ')
+want='✓ ok_id ✗ face_not_vacuous ✗ two_closures ✗ proj_not_sig ✗ path_wrong_family ✓ ok_declared : a coordinate of its type '
+if [ "$got" = "$want" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL mustfail verdicts: $got"; fi
 # witnessing a proposition (research/SAT_FIBRE_BEND_HVM_DEPLOYED_TECHNICAL_REPORT.md): the domain is one labelled
 # superposition shared by every occurrence, the proposition reduces once over it, a failing branch is erased, and the
 # collapse is the fibre.  XOR's fibre over True and over False; a contradiction's empty fibre

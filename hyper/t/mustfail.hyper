@@ -1,0 +1,18 @@
+; must-fail probes for the checker's conversion (verify.c): each b/ definition here must be REJECTED.
+; control: a definition that must be accepted, so the file exercises both verdicts
+(def b/ok_id : (ctr Pi (ctr Nat) (lam n (ctr Nat))) = (lam n n))
+; 1. a face is not vacuous when the closure's code reads the dimension: the line λi. (λ_. i) applied at i=0
+;    and at i=1 are different, so a path claiming constant endpoints through it must fail
+(def b/face_not_vacuous : (ctr Path (lam _ (ctr Pi (ctr Nat) (lam _ (ctr Itv)))) (lam _ i0) (lam _ i0))
+  = (plm i (lam _ i)))
+; 2. two closures of one code with different captured values are not equal: (λx. c) at c := 0 and c := 1
+(def b/two_closures : (ctr Pi (ctr Pi (ctr Nat) (lam c (ctr Pi (ctr Nat) (lam _ (ctr Nat))))) (lam k (ctr Path (lam _ (ctr Pi (ctr Nat) (lam _ (ctr Nat)))) (app k (ctr Zer)) (app k (ctr Suc (ctr Zer))))))
+  = (lam k (plm _ (app k (ctr Zer)))))
+; 3. proj off a value that is not a pair must not infer
+(def b/proj_not_sig : (ctr Nat) = (proj 0 (ctr Zer)))
+; 4. a path with the wrong family is not a line of types: Path Nat (not Path Set) used as a transport line
+(def b/path_wrong_family : (ctr Pi (ctr Path (lam _ (ctr Nat)) (ctr Zer) (ctr Zer)) (lam p (ctr Nat)))
+  = (lam p (trp p i0 i1 (ctr Zer))))
+; 5. a declared (bodyless) name whose type has two book entries is crowded: the checker still accepts the
+;    declaration as a coordinate (that is the census' job at run time), so this one must be ACCEPTED
+(def b/ok_declared : (ctr Nat))

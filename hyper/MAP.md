@@ -152,6 +152,11 @@ them.
    `strip_scoped_faces`) — without it a restriction read through a frame re-wrapped a fix's closure afresh at every lookup
    and the coinductive memo never saw one pair twice; the memo reset per top-level comparison (`verify.c:138` `eq_reset`);
    `proj` inferred at a Sig (`verify.c:423`); a path accepted as a transport line (`verify.c:324`).
+   `t/mustfail.hyper` holds the rejections these rules must keep making (a face the closure reads, two closures of one
+   code over different values, `proj` off a non-pair, a path of the wrong family as a line), gated in `test.sh`. The
+   checker differential against Bend2 (`checktest.sh`, `bendtest.sh`) was not run for these changes: Bend2's source is
+   reachable only from GitHub, which this environment cannot reach, and no build of it is on the machine. Run both where
+   Bend2 builds before taking the conversion changes as settled.
 5. **A declaration with no body. Written** (`verify.c` `resolve_declaration`, `cell.c` at `T_REF`; `t/declare.hyper`, `b/sort_spec` in
    `t/sort.hyper`, `test.sh`). A declaration `name : T` with no body, when demanded, is the census of the book at `T`: the
    typed entries with a body whose type converts to `T` (the checker's conversion, on the same loop) are the fibre of the
