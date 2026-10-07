@@ -101,7 +101,9 @@
   #copyall[data-done="1"]{opacity:1; color:var(--accent)}
   @media print{#copyall{display:none}}
   a.ref{color:inherit; text-decoration:none; border-bottom:1px dotted var(--accent); cursor:pointer}
-a.x{color:inherit; text-decoration:none; border-bottom:1px solid var(--rule); cursor:pointer}
+a.x{color:inherit; text-decoration:none; border-bottom:1px solid var(--muted); cursor:pointer}
+a.mail{color:inherit; text-decoration:none; border-bottom:1px solid var(--muted)}
+a.mail:hover,a.mail:focus{color:var(--accent); border-bottom-color:var(--accent); outline:none}
 a.x:hover,a.x:focus{color:var(--accent); border-bottom-color:var(--accent); outline:none}
   a.ref:hover,a.ref:focus{color:var(--accent); border-bottom-style:solid; outline:none}
   .st,.rk{scroll-margin-top:1.2rem}
@@ -124,7 +126,7 @@ a.x:hover,a.x:focus{color:var(--accent); border-bottom-color:var(--accent); outl
 <main>
 
 <h1>Respecting Equality: Complete Inference, Deterministic and Step-Optimal</h1>
-<p class="byline">Avik Jain</p>
+<p class="byline">Avik Jain &middot; <a class="mail" href="mailto:avikj@berkeley.edu">avikj@berkeley.edu</a></p>
 <p>This is one construction on how equality behaves in cubical type theory: equality of types <em>is</em> equivalence — <a class="x" href="https://ncatlab.org/nlab/show/univalence+axiom">Voevodsky's univalence</a> — and it computes. No prior familiarity with either is assumed.</p>
 <p>From that one fact the construction builds to a single result: complete inference — proving, computing, deciding, or answering any well-formed question — runs deterministically and in the fewest possible steps: a count fixed by where the reduction starts and ends, never by which strategy walks between them. The exact form of the Gödel and Turing limits is a stop on the way (§4). The natural numbers (§6) and the complex numbers with the field equations (§7) are two readings of the finished construction, and §8 reads it at search. The shape is worth knowing in advance: §§0–2 are one chain, each step from the one before, ending in univalence (<a class="ref" href="#s2.4">2.4</a>); §3 and §4 are two facts that chain does not give, each standing on its own (<a class="ref" href="#s3.5">3.5</a>, <a class="ref" href="#s4.2">4.2</a>); §5 is where all four are used, and <a class="ref" href="#s5.13">equal length (5.13)</a> is the result. Every step is elementary, and at each one the computational core is machine-checked and runs — the boxed terms below, verbatim and checkable as printed.</p>
 <h2><span class="n">0.</span> The one fact</h2>
