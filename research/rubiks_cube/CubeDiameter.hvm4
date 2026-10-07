@@ -1,0 +1,237 @@
+// Bend2 -> HVM4 FULL RUNTIME (no erasure, no pre-normalisation)
+// ---- intervals
+@inot = λ{#I0: #I1; #I1: #I0; λx. #INot{x}}
+// (linear: a value is never cloned merely because it is used in several match ARMS —
+//  HVM4 auto-dup labels are static per binder, and a dup of an argument that already
+//  contains an instance of the same definition's dup would annihilate instead of commute)
+@iand = λa. λb. (λ{#I0: λb. #I0; #I1: λb. b; λa. λb. (λ{#I0: λa. #I0; #I1: λa. a; λb2. λa. #IAnd{a, b2}})(b)(a)})(a)(b)
+@ior  = λa. λb. (λ{#I1: λb. #I1; #I0: λb. b; λa. λb. (λ{#I1: λa. #I1; #I0: λa. a; λb2. λa. #IOr{a, b2}})(b)(a)})(a)(b)
+@sameEnd = λ{#I0: λ{#I0: 1; λx. 0}; #I1: λ{#I1: 1; λx. 0}; λx. λy. 0}
+// forward direction test: r=I0,s=I1 -> 1 ; r=I1,s=I0 -> 0
+@fwd = λ{#I0: λs. 1; #I1: λs. 0; λr. λs. 0}
+// ---- paths applied to intervals (universe paths are data; value paths are functions)
+@pathAt = λp. λi. (λ{#I0: λp. @pL(p); #I1: λp. @pR(p); λi. λp. @pAtSym(p, i)})(i)(p)
+@pAtSym = λ{#PLm: λf. λi. f(i); #TSq: λu. λv. λi. #At{#TSq{u, v}, i}; #Loop: λi. #At{#Loop, i}; #QEq: λa. λb. λw. λi. #At{#QEq{a, b, w}, i}; #UaU: λA. λB. λf. λg. λi. #At{#UaU{A, B, f, g}, i}; #CompU: λP. λQ. λi. #At{#CompU{P, Q}, i}; λv. λi. #StuckAt{v, i}}
+@pL = λ{#PLm: λf. f(#I0); #TSq: λu. λv. u; #Loop: #Base; #QEq: λa. λb. λw. #QCl{a}; #UaU: λA. λB. λf. λg. A; #CompU: λP. λQ. P(#I0); λv. #StuckAt{v, #I0}}
+@pR = λ{#PLm: λf. f(#I1); #TSq: λu. λv. v; #Loop: #Base; #QEq: λa. λb. λw. #QCl{b}; #UaU: λA. λB. λf. λg. B; #CompU: λP. λQ. Q(#I1); λv. #StuckAt{v, #I1}}
+// ---- hcomp: faces = #Nil | #Cons{#Face{phi, tube}, rest}; stuck faces are kept
+@hcomp = λA. λfs. λbase. @hcompGo(A, fs, base, #Nil)
+@hcompGo = λ&A. λ{
+  #Nil: λ&base. λ{#Nil: base; λ&stuck. (λ{
+    #Set: #Glue{base, @setFaces(stuck)};
+    #Pi: λ&A1. λ&B1. λ&v. @hcomp(B1(v), @hcTubesApp(stuck, v), base(v));
+    #Path: λ&A1. λ&u1. λ&v1. #PLm{λ&j. @hcomp(A1(j), #Cons{#Face{@inot(j), #PLm{λk. u1}}, #Cons{#Face{j, #PLm{λk. v1}}, @hcTubesAtJ(stuck, j)}}, @pathAt(base, j))};
+    #Sig: λ&A1. λ&B1. ! &{st1, st2} = stuck; ! &{ba1, ba2} = base; ! &{aa1, aa2} = A1;
+          #Pair{@hcomp(aa1, @hcTubesFst(st1), @fstP(ba1)),
+                @compAt(λj. B1(@hfillAt(aa2, @hcTubesFst(st2), @fstP(ba2), j)), @hcTubesSnd(stuck), @sndP(base))};
+    #Glue: λ&aT. λ&gfs. @hcGlue(aT, gfs, stuck, base);
+    #Nat: @hcNat(stuck, base);
+    #List: λ&eT. @hcList(eT, stuck, base);
+    #Unit: @hcNullary(#Unit, stuck, base);
+    #Bool: @hcNullary(#Bool, stuck, base);
+    λA2. #HCm{A2, stuck, base}})(A)};
+  #Cons: λ{#Face: λphi. λ&tube. λ&rest. λ&base. λ&stuck. (λ{
+    #I1: @pathAt(tube, #I1);
+    #I0: @hcompGo(A, rest, base, stuck);
+    λp. @hcompGo(A, rest, base, #Cons{#Face{p, tube}, stuck})})(phi)}}
+// ---- type-directed Kan rules for hcomp (CCHM), mirroring Core.WHNF.whnfHCm
+@fstP = λ{#Pair: λa. λb. a; λv. v}
+@sndP = λ{#Pair: λa. λb. b; λv. v}
+@hcTubesApp = λ{#Nil: λv. #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. λ&v. #Cons{#Face{p, #PLm{λj. @pathAt(tube, j)(v)}}, @hcTubesApp(rest, v)}}}
+@hcTubesAtJ = λ{#Nil: λj. #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. λ&j. #Cons{#Face{p, #PLm{λk. @pathAt(@pathAt(tube, k), j)}}, @hcTubesAtJ(rest, j)}}}
+@hcTubesFst = λ{#Nil: #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. #Cons{#Face{p, #PLm{λj. @fstP(@pathAt(tube, j))}}, @hcTubesFst(rest)}}}
+@hcTubesSnd = λ{#Nil: #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. #Cons{#Face{p, #PLm{λj. @sndP(@pathAt(tube, j))}}, @hcTubesSnd(rest)}}}
+@hcTubesAnd = λ{#Nil: λj. #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. λ&j. #Cons{#Face{p, #PLm{λk. @pathAt(tube, @iand(j, k))}}, @hcTubesAnd(rest, j)}}}
+@hcTubesCoe = λ&P. λ{#Nil: #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. #Cons{#Face{p, #PLm{λ&j. @coe(P, j, #I1, @pathAt(tube, j))}}, @hcTubesCoe(P, rest)}}}
+@hcTubesMap = λ&f. λ{#Nil: #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. #Cons{#Face{p, #PLm{λj. f(@pathAt(tube, j))}}, @hcTubesMap(f, rest)}}}
+// hfill: the filler; comp: composition along a type line (coe + hcomp)
+@hfillAt = λ&A. λ&fs. λ&u0. λ&j. @hcomp(A, #Cons{#Face{@inot(j), #PLm{λk. u0}}, @hcTubesAnd(fs, j)}, u0)
+@compAt = λ&P. λ&fs. λ&u0. @hcomp(P(#I1), @hcTubesCoe(P, fs), @coe(P, #I0, #I1, u0))
+// hcomp in a Glue type (CCHM): compose inside each partial type T (there
+// Glue IS T), and in A compose the UNGLUED tube with one extra face per phi
+// forcing f of the T-filler; then glue the phi-parts onto the A-part.
+@hcTubesUnglue = λ&gfs. λ{#Nil: #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. #Cons{#Face{p, #PLm{λj. @gUnglue(gfs, @pathAt(tube, j))}}, @hcTubesUnglue(gfs, rest)}}}
+@hcGlueFaces = λ&fs. λ&base. λ{#Nil: #Nil; #Cons: λ{#GFace: λphi. λ&T. λ&e. λ&rest. #Cons{#Face{phi, #PLm{λk. @eFun(e)(@hfillAt(T, fs, base, k))}}, @hcGlueFaces(fs, base, rest)}}}
+@hcGlueT = λ&fs. λ&base. λ{#Nil: #Nil; #Cons: λ{#GFace: λphi. λ&T. λe. λ&rest. #Cons{#Face{phi, @hcomp(T, fs, base)}, @hcGlueT(fs, base, rest)}}}
+@appendF = λ{#Nil: λys. ys; #Cons: λ{#Face: λp. λt. λ&rest. λ&ys. #Cons{#Face{p, t}, @appendF(rest, ys)}}}
+@hcGlue = λ&aT. λ&gfs. λ&fs. λ&base.
+  ! &{g1, gx} = gfs; ! &{g2, g3} = gx;
+  ! &{f1, fx} = fs; ! &{f2, f3} = fx;
+  ! &{b1, bx} = base; ! &{b2, b3} = bx;
+  @glue(aT, @hcomp(aT, @appendF(@hcTubesUnglue(g1, f1), @hcGlueFaces(f2, b1, g2)), @gUnglue(g3, b2)), @hcGlueT(f3, b3, gfs))
+// hcomp in an inductive type: push through a common constructor head.
+// Headedness of a LINE is decided by applying it at the marker dimension,
+// the same idiom @coe uses for its regularity check.
+@allSuc = λ{#Nil: #I1; #Cons: λ{#Face: λp. λ&tube. λ&rest. (λ{#Suc: λn. @allSuc(rest); λv. #I0})(@pathAt(tube, #IMark))}}
+@hcTubesPred = λ{#Nil: #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. #Cons{#Face{p, #PLm{λj. (λ{#Suc: λn. n; λv. v})(@pathAt(tube, j))}}, @hcTubesPred(rest)}}}
+@hcNat = λ&fs. λ&base. (λ{
+  #Suc: λ&n. (λ{#I1: #Suc{@hcomp(#Nat, @hcTubesPred(fs), n)}; λo. #HCm{#Nat, fs, #Suc{n}}})(@allSuc(fs));
+  λv. #HCm{#Nat, fs, v}})(base)
+@allCon = λ{#Nil: #I1; #Cons: λ{#Face: λp. λ&tube. λ&rest. (λ{#Con: λh. λt. @allCon(rest); λv. #I0})(@pathAt(tube, #IMark))}}
+@hcTubesHd = λ{#Nil: #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. #Cons{#Face{p, #PLm{λj. (λ{#Con: λh. λt. h; λv. v})(@pathAt(tube, j))}}, @hcTubesHd(rest)}}}
+@hcTubesTl = λ{#Nil: #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. #Cons{#Face{p, #PLm{λj. (λ{#Con: λh. λt. t; λv. v})(@pathAt(tube, j))}}, @hcTubesTl(rest)}}}
+@hcList = λ&eT. λ&fs. λ&base. (λ{
+  #Con: λ&h. λ&t. (λ{#I1: #Con{@hcomp(eT, @hcTubesHd(fs), h), @hcomp(#List{eT}, @hcTubesTl(fs), t)}; λo. #HCm{#List{eT}, fs, #Con{h, t}}})(@allCon(fs));
+  λv. #HCm{#List{eT}, fs, v}})(base)
+// discrete types: the composite is the cap when every tube agrees with it
+@allEq = λ&x. λ{#Nil: #I1; #Cons: λ{#Face: λp. λ&tube. λ&rest. (λ{#I1: @allEq(x, rest); λo. #I0})(@sameCtr(x, @pathAt(tube, #IMark)))}}
+@sameCtr = λ{0: λ{0: #I1; λw. #I0}; 1: λ{1: #I1; λw. #I0}; #One: λ{#One: #I1; λw. #I0}; #Nil: λ{#Nil: #I1; λw. #I0}; λv. λw. #I0}
+@hcNullary = λ&A. λ&fs. λ&base. ! &{b1, bx} = base; ! &{b2, b3} = bx; (λ{#I1: b2; λo. #HCm{A, fs, b3}})(@allEq(b1, fs))
+// propositional truncation: tsquash is a PATH constructor joining ANY two
+// elements; the recursor sends it to the target's own proof of propness.
+@trec = λ&x. λ&pb. λ&f. (λ{#TIn: λa. f(a); #At: λp. λi. (λ{#TSq: λu. λv. @pathAt(pb(@trec(u, pb, f))(@trec(v, pb, f)), i); λq. #TRec{q, pb, f}})(p); λv. #TRec{v, pb, f}})(x)
+// S1: loop is a PATH constructor, so @pathAt knows it; the recursor sends
+// base to b and loop@i to l@i.
+@srec = λ&x. λ&b. λ&l. (λ{#Base: b; #At: λp. λi. (λ{#Loop: @pathAt(l, i); λq. #SRec{q, b, l}})(p); λv. #SRec{v, b, l}})(x)
+// pout: a system on a true face is that branch
+@pout = λ{#Sys: λfs. @poutGo(fs); λv. #POut{v}}
+@poutGo = λ{#Nil: #POut{#Nil}; #Cons: λ{#Face: λphi. λ&v. λ&rest. (λ{#I1: v; λq. @poutGo(rest)})(phi)}}
+// transp with a cofibration: identity on phi, ordinary transport off it
+@transp = λ&L. λp. λ&x. (λ{#I1: x; #I0: @coe(L, #I0, #I1, x); λq. #Trp{L, q, x}})(p)
+// outS: projecting a restricted element; outS(inS x) = x
+@outS = λ{#InS: λx. x; λv. #OutS{v}}
+// ---- SetQuotient recursor: on a point it is f; on the path constructor it
+// is the resp witness applied at that interval; superpositions commute.
+@qrec = λ&x. λ&t. λ&f. λ&rsp. (λ{
+  #QCl: λa. f(a);
+  #At: λp. λi. (λ{#QEq: λa. λb. λw. @pathAt(rsp(a)(b)(w), i); λq. #QRec{q, t, f, rsp}})(p);
+  λv. #QRec{v, t, f, rsp}})(x)
+// ---- Glue (boundary rules only, as in the checker): a true face selects its partial type / section
+@glueT = λA. λfs. @glueTGo(fs, #Nil, A)
+@glueTGo = λfs. λlive. λA. (λ{
+  #Nil: λlive. λA. (λ{#Nil: λA. A; λlive. λA. #Glue{A, live}})(live)(A);
+  #Cons: λ{#GFace: λphi. λT. λe. λrest. λlive. λA. (λ{
+    #I0: λT. λe. λrest. λlive. λA. @glueTGo(rest, live, A);
+    λp. λT. λe. λrest. λlive. λA. @glueTGo(rest, #Cons{#GFace{p, T, e}, live}, A)})(phi)(T)(e)(rest)(live)(A)}})(fs)(live)(A)
+@glueA = λ{#Glue: λA. λfs. A; λA. A}
+@glueFs = λ{#Glue: λA. λfs. fs; λA. #Nil}
+// coherent equivalence e = #Pair{f, h}: function, inverse (fibre centre), section path
+@eFun = λ{#Pair: λf. λh. f}
+@eInv = λ{#Pair: λf. λh. λy. (λ{#Pair: λcen. λc. (λ{#Pair: λx. λp. x})(cen)})(h(y))}
+@eSec = λ{#Pair: λf. λh. λy. (λ{#Pair: λcen. λc. (λ{#Pair: λx. λp. p})(cen)})(h(y))}
+// transport through Glue: faces at r and s read off L(r), L(s)
+// the faces are read off the line at the MARKER and instantiated at r / s by
+// interval substitution (re-evaluating L at a literal endpoint would let a
+// true face collapse the Glue to its partial type and lose the faces)
+@coeGlue = λ&L. λ&r. λ&s. λ&x. λfs0.
+  ! &{fsA, fsB} = fs0;
+  ! &{a1x, a1y} = @coe(λi. @glueA(L(i)), r, s, @gUnglue(@facesAt(fsA, r), x));
+  ! &{a1u, a1v} = a1x;
+  ! &{fsS, fsS2} = @facesAt(fsB, s);
+  ! &{aSu, aSv} = @glueA(L(s));
+  @glue(aSu, @gT1(fsS, a1y), @hcomp(aSv, @gTubes(fsS2, a1u), a1v))
+@substI = λ&s. λ{#IMark: s; #I0: #I0; #I1: #I1; #INot: λa. @inot(@substI(s, a)); #IAnd: λa. λb. @iand(@substI(s, a), @substI(s, b)); #IOr: λa. λb. @ior(@substI(s, a), @substI(s, b)); λv. v}
+@facesAt = λ{#Nil: λs. #Nil; #Cons: λ{#GFace: λphi. λT. λe. λrest. λ&s. (λ{#I0: λT. λe. λrest. λs. @facesAt(rest, s); λp. λT. λe. λrest. λs. #Cons{#GFace{p, T, e}, @facesAt(rest, s)}})(@substI(s, phi))(T)(e)(rest)(s)}}
+// unglue at r: a true face gives fst(e) x; symbolic faces unglue the glue value; no faces: x
+@gUnglue = λ{#Nil: λx. x; #Cons: λ{#GFace: λphi. λT. λe. λrest. λx. (λ{#I1: λe. λrest. λx. @eFun(e)(x); λp. λe. λrest. λx. @gUngS(rest, x)})(phi)(e)(rest)(x)}}
+@gUngS = λ{#Nil: λx. @unglue(x); #Cons: λ{#GFace: λphi. λT. λe. λrest. λx. (λ{#I1: λe. λrest. λx. @eFun(e)(x); λp. λe. λrest. λx. @gUngS(rest, x)})(phi)(e)(rest)(x)}}
+@gT1 = λ{#Nil: λa. #Nil; #Cons: λ{#GFace: λphi. λT. λ&e. λ&rest. λ&a. #Cons{#Face{phi, @eInv(e)(a)}, @gT1(rest, a)}}}
+@gTubes = λ{#Nil: λa. #Nil; #Cons: λ{#GFace: λphi. λT. λ&e. λ&rest. λ&a. #Cons{#Face{phi, #PLm{λj. @pathAt(@eSec(e)(@eInv(e)(a)), @inot(j))}}, @gTubes(rest, a)}}}
+// hcomp in the universe: Glue over the base with the transport equivalences of the tubes
+@isContrT = λ&c. #Sig{c, λ&cen. #Pi{c, λw. #Path{λi. c, cen, w}}}
+@fiberT = λ&T. λ&A. λ&f. λ&y. #Sig{T, λx. #Path{λi. A, f(x), y}}
+@equivT = λ&T. λ&A. #Sig{#Pi{T, λx. A}, λ&f. #Pi{A, λy. @isContrT(@fiberT(T, A, f, y))}}
+@idEquivV = λ&a. #Pair{λx. x, λ&y. #Pair{#Pair{y, #PLm{λi. y}}, λ{#Pair: λx. λ&p. #PLm{λ&i. #Pair{@pathAt(p, @inot(i)), #PLm{λj. @pathAt(p, @ior(@inot(i), j))}}}}}}
+@transpEquiv = λ&u. ! &{top, top2} = @pathAt(u, #I1); @coe(λ&k. @equivT(top, @pathAt(u, @inot(k))), #I0, #I1, @idEquivV(top2))
+@setFaces = λ{#Nil: #Nil; #Cons: λ{#Face: λphi. λ&u. λrest. #Cons{#GFace{phi, @pathAt(u, #I1), @transpEquiv(u)}, @setFaces(rest)}}}
+@glue = λA. λfs. λx. @glueGo(fs, x, #Nil, A)
+@glueGo = λfs. λx. λstuck. λA. (λ{
+  #Nil: λx. λstuck. λA. (λ{#Nil: λx. λA. x; λstuck. λx. λA. #GlB{A, stuck, x}})(stuck)(x)(A);
+  #Cons: λ{#Face: λphi. λt. λrest. λx. λstuck. λA. (λ{
+    #I1: λt. λrest. λx. λstuck. λA. t;
+    #I0: λt. λrest. λx. λstuck. λA. @glueGo(rest, x, stuck, A);
+    λp. λt. λrest. λx. λstuck. λA. @glueGo(rest, x, #Cons{#Face{p, t}, stuck}, A)})(phi)(t)(rest)(x)(stuck)(A)}})(fs)(x)(stuck)(A)
+@unglue = λ{#GlB: λA. λfs. λx. x; λg. g}
+// ---- coe: transport x along the type line L from r to s
+@coe = λ&L. λ&r. λ&s. λ&x. (λ{1: x; λn. @coeT(L, r, s, x, L(#IMark))})(@sameEnd(r, s))
+@piA = λ{#Pi: λA. λB. A; λt. #StuckDom{t}}
+@piB = λ{#Pi: λA. λB. B; λt. λv. #StuckCod{t}}
+@sgA = λ{#Sig: λA. λB. A; λt. #StuckDom{t}}
+@sgB = λ{#Sig: λA. λB. B; λt. λv. #StuckCod{t}}
+@ptA = λ{#Path: λA. λu. λv. A; λt. #StuckPathTy{t}}
+@ptU = λ{#Path: λA. λu. λv. u; λt. #StuckPathTy{t}}
+@ptV = λ{#Path: λA. λu. λv. v; λt. #StuckPathTy{t}}
+@coeT = λ&L. λ&r. λ&s. λ&x. λ{
+  #Bool: x; #Nat: x; #Set: x; #Unit: x; #Empty: x; #List: λe. x; #Enum: x; #Num: x; #Itv: x; #Eql: x;
+  #Pi: λA0. λB0. λ&y. @coe(λ&i. @piB(L(i), @coe(λj. @piA(L(j)), s, i, y)), r, s, x(@coe(λj. @piA(L(j)), s, r, y)));
+  #Sig: λA0. λB0. (λ{#Pair: λ&a. λb. #Pair{@coe(λj. @sgA(L(j)), r, s, a), @coe(λ&i. @sgB(L(i), @coe(λj. @sgA(L(j)), r, i, a)), r, s, b)}})(x);
+  #Path: λA0. λu0. λv0. @coePath(L, r, s, x);
+  #At: λp. λi. @coeAt(p, i, r, s, x);
+  #Glue: λA0. λfs0. @coeGlue(L, r, s, x, fs0);
+  λt. @hitCoe(L, r, s, x, t)}
+// Path transport fills the j-boundaries; k runs from r to s, including reverse transport.
+@coePath = λ&L. λ&r. λ&s. λx. #PLm{λ&j. @hcomp(@ptA(L(s))(j), #Cons{#Face{@inot(j), #PLm{λ&k. @coe(λi. @ptA(L(i))(#I0), @ior(@iand(@inot(k), r), @iand(k, s)), s, @ptU(L(@ior(@iand(@inot(k), r), @iand(k, s)))))}}, #Cons{#Face{j, #PLm{λ&k. @coe(λi. @ptA(L(i))(#I1), @ior(@iand(@inot(k), r), @iand(k, s)), s, @ptV(L(@ior(@iand(@inot(k), r), @iand(k, s)))))}}, #Nil}}, @coe(λi. @ptA(L(i))(j), r, s, @pathAt(x, j)))}
+// tubes of an hcomp cell transported along a line (transport commutes with hcomp in a HIT)
+@hcTubesCoeLine = λ&L. λ&r. λ&s. λ{#Nil: #Nil; #Cons: λ{#Face: λp. λ&tube. λ&rest. #Cons{#Face{p, #PLm{λj. @coe(L, r, s, @pathAt(tube, j))}}, @hcTubesCoeLine(L, r, s, rest)}}}
+// coe along a universe path applied at the symbolic marker (or its negation)
+// direction of literal endpoints: 1 fwd, 0 bwd, 2 symbolic (stuck)
+@dir = λ{#I0: λ{#I1: 1; λs. 2}; #I1: λ{#I0: 0; λs. 2}; λr. λs. 2}
+@coeAt = λ&p. λ{#IMark: λr. λs. λx. @coeU(p, @dir(r, s), x); #INot: λ{#IMark: λr. λs. λx. @coeU(p, (1 - @dir(r, s)), x); λi. λr. λs. λx. #StuckCoe{#At{p, #INot{i}}, x}}; λi. λr. λs. λx. #StuckCoe{#At{p, i}, x}}
+@coeU = λ{
+  #UaU: λ&A. λ&B. λ&f. λ&g. λd. λ&x. (λ{1: f(x); 0: g(x); λn. #StuckCoeU{#UaU{A, B, f, g}, x}})(d);
+  #CompU: λ&P. λ&Q. λ&d. λ&x. (λ{1: @coe(Q, #I0, #I1, @coe(P, #I0, #I1, x)); 0: @coe(P, #I1, #I0, @coe(Q, #I1, #I0, x)); λn. #StuckCoeU{#CompU{P, Q}, x}})(d);
+  λv. λd. λx. #StuckCoeU{v, x}}
+
+@hitCoe = λ&L. λ&r. λ&s. λ&x. λ{λt. #StuckCoe{t, x}}
+@Diameter = λ&b0u0. #Sig{@Elt, λ&b1u1. #Sig{@InG(b1u1), λ&b2u2. #Sig{@DistIs(b1u1)(b0u0), λ&b3u3. #Pi{@Elt, λ&b4u4. #Pi{@InG(b4u4), λ&b5u5. @Reaches(b4u4)(b0u0)}}}}}
+@DistIs = λ&b0u6. λ&b1u7. #Sig{@Reaches(b0u6)(b1u7), λ&b2u8. #Pi{#Nat, λ&b3u9. #Pi{@Reaches(b0u6)(b3u9), λ&b4u10. @LE(b1u7)(b3u9)}}}
+@Elt = #Sig{#Enum, λ&b0u11. (λ{#elt: #Sig{#List{#Num}, λ&b1u12. #Sig{#List{#Num}, λ&b2u13. #Sig{#List{#Num}, λ&b3u14. #Sig{#List{#Num}, λ&b4u15. #Unit}}}}; _: λ&b1u16. λ&b2u17. #One})(b0u11)}
+@Gen = #Sig{#Enum, λ&b0u18. (λ{#sU: #Unit; #sU2: #Unit; #sUi: #Unit; #sD: #Unit; #sD2: #Unit; #sDi: #Unit; #sR: #Unit; #sR2: #Unit; #sRi: #Unit; #sL: #Unit; #sL2: #Unit; #sLi: #Unit; #sF: #Unit; #sF2: #Unit; #sFi: #Unit; #sB: #Unit; #sB2: #Unit; #sBi: #Unit; _: λ&b1u19. λ&b2u20. #One})(b0u18)}
+@GodsNumber = @Diameter(@twenty)
+@InG = λ&b0u21. λ{#Pair: λ&b1u22. λ&b2u23. (λ{#elt: λ&b3u24. λ{#Pair: λ&b4u25. λ&b5u26. λ{#Pair: λ&b6u27. λ&b7u28. λ{#Pair: λ&b8u29. λ&b9u30. λ{#Pair: λ&b10u31. λ&b11u32. λ{#One: #Sig{#Path{λ&b12u33. #Num, @sumMod(b6u27)(3), 0}, λ&b12u34. #Sig{#Path{λ&b13u35. #Num, @sumMod(b10u31)(2), 0}, λ&b13u36. #Path{λ&b14u37. #Num, @parity(b4u25)(8), @parity(b8u29)(12)}}}}(b11u32)}(b9u30)}(b7u28)}(b5u26)}(b3u24); _: λ&b3u38. λ&b4u39. λ&b5u40. #One})(b1u22)(b2u23)}(b0u21)
+@LE = λ&b0u41. λ&b1u42. #Sig{#Enum, λ&b2u43. (λ{#leRefl: λ&b3u44. λ&b4u45. #Sig{#Path{λ&b5u46. #Nat, b3u44, b4u45}, λ&b5u47. #Unit}; #leStep: λ&b3u48. λ&b4u49. #Sig{#Nat, λ&b5u50. #Sig{#Path{λ&b6u51. #Nat, b4u49, #Suc{b5u50}}, λ&b6u52. #Sig{@LE(b3u48)(b5u50), λ&b7u53. #Unit}}}; _: λ&b3u54. λ&b4u55. λ&b5u56. λ&b6u57. #One})(b2u43)(b0u41)(b1u42)}
+@Reaches = λ&b0u58. λ&b1u59. #Sig{#Enum, λ&b2u60. (λ{#here: λ&b3u61. λ&b4u62. #Sig{#Path{λ&b5u63. @Elt, b3u61, @identity}, λ&b5u64. #Unit}; #onward: λ&b3u65. λ&b4u66. #Sig{#Nat, λ&b5u67. #Sig{@Gen, λ&b6u68. #Sig{#Path{λ&b7u69. #Nat, b4u66, #Suc{b5u67}}, λ&b7u70. #Sig{@Reaches(@compose(b3u65)(@act(b6u68)))(b5u67), λ&b8u71. #Unit}}}}; _: λ&b3u72. λ&b4u73. λ&b5u74. λ&b6u75. #One})(b2u60)(b0u58)(b1u59)}
+@SuperflipBeyondNineteen = #Pi{@Reaches(@superflip)(@nineteen), λ&b0u76. #Empty}
+@act = λ&b0u77. λ{#Pair: λ&b1u78. λ&b2u79. (λ{#sU: λ&b3u80. λ{#One: @gU}(b3u80); #sU2: λ&b3u81. λ{#One: @gU2}(b3u81); #sUi: λ&b3u82. λ{#One: @gUi}(b3u82); #sD: λ&b3u83. λ{#One: @gD}(b3u83); #sD2: λ&b3u84. λ{#One: @gD2}(b3u84); #sDi: λ&b3u85. λ{#One: @gDi}(b3u85); #sR: λ&b3u86. λ{#One: @gR}(b3u86); #sR2: λ&b3u87. λ{#One: @gR2}(b3u87); #sRi: λ&b3u88. λ{#One: @gRi}(b3u88); #sL: λ&b3u89. λ{#One: @gL}(b3u89); #sL2: λ&b3u90. λ{#One: @gL2}(b3u90); #sLi: λ&b3u91. λ{#One: @gLi}(b3u91); #sF: λ&b3u92. λ{#One: @gF}(b3u92); #sF2: λ&b3u93. λ{#One: @gF2}(b3u93); #sFi: λ&b3u94. λ{#One: @gFi}(b3u94); #sB: λ&b3u95. λ{#One: @gB}(b3u95); #sB2: λ&b3u96. λ{#One: @gB2}(b3u96); #sBi: λ&b3u97. λ{#One: @gBi}(b3u97); _: λ&b3u98. λ&b4u99. λ&b5u100. #One})(b1u78)(b2u79)}(b0u77)
+@allChecks = #Con{@orderFourU, #Con{@orderFourR, #Con{@orderFourF, #Con{@halfIsSquareR, #Con{@inverseIsCubeR, #Con{@oppositeCommuteUD, #Con{@oppositeCommuteRL, #Con{@oppositeCommuteFB, #Con{@generatorsInG, #Con{@composeStaysInG, #Con{@superflipInG, #Con{@superflipIsInvolution, #Nil}}}}}}}}}}}}
+@alphabet = #Con{@gU, #Con{@gU2, #Con{@gUi, #Con{@gD, #Con{@gD2, #Con{@gDi, #Con{@gR, #Con{@gR2, #Con{@gRi, #Con{@gL, #Con{@gL2, #Con{@gLi, #Con{@gF, #Con{@gF2, #Con{@gFi, #Con{@gB, #Con{@gB2, #Con{@gBi, #Nil}}}}}}}}}}}}}}}}}}
+@compose = λ&b0u101. λ&b1u102. λ{#Pair: λ&b2u103. λ&b3u104. (λ{#elt: λ&b4u105. λ&b5u106. λ{#Pair: λ&b6u107. λ&b7u108. λ{#Pair: λ&b8u109. λ&b9u110. λ{#Pair: λ&b10u111. λ&b11u112. λ{#Pair: λ&b12u113. λ&b13u114. λ{#One: λ{#Pair: λ&b14u115. λ&b15u116. (λ{#elt: λ&b16u117. λ&b17u118. λ&b18u119. λ&b19u120. λ&b20u121. λ{#Pair: λ&b21u122. λ&b22u123. λ{#Pair: λ&b23u124. λ&b24u125. λ{#Pair: λ&b25u126. λ&b26u127. λ{#Pair: λ&b27u128. λ&b28u129. λ{#One: #Pair{#elt, #Pair{@permAt(b19u120)(b21u122)(8)(0), #Pair{@oriAt(b20u121)(b21u122)(b23u124)(3)(8)(0), #Pair{@permAt(b16u117)(b25u126)(12)(0), #Pair{@oriAt(b17u118)(b25u126)(b27u128)(2)(12)(0), #One}}}}}}(b28u129)}(b26u127)}(b24u125)}(b22u123)}(b18u119); _: λ&b16u130. λ&b17u131. λ&b18u132. λ&b19u133. λ&b20u134. λ&b21u135. λ&b22u136. #One})(b14u115)(b10u111)(b12u113)(b15u116)(b6u107)(b8u109)}(b4u105)}(b13u114)}(b11u112)}(b9u110)}(b7u108)}(b5u106); _: λ&b4u137. λ&b5u138. λ&b6u139. λ&b7u140. #One})(b2u103)(b1u102)(b3u104)}(b0u101)
+@composeStaysInG = @inG(@compose(@gR)(@compose(@gU)(@gFi)))
+@cornerTwistClosed = λ&b0u141. λ{#Pair: λ&b1u142. λ&b2u143. (λ{#elt: λ&b3u144. λ{#Pair: λ&b4u145. λ&b5u146. λ{#Pair: λ&b6u147. λ&b7u148. λ{#Pair: λ&b8u149. λ&b9u150. λ{#Pair: λ&b10u151. λ&b11u152. λ{#One: (@sumMod(b6u147)(3) == 0)}(b11u152)}(b9u150)}(b7u148)}(b5u146)}(b3u144); _: λ&b3u153. λ&b4u154. λ&b5u155. #One})(b1u142)(b2u143)}(b0u141)
+@edgeFlipClosed = λ&b0u156. λ{#Pair: λ&b1u157. λ&b2u158. (λ{#elt: λ&b3u159. λ{#Pair: λ&b4u160. λ&b5u161. λ{#Pair: λ&b6u162. λ&b7u163. λ{#Pair: λ&b8u164. λ&b9u165. λ{#Pair: λ&b10u166. λ&b11u167. λ{#One: (@sumMod(b10u166)(2) == 0)}(b11u167)}(b9u165)}(b7u163)}(b5u161)}(b3u159); _: λ&b3u168. λ&b4u169. λ&b5u170. #One})(b1u157)(b2u158)}(b0u156)
+@eqElt = λ&b0u171. λ&b1u172. λ{#Pair: λ&b2u173. λ&b3u174. (λ{#elt: λ&b4u175. λ&b5u176. λ{#Pair: λ&b6u177. λ&b7u178. λ{#Pair: λ&b8u179. λ&b9u180. λ{#Pair: λ&b10u181. λ&b11u182. λ{#Pair: λ&b12u183. λ&b13u184. λ{#One: λ{#Pair: λ&b14u185. λ&b15u186. (λ{#elt: λ&b16u187. λ&b17u188. λ&b18u189. λ&b19u190. λ&b20u191. λ{#Pair: λ&b21u192. λ&b22u193. λ{#Pair: λ&b23u194. λ&b24u195. λ{#Pair: λ&b25u196. λ&b26u197. λ{#Pair: λ&b27u198. λ&b28u199. λ{#One: (λ{0: λ&b29u200. λ&b30u201. λ&b31u202. λ&b32u203. λ&b33u204. λ&b34u205. 0; _: λ&b29u206. λ&b30u207. λ&b31u208. λ&b32u209. λ&b33u210. λ&b34u211. λ&b35u212. (λ{0: λ&b36u213. λ&b37u214. λ&b38u215. λ&b39u216. 0; _: λ&b36u217. λ&b37u218. λ&b38u219. λ&b39u220. λ&b40u221. (λ{0: λ&b41u222. λ&b42u223. 0; _: λ&b41u224. λ&b42u225. λ&b43u226. @eqList(b42u225)(b43u226)})(@eqList(b37u218)(b39u220))(b38u219)(b40u221)})(@eqList(b35u212)(b32u209))(b30u207)(b31u208)(b33u210)(b34u211)})(@eqList(b19u190)(b21u192))(b16u187)(b17u188)(b23u194)(b25u196)(b27u198)(b20u191)}(b28u199)}(b26u197)}(b24u195)}(b22u193)}(b18u189); _: λ&b16u227. λ&b17u228. λ&b18u229. λ&b19u230. λ&b20u231. λ&b21u232. λ&b22u233. #One})(b14u185)(b10u181)(b12u183)(b15u186)(b6u177)(b8u179)}(b4u175)}(b13u184)}(b11u182)}(b9u180)}(b7u178)}(b5u176); _: λ&b4u234. λ&b5u235. λ&b6u236. λ&b7u237. #One})(b2u173)(b1u172)(b3u174)}(b0u171)
+@eqList = λ&b0u238. λ&b1u239. (λ{#Nil: λ&b2u240. (λ{#Nil: 1; #Con: λ&b3u241. λ&b4u242. 0})(b2u240); #Con: λ&b2u243. λ&b3u244. λ&b4u245. (λ{#Nil: λ&b5u246. λ&b6u247. 0; #Con: λ&b5u248. λ&b6u249. λ&b7u250. λ&b8u251. (λ{0: λ&b9u252. λ&b10u253. 0; _: λ&b9u254. λ&b10u255. λ&b11u256. @eqList(b10u255)(b11u256)})((b7u250 == b5u248))(b8u251)(b6u249)})(b4u245)(b2u243)(b3u244)})(b0u238)(b1u239)
+@gB = #Pair{#elt, #Pair{#Con{0, #Con{1, #Con{3, #Con{7, #Con{4, #Con{5, #Con{2, #Con{6, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{1, #Con{2, #Con{0, #Con{0, #Con{2, #Con{1, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{11, #Con{4, #Con{5, #Con{6, #Con{10, #Con{8, #Con{9, #Con{3, #Con{7, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{1, #Con{0, #Con{0, #Con{0, #Con{1, #Con{0, #Con{0, #Con{1, #Con{1, #Nil}}}}}}}}}}}}, #One}}}}}
+@gB2 = #Pair{#elt, #Pair{#Con{0, #Con{1, #Con{7, #Con{6, #Con{4, #Con{5, #Con{3, #Con{2, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{7, #Con{4, #Con{5, #Con{6, #Con{3, #Con{8, #Con{9, #Con{11, #Con{10, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gBi = #Pair{#elt, #Pair{#Con{0, #Con{1, #Con{6, #Con{2, #Con{4, #Con{5, #Con{7, #Con{3, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{1, #Con{2, #Con{0, #Con{0, #Con{2, #Con{1, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{10, #Con{4, #Con{5, #Con{6, #Con{11, #Con{8, #Con{9, #Con{7, #Con{3, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{1, #Con{0, #Con{0, #Con{0, #Con{1, #Con{0, #Con{0, #Con{1, #Con{1, #Nil}}}}}}}}}}}}, #One}}}}}
+@gD = #Pair{#elt, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{5, #Con{6, #Con{7, #Con{4, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{5, #Con{6, #Con{7, #Con{4, #Con{8, #Con{9, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gD2 = #Pair{#elt, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{6, #Con{7, #Con{4, #Con{5, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{6, #Con{7, #Con{4, #Con{5, #Con{8, #Con{9, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gDi = #Pair{#elt, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{7, #Con{4, #Con{5, #Con{6, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{7, #Con{4, #Con{5, #Con{6, #Con{8, #Con{9, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gF = #Pair{#elt, #Pair{#Con{1, #Con{5, #Con{2, #Con{3, #Con{0, #Con{4, #Con{6, #Con{7, #Nil}}}}}}}}, #Pair{#Con{1, #Con{2, #Con{0, #Con{0, #Con{2, #Con{1, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{9, #Con{2, #Con{3, #Con{4, #Con{8, #Con{6, #Con{7, #Con{1, #Con{5, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{0, #Con{0, #Con{0, #Con{1, #Con{0, #Con{0, #Con{1, #Con{1, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gF2 = #Pair{#elt, #Pair{#Con{5, #Con{4, #Con{2, #Con{3, #Con{1, #Con{0, #Con{6, #Con{7, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{5, #Con{2, #Con{3, #Con{4, #Con{1, #Con{6, #Con{7, #Con{9, #Con{8, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gFi = #Pair{#elt, #Pair{#Con{4, #Con{0, #Con{2, #Con{3, #Con{5, #Con{1, #Con{6, #Con{7, #Nil}}}}}}}}, #Pair{#Con{1, #Con{2, #Con{0, #Con{0, #Con{2, #Con{1, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{8, #Con{2, #Con{3, #Con{4, #Con{9, #Con{6, #Con{7, #Con{5, #Con{1, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{0, #Con{0, #Con{0, #Con{1, #Con{0, #Con{0, #Con{1, #Con{1, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gL = #Pair{#elt, #Pair{#Con{0, #Con{2, #Con{6, #Con{3, #Con{4, #Con{1, #Con{5, #Con{7, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{0, #Con{0, #Con{2, #Con{1, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{10, #Con{3, #Con{4, #Con{5, #Con{9, #Con{7, #Con{8, #Con{2, #Con{6, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gL2 = #Pair{#elt, #Pair{#Con{0, #Con{6, #Con{5, #Con{3, #Con{4, #Con{2, #Con{1, #Con{7, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{6, #Con{3, #Con{4, #Con{5, #Con{2, #Con{7, #Con{8, #Con{10, #Con{9, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gLi = #Pair{#elt, #Pair{#Con{0, #Con{5, #Con{1, #Con{3, #Con{4, #Con{6, #Con{2, #Con{7, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{0, #Con{0, #Con{2, #Con{1, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{9, #Con{3, #Con{4, #Con{5, #Con{10, #Con{7, #Con{8, #Con{6, #Con{2, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gR = #Pair{#elt, #Pair{#Con{4, #Con{1, #Con{2, #Con{0, #Con{7, #Con{5, #Con{6, #Con{3, #Nil}}}}}}}}, #Pair{#Con{2, #Con{0, #Con{0, #Con{1, #Con{1, #Con{0, #Con{0, #Con{2, #Nil}}}}}}}}, #Pair{#Con{8, #Con{1, #Con{2, #Con{3, #Con{11, #Con{5, #Con{6, #Con{7, #Con{4, #Con{9, #Con{10, #Con{0, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gR2 = #Pair{#elt, #Pair{#Con{7, #Con{1, #Con{2, #Con{4, #Con{3, #Con{5, #Con{6, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{4, #Con{1, #Con{2, #Con{3, #Con{0, #Con{5, #Con{6, #Con{7, #Con{11, #Con{9, #Con{10, #Con{8, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gRi = #Pair{#elt, #Pair{#Con{3, #Con{1, #Con{2, #Con{7, #Con{0, #Con{5, #Con{6, #Con{4, #Nil}}}}}}}}, #Pair{#Con{2, #Con{0, #Con{0, #Con{1, #Con{1, #Con{0, #Con{0, #Con{2, #Nil}}}}}}}}, #Pair{#Con{11, #Con{1, #Con{2, #Con{3, #Con{8, #Con{5, #Con{6, #Con{7, #Con{0, #Con{9, #Con{10, #Con{4, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gU = #Pair{#elt, #Pair{#Con{3, #Con{0, #Con{1, #Con{2, #Con{4, #Con{5, #Con{6, #Con{7, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{3, #Con{0, #Con{1, #Con{2, #Con{4, #Con{5, #Con{6, #Con{7, #Con{8, #Con{9, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gU2 = #Pair{#elt, #Pair{#Con{2, #Con{3, #Con{0, #Con{1, #Con{4, #Con{5, #Con{6, #Con{7, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{2, #Con{3, #Con{0, #Con{1, #Con{4, #Con{5, #Con{6, #Con{7, #Con{8, #Con{9, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@gUi = #Pair{#elt, #Pair{#Con{1, #Con{2, #Con{3, #Con{0, #Con{4, #Con{5, #Con{6, #Con{7, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{1, #Con{2, #Con{3, #Con{0, #Con{4, #Con{5, #Con{6, #Con{7, #Con{8, #Con{9, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@generatorsInG = (λ{0: 0; _: λ&b0u257. (λ{0: 0; _: λ&b1u258. (λ{0: 0; _: λ&b2u259. (λ{0: 0; _: λ&b3u260. (λ{0: 0; _: λ&b4u261. @inG(@gD)})(@inG(@gB))})(@inG(@gL))})(@inG(@gF))})(@inG(@gR))})(@inG(@gU))
+@halfIsSquareR = @eqElt(@gR2)(@compose(@gR)(@gR))
+@identity = #Pair{#elt, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{4, #Con{5, #Con{6, #Con{7, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{4, #Con{5, #Con{6, #Con{7, #Con{8, #Con{9, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}}}}}, #One}}}}}
+@inG = λ&b0u262. (λ{0: λ&b1u263. 0; _: λ&b1u264. λ&b2u265. (λ{0: λ&b3u266. 0; _: λ&b3u267. λ&b4u268. @paritiesAgree(b4u268)})(@edgeFlipClosed(b2u265))(b2u265)})(@cornerTwistClosed(b0u262))(b0u262)
+@inverseIsCubeR = @eqElt(@gRi)(@compose(@gR)(@compose(@gR)(@gR)))
+@inversions = λ&b0u269. λ&b1u270. λ&b2u271. λ&b3u272. (λ{0: λ&b4u273. λ&b5u274. λ&b6u275. λ&b7u276. (λ{0: λ&b8u277. λ&b9u278. λ&b10u279. λ&b11u280. (λ{0: λ&b12u281. λ&b13u282. λ&b14u283. λ&b15u284. @inversions(b12u281)(b13u282)(b14u283)((b15u284 + 1)); _: λ&b12u285. λ&b13u286. λ&b14u287. λ&b15u288. λ&b16u289. (1 + @inversions(b13u286)(b14u287)(b15u288)((b16u289 + 1)))})((@nth(b8u277)(b10u279) > @nth(b8u277)(b11u280)))(b8u277)(b9u278)(b10u279)(b11u280); _: λ&b8u290. λ&b9u291. λ&b10u292. λ&b11u293. λ&b12u294. @inversions(b9u291)(b10u292)((b11u293 + 1))((b11u293 + 2))})((b7u276 == b5u274))(b4u273)(b5u274)(b6u275)(b7u276); _: λ&b4u295. λ&b5u296. λ&b6u297. λ&b7u298. λ&b8u299. 0})((b2u271 == b1u270))(b0u269)(b1u270)(b2u271)(b3u272)
+@main = @GodsNumber
+@nineteen = #Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Zer}}}}}}}}}}}}}}}}}}}
+@nth = λ&b0u300. λ&b1u301. (λ{#Nil: λ&b2u302. 0; #Con: λ&b2u303. λ&b3u304. λ&b4u305. (λ{0: λ&b5u306. λ&b6u307. λ&b7u308. @nth(b7u308)((b5u306 - 1)); _: λ&b5u309. λ&b6u310. λ&b7u311. λ&b8u312. b7u311})((b4u305 == 0))(b4u305)(b2u303)(b3u304)})(b0u300)(b1u301)
+@oppositeCommuteFB = @eqElt(@compose(@gF)(@gB))(@compose(@gB)(@gF))
+@oppositeCommuteRL = @eqElt(@compose(@gR)(@gL))(@compose(@gL)(@gR))
+@oppositeCommuteUD = @eqElt(@compose(@gU)(@gD))(@compose(@gD)(@gU))
+@orderFourF = @eqElt(@power(@gF)(4))(@identity)
+@orderFourR = @eqElt(@power(@gR)(4))(@identity)
+@orderFourU = @eqElt(@power(@gU)(4))(@identity)
+@oriAt = λ&b0u313. λ&b1u314. λ&b2u315. λ&b3u316. λ&b4u317. λ&b5u318. (λ{0: λ&b6u319. λ&b7u320. λ&b8u321. λ&b9u322. λ&b10u323. λ&b11u324. #Con{((@nth(b8u321)(b11u324) + @nth(b6u319)(@nth(b7u320)(b11u324))) % b9u322), @oriAt(b6u319)(b7u320)(b8u321)(b9u322)(b10u323)((b11u324 + 1))}; _: λ&b6u325. λ&b7u326. λ&b8u327. λ&b9u328. λ&b10u329. λ&b11u330. λ&b12u331. #Nil})((b5u318 == b4u317))(b0u313)(b1u314)(b2u315)(b3u316)(b4u317)(b5u318)
+@paritiesAgree = λ&b0u332. λ{#Pair: λ&b1u333. λ&b2u334. (λ{#elt: λ&b3u335. λ{#Pair: λ&b4u336. λ&b5u337. λ{#Pair: λ&b6u338. λ&b7u339. λ{#Pair: λ&b8u340. λ&b9u341. λ{#Pair: λ&b10u342. λ&b11u343. λ{#One: (@parity(b4u336)(8) == @parity(b8u340)(12))}(b11u343)}(b9u341)}(b7u339)}(b5u337)}(b3u335); _: λ&b3u344. λ&b4u345. λ&b5u346. #One})(b1u333)(b2u334)}(b0u332)
+@parity = λ&b0u347. λ&b1u348. (@inversions(b0u347)(b1u348)(0)(1) % 2)
+@permAt = λ&b0u349. λ&b1u350. λ&b2u351. λ&b3u352. (λ{0: λ&b4u353. λ&b5u354. λ&b6u355. λ&b7u356. #Con{@nth(b4u353)(@nth(b5u354)(b7u356)), @permAt(b4u353)(b5u354)(b6u355)((b7u356 + 1))}; _: λ&b4u357. λ&b5u358. λ&b6u359. λ&b7u360. λ&b8u361. #Nil})((b3u352 == b2u351))(b0u349)(b1u350)(b2u351)(b3u352)
+@power = λ&b0u362. λ&b1u363. (λ{0: λ&b2u364. λ&b3u365. @compose(@power(b2u364)((b3u365 - 1)))(b2u364); _: λ&b2u366. λ&b3u367. λ&b4u368. @identity})((b1u363 == 0))(b0u362)(b1u363)
+@sumMod = λ&b0u369. λ&b1u370. (λ{#Nil: λ&b2u371. 0; #Con: λ&b2u372. λ&b3u373. λ&b4u374. ((b2u372 + @sumMod(b3u373)(b4u374)) % b4u374)})(b0u369)(b1u370)
+@superflip = #Pair{#elt, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{4, #Con{5, #Con{6, #Con{7, #Nil}}}}}}}}, #Pair{#Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Con{0, #Nil}}}}}}}}, #Pair{#Con{0, #Con{1, #Con{2, #Con{3, #Con{4, #Con{5, #Con{6, #Con{7, #Con{8, #Con{9, #Con{10, #Con{11, #Nil}}}}}}}}}}}}, #Pair{#Con{1, #Con{1, #Con{1, #Con{1, #Con{1, #Con{1, #Con{1, #Con{1, #Con{1, #Con{1, #Con{1, #Con{1, #Nil}}}}}}}}}}}}, #One}}}}}
+@superflipInG = @inG(@superflip)
+@superflipIsInvolution = @eqElt(@compose(@superflip)(@superflip))(@identity)
+@twenty = #Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Suc{#Zer}}}}}}}}}}}}}}}}}}}}
+
