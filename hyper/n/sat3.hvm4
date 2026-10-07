@@ -1,0 +1,8 @@
+// witnessing a proposition over three fresh coordinates: (x or y) and (not y or z) and (not x or not z)
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@not = λ{#T: #F; #F: #T}
+@and = λ{#T: λb. b; #F: λb. #F}
+@or  = λ{#T: λb. #T; #F: λb. b}
+@keep = λ{#T: λv. v; #F: λv. &{}}
+@main = ! &x = &(0){#F, #T}; ! &y = &(1){#F, #T}; ! &z = &(2){#F, #T};
+  %(@keep(@and(@or(x, y), @and(@or(@not(y), z), @or(@not(x), @not(z)))), [x, y, z]))

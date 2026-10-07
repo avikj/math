@@ -1,0 +1,10 @@
+// MAP §0 on the net: B over every arrangement of A (insertions, one fresh coordinate per place), the
+// specification `sorted` run on the line, the survivors read by %.  No sorting algorithm anywhere.
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@leq = λa. λb. (a <= b)
+@sorted = λ{#Nil: #T; #Cons: λh. λ{#Nil: #T; #Cons: λ&h2. λt2. (λ{1: @sorted(#Cons{h2, t2}); 0: #F})(h <= h2)}}
+@keep = λ{#T: λv. v; #F: λv. &{}}
+@ins = λ&x. λ{#Nil: λn. [x]; #Cons: λ&h. λ&t. λ&n. &(n){#Cons{x, #Cons{h, t}}, #Cons{h, @ins(x, t, n + 1)}}}
+@perms = λ{#Nil: λn. #Nil; #Cons: λh. λt. λ&n. @ins(h, @perms(t, n + 10), n)}
+@spec = λ&p. @keep(@sorted(p), p)
+@main = %(@spec(@perms([3, 1, 2], 0)))
