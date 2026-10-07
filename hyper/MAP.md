@@ -507,7 +507,15 @@ hyper's agents, and everything cubical as programs on it. State, every line pinn
   violations). Each instantiation of a binder now takes a fresh label (`wnf_alo_dup`, the entry's third word), the
   default; `-L` keeps HVM4's discipline, under which the SAT receipts were recorded and still reproduce 282/282.
   The identity equivalence's contraction on a Glue face checks only under the fresh discipline (`n/judgecub`, case 11).
-- **Neutrals carry their type** (`#Nam{form, T}`), so `p @ i1` is `p`'s end from its Path type, and conversion has
-  Σ η and path η (`@conv`). Eliminators for Bool, Nat and List against a goal; `fst`/`snd`; List, Unit, Empty.
-- **Not done:** HITs and quotients, `Sub`/`Partial`, Enum; the lane's eleven cubical programs re-run here (no Bend
-  binary to emit them); parallel execution (this HVM4 is sequential; the diamond makes it legal).
+- **Neutrals are η-long by their type at creation** (`@nam`): a Π-typed neutral is the function that builds the
+  neutral application, a Σ-typed one the pair of its neutral projections, a Path-typed one the line whose ends are
+  its type's ends (the endpoint rule) and whose interior is the neutral application. HVM4 has no rule for a match
+  on a lambda, so values are never matched for their shape; conversion is type-directed instead (`@convT`): Π by a
+  fresh neutral, Σ componentwise, Path at `i0`, `i1` and a fresh neutral interval, the equation at base types.
+  Eliminators for Bool, Nat and List against a goal; `fst`/`snd`; List, Unit, Empty.
+- **HITs and the rest of CCHM** (`n/judgehit.hvm4`, twenty cases): the circle with `S1.rec`; `Partial`, systems
+  (each branch on its own cells, agreement on overlaps, coverage of φ), `pout`; `transp` with a cofibration (the line
+  constant on φ, cell by cell); `Sub`/`inS`/`outS`; the set quotient with `[a]`, `eq/` against a Path whose line is
+  the quotient, and its recursor.
+- **Not done:** Enum; the lane's eleven cubical programs re-run here (no Bend binary to emit them); parallel
+  execution (this HVM4 is sequential; the diamond makes it legal).

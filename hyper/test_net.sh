@@ -29,14 +29,17 @@ pin supline '#Cons{#T{},#Cons{#F{},#Nil{}}}' 269
 # Block D: verify is decide — a typed point's judgment is one equation T === @infer(D) on the net (n/judge.hvm4):
 # Π, Σ, Bool, Nat, Eql/refl over quoted syntax; two must-fail cases reduce to 0; a superposed point against a
 # goal is a superposition of equations (EQL-SUP, no rule added), read by %
-pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}' 1090
+pin judge '#Cons{1,#Cons{0,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}' 1234
 # the cubical formers (n/judgecub.hvm4), twenty cases: plm against Path (and a wrong end), path application, coe along a
 # constant line (and a wrong target), ua of the identity, hcomp with a tube whose i0 end is the base (and one whose is
 # not), Glue with no face, glue/unglue, a Glue face with a wrong contraction (0) and with the identity equivalence's
 # contraction (1: the endpoint rule for a typed neutral path, Σ η and path η), λp. <i> p @ i by path η, Bool/Nat/List
 # eliminators, fst/snd (and snd against the wrong type), and a superposed cubical point read by %.
 # The identity equivalence checks only with fresh labels per binder instantiation (the default; -L is HVM4's).
-pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}}}}}}}}}' 27243
+pin judgecub '#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{#Cons{1,#Cons{0,#Nil{}}},#Nil{}}}}}}}}}}}}}}}}}}}}}' 35787
+# the circle, Partial and systems (branches on their cells, agreement, coverage), transp with a cofibration (the line
+# constant on φ), Sub/inS/outS, the set quotient with its point and path constructors and its recursor (n/judgehit.hvm4)
+pin judgehit '#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Cons{1,#Cons{1,#Cons{1,#Cons{0,#Cons{1,#Nil{}}}}}}}}}}}}}}}}}}}}}' 6685
 # the SAT fibre receipts, exactly as recorded (research/sat_fibre) under -L, the labels HVM4 gave them; the readback path is untouched
 if [ -z "$SKIP_SATCHECK" ]; then r=$(cd .. && python3 hyper/satcheck.py ./hyper/hyper net -L 2>&1 | tail -1); case "$r" in "satcheck pass=282 fail=0") pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL satcheck: $r";; esac; fi
 echo "pass=$pass fail=$fail"; [ "$fail" = 0 ]

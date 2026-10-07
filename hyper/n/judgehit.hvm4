@@ -1,0 +1,26 @@
+#include "judgment.hvm4"
+// the circle, Partial and systems, transp with a cofibration, Sub, and the set quotient
+@R = #SLam{#SLam{#SUnit}}
+@Q = #SQuo{#SBool, @R}
+@QV = #Quo{#Bool, λ&a. λ&b. #Unit}
+@main = #Cons{@judge(#Pair{#Set, #SCir}),                                                            // 1
+        #Cons{@judge(#Pair{#Cir, #SBase}),                                                           // 1
+        #Cons{@judge(#Pair{#Path{λi. #Cir, #Base, #Base}, #SLoop}),                                  // 1
+        #Cons{@judge(#Pair{#Bool, #SCRec{#SBase, #STrue, #SPlm{#STrue}}}),                           // 1
+        #Cons{@judge(#Pair{#Bool, #SCRec{#SPap{#SLoop, #SI1}, #STrue, #SPlm{#STrue}}}),              // 1
+        #Cons{@judge(#Pair{#Bool, #SCRec{#SBase, #STrue, #SPlm{#SFalse}}}),                          // 0: l is not a loop at b
+        #Cons{@judge(#Pair{#Set, #SPartial{#SI1, #SBool}}),                                          // 1
+        #Cons{@judge(#Pair{#Partial{#I1, #Bool}, #SSys{#Cons{#SFace{#SI1, #STrue}, #Nil}}}),         // 1
+        #Cons{@judge(#Pair{#Partial{#I1, #Bool}, #SSys{#Cons{#SFace{#SI0, #STrue}, #Nil}}}),         // 0: the branches do not cover
+        #Cons{@judge(#Pair{#Bool, #SPout{#SAnn{#SSys{#Cons{#SFace{#SI1, #STrue}, #Nil}}, #SPartial{#SI1, #SBool}}}}), // 1
+        #Cons{@judge(#Pair{#Bool, #STrp{#SBool, #SI1, #STrue}}),                                     // 1: a constant line
+        #Cons{@judge(#Pair{#Set, #SSub{#SBool, #SI1, #STrue}}),                                      // 1
+        #Cons{@judge(#Pair{#Sub{#Bool, #I1, #T}, #SInS{#STrue}}),                                    // 1
+        #Cons{@judge(#Pair{#Sub{#Bool, #I1, #T}, #SInS{#SFalse}}),                                   // 0: not u on φ
+        #Cons{@judge(#Pair{#Bool, #SOutS{#SAnn{#SInS{#STrue}, #SSub{#SBool, #SI1, #STrue}}}}),       // 1
+        #Cons{@judge(#Pair{#Set, @Q}),                                                               // 1
+        #Cons{@judge(#Pair{@QV, #SQCl{#STrue}}),                                                     // 1
+        #Cons{@judge(#Pair{#Path{λi. @QV, #QCl{#T}, #QCl{#F}}, #SQEq{#STrue, #SFalse, #STt}}),       // 1
+        #Cons{@judge(#Pair{#Path{λi. @QV, #QCl{#T}, #QCl{#T}}, #SQEq{#STrue, #SFalse, #STt}}),       // 0: wrong end
+        #Cons{@judge(#Pair{#Nat, #SQRec{#SAnn{#SQCl{#STrue}, @Q}, #SNat, #SLam{#SZer}, #SLam{#SLam{#SLam{#SPlm{#SZer}}}}}}), // 1
+        #Nil}}}}}}}}}}}}}}}}}}}}
