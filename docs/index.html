@@ -93,6 +93,13 @@
   table.dict td{padding:.26rem .5rem; border-bottom:1px solid var(--rule); vertical-align:top}
   table.dict tr:last-child td{border-bottom:none}
   table.dict td:first-child{white-space:nowrap; width:11.5em}
+  #copyall{position:fixed; top:14px; right:14px; z-index:60; appearance:none;
+    font:inherit; font-size:.76rem; letter-spacing:.02em; cursor:pointer;
+    color:var(--muted); background:var(--bg); border:1px solid var(--rule);
+    border-radius:6px; padding:.28rem .55rem; opacity:.45; transition:opacity .15s, color .15s}
+  #copyall:hover,#copyall:focus{opacity:1; color:var(--accent); outline:none}
+  #copyall[data-done="1"]{opacity:1; color:var(--accent)}
+  @media print{#copyall{display:none}}
   a.ref{color:inherit; text-decoration:none; border-bottom:1px dotted var(--accent); cursor:pointer}
   a.ref:hover,a.ref:focus{color:var(--accent); border-bottom-style:solid; outline:none}
   .st,.rk{scroll-margin-top:1.2rem}
@@ -111,6 +118,7 @@
 </style>
 </head>
 <body>
+<button id="copyall" type="button" title="Copy the whole document as plain text">copy</button>
 <main>
 
 <h1>Respecting Equality: Complete Inference, Deterministic and Step-Optimal</h1>
@@ -664,6 +672,77 @@ witness-self-certifies f a = refl</code></pre>
     if(el){el.classList.remove('landed'); void el.offsetWidth; el.classList.add('landed');}
   }
   window.addEventListener('hashchange',land); land();
+})();
+</script>
+
+<script>
+(function(){
+  // Plain-text rendering of the document: statements, proofs, the TeX source of
+  // every display, and the checked terms verbatim.
+  function tex(node){
+    var a=node.querySelector('annotation[encoding="application/x-tex"]');
+    return a? a.textContent.trim() : node.textContent.trim();
+  }
+  function build(){
+    var main=document.querySelector('main');
+    var out=[];
+    function emit(s){ out.push(s); }
+    function inline(el){
+      var parts=[];
+      el.childNodes.forEach(function(n){
+        if(n.nodeType===3){ parts.push(n.nodeValue); return; }
+        if(n.nodeType!==1) return;
+        if(n.classList && n.classList.contains('katex')){ parts.push('$'+tex(n)+'$'); return; }
+        parts.push(inline(n));
+      });
+      return parts.join('');
+    }
+    function clean(s){ return s.replace(/\s+/g,' ').trim(); }
+    function walk(el){
+      el.childNodes.forEach(function(n){
+        if(n.nodeType!==1) return;
+        var t=n.tagName.toLowerCase(), c=n.classList;
+        if(c.contains('katex-display')){ emit('\n$$\n'+tex(n)+'\n$$\n'); return; }
+        if(t==='h1'){ emit(clean(inline(n))+'\n'); return; }
+        if(c.contains('byline')){ emit(clean(inline(n))+'\n'); return; }
+        if(t==='h2'){ emit('\n\n'+clean(inline(n)).replace(/^(\d+\.)\s*/,'$1 ')+'\n'); return; }
+        if(t==='h3'){ emit('\n'+clean(inline(n))+'\n'); return; }
+        if(t==='pre'){ emit('\n'+n.textContent.replace(/\s+$/,'')+'\n'); return; }
+        if(t==='summary'){ emit('\n['+clean(n.textContent)+']'); return; }
+        if(t==='figcaption'){ emit('\n('+clean(inline(n))+')\n'); return; }
+        if(t==='table'){
+          n.querySelectorAll('tr').forEach(function(r){
+            var td=r.querySelectorAll('td');
+            emit('\n  '+clean(inline(td[0]))+'  ::  '+clean(inline(td[1])));
+          });
+          emit('\n'); return;
+        }
+        if(t==='p'){ emit('\n'+clean(inline(n))+'\n'); return; }
+        walk(n);
+      });
+    }
+    walk(main);
+    return out.join('').replace(/\n{3,}/g,'\n\n').trim()+'\n';
+  }
+  window.__pageText=build;
+  var b=document.getElementById('copyall');
+  b.addEventListener('click',function(){
+    var txt=build(), done=function(){
+      b.textContent='copied'; b.dataset.done='1';
+      setTimeout(function(){ b.textContent='copy'; b.removeAttribute('data-done'); },1400);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done,function(){fallback(txt,done);});
+    } else { fallback(txt,done); }
+  });
+  function fallback(txt,done){
+    var ta=document.createElement('textarea');
+    ta.value=txt; ta.setAttribute('readonly','');
+    ta.style.position='fixed'; ta.style.left='-9999px';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){}
+    document.body.removeChild(ta);
+  }
 })();
 </script>
 </body>
