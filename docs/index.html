@@ -323,7 +323,7 @@ not-no-fix false p = true≢false p
 -- Cantor, as the B = Bool, f = not instance (not has no fixed point).
 cantor : (φ : A → (A → Bool)) → ¬ PtSurj φ
 cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
-<figcaption>4.2 in one term — <code>lawvere</code> is three lines — with <a class="ref" href="#s4.3">the contrapositive (4.3)</a> and <a class="ref" href="#s4.4">Cantor (4.4)</a> as the checked instances. <a class="ref" href="#s4.6">Gödel (4.6)</a>–<a class="ref" href="#s4.8">Russell–Tarski (4.8)</a> and <a class="ref" href="#s4.10">Rice (4.10)</a> are that same term at their own <code>(B, g)</code>. Verbatim, <code>--safe</code>, untruncated <code>Σ</code> (the escaping index is exhibited, not merely asserted).</figcaption>
+<figcaption>4.2 in one term — <code>lawvere</code> is three lines — with <a class="ref" href="#s4.3">the contrapositive (4.3)</a> and <a class="ref" href="#s4.4">Cantor (4.4)</a> as the checked instances. <a class="ref" href="#s4.8">Russell and Tarski (4.8)</a> are that same term at their own <code>(B, g)</code>; <a class="ref" href="#s4.6">Gödel (4.6)</a> is that diagonal plus the arithmetic hypotheses its own box isolates; <a class="ref" href="#s4.10">Rice (4.10)</a> reads it in the other direction (<a class="ref" href="#s4.9">4.9</a>). Verbatim, <code>--safe</code>, untruncated <code>Σ</code> (the escaping index is exhibited, not merely asserted).</figcaption>
 </details>
 
 <p>The impossibility theorems are <a class="ref" href="#s4.2">Lawvere (4.2)</a> or <a class="ref" href="#s4.3">the contrapositive (4.3)</a> at a named <code>(B , g)</code>. Each instance below supplies only that naming.</p>
@@ -334,8 +334,129 @@ cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
 <div class="st" id="s4.5"><p><span class="lab">Lemma 4.5</span> (<code>sub</code> is a formula). Code each one-variable formula by a number and let <code>sub(m , n)</code> be the code of formula <code>m</code> with the numeral <code>n̄</code> substituted for its variable. Then <code>sub</code> is represented by a formula.</p>
 <p class="pf"><span class="lab">Proof.</span> <code>sub</code> is <a class="x" href="https://en.wikipedia.org/wiki/Primitive_recursive_function">primitive recursive</a>, and every primitive-recursive function is represented by a formula: induct on how it is built — the base functions (zero, successor, projection) are formulas, and composition and primitive recursion stay first-order by quantifying, boundedly, over the finite run that computes the value. <span class="qed">∎</span></p></div>
 
-<div class="st" id="s4.6"><p><span class="lab">Corollary 4.6</span> (<a class="x" href="https://en.wikipedia.org/wiki/G%C3%B6del%27s_incompleteness_theorems">the diagonal lemma, and Gödel</a>). For every formula <code>ψ</code> there is a sentence <code>G</code> with <code>G ↔ ψ(⌜G⌝)</code>. Taking <code>ψ = ¬Prov</code>, if the theory is consistent then <code>G</code> is unprovable and true.</p>
+<div class="st" id="s4.6"><p><span class="lab">Corollary 4.6</span> (<a class="x" href="https://en.wikipedia.org/wiki/G%C3%B6del%27s_incompleteness_theorems">the diagonal lemma, and Gödel</a>). For every formula <code>ψ</code> there is a sentence <code>G</code> with <code>G ↔ ψ(⌜G⌝)</code>. Taking <code>ψ = ¬Prov</code>, if the theory is consistent then <code>G</code> is unprovable and true. That is conjunct 1 (<code>⊬ G</code>); conjunct 2 (<code>⊬ ¬G</code>) needs <a class="x" href="https://en.wikipedia.org/wiki/%CE%A9-consistent_theory">ω-consistency</a>, and the box separates the two with a term rather than a word — a four-sentence countermodel in which consistency, D1 (<code>⊢ s ⇒ ⊢ Prov⌜s⌝</code>) and the fixed point all hold yet <code>¬G</code> is provable, so conjunct 2 is a further hypothesis, not an instance of the diagonal (<a class="x" href="https://doi.org/10.2307/2269055">Rosser 1936</a> buys it by changing the fixed point instead).</p>
 <p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s4.2">Lawvere (4.2)</a> at the table <code>e(m)(n) = sub(m , n)</code>: row <code>m</code> is the formula coded by <code>m</code>, and reading row <code>m</code> at its own index is <code>sub(m , m)</code>. The row <a class="ref" href="#s4.2">4.2</a> needs is the twist's, and that it is a row is <a class="ref" href="#s4.5">representability (4.5)</a>, nothing more. The full notion of <a class="ref" href="#s4.1">4.1</a> is false here — most families of formulas are cut out by no formula — which is why the one-row form is the one that fires. The <code>B</code> it fires over is the sentences taken up to provable equivalence, where <code>↔</code> is equality, so <code>g b = b</code> read there is exactly <code>G ↔ ψ(⌜G⌝)</code>. For <code>g = ψ</code> the twist <code>δ(x) := ψ(sub(x , x))</code> is a formula, has a code <code>d</code>, and the fixed point <code>G := δ(d̄)</code> has code <code>sub(d , d)</code>. With <code>ψ = ¬Prov</code>, where <code>Prov(⌜G⌝)</code> is the formula a proof of <code>G</code> exists — one unbounded existential over a decidable check of the proof, which is what <code>Σ₁</code> names — <code>G</code> says <em>I am unprovable</em>: if the theory is consistent no proof of <code>G</code> exists, and <code>G</code> is therefore true. <span class="qed">∎</span></p></div>
+
+<details class="proof"><summary>the checked term — the Gödel construction (larger)</summary>
+<pre><code>private variable ℓ : Level
+
+-- A theory: sentences, a derivability predicate Pf, negation, and the
+-- internal provability operator prov (already "the formula at a code").
+record Theory (ℓ : Level) : Type (ℓ-suc ℓ) where
+  field
+    Sent : Type ℓ
+    Pf   : Sent → Type ℓ
+    neg  : Sent → Sent
+    prov : Sent → Sent
+open Theory public
+
+Consistent : Theory ℓ → Type ℓ
+Consistent T = (s : Sent T) → Pf T s → Pf T (neg T s) → ⊥
+
+HBL1 : Theory ℓ → Type ℓ                       -- D1:  ⊢ s  ⇒  ⊢ Prov⌜s⌝
+HBL1 T = (s : Sent T) → Pf T s → Pf T (prov T s)
+
+GoedelFix : (T : Theory ℓ) → Sent T → Type ℓ   -- ⊢ G ↔ ¬Prov⌜G⌝
+GoedelFix T G =
+  (Pf T G → Pf T (neg T (prov T G))) × (Pf T (neg T (prov T G)) → Pf T G)
+
+OmegaBad : (T : Theory ℓ) → Sent T → Type ℓ    -- ⊢ Prov⌜G⌝ yet ⊬ G
+OmegaBad T G = Pf T (prov T G) × (¬ Pf T G)
+
+Independent : (T : Theory ℓ) → Sent T → Type ℓ
+Independent T s = (¬ Pf T s) × (¬ Pf T (neg T s))
+
+-- Conjunct 1 (⊬ G): the fixed point's forward half, D1, consistency.
+goedelHalfOne : (T : Theory ℓ) (G : Sent T)
+  → Consistent T → HBL1 T → GoedelFix T G → ¬ Pf T G
+goedelHalfOne T G con d1 (fwd , _) pG = con (prov T G) (d1 G pG) (fwd pG)
+
+-- Conjunct 2 (⊬ ¬G) does NOT follow: a four-sentence countermodel with
+-- consistency, D1 and the fixed point, in which ¬G is provable.
+data W : Type where wtop wbot wg wng : W
+wneg : W → W
+wneg wtop = wbot
+wneg wbot = wtop
+wneg wg   = wng
+wneg wng  = wg
+wPf : W → Type
+wPf wtop = Unit
+wPf wbot = ⊥
+wPf wg   = ⊥
+wPf wng  = Unit
+Wit : Theory ℓ-zero
+Sent Wit = W
+Pf   Wit = wPf
+neg  Wit = wneg
+prov Wit = λ _ → wtop
+witCon : Consistent Wit
+witCon wtop _ b = b
+witCon wbot a _ = a
+witCon wg   a _ = a
+witCon wng  _ b = b
+witHBL1 : HBL1 Wit
+witHBL1 _ _ = tt
+witFix : GoedelFix Wit wg
+witFix = absurd , absurd
+witProvesNegG : wPf (wneg wg)
+witProvesNegG = tt
+noHalfTwo :
+  ((T : Theory ℓ-zero) (G : Sent T)
+     → Consistent T → HBL1 T → GoedelFix T G → ¬ Pf T (neg T G)) → ⊥
+noHalfTwo half2 = half2 Wit wg witCon witHBL1 witFix witProvesNegG
+
+-- Representability, as the structure the diagonal lemma needs.
+record HasDiagonal (T : Theory ℓ) : Type (ℓ-suc ℓ) where
+  field
+    imp  : Sent T → Sent T → Sent T
+    mp   : (a b : Sent T) → Pf T (imp a b) → Pf T a → Pf T b
+    Form : Type ℓ
+    app  : Form → Sent T → Sent T
+    fix  : (φ : Form)
+         → Σ[ G ∈ Sent T ]
+             (Pf T (imp G (app φ G)) × Pf T (imp (app φ G) G))
+    negProv    : Form
+    negProv-is : (s : Sent T) → app negProv s ≡ neg T (prov T s)
+open HasDiagonal public
+
+module _ (T : Theory ℓ) (D : HasDiagonal T) where
+  goedelSentence : Sent T                       -- built, with its own code
+  goedelSentence = fst (fix D (negProv D))
+  diagonalGivesGoedelFix : GoedelFix T goedelSentence
+  diagonalGivesGoedelFix =
+      (λ pG → subst (Pf T) (negProv-is D goedelSentence)
+                (mp D goedelSentence _ (fst (snd (fix D (negProv D)))) pG))
+    , (λ pNP → mp D _ goedelSentence (snd (snd (fix D (negProv D))))
+                (subst (Pf T) (sym (negProv-is D goedelSentence)) pNP))
+
+-- Full independence, given ω-consistency and the internal rules the
+-- second conjunct needs: contraposition, double-negation, transitivity.
+module _ (T : Theory ℓ) (D : HasDiagonal T)
+         (contra : (a b : Sent T)
+                 → Pf T (imp D a b) → Pf T (imp D (neg T b) (neg T a)))
+         (dne    : (a : Sent T) → Pf T (imp D (neg T (neg T a)) a))
+         (trans  : (a b c : Sent T)
+                 → Pf T (imp D a b) → Pf T (imp D b c) → Pf T (imp D a c))
+         where
+  private
+    G : Sent T
+    G = goedelSentence T D
+    bwd' : Pf T (imp D (neg T (prov T G)) G)
+    bwd' = subst (λ s → Pf T (imp D s G)) (negProv-is D G)
+             (snd (snd (fix D (negProv D))))
+  internalFix : Pf T (imp D (neg T G) (prov T G))
+  internalFix = trans (neg T G) (neg T (neg T (prov T G))) (prov T G)
+                  (contra (neg T (prov T G)) G bwd') (dne (prov T G))
+  secondConjunct : (¬ Pf T G) → (¬ OmegaBad T G) → ¬ Pf T (neg T G)
+  secondConjunct notG notOmega pNegG =
+    notOmega (mp D (neg T G) (prov T G) internalFix pNegG , notG)
+  independenceFromRepresentability :
+      Consistent T → HBL1 T → (¬ OmegaBad T G) → Independent T G
+  independenceFromRepresentability con d1 notOmega =
+      goedelHalfOne T G con d1 (diagonalGivesGoedelFix T D)
+    , secondConjunct (goedelHalfOne T G con d1 (diagonalGivesGoedelFix T D)) notOmega</code></pre>
+<figcaption>The Gödel construction as checked terms, not a paragraph. <code>goedelHalfOne</code> is conjunct 1 — <code>⊬ G</code> from the fixed point's forward half, D1 and consistency, three lines. <code>noHalfTwo</code> runs any claimed derivation of conjunct 2 against the four-sentence model <code>Wit</code>, where consistency, D1 and the fixed point all hold yet <code>¬G</code> is provable — so no such derivation exists, and conjunct 2 (<code>⊬ ¬G</code>) needs ω-consistency. <code>HasDiagonal</code> writes representability down (one-place formulas, their application, and the fixed point as a <em>pair of implications</em> — <code>Theory</code> has no conjunction to make it a biconditional), <code>diagonalGivesGoedelFix</code> discharges the fixed point from it by two <code>mp</code>s, and <code>independenceFromRepresentability</code> assembles full independence given ω-consistency. Self-contained; typechecks under Agda 2.8.0 <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9.</figcaption>
+</details>
 
 <div class="st" id="s4.7"><p><span class="lab">Corollary 4.7</span> (<a class="x" href="https://doi.org/10.1112/plms/s2-42.1.230">halting</a>). No total <code>H</code> decides, of an arbitrary machine and input, whether it halts.</p>
 <p class="pf"><span class="lab">Proof.</span> Running code <code>a</code> on input <code>x</code> is partial, so it is no table of total functions; a total halting-decider <code>H</code> makes it one, since <code>φ(a)(x) := if H(a,x) then run(a,x) else 0</code> is then total. Every total computable <code>h : A → 2</code> is a row of it: take any program for <code>h</code>; it halts everywhere, so <code>H</code> never diverts it. Now <a class="ref" href="#s4.2">Lawvere (4.2)</a> at <code>g = ¬</code>, in the one-row form: the twist <code>δ(a) := ¬ φ(a)(a)</code> is total and computable, hence a row, so <code>δ ≡ φ(d)</code> for some code <code>d</code>, and reading row <code>d</code> at its own index gives <code>φ(d)(d) = ¬ φ(d)(d)</code>, which <code>¬</code>, having no fixed point, forbids. <span class="qed">∎</span></p></div>
@@ -351,7 +472,7 @@ cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
 
 <div class="rk" id="s4.11"><p><span class="lab">Remark 4.11</span> (one lemma, many instances). There is no family of impossibility theorems: one lemma (<a class="ref" href="#s4.2">4.2</a>), applied at a different <code>(B , g)</code> each time, and read in the other direction for <a class="ref" href="#s4.9">the recursion theorem (4.9)</a>. Rice sits on that second side rather than among the fixed-point-free instances.</p></div>
 
-<div class="rk" id="s4.12"><p><span class="lab">Remark 4.12</span> (the fixed points are built). Because the <code>Σ</code> of <a class="ref" href="#s4.1">point-surjectivity (4.1)</a> is untruncated, <a class="ref" href="#s4.2">4.2</a> returns a fixed point as a <em>value</em>, and each instance inherits that: <a class="ref" href="#s4.6">4.6</a> builds Gödel's <code>G</code> together with its own code <code>sub(d , d)</code>, <a class="ref" href="#s4.7">4.7</a> builds the diagonal program <code>δ</code>, and <a class="ref" href="#s4.9">4.9</a> builds the quine. The classical statements assert that such a thing exists; here each is produced by the term in the box, instantiated at its own <code>(B , g)</code>.</p></div>
+<div class="rk" id="s4.12"><p><span class="lab">Remark 4.12</span> (the fixed points are built). Because the <code>Σ</code> of <a class="ref" href="#s4.1">point-surjectivity (4.1)</a> is untruncated, <a class="ref" href="#s4.2">4.2</a> returns a fixed point as a <em>value</em>, and each instance inherits that: <a class="ref" href="#s4.6">4.6</a>'s box builds the Gödel sentence <code>goedelSentence</code> and discharges its fixed point from representability (<code>diagonalGivesGoedelFix</code>), <a class="ref" href="#s4.7">4.7</a> builds the diagonal program <code>δ</code>, and <a class="ref" href="#s4.9">4.9</a> builds the quine. The classical statements assert that such a thing exists; here each is produced by the term in the box, instantiated at its own <code>(B , g)</code>.</p></div>
 
 
 <h2><span class="n">5.</span> Complete inference is deterministic and step-optimal</h2>
