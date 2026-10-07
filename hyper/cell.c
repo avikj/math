@@ -948,7 +948,7 @@ static void *worker(void *arg) {
 void par_init(void) {
   const char *s = getenv("HYPER_PARALLEL"); NPAR = s && *s ? atoi(s) : 0; if (NPAR <= 0) { NPAR = 0; return; }
   for (uint32_t i = 1; i < CODE_LEN; i++) if (CODE[i].tag == S_TRACE) {   /* a run traced as a term is its own events alone: one thread */
-    fprintf(stderr, "hyper: parallel demand off: the book traces a run\n"); NPAR = 0; return; }
+    if (getenv("HYPER_DEBUG")) fprintf(stderr, "hyper: parallel demand off: the book traces a run\n"); NPAR = 0; return; }
   heap_init(); Q = malloc(QCAP * sizeof(Term));
   pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at, (size_t)1 << 30);   /* deep terms recurse deep */
   for (int i = 0; i < NPAR; i++) { pthread_t th; if (pthread_create(&th, &at, worker, (void *)(uintptr_t)(i + 1))) { fprintf(stderr, "hyper: cannot start a worker\n"); exit(2); } pthread_detach(th); }
