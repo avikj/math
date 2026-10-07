@@ -1,4 +1,4 @@
-{-# OPTIONS --cubical --safe --no-import-sorts #-}
+{-# OPTIONS --cubical --safe --guardedness --no-import-sorts #-}
 
 ------------------------------------------------------------------------
 -- Diamond — the step relation of the hyperactive machine, with its
@@ -38,8 +38,9 @@ open import Cubical.Data.Sigma
 open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
 open import Cubical.Data.Maybe using (Maybe ; nothing ; just ; isOfHLevelMaybe)
 open import Cubical.Data.Bool using (Bool ; true ; false)
+open import Cubical.Foundations.HLevels using (isSet×)
 open import Cubical.Data.Empty as Empty using (⊥)
-open import Cubical.Relation.Nullary using (Dec ; yes ; no ; ¬_)
+open import Cubical.Relation.Nullary using (Dec ; yes ; no ; ¬_ ; decRec)
 
 private
   variable
@@ -97,33 +98,54 @@ module RandomDescent (S : Type) (Step : S → S → Type)
 --     "distinct steps consume disjoint material".
 ------------------------------------------------------------------------
 
-module Tables {A : Type} where
+module Tables where
 
+  private variable A : Type
+
+  -- update via decRec: reduces on the Dec value, so it also reduces when
+  -- that Dec is the subject of an outer `with` (unlike a with-defined
+  -- update, which gets stuck under goal-level abstraction).
   update : ℕ → A → (ℕ → A) → (ℕ → A)
-  update i v f k with discreteℕ i k
-  ... | yes _ = v
-  ... | no  _ = f k
+  update i v f k = decRec (λ _ → v) (λ _ → f k) (discreteℕ i k)
 
-  update-at : (i : ℕ) (v : A) (f : ℕ → A) → update i v f i ≡ v
-  update-at i v f with discreteℕ i i
-  ... | yes _ = refl
-  ... | no ¬p = Empty.rec (¬p refl)
+  update-hit : {A : Type} (i k : ℕ) (v : A) (f : ℕ → A) → i ≡ k → update i v f k ≡ v
+  update-hit i k v f p with discreteℕ i k
+  ... | yes _  = refl
+  ... | no ¬p  = Empty.rec (¬p p)
 
-  update-elsewhere : (i k : ℕ) (v : A) (f : ℕ → A) → ¬ i ≡ k → update i v f k ≡ f k
-  update-elsewhere i k v f ¬p with discreteℕ i k
-  ... | yes p = Empty.rec (¬p p)
-  ... | no  _ = refl
+  update-miss : {A : Type} (i k : ℕ) (v : A) (f : ℕ → A) → ¬ i ≡ k → update i v f k ≡ f k
+  update-miss i k v f ¬p with discreteℕ i k
+  ... | yes p  = Empty.rec (¬p p)
+  ... | no  _  = refl
 
-  update-comm : (i j : ℕ) (v w : A) (f : ℕ → A) → ¬ i ≡ j
+  update-at : {A : Type} (i : ℕ) (v : A) (f : ℕ → A) → update i v f i ≡ v
+  update-at i v f = update-hit i i v f refl
+
+  update-elsewhere : {A : Type} (i k : ℕ) (v : A) (f : ℕ → A) → ¬ i ≡ k → update i v f k ≡ f k
+  update-elsewhere = update-miss
+
+  update-comm : {A : Type} (i j : ℕ) (v w : A) (f : ℕ → A) → ¬ i ≡ j
     → update i v (update j w f) ≡ update j w (update i v f)
   update-comm i j v w f ¬p = funExt point
     where
+    -- dispatch through a helper whose codomain is FIXED (the point type),
+    -- so the Decs only select a proof branch and never rewrite the goal;
+    -- update-hit/miss carry their own reduction.
     point : (k : ℕ) → update i v (update j w f) k ≡ update j w (update i v f) k
-    point k with discreteℕ i k | discreteℕ j k
-    ... | yes ik | yes jk = Empty.rec (¬p (ik ∙ sym jk))
-    ... | yes ik | no  _  = refl
-    ... | no  _  | yes jk = refl
-    ... | no  _  | no  _  = refl
+    point k = lemma (discreteℕ i k) (discreteℕ j k)
+      where
+      lemma : Dec (i ≡ k) → Dec (j ≡ k)
+            → update i v (update j w f) k ≡ update j w (update i v f) k
+      lemma (yes ik) (yes jk) = Empty.rec (¬p (ik ∙ sym jk))
+      lemma (yes ik) (no ¬jk) =
+        update-hit i k v (update j w f) ik
+        ∙ sym (update-miss j k w (update i v f) ¬jk ∙ update-hit i k v f ik)
+      lemma (no ¬ik) (yes jk) =
+        update-miss i k v (update j w f) ¬ik ∙ update-hit j k w f jk
+        ∙ sym (update-hit j k w (update i v f) jk)
+      lemma (no ¬ik) (no ¬jk) =
+        update-miss i k v (update j w f) ¬ik ∙ update-miss j k w f ¬jk
+        ∙ sym (update-miss j k w (update i v f) ¬jk ∙ update-miss i k v f ¬ik)
 
 ------------------------------------------------------------------------
 -- §3  The machine, generically: shared immutable environment, slotted
@@ -161,17 +183,17 @@ module Machine (Env : Type) (Cell : Type) (isSetCell : isSet Cell)
   Active : St → Type
   Active s = Σ[ ic ∈ ℕ × Cell ] (pending s (fst ic) ≡ just (snd ic))
 
-  site : {s : St} → Active s → ℕ
-  site a = fst (fst a)
+  site : (s : St) → Active s → ℕ
+  site _ a = fst (fst a)
 
-  cell : {s : St} → Active s → Cell
-  cell a = snd (fst a)
+  cell : (s : St) → Active s → Cell
+  cell _ a = snd (fst a)
 
   -- Firing: consume the slot, write the verdict.  Nothing else moves.
   fire : (s : St) → Active s → St
   fire s a = st (env s)
-                (update (site a) nothing (pending s))
-                (update (site a) (just (rule (env s) (cell a))) (out s))
+                (update {A = Maybe Cell} (site s a) nothing (pending s))
+                (update {A = Maybe Out} (site s a) (just (rule (env s) (cell s a))) (out s))
 
   Step : St → St → Type
   Step s t = Σ[ a ∈ Active s ] (fire s a ≡ t)
@@ -185,50 +207,50 @@ module Machine (Env : Type) (Cell : Type) (isSetCell : isSet Cell)
   occupancyProp s ic = isSetMaybeCell _ _
 
   Active-path : {s : St} (a b : Active s) → fst a ≡ fst b → a ≡ b
-  Active-path {s} a b = Σ≡Prop (occupancyProp s)
+  Active-path {s} a b eq = Σ≡Prop (occupancyProp s) eq
 
   -- The diamond, at fired states first.
   module _ (s : St) (a b : Active s) where
 
     -- Same slot: the cells agree, the fired states agree.
-    same-slot : site {s} a ≡ site {s} b → fire s a ≡ fire s b
-    same-slot p = cong (fire s) (Active-path a b pair-path)
+    same-slot : site s a ≡ site s b → fire s a ≡ fire s b
+    same-slot p = cong (fire s) (Active-path {s = s} a b pair-path)
       where
-      cells-agree : cell {s} a ≡ cell {s} b
+      cells-agree : cell s a ≡ cell s b
       cells-agree = justInj (sym (snd a) ∙ cong (pending s) p ∙ snd b)
       pair-path : fst a ≡ fst b
       pair-path i = p i , cells-agree i
 
     -- Distinct slots: each survives the other's firing...
-    survive : (¬ site {s} a ≡ site {s} b) → Active (fire s a)
+    survive : (¬ site s a ≡ site s b) → Active (fire s a)
     survive ¬p = fst b ,
-      ( Tables.update-elsewhere (site {s} a) (site {s} b) nothing (pending s) ¬p
+      ( Tables.update-elsewhere (site s a) (site s b) nothing (pending s) ¬p
       ∙ snd b )
 
     -- ...and the two double-firings land on one state.
-    join : (¬p : ¬ site {s} a ≡ site {s} b) (¬q : ¬ site {s} b ≡ site {s} a)
+    join : (¬p : ¬ site s a ≡ site s b) (¬q : ¬ site s b ≡ site s a)
       → fire (fire s a) (survive ¬p)
       ≡ fire (fire s b) ((fst a) ,
-          ( Tables.update-elsewhere (site {s} b) (site {s} a) nothing (pending s) ¬q
+          ( Tables.update-elsewhere (site s b) (site s a) nothing (pending s) ¬q
           ∙ snd a ))
     join ¬p ¬q = St-path refl
-      (Tables.update-comm (site {s} b) (site {s} a) nothing nothing (pending s) ¬q)
-      (Tables.update-comm (site {s} b) (site {s} a)
-        (just (rule (env s) (cell {s} b))) (just (rule (env s) (cell {s} a))) (out s) ¬q)
+      (Tables.update-comm (site s b) (site s a) nothing nothing (pending s) ¬q)
+      (Tables.update-comm (site s b) (site s a)
+        (just (rule (env s) (cell s b))) (just (rule (env s) (cell s a))) (out s) ¬q)
 
   ¬sym : {x y : ℕ} → ¬ x ≡ y → ¬ y ≡ x
   ¬sym ¬p q = ¬p (sym q)
 
   diamond : {s t u : St} → Step s t → Step s u
     → (t ≡ u) ⊎ (Σ[ c ∈ St ] (Step t c × Step u c))
-  diamond {s} (a , pa) (b , pb) with discreteℕ (site {s} a) (site {s} b)
+  diamond {s} (a , pa) (b , pb) with discreteℕ (site s a) (site s b)
   ... | yes p = inl (sym pa ∙ same-slot s a b p ∙ pb)
   ... | no ¬p =
     inr ( fire (fire s a) (survive s a b ¬p)
         , subst (λ x → Step x (fire (fire s a) (survive s a b ¬p))) pa
             (survive s a b ¬p , refl)
         , subst (λ x → Step x (fire (fire s a) (survive s a b ¬p))) pb
-            ( (fst a , ( Tables.update-elsewhere (site {s} b) (site {s} a)
+            ( (fst a , ( Tables.update-elsewhere (site s b) (site s a)
                            nothing (pending s) (¬sym ¬p)
                        ∙ snd a ))
             , sym (join s a b ¬p (¬sym ¬p)) ) )
@@ -282,7 +304,7 @@ module EqlInstance where
   s₀ = st pool₀ pending₀ (λ _ → nothing)
 
   a₀ : Active s₀
-  a₀ = (0 , (0 , 1)) , update-at 0 (just (0 , 1)) _
+  a₀ = (0 , (0 , 1)) , update-at 0 (just (0 , 1)) (update 1 (just (0 , 2)) (λ _ → nothing))
 
   -- Slot 1 is occupied in s₀: step under the outer update, then hit.
   occupied₁ : pending₀ 1 ≡ just (0 , 2)
@@ -301,7 +323,7 @@ module EqlInstance where
   s₁ = fire s₀ a₀
 
   verdict-first : out s₁ 0 ≡ just true
-  verdict-first = update-at 0 (just true) _
+  verdict-first = update-at 0 (just true) (out s₀)
 
   b₁ : Active s₁
   b₁ = (1 , (0 , 2)) ,
@@ -312,7 +334,7 @@ module EqlInstance where
   s₂ = fire s₁ b₁
 
   verdict-second : out s₂ 1 ≡ just false
-  verdict-second = update-at 1 (just false) _
+  verdict-second = update-at 1 (just false) (out s₁)
 
   -- Both pending slots are now consumed:
   consumed₀ : pending s₂ 0 ≡ nothing

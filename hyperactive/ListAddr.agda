@@ -1,4 +1,4 @@
-{-# OPTIONS --cubical --safe --no-import-sorts #-}
+{-# OPTIONS --cubical --safe --guardedness --no-import-sorts #-}
 
 ------------------------------------------------------------------------
 -- ListAddr — the concrete address model for the spawn machine.
@@ -21,6 +21,7 @@ open import Cubical.Data.Nat.Order using (_<_ ; _≤_)
 open import Cubical.Data.List using (List ; [] ; _∷_ ; _++_ ; length ; ++-assoc)
 open import Cubical.Data.Sigma
 open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
+open import Cubical.Data.Unit using (Unit ; tt)
 open import Cubical.Data.Empty as Empty using (⊥)
 open import Cubical.Relation.Nullary using (Discrete ; yes ; no ; ¬_)
 
@@ -79,8 +80,6 @@ child-inj = ∷-inj
   isCons : Addr → Type
   isCons []      = ⊥
   isCons (_ ∷ _) = Unit
-  tt : Unit
-  tt = _
 
 child-ext : (k : ℕ) (α : Addr) → Ext (child k α) α
 child-ext k α = ext (k ∷ []) []≢∷ refl
