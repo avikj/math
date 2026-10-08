@@ -1,0 +1,940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A New Kind of Science, Under Univalence</title>
+<meta name="description" content="Seven of Wolfram's sentences, 2021-2026, each held to a machine-checked term over the smallest multiway system that exhibits all of them.">
+<link rel="stylesheet" href="./vendor/katex/katex.min.css">
+<style>
+  :root{
+    --bg:#ffffff; --fg:#1a1a1a; --muted:#606060; --rule:#e4e4e4;
+    --accent:#7a1f1f; --math-bg:#fafafa; --math-rule:#ececec;
+    --maxw:760px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#141414; --fg:#e8e8e6; --muted:#a0a0a0; --rule:#2a2a2a;
+      --accent:#d98a8a; --math-bg:#1c1c1c; --math-rule:#2a2a2a;
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:17px; line-height:1.6;
+    padding:0 20px;
+  }
+  main{max-width:var(--maxw); margin:0 auto; padding:56px 0 96px}
+  h1{
+    font-size:1.72rem; line-height:1.28; font-weight:650;
+    letter-spacing:-0.01em; margin:0 0 .35rem;
+  }
+  .byline{color:var(--muted); font-style:italic; margin:0 0 2.4rem; font-size:.98rem}
+  h2{
+    font-size:1.14rem; font-weight:650; line-height:1.35;
+    margin:2.9rem 0 1rem; padding-top:1.4rem; border-top:1px solid var(--rule);
+    letter-spacing:-0.005em;
+  }
+  h2 .n{color:var(--accent); font-variant-numeric:tabular-nums}
+  ul{margin:0; padding:0; list-style:none}
+  li{
+    position:relative; margin:0 0 .95rem; padding-left:1.15rem;
+  }
+  li::before{
+    content:""; position:absolute; left:.1rem; top:.72em;
+    width:5px; height:5px; border-radius:50%; background:var(--accent); opacity:.7;
+  }
+  .katex-display{
+    margin:1.15rem 0; padding:.7rem .9rem; overflow-x:auto; overflow-y:hidden;
+    background:var(--math-bg); border:1px solid var(--math-rule); border-radius:8px;
+  }
+  .katex{font-size:1.02em}
+  code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:.9em; background:var(--math-bg); border:1px solid var(--math-rule);
+    padding:.05em .35em; border-radius:4px;
+  }
+  code::before,code::after{content:""}
+  a{color:var(--accent)}
+  details.proof{margin:.85rem 0 1.3rem; border:1px solid var(--math-rule);
+    border-radius:8px; background:var(--math-bg); overflow:hidden}
+  details.proof>summary{cursor:pointer; padding:.5rem .9rem; font-size:.9rem;
+    color:var(--accent); font-weight:650; list-style:none; user-select:none}
+  details.proof>summary::-webkit-details-marker{display:none}
+  details.proof>summary::before{content:"▸\00a0"; font-size:.85em}
+  details.proof[open]>summary::before{content:"▾\00a0"}
+  details.proof>summary:hover{text-decoration:underline}
+  details.proof pre{margin:0; padding:.75rem .95rem; border-top:1px solid var(--math-rule);
+    overflow-x:auto; font-size:.795rem; line-height:1.5; color:var(--fg);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  details.proof pre code{background:none; border:none; padding:0; font-size:1em}
+  details.proof figcaption{padding:.5rem .95rem 0; color:var(--muted);
+    font-size:.8rem; line-height:1.45}
+  .kw{color:var(--accent); font-weight:600}
+  .cm{color:var(--muted); font-style:italic}
+  h3{font-size:1rem; font-weight:650; margin:2rem 0 .6rem; letter-spacing:-0.004em}
+  .st{margin:1.05rem 0}
+  .st>p{margin:0 0 .35rem}
+  .st>p:last-child{margin-bottom:0}
+  .lab{font-weight:650; color:var(--accent); font-variant-numeric:tabular-nums}
+  .st pre, pre.def{margin:.6rem 0 .2rem; padding:.7rem .9rem; overflow-x:auto;
+    background:var(--math-bg); border:1px solid var(--math-rule); border-radius:8px;
+    font-size:.795rem; line-height:1.5;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .st pre code, pre.def code{background:none; border:none; padding:0; font-size:1em}
+  .pf{margin:.3rem 0 0}
+  .pf>.lab{font-weight:600; font-style:italic; color:var(--muted)}
+  .pf .qed{color:var(--muted)}
+  .rk{margin:1.05rem 0}
+  .rk>.lab{font-weight:600; font-style:italic; color:var(--muted)}
+  table.dict{border-collapse:collapse; margin:.9rem 0; font-size:.95rem; width:100%}
+  table.dict td{padding:.26rem .5rem; border-bottom:1px solid var(--rule); vertical-align:top}
+  table.dict tr:last-child td{border-bottom:none}
+  table.dict td:first-child{white-space:nowrap; width:11.5em}
+  #copyall{position:fixed; top:14px; right:14px; z-index:60; appearance:none;
+    font:inherit; font-size:.76rem; letter-spacing:.02em; cursor:pointer;
+    color:var(--muted); background:var(--bg); border:1px solid var(--rule);
+    border-radius:6px; padding:.28rem .55rem; opacity:.45; transition:opacity .15s, color .15s}
+  #copyall:hover,#copyall:focus{opacity:1; color:var(--accent); outline:none}
+  #copyall[data-done="1"]{opacity:1; color:var(--accent)}
+  @media print{#copyall{display:none}}
+  a.ref{color:inherit; text-decoration:none; border-bottom:1px dotted var(--accent); cursor:pointer}
+a.x{color:inherit; text-decoration:none; border-bottom:1px solid var(--muted); cursor:pointer}
+a.mail{color:inherit; text-decoration:none; border-bottom:1px solid var(--muted)}
+a.mail:hover,a.mail:focus{color:var(--accent); border-bottom-color:var(--accent); outline:none}
+a.x:hover,a.x:focus{color:var(--accent); border-bottom-color:var(--accent); outline:none}
+  a.ref:hover,a.ref:focus{color:var(--accent); border-bottom-style:solid; outline:none}
+  .st,.rk{scroll-margin-top:1.2rem}
+  @keyframes landed{from{background:var(--math-bg)} to{background:transparent}}
+  .st.landed,.rk.landed{animation:landed 1.8s ease-out}
+  .refcard{position:absolute; z-index:50; max-width:min(420px, calc(100vw - 16px));
+    background:var(--bg); color:var(--fg); border:1px solid var(--rule);
+    border-radius:10px; padding:.65rem .8rem; font-size:.86rem; line-height:1.5;
+    box-shadow:0 6px 26px rgba(0,0,0,.16)}
+  .refcard[hidden]{display:none}
+  .refcard .katex-display{margin:.5rem 0; padding:.4rem .5rem}
+  .refcard a.ref{border-bottom:none; color:inherit}
+  @media (hover:none){.refcard{display:none !important}}
+  .src{margin-top:3.2rem; padding-top:1.3rem; border-top:1px solid var(--rule);
+       color:var(--muted); font-size:.9rem}
+</style>
+</head>
+<body>
+<button id="copyall" type="button" title="Copy the whole document as plain text">copy</button>
+<main>
+
+<h1>A New Kind of Science, Under Univalence</h1>
+<p class="byline">Avik Jain &middot; <a class="mail" href="mailto:avikj@berkeley.edu">avikj@berkeley.edu</a></p>
+<p>Wolfram's programme rests on sentences that have until now been read as programme rather than as mathematics. Seven of them are taken verbatim here, across five years of writing, and each is held to a machine-checked term. Nothing is argued by simulation and nothing is asserted of a rule class: each sentence names a theorem, and the theorem's witness is exhibited at named points.</p>
+<p>The development sits at the smallest scale that is not degenerate — a unary substitution system with two updating events, append one cell and append two, whose multiway evolutions between fixed endpoints form an indexed inductive family. Two events, one branch point, one merge, two coordinate systems. Every constructor is reachable by hand and every refutation lands on a named collision.</p>
+<p>Coordinatization is a path and its transport computes <a class="ref" href="#s1.3">(1.3)</a>; the merge is a truncation whose cost is a computed object <a class="ref" href="#s3.4">(3.4)</a> and which has no section, so route information provably cannot be reconstructed <a class="ref" href="#s4.3">(4.3)</a>; the interchange of co-initial events converges by <code>refl</code> <a class="ref" href="#s2.2">(2.2)</a>; the advantage of proof is the universal quantifier <a class="ref" href="#s5.2">(5.2)</a>; the merged state is one eme, constructed <a class="ref" href="#s6.3">(6.3)</a>; purpose ranks nothing inside the ensemble it selects <a class="ref" href="#s7.2">(7.2)</a> and a living step refuses to descend to its marginals <a class="ref" href="#s7.5">(7.5)</a>; and causal invariance is not needed for the observer to have a time and a law <a class="ref" href="#s8.2">(8.2)</a>. One term inhabits the conjunction of the seven <a class="ref" href="#s9.1">(9.1)</a>.</p>
+<p>Every boxed term below is verbatim, carries its own import lines, and compiles on its own against <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Cubical Agda</a> — Agda 2.8.0, agda/cubical v0.9, <code>--cubical --guardedness --safe --no-import-sorts</code>, no postulates and no holes. A green check is the theorem, not a report of one.</p>
+
+<h2><span class="n">0.</span> The system</h2>
+
+<div class="st" id="s0.1"><p><span class="lab">Definition 0.1</span> (the two updating events). A state is a unary string, read as its length. The two updating events append one cell and append two:</p>
+<pre class="def"><code>event₁ n = suc n
+event₂ n = suc (suc n)</code></pre>
+<p>This is a substitution system in the sense of <em>A New Kind of Science</em>, at the smallest size that still branches.</p></div>
+
+<div class="st" id="s0.2"><p><span class="lab">Definition 0.2</span> (multiway evolution). An evolution from <code>a</code> to <code>b</code> either halts or applies one of the two events and continues:</p>
+<pre class="def"><code>data Evolve : ℕ → ℕ → Type where
+  halt : (n : ℕ) → Evolve n n
+  ev₁  : {m n : ℕ} → Evolve (event₁ m) n → Evolve m n
+  ev₂  : {m n : ℕ} → Evolve (event₂ m) n → Evolve m n</code></pre>
+<p>The endpoints are indices, so two evolutions between the same endpoints inhabit the same type and can be compared directly. Distinct evolutions between fixed endpoints exist and are separated by a <em>computed</em> invariant <a class="ref" href="#s3.2">(3.2)</a>, never assumed distinct.</p></div>
+
+<div class="rk" id="s0.3"><p><span class="lab">Remark 0.3</span> (what the scale buys). The four phenomena of the 2021 essay all appear here: two coordinate systems, one branch point, one merge, and one reconvergence. Nothing below is a claim about rule classes or about what large systems do — each statement is about this system, and each is checked. What generalises is the shape of the argument, not an extrapolation from a simulation.</p></div>
+
+<h2><span class="n">1.</span> Coordinatization is a path</h2>
+
+<div class="st" id="s1.1"><p><span class="lab">Sentence 1.1</span> (W1, <em>The Concept of the Ruliad</em>, 2021). “Each [computational system] can be thought of as defining a different coordinate system for describing the ruliad … each will ultimately lead to the same limiting object.”</p>
+<p>This is <a class="x" href="https://ncatlab.org/nlab/show/univalence+axiom">univalence</a>, used as Voevodsky built it. It is the sentence of Wolfram's that only univalence can hold, because it identifies presentations while refunding, through transport, everything the identification would otherwise owe.</p></div>
+
+<div class="st" id="s1.2"><p><span class="lab">Theorem 1.2</span> (one path of structured systems). The same system presented in tape coordinates and in number coordinates is connected by a single path in the type of systems — carrier together with <em>both</em> updating events:</p>
+<pre class="def"><code>System = Σ[ S ∈ Type ] (S → S) × (S → S)
+
+coordinateChange : tapeSystem ≡ numberSystem</code></pre>
+<p class="pf"><span class="lab">Proof.</span> The coordinate change <code>Tape ≃ ℕ</code> is the length function with its inverse, and <code>ua</code> turns it into a path of carriers. The two event components of <a class="ref" href="#s0.1">0.1</a> ride over that path by <code>ua→</code>, and the commuting datum in each is <code>refl</code>, because the coding function sends <code>cell</code> to <code>suc</code> definitionally. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s1.3"><p><span class="lab">Corollary 1.3</span> (three clauses, three corollaries). <a class="ref" href="#s1.1">1.1</a>’s three clauses discharge separately.</p>
+<p class="pf">First, every property of systems crosses the coordinate change by transport, with no re-proof: the interchange law, proved in tape coordinates by <code>refl</code>, is delivered in number coordinates by <code>subst</code>. Second, the emulation that “moves” between coordinate systems is not a map postulated beside the identification — it <em>is</em> the path's own transport, and it computes to the coding function, by <code>uaβ</code>. In cubical type theory univalence is a theorem with computational content, which is the entire difference between citing an equivalence and running one. Third, “the same limiting object” is not agreement-after-inspection but contractibility: the space of coordinatizations of the fixed carrier, each carrying its own identification, is a point. <span class="qed">∎</span></p>
+<p class="pf">No coordinate system is privileged, and the privilege's absence is a contraction, not a convention.</p></div>
+
+<h2><span class="n">2.</span> The interchange converges by <code>refl</code></h2>
+
+<div class="st" id="s2.1"><p><span class="lab">Sentence 2.1</span> (W4, <em>The Concept of the Ruliad</em>, 2021). “Causal invariance can be thought of as being associated with paths of history that diverge, eventually converging again.”</p></div>
+
+<div class="st" id="s2.2"><p><span class="lab">Theorem 2.2</span> (divergence with exhibited reconvergence). From every state the two updating events diverge — one cell apart after one event — and both orders complete to the same state three cells on — the convergence <a class="ref" href="#s2.1">2.1</a> names — with the endpoint agreement definitional:</p>
+<pre class="def"><code>bothOrdersConverge : (m : ℕ) → Evolve m (suc (suc (suc m)))
+                             × Evolve m (suc (suc (suc m)))
+bothOrdersConverge m = ev₁ (ev₂ (halt _)) , ev₂ (ev₁ (halt _))</code></pre>
+<p class="pf"><span class="lab">Proof.</span> By <a class="ref" href="#s0.2">indexing (0.2)</a> the two interchanged runs inhabit the <em>same</em> type, with no transport and no path algebra: both components are exhibited and the agreement is by indexing. <span class="qed">∎</span></p>
+<p class="pf">Stated exactly, what is checked is endpoint agreement of interchanged co-initial updating events — the convergence the sentence names, and no more. The stronger statement is already in the corpus and is cited rather than re-proved: pointwise pairwise commutation makes <em>every</em> permutation of a run agree on every source state, and any observed order-dependence localises a state outside the image of the observation.</p></div>
+
+<h2><span class="n">3.</span> The merge is a truncation</h2>
+
+<div class="st" id="s3.1"><p><span class="lab">Sentence 3.1</span> (W2, <em>The Concept of the Ruliad</em>, 2021). “Whenever we said that two paths in the ruliad ‘merge’, that's really just saying that we treat the outcomes as equivalent.”</p>
+<p>The merge is propositional truncation, and its cost is a computed object.</p></div>
+
+<div class="st" id="s3.2"><p><span class="lab">Proposition 3.2</span> (the branches are distinct). The two evolutions from <code>0</code> to <code>3</code> that <a class="ref" href="#s2.2">2.2</a> produced are distinct, by an invariant that reads the first updating event.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>firstEvent</code> returns <code>true</code> on <code>ev₁</code> and <code>false</code> on <code>ev₂</code>; <code>cong firstEvent</code> on a supposed path gives <code>true ≡ false</code>. The distinction is computed, not stipulated. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s3.3"><p><span class="lab">Proposition 3.3</span> (and merged). In the observer’s single thread <code>∥ Evolve 0 3 ∥₁</code> the two runs of <a class="ref" href="#s3.2">3.2</a> are equal, by the squash — so the merge <a class="ref" href="#s3.1">3.1</a> describes is real, and really lossy.</p></div>
+
+<div class="st" id="s3.4"><p><span class="lab">Theorem 3.4</span> (the branchial pair is the fibre content). The loss is exhibited as two distinct residents of the <a class="x" href="https://ncatlab.org/nlab/show/homotopy+fiber">fibre</a> of the merge over the one merged point.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>branchialPair</code> is <code>(route₁ , refl)</code> and <code>(route₂ , squash₁ _ _)</code> in <code>Σ[ r ] (merge r ≡ merge route₁)</code>, and their distinctness is <a class="ref" href="#s3.2">3.2</a> under <code>cong fst</code>. <span class="qed">∎</span></p>
+<p class="pf">Branch structure is not what a finer observer would see; it is the fibre of the coarser observer's map, and it is computed. The same statement holds in the corpus for a reversible process calculus, where the scheduler is forbidden to merge.</p></div>
+
+
+<details class="proof"><summary>the checked term — the system, W1, W4, W2</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Foundations.Equiv using (_≃_)
+open import Cubical.Foundations.Isomorphism using (Iso ; iso ; isoToEquiv)
+open import Cubical.Foundations.Univalence using (ua ; ua→ ; ua-gluePath ; uaβ ; EquivContr)
+open import Cubical.Data.Bool using (Bool ; true ; false ; true≢false)
+open import Cubical.Data.Nat using (ℕ ; zero ; suc)
+open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_ ; fst ; snd)
+open import Cubical.Relation.Nullary using (¬_)
+open import Cubical.HITs.PropositionalTruncation using (∥_∥₁ ; ∣_∣₁ ; squash₁)
+
+-- 1 · the multiway system: two updating events on unary strings.
+
+-- the ℕ coordinate system: a state is the string's length; the two
+-- updating events append one cell and two cells.
+event₁ event₂ : ℕ → ℕ
+event₁ n = suc n
+event₂ n = suc (suc n)
+
+-- a multiway evolution from a to b: at each state, either halt or
+-- apply one of the two updating events and continue.
+data Evolve : ℕ → ℕ → Type where
+  halt : (n : ℕ) → Evolve n n
+  ev₁  : {m n : ℕ} → Evolve (event₁ m) n → Evolve m n
+  ev₂  : {m n : ℕ} → Evolve (event₂ m) n → Evolve m n
+
+-- 2 · W4: divergence with exhibited reconvergence, endpoints refl.
+
+-- from every state m the two orders of the two events diverge after
+-- one event and reconverge at m+3; both completions are exhibited and
+bothOrdersConverge : (m : ℕ) → Evolve m (suc (suc (suc m))) × Evolve m (suc (suc (suc m)))
+bothOrdersConverge m = ev₁ (ev₂ (halt _)) , ev₂ (ev₁ (halt _))
+
+-- 3 · W1: coordinatization is a path, and there is one limiting object.
+
+-- the second coordinate system: the unary tape itself.
+data Tape : Type where
+  blank : Tape
+  cell  : Tape → Tape
+
+-- the two updating events, in tape coordinates.
+write₁ write₂ : Tape → Tape
+write₁ t = cell t
+write₂ t = cell (cell t)
+
+-- the coordinate change, an equivalence by two inductions.
+toNumber : Tape → ℕ
+toNumber blank    = zero
+toNumber (cell t) = suc (toNumber t)
+
+toTape : ℕ → Tape
+toTape zero    = blank
+toTape (suc n) = cell (toTape n)
+
+toNumber-toTape : (n : ℕ) → toNumber (toTape n) ≡ n
+toNumber-toTape zero    = refl
+toNumber-toTape (suc n) = cong suc (toNumber-toTape n)
+
+toTape-toNumber : (t : Tape) → toTape (toNumber t) ≡ t
+toTape-toNumber blank    = refl
+toTape-toNumber (cell t) = cong cell (toTape-toNumber t)
+
+coordinates : Tape ≃ ℕ
+coordinates = isoToEquiv (iso toNumber toTape toNumber-toTape toTape-toNumber)
+
+-- a system is a carrier with its two updating events.
+System : Type₁
+System = Σ[ S ∈ Type ] (S → S) × (S → S)
+
+tapeSystem numberSystem : System
+tapeSystem    = Tape , write₁ , write₂
+numberSystem = ℕ    , event₁ , event₂
+
+-- W1 AS A TERM: the two coordinate systems are ONE PATH in the type
+-- of systems.  The carrier path is ua; the event components ride over
+coordinateChange : tapeSystem ≡ numberSystem
+coordinateChange i =
+  ua coordinates i ,
+  ua→ {e = coordinates} {B = λ i → ua coordinates i} {f₀ = write₁} {f₁ = event₁}
+      (λ t → ua-gluePath coordinates refl) i ,
+  ua→ {e = coordinates} {B = λ i → ua coordinates i} {f₀ = write₂} {f₁ = event₂}
+      (λ t → ua-gluePath coordinates refl) i
+
+-- consequently every property of systems crosses the coordinate
+-- change by transport, with no re-proof.
+propertiesCross : (P : System → Type) → P tapeSystem → P numberSystem
+propertiesCross P = subst P coordinateChange
+
+-- instantiated: the interchange of the two events, proved in tape
+-- coordinates by refl, is delivered in number coordinates by subst.
+writesCommute : (t : Tape) → write₁ (write₂ t) ≡ write₂ (write₁ t)
+writesCommute t = refl
+
+eventsCommute : (n : ℕ) → event₁ (event₂ n) ≡ event₂ (event₁ n)
+eventsCommute =
+  propertiesCross (λ (S , e₁ , e₂) → (s : S) → e₁ (e₂ s) ≡ e₂ (e₁ s))
+                writesCommute
+
+-- the emulation that "moves" between the coordinate systems is the
+-- path's own transport, and it computes to the coding function.
+transportComputes : (t : Tape) → transport (ua coordinates) t ≡ toNumber t
+transportComputes = uaβ coordinates
+
+-- and "the same limiting object": the space of coordinatizations of
+-- the fixed carrier, each carrying its identification, is a point.
+oneLimitingObject : isContr (Σ[ S ∈ Type ] (S ≃ ℕ))
+oneLimitingObject = EquivContr ℕ
+
+-- 4 · W2: the merge is a truncation, and the branchial pair is its
+--        fibre content.
+
+-- two evolutions 0 → 3: one-then-two, and two-then-one.
+route₁ route₂ : Evolve zero (suc (suc (suc zero)))
+route₁ = fst (bothOrdersConverge zero)
+route₂ = snd (bothOrdersConverge zero)
+
+-- the invariant that reads the first updating event.
+firstEvent : {a b : ℕ} → Evolve a b → Bool
+firstEvent (halt _) = true
+firstEvent (ev₁ _)  = true
+firstEvent (ev₂ _)  = false
+
+-- the branches are DISTINCT, by the invariant --
+routesDistinct : ¬ route₁ ≡ route₂
+routesDistinct p = true≢false (cong firstEvent p)
+
+-- and MERGED in the observer's single thread.
+merge : {a b : ℕ} → Evolve a b → ∥ Evolve a b ∥₁
+merge = ∣_∣₁
+
+merged : merge route₁ ≡ merge route₂
+merged = squash₁ _ _
+
+-- the branchial pair: two distinct residents of the fibre of the
+-- merge over the one merged point.
+branchialFibre : Type
+branchialFibre = Σ[ r ∈ Evolve zero (suc (suc (suc zero))) ]
+              merge r ≡ merge route₁
+
+branchialPair : branchialFibre × branchialFibre
+branchialPair = (route₁ , refl) , (route₂ , squash₁ _ _)
+
+branchialPairDistinct : ¬ fst branchialPair ≡ snd branchialPair
+branchialPairDistinct p = routesDistinct (cong fst p)</code></pre>
+<figcaption>W1 is <code>coordinateChange</code> with its three corollaries: <code>propertiesCross</code> carries every property across by <code>subst</code>, <code>transportComputes</code> is the emulation being the path’s own transport (by <code>uaβ</code>), and <code>oneLimitingObject</code> is “the same limiting object” as contractibility (by <code>EquivContr</code>). W4 is <code>bothOrdersConverge</code>, both components exhibited with the endpoints agreeing by indexing. W2 is <code>routesDistinct</code> against <code>merged</code>, and <code>branchialPair</code> exhibits what the merge destroyed. Verbatim; this box checks on its own.</figcaption>
+</details>
+
+<h2><span class="n">4.</span> The bounded observer, and the refusal of repair</h2>
+
+<div class="st" id="s4.1"><p><span class="lab">Sentence 4.1</span> (W3, <em>The Concept of the Ruliad</em>, 2021). “Because we are computationally bounded observers who imagine a certain coherence in their experience, there are strong constraints on what kinds of equivalence classes we can use.” The same equivalencing is <em>Observer Theory</em> (2023): “a large set of possible inputs, a much smaller set of possible outputs”.</p>
+<p>The constraint is quantified, and the repair is refuted.</p></div>
+
+<div class="st" id="s4.2"><p><span class="lab">Theorem 4.2</span> (every consumer answers equally). Any observer that reads only the merged thread — any <code>g : ∥ Evolve 0 3 ∥₁ → X</code>, for every <code>X</code> at every universe level — returns equal answers on the two branches.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>cong g</code> applied to <a class="ref" href="#s3.3">3.3</a>. The quantification is over all types at all levels, so no choice of target recovers the branch. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s4.3"><p><span class="lab">Theorem 4.3</span> (the merge has no section). No selector reads a run back out of the thread.</p>
+<p class="pf"><span class="lab">Proof.</span> A section <code>sel</code> with <code>sel (merge r) ≡ r</code> gives <code>route₁ ≡ route₂</code> by composing that equation at both routes across <a class="ref" href="#s3.3">3.3</a>, contradicting <a class="ref" href="#s3.2">3.2</a>. <span class="qed">∎</span></p>
+<p class="pf">Equivalencing is many-to-one with the many exhibited, and the one-to-many direction is refuted, not merely absent. This is computational irreducibility in its proof-relevant form: the outcome — the endpoint, and even the whole merged thread — does not determine the run, so route information must be carried, since it provably cannot be reconstructed. The corpus proves the same for derivations, where soundness factors through the truncation and the truncation is strict; for denotations, where full abstraction is the statement that the denotation <em>is</em> the truncation; and for program synthesis, where pruning by observational equivalence collapses a fibre that is constructed and unbounded.</p></div>
+
+
+<h2><span class="n">5.</span> The advantage of proof is the quantifier</h2>
+
+<div class="st" id="s5.1"><p><span class="lab">Sentence 5.1</span> (W5, <em>Towards a Theory of Bugs: The Ruliology of the Unexpected</em>, July 2026). “We don't get any fundamental advantage by trying to make a proof rather than just running the Turing machine — in both cases we have to expend a potentially unbounded amount of computational effort.”</p>
+<p>The sentence is exactly right about each single instance and exactly wrong about their totality, and both halves are terms.</p></div>
+
+<div class="st" id="s5.2"><p><span class="lab">Theorem 5.2</span> (the term running cannot produce). Every state is reached from <code>0</code> — every evolution type of <a class="ref" href="#s0.2">0.2</a> inhabited — all of them by one induction:</p>
+<pre class="def"><code>reachesEvery : (n : ℕ) → Evolve zero n</code></pre>
+<p class="pf"><span class="lab">Proof.</span> Induction on <code>n</code>, through a lemma appending one event of <a class="ref" href="#s0.1">0.1</a> at the end of an evolution. <span class="qed">∎</span></p>
+<p class="pf">A run exhibits one endpoint; this function is the whole family at once. The effort of proof is bounded by the induction, the effort of running is unbounded over the family, and that asymmetry <em>is</em> the fundamental advantage: the term is the family where the run is a point. The corpus holds the machine-scale form, where a composition theorem certifies a compound machine for every input with no induction over the compound.</p></div>
+
+<div class="rk" id="s5.3"><p><span class="lab">Remark 5.3</span> (the escape is a named counterexample). The same essay's “whatever constraint we give, there'll always be machines that insidiously escape it” is this development's standing discipline read back. Every refusal here is exhibited — a candidate interrogated at named points, the collision written down — and a constraint without its exhibited escape is an unfinished theorem.</p></div>
+
+<h2><span class="n">6.</span> The merged state is one eme</h2>
+
+<div class="st" id="s6.1"><p><span class="lab">Sentence 6.1</span> (W6, <em>What Ultimately Is There? Metaphysics and the Ruliad</em>, February 2026). “Equivalent states are in fact merged.” And the emes: “atoms of existence” whose “only property is distinctness”.</p>
+<p>The February sentence is stronger than the 2021 merge — merged in the object, not treated as equivalent by an observer — and the stronger merge is the <a class="x" href="https://en.wikipedia.org/wiki/Equivalence_class">set quotient</a>.</p></div>
+
+<div class="st" id="s6.2"><p><span class="lab">Proposition 6.2</span> (equal as data). Under co-terminality the two branches of <a class="ref" href="#s3.2">3.2</a> become equal in the quotient, by <code>eq/</code> — not merely jointly present in a truncation as in <a class="ref" href="#s3.3">3.3</a>.</p></div>
+
+<div class="st" id="s6.3"><p><span class="lab">Theorem 6.3</span> (one eme, constructed). The quotient of <a class="ref" href="#s6.2">6.2</a> contracts to a single point, and that point is the atom of existence <a class="ref" href="#s6.1">6.1</a> names with no property beyond its own distinctness.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>[ route₁ ]</code> is the centre, and <code>elimProp</code> with <code>squash/</code> contracts every class onto it. The eme is constructed rather than posited. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s6.4"><p><span class="lab">Theorem 6.4</span> (the stronger merge still has no section). Reading a run back out of the merged object collides with the branch distinction.</p>
+<p class="pf"><span class="lab">Proof.</span> As <a class="ref" href="#s4.3">4.3</a>, with <a class="ref" href="#s6.2">6.2</a> in place of the squash. <span class="qed">∎</span></p>
+<p class="pf">Both merges are real, both lossy, and the loss is the same computed object.</p></div>
+
+<details class="proof"><summary>the checked term — W3, W5, W6</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Data.Bool using (Bool ; true ; false ; true≢false)
+open import Cubical.Data.Nat using (ℕ ; zero ; suc)
+open import Cubical.Data.Unit using (Unit ; tt)
+open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_ ; fst ; snd)
+open import Cubical.Relation.Nullary using (¬_)
+open import Cubical.HITs.PropositionalTruncation using (∥_∥₁ ; ∣_∣₁ ; squash₁)
+open import Cubical.HITs.SetQuotients using (_/_ ; [_] ; eq/ ; squash/ ; elimProp)
+
+-- The system again, so this box checks on its own.
+event₁ event₂ : ℕ → ℕ
+event₁ n = suc n
+event₂ n = suc (suc n)
+
+data Evolve : ℕ → ℕ → Type where
+  halt : (n : ℕ) → Evolve n n
+  ev₁  : {m n : ℕ} → Evolve (event₁ m) n → Evolve m n
+  ev₂  : {m n : ℕ} → Evolve (event₂ m) n → Evolve m n
+
+route₁ route₂ : Evolve zero (suc (suc (suc zero)))
+route₁ = ev₁ (ev₂ (halt _))
+route₂ = ev₂ (ev₁ (halt _))
+
+firstEvent : {a b : ℕ} → Evolve a b → Bool
+firstEvent (halt _) = true
+firstEvent (ev₁ _)  = true
+firstEvent (ev₂ _)  = false
+
+routesDistinct : ¬ route₁ ≡ route₂
+routesDistinct p = true≢false (cong firstEvent p)
+
+merge : {a b : ℕ} → Evolve a b → ∥ Evolve a b ∥₁
+merge = ∣_∣₁
+
+merged : merge route₁ ≡ merge route₂
+merged = squash₁ _ _
+
+
+-- 5 · W3: the bounded observer separates nothing co-terminal, and the
+--        merge has no section.
+
+-- any consumer of the single thread — every X, every universe level —
+-- answers equally on the two branches.
+boundedObserver : {ℓ : Level} {X : Type ℓ}
+             (g : ∥ Evolve zero (suc (suc (suc zero))) ∥₁ → X)
+           → g (merge route₁) ≡ g (merge route₂)
+boundedObserver g = cong g merged
+
+-- and no consumer reads a run back out: a section of the merge would
+-- collapse the branch distinction.
+noSection :
+  ¬ (Σ[ sel ∈ (∥ Evolve zero (suc (suc (suc zero))) ∥₁
+               → Evolve zero (suc (suc (suc zero)))) ]
+       ((r : Evolve zero (suc (suc (suc zero)))) → sel (merge r) ≡ r))
+noSection (sel , h) =
+  routesDistinct (sym (h route₁) ∙ cong sel merged ∙ h route₂)
+
+-- 1 · W5: the advantage of proof is the quantifier.
+
+-- appending one updating event at the END of an evolution.
+extendByOne : {m n : ℕ} → Evolve m n → Evolve m (suc n)
+extendByOne (halt n) = ev₁ (halt (suc n))
+extendByOne (ev₁ r)  = ev₁ (extendByOne r)
+extendByOne (ev₂ r)  = ev₂ (extendByOne r)
+
+-- THE TERM RUNNING CANNOT PRODUCE: every state is reached from zero,
+-- all of them by one induction.  A run exhibits one endpoint; this
+reachesEvery : (n : ℕ) → Evolve zero n
+reachesEvery zero    = halt zero
+reachesEvery (suc n) = extendByOne (reachesEvery n)
+
+-- 2 · W6: the merged state is one eme, and still has no section.
+
+-- co-terminality: the relation that holds between any two evolutions
+-- sharing both endpoints (they already do, by the index).
+coTerminal : {a b : ℕ} → Evolve a b → Evolve a b → Type
+coTerminal _ _ = Unit
+
+-- the object-level merge: runs 0 → 3, quotiented.
+mergedStates : Type
+mergedStates = Evolve zero (suc (suc (suc zero))) / coTerminal
+
+-- "equivalent states are in fact merged": the branches are EQUAL as
+-- data in the quotient, not merely jointly present in a truncation.
+equalAsData : Path mergedStates [ route₁ ] [ route₂ ]
+equalAsData = eq/ route₁ route₂ tt
+
+-- the merged object is one eme: a point with no property beyond its
+-- own distinctness — the whole quotient contracts onto it.
+oneEme : isContr mergedStates
+oneEme = [ route₁ ] , elimProp (λ x → squash/ [ route₁ ] x)
+                                (λ r → eq/ route₁ r tt)
+
+-- and the stronger merge still has no section: reading a run back out
+-- of the merged object collides with the branch distinction.
+noSectionEither :
+  ¬ (Σ[ sel ∈ (mergedStates → Evolve zero (suc (suc (suc zero)))) ]
+       ((r : Evolve zero (suc (suc (suc zero)))) → sel [ r ] ≡ r))
+noSectionEither (sel , h) =
+  routesDistinct (sym (h route₁) ∙ cong sel equalAsData ∙ h route₂)
+
+-- 3 · W7: purpose ranks nothing inside the ensemble.
+
+-- the ensemble selected by the purpose "arrive at 3 from 0" is the
+-- run type itself (the fibre of arrival); any assessor reading only
+purposeRanksNothing : {ℓ : Level} {X : Type ℓ} (g : mergedStates → X)
+              → g [ route₁ ] ≡ g [ route₂ ]
+purposeRanksNothing g = cong g equalAsData</code></pre>
+<figcaption>The system is restated in the first lines so this box checks on its own. <code>boundedObserver</code> is one <code>cong</code> quantified over every target type at every level; <code>noSection</code> refutes repair in three steps. <code>reachesEvery</code> is the family a run can only be a point of. <code>oneEme</code> contracts the quotient onto one point and <code>noSectionEither</code> shows the stronger merge is no less lossy. Verbatim; checks on its own, prelude included.</figcaption>
+</details>
+
+<h2><span class="n">7.</span> Purpose, and the living step</h2>
+
+<div class="st" id="s7.1"><p><span class="lab">Sentence 7.1</span> (W7, <em>What's Special about Life?</em>, November 2025). The rulial ensemble is “an ensemble of possible rules … selected to ‘achieve the purpose’”, and life is patches of irreducibility “fitted together to achieve that purpose” through bulk orchestration.</p></div>
+
+<div class="st" id="s7.2"><p><span class="lab">Theorem 7.2</span> (purpose ranks nothing inside the ensemble). Taking the purpose to be arrival, the ensemble selected to achieve it is the fibre of the endpoint, and every assessor reading only the merged achievement answers equally on all its members.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>cong g</code> applied to <a class="ref" href="#s6.2">6.2</a>, for every <code>g</code> out of the quotient into every type at every level — proposition-valued fitness functions included, since they factor through functions. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s7.3"><p><span class="lab">Theorem 7.3</span> (the ledger is general). The orchestration half of <a class="ref" href="#s7.1">7.1</a> needs one map. A joint state of two parts is a type <code>J</code> with projections <code>p : J → A</code> and <code>q : J → B</code>, and everything below is an officer of the single comparison <code>⟨p,q⟩ : J → A × B</code>. For every joint whatsoever, the total space of the entanglement fibres is the joint itself:</p>
+<pre class="def"><code>Σ[ (a , b) ] fib ⟨p,q⟩ (a , b)  ≃  J</code></pre>
+<p class="pf"><span class="lab">Proof.</span> The fibre decomposition, at <code>⟨p,q⟩</code>. Nothing double-kept and nothing dropped: as in <a class="ref" href="#s3.4">3.4</a>, the fibres carry exactly what the marginals forgot, and summing them back recovers the whole. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s7.4"><p><span class="lab">Proposition 7.4</span> (independence, entanglement, reconstruction). Independence is the comparison of <a class="ref" href="#s7.3">7.3</a> being an equivalence, and at the product joint it is definitionally the identity. Entanglement is the comparison's fibre, and both of its failures are pointed at rather than counted: over the diagonal joint the fibre at <code>(true , false)</code> is <em>empty</em> — a pair of marginal readings the whole never realises — and over the joint that outruns its marginals the fibre at the one reading holds <em>two named points</em>, a hidden degree of freedom the marginals jointly cannot see. On the diagonal joint either reading determines the other, the recovering function is exhibited and the commuting square is <code>refl</code>.</p></div>
+
+<details class="proof"><summary>the checked term — the ledger, and the three readings</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Foundations.Equiv
+open import Cubical.Foundations.Isomorphism using (Iso ; iso ; isoToEquiv)
+open import Cubical.Foundations.HLevels using (isSet×)
+open import Cubical.Data.Bool using (Bool ; true ; false ; not ; true≢false ; isSetBool)
+open import Cubical.Data.Unit using (Unit ; tt)
+open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_ ; fst ; snd)
+open import Cubical.Data.Empty as Empty using (⊥)
+open import Cubical.Functions.Embedding using (injective→hasPropFibers)
+open import Cubical.Relation.Nullary using (¬_)
+
+private
+  variable
+    ℓ : Level
+
+-- 0 · the comparison map, and the general ledger.
+
+module _ {J A B : Type ℓ} (p : J → A) (q : J → B) where
+
+  compare : J → A × B
+  compare j = (p j , q j)
+
+  -- independence IS this map being an equivalence; entanglement IS its
+  -- fibre family.  Both words name the same object from the two sides.
+  independence : Type ℓ
+  independence = isEquiv compare
+
+  entanglementFibre : A × B → Type ℓ
+  entanglementFibre = fiber compare
+
+  -- the ledger: the joint is the sum of its entanglement fibres.
+  -- nothing double-kept, nothing dropped — the same interval trick,
+  fibreSum : Iso (Σ (A × B) entanglementFibre) J
+  fibreSum = iso (λ (_ , j , _) → j)
+                (λ j → (compare j , j , refl))
+                (λ j → refl)
+                (λ (ab , j , pth) i → (pth i , j , λ k → pth (i ∧ k)))
+
+-- 1 · the product pole: the comparison is the identity, definitionally.
+
+productCompare : Bool × Bool → Bool × Bool
+productCompare = compare fst snd
+
+-- Σ-eta makes ⟨fst , snd⟩ definitionally the identity, so independence
+-- of the product joint is `idIsEquiv` with nothing to transport.
+productIndependent : isEquiv productCompare
+productIndependent = idIsEquiv (Bool × Bool)
+
+-- 2 · the diagonal joint: an EMPTY fibre, named.
+
+-- J = Bool, both projections the identity: the support {(t,t),(f,f)}.
+diagonalCompare : Bool → Bool × Bool
+diagonalCompare = compare (λ j → j) (λ j → j)
+
+-- the excluded reading: (true , false) is a pair of marginal readings
+-- the whole never realises.  A fibre point would identify true with
+fibreEmpty : ¬ fiber diagonalCompare (true , false)
+fibreEmpty (j , pth) = true≢false (sym (cong fst pth) ∙ cong snd pth)
+
+-- so the diagonal joint is entangled: the comparison is no equivalence,
+-- because an equivalence has an inhabited fibre over every point.
+diagonalNotIndependent : ¬ isEquiv diagonalCompare
+diagonalNotIndependent e = fibreEmpty (e .equiv-proof (true , false) .fst)
+
+-- the diagonal is injective into a set, so every entanglement fibre of
+-- this joint is a proposition: each door is either open or walled, and
+diagonalFibreIsProp : (ab : Bool × Bool) → isProp (fiber diagonalCompare ab)
+diagonalFibreIsProp =
+  injective→hasPropFibers (isSet× isSetBool isSetBool) (λ pth → cong fst pth)
+
+-- 3 · the joint that outruns its marginals: a TWO-POINT fibre, named.
+
+-- J = Bool over the one-point parts: two globally distinct situations
+-- whose every marginal reading agrees.
+hiddenCompare : Bool → Unit × Unit
+hiddenCompare = compare (λ _ → tt) (λ _ → tt)
+
+hiddenTrue hiddenFalse : fiber hiddenCompare (tt , tt)
+hiddenTrue  = (true  , refl)
+hiddenFalse = (false , refl)
+
+-- the two residents are distinct, by the base point alone.
+hiddenDistinct : ¬ hiddenTrue ≡ hiddenFalse
+hiddenDistinct pth = true≢false (cong fst pth)
+
+-- 4 · conditional certainty is a reconstruction: H(A|B) = 0 as a term.
+
+-- on the diagonal joint, the reading of B determines A: the recovering
+-- function is exhibited and the square commutes by refl.  By symmetry
+recover : Bool → Bool
+recover b = b
+
+recoverWitness : (j : Bool) → recover (snd (diagonalCompare j)) ≡ fst (diagonalCompare j)
+recoverWitness j = refl</code></pre>
+<figcaption>One comparison map carries the vocabulary. <code>fibreSum</code> is the ledger: the fibres hold exactly what the marginals forgot. Then the three readings of the same construction, varying the joint — the comparison an equivalence at the product pole, its fibre empty over the diagonal joint, and two-pointed over the joint that outruns its marginals — with <code>recoverWitness</code> giving conditional certainty as a reconstruction rather than a number. Verbatim; nothing here depends on the sections above.</figcaption>
+</details>
+
+<div class="st" id="s7.5"><p><span class="lab">Theorem 7.5</span> (a living step refuses to descend). A joint step descends along the <code>p</code> of <a class="ref" href="#s7.3">7.3</a> when some <code>f</code> closes the square <code>f ∘ p ∼ p ∘ step</code>, and the descent structure is fully characterised: a pair simulates the step exactly when each side descends separately, proved in both directions. The <a class="x" href="https://en.wikipedia.org/wiki/Controlled_NOT_gate">controlled-not</a> step <code>(a , b) ↦ (a ⊕ b , b)</code> is then placed exactly — it descends on the environment side by <code>refl</code> and <em>refuses</em> on the visible side.</p>
+<p class="pf"><span class="lab">Proof.</span> Any candidate <code>f</code> is interrogated at <code>(true , false)</code> and <code>(true , true)</code>, where <code>fst</code> agrees and <code>fst ∘ step</code> disagrees; the collision is <code>true≢false</code>. A fortiori no pair simulates it. Beside it, <code>(a , b) ↦ (not a , b)</code> descends on both sides. <span class="qed">∎</span></p>
+<p class="pf">Living is a definition here, not a metaphor, and the step is nevertheless a global equivalence — it is its own inverse — so the consultation of the hidden part costs nothing and destroys nothing. Consultation, not destruction: the step whose visible part must read its environment is exactly the one no marginal can simulate.</p></div>
+
+<details class="proof"><summary>the checked term — the living step</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Foundations.Equiv
+open import Cubical.Foundations.Isomorphism using (Iso ; iso ; isoToEquiv)
+open import Cubical.Foundations.HLevels using (isSet×)
+open import Cubical.Data.Bool using (Bool ; true ; false ; not ; true≢false ; isSetBool)
+open import Cubical.Data.Unit using (Unit ; tt)
+open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_ ; fst ; snd)
+open import Cubical.Data.Empty as Empty using (⊥)
+open import Cubical.Functions.Embedding using (injective→hasPropFibers)
+open import Cubical.Relation.Nullary using (¬_)
+
+-- 5 · the living step: no marginal endomap simulates it.
+
+_⊕_ : Bool → Bool → Bool
+false ⊕ b = b
+true  ⊕ b = not b
+
+-- the controlled-not on the full product joint: the visible part is
+-- rewritten by consulting the hidden part.
+livingStep : Bool × Bool → Bool × Bool
+livingStep (a , b) = (a ⊕ b , b)
+
+-- descent along a projection: some endomap of the part closing the
+-- square against the step.  Descent along fst is simulation of the
+descendsToMarginal descendsOnRight : (Bool × Bool → Bool × Bool) → Type
+descendsToMarginal step =
+  Σ (Bool → Bool) (λ f → (j : Bool × Bool) → f (fst j) ≡ fst (step j))
+descendsOnRight step =
+  Σ (Bool → Bool) (λ g → (j : Bool × Bool) → g (snd j) ≡ snd (step j))
+
+descendsAsPair : (Bool × Bool → Bool × Bool) → Type
+descendsAsPair step =
+  Σ (Bool → Bool) (λ f → Σ (Bool → Bool) (λ g →
+    (j : Bool × Bool) → (f (fst j) , g (snd j)) ≡ step j))
+
+-- the descent structure is fully characterised: a pair simulates the
+-- step exactly when each side descends separately.  Both directions
+pairBothWays : (s : Bool × Bool → Bool × Bool)
+             → (descendsAsPair s → descendsToMarginal s × descendsOnRight s)
+             × (descendsToMarginal s × descendsOnRight s → descendsAsPair s)
+pairBothWays s =
+  (λ (f , g , h) → (f , λ j → cong fst (h j)) , (g , λ j → cong snd (h j))) ,
+  (λ ((f , hf) , (g , hg)) → f , g , λ j i → (hf j i , hg j i))
+
+-- THE THEOREM.  The two interrogating configurations share their
+-- visible half and split their hidden half; any simulator must answer
+livingStepNoMarginal : ¬ descendsToMarginal livingStep
+livingStepNoMarginal (f , h) = true≢false (sym (h (true , false)) ∙ h (true , true))
+
+-- a fortiori, no PAIR of marginal endomaps simulates the living step.
+livingStepNoPairMarginal : ¬ descendsAsPair livingStep
+livingStepNoPairMarginal yu = livingStepNoMarginal (fst (fst (pairBothWays livingStep) yu))
+
+-- the refusal is LOCATED: the same step descends on the environment
+-- side by refl.  The organism's half consults; the environment's half
+rightDescentHolds : descendsOnRight livingStep
+rightDescentHolds = (λ b → b) , λ j → refl
+
+-- 6 · beside it, the decoherent step: descent on both sides by refl.
+
+deadStep : Bool × Bool → Bool × Bool
+deadStep (a , b) = (not a , b)
+
+deadStepDescends : descendsToMarginal deadStep
+deadStepDescends = not , λ j → refl
+
+deadStepDescendsAsPair : descendsAsPair deadStep
+deadStepDescendsAsPair = snd (pairBothWays deadStep) (deadStepDescends , (λ b → b) , λ j → refl)
+
+-- the contrast is the content: same joint, same projections, one step
+-- provably inseparable and one separable, and the difference is not a
+
+-- 7 · the information equation, exact and exponential.
+
+-- controlled-not is an involution: consulting the same oracle twice
+-- undoes the consultation.  Four configurations, four refl.
+livingStepInvolution : (j : Bool × Bool) → livingStep (livingStep j) ≡ j
+livingStepInvolution (false , false) = refl
+livingStepInvolution (false , true)  = refl
+livingStepInvolution (true  , false) = refl
+livingStepInvolution (true  , true)  = refl
+
+-- so the LIVING step is an EQUIVALENCE of the whole reading space:
+-- globally lossless, locally refusing.  Life is consultation, not
+livingStepEquiv : (Bool × Bool) ≃ (Bool × Bool)
+livingStepEquiv = isoToEquiv (iso livingStep livingStep livingStepInvolution livingStepInvolution)
+
+-- the parity of a doubled coordinate vanishes; the oracle's answer on</code></pre>
+<figcaption><code>descendsToMarginal</code> is the definition of descent and <code>pairBothWays</code> characterises it in both directions. <code>livingStepNoMarginal</code> is the refusal: a candidate interrogated at <code>(true , false)</code> and <code>(true , true)</code>, colliding on <code>true≢false</code>. Beside it <code>rightDescentHolds</code> places the descent on the environment side by <code>refl</code>, <code>deadStep</code> descends on both, and <code>livingStepInvolution</code> makes the living step its own inverse. Verbatim; checks on its own.</figcaption>
+</details>
+
+<h2><span class="n">8.</span> Causal invariance is not needed</h2>
+
+<div class="st" id="s8.1"><p><span class="lab">Definition 8.1</span> (branch-blind). An observation <code>o : X → V</code> is <em>branch-blind</em> when it cannot tell two successors of a state apart: if <code>o x ≡ o y</code> and <code>x</code> steps to <code>u</code> while <code>y</code> steps to <code>v</code>, then <code>o u ≡ o v</code>. A <em>law</em> for <code>o</code> is a map <code>g</code> on readings with <code>o x' ≡ g (o x)</code> at every step — and a law gives branch-blindness immediately.</p></div>
+
+<div class="st" id="s8.2"><p><span class="lab">Theorem 8.2</span> (one reading, from the congruence alone). If <code>o</code> is branch-blind <a class="ref" href="#s8.1">(8.1)</a> then any two routes of the same length from states that <code>o</code> cannot distinguish arrive at states <code>o</code> cannot distinguish.</p>
+<p class="pf"><span class="lab">Proof.</span> Induction on the common length, applying blindness at each step. <span class="qed">∎</span></p>
+<p class="pf">There is no <a class="x" href="https://en.wikipedia.org/wiki/Confluence_(abstract_rewriting)">confluence</a> premise anywhere in the statement. The standard demand made of a multiway rule is that any two branches can be brought back together; the observer's time and law do not need it. What they need is that the observation be blind to the branching, which is weaker and is checkable. And the converse direction is also exhibited: an observation with no law is given, so having a law is strictly stronger than being blind.</p></div>
+
+<div class="rk" id="s8.3"><p><span class="lab">Remark 8.3</span> (the multiway does not collapse). Distinct branches of the multiway are <em>provably</em> unequal — <a class="ref" href="#s3.2">3.2</a> at this system — not merely not-identified — which is why a proof-relevant store keeps them. A branch is never identified with another branch, and that is a theorem rather than a convention of the encoding.</p></div>
+
+<details class="proof"><summary>the checked term — a time and a law without confluence</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Data.Nat using (ℕ ; zero ; suc)
+open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_)
+open import Cubical.Relation.Nullary using (¬_)
+
+private
+  variable
+    ℓ ℓ' ℓ'' : Level
+
+module _ {X : Type ℓ} (R : X → X → Type ℓ') where
+
+  -- a run of exactly n steps, with the branches it took
+  -- Defined by recursion on the length rather than as an indexed family: a
+  route-n : ℕ → X → X → Type (ℓ-max ℓ ℓ')
+  route-n zero x y = Lift {j = ℓ'} (x ≡ y)
+  route-n (suc n) x z = Σ[ y ∈ X ] (R x y × route-n n y z)
+
+  -- the observer cannot see WHICH branch was taken: equal readings in, equal
+  -- readings out, for every choice of successor on either side.
+  branchBlind : {V : Type ℓ''} → (X → V) → Type _
+  branchBlind {V = V} o =
+    {x y x' y' : X} → o x ≡ o y → R x x' → R y y' → o x' ≡ o y'
+
+  -- ------------------------------------------------------------- the law
+  -- Any two runs of the same length, from starts the observer cannot tell
+  oneUtterance : {V : Type ℓ''} (o : X → V) → branchBlind o
+    → (n : ℕ) {x y u v : X}
+    → route-n n x u → route-n n y v → o x ≡ o y → o u ≡ o v
+  oneUtterance o blind zero (lift p) (lift q) e =
+    cong o (sym p) ∙ e ∙ cong o q
+  oneUtterance o blind (suc n) (_ , r , p) (_ , s , q) e =
+    oneUtterance o blind n p q (blind e r s)
+
+  -- ------------------------------------------------- and what breaks it
+  -- A predictor at the level of readings: one function of the reading that
+  hasLaw : {V : Type ℓ''} → (X → V) → Type _
+  hasLaw {V = V} o = Σ[ g ∈ (V → V) ] ({x x' : X} → R x x' → o x' ≡ g (o x))
+
+  -- a predictor is branch-blind, so the two notions cannot come apart
+  lawGivesBranchBlind : {V : Type ℓ''} (o : X → V) → hasLaw o → branchBlind o
+  lawGivesBranchBlind o (g , p) e r s = p r ∙ cong g e ∙ sym (p s)
+
+  -- ONE branching the observer can see refutes every reading-level law.
+  -- Two successors of ONE state with different readings is the sharpest
+  noLaw : {V : Type ℓ''} (o : X → V) {x x' x'' : X}
+    → R x x' → R x x'' → ¬ (o x' ≡ o x'')
+    → ¬ (hasLaw o)
+  noLaw o r s d h = d (lawGivesBranchBlind o h refl r s)
+
+-- --------------------------------------------------------------- limits
+--
+
+  -- ------------------------------------------------------------ the tower
+  -- A frame is not a number; it is a rung.  Given a branch-blind observer
+  layer : {V : Type ℓ''} {W : Type ℓ''} (o : X → V) (h : V → W)
+    → (b : hasLaw o)
+    → ({a c : V} → h a ≡ h c → h (fst b a) ≡ h (fst b c))
+    → branchBlind (λ x → h (o x))
+  layer o h (g , p) hcong e r s =
+    cong h (p r) ∙ hcong e ∙ cong h (sym (p s))</code></pre>
+<figcaption><code>branchBlind</code> and <code>hasLaw</code> are the two conditions, <code>lawGivesBranchBlind</code> the implication between them, and <code>noLaw</code> its strictness. <code>oneUtterance</code> is the result: one induction on the common length, and no confluence premise appears in the statement or the proof. Verbatim; checks on its own, generic in the state type and the step relation.</figcaption>
+</details>
+
+<h2><span class="n">9.</span> One term</h2>
+
+<div class="st" id="s9.1"><p><span class="lab">Theorem 9.1</span> (the conjunction). One term’s type is the conjunction of all seven sentences — <a class="ref" href="#s1.1">1.1</a>, <a class="ref" href="#s2.1">2.1</a>, <a class="ref" href="#s3.1">3.1</a>, <a class="ref" href="#s4.1">4.1</a>, <a class="ref" href="#s5.1">5.1</a>, <a class="ref" href="#s6.1">6.1</a>, <a class="ref" href="#s7.1">7.1</a> — and checking the file that exports it checks, through its imports, every theorem it cites. Reading the claim and verifying it are the same act.</p></div>
+
+
+<details class="proof"><summary>the checked term — the conjunction of the seven</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Foundations.Equiv using (_≃_)
+open import Cubical.Data.Nat using (ℕ ; zero ; suc)
+open import Cubical.Data.Bool using (Bool)
+open import Cubical.Data.Sigma using (Σ-syntax ; _×_ ; _,_)
+open import Cubical.Relation.Nullary using (¬_)
+open import Cubical.HITs.PropositionalTruncation using (∥_∥₁)
+
+-- the development above, as its three modules.
+open import CoordinatizationIsAPathTheMergeIsATruncationWithNoSectionAndTheBoundedObserverSeparatesNoCoTerminalRuns public
+open import TheAdvantageOfProofIsTheQuantifierTheMergedStateIsOneEmeAndPurposeRanksNothingInsideTheEnsemble public
+open import EntanglementIsTheFibreOfTheProductComparisonAndTheLivingStepRefusesToDescendToTheMarginals public
+
+sevenSentences :
+    (tapeSystem ≡ numberSystem)                           -- W1: one path
+  × isContr (Σ[ S ∈ Type ] (S ≃ ℕ))                       -- W1: one limiting object
+  × (merge route₁ ≡ merge route₂) × (¬ route₁ ≡ route₂)   -- W2: merged, and distinct
+  × (¬ (Σ[ sel ∈ (∥ Evolve zero (suc (suc (suc zero))) ∥₁
+                  → Evolve zero (suc (suc (suc zero)))) ]
+          ((r : Evolve zero (suc (suc (suc zero))))
+           → sel (merge r) ≡ r)))                         -- W3: no section
+  × ((m : ℕ) → Evolve m (suc (suc (suc m)))
+             × Evolve m (suc (suc (suc m))))              -- W4: both orders converge
+  × ((n : ℕ) → Evolve zero n)                             -- W5: the quantifier
+  × isContr mergedStates                                  -- W6: one eme
+  × ((j : Bool × Bool) → livingStep (livingStep j) ≡ j)   -- W7: the living step,
+  × (¬ descendsToMarginal livingStep)                     --     lossless yet unsimulable
+sevenSentences =
+    coordinateChange
+  , oneLimitingObject
+  , merged , routesDistinct
+  , noSection
+  , bothOrdersConverge
+  , reachesEvery
+  , oneEme
+  , livingStepInvolution
+  , livingStepNoMarginal</code></pre>
+<figcaption>The type is the claim and the term is the proof: nine lines, each component the identifier named in its section above, so the term is the development’s whole index. This is the one box that does not check in isolation, and that is its content — it checks against the three modules the five boxes above display, as one file, which is how it was run. Agda 2.8.0, agda/cubical v0.9, <code>--cubical --guardedness --safe --no-import-sorts</code>: exit 0, no postulates, no holes.</figcaption>
+</details>
+
+<p class="src">Seven sentences, five years of writing, nine identifiers whose combined proof text is shorter than this page. One methodological sentence from <em>What Is Ruliology?</em> (January 2026) frames the series: mathematics “tends to get out of hand, with even a very simple rule having behavior that can only be captured by large amounts of obscure mathematics.” This is the measured reply. At the scale where ruliology's own sentences live — two events, one branch point, one merge — the mathematics does not get out of hand; it gets exactly as large as the sentence. Where a sentence names something genuinely irreducible, the development agrees from the other side: proof identity is the fibre, so an ununderstood proof is a trace not yet carried, and carrying traces is what the machine is for. The ruliad's load-bearing sentences are, one by one, theorems of univalent mathematics. The construction this sits inside — equality of types is equivalence, and it computes, from which complete inference comes out deterministic and step-optimal — is at <a class="x" href="./index.html">Respecting Equality</a>.</p>
+
+</main>
+<script src="./vendor/katex/katex.min.js"></script>
+<script src="./vendor/katex/auto-render.min.js"></script>
+<script>
+  renderMathInElement(document.body, {
+    delimiters: [{left: "$$", right: "$$", display: true}],
+    throwOnError: false,
+    strict: "warn"
+  });
+</script>
+
+<script>
+(function(){
+  var card=document.createElement('div');
+  card.className='refcard'; card.hidden=true; card.setAttribute('role','tooltip');
+  document.body.appendChild(card);
+  var t=null;
+  function place(a){
+    var el=document.getElementById(a.getAttribute('href').slice(1));
+    if(!el){return;}
+    var c=el.cloneNode(true);
+    Array.prototype.forEach.call(c.querySelectorAll('.pf,details'),function(n){n.parentNode.removeChild(n);});
+    card.innerHTML=c.innerHTML;
+    card.hidden=false; card.style.visibility='hidden'; card.style.left='0'; card.style.top='0';
+    var r=a.getBoundingClientRect(), w=card.offsetWidth, h=card.offsetHeight;
+    var left=Math.min(Math.max(8,r.left+r.width/2-w/2), window.innerWidth-w-8);
+    var top=r.top-h-10; if(top<8){top=r.bottom+10;}
+    card.style.left=(left+window.pageXOffset)+'px';
+    card.style.top=(top+window.pageYOffset)+'px';
+    card.style.visibility='visible';
+  }
+  function hide(){card.hidden=true;}
+  Array.prototype.forEach.call(document.querySelectorAll('a.ref'),function(a){
+    a.addEventListener('mouseenter',function(){clearTimeout(t);t=setTimeout(function(){place(a);},110);});
+    a.addEventListener('mouseleave',function(){clearTimeout(t);t=setTimeout(hide,160);});
+    a.addEventListener('focus',function(){place(a);});
+    a.addEventListener('blur',hide);
+    a.addEventListener('click',hide);
+  });
+  card.addEventListener('mouseenter',function(){clearTimeout(t);});
+  card.addEventListener('mouseleave',hide);
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'){hide();}});
+  function land(){
+    var el=location.hash&&document.getElementById(location.hash.slice(1));
+    if(el){el.classList.remove('landed'); void el.offsetWidth; el.classList.add('landed');}
+  }
+  window.addEventListener('hashchange',land); land();
+})();
+</script>
+
+<script>
+(function(){
+  // Plain-text rendering of the document: statements, proofs, the TeX source of
+  // every display, and the checked terms verbatim.
+  function tex(node){
+    var a=node.querySelector('annotation[encoding="application/x-tex"]');
+    return a? a.textContent.trim() : node.textContent.trim();
+  }
+  function build(){
+    var main=document.querySelector('main');
+    var out=[];
+    function emit(s){ out.push(s); }
+    function inline(el){
+      var parts=[];
+      el.childNodes.forEach(function(n){
+        if(n.nodeType===3){ parts.push(n.nodeValue); return; }
+        if(n.nodeType!==1) return;
+        if(n.classList && n.classList.contains('katex')){ parts.push('$'+tex(n)+'$'); return; }
+        parts.push(inline(n));
+      });
+      return parts.join('');
+    }
+    function clean(s){ return s.replace(/\s+/g,' ').trim(); }
+    function walk(el){
+      el.childNodes.forEach(function(n){
+        if(n.nodeType!==1) return;
+        var t=n.tagName.toLowerCase(), c=n.classList;
+        if(c.contains('katex-display')){ emit('\n$$\n'+tex(n)+'\n$$\n'); return; }
+        if(t==='h1'){ emit(clean(inline(n))+'\n'); return; }
+        if(c.contains('byline')){ emit(clean(inline(n))+'\n'); return; }
+        if(t==='h2'){ emit('\n\n'+clean(inline(n)).replace(/^(\d+\.)\s*/,'$1 ')+'\n'); return; }
+        if(t==='h3'){ emit('\n'+clean(inline(n))+'\n'); return; }
+        if(t==='pre'){ emit('\n'+n.textContent.replace(/\s+$/,'')+'\n'); return; }
+        if(t==='summary'){ emit('\n['+clean(n.textContent)+']'); return; }
+        if(t==='figcaption'){ emit('\n('+clean(inline(n))+')\n'); return; }
+        if(t==='table'){
+          n.querySelectorAll('tr').forEach(function(r){
+            var td=r.querySelectorAll('td');
+            emit('\n  '+clean(inline(td[0]))+'  ::  '+clean(inline(td[1])));
+          });
+          emit('\n'); return;
+        }
+        if(t==='p'){ emit('\n'+clean(inline(n))+'\n'); return; }
+        walk(n);
+      });
+    }
+    walk(main);
+    return out.join('').replace(/\n{3,}/g,'\n\n').trim()+'\n';
+  }
+  window.__pageText=build;
+  var b=document.getElementById('copyall');
+  b.addEventListener('click',function(){
+    var txt=build(), done=function(){
+      b.textContent='copied'; b.dataset.done='1';
+      setTimeout(function(){ b.textContent='copy'; b.removeAttribute('data-done'); },1400);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(txt).then(done,function(){fallback(txt,done);});
+    } else { fallback(txt,done); }
+  });
+  function fallback(txt,done){
+    var ta=document.createElement('textarea');
+    ta.value=txt; ta.setAttribute('readonly','');
+    ta.style.position='fixed'; ta.style.left='-9999px';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){}
+    document.body.removeChild(ta);
+  }
+})();
+</script>
+</body>
+</html>
