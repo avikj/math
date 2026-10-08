@@ -589,9 +589,19 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   about twenty-two each. So under the relabellings and one shear within the alphabet the choices do not
   collapse to one: the uniqueness of the rank-7 writing (de Groote) is under the whole conjugation group over
   the field, and within the alphabet its trace is many classes, most emptied by the faces.
-- **The 2×2 writing type at a node, posed as sort is posed** (`n/writing22.hvm4`): the fixed cell's two
-  classes, u and v as their classes, w four coordinates the faces decide, the six other cells the orbit of one
-  under the order-6 element. Its points and sides are read by `%`; the run is recorded here when it ends.
+- **The 2×2 writing type at a node, posed as sort is posed** (`n/writing22.hvm4`). Seven cells: the cell fixed
+  by the whole group (one coordinate per orbit of positions, x = + by the scaling: two classes in the alphabet,
+  I⊗I⊗I and S⊗S⊗S, read), and the orbit of one cell under an element of order six. The elements of order six
+  fall into three conjugacy classes (an element and its inverse), derived, so the generator is read over three
+  representatives; the orbit cell's u is read as its class under the generator's centraliser with the scaling
+  (sixteen; the shear does not commute and is not among them); v and w are coordinates the faces cut. Nothing
+  else is posed. Result: 8 points, every one Strassen's shape (its sign and class variants), 23,860 sides erased,
+  17,121,108 interactions; the other two generator classes are empty. The same posing with the compatible
+  generator alone: 8 points, 11,370 sides, 6,277,252 interactions; with Strassen's u and v given and w free, one
+  point and 12 sides. What this is and is not: the writing is reached from the type with nothing of it posed,
+  through choices read as classes under the derived symmetry; it is not yet sort's standard of zero dead sides,
+  because the faces touch all twelve coordinates of the orbit cell at once (every entry of the residual is a sum
+  over the six orbit images), so v and w are cut jointly rather than decided one coordinate at a time.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
