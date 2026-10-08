@@ -23,4 +23,4 @@
 @writing = ! &g = @choose(@classReps(@six)); ! &u = @choose(@uClasses3(g)); ! &v = @cellQ; ! &w = @cellQ;
   #Cons{@fixedCell, @orbit6(g, #W{u, v, w})}
 @keep = λ&W. (λ{#T: W; #F: &{}})(@holds(W))
-@main = ! &pts = %(@keep(@writing)); #Pair{@lenN(pts), pts}
+@main = ! &pts = %(@keep(@writing)); #Pair{@lenN(pts), @headL(pts)}
