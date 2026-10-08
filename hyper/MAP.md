@@ -606,6 +606,20 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   w are cut jointly (81 × 81 per choice of fixed cell, generator class and u) rather than decided one at a time.
   On the two orbits of size two the sum is three times a pair of products, so the residual must vanish there
   and the pair must cancel: a relation between two products, again not a single coordinate.
+- **The quotient computed by the net itself** (`n/writing22q.hvm4`; `%%`, `??` in `net.c`). Everything derived
+  above (the group, its orbits, the centraliser classes, the conjugacy classes) was a priori work caused by one
+  posing error: positions named by constructors. With the index posed as the cube it is (9.11), six index
+  coordinates `??` for the three slots, a factor is a shape over its slot's pair, the generator cyclic∘swap is
+  the index relabelling it is (slots cycled, sides swapped) read off tr(ABC), the orbit shares one cell's choice
+  coordinates across the six, the fixed cell has one coordinate per orbit of positions, and the 64 equations are
+  faces of the shapes. The reading `%%` is the collapse with relabellings discarded (6.1): the choice
+  coordinates are projected lazily through the lifting (an index superposition is a node and stays in the
+  value), an erased side is dropped, and a value that is one shape with a kept value up to a bijection of index
+  coordinates with orientation is identified. A face whose side or coordinate is a superposition distributes
+  over it (FAD-SUP, FDL-SUP). Result, nothing derived: 87,260 splits, 87,213 sides erased, 48 leaves of which
+  24 are relabellings of the other 24, 5,799,244 interactions; every leaf a seven-cell writing. Against the
+  derived-group posing (23,860 sides, 17,121,108 interactions) the net's own quotient is the cheaper and it
+  needs no class, no orbit and no generator chosen. What remains posed: the alphabet {−1, 0, 1} and the length.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.

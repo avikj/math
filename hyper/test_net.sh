@@ -70,6 +70,10 @@ pin sym22 '#Pair{#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{
 # coordinates the faces cut, nothing else posed: 8 points, all Strassen's shape (its sign and class variants),
 # 23,860 sides erased, the other two generator classes empty
 pin writing22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}},#Cons{#W{#Q{#P{},#O{},#O{},#P{}},#Q{#P{},#O{},#O{},#P{}},#Q{#P{},#O{},#O{},#P{}}},#Cons{#W{#Q{#O{},#P{},#O{},#P{}},#Q{#O{},#O{},#N{},#P{}},#Q{#N{},#O{},#O{},#O{}}},#Cons{#W{#Q{#O{},#O{},#O{},#N{}},#Q{#P{},#O{},#P{},#O{}},#Q{#P{},#N{},#O{},#O{}}},#Cons{#W{#Q{#O{},#O{},#N{},#P{}},#Q{#N{},#O{},#O{},#O{}},#Q{#O{},#P{},#O{},#P{}}},#Cons{#W{#Q{#P{},#O{},#P{},#O{}},#Q{#P{},#N{},#O{},#O{}},#Q{#O{},#O{},#O{},#N{}}},#Cons{#W{#Q{#N{},#O{},#O{},#O{}},#Q{#O{},#P{},#O{},#P{}},#Q{#O{},#O{},#N{},#P{}}},#Cons{#W{#Q{#P{},#N{},#O{},#O{}},#Q{#O{},#O{},#O{},#N{}},#Q{#P{},#O{},#P{},#O{}}},#Nil{}}}}}}}}}' 17120271
+# the 2x2 writing type with the index as the cube (n/writing22q.hvm4): nothing derived outside the net; the reading %%
+# projects the choice coordinates lazily and discards relabellings (6.1); the ledger and the reading's counts are pinned
+r=$(./hyper net n/writing22q.hvm4 -s 2>&1); wi=$(echo "$r" | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); wv=$(echo "$r" | grep -oE '"COLQ-VAL":[0-9]+' | sed 's/.*://'); ws=$(echo "$r" | grep -oE '"COLQ-SAME":[0-9]+' | sed 's/.*://'); we=$(echo "$r" | grep -oE '"COLQ-ERA":[0-9]+' | sed 's/.*://')
+if [ "$wi" = 5799244 ] && [ "$wv" = 24 ] && [ "$ws" = 24 ] && [ "$we" = 87213 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL writing22q: itrs=$wi val=$wv same=$ws era=$we want 5799244/24/24/87213"; fi
 # index 5.11 / 5.13 / 5.24 on net.c (n/diamond.hvm4): one term, eight normaliser schedules (-R), one ledger; the
 # seeded order is confirmed to differ (schedule_flips > 0) and the interaction count does not move
 d0=$(./hyper net n/diamond.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); dok=1
