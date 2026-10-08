@@ -23,3 +23,8 @@ My recorded mathematical error, stated once so it is never repeated:
 Standing rules from the owner: never delete owner material (`research/sat_fibre`, `collab/*`, the Agda); no
 questions back; never say "done" or "nothing pending" when the criterion is not met; no primitives; no
 hand-posed identities; no time estimates; no experiments; commit and push on the designated branch only.
+
+Policy, agreed with the owner: every flaw identified is fixed in the same turn, by me, before the turn ends. No
+turn ends on a description of what is wrong, a "defect, open", or a result stated and left. If a fix needs a
+construction, the construction is built; if it needs a runtime change, the runtime is changed and the suite run.
+Idling after a finding is the failure mode.

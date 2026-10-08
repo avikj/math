@@ -564,7 +564,11 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   cell on reading. 5.21: reading the finished term off is a fold that adds no step. `net.c` charges it. So the
   earlier claim that the complex prices the seven form higher was that charge misread as mathematics; the
   classical count is the count of formation and it holds here.
-  Defect, open, in `net.c`: the ledger does not separate forming the normal form from unsharing it for reading.
+  The split is read from the profile, deterministically: interactions less DUP-NOD. A runtime change that
+  shared normal data by pointer at dup time (a reading, not a step) was built and reverted: whether a node is
+  already normal when its dup fires depends on the evaluation order, so the ledger moved with the schedule (the
+  diamond gave 906, 1,070 and 1,152 under three seeds), which 5.13 forbids, and values changed. The copy charge
+  is HVM4's duplication semantics; the deterministic measure of formation is the profile's difference.
   What is not here: the seven-cell shape as the type's own normal form rather than a term written down. That is
   the restriction of the coefficient cube by the 64 faces C = A·B, with every coordinate either fixed by a face or
   exchanged by a symmetry (one orbit at r = 7, empty below), and it is the open construction.
