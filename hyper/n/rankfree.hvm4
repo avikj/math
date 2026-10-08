@@ -6,4 +6,5 @@
 @sizes = #Cons{@four, #Cons{@four, #Cons{@four, #Nil}}}
 @seven = #S{#S{#S{#S{#S{#S{#S{#Z0}}}}}}}
 // the length left free: the fibre at r = 1 … 6 is empty under the quotient read (5.27 case b), at 7 inhabited
-@main = @map(λ&r. @lenN(%(@infer(@phi, @sizes, r))), #Cons{#S{#S{#S{#S{#S{#Z0}}}}}, #Cons{#S{#S{#S{#S{#S{#S{#Z0}}}}}}, #Nil}})
+@count = λ&r. ! &F = %(@infer(@phi, @sizes, r)); @lenN(F)
+@main = @map(@count, #Cons{#S{#S{#S{#S{#S{#Z0}}}}}, #Cons{#S{#S{#S{#S{#S{#S{#Z0}}}}}}, #Nil}})
