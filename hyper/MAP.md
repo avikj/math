@@ -546,6 +546,15 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
     Two generic corrections were needed to get there, both statements about quotients, neither about matrices: a
     fixed term has one coordinate per orbit of the generator on positions, and representatives are canonical under
     the generator's centraliser, the symmetries that act on the invariant cube, not under the whole stabiliser.
+    **The forced execution** (`@inferForced`, the form now pinned). The cube-and-cut above was the regression sort
+    had: a free line erased afterwards. In the forced form the only coordinates read are the choices the symmetry
+    leaves (the fixed terms' cells and the first generator's `u`, up to the stabiliser); every cell an entry of the
+    residual determines is taken from the environment and its coordinate is never read, which is the restriction
+    without any agent; a nonzero requirement on a product fixes the supports of its cells; a contradiction kills
+    the side. Entries are walked in exclusion order to a fixed point. The 2×2 product: length 7, Strassen's shape,
+    56,087 sides touched against 680,548 for the cut (the interaction count, 291,100,574, is higher: the
+    propagator pays list operations per side; the sides are the structural measure). The polynomial product:
+    length 3, Karatsuba, 5,744 sides.
     **No length posed** (`@inferFree`, `n/rankfree.hvm4`, `n/karatsubag.hvm4`): the length is a coordinate, the
     line over lengths in order (9.11), each its splits, and the first point the collapse yields is the writing of
     least length, every shorter length having been cut empty on the way: 5.27 both ways in one run. The 2×2
