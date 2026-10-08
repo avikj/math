@@ -30,9 +30,12 @@
 @cellAt = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&i. λ&j. λ&j2. λ&k. λ&k2. λ&i2. λ{#W: λ&u. λ&v. λ&w.
   @mulS(@mulS(@at(ia, ja, i, j, u), @at(jb, kb, j2, k, v)), @at(kc, ic, k2, i2, w))}
 @sumAt = λ&cells. λ&f. (λ{#Nil: #O; #Cons: λ&c. λ&rest. @addS(f(c), @sumAt(rest, f))})(cells)
-@holds = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&cells.
-  @all(λ&i. @all(λ&j. @all(λ&j2. @all(λ&k. @all(λ&k2. @all(λ&i2.
-    @eqS(@sumAt(cells, @cellAt(ia, ja, jb, kb, kc, ic, i, j, j2, k, k2, i2)), @target(i, j, j2, k, k2, i2)), @bits), @bits), @bits), @bits), @bits), @bits)
+// the 64 entries as data, and the equations walked by a definition that re-binds its variables at each step
+@concatMap = λ&f. λ{#Nil: #Nil; #Cons: λ&h. λ&t. @lcat(f(h), @concatMap(f, t))}
+@entries = @concatMap(λ&i. @concatMap(λ&j. @concatMap(λ&j2. @concatMap(λ&k. @concatMap(λ&k2. @map(λ&i2. #E{i, j, j2, k, k2, i2}, @bits), @bits), @bits), @bits), @bits), @bits)
+@holds = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&cells. @holdsGo(ia, ja, jb, kb, kc, ic, cells, @entries)
+@holdsGo = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&cells. λ{#Nil: #T; #Cons: λ{#E: λ&i. λ&j. λ&j2. λ&k. λ&k2. λ&i2. λ&rest.
+  (λ{#T: @holdsGo(ia, ja, jb, kb, kc, ic, cells, rest); #F: #F})(@eqS(@sumAt(cells, @cellAt(ia, ja, jb, kb, kc, ic, i, j, j2, k, k2, i2)), @target(i, j, j2, k, k2, i2)))}}
 @writing = ! &ia = ??; ! &ja = ??; ! &jb = ??; ! &kb = ??; ! &kc = ??; ! &ic = ??;
   ! &x = @cellS; ! &y = @cellS;
   ! &a = @cellS; ! &b = @cellS; ! &c = @cellS; ! &d = @cellS;

@@ -189,7 +189,7 @@ typedef struct __attribute__((aligned(256))) {
 static WnfBank WNF_BANK = {0};
 static u64 ITRS = 0;
 
-static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL","FAD-SIDE","FDL-LAB","COLQ-SPLIT","COLQ-VAL","COLQ-SAME","COLQ-ERA","COLQ-HALF","FRI-NUM" };
+static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL","FAD-SIDE","FDL-LAB","COLQ-SPLIT","COLQ-VAL","COLQ-SAME","COLQ-ERA","FRI-NUM","FAD-SUP","FDL-SUP" };
 #define SAT_NRULES ((int)(sizeof(SAT_NAMES) / sizeof(SAT_NAMES[0])))
 static u64 SAT_COUNTS[128] = {0};
 static u64 SCHED_FLIPS = 0;
@@ -679,6 +679,7 @@ fn Term term_new_fdl(u8 side, Term lab, Term x) {
   return term_new(0, FDL, side, loc);
 }
 
+fn u8 is_index_label(u32 lab);
 fn Term term_new_colq(Term x) {
   u64 loc = heap_alloc(1);
   heap_set(loc, x);
@@ -5107,44 +5108,42 @@ fn void norm_small(u64 root) {
   }
   free(stack); hset_free(&seen);
 }
-// the reading: the leaves of the choice coordinates, each a value with its index coordinates, relabellings discarded
+// the reading: the leaves of the choice coordinates, each a value with its index coordinates, relabellings discarded.
+// Lazy, as % is: the collapsed normal form lifts the first choice superposition to the top (an index superposition is
+// a node and stays), a side that is erased is dropped, a value is kept unless it is one shape with a value already
+// kept up to a bijection of its index coordinates with orientation (6.1).
 #define COLQ_MAX 65536
-static u64 COLQ_LEAVES[COLQ_MAX]; static u32 COLQ_N = 0; static u64 COLQ_SPLITS = 0, COLQ_HALVES = 0;
-fn void colq_enum(u64 root, u32 depth) {
-  Term t = norm_read(root);
-  if (term_tag(t) == ERA) { if (ITRS_ENABLED) sat_tick("COLQ-ERA"); return; }
-  u32 c = find_choice(root, 0);
-  if (c == 0) {
-    for (u32 i = 0; i < COLQ_N; i++) {
-      if (eqq_same(COLQ_LEAVES[i], root)) { if (ITRS_ENABLED) sat_tick("COLQ-SAME"); return; }
+static u64 COLQ_LEAVES[COLQ_MAX]; static u32 COLQ_N = 0; static u64 COLQ_SPLITS = 0;
+fn Term cnf_at(Term term, u32 depth);
+fn void colq_leaf(Term v) {
+  u64 r = heap_alloc(1); heap_set(r, v);
+  for (u32 i = 0; i < COLQ_N; i++) {
+    if (eqq_same(COLQ_LEAVES[i], r)) { if (ITRS_ENABLED) sat_tick("COLQ-SAME"); return; }
+  }
+  if (ITRS_ENABLED) sat_tick("COLQ-VAL");
+  if (COLQ_N < COLQ_MAX) COLQ_LEAVES[COLQ_N++] = r;
+}
+fn void colq_go(Term t, u32 depth) {
+  for (;;) {
+    Term c = cnf_at(t, 0);
+    u8 tag = term_tag(c);
+    if (tag == ERA) { if (ITRS_ENABLED) sat_tick("COLQ-ERA"); return; }
+    if (tag == INC) { t = heap_read(term_val(c)); continue; }
+    if (tag == SUP && !is_index_label(term_ext(c))) {
+      if (ITRS_ENABLED) { sat_tick("COLQ-SPLIT"); ITRS++; }
+      COLQ_SPLITS++;
+      if (getenv("COLQ_PROGRESS") && (COLQ_SPLITS % 10000) == 0) fprintf(stderr, "colq: %llu splits, %u leaves\n", (unsigned long long)COLQ_SPLITS, COLQ_N);
+      colq_go(heap_read(term_val(c) + 0), depth + 1);
+      t = heap_read(term_val(c) + 1);
+      continue;
     }
-    if (ITRS_ENABLED) sat_tick("COLQ-VAL");
-    if (COLQ_N < COLQ_MAX) COLQ_LEAVES[COLQ_N++] = root;
+    colq_leaf(c);
     return;
   }
-  if (ITRS_ENABLED) { sat_tick("COLQ-SPLIT"); ITRS++; }
-  u64 rs[2];
-  for (u8 side = 0; side < 2; side++) {
-    Term f = term_new_fad(term_new_num(side), term_new_num(c), t);
-    rs[side] = heap_alloc(1); heap_set(rs[side], f);
-    norm_small(rs[side]);
-  }
-  COLQ_SPLITS++;
-  if (getenv("COLQ_PROGRESS") && (COLQ_SPLITS % 10000) == 0) fprintf(stderr, "colq: %llu splits, %u leaves, %llu halved\n", (unsigned long long)COLQ_SPLITS, COLQ_N, (unsigned long long)COLQ_HALVES);
-  /* 9.5: a choice whose two sides are one shape up to relabelling is exchanged by a symmetry of what is held; one side is kept */
-  if (term_tag(norm_read(rs[0])) != ERA && term_tag(norm_read(rs[1])) != ERA && eqq_same(rs[0], rs[1])) {
-    if (ITRS_ENABLED) sat_tick("COLQ-HALF");
-    COLQ_HALVES++;
-    colq_enum(rs[0], depth + 1);
-    return;
-  }
-  colq_enum(rs[0], depth + 1);
-  colq_enum(rs[1], depth + 1);
 }
 fn Term colq_top(Term colq) {
-  u64 arg = term_val(colq);
   COLQ_N = 0;
-  colq_enum(arg, 0);
+  colq_go(heap_read(term_val(colq)), 0);
   Term none[1];
   Term list = term_new_ctr(table_find("Nil", 3), 0, none);
   for (u32 i = COLQ_N; i > 0; i--) { Term args[2] = { norm_read(COLQ_LEAVES[i - 1]), list }; list = term_new_ctr(table_find("Cons", 4), 2, args); }
@@ -5557,6 +5556,14 @@ __attribute__((hot)) fn Term wnf(Term term) {
             u32 nm = term_ext(whnf);
             if (nm == table_find("T", 1)) side = 1; else if (nm == table_find("F", 1)) side = 0;
           }
+          if (side < 0 && term_tag(whnf) == SUP) {                             /* a superposed side: the face distributes over it */
+            ITRS_INC("FAD-SUP");
+            u64 sl = term_val(whnf);
+            Term f0 = term_new_fad(heap_read(sl + 0), heap_read(floc + 1), heap_read(floc + 2));
+            Term f1 = term_new_fad(heap_read(sl + 1), heap_read(floc + 1), heap_read(floc + 2));
+            next = term_new_sup(term_ext(whnf), f0, f1);
+            goto enter;
+          }
           if (side < 0) { heap_set(floc, whnf); whnf = frame; continue; }     /* stuck: not a side */
           ITRS_INC("FAD-SIDE");
           next = term_new_fdl((u8)side, heap_read(floc + 1), heap_read(floc + 2));
@@ -5564,6 +5571,14 @@ __attribute__((hot)) fn Term wnf(Term term) {
         }
         case FDL: {
           u64 floc = term_val(frame);
+          if (term_tag(whnf) == SUP) {                                         /* a superposed coordinate: the face distributes over it */
+            ITRS_INC("FDL-SUP");
+            u64 sl = term_val(whnf);
+            Term f0 = term_new_fdl((u8)term_ext(frame), heap_read(sl + 0), heap_read(floc + 1));
+            Term f1 = term_new_fdl((u8)term_ext(frame), heap_read(sl + 1), heap_read(floc + 1));
+            next = term_new_sup(term_ext(whnf), f0, f1);
+            goto enter;
+          }
           if (term_tag(whnf) != NUM) { heap_set(floc, whnf); whnf = frame; continue; }
           ITRS_INC("FDL-LAB");
           next = term_new_fac((u8)term_ext(frame), (u32)term_val(whnf), heap_read(floc + 1));
@@ -6256,8 +6271,9 @@ fn void runtime_eval_main(u32 main_id, const RuntimeEvalCfg *cfg) {
   if (run.do_collapse) {
     eval_collapse(main_ref, run.collapse_limit, run.stats, run.silent);
   } else {
-    Term result = eval_normalize(main_ref);
-    if (term_tag(result) == COLQ) { WNF_S_POS = 0; result = colq_top(result); }
+    Term top = wnf(main_ref);
+    Term result = (term_tag(top) == COLQ) ? colq_top(top) : eval_normalize(top);
+    if (term_tag(top) == COLQ) result = eval_normalize(result);
     if (!run.silent && !run.step_by_step) {
       print_term(result);
       printf("\n");
@@ -6360,7 +6376,10 @@ fn Term cnf_at(Term term, u32 depth) {
       return term;
     }
 
-    case SUP:
+    case SUP: {
+      if (is_index_label(term_ext(term))) goto lift_node;   /* an index coordinate stays in the value; choices beneath it rise through it */
+      return term;
+    }
     case INC: {
       return term;
     }
@@ -6425,6 +6444,7 @@ fn Term cnf_at(Term term, u32 depth) {
     case FAD:
     case FDL:
     case C01 ... C16: {
+    lift_node:;
       u32 ari = term_arity(term);
       u64 loc = term_val(term);
 
@@ -6442,7 +6462,7 @@ fn Term cnf_at(Term term, u32 depth) {
           return term_new_era();
         }
 
-        if (sup_idx < 0 && term_tag(children[i]) == SUP) {
+        if (sup_idx < 0 && term_tag(children[i]) == SUP && !is_index_label(term_ext(children[i]))) {
           sup_idx = (int)i;
         }
       }
