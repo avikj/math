@@ -526,21 +526,25 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   `Sorted`, and the comparison as a face. What is not in the book: any word for merging, any free line cut by a
   predicate, any primitive. The leftover run at a merge is appended by pointer, so the interaction count sits
   below 9.7's a + b per merge, which assumed one constructor emitted per element.
-- **Complete inference on the 2×2 product** (5.27, 6.1, 9.4, 9.5; `n/aut22.hvm4`, `n/rank7.hvm4`,
-  `n/blockmul.hvm4`, `classes_rank7.txt`). State the product and nothing else: `φ(A,B,C) = tr(ABC)`, eight monomials
-  over the entries. Its symmetries are a fibre: the relabellings of the three entry sets (the rearrangement cube of
-  9.2, three times) and of the three slots, cut by "φ's monomials go to φ's monomials"; `%` reads 48 elements, the
-  slot 3-cycle among them. That group poses the writing cube: a writing and its image under the cycle are one
-  writing (6.1), so the writings the cycle fixes are read, terms in orbits of size 1 or 3, seven being 1 + 3 + 3, one
-  fixed term `u = v = w` which conjugation makes `I`, and two generators with their rotations. The first generator's
-  `u` is taken up to the stabiliser of the fixed term (9.5), nineteen classes. The cut reads each coefficient's
-  support before its sign (9.4) and the equation mod 2 before the equation (an implied restriction, 8.5), entry by
-  entry in the order that opens fewest coordinates. Points exist in exactly three classes: the single-entry `u`
-  (48 points), `−−00` (24), `−0+0` (24); the sixteen others are empty. The first point read is
-  `(E11, E12−E22, E21+E22)` and `(−E22, E11−E21, E11+E12)` with their rotations and `I⊗I⊗I`: Strassen's seven, with
-  nothing of them in the program. Ledger: the group 510,936 interactions; the single-entry class 2,072,692; all
-  nineteen classes about 22 million in all. The flat cube of the same declaration (3⁸⁴, `old/`) could not open its
-  first entry in 5,000,000; the quotient the object hands over is the whole difference.
+- **Complete inference, as programs with no problem in them** (5.27, 6.1, 9.4, 9.5; `n/infer.hvm4`). An object is a
+  trilinear form given by its monomials; the question is its writings as sums of r rank-one terms. `@aut` reads the
+  object's symmetries as a fibre over the relabelling cube (the rearrangement cube of 9.2, once per slot, and the
+  slot permutations). `@quotient` poses the writing cube up to that group: a generator of maximal order is read out
+  of the group, orbits are the generator iterated, fixed terms are cut by invariance, and representatives are
+  canonical under the group and under the stabiliser (6.1, 9.5), the splits `r = f + m·k` a line. `@order` sorts
+  the entries by how many coordinates each would open, computed from the coordinates' names (9.4), supports before
+  signs, and `@decl` reads the equation mod 2 before the equation. `@infer(φ, sizes, r)` is the whole of it.
+  - **Karatsuba** (`n/karatsubag.hvm4`): φ of the degree-one polynomial product and r = 3, nothing else. The group
+    has four elements, the generator read is the reversal (order 2), the split is 1 + 2, and `%` reads ten points,
+    the first `(a₀+a₁)(b₀+b₁)·x` with the orbit `{a₁b₁(x²−x), a₀b₀(1−x)}`: Karatsuba's identity. 17,468,537
+    interactions.
+  - **The 2×2 product** (`n/rank7g.hvm4`): φ = tr(ABC) and r = 7, nothing else. The group has 48 elements; the
+    generator read has order 6 (the swap-conjugation composed with the slot cycle), so the split is 1 + 6: one
+    fixed term and one generator with five rotations, 24 free coefficients. See the ledger line below for its state.
+  The instance-shaped version of the same inference (`old/n/rank7_instance.hvm4`, the 3-cycle and the fixed term
+  `I⊗I⊗I` written by hand, nineteen `u₁` classes enumerated outside the net, `classes_rank7.txt`) read 48 points in
+  the single-entry class in 2,072,692 interactions and found points in exactly the three classes of Strassen's
+  generators; it is kept as the record of what the generic programs replace.
 - **The N×N product by the numeral** (9.11, 1.2, 5.24; `n/blockmul.hvm4`). Along the top bit of the index the
   product of `2^k × 2^k` matrices is a 2×2 product of blocks, forced as 9.8 is, and at each node the object is the
   2×2 product again; the writing read from the fibre is applied there as data (its `w` transposed, since the trace
