@@ -5,4 +5,4 @@
        #Cons{#M{#S{#S{#Z0}},#Z0,#S{#Z0}}, #Cons{#M{#S{#S{#Z0}},#S{#Z0},#S{#S{#S{#Z0}}}}, #Cons{#M{#S{#S{#S{#Z0}}},#S{#S{#Z0}},#S{#Z0}}, #Cons{#M{#S{#S{#S{#Z0}}},#S{#S{#S{#Z0}}},#S{#S{#S{#Z0}}}}, #Nil}}}}}}}}
 @four = #S{#S{#S{#S{#Z0}}}}
 @sizes = #Cons{@four, #Cons{@four, #Cons{@four, #Nil}}}
-@main = ! &W = @headL(%(@inferFree(@phi, @sizes))); #Pair{@lenN(W), W}
+@main = ! &W = @headL(%(@inferForced(@phi, @sizes))); #Pair{@lenN(W), W}

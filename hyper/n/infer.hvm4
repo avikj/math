@@ -53,12 +53,13 @@
 @maxGo = λ{#Nil: λ&sizes. λ&best. λ&bo. best; #Cons: λ&g. λ&rest. λ&sizes. λ&best. λ&bo. ! &o = @ordG(g, sizes); (λ{1: @maxGo(rest, sizes, g, o); 0: @maxGo(rest, sizes, best, bo)})(@ltN(bo, o))}
 // ---- terms, cells, and the action on terms ----
 // a cell: its name (0 when fixed), its support, its sign; the sign is read only where the support is 1 (9.4)
-@fresh = ! &n = ?; #Sg{n, &(?){0, 1}, &(?){#P, #N}}
-@fixed = λ&g. #Sg{0, 1, g}
-@zero = #Sg{0, 0, #P}
-@val = λ{#Sg: λ&n. λ&s. λ&g. (λ{0: #O; 1: g})(s)}
-@sup = λ{#Sg: λ&n. λ&s. λ&g. s}
-@name = λ{#Sg: λ&n. λ&s. λ&g. n}
+@fresh = ! &n = ?; ! &m = ?; #Sg{n, m, &(n){0, 1}, &(m){#P, #N}}
+@fixed = λ&g. #Sg{0, 0, 1, g}
+@zero = #Sg{0, 0, 0, #P}
+@val = λ{#Sg: λ&n. λ&m. λ&s. λ&g. (λ{0: #O; 1: g})(s)}
+@sup = λ{#Sg: λ&n. λ&m. λ&s. λ&g. s}
+@name = λ{#Sg: λ&n. λ&m. λ&s. λ&g. n}
+@sname = λ{#Sg: λ&n. λ&m. λ&s. λ&g. m}
 // one unfolding per cell: a shared lambda body would make every cell one coordinate
 @pat = λ{#Z0: #Nil; #S: λ&n. #Cons{@fresh, @pat(n)}}
 @mulS = λ{#O: λ&y. #O; #P: λ&y. y; #N: λ{#O: #O; #P: #N; #N: #P}}
@@ -159,3 +160,62 @@
   (λ{#Q: λ&F. λ&Gs. λ&W. ! &es = @order(W, @allMon(sizes));
      (λ{1: @map(@valsT, W); 0: &{}})(@and(@sideConds(G, g, sizes, #Q{F, Gs, W}), @decl(phi, W, es)))})(@choose(@lineOf(G, g, k, sizes, @lengths(#Z0))))
 @headL = λ{#Cons: λ&h. λ&t. h}
+
+// ---- the forced execution: entries as restrictions, not a cut ----
+// What is held: an environment of cells already determined (name, value).  An entry of the residual whose sum has one
+// unknown cell with known co-factors determines that cell: a face on its support coordinate and on its sign
+// coordinate (9.3: a restriction, the coordinate decided by the act).  An entry requiring a nonzero value from a
+// product of unknown cells fixes their supports to 1.  Entries are walked in exclusion order to a fixed point.  Cells
+// nothing determines stay as they are: that is the genuine choice, read by %.  A contradiction kills the side.
+@lookup = λ&n. λ{#Nil: #U; #Cons: λ{#Pair: λ&k. λ&v. λ&rest. (λ{1: #K{v}; 0: @lookup(n, rest)})((n == @name(k)))}}
+// a cell's value under the environment: fixed cells by their value, determined cells from the environment, else unknown
+@cellV = λ&env. λ{#Sg: λ&n. λ&m. λ&s. λ&g. (λ{0: #K{(λ{0: #O; 1: g})(s)}; λ&q. @lookup(n, env)})(n)}
+// a term's factors at an entry: list of (cell, value-or-unknown)
+@factors = λ&env. λ{#T: λ&u. λ&v. λ&w. λ{#M: λ&i. λ&j. λ&k. ! &a = @nth(u, i); ! &b = @nth(v, j); ! &c = @nth(w, k);
+  #Cons{#Pair{a, @cellV(env, a)}, #Cons{#Pair{b, @cellV(env, b)}, #Cons{#Pair{c, @cellV(env, c)}, #Nil}}}}}
+// a term's status: #Zero (a known factor is 0), #Val{s} (all known, product s), #Unk{coef, unknown cells}
+@status = λ&fs. @statusGo(fs, #P, #Nil)
+@statusGo = λ{#Nil: λ&coef. λ&unk. (λ{#Nil: #Val{coef}; λ&l. #Unk{coef, unk}})(unk);
+  #Cons: λ{#Pair: λ&cell. λ&cv. λ&rest. λ&coef. λ&unk. (λ{#K: λ&v. (λ{#O: #Zero; #Nz: @statusGo(rest, coef, #Cons{cell, unk}); λ&q. @statusGo(rest, @mulS(coef, v), unk)})(v); #U: @statusGo(rest, coef, #Cons{cell, unk})})(cv)}}
+@isZero = λ{#Zero: 1; λ&q. 0}
+// the entry: known sum, and the unknown terms
+@entryState = λ&env. λ&W. λ&m. @esGo(@map(λ&T. @status(@factors(env, T, m)), W), #Z{#Z0, #Z0}, #Nil)
+@esGo = λ{#Nil: λ&known. λ&unks. #ES{known, unks}; #Cons: λ&st. λ&rest. λ&known. λ&unks.
+  (λ{#Zero: @esGo(rest, known, unks); #Val: λ&v. @esGo(rest, @addZ(known, @int(v)), unks); #Unk: λ&c. λ&cells. @esGo(rest, known, #Cons{#Unk{c, cells}, unks})})(st)}
+// q = target − known as a sign (or #Big when |q| > 1, a contradiction)
+@asSign = λ{#Z: λ&a. λ&b. @signOf(@subT(a, b), @subT(b, a))}
+@signOf = λ{#Z0: λ{#Z0: #O; #S: λ{#Z0: #N; #S: λ&r. #Big}}; #S: λ{#Z0: λ{#Z0: #P; #S: λ&r. #Big}; #S: λ&r. λ&q. #Big}}
+@subT = λ{#Z0: λ&b. #Z0; #S: λ&a. λ{#Z0: #S{a}; #S: λ&b. @subT(a, b)}}
+// one entry's restriction: returns #Dead, or #Env{env'} (possibly unchanged)
+@restrict = λ&phi. λ&env. λ&W. λ&m. (λ{#ES: λ&known. λ&unks. ! &q = @asSign(@addZ(@int(@targetS(phi, m)), @negZ(known)));
+  (λ{#Big: #Dead; λ&qs. (λ{#Nil: (λ{#O: #Env{env}; λ&z. #Dead})(qs);
+     #Cons: λ&one. λ&more. (λ{#Nil: @restrictOne(env, qs, one); λ&l. #Env{env}})(more)})(unks)})(q)})(@entryState(env, W, m))
+@negZ = λ{#Z: λ&a. λ&b. #Z{b, a}}
+@restrictOne = λ&env. λ&q. λ{#Unk: λ&c. λ{#Cons: λ&x. λ{#Nil: (λ{#O: (λ{#K: λ&v. #Dead; #U: #Env{#Cons{#Pair{x, #O}, env}}})(@lookup(@name(x), env)); λ&nz. #Env{#Cons{#Pair{x, @mulS(q, c)}, env}}})(q);
+  λ&others. (λ{#O: #Env{env}; λ&nz. #Env{@markNz(env, #Cons{x, others})}})(q)}}}
+@markNz = λ&env. λ{#Nil: env; #Cons: λ&x. λ&rest. (λ{#K: λ&v. @markNz(env, rest); #U: @markNz(#Cons{#Pair{x, #Nz}, env}, rest)})(@lookup(@name(x), env))}
+// to a fixed point over the entries in exclusion order
+@propagate = λ&phi. λ&W. λ&es. λ&env. @propGo(phi, W, es, env, es, 0)
+@propGo = λ&phi. λ&W. λ&all. λ&env. λ{#Nil: λ&changed. (λ{1: @propagate(phi, W, all, env); 0: #Env{env}})(changed);
+  #Cons: λ&m. λ&rest. λ&changed. (λ{#Dead: #Dead; #Env: λ&env2. @propGo(phi, W, all, env2, rest, @or2(changed, @grew(env, env2)))})(@restrict(phi, env, W, m))}
+@or2 = λ{1: λ&b. 1; 0: λ&b. b}
+@grew = λ&a. λ&b. (λ{1: 0; 0: 1})(@eqN(@lenN(a), @lenN(b)))
+// the determined cells taken as faces on the writing: support, then sign where nonzero
+@applyFaces = λ{#Nil: λ&W. W; #Cons: λ{#Pair: λ&cell. λ&v. λ&rest. λ&W. @applyFaces(rest, @faceCell(cell, v, W))}}
+@faceCell = λ&cell. λ&v. λ&W. (λ{0: W; λ&n. (λ{#O: |(0)(n) W; #P: |(1)(n) (|(0)(@sname(cell)) W); #N: |(1)(n) (|(1)(@sname(cell)) W)})(v)})(@name(cell))
+// the forced choices (9.5): the cells of the given terms are read, which branches the continuation per side
+@force = λ&env. λ{#Nil: env; #Cons: λ&cell. λ&rest. ! &v = @val(cell); @force(#Cons{#Pair{cell, v}, env}, rest)}
+@cellsOf = λ{#T: λ&u. λ&v. λ&w. @lcat(u, @lcat(v, w))}
+@uOf = λ{#T: λ&u. λ&v. λ&w. u}
+// the forced execution: the fixed terms' cells and the first generator's u are the choices; everything an entry
+// determines is taken as a face; what remains is read
+@valE = λ&env. λ&cell. (λ{#K: λ&v. (λ{#Nz: @val(cell); λ&w. v})(v); #U: @val(cell)})(@lookup(@name(cell), env))
+@valsTE = λ&env. λ{#T: λ&u. λ&v. λ&w. #T{@map(@valE(env), u), @map(@valE(env), v), @map(@valE(env), w)}}
+@entryE = λ&env. λ{#T: λ&u. λ&v. λ&w. λ{#M: λ&i. λ&j. λ&k. @mulS(@mulS(@valE(env, @nth(u, i)), @valE(env, @nth(v, j))), @valE(env, @nth(w, k)))}}
+@sumWE = λ&env. λ&W. λ&m. (λ{#Nil: #Z{#Z0, #Z0}; #Cons: λ&T. λ&rest. @addZ(@int(@entryE(env, T, m)), @sumWE(env, rest, m))})(W)
+@declE = λ&env. λ&phi. λ&W. λ&entries. @all(λ&m. @eqZ(@sumWE(env, W, m), @int(@targetS(phi, m))), entries)
+@inferForced = λ&phi. λ&sizes. ! &G = @aut(phi, sizes); ! &g = @maxOrder(G, sizes); ! &k = @ordG(g, sizes);
+  (λ{#Q: λ&F. λ&Gs. λ&W. ! &es = @order(W, @allMon(sizes));
+     ! &env0 = @force(@force(#Nil, @concatMap(@cellsOf, F)), (λ{#Nil: #Nil; #Cons: λ&T1. λ&r. @uOf(T1)})(Gs));
+     (λ{#Dead: &{}; #Env: λ&env. ! &Wv = @map(@valsTE(env), W);
+        (λ{1: Wv; 0: &{}})(@and(@sideConds(G, g, sizes, #Q{F, Gs, W}), @declE(env, phi, W, es)))})(@propagate(phi, W, es, env0))})(@choose(@lineOf(G, g, k, sizes, @lengths(#Z0))))
