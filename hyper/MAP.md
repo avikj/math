@@ -526,6 +526,14 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   `Sorted`, and the comparison as a face. What is not in the book: any word for merging, any free line cut by a
   predicate, any primitive. The leftover run at a merge is appended by pointer, so the interaction count sits
   below 9.7's a + b per merge, which assumed one constructor emitted per element.
+- **An identity derived, not posed** (1.1, 8.1, 6.1; `n/karatsuba.hvm4`). The rank-r writings of a bilinear map are
+  the fibre of evaluation over its tensor (1.1). Posed on the coefficient cube for the degree-one polynomial product
+  at r = 3, with nothing but the ring's definitions and the relabellings of the products discarded by an order
+  (6.1), `%` reads one point: `c₁ = (a₀+a₁)(b₀+b₁) − a₀b₀ − a₁b₁`, Karatsuba's identity. Ledger 507,562
+  interactions, 9,592 sides erased of a cube of about 8·10⁷ vertices: the lazy cut visits one side in ten thousand.
+  The same declaration at the 2×2 matrix product and r = 7 has a cube of 3⁸⁴ vertices; its symmetries (the 7!
+  relabellings and the group of the product tensor) are what 6.1 says to discard before reading it, and that
+  quotient is the next thing to build, not a flat cut.
 - **Retired** (`hyper/old/`): the first construction layer, which implemented cubical type theory as an interpreter
   of quoted syntax with the interval as data, and the sort readings over primitive numbers or a free line cut
   afterwards. Kept as the record; nothing there is in the suite. `cell.c` and `verify.c` remain as before.
