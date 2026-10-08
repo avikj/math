@@ -1,6 +1,6 @@
 {-# OPTIONS --cubical --safe #-}
 --
--- एकवाक्यता — construal as a single utterance.  In Pūrva-Mīmāṃsā, ekavākyatā
+-- oneUtterance — construal as a single utterance.  In Pūrva-Mīmāṃsā, ekavākyatā
 -- is the principle that statements scattered across a text must be construed
 -- as ONE injunction where they can be: different routes through the corpus
 -- must come to one reading.  Jaimini, *Mmsstra*, with abara's *Bhya*
@@ -26,7 +26,7 @@
 -- The observer then has a deterministic law AND a well-defined time (the step
 -- count), inside a rule that may branch without limit and need not be
 -- confluent anywhere.  No confluence hypothesis appears in the proof, and
--- there is none to appear: `एकवाक्यता` below assumes only the congruence.
+-- there is none to appear: `oneUtterance` below assumes only the congruence.
 --
 -- And the converse bite, as everywhere in this corpus: ONE pair of branches
 -- the observer can tell apart destroys it — not the schedulers anyone tried,
@@ -56,52 +56,52 @@ module _ {X : Type ℓ} (R : X → X → Type ℓ') where
   -- branch and a run of n.  Cubical Agda does not accept the doubly-indexed
   -- match this proof would otherwise need, and the recursive form is the
   -- better statement anyway -- the branch taken is right there in the data.
-  मार्गः : ℕ → X → X → Type (ℓ-max ℓ ℓ')
-  मार्गः zero x y = Lift {j = ℓ'} (x ≡ y)
-  मार्गः (suc n) x z = Σ[ y ∈ X ] (R x y × मार्गः n y z)
+  route-n : ℕ → X → X → Type (ℓ-max ℓ ℓ')
+  route-n zero x y = Lift {j = ℓ'} (x ≡ y)
+  route-n (suc n) x z = Σ[ y ∈ X ] (R x y × route-n n y z)
 
   -- the observer cannot see WHICH branch was taken: equal readings in, equal
   -- readings out, for every choice of successor on either side.
-  शाखान्धम् : {V : Type ℓ''} → (X → V) → Type _
-  शाखान्धम् {V = V} o =
+  branchBlind : {V : Type ℓ''} → (X → V) → Type _
+  branchBlind {V = V} o =
     {x y x' y' : X} → o x ≡ o y → R x x' → R y y' → o x' ≡ o y'
 
   -- ------------------------------------------------------------- the law
   -- Any two runs of the same length, from starts the observer cannot tell
   -- apart, end in states the observer cannot tell apart.  The branching is
   -- unrestricted and no confluence is assumed.
-  एकवाक्यता : {V : Type ℓ''} (o : X → V) → शाखान्धम् o
+  oneUtterance : {V : Type ℓ''} (o : X → V) → branchBlind o
     → (n : ℕ) {x y u v : X}
-    → मार्गः n x u → मार्गः n y v → o x ≡ o y → o u ≡ o v
-  एकवाक्यता o blind zero (lift p) (lift q) e =
+    → route-n n x u → route-n n y v → o x ≡ o y → o u ≡ o v
+  oneUtterance o blind zero (lift p) (lift q) e =
     cong o (sym p) ∙ e ∙ cong o q
-  एकवाक्यता o blind (suc n) (_ , r , p) (_ , s , q) e =
-    एकवाक्यता o blind n p q (blind e r s)
+  oneUtterance o blind (suc n) (_ , r , p) (_ , s , q) e =
+    oneUtterance o blind n p q (blind e r s)
 
   -- ------------------------------------------------- and what breaks it
   -- A predictor at the level of readings: one function of the reading that
   -- gives the reading after any step, whichever branch.
-  भाव्यम् : {V : Type ℓ''} → (X → V) → Type _
-  भाव्यम् {V = V} o = Σ[ g ∈ (V → V) ] ({x x' : X} → R x x' → o x' ≡ g (o x))
+  hasLaw : {V : Type ℓ''} → (X → V) → Type _
+  hasLaw {V = V} o = Σ[ g ∈ (V → V) ] ({x x' : X} → R x x' → o x' ≡ g (o x))
 
   -- a predictor is branch-blind, so the two notions cannot come apart
-  भाव्य-शाखान्धम् : {V : Type ℓ''} (o : X → V) → भाव्यम् o → शाखान्धम् o
-  भाव्य-शाखान्धम् o (g , p) e r s = p r ∙ cong g e ∙ sym (p s)
+  lawGivesBranchBlind : {V : Type ℓ''} (o : X → V) → hasLaw o → branchBlind o
+  lawGivesBranchBlind o (g , p) e r s = p r ∙ cong g e ∙ sym (p s)
 
   -- ONE branching the observer can see refutes every reading-level law.
   -- Two successors of ONE state with different readings is the sharpest
   -- case: the start readings are equal by refl, so no g can send one value
   -- to two.
-  अभाव्यम् : {V : Type ℓ''} (o : X → V) {x x' x'' : X}
+  noLaw : {V : Type ℓ''} (o : X → V) {x x' x'' : X}
     → R x x' → R x x'' → ¬ (o x' ≡ o x'')
-    → ¬ (भाव्यम् o)
-  अभाव्यम् o r s d h = d (भाव्य-शाखान्धम् o h refl r s)
+    → ¬ (hasLaw o)
+  noLaw o r s d h = d (lawGivesBranchBlind o h refl r s)
 
--- --------------------------------------------------------------- मर्यादा
+-- --------------------------------------------------------------- limits
 --
 -- WHAT IS CLAIMED, and it is the whole of it: the global hypothesis is
 -- replaceable by a local one about the observer, and the replacement is not
--- an approximation.  `एकवाक्यता` has no confluence premise in its statement
+-- an approximation.  `oneUtterance` has no confluence premise in its statement
 -- or its proof.
 
   -- ------------------------------------------------------------ the tower
@@ -120,9 +120,9 @@ module _ {X : Type ℓ} (R : X → X → Type ℓ') where
   --
   -- The converse needs o to hit every value of V, which is a hypothesis
   -- about the observer and not about the rule.
-  स्तरः : {V : Type ℓ''} {W : Type ℓ''} (o : X → V) (h : V → W)
-    → (b : भाव्यम् o)
+  layer : {V : Type ℓ''} {W : Type ℓ''} (o : X → V) (h : V → W)
+    → (b : hasLaw o)
     → ({a c : V} → h a ≡ h c → h (fst b a) ≡ h (fst b c))
-    → शाखान्धम् (λ x → h (o x))
-  स्तरः o h (g , p) hcong e r s =
+    → branchBlind (λ x → h (o x))
+  layer o h (g , p) hcong e r s =
     cong h (p r) ∙ hcong e ∙ cong h (sym (p s))

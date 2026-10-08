@@ -1,6 +1,6 @@
 {-# OPTIONS --cubical --safe #-}
 
--- बहुमार्ग-भेद — the many paths are distinct: Wolfram's MULTIWAY
+-- multiwayBranchesDistinct — the many paths are distinct: Wolfram's MULTIWAY
 -- systems keep branching histories and refuse to collapse them.  Put to
 -- the kernel: two computational branches with different winding are
 -- PROVABLY unequal — the multiway does not collapse, as a theorem.

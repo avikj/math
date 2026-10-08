@@ -30,7 +30,7 @@
 -- inductive type; distinct evolutions between the same endpoints exist
 -- and are SEPARATED BY A COMPUTED INVARIANT, not assumed distinct.
 --
--- W1 IS A PATH IN THE UNIVERSE (§३).  The same system is presented in
+-- W1 IS A PATH IN THE UNIVERSE (§3).  The same system is presented in
 -- two coordinate systems: unary tapes (Tape) and numbers (ℕ).  The
 -- coordinate change is an equivalence; univalence turns it into a path
 -- ua; and the two STRUCTURED systems — carrier together with both
@@ -48,7 +48,7 @@
 -- univalence again).  No coordinate system is privileged, and the
 -- choice of one costs nothing that transport does not refund.
 --
--- W2 IS PROPOSITIONAL TRUNCATION (§४).  The observer's single thread
+-- W2 IS PROPOSITIONAL TRUNCATION (§4).  The observer's single thread
 -- is ∥ Evolve a b ∥₁.  Two named evolutions 0 → 3 — one-then-two, and
 -- two-then-one — are proved distinct by the invariant that reads the
 -- first updating event (`prathama-bheda`), and proved merged by the
@@ -58,7 +58,7 @@
 -- (`shakha-yugalam`).  The pair of runs IS the fibre content of the
 -- merge — branchial structure as a computed object.
 --
--- W3 IS A QUANTIFICATION OVER ALL CONSUMERS (§५).  Any observer that
+-- W3 IS A QUANTIFICATION OVER ALL CONSUMERS (§5).  Any observer that
 -- reads only the merged thread — any g : ∥ Evolve 0 3 ∥₁ → X, for
 -- every X at every universe level — returns equal answers on the two
 -- branches (`baddha-drashta`).  And the constraint is not repairable
@@ -71,7 +71,7 @@
 -- merged thread) does not determine the run, so route information
 -- must be carried, since it provably cannot be reconstructed.
 --
--- W4 IS DIVERGENCE WITH EXHIBITED RECONVERGENCE (§२).  From every
+-- W4 IS DIVERGENCE WITH EXHIBITED RECONVERGENCE (§2).  From every
 -- state, the two updating events diverge — one cell apart after one
 -- event — and both orders complete to the same state three cells on,
 -- with the endpoint agreement DEFINITIONAL (`vinimaya`, both
@@ -106,35 +106,35 @@ open import Cubical.Relation.Nullary using (¬_)
 open import Cubical.HITs.PropositionalTruncation using (∥_∥₁ ; ∣_∣₁ ; squash₁)
 
 ------------------------------------------------------------------------
--- १ · the multiway system: two updating events on unary strings.
+-- 1 · the multiway system: two updating events on unary strings.
 ------------------------------------------------------------------------
 
 -- the ℕ coordinate system: a state is the string's length; the two
 -- updating events append one cell and two cells.
-घटना₁ घटना₂ : ℕ → ℕ
-घटना₁ n = suc n
-घटना₂ n = suc (suc n)
+event₁ event₂ : ℕ → ℕ
+event₁ n = suc n
+event₂ n = suc (suc n)
 
 -- a multiway evolution from a to b: at each state, either halt or
 -- apply one of the two updating events and continue.
 data Evolve : ℕ → ℕ → Type where
   halt : (n : ℕ) → Evolve n n
-  ev₁  : {m n : ℕ} → Evolve (घटना₁ m) n → Evolve m n
-  ev₂  : {m n : ℕ} → Evolve (घटना₂ m) n → Evolve m n
+  ev₁  : {m n : ℕ} → Evolve (event₁ m) n → Evolve m n
+  ev₂  : {m n : ℕ} → Evolve (event₂ m) n → Evolve m n
 
 ------------------------------------------------------------------------
--- २ · W4: divergence with exhibited reconvergence, endpoints refl.
+-- 2 · W4: divergence with exhibited reconvergence, endpoints refl.
 ------------------------------------------------------------------------
 
 -- from every state m the two orders of the two events diverge after
 -- one event and reconverge at m+3; both completions are exhibited and
 -- the endpoint agreement is definitional: the two runs inhabit the
 -- SAME type, with no transport.
-विनिमय : (m : ℕ) → Evolve m (suc (suc (suc m))) × Evolve m (suc (suc (suc m)))
-विनिमय m = ev₁ (ev₂ (halt _)) , ev₂ (ev₁ (halt _))
+bothOrdersConverge : (m : ℕ) → Evolve m (suc (suc (suc m))) × Evolve m (suc (suc (suc m)))
+bothOrdersConverge m = ev₁ (ev₂ (halt _)) , ev₂ (ev₁ (halt _))
 
 ------------------------------------------------------------------------
--- ३ · W1: coordinatization is a path, and there is one limiting object.
+-- 3 · W1: coordinatization is a path, and there is one limiting object.
 ------------------------------------------------------------------------
 
 -- the second coordinate system: the unary tape itself.
@@ -143,131 +143,131 @@ data Tape : Type where
   cell  : Tape → Tape
 
 -- the two updating events, in tape coordinates.
-लेखन₁ लेखन₂ : Tape → Tape
-लेखन₁ t = cell t
-लेखन₂ t = cell (cell t)
+write₁ write₂ : Tape → Tape
+write₁ t = cell t
+write₂ t = cell (cell t)
 
 -- the coordinate change, an equivalence by two inductions.
-कोश : Tape → ℕ
-कोश blank    = zero
-कोश (cell t) = suc (कोश t)
+toNumber : Tape → ℕ
+toNumber blank    = zero
+toNumber (cell t) = suc (toNumber t)
 
-अकोश : ℕ → Tape
-अकोश zero    = blank
-अकोश (suc n) = cell (अकोश n)
+toTape : ℕ → Tape
+toTape zero    = blank
+toTape (suc n) = cell (toTape n)
 
-कोश-अकोश : (n : ℕ) → कोश (अकोश n) ≡ n
-कोश-अकोश zero    = refl
-कोश-अकोश (suc n) = cong suc (कोश-अकोश n)
+toNumber-toTape : (n : ℕ) → toNumber (toTape n) ≡ n
+toNumber-toTape zero    = refl
+toNumber-toTape (suc n) = cong suc (toNumber-toTape n)
 
-अकोश-कोश : (t : Tape) → अकोश (कोश t) ≡ t
-अकोश-कोश blank    = refl
-अकोश-कोश (cell t) = cong cell (अकोश-कोश t)
+toTape-toNumber : (t : Tape) → toTape (toNumber t) ≡ t
+toTape-toNumber blank    = refl
+toTape-toNumber (cell t) = cong cell (toTape-toNumber t)
 
-निर्देश : Tape ≃ ℕ
-निर्देश = isoToEquiv (iso कोश अकोश कोश-अकोश अकोश-कोश)
+coordinates : Tape ≃ ℕ
+coordinates = isoToEquiv (iso toNumber toTape toNumber-toTape toTape-toNumber)
 
 -- a system is a carrier with its two updating events.
 System : Type₁
 System = Σ[ S ∈ Type ] (S → S) × (S → S)
 
-तन्त्र-लिपि तन्त्र-सङ्ख्या : System
-तन्त्र-लिपि    = Tape , लेखन₁ , लेखन₂
-तन्त्र-सङ्ख्या = ℕ    , घटना₁ , घटना₂
+tapeSystem numberSystem : System
+tapeSystem    = Tape , write₁ , write₂
+numberSystem = ℕ    , event₁ , event₂
 
 -- W1 AS A TERM: the two coordinate systems are ONE PATH in the type
 -- of systems.  The carrier path is ua; the event components ride over
 -- it by ua→, and the commuting datum in each is refl, because the
 -- coding function sends cell to suc definitionally.
-निर्देशान्तर : तन्त्र-लिपि ≡ तन्त्र-सङ्ख्या
-निर्देशान्तर i =
-  ua निर्देश i ,
-  ua→ {e = निर्देश} {B = λ i → ua निर्देश i} {f₀ = लेखन₁} {f₁ = घटना₁}
-      (λ t → ua-gluePath निर्देश refl) i ,
-  ua→ {e = निर्देश} {B = λ i → ua निर्देश i} {f₀ = लेखन₂} {f₁ = घटना₂}
-      (λ t → ua-gluePath निर्देश refl) i
+coordinateChange : tapeSystem ≡ numberSystem
+coordinateChange i =
+  ua coordinates i ,
+  ua→ {e = coordinates} {B = λ i → ua coordinates i} {f₀ = write₁} {f₁ = event₁}
+      (λ t → ua-gluePath coordinates refl) i ,
+  ua→ {e = coordinates} {B = λ i → ua coordinates i} {f₀ = write₂} {f₁ = event₂}
+      (λ t → ua-gluePath coordinates refl) i
 
 -- consequently every property of systems crosses the coordinate
 -- change by transport, with no re-proof.
-निर्देश-अनादर : (P : System → Type) → P तन्त्र-लिपि → P तन्त्र-सङ्ख्या
-निर्देश-अनादर P = subst P निर्देशान्तर
+propertiesCross : (P : System → Type) → P tapeSystem → P numberSystem
+propertiesCross P = subst P coordinateChange
 
 -- instantiated: the interchange of the two events, proved in tape
 -- coordinates by refl, is delivered in number coordinates by subst.
-विनिमय-लिपि : (t : Tape) → लेखन₁ (लेखन₂ t) ≡ लेखन₂ (लेखन₁ t)
-विनिमय-लिपि t = refl
+writesCommute : (t : Tape) → write₁ (write₂ t) ≡ write₂ (write₁ t)
+writesCommute t = refl
 
-विनिमय-सङ्ख्या : (n : ℕ) → घटना₁ (घटना₂ n) ≡ घटना₂ (घटना₁ n)
-विनिमय-सङ्ख्या =
-  निर्देश-अनादर (λ (S , e₁ , e₂) → (s : S) → e₁ (e₂ s) ≡ e₂ (e₁ s))
-                विनिमय-लिपि
+eventsCommute : (n : ℕ) → event₁ (event₂ n) ≡ event₂ (event₁ n)
+eventsCommute =
+  propertiesCross (λ (S , e₁ , e₂) → (s : S) → e₁ (e₂ s) ≡ e₂ (e₁ s))
+                writesCommute
 
 -- the emulation that "moves" between the coordinate systems is the
 -- path's own transport, and it computes to the coding function.
-सङ्क्रमण-गणना : (t : Tape) → transport (ua निर्देश) t ≡ कोश t
-सङ्क्रमण-गणना = uaβ निर्देश
+transportComputes : (t : Tape) → transport (ua coordinates) t ≡ toNumber t
+transportComputes = uaβ coordinates
 
 -- and "the same limiting object": the space of coordinatizations of
 -- the fixed carrier, each carrying its identification, is a point.
-एक-वस्तु : isContr (Σ[ S ∈ Type ] (S ≃ ℕ))
-एक-वस्तु = EquivContr ℕ
+oneLimitingObject : isContr (Σ[ S ∈ Type ] (S ≃ ℕ))
+oneLimitingObject = EquivContr ℕ
 
 ------------------------------------------------------------------------
--- ४ · W2: the merge is a truncation, and the branchial pair is its
+-- 4 · W2: the merge is a truncation, and the branchial pair is its
 --        fibre content.
 ------------------------------------------------------------------------
 
 -- two evolutions 0 → 3: one-then-two, and two-then-one.
-मार्ग₁ मार्ग₂ : Evolve zero (suc (suc (suc zero)))
-मार्ग₁ = fst (विनिमय zero)
-मार्ग₂ = snd (विनिमय zero)
+route₁ route₂ : Evolve zero (suc (suc (suc zero)))
+route₁ = fst (bothOrdersConverge zero)
+route₂ = snd (bothOrdersConverge zero)
 
 -- the invariant that reads the first updating event.
-प्रथम : {a b : ℕ} → Evolve a b → Bool
-प्रथम (halt _) = true
-प्रथम (ev₁ _)  = true
-प्रथम (ev₂ _)  = false
+firstEvent : {a b : ℕ} → Evolve a b → Bool
+firstEvent (halt _) = true
+firstEvent (ev₁ _)  = true
+firstEvent (ev₂ _)  = false
 
 -- the branches are DISTINCT, by the invariant --
-प्रथम-भेद : ¬ मार्ग₁ ≡ मार्ग₂
-प्रथम-भेद p = true≢false (cong प्रथम p)
+routesDistinct : ¬ route₁ ≡ route₂
+routesDistinct p = true≢false (cong firstEvent p)
 
 -- and MERGED in the observer's single thread.
-एकसूत्र : {a b : ℕ} → Evolve a b → ∥ Evolve a b ∥₁
-एकसूत्र = ∣_∣₁
+merge : {a b : ℕ} → Evolve a b → ∥ Evolve a b ∥₁
+merge = ∣_∣₁
 
-मिलितम् : एकसूत्र मार्ग₁ ≡ एकसूत्र मार्ग₂
-मिलितम् = squash₁ _ _
+merged : merge route₁ ≡ merge route₂
+merged = squash₁ _ _
 
 -- the branchial pair: two distinct residents of the fibre of the
 -- merge over the one merged point.
-शाखा-तन्तुः : Type
-शाखा-तन्तुः = Σ[ r ∈ Evolve zero (suc (suc (suc zero))) ]
-              एकसूत्र r ≡ एकसूत्र मार्ग₁
+branchialFibre : Type
+branchialFibre = Σ[ r ∈ Evolve zero (suc (suc (suc zero))) ]
+              merge r ≡ merge route₁
 
-शाखा-युगलम् : शाखा-तन्तुः × शाखा-तन्तुः
-शाखा-युगलम् = (मार्ग₁ , refl) , (मार्ग₂ , squash₁ _ _)
+branchialPair : branchialFibre × branchialFibre
+branchialPair = (route₁ , refl) , (route₂ , squash₁ _ _)
 
-शाखे-भिन्ने : ¬ fst शाखा-युगलम् ≡ snd शाखा-युगलम्
-शाखे-भिन्ने p = प्रथम-भेद (cong fst p)
+branchialPairDistinct : ¬ fst branchialPair ≡ snd branchialPair
+branchialPairDistinct p = routesDistinct (cong fst p)
 
 ------------------------------------------------------------------------
--- ५ · W3: the bounded observer separates nothing co-terminal, and the
+-- 5 · W3: the bounded observer separates nothing co-terminal, and the
 --        merge has no section.
 ------------------------------------------------------------------------
 
 -- any consumer of the single thread — every X, every universe level —
 -- answers equally on the two branches.
-बद्ध-द्रष्टा : {ℓ : Level} {X : Type ℓ}
+boundedObserver : {ℓ : Level} {X : Type ℓ}
              (g : ∥ Evolve zero (suc (suc (suc zero))) ∥₁ → X)
-           → g (एकसूत्र मार्ग₁) ≡ g (एकसूत्र मार्ग₂)
-बद्ध-द्रष्टा g = cong g मिलितम्
+           → g (merge route₁) ≡ g (merge route₂)
+boundedObserver g = cong g merged
 
 -- and no consumer reads a run back out: a section of the merge would
 -- collapse the branch distinction.
-पुनरुद्धार-नास्ति :
+noSection :
   ¬ (Σ[ sel ∈ (∥ Evolve zero (suc (suc (suc zero))) ∥₁
                → Evolve zero (suc (suc (suc zero)))) ]
-       ((r : Evolve zero (suc (suc (suc zero)))) → sel (एकसूत्र r) ≡ r))
-पुनरुद्धार-नास्ति (sel , h) =
-  प्रथम-भेद (sym (h मार्ग₁) ∙ cong sel मिलितम् ∙ h मार्ग₂)
+       ((r : Evolve zero (suc (suc (suc zero)))) → sel (merge r) ≡ r))
+noSection (sel , h) =
+  routesDistinct (sym (h route₁) ∙ cong sel merged ∙ h route₂)
