@@ -99,6 +99,9 @@ typedef struct {
 #define FA1 48  // Fa1(x): the face at L = 1
 #define FAD 49  // Fad(side, lab, x): a face whose side and coordinate are terms — reduces to Fa0/Fa1 once both are values
 #define FDL 50  // Fdl(lab, x) with ext = side: the side known, the coordinate still a term
+#define COLQ 51 // Colq(x): the collapse with relabellings discarded (6.1): only choice coordinates (?) are read, index coordinates (??) stay in the value
+#define EQQ 52  // Eqq(a, b): equality of normal forms up to a bijection of index coordinates with orientation (a relabelling is the same shape)
+#define FRI 53  // Fri: a fresh index coordinate — kept by %%, renamed freely by ~=
 #define COL 45  // Col(x): the collapse of x as a value — the list of its leaves, multiplicity conserved (hyper: §6, the fibre is data)
 
 // LAM Ext Flags
@@ -186,7 +189,7 @@ typedef struct __attribute__((aligned(256))) {
 static WnfBank WNF_BANK = {0};
 static u64 ITRS = 0;
 
-static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL","FAD-SIDE","FDL-LAB" };
+static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL","FAD-SIDE","FDL-LAB","COLQ-SPLIT","COLQ-VAL","COLQ-SAME","COLQ-ERA","FRI-NUM" };
 #define SAT_NRULES ((int)(sizeof(SAT_NAMES) / sizeof(SAT_NAMES[0])))
 static u64 SAT_COUNTS[128] = {0};
 static u64 SCHED_FLIPS = 0;
@@ -233,6 +236,7 @@ static int ITRS_ENABLED = 1;
     } \
   } while (0)
 static u32 FRESH = 1;
+static u32 FRESH_INDEX = 1 << 18;                /* index coordinates (??): below the choice coordinates, above every static label */
 static u32 FRESH_COORD = 1 << 20;                /* run-time coordinates start above every static label */
 static int BOOK_LABELS = 0;
 static u64 SCHED_SEED = 0;                       /* -R n: the normaliser visits a node's fields in a seeded random order (a second schedule; 5.11/5.13: the ledger must not move) */                      /* -L: HVM4 verbatim, a binder's label static per binder (the SAT receipts were recorded so) */
@@ -359,6 +363,9 @@ static const u8 TERM_ARITY[TAG_MASK + 1] = {
   [BJ0] = 0,
   [BJ1] = 0,
   [COL] = 1,
+  [COLQ] = 1,
+  [EQQ] = 2,
+  [FRI] = 0,
   [FRS] = 0,
   [FA0] = 1,
   [FA1] = 1,
@@ -672,6 +679,17 @@ fn Term term_new_fdl(u8 side, Term lab, Term x) {
   return term_new(0, FDL, side, loc);
 }
 
+fn Term term_new_colq(Term x) {
+  u64 loc = heap_alloc(1);
+  heap_set(loc, x);
+  return term_new(0, COLQ, 0, loc);
+}
+fn Term term_new_eqq(Term a, Term b) {
+  u64 loc = heap_alloc(2);
+  heap_set(loc + 0, a);
+  heap_set(loc + 1, b);
+  return term_new(0, EQQ, 0, loc);
+}
 fn Term term_new_col(Term x) {
   u64 loc = heap_alloc(1);
   heap_set(loc, x);
@@ -1793,6 +1811,16 @@ fn void print_term_go(FILE *f, Term term, u32 depth, PrintState *st) {
       u64 loc = term_val(term);
       fputs("%", f);
       print_term_at(f, HEAP[loc], depth, st);
+      break;
+    }
+    case COLQ: {
+      u64 loc = term_val(term);
+      fputs("%%", f);
+      print_term_at(f, HEAP[loc], depth, st);
+      break;
+    }
+    case FRI: {
+      fputs("??", f);
       break;
     }
     case FAD: {
@@ -3640,6 +3668,9 @@ fn Term parse_term_atom(PState *s, u32 depth) {
   parse_skip(s);
   if (parse_match(s, "λ")) {
     return parse_term_lam(s, depth);
+  } else if (parse_match(s, "%%")) {
+    Term x = parse_term_atom(s, depth);
+    return term_new_colq(x);
   } else if (parse_match(s, "%")) {
     return parse_term_col(s, depth);
   } else if (parse_peek(s) == '|' && parse_peek_at(s, 1) == '(') {
@@ -3659,6 +3690,8 @@ fn Term parse_term_atom(PState *s, u32 depth) {
     u32 lab  = parse_name_num(s);
     Term x   = parse_term_atom(s, depth);
     return term_new_fac(side, lab, x);
+  } else if (parse_match(s, "??")) {
+    return term_new(0, FRI, 0, 0);
   } else if (parse_match(s, "?")) {
     return term_new(0, FRS, 0, 0);
   } else if (parse_match(s, "!")) {
@@ -4872,6 +4905,8 @@ __attribute__((cold, noinline)) static Term wnf_rebuild(Term cur, Term *stack, u
       case DSU:
       case DDU:
       case COL:
+      case COLQ:
+      case EQQ:
       case FA0:
       case FA1:
       case FAD:
@@ -4934,6 +4969,175 @@ fn Term wnf_col_val(Term v) {
   Term nil = term_new_ctr(table_find("Nil", 3), 0, none);
   Term args[2] = { v, nil };
   return term_new_ctr(table_find("Cons", 4), 2, args);
+}
+
+// ---- COLQ and EQQ (hyper): the reading with relabellings discarded ----
+fn Term wnf_at(u64 loc);
+// a recursive full normalisation (used inside a rule; the caller has set WNF_S_POS)
+fn void norm_rec(u64 loc, u32 depth) {
+  if (depth > 100000) { fprintf(stderr, "hyper: normalisation too deep\n"); exit(2); }
+  Term cur = term_sub_set(heap_read(loc), 0);
+  if (term_tag(cur) == DP0 || term_tag(cur) == DP1) { norm_rec(term_val(cur), depth + 1); return; }   /* a projection: the shared location, once */
+  Term t = wnf_at(loc);
+  u8 tag = term_tag(t);
+  if (tag == DP0 || tag == DP1) { norm_rec(term_val(t), depth + 1); return; }
+  u32 ari = term_arity(t);
+  u64 tloc = term_val(t);
+  for (u32 i = 0; i < ari; i++) norm_rec(tloc + i, depth + 1);
+}
+// the value at a location after normalisation, projections followed
+fn Term norm_read(u64 loc) {
+  Term t = heap_read(loc);
+  while (term_tag(t) == DP0 || term_tag(t) == DP1) { t = heap_read(term_val(t)); t = term_sub_set(t, 0); }
+  return term_sub_set(t, 0);
+}
+fn u8 is_choice_label(u32 lab) { return lab >= (1u << 20) && lab < 0x800000u; }
+fn u8 is_index_label(u32 lab) { return lab >= (1u << 18) && lab < (1u << 20); }
+// the first choice coordinate occurring in a normal form, or 0
+fn u32 find_choice(u64 loc, u32 depth) {
+  Term t = norm_read(loc);
+  u8 tag = term_tag(t);
+  if (tag == SUP && is_choice_label(term_ext(t))) return term_ext(t);
+  u32 ari = term_arity(t);
+  u64 tloc = term_val(t);
+  for (u32 i = 0; i < ari; i++) { u32 c = find_choice(tloc + i, depth + 1); if (c) return c; }
+  return 0;
+}
+// (the reading itself is colq_top, below the equality)
+// a ~= b: both normalised and compared as shapes on the index cube: there is a bijection of their index labels,
+// each with an orientation, under which the two agree at every vertex (a relabelled shape is the same shape, 6.1)
+#define EQQ_MAX 12
+static u32 EQQ_LA[EQQ_MAX], EQQ_LB[EQQ_MAX]; static u32 EQQ_NA, EQQ_NB;
+fn void eqq_labels(u64 loc, u32 *labs, u32 *n, u32 depth) {
+  Term t = norm_read(loc);
+  u8 tag = term_tag(t);
+  if (tag == SUP && is_index_label(term_ext(t))) {
+    u32 l = term_ext(t); u8 seen = 0;
+    for (u32 i = 0; i < *n; i++) if (labs[i] == l) seen = 1;
+    if (!seen && *n < EQQ_MAX) { labs[*n] = l; (*n)++; }
+  }
+  u32 ari = term_arity(t); u64 tloc = term_val(t);
+  for (u32 i = 0; i < ari; i++) eqq_labels(tloc + i, labs, n, depth + 1);
+}
+// the side chosen for an index label of a (by position in EQQ_LA) and of b (by position in EQQ_LB)
+static u8 EQQ_SA[EQQ_MAX], EQQ_SB[EQQ_MAX];
+fn int eqq_pos(u32 *labs, u32 n, u32 l) { for (u32 i = 0; i < n; i++) if (labs[i] == l) return (int)i; return -1; }
+fn Term eqq_proj(u64 loc, u32 *labs, u32 n, u8 *sides) {
+  Term t = norm_read(loc);
+  while (term_tag(t) == SUP && is_index_label(term_ext(t))) {
+    int k = eqq_pos(labs, n, term_ext(t));
+    if (k < 0) break;
+    t = norm_read(term_val(t) + sides[k]);
+  }
+  return t;
+}
+fn u8 eqq_eqv(u64 la, u64 lb, u32 depth) {
+  Term a = eqq_proj(la, EQQ_LA, EQQ_NA, EQQ_SA), b = eqq_proj(lb, EQQ_LB, EQQ_NB, EQQ_SB);
+  u8 ta = term_tag(a), tb = term_tag(b);
+  if (ta != tb) return 0;
+  if (ta == NUM) return term_val(a) == term_val(b);
+  if (ta == ERA) return 1;
+  if (ta == SUP) { if (term_ext(a) != term_ext(b)) return 0; return eqq_eqv(term_val(a), term_val(b), depth + 1) && eqq_eqv(term_val(a) + 1, term_val(b) + 1, depth + 1); }
+  if (ta >= C00 && ta <= C16) {
+    if (term_ext(a) != term_ext(b)) return 0;
+    u32 ari = term_arity(a);
+    for (u32 i = 0; i < ari; i++) if (!eqq_eqv(term_val(a) + i, term_val(b) + i, depth + 1)) return 0;
+    return 1;
+  }
+  return 0;
+}
+// all vertices agree under the current bijection (EQQ_LB permuted) and orientation
+static u32 EQQ_PERM[EQQ_MAX]; static u8 EQQ_OR[EQQ_MAX];
+fn u8 eqq_all_vertices(u64 ra, u64 rb) {
+  u32 n = EQQ_NA;
+  for (u32 v = 0; v < (1u << n); v++) {
+    for (u32 k = 0; k < n; k++) { EQQ_SA[k] = (v >> k) & 1; }
+    for (u32 k = 0; k < n; k++) { EQQ_SB[EQQ_PERM[k]] = EQQ_SA[k] ^ EQQ_OR[k]; }
+    if (!eqq_eqv(ra, rb, 0)) return 0;
+  }
+  return 1;
+}
+fn u8 eqq_search(u64 ra, u64 rb, u32 k, u32 used) {
+  u32 n = EQQ_NA;
+  if (k == n) return eqq_all_vertices(ra, rb);
+  for (u32 j = 0; j < n; j++) {
+    if (used & (1u << j)) continue;
+    EQQ_PERM[k] = j;
+    for (u8 o = 0; o < 2; o++) { EQQ_OR[k] = o; if (eqq_search(ra, rb, k + 1, used | (1u << j))) return 1; }
+  }
+  return 0;
+}
+fn u8 eqq_same(u64 ra, u64 rb) {
+  EQQ_NA = 0; EQQ_NB = 0;
+  eqq_labels(ra, EQQ_LA, &EQQ_NA, 0); eqq_labels(rb, EQQ_LB, &EQQ_NB, 0);
+  return (EQQ_NA == EQQ_NB) && eqq_search(ra, rb, 0, 0);
+}
+// a small visited set for re-normalising a face's result (the top-level set is a bitset over the whole heap)
+typedef struct { u64 *keys; u64 cap; u64 n; } Hset;
+fn void hset_init(Hset *h) { h->cap = 1u << 16; h->n = 0; h->keys = (u64 *)calloc(h->cap, sizeof(u64)); }
+fn void hset_free(Hset *h) { free(h->keys); }
+fn void hset_grow(Hset *h);
+fn u8 hset_add(Hset *h, u64 key) {
+  if (h->n * 2 >= h->cap) hset_grow(h);
+  u64 k = key + 1; u64 i = (k * 11400714819323198485ull) >> 40; u64 mask = h->cap - 1;
+  for (;;) { i &= mask; if (h->keys[i] == 0) { h->keys[i] = k; h->n++; return 1; } if (h->keys[i] == k) return 0; i++; }
+}
+fn void hset_grow(Hset *h) {
+  u64 *old = h->keys; u64 oc = h->cap; h->cap = oc * 2; h->n = 0; h->keys = (u64 *)calloc(h->cap, sizeof(u64));
+  for (u64 i = 0; i < oc; i++) if (old[i]) hset_add(h, old[i] - 1);
+  free(old);
+}
+fn void norm_small(u64 root) {
+  Hset seen; hset_init(&seen);
+  u64 *stack = (u64 *)malloc(sizeof(u64) * 1024); u64 cap = 1024, sp = 0;
+  stack[sp++] = root;
+  while (sp) {
+    u64 loc = stack[--sp];
+    for (;;) {
+      if (loc == 0 || !hset_add(&seen, loc)) break;
+      Term term = wnf_at(loc);
+      u64 tloc = term_val(term); u8 tag = term_tag(term);
+      if (tag == DP0 || tag == DP1) { loc = tloc; continue; }
+      u32 ari = term_arity(term);
+      if (ari == 0) break;
+      if (sp + ari >= cap) { cap *= 2; stack = (u64 *)realloc(stack, sizeof(u64) * cap); }
+      for (u32 i = ari; i > 1; i--) stack[sp++] = tloc + (i - 1);
+      loc = tloc;
+    }
+  }
+  free(stack); hset_free(&seen);
+}
+// the reading: the leaves of the choice coordinates, each a value with its index coordinates, relabellings discarded
+#define COLQ_MAX 65536
+static u64 COLQ_LEAVES[COLQ_MAX]; static u32 COLQ_N = 0;
+fn void colq_enum(u64 root, u32 depth) {
+  Term t = norm_read(root);
+  if (term_tag(t) == ERA) { if (ITRS_ENABLED) sat_tick("COLQ-ERA"); return; }
+  u32 c = find_choice(root, 0);
+  if (c == 0) {
+    for (u32 i = 0; i < COLQ_N; i++) {
+      if (eqq_same(COLQ_LEAVES[i], root)) { if (ITRS_ENABLED) sat_tick("COLQ-SAME"); return; }
+    }
+    if (ITRS_ENABLED) sat_tick("COLQ-VAL");
+    if (COLQ_N < COLQ_MAX) COLQ_LEAVES[COLQ_N++] = root;
+    return;
+  }
+  if (ITRS_ENABLED) { sat_tick("COLQ-SPLIT"); ITRS++; }
+  for (u8 side = 0; side < 2; side++) {
+    Term f = term_new_fad(term_new_num(side), term_new_num(c), t);
+    u64 r = heap_alloc(1); heap_set(r, f);
+    norm_small(r);
+    colq_enum(r, depth + 1);
+  }
+}
+fn Term colq_top(Term colq) {
+  u64 arg = term_val(colq);
+  COLQ_N = 0;
+  colq_enum(arg, 0);
+  Term none[1];
+  Term list = term_new_ctr(table_find("Nil", 3), 0, none);
+  for (u32 i = COLQ_N; i > 0; i--) { Term args[2] = { norm_read(COLQ_LEAVES[i - 1]), list }; list = term_new_ctr(table_find("Cons", 4), 2, args); }
+  return list;
 }
 
 __attribute__((hot)) fn Term wnf(Term term) {
@@ -5063,6 +5267,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
           case DSU:
           case DDU:
           case COL:
+          case COLQ:
+          case EQQ:
           case FA0:
           case FA1:
           case FAD:
@@ -5070,6 +5276,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
             next = wnf_alo_nod(alo_loc, ls_loc, len, book);
             goto enter;
           }
+          case FRI:
           case NAM:
           case NUM:
           case REF:
@@ -5118,6 +5325,16 @@ __attribute__((hot)) fn Term wnf(Term term) {
         goto enter;
       }
 
+      case FRI: {
+        ITRS_INC("FRI-NUM");
+        if (FRESH_INDEX >= FRESH_COORD) { fprintf(stderr, "hyper: index coordinates exhausted\n"); exit(2); }
+        whnf = term_new_num(FRESH_INDEX++);
+        goto apply;
+      }
+      case COLQ: {                                  /* %%x is the reading of the program: it stays, its argument is normalised under it, and the root reads it (colq_top) */
+        whnf = next;
+        goto apply;
+      }
       case FRS: {                                   /* ? → the next number: a coordinate no other unfolding has */
         ITRS_INC("FRS-NUM");
         whnf = term_new_num(FRESH_COORD++);
@@ -6029,6 +6246,7 @@ fn void runtime_eval_main(u32 main_id, const RuntimeEvalCfg *cfg) {
     eval_collapse(main_ref, run.collapse_limit, run.stats, run.silent);
   } else {
     Term result = eval_normalize(main_ref);
+    if (term_tag(result) == COLQ) { WNF_S_POS = 0; result = colq_top(result); }
     if (!run.silent && !run.step_by_step) {
       print_term(result);
       printf("\n");
