@@ -1,0 +1,20 @@
+#include "bits.hvm4"
+// The type of the matrix product, posed as the shape it is. An entry is a numeral: bits on coordinates, the
+// k-cube (@cube). A matrix is indexed by the cube: a leaf entry or four blocks along the top bit of the index.
+// The type is the fibre of the product over every input: the defining equations C_ik = Σ_j A_ij B_jk taken on
+// the cube of all A and B at once — not a run on one input but the function, as one superposed shape. + and ×
+// on bits are the identities of the numeral (place by place with carry; a bit selects a shifted copy). The net
+// normalises that shape; its normal form is the function's (5.18), reached in the geodesic count (5.14, 5.17).
+// Nothing is collapsed to vertices here: the normal form is kept as the shape, and its size is read off.
+@mulN = λ{#Nil: λ&y. #Nil; #Cons: λ{#F: λ&t. λ&y. #Cons{#F, @mulN(t, y)}; #T: λ&t. λ&y. @add(y, #Cons{#F, @mulN(t, y)})}}
+@addM = λ{#Leaf: λ&x. λ{#Leaf: λ&y. #Leaf{@add(x, y)}};
+  #Blk: λ&a. λ&b. λ&c. λ&d. λ{#Blk: λ&e. λ&f. λ&g. λ&h. #Blk{@addM(a, e), @addM(b, f), @addM(c, g), @addM(d, h)}}}
+@prod = λ{#Leaf: λ&x. λ{#Leaf: λ&y. #Leaf{@mulN(x, y)}};
+  #Blk: λ&a. λ&b. λ&c. λ&d. λ{#Blk: λ&e. λ&f. λ&g. λ&h.
+    #Blk{@addM(@prod(a, e), @prod(b, g)), @addM(@prod(a, f), @prod(b, h)),
+         @addM(@prod(c, e), @prod(d, g)), @addM(@prod(c, f), @prod(d, h))}}}
+// the cube of inputs: every entry the k-cube of numerals, one coordinate per bit
+@cubeM = λ&k. λ{#Z: #Leaf{@cube(k)}; #S: λ&d. #Blk{@cubeM(k, d), @cubeM(k, d), @cubeM(k, d), @cubeM(k, d)}}
+// the type: the product over the whole cube of 2^d × 2^d matrices of k-bit entries
+@type = λ&k. λ&d. @prod(@cubeM(k, d), @cubeM(k, d))
+@main = @type(#S{#Z}, #S{#Z})

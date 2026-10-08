@@ -530,6 +530,10 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   `Sorted`, and the comparison as a face. What is not in the book: any word for merging, any free line cut by a
   predicate, any primitive. The leftover run at a merge is appended by pointer, so the interaction count sits
   below 9.7's a + b per merge, which assumed one constructor emitted per element.
-- **Removed.** The matrix product and the writing-cube inference that stood here were executions of a
-  formula and a search over a class, not the object posed with its identities (9.15); every file of them,
-  their pins and `hyper/old/` were deleted. Nothing of the product is in the suite.
+- **The type of the matrix product** (`n/product.hvm4`). Not a run on an input: the defining equations
+  C_ik = Σ_j A_ij B_jk taken on the cube of all inputs at once, every entry the k-cube of bits, so the term is the
+  function itself as one superposed shape. + and × on bits are the numeral's identities. The net normalises the
+  shape and the normal form is kept as the shape, not collapsed to vertices: it is the function's normal form
+  (5.18), a decision structure over the bit coordinates, reached in the geodesic count. 2×2 with 1-bit entries:
+  3,515 interactions, 10,315 heap nodes. What stood here before, the product run as a formula on one input and
+  a writing-cube inference with coefficients posed, was deleted as execution and search, with `hyper/old/`.
