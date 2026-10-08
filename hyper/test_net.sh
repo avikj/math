@@ -60,6 +60,11 @@ pin blocks '{#P1{#P1{#B{}}},#P1{#P2{#B{}}}},#Sum{#P4{#P1{#B{}}},#P4{#P2{#B{}}}}}
 # exchanged by the substitutions x -> 1-x, 1/x, -x, which the faces verify on the point as identities of the object),
 # the orbit cell's u and v as their classes. One point, Karatsuba; 25 sides erased; the three images hold (T, T, T)
 pin writing '#Pair{#Cons{#W{#U{#P{},#P{}},#V{#P{},#P{}},#Wc{#O{},#P{},#O{}}},#Cons{#W{#U{#P{},#O{}},#V{#P{},#O{}},#Wc{#P{},#N{},#O{}}},#Cons{#W{#U{#O{},#P{}},#V{#O{},#P{}},#Wc{#O{},#N{},#P{}}},#Nil{}}}},#Pair{#Pair{#T{},#Cons{#W{#U{#P{},#O{}},#V{#P{},#O{}},#Wc{#P{},#N{},#O{}}},#Cons{#W{#U{#P{},#P{}},#V{#P{},#P{}},#Wc{#O{},#P{},#O{}}},#Cons{#W{#U{#O{},#N{}},#V{#O{},#N{}},#Wc{#O{},#N{},#P{}}},#Nil{}}}}},#Pair{#Pair{#T{},#Cons{#W{#U{#P{},#P{}},#V{#P{},#P{}},#Wc{#O{},#P{},#O{}}},#Cons{#W{#U{#O{},#P{}},#V{#O{},#P{}},#Wc{#O{},#N{},#P{}}},#Cons{#W{#U{#P{},#O{}},#V{#P{},#O{}},#Wc{#P{},#N{},#O{}}},#Nil{}}}}},#Pair{#T{},#Cons{#W{#U{#P{},#N{}},#V{#P{},#N{}},#Wc{#O{},#N{},#O{}}},#Cons{#W{#U{#P{},#O{}},#V{#P{},#O{}},#Wc{#P{},#P{},#O{}}},#Cons{#W{#U{#O{},#N{}},#V{#O{},#N{}},#Wc{#O{},#P{},#P{}}},#Nil{}}}}}}}}' 18597
+# the symmetry of the 2x2 product derived from its generators (n/sym22.hvm4): 24 relabellings (six of order 6); the
+# shear, conjugation by [[1,1],[0,1]], as an identity on cells; Strassen's writing holds the faces, and so do its
+# images under the shear and under the order-6 element (8.6); alphabet-orbits: the trace cell 1, S x S x S 10, an
+# orbit cell 36
+pin sym22 '#Pair{#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}},#T{}},#Pair{#Pair{#T{},#T{}},#Pair{#S{#Z{}},#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}' 5333458
 # index 5.11 / 5.13 / 5.24 on net.c (n/diamond.hvm4): one term, eight normaliser schedules (-R), one ledger; the
 # seeded order is confirmed to differ (schedule_flips > 0) and the interaction count does not move
 d0=$(./hyper net n/diamond.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); dok=1

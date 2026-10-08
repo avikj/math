@@ -1,0 +1,18 @@
+#include "sym22.hvm4"
+// The writing type at a node for the 2×2 product, posed as sort is posed (the polynomial product's n/writing.hvm4
+// template): seven cells; the cell fixed by the whole group, one coordinate per orbit of positions, so (x, y)
+// with x the diagonal and y the off-diagonal coefficient, x = + by the scaling: two classes in the alphabet, I⊗I⊗I
+// and S⊗S⊗S (their orbits under the relabellings and the shear are disjoint, n/sym22.hvm4), so this choice is
+// read; the other six cells are the orbit of one cell under the element of order six; that cell's u is posed as
+// its class under the symmetries that keep its slot (with the shear and the scaling), its v as its class under the
+// stabiliser of u, and its w is four coordinates the faces decide. Nothing else is posed.
+@cellQ = ! &a = @cellS; ! &b = @cellS; ! &c = @cellS; ! &d = @cellS; #Q{a, b, c, d}
+@cellS = ! &s = ?; ! &g = ?; &(s){#O, &(g){#P, #N}}
+@choose = λ{#Nil: &{}; #Cons: λ&h. λ&t. ! &c = ?; &(c){h, @choose(t)}}
+@orbit6 = λ&T. ! &g = @g6; ! &T1 = @actCell(g, T); ! &T2 = @actCell(g, T1); ! &T3 = @actCell(g, T2); ! &T4 = @actCell(g, T3); ! &T5 = @actCell(g, T4);
+  #Cons{T, #Cons{T1, #Cons{T2, #Cons{T3, #Cons{T4, #Cons{T5, #Nil}}}}}}
+@fixedCell = ! &y = ?; &(y){#W{@eye, @eye, @eye}, #W{@st(#O,#P,#P,#O), @st(#O,#P,#P,#O), @st(#O,#P,#P,#O)}}
+@writing = ! &u = @choose(@uClasses2); ! &v = @choose(@vClasses2(u)); ! &w = @cellQ;
+  #Cons{@fixedCell, @orbit6(#W{u, v, w})}
+@keep = λ&W. (λ{#T: W; #F: &{}})(@holds(W))
+@main = ! &pts = %(@keep(@writing)); #Pair{@lenN(pts), pts}

@@ -578,8 +578,20 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   functionals (u ↦ u∘σ*) and on w by the degree-two coefficient map; the faces verify on the point that each
   image is a writing of φ (8.6): the three cells are evaluations at 0, 1, ∞, one orbit. So the symmetry that
   makes the choice free is not a relabelling but a basis change, an identity of the object (a shear), and the
-  group to quotient by includes it. For the 2×2 product that group is the conjugations (de Groote), under which
-  the rank-7 fibre is one orbit; its derivation from the generators is the next construction.
+  group to quotient by includes it.
+- **The symmetry of the 2×2 product, derived** (`n/sym22.hvm4`). From the generators cyclic shift,
+  transpose-reversal, swap-conjugation and sign-conjugation the closure is 24 relabellings, six of order 6, so
+  the orbit generator exists. The shear, simultaneous conjugation by [[1,1],[0,1]], acts on a cell's u as a
+  functional (u ↦ Pᵀ u P⁻ᵀ) and is verified by the faces as an identity of tr(ABC): Strassen's writing, its
+  shear image and its image under the order-6 element all hold (8.6). Alphabet-orbits under relabellings and
+  shear: the trace cell I⊗I⊗I is fixed by everything (1); S⊗S⊗S has 10; an orbit cell 36. Classes of a first
+  factor u under the slot-keeping symmetries, shear and the cell scaling: ten; of v under the stabiliser of u:
+  about twenty-two each. So under the relabellings and one shear within the alphabet the choices do not
+  collapse to one: the uniqueness of the rank-7 writing (de Groote) is under the whole conjugation group over
+  the field, and within the alphabet its trace is many classes, most emptied by the faces.
+- **The 2×2 writing type at a node, posed as sort is posed** (`n/writing22.hvm4`): the fixed cell's two
+  classes, u and v as their classes, w four coordinates the faces decide, the six other cells the orbit of one
+  under the order-6 element. Its points and sides are read by `%`; the run is recorded here when it ends.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
