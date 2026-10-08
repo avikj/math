@@ -539,9 +539,19 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
 - **The type of the matrix product, generic in its entries** (`n/product.hvm4`). An entry is an indeterminate, a
   unit carrying only its name. C_ik = Σ_j a_ij × b_jk is posed as the shape it is; nothing is evaluated. The
   normal form of each entry is its monomials, the pairs (a_ij, b_jk): eight cells for 2×2, 277 interactions.
-  On multitudes there is no cancellation, so no writing with fewer than the eight product cells exists in this
-  posing; the seven-product form needs signed units (an integer as a pair of multitudes with cancellation), which
-  is the next posing and is not here.
+- **The integers as the repo constructs them** (`n/integer.hvm4`; NumberLinePathStructureIsTheCircle,
+  IndrajalaDipa: ΩS¹ ≡ ℤ). An integer is a loop: a multitude of units each traversed forward or backward (the
+  reverse is `sym`, ~). Composition is disjoint union: the windings add, nothing is created. The winding is read,
+  not computed into the object: forward minus backward over the vertices, so a loop and its reverse have winding 0
+  while both traversals remain. Pinned: 3+2, the mirror, 3 forward 2 back, (−2)(−3), 2(−3).
+- **The signed product type** (`n/product_signed.hvm4`). Entries as directed named units; the direct shape
+  C_ik = Σ_j a_ij × b_jk beside the seven-product writing as a different starting term (5.28). Read by winding per
+  monomial the two normal forms are identical. Cells formed: the direct shape 8, the seven-product term 32, its
+  extra monomials cancelling in the reading. On the complex, with integers as loops, the direct shape is the
+  geodesic of this type and the seven-product writing is a longer route to the same normal form: a product of
+  multitudes costs every unit pair, so a product of sums is never cheaper than the products it replaces.
+  The classical subcubic count is the binary measure's (5.22, notes J): it prices a product of k-bit numbers above
+  k additions, which the lossless unit count does not.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.

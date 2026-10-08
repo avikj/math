@@ -1,0 +1,27 @@
+#include "number.hvm4"
+// The integers as the repo constructs them (NumberLinePathStructureIsTheCircle, IndrajalaDipa): ΩS¹ ≡ ℤ. An
+// integer is a loop: a composite of the generator traversed forward (#Fwd) or backward (#Bwd, the reversed path,
+// ~). On the complex a loop is a multitude of directed units, so a signed number is a multitude whose units carry a
+// direction. Composition of loops is disjoint union (charge-adds: the windings add, nothing is created). The
+// reverse of a loop swaps every direction (sym). The winding is read, not computed into the object: the vertices
+// are read by % and the net charge is forward minus backward (mirror-cancels: a loop and its reverse have
+// winding 0, though both traversals are still there — "the light that leaves is the light that entered").
+@fwd = λ&n. (λu. #Fwd{u})(@units(n))
+@bwd = λ&n. (λu. #Bwd{u})(@units(n))
+@sym = λ&a. (λ{#Fwd: λu. #Bwd{u}; #Bwd: λu. #Fwd{u}})(a)
+// the winding of a loop: a signed tally #W{forward, backward} as read; a signed number is the pair of tallies up
+// to cancellation, which is the reading's identity #W{S a, S b} = #W{a, b}
+@winding = λ&a. @wind(%(a), #Z, #Z)
+@wind = λ{#Nil: λ&f. λ&b. @cancel(f, b); #Cons: λ{#Fwd: λ&u. λ&t. λ&f. λ&b. @wind(t, #S{f}, b); #Bwd: λ&u. λ&t. λ&f. λ&b. @wind(t, f, #S{b})}}
+@cancel = λ{#Z: λ&b. #W{#Z, b}; #S: λ&f. λ{#Z: #W{#S{f}, #Z}; #S: λ&b. @cancel(f, b)}}
+// product of signed loops: a pair of directed units is directed by the product of directions
+@stimes = λ&a. λ&b. (λ{#Fwd: λ&u. (λ{#Fwd: λv. #Fwd{#Pr{u, v}}; #Bwd: λv. #Bwd{#Pr{u, v}}})(b);
+                      #Bwd: λ&u. (λ{#Fwd: λv. #Bwd{#Pr{u, v}}; #Bwd: λv. #Fwd{#Pr{u, v}}})(b)})(a)
+@one = #S{#Z}
+// charge-adds (3 + 2 = 5), vacuum, mirror-cancels (loop ∙ sym loop), net-winding (3 forward 2 back = +1),
+// (−2)·(−3) = 6, 2·(−3) = −6
+@main = #Pair{@winding(@plus(@fwd(@three), @fwd(@two))),
+        #Pair{@winding(@plus(@fwd(@one), @sym(@fwd(@one)))),
+        #Pair{@winding(@plus(@fwd(@three), @bwd(@two))),
+        #Pair{@winding(@stimes(@bwd(@two), @bwd(@three))),
+               @winding(@stimes(@fwd(@two), @bwd(@three)))}}}}

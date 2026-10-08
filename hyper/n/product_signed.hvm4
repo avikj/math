@@ -1,0 +1,35 @@
+#include "integer.hvm4"
+// The product type generic in its entries over the integers (the loops): an entry is a directed named unit. The
+// type is C_ik = Σ_j a_ij × b_jk as the shape (direct). Beside it, as a DIFFERENT STARTING TERM (5.28, its own
+// length), the seven-product writing: seven products of signed unions, then unions; its normal form read by the
+// winding per monomial is the same four shapes. The ledger counts the cells each forms; the readings agree.
+@u = λ&x. #Fwd{x}
+@neg = λ&a. @sym(a)
+@direct = λ&a11. λ&a12. λ&a21. λ&a22. λ&b11. λ&b12. λ&b21. λ&b22.
+  #Blk{@plus(@stimes(a11, b11), @stimes(a12, b21)), @plus(@stimes(a11, b12), @stimes(a12, b22)),
+       @plus(@stimes(a21, b11), @stimes(a22, b21)), @plus(@stimes(a21, b12), @stimes(a22, b22))}
+@seven = λ&a11. λ&a12. λ&a21. λ&a22. λ&b11. λ&b12. λ&b21. λ&b22.
+  ! &m1 = @stimes(@plus(a11, a22), @plus(b11, b22));
+  ! &m2 = @stimes(@plus(a21, a22), b11);
+  ! &m3 = @stimes(a11, @plus(b12, @neg(b22)));
+  ! &m4 = @stimes(a22, @plus(b21, @neg(b11)));
+  ! &m5 = @stimes(@plus(a11, a12), b22);
+  ! &m6 = @stimes(@plus(a21, @neg(a11)), @plus(b11, b12));
+  ! &m7 = @stimes(@plus(a12, @neg(a22)), @plus(b21, b22));
+  #Blk{@plus(@plus(m1, m4), @plus(@neg(m5), m7)), @plus(m3, m5), @plus(m2, m4), @plus(@plus(m1, @neg(m2)), @plus(m3, m6))}
+// a shape read as the winding of each monomial: the sorted multiset is not needed, the readings are compared
+// as the list of (monomial, winding) over the monomials of the direct form
+@monos = #Cons{#Pr{#A11,#B11}, #Cons{#Pr{#A12,#B21}, #Cons{#Pr{#A11,#B12}, #Cons{#Pr{#A12,#B22}, #Cons{#Pr{#A21,#B11}, #Cons{#Pr{#A22,#B21}, #Cons{#Pr{#A21,#B12}, #Cons{#Pr{#A22,#B22}, #Cons{#Pr{#A11,#B22}, #Cons{#Pr{#A22,#B11}, #Cons{#Pr{#A12,#B11}, #Cons{#Pr{#A21,#B22}, #Cons{#Pr{#A11,#B21}, #Cons{#Pr{#A22,#B12}, #Cons{#Pr{#A12,#B12}, #Cons{#Pr{#A21,#B21}, #Nil}}}}}}}}}}}}}}}}
+@eqName = λ{#A11: λ{#A11: #T; λ&x. #F}; #A12: λ{#A12: #T; λ&x. #F}; #A21: λ{#A21: #T; λ&x. #F}; #A22: λ{#A22: #T; λ&x. #F};
+            #B11: λ{#B11: #T; λ&x. #F}; #B12: λ{#B12: #T; λ&x. #F}; #B21: λ{#B21: #T; λ&x. #F}; #B22: λ{#B22: #T; λ&x. #F}}
+@eqPr = λ{#Pr: λ&a. λ&b. λ{#Pr: λ&c. λ&d. (λ{#T: @eqName(b, d); #F: #F})(@eqName(a, c))}}
+@at = λ&m. λ&a. @windAt(m, %(a), #Z, #Z)
+@windAt = λ&m. λ{#Nil: λ&f. λ&b. @cancel(f, b);
+  #Cons: λ{#Fwd: λ&u. λ&t. λ&f. λ&b. (λ{#T: @windAt(m, t, #S{f}, b); #F: @windAt(m, t, f, b)})(@eqPr(u, m));
+           #Bwd: λ&u. λ&t. λ&f. λ&b. (λ{#T: @windAt(m, t, f, #S{b}); #F: @windAt(m, t, f, b)})(@eqPr(u, m))}}
+@read = λ{#Blk: λ&c11. λ&c12. λ&c21. λ&c22. #Blk{@map(λ&m. @at(m, c11), @monos), @map(λ&m. @at(m, c12), @monos), @map(λ&m. @at(m, c21), @monos), @map(λ&m. @at(m, c22), @monos)}}
+@map = λ&f. λ{#Nil: #Nil; #Cons: λ&h. λ&t. #Cons{f(h), @map(f, t)}}
+@cells = λ{#Blk: λ&a. λ&b. λ&c. λ&d. @lenN(@lcat(%(a), @lcat(%(b), @lcat(%(c), %(d)))))}
+@D = @direct(@u(#A11), @u(#A12), @u(#A21), @u(#A22), @u(#B11), @u(#B12), @u(#B21), @u(#B22))
+@S7 = @seven(@u(#A11), @u(#A12), @u(#A21), @u(#A22), @u(#B11), @u(#B12), @u(#B21), @u(#B22))
+@main = #Pair{#Pair{@read(@D), @read(@S7)}, #Pair{@cells(@D), @cells(@S7)}}
