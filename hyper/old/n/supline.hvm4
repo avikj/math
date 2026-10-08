@@ -1,5 +1,0 @@
-#include "cubical.hvm4"
-// transport along a superposed universe path: one shared line, two worlds (ua of the identity, and a constant line), read by %
-@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
-@line = λi. @pathAt(&(?){@ua(#Bool, #Bool, @idEquivV(#Bool)), #PLm{λj. #Bool}}, i)
-@main = %(@coe(@line, #I0, #I1, #F))

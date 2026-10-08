@@ -1,6 +1,0 @@
-#include "infer.hvm4"
-// the degree-one polynomial product and nothing else — no length: (a0 + a1 x)(b0 + b1 x), a_i b_j landing at
-// x^(i+j); slots of sizes 2, 2, 3.  The first point the collapse yields is the writing of least length.
-@phi = #Cons{#M{#Z0,#Z0,#Z0}, #Cons{#M{#Z0,#S{#Z0},#S{#Z0}}, #Cons{#M{#S{#Z0},#Z0,#S{#Z0}}, #Cons{#M{#S{#Z0},#S{#Z0},#S{#S{#Z0}}}, #Nil}}}}
-@sizes = #Cons{#S{#S{#Z0}}, #Cons{#S{#S{#Z0}}, #Cons{#S{#S{#S{#Z0}}}, #Nil}}}
-@main = ! &W = @headL(%(@inferForced(@phi, @sizes))); #Pair{@lenN(W), W}
