@@ -3286,7 +3286,9 @@ fn Term parse_term_par(PState *s, u32 depth) {
   return term;
 }
 
+fn void parse_no_primitive(PState *s);
 fn Term parse_term_num(PState *s) {
+  parse_no_primitive(s);
   parse_skip(s);
   u32 n = 0;
   int has = 0;
@@ -3503,11 +3505,9 @@ fn int parse_term_opr_peek(PState *s) {
 }
 
 // Consume an operator (call after peek confirms one exists)
-/* primitive arithmetic is not in the net: an operator is a parse error. Only under -L (HVM4 verbatim, the labels the
-   recorded SAT receipts were taken with) is the HVM4 operator kept, so the receipts reproduce. */
+/* a primitive number is not in the net: a numeric literal or an operator is a parse error, always. */
 fn void parse_no_primitive(PState *s) {
-  if (BOOK_LABELS) return;
-  fprintf(stderr, "\033[1;31mPARSE_ERROR\033[0m (%s:%d:%d)\n- primitive arithmetic is not in the net (numbers are shapes; operators only under -L)\n", s->file, s->line, s->col);
+  fprintf(stderr, "\033[1;31mPARSE_ERROR\033[0m (%s:%d:%d)\n- a primitive number is not in the net: numbers are shapes (bits on coordinates); no literal, no operator\n", s->file, s->line, s->col);
   exit(1);
 }
 fn void parse_term_opr_consume(PState *s, int op) {
@@ -3684,6 +3684,7 @@ fn Term parse_term_atom(PState *s, u32 depth) {
   } else if (parse_peek(s) == '"' || parse_peek(s) == '`') {
     return parse_term_str(s, depth);
   } else if (isdigit(parse_peek(s))) {
+    parse_no_primitive(s);
     Term t = parse_term_nat(s, depth);
     if (!t) t = parse_term_num(s);
     return t;
