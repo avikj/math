@@ -1,1 +1,0 @@
-(function(){var b=document.createElement("a");b.id="timeline-toggle";b.href="./lineage.html";b.textContent="lineage";b.title="Read the technical lineage and sources";document.body.appendChild(b);})();
