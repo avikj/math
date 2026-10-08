@@ -24,10 +24,10 @@
 --       through bulk orchestration.
 --       (What's Special about Life?, November 2025)
 --
--- W5: THE ADVANTAGE OF PROOF IS THE QUANTIFIER (§१).  The sentence is
+-- W5: THE ADVANTAGE OF PROOF IS THE QUANTIFIER (§1).  The sentence is
 -- exactly right about each single instance and exactly wrong about
 -- their totality, and both halves are terms.  Running the system
--- reaches one endpoint per run; the term `sarva-prapti` reaches EVERY
+-- reaches one endpoint per run; the term `reachesEvery` reaches EVERY
 -- endpoint at once — a function (n : ℕ) → Evolve zero n, built by one
 -- induction through the snoc lemma — and no amount of running produces
 -- a universally quantified statement, because a run is one point of
@@ -39,29 +39,29 @@
 -- effort of running is unbounded over the family, and that asymmetry
 -- IS the fundamental advantage.
 --
--- W6: THE MERGED STATE IS ONE EME (§२).  Coordinatization… merged the
+-- W6: THE MERGED STATE IS ONE EME (§2).  Coordinatization… merged the
 -- branches with a propositional truncation — existence kept, identity
 -- withheld.  Wolfram's February 2026 sentence is stronger: merged IN
 -- THE OBJECT.  That is the set quotient, and it is also checked: under
 -- the co-terminality relation, the branches become EQUAL as data
--- (`ekibhava`, by eq/), the whole quotient contracts to a single point
--- (`eka-eme`) — an object with no property but its own distinctness,
+-- (`equalAsData`, by eq/), the whole quotient contracts to a single point
+-- (`oneEme`) — an object with no property but its own distinctness,
 -- which is Wolfram's eme, constructed rather than posited — and the
--- stronger merge still has no section (`punaruddhara-nasti-eva`): the
+-- stronger merge still has no section (`noSectionEither`): the
 -- collision that refuted reconstruction from the thread refutes it
 -- from the quotient, by the same two congs.  So the two merges the
 -- 2021 and 2026 sentences name — treat-as-equivalent and
 -- merged-in-fact — are BOTH real, both lossy, and the loss is the same
 -- computed object either way.
 --
--- W7: PURPOSE RANKS NOTHING INSIDE THE ENSEMBLE (§३).  Take the
+-- W7: PURPOSE RANKS NOTHING INSIDE THE ENSEMBLE (§3).  Take the
 -- purpose to be arrival — reach state 3 from state 0 — so that the
 -- ensemble "selected to achieve the purpose" is exactly the fibre of
 -- the endpoint, populated here by the two interchanged orders.  Any
 -- assessor that reads only purpose-achievement — any function out of
 -- the merged outcome, prop-valued fitness included — answers equally
--- on all ensemble members (`niyojana-anankana`, the quotient form of
--- Coordinatization…'s baddha-drashta): selection BY the purpose cannot
+-- on all ensemble members (`purposeRanksNothing`, the quotient form of
+-- Coordinatization…'s boundedObserver): selection BY the purpose cannot
 -- rank WITHIN the ensemble that achieves it, which is abstract 12's
 -- theorem (no scoring function of the outcome ranks the route) arrived
 -- at from Wolfram's November 2025 vocabulary.  The orchestration half
@@ -90,65 +90,65 @@ open import Cubical.Relation.Nullary using (¬_)
 open import Cubical.HITs.SetQuotients using (_/_ ; [_] ; eq/ ; squash/ ; elimProp)
 
 open import CoordinatizationIsAPathTheMergeIsATruncationWithNoSectionAndTheBoundedObserverSeparatesNoCoTerminalRuns
-  using (Evolve ; halt ; ev₁ ; ev₂ ; मार्ग₁ ; मार्ग₂ ; प्रथम-भेद)
+  using (Evolve ; halt ; ev₁ ; ev₂ ; route₁ ; route₂ ; routesDistinct)
 
 ------------------------------------------------------------------------
--- १ · W5: the advantage of proof is the quantifier.
+-- 1 · W5: the advantage of proof is the quantifier.
 ------------------------------------------------------------------------
 
 -- appending one updating event at the END of an evolution.
-अन्त-घटना : {m n : ℕ} → Evolve m n → Evolve m (suc n)
-अन्त-घटना (halt n) = ev₁ (halt (suc n))
-अन्त-घटना (ev₁ r)  = ev₁ (अन्त-घटना r)
-अन्त-घटना (ev₂ r)  = ev₂ (अन्त-घटना r)
+extendByOne : {m n : ℕ} → Evolve m n → Evolve m (suc n)
+extendByOne (halt n) = ev₁ (halt (suc n))
+extendByOne (ev₁ r)  = ev₁ (extendByOne r)
+extendByOne (ev₂ r)  = ev₂ (extendByOne r)
 
 -- THE TERM RUNNING CANNOT PRODUCE: every state is reached from zero,
 -- all of them by one induction.  A run exhibits one endpoint; this
 -- function is the whole family at once.
-सर्व-प्राप्ति : (n : ℕ) → Evolve zero n
-सर्व-प्राप्ति zero    = halt zero
-सर्व-प्राप्ति (suc n) = अन्त-घटना (सर्व-प्राप्ति n)
+reachesEvery : (n : ℕ) → Evolve zero n
+reachesEvery zero    = halt zero
+reachesEvery (suc n) = extendByOne (reachesEvery n)
 
 ------------------------------------------------------------------------
--- २ · W6: the merged state is one eme, and still has no section.
+-- 2 · W6: the merged state is one eme, and still has no section.
 ------------------------------------------------------------------------
 
 -- co-terminality: the relation that holds between any two evolutions
 -- sharing both endpoints (they already do, by the index).
-सह-अन्त : {a b : ℕ} → Evolve a b → Evolve a b → Type
-सह-अन्त _ _ = Unit
+coTerminal : {a b : ℕ} → Evolve a b → Evolve a b → Type
+coTerminal _ _ = Unit
 
 -- the object-level merge: runs 0 → 3, quotiented.
-विलीन : Type
-विलीन = Evolve zero (suc (suc (suc zero))) / सह-अन्त
+mergedStates : Type
+mergedStates = Evolve zero (suc (suc (suc zero))) / coTerminal
 
 -- "equivalent states are in fact merged": the branches are EQUAL as
 -- data in the quotient, not merely jointly present in a truncation.
-एकीभाव : Path विलीन [ मार्ग₁ ] [ मार्ग₂ ]
-एकीभाव = eq/ मार्ग₁ मार्ग₂ tt
+equalAsData : Path mergedStates [ route₁ ] [ route₂ ]
+equalAsData = eq/ route₁ route₂ tt
 
 -- the merged object is one eme: a point with no property beyond its
 -- own distinctness — the whole quotient contracts onto it.
-एक-एमे : isContr विलीन
-एक-एमे = [ मार्ग₁ ] , elimProp (λ x → squash/ [ मार्ग₁ ] x)
-                                (λ r → eq/ मार्ग₁ r tt)
+oneEme : isContr mergedStates
+oneEme = [ route₁ ] , elimProp (λ x → squash/ [ route₁ ] x)
+                                (λ r → eq/ route₁ r tt)
 
 -- and the stronger merge still has no section: reading a run back out
 -- of the merged object collides with the branch distinction.
-पुनरुद्धार-नास्ति-एव :
-  ¬ (Σ[ sel ∈ (विलीन → Evolve zero (suc (suc (suc zero)))) ]
+noSectionEither :
+  ¬ (Σ[ sel ∈ (mergedStates → Evolve zero (suc (suc (suc zero)))) ]
        ((r : Evolve zero (suc (suc (suc zero)))) → sel [ r ] ≡ r))
-पुनरुद्धार-नास्ति-एव (sel , h) =
-  प्रथम-भेद (sym (h मार्ग₁) ∙ cong sel एकीभाव ∙ h मार्ग₂)
+noSectionEither (sel , h) =
+  routesDistinct (sym (h route₁) ∙ cong sel equalAsData ∙ h route₂)
 
 ------------------------------------------------------------------------
--- ३ · W7: purpose ranks nothing inside the ensemble.
+-- 3 · W7: purpose ranks nothing inside the ensemble.
 ------------------------------------------------------------------------
 
 -- the ensemble selected by the purpose "arrive at 3 from 0" is the
 -- run type itself (the fibre of arrival); any assessor reading only
 -- the merged achievement answers equally on all members — prop-valued
 -- fitness functions included, since they factor through functions.
-नियोजन-अनङ्कन : {ℓ : Level} {X : Type ℓ} (g : विलीन → X)
-              → g [ मार्ग₁ ] ≡ g [ मार्ग₂ ]
-नियोजन-अनङ्कन g = cong g एकीभाव
+purposeRanksNothing : {ℓ : Level} {X : Type ℓ} (g : mergedStates → X)
+              → g [ route₁ ] ≡ g [ route₂ ]
+purposeRanksNothing g = cong g equalAsData

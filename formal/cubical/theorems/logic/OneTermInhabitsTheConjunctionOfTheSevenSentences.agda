@@ -1,13 +1,13 @@
 {-# OPTIONS --cubical --guardedness --safe --no-import-sorts #-}
 
 ------------------------------------------------------------------------
--- FOR STEPHEN WOLFRAM — the entrypoint: one term, सप्त-वाक्य, inhabits
+-- FOR STEPHEN WOLFRAM — the entrypoint: one term, sevenSentences, inhabits
 -- the conjunction of the seven sentences below.
 --
 -- Markdown is banned in this repository (a .md file asserts; a checked
 -- term is the object), so the entrypoint is a module: checking
 -- this file checks, through its imports, every theorem it cites, and
--- its one exported term सप्त-वाक्य has as its TYPE the conjunction of
+-- its one exported term sevenSentences has as its TYPE the conjunction of
 -- the seven claims below.  Reading the letter and verifying it are the
 -- same act.
 --
@@ -28,48 +28,48 @@
 -- module headers):
 --
 --   W1 (Ruliad 2021: coordinatization; "same limiting object")
---      निर्देशान्तर       one path connects the two structured
+--      coordinateChange       one path connects the two structured
 --                          presentations (tape and number) of the same
 --                          two-event multiway system; every property
---                          then crosses by subst (निर्देश-अनादर), the
+--                          then crosses by subst (propertiesCross), the
 --                          emulation between coordinate systems IS the
---                          path's transport and computes (सङ्क्रमण-गणना,
+--                          path's transport and computes (transportComputes,
 --                          by uaβ), and the space of coordinatizations
 --                          of the fixed carrier is contractible
---                          (एक-वस्तु).
+--                          (oneLimitingObject).
 --   W2 (Ruliad 2021: "merge = treat outcomes as equivalent")
---      मिलितम् / प्रथम-भेद  two runs 0→3, merged in the observer's
+--      merged / routesDistinct  two runs 0→3, merged in the observer's
 --                          single thread and distinct by the invariant
 --                          reading the first updating event; the
 --                          branchial pair is exhibited as two residents
---                          of the merge's fibre (शाखा-युगलम्).
+--                          of the merge's fibre (branchialPair).
 --   W3 (Ruliad 2021 + Observer Theory 2023: bounded equivalencing)
---      बद्ध-द्रष्टा         every consumer of the merged thread answers
+--      boundedObserver         every consumer of the merged thread answers
 --                          equally on both branches, at every universe
 --                          level; and the merge has no section
---                          (पुनरुद्धार-नास्ति) — reconstruction refuted,
+--                          (noSection) — reconstruction refuted,
 --                          not merely absent.
 --   W4 (Ruliad 2021: divergence, eventual reconvergence)
---      विनिमय              from every state the two updating orders
+--      bothOrdersConverge              from every state the two updating orders
 --                          diverge and reconverge with definitional
 --                          endpoint agreement.
 --   W5 (Theory of Bugs 2026: "no fundamental advantage of proof")
---      सर्व-प्राप्ति        the term (n : ℕ) → Evolve zero n reaches
+--      reachesEvery        the term (n : ℕ) → Evolve zero n reaches
 --                          every endpoint by one induction where a run
 --                          reaches one: the advantage of proof is the
 --                          universal quantifier.
 --   W6 (Metaphysics 2026: "equivalent states are in fact merged"; emes)
---      एकीभाव / एक-एमे     the set quotient: branches equal AS DATA,
+--      equalAsData / oneEme     the set quotient: branches equal AS DATA,
 --                          the quotient one point with no property but
 --                          distinctness — the eme, constructed; and
---                          still no section (पुनरुद्धार-नास्ति-एव).
+--                          still no section (noSectionEither).
 --   W7 (Life 2025: bulk orchestration, the rulial ensemble)
---      नियोजन-अनङ्कन        purpose ranks nothing inside the ensemble it
+--      purposeRanksNothing        purpose ranks nothing inside the ensemble it
 --                          selects; and the orchestration ingredient is
 --                          Entanglement…'s living step: no marginal endomap
---                          simulates the controlled-not (जीवति), which
+--                          simulates the controlled-not (livingStepNoMarginal), which
 --                          is nevertheless a global equivalence
---                          (सूचना-समीकरणम्) — consultation, not
+--                          (livingStepEquiv) — consultation, not
 --                          destruction.
 --
 -- THE CORPUS BEHIND IT, cited by actual content: abstract 25 (the
@@ -128,27 +128,27 @@ open import EntanglementIsTheFibreOfTheProductComparisonAndTheLivingStepRefusesT
 -- one term whose type states the seven sentences.
 ------------------------------------------------------------------------
 
-सप्त-वाक्य :
-    (तन्त्र-लिपि ≡ तन्त्र-सङ्ख्या)                               -- W1: one path
-  × isContr (Σ[ S ∈ Type ] (S ≃ ℕ))                              -- W1: one limiting object
-  × (एकसूत्र मार्ग₁ ≡ एकसूत्र मार्ग₂) × (¬ मार्ग₁ ≡ मार्ग₂)        -- W2: merged, and distinct
+sevenSentences :
+    (tapeSystem ≡ numberSystem)                           -- W1: one path
+  × isContr (Σ[ S ∈ Type ] (S ≃ ℕ))                       -- W1: one limiting object
+  × (merge route₁ ≡ merge route₂) × (¬ route₁ ≡ route₂)   -- W2: merged, and distinct
   × (¬ (Σ[ sel ∈ (∥ Evolve zero (suc (suc (suc zero))) ∥₁
                   → Evolve zero (suc (suc (suc zero)))) ]
           ((r : Evolve zero (suc (suc (suc zero))))
-           → sel (एकसूत्र r) ≡ r)))                              -- W3: no section
+           → sel (merge r) ≡ r)))                         -- W3: no section
   × ((m : ℕ) → Evolve m (suc (suc (suc m)))
-             × Evolve m (suc (suc (suc m))))                     -- W4: both orders converge
-  × ((n : ℕ) → Evolve zero n)                                    -- W5: the quantifier
-  × isContr विलीन                                                 -- W6: one eme
-  × ((j : Bool × Bool) → जीवन-पदम् (जीवन-पदम् j) ≡ j)              -- W7: the living step,
-  × (¬ अवतरणम् जीवन-पदम्)                                        --     lossless yet unsimulable
-सप्त-वाक्य =
-    निर्देशान्तर
-  , एक-वस्तु
-  , मिलितम् , प्रथम-भेद
-  , पुनरुद्धार-नास्ति
-  , विनिमय
-  , सर्व-प्राप्ति
-  , एक-एमे
-  , जीवन-द्विः
-  , जीवति
+             × Evolve m (suc (suc (suc m))))              -- W4: both orders converge
+  × ((n : ℕ) → Evolve zero n)                             -- W5: the quantifier
+  × isContr mergedStates                                  -- W6: one eme
+  × ((j : Bool × Bool) → livingStep (livingStep j) ≡ j)   -- W7: the living step,
+  × (¬ descendsToMarginal livingStep)                     --     lossless yet unsimulable
+sevenSentences =
+    coordinateChange
+  , oneLimitingObject
+  , merged , routesDistinct
+  , noSection
+  , bothOrdersConverge
+  , reachesEvery
+  , oneEme
+  , livingStepInvolution
+  , livingStepNoMarginal
