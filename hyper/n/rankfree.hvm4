@@ -1,10 +1,8 @@
 #include "infer.hvm4"
-// the 2×2 product and nothing else: φ = tr(ABC), entries 11,12,21,22 = 0..3, slots of four; writings of length 7
+// the 2×2 product and nothing else — no length: φ = tr(ABC), entries 11,12,21,22 = 0..3, slots of four.  The first
+// point the collapse yields is the writing of least length; every shorter length was cut empty on the way (5.27).
 @phi = #Cons{#M{#Z0,#Z0,#Z0}, #Cons{#M{#Z0,#S{#Z0},#S{#S{#Z0}}}, #Cons{#M{#S{#Z0},#S{#S{#Z0}},#Z0}, #Cons{#M{#S{#Z0},#S{#S{#S{#Z0}}},#S{#S{#Z0}}},
        #Cons{#M{#S{#S{#Z0}},#Z0,#S{#Z0}}, #Cons{#M{#S{#S{#Z0}},#S{#Z0},#S{#S{#S{#Z0}}}}, #Cons{#M{#S{#S{#S{#Z0}}},#S{#S{#Z0}},#S{#Z0}}, #Cons{#M{#S{#S{#S{#Z0}}},#S{#S{#S{#Z0}}},#S{#S{#S{#Z0}}}}, #Nil}}}}}}}}
 @four = #S{#S{#S{#S{#Z0}}}}
 @sizes = #Cons{@four, #Cons{@four, #Cons{@four, #Nil}}}
-@seven = #S{#S{#S{#S{#S{#S{#S{#Z0}}}}}}}
-// the length left free: the fibre at r = 1, 2, 3, 4, 5 is empty under the object's symmetry (3.5M, 3.6M, 3.8M, 4.1M,
-// 5.7M interactions, run one at a time), at 6 empty (this run), at 7 inhabited (n/rank7g.hvm4): 5.27 both ways
-@main = ! &F = %(@infer(@phi, @sizes, #S{#S{#S{#S{#S{#S{#Z0}}}}}})); @lenN(F)
+@main = ! &W = @headL(%(@inferFree(@phi, @sizes))); #Pair{@lenN(W), W}

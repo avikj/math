@@ -150,3 +150,12 @@
   (λ{#Pair: λ&gk. λ&q. (λ{#Q: λ&F. λ&Gs. λ&W. ! &es = @order(W, @allMon(sizes));
      (λ{1: @map(@valsT, W); 0: &{}})(@and(@sideConds(G, @fstP(gk), sizes, #Q{F, Gs, W}), @decl(phi, W, es)))})(q)})(Q)
 @fstP = λ{#Pair: λ&a. λ&b. a}
+// ---- the declaration with no length in it: the writings of the object, the length a coordinate read in order ----
+// the line over lengths r = 0, 1, 2, … (9.11's order), each length its splits; the collapse walks it in order, so the
+// first point it yields is the writing of least length and every length below it has been cut empty (5.27 both ways)
+@lengths = λ&r. #Cons{r, @lengths(#S{r})}
+@lineOf = λ&G. λ&g. λ&k. λ&sizes. λ{#Cons: λ&r. λ&rest. @lcat(@map(λ&sp. @quotientAt(G, g, k, sizes, sp), @splits(r, k)), @lineOf(G, g, k, sizes, rest))}
+@inferFree = λ&phi. λ&sizes. ! &G = @aut(phi, sizes); ! &g = @maxOrder(G, sizes); ! &k = @ordG(g, sizes);
+  (λ{#Q: λ&F. λ&Gs. λ&W. ! &es = @order(W, @allMon(sizes));
+     (λ{1: @map(@valsT, W); 0: &{}})(@and(@sideConds(G, g, sizes, #Q{F, Gs, W}), @decl(phi, W, es)))})(@choose(@lineOf(G, g, k, sizes, @lengths(#Z0))))
+@headL = λ{#Cons: λ&h. λ&t. h}
