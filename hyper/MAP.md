@@ -546,6 +546,12 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
     Two generic corrections were needed to get there, both statements about quotients, neither about matrices: a
     fixed term has one coordinate per orbit of the generator on positions, and representatives are canonical under
     the generator's centraliser, the symmetries that act on the invariant cube, not under the whole stabiliser.
+    With the length left free (`n/rankfree.hvm4`, one program per length) the fibre is empty at r = 1, 2, 3, 4, 5,
+    6 (3.5M, 3.6M, 3.8M, 4.1M, 5.7M, 34.6M interactions) and inhabited at 7: 5.27's case (b) below seven and case
+    (a) at seven, the lower bound inhabited by the run. What stays posed, and only this: coefficients in {−1, 0, 1},
+    since an unbounded coefficient line with cancellation is not finitely cut and the object's writings use no other.
+    Defect, open: two collapses `%` in one term (a map of the inference over two lengths) segfault `net.c`; one per
+    program works.
   The instance-shaped version of the same inference (`old/n/rank7_instance.hvm4`, the 3-cycle and the fixed term
   `I⊗I⊗I` written by hand, nineteen `u₁` classes enumerated outside the net, `classes_rank7.txt`) read 48 points in
   the single-entry class in 2,072,692 interactions and found points in exactly the three classes of Strassen's
