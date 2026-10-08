@@ -6,7 +6,9 @@ gcc -std=gnu11 -O2 -w -c net.c -o net.o || exit 1
 gcc -std=gnu11 -O2 -Wall -Wno-misleading-indentation -Wno-unused-parameter -Wno-unused-function -pthread -o hyper cell.c read.c verify.c main.c net.o -lm || exit 1
 pass=0; fail=0
 export SAT_MAX_ITRS=4000000000 SAT_MAX_HEAP=1300000000
+# no program in the suite touches a primitive: the parser refuses an operator outside -L, and the ledger must show none
 pin() { f=$1; want=$2; witrs=$3
+  if ./hyper net n/$f.hvm4 -s 2>&1 | grep -qE '"OP2-[A-Z-]+":[1-9]'; then echo "FAIL $f: primitive arithmetic in the ledger"; fail=$((fail+1)); return; fi
   got=$(./hyper net n/$f.hvm4 2>&1 | grep -v SAT_PROFILE | grep -v '^$' | head -1 | sed 's/↑//g'); itrs=$(./hyper net n/$f.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://')
   if [ "$got" = "$want" ] && [ "$itrs" = "$witrs" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $f: got '$got' ($itrs) want '$want' ($witrs)"; fi; }
 # Block A: the collapse as a value (COL, written %x): the fibre as a list, multiplicity conserved, dead sides dropped
@@ -38,7 +40,7 @@ pin sort '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#
 # seeded order is confirmed to differ (schedule_flips > 0) and the interaction count does not move
 d0=$(./hyper net n/diamond.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); dok=1
 for R in 1 2 3 5 8 13 21; do o=$(./hyper net n/diamond.hvm4 -s -R $R 2>&1); di=$(echo "$o" | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); fl=$(echo "$o" | grep -oE '"schedule_flips":[0-9]+' | sed 's/.*://'); [ "$di" = "$d0" ] && [ "$fl" != 0 ] || { dok=0; echo "FAIL diamond R=$R: $di flips=$fl want $d0"; }; done
-[ "$d0" = 3053 ] || { dok=0; echo "FAIL diamond: $d0 want 3053"; }; if [ $dok = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); fi
+[ "$d0" = 1242 ] || { dok=0; echo "FAIL diamond: $d0 want 1242"; }; if [ $dok = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); fi
 # the SAT fibre receipts, exactly as recorded (research/sat_fibre) under -L, the labels HVM4 gave them; the readback path is untouched
 if [ -z "$SKIP_SATCHECK" ]; then r=$(cd .. && python3 hyper/satcheck.py ./hyper/hyper net -L 2>&1 | tail -1); case "$r" in "satcheck pass=282 fail=0") pass=$((pass+1));; *) fail=$((fail+1)); echo "FAIL satcheck: $r";; esac; fi
 echo "pass=$pass fail=$fail"; [ "$fail" = 0 ]

@@ -484,6 +484,10 @@ value, and the ledger counts rule firings (5.5). Nothing in the book is a primit
 comparison: a number is bits on coordinates (§6, 9.11) and a comparison is a cut (9.3). The machine is `net.c`:
 HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test_net.sh`:
 
+- **No primitive.** The parser refuses an arithmetic operator: numbers are shapes (bits on coordinates), and a
+  program that writes `+`, `-`, `<`, `==` on native numbers does not parse. Only under `-L`, HVM4 verbatim with
+  the book's static labels, is the operator kept, because the recorded SAT receipts (`satcheck.py`, owner
+  material) were taken with it; the suite checks every pinned program's ledger shows no operator interaction.
 - **The diamond** (5.11, 5.13, 5.24). `-R n` makes the normaliser visit a node's fields in a seeded order, so which
   copy of a shared sub-net forces it first changes from run to run; `n/diamond.hvm4` under eight schedules has one
   ledger, 3,053, with the visiting order confirmed to differ. The inner strategy (needed redex first) is fixed; what

@@ -3,6 +3,6 @@
 // are read as one (the recorded defect: STATE_OF_THE_WORK I.4): @static(3) has two leaves.
 // `?` is a fresh number — the name of a coordinate no other unfolding has (dim): @fresh(3) has eight.
 @lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
-@static = λ{0: #Nil; _: λk. #Cons{&L{#F, #T}, @static(k - 1)}}
-@fresh  = λ{0: #Nil; _: λk. #Cons{&(?){#F, #T}, @fresh(k - 1)}}
-@main = #Pair{%(@static(3)), %(@fresh(3))}
+@static = λ{#Z: #Nil; #S: λk. #Cons{&L{#F, #T}, @static(k)}}
+@fresh  = λ{#Z: #Nil; #S: λk. #Cons{&(?){#F, #T}, @fresh(k)}}
+@main = #Pair{%(@static(#S{#S{#S{#Z}}})), %(@fresh(#S{#S{#S{#Z}}}))}

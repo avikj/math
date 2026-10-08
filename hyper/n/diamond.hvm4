@@ -3,9 +3,11 @@
 // reduces first, change from run to run.  Equal length (5.13) says the interaction count cannot move; sharing (5.24)
 // says an active pair is never duplicated, so the shared work is paid once whichever side reaches it.
 @lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
-@nat = λ{0: #Z; _: λk. #S{@nat(k - 1)}}
 @add = λ{#Z: λ&b. b; #S: λ&a. λ&b. #S{@add(a, b)}}
 @mul = λ{#Z: λ&b. #Z; #S: λ&a. λ&b. @add(b, @mul(a, b))}
-@len = λ{#Z: 0; #S: λ&n. 1 + @len(n)}
+@n3 = #S{#S{#S{#Z}}}
+@n4 = #S{@n3}
+@n5 = #S{@n4}
+@n9 = #S{#S{#S{#S{#S{@n4}}}}}
 // a shared expensive sub-net, read by four fields through two levels of pairs
-@main = ! &x = @mul(@nat(9), @nat(9)); #Pair{#Pair{@len(x), @len(@add(x, @nat(3)))}, #Pair{@len(@add(@nat(5), x)), #Pair{@len(x), %(&(?){@len(x), @len(@mul(@nat(3), @nat(4)))})}}}
+@main = ! &x = @mul(@n9, @n9); #Pair{#Pair{x, @add(x, @n3)}, #Pair{@add(@n5, x), #Pair{x, %(&(?){x, @mul(@n3, @n4)})}}}

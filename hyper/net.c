@@ -3503,7 +3503,15 @@ fn int parse_term_opr_peek(PState *s) {
 }
 
 // Consume an operator (call after peek confirms one exists)
+/* primitive arithmetic is not in the net: an operator is a parse error. Only under -L (HVM4 verbatim, the labels the
+   recorded SAT receipts were taken with) is the HVM4 operator kept, so the receipts reproduce. */
+fn void parse_no_primitive(PState *s) {
+  if (BOOK_LABELS) return;
+  fprintf(stderr, "\033[1;31mPARSE_ERROR\033[0m (%s:%d:%d)\n- primitive arithmetic is not in the net (numbers are shapes; operators only under -L)\n", s->file, s->line, s->col);
+  exit(1);
+}
 fn void parse_term_opr_consume(PState *s, int op) {
+  parse_no_primitive(s);
   parse_skip(s);
   parse_advance(s);
   // Two-character operators need second advance
@@ -3519,6 +3527,7 @@ fn int parse_term_opr_match(PState *s) {
   parse_skip(s);
   char c = parse_peek(s);
   char c1 = parse_peek_at(s, 1);
+  if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%' || c == '^' || c == '~' || c == '<' || c == '>' || (c == '=' && c1 == '=') || (c == '!' && c1 == '=') || (c == '&' && c1 == '&') || (c == '|' && c1 == '|')) parse_no_primitive(s);
 
   // Two-character operators
   if (c == '=' && c1 == '=') { parse_advance(s); parse_advance(s); return OP_EQ; }
