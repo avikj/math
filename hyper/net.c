@@ -5234,7 +5234,8 @@ __attribute__((hot)) fn Term wnf(Term term) {
               goto enter;
             }
             case NUM: {
-              fprintf(stderr, "RUNTIME_ERROR: cannot apply a number\n");
+              fprintf(stderr, "RUNTIME_ERROR: cannot apply a number: %u applied to ", (u32)term_val(whnf));
+              print_term(arg); fprintf(stderr, "\n");
               exit(1);
             }
             case C00 ... C16: {
