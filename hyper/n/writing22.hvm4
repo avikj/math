@@ -13,7 +13,14 @@
   #Cons{T, #Cons{T1, #Cons{T2, #Cons{T3, #Cons{T4, #Cons{T5, #Nil}}}}}}
 @fixedCell = ! &y = ?; &(y){#W{@eye, @eye, @eye}, #W{@st(#O,#P,#P,#O), @st(#O,#P,#P,#O), @st(#O,#P,#P,#O)}}
 // v's classes under the stabiliser of u cost more to derive per side than the faces cost to cut; v is coordinates
-@writing = ! &g = @g6; ! &u = @choose(@uClasses3(g)); ! &v = @cellQ; ! &w = @cellQ;
+// the orbit generator: the elements of order six fall into three conjugacy classes (an element and its inverse),
+// derived below; conjugate generators give relabelled writings, non-conjugate ones do not, so the class is read
+@six = @filter(λ&g. @eqN(@order(g), #S{#S{#S{#S{#S{#S{#Z}}}}}}), @group)
+@inv = λ&g. @invGo(g, g)
+@invGo = λ&g. λ&h. (λ{#T: h; #F: @invGo(g, @compose(g, h))})(@eqTab(@compose(g, h), @identity))
+@conjugate = λ&g. λ&h. @any(λ&k. @eqTab(h, @compose(k, @compose(g, @inv(k)))), @group)
+@classReps = λ{#Nil: #Nil; #Cons: λ&g. λ&gs. #Cons{g, @classReps(@filter(λ&h. (λ{#T: #F; #F: #T})(@conjugate(g, h)), gs))}}
+@writing = ! &g = @choose(@classReps(@six)); ! &u = @choose(@uClasses3(g)); ! &v = @cellQ; ! &w = @cellQ;
   #Cons{@fixedCell, @orbit6(g, #W{u, v, w})}
 @keep = λ&W. (λ{#T: W; #F: &{}})(@holds(W))
-@main = @headL(%(@keep(@writing)))
+@main = ! &pts = %(@keep(@writing)); #Pair{@lenN(pts), pts}
