@@ -616,10 +616,16 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   coordinates are projected lazily through the lifting (an index superposition is a node and stays in the
   value), an erased side is dropped, and a value that is one shape with a kept value up to a bijection of index
   coordinates with orientation is identified. A face whose side or coordinate is a superposition distributes
-  over it (FAD-SUP, FDL-SUP). Result, nothing derived: 87,260 splits, 87,213 sides erased, 48 leaves of which
-  24 are relabellings of the other 24, 5,799,244 interactions; every leaf a seven-cell writing. Against the
-  derived-group posing (23,860 sides, 17,121,108 interactions) the net's own quotient is the cheaper and it
-  needs no class, no orbit and no generator chosen. What remains posed: the alphabet {−1, 0, 1} and the length.
+  over it (FAD-SUP, FDL-SUP). Result: 87,260 splits, 87,213 sides erased, 48 leaves of which 24 are
+  relabellings of the other 24, 5,799,244 interactions; every leaf a seven-cell writing.
+  What is still posed by hand here, stated plainly: the orbit (six cells as one cell carried along cyclic∘swap,
+  sharing its choice coordinates) and the fixed cell's shape, both read off the type's symmetry but written by
+  me; the alphabet {−1, 0, 1}; the length seven. The reading identifies relabellings among results, and, by 9.5,
+  a choice whose two faces are one shape up to relabelling is read once (COLQ-HALF); it does not yet identify
+  two partial sides that differ by a permutation of cells, which is what would let the seven cells be posed
+  with no orbit written. Without the written orbit the cut is over 3^84 and the reading identifies nothing
+  before the leaves. That identification of partial sides is the next construction, and the comparison of
+  interaction counts with the derived-group posing says nothing about it.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
