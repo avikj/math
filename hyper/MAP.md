@@ -553,9 +553,13 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
     the rules of + and × on bits and the net's sharing. Ledger: 23,242 interactions for the 1-bit fibre plus a
     concrete 2×2 and a 4×4 by blocks. The 1-bit fibre of two 2×2 matrices has 256 vertices and the product reads
     169: when a bit of the left factor is 0 the matching bit of the right factor is never read (9.3's "already
-    implied is never made", here as erasure). This is the honest state of the product on the net. Whether the
-    geodesic of this posed declaration is the seven-product writing is not something this file decides; it
-    counts what the net does.
+    implied is never made", here as erasure). This is the product's execution. A coordinate is a label, so a
+    relabelling of the index is not another object: the product's symmetries are identified by the construction,
+    not added to it. The ring identities are the rules of + and × on bits and the net's sharing. The order of the
+    sum over j is not chosen: it is the index cube's j-coordinate halved along its bits, the numeral shape, as the
+    sum shape in sort was the input's index and not a policy. So the ledger of this file is the geodesic of the
+    product as posed (5.14, 5.17), with no room for variation. The writing-cube inference below is a different
+    object (writings of a bilinear map with coefficients posed) and is kept as what it is.
     **The forced execution** (`@inferForced`). The cube-and-cut above was the regression sort had: a free line
     erased afterwards. The forced form reads no coordinate blindly: a split whose entries give one expression with
     two targets is empty before any cell is read (this empties every sum of generator-fixed terms); the fixed terms
