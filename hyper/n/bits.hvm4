@@ -8,7 +8,7 @@
 // full adder on one place: (sum, carry)
 @fa = λ{#F: λ{#F: λ&c. #Pair{c, #F}; #T: λ{#F: #Pair{#T, #F}; #T: #Pair{#F, #T}}};
        #T: λ{#F: λ{#F: #Pair{#T, #F}; #T: #Pair{#F, #T}}; #T: λ{#F: #Pair{#F, #T}; #T: #Pair{#T, #T}}}}
-@addc = λ&c. λ{#Nil: λ&y. (λ{#F: y; #T: @inc(y)})(c); #Cons: λ&a. λ&as. λ{#Nil: @addc(c, #Cons{a, as}, #Nil);
+@addc = λ&c. λ{#Nil: λ&y. (λ{#F: y; #T: @inc(y)})(c); #Cons: λ&a. λ&as. λ{#Nil: @addc(c, #Nil, #Cons{a, as});
          #Cons: λ&b. λ&bs. (λ{#Pair: λ&s. λ&c2. #Cons{s, @addc(c2, as, bs)}})(@fa(a, b, c))}}
 @inc = λ{#Nil: #Cons{#T, #Nil}; #Cons: λ{#F: λ&t. #Cons{#T, t}; #T: λ&t. #Cons{#F, @inc(t)}}}
 @add = @addc(#F)
