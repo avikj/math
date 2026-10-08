@@ -5068,7 +5068,28 @@ fn u8 eqq_search(u64 ra, u64 rb, u32 k, u32 used) {
   }
   return 0;
 }
+// a signature invariant under relabelling and orientation of index coordinates: both sides of an index
+// superposition enter commutatively; everything else enters in order
+fn u64 eqq_sig(u64 loc) {
+  Term t = norm_read(loc);
+  u8 tag = term_tag(t);
+  if (tag == SUP) {
+    u64 a = eqq_sig(term_val(t)), b = eqq_sig(term_val(t) + 1);
+    if (is_index_label(term_ext(t))) return 0x9E3779B97F4A7C15ull ^ ((a + b) * 0xBF58476D1CE4E5B9ull) ^ ((a ^ b) * 0x94D049BB133111EBull);
+    return (0xD6E8FEB86659FD93ull * (u64)term_ext(t)) ^ (a * 0x2545F4914F6CDD1Dull) ^ (b * 0x9E3779B97F4A7C15ull);
+  }
+  if (tag == NUM) return 0xC2B2AE3D27D4EB4Full * (u64)(term_val(t) + 1);
+  if (tag == ERA) return 0x165667B19E3779F9ull;
+  if (tag >= C00 && tag <= C16) {
+    u64 h = 0x27D4EB2F165667C5ull * (u64)(term_ext(t) + 1);
+    u32 ari = term_arity(t);
+    for (u32 i = 0; i < ari; i++) h = (h ^ eqq_sig(term_val(t) + i)) * 0x9E3779B97F4A7C15ull + (u64)i;
+    return h;
+  }
+  return 0x7F4A7C159E3779B9ull * (u64)tag;
+}
 fn u8 eqq_same(u64 ra, u64 rb) {
+  if (eqq_sig(ra) != eqq_sig(rb)) return 0;
   EQQ_NA = 0; EQQ_NB = 0;
   eqq_labels(ra, EQQ_LA, &EQQ_NA, 0); eqq_labels(rb, EQQ_LB, &EQQ_NB, 0);
   return (EQQ_NA == EQQ_NB) && eqq_search(ra, rb, 0, 0);
