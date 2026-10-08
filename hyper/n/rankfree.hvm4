@@ -1,0 +1,9 @@
+#include "infer.hvm4"
+// the 2×2 product and nothing else: φ = tr(ABC), entries 11,12,21,22 = 0..3, slots of four; writings of length 7
+@phi = #Cons{#M{#Z0,#Z0,#Z0}, #Cons{#M{#Z0,#S{#Z0},#S{#S{#Z0}}}, #Cons{#M{#S{#Z0},#S{#S{#Z0}},#Z0}, #Cons{#M{#S{#Z0},#S{#S{#S{#Z0}}},#S{#S{#Z0}}},
+       #Cons{#M{#S{#S{#Z0}},#Z0,#S{#Z0}}, #Cons{#M{#S{#S{#Z0}},#S{#Z0},#S{#S{#S{#Z0}}}}, #Cons{#M{#S{#S{#S{#Z0}}},#S{#S{#Z0}},#S{#Z0}}, #Cons{#M{#S{#S{#S{#Z0}}},#S{#S{#S{#Z0}}},#S{#S{#S{#Z0}}}}, #Nil}}}}}}}}
+@four = #S{#S{#S{#S{#Z0}}}}
+@sizes = #Cons{@four, #Cons{@four, #Cons{@four, #Nil}}}
+@seven = #S{#S{#S{#S{#S{#S{#S{#Z0}}}}}}}
+// the length left free: the fibre at r = 1 … 6 is empty under the quotient read (5.27 case b), at 7 inhabited
+@main = @map(λ&r. @lenN(%(@infer(@phi, @sizes, r))), #Cons{#S{#S{#S{#S{#S{#Z0}}}}}, #Cons{#S{#S{#S{#S{#S{#S{#Z0}}}}}}, #Nil}})
