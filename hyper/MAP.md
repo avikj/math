@@ -546,10 +546,12 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
     Two generic corrections were needed to get there, both statements about quotients, neither about matrices: a
     fixed term has one coordinate per orbit of the generator on positions, and representatives are canonical under
     the generator's centraliser, the symmetries that act on the invariant cube, not under the whole stabiliser.
-    With the length left free (`n/rankfree.hvm4`, one program per length) the fibre is empty at r = 1, 2, 3, 4, 5,
-    6 (3.5M, 3.6M, 3.8M, 4.1M, 5.7M, 34.6M interactions) and inhabited at 7: 5.27's case (b) below seven and case
-    (a) at seven, the lower bound inhabited by the run. What stays posed, and only this: coefficients in {−1, 0, 1},
-    since an unbounded coefficient line with cancellation is not finitely cut and the object's writings use no other.
+    **No length posed** (`@inferFree`, `n/rankfree.hvm4`, `n/karatsubag.hvm4`): the length is a coordinate, the
+    line over lengths in order (9.11), each its splits, and the first point the collapse yields is the writing of
+    least length, every shorter length having been cut empty on the way: 5.27 both ways in one run. The 2×2
+    product: length 7, Strassen's shape, 201,779,965 interactions. The polynomial product: length 3, Karatsuba,
+    1,735,503. What stays posed, and only this: coefficients in {−1, 0, 1}, since an unbounded coefficient line
+    with cancellation is not finitely cut and the object's writings use no other.
     Defect, open: two collapses `%` in one term (a map of the inference over two lengths) segfault `net.c`; one per
     program works.
   The instance-shaped version of the same inference (`old/n/rank7_instance.hvm4`, the 3-cycle and the fixed term
