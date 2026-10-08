@@ -121,9 +121,10 @@
 @nonzeroQ = λ{#Q: λ&a. λ&b. λ&c. λ&d. @or((λ{#O: #F; λ&x. #T})(a), @or((λ{#O: #F; λ&x. #T})(b), @or((λ{#O: #F; λ&x. #T})(c), (λ{#O: #F; λ&x. #T})(d))))}
 @eye = @st(#P,#O,#O,#P)
 // representatives: a candidate is new when no earlier representative's orbit contains it
-@classes = λ&gs. λ&mk. λ&cands. @clGo(gs, mk, cands, #Nil)
-@clGo = λ&gs. λ&mk. λ{#Nil: λ&reps. reps; #Cons: λ&q. λ&qs. λ&reps.
-  (λ{#T: @clGo(gs, mk, qs, reps); #F: @clGo(gs, mk, qs, #Cons{q, reps})})(@any(λ&r. @memW(mk(q), @orbitBy(gs, mk(r))), reps))}
+// each representative carries its orbit, computed once; a candidate is new when no stored orbit contains it
+@classes = λ&gs. λ&mk. λ&cands. @map(λ{#Pair: λ&r. λ&o. r}, @clGo(gs, mk, cands, #Nil))
+@clGo = λ&gs. λ&mk. λ{#Nil: λ&reps. reps; #Cons: λ&q. λ&qs. λ&reps. ! &c = mk(q);
+  (λ{#T: @clGo(gs, mk, qs, reps); #F: @clGo(gs, mk, qs, #Cons{#Pair{q, @orbitBy(gs, c)}, reps})})(@any(λ{#Pair: λ&r. λ&o. @memW(c, o)}, reps))}
 @uClasses = @classes(@gensA, λ&u. #W{u, @eye, @eye}, @filter(@nonzeroQ, @allQ))
 // for a representative u, the symmetries keeping slot B at slot B and fixing u as a matrix: v's classes
 @keepsB = λ&tab. @allL(λ&e. (λ{#SP: λ&sg. λ{#Pos: λ&sl. λ&e2. @eqSlot(sl, #B)}})(@apply(tab, #Pos{#B, e})), @ents)
@@ -134,7 +135,8 @@
 @scaleW = λ{#W: λ&u. λ&v. λ&w. #W{@negQ(u), @negQ(v), w}}
 @negQ = λ{#Q: λ&a. λ&b. λ&c. λ&d. #Q{@mulZ(#N, a), @mulZ(#N, b), @mulZ(#N, c), @mulZ(#N, d)}}
 @gensA2 = #Cons{@scaleW, @gensA}
-@uClasses2 = @classes(@gensA2, λ&u. #W{u, @eye, @eye}, @filter(@nonzeroQ, @allQ))
+@zeroQ = @st(#O,#O,#O,#O)
+@uClasses2 = @classes(@gensA2, λ&u. #W{u, @zeroQ, @zeroQ}, @filter(@nonzeroQ, @allQ))
 @scaleVW = λ{#W: λ&u. λ&v. λ&w. #W{u, @negQ(v), @negQ(w)}}
 @gensBU2 = λ&u. #Cons{@scaleVW, @gensBU(u)}
 @vClasses2 = λ&u. @classes(@gensBU2(u), λ&v. #W{u, v, @eye}, @filter(@nonzeroQ, @allQ))
