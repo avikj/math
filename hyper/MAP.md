@@ -546,6 +546,16 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
     Two generic corrections were needed to get there, both statements about quotients, neither about matrices: a
     fixed term has one coordinate per orbit of the generator on positions, and representatives are canonical under
     the generator's centraliser, the symmetries that act on the invariant cube, not under the whole stabiliser.
+    **The product as the object** (`n/matmul.hvm4`). Posed the way sort is posed and nothing else: entries are
+    numerals of bits, multiplication is addition composed, the matrix is indexed by the cube and at every node the
+    product is its own unfolding C_ik = Σ_j A_ij B_jk (9.6 read for the product), inputs over the fibre are numerals
+    of superposed bits, `%` reads the vertices. No writing, no coefficient, no length is posed; the identities are
+    the rules of + and × on bits and the net's sharing. Ledger: 23,242 interactions for the 1-bit fibre plus a
+    concrete 2×2 and a 4×4 by blocks. The 1-bit fibre of two 2×2 matrices has 256 vertices and the product reads
+    169: when a bit of the left factor is 0 the matching bit of the right factor is never read (9.3's "already
+    implied is never made", here as erasure). This is the honest state of the product on the net. Whether the
+    geodesic of this posed declaration is the seven-product writing is not something this file decides; it
+    counts what the net does.
     **The forced execution** (`@inferForced`). The cube-and-cut above was the regression sort had: a free line
     erased afterwards. The forced form reads no coordinate blindly: a split whose entries give one expression with
     two targets is empty before any cell is read (this empties every sum of generator-fixed terms); the fixed terms
