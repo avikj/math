@@ -529,6 +529,64 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   `Sorted`, and the comparison as a face. What is not in the book: any word for merging, any free line cut by a
   predicate, any primitive. The leftover run at a merge is appended by pointer, so the interaction count sits
   below 9.7's a + b per merge, which assumed one constructor emitted per element.
+- **Numbers as the book poses them** (6.1–6.3; `n/number.hvm4`). A number is a multitude of position-less
+  units with its relabellings discarded: a shape whose vertices are its units, one fresh coordinate per choice,
+  the units carrying nothing. Counting reads the vertices. Addition is disjoint union (a fresh coordinate for the
+  side); multiplication is product (every unit of A replaced by the shape of B). The ring identities are not
+  computed: a coordinate is a label, so A ⊎ B and B ⊎ A, A × (B ⊎ C) and (A × B) ⊎ (A × C) are one shape, and the
+  pinned counts read them off. `n/bits.hvm4` (place-value numerals with carry, by case analysis on closed
+  constructors) stays for sort and the numeral tests; it is evaluation and is not a posing of the identities.
+- **The type of the matrix product, generic in its entries** (`n/product.hvm4`). An entry is an indeterminate, a
+  unit carrying only its name. C_ik = Σ_j a_ij × b_jk is posed as the shape it is; nothing is evaluated. The
+  normal form of each entry is its monomials, the pairs (a_ij, b_jk): eight cells for 2×2, 277 interactions.
+  On multitudes there is no cancellation, so no writing with fewer than the eight product cells exists in this
+  posing; the seven-product form needs signed units (an integer as a pair of multitudes with cancellation), which
+  is the next posing and is not here.
+- **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
+  shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
+  were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
+- **The diamond** (5.11, 5.13, 5.24). `-R n` makes the normaliser visit a node's fields in a seeded order, so which
+  copy of a shared sub-net forces it first changes from run to run; `n/diamond.hvm4` under eight schedules has one
+  ledger, 3,053, with the visiting order confirmed to differ. The inner strategy (needed redex first) is fixed; what
+  varies is the order among independent needs and shared forcing. HVM4's substitution of a variable is a global
+  map rather than a wire, so this is the diamond measured, not proved.
+- **`%x`, the collapse as a value (COL)**, and **`?`, a fresh coordinate (FRS)**: `n/xor` `n/same` `n/empty` `n/diff`
+  `n/sat3` `n/fresh`, as before. The SAT receipts (`-L`, HVM4's static labels) check 282/282.
+- **Faces (FA0/FA1, `|0I x` and `|1I x`; FAD, `|(side)(coord) x`).** The restriction of x to a side of a coordinate,
+  pushed through constructors, lambdas and other coordinates, consuming every occurrence of its own. HVM4's dup by
+  a label projects one level only; a face is the side at every depth, which is what the collapse's correlation
+  means. A named dup (`! &I{a,b}`) keeps its coordinate; only auto-dups get a fresh one per instantiation.
+- **The interval** (0.3, 0.4, 0.7, 0.8, 0.11; `n/interval.hvm4`). `&I{a,b}` is a path; its faces are `|0I`, `|1I`;
+  the operations of 0.3 are reparametrisations of a cube, each written once with faces alone: `i := ~i` swaps the
+  faces, `i := i ∧ j` is `&I{|0I c, &J{|0I c, |1I c}}`, `i := i ∨ j` is `&I{&J{|0I c, |1I c}, |1I c}`. All sixteen
+  laws of 0.3 hold as vertex equality, and the one fact's contraction `(p i, λ j → p (i ∧ j))` reads `(x, refl)` at
+  i = 0 and `(y, p)` at i = 1. On vertices the net's interval is Boolean: `i ∧ ~i` reads as 0, which 0.3's free
+  algebra does not force; nothing in the text uses that distinction (0.11 lists the three uses).
+- **Numbers** (6.1–6.3, 9.11; `n/bits.hvm4`, `n/numeral.hvm4`). Bool is one coordinate `&(?){#F,#T}`; a numeral is
+  its bits, least place first; the type of k-bit numerals is the k-cube. Addition is disjoint union place by place
+  with carries (6.3); comparison reads places from the top and stops at the first that differs. The 2-cube plus 3
+  is read by `%` as the fibre {3,5,4,6}.
+- **The declaration** (§9, `n/sort.hvm4`). `Σ B. (B is a rearrangement of A) × Sorted B` (9.15), A a finite set
+  indexed by the cube (9.11), elements numerals. The rearrangements of a node are the interleavings of the
+  rearrangements of its halves (9.2, 9.8): `@cube` is that coordinate, one `?` per interleaving choice; unrestricted, `%` reads 24 = 4! vertices at n = 4. `Sorted` is
+  not a predicate that erases sides; unfolded at the head of an interleaving of two sorted runs it is decided by the
+  one comparison the held order does not imply, between the two head candidates, and its outcome names the face of
+  the cube at that coordinate (9.3, 9.6). `@sorted` creates the coordinate, builds its superposition, and takes that
+  face: the cube is never materialised beyond the coordinate being restricted, which is what a comparison costs. The
+  faces taken are the permutation, kept with the answer (0.2, 3.6); `@faces` counts them, `@verify` replays them
+  without a comparison and the answer comes back (8.6). Ledger:
+
+  | input | interactions | coordinates created = faces taken = comparisons |
+  |---|---|---|
+  | n=4, balanced | 1,159 | 5 (= ⌈log₂ 24⌉, 9.4) |
+  | n=8, balanced numeral | 5,236 | 17 (9.9's n log n − n + 1) |
+  | n=8, tally (chain) | 5,898 | 20 |
+
+  The shape is the input's numeral, not a policy (9.11), and the balanced one is cheaper on both axes (9.7).
+  What is posed, as 9.15 says it must be: the index as a cube, the factorisation of the rearrangements along it,
+  `Sorted`, and the comparison as a face. What is not in the book: any word for merging, any free line cut by a
+  predicate, any primitive. The leftover run at a merge is appended by pointer, so the interaction count sits
+  below 9.7's a + b per merge, which assumed one constructor emitted per element.
 - **The type of the matrix product** (`n/product.hvm4`). Not a run on an input: the defining equations
   C_ik = Σ_j A_ij B_jk taken on the cube of all inputs at once, every entry the k-cube of bits, so the term is the
   function itself as one superposed shape. + and × on bits are the numeral's identities. The net normalises the

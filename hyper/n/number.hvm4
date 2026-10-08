@@ -1,0 +1,30 @@
+// index 6.1–6.3 on the net, literally. A number is a multitude of position-less units with its relabellings
+// discarded: on the complex, a multitude is a shape whose vertices are its units, one fresh coordinate per
+// choice, and the units carry nothing (#U). To count (6.1) is to forget which is which: read the vertices with %
+// and keep only how many. Addition is disjoint union (6.3): one fresh coordinate choosing the side. Multiplication
+// is product: a unit of the product is a unit of each factor, the shape of A with every unit replaced by the shape
+// of B. The identities of + and × are not computed: a coordinate is a label, and a relabelling is the same shape,
+// so A ⊎ B and B ⊎ A, A × (B ⊎ C) and (A × B) ⊎ (A × C), are equal as multitudes by construction, which is what
+// the counts below read off.
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@lenN = λ{#Nil: #Z; #Cons: λ&h. λ&t. #S{@lenN(t)}}
+// the multitude of n units, n given as the tally (a numeral is the class, the tally one presentation of it)
+@units = λ{#Z: &{}; #S: λ{#Z: #U; #S: λ&n. &(?){#U, @units(#S{n})}}}
+// counting: the vertices, how many
+@count = λ&a. @lenN(%(a))
+// addition: disjoint union, one fresh coordinate for the side
+@plus = λ&a. λ&b. &(?){a, b}
+// multiplication: product, every unit of a replaced by the shape of b
+@times = λ&a. λ&b. (λu. (λv. #Pr{u, v})(b))(a)
+@two = #S{#S{#Z}}
+@three = #S{@two}
+@five = #S{#S{@three}}
+// 6.3: |A ⊎ B| = |A| + |B|, |A × B| = |A|·|B|; the ring identities as counts: commutativity, associativity,
+// distributivity, and (a+b)(c+d) = ac + ad + bc + bd
+@main = #Pair{@count(@plus(@units(@two), @units(@three))),
+        #Pair{@count(@times(@units(@two), @units(@three))),
+        #Pair{@count(@plus(@units(@three), @units(@two))),
+        #Pair{@count(@times(@units(@two), @plus(@units(@three), @units(@five)))),
+        #Pair{@count(@plus(@times(@units(@two), @units(@three)), @times(@units(@two), @units(@five)))),
+        #Pair{@count(@times(@plus(@units(@two), @units(@three)), @plus(@units(@five), @units(@two)))),
+               @count(@times(@times(@units(@two), @units(@three)), @units(@five)))}}}}}}

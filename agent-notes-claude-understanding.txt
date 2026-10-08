@@ -566,3 +566,9 @@ AG. The inference made generic (hyper/n/infer.hvm4): @aut, @quotient, @order, @d
   read as the generator; the 2×2 product's run under @infer(φ, sizes, 7) reads an order-6 generator (swap-conjugation
   composed with the slot cycle), split 1 + 6, 24 free coefficients. The instance-shaped rank7 and the flat cubes are
   in hyper/old/. A shared lambda body makes every cell it builds one coordinate: cells are built by unfolding.
+
+[2026-10-08] ENTRY AH — the mathematical error, recorded.
+   I posed the extension of the matrix product (a table over enumerated bit values) instead of its type, generic
+   in its entries with the identities as paths; and I posed + and × as evaluation on closed numerals, so the ring
+   identities were never in the net as paths. Both are in CLAUDE.md at the repo root, read first every session.
+   Everything built on them (inference library, writing cube, propagators, the product run on inputs) was deleted.
