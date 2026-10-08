@@ -3,13 +3,14 @@
 // the top bit of the index. A product of blocks is the type again one level down, so its cost is its own ledger;
 // a sum of blocks is one coordinate, a disjoint union, whatever the blocks hold. A product of two leaf entries is
 // one cell, #Pr{u, v}; it is not expanded: distribution is an identity of the complex, not a step. A sum of two
-// leaf entries is one cell, a coordinate; the negation of a leaf is one cell, #Neg{x}; a block sum is these at
-// every leaf, (N/2)² cells, the price of an addition. Two terms of
+// leaf entries is one cell, #Sum{a, b}, shared and never looked into by a product (a sum as a superposition is
+// split by every binder it is copied through, DUP-SUP-DIFF, which doubles a leaf per level and is not the price
+// of an addition); the negation of a leaf is one cell, #Neg{x}; a block sum is these at every leaf, (N/2)² cells. Two terms of
 // the same type, read side by side as different starting terms (5.28): the defining shape, eight block products
 // and four unions at every node, and the seven-product writing, seven block products and eighteen unions. The
 // ledger of each is read at depth k; the normal forms (the monomials, by winding) are the same shapes.
 @pr = λ&a. λ&b. #Pr{a, b}
-@sum = λ&a. λ&b. &(?){a, b}
+@sum = λ&a. λ&b. #Sum{a, b}
 @neg = λ&a. #Neg{a}
 @direct = λ{#Leaf: λ&x. λ{#Leaf: λ&y. #Leaf{@pr(x, y)}};
   #Blk: λ&a. λ&b. λ&c. λ&d. λ{#Blk: λ&e. λ&f. λ&g. λ&h.
