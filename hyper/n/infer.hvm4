@@ -82,7 +82,23 @@
 // r = f + m·k for each f; the fixed terms and the first generator are canonical (6.1, 9.5)
 @orbit = λ&g. λ&k. λ&T. @orbitGo(g, k, T)
 @orbitGo = λ&g. λ{#Z0: λ&T. #Nil; #S: λ&k. λ&T. #Cons{T, @orbitGo(g, k, @actT(g, T))}}
-@fixedTerms = λ&sizes. λ{#Z0: #Nil; #S: λ&f. #Cons{#T{@pat(@nth(sizes, #Z0)), @pat(@nth(sizes, #S{#Z0})), @pat(@nth(sizes, #S{#S{#Z0}}))}, @fixedTerms(sizes, f)}}
+// a term fixed by g has one coordinate per orbit of g on positions (slot, index): the cells of an orbit are one
+// cell (6.1 one level down), so invariance is built, not cut
+@positions = λ&sizes. @concatMap(λ&sl. @map(λ&i. #Pos{sl, i}, @range(@nth(sizes, sl))), @range(#S{#S{#S{#Z0}}}))
+@permOf = λ{#R: λ&pa. λ&pb. λ&pc. λ&s. λ{#Z0: pa; #S: λ{#Z0: pb; #S: λ&q. pc}}}
+@tgtSlot = λ{#R: λ&pa. λ&pb. λ&pc. λ&s. @inv(@slotPerm(s))}
+@actPos = λ&g. λ{#Pos: λ&sl. λ&i. #Pos{@nth(@tgtSlot(g), sl), @nth(@permOf(g, sl), i)}}
+@eqPos = λ{#Pos: λ&a. λ&i. λ{#Pos: λ&b. λ&j. @and(@eqN(a, b), @eqN(i, j))}}
+@memPos = λ&p. λ{#Nil: 0; #Cons: λ&h. λ&t. (λ{1: 1; 0: @memPos(p, t)})(@eqPos(p, h))}
+@orbitPos = λ&g. λ&p. @orbitPosGo(g, p, @actPos(g, p), #Cons{p, #Nil})
+@orbitPosGo = λ&g. λ&p0. λ&p. λ&acc. (λ{1: acc; 0: @orbitPosGo(g, p0, @actPos(g, p), #Cons{p, acc})})(@eqPos(p, p0))
+@orbitsPos = λ&g. λ{#Nil: #Nil; #Cons: λ&p. λ&rest. ! &orb = @orbitPos(g, p); #Cons{orb, @orbitsPos(g, @filter(λ&q. (λ{1: 0; 0: 1})(@memPos(q, orb)), rest))}}
+// one fresh cell per orbit; a position's cell is its orbit's
+@cellsFor = λ{#Nil: #Nil; #Cons: λ&orb. λ&rest. #Cons{#Pair{orb, @fresh}, @cellsFor(rest)}}
+@cellAt = λ&cells. λ&p. (λ{#Cons: λ{#Pair: λ&orb. λ&c. λ&rest. (λ{1: c; 0: @cellAt(rest, p)})(@memPos(p, orb))}})(cells)
+@fixedTermG = λ&g. λ&sizes. ! &cells = @cellsFor(@orbitsPos(g, @positions(sizes)));
+  #T{@map(λ&i. @cellAt(cells, #Pos{#Z0, i}), @range(@nth(sizes, #Z0))), @map(λ&i. @cellAt(cells, #Pos{#S{#Z0}, i}), @range(@nth(sizes, #S{#Z0}))), @map(λ&i. @cellAt(cells, #Pos{#S{#S{#Z0}}, i}), @range(@nth(sizes, #S{#S{#Z0}})))}
+@fixedTerms = λ&g. λ&sizes. λ{#Z0: #Nil; #S: λ&f. #Cons{@fixedTermG(g, sizes), @fixedTerms(g, sizes, f)}}
 @gens = λ&sizes. λ{#Z0: #Nil; #S: λ&m. #Cons{#T{@pat(@nth(sizes, #Z0)), @pat(@nth(sizes, #S{#Z0})), @pat(@nth(sizes, #S{#S{#Z0}}))}, @gens(sizes, m)}}
 // the splits r = f + m·k, as a line over f
 @splits = λ&r. λ&k. @splitsGo(r, k, #Z0)
@@ -94,10 +110,13 @@
 @choose = λ{#Nil: &{}; #Cons: λ&h. λ&t. &(?){h, @choose(t)}}
 // the cube of writings for one split, with its side conditions: fixed terms invariant and canonical under G,
 // the first generator's u canonical under the stabiliser of the fixed terms
-@quotientAt = λ&G. λ&g. λ&k. λ&sizes. λ{#Pair: λ&f. λ&m. ! &F = @fixedTerms(sizes, f); ! &Gs = @gens(sizes, m);
+@quotientAt = λ&G. λ&g. λ&k. λ&sizes. λ{#Pair: λ&f. λ&m. ! &F = @fixedTerms(g, sizes, f); ! &Gs = @gens(sizes, m);
   #Q{F, Gs, @lcat(F, @concatMap(λ&T. @orbit(g, k, T), Gs))}}
-@sideConds = λ&G. λ&g. λ{#Q: λ&F. λ&Gs. λ&W. ! &stabF = @stabAll(G, F);
-  @and(@all(λ&T. @and(@eqTv(@valsT(T), @valsT(@actT(g, T))), @canonT(G, T)), F),
+// the symmetries that act on the quotient cube are those commuting with the generator; representatives are
+// canonical under them (and, for the generator, under their stabiliser of the fixed terms)
+@centraliser = λ&G. λ&g. λ&sizes. ! &ms = @allMon(sizes); @filter(λ&h. @all(λ&m. @eqM(@actM(h, @actM(g, m)), @actM(g, @actM(h, m))), ms), G)
+@sideConds = λ&G. λ&g. λ&sizes. λ{#Q: λ&F. λ&Gs. λ&W. ! &C = @centraliser(G, g, sizes); ! &stabF = @stabAll(C, F);
+  @and(@all(λ&T. @canonT(C, T), F),
        (λ{#Nil: 1; #Cons: λ&T1. λ&rest. @canonU(stabF, T1)})(Gs))}
 @stabAll = λ&G. λ{#Nil: G; #Cons: λ&T. λ&rest. @stabAll(@stab(G, T), rest)}
 @canonU = λ&G. λ{#T: λ&u. λ&v. λ&w. ! &uv = @map(@val, u); @all(λ&g. @leL(uv, @fstT(@valsT(@actT(g, #T{u, v, w})))), G)}
@@ -129,5 +148,5 @@
 // ---- complete inference: the fibre of writings of length r of the object, up to its symmetries ----
 @infer = λ&phi. λ&sizes. λ&r. ! &G = @aut(phi, sizes); ! &Q = @quotient(G, sizes, r);
   (λ{#Pair: λ&gk. λ&q. (λ{#Q: λ&F. λ&Gs. λ&W. ! &es = @order(W, @allMon(sizes));
-     (λ{1: @map(@valsT, W); 0: &{}})(@and(@sideConds(G, @fstP(gk), #Q{F, Gs, W}), @decl(phi, W, es)))})(q)})(Q)
+     (λ{1: @map(@valsT, W); 0: &{}})(@and(@sideConds(G, @fstP(gk), sizes, #Q{F, Gs, W}), @decl(phi, W, es)))})(q)})(Q)
 @fstP = λ{#Pair: λ&a. λ&b. a}

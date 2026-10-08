@@ -530,14 +530,14 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   trilinear form given by its monomials; the question is its writings as sums of r rank-one terms. `@aut` reads the
   object's symmetries as a fibre over the relabelling cube (the rearrangement cube of 9.2, once per slot, and the
   slot permutations). `@quotient` poses the writing cube up to that group: a generator of maximal order is read out
-  of the group, orbits are the generator iterated, fixed terms are cut by invariance, and representatives are
+  of the group, orbits are the generator iterated, a fixed term has one coordinate per orbit of the generator on positions
+  (6.1 one level down, so invariance is built, never cut), and representatives are
   canonical under the group and under the stabiliser (6.1, 9.5), the splits `r = f + m·k` a line. `@order` sorts
   the entries by how many coordinates each would open, computed from the coordinates' names (9.4), supports before
   signs, and `@decl` reads the equation mod 2 before the equation. `@infer(φ, sizes, r)` is the whole of it.
   - **Karatsuba** (`n/karatsubag.hvm4`): φ of the degree-one polynomial product and r = 3, nothing else. The group
     has four elements, the generator read is the reversal (order 2), the split is 1 + 2, and `%` reads ten points,
-    the first `(a₀+a₁)(b₀+b₁)·x` with the orbit `{a₁b₁(x²−x), a₀b₀(1−x)}`: Karatsuba's identity. 17,468,537
-    interactions.
+    the first `(a₀+a₁)(b₀+b₁)·x` with the orbit `{a₁b₁(x²−x), a₀b₀(1−x)}`: Karatsuba's identity. 1,114,919 interactions.
   - **The 2×2 product** (`n/rank7g.hvm4`): φ = tr(ABC) and r = 7, nothing else. The group has 48 elements; the
     generator read has order 6 (the swap-conjugation composed with the slot cycle), so the split is 1 + 6: one
     fixed term and one generator with five rotations, 24 free coefficients. See the ledger line below for its state.
