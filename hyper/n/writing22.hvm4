@@ -9,11 +9,11 @@
 @cellQ = ! &a = @cellS; ! &b = @cellS; ! &c = @cellS; ! &d = @cellS; #Q{a, b, c, d}
 @cellS = ! &s = ?; ! &g = ?; &(s){#O, &(g){#P, #N}}
 @choose = λ{#Nil: &{}; #Cons: λ&h. λ&t. ! &c = ?; &(c){h, @choose(t)}}
-@orbit6 = λ&T. ! &g = @g6; ! &T1 = @actCell(g, T); ! &T2 = @actCell(g, T1); ! &T3 = @actCell(g, T2); ! &T4 = @actCell(g, T3); ! &T5 = @actCell(g, T4);
+@orbit6 = λ&g. λ&T. ! &T1 = @actCell(g, T); ! &T2 = @actCell(g, T1); ! &T3 = @actCell(g, T2); ! &T4 = @actCell(g, T3); ! &T5 = @actCell(g, T4);
   #Cons{T, #Cons{T1, #Cons{T2, #Cons{T3, #Cons{T4, #Cons{T5, #Nil}}}}}}
 @fixedCell = ! &y = ?; &(y){#W{@eye, @eye, @eye}, #W{@st(#O,#P,#P,#O), @st(#O,#P,#P,#O), @st(#O,#P,#P,#O)}}
 // v's classes under the stabiliser of u cost more to derive per side than the faces cost to cut; v is coordinates
-@writing = ! &u = @choose(@uClasses2); ! &v = @cellQ; ! &w = @cellQ;
-  #Cons{@fixedCell, @orbit6(#W{u, v, w})}
+@writing = ! &g = @g6; ! &u = @choose(@uClasses3(g)); ! &v = @cellQ; ! &w = @cellQ;
+  #Cons{@fixedCell, @orbit6(g, #W{u, v, w})}
 @keep = λ&W. (λ{#T: W; #F: &{}})(@holds(W))
 @main = @headL(%(@keep(@writing)))

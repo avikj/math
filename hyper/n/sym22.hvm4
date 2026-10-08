@@ -140,6 +140,13 @@
 @scaleVW = λ{#W: λ&u. λ&v. λ&w. #W{u, @negQ(v), @negQ(w)}}
 @gensBU2 = λ&u. #Cons{@scaleVW, @gensBU(u)}
 @vClasses2 = λ&u. @classes(@gensBU2(u), λ&v. #W{u, v, @eye}, @filter(@nonzeroQ, @allQ))
+// the class of the orbit cell's u is under the symmetries that commute with the orbit generator (they carry a
+// g-orbit to a g-orbit) and keep slot A; the scaling commutes; the shear is kept only if it commutes with g on cells
+@commutes = λ&g. λ&t. @eqTab(@compose(g, t), @compose(t, g))
+@shearCommutes = λ&g. @allL(λ&c. @eqW(@actCell(g, @shearW(c)), @shearW(@actCell(g, c))), @strassen)
+@gensA3 = λ&g. #Cons{@scaleW, @lcat(@map(λ&t. @actCell(t), @filter(λ&t. @and(@keepsA(t), @commutes(g, t)), @group)),
+  (λ{#T: #Cons{@shearW, #Nil}; #F: #Nil})(@shearCommutes(g)))}
+@uClasses3 = λ&g. @classes(@gensA3(g), λ&u. #W{u, @zeroQ, @zeroQ}, @filter(@nonzeroQ, @allQ))
 @main = #Pair{#Pair{@lenN(@group), @holds(@strassen)},
         #Pair{#Pair{@holds(@map(@shearW, @strassen)), @holds(@map(@actCell(@g6), @strassen))},
         #Pair{@lenN(@orbitC(#W{@st(#P,#O,#O,#P), @st(#P,#O,#O,#P), @st(#P,#O,#O,#P)})),
