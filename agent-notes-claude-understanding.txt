@@ -560,3 +560,9 @@ AF. Complete inference run on the 2×2 product, nothing posed but the product: i
   classes of Strassen's u's, the first point read being Strassen's seven. Applied at each node of the index cube:
   49 against 64 entry products at N=4. The flat 3^84 cube of the same declaration could not open its first entry;
   the quotient the object hands over (6.1) is the whole difference. hyper/MAP.md, hyper/classes_rank7.txt.
+
+AG. The inference made generic (hyper/n/infer.hvm4): @aut, @quotient, @order, @decl, @infer, with the object's
+  monomials and the writing length as the only inputs. Karatsuba comes out of @infer(φ, sizes, 3) with the reversal
+  read as the generator; the 2×2 product's run under @infer(φ, sizes, 7) reads an order-6 generator (swap-conjugation
+  composed with the slot cycle), split 1 + 6, 24 free coefficients. The instance-shaped rank7 and the flat cubes are
+  in hyper/old/. A shared lambda body makes every cell it builds one coordinate: cells are built by unfolding.
