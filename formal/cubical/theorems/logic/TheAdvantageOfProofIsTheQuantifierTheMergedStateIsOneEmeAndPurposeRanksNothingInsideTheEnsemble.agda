@@ -27,7 +27,7 @@
 -- W5: THE ADVANTAGE OF PROOF IS THE QUANTIFIER (§1).  The sentence is
 -- exactly right about each single instance and exactly wrong about
 -- their totality, and both halves are terms.  Running the system
--- reaches one endpoint per run; the term `sarva-prapti` reaches EVERY
+-- reaches one endpoint per run; the term `reachesEvery` reaches EVERY
 -- endpoint at once — a function (n : ℕ) → Evolve zero n, built by one
 -- induction through the snoc lemma — and no amount of running produces
 -- a universally quantified statement, because a run is one point of
@@ -44,10 +44,10 @@
 -- withheld.  Wolfram's February 2026 sentence is stronger: merged IN
 -- THE OBJECT.  That is the set quotient, and it is also checked: under
 -- the co-terminality relation, the branches become EQUAL as data
--- (`ekibhava`, by eq/), the whole quotient contracts to a single point
--- (`eka-eme`) — an object with no property but its own distinctness,
+-- (`equalAsData`, by eq/), the whole quotient contracts to a single point
+-- (`oneEme`) — an object with no property but its own distinctness,
 -- which is Wolfram's eme, constructed rather than posited — and the
--- stronger merge still has no section (`punaruddhara-nasti-eva`): the
+-- stronger merge still has no section (`noSectionEither`): the
 -- collision that refuted reconstruction from the thread refutes it
 -- from the quotient, by the same two congs.  So the two merges the
 -- 2021 and 2026 sentences name — treat-as-equivalent and
@@ -60,8 +60,8 @@
 -- the endpoint, populated here by the two interchanged orders.  Any
 -- assessor that reads only purpose-achievement — any function out of
 -- the merged outcome, prop-valued fitness included — answers equally
--- on all ensemble members (`niyojana-anankana`, the quotient form of
--- Coordinatization…'s baddha-drashta): selection BY the purpose cannot
+-- on all ensemble members (`purposeRanksNothing`, the quotient form of
+-- Coordinatization…'s boundedObserver): selection BY the purpose cannot
 -- rank WITHIN the ensemble that achieves it, which is abstract 12's
 -- theorem (no scoring function of the outcome ranks the route) arrived
 -- at from Wolfram's November 2025 vocabulary.  The orchestration half

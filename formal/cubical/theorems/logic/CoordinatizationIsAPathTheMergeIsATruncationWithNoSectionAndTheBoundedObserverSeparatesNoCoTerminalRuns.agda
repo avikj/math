@@ -35,36 +35,36 @@
 -- coordinate change is an equivalence; univalence turns it into a path
 -- ua; and the two STRUCTURED systems — carrier together with both
 -- updating events — are connected by a single path in the type of
--- systems (`nirdeshantara`, built with ua→ and ua-gluePath, the
+-- systems (`coordinateChange`, built with ua→ and ua-gluePath, the
 -- commuting datum being refl in both components).  Consequently EVERY
 -- property of systems transports across the coordinate change by
--- subst, with no re-proof (`nirdesha-anadara`), and the emulation map
+-- subst, with no re-proof (`propertiesCross`), and the emulation map
 -- that "moves" between the two coordinate systems is not postulated
 -- beside the path — it IS the path's transport, and it COMPUTES to the
--- coding function (`sankramana-ganana`, by uaβ).  "The same limiting
+-- coding function (`transportComputes`, by uaβ).  "The same limiting
 -- object" is then not agreement-after-inspection but contractibility:
 -- the space of coordinatizations of the fixed carrier, each carrying
--- its own identification, is a point (`eka-vastu`, by EquivContr —
+-- its own identification, is a point (`oneLimitingObject`, by EquivContr —
 -- univalence again).  No coordinate system is privileged, and the
 -- choice of one costs nothing that transport does not refund.
 --
 -- W2 IS PROPOSITIONAL TRUNCATION (§4).  The observer's single thread
 -- is ∥ Evolve a b ∥₁.  Two named evolutions 0 → 3 — one-then-two, and
 -- two-then-one — are proved distinct by the invariant that reads the
--- first updating event (`prathama-bheda`), and proved merged by the
--- squash (`militam`).  The merge is therefore real and really lossy,
+-- first updating event (`routesDistinct`), and proved merged by the
+-- squash (`merged`).  The merge is therefore real and really lossy,
 -- and the loss is exhibited as the branchial pair: two distinct
 -- residents of the fibre of ∣_∣₁ over the one merged point
--- (`shakha-yugalam`).  The pair of runs IS the fibre content of the
+-- (`branchialPair`).  The pair of runs IS the fibre content of the
 -- merge — branchial structure as a computed object.
 --
 -- W3 IS A QUANTIFICATION OVER ALL CONSUMERS (§5).  Any observer that
 -- reads only the merged thread — any g : ∥ Evolve 0 3 ∥₁ → X, for
 -- every X at every universe level — returns equal answers on the two
--- branches (`baddha-drashta`).  And the constraint is not repairable
+-- branches (`boundedObserver`).  And the constraint is not repairable
 -- downstream: the merge has NO SECTION — a selector reading a run
 -- back out of the thread contradicts the branch distinction
--- (`punaruddhara-nasti`).  Equivalencing is many-to-one with the
+-- (`noSection`).  Equivalencing is many-to-one with the
 -- many exhibited, and the one-to-many direction is refuted, not
 -- merely absent.  This is also computational irreducibility in its
 -- proof-relevant form: the outcome (the endpoint, and even the whole
@@ -74,7 +74,7 @@
 -- W4 IS DIVERGENCE WITH EXHIBITED RECONVERGENCE (§2).  From every
 -- state, the two updating events diverge — one cell apart after one
 -- event — and both orders complete to the same state three cells on,
--- with the endpoint agreement DEFINITIONAL (`vinimaya`, both
+-- with the endpoint agreement DEFINITIONAL (`bothOrdersConverge`, both
 -- components refl).  This is the interchange law at the smallest
 -- scale: order-independence of co-initial updating events as data.
 --

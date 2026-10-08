@@ -1,10 +1,8 @@
 {-# OPTIONS --cubical --guardedness --safe --no-import-sorts #-}
 
 ------------------------------------------------------------------------
--- life — entanglement comparisonFibre, life and of descent refusal .
---
--- (entanglement is the fibre of the product comparison, and life is
---  the refusal of the descent.)
+-- Entanglement is the fibre of the product comparison, and a living step
+-- is one that refuses to descend to the marginals.
 --
 -- ONE MAP CARRIES THE WHOLE VOCABULARY.  A joint state of two parts is
 -- a type J with two projections p : J → A and q : J → B, and everything

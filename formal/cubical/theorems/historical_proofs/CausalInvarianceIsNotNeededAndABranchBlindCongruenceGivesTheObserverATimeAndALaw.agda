@@ -1,11 +1,10 @@
 {-# OPTIONS --cubical --safe #-}
 --
--- oneUtterance — construal as a single utterance.  In Pūrva-Mīmāṃsā, ekavākyatā
--- is the principle that statements scattered across a text must be construed
--- as ONE injunction where they can be: different routes through the corpus
--- must come to one reading.  Jaimini, *Mmsstra*, with abara's *Bhya*
--- (the sūtras c. 200 BCE – 200 CE, Śabara c. 5th c.); the principle is
--- standard in that hermeneutics.  The word is taken for what it names.
+-- Causal invariance is not needed.  A branch-blind congruence already gives
+-- the observer a time and a law: different routes through the system must
+-- come to one reading, and that follows from the congruence alone, with no
+-- confluence premise anywhere in the statement.
+--
 --
 -- WHAT THIS IS ABOUT.  A multiway rule — one state, many successors — is the
 -- shape of a rewriting system, and the standard demand made of it is
