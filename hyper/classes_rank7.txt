@@ -1,0 +1,20 @@
+---- exit 0 "interactions":1105369 "COL-ERA":22285 "COL-VAL":0 
+---0 exit 0 "interactions":1078244 "COL-ERA":22276 "COL-VAL":0 
+---+ exit 0 "interactions":1105369 "COL-ERA":22285 "COL-VAL":0 
+--0- exit 0 "interactions":1191362 "COL-ERA":23490 "COL-VAL":0 
+--00 exit 0 "interactions":2026363 "COL-ERA":23706 "COL-VAL":24 
+--0+ exit 0 "interactions":1191362 "COL-ERA":23490 "COL-VAL":0 
+--+- exit 0 "interactions":1105369 "COL-ERA":22285 "COL-VAL":0 
+--+0 exit 0 "interactions":1078244 "COL-ERA":22276 "COL-VAL":0 
+--++ exit 0 "interactions":1105369 "COL-ERA":22285 "COL-VAL":0 
+-00- exit 0 "interactions":898094 "COL-ERA":17105 "COL-VAL":0 
+-000 exit 0 "interactions":2075862 "COL-ERA":18659 "COL-VAL":48 
+-00+ exit 0 "interactions":898094 "COL-ERA":17105 "COL-VAL":0 
+-0+- exit 0 "interactions":947915 "COL-ERA":16792 "COL-VAL":0 
+-0+0 exit 0 "interactions":1903842 "COL-ERA":19622 "COL-VAL":24 
+-++- exit 0 "interactions":1105369 "COL-ERA":22285 "COL-VAL":0 
+-++0 exit 0 "interactions":1078244 "COL-ERA":22276 "COL-VAL":0 
+0--0 exit 0 "interactions":374013 "COL-ERA":6859 "COL-VAL":0 
+0-00 exit 0 "interactions":390803 "COL-ERA":8670 "COL-VAL":0 
+0-+0 exit 0 "interactions":374013 "COL-ERA":6859 "COL-VAL":0 
+ALLDONE

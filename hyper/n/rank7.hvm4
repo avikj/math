@@ -1,0 +1,58 @@
+// index 5.27 / 6.1 / 9.4 / 9.5 on the 2×2 product: the declaration "φ written as a sum of seven rank-one terms",
+// posed as the quotient its derived symmetry (n/aut22.hvm4) dictates and read by %.
+// φ(A,B,C) = tr(ABC) = Σ a_ij b_jk c_ki.  A rank-one term is (u·A)(v·B)(w·C) with u, v, w sign patterns over the
+// four entries.  The derived group contains the slot 3-cycle σ: (u,v,w) ↦ (v,w,u); a writing and its image under σ
+// are one writing (6.1), and the writings σ fixes are read: terms in σ-orbits of size 1 or 3, so seven is
+// 1 + 3 + 3 — one fixed term u = v = w, which conjugation makes I, and two generators with their rotations.
+// The first generator's u is taken up to the stabiliser of the fixed term (9.5: choices a symmetry exchanges are one
+// choice); each class is a run, @U1 below.  The cut: every entry (i,j,k) of φ's tensor, read in an order where the
+// first entries touch the fewest coordinates (9.4).  Nothing here names the seven products.
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+// a coefficient: its support (zero or not) is one coordinate, its sign another, read only where the support is 1 (9.4)
+@sgn = #Sg{&(?){0, 1}, &(?){#P, #N}}
+@val = λ{#Sg: λ&s. λ&g. (λ{0: #O; 1: g})(s)}
+@sup = λ{#Sg: λ&s. λ&g. s}
+@fixedS = λ&g. #Sg{1, g}
+@zeroS = #Sg{0, #P}
+@mulS = λ{#O: λ&y. #O; #P: λ&y. y; #N: λ{#O: #O; #P: #N; #N: #P}}
+@int = λ{#O: #Z{#Z0, #Z0}; #P: #Z{#S{#Z0}, #Z0}; #N: #Z{#Z0, #S{#Z0}}}
+@addZ = λ{#Z: λ&a. λ&b. λ{#Z: λ&c. λ&d. #Z{@addT(a, c), @addT(b, d)}}}
+@addT = λ{#Z0: λ&b. b; #S: λ&a. λ&b. #S{@addT(a, b)}}
+@eqZ = λ{#Z: λ&a. λ&b. λ{#Z: λ&c. λ&d. @eqT(@addT(a, d), @addT(b, c))}}
+@eqT = λ{#Z0: λ{#Z0: 1; #S: λ&b. 0}; #S: λ&a. λ{#Z0: 0; #S: λ&b. @eqT(a, b)}}
+@nth = λ{#Cons: λ&h. λ&t. λ{#E0: h; #E1: @nth(t, #E0); #E2: @nth(t, #E1); #E3: @nth(t, #E2)}}
+@and = λ{1: λ&b. b; 0: λ&b. 0}
+// entries 0..3 = 11, 12, 21, 22; φ's tensor: a_(r,s) b_(s,t) c_(t,r)
+@row = λ{#E0: 0; #E1: 0; #E2: 1; #E3: 1}
+@col = λ{#E0: 0; #E1: 1; #E2: 0; #E3: 1}
+@eqB = λ{0: λ{0: 1; 1: 0}; 1: λ{0: 0; 1: 1}}
+@target = λ&i. λ&j. λ&k. (λ{1: #P; 0: #O})(@and(@eqB(@col(i), @row(j)), @and(@eqB(@col(j), @row(k)), @eqB(@col(k), @row(i)))))
+// a term's entry (i,j,k) is u_i v_j w_k; a writing's is the sum over its terms
+@entry = λ{#T: λ&u. λ&v. λ&w. λ&i. λ&j. λ&k. @mulS(@mulS(@val(@nth(u, i)), @val(@nth(v, j))), @val(@nth(w, k)))}
+// the entry's support: whether the term is nonzero there, reading supports only
+@entryS = λ{#T: λ&u. λ&v. λ&w. λ&i. λ&j. λ&k. @and(@sup(@nth(u, i)), @and(@sup(@nth(v, j)), @sup(@nth(w, k))))}
+@parW = λ{#Nil: λ&i. λ&j. λ&k. 0; #Cons: λ&t. λ&rest. λ&i. λ&j. λ&k. @xor(@entryS(t, i, j, k), @parW(rest, i, j, k))}
+@xor = λ{0: λ&b. b; 1: λ{0: 1; 1: 0}}
+@targetB = λ&i. λ&j. λ&k. @and(@eqB(@col(i), @row(j)), @and(@eqB(@col(j), @row(k)), @eqB(@col(k), @row(i))))
+@sumW = λ{#Nil: λ&i. λ&j. λ&k. #Z{#Z0, #Z0}; #Cons: λ&t. λ&rest. λ&i. λ&j. λ&k. @addZ(@int(@entry(t, i, j, k)), @sumW(rest, i, j, k))}
+// the quotient: fixed term I⊗I⊗I, and each generator with its two rotations under the derived 3-cycle
+@I = #Cons{@fixedS(#P), #Cons{@zeroS, #Cons{@zeroS, #Cons{@fixedS(#P), #Nil}}}}
+@orbit = λ{#T: λ&u. λ&v. λ&w. #Cons{#T{u, v, w}, #Cons{#T{v, w, u}, #Cons{#T{w, u, v}, #Nil}}}}
+@writing = λ&g1. λ&g2. #Cons{#T{@I, @I, @I}, @lcat(@orbit(g1), @orbit(g2))}
+@pat = #Cons{@sgn, #Cons{@sgn, #Cons{@sgn, #Cons{@sgn, #Nil}}}}
+// the declaration: every entry of the writing's tensor is φ's; the entries in exclusion order (9.4)
+@decl = λ&W. @and(@all(λ{#M: λ&i. λ&j. λ&k. @eqB(@parW(W, i, j, k), @targetB(i, j, k))}, @entries),
+                  @all(λ{#M: λ&i. λ&j. λ&k. @eqZ(@sumW(W, i, j, k), @int(@target(i, j, k)))}, @entries))
+@entries = #Cons{#M{#E0,#E1,#E1}, #Cons{#M{#E0,#E1,#E2}, #Cons{#M{#E0,#E1,#E3}, #Cons{#M{#E0,#E2,#E1}, #Cons{#M{#E0,#E2,#E2}, #Cons{#M{#E0,#E2,#E3}, #Cons{#M{#E0,#E3,#E1}, #Cons{#M{#E0,#E3,#E2}, #Cons{#M{#E0,#E3,#E3}, #Cons{#M{#E1,#E1,#E1}, #Cons{#M{#E1,#E1,#E2}, #Cons{#M{#E1,#E1,#E3}, #Cons{#M{#E1,#E2,#E1}, #Cons{#M{#E1,#E2,#E2}, #Cons{#M{#E1,#E2,#E3}, #Cons{#M{#E1,#E3,#E1}, #Cons{#M{#E1,#E3,#E2}, #Cons{#M{#E1,#E3,#E3}, #Cons{#M{#E2,#E1,#E1}, #Cons{#M{#E2,#E1,#E2}, #Cons{#M{#E2,#E1,#E3}, #Cons{#M{#E2,#E2,#E1}, #Cons{#M{#E2,#E2,#E2}, #Cons{#M{#E2,#E2,#E3}, #Cons{#M{#E2,#E3,#E1}, #Cons{#M{#E2,#E3,#E2}, #Cons{#M{#E2,#E3,#E3}, #Cons{#M{#E3,#E1,#E1}, #Cons{#M{#E3,#E1,#E2}, #Cons{#M{#E3,#E1,#E3}, #Cons{#M{#E3,#E2,#E1}, #Cons{#M{#E3,#E2,#E2}, #Cons{#M{#E3,#E2,#E3}, #Cons{#M{#E3,#E3,#E1}, #Cons{#M{#E3,#E3,#E2}, #Cons{#M{#E3,#E3,#E3}, #Cons{#M{#E0,#E0,#E1}, #Cons{#M{#E0,#E0,#E2}, #Cons{#M{#E0,#E0,#E3}, #Cons{#M{#E0,#E1,#E0}, #Cons{#M{#E0,#E2,#E0}, #Cons{#M{#E0,#E3,#E0}, #Cons{#M{#E1,#E0,#E1}, #Cons{#M{#E1,#E0,#E2}, #Cons{#M{#E1,#E0,#E3}, #Cons{#M{#E1,#E1,#E0}, #Cons{#M{#E1,#E2,#E0}, #Cons{#M{#E1,#E3,#E0}, #Cons{#M{#E2,#E0,#E1}, #Cons{#M{#E2,#E0,#E2}, #Cons{#M{#E2,#E0,#E3}, #Cons{#M{#E2,#E1,#E0}, #Cons{#M{#E2,#E2,#E0}, #Cons{#M{#E2,#E3,#E0}, #Cons{#M{#E3,#E0,#E1}, #Cons{#M{#E3,#E0,#E2}, #Cons{#M{#E3,#E0,#E3}, #Cons{#M{#E3,#E1,#E0}, #Cons{#M{#E3,#E2,#E0}, #Cons{#M{#E3,#E3,#E0}, #Cons{#M{#E0,#E0,#E0}, #Cons{#M{#E1,#E0,#E0}, #Cons{#M{#E2,#E0,#E0}, #Cons{#M{#E3,#E0,#E0}, #Nil}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}
+@all = λ&f. λ{#Nil: 1; #Cons: λ&h. λ&t. (λ{1: @all(f, t); 0: 0})(f(h))}
+@keep = λ&P. (λ{1: P; 0: &{}})(@decl(@writingOf(P)))
+@writingOf = λ{#Pair: λ&g1. λ&g2. @writing(g1, g2)}
+@U1 = #Cons{@fixedS(#P), #Cons{@zeroS, #Cons{@zeroS, #Cons{@zeroS, #Nil}}}}
+@P2 = #Pair{#T{@U1, @pat, @pat}, #T{@pat, @pat, @pat}}
+@lenN = λ{#Nil: #Z; #Cons: λ&h. λ&t. #S{@lenN(t)}}
+// the point read: each coefficient as its sign, the sign coordinate of a zero coefficient never read (it is not there)
+@normT = λ{#T: λ&u. λ&v. λ&w. #T{@map(@val, u), @map(@val, v), @map(@val, w)}}
+@normP = λ{#Pair: λ&a. λ&b. #Pair{@normT(a), @normT(b)}}
+@map = λ&f. λ{#Nil: #Nil; #Cons: λ&h. λ&t. #Cons{f(h), @map(f, t)}}
+@take = λ{#Z0: λ&l. #Nil; #S: λ&n. λ{#Nil: #Nil; #Cons: λ&h. λ&t. #Cons{h, @take(n, t)}}}
+@main = ! &F = %(@normP(@keep(@P2))); #Pair{@lenN(F), @take(#S{#S{#Z0}}, F)}

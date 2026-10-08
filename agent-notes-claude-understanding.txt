@@ -553,3 +553,10 @@ AE. The net is the complex (this session's reset). The first construction layer 
   of 0.3 as vertex equality, numerals as bits on coordinates, and the declaration of §9 posed with its identities
   (index cube, factorisation of rearrangements along it, Sorted as a face named by the head comparison) resolving
   to 5 / 17 / 20 comparisons at n = 4 / 8 balanced / 8 tally, the permutation kept and replayed. See hyper/MAP.md.
+
+AF. Complete inference run on the 2×2 product, nothing posed but the product: its symmetry group read as a fibre
+  (48 elements), the writing cube posed as that group dictates (fixed term + two generators under the derived
+  3-cycle, supports before signs, the equation mod 2 first), all nineteen u1 classes cut; points only in the three
+  classes of Strassen's u's, the first point read being Strassen's seven. Applied at each node of the index cube:
+  49 against 64 entry products at N=4. The flat 3^84 cube of the same declaration could not open its first entry;
+  the quotient the object hands over (6.1) is the whole difference. hyper/MAP.md, hyper/classes_rank7.txt.

@@ -526,19 +526,29 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   `Sorted`, and the comparison as a face. What is not in the book: any word for merging, any free line cut by a
   predicate, any primitive. The leftover run at a merge is appended by pointer, so the interaction count sits
   below 9.7's a + b per merge, which assumed one constructor emitted per element.
-- **An identity derived, not posed** (1.1, 8.1, 6.1; `n/karatsuba.hvm4`). The rank-r writings of a bilinear map are
-  the fibre of evaluation over its tensor (1.1). Posed on the coefficient cube for the degree-one polynomial product
-  at r = 3, with nothing but the ring's definitions and the relabellings of the products discarded by an order
-  (6.1), `%` reads one point: `c₁ = (a₀+a₁)(b₀+b₁) − a₀b₀ − a₁b₁`, Karatsuba's identity. Ledger 507,562
-  interactions, 9,592 sides erased of a cube of about 8·10⁷ vertices: the lazy cut visits one side in ten thousand.
-  The same declaration at the 2×2 matrix product and r = 7 (`n/strassen.hvm4`, not pinned) has a cube of 3⁸⁴
-  vertices, and at the ledger's limit of 5,000,000 interactions the cut has erased 6,768 sides, touched 141 of
-  the 168 binary coordinates, and read no point. The obstacle is exact: the first tensor entry's equation reads
-  one coefficient of u, v and w from every one of the seven products, 21 ternary coordinates, so no side can die
-  before 3²¹ ≈ 10¹⁰ have been opened, whatever order the entries are taken in. 6.1 says what to do before reading
-  such a fibre: discard the relabellings (the 7! orders, done) and the symmetries of the tensor itself (the
-  changes of basis on A, B and C that carry one decomposition to another), under which the fibre is one point.
-  That quotient is a statement about the object, to be posed, and is the next thing to build.
+- **Complete inference on the 2×2 product** (5.27, 6.1, 9.4, 9.5; `n/aut22.hvm4`, `n/rank7.hvm4`,
+  `n/blockmul.hvm4`, `classes_rank7.txt`). State the product and nothing else: `φ(A,B,C) = tr(ABC)`, eight monomials
+  over the entries. Its symmetries are a fibre: the relabellings of the three entry sets (the rearrangement cube of
+  9.2, three times) and of the three slots, cut by "φ's monomials go to φ's monomials"; `%` reads 48 elements, the
+  slot 3-cycle among them. That group poses the writing cube: a writing and its image under the cycle are one
+  writing (6.1), so the writings the cycle fixes are read, terms in orbits of size 1 or 3, seven being 1 + 3 + 3, one
+  fixed term `u = v = w` which conjugation makes `I`, and two generators with their rotations. The first generator's
+  `u` is taken up to the stabiliser of the fixed term (9.5), nineteen classes. The cut reads each coefficient's
+  support before its sign (9.4) and the equation mod 2 before the equation (an implied restriction, 8.5), entry by
+  entry in the order that opens fewest coordinates. Points exist in exactly three classes: the single-entry `u`
+  (48 points), `−−00` (24), `−0+0` (24); the sixteen others are empty. The first point read is
+  `(E11, E12−E22, E21+E22)` and `(−E22, E11−E21, E11+E12)` with their rotations and `I⊗I⊗I`: Strassen's seven, with
+  nothing of them in the program. Ledger: the group 510,936 interactions; the single-entry class 2,072,692; all
+  nineteen classes about 22 million in all. The flat cube of the same declaration (3⁸⁴, `old/`) could not open its
+  first entry in 5,000,000; the quotient the object hands over is the whole difference.
+- **The N×N product by the numeral** (9.11, 1.2, 5.24; `n/blockmul.hvm4`). Along the top bit of the index the
+  product of `2^k × 2^k` matrices is a 2×2 product of blocks, forced as 9.8 is, and at each node the object is the
+  2×2 product again; the writing read from the fibre is applied there as data (its `w` transposed, since the trace
+  form pairs `c_ki` against `C_ik`). Each product is one cell. Entry products formed, read off the certificate:
+  8 against 7 at N = 2, 64 against 49 at N = 4, results equal. No exponent was posed; `N^{log₂ 7}` is what the
+  numeral and the fibre's point give, and by 5.14 that count is the one the posed declaration reaches.
+- **Karatsuba, the same way** (`n/karatsuba.hvm4`): the rank-3 writings of the degree-one polynomial product as the
+  fibre over its tensor, one point with the products' relabellings discarded, derived from the ring alone.
 - **Retired** (`hyper/old/`): the first construction layer, which implemented cubical type theory as an interpreter
   of quoted syntax with the interval as data, and the sort readings over primitive numbers or a free line cut
   afterwards. Kept as the record; nothing there is in the suite. `cell.c` and `verify.c` remain as before.

@@ -1,0 +1,34 @@
+// index 6.1 / 9.2 / 2.6: the symmetries of the 2×2 product, derived as a fibre.  The product paired against a third
+// matrix is the trilinear form φ(A,B,C) = tr(ABC) = Σ a_ij b_jk c_ki, eight monomials over the entries
+// 11, 12, 21, 22 (named 0, 1, 2, 3).  A relabelling is a permutation of each matrix's four entries together with a
+// permutation of the three slots; the symmetries are the relabellings that carry φ's monomials onto φ's monomials.
+// The relabellings are a cube (9.2: the rearrangements of four things, one coordinate per interleaving choice, as in
+// n/sort.hvm4), the slot permutations six sides, and the fibre over "φ is unchanged" is read by %.
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+// the rearrangement cube over the index tree (9.2, 9.8)
+@cube = λ&c. λ{#Nil: λ&y. y; #Cons: λ&h. λ&t. λ{#Nil: #Cons{h, t}; #Cons: λ&h2. λ&t2. &(c){#Cons{h2, @cubeRest(#Cons{h, t}, t2)}, #Cons{h, @cubeRest(t, #Cons{h2, t2})}}}}
+@cubeRest = λ&x. λ&y. ! &c = ?; @cube(c, x, y)
+@rearr = λ{#Leaf: λ&a. #Cons{a, #Nil}; #Node: λ&l. λ&r. @cubeRest(@rearr(l), @rearr(r))}
+@I4 = #Node{#Node{#Leaf{#E0}, #Leaf{#E1}}, #Node{#Leaf{#E2}, #Leaf{#E3}}}
+// a permutation as the list of images of 0,1,2,3; applying it
+@at = λ{#Cons: λ&h. λ&t. λ{#E0: h; #E1: @at(t, #E0); #E2: @at(t, #E1); #E3: @at(t, #E2)}}
+// φ's monomials: a_ij b_jk c_ki as (entry of A, entry of B, entry of C), entry (r, s) named 2r + s
+@phi = #Cons{#M{#E0,#E0,#E0}, #Cons{#M{#E0,#E1,#E2}, #Cons{#M{#E1,#E2,#E0}, #Cons{#M{#E1,#E3,#E2},
+       #Cons{#M{#E2,#E0,#E1}, #Cons{#M{#E2,#E1,#E3}, #Cons{#M{#E3,#E2,#E1}, #Cons{#M{#E3,#E3,#E3}, #Nil}}}}}}}}
+@eqE = λ{#E0: λ{#E0: 1; λ&q. 0}; #E1: λ{#E1: 1; λ&q. 0}; #E2: λ{#E2: 1; λ&q. 0}; #E3: λ{#E3: 1; λ&q. 0}}
+@eqM = λ{#M: λ&a. λ&b. λ&c. λ{#M: λ&d. λ&e. λ&f. @and(@eqE(a, d), @and(@eqE(b, e), @eqE(c, f)))}}
+@and = λ{1: λ&b. b; 0: λ&b. 0}
+@member = λ&m. λ{#Nil: 0; #Cons: λ&h. λ&t. (λ{1: 1; 0: @member(m, t)})(@eqM(m, h))}
+@all = λ&f. λ{#Nil: 1; #Cons: λ&h. λ&t. (λ{1: @all(f, t); 0: 0})(f(h))}
+// a relabelling: three entry permutations and a slot permutation; its action on a monomial
+@slot = λ{#S0: λ&a. λ&b. λ&c. #M{a, b, c}; #S1: λ&a. λ&b. λ&c. #M{b, c, a}; #S2: λ&a. λ&b. λ&c. #M{c, a, b};
+         #S3: λ&a. λ&b. λ&c. #M{a, c, b}; #S4: λ&a. λ&b. λ&c. #M{c, b, a}; #S5: λ&a. λ&b. λ&c. #M{b, a, c}}
+@act = λ{#R: λ&pa. λ&pb. λ&pc. λ&s. λ{#M: λ&a. λ&b. λ&c. @slot(s, @at(pa, a), @at(pb, b), @at(pc, c))}}
+@fixes = λ&r. @all(λ&m. @member(@act(r, m), @phi), @phi)
+@slots = &(?){#S0, &(?){#S1, &(?){#S2, &(?){#S3, &(?){#S4, #S5}}}}}
+@R = #R{@rearr(@I4), @rearr(@I4), @rearr(@I4), @slots}
+@keep = λ&r. (λ{1: r; 0: &{}})(@fixes(r))
+@lenN = λ{#Nil: #Z; #Cons: λ&h. λ&t. #S{@lenN(t)}}
+@take = λ{#Z: λ&l. #Nil; #S: λ&n. λ{#Nil: #Nil; #Cons: λ&h. λ&t. #Cons{h, @take(n, t)}}}
+// the order of the group, and its first two elements as read (the whole list is 48 relabellings)
+@main = ! &G = %(@keep(@R)); #Pair{@lenN(G), @take(#S{#S{#Z}}, G)}

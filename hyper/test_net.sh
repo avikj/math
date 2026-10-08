@@ -5,6 +5,7 @@ cd "$(dirname "$0")"
 gcc -std=gnu11 -O2 -w -c net.c -o net.o || exit 1
 gcc -std=gnu11 -O2 -Wall -Wno-misleading-indentation -Wno-unused-parameter -Wno-unused-function -pthread -o hyper cell.c read.c verify.c main.c net.o -lm || exit 1
 pass=0; fail=0
+export SAT_MAX_ITRS=600000000 SAT_MAX_HEAP=180000000
 pin() { f=$1; want=$2; witrs=$3
   got=$(./hyper net n/$f.hvm4 2>&1 | grep -v SAT_PROFILE | grep -v '^$' | head -1 | sed 's/↑//g'); itrs=$(./hyper net n/$f.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://')
   if [ "$got" = "$want" ] && [ "$itrs" = "$witrs" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $f: got '$got' ($itrs) want '$want' ($witrs)"; fi; }
@@ -37,6 +38,16 @@ pin sort '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#
 # degree-one polynomial product are the fibre of evaluation over its tensor, posed on the coefficient cube with nothing but
 # the ring; relabellings of the products discarded by an order.  One point: Karatsuba's identity, derived, not posed
 pin karatsuba '#Cons{#Cons{#Prod{#Cons{#O{},#Cons{#P{},#Nil{}}},#Cons{#O{},#Cons{#P{},#Nil{}}},#Cons{#O{},#Cons{#N{},#Cons{#P{},#Nil{}}}}},#Cons{#Prod{#Cons{#P{},#Cons{#O{},#Nil{}}},#Cons{#P{},#Cons{#O{},#Nil{}}},#Cons{#P{},#Cons{#N{},#Cons{#O{},#Nil{}}}}},#Cons{#Prod{#Cons{#P{},#Cons{#P{},#Nil{}}},#Cons{#P{},#Cons{#P{},#Nil{}}},#Cons{#O{},#Cons{#P{},#Cons{#O{},#Nil{}}}}},#Nil{}}}},#Nil{}}' 507562
+# complete inference on the 2×2 product (index 5.27, 6.1, 9.4, 9.5):
+#  n/aut22.hvm4 — its symmetry group derived as a fibre over the relabelling cube: 48 elements, the slot 3-cycle among them
+pin aut22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#Cons{#R{#Cons{#E3{},#Cons{#E2{},#Cons{#E1{},#Cons{#E0{},#Nil{}}}}},#Cons{#E3{},#Cons{#E2{},#Cons{#E1{},#Cons{#E0{},#Nil{}}}}},#Cons{#E3{},#Cons{#E2{},#Cons{#E1{},#Cons{#E0{},#Nil{}}}}},#S0{}},#Cons{#R{#Cons{#E3{},#Cons{#E2{},#Cons{#E1{},#Cons{#E0{},#Nil{}}}}},#Cons{#E2{},#Cons{#E3{},#Cons{#E0{},#Cons{#E1{},#Nil{}}}}},#Cons{#E1{},#Cons{#E0{},#Cons{#E3{},#Cons{#E2{},#Nil{}}}}},#S0{}},#Nil{}}}}' 509618
+#  n/rank7.hvm4 — the writing cube posed as that group dictates (fixed term + two generators under the 3-cycle, supports
+#  before signs, the equation mod 2 before the equation), u1 in the single-entry class: 48 points, the first printed;
+#  all nineteen u1 classes are recorded in hyper/classes_rank7.txt (points only in the three classes of Strassen's u's)
+pin rank7 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#Cons{#Pair{#T{#Cons{#P{},#Cons{#O{},#Cons{#O{},#Cons{#O{},#Nil{}}}}},#Cons{#O{},#Cons{#P{},#Cons{#O{},#Cons{#N{},#Nil{}}}}},#Cons{#O{},#Cons{#O{},#Cons{#P{},#Cons{#P{},#Nil{}}}}}},#T{#Cons{#O{},#Cons{#O{},#Cons{#O{},#Cons{#N{},#Nil{}}}}},#Cons{#P{},#Cons{#O{},#Cons{#N{},#Cons{#O{},#Nil{}}}}},#Cons{#P{},#Cons{#P{},#Cons{#O{},#Cons{#O{},#Nil{}}}}}}},#Cons{#Pair{#T{#Cons{#P{},#Cons{#O{},#Cons{#O{},#Cons{#O{},#Nil{}}}}},#Cons{#O{},#Cons{#P{},#Cons{#O{},#Cons{#P{},#Nil{}}}}},#Cons{#O{},#Cons{#O{},#Cons{#P{},#Cons{#N{},#Nil{}}}}}},#T{#Cons{#O{},#Cons{#O{},#Cons{#O{},#Cons{#P{},#Nil{}}}}},#Cons{#P{},#Cons{#O{},#Cons{#P{},#Cons{#O{},#Nil{}}}}},#Cons{#N{},#Cons{#P{},#Cons{#O{},#Cons{#O{},#Nil{}}}}}}},#Nil{}}}}' 2072692
+#  n/blockmul.hvm4 — the N×N product along the index cube with the fibre's point applied as data at each node: products
+#  equal, 8 against 7 at N=2, 64 against 49 at N=4
+pin blockmul '#Pair{#Pair{#T{},#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#Z0{}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#Z0{}}}}}}}}}},#Pair{#T{},#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z0{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z0{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}' 227828
 # index 5.11 / 5.13 / 5.24 on net.c (n/diamond.hvm4): one term, eight normaliser schedules (-R), one ledger; the
 # seeded order is confirmed to differ (schedule_flips > 0) and the interaction count does not move
 d0=$(./hyper net n/diamond.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); dok=1
