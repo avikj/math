@@ -167,7 +167,7 @@
 // coordinate (9.3: a restriction, the coordinate decided by the act).  An entry requiring a nonzero value from a
 // product of unknown cells fixes their supports to 1.  Entries are walked in exclusion order to a fixed point.  Cells
 // nothing determines stay as they are: that is the genuine choice, read by %.  A contradiction kills the side.
-@lookup = λ&n. λ{#Nil: #U; #Cons: λ{#Pair: λ&k. λ&v. λ&rest. (λ{1: #K{v}; 0: @lookup(n, rest)})((n == @name(k)))}}
+@lookup = λ&n. λ{#Nil: #U; #Cons: λ{#Pair: λ&k. λ&v. λ&rest. (λ{1: #K{v}; 0: @lookup(n, rest)})((n == @name(k))); #Rel: λ&cs. λ&q. λ&rest. @lookup(n, rest)}}
 // a cell's value under the environment: fixed cells by their value, determined cells from the environment, else unknown
 @cellV = λ&env. λ{#Sg: λ&n. λ&m. λ&s. λ&g. (λ{0: #K{(λ{0: #O; 1: g})(s)}; λ&q. @lookup(n, env)})(n)}
 // a term's factors at an entry: list of (cell, value-or-unknown)
@@ -191,12 +191,21 @@
   (λ{#Big: #Dead; λ&qs. (λ{#Nil: (λ{#O: #Env{env}; λ&z. #Dead})(qs);
      #Cons: λ&one. λ&more. (λ{#Nil: @restrictOne(env, qs, one); λ&l. #Env{env}})(more)})(unks)})(q)})(@entryState(env, W, m))
 @negZ = λ{#Z: λ&a. λ&b. #Z{b, a}}
-@restrictOne = λ&env. λ&q. λ{#Unk: λ&c. λ{#Cons: λ&x. λ{#Nil: (λ{#O: (λ{#K: λ&v. #Dead; #U: #Env{#Cons{#Pair{x, #O}, env}}})(@lookup(@name(x), env)); λ&nz. #Env{#Cons{#Pair{x, @mulS(q, c)}, env}}})(q);
-  λ&others. (λ{#O: #Env{env}; λ&nz. #Env{@markNz(env, #Cons{x, others})}})(q)}}}
+@restrictOne = λ&env. λ&q. λ{#Unk: λ&c. λ&cells. ! &us = @filter(λ&x. (λ{#U: 1; #K: λ&v. 0})(@lookup(@name(x), env)), cells);
+  (λ{#O: (λ{#Nil: #Dead; #Cons: λ&x. λ{#Nil: #Env{#Cons{#Pair{x, #O}, env}}; λ&more. #Env{env}}})(us);
+     λ&nz. (λ{#Nil: #Env{env}; λ&l. #Env{#Cons{#Rel{cells, @mulS(q, c)}, @markNz(env, cells)}}})(us)})(q)}
+@anyUnmarked = λ&env. @any(λ&x. (λ{#K: λ&v. 0; #U: 1})(@lookup(@name(x), env)))
 @markNz = λ&env. λ{#Nil: env; #Cons: λ&x. λ&rest. (λ{#K: λ&v. @markNz(env, rest); #U: @markNz(#Cons{#Pair{x, #Nz}, env}, rest)})(@lookup(@name(x), env))}
 // to a fixed point over the entries in exclusion order
-@propagate = λ&phi. λ&W. λ&es. λ&env. @propGo(phi, W, es, env, es, 0)
-@propGo = λ&phi. λ&W. λ&all. λ&env. λ{#Nil: λ&changed. (λ{1: @propagate(phi, W, all, env); 0: #Env{env}})(changed);
+@propagate = λ&phi. λ&W. λ&es. λ&env. (λ{#Dead: #Dead; #Env: λ&env2. @propGo(phi, W, es, env2, es, @grew(env, env2))})(@resolve(env, env))
+@openCell = λ&env. λ{#Nil: #None; #Cons: λ&e. λ&rest. (λ{#Rel: λ&cs. λ&q. (λ{#None: @openCell(env, rest); #Some: λ&x. #Some{x}})(@firstOpen(env, cs)); λ&o. @openCell(env, rest)})(e)}
+@firstOpen = λ&env. λ{#Nil: #None; #Cons: λ&x. λ&rest. (λ{#K: λ&v. (λ{#Nz: #Some{x}; λ&w. @firstOpen(env, rest)})(v); #U: #Some{x}})(@lookup(@name(x), env))}
+@resolve = λ&env. λ{#Nil: #Env{env}; #Cons: λ&e. λ&rest. (λ{#Rel: λ&cs. λ&q. (λ{#Dead: #Dead; #Env: λ&env2. @resolve(env2, rest)})(@resolveRel(env, cs, q, #P, #Nil)); λ&other. @resolve(env, rest)})(e)}
+@resolveRel = λ&env. λ{#Nil: λ&q. λ&known. λ&unk. (λ{#Nil: (λ{1: #Env{env}; 0: #Dead})(@eqS(known, q)); #Cons: λ&x. λ{#Nil: #Env{#Cons{#Pair{x, @mulS(q, known)}, env}}; λ&more. #Env{env}}})(unk);
+  #Cons: λ&x. λ&rest. λ&q. λ&known. λ&unk. (λ{#K: λ&v. (λ{#Nz: @resolveRel(env, rest, q, known, #Cons{x, unk}); #O: #Dead; λ&w. @resolveRel(env, rest, q, @mulS(known, v), unk)})(v); #U: @resolveRel(env, rest, q, known, #Cons{x, unk})})(@lookup(@name(x), env))}
+// at a fixed point with relations still open, the freedom left is the scaling symmetry (negating two factors of a
+// product together); 6.1 discards it: the first open relation's first cell takes the sign +, and propagation resumes
+@propGo = λ&phi. λ&W. λ&all. λ&env. λ{#Nil: λ&changed. (λ{1: @propagate(phi, W, all, env); 0: (λ{#None: #Env{env}; #Some: λ&x. @propagate(phi, W, all, #Cons{#Pair{x, #P}, env})})(@openCell(env, env))})(changed);
   #Cons: λ&m. λ&rest. λ&changed. (λ{#Dead: #Dead; #Env: λ&env2. @propGo(phi, W, all, env2, rest, @or2(changed, @grew(env, env2)))})(@restrict(phi, env, W, m))}
 @or2 = λ{1: λ&b. 1; 0: λ&b. b}
 @grew = λ&a. λ&b. (λ{1: 0; 0: 1})(@eqN(@lenN(a), @lenN(b)))
@@ -214,8 +223,20 @@
 @entryE = λ&env. λ{#T: λ&u. λ&v. λ&w. λ{#M: λ&i. λ&j. λ&k. @mulS(@mulS(@valE(env, @nth(u, i)), @valE(env, @nth(v, j))), @valE(env, @nth(w, k)))}}
 @sumWE = λ&env. λ&W. λ&m. (λ{#Nil: #Z{#Z0, #Z0}; #Cons: λ&T. λ&rest. @addZ(@int(@entryE(env, T, m)), @sumWE(env, rest, m))})(W)
 @declE = λ&env. λ&phi. λ&W. λ&entries. @all(λ&m. @eqZ(@sumWE(env, W, m), @int(@targetS(phi, m))), entries)
-@inferForced = λ&phi. λ&sizes. ! &G = @aut(phi, sizes); ! &g = @maxOrder(G, sizes); ! &k = @ordG(g, sizes);
+// the choices the symmetry leaves, posed as their classes (9.5, 6.1): all sign patterns over the cells, kept when
+// canonical under the group, superposed as one coordinate; the chosen values go straight into the environment
+@patterns = λ{#Z0: #Cons{#Nil, #Nil}; #S: λ&n. @concatMap(λ&p. #Cons{#Cons{#O, p}, #Cons{#Cons{#P, p}, #Cons{#Cons{#N, p}, #Nil}}}, @patterns(n))}
+@assign = λ&env. λ{#Nil: λ&vs. env; #Cons: λ&cell. λ&cs. λ{#Cons: λ&v. λ&vs. @assign(#Cons{#Pair{cell, v}, env}, cs, vs)}}
+@valsTE0 = λ&env. λ&T. @valsTE(env, T)
+@canonTE = λ&G. λ&env. λ&T. ! &Tv = @valsTE(env, T); @all(λ&g. @leT(Tv, @valsTE(env, @actT(g, T))), G)
+@canonUE = λ&G. λ&env. λ{#T: λ&u. λ&v. λ&w. ! &uv = @map(@valE(env), u); @all(λ&g. @leL(uv, @fstT(@valsTE(env, @actT(g, #T{u, v, w})))), G)}
+@nonzeroP = λ&p. @any(λ&x. (λ{#O: 0; λ&q. 1})(x), p)
+@inferForced = λ&phi. λ&sizes. ! &G = @aut(phi, sizes); ! &g = @maxOrder(G, sizes); ! &k = @ordG(g, sizes); ! &C = @centraliser(G, g, sizes);
   (λ{#Q: λ&F. λ&Gs. λ&W. ! &es = @order(W, @allMon(sizes));
-     ! &env0 = @force(@force(#Nil, @concatMap(@cellsOf, F)), (λ{#Nil: #Nil; #Cons: λ&T1. λ&r. @uOf(T1)})(Gs));
+     ! &fcells = @distinctCells(@concatMap(@cellsOf, F)); ! &ucells = (λ{#Nil: #Nil; #Cons: λ&T1. λ&r. @uOf(T1)})(Gs);
+     ! &fenv = @choose(@filter(λ&e. @all(λ&T. @canonTE(C, e, T), F), @map(λ&p. @assign(#Nil, fcells, p), @filter(@nonzeroP, @patterns(@lenN(fcells))))));
+     ! &stabF = @stabAll(C, F);
+     ! &env0 = @choose(@filter(λ&e. (λ{#Nil: 1; #Cons: λ&T1. λ&r. @canonUE(stabF, e, T1)})(Gs), @map(λ&p. @assign(fenv, ucells, p), @filter(@nonzeroP, @patterns(@lenN(ucells))))));
      (λ{#Dead: &{}; #Env: λ&env. ! &Wv = @map(@valsTE(env), W);
-        (λ{1: Wv; 0: &{}})(@and(@sideConds(G, g, sizes, #Q{F, Gs, W}), @declE(env, phi, W, es)))})(@propagate(phi, W, es, env0))})(@choose(@lineOf(G, g, k, sizes, @lengths(#Z0))))
+        (λ{1: Wv; 0: &{}})(@declE(env, phi, W, es))})(@propagate(phi, W, es, env0))})(@choose(@lineOf(G, g, k, sizes, @lengths(#Z0))))
+@distinctCells = λ{#Nil: #Nil; #Cons: λ&c. λ&rest. #Cons{c, @distinctCells(@filter(λ&d. (λ{1: 0; 0: 1})((@name(d) == @name(c))), rest))}}

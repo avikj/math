@@ -551,10 +551,16 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
     leaves (the fixed terms' cells and the first generator's `u`, up to the stabiliser); every cell an entry of the
     residual determines is taken from the environment and its coordinate is never read, which is the restriction
     without any agent; a nonzero requirement on a product fixes the supports of its cells; a contradiction kills
-    the side. Entries are walked in exclusion order to a fixed point. The 2×2 product: length 7, Strassen's shape,
-    56,087 sides touched against 680,548 for the cut (the interaction count, 291,100,574, is higher: the
-    propagator pays list operations per side; the sides are the structural measure). The polynomial product:
-    length 3, Karatsuba, 5,744 sides.
+    the side. Entries are walked in exclusion order to a fixed point. The choices the symmetry leaves are posed
+    by class, not by cell: a representative of each orbit of the stabiliser on sign patterns, once; a sign
+    relation between two cells (a product that must vanish on an entry with two open cells) is kept as a
+    relation and not branched; a zero requirement with one unmarked cell sets it; the scaling of a product by
+    −1 is removed by fixing one open sign. The 2×2 product: length 7, Strassen's shape, 5,308 sides touched
+    against 680,548 for the cut and 56,087 for the first forced form (212,700,801 interactions: the propagator
+    pays list operations per side; the sides are the structural measure). The polynomial product: length 3,
+    Karatsuba, 1,710 sides, 18,909,828 interactions. Not yet the sort ledger: sort touches the sides its
+    object has and no other; here thousands of sides are still touched for a seven-product object, so some
+    freedom the object determines is still read as a coordinate. That residue is the open item.
     **No length posed** (`@inferFree`, `n/rankfree.hvm4`, `n/karatsubag.hvm4`): the length is a coordinate, the
     line over lengths in order (9.11), each its splits, and the first point the collapse yields is the writing of
     least length, every shorter length having been cut empty on the way: 5.27 both ways in one run. The 2×2
