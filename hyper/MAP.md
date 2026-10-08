@@ -569,9 +569,17 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   already normal when its dup fires depends on the evaluation order, so the ledger moved with the schedule (the
   diamond gave 906, 1,070 and 1,152 under three seeds), which 5.13 forbids, and values changed. The copy charge
   is HVM4's duplication semantics; the deterministic measure of formation is the profile's difference.
-  What is not here: the seven-cell shape as the type's own normal form rather than a term written down. That is
-  the restriction of the coefficient cube by the 64 faces C = A·B, with every coordinate either fixed by a face or
-  exchanged by a symmetry (one orbit at r = 7, empty below), and it is the open construction.
+- **The writing type at a node, posed as sort is posed** (`n/writing.hvm4`, the polynomial product). A cell
+  is u ⊗ v ⊗ w with every coefficient a coordinate (support, and on it a sign); the equations C = A·B are the
+  faces; the cell fixed by the swap σ (a0↔a1, b0↔b1, c0↔c2) has x = y = + by the scaling and its w is a choice
+  the substitutions of the polynomial product exchange, so one representative is kept (evaluation at 1); the
+  orbit cell's u and v are their classes under σ and the scaling; the rest the faces decide. One point:
+  Karatsuba. 25 sides erased, 18,597 interactions. The substitutions x ↦ 1−x, x ↦ 1/x, x ↦ −x act on u as
+  functionals (u ↦ u∘σ*) and on w by the degree-two coefficient map; the faces verify on the point that each
+  image is a writing of φ (8.6): the three cells are evaluations at 0, 1, ∞, one orbit. So the symmetry that
+  makes the choice free is not a relabelling but a basis change, an identity of the object (a shear), and the
+  group to quotient by includes it. For the 2×2 product that group is the conjugations (de Groote), under which
+  the rank-7 fibre is one orbit; its derivation from the generators is the next construction.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
