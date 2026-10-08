@@ -600,8 +600,12 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   generator alone: 8 points, 11,370 sides, 6,277,252 interactions; with Strassen's u and v given and w free, one
   point and 12 sides. What this is and is not: the writing is reached from the type with nothing of it posed,
   through choices read as classes under the derived symmetry; it is not yet sort's standard of zero dead sides,
-  because the faces touch all twelve coordinates of the orbit cell at once (every entry of the residual is a sum
-  over the six orbit images), so v and w are cut jointly rather than decided one coordinate at a time.
+  because the faces touch all twelve coordinates of the orbit cell at once: the 64 entries fall into twelve
+  orbits under the generator (ten of size six, two of size two), the residual is constant on each, so there are
+  twelve equations, and each sums the one cell over its six images. No equation isolates a coordinate, so v and
+  w are cut jointly (81 × 81 per choice of fixed cell, generator class and u) rather than decided one at a time.
+  On the two orbits of size two the sum is three times a pair of products, so the residual must vanish there
+  and the pair must cancel: a relation between two products, again not a single coordinate.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
