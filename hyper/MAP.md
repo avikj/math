@@ -546,21 +546,21 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
     Two generic corrections were needed to get there, both statements about quotients, neither about matrices: a
     fixed term has one coordinate per orbit of the generator on positions, and representatives are canonical under
     the generator's centraliser, the symmetries that act on the invariant cube, not under the whole stabiliser.
-    **The forced execution** (`@inferForced`, the form now pinned). The cube-and-cut above was the regression sort
-    had: a free line erased afterwards. In the forced form the only coordinates read are the choices the symmetry
-    leaves (the fixed terms' cells and the first generator's `u`, up to the stabiliser); every cell an entry of the
-    residual determines is taken from the environment and its coordinate is never read, which is the restriction
-    without any agent; a nonzero requirement on a product fixes the supports of its cells; a contradiction kills
-    the side. Entries are walked in exclusion order to a fixed point. The choices the symmetry leaves are posed
-    by class, not by cell: a representative of each orbit of the stabiliser on sign patterns, once; a sign
-    relation between two cells (a product that must vanish on an entry with two open cells) is kept as a
-    relation and not branched; a zero requirement with one unmarked cell sets it; the scaling of a product by
-    −1 is removed by fixing one open sign. The 2×2 product: length 7, Strassen's shape, 5,308 sides touched
-    against 680,548 for the cut and 56,087 for the first forced form (212,700,801 interactions: the propagator
-    pays list operations per side; the sides are the structural measure). The polynomial product: length 3,
-    Karatsuba, 1,710 sides, 18,909,828 interactions. Not yet the sort ledger: sort touches the sides its
-    object has and no other; here thousands of sides are still touched for a seven-product object, so some
-    freedom the object determines is still read as a coordinate. That residue is the open item.
+    **The forced execution** (`@inferForced`). The cube-and-cut above was the regression sort had: a free line
+    erased afterwards. The forced form reads no coordinate blindly: a split whose entries give one expression with
+    two targets is empty before any cell is read (this empties every sum of generator-fixed terms); the fixed terms
+    and the orbit generators are posed factor by factor, each factor as one representative per orbit of the
+    symmetries fixing what is posed, the scaling discarded where a disjoint factor can carry it, a term with two
+    generator-fixed factors excluded (its orbit sums to one product, a shorter length already cut empty); between
+    factors the entries are walked in exclusion order to a fixed point, a nonzero requirement fixing supports, a
+    one-unknown entry fixing a cell, a contradiction killing the side. The polynomial product: length 3,
+    Karatsuba, about 25 leaves, 5,154,790 interactions, 110 erasures. The 2×2 product under this form does NOT
+    reach a point: the heap is exhausted at 432,280,273 interactions, 13,178 erasures. The reason is structural
+    and open: with a generator of order 6 every entry is a sum over six orbit terms, so the one-unknown rule
+    almost never fires and each factor of the generator is posed as a class, which is a tree of tens of thousands
+    of leaves. An earlier form reached Strassen's shape (5,308 erasures) only by reading the undetermined cells at
+    the end, which is a search; it was removed. What the construction states, that the first factor is forced too,
+    is not yet derived here. What stays posed in every form: coefficients in {−1, 0, 1}.
     **No length posed** (`@inferFree`, `n/rankfree.hvm4`, `n/karatsubag.hvm4`): the length is a coordinate, the
     line over lengths in order (9.11), each its splits, and the first point the collapse yields is the writing of
     least length, every shorter length having been cut empty on the way: 5.27 both ways in one run. The 2×2
