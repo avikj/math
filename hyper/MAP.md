@@ -537,10 +537,15 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   signs, and `@decl` reads the equation mod 2 before the equation. `@infer(φ, sizes, r)` is the whole of it.
   - **Karatsuba** (`n/karatsubag.hvm4`): φ of the degree-one polynomial product and r = 3, nothing else. The group
     has four elements, the generator read is the reversal (order 2), the split is 1 + 2, and `%` reads ten points,
-    the first `(a₀+a₁)(b₀+b₁)·x` with the orbit `{a₁b₁(x²−x), a₀b₀(1−x)}`: Karatsuba's identity. 1,114,919 interactions.
+    the first `(a₀+a₁)(b₀+b₁)·x` with the orbit `{a₁b₁(x²−x), a₀b₀(1−x)}`: Karatsuba's identity. 1,134,990 interactions.
   - **The 2×2 product** (`n/rank7g.hvm4`): φ = tr(ABC) and r = 7, nothing else. The group has 48 elements; the
     generator read has order 6 (the swap-conjugation composed with the slot cycle), so the split is 1 + 6: one
-    fixed term and one generator with five rotations, 24 free coefficients. See the ledger line below for its state.
+    fixed term of two coordinates (its position orbits) and one generator of twelve with five rotations. `%` reads
+    8 points, the first `I⊗I⊗I` with the generator `(E22, E11+E21, E12−E11)` and its five rotations: a writing of
+    Strassen's shape, read with nothing of it in the program. 187,819,642 interactions, 4,953,195 sides erased.
+    Two generic corrections were needed to get there, both statements about quotients, neither about matrices: a
+    fixed term has one coordinate per orbit of the generator on positions, and representatives are canonical under
+    the generator's centraliser, the symmetries that act on the invariant cube, not under the whole stabiliser.
   The instance-shaped version of the same inference (`old/n/rank7_instance.hvm4`, the 3-cycle and the fixed term
   `I⊗I⊗I` written by hand, nineteen `u₁` classes enumerated outside the net, `classes_rank7.txt`) read 48 points in
   the single-entry class in 2,072,692 interactions and found points in exactly the three classes of Strassen's
