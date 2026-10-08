@@ -120,6 +120,9 @@
   @and(@all(λ&T. @canonT(C, T), F),
        (λ{#Nil: 1; #Cons: λ&T1. λ&rest. @canonU(stabF, T1)})(Gs))}
 @stabAll = λ&G. λ{#Nil: G; #Cons: λ&T. λ&rest. @stabAll(@stab(G, T), rest)}
+// the stabiliser read through the environment: the posed values, not the cells' coordinates
+@stabE = λ&G. λ&env. λ&T. ! &Tv = @valsTE(env, T); @filter(λ&g. @eqTv(Tv, @valsTE(env, @actT(g, T))), G)
+@stabAllE = λ&G. λ&env. λ{#Nil: G; #Cons: λ&T. λ&rest. @stabAllE(@stabE(G, env, T), env, rest)}
 @canonU = λ&G. λ{#T: λ&u. λ&v. λ&w. ! &uv = @map(@val, u); @all(λ&g. @leL(uv, @fstT(@valsT(@actT(g, #T{u, v, w})))), G)}
 @fstT = λ{#T: λ&u. λ&v. λ&w. u}
 @quotient = λ&G. λ&sizes. λ&r. ! &g = @maxOrder(G, sizes); ! &k = @ordG(g, sizes); #Pair{#Pair{g, k}, @choose(@map(λ&sp. @quotientAt(G, g, k, sizes, sp), @splits(r, k)))}
@@ -228,15 +231,95 @@
 @patterns = λ{#Z0: #Cons{#Nil, #Nil}; #S: λ&n. @concatMap(λ&p. #Cons{#Cons{#O, p}, #Cons{#Cons{#P, p}, #Cons{#Cons{#N, p}, #Nil}}}, @patterns(n))}
 @assign = λ&env. λ{#Nil: λ&vs. env; #Cons: λ&cell. λ&cs. λ{#Cons: λ&v. λ&vs. @assign(#Cons{#Pair{cell, v}, env}, cs, vs)}}
 @valsTE0 = λ&env. λ&T. @valsTE(env, T)
-@canonTE = λ&G. λ&env. λ&T. ! &Tv = @valsTE(env, T); @all(λ&g. @leT(Tv, @valsTE(env, @actT(g, T))), G)
-@canonUE = λ&G. λ&env. λ{#T: λ&u. λ&v. λ&w. ! &uv = @map(@valE(env), u); @all(λ&g. @leL(uv, @fstT(@valsTE(env, @actT(g, #T{u, v, w})))), G)}
+// the scaling symmetry of a product (negating two of its factors together) is not a choice (6.1): a term whose
+// factors are on disjoint cells is posed with the first nonzero cell of u and of v positive, w carrying the
+// product of the two signs; a factor with no nonzero cell is not a factor.  Representatives are canonical under
+// the group and this normalisation together: least among the normalised images.
+@firstNz = λ{#Nil: #O; #Cons: λ&h. λ&t. (λ{#O: @firstNz(t); λ&s. s})(h)}
+@scaleL = λ&s. λ&l. @map(λ&x. @mulS(s, x), l)
+@normL = λ&l. @scaleL(@firstNz(l), l)
+@normT = λ{#T: λ&u. λ&v. λ&w. ! &su = @firstNz(u); ! &sv = @firstNz(v); #T{@scaleL(su, u), @scaleL(sv, v), @scaleL(@mulS(su, sv), w)}}
+@nzFactorsT = λ{#T: λ&u. λ&v. λ&w. @and(@nonzeroP(u), @and(@nonzeroP(v), @nonzeroP(w)))}
+@disjointL = λ&a. λ&b. @all(λ&x. (λ{1: 0; 0: 1})(@any(λ&y. (@name(x) == @name(y)), b)), a)
+@disjointT = λ{#T: λ&u. λ&v. λ&w. @and(@disjointL(u, v), @and(@disjointL(u, w), @disjointL(v, w)))}
+@canonTE = λ&G. λ&env. λ&T. ! &nf = (λ{1: @normT; 0: λ&x. x})(@disjointT(T)); ! &Tr = @valsTE(env, T); ! &Tv = nf(Tr);
+  @and(@eqTv(Tr, Tv), @and(@nzFactorsT(Tv), @all(λ&g. @leT(Tv, nf(@valsTE(env, @actT(g, T)))), G)))
+// only the symmetries that carry u to u compare posed cells with posed cells; the others are checked on the whole
+// term once its cells are determined (@canonTE after propagation), so no unposed cell is read here
+@uPreserving = λ&T. λ&u. λ&g. @all(λ&x. @any(λ&y. (@name(x) == @name(y)), u), @fstT(@actT(g, T)))
+// canonicity of a determined term as a class: its normal form least among the normal forms of its images (the
+// scaling was discarded during propagation, so the term itself need not be in normal form)
+@canonClassTE = λ&G. λ&env. λ&T. ! &nf = (λ{1: @normT; 0: λ&x. x})(@disjointT(T)); ! &Tv = nf(@valsTE(env, T));
+  @all(λ&g. @leT(Tv, nf(@valsTE(env, @actT(g, T)))), G)
+@canonUE = λ&G. λ&env. λ{#T: λ&u. λ&v. λ&w. ! &uv = @normL(@map(@valE(env), u));
+  @and(@nonzeroP(uv), @all(λ&g. @leL(uv, @normL(@fstT(@valsTE(env, @actT(g, #T{u, v, w}))))), @filter(@uPreserving(#T{u, v, w}, u), G)))}
 @nonzeroP = λ&p. @any(λ&x. (λ{#O: 0; λ&q. 1})(x), p)
+// ---- equal expressions: the restriction that needs no value ----
+// Two entries of the residual whose sums are the same expression in the cells (the same multiset of cell triples,
+// a cell by its name, a fixed cell by its value) take the same value under every environment; if their targets
+// differ the split is empty before any cell is read.  This is what empties every sum of terms fixed by the
+// generator (a fixed term has one cell per orbit of positions, so entries in one orbit are one expression).
+@ckey = λ{#Sg: λ&n. λ&m. λ&s. λ&g. (λ{0: (λ{0: 1; 1: (λ{#P: 2; #N: 3})(g)})(s); λ&q. (n * 4)})(n)}
+@trip = λ{#T: λ&u. λ&v. λ&w. λ{#M: λ&i. λ&j. λ&k. #Tr{@ckey(@nth(u, i)), @ckey(@nth(v, j)), @ckey(@nth(w, k))}}}
+@nzTrip = λ{#Tr: λ&a. λ&b. λ&c. (λ{1: 0; 0: (λ{1: 0; 0: (λ{1: 0; 0: 1})((c == 1))})((b == 1))})((a == 1))}
+@ltTr = λ{#Tr: λ&a. λ&b. λ&c. λ{#Tr: λ&d. λ&e. λ&f. (λ{1: 1; 0: (λ{1: (λ{1: 1; 0: (λ{1: (c < f); 0: 0})((b == e))})((b < e)); 0: 0})((a == d))})((a < d))}}
+@eqTr = λ{#Tr: λ&a. λ&b. λ&c. λ{#Tr: λ&d. λ&e. λ&f. (λ{1: (λ{1: (c == f); 0: 0})((b == e)); 0: 0})((a == d))}}
+@insTr = λ&x. λ{#Nil: #Cons{x, #Nil}; #Cons: λ&h. λ&t. (λ{1: #Cons{x, #Cons{h, t}}; 0: #Cons{h, @insTr(x, t)}})(@ltTr(x, h))}
+@sortTr = λ{#Nil: #Nil; #Cons: λ&h. λ&t. @insTr(h, @sortTr(t))}
+@eqTrL = λ{#Nil: λ{#Nil: 1; #Cons: λ&b. λ&bs. 0}; #Cons: λ&a. λ&as. λ{#Nil: 0; #Cons: λ&b. λ&bs. (λ{1: @eqTrL(as, bs); 0: 0})(@eqTr(a, b))}}
+@exprE = λ&W. λ&m. @sortTr(@filter(@nzTrip, @map(λ&T. @trip(T, m), W)))
+@consistentW = λ&phi. λ&W. λ&ms. @consGo(@map(λ&m. #Pair{@targetS(phi, m), @exprE(W, m)}, ms))
+@consGo = λ{#Nil: 1; #Cons: λ{#Pair: λ&t. λ&e. λ&rest. (λ{1: @consGo(rest); 0: 0})(@all(λ{#Pair: λ&t2. λ&e2. (λ{1: @eqS(t, t2); 0: 1})(@eqTrL(e, e2))}, rest))}}
+// ---- the choices, each read as its class, in order; nothing read blindly ----
+// Propagation to a fixed point; then the first factor of the first term with an undetermined cell is posed: its
+// patterns over the undetermined cells (a cell marked nonzero takes a sign only), a factor with no nonzero cell
+// excluded, the scaling discarded (first nonzero positive) when another factor of the term has no sign fixed yet to
+// carry it, and one representative per orbit of the symmetries that fix what is already posed.  Then propagation
+// again, until every cell is determined.  The sides are the classes posed and nothing else.
+@unkCells = λ&env. λ&cs. @distinctCells(@filter(λ&x. (λ{#U: 1; #K: λ&v. (λ{#Nz: 1; λ&w. 0})(v)})(@lookup(@name(x), env)), cs))
+@signKnown = λ&env. λ&x. (λ{#U: 0; #K: λ&v. (λ{#Nz: 0; #O: 0; λ&w. 1})(v)})(@lookup(@name(x), env))
+@patternsOver = λ&env. λ{#Nil: #Cons{#Nil, #Nil}; #Cons: λ&x. λ&rest. ! &ps = @patternsOver(env, rest);
+  (λ{#U: @concatMap(λ&p. #Cons{#Cons{#O, p}, #Cons{#Cons{#P, p}, #Cons{#Cons{#N, p}, #Nil}}}, ps);
+     #K: λ&v. @concatMap(λ&p. #Cons{#Cons{#P, p}, #Cons{#Cons{#N, p}, #Nil}}, ps)})(@lookup(@name(x), env))}
+@factorsOf = λ{#T: λ&u. λ&v. λ&w. #Cons{u, #Cons{v, #Cons{w, #Nil}}}}
+@nthF = λ&T. λ&i. @nth(@factorsOf(T), i)
+@three = #Cons{#Z0, #Cons{#S{#Z0}, #Cons{#S{#S{#Z0}}, #Nil}}}
+@firstOpenFactor = λ&env. λ{#Nil: #None; #Cons: λ&T. λ&rest. (λ{#None: @firstOpenFactor(env, rest); #Some: λ&i. #Some{#Pair{T, i}}})(@openFactorIn(env, @factorsOf(T), #Z0))}
+@openFactorIn = λ&env. λ{#Nil: λ&i. #None; #Cons: λ&f. λ&rest. λ&i. (λ{#Nil: @openFactorIn(env, rest, #S{i}); λ&l. #Some{i}})(@unkCells(env, f))}
+@compensable = λ&env. λ&T. λ&i. @any(λ&j. @and((λ{1: 0; 0: 1})(@eqN(i, j)), @and(@disjointL(@nthF(T, i), @nthF(T, j)), @all(λ&x. (λ{1: 0; 0: 1})(@signKnown(env, x)), @nthF(T, j)))), @three)
+@sameCells = λ&a. λ&b. @and(@eqN(@lenN(a), @lenN(b)), @all(λ&x. @any(λ&y. (@name(x) == @name(y)), b), a))
+// a symmetry fixes what is posed when it carries the open factor onto itself, every determined factor onto a
+// determined factor of equal values, and every other factor onto its own cells
+@fixesFactor = λ&env. λ&open. λ&f. λ&hf. (λ{1: @sameCells(hf, f); 0: (λ{#Nil: (λ{#Nil: @eqL(@map(@valE(env), f), @map(@valE(env), hf)); λ&l. 0})(@unkCells(env, hf)); λ&l. @sameCells(hf, f)})(@unkCells(env, f))})(open)
+@fixesTerm = λ&env. λ&h. λ&T. λ&oi. ! &hT = @actT(h, T); @all(λ&j. @fixesFactor(env, @eqN(j, oi), @nthF(T, j), @nthF(hT, j)), @three)
+@sameTerm = λ&S. λ&T. (@name(@headL(@uOf(S))) == @name(@headL(@uOf(T))))
+@fixesPosed = λ&env. λ&T. λ&i. λ&terms. λ&h. @all(λ&S. @fixesTerm(env, h, S, (λ{1: i; 0: #S{#S{#S{#Z0}}}})(@sameTerm(S, T))), terms)
+// a term of an orbit with two factors carried to themselves (up to sign) by the generator sums, over the orbit, to
+// one product: the writing would have a shorter length, and the shorter lengths were cut empty (5.27); excluded
+@gFixedFactor = λ&env. λ&g. λ&T. λ&j. ! &fv = @map(@valE(env), @nthF(T, j)); ! &gv = @map(@valE(env), @nthF(@actT(g, T), j));
+  (λ{1: 0; 0: @or2(@eqL(fv, gv), @eqL(fv, @scaleL(#N, gv)))})(@anyUnk(env, @nthF(T, j)))
+@anyUnk = λ&env. λ&cs. (λ{#Nil: 0; λ&l. 1})(@unkCells(env, cs))
+@twoFixed = λ&env. λ&g. λ&T. @ltN(#S{#Z0}, @lenN(@filter(@gFixedFactor(env, g, T), @three)))
+@poseFactor = λ&G. λ&g. λ&env. λ&T. λ&i. λ&terms. λ&orb. ! &cs = @unkCells(env, @nthF(T, i)); ! &comp = @compensable(env, T, i);
+  ! &Gi = @filter(@fixesPosed(env, T, i, terms), G); ! &nf = (λ{1: @normL; 0: λ&x. x})(comp);
+  @filter(λ&e. ! &fv = @map(@valE(e), @nthF(T, i)); ! &nv = nf(fv);
+     @and(@nonzeroP(fv), @and((λ{1: @eqL(nv, fv); 0: 1})(comp), @and((λ{1: 0; 0: 1})(@and(orb, @twoFixed(e, g, T))), @all(λ&h. @leL(nv, nf(@map(@valE(e), @nthF(@actT(h, T), i)))), Gi)))),
+    @map(λ&p. @assign(env, cs, p), @patternsOver(env, cs)))
+// the fixed terms are posed first, factor by factor like the rest, under the centraliser; then the orbit generators
+@drive = λ&phi. λ&W. λ&es. λ&G. λ&g. λ&F. λ&Gs. λ&env. ! &terms = @lcat(F, Gs); (λ{#Dead: &{}; #Env: λ&env2.
+  (λ{#None: (λ{#None: env2; #Some: λ{#Pair: λ&T. λ&i. @drive(phi, W, es, G, g, F, Gs, @choose(@poseFactor(G, g, env2, T, i, terms, 1)))}})(@firstOpenFactor(env2, Gs));
+     #Some: λ{#Pair: λ&T. λ&i. @drive(phi, W, es, G, g, F, Gs, @choose(@poseFactor(G, g, env2, T, i, terms, 0)))}})(@firstOpenFactor(env2, F))})(@propagate(phi, W, es, env))
+@inferAt = λ&phi. λ&sizes. λ&sp. ! &G = @aut(phi, sizes); ! &g = @maxOrder(G, sizes); ! &k = @ordG(g, sizes); ! &C = @centraliser(G, g, sizes);
+  @inferQ(phi, sizes, g, C, @quotientAt(G, g, k, sizes, sp))
+@inferQ = λ&phi. λ&sizes. λ&g. λ&C. λ{#Q: λ&F. λ&Gs. λ&W. ! &ms = @allMon(sizes); ! &es = @order(W, ms);
+     (λ{0: &{}; 1:
+     ! &env = @drive(phi, W, es, C, g, F, Gs, #Nil);
+     ! &Wv = @map(@valsTE(env), W);
+     (λ{1: Wv; 0: &{}})(@and(@all(λ&T. @canonClassTE(@stabAllE(C, env, F), env, T), Gs), @declE(env, phi, W, es)))})(@consistentW(phi, W, ms))}
 @inferForced = λ&phi. λ&sizes. ! &G = @aut(phi, sizes); ! &g = @maxOrder(G, sizes); ! &k = @ordG(g, sizes); ! &C = @centraliser(G, g, sizes);
-  (λ{#Q: λ&F. λ&Gs. λ&W. ! &es = @order(W, @allMon(sizes));
-     ! &fcells = @distinctCells(@concatMap(@cellsOf, F)); ! &ucells = (λ{#Nil: #Nil; #Cons: λ&T1. λ&r. @uOf(T1)})(Gs);
-     ! &fenv = @choose(@filter(λ&e. @all(λ&T. @canonTE(C, e, T), F), @map(λ&p. @assign(#Nil, fcells, p), @filter(@nonzeroP, @patterns(@lenN(fcells))))));
-     ! &stabF = @stabAll(C, F);
-     ! &env0 = @choose(@filter(λ&e. (λ{#Nil: 1; #Cons: λ&T1. λ&r. @canonUE(stabF, e, T1)})(Gs), @map(λ&p. @assign(fenv, ucells, p), @filter(@nonzeroP, @patterns(@lenN(ucells))))));
-     (λ{#Dead: &{}; #Env: λ&env. ! &Wv = @map(@valsTE(env), W);
-        (λ{1: Wv; 0: &{}})(@declE(env, phi, W, es))})(@propagate(phi, W, es, env0))})(@choose(@lineOf(G, g, k, sizes, @lengths(#Z0))))
+  (λ{#Q: λ&F. λ&Gs. λ&W. ! &ms = @allMon(sizes); ! &es = @order(W, ms);
+     (λ{0: &{}; 1:
+     ! &env = @drive(phi, W, es, C, g, F, Gs, #Nil);
+     ! &Wv = @map(@valsTE(env), W);
+     (λ{1: Wv; 0: &{}})(@and(@all(λ&T. @canonClassTE(@stabAllE(C, env, F), env, T), Gs), @declE(env, phi, W, es)))})(@consistentW(phi, W, ms))})(@choose(@lineOf(G, g, k, sizes, @lengths(#Z0))))
 @distinctCells = λ{#Nil: #Nil; #Cons: λ&c. λ&rest. #Cons{c, @distinctCells(@filter(λ&d. (λ{1: 0; 0: 1})((@name(d) == @name(c))), rest))}}
