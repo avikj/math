@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>A New Kind of Science, Under Univalence</title>
-<meta name="description" content="Seven of Wolfram's sentences, 2021-2026, each held to a machine-checked term over the smallest multiway system that exhibits all of them.">
+<title>Computational Foundations of Physics</title>
+<meta name="description" content="The construction of Respecting Equality read as the computational foundation of physics, with seven of Wolfram's sentences discharged where each falls.">
 <link rel="stylesheet" href="./vendor/katex/katex.min.css">
 <style>
   :root{
@@ -125,69 +125,924 @@ a.x:hover,a.x:focus{color:var(--accent); border-bottom-color:var(--accent); outl
 <button id="copyall" type="button" title="Copy the whole document as plain text">copy</button>
 <main>
 
-<h1>A New Kind of Science, Under Univalence</h1>
+<h1>Computational Foundations of Physics: The Construction, and Seven Sentences</h1>
 <p class="byline">Avik Jain &middot; <a class="mail" href="mailto:avikj@berkeley.edu">avikj@berkeley.edu</a></p>
-<p>Wolfram's programme rests on sentences that have until now been read as programme rather than as mathematics. Seven of them are taken verbatim here, across five years of writing, and each is held to a machine-checked term. Nothing is argued by simulation and nothing is asserted of a rule class: each sentence names a theorem, and the theorem's witness is exhibited at named points.</p>
-<p>The development sits at the smallest scale that is not degenerate — a unary substitution system with two updating events, append one cell and append two, whose multiway evolutions between fixed endpoints form an indexed inductive family. Two events, one branch point, one merge, two coordinate systems. Every constructor is reachable by hand and every refutation lands on a named collision.</p>
-<p>Coordinatization is a path and its transport computes <a class="ref" href="#s1.3">(1.3)</a>; the merge is a truncation whose cost is a computed object <a class="ref" href="#s3.4">(3.4)</a> and which has no section, so route information provably cannot be reconstructed <a class="ref" href="#s4.3">(4.3)</a>; the interchange of co-initial events converges by <code>refl</code> <a class="ref" href="#s2.2">(2.2)</a>; the advantage of proof is the universal quantifier <a class="ref" href="#s5.2">(5.2)</a>; the merged state is one eme, constructed <a class="ref" href="#s6.3">(6.3)</a>; purpose ranks nothing inside the ensemble it selects <a class="ref" href="#s7.2">(7.2)</a> and a living step refuses to descend to its marginals <a class="ref" href="#s7.5">(7.5)</a>; and causal invariance is not needed for the observer to have a time and a law <a class="ref" href="#s8.2">(8.2)</a>. One term inhabits the conjunction of the seven <a class="ref" href="#s9.1">(9.1)</a>.</p>
-<p>Every boxed term below is verbatim, carries its own import lines, and compiles on its own against <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Cubical Agda</a> — Agda 2.8.0, agda/cubical v0.9, <code>--cubical --guardedness --safe --no-import-sorts</code>, no postulates and no holes. A green check is the theorem, not a report of one.</p>
+<p>This is the construction of <a class="x" href="./index.html">Respecting Equality</a>, read as the computational foundation of physics. Not a different development — the same one, numbered the same way, with the same terms, and with what each part <em>is</em> physically said where it sits. Seven sentences of Wolfram's, 2021 through 2026, are quoted verbatim and discharged at the places they fall <a class="ref" href="#s10.1">(§§10–12)</a>.</p>
+<p>Equality of types is equivalence — <a class="x" href="https://ncatlab.org/nlab/show/univalence+axiom">Voevodsky's univalence</a> — and it computes. Before any rule is written, what it means for two presentations of a system to be the same has to carry no choices of its own, and <a class="ref" href="#s0.8">the one fact (0.8)</a> is that: the space of identifications of a thing is a point. The interval is the deformation parameter and nothing is assumed about any type <a class="ref" href="#s0.11">(0.11)</a>.</p>
+<p>From there the observer is forced rather than modelled. What a map discards is a <em>type</em> — the fibre — and the decomposition into fibres is the <em>only</em> one <a class="ref" href="#s1.4">(1.4)</a>, so coarse-graining has a computed residue and the object being coarse-grained is not a chosen encoding. Different computational systems are different coordinate systems for it, which is <code>ua</code>, and the emulation between two of them is the path's own transport <a class="ref" href="#s2.4">(2.4)</a>.</p>
+<p>Then the physics, in order. A step is reversible exactly when it is transport <a class="ref" href="#s3.2">(3.2)</a>; every additive measure of what a step destroys vanishes on the reversible ones <a class="ref" href="#s3.5">(3.5)</a>, so the energetics of a rule are fixed by what it erases and nothing else — <a class="x" href="https://en.wikipedia.org/wiki/Landauer%27s_principle">Landauer</a> in units <a class="ref" href="#s5.9">(5.9)</a>. The diagonal is one lemma (<a class="x" href="http://www.tac.mta.ca/tac/reprints/articles/15/tr15abs.html">Lawvere</a>) and every impossibility is it at a different point <a class="ref" href="#s4.2">(4.2)</a>. The interchange of co-initial events is the one-step diamond, a property of a rule set rather than an assumption about it <a class="ref" href="#s5.11">(5.11)</a>; it gives the same outcome <em>and</em> the same elapsed time <a class="ref" href="#s5.13">(5.13)</a>; the cone is a theorem, since one interaction reaches exactly one wired neighbour <a class="ref" href="#s5.16">(5.16)</a>; and the geodesic is the greatest potential, which is the variational principle <a class="ref" href="#s5.15">(5.15)</a>. There is no meta-level <a class="ref" href="#s5.26">(5.26)</a>.</p>
+<p>Counting is the indistinguishability postulate: to count is to discard the relabellings, and the <code>n!</code> discarded is the one in the partition function <a class="ref" href="#s6.1">(6.1)</a>. One reversible operation generates the complex numbers, the phases and unitarity, and Maxwell's two vacuum equations are one Schrödinger equation <a class="ref" href="#s7.4">(7.4)</a>. Measurement is the lossy truncation, and what the one bit discards is computed exactly <a class="ref" href="#s8.5">(8.5)</a>. §9 runs the whole machine on one problem, where the configuration space carries a metric and every route is a geodesic <a class="ref" href="#s9.13">(9.13)</a>.</p>
+<p>Every step is elementary. At each result the computational core is a term, printed where it is proved, machine-checked against the cubical library, and compiling on its own.</p>
 
-<h2><span class="n">0.</span> The system</h2>
+<h2><span class="n">0.</span> The one fact</h2>
 
-<div class="st" id="s0.1"><p><span class="lab">Definition 0.1</span> (the two updating events). A state is a unary string, read as its length. The two updating events append one cell and append two:</p>
-<pre class="def"><code>event₁ n = suc n
-event₂ n = suc (suc n)</code></pre>
-<p>This is a substitution system in the sense of <em>A New Kind of Science</em>, at the smallest size that still branches.</p></div>
+<div class="st" id="s0.1"><p><span class="lab">Definition 0.1</span> (type, function, dependent pair). A <em>type</em> is a collection of values, written <code>a : A</code>. A <em>function</em> <code>f : A → B</code> maps values to values. For a <em>family</em> <code>P</code> — one type <code>P a</code> for each <code>a : A</code> — the <em>dependent pair</em> <code>Σ[ a ∈ A ] P a</code> holds pairs <code>(a , w)</code> with <code>w : P a</code>.</p></div>
 
-<div class="st" id="s0.2"><p><span class="lab">Definition 0.2</span> (multiway evolution). An evolution from <code>a</code> to <code>b</code> either halts or applies one of the two events and continues:</p>
-<pre class="def"><code>data Evolve : ℕ → ℕ → Type where
-  halt : (n : ℕ) → Evolve n n
-  ev₁  : {m n : ℕ} → Evolve (event₁ m) n → Evolve m n
-  ev₂  : {m n : ℕ} → Evolve (event₂ m) n → Evolve m n</code></pre>
-<p>The endpoints are indices, so two evolutions between the same endpoints inhabit the same type and can be compared directly. Distinct evolutions between fixed endpoints exist and are separated by a <em>computed</em> invariant <a class="ref" href="#s3.2">(3.2)</a>, never assumed distinct.</p></div>
+<div class="st" id="s0.2"><p><span class="lab">Definition 0.2</span> (<a class="x" href="https://ncatlab.org/nlab/show/identity+type">identity type</a>). Equality is a type: <code>x ≡ y</code> is the type of proofs that <code>x</code> equals <code>y</code>, with <code>refl : x ≡ x</code>. A proof is a value you keep.</p></div>
 
-<div class="rk" id="s0.3"><p><span class="lab">Remark 0.3</span> (what the scale buys). The four phenomena of the 2021 essay all appear here: two coordinate systems, one branch point, one merge, and one reconvergence. Nothing below is a claim about rule classes or about what large systems do — each statement is about this system, and each is checked. What generalises is the shape of the argument, not an extrapolation from a simulation.</p></div>
+<div class="st" id="s0.3"><p><span class="lab">Definition 0.3</span> (the interval). <code>𝕀</code> has two endpoints <code>0</code> and <code>1</code>, a meet <code>∧</code>, a join <code>∨</code>, and an operation <code>~</code> that exchanges the endpoints and reverses order. The laws are: <code>∧</code> and <code>∨</code> are associative, commutative and idempotent, absorb one another (<code>x ∧ (x ∨ y) = x</code>) and distribute over one another, with <code>0</code> the unit of <code>∨</code> and <code>1</code> of <code>∧</code>; and <code>~ 0 = 1</code>, <code>~ 1 = 0</code>, <code>~ ~ x = x</code>, <code>~(x ∧ y) = ~x ∨ ~y</code>. The unit interval <code>[0,1]</code> with <code>min</code>, <code>max</code> and <code>1 − x</code> satisfies all of this and is a usable picture; what is used below is <em>only</em> these laws, never any property of the real numbers. "<a class="x" href="https://ncatlab.org/nlab/show/De+Morgan+algebra">Free De Morgan algebra on one generator</a>" is the exact name for that restriction: the elements are the expressions built from one symbol <code>i</code> by <code>~</code>, <code>∧</code> and <code>∨</code>, and two are equal only where the laws just listed force it. It is built, not assumed.</p></div>
 
-<h2><span class="n">1.</span> Coordinatization is a path</h2>
+<div class="st" id="s0.4"><p><span class="lab">Definition 0.4</span> (path). A proof of <code>x ≡ y</code> is a map <code>p : 𝕀 → A</code> with <code>p 0 = x</code> and <code>p 1 = y</code>. <code>refl</code> is the constant map.</p></div>
 
-<div class="st" id="s1.1"><p><span class="lab">Sentence 1.1</span> (W1, <em>The Concept of the Ruliad</em>, 2021). “Each [computational system] can be thought of as defining a different coordinate system for describing the ruliad … each will ultimately lead to the same limiting object.”</p>
-<p>This is <a class="x" href="https://ncatlab.org/nlab/show/univalence+axiom">univalence</a>, used as Voevodsky built it. It is the sentence of Wolfram's that only univalence can hold, because it identifies presentations while refunding, through transport, everything the identification would otherwise owe.</p></div>
+<div class="st" id="s0.5"><p><span class="lab">Definition 0.5</span> (<a class="x" href="https://ncatlab.org/nlab/show/contractible+type">contractible</a>). <code>A</code> is <em>contractible</em> when some point of it exists and every element is equal to that point — the whole type collapses onto it.</p></div>
 
-<div class="st" id="s1.2"><p><span class="lab">Theorem 1.2</span> (one path of structured systems). The same system presented in tape coordinates and in number coordinates is connected by a single path in the type of systems — carrier together with <em>both</em> updating events:</p>
-<pre class="def"><code>System = Σ[ S ∈ Type ] (S → S) × (S → S)
+<div class="st" id="s0.6"><p><span class="lab">Definition 0.6</span> (<a class="x" href="https://ncatlab.org/nlab/show/transport">transport</a>). For a family <code>P</code>, a proof <code>p : x ≡ y</code> gives <code>transport p : P x → P y</code>.</p></div>
 
-coordinateChange : tapeSystem ≡ numberSystem</code></pre>
-<p class="pf"><span class="lab">Proof.</span> The coordinate change <code>Tape ≃ ℕ</code> is the length function with its inverse, and <code>ua</code> turns it into a path of carriers. The two event components of <a class="ref" href="#s0.1">0.1</a> ride over that path by <code>ua→</code>, and the commuting datum in each is <code>refl</code>, because the coding function sends <code>cell</code> to <code>suc</code> definitionally. <span class="qed">∎</span></p></div>
+<div class="st" id="s0.7"><p><span class="lab">Proposition 0.7</span> (reversibility of transport). <code>transport</code> is reversible and loses nothing: it runs backward along the reversed path <code>λ i → p (~ i)</code>, and <code>transport refl x ≡ x</code> — moving nowhere changes nothing.</p>
+<p class="pf"><span class="lab">Proof.</span> Reversal is <code>~</code> from <a class="ref" href="#s0.3">the interval (0.3)</a> applied to the map of <a class="ref" href="#s0.4">paths (0.4)</a>. For the second, note what is and is not being claimed: <code>transport refl x</code> is not the <em>same term</em> as <code>x</code> — Agda rejects <code>refl</code> as a proof of it, since <code>transp (λ i → refl i) i0 x</code> has still to be computed — but it is path-equal to <code>x</code>, which is what <code>≡</code> asserts and all that is used below. The path is built by filling the constant line (<code>transportRefl</code> in the library). <span class="qed">∎</span></p></div>
 
-<div class="st" id="s1.3"><p><span class="lab">Corollary 1.3</span> (three clauses, three corollaries). <a class="ref" href="#s1.1">1.1</a>’s three clauses discharge separately.</p>
-<p class="pf">First, every property of systems crosses the coordinate change by transport, with no re-proof: the interchange law, proved in tape coordinates by <code>refl</code>, is delivered in number coordinates by <code>subst</code>. Second, the emulation that “moves” between coordinate systems is not a map postulated beside the identification — it <em>is</em> the path's own transport, and it computes to the coding function, by <code>uaβ</code>. In cubical type theory univalence is a theorem with computational content, which is the entire difference between citing an equivalence and running one. Third, “the same limiting object” is not agreement-after-inspection but contractibility: the space of coordinatizations of the fixed carrier, each carrying its own identification, is a point. <span class="qed">∎</span></p>
-<p class="pf">No coordinate system is privileged, and the privilege's absence is a contraction, not a convention.</p></div>
+<div class="st" id="s0.8"><p><span class="lab">Theorem 0.8</span> (the one fact). <code>Σ[ y ∈ A ] (x ≡ y)</code> — the values equal to <code>x</code>, each with its proof — is contractible, with centre <code>(x , refl)</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> The path from the centre to any <code>(y , p)</code> slides along <code>p</code> itself: at stage <code>t</code> sit at the point <code>p t</code>, holding as its proof the piece of <code>p</code> from <code>x</code> up to <code>t</code>, which shows <code>x ≡ p t</code>. At <code>t = 0</code> that is <code>(x , refl)</code>; at <code>t = 1</code> it is <code>(y , p)</code>. The piece of <code>p</code> up to <code>t</code> is <code>λ j → p (t ∧ j)</code> — the <code>i ∧ j</code> of the term below. Its two ends follow from <a class="ref" href="#s0.3">0.3</a> alone: at <code>j = 0</code> it is <code>p (t ∧ 0) = p 0 = x</code>, and at <code>j = 1</code> it is <code>p (t ∧ 1) = p t</code>. So it is a path from <code>x</code> to <code>p t</code>, which is the proof the pair at stage <code>t</code> must carry. That is the whole use of <code>∧</code> here: it cuts a path off at a point. <span class="qed">∎</span></p></div>
 
-<h2><span class="n">2.</span> The interchange converges by <code>refl</code></h2>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+private variable ℓ : Level ; A : Type ℓ
 
-<div class="st" id="s2.1"><p><span class="lab">Sentence 2.1</span> (W4, <em>The Concept of the Ruliad</em>, 2021). “Causal invariance can be thought of as being associated with paths of history that diverge, eventually converging again.”</p></div>
+singleton-contractible : (x : A) → isContr (Σ[ y ∈ A ] x ≡ y)
+singleton-contractible x = (x , refl) , λ (y , p) i → p i , λ j → p (i ∧ j)</code></pre>
+<figcaption>Centre <code>(x , refl)</code>; the second component is the contraction, sliding any <code>(y , p)</code> back along <code>p</code> — this <em>is</em> <code>J</code>. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code> against the cubical library; no postulates, no holes.</figcaption>
+</details>
 
-<div class="st" id="s2.2"><p><span class="lab">Theorem 2.2</span> (divergence with exhibited reconvergence). From every state the two updating events diverge — one cell apart after one event — and both orders complete to the same state three cells on — the convergence <a class="ref" href="#s2.1">2.1</a> names — with the endpoint agreement definitional:</p>
-<pre class="def"><code>bothOrdersConverge : (m : ℕ) → Evolve m (suc (suc (suc m)))
-                             × Evolve m (suc (suc (suc m)))
-bothOrdersConverge m = ev₁ (ev₂ (halt _)) , ev₂ (ev₁ (halt _))</code></pre>
-<p class="pf"><span class="lab">Proof.</span> By <a class="ref" href="#s0.2">indexing (0.2)</a> the two interchanged runs inhabit the <em>same</em> type, with no transport and no path algebra: both components are exhibited and the agreement is by indexing. <span class="qed">∎</span></p>
-<p class="pf">Stated exactly, what is checked is endpoint agreement of interchanged co-initial updating events — the convergence the sentence names, and no more. The stronger statement is already in the corpus and is cited rather than re-proved: pointwise pairwise commutation makes <em>every</em> permutation of a run agree on every source state, and any observed order-dependence localises a state outside the image of the observation.</p></div>
+<div class="st" id="s0.9"><p><span class="lab">Corollary 0.9</span> (path induction, <code>J</code>). To act on every <code>(y , p : x ≡ y)</code> it suffices to give the value at <code>(x , refl)</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Transport the value at the centre forward along the contraction path of <a class="ref" href="#s0.8">the one fact (0.8)</a>. This is the eliminator of <code>≡</code>. <span class="qed">∎</span></p></div>
 
-<h2><span class="n">3.</span> The merge is a truncation</h2>
+<div class="rk" id="s0.10"><p><span class="lab">Remark 0.10</span> (transport is J). <code>transport</code> (<a class="ref" href="#s0.6">0.6</a>) is exactly <code>J</code> for a goal that ignores the proof — <code>C(y , p) = P y</code> — so <a class="ref" href="#s0.6">transport (0.6)</a> and <a class="ref" href="#s0.9">J (0.9)</a> are one thing. (The identity type's eliminator is its initiality as an inductive family: <a class="x" href="https://arxiv.org/abs/1201.3898">Awodey–Gambino–Sojakova 2012</a>.)</p></div>
 
-<div class="st" id="s3.1"><p><span class="lab">Sentence 3.1</span> (W2, <em>The Concept of the Ruliad</em>, 2021). “Whenever we said that two paths in the ruliad ‘merge’, that's really just saying that we treat the outcomes as equivalent.”</p>
-<p>The merge is propositional truncation, and its cost is a computed object.</p></div>
+<div class="rk" id="s0.11"><p><span class="lab">Remark 0.11</span> (what the base is). Everything below — <code>transport</code>, <code>J</code>, <a class="x" href="https://ncatlab.org/nlab/show/function+extensionality">function extensionality</a>, univalence (§2) — is built from <a class="ref" href="#s0.3">the interval (0.3)</a> and one thing done with it: paths compose, and can be pushed along one another (the filling of <a class="ref" href="#s2.4">2.4</a>), which each type former supplies for its own type. Of the interval's operations, <code>∧</code> builds the contraction in <a class="ref" href="#s0.8">the one fact (0.8)</a>, <code>~</code> reverses a path in <a class="ref" href="#s0.7">reversibility of transport (0.7)</a>, and <code>∨</code> earns its place in <a class="ref" href="#s2.4">2.4</a>, where a square is closed from two of its sides. No axiom is added about any type.</p></div>
 
-<div class="st" id="s3.2"><p><span class="lab">Proposition 3.2</span> (the branches are distinct). The two evolutions from <code>0</code> to <code>3</code> that <a class="ref" href="#s2.2">2.2</a> produced are distinct, by an invariant that reads the first updating event.</p>
-<p class="pf"><span class="lab">Proof.</span> <code>firstEvent</code> returns <code>true</code> on <code>ev₁</code> and <code>false</code> on <code>ev₂</code>; <code>cong firstEvent</code> on a supposed path gives <code>true ≡ false</code>. The distinction is computed, not stipulated. <span class="qed">∎</span></p></div>
+<div class="rk" id="s0.12"><p><span class="lab">Remark 0.12</span> (what §1 does). §1 is <a class="ref" href="#s0.8">the one fact (0.8)</a> with <code>x</code> replaced by a function's output.</p></div>
 
-<div class="st" id="s3.3"><p><span class="lab">Proposition 3.3</span> (and merged). In the observer’s single thread <code>∥ Evolve 0 3 ∥₁</code> the two runs of <a class="ref" href="#s3.2">3.2</a> are equal, by the squash — so the merge <a class="ref" href="#s3.1">3.1</a> describes is real, and really lossy.</p></div>
+<div class="rk" id="s0.13"><p><span class="lab">Remark 0.13</span> (what this section is, physically). A rule cannot be written before it is settled what it means for two presentations of a system to be the same thing. That is what §0 settles, and it settles it with no freedom left over: by <a class="ref" href="#s0.8">the one fact (0.8)</a> the space of values equal to <code>x</code>, each with its proof, is a point. Identification carries no structure of its own, so nothing later can smuggle a convention in through it. The interval <a class="ref" href="#s0.3">(0.3)</a> is the deformation parameter — a path is a map out of it <a class="ref" href="#s0.4">(0.4)</a> — and it is built as the free De Morgan algebra on one generator rather than borrowed from the reals, so no property of the continuum is in use anywhere below.</p></div>
 
-<div class="st" id="s3.4"><p><span class="lab">Theorem 3.4</span> (the branchial pair is the fibre content). The loss is exhibited as two distinct residents of the <a class="x" href="https://ncatlab.org/nlab/show/homotopy+fiber">fibre</a> of the merge over the one merged point.</p>
-<p class="pf"><span class="lab">Proof.</span> <code>branchialPair</code> is <code>(route₁ , refl)</code> and <code>(route₂ , squash₁ _ _)</code> in <code>Σ[ r ] (merge r ≡ merge route₁)</code>, and their distinctness is <a class="ref" href="#s3.2">3.2</a> under <code>cong fst</code>. <span class="qed">∎</span></p>
-<p class="pf">Branch structure is not what a finer observer would see; it is the fibre of the coarser observer's map, and it is computed. The same statement holds in the corpus for a reversible process calculus, where the scheduler is forbidden to merge.</p></div>
+<h2><span class="n">1.</span> Partition by output</h2>
 
+<div class="st" id="s1.1"><p><span class="lab">Definition 1.1</span> (the inputs over an output). For <code>f : A → B</code> and <code>b : B</code>, write</p>
+<pre class="def"><code>f⁻¹(b)  =  Σ[ a ∈ A ] (f a ≡ b)</code></pre>
+<p>— the inputs that land on <code>b</code>, each kept with its proof that it does.</p></div>
+
+<div class="st" id="s1.2"><p><span class="lab">Theorem 1.2</span> (partition by output). <code>A ≃ Σ[ b ∈ B ] f⁻¹(b)</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Forward <code>a ↦ (f a , (a , refl))</code>; backward <code>(b , (a , p)) ↦ a</code>. Both round trips are <code>refl</code>, the return using the kept proof <code>p : f a ≡ b</code>. Nothing is lost, only regrouped. <span class="qed">∎</span></p></div>
+
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Foundations.Isomorphism
+open import Cubical.Foundations.Equiv
+private variable ℓ : Level ; A B : Type ℓ
+
+partition : (f : A → B) → A ≃ (Σ[ b ∈ B ] fiber f b)
+partition f = isoToEquiv (iso fwd bwd rinv (λ _ → refl))
+  where
+  fwd  = λ a → f a , a , refl
+  bwd  = λ (b , a , _) → a
+  rinv = λ (b , a , p) i → p i , a , λ j → p (i ∧ j)</code></pre>
+<figcaption>The equivalence <code>A ≃ Σ (b : B) . f⁻¹(b)</code>; <code>fwd</code> sends <code>a</code> to its output with the <code>refl</code> witness, <code>bwd</code> reads the kept input back, and both round trips are <code>refl</code>. Verbatim, <code>--safe</code>.</figcaption>
+</details>
+
+<div class="st" id="s1.3"><p><span class="lab">Definition 1.3</span> (completion). A <em>completion</em> of <code>f</code> is a family <code>T</code> assigning a type <code>T(b)</code> to each <code>b</code>, together with an equivalence <code>A ≃ Σ[ b ∈ B ] T(b)</code> that respects the output map — an input's <code>b</code> is unchanged.</p></div>
+
+<div class="st" id="s1.4"><p><span class="lab">Theorem 1.4</span> (the partition is the only one). Every completion of <code>f</code> is <code>f⁻¹</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Respecting the output map means the equivalence carries the piece over each <code>b</code> to the piece over that same <code>b</code>; by <a class="ref" href="#s1.2">the partition (1.2)</a> the inputs over <code>b</code> on the right are exactly <code>T(b)</code>, so it carries <code>f⁻¹(b)</code> onto <code>T(b)</code>. A completion is therefore a choice, at each <code>b</code>, of a type equivalent to <code>f⁻¹(b)</code>. The types equivalent to a fixed one form a contractible type (<a class="ref" href="#s2.4">2.4</a>), and a per-<code>b</code> choice among contractible options is again contractible (<a class="ref" href="#s2.5">2.5</a>). So <code>T = f⁻¹</code>: the decomposition is forced, not a chosen encoding. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s1.5"><p><span class="lab">Remark 1.5</span> (what §1 rests on). The partition (<a class="ref" href="#s1.2">1.2</a>) stands on §0 alone. Its uniqueness (<a class="ref" href="#s1.4">1.4</a>) is the one place §1 looks forward, borrowing <a class="ref" href="#s2.4">univalence (2.4)</a> and <a class="ref" href="#s2.5">function extensionality (2.5)</a>. Every decomposition later in the page is that partition: group by output, keep the inputs over each <code>b</code>.</p></div>
+
+<div class="rk" id="s1.6"><p><span class="lab">Remark 1.6</span> (the observer is forced, not modelled). An observer is a map, and what it discards is not an argument about what it cannot see — it is a type, the fibre <a class="ref" href="#s1.1">(1.1)</a>, and the whole is that type summed over the readings <a class="ref" href="#s1.2">(1.2)</a>. Coarse-graining therefore has a computed residue, always. And <a class="ref" href="#s1.4">uniqueness (1.4)</a> is the stronger statement: every completion of a map <em>is</em> the fibre decomposition, so the object an observer is coarse-graining is not one encoding among many. There is nothing to choose, which is why the limiting object of §2 can be a single thing rather than a convention.</p></div>
+
+<h2><span class="n">2.</span> Isomorphism is substitution</h2>
+
+<div class="st" id="s2.1"><p><span class="lab">Definition 2.1</span> (equivalence). <code>A ≃ B</code> is maps both ways with proofs that they cancel: runnable in both directions, nothing lost either way. This is the lossless match <a class="ref" href="#s1.2">the partition (1.2)</a> asserts.</p></div>
+
+<div class="st" id="s2.2"><p><span class="lab">Proposition 2.2</span> (two sides of one thing). <code>f</code> has a two-sided inverse if and only if <code>f⁻¹(b)</code> is contractible for every <code>b</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> An inverse <code>g</code> centres <code>f⁻¹(b)</code> at <code>(g b , ·)</code>, and the cancellation laws contract every <code>(a , p : f a ≡ b)</code> onto that centre (<a class="ref" href="#s0.5">0.5</a>). Conversely, choosing the centre of each <code>f⁻¹(b)</code> is an inverse. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s2.3"><p><span class="lab">Remark 2.3</span> (property against data). The two sides <a class="ref" href="#s2.2">(2.2)</a> are not the same type. Contractible-fibred is a <em>property</em>, true in at most one way; an inverse is <em>data</em>, which may be given differently. The second is the one carried around.</p></div>
+
+<div class="st" id="s2.4"><p><span class="lab">Theorem 2.4</span> (univalence). <code>ua : (A ≃ B) → (A ≡ B)</code>, and it computes: <code>transport<sup>ua(e)</sup> = e</code>. Hence <code>Σ[ X ] (X ≃ Y)</code> is contractible.</p>
+$$
+(A \simeq B)\ \simeq\ (A \equiv B), \qquad \mathsf{ua} : (A \simeq B) \longrightarrow (A \equiv B), \qquad \mathrm{transport}^{\,\mathsf{ua}(e)} \;=\; e
+$$
+<p class="pf"><span class="lab">Proof.</span> The primitive is <a class="ref" href="#s0.3">the interval (0.3)</a>: a path is a map out of the interval (<a class="ref" href="#s0.4">0.4</a>), and paths can be joined end-to-end and pushed along one another — <a class="x" href="https://ncatlab.org/nlab/show/Kan+complex">Kan composition</a>, which is what runs <code>transport</code>. The second ingredient is <code>Glue</code>, a type former whose defining property is exactly what is wanted: given a type <code>B</code>, and on part of the boundary a type <code>A</code> with an equivalence <code>A ≃ B</code>, it yields a type that <em>is</em> <code>A</code> on that part of the boundary and <code>B</code> elsewhere. Apply it along one interval coordinate with <code>A</code> and <code>e</code> at the <code>0</code> end: the result is a map <code>𝕀 → Type</code> sending <code>0</code> to <code>A</code> and <code>1</code> to <code>B</code>, which by <a class="ref" href="#s0.4">0.4</a> is a path <code>A ≡ B</code>, and transport along it is <code>e</code>. Contractibility is then <a class="ref" href="#s0.8">the one fact (0.8)</a> read at the universe, with <code>≡</code> between types supplied by <code>ua</code>. <a class="x" href="https://homotopytypetheory.org/book/">Voevodsky's axiom</a>, built from the interval and <code>Glue</code> (<a class="x" href="https://arxiv.org/abs/1611.02108">Cohen–Coquand–Huber–Mörtberg 2018</a>). <span class="qed">∎</span></p></div>
+
+<div class="st" id="s2.5"><p><span class="lab">Corollary 2.5</span> (function extensionality). Functions that agree at every argument are equal.</p>
+<p class="pf"><span class="lab">Proof.</span> Given <code>h : (x : A) → f x ≡ g x</code>, the map <code>λ i x → h x i</code> is a path <code>f ≡ g</code> by <a class="ref" href="#s0.4">paths (0.4)</a> — the interval is pulled out of the argument. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s2.6"><p><span class="lab">Remark 2.6</span> (structures interchange). By <a class="ref" href="#s2.4">univalence (2.4)</a> isomorphic structures interchange by a program, losslessly. This is the fact used by <a class="ref" href="#s1.4">1.4</a>.</p></div>
+
+<div class="rk" id="s2.7"><p><span class="lab">Remark 2.7</span> (coordinate systems). Two computational systems that describe the same thing differently are two coordinate systems for it, and <a class="ref" href="#s2.4">univalence (2.4)</a> is what makes that exact: an equivalence of presentations becomes a path, and transport along it is the equivalence, computing. The emulation between coordinate systems is then not a translation postulated beside the identification but the identification’s own action, and the space of coordinatizations of a fixed carrier is contractible — no presentation is privileged, and the privilege’s absence is a contraction rather than a convention. This is discharged against Wolfram’s own sentence at <a class="ref" href="#s10.3">10.3</a>.</p></div>
+
+<h2><span class="n">3.</span> A step is reversible when its input can be recovered</h2>
+
+<div class="st" id="s3.1"><p><span class="lab">Definition 3.1</span> (reversible). A step is <em>reversible</em> when some map sends its output back to its input, so it runs backward as well as forward, losing nothing (<a class="ref" href="#s2.1">2.1</a>). By <a class="ref" href="#s0.7">reversibility of transport (0.7)</a>, <code>transport</code> and every equivalence are of this kind.</p></div>
+
+<div class="st" id="s3.2"><p><span class="lab">Theorem 3.2</span> (every reversible operation is a transport). A reversible operation is transport along a path, namely the one its own reversibility names, and that path is the only one inducing it.</p>
+<p class="pf"><span class="lab">Proof.</span> Maps both ways whose round trips are the identity are an equivalence (<a class="ref" href="#s2.1">2.1</a>, <a class="ref" href="#s2.2">2.2</a>), which <code>ua</code> turns into a path <code>A ≡ B</code> (<a class="ref" href="#s2.4">2.4</a>). Transport along that path is the operation, by <a class="ref" href="#s2.4">univalence (2.4)</a>'s computation rule. Uniqueness is <code>ua</code> being an equivalence, again <a class="ref" href="#s2.4">univalence (2.4)</a>. <span class="qed">∎</span></p></div>
+
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Foundations.Isomorphism
+open import Cubical.Foundations.Equiv
+open import Cubical.Foundations.Univalence
+private variable ℓ : Level
+
+-- A reversible operation: maps both ways whose round trips are the identity.
+module _ {A B : Type ℓ} (f : A → B) (g : B → A)
+         (fg : (b : B) → f (g b) ≡ b) (gf : (a : A) → g (f a) ≡ a) where
+
+  -- Its reversibility IS an equivalence, so it names a path.
+  its-equivalence : A ≃ B
+  its-equivalence = isoToEquiv (iso f g fg gf)
+
+  its-path : A ≡ B
+  its-path = ua its-equivalence
+
+  -- And transport along that path is the operation itself.
+  reversible-is-transport : (a : A) → transport its-path a ≡ f a
+  reversible-is-transport a = uaβ its-equivalence a
+
+  -- The path is the only one that induces it: ua is an equivalence.
+  the-path-is-unique : pathToEquiv its-path ≡ its-equivalence
+  the-path-is-unique = pathToEquiv-ua its-equivalence</code></pre>
+<figcaption>3.2 as a term. <code>isoToEquiv</code> is the step from reversibility to an equivalence, <code>ua</code> the step to a path, <code>uaβ</code> the computation rule that makes the transport <em>be</em> the operation. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+
+<div class="st" id="s3.3"><p><span class="lab">Definition 3.3</span> (effect-cost). A step is <em>irreversible</em> when several inputs share one output <code>b</code>: then <em>which</em> of them the input was is gone. That forgotten "which one" is the only thing a step can ever destroy. Its <em>effect-cost</em> is <a class="x" href="https://doi.org/10.1002/j.1538-7305.1948.tb01338.x">the entropy of the input given the output</a>: <code>log₂</code> of the number of inputs mapping to <code>b</code> when those are equally likely (<code>2ᵏ</code> inputs give <code>k</code> bits), and less when they are not — the count is the most it can be. This is one of the two axes; the other is the number of steps taken (<a class="ref" href="#s5.7">5.7</a>).</p></div>
+
+<div class="st" id="s3.4"><p><span class="lab">Proposition 3.4</span> (<a class="x" href="https://en.wikipedia.org/wiki/Landauer%27s_principle">Landauer's principle</a>). Destroying <code>k</code> bits dissipates at least <code>k · k_B T ln 2</code> of heat, with <code>k_B</code> <a class="x" href="https://en.wikipedia.org/wiki/Boltzmann_constant">Boltzmann's constant</a> and <code>T</code> the temperature; a reversible step dissipates <code>0</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s5.9">Landauer in units (5.9)</a>, which derives it from <a class="ref" href="#s3.1">reversibility (3.1)</a> and <a class="ref" href="#s3.3">effect-cost (3.3)</a>. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s3.5"><p><span class="lab">Theorem 3.5</span> (reversibility costs nothing, for any measure). Let <code>ℓ</code> be any <code>ℕ</code>-valued measure that adds under composition with <code>ℓ e = 0</code>. Then <code>ℓ g = 0</code> wherever <code>g</code> has a right inverse — no group laws are used.</p>
+$$
+\ell(g) + \ell(g^{-1}) = \ell(\mathrm{id}) = 0 \;\Longrightarrow\; \ell(g) = 0 \qquad (\text{naturals} \ge 0)
+$$
+<p class="pf"><span class="lab">Proof.</span> A sum of naturals is <code>0</code> only when each summand is. <span class="qed">∎</span></p></div>
+
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Data.Nat using (ℕ ; zero ; suc ; _+_ ; snotz)
+open import Cubical.Data.Empty using (rec)
+
++≡0→≡0 : (m n : ℕ) → m + n ≡ 0 → m ≡ 0
++≡0→≡0 zero    n p = refl
++≡0→≡0 (suc m) n p = rec (snotz p)
+
+module _ (G : Type) (_·_ : G → G → G) (e : G) (inv : G → G)
+  (invr : (g : G) → g · inv g ≡ e)
+  (ℓ : G → ℕ) (ℓe : ℓ e ≡ 0) (ℓ· : (g h : G) → ℓ (g · h) ≡ ℓ g + ℓ h) where
+
+  -- ℓ g + ℓ g⁻¹ = ℓ (g · g⁻¹) = ℓ e = 0, and a natural sum is 0 only at 0.
+  grading-vanishes : (g : G) → ℓ g ≡ 0
+  grading-vanishes g = +≡0→≡0 (ℓ g) (ℓ (inv g))
+    (sym (ℓ· g (inv g)) ∙ cong ℓ (invr g) ∙ ℓe)</code></pre>
+<figcaption>Any additive measure <code>ℓ</code> (adds under composition, <code>ℓ e = 0</code>) vanishes wherever an inverse exists: <code>ℓ g + ℓ g⁻¹ = ℓ e = 0</code>, and a sum of naturals is <code>0</code> only when each is. The hypotheses are an operation, a unit, and a right inverse for each element: no associativity, no left inverse, no group laws at all. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+
+<div class="st" id="s3.6"><p><span class="lab">Corollary 3.6</span> (§§1–2 destroy nothing). <code>transport</code> and every equivalence destroy nothing: every construction in §§1–2 runs backward and dissipates no heat.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s3.1">Reversibility (3.1)</a> and <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>, or <a class="ref" href="#s3.1">reversibility (3.1)</a> and <a class="ref" href="#s3.4">Landauer (3.4)</a> for the bit count alone. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s3.7"><p><span class="lab">Remark 3.7</span> (what is lost). The only thing a computation ever loses is an input it chose to forget. How many steps it takes to reach the answer is the length axis (<a class="ref" href="#s5.7">5.7</a>), treated in §5.</p></div>
+
+<div class="rk" id="s3.8"><p><span class="lab">Remark 3.8</span> (the energetics of a rule). This section is thermodynamics with nothing added. A rule’s only cost is what it erases <a class="ref" href="#s3.3">(3.3)</a>, its reversible part is free for <em>every</em> additive measure at once <a class="ref" href="#s3.5">(3.5)</a>, and the conversion to heat is <a class="ref" href="#s3.4">Landauer (3.4)</a>, derived in units at <a class="ref" href="#s5.9">5.9</a> by splitting on reversibility of the ambient dynamics rather than by appeal to statistical mechanics. So the question “what does this evolution cost” has an answer before any dynamics is chosen: count the collisions under the observation. Unitary evolution is this section’s reversible side <a class="ref" href="#s7.3">(7.3)</a>; measurement is its other side <a class="ref" href="#s8.5">(8.5)</a>.</p></div>
+
+<h2><span class="n">4.</span> The diagonal</h2>
+
+<div class="st" id="s4.1"><p><span class="lab">Definition 4.1</span> (point-surjective). Picture <code>e : A → (A → B)</code> as a table whose row <code>a</code> is the function <code>e a</code>; reading row <code>a</code> at its own index gives <code>e a a</code>, the <em>diagonal</em>. Call <code>e</code> <em>point-surjective</em> when every <code>h : A → B</code> appears as some row, with the row index <em>produced</em>:</p>
+<pre class="def"><code>onto e  =  (h : A → B) → Σ[ a ∈ A ] (e a ≡ h)</code></pre>
+<p>The <code>Σ</code> is untruncated, which is why the fixed point below comes out as a value you can hold.</p></div>
+
+<div class="st" id="s4.2"><p><span class="lab">Theorem 4.2</span> (<a class="x" href="http://www.tac.mta.ca/tac/reprints/articles/15/tr15abs.html">Lawvere 1969</a>). If <code>e : A → (A → B)</code> is point-surjective then every <code>g : B → B</code> has a fixed point.</p>
+$$
+\Big(\forall\, h : A \to B.\ \ \Sigma\, a : A.\ \ e\,a \equiv h\Big)
+\;\Longrightarrow\;
+\Big(\forall\, g : B \to B.\ \ \Sigma\, b : B.\ \ g\,b \equiv b\Big)
+$$
+<p class="pf"><span class="lab">Proof.</span> Put <code>h a := g (e a a)</code>, the <em>twist</em> of <code>e</code> by <code>g</code>. Point-surjectivity gives <code>a₀</code> with <code>e a₀ ≡ h</code>, so</p>
+$$
+e(a_0)(a_0) \;\equiv\; h(a_0) \;\equiv\; g\big(e(a_0)(a_0)\big)
+$$
+<p class="pf">and <code>e a₀ a₀</code> is a fixed point of <code>g</code>. <span class="qed">∎</span></p>
+<p class="pf">The proof reads <code>e</code> at one argument only, so the hypothesis can be weakened to exactly what it uses: it is enough that <code>e</code> hits the single function <code>h</code>. That weaker form, <code>lawvere-one-row</code> in the box, is what <a class="ref" href="#s4.6">the diagonal lemma (4.6)</a> and <a class="ref" href="#s4.10">halting (4.10)</a> supply, where only the <em>definable</em> or <em>computable</em> functions are rows.</p></div>
+
+<div class="st" id="s4.3"><p><span class="lab">Corollary 4.3</span> (contrapositive). If some <code>g : B → B</code> has no fixed point, no <code>e : A → (A → B)</code> is point-surjective.</p></div>
+
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Data.Bool using (Bool ; true ; false ; not ; true≢false)
+open import Cubical.Relation.Nullary using (¬_)
+private variable A B : Type
+
+-- φ is point-surjective: every B-valued observation on A is a row of φ.
+PtSurj : (A → (A → B)) → Type
+PtSurj {A = A} {B = B} φ = (g : A → B) → Σ[ a ∈ A ] φ a ≡ g
+
+-- Read the row at its own index, then apply f.
+twist : (A → (A → B)) → (B → B) → (A → B)
+twist φ f a = f (φ a a)
+
+-- The argument reads φ at ONE argument, so one row is the whole hypothesis.
+lawvere-one-row : (φ : A → (A → B)) (f : B → B)
+  → Σ[ a ∈ A ] (φ a ≡ twist φ f) → Σ[ b ∈ B ] f b ≡ b
+lawvere-one-row φ f (a₀ , hit) = φ a₀ a₀ , sym (funExt⁻ hit a₀)
+
+-- Lawvere 1969: a point-surjective φ forces every endomap of B a fixed point.
+lawvere : (φ : A → (A → B)) → PtSurj φ → (f : B → B) → Σ[ b ∈ B ] f b ≡ b
+lawvere φ surj f = lawvere-one-row φ f (surj (twist φ f))
+
+-- Contrapositive: one fixed-point-free f kills point-surjectivity of every φ.
+noFix→noPtSurj : (φ : A → (A → B)) (f : B → B)
+  → ((b : B) → ¬ (f b ≡ b)) → ¬ PtSurj φ
+noFix→noPtSurj φ f nofix surj = nofix (lawvere φ surj f .fst) (lawvere φ surj f .snd)
+
+-- not has no fixed point: not true = false and not false = true.
+not-no-fix : (b : Bool) → ¬ (not b ≡ b)
+not-no-fix true  p = true≢false (sym p)
+not-no-fix false p = true≢false p
+
+-- Cantor, as the B = Bool, f = not instance (not has no fixed point).
+cantor : (φ : A → (A → Bool)) → ¬ PtSurj φ
+cantor φ = noFix→noPtSurj φ not not-no-fix</code></pre>
+<figcaption>4.2 in one term — <code>lawvere</code> is three lines — with <a class="ref" href="#s4.3">the contrapositive (4.3)</a> and <a class="ref" href="#s4.4">Cantor (4.4)</a> as the checked instances. <a class="ref" href="#s4.11">Russell and Tarski (4.11)</a> are that same term at their own <code>(B, g)</code>; <a class="ref" href="#s4.6">Gödel (4.6</a>–<a class="ref" href="#s4.9">4.9)</a> is that diagonal plus the arithmetic hypotheses its own box isolates; <a class="ref" href="#s4.13">Rice (4.13)</a> reads it in the other direction (<a class="ref" href="#s4.12">4.12</a>). Verbatim, <code>--safe</code>, untruncated <code>Σ</code> (the escaping index is exhibited, not merely asserted).</figcaption>
+</details>
+
+<p>The impossibility theorems are <a class="ref" href="#s4.2">Lawvere (4.2)</a> or <a class="ref" href="#s4.3">the contrapositive (4.3)</a> at a named <code>(B , g)</code>. Each instance below supplies only that naming.</p>
+
+<div class="st" id="s4.4"><p><span class="lab">Corollary 4.4</span> (<a class="x" href="https://en.wikipedia.org/wiki/Cantor%27s_diagonal_argument">Cantor</a>). No <code>e : A → (A → 2)</code> is point-surjective.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s4.3">The contrapositive (4.3)</a> with <code>B = 2</code>, <code>g = ¬</code>: negation swaps <code>true</code> and <code>false</code>, so it has no fixed point. <code>(A → 2)</code> is the decidable subsets of <code>A</code> by characteristic functions — not every subset, which would be maps into propositions. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s4.5"><p><span class="lab">Lemma 4.5</span> (representability). Work in a theory with sentences, a derivability predicate <code>⊢</code>, negation, and a provability formula <code>Prov</code> — the box names these <code>Sent</code>, <code>Pf</code>, <code>neg</code>, <code>prov</code>. Code each one-variable formula by a number and let <code>sub(m , n)</code> be the code of formula <code>m</code> with the numeral <code>n̄</code> substituted for its variable. Then <code>sub</code> is represented by a formula.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>sub</code> is <a class="x" href="https://en.wikipedia.org/wiki/Primitive_recursive_function">primitive recursive</a>, and every primitive-recursive function is represented by a formula: induct on how it is built — the base functions (zero, successor, projection) are formulas, and composition and primitive recursion stay first-order by quantifying, boundedly, over the finite run that computes the value. A base as weak as <a class="x" href="https://en.wikipedia.org/wiki/Robinson_arithmetic">Robinson's Q</a> suffices. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s4.6"><p><span class="lab">Theorem 4.6</span> (<a class="x" href="https://en.wikipedia.org/wiki/Diagonal_lemma">the diagonal lemma</a>). For every formula <code>ψ</code> there is a sentence <code>G</code> with <code>⊢ G ↔ ψ(⌜G⌝)</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s4.2">Lawvere (4.2)</a> in the one-row form, at the table <code>e(m)(n) = sub(m , n)</code>: row <code>m</code> is the formula coded by <code>m</code>, and reading row <code>m</code> at its own index is <code>sub(m , m)</code>. The row <a class="ref" href="#s4.2">4.2</a> needs is the twist's, and that it is a row is <a class="ref" href="#s4.5">representability (4.5)</a>, nothing more — the full notion of <a class="ref" href="#s4.1">4.1</a> is false here, most families of formulas being cut out by no formula, which is why the one-row form is the one that fires. Concretely, for <code>g = ψ</code> the twist <code>δ(x) := ψ(sub(x , x))</code> is a formula, has a code <code>d</code>, and the fixed point <code>G := δ(d̄)</code> has code <code>sub(d , d)</code>. The <code>B</code> this fires over is the sentences up to provable equivalence, where <code>↔</code> is equality, so <code>g b = b</code> read there is exactly <code>⊢ G ↔ ψ(⌜G⌝)</code>. The box records formulas, their application, and the fixed point just built as the interface <code>HasDiagonal</code>, and reads it in the <code>¬Prov</code> form as <code>diagonalGivesGoedelFix</code>. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s4.7"><p><span class="lab">Corollary 4.7</span> (<a class="x" href="https://en.wikipedia.org/wiki/G%C3%B6del%27s_incompleteness_theorems">Gödel, first conjunct</a>). Take <code>ψ = ¬Prov</code>, so <a class="ref" href="#s4.6">4.6</a> gives <code>G</code> with <code>⊢ G ↔ ¬Prov(⌜G⌝)</code> — <code>G</code> says <em>I am unprovable</em>. If the theory is consistent and satisfies D1 (<code>⊢ s ⇒ ⊢ Prov⌜s⌝</code>), then <code>⊬ G</code>, and by soundness <code>G</code> is true.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>goedelHalfOne</code> in the box. If <code>⊢ G</code> then D1 gives <code>⊢ Prov⌜G⌝</code>, and the forward half of <a class="ref" href="#s4.6">the fixed point (4.6)</a> gives <code>⊢ ¬Prov⌜G⌝</code>, contradicting consistency. <code>Prov(⌜G⌝)</code> is the formula a proof of <code>G</code> exists — one unbounded existential over a decidable proof-check, which is what <code>Σ₁</code> names — so <code>G</code>'s unprovability is its truth. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s4.8"><p><span class="lab">Proposition 4.8</span> (the second conjunct is a further hypothesis). Consistency, D1 and the fixed point do not give <code>⊬ ¬G</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>noHalfTwo</code> runs any claimed derivation of <code>⊬ ¬G</code> against the four-sentence model <code>Wit</code> in the box — <code>⊤, ⊥, g, ¬g</code> with <code>Prov</code> constantly <code>⊤</code>. It is consistent, satisfies D1, and carries the fixed point at <code>g</code> — whose two arrows are both vacuous, not by accident but in every model of these hypotheses: those already force <code>⊬ g</code> (<code>fixIsAlwaysVacuous</code>, from <a class="ref" href="#s4.7">4.7</a>) and <code>⊬ ¬Prov⌜g⌝</code> (<code>provNegEmpty</code>), so neither arrow ever receives an input. What <code>Wit</code> alone adds is that <code>¬g</code> is provable — so no such derivation exists. <code>Wit</code> fails exactly where it must: <code>OmegaBad</code>, proving <code>Prov⌜g⌝</code> yet not <code>g</code> — consistent but <a class="x" href="https://en.wikipedia.org/wiki/%CE%A9-consistent_theory">ω-inconsistent</a>. (In a real arithmetic that gap is consistency surviving because the asserted proof is a nonstandard one no numeral names; <code>Wit</code> is the same separation stripped to four points and no arithmetic.) <span class="qed">∎</span></p></div>
+
+<div class="st" id="s4.9"><p><span class="lab">Theorem 4.9</span> (<a class="x" href="https://en.wikipedia.org/wiki/G%C3%B6del%27s_incompleteness_theorems">Gödel's first incompleteness theorem</a>). If the theory is also <a class="x" href="https://en.wikipedia.org/wiki/%CE%A9-consistent_theory">ω-consistent</a>, and its logic carries contraposition, double-negation elimination and transitivity internally, then <code>G</code> is independent: <code>⊬ G</code> and <code>⊬ ¬G</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>independenceFromRepresentability</code> in the box. The first conjunct is <a class="ref" href="#s4.7">4.7</a>. For the second, the backward half of <a class="ref" href="#s4.6">the fixed point (4.6)</a>, <code>¬Prov⌜G⌝ → G</code>, contraposed and cleared of its double negation (<code>internalFix</code>), gives <code>¬G → Prov⌜G⌝</code>; so <code>⊢ ¬G</code> would force <code>⊢ Prov⌜G⌝</code> alongside <code>⊬ G</code> (<a class="ref" href="#s4.7">4.7</a>) — the <code>OmegaBad</code> that <a class="ref" href="#s4.8">4.8</a> exhibits and ω-consistency forbids. <span class="qed">∎</span> (<a class="x" href="https://doi.org/10.2307/2269055">Rosser 1936</a> lowers ω-consistency to plain consistency by changing the fixed point.)</p></div>
+
+<details class="proof"><summary>the checked term — the Gödel construction (larger)</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Data.Sigma
+open import Cubical.Data.Unit using (Unit ; tt)
+open import Cubical.Data.Empty as Empty using (⊥)
+open import Cubical.Relation.Nullary using (¬_)
+private variable ℓ : Level
+
+-- A theory: sentences, a derivability predicate Pf, negation, and the
+-- internal provability operator prov (already "the formula at a code").
+record Theory (ℓ : Level) : Type (ℓ-suc ℓ) where
+  field
+    Sent : Type ℓ
+    Pf   : Sent → Type ℓ
+    neg  : Sent → Sent
+    prov : Sent → Sent
+open Theory public
+
+Consistent : Theory ℓ → Type ℓ
+Consistent T = (s : Sent T) → Pf T s → Pf T (neg T s) → ⊥
+
+HBL1 : Theory ℓ → Type ℓ                       -- D1:  ⊢ s  ⇒  ⊢ Prov⌜s⌝
+HBL1 T = (s : Sent T) → Pf T s → Pf T (prov T s)
+
+GoedelFix : (T : Theory ℓ) → Sent T → Type ℓ   -- ⊢ G ↔ ¬Prov⌜G⌝
+GoedelFix T G =
+  (Pf T G → Pf T (neg T (prov T G))) × (Pf T (neg T (prov T G)) → Pf T G)
+
+OmegaBad : (T : Theory ℓ) → Sent T → Type ℓ    -- ⊢ Prov⌜G⌝ yet ⊬ G
+OmegaBad T G = Pf T (prov T G) × (¬ Pf T G)
+
+Independent : (T : Theory ℓ) → Sent T → Type ℓ
+Independent T s = (¬ Pf T s) × (¬ Pf T (neg T s))
+
+-- Conjunct 1 (⊬ G): the fixed point's forward half, D1, consistency.
+goedelHalfOne : (T : Theory ℓ) (G : Sent T)
+  → Consistent T → HBL1 T → GoedelFix T G → ¬ Pf T G
+goedelHalfOne T G con d1 (fwd , _) pG = con (prov T G) (d1 G pG) (fwd pG)
+
+-- …so ⊬ G in EVERY such model, and the fixed point's forward arrow is
+-- vacuous there — not a quirk of Wit below. Only ⊢ ¬G can still vary.
+fixIsAlwaysVacuous : (T : Theory ℓ) (G : Sent T)
+  → Consistent T → HBL1 T → GoedelFix T G → (Pf T G → Pf T (neg T (prov T G)))
+fixIsAlwaysVacuous T G con d1 gf pG = Empty.rec (goedelHalfOne T G con d1 gf pG)
+
+-- …and its backward arrow too: ⊢ ¬Prov⌜G⌝ would give ⊢ G through it.
+provNegEmpty : (T : Theory ℓ) (G : Sent T)
+  → Consistent T → HBL1 T → (gf : GoedelFix T G) → ¬ Pf T (neg T (prov T G))
+provNegEmpty T G con d1 gf pNP = goedelHalfOne T G con d1 gf (snd gf pNP)
+
+-- Conjunct 2 (⊬ ¬G) does NOT follow: a four-sentence countermodel with
+-- consistency, D1 and the fixed point, in which ¬G is provable.
+data W : Type where wtop wbot wg wng : W
+wneg : W → W
+wneg wtop = wbot
+wneg wbot = wtop
+wneg wg   = wng
+wneg wng  = wg
+wPf : W → Type
+wPf wtop = Unit
+wPf wbot = ⊥
+wPf wg   = ⊥
+wPf wng  = Unit
+Wit : Theory ℓ-zero
+Sent Wit = W
+Pf   Wit = wPf
+neg  Wit = wneg
+prov Wit = λ _ → wtop
+witCon : Consistent Wit
+witCon wtop _ b = b
+witCon wbot a _ = a
+witCon wg   a _ = a
+witCon wng  _ b = b
+witHBL1 : HBL1 Wit
+witHBL1 _ _ = tt
+witFix : GoedelFix Wit wg
+witFix = Empty.rec , Empty.rec
+witProvesNegG : wPf (wneg wg)
+witProvesNegG = tt
+noHalfTwo :
+  ((T : Theory ℓ-zero) (G : Sent T)
+     → Consistent T → HBL1 T → GoedelFix T G → ¬ Pf T (neg T G)) → ⊥
+noHalfTwo half2 = half2 Wit wg witCon witHBL1 witFix witProvesNegG
+
+-- Representability, as the structure the diagonal lemma needs.
+record HasDiagonal (T : Theory ℓ) : Type (ℓ-suc ℓ) where
+  field
+    imp  : Sent T → Sent T → Sent T
+    mp   : (a b : Sent T) → Pf T (imp a b) → Pf T a → Pf T b
+    Form : Type ℓ
+    app  : Form → Sent T → Sent T
+    fix  : (φ : Form)
+         → Σ[ G ∈ Sent T ]
+             (Pf T (imp G (app φ G)) × Pf T (imp (app φ G) G))
+    negProv    : Form
+    negProv-is : (s : Sent T) → app negProv s ≡ neg T (prov T s)
+open HasDiagonal public
+
+module _ (T : Theory ℓ) (D : HasDiagonal T) where
+  goedelSentence : Sent T                       -- built, with its own code
+  goedelSentence = fst (fix D (negProv D))
+  diagonalGivesGoedelFix : GoedelFix T goedelSentence
+  diagonalGivesGoedelFix =
+      (λ pG → subst (Pf T) (negProv-is D goedelSentence)
+                (mp D goedelSentence _ (fst (snd (fix D (negProv D)))) pG))
+    , (λ pNP → mp D _ goedelSentence (snd (snd (fix D (negProv D))))
+                (subst (Pf T) (sym (negProv-is D goedelSentence)) pNP))
+
+-- Full independence, given ω-consistency and the internal rules the
+-- second conjunct needs: contraposition, double-negation, transitivity.
+module _ (T : Theory ℓ) (D : HasDiagonal T)
+         (contra : (a b : Sent T)
+                 → Pf T (imp D a b) → Pf T (imp D (neg T b) (neg T a)))
+         (dne    : (a : Sent T) → Pf T (imp D (neg T (neg T a)) a))
+         (trans  : (a b c : Sent T)
+                 → Pf T (imp D a b) → Pf T (imp D b c) → Pf T (imp D a c))
+         where
+  private
+    G : Sent T
+    G = goedelSentence T D
+    bwd' : Pf T (imp D (neg T (prov T G)) G)
+    bwd' = subst (λ s → Pf T (imp D s G)) (negProv-is D G)
+             (snd (snd (fix D (negProv D))))
+  internalFix : Pf T (imp D (neg T G) (prov T G))
+  internalFix = trans (neg T G) (neg T (neg T (prov T G))) (prov T G)
+                  (contra (neg T (prov T G)) G bwd') (dne (prov T G))
+  secondConjunct : (¬ Pf T G) → (¬ OmegaBad T G) → ¬ Pf T (neg T G)
+  secondConjunct notG notOmega pNegG =
+    notOmega (mp D (neg T G) (prov T G) internalFix pNegG , notG)
+  independenceFromRepresentability :
+      Consistent T → HBL1 T → (¬ OmegaBad T G) → Independent T G
+  independenceFromRepresentability con d1 notOmega =
+      goedelHalfOne T G con d1 (diagonalGivesGoedelFix T D)
+    , secondConjunct (goedelHalfOne T G con d1 (diagonalGivesGoedelFix T D)) notOmega</code></pre>
+<figcaption>The Gödel cluster <a class="ref" href="#s4.6">4.6</a>–<a class="ref" href="#s4.9">4.9</a> as one module, each term echoing its statement. <code>HasDiagonal</code> records what <a class="ref" href="#s4.5">representability (4.5)</a> provides — one-place formulas, their application, and the fixed point as a <em>pair of implications</em>, since <code>Theory</code> has no conjunction for a biconditional — and <code>diagonalGivesGoedelFix</code> reads that fixed point in the <code>¬Prov</code> form (<a class="ref" href="#s4.6">4.6</a>). <code>goedelHalfOne</code> is the first conjunct, three lines (<a class="ref" href="#s4.7">4.7</a>), and <code>fixIsAlwaysVacuous</code> and <code>provNegEmpty</code> read off that it already empties both <code>Pf G</code> and <code>Pf ¬Prov⌜G⌝</code> in every such model; the four-sentence <code>Wit</code> drives <code>noHalfTwo</code> (<a class="ref" href="#s4.8">4.8</a>); <code>independenceFromRepresentability</code> assembles both halves given ω-consistency (<a class="ref" href="#s4.9">4.9</a>). Self-contained; typechecks under Agda 2.8.0 <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9.</figcaption>
+</details>
+
+<div class="st" id="s4.10"><p><span class="lab">Corollary 4.10</span> (<a class="x" href="https://doi.org/10.1112/plms/s2-42.1.230">halting</a>). No total <code>H</code> decides, of an arbitrary machine and input, whether it halts.</p>
+<p class="pf"><span class="lab">Proof.</span> Running code <code>a</code> on input <code>x</code> is partial, so it is no table of total functions; a total halting-decider <code>H</code> makes it one, since <code>φ(a)(x) := if H(a,x) then run(a,x) else 0</code> is then total. Every total computable <code>h : A → 2</code> is a row of it: take any program for <code>h</code>; it halts everywhere, so <code>H</code> never diverts it. Now <a class="ref" href="#s4.2">Lawvere (4.2)</a> at <code>g = ¬</code>, in the one-row form: the twist <code>δ(a) := ¬ φ(a)(a)</code> is total and computable, hence a row, so <code>δ ≡ φ(d)</code> for some code <code>d</code>, and reading row <code>d</code> at its own index gives <code>φ(d)(d) = ¬ φ(d)(d)</code>, which <code>¬</code>, having no fixed point, forbids. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s4.11"><p><span class="lab">Corollary 4.11</span> (Russell, Tarski). The non-self-members are no set's membership, and no truth predicate is definable.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s4.3">The contrapositive (4.3)</a> twice. Russell: <code>B</code> the propositions, <code>g = ¬</code> on <code>x ∈ x</code> — the non-self-members are the diagonal row, and <code>¬</code> fixes nothing. Tarski: <code>B</code> the truth values, <code>g = ¬</code> — a truth predicate would make the liar a fixed point of negation. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s4.12"><p><span class="lab">Theorem 4.12</span> (<a class="x" href="https://en.wikipedia.org/wiki/Kleene%27s_recursion_theorem">Kleene's recursion theorem</a> — the positive reading). Where <code>e</code> has a section — <code>e</code> being the interpreter, sending a code to the function it runs, and the section the compiler, sending a function to a code for it — <a class="ref" href="#s4.2">Lawvere (4.2)</a> hands every <code>g</code> a fixed point: a program equal to its own transform, the quine.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s4.2">Lawvere (4.2)</a> unchanged. The fixed-point-free instances — <a class="ref" href="#s4.4">Cantor (4.4)</a>, <a class="ref" href="#s4.10">halting (4.10)</a>, <a class="ref" href="#s4.11">Russell–Tarski (4.11)</a> — read it where <code>g</code> has no fixed point and conclude against <code>e</code>; here <code>e</code> is given and the conclusion is kept. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s4.13"><p><span class="lab">Corollary 4.13</span> (<a class="x" href="https://en.wikipedia.org/wiki/Rice%27s_theorem">Rice</a>). No decider exists for a nontrivial semantic property of programs.</p>
+<p class="pf"><span class="lab">Proof.</span> Suppose one, and take programs <code>a</code> that has the property and <code>b</code> that lacks it. By <a class="ref" href="#s4.12">the recursion theorem (4.12)</a> build a program which reads its own code, runs the decider on it, and then behaves like <code>b</code> if the verdict is yes and like <code>a</code> if no. Either verdict is wrong about it. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s4.14"><p><span class="lab">Remark 4.14</span> (one lemma, many instances). There is no family of impossibility theorems: one lemma (<a class="ref" href="#s4.2">4.2</a>), applied at a different <code>(B , g)</code> each time, read in the other direction for <a class="ref" href="#s4.12">the recursion theorem (4.12)</a>, and — at Gödel (<a class="ref" href="#s4.6">4.6</a>–<a class="ref" href="#s4.9">4.9</a>) — carrying the extra arithmetic hypotheses the diagonal alone does not supply. Rice sits on that second side rather than among the fixed-point-free instances.</p></div>
+
+<div class="rk" id="s4.15"><p><span class="lab">Remark 4.15</span> (the fixed points are built). Because the <code>Σ</code> of <a class="ref" href="#s4.1">point-surjectivity (4.1)</a> is untruncated, <a class="ref" href="#s4.2">4.2</a> returns a fixed point as a <em>value</em>, and each instance inherits that: <a class="ref" href="#s4.6">4.6</a> builds the Gödel sentence <code>goedelSentence</code> with its own code <code>sub(d , d)</code>, <a class="ref" href="#s4.10">4.10</a> builds the diagonal program <code>δ</code>, and <a class="ref" href="#s4.12">4.12</a> builds the quine. The classical statements assert that such a thing exists; here each is produced by the term in the box, instantiated at its own <code>(B , g)</code>.</p></div>
+
+
+<div class="rk" id="s4.16"><p><span class="lab">Remark 4.16</span> (irreducibility, from above). Computational irreducibility has two halves and this is the one that can be proved outright. There is no family of impossibility theorems — one lemma at a different point each time <a class="ref" href="#s4.14">(4.14)</a> — and because the <code>Σ</code> is untruncated each instance <em>builds</em> its object rather than asserting one exists <a class="ref" href="#s4.15">(4.15)</a>. The other half, that the outcome does not determine the run, is not a limitation theorem at all: it is <a class="ref" href="#s11.3">the merge having no section (11.3)</a>, and it is proved, not observed.</p></div>
+
+<h2><span class="n">5.</span> Complete inference is deterministic and step-optimal</h2>
+
+<p>§§0–2 supply substitution along an equality (<a class="ref" href="#s0.6">0.6</a>, <a class="ref" href="#s2.4">2.4</a>), §3 reversibility (<a class="ref" href="#s3.1">3.1</a>), §4 the diagonal (<a class="ref" href="#s4.2">4.2</a>). This section fixes a machine, defines two costs on it, and proves the result stated at the top. The division of labour is worth stating once: §§0–4 are the semantics — what a proof, an answer and a reversible step <em>are</em> — and §5.2 fixes the machine they run on. Every cost result below is a theorem about that machine, and takes exactly one property of it: the one-step diamond (<a class="ref" href="#s5.11">5.11</a>).</p>
+
+<h3>5.1 Terms, proofs, questions</h3>
+
+<div class="st" id="s5.1"><p><span class="lab">Definition 5.1</span> (the correspondence). Each connective is read as a type former:</p>
+<table class="dict">
+<tr><td><code>A ⇒ B</code></td><td><code>A → B</code>, the function type: a proof sends a proof of <code>A</code> to one of <code>B</code></td></tr>
+<tr><td><code>A ∧ B</code></td><td><code>A × B</code>, the pair</td></tr>
+<tr><td><code>A ∨ B</code></td><td><code>A ⊎ B</code>, the tagged sum</td></tr>
+<tr><td>falsehood</td><td><code>⊥</code>, the empty type</td></tr>
+<tr><td><code>∀ x. P x</code></td><td><code>(x : A) → P x</code>, the dependent function</td></tr>
+<tr><td><code>∃ x. P x</code></td><td><code>Σ[ x ∈ A ] P x</code>, the dependent pair</td></tr>
+<tr><td>modus ponens</td><td>application</td></tr>
+<tr><td>checking a proof</td><td><em>normalizing</em> its term: running it until no step is left</td></tr>
+</table>
+<p>For the first four rows — the propositional part, with sums and the empty type — the connectives and the type formers are one structure: the <a class="x" href="https://ncatlab.org/nlab/show/bicartesian+closed+category">free bicartesian closed category</a> (<a class="x" href="https://doi.org/10.1073/pnas.20.11.584">Curry 1934</a>; <a class="x" href="https://en.wikipedia.org/wiki/Curry%E2%80%93Howard_correspondence">Howard 1969</a>; Lambek 1980). The two quantifier rows go past it, since their types depend on a value; the setting for those is a <a class="x" href="https://ncatlab.org/nlab/show/locally+cartesian+closed+category">locally cartesian closed category</a>, which is what §0 has been building.</p></div>
+
+<div class="st" id="s5.2"><p><span class="lab">Definition 5.2</span> (question, answer). A <em>computation</em> is a term of a value type, a <em>decision</em> a term of <code>Dec P = P ⊎ ¬ P</code>, an <em>answer</em> a term of the type the question asks for. The <em>answer</em> to a question is the normal form of that term.</p></div>
+
+<div class="st" id="s5.3"><p><span class="lab">Proposition 5.3</span> (one operation). <a class="x" href="https://en.wikipedia.org/wiki/Calculus_ratiocinator">Proving, deciding, computing and answering are one operation</a>: build the term, normalize it.</p>
+<p class="pf"><span class="lab">Proof.</span> Immediate from <a class="ref" href="#s5.1">the correspondence (5.1)</a> and <a class="ref" href="#s5.2">questions and answers (5.2)</a>: the four differ only in which type the term inhabits. <span class="qed">∎</span></p></div>
+
+<h3>5.2 The machine</h3>
+
+<div class="st" id="s5.4"><p><span class="lab">Definition 5.4</span> (<a class="x" href="https://en.wikipedia.org/wiki/Interaction_nets">net</a>). A <em>cell</em> has one distinguished <em>principal</em> port and finitely many <em>auxiliary</em> ports. A <em>net</em> is a finite set of cells with a partial matching of their ports by <em>wires</em>. The <em>distance</em> between two cells is the number of wires on a shortest path between them.</p></div>
+
+<div class="st" id="s5.5"><p><span class="lab">Definition 5.5</span> (interaction step). An <em>active pair</em> is two cells whose principal ports are wired to each other. For each pair of cell kinds a rule gives a net <code>R</code> on exactly the auxiliary wires of those two cells:</p>
+$$
+\dfrac{\;(c_1,c_2)\ \text{an active pair of}\ N \qquad (c_1,c_2) \longrightarrow R\;}{\;N \longrightarrow N[(c_1,c_2) := R]\;}
+$$
+<p>Every other cell and wire of <code>N</code> is unchanged. Write <code>Step s t</code> for one such step.</p></div>
+
+<div class="st" id="s5.6"><p><span class="lab">Definition 5.6</span> (trace, length, normal form).</p>
+<pre class="def"><code>data Trace : ℕ → S → S → Type where
+  done      : {s : S} → Trace zero s s
+  stepTrace : {n : ℕ} {s u t : S} → Step s u → Trace n u t → Trace (suc n) s t
+
+Normal : S → Type
+Normal t = (u : S) → Step t u → ⊥</code></pre>
+<p>The <em>length</em> of a trace is its index <code>n</code>.</p></div>
+
+<h3>5.3 Two costs</h3>
+
+<div class="st" id="s5.7"><p><span class="lab">Definition 5.7</span> (the two axes). The <em>length</em> of a reduction is the number of steps it takes (<a class="ref" href="#s5.6">5.6</a>). Its <em>effect-cost</em> is the quantity defined in <a class="ref" href="#s3.3">3.3</a>: the entropy of its input given its output.</p></div>
+
+<div class="st" id="s5.8"><p><span class="lab">Proposition 5.8</span> (the two costs of a step). A reversible step has effect-cost <code>0</code> and length <code>1</code>. A step merging <code>2ᵏ</code> inputs into one output has effect-cost <code>k</code> and length <code>1</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> A step whose input can be recovered is a bijection (<a class="ref" href="#s3.1">3.1</a>), so one input shares each output and <code>log₂ 1 = 0</code>; a <code>2ᵏ</code>-fold merge gives <code>log₂ 2ᵏ = k</code>. Neither touches the step count. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s5.9"><p><span class="lab">Proposition 5.9</span> (Landauer's bound, in units). A step of effect-cost <code>k</code> dissipates <code>k · k_B T ln 2</code> of heat, and a reversible step dissipates <code>0</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s3.1">Reversibility (3.1)</a> and <a class="ref" href="#s3.3">effect-cost (3.3)</a> read twice — once on the datum, once on the dynamics carrying it. A <code>2 → 1</code> merge of microstates is an entropy drop of <code>ln 2</code> nats, <code>k_B ln 2</code> once <code>k_B</code> converts nats to thermodynamic entropy. <a class="ref" href="#s3.1">Reversibility (3.1)</a> splits the ambient dynamics into two cases. <em>Injective</em>: the two microstates the step merged stay distinct in it, so the distinction the datum lost is now in the surroundings, as heat <code>T ΔS</code>, with <code>T</code> the conversion of entropy to energy that <em>defines</em> temperature. <em>Non-injective</em>: it is a merging step itself, and <a class="ref" href="#s3.3">effect-cost (3.3)</a> charges it the same <code>k</code> one level down. Both cases pay <code>k</code> bits; <code>k_B</code> and <code>T</code> convert that to joules. By <a class="ref" href="#s5.8">the two costs (5.8)</a> a reversible step has <code>k = 0</code>, so the drop is <code>0</code> and the heat is <code>0</code>. <span class="qed">∎</span> (<a class="x" href="https://doi.org/10.1147/rd.53.0183">Landauer 1961</a>; <a class="x" href="https://doi.org/10.1147/rd.176.0525">Bennett 1973</a>, 1982 named it.)</p></div>
+
+<div class="rk" id="s5.10"><p><span class="lab">Remark 5.10</span> (what the price covers). The effect-cost is charged against the observation: the bits erased for the requested output, not for a whole trace. The length cost is a separate axis, bounded by a potential (<a class="ref" href="#s5.15">5.15</a>) and by no count of <a class="x" href="https://ncatlab.org/nlab/show/homotopy+fiber">solutions</a> (Search).</p></div>
+
+<h3>5.4 Every reduction is the shortest</h3>
+
+<div class="st" id="s5.11"><p><span class="lab">Lemma 5.11</span> (one-step diamond). If <code>Step s a</code> and <code>Step s b</code> then <code>a ≡ b</code>, or there is <code>c</code> with <code>Step a c</code> and <code>Step b c</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Two distinct active pairs are disjoint: distinct principal-port pairs cannot share a cell. By <a class="ref" href="#s5.5">interaction (5.5)</a> each step leaves everything outside its own pair untouched, so doing one leaves the other available and untouched, and the two converge in one further step each. This is structural to interaction nets (<a class="x" href="https://doi.org/10.1145/96709.96718">Lafont 1990</a>), not an assumption. It is also why the machine is nets and not terms: β-reduction is confluent but has no one-step diamond — two overlapping β-redexes need several steps to reconverge, which is why the classical proof goes through parallel reduction — so the equal-length result below is false for it. A rule firing on an active pair cannot overlap another, by the disjointness just shown, and that is the whole difference. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s5.12"><p><span class="lab">Lemma 5.12</span> (peel). <code>Step s u → Trace (suc n) s t → Normal t → Trace n u t</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Induction on the trace's length. Apply <a class="ref" href="#s5.11">the diamond (5.11)</a> to the given step and the trace's first step: either they merge, and the tail is the required trace, or they reach a common term, from which the inductive hypothesis peels the shorter tail. At a normal form no step is left to carry, so the given step is absorbed exactly once. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s5.13"><p><span class="lab">Theorem 5.13</span> (equal length). <code>Trace n s t → Trace m s t → Normal t → n ≡ m</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Induction on the first trace, peeling its first step through the second by <a class="ref" href="#s5.12">peel (5.12)</a>. <span class="qed">∎</span></p></div>
+
+<details class="proof"><summary>the checked term</summary>
+<pre><code>-- as a file: RandomDescent.agda
+open import Cubical.Foundations.Prelude
+open import Cubical.Data.Nat using (ℕ ; zero ; suc)
+open import Cubical.Data.Nat.Order using (_≤_ ; ≤-refl)
+open import Cubical.Data.Sigma
+open import Cubical.Data.Sum using (_⊎_ ; inl ; inr)
+open import Cubical.Data.Empty as Empty using (⊥)
+
+module RandomDescent (S : Type) (Step : S → S → Type)
+  (diamond : {s a b : S} → Step s a → Step s b
+    → (a ≡ b) ⊎ (Σ[ c ∈ S ] (Step a c × Step b c))) where
+
+  data Trace : ℕ → S → S → Type where
+    done      : {s : S} → Trace zero s s
+    stepTrace : {n : ℕ} {s u t : S} → Step s u → Trace n u t → Trace (suc n) s t
+
+  Normal : S → Type
+  Normal t = (u : S) → Step t u → ⊥
+
+  -- Any available first interaction removes exactly one unit from any
+  -- terminating reduction to the same normal form. It cannot detour.
+  peel : {n : ℕ} {s u t : S} → Step s u → Trace (suc n) s t → Normal t → Trace n u t
+  peel {zero} jump (stepTrace first done) normal with diamond first jump
+  ... | inl same             = subst (λ v → Trace zero v _) same done
+  ... | inr (z , left , right) = Empty.rec (normal z left)
+  peel {suc n} jump (stepTrace first rest) normal with diamond first jump
+  ... | inl same             = subst (λ v → Trace (suc n) v _) same rest
+  ... | inr (z , left , right) = stepTrace right (peel left rest normal)
+
+  normal-length-zero : {n : ℕ} {s t : S} → Normal s → Trace n s t → n ≡ zero
+  normal-length-zero normal done                     = refl
+  normal-length-zero normal (stepTrace first rest)   = Empty.rec (normal _ first)
+
+  zero-endpoints : {s t : S} → Trace zero s t → s ≡ t
+  zero-endpoints done = refl
+
+  -- All complete reductions of THIS object to THIS normal form have one length.
+  same-normalization-length : {n m : ℕ} {s t : S}
+    → Trace n s t → Trace m s t → Normal t → n ≡ m
+  same-normalization-length done other normal = sym (normal-length-zero normal other)
+  same-normalization-length {m = zero} (stepTrace first rest) other normal =
+    Empty.rec (normal _ (subst (λ s → Step s _) (zero-endpoints other) first))
+  same-normalization-length {m = suc m} (stepTrace first rest) other normal =
+    cong suc (same-normalization-length rest (peel first other normal) normal)
+
+  normalization-is-geodesic : {n m : ℕ} {s t : S}
+    → Trace n s t → Trace m s t → Normal t → n ≤ m
+  normalization-is-geodesic chosen competitor normal =
+    subst (_ ≤_) (same-normalization-length chosen competitor normal) ≤-refl</code></pre>
+<figcaption>The step-count is fixed by the endpoints, never the strategy: <code>peel</code> pushes any first step through any reduction, and <code>same-normalization-length</code> inducts to equal length. Generic in <code>(S, Step, diamond)</code> — instantiated by any system with the interaction-net diamond. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+
+<div class="st" id="s5.14"><p><span class="lab">Corollary 5.14</span> (the length is fixed by the endpoints). Every reduction of a term to its normal form has the same length, so each is the minimum: the step-count is fixed by the endpoints, never by the strategy, and the cost is as deterministic as the answer.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s5.13">Equal length (5.13)</a> with <code>≤-refl</code>, as <code>normalization-is-geodesic</code> in the box. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s5.15"><p><span class="lab">Theorem 5.15</span> (Bellman). In the reduction graph — vertices terms, edges steps of cost <code>c(u→v)</code> — call <code>Φ</code> a <em>potential</em> when <code>Φ(normal form) = 0</code> and <code>Φ(u) ≤ c(u→v) + Φ(v)</code> on every edge. Then every potential is a lower bound on every finishing path, and where a normal form is reachable the geodesic distance is the greatest potential, satisfying</p>
+$$
+\Phi(\text{normal form}) = 0, \qquad \Phi(u) = \min_{v}\, \big[\, c(u \to v) + \Phi(v)\,\big]
+$$
+<p class="pf"><span class="lab">Proof.</span> Adding the edge inequality along any path to a normal form, where <code>Φ = 0</code>, gives <code>Φ(u) ≤</code> the path's total cost. The geodesic distance satisfies both conditions, so it is a potential, and it meets the bound with equality at the cheapest edge (<a class="x" href="https://en.wikipedia.org/wiki/Bellman_equation">Bellman 1957</a>). By <a class="ref" href="#s5.14">minimality (5.14)</a> it is attained by every reduction, so there is nothing to minimise over. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s5.16"><p><span class="lab">Theorem 5.16</span> (unit lookahead). An output that must read input at distance <code>n</code> from it cannot be produced in fewer than <code>n</code> steps — a bound on every reduction, not on one chosen strategy.</p>
+<p class="pf"><span class="lab">Proof.</span> By <a class="ref" href="#s5.5">interaction (5.5)</a> one step changes the datum only where its two cells sat, so its output at a position depends on that position and its one wired neighbour. Composing <code>k</code> steps, the output depends only on input within distance <code>k</code> of it in the net one started from: one step reaches a wired neighbour, so each widens the reach by exactly one. The rewriting does not let that slip — a rule replaces two cells by a net on their own auxiliary wires, and the cells it puts there can carry only what those two already held, so no interaction moves information further than one wire, however the distances in the rewritten net come out. <span class="qed">∎</span></p>
+<p class="pf">Read from the other end, the same <code>k</code> is an information demand. Write <code>x ≡ₙ y</code> for agreement through observational depth <code>n</code>: the bound says <code>x ≡ₙ₊ₖ y ⇒ w(x) ≡ₙ w(y)</code> for every <code>k</code>-step <code>w</code>, so an output determined to depth <code>n</code> requires source read to depth <code>n + k</code>. One number, two orientations — elapsed interaction depth read dynamically, source information required read observationally — and both are the length axis (<a class="ref" href="#s5.7">5.7</a>), not a third cost: the <a class="ref" href="#s3.3">effect-cost (3.3)</a> counts what collides under an observation, this counts what must be read to produce it. In the observational orientation the criterion of <a class="ref" href="#s8.11">8.11</a> reads as a radius, since one step widens the source a position can consult by exactly one wire.</p></div>
+
+<div class="st" id="s5.17"><p><span class="lab">Corollary 5.17</span> (step-optimality). The native evolution attains the geodesic: no reduction is shorter than the one it takes.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s5.14">Minimality (5.14)</a>. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s5.18"><p><span class="lab">Theorem 5.18</span> (unique normal form). A term has at most one normal form.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s5.11">The diamond (5.11)</a>, tiled. Take two reductions of one term; the diamond closes their first steps to a common term, and filling the grid step by step reconverges them. If both end at a normal form — nothing left to rewrite — that common reduct can only be each endpoint, so the two are equal. (<a class="x" href="https://doi.org/10.1090/s0002-9947-1936-1501858-0">Church–Rosser</a>, here the diamond filled in.) <span class="qed">∎</span></p></div>
+
+<div class="st" id="s5.19"><p><span class="lab">Corollary 5.19</span> (the dichotomy). For every question there are two cases and no third. Either a normal form exists, and by <a class="ref" href="#s5.14">minimality (5.14)</a> and <a class="ref" href="#s5.18">unique normal form (5.18)</a> every reduction reaches that one answer in the one step-count the endpoints fix; or §4 proves there is none — a decider for one's own halting is among these, since asking for one asks for the fixed point the diagonal forbids — and the question had no answer to find, which the system establishes rather than running out of time looking.</p></div>
+
+<div class="rk" id="s5.20"><p><span class="lab">Remark 5.20</span> (what well-formed names). <em>Well-formed</em> names the first case, and the reduction decides which case a question is in. What <a class="ref" href="#s5.19">the dichotomy (5.19)</a> fixes is reachability, not length: a long geodesic is a real price, charged honestly, and already the shortest (<a class="ref" href="#s5.14">5.14</a>).</p></div>
+
+<h3>5.5 What the length counts</h3>
+
+<div class="st" id="s5.21"><p><span class="lab">Proposition 5.21</span> (the building route is the size of the answer). Take a rule set in which each interaction emits at most one constructor — true of the standard encodings, and a property of the rules rather than of <a class="ref" href="#s5.5">interaction (5.5)</a>. The normal form is then a complete proof-carrying witness — the answer with its certificate — and the steps that build it number exactly its constructors.</p>
+<p class="pf"><span class="lab">Proof.</span> Each building step emits exactly one constructor — one piece of the answer, a successor, a pair, a tag — so the building route's length equals the witness's size; building <code>sucⁿ</code> takes one successor per step. A term carrying extra <em>redexes</em> — spots still waiting to reduce, like <code>(λx.x) t</code> — clears those first, administrative steps building nothing, so its total length is its own geodesic by <a class="ref" href="#s5.14">minimality (5.14)</a> while the witness's size counts only the constructors built. Reading the finished term off is a fold that copies it, adding no step. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s5.22"><p><span class="lab">Remark 5.22</span> (two exponentials). By <a class="ref" href="#s5.21">the building route (5.21)</a> the building route's length is the witness's size in unary. When that unary size is exponential in the question's succinct binary measure — as <code>sucⁿ</code> is, <code>n</code> against <code>log n</code> — the route is exponentially longer than the succinct measure. That exponential is the observer's lossy binary measure laid against a lossless unary object; change the measure, not the computation, and it is gone. The other exponential can be real: the geodesic length when a <em>small</em> witness ends a <em>long</em> reduction. That is a length, so no change of measure touches it; it is the reduction's own fixed distance, already the minimum by <a class="ref" href="#s5.14">minimality (5.14)</a>.</p></div>
+
+<div class="rk" id="s5.23"><p><span class="lab">Remark 5.23</span> (what is solved). The optimization problem — the fewest steps to an answer, what complexity theory exists to chase — is here <em>solved</em>: computation modeled as lossless reduction is optimal by construction, optimality its standing condition. The million wasteful ways to compute the same answer are departures from this model, not rival strategies within it. Only <a class="ref" href="#s5.11">the diamond (5.11)</a> is used, so <a class="ref" href="#s5.13">5.13</a>–<a class="ref" href="#s5.19">5.19</a> hold of any reduction that has the diamond.</p></div>
+
+<div class="rk" id="s5.24"><p><span class="lab">Remark 5.24</span> (sharing). Sharing is written into the net. A shared subterm is held by a <em>cell</em> — a duplicator, wired in at ports like every other cell — so it belongs to the net's syntax, in place before any reduction begins: no bookkeeping outside the net itself, and <a class="ref" href="#s5.11">the diamond (5.11)</a> used only the disjointness of active pairs, not sharing. Its price is charged: a duplicator's interactions are steps on the length axis exactly like the rest, and on the effect axis they are free by <a class="ref" href="#s5.8">the two costs (5.8)</a>, since folding along an equality is transport (<a class="ref" href="#s0.6">0.6</a>) and runs backward (<a class="ref" href="#s0.7">0.7</a>). What sharing buys is the one thing claimed for it: an active pair is never duplicated, so no step repeats work.</p></div>
+
+<div class="rk" id="s5.25"><p><span class="lab">Remark 5.25</span> (termination). Where a term terminates it is reached in finitely many forced steps; a non-terminating term denotes a well-defined infinite (coinductive) object, not a gap.</p></div>
+
+<div class="rk" id="s5.26"><p><span class="lab">Remark 5.26</span> (no outer layer). Evaluator, type-checker and optimizer are themselves terms of the same language, and a question about them is another term the same normalizer reduces. There is no meta-level, so no self-reference contradiction: reasoning about its own terms as data, it proves the §4 impossibilities as ordinary theorems — and, as those theorems say, it does not decide <a class="x" href="https://en.wikipedia.org/wiki/Halting_problem">its own halting</a>, and has a sentence it neither proves nor refutes. Any expressible system, this one included, is lawful construction and identity, operated on exactly as everything else is: the language is its own metatheory, standing nowhere outside itself.</p></div>
+
+<h3>5.6 The result</h3>
+
+<div class="st" id="s5.27"><p><span class="lab">Theorem 5.27</span> (complete inference). Let a <em>declaration</em> be any type — <a class="x" href="https://en.wikipedia.org/wiki/Characteristica_universalis">anything rationally stateable</a> (<a class="ref" href="#s5.1">the correspondence (5.1)</a>, <a class="ref" href="#s5.2">5.2</a>). Pose it together with the identities available, which by <a class="ref" href="#s1.4">uniqueness of the partition (1.4)</a> is forced rather than a choice of encoding, and normalize. Then exactly one of two cases holds, and the reduction itself decides which:</p>
+<p>(a) the declaration is inhabitable, and the normal form is an inhabitant of it — a proof, carrying its own acceptance as <code>refl</code> (<a class="ref" href="#s8.6">decide = verify (8.6)</a>) — reached in a number of steps fixed by where the reduction starts and ends (<a class="ref" href="#s5.13">equal length (5.13)</a>), which no order of applying the identities can beat (<a class="ref" href="#s5.14">5.14</a>, <a class="ref" href="#s5.17">5.17</a>), and with no step repeating work (<a class="ref" href="#s5.24">sharing (5.24)</a>);</p>
+<p>(b) it is not inhabitable, and §4 names the obstruction: the system <em>establishes</em> that no inhabitant exists, rather than failing to find one (<a class="ref" href="#s5.19">the dichotomy (5.19)</a>).</p>
+<p>By <a class="ref" href="#s5.26">no outer layer (5.26)</a> this holds of declarations about the system itself.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s5.3">One operation (5.3)</a> makes proving, deciding, computing and answering the same act, so the four are this one statement. <a class="ref" href="#s5.18">Unique normal form (5.18)</a> makes the inhabitant unique; <a class="ref" href="#s5.13">5.13</a> makes every reduction to it the same length and <a class="ref" href="#s5.14">5.14</a> makes each one minimal; <a class="ref" href="#s5.16">unit lookahead (5.16)</a> is the matching lower bound; <a class="ref" href="#s5.19">5.19</a> supplies the two cases and no third. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s5.28"><p><span class="lab">Remark 5.28</span> (the scope of the minimum). The minimum in <a class="ref" href="#s5.27">complete inference (5.27)</a> is over orders of applying the identities, not over choices of starting term: a different term inhabiting the same type has its own length. What <a class="ref" href="#s5.13">5.13</a> settles is that once the declaration is posed there is no search over methods left to perform — every way of following the identities takes the same number of steps, so none is cleverer than another, and only the identities remain to follow.</p></div>
+
+<div class="rk" id="s5.29"><p><span class="lab">Remark 5.29</span> (where the physics is). Five of this section’s results are physical statements about any system whose steps are local interactions. <a class="ref" href="#s5.11">The one-step diamond (5.11)</a> is the interchange of co-initial events — causal invariance as a property of a rule set, checkable per rule rather than assumed of a class. <a class="ref" href="#s5.13">Equal length (5.13)</a> gives that invariance a quantity: not only the same outcome under every update order, but the same elapsed time, so no order is faster and every history is the geodesic. <a class="ref" href="#s5.16">Unit lookahead (5.16)</a> is the cone, and it is derived: one interaction reaches exactly one wired neighbour, so an output determined to depth <code>n</code> requires source read to depth <code>n + k</code>, and the maximum speed of information is a theorem about the rewriting rather than a postulate about the geometry. <a class="ref" href="#s5.15">Bellman (5.15)</a> is the variational principle — the distance is the greatest potential, and by <a class="ref" href="#s5.14">minimality (5.14)</a> there is nothing to minimise over, because every path already attains it. And <a class="ref" href="#s5.26">no outer layer (5.26)</a> is the observer being inside what it describes: the language is its own metatheory, so the limits of §4 are results the system proves about itself rather than damage done to it from outside.</p></div>
+
+<h2><span class="n">6.</span> Numbers</h2>
+
+<div class="st" id="s6.1"><p><span class="lab">Definition 6.1</span> (counting). To count a finite set is to forget which element is which. Any two <code>n</code>-element sets differ only by a relabelling, so all of them are one thing; what the forgetting throws away is exactly the relabellings, the <code>n!</code> permutations of <code>n</code> things. To count is to keep the class and discard <code>Sₙ</code>:</p>
+$$
+\mathbb{N} \;=\; \{\text{finite sets}\}\,/\,\cong, \qquad \mathrm{Aut}(\text{an } n\text{-element set}) \;=\; S_n
+$$
+<p>Greek arithmetic states this construction outright. <a class="x" href="https://mathcs.clarku.edu/~djoyce/elements/bookVII/bookVII.html">Euclid VII Def. 1–2</a> define the unit as "that by virtue of which each of the things that exist is called one" and a number as "a multitude composed of units" — so the unit is defined separately and is not itself among the numbers, which is identity's standing here too (<a class="ref" href="#s0.2">0.2</a>): it generates the sequence without being a term of it. And the units are <em>athetos</em>, without position: a monad is a position-less substance where a point is one having position (Aristotle, <a class="x" href="http://www.perseus.tufts.edu/hopper/text?doc=Perseus%3Atext%3A1999.01.0052"><em>Metaphysics</em> 1016b</a>; <a class="x" href="https://en.wikipedia.org/wiki/Posterior_Analytics"><em>Posterior Analytics</em> 87a36</a>). Position-less is the whole content of this definition. Units with no position have nothing to tell one from another, so a multitude of them carries nothing beyond how many there are, and every relabelling of it is the same multitude. That is <code>Sₙ</code> discarded, given as a definition rather than derived.</p></div>
+
+<div class="st" id="s6.2"><p><span class="lab">Proposition 6.2</span> (card). <code>card</code> is the bijection between iso-classes of finite sets and <code>ℕ</code>, with inverse <code>n ↦ {1,…,n}</code>.</p>
+<p>Being a bijection and not a measurement, the number <em>is</em> the iso-class rather than a label attached to it. Aristotle marks exactly this as the Pythagorean position against the Platonic one (<a class="x" href="https://plato.stanford.edu/entries/aristotle-metaphysics/"><em>Metaphysics</em> 1090a</a>): number is not separated from the things.</p></div>
+
+<div class="st" id="s6.3"><p><span class="lab">Proposition 6.3</span> (arithmetic). Addition is disjoint union and multiplication is product:</p>
+<pre class="def"><code>|A ⊎ B| = |A| + |B|        |A × B| = |A| · |B|</code></pre>
+<p>Written in base <code>b</code>, adding two digit strings is this disjoint union done place by place, carrying whatever overflows a place into the next.</p></div>
+
+<div class="st" id="s6.4"><p><span class="lab">Proposition 6.4</span> (divisibility is a <a class="x" href="https://en.wikipedia.org/wiki/Distributive_lattice">distributive lattice</a>). <code>d ∣ n</code> iff each prime's exponent in <code>d</code> is <code>≤</code> its exponent in <code>n</code>. So <code>gcd</code> is the meet (minimum exponents) and <code>lcm</code> the join (maximum), and <a class="x" href="https://en.wikipedia.org/wiki/Fundamental_theorem_of_arithmetic">unique factorization</a> sends <code>n</code> to its exponent vector, making <code>ℕ</code> the product of one chain per prime, where minimum and maximum distribute componentwise.</p></div>
+
+<div class="st" id="s6.5"><p><span class="lab">Theorem 6.5</span> (number theory and logic are one lattice). The divisor lattice carries the operations of propositional logic: <code>gcd</code>/<code>lcm</code> are <code>∧</code>/<code>∨</code>, coprimality is disjointness, the divisibility order is entailment, and <code>d ↦ n/d</code> is an order-reversing involution satisfying De Morgan. So divisibility and the propositional connectives are one algebra — the same distributive lattice with involution, whether the elements are divisors or truth values — and <a class="ref" href="#s6.6">6.6</a> says when it is the Boolean one.</p>
+<p class="pf"><span class="lab">Proof.</span> The product decomposition of <a class="ref" href="#s6.4">the divisor lattice (6.4)</a> matches the <a class="x" href="https://en.wikipedia.org/wiki/Chinese_remainder_theorem">Chinese remainder theorem</a> <code>ℤ/mn ≅ ℤ/m × ℤ/n</code> by <code>x ↦ (x mod m, x mod n)</code>: injective, since coprime <code>m, n</code> both dividing <code>x − y</code> force <code>mn ∣ (x − y)</code>, hence bijective by count. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s6.6"><p><span class="lab">Proposition 6.6</span> (<a class="x" href="https://en.wikipedia.org/wiki/Boolean_algebra_(structure)">Boolean exactly on the squarefree</a>). Being finite and distributive, the divisor lattice of every <code>n</code> is a <a class="x" href="https://ncatlab.org/nlab/show/Heyting+algebra">Heyting algebra</a>. It is Boolean iff <code>n</code> is squarefree.</p>
+<p class="pf"><span class="lab">Proof.</span> What varies is whether the involution of <a class="ref" href="#s6.5">6.5</a> is the Heyting negation. On squarefree <code>n</code> it is: a divisor is a subset of the primes and <code>n/d</code> its complement. A repeated prime breaks it — on <code>n = p²</code> the divisors are the chain <code>1 &lt; p &lt; p²</code>, where the Heyting negation of <code>p</code> is <code>1</code> and <code>¬¬p = p² ≠ p</code>, while the involution sends <code>p</code> to <code>n/p = p</code>. So the lattice is Boolean on squarefree <code>n</code> and properly intuitionistic otherwise. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s6.7"><p><span class="lab">Remark 6.7</span> (the factor the partition function carries). To count is to discard the relabellings <a class="ref" href="#s6.1">(6.1)</a>, and the relabellings are <code>Sₙ</code>, of order <code>n!</code>. That is the indistinguishability of identical particles, given as a definition rather than imposed as a correction: units <em>athetos</em>, without position, have nothing to tell them apart, so a multitude of them carries nothing beyond how many there are. The <code>n!</code> that a classical partition function must divide by is this quotient, and <a class="ref" href="#s9.2">9.2</a> is the same forgetting run backwards — sorting recovers the one relabelling an order names, at a cost of exactly <code>log₂ n!</code> if the permutation is not kept.</p></div>
+
+<h2><span class="n">7.</span> Complex numbers and quantum dynamics — the reversible side of §3</h2>
+
+<div class="st" id="s7.1"><p><span class="lab">Definition 7.1</span> (the quarter-turn). <code>σ(x , y) = (−y , x)</code>, a length-preserving quarter-turn of the plane. Write <code>i</code> for <code>σ</code>: then <code>σ(x,y) = (−y, x)</code> is <code>i·(x + iy) = −y + ix</code>. It is reversible, so free on the effect axis by <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>.</p></div>
+
+<div class="st" id="s7.2"><p><span class="lab">Proposition 7.2</span> (σ² = −1). <code>σ² = −1</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>σ²(x,y) = σ(−y,x) = (−x,−y) = −(x,y)</code>. The identity needs no analysis and holds over any ring; the box checks it on the integer lattice, where it is exact arithmetic. <span class="qed">∎</span></p></div>
+
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Data.Int using (ℤ ; -_)
+open import Cubical.Data.Sigma
+
+-- the quarter-turn of the plane: (x, y) ↦ (−y, x).
+σ : ℤ × ℤ → ℤ × ℤ
+σ (x , y) = (- y , x)
+
+-- σ² is negation — σ is a square root of −1 — on the nose.
+σ²≡neg : (p : ℤ × ℤ) → σ (σ p) ≡ (- fst p , - snd p)
+σ²≡neg (x , y) = refl</code></pre>
+<figcaption>By <code>refl</code>: <code>σ² = −1</code> is not proved here but <em>computed</em>, the two sides reducing to the same pair. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+
+<div class="st" id="s7.3"><p><span class="lab">Corollary 7.3</span> (ℂ, the phases, unitarity). The complex numbers, the four phases and unitarity are generated by this one reversible operation.</p>
+<p class="pf"><span class="lab">Proof.</span> By <a class="ref" href="#s7.2">σ² = −1 (7.2)</a> the powers of <code>σ</code> cycle <code>1, σ, −1, −σ</code>, the phases <code>{1, i, −1, −i}</code>; adjoining <code>σ</code> to the reals by those same two lines is <code>ℝ[σ]/(σ²+1) = ℂ</code>; and <code>σ</code>, a rotation, preserves length, so it is <a class="x" href="https://en.wikipedia.org/wiki/Unitary_operator">unitary</a>. Unitary evolution is exactly the reversible side of <a class="ref" href="#s3.1">3.1</a>; the physics that costs — measurement, erasure — is the irreversible side (<a class="ref" href="#s3.3">3.3</a>, <a class="ref" href="#s5.9">5.9</a>). <span class="qed">∎</span></p></div>
+
+<div class="st" id="s7.4"><p><span class="lab">Theorem 7.4</span> (<a class="x" href="https://en.wikipedia.org/wiki/Riemann%E2%80%93Silberstein_vector">Riemann–Silberstein</a>). With <code>F = E + iB</code> and units in which <code>c = 1</code> — otherwise <code>F = E + icB</code>, and a <code>c</code> rides along on the right — <a class="x" href="https://en.wikipedia.org/wiki/Maxwell%27s_equations">Maxwell's two vacuum equations</a> are one <a class="x" href="https://en.wikipedia.org/wiki/Schr%C3%B6dinger_equation">Schrödinger equation</a>:</p>
+$$
+\partial_t E = \nabla\times B,\ \ \partial_t B = -\nabla\times E \;\Longleftrightarrow\; i\,\partial_t F = \nabla\times F
+$$
+<p class="pf"><span class="lab">Proof.</span> <code>i ∂_t F = i ∂_t E − ∂_t B = i(∇×B) + ∇×E = ∇×(E + iB) = ∇×F</code>, using the two Maxwell equations; splitting real and imaginary parts gives them back. Classical electromagnetism and single-particle quantum mechanics are the same equation. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s7.5"><p><span class="lab">Lemma 7.5</span> (curl is <a class="x" href="https://en.wikipedia.org/wiki/Self-adjoint_operator">self-adjoint</a>). <code>∫ a·(∇×b) = ∫ (∇×a)·b</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Integrate <code>∇·(a×b) = b·(∇×a) − a·(∇×b)</code> over a domain with no boundary — a torus, or fields decaying at infinity — where the left side integrates to zero. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s7.6"><p><span class="lab">Theorem 7.6</span> (the flow is unitary). <code>‖F‖²</code> is conserved, and the generator <code>−i∇×</code> is skew-adjoint.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>‖F‖² = ⟨E+iB, E+iB⟩ = ‖E‖² + ‖B‖²</code>, the Hermitian cross terms <code>±i⟨E,B⟩</code> cancelling. From <code>∂_t F = −i∇×F</code> (<a class="ref" href="#s7.4">7.4</a>),</p>
+$$
+\tfrac{d}{dt}\,\lVert F\rVert^2 \;=\; 2\,\mathrm{Re}\,\langle F,\ \partial_t F\rangle \;=\; 2\,\mathrm{Re}\,\langle F,\ -i\,\nabla\times F\rangle \;=\; 2\,\mathrm{Im}\,\langle F,\ \nabla\times F\rangle \;=\; 0,
+$$
+<p class="pf">since <a class="ref" href="#s7.5">curl is self-adjoint (7.5)</a> at <code>a = b = F</code> makes <code>⟨F, ∇×F⟩</code> real, so its imaginary part vanishes. A length-preserving flow is unitary. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s7.7"><p><span class="lab">Remark 7.7</span> (what generated all of it). One reversible operation, the quarter-turn, is the whole input. By <a class="ref" href="#s7.2">σ² = −1 (7.2)</a> its powers are the four phases, adjoining it to the reals is <code>ℂ</code>, and it preserves length, so it is unitary <a class="ref" href="#s7.3">(7.3)</a> — and being reversible it is free on the effect axis by <a class="ref" href="#s3.5">3.5</a>. Then <a class="ref" href="#s7.4">Riemann–Silberstein (7.4)</a>: Maxwell’s two vacuum equations are one Schrödinger equation, so classical electromagnetism and single-particle quantum mechanics are the same equation, and <a class="ref" href="#s7.6">7.6</a> shows the flow unitary because curl is self-adjoint. Unitary dynamics is not an extra axiom here. It is §3’s reversible side, instantiated.</p></div>
+
+<h2><span class="n">8.</span> Search</h2>
+
+<div class="st" id="s8.1"><p><span class="lab">Definition 8.1</span> (solutions). For <code>F : </code>assignments<code> → {true, false}</code>, the solutions are <a class="ref" href="#s1.1">the fibre (1.1)</a> at <code>b = true</code>:</p>
+$$
+\text{solutions of } F \;=\; F^{-1}(\text{true}) \;=\; \{\, w : F(w) = \text{true} \,\}
+$$
+<p>Write <code>S_F</code> for this type, and <code>Q_N</code> for the <code>2^N</code> assignments.</p></div>
+
+<div class="st" id="s8.2"><p><span class="lab">Theorem 8.2</span> (the cube splits). <code>Q_N = S_F ⊎ ⋃<sub>α</sub> V_α</code>, where <code>V_α</code> is the subcube of assignments breaking clause <code>α</code>. Deciding and solving are two observations of this one partition.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s1.2">The partition (1.2)</a> at <code>F</code>. For <a class="x" href="https://en.wikipedia.org/wiki/Boolean_satisfiability_problem">3-SAT</a> a clause forbids exactly one setting of its three literals, so the assignments that break it fill a subcube <code>V_α</code> — those three bits fixed to the forbidden setting, the other <code>N−3</code> free, a codimension-3 face. Every assignment either satisfies all clauses, so lies in <code>S_F</code>, or lies in some <code>V_α</code>, and <code>S_F</code> is disjoint from <code>⋃ V_α</code>. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s8.3"><p><span class="lab">Theorem 8.3</span> (the count).</p>
+$$
+\#\text{solutions} \;=\; \sum_{T \subseteq C} (-1)^{|T|}\, 2^{\,N - r(T)}
+$$
+<p class="pf"><span class="lab">Proof.</span> <a class="x" href="https://en.wikipedia.org/wiki/Inclusion%E2%80%93exclusion_principle">Inclusion–exclusion</a> on <a class="ref" href="#s8.2">the cube splits (8.2)</a>: <code>#S_F = Σ_{T⊆C} (−1)^{|T|} |⋂_{α∈T} V_α|</code>. When the clauses in <code>T</code> can be violated together, <code>|⋂_{α∈T} V_α| = 2^{N−r(T)}</code> with <code>r(T)</code> the coordinates they jointly fix; when two of them demand opposite values on a shared variable the intersection is empty and contributes <code>0</code>. Regrouping per assignment by the <code>j</code> clauses it breaks, its weight is <code>Σ_{i≤j} C(j,i)(−1)^i = (1−1)^j</code>, which is <code>1</code> only at <code>j = 0</code>: each solution survives once, the rest cancel. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s8.4"><p><span class="lab">Definition 8.4</span> (deciding, solving). <em>Solving</em> is <code>S_F</code> — a vertex with its membership proof. <em>Deciding</em> is <code>‖S_F‖</code>, writing <code>‖·‖</code> for the proposition that this is inhabited: one bit, and when true a single point, every witness collapsed onto it. The truncation is <code>τ : S_F → ‖S_F‖</code>.</p></div>
+
+<div class="st" id="s8.5"><p><span class="lab">Theorem 8.5</span> (what the one bit discards). The pre-image of <code>τ</code> is <code>S_F</code> itself, and <code>τ</code> has no left inverse once <code>|S_F| &gt; 1</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>τ</code> sends every witness to the one point, so by <a class="ref" href="#s1.1">the fibre (1.1)</a> its pre-image is <code>Σ[ w ∈ S_F ] (τ w ≡ pt)</code>. Since <code>‖S_F‖</code> has any two of its points equal, the equality component carries nothing, and the pre-image is <code>S_F</code>. The one-bit decision therefore discards exactly the which-witness pre-image. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s8.6"><p><span class="lab">Theorem 8.6</span> (deciding and verifying are one equivalence). For the machine's step <code>f</code>, <code>decide(a) = (f a , (a , refl))</code> and <code>verify</code> reads the witness's pre-image back out; the round trip is <code>refl</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Deciding an input <code>a</code> completes it to an answer with a witness, and by <a class="ref" href="#s1.2">the partition (1.2)</a> that completion is the equivalence <code>A ≃ Σ[ b ] f⁻¹(b)</code>, unique by <a class="ref" href="#s1.4">uniqueness of the partition (1.4)</a>. The two directions are <code>decide</code> and <code>verify</code>. The decided witness carries its own acceptance as <code>refl</code>, so the lossless run produces the witness with the answer in one forward pass, and verifying is that pass reversed: no operation sits between them for a gap to live in. <span class="qed">∎</span></p></div>
+
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Foundations.Equiv using (fiber)
+private variable ℓ : Level ; A B : Type ℓ
+
+decide : (f : A → B) → A → Σ[ b ∈ B ] fiber f b
+decide f a = f a , a , refl
+
+verify : (f : A → B) → (Σ[ b ∈ B ] fiber f b) → A
+verify f (b , a , _) = a
+
+-- verify inverts decide on the nose -- nothing searched between answer and proof.
+verify-inverts-decide : (f : A → B) (a : A) → verify f (decide f a) ≡ a
+verify-inverts-decide f a = refl
+
+-- the decided witness carries its own acceptance as refl.
+witness-self-certifies : (f : A → B) (a : A) → snd (snd (decide f a)) ≡ refl
+witness-self-certifies f a = refl</code></pre>
+<figcaption>8.6 as a term: <code>verify-inverts-decide</code> is the round trip, <code>witness-self-certifies</code> the <code>refl</code> the decided witness carries. Both hold by <code>refl</code>, so neither is proved here — each reduces to the other side. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+
+<div class="rk" id="s8.7"><p><span class="lab">Remark 8.7</span> (what the bit throws away). <code>‖S_F‖</code> is the lossy projection that throws the witness away (<a class="ref" href="#s8.5">8.5</a>); the lossless machine never does. What is left to ask of a problem is how many steps the output it asks for forces, and <a class="ref" href="#s5.15">Bellman (5.15)</a> fixed the form any answer to that must take.</p></div>
+
+<div class="st" id="s8.8"><p><span class="lab">Proposition 8.8</span> (the moment tower). <code>#SAT = Σ_{T compatible} (−1)^{|T|} 2^{N−r(T)} = Σ_r (−1)^r M_r</code>, the alternating collapse of the clause-intersection (factorial-moment) tower <code>M_r = Σ_{|T|=r} |⋂ V|</code>. The scalar count is the extremely lossy projection <code>(1,−1,1,…)·(M_r)</code>, and <code>F</code> is unsatisfiable iff it is <code>0</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Regroup <a class="ref" href="#s8.3">the count (8.3)</a> by <code>|T|</code>. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s8.9"><p><span class="lab">Proposition 8.9</span> (eight clauses). An unsatisfiable formula whose every clause has exactly three literals needs <code>m ≥ 8</code> clauses, and eight suffice.</p>
+<p class="pf"><span class="lab">Proof.</span> Write <code>ν(x)</code> for the clauses assignment <code>x</code> violates. Each clause is violated by <code>2^{N−3}</code> assignments, and unsatisfiability means every <code>x</code> violates at least one, so <code>Σ_x ν(x) = m·2^{N−3} ≥ 2^N</code>, that is <code>m ≥ 8</code>. Sharp: the eight clauses on three variables, one for each sign pattern, forbid all eight settings. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s8.10"><p><span class="lab">Theorem 8.10</span> (no count bounds the length). None of the four counts proposed as lower bounds — assignments, satisfying vertices, clause-intersections, and the width of a fixed-order pass — bounds the length of the problem: each can be made small by factoring or a change of coordinates while the problem stays the same, so none can serve as the potential of <a class="ref" href="#s5.15">Bellman (5.15)</a> for the problem itself.</p>
+<p class="pf"><span class="lab">Proof.</span> Each collapses under factoring or a change of coordinates. <em>Disjoint triples</em>: <code>m</code> clauses on disjoint variable-triples each kill <code>1</code> of <code>8</code> and leave <code>7</code>, so <code>#SAT = 7^m</code> while the intersections number <code>2^m</code>. <em>Inner product</em> <code>⟨x,y⟩ mod 2</code>: read all of <code>x</code> first and the state reached must fix the map <code>y ↦ ⟨x,y⟩</code> — distinct <code>x ≠ x′</code> give different maps, disagreeing at <code>y = e_i</code>, the vector with a single <code>1</code> in place <code>i</code>, wherever <code>x_i ≠ x′_i</code> — so the <code>2ⁿ</code> inputs force <code>2ⁿ</code> distinct states, width <code>2ⁿ</code>; read the pairs <code>x_i, y_i</code> interleaved and it is a running parity, remembering <code>x_i</code> and folding <code>x_i y_i</code> in, width <code>≤ 4</code>. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s8.11"><p><span class="lab">Remark 8.11</span> (what a lower-bound proof must exhibit). With unit-cost primitive steps, <a class="ref" href="#s5.15">Bellman (5.15)</a>'s inequality reads <code>Φ(u) ≤ 1 + Φ(v)</code>, so <code>Φ</code> can fall by at most one per step. An exponential lower bound is therefore a <code>Φ</code> that starts out exponential and still falls by at most one per step — equivalently, an exponentially large supply of obligations of which one step can discharge at most one. Nothing here exhibits one for SAT.</p></div>
+
+<div class="rk" id="s8.12"><p><span class="lab">Remark 8.12</span> (measurement, and what no scalar can bound). Deciding is solving with the witness truncated away <a class="ref" href="#s8.4">(8.4)</a>, and what the one bit discards is computed rather than described: the pre-image of the truncation is the solution type itself <a class="ref" href="#s8.5">(8.5)</a>. That is measurement as a lossy projection whose loss has a number — the same shape as <a class="ref" href="#s11.3">the merge (11.3)</a>, one level up. And <a class="ref" href="#s8.10">8.10</a> is a negative result about observables: each of the four natural counts collapses under factoring or a change of coordinates while the problem is unchanged, so no coordinate-independent scalar of that kind bounds how long the problem takes. <a class="ref" href="#s8.11">8.11</a> says what a bound would have to exhibit instead, and that nothing here exhibits one.</p></div>
+
+<h2><span class="n">9.</span> Ordering — what counting discards</h2>
+
+<p>One problem, taken end to end. Sorting is where a reader is most certain that a method has to be chosen, and it is where the construction says there is nothing to choose. The fibre is <a class="ref" href="#s1.2">§1</a>, the halving is <a class="ref" href="#s2.6">§2</a>, keeping the permutation is <a class="ref" href="#s3.6">§3</a>, the two costs are <a class="ref" href="#s5.7">§5</a>’s, and the number being sorted is <a class="ref" href="#s6.1">§6</a>’s. Nothing below is added to the construction; all of it is used.</p>
+
+<div class="st" id="s9.1"><p><span class="lab">Definition 9.1</span> (sorting). To sort a finite set is to assign it indices matching its order — to compute the ordering, delivered as a sequence. The orderings of <code>n</code> elements number <code>n!</code>, and each comparison restricts which of them survive.</p></div>
+
+<div class="st" id="s9.2"><p><span class="lab">Theorem 9.2</span> (the fibre is the relabellings). The fibre of <code>sort</code> over a sorted sequence is the <code>n!</code> rearrangements of it: a list is a sorted list together with a permutation, and nothing besides.</p>
+<p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s1.2">The partition (1.2)</a> at <code>sort</code>, whose fibre <a class="ref" href="#s1.1">(1.1)</a> over a sorted sequence is the inputs landing on it, and forced rather than chosen by <a class="ref" href="#s1.4">1.4</a>. <span class="qed">∎</span></p>
+<p class="pf"><a class="ref" href="#s6.1">Counting (6.1)</a> discards exactly these relabellings to reach the number; sorting recovers the one the order names. The two are one forgetting, run in opposite directions. Keep the permutation and the run destroys nothing <a class="ref" href="#s3.6">(3.6)</a>; deliver the sorted sequence alone and the <a class="ref" href="#s3.3">effect-cost (3.3)</a> is <code>log₂ n!</code>, the size of the fibre.</p></div>
+
+<div class="st" id="s9.3"><p><span class="lab">Proposition 9.3</span> (a comparison is a restriction). A comparison leaves exactly the orderings consistent with its outcome. Comparing two elements about which nothing is known leaves half, since exchanging them is a bijection between the orderings answering one way and those answering the other <a class="ref" href="#s2.6">(2.6)</a>. A comparison already implied leaves all of them and is never made: what is held is a partial order, so from <code>a &lt; b</code>, <code>b &lt; c</code>, <code>b &lt; d</code> the relations <code>a &lt; c</code> and <code>a &lt; d</code> are there already, the <code>n²</code> pairs never stored.</p></div>
+
+<div class="st" id="s9.4"><p><span class="lab">Proposition 9.4</span> (which comparison). Naming any still-unordered pair is not enough: a supply offering <code>(a,b)</code>, then <code>(a,c)</code>, then <code>(a,d)</code> spends <code>n−1</code> comparisons to learn only which element is least. The one that excludes most is wanted. Of the twenty-four orderings of four elements, <code>a &lt; b</code> leaves twelve. Comparing <code>c</code> with <code>d</code> halves those to six; comparing <code>a</code> with <code>c</code> instead leaves eight when <code>a</code> wins — <code>a</code> least of three, one of three equally — so its worse outcome is worse than six. Fresh pairs are taken while any remain. With <code>a &lt; b</code> and <code>c &lt; d</code> the six survivors are the <code>C(4,2)</code> interleavings, and comparing the two least leaves three either way, where comparing <code>b</code> with <code>c</code> leaves five in one outcome, <code>b &lt; c</code> forcing <code>abcd</code> alone. The least are compared, and the result is one component with a known least, below everything in both. Five comparisons in all, and <code>⌈log₂ 24⌉ = 5</code>.</p></div>
+
+<div class="st" id="s9.5"><p><span class="lab">Theorem 9.5</span> (why the least halve). A comparison between two elements exchanged by a symmetry of what is already known splits the survivors exactly in half.</p>
+<p class="pf"><span class="lab">Proof.</span> The exchange carries orderings consistent with what is known to orderings consistent with it and swaps the two outcomes, so it is a bijection between them <a class="ref" href="#s2.6">(2.6)</a>, and two sets in bijection are equal halves of their union. Two runs of equal length are exchanged by the symmetry that interchanges them, which carries least to least. No symmetry of <code>a &lt; b</code>, <code>c &lt; d</code> exchanges <code>b</code> with <code>c</code>, which is why that comparison is lopsided. <span class="qed">∎</span></p>
+<p class="pf">Each such comparison establishes a new least for the two components it joins; every relation already established stays, and the loser remains least of its own run. Two fresh elements are always so exchanged, so a fresh pair always yields one.</p></div>
+
+<div class="st" id="s9.6"><p><span class="lab">Definition 9.6</span> (merge). Sortedness unfolds into one recursion, and merge is that unfolding:</p>
+<pre class="def"><code>Sorted(x)  =  head x ≤ every element of tail x  and  Sorted(tail x)
+
+merge(x, y)  =  head x ≤ head y  ?  head x ∷ merge(tail x, y)
+                                 :  head y ∷ merge(x, tail y)</code></pre>
+<p>A single comparison is merge running on two one-element runs. Sorting is the composition of merges and nothing else, beginning from the elements as runs of length one.</p></div>
+
+<div class="st" id="s9.7"><p><span class="lab">Theorem 9.7</span> (every <code>+</code> is a merge). Writing <code>n</code> as a sum is choosing the merges. Each <code>+</code> is one merge of two runs and costs the sum it produces, so the cost of sorting is the sum of the intermediate sums — equivalently, each element pays once for every <code>+</code> above it.</p>
+<pre class="def"><code>(1+1)+(1+1)        2, 2, 4              cost  8  =  n log₂ n
+1+(1+(1+1))        2, 3, 4              cost  9
+n = 8, balanced    2,2,2,2, 4,4, 8      cost 24  =  n log₂ n
+n = 8, chained     2,3,4,5,6,7,8        cost 35</code></pre>
+<p class="pf"><span class="lab">Proof.</span> A merge of runs of lengths <code>a</code> and <code>b</code> emits <code>a + b</code> elements, and under a rule set emitting one constructor per step <a class="ref" href="#s5.21">(5.21)</a> that is <code>a + b</code> steps: the sum it produces. Summing over the <code>+</code> signs counts each element once for each <code>+</code> standing above it, which is its depth. <span class="qed">∎</span></p>
+<p class="pf">This counts steps, one per element emitted. The comparisons are fewer — a merge of <code>a</code> and <code>b</code> makes at most <code>a + b − 1</code>, since the last run empties without one — and they are bounded separately, below.</p></div>
+
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Data.Nat
+open import Cubical.Tactics.NatSolver
+
+-- A merge order is a way of writing n as a sum: every ⊕ is one merge.
+data Shape : Type where
+  one : Shape
+  _⊕_ : Shape → Shape → Shape
+
+size : Shape → ℕ
+size one     = 1
+size (l ⊕ r) = size l + size r
+
+-- Each merge costs the sum it produces: the total is the sum of the
+-- intermediate sums.
+cost : Shape → ℕ
+cost one     = 0
+cost (l ⊕ r) = (size l + size r) + (cost l + cost r)
+
+-- The same number again: each element pays once for every ⊕ above it.
+paid : ℕ → Shape → ℕ
+paid d one     = d
+paid d (l ⊕ r) = paid (suc d) l + paid (suc d) r
+
+paid≡ : (t : Shape) (d : ℕ) → paid d t ≡ cost t + d · size t
+paid≡ one d = solveℕ!
+paid≡ (l ⊕ r) d =
+    cong₂ _+_ (paid≡ l (suc d)) (paid≡ r (suc d))
+  ∙ step (cost l) (size l) (cost r) (size r) d
+  where
+    step : (cl sl cr sr d : ℕ)
+         → (cl + (suc d · sl)) + (cr + (suc d · sr))
+         ≡ ((sl + sr) + (cl + cr)) + d · (sl + sr)
+    step cl sl cr sr d = solveℕ!
+
+-- The sum of the intermediate sums IS the sum over elements of their depth.
+cost≡depth : (t : Shape) → cost t ≡ paid 0 t
+cost≡depth t = sym (paid≡ t 0 ∙ zero· (cost t) (size t))
+  where
+    zero· : (c s : ℕ) → c + 0 · s ≡ c
+    zero· c s = solveℕ!
+
+-- The balanced sum at every size: cost k · 2ᵏ, which is n log₂ n with the log removed.
+bal : ℕ → Shape
+bal zero    = one
+bal (suc k) = bal k ⊕ bal k
+
+size-bal : (k : ℕ) → size (bal k) ≡ 2 ^ k
+size-bal zero    = refl
+size-bal (suc k) = cong₂ _+_ (size-bal k) (size-bal k) ∙ double (2 ^ k)
+  where
+    double : (x : ℕ) → x + x ≡ 2 · x
+    double x = solveℕ!
+
+cost-bal : (k : ℕ) → cost (bal k) ≡ k · 2 ^ k
+cost-bal zero    = refl
+cost-bal (suc k) =
+    cong₂ (λ s c → (s + s) + (c + c)) (size-bal k) (cost-bal k)
+  ∙ step k (2 ^ k)
+  where
+    step : (k x : ℕ) → (x + x) + (k · x + k · x) ≡ suc k · (2 · x)
+    step k x = solveℕ!
+
+-- The chains, by refl.
+chain4 chain8 : Shape
+chain4 = one ⊕ (one ⊕ (one ⊕ one))
+chain8 = one ⊕ (one ⊕ (one ⊕ (one ⊕ (one ⊕ (one ⊕ (one ⊕ one))))))
+
+_ : cost chain4 ≡ 9
+_ = refl
+_ : cost chain8 ≡ 35
+_ = refl
+
+-- The interleavings of a run of a with a run of b: the first element of
+-- the merge comes from one side or the other.
+il : ℕ → ℕ → ℕ
+il zero    b       = 1
+il (suc a) zero    = 1
+il (suc a) (suc b) = il a (suc b) + il (suc a) b
+
+-- An ordering of the whole is the interleaving with an ordering of each run.
+il-fact : (a b : ℕ) → il a b · ((a !) · (b !)) ≡ (a + b) !
+il-fact zero    b       = left (b !)
+  where
+    left : (x : ℕ) → 1 · (1 · x) ≡ x
+    left x = solveℕ!
+il-fact (suc a) zero    = right (suc a !) ∙ cong _! (sym (+-zero (suc a)))
+  where
+    right : (x : ℕ) → 1 · (x · 1) ≡ x
+    right x = solveℕ!
+il-fact (suc a) (suc b) =
+    split (il a (suc b)) (il (suc a) b) (a !) (b !) a b
+  ∙ cong₂ (λ x y → suc a · x + suc b · y)
+      (il-fact a (suc b))
+      (il-fact (suc a) b ∙ cong _! (sym (+-suc a b)))
+  ∙ close a b ((a + suc b) !)
+  where
+    split : (X Y A B a b : ℕ)
+          → (X + Y) · ((suc a · A) · (suc b · B))
+          ≡ suc a · (X · (A · (suc b · B))) + suc b · (Y · ((suc a · A) · B))
+    split X Y A B a b = solveℕ!
+    close : (a b K : ℕ) → suc a · K + suc b · K ≡ suc (a + suc b) · K
+    close a b K = solveℕ!
+
+-- What every merge settles, multiplied over the sum: n! whatever the shape.
+info : Shape → ℕ
+info one     = 1
+info (l ⊕ r) = il (size l) (size r) · (info l · info r)
+
+info≡ : (t : Shape) → info t ≡ size t !
+info≡ one     = refl
+info≡ (l ⊕ r) =
+    cong₂ (λ x y → il (size l) (size r) · (x · y)) (info≡ l) (info≡ r)
+  ∙ il-fact (size l) (size r)</code></pre>
+<figcaption>The same number twice: <code>cost</code> sums what each merge produces, <code>paid</code> charges each element its depth, and <code>cost≡depth</code> identifies them. The balanced figures hold for every <code>k</code> by <code>cost-bal</code>, the chained ones by <code>refl</code>. The other axis on the same <code>Shape</code>: <code>il</code> counts the interleavings a merge settles, <code>il-fact</code> is that count times the orderings within each run giving the orderings of the whole, and <code>info≡</code> multiplies it over any sum to <code>n!</code> — 9.8, whatever the shape. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code>.</figcaption>
+</details>
+
+<div class="st" id="s9.8"><p><span class="lab">Theorem 9.8</span> (the information is fixed by the endpoints). A merge of runs of lengths <code>a</code> and <code>b</code> settles which of <code>C(a+b, a)</code> interleavings occurred, and along every way of writing <code>n</code> as a sum these binomials multiply to <code>n!</code> exactly.</p>
+<p class="pf"><span class="lab">Proof.</span> An ordering of the whole is an ordering within each run together with the interleaving, so each merge contributes its binomial and the product telescopes to <code>n!</code> — <code>info≡</code> in the box under <a class="ref" href="#s9.7">9.7</a>. <span class="qed">∎</span></p>
+<p class="pf">What is learned is fixed by where the sorting starts and ends, never by the shape — the pattern of <a class="ref" href="#s5.13">equal length (5.13)</a> on the other axis <a class="ref" href="#s5.7">(5.7)</a>, reached here by a counting telescope rather than by the diamond. The shape decides only what each merge <em>pays</em> for what it settles: equal runs pay <code>2a</code> for nearly <code>2a</code> bits, a run against one element pays <code>a+1</code> for <code>log₂(a+1)</code>. That is the whole difference between the two sums of <a class="ref" href="#s9.7">9.7</a> — one quantity, distributed differently over the <code>+</code> signs.</p></div>
+
+<div class="rk" id="s9.9"><p><span class="lab">Remark 9.9</span> (the shape of the obligation). Write <code>Φ</code> for <code>log₂</code> of the orderings still consistent. It is zero exactly at the one that survives, but it is not a potential in the sense of <a class="ref" href="#s5.15">Bellman (5.15)</a>, which asks <code>Φ(u) ≤ 1 + Φ(v)</code> on <em>every</em> edge: a comparison falling the unlikely way can drop it by much more, and with <code>a &lt; b</code>, <code>c &lt; d</code> the outcome <code>b &lt; c</code> takes it from <code>log₂ 6</code> to zero. What holds is the weaker, adversarial form — of a comparison’s two outcomes one leaves at least half, so one of them lowers <code>Φ</code> by at most one <a class="ref" href="#s9.3">(9.3)</a>. That bounds the deepest route rather than every route, and the bound is <code>log₂ n!</code> comparisons, which some orderings beat. It is the shape <a class="ref" href="#s8.11">8.11</a> describes — obligations of which a step discharges at most one — at a scale that is not exponential, and it is met: merging equal runs makes at most <code>n log₂ n − n + 1</code> comparisons for <code>n = 2ᵏ</code>, each of the <code>n − 1</code> merges making one fewer than the sum it produces — for <code>n = 4</code> that is <code>5 = ⌈log₂ 24⌉</code>, the bound met exactly, and for <code>n = 8</code> it is <code>17</code> against <code>16</code>. The count it bounds is comparisons, not the steps of <a class="ref" href="#s9.7">9.7</a>.</p></div>
+
+<div class="st" id="s9.10"><p><span class="lab">Corollary 9.10</span> (the two smallest). Minimising the sum of the intermediate sums over the ways of writing <code>n</code> as a sum is solved by repeatedly adding the two smallest parts — <a class="x" href="https://doi.org/10.1109/JRPROC.1952.273898">Huffman 1952</a> — which for <code>n</code> units gives the balanced sum. This answers <a class="ref" href="#s9.4">9.4</a> from the cost side rather than the information side: the cheapest merge available is the one between the two smallest runs, and two fresh elements are the smallest there are.</p></div>
+
+<div class="st" id="s9.11"><p><span class="lab">Theorem 9.11</span> (the shape is the numeral). The balanced sum is the binary representation of <code>n</code>, and the chain is the tally.</p>
+<p class="pf"><span class="lab">Proof.</span> For <code>n = 2ᵏ</code> each element has a <code>k</code>-bit index, and the path from the root of the sum down to it spells that index: the first layer of merges joins indices differing in the last bit, the next those differing in the second-to-last. Resolving the ordering one layer at a time is resolving it one bit of the index at a time. For general <code>n</code> the runs are the 1-bits: <code>13 = 8 + 4 + 1</code>. Counting is merging — add elements one at a time, keep runs matching the binary form of the count, and each carry merges two equal runs into one twice the size, which is <a class="ref" href="#s6.3">6.3</a>'s carrying read at its cost. The chain <code>1+(1+(1+⋯))</code> is the same number in tally marks: no carries, one growing run. <span class="qed">∎</span></p>
+<p class="pf">The gap between the two costs is the gap between a tally and a numeral. Succession gives a line; place value gives a <code>log₂ n</code>-dimensional cube, which is what a base system has always been. A set indexed by the naturals already carries that structure, so there is no reason to prefer succession unless the input arrives as a line.</p></div>
+
+<div class="st" id="s9.12"><p><span class="lab">Proposition 9.12</span> (the same factorisation from the other end). Read downward, that product of binomials is a partition rather than a composition: at the top, which half of the set lies below and which above — <code>C(n, n/2)</code> ways — then the same within each half, down to single elements. Every element is sent toward its own index, as though searching for its own position one bit at a time. Merge splits by position and builds from the leaves; this splits by value and descends from the root. Splitting by value is <a class="ref" href="#s1.2">partition by output (1.2)</a>, the output being where the element lands, so the two directions are that one partition taken at the two ends of the same factorisation, and inverting the permutation exchanges them.</p></div>
+
+<div class="st" id="s9.13"><p><span class="lab">Proposition 9.13</span> (the space of orderings). Take the orderings as points, joining two when they differ by swapping neighbours in the sequence. For three elements the six close into a hexagon:</p>
+<pre class="def"><code>            abc
+          /     \
+       bac       acb
+        |         |
+       bca       cab
+          \     /
+            cba</code></pre>
+<p>The distance from an ordering to the sorted one is its number of out-of-order pairs, since each swap of an out-of-order neighbouring pair fixes exactly one. Every route that only fixes out-of-order pairs therefore has the same length whatever order the swaps are taken in — not by <a class="ref" href="#s5.11">the diamond (5.11)</a>, which fails here, but by <a class="ref" href="#s5.15">Bellman (5.15)</a>: the out-of-order count is a potential that every such swap meets with equality — the swap costs one and lowers the count by exactly one — and a potential met with equality on every edge of the reduction makes every route a geodesic. (A swap of an in-order pair raises the count instead; it is not a step of the reduction, and a route using one is longer.) Two swaps at disjoint positions do commute and their routes close a square, the diamond where it holds; three sharing an element close the hexagon above, where it does not — those two reconverge only after two further swaps on each side, not one — and both sides are still the same length. So the picture reaches <a class="ref" href="#s5.13">5.13</a>’s conclusion through <a class="ref" href="#s5.15">5.15</a>, and shows the diamond failing on the way. A comparison is a cut through this space, and one already implied is a cut that misses what remains.</p></div>
+
+<div class="st" id="s9.14"><p><span class="lab">Proposition 9.14</span> (comparisons and swaps). Comparisons count cuts and swaps count distance, and the counts differ: about <code>log₂ n!</code> comparisons are needed <a class="ref" href="#s9.9">(9.9)</a>, while the swaps are the out-of-order pairs <a class="ref" href="#s9.13">(9.13)</a>, of which there are at most the <code>n(n−1)/2</code> pairs. One comparison can authorise several swaps, and that is the whole of the gap — the two axes <a class="ref" href="#s5.7">(5.7)</a>, with both numbers in hand.</p>
+<p class="pf"><span class="lab">Proof.</span> In the set there are no swaps at all — comparisons add knowledge and the order is learned, not moved; swaps belong to the sequence presentation. At a single pair the two coincide: one comparison, one swap, one edge of <a class="ref" href="#s9.13">9.13</a>. Above that they part. Merging <code>[a,b]</code> with <code>[c,d]</code> and learning <code>c &lt; a</code> gives <code>c &lt; b</code> free from the <code>a &lt; b</code> already held, so one comparison authorises both swaps. Every swap is backed by a comparison made or inherited, and in a sorting that wastes nothing most are inherited. <span class="qed">∎</span></p></div>
+
+<div class="rk" id="s9.15"><p><span class="lab">Remark 9.15</span> (the declaration). Nothing above chooses a method. The declaration is <code>Σ[ B ] (B is a rearrangement of A) × Sorted B</code>, and by <a class="ref" href="#s9.2">9.2</a> the completion is forced, not searched for. Posing it with the identities available and normalising <a class="ref" href="#s5.27">(5.27)</a> is the sorting: merge is sortedness unfolded <a class="ref" href="#s9.6">(9.6)</a>, the shape is the numeral rather than a policy <a class="ref" href="#s9.11">(9.11)</a>, the information is fixed by the endpoints <a class="ref" href="#s9.8">(9.8)</a>, the cost is the sum of the intermediate sums <a class="ref" href="#s9.7">(9.7)</a>. The sums that cost more are not rival methods but the same number written another way <a class="ref" href="#s5.23">(5.23)</a>. Sorting is where the choice of method looks least avoidable, and there is none to make: pose the declaration with the identities the object actually has, and what remains is to follow them. What is learned is fixed by where the sorting starts and ends <a class="ref" href="#s9.8">(9.8)</a>; what it costs was fixed when the number was written as a sum <a class="ref" href="#s9.7">(9.7)</a>; and the sum is part of what was posed, not something chosen along the way.</p></div>
+
+<div class="rk" id="s9.16"><p><span class="lab">Remark 9.16</span> (a configuration space with a metric). The last section is the whole machine on one problem, and its space is a physical one. <a class="ref" href="#s9.13">9.13</a> takes the orderings as points joined by adjacent transpositions, and the out-of-order count is a potential met with equality on every step of the reduction — so every route is a geodesic, by <a class="ref" href="#s5.15">Bellman (5.15)</a> rather than by the diamond, which fails there. The cost is fixed by how the size is written as a sum <a class="ref" href="#s9.7">(9.7)</a> and the balanced shape <em>is</em> the binary numeral rather than a policy <a class="ref" href="#s9.11">(9.11)</a>. Where a reader is most certain a method must be chosen, there is none to choose <a class="ref" href="#s9.15">(9.15)</a>.</p></div>
+
+<h2><span class="n">10.</span> The multiway system, and the 2021 sentences</h2>
+
+<p>Everything above is general. This section and the two after it put it against named sentences, at the smallest scale that is not degenerate: two updating events, one branch point, one merge, two coordinate systems. Each sentence is quoted verbatim, and what discharges it is the construction already built.</p>
+
+<div class="st" id="s10.1"><p><span class="lab">Definition 10.1</span> (the two updating events). A state is a unary string, read as its length. The two updating events append one cell and append two: <code>event₁ n = suc n</code> and <code>event₂ n = suc (suc n)</code>. This is a substitution system in the sense of <em>A New Kind of Science</em>, at the smallest size that still branches.</p></div>
+
+<div class="st" id="s10.2"><p><span class="lab">Definition 10.2</span> (multiway evolution). An evolution from <code>a</code> to <code>b</code> either halts or applies one of the two events and continues — <code>halt</code>, <code>ev₁</code>, <code>ev₂</code>, as an inductive family indexed by its endpoints. Because the endpoints are indices, two evolutions between the same endpoints inhabit the same type and can be compared directly, and distinct ones are separated by a <em>computed</em> invariant <a class="ref" href="#s10.9">(10.9)</a> rather than assumed distinct.</p></div>
+
+<div class="st" id="s10.3"><p><span class="lab">Sentence 10.3</span> (W1, coordinatization). “Each [computational system] can be thought of as defining a different coordinate system for describing the ruliad … each will ultimately lead to the same limiting object.” (<em>The Concept of the Ruliad</em>, 2021.) This is <a class="ref" href="#s2.4">univalence (2.4)</a>, used as Voevodsky built it, and it is the sentence of Wolfram’s that only univalence can hold — because it identifies presentations while refunding, through transport, everything the identification would otherwise owe.</p></div>
+
+<div class="st" id="s10.4"><p><span class="lab">Theorem 10.4</span> (one path of structured systems). The same system presented in tape coordinates and in number coordinates is connected by a single path in the type of systems — carrier together with <em>both</em> updating events.</p><p class="pf"><span class="lab">Proof.</span> The coordinate change <code>Tape ≃ ℕ</code> is the length function with its inverse, and <code>ua</code> turns it into a path of carriers <a class="ref" href="#s2.4">(2.4)</a>. The two event components of <a class="ref" href="#s10.1">10.1</a> ride over that path by <code>ua→</code>, and the commuting datum in each is <code>refl</code>, because the coding function sends <code>cell</code> to <code>suc</code> definitionally. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s10.5"><p><span class="lab">Corollary 10.5</span> (three clauses, three corollaries). <a class="ref" href="#s10.3">10.3</a>’s three clauses discharge separately. Every property of systems crosses the coordinate change by transport, with no re-proof — the interchange law, proved in tape coordinates by <code>refl</code>, is delivered in number coordinates by <code>subst</code>. The emulation that “moves” between coordinate systems is not a map postulated beside the identification: it <em>is</em> the path’s own transport, and it computes to the coding function, by <code>uaβ</code>. And “the same limiting object” is not agreement-after-inspection but contractibility, by <a class="ref" href="#s2.4">2.4</a> read at the universe.</p><p class="pf">No coordinate system is privileged, and the privilege’s absence is a contraction, not a convention.</p></div>
+
+<div class="st" id="s10.6"><p><span class="lab">Sentence 10.6</span> (W4, divergence and reconvergence). “Causal invariance can be thought of as being associated with paths of history that diverge, eventually converging again.” (<em>The Concept of the Ruliad</em>, 2021.)</p></div>
+
+<div class="st" id="s10.7"><p><span class="lab">Theorem 10.7</span> (the interchange converges by <code>refl</code>). From every state the two updating events diverge — one cell apart after one event — and both orders complete to the same state three cells on, with the endpoint agreement definitional.</p><p class="pf"><span class="lab">Proof.</span> By the indexing of <a class="ref" href="#s10.2">10.2</a> the two interchanged runs inhabit the <em>same</em> type, with no transport and no path algebra; both completions are exhibited. <span class="qed">∎</span></p><p class="pf">Stated exactly, this is endpoint agreement of interchanged co-initial updating events — the convergence <a class="ref" href="#s10.6">10.6</a> names, and no more. What the construction adds beyond the sentence is the quantity: by <a class="ref" href="#s5.11">the one-step diamond (5.11)</a>, where a rule set has it, <a class="ref" href="#s5.13">equal length (5.13)</a> gives the same outcome <em>and</em> the same elapsed time, so no update order is faster than another and every history is already the geodesic <a class="ref" href="#s5.14">(5.14)</a>. Causal invariance stops being a hypothesis about a rule class and becomes a property checkable per rule set.</p></div>
+
+<div class="st" id="s10.8"><p><span class="lab">Sentence 10.8</span> (W2, the merge). “Whenever we said that two paths in the ruliad ‘merge’, that’s really just saying that we treat the outcomes as equivalent.” (<em>The Concept of the Ruliad</em>, 2021.) The merge is propositional truncation, and its cost is a computed object.</p></div>
+
+<div class="st" id="s10.9"><p><span class="lab">Proposition 10.9</span> (the branches are distinct). The two evolutions from <code>0</code> to <code>3</code> that <a class="ref" href="#s10.7">10.7</a> produced are distinct.</p><p class="pf"><span class="lab">Proof.</span> <code>firstEvent</code> returns <code>true</code> on <code>ev₁</code> and <code>false</code> on <code>ev₂</code>; <code>cong firstEvent</code> on a supposed path gives <code>true ≡ false</code>. The distinction is computed, not stipulated. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s10.10"><p><span class="lab">Proposition 10.10</span> (and merged). In the observer’s single thread the two runs of <a class="ref" href="#s10.9">10.9</a> are equal, by the squash — so the merge <a class="ref" href="#s10.8">10.8</a> describes is real, and really lossy.</p></div>
+
+<div class="st" id="s10.11"><p><span class="lab">Theorem 10.11</span> (the branchial pair is the fibre content). The loss is exhibited as two distinct residents of the <a class="ref" href="#s1.1">fibre (1.1)</a> of the merge over the one merged point.</p><p class="pf"><span class="lab">Proof.</span> <code>branchialPair</code> is <code>(route₁ , refl)</code> and <code>(route₂ , squash₁ _ _)</code> in <code>Σ[ r ] (merge r ≡ merge route₁)</code>, and their distinctness is <a class="ref" href="#s10.9">10.9</a> under <code>cong fst</code>. <span class="qed">∎</span></p><p class="pf">Branch structure is not what a finer observer would see; it is the fibre of the coarser observer’s map, and it is computed. This is <a class="ref" href="#s1.2">the partition (1.2)</a> at the merge, and <a class="ref" href="#s1.4">1.4</a> is why the decomposition is the only one available.</p></div>
 
 <details class="proof"><summary>the checked term — the system, W1, W4, W2</summary>
 <pre><code>open import Cubical.Foundations.Prelude
@@ -336,44 +1191,24 @@ branchialPairDistinct p = routesDistinct (cong fst p)</code></pre>
 <figcaption>W1 is <code>coordinateChange</code> with its three corollaries: <code>propertiesCross</code> carries every property across by <code>subst</code>, <code>transportComputes</code> is the emulation being the path’s own transport (by <code>uaβ</code>), and <code>oneLimitingObject</code> is “the same limiting object” as contractibility (by <code>EquivContr</code>). W4 is <code>bothOrdersConverge</code>, both components exhibited with the endpoints agreeing by indexing. W2 is <code>routesDistinct</code> against <code>merged</code>, and <code>branchialPair</code> exhibits what the merge destroyed. Verbatim; this box checks on its own.</figcaption>
 </details>
 
-<h2><span class="n">4.</span> The bounded observer, and the refusal of repair</h2>
 
-<div class="st" id="s4.1"><p><span class="lab">Sentence 4.1</span> (W3, <em>The Concept of the Ruliad</em>, 2021). “Because we are computationally bounded observers who imagine a certain coherence in their experience, there are strong constraints on what kinds of equivalence classes we can use.” The same equivalencing is <em>Observer Theory</em> (2023): “a large set of possible inputs, a much smaller set of possible outputs”.</p>
-<p>The constraint is quantified, and the repair is refuted.</p></div>
+<h2><span class="n">11.</span> The bounded observer, and the 2025–2026 writings</h2>
 
-<div class="st" id="s4.2"><p><span class="lab">Theorem 4.2</span> (every consumer answers equally). Any observer that reads only the merged thread — any <code>g : ∥ Evolve 0 3 ∥₁ → X</code>, for every <code>X</code> at every universe level — returns equal answers on the two branches.</p>
-<p class="pf"><span class="lab">Proof.</span> <code>cong g</code> applied to <a class="ref" href="#s3.3">3.3</a>. The quantification is over all types at all levels, so no choice of target recovers the branch. <span class="qed">∎</span></p></div>
+<div class="st" id="s11.1"><p><span class="lab">Sentence 11.1</span> (W3, the bounded observer). “Because we are computationally bounded observers who imagine a certain coherence in their experience, there are strong constraints on what kinds of equivalence classes we can use.” (<em>The Concept of the Ruliad</em>, 2021; the same equivalencing is <em>Observer Theory</em>, 2023: “a large set of possible inputs, a much smaller set of possible outputs”.) The constraint is quantified, and the repair is refuted.</p></div>
 
-<div class="st" id="s4.3"><p><span class="lab">Theorem 4.3</span> (the merge has no section). No selector reads a run back out of the thread.</p>
-<p class="pf"><span class="lab">Proof.</span> A section <code>sel</code> with <code>sel (merge r) ≡ r</code> gives <code>route₁ ≡ route₂</code> by composing that equation at both routes across <a class="ref" href="#s3.3">3.3</a>, contradicting <a class="ref" href="#s3.2">3.2</a>. <span class="qed">∎</span></p>
-<p class="pf">Equivalencing is many-to-one with the many exhibited, and the one-to-many direction is refuted, not merely absent. This is computational irreducibility in its proof-relevant form: the outcome — the endpoint, and even the whole merged thread — does not determine the run, so route information must be carried, since it provably cannot be reconstructed. The corpus proves the same for derivations, where soundness factors through the truncation and the truncation is strict; for denotations, where full abstraction is the statement that the denotation <em>is</em> the truncation; and for program synthesis, where pruning by observational equivalence collapses a fibre that is constructed and unbounded.</p></div>
+<div class="st" id="s11.2"><p><span class="lab">Theorem 11.2</span> (every consumer answers equally). Any observer that reads only the merged thread — any <code>g</code> out of the truncation, into every type at every universe level — returns equal answers on the two branches.</p><p class="pf"><span class="lab">Proof.</span> <code>cong g</code> applied to <a class="ref" href="#s10.10">10.10</a>. The quantification is over all types at all levels, so no choice of target recovers the branch. <span class="qed">∎</span></p></div>
 
+<div class="st" id="s11.3"><p><span class="lab">Theorem 11.3</span> (the merge has no section). No selector reads a run back out of the thread.</p><p class="pf"><span class="lab">Proof.</span> A section <code>sel</code> with <code>sel (merge r) ≡ r</code> gives <code>route₁ ≡ route₂</code> by composing that equation at both routes across <a class="ref" href="#s10.10">10.10</a>, contradicting <a class="ref" href="#s10.9">10.9</a>. <span class="qed">∎</span></p><p class="pf">Equivalencing is many-to-one with the many exhibited, and the one-to-many direction is refuted, not merely absent. This is computational irreducibility in its proof-relevant form: the outcome — the endpoint, and even the whole merged thread — does not determine the run, so route information must be carried, because it provably cannot be reconstructed. It is <a class="ref" href="#s8.5">what the one bit discards (8.5)</a> one level up, and the other half of <a class="ref" href="#s4.16">4.16</a>.</p></div>
 
-<h2><span class="n">5.</span> The advantage of proof is the quantifier</h2>
+<div class="st" id="s11.4"><p><span class="lab">Sentence 11.4</span> (W5, the advantage of proof). “We don’t get any fundamental advantage by trying to make a proof rather than just running the Turing machine — in both cases we have to expend a potentially unbounded amount of computational effort.” (<em>Towards a Theory of Bugs: The Ruliology of the Unexpected</em>, July 2026.) The sentence is exactly right about each single instance and exactly wrong about their totality, and both halves are terms.</p></div>
 
-<div class="st" id="s5.1"><p><span class="lab">Sentence 5.1</span> (W5, <em>Towards a Theory of Bugs: The Ruliology of the Unexpected</em>, July 2026). “We don't get any fundamental advantage by trying to make a proof rather than just running the Turing machine — in both cases we have to expend a potentially unbounded amount of computational effort.”</p>
-<p>The sentence is exactly right about each single instance and exactly wrong about their totality, and both halves are terms.</p></div>
+<div class="st" id="s11.5"><p><span class="lab">Theorem 11.5</span> (the term running cannot produce). Every state is reached from <code>0</code> — every evolution type of <a class="ref" href="#s10.2">10.2</a> inhabited — all of them by one induction.</p><p class="pf"><span class="lab">Proof.</span> Induction on <code>n</code>, through a lemma appending one event of <a class="ref" href="#s10.1">10.1</a> at the end of an evolution. <span class="qed">∎</span></p><p class="pf">A run exhibits one endpoint; this function is the whole family at once. The effort of proof is bounded by the induction, the effort of running is unbounded over the family, and that asymmetry <em>is</em> the fundamental advantage: the term is the family where the run is a point. The same essay’s “whatever constraint we give, there’ll always be machines that insidiously escape it” is this development’s standing discipline read back — every refusal here is exhibited, a candidate interrogated at named points and the collision written down, and a constraint without its exhibited escape is an unfinished theorem.</p></div>
 
-<div class="st" id="s5.2"><p><span class="lab">Theorem 5.2</span> (the term running cannot produce). Every state is reached from <code>0</code> — every evolution type of <a class="ref" href="#s0.2">0.2</a> inhabited — all of them by one induction:</p>
-<pre class="def"><code>reachesEvery : (n : ℕ) → Evolve zero n</code></pre>
-<p class="pf"><span class="lab">Proof.</span> Induction on <code>n</code>, through a lemma appending one event of <a class="ref" href="#s0.1">0.1</a> at the end of an evolution. <span class="qed">∎</span></p>
-<p class="pf">A run exhibits one endpoint; this function is the whole family at once. The effort of proof is bounded by the induction, the effort of running is unbounded over the family, and that asymmetry <em>is</em> the fundamental advantage: the term is the family where the run is a point. The corpus holds the machine-scale form, where a composition theorem certifies a compound machine for every input with no induction over the compound.</p></div>
+<div class="st" id="s11.6"><p><span class="lab">Sentence 11.6</span> (W6, the eme). “Equivalent states are in fact merged.” And the emes: “atoms of existence” whose “only property is distinctness”. (<em>What Ultimately Is There? Metaphysics and the Ruliad</em>, February 2026.) This is stronger than <a class="ref" href="#s10.8">10.8</a> — merged in the object, not treated as equivalent by an observer — and the stronger merge is the set quotient.</p></div>
 
-<div class="rk" id="s5.3"><p><span class="lab">Remark 5.3</span> (the escape is a named counterexample). The same essay's “whatever constraint we give, there'll always be machines that insidiously escape it” is this development's standing discipline read back. Every refusal here is exhibited — a candidate interrogated at named points, the collision written down — and a constraint without its exhibited escape is an unfinished theorem.</p></div>
+<div class="st" id="s11.7"><p><span class="lab">Theorem 11.7</span> (one eme, constructed). Under co-terminality the two branches of <a class="ref" href="#s10.9">10.9</a> become equal as <em>data</em> in the quotient, and the quotient contracts to a single point — an atom of existence with no property beyond its own distinctness.</p><p class="pf"><span class="lab">Proof.</span> <code>eq/</code> makes the branches equal; <code>[ route₁ ]</code> is the centre and <code>elimProp</code> with <code>squash/</code> contracts every class onto it. The eme is constructed rather than posited. <span class="qed">∎</span></p></div>
 
-<h2><span class="n">6.</span> The merged state is one eme</h2>
-
-<div class="st" id="s6.1"><p><span class="lab">Sentence 6.1</span> (W6, <em>What Ultimately Is There? Metaphysics and the Ruliad</em>, February 2026). “Equivalent states are in fact merged.” And the emes: “atoms of existence” whose “only property is distinctness”.</p>
-<p>The February sentence is stronger than the 2021 merge — merged in the object, not treated as equivalent by an observer — and the stronger merge is the <a class="x" href="https://en.wikipedia.org/wiki/Equivalence_class">set quotient</a>.</p></div>
-
-<div class="st" id="s6.2"><p><span class="lab">Proposition 6.2</span> (equal as data). Under co-terminality the two branches of <a class="ref" href="#s3.2">3.2</a> become equal in the quotient, by <code>eq/</code> — not merely jointly present in a truncation as in <a class="ref" href="#s3.3">3.3</a>.</p></div>
-
-<div class="st" id="s6.3"><p><span class="lab">Theorem 6.3</span> (one eme, constructed). The quotient of <a class="ref" href="#s6.2">6.2</a> contracts to a single point, and that point is the atom of existence <a class="ref" href="#s6.1">6.1</a> names with no property beyond its own distinctness.</p>
-<p class="pf"><span class="lab">Proof.</span> <code>[ route₁ ]</code> is the centre, and <code>elimProp</code> with <code>squash/</code> contracts every class onto it. The eme is constructed rather than posited. <span class="qed">∎</span></p></div>
-
-<div class="st" id="s6.4"><p><span class="lab">Theorem 6.4</span> (the stronger merge still has no section). Reading a run back out of the merged object collides with the branch distinction.</p>
-<p class="pf"><span class="lab">Proof.</span> As <a class="ref" href="#s4.3">4.3</a>, with <a class="ref" href="#s6.2">6.2</a> in place of the squash. <span class="qed">∎</span></p>
-<p class="pf">Both merges are real, both lossy, and the loss is the same computed object.</p></div>
+<div class="st" id="s11.8"><p><span class="lab">Theorem 11.8</span> (the stronger merge is no less lossy). Reading a run back out of the merged object collides with the branch distinction.</p><p class="pf"><span class="lab">Proof.</span> As <a class="ref" href="#s11.3">11.3</a>, with <a class="ref" href="#s11.7">11.7</a>’s <code>eq/</code> in place of the squash. <span class="qed">∎</span></p><p class="pf">Both merges are real, both lossy, and the loss is the same computed object.</p></div>
 
 <details class="proof"><summary>the checked term — W3, W5, W6</summary>
 <pre><code>open import Cubical.Foundations.Prelude
@@ -484,21 +1319,19 @@ noSectionEither (sel , h) =
 purposeRanksNothing : {ℓ : Level} {X : Type ℓ} (g : mergedStates → X)
               → g [ route₁ ] ≡ g [ route₂ ]
 purposeRanksNothing g = cong g equalAsData</code></pre>
-<figcaption>The system is restated in the first lines so this box checks on its own. <code>boundedObserver</code> is one <code>cong</code> quantified over every target type at every level; <code>noSection</code> refutes repair in three steps. <code>reachesEvery</code> is the family a run can only be a point of. <code>oneEme</code> contracts the quotient onto one point and <code>noSectionEither</code> shows the stronger merge is no less lossy. Verbatim; checks on its own, prelude included.</figcaption>
+<figcaption>The system is restated in the first lines so this box checks on its own. <code>boundedObserver</code> is one <code>cong</code> quantified over every target type at every level; <code>noSection</code> refutes repair in three steps. <code>reachesEvery</code> is the family a run can only be a point of. <code>oneEme</code> contracts the quotient onto one point, and <code>noSectionEither</code> shows the stronger merge is no less lossy. Verbatim; checks on its own, prelude included.</figcaption>
 </details>
 
-<h2><span class="n">7.</span> Purpose, and the living step</h2>
 
-<div class="st" id="s7.1"><p><span class="lab">Sentence 7.1</span> (W7, <em>What's Special about Life?</em>, November 2025). The rulial ensemble is “an ensemble of possible rules … selected to ‘achieve the purpose’”, and life is patches of irreducibility “fitted together to achieve that purpose” through bulk orchestration.</p></div>
+<h2><span class="n">12.</span> Purpose, and the living step</h2>
 
-<div class="st" id="s7.2"><p><span class="lab">Theorem 7.2</span> (purpose ranks nothing inside the ensemble). Taking the purpose to be arrival, the ensemble selected to achieve it is the fibre of the endpoint, and every assessor reading only the merged achievement answers equally on all its members.</p>
-<p class="pf"><span class="lab">Proof.</span> <code>cong g</code> applied to <a class="ref" href="#s6.2">6.2</a>, for every <code>g</code> out of the quotient into every type at every level — proposition-valued fitness functions included, since they factor through functions. <span class="qed">∎</span></p></div>
+<div class="st" id="s12.1"><p><span class="lab">Sentence 12.1</span> (W7, the rulial ensemble). The rulial ensemble is “an ensemble of possible rules … selected to ‘achieve the purpose’”, and life is patches of irreducibility “fitted together to achieve that purpose” through bulk orchestration. (<em>What’s Special about Life?</em>, November 2025.)</p></div>
 
-<div class="st" id="s7.3"><p><span class="lab">Theorem 7.3</span> (the ledger is general). The orchestration half of <a class="ref" href="#s7.1">7.1</a> needs one map. A joint state of two parts is a type <code>J</code> with projections <code>p : J → A</code> and <code>q : J → B</code>, and everything below is an officer of the single comparison <code>⟨p,q⟩ : J → A × B</code>. For every joint whatsoever, the total space of the entanglement fibres is the joint itself:</p>
-<pre class="def"><code>Σ[ (a , b) ] fib ⟨p,q⟩ (a , b)  ≃  J</code></pre>
-<p class="pf"><span class="lab">Proof.</span> The fibre decomposition, at <code>⟨p,q⟩</code>. Nothing double-kept and nothing dropped: as in <a class="ref" href="#s3.4">3.4</a>, the fibres carry exactly what the marginals forgot, and summing them back recovers the whole. <span class="qed">∎</span></p></div>
+<div class="st" id="s12.2"><p><span class="lab">Theorem 12.2</span> (purpose ranks nothing inside the ensemble). Taking the purpose to be arrival, the ensemble selected to achieve it is the fibre of the endpoint, and every assessor reading only the merged achievement answers equally on all its members.</p><p class="pf"><span class="lab">Proof.</span> <code>cong g</code> applied to <a class="ref" href="#s11.7">11.7</a>, for every <code>g</code> out of the quotient into every type at every level — proposition-valued fitness functions included, since they factor through functions. <span class="qed">∎</span></p></div>
 
-<div class="st" id="s7.4"><p><span class="lab">Proposition 7.4</span> (independence, entanglement, reconstruction). Independence is the comparison of <a class="ref" href="#s7.3">7.3</a> being an equivalence, and at the product joint it is definitionally the identity. Entanglement is the comparison's fibre, and both of its failures are pointed at rather than counted: over the diagonal joint the fibre at <code>(true , false)</code> is <em>empty</em> — a pair of marginal readings the whole never realises — and over the joint that outruns its marginals the fibre at the one reading holds <em>two named points</em>, a hidden degree of freedom the marginals jointly cannot see. On the diagonal joint either reading determines the other, the recovering function is exhibited and the commuting square is <code>refl</code>.</p></div>
+<div class="st" id="s12.3"><p><span class="lab">Theorem 12.3</span> (the ledger is general). The orchestration half of <a class="ref" href="#s12.1">12.1</a> needs one map. A joint state of two parts is a type <code>J</code> with projections <code>p : J → A</code> and <code>q : J → B</code>, and everything below is an officer of the single comparison <code>⟨p,q⟩ : J → A × B</code>. For every joint whatsoever, the total space of the comparison’s fibres is the joint itself.</p><p class="pf"><span class="lab">Proof.</span> <a class="ref" href="#s1.2">The partition (1.2)</a> at <code>⟨p,q⟩</code>. Nothing double-kept and nothing dropped: as in <a class="ref" href="#s10.11">10.11</a>, the fibres carry exactly what the marginals forgot, and summing them back recovers the whole. <span class="qed">∎</span></p></div>
+
+<div class="st" id="s12.4"><p><span class="lab">Proposition 12.4</span> (independence, entanglement, reconstruction). Independence is the comparison of <a class="ref" href="#s12.3">12.3</a> being an equivalence, and at the product joint it is definitionally the identity. Entanglement is the comparison’s fibre, and both of its failures are pointed at rather than counted: over the diagonal joint the fibre at <code>(true , false)</code> is <em>empty</em> — a pair of marginal readings the whole never realises — and over the joint that outruns its marginals the fibre at the one reading holds <em>two named points</em>, a hidden degree of freedom the marginals jointly cannot see. On the diagonal joint either reading determines the other, the recovering function is exhibited and the commuting square is <code>refl</code>: conditional certainty as a reconstruction rather than a number.</p></div>
 
 <details class="proof"><summary>the checked term — the ledger, and the three readings</summary>
 <pre><code>open import Cubical.Foundations.Prelude
@@ -595,12 +1428,10 @@ recover b = b
 
 recoverWitness : (j : Bool) → recover (snd (diagonalCompare j)) ≡ fst (diagonalCompare j)
 recoverWitness j = refl</code></pre>
-<figcaption>One comparison map carries the vocabulary. <code>fibreSum</code> is the ledger: the fibres hold exactly what the marginals forgot. Then the three readings of the same construction, varying the joint — the comparison an equivalence at the product pole, its fibre empty over the diagonal joint, and two-pointed over the joint that outruns its marginals — with <code>recoverWitness</code> giving conditional certainty as a reconstruction rather than a number. Verbatim; nothing here depends on the sections above.</figcaption>
+<figcaption>One comparison map carries the vocabulary. <code>fibreSum</code> is the ledger. Then the three readings of the same construction, varying the joint — the comparison an equivalence at the product pole, its fibre empty over the diagonal joint, two-pointed over the joint that outruns its marginals — with <code>recoverWitness</code> giving conditional certainty as a reconstruction. Verbatim; nothing here depends on the sections above.</figcaption>
 </details>
 
-<div class="st" id="s7.5"><p><span class="lab">Theorem 7.5</span> (a living step refuses to descend). A joint step descends along the <code>p</code> of <a class="ref" href="#s7.3">7.3</a> when some <code>f</code> closes the square <code>f ∘ p ∼ p ∘ step</code>, and the descent structure is fully characterised: a pair simulates the step exactly when each side descends separately, proved in both directions. The <a class="x" href="https://en.wikipedia.org/wiki/Controlled_NOT_gate">controlled-not</a> step <code>(a , b) ↦ (a ⊕ b , b)</code> is then placed exactly — it descends on the environment side by <code>refl</code> and <em>refuses</em> on the visible side.</p>
-<p class="pf"><span class="lab">Proof.</span> Any candidate <code>f</code> is interrogated at <code>(true , false)</code> and <code>(true , true)</code>, where <code>fst</code> agrees and <code>fst ∘ step</code> disagrees; the collision is <code>true≢false</code>. A fortiori no pair simulates it. Beside it, <code>(a , b) ↦ (not a , b)</code> descends on both sides. <span class="qed">∎</span></p>
-<p class="pf">Living is a definition here, not a metaphor, and the step is nevertheless a global equivalence — it is its own inverse — so the consultation of the hidden part costs nothing and destroys nothing. Consultation, not destruction: the step whose visible part must read its environment is exactly the one no marginal can simulate.</p></div>
+<div class="st" id="s12.5"><p><span class="lab">Theorem 12.5</span> (a living step refuses to descend). A joint step descends along the <code>p</code> of <a class="ref" href="#s12.3">12.3</a> when some <code>f</code> closes the square <code>f ∘ p ∼ p ∘ step</code>, and the descent structure is fully characterised: a pair simulates the step exactly when each side descends separately, proved in both directions. The <a class="x" href="https://en.wikipedia.org/wiki/Controlled_NOT_gate">controlled-not</a> step <code>(a , b) ↦ (a ⊕ b , b)</code> is then placed exactly — it descends on the environment side by <code>refl</code> and <em>refuses</em> on the visible side.</p><p class="pf"><span class="lab">Proof.</span> Any candidate <code>f</code> is interrogated at <code>(true , false)</code> and <code>(true , true)</code>, where <code>fst</code> agrees and <code>fst ∘ step</code> disagrees; the collision is <code>true≢false</code>. A fortiori no pair simulates it. Beside it, <code>(a , b) ↦ (not a , b)</code> descends on both sides. <span class="qed">∎</span></p><p class="pf">Living is a definition here, not a metaphor. The step is its own inverse, so by <a class="ref" href="#s3.5">3.5</a> the consultation of the hidden part costs nothing and destroys nothing: consultation, not destruction. The step whose visible part must read its environment is exactly the one no marginal can simulate — bulk orchestration with the orchestration proved rather than described.</p></div>
 
 <details class="proof"><summary>the checked term — the living step</summary>
 <pre><code>open import Cubical.Foundations.Prelude
@@ -691,18 +1522,17 @@ livingStepEquiv : (Bool × Bool) ≃ (Bool × Bool)
 livingStepEquiv = isoToEquiv (iso livingStep livingStep livingStepInvolution livingStepInvolution)
 
 -- the parity of a doubled coordinate vanishes; the oracle's answer on</code></pre>
-<figcaption><code>descendsToMarginal</code> is the definition of descent and <code>pairBothWays</code> characterises it in both directions. <code>livingStepNoMarginal</code> is the refusal: a candidate interrogated at <code>(true , false)</code> and <code>(true , true)</code>, colliding on <code>true≢false</code>. Beside it <code>rightDescentHolds</code> places the descent on the environment side by <code>refl</code>, <code>deadStep</code> descends on both, and <code>livingStepInvolution</code> makes the living step its own inverse. Verbatim; checks on its own.</figcaption>
+<figcaption><code>descendsToMarginal</code> is the definition of descent and <code>pairBothWays</code> characterises it in both directions. <code>livingStepNoMarginal</code> is the refusal, the candidate interrogated at two points and colliding on <code>true≢false</code>. Beside it <code>rightDescentHolds</code> places the descent on the environment side by <code>refl</code>, <code>deadStep</code> descends on both, and <code>livingStepInvolution</code> makes the living step its own inverse. Verbatim; checks on its own.</figcaption>
 </details>
 
-<h2><span class="n">8.</span> Causal invariance is not needed</h2>
 
-<div class="st" id="s8.1"><p><span class="lab">Definition 8.1</span> (branch-blind). An observation <code>o : X → V</code> is <em>branch-blind</em> when it cannot tell two successors of a state apart: if <code>o x ≡ o y</code> and <code>x</code> steps to <code>u</code> while <code>y</code> steps to <code>v</code>, then <code>o u ≡ o v</code>. A <em>law</em> for <code>o</code> is a map <code>g</code> on readings with <code>o x' ≡ g (o x)</code> at every step — and a law gives branch-blindness immediately.</p></div>
+<h2><span class="n">13.</span> A time and a law without confluence</h2>
 
-<div class="st" id="s8.2"><p><span class="lab">Theorem 8.2</span> (one reading, from the congruence alone). If <code>o</code> is branch-blind <a class="ref" href="#s8.1">(8.1)</a> then any two routes of the same length from states that <code>o</code> cannot distinguish arrive at states <code>o</code> cannot distinguish.</p>
-<p class="pf"><span class="lab">Proof.</span> Induction on the common length, applying blindness at each step. <span class="qed">∎</span></p>
-<p class="pf">There is no <a class="x" href="https://en.wikipedia.org/wiki/Confluence_(abstract_rewriting)">confluence</a> premise anywhere in the statement. The standard demand made of a multiway rule is that any two branches can be brought back together; the observer's time and law do not need it. What they need is that the observation be blind to the branching, which is weaker and is checkable. And the converse direction is also exhibited: an observation with no law is given, so having a law is strictly stronger than being blind.</p></div>
+<div class="st" id="s13.1"><p><span class="lab">Definition 13.1</span> (branch-blind). An observation <code>o : X → V</code> is <em>branch-blind</em> when it cannot tell two successors of a state apart: if <code>o x ≡ o y</code> and <code>x</code> steps to <code>u</code> while <code>y</code> steps to <code>v</code>, then <code>o u ≡ o v</code>. A <em>law</em> for <code>o</code> is a map <code>g</code> on readings with <code>o x′ ≡ g (o x)</code> at every step — and a law gives branch-blindness immediately.</p></div>
 
-<div class="rk" id="s8.3"><p><span class="lab">Remark 8.3</span> (the multiway does not collapse). Distinct branches of the multiway are <em>provably</em> unequal — <a class="ref" href="#s3.2">3.2</a> at this system — not merely not-identified — which is why a proof-relevant store keeps them. A branch is never identified with another branch, and that is a theorem rather than a convention of the encoding.</p></div>
+<div class="st" id="s13.2"><p><span class="lab">Theorem 13.2</span> (one reading, from the congruence alone). If <code>o</code> is branch-blind <a class="ref" href="#s13.1">(13.1)</a> then any two routes of the same length, from states <code>o</code> cannot distinguish, arrive at states <code>o</code> cannot distinguish.</p><p class="pf"><span class="lab">Proof.</span> Induction on the common length, applying blindness at each step. <span class="qed">∎</span></p><p class="pf">There is no <a class="x" href="https://en.wikipedia.org/wiki/Confluence_(abstract_rewriting)">confluence</a> premise anywhere in the statement or the proof. The standard demand made of a multiway rule is that any two branches can be brought back together; the observer’s time and law do not need it. What they need is that the observation be blind to the branching, which is weaker and is checkable. The converse is also exhibited — an observation with no law — so having a law is strictly stronger than being blind. Where a rule set <em>does</em> have the diamond, <a class="ref" href="#s5.13">5.13</a> adds the elapsed time on top of this.</p></div>
+
+<div class="rk" id="s13.3"><p><span class="lab">Remark 13.3</span> (the multiway does not collapse). Distinct branches are <em>provably</em> unequal — <a class="ref" href="#s10.9">10.9</a> at this system — not merely not-identified. A branch is never identified with another branch, and that is a theorem rather than a convention of the encoding, which is why a proof-relevant store has to keep them.</p></div>
 
 <details class="proof"><summary>the checked term — a time and a law without confluence</summary>
 <pre><code>open import Cubical.Foundations.Prelude
@@ -768,10 +1598,7 @@ module _ {X : Type ℓ} (R : X → X → Type ℓ') where
 <figcaption><code>branchBlind</code> and <code>hasLaw</code> are the two conditions, <code>lawGivesBranchBlind</code> the implication between them, and <code>noLaw</code> its strictness. <code>oneUtterance</code> is the result: one induction on the common length, and no confluence premise appears in the statement or the proof. Verbatim; checks on its own, generic in the state type and the step relation.</figcaption>
 </details>
 
-<h2><span class="n">9.</span> One term</h2>
-
-<div class="st" id="s9.1"><p><span class="lab">Theorem 9.1</span> (the conjunction). One term’s type is the conjunction of all seven sentences — <a class="ref" href="#s1.1">1.1</a>, <a class="ref" href="#s2.1">2.1</a>, <a class="ref" href="#s3.1">3.1</a>, <a class="ref" href="#s4.1">4.1</a>, <a class="ref" href="#s5.1">5.1</a>, <a class="ref" href="#s6.1">6.1</a>, <a class="ref" href="#s7.1">7.1</a> — and checking the file that exports it checks, through its imports, every theorem it cites. Reading the claim and verifying it are the same act.</p></div>
-
+<div class="st" id="s13.4"><p><span class="lab">Theorem 13.4</span> (one term). One term’s type is the conjunction of all seven sentences — <a class="ref" href="#s10.3">10.3</a>, <a class="ref" href="#s10.6">10.6</a>, <a class="ref" href="#s10.8">10.8</a>, <a class="ref" href="#s11.1">11.1</a>, <a class="ref" href="#s11.4">11.4</a>, <a class="ref" href="#s11.6">11.6</a>, <a class="ref" href="#s12.1">12.1</a> — and checking the file that exports it checks, through its imports, every theorem it cites. Reading the claim and verifying it are the same act.</p></div>
 
 <details class="proof"><summary>the checked term — the conjunction of the seven</summary>
 <pre><code>open import Cubical.Foundations.Prelude
@@ -814,7 +1641,7 @@ sevenSentences =
 <figcaption>The type is the claim and the term is the proof: nine lines, each component the identifier named in its section above, so the term is the development’s whole index. This is the one box that does not check in isolation, and that is its content — it checks against the three modules the five boxes above display, as one file, which is how it was run. Agda 2.8.0, agda/cubical v0.9, <code>--cubical --guardedness --safe --no-import-sorts</code>: exit 0, no postulates, no holes.</figcaption>
 </details>
 
-<p class="src">Seven sentences, five years of writing, nine identifiers whose combined proof text is shorter than this page. One methodological sentence from <em>What Is Ruliology?</em> (January 2026) frames the series: mathematics “tends to get out of hand, with even a very simple rule having behavior that can only be captured by large amounts of obscure mathematics.” This is the measured reply. At the scale where ruliology's own sentences live — two events, one branch point, one merge — the mathematics does not get out of hand; it gets exactly as large as the sentence. Where a sentence names something genuinely irreducible, the development agrees from the other side: proof identity is the fibre, so an ununderstood proof is a trace not yet carried, and carrying traces is what the machine is for. The ruliad's load-bearing sentences are, one by one, theorems of univalent mathematics. The construction this sits inside — equality of types is equivalence, and it computes, from which complete inference comes out deterministic and step-optimal — is at <a class="x" href="./index.html">Respecting Equality</a>.</p>
+<p class="src">Every step above is elementary. Sixteen boxed terms sit at the computational cores, each headed by its own import lines and each compiling on its own against agda-cubical v0.9 under <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Agda 2.8.0</a> with <code>--cubical --guardedness --safe --no-import-sorts</code> — no postulates, no holes, no classical axiom, and the untruncated <code>Σ</code> forms keeping each claim constructive by exhibiting the escaping witness as a value. The one exception is <a class="ref" href="#s13.4">13.4</a>, which checks against the three modules the five boxes before it display, as one file; its figcaption says so. Seven sentences across five years of writing, discharged by nine identifiers whose combined proof text is shorter than this page. One methodological sentence from <em>What Is Ruliology?</em> (January 2026) frames it: mathematics “tends to get out of hand, with even a very simple rule having behavior that can only be captured by large amounts of obscure mathematics.” This is the measured reply — at the scale where ruliology’s own sentences live, two events and one branch point and one merge, the mathematics does not get out of hand; it gets exactly as large as the sentence. Where a sentence names something genuinely irreducible, the construction agrees from the other side: what an identification destroys is a fibre <a class="ref" href="#s1.1">(1.1)</a>, so an ununderstood derivation is a trace not yet carried, and carrying traces is what the machine is for. The ruliad’s load-bearing sentences are, one by one, theorems of univalent mathematics.</p>
 
 </main>
 <script src="./vendor/katex/katex.min.js"></script>
