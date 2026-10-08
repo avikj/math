@@ -550,8 +550,21 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   extra monomials cancelling in the reading. On the complex, with integers as loops, the direct shape is the
   geodesic of this type and the seven-product writing is a longer route to the same normal form: a product of
   multitudes costs every unit pair, so a product of sums is never cheaper than the products it replaces.
-  The classical subcubic count is the binary measure's (5.22, notes J): it prices a product of k-bit numbers above
-  k additions, which the lossless unit count does not.
+  That is the scalar node only, where nothing recurses.
+- **The N×N type on the index cube** (9.11; `n/blocks.hvm4`). A product of blocks is the type again one level
+  down, so its cost is its own ledger; a product of leaves is one cell `#Pr{u, v}`, not expanded (distribution
+  is an identity, not a step); a sum of leaves is one coordinate; a negation one cell. The defining shape (eight
+  block products, four block sums a node) and the seven-product writing (seven and eighteen) side by side as
+  different starting terms, ledgers by depth k, N = 2^k:
+  direct 153, 1,327, 11,181, 94,891, 810,665, 6,942,375 (×8.5 a level, the cube);
+  seven 374, 6,013, 106,686, 2,193,857, 48,276,642, then the heap (×20 a level).
+  The seven-product writing is costlier at every depth and grows faster. Why, read off the ledger: a sum on the
+  complex is lossless, it carries both summands; the seven-product recursion feeds sums of sums downward, so its
+  operands' leaves grow as 2^k, and every copy of an operand (DUP) and every match on it pays that size. The
+  classical 7 against 8 assumes a sum consumed at unit cost whatever it holds, a number of k+1 bits, which is the
+  compressed measure (5.22, notes J, L): the forgetful projection, where the classical count lives. On the
+  complex as posed, the defining shape is the geodesic of the product type and it is cubic. What is not here:
+  any reading under which the type's own normal form is reached in fewer than the cube of cells.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
