@@ -494,7 +494,10 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   reading the net stays need-driven (eager sides cost interactions where the rule never fires). It is the identity
   of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
   leaves are read with 56,478 sides instead of 87,260.
-- **Memory of the reading.** The collapse allocated and never freed, so a complete reading of a large type outgrew
+- **Memory of the reading.** In a net every node is consumed by exactly one interaction, so nothing is ever
+  garbage and there is no collector: that is the one memory policy, and this runtime does not have it (a bump
+  allocator, variables by substitution, the two sides of a split sharing their context instead of owning it). The
+  collapse allocated and never freed, so a complete reading of a large type outgrew
   the heap (the group posings below died at 8–10 million sides). Between the two sides of a split the live heap is
   now compacted in place (a sliding collector over the region above the loaded book; `gc_collect` in `net.c`,
   `SAT_GC_AT` sets the threshold, by default half the heap budget, and a collection is not repeated before the live
@@ -502,25 +505,26 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   the normaliser's stack, visited set and current cell reach; binding entries of instantiated lambdas took the
   same size as those of dups so the list can be walked. No interaction is counted: with the threshold forced low,
   `n/writing22q`, `n/blocks22` and `n/classes22` give the same values and the same counts through 15 collections.
-- **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
-  relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's
-  relabellings permute the slots, may swap a slot's pair, and may orient each coordinate) is data, every such
-  relabelling is a choice (3072), and the faces keep the ones along which the target of every entry is unchanged:
-  48, read with their orders on the entries (one of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6; S₄ × Z₂). The
-  earlier `n/sym22.hvm4` derived a group by closure from generators I wrote; here the generators are not written.
-- **The writing over the derived group** (`n/writing22g.hvm4`, `n/empty22g4.hvm4`, `n/empty22g5.hvm4`). The
-  symmetric form with nothing of the symmetry written: a symmetry r is a choice among the 48 the net read off the
-  cube, its order is read on the entries, the fixed cell is a generic cell f with the face r·f = f (equality as
-  tensors, so the scaling identity is recognised there), the orbit is a generic cell c carried along r as many
-  times as the order, a cell's three slot shapes are nonzero (a product with a zero factor is not a cell), and the
-  64 equations are faces as before. What is posed is the length: the orbit's length is the order of r. With the
-  order six (length seven) the reading keeps 768 writings in 13,393,277 sides and 2,333,312,725 interactions: the
-  eight symmetries of order six, each with 96 writings, the 24 of `n/writing22q.hvm4` in the four sign images
-  (±u, ±v) the tensor equality admits; a writing carries its symmetry, so writings of different symmetries are not
-  relabellings of each other to the reading. With the orders three and four (lengths four and five) the readings
-  are empty: 14,029,333 and 18,778,059 sides, nothing kept. The order two (length three) costs about two million
-  sides per symmetry, nineteen symmetries, and the identity (length two: two generic cells) is the enumeration of
-  all pairs of cells with no symmetry to cut it; neither is pinned. Each of these runs needs the collector.
+- **The 2×2 writing type and the reading of its symmetric form with nothing written but the type**
+  (`n/product22.hvm4`, `n/group22.hvm4`). The type: the index as the cube it is (9.11), six index coordinates
+  `??`; a cell a product of three slot shapes whose coefficients are choice cells `?` (a support bit and a sign
+  bit on it); a product with a zero factor is not a cell; the 64 equations C = A·B as faces of the shapes. The
+  symmetry: a relabelling of the index cube that keeps the slots is data, every such relabelling is a choice
+  (3072), and the faces keep the ones along which the target of every entry is unchanged: the type's group, 48
+  (one of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6; S₄ × Z₂), with the order of each read on the entries
+  (`n/group22.hvm4`). The symmetric form: a symmetry r chosen by the net among the 48, one generic cell f with
+  the face r·f = f (as tensors, so the scaling identity is recognised there), and the orbit of one generic cell c
+  carried along r as many times as the order of r; so every length the form admits, two to seven, is read in one
+  reading, by `%%`, which discards relabellings of the index (6.1). The complete reading over all 48 symmetries is running (it passed 42 million sides and
+  four thousand million interactions without a writing, still inside the short lengths); its count is not yet
+  recorded here, and `n/product22.hvm4` is not yet pinned.
+  What stood here before and was deleted as my own derivation layer, run once and written into the next program
+  by hand: `sym22` (a group derived by closure from generators I wrote), `writing22` and `writing22q` (the orbit
+  generator cyclic∘swap read off `sym22`'s output and written in as cycled, side-swapped shapes, and the fixed
+  cell's shape written in), `classes22` and `reach22` (identity maps written by hand, among them a shear found by
+  running faces and then written in), the polynomial `writing`, and `writing22g` with its order face (the number
+  six read off the group's output and written in). The recorded error 3 of CLAUDE.md, in a fourth form: the
+  output of one program written into another is a derivation outside the net.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
@@ -606,90 +610,14 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   already normal when its dup fires depends on the evaluation order, so the ledger moved with the schedule (the
   diamond gave 906, 1,070 and 1,152 under three seeds), which 5.13 forbids, and values changed. The copy charge
   is HVM4's duplication semantics; the deterministic measure of formation is the profile's difference.
-- **The writing type at a node, posed as sort is posed** (`n/writing.hvm4`, the polynomial product). A cell
-  is u ⊗ v ⊗ w with every coefficient a coordinate (support, and on it a sign); the equations C = A·B are the
-  faces; the cell fixed by the swap σ (a0↔a1, b0↔b1, c0↔c2) has x = y = + by the scaling and its w is a choice
-  the substitutions of the polynomial product exchange, so one representative is kept (evaluation at 1); the
-  orbit cell's u and v are their classes under σ and the scaling; the rest the faces decide. One point:
-  Karatsuba. 25 sides erased, 18,597 interactions. The substitutions x ↦ 1−x, x ↦ 1/x, x ↦ −x act on u as
-  functionals (u ↦ u∘σ*) and on w by the degree-two coefficient map; the faces verify on the point that each
-  image is a writing of φ (8.6): the three cells are evaluations at 0, 1, ∞, one orbit. So the symmetry that
-  makes the choice free is not a relabelling but a basis change, an identity of the object (a shear), and the
-  group to quotient by includes it.
-- **The symmetry of the 2×2 product, derived** (`n/sym22.hvm4`). From the generators cyclic shift,
-  transpose-reversal, swap-conjugation and sign-conjugation the closure is 24 relabellings, six of order 6, so
-  the orbit generator exists. The shear, simultaneous conjugation by [[1,1],[0,1]], acts on a cell's u as a
-  functional (u ↦ Pᵀ u P⁻ᵀ) and is verified by the faces as an identity of tr(ABC): Strassen's writing, its
-  shear image and its image under the order-6 element all hold (8.6). Alphabet-orbits under relabellings and
-  shear: the trace cell I⊗I⊗I is fixed by everything (1); S⊗S⊗S has 10; an orbit cell 36. Classes of a first
-  factor u under the slot-keeping symmetries, shear and the cell scaling: ten; of v under the stabiliser of u:
-  about twenty-two each. So under the relabellings and one shear within the alphabet the choices do not
-  collapse to one: the uniqueness of the rank-7 writing (de Groote) is under the whole conjugation group over
-  the field, and within the alphabet its trace is many classes, most emptied by the faces.
-- **The 2×2 writing type at a node, posed as sort is posed** (`n/writing22.hvm4`). Seven cells: the cell fixed
-  by the whole group (one coordinate per orbit of positions, x = + by the scaling: two classes in the alphabet,
-  I⊗I⊗I and S⊗S⊗S, read), and the orbit of one cell under an element of order six. The elements of order six
-  fall into three conjugacy classes (an element and its inverse), derived, so the generator is read over three
-  representatives; the orbit cell's u is read as its class under the generator's centraliser with the scaling
-  (sixteen; the shear does not commute and is not among them); v and w are coordinates the faces cut. Nothing
-  else is posed. Result: 8 points, every one Strassen's shape (its sign and class variants), 23,860 sides erased,
-  17,121,108 interactions; the other two generator classes are empty. The same posing with the compatible
-  generator alone: 8 points, 11,370 sides, 6,277,252 interactions; with Strassen's u and v given and w free, one
-  point and 12 sides. What this is and is not: the writing is reached from the type with nothing of it posed,
-  through choices read as classes under the derived symmetry; it is not yet sort's standard of zero dead sides,
-  because the faces touch all twelve coordinates of the orbit cell at once: the 64 entries fall into twelve
-  orbits under the generator (ten of size six, two of size two), the residual is constant on each, so there are
-  twelve equations, and each sums the one cell over its six images. No equation isolates a coordinate, so v and
-  w are cut jointly (81 × 81 per choice of fixed cell, generator class and u) rather than decided one at a time.
-  On the two orbits of size two the sum is three times a pair of products, so the residual must vanish there
-  and the pair must cancel: a relation between two products, again not a single coordinate.
-- **The quotient computed by the net itself** (`n/writing22q.hvm4`; `%%`, `??` in `net.c`). Everything derived
-  above (the group, its orbits, the centraliser classes, the conjugacy classes) was a priori work caused by one
-  posing error: positions named by constructors. With the index posed as the cube it is (9.11), six index
-  coordinates `??` for the three slots, a factor is a shape over its slot's pair, the generator cyclic∘swap is
-  the index relabelling it is (slots cycled, sides swapped) read off tr(ABC), the orbit shares one cell's choice
-  coordinates across the six, the fixed cell has one coordinate per orbit of positions, and the 64 equations are
-  faces of the shapes. The reading `%%` is the collapse with relabellings discarded (6.1): the choice
-  coordinates are projected lazily through the lifting (an index superposition is a node and stays in the
-  value), an erased side is dropped, and a value that is one shape with a kept value up to a bijection of index
-  coordinates with orientation is identified. A face whose side or coordinate is a superposition distributes
-  over it (FAD-SUP, FDL-SUP). Result: 87,260 splits, 87,213 sides erased, 48 leaves of which 24 are
-  relabellings of the other 24, 10,009,786 interactions (each side taken through the face of its own coordinate, so a
-  nested occurrence is projected); every leaf a seven-cell writing.
-  What is still posed by hand here, stated plainly: the orbit (six cells as one cell carried along cyclic∘swap,
-  sharing its choice coordinates) and the fixed cell's shape, both read off the type's symmetry but written by
-  me; the alphabet {−1, 0, 1}; the length seven. The reading identifies relabellings among results only. A
-  rule reading once a choice whose two faces are one shape up to relabelling (9.5) was built and removed: on
-  this posing the two faces of a choice differ in one coefficient and are never relabellings, and the check
-  cost more than the whole reading. The reading does not identify two partial sides that differ by a
-  permutation of cells; and even with that, seven plain cells are a cut over 3^84, out of reach: the orbit is
-  the type's symmetry used before enumeration, which is why it is posed. The reading takes three seconds.
-- **The reading's classes under the identities the net verified** (`n/classes22.hvm4`). `%%` is read inside the
-  program; each leaf's factors are read into coefficients by faces; the identities are the relabellings
-  (cyclic, transpose-reversal, swap, sign), the scaling, and the shear the faces verified on a writing; each
-  leaf is carried into its orbit under them within the alphabet, and two leaves are one class when one lies in
-  the other's orbit. Result: the 24 leaves are 3 classes, with orbits of 8, 48 and 24 writings. Allowing one
-  step through coefficients up to ±2 the classes stay three (orbits 24, 144, …). The basis change of one slot
-  pair, A ↦ PA with C ↦ CP⁻¹, is an identity of tr(ABC) too; its action on a cell was found by the faces among
-  the row and column shears on u and w (a row shear on u with the matching column shear on w; my own derivation
-  of it was wrong and the faces said so). Its alphabet orbits exceed the heap, so `n/reach22.hvm4` asks instead
-  whether a word of length at most five in all the identities, staying in the alphabet, joins two of the three
-  representatives: none does (F, F, F; 149,685,846 interactions). Caveat, exact: the closure is within the
-  alphabet and bounded; the conjugation group over the field (de Groote) makes the fibre one orbit, and that is
-  not reproduced here. Three classes is what the net reads under the identities as it can apply them.
-  The shorter lengths of the symmetric form, read the same way: the fixed cell alone (length one) is empty after
-  5 sides, the orbit alone (length six) after 729; seven is the least length inhabited in this form (5.27).
-- **The N×N product executed with the writing the net read** (`n/blocks22.hvm4`). The first class of `%%` at
-  the 2×2 node, its cells read into coefficients by faces, is the writing applied at every node of the block
-  recursion on the index cube (9.11): a product of blocks is the type again one level down, a product of
-  leaves is one cell, a zero coefficient is no side and a sum is formed only between the sides that are there.
-  Each node returns its matrix with the number of products formed below it, as a multitude; the net reports
-  1, 7, 49, 343 products at depths 0 to 3 (pinned at depth 2: 49 products, 16 entries of C), against 8^k for
-  the direct form of `n/blocks.hvm4`. The reading of the writing costs its 8,727,590 interactions once (after SUP-IDEM); the
-  execution at depth 2 adds 33,391 more (pinned), with copying on reading (DUP-NOD) kept apart from products formed
-  (APP-LAM) as before. This is the N×N type executed by the numeral with nothing of the writing posed in the
-  program: what is posed is still what the previous entry names (the orbit, the fixed cell, the alphabet, the
-  length), and the writing used is one representative of the three classes, taken as the first leaf read.
+- **The N×N product executed with the writing the net read** (`n/blocks22.hvm4`). The first writing `%%` keeps at
+  the 2×2 node (`n/product22.hvm4`), its cells read into coefficients by faces, is the writing applied at every
+  node of the block recursion on the index cube (9.11): a product of blocks is the type again one level down, a
+  product of leaves is one cell, a zero coefficient is no side and a sum is formed only between the sides that are
+  there. Each node returns its matrix with the number of products formed below it, as a multitude; the net
+  reports 1, 7, 49, 343 products at depths 0 to 3 (pinned at depth 2: 49 products, 16 entries of C), against 8^k
+  for the direct form of `n/blocks.hvm4`. Copying on reading (DUP-NOD) is kept apart from products formed
+  (APP-LAM) as before. The pin is re-made when the reading completes.
 - **The type of the matrix product** (`n/product.hvm4`). Not a run on an input: the defining equations
   C_ik = Σ_j A_ij B_jk taken on the cube of all inputs at once, every entry the k-cube of bits, so the term is the
   function itself as one superposed shape. + and × on bits are the numeral's identities. The net normalises the
