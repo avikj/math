@@ -5378,9 +5378,10 @@ __attribute__((hot)) fn Term wnf(Term term) {
         whnf = term_new_num(FRESH_INDEX++);
         goto apply;
       }
-      case COLQ: {                                  /* %%x is the reading of the program: it stays, its argument is normalised under it, and the root reads it (colq_top) */
-        whnf = next;
-        goto apply;
+      case COLQ: {                                  /* %%x: the reading, taken where it is met; it lifts and normalises what it needs itself */
+        WNF_S_POS = s_pos;
+        next = colq_top(next);
+        goto enter;
       }
       case FRS: {                                   /* ? → the next number: a coordinate no other unfolding has */
         ITRS_INC("FRS-NUM");
@@ -6311,10 +6312,7 @@ fn void runtime_eval_main(u32 main_id, const RuntimeEvalCfg *cfg) {
     /* %% anywhere in the program's spine is read first (its reading is a value the rest of the program may use):
        the main term is unfolded one level, every %% node reachable through constructors and applications is read
        and its list put in its place, then the whole is normalised */
-    Term top = wnf(main_ref);
-    Term result;
-    if (term_tag(top) == COLQ) { result = eval_normalize(colq_top(top)); }
-    else { colq_substitute(top, 0); result = eval_normalize(top); }
+    Term result = eval_normalize(main_ref);
     if (!run.silent && !run.step_by_step) {
       print_term(result);
       printf("\n");
