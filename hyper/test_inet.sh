@@ -3,10 +3,11 @@
 # length (the forced steps) are pinned. The value is the standard; the length is the geodesic count, the same under
 # every schedule (-R seed), which test_inet.sh checks for one seed on every program.
 cd "$(dirname "$0")"
-gcc -std=gnu11 -O2 -w -o inet inet.c || exit 1
+gcc -std=gnu11 -O2 -w -c inet.c -o inet.o || exit 1
+gcc -std=gnu11 -O2 -Wall -Wno-misleading-indentation -Wno-unused-parameter -Wno-unused-function -pthread -o hyper cell.c read.c verify.c main.c inet.o -lm || exit 1
 pass=0; fail=0
 pin() { f=$1; want=$2; wsteps=$3
-  got=$(./inet n/$f.hvm4 2>/dev/null | head -1); steps=$(./inet n/$f.hvm4 -s 2>&1 | grep -oE "Steps: [0-9]+" | grep -oE "[0-9]+"); steps2=$(./inet n/$f.hvm4 -s -R 7 2>&1 | grep -oE "Steps: [0-9]+" | grep -oE "[0-9]+")
+  got=$(./hyper net n/$f.hvm4 2>/dev/null | head -1); steps=$(./hyper net n/$f.hvm4 -s 2>&1 | grep -oE "Steps: [0-9]+" | grep -oE "[0-9]+"); steps2=$(./hyper net n/$f.hvm4 -s -R 7 2>&1 | grep -oE "Steps: [0-9]+" | grep -oE "[0-9]+")
   if [ "$got" = "$want" ] && [ "$steps" = "$wsteps" ] && [ "$steps2" = "$wsteps" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL $f: got '$got' ($steps, $steps2 under -R 7) want '$want' ($wsteps)"; fi; }
 pin xor '#Cons{#Pair{#F{},#T{}},#Cons{#Pair{#T{},#F{}},#Nil{}}}' 98
 pin same '#Cons{#Pair{#F{},#F{}},#Cons{#Pair{#T{},#T{}},#Nil{}}}' 33

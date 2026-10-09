@@ -805,7 +805,7 @@ static void print_port(Port p, u32 depth) {
   }
 }
 
-int main(int argc, char **argv) {
+int inet_main(int argc, char **argv) {
   const char *file = NULL; int stats = 0; int debug = 0;
   for (int i = 1; i < argc; i++) {
     if (!strcmp(argv[i], "-s")) stats = 1;
@@ -817,7 +817,7 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "net")) continue;
     else file = argv[i];
   }
-  if (!file) { fprintf(stderr, "usage: inet [net] file.hvm4 [-s] [-R seed]\n"); return 1; }
+  if (!file) { fprintf(stderr, "usage: hyper net file.hvm4 [-s] [-R seed] [-c] [-t] [-l steps]\n"); return 1; }
   CLOS_TERMS = malloc((1u << 22) * sizeof(Term *));
   CN_NIL = name_id("Nil", 3); CN_CONS = name_id("Cons", 4); CN_T = name_id("T", 1); CN_F = name_id("F", 1); CN_TUP = name_id("tup", 3);
   parse_file(file);
@@ -841,3 +841,7 @@ int main(int argc, char **argv) {
   }
   return 0;
 }
+
+#ifdef INET_STANDALONE
+int main(int argc, char **argv) { return inet_main(argc, argv); }
+#endif

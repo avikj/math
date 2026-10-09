@@ -57,9 +57,9 @@ static void load_next_to_exe(const char *exe, const char *name) {
   snprintf(pre, sizeof pre, "%.*s%s%s", slash ? (int)(slash - exe) : 1, slash ? exe : ".", "/", name);
   read_file(pre);
 }
-int net_main(int argc, char **argv);   /* net.c: the interaction net */
+int inet_main(int argc, char **argv);  /* inet.c: the machine of index.html 5.4/5.5 */
 int main(int argc, char **argv) {
-  if (argc >= 2 && !strcmp(argv[1], "net")) return net_main(argc - 1, argv + 1);
+  if (argc >= 2 && !strcmp(argv[1], "net")) return inet_main(argc - 1, argv + 1);
   { struct rlimit rl; if (!getrlimit(RLIMIT_STACK, &rl)) { rl.rlim_cur = rl.rlim_max == RLIM_INFINITY ? (rlim_t)4 << 30 : rl.rlim_max; setrlimit(RLIMIT_STACK, &rl); } }   /* deep terms recurse deep */
   sched_init();
   if (argc < 3) { fprintf(stderr, "usage: hyper run FILE [DEF] | hyper bend FILE | hyper check FILE | hyper interact FILE [DEF]\n"); return 1; }
