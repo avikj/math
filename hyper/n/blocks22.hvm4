@@ -1,6 +1,10 @@
-#include "classes22.hvm4"
-// The N×N product on the index cube (9.11) executed with a writing the net read from the type: the first class of
-// %% at the 2×2 node, its cells read into coefficients by faces, applied at every node of the block recursion.
+#include "product22.hvm4"
+// a leaf's factors are shapes over the index; a shape is read into its four coefficients by faces
+@q = λ&p. λ&q. λ&x. #Q{@at(p, q, #F, #F, x), @at(p, q, #F, #T, x), @at(p, q, #T, #F, x), @at(p, q, #T, #T, x)}
+@cellQ = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ{#W: λ&u. λ&v. λ&w. #C{@q(ia, ja, u), @q(jb, kb, v), @q(kc, ic, w)}}
+@toQ = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&W. @map(@cellQ(ia, ja, jb, kb, kc, ic), W)
+// The N×N product on the index cube (9.11) executed with a writing the net read from the type: the first writing
+// %% keeps at the 2×2 node, its cells read into coefficients by faces, applied at every node of the block recursion.
 // A product of blocks is the type again one level down; a product of leaves is one cell; a sum of leaves is one
 // shared cell; a signed sum of blocks is these at every leaf. Products formed by depth read off the ledger.
 @pr = λ&a. λ&b. #Pr{a, b}
@@ -29,7 +33,7 @@
 @gen = λ&name. λ{#Z: #Leaf{name}; #S: λ&d. #Blk{@gen(#P1{name}, d), @gen(#P2{name}, d), @gen(#P3{name}, d), @gen(#P4{name}, d)}}
 @depth = #S{#S{#Z}}
 @main = ! &ia = ??; ! &ja = ??; ! &jb = ??; ! &kb = ??; ! &kc = ??; ! &ic = ??;
-  ! &W = @headT(@map(@toQ(ia, ja, jb, kb, kc, ic), %%(@writingAt(ia, ja, jb, kb, kc, ic))));
+  ! &W = @toQ(ia, ja, jb, kb, kc, ic, (λ{#Pair: λ&r. λ&cells. cells})(@headT(%%(@writingAll(ia, ja, jb, kb, kc, ic, @bound)))));
   (λ{#Pair: λ&m. λ&n. #Pair{n, @leaves(m)}})(@prodW(W, @gen(#A, @depth), @gen(#B, @depth)))
 // the entries of C, each forced to its cell
 @leaves = λ{#Leaf: λ&x. #S{#Z}; #Blk: λ&a. λ&b. λ&c. λ&d. @plusN(@leaves(a), @plusN(@leaves(b), @plusN(@leaves(c), @leaves(d))))}

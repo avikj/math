@@ -1,0 +1,96 @@
+// The writing type at a node of the 2×2 product, with the index posed as the cube it is (9.11), and the reading of
+// its symmetric form with nothing written by hand but the type.
+//   The index: A over (ia, ja), B over (jb, kb), C over (kc, ic), six index coordinates (??). A cell is a product
+//   of three slot shapes, each a shape over its slot's pair whose coefficients are choice cells (?): a support bit
+//   and on it a sign bit; a product with a zero factor is not a cell. The equations C = A·B: for every
+//   (i,j,j',k,k',i') the sum over the cells of u(i,j)·v(j',k)·w(k',i') is [j=j'][k=k'][i=i']; each value is a face
+//   of a shape at its index coordinates.
+//   The symmetry: a relabelling of the index cube that keeps the slots is data r = #R{mA, mB, mC}, m = #M{src,
+//   swap, o1, o2}; every such relabelling is a choice (3072) and the faces keep the ones along which the target of
+//   every entry is unchanged (48): the type's group, read, not written. The order of r is read on the entries.
+//   The symmetric form: one r-invariant cell f (r·f = f as tensors, a face) together with the orbit of one generic
+//   cell c under r, carried as many times as the order of r. Every symmetry is taken, so every length the form
+//   admits (two to seven) is read in one reading; the reading %% discards relabellings of the index (6.1).
+@lcat = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @lcat(t, ys)}}
+@map = λ&f. λ{#Nil: #Nil; #Cons: λ&h. λ&t. #Cons{f(h), @map(f, t)}}
+@all = λ&f. λ{#Nil: #T; #Cons: λ&h. λ&t. (λ{#T: @all(f, t); #F: #F})(f(h))}
+@mulS = λ{#O: λ&y. #O; #P: λ&y. y; #N: λ{#O: #O; #P: #N; #N: #P; #Big: #Big}; #Big: λ&y. #Big}
+@addS = λ{#O: λ&y. y; #P: λ{#O: #P; #P: #Big; #N: #O; #Big: #Big}; #N: λ{#O: #N; #P: #O; #N: #Big; #Big: #Big}; #Big: λ&y. #Big}
+@eqS = λ{#O: λ{#O: #T; λ&q. #F}; #P: λ{#P: #T; λ&q. #F}; #N: λ{#N: #T; λ&q. #F}; #Big: λ&q. #F}
+@cellS = ! &s = ?; ! &g = ?; &(s){#O, &(g){#P, #N}}
+@sh  = λ&p. λ&q. λ&a. λ&b. λ&c. λ&d. &(p){&(q){a, b}, &(q){c, d}}
+@at = λ&p. λ&q. λ&i. λ&j. λ&x. |(j)(q) (|(i)(p) x)
+@bits = #Cons{#F, #Cons{#T, #Nil}}
+@eqB = λ{#F: λ{#F: #T; #T: #F}; #T: λ{#T: #T; #F: #F}}
+@target = λ&i. λ&j. λ&j2. λ&k. λ&k2. λ&i2. (λ{#T: #P; #F: #O})((λ{#T: λ&r. r; #F: λ&r. #F})(@eqB(j, j2), (λ{#T: λ&r. r; #F: λ&r. #F})(@eqB(k, k2), @eqB(i, i2))))
+@cellAt = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&i. λ&j. λ&j2. λ&k. λ&k2. λ&i2. λ{#W: λ&u. λ&v. λ&w.
+  @mulS(@mulS(@at(ia, ja, i, j, u), @at(jb, kb, j2, k, v)), @at(kc, ic, k2, i2, w))}
+@sumAt = λ&cells. λ&f. (λ{#Nil: #O; #Cons: λ&c. λ&rest. @addS(f(c), @sumAt(rest, f))})(cells)
+@concatMap = λ&f. λ{#Nil: #Nil; #Cons: λ&h. λ&t. @lcat(f(h), @concatMap(f, t))}
+@entries = @concatMap(λ&i. @concatMap(λ&j. @concatMap(λ&j2. @concatMap(λ&k. @concatMap(λ&k2. @map(λ&i2. #E{i, j, j2, k, k2, i2}, @bits), @bits), @bits), @bits), @bits), @bits)
+@holds = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&cells. @holdsGo(ia, ja, jb, kb, kc, ic, cells, @entries)
+@holdsGo = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&cells. λ{#Nil: #T; #Cons: λ{#E: λ&i. λ&j. λ&j2. λ&k. λ&k2. λ&i2. λ&rest.
+  (λ{#T: @holdsGo(ia, ja, jb, kb, kc, ic, cells, rest); #F: #F})(@eqS(@sumAt(cells, @cellAt(ia, ja, jb, kb, kc, ic, i, j, j2, k, k2, i2)), @target(i, j, j2, k, k2, i2)))}}
+// --- the symmetry, read
+@notB = λ{#F: #T; #T: #F}
+@xorB = λ{#F: λ&y. y; #T: λ&y. @notB(y)}
+@andB = λ{#T: λ&y. y; #F: λ&y. #F}
+@pair = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ{#A: #Pr{ia, ja}; #B: #Pr{jb, kb}; #C: #Pr{kc, ic}}
+@slot = λ{#A: λ{#W: λ&u. λ&v. λ&w. u}; #B: λ{#W: λ&u. λ&v. λ&w. v}; #C: λ{#W: λ&u. λ&v. λ&w. w}}
+@srcIx = λ{#M: λ&src. λ&sw. λ&o1. λ&o2. λ&i. λ&j. ! &i2 = @xorB(i, o1); ! &j2 = @xorB(j, o2); (λ{#F: #Pr{i2, j2}; #T: #Pr{j2, i2}})(sw)}
+@srcOf = λ{#M: λ&src. λ&sw. λ&o1. λ&o2. src}
+@carrySlot = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&cell. λ&t. λ&m.
+  ! &x = @slot(@srcOf(m), cell); ! &pq = @pair(ia, ja, jb, kb, kc, ic, @srcOf(m));
+  (λ{#Pr: λ&p. λ&q. @sh(p, q, @ent(m, pq, x, #F, #F), @ent(m, pq, x, #F, #T), @ent(m, pq, x, #T, #F), @ent(m, pq, x, #T, #T))})(@pair(ia, ja, jb, kb, kc, ic, t))
+@ent = λ&m. λ{#Pr: λ&p. λ&q. λ&x. λ&i. λ&j. (λ{#Pr: λ&si. λ&sj. @at(p, q, si, sj, x)})(@srcIx(m, i, j))}
+@carry = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ{#R: λ&mA. λ&mB. λ&mC. λ&cell.
+  #W{@carrySlot(ia, ja, jb, kb, kc, ic, cell, #A, mA), @carrySlot(ia, ja, jb, kb, kc, ic, cell, #B, mB), @carrySlot(ia, ja, jb, kb, kc, ic, cell, #C, mC)}}
+@entryOf = λ{#E: λ&i. λ&j. λ&j2. λ&k. λ&k2. λ&i2. λ{#A: #Pr{i, j}; #B: #Pr{j2, k}; #C: #Pr{k2, i2}}}
+@mkEntry = λ&pA. λ&pB. λ&pC. (λ{#Pr: λ&i. λ&j. (λ{#Pr: λ&j2. λ&k. (λ{#Pr: λ&k2. λ&i2. #E{i, j, j2, k, k2, i2}})(pC)})(pB)})(pA)
+@mapEntry = λ{#R: λ&mA. λ&mB. λ&mC. λ&e.
+  ! &pA = (λ{#Pr: λ&i. λ&j. @srcIx(mA, i, j)})(@entryOf(e, #A));
+  ! &pB = (λ{#Pr: λ&i. λ&j. @srcIx(mB, i, j)})(@entryOf(e, #B));
+  ! &pC = (λ{#Pr: λ&i. λ&j. @srcIx(mC, i, j)})(@entryOf(e, #C));
+  ! &set = (λ&s. λ&p. λ&ps. (λ{#Pr: λ&a. λ{#Pr: λ&b. λ&c. (λ{#A: #Pr{p, #Pr{b, c}}; #B: #Pr{a, #Pr{p, c}}; #C: #Pr{a, #Pr{b, p}}})(s)}})(ps));
+  ! &z = #Pr{#Pr{#F, #F}, #Pr{#Pr{#F, #F}, #Pr{#F, #F}}};
+  (λ{#Pr: λ&a. λ{#Pr: λ&b. λ&c. @mkEntry(a, b, c)}})(set(@srcOf(mC), pC, set(@srcOf(mB), pB, set(@srcOf(mA), pA, z))))}
+@targetE = λ{#E: λ&i. λ&j. λ&j2. λ&k. λ&k2. λ&i2. @target(i, j, j2, k, k2, i2)}
+@isSym = λ&r. @all(λ&e. @eqS(@targetE(e), @targetE(@mapEntry(r, e))), @entries)
+@bit = ! &b = ?; &(b){#F, #T}
+@perm = ! &c = ?; ! &a = ?; ! &b1 = ?; ! &b2 = ?; ! &b3 = ?;
+  &(c){&(a){&(b1){#Pr{#A, #Pr{#B, #C}}, #Pr{#A, #Pr{#C, #B}}}, &(b2){#Pr{#B, #Pr{#A, #C}}, #Pr{#B, #Pr{#C, #A}}}}, &(b3){#Pr{#C, #Pr{#A, #B}}, #Pr{#C, #Pr{#B, #A}}}}
+@relabelling = (λ{#Pr: λ&sA. λ{#Pr: λ&sB. λ&sC. #R{#M{sA, @bit, @bit, @bit}, #M{sB, @bit, @bit, @bit}, #M{sC, @bit, @bit, @bit}}}})(@perm)
+@eqCell = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&c1. λ&c2.
+  @all(λ&e. @eqS(@cellAtE(ia, ja, jb, kb, kc, ic, e, c1), @cellAtE(ia, ja, jb, kb, kc, ic, e, c2)), @entries)
+@cellAtE = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ{#E: λ&i. λ&j. λ&j2. λ&k. λ&k2. λ&i2. @cellAt(ia, ja, jb, kb, kc, ic, i, j, j2, k, k2, i2)}
+@eqE = λ{#E: λ&i. λ&j. λ&j2. λ&k. λ&k2. λ&i2. λ{#E: λ&a. λ&b. λ&b2. λ&c. λ&c2. λ&a2.
+  @andB(@eqB(i, a), @andB(@eqB(j, b), @andB(@eqB(j2, b2), @andB(@eqB(k, c), @andB(@eqB(k2, c2), @eqB(i2, a2))))))}}
+@powE = λ&r. λ{#Z: λ&e. e; #S: λ&n. λ&e. @mapEntry(r, @powE(r, n, e))}
+@isId = λ&r. λ&n. @all(λ&e. @eqE(e, @powE(r, n, e)), @entries)
+@orderGo = λ&r. λ&n. λ&bound. (λ{#T: n; #F: (λ{#Z: &{}; #S: λ&b. @orderGo(r, #S{n}, b)})(bound)})(@isId(r, n))
+@order = λ&r. λ&bound. @orderGo(r, #S{#Z}, bound)
+@orbit = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&r. λ&c. λ{#Z: #Nil; #S: λ&n. #Cons{c, @orbit(ia, ja, jb, kb, kc, ic, r, @carry(ia, ja, jb, kb, kc, ic, r, c), n)}}
+@nonzero = λ&p. λ&q. λ&x. (λ{#T: #T; #F: #F})(@orB(@isNZ(@at(p, q, #F, #F, x)), @orB(@isNZ(@at(p, q, #F, #T, x)), @orB(@isNZ(@at(p, q, #T, #F, x)), @isNZ(@at(p, q, #T, #T, x))))))
+@isNZ = λ{#O: #F; #P: #T; #N: #T; #Big: #T}
+@orB = λ{#T: λ&y. #T; #F: λ&y. y}
+@genCell = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic.
+  ! &u = @sh(ia, ja, @cellS, @cellS, @cellS, @cellS); ! &v = @sh(jb, kb, @cellS, @cellS, @cellS, @cellS); ! &w = @sh(kc, ic, @cellS, @cellS, @cellS, @cellS);
+  (λ{#F: &{}; #T: (λ{#F: &{}; #T: (λ{#F: &{}; #T: #W{u, v, w}})(@nonzero(kc, ic, w))})(@nonzero(jb, kb, v))})(@nonzero(ia, ja, u))
+@eqN = λ{#Z: λ{#Z: #T; #S: λ&y. #F}; #S: λ&x. λ{#Z: #F; #S: λ&y. @eqN(x, y)}}
+@writingR = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&bound. λ&r.
+  (λ{#F: &{}; #T:
+    ! &f = @genCell(ia, ja, jb, kb, kc, ic);
+    (λ{#F: &{}; #T:
+      ! &c = @genCell(ia, ja, jb, kb, kc, ic);
+      ! &cells = #Cons{f, @orbit(ia, ja, jb, kb, kc, ic, r, c, @order(r, bound))};
+      (λ{#T: #Pair{r, cells}; #F: &{}})(@holds(ia, ja, jb, kb, kc, ic, cells))
+    })(@eqCell(ia, ja, jb, kb, kc, ic, @carry(ia, ja, jb, kb, kc, ic, r, f), f))
+  })(@isSym(r))
+@bound = #S{#S{#S{#S{#S{#S{#S{#S{#Z}}}}}}}}
+// the reading over every symmetry; a kept writing carries its symmetry
+@writingAll = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&bound. ! &r = @relabelling;
+  (λ{#F: &{}; #T: @writingR(ia, ja, jb, kb, kc, ic, bound, r)})(@isSym(r))
+@len = λ{#Nil: #Z; #Cons: λ&h. λ&t. #S{@len(t)}}
+// the value: how many writings the reading keeps, and the first
+@main = ! &ia = ??; ! &ja = ??; ! &jb = ??; ! &kb = ??; ! &kc = ??; ! &ic = ??;
+  ! &ws = %%(@writingAll(ia, ja, jb, kb, kc, ic, @bound)); #Pair{@len(ws), (λ{#Cons: λ&h. λ&t. h})(ws)}
