@@ -64,6 +64,8 @@ static void wire(Port a, Port b) {
 /* the port wired to p (NIL when free) */
 static Port peer(Port p) { return CELLS[PC(p)].p[PS(p)]; }
 static u32 LAB_CHOICE = 1u << 20, LAB_INDEX = 1u << 18;    /* fresh coordinates: choices above, index coordinates below */
+#define LAB_DUP (1u << 17)                                   /* the one label of every duplicator a binder makes: a duplicator's label matters only
+                                                               against a superposition of the same label, and no superposition carries this one */
 /* a choice coordinate: a static label or a fresh ? ; an index coordinate (??) is a node of the value, not a choice */
 static int is_choice(u32 lab) { return !(lab >= (1u << 18) && lab < (1u << 20)); }
 
@@ -248,7 +250,7 @@ static void env_pop_wire(Port value, int external) {
   else {
     Port src = value;
     for (u32 i = 0; i + 1 < b->n; i++) {
-      u32 d = cell_new(K_DUP, 2, LAB_CHOICE++);       /* an auto-dup is a coordinate of its own, fresh per instantiation (5.24) */
+      u32 d = cell_new(K_DUP, 2, LAB_DUP);            /* sharing is a duplicator cell (5.24) */
       conn(P(d, 0), src); bind_use(b->uses[i], P(d, 1), wire);
       if (i + 2 == b->n) bind_use(b->uses[i + 1], P(d, 2), wire); else src = P(d, 2);
       conn = wire;
@@ -486,7 +488,7 @@ static u32 faced_closure(u32 c, u32 lab, u8 side) {
 static void freshen(u32 f) {       /* ? → the next choice coordinate, ?? → the next index coordinate: one step */
   u8 idx = CELLS[f].kind == K_FRI; STEPS++; RULES[CELLS[f].kind][K_NUM]++;
   CELLS[f].kind = K_NUM; CELLS[f].ext = idx ? LAB_INDEX++ : LAB_CHOICE++;
-  if (CELLS[f].ext >= (idx ? (1u << 20) : 0xFFFFFFu)) { fprintf(stderr, "hyper: coordinates exhausted\n"); exit(2); }
+  if ((idx && CELLS[f].ext >= (1u << 20)) || (!idx && LAB_CHOICE == 0)) { fprintf(stderr, "hyper: coordinates exhausted\n"); exit(2); }
 }
 /* lifting (the collapsed normal form): LIFT(principal = value; aux1 = out) brings the first choice coordinate of
    the value to its top. A coordinate inside a node rises through the node, the node's other fields taken on the
@@ -518,10 +520,9 @@ static void rule_liftc(u32 lc, u32 c) {
   if (CELLS[c].kind == K_SUP && is_choice(CELLS[c].ext)) {   /* field k is a choice: it rises, the other fields follow its side */
     u32 lab = CELLS[c].ext; u32 s = cell_new(K_SUP, 2, lab); link(P(s, 0), out);
     u32 lc0 = mk_liftc(kind, ext, n, k), lc1 = mk_liftc(kind, ext, n, k);
-    u32 dl = LAB_CHOICE++;
     for (u32 i = 1; i <= n; i++) {
       if (i == k) continue;
-      u32 d = cell_new(K_DUP, 2, dl); link(P(d, 0), aux(lc, i));
+      u32 d = cell_new(K_DUP, 2, LAB_DUP); link(P(d, 0), aux(lc, i));
       if (i < k) { wire(P(d, 1), P(lc0, i)); wire(P(d, 2), P(lc1, i)); }                /* a field already a leaf */
       else { mk_fa(lab, 0, P(d, 1), P(lc0, i)); mk_fa(lab, 1, P(d, 2), P(lc1, i)); }    /* a pending field: its face */
     }
