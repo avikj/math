@@ -465,7 +465,7 @@ this runtime does not model.
     hyper/read.c             the reader for the kernel's own text
     hyper/verify.c           the checker on the same loop
     hyper/main.c             run | bend | check | interact | net
-    hyper/net.c              the interaction net the SAT fibre results were computed on: HVM4 6defdfc src/hvm.c
+    hyper/inet.c             the machine of index.html 5.4/5.5 (net.c, HVM4 6defdfc src/hvm with agents, retired).c
                              taken literally, with build_profile.py's receipt by rule (DUP-SUP-SAME/-DIFF)
     hyper/prelude.hyper 158  the Kan rows, Glue, transpEquiv, the HIT rows, as data
     hyper/bend.hyper     45  the Bend2 dialect's rows
@@ -534,7 +534,7 @@ a duplicator cell, a definition unfolds when a reference is demanded, a fresh co
   results are reproduced here value for value; it is superseded by this machine and kept only until every
   reading it pinned is pinned here.
 
-## The net (hyper/net.c, test_net.sh)
+## What net.c read (retired; the record of the previous runtime, every number below from it)
 
 The net is the complex. Read against `docs/index.html`: a coordinate is a label, a path is a superposition on it
 (0.4), a face is the restriction of a term to a side at every depth, a term with k fresh coordinates is a k-cube,
