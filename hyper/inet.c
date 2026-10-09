@@ -36,7 +36,7 @@ typedef struct { u8 kind; u8 ari; u32 ext; u32 ext2; Port p[MAXP]; } Cell;
 static Cell *CELLS; static u32 NCELLS = 0, CAP = 0; static u32 FREELIST = NIL; static u32 *GEN;   /* a cell index is reused; its generation tells a stale port */
 static u64 LIVE = 0, PEAK = 0;
 static u32 *ACTIVE; static u32 NACTIVE = 0, ACAP = 0;   /* one cell of each active pair */
-static u64 STEPS = 0, MERGES = 0, UNFOLDS = 0;
+static u64 STEPS = 0, MERGES = 0, UNFOLDS = 0, ERASURES = 0;
 static u64 RULES[64][64];
 
 static u32 cell_new(u8 kind, u8 ari, u32 ext) {
@@ -50,13 +50,16 @@ static u32 cell_new(u8 kind, u8 ari, u32 ext) {
 }
 static void cell_free(u32 c) { CELLS[c].kind = K_FREE; CELLS[c].ext = FREELIST; FREELIST = c; LIVE--; GEN[c]++; }
 static void active_push(u32 c) { if (NACTIVE == ACAP) { ACAP = ACAP ? ACAP * 2 : 1 << 12; ACTIVE = realloc(ACTIVE, ACAP * sizeof(u32)); } ACTIVE[NACTIVE++] = c; }
+static u32 out_mask(u32 c);
+static int erases_output(Port p);
 /* wire two ports: the matching is partial, a port is wired at most once */
 static void wire(Port a, Port b) {
   if (a == NIL || b == NIL) { if (a != NIL) CELLS[PC(a)].p[PS(a)] = NIL; if (b != NIL) CELLS[PC(b)].p[PS(b)] = NIL; return; }
   CELLS[PC(a)].p[PS(a)] = b; CELLS[PC(b)].p[PS(b)] = a;
   /* an erasure meeting a principal port is taken as soon as the rule that made it is done: its steps commute with
      every other and end (nothing unfolds under an erasure), and a sub-net erased is memory returned */
-  if (PS(a) == 0 && PS(b) == 0 && (CELLS[PC(a)].kind == K_ERA || CELLS[PC(b)].kind == K_ERA)) active_push(PC(a));
+  if (CELLS[PC(a)].kind == K_ERA && PS(a) == 0 && (PS(b) == 0 || erases_output(b))) active_push(PC(a));
+  else if (CELLS[PC(b)].kind == K_ERA && PS(b) == 0 && (PS(a) == 0 || erases_output(a))) active_push(PC(b));
 }
 /* the port wired to p (NIL when free) */
 static Port peer(Port p) { return CELLS[PC(p)].p[PS(p)]; }
@@ -418,7 +421,7 @@ static void rule_dup_copy(u32 d, u32 c) {
   link(P(c0, 0), o0); link(P(c1, 0), o1);
 }
 static void rule_erase(u32 e, u32 c) {
-  tick(e, c);
+  ERASURES++; RULES[K_ERA][CELLS[c].kind]++;
   u8 k = CELLS[c].kind;
   if (k == K_CTR || k == K_LAM || k == K_SUP || k == K_NUM || k == K_MATV) MERGES++;   /* a value discarded */
   for (u32 i = 1; i <= CELLS[c].ari; i++) mk_era(aux(c, i));
@@ -625,7 +628,7 @@ static void step_(u32 a, u32 b) {
   u8 ka = CELLS[a].kind, kb = CELLS[b].kind;
   if (ka > kb) { u32 t = a; a = b; b = t; ka = CELLS[a].kind; kb = CELLS[b].kind; }
   /* fresh coordinates become numbers first; a reference unfolds unless it is erased or copied */
-  if (kb == K_FRS || kb == K_FRI) { if (ka == K_ERA) { tick(a, b); return; } freshen(b); KEEP = 1; active_push(a); return; }
+  if (kb == K_FRS || kb == K_FRI) { if (ka == K_ERA) { ERASURES++; return; } freshen(b); KEEP = 1; active_push(a); return; }
   if (ka == K_FRS || ka == K_FRI) { freshen(a); KEEP = 1; active_push(a); return; }
   if (ka == K_REF && kb != K_ERA && kb != K_DUP) { rule_unfold(a, b); return; }
   if (kb == K_REF && ka != K_ERA && ka != K_DUP) { rule_unfold(b, a); return; }
@@ -640,8 +643,7 @@ static void step_(u32 a, u32 b) {
   }
   switch (ka) {
     case K_ERA:
-      if (kb == K_COL) { tick(a, b); mk_ctr0(CN_NIL, aux(b, 1)); return; }
-      if (kb == K_NF) { tick(a, b); mk_era(aux(b, 1)); return; }
+      if (kb == K_COL) { tick(a, b); mk_ctr0(CN_NIL, aux(b, 1)); return; }      /* the collapse of nothing is the empty list: a step */
       rule_erase(a, b); return;
     case K_LAM:
       if (kb == K_APP) { rule_lam_app(a, b); return; }
@@ -721,15 +723,38 @@ static Port instantiate(u32 name) {
 static u64 SCHED_SEED = 0; static u64 STEP_LIMIT = 0;
 static int is_value(u8 k) { return k == K_CTR || k == K_SUP || k == K_NUM || k == K_LAM || k == K_MATV || k == K_ERA; }
 static void step(u32 a, u32 b);
+/* an erasure at an output port of a cell: the cell's result is never demanded, so the cell is garbage; it is
+   consumed and its inputs erased. A duplicator with one copy erased is the wire of the other copy. */
+static int erases_output(Port p) {
+  u32 c = PC(p); u8 k = CELLS[c].kind; u32 s = PS(p);
+  if (k == K_DUP) {                                 /* a dup with one copy erased still copies when the other is demanded (the erased copy
+                                                       is erased as it is made); with both copies erased the value is garbage */
+    if (s != 1 && s != 2) return 0;
+    Port o = CELLS[c].p[s == 1 ? 2 : 1];
+    return o != NIL && PS(o) == 0 && CELLS[PC(o)].kind == K_ERA;
+  }
+  u32 m = out_mask(c);
+  if (m & (m - 1)) return 0;                        /* a cell with two outputs (a labelled dup) is not garbage for one */
+  return (m >> s) & 1;
+}
+static void erase_output(u32 e, u32 c, u32 s) {
+  CONS_A = e; CONS_B = c; NLINKS = 0; KEEP = 0;
+  ERASURES++; RULES[K_ERA][CELLS[c].kind]++;
+  if (CELLS[c].kind == K_DUP) {                     /* both copies erased: the value is erased, the other erasure cell goes with it */
+    u32 other = PC(aux(c, s == 1 ? 2 : 1)); cell_free(other);
+    mk_era(aux(c, 0)); commit(); return;
+  }
+  for (u32 i = 0; i <= CELLS[c].ari; i++) if (i != s) mk_era(aux(c, i));
+  commit();
+}
 static void erase_pending(void) {
   while (NACTIVE) {
     u32 a = ACTIVE[--NACTIVE];
-    if (CELLS[a].kind == K_FREE) continue;
-    Port pb = CELLS[a].p[0]; if (pb == NIL || PS(pb) != 0) continue;
-    u32 b = PC(pb); if (CELLS[b].kind == K_FREE || CELLS[b].p[0] != P(a, 0)) continue;
-    if (CELLS[a].kind != K_ERA && CELLS[b].kind != K_ERA) continue;
-    if (CELLS[a].kind == K_ROOT || CELLS[b].kind == K_ROOT) continue;
-    step(a, b);
+    if (CELLS[a].kind != K_ERA) continue;
+    Port pb = CELLS[a].p[0]; if (pb == NIL) continue;
+    u32 b = PC(pb); if (CELLS[b].kind == K_FREE || CELLS[b].p[PS(pb)] != P(a, 0)) continue;
+    if (CELLS[b].kind == K_ROOT) continue;
+    if (PS(pb) == 0) step(a, b); else if (erases_output(pb)) erase_output(a, b, PS(pb));
   }
 }
 static void drive(Port in) {
@@ -755,7 +780,12 @@ static void drive(Port in) {
     Port v = peer(P(c, 0)); if (v == NIL || PS(v) != 0) { fprintf(stderr, "hyper: a cell with no value at its principal: "); dump_cell(c); exit(1); }
     u32 vc = PC(v);
     if (CELLS[vc].kind == K_ROOT) return;
-    if (STEP_LIMIT && STEPS >= STEP_LIMIT) { fprintf(stderr, "hyper: step limit; %llu live cells, %llu at the peak\n", (unsigned long long)LIVE, (unsigned long long)PEAK); exit(2); }
+    if (STEP_LIMIT && STEPS >= STEP_LIMIT) {
+      fprintf(stderr, "hyper: step limit; %llu live cells, %llu at the peak\n", (unsigned long long)LIVE, (unsigned long long)PEAK);
+      u64 byk[64] = {0}; for (u32 i = 0; i < NCELLS; i++) byk[CELLS[i].kind]++;
+      for (u32 k = 0; k < K_FREE; k++) if (byk[k]) fprintf(stderr, "  %s: %llu\n", KIND_NAME[k], (unsigned long long)byk[k]);
+      exit(2);
+    }
     step(c, vc);
     if (CHECK) check_net("after a step");
   }
@@ -833,8 +863,8 @@ int inet_main(int argc, char **argv) {
   print_port(CELLS[root].p[1], 0); printf("\n");
   if (debug) { fprintf(stderr, "live cells:\n"); for (u32 c = 0; c < NCELLS; c++) if (CELLS[c].kind != K_FREE) dump_cell(c); }
   if (stats) {
-    fprintf(stderr, "- Steps: %llu (length)\n- Merges: %llu (effect axis, in discarded values)\n- Unfolds: %llu\n- Cells: %llu live at the end, %llu at the peak\n",
-      (unsigned long long)STEPS, (unsigned long long)MERGES, (unsigned long long)UNFOLDS, (unsigned long long)LIVE, (unsigned long long)PEAK);
+    fprintf(stderr, "- Steps: %llu (length)\n- Merges: %llu (effect axis, in discarded values)\n- Erasures: %llu (memory returned, not length)\n- Unfolds: %llu\n- Cells: %llu live at the end, %llu at the peak\n",
+      (unsigned long long)STEPS, (unsigned long long)MERGES, (unsigned long long)ERASURES, (unsigned long long)UNFOLDS, (unsigned long long)LIVE, (unsigned long long)PEAK);
     fprintf(stderr, "- Rules:");
     for (u32 i = 0; i < 64; i++) for (u32 j = 0; j < 64; j++) if (RULES[i][j]) fprintf(stderr, " %s-%s:%llu", KIND_NAME[i], KIND_NAME[j], (unsigned long long)RULES[i][j]);
     fprintf(stderr, "\n");

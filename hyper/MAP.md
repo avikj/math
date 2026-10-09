@@ -500,10 +500,18 @@ a duplicator cell, a definition unfolds when a reference is demanded, a fresh co
 - **Reduction by demand** (5.25, the forced steps): a value is demanded at an input port; the cell producing it is
   driven; if it waits on its own principal that is demanded first; when the principal meets a value the pair
   is active and its rule fires. The normal form demands every field, in any order (`-R seed` permutes the
-  order). A sub-net nothing demands never reduces, so a wire that is erased carries no work. With every pair
+  order). A sub-net nothing demands never reduces: the branch not taken costs nothing. With every pair
   reduced regardless of demand (the first version of this file) a branch the match discards still ran, and a
   recursive call in a discarded branch ran forever: a net of 5.5 reduced without demand is not the machine of
   5.25.
+- **Erasure is memory, not length.** An erasure meeting a principal port, or the result port of a cell nothing
+  demands (the tail of a list after `@all` fails, a free variable the taken branch does not use), consumes the
+  cell and erases its inputs; it is taken as soon as the rule that made it is done, and it is counted apart
+  from the length (`Erasures` in `-s`): erasing a sub-net is returning it, not computing with it, and whether a
+  shared value was copied before its other copy was erased depends on the order of demands, so counting
+  erasure in the length would make the length depend on the schedule. A duplicator with one copy erased
+  still copies when the other is demanded (the erased copy is erased as it is made); with both erased its
+  value is garbage. With this the live cells of the writing-type reading stay in the tens of thousands.
 - **The two costs** (5.7, 5.8): the length is the steps; the effect axis counts the steps that discard (a value
   erased, a branch not taken, a side a face drops, an equality that fails), in discarded values, not yet in
   bits.
@@ -514,8 +522,7 @@ a duplicator cell, a definition unfolds when a reference is demanded, a fresh co
 - **The standard.** Every program under `n/` gives on this machine the value the previous runtime gave (15 of 15,
   `===` as `#T`/`#F` and lists as `#Cons` where that runtime printed `1` and `[..]`), and the same value and
   the same length under three schedules (the diamond, 5.11, 5.13): `test_inet.sh` pins the value and the length
-  and checks the length under a second schedule. Lengths on this machine (erasure steps included, they commute with every other step and are taken as soon as
-  the rule that made them is done, which is what returns the memory): xor 98, same 33, empty 32, diff 62, sat3 335, fresh 683, interval 3205, numeral 700, sort 15165, number 4900, product 459, integer 1360, product_signed 46660, blocks 8294, group22 5855161.
+  and checks the length under a second schedule. Lengths on this machine: xor 88, same 31, empty 30, diff 62, sat3 288, fresh 679, interval 3113, numeral 690, sort 14350, number 4684, product 435, integer 1312, product_signed 44768, blocks 8294, group22 5244438.
 - **What `net.c` was.** HVM4's evaluator with agents: variables by a global substitution, lazy copying by label,
   faces as frames, a collector added for the reading; the section below records it and its readings. Its
   results are reproduced here value for value; it is superseded by this machine and kept only until every
