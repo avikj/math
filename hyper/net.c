@@ -189,7 +189,7 @@ typedef struct __attribute__((aligned(256))) {
 static WnfBank WNF_BANK = {0};
 static u64 ITRS = 0;
 
-static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL","FAD-SIDE","FDL-LAB","COLQ-SPLIT","COLQ-VAL","COLQ-SAME","COLQ-ERA","FRI-NUM","FAD-SUP","FDL-SUP" };
+static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL","FAD-SIDE","FDL-LAB","COLQ-SPLIT","COLQ-VAL","COLQ-SAME","COLQ-ERA","FRI-NUM","FAD-SUP","FDL-SUP","SUP-IDEM" };
 #define SAT_NRULES ((int)(sizeof(SAT_NAMES) / sizeof(SAT_NAMES[0])))
 static u64 SAT_COUNTS[128] = {0};
 static u64 SCHED_FLIPS = 0;
@@ -680,6 +680,7 @@ fn Term term_new_fdl(u8 side, Term lab, Term x) {
 }
 
 fn u8 is_index_label(u32 lab);
+fn u8 is_choice_label(u32 lab);
 fn Term term_new_colq(Term x) {
   u64 loc = heap_alloc(1);
   heap_set(loc, x);
@@ -5527,6 +5528,22 @@ __attribute__((hot)) fn Term wnf(Term term) {
               continue;
             }
             case SUP: {
+              if (is_choice_label(term_ext(whnf))) {                 /* a choice whose two sides are one atom is that atom: &c{x,x} = x (SUP-IDEM) */
+                u64 sl = term_val(whnf);
+                Term a = heap_read(sl + 0), b = heap_read(sl + 1);
+                u8 ta = term_tag(a), tb = term_tag(b);
+                /* a side is read only when it is closed (an application or an atom): a variable of a copied lambda waits for its argument */
+                if ((ta == APP || ta == C00 || ta == NUM) && (tb == APP || tb == C00 || tb == NUM)) {
+                  WNF_S_POS = s_pos;
+                  a = wnf_at(sl + 0); b = wnf_at(sl + 1);
+                  ta = term_tag(a); tb = term_tag(b);
+                } else ta = 0xFF;
+                if (ta == tb && ((ta == C00 && term_ext(a) == term_ext(b)) || (ta == NUM && term_val(a) == term_val(b)))) {
+                  ITRS_INC("SUP-IDEM");
+                  next = term_new_app(mat, a);
+                  goto enter;
+                }
+              }
               whnf = wnf_app_mat_sup(mat, whnf);
               continue;
             }
@@ -5597,8 +5614,10 @@ __attribute__((hot)) fn Term wnf(Term term) {
           if (side < 0 && term_tag(whnf) == SUP) {                             /* a superposed side: the face distributes over it */
             ITRS_INC("FAD-SUP");
             u64 sl = term_val(whnf);
-            Term f0 = term_new_fad(heap_read(sl + 0), heap_read(floc + 1), heap_read(floc + 2));
-            Term f1 = term_new_fad(heap_read(sl + 1), heap_read(floc + 1), heap_read(floc + 2));
+            Copy L = term_clone(term_ext(whnf), heap_read(floc + 1));             /* the coordinate and the body are shared by the two faces, so each is copied by the superposition's label */
+            Copy X = term_clone(term_ext(whnf), heap_read(floc + 2));
+            Term f0 = term_new_fad(heap_read(sl + 0), L.k0, X.k0);
+            Term f1 = term_new_fad(heap_read(sl + 1), L.k1, X.k1);
             next = term_new_sup(term_ext(whnf), f0, f1);
             goto enter;
           }
@@ -5612,8 +5631,9 @@ __attribute__((hot)) fn Term wnf(Term term) {
           if (term_tag(whnf) == SUP) {                                         /* a superposed coordinate: the face distributes over it */
             ITRS_INC("FDL-SUP");
             u64 sl = term_val(whnf);
-            Term f0 = term_new_fdl((u8)term_ext(frame), heap_read(sl + 0), heap_read(floc + 1));
-            Term f1 = term_new_fdl((u8)term_ext(frame), heap_read(sl + 1), heap_read(floc + 1));
+            Copy X = term_clone(term_ext(whnf), heap_read(floc + 1));
+            Term f0 = term_new_fdl((u8)term_ext(frame), heap_read(sl + 0), X.k0);
+            Term f1 = term_new_fdl((u8)term_ext(frame), heap_read(sl + 1), X.k1);
             next = term_new_sup(term_ext(whnf), f0, f1);
             goto enter;
           }

@@ -484,6 +484,20 @@ value, and the ledger counts rule firings (5.5). Nothing in the book is a primit
 comparison: a number is bits on coordinates (§6, 9.11) and a comparison is a cut (9.3). The machine is `net.c`:
 HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test_net.sh`:
 
+- **Two corrections to the net, found by the group posing below.** (1) A face whose side or coordinate is a
+  superposition distributes over it (FAD-SUP, FDL-SUP); the two faces it makes shared the coordinate and the body
+  terms, which are linear (a dup variable read twice), so a face applied inside a lambda used twice returned the
+  coordinate's number for the second use. Each field is now copied by the superposition's label. (2) A choice
+  whose two sides are one atom is that atom: `&c{x, x} = x` (SUP-IDEM), applied at a match on a choice whose two
+  sides are closed terms (an application or an atom; a variable of a copied lambda waits for its argument). It
+  is the identity of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
+  leaves are read with 56,478 sides instead of 87,260.
+- **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
+  relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's
+  relabellings permute the slots, may swap a slot's pair, and may orient each coordinate) is data, every such
+  relabelling is a choice (3072), and the faces keep the ones along which the target of every entry is unchanged:
+  48, read with their orders on the entries (one of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6; S₄ × Z₂). The
+  earlier `n/sym22.hvm4` derived a group by closure from generators I wrote; here the generators are not written.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
@@ -653,6 +667,20 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   (APP-LAM) as before. This is the N×N type executed by the numeral with nothing of the writing posed in the
   program: what is posed is still what the previous entry names (the orbit, the fixed cell, the alphabet, the
   length), and the writing used is one representative of the three classes, taken as the first leaf read.
+- **Two corrections to the net, found by the group posing below.** (1) A face whose side or coordinate is a
+  superposition distributes over it (FAD-SUP, FDL-SUP); the two faces it makes shared the coordinate and the body
+  terms, which are linear (a dup variable read twice), so a face applied inside a lambda used twice returned the
+  coordinate's number for the second use. Each field is now copied by the superposition's label. (2) A choice
+  whose two sides are one atom is that atom: `&c{x, x} = x` (SUP-IDEM), applied at a match on a choice whose two
+  sides are closed terms (an application or an atom; a variable of a copied lambda waits for its argument). It
+  is the identity of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
+  leaves are read with 56,478 sides instead of 87,260.
+- **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
+  relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's
+  relabellings permute the slots, may swap a slot's pair, and may orient each coordinate) is data, every such
+  relabelling is a choice (3072), and the faces keep the ones along which the target of every entry is unchanged:
+  48, read with their orders on the entries (one of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6; S₄ × Z₂). The
+  earlier `n/sym22.hvm4` derived a group by closure from generators I wrote; here the generators are not written.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
@@ -734,6 +762,20 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   compressed measure (5.22, notes J, L): the forgetful projection, where the classical count lives. On the
   complex as posed, the defining shape is the geodesic of the product type and it is cubic. What is not here:
   any reading under which the type's own normal form is reached in fewer than the cube of cells.
+- **Two corrections to the net, found by the group posing below.** (1) A face whose side or coordinate is a
+  superposition distributes over it (FAD-SUP, FDL-SUP); the two faces it makes shared the coordinate and the body
+  terms, which are linear (a dup variable read twice), so a face applied inside a lambda used twice returned the
+  coordinate's number for the second use. Each field is now copied by the superposition's label. (2) A choice
+  whose two sides are one atom is that atom: `&c{x, x} = x` (SUP-IDEM), applied at a match on a choice whose two
+  sides are closed terms (an application or an atom; a variable of a copied lambda waits for its argument). It
+  is the identity of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
+  leaves are read with 56,478 sides instead of 87,260.
+- **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
+  relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's
+  relabellings permute the slots, may swap a slot's pair, and may orient each coordinate) is data, every such
+  relabelling is a choice (3072), and the faces keep the ones along which the target of every entry is unchanged:
+  48, read with their orders on the entries (one of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6; S₄ × Z₂). The
+  earlier `n/sym22.hvm4` derived a group by closure from generators I wrote; here the generators are not written.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
