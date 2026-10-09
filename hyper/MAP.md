@@ -631,12 +631,28 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   program; each leaf's factors are read into coefficients by faces; the identities are the relabellings
   (cyclic, transpose-reversal, swap, sign), the scaling, and the shear the faces verified on a writing; each
   leaf is carried into its orbit under them within the alphabet, and two leaves are one class when one lies in
-  the other's orbit. Result: the 24 leaves are 3 classes, with orbits of 8, 48 and 24 writings. Caveat, exact:
-  the orbit is closed within the alphabet, so two writings joined only through a writing outside {−1, 0, 1}
-  are not joined here; the conjugation group over the field (de Groote) makes the fibre one orbit, and that
-  statement is not reproduced by a closure inside the alphabet.
+  the other's orbit. Result: the 24 leaves are 3 classes, with orbits of 8, 48 and 24 writings. Allowing one
+  step through coefficients up to ±2 the classes stay three (orbits 24, 144, …). The basis change of one slot
+  pair, A ↦ PA with C ↦ CP⁻¹, is an identity of tr(ABC) too; its action on a cell was found by the faces among
+  the row and column shears on u and w (a row shear on u with the matching column shear on w; my own derivation
+  of it was wrong and the faces said so). Its alphabet orbits exceed the heap, so `n/reach22.hvm4` asks instead
+  whether a word of length at most five in all the identities, staying in the alphabet, joins two of the three
+  representatives: none does (F, F, F; 149,685,846 interactions). Caveat, exact: the closure is within the
+  alphabet and bounded; the conjugation group over the field (de Groote) makes the fibre one orbit, and that is
+  not reproduced here. Three classes is what the net reads under the identities as it can apply them.
   The shorter lengths of the symmetric form, read the same way: the fixed cell alone (length one) is empty after
   5 sides, the orbit alone (length six) after 729; seven is the least length inhabited in this form (5.27).
+- **The N×N product executed with the writing the net read** (`n/blocks22.hvm4`). The first class of `%%` at
+  the 2×2 node, its cells read into coefficients by faces, is the writing applied at every node of the block
+  recursion on the index cube (9.11): a product of blocks is the type again one level down, a product of
+  leaves is one cell, a zero coefficient is no side and a sum is formed only between the sides that are there.
+  Each node returns its matrix with the number of products formed below it, as a multitude; the net reports
+  1, 7, 49, 343 products at depths 0 to 3 (pinned at depth 2: 49 products, 16 entries of C), against 8^k for
+  the direct form of `n/blocks.hvm4`. The reading of the writing costs its 10,009,786 interactions once; the
+  execution at depth 3 adds 116,132 more, with copying on reading (DUP-NOD) kept apart from products formed
+  (APP-LAM) as before. This is the N×N type executed by the numeral with nothing of the writing posed in the
+  program: what is posed is still what the previous entry names (the orbit, the fixed cell, the alphabet, the
+  length), and the writing used is one representative of the three classes, taken as the first leaf read.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.

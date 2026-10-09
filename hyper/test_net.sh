@@ -79,6 +79,12 @@ if [ "$wi" = 10009786 ] && [ "$wv" = 24 ] && [ "$ws" = 24 ] && [ "$we" = 87213 ]
 # the reading's classes under the identities the net verified (n/classes22.hvm4): the 24 leaves of % carried into their
 # orbits under the relabellings, the scaling and the shear within the alphabet: 3 classes, orbits of 8, 48 and 24
 pin classes22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}},#Pair{#S{#S{#S{#Z{}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}},#Nil{}}}}}}' 36382729
+# with the per-pair basis change (A -> PA, C -> C P^-1, found by the faces among row and column shears) no word of
+# length <= 5 in all the identities, staying in the alphabet, joins the three classes (n/reach22.hvm4)
+pin reach22 '#Pair{#F{},#Pair{#F{},#F{}}}' 149685846
+# the N x N product executed with the writing the net read from the type (n/blocks22.hvm4): at depth k the net forms
+# 7^k products (1, 7, 49, 343 at depths 0..3; pinned at depth 2: 49 products, 16 entries of C)
+pin blocks22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}' 10043177
 # index 5.11 / 5.13 / 5.24 on net.c (n/diamond.hvm4): one term, eight normaliser schedules (-R), one ledger; the
 # seeded order is confirmed to differ (schedule_flips > 0) and the interaction count does not move
 d0=$(./hyper net n/diamond.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); dok=1

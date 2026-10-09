@@ -1,0 +1,35 @@
+#include "classes22.hvm4"
+// The N×N product on the index cube (9.11) executed with a writing the net read from the type: the first class of
+// %% at the 2×2 node, its cells read into coefficients by faces, applied at every node of the block recursion.
+// A product of blocks is the type again one level down; a product of leaves is one cell; a sum of leaves is one
+// shared cell; a signed sum of blocks is these at every leaf. Products formed by depth read off the ledger.
+@pr = λ&a. λ&b. #Pr{a, b}
+@sumL = λ&a. λ&b. #Sum{a, b}
+@negL = λ&a. #Neg{a}
+@addM = λ{#Leaf: λ&x. λ{#Leaf: λ&y. #Leaf{@sumL(x, y)}};
+  #Blk: λ&a. λ&b. λ&c. λ&d. λ{#Blk: λ&e. λ&f. λ&g. λ&h. #Blk{@addM(a, e), @addM(b, f), @addM(c, g), @addM(d, h)}}}
+@negM = λ{#Leaf: λ&x. #Leaf{@negL(x)}; #Blk: λ&a. λ&b. λ&c. λ&d. #Blk{@negM(a), @negM(b), @negM(c), @negM(d)}}
+// a signed combination of the four blocks of a matrix by a coefficient 2×2: a zero coefficient is no side, a sum
+// is formed only between the sides that are there (a writing's u, v are nonzero shapes, so the list is nonempty)
+@comb = λ{#Q: λ&ca. λ&cb. λ&cc. λ&cd. λ{#Blk: λ&a. λ&b. λ&c. λ&d. @sumNZ(@sides(#Cons{#Pair{ca, a}, #Cons{#Pair{cb, b}, #Cons{#Pair{cc, c}, #Cons{#Pair{cd, d}, #Nil}}}}))}}
+@sides = λ{#Nil: #Nil; #Cons: λ{#Pair: λ&s. λ&m. λ&rest. (λ{#O: λ&m. @sides(rest); #P: λ&m. #Cons{m, @sides(rest)}; #N: λ&m. #Cons{@negM(m), @sides(rest)}})(s, m)}}
+@sumNZ = λ{#Cons: λ&x. λ{#Nil: x; #Cons: λ&y. λ&rest. @addM(x, @sumNZ(#Cons{y, rest}))}}
+// the product at a node by a writing W (a list of #C{u, v, w}): each cell one block product, w placing it into C
+@prodW = λ&W. λ{#Leaf: λ&x. λ{#Leaf: λ&y. #Pair{#Leaf{@pr(x, y)}, #S{#Z}}};
+  #Blk: λ&a. λ&b. λ&c. λ&d. λ&B. ! &A = #Blk{a, b, c, d}; ! &ts = @cellsOf(W, W, A, B); #Pair{@assemble(ts), @countOf(ts)}}
+@cellsOf = λ&W. λ{#Nil: λ&A. λ&B. #Nil; #Cons: λ{#C: λ&u. λ&v. λ&w. λ&rest. λ&A. λ&B.
+  ! &p = @prodW(W, @comb(u, A), @comb(v, B)); #Cons{#Pair{w, p}, @cellsOf(W, rest, A, B)}}}
+// products formed at a node: the sum over its cells of the products formed below (one at a leaf)
+@countOf = λ{#Nil: #Z; #Cons: λ{#Pair: λ&w. λ{#Pair: λ&m. λ&n. λ&rest. @plusN(n, @countOf(rest))}}}
+@plusN = λ{#Z: λ&y. y; #S: λ&x. λ&y. #S{@plusN(x, y)}}
+// C's blocks: the w of a cell gives, in the trace convention, the coefficient at C_ki; C_ik collects w's (k,i) entry
+@assemble = λ&ts. #Blk{@sumK(λ{#Q: λ&a. λ&b. λ&c. λ&d. a}, ts), @sumK(λ{#Q: λ&a. λ&b. λ&c. λ&d. c}, ts), @sumK(λ{#Q: λ&a. λ&b. λ&c. λ&d. b}, ts), @sumK(λ{#Q: λ&a. λ&b. λ&c. λ&d. d}, ts)}
+@headT = λ{#Cons: λ&h. λ&t. h}
+@sumK = λ&pick. λ&ts. @sumNZ(@sides(@map(λ{#Pair: λ&w. λ{#Pair: λ&m. λ&n. #Pair{pick(w), m}}}, ts)))
+@gen = λ&name. λ{#Z: #Leaf{name}; #S: λ&d. #Blk{@gen(#P1{name}, d), @gen(#P2{name}, d), @gen(#P3{name}, d), @gen(#P4{name}, d)}}
+@depth = #S{#S{#Z}}
+@main = ! &ia = ??; ! &ja = ??; ! &jb = ??; ! &kb = ??; ! &kc = ??; ! &ic = ??;
+  ! &W = @headT(@map(@toQ(ia, ja, jb, kb, kc, ic), %%(@writingAt(ia, ja, jb, kb, kc, ic))));
+  (λ{#Pair: λ&m. λ&n. #Pair{n, @leaves(m)}})(@prodW(W, @gen(#A, @depth), @gen(#B, @depth)))
+// the entries of C, each forced to its cell
+@leaves = λ{#Leaf: λ&x. #S{#Z}; #Blk: λ&a. λ&b. λ&c. λ&d. @plusN(@leaves(a), @plusN(@leaves(b), @plusN(@leaves(c), @leaves(d))))}
