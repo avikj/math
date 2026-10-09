@@ -135,3 +135,4 @@ zzz/**/*.pyc
 # log several lanes write to, is a different file and stays tracked.
 interactive/yantra-session.lekha
 hyper/hyper_dbg
+hyper/n/_*.hvm4
