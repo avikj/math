@@ -136,3 +136,6 @@ zzz/**/*.pyc
 interactive/yantra-session.lekha
 hyper/hyper_dbg
 hyper/n/_*.hvm4
+hyper/inet
+hyper/inet.o
+hyper/inet_*
