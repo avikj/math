@@ -475,6 +475,53 @@ this runtime does not model.
     hyper/checktest.sh       verdicts against Bend2's checker
     hyper/cite.sh            every identifier this file names is on the line it cites
 
+## The machine (hyper/inet.c, test_inet.sh)
+
+`hyper/inet.c` is the machine of index.html §5.2 as written and nothing else. 5.4: a cell has one principal port
+and finitely many auxiliary ports; a net is a finite set of cells with a partial matching of their ports by
+wires. 5.5: an active pair is two cells whose principal ports are wired to each other; a rule gives a net on
+exactly the auxiliary wires of the two cells and touches nothing else; the two cells are consumed by the step,
+which is the whole of memory (a cell is freed by the one interaction that consumes it; there is no collector).
+There is no substitution map, no heap of terms, no evaluator outside the rules: a variable is a wire, sharing is
+a duplicator cell, a definition unfolds when a reference is demanded, a fresh coordinate is named when demanded.
+
+- **Cells** (5.1): abstraction and application (a lambda is a closure cell over its free variables, instantiated
+  when it meets its argument, so nothing under a binder is built until the binder is applied: a branch not taken
+  costs nothing), constructors and case analysis (a match is a closure over its free variables too), the
+  duplicator (5.24) with its coordinate, the erasure; and the complex's own: a coordinate `&L{a,b}` (a
+  superposition; an index coordinate `??` is a node of the value, a choice `?` or a static label is a
+  coordinate the collapse reads), its faces `|s(L)` (the side at every depth), the fresh coordinate, the
+  collapse `%` as lifting (LIFT, LIFTC: a choice rises through a node, the node's other fields taken through
+  its faces, so a label occurring twice is one coordinate) followed by the reading of a lifted value into its
+  list (COL, APPEND), structural equality `===` (EQL, EQLC, EQLN, AND), and `labels(x)`, the index coordinates a
+  value holds. `%%`, the reading with relabellings discarded (6.1), is a program on these cells
+  (`n/prelude.hvm4`, `@colq`): the bijection of index coordinates and the orientations are coordinates, the
+  agreement at every vertex is faces and equality, and the collapse of that says whether some bijection agrees.
+- **Reduction by demand** (5.25, the forced steps): a value is demanded at an input port; the cell producing it is
+  driven; if it waits on its own principal that is demanded first; when the principal meets a value the pair
+  is active and its rule fires. The normal form demands every field, in any order (`-R seed` permutes the
+  order). A sub-net nothing demands never reduces, so a wire that is erased carries no work. With every pair
+  reduced regardless of demand (the first version of this file) a branch the match discards still ran, and a
+  recursive call in a discarded branch ran forever: a net of 5.5 reduced without demand is not the machine of
+  5.25.
+- **The two costs** (5.7, 5.8): the length is the steps; the effect axis counts the steps that discard (a value
+  erased, a branch not taken, a side a face drops, an equality that fails), in discarded values, not yet in
+  bits.
+- **The rules' connections** are links between wire ends, resolved together when the rule is done (an auxiliary
+  wire may run back into the pair, as in the identity lambda; then the two links it joins are one wire): the
+  union of the ends. `-c` checks after every step that every wire has two ends and that every end of the
+  consumed pair was linked.
+- **The standard.** Every program under `n/` gives on this machine the value the previous runtime gave (15 of 15,
+  `===` as `#T`/`#F` and lists as `#Cons` where that runtime printed `1` and `[..]`), and the same value and
+  the same length under three schedules (the diamond, 5.11, 5.13): `test_inet.sh` pins the value and the length
+  and checks the length under a second schedule. Lengths on this machine: xor 92, same 31, empty 32, diff 62,
+  sat3 302, fresh 679, interval 3113, numeral 690, sort 14350, number 4684, product 435, integer 1312,
+  product_signed 44768, blocks 8294, group22 5255430.
+- **What `net.c` was.** HVM4's evaluator with agents: variables by a global substitution, lazy copying by label,
+  faces as frames, a collector added for the reading; the section below records it and its readings. Its
+  results are reproduced here value for value; it is superseded by this machine and kept only until every
+  reading it pinned is pinned here.
+
 ## The net (hyper/net.c, test_net.sh)
 
 The net is the complex. Read against `docs/index.html`: a coordinate is a label, a path is a superposition on it

@@ -1,0 +1,29 @@
+// The reading with relabellings discarded (6.1), as a program on the machine: %%x is @colq(%x). Two leaves are one
+// when they are one shape up to a bijection of their index coordinates with orientation: the bijection and the
+// orientations are coordinates (?), the agreement at every vertex is faces and equality, and the collapse of that
+// says whether some bijection agrees. labels(x) is the one cell this needs: the index coordinates a value holds.
+@colq = λ&xs. @colq_dedup(xs, #Nil)
+@colq_dedup = λ{#Nil: λ&kept. #Nil; #Cons: λ&x. λ&rest. λ&kept. (λ{#T: @colq_dedup(rest, kept); #F: #Cons{x, @colq_dedup(rest, #Cons{x, kept})}})(@colq_anyEqq(x, kept))}
+@colq_anyEqq = λ&x. λ{#Nil: #F; #Cons: λ&y. λ&t. (λ{#T: #T; #F: @colq_anyEqq(x, t)})(@colq_eqq(x, y))}
+@colq_eqq = λ&a. λ&b. ! &la = @colq_uniq(labels(a)); ! &lb = @colq_uniq(labels(b));
+  (λ{#T: @colq_nonempty(%(@colq_agree(a, b, la, @colq_bij(la, lb)))); #F: #F})(@colq_sameLen(la, lb))
+@colq_uniq = λ{#Nil: #Nil; #Cons: λ&h. λ&t. (λ{#T: @colq_uniq(t); #F: #Cons{h, @colq_uniq(t)}})(@colq_memN(h, t))}
+@colq_memN = λ&n. λ{#Nil: #F; #Cons: λ&h. λ&t. (λ{#T: #T; #F: @colq_memN(n, t)})(n === h)}
+@colq_sameLen = λ{#Nil: λ{#Nil: #T; #Cons: λ&h. λ&t. #F}; #Cons: λ&h. λ&t. λ{#Nil: #F; #Cons: λ&h2. λ&t2. @colq_sameLen(t, t2)}}
+// a bijection la → lb with an orientation per label: for each label of a, pick a remaining label of b (a coordinate
+// per choice) and an orientation bit; the result is a list of #M{la, lb, orient}
+@colq_bij = λ{#Nil: λ&lb. #Nil; #Cons: λ&l. λ&rest. λ&lb. (λ{#Pair: λ&m. λ&others. #Cons{#M{l, m, &(?){#F, #T}}, @colq_bij(rest, others)}})(@colq_pick(lb))}
+@colq_pick = λ{#Cons: λ&h. λ{#Nil: #Pair{h, #Nil}; #Cons: λ&h2. λ&t2. &(?){#Pair{h, #Cons{h2, t2}}, (λ{#Pair: λ&m. λ&o. #Pair{m, #Cons{h, o}}})(@colq_pick(#Cons{h2, t2}))}}}
+// every vertex of the cube on the labels la, as a list of #V{label, side}
+@colq_vertices = λ{#Nil: #Cons{#Nil, #Nil}; #Cons: λ&l. λ&t. @colq_concatMap(λ&v. #Cons{#Cons{#V{l, #F}, v}, #Cons{#Cons{#V{l, #T}, v}, #Nil}}, @colq_vertices(t))}
+@colq_concatMap = λ&f. λ{#Nil: #Nil; #Cons: λ&h. λ&t. @colq_lcatP(f(h), @colq_concatMap(f, t))}
+@colq_lcatP = λ{#Nil: λys. ys; #Cons: λh. λt. λys. #Cons{h, @colq_lcatP(t, ys)}}
+// the value of x at a vertex: its faces
+@colq_atV = λ&x. λ{#Nil: x; #Cons: λ{#V: λ&l. λ&s. λ&rest. @colq_atV(|(s)(l) x, rest)}}
+// the vertex carried along the bijection: each label to its image, its side flipped by the orientation
+@colq_carry = λ&bj. λ{#Nil: #Nil; #Cons: λ{#V: λ&l. λ&s. λ&rest. #Cons{@colq_carryOne(bj, l, s), @colq_carry(bj, rest)}}}
+@colq_carryOne = λ{#Cons: λ{#M: λ&la. λ&lb. λ&o. λ&t. λ&l. λ&s. (λ{#T: #V{lb, @colq_xorB(s, o)}; #F: @colq_carryOne(t, l, s)})(l === la)}}
+@colq_xorB = λ{#F: λ&y. y; #T: λ{#F: #T; #T: #F}}
+@colq_agree = λ&a. λ&b. λ&la. λ&bj. @colq_allV(λ&v. (@colq_atV(a, v) === @colq_atV(b, @colq_carry(bj, v))), @colq_vertices(la))
+@colq_allV = λ&f. λ{#Nil: #T; #Cons: λ&h. λ&t. (λ{#T: @colq_allV(f, t); #F: #F})(f(h))}
+@colq_nonempty = λ{#Nil: #F; #Cons: λ&h. λ&t. (λ{#T: #T; #F: @colq_nonempty(t)})(h)}
