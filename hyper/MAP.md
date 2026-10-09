@@ -508,6 +508,19 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   relabelling is a choice (3072), and the faces keep the ones along which the target of every entry is unchanged:
   48, read with their orders on the entries (one of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6; S₄ × Z₂). The
   earlier `n/sym22.hvm4` derived a group by closure from generators I wrote; here the generators are not written.
+- **The writing over the derived group** (`n/writing22g.hvm4`, `n/empty22g4.hvm4`, `n/empty22g5.hvm4`). The
+  symmetric form with nothing of the symmetry written: a symmetry r is a choice among the 48 the net read off the
+  cube, its order is read on the entries, the fixed cell is a generic cell f with the face r·f = f (equality as
+  tensors, so the scaling identity is recognised there), the orbit is a generic cell c carried along r as many
+  times as the order, a cell's three slot shapes are nonzero (a product with a zero factor is not a cell), and the
+  64 equations are faces as before. What is posed is the length: the orbit's length is the order of r. With the
+  order six (length seven) the reading keeps 768 writings in 13,393,277 sides and 2,333,312,725 interactions: the
+  eight symmetries of order six, each with 96 writings, the 24 of `n/writing22q.hvm4` in the four sign images
+  (±u, ±v) the tensor equality admits; a writing carries its symmetry, so writings of different symmetries are not
+  relabellings of each other to the reading. With the orders three and four (lengths four and five) the readings
+  are empty: 14,029,333 and 18,778,059 sides, nothing kept. The order two (length three) costs about two million
+  sides per symmetry, nineteen symmetries, and the identity (length two: two generic cells) is the enumeration of
+  all pairs of cells with no symmetry to cut it; neither is pinned. Each of these runs needs the collector.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
@@ -701,6 +714,19 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   relabelling is a choice (3072), and the faces keep the ones along which the target of every entry is unchanged:
   48, read with their orders on the entries (one of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6; S₄ × Z₂). The
   earlier `n/sym22.hvm4` derived a group by closure from generators I wrote; here the generators are not written.
+- **The writing over the derived group** (`n/writing22g.hvm4`, `n/empty22g4.hvm4`, `n/empty22g5.hvm4`). The
+  symmetric form with nothing of the symmetry written: a symmetry r is a choice among the 48 the net read off the
+  cube, its order is read on the entries, the fixed cell is a generic cell f with the face r·f = f (equality as
+  tensors, so the scaling identity is recognised there), the orbit is a generic cell c carried along r as many
+  times as the order, a cell's three slot shapes are nonzero (a product with a zero factor is not a cell), and the
+  64 equations are faces as before. What is posed is the length: the orbit's length is the order of r. With the
+  order six (length seven) the reading keeps 768 writings in 13,393,277 sides and 2,333,312,725 interactions: the
+  eight symmetries of order six, each with 96 writings, the 24 of `n/writing22q.hvm4` in the four sign images
+  (±u, ±v) the tensor equality admits; a writing carries its symmetry, so writings of different symmetries are not
+  relabellings of each other to the reading. With the orders three and four (lengths four and five) the readings
+  are empty: 14,029,333 and 18,778,059 sides, nothing kept. The order two (length three) costs about two million
+  sides per symmetry, nineteen symmetries, and the identity (length two: two generic cells) is the enumeration of
+  all pairs of cells with no symmetry to cut it; neither is pinned. Each of these runs needs the collector.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
@@ -806,6 +832,19 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   relabelling is a choice (3072), and the faces keep the ones along which the target of every entry is unchanged:
   48, read with their orders on the entries (one of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6; S₄ × Z₂). The
   earlier `n/sym22.hvm4` derived a group by closure from generators I wrote; here the generators are not written.
+- **The writing over the derived group** (`n/writing22g.hvm4`, `n/empty22g4.hvm4`, `n/empty22g5.hvm4`). The
+  symmetric form with nothing of the symmetry written: a symmetry r is a choice among the 48 the net read off the
+  cube, its order is read on the entries, the fixed cell is a generic cell f with the face r·f = f (equality as
+  tensors, so the scaling identity is recognised there), the orbit is a generic cell c carried along r as many
+  times as the order, a cell's three slot shapes are nonzero (a product with a zero factor is not a cell), and the
+  64 equations are faces as before. What is posed is the length: the orbit's length is the order of r. With the
+  order six (length seven) the reading keeps 768 writings in 13,393,277 sides and 2,333,312,725 interactions: the
+  eight symmetries of order six, each with 96 writings, the 24 of `n/writing22q.hvm4` in the four sign images
+  (±u, ±v) the tensor equality admits; a writing carries its symmetry, so writings of different symmetries are not
+  relabellings of each other to the reading. With the orders three and four (lengths four and five) the readings
+  are empty: 14,029,333 and 18,778,059 sides, nothing kept. The order two (length three) costs about two million
+  sides per symmetry, nineteen symmetries, and the identity (length two: two generic cells) is the enumeration of
+  all pairs of cells with no symmetry to cut it; neither is pinned. Each of these runs needs the collector.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.

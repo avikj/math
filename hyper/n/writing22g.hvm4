@@ -78,4 +78,7 @@
     })(@eqCell(ia, ja, jb, kb, kc, ic, @carry(ia, ja, jb, kb, kc, ic, r, f), f))
   })(@isSym(r))
 @bound = #S{#S{#S{#S{#S{#S{#S{#S{#Z}}}}}}}}
-@main = ! &ia = ??; ! &ja = ??; ! &jb = ??; ! &kb = ??; ! &kc = ??; ! &ic = ??; %%(@writingG(ia, ja, jb, kb, kc, ic, @bound))
+@len = λ{#Nil: #Z; #Cons: λ&h. λ&t. #S{@len(t)}}
+// the value: how many writings the reading keeps (each with its symmetry), and the first
+@main = ! &ia = ??; ! &ja = ??; ! &jb = ??; ! &kb = ??; ! &kc = ??; ! &ic = ??;
+  ! &ws = %%(@writingG(ia, ja, jb, kb, kc, ic, @bound)); #Pair{@len(ws), (λ{#Cons: λ&h. λ&t. h})(ws)}
