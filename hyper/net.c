@@ -189,7 +189,7 @@ typedef struct __attribute__((aligned(256))) {
 static WnfBank WNF_BANK = {0};
 static u64 ITRS = 0;
 
-static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL","FAD-SIDE","FDL-LAB","COLQ-SPLIT","COLQ-VAL","COLQ-SAME","COLQ-ERA","COLQ-HALF","FRI-NUM","FAD-SUP","FDL-SUP" };
+static const char *SAT_NAMES[] = { "-","1","AND-ERA","AND-INC","AND-ONE","AND-SUP","AND-ZER","APP-ERA","APP-INC","APP-LAM","APP-MAT-CTR-MAT","APP-MAT-CTR-MIS","APP-MAT-NUM-MAT","APP-MAT-NUM-MIS","APP-MAT-SUP","APP-SUP","DDU-ERA","DDU-INC","DDU-NUM","DDU-SUP","DSU-ERA","DSU-INC","DSU-NUM","DSU-SUP","DUP-LAM","DUP-NAM","DUP-NOD","DUP-SUP-DIFF","DUP-SUP-SAME","EQL-CTR-MIS","EQL-DRY","EQL-ERA-L","EQL-ERA-R","EQL-INC-L","EQL-INC-R","EQL-LAM","EQL-MAT-MIS","EQL-NOT","EQL-NUM","EQL-SUP-L","EQL-SUP-R","EQL-USE","MAT-INC","OP2-ERA","OP2-INC-X","OP2-INC-Y","OP2-NUM-ERA","OP2-NUM-NUM","OP2-NUM-SUP","OP2-SUP","OR-ERA","OR-INC","OR-ONE","OR-SUP","OR-ZER","USE-ERA","USE-INC","USE-SUP","USE-VAL","WNF-UNS","COL-ERA","COL-INC","COL-SUP","COL-VAL","FRS-NUM","FAC-SUP-SAME","FAC-SUP-DIFF","FAC-NOD","FAC-LAM","FAC-VAL","FAD-SIDE","FDL-LAB","COLQ-SPLIT","COLQ-VAL","COLQ-SAME","COLQ-ERA","FRI-NUM","FAD-SUP","FDL-SUP" };
 #define SAT_NRULES ((int)(sizeof(SAT_NAMES) / sizeof(SAT_NAMES[0])))
 static u64 SAT_COUNTS[128] = {0};
 static u64 SCHED_FLIPS = 0;
@@ -5154,12 +5154,8 @@ fn void colq_go(Term t, u32 depth) {
       if (ITRS_ENABLED) { sat_tick("COLQ-SPLIT"); ITRS++; }
       COLQ_SPLITS++;
       if (getenv("COLQ_PROGRESS") && (COLQ_SPLITS % 10000) == 0) fprintf(stderr, "colq: %llu splits, %u leaves\n", (unsigned long long)COLQ_SPLITS, COLQ_N);
-      /* 9.5: a choice whose two sides are one shape up to relabelling is exchanged by a symmetry of what is held; one side is kept */
-      u64 r0 = heap_alloc(1); heap_set(r0, heap_read(term_val(c) + 0));
-      u64 r1 = heap_alloc(1); heap_set(r1, heap_read(term_val(c) + 1));
-      if (eqq_same(r0, r1)) { if (ITRS_ENABLED) sat_tick("COLQ-HALF"); t = heap_read(r0); continue; }
-      colq_go(heap_read(r0), depth + 1);
-      t = heap_read(r1);
+      colq_go(heap_read(term_val(c) + 0), depth + 1);
+      t = heap_read(term_val(c) + 1);
       continue;
     }
     colq_leaf(c);

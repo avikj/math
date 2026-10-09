@@ -620,12 +620,12 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   relabellings of the other 24, 5,799,244 interactions; every leaf a seven-cell writing.
   What is still posed by hand here, stated plainly: the orbit (six cells as one cell carried along cyclic∘swap,
   sharing its choice coordinates) and the fixed cell's shape, both read off the type's symmetry but written by
-  me; the alphabet {−1, 0, 1}; the length seven. The reading identifies relabellings among results, and, by 9.5,
-  a choice whose two faces are one shape up to relabelling is read once (COLQ-HALF); it does not yet identify
-  two partial sides that differ by a permutation of cells, which is what would let the seven cells be posed
-  with no orbit written. Without the written orbit the cut is over 3^84 and the reading identifies nothing
-  before the leaves. That identification of partial sides is the next construction, and the comparison of
-  interaction counts with the derived-group posing says nothing about it.
+  me; the alphabet {−1, 0, 1}; the length seven. The reading identifies relabellings among results only. A
+  rule reading once a choice whose two faces are one shape up to relabelling (9.5) was built and removed: on
+  this posing the two faces of a choice differ in one coefficient and are never relabellings, and the check
+  cost more than the whole reading. The reading does not identify two partial sides that differ by a
+  permutation of cells; and even with that, seven plain cells are a cut over 3^84, out of reach: the orbit is
+  the type's symmetry used before enumeration, which is why it is posed. The reading takes three seconds.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
