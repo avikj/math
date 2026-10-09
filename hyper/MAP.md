@@ -504,6 +504,12 @@ a duplicator cell, a definition unfolds when a reference is demanded, a fresh co
   reduced regardless of demand (the first version of this file) a branch the match discards still ran, and a
   recursive call in a discarded branch ran forever: a net of 5.5 reduced without demand is not the machine of
   5.25.
+- **Every active pair, for comparison** (`-a`): the same fourteen programs reduced with every active pair taken
+  regardless of demand (5.5 read without 5.25) give the same values; their lengths are the demanded lengths
+  plus the steps spent on sub-nets later discarded: xor 88/88, same 31/31, empty 30/31, diff 62/62, sat3
+  288/291, fresh 679/679, interval 3113/3581, numeral 690/690, sort 14350/17714, number 4684/4816, product
+  435/435, integer 1312/1312, product_signed 8401/8481, blocks 1527/1527 (demanded/all). Where the two differ,
+  the difference is work on a value that an erasure then removes; the demanded length is the one pinned.
 - **Erasure is memory, not length.** An erasure meeting a principal port, or the result port of a cell nothing
   demands (the tail of a list after `@all` fails, a free variable the taken branch does not use), consumes the
   cell and erases its inputs; it is taken as soon as the rule that made it is done, and it is counted apart

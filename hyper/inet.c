@@ -792,8 +792,29 @@ static void drive(Port in) {
     if (CHECK) check_net("after a step");
   }
 }
+/* every active pair, regardless of demand (5.5 read without 5.25): for comparison with the demanded length */
+static int ALL_PAIRS = 0;
+static void reduce_all(void) {
+  for (;;) {
+    u32 found = 0;
+    for (u32 c = 0; c < NCELLS; c++) {
+      if (CELLS[c].kind == K_FREE || CELLS[c].kind == K_ROOT || CELLS[c].kind == K_ERA) continue;
+      Port q = CELLS[c].p[0]; if (q == NIL || PS(q) != 0) continue;
+      u32 d = PC(q); if (d < c || CELLS[d].kind == K_FREE || CELLS[d].kind == K_ROOT || CELLS[d].p[0] != P(c, 0)) continue;
+      u8 kd = CELLS[d].kind;
+      if (CELLS[c].kind == K_REF) { STEPS++; UNFOLDS++; RULES[K_REF][K_REF]++; u32 name = CELLS[c].ext; cell_free(c); wire(instantiate(name), P(d, 0)); found++; continue; }
+      if (kd == K_REF) { STEPS++; UNFOLDS++; RULES[K_REF][K_REF]++; u32 name = CELLS[d].ext; cell_free(d); wire(instantiate(name), P(c, 0)); found++; continue; }
+      if (CELLS[c].kind == K_FRS || CELLS[c].kind == K_FRI) { freshen(c); found++; continue; }
+      if (kd == K_FRS || kd == K_FRI) { freshen(d); found++; continue; }
+      step(c, d); erase_pending(); found++;
+      if (STEP_LIMIT && STEPS >= STEP_LIMIT) { fprintf(stderr, "hyper: step limit\n"); exit(2); }
+    }
+    if (!found) return;
+  }
+}
 /* the normal form: every field demanded, in any order */
 static void normalize(Port in) {
+  if (ALL_PAIRS) reduce_all();
   drive(in);
   Port q = peer(in); if (q == NIL || PS(q) != 0) return;
   u32 c = PC(q); u8 k = CELLS[c].kind;
@@ -845,6 +866,7 @@ int inet_main(int argc, char **argv) {
     else if (!strcmp(argv[i], "-t")) TRACE = 1;
     else if (!strcmp(argv[i], "-c")) CHECK = 1;
     else if (!strcmp(argv[i], "-p")) PROGRESS = 1;
+    else if (!strcmp(argv[i], "-a")) ALL_PAIRS = 1;
     else if (!strcmp(argv[i], "-l") && i + 1 < argc) STEP_LIMIT = strtoull(argv[++i], NULL, 10);
     else if (!strcmp(argv[i], "-R") && i + 1 < argc) SCHED_SEED = strtoull(argv[++i], NULL, 10);
     else if (!strcmp(argv[i], "net")) continue;
