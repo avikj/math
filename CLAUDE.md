@@ -19,6 +19,9 @@ My recorded mathematical error, stated once so it is never repeated:
    labels) and are not computed.
 3. I posed writings, coefficient alphabets, lengths and propagators, i.e. a search over a class, and called the
    search "forced". Nothing is searched. Nothing is run as a sequence of steps on one input.
+4. I ran one program, read its output, and wrote that output into the next program by hand (a symmetry generator,
+   a shear, the number six): a derivation outside the net. Whatever one program reads, the next program reads from
+   the type itself, in the net, or it is not read at all.
 
 Standing rules from the owner: never delete owner material (`research/sat_fibre`, `collab/*`, the Agda); no
 questions back; never say "done" or "nothing pending" when the criterion is not met; no primitives; no
