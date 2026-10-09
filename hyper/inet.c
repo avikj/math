@@ -721,7 +721,7 @@ static Port instantiate(u32 name) {
    value the pair is active and its rule fires; a reference unfolds and a fresh coordinate is named when demanded.
    A sub-net nothing demands never reduces: the branch not taken costs nothing, and a wire that is erased carries
    no work. The order among independent demands is free (5.11). ---------- */
-static u64 SCHED_SEED = 0; static u64 STEP_LIMIT = 0;
+static u64 SCHED_SEED = 0; static u64 STEP_LIMIT = 0; static int PROGRESS = 0;
 static int is_value(u8 k) { return k == K_CTR || k == K_SUP || k == K_NUM || k == K_LAM || k == K_MATV || k == K_ERA; }
 static void step(u32 a, u32 b);
 /* an erasure at an output port of a cell: the cell's result is never demanded, so the cell is garbage; it is
@@ -781,6 +781,7 @@ static void drive(Port in) {
     Port v = peer(P(c, 0)); if (v == NIL || PS(v) != 0) { fprintf(stderr, "hyper: a cell with no value at its principal: "); dump_cell(c); exit(1); }
     u32 vc = PC(v);
     if (CELLS[vc].kind == K_ROOT) return;
+    if (PROGRESS && (STEPS % 50000000) == 0) fprintf(stderr, "progress: %llu steps, %llu live cells\n", (unsigned long long)STEPS, (unsigned long long)LIVE);
     if (STEP_LIMIT && STEPS >= STEP_LIMIT) {
       fprintf(stderr, "hyper: step limit; %llu live cells, %llu at the peak\n", (unsigned long long)LIVE, (unsigned long long)PEAK);
       u64 byk[64] = {0}; for (u32 i = 0; i < NCELLS; i++) byk[CELLS[i].kind]++;
@@ -843,6 +844,7 @@ int inet_main(int argc, char **argv) {
     else if (!strcmp(argv[i], "-d")) debug = 1;
     else if (!strcmp(argv[i], "-t")) TRACE = 1;
     else if (!strcmp(argv[i], "-c")) CHECK = 1;
+    else if (!strcmp(argv[i], "-p")) PROGRESS = 1;
     else if (!strcmp(argv[i], "-l") && i + 1 < argc) STEP_LIMIT = strtoull(argv[++i], NULL, 10);
     else if (!strcmp(argv[i], "-R") && i + 1 < argc) SCHED_SEED = strtoull(argv[++i], NULL, 10);
     else if (!strcmp(argv[i], "net")) continue;
