@@ -1,8 +1,0 @@
-#include "writing22g.hvm4"
-// The type's symmetry group read off the cube: every slot-preserving relabelling of the six index coordinates is a
-// choice (3072), the faces keep the ones that leave the target of every entry unchanged, and the order of each is
-// read on the entries. The value: how many symmetries, and how many of each order (1, 2, 3, 4, 6).
-@len = λ{#Nil: #Z; #Cons: λ&h. λ&t. #S{@len(t)}}
-@count = λ&n. λ{#Nil: #Z; #Cons: λ&h. λ&t. (λ{#T: #S{@count(n, t)}; #F: @count(n, t)})(@eqN(h, n))}
-@main = ! &os = @map(λ&r. @order(r, @bound), %%(! &r = @relabelling; (λ{#T: r; #F: &{}})(@isSym(r))));
-  #Group{@len(os), @count(#S{#Z}, os), @count(#S{#S{#Z}}, os), @count(#S{#S{#S{#Z}}}, os), @count(#S{#S{#S{#S{#Z}}}}, os), @count(@six, os)}

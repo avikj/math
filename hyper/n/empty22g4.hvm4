@@ -1,4 +1,0 @@
-#include "writing22g.hvm4"
-// the symmetric form at length 4: every symmetry of order 3 read from the group, its invariant cell, the orbit; empty
-@n = #S{#S{#S{#Z}}}
-@main = ! &ia = ??; ! &ja = ??; ! &jb = ??; ! &kb = ??; ! &kc = ??; ! &ic = ??; %%(@writingOrd(ia, ja, jb, kb, kc, ic, @bound, @n))
