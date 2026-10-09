@@ -5,10 +5,8 @@
 // one cell, #Pr{u, v}; it is not expanded: distribution is an identity of the complex, not a step. A sum of two
 // leaf entries is one cell, #Sum{a, b}, shared and never looked into by a product (a sum as a superposition is
 // split by every binder it is copied through, DUP-SUP-DIFF, which doubles a leaf per level and is not the price
-// of an addition); the negation of a leaf is one cell, #Neg{x}; a block sum is these at every leaf, (N/2)² cells. Two terms of
-// the same type, read side by side as different starting terms (5.28): the defining shape, eight block products
-// and four unions at every node, and the seven-product writing, seven block products and eighteen unions. The
-// ledger of each is read at depth k; the normal forms (the monomials, by winding) are the same shapes.
+// of an addition); the negation of a leaf is one cell, #Neg{x}; a block sum is these at every leaf, (N/2)² cells.
+// The type's own shape: eight block products and four block sums at every node, 8^k products at depth k.
 @pr = λ&a. λ&b. #Pr{a, b}
 @sum = λ&a. λ&b. #Sum{a, b}
 @neg = λ&a. #Neg{a}
@@ -19,17 +17,6 @@
 @addM = λ{#Leaf: λ&x. λ{#Leaf: λ&y. #Leaf{@sum(x, y)}};
   #Blk: λ&a. λ&b. λ&c. λ&d. λ{#Blk: λ&e. λ&f. λ&g. λ&h. #Blk{@addM(a, e), @addM(b, f), @addM(c, g), @addM(d, h)}}}
 @negM = λ{#Leaf: λ&x. #Leaf{@neg(x)}; #Blk: λ&a. λ&b. λ&c. λ&d. #Blk{@negM(a), @negM(b), @negM(c), @negM(d)}}
-@seven = λ{#Leaf: λ&x. λ{#Leaf: λ&y. #Leaf{@pr(x, y)}};
-  #Blk: λ&a11. λ&a12. λ&a21. λ&a22. λ{#Blk: λ&b11. λ&b12. λ&b21. λ&b22.
-    ! &m1 = @seven(@addM(a11, a22), @addM(b11, b22));
-    ! &m2 = @seven(@addM(a21, a22), b11);
-    ! &m3 = @seven(a11, @addM(b12, @negM(b22)));
-    ! &m4 = @seven(a22, @addM(b21, @negM(b11)));
-    ! &m5 = @seven(@addM(a11, a12), b22);
-    ! &m6 = @seven(@addM(a21, @negM(a11)), @addM(b11, b12));
-    ! &m7 = @seven(@addM(a12, @negM(a22)), @addM(b21, b22));
-    #Blk{@addM(@addM(m1, m4), @addM(@negM(m5), m7)), @addM(m3, m5), @addM(m2, m4), @addM(@addM(m1, @negM(m2)), @addM(m3, m6))}}}
-// generic matrices of depth d: every leaf an indeterminate unit named by its path
 @gen = λ&name. λ{#Z: #Leaf{name}; #S: λ&d. #Blk{@gen(#P1{name}, d), @gen(#P2{name}, d), @gen(#P3{name}, d), @gen(#P4{name}, d)}}
 @depth = #S{#S{#Z}}
-@main = #Pair{@direct(@gen(#A, @depth), @gen(#B, @depth)), @seven(@gen(#A, @depth), @gen(#B, @depth))}
+@main = @direct(@gen(#A, @depth), @gen(#B, @depth))

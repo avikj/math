@@ -519,10 +519,10 @@ a duplicator cell, a definition unfolds when a reference is demanded, a fresh co
   wire may run back into the pair, as in the identity lambda; then the two links it joins are one wire): the
   union of the ends. `-c` checks after every step that every wire has two ends and that every end of the
   consumed pair was linked.
-- **The standard.** Every program under `n/` gives on this machine the value the previous runtime gave (15 of 15,
+- **The standard.** Every program under `n/` gives on this machine the value the previous runtime gave (14 of 14,
   `===` as `#T`/`#F` and lists as `#Cons` where that runtime printed `1` and `[..]`), and the same value and
   the same length under three schedules (the diamond, 5.11, 5.13): `test_inet.sh` pins the value and the length
-  and checks the length under a second schedule. Lengths on this machine: xor 88, same 31, empty 30, diff 62, sat3 288, fresh 679, interval 3113, numeral 690, sort 14350, number 4684, product 435, integer 1312, product_signed 44768, blocks 8294, group22 5244438.
+  and checks the length under a second schedule. Lengths on this machine: xor 88, same 31, empty 30, diff 62, sat3 288, fresh 679, interval 3113, numeral 690, sort 14350, number 4684, product 435, integer 1312, product_signed 8401, blocks 1527.
 - **What `net.c` was.** HVM4's evaluator with agents: variables by a global substitution, lazy copying by label,
   faces as frames, a collector added for the reading; the section below records it and its readings. Its
   results are reproduced here value for value; it is superseded by this machine and kept only until every
@@ -558,26 +558,15 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   the normaliser's stack, visited set and current cell reach; binding entries of instantiated lambdas took the
   same size as those of dups so the list can be walked. No interaction is counted: with the threshold forced low,
   `n/writing22q`, `n/blocks22` and `n/classes22` give the same values and the same counts through 15 collections.
-- **The 2×2 writing type and the reading of its symmetric form with nothing written but the type**
-  (`n/product22.hvm4`, `n/group22.hvm4`). The type: the index as the cube it is (9.11), six index coordinates
-  `??`; a cell a product of three slot shapes whose coefficients are choice cells `?` (a support bit and a sign
-  bit on it); a product with a zero factor is not a cell; the 64 equations C = A·B as faces of the shapes. The
-  symmetry: a relabelling of the index cube that keeps the slots is data, every such relabelling is a choice
-  (3072), and the faces keep the ones along which the target of every entry is unchanged: the type's group, 48
-  (one of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6; S₄ × Z₂), with the order of each read on the entries
-  (`n/group22.hvm4`). The symmetric form: a symmetry r chosen by the net among the 48, one generic cell f with
-  the face r·f = f (as tensors, so the scaling identity is recognised there), and the orbit of one generic cell c
-  carried along r as many times as the order of r; so every length the form admits, two to seven, is read in one
-  reading, by `%%`, which discards relabellings of the index (6.1). The complete reading over all 48 symmetries is running (it passed 42 million sides and
-  four thousand million interactions without a writing, still inside the short lengths); its count is not yet
-  recorded here, and `n/product22.hvm4` is not yet pinned.
-  What stood here before and was deleted as my own derivation layer, run once and written into the next program
-  by hand: `sym22` (a group derived by closure from generators I wrote), `writing22` and `writing22q` (the orbit
-  generator cyclic∘swap read off `sym22`'s output and written in as cycled, side-swapped shapes, and the fixed
-  cell's shape written in), `classes22` and `reach22` (identity maps written by hand, among them a shear found by
-  running faces and then written in), the polynomial `writing`, and `writing22g` with its order face (the number
-  six read off the group's output and written in). The recorded error 3 of CLAUDE.md, in a fourth form: the
-  output of one program written into another is a derivation outside the net.
+- **The 2×2 product, stated once.** On this machine the normal form of the product type posed from the type alone
+  (`n/product.hvm4`, `n/product_signed.hvm4`, `n/blocks.hvm4`) is the type's own shape: eight cells at a 2×2 node,
+  8^k by the numeral. Every seven ever shown here came from a writing I posed (Strassen's coefficients written
+  in) or from a search (a cube of choice coordinates over coefficients and relabellings, collapsed); both are
+  error 3 of CLAUDE.md, and both are deleted: `product22`, `group22`, `blocks22`, and the seven-product halves of
+  `blocks` and `product_signed`. The last such search ran eight hours on this machine before it was killed. The
+  owner holds that the type's unique normal form exhibits the subcubic form; that is not what this machine
+  reads off the type as posed, and no further search will be run to bridge the two: whatever closes the gap
+  is a construction of the type, not an enumeration.
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.
@@ -638,39 +627,13 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   reverse is `sym`, ~). Composition is disjoint union: the windings add, nothing is created. The winding is read,
   not computed into the object: forward minus backward over the vertices, so a loop and its reverse have winding 0
   while both traversals remain. Pinned: 3+2, the mirror, 3 forward 2 back, (−2)(−3), 2(−3).
-- **The signed product type** (`n/product_signed.hvm4`). Entries as directed named units; the direct shape
-  C_ik = Σ_j a_ij × b_jk beside the seven-product writing as a different starting term (5.28). Read by winding per
-  monomial the two normal forms are identical. Cells formed: the direct shape 8, the seven-product term 32, its
-  extra monomials cancelling in the reading. On the complex, with integers as loops, the direct shape is the
-  geodesic of this type and the seven-product writing is a longer route to the same normal form: a product of
-  multitudes costs every unit pair, so a product of sums is never cheaper than the products it replaces.
-  That is the scalar node only, where nothing recurses.
+- **The signed product type** (`n/product_signed.hvm4`).28). Read by winding per
+  monomial the two normal forms are identical.That is the scalar node only, where nothing recurses.
 - **The N×N type on the index cube** (9.11; `n/blocks.hvm4`). A product of blocks is the type again one level
-  down; a product of leaves is one cell `#Pr{u, v}`, not expanded; a sum of leaves one cell `#Sum{a, b}`, shared,
-  never looked into by a product; a negation one cell. The defining shape (eight block products, four block sums a
-  node) beside the seven-product writing (seven and eighteen) as different starting terms, N = 2^k. The ledger
-  must be split. Products formed (APP-LAM), k = 1..5: direct 60, 452, 3,428, 26,596, 209,380 (→ ×8); seven 139,
-  1,460, 12,267, 94,156, 692,339 (→ ×7.4). Interactions less copying, the cost of forming the shape: direct 91,
-  659, 4,883, 37,395, 292,371 (→ ×8); seven 210, 2,162, 18,034, 137,970, 1,012,850 (→ ×7), the seven-product
-  writing subcubic with a constant of 3.5 at k = 5 shrinking by 8/7 a level. Copying (DUP-NOD): direct ×9 a level,
-  seven ×25 a level, 47,074,396 of its 48,087,246 interactions at k = 5. That copying is the net unsharing the
-  finished term to read it as a tree: the seven term's cells hold sums of sums, shared once, copied into every
-  cell on reading. 5.21: reading the finished term off is a fold that adds no step. `net.c` charges it. So the
-  earlier claim that the complex prices the seven form higher was that charge misread as mathematics; the
-  classical count is the count of formation and it holds here.
-  The split is read from the profile, deterministically: interactions less DUP-NOD. A runtime change that
-  shared normal data by pointer at dup time (a reading, not a step) was built and reverted: whether a node is
-  already normal when its dup fires depends on the evaluation order, so the ledger moved with the schedule (the
-  diamond gave 906, 1,070 and 1,152 under three seeds), which 5.13 forbids, and values changed. The copy charge
-  is HVM4's duplication semantics; the deterministic measure of formation is the profile's difference.
-- **The N×N product executed with the writing the net read** (`n/blocks22.hvm4`). The first writing `%%` keeps at
-  the 2×2 node (`n/product22.hvm4`), its cells read into coefficients by faces, is the writing applied at every
-  node of the block recursion on the index cube (9.11): a product of blocks is the type again one level down, a
-  product of leaves is one cell, a zero coefficient is no side and a sum is formed only between the sides that are
-  there. Each node returns its matrix with the number of products formed below it, as a multitude; the net
-  reports 1, 7, 49, 343 products at depths 0 to 3 (pinned at depth 2: 49 products, 16 entries of C), against 8^k
-  for the direct form of `n/blocks.hvm4`. Copying on reading (DUP-NOD) is kept apart from products formed
-  (APP-LAM) as before. The pin is re-made when the reading completes.
+  down; a product of leaves is one cell `#Pr{u, v}`, not expanded; a sum of leaves one cell `#Sum{a, b}`, shared;
+  a negation one cell. The type's own shape: eight block products and four block sums at every node, 8^k
+  products at depth k; pinned at depth 2 on the machine (length 1527). What stood here, a seven-product
+  writing beside it with its ledger split by hand, was a posed writing and is deleted (the entry above).
 - **The type of the matrix product** (`n/product.hvm4`). Not a run on an input: the defining equations
   C_ik = Σ_j A_ij B_jk taken on the cube of all inputs at once, every entry the k-cube of bits, so the term is the
   function itself as one superposed shape. + and × on bits are the numeral's identities. The net normalises the
