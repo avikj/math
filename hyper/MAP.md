@@ -514,9 +514,8 @@ a duplicator cell, a definition unfolds when a reference is demanded, a fresh co
 - **The standard.** Every program under `n/` gives on this machine the value the previous runtime gave (15 of 15,
   `===` as `#T`/`#F` and lists as `#Cons` where that runtime printed `1` and `[..]`), and the same value and
   the same length under three schedules (the diamond, 5.11, 5.13): `test_inet.sh` pins the value and the length
-  and checks the length under a second schedule. Lengths on this machine: xor 92, same 31, empty 32, diff 62,
-  sat3 302, fresh 679, interval 3113, numeral 690, sort 14350, number 4684, product 435, integer 1312,
-  product_signed 44768, blocks 8294, group22 5255430.
+  and checks the length under a second schedule. Lengths on this machine (erasure steps included, they commute with every other step and are taken as soon as
+  the rule that made them is done, which is what returns the memory): xor 98, same 33, empty 32, diff 62, sat3 335, fresh 683, interval 3205, numeral 700, sort 15165, number 4900, product 459, integer 1360, product_signed 46660, blocks 8294, group22 5855161.
 - **What `net.c` was.** HVM4's evaluator with agents: variables by a global substitution, lazy copying by label,
   faces as frames, a collector added for the reading; the section below records it and its readings. Its
   results are reproduced here value for value; it is superseded by this machine and kept only until every

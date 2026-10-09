@@ -33,7 +33,7 @@ typedef u32 Port;                      /* cell << 5 | slot */
 #define PC(p) ((p) >> 5)
 #define PS(p) ((p) & 31)
 typedef struct { u8 kind; u8 ari; u32 ext; u32 ext2; Port p[MAXP]; } Cell;
-static Cell *CELLS; static u32 NCELLS = 0, CAP = 0; static u32 FREELIST = NIL;
+static Cell *CELLS; static u32 NCELLS = 0, CAP = 0; static u32 FREELIST = NIL; static u32 *GEN;   /* a cell index is reused; its generation tells a stale port */
 static u64 LIVE = 0, PEAK = 0;
 static u32 *ACTIVE; static u32 NACTIVE = 0, ACAP = 0;   /* one cell of each active pair */
 static u64 STEPS = 0, MERGES = 0, UNFOLDS = 0;
@@ -42,19 +42,21 @@ static u64 RULES[64][64];
 static u32 cell_new(u8 kind, u8 ari, u32 ext) {
   u32 c;
   if (FREELIST != NIL) { c = FREELIST; FREELIST = CELLS[c].ext; }
-  else { if (NCELLS == CAP) { CAP = CAP ? CAP * 2 : 1 << 16; CELLS = realloc(CELLS, CAP * sizeof(Cell)); } c = NCELLS++; }
+  else { if (NCELLS == CAP) { CAP = CAP ? CAP * 2 : 1 << 16; CELLS = realloc(CELLS, CAP * sizeof(Cell)); GEN = realloc(GEN, CAP * sizeof(u32)); memset(GEN + NCELLS, 0, (CAP - NCELLS) * sizeof(u32)); } c = NCELLS++; }
   CELLS[c].kind = kind; CELLS[c].ari = ari; CELLS[c].ext = ext; CELLS[c].ext2 = 0;
   for (u32 i = 0; i <= ari; i++) CELLS[c].p[i] = NIL;
   LIVE++; if (LIVE > PEAK) PEAK = LIVE;
   return c;
 }
-static void cell_free(u32 c) { CELLS[c].kind = K_FREE; CELLS[c].ext = FREELIST; FREELIST = c; LIVE--; }
+static void cell_free(u32 c) { CELLS[c].kind = K_FREE; CELLS[c].ext = FREELIST; FREELIST = c; LIVE--; GEN[c]++; }
 static void active_push(u32 c) { if (NACTIVE == ACAP) { ACAP = ACAP ? ACAP * 2 : 1 << 12; ACTIVE = realloc(ACTIVE, ACAP * sizeof(u32)); } ACTIVE[NACTIVE++] = c; }
 /* wire two ports: the matching is partial, a port is wired at most once */
 static void wire(Port a, Port b) {
   if (a == NIL || b == NIL) { if (a != NIL) CELLS[PC(a)].p[PS(a)] = NIL; if (b != NIL) CELLS[PC(b)].p[PS(b)] = NIL; return; }
   CELLS[PC(a)].p[PS(a)] = b; CELLS[PC(b)].p[PS(b)] = a;
-  if (PS(a) == 0 && PS(b) == 0) active_push(PC(a));
+  /* an erasure meeting a principal port is taken as soon as the rule that made it is done: its steps commute with
+     every other and end (nothing unfolds under an erasure), and a sub-net erased is memory returned */
+  if (PS(a) == 0 && PS(b) == 0 && (CELLS[PC(a)].kind == K_ERA || CELLS[PC(b)].kind == K_ERA)) active_push(PC(a));
 }
 /* the port wired to p (NIL when free) */
 static Port peer(Port p) { return CELLS[PC(p)].p[PS(p)]; }
@@ -718,8 +720,23 @@ static Port instantiate(u32 name) {
    no work. The order among independent demands is free (5.11). ---------- */
 static u64 SCHED_SEED = 0; static u64 STEP_LIMIT = 0;
 static int is_value(u8 k) { return k == K_CTR || k == K_SUP || k == K_NUM || k == K_LAM || k == K_MATV || k == K_ERA; }
+static void step(u32 a, u32 b);
+static void erase_pending(void) {
+  while (NACTIVE) {
+    u32 a = ACTIVE[--NACTIVE];
+    if (CELLS[a].kind == K_FREE) continue;
+    Port pb = CELLS[a].p[0]; if (pb == NIL || PS(pb) != 0) continue;
+    u32 b = PC(pb); if (CELLS[b].kind == K_FREE || CELLS[b].p[0] != P(a, 0)) continue;
+    if (CELLS[a].kind != K_ERA && CELLS[b].kind != K_ERA) continue;
+    if (CELLS[a].kind == K_ROOT || CELLS[b].kind == K_ROOT) continue;
+    step(a, b);
+  }
+}
 static void drive(Port in) {
+  u32 gen_in = GEN[PC(in)];
   for (;;) {
+    erase_pending();
+    if (GEN[PC(in)] != gen_in) return;              /* the demanding cell was erased meanwhile: nothing to produce */
     Port q = peer(in); if (q == NIL) return;
     u32 c = PC(q); u8 k = CELLS[c].kind;
     if (PS(q) == 0) {
@@ -730,11 +747,15 @@ static void drive(Port in) {
       fprintf(stderr, "hyper: a demand met the principal port of %s\n", KIND_NAME[k]); dump_cell(c); exit(1);
     }
     /* q is an output port of c, a cell waiting on its principal: demand that, then let the pair interact */
+    u32 gen_c = GEN[c];
     drive(P(c, 0));
+    if (GEN[c] != gen_c) continue;                  /* an erasure reached c meanwhile: in's peer has changed */
+    erase_pending();
+    if (GEN[c] != gen_c) continue;
     Port v = peer(P(c, 0)); if (v == NIL || PS(v) != 0) { fprintf(stderr, "hyper: a cell with no value at its principal: "); dump_cell(c); exit(1); }
     u32 vc = PC(v);
     if (CELLS[vc].kind == K_ROOT) return;
-    if (STEP_LIMIT && STEPS >= STEP_LIMIT) { fprintf(stderr, "hyper: step limit\n"); exit(2); }
+    if (STEP_LIMIT && STEPS >= STEP_LIMIT) { fprintf(stderr, "hyper: step limit; %llu live cells, %llu at the peak\n", (unsigned long long)LIVE, (unsigned long long)PEAK); exit(2); }
     step(c, vc);
     if (CHECK) check_net("after a step");
   }
