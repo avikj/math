@@ -617,7 +617,8 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   value), an erased side is dropped, and a value that is one shape with a kept value up to a bijection of index
   coordinates with orientation is identified. A face whose side or coordinate is a superposition distributes
   over it (FAD-SUP, FDL-SUP). Result: 87,260 splits, 87,213 sides erased, 48 leaves of which 24 are
-  relabellings of the other 24, 5,799,244 interactions; every leaf a seven-cell writing.
+  relabellings of the other 24, 10,009,780 interactions (each side taken through the face of its own coordinate, so a
+  nested occurrence is projected); every leaf a seven-cell writing.
   What is still posed by hand here, stated plainly: the orbit (six cells as one cell carried along cyclic∘swap,
   sharing its choice coordinates) and the fixed cell's shape, both read off the type's symmetry but written by
   me; the alphabet {−1, 0, 1}; the length seven. The reading identifies relabellings among results only. A
@@ -626,6 +627,8 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   cost more than the whole reading. The reading does not identify two partial sides that differ by a
   permutation of cells; and even with that, seven plain cells are a cut over 3^84, out of reach: the orbit is
   the type's symmetry used before enumeration, which is why it is posed. The reading takes three seconds.
+  The shorter lengths of the symmetric form, read the same way: the fixed cell alone (length one) is empty after
+  5 sides, the orbit alone (length six) after 729; seven is the least length inhabited in this form (5.27).
 - **No primitive number.** The parser refuses a numeric literal and an arithmetic operator, always: numbers are
   shapes, bits on coordinates, and nothing else is a number in the net. The SAT receipts of `research/sat_fibre`
   were taken on HVM4 with its native numbers; they are not run by this suite, and `satcheck.py` is gone.

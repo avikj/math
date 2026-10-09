@@ -5154,12 +5154,28 @@ fn void colq_go(Term t, u32 depth) {
       if (ITRS_ENABLED) { sat_tick("COLQ-SPLIT"); ITRS++; }
       COLQ_SPLITS++;
       if (getenv("COLQ_PROGRESS") && (COLQ_SPLITS % 10000) == 0) fprintf(stderr, "colq: %llu splits, %u leaves\n", (unsigned long long)COLQ_SPLITS, COLQ_N);
-      colq_go(heap_read(term_val(c) + 0), depth + 1);
-      t = heap_read(term_val(c) + 1);
+      /* each side is taken through the face of its own coordinate, so an occurrence nested under it is projected */
+      u32 lab = term_ext(c);
+      colq_go(term_new_fac(0, lab, heap_read(term_val(c) + 0)), depth + 1);
+      t = term_new_fac(1, lab, heap_read(term_val(c) + 1));
       continue;
     }
     colq_leaf(c);
     return;
+  }
+}
+fn Term colq_top(Term colq);
+// replace every %% node reachable through constructors and applications by its reading
+fn void colq_substitute(Term t, u32 depth) {
+  if (depth > 64) return;
+  u8 tag = term_tag(t);
+  if (tag == APP || (tag >= C00 && tag <= C16)) {
+    u32 ari = term_arity(t); u64 loc = term_val(t);
+    for (u32 i = 0; i < ari; i++) {
+      Term f = wnf_at(loc + i);
+      if (term_tag(f) == COLQ) { Term l = colq_top(f); heap_set(loc + i, l); }
+      else colq_substitute(f, depth + 1);
+    }
   }
 }
 fn Term colq_top(Term colq) {
@@ -6292,9 +6308,13 @@ fn void runtime_eval_main(u32 main_id, const RuntimeEvalCfg *cfg) {
   if (run.do_collapse) {
     eval_collapse(main_ref, run.collapse_limit, run.stats, run.silent);
   } else {
+    /* %% anywhere in the program's spine is read first (its reading is a value the rest of the program may use):
+       the main term is unfolded one level, every %% node reachable through constructors and applications is read
+       and its list put in its place, then the whole is normalised */
     Term top = wnf(main_ref);
-    Term result = (term_tag(top) == COLQ) ? colq_top(top) : eval_normalize(top);
-    if (term_tag(top) == COLQ) result = eval_normalize(result);
+    Term result;
+    if (term_tag(top) == COLQ) { result = eval_normalize(colq_top(top)); }
+    else { colq_substitute(top, 0); result = eval_normalize(top); }
     if (!run.silent && !run.step_by_step) {
       print_term(result);
       printf("\n");
