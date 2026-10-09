@@ -4214,11 +4214,12 @@ fn Term wnf_alo_cop(u64 ls, u32 len, Term book) {
 fn Term wnf_alo_lam(u64 alo_loc, u64 ls_loc, u32 len, Term book) {
   u32 lam_ext  = term_ext(book);
   u64 lam_body = term_val(book);
-  u64 bind_loc = heap_alloc(2);
+  u64 bind_loc = heap_alloc(BOOK_LABELS ? 2 : 3);          /* every binding entry has one size, so the collector can walk the list */
   u64 loc      = (len > 0) ? alo_loc : heap_alloc(1);
   Term alo     = term_new_alo_at(loc, bind_loc, len + 1, lam_body);
   heap_set(bind_loc + 0, alo);
   heap_set(bind_loc + 1, term_new(0, NUM, 0, ls_loc));
+  if (!BOOK_LABELS) heap_set(bind_loc + 2, term_new(0, NUM, 0, 0));
   return term_new(0, LAM, lam_ext, bind_loc + 0);
 }
 
@@ -5136,6 +5137,156 @@ fn void norm_small(u64 root) {
 // kept up to a bijection of its index coordinates with orientation (6.1).
 #define COLQ_MAX 65536
 static u64 COLQ_LEAVES[COLQ_MAX]; static u32 COLQ_N = 0; static u64 COLQ_SPLITS = 0; static u8 COLQ_ACTIVE = 0;
+
+// ---- Memory of the reading (hyper). The collapse allocates and never frees; a complete reading of a large type
+// outgrows the heap. Between the two sides of a split, the live heap is compacted in place (a sliding collector over
+// the dynamic region above the loaded book): what is live is reached from the suspended frames of wnf, the reading's
+// pending sides and kept leaves, and the normaliser's stack, visited set and current cell. Nothing semantic happens:
+// no interaction is counted, every term keeps its identity.
+static u64 GC_STATIC_END = 0;                   /* the book's end: below it nothing moves and nothing points above */
+static u64 GC_TRIGGER = 0;                      /* collect when HEAP_NEXT exceeds this (0: never) */
+static u64 GC_NEXT = 0;                         /* the next collection: after one, not before the live cells have doubled */
+static u64 GC_COLLECTIONS = 0, GC_FREED = 0;
+#define GC_PENDING_MAX (1u << 20)
+static Term GC_PENDING[GC_PENDING_MAX]; static u32 GC_PENDING_N = 0;   /* the reading's sides still to be taken */
+static u64 GC_WNF_AT_LOCS[256]; static u32 GC_WNF_AT_N = 0;          /* cells whose wnf is in progress */
+static u64 *GC_NORM_STACK_DATA = NULL; static u64 *GC_NORM_STACK_LEN = NULL;  /* the normaliser's stack of cells */
+static u64 *GC_NORM_SEEN_WORDS = NULL; static u64 GC_NORM_SEEN_COUNT = 0;      /* its visited bitset over cells */
+static u64 *GC_NORM_ROOT_LOC = NULL; static u64 *GC_NORM_GO_LOC = NULL;
+static u64 *GC_MARK = NULL, *GC_KIND = NULL, *GC_LINK = NULL, *GC_RANK = NULL; static u64 GC_WORDS = 0;
+/* GC_KIND: the cell is an ALO pair (bind-list head << 32 | book term), not a term; GC_LINK: a bind entry's next link, a NUM whose value is a cell */
+static u64 *GC_WORK = NULL; static u64 GC_WORK_N = 0, GC_WORK_CAP = 0;
+fn u8 gc_is_ptr_tag(u8 tag) { return TERM_ARITY[tag] > 0 || tag == VAR || tag == DP0 || tag == DP1; }
+fn u8 gc_marked(u64 loc) { return (GC_MARK[loc >> 6] >> (loc & 63)) & 1; }
+fn void gc_set_mark(u64 loc) { GC_MARK[loc >> 6] |= 1ull << (loc & 63); }
+fn void gc_set_kind(u64 loc) { GC_KIND[loc >> 6] |= 1ull << (loc & 63); }
+fn u8 gc_kind(u64 loc) { return (GC_KIND[loc >> 6] >> (loc & 63)) & 1; }
+fn void gc_set_link(u64 loc) { GC_LINK[loc >> 6] |= 1ull << (loc & 63); }
+fn u8 gc_link(u64 loc) { return (GC_LINK[loc >> 6] >> (loc & 63)) & 1; }
+fn void gc_push(Term t) {
+  if (GC_WORK_N == GC_WORK_CAP) { GC_WORK_CAP = GC_WORK_CAP ? GC_WORK_CAP * 2 : (1u << 20); GC_WORK = (u64 *)realloc(GC_WORK, GC_WORK_CAP * sizeof(u64)); }
+  GC_WORK[GC_WORK_N++] = t;
+}
+fn void gc_mark_cell(u64 loc) {       /* a cell that holds a term: mark it, queue its content */
+  if (loc < GC_STATIC_END || loc >= HEAP_NEXT) return;
+  if (gc_marked(loc)) return;
+  gc_set_mark(loc);
+  gc_push(term_sub_set(HEAP[loc], 0));
+}
+fn void gc_mark_term(Term t) {
+  u8 tag = term_tag(t);
+  u64 loc = term_val(t);
+  if (tag == ALO) {
+    if (term_ext(t) == 0) return;                                  /* a bare book term: static */
+    if (loc < GC_STATIC_END || loc >= HEAP_NEXT || gc_marked(loc)) return;
+    gc_set_mark(loc); gc_set_kind(loc);
+    u64 ls = HEAP[loc] >> ALO_TM_BITS;
+    while (ls != 0 && ls >= GC_STATIC_END && !gc_marked(ls)) {    /* the bind list: value, next, coordinate */
+      u32 k = BOOK_LABELS ? 2 : 3;
+      gc_mark_cell(ls + 0);
+      gc_set_mark(ls + 1); gc_set_link(ls + 1);
+      if (k == 3) gc_set_mark(ls + 2);
+      ls = term_val(HEAP[ls + 1]);
+    }
+    return;
+  }
+  if (tag == VAR || tag == DP0 || tag == DP1) { gc_mark_cell(loc); return; }
+  u32 ari = TERM_ARITY[tag];
+  for (u32 i = 0; i < ari; i++) gc_mark_cell(loc + i);
+}
+fn void gc_mark_frame(Term f) {
+  u8 tag = term_tag(f);
+  if (tag == F_OP2_NUM) return;
+  if (tag == F_EQL_L || tag == F_EQL_R) { gc_mark_cell(term_val(f)); gc_mark_cell(term_val(f) + 1); return; }
+  gc_mark_term(f);
+}
+fn u64 gc_fwd(u64 loc) {
+  if (loc < GC_STATIC_END) return loc;
+  if (loc >= HEAP_NEXT || !gc_marked(loc)) { fprintf(stderr, "hyper: gc: a live pointer to a dead cell (%llu)\n", (unsigned long long)loc); exit(3); }
+  u64 w = loc >> 6;
+  return GC_STATIC_END + GC_RANK[w] + (u64)__builtin_popcountll(GC_MARK[w] & ((1ull << (loc & 63)) - 1));
+}
+fn Term gc_fwd_term(Term t) {
+  u8 tag = term_tag(t);
+  if (tag == ALO) { if (term_ext(t) == 0) return t; return (t & ~VAL_MASK) | gc_fwd(term_val(t)); }
+  if (!gc_is_ptr_tag(tag)) return t;
+  return (t & ~VAL_MASK) | gc_fwd(term_val(t));
+}
+fn Term gc_fwd_frame(Term f) {
+  u8 tag = term_tag(f);
+  if (tag == F_OP2_NUM) return f;
+  if (tag == F_EQL_L || tag == F_EQL_R) return (f & ~VAL_MASK) | gc_fwd(term_val(f));
+  return gc_fwd_term(f);
+}
+fn void gc_collect(void) {
+  if (STEPS_ENABLE) return;
+  u64 lo = GC_STATIC_END, hi = HEAP_NEXT;
+  GC_WORDS = (hi >> 6) + 2;
+  GC_MARK = (u64 *)calloc(GC_WORDS, sizeof(u64)); GC_KIND = (u64 *)calloc(GC_WORDS, sizeof(u64)); GC_LINK = (u64 *)calloc(GC_WORDS, sizeof(u64)); GC_RANK = (u64 *)calloc(GC_WORDS, sizeof(u64));
+  if (!GC_MARK || !GC_KIND || !GC_LINK || !GC_RANK) { fprintf(stderr, "hyper: gc: no memory for the mark\n"); exit(3); }
+  GC_WORK_N = 0;
+  /* roots */
+  for (u32 i = 0; i < WNF_S_POS; i++) gc_mark_frame(WNF_STACK[i]);
+  for (u32 i = 0; i < GC_PENDING_N; i++) gc_mark_term(GC_PENDING[i]);
+  for (u32 i = 0; i < COLQ_N; i++) gc_mark_cell(COLQ_LEAVES[i]);
+  for (u32 i = 0; i < GC_WNF_AT_N; i++) gc_mark_cell(GC_WNF_AT_LOCS[i]);
+  if (GC_NORM_STACK_DATA) for (u64 i = 0; i < *GC_NORM_STACK_LEN; i++) gc_mark_cell(GC_NORM_STACK_DATA[i]);
+  if (GC_NORM_ROOT_LOC) gc_mark_cell(*GC_NORM_ROOT_LOC);
+  if (GC_NORM_GO_LOC) gc_mark_cell(*GC_NORM_GO_LOC);
+  while (GC_WORK_N) gc_mark_term(GC_WORK[--GC_WORK_N]);
+  /* ranks */
+  u64 live = 0;
+  for (u64 w = lo >> 6; w < GC_WORDS; w++) { GC_RANK[w] = live; live += (u64)__builtin_popcountll(GC_MARK[w]); }
+  u64 below = 0;                                                  /* marks in the static part of the first word are not moved */
+  for (u64 l = (lo >> 6) << 6; l < lo; l++) if (gc_marked(l)) below++;
+  if (below) { fprintf(stderr, "hyper: gc: a static cell was marked\n"); exit(3); }
+  /* rewrite pointers in live cells and in roots, then slide */
+  for (u64 w = lo >> 6; w < GC_WORDS; w++) {
+    u64 bits = GC_MARK[w];
+    while (bits) {
+      u64 b = __builtin_ctzll(bits); bits &= bits - 1;
+      u64 l = (w << 6) + b;
+      if (gc_link(l)) {
+        u64 nx = term_val(HEAP[l]);
+        HEAP[l] = (HEAP[l] & ~VAL_MASK) | (nx ? gc_fwd(nx) : 0);
+      } else if (gc_kind(l)) {
+        u64 pair = HEAP[l]; u64 ls = pair >> ALO_TM_BITS; u64 tm = pair & ALO_TM_MASK;
+        HEAP[l] = ((ls ? gc_fwd(ls) : 0) << ALO_TM_BITS) | tm;
+      } else {
+        HEAP[l] = gc_fwd_term(HEAP[l]);
+      }
+    }
+  }
+  for (u32 i = 0; i < WNF_S_POS; i++) WNF_STACK[i] = gc_fwd_frame(WNF_STACK[i]);
+  for (u32 i = 0; i < GC_PENDING_N; i++) GC_PENDING[i] = gc_fwd_term(GC_PENDING[i]);
+  for (u32 i = 0; i < COLQ_N; i++) COLQ_LEAVES[i] = gc_fwd(COLQ_LEAVES[i]);
+  for (u32 i = 0; i < GC_WNF_AT_N; i++) GC_WNF_AT_LOCS[i] = gc_fwd(GC_WNF_AT_LOCS[i]);
+  if (GC_NORM_STACK_DATA) for (u64 i = 0; i < *GC_NORM_STACK_LEN; i++) GC_NORM_STACK_DATA[i] = gc_fwd(GC_NORM_STACK_DATA[i]);
+  if (GC_NORM_ROOT_LOC) *GC_NORM_ROOT_LOC = gc_fwd(*GC_NORM_ROOT_LOC);
+  if (GC_NORM_GO_LOC) *GC_NORM_GO_LOC = gc_fwd(*GC_NORM_GO_LOC);
+  if (GC_NORM_SEEN_WORDS) {                                        /* the visited set follows the live cells; dead visited cells are forgotten */
+    u64 *nw = (u64 *)calloc(GC_WORDS, sizeof(u64));
+    for (u64 w = lo >> 6; w < GC_WORDS && w < GC_NORM_SEEN_COUNT; w++) {
+      u64 bits = GC_NORM_SEEN_WORDS[w] & GC_MARK[w];
+      while (bits) { u64 b = __builtin_ctzll(bits); bits &= bits - 1; u64 n = gc_fwd((w << 6) + b); nw[n >> 6] |= 1ull << (n & 63); }
+    }
+    for (u64 w = 0; w < lo >> 6 && w < GC_NORM_SEEN_COUNT; w++) nw[w] = GC_NORM_SEEN_WORDS[w];
+    memset(GC_NORM_SEEN_WORDS + (lo >> 6), 0, (GC_NORM_SEEN_COUNT - (lo >> 6)) * sizeof(u64));
+    for (u64 w = lo >> 6; w < GC_WORDS; w++) GC_NORM_SEEN_WORDS[w] = nw[w];
+    free(nw);
+  }
+  u64 dst = lo;
+  for (u64 w = lo >> 6; w < GC_WORDS; w++) {
+    u64 bits = GC_MARK[w];
+    while (bits) { u64 b = __builtin_ctzll(bits); bits &= bits - 1; HEAP[dst++] = HEAP[(w << 6) + b]; }
+  }
+  GC_FREED += hi - dst;
+  GC_COLLECTIONS++;
+  if (getenv("COLQ_PROGRESS")) fprintf(stderr, "gc: %llu live of %llu cells\n", (unsigned long long)(dst - lo), (unsigned long long)(hi - lo));
+  HEAP_NEXT = dst;
+  GC_NEXT = dst + (dst - lo) > GC_TRIGGER ? dst + (dst - lo) : GC_TRIGGER;
+  free(GC_MARK); free(GC_KIND); free(GC_LINK); free(GC_RANK); GC_MARK = GC_KIND = GC_LINK = GC_RANK = NULL;
+}
 fn Term cnf_at(Term term, u32 depth);
 fn void colq_leaf(Term v) {
   u64 r = heap_alloc(1); heap_set(r, v);
@@ -5157,8 +5308,13 @@ fn void colq_go(Term t, u32 depth) {
       if (getenv("COLQ_PROGRESS") && (COLQ_SPLITS % 10000) == 0) fprintf(stderr, "colq: %llu splits, %u leaves\n", (unsigned long long)COLQ_SPLITS, COLQ_N);
       /* each side is taken through the face of its own coordinate, so an occurrence nested under it is projected */
       u32 lab = term_ext(c);
-      colq_go(term_new_fac(0, lab, heap_read(term_val(c) + 0)), depth + 1);
-      t = term_new_fac(1, lab, heap_read(term_val(c) + 1));
+      Term s0 = term_new_fac(0, lab, heap_read(term_val(c) + 0));
+      Term s1 = term_new_fac(1, lab, heap_read(term_val(c) + 1));
+      if (GC_PENDING_N >= GC_PENDING_MAX) { fprintf(stderr, "hyper: the reading's pending sides exceed %u\n", GC_PENDING_MAX); exit(2); }
+      GC_PENDING[GC_PENDING_N++] = s1;
+      colq_go(s0, depth + 1);
+      t = GC_PENDING[--GC_PENDING_N];                                  /* the side may have moved with the heap */
+      if (GC_TRIGGER && HEAP_NEXT > GC_NEXT) { GC_PENDING[GC_PENDING_N++] = t; gc_collect(); t = GC_PENDING[--GC_PENDING_N]; }
       continue;
     }
     colq_leaf(c);
@@ -6127,7 +6283,9 @@ fn Term wnf_at(u64 loc) {
       break;
     }
   }
+  if (GC_WNF_AT_N < 256) GC_WNF_AT_LOCS[GC_WNF_AT_N++] = loc;
   Term res = wnf(cur);
+  if (GC_WNF_AT_N > 0) loc = GC_WNF_AT_LOCS[--GC_WNF_AT_N];        /* the cell may have moved with the heap */
   if (res != cur) {
     heap_set(loc, res);
   }
@@ -6328,6 +6486,8 @@ fn void runtime_eval_main(u32 main_id, const RuntimeEvalCfg *cfg) {
   clock_gettime(CLOCK_MONOTONIC, &start);
 
   Term main_ref = term_new_ref(main_id);
+  GC_STATIC_END = HEAP_NEXT;
+  { char *g = getenv("SAT_GC_AT"); GC_TRIGGER = g ? strtoull(g, NULL, 10) : (SAT_HEAP_BUDGET / 2); GC_NEXT = GC_TRIGGER; }
   if (run.do_collapse) {
     eval_collapse(main_ref, run.collapse_limit, run.stats, run.silent);
   } else {
@@ -6631,7 +6791,9 @@ fn void eval_normalize_go(Uset *seen, EvalNormalizeStack *stack, u64 loc) {
       return;
     }
 
+    GC_NORM_GO_LOC = &loc; GC_NORM_STACK_DATA = stack->data; GC_NORM_STACK_LEN = &stack->len;
     Term term = __builtin_expect(STEPS_ENABLE, 0) ? wnf_steps_at(loc) : wnf_at(loc);
+    GC_NORM_GO_LOC = NULL;
 
     u64 tloc = term_val(term);
     u8  tag  = term_tag(term);
@@ -6683,11 +6845,15 @@ fn Term eval_normalize(Term term) {
   eval_normalize_stack_init(&stack);
   uset_clear(&seen);
   eval_normalize_stack_push(&stack, root_loc);
+  GC_NORM_ROOT_LOC = &root_loc; GC_NORM_SEEN_WORDS = seen.words; GC_NORM_SEEN_COUNT = seen.word_count;
 
   u64 loc = 0;
   while (eval_normalize_stack_pop(&stack, &loc)) {
+    GC_NORM_STACK_DATA = stack.data; GC_NORM_STACK_LEN = &stack.len;
     eval_normalize_go(&seen, &stack, loc);
+    GC_NORM_STACK_DATA = NULL; GC_NORM_STACK_LEN = NULL;
   }
+  GC_NORM_ROOT_LOC = NULL; GC_NORM_SEEN_WORDS = NULL;
 
   eval_normalize_stack_free(&stack);
   uset_free(&seen);

@@ -494,6 +494,14 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   reading the net stays need-driven (eager sides cost interactions where the rule never fires). It is the identity
   of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
   leaves are read with 56,478 sides instead of 87,260.
+- **Memory of the reading.** The collapse allocated and never freed, so a complete reading of a large type outgrew
+  the heap (the group posings below died at 8–10 million sides). Between the two sides of a split the live heap is
+  now compacted in place (a sliding collector over the region above the loaded book; `gc_collect` in `net.c`,
+  `SAT_GC_AT` sets the threshold, by default half the heap budget, and a collection is not repeated before the live
+  cells have doubled). Live is what the suspended frames of wnf, the reading's pending sides and kept leaves, and
+  the normaliser's stack, visited set and current cell reach; binding entries of instantiated lambdas took the
+  same size as those of dups so the list can be walked. No interaction is counted: with the threshold forced low,
+  `n/writing22q`, `n/blocks22` and `n/classes22` give the same values and the same counts through 15 collections.
 - **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
   relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's
   relabellings permute the slots, may swap a slot's pair, and may orient each coordinate) is data, every such
@@ -679,6 +687,14 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   reading the net stays need-driven (eager sides cost interactions where the rule never fires). It is the identity
   of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
   leaves are read with 56,478 sides instead of 87,260.
+- **Memory of the reading.** The collapse allocated and never freed, so a complete reading of a large type outgrew
+  the heap (the group posings below died at 8–10 million sides). Between the two sides of a split the live heap is
+  now compacted in place (a sliding collector over the region above the loaded book; `gc_collect` in `net.c`,
+  `SAT_GC_AT` sets the threshold, by default half the heap budget, and a collection is not repeated before the live
+  cells have doubled). Live is what the suspended frames of wnf, the reading's pending sides and kept leaves, and
+  the normaliser's stack, visited set and current cell reach; binding entries of instantiated lambdas took the
+  same size as those of dups so the list can be walked. No interaction is counted: with the threshold forced low,
+  `n/writing22q`, `n/blocks22` and `n/classes22` give the same values and the same counts through 15 collections.
 - **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
   relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's
   relabellings permute the slots, may swap a slot's pair, and may orient each coordinate) is data, every such
@@ -776,6 +792,14 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   reading the net stays need-driven (eager sides cost interactions where the rule never fires). It is the identity
   of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
   leaves are read with 56,478 sides instead of 87,260.
+- **Memory of the reading.** The collapse allocated and never freed, so a complete reading of a large type outgrew
+  the heap (the group posings below died at 8–10 million sides). Between the two sides of a split the live heap is
+  now compacted in place (a sliding collector over the region above the loaded book; `gc_collect` in `net.c`,
+  `SAT_GC_AT` sets the threshold, by default half the heap budget, and a collection is not repeated before the live
+  cells have doubled). Live is what the suspended frames of wnf, the reading's pending sides and kept leaves, and
+  the normaliser's stack, visited set and current cell reach; binding entries of instantiated lambdas took the
+  same size as those of dups so the list can be walked. No interaction is counted: with the threshold forced low,
+  `n/writing22q`, `n/blocks22` and `n/classes22` give the same values and the same counts through 15 collections.
 - **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
   relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's
   relabellings permute the slots, may swap a slot's pair, and may orient each coordinate) is data, every such
