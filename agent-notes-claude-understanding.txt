@@ -572,3 +572,16 @@ AG. The inference made generic (hyper/n/infer.hvm4): @aut, @quotient, @order, @d
    in its entries with the identities as paths; and I posed + and × as evaluation on closed numerals, so the ring
    identities were never in the net as paths. Both are in CLAUDE.md at the repo root, read first every session.
    Everything built on them (inference library, writing cube, propagators, the product run on inputs) was deleted.
+
+[2026-10-09] ENTRY AI — the machine of 5.4/5.5, and error 4.
+   hyper/inet.c is the net as index.html 5.4/5.5 state it: cells with a principal port and auxiliary ports, a
+   partial matching by wires, a rule per pair of cell kinds on exactly their auxiliary wires, the pair consumed
+   by the step (the whole of memory). Variables are wires; lambdas and matches are closures over their free
+   variables, built when applied; reduction is by demand (5.25); erasure is memory, not length. net.c (HVM4's
+   evaluator with agents, a global substitution, a collector) is deleted. Fourteen programs give the previous
+   values and the same length under three schedules; with every active pair taken regardless of demand the
+   values are the same and the lengths are the demanded ones plus work later erased.
+   Error 4, recorded in CLAUDE.md: running one program and writing its output into the next by hand. The 2x2
+   searches (product22, group22, blocks22) and the posed seven-product forms are deleted; the last search ran
+   eight hours on the new machine, which was error 3 again, before it was killed. The type posed alone
+   normalises to its own shape, eight cells at a 2x2 node, 8^k by the numeral; MAP states this once.
