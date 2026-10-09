@@ -488,9 +488,11 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   superposition distributes over it (FAD-SUP, FDL-SUP); the two faces it makes shared the coordinate and the body
   terms, which are linear (a dup variable read twice), so a face applied inside a lambda used twice returned the
   coordinate's number for the second use. Each field is now copied by the superposition's label. (2) A choice
-  whose two sides are one atom is that atom: `&c{x, x} = x` (SUP-IDEM), applied at a match on a choice whose two
-  sides are closed terms (an application or an atom; a variable of a copied lambda waits for its argument). It
-  is the identity of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
+  whose two sides are one atom is that atom: `&c{x, x} = x` (SUP-IDEM), applied under the reading `%%` at a match
+  on a choice whose two sides are closed terms (an application or an atom; a variable of a copied lambda waits for
+  its argument): the reading explores both sides, so reading them at the match is no extra work, and outside a
+  reading the net stays need-driven (eager sides cost interactions where the rule never fires). It is the identity
+  of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
   leaves are read with 56,478 sides instead of 87,260.
 - **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
   relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's
@@ -671,9 +673,11 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   superposition distributes over it (FAD-SUP, FDL-SUP); the two faces it makes shared the coordinate and the body
   terms, which are linear (a dup variable read twice), so a face applied inside a lambda used twice returned the
   coordinate's number for the second use. Each field is now copied by the superposition's label. (2) A choice
-  whose two sides are one atom is that atom: `&c{x, x} = x` (SUP-IDEM), applied at a match on a choice whose two
-  sides are closed terms (an application or an atom; a variable of a copied lambda waits for its argument). It
-  is the identity of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
+  whose two sides are one atom is that atom: `&c{x, x} = x` (SUP-IDEM), applied under the reading `%%` at a match
+  on a choice whose two sides are closed terms (an application or an atom; a variable of a copied lambda waits for
+  its argument): the reading explores both sides, so reading them at the match is no extra work, and outside a
+  reading the net stays need-driven (eager sides cost interactions where the rule never fires). It is the identity
+  of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
   leaves are read with 56,478 sides instead of 87,260.
 - **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
   relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's
@@ -766,9 +770,11 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   superposition distributes over it (FAD-SUP, FDL-SUP); the two faces it makes shared the coordinate and the body
   terms, which are linear (a dup variable read twice), so a face applied inside a lambda used twice returned the
   coordinate's number for the second use. Each field is now copied by the superposition's label. (2) A choice
-  whose two sides are one atom is that atom: `&c{x, x} = x` (SUP-IDEM), applied at a match on a choice whose two
-  sides are closed terms (an application or an atom; a variable of a copied lambda waits for its argument). It
-  is the identity of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
+  whose two sides are one atom is that atom: `&c{x, x} = x` (SUP-IDEM), applied under the reading `%%` at a match
+  on a choice whose two sides are closed terms (an application or an atom; a variable of a copied lambda waits for
+  its argument): the reading explores both sides, so reading them at the match is no extra work, and outside a
+  reading the net stays need-driven (eager sides cost interactions where the rule never fires). It is the identity
+  of a constant path and is applied by the net, not posed. On `n/writing22q.hvm4` the same 24
   leaves are read with 56,478 sides instead of 87,260.
 - **The type's symmetry group read off the cube** (`n/sym22g.hvm4`). Nothing of the symmetry is written: a
   relabelling of the index cube that keeps the slots (each cell is a product of three slot shapes, so the type's

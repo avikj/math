@@ -84,7 +84,7 @@ pin classes22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S
 pin reach22 '#Pair{#F{},#Pair{#F{},#F{}}}' 149685846
 # the type's symmetry group read off the cube (n/sym22g.hvm4): 3072 slot-preserving relabellings as choices, the
 # faces keep 48, their orders read on the entries: 1 of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6
-pin sym22g '' 13826800
+pin sym22g '#Group{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#S{#Z{}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}' 4885684
 # the N x N product executed with the writing the net read from the type (n/blocks22.hvm4): at depth k the net forms
 # 7^k products (1, 7, 49, 343 at depths 0..3; pinned at depth 2: 49 products, 16 entries of C)
 pin blocks22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}' 10043177

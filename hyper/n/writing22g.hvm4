@@ -64,8 +64,10 @@
 @eqN = λ{#Z: λ{#Z: #T; #S: λ&y. #F}; #S: λ&x. λ{#Z: #F; #S: λ&y. @eqN(x, y)}}
 @six = #S{#S{#S{#S{#S{#S{#Z}}}}}}
 // the writing of length seven: a symmetry of order six (the orbit) with its invariant cell; the length is posed
-@writingG = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&bound. ! &r = @relabelling;
-  (λ{#F: &{}; #T: (λ{#F: &{}; #T: @writingR(ia, ja, jb, kb, kc, ic, bound, r)})(@eqN(@order(r, bound), @six))})(@isSym(r))
+@writingG = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&bound. @writingOrd(ia, ja, jb, kb, kc, ic, bound, @six)
+// the same with the orbit's length n posed: the writing of length n + 1 in the symmetric form
+@writingOrd = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&bound. λ&n. ! &r = @relabelling;
+  (λ{#F: &{}; #T: (λ{#F: &{}; #T: @writingR(ia, ja, jb, kb, kc, ic, bound, r)})(@eqN(@order(r, bound), n))})(@isSym(r))
 @writingR = λ&ia. λ&ja. λ&jb. λ&kb. λ&kc. λ&ic. λ&bound. λ&r.
   (λ{#F: &{}; #T:
     ! &f = @genCell(ia, ja, jb, kb, kc, ic);

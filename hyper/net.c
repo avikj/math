@@ -5135,7 +5135,7 @@ fn void norm_small(u64 root) {
 // a node and stays), a side that is erased is dropped, a value is kept unless it is one shape with a value already
 // kept up to a bijection of its index coordinates with orientation (6.1).
 #define COLQ_MAX 65536
-static u64 COLQ_LEAVES[COLQ_MAX]; static u32 COLQ_N = 0; static u64 COLQ_SPLITS = 0;
+static u64 COLQ_LEAVES[COLQ_MAX]; static u32 COLQ_N = 0; static u64 COLQ_SPLITS = 0; static u8 COLQ_ACTIVE = 0;
 fn Term cnf_at(Term term, u32 depth);
 fn void colq_leaf(Term v) {
   u64 r = heap_alloc(1); heap_set(r, v);
@@ -5181,7 +5181,9 @@ fn void colq_substitute(Term t, u32 depth) {
 }
 fn Term colq_top(Term colq) {
   COLQ_N = 0;
+  COLQ_ACTIVE = 1;
   colq_go(heap_read(term_val(colq)), 0);
+  COLQ_ACTIVE = 0;
   Term none[1];
   Term list = term_new_ctr(table_find("Nil", 3), 0, none);
   for (u32 i = COLQ_N; i > 0; i--) { Term args[2] = { norm_read(COLQ_LEAVES[i - 1]), list }; list = term_new_ctr(table_find("Cons", 4), 2, args); }
@@ -5528,7 +5530,7 @@ __attribute__((hot)) fn Term wnf(Term term) {
               continue;
             }
             case SUP: {
-              if (is_choice_label(term_ext(whnf))) {                 /* a choice whose two sides are one atom is that atom: &c{x,x} = x (SUP-IDEM) */
+              if (COLQ_ACTIVE && is_choice_label(term_ext(whnf))) {  /* under the reading %%, a choice whose two sides are one atom is that atom: &c{x,x} = x (SUP-IDEM); both sides are explored by the reading, so reading them here is no extra work */
                 u64 sl = term_val(whnf);
                 Term a = heap_read(sl + 0), b = heap_read(sl + 1);
                 u8 ta = term_tag(a), tb = term_tag(b);
