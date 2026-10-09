@@ -75,19 +75,19 @@ pin writing22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}},#Cons{#W{#Q{#P{},#O{},
 # the 2x2 writing type with the index as the cube (n/writing22q.hvm4): nothing derived outside the net; the reading %%
 # projects the choice coordinates lazily and discards relabellings (6.1); the ledger and the reading's counts are pinned
 r=$(./hyper net n/writing22q.hvm4 -s 2>&1); wi=$(echo "$r" | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); wv=$(echo "$r" | grep -oE '"COLQ-VAL":[0-9]+' | sed 's/.*://'); ws=$(echo "$r" | grep -oE '"COLQ-SAME":[0-9]+' | sed 's/.*://'); we=$(echo "$r" | grep -oE '"COLQ-ERA":[0-9]+' | sed 's/.*://')
-if [ "$wi" = 10009786 ] && [ "$wv" = 24 ] && [ "$ws" = 24 ] && [ "$we" = 87213 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL writing22q: itrs=$wi val=$wv same=$ws era=$we want 10009786/24/24/87213"; fi
+if [ "$wi" = 8727590 ] && [ "$wv" = 24 ] && [ "$ws" = 24 ] && [ "$we" = 56431 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL writing22q: itrs=$wi val=$wv same=$ws era=$we want 8727590/24/24/56431"; fi
 # the reading's classes under the identities the net verified (n/classes22.hvm4): the 24 leaves of % carried into their
 # orbits under the relabellings, the scaling and the shear within the alphabet: 3 classes, orbits of 8, 48 and 24
-pin classes22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}},#Pair{#S{#S{#S{#Z{}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}},#Nil{}}}}}}' 36382729
+pin classes22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}},#Pair{#S{#S{#S{#Z{}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#Cons{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}},#Nil{}}}}}}' 35100533
 # with the per-pair basis change (A -> PA, C -> C P^-1, found by the faces among row and column shears) no word of
 # length <= 5 in all the identities, staying in the alphabet, joins the three classes (n/reach22.hvm4)
-pin reach22 '#Pair{#F{},#Pair{#F{},#F{}}}' 149685846
+pin reach22 '#Pair{#F{},#Pair{#F{},#F{}}}' 148403650
 # the type's symmetry group read off the cube (n/sym22g.hvm4): 3072 slot-preserving relabellings as choices, the
 # faces keep 48, their orders read on the entries: 1 of order 1, 19 of 2, 8 of 3, 12 of 4, 8 of 6
 pin sym22g '#Group{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#S{#Z{}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}' 4885684
 # the N x N product executed with the writing the net read from the type (n/blocks22.hvm4): at depth k the net forms
 # 7^k products (1, 7, 49, 343 at depths 0..3; pinned at depth 2: 49 products, 16 entries of C)
-pin blocks22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}' 10043177
+pin blocks22 '#Pair{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}}},#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#S{#Z{}}}}}}}}}}}}}}}}}}' 8760981
 # index 5.11 / 5.13 / 5.24 on net.c (n/diamond.hvm4): one term, eight normaliser schedules (-R), one ledger; the
 # seeded order is confirmed to differ (schedule_flips > 0) and the interaction count does not move
 d0=$(./hyper net n/diamond.hvm4 -s 2>&1 | grep -oE '"interactions":[0-9]+' | sed 's/.*://'); dok=1

@@ -664,8 +664,8 @@ HVM4's rules, verbatim, plus the agents below. State, every line pinned by `test
   leaves is one cell, a zero coefficient is no side and a sum is formed only between the sides that are there.
   Each node returns its matrix with the number of products formed below it, as a multitude; the net reports
   1, 7, 49, 343 products at depths 0 to 3 (pinned at depth 2: 49 products, 16 entries of C), against 8^k for
-  the direct form of `n/blocks.hvm4`. The reading of the writing costs its 10,009,786 interactions once; the
-  execution at depth 3 adds 116,132 more, with copying on reading (DUP-NOD) kept apart from products formed
+  the direct form of `n/blocks.hvm4`. The reading of the writing costs its 8,727,590 interactions once (after SUP-IDEM); the
+  execution at depth 2 adds 33,391 more (pinned), with copying on reading (DUP-NOD) kept apart from products formed
   (APP-LAM) as before. This is the N×N type executed by the numeral with nothing of the writing posed in the
   program: what is posed is still what the previous entry names (the orbit, the fixed cell, the alphabet, the
   length), and the writing used is one representative of the three classes, taken as the first leaf read.
