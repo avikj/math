@@ -1,3 +1,0 @@
-name: ceptr-boxes
-depend: cubical-0.9
-include: .
