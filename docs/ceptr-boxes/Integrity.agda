@@ -127,6 +127,10 @@ mergeIsOrderIndependent L M t e =
 mergeIsIdempotent : (L : Library) (t : Tm) → Enabled (merge L L) t → Enabled L t
 mergeIsIdempotent L t e = ⊎rec (λ x → x) (λ x → x) (inventsNothing L L t e)
 
+mergeIsAssociative : (L M N : Library) → merge (merge L M) N ≡ merge L (merge M N)
+mergeIsAssociative []       M N = refl
+mergeIsAssociative (op ∷ L) M N = cong (op ∷_) (mergeIsAssociative L M N)
+
 -- 5 · THE FORK.  What two nodes genuinely differ on is the route, and
 --     the route is kept.  Two entries of one fact, lengths 2 and 4;
 --     the meaning identifies them, and no function of the meaning
