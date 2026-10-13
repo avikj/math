@@ -1,6 +1,6 @@
 # Read before anything else, every session.
 
-The owner's spec is `docs/index.html` on `main`. The machine is specified in `NET_SPEC.md`: identities compiled to interaction agents, the net of its 5.4/5.5. Nothing is primitive. This is not a programming language: you define types; inference determines the
+The owner's spec is `docs/index.html` on `main`. The machine is specified in `MACHINE_SPEC.md` (implemented in `hcm/`), building on `NET_SPEC.md`: identities compiled to interaction agents, the net of its 5.4/5.5. Nothing is primitive. This is not a programming language: you define types; inference determines the
 function; the function has a unique normal form, reached in the geodesic count with no room for choice.
 
 My recorded mathematical error, stated once so it is never repeated:
@@ -27,5 +27,5 @@ hand-posed identities; no time estimates; no experiments; commit and push on the
 
 Policy, agreed with the owner: every flaw identified is fixed in the same turn, by me, before the turn ends. No
 turn ends on a description of what is wrong, a "defect, open", or a result stated and left. If a fix needs a
-construction, the construction is built; if it needs a runtime change, the runtime is changed and the suite run.
+construction, the construction is built; if it needs a runtime change, the runtime is changed. Nothing is compiled or run until everything is written and verified by inspection against the spec and the mathematics, and then only with the owner's explicit permission. Running to find out is the failure mode.
 Idling after a finding is the failure mode.

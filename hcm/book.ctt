@@ -1,0 +1,143 @@
+-- book.ctt : constructions of MACHINE_SPEC.md, posed for the machine.
+--   ./hcm book.ctt <name>
+-- A name with a type and no definition is a postulate: a neutral atom,
+-- reflected at its type, so a postulated path exposes its declared ends.
+
+A : U
+B : U
+X : U
+P : X → U
+x : A
+y : A
+z : A
+p : Path A x y
+q : Path A y z
+e : Equiv A B
+a : A
+x0 : X
+y0 : X
+z0 : X
+s : Path X x0 y0
+t : Path X y0 z0
+u0 : P x0
+
+-- §7  a postulated path exposes its ends
+pEnd0 : A
+pEnd0 = p @ 0
+
+-- §23  reversal and composition
+pInv : Path A y x
+pInv = reverse p
+
+pq : Path A x z
+pq = compose A x p q
+
+pq0 : A
+pq0 = pq @ 0
+
+pq1 : A
+pq1 = pq @ 1
+
+-- Data enter as constructions with their computation identities.  Each
+-- `rule p` compiles the identity p into an interaction rule: nothing about
+-- Nat or Bool is built into the machine.
+Nat : U
+zero : Nat
+suc : Nat → Nat
+natrec : (P : Nat → U) → P zero → ((n : Nat) → P n → P (suc n)) → (n : Nat) → P n
+natrec-zero : (P : Nat → U) (z : P zero) (s : (n : Nat) → P n → P (suc n)) → Path (P zero) (natrec P z s zero) z
+natrec-suc : (P : Nat → U) (z : P zero) (s : (n : Nat) → P n → P (suc n)) (n : Nat) → Path (P (suc n)) (natrec P z s (suc n)) (s n (natrec P z s n))
+rule natrec-zero
+rule natrec-suc
+
+add : Nat → Nat → Nat
+add m n = natrec (\ _ → Nat) m (\ _ r → suc r) n
+
+two : Nat
+two = suc (suc zero)
+
+four : Nat
+four = add two two
+
+Bool : U
+true : Bool
+false : Bool
+if : (P : Bool → U) → P true → P false → (b : Bool) → P b
+if-true : (P : Bool → U) (t : P true) (f : P false) → Path (P true) (if P t f true) t
+if-false : (P : Bool → U) (t : P true) (f : P false) → Path (P false) (if P t f false) f
+rule if-true
+rule if-false
+
+not : Bool → Bool
+not b = if (\ _ → Bool) false true b
+
+notnot : Bool
+notnot = not (not true)
+
+-- a path in a type of constructions: congruence carries it through not
+notPath : Path Bool (not true) (not true)
+notPath = <i> not true
+
+-- §10–12  coercion along constant lines over an abstract type: with no Kan
+-- structure supplied for Nat, the composition stays suspended at its head
+coeNat : Nat
+coeNat = coe (<_> Nat) two
+
+coePair : A * B
+coePair = coe (<_> A * B) (a , e .1 a)
+
+-- §14, §22  univalence
+-- transport along Ua of a postulated equivalence
+uaAbs : B
+uaAbs = coe (Ua A B e) a
+
+-- §21  composing two type paths: composition in the universe
+compU2 : Path U A B
+compU2 = compose U A (Ua A B e) (<_> B)
+
+compU2Beta : B
+compU2Beta = coe compU2 a
+
+-- §23  singleton contraction, and §32 the fibre round trip
+contr0 : (h : A) * Path A h y
+contr0 = (contractSingleton x p) @ 0
+
+contr1 : (h : A) * Path A h y
+contr1 = (contractSingleton x p) @ 1
+
+-- §25  handles: one payload, its path extended
+readS : P y0
+readS = readHandle P x0 u0 s
+
+readST : P z0
+readST = readHandle P x0 u0 (compose X x0 s t)
+
+handle2 : (r : X) * (P r * Path X r z0)
+handle2 = extendHandle X x0 u0 s t
+
+-- §25  difference of p with itself
+diffSelf : Path A y y
+diffSelf = difference A y p p
+
+-- §33  the square of two independent changes, and its diagonal
+m : A → A → A
+square : Path (Path A (m x y) (m y y)) (<i> m (p @ i) y) (<i> m (p @ i) z)
+square = <j i> m (p @ i) (q @ j)
+
+diagonal : Path A (m x y) (m y z)
+diagonal = <i> m (p @ i) (q @ i)
+
+-- §24  an identity agent: associativity of a binary construction
+star : A → A → A
+assoc : (a b c : A) → Path A (star (star a b) c) (star a (star b c))
+agent assoc
+
+-- a realization of the left patch: the internal wire u = star a b, with refl
+leftPatch : assoc-realL x y z (star (star x y) z)
+leftPatch = (star x y , (<_> star x y , <_> star (star x y) z))
+
+rewritten : assoc-realR x y z (star (star x y) z)
+rewritten = assoc-forward x y z (star (star x y) z) leftPatch
+
+restored : assoc-realL x y z (star (star x y) z)
+restored = assoc-backward x y z (star (star x y) z) rewritten

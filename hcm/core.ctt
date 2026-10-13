@@ -1,0 +1,93 @@
+-- core.ctt : the defined programs of MACHINE_SPEC.md.  Every one expands
+-- into the single primitive compF and the ordinary interactions.
+--
+--   interval:  0 1 ~ && || (also ∧ ∨)      faces:  (r = 0) (r = 1) top bot /\ \/
+--   paths:     <i> t   p @ r                 systems: [ φ → t ; ψ → u ]
+--   compF L φ u a0   is  comp^i (L @ i) [φ ↦ u @ i] a0
+
+-- §9  derived filling, homogeneous composition, coercion
+fill L φ u a0 r = compF (<j> L @ (r && j)) (φ \/ (r = 0)) (<j> [ φ → u @ (r && j) ; (r = 0) → a0 ]) a0
+
+hcomp A φ u a0 = compF (<_> A) φ u a0
+
+coe L a = compF L bot (<_> []) a
+
+coeBack L a = compF (<i> L @ (~ i)) bot (<_> []) a
+
+-- §10  composition at Π: the argument is filled backwards, v r : D r, v 1 = x1
+compPi L φ u f0 = \ x1 →
+  let v = \ r → fill (<j> pidom (L @ (~ j))) bot (<_> []) x1 (~ r) in
+  compF (<i> picod (L @ i) (v i)) φ (<i> (u @ i) (v i)) (f0 (v 0))
+
+-- §11  composition at Σ: the second component along the first one's filler
+compSig L φ u c =
+  let a = \ r → fill (<i> sigdom (L @ i)) φ (<i> (u @ i) .1) (c .1) r in
+  (a 1 , compF (<i> sigcod (L @ i) (a i)) φ (<i> (u @ i) .2) (c .2))
+
+-- §12  composition at PathP: the ends become sides of the box
+compPath L φ u p0 = <j>
+  compF (<i> (pfam (L @ i)) @ j) (φ \/ (j = 0) \/ (j = 1))
+        (<i> [ φ → (u @ i) @ j ; (j = 0) → pleft (L @ i) ; (j = 1) → pright (L @ i) ]) (p0 @ j)
+
+-- §14  equivalences
+Contr T = (c : T) * ((x : T) → Path T c x)
+
+fib X Y f y = (x : X) * Path Y (f x) y
+
+Equiv X Y = (f : X → Y) * ((y : Y) → Contr (fib X Y f y))
+
+IdEquiv A = (\ x → x , \ y → ((y , <_> y) , \ w → <i> ((w .2) @ (~ i) , <j> (w .2) @ ((~ i) || j))))
+
+PathEquiv A = coe (<i> Equiv (A @ 0) (A @ i)) (IdEquiv (A @ 0))
+
+-- §15  extending a partial point of a contractible type
+ExtendContr T c k θ u = hcomp T θ (<j> [ θ → (k (sel u)) @ j ]) c
+
+EquivExtend X Y e y θ w = ExtendContr (fib X Y (e .1) y) (((e .2) y) .1) (((e .2) y) .2) θ w
+
+-- §§17–20  composition at Glue.  The machine passes the components of the
+-- family as lines: A (base), α (face), S (system of (T , e)); each is the
+-- head at a fresh name reindexed to i, so the family may be its T where α holds.
+compGlue A α S ψ u u0 =
+  let T = <i> (sel (S @ i)) .1 in
+  let f = <i> ((sel (S @ i)) .2) .1 in
+  let a0 = unglueF (α @ 0) (S @ 0) u0 in
+  let a = \ r → fill A ψ (<i> unglueF (α @ i) (S @ i) (u @ i)) a0 r in
+  let a1 = a 1 in
+  let δ = forall (<i> α @ i) in
+  let t = \ r → fill T ψ u u0 r in
+  let t1 = t 1 in
+  let ω = <j> compF A (ψ \/ (j = 0) \/ (j = 1)) (<i> [ ψ → a i ; (j = 0) → (f @ i) (t i) ; (j = 1) → a i ]) a0 in
+  let e1 = (sel (S @ 1)) .2 in
+  let ext = EquivExtend (T @ 1) (A @ 1) e1 a1 (δ \/ ψ) [ δ → (t1 , ω) ; ψ → (sel (u @ 1) , <_> a1) ] in
+  let a1' = hcomp (A @ 1) ((α @ 1) \/ ψ) (<j> [ α @ 1 → (ext .2) @ (~ j) ; ψ → a1 ]) a1 in
+  glue [ α @ 1 → ext .1 ] a1'
+
+-- §21  composition in the universe
+compU φ u A0 = Glue A0 [ φ → (sel (u @ 1) , PathEquiv (<j> sel (u @ (~ j)))) ]
+
+-- §22  univalence
+Ua A B e = <i> Glue B [ (i = 0) → (A , e) ; (i = 1) → (B , IdEquiv B) ]
+
+-- §23  paths and singletons
+reverse p = <i> p @ (~ i)
+
+compose A x p q = <i> hcomp A ((i = 0) \/ (i = 1)) (<j> [ (i = 0) → x ; (i = 1) → q @ j ]) (p @ i)
+
+transport P p u = coe (<i> P (p @ i)) u
+
+contractSingleton h k = <i> (k @ (~ i) , <j> k @ ((~ i) || j))
+
+-- §25  cut, difference, handles
+cut A c z u v = compose A c u (reverse v)
+
+uncut d h = (d , (h , <_> d))
+
+difference A y p h = compose A y (reverse p) h
+
+readHandle P r u h = transport P h u
+
+extendHandle A r u h s = (r , (u , compose A r h s))
+
+-- §32  the fibre round trip (b , a , p) ↦ (f a , a , refl)
+fibreTrip a p = <i> (p @ i , (a , <j> p @ (i && j)))
