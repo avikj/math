@@ -120,6 +120,7 @@ a.x:hover,a.x:focus{color:var(--accent); border-bottom-color:var(--accent); outl
   .refcard .katex-display{margin:.5rem 0; padding:.4rem .5rem}
   .refcard a.ref{border-bottom:none; color:inherit}
   @media (hover:none){.refcard{display:none !important}}
+  .nu{}
   .src{margin-top:3.2rem; padding-top:1.3rem; border-top:1px solid var(--rule);
        color:var(--muted); font-size:.9rem}
 </style>
@@ -999,7 +1000,112 @@ info≡ (l ⊕ r) =
 
 <div class="rk" id="s9.15"><p><span class="lab">Remark 9.15</span> (the declaration). Nothing above chooses a method. The declaration is <code>Σ[ B ] (B is a rearrangement of A) × Sorted B</code>, and by <a class="ref" href="#s9.2">9.2</a> the completion is forced, not searched for. Posing it with the identities available and normalising <a class="ref" href="#s5.27">(5.27)</a> is the sorting: merge is sortedness unfolded <a class="ref" href="#s9.6">(9.6)</a>, the shape is the numeral rather than a policy <a class="ref" href="#s9.11">(9.11)</a>, the information is fixed by the endpoints <a class="ref" href="#s9.8">(9.8)</a>, the cost is the sum of the intermediate sums <a class="ref" href="#s9.7">(9.7)</a>. The sums that cost more are not rival methods but the same number written another way <a class="ref" href="#s5.23">(5.23)</a>. Sorting is where the choice of method looks least avoidable, and there is none to make: pose the declaration with the identities the object actually has, and what remains is to follow them. What is learned is fixed by where the sorting starts and ends <a class="ref" href="#s9.8">(9.8)</a>; what it costs was fixed when the number was written as a sum <a class="ref" href="#s9.7">(9.7)</a>; and the sum is part of what was posed, not something chosen along the way.</p></div>
 
-<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Agda 2.8.0</a> with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. A box sits at each computational core — <a class="ref" href="#s0.8">the one fact (0.8)</a>, <a class="ref" href="#s1.2">the partition (1.2)</a>, <a class="ref" href="#s3.2">every reversible operation is a transport (3.2)</a>, <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>, <a class="ref" href="#s4.2">Lawvere (4.2)</a>, <a class="ref" href="#s4.9">Gödel (4.6–4.9)</a>, <a class="ref" href="#s5.13">equal length (5.13)</a>, <a class="ref" href="#s7.2">σ² = −1 (7.2)</a>, <a class="ref" href="#s8.6">decide = verify (8.6)</a>, <a class="ref" href="#s9.7">every + is a merge, and the information fixed (9.7–9.8)</a> — and each, headed by its own import lines, compiles on its own against the library under those flags, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
+<h2><span class="n">10.</span> Sharing — the balance a free network keeps</h2>
+
+<p>Information copies, so sharing it destroys nothing <a class="ref" href="#s3.6">(3.6)</a>. What follows asks when sharing is nonetheless withheld, and what the single obstruction costs. The fibre is <a class="ref" href="#s1.1">§1</a>, the two axes and the vanishing grading are <a class="ref" href="#s3.5">§3</a>, the distance bound is <a class="ref" href="#s5.16">§5</a>, and the sums are <a class="ref" href="#s9.7">§9</a>’s. Nothing below is added to the construction; all of it is used.</p>
+
+<div class="st nu" id="s10.1"><p><span class="lab">Definition 10.1</span> (state, trajectory, future-value). A state is the information held — internal together with external observable. From a state the admissible transitions each carry a local value delta, and iterating them gives the trajectory type over that state. Future-value is a functional on that type, accumulated along a trajectory, and over branches either by <code>max</code> — the path taken — or by <code>sum</code> — the branch set held.</p></div>
+
+<div class="st nu" id="s10.2"><p><span class="lab">Definition 10.2</span> (the increment). For information <code>I′</code> received at a state <code>I</code>, write <code>V[I′, I] = V[I + I′] − V[I]</code>. The object is the increment; no absolute is required to exist.</p></div>
+
+<div class="st nu" id="s10.3"><p><span class="lab">Theorem 10.3</span> (information is never worse, and only because nothing is retracted). If the trajectory type over <code>I + I′</code> contains the one over <code>I</code> and the local deltas are nonnegative, then <code>V[I′, I] ≥ 0</code> under either accumulator, and along a received sequence of information the future-value at each next state is monotonically nondecreasing.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>max</code> over a superset is at least <code>max</code> over the subset, and a sum of nonnegatives over a superset is at least the sum over the subset. <span class="qed">∎</span></p>
+<p class="pf">The containment is the whole hypothesis, and it holds exactly when information accumulates. If <code>I′</code> corrects <code>I</code> rather than extending it, a trajectory that was admissible is withdrawn and the value falls. So the monotonicity of value and the absence of reconciliation are one condition, not two: a store that only grows.</p></div>
+
+<div class="rk nu" id="s10.4"><p><span class="lab">Remark 10.4</span> (the trajectory type is a fibre, and both accumulators are already here). The trajectories admissible from a state are the inputs over it <a class="ref" href="#s1.1">(1.1)</a>, growing the state is an inclusion of those fibres, and the decomposition by state is forced rather than chosen <a class="ref" href="#s1.4">(1.4)</a>. Value is then a monotone functional on an expanding fibre and nothing further is assumed of it. The two accumulators are the two the page already uses: <code>max</code> is the form <a class="ref" href="#s5.15">Bellman (5.15)</a> fixes for any functional over paths, and <code>sum</code> is the alternating accumulation over the whole branch set at <a class="ref" href="#s8.8">the moment tower (8.8)</a>. Only the first is realisable by an agent, which takes one trajectory; only the second is additive over disjoint branch sets.</p></div>
+
+<div class="st nu" id="s10.5"><p><span class="lab">Theorem 10.5</span> (exclusivity is the only obstruction to sharing). Sharing information lowers no party’s future-value unless some transition raises one party’s while lowering another’s, and that requires a resource whose acquisition by one removes trajectories from the other.</p>
+<p class="pf"><span class="lab">Proof.</span> By 10.3 each party’s value is monotone in its own information, so a loss can only come from the trajectory type itself shrinking. Receiving information never shrinks it; only the environment moving does. An environment move shrinks <em>X</em>’s trajectories exactly when it removes a transition <em>X</em> had, which for a move made by <em>Y</em> means <em>Y</em> took something <em>X</em> can no longer take. <span class="qed">∎</span></p>
+<p class="pf">So withholding is not a primitive of this construction and needs no separate justification. It is forced by the exclusivity structure, in the amount that structure forces, and is zero elsewhere.</p></div>
+
+<div class="st nu" id="s10.6"><p><span class="lab">Definition 10.6</span> (the two forms of scarcity). A resource is <em>cyclic</em> when it is acquired, held for an interval, and released to the pool it came from, the pool undiminished — the unit is exclusivity over the interval. It is <em>consumable</em> when acquisition is its use and its use is its destruction — the unit is the quantity.</p></div>
+
+<div class="st nu" id="s10.7"><p><span class="lab">Theorem 10.7</span> (the two forms are the two axes, one each). Consumption is effect-cost. A cyclic hold has effect-cost zero for every measure, and its only cost is length: the interval occupied.</p>
+<p class="pf"><span class="lab">Proof.</span> Consuming merges several inputs into one output, and what is forgotten is which input it was — <a class="ref" href="#s3.3">effect-cost (3.3)</a>, with <a class="ref" href="#s3.4">Landauer (3.4)</a> attached. Acquire, hold and release compose to the identity <em>on the pool</em>; the holder’s own state changed, the pool’s did not. So on pool-transformations the cycle has a right inverse, and by <a class="ref" href="#s3.5">the vanishing grading (3.5)</a> every ℕ-valued measure additive under composition with <code>ℓ(id) = 0</code> is zero on it — no group laws used. What remains is the other axis <a class="ref" href="#s5.7">(5.7)</a>. <span class="qed">∎</span></p>
+<p class="pf">Copying is the degenerate cyclic case: a read leaves the source as it was, so it is reversible and free on the effect axis <a class="ref" href="#s3.6">(3.6)</a>, and its only cost is the steps taken to obtain it. Charging a consumption cost for cyclic access charges effect-cost to a step with a right inverse, which 3.5 says is zero.</p></div>
+
+<div class="st nu" id="s10.8"><p><span class="lab">Theorem 10.8</span> (where nothing is exclusive, circulation needs no argument). Releasing a held cyclic resource is preferred when the gain fed back through other parties’ enlarged trajectory types exceeds one’s own loss of exclusivity, and that loss is nonzero only on exclusive holdings.</p>
+<p class="pf"><span class="lab">Proof.</span> Releasing enlarges the trajectory type of whoever takes it, which by 10.3 raises their future-value, and their subsequent transitions act on the environment the releaser also inhabits. The releaser’s own loss is the trajectories that required holding it, which is the exclusivity of 10.5. <span class="qed">∎</span></p>
+<p class="pf">The same obstruction as 10.5, read on circulation rather than on information. One condition governs both.</p></div>
+
+<div class="st nu" id="s10.9"><p><span class="lab">Definition 10.9</span> (the balance, with its slack). For a total <code>c</code> shared between two parties, the balance is</p>
+<pre class="def"><code>Balance c = Σ[ x ∈ ℕ ] Σ[ y ∈ ℕ ] Σ[ d ∈ ℕ ] (x + y + d ≡ c)</code></pre>
+<p>The unheld remainder <code>d</code> is a variable, so the constraint is an <em>equality</em> at every moment rather than an inequality to be checked. Nothing is imposed by this but a bookkeeping: it is chosen so that simultaneous use by both parties respects <code>x + y ≤ c</code>, and it is not derived from anything above.</p></div>
+
+<div class="st nu" id="s10.10"><p><span class="lab">Theorem 10.10</span> (the slack is determined by the shares). The third component is a proposition: given <code>x</code> and <code>y</code> there is at most one <code>d</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> Two slacks give <code>(x + y) + d ≡ (x + y) + d′</code>, and cancellation on the left gives <code>d ≡ d′</code>; the proof components then agree because ℕ is a set. <span class="qed">∎</span></p></div>
+
+<div class="st nu" id="s10.11"><p><span class="lab">Theorem 10.11</span> (lowering is unilateral and raising is gated, by the types). A party may lower its own share with no counterparty in the hypothesis. A party may raise its own share only from a hypothesis that presents the slack as <code>k + d</code>, and there is no term of that type without the presentation.</p>
+<pre class="def"><code>release : (x′ k y d c : ℕ) → (x′ + k) + y + d ≡ c → x′ + y + (k + d) ≡ c
+claim   : (x y′ k d c : ℕ) → x + y′ + (k + d) ≡ c → x + (y′ + k) + d ≡ c</code></pre>
+<p class="pf"><span class="lab">Proof.</span> Both are one rearrangement of a sum composed with the hypothesis; the box checks them. <code>release</code> mentions only the releasing party’s own decomposition <code>x′ + k</code>, so it needs nothing received. <code>claim</code>’s hypothesis is the grant: the slack exhibited in the form the raise consumes. <span class="qed">∎</span></p>
+<p class="pf">A transfer is the two composed, and the total is untouched by either. The slack is the only intermediary, so the parties never hold a joint object — each rewrites its own component against a presentation of the remainder.</p>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Data.Nat using (ℕ ; zero ; suc ; _+_ ; isSetℕ ; injSuc)
+open import Cubical.Data.Sigma
+open import Cubical.Tactics.NatSolver
+
+Balance : ℕ → Type
+Balance c = Σ[ x ∈ ℕ ] Σ[ y ∈ ℕ ] Σ[ d ∈ ℕ ] (x + y + d ≡ c)
+
+cancel : (m a b : ℕ) → m + a ≡ m + b → a ≡ b
+cancel zero    a b p = p
+cancel (suc m) a b p = cancel m a b (injSuc p)
+
+slack-unique : (x y c : ℕ) → isProp (Σ[ d ∈ ℕ ] (x + y + d ≡ c))
+slack-unique x y c (d , p) (d′ , q) =
+  ΣPathP (dp , isProp→PathP (λ i → isSetℕ (x + y + dp i) c) p q)
+  where dp : d ≡ d′
+        dp = cancel (x + y) d d′ (p ∙ sym q)
+
+release : (x′ k y d c : ℕ) → (x′ + k) + y + d ≡ c → x′ + y + (k + d) ≡ c
+release x′ k y d c p = rearr ∙ p
+  where rearr : x′ + y + (k + d) ≡ (x′ + k) + y + d
+        rearr = solveℕ!
+
+claim : (x y′ k d c : ℕ) → x + y′ + (k + d) ≡ c → x + (y′ + k) + d ≡ c
+claim x y′ k d c p = rearr ∙ p
+  where rearr : x + (y′ + k) + d ≡ x + y′ + (k + d)
+        rearr = solveℕ!
+
+transfer : (x′ k y d c : ℕ) → (x′ + k) + y + d ≡ c → x′ + (y + k) + d ≡ c
+transfer x′ k y d c p = claim x′ y k d c (release x′ k y d c p)</code></pre>
+<figcaption>The slack is unique, lowering needs no counterparty, and raising cannot be written without the slack presented in the form it consumes. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code> against the cubical library; no postulates, no holes.</figcaption>
+</details></div>
+
+<div class="rk nu" id="s10.12"><p><span class="lab">Remark 10.12</span> (the signal is a ratchet, so its order carries nothing). Lowering is what creates the slack a raise consumes, and announcing it fixes the announcer’s own upper bound at the lowered value. The announced total therefore only grows, the recipient takes the greatest it has heard, and a repeated or late announcement changes nothing — the state after a set of announcements is a function of the set.</p></div>
+
+<div class="st nu" id="s10.13"><p><span class="lab">Theorem 10.13</span> (a budget tree is a writing of the total as a sum). Partitioning <code>c</code> into local budgets, each node holding its own slack, recursively, is a writing of <code>c</code> as a sum of ones; the constraint composes by one induction, with every check local to a node and its children.</p>
+<p class="pf"><span class="lab">Proof.</span> If each node’s children’s shares and slack sum to that node’s share, then by induction on the tree the leaves’ shares sum to at most the root’s. Each step of the induction mentions one node and its children only. The shapes available are the ways of writing the number as a sum, which is the choice of merges <a class="ref" href="#s9.7">(9.7)</a>. <span class="qed">∎</span></p>
+<p class="pf">So §9 is this tree’s theory and nothing further is needed. What a partition settles is fixed by its endpoints along every shape <a class="ref" href="#s9.8">(9.8)</a>, so a subtree may be rewritten freely under the constraint from above without changing what is authorised; and if the cost of a shape is taken to be the total of the intermediate budgets, the cheapest is the balanced one <a class="ref" href="#s9.10">(9.10)</a>, which is the total in binary <a class="ref" href="#s9.11">(9.11)</a>.</p></div>
+
+<div class="rk nu" id="s10.14"><p><span class="lab">Remark 10.14</span> (the budget bounds width, never length). An action acquires one unit, holds it for an interval and releases it, so by 10.7 its entire cost is the interval. The total therefore bounds <em>simultaneous</em> holding and nothing else: with one unit, unboundedly much work runs in sequence.</p></div>
+
+<div class="st nu" id="s10.15"><p><span class="lab">Theorem 10.15</span> (a party can prove only the quantity that constrains it). Allocation received is provable by the holder; return made is not, and the gap is one quantity per edge.</p>
+<p class="pf"><span class="lab">Proof.</span> A counterparty needs an upper bound on what the holder may still use, which is allocation received minus return made. A stale reading of a quantity that only grows yields a lower bound on it. A lower bound on allocation received makes the usable amount smaller, which is safe. A lower bound on return made makes it larger, which is not. So the freshness requirement falls on the second quantity alone, and the same snapshot of a holder is consistent with the moment before its return. <span class="qed">∎</span></p>
+<p class="pf">Hence allocation is certified by the allocator, with a chain of receipts to the root, and a return is complete only when the party it constrains has signed for it. The trust that moves is no longer in the returning party but in the allocator not over-allocating, and that recurses to the root.</p></div>
+
+<div class="rk nu" id="s10.16"><p><span class="lab">Remark 10.16</span> (a held grant leaves nothing to understate). If budget exists only as a grant held, and returning hands the grant back, then misreporting a return gains nothing: what is spent is the grant and not a number. What remains is presenting one grant twice, which is a second use of a thing whose fibre carries one.</p></div>
+
+<div class="st nu" id="s10.17"><p><span class="lab">Theorem 10.17</span> (the invariant is a law at every cut, not at a time). For each cut of the system into a part and its environment, inflow equals outflow together with the residue held or dissipated inside. The family of such laws, agreeing where cuts overlap, is the invariant; no global time appears in it, and each party checks its own boundary alone.</p>
+<p class="pf"><span class="lab">Proof.</span> A cut is a partition of the parties, and the flows crossing it are the inputs over that boundary <a class="ref" href="#s1.1">(1.1)</a>. A family assigning to each cut a local balance that respects the flow map is a completion of it, and by <a class="ref" href="#s1.4">1.4</a> every completion is that partition — so the family is forced rather than chosen, and agreeing on overlaps is automatic. <span class="qed">∎</span></p>
+<p class="pf">This is what a globally serialised record is for, obtained without one. A serialisation produces a single order over all events; the cut-law holds at every cut, including the ones a single order cannot name, and is checked locally.</p></div>
+
+<div class="st nu" id="s10.18"><p><span class="lab">Theorem 10.18</span> (a closed cycle is invisible to every cut it does not cross). A flow that returns to where it began contributes zero to the balance at any cut it does not cross, so it requires no visibility outside itself. What requires agreement is only what nets across a cut.</p>
+<p class="pf"><span class="lab">Proof.</span> The contribution of a flow to a cut is its net crossing; a closed cycle crosses each cut an equal number of times in each direction, or not at all. <span class="qed">∎</span></p>
+<p class="pf">The exception is the cycle that has not closed. A unit in flight is indistinguishable from net transport to anyone outside, so the quantity 10.15 requires fresh and the quantity that limits this invisibility are the same one: what is currently held. The rotation generating such a flow, and the conservation it carries, are <a class="ref" href="#s7.6">§7</a>’s.</p></div>
+
+<div class="st nu" id="s10.19"><p><span class="lab">Definition 10.19</span> (the packet). Information moves along paths of connected peers. A packet is a persistent object on such a path, carrying its accumulated interaction history and the code that acts on it, each node updating both.</p></div>
+
+<div class="st nu" id="s10.20"><p><span class="lab">Theorem 10.20</span> (a forwarding path is a continuation chain, and the join is what costs). <code>n</code> peers each making at most one call and never calling itself is tail position only, so the packet is the continuation and no stack exists anywhere. A forward is then a step on the length axis alone; a sequential call is a wait for an emitted packet to terminate, and that wait is where the cost sits.</p>
+<p class="pf"><span class="lab">Proof.</span> Forwarding carries the packet unchanged but for its own trace, so it is reversible and free on the effect axis <a class="ref" href="#s3.6">(3.6)</a>, leaving the length axis <a class="ref" href="#s5.7">(5.7)</a>. A sequential call cannot proceed until two traces — the caller’s and the callee’s — are identified at a point, and branching copies the packet so that two copies share a trace prefix; the content such a rejoin settles is the interleaving, fixed by the endpoints along every schedule <a class="ref" href="#s9.8">(9.8)</a>. <span class="qed">∎</span></p>
+<p class="pf">So the floor on a dependency is the distance bound <a class="ref" href="#s5.16">(5.16)</a> with distance counted in peers: an output that must read input <code>n</code> hops away cannot be produced in fewer than <code>n</code> forwards, for every route and not for a chosen one. And a subproblem handled by a loop on a subnetwork is a cycle in this flow, so by 10.18 it is invisible outside once closed, and is the open case until then.</p></div>
+
+<div class="rk nu" id="s10.21"><p><span class="lab">Remark 10.21</span> (what is not derived). Value here is relative to the party holding the state: 10.1 is a functional on <em>that</em> party’s trajectory type, and 10.5 turns on one party’s rising while another’s falls. There is no network-wide quantity above, and none is conserved. The balance of 10.9 is imposed, chosen so that simultaneous use is safe, and the construction supplies only what follows from it once chosen — that lowering needs no permission, that raising cannot be written without a grant, that the tree is a sum, and that the law holds at every cut.</p></div>
+
+
+<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Agda 2.8.0</a> with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. A box sits at each computational core — <a class="ref" href="#s0.8">the one fact (0.8)</a>, <a class="ref" href="#s1.2">the partition (1.2)</a>, <a class="ref" href="#s3.2">every reversible operation is a transport (3.2)</a>, <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>, <a class="ref" href="#s4.2">Lawvere (4.2)</a>, <a class="ref" href="#s4.9">Gödel (4.6–4.9)</a>, <a class="ref" href="#s5.13">equal length (5.13)</a>, <a class="ref" href="#s7.2">σ² = −1 (7.2)</a>, <a class="ref" href="#s8.6">decide = verify (8.6)</a>, <a class="ref" href="#s9.7">every + is a merge, and the information fixed (9.7–9.8)</a>, <a class="ref" href="#s10.11">the balance and its slack (10.11)</a> — and each, headed by its own import lines, compiles on its own against the library under those flags, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
 
 </main>
 <script src="./vendor/katex/katex.min.js"></script>
