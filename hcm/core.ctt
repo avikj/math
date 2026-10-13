@@ -1,0 +1,295 @@
+-- core.ctt: the basis, written as definitions. Nothing here is in the host.
+-- The host knows only: fresh labels, label order (cmpname -> lt/eq/gt), and
+-- which constructors carry interval forms (inil/icons), face forms
+-- (fnil/fcons) and partial elements (sys/nosys) -- the representation
+-- contract of MACHINE_PLAN.md section 4.
+
+data Ord = lt | eq | gt
+data Bool = true | false
+data Lit = pos n | neg n
+data FLit = at0 n | at1 n
+data Clause = cnil | ccons l c
+data IForm = inil | icons c f
+data FForm = fnil | fcons c f
+data Sys = sys phi e rest | nosys
+data Pair = pair a b
+data Type = U | Pi d c | Sigma d c | PathP a l r | GlueT al a s
+data GlueEl = glueEl al s a
+
+-- Booleans, only to return tests.
+or true b = true
+or false b = b
+
+isEq eq = true
+isEq o = false
+
+sameName a b = isEq (cmpname a b)
+
+ordThen lt o = lt
+ordThen eq o = o
+ordThen gt o = gt
+
+-- Literal order: by name label, then sign (pos < neg, at0 < at1).
+litcmp (pos a) (pos b) = cmpname a b
+litcmp (pos a) (neg b) = ordThen (cmpname a b) lt
+litcmp (neg a) (pos b) = ordThen (cmpname a b) gt
+litcmp (neg a) (neg b) = cmpname a b
+litcmp (at0 a) (at0 b) = cmpname a b
+litcmp (at0 a) (at1 b) = ordThen (cmpname a b) lt
+litcmp (at1 a) (at0 b) = ordThen (cmpname a b) gt
+litcmp (at1 a) (at1 b) = cmpname a b
+
+-- Clauses: sorted literal lists without duplicates.
+cins l cnil = ccons l cnil
+cins l (ccons m c) = cinsO (litcmp l m) l m c
+cinsO lt l m c = ccons l (ccons m c)
+cinsO eq l m c = ccons m c
+cinsO gt l m c = ccons m (cins l c)
+
+cunion cnil d = d
+cunion (ccons l c) d = cins l (cunion c d)
+
+-- csub c d: every literal of c is in d.
+csub cnil d = true
+csub (ccons l c) cnil = false
+csub (ccons l c) (ccons m d) = csubO (litcmp l m) l c m d
+csubO lt l c m d = false
+csubO eq l c m d = csub c d
+csubO gt l c m d = csub (ccons l c) d
+
+-- Clause order, lexicographic, so a form has one normal presentation.
+ccmp cnil cnil = eq
+ccmp cnil (ccons m d) = lt
+ccmp (ccons l c) cnil = gt
+ccmp (ccons l c) (ccons m d) = ordThen (litcmp l m) (ccmp c d)
+
+-- Interval forms: sorted antichains of clauses (section 4 of the spec).
+-- 0 is inil, 1 is icons cnil inil. i /\ ~i is not 0.
+iadd c f = iaddB (isubsumed c f) c f
+isubsumed c inil = false
+isubsumed c (icons e f) = or (csub e c) (isubsumed c f)
+iaddB true c f = f
+iaddB false c f = iins c (iprune c f)
+iprune c inil = inil
+iprune c (icons e f) = ipruneB (csub c e) c e f
+ipruneB true c e f = iprune c f
+ipruneB false c e f = icons e (iprune c f)
+iins c inil = icons c inil
+iins c (icons e f) = iinsO (ccmp c e) c e f
+iinsO lt c e f = icons c (icons e f)
+iinsO eq c e f = icons e f
+iinsO gt c e f = icons e (iins c f)
+
+itop = icons cnil inil
+ivar n = icons (ccons (pos n) cnil) inil
+
+ijoin inil g = g
+ijoin (icons c f) g = iadd c (ijoin f g)
+imeet inil g = inil
+imeet (icons c f) g = ijoin (imeetc c g) (imeet f g)
+imeetc c inil = inil
+imeetc c (icons e g) = iadd (cunion c e) (imeetc c g)
+
+litflip (pos a) = neg a
+litflip (neg a) = pos a
+ineg inil = itop
+ineg (icons c f) = imeet (inegC c) (ineg f)
+inegC cnil = inil
+inegC (ccons l c) = iadd (ccons (litflip l) cnil) (inegC c)
+
+-- Face forms: the same, and a clause holding (n=0) and (n=1) is dropped.
+-- Sorted by name then sign, so at0 n and at1 n are adjacent.
+opposite (at0 a) (at1 b) = sameName a b
+opposite l m = false
+fcontra cnil = false
+fcontra (ccons l c) = fcontraL l c
+fcontraL l cnil = false
+fcontraL l (ccons m c) = or (opposite l m) (fcontraL m c)
+
+fadd c f = faddC (fcontra c) c f
+faddC true c f = f
+faddC false c f = faddB (fsubsumed c f) c f
+fsubsumed c fnil = false
+fsubsumed c (fcons e f) = or (csub e c) (fsubsumed c f)
+faddB true c f = f
+faddB false c f = fins c (fprune c f)
+fprune c fnil = fnil
+fprune c (fcons e f) = fpruneB (csub c e) c e f
+fpruneB true c e f = fprune c f
+fpruneB false c e f = fcons e (fprune c f)
+fins c fnil = fcons c fnil
+fins c (fcons e f) = finsO (ccmp c e) c e f
+finsO lt c e f = fcons c (fcons e f)
+finsO eq c e f = fcons e f
+finsO gt c e f = fcons e (fins c f)
+
+ftop = fcons cnil fnil
+fbot = fnil
+fjoin fnil g = g
+fjoin (fcons c f) g = fadd c (fjoin f g)
+fmeet fnil g = fnil
+fmeet (fcons c f) g = fjoin (fmeetc c g) (fmeet f g)
+fmeetc c fnil = fnil
+fmeetc c (fcons e g) = fadd (cunion c e) (fmeetc c g)
+
+-- Endpoint equations (spec section 5): (r = 1) literal by literal.
+litface (pos a) = at1 a
+litface (neg a) = at0 a
+fclause cnil = cnil
+fclause (ccons l c) = cins (litface l) (fclause c)
+feq1 inil = fnil
+feq1 (icons c f) = fadd (fclause c) (feq1 f)
+feq0 r = feq1 (ineg r)
+
+-- forall n. phi: drop every clause mentioning n.
+flname (at0 a) = a
+flname (at1 a) = a
+cmentions n cnil = false
+cmentions n (ccons l c) = or (sameName n (flname l)) (cmentions n c)
+fall n fnil = fnil
+fall n (fcons c f) = fallB (cmentions n c) n c f
+fallB true n c f = fall n f
+fallB false n c f = fcons c (fall n f)
+
+-- Substitution of the interval r for the name n (reached by reidx).
+isubst n r inil = inil
+isubst n r (icons c f) = ijoin (isubstC n r c) (isubst n r f)
+isubstC n r cnil = itop
+isubstC n r (ccons l c) = imeet (isubstL n r l) (isubstC n r c)
+isubstL n r (pos a) = substPos (sameName n a) r a
+isubstL n r (neg a) = substNeg (sameName n a) r a
+substPos true r a = r
+substPos false r a = ivar a
+substNeg true r a = ineg r
+substNeg false r a = icons (ccons (neg a) cnil) inil
+
+fsubst n r fnil = fnil
+fsubst n r (fcons c f) = fjoin (fsubstC n r c) (fsubst n r f)
+fsubstC n r cnil = ftop
+fsubstC n r (ccons l c) = fmeet (fsubstL n r l) (fsubstC n r c)
+fsubstL n r (at0 a) = subst0 (sameName n a) r a
+fsubstL n r (at1 a) = subst1 (sameName n a) r a
+subst0 true r a = feq0 r
+subst0 false r a = fcons (ccons (at0 a) cnil) fnil
+subst1 true r a = feq1 r
+subst1 false r a = fcons (ccons (at1 a) cnil) fnil
+
+-- Partial elements: the first branch whose face is top.
+sel (sys (fcons cnil fnil) e rest) = sel e
+sel (sys phi e rest) = sel rest
+sel v = v
+
+smap g (sys phi e rest) = sys phi (g e) (smap g rest)
+smap g nosys = nosys
+
+fst (pair a b) = a
+snd (pair a b) = b
+
+-- Composition, the single primitive (spec section 8; plan 5.4).
+-- The face test is clause 1 of compH, so a suspended compH that is
+-- reindexed runs it again.
+comp L phi u a0 = let n = freshname in compH (L (ivar n)) n L phi u a0
+
+compH h n L (fcons cnil fnil) u a0 = sel (u 1)
+compH (Pi D C) n L phi u f0 =
+  let Dl = <i> reidx n i D in
+  let Cl = <i> reidx n i C in
+  \x1 -> let v = \r -> fill (<j> Dl (~ j)) fbot (<j> nosys) x1 (~ r) in
+         comp (<i> Cl i (v i)) phi (<i> u i (v i)) (f0 (v 0))
+compH (Sigma D C) n L phi u z0 =
+  let Dl = <i> reidx n i D in
+  let Cl = <i> reidx n i C in
+  let a = \r -> fill Dl phi (<i> fst (u i)) (fst z0) r in
+  pair (a 1) (comp (<i> Cl i (a i)) phi (<i> snd (u i)) (snd z0))
+compH (PathP B l r) n L phi u p0 =
+  let Bl = <i> reidx n i B in
+  let ll = <i> reidx n i l in
+  let rl = <i> reidx n i r in
+  <j> comp (<i> Bl i j) (fjoin phi (fjoin (j = 0) (j = 1)))
+           (<i> sys phi (u i j) (sys (j = 0) (ll i) (sys (j = 1) (rl i) nosys)))
+           (p0 j)
+compH (GlueT al A S) n L psi u u0 =
+  compGlue (<i> reidx n i A) (<i> reidx n i al) (<i> reidx n i S) psi u u0
+compH U n L phi u A0 =
+  Glue phi A0 (sys phi (pair (sel (u 1)) (lineEquiv (<j> sel (u (~ j))))) nosys)
+compH (sys al A rest) n L phi u a0 =
+  sys (fall n al) (comp (<i> reidx n i A) phi u a0) (compH rest n L phi u a0)
+compH nosys n L phi u a0 = nosys
+
+-- Derived (spec section 9).
+fill L phi u a0 r =
+  comp (<j> L (r /\ j)) (fjoin phi (r = 0))
+       (<j> sys phi (u (r /\ j)) (sys (r = 0) a0 nosys)) a0
+hcomp A phi u a0 = comp (<_> A) phi u a0
+coe L a = comp L fbot (<_> nosys) a
+coeRS L r s a = comp (<j> L ((r /\ (~ j)) \/ (s /\ j))) fbot (<_> nosys) a
+
+-- Types of paths, contractibility, fibres, equivalences (section 14).
+Path A a b = PathP (<_> A) a b
+Contr T = Sigma T (\c -> Pi T (\x -> Path T c x))
+fib X Y f y = Sigma X (\x -> Path Y (f x) y)
+Equiv X Y = Sigma (Pi X (\_ -> Y)) (\f -> Pi Y (\y -> Contr (fib X Y f y)))
+
+idEquiv A = pair (\x -> x)
+  (\y -> pair (pair y (<_> y))
+              (\z -> <i> pair (snd z (~ i)) (<j> snd z ((~ i) \/ j))))
+lineEquiv A = coe (<i> Equiv (A 0) (A i)) (idEquiv (A 0))
+
+-- Extension (section 15). u is a partial element on theta.
+extendContr T c k theta u = hcomp T theta (<j> smap (\x -> k x j) u) c
+extendEquiv X Y e y theta w =
+  extendContr (fib X Y (fst e) y) (fst (snd e y)) (snd (snd e y)) theta w
+
+-- Glue (section 16). S is a system of pairs (T , e).
+Glue (fcons cnil fnil) A S = fst (sel S)
+Glue al A S = GlueT al A S
+glue (fcons cnil fnil) s a = sel s
+glue al s a = glueEl al s a
+unglue (fcons cnil fnil) S v = fst (snd (sel S)) v
+unglue al S (glueEl be s a) = a
+
+-- Composition at Glue (sections 17-20). A, al, S are lines in i.
+compGlue A al S psi u u0 =
+  let f = \i -> fst (snd (sel (S i))) in
+  let T = \i -> fst (sel (S i)) in
+  let a0 = unglue (al 0) (S 0) u0 in
+  let a = \r -> fill A psi (<i> unglue (al i) (S i) (u i)) a0 r in
+  let a1 = a 1 in
+  let m = freshname in
+  let delta = fall m (al (ivar m)) in
+  let t = \r -> fill T psi u u0 r in
+  let omega = <j> comp A (fjoin psi (fjoin (j = 0) (j = 1)))
+                (<i> sys psi (a i) (sys (j = 0) (f i (t i)) (sys (j = 1) (a i) nosys))) a0 in
+  let w = sys delta (pair (t 1) omega) (sys psi (pair (u 1) (<_> a1)) nosys) in
+  let ext = extendEquiv (T 1) (A 1) (snd (sel (S 1))) a1 (fjoin delta psi) w in
+  let a1' = hcomp (A 1) (fjoin (al 1) psi)
+              (<j> sys (al 1) (snd ext (~ j)) (sys psi a1 nosys)) a1 in
+  glue (al 1) (sys (al 1) (fst ext) nosys) a1'
+
+-- Univalence (section 22).
+ua A B e = <i> Glue (fjoin (i = 0) (i = 1)) B
+  (sys (i = 0) (pair A e) (sys (i = 1) (pair B (idEquiv B)) nosys))
+
+-- Path operations, singletons, handles (sections 23, 25).
+refl a = <_> a
+reverse p = <i> p (~ i)
+compose A p q = <i> hcomp A (fjoin (i = 0) (i = 1))
+  (<j> sys (i = 0) (p 0) (sys (i = 1) (q j) nosys)) (p i)
+ap f p = <i> f (p i)
+transport P p u = coe (<i> P (p i)) u
+contractSingleton h k = <i> pair (k (~ i)) (<j> k ((~ i) \/ j))
+cut A z u v = compose A u (reverse v)
+uncut D delta h = pair (D delta) (pair h (<_> h))
+difference A p h = compose A (reverse p) h
+Handle X P x = Sigma X (\r -> Sigma (P r) (\_ -> Path X r x))
+readHandle P r u h = transport P h u
+extendHandle X r u h s = pair r (pair u (compose X h s))
+
+-- Typed neutrals: a postulate whose declared type is literally Pi, Sigma or
+-- PathP is reflected, so its eliminations keep their endpoints (section 7).
+reflect (Pi D C) n = \x -> reflect (C x) (n x)
+reflect (PathP A a b) n = <i> reflect (A i) (npapp n i a b)
+reflect (Sigma D C) n = pair (reflect D (fst n)) (reflect (C (fst n)) (snd n))
+reflect T n = n
+npapp n inil a b = a
+npapp n (icons cnil inil) a b = b
