@@ -1,2 +1,0 @@
-#include "bits.hvm4"
-@main = #Pair{@tally(@add(@three, @five)), #Pair{%(@tally(@add(@cube(#S{#S{#Z}}), @three))), #Pair{@le(@three, @five), %(@le(@cube(#S{#S{#Z}}), @three))}}}

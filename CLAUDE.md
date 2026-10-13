@@ -1,9 +1,6 @@
 # Read before anything else, every session.
 
-The owner's spec is `docs/index.html` on `main`. The machine is `hyper/inet.c`, the net of its 5.4/5.5 as written:
-cells, ports, wires, a rule per pair of cell kinds, reduction by demand; it IS the cubical cell complex: a coordinate is a
-label, a path is a superposition, a face a restriction, erasure removes a face, `%` reads vertices, the ledger counts
-cells. Nothing is primitive. This is not a programming language: you define types; inference determines the
+The owner's spec is `docs/index.html` on `main`. The machine is specified in `NET_SPEC.md`: identities compiled to interaction agents, the net of its 5.4/5.5. Nothing is primitive. This is not a programming language: you define types; inference determines the
 function; the function has a unique normal form, reached in the geodesic count with no room for choice.
 
 My recorded mathematical error, stated once so it is never repeated:
