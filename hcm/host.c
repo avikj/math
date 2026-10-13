@@ -207,7 +207,7 @@ static void addClause(const char *name, int npat, RPat **rp, Raw *rhs, const cha
 /* ------------------------------------------------------------------------
  * Tags
  * ---------------------------------------------------------------------- */
-enum { C_CON, C_CLO, C_ATOM, C_NE, C_NAME, C_DEF,
+enum { C_CON, C_LAM, C_SUP, C_ATOM, C_NE, C_NAME, C_DEF,
        C_APP, C_STATE, C_CMP1, C_CMP2, C_REIDX, C_DUP, C_ERA, C_EVAL, C_ROOT };
 typedef struct { char *name; int cls, arity, dim, ref; void *ptr; } Tag;
 static Tag *tags; static int ntags, captags;
@@ -217,7 +217,7 @@ static int newTag(const char *name, int cls, int arity) {
   PUSH(tags, ntags, captags, t); return ntags - 1;
 }
 static int isValue(int c) { return c <= C_DEF; }
-static int T_ATOM, T_NAME, T_APP, T_CMP1, T_CMP2, T_REIDX, T_DUP, T_ERA, T_EVAL, T_ROOT;
+static int T_LAM, T_LAMD, T_SUP, T_ATOM, T_NAME, T_APP, T_CMP1, T_CMP2, T_REIDX, T_DUP, T_ERA, T_EVAL, T_ROOT;
 static int K_lt, K_eq, K_gt, K_inil, K_icons, K_fnil, K_fcons, K_sys, K_nosys, K_cnil, K_ccons, K_pos, K_at0, K_at1;
 static int D_isubst, D_fsubst, D_reflect;
 static int neTag(int demand) {
@@ -234,38 +234,15 @@ static int neTag(int demand) {
  * Elaborated terms
  * ---------------------------------------------------------------------- */
 enum { E_VAR, E_LAM, E_APP, E_CON, E_CALL, E_REF, E_ATOM, E_FRESH, E_REIDX, E_CMP };
-struct E { int k; char *name; int dim, id, n; E **a; char **fv; int nfv, fvDone, tag; };
-static E *emk(int k, int n) { E *e = xalloc(sizeof *e); e->k = k; e->n = n; e->a = xalloc(sizeof(E *) * (n ? n : 1)); e->tag = -1; return e; }
+struct E { int k; char *name; int dim, id, n; E **a; };
+static E *emk(int k, int n) { E *e = xalloc(sizeof *e); e->k = k; e->n = n; e->a = xalloc(sizeof(E *) * (n ? n : 1)); return e; }
 static E *evar(const char *x) { E *e = emk(E_VAR, 0); e->name = xdup(x); return e; }
 static E *eapp(E *f, E *a) { E *e = emk(E_APP, 2); e->a[0] = f; e->a[1] = a; return e; }
 
-static int inList(char **xs, int n, const char *x) { for (int i = 0; i < n; i++) if (!strcmp(xs[i], x)) return 1; return 0; }
-static void fvCollect(E *t, char ***xs, int *n, int *cap, char **bound, int nb);
-static void lamFV(E *l) {
-  if (l->fvDone) return;
-  char **xs = NULL; int n = 0, cap = 0; char *b[1] = { l->name };
-  fvCollect(l->a[0], &xs, &n, &cap, b, 1);
-  l->fv = xs; l->nfv = n; l->fvDone = 1;
-}
-static void fvCollect(E *t, char ***xs, int *n, int *cap, char **bound, int nb) {
-  switch (t->k) {
-  case E_VAR:
-    if (!inList(bound, nb, t->name) && !inList(*xs, *n, t->name)) PUSH(*xs, *n, *cap, t->name);
-    return;
-  case E_LAM:
-    lamFV(t);
-    for (int i = 0; i < t->nfv; i++)
-      if (!inList(bound, nb, t->fv[i]) && !inList(*xs, *n, t->fv[i])) PUSH(*xs, *n, *cap, t->fv[i]);
-    return;
-  default:
-    for (int i = 0; i < t->n; i++) fvCollect(t->a[i], xs, n, cap, bound, nb);
-  }
-}
-/* Uses of x in t, as one replacement sees them: a closure that captures x
- * is one use. */
+/* Occurrences of the binding x in t (an inner binder of x shadows it). */
 static int countUses(E *t, const char *x) {
   if (t->k == E_VAR) return !strcmp(t->name, x);
-  if (t->k == E_LAM) { if (!strcmp(t->name, x)) return 0; lamFV(t); return inList(t->fv, t->nfv, x); }
+  if (t->k == E_LAM && !strcmp(t->name, x)) return 0;
   int c = 0; for (int i = 0; i < t->n; i++) c += countUses(t->a[i], x); return c;
 }
 
@@ -417,7 +394,7 @@ static void fan(End src, End *dst, int k) {
   if (k == 0) { int e = nn(T_ERA, 0, 0); cn(EN(e, 0), src); return; }
   End cur = src;
   for (int i = 0; i < k - 1; i++) {
-    int d = nn(T_DUP, 0, 0); cn(EN(d, 0), cur); cn(EN(d, 1), dst[i]); cur = EN(d, 2);
+    int d = nn(T_DUP, 'f', 0); cn(EN(d, 0), cur); cn(EN(d, 1), dst[i]); cur = EN(d, 2);
   }
   cn(cur, dst[k - 1]);
 }
@@ -428,31 +405,26 @@ static void fan(End src, End *dst, int k) {
 typedef struct { const char *name; End e; End *leaf; int nleaf, next; } Bind;
 static Bind *env; static int nenv, capenv;
 static void bindv(const char *x, End e) { Bind b; memset(&b, 0, sizeof b); b.name = x; b.e = e; PUSH(env, nenv, capenv, b); }
-static void prepare(E *t) {
-  for (int i = 0; i < nenv; i++) {
+/* Split each binding from index `from` on by its uses in t: ERA, a wire, or
+ * a DUP tree; every DUP made here is a new duplication, so a fresh label. */
+static void prepareFrom(int from, E *t) {
+  for (int i = from; i < nenv; i++) {
     Bind *b = &env[i]; int k = countUses(t, b->name);
     b->nleaf = k; b->next = 0;
     if (k == 0) { int e = nn(T_ERA, 0, 0); cn(EN(e, 0), b->e); continue; }
     b->leaf = xalloc(sizeof(End) * k);
     End cur = b->e;
-    for (int j = 0; j < k - 1; j++) { int d = nn(T_DUP, 0, 0); cn(EN(d, 0), cur); b->leaf[j] = EN(d, 1); cur = EN(d, 2); }
+    for (int j = 0; j < k - 1; j++) { int d = nn(T_DUP, 'f', 0); cn(EN(d, 0), cur); b->leaf[j] = EN(d, 1); cur = EN(d, 2); }
     b->leaf[k - 1] = cur;
   }
 }
-static void envReset(void) { for (int i = 0; i < nenv; i++) free(env[i].leaf); nenv = 0; }
+static void envPop(int mark) { for (int i = mark; i < nenv; i++) free(env[i].leaf); nenv = mark; }
 static End useVar(const char *x) {
   for (int i = nenv - 1; i >= 0; i--) if (!strcmp(env[i].name, x)) {
     if (env[i].next >= env[i].nleaf) die("internal: variable %s used more than counted", x);
     return env[i].leaf[env[i].next++];
   }
   die("internal: unbound variable %s", x); return EL(0);
-}
-static int closureTag(E *l) {
-  if (l->tag >= 0) return l->tag;
-  lamFV(l);
-  char buf[64]; static int ctr; snprintf(buf, sizeof buf, "%s%d", l->dim ? "<>" : "\\", ++ctr);
-  l->tag = newTag(buf, C_CLO, l->nfv); tags[l->tag].dim = l->dim; tags[l->tag].ptr = l;
-  return l->tag;
 }
 static State *initialState(int def);
 static int slotPort(State *s, int slot);
@@ -461,10 +433,15 @@ static void emit(E *t, End tg) {
   int k;
   switch (t->k) {
   case E_VAR: cn(useVar(t->name), tg); return;
-  case E_LAM:
-    k = nn(closureTag(t), 0, 0); cn(EN(k, 0), tg);
-    for (int j = 0; j < t->nfv; j++) cn(useVar(t->fv[j]), EN(k, j + 1));
+  case E_LAM: {
+    /* the binder is its body subnet: aux 0 the bound-variable wire, aux 1
+     * the body result; the body is emitted here, once */
+    k = nn(t->dim ? T_LAMD : T_LAM, 0, 0); cn(EN(k, 0), tg);
+    int mark = nenv; bindv(t->name, EN(k, 1)); prepareFrom(mark, t->a[0]);
+    emit(t->a[0], EN(k, 2));
+    envPop(mark);
     return;
+  }
   case E_APP: k = nn(T_APP, 0, 0); emit(t->a[0], EN(k, 0)); cn(EN(k, 1), tg); emit(t->a[1], EN(k, 2)); return;
   case E_CON: k = nn(t->id, 0, 0); cn(EN(k, 0), tg); for (int i = 0; i < t->n; i++) emit(t->a[i], EN(k, i + 1)); return;
   case E_CALL: {
@@ -481,7 +458,7 @@ static void emit(E *t, End tg) {
   }
 }
 /* Emit t at target with the bindings already made, then clear them. */
-static void emitWith(E *t, End tg) { prepare(t); emit(t, tg); envReset(); }
+static void emitWith(E *t, End tg) { prepareFrom(0, t); emit(t, tg); envPop(0); }
 
 /* ------------------------------------------------------------------------
  * Inspection states (plan 3.4)
@@ -611,14 +588,44 @@ static void famBranch(int ft, int vt) {
   cn(EN(f1, 0), ER(1)); cn(EN(f2, 0), ER(2));
   cn(EN(f1, 1), EN(s, 2)); cn(EN(f2, 1), EN(s, 3));
   for (int i = 1; i < a; i++) {
-    int d = nn(T_DUP, 0, 0); cn(EN(d, 0), EL(i)); cn(EN(d, 1), EN(f1, i + 1)); cn(EN(d, 2), EN(f2, i + 1));
+    int d = nn(T_DUP, 'f', 0); cn(EN(d, 0), EL(i)); cn(EN(d, 1), EN(f1, i + 1)); cn(EN(d, 2), EN(f2, i + 1));
+  }
+}
+/* DUP_k(u,v) >< LAM(x,t): L0, L1, SUP_k on x, DUP_k on t.  The body
+ * subnet stays one subnet. */
+static void famCopyLam(int vt) {
+  int l0 = nn(vt, 0, 0), l1 = nn(vt, 0, 0), sp = nn(T_SUP, 'l', 0), d = nn(T_DUP, 'l', 0);
+  cn(EN(l0, 0), EL(0)); cn(EN(l1, 0), EL(1));
+  cn(EN(sp, 0), ER(0)); cn(EN(d, 0), ER(1));
+  cn(EN(l0, 1), EN(sp, 1)); cn(EN(l1, 1), EN(sp, 2));
+  cn(EN(l0, 2), EN(d, 1)); cn(EN(l1, 2), EN(d, 2));
+}
+/* DUP_k >< SUP_k: annihilate.  DUP_k >< SUP_j: commute. */
+static void famDupSup(int same) {
+  if (same) { cn(EL(0), ER(0)); cn(EL(1), ER(1)); return; }
+  int s0 = nn(T_SUP, 'r', 0), s1 = nn(T_SUP, 'r', 0), d0 = nn(T_DUP, 'l', 0), d1 = nn(T_DUP, 'l', 0);
+  cn(EN(s0, 0), EL(0)); cn(EN(s1, 0), EL(1));
+  cn(EN(d0, 0), ER(0)); cn(EN(d1, 0), ER(1));
+  cn(EN(d0, 1), EN(s0, 1)); cn(EN(d0, 2), EN(s1, 1));
+  cn(EN(d1, 1), EN(s0, 2)); cn(EN(d1, 2), EN(s1, 2));
+}
+/* Any other demand F >< SUP_k(a,b): SUP_k(F a, F b), F's other inputs
+ * fanned by DUP_k, so the two sides stay correlated. */
+static void famSup(int ft) {
+  int a = tags[ft].arity;
+  int s = nn(T_SUP, 'r', 0), f0 = nn(ft, 'l', 0), f1 = nn(ft, 'l', 0);
+  cn(EN(s, 0), EL(0));
+  cn(EN(f0, 0), ER(0)); cn(EN(f1, 0), ER(1));
+  cn(EN(f0, 1), EN(s, 1)); cn(EN(f1, 1), EN(s, 2));
+  for (int i = 1; i < a; i++) {
+    int d = nn(T_DUP, 'r', 0); cn(EN(d, 0), EL(i)); cn(EN(d, 1), EN(f0, i + 1)); cn(EN(d, 2), EN(f1, i + 1));
   }
 }
 static void famCopy(int vt) {
   int v1 = nn(vt, 'r', 0), v2 = nn(vt, 'r', 0);
   cn(EN(v1, 0), EL(0)); cn(EN(v2, 0), EL(1));
   for (int j = 0; j < tags[vt].arity; j++) {
-    int d = nn(T_DUP, 0, 0); cn(EN(d, 0), ER(j)); cn(EN(d, 1), EN(v1, j + 1)); cn(EN(d, 2), EN(v2, j + 1));
+    int d = nn(T_DUP, 'l', 0); cn(EN(d, 0), ER(j)); cn(EN(d, 1), EN(v1, j + 1)); cn(EN(d, 2), EN(v2, j + 1));
   }
 }
 static void famErase(int vt) { for (int j = 0; j < tags[vt].arity; j++) { int e = nn(T_ERA, 0, 0); cn(EN(e, 0), ER(j)); } }
@@ -628,12 +635,8 @@ static void famForce(int ft, int vt) {
   for (int i = 0; i < tags[ft].arity; i++) cn(EN(k, i + 1), EL(i));
   emitWith(d->body, EN(k, 0));
 }
-static void famBeta(int vt) {
-  E *l = tags[vt].ptr;
-  bindv(l->name, EL(1));
-  for (int j = 0; j < l->nfv; j++) bindv(l->fv[j], ER(j));
-  emitWith(l->a[0], EL(0));
-}
+/* LAM(x,t) >< APP(r,a): x = a, t = r.  The existing body is spliced in. */
+static void famBeta(void) { cn(EL(1), ER(0)); cn(EL(0), ER(1)); }
 /* REIDX: aux 0 result, aux 1 name, aux 2 interval. */
 static void famReidx(int vt) {
   int vc = tags[vt].cls;
@@ -644,7 +647,14 @@ static void famReidx(int vt) {
     emitWith(c, EL(0));
     return;
   }
-  if (vc == C_CON || vc == C_CLO || vc == C_ATOM || vc == C_NAME) {
+  if (vc == C_LAM) {
+    /* the bound variable passes through; the body result is reindexed */
+    int l = nn(vt, 0, 0), r = nn(T_REIDX, 0, 0);
+    cn(EN(l, 0), EL(0)); cn(EN(l, 1), ER(0));
+    cn(EN(r, 0), ER(1)); cn(EN(r, 1), EN(l, 2)); cn(EN(r, 2), EL(1)); cn(EN(r, 3), EL(2));
+    return;
+  }
+  if (vc == C_CON || vc == C_ATOM || vc == C_NAME) {
     int m = tags[vt].arity, v = nn(vt, 'r', 0);
     cn(EN(v, 0), EL(0));
     End *ns = xalloc(sizeof(End) * (m + 1)), *rs = xalloc(sizeof(End) * (m + 1));
@@ -729,14 +739,17 @@ static void famState(int st, int vt) {
 static Desc *build(int lt, int rt, int extra) {
   Desc *d = xalloc(sizeof *d); B = d; d->la = tags[lt].arity; d->ra = tags[rt].arity;
   int lc = tags[lt].cls, rc = tags[rt].cls;
-  if (lc == C_DUP) famCopy(rt);
+  if (lc == C_DUP && rc == C_LAM) famCopyLam(rt);
+  else if (lc == C_DUP && rc == C_SUP) famDupSup(extra);
+  else if (lc == C_DUP) famCopy(rt);
   else if (lc == C_ERA) famErase(rt);
   else if (rc == C_DEF) famForce(lt, rt);
   else if (lc == C_EVAL) cn(EL(0), rebuildRight(rt));
+  else if (rc == C_SUP) famSup(lt);
   else if (lc == C_REIDX) famReidx(rt);
   else if (lc == C_STATE) famState(lt, rt);
   else if (rc == C_CON && (rt == K_sys || rt == K_nosys)) famBranch(lt, rt);
-  else if (lc == C_APP && rc == C_CLO) famBeta(rt);
+  else if (lc == C_APP && rc == C_LAM) famBeta();
   else if (lc == C_CMP1 && rc == C_NAME) { int c = nn(T_CMP2, 'r', 0); cn(EN(c, 0), EL(1)); cn(EN(c, 1), EL(0)); famErase(rt); }
   else if (lc == C_CMP2 && rc == C_NAME) { int o = nn(extra < 0 ? K_lt : extra > 0 ? K_gt : K_eq, 0, 0); cn(EN(o, 0), EL(0)); }
   else famNE(lt, rt);
@@ -856,6 +869,8 @@ static void fire(int x, int y) {
   int extra = 0;
   if (tags[nodes[x].tag].cls == C_CMP2 && tags[nodes[y].tag].cls == C_NAME)
     extra = nodes[x].lab < nodes[y].lab ? -1 : nodes[x].lab > nodes[y].lab ? 1 : 0;
+  else if (tags[nodes[x].tag].cls == C_DUP && tags[nodes[y].tag].cls == C_SUP)
+    extra = nodes[x].lab == nodes[y].lab;
   Desc *d = getDesc(nodes[x].tag, nodes[y].tag, extra);
   instantiate(d, x, y);
   steps++;
@@ -946,7 +961,7 @@ static void readSys(int s) {
     PR e = partner(pr(s, 2)); nodes[s].port[2].n = -1;
     PR *leaf = xalloc(sizeof(PR) * k);
     PR cur = e;
-    for (int i = 0; i < k - 1; i++) { int d = alloc(T_DUP, 0); link(pr(d, 0), cur); leaf[i] = pr(d, 1); cur = pr(d, 2); }
+    for (int i = 0; i < k - 1; i++) { int d = alloc(T_DUP, ++labelCtr); link(pr(d, 0), cur); leaf[i] = pr(d, 1); cur = pr(d, 2); }
     leaf[k - 1] = cur;
     sput(&out, "{");
     for (int i = 0; i < k; i++) {
@@ -973,7 +988,8 @@ static void readback(PR p) {
     whnf(p);
     PR q = partner(p); int t = nodes[q.n].tag; int c = tags[t].cls;
     if (c == C_DEF) { int e = alloc(T_EVAL, 0); link(pr(e, 0), q); link(pr(e, 1), p); continue; }
-    if (c == C_CLO) {
+    if (c == C_SUP) { sput(&out, "{"); readback(pr(q.n, 1)); sput(&out, " | "); readback(pr(q.n, 2)); sput(&out, "}"); return; }
+    if (c == C_LAM) {
       long lab = ++labelCtr; int arg;
       if (tags[t].dim) { arg = mkIVar(lab); sput(&out, "<#%ld> ", lab); }
       else { arg = alloc(T_ATOM, lab); sput(&out, "\\x%ld -> ", lab); }
@@ -1223,6 +1239,8 @@ static int needDef(const char *n) { int k = findDef(n); if (k < 0) die("core: de
 
 int main(int argc, char **argv) {
   if (argc < 2) { fprintf(stderr, "usage: hcm core.ctt file.ctt ...\n"); return 2; }
+  T_LAM = newTag("LAM", C_LAM, 2); T_LAMD = newTag("LAMd", C_LAM, 2); tags[T_LAMD].dim = 1;
+  T_SUP = newTag("SUP", C_SUP, 2);
   T_ATOM = newTag("ATOM", C_ATOM, 0); T_NAME = newTag("NAME", C_NAME, 0);
   T_APP = newTag("APP", C_APP, 2); T_CMP1 = newTag("CMP1", C_CMP1, 2); T_CMP2 = newTag("CMP2", C_CMP2, 1);
   T_REIDX = newTag("REIDX", C_REIDX, 3); T_DUP = newTag("DUP", C_DUP, 2); T_ERA = newTag("ERA", C_ERA, 0);

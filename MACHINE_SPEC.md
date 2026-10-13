@@ -413,3 +413,35 @@ Implemented in `hcm/` as follows:
   `f ⋈ c → R`. The right-hand side `p-rhs γ` is applied to the ports that
   carried the variables. The interaction counts one step, and the expansion
   of `R` counts its own.
+
+## Correction: binders are subnets; sharing is part of correctness (owner, verbatim)
+
+Optimal sharing is part of correctness here. My closure-copying translation contains a concrete defect, so that rule must be replaced.
+
+Consider (λf.(f a, f b))(λx.R), R = (λz.z) w, with a, b, w values.
+
+The translation I gave creates two closure instances and instantiates their body template separately when each is called. That creates two copies of the redex R, although R is independent of x. Its evaluation can be shared. Sharing a code address did not preserve sharing of the computation.
+
+The correction is to represent a binder by its actual body subnet and binding wire:
+
+    LAM:  principal: function;  auxiliary 0: bound-variable wire;  auxiliary 1: body-result wire
+    APP:  principal: demanded function;  auxiliary 0: result;  auxiliary 1: argument
+
+Application is exactly  LAM(x,t) ⋈ APP(r,a) → x = a, t = r.  It splices the existing body into its context. It does not instantiate another copy of a stored body template.
+
+When a labelled duplicator meets that binder, DUP_κ(u,v) ⋈ LAM(x,t), the replacement contains precisely four agents: L0 = LAM, L1 = LAM, S = SUP_κ, D = DUP_κ. Its complete wiring is:
+
+    L0.principal — u          L1.principal — v
+    S.principal  — x          D.principal  — t
+    L0.variable  — S.branch 0 L1.variable  — S.branch 1
+    L0.body      — D.output 0 L1.body      — D.output 1
+
+There are four boundary connections and four internal wires. The original body subnet remains one subnet.
+
+Applying the two resulting functions to a and b connects x = SUP_κ(a,b) at the original binder's input, while its result feeds the corresponding DUP_κ. In the example, the body does not use x. Its one existing redex (λz.z) w therefore reduces once, and its result reaches both callers through the result fan.
+
+Two statements must remain distinct: reduction-order independence within the compiled net, and preservation of computation sharing during compilation. The former cannot substitute for the latter.
+
+The remaining concrete obligation is to track the same sharing families through the cubical clauses — including their generated substitutions and scope changes. Merely attaching fresh labels would not prove that correspondence.
+
+The earlier closure-template copying scheme is therefore superseded for binders. Copying immutable code descriptions is not an implementation of the required sharing.
