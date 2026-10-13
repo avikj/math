@@ -1,10 +1,11 @@
 # hcm: the hypercubical interaction machine
 
-The design is in `../MACHINE_PLAN.md`, built from `../MACHINE_SPEC.md` and `../NET_SPEC.md`.
+The specification is `../MACHINE_SPEC.md` (the owner's text, verbatim) and `../NET_SPEC.md`.
 
 - **`host.c`**: the fixed step.
   - It holds the agent store and the wires, demands active pairs from the root, applies descriptors, and reads the result back.
-  - Every rule is a descriptor generated from definitions the first time its pair meets. That covers closures, inspection states, and the copy, erase, force, neutral, branchwise and reindexing families.
+  - Binders are body subnets (`LAM`: variable wire, body wire). Copying a binder uses labelled `SUP`/`DUP` fans, so a body's redexes reduce once for all copies.
+  - Every rule is a descriptor generated from definitions the first time its pair meets. That covers inspection states, and the copy, erase, force, neutral, branchwise and reindexing families.
   - The literal operations are fresh labels and label order.
   - The identity-agent pass (`agent p`) is here as a transformation of syntax into definitions.
 - **`core.ctt`**: the basis, written as definitions:
