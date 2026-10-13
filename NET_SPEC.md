@@ -318,6 +318,8 @@ Each piece is transcribed from its source, not invented.
 ## 9. Prohibitions (the recorded failures)
 
 - No number primitives; elements are abstract.
+- No type checker separate from reduction. Checking is the reduction of the
+  declaration being inhabitable: normalizing reaches an inhabitant (5.3, 5.27).
 - No conversion or equivalence test anywhere. Equality is always a supplied
   path.
 - No per-theorem hand-written transformation. Rules come from §§1–5.
