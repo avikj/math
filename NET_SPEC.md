@@ -189,7 +189,7 @@ The rule record is `forward`, `backward`, `backwardForward` and
 `Σ_β R(β) → boundary` is lossless exactly when every `R(β)` is contractible.
 The decoder supplies the contraction's centre.
 
-## 6. Ports: one principal port, inputs in any order, in any grouping
+## 6. Ports: inputs in any order, in any grouping
 
 A chain of cells waiting one input at a time forces an order of arrival. That
 order is extra structure the math never asked for, so it is a failure. Inputs
@@ -198,7 +198,11 @@ central.
 
 ### Port type
 
-    Σ (T ⊆ remaining, T dependency-closed given S). Π_{k∈T} A_k
+    Σ (T ⊆ remaining). Π (missing dependencies of T). Π_{k∈T} A_k
+
+No dependency-closure check is needed. A block whose types mention
+unreceived inputs is a function of them: a partial application of the
+telescope's types. That is just the block's type, and nothing decides it.
 
 ### State
 
@@ -220,9 +224,9 @@ Currying in either order is the same equivalence:
 
 ### Dependency
 
-If A_k depends on A_j and j ∉ S, then either T includes j, or T carries k's
-type as a function of j. For independent inputs any subset is allowed. No
-order is forced beyond what the types require.
+If A_k depends on A_j and j ∉ S, then k's value is held as a function of j
+and applied where it is read (see Diamond). Any subset can arrive at any time,
+and no order is forced, not even by dependency.
 
 ### Overlap is a gluing condition
 
@@ -236,11 +240,33 @@ Source:
 Order-dependence where no cell is supplied shows the observed state was never
 produced by any source (`abstracts/14`).
 
-### Diamond
+### Diamond (corrected; the earlier claim was wrong)
 
-The agent keeps one principal port, so Lafont's disjointness proof of 5.11
-applies unchanged. Simultaneous arrivals at one port are sequenced. The
-sequence is whatever happens, not a fixed order, and every sequence is equal.
+Earlier this section said: "the agent keeps one principal port, so Lafont's
+proof applies unchanged". That is false. In an interaction net a port takes
+exactly one wire. A port that receives from many senders is a nondeterministic
+merge (Alexiev's multiple principal ports), and two active pairs on it share a
+cell. So the disjointness proof of 5.11 does not apply.
+
+The diamond holds here by a different proof. Every input port is principal.
+Receiving at k and receiving at l are two active pairs on the same cell, and:
+
+- (a) neither firing consumes or disables the other's wire, because nothing is
+  discarded;
+- (b) the two updates commute strictly: S ∪ T ∪ U is reached in either order,
+  with the data at disjoint coordinates.
+
+So after either firing the other is still available, and both routes meet in
+one further step each. That is exactly 5.11's conclusion. A merge breaks
+confluence only when one firing disables the other, as amb's choice does. Here
+nothing is chosen.
+
+Condition (b) needs care in the dependent case. If k's type depends on an
+unreceived j, receiving k stores its value as a function of j. Instantiating
+it at j's arrival would cost an extra step in one order only, which would
+break equal length (5.13). So the stored function is never instantiated on
+arrival. It is applied where it is read, as with Handle (§3), so both orders
+take the same number of steps.
 
 ## 7. Lowering the primitives
 
@@ -253,7 +279,32 @@ Each piece is transcribed from its source, not invented.
 | Face formulas | Free De Morgan algebra on finitely many generators: a fixed small rule set of agents. Not a C primitive. |
 | Cells needing several inputs (e.g. hcomp needs the type head and φ) | §6 ports. Never a fixed-order chain. |
 
-## 8. Prohibitions (the recorded failures)
+## 8. The open seams, assessed
+
+1. **Where identity agents are wired.** There is no wiring step to decide. An
+   identity is a term p of a path type, and it acts where the posed term uses
+   it (through `ap`, transport, `E_p`). Its use sites are its occurrences in
+   the term, and the term-to-net translation places it there. "The compiler
+   decides where p fires" would be search under another name.
+
+2. **Lamping across interval binders.** Nothing new is needed:
+   - `<i> t` is λ over I, and path application is application.
+   - A partial element is a function of a face proof
+     (`Partial φ A = IsOne φ → A`), so hcomp's systems are λ too.
+   - Lamping and Asperti–Guerrini apply unchanged.
+   - The only cubical addition is that a neutral path applied at 0 or 1 gives
+     its boundary. A path cell therefore carries its endpoints, which the Path
+     type already does.
+
+3. **Dependency-closed blocks.** No closure check exists (§6, port type). A
+   block that depends on missing inputs is a function of them.
+
+4. **The diamond for block ports.** The original claim was wrong (§6,
+   Diamond). It is replaced by: rules on different ports commute strictly and
+   never disable each other, and dependent values are applied where they are
+   read.
+
+## 9. Prohibitions (the recorded failures)
 
 - No number primitives; elements are abstract.
 - No conversion or equivalence test anywhere. Equality is always a supplied
