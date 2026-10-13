@@ -304,6 +304,17 @@ Each piece is transcribed from its source, not invented.
    never disable each other, and dependent values are applied where they are
    read.
 
+## 10. Input and output
+
+- **Input:** CCHM's core and nothing more: Π, Σ, Path, U, the interval, faces
+  and systems, comp/transp/hcomp, and Glue, in the CCHM paper's syntax. Agda
+  notation for those same constructs is accepted only where it is trivial to
+  accept. There is no import resolution and no Agda feature outside CCHM. A
+  declaration is a type posed with its identities (5.27), as a term of the
+  same language (5.26).
+- **Output:** the normal form in the same syntax, read back by a fold that
+  adds no step (5.21), together with its length (5.6).
+
 ## 9. Prohibitions (the recorded failures)
 
 - No number primitives; elements are abstract.
