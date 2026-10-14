@@ -1445,7 +1445,102 @@ retrace a b k v =
 
 <div class="rk nu" id="s12.25"><p><span class="lab">Remark 12.25</span> (what is not derived). That every neighbour observes is a condition on the protocol, not a consequence of anything above; 12.2 says only that if anyone checks a node’s cut it is that set, and 12.4 that this is the set 10.26 needed. The orientation of 12.11 is a choice and nothing depends on it, since reversing an edge negates one coordinate and the box checks that the balance follows. That a party transmits its true boundary values is not derived — 12.18 says what a proof consists of, not that one is offered. Which graph the parties form is not derived either: 12.6, 12.21 and 12.22 price the choices and 12.24 says the three constraints cannot all be met at once, but nothing here selects a topology, and the trade is the result rather than a recommendation.</p></div>
 
-<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Agda 2.8.0</a> with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. A box sits at each computational core — <a class="ref" href="#s0.8">the one fact (0.8)</a>, <a class="ref" href="#s1.2">the partition (1.2)</a>, <a class="ref" href="#s3.2">every reversible operation is a transport (3.2)</a>, <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>, <a class="ref" href="#s4.2">Lawvere (4.2)</a>, <a class="ref" href="#s4.9">Gödel (4.6–4.9)</a>, <a class="ref" href="#s5.13">equal length (5.13)</a>, <a class="ref" href="#s7.2">σ² = −1 (7.2)</a>, <a class="ref" href="#s8.6">decide = verify (8.6)</a>, <a class="ref" href="#s9.7">every + is a merge, and the information fixed (9.7–9.8)</a>, <a class="ref" href="#s10.15">the balance and its slack (10.15)</a>, <a class="ref" href="#s11.10">the thread and its hops (11.10)</a>, <a class="ref" href="#s12.14">the balance and what cancels (12.14)</a> — and each, headed by its own import lines, compiles on its own against the library under those flags, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
+<h2><span class="n">13.</span> The three quantities, and the one identity among them</h2>
+
+<p>§12 found two things about a network’s accounting: the reference levels <a class="ref" href="#s12.16">(12.16)</a> and the gap between what a balance hides and what neighbours can check <a class="ref" href="#s12.23">(12.23)</a>. They are not two findings. They are two degrees of one object, there is a third, and the three satisfy a single identity fixed by counting parties, channels and witness triangles.</p>
+
+<div class="st nu" id="s13.1"><p><span class="lab">Definition 13.1</span> (the three degrees). Over the interaction complex, degree 0 is quantities at parties, degree 1 is quantities on channels, degree 2 is the witness triangles of <a class="ref" href="#s12.23">12.23</a> — the mutually adjacent triples, each supported inside one witness set. A <em>potential</em> is a degree-0 assignment; its <em>circulation</em> along a walk is the sum of its differences across the steps.</p></div>
+
+<div class="st nu" id="s13.2"><p><span class="lab">Theorem 13.2</span> (a potential telescopes, so it has no circulation at all). Along any walk, a potential’s circulation is the difference of its endpoints alone; around any closed walk it is zero. Hence no nonzero potential difference is a circulation, which is what makes the split of <a class="ref" href="#s12.15">12.15</a> a direct sum and the quotients below well-defined.</p>
+<pre class="def"><code>telescope : (φ : V → A) (x : V) (xs : List V)
+          → circ φ x xs ≡ φ (end x xs) + (- φ x)
+
+closed : (φ : V → A) (x : V) (xs : List V) → end x xs ≡ x
+       → circ φ x xs ≡ 0g</code></pre>
+<p class="pf"><span class="lab">Proof.</span> Induction on the walk: each step contributes the difference across it, and consecutive steps cancel the shared endpoint — one application of the additive inverse per step. Closing the walk makes the two endpoints the same, so the difference is zero. The triangle is the three-step case and needs no separate argument. <span class="qed">∎</span></p>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Data.List
+open import Cubical.Algebra.AbGroup
+
+module _ {ℓ ℓ&#x27; : Level} (G : AbGroup ℓ) (V : Type ℓ&#x27;) where
+  open AbGroupStr (snd G)
+  private
+    A : Type ℓ
+    A = fst G
+
+  -- where a walk ends
+  end : V → List V → V
+  end x []       = x
+  end _ (y ∷ ys) = end y ys
+
+  -- the circulation of a potential along a walk: differences across each step
+  circ : (V → A) → V → List V → A
+  circ φ x []       = 0g
+  circ φ x (y ∷ ys) = (φ y + (- φ x)) + circ φ y ys
+
+  -- a potential telescopes: only the endpoints survive
+  telescope : (φ : V → A) (x : V) (xs : List V)
+            → circ φ x xs ≡ φ (end x xs) + (- φ x)
+  telescope φ x []       = sym (+InvR (φ x))
+  telescope φ x (y ∷ ys) =
+    cong ((φ y + (- φ x)) +_) (telescope φ y ys)
+    ∙ regroup
+    where
+    a = φ (end y ys) ; b = φ y ; c = φ x
+    regroup : (b + (- c)) + (a + (- b)) ≡ a + (- c)
+    regroup =
+      +Comm (b + (- c)) (a + (- b))
+      ∙ sym (+Assoc a (- b) (b + (- c)))
+      ∙ cong (a +_) (+Assoc (- b) b (- c) ∙ cong (_+ (- c)) (+InvL b) ∙ +IdL (- c))
+
+  -- so a potential has no circulation around any closed walk
+  closed : (φ : V → A) (x : V) (xs : List V) → end x xs ≡ x
+         → circ φ x xs ≡ 0g
+  closed φ x xs p = telescope φ x xs ∙ cong (λ v → φ v + (- φ x)) p ∙ +InvR (φ x)
+
+  -- the triangle case, which is what makes the degree-2 condition a complex
+  triangle : (φ : V → A) (u v w : V) → circ φ u (v ∷ w ∷ u ∷ []) ≡ 0g
+  triangle φ u v w = closed φ u (v ∷ w ∷ u ∷ []) refl</code></pre>
+<figcaption>Over an arbitrary abelian group and an arbitrary type of parties: a potential telescopes along any walk and has zero circulation around any closed one. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code> against the cubical library; no postulates, no holes.</figcaption>
+</details></div>
+
+<div class="st nu" id="s13.3"><p><span class="lab">Theorem 13.3</span> (12.16 and 12.23 are the first two). The reference-level freedom of 12.16 is one dimension per connected component — degree 0. The gap of 12.23 is the circulations modulo those the triangles cancel — degree 1. Write their ranks <code>b₀</code> and <code>b₁</code>.</p>
+<p class="pf"><span class="lab">Proof.</span> By 13.2 a potential is determined by its differences up to its value at one party of each component, which is 12.16, and the space of such freedoms has one dimension per component. By <a class="ref" href="#s12.14">12.14</a> the circulations are the histories with zero balance, and by 12.23 the ones a sequence of locally witnessed steps accounts for are the combinations of triangle boundaries; the quotient is the gap. <span class="qed">∎</span></p>
+<p class="pf">So <code>b₀</code> counts independent reference levels — independent <em>currencies</em>, if one insists on the word, and nothing forces that count to one <a class="ref" href="#s10.31">(10.31)</a>. And <code>b₁</code> counts the dimensions of history that every balance hides and no neighbourhood can account for.</p></div>
+
+<div class="st nu" id="s13.4"><p><span class="lab">Theorem 13.4</span> (the third is a redundancy among the local checks). The combinations of triangles whose boundaries cancel each other form degree 2; write its rank <code>b₂</code>. The triangles generate the locally cancellable circulations with exactly <code>b₂</code> independent relations among them, so <code>F − b₂</code> of the <code>F</code> triangles suffice and the rest are implied. On a closed orientable witness complex <code>b₂ = 1</code>: one of the local checks always follows from all the others.</p>
+<p class="pf"><span class="lab">Proof.</span> The map sending a combination of triangles to its boundary has image the locally cancellable circulations and kernel the combinations that cancel, so its rank is <code>F − b₂</code> and that is the number of independent generators. For a closed orientable complex the sum of all triangles, coherently oriented, has zero boundary and is the only such combination up to scale. <span class="qed">∎</span></p>
+<p class="pf">The redundancy is global and no party can see it: each party sees its own triangles and no combination of all of them. So a network with a closed witness complex is doing one check more than it needs, and cannot locally discover which.</p></div>
+
+<div class="st nu" id="s13.5"><p><span class="lab">Theorem 13.5</span> (one identity ties the three). For <code>n</code> parties, <code>m</code> channels and <code>F</code> witness triangles,</p>
+$$b_0 - b_1 + b_2 = n - m + F.$$
+<p>So the number of independent currencies, the dimension of unaccountable history and the number of redundant checks are not three free parameters: fixing any two fixes the third, and the right-hand side is three counts anyone can take locally and add up.</p>
+<p class="pf"><span class="lab">Proof.</span> Each degree’s rank is its own count minus the rank of the map out of it, plus the rank of the map into it; summing with alternating signs cancels every map rank and leaves the counts. <span class="qed">∎</span></p></div>
+
+<div class="st nu" id="s13.6"><p><span class="lab">Theorem 13.6</span> (a channel either unifies two currencies or creates one dimension of hidden history, never both). Adding a channel between two existing parties lowers <code>b₀</code> by one if it joins two components, and otherwise raises <code>b₁</code> by one. Exactly one of the two happens.</p>
+<p class="pf"><span class="lab">Proof.</span> The new channel adds nothing in degree 2, so <code>b₂</code> is unchanged, while <code>m</code> rises by one and by 13.5 the alternating sum falls by one. <code>b₀</code> can only fall or stay, since adding a channel never disconnects, and <code>b₁</code> can only rise or stay, since no circulation is destroyed. One of them must therefore move, and only one can. <span class="qed">∎</span></p>
+<p class="pf">That is the whole price list for connecting two parties. Within a component the channel buys reachability and costs one dimension of history that no balance will show and no neighbourhood will account for <a class="ref" href="#s12.20">(12.20)</a>; across components it costs nothing of the kind and instead merges two reference levels into one, which is <a class="ref" href="#s12.17">12.17</a>.</p></div>
+
+<div class="st nu" id="s13.7"><p><span class="lab">Theorem 13.7</span> (a witness triangle either converts hidden history into checkable history or adds a redundant check, never both). Adding a triangle on three mutually connected parties lowers <code>b₁</code> by one if its boundary was not already locally cancellable, and otherwise raises <code>b₂</code> by one. Exactly one of the two happens.</p>
+<p class="pf"><span class="lab">Proof.</span> <code>F</code> rises by one and <code>b₀</code> is untouched, so by 13.5 the quantity <code>b₂ − b₁</code> rises by one. If the new triangle’s boundary lies outside the already cancellable circulations it enlarges them and kills one class of 13.3’s gap; if it lies inside, it contributes a new relation instead. The two cases are exclusive and exhaustive. <span class="qed">∎</span></p>
+<p class="pf">So the two moves available when building a network have exactly two prices between them, and 13.6 and 13.7 are the whole marginal calculus: a channel trades reachability against hidden history or against a currency, a triangle trades a check against verifiability. Which one a move buys depends on what is already there, so the order of building decides what a network ends up holding — which is <a class="ref" href="#s10.23">10.23</a> again, at the scale of the topology.</p></div>
+
+<div class="st nu" id="s13.8"><p><span class="lab">Theorem 13.8</span> (joining two regions creates one circulation per extra contact component). Let two regions and their union each be connected, and let their overlap have <code>k</code> components. Then the join adds exactly <code>k − 1</code> independent circulations beyond those the two regions already had.</p>
+<p class="pf"><span class="lab">Proof.</span> The two regions’ degree-0 freedoms map to the overlap’s by restriction, and the difference of the two restrictions is a map from the overlap’s <code>k</code> components to one dimension; its kernel has rank <code>k − 1</code>. The long exact sequence of the two regions identifies that kernel with the circulations of the union not coming from the pieces. <span class="qed">∎</span></p>
+<p class="pf">Checked on the two smallest cases. Two connected arcs of a four-cycle meeting at two isolated parties: each arc has no circulation, the overlap has two components, and the union has exactly one — <code>k − 1 = 1</code>. Two parties each connected to the same three others, overlapping in those three: <code>k = 3</code>, and the union has exactly two.</p></div>
+
+<div class="rk nu" id="s13.9"><p><span class="lab">Remark 13.9</span> (so contact through one region, not several). <a class="ref" href="#s12.17">12.17</a> priced a join at one constant. 13.8 says that price is exact only when the two regions meet in one piece; meeting in <code>k</code> pieces manufactures <code>k − 1</code> dimensions of history that no balance shows and, until triangles are added across the contact, no neighbourhood accounts for. Nothing forbids it. It is simply the one structural choice in joining that is not free, and by 13.7 the remedy is triangles at the contact rather than fewer channels.</p></div>
+
+<div class="st nu" id="s13.10"><p><span class="lab">Theorem 13.10</span> (there can be history unaccountable once and accountable when repeated). The gap of 13.3 is a group, not a vector space, so it may contain an element of finite order <code>k &gt; 1</code>: a circulation that no sequence of locally witnessed steps accounts for, while its <code>k</code>-fold repetition is a combination of triangle boundaries and is accounted for exactly. The rank <code>b₁</code> does not see such an element.</p>
+<p class="pf"><span class="lab">Proof.</span> Take a witness complex triangulating the real projective plane. Its gap is the two-element group: there is a circulation <code>z</code> with <code>2z</code> the boundary of the sum of all triangles while <code>z</code> itself is no such boundary. So <code>z</code> is unaccountable and <code>z + z</code> is accounted for, and <code>b₁ = 0</code> throughout. For closed witness complexes this happens exactly for the non-orientable ones. <span class="qed">∎</span></p>
+<p class="pf">This is worth stating because it is invisible to every count in 13.5: a network can hold a transaction pattern that is unjustifiable performed once and fully justified performed twice, and no Betti number anywhere reports it. It is also the sharpest reason the gap has to be treated as the group it is rather than as a dimension.</p></div>
+
+<div class="rk nu" id="s13.11"><p><span class="lab">Remark 13.11</span> (why only the accounting has a topological answer). Two complexes are in play and only one of them is governed by the counts above. The <em>interaction</em> complex — parties, channels, witness triangles — carries the accounting, and there the quantity on a channel is an integer and the comparison along it is the identity, so every rank in 13.3–13.10 is a function of <code>n</code>, <code>m</code> and <code>F</code> alone. Each party’s own <em>knowledge</em> complex <a class="ref" href="#s10.2">(10.2)</a> sits over a party, and the comparison along a channel is whatever that pair can establish — by <a class="ref" href="#s11.4">11.4</a> only equality is held in common, and by 10.2 composition belongs to the receiver. Those maps are not identities, need not be injective or surjective, and the complexes they join are not alike. Nothing above computes an obstruction for them, and the topology of the network does not determine one.</p></div>
+
+<div class="rk nu" id="s13.12"><p><span class="lab">Remark 13.12</span> (what is not derived). That the witness triangles exist at all is the local-connectivity condition of <a class="ref" href="#s12.24">12.24</a>, assumed and not derived; without them degree 2 is empty, <code>b₂ = 0</code>, and 13.3’s gap is the whole cycle space again. 13.4’s orientability is a property of the complex the parties happen to form and is not arranged by anything here. 13.5 is an identity among ranks and says nothing about torsion, which is exactly 13.10’s point. And nothing above says a party can compute any of these: <code>n</code>, <code>m</code> and <code>F</code> are global counts, and by <a class="ref" href="#s12.18">12.18</a> obtaining one is itself a relayed proof costing the diameter.</p></div>
+
+<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Agda 2.8.0</a> with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. A box sits at each computational core — <a class="ref" href="#s0.8">the one fact (0.8)</a>, <a class="ref" href="#s1.2">the partition (1.2)</a>, <a class="ref" href="#s3.2">every reversible operation is a transport (3.2)</a>, <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>, <a class="ref" href="#s4.2">Lawvere (4.2)</a>, <a class="ref" href="#s4.9">Gödel (4.6–4.9)</a>, <a class="ref" href="#s5.13">equal length (5.13)</a>, <a class="ref" href="#s7.2">σ² = −1 (7.2)</a>, <a class="ref" href="#s8.6">decide = verify (8.6)</a>, <a class="ref" href="#s9.7">every + is a merge, and the information fixed (9.7–9.8)</a>, <a class="ref" href="#s10.15">the balance and its slack (10.15)</a>, <a class="ref" href="#s11.10">the thread and its hops (11.10)</a>, <a class="ref" href="#s12.14">the balance and what cancels (12.14)</a>, <a class="ref" href="#s13.2">a potential has no circulation (13.2)</a> — and each, headed by its own import lines, compiles on its own against the library under those flags, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
 
 </main>
 <script src="./vendor/katex/katex.min.js"></script>
