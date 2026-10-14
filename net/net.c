@@ -32,6 +32,13 @@
  *   APP_l  principal: function;  aux 0: result;         aux 1: argument
  *   CON_l  principal: value;     aux j: field j
  *   CASE_l principal: scrutinee; aux 0: result;         aux 1+k: branch k
+ *   CASED_l the same, and one more branch, taken when the scrutinee is
+ *          neutral.  Written T? s B1..Bn D.  A neutral value is final (no
+ *          step turns it into a constructor), so this decides "not any
+ *          constructor".  It is sound only where the branches are equal
+ *          whatever the scrutinee would be; its one use is comp at a full
+ *          face, where it separates U (whose composite stays a Glue code)
+ *          from everything else, the two answers being the same type.
  *   FAN_l, BRA_l, CRO_l, ERA     as [AG] (delta, t, e, epsilon)
  *   ATOM   a free variable, or a variable read-back put in a binder
  *   NAPP   an application whose head is neutral; aux: head, argument
@@ -82,7 +89,7 @@ static int findData(const char *s) { for (int i = 0; i < ndatas; i++) if (!strcm
  * Comments are {...} and # to end of line.
  * ---------------------------------------------------------------------- */
 enum { TV, TL, TA, TK, TC };
-typedef struct T { int k; char *name; int w, free, tag, n; struct T **ch; } T;
+typedef struct T { int k; char *name; int w, free, tag, n, dflt; struct T **ch; } T;
 static T *tmk(int k, const char *name, int n) {
   T *t = xalloc(sizeof *t); t->k = k; t->name = name ? xdup(name) : NULL; t->w = -1; t->n = n;
   t->ch = xalloc(sizeof(T *) * (n ? n : 1)); return t;
@@ -172,6 +179,8 @@ static void freeNames(T *t, char **bound, int nb, Names *out) {
   if (t->k == TV) {
     for (int i = 0; i < nb; i++) if (!strcmp(bound[i], t->name)) return;
     if (findCon(t->name) >= 0 || findData(t->name) >= 0) return;
+    size_t ln = strlen(t->name);
+    if (ln > 1 && t->name[ln - 1] == '?') { char *b = xdup(t->name); b[ln - 1] = 0; int d = findData(b); free(b); if (d >= 0) return; }
     if (!hasName(out, t->name)) PUSH(out->s, out->n, out->cap, t->name);
     return;
   }
@@ -201,9 +210,9 @@ static int nwires, etaCtr;
 typedef struct Env { const char *x; int w; struct Env *up; } Env;
 static int bound(Env *e, const char *x) { for (; e; e = e->up) if (!strcmp(e->x, x)) return e->w; return -1; }
 static T *alpha(T *t, Env *e);
-static T *saturate(int kind, int tag, int need, T **args, int nargs, Env *e) {
+static T *saturate(int kind, int tag, int dflt, int need, T **args, int nargs, Env *e) {
   /* args are source terms; build kind node with `need` children */
-  T *body = tmk(kind, NULL, need); body->tag = tag;
+  T *body = tmk(kind, NULL, need); body->tag = tag; body->dflt = dflt;
   int have = nargs < need ? nargs : need;
   T *wrapped = body; char **names = xalloc(sizeof(char *) * (need + 1));
   for (int i = have; i < need; i++) { char b[32]; snprintf(b, sizeof b, "%%eta%d", ++etaCtr); names[i] = xdup(b); }
@@ -222,12 +231,16 @@ static T *alpha(T *t, Env *e) {
     T *h = t; int n = 0;
     while (h->k == TA) { n++; h = h->ch[0]; }
     if (h->k == TV && bound(e, h->name) < 0) {
-      int c = findCon(h->name), d = findData(h->name);
+      int c = findCon(h->name), d = findData(h->name), dflt = 0;
+      size_t ln = strlen(h->name);
+      if (c < 0 && d < 0 && ln > 1 && h->name[ln - 1] == '?') {
+        char *base = xdup(h->name); base[ln - 1] = 0; d = findData(base); free(base); dflt = d >= 0;
+      }
       if (c >= 0 || d >= 0) {
         T **args = xalloc(sizeof(T *) * (n + 1)); T *s = t;
         for (int i = n - 1; i >= 0; i--) { args[i] = s->ch[1]; s = s->ch[0]; }
-        if (c >= 0) return saturate(TK, c, cons[c].arity, args, n, e);
-        return saturate(TC, d, 1 + datas[d].ncon, args, n, e);
+        if (c >= 0) return saturate(TK, c, 0, cons[c].arity, args, n, e);
+        return saturate(TC, d, dflt, 1 + datas[d].ncon + dflt, args, n, e);
       }
     }
   }
@@ -240,7 +253,7 @@ static T *alpha(T *t, Env *e) {
     Env e2 = { t->name, nwires++, e };
     T *l = tl(t->name, alpha(t->ch[0], &e2)); l->w = e2.w; return l;
   }
-  T *r = tmk(t->k, t->name, t->n); r->tag = t->tag;
+  T *r = tmk(t->k, t->name, t->n); r->tag = t->tag; r->dflt = t->dflt;
   for (int i = 0; i < t->n; i++) r->ch[i] = alpha(t->ch[i], e);
   return r;
 }
@@ -263,8 +276,8 @@ static void rename(T *t, int from, int to) {
 /* ------------------------------------------------------------------------
  * The net
  * ---------------------------------------------------------------------- */
-enum { LAM, APP, CON, CASE, FAN, BRA, CRO, ERA, ATOM, NAPP, NCASE, ROOT, NKIND };
-static const char *kname[NKIND] = { "LAM", "APP", "CON", "CASE", "FAN", "BRA", "CRO", "ERA", "ATOM", "NAPP", "NCASE", "ROOT" };
+enum { LAM, APP, CON, CASE, CASED, FAN, BRA, CRO, ERA, ATOM, NAPP, NCASE, ROOT, NKIND };
+static const char *kname[NKIND] = { "LAM", "APP", "CON", "CASE", "CASED", "FAN", "BRA", "CRO", "ERA", "ATOM", "NAPP", "NCASE", "ROOT" };
 typedef struct { int n, p; } PR;
 /* lev: the level; for ATOM its label; for NAPP and NCASE 1 when read-back
  * made it.  tag: the constructor (CON) or datatype (CASE, NCASE). */
@@ -276,6 +289,7 @@ static int arityOf(int kind, int tag) {
   case BRA: case CRO: return 1;
   case CON: return cons[tag].arity;
   case CASE: case NCASE: return 1 + datas[tag].ncon;
+  case CASED: return 2 + datas[tag].ncon;
   default: return 0;
   }
 }
@@ -370,7 +384,7 @@ static void gamma(T *t, int root, long lvl) {
     node = alloc(APP, lvl, 0);
     attach(cw[0], pr(node, 0)); attach(root, pr(node, 1)); attach(cw[1], pr(node, 2));
   } else if (t->k == TC) {
-    node = alloc(CASE, lvl, t->tag);
+    node = alloc(t->dflt ? CASED : CASE, lvl, t->tag);
     attach(cw[0], pr(node, 0)); attach(root, pr(node, 1));
     for (int i = 1; i < n; i++) attach(cw[i], pr(node, i + 1));
   } else {
@@ -479,7 +493,7 @@ static void replace(int x, int y) {
  * ---------------------------------------------------------------------- */
 static long steps, betas, rbsteps;
 static int isControl(int k) { return k == FAN || k == BRA || k == CRO; }
-static int isProper(int k) { return k == LAM || k == APP || k == CON || k == CASE; }
+static int isProper(int k) { return k == LAM || k == APP || k == CON || k == CASE || k == CASED; }
 static int isNeutral(int k) { return k == ATOM || k == NAPP || k == NCASE; }
 /* Does this agent exist only because read-back put an atom in a binder? */
 static int fromReadback(int n) {
@@ -530,12 +544,31 @@ static void fire(int a, int b) {
     for (int k = 0; k < nodes[b].ar; k++) { int e = nn(ERA, 0, 0); cn(EN(e, 0), ER(k)); }
     replace(a, b); ++*count; return;
   }
-  if (kb == APP || kb == CASE) { swap(&a, &b); swap(&ka, &kb); }
+  if (kb == APP || kb == CASE || kb == CASED) { swap(&a, &b); swap(&ka, &kb); }
   /* [AG] lambda_i[x, y] >< @_i[x, y]: LAM(x,t) >< APP(r,a) -> x = a, t = r */
   if (ka == APP && kb == LAM) {
     if (nodes[a].lev != nodes[b].lev) die("APP_%ld meets LAM_%ld", nodes[a].lev, nodes[b].lev);
     cn(EL(0), ER(1)); cn(EL(1), ER(0));
     replace(a, b); ++*count; if (!rb) betas++; return;
+  }
+  /* CASED (header): a constructor as in CASE, the neutral branch erased; a
+   * neutral scrutinee takes the neutral branch and is erased. */
+  if (ka == CASED && (kb == CON || isNeutral(kb))) {
+    long l = nodes[a].lev; int nb = datas[nodes[a].tag].ncon;
+    if (kb == CON && cons[nodes[b].tag].data != nodes[a].tag) die("case of %s meets constructor %s", datas[nodes[a].tag].name, cons[nodes[b].tag].name);
+    if (kb == CON && nodes[b].lev != l) die("CASED_%ld meets CON_%ld", l, nodes[b].lev);
+    int k = kb == CON ? cons[nodes[b].tag].index : nb;
+    int c = nn(CRO, l, 0);
+    cn(EN(c, 0), EL(1 + k));
+    End f = EN(c, 1);
+    for (int j = 0; kb == CON && j < nodes[b].ar; j++) {
+      int ap = nn(APP, l, 0);
+      cn(EN(ap, 0), f); cn(EN(ap, 2), ER(j)); f = EN(ap, 1);
+    }
+    if (kb != CON) for (int j = 0; j < nodes[b].ar; j++) { int e = nn(ERA, 0, 0); cn(EN(e, 0), ER(j)); }
+    cn(f, EL(0));
+    for (int j = 0; j <= nb; j++) if (j != k) { int e = nn(ERA, 0, 0); cn(EN(e, 0), EL(1 + j)); }
+    replace(a, b); ++*count; return;
   }
   /* The Scott construction, its binders met: n beta steps (header). */
   if (ka == CASE && kb == CON) {

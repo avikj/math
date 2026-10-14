@@ -145,8 +145,8 @@ cGlue = cmp, L, psi, u, u0:
 cSys = cmp, L, phi, u, a0: sys (p1 (L gen)) (cmp (i: p2 (L i)) phi u a0) (cmp (i: p3 (L i)) phi u a0);
 
 # --- comp (section 8): the face first; at a full face the tube at 1 ------------
-# At a full face the head is still read, only to keep comp in U a code
-# (see the header); every other head gives u 1.
+# At a full face the head is read only to keep comp in U a code (see the
+# header); every other head, a neutral one included, gives u 1.
 
 comp = Y (cmp, L, phi, u, a0:
   B (top phi)
@@ -159,9 +159,10 @@ comp = Y (cmp, L, phi, u, a0:
         (al, a, r: cSys cmp L phi u a0)
         nosys
         (k: k L phi u a0))
-    (Ty (L gen)
+    (Ty? (L gen)
         (cU cmp L phi u a0)
-        (d, c: u i1) (d, c: u i1) (a, l, r: u i1) (al, a, s: u i1) (al, a, r: u i1) (u i1) (k: u i1)));
+        (d, c: u i1) (d, c: u i1) (a, l, r: u i1) (al, a, s: u i1) (al, a, r: u i1) (u i1) (k: u i1)
+        (u i1)));
 
 fill = fillW comp;
 hcomp = hcompW comp;
