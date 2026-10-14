@@ -279,7 +279,7 @@ Each piece is transcribed from its source, not invented.
 | Face formulas | Free De Morgan algebra on finitely many generators: a fixed small rule set of agents. Not a C primitive. |
 | Cells needing several inputs (e.g. hcomp needs the type head and φ) | §6 ports. Never a fixed-order chain. |
 
-## 8. The open seams, assessed
+## 8. The open seams, assessed (this section is mine, not the owner's)
 
 1. **Where identity agents are wired.** There is no wiring step to decide. An
    identity is a term p of a path type, and it acts where the posed term uses
@@ -287,14 +287,13 @@ Each piece is transcribed from its source, not invented.
    the term, and the term-to-net translation places it there. "The compiler
    decides where p fires" would be search under another name.
 
-2. **Lamping across interval binders.** Nothing new is needed:
-   - `<i> t` is λ over I, and path application is application.
-   - A partial element is a function of a face proof
-     (`Partial φ A = IsOne φ → A`), so hcomp's systems are λ too.
-   - Lamping and Asperti–Guerrini apply unchanged.
-   - The only cubical addition is that a neutral path applied at 0 or 1 gives
-     its boundary. A path cell therefore carries its endpoints, which the Path
-     type already does.
+2. *(Removed: a claim of mine, not the owner's, that dimension binders are
+   plain λ and need nothing new. It is false: comp takes the head of A(i)
+   at a generic i and uses its components as lines in i, and
+   Glue [⊤ ↦ (T,e)] A ≡ T collapses at a full face, so a component read
+   off `L i` at such a point is lost. Fresh dimension names with
+   reindexing are needed, as MACHINE_SPEC §§3, 26 and the correction
+   "restrictions are reindexings" state.)*
 
 3. **Dependency-closed blocks.** No closure check exists (§6, port type). A
    block that depends on missing inputs is a function of them.
