@@ -1,0 +1,210 @@
+# cubical.lam -- CCHM composition and everything derived from it, as
+# definitions on the optimal net (net.c).  Nothing here is in the host.
+#
+# Section numbers are MACHINE_SPEC.md (the owner's text).
+#
+# How it reduces to what the net already does:
+#   - a dimension binder is a binder: a line is \i. A, a tube is \i. u,
+#     substitution of an interval is application (beta);
+#   - comp needs the head of A(i) at a generic i (section 8).  A generic
+#     point is an interval value, `gen`, at which no face holds; the head
+#     is read there, and every component is re-read as a line \i. comp(A i).
+#     Re-reading at each point is the same as reading generically and
+#     substituting, provided no type code collapses at a face; so the codes
+#     GlueT and comp-in-U never collapse, and their elements do (glue,
+#     unglue at a full face, section 16).  This is the one place the codes
+#     differ from section 16's "Glue [1 -> (T,e)] A -> T": the code stays,
+#     everything built from it computes as T.
+#   - a path is the constructor plam, so read-back can put a generic named
+#     interval in its binder and print <i> t.
+
+# --- data ------------------------------------------------------------------
+
+data B = ff | tt;
+data Pair = pair a b;
+data E = ename x | egen | eneg e | emeet a b | ejoin a b;     # symbolic interval
+data I = i0 | i1 | igen e;                                  # interval value
+data F = Ftop | Fbot | Feq0 x | Feq1 x | Fand p q | For p q;
+data Ty = U | Pi d c | Sigma d c | PathP a l r | GlueT al a s | TSys al a rest | TNil | Kan k;
+data GS = gsys al t e rest | gnil;                           # partial (T, e)
+data P = plam f;
+data G = glueEl al s a;
+
+Y = (a: a a) (a, f: f (a a f));
+
+fst = p: Pair p (a, b: a);
+snd = p: Pair p (a, b: b);
+papp = p, r: P p (f: f r);
+
+# --- the interval (section 4): De Morgan, i /\ ~i is not 0 ------------------
+
+enot = e: E e (x: eneg (ename x)) (eneg egen) (d: d) (a, b: eneg (emeet a b)) (a, b: eneg (ejoin a b));
+ineg = r: I r i1 i0 (e: igen (enot e));
+imeet = r, s: I r i0 s (e: I s i0 (igen e) (f: igen (emeet e f)));
+ijoin = r, s: I r s i1 (e: I s (igen e) i1 (f: igen (ejoin e f)));
+gen = igen egen;
+
+# --- faces (section 5) --------------------------------------------------------
+# (r/\s = 0) = (r=0) \/ (s=0), (r/\s = 1) = (r=1) /\ (s=1), and duals;
+# (~r = 0) = (r = 1).  A literal on the generic point egen is bottom, so a
+# face read at `gen` is forall i of it: the clauses mentioning i are gone.
+
+fandR = p, q: F q p Fbot (x: Fand p (Feq0 x)) (x: Fand p (Feq1 x)) (a, b: Fand p (Fand a b)) (a, b: Fand p (For a b));
+fand = p, q: F p q Fbot (x: fandR (Feq0 x) q) (x: fandR (Feq1 x) q) (a, b: fandR (Fand a b) q) (a, b: fandR (For a b) q);
+forR = p, q: F q Ftop p (x: For p (Feq0 x)) (x: For p (Feq1 x)) (a, b: For p (Fand a b)) (a, b: For p (For a b));
+for = p, q: F p Ftop q (x: forR (Feq0 x) q) (x: forR (Feq1 x) q) (a, b: forR (Fand a b) q) (a, b: forR (For a b) q);
+
+eqE = Y (self, one, e: E e
+  (x: B one (Feq0 x) (Feq1 x))
+  Fbot
+  (d: self (B one tt ff) d)
+  (a, b: B one (for (self one a) (self one b)) (fand (self one a) (self one b)))
+  (a, b: B one (fand (self one a) (self one b)) (for (self one a) (self one b))));
+eq0 = r: I r Ftop Fbot (e: eqE ff e);
+eq1 = r: I r Fbot Ftop (e: eqE tt e);
+
+# A face holds exactly when it is Ftop: the smart constructors leave
+# nothing else that could.
+top = p: F p tt ff (x: ff) (x: ff) (a, b: ff) (a, b: ff);
+
+# --- partial elements (section 6): the first branch whose face holds ---------
+
+sys = phi, u, rest: B (top phi) rest u;
+
+# --- type codes ---------------------------------------------------------------
+
+p1 = t: Ty t bot (d, c: d) (d, c: d) (a, l, r: a) (al, a, s: al) (al, a, r: al) bot (k: bot);
+p2 = t: Ty t bot (d, c: c) (d, c: c) (a, l, r: l) (al, a, s: a) (al, a, r: a) bot (k: bot);
+p3 = t: Ty t bot (d, c: bot) (d, c: bot) (a, l, r: r) (al, a, s: s) (al, a, r: r) bot (k: bot);
+
+Path = A, a, b: PathP (i: A) a b;
+Contr = T: Sigma T (c: Pi T (x: Path T c x));
+fib = X, Z, f, y: Sigma X (x: Path Z (f x) y);
+Equiv = X, Z: Sigma (Pi X (x: Z)) (f: Pi Z (y: Contr (fib X Z f y)));
+
+# --- Glue (section 16) ------------------------------------------------------------
+
+selS = Y (self, s: GS s (al, t, e, rest: B (top al) (self rest) (pair t e)) nosys);
+tOf = Y (self, s: GS s (al, t, e, rest: TSys al t (self rest)) TNil);
+glue = al, s, a: B (top al) (glueEl al s a) s;
+unglue = al, S, v: B (top al) (G v (be, s, a: a)) (fst (snd (selS S)) v);
+
+# --- equivalences (section 14) ----------------------------------------------------
+
+idEquiv = A: pair (x: x)
+  (y: pair (pair y (plam (i: y)))
+           (z: plam (i: pair (papp (snd z) (ineg i)) (plam (j: papp (snd z) (ijoin (ineg i) j))))));
+
+# --- derived operations, given comp (sections 9, 14, 15) --------------------------
+
+fillW = cmp, L, phi, u, a0, r:
+  cmp (j: L (imeet r j)) (for phi (eq0 r)) (j: sys phi (u (imeet r j)) (sys (eq0 r) a0 nosys)) a0;
+hcompW = cmp, A, phi, u, a0: cmp (i: A) phi u a0;
+coeW = cmp, L, a: cmp L Fbot (i: nosys) a;
+lineEquivW = cmp, A: coeW cmp (i: Equiv (A i0) (A i)) (idEquiv (A i0));
+extendContrW = cmp, T, c, k, theta, w: hcompW cmp T theta (j: papp (k w) j) c;
+extendEquivW = cmp, X, Z, e, y, theta, w:
+  extendContrW cmp (fib X Z (fst e) y) (fst (snd e y)) (snd (snd e y)) theta w;
+
+# --- the head table (sections 10, 11, 12, 17-20, 21, and the system head) ---------
+
+cPi = cmp, L, phi, u, f0: x1:
+  let v = r: fillW cmp (j: p1 (L (ineg j))) Fbot (j: nosys) x1 (ineg r) in
+  cmp (i: p2 (L i) (v i)) phi (i: u i (v i)) (f0 (v i0));
+
+cSigma = cmp, L, phi, u, z0:
+  let a = r: fillW cmp (i: p1 (L i)) phi (i: fst (u i)) (fst z0) r in
+  pair (a i1) (cmp (i: p2 (L i) (a i)) phi (i: snd (u i)) (snd z0));
+
+cPath = cmp, L, phi, u, p0: plam (j:
+  cmp (i: p1 (L i) j) (for phi (for (eq0 j) (eq1 j)))
+      (i: sys phi (papp (u i) j) (sys (eq0 j) (p2 (L i)) (sys (eq1 j) (p3 (L i)) nosys)))
+      (papp p0 j));
+
+cU = cmp, L, phi, u, A0: GlueT phi A0 (gsys phi (u i1) (lineEquivW cmp (j: u (ineg j))) gnil);
+
+cGlue = cmp, L, psi, u, u0:
+  let A = i: p2 (L i) in
+  let al = i: p1 (L i) in
+  let S = i: p3 (L i) in
+  let f = i: fst (snd (selS (S i))) in
+  let T = i: tOf (S i) in
+  let a0 = unglue (al i0) (S i0) u0 in
+  let a = r: fillW cmp A psi (i: unglue (al i) (S i) (u i)) a0 r in
+  let a1 = a i1 in
+  let delta = al gen in
+  let t = r: fillW cmp T psi u u0 r in
+  let omega = plam (j: cmp A (for psi (for (eq0 j) (eq1 j)))
+                         (i: sys psi (a i) (sys (eq0 j) (f i (t i)) (sys (eq1 j) (a i) nosys))) a0) in
+  let w = sys delta (pair (t i1) omega) (sys psi (pair (u i1) (plam (j: a1))) nosys) in
+  let al1 = al i1 in
+  let ext = extendEquivW cmp (fst (selS (S i1))) (A i1) (snd (selS (S i1))) a1 (for delta psi) w in
+  let a1p = hcompW cmp (A i1) (for al1 psi) (j: sys al1 (papp (snd ext) (ineg j)) (sys psi a1 nosys)) a1 in
+  glue al1 (sys al1 (fst ext) nosys) a1p;
+
+cSys = cmp, L, phi, u, a0: sys (p1 (L gen)) (cmp (i: p2 (L i)) phi u a0) (cmp (i: p3 (L i)) phi u a0);
+
+# --- comp (section 8): the face first; at a full face the tube at 1 ------------
+# At a full face the head is still read, only to keep comp in U a code
+# (see the header); every other head gives u 1.
+
+comp = Y (cmp, L, phi, u, a0:
+  B (top phi)
+    (Ty (L gen)
+        (cU cmp L phi u a0)
+        (d, c: cPi cmp L phi u a0)
+        (d, c: cSigma cmp L phi u a0)
+        (a, l, r: cPath cmp L phi u a0)
+        (al, a, s: cGlue cmp L phi u a0)
+        (al, a, r: cSys cmp L phi u a0)
+        nosys
+        (k: k L phi u a0))
+    (Ty (L gen)
+        (cU cmp L phi u a0)
+        (d, c: u i1) (d, c: u i1) (a, l, r: u i1) (al, a, s: u i1) (al, a, r: u i1) (u i1) (k: u i1)));
+
+fill = fillW comp;
+hcomp = hcompW comp;
+coe = coeW comp;
+coeRS = L, r, s, a: comp (j: L (ijoin (imeet r (ineg j)) (imeet s j))) Fbot (j: nosys) a;
+lineEquiv = lineEquivW comp;
+extendEquiv = extendEquivW comp;
+
+# --- univalence (section 22) ---------------------------------------------------------
+
+ua = A, Z, e: plam (i: GlueT (for (eq0 i) (eq1 i)) Z
+  (gsys (eq0 i) A e (gsys (eq1 i) Z (idEquiv Z) gnil)));
+
+# --- paths, singletons, handles (sections 23, 25; NET_SPEC 1-3, 5) ------------------
+
+reverse = p: plam (i: papp p (ineg i));
+compose = A, p, q: plam (i: hcomp A (for (eq0 i) (eq1 i))
+  (j: sys (eq0 i) (papp p i0) (sys (eq1 i) (papp q j) nosys)) (papp p i));
+ap = f, p: plam (i: f (papp p i));
+transport = P, p, v: coe (i: P (papp p i)) v;
+contractSingleton = h, k: plam (i: pair (papp k (ineg i)) (plam (j: papp k (ijoin (ineg i) j))));
+
+# The identity agent, forward and reverse (NET_SPEC 1).
+forward = Bt, R, p, q: plam (i: hcomp Bt (for (eq0 i) (eq1 i))
+  (j: sys (eq0 i) R (sys (eq1 i) (papp q j) nosys)) (papp p (ineg i)));
+backward = Bt, Lt, p, r: plam (i: hcomp Bt (for (eq0 i) (eq1 i))
+  (j: sys (eq0 i) Lt (sys (eq1 i) (papp r j) nosys)) (papp p i));
+
+# Wire elimination (NET_SPEC 2): (b, (s, t)) -> ap g s . t, and w -> (f a, (refl, w)).
+elim = C, g, x: compose C (ap g (fst (snd x))) (snd (snd x));
+unelim = f, a, w: pair (f a) (pair (plam (i: f a)) w);
+
+# Handles (NET_SPEC 3).
+Handle = X, Q, x: Sigma X (r: Sigma (Q r) (v: Path X r x));
+readHandle = Q, h: transport Q (snd (snd h)) (fst (snd h));
+canonHandle = x, v: pair x (pair v (plam (i: x)));
+extendHandle = X, h, s: pair (fst h) (pair (fst (snd h)) (compose X (snd (snd h)) s));
+
+# Cut and difference (NET_SPEC 5).
+cut = A, u, v: compose A u (reverse v);
+uncut = d, h: pair d (pair h (plam (i: d)));
+difference = A, p, h: compose A (reverse p) h;
+restore = A, p, l: compose A p l;
+
+# A postulated path a = b: neutral inside, its endpoints at 0 and 1 (section 7).
+axPath = a, b, n: plam (i: I i a b (e: n (igen e)));

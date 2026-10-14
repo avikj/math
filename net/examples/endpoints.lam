@@ -1,0 +1,2 @@
+# A postulated path keeps its endpoints (section 7).
+papp (axPath a b p) i0

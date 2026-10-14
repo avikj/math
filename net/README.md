@@ -1,36 +1,45 @@
-# net: optimal reduction by interaction
+# net: CCHM on an optimal interaction net
 
-The substrate `NET_SPEC.md` §7 asks for: duplication and substitution under
-binders by Lamping / Asperti–Guerrini, with a binder as its body subnet
-(`LAM(x,t) ⋈ APP(r,a) → x = a, t = r`) and sharing through levelled fans
-(`DUP_k(SUP_k(a,b)) → (a,b)`), as in the binder correction recorded in
-`MACHINE_SPEC.md`.
+- `net.c`: the fixed step. It contains:
+  - the Asperti–Guerrini interaction system, transcribed rule by rule
+    (sources in the file header): levelled λ, @, fans, brackets,
+    croissants and erasers;
+  - data: a constructor and a case agent, which are a datatype's Scott
+    construction with its binders already met (one case interaction is n
+    β-steps);
+  - neutral application and neutral case;
+  - read-back.
+- `cubical.lam`: the cubical layer as definitions, following MACHINE_SPEC
+  §§4–25:
+  - the De Morgan interval and faces;
+  - partial elements;
+  - type codes;
+  - comp, with the face first and then the head table: Π, Σ, PathP, Glue
+    (all six stages), U, a system head, and a type's own Kan structure;
+  - fill, hcomp, coe, coeRS, idEquiv, lineEquiv, extendEquiv, glue,
+    unglue and ua;
+  - path operations;
+  - the identity agent's forward and backward bodies (NET_SPEC §1),
+    wire elimination (§2), handles (§3), cut and difference (§5).
+- `examples/`: one term each, with no numbers. `discrete.lam` declares a
+  two-point type with its Kan structure.
 
-`net.c` transcribes, rule by rule, from:
+Run: `net cubical.lam [examples/discrete.lam] examples/<name>.lam`. It
+prints the normal form, then its length in interactions; read-back's own
+interactions are counted apart.
 
-- Asperti & Guerrini, *The Optimal Implementation of Functional Programming
-  Languages*, pp. 40–42 (rules and initial encoding), as stated in
-  Salikhmetov, *Token-passing Optimal Reduction with Embedded Read-back*,
-  EPTCS 225 (2016) §4, and as carried by codedot/lambda
-  `encoding/standard/{index.js,template.txt}`;
-- read-back: the same paper §7 and the same template.
+How the cubical layer stands on the net, without new agents:
 
-One rule is added and marked ADDED in the source: a bracket or croissant
-meeting an application whose head is a variable passes into its fields.
-
-Input: the codedot/lambda syntax (`x, y: body`, application by
-juxtaposition, `name = term;` definitions, `#` comments). Each definition
-used is bound once and shared through fans.
-
-Output: the normal form, and its length, the number of interactions (5.6).
-Interactions that exist only because read-back put an atom in a binder are
-counted separately (5.21).
-
-Check, when the owner permits running: the number of β-interactions is
-Lévy's count of redex families, so it must equal the `B` column of
-codedot/lambda's benchmark table on the same terms (e.g. 7 for `w2eta`, 14
-for `counter`).
-
-Not yet built on this substrate: the cubical layer (interval and faces,
-systems, comp and its head table, Glue, ua) and the identity agents of
-`NET_SPEC.md` §§1–5.
+- **A dimension binder is a binder.** A line is `\i. A`, and substituting
+  an interval is β.
+- **comp reads the head of `A(i)` at a generic point `gen`.** No face holds
+  there, and a face read there is ∀i of it. Each component is then the
+  line `\i. component (A i)`.
+- **Re-reading the components at each point is exact, under one
+  condition.** It is the same as reading them generically and then
+  substituting, provided no type code collapses at a face. So the Glue
+  code, and comp in U, stay codes at a full face. Their elements still
+  collapse, through `glue` and `unglue`.
+- **This is the one difference from MACHINE_SPEC §16.** There,
+  `Glue [1 ↦ (T,e)] A → T`. Here that type prints as its code, and
+  everything built from it computes as T.
