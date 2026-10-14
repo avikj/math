@@ -1445,7 +1445,218 @@ retrace a b k v =
 
 <div class="rk nu" id="s12.25"><p><span class="lab">Remark 12.25</span> (what is not derived). That every neighbour observes is a condition on the protocol, not a consequence of anything above; 12.2 says only that if anyone checks a node’s cut it is that set, and 12.4 that this is the set 10.26 needed. The orientation of 12.11 is a choice and nothing depends on it, since reversing an edge negates one coordinate and the box checks that the balance follows. That a party transmits its true boundary values is not derived — 12.18 says what a proof consists of, not that one is offered. Which graph the parties form is not derived either: 12.6, 12.21 and 12.22 price the choices and 12.24 says the three constraints cannot all be met at once, but nothing here selects a topology, and the trade is the result rather than a recommendation.</p></div>
 
-<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Agda 2.8.0</a> with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. A box sits at each computational core — <a class="ref" href="#s0.8">the one fact (0.8)</a>, <a class="ref" href="#s1.2">the partition (1.2)</a>, <a class="ref" href="#s3.2">every reversible operation is a transport (3.2)</a>, <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>, <a class="ref" href="#s4.2">Lawvere (4.2)</a>, <a class="ref" href="#s4.9">Gödel (4.6–4.9)</a>, <a class="ref" href="#s5.13">equal length (5.13)</a>, <a class="ref" href="#s7.2">σ² = −1 (7.2)</a>, <a class="ref" href="#s8.6">decide = verify (8.6)</a>, <a class="ref" href="#s9.7">every + is a merge, and the information fixed (9.7–9.8)</a>, <a class="ref" href="#s10.15">the balance and its slack (10.15)</a>, <a class="ref" href="#s11.10">the thread and its hops (11.10)</a>, <a class="ref" href="#s12.14">the balance and what cancels (12.14)</a> — and each, headed by its own import lines, compiles on its own against the library under those flags, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
+<h2><span class="n">13.</span> Matrix multiplication — the same product, written to cost less</h2>
+
+<p>One worked instance, on the shape <a class="ref" href="#s9.7">§9</a> already fixed: a product whose information is settled by its endpoints and whose cost is settled by how it is written as a sum. The ring identities are the ones §0 gives any algebraic structure; nothing below is added to the construction.</p>
+
+<div class="st nu" id="s13.1"><p><span class="lab">Definition 13.1</span> (the product, by the definition). For <code>2 × 2</code> matrices over a ring, each entry of the product is a sum of two products of entries: eight multiplications and four additions in all, with no choice anywhere in the writing.</p></div>
+
+<div class="st nu" id="s13.2"><p><span class="lab">Definition 13.2</span> (seven forms, built from sums of entries alone). Form instead</p>
+<pre class="def"><code>m₁ = (a₁₁ + a₂₂) · (b₁₁ + b₂₂)      m₅ = (a₁₁ + a₁₂) · b₂₂
+m₂ = (a₂₁ + a₂₂) · b₁₁              m₆ = (a₂₁ - a₁₁) · (b₁₁ + b₁₂)
+m₃ = a₁₁ · (b₁₂ - b₂₂)              m₇ = (a₁₂ - a₂₂) · (b₂₁ + b₂₂)
+m₄ = a₂₂ · (b₂₁ - b₁₁)</code></pre>
+<p>Every factor is a sum of entries, so the seven forms are seven multiplications, and the entries of the product are to be recovered from them additively.</p></div>
+
+<div class="st nu" id="s13.3"><p><span class="lab">Theorem 13.3</span> (the seven forms are the product, in any ring, with no product ever reordered). In every ring,</p>
+<pre class="def"><code>e₁₁ : ((m₁ + m₄) + (- m₅)) + m₇ ≡ (a₁₁ · b₁₁) + (a₁₂ · b₂₁)
+e₁₂ : m₃ + m₅                   ≡ (a₁₁ · b₁₂) + (a₁₂ · b₂₂)
+e₂₁ : m₂ + m₄                   ≡ (a₂₁ · b₁₁) + (a₂₂ · b₂₁)
+e₂₂ : ((m₁ + (- m₂)) + m₃) + m₆ ≡ (a₂₁ · b₁₂) + (a₂₂ · b₂₂)</code></pre>
+<p>Commutativity of multiplication is nowhere assumed and nowhere used.</p>
+<p class="pf"><span class="lab">Proof.</span> The two distributive laws expand each form into a sum of products <code>aᵢⱼ · bₖₗ</code>, each written with its own factor on the left and never transposed; ten such products occur. What remains on each side is a combination of those ten with coefficients <code>±1</code>, and the two combinations agree term by term — which is an identity in the ring’s additive group alone, proved in the box from associativity, commutativity of addition and the additive inverse. <span class="qed">∎</span></p>
+<p class="pf">That the ring is arbitrary is the load-bearing part, and it is why the statement is made over <code>Ring</code> and not <code>CommRing</code>: the entries to which 13.6 applies this are themselves matrices, which do not commute. An identity proved only for commutative rings would not license the recursion at all.</p>
+<details class="proof"><summary>the checked term</summary>
+<pre><code>open import Cubical.Foundations.Prelude
+open import Cubical.Algebra.Ring
+
+module _ {ℓ : Level} (R : Ring ℓ) where
+  open RingStr (snd R)
+  open RingTheory R
+  private
+    A : Type ℓ
+    A = fst R
+
+  -- additive bookkeeping, in the ring&#x27;s abelian group
+  pair : (a b c d : A) → (a + b) + (c + d) ≡ (a + c) + (b + d)
+  pair a b c d =
+    sym (+Assoc a b (c + d))
+    ∙ cong (a +_) (+Assoc b c d ∙ cong (_+ d) (+Comm b c) ∙ sym (+Assoc c b d))
+    ∙ +Assoc a c (b + d)
+
+  killR : (a b : A) → (a + b) + (- a) ≡ b
+  killR a b = sym (+Assoc a b (- a))
+            ∙ cong (a +_) (+Comm b (- a))
+            ∙ +Assoc a (- a) b
+            ∙ cong (_+ b) (+InvR a)
+            ∙ +IdL b
+
+  eatL : (a b : A) → a + ((- a) + b) ≡ b
+  eatL a b = +Assoc a (- a) b ∙ cong (_+ b) (+InvR a) ∙ +IdL b
+
+  eatL&#x27; : (a b : A) → (- a) + (a + b) ≡ b
+  eatL&#x27; a b = +Assoc (- a) a b ∙ cong (_+ b) (+InvL a) ∙ +IdL b
+
+  -- pull an atom out to the right so it can meet its inverse
+  shiftR : (a b c : A) → (a + b) + c ≡ (a + c) + b
+  shiftR a b c = sym (+Assoc a b c) ∙ cong (a +_) (+Comm b c) ∙ +Assoc a c b
+
+  -- the two seven-term identities the recombination needs
+  lem₁₁ : (x y z w u v s : A)
+        → ((((x + y) + (z + w)) + (u + (- z))) + ((- y) + (- v)))
+            + ((s + v) + ((- u) + (- w)))
+          ≡ x + s
+  lem₁₁ x y z w u v s =
+    cong (λ e → (e + ((- y) + (- v))) + ((s + v) + ((- u) + (- w)))) step1
+    ∙ cong (_+ ((s + v) + ((- u) + (- w)))) step2
+    ∙ step3
+    where
+    step1 : ((x + y) + (z + w)) + (u + (- z)) ≡ ((x + y) + u) + w
+    step1 = pair (x + y) (z + w) u (- z)
+          ∙ cong (((x + y) + u) +_) (shiftR z w (- z) ∙ killR&#x27; )
+      where killR&#x27; : (z + (- z)) + w ≡ w
+            killR&#x27; = cong (_+ w) (+InvR z) ∙ +IdL w
+    step2 : (((x + y) + u) + w) + ((- y) + (- v)) ≡ (x + u) + (w + (- v))
+    step2 = pair ((x + y) + u) w (- y) (- v)
+          ∙ cong (_+ (w + (- v))) inner
+      where inner : (((x + y) + u) + (- y)) ≡ x + u
+            inner = cong (_+ (- y)) (shiftR x y u) ∙ killR&#x27; 
+              where killR&#x27; : ((x + u) + y) + (- y) ≡ x + u
+                    killR&#x27; = sym (+Assoc (x + u) y (- y))
+                           ∙ cong ((x + u) +_) (+InvR y)
+                           ∙ +IdR (x + u)
+    step3 : ((x + u) + (w + (- v))) + ((s + v) + ((- u) + (- w))) ≡ x + s
+    step3 = cong (((x + u) + (w + (- v))) +_) (+Comm (s + v) ((- u) + (- w)))
+          ∙ pair (x + u) (w + (- v)) ((- u) + (- w)) (s + v)
+          ∙ cong₂ _+_ left right
+          ∙ sym (+Assoc x (- w) (w + s))
+          ∙ cong (x +_) (eatL&#x27; w s)
+      where left : (x + u) + ((- u) + (- w)) ≡ x + (- w)
+            left = sym (+Assoc x u ((- u) + (- w))) ∙ cong (x +_) (eatL u (- w))
+            right : (w + (- v)) + (s + v) ≡ w + s
+            right = pair w (- v) s v
+                  ∙ cong ((w + s) +_) (+InvL v)
+                  ∙ +IdR (w + s)
+
+  lem₂₂ : (x y z w p q t : A)
+        → ((((x + y) + (z + w)) + ((- p) + (- z))) + (t + (- y)))
+            + ((p + q) + ((- x) + (- t)))
+          ≡ q + w
+  lem₂₂ x y z w p q t =
+    cong (λ e → (e + (t + (- y))) + ((p + q) + ((- x) + (- t)))) step1
+    ∙ cong (_+ ((p + q) + ((- x) + (- t)))) step2
+    ∙ step3
+    where
+    step1 : ((x + y) + (z + w)) + ((- p) + (- z)) ≡ ((x + y) + (- p)) + w
+    step1 = pair (x + y) (z + w) (- p) (- z)
+          ∙ cong (((x + y) + (- p)) +_) (shiftR z w (- z) ∙ cong (_+ w) (+InvR z) ∙ +IdL w)
+    step2 : (((x + y) + (- p)) + w) + (t + (- y)) ≡ (x + (- p)) + (w + t)
+    step2 = cong ((((x + y) + (- p)) + w) +_) (+Comm t (- y))
+          ∙ pair ((x + y) + (- p)) w (- y) t
+          ∙ cong (_+ (w + t)) inner
+      where inner : (((x + y) + (- p)) + (- y)) ≡ x + (- p)
+            inner = cong (_+ (- y)) (shiftR x y (- p))
+                  ∙ sym (+Assoc (x + (- p)) y (- y))
+                  ∙ cong ((x + (- p)) +_) (+InvR y)
+                  ∙ +IdR (x + (- p))
+    step3 : ((x + (- p)) + (w + t)) + ((p + q) + ((- x) + (- t))) ≡ q + w
+    step3 = pair (x + (- p)) (w + t) (p + q) ((- x) + (- t))
+          ∙ cong₂ _+_ left right
+          ∙ cong (((x + q)) +_) (+Comm w (- x))
+          ∙ pair x q (- x) w
+          ∙ cong (_+ (q + w)) (+InvR x)
+          ∙ +IdL (q + w)
+      where left : (x + (- p)) + (p + q) ≡ x + q
+            left = sym (+Assoc x (- p) (p + q)) ∙ cong (x +_) (eatL&#x27; p q)
+            right : (w + t) + ((- x) + (- t)) ≡ w + (- x)
+            right = pair w t (- x) (- t)
+                  ∙ cong ((w + (- x)) +_) (+InvR t)
+                  ∙ +IdR (w + (- x))
+
+  -- the seven products, and the four entries of the product matrix
+  module _ (a₁₁ a₁₂ a₂₁ a₂₂ b₁₁ b₁₂ b₂₁ b₂₂ : A) where
+
+    private
+      x = a₁₁ · b₁₁ ; t = a₁₁ · b₁₂ ; y = a₁₁ · b₂₂
+      s = a₁₂ · b₂₁ ; v = a₁₂ · b₂₂
+      p = a₂₁ · b₁₁ ; q = a₂₁ · b₁₂
+      z = a₂₂ · b₁₁ ; u = a₂₂ · b₂₁ ; w = a₂₂ · b₂₂
+
+    m₁ m₂ m₃ m₄ m₅ m₆ m₇ : A
+    m₁ = (a₁₁ + a₂₂) · (b₁₁ + b₂₂)
+    m₂ = (a₂₁ + a₂₂) · b₁₁
+    m₃ = a₁₁ · (b₁₂ + (- b₂₂))
+    m₄ = a₂₂ · (b₂₁ + (- b₁₁))
+    m₅ = (a₁₁ + a₁₂) · b₂₂
+    m₆ = (a₂₁ + (- a₁₁)) · (b₁₁ + b₁₂)
+    m₇ = (a₁₂ + (- a₂₂)) · (b₂₁ + b₂₂)
+
+    -- distributivity alone expands each form; no product is ever reordered
+    E₁ : m₁ ≡ (x + y) + (z + w)
+    E₁ = ·DistL+ a₁₁ a₂₂ (b₁₁ + b₂₂)
+       ∙ cong₂ _+_ (·DistR+ a₁₁ b₁₁ b₂₂) (·DistR+ a₂₂ b₁₁ b₂₂)
+
+    E₂ : m₂ ≡ p + z
+    E₂ = ·DistL+ a₂₁ a₂₂ b₁₁
+
+    E₃ : m₃ ≡ t + (- y)
+    E₃ = ·DistR+ a₁₁ b₁₂ (- b₂₂) ∙ cong (t +_) (-DistR· a₁₁ b₂₂)
+
+    E₄ : m₄ ≡ u + (- z)
+    E₄ = ·DistR+ a₂₂ b₂₁ (- b₁₁) ∙ cong (u +_) (-DistR· a₂₂ b₁₁)
+
+    E₅ : m₅ ≡ y + v
+    E₅ = ·DistL+ a₁₁ a₁₂ b₂₂
+
+    E₆ : m₆ ≡ (p + q) + ((- x) + (- t))
+    E₆ = ·DistL+ a₂₁ (- a₁₁) (b₁₁ + b₁₂)
+       ∙ cong₂ _+_ (·DistR+ a₂₁ b₁₁ b₁₂)
+                   (·DistR+ (- a₁₁) b₁₁ b₁₂
+                    ∙ cong₂ _+_ (-DistL· a₁₁ b₁₁) (-DistL· a₁₁ b₁₂))
+
+    E₇ : m₇ ≡ (s + v) + ((- u) + (- w))
+    E₇ = ·DistL+ a₁₂ (- a₂₂) (b₂₁ + b₂₂)
+       ∙ cong₂ _+_ (·DistR+ a₁₂ b₂₁ b₂₂)
+                   (·DistR+ (- a₂₂) b₂₁ b₂₂
+                    ∙ cong₂ _+_ (-DistL· a₂₂ b₂₁) (-DistL· a₂₂ b₂₂))
+
+    e₁₁ : ((m₁ + m₄) + (- m₅)) + m₇ ≡ (a₁₁ · b₁₁) + (a₁₂ · b₂₁)
+    e₁₁ = cong₂ _+_ (cong₂ _+_ (cong₂ _+_ E₁ E₄)
+                               (cong -_ E₅ ∙ sym (-Dist y v)))
+                    E₇
+        ∙ lem₁₁ x y z w u v s
+
+    e₁₂ : m₃ + m₅ ≡ (a₁₁ · b₁₂) + (a₁₂ · b₂₂)
+    e₁₂ = cong₂ _+_ E₃ E₅
+        ∙ sym (+Assoc t (- y) (y + v)) ∙ cong (t +_) (eatL&#x27; y v)
+
+    e₂₁ : m₂ + m₄ ≡ (a₂₁ · b₁₁) + (a₂₂ · b₂₁)
+    e₂₁ = cong₂ _+_ E₂ E₄
+        ∙ pair p z u (- z) ∙ cong ((p + u) +_) (+InvR z) ∙ +IdR (p + u)
+
+    e₂₂ : ((m₁ + (- m₂)) + m₃) + m₆ ≡ (a₂₁ · b₁₂) + (a₂₂ · b₂₂)
+    e₂₂ = cong₂ _+_ (cong₂ _+_ (cong₂ _+_ E₁ (cong -_ E₂ ∙ sym (-Dist p z)))
+                               E₃)
+                    E₆
+        ∙ lem₂₂ x y z w p q t</code></pre>
+<figcaption>All four entries, over an arbitrary ring. The additive bookkeeping is two lemmas in the ring’s abelian group; the expansions use only the two distributive laws and the sign rules. Verbatim, typechecks under Agda 2.8.0 <code>--safe</code> against the cubical library; no postulates, no holes.</figcaption>
+</details></div>
+
+<div class="st nu" id="s13.4"><p><span class="lab">Theorem 13.4</span> (the two costs). The definition spends eight multiplications and four additions. The seven forms spend seven multiplications and eighteen additions — ten to build the factors and eight to recombine. One multiplication is traded for fourteen additions.</p>
+<p class="pf"><span class="lab">Proof.</span> Count 13.2: <code>m₁</code> and <code>m₆</code> and <code>m₇</code> take two additions each, <code>m₂</code>, <code>m₃</code>, <code>m₄</code>, <code>m₅</code> one each — ten. Then 13.3’s four recombinations take three, one, one and three — eight. <span class="qed">∎</span></p>
+<p class="pf">On scalars that is a worse writing, not a better one: fourteen additions for one multiplication. The trade is only ever favourable when a multiplication is itself a product of the same kind, and that is the whole reason 13.3 had to hold in an arbitrary ring.</p></div>
+
+<div class="st nu" id="s13.5"><p><span class="lab">Theorem 13.5</span> (the exponent). Read 13.3 with the entries themselves matrices — legitimate by 13.3, since the <code>2ᵏ⁻¹ × 2ᵏ⁻¹</code> matrices over a ring form a ring. A product of <code>n × n</code> matrices then costs <code>T(n) = 7·T(n/2) + c·n²</code>, whose solution is of order</p>
+$$n^{\log_2 7} \approx n^{2.807},$$
+<p>against <code>n³</code> for the definition.</p>
+<p class="pf"><span class="lab">Proof.</span> Unrolling the recurrence, level <code>i</code> performs <code>7ⁱ</code> additions of blocks of side <code>n/2ⁱ</code>, costing <code>7ⁱ·(n/2ⁱ)² = n²·(7/4)ⁱ</code>. Since <code>7/4 &gt; 1</code> the levels grow geometrically and the last dominates: at <code>i = log₂ n</code> the total is of order <code>7^{log₂ n} = n^{log₂ 7}</code>. The multiplications are the leaves, <code>7^{log₂ n}</code> of them, the same order. <span class="qed">∎</span></p>
+<p class="pf">So the exponent is not a property of multiplication. It is a property of which writing of the sum was chosen <a class="ref" href="#s9.7">(9.7)</a>, and the choice was available because the identities of addition were already there to be used.</p></div>
+
+<div class="rk nu" id="s13.6"><p><span class="lab">Remark 13.6</span> (this is 9.7’s shape, on a different object). <a class="ref" href="#s9.8">9.8</a> fixes what a computation learns by its endpoints, and <a class="ref" href="#s9.7">9.7</a> fixes what it costs by how the total was written as a sum. Here the endpoints are the two matrices and their product, identical under both writings — 13.3 is the identification — while the cost differs by the exponent of 13.5. The two writings are not rival algorithms any more than two sums of the same number are <a class="ref" href="#s5.23">(5.23)</a>: they are one product, written twice.</p></div>
+
+<div class="rk nu" id="s13.7"><p><span class="lab">Remark 13.7</span> (what is not derived). 13.3 exhibits the identification; nothing above says that normalising the declaration <em>finds</em> the seven forms rather than merely agreeing with them, and that stronger claim is not made here. That seven is the least possible for <code>2 × 2</code> is also not proved here. The count of eighteen in 13.4 is the count for the recombination written in 13.2 and 13.3 — a different grouping gives a different count and leaves 13.3 untouched — and 13.5 is an order, with the crossover against the definition left where it belongs, in the constants.</p></div>
+
+<p class="src">Every step above is elementary. The boxed terms are verbatim and typecheck under <a class="x" href="https://agda.readthedocs.io/en/latest/language/cubical.html">Agda 2.8.0</a> with <code>--cubical --guardedness --safe --no-import-sorts</code> against agda-cubical v0.9 (<code>--guardedness</code> because the library carries it, and it is infective) — no postulates, no holes, no classical axiom; the untruncated <code>Σ</code> forms keep each claim constructive, exhibiting the escaping witness as a value. A box sits at each computational core — <a class="ref" href="#s0.8">the one fact (0.8)</a>, <a class="ref" href="#s1.2">the partition (1.2)</a>, <a class="ref" href="#s3.2">every reversible operation is a transport (3.2)</a>, <a class="ref" href="#s3.5">the vanishing grading (3.5)</a>, <a class="ref" href="#s4.2">Lawvere (4.2)</a>, <a class="ref" href="#s4.9">Gödel (4.6–4.9)</a>, <a class="ref" href="#s5.13">equal length (5.13)</a>, <a class="ref" href="#s7.2">σ² = −1 (7.2)</a>, <a class="ref" href="#s8.6">decide = verify (8.6)</a>, <a class="ref" href="#s9.7">every + is a merge, and the information fixed (9.7–9.8)</a>, <a class="ref" href="#s10.15">the balance and its slack (10.15)</a>, <a class="ref" href="#s11.10">the thread and its hops (11.10)</a>, <a class="ref" href="#s12.14">the balance and what cancels (12.14)</a>, <a class="ref" href="#s13.3">the seven forms in any ring (13.3)</a> — and each, headed by its own import lines, compiles on its own against the library under those flags, so any one can be checked without the rest; what is cumulative is the argument between them, not their imports. Not a citation to be trusted; the thing itself, on the page.</p>
 
 </main>
 <script src="./vendor/katex/katex.min.js"></script>
