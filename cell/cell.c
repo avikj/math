@@ -704,13 +704,18 @@ static int compClause(int c, int eta, Val hv, int *ok) {
  *     their common result, or the system of them over the clauses.
  *   K_APP, K_FST, K_SND, K_PAPP, K_UNGLUE, K_COMP: the eliminator waiting
  *     on its scrutinee's head.
+ *   APPLY_TERM_BINDER(a) >< TERM_BINDER(h), APPLY_DIM_BINDER(r) ><
+ *     DIM_BINDER(h), UNFOLD_GLOBAL >< REF(g): the scope table's own
+ *     replacements (scope document sections 22, 27); the binder handle is
+ *     the owner reference with its body field.
  *   TYPEOF >< REF(n): the type of a neutral n (a variable, an elimination
  *     of a neutral, a retained comp or unglue), so that a neutral path at
  *     an entailed endpoint gives its endpoint whether or not its
  *     application carried its type.
  * ---------------------------------------------------------------------- */
 enum { OP_ROOT, OP_EVAL, OP_PUBLISH, OP_JOIN, OP_KAPP, OP_KFST, OP_KSND, OP_KPAPP, OP_KPAPPTY, OP_KUNGLUE, OP_KCOMP,
-       OP_TYPEOF, OP_KTYPI, OP_KTYFST, OP_KTYSND, OP_KTYPATH };
+       OP_TYPEOF, OP_KTYPI, OP_KTYFST, OP_KTYSND, OP_KTYPATH,
+       OP_APPLY_TERM, OP_APPLY_DIM, OP_UNFOLD };
 typedef struct { int kind, p[4], outA, outI, n, got; Val *ins; int *faces; Val rootv; int rootset; } Op;
 static Op *ops; static int nops, capops;
 typedef struct { int op, idx; Val d; } Pair;
@@ -732,6 +737,18 @@ static void evalTo(int ref, int chi, int outA, int outI) {
 /* a chain: EVAL(eta) of ref, then the operation k (already created) */
 static int kop(int kind, int outA, int outI, int p0, int p1, int p2, int p3) {
   int k = newOp(kind, outA, outI); ops[k].p[0] = p0; ops[k].p[1] = p1; ops[k].p[2] = p2; ops[k].p[3] = p3; return k;
+}
+
+/* scope operations as their own interactions, their result evaluated */
+static void applyTermThenEval(int owner, int fi, int arg, int eta, int oA, int oI) {
+  int ev = newOp(OP_EVAL, oA, oI); ops[ev].p[0] = eta;
+  int ap = kop(OP_APPLY_TERM, ev, 0, fi, eta, arg, 0);
+  deliver(V(owner, 0), ap, 0);
+}
+static void applyDimThenEval(int owner, int fi, int itv, int eta, int oA, int oI) {
+  int ev = newOp(OP_EVAL, oA, oI); ops[ev].p[0] = eta;
+  int ap = kop(OP_APPLY_DIM, ev, 0, fi, eta, itv, 0);
+  deliver(V(owner, 0), ap, 0);
 }
 
 /* an elimination of a system that does not cover the context distributes
@@ -757,7 +774,11 @@ static void dispatch(int ref, int eta, int oA, int oI) {
   Head h = openRef(ref);
   switch (h.tag) {
   case UNIV: case PI: case SIGMA: case LAM: case PAIR: case PATH: case PLAM: deliver(V(ref, 0), oA, oI); return;
-  case GLOBAL: evalTo(reindex(defs[h.scal].body, refMap(ref)), eta, oA, oI); return;
+  case GLOBAL: {
+    int ev = newOp(OP_EVAL, oA, oI); ops[ev].p[0] = eta;
+    deliver(V(ref, 0), kop(OP_UNFOLD, ev, 0, 0, eta, 0, 0), 0);
+    return;
+  }
   case APP: evalTo(h.f[0].ref, eta, kop(OP_KAPP, oA, oI, ref, eta, h.f[1].ref, 0), 0); return;
   case FST: case SND: evalTo(h.f[0].ref, eta, kop(h.tag == FST ? OP_KFST : OP_KSND, oA, oI, ref, eta, 0, 0), 0); return;
   case PAPP: {
@@ -782,7 +803,7 @@ static void dispatch(int ref, int eta, int oA, int oI) {
     deliver(V(ref, 0), oA, oI);                       /* not covered: retained */
     return;
   case COMP: {
-    if (entails(eta, h.f[1].face)) { evalTo(applyDim(ref, 2, I1), eta, oA, oI); return; }
+    if (entails(eta, h.f[1].face)) { applyDimThenEval(ref, 2, I1, eta, oA, oI); return; }
     Resolved fam = resolve(ref, 0);
     evalTo(fam.body, eta, kop(OP_KCOMP, oA, oI, ref, eta, 0, 0), 0);
     return;
@@ -844,7 +865,7 @@ static void fire(Pair pr) {
   }
   case OP_KAPP: {
     int orig = o->p[0], arg = o->p[2]; Head hf = openRef(d.ref);
-    if (hf.tag == LAM) evalTo(applyTerm(d.ref, 1, arg), eta, oA, oI);
+    if (hf.tag == LAM) applyTermThenEval(d.ref, 1, arg, eta, oA, oI);
     else if (hf.tag == SYSTEM) evalTo(distribute(&hf, APP, arg), eta, oA, oI);
     else deliver(V(orig, 1), oA, oI);
     return;
@@ -858,7 +879,7 @@ static void fire(Pair pr) {
   }
   case OP_KPAPP: {
     int orig = o->p[0], s = o->p[2], typed = o->p[3]; Head hp = openRef(d.ref);
-    if (hp.tag == PLAM) { evalTo(applyDim(d.ref, 0, s), eta, oA, oI); return; }
+    if (hp.tag == PLAM) { applyDimThenEval(d.ref, 0, s, eta, oA, oI); return; }
     if (hp.tag == SYSTEM) { evalTo(distribute(&hp, PAPPU, s), eta, oA, oI); return; }
     if (typed) { deliver(V(orig, 1), oA, oI); return; }
     /* a neutral path whose application did not carry its type: read the
@@ -915,6 +936,12 @@ static void fire(Pair pr) {
     case UNGLUE: deliver(V(h.f[0].ref, 0), oA, oI); return;
     default: die("internal: the type of a non-neutral");
     }
+  }
+  case OP_APPLY_TERM: deliver(V(applyTerm(d.ref, o->p[0], o->p[2]), 0), oA, oI); return;
+  case OP_APPLY_DIM: deliver(V(applyDim(d.ref, o->p[0], o->p[2]), 0), oA, oI); return;
+  case OP_UNFOLD: {
+    Head h = openRef(d.ref); if (h.tag != GLOBAL) die("UNFOLD_GLOBAL meets a non-global reference");
+    deliver(V(reindex(defs[h.scal].body, refMap(d.ref)), 0), oA, oI); return;
   }
   case OP_KTYPI: {
     Head ht = openRef(d.ref); if (ht.tag != PI) die("ill-typed application of a neutral");
