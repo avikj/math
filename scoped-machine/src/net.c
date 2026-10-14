@@ -1,0 +1,647 @@
+#include "net.h"
+#include "lib.h"
+
+/* ------------------------------------------------------------------ */
+/* nodes and wiring                                                     */
+
+void net_init(Net *n) { memset(n, 0, sizeof *n); n->rng = 0x9E3779B97F4A7C15ULL; Node dummy = {0}; vec_push(&n->nodes, dummy); /* id 0 unused */ }
+
+void net_free(Net *n) {
+    for (size_t i = 0; i < n->nodes.len; i++) {
+        free(n->nodes.data[i].peer); free(n->nodes.data[i].polarity);
+        if (n->nodes.data[i].head) { head_free(n->nodes.data[i].head); free(n->nodes.data[i].head); }
+    }
+    vec_free(&n->nodes); vec_free(&n->active);
+}
+
+static Node *N(Net *n, NodeId id) { require(id && id < n->nodes.len, "bad node id"); return &n->nodes.data[id]; }
+
+NodeId net_node(Net *n, NodeKind kind, uint8_t nports, const int8_t *polarity, Payload p) {
+    Node x; memset(&x, 0, sizeof x);
+    x.kind = kind; x.live = true; x.nports = nports; x.p = p;
+    x.peer = calloc(nports ? nports : 1, sizeof(Endpoint));
+    x.polarity = malloc((nports ? nports : 1) * sizeof(int8_t));
+    require(x.peer && x.polarity, "out of memory");
+    memcpy(x.polarity, polarity, nports);
+    vec_push(&n->nodes, x);
+    return (NodeId)(n->nodes.len - 1);
+}
+
+static bool is_descriptor(NodeKind k) { return k >= D_REF && k <= D_STATUS; }
+static bool is_operation(NodeKind k) { return k >= OP_REINDEX_TERM && k <= OP_EVAL; }
+
+NodeId net_descriptor(Net *n, NodeKind kind, Payload p) {
+    require(is_descriptor(kind), "not a descriptor kind");
+    int8_t pol[1] = { +1 };
+    return net_node(n, kind, 1, pol, p);
+}
+
+NodeId net_operation(Net *n, NodeKind kind, Payload p) {
+    require(is_operation(kind), "not an operation kind");
+    int8_t pol[2] = { -1, +1 };
+    return net_node(n, kind, 2, pol, p);
+}
+
+static NodeId net_pending(Net *n) { Payload p = {0}; int8_t pol[1] = { +1 }; return net_node(n, (NodeKind)0, 1, pol, p); }
+
+bool net_is_live(const Net *n, NodeId a) { return a && a < n->nodes.len && n->nodes.data[a].live; }
+
+void net_connect(Net *n, NodeId a, uint16_t pa, NodeId b, uint16_t pb) {
+    Node *x = N(n, a), *y = N(n, b);
+    require(x->live && y->live, "connecting a retired node");
+    require(pa < x->nports && pb < y->nports, "port out of range");
+    require(x->polarity[pa] + y->polarity[pb] == 0, "polarity violation: only opposite polarities connect");
+    x->peer[pa].node = b; x->peer[pa].port = pb;
+    y->peer[pb].node = a; y->peer[pb].port = pa;
+    if (pa == 0 && pb == 0) vec_push(&n->active, a);
+}
+
+Endpoint net_peer(const Net *n, NodeId a, uint16_t pa) { return n->nodes.data[a].peer[pa]; }
+
+static void retire(Net *n, NodeId a) {
+    Node *x = N(n, a);
+    x->live = false;
+    for (uint16_t k = 0; k < x->nports; k++) x->peer[k].node = 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* local replacement with explicit boundary (§20)                       */
+
+typedef struct {
+    NodeId removed[4]; size_t nrem;
+    /* for each removed node's auxiliary port: the fresh endpoint that takes
+     * its place, or a connector to another removed aux port */
+    struct { NodeId node; uint16_t port; Endpoint fresh; Endpoint connector; bool has_fresh; } wires[32];
+    size_t nw;
+    size_t closed_cycles;
+} Replacement;
+
+static void rep_init(Replacement *r) { memset(r, 0, sizeof *r); }
+static void rep_remove(Replacement *r, NodeId a) { require(r->nrem < 4, "too many removed nodes"); r->removed[r->nrem++] = a; }
+static bool rep_is_removed(const Replacement *r, NodeId a) { for (size_t i = 0; i < r->nrem; i++) if (r->removed[i] == a) return true; return false; }
+static void rep_fresh(Replacement *r, NodeId a, uint16_t pa, NodeId b, uint16_t pb) {
+    require(r->nw < 32, "too many boundary wires");
+    r->wires[r->nw].node = a; r->wires[r->nw].port = pa;
+    r->wires[r->nw].fresh.node = b; r->wires[r->nw].fresh.port = pb; r->wires[r->nw].has_fresh = true;
+    r->nw++;
+}
+__attribute__((unused)) static void rep_connector(Replacement *r, NodeId a, uint16_t pa, NodeId b, uint16_t pb) {
+    require(r->nw < 32, "too many boundary wires");
+    r->wires[r->nw].node = a; r->wires[r->nw].port = pa;
+    r->wires[r->nw].connector.node = b; r->wires[r->nw].connector.port = pb; r->wires[r->nw].has_fresh = false;
+    r->nw++;
+}
+static int rep_find(const Replacement *r, NodeId a, uint16_t pa) {
+    for (size_t i = 0; i < r->nw; i++) if (r->wires[i].node == a && r->wires[i].port == pa) return (int)i;
+    return -1;
+}
+
+/* Every removed auxiliary port must be listed exactly once. Removed
+ * principal ports are internal to the redex. Each fresh endpoint is joined
+ * to the surviving endpoint reached by following old wires through
+ * connectors; a path that returns to its origin is a closed wire component. */
+static void rep_commit(Net *n, Replacement *r) {
+    /* validate: every aux port of every removed node is covered */
+    for (size_t i = 0; i < r->nrem; i++) {
+        Node *x = N(n, r->removed[i]);
+        for (uint16_t k = 1; k < x->nports; k++) require(rep_find(r, r->removed[i], k) >= 0, "replacement leaves a removed auxiliary port unaccounted");
+    }
+    /* snapshot old peers before retiring */
+    Endpoint *old = malloc((r->nw ? r->nw : 1) * sizeof(Endpoint));
+    require(old, "out of memory");
+    for (size_t i = 0; i < r->nw; i++) old[i] = N(n, r->wires[i].node)->peer[r->wires[i].port];
+    bool *done = calloc(r->nw ? r->nw : 1, sizeof(bool));
+    for (size_t i = 0; i < r->nw; i++) {
+        if (!r->wires[i].has_fresh || done[i]) continue;
+        /* follow from the old peer of this port */
+        Endpoint q = old[i];
+        size_t guard = 0;
+        for (;;) {
+            require(guard++ < 1000, "replacement path does not terminate");
+            if (!q.node) { done[i] = true; break; }                    /* free end: fresh endpoint stays free */
+            if (!rep_is_removed(r, q.node) || q.port == 0) {
+                /* survivor (a removed principal is internal: it cannot be a boundary peer) */
+                require(!rep_is_removed(r, q.node), "redex principal reached through a boundary path");
+                net_connect(n, r->wires[i].fresh.node, r->wires[i].fresh.port, q.node, q.port);
+                done[i] = true;
+                break;
+            }
+            int j = rep_find(r, q.node, q.port);
+            require(j >= 0, "removed aux without wiring");
+            if (r->wires[j].has_fresh) {
+                if ((size_t)j == i) { r->closed_cycles++; done[i] = true; break; }
+                net_connect(n, r->wires[i].fresh.node, r->wires[i].fresh.port, r->wires[j].fresh.node, r->wires[j].fresh.port);
+                done[i] = done[j] = true;
+                break;
+            }
+            /* connector: continue from the partner's old peer */
+            int pj = rep_find(r, r->wires[j].connector.node, r->wires[j].connector.port);
+            require(pj >= 0, "dangling connector");
+            done[j] = true;
+            if (done[pj] && (size_t)pj != i) { break; }
+            done[pj] = true;
+            q = old[pj];
+            if (q.node == r->wires[i].node && q.port == r->wires[i].port) { r->closed_cycles++; break; }
+        }
+    }
+    free(done); free(old);
+    for (size_t i = 0; i < r->nrem; i++) retire(n, r->removed[i]);
+    n->rewrites++;
+}
+
+/* ------------------------------------------------------------------ */
+/* rule helpers                                                         */
+
+static NodeId status_node(Net *n, uint64_t code, FaceId face, RefId ref) {
+    Payload p = {0}; p.a = code; p.face = face; p.ref = ref;
+    return net_descriptor(n, D_STATUS, p);
+}
+enum { ST_NOT_COVERED = 0, ST_COVERED = 1, ST_NO_OBSERVATION = 2, ST_SORT_MISMATCH = 3, ST_INVALID_MAP = 4 };
+
+/* one-result rule: replace OP (principal at port 0, result at port 1) and
+ * its consumed descriptor by a fresh result descriptor D */
+static void one_result(Net *n, NodeId op, NodeId data, NodeId result) {
+    Replacement r; rep_init(&r);
+    rep_remove(&r, op); rep_remove(&r, data);
+    rep_fresh(&r, op, 1, result, 0);
+    rep_commit(n, &r);
+}
+
+static NodeId desc_ref(Net *n, RefId t) { Payload p = {0}; p.ref = t; return net_descriptor(n, D_REF, p); }
+static NodeId desc_face(Net *n, FaceId f) { Payload p = {0}; p.face = f; return net_descriptor(n, D_FACE, p); }
+static NodeId desc_interval(Net *n, IntervalId r) { Payload p = {0}; p.a = r; return net_descriptor(n, D_INTERVAL, p); }
+static NodeId desc_map(Net *n, MapId m, FaceId src, FaceId tgt) { Payload p = {0}; p.a = m; p.b = src; p.c = tgt; return net_descriptor(n, D_MAP, p); }
+static NodeId desc_binder(Net *n, NodeKind kind, RefId owner, BinderSlot slot, FieldIndex field, FieldIndex guard) {
+    Payload p = {0}; p.a = owner; p.b = slot; p.c = field; p.d = guard; return net_descriptor(n, kind, p);
+}
+static NodeId desc_partial(Net *n, FaceId f, RefId t) { Payload p = {0}; p.face = f; p.ref = t; return net_descriptor(n, D_PARTIAL, p); }
+static NodeId desc_recipe(Net *n, RefId t) {
+    Payload p = {0}; p.ref = t;
+    NodeId d = net_descriptor(n, D_HEAD_RECIPE, p);
+    Node *x = N(n, d);
+    x->head = malloc(sizeof(Head)); require(x->head, "out of memory");
+    open_ref(t, x->head);
+    x->tag = x->head->is_var ? 0 : x->head->tag;
+    return d;
+}
+
+/* ------------------------------------------------------------------ */
+/* materializing a head (§19)                                            */
+
+static NodeId materialize(Net *n, const Head *h) {
+    Payload p = {0}; p.ref = h->owner;
+    if (h->is_var) {
+        int8_t pol[1] = { +1 };
+        p.a = h->var;
+        NodeId hd = net_node(n, A_HEAD, 1, pol, p);
+        N(n, hd)->tag = 0;
+        return hd;
+    }
+    if (h->tag == T_SYSTEM) {
+        /* HEAD_SYSTEM with one negative aux attached to a BRANCH list */
+        int8_t pol[2] = { +1, -1 };
+        NodeId hd = net_node(n, A_HEAD, 2, pol, p);
+        N(n, hd)->tag = T_SYSTEM;
+        size_t nb = h->n / 2;
+        int8_t polnil[1] = { +1 }, polcons[3] = { +1, -1, -1 }, polbr[3] = { +1, -1, -1 };
+        Payload e = {0};
+        NodeId tail = net_node(n, A_BRANCH_NIL, 1, polnil, e);
+        for (size_t k = nb; k-- > 0;) {
+            NodeId br = net_node(n, A_BRANCH, 3, polbr, e);
+            net_connect(n, br, 1, desc_face(n, h->f[2 * k].id), 0);
+            net_connect(n, br, 2, desc_ref(n, h->f[2 * k + 1].id), 0);
+            NodeId cons = net_node(n, A_BRANCH_CONS, 3, polcons, e);
+            net_connect(n, cons, 1, br, 0);
+            net_connect(n, cons, 2, tail, 0);
+            tail = cons;
+        }
+        net_connect(n, hd, 1, tail, 0);
+        return hd;
+    }
+    int8_t *pol = malloc(h->n + 1); require(pol, "out of memory");
+    pol[0] = +1; for (size_t k = 0; k < h->n; k++) pol[k + 1] = -1;
+    NodeId hd = net_node(n, A_HEAD, (uint8_t)(h->n + 1), pol, p);
+    free(pol);
+    N(n, hd)->tag = h->tag;
+    for (size_t k = 0; k < h->n; k++) {
+        const HField *f = &h->f[k];
+        NodeId d;
+        if (f->is_binder) {
+            if (h->tag == T_COMP && k == 2) d = desc_binder(n, D_PARTIAL_DIM_BINDER, h->owner, f->slot, f->index, 1);
+            else d = desc_binder(n, f->sort == S_TERM ? D_TERM_BINDER : D_DIM_BINDER, h->owner, f->slot, f->index, NO_FIELD);
+        } else if (f->kind == F_REF) {
+            /* partial fields: Glue fibre/equivalence under alpha, glue intro fibre term */
+            bool partial = (h->tag == T_GLUE_TYPE && (k == 2 || k == 3)) ||
+                           (h->tag == T_GLUE_INTRO && (k == 2 || k == 3 || k == 4)) ||
+                           (h->tag == T_UNGLUE && (k == 2 || k == 3));
+            d = partial ? desc_partial(n, h->f[1].id, f->id) : desc_ref(n, f->id);
+        } else if (f->kind == F_INTERVAL) d = desc_interval(n, f->id);
+        else d = desc_face(n, f->id);
+        net_connect(n, hd, (uint16_t)(k + 1), d, 0);
+    }
+    return hd;
+}
+
+/* ------------------------------------------------------------------ */
+/* evaluation agents                                                     */
+
+typedef struct { Net *net; NodeId pending; } EvalCtx;
+
+static void net_eval_deliver(void *ctx, EvalResult *r) {
+    EvalCtx *c = ctx;
+    Net *n = c->net;
+    NodeId pend = c->pending;
+    free(c);
+    if (!net_is_live(n, pend)) return;    /* consumer released the endpoint */
+    Payload p = {0}; p.a = (uint64_t)(uintptr_t)r; p.ref = r->ref;
+    NodeId d = net_descriptor(n, r->cls == R_NO_OBSERVATION ? D_STATUS : D_EVAL_RESULT, p);
+    if (r->cls == R_NO_OBSERVATION) N(n, d)->p.a = ST_NO_OBSERVATION;
+    Replacement rp; rep_init(&rp);
+    rep_remove(&rp, pend);
+    /* the pending node's only port is its principal: the boundary is its peer */
+    Endpoint q = N(n, pend)->peer[0];
+    retire(n, pend);
+    n->rewrites++; n->n_eval_deliver++;
+    if (q.node) net_connect(n, d, 0, q.node, q.port);
+}
+
+/* ------------------------------------------------------------------ */
+/* the rule table                                                        */
+
+static NodeId copy_descriptor(Net *n, const Node *x) {
+    NodeId d = net_descriptor(n, x->kind, x->p);
+    if (x->head) {
+        Node *y = N(n, d);
+        y->head = malloc(sizeof(Head)); require(y->head, "out of memory");
+        open_ref(x->head->owner, y->head);   /* same owner handle; the recipe is recomputed, not the construction */
+        y->tag = x->tag;
+    }
+    return d;
+}
+
+/* Rules snapshot the node records they read: allocating a node may move the
+ * node array, so no Node* is held across an allocation. */
+static void rule_dup_data(Net *n, NodeId dup, NodeId data) {
+    Node xs = *N(n, data); const Node *x = &xs;
+    NodeId d1 = copy_descriptor(n, x), d2 = copy_descriptor(n, x);
+    Replacement r; rep_init(&r);
+    rep_remove(&r, dup); rep_remove(&r, data);
+    rep_fresh(&r, dup, 1, d1, 0);
+    rep_fresh(&r, dup, 2, d2, 0);
+    rep_commit(n, &r);
+}
+
+static void rule_erase_data(Net *n, NodeId er, NodeId data) {
+    Replacement r; rep_init(&r);
+    rep_remove(&r, er); rep_remove(&r, data);
+    rep_commit(n, &r);
+}
+
+/* duplicate / erase a materialized shell fieldwise with local agents */
+static void rule_dup_shell(Net *n, NodeId dup, NodeId sh) {
+    Node xs = *N(n, sh); const Node *x = &xs;
+    uint8_t np = x->nports;
+    int8_t *pol = malloc(np); memcpy(pol, x->polarity, np);
+    NodeId s1 = net_node(n, x->kind, np, pol, x->p), s2 = net_node(n, x->kind, np, pol, x->p);
+    free(pol);
+    N(n, s1)->tag = x->tag; N(n, s2)->tag = x->tag;
+    Replacement r; rep_init(&r);
+    rep_remove(&r, dup); rep_remove(&r, sh);
+    rep_fresh(&r, dup, 1, s1, 0);
+    rep_fresh(&r, dup, 2, s2, 0);
+    int8_t pdup[3] = { -1, +1, +1 }; Payload e = {0};
+    for (uint16_t k = 1; k < np; k++) {
+        NodeId d = net_node(n, A_DUP, 3, pdup, e);
+        net_connect(n, d, 1, s1, k);
+        net_connect(n, d, 2, s2, k);
+        rep_fresh(&r, sh, k, d, 0);
+    }
+    rep_commit(n, &r);
+}
+
+static void rule_erase_shell(Net *n, NodeId er, NodeId sh) {
+    Node xs = *N(n, sh); const Node *x = &xs;
+    Replacement r; rep_init(&r);
+    rep_remove(&r, er); rep_remove(&r, sh);
+    int8_t per[1] = { -1 }; Payload e = {0};
+    for (uint16_t k = 1; k < x->nports; k++) rep_fresh(&r, sh, k, net_node(n, A_ERASE, 1, per, e), 0);
+    rep_commit(n, &r);
+}
+
+static void rule_op(Net *n, NodeId op, NodeId data) {
+    Node os = *N(n, op), ds = *N(n, data);
+    const Node *o = &os, *d = &ds;
+    NodeKind k = o->kind, dk = d->kind;
+    Payload P = o->p, Q = d->p;
+    NodeId res = 0;
+#define WANT(kind) do { if (dk != (kind)) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); goto out; } } while (0)
+    switch (k) {
+    case OP_REINDEX_TERM: WANT(D_REF); res = desc_ref(n, reindex(Q.ref, P.a)); break;
+    case OP_REINDEX_INTERVAL: WANT(D_INTERVAL); res = desc_interval(n, iv_reindex(Q.a, P.a)); break;
+    case OP_REINDEX_FACE: WANT(D_FACE); res = desc_face(n, fc_reindex(Q.face, P.a)); break;
+    case OP_COMPOSE_MAP: WANT(D_MAP); res = desc_map(n, compose(P.a, Q.a), 0, 0); break;
+    case OP_RESTRICT_MAP: {
+        WANT(D_MAP);
+        FaceId src = Q.b ? Q.b : fc_true(), tgt = Q.c ? Q.c : fc_true();
+        res = desc_map(n, Q.a, fc_meet(src, fc_reindex(P.face, Q.a)), fc_meet(tgt, P.face));
+        break;
+    }
+    case OP_LIFT_TERM: case OP_LIFT_DIMENSION: {
+        WANT(D_MAP);
+        RefId owner = P.a; BinderSlot slot = (BinderSlot)P.b;
+        if (ref_is_var(owner) || Q.a != ref_map(owner)) { res = status_node(n, ST_INVALID_MAP, 0, 0); break; }
+        Binder b = origin_binder(ref_origin(owner), slot);
+        if ((k == OP_LIFT_TERM) != (b.sort == S_TERM)) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
+        res = desc_map(n, lifted_map(owner, slot, NULL), Q.b, Q.c);
+        break;
+    }
+    case OP_OPEN: WANT(D_REF); res = desc_recipe(n, Q.ref); break;
+    case OP_UNFOLD_GLOBAL:
+        WANT(D_REF);
+        if (ref_is_var(Q.ref) || origin_tag(ref_origin(Q.ref)) != T_GLOBAL) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
+        res = desc_ref(n, unfold_global(Q.ref));
+        break;
+    case OP_REINDEX_TERM_BINDER: WANT(D_TERM_BINDER); res = desc_binder(n, D_TERM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
+    case OP_REINDEX_DIM_BINDER: WANT(D_DIM_BINDER); res = desc_binder(n, D_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
+    case OP_REINDEX_PARTIAL_DIM_BINDER: WANT(D_PARTIAL_DIM_BINDER); res = desc_binder(n, D_PARTIAL_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, (FieldIndex)Q.d); break;
+    case OP_REINDEX_PARTIAL: WANT(D_PARTIAL); res = desc_partial(n, fc_reindex(Q.face, P.a), reindex(Q.ref, P.a)); break;
+    case OP_APPLY_TERM_BINDER: WANT(D_TERM_BINDER); res = desc_ref(n, apply_term_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.ref)); break;
+    case OP_APPLY_DIM_BINDER: WANT(D_DIM_BINDER); res = desc_ref(n, apply_dim_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.a)); break;
+    case OP_APPLY_PARTIAL_DIM_BINDER: {
+        WANT(D_PARTIAL_DIM_BINDER);
+        RefId owner = Q.a;
+        DimOpen o = resolve_dim_binder(owner, (BinderSlot)Q.b, (FieldIndex)Q.c);
+        MapId at_r = map_single_dim(o.j, P.a);
+        /* both body and guard are specialized at r (the guard of a valid tube
+         * is independent of the bound dimension, so this leaves it unchanged) */
+        FaceId guard = fc_reindex(fc_reindex(origin_field(ref_origin(owner), (FieldIndex)Q.d).id, ref_map(owner)), at_r);
+        res = desc_partial(n, guard, reindex(o.body, at_r));
+        break;
+    }
+    case OP_FORALL_DIMENSION: WANT(D_FACE); res = desc_face(n, fc_forall(P.a, Q.face)); break;
+    case OP_PROJECT_FACE: { WANT(D_FACE); size_t m; const uint64_t *S = dimset_get(P.a, &m); res = desc_face(n, fc_project(Q.face, S, m)); break; }
+    case OP_FACE_COVERAGE: WANT(D_FACE); res = status_node(n, fc_entails(P.face, Q.face) ? ST_COVERED : ST_NOT_COVERED, 0, 0); break;
+    case OP_USE_PARTIAL:
+        WANT(D_PARTIAL);
+        if (fc_entails(P.face, Q.face)) res = desc_ref(n, Q.ref);
+        else res = status_node(n, ST_NOT_COVERED, Q.face, Q.ref);      /* retains the partial payload */
+        break;
+    case OP_GET_SUPPORT: { WANT(D_REF); Payload p = {0}; p.a = ref_support(Q.ref); res = net_descriptor(n, D_DIMSET, p); break; }
+    case OP_REINDEX_HEAD: WANT(D_HEAD_RECIPE); res = desc_recipe(n, reindex(d->head->owner, P.a)); break;
+    case OP_MATERIALIZE: WANT(D_HEAD_RECIPE); res = materialize(n, d->head); break;
+    case OP_EVAL: {
+        WANT(D_REF);
+        /* the result endpoint transfers into the continuation; the request
+         * descriptors retire. */
+        NodeId pend = net_pending(n);
+        EvalCtx *ctx = malloc(sizeof *ctx); require(ctx, "out of memory");
+        ctx->net = n; ctx->pending = pend;
+        one_result(n, op, data, pend);
+        eval_request(Q.ref, P.face, cont_external(net_eval_deliver, ctx));
+        return;
+    }
+    default: die("unknown operation");
+    }
+out:
+#undef WANT
+    one_result(n, op, data, res);
+}
+
+static bool is_shell(NodeKind k) { return k == A_HEAD || k == A_BRANCH_NIL || k == A_BRANCH_CONS || k == A_BRANCH; }
+
+static bool step(Net *n, NodeId a) {
+    Node *x = N(n, a);
+    if (!x->live) return false;
+    Endpoint q = x->peer[0];
+    if (!q.node || q.port != 0) return false;
+    NodeId b = q.node;
+    Node *y = N(n, b);
+    if (!y->live) return false;
+    /* orient: negative principal (agent) vs positive principal (data/shell) */
+    NodeId neg = x->polarity[0] < 0 ? a : b, pos = x->polarity[0] < 0 ? b : a;
+    Node *ng = N(n, neg), *ps = N(n, pos);
+    if (ng->kind == A_ROOT || ps->kind == (NodeKind)0) return false;   /* observation root / pending: no rule */
+    if (is_operation(ng->kind)) {
+        if (is_descriptor(ps->kind)) { rule_op(n, neg, pos); n->n_op++; return true; }
+        /* an operation meeting a shell is a sort mismatch */
+        Replacement r; rep_init(&r);
+        rep_remove(&r, neg);
+        rep_fresh(&r, neg, 1, status_node(n, ST_SORT_MISMATCH, 0, 0), 0);
+        rep_commit(n, &r);
+        /* the shell keeps its principal free; erase it */
+        int8_t per[1] = { -1 }; Payload e = {0};
+        net_connect(n, net_node(n, A_ERASE, 1, per, e), 0, pos, 0);
+        n->n_op++;
+        return true;
+    }
+    if (ng->kind == A_DUP) {
+        if (is_descriptor(ps->kind)) rule_dup_data(n, neg, pos);
+        else if (is_shell(ps->kind)) rule_dup_shell(n, neg, pos);
+        else return false;
+        n->n_dup++;
+        return true;
+    }
+    if (ng->kind == A_ERASE) {
+        if (is_descriptor(ps->kind)) rule_erase_data(n, neg, pos);
+        else if (is_shell(ps->kind)) rule_erase_shell(n, neg, pos);
+        else return false;
+        n->n_erase++;
+        return true;
+    }
+    return false;
+}
+
+size_t net_run(Net *n) {
+    size_t count = 0;
+    while (n->active.len) {
+        size_t pick = n->active.len - 1;
+        if (n->policy == 1) pick = 0;
+        else if (n->policy == 2) { n->rng ^= n->rng << 13; n->rng ^= n->rng >> 7; n->rng ^= n->rng << 17; pick = (size_t)(n->rng % n->active.len); }
+        NodeId a = n->active.data[pick];
+        n->active.data[pick] = n->active.data[n->active.len - 1];
+        n->active.len--;
+        if (step(n, a)) count++;
+    }
+    return count;
+}
+
+size_t net_run_with_eval(Net *n) {
+    size_t total = 0;
+    for (;;) {
+        size_t c = net_run(n);
+        size_t e = eval_run();
+        total += c;
+        if (c == 0 && e == 0) break;
+    }
+    return total;
+}
+
+bool net_root_read(const Net *n, NodeId root, NodeKind *kind, Payload *p) {
+    const Node *x = &n->nodes.data[root];
+    if (!x->live || x->kind != A_ROOT) return false;
+    Endpoint q = x->peer[0];
+    if (!q.node) return false;
+    const Node *y = &n->nodes.data[q.node];
+    if (kind) *kind = y->kind;
+    if (p) *p = y->p;
+    return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* tests                                                                 */
+
+static int tp = 0, tf = 0;
+#define TCHECK(c, msg) do { if (c) tp++; else { tf++; printf("  FAIL (net): %s\n", msg); } } while (0)
+
+static NodeId mk_root(Net *n) { int8_t pol[1] = { -1 }; Payload e = {0}; return net_node(n, A_ROOT, 1, pol, e); }
+
+/* wire op.result → root, op.principal → data.principal, run, read root */
+static bool run_op(Net *n, NodeKind opk, Payload P, NodeKind dk, Payload Q, NodeKind *outk, Payload *outp) {
+    NodeId op = net_operation(n, opk, P), d = net_descriptor(n, dk, Q), root = mk_root(n);
+    net_connect(n, op, 1, root, 0);
+    net_connect(n, op, 0, d, 0);
+    net_run_with_eval(n);
+    return net_root_read(n, root, outk, outp);
+}
+
+void test_net(void) {
+    printf("== §19–20 scope agents and local replacement\n");
+    Net net; net_init(&net);
+    RefId U = mk_universe(0);
+    RefId A = ref_var(declare_term(U, fc_true()));
+    TermVarId x = declare_term(A, fc_true());
+    RefId a = ref_var(declare_term(A, fc_true()));
+    RefId id = mk_lam(x, A, ref_var(x));
+    NodeKind ok; Payload op, P = {0}, Q = {0};
+
+    /* REINDEX_TERM */
+    P.a = map_single_term(x, a); Q.ref = ref_var(x);
+    TCHECK(run_op(&net, OP_REINDEX_TERM, P, D_REF, Q, &ok, &op) && ok == D_REF && op.ref == a, "REINDEX_TERM");
+    /* sort mismatch is a status, not a value */
+    Q.a = iv_one();
+    TCHECK(run_op(&net, OP_REINDEX_TERM, P, D_INTERVAL, Q, &ok, &op) && ok == D_STATUS && op.a == ST_SORT_MISMATCH, "sort mismatch → status");
+    /* OPEN then APPLY_TERM_BINDER through descriptors */
+    Q = (Payload){0}; Q.ref = id; P = (Payload){0};
+    TCHECK(run_op(&net, OP_OPEN, P, D_REF, Q, &ok, &op) && ok == D_HEAD_RECIPE, "OPEN gives a head recipe");
+    P.ref = a; Q = (Payload){0}; Q.a = id; Q.b = 0; Q.c = 1;
+    TCHECK(run_op(&net, OP_APPLY_TERM_BINDER, P, D_TERM_BINDER, Q, &ok, &op) && ok == D_REF && op.ref == a, "APPLY_TERM_BINDER");
+    /* LIFT_TERM requires the owner's own map */
+    P = (Payload){0}; P.a = id; P.b = 0; Q = (Payload){0}; Q.a = map_single_term(x, a);
+    TCHECK(run_op(&net, OP_LIFT_TERM, P, D_MAP, Q, &ok, &op) && ok == D_STATUS && op.a == ST_INVALID_MAP, "LIFT_TERM with an unrelated map is a validation error");
+    Q.a = map_identity();
+    TCHECK(run_op(&net, OP_LIFT_TERM, P, D_MAP, Q, &ok, &op) && ok == D_MAP && map_n_terms(op.a) == 1, "LIFT_TERM with the owner's map gives the lifted map");
+    /* faces */
+    DimVarId i = declare_dim(), j = declare_dim();
+    P = (Payload){0}; P.a = i; Q = (Payload){0}; Q.face = fc_join(fc_lit(i, 0), fc_lit(j, 0));
+    TCHECK(run_op(&net, OP_FORALL_DIMENSION, P, D_FACE, Q, &ok, &op) && op.face == fc_lit(j, 0), "FORALL_DIMENSION");
+    uint64_t Sj[1] = { j }; P.a = dimset_make(Sj, 1); Q.face = fc_meet(fc_lit(i, 0), fc_lit(j, 0));
+    TCHECK(run_op(&net, OP_PROJECT_FACE, P, D_FACE, Q, &ok, &op) && op.face == fc_lit(j, 0), "PROJECT_FACE");
+    P = (Payload){0}; P.face = fc_lit(i, 0); Q.face = fc_join(fc_lit(i, 0), fc_lit(j, 0));
+    TCHECK(run_op(&net, OP_FACE_COVERAGE, P, D_FACE, Q, &ok, &op) && ok == D_STATUS && op.a == ST_COVERED, "FACE_COVERAGE covered");
+    P.face = fc_true(); Q = (Payload){0}; Q.face = fc_lit(i, 0); Q.ref = a;
+    TCHECK(run_op(&net, OP_USE_PARTIAL, P, D_PARTIAL, Q, &ok, &op) && ok == D_STATUS && op.a == ST_NOT_COVERED && op.ref == a, "USE_PARTIAL not covered retains the partial payload");
+    P.face = fc_lit(i, 0);
+    TCHECK(run_op(&net, OP_USE_PARTIAL, P, D_PARTIAL, Q, &ok, &op) && ok == D_REF && op.ref == a, "USE_PARTIAL covered yields the term");
+    /* support */
+    RefId pth = ref_var(declare_term(mk_path_const(A, a, a), fc_true()));
+    RefId at_i = mk_papp(j, A, a, a, pth, iv_var(i));
+    P = (Payload){0}; Q = (Payload){0}; Q.ref = at_i;
+    TCHECK(run_op(&net, OP_GET_SUPPORT, P, D_REF, Q, &ok, &op) && ok == D_DIMSET && dimset_contains(op.a, i) && !dimset_contains(op.a, j), "GET_SUPPORT");
+
+    /* duplication copies handles: no new interned records */
+    size_t refs0 = interner_count(&M.refs), org0 = interner_count(&M.origins);
+    int8_t pdup[3] = { -1, +1, +1 }; Payload e = {0};
+    NodeId dup = net_node(&net, A_DUP, 3, pdup, e);
+    NodeId r1 = mk_root(&net), r2 = mk_root(&net);
+    net_connect(&net, dup, 1, r1, 0); net_connect(&net, dup, 2, r2, 0);
+    Q = (Payload){0}; Q.ref = id;
+    net_connect(&net, dup, 0, net_descriptor(&net, D_REF, Q), 0);
+    net_run(&net);
+    Payload p1, p2;
+    TCHECK(net_root_read(&net, r1, &ok, &p1) && net_root_read(&net, r2, NULL, &p2) && ok == D_REF && p1.ref == id && p2.ref == id, "duplicated descriptors share the payload handle");
+    TCHECK(interner_count(&M.refs) == refs0 && interner_count(&M.origins) == org0, "duplication allocates no origin, body or reference");
+    /* erasure retires the descriptor */
+    int8_t per[1] = { -1 };
+    NodeId er = net_node(&net, A_ERASE, 1, per, e);
+    NodeId dd = net_descriptor(&net, D_REF, Q);
+    net_connect(&net, er, 0, dd, 0);
+    net_run(&net);
+    TCHECK(!net_is_live(&net, dd) && !net_is_live(&net, er), "erasure retires descriptor and eraser");
+
+    /* materialize a system head into BRANCH_CONS / BRANCH wiring */
+    FaceId fs[2] = { fc_lit(i, 0), fc_lit(i, 1) }; RefId ts[2] = { a, a };
+    RefId sys = mk_system(2, fs, ts);
+    NodeId recipe = desc_recipe(&net, sys);
+    NodeId mat = net_operation(&net, OP_MATERIALIZE, e), root = mk_root(&net);
+    net_connect(&net, mat, 1, root, 0); net_connect(&net, mat, 0, recipe, 0);
+    net_run(&net);
+    Endpoint h = net_peer(&net, root, 0);
+    bool shape = net_is_live(&net, h.node) && net.nodes.data[h.node].kind == A_HEAD && net.nodes.data[h.node].tag == T_SYSTEM;
+    if (shape) {
+        Endpoint l = net_peer(&net, h.node, 1);
+        shape = net.nodes.data[l.node].kind == A_BRANCH_CONS;
+        Endpoint br = net_peer(&net, l.node, 1);
+        shape = shape && net.nodes.data[br.node].kind == A_BRANCH && net.nodes.data[net_peer(&net, br.node, 1).node].kind == D_FACE && net.nodes.data[net_peer(&net, br.node, 2).node].kind == D_REF;
+        Endpoint l2 = net_peer(&net, l.node, 2);
+        shape = shape && net.nodes.data[l2.node].kind == A_BRANCH_CONS && net.nodes.data[net_peer(&net, l2.node, 2).node].kind == A_BRANCH_NIL;
+    }
+    TCHECK(shape, "SYSTEM materializes as HEAD → CONS(BRANCH(FACE,REF), CONS(BRANCH, NIL))");
+    /* duplicate the shell fieldwise, then erase one copy */
+    refs0 = interner_count(&M.refs); org0 = interner_count(&M.origins);
+    NodeId dup2 = net_node(&net, A_DUP, 3, pdup, e);
+    NodeId ra = mk_root(&net), rb = mk_root(&net);
+    net_connect(&net, dup2, 1, ra, 0); net_connect(&net, dup2, 2, rb, 0);
+    /* detach root from head, attach dup */
+    net.nodes.data[root].peer[0].node = 0;
+    net_connect(&net, dup2, 0, h.node, 0);
+    size_t live_before = 0; for (size_t k = 1; k < net.nodes.len; k++) if (net.nodes.data[k].live) live_before++;
+    net_run(&net);
+    Endpoint ha = net_peer(&net, ra, 0), hb = net_peer(&net, rb, 0);
+    TCHECK(net_is_live(&net, ha.node) && net_is_live(&net, hb.node) && net.nodes.data[ha.node].kind == A_HEAD && net.nodes.data[hb.node].kind == A_HEAD && ha.node != hb.node, "shell duplication yields two shells");
+    TCHECK(interner_count(&M.refs) == refs0 && interner_count(&M.origins) == org0, "shell duplication still allocates nothing in the tables");
+    NodeId er2 = net_node(&net, A_ERASE, 1, per, e);
+    net.nodes.data[rb].peer[0].node = 0;
+    net_connect(&net, er2, 0, hb.node, 0);
+    net_run(&net);
+    size_t live_after = 0; for (size_t k = 1; k < net.nodes.len; k++) if (net.nodes.data[k].live) live_after++;
+    TCHECK(!net_is_live(&net, hb.node) && live_after < live_before + 20, "erasing a shell retires it and its fields");
+    /* every live port is either free or connected to a live node of opposite polarity */
+    bool wiring_ok = true;
+    for (size_t k = 1; k < net.nodes.len; k++) {
+        Node *nd = &net.nodes.data[k];
+        if (!nd->live) continue;
+        for (uint16_t q = 0; q < nd->nports; q++) {
+            Endpoint pe = nd->peer[q];
+            if (!pe.node) continue;
+            Node *o = &net.nodes.data[pe.node];
+            if (!o->live || o->peer[pe.port].node != k || o->peer[pe.port].port != q || o->polarity[pe.port] + nd->polarity[q] != 0) wiring_ok = false;
+        }
+    }
+    TCHECK(wiring_ok, "all surviving wiring is symmetric, live and polarity-correct");
+
+    /* EVAL agents: two requests for one key share one evaluation task */
+    size_t tasks0 = eval_task_count();
+    RefId t = mk_app(id, mk_pair(a, a));
+    NodeId e1 = net_operation(&net, OP_EVAL, (Payload){ .face = fc_true() }), e2 = net_operation(&net, OP_EVAL, (Payload){ .face = fc_lit(i, 0) });
+    NodeId q1 = mk_root(&net), q2 = mk_root(&net);
+    net_connect(&net, e1, 1, q1, 0); net_connect(&net, e2, 1, q2, 0);
+    Q = (Payload){0}; Q.ref = t;
+    net_connect(&net, e1, 0, net_descriptor(&net, D_REF, Q), 0);
+    net_connect(&net, e2, 0, net_descriptor(&net, D_REF, Q), 0);
+    net_run_with_eval(&net);
+    Payload o1, o2; NodeKind k1, k2;
+    bool got = net_root_read(&net, q1, &k1, &o1) && net_root_read(&net, q2, &k2, &o2);
+    TCHECK(got && k1 == D_EVAL_RESULT && k2 == D_EVAL_RESULT && o1.a == o2.a && ((EvalResult *)(uintptr_t)o1.a)->cls == R_INTRODUCTION, "both EVAL agents receive the same result payload");
+    (void)tasks0;
+    TCHECK(eval_entry_lookup(t, fc_true()) == eval_entry_lookup(t, fc_lit(i, 0)) && eval_entry_runs(eval_entry_lookup(t, fc_true())) == 1, "one evaluation task for the shared key");
+    /* false face: explicit host control result */
+    NodeId e3 = net_operation(&net, OP_EVAL, (Payload){ .face = fc_false() }), q3 = mk_root(&net);
+    net_connect(&net, e3, 1, q3, 0); net_connect(&net, e3, 0, net_descriptor(&net, D_REF, Q), 0);
+    net_run_with_eval(&net);
+    TCHECK(net_root_read(&net, q3, &k1, &o1) && k1 == D_STATUS && o1.a == ST_NO_OBSERVATION, "EVAL on the false face emits a no-observation status, not a term");
+
+    printf("  net: %zu rewrites\n", net.rewrites);
+    net_free(&net);
+    printf("  %d net checks passed, %d failed\n", tp, tf);
+    if (tf) exit(1);
+}

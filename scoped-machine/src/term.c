@@ -1,0 +1,665 @@
+#include "term.h"
+
+const char *tag_name(Tag t) {
+    switch (t) {
+    case T_UNIVERSE: return "U"; case T_PI: return "Π"; case T_SIGMA: return "Σ";
+    case T_LAM: return "λ"; case T_APP: return "app"; case T_PAIR: return "pair";
+    case T_FST: return "fst"; case T_SND: return "snd"; case T_PATH: return "PathP";
+    case T_PLAM: return "plam"; case T_PAPP: return "papp"; case T_GLUE_TYPE: return "Glue";
+    case T_GLUE_INTRO: return "glue"; case T_UNGLUE: return "unglue"; case T_COMP: return "comp";
+    case T_SYSTEM: return "system"; case T_GLOBAL: return "global";
+    }
+    return "?";
+}
+
+#define ENSURE_CAP(arr, cap, need) do { \
+    if ((need) > (cap)) { size_t nc = (cap) ? (cap) * 2 : 64; while (nc < (need)) nc *= 2; \
+        (arr) = realloc((arr), nc * sizeof(*(arr))); require((arr), "out of memory"); (cap) = nc; } } while (0)
+
+/* ================= declarations ================= */
+
+TermVarId declare_term(RefId type, FaceId required) {
+    ENSURE_CAP(M.term_decl, M.term_decl_cap, M.n_term_vars + 1);
+    M.term_decl[M.n_term_vars].type = type;
+    M.term_decl[M.n_term_vars].required = required;
+    M.n_term_vars++;
+    ENSURE_CAP(M.term_prov, M.term_prov_cap, M.n_term_vars);
+    M.term_prov[M.n_term_vars - 1] = 0;
+    return (TermVarId)M.n_term_vars;
+}
+DimVarId declare_dim(void) {
+    ++M.n_dim_vars;
+    ENSURE_CAP(M.dim_prov, M.dim_prov_cap, M.n_dim_vars);
+    M.dim_prov[M.n_dim_vars - 1] = 0;
+    return (DimVarId)M.n_dim_vars;
+}
+RefId term_var_type(TermVarId x) { require(x >= 1 && x <= M.n_term_vars, "undeclared term variable"); return M.term_decl[x - 1].type; }
+FaceId term_var_required(TermVarId x) { require(x >= 1 && x <= M.n_term_vars, "undeclared term variable"); return M.term_decl[x - 1].required; }
+
+/* ================= raw maps ================= */
+/* record: [nt, (x,ref)*, nd, (i,intv)*], keys sorted, no identity entries */
+
+void mapb_init(MapBuilder *b) { words_init(&b->t); words_init(&b->d); }
+void mapb_term(MapBuilder *b, TermVarId x, RefId image) { words_push(&b->t, x); words_push(&b->t, image); }
+void mapb_dim(MapBuilder *b, DimVarId i, IntervalId image) { words_push(&b->d, i); words_push(&b->d, image); }
+
+static int cmp_pair(const void *a, const void *b) {
+    const uint64_t *x = a, *y = b;
+    return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0;
+}
+
+MapId mapb_finish(MapBuilder *b) {
+    size_t nt = b->t.n / 2, nd = b->d.n / 2;
+    if (nt > 1) qsort(b->t.w, nt, 2 * sizeof(uint64_t), cmp_pair);
+    if (nd > 1) qsort(b->d.w, nd, 2 * sizeof(uint64_t), cmp_pair);
+    Words w; words_init(&w);
+    words_push(&w, 0);
+    size_t kept = 0;
+    for (size_t k = 0; k < nt; k++) {
+        uint64_t x = b->t.w[2 * k], img = b->t.w[2 * k + 1];
+        if (k > 0 && b->t.w[2 * (k - 1)] == x) {
+            require(b->t.w[2 * (k - 1) + 1] == img, "duplicate term key in map");
+            continue;
+        }
+        if (img == ref_var(x)) continue;   /* identity entry */
+        words_push(&w, x); words_push(&w, img); kept++;
+    }
+    w.w[0] = kept;
+    size_t ndpos = w.n;
+    words_push(&w, 0);
+    kept = 0;
+    for (size_t k = 0; k < nd; k++) {
+        uint64_t i = b->d.w[2 * k], img = b->d.w[2 * k + 1];
+        if (k > 0 && b->d.w[2 * (k - 1)] == i) {
+            require(b->d.w[2 * (k - 1) + 1] == img, "duplicate dimension key in map");
+            continue;
+        }
+        if (img == iv_var(i)) continue;
+        words_push(&w, i); words_push(&w, img); kept++;
+    }
+    w.w[ndpos] = kept;
+    MapId id = interner_intern(&M.maps, w.w, w.n, NULL);
+    words_free(&w);
+    words_free(&b->t); words_free(&b->d);
+    return id;
+}
+
+MapId map_identity(void) { MapBuilder b; mapb_init(&b); return mapb_finish(&b); }
+bool map_is_identity(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return w[0] == 0 && w[1] == 0; }
+size_t map_n_terms(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (size_t)w[0]; }
+size_t map_n_dims(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (size_t)w[1 + 2 * w[0]]; }
+void map_term_entry(MapId m, size_t k, TermVarId *x, RefId *img) {
+    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
+    require(k < w[0], "map entry out of range");
+    *x = w[1 + 2 * k]; *img = w[2 + 2 * k];
+}
+void map_dim_entry(MapId m, size_t k, DimVarId *i, IntervalId *img) {
+    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
+    const uint64_t *d = w + 1 + 2 * w[0];
+    require(k < d[0], "map entry out of range");
+    *i = d[1 + 2 * k]; *img = d[2 + 2 * k];
+}
+
+static const uint64_t *pairs_find(const uint64_t *p, size_t n, uint64_t key) {
+    size_t lo = 0, hi = n;
+    while (lo < hi) {
+        size_t mid = (lo + hi) / 2;
+        if (p[2 * mid] == key) return p + 2 * mid;
+        if (p[2 * mid] < key) lo = mid + 1; else hi = mid;
+    }
+    return NULL;
+}
+
+RefId map_term_image(MapId m, TermVarId x) {
+    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
+    const uint64_t *e = pairs_find(w + 1, (size_t)w[0], x);
+    return e ? e[1] : ref_var(x);
+}
+IntervalId map_dim_image(MapId m, DimVarId i) {
+    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
+    const uint64_t *d = w + 1 + 2 * w[0];
+    const uint64_t *e = pairs_find(d + 1, (size_t)d[0], i);
+    return e ? e[1] : iv_var(i);
+}
+MapId map_single_term(TermVarId x, RefId a) { MapBuilder b; mapb_init(&b); mapb_term(&b, x, a); return mapb_finish(&b); }
+MapId map_single_dim(DimVarId i, IntervalId r) { MapBuilder b; mapb_init(&b); mapb_dim(&b, i, r); return mapb_finish(&b); }
+
+static IntervalId map_img_cb(DimVarId i, void *ctx) { return map_dim_image(*(MapId *)ctx, i); }
+IntervalId iv_reindex(IntervalId r, MapId m) { return map_is_identity(m) ? r : iv_substitute(r, map_img_cb, &m); }
+FaceId fc_reindex(FaceId phi, MapId m) { return map_is_identity(m) ? phi : fc_substitute(phi, map_img_cb, &m); }
+
+MapId compose(MapId sigma, MapId tau) {
+    if (map_is_identity(sigma)) return tau;
+    if (map_is_identity(tau)) return sigma;
+    uint64_t key[2] = { sigma, tau }, out;
+    if (wordmap_get(&M.compose_memo, key, 2, &out)) return out;
+    MapBuilder b; mapb_init(&b);
+    /* keys of both maps; tau acts on sigma's images, sigma is identity on
+     * keys present only in tau */
+    Words keys; words_init(&keys);
+    size_t ns = map_n_terms(sigma), nt = map_n_terms(tau);
+    for (size_t k = 0; k < ns; k++) { TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); words_push(&keys, x); }
+    for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(tau, k, &x, &im); words_push(&keys, x); }
+    keys.n = sort_unique_u64(keys.w, keys.n);
+    for (size_t k = 0; k < keys.n; k++) mapb_term(&b, keys.w[k], reindex(map_term_image(sigma, keys.w[k]), tau));
+    keys.n = 0;
+    ns = map_n_dims(sigma); nt = map_n_dims(tau);
+    for (size_t k = 0; k < ns; k++) { DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im); words_push(&keys, i); }
+    for (size_t k = 0; k < nt; k++) { DimVarId i; IntervalId im; map_dim_entry(tau, k, &i, &im); words_push(&keys, i); }
+    keys.n = sort_unique_u64(keys.w, keys.n);
+    for (size_t k = 0; k < keys.n; k++) mapb_dim(&b, keys.w[k], iv_reindex(map_dim_image(sigma, keys.w[k]), tau));
+    words_free(&keys);
+    out = mapb_finish(&b);
+    wordmap_put(&M.compose_memo, key, 2, out);
+    return out;
+}
+
+/* ================= origins ================= */
+/* record: [tag, payload, nfields, (kind,slot,id)*, nbinders, (sort,formal,domain_field)*] */
+
+static const uint64_t *origin_words(OriginId c, size_t *n) { return interner_get(&M.origins, c, n); }
+Tag origin_tag(OriginId c) { size_t n; return (Tag)origin_words(c, &n)[0]; }
+uint64_t origin_payload(OriginId c) { size_t n; return origin_words(c, &n)[1]; }
+size_t origin_nfields(OriginId c) { size_t n; return (size_t)origin_words(c, &n)[2]; }
+Field origin_field(OriginId c, FieldIndex k) {
+    size_t n; const uint64_t *w = origin_words(c, &n);
+    require(k < w[2], "field index out of range");
+    Field f = { (FieldKind)w[3 + 3 * k], (BinderSlot)w[4 + 3 * k], w[5 + 3 * k] };
+    return f;
+}
+size_t origin_nbinders(OriginId c) { size_t n; const uint64_t *w = origin_words(c, &n); return (size_t)w[3 + 3 * w[2]]; }
+Binder origin_binder(OriginId c, BinderSlot s) {
+    size_t n; const uint64_t *w = origin_words(c, &n);
+    const uint64_t *b = w + 3 + 3 * w[2];
+    require(s < b[0], "binder slot out of range");
+    Binder r = { (Sort)b[1 + 3 * s], b[2 + 3 * s], (FieldIndex)b[3 + 3 * s] };
+    return r;
+}
+VarSetId origin_ft(OriginId c) { return M.origin_side[c - 1].ft; }
+DimSetId origin_fd(OriginId c) { return M.origin_side[c - 1].fd; }
+FaceId origin_required(OriginId c) { return M.origin_side[c - 1].required; }
+
+static OriginId origin_intern(Tag tag, uint64_t payload, const Field *fields, size_t nf,
+                              const Binder *binders, size_t nb, VarSetId ft, DimSetId fd, FaceId req) {
+    Words w; words_init(&w);
+    words_push(&w, tag); words_push(&w, payload); words_push(&w, nf);
+    for (size_t k = 0; k < nf; k++) { words_push(&w, fields[k].kind); words_push(&w, fields[k].slot); words_push(&w, fields[k].id); }
+    words_push(&w, nb);
+    for (size_t k = 0; k < nb; k++) { words_push(&w, binders[k].sort); words_push(&w, binders[k].formal); words_push(&w, binders[k].domain_field); }
+    bool created;
+    OriginId id = interner_intern(&M.origins, w.w, w.n, &created);
+    words_free(&w);
+    if (created) {
+        ENSURE_CAP(M.origin_side, M.origin_side_cap, id);
+        M.origin_side[id - 1].ft = ft;
+        M.origin_side[id - 1].fd = fd;
+        M.origin_side[id - 1].required = req;
+    }
+    return id;
+}
+
+OriginId origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nf,
+                     const Binder *binders, size_t nb) {
+    /* dependency-closed free boundary: union of field boundaries (which are
+     * already closed through declaration types), minus formals bound at the
+     * field's binder. */
+    VarSetId ft = varset_make(NULL, 0);
+    DimSetId fd = dimset_make(NULL, 0);
+    FaceId req = fc_true();
+    Words dims; words_init(&dims);
+    for (size_t k = 0; k < nf; k++) {
+        VarSetId fv = varset_make(NULL, 0);
+        DimSetId fdk;
+        dims.n = 0;
+        switch (fields[k].kind) {
+        case F_REF: fv = ref_freevars(fields[k].id); fdk = ref_support(fields[k].id); break;
+        case F_INTERVAL: iv_dims(fields[k].id, &dims); fdk = dimset_make(dims.w, dims.n); break;
+        case F_FACE: fc_dims(fields[k].id, &dims); fdk = dimset_make(dims.w, dims.n); break;
+        default: die("bad field kind");
+        }
+        if (fields[k].slot != NO_SLOT) {
+            require(fields[k].slot < nb, "field refers to a missing binder");
+            const Binder *b = &binders[fields[k].slot];
+            if (b->sort == S_TERM) fv = varset_remove(fv, b->formal);
+            else fdk = dimset_remove(fdk, b->formal);
+        }
+        ft = varset_union(ft, fv);
+        fd = dimset_union(fd, fdk);
+    }
+    words_free(&dims);
+    for (size_t k = 0; k < nb; k++)
+        if (binders[k].sort == S_TERM) require(binders[k].domain_field < nf, "term binder without domain field");
+    if (tag == T_SYSTEM) {
+        req = fc_false();
+        for (size_t k = 0; k < nf; k += 2) req = fc_join(req, fields[k].id);
+    } else {
+        /* a total construction requires what its total reference fields
+         * require; partial positions (tube, Glue fibre data, glue fibre term)
+         * are only used under their guards and do not propagate. A field under
+         * a dimension binder must be available along the whole line. */
+        for (size_t k = 0; k < nf; k++) {
+            if (fields[k].kind != F_REF) continue;
+            bool partial = (tag == T_COMP && k == 2) || (tag == T_GLUE_TYPE && (k == 2 || k == 3)) ||
+                           (tag == T_GLUE_INTRO && (k == 2 || k == 3 || k == 4)) || (tag == T_UNGLUE && (k == 2 || k == 3));
+            if (partial) continue;
+            FaceId rk = ref_required(fields[k].id);
+            if (fields[k].slot != NO_SLOT && binders[fields[k].slot].sort == S_DIM) rk = fc_forall(binders[fields[k].slot].formal, rk);
+            req = fc_meet(req, rk);
+        }
+    }
+    return origin_intern(tag, payload, fields, nf, binders, nb, ft, fd, req);
+}
+
+/* ================= references ================= */
+/* record: [1, x] for VAR ; [2, origin, map] for VIEW */
+
+static void ref_side_set(RefId id, DimSetId support, VarSetId fv, FaceId req) {
+    ENSURE_CAP(M.ref_side, M.ref_side_cap, id);
+    M.ref_side[id - 1].support = support;
+    M.ref_side[id - 1].freevars = fv;
+    M.ref_side[id - 1].required = req;
+}
+
+RefId ref_var(TermVarId x) {
+    uint64_t w[2] = { 1, x };
+    RefId id = interner_find(&M.refs, w, 2);
+    if (id) return id;
+    require(x >= 1 && x <= M.n_term_vars, "VAR of undeclared variable %llu", (unsigned long long)x);
+    RefId type = M.term_decl[x - 1].type;
+    FaceId req = M.term_decl[x - 1].required;
+    /* typed boundary: x itself plus the closed boundary of its declaration
+     * type and the dimensions of its required face */
+    uint64_t xs[1] = { x };
+    VarSetId fv = varset_union(varset_make(xs, 1), ref_freevars(type));
+    Words d; words_init(&d); fc_dims(req, &d);
+    DimSetId sup = dimset_union(ref_support(type), dimset_make(d.w, d.n));
+    words_free(&d);
+    bool created;
+    id = interner_intern(&M.refs, w, 2, &created);
+    require(created, "ref_var race");
+    ref_side_set(id, sup, fv, req);
+    return id;
+}
+
+bool ref_is_var(RefId t) { size_t n; return interner_get(&M.refs, t, &n)[0] == 1; }
+TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
+OriginId ref_origin(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 2, "not a VIEW"); return w[1]; }
+MapId ref_map(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 2, "not a VIEW"); return w[2]; }
+DimSetId ref_support(RefId t) { return M.ref_side[t - 1].support; }
+VarSetId ref_freevars(RefId t) { return M.ref_side[t - 1].freevars; }
+FaceId ref_required(RefId t) { return M.ref_side[t - 1].required; }
+
+RefId make_view(OriginId c, MapId sigma) {
+    /* restrict keys to the complete typed free boundary of c, drop identity
+     * entries (mapb_finish), intern */
+    VarSetId ft = origin_ft(c);
+    DimSetId fd = origin_fd(c);
+    MapBuilder b; mapb_init(&b);
+    size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
+    for (size_t k = 0; k < nt; k++) {
+        TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im);
+        if (varset_contains(ft, x)) mapb_term(&b, x, im);
+    }
+    for (size_t k = 0; k < nd; k++) {
+        DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im);
+        if (dimset_contains(fd, i)) mapb_dim(&b, i, im);
+    }
+    MapId m = mapb_finish(&b);
+    uint64_t w[3] = { 2, c, m };
+    bool created;
+    RefId id = interner_intern(&M.refs, w, 3, &created);
+    if (created) {
+        /* instantiated support and free variables (§7) */
+        VarSetId fv = varset_make(NULL, 0);
+        DimSetId sup = dimset_make(NULL, 0);
+        FaceId req = fc_reindex(origin_required(c), m);
+        size_t n; const uint64_t *xs = varset_get(ft, &n);
+        for (size_t k = 0; k < n; k++) {
+            RefId im = map_term_image(m, xs[k]);
+            fv = varset_union(fv, ref_freevars(im));
+            sup = dimset_union(sup, ref_support(im));
+            req = fc_meet(req, ref_required(im));
+        }
+        const uint64_t *ds = dimset_get(fd, &n);
+        Words d; words_init(&d);
+        for (size_t k = 0; k < n; k++) iv_dims(map_dim_image(m, ds[k]), &d);
+        sup = dimset_union(sup, dimset_make(d.w, d.n));
+        words_free(&d);
+        ref_side_set(id, sup, fv, req);
+    }
+    return id;
+}
+
+RefId reindex(RefId t, MapId sigma) {
+    if (map_is_identity(sigma)) return t;
+    if (ref_is_var(t)) return map_term_image(sigma, ref_var_id(t));
+    uint64_t key[2] = { t, sigma }, out;
+    if (wordmap_get(&M.reindex_memo, key, 2, &out)) return out;
+    OriginId c = ref_origin(t);
+    MapId tau = ref_map(t);
+    MapBuilder b; mapb_init(&b);
+    size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
+    for (size_t k = 0; k < n; k++) mapb_term(&b, xs[k], reindex(map_term_image(tau, xs[k]), sigma));
+    const uint64_t *ds = dimset_get(origin_fd(c), &n);
+    for (size_t k = 0; k < n; k++) mapb_dim(&b, ds[k], iv_reindex(map_dim_image(tau, ds[k]), sigma));
+    out = make_view(c, mapb_finish(&b));
+    wordmap_put(&M.reindex_memo, key, 2, out);
+    return out;
+}
+
+RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_term(x, a)); }
+RefId reindex_dim(RefId t, DimVarId i, IntervalId r) { return reindex(t, map_single_dim(i, r)); }
+
+/* ================= binders ================= */
+
+static uint64_t nominal_lookup(const KeyWord *key, size_t n, bool *created) {
+    Words w; words_init(&w);
+    for (size_t k = 0; k < n; k++) { words_push(&w, key[k].kind); words_push(&w, key[k].v); }
+    uint64_t id = interner_intern(&M.nominal, w.w, w.n, created);
+    words_free(&w);
+    ENSURE_CAP(M.nominal_val, M.nominal_cap, id);
+    return id;
+}
+const uint64_t *nominal_key(uint64_t nid, size_t *npairs) {
+    size_t n; const uint64_t *w = interner_get(&M.nominal, nid, &n);
+    *npairs = n / 2;
+    return w;
+}
+static void set_term_prov(TermVarId x, uint64_t nid) { ENSURE_CAP(M.term_prov, M.term_prov_cap, x); M.term_prov[x - 1] = nid; }
+static void set_dim_prov(DimVarId i, uint64_t nid) { ENSURE_CAP(M.dim_prov, M.dim_prov_cap, i); M.dim_prov[i - 1] = nid; }
+uint64_t term_var_provenance(TermVarId x) { return x <= M.term_prov_cap ? M.term_prov[x - 1] : 0; }
+uint64_t dim_var_provenance(DimVarId i) { return i <= M.dim_prov_cap ? M.dim_prov[i - 1] : 0; }
+
+TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type) {
+    KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_TERM } };
+    bool created;
+    uint64_t id = nominal_lookup(key, 4, &created);
+    if (created) { M.nominal_val[id - 1] = declare_term(type, fc_true()); set_term_prov(M.nominal_val[id - 1], id); }
+    return (TermVarId)M.nominal_val[id - 1];
+}
+DimVarId binder_dim_var(RefId owner, BinderSlot slot) {
+    KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_DIM } };
+    bool created;
+    uint64_t id = nominal_lookup(key, 4, &created);
+    if (created) { M.nominal_val[id - 1] = declare_dim(); set_dim_prov(M.nominal_val[id - 1], id); }
+    return (DimVarId)M.nominal_val[id - 1];
+}
+TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type) {
+    KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
+    w[0].kind = KW_CONST; w[0].v = 2; memcpy(w + 1, key, n * sizeof(KeyWord));
+    bool created;
+    uint64_t id = nominal_lookup(w, n + 1, &created);
+    free(w);
+    if (created) { M.nominal_val[id - 1] = declare_term(type, fc_true()); set_term_prov(M.nominal_val[id - 1], id); }
+    else require(term_var_type((TermVarId)M.nominal_val[id - 1]) == type, "keyed fresh variable reused at a different type");
+    return (TermVarId)M.nominal_val[id - 1];
+}
+DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
+    KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
+    w[0].kind = KW_CONST; w[0].v = 3; memcpy(w + 1, key, n * sizeof(KeyWord));
+    bool created;
+    uint64_t id = nominal_lookup(w, n + 1, &created);
+    free(w);
+    if (created) { M.nominal_val[id - 1] = declare_dim(); set_dim_prov(M.nominal_val[id - 1], id); }
+    return (DimVarId)M.nominal_val[id - 1];
+}
+
+/* lifted = sigma with the formal's entry removed, then formal ↦ fresh */
+static MapId lift_map(MapId sigma, Sort sort, uint64_t formal, uint64_t fresh_image) {
+    MapBuilder b; mapb_init(&b);
+    size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
+    for (size_t k = 0; k < nt; k++) {
+        TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im);
+        if (sort == S_TERM && x == formal) continue;
+        mapb_term(&b, x, im);
+    }
+    for (size_t k = 0; k < nd; k++) {
+        DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im);
+        if (sort == S_DIM && i == formal) continue;
+        mapb_dim(&b, i, im);
+    }
+    if (sort == S_TERM) mapb_term(&b, formal, fresh_image); else mapb_dim(&b, formal, fresh_image);
+    return mapb_finish(&b);
+}
+
+MapId lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh) {
+    require(!ref_is_var(owner), "binder of a variable");
+    OriginId c = ref_origin(owner);
+    MapId sigma = ref_map(owner);
+    Binder b = origin_binder(c, slot);
+    if (b.sort == S_TERM) {
+        TermVarId x = binder_term_var(owner, slot, reindex(origin_field(c, b.domain_field).id, sigma));
+        if (fresh) *fresh = x;
+        return lift_map(sigma, S_TERM, b.formal, ref_var(x));
+    }
+    DimVarId j = binder_dim_var(owner, slot);
+    if (fresh) *fresh = j;
+    return lift_map(sigma, S_DIM, b.formal, iv_var(j));
+}
+
+TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
+    require(!ref_is_var(owner), "binder of a variable");
+    OriginId c = ref_origin(owner);
+    MapId sigma = ref_map(owner);
+    Binder b = origin_binder(c, slot);
+    require(b.sort == S_TERM, "sort mismatch: expected term binder");
+    Field dom = origin_field(c, b.domain_field);
+    Field body = origin_field(c, body_field);
+    require(body.slot == slot && body.kind == F_REF, "field is not under this binder");
+    TermOpen o;
+    o.type = reindex(dom.id, sigma);
+    o.x = binder_term_var(owner, slot, o.type);
+    o.body = reindex(body.id, lift_map(sigma, S_TERM, b.formal, ref_var(o.x)));
+    return o;
+}
+
+DimOpen resolve_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
+    require(!ref_is_var(owner), "binder of a variable");
+    OriginId c = ref_origin(owner);
+    MapId sigma = ref_map(owner);
+    Binder b = origin_binder(c, slot);
+    require(b.sort == S_DIM, "sort mismatch: expected dimension binder");
+    Field body = origin_field(c, body_field);
+    require(body.slot == slot && body.kind == F_REF, "field is not under this binder");
+    DimOpen o;
+    o.j = binder_dim_var(owner, slot);
+    o.body = reindex(body.id, lift_map(sigma, S_DIM, b.formal, iv_var(o.j)));
+    return o;
+}
+
+RefId apply_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field, RefId a) {
+    TermOpen o = resolve_term_binder(owner, slot, body_field);
+    return reindex1(o.body, o.x, a);
+}
+RefId apply_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field, IntervalId r) {
+    DimOpen o = resolve_dim_binder(owner, slot, body_field);
+    return reindex_dim(o.body, o.j, r);
+}
+
+/* ================= opening ================= */
+
+void open_ref(RefId t, Head *h) {
+    memset(h, 0, sizeof *h);
+    h->owner = t;
+    if (ref_is_var(t)) { h->is_var = true; h->var = ref_var_id(t); return; }
+    OriginId c = ref_origin(t);
+    MapId sigma = ref_map(t);
+    h->origin = c; h->map = sigma;
+    h->tag = origin_tag(c);
+    h->payload = origin_payload(c);
+    h->n = origin_nfields(c);
+    h->f = calloc(h->n ? h->n : 1, sizeof(HField));
+    require(h->f, "out of memory");
+    for (size_t k = 0; k < h->n; k++) {
+        Field f = origin_field(c, (FieldIndex)k);
+        h->f[k].kind = f.kind;
+        h->f[k].index = (FieldIndex)k;
+        if (f.slot != NO_SLOT) {
+            h->f[k].is_binder = true;
+            h->f[k].slot = f.slot;
+            h->f[k].sort = origin_binder(c, f.slot).sort;
+            h->f[k].id = f.id;
+        } else {
+            h->f[k].slot = NO_SLOT;
+            switch (f.kind) {
+            case F_REF: h->f[k].id = reindex(f.id, sigma); break;
+            case F_INTERVAL: h->f[k].id = iv_reindex(f.id, sigma); break;
+            case F_FACE: h->f[k].id = fc_reindex(f.id, sigma); break;
+            }
+        }
+    }
+}
+
+void head_free(Head *h) { free(h->f); h->f = NULL; h->n = 0; }
+
+/* ================= globals ================= */
+
+SymbolId define_global(const char *name, VarSetId params, DimSetId dims) {
+    ENSURE_CAP(M.defs, M.defs_cap, M.n_defs + 1);
+    M.defs[M.n_defs].body = 0;
+    M.defs[M.n_defs].params = params;
+    M.defs[M.n_defs].dims = dims;
+    M.defs[M.n_defs].name = name;
+    M.n_defs++;
+    return (SymbolId)M.n_defs;
+}
+
+void set_global_body(SymbolId s, RefId body) {
+    require(s >= 1 && s <= M.n_defs, "unknown symbol");
+    require(M.defs[s - 1].body == 0, "definition environment is immutable: %s already defined", M.defs[s - 1].name);
+    size_t n; const uint64_t *xs = varset_get(ref_freevars(body), &n);
+    for (size_t k = 0; k < n; k++) require(varset_contains(M.defs[s - 1].params, xs[k]), "global body has an undeclared free variable");
+    const uint64_t *ds = dimset_get(ref_support(body), &n);
+    for (size_t k = 0; k < n; k++) require(dimset_contains(M.defs[s - 1].dims, ds[k]), "global body has an undeclared free dimension");
+    M.defs[s - 1].body = body;
+}
+
+RefId global_ref(SymbolId s) {
+    require(s >= 1 && s <= M.n_defs, "unknown symbol");
+    OriginId c = origin_intern(T_GLOBAL, s, NULL, 0, NULL, 0, M.defs[s - 1].params, M.defs[s - 1].dims, fc_true());
+    return make_view(c, map_identity());
+}
+
+RefId unfold_global(RefId t) {
+    require(!ref_is_var(t), "unfold of a variable");
+    OriginId c = ref_origin(t);
+    require(origin_tag(c) == T_GLOBAL, "unfold of a non-global");
+    SymbolId s = origin_payload(c);
+    require(M.defs[s - 1].body != 0, "global %s has no body", M.defs[s - 1].name);
+    return reindex(M.defs[s - 1].body, ref_map(t));
+}
+
+/* ================= constructors ================= */
+
+static RefId view0(Tag tag, uint64_t payload, const Field *f, size_t nf, const Binder *b, size_t nb) {
+    return make_view(origin_make(tag, payload, f, nf, b, nb), map_identity());
+}
+
+RefId mk_universe(uint64_t level) { return view0(T_UNIVERSE, level, NULL, 0, NULL, 0); }
+
+static RefId mk_term_binder_form(Tag tag, TermVarId x, RefId A, RefId body) {
+    require(term_var_type(x) == A, "binder formal declared at a different type");
+    Field f[2] = { { F_REF, NO_SLOT, A }, { F_REF, 0, body } };
+    Binder b[1] = { { S_TERM, x, 0 } };
+    return view0(tag, 0, f, 2, b, 1);
+}
+RefId mk_pi(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, x, A, B); }
+RefId mk_sigma(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_SIGMA, x, A, B); }
+RefId mk_lam(TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, x, A, body); }
+RefId mk_app(RefId fn, RefId a) { Field f[2] = { { F_REF, NO_SLOT, fn }, { F_REF, NO_SLOT, a } }; return view0(T_APP, 0, f, 2, NULL, 0); }
+RefId mk_pair(RefId a, RefId b) { Field f[2] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b } }; return view0(T_PAIR, 0, f, 2, NULL, 0); }
+RefId mk_fst(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_FST, 0, f, 1, NULL, 0); }
+RefId mk_snd(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_SND, 0, f, 1, NULL, 0); }
+RefId mk_path(DimVarId j, RefId B_j, RefId l, RefId r) {
+    Field f[3] = { { F_REF, 0, B_j }, { F_REF, NO_SLOT, l }, { F_REF, NO_SLOT, r } };
+    Binder b[1] = { { S_DIM, j, NO_FIELD } };
+    return view0(T_PATH, 0, f, 3, b, 1);
+}
+RefId mk_plam(DimVarId j, RefId body) {
+    Field f[1] = { { F_REF, 0, body } };
+    Binder b[1] = { { S_DIM, j, NO_FIELD } };
+    return view0(T_PLAM, 0, f, 1, b, 1);
+}
+RefId mk_papp(DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) {
+    Field f[5] = { { F_REF, 0, B_j }, { F_REF, NO_SLOT, l }, { F_REF, NO_SLOT, r }, { F_REF, NO_SLOT, p }, { F_INTERVAL, NO_SLOT, s } };
+    Binder b[1] = { { S_DIM, j, NO_FIELD } };
+    return view0(T_PAPP, 0, f, 5, b, 1);
+}
+RefId mk_glue_type(RefId A, FaceId alpha, RefId T, RefId e) {
+    Field f[4] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e } };
+    return view0(T_GLUE_TYPE, 0, f, 4, NULL, 0);
+}
+RefId mk_glue_intro(RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) {
+    Field f[6] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, t }, { F_REF, NO_SLOT, a } };
+    return view0(T_GLUE_INTRO, 0, f, 6, NULL, 0);
+}
+RefId mk_unglue(RefId A, FaceId alpha, RefId T, RefId e, RefId v) {
+    Field f[5] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, v } };
+    return view0(T_UNGLUE, 0, f, 5, NULL, 0);
+}
+RefId mk_comp(DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) {
+    Field f[4] = { { F_REF, 0, A_j }, { F_FACE, NO_SLOT, phi }, { F_REF, 0, u_j }, { F_REF, NO_SLOT, cap } };
+    Binder b[1] = { { S_DIM, j, NO_FIELD } };
+    return view0(T_COMP, 0, f, 4, b, 1);
+}
+RefId mk_system(size_t n, const FaceId *faces, const RefId *terms) {
+    Field *f = malloc((n ? 2 * n : 1) * sizeof(Field));
+    require(f, "out of memory");
+    for (size_t k = 0; k < n; k++) {
+        f[2 * k].kind = F_FACE; f[2 * k].slot = NO_SLOT; f[2 * k].id = faces[k];
+        f[2 * k + 1].kind = F_REF; f[2 * k + 1].slot = NO_SLOT; f[2 * k + 1].id = terms[k];
+    }
+    RefId r = view0(T_SYSTEM, n, f, 2 * n, NULL, 0);
+    free(f);
+    return r;
+}
+
+/* ================= printing ================= */
+
+static void pr(RefId t, FILE *f, int depth);
+
+static void pr_field(const Head *h, size_t k, FILE *f, int depth) {
+    const HField *x = &h->f[k];
+    if (x->is_binder) {
+        if (x->sort == S_TERM) {
+            TermOpen o = resolve_term_binder(h->owner, x->slot, x->index);
+            fprintf(f, "x%llu. ", (unsigned long long)o.x);
+            pr(o.body, f, depth - 1);
+        } else {
+            DimOpen o = resolve_dim_binder(h->owner, x->slot, x->index);
+            fprintf(f, "d%llu. ", (unsigned long long)o.j);
+            pr(o.body, f, depth - 1);
+        }
+        return;
+    }
+    switch (x->kind) {
+    case F_REF: pr(x->id, f, depth - 1); break;
+    case F_INTERVAL: iv_print(x->id, f); break;
+    case F_FACE: fc_print(x->id, f); break;
+    }
+}
+
+static void pr(RefId t, FILE *f, int depth) {
+    if (ref_is_var(t)) { fprintf(f, "x%llu", (unsigned long long)ref_var_id(t)); return; }
+    if (depth <= 0) { fprintf(f, "#%llu", (unsigned long long)t); return; }
+    Head h; open_ref(t, &h);
+    if (h.tag == T_UNIVERSE) { fprintf(f, "U%llu", (unsigned long long)h.payload); head_free(&h); return; }
+    if (h.tag == T_GLOBAL) {
+        fprintf(f, "%s", M.defs[h.payload - 1].name);
+        if (!map_is_identity(h.map)) {
+            fprintf(f, "[");
+            size_t nt = map_n_terms(h.map), nd = map_n_dims(h.map);
+            for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(h.map, k, &x, &im); fprintf(f, "%sx%llu:=", k ? "," : "", (unsigned long long)x); pr(im, f, depth - 1); }
+            for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(h.map, k, &i, &im); fprintf(f, "%sd%llu:=", (k || nt) ? "," : "", (unsigned long long)i); iv_print(im, f); }
+            fprintf(f, "]");
+        }
+        head_free(&h); return;
+    }
+    fprintf(f, "(%s", tag_name(h.tag));
+    for (size_t k = 0; k < h.n; k++) { fprintf(f, " "); pr_field(&h, k, f, depth); }
+    fprintf(f, ")");
+    head_free(&h);
+}
+
+void print_ref_depth(RefId t, FILE *f, int depth) { pr(t, f, depth); }
+void print_ref(RefId t, FILE *f) { pr(t, f, 12); }
