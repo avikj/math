@@ -1,0 +1,62 @@
+-- core.cell: equivalences, univalence, path operations, the identity agent.
+-- The composition clauses are in the machine (cell.c); they use fib and
+-- lineEquiv from here.
+
+def Contr (A : U) : U = (c : A) * ((x : A) -> Path A c x)
+def fib (A B : U) (f : A -> B) (y : B) : U = (x : A) * Path B (f x) y
+def Equiv (A B : U) : U = (f : A -> B) * ((y : B) -> Contr (fib A B f y))
+
+-- IdEquiv: centre (y , refl), contraction <i> (p (~i) , <j> p (~i \/ j))
+def idEquiv (A : U) : Equiv A A =
+  (\(x : A) -> x ,
+   \(y : A) -> ((y , <i> y) ,
+                \(z : fib A A (\(x : A) -> x) y) -> <i> (z.2 @ (~ i) , <j> z.2 @ (~ i \/ j))))
+
+-- PathEquiv (section 14): coe along i |-> Equiv (A 0) (A i) of IdEquiv (A 0)
+def lineEquiv (A0 A1 : U) (p : Path U A0 A1) : Equiv A0 A1 =
+  coe <i> (Equiv A0 (p @ i)) (idEquiv A0)
+
+-- Univalence (section 22)
+def ua (A B : U) (e : Equiv A B) : Path U A B =
+  <i> Glue B [ (i = 0) -> (A , e) , (i = 1) -> (B , idEquiv B) ]
+
+-- Paths (section 23)
+def refl (A : U) (a : A) : Path A a a = <i> a
+def reverse (A : U) (a b : A) (p : Path A a b) : Path A b a = <i> p @ (~ i)
+def compose (A : U) (a b c : A) (p : Path A a b) (q : Path A b c) : Path A a c =
+  <i> hcomp <j> A [ (i = 0) -> a , (i = 1) -> q @ j ] (p @ i)
+def ap (A B : U) (f : A -> B) (a b : A) (p : Path A a b) : Path B (f a) (f b) = <i> f (p @ i)
+def transport (A : U) (P : A -> U) (a b : A) (p : Path A a b) (x : P a) : P b = coe <i> (P (p @ i)) x
+
+-- Singletons at b contract (sections 23, 25): <i> (k (~i) , <j> k (~i \/ j))
+def contractSingleton (A : U) (a b : A) (k : Path A a b) :
+    Path ((h : A) * Path A h b) (b , <i> b) (a , k) =
+  <i> (k @ (~ i) , <j> k @ (~ i \/ j))
+
+-- The identity agent, forward and reverse (NET_SPEC 1)
+def agentForward (B : U) (L R : B) (p : Path B L R) (y : B) (q : Path B L y) : Path B R y =
+  <i> hcomp <j> B [ (i = 0) -> R , (i = 1) -> q @ j ] (p @ (~ i))
+def agentBackward (B : U) (L R : B) (p : Path B L R) (y : B) (r : Path B R y) : Path B L y =
+  <i> hcomp <j> B [ (i = 0) -> L , (i = 1) -> r @ j ] (p @ i)
+
+-- Wire elimination (NET_SPEC 2): (b , (s , t)) |-> ap g s . t,  w |-> (f a , (refl , w))
+def elim (A B C : U) (f : A -> B) (g : B -> C) (a : A) (c : C)
+    (x : (b : B) * ((s : Path B (f a) b) * Path C (g b) c)) : Path C (g (f a)) c =
+  compose C (g (f a)) (g x.1) c (ap B C g (f a) x.1 x.2.1) x.2.2
+def unelim (A B C : U) (f : A -> B) (g : B -> C) (a : A) (c : C) (w : Path C (g (f a)) c) :
+    (b : B) * ((s : Path B (f a) b) * Path C (g b) c) =
+  (f a , (<i> f a , w))
+
+-- Handles (NET_SPEC 3)
+def Handle (X : U) (P : X -> U) (x : X) : U = (r : X) * ((v : P r) * Path X r x)
+def readHandle (X : U) (P : X -> U) (x : X) (h : Handle X P x) : P x =
+  transport X P h.1 x h.2.2 h.2.1
+def canonHandle (X : U) (P : X -> U) (x : X) (v : P x) : Handle X P x = (x , (v , <i> x))
+def extendHandle (X : U) (P : X -> U) (x y : X) (h : Handle X P x) (s : Path X x y) : Handle X P y =
+  (h.1 , (h.2.1 , compose X h.1 x y h.2.2 s))
+
+-- Cut and difference (NET_SPEC 5)
+def cut (A : U) (x y z : A) (u : Path A x y) (v : Path A z y) : Path A x z =
+  compose A x y z u (reverse A z y v)
+def difference (A : U) (x y : A) (p h : Path A x y) : Path A y y =
+  compose A y x y (reverse A x y p) h

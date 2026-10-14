@@ -1,2 +1,0 @@
-# The identity agent's forward body (NET_SPEC 1) on paths in Two.
-forward Two on (axPath on on p) (axPath on on q)

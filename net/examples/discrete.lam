@@ -1,5 +1,0 @@
-# A discrete type and its Kan structure, added as part of its construction
-# (section 13: a box whose cap is a constructor reduces to it).
-data Bit = on | off;
-Two = Kan (L, phi, u, a0: Bit a0 on off);
-not = x: Bit x off on;
