@@ -9,8 +9,12 @@
     - intervals and faces are normalized DNF, with entailment, ∀ and projection;
     - binders are instantiated from `(owner, slot)`, shared by every field the slot governs;
     - `open` exposes one constructor.
-  - **Evaluation**: one entry per `(reference, ambient face projected to the reference's dimension support)`.
-    - A disjunctive face is evaluated clause by clause.
+  - **Evaluation is interaction.** Operation agents meet data agents, and each firing is one finite payload computation.
+    - `EVAL ⋈ REF` keeps one entry per `(reference, ambient face projected to its dimension support)`, either running with its waiters or ready.
+    - `PUBLISH` resumes the waiters.
+    - A disjunctive face goes to a `JOIN` that takes its clause results in any order.
+    - Eliminators wait on their scrutinee's head through continuation agents.
+    - `TYPEOF` reads the type off a neutral, so every neutral path at an entailed endpoint gives its endpoint.
     - Results never overwrite the reference.
   - **Reductions**: the CCHM rules:
     - application, projections;
@@ -22,4 +26,4 @@
 - `core.cell`: `Contr`, `fib`, `Equiv`, `idEquiv`, `lineEquiv`, `ua`, path operations, singleton contraction, the identity agent's forward and backward bodies, wire elimination, handles, cut and difference.
 - `examples.cell`: no numbers.
 
-Run: `cell core.cell examples.cell`. Each `eval` prints a normal form and the number of evaluation entries it computed.
+Run: `cell core.cell examples.cell`. Each `eval` prints a normal form and its length, the number of interactions. Read-back is a fold that demands evaluation and adds no interaction of its own.

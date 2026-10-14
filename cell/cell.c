@@ -9,8 +9,10 @@
  *   - interval and face forms are normalized DNF;
  *   - a binder is instantiated from its owner reference and slot;
  *   - opening a reference exposes one constructor with reindexed fields.
- * Evaluation: one entry per (reference, ambient face projected to the
- * reference's dimension support); RUNNING, READY (the owner's cache rule).
+ * Evaluation: interactions of operation agents with data agents; one
+ * entry per (reference, ambient face projected to the reference's
+ * dimension support), RUNNING with its waiters, READY (the owner's cache
+ * rule).  Length is the number of interactions.
  * Reduction: the CCHM rules -- application, projections, path application
  * with endpoints first, Glue/glue/unglue at an entailed face, systems by
  * coverage, comp: coverage first, else the family's head at the fresh
@@ -534,9 +536,8 @@ static int findDef(const char *n) { for (int i = 0; i < ndefs; i++) if (!strcmp(
  * ambient face projected to the reference's dimension support).
  * ---------------------------------------------------------------------- */
 enum { UNEVALUATED, RUNNING, READY };
-typedef struct { int ref, face, state, res, neutral; } Entry;
+typedef struct { int ref, face, state, res, neutral; int *wo, *wi, nw, capw; } Entry;
 static Entry *etab; static int capetab, netab;
-static long steps;
 typedef struct { int ref, neutral, empty; } Val;
 static Entry *entry(int ref, int face) {
   if (netab * 2 >= capetab) {
@@ -550,116 +551,6 @@ static Entry *entry(int ref, int face) {
   etab[k].ref = ref; etab[k].face = face; etab[k].state = UNEVALUATED; netab++;
   return &etab[k];
 }
-static Val whnf(int ref, int chi);
-static Val evalRef(int ref, int eta);
-static Val whnf(int ref, int chi) {
-  Val v = { ref, 0, 0 };
-  if (chi == F0) { v.empty = 1; return v; }
-  int eta = projectFace(chi, &fvOf(ref)->d);
-  /* Under a disjunction, evaluate clause by clause (each clause its own
-   * entry); agreeing results are one result, differing ones a system. */
-  Form fx = formGet(eta, 1);
-  if (fx.n > 1) {
-    int n = fx.n, *fc = xalloc(sizeof(int) * n), *rs = xalloc(sizeof(int) * n), same = 1, neu = 1;
-    for (int k = 0; k < n; k++) { Form one = { 0 }; formAdd(&one, ivcopy(&fx.c[k])); fc[k] = formIntern(&one, 1); }
-    formFree(&fx);
-    for (int k = 0; k < n; k++) { Val r = whnf(ref, fc[k]); rs[k] = r.ref; neu = neu && r.neutral; if (rs[k] != rs[0]) same = 0; }
-    Val out = { same ? rs[0] : bSys(n, fc, rs), same ? neu : 0, 0 };
-    free(fc); free(rs);
-    return out;
-  }
-  formFree(&fx);
-  Entry *e = entry(ref, eta);
-  if (e->state == READY) { v.ref = e->res; v.neutral = e->neutral; return v; }
-  if (e->state == RUNNING) die("evaluation demands itself (a cycle): reference %d", ref);
-  e->state = RUNNING;
-  Val r = evalRef(ref, eta);
-  e = entry(ref, eta);                                /* the table may have moved */
-  e->state = READY; e->res = r.ref; e->neutral = r.neutral;
-  return r;
-}
-static Val value(int ref) { Val v = { ref, 0, 0 }; return v; }
-static Val neutral(int ref) { Val v = { ref, 1, 0 }; return v; }
-
-/* an elimination of a system that does not cover the context distributes
- * over its branches (section 6) */
-typedef int (*Elim)(int t, void *ctx);
-static int distribute(Head *s, Elim el, void *ctx) {
-  int *ts = xalloc(sizeof(int) * (s->sysN + 1));
-  for (int k = 0; k < s->sysN; k++) ts[k] = el(s->sysTerm[k], ctx);
-  int r = bSys(s->sysN, s->sysFace, ts); free(ts); return r;
-}
-static int elApp(int t, void *c) { return bApp(t, *(int *)c); }
-static int elFst(int t, void *c) { (void)c; return bFst(t); }
-static int elSnd(int t, void *c) { (void)c; return bSnd(t); }
-
-static int compClause(int c, Head *ch, int eta, int *ok);
-
-static Val evalRef(int ref, int eta) {
-  if (isVar(ref)) return neutral(ref);
-  Head h = openRef(ref);
-  steps++;
-  switch (h.tag) {
-  case UNIV: case PI: case SIGMA: case LAM: case PAIR: case PATH: case PLAM: return value(ref);
-  case GLOBAL: {
-    Def *d = &defs[h.scal];
-    return whnf(reindex(d->body, refMap(ref)), eta);
-  }
-  case APP: {
-    Val f = whnf(h.f[0].ref, eta);
-    Head hf = openRef(f.ref);
-    if (hf.tag == LAM) return whnf(applyTerm(f.ref, 1, h.f[1].ref), eta);
-    if (hf.tag == SYSTEM) return whnf(distribute(&hf, elApp, &h.f[1].ref), eta);
-    return neutral(ref);
-  }
-  case FST: case SND: {
-    Val p = whnf(h.f[0].ref, eta);
-    Head hp = openRef(p.ref);
-    if (hp.tag == PAIR) return whnf(hp.f[h.tag == FST ? 0 : 1].ref, eta);
-    if (hp.tag == SYSTEM) return whnf(distribute(&hp, h.tag == FST ? elFst : elSnd, NULL), eta);
-    return neutral(ref);
-  }
-  case PAPP: case PAPPU: {
-    int pi = h.tag == PAPP ? 3 : 0, si = h.tag == PAPP ? 4 : 1;
-    int s = h.f[si].itv;
-    if (h.tag == PAPP) {
-      if (entails(eta, endpoint(s, 0))) return whnf(h.f[1].ref, eta);
-      if (entails(eta, endpoint(s, 1))) return whnf(h.f[2].ref, eta);
-    }
-    Val p = whnf(h.f[pi].ref, eta);
-    Head hp = openRef(p.ref);
-    if (hp.tag == PLAM) return whnf(applyDim(p.ref, 0, s), eta);
-    return neutral(ref);
-  }
-  case GLUE_TYPE: {
-    if (entails(eta, h.f[1].face)) return whnf(h.f[2].ref, eta);
-    return value(ref);
-  }
-  case GLUE_INTRO: {
-    if (entails(eta, h.f[1].face)) return whnf(h.f[4].ref, eta);
-    return value(ref);
-  }
-  case UNGLUE: {
-    if (entails(eta, h.f[1].face)) return whnf(bApp(bFst(h.f[3].ref), h.f[4].ref), eta);
-    Val v = whnf(h.f[4].ref, eta);
-    Head hv = openRef(v.ref);
-    if (hv.tag == GLUE_INTRO) return whnf(hv.f[5].ref, eta);
-    return neutral(ref);
-  }
-  case SYSTEM: {
-    for (int k = 0; k < h.sysN; k++) if (entails(eta, h.sysFace[k])) return whnf(h.sysTerm[k], eta);
-    return value(ref);                                /* covered only jointly, or not covered: retained */
-  }
-  case COMP: {
-    if (entails(eta, h.f[1].face)) return whnf(applyDim(ref, 2, I1), eta);
-    int ok = 0, r = compClause(ref, &h, eta, &ok);
-    if (!ok) return neutral(ref);
-    return whnf(r, eta);
-  }
-  }
-  die("internal: unknown tag"); return neutral(ref);
-}
-
 /* ------------------------------------------------------------------------
  * Composition clauses (MACHINE_SPEC sections 10, 11, 12, 17-21).
  * j is the instantiated dimension of the composition, shared by family and
@@ -685,11 +576,14 @@ static int fill(int d, int X, int phi, int U, int a0, int r) {
 }
 static int DEF_fib = -1, DEF_lineEquiv = -1;
 
-static int compClause(int c, Head *ch, int eta, int *ok) {
+/* c: the composition reference; hv: the head of its family at its j,
+ * already evaluated under eta.  Returns the clause's result, or 0 when the
+ * head is neutral (the composition is retained). */
+static int compClause(int c, int eta, Val hv, int *ok) {
+  Head hc = openRef(c), *ch = &hc;
   Resolved fam = resolve(c, 0), tube = resolve(c, 2);
   if (fam.var != tube.var) die("internal: family and tube instantiated apart");
   int j = fam.var, phi = ch->f[1].face, a0 = ch->f[3].ref, uj = tube.body;
-  Val hv = whnf(fam.body, eta);
   if (hv.empty) return 0;
   Head hA = openRef(hv.ref);
   int saveJ = CJ, saveS = CSLOT, saveO = COWNER, saveF = CFACE;
@@ -787,6 +681,265 @@ static int compClause(int c, Head *ch, int eta, int *ok) {
   CJ = saveJ; CSLOT = saveS; COWNER = saveO; CFACE = saveF;
   if (res < 0) return 0;
   *ok = 1; return res;
+}
+
+
+/* ------------------------------------------------------------------------
+ * Evaluation as interactions.
+ *
+ * Data agents carry a reference (REF, with whether it is neutral).
+ * Operation agents have a principal input and a result output; an
+ * operation agent meeting a data agent is an active pair, and firing it is
+ * one finite payload computation (open, reindex, entailment, a clause's
+ * construction) whose result goes on as data agents to other operation
+ * agents.  The length of an evaluation is the number of interactions.
+ *
+ *   EVAL(chi) >< REF(t): the entry (t, pi_S(chi)) -- READY gives its
+ *     result; RUNNING parks this demand among its waiters; otherwise it is
+ *     marked RUNNING and t's constructor is dispatched, its result routed
+ *     to PUBLISH.  A disjunctive face sends one EVAL per clause to a JOIN.
+ *   PUBLISH >< REF(v): the entry READY with v; v to the demand and to every
+ *     waiter.
+ *   JOIN: one input per clause, accepted in any order; when all are in,
+ *     their common result, or the system of them over the clauses.
+ *   K_APP, K_FST, K_SND, K_PAPP, K_UNGLUE, K_COMP: the eliminator waiting
+ *     on its scrutinee's head.
+ *   TYPEOF >< REF(n): the type of a neutral n (a variable, an elimination
+ *     of a neutral, a retained comp or unglue), so that a neutral path at
+ *     an entailed endpoint gives its endpoint whether or not its
+ *     application carried its type.
+ * ---------------------------------------------------------------------- */
+enum { OP_ROOT, OP_EVAL, OP_PUBLISH, OP_JOIN, OP_KAPP, OP_KFST, OP_KSND, OP_KPAPP, OP_KPAPPTY, OP_KUNGLUE, OP_KCOMP,
+       OP_TYPEOF, OP_KTYPI, OP_KTYFST, OP_KTYSND, OP_KTYPATH };
+typedef struct { int kind, p[4], outA, outI, n, got; Val *ins; int *faces; Val rootv; int rootset; } Op;
+static Op *ops; static int nops, capops;
+typedef struct { int op, idx; Val d; } Pair;
+static Pair *queue; static int nqueue, capqueue;
+static long interactions;
+static int newOp(int kind, int outA, int outI) {
+  Op o; memset(&o, 0, sizeof o); o.kind = kind; o.outA = outA; o.outI = outI;
+  PUSH(ops, nops, capops, o); return nops - 1;
+}
+static void deliver(Val d, int op, int idx) {
+  if (ops[op].kind == OP_ROOT) { ops[op].rootv = d; ops[op].rootset = 1; return; }
+  Pair pr = { op, idx, d }; PUSH(queue, nqueue, capqueue, pr);
+}
+static void out(int op, Val d) { deliver(d, ops[op].outA, ops[op].outI); }
+static Val V(int ref, int neu) { Val v = { ref, neu, 0 }; return v; }
+static void evalTo(int ref, int chi, int outA, int outI) {
+  int e = newOp(OP_EVAL, outA, outI); ops[e].p[0] = chi; deliver(V(ref, 0), e, 0);
+}
+/* a chain: EVAL(eta) of ref, then the operation k (already created) */
+static int kop(int kind, int outA, int outI, int p0, int p1, int p2, int p3) {
+  int k = newOp(kind, outA, outI); ops[k].p[0] = p0; ops[k].p[1] = p1; ops[k].p[2] = p2; ops[k].p[3] = p3; return k;
+}
+
+/* an elimination of a system that does not cover the context distributes
+ * over its branches (section 6) */
+static int distribute(Head *sy, int kind, int arg) {
+  int *ts = xalloc(sizeof(int) * (sy->sysN + 1));
+  for (int k = 0; k < sy->sysN; k++) {
+    int t = sy->sysTerm[k];
+    switch (kind) {
+    case APP: ts[k] = bApp(t, arg); break;
+    case FST: ts[k] = bFst(t); break;
+    case SND: ts[k] = bSnd(t); break;
+    case PAPPU: { Field f[2] = { FT(t), FI(arg) }; ts[k] = cell(PAPPU, 0, NULL, 2, f); break; }
+    default: die("internal: distribute");
+    }
+  }
+  int r = bSys(sy->sysN, sy->sysFace, ts); free(ts); return r;
+}
+
+/* EVAL >< REF, its result to (oA, oI) */
+static void dispatch(int ref, int eta, int oA, int oI) {
+  if (isVar(ref)) { deliver(V(ref, 1), oA, oI); return; }
+  Head h = openRef(ref);
+  switch (h.tag) {
+  case UNIV: case PI: case SIGMA: case LAM: case PAIR: case PATH: case PLAM: deliver(V(ref, 0), oA, oI); return;
+  case GLOBAL: evalTo(reindex(defs[h.scal].body, refMap(ref)), eta, oA, oI); return;
+  case APP: evalTo(h.f[0].ref, eta, kop(OP_KAPP, oA, oI, ref, eta, h.f[1].ref, 0), 0); return;
+  case FST: case SND: evalTo(h.f[0].ref, eta, kop(h.tag == FST ? OP_KFST : OP_KSND, oA, oI, ref, eta, 0, 0), 0); return;
+  case PAPP: {
+    int s = h.f[4].itv;
+    if (entails(eta, endpoint(s, 0))) { evalTo(h.f[1].ref, eta, oA, oI); return; }
+    if (entails(eta, endpoint(s, 1))) { evalTo(h.f[2].ref, eta, oA, oI); return; }
+    evalTo(h.f[3].ref, eta, kop(OP_KPAPP, oA, oI, ref, eta, s, 1), 0); return;
+  }
+  case PAPPU: evalTo(h.f[0].ref, eta, kop(OP_KPAPP, oA, oI, ref, eta, h.f[1].itv, 0), 0); return;
+  case GLUE_TYPE:
+    if (entails(eta, h.f[1].face)) evalTo(h.f[2].ref, eta, oA, oI); else deliver(V(ref, 0), oA, oI);
+    return;
+  case GLUE_INTRO:
+    if (entails(eta, h.f[1].face)) evalTo(h.f[4].ref, eta, oA, oI); else deliver(V(ref, 0), oA, oI);
+    return;
+  case UNGLUE:
+    if (entails(eta, h.f[1].face)) evalTo(bApp(bFst(h.f[3].ref), h.f[4].ref), eta, oA, oI);
+    else evalTo(h.f[4].ref, eta, kop(OP_KUNGLUE, oA, oI, ref, eta, 0, 0), 0);
+    return;
+  case SYSTEM:
+    for (int k = 0; k < h.sysN; k++) if (entails(eta, h.sysFace[k])) { evalTo(h.sysTerm[k], eta, oA, oI); return; }
+    deliver(V(ref, 0), oA, oI);                       /* not covered: retained */
+    return;
+  case COMP: {
+    if (entails(eta, h.f[1].face)) { evalTo(applyDim(ref, 2, I1), eta, oA, oI); return; }
+    Resolved fam = resolve(ref, 0);
+    evalTo(fam.body, eta, kop(OP_KCOMP, oA, oI, ref, eta, 0, 0), 0);
+    return;
+  }
+  }
+  die("internal: unknown tag");
+}
+
+static void fire(Pair pr) {
+  Op *o = &ops[pr.op]; Val d = pr.d; int oA = o->outA, oI = o->outI, eta = o->p[1];
+  interactions++;
+  switch (o->kind) {
+  case OP_EVAL: {
+    int chi = o->p[0], ref = d.ref;
+    if (chi == F0) { Val v = { ref, 0, 1 }; deliver(v, oA, oI); return; }
+    int e2 = projectFace(chi, &fvOf(ref)->d);
+    Form fx = formGet(e2, 1);
+    if (fx.n > 1) {
+      int n = fx.n, j = newOp(OP_JOIN, oA, oI);
+      ops[j].n = n; ops[j].ins = xalloc(sizeof(Val) * n); ops[j].faces = xalloc(sizeof(int) * n);
+      for (int k = 0; k < n; k++) { Form one = { 0 }; formAdd(&one, ivcopy(&fx.c[k])); ops[j].faces[k] = formIntern(&one, 1); }
+      formFree(&fx);
+      for (int k = 0; k < n; k++) evalTo(ref, ops[j].faces[k], j, k);
+      return;
+    }
+    formFree(&fx);
+    Entry *en = entry(ref, e2);
+    if (en->state == READY) { deliver(V(en->res, en->neutral), oA, oI); return; }
+    if (en->state == RUNNING) {
+      if (en->nw == en->capw) { en->capw = en->capw ? 2 * en->capw : 4; en->wo = xgrow(en->wo, sizeof(int) * en->capw); en->wi = xgrow(en->wi, sizeof(int) * en->capw); }
+      en->wo[en->nw] = oA; en->wi[en->nw] = oI; en->nw++;
+      return;
+    }
+    en->state = RUNNING;
+    int pub = kop(OP_PUBLISH, oA, oI, ref, e2, 0, 0);
+    dispatch(ref, e2, pub, 0);
+    return;
+  }
+  case OP_PUBLISH: {
+    Entry *en = entry(o->p[0], o->p[1]);
+    en->state = READY; en->res = d.ref; en->neutral = d.neutral;
+    int nw = en->nw, *wo = en->wo, *wi = en->wi;
+    en->wo = en->wi = NULL; en->nw = en->capw = 0;
+    deliver(d, oA, oI);
+    for (int k = 0; k < nw; k++) deliver(d, wo[k], wi[k]);
+    free(wo); free(wi);
+    return;
+  }
+  case OP_JOIN: {
+    o->ins[pr.idx] = d; o->got++;
+    if (o->got < o->n) return;
+    int same = 1, neu = 1;
+    for (int k = 0; k < o->n; k++) { if (o->ins[k].ref != o->ins[0].ref) same = 0; neu = neu && o->ins[k].neutral; }
+    if (same) { deliver(V(o->ins[0].ref, neu), oA, oI); return; }
+    int *rs = xalloc(sizeof(int) * o->n); for (int k = 0; k < o->n; k++) rs[k] = o->ins[k].ref;
+    int sy = bSys(o->n, ops[pr.op].faces, rs); free(rs);
+    deliver(V(sy, 0), oA, oI);
+    return;
+  }
+  case OP_KAPP: {
+    int orig = o->p[0], arg = o->p[2]; Head hf = openRef(d.ref);
+    if (hf.tag == LAM) evalTo(applyTerm(d.ref, 1, arg), eta, oA, oI);
+    else if (hf.tag == SYSTEM) evalTo(distribute(&hf, APP, arg), eta, oA, oI);
+    else deliver(V(orig, 1), oA, oI);
+    return;
+  }
+  case OP_KFST: case OP_KSND: {
+    int orig = o->p[0], fst = o->kind == OP_KFST; Head hp = openRef(d.ref);
+    if (hp.tag == PAIR) evalTo(hp.f[fst ? 0 : 1].ref, eta, oA, oI);
+    else if (hp.tag == SYSTEM) evalTo(distribute(&hp, fst ? FST : SND, 0), eta, oA, oI);
+    else deliver(V(orig, 1), oA, oI);
+    return;
+  }
+  case OP_KPAPP: {
+    int orig = o->p[0], s = o->p[2], typed = o->p[3]; Head hp = openRef(d.ref);
+    if (hp.tag == PLAM) { evalTo(applyDim(d.ref, 0, s), eta, oA, oI); return; }
+    if (hp.tag == SYSTEM) { evalTo(distribute(&hp, PAPPU, s), eta, oA, oI); return; }
+    if (typed) { deliver(V(orig, 1), oA, oI); return; }
+    /* a neutral path whose application did not carry its type: read the
+     * type off the neutral, then the endpoint rule */
+    int k = kop(OP_KPAPPTY, oA, oI, orig, eta, s, 0);
+    int ev = newOp(OP_EVAL, k, 0); ops[ev].p[0] = eta;
+    int ty = kop(OP_TYPEOF, ev, 0, 0, eta, 0, 0);
+    deliver(d, ty, 0);
+    return;
+  }
+  case OP_KPAPPTY: {
+    int orig = o->p[0], s = o->p[2]; Head ht = openRef(d.ref);
+    if (ht.tag == PATH) {
+      if (entails(eta, endpoint(s, 0))) { evalTo(ht.f[1].ref, eta, oA, oI); return; }
+      if (entails(eta, endpoint(s, 1))) { evalTo(ht.f[2].ref, eta, oA, oI); return; }
+    }
+    deliver(V(orig, 1), oA, oI);
+    return;
+  }
+  case OP_KUNGLUE: {
+    int orig = o->p[0]; Head hv = openRef(d.ref);
+    if (hv.tag == GLUE_INTRO) { evalTo(hv.f[5].ref, eta, oA, oI); return; }
+    if (hv.tag == SYSTEM) {
+      Head ho = openRef(orig); int *ts = xalloc(sizeof(int) * (hv.sysN + 1));
+      for (int k = 0; k < hv.sysN; k++) ts[k] = bUnglue(ho.f[0].ref, ho.f[1].face, ho.f[2].ref, ho.f[3].ref, hv.sysTerm[k]);
+      int sy = bSys(hv.sysN, hv.sysFace, ts); free(ts);
+      evalTo(sy, eta, oA, oI); return;
+    }
+    deliver(V(orig, 1), oA, oI);
+    return;
+  }
+  case OP_KCOMP: {
+    int c = o->p[0], ok = 0, r = compClause(c, eta, d, &ok);
+    if (ok) evalTo(r, eta, oA, oI); else deliver(V(c, 1), oA, oI);
+    return;
+  }
+  case OP_TYPEOF: {
+    int n = d.ref;
+    if (isVar(n)) { int ty = vars[refVarId(n)].type; if (ty < 0) die("a neutral variable without a type"); deliver(V(ty, 0), oA, oI); return; }
+    Head h = openRef(n);
+    switch (h.tag) {
+    case APP: case FST: case SND: case PAPPU: {
+      /* evaluate the eliminated neutral, take its type, evaluate that, then read */
+      int kind = h.tag == APP ? OP_KTYPI : h.tag == FST ? OP_KTYFST : h.tag == SND ? OP_KTYSND : OP_KTYPATH;
+      int arg = h.tag == APP ? h.f[1].ref : h.tag == PAPPU ? h.f[1].itv : h.f[0].ref;
+      int k = kop(kind, oA, oI, arg, eta, 0, 0);
+      int ev = newOp(OP_EVAL, k, 0); ops[ev].p[0] = eta;
+      int ty = kop(OP_TYPEOF, ev, 0, 0, eta, 0, 0);
+      evalTo(h.f[0].ref, eta, ty, 0);
+      return;
+    }
+    case PAPP: deliver(V(applyDim(n, 0, h.f[4].itv), 0), oA, oI); return;
+    case COMP: deliver(V(applyDim(n, 0, I1), 0), oA, oI); return;
+    case UNGLUE: deliver(V(h.f[0].ref, 0), oA, oI); return;
+    default: die("internal: the type of a non-neutral");
+    }
+  }
+  case OP_KTYPI: {
+    Head ht = openRef(d.ref); if (ht.tag != PI) die("ill-typed application of a neutral");
+    deliver(V(applyTerm(d.ref, 1, o->p[0]), 0), oA, oI); return;
+  }
+  case OP_KTYFST: case OP_KTYSND: {
+    Head ht = openRef(d.ref); if (ht.tag != SIGMA) die("ill-typed projection of a neutral");
+    if (o->kind == OP_KTYFST) deliver(V(ht.f[0].ref, 0), oA, oI);
+    else deliver(V(applyTerm(d.ref, 1, bFst(o->p[0])), 0), oA, oI);
+    return;
+  }
+  case OP_KTYPATH: {
+    Head ht = openRef(d.ref); if (ht.tag != PATH) die("ill-typed path application of a neutral");
+    deliver(V(applyDim(d.ref, 0, o->p[0]), 0), oA, oI); return;
+  }
+  }
+  die("internal: an operation agent without a rule");
+}
+/* demand from outside the net (read-back, elaboration): run to quiescence */
+static Val demand(int ref, int chi) {
+  int root = newOp(OP_ROOT, -1, -1);
+  evalTo(ref, chi, root, 0);
+  while (nqueue) { Pair pr = queue[--nqueue]; fire(pr); }
+  if (!ops[root].rootset) die("evaluation demands itself (a cycle)");
+  return ops[root].rootv;
 }
 
 /* ------------------------------------------------------------------------
@@ -974,9 +1127,9 @@ static int synth(int ref) {
   Head h = openRef(ref);
   switch (h.tag) {
   case GLOBAL: { int ty = defs[h.scal].type; return ty < 0 ? -1 : reindex(ty, refMap(ref)); }
-  case APP: { int t = synth(h.f[0].ref); if (t < 0) return -1; Val w = whnf(t, F1); Head ht = openRef(w.ref); if (ht.tag != PI) return -1; return applyTerm(w.ref, 1, h.f[1].ref); }
+  case APP: { int t = synth(h.f[0].ref); if (t < 0) return -1; Val w = demand(t, F1); Head ht = openRef(w.ref); if (ht.tag != PI) return -1; return applyTerm(w.ref, 1, h.f[1].ref); }
   case FST: case SND: {
-    int t = synth(h.f[0].ref); if (t < 0) return -1; Val w = whnf(t, F1); Head ht = openRef(w.ref); if (ht.tag != SIGMA) return -1;
+    int t = synth(h.f[0].ref); if (t < 0) return -1; Val w = demand(t, F1); Head ht = openRef(w.ref); if (ht.tag != SIGMA) return -1;
     return h.tag == FST ? ht.f[0].ref : applyTerm(w.ref, 1, bFst(h.f[0].ref));
   }
   case PAPP: return applyDim(ref, 0, h.f[4].itv);
@@ -1054,7 +1207,7 @@ static int elab(Ast *a, Scope *s) {
     int p = elab(a->c[0], s), r = elabItv(a->c[1], s);
     int ty = synth(p);
     if (ty >= 0) {
-      Val w = whnf(ty, F1); Head ht = openRef(w.ref);
+      Val w = demand(ty, F1); Head ht = openRef(w.ref);
       if (ht.tag == PATH) { Resolved B = resolve(w.ref, 0); return bPapp(B.var, B.body, ht.f[1].ref, ht.f[2].ref, p, r); }
     }
     Field f[2] = { FT(p), FI(r) }; return cell(PAPPU, 0, NULL, 2, f);
@@ -1122,7 +1275,7 @@ static void nf(int ref, int chi);
 static void nfPartial(int ref, int chi, int guard) { int c = fand(chi, guard); if (c == F0) printf("_"); else nf(ref, c); }
 static void nf(int ref, int chi) {
   if (chi == F0) { printf("_"); return; }
-  Val w = whnf(ref, chi);
+  Val w = demand(ref, chi);
   int r = w.ref;
   if (isVar(r)) { pVar(refVarId(r)); return; }
   Head h = openRef(r);
@@ -1199,9 +1352,9 @@ static void decl(void) {
   }
   if (is("eval")) {
     pos++; int t = elab(pTerm(), NULL);
-    long before = steps;
+    long before = interactions;
     nf(t, F1);
-    printf("\n  [%ld evaluation steps]\n", steps - before);
+    printf("\n  [%ld interactions]\n", interactions - before);
     return;
   }
   die("expected postulate, def or eval at '%s'", pk(0));
