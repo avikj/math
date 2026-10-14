@@ -208,3 +208,30 @@ restore = A, p, l: compose A p l;
 
 # A postulated path a = b: neutral inside, its endpoints at 0 and 1 (section 7).
 axPath = a, b, n: plam (i: I i a b (e: n (igen e)));
+
+# --- the identity agent over a construction (NET_SPEC 2, MACHINE_SPEC 24) ------
+# A construction tree: a leaf (its type and value), or a unary or binary node
+# (its result type, its operation, its children).  Its internal wires are
+# dependent pairs; c contracts them (singletons), c-inverse reintroduces them.
+
+data Tree = leaf T v | node1 Bt f t | node2 Bt m s t;
+evalT = Y (self, x: Tree x (T, v: v) (Bt, f, t: f (self t)) (Bt, m, s, t: m (self s) (self t)));
+typeT = x: Tree x (T, v: T) (Bt, f, t: Bt) (Bt, m, s, t: Bt);
+Real = Y (self, x, y: Tree x
+  (T, v: Path T v y)
+  (Bt, f, t: Sigma (typeT t) (a: Sigma (self t a) (r: Path Bt (f a) y)))
+  (Bt, m, s, t: Sigma (typeT s) (a: Sigma (self s a) (r: Sigma (typeT t) (b: Sigma (self t b) (k: Path Bt (m a b) y))))));
+cTree = Y (self, x, u: Tree x
+  (T, v: u)
+  (Bt, f, t: compose Bt (ap f (self t (fst (snd u)))) (snd (snd u)))
+  (Bt, m, s, t:
+     let r = fst (snd u) in let k = fst (snd (snd (snd u))) in
+     compose Bt (plam (i: m (papp (self s r) i) (papp (self t k) i))) (snd (snd (snd (snd u))))));
+cTreeInv = Y (self, x, q: Tree x
+  (T, v: q)
+  (Bt, f, t: pair (evalT t) (pair (self t (plam (i: evalT t))) q))
+  (Bt, m, s, t: pair (evalT s) (pair (self s (plam (i: evalT s)))
+                 (pair (evalT t) (pair (self t (plam (i: evalT t))) q)))));
+# F_p = c_R^-1 . (q -> p^-1 . q) . c_L, and its inverse (MACHINE_SPEC 24).
+agentForward = Bt, Lt, Rt, p, u: cTreeInv Rt (compose Bt (reverse p) (cTree Lt u));
+agentBackward = Bt, Lt, Rt, p, v: cTreeInv Lt (compose Bt p (cTree Rt v));

@@ -1,0 +1,4 @@
+# p : g (f x) = h x, on construction trees; F_p takes Real(L) to Real(R).
+let Lt = node1 Two g (node1 Two f (leaf Two x)) in
+let Rt = node1 Two h (leaf Two x) in
+agentForward Two Lt Rt (axPath (g (f x)) (h x) pg) (cTreeInv Lt (plam (i: g (f x))))
