@@ -1,0 +1,13 @@
+eval 0
+node 1 var r10 v5
+node 2 var r10 v5
+node 3 papp r11 I[(-7)] n1
+node 0 pair r12 n1 n3
+var 5 anchor a
+var 7 gen r12 0 1
+ref r10
+ref r11
+ref r12
+root 0
+events 1 2 3 4 5 0
+end

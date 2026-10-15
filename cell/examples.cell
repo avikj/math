@@ -7,27 +7,28 @@ postulate b : A
 postulate c : A
 postulate p : Path A a b
 postulate q : Path A b c
-postulate e : Equiv A B
+postulate e : Equiv 0 A B
 postulate P : A -> U
 postulate x : P a
+postulate f : (y : A) -> P y
 
 -- endpoints of a neutral path, and of an operation on it
-eval (reverse A a b p) @ 0
-eval reverse A b a (reverse A a b p)
+eval (reverse 0 A a b p) @ 0
+eval reverse 0 A b a (reverse 0 A a b p)
 -- full-face composition at a neutral type gives the tube at 1
-eval (compose A a b c p q) @ 0
-eval (compose A a b c p q) @ 1
-eval compose A a b c p q
--- singleton contraction and its endpoints
-eval (contractSingleton A a b p) @ 1
--- transport along ua runs through the Glue clause (sections 17-20)
-eval coe <i> ((ua A B e) @ i) a
-eval coe <i> ((ua A A (idEquiv A)) @ i) a
--- composition in the universe gives a Glue type (section 21)
+eval (compose 0 A a b c p q) @ 0
+eval (compose 0 A a b c p q) @ 1
+eval compose 0 A a b c p q
+-- singleton contraction and its endpoint
+eval (contractSingleton 0 A a b p) @ 1
+-- transport along ua runs the Glue clause (section 16)
+eval coe <i> ((ua 0 A B e) @ i) a
+eval coe <i> ((ua 0 A A (idEquiv 0 A)) @ i) a
+-- composition in the universe gives a Glue type (section 17)
 eval coe <i> U A
 -- transport in Pi, Sigma and PathP families
-eval coe <i> ((y : A) -> P y) (\(y : A) -> x)
+eval coe <i> ((y : A) -> P y) f
 eval coe <i> ((y : A) * P y) (a , x)
-eval coe <i> (Path A a a) (refl A a)
+eval coe <i> (Path A a a) (refl 0 A a)
 -- the identity agent's forward body
-eval agentForward A a b p c (compose A a b c p q)
+eval agentForward 0 A a b p c (compose 0 A a b c p q)

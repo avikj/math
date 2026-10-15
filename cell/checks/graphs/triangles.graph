@@ -1,0 +1,16 @@
+eval 0
+node 0 comp r1 v9 F[(1=1,2=1)(2=1,3=1)(1=1,3=1)(4=1,5=1)(5=1,6=1)(4=1,6=1)] n1 n1 n1
+node 1 var r2 v20
+var 9 free
+var 20 anchor A
+var 1 free
+var 2 free
+var 3 free
+var 4 free
+var 5 free
+var 6 free
+ref r1
+ref r2
+root 0
+events 0 0 0 0 0 0
+end

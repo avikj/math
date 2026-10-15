@@ -1,0 +1,59 @@
+-- Section 38 checks for the checking and conversion layer; run after core.cell.
+postulate A : U
+postulate B : U
+postulate a : A
+postulate b : A
+postulate p : Path A a b
+postulate f : A -> A
+postulate g : A -> A
+postulate s : A * A
+postulate e : Equiv 0 A B
+postulate q' : Path A b b
+
+-- beta and the eta rules (section 34)
+assert equal A (((\(x : A) -> f x) : A -> A) a) (f a)
+assert invalid (\(x : A) -> f x) a : A
+assert equal (A -> A) f (\(x : A) -> f x)
+assert equal (A * A) s (s.1 , s.2)
+assert equal (Path A a b) p (<i> p @ i)
+assert unequal A a b
+assert unequal (A -> A) f g
+assert unequal A (f a) (g a)
+
+-- Glue eta: glue [(i=0) -> v] (unglue v) is v at the Glue type, and the
+-- base and fibre components of a Glue element are compared
+def glueEta (i : I) (v : Glue B [ (i = 0) -> (A , e) ]) :
+    Path (Glue B [ (i = 0) -> (A , e) ]) (glue B [ (i = 0) -> (A , e , v) ] (unglue B [ (i = 0) -> (A , e) ] v)) v =
+  <k> v
+
+-- universes: exact levels, no cumulativity
+assert valid U : U 1
+assert invalid A : U 1
+assert invalid U : U
+
+-- incompatible declared types, unbound dependencies
+assert invalid a : B
+assert invalid zz : A
+-- a dependent substitution image of the wrong type (p : Path A a b gets refl a)
+assert invalid reverse 0 A a b (refl 0 A a) : Path A b a
+assert valid reverse 0 A a b p : Path A b a
+-- composition: the tube at 0 must be the cap
+assert invalid (<i> comp <j> A [ (i = 0) -> b ] a) : Path A b b
+assert valid (<i> comp <j> A [ (i = 0) -> a ] a) : PathP (<i> A) a (comp <j> A [] a)
+-- path endpoints
+assert invalid (<i> p @ i) : Path A a a
+assert valid (<i> p @ (~ i)) : Path A b a
+-- Glue: the equivalence's map of the fibre element must be the base element
+assert invalid (<i> glue B [ (i = 0) -> (A , e , a) ] (e.1 b)) : PathP (<i> Glue B [ (i = 0) -> (A , e) ]) a (glue B [] (e.1 b))
+assert valid (<i> glue B [ (i = 0) -> (A , e , a) ] (e.1 a)) : PathP (<i> Glue B [ (i = 0) -> (A , e) ]) a (glue B [] (e.1 a))
+-- systems: coverage and agreement on overlaps
+assert invalid (<i> [ (i = 0) -> a ]) : Path A a a
+assert invalid (<i> [ (i = 0) -> a , (i = 0) -> b , (i = 1) -> a ]) : Path A a a
+-- a system as a composition tube: agreement on the overlap is checked
+assert valid (<i> comp <j> A [ (i = 0) -> a , (i = 1) -> q' @ j ] (p @ i)) : Path A a b
+assert invalid (<i> comp <j> A [ (i = 0) -> a , (i = 0) -> b ] (p @ i)) : Path A a a
+
+-- an unresolved conversion is reported as such, neither equal nor unequal
+def loop (x : A) : A = loop x
+assert valid loop a : A
+assert undecided A (loop a) a

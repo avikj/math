@@ -1,31 +1,43 @@
-# cell: CCHM on instantiated cell references
+# cell: the scoped cubical machine
 
-- `SCOPE.md`, `EVALUATION.md`: the owner's specification, verbatim.
-- `cell.c` is the machine.
-  - **Scope subsystem**, as specified:
-    - origins are immutable construction records;
-    - a reference is `VAR(x)` or `VIEW(origin, σ|FV)`, interned;
-    - `reindex` acts on references, never on bodies;
-    - intervals and faces are normalized DNF, with entailment, ∀ and projection;
-    - binders are instantiated from `(owner, slot)`, shared by every field the slot governs;
-    - `open` exposes one constructor.
-  - **Evaluation is interaction.** Operation agents meet data agents, and each firing is one finite payload computation.
-    - `EVAL ⋈ REF` keeps one entry per `(reference, ambient face projected to its dimension support)`, either running with its waiters or ready.
-    - `PUBLISH` resumes the waiters.
-    - A disjunctive face goes to a `JOIN` that takes its clause results in any order.
-    - Eliminators wait on their scrutinee's head through continuation agents.
-    - The scope table's own pairs carry the control: `OPEN`, `UNFOLD_GLOBAL`, `APPLY_TERM_BINDER`, `APPLY_DIM_BINDER`, `APPLY_PARTIAL_DIM_BINDER`, `FACE_COVERAGE` and `USE_PARTIAL`.
-    - Every path application carries its family and endpoints. Its type is synthesized at elaboration from variables, globals, eliminations, `comp`, `unglue` and path abstractions, or given by an annotation `(t : T)`.
-    - A composition clause is built in one interaction from its component references.
-    - Results never overwrite the reference.
-  - **Reductions**: the CCHM rules:
-    - application, projections;
-    - path application, endpoints first;
-    - Glue, glue and unglue at an entailed face;
-    - systems by coverage;
-    - comp: coverage first, otherwise the family's head at the fresh instantiated dimension;
-    - the Π, Σ, PathP, Glue (six stages) and U clauses, built as cells from the component references.
-- `core.cell`: `Contr`, `fib`, `Equiv`, `idEquiv`, `lineEquiv`, `ua`, path operations, singleton contraction, the identity agent's forward and backward bodies, wire elimination, handles, cut and difference.
-- `examples.cell`: no numbers.
+The specification is the owner's handoff, `HANDOFF.md`. It refines the owner's documents `SCOPE.md` and `EVALUATION.md`.
 
-Run: `cell core.cell examples.cell`. Each `eval` prints a normal form and its length, the number of interactions. Read-back is a fold that demands evaluation and adds no interaction of its own.
+## Files
+
+- `cell.c`: the machine.
+  - **Scope (§§2–9).** It provides:
+    - immutable origins with required face and annotation;
+    - references `VAR` / `VIEW(origin, σ)`, with σ restricted to the typed boundary and interned;
+    - `reindex` and `compose`;
+    - interval and face DNF with entailment, `∀` and projection;
+    - universe levels;
+    - binders from (owner, slot, sort);
+    - `open`.
+  - **Evaluation (§§10–12, 26).** The cache is keyed by (reference, face projected to its support).
+    - It has one evaluator task per key.
+    - Delivery is counted uniformly as REQUEST / EVALUATE / PUBLISH / DELIVER / RULE / JOIN.
+    - A worker pool runs with quiescence (`-w N`, `-p lifo|fifo|random|mixed`, `-s seed`).
+  - **Composition clauses (§§13–17).** Π, Σ, PathP, U, Glue, and systems of type families (`∀j` guards).
+    - Each shared filler is built once as a line, and its endpoints are reindexed from it.
+  - **Checking and conversion (§§33–34).**
+    - Outcomes are VALID / INVALID / UNRESOLVED.
+    - Conversion uses eta for Π, Σ, Path and Glue, and compares neutral spines structurally.
+    - A view is typed by the substitution lemma.
+  - **Ownership and teardown (§36).** A stuck workload is torn down, not published.
+  - **Comparison dump (§37):** `-d FILE`.
+- `cellcmp.c`: exact comparison of two dumps modulo renaming of generated identities, by backtracking.
+- `core.cell`: the level-parametric library: `fib`, `Equiv`, `idEquiv`, `lineEquiv`, `ua`, path operations, and more.
+- `examples.cell`: example evaluations.
+- `checks/`: the §38 checks. `checks/run.sh` runs them all.
+
+## Running
+
+```
+cell core.cell examples.cell
+cell --selftest
+checks/run.sh
+```
+
+Each `eval` prints its normal form and two event vectors:
+- its evaluation, from an empty cache;
+- its admission (elaboration and checking).
