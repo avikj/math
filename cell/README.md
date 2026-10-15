@@ -14,7 +14,9 @@
     - `PUBLISH` resumes the waiters.
     - A disjunctive face goes to a `JOIN` that takes its clause results in any order.
     - Eliminators wait on their scrutinee's head through continuation agents.
-    - `TYPEOF` reads the type off a neutral, so every neutral path at an entailed endpoint gives its endpoint.
+    - The scope table's own pairs carry the control: `OPEN`, `UNFOLD_GLOBAL`, `APPLY_TERM_BINDER`, `APPLY_DIM_BINDER`, `APPLY_PARTIAL_DIM_BINDER`, `FACE_COVERAGE` and `USE_PARTIAL`.
+    - Every path application carries its family and endpoints. Its type is synthesized at elaboration from variables, globals, eliminations, `comp`, `unglue` and path abstractions, or given by an annotation `(t : T)`.
+    - A composition clause is built in one interaction from its component references.
     - Results never overwrite the reference.
   - **Reductions**: the CCHM rules:
     - application, projections;

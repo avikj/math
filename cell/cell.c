@@ -260,8 +260,8 @@ static int map1Term(int x, int t) { KV k = { x, t }; return mapMake(&k, 1, NULL,
 /* ------------------------------------------------------------------------
  * Origins (section 3) and the constructor signature (section 16)
  * ---------------------------------------------------------------------- */
-enum { UNIV, PI, SIGMA, LAM, APP, PAIR, FST, SND, PATH, PLAM, PAPP, PAPPU, GLUE_TYPE, GLUE_INTRO, UNGLUE, COMP, SYSTEM, GLOBAL, NTAG };
-static const char *tagName[NTAG] = { "U", "Pi", "Sigma", "lam", "app", "pair", "fst", "snd", "PathP", "plam", "papp", "papp", "Glue", "glue", "unglue", "comp", "system", "global" };
+enum { UNIV, PI, SIGMA, LAM, APP, PAIR, FST, SND, PATH, PLAM, PAPP, GLUE_TYPE, GLUE_INTRO, UNGLUE, COMP, SYSTEM, GLOBAL, NTAG };
+static const char *tagName[NTAG] = { "U", "Pi", "Sigma", "lam", "app", "pair", "fst", "snd", "PathP", "plam", "papp", "Glue", "glue", "unglue", "comp", "system", "global" };
 enum { K_TERM, K_INTERVAL, K_FACE, K_TERM_BODY, K_DIM_BODY, K_PARTIAL, K_PARTIAL_DIM_BODY };
 typedef struct { int kind, val, slot, guard; } Field;
 typedef struct { int sort, formal, domain; } Binder;
@@ -416,10 +416,9 @@ static int reindex(int ref, int m) {
  * Binders instantiated from their owner (sections 10-15)
  * ---------------------------------------------------------------------- */
 static Tab btab; static int *binstVar; static int capbinst;
-/* key: owner, slot, sort, and for a binder a composition clause introduces,
- * the face it was evaluated under (-1 for an origin's own binder) */
-static int instBinder(int owner, int slot, int sort, int face, const char *name, int type) {
-  int v[4] = { owner, slot, sort, face }; int before = btab.n, id = tabIntern(&btab, v, 4);
+/* instantiated_binder(owner, slot, sort) (section 10) */
+static int instBinder(int owner, int slot, int sort, const char *name, int type) {
+  int v[3] = { owner, slot, sort }; int before = btab.n, id = tabIntern(&btab, v, 3);
   if (id >= capbinst) { int nc = id * 2 + 64; binstVar = xgrow(binstVar, sizeof(int) * nc); capbinst = nc; }
   if (id >= before) binstVar[id] = newVar(sort, name, type);
   return binstVar[id];
@@ -431,7 +430,7 @@ static Resolved resolve(int owner, int fi) {
   Field fl = O->f[fi]; Binder bd = O->b[fl.slot];
   Resolved r; r.domain = -1; r.guard = -1;
   if (bd.sort == S_TERM) r.domain = reindex(bd.domain, sigma);
-  r.var = instBinder(owner, fl.slot, bd.sort, -1, vars[bd.formal].name, r.domain);
+  r.var = instBinder(owner, fl.slot, bd.sort, vars[bd.formal].name, r.domain);
   KV *t, *d; int nt, nd; mapRead(sigma, &t, &nt, &d, &nd);
   t = xgrow(t, sizeof(KV) * (nt + 2)); d = xgrow(d, sizeof(KV) * (nd + 2));
   int ot = 0, od = 0;
@@ -560,8 +559,18 @@ static Entry *entry(int ref, int face) {
 static int CJ, CSLOT, COWNER, CFACE;             /* current comp: its j, a slot counter, its owner, its face */
 static int at(int X, int r) { return reindex(X, map1Dim(CJ, r)); }
 static int atF(int phi, int r) { return substFace(phi, map1Dim(CJ, r)); }
-static int freshDim(const char *n) { return instBinder(COWNER, 100 + CSLOT++, S_DIM, CFACE, n, -1); }
-static int freshTerm(const char *n, int ty) { return instBinder(COWNER, 100 + CSLOT++, S_TERM, CFACE, n, ty); }
+/* the formal identities of the cells a clause builds: fresh, and the same
+ * for the same composition, face and position, so that the same clause
+ * builds the same (interned) cells */
+static Tab ftabFormal; static int *formalVar; static int capformal;
+static int formal(int sort, const char *n, int ty) {
+  int v[4] = { COWNER, CFACE, CSLOT++, sort }; int before = ftabFormal.n, id = tabIntern(&ftabFormal, v, 4);
+  if (id >= capformal) { int nc = id * 2 + 64; formalVar = xgrow(formalVar, sizeof(int) * nc); capformal = nc; }
+  if (id >= before) formalVar[id] = newVar(sort, n, ty);
+  return formalVar[id];
+}
+static int freshDim(const char *n) { return formal(S_DIM, n, -1); }
+static int freshTerm(const char *n, int ty) { return formal(S_TERM, n, ty); }
 /* fill^d X [phi -> U] a0 (r) = comp^n X(d := r/\n) [phi -> U(d := r/\n), (r=0) -> a0] a0
  * (section 9; X and U have the dimension d free) */
 static int fill(int d, int X, int phi, int U, int a0, int r) {
@@ -579,12 +588,13 @@ static int DEF_fib = -1, DEF_lineEquiv = -1;
 /* c: the composition reference; hv: the head of its family at its j,
  * already evaluated under eta.  Returns the clause's result, or 0 when the
  * head is neutral (the composition is retained). */
-static int compClause(int c, int eta, Val hv, int *ok) {
+static int compClause(int c, int eta, Data hd, int *ok) {
   Head hc = openRef(c), *ch = &hc;
   Resolved fam = resolve(c, 0), tube = resolve(c, 2);
   if (fam.var != tube.var) die("internal: family and tube instantiated apart");
   int j = fam.var, phi = ch->f[1].face, a0 = ch->f[3].ref, uj = tube.body;
-  if (hv.empty) return 0;
+  if (hd.empty) return 0;
+  struct { int ref; } hv = { hd.a };
   Head hA = openRef(hv.ref);
   int saveJ = CJ, saveS = CSLOT, saveO = COWNER, saveF = CFACE;
   CJ = j; CSLOT = 0; COWNER = c; CFACE = eta;
@@ -685,145 +695,164 @@ static int compClause(int c, int eta, Val hv, int *ok) {
 
 
 /* ------------------------------------------------------------------------
+ * Contexts, typed maps and occurrences (scope sections 1, 2, 9)
+ * A context: its declarations (variable identities, in order) and its face
+ * assumption.  A typed map: source and target contexts and a raw map.  An
+ * occurrence: a reference and the context it is used in; the context is
+ * not part of the reference's identity.
+ * ---------------------------------------------------------------------- */
+static Tab ctab, tmtab;
+static int ctxMake(const IV *decls, int face) {
+  IV e = { 0 }; ivp(&e, face); for (int i = 0; i < decls->n; i++) ivp(&e, decls->a[i]);
+  int id = tabIntern(&ctab, e.a, e.n); free(e.a); return id;
+}
+static int ctxFace(int ctx) { return ctab.items[ctx].a[0]; }
+static int ctxRestrict(int ctx, int phi) {               /* the same declarations, a stronger face */
+  IV d = { 0 }; IV *e = &ctab.items[ctx];
+  for (int i = 1; i < e->n; i++) ivp(&d, e->a[i]);
+  int r = ctxMake(&d, fand(e->a[0], phi)); free(d.a); return r;
+}
+typedef struct { int ref, ctx; } Occurrence;
+static Occurrence weakenOccurrence(Occurrence o, int delta) { Occurrence r = { o.ref, delta }; return r; }
+static int typedMap(int source, int target, int raw) { int v[3] = { source, target, raw }; return tabIntern(&tmtab, v, 3); }
+static int tmSource(int tm) { return tmtab.items[tm].a[0]; }
+static int tmTarget(int tm) { return tmtab.items[tm].a[1]; }
+static int tmRaw(int tm) { return tmtab.items[tm].a[2]; }
+/* sigma|_phi : (Delta, phi[sigma]) -> (Gamma, phi); the raw map unchanged */
+static int restrictTypedMap(int tm, int phi) {
+  int mapped = substFace(phi, tmRaw(tm));
+  return typedMap(ctxRestrict(tmSource(tm), mapped), ctxRestrict(tmTarget(tm), phi), tmRaw(tm));
+}
+/* sigma ; tau (section 6): apply sigma, then tau */
+static int composeMaps(int sigma, int tau) {
+  KV *st, *sd, *tt, *td; int nst, nsd, ntt, ntd;
+  mapRead(sigma, &st, &nst, &sd, &nsd); mapRead(tau, &tt, &ntt, &td, &ntd);
+  IV tk = { 0 }, dk = { 0 };
+  for (int i = 0; i < nst; i++) ivadd(&tk, st[i].k);
+  for (int i = 0; i < ntt; i++) ivadd(&tk, tt[i].k);
+  for (int i = 0; i < nsd; i++) ivadd(&dk, sd[i].k);
+  for (int i = 0; i < ntd; i++) ivadd(&dk, td[i].k);
+  KV *t = xalloc(sizeof(KV) * (tk.n + 1)), *d = xalloc(sizeof(KV) * (dk.n + 1));
+  for (int i = 0; i < tk.n; i++) { t[i].k = tk.a[i]; t[i].v = reindex(termImage(sigma, tk.a[i]), tau); }
+  for (int i = 0; i < dk.n; i++) { d[i].k = dk.a[i]; d[i].v = substInterval(dimImage(sigma, dk.a[i]), tau); }
+  int r = mapMake(t, tk.n, d, dk.n);
+  free(t); free(d); free(st); free(sd); free(tt); free(td); free(tk.a); free(dk.a);
+  return r;
+}
+static int composeTyped(int s1, int s2) {               /* s1 : Delta -> Gamma, s2 : Theta -> Delta */
+  if (tmSource(s1) != tmTarget(s2)) die("typed maps do not compose");
+  return typedMap(tmSource(s2), tmTarget(s1), composeMaps(tmRaw(s1), tmRaw(s2)));
+}
+/* binder handles (section 13): reindexing acts on the owner */
+typedef struct { int owner, field; } BinderHandle;
+static BinderHandle reindexBinder(BinderHandle h, int sigma) { BinderHandle r = { reindex(h.owner, sigma), h.field }; return r; }
+/* the lifted map under a binder (sections 11, 12, 23) */
+static int liftBinder(int owner, int fi) {
+  Origin *O = &origins[refOrigin(owner)]; Field fl = O->f[fi]; Binder bd = O->b[fl.slot]; int sigma = refMap(owner);
+  Resolved r = resolve(owner, fi);
+  KV *t, *d; int nt, nd; mapRead(sigma, &t, &nt, &d, &nd);
+  t = xgrow(t, sizeof(KV) * (nt + 2)); d = xgrow(d, sizeof(KV) * (nd + 2));
+  int ot = 0, od = 0;
+  for (int i = 0; i < nt; i++) if (!(bd.sort == S_TERM && t[i].k == bd.formal)) t[ot++] = t[i];
+  for (int i = 0; i < nd; i++) if (!(bd.sort == S_DIM && d[i].k == bd.formal)) d[od++] = d[i];
+  if (bd.sort == S_TERM) { t[ot].k = bd.formal; t[ot].v = refVar(r.var); ot++; } else { d[od].k = bd.formal; d[od].v = ivar(r.var); od++; }
+  int m = mapMake(t, ot, d, od); free(t); free(d); return m;
+}
+
+/* ------------------------------------------------------------------------
  * Evaluation as interactions.
  *
- * Data agents carry a reference (REF, with whether it is neutral).
- * Operation agents have a principal input and a result output; an
- * operation agent meeting a data agent is an active pair, and firing it is
- * one finite payload computation (open, reindex, entailment, a clause's
- * construction) whose result goes on as data agents to other operation
- * agents.  The length of an evaluation is the number of interactions.
+ * Data agents (scope section 21): REF(t), HEAD_RECIPE(owner), FACE(phi),
+ * PARTIAL(phi, t), TERM_BINDER(h), DIM_BINDER(h), PARTIAL_DIM_BINDER(h),
+ * and the protocol results COVERED, NOT_COVERED.  A binder handle h is the
+ * owner reference with its body field.
  *
- *   EVAL(chi) >< REF(t): the entry (t, pi_S(chi)) -- READY gives its
- *     result; RUNNING parks this demand among its waiters; otherwise it is
- *     marked RUNNING and t's constructor is dispatched, its result routed
- *     to PUBLISH.  A disjunctive face sends one EVAL per clause to a JOIN.
- *   PUBLISH >< REF(v): the entry READY with v; v to the demand and to every
- *     waiter.
- *   JOIN: one input per clause, accepted in any order; when all are in,
- *     their common result, or the system of them over the clauses.
- *   K_APP, K_FST, K_SND, K_PAPP, K_UNGLUE, K_COMP: the eliminator waiting
- *     on its scrutinee's head.
- *   APPLY_TERM_BINDER(a) >< TERM_BINDER(h), APPLY_DIM_BINDER(r) ><
- *     DIM_BINDER(h), UNFOLD_GLOBAL >< REF(g): the scope table's own
- *     replacements (scope document sections 22, 27); the binder handle is
- *     the owner reference with its body field.
- *   TYPEOF >< REF(n): the type of a neutral n (a variable, an elimination
- *     of a neutral, a retained comp or unglue), so that a neutral path at
- *     an entailed endpoint gives its endpoint whether or not its
- *     application carried its type.
+ * Operation agents have a principal input and a result output; one meeting
+ * a data agent is an active pair, and firing it is one finite payload
+ * computation (section 22).  The scope table's own pairs:
+ *   OPEN >< REF(t)                          HEAD_RECIPE(open t)
+ *   UNFOLD_GLOBAL >< REF(g sigma)           REF(unfold)
+ *   APPLY_TERM_BINDER(a) >< TERM_BINDER(h)  REF(apply_term_binder(h, a))
+ *   APPLY_DIM_BINDER(r) >< DIM_BINDER(h)    REF(apply_dimension_binder(h, r))
+ *   APPLY_PARTIAL_DIM_BINDER(r) >< PARTIAL_DIM_BINDER(h)
+ *                                           PARTIAL(apply_partial_dimension_binder(h, r))
+ *   FACE_COVERAGE(chi) >< FACE(phi)         COVERED or NOT_COVERED
+ *   USE_PARTIAL(chi) >< PARTIAL(phi, t)     REF(t) if chi => phi, else NOT_COVERED
+ * The evaluator's own (the owner's cache rule):
+ *   EVAL(chi) >< REF(t): the entry (t, pi_S(chi)) -- READY: its result;
+ *     RUNNING: this demand joins its waiters; otherwise RUNNING, and t is
+ *     opened and inspected, the result going to PUBLISH.  A disjunctive
+ *     face sends one EVAL per clause to a JOIN.
+ *   PUBLISH >< REF(v): the entry READY; v to the demand and every waiter.
+ *   JOIN: one input per clause, in any order (NET_SPEC 6).
+ *   INSPECT(eta) >< HEAD_RECIPE: the constructor's rule.
+ *   continuations: the eliminator waiting on its scrutinee's head, or on a
+ *   coverage answer.
+ * The length is the number of interactions.
  * ---------------------------------------------------------------------- */
-enum { OP_ROOT, OP_EVAL, OP_PUBLISH, OP_JOIN, OP_KAPP, OP_KFST, OP_KSND, OP_KPAPP, OP_KPAPPTY, OP_KUNGLUE, OP_KCOMP,
-       OP_TYPEOF, OP_KTYPI, OP_KTYFST, OP_KTYSND, OP_KTYPATH,
-       OP_APPLY_TERM, OP_APPLY_DIM, OP_UNFOLD };
-typedef struct { int kind, p[4], outA, outI, n, got; Val *ins; int *faces; Val rootv; int rootset; } Op;
+enum { D_REF, D_HEAD, D_FACE, D_PARTIAL, D_TBIND, D_DBIND, D_PDBIND, D_COVERED, D_NOT_COVERED };
+typedef struct { int kind, a, b, neutral, empty; } Data;
+enum { OP_ROOT, OP_EVAL, OP_PUBLISH, OP_JOIN, OP_OPEN, OP_INSPECT, OP_UNFOLD, OP_APPLY_TERM, OP_APPLY_DIM, OP_APPLY_PDIM,
+       OP_FACE_COVERAGE, OP_USE_PARTIAL,
+       OP_KAPP, OP_KFST, OP_KSND, OP_KPEND0, OP_KPEND1, OP_KPAPP, OP_KGLUE, OP_KUNGLUE0, OP_KUNGLUE, OP_KSYS, OP_KCOMP0, OP_KCOMP };
+typedef struct { int kind, p[4], outA, outI, n, got; Data *ins; int *faces; Data rootv; int rootset; } Op;
 static Op *ops; static int nops, capops;
-typedef struct { int op, idx; Val d; } Pair;
+typedef struct { int op, idx; Data d; } Pair;
 static Pair *queue; static int nqueue, capqueue;
 static long interactions;
-static int newOp(int kind, int outA, int outI) {
+static int newOp(int kind, int outA, int outI, int p0, int p1, int p2, int p3) {
   Op o; memset(&o, 0, sizeof o); o.kind = kind; o.outA = outA; o.outI = outI;
+  o.p[0] = p0; o.p[1] = p1; o.p[2] = p2; o.p[3] = p3;
   PUSH(ops, nops, capops, o); return nops - 1;
 }
-static void deliver(Val d, int op, int idx) {
+static void deliver(Data d, int op, int idx) {
   if (ops[op].kind == OP_ROOT) { ops[op].rootv = d; ops[op].rootset = 1; return; }
   Pair pr = { op, idx, d }; PUSH(queue, nqueue, capqueue, pr);
 }
-static void out(int op, Val d) { deliver(d, ops[op].outA, ops[op].outI); }
-static Val V(int ref, int neu) { Val v = { ref, neu, 0 }; return v; }
-static void evalTo(int ref, int chi, int outA, int outI) {
-  int e = newOp(OP_EVAL, outA, outI); ops[e].p[0] = chi; deliver(V(ref, 0), e, 0);
-}
-/* a chain: EVAL(eta) of ref, then the operation k (already created) */
-static int kop(int kind, int outA, int outI, int p0, int p1, int p2, int p3) {
-  int k = newOp(kind, outA, outI); ops[k].p[0] = p0; ops[k].p[1] = p1; ops[k].p[2] = p2; ops[k].p[3] = p3; return k;
-}
-
-/* scope operations as their own interactions, their result evaluated */
-static void applyTermThenEval(int owner, int fi, int arg, int eta, int oA, int oI) {
-  int ev = newOp(OP_EVAL, oA, oI); ops[ev].p[0] = eta;
-  int ap = kop(OP_APPLY_TERM, ev, 0, fi, eta, arg, 0);
-  deliver(V(owner, 0), ap, 0);
-}
-static void applyDimThenEval(int owner, int fi, int itv, int eta, int oA, int oI) {
-  int ev = newOp(OP_EVAL, oA, oI); ops[ev].p[0] = eta;
-  int ap = kop(OP_APPLY_DIM, ev, 0, fi, eta, itv, 0);
-  deliver(V(owner, 0), ap, 0);
-}
+static Data DR(int ref, int neu) { Data d = { D_REF, ref, 0, neu, 0 }; return d; }
+static Data DK(int kind, int a, int b) { Data d = { kind, a, b, 0, 0 }; return d; }
+static Data DEMPTY(int ref) { Data d = { D_REF, ref, 0, 0, 1 }; return d; }
+/* a data agent sent to a new operation agent */
+static void to(Data d, int kind, int oA, int oI, int p0, int p1, int p2, int p3) { deliver(d, newOp(kind, oA, oI, p0, p1, p2, p3), 0); }
+static void evalTo(int ref, int eta, int oA, int oI) { to(DR(ref, 0), OP_EVAL, oA, oI, eta, 0, 0, 0); }
+/* evaluate, open, then the continuation k (created by the caller) */
+static void evalOpenTo(int ref, int eta, int k) { int op = newOp(OP_OPEN, k, 0, 0, 0, 0, 0); evalTo(ref, eta, op, 0); }
 
 /* an elimination of a system that does not cover the context distributes
- * over its branches (section 6) */
-static int distribute(Head *sy, int kind, int arg) {
-  int *ts = xalloc(sizeof(int) * (sy->sysN + 1));
+ * over its branches (section 6); a path application keeps the family and
+ * endpoints it carries */
+static int distribute(Head *sy, int orig) {
+  Head ho = openRef(orig); int *ts = xalloc(sizeof(int) * (sy->sysN + 1));
   for (int k = 0; k < sy->sysN; k++) {
     int t = sy->sysTerm[k];
-    switch (kind) {
-    case APP: ts[k] = bApp(t, arg); break;
+    switch (ho.tag) {
+    case APP: ts[k] = bApp(t, ho.f[1].ref); break;
     case FST: ts[k] = bFst(t); break;
     case SND: ts[k] = bSnd(t); break;
-    case PAPPU: { Field f[2] = { FT(t), FI(arg) }; ts[k] = cell(PAPPU, 0, NULL, 2, f); break; }
+    case PAPP: { Resolved B = resolve(orig, 0); ts[k] = bPapp(B.var, B.body, ho.f[1].ref, ho.f[2].ref, t, ho.f[4].itv); break; }
+    case UNGLUE: ts[k] = bUnglue(ho.f[0].ref, ho.f[1].face, ho.f[2].ref, ho.f[3].ref, t); break;
     default: die("internal: distribute");
     }
   }
   int r = bSys(sy->sysN, sy->sysFace, ts); free(ts); return r;
 }
 
-/* EVAL >< REF, its result to (oA, oI) */
-static void dispatch(int ref, int eta, int oA, int oI) {
-  if (isVar(ref)) { deliver(V(ref, 1), oA, oI); return; }
-  Head h = openRef(ref);
-  switch (h.tag) {
-  case UNIV: case PI: case SIGMA: case LAM: case PAIR: case PATH: case PLAM: deliver(V(ref, 0), oA, oI); return;
-  case GLOBAL: {
-    int ev = newOp(OP_EVAL, oA, oI); ops[ev].p[0] = eta;
-    deliver(V(ref, 0), kop(OP_UNFOLD, ev, 0, 0, eta, 0, 0), 0);
-    return;
-  }
-  case APP: evalTo(h.f[0].ref, eta, kop(OP_KAPP, oA, oI, ref, eta, h.f[1].ref, 0), 0); return;
-  case FST: case SND: evalTo(h.f[0].ref, eta, kop(h.tag == FST ? OP_KFST : OP_KSND, oA, oI, ref, eta, 0, 0), 0); return;
-  case PAPP: {
-    int s = h.f[4].itv;
-    if (entails(eta, endpoint(s, 0))) { evalTo(h.f[1].ref, eta, oA, oI); return; }
-    if (entails(eta, endpoint(s, 1))) { evalTo(h.f[2].ref, eta, oA, oI); return; }
-    evalTo(h.f[3].ref, eta, kop(OP_KPAPP, oA, oI, ref, eta, s, 1), 0); return;
-  }
-  case PAPPU: evalTo(h.f[0].ref, eta, kop(OP_KPAPP, oA, oI, ref, eta, h.f[1].itv, 0), 0); return;
-  case GLUE_TYPE:
-    if (entails(eta, h.f[1].face)) evalTo(h.f[2].ref, eta, oA, oI); else deliver(V(ref, 0), oA, oI);
-    return;
-  case GLUE_INTRO:
-    if (entails(eta, h.f[1].face)) evalTo(h.f[4].ref, eta, oA, oI); else deliver(V(ref, 0), oA, oI);
-    return;
-  case UNGLUE:
-    if (entails(eta, h.f[1].face)) evalTo(bApp(bFst(h.f[3].ref), h.f[4].ref), eta, oA, oI);
-    else evalTo(h.f[4].ref, eta, kop(OP_KUNGLUE, oA, oI, ref, eta, 0, 0), 0);
-    return;
-  case SYSTEM:
-    for (int k = 0; k < h.sysN; k++) if (entails(eta, h.sysFace[k])) { evalTo(h.sysTerm[k], eta, oA, oI); return; }
-    deliver(V(ref, 0), oA, oI);                       /* not covered: retained */
-    return;
-  case COMP: {
-    if (entails(eta, h.f[1].face)) { applyDimThenEval(ref, 2, I1, eta, oA, oI); return; }
-    Resolved fam = resolve(ref, 0);
-    evalTo(fam.body, eta, kop(OP_KCOMP, oA, oI, ref, eta, 0, 0), 0);
-    return;
-  }
-  }
-  die("internal: unknown tag");
-}
+static int compClause(int c, int eta, Data hv, int *ok);
 
 static void fire(Pair pr) {
-  Op *o = &ops[pr.op]; Val d = pr.d; int oA = o->outA, oI = o->outI, eta = o->p[1];
+  Op o = ops[pr.op]; Data d = pr.d; int oA = o.outA, oI = o.outI, eta = o.p[0];
   interactions++;
-  switch (o->kind) {
+  /* an empty-face result passes through every continuation unopened */
+  if (d.kind == D_REF && d.empty && o.kind != OP_JOIN && o.kind != OP_PUBLISH) { deliver(d, oA, oI); return; }
+  switch (o.kind) {
   case OP_EVAL: {
-    int chi = o->p[0], ref = d.ref;
-    if (chi == F0) { Val v = { ref, 0, 1 }; deliver(v, oA, oI); return; }
+    int chi = eta, ref = d.a;
+    if (chi == F0) { deliver(DEMPTY(ref), oA, oI); return; }
     int e2 = projectFace(chi, &fvOf(ref)->d);
     Form fx = formGet(e2, 1);
     if (fx.n > 1) {
-      int n = fx.n, j = newOp(OP_JOIN, oA, oI);
-      ops[j].n = n; ops[j].ins = xalloc(sizeof(Val) * n); ops[j].faces = xalloc(sizeof(int) * n);
+      int n = fx.n, j = newOp(OP_JOIN, oA, oI, 0, 0, 0, 0);
+      ops[j].n = n; ops[j].ins = xalloc(sizeof(Data) * n); ops[j].faces = xalloc(sizeof(int) * n);
       for (int k = 0; k < n; k++) { Form one = { 0 }; formAdd(&one, ivcopy(&fx.c[k])); ops[j].faces[k] = formIntern(&one, 1); }
       formFree(&fx);
       for (int k = 0; k < n; k++) evalTo(ref, ops[j].faces[k], j, k);
@@ -831,20 +860,21 @@ static void fire(Pair pr) {
     }
     formFree(&fx);
     Entry *en = entry(ref, e2);
-    if (en->state == READY) { deliver(V(en->res, en->neutral), oA, oI); return; }
+    if (en->state == READY) { deliver(DR(en->res, en->neutral), oA, oI); return; }
     if (en->state == RUNNING) {
       if (en->nw == en->capw) { en->capw = en->capw ? 2 * en->capw : 4; en->wo = xgrow(en->wo, sizeof(int) * en->capw); en->wi = xgrow(en->wi, sizeof(int) * en->capw); }
       en->wo[en->nw] = oA; en->wi[en->nw] = oI; en->nw++;
       return;
     }
     en->state = RUNNING;
-    int pub = kop(OP_PUBLISH, oA, oI, ref, e2, 0, 0);
-    dispatch(ref, e2, pub, 0);
+    int pub = newOp(OP_PUBLISH, oA, oI, ref, e2, 0, 0);
+    int ins = newOp(OP_INSPECT, pub, 0, e2, 0, 0, 0);
+    to(DR(ref, 0), OP_OPEN, ins, 0, 0, 0, 0, 0);
     return;
   }
   case OP_PUBLISH: {
-    Entry *en = entry(o->p[0], o->p[1]);
-    en->state = READY; en->res = d.ref; en->neutral = d.neutral;
+    Entry *en = entry(o.p[0], o.p[1]);
+    en->state = READY; en->res = d.a; en->neutral = d.neutral;
     int nw = en->nw, *wo = en->wo, *wi = en->wi;
     en->wo = en->wi = NULL; en->nw = en->capw = 0;
     deliver(d, oA, oI);
@@ -853,116 +883,136 @@ static void fire(Pair pr) {
     return;
   }
   case OP_JOIN: {
-    o->ins[pr.idx] = d; o->got++;
-    if (o->got < o->n) return;
+    Op *j = &ops[pr.op];
+    j->ins[pr.idx] = d; j->got++;
+    if (j->got < j->n) return;
     int same = 1, neu = 1;
-    for (int k = 0; k < o->n; k++) { if (o->ins[k].ref != o->ins[0].ref) same = 0; neu = neu && o->ins[k].neutral; }
-    if (same) { deliver(V(o->ins[0].ref, neu), oA, oI); return; }
-    int *rs = xalloc(sizeof(int) * o->n); for (int k = 0; k < o->n; k++) rs[k] = o->ins[k].ref;
-    int sy = bSys(o->n, ops[pr.op].faces, rs); free(rs);
-    deliver(V(sy, 0), oA, oI);
+    for (int k = 0; k < j->n; k++) { if (j->ins[k].a != j->ins[0].a) same = 0; neu = neu && j->ins[k].neutral; }
+    if (same) { deliver(DR(j->ins[0].a, neu), oA, oI); return; }
+    int n = j->n, *rs = xalloc(sizeof(int) * n), *fs = j->faces;
+    for (int k = 0; k < n; k++) rs[k] = j->ins[k].a;
+    int sy = bSys(n, fs, rs); free(rs);
+    deliver(DR(sy, 0), oA, oI);
     return;
   }
+  /* --- the scope table's pairs --- */
+  case OP_OPEN: deliver(DK(D_HEAD, d.a, 0), oA, oI); return;   /* the recipe is open(t), read by its consumer */
+  case OP_UNFOLD: {
+    Head h = openRef(d.a); if (h.tag != GLOBAL) die("UNFOLD_GLOBAL meets a non-global reference");
+    deliver(DR(reindex(defs[h.scal].body, refMap(d.a)), 0), oA, oI); return;
+  }
+  case OP_APPLY_TERM: deliver(DR(applyTerm(d.a, d.b, o.p[1]), 0), oA, oI); return;
+  case OP_APPLY_DIM: deliver(DR(applyDim(d.a, d.b, o.p[1]), 0), oA, oI); return;
+  case OP_APPLY_PDIM: {
+    Resolved r = resolve(d.a, d.b); int m = map1Dim(r.var, o.p[1]);
+    deliver(DK(D_PARTIAL, substFace(r.guard, m), reindex(r.body, m)), oA, oI); return;
+  }
+  case OP_FACE_COVERAGE: deliver(DK(entails(eta, d.a) ? D_COVERED : D_NOT_COVERED, 0, 0), oA, oI); return;
+  case OP_USE_PARTIAL:
+    if (entails(eta, d.a)) deliver(DR(d.b, 0), oA, oI); else deliver(DK(D_NOT_COVERED, 0, 0), oA, oI);
+    return;
+  /* --- inspection of the opened constructor --- */
+  case OP_INSPECT: {
+    int ref = d.a;
+    if (isVar(ref)) { deliver(DR(ref, 1), oA, oI); return; }
+    Head h = openRef(ref);
+    switch (h.tag) {
+    case UNIV: case PI: case SIGMA: case LAM: case PAIR: case PATH: case PLAM: deliver(DR(ref, 0), oA, oI); return;
+    case GLOBAL: { int ev = newOp(OP_EVAL, oA, oI, eta, 0, 0, 0); to(DR(ref, 0), OP_UNFOLD, ev, 0, eta, 0, 0, 0); return; }
+    case APP: evalOpenTo(h.f[0].ref, eta, newOp(OP_KAPP, oA, oI, eta, ref, h.f[1].ref, 0)); return;
+    case FST: case SND: evalOpenTo(h.f[0].ref, eta, newOp(h.tag == FST ? OP_KFST : OP_KSND, oA, oI, eta, ref, 0, 0)); return;
+    case PAPP: to(DK(D_FACE, endpoint(h.f[4].itv, 0), 0), OP_FACE_COVERAGE, newOp(OP_KPEND0, oA, oI, eta, ref, 0, 0), 0, eta, 0, 0, 0); return;
+    case GLUE_TYPE: to(DK(D_PARTIAL, h.f[2].guard, h.f[2].ref), OP_USE_PARTIAL, newOp(OP_KGLUE, oA, oI, eta, ref, 0, 0), 0, eta, 0, 0, 0); return;
+    case GLUE_INTRO: to(DK(D_PARTIAL, h.f[4].guard, h.f[4].ref), OP_USE_PARTIAL, newOp(OP_KGLUE, oA, oI, eta, ref, 0, 0), 0, eta, 0, 0, 0); return;
+    case UNGLUE: to(DK(D_PARTIAL, h.f[3].guard, h.f[3].ref), OP_USE_PARTIAL, newOp(OP_KUNGLUE0, oA, oI, eta, ref, 0, 0), 0, eta, 0, 0, 0); return;
+    case SYSTEM:
+      if (h.sysN == 0) { deliver(DR(ref, 0), oA, oI); return; }
+      to(DK(D_PARTIAL, h.sysFace[0], h.sysTerm[0]), OP_USE_PARTIAL, newOp(OP_KSYS, oA, oI, eta, ref, 0, 0), 0, eta, 0, 0, 0);
+      return;
+    case COMP: {
+      int k = newOp(OP_KCOMP0, oA, oI, eta, ref, 0, 0);
+      int use = newOp(OP_USE_PARTIAL, k, 0, eta, 0, 0, 0);
+      to(DK(D_PDBIND, ref, 2), OP_APPLY_PDIM, use, 0, eta, I1, 0, 0);
+      return;
+    }
+    }
+    die("internal: unknown tag");
+  }
+  /* --- continuations --- */
   case OP_KAPP: {
-    int orig = o->p[0], arg = o->p[2]; Head hf = openRef(d.ref);
-    if (hf.tag == LAM) applyTermThenEval(d.ref, 1, arg, eta, oA, oI);
-    else if (hf.tag == SYSTEM) evalTo(distribute(&hf, APP, arg), eta, oA, oI);
-    else deliver(V(orig, 1), oA, oI);
+    int orig = o.p[1], arg = o.p[2]; Head hf = openRef(d.a);
+    if (hf.tag == LAM) { int ev = newOp(OP_EVAL, oA, oI, eta, 0, 0, 0); to(DK(D_TBIND, d.a, 1), OP_APPLY_TERM, ev, 0, eta, arg, 0, 0); }
+    else if (hf.tag == SYSTEM) evalTo(distribute(&hf, orig), eta, oA, oI);
+    else deliver(DR(orig, 1), oA, oI);
     return;
   }
   case OP_KFST: case OP_KSND: {
-    int orig = o->p[0], fst = o->kind == OP_KFST; Head hp = openRef(d.ref);
-    if (hp.tag == PAIR) evalTo(hp.f[fst ? 0 : 1].ref, eta, oA, oI);
-    else if (hp.tag == SYSTEM) evalTo(distribute(&hp, fst ? FST : SND, 0), eta, oA, oI);
-    else deliver(V(orig, 1), oA, oI);
+    int orig = o.p[1]; Head hp = openRef(d.a);
+    if (hp.tag == PAIR) evalTo(hp.f[o.kind == OP_KFST ? 0 : 1].ref, eta, oA, oI);
+    else if (hp.tag == SYSTEM) evalTo(distribute(&hp, orig), eta, oA, oI);
+    else deliver(DR(orig, 1), oA, oI);
+    return;
+  }
+  case OP_KPEND0: case OP_KPEND1: {
+    int orig = o.p[1]; Head h = openRef(orig);
+    if (d.kind == D_COVERED) { evalTo(h.f[o.kind == OP_KPEND0 ? 1 : 2].ref, eta, oA, oI); return; }
+    if (o.kind == OP_KPEND0) { to(DK(D_FACE, endpoint(h.f[4].itv, 1), 0), OP_FACE_COVERAGE, newOp(OP_KPEND1, oA, oI, eta, orig, 0, 0), 0, eta, 0, 0, 0); return; }
+    evalOpenTo(h.f[3].ref, eta, newOp(OP_KPAPP, oA, oI, eta, orig, 0, 0));
     return;
   }
   case OP_KPAPP: {
-    int orig = o->p[0], s = o->p[2], typed = o->p[3]; Head hp = openRef(d.ref);
-    if (hp.tag == PLAM) { applyDimThenEval(d.ref, 0, s, eta, oA, oI); return; }
-    if (hp.tag == SYSTEM) { evalTo(distribute(&hp, PAPPU, s), eta, oA, oI); return; }
-    if (typed) { deliver(V(orig, 1), oA, oI); return; }
-    /* a neutral path whose application did not carry its type: read the
-     * type off the neutral, then the endpoint rule */
-    int k = kop(OP_KPAPPTY, oA, oI, orig, eta, s, 0);
-    int ev = newOp(OP_EVAL, k, 0); ops[ev].p[0] = eta;
-    int ty = kop(OP_TYPEOF, ev, 0, 0, eta, 0, 0);
-    deliver(d, ty, 0);
+    int orig = o.p[1]; Head hp = openRef(d.a), ho = openRef(orig);
+    if (hp.tag == PLAM) { int ev = newOp(OP_EVAL, oA, oI, eta, 0, 0, 0); to(DK(D_DBIND, d.a, 0), OP_APPLY_DIM, ev, 0, eta, ho.f[4].itv, 0, 0); }
+    else if (hp.tag == SYSTEM) evalTo(distribute(&hp, orig), eta, oA, oI);
+    else deliver(DR(orig, 1), oA, oI);                 /* its endpoints were not entailed */
     return;
   }
-  case OP_KPAPPTY: {
-    int orig = o->p[0], s = o->p[2]; Head ht = openRef(d.ref);
-    if (ht.tag == PATH) {
-      if (entails(eta, endpoint(s, 0))) { evalTo(ht.f[1].ref, eta, oA, oI); return; }
-      if (entails(eta, endpoint(s, 1))) { evalTo(ht.f[2].ref, eta, oA, oI); return; }
-    }
-    deliver(V(orig, 1), oA, oI);
+  case OP_KGLUE: {                                        /* Glue type or glue: collapse only on the entailed face */
+    int orig = o.p[1];
+    if (d.kind == D_REF) evalTo(d.a, eta, oA, oI); else deliver(DR(orig, 0), oA, oI);
+    return;
+  }
+  case OP_KUNGLUE0: {
+    int orig = o.p[1]; Head h = openRef(orig);
+    if (d.kind == D_REF) evalTo(bApp(bFst(d.a), h.f[4].ref), eta, oA, oI);
+    else evalOpenTo(h.f[4].ref, eta, newOp(OP_KUNGLUE, oA, oI, eta, orig, 0, 0));
     return;
   }
   case OP_KUNGLUE: {
-    int orig = o->p[0]; Head hv = openRef(d.ref);
-    if (hv.tag == GLUE_INTRO) { evalTo(hv.f[5].ref, eta, oA, oI); return; }
-    if (hv.tag == SYSTEM) {
-      Head ho = openRef(orig); int *ts = xalloc(sizeof(int) * (hv.sysN + 1));
-      for (int k = 0; k < hv.sysN; k++) ts[k] = bUnglue(ho.f[0].ref, ho.f[1].face, ho.f[2].ref, ho.f[3].ref, hv.sysTerm[k]);
-      int sy = bSys(hv.sysN, hv.sysFace, ts); free(ts);
-      evalTo(sy, eta, oA, oI); return;
-    }
-    deliver(V(orig, 1), oA, oI);
+    int orig = o.p[1]; Head hv = openRef(d.a);
+    if (hv.tag == GLUE_INTRO) evalTo(hv.f[5].ref, eta, oA, oI);
+    else if (hv.tag == SYSTEM) evalTo(distribute(&hv, orig), eta, oA, oI);
+    else deliver(DR(orig, 1), oA, oI);
+    return;
+  }
+  case OP_KSYS: {
+    int orig = o.p[1], k = o.p[2]; Head h = openRef(orig);
+    if (d.kind == D_REF) { evalTo(d.a, eta, oA, oI); return; }
+    if (k + 1 < h.sysN) { to(DK(D_PARTIAL, h.sysFace[k + 1], h.sysTerm[k + 1]), OP_USE_PARTIAL, newOp(OP_KSYS, oA, oI, eta, orig, k + 1, 0), 0, eta, 0, 0, 0); return; }
+    deliver(DR(orig, 0), oA, oI);                       /* no branch covers: retained */
+    return;
+  }
+  case OP_KCOMP0: {                                       /* tube at 1 if the face is entailed, else the family's head at j */
+    int c = o.p[1];
+    if (d.kind == D_REF) { evalTo(d.a, eta, oA, oI); return; }
+    Resolved fam = resolve(c, 0);
+    int k = newOp(OP_KCOMP, oA, oI, eta, c, 0, 0);
+    int op = newOp(OP_OPEN, k, 0, 0, 0, 0, 0);
+    int ev = newOp(OP_EVAL, op, 0, eta, 0, 0, 0);
+    to(DK(D_DBIND, c, 0), OP_APPLY_DIM, ev, 0, eta, ivar(fam.var), 0, 0);
     return;
   }
   case OP_KCOMP: {
-    int c = o->p[0], ok = 0, r = compClause(c, eta, d, &ok);
-    if (ok) evalTo(r, eta, oA, oI); else deliver(V(c, 1), oA, oI);
+    int c = o.p[1], ok = 0, r = compClause(c, eta, d, &ok);
+    if (ok) evalTo(r, eta, oA, oI); else deliver(DR(c, 1), oA, oI);
     return;
-  }
-  case OP_TYPEOF: {
-    int n = d.ref;
-    if (isVar(n)) { int ty = vars[refVarId(n)].type; if (ty < 0) die("a neutral variable without a type"); deliver(V(ty, 0), oA, oI); return; }
-    Head h = openRef(n);
-    switch (h.tag) {
-    case APP: case FST: case SND: case PAPPU: {
-      /* evaluate the eliminated neutral, take its type, evaluate that, then read */
-      int kind = h.tag == APP ? OP_KTYPI : h.tag == FST ? OP_KTYFST : h.tag == SND ? OP_KTYSND : OP_KTYPATH;
-      int arg = h.tag == APP ? h.f[1].ref : h.tag == PAPPU ? h.f[1].itv : h.f[0].ref;
-      int k = kop(kind, oA, oI, arg, eta, 0, 0);
-      int ev = newOp(OP_EVAL, k, 0); ops[ev].p[0] = eta;
-      int ty = kop(OP_TYPEOF, ev, 0, 0, eta, 0, 0);
-      evalTo(h.f[0].ref, eta, ty, 0);
-      return;
-    }
-    case PAPP: deliver(V(applyDim(n, 0, h.f[4].itv), 0), oA, oI); return;
-    case COMP: deliver(V(applyDim(n, 0, I1), 0), oA, oI); return;
-    case UNGLUE: deliver(V(h.f[0].ref, 0), oA, oI); return;
-    default: die("internal: the type of a non-neutral");
-    }
-  }
-  case OP_APPLY_TERM: deliver(V(applyTerm(d.ref, o->p[0], o->p[2]), 0), oA, oI); return;
-  case OP_APPLY_DIM: deliver(V(applyDim(d.ref, o->p[0], o->p[2]), 0), oA, oI); return;
-  case OP_UNFOLD: {
-    Head h = openRef(d.ref); if (h.tag != GLOBAL) die("UNFOLD_GLOBAL meets a non-global reference");
-    deliver(V(reindex(defs[h.scal].body, refMap(d.ref)), 0), oA, oI); return;
-  }
-  case OP_KTYPI: {
-    Head ht = openRef(d.ref); if (ht.tag != PI) die("ill-typed application of a neutral");
-    deliver(V(applyTerm(d.ref, 1, o->p[0]), 0), oA, oI); return;
-  }
-  case OP_KTYFST: case OP_KTYSND: {
-    Head ht = openRef(d.ref); if (ht.tag != SIGMA) die("ill-typed projection of a neutral");
-    if (o->kind == OP_KTYFST) deliver(V(ht.f[0].ref, 0), oA, oI);
-    else deliver(V(applyTerm(d.ref, 1, bFst(o->p[0])), 0), oA, oI);
-    return;
-  }
-  case OP_KTYPATH: {
-    Head ht = openRef(d.ref); if (ht.tag != PATH) die("ill-typed path application of a neutral");
-    deliver(V(applyDim(d.ref, 0, o->p[0]), 0), oA, oI); return;
   }
   }
   die("internal: an operation agent without a rule");
 }
 /* demand from outside the net (read-back, elaboration): run to quiescence */
-static Val demand(int ref, int chi) {
-  int root = newOp(OP_ROOT, -1, -1);
+static Data demand(int ref, int chi) {
+  int root = newOp(OP_ROOT, -1, -1, 0, 0, 0, 0);
   evalTo(ref, chi, root, 0);
   while (nqueue) { Pair pr = queue[--nqueue]; fire(pr); }
   if (!ops[root].rootset) die("evaluation demands itself (a cycle)");
@@ -973,7 +1023,7 @@ static Val demand(int ref, int chi) {
  * Source: a small CCHM syntax
  * ---------------------------------------------------------------------- */
 enum { A_ID, A_U, A_LAM, A_PI, A_SIGMA, A_APP, A_PAIR, A_FST, A_SND, A_PLAM, A_PAPP, A_PATHP, A_PATH,
-       A_COMP, A_COE, A_FILL, A_GLUE, A_GLUEI, A_UNGLUE, A_SYS, A_I0, A_I1, A_INEG, A_IAND, A_IOR, A_EQ };
+       A_COMP, A_COE, A_ANN, A_FILL, A_GLUE, A_GLUEI, A_UNGLUE, A_SYS, A_I0, A_I1, A_INEG, A_IAND, A_IOR, A_EQ };
 typedef struct Ast { int k; char *name; struct Ast **c; int n; int eps; } Ast;
 static Ast *amk(int k, const char *name, int n) { Ast *a = xalloc(sizeof *a); a->k = k; a->name = name ? xdup(name) : NULL; a->n = n; a->c = xalloc(sizeof(Ast *) * (n + 1)); return a; }
 
@@ -1051,6 +1101,7 @@ static Ast *pAtom(void) {
   if (is("(")) {
     pos++; a = pTerm();
     if (is(",")) { pos++; Ast *p = amk(A_PAIR, NULL, 2); p->c[0] = a; p->c[1] = pTerm(); want(")"); return pPost(p); }
+    if (is(":")) { pos++; Ast *n = amk(A_ANN, NULL, 2); n->c[0] = a; n->c[1] = pTerm(); want(")"); return pPost(n); }
     want(")"); return pPost(a);
   }
   if (is("U")) { pos++; return amk(A_U, NULL, 0); }
@@ -1149,15 +1200,27 @@ static int elabFace(Ast *a, Scope *s) {
 }
 /* the type of a reference, where it can be read off (for the family and
  * endpoints a path application carries) */
+static int *annot; static int capannot;
+static void annotate(int ref, int ty) {
+  if (ref >= capannot) { int nc = ref * 2 + 64; annot = xgrow(annot, sizeof(int) * nc); for (int i = capannot; i < nc; i++) annot[i] = -1; capannot = nc; }
+  annot[ref] = ty;
+}
 static int synth(int ref) {
+  if (ref < capannot && annot[ref] >= 0) return annot[ref];
   if (isVar(ref)) return vars[refVarId(ref)].type;
   Head h = openRef(ref);
   switch (h.tag) {
+  case PLAM: {                                   /* <i> t : PathP (<i> type of t) t(0) t(1) */
+    Resolved b = resolve(ref, 0); int B = synth(b.body); if (B < 0) return -1;
+    Binder bd = { S_DIM, b.var, -1 };
+    Field f[3] = { FB(K_DIM_BODY, B, 0, 0), FT(reindex(b.body, map1Dim(b.var, I0))), FT(reindex(b.body, map1Dim(b.var, I1))) };
+    return cell(PATH, 1, &bd, 3, f);
+  }
   case GLOBAL: { int ty = defs[h.scal].type; return ty < 0 ? -1 : reindex(ty, refMap(ref)); }
-  case APP: { int t = synth(h.f[0].ref); if (t < 0) return -1; Val w = demand(t, F1); Head ht = openRef(w.ref); if (ht.tag != PI) return -1; return applyTerm(w.ref, 1, h.f[1].ref); }
+  case APP: { int t = synth(h.f[0].ref); if (t < 0) return -1; Data w = demand(t, F1); Head ht = openRef(w.a); if (ht.tag != PI) return -1; return applyTerm(w.a, 1, h.f[1].ref); }
   case FST: case SND: {
-    int t = synth(h.f[0].ref); if (t < 0) return -1; Val w = demand(t, F1); Head ht = openRef(w.ref); if (ht.tag != SIGMA) return -1;
-    return h.tag == FST ? ht.f[0].ref : applyTerm(w.ref, 1, bFst(h.f[0].ref));
+    int t = synth(h.f[0].ref); if (t < 0) return -1; Data w = demand(t, F1); Head ht = openRef(w.a); if (ht.tag != SIGMA) return -1;
+    return h.tag == FST ? ht.f[0].ref : applyTerm(w.a, 1, bFst(h.f[0].ref));
   }
   case PAPP: return applyDim(ref, 0, h.f[4].itv);
   case COMP: return applyDim(ref, 0, I1);
@@ -1218,6 +1281,7 @@ static int elab(Ast *a, Scope *s) {
   case A_PI: return binderLam(PI, a, s);
   case A_SIGMA: return binderLam(SIGMA, a, s);
   case A_PAIR: return bPair(elab(a->c[0], s), elab(a->c[1], s));
+  case A_ANN: { int t = elab(a->c[0], s), T = elab(a->c[1], s); annotate(t, T); return t; }
   case A_FST: return bFst(elab(a->c[0], s));
   case A_SND: return bSnd(elab(a->c[0], s));
   case A_PLAM: {
@@ -1234,10 +1298,11 @@ static int elab(Ast *a, Scope *s) {
     int p = elab(a->c[0], s), r = elabItv(a->c[1], s);
     int ty = synth(p);
     if (ty >= 0) {
-      Val w = demand(ty, F1); Head ht = openRef(w.ref);
-      if (ht.tag == PATH) { Resolved B = resolve(w.ref, 0); return bPapp(B.var, B.body, ht.f[1].ref, ht.f[2].ref, p, r); }
+      Data w = demand(ty, F1); Head ht = openRef(w.a);
+      if (ht.tag == PATH) { Resolved B = resolve(w.a, 0); return bPapp(B.var, B.body, ht.f[1].ref, ht.f[2].ref, p, r); }
     }
-    Field f[2] = { FT(p), FI(r) }; return cell(PAPPU, 0, NULL, 2, f);
+    die("%s: the type of the path in `p @ r` cannot be read off; annotate it, (p : PathP (<i> A) a b) @ r", where);
+    return -1;
   }
   case A_COMP: case A_FILL: case A_COE: {
     const char *iname = a->name;
@@ -1298,12 +1363,17 @@ static void pFace(int phi) {
   }
   formFree(&x);
 }
-static void nf(int ref, int chi);
+/* read-back is a fold over occurrences: a field under a face is read in the
+ * restricted context (section 9); it adds no interaction of its own */
+static int TOPCTX;
+static void nfo(Occurrence o);
+static void nf(int ref, int chi) { Occurrence o = { ref, ctxRestrict(TOPCTX, chi) }; nfo(o); }
 static void nfPartial(int ref, int chi, int guard) { int c = fand(chi, guard); if (c == F0) printf("_"); else nf(ref, c); }
-static void nf(int ref, int chi) {
+static void nfo(Occurrence occ) {
+  int chi = ctxFace(occ.ctx), ref = occ.ref;
   if (chi == F0) { printf("_"); return; }
-  Val w = demand(ref, chi);
-  int r = w.ref;
+  Data w = demand(ref, chi);
+  int r = w.a;
   if (isVar(r)) { pVar(refVarId(r)); return; }
   Head h = openRef(r);
   switch (h.tag) {
@@ -1320,7 +1390,6 @@ static void nf(int ref, int chi) {
   case PATH: { Resolved b = resolve(r, 0); printf("(PathP (<"); pVar(b.var); printf("> "); nf(b.body, chi); printf(") "); nf(h.f[1].ref, chi); printf(" "); nf(h.f[2].ref, chi); printf(")"); return; }
   case PLAM: { Resolved b = resolve(r, 0); printf("(<"); pVar(b.var); printf("> "); nf(b.body, chi); printf(")"); return; }
   case PAPP: printf("("); nf(h.f[3].ref, chi); printf(" @ "); pItv(h.f[4].itv); printf(")"); return;
-  case PAPPU: printf("("); nf(h.f[0].ref, chi); printf(" @ "); pItv(h.f[1].itv); printf(")"); return;
   case GLUE_TYPE: printf("(Glue "); nf(h.f[0].ref, chi); printf(" ["); pFace(h.f[1].face); printf(" -> ("); nfPartial(h.f[2].ref, chi, h.f[1].face); printf(" , "); nfPartial(h.f[3].ref, chi, h.f[1].face); printf(")])"); return;
   case GLUE_INTRO: printf("(glue ["); pFace(h.f[1].face); printf(" -> "); nfPartial(h.f[4].ref, chi, h.f[1].face); printf("] "); nf(h.f[5].ref, chi); printf(")"); return;
   case UNGLUE: printf("(unglue "); nf(h.f[4].ref, chi); printf(")"); return;
@@ -1398,6 +1467,7 @@ int main(int argc, char **argv) {
   if (argc < 2) { fprintf(stderr, "usage: cell file ...\n"); return 2; }
   I0 = formConst(0, 0); I1 = formConst(1, 0); F0 = formConst(0, 1); F1 = formConst(1, 1);
   MID = mapMake(NULL, 0, NULL, 0);
+  { IV none = { 0 }; TOPCTX = ctxMake(&none, F1); }
   for (int i = 1; i < argc; i++) { where = argv[i]; lex(slurp(argv[i])); }
   while (pos < ntok) decl();
   return 0;
