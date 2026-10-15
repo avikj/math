@@ -1,0 +1,120 @@
+-- Section 47: the identity compiler's verification cases; run after core.cell.
+postulate X : U
+postulate m : X -> X -> X
+postulate g : X -> X
+postulate a : X
+postulate b : X
+postulate c : X
+postulate yv : X
+postulate al : Path X (m (m a b) c) (m a (m b c))
+postulate al2 : Path X (m (m a b) c) (m a (m b c))
+postulate H : Path (Path X (m (m a b) c) (m a (m b c))) al al2
+postulate w : Path X (m (m a b) c) yv
+postulate w2 : Path X (m a (m b c)) yv
+postulate pab : Path X a b
+postulate wa : Path X a yv
+postulate wb : Path X b yv
+
+-- 3. the complete associativity declaration (section 46) and both orientations
+identity assoc (X : U) (m : X -> X -> X) (a b c : X) (alpha : Path X (m (m a b) c) (m a (m b c))) : X
+  left { u s : X = m a b } m u c
+  right { v t : X = m b c } m a v
+  by alpha
+eval apply assoc forward X m a b c al yv (m a b , (<i> m a b , w))
+eval apply assoc reverse X m a b c al yv (m b c , (<i> m b c , w2))
+eval apply assoc reverse X m a b c al yv (apply assoc forward X m a b c al yv (m a b , (<i> m a b , w)))
+assert valid apply assoc forward X m a b c al yv (m a b , (<i> m a b , w)) : (v : X) * ((t : Path X (m b c) v) * Path X (m a v) yv)
+-- the input must have the instantiated domain
+assert invalid apply assoc forward X m a b c al yv (m b c , (<i> m b c , w2)) : (v : X) * ((t : Path X (m b c) v) * Path X (m a v) yv)
+-- 10. two identical transformed references demanded together share their entries
+eval ((apply assoc forward X m a b c al yv (m a b , (<i> m a b , w)) , apply assoc forward X m a b c al yv (m a b , (<i> m a b , w))) : ((v : X) * ((t : Path X (m b c) v) * Path X (m a v) yv)) * ((v : X) * ((t : Path X (m b c) v) * Path X (m a v) yv)))
+
+-- 1. the empty diagram: collapse and expand are the identity on the output path type
+identity triv (X : U) (a b : X) (p : Path X a b) : X
+  left { } a
+  right { } b
+  by p
+eval apply triv forward X a b pab yv wa
+
+-- 2. a tail depending on its witness: the transport substitutes x and e together
+identity witness (X : U) (a : X) : X
+  left { u s : X = a ; v t : Path X a u = s } a
+  right { } a
+  by <i> a
+eval apply witness forward X a yv (a , (<i> a , (<i> a , (<i> <j> a , wa))))
+
+-- 4. a shared predecessor used twice: one singleton block
+identity shared (X : U) (m : X -> X -> X) (g : X -> X) (x : X) : X
+  left { u s : X = g x } m u u
+  right { } m (g x) (g x)
+  by <i> m (g x) (g x)
+
+-- 5. a dimension parameter: the complete call is reindexed before its key is rebuilt
+identity pt (i : I) (X : U) (a b : X) (p : Path X a b) : X
+  left { } p @ i
+  right { } p @ i
+  by <k> p @ i
+assert valid (<k> apply pt forward k X a b pab b (<z> pab @ (k \/ z))) :
+  PathP (<k> Path X (pab @ k) b) (apply pt forward 0 X a b pab b (<z> pab @ z)) (apply pt forward 1 X a b pab b (<z> b))
+eval ((<k> apply pt forward k X a b pab b (<z> pab @ (k \/ z))) : PathP (<k> Path X (pab @ k) b) (apply pt forward 0 X a b pab b (<z> pab @ z)) (apply pt forward 1 X a b pab b (<z> b))) @ 0
+
+-- 6. wrong endpoints, a bad node type, an unmet face, unresolved checking: rejected, nothing published
+reject identity bad1 (X : U) (a b : X) (p : Path X a b) : X
+  left { } a
+  right { } b
+  by <i> a
+reject identity bad2 (X : U) (a : X) (Y : U) (y0 : Y) : X
+  left { u s : X = y0 } a
+  right { } a
+  by <i> a
+def loopX (X : U) (x : X) : X = loopX X x
+reject identity bad3 (X : U) (a : X) : X
+  left { } loopX X a
+  right { } a
+  by <i> a
+identity zero (i : I) (X : U) (a : X) : X under (i = 0)
+  left { } a
+  right { } a
+  by <k> a
+assert invalid (<k> apply zero forward k X a a (<z> a)) : PathP (<k> Path X a a) (<z> a) (<z> a)
+assert valid apply zero forward 0 X a a (<z> a) : Path X a a
+
+-- 7. a higher path in the proof slot: the output path has the two specialized ends
+assert valid (<i> applyp assoc forward X m a b c al yv (H @ i) (m a b , (<i> m a b , w))) :
+  PathP (<i> ((v : X) * ((t : Path X (m b c) v) * Path X (m a v) yv))) (apply assoc forward X m a b c al yv (m a b , (<i> m a b , w))) (applyp assoc forward X m a b c al yv al2 (m a b , (<i> m a b , w)))
+assert invalid (<i> applyp assoc forward X m a b c al yv (H @ i) (m a b , (<i> m a b , w))) :
+  PathP (<i> ((v : X) * ((t : Path X (m b c) v) * Path X (m a v) yv))) (apply assoc forward X m a b c al yv (m a b , (<i> m a b , w))) (apply assoc forward X m a b c al yv (m a b , (<i> m a b , w)))
+
+-- 8. a cut, then the loop p^-1 . (u . v^-1): the residual is retained, not refl
+cutpath cutx (X : U) (C D : X) X C D
+eval apply cutx forward X a b (a , (<i> a , (<i> pab @ (~ i))))
+assert unequal (Path X b b)
+  (compose 0 X b a b (reverse 0 X a b pab) (apply cutx forward X a b (yv , (wa , wb))))
+  (<i> b)
+
+-- 9. a contractible fibre: projection and section, certified from k
+contractible sing (X : U) (R : X -> U) (k : (b : X) -> Contr 0 (R b)) X R by k
+eval apply sing forward X (\(b : X) -> (h : X) * Path X h b)
+  (\(b : X) -> ((b , <i> b) , \(z : (h : X) * Path X h b) -> <i> (z.2 @ (~ i) , <j> z.2 @ (~ i \/ j))))
+  (b , (a , pab))
+eval apply sing reverse X (\(b : X) -> (h : X) * Path X h b)
+  (\(b : X) -> ((b , <i> b) , \(z : (h : X) * Path X h b) -> <i> (z.2 @ (~ i) , <j> z.2 @ (~ i \/ j))))
+  b
+
+-- equivalences, and a residual description ending in a retained type
+postulate e : Equiv 0 X X
+equivalence eqx (e : Equiv 0 X X) X X by e
+eval apply eqx forward e a
+eval apply eqx reverse e a
+residual res (X : U) (g : X -> X) (a : X) (e : Equiv 0 X X)
+  left { u s : X = g a } X
+  right { } X
+  by e
+eval apply res forward X g a e (g a , (<i> g a , b))
+eval apply res reverse X g a e b
+
+-- 11. a recursive term without an obtainable observation stays unresolved
+def loopS (X : U) : (b : X) * ((h : X) * Path X h b) = loopS X
+assert undecided X (apply sing forward X (\(b : X) -> (h : X) * Path X h b)
+  (\(b : X) -> ((b , <i> b) , \(z : (h : X) * Path X h b) -> <i> (z.2 @ (~ i) , <j> z.2 @ (~ i \/ j))))
+  (loopS X)) a

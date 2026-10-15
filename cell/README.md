@@ -25,10 +25,27 @@ The specification is the owner's handoff, `HANDOFF.md`. It refines the owner's d
     - A view is typed by the substitution lemma.
   - **Ownership and teardown (§36).** A stuck workload is torn down, not published.
   - **Comparison dump (§37):** `-d FILE`.
+- **The identity compiler (§§39–48).** It handles five declaration kinds:
+  - `identity`: typed diagrams `left { x e : A = t ; … } o`, `right { … } o`, `by p`, with optional `under φ`;
+  - `equivalence`;
+  - `residual`;
+  - `cutpath`;
+  - `contractible`.
+
+  Each declaration is compiled as follows.
+  - **Validation:** the diagrams and evidence are checked, and the realization telescopes are folded.
+  - **Emission:** the singleton collapse/expand maps (`down`, `up`) and `F_P` / `B_P` are emitted as fixed core templates, together with a proof-parameterized graph-pair template.
+  - **Certificate:** the bodies are checked at their types, and a structural certificate re-emits them and requires identical references.
+  - **Publication:** only then is the record published. `reject <declaration>` must fail and publish nothing.
+
+  Calls are `apply T forward|reverse params… r` and `applyp T dir params… proof r` (the latter puts a given path in the proof slot, which gives higher coherence).
+  - A call is a `TRANSFORM_CALL` instruction. The evaluator handles it with `APPLY_TRANSFORM`, then `CONTINUE_REFERENCE`, then an ordinary request.
+  - These events are counted as their own classes.
 - `cellcmp.c`: exact comparison of two dumps modulo renaming of generated identities, by backtracking.
 - `core.cell`: the level-parametric library: `fib`, `Equiv`, `idEquiv`, `lineEquiv`, `ua`, path operations, and more.
 - `examples.cell`: example evaluations.
-- `checks/`: the §38 checks. `checks/run.sh` runs them all.
+- `checks/`: the §38 and §47 checks.
+  - `checks/transform.cell` holds compiler verification cases 1–11. `checks/run.sh` runs them all.
 
 ## Running
 

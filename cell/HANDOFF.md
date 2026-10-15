@@ -1,6 +1,8 @@
-# Scoped references and face sensitive cubical evaluation with interaction optimality
+# Scoped cubical interaction machine and identity compiler
 
 Implementation handoff — 14 October 2026
+
+Identity-to-agent compiler completion — 14 October 2026
 
 ## 1. Scope and central invariant
 
@@ -26,7 +28,9 @@ The scope operations, face algorithms, cache contract, and their local correctne
 
 Sections 25–31 extend the construction with an explicit event protocol and derive random descent and geodesic optimality for the combined abstract interaction machine. They specify the counted elementary events, close the cache's overlapping transitions, and state how a demand-driven root observation reaches a complete normal form of its demand network. This establishes interaction-work optimality for a fixed initial configuration and reduction relation; it does not equate that cost with elapsed time, arbitrary C instruction counts, or the cost of arbitrary alternative source programs.
 
-Sections 32–38 settle the remaining implementation scope: checking the annotated core against its declared global signature, a configurable concurrent worker pool, explicit ownership and teardown, and exact comparison modulo generated-name renaming. Structural scope checking alone does not certify a typed occurrence. Partition refinement alone does not certify graph isomorphism.
+Sections 32–38 settle the runtime implementation scope: checking the annotated core against its declared global signature, a configurable concurrent worker pool, explicit ownership and teardown, and exact comparison modulo generated-name renaming. Structural scope checking alone does not certify a typed occurrence. Partition refinement alone does not certify graph isomorphism.
+
+Sections 39–48 supply the identity-to-agent compiler: checked diagram declarations, generated realization maps, exact application wiring, an internal call instruction, and an end-to-end associativity instance. These sections are additive to the existing runtime.
 
 The most recent assistant reply and the worker's report are reproduced verbatim in the appendices. The preceding assistant reply is available in the current context only as a detailed retained summary. Its technical content is reconstructed explicitly and is not labelled a verbatim transcript. Accordingly, exact textual preservation is claimed only for the two available messages, not for the unavailable original wording.
 
@@ -1517,6 +1521,608 @@ The relevant checks are finite and directed at the newly implemented obligations
 - Scheduling: vary both job and active-pair policies, including mixed policies, from the same initial state; compare the balanced event vector and exact reachable result graph. Retain seeds and a useful first mismatch record.
 
 Deliver the implementation, the current handoff, and the actual validation results together. Source changes can be separated into reviewable commits for checking, concurrency, ownership, and comparison; none of those four is left as an unanswered author decision by this specification. This section specifies the work and its checks; it does not assert that another agent's uninspected implementation has passed them.
+
+## 39. Identity compiler: declarations and generated records
+
+Sections 39–48 complete the executable connection between the realization equivalences of section 21 and the scope/evaluation agents of sections 19 and 26. They add a compiler and invocation rules while preserving the existing reference representation, cubical clauses, cache protocol, and ownership rules.
+
+An identity is supplied evidence, not a request to search for an equation. Its orientation is explicit invocation data. Compiling identities must not register competing automatic rewrites for one undecorated constructor pair.
+
+All types and terms below are annotated core references. The formulas are term-building specifications; section 40 defines their lowering. Host records and enums do not introduce object-language datatypes.
+
+~~~c
+struct IdentityDecl {
+    DeclarationId id;        // stable source identity
+    ContextId parameters;   // ordered dependent telescope Gamma
+    FaceId required_face;   // phi in Gamma
+    RefId result_type;      // B, a type in Gamma,phi
+    DiagramId left;
+    DiagramId right;
+    RefId evidence;         // p : Path_B(C_left,C_right)
+};
+~~~
+
+Introduce a fresh formal compiler parameter y:B, distinct from the parameters and diagram-local variables. The generated forward map has domain Real(left,Gamma,y) and codomain Real(right,Gamma,y); the reverse exchanges them. The entire boundary Gamma,y is retained.
+
+A finite construction diagram has the following typed topological description:
+
+~~~text
+Diagram:
+    parameter_context
+    nodes[0..n-1]
+    output_type B
+    output_term o
+
+Node k:
+    stable_node_id
+    value_variable x_k
+    witness_variable e_k
+    value_type A_k
+    defining_term t_k : A_k
+~~~
+
+Check A_k and t_k in Gamma followed by all preceding node variables and witness declarations. Then add
+
+    x_k : A_k
+    e_k : Path_(A_k)(t_k,x_k).
+
+Check the final output o:B in that extended context; B itself is in Gamma. Dependent data may be packaged in Sigma types. Necessary transports between dependent argument types are explicit annotated core syntax checked by the existing checker. The compiler does not silently replace propositional equality with definitional equality.
+
+For an ordinary operation graph, t_k applies the operation to boundary values and predecessor variables. Multiple uses of one predecessor use the same variable. A shared node occurs once in the array. Source declaration order breaks ties between independent nodes; runtime allocation order does not determine graph order.
+
+The output operation may be retained as o without a redundant final node. For example, m(m(a,b),c) can have one internal node u=m(a,b), followed by output m(u,c).
+
+Construct the realization type by a right fold:
+
+\[
+R_n=\operatorname{Path}_{B}(o,y),\qquad
+R_k=\Sigma(x_k:A_k).\Sigma(e_k:\operatorname{Path}_{A_k}(t_k,x_k)).R_{k+1}.
+\]
+
+Real(C,Gamma,y) is R_0. The tail retains its dependencies on x_k,e_k. For n=0 the realization is the output path type; no Unit or list primitive is needed.
+
+Compute a canonical substitution without evaluating terms:
+
+~~~text
+nu := identity on Gamma
+for k = 0 .. n-1:
+    a_k := reindex(t_k,nu)
+    nu := nu extended by x_k -> a_k, e_k -> refl(a_k)
+C := reindex(o,nu)
+~~~
+
+Images are references, and reusing an image reuses its handle. This does not textually expand a shared DAG into a tree. Every extension uses simultaneous substitution. Check the declaration's evidence at Path_B(C_left,C_right) under its required face. INVALID or UNRESOLVED validation is not acceptance.
+
+The generated immutable record is:
+
+~~~c
+struct CompiledTransform {
+    DeclarationId id;
+    ContextId parameters;
+    FaceId required_face;
+    RefId domain;
+    RefId codomain;
+    TermVarId forward_argument_slot;
+    TermVarId reverse_argument_slot;
+    RefId forward_body;
+    RefId reverse_body;
+    EvidenceKind evidence_kind;
+    CertificateId certificate;
+    GraphPairTemplateId identity_template; // present for identity declarations
+};
+~~~
+
+For an identity declaration its parameters are Gamma,y. Its domain and codomain are the two realization types. The forward and reverse formal argument variables have distinct identities and their respective input types. The template bodies are free in the parameters and the appropriate argument variable.
+
+The certificate records the checked declaration and the structural derivation below: typed singleton blocks, their order, generated maps, and the checked identity. It is not an unchecked assertion that arbitrary functions are inverses. Its verification reconstructs this finite compilation schema. A trusted compiler pass plus checking of its emitted types is an implementation of that verification; it does not require proof search.
+
+The certificate is a tagged immutable record with exactly these cases:
+
+| Tag | Retained input and verification |
+| --- | --- |
+| IDENTITY | IdentityDecl plus checked diagrams; reconstruct sections 41–42 |
+| EQUIVALENCE | Context, face, X,Y,e; check e:Equiv(X,Y), reconstruct section 44's two maps |
+| RESIDUAL_EQUIVALENCE | Two singleton-prefix descriptions with terminal types Z_L,Z_R and e; check e between their canonically instantiated terminal types, reconstruct collapse/equivalence/expand |
+| CUT | Context, face, B,C,D; reconstruct CUT_TO_PATH and its section 44 inverse |
+| CONTRACTIBLE_FIBRE | Context, face, B,R,k; check k:Pi(b:B).Contr(R(b)), reconstruct the projection and section |
+
+Verification re-emits the prescribed templates using the same anchored formal identities and checks exact structural equality with the registered bodies, domain, codomain, and argument slots. Check all retained input types/evidence first. It does not merely check the bodies' function types and assume invertibility. Arbitrary user-supplied inverse functions require an actual EQUIVALENCE value; they do not qualify for a built-in schema tag.
+
+For RESIDUAL_EQUIVALENCE the parameter context is the supplied common telescope. Each description contains the same node fields as Diagram and an explicitly typed terminal type instead of output_type/output_term. Its domain/codomain are the resulting folded realization types; no extra y is introduced unless it is already a parameter. Canonical substitution determines the two terminal types expected by e.
+
+The registry retains its declarations, diagrams, certificates, templates, and all referenced data for the workload lifetime. No pending application may outlive its registry.
+
+Publish the compiled record only after validation succeeds. The registry is immutable within a workload. Declaration replacement creates a new environment identity or begins a new workload, as for existing global definitions.
+
+## 40. Exact lowering into the existing core
+
+Compilation builds origin records and references directly. The following builder operations have exact expansions:
+
+| Builder | Core expansion |
+| --- | --- |
+| lam(x:A,t) | LAM, domain A, term-binder body t |
+| app(f,a) | APP(f,a) |
+| pair(a,b) | PAIR(a,b), with checked expected Sigma type |
+| fst(v), snd(v) | FST(v), SND(v) |
+| path(A,a,b) | PATH with constant family A and endpoints a,b |
+| pathp(i.A,a,b) | PATH with the indicated family binder |
+| plam(i,t) | PLAM with dimension-binder body t |
+| at(p,r) | PAPP retaining the checked family and both endpoints |
+| refl(a) | plam(i,a) |
+| inverse(p) | plam(i,at(p,not i)) |
+| coe(i.A,a) | COMP, family i.A, false tube face, cap a |
+| hcomp(j.A,branches,a) | COMP with constant family A and the specified tube |
+| concat(p,q) | The section 18 hcomp definition below |
+| sigma(x:A,D) | SIGMA with domain A and codomain binder D |
+| substitute(t,sigma) | Existing reindex; no evaluation |
+
+For p:x=y and q:y=z in A, concat generates exactly
+
+\[
+\langle i\rangle\operatorname{hcomp}^{j}_{A}
+[(i=0)\mapsto x,\ (i=1)\mapsto q@j]\,(p@i).
+\]
+
+The fresh dimensions i,j have distinct binder slots. Families, guards, caps, endpoints, and tubes use the shared lifts required by section 8.
+
+Generated formal binder identities are anchored in the owning template identity, compilation role, diagram node id, and local slot. Runtime opening still uses owner/slot identities. Compiler names are not runtime freshness.
+
+Build terms in dependency order and intern complete immutable records with exact structural equality. Cache collapse/expand templates by the checked diagram, definition environment, and role; an unrelated identity declaration or proof is not part of that key. Cache the generic proof-parameterized map by the ordered diagram pair and environment. Source diagram identities anchor provenance, while an invocation supplies the proof and boundary through substitution. This allows different identities involving the same diagram to reuse the same realization maps. A hash match alone is not equality. Keep fixed bodies and instantiate their references at calls; do not copy their syntax.
+
+All generated programs use these operations and existing type constructors. There is no native associativity oracle, special datatype handler, general proof-search step, or noncollapsing Glue representation.
+
+## 41. Executable realization contraction and expansion
+
+This gives the missing algorithms for c_C and its inverse. They operate on the dependent realization telescope without duplicating graph predecessors.
+
+First remove one singleton block. Given
+
+\[
+t:A,\quad x:A,\quad e:\operatorname{Path}_{A}(t,x),\quad z:D(x,e),
+\]
+
+define the fixed template
+
+\[
+\begin{aligned}
+x_i&=e@(\neg i),\\
+e_i&=\langle j\rangle e@(\neg i\wedge j),\\
+\operatorname{down}(A,t,D,x,e,z)
+&=\operatorname{coe}^{i}D(x_i,e_i)\ z.
+\end{aligned}
+\]
+
+At i=0, the family is D(x,e), using the specified path eta conversion. At i=1 it is D(t,refl(t)). Thus down has that latter type. Its code is one COMP with false tube, whose family simultaneously substitutes x_i,e_i into D. The images contain the original e reference; substitution must not recursively substitute inside an image.
+
+The corresponding inclusion is
+
+\[
+\operatorname{up}(z_0)=(t,\operatorname{refl}(t),z_0).
+\]
+
+This triple means pair(t,pair(refl(t),z_0)), not a new primitive.
+
+For a diagram, generate collapse and expand by the following recursions. At each stage prefix is the canonical substitution for all earlier nodes.
+
+~~~text
+emit_collapse(k,prefix,r):
+    if k == n:
+        return r
+    A := reindex(A_k,prefix)
+    t := reindex(t_k,prefix)
+    D := reindex(R_(k+1),prefix)  // formal x_k,e_k remain free here
+    x := fst(r)
+    e := fst(snd(r))
+    z := snd(snd(r))
+    z0 := down(A,t,D,x,e,z)
+    next := prefix extended by x_k -> t, e_k -> refl(t)
+    return emit_collapse(k+1,next,z0)
+
+emit_expand(k,prefix,q):
+    if k == n:
+        return q
+    t := reindex(t_k,prefix)
+    next := prefix extended by x_k -> t, e_k -> refl(t)
+    z0 := emit_expand(k+1,next,q)
+    return pair(t,pair(refl(t),z0))
+~~~
+
+These recursions emit syntax over a finite node array. They do not evaluate fst, coe, or an operation value during compilation. Generated subexpressions are retained references. The implementation may produce the stages iteratively to avoid host stack growth.
+
+The emitted maps have types
+
+\[
+c_C:\operatorname{Real}(C,\gamma,y)\to(C(\gamma)=y),
+\qquad
+d_C:(C(\gamma)=y)\to\operatorname{Real}(C,\gamma,y).
+\]
+
+Here d_C is the inverse denoted c_C^{-1} in section 21.
+
+For correctness, a singleton
+
+\[
+S=\Sigma(x:A).\operatorname{Path}_{A}(t,x)
+\]
+
+is contractible, with centre (t,refl) and contraction
+
+\[
+H((x,e),i)=(e@i,\langle j\rangle e@(i\wedge j)).
+\]
+
+For any dependent D over S, inclusion of the centre fibre D(t,refl) into Sigma(s:S).D(s) is an equivalence. Transport along H in reverse is the displayed down map. Transport equivalences and the lifted dependent paths supply its inverse homotopies. Equivalently, this is singleton path induction. It applies when D depends on the witness e as well as on x.
+
+Remove each block by that equivalence and compose. The base case is the identity on the output path type. This proves that the generated c_C,d_C are inverse up to paths.
+
+This is not a new definitional computation rule. Do not optimize constant-family coe to its argument unless the calculus separately supplies that regularity. Round trips are generally witnessed by paths, not identical RefIds. No proof irrelevance is introduced.
+
+Dependent-tail handling is essential: down transports the complete R_(k+1), including later types, values, guards, and witnesses. Updating only value fields is incorrect.
+
+The contraction applies to the displayed finite singleton telescope. Extra constraints must remain in its terminal type rather than being silently erased. Section 44 specifies that general case.
+
+## 42. Complete identity compilation procedure
+
+~~~text
+compile_identity(d):
+    validate parameter context, required face, and result type
+    validate both typed diagram telescopes
+    build R_left,R_right and canonical values C_left,C_right
+    check evidence : Path_(result_type)(C_left,C_right)
+    generate c_left,d_left,c_right,d_right using section 41
+
+    introduce common parameter y : result_type
+    introduce distinct formal arguments r_left:R_left, r_right:R_right
+    introduce fresh P : Path_(result_type)(C_left,C_right)
+    graph_pair_forward := d_right(concat(inverse(P),c_left(r_left)))
+    graph_pair_reverse := d_left(concat(P,c_right(r_right)))
+    retain GraphPairTemplate with P and these two generic bodies
+    forward_body := reindex(graph_pair_forward,[P -> evidence])
+    reverse_body := reindex(graph_pair_reverse,[P -> evidence])
+
+    check forward_body : R_right in Gamma,y,r_left:R_left
+    check reverse_body : R_left in Gamma,y,r_right:R_right
+    validate structural compilation certificate
+    intern and publish CompiledTransform
+~~~
+
+GraphPairTemplate retains the two diagrams, their parameter context, the common y parameter, the fresh proof slot P, distinct input slots, domain/codomain, and generic forward/reverse bodies. This is the concrete proof-parameterized template used for higher coherence in section 45. The ordinary compiled record specializes P to the declaration evidence. P is distinct from every source parameter, even when that context already contains the source evidence as a variable.
+
+For these generated subtemplate calls, instantiate a fixed template body by mapping its formal input to the argument reference. Do not introduce an unnecessary APP/LAM pair. This is the fixed compilation convention, independent of scheduling or cache readiness.
+
+The generated maps are precisely
+
+\[
+F_p=d_R\circ(q\mapsto p^{-1}\cdot q)\circ c_L,\qquad
+B_p=d_L\circ(q\mapsto p\cdot q)\circ c_R.
+\]
+
+Concatenation with p or its inverse is an equivalence of path spaces. Section 41 gives the other equivalences. Their composites establish the forward/reverse inverse homotopies. The evidence remains executable core data.
+
+A proof may use ordinary functions, globals, compositions, Glue, and higher paths. Compilation retains those references rather than normalizing the proof. General recursive conversion or execution may not terminate; compilation does not decide termination or accept unfinished checking.
+
+The runtime work theorem starts with the validated compiled registry fixed. An end-to-end cost report must separately include compilation and validation instead of claiming they cost nothing.
+
+## 43. Invocation, exact agent wiring, and evaluator integration
+
+All compiled transformations use one uniform agent schema. Declaration id and orientation distinguish the instances; C can use one dispatcher rather than handwritten handlers for individual identities.
+
+~~~c
+struct ApplyTransform {
+    TransformId transform;
+    Direction direction;   // FORWARD or REVERSE
+    MapId parameters;      // map into template parameter context
+};
+~~~
+
+The operation agent has a negative principal port and one positive result auxiliary. Its input is a positive-principal REF(a) descriptor. Let b be the surviving endpoint attached to the result auxiliary.
+
+There is exactly one replacement:
+
+~~~text
+APPLY_TRANSFORM(id,dir,sigma).principal -- REF(a).principal
+APPLY_TRANSFORM.result -- b
+
+    becomes
+
+REF(v).principal -- b
+
+where:
+    (template,slot) :=
+        (forward_body,forward_argument_slot) if dir==FORWARD
+        (reverse_body,reverse_argument_slot) if dir==REVERSE
+    tau := sigma extended by slot -> a
+    v := reindex(template,tau)
+~~~
+
+The rule performs no evaluation of a, the proof, or v. Retain v's owned data before retiring the consumed operation and descriptor shells. Parameter images and a are reused by handle. Every boundary port is accounted for; the two removed principal ports are internal to the redex.
+
+Its typed preconditions are a validated compiled record in the current environment, a valid parameter map sigma, ambient entailment of required_face[sigma], and input a of the appropriate instantiated domain. The result has the opposite instantiated type under the same occurrence context and face.
+
+Validate raw occurrences before execution. In a well-typed generated program these premises follow from the checked origin and substitution lemma. Do not run a potentially nonterminating conversion procedure inside the finite APPLY_TRANSFORM rule. Malformed raw inputs are validation failures, not alternative rewrite cases.
+
+For an external net, b is the desired consumer. An EVAL(chi) consumer demands the output through the existing protocol; a storing consumer retains the reference unevaluated. Instantiation does not itself demand evaluation.
+
+For calls inside referenced programs, add one internal instruction origin:
+
+~~~text
+TRANSFORM_CALL:
+    transform id
+    direction
+    parameter map sigma
+    argument reference a
+    checked instantiated input/output type annotations
+~~~
+
+This is an additive instruction implementing the generated core expression, not an object-language datatype. Its checker validates the preconditions and infers the specified output type. Parameter-map images, argument, guards, and type annotations participate in complete typed support.
+
+The source support invariant is S(instantiated_body) subset S(TRANSFORM_CALL). Compute the call support from all instantiated typed template dependencies, including declaration evidence through the template, required faces, and argument-type dependencies; retaining only the visible argument's support is insufficient. Projecting the parent face therefore preserves every entailment needed by its expanded body.
+
+Reindexing by tau composes sigma with tau, reindexes a and its annotations, and preserves id and direction. Opening performs these operations on immediate fields. It never evaluates the source template before instantiation. Registry identity is part of the fixed definition environment.
+
+Add this dispatch case:
+
+~~~text
+evaluate K whose opened origin is TRANSFORM_CALL(id,dir,sigma,a):
+    consume the current owned evaluator frame
+    allocate APPLY_TRANSFORM(id,dir,sigma)
+    attach REF(a).principal to APPLY_TRANSFORM.principal
+    allocate negative-principal CONTINUE_REFERENCE(K), with no auxiliaries
+    attach APPLY_TRANSFORM.result to CONTINUE_REFERENCE.principal
+    transfer ownership of K's suspended evaluation to the receiver
+~~~
+
+The receiver has one rule:
+
+~~~text
+CONTINUE_REFERENCE(K).principal -- REF(v).principal
+    ->
+    REQ(key(v,E[K].face), continuation FORWARD_RESULT(K))
+~~~
+
+Retire the shells after transferring ownership. The child key uses v's support and the parent entry's projected face, as for other child demands. K remains RUNNING. The continuation is linear.
+
+Delivery to FORWARD_RESULT(K) schedules the normal parent evaluator publication frame, which emits PUB(K,result). There is no inline ready-entry shortcut. An actual demand cycle retains the existing unresolved/quiescence behavior.
+
+Represent pending local active pairs as NET_PAIR jobs in the same outstanding-work accounting as evaluator jobs. Distinct job and pair queues may use different selection policies, but their queued/executing jobs contribute to one outstanding count. Enqueue the newly enabled application pair before finishing the creating evaluator job. After each committed replacement, enqueue its newly enabled pairs or emitted requests before finishing that NET_PAIR job. Thus an empty evaluator queue cannot report quiescence while a transformation pair is pending. Stale pair jobs are handled by the existing revalidation protocol and do not count as committed semantic interactions.
+
+Introducing the three agents is one evaluator-frame event. APPLY_TRANSFORM and CONTINUE_REFERENCE are local rule events. Requests, deliveries, resumed frames, and publication retain the existing event classes. No hidden uncounted proof evaluation or cache-hit path exists.
+
+In definitional conversion TRANSFORM_CALL is reducible by this template expansion. It is not a new neutral form. An unfinished demand is UNRESOLVED. Mathematical equivalence of two declarations does not alone make their call references identical.
+
+## 44. Equivalences, annihilation, and retained residuals
+
+The same interface accepts supplied e:X≃Y under a typed parameter context and face. Check e against the section 15 definition of Equiv and generate
+
+\[
+\operatorname{forward}(a)=(\operatorname{fst}e)(a),\qquad
+\operatorname{reverse}(b)=
+\operatorname{fst}\bigl(\operatorname{fst}((\operatorname{snd}e)(b))\bigr).
+\]
+
+The inner fst selects the centre of the contractible fibre, and the outer fst selects its X-coordinate. Fibre contractibility supplies the inverse guarantee; no inverse search is performed.
+
+More generally a realization telescope may end in an explicit residual type Z instead of an output path. Use section 41 with the identity on Z as its base case. A supplied equivalence e:Equiv(Z_L,Z_R) gives the forward map
+
+\[
+d_R\circ e.\mathrm{map}\circ c_L
+\]
+
+and the reverse using the fibre-derived inverse. Extra constraints remain in Z. Arbitrary cyclic constraints require this actual residual and evidence; they must not be treated as a contractible acyclic function graph.
+
+This does not prohibit recursive programs or infinitely unfolding values. Their finite syntax uses GLOBAL and the existing demand semantics. It prohibits contracting a cyclic solution space without evidence.
+
+For a cut between C,D:B at a common output, define using ordinary Sigma and Path
+
+\[
+\operatorname{Cut}(C,D)=\Sigma(z:B).(C=z)\times(D=z).
+\]
+
+The fixed CUT_TO_PATH templates are
+
+\[
+(z,u,v)\mapsto u\cdot v^{-1},\qquad
+h\mapsto(D,h,\operatorname{refl}(D)).
+\]
+
+They are equivalences by singleton elimination. Their certificate is this fixed derivation, not arbitrary assumed inverse functions. For cuts between graph realizations, apply their collapse maps before CUT_TO_PATH and expansion maps in its inverse. Represent the common output once.
+
+Given p:C=D, the residual is the loop
+
+\[
+p^{-1}\cdot(u\cdot v^{-1}):D=D.
+\]
+
+The construction shells may disappear while this residual remains. Supplying p is not permission to replace every such loop by refl.
+
+Semantic erasure requires a checked contraction. Given R:B→U and k:Pi(b:B).Contr(R(b)), generate COLLAPSE_FIBRE:
+
+\[
+\Sigma(b:B).R(b)\to B,\quad(b,r)\mapsto b,
+\]
+
+with reverse b↦(b,fst(k(b))). Its inverse homotopy is pointwise snd(k(b))(r), with the first coordinate fixed. These are fixed templates with a certificate checked from k. They use the same application agent.
+
+Physical ERA remains an ownership operation. It neither manufactures k nor proves a mathematical quotient. Substitution/transport, cut contraction, residual retention, and contractible erasure therefore have distinct executable meanings.
+
+## 45. Substitution, higher coherence, and interaction work
+
+Generated programs use substitution-respecting core constructors, so
+
+\[
+(F_p(r))[\sigma]=F_{p[\sigma]}(r[\sigma])
+\]
+
+with diagrams, boundary, types, guards, and scopes reindexed together. This is the substitution law for the generated expression; it does not identify arbitrary propositionally equal proofs as one RefId.
+
+In context the replacement is
+
+\[
+(\beta,r,c)\mapsto(\beta,F_p(r),c).
+\]
+
+Boundary handles are retained. Equal instantiated template references under equal relevant faces reach the same evaluation entry. Witnesses that affect the result remain dependencies.
+
+The maps depend on p as an ordinary parameter. If H is a path from p_0 to p_1, then
+
+\[
+\langle i\rangle F_{H@i}(r)
+\]
+
+is the output path. Generate it with the same graph-pair template, substituting H@i into its proof slot. Repeated dimension abstraction handles higher cubes without per-dimension handlers.
+
+The inverse homotopies for c_M,d_M and the path laws compare F_q∘F_p with F_(p·q). This is generally a higher equality, not a definitional collapse of two counted invocations to one. Coherence does not become proof irrelevance or an unaccounted cost reduction.
+
+The new active pairs satisfy section 25: one principal port per agent, one deterministic rule for each fixed payload, and preservation of the surviving boundary. Immutable interning commutes. CONTINUE_REFERENCE transfers a uniquely owned parent frame to one request continuation.
+
+The additional overlap cases are therefore:
+- two distinct application pairs: disjoint shells, commuting interning and boundary splicing;
+- an application pair and another distinct ordinary pair: preserved residual principal connection;
+- a receiver pair and a distinct pair: disjoint shells, linear parent ownership, and explicit request emission;
+- emitted requests against requests/publication: exactly section 27's existing overlaps.
+
+No new rule chooses a result from waiter order, waiter count, or the first caller's identity. Use the existing pinning, locks, and boundary revalidation.
+
+Thus the exact residual-diamond and interaction-work conclusions extend under the same hypotheses. Add APPLY_TRANSFORM and CONTINUE_REFERENCE to the local-rule event vector. Demanded execution of generated transports counts normally; a supplied proof is not a free computational oracle.
+
+The theorem concerns executions of the same represented workload and elementary relation. Different supplied identity programs are not silently merged into nondeterministic rewrite alternatives. Any broader comparison must use its declared computation and cost semantics.
+
+## 46. Complete associativity instance
+
+Parameters are
+
+\[
+X:U,\quad m:X\to X\to X,\quad a,b,c:X,\quad
+\alpha:m(m(a,b),c)=m(a,m(b,c)),
+\]
+
+under true face, with common output parameter y:X.
+
+The left diagram has one node u=m(a,b) with witness s:m(a,b)=u and output m(u,c). The right has one node v=m(b,c), witness t:m(b,c)=v, and output m(a,v). Thus
+
+\[
+\begin{aligned}
+R_L(y)&=\Sigma(u:X).\Sigma(s:m(a,b)=u).(m(u,c)=y),\\
+R_R(y)&=\Sigma(v:X).\Sigma(t:m(b,c)=v).(m(a,v)=y).
+\end{aligned}
+\]
+
+For r_L=(u,s,w), the generated collapse is exactly
+
+\[
+c_L(r_L)=\operatorname{coe}^{i}
+\operatorname{Path}_{X}(m(s@(\neg i),c),y)\ w.
+\]
+
+For r_R=(v,t,w),
+
+\[
+c_R(r_R)=\operatorname{coe}^{i}
+\operatorname{Path}_{X}(m(a,t@(\neg i)),y)\ w.
+\]
+
+The expansions are
+
+\[
+d_L(q)=(m(a,b),\operatorname{refl},q),\qquad
+d_R(q)=(m(b,c),\operatorname{refl},q).
+\]
+
+Therefore the exact forward and reverse emitted templates are
+
+\[
+r_L\mapsto
+\left(m(b,c),\operatorname{refl},
+\alpha^{-1}\cdot
+\operatorname{coe}^{i}\operatorname{Path}_{X}(m(s@(\neg i),c),y)\ w\right),
+\]
+
+\[
+r_R\mapsto
+\left(m(a,b),\operatorname{refl},
+\alpha\cdot
+\operatorname{coe}^{i}\operatorname{Path}_{X}(m(a,t@(\neg i)),y)\ w\right).
+\]
+
+Here s or t is fst(snd(r)), and w is snd(snd(r)). Every operation lowers by section 40. The transport expression for c_L is propositionally equal to ap_(z↦m(z,c))(s)·w in section 21. The generated program consistently uses the displayed transport form; no judgmental equality between presentations is assumed.
+
+For invocation, sigma supplies references for X,m,a,b,c,alpha,y and r is checked at R_L[sigma]. Build TRANSFORM_CALL(associativity,FORWARD,sigma,r), or the corresponding external application pair.
+
+Execution:
+1. The pair creates a view of the fixed forward body with sigma and its argument slot mapped to r.
+2. Its receiver requests that view under the parent's projected face.
+3. Weak-head evaluation exposes a pair retaining m(b,c), refl, and the output-path reference. It need not evaluate that path to expose the pair.
+4. Demanding the path executes alpha reversal, singleton transport, and concatenation through the ordinary cubical evaluator.
+5. Publication/delivery use the standard protocol. Repeated identical demands share entries.
+
+Boundary references remain shared. The source r stays immutable for its other consumers. The output realization is returned at the application's result boundary; other uses of r are not rewritten.
+
+The round trip is related to r by the generated equivalence's inverse homotopies. Verification checks a typed witness or the structural certificate, not equality of endpoint RefIds.
+
+For sharing, use one node u=f(x) and output m(u,u). Its realization contains one u and one witness s:f(x)=u. Collapse uses the family
+
+\[
+\operatorname{Path}(m(s@(\neg i),s@(\neg i)),y).
+\]
+
+Both occurrences use the same instantiated reference. Do not generate two singleton blocks or duplicate f(x)'s origins.
+
+## 47. Compiler and integration verification
+
+Review must locate actual emitted programs and their execution, not merely a function named compile_identity.
+
+| Responsibility | Required implementation evidence |
+| --- | --- |
+| Validation | Typed telescope, canonical substitutions, checked endpoints and required face |
+| Realization | One singleton block per shared node, correctly bound dependent tail |
+| Map emission | Executable down/expand and forward/reverse templates |
+| Invocation | Application replacement, internal call dispatch, exact receiver behavior |
+| Boundary | Shared parameter/image handles and immutable source references |
+| Evaluation | Generated terms use the existing cubical evaluator and cache |
+| Residuals | Cuts retain path data; erasure requires checked contraction |
+| Certificate | Structural derivation checked, not arbitrary inverse assertions |
+| Scheduling | New rule counters participate in existing schedule comparisons |
+
+Focused verification cases:
+1. Empty diagram: collapse/expand are identity on the output path type.
+2. A tail depending on its witness: emitted transport substitutes both x and e.
+3. Complete associativity declaration and both invocation orientations.
+4. Shared predecessor used twice: one singleton block and identical repeated image references.
+5. Dimension substitution and strengthened face: reindex the complete call before rebuilding its observation key.
+6. Wrong endpoints, bad node type, or unmet face: reject; unresolved checking must not publish a compiled record.
+7. Higher path in the evidence parameter: generated output family has the stated endpoints.
+8. Cut followed by loop conversion: retain the residual without contractibility evidence.
+9. Contractible-fibre projection/section: check templates and the certificate from k.
+10. Duplicate transformed-reference demands under mixed schedulers: one evaluator per key, equal complete result graphs modulo renaming, equal balanced event vectors.
+11. Recursive terms without an obtainable observation: preserve nontermination/unresolved demand; never synthesize success.
+
+Round-trip checks concern typed homotopies or validated certificates, not syntactic identity of generally homotopic expressions. Schedule comparison still uses exact graph comparison for executions of the same program.
+
+These are requirements for actual worker validation. This document does not claim those code tests have already run.
+
+## 48. Combined contract and incoming review
+
+The complete specified implementation path is:
+
+~~~text
+annotated diagrams + checked identity/equivalence
+    -> validated realization descriptions
+    -> fixed core templates + structural certificate
+    -> immutable compiled-transform record
+    -> explicit oriented application agent
+    -> instantiated reference
+    -> existing cubical demand evaluator
+    -> shared result and preserved dependent boundary
+~~~
+
+Existing runtime subsystems remain the substrate. Add the declaration/compiler records, singleton-map emission, uniform application, internal call instruction, and validation. The call instruction extends origin dispatch and checking; it does not replace existing representations.
+
+Compiler correctness follows from singleton contraction, path concatenation equivalences, composition of equivalences, and substitution. Sharing follows from representing each source node once, retaining parameter/image handles, and using the existing cache. Interaction-work properties follow from the deterministic principal-pair rules and explicit cache protocol.
+
+Automatic realization contraction covers finite typed singleton-definition telescopes ending in an output path or retained residual. Other supplied equivalences use the checked equivalence interface. Higher and cyclic constraints are not silently treated as contractible definitions. Recursive executable terms retain their finite GLOBAL descriptions.
+
+For the incoming review, assess existing runtime compliance and presence of the compiler path separately. A missing compiler is an additive subsystem; it does not require discarding a correctly implemented reference, scope, cubical evaluation, sharing, or scheduling subsystem.
+
 
 ## Appendix A. Latest assistant reply verbatim
 

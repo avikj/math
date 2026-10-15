@@ -407,8 +407,8 @@ static int clauseMap(int C) {
 /* ------------------------------------------------------------------------
  * Origins (section 2) and the open table (section 9)
  * ---------------------------------------------------------------------- */
-enum { UNIV, PI, SIGMA, LAM, APP, PAIR, FST, SND, PATH, PLAM, PAPP, GLUE_TYPE, GLUE_INTRO, UNGLUE, COMP, SYSTEM, GLOBAL, NTAG };
-static const char *tagName[NTAG] = { "U", "Pi", "Sigma", "lam", "app", "pair", "fst", "snd", "PathP", "plam", "papp", "Glue", "glue", "unglue", "comp", "system", "global" };
+enum { UNIV, PI, SIGMA, LAM, APP, PAIR, FST, SND, PATH, PLAM, PAPP, GLUE_TYPE, GLUE_INTRO, UNGLUE, COMP, SYSTEM, GLOBAL, TCALL, NTAG };
+static const char *tagName[NTAG] = { "U", "Pi", "Sigma", "lam", "app", "pair", "fst", "snd", "PathP", "plam", "papp", "Glue", "glue", "unglue", "comp", "system", "global", "transform" };
 enum { K_TERM, K_INTERVAL, K_FACE, K_LEVEL, K_TERM_BODY, K_DIM_BODY, K_PARTIAL, K_PARTIAL_DIM_BODY };
 typedef struct { int kind, val, slot, guard; } Field;
 typedef struct { int sort, formal, domain; } Binder;
@@ -648,7 +648,7 @@ static int applyDim(int owner, int fi, int itv) { Resolved r = resolve(owner, fi
 /* open (section 9): one constructor, its immediate fields specialized by
  * the owner's map; binder fields stay handles (resolved on demand) */
 typedef struct { int kind, ref, itv, face, guard, lev; } OField;
-typedef struct { int tag, owner, scal, nf; OField f[8]; int sysN; int *sysFace, *sysTerm; } Head;
+typedef struct { int tag, owner, scal, nf; OField f[40]; int sysN; int *sysFace, *sysTerm; } Head;
 static Head openRef(int ref) {
   Head h; memset(&h, 0, sizeof h); h.owner = ref; h.tag = -1;
   if (isVar(ref)) return h;
@@ -659,7 +659,7 @@ static Head openRef(int ref) {
     for (int k = 0; k < h.sysN; k++) { h.sysFace[k] = substFace(O->f[2 * k].val, s); h.sysTerm[k] = reindex(O->f[2 * k + 1].val, s); }
     h.nf = 0; return h;
   }
-  if (O->nf > 8) die("too many fields");
+  if (O->nf > 40) die("too many fields");
   for (int i = 0; i < O->nf; i++) {
     Field fl = O->f[i];
     h.f[i].kind = fl.kind;
@@ -689,7 +689,7 @@ static Field FF(int i) { Field f = { K_FACE, i, 0, -1 }; return f; }
 static Field FL(int l) { Field f = { K_LEVEL, l, 0, -1 }; return f; }
 static Field FP(int r, int g) { Field f = { K_PARTIAL, r, 0, g }; return f; }
 static Field FB(int kind, int r, int slot, int g) { Field f = { kind, r, slot, g }; return f; }
-static int cellA(int tag, int ann, int extra, int nb, Binder *b, int nf, Field *f) {
+static int cellA(int tag, int scal, int ann, int extra, int nb, Binder *b, int nf, Field *f) {
   int req = extra;
   for (int i = 0; i < nf; i++) {
     switch (f[i].kind) {
@@ -699,9 +699,9 @@ static int cellA(int tag, int ann, int extra, int nb, Binder *b, int nf, Field *
     }
   }
   if (ann >= 0) req = fand(req, reqOf(ann));
-  return makeView(mkOrigin(tag, 0, req, ann, nb, b, nf, f, NULL, NULL, NULL), MID);
+  return makeView(mkOrigin(tag, scal, req, ann, nb, b, nf, f, NULL, NULL, NULL), MID);
 }
-static int cell(int tag, int nb, Binder *b, int nf, Field *f) { return cellA(tag, -1, F1, nb, b, nf, f); }
+static int cell(int tag, int nb, Binder *b, int nf, Field *f) { return cellA(tag, 0, -1, F1, nb, b, nf, f); }
 static int bUniv(int lev) { Field f[1] = { FL(lev) }; return cell(UNIV, 0, NULL, 1, f); }
 static int bBind(int tag, int x, int A, int B) { Binder b = { S_TERM, x, A }; Field f[2] = { FT(A), FB(K_TERM_BODY, B, 0, -1) }; return cell(tag, 1, &b, 2, f); }
 static int bLam(int x, int A, int body) { return bBind(LAM, x, A, body); }
@@ -723,7 +723,7 @@ static int bComp(int i, int A, int phi, int u, int a0) {
 static int bSys(int n, const int *faces, const int *terms) {
   Field *f = xalloc(sizeof(Field) * (2 * n + 1)); int k = 0, cover = F0;
   for (int i = 0; i < n; i++) { if (faces[i] == F0) continue; f[k++] = FF(faces[i]); f[k++] = FP(terms[i], faces[i]); cover = forr(cover, faces[i]); }
-  int r = cellA(SYSTEM, -1, cover, 0, NULL, k, f); free(f); return r;
+  int r = cellA(SYSTEM, 0, -1, cover, 0, NULL, k, f); free(f); return r;
 }
 static int bGlueType(int lev, int A, int phi, int T, int e) {
   Field f[5] = { FL(lev), FT(A), FF(phi), FP(T, phi), FP(e, phi) }; return cell(GLUE_TYPE, 0, NULL, 5, f);
@@ -739,8 +739,8 @@ static int annotateCell(int ref, int ann) {
   if (isVar(ref) || refMap(ref) != MID) return ref;
   Origin *O = O_(refOrigin(ref));
   if (O->tag == GLOBAL) return ref;
-  int extra = O->tag == SYSTEM ? O->req : F1;
-  return cellA(O->tag, ann, extra, O->nb, O->b, O->nf, O->f);
+  int extra = O->tag == SYSTEM || O->tag == TCALL ? O->req : F1;
+  return cellA(O->tag, O->scal, ann, extra, O->nb, O->b, O->nf, O->f);
 }
 
 /* Global definitions (section 9): a GLOBAL origin per definition, its
@@ -762,6 +762,51 @@ static int globalView(int d, const int *args) {
 }
 static int findDef(const char *n) { int nd = scount(&defsS); for (int i = 0; i < nd; i++) if (!strcmp(DEF(i)->name, n)) return i; return -1; }
 static int DEF_fib = -1, DEF_lineEquiv = -1, DEF_Equiv = -1;
+
+/* The registry of compiled transformations (sections 39-44).  A diagram:
+ * its nodes x_k : A_k with witnesses e_k : Path A_k t_k x_k, its output o
+ * (or, for a residual description, its terminal type), the canonical images
+ * a_k and refl(a_k), and the folded realization types R_k. */
+enum { T_IDENTITY, T_EQUIVALENCE, T_RESIDUAL, T_CUT, T_CONTRACTIBLE };
+static const char *trKindName[] = { "IDENTITY", "EQUIVALENCE", "RESIDUAL_EQUIVALENCE", "CUT", "CONTRACTIBLE_FIBRE" };
+typedef struct { int n; int *x, *e, *A, *t, *a, *refl, *R; int out, term, canon; } Diag;
+/* params: the template parameter context (for an identity, Gamma then y);
+ * fslot/rslot: the formal arguments; fbody/rbody: the bodies; pslot, ptype,
+ * gfwd, grev: the graph-pair template with its proof slot (identities) */
+typedef struct {
+  char *name; int kind, anchor; IV params;   /* anchor: the declaration's stable source identity */ int face, domain, codomain, fslot, rslot, fbody, rbody, pslot, ptype, gfwd, grev;
+  Diag L, R; int B, y, ev, X, Y, lev, C, D, Rf, k;
+} Tr;
+static Store trS = STORE_INIT(Tr);
+static Tr *TR(int i) { return sat(&trS, i); }
+static int trFind(const char *n) { int nt = scount(&trS); for (int i = 0; i < nt; i++) if (!strcmp(TR(i)->name, n)) return i; return -1; }
+/* a TRANSFORM_CALL's fields: the parameter images, the argument, the
+ * instantiated input and output types, and (when explicit) the proof; its
+ * scal is (transform << 2) | (explicit proof << 1) | direction */
+static int tcallMapFields(const int *imgs, Tr *T, int proof) {
+  int np = T->params.n; KV *t = xalloc(sizeof(KV) * (np + 2)), *d = xalloc(sizeof(KV) * (np + 1)), *l = xalloc(sizeof(KV) * (np + 1)); int nt = 0, nd = 0, nl = 0;
+  for (int i = 0; i < np; i++) {
+    int x = T->params.a[i], s = V(x)->sort;
+    if (s == S_TERM) { t[nt].k = x; t[nt].v = imgs[i]; nt++; } else if (s == S_DIM) { d[nd].k = x; d[nd].v = imgs[i]; nd++; } else { l[nl].k = x; l[nl].v = imgs[i]; nl++; }
+  }
+  if (proof >= 0) { t[nt].k = T->pslot; t[nt].v = proof; nt++; }
+  int m = mapMake(t, nt, d, nd, l, nl); free(t); free(d); free(l); return m;
+}
+static int bTcall(int tid, int dir, const int *imgs, int arg, int proof) {
+  Tr *T = TR(tid); int np = T->params.n, ex = proof >= 0;
+  int sigma = tcallMapFields(imgs, T, -1);
+  int inT = reindex(dir ? T->codomain : T->domain, sigma), outT = reindex(dir ? T->domain : T->codomain, sigma);
+  Field *f = xalloc(sizeof(Field) * (np + 5));
+  for (int i = 0; i < np; i++) { int s = V(T->params.a[i])->sort; f[i] = s == S_TERM ? FT(imgs[i]) : s == S_DIM ? FI(imgs[i]) : FL(imgs[i]); }
+  f[np] = FT(arg); f[np + 1] = FT(inT); f[np + 2] = FT(outT); if (ex) f[np + 3] = FT(proof);
+  int r = cellA(TCALL, (tid << 2) | (ex << 1) | dir, -1, substFace(T->face, sigma), 0, NULL, np + 3 + ex, f);
+  free(f); return r;
+}
+static int tcallMap(Head *h, Tr *T, int ex) {
+  int np = T->params.n, *imgs = xalloc(sizeof(int) * (np + 1));
+  for (int i = 0; i < np; i++) { int s = V(T->params.a[i])->sort; imgs[i] = s == S_TERM ? h->f[i].ref : s == S_DIM ? h->f[i].itv : h->f[i].lev; }
+  int m = tcallMapFields(imgs, T, ex ? h->f[np + 3].ref : -1); free(imgs); return m;
+}
 
 /* ------------------------------------------------------------------------
  * Contexts, typed maps and occurrences (sections 2, 6).  A context: its
@@ -960,8 +1005,8 @@ enum { D_REF, D_HEAD, D_FACE, D_INTERVAL, D_MAP, D_TMAP, D_LEVEL, D_PARTIAL, D_T
 typedef struct { int kind, a, b, cls; } Data;
 static Data DR(int ref, int cls) { Data d = { D_REF, ref, 0, cls }; return d; }
 static Data DK(int kind, int a, int b) { Data d = { kind, a, b, C_REF }; return d; }
-enum { E_REQUEST, E_EVALUATE, E_PUBLISH, E_DELIVER, E_RULE, E_JOIN, NEV };
-static const char *evName[NEV] = { "request", "evaluate", "publish", "deliver", "rule", "join" };
+enum { E_REQUEST, E_EVALUATE, E_PUBLISH, E_DELIVER, E_RULE, E_JOIN, E_TRANSFORM, E_CONTINUE, NEV };
+static const char *evName[NEV] = { "request", "evaluate", "publish", "deliver", "rule", "join", "apply_transform", "continue_reference" };
 static atomic_long evc[NEV];
 static void ev(int k) { atomic_fetch_add_explicit(&evc[k], 1, memory_order_relaxed); }
 
@@ -969,7 +1014,7 @@ enum { OP_ROOT, OP_EVAL, OP_EVALUATE, OP_PUBLISH, OP_JOIN, OP_INSPECT,
        OP_REINDEX_TERM, OP_REINDEX_INTERVAL, OP_REINDEX_FACE, OP_REINDEX_LEVEL, OP_COMPOSE_MAP, OP_RESTRICT_MAP, OP_LIFT,
        OP_OPEN, OP_UNFOLD, OP_REINDEX_TBIND, OP_REINDEX_DBIND, OP_REINDEX_PDBIND, OP_REINDEX_PARTIAL,
        OP_APPLY_TERM, OP_APPLY_DIM, OP_APPLY_PDIM, OP_FORALL, OP_PROJECT_FACE, OP_FACE_COVERAGE, OP_USE_PARTIAL,
-       OP_GET_SUPPORT, OP_REINDEX_HEAD, OP_DUP, OP_ERA,
+       OP_GET_SUPPORT, OP_REINDEX_HEAD, OP_DUP, OP_ERA, OP_APPLY_TRANSFORM, OP_CONTINUE,
        OP_KAPP, OP_KFST, OP_KSND, OP_KPEND0, OP_KPEND1, OP_KPAPP, OP_KGLUE, OP_KUNGLUE0, OP_KUNGLUE, OP_KSYS, OP_KCOMP0, OP_KCOMP };
 typedef struct { int kind, p[4], outA, outI, n, got; Data *ins; int *faces; Data rootv; int rootset; } Op;
 static Store opsS = STORE_INIT(Op);
@@ -1135,7 +1180,8 @@ static void fire(int opi, int idx, Data d) {
   struct { int kind, p[4]; } o; Op *op = OPP(opi);
   o.kind = op->kind; memcpy(o.p, op->p, sizeof o.p);
   int oA = op->outA, oI = op->outI, eta = o.p[0];
-  if (o.kind != OP_EVAL) ev(o.kind == OP_PUBLISH ? E_PUBLISH : o.kind == OP_JOIN ? E_JOIN : o.kind == OP_EVALUATE ? E_EVALUATE : E_RULE);
+  if (o.kind != OP_EVAL) ev(o.kind == OP_PUBLISH ? E_PUBLISH : o.kind == OP_JOIN ? E_JOIN : o.kind == OP_EVALUATE ? E_EVALUATE :
+                           o.kind == OP_APPLY_TRANSFORM ? E_TRANSFORM : o.kind == OP_CONTINUE ? E_CONTINUE : E_RULE);
   /* an empty-face result passes through a continuation unopened */
   if (d.cls == C_EMPTY && (o.kind >= OP_KAPP || o.kind == OP_OPEN)) { connect(d, oA, oI); return; }
   switch (o.kind) {
@@ -1228,6 +1274,16 @@ static void fire(int opi, int idx, Data d) {
   case OP_REINDEX_HEAD: connect(DK(D_HEAD, reindex(d.a, o.p[1]), 0), oA, oI); return;
   case OP_DUP: connect(d, oA, oI); connect(d, o.p[1], o.p[2]); return;
   case OP_ERA: return;
+  /* section 43: the one replacement of an oriented application, and its
+   * receiver; neither evaluates anything */
+  case OP_APPLY_TRANSFORM: {
+    Tr *T = TR(o.p[1] >> 2); int dir = o.p[1] & 1, ex = (o.p[1] >> 1) & 1;
+    int tmpl = ex ? (dir ? T->grev : T->gfwd) : (dir ? T->rbody : T->fbody), slot = dir ? T->rslot : T->fslot;
+    MapR m = mapRead(o.p[2], 1); m.t[m.nt].k = slot; m.t[m.nt].v = d.a; m.nt++;
+    connect(DK(D_REF, reindex(tmpl, mapFromR(&m)), 0), oA, oI);
+    return;
+  }
+  case OP_CONTINUE: evalTo(d.a, eta, oA, oI); return;
   /* --- the evaluator task: inspection of the opened constructor (section 12) --- */
   case OP_INSPECT: {
     int ref = d.a;
@@ -1246,6 +1302,11 @@ static void fire(int opi, int idx, Data d) {
       if (h.sysN == 0) die("an empty system observed under a consistent face");
       to(DK(D_PARTIAL, h.sysFace[0], h.sysTerm[0]), OP_USE_PARTIAL, newOp(OP_KSYS, oA, oI, eta, ref, 0, 0), 0, eta, 0, 0, 0);
       break;
+    case TCALL: {                                    /* section 43: APPLY_TRANSFORM, then CONTINUE_REFERENCE */
+      Tr *T = TR(h.scal >> 2); int np = T->params.n, sigma = tcallMap(&h, T, (h.scal >> 1) & 1);
+      to(DK(D_REF, h.f[np].ref, 0), OP_APPLY_TRANSFORM, newOp(OP_CONTINUE, oA, oI, eta, 0, 0, 0), 0, eta, h.scal, sigma, 0);
+      break;
+    }
     case COMP: {                                     /* the tube first */
       int use = newOp(OP_USE_PARTIAL, newOp(OP_KCOMP0, oA, oI, eta, ref, 0, 0), 0, eta, 0, 0, 0);
       to(DK(D_PDBIND, ref, 2), OP_APPLY_PDIM, use, 0, eta, I1, 0, 0);
@@ -1670,7 +1731,7 @@ static int convEF(int t, int u, int A, int chi) {
 /* A : U_lev under C */
 static int chkTy(int A, int C, int *lev) {
   int T, s = inf(A, C, &T); if (s != V_OK) return s;
-  Data w; s = whnfC(T, C, &w); if (s != V_OK) return s;
+  Data w = { 0 }; s = whnfC(T, C, &w); if (s != V_OK) return s;
   if (refTag(w.a) != UNIV) return bad("a type was expected; its type is not a universe");
   Head h = openRef(w.a); *lev = h.f[0].lev; headFree(&h);
   return V_OK;
@@ -1704,7 +1765,7 @@ static int expectHead(int A, int C, int tag, Data *w, const char *what) {
 }
 /* the rules of the checking forms against an expected type */
 static int chkRule(int t, int A, int C) {
-  Head h = openRef(t); int tag = h.tag; Data w; int s = V_OK;
+  Head h = openRef(t); int tag = h.tag; Data w = { 0 }; int s = V_OK;
   switch (tag) {
   case LAM: {
     if ((s = expectHead(A, C, PI, &w, "a function type")) != V_OK) break;
@@ -1785,7 +1846,7 @@ static int infGlobal(int t, int C, int *A) {
   return V_OK;
 }
 static int infRule(int t, int C, int *A) {
-  Head h = openRef(t); int s = V_OK; Data w;
+  Head h = openRef(t); int s = V_OK; Data w = { 0 };
   switch (h.tag) {
   case UNIV: *A = bUniv(lsuc(h.f[0].lev)); break;
   case PI: case SIGMA: {
@@ -1883,6 +1944,23 @@ static int infRule(int t, int C, int *A) {
     break;
   }
   case GLOBAL: s = infGlobal(t, C, A); break;
+  case TCALL: {                                      /* section 43: the call's preconditions, then its output type */
+    Tr *T = TR(h.scal >> 2); int dir = h.scal & 1, ex = (h.scal >> 1) & 1, np = T->params.n;
+    int sigma = tcallMap(&h, T, 0);
+    for (int i = 0; i < np && s == V_OK; i++) {
+      int x = T->params.a[i]; if (V(x)->sort != S_TERM) continue;
+      s = chk(h.f[i].ref, reindex(V(x)->type, sigma), C);
+      if (s == V_BAD) s = bad("argument %d of transform %s does not have its parameter's type", i + 1, T->name);
+    }
+    if (s != V_OK) break;
+    if (!entails(C, substFace(T->face, sigma))) { s = bad("the required face of transform %s is not entailed", T->name); break; }
+    int inT = reindex(dir ? T->codomain : T->domain, sigma), outT = reindex(dir ? T->domain : T->codomain, sigma);
+    if (h.f[np + 1].ref != inT || h.f[np + 2].ref != outT) { s = bad("the call's type annotations are not its instantiated types"); break; }
+    if ((s = chk(h.f[np].ref, inT, C)) != V_OK) break;
+    if (ex) { if (T->kind != T_IDENTITY) { s = bad("only an identity has a proof slot"); break; } if ((s = chk(h.f[np + 3].ref, reindex(T->ptype, sigma), C)) != V_OK) break; }
+    *A = outT;
+    break;
+  }
   default: s = bad("unknown constructor");
   }
   headFree(&h);
@@ -1947,7 +2025,7 @@ static int convT(int A, int B, int C) {
   if (jstate[id] == 1) return unres("a circular conversion");
   if (jstate[id] >= 2) return jres[id];
   jstate[id] = 1;
-  Data a, b; int s = whnfC(A, c, &a);
+  Data a = { 0 }, b = { 0 }; int s = whnfC(A, c, &a);
   if (s == V_OK) s = whnfC(B, c, &b);
   if (s == V_OK && a.a != b.a) {
     int ta = refTag(a.a), tb = refTag(b.a);
@@ -1995,7 +2073,7 @@ static int convE(int t, int u, int A, int C) {
   if (jstate[id] == 1) return unres("a circular conversion");
   if (jstate[id] >= 2) return jres[id];
   jstate[id] = 1;
-  Data w; int s = whnfC(A, c, &w);
+  Data w = { 0 }; int s = whnfC(A, c, &w);
   if (s == V_OK) {
     int tag = w.cls == C_INTRO ? refTag(w.a) : -1;
     Head h = openRef(w.a);
@@ -2018,7 +2096,7 @@ static int convE(int t, int u, int A, int C) {
     }
     case UNIV: s = convT(t, u, c); break;
     default: {                                       /* a neutral expected type: compare the terms' heads */
-      Data a, b;
+      Data a = { 0 }, b = { 0 };
       if ((s = whnfC(t, c, &a)) != V_OK) break;
       if ((s = whnfC(u, c, &b)) != V_OK) break;
       if (a.a == b.a) s = V_OK;
@@ -2036,7 +2114,7 @@ static int itvModClause(int r, int C) { return substInterval(r, clauseMap(C)); }
 /* neutral comparison: the head and elimination spine structurally, argument
  * data by typed conversion; no eta on the spine head */
 static int neuSpine(int x, int y, int C) {
-  Data a, b; TRY(whnfC(x, C, &a)); TRY(whnfC(y, C, &b));
+  Data a = { 0 }, b = { 0 }; TRY(whnfC(x, C, &a)); TRY(whnfC(y, C, &b));
   if (a.a == b.a) return V_OK;
   if (a.cls != C_NEUTRAL || b.cls != C_NEUTRAL) return bad("a spine head is not neutral");
   return neu(a.a, b.a, C);
@@ -2056,7 +2134,7 @@ static int neu(int a, int b, int C) {
     switch (ta) {
     case APP: {
       if ((s = neuSpine(ha.f[0].ref, hb.f[0].ref, c)) != V_OK) break;
-      int T; Data w;
+      int T; Data w = { 0 };
       if ((s = inf(ha.f[0].ref, c, &T)) != V_OK) break;
       if ((s = expectHead(T, c, PI, &w, "a function")) != V_OK) break;
       Head hp = openRef(w.a); int dom = hp.f[0].ref; headFree(&hp);
@@ -2107,7 +2185,7 @@ static char *adup(const char *s) { char *d = aalloc(strlen(s) + 1); strcpy(d, s)
 static void arenaFree(void) { for (int i = 0; i < narena; i++) free(arena[i]); free(arena); arena = NULL; narena = caparena = 0; }
 
 enum { A_ID, A_NUM, A_U, A_LAM, A_PI, A_SIGMA, A_APP, A_PAIR, A_FST, A_SND, A_PLAM, A_PAPP, A_PATHP, A_PATH,
-       A_COMP, A_COE, A_ANN, A_FILL, A_GLUE, A_GLUEI, A_UNGLUE, A_SYS, A_I0, A_I1, A_INEG, A_IAND, A_IOR, A_EQ };
+       A_COMP, A_COE, A_TCALL, A_ANN, A_FILL, A_GLUE, A_GLUEI, A_UNGLUE, A_SYS, A_I0, A_I1, A_INEG, A_IAND, A_IOR, A_EQ };
 typedef struct Ast { int k; char *name; struct Ast **c; int n; int eps; int pos; } Ast;
 static char **tok; static int ntok, captok, pos;
 static Ast *amk(int k, const char *name, int n) {
@@ -2121,7 +2199,7 @@ static void lex(const char *s) {
     if (isalpha((unsigned char)*s) || *s == '_') { while (isalnum((unsigned char)*s) || *s == '_' || *s == '\'') s++; }
     else if (isdigit((unsigned char)*s)) { while (isdigit((unsigned char)*s)) s++; }
     else if (!strncmp(s, "->", 2) || !strncmp(s, "/\\", 2) || !strncmp(s, "\\/", 2) || !strncmp(s, ".1", 2) || !strncmp(s, ".2", 2)) s += 2;
-    else if (strchr("()[],:*\\<>@~=", *s)) s++;
+    else if (strchr("()[],:*\\<>@~=;{}", *s)) s++;
     else fail("unexpected character '%c'", *s);
     char *t = aalloc(s - b + 1); memcpy(t, b, s - b); PUSH(tok, ntok, captok, t);
   }
@@ -2133,7 +2211,8 @@ static void want(const char *s) { if (!is(s)) fail("expected '%s' at '%s' (token
 static int isIdent(const char *s) { return isalpha((unsigned char)s[0]) || s[0] == '_'; }
 static int isNum(const char *s) { if (!*s) return 0; for (; *s; s++) if (!isdigit((unsigned char)*s)) return 0; return 1; }
 static int kw(const char *s) {
-  static const char *k[] = { "U", "comp", "hcomp", "coe", "fill", "Glue", "glue", "unglue", "PathP", "Path", "postulate", "def", "eval", "assert", NULL };
+  static const char *k[] = { "U", "comp", "hcomp", "coe", "fill", "Glue", "glue", "unglue", "PathP", "Path", "postulate", "def", "eval", "assert", "apply", "applyp",
+                             "identity", "equivalence", "residual", "cutpath", "contractible", "reject", "left", "right", "by", "under", NULL };
   for (int i = 0; k[i]; i++) if (!strcmp(s, k[i])) return 1;
   return 0;
 }
@@ -2202,6 +2281,15 @@ static Ast *pAtom(void) {
 static int atomStart(void) { return is("(") || is("[") || is("U") || isNum(pk(0)) || is("~") || (isIdent(pk(0)) && !kw(pk(0))); }
 static Ast *pApp(void) {
   Ast *a;
+  if (is("apply") || is("applyp")) {                 /* apply T forward|reverse args.. [proof] r */
+    int ex = is("applyp"); pos++;
+    const char *nm = nx(); int tid = trFind(nm); if (tid < 0) fail("unknown transform %s", nm);
+    int dir = is("reverse") ? 1 : is("forward") ? 0 : -1; if (dir < 0) fail("apply %s: forward or reverse", nm); pos++;
+    int np = TR(tid)->params.n;
+    a = amk(A_TCALL, nm, np + 1 + ex); a->eps = (tid << 2) | (ex << 1) | dir;
+    for (int i = 0; i < np + 1 + ex; i++) a->c[i] = pAtom();
+    return a;
+  }
   if (is("comp") || is("hcomp") || is("fill") || is("coe")) {
     int k = (is("comp") || is("hcomp")) ? A_COMP : is("fill") ? A_FILL : A_COE; pos++;
     char *i = pDimBinder();
@@ -2308,7 +2396,7 @@ static int typeHeadOf(int t, int face, int tag, const char *what) {
   for (int k = 0; k < n; k++) {
     int T, s = inf(t, cl[k], &T);
     if (s != V_OK) { free(cl); fail("the %s does not check (%s: %s)", what, vName(s, 0), why); }
-    Data w; s = whnfC(T, cl[k], &w);
+    Data w = { 0 }; s = whnfC(T, cl[k], &w);
     if (s != V_OK) { free(cl); fail("the type of the %s is unresolved (%s)", what, why); }
     if (refTag(w.a) != tag) { free(cl); fail("the type of the %s is not a %s", what, tagName[tag]); }
     if (res >= 0 && res != w.a) { free(cl); fail("the type of the %s differs between the clauses of its face; annotate it", what); }
@@ -2431,6 +2519,13 @@ static int elab(Ast *a, Scope *s, int face) {
     else r = bUnglue(lev, A, phi, T, e, elab(a->c[2], s, face));
     free(faces); return r;
   }
+  case A_TCALL: {
+    int tid = a->eps >> 2, ex = (a->eps >> 1) & 1, dir = a->eps & 1; Tr *T = TR(tid); int np = T->params.n;
+    int *imgs = xalloc(sizeof(int) * (np + 1));
+    for (int i = 0; i < np; i++) { int sort = V(T->params.a[i])->sort; imgs[i] = sort == S_DIM ? elabItv(a->c[i], s) : sort == S_LEVEL ? elabLevel(a->c[i], s) : elab(a->c[i], s, face); }
+    int proof = ex ? elab(a->c[np], s, face) : -1, arg = elab(a->c[np + ex], s, face);
+    int r = bTcall(tid, dir, imgs, arg, proof); free(imgs); return r;
+  }
   case A_SYS: {                                      /* a system [phi_k -> t_k] */
     int *faces, n = a->n / 2; sysFaces(a, s, 1, &faces);
     int *ts = xalloc(sizeof(int) * (n + 1));
@@ -2439,6 +2534,289 @@ static int elab(Ast *a, Scope *s, int face) {
   }
   default: fail("this is not a term"); return -1;
   }
+}
+
+/* ------------------------------------------------------------------------
+ * The identity compiler (sections 39-44).  Declarations are checked, then
+ * their maps are emitted as fixed core templates (section 40 lowering), and
+ * a record is published only after the emitted bodies check at their types
+ * and the structural certificate -- the same emission, re-run from the
+ * retained inputs with the same anchored formal identities, giving the same
+ * interned references -- is confirmed.  Nothing is searched; an identity's
+ * orientation is invocation data; no automatic rewrite is registered.
+ * ---------------------------------------------------------------------- */
+typedef struct { int tid, role, slot; } CF;
+static void diagFree(Diag *D);
+/* a declaration being compiled; released if its compilation is rejected */
+static Tr *trPending;
+static void trPendingFree(void) { if (!trPending) return; free(trPending->name); ivfree(&trPending->params); diagFree(&trPending->L); diagFree(&trPending->R); trPending = NULL; }     /* formal identities anchored in (template, role, slot) */
+enum { R_CANON_L = 1, R_CANON_R, R_REAL_L, R_REAL_R, R_FWD, R_REV, R_SLOTS };
+static Tab cfTab = TAB_INIT; static Store cfS = STORE_INIT(int);
+static int cform(CF *c, int sort, const char *nm, int ty) {
+  int v[4] = { c->tid, c->role, c->slot++, sort }, var;
+  LOCK(&cfTab.m);
+  int isnew, id = tabInternLocked(&cfTab, v, 4, &isnew);
+  if (isnew) { var = newVar(sort, nm, ty, P_FORMAL, -1 - c->tid, c->role, v[2], sort); if (spushLocked(&cfS, &var) != id) die("compiler formal table out of step"); }
+  else var = *(int *)sat(&cfS, id);
+  UNLOCK(&cfTab.m);
+  return var;
+}
+/* section 40 lowering */
+static int cPath(CF *c, int B, int x, int y) { return bPath(cform(c, S_DIM, "_", -1), B, x, y); }
+static int cAt(CF *c, int B, int x, int y, int p, int r) { return bPapp(cform(c, S_DIM, "_", -1), B, x, y, p, r); }
+static int cRefl(CF *c, int a) { return bPlam(cform(c, S_DIM, "i", -1), a); }
+static int cInverse(CF *c, int B, int x, int y, int p) { int i = cform(c, S_DIM, "i", -1); return bPlam(i, cAt(c, B, x, y, p, ineg(ivar(i)))); }
+/* p : x = y, q : y = z:  <i> hcomp^j_B [(i=0) -> x, (i=1) -> q@j] (p@i) */
+static int cConcat(CF *c, int B, int x, int y, int z, int p, int q) {
+  int i = cform(c, S_DIM, "i", -1), j = cform(c, S_DIM, "j", -1);
+  int faces[2] = { flit(i, 0), flit(i, 1) }, terms[2] = { x, cAt(c, B, y, z, q, ivar(j)) };
+  return bPlam(i, bComp(j, B, forr(faces[0], faces[1]), bSys(2, faces, terms), cAt(c, B, x, y, p, ivar(i))));
+}
+static int nuMap(Diag *D, int k) {               /* the canonical substitution for nodes 0..k-1 */
+  KV *t = xalloc(sizeof(KV) * (2 * k + 1));
+  for (int j = 0; j < k; j++) { t[2 * j].k = D->x[j]; t[2 * j].v = D->a[j]; t[2 * j + 1].k = D->e[j]; t[2 * j + 1].v = D->refl[j]; }
+  int m = mapMake(t, 2 * k, NULL, 0, NULL, 0); free(t); return m;
+}
+/* canonical images a_k = t_k[nu], nu += x_k -> a_k, e_k -> refl(a_k); C = o[nu] */
+static void canon(CF *c, Diag *D) {
+  free(D->a); free(D->refl);
+  D->a = xalloc(sizeof(int) * (D->n + 1)); D->refl = xalloc(sizeof(int) * (D->n + 1));
+  for (int k = 0; k < D->n; k++) { D->a[k] = reindex(D->t[k], nuMap(D, k)); D->refl[k] = cRefl(c, D->a[k]); }
+  D->canon = reindex(D->term >= 0 ? D->term : D->out, nuMap(D, D->n));
+}
+/* R_n = Path_B(o, y) (or the terminal type); R_k = Sigma x_k. Sigma e_k. R_(k+1) */
+static void realize(CF *c, Diag *D, int B, int y) {
+  free(D->R); D->R = xalloc(sizeof(int) * (D->n + 1));
+  D->R[D->n] = D->term >= 0 ? D->term : cPath(c, B, D->out, refVar(y));
+  for (int k = D->n - 1; k >= 0; k--) D->R[k] = bBind(SIGMA, D->x[k], D->A[k], bBind(SIGMA, D->e[k], V(D->e[k])->type, D->R[k + 1]));
+}
+/* section 41: down(A, t, D, x, e, z) = coe^i D(e@~i, <j> e@(~i/\j)) z */
+static int cDown(CF *c, int A, int t, int Dt, int xk, int ek, int x, int e, int z) {
+  int i = cform(c, S_DIM, "i", -1), j = cform(c, S_DIM, "j", -1);
+  int xi = cAt(c, A, t, x, e, ineg(ivar(i)));
+  int ei = bPlam(j, cAt(c, A, t, x, e, imeet(ineg(ivar(i)), ivar(j))));
+  KV tt[2] = { { xk, xi }, { ek, ei } };
+  return bComp(i, reindex(Dt, mapMake(tt, 2, NULL, 0, NULL, 0)), F0, bSys(0, NULL, NULL), z);
+}
+static int cCollapse(CF *c, Diag *D, int r) {
+  int cur = r;
+  for (int k = 0; k < D->n; k++) {
+    int nu = nuMap(D, k);
+    int A = reindex(D->A[k], nu), Dt = reindex(D->R[k + 1], nu);
+    cur = cDown(c, A, D->a[k], Dt, D->x[k], D->e[k], bFst(cur), bFst(bSnd(cur)), bSnd(bSnd(cur)));
+  }
+  return cur;
+}
+static int cExpand(Diag *D, int q) {
+  int cur = q;
+  for (int k = D->n - 1; k >= 0; k--) cur = bPair(D->a[k], bPair(D->refl[k], cur));
+  return cur;
+}
+static void diagFree(Diag *D) { free(D->x); free(D->e); free(D->A); free(D->t); free(D->a); free(D->refl); free(D->R); memset(D, 0, sizeof *D); }
+
+/* the emission of every kind, deterministic in its retained inputs */
+static void emit(Tr *T) {
+  int tid = T->anchor;
+  CF cl = { tid, R_CANON_L, 0 }, cr = { tid, R_CANON_R, 0 }, rl = { tid, R_REAL_L, 0 }, rr = { tid, R_REAL_R, 0 };
+  CF fw = { tid, R_FWD, 0 }, rv = { tid, R_REV, 0 }, sl = { tid, R_SLOTS, 0 };
+  switch (T->kind) {
+  case T_IDENTITY: {
+    canon(&cl, &T->L); canon(&cr, &T->R);
+    T->C = T->L.canon; T->D = T->R.canon;
+    realize(&rl, &T->L, T->B, T->y); realize(&rr, &T->R, T->B, T->y);
+    T->domain = T->L.R[0]; T->codomain = T->R.R[0];
+    T->ptype = cPath(&sl, T->B, T->C, T->D);
+    T->fslot = cform(&sl, S_TERM, "r", T->domain); T->rslot = cform(&sl, S_TERM, "r", T->codomain); T->pslot = cform(&sl, S_TERM, "P", T->ptype);
+    int y = refVar(T->y), P = refVar(T->pslot);
+    /* F_P = d_R . (q |-> P^-1 . q) . c_L;  B_P = d_L . (q |-> P . q) . c_R */
+    T->gfwd = cExpand(&T->R, cConcat(&fw, T->B, T->D, T->C, y, cInverse(&fw, T->B, T->C, T->D, P), cCollapse(&fw, &T->L, refVar(T->fslot))));
+    T->grev = cExpand(&T->L, cConcat(&rv, T->B, T->C, T->D, y, P, cCollapse(&rv, &T->R, refVar(T->rslot))));
+    T->fbody = reindex(T->gfwd, map1Term(T->pslot, T->ev)); T->rbody = reindex(T->grev, map1Term(T->pslot, T->ev));
+    break;
+  }
+  case T_RESIDUAL: {
+    canon(&cl, &T->L); canon(&cr, &T->R);
+    realize(&rl, &T->L, -1, -1); realize(&rr, &T->R, -1, -1);
+    T->domain = T->L.R[0]; T->codomain = T->R.R[0];
+    T->fslot = cform(&sl, S_TERM, "r", T->domain); T->rslot = cform(&sl, S_TERM, "r", T->codomain);
+    T->fbody = cExpand(&T->R, bApp(bFst(T->ev), cCollapse(&fw, &T->L, refVar(T->fslot))));
+    T->rbody = cExpand(&T->L, bFst(bFst(bApp(bSnd(T->ev), cCollapse(&rv, &T->R, refVar(T->rslot))))));
+    break;
+  }
+  case T_EQUIVALENCE:
+    T->domain = T->X; T->codomain = T->Y;
+    T->fslot = cform(&sl, S_TERM, "a", T->X); T->rslot = cform(&sl, S_TERM, "b", T->Y);
+    T->fbody = bApp(bFst(T->ev), refVar(T->fslot));
+    T->rbody = bFst(bFst(bApp(bSnd(T->ev), refVar(T->rslot))));
+    break;
+  case T_CUT: {                                   /* Sigma z. (C = z) * (D = z)  <->  C = D */
+    int z = cform(&rl, S_TERM, "z", T->B), u = cform(&rl, S_TERM, "u", cPath(&rl, T->B, T->C, refVar(z)));
+    T->domain = bBind(SIGMA, z, T->B, bBind(SIGMA, u, V(u)->type, cPath(&rl, T->B, T->D, refVar(z))));
+    T->codomain = cPath(&rr, T->B, T->C, T->D);
+    T->fslot = cform(&sl, S_TERM, "r", T->domain); T->rslot = cform(&sl, S_TERM, "h", T->codomain);
+    int r = refVar(T->fslot), zz = bFst(r), uu = bFst(bSnd(r)), vv = bSnd(bSnd(r));
+    T->fbody = cConcat(&fw, T->B, T->C, zz, T->D, uu, cInverse(&fw, T->B, T->D, zz, vv));
+    T->rbody = bPair(T->D, bPair(refVar(T->rslot), cRefl(&rv, T->D)));
+    break;
+  }
+  case T_CONTRACTIBLE: {                          /* Sigma b. R b  <->  B, by k : (b : B) -> Contr (R b) */
+    int b = cform(&rl, S_TERM, "b", T->B);
+    T->domain = bBind(SIGMA, b, T->B, bApp(T->Rf, refVar(b)));
+    T->codomain = T->B;
+    T->fslot = cform(&sl, S_TERM, "r", T->domain); T->rslot = cform(&sl, S_TERM, "b", T->B);
+    T->fbody = bFst(refVar(T->fslot));
+    T->rbody = bPair(refVar(T->rslot), bFst(bApp(T->k, refVar(T->rslot))));
+    break;
+  }
+  }
+}
+/* A : U_l under every clause of face, the same l */
+static int levelUnder(int A, int face, const char *what) {
+  int n, *cl = faceClauses(face == F0 ? F1 : face, &n), lev = -1;
+  for (int k = 0; k < n; k++) {
+    int l, s = chkTy(A, cl[k], &l);
+    if (s != V_OK) { free(cl); fail("%s is not a type (%s: %s)", what, vName(s, 0), why); }
+    if (lev >= 0 && l != lev) { free(cl); fail("%s has different levels under the clauses of the face", what); }
+    lev = l;
+  }
+  free(cl); return lev;
+}
+static void need(int s, const char *what) { if (s != V_OK) fail("%s (%s: %s)", what, vName(s, 0), why); }
+/* parameters, as for def */
+static Scope *parseParams(IV *params) {
+  Scope *s = NULL;
+  while (is("(")) {
+    int at0 = pos; pos++; const char *xs[16]; int n = 0;
+    while (!is(":")) { if (n == 16) fail("too many parameters"); xs[n++] = nx(); }
+    pos++;
+    int sort = S_TERM, ty = -1;
+    if (is("I") && !strcmp(pk(1), ")")) { sort = S_DIM; pos++; }
+    else if (is("Level") && !strcmp(pk(1), ")")) { sort = S_LEVEL; pos++; }
+    else { ty = elab(pTerm(), s, F1); int l; need(chkTy(ty, F1, &l), "a parameter type does not check"); }
+    want(")");
+    for (int i = 0; i < n; i++) {
+      int v = newVar(sort, xs[i], ty, P_SOURCE, at0, i, 0, 0);
+      Scope *s2 = aalloc(sizeof *s2); s2->name = xs[i]; s2->var = v; s2->up = s; s = s2;
+      ivp(params, v);
+    }
+  }
+  return s;
+}
+/* { x e : A = t ; ... } then the output o : B, or the terminal type */
+static void parseDiagram(Diag *D, Scope *s, int face, int B) {
+  want("{"); int cap = 0;
+  while (!is("}")) {
+    const char *xn = nx(), *en = nx(); want(":");
+    Ast *Aa = pTerm(); want("="); Ast *ta = pTerm();
+    int A = elab(Aa, s, face); levelUnder(A, face, "a node type");
+    int t = elab(ta, s, face);
+    int st = V_OK, n, *cl = faceClauses(face == F0 ? F1 : face, &n);
+    for (int k = 0; k < n && st == V_OK; k++) st = chk(t, A, cl[k]);
+    free(cl); need(st, "a node's defining term does not have the node's type");
+    int x = newVar(S_TERM, xn, A, P_SOURCE, pos, 0, 0, 0);
+    Scope *s1 = aalloc(sizeof *s1); s1->name = xn; s1->var = x; s1->up = s; s = s1;
+    int dd = newVar(S_DIM, "_", -1, P_SOURCE, pos, 1, 0, 0);
+    int e = newVar(S_TERM, en, bPath(dd, A, t, refVar(x)), P_SOURCE, pos, 2, 0, 0);
+    Scope *s2 = aalloc(sizeof *s2); s2->name = en; s2->var = e; s2->up = s; s = s2;
+    if (D->n == cap) { cap = cap ? 2 * cap : 4; D->x = xgrow(D->x, sizeof(int) * cap); D->e = xgrow(D->e, sizeof(int) * cap); D->A = xgrow(D->A, sizeof(int) * cap); D->t = xgrow(D->t, sizeof(int) * cap); }
+    D->x[D->n] = x; D->e[D->n] = e; D->A[D->n] = A; D->t[D->n] = t; D->n++;
+    if (is(";")) pos++;
+  }
+  want("}");
+  int o = elab(pTerm(), s, face);
+  if (B >= 0) {
+    int st = V_OK, n, *cl = faceClauses(face == F0 ? F1 : face, &n);
+    for (int k = 0; k < n && st == V_OK; k++) st = chk(o, B, cl[k]);
+    free(cl); need(st, "a diagram's output does not have the result type");
+    D->out = o; D->term = -1;
+  } else { levelUnder(o, face, "a terminal type"); D->term = o; D->out = -1; }
+}
+static int chkUnder(int t, int A, int face) {
+  int st = V_OK, n, *cl = faceClauses(face == F0 ? F1 : face, &n);
+  for (int k = 0; k < n && st == V_OK; k++) { int s = chk(t, A, cl[k]); if (s != V_OK) st = s; }
+  free(cl); return st;
+}
+static void declTransform(void) {
+  const char *kw_ = nx(); const char *name = nx();
+  static Tr T; trPendingFree(); memset(&T, 0, sizeof T); trPending = &T; T.name = xdup(name); T.anchor = pos; T.L.term = T.R.term = -1; T.y = T.pslot = -1; T.gfwd = T.grev = -1;
+  T.kind = !strcmp(kw_, "identity") ? T_IDENTITY : !strcmp(kw_, "equivalence") ? T_EQUIVALENCE : !strcmp(kw_, "residual") ? T_RESIDUAL : !strcmp(kw_, "cutpath") ? T_CUT : T_CONTRACTIBLE;
+  if (trFind(name) >= 0) fail("transform %s is already declared", name);
+  Scope *s = parseParams(&T.params);
+  T.face = F1;
+  if (T.kind == T_IDENTITY) { want(":"); T.B = elab(pTerm(), s, F1); }
+  if (is("under")) { pos++; T.face = elabFace(parseFace(), s); }
+  int face = T.face;
+  switch (T.kind) {
+  case T_IDENTITY: {
+    T.lev = levelUnder(T.B, face, "the result type");
+    want("left"); parseDiagram(&T.L, s, face, T.B);
+    want("right"); parseDiagram(&T.R, s, face, T.B);
+    want("by"); T.ev = elab(pTerm(), s, face);
+    T.y = newVar(S_TERM, "y", T.B, P_SOURCE, pos, 3, 0, 0);
+    break;
+  }
+  case T_RESIDUAL:
+    want("left"); parseDiagram(&T.L, s, face, -1);
+    want("right"); parseDiagram(&T.R, s, face, -1);
+    want("by"); T.ev = elab(pTerm(), s, face);
+    break;
+  case T_EQUIVALENCE:
+    T.X = elab(pAtom(), s, face); T.Y = elab(pAtom(), s, face); want("by"); T.ev = elab(pTerm(), s, face);
+    T.lev = levelUnder(T.X, face, "the domain");
+    if (levelUnder(T.Y, face, "the codomain") != T.lev) fail("the two sides of an equivalence have different levels");
+    need(chkUnder(T.ev, equivType(T.lev, T.X, T.Y), face), "the evidence is not an equivalence");
+    break;
+  case T_CUT:
+    T.B = elab(pAtom(), s, face); T.C = elab(pAtom(), s, face); T.D = elab(pAtom(), s, face);
+    T.lev = levelUnder(T.B, face, "the output type");
+    need(chkUnder(T.C, T.B, face), "the left output is not in the output type");
+    need(chkUnder(T.D, T.B, face), "the right output is not in the output type");
+    break;
+  case T_CONTRACTIBLE: {
+    T.B = elab(pAtom(), s, face); T.Rf = elab(pAtom(), s, face); want("by"); T.k = elab(pTerm(), s, face);
+    T.lev = levelUnder(T.B, face, "the base");
+    int dc = findDef("Contr"); if (dc < 0) fail("core: Contr is not defined");
+    CF tc = { T.anchor, R_SLOTS + 1, 0 };
+    int b = cform(&tc, S_TERM, "b", T.B), w = cform(&tc, S_TERM, "w", T.B);
+    need(chkUnder(T.Rf, bBind(PI, w, T.B, bUniv(T.lev)), face), "the fibre family is not a family of types");
+    int cargs[2] = { T.lev, bApp(T.Rf, refVar(b)) };
+    need(chkUnder(T.k, bBind(PI, b, T.B, globalView(dc, cargs)), face), "the contraction is not a contraction of every fibre");
+    break;
+  }
+  }
+  emit(&T);
+  if (T.kind == T_IDENTITY) need(chkUnder(T.ev, T.ptype, face), "the evidence is not a path between the two canonical outputs");
+  if (T.kind == T_RESIDUAL) {
+    int l = levelUnder(T.L.canon, face, "the left terminal type");
+    if (levelUnder(T.R.canon, face, "the right terminal type") != l) fail("the terminal types have different levels");
+    need(chkUnder(T.ev, equivType(l, T.L.canon, T.R.canon), face), "the evidence is not an equivalence of the canonical terminal types");
+  }
+  levelUnder(T.domain, face, "the generated domain"); levelUnder(T.codomain, face, "the generated codomain");
+  need(chkUnder(T.fbody, T.codomain, face), "the generated forward map does not check");
+  need(chkUnder(T.rbody, T.domain, face), "the generated reverse map does not check");
+  if (T.kind == T_IDENTITY) {
+    need(chkUnder(T.gfwd, T.codomain, face), "the generic forward template does not check");
+    need(chkUnder(T.grev, T.domain, face), "the generic reverse template does not check");
+  }
+  /* the structural certificate: re-emit from the retained inputs */
+  Tr U = T; memset(&U.L, 0, sizeof U.L); memset(&U.R, 0, sizeof U.R);
+  if (T.kind == T_IDENTITY || T.kind == T_RESIDUAL) {
+    Diag *src[2] = { &T.L, &T.R }, *dst[2] = { &U.L, &U.R };
+    for (int q = 0; q < 2; q++) {
+      int n = src[q]->n; dst[q]->n = n; dst[q]->out = src[q]->out; dst[q]->term = src[q]->term;
+      dst[q]->x = xalloc(sizeof(int) * (n + 1)); dst[q]->e = xalloc(sizeof(int) * (n + 1)); dst[q]->A = xalloc(sizeof(int) * (n + 1)); dst[q]->t = xalloc(sizeof(int) * (n + 1));
+      if (n) { memcpy(dst[q]->x, src[q]->x, sizeof(int) * n); memcpy(dst[q]->e, src[q]->e, sizeof(int) * n); memcpy(dst[q]->A, src[q]->A, sizeof(int) * n); memcpy(dst[q]->t, src[q]->t, sizeof(int) * n); }
+    }
+  }
+  emit(&U);
+  int certified = U.domain == T.domain && U.codomain == T.codomain && U.fslot == T.fslot && U.rslot == T.rslot && U.fbody == T.fbody && U.rbody == T.rbody && U.gfwd == T.gfwd && U.grev == T.grev && U.pslot == T.pslot;
+  diagFree(&U.L); diagFree(&U.R);
+  if (!certified) fail("the structural certificate does not reproduce the registered templates");
+  if (T.kind == T_IDENTITY) ivp(&T.params, T.y);
+  spush(&trS, &T); trPending = NULL;
+  printf("%s %s: compiled, checked and certified (%s", kw_, name, trKindName[T.kind]);
+  if (T.kind == T_IDENTITY || T.kind == T_RESIDUAL) printf("; left %d singleton block%s, right %d", T.L.n, T.L.n == 1 ? "" : "s", T.R.n);
+  printf(")\n");
 }
 
 /* ------------------------------------------------------------------------
@@ -2469,7 +2847,7 @@ static void requireSorts(const char *name, int d, const int *sorts, int n) {
   if (!ok) fail("core: %s must take its parameters in the kernel's order", name);
 }
 static void skipToDecl(void) {
-  while (pos < ntok && !is("postulate") && !is("def") && !is("eval") && !is("assert")) pos++;
+  while (pos < ntok && !is("postulate") && !is("def") && !is("eval") && !is("assert") && !is("identity") && !is("equivalence") && !is("residual") && !is("cutpath") && !is("contractible") && !is("reject")) pos++;
 }
 static void decl(void) {
   if (is("postulate")) {
@@ -2542,12 +2920,25 @@ static void decl(void) {
     nfReset(); CUR = ADMIT; cacheFree(ec);
     return;
   }
+  if (is("identity") || is("equivalence") || is("residual") || is("cutpath") || is("contractible")) {
+    long a0[NEV], a1[NEV]; evSnap(a0); declTransform(); evSnap(a1); evPrint("compilation and validation", a0, a1); return;
+  }
+  if (is("reject")) {                                /* a declaration that must not be published */
+    pos++; int start = pos, before = scount(&trS) + scount(&defsS); volatile int rejected = 0;
+    jmp_buf jb; recoverJmp = &jb;
+    if (!setjmp(jb)) decl(); else { rejected = 1; trPendingFree(); skipToDecl(); }
+    recoverJmp = NULL;
+    int pass = rejected && scount(&trS) + scount(&defsS) == before;
+    printf("reject (tokens %d-%d): %s (%s)\n", start, pos - 1, pass ? "PASS" : "FAIL", rejected ? lastError : "it was accepted");
+    if (!pass) failures++;
+    return;
+  }
   if (is("assert")) {
     pos++; const char *kind = nx();
-    int conv = !strcmp(kind, "equal") || !strcmp(kind, "unequal") || !strcmp(kind, "undecided");
-    int want_ = !strcmp(kind, "valid") || !strcmp(kind, "equal") ? V_OK : !strcmp(kind, "invalid") || !strcmp(kind, "unequal") ? V_BAD : V_UNRES;
+    volatile int conv = !strcmp(kind, "equal") || !strcmp(kind, "unequal") || !strcmp(kind, "undecided");
+    volatile int want_ = !strcmp(kind, "valid") || !strcmp(kind, "equal") ? V_OK : !strcmp(kind, "invalid") || !strcmp(kind, "unequal") ? V_BAD : V_UNRES;
     if (!conv && strcmp(kind, "valid") && strcmp(kind, "invalid") && strcmp(kind, "unresolved")) fail("unknown assertion %s", kind);
-    int start = pos, got, typingFailed = 0;
+    int start = pos; volatile int got = V_OK, typingFailed = 0;
     jmp_buf jb; recoverJmp = &jb;
     if (!setjmp(jb)) {
       if (!conv) {
@@ -2721,9 +3112,10 @@ static void teardown(void) {
   n = scount(&varsS); for (int i = 0; i < n; i++) free(V(i)->name); sfree(&varsS);
   n = scount(&fvS); for (int i = 0; i < n; i++) { FV *f = sat(&fvS, i); ivfree(&f->t); ivfree(&f->d); ivfree(&f->l); } sfree(&fvS); free(fvIdx);
   n = scount(&defsS); for (int i = 0; i < n; i++) { free(DEF(i)->name); ivfree(&DEF(i)->params); } sfree(&defsS);
-  Tab *tabs[] = { &itab, &ftab, &ltab, &mtab, &rtab, &otab, &btab, &formalTab, &ctab, &tmtab, &dstab, &jtab, &cvtab };
+  Tab *tabs[] = { &itab, &ftab, &ltab, &mtab, &rtab, &otab, &btab, &formalTab, &ctab, &tmtab, &dstab, &jtab, &cvtab, &cfTab };
   for (size_t t = 0; t < sizeof tabs / sizeof *tabs; t++) tabFree(tabs[t]);
-  sfree(&binstS); sfree(&formalS); sfree(&cvS); sfree(&opsS);
+  sfree(&binstS); sfree(&formalS); sfree(&cvS); sfree(&opsS); sfree(&cfS);
+  n = scount(&trS); for (int i = 0; i < n; i++) { Tr *T = TR(i); free(T->name); ivfree(&T->params); diagFree(&T->L); diagFree(&T->R); } sfree(&trS);
   memoFree(&reidx); free(jstate); free(jres);
   for (int i = 0; i < nposts; i++) free(posts[i].name);
   free(posts); free(tok); arenaFree();
