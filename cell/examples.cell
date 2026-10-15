@@ -32,3 +32,13 @@ eval coe <i> ((y : A) * P y) (a , x)
 eval coe <i> (Path A a a) (refl 0 A a)
 -- the identity agent's forward body
 eval agentForward 0 A a b p c (compose 0 A a b c p q)
+-- section 21: the fibre-augmentation round trip at its ends, and the
+-- associativity transport of a realization
+postulate m : A -> A -> A
+postulate al : Path A (m (m a b) c) (m a (m b c))
+postulate y : A
+postulate t : Path A (m (m a b) c) y
+postulate t2 : Path A (m a b) y
+eval (augmentRound 0 A A (m a) (y , (b , t2))) @ 0
+eval (augmentRound 0 A A (m a) (y , (b , t2))) @ 1
+eval assocForward 0 A m a b c y al (m a b , (<i> m a b , t))

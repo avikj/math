@@ -61,3 +61,47 @@ def cut (l : Level) (A : U l) (x y z : A) (u : Path A x y) (v : Path A z y) : Pa
   compose l A x y z u (reverse l A z y v)
 def difference (l : Level) (A : U l) (x y : A) (p h : Path A x y) : Path A y y =
   compose l A y x y (reverse l A x y p) h
+
+-- Section 21: the realization replacements, as checked definitions.
+-- The fibre-augmented representation of f : A -> B: a |-> (f a , a , refl),
+-- (b , a , p) |-> a, and the homotopy i |-> (p i , a , <j> p (i /\ j)) from
+-- the round trip to the original point.
+def augment (l : Level) (A B : U l) (f : A -> B) (a : A) : (b : B) * ((x : A) * Path B (f x) b) =
+  (f a , (a , <i> f a))
+def forget (l : Level) (A B : U l) (f : A -> B) (t : (b : B) * ((x : A) * Path B (f x) b)) : A = t.2.1
+def augmentRound (l : Level) (A B : U l) (f : A -> B) (t : (b : B) * ((x : A) * Path B (f x) b)) :
+    Path ((b : B) * ((x : A) * Path B (f x) b)) (augment l A B f (forget l A B f t)) t =
+  <i> (t.2.2 @ i , (t.2.1 , <j> t.2.2 @ (i /\ j)))
+
+-- Associativity alpha : (a*b)*c = a*(b*c) acting on realizations:
+-- forward (u , s , t) = (b*c , refl , alpha^-1 . ap_(z -> z*c) s . t)
+-- reverse (v , s , t) = (a*b , refl , alpha . ap_(z -> a*z) s . t)
+def assocForward (l : Level) (A : U l) (m : A -> A -> A) (a b c y : A)
+    (alpha : Path A (m (m a b) c) (m a (m b c)))
+    (x : (u : A) * ((s : Path A (m a b) u) * Path A (m u c) y)) :
+    (v : A) * ((s : Path A (m b c) v) * Path A (m a v) y) =
+  (m b c , (<i> m b c ,
+    compose l A (m a (m b c)) (m (m a b) c) y (reverse l A (m (m a b) c) (m a (m b c)) alpha)
+      (compose l A (m (m a b) c) (m x.1 c) y (ap l A A (\(z : A) -> m z c) (m a b) x.1 x.2.1) x.2.2)))
+def assocReverse (l : Level) (A : U l) (m : A -> A -> A) (a b c y : A)
+    (alpha : Path A (m (m a b) c) (m a (m b c)))
+    (x : (v : A) * ((s : Path A (m b c) v) * Path A (m a v) y)) :
+    (u : A) * ((s : Path A (m a b) u) * Path A (m u c) y) =
+  (m a b , (<i> m a b ,
+    compose l A (m (m a b) c) (m a (m b c)) y alpha
+      (compose l A (m a (m b c)) (m a x.1) y (ap l A A (\(z : A) -> m a z) (m b c) x.1 x.2.1) x.2.2)))
+
+-- Sigma z. (C = z) * (D = z) ~ (C = D): (z , u , v) |-> u . v^-1, h |-> (D , h , refl)
+def meetForward (l : Level) (A : U l) (C D : A) (x : (z : A) * (Path A C z * Path A D z)) : Path A C D =
+  compose l A C x.1 D x.2.1 (reverse l A D x.1 x.2.2)
+def meetReverse (l : Level) (A : U l) (C D : A) (h : Path A C D) : (z : A) * (Path A C z * Path A D z) =
+  (D , (h , <i> D))
+
+-- The action of a given identity p : C_L = C_R between two realizations:
+-- F_p = c_R^-1 . (q |-> p^-1 . q) . c_L, its inverse c_L^-1 . (q |-> p . q) . c_R
+def Fp (l : Level) (A RL RR : U l) (CL CR y : A) (p : Path A CL CR)
+    (cL : RL -> Path A CL y) (cRinv : Path A CR y -> RR) (r : RL) : RR =
+  cRinv (compose l A CR CL y (reverse l A CL CR p) (cL r))
+def FpInverse (l : Level) (A RL RR : U l) (CL CR y : A) (p : Path A CL CR)
+    (cR : RR -> Path A CR y) (cLinv : Path A CL y -> RL) (r : RR) : RL =
+  cLinv (compose l A CL CR y p (cR r))

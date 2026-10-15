@@ -128,7 +128,9 @@ enum { OB_NODE, OB_VAR, OB_REF, OB_SET, OB_CLAUSE, OB_SPLIT };
 typedef struct Ob { int kind, a, b; Clause *ca, *cb; int *ra, *rb, nr; const Node *na, *nb; char sk; struct Ob *next; } Ob;
 static Ob *ob(int kind, int a, int b, Ob *next) { Ob *o = palloc(sizeof *o); o->kind = kind; o->a = a; o->b = b; o->next = next; return o; }
 static char why[512];
-static int failf(const char *m) { snprintf(why, sizeof why, "%s", m); return 0; }
+static int bestDepth = -1;
+/* the reported mismatch is the one reached by the deepest partial bijection */
+static int failf(const char *m) { if (ntrail >= bestDepth) { bestDepth = ntrail; snprintf(why, sizeof why, "%s (after %d matched identities)", m, ntrail); } return 0; }
 static int solve(Ob *o);
 /* remaining-index arrays without element k */
 static int *without(const int *r, int n, int k) { int *x = palloc(sizeof(int) * (n + 1)); int m = 0; for (int i = 0; i < n; i++) if (i != k) x[m++] = r[i]; return x; }
@@ -245,7 +247,7 @@ int main(int argc, char **argv) {
     L = &a.e[k]; R = &b.e[k];
     if (L->nev != R->nev || memcmp(L->ev, R->ev, sizeof(long) * L->nev)) { printf("cellcmp: eval %d: the event vectors differ\n", k); return 1; }
     nL2R = negs(L->nn); nR2L = negs(R->nn); vL2R = negs(L->nv); vR2L = negs(R->nv); rL2R = negs(L->maxref); rR2L = negs(R->maxref);
-    ntrail = 0; why[0] = 0;
+    ntrail = 0; why[0] = 0; bestDepth = -1;
     int ok = solve(ob(OB_NODE, L->root, R->root, NULL));
     poolFree(0);
     free(nL2R); free(nR2L); free(vL2R); free(vR2L); free(rL2R); free(rR2L);
