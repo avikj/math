@@ -133,6 +133,8 @@ void eval_init(void) {
 /* a new definition environment retires every observation: the memo, the
  * results and the pending pairs; the scheduler configuration survives */
 void eval_reset(void) {
+    pthread_mutex_lock(&E.q_mu); size_t pending = E.outstanding; pthread_mutex_unlock(&E.q_mu);
+    require(pending == 0, "eval_reset with outstanding evaluator work (the session boundary requires quiescence)");
     size_t w = E.nworkers; SchedPolicy p = E.policy, pp = E.pair_policy; uint64_t rng = E.rng; int np = E.net.policy; uint64_t nrng = E.net.rng;
     eval_free(); eval_init();
     E.policy = p; E.pair_policy = pp; E.rng = rng; E.net.policy = np; E.net.rng = nrng;

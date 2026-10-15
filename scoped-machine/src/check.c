@@ -43,6 +43,7 @@ static struct {
     uint64_t ntids;
     size_t budget;
     uint64_t attempt;       /* §59.4: a changed budget or a retry begins a new attempt */
+    size_t clients;         /* top-level requests in progress (atomic): the session boundary requires zero */
 } K;
 
 /* §59.4: thread identities are session-qualified; the generation allocator
@@ -291,13 +292,14 @@ static void assume_symbol(size_t c) {
  * taken as an assumption to break a wait cycle; the verdict is then not
  * final: top_settled waits for those validations and asks the caller to
  * recompute (the recomputation finds committed or withdrawn claims). */
-static void top_enter(void) { if (tl_depth++ == 0) { tl_steps = 0; tl_budget = __atomic_load_n(&K.budget, __ATOMIC_ACQUIRE); frame_push(0); } }
+static void top_enter(void) { if (tl_depth++ == 0) { __atomic_add_fetch(&K.clients, 1, __ATOMIC_ACQ_REL); tl_steps = 0; tl_budget = __atomic_load_n(&K.budget, __ATOMIC_ACQUIRE); frame_push(0); } }
 static void top_leave(void) {
     if (--tl_depth == 0) {
         Frame *f = top_frame(); require(f && f->claim == 0, "root frame mismatch");
         tl_pending.n = 0; words_append(&tl_pending, f->deps.w, f->deps.n);
         words_free(&f->deps); tl_frames.len--;
         if (tl_frames.len == 0) vec_free(&tl_frames);   /* thread-local storage is released at the outermost exit */
+        __atomic_sub_fetch(&K.clients, 1, __ATOMIC_ACQ_REL);
     }
 }
 static bool top_settled(void) {
@@ -640,8 +642,8 @@ static CheckStatus glue_data_ok(ContextId G, FaceId C, RefId A, FaceId alpha, Re
     return st;
 }
 
-/* an annotation is validated when present; LEVEL_NONE means the source
- * supplied none and the inferred level stands (migration, §59.5) */
+/* §59.1: every required type position carries its level; a missing or
+ * differing annotation is INVALID */
 static bool level_ok1(uint64_t levels, uint64_t inferred) { return levels_first(levels) == inferred; }
 static bool level_ok2(uint64_t levels, uint64_t i, uint64_t j) { return levels_first(levels) == i && levels_second(levels) == j; }
 static const char *level_why(uint64_t levels, const char *differs) { return levels == LEVELS_NONE || levels_first(levels) == LEVEL_NONE ? "missing universe annotation at a required type position (§59.1)" : differs; }
@@ -905,13 +907,63 @@ static CheckStatus infer_clause(ContextId G, FaceId C, RefId t, RefId *type, con
     return CK_VALID;
 }
 
-/* §50.2–4, §51.4: a scope argument S against the expected contextual
+/* §50.1–4: the supplied scope's own validity, in its own ambient-plus-local
+ * context under its own guards: every term local's declaration forms (in the
+ * supplied prefix, under the projected clause conjoined with that local's
+ * required face) at its required stated level; under C ∧ supplied guard the
+ * result type forms at its stated level and the body has that type. The
+ * metadata requirements hold whatever the guards; the typing judgments are
+ * vacuous where the guards are false. */
+static CheckStatus check_scope_own(ContextId G, FaceId C, ScopeId S, const char **reason) {
+    size_t n = scope_arity(S);
+    uint64_t *ids = malloc((n ? n : 1) * sizeof(uint64_t)); Val *args = malloc((n ? n : 1) * sizeof(Val));
+    require(ids && args, "out of memory");
+    (void)open_scope_fresh(S, 0x52, ids);
+    ContextId Gx = G;
+    CheckStatus st = CK_VALID;
+    for (size_t k = 0; k < n && st == CK_VALID; k++) {
+        LocalDecl d = scope_local(S, k);
+        if (d.sort == S_DIM) { args[k].sort = VS_INTERVAL; args[k].id = iv_var((DimVarId)ids[k]); Gx = extend_dim(Gx, (DimVarId)ids[k]); continue; }
+        args[k].sort = VS_REF; args[k].id = ref_var((TermVarId)ids[k]);
+        RefId sty; FaceId sreq; uint64_t slv;
+        scope_local_at(S, k, args, &sty, &sreq, &slv);
+        if (!sty) { *reason = "scope local has no declared type"; st = CK_INVALID; break; }
+        if (slv == LEVEL_NONE) { *reason = "missing universe annotation on a scope local (§59.1)"; st = CK_INVALID; break; }
+        FaceId *cs = NULL; size_t nc = clauses_of(fc_meet(C, sreq), &cs);
+        for (size_t c = 0; c < nc && st == CK_VALID; c++) {
+            uint64_t l; st = check_is_type(Gx, cs[c], sty, &l, reason);
+            if (st == CK_INVALID) { *reason = "scope local type is not a type"; break; }
+            if (st == CK_VALID && l != slv) { *reason = "scope local level annotation differs from its formation level"; st = CK_INVALID; }
+        }
+        free(cs);
+        Gx = extend_term(Gx, (TermVarId)ids[k], sty);
+    }
+    if (st == CK_VALID) {
+        TypedPartial sup = apply_scope(S, n, args);
+        if (sup.body.sort == VS_REF) {
+            if (!sup.type) { *reason = "scope has no declared result type"; st = CK_INVALID; }
+            else if (sup.level == LEVEL_NONE) { *reason = "missing universe annotation on a scope result (§59.1)"; st = CK_INVALID; }
+            FaceId *cs = NULL; size_t nc = st == CK_VALID ? clauses_of(fc_meet(C, sup.guard), &cs) : 0;
+            for (size_t c = 0; c < nc && st == CK_VALID; c++) {
+                uint64_t l; st = check_is_type(Gx, cs[c], sup.type, &l, reason);
+                if (st == CK_INVALID) { *reason = "scope result type is not a type"; break; }
+                if (st != CK_VALID) break;
+                if (sup.level != l) { *reason = "scope result level annotation differs from its formation level"; st = CK_INVALID; break; }
+                st = check_clause(Gx, cs[c], sup.body.id, sup.type, reason);
+            }
+            free(cs);
+        }
+    }
+    free(ids); free(args);
+    return st;
+}
+
+/* §51.4: a (valid) scope argument S supplied at the expected contextual
  * signature Sig (locals = expected telescope, body = expected result type,
  * level, guard). Both are opened at one common fresh telescope (the
- * signature's); the supplied declarations are compared by conversion, the
- * expected guard must entail the supplied one under the source clause, the
- * supplied result type must form at its stated level and convert to the
- * expected one, and the body is checked at it under the supplied guard. A
+ * signature's); the supplied local declarations must convert to the expected
+ * ones, the expected guard must entail the supplied one under the source
+ * clause, and the result types must convert under the expected guard. A
  * face / interval scope is total syntax: arity, sorts and guard only. */
 static CheckStatus check_scope_arg(ContextId G, FaceId C, ScopeId S, ScopeId Sig, const char **reason) {
     size_t n = scope_arity(S);
@@ -919,23 +971,18 @@ static CheckStatus check_scope_arg(ContextId G, FaceId C, ScopeId S, ScopeId Sig
     for (size_t k = 0; k < n; k++) if (scope_local(S, k).sort != scope_local(Sig, k).sort) { *reason = "scope argument telescope sorts differ from the signature"; return CK_INVALID; }
     Val sb = scope_body(S), gb = scope_body(Sig);
     if (sb.sort != gb.sort) { *reason = "scope argument body sort differs from the signature"; return CK_INVALID; }
+    CheckStatus st = check_scope_own(G, C, S, reason);
+    if (st != CK_VALID) return st;
     uint64_t *ids = malloc((n ? n : 1) * sizeof(uint64_t)); Val *args = malloc((n ? n : 1) * sizeof(Val));
     require(ids && args, "out of memory");
     TypedPartial sig = open_scope_fresh(Sig, 0x51, ids);
     ContextId Gx = G;
-    CheckStatus st = CK_VALID;
     for (size_t k = 0; k < n && st == CK_VALID; k++) {
         LocalDecl d = scope_local(Sig, k);
         if (d.sort == S_DIM) { args[k].sort = VS_INTERVAL; args[k].id = iv_var((DimVarId)ids[k]); Gx = extend_dim(Gx, (DimVarId)ids[k]); continue; }
         args[k].sort = VS_REF; args[k].id = ref_var((TermVarId)ids[k]);
         RefId sty, ety = term_var_type((TermVarId)ids[k]); FaceId sreq; uint64_t slv;
         scope_local_at(S, k, args, &sty, &sreq, &slv);
-        if (!sty) { *reason = "scope argument local has no declared type"; st = CK_INVALID; break; }
-        /* the supplied declaration forms (in the prefix) at its stated level and converts to the expected one */
-        uint64_t l; st = check_is_type(Gx, C, sty, &l, reason);
-        if (st == CK_INVALID) { *reason = "scope argument local type is not a type"; break; }
-        if (st != CK_VALID) break;
-        if (slv != LEVEL_NONE && slv != l) { *reason = "scope argument local level differs from its formation level"; st = CK_INVALID; break; }
         ConvStatus cv = conv_type_clause(Gx, C, sty, ety);
         if (cv == CV_UNEQUAL) { *reason = "scope argument local type differs from the signature"; st = CK_INVALID; break; }
         if (cv == CV_UNRESOLVED) { *reason = "unresolved: scope argument local type conversion"; st = CK_UNRESOLVED; break; }
@@ -946,22 +993,13 @@ static CheckStatus check_scope_arg(ContextId G, FaceId C, ScopeId S, ScopeId Sig
         /* availability: expected guard ⊢ supplied guard under the source clause */
         if (!fc_entails(fc_meet(C, sig.guard), sup.guard)) { *reason = "scope argument is not available where the signature requires it"; st = CK_INVALID; }
         else if (sb.sort == VS_REF) {
-            if (!sup.type) { *reason = "scope argument has no declared result type"; st = CK_INVALID; }
-            FaceId *cs = NULL; size_t nc = st == CK_VALID ? clauses_of(fc_meet(C, sig.guard), &cs) : 0;
+            FaceId *cs = NULL; size_t nc = clauses_of(fc_meet(C, sig.guard), &cs);
             for (size_t c = 0; c < nc && st == CK_VALID; c++) {
-                uint64_t l; st = check_is_type(Gx, cs[c], sup.type, &l, reason);
-                if (st == CK_INVALID) { *reason = "scope argument result type is not a type"; break; }
-                if (st != CK_VALID) break;
-                if (sup.level != l) { *reason = "scope argument result level differs from its formation level"; st = CK_INVALID; break; }
                 ConvStatus cv = conv_type_clause(Gx, cs[c], sup.type, sig.body.id);
                 if (cv == CV_UNEQUAL) { *reason = "scope argument result type differs from the signature"; st = CK_INVALID; break; }
                 if (cv == CV_UNRESOLVED) { *reason = "unresolved: scope argument result type conversion"; st = CK_UNRESOLVED; break; }
             }
             free(cs);
-            /* the body at the supplied result type under the supplied guard (vacuous where that is false) */
-            FaceId *bs = NULL; size_t nb = st == CK_VALID ? clauses_of(fc_meet(C, sup.guard), &bs) : 0;
-            for (size_t c = 0; c < nb && st == CK_VALID; c++) st = check_clause(Gx, bs[c], sup.body.id, sup.type, reason);
-            free(bs);
         }
     }
     free(ids); free(args);
@@ -990,7 +1028,10 @@ static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **r
         require(have, "template boundary: a retained slot has no image");
         if (sig[k].sort == PS_REF) {
             if (!sig[k].type) continue;                     /* an undeclared parameter (none in the library) */
-            st = check_clause(G, C, image, sig[k].type, reason);
+            /* a partial parameter or local is checked on its declared guarded use */
+            FaceId *cs = NULL; size_t nc = clauses_of(fc_meet(C, sig[k].guard), &cs);
+            for (size_t c = 0; c < nc && st == CK_VALID; c++) st = check_clause(G, cs[c], image, sig[k].type, reason);
+            free(cs);
             if (st == CK_INVALID) { char buf[256]; snprintf(buf, sizeof buf, "template parameter image is not of its declared type (%s slot %zu: %s)", tdef_name(tnode_def(ref_tnode(t))), sig[k].slot, *reason); *reason = diag_intern(buf); }
         } else if (sig[k].sort == PS_SCOPE) {
             if (!sig[k].sig) continue;
@@ -1504,12 +1545,17 @@ CheckStatus check_admission(const char **reason) {
 }
 
 /* §57 R1 / §59.4: a new candidate environment. The previous environment's
- * verdicts, claims and observations are retired (a fresh checker session and
- * a reset evaluator); registration is open again until the next admission.
- * Not callable while an admission attempt is running on another thread. */
+ * verdicts, claims, diagnostics and observations are retired (a fresh checker
+ * session and a reset evaluator); registration is open again until the next
+ * admission. This is a closed session boundary: every checker, compiler and
+ * observation client must have returned and evaluator work must have
+ * drained; the caller stops admitting new clients while crossing it. The
+ * precondition is enforced here (no top-level request in progress, no
+ * admission attempt running) and in eval_reset (no outstanding work). */
 void check_open_environment(void) {
     pthread_mutex_lock(&K.mu);
     require(!ADM.running, "check_open_environment during a running admission attempt");
+    require(__atomic_load_n(&K.clients, __ATOMIC_ACQUIRE) == 0, "check_open_environment while a checker client is in progress");
     size_t budget = K.budget;
     pthread_mutex_unlock(&K.mu);
     check_free(); check_init();

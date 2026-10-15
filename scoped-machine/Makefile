@@ -5,7 +5,7 @@ LDFLAGS ?= -fsanitize=address,undefined -pthread
 SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -59,7 +59,12 @@ build/review-ae756a1: $(OBJ) tests/review_ae756a1.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 
+build/review-0f787a3: $(OBJ) tests/review_0f787a3.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
 REVIEW_AE_MODES := signature scope annotations missing-level environment retry partial-context publication canon publication-concurrent diagnostics-concurrent
+REVIEW_0F_MODES := scope-level scope-locals call-boundary binder-boundary machine-restart missing-level
 
 test: all
 	./build/check
@@ -85,8 +90,9 @@ test: all
 	./build/review-claim-wait
 	./build/review-checker-lifecycle
 	for m in $(REVIEW_AE_MODES); do ./build/review-ae756a1 $$m || exit 1; done
+	for m in $(REVIEW_0F_MODES); do ./build/review-0f787a3 $$m || exit 1; done
 
-TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1
+TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
@@ -106,6 +112,7 @@ tsan:
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_followup call
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_checker_lifecycle
 	for m in $(REVIEW_AE_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_ae756a1 $$m || exit 1; done
+	for m in $(REVIEW_0F_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_0f787a3 $$m || exit 1; done
 	$(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -o build/tsan/review_claim_wait tests/review_claim_wait.c $(filter-out build/tsan/check.o,$(TSAN_CORE))
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_claim_wait
 

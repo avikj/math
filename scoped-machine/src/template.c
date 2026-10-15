@@ -14,8 +14,11 @@ typedef struct {
     ExprId ptype[MAXP];            /* reference parameters: declared type expression (0 = none) */
     ExprId plevel[MAXP];           /* its level expression */
     ExprId psig[MAXP];             /* scope parameters: the expected contextual signature (a scope expression whose body is the result type) */
+    ExprId pguard[MAXP];           /* a partial reference parameter's declared availability (0 = κ) */
     size_t nlocals;
     PSort lsort[MAXL];
+    ExprId ltype[MAXL], llevel[MAXL], lreq[MAXL];   /* declarations of term locals (constructor binders and scope locals) */
+    Words nodes;                   /* every constructor node of the definition, in construction order */
     ExprId root;
     ExprId rtype, rlevel;          /* the declared result type of the program and its level */
     TNodeId root_node;             /* the root constructor node when the root is a node (0 when the root is a call) */
@@ -31,7 +34,7 @@ FaceId template_kappa(void) { return tl_kappa ? tl_kappa : fc_true(); }
 /* expressions: interned records [kind, words...]                        */
 
 enum {
-    X_PARAM = 1, X_LOCAL, X_LEVEL, X_LSUCC, X_LMAX, X_LEVELS, X_NODE, X_CALL, X_SCOPE, X_APPLY, X_APPLY_TYPE, X_APPLY_GUARD,
+    X_PARAM = 1, X_LOCAL, X_LEVEL, X_LSUCC, X_LMAX, X_LEVELS, X_LFIRST, X_NODE, X_CALL, X_SCOPE, X_APPLY, X_APPLY_TYPE, X_APPLY_GUARD,
     X_IV0, X_IV1, X_IVNOT, X_IVAND, X_IVOR, X_FCF, X_FCT, X_FCAND, X_FCOR, X_FCEND, X_FORALL
 };
 
@@ -85,7 +88,7 @@ static void expr_free(ExprId e, size_t np, SlotSet *out) {
     case X_PARAM: ss_set(out, w[1]); break;
     case X_LOCAL: ss_set(out, np + w[1]); break;
     case X_LEVEL: case X_IV0: case X_IV1: case X_FCF: case X_FCT: break;
-    case X_LSUCC: case X_IVNOT: case X_FORALL: case X_APPLY_TYPE: case X_APPLY_GUARD: expr_free(w[1], np, out); break;
+    case X_LSUCC: case X_LFIRST: case X_IVNOT: case X_FORALL: case X_APPLY_TYPE: case X_APPLY_GUARD: expr_free(w[1], np, out); break;
     case X_LMAX: case X_LEVELS: case X_IVAND: case X_IVOR: case X_FCAND: case X_FCOR: expr_free(w[1], np, out); expr_free(w[2], np, out); break;
     case X_FCEND: expr_free(w[1], np, out); break;
     case X_NODE: node_free(w[1], out); break;
@@ -232,6 +235,7 @@ static TVal interp(ExprId e, Env *env) {
     case X_LOCAL: { size_t s = env->def->nparams + w[1]; require(env->has[s], "template: local %llu unbound", (unsigned long long)w[1]); return env->val[s]; }
     case X_LEVEL: return tv_level(w[1]);
     case X_LSUCC: return tv_level(level_succ(interp(w[1], env).id));
+    case X_LFIRST: return tv_level(levels_first(interp(w[1], env).id));
     case X_LMAX: return tv_level(level_max(interp(w[1], env).id, interp(w[2], env).id));
     case X_LEVELS: return tv_level(levels_pack(interp(w[1], env).id, interp(w[2], env).id));
     case X_NODE: return tv_ref(make_view_env(w[1], env));
@@ -372,16 +376,28 @@ size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
     size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
     size_t n = 0;
+    size_t np = env.def->nparams;
     for (size_t k = 0; k < nf && n < max; k++) {
         size_t slot = (size_t)fl[k];
-        if (slot >= env.def->nparams) continue;                 /* locals: bound by the enclosing opening */
-        out[n].slot = slot; out[n].sort = env.def->sorts[slot];
-        /* the node's environment is closed under the declarations (NODE), so
-         * every declared type is interpretable here */
-        out[n].type = env.def->ptype[slot] ? interp(env.def->ptype[slot], &env).id : 0;
-        out[n].level = env.def->plevel[slot] ? interp(env.def->plevel[slot], &env).id : LEVEL_NONE;
-        out[n].sig = env.def->psig[slot] ? interp(env.def->psig[slot], &env).id : 0;
-        out[n].guard = fc_true();
+        /* the node's environment is closed under the declarations (finish),
+         * so every declared type is interpretable here */
+        if (slot < np) {
+            out[n].slot = slot; out[n].sort = env.def->sorts[slot];
+            out[n].type = env.def->ptype[slot] ? interp(env.def->ptype[slot], &env).id : 0;
+            out[n].level = env.def->plevel[slot] ? interp(env.def->plevel[slot], &env).id : LEVEL_NONE;
+            out[n].sig = env.def->psig[slot] ? interp(env.def->psig[slot], &env).id : 0;
+            out[n].guard = env.def->pguard[slot] ? interp(env.def->pguard[slot], &env).id : fc_true();
+        } else {
+            /* a term local used freely by this node (bound by an enclosing
+             * constructor or scope): its image is checked against the
+             * declaration it was stored under */
+            size_t l = slot - np;
+            if (env.def->lsort[l] != PS_REF || !env.def->ltype[l]) continue;
+            out[n].slot = slot; out[n].sort = PS_REF; out[n].sig = 0;
+            out[n].type = interp(env.def->ltype[l], &env).id;
+            out[n].level = env.def->llevel[l] ? interp(env.def->llevel[l], &env).id : LEVEL_NONE;
+            out[n].guard = env.def->lreq[l] ? interp(env.def->lreq[l], &env).id : fc_true();
+        }
         n++;
     }
     return n;
@@ -425,7 +441,10 @@ static ExprId CALLn(TDefKind f, size_t n, const ExprId *args) { uint64_t w[3 + M
 
 static size_t newlocal(PSort s) { require(cd->nlocals < MAXL, "too many template locals"); cd->lsort[cd->nlocals] = s; return cd->nlocals++; }
 
-/* close a slot set under the parameter declarations of the current definition */
+/* close a slot set under the declarations of the current definition: the
+ * declared types / levels / guards / signatures of retained parameters and
+ * the declarations of retained term locals (constructor binders and scope
+ * locals). A retained slot keeps its typed dependency closure (§51.1). */
 static void decl_closure(SlotSet *fsl) {
     size_t np = cd->nparams;
     for (bool changed = true; changed; ) {
@@ -435,9 +454,28 @@ static void decl_closure(SlotSet *fsl) {
             if (cd->ptype[k]) expr_free(cd->ptype[k], np, &add);
             if (cd->plevel[k]) expr_free(cd->plevel[k], np, &add);
             if (cd->psig[k]) expr_free(cd->psig[k], np, &add);
+            if (cd->pguard[k]) expr_free(cd->pguard[k], np, &add);
+        }
+        for (size_t l = 0; l < cd->nlocals; l++) if (ss_has(fsl, np + l)) {
+            if (cd->ltype[l]) expr_free(cd->ltype[l], np, &add);
+            if (cd->llevel[l]) expr_free(cd->llevel[l], np, &add);
+            if (cd->lreq[l]) expr_free(cd->lreq[l], np, &add);
         }
         for (size_t k = 0; k < MAXSLOT; k++) if (ss_has(&add, k) && !ss_has(fsl, k)) { ss_set(fsl, k); changed = true; }
     }
+}
+/* the syntactic free slots of a node: fields, payload, levels, required
+ * face, minus its own binder locals (child nodes contribute their current
+ * free sets) */
+static void node_syntactic_free(TNodeId Q, SlotSet *fsl) {
+    size_t np = cd->nparams;
+    size_t nf = tnode_nfields(Q);
+    for (size_t k = 0; k < nf; k++) { FieldKind kd; BinderSlot bs; ExprId e; node_field(Q, k, &kd, &bs, &e); expr_free(e, np, fsl); }
+    if (node_payload_e(Q)) expr_free(node_payload_e(Q), np, fsl);
+    if (node_levels_e(Q)) expr_free(node_levels_e(Q), np, fsl);
+    expr_free(node_required_e(Q), np, fsl);
+    size_t nb = tnode_nbinders(Q);
+    for (size_t b = 0; b < nb; b++) { Sort so; FieldIndex df; size_t ls; node_binder(Q, (BinderSlot)b, &so, &df, &ls); ss_clear(fsl, np + ls); }
 }
 static void set_free_slots(TNodeId Q, const SlotSet *fsl) {
     Words fl; words_init(&fl);
@@ -448,14 +486,23 @@ static void set_free_slots(TNodeId Q, const SlotSet *fsl) {
 
 typedef struct { FieldKind kind; BinderSlot bslot; ExprId e; } FS;
 typedef struct { Sort sort; FieldIndex domfield; size_t lslot; } BS;
+static ExprId NODE_req(Tag tag, ExprId payload, ExprId levels, size_t nf, const FS *fs, size_t nb, const BS *bs, ExprId req);
 static ExprId NODE(Tag tag, ExprId payload, ExprId levels, size_t nf, const FS *fs, size_t nb, const BS *bs) {
+    return NODE_req(tag, payload, levels, nf, fs, nb, bs, under_face ? FCAND(KAPPA(), under_face) : KAPPA());
+}
+static ExprId NODE_req(Tag tag, ExprId payload, ExprId levels, size_t nf, const FS *fs, size_t nb, const BS *bs, ExprId req) {
     Words w; words_init(&w);
     words_push(&w, cur); words_push(&w, TPL.index_counter[cur]++); words_push(&w, tag); words_push(&w, payload); words_push(&w, levels); words_push(&w, nf);
     for (size_t k = 0; k < nf; k++) { words_push(&w, fs[k].kind); words_push(&w, fs[k].bslot); words_push(&w, fs[k].e); }
     words_push(&w, nb);
     for (size_t k = 0; k < nb; k++) { words_push(&w, bs[k].sort); words_push(&w, bs[k].domfield); words_push(&w, bs[k].lslot); }
-    ExprId req = under_face ? FCAND(KAPPA(), under_face) : KAPPA();
     words_push(&w, req);
+    /* a term binder declares its local: the domain field, the first level, the node's required face */
+    for (size_t k = 0; k < nb; k++) if (bs[k].sort == S_TERM && bs[k].domfield != NO_FIELD) {
+        cd->ltype[bs[k].lslot] = fs[bs[k].domfield].e;
+        cd->llevel[bs[k].lslot] = levels ? x1(X_LFIRST, levels) : 0;
+        cd->lreq[bs[k].lslot] = req;
+    }
     bool created;
     TNodeId Q = interner_intern(&M.tnodes, w.w, w.n, &created);
     words_free(&w);
@@ -465,14 +512,9 @@ static ExprId NODE(Tag tag, ExprId payload, ExprId levels, size_t nf, const FS *
      * retained parameters (§51.1, §59.1): a retained parameter keeps its
      * typed dependency closure */
     SlotSet fsl; memset(&fsl, 0, sizeof fsl);
-    size_t np = cd->nparams;
-    for (size_t k = 0; k < nf; k++) expr_free(fs[k].e, np, &fsl);
-    if (payload) expr_free(payload, np, &fsl);
-    if (levels) expr_free(levels, np, &fsl);
-    expr_free(req, np, &fsl);
-    for (size_t k = 0; k < nb; k++) ss_clear(&fsl, np + bs[k].lslot);
-    decl_closure(&fsl);
-    set_free_slots(Q, &fsl);
+    node_syntactic_free(Q, &fsl);
+    set_free_slots(Q, &fsl);             /* provisional: finish() recomputes the typed closure over the complete declaration table */
+    words_push(&cd->nodes, Q);
     return x1(X_NODE, Q);
 }
 
@@ -500,8 +542,10 @@ static ExprId nUNIV(ExprId l) { return NODE(T_UNIVERSE, l, 0, 0, NULL, 0, NULL);
 
 /* scope literals: locals are allocated here; the body is built by a
  * callback that receives the local slots */
+static ExprId guard_now(void) { return under_face ? FCAND(KAPPA(), under_face) : KAPPA(); }
 typedef struct { Sort sort; ExprId type, level, req; } LS;
 static ExprId SCOPE(size_t nl, const LS *ls, size_t *slots, ExprId body, ExprId type, ExprId level, ExprId guard) {
+    for (size_t k = 0; k < nl; k++) if (ls[k].sort == S_TERM) { cd->ltype[slots[k]] = ls[k].type; cd->llevel[slots[k]] = ls[k].level; cd->lreq[slots[k]] = ls[k].req; }
     uint64_t w[8 + 5 * 8]; size_t n = 0;
     w[n++] = X_SCOPE; w[n++] = nl;
     for (size_t k = 0; k < nl; k++) { w[n++] = ls[k].sort; w[n++] = slots[k]; w[n++] = ls[k].type; w[n++] = ls[k].level; w[n++] = ls[k].req; }
@@ -568,28 +612,107 @@ static ExprId SIG_DIM1_G(JFn result, JFn guard, void *ctx, ExprId level) {
 }
 
 static void begin(TDefKind k, const char *name, size_t n, const PSort *sorts) {
-    cur = k; cd = &TPL.defs[k]; memset(cd, 0, sizeof *cd);
+    cur = k; cd = &TPL.defs[k]; memset(cd, 0, sizeof *cd); words_init(&cd->nodes);
     cd->name = name; cd->nparams = n + 1; cd->sorts[0] = PS_FACE;
     for (size_t i = 0; i < n; i++) cd->sorts[i + 1] = sorts[i];
     under_face = 0;
 }
 static void ptype(size_t k, ExprId type, ExprId level) { cd->ptype[k + 1] = type; cd->plevel[k + 1] = level; }
+static void ptype_on(size_t k, ExprId type, ExprId level, ExprId guard) { ptype(k, type, level); cd->pguard[k + 1] = guard; }
 static void psig(size_t k, ExprId sig) { cd->psig[k + 1] = sig; }
 static void rtype(ExprId type, ExprId level) { cd->rtype = type; cd->rlevel = level; }
+/* ---- integration of a call-root (§51.1, review F2) ----
+ * The callee's root recipe is remapped into caller-owned nodes: callee
+ * parameters become the call's argument recipes (κ stays the caller's κ),
+ * callee locals become fresh caller locals with their declarations, callee
+ * nodes become caller nodes with the substituted field, payload, level and
+ * required-face recipes. Done once at registration. */
+typedef struct { const TDef *callee; ExprId arg[MAXP]; size_t lmap[MAXL]; bool lmapped[MAXL]; } Inl;
+static ExprId inl_expr(ExprId e, Inl *in);
+static size_t inl_local(size_t l, Inl *in) {
+    if (!in->lmapped[l]) {
+        size_t nl = newlocal(in->callee->lsort[l]);
+        in->lmap[l] = nl; in->lmapped[l] = true;
+        /* the local's declaration follows it (its recipes mention earlier locals: mapped on demand) */
+        if (in->callee->ltype[l]) cd->ltype[nl] = inl_expr(in->callee->ltype[l], in);
+        if (in->callee->llevel[l]) cd->llevel[nl] = inl_expr(in->callee->llevel[l], in);
+        if (in->callee->lreq[l]) cd->lreq[nl] = inl_expr(in->callee->lreq[l], in);
+    }
+    return in->lmap[l];
+}
+static ExprId inl_expr(ExprId e, Inl *in) {
+    if (!e) return 0;
+    size_t n; const uint64_t *w = xw(e, &n);
+    switch (w[0]) {
+    case X_PARAM: return w[1] == 0 ? KAPPA() : in->arg[w[1]];
+    case X_LOCAL: return x1(X_LOCAL, inl_local((size_t)w[1], in));
+    case X_LEVEL: case X_IV0: case X_IV1: case X_FCF: case X_FCT: return e;
+    case X_LSUCC: case X_LFIRST: case X_IVNOT: case X_FORALL: case X_APPLY_TYPE: case X_APPLY_GUARD: return x1(w[0], inl_expr(w[1], in));
+    case X_LMAX: case X_LEVELS: case X_IVAND: case X_IVOR: case X_FCAND: case X_FCOR: return x2(w[0], inl_expr(w[1], in), inl_expr(w[2], in));
+    case X_FCEND: return x2(X_FCEND, inl_expr(w[1], in), w[2]);
+    case X_CALL: { uint64_t o[3 + MAXP]; o[0] = X_CALL; o[1] = w[1]; o[2] = w[2]; for (size_t k = 0; k < w[2]; k++) o[3 + k] = inl_expr(w[3 + k], in); return xi(3 + w[2], o); }
+    case X_APPLY: { uint64_t o[3 + MAXP]; o[0] = X_APPLY; o[1] = inl_expr(w[1], in); o[2] = w[2]; for (size_t k = 0; k < w[2]; k++) o[3 + k] = inl_expr(w[3 + k], in); return xi(3 + w[2], o); }
+    case X_SCOPE: {
+        size_t nl = w[1]; const uint64_t *l = w + 2; const uint64_t *t = l + 5 * nl;
+        uint64_t o[8 + 5 * 8]; size_t m = 0; o[m++] = X_SCOPE; o[m++] = nl;
+        for (size_t k = 0; k < nl; k++) {
+            size_t ns = inl_local((size_t)l[5 * k + 1], in);
+            o[m++] = l[5 * k]; o[m++] = ns; o[m++] = inl_expr(l[5 * k + 2], in); o[m++] = inl_expr(l[5 * k + 3], in); o[m++] = inl_expr(l[5 * k + 4], in);
+            if (l[5 * k] == S_TERM) { cd->ltype[ns] = o[m - 3]; cd->llevel[ns] = o[m - 2]; cd->lreq[ns] = o[m - 1]; }
+        }
+        o[m++] = inl_expr(t[0], in); o[m++] = inl_expr(t[1], in); o[m++] = inl_expr(t[2], in); o[m++] = inl_expr(t[3], in);
+        return xi(m, o);
+    }
+    case X_NODE: {
+        TNodeId Q = w[1];
+        size_t nf = tnode_nfields(Q), nb = tnode_nbinders(Q);
+        FS fs[12]; BS bs[4]; require(nf <= 12 && nb <= 4, "inline: node arity");
+        for (size_t k = 0; k < nf; k++) { ExprId fe; node_field(Q, k, &fs[k].kind, &fs[k].bslot, &fe); fs[k].e = inl_expr(fe, in); }
+        for (size_t b = 0; b < nb; b++) { size_t ls; node_binder(Q, (BinderSlot)b, &bs[b].sort, &bs[b].domfield, &ls); bs[b].lslot = inl_local(ls, in); }
+        return NODE_req(tnode_tag(Q), inl_expr(node_payload_e(Q), in), inl_expr(node_levels_e(Q), in), nf, fs, nb, bs, inl_expr(node_required_e(Q), in));
+    }
+    default: die("inline: bad expression kind");
+    }
+}
+static ExprId inline_root(ExprId e) {
+    for (;;) {
+        size_t n; const uint64_t *w = xw(e, &n);
+        if (w[0] != X_CALL) return e;
+        Inl in; memset(&in, 0, sizeof in);
+        in.callee = &TPL.defs[w[1]];
+        require(in.callee->root, "inline: callee not registered (%s)", in.callee->name);
+        require(w[2] + 1 == in.callee->nparams, "inline: call arity");
+        for (size_t k = 0; k < w[2]; k++) in.arg[k + 1] = w[3 + k];
+        e = inl_expr(in.callee->root, &in);
+    }
+}
+
 static void finish(ExprId root) {
+    /* a root that calls another program is integrated into a caller-owned
+     * constructor node (§51.1): the caller's parameter signature and result
+     * type stay the retained, checkable boundary */
+    root = inline_root(root);
     cd->root = root;
     size_t n; const uint64_t *w = xw(root, &n);
-    if (w[0] != X_NODE) return;
+    require(w[0] == X_NODE, "template root is not a constructor node (%s)", cd->name);
     TNodeId Q = w[1]; cd->root_node = Q;
-    /* the root node also retains the dependencies of the declared result type */
-    SlotSet fsl; memset(&fsl, 0, sizeof fsl); node_free(Q, &fsl);
-    if (cd->rtype) expr_free(cd->rtype, cd->nparams, &fsl);
-    if (cd->rlevel) expr_free(cd->rlevel, cd->nparams, &fsl);
-    decl_closure(&fsl);
-    set_free_slots(Q, &fsl);
+    /* the typed closure over the complete declaration table, children first,
+     * to a fixpoint; the root node also retains the declared result type */
+    for (bool changed = true; changed; ) {
+        changed = false;
+        for (size_t k = 0; k < cd->nodes.n; k++) {
+            TNodeId N = (TNodeId)cd->nodes.w[k];
+            SlotSet fsl; memset(&fsl, 0, sizeof fsl);
+            node_syntactic_free(N, &fsl);
+            if (N == Q) { if (cd->rtype) expr_free(cd->rtype, cd->nparams, &fsl); if (cd->rlevel) expr_free(cd->rlevel, cd->nparams, &fsl); }
+            decl_closure(&fsl);
+            uint64_t before = TNSIDE(N)->free_slots;
+            set_free_slots(N, &fsl);
+            if (TNSIDE(N)->free_slots != before) changed = true;
+        }
+    }
 }
 #define SORTS(...) ((const PSort[]){ __VA_ARGS__ })
-static ExprId guard_now(void) { return under_face ? FCAND(KAPPA(), under_face) : KAPPA(); }
 
 /* ---- §52 programs ---- */
 
@@ -767,7 +890,7 @@ static void register_library(void) {
     { size_t i = newlocal(PS_INTERVAL); finish(nCOMP(P(0), i, AP1(P(1), L(i)), FCF(), nSYSTEM(0, NULL, NULL), P(2))); }
     /* ExtendContr(l, X, c, k, theta, v on theta) */
     begin(TD_EXTENDCONTR, "ExtendContr", 6, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_FACE, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(5, P(1), P(0));
+    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype_on(5, P(1), P(0), FCAND(KAPPA(), P(4)));
     { size_t xk = newlocal(PS_REF); ptype(3, nPI(P(0), P(0), xk, P(1), CALL(TD_PATHCONST, P(0), P(1), P(2), L(xk))), P(0)); }
     rtype(P(1), P(0));
     { Cx c = { P(0), P(1), P(2), P(5), P(3), 0, P(1) };
@@ -909,6 +1032,7 @@ void templates_init(void) {
 }
 void templates_free(void) {
     if (!TPL.init) return;
+    for (size_t k = 0; k < TD_COUNT; k++) words_free(&TPL.defs[k].nodes);
     pthread_mutex_destroy(&TPL.mu);
     memset(&TPL, 0, sizeof TPL);
 }

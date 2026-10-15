@@ -62,13 +62,20 @@ int main(int argc, char **argv) {
         CheckStatus pc=check(G,fc_true(),pair,sg,&why); verdict("pair with incompatible stored Sigma annotation",pc,why);
         EXPECT(pc==CK_INVALID,"checking against another Sigma cannot erase the stored annotation");
     } else if (!strcmp(mode,"missing-level")) {
+        /* negative: the original unannotated core composition must be rejected */
         TermVarId vz=declare_term(A,fc_true());
-        RefId pi=mk_pi_lv(0, 0, vz,A,A), cap=mk_lam_lv(0, vz,A,ref_var(vz));
-        RefId term=mk_comp_lv(0, i,pi,fc_false(),mk_system(0,NULL,NULL),cap);
+        RefId pi=mk_pi(vz,A,A), cap=mk_lam(vz,A,ref_var(vz));
+        RefId term=mk_comp(i,pi,fc_false(),mk_system(0,NULL,NULL),cap);
         WhnfStatus ws; EvalResult *r=observe_checked(G,term,&ws,&why);
-        printf("unannotated checked COMP: status=%d result=%d\n",(int)ws,r!=NULL);
-        if(r) { Head h;open_ref(r->ref,&h);printf("result levels=%llu\n",(unsigned long long)h.levels); EXPECT(levels_first(h.levels)!=LEVEL_NONE,"admitted clause output must carry its explicit formation level");head_free(&h); }
-        EXPECT(ws==W_INVALID || (r && ws==W_OK),"must reject or elaborate before execution");
+        printf("unannotated checked COMP: status=%d result=%d (%s)\n",(int)ws,r!=NULL,why?why:"");
+        EXPECT(ws==W_INVALID && r==NULL,"an unannotated required type position is rejected before execution");
+        /* positive: the explicitly annotated term executes and its output carries its level */
+        RefId pia=mk_pi_lv(0,0,vz,A,A), capa=mk_lam_lv(0,vz,A,ref_var(vz));
+        RefId terma=mk_comp_lv(0,i,pia,fc_false(),mk_system(0,NULL,NULL),capa);
+        r=observe_checked(G,terma,&ws,&why);
+        printf("annotated checked COMP: status=%d result=%d\n",(int)ws,r!=NULL);
+        if(r) { Head h;open_ref(r->ref,&h);printf("result levels=%llu\n",(unsigned long long)levels_first(h.levels)); EXPECT(levels_first(h.levels)!=LEVEL_NONE,"admitted clause output must carry its explicit formation level");head_free(&h); }
+        EXPECT(r && ws==W_OK,"the annotated composition executes");
     } else if (!strcmp(mode,"environment")) {
         uint64_t pars[]={vA};
         SymbolId s=define_global("late",varset_make(pars,1),dimset_make(NULL,0),A);

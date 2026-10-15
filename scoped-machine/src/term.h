@@ -228,7 +228,7 @@ size_t global_count(void);
 bool set_global_body(SymbolId s, RefId body);   /* false: the environment is frozen (admitted); open a new one first */
 RefId global_ref(SymbolId s);          /* VIEW(GLOBAL(s), identity) */
 uint64_t global_env_version(void);     /* changes with every declaration / body registration */
-void env_freeze(void); void env_unfreeze(void); bool env_is_frozen(void);   /* §57 R1: define_global returns 0 and set_global_body false while frozen */
+void env_control_init(void); void env_freeze(void); void env_unfreeze(void); bool env_is_frozen(void);   /* §57 R1: define_global returns 0 and set_global_body false while frozen */
 RefId unfold_global(RefId t);          /* reindex(definition body, map) */
 
 /* ---- constructors (identity views of fresh origins) ---- */

@@ -160,7 +160,60 @@ int main(void) {
       r = whnf(mk_coe_at(0, i, mk_fun(0, 0, A, B), f), fc_true(), &st);
       CHECK(st == W_OK && check(G, fc_true(), r->ref, mk_fun(0, 0, A, B), &why) == CK_VALID, "Π clause output checks (%s)", why);
       CHECK(check(G, fc_true(), mk_path_concat(0, A, a, b, c, mk_refl(0, A, a), mk_refl(0, A, b)), mk_path_const(0, A, a, c), &why) == CK_INVALID, "ill-typed concatenation is rejected");
-      CHECK(check(G, fc_true(), mk_path_concat(0, A, a, a, a, mk_refl(0, A, a), mk_refl(0, A, a)), mk_path_const(0, A, a, a), &why) == CK_VALID, "refl·refl : Path A a a (%s)", why); }
+      CHECK(check(G, fc_true(), mk_path_concat(0, A, a, a, a, mk_refl(0, A, a), mk_refl(0, A, a)), mk_path_const(0, A, a, a), &why) == CK_VALID, "refl·refl : Path A a a (%s)", why);
+
+      /* call-root programs keep their own typed boundary (review F2): the
+       * root of ExtendContr / Down / LineEquiv is a caller-owned node; a
+       * supplied scope's annotation and guard are retained and checked */
+      { TermVarId xk = tv(A), vcen = tv(A);
+        RefId Kt = mk_pi_lv(0, 0, xk, A, mk_path_const(0, A, ref_var(vcen), ref_var(xk)));
+        TermVarId vkk = tv(Kt), vvp = declare_term(A, fc_lit(k, 1)), vbad = declare_term(B, fc_lit(k, 1));
+        ContextId Ge = context_extend_term(context_extend_term(context_extend_term(G, vcen, A), vkk, Kt), vvp, A);
+        ContextId Gb = context_extend_term(context_extend_term(context_extend_term(G, vcen, A), vkk, Kt), vbad, B);
+        RefId ext = mk_extend_contr(0, A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vvp));
+        CHECK(tnode_def(tnode_of(ext)) == TD_EXTENDCONTR, "ExtendContr's root is its own node");
+        CHECK(check(Ge, fc_true(), ext, A, &why) == CK_VALID, "ExtendContr with a partial v (available on its guard) checks (%s)", why);
+        RefId extb = mk_extend_contr(0, A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vbad));
+        CHECK(ext != extb && check(Gb, fc_true(), extb, A, &why) == CK_INVALID, "ExtendContr rejects v : B at the declared guarded parameter (%s)", why);
+        /* Down: the scope's declared result annotation and guard */
+        TermVarId vxk = tv(A), vek = tv(mk_path_const(0, A, a, ref_var(vxk)));
+        RefId Pk = mk_path_const(0, A, a, ref_var(vxk));
+        ScopeId Dg = capture_term2(vxk, A, 0, vek, Pk, 0, mk_path_const(0, A, ref_var(vxk), b), U0, 1, fc_true());
+        ScopeId Dw = capture_term2(vxk, A, 0, vek, Pk, 0, mk_path_const(0, A, ref_var(vxk), b), mk_universe(1), 2, fc_true());
+        ScopeId Du = capture_term2(vxk, A, 0, vek, Pk, 0, mk_path_const(0, A, ref_var(vxk), b), U0, 1, fc_false());
+        TermVarId vz = tv(mk_path_const(0, A, a, b));
+        ContextId Gd = context_extend_term(G, vz, term_var_type(vz));
+        RefId dg = mk_down(0, 0, A, a, Dg, a, mk_refl(0, A, a), ref_var(vz));
+        RefId dw = mk_down(0, 0, A, a, Dw, a, mk_refl(0, A, a), ref_var(vz));
+        RefId du = mk_down(0, 0, A, a, Du, a, mk_refl(0, A, a), ref_var(vz));
+        CHECK(tnode_def(tnode_of(dg)) == TD_DOWN, "Down's root is its own node");
+        CHECK(dg != dw && dg != du, "Down retains the supplied scope: differently annotated scopes are distinct references");
+        CHECK(check(Gd, fc_true(), dg, mk_path_const(0, A, a, b), &why) == CK_VALID, "Down at a well-annotated scope checks (%s)", why);
+        CHECK(check(Gd, fc_true(), dw, mk_path_const(0, A, a, b), &why) == CK_INVALID, "Down rejects a scope with a false result annotation (%s)", why);
+        CHECK(check(Gd, fc_true(), du, mk_path_const(0, A, a, b), &why) == CK_INVALID, "Down rejects a scope available only on false (%s)", why); }
+
+      /* escaped constructor locals (review F3): a child of IdEquiv over its
+       * local w keeps w's declaration; a valid substitute checks and the
+       * child's typed boundary reindexes canonically */
+      { RefId ie = mk_id_equiv(0, A);
+        Head h0; open_ref(ie, &h0); RefId outer = h0.f[1].id; head_free(&h0);
+        TermOpen oy = resolve_term_binder(outer, 0, 1);
+        Head h1; open_ref(oy.body, &h1); RefId contraction = h1.f[1].id; head_free(&h1);
+        TermOpen ow = resolve_term_binder(contraction, 0, 1);
+        DimOpen oi = resolve_dim_binder(ow.body, 0, 0);
+        Head h2; open_ref(oi.body, &h2); Head h3; open_ref(h2.f[0].id, &h3); RefId snd_w = h3.f[3].id; head_free(&h3); head_free(&h2);
+        CHECK(ref_tag(snd_w) == T_SND, "located the projection from w");
+        ContextId H = context_extend_term(G, oy.x, oy.type);
+        TermVarId vq = tv(ow.type);                         /* a valid substitute: q : Fib(A, A, id, y) */
+        ContextId Hq = context_extend_term(H, vq, ow.type);
+        RefId good = reindex(snd_w, map_single_term(ow.x, ref_var(vq)));
+        CHECK(check(Hq, fc_true(), good, mk_path_const(0, A, mk_app(mk_id_fun(0, A), mk_fst(ref_var(vq))), ref_var(oy.x)), &why) == CK_VALID, "the escaped child checks after a valid substitution (%s)", why);
+        /* canonical reindexing of the complete boundary: two steps compose */
+        TermVarId vy2 = tv(A);
+        MapBuilder m1; mapb_init(&m1); mapb_term(&m1, oy.x, ref_var(vy2));
+        MapBuilder m2; mapb_init(&m2); mapb_term(&m2, oy.x, ref_var(vy2)); mapb_term(&m2, ow.x, ref_var(vq));
+        CHECK(reindex(reindex(snd_w, mapb_finish(&m1)), map_single_term(ow.x, ref_var(vq))) == reindex(snd_w, mapb_finish(&m2)), "the child's boundary (w, y, A, l) reindexes canonically");
+        CHECK(reindex(good, map_identity()) == good, "identity reindexing is the identity"); } }
 
     /* ---- admission transaction (R1/Q2): mutual recursion ---- */
     { uint64_t ps[] = { vA }; VarSetId params = varset_make(ps, 1); DimSetId nod = dimset_make(NULL, 0);

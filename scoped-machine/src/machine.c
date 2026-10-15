@@ -29,6 +29,7 @@ void machine_init(void) {
     pthread_mutexattr_settype(&a, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&M.term_mu, &a);
     pthread_mutexattr_destroy(&a);
+    env_control_init();                /* the fresh machine's environment is open */
 }
 
 void machine_free(void) {

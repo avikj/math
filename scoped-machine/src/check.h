@@ -66,7 +66,12 @@ CheckStatus check_signature(const char **reason);
  * once per version, and returns the environment's verdict; public checked
  * execution and compiler publication require VALID. */
 CheckStatus check_admission(const char **reason);
-/* open a new candidate environment after an admission: retires the checker session and every observation; registration is open again */
+/* open a new candidate environment after an admission: retires the checker
+ * session (claims, verdicts, diagnostic text) and every evaluator observation
+ * (EvalResult pointers and diagnostic pointers obtained before are dead);
+ * registration is open again. A closed session boundary: no checker,
+ * compiler or observation client may be in progress and evaluator work must
+ * have drained (both enforced); stop admitting new clients while crossing. */
 void check_open_environment(void);
 
 /* the parameter context of an origin: its free dimensions, then its free

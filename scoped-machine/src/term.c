@@ -680,6 +680,9 @@ static void env_bump(void) { __atomic_add_fetch(&env_version_ctr, 1, __ATOMIC_AC
  * frozen environment fails closed (a new candidate environment is opened by
  * the checker, which retires its caches) */
 static bool env_frozen_flag;
+/* a new machine starts with an open environment; the version counter is
+ * never reused, so stale keys of a destroyed machine cannot alias */
+void env_control_init(void) { __atomic_store_n(&env_frozen_flag, false, __ATOMIC_RELEASE); env_bump(); }
 void env_freeze(void) { __atomic_store_n(&env_frozen_flag, true, __ATOMIC_RELEASE); }
 void env_unfreeze(void) { __atomic_store_n(&env_frozen_flag, false, __ATOMIC_RELEASE); env_bump(); }
 bool env_is_frozen(void) { return __atomic_load_n(&env_frozen_flag, __ATOMIC_ACQUIRE); }

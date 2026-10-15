@@ -11,16 +11,17 @@ says how to check it without trusting the implementer's summary.
                   # (124 + 35 net), 24-schedule comparison, concurrent clients (storms, pools); then
                   # the acceptance, schedule, checking, template and compiler suites with 4-thread
                   # pools; then the reviews' reproductions (review-followup in 4 modes,
-                  # review-claim-wait, review-checker-lifecycle, review-ae756a1 in 11 modes),
+                  # review-claim-wait, review-checker-lifecycle, review-ae756a1 in 11 modes,
+                  # review-0f787a3 in 6 modes),
                   # each exiting nonzero on a miss
     make tsan     # every suite under ThreadSanitizer, including the review's concurrent case and
                   # the three reproductions with halt_on_error (several minutes)
 
-Expected: `78 passed, 0 failed`, `12 passed, 0 failed`, `61 passed, 0 failed`, `85 passed, 0 failed`, every
+Expected: `78 passed, 0 failed`, `12 passed, 0 failed`, `73 passed, 0 failed`, `85 passed, 0 failed`, every
 `(expected …)` line of `review-regressions` matching its expectation, `124 passed, 0 failed`,
 `35 net checks passed`, `schedule check passed`, `concurrent check passed`, the reproductions
 printing their observations without a `FAIL:` line (`<mode>: 0 expectation failures` for each
-review_ae756a1 mode), and `make tsan` ending with the same lines and no `WARNING`. Where LeakSanitizer cannot run (restricted `/proc`), `ASAN_OPTIONS=detect_leaks=0`
+review_ae756a1 and review_0f787a3 mode), and `make tsan` ending with the same lines and no `WARNING`. Where LeakSanitizer cannot run (restricted `/proc`), `ASAN_OPTIONS=detect_leaks=0`
 keeps ASan/UBSan; leak checking was run here.
 
 ## 2. Where each spec section lives
@@ -194,6 +195,23 @@ One further defect surfaced by the concurrent publication case and fixed: withou
 pool, a client thread whose demand was being executed by another client thread drained an
 empty queue and reported `W_STUCK`; `whnf` now waits for its root or for quiescence in that
 configuration too (`eval.c`).
+
+## 5d. The review of 0f787a3: corrections made
+
+Reading 1 (observation retirement) is implemented at a closed session boundary as the review
+directs: `check_open_environment` requires no top-level checker client in progress and no
+running admission attempt, `eval_reset` requires no outstanding evaluator work, and the API
+comment states that previously returned `EvalResult` and diagnostic pointers are dead. Reading
+2 (binder locals) is withdrawn: descendants retain and check the declarations of the locals
+they use freely (F3).
+
+| Finding | Correction | Where | Regression |
+| --- | --- | --- | --- |
+| F1 scope validity vs. compatibility | `check_scope_own` validates the supplied scope in its own context: each term local's declaration forms in the supplied prefix under the projected clause ∧ its own required face, at a required (non-`LEVEL_NONE`) stated level; under C ∧ supplied guard the result type forms at its required stated level and the body has that type. `check_scope_arg` then compares against the signature on the common telescope (declarations by conversion, expected guard ⊢ supplied guard, result types under the expected guard) without substituting expected declarations for supplied ones | `check.c` | `review-0f787a3 scope-level`, `scope-locals`; existing partial-tube and Glue positives unchanged |
+| F2 call-root programs | `finish` integrates a call root into caller-owned nodes once at registration (`inline_root`: callee parameters ↦ argument recipes, κ stays the caller's, callee locals ↦ fresh caller locals with their declarations, callee nodes ↦ caller nodes with substituted field/payload/level/required recipes); the caller's parameter signatures and result type are the retained boundary; partial parameters keep their guard (`ptype_on`: ExtendContr's `v` on κ∧θ) and are checked on it | `template.c`, `check.c` `tview_boundary` | `review-0f787a3 call-boundary`; `test_templates.c` (ExtendContr/Down roots are their own nodes, partial `v` valid, `v : B` rejected, Down's scope annotation/guard rejected and distinct) |
+| F3 escaped constructor locals | Term-local declarations (type, level, required face) are recorded for constructor binders and scope locals; free sets are recomputed at `finish` over the complete table to a fixpoint, closing each node under the declarations of the parameters and locals it retains; a local is removed only at its binder; `tnode_signature` reports retained locals with their instantiated declarations and the boundary checks their images on the declared guard | `template.c` (`NODE_req`, `decl_closure`, `finish`), `check.c` | `review-0f787a3 binder-boundary`; `test_templates.c` (valid substitute checks; two-step reindexing of the child's boundary composes) |
+| F4 fresh machine frozen | `machine_init` opens the environment (`env_control_init`); the version counter is not reused | `term.c`, `machine.c` | `review-0f787a3 machine-restart` |
+| regressions / docs | `review_ae756a1 missing-level` keeps the original unannotated negative case and the annotated positive case; README's composition paragraph and the `level_ok1` comment corrected | — | — |
 
 Two readings to confirm. (1) A new candidate environment retires every observation
 (`eval_reset`): `EvalResult` pointers obtained before `check_open_environment` are dead

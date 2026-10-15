@@ -305,13 +305,16 @@ still takes them as premises and reports ill-typed demands it reaches as `R_INVA
   over the evaluator's dimension with the producer entry's face as κ and instantiates the one
   fixed clause (`PiComp`, `SigmaComp`, `PathComp`, `GlueComp`, `UniverseComp`). The evaluator
   performs this inside its frame (§55: no additional administrative agents for the same
-  call); a family without level annotations yields scopes without declared types, which the
-  checker infers.
+  call); a family without its level annotation is not admitted core syntax: no clause is
+  instantiated and the demand is reported invalid.
 - **Environments (§57 R1).** `check_admission` freezes the registered environment before
   validating it; while frozen, `define_global` returns 0 and `set_global_body` returns false.
   `check_open_environment()` opens a new candidate environment: a fresh checker session
   (claims, admission verdict, diagnostics) and a reset evaluator (all observations retired;
-  workers and policies kept). An admission verdict is reused for its environment version
+  workers and policies kept). It is a closed session boundary: no checker, compiler or
+  observation client may be in progress and evaluator work must have drained (both
+  enforced); `EvalResult` and diagnostic pointers from before it are dead. A new machine
+  starts with an open environment (the version counter is never reused). An admission verdict is reused for its environment version
   when settled, and an UNRESOLVED one only within the attempt that produced it
   (`check_new_attempt`, or a changed budget, begins a new attempt; a top-level request's
   budget is fixed when it enters).
@@ -319,15 +322,22 @@ still takes them as premises and reports ill-typed demands it reaches as `R_INVA
   level: `LEVEL_NONE` at a Π/Σ/λ/Path/PApp/Glue/comp/annotated-pair position is INVALID in
   inference and in checking, and the evaluator instantiates no composition clause for an
   unannotated family. The unannotated constructors remain for raw construction only.
-- **Template boundary (§51.4).** A node's environment is closed under the declared types,
-  levels and scope signatures of its retained parameters (so `Refl(0,A,x)`, `Refl(0,B,x)` and
-  `Refl(1,A,x)` are three references), every library parameter is declared, and an instance
-  is validated at its boundary before its head: reference images against the instantiated
-  declared types, scope arguments against their contextual signatures (common fresh
-  telescope, declarations by conversion, expected guard ⊢ supplied guard, result type formed
-  at its level and converted, body under the supplied guard), and the inferred type against
-  the program's declared result type; checking forms (λ, pair, path λ, system) enter the same
-  boundary.
+- **Template boundary (§51.4).** A node's environment is closed under the declarations of
+  everything it retains: parameters (declared type, level, guard, scope signature) and the
+  term locals it uses freely (constructor-binder locals and scope locals, whose declaration
+  recipes are recorded and closed after the definition is complete), so `Refl(0,A,x)`,
+  `Refl(0,B,x)` and `Refl(1,A,x)` are three references and a child escaping its binder keeps
+  the binder's declaration. A program whose root calls another program is integrated at
+  registration into a caller-owned node (`LineEquiv`, `ExtendContr`, `Down`), so the caller's
+  parameter signature and result type remain the retained boundary. Every library parameter
+  is declared (partial ones with their guard); an instance is validated at its boundary
+  before its head: reference and local images against the instantiated declared types on
+  their declared guards; scope arguments first for their own validity (locals' declarations
+  form at their required levels under their own required faces, result type and body under
+  the supplied guard) and then against their contextual signatures (common fresh telescope,
+  declarations by conversion, expected guard ⊢ supplied guard, result types converted under
+  the expected guard); and the inferred type against the program's declared result type.
+  Checking forms (λ, pair, path λ, system) enter the same boundary.
 - **Claims and admission (§57, §59.4).** The claim table has a session generation (a fresh
   `check_init` re-registers thread identities, `review-checker-lifecycle`: eight identical
   conversions after a restart), per-attempt UNRESOLVED outcomes that are retried by a later
