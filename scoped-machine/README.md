@@ -1,11 +1,11 @@
-# Scoped references and face-sensitive cubical evaluation
+# Scoped cubical interaction machine and identity compiler
 
-A from-scratch C11 implementation of the handoff specification *Scoped
-references and face sensitive cubical evaluation* (14 October 2026). Nothing
+A from-scratch C11 implementation of the handoff specification *Scoped cubical
+interaction machine and identity compiler* (§§1–48, 14 October 2026). Nothing
 here is derived from earlier runtime code; the spec is the only source.
 
-    make test        # ASan/UBSan: acceptance suite, schedule suite, concurrent-client suite, and the first two again with 4-thread pools
-    make tsan        # ThreadSanitizer build of the same suites
+    make test        # ASan/UBSan/LSan: every suite, then the acceptance, schedule, checking, template and compiler suites again with 4-thread pools
+    make tsan        # ThreadSanitizer build of every suite
 
 ## Layout — spec section → file
 
@@ -24,7 +24,8 @@ here is derived from earlier runtime code; the spec is the only source.
 | §37 | `src/match.*`, `src/canon.*` | Exported labelled graph; exact matching with backtracking; refinement as candidate filter only |
 | §25–31 | `src/eval.*` (counters, policies, worker pool), `src/net.*` (rule counters, policies, worker pool), `src/canon.*` | Interaction-work vector, deterministic joins, exact canonical comparison modulo renaming |
 | §23 | `tests/test_main.c`, `test_net` in `src/net.c` | Every row of the acceptance table, plus the exhaustive projection/quantifier law check on all 48 canonical faces over two dimensions (2 880 + 240 comparisons) |
-| §28–31, §38 | `tests/test_schedule.c`, `tests/test_concurrent.c`, `tests/test_match.c`, `tests/test_check.c` | 24 schedule combinations; client storms and multi-client runs; comparison acceptance/rejection incl. ambiguous refinement; checking acceptance/rejection/unresolved; `make tsan` |
+| §39–48 | `src/compiler.*`, `T_TCALL` in `src/term.*`, `OP_APPLY_TRANSFORM` / `A_CONTINUE_REFERENCE` in `src/net.*`, `evaluate` (T_TCALL) and the pair jobs in `src/eval.*`, the T_TCALL rule in `src/check.c` | Diagrams, realization telescopes, canonical substitution, `down`/expand, collapse/expand templates, `compile_identity` with the graph-pair template, equivalence / residual / cut / contractible-fibre schemas, certificates, `TRANSFORM_CALL`, the application and receiver rules, one outstanding count for evaluator jobs and net pairs |
+| §28–31, §38, §47 | `tests/test_schedule.c`, `tests/test_concurrent.c`, `tests/test_match.c`, `tests/test_check.c`, `tests/test_templates.c`, `tests/test_compiler.c`, `tests/review_regressions.c` | 24 schedule combinations (now with the associativity transform in the workload); client storms and multi-client runs; comparison acceptance/rejection incl. ambiguous refinement; checking acceptance/rejection/unresolved; template laws and the admission transaction; the §47 compiler cases; the review's regression cases; `make tsan` |
 
 ## The central distinction, as implemented
 
@@ -266,3 +267,63 @@ a cycle.
 
 Typing premises of the cubical rules are now checked by `src/check.c`; the evaluator itself
 still takes them as premises and reports ill-typed demands it reaches as `R_INVALID`.
+
+## Identity compiler (§39–§48)
+
+`src/compiler.c` is additive to the runtime above and emits only annotated core syntax
+through the existing constructors and the fixed library templates (§40 builders: `refl`,
+`inverse` = `mk_path_rev`, `concat` = `mk_path_concat`, `coe` = `mk_coe`, `pair` with its Σ
+annotation, …).
+
+- **Diagrams.** `diagram_declare(Γ, nodes, B, o)` / `residual_declare(Γ, nodes, Z)`; a node
+  is `(node_id, x, e, A, t)` with the user's variables `x : A`, `e : Path_A(t, x)`.
+  `diagram_validate` checks the typed telescope in order under the required face (and that
+  the realization type is a type). `diagram_realization` is the right fold
+  `R_k = Σ(x_k:A_k).Σ(e_k:Path(t_k,x_k)).R_{k+1}`, `R_n = Path_B(o, y_d)` (residual: `Z`);
+  the canonical substitution `ν` extends by `x_k ↦ t_k[ν], e_k ↦ refl` and `C = o[ν]`, so a
+  shared node has one image and the DAG is not expanded.
+- **Singleton maps (§41).** `down(A,t,D,x,e,z) = coe^i D(e@¬i, ⟨j⟩e@(¬i∧j)) z` substitutes
+  both `x_k` and `e_k` in the complete tail; `emit_collapse` / `emit_expand` follow the
+  stated recursions; `diagram_collapse(d)` and `diagram_expand(d)` are cached per diagram
+  and role with formals `r_d : R_0` and `q_d : Path_B(C, y_d)` anchored in the diagram.
+- **Identity (§42).** `graph_pair(L, R)` is the proof-parameterized template cached by the
+  ordered pair: common `y`, fresh `P`, distinct input slots, `forward = d_R(concat(inverse(P),
+  c_L(r_L)))`, `reverse = d_L(concat(P, c_R(r_R)))`, every subtemplate instantiated by mapping
+  its formal to the argument (no APP/LAM pair). `compile_identity` validates the context,
+  face and result type, both diagrams, the evidence at `Path_B(C_L, C_R)`, specializes `P` to
+  the evidence, checks both bodies at their stated types in `Γ, y, r`, and publishes only
+  then. `certificate_verify` re-runs the same derivation and requires an identical record.
+- **Other schemas (§44).** `compile_equivalence` (`(fst e) a`, `fst(fst((snd e) b))`),
+  `compile_residual_equivalence` (`d_R ∘ e.map ∘ c_L` with the terminal types as base case),
+  `compile_cut` (`Cut(C,D) = Σ(z:B).Σ(u:C=z).(D=z)`, `(z,u,v) ↦ u·v⁻¹`, `h ↦ (D,h,refl D)`),
+  `compile_contractible_fibre` (`(b,r) ↦ b`, `b ↦ (b, fst(k b))` from a checked `k`). All are
+  fixed templates with a certificate recording their retained inputs.
+- **Invocation (§43).** `mk_transform_call(id, dir, σ, a)` builds the `TRANSFORM_CALL` origin:
+  payload `2·id+dir`, fields = σ's images in parameter order, then `a`, then the instantiated
+  input and output types, required face `required[σ]`; reindexing a view composes σ and
+  reindexes the rest. The checker validates the record, `σ` as a typed map whose face entails
+  `required[σ]`, `a` at the instantiated domain and the annotations, and returns the output
+  annotation. The evaluator's dispatch allocates `APPLY_TRANSFORM(id,dir,σ) -- REF(a)` with
+  `CONTINUE_REFERENCE(K)` on the result in the evaluator's own net; the application rule
+  produces `REF(reindex(template, σ + slot ↦ a))` without evaluating anything; the receiver
+  rule issues `REQ(key(v, face K), FORWARD_RESULT(K))`; delivery publishes `K` through the
+  ordinary protocol. Pending pairs are jobs of the same scheduler (`outstanding` counts
+  evaluator jobs and pairs; a pair is enqueued before the creating job finishes), with their
+  own selection policy (`eval_set_pair_policy`). `APPLY_TRANSFORM` and `CONTINUE_REFERENCE`
+  are local rule events (`eval_net_events`), compared across schedules like the others.
+- **Verification (§47).** `tests/test_compiler.c`: the empty diagram; a tail depending on
+  its witness; the complete associativity declaration in both orientations (the emitted
+  collapse is one transport with a false tube in a path family, the expansion the stated
+  triple; the call checks, exposes the pair without evaluating the path, one application and
+  one receiver event, repeated demands share the entry); a shared predecessor (one block,
+  one image); dimension substitution and strengthened face (opening the reindexed call gives
+  the composed data, support follows the boundary, keys are rebuilt from the call's support);
+  rejections (wrong endpoints, bad node type, unmet face; a budgeted run publishes nothing
+  unless checked); a higher path in the evidence parameter (`⟨i⟩F_{H@i}(r)` at its path
+  type); cut followed by loop conversion (the residual is not refl); contractible-fibre
+  projection/section and a rejected non-contraction; an external application pair into an
+  `EVAL` consumer and into a storing consumer; recursive arguments (the pair is exposed, a
+  demand through the identity equivalence at a cyclic argument stays `W_STUCK`, nothing is
+  synthesized). `tests/test_schedule.c` demands the same calls under three faces and after a
+  dimension substitution and compares W (including the two new rule classes) and the exact
+  result graphs across 24 schedules.

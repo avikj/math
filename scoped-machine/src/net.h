@@ -25,10 +25,11 @@ typedef enum {
     OP_REINDEX_DIM_BINDER, OP_REINDEX_PARTIAL_DIM_BINDER, OP_REINDEX_PARTIAL,
     OP_APPLY_TERM_BINDER, OP_APPLY_DIM_BINDER, OP_APPLY_PARTIAL_DIM_BINDER,
     OP_FORALL_DIMENSION, OP_PROJECT_FACE, OP_FACE_COVERAGE, OP_USE_PARTIAL, OP_GET_SUPPORT,
-    OP_REINDEX_HEAD, OP_MATERIALIZE, OP_EVAL,
+    OP_REINDEX_HEAD, OP_MATERIALIZE, OP_APPLY_TRANSFORM, OP_EVAL,
     /* structural agents */
     A_DUP,        /* negative principal; aux 1,2 positive results */
     A_ERASE,      /* negative principal */
+    A_CONTINUE_REFERENCE,   /* §43 receiver: negative principal, no auxiliaries; payload a = parent entry */
     A_HEAD,       /* materialized constructor: positive principal, negative field auxiliaries */
     A_BRANCH_NIL, A_BRANCH_CONS, A_BRANCH,
     A_ROOT        /* observation root: one negative port */
@@ -62,7 +63,7 @@ typedef struct { NodeId node; uint64_t gen; } Active;
  * and every surviving boundary owner in a consistent total order (by id),
  * revalidates the redex and its boundary, installs, publishes and retires,
  * then enqueues the new active pairs after releasing the locks (§20). */
-typedef struct {
+typedef struct Net {
     Chunked nodes; size_t nnodes;
     pthread_mutex_t alloc_mu;
     VEC(Active) active;       /* candidate active pairs (by one member, with generation) */
@@ -72,7 +73,13 @@ typedef struct {
     size_t rewrites;
     /* local rule instances by class (diamond-balanced event classes), committed only */
     size_t n_op, n_dup, n_erase, n_eval_deliver;
+    size_t n_apply, n_continue;   /* §43/§45: APPLY_TRANSFORM and CONTINUE_REFERENCE rule events */
     size_t retries;           /* diagnostics: replacements abandoned after revalidation */
+    /* §43: when shared is set, pending active pairs are jobs of the shared
+     * scheduler: pushes count in *shared.outstanding under *shared.mu and
+     * signal *shared.cv; the shared scheduler pops them (net_pop_pair) and
+     * steps them (net_step_pair) and does its own finish accounting. */
+    struct { pthread_mutex_t *mu; pthread_cond_t *cv; size_t *outstanding; } shared;
     int policy;               /* 0 LIFO, 1 FIFO, 2 random (sequential selection only) */
     uint64_t rng;
 } Net;
@@ -89,6 +96,10 @@ bool net_is_live(const Net *n, NodeId a);
 Node *net_node_ptr(const Net *n, NodeId a);           /* quiescent inspection only */
 size_t net_node_count(Net *n);
 void net_set_workers(Net *n, size_t workers);          /* 0 = sequential */
+void net_share_scheduler(Net *n, pthread_mutex_t *mu, pthread_cond_t *cv, size_t *outstanding);
+bool net_pop_pair_locked(Net *n, Active *out);         /* caller holds shared.mu */
+size_t net_pending_pairs_locked(const Net *n);
+bool net_step_pair(Net *n, Active a);                  /* one candidate pair; true when a replacement was committed */
 /* run local rules until no active pair remains; returns rewrite count */
 size_t net_run(Net *n);
 /* evaluation requests suspended in the cache are resumed by the eval

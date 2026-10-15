@@ -1,20 +1,19 @@
 # Reviewer guide
 
-This is a from-scratch C11 implementation of §§1–38 of `HANDOFF.md` (*Scoped cubical
-interaction machine and identity compiler*, 14 October 2026; §§39–48 are the next
-increment). The guide
+This is a from-scratch C11 implementation of `HANDOFF.md` (*Scoped cubical interaction
+machine and identity compiler*, §§1–48, 14 October 2026). The guide
 says how to check it without trusting the implementer's summary.
 
 ## 1. Run
 
     make test     # ASan/UBSan/LSan: checking (74), comparison (12), templates and admission (52),
-                  # the review's regression cases (4 modes), acceptance/law (124 + 23 net),
-                  # 24-schedule comparison, concurrent clients (storms, pools); then the acceptance,
-                  # schedule, checking and template suites again with 4-thread pools
+                  # identity compiler (77), the review's regression cases (4 modes), acceptance/law
+                  # (124 + 23 net), 24-schedule comparison, concurrent clients (storms, pools); then
+                  # the acceptance, schedule, checking, template and compiler suites with 4-thread pools
     make tsan     # every suite under ThreadSanitizer, including the review's concurrent case
                   # with halt_on_error (several minutes)
 
-Expected: `74 passed, 0 failed`, `12 passed, 0 failed`, `52 passed, 0 failed`, every
+Expected: `74 passed, 0 failed`, `12 passed, 0 failed`, `52 passed, 0 failed`, `77 passed, 0 failed`, every
 `(expected …)` line of `review-regressions` matching its expectation, `124 passed, 0 failed`,
 `schedule check passed`, `concurrent check passed`, and `make tsan` ending with the same lines
 and no `WARNING`. Where LeakSanitizer cannot run (restricted `/proc`), `ASAN_OPTIONS=detect_leaks=0`
@@ -42,7 +41,14 @@ See the table in `README.md`. Entry points worth reading first:
 | §26 events | counters in `eval_request`, `deliver`, `publish`, `execute` | `src/eval.c` |
 | §2 contexts | `context_make`, `occurrence_validate`, `whnf_in` | `src/term.c`, `src/eval.c` |
 | §33 checking | `check_context`, `check_map`, `check_origin`, `infer_head`, `check_clause`, `validate_symbol` | `src/check.c` |
-| §34 conversion | `conv_type_clause`, `conv_term_clause`, `spine`, `conv_memo_get` | `src/check.c` |
+| §34 conversion | `conv_type_clause`, `conv_term_clause`, `spine`, `conv_claim` | `src/check.c` |
+| §34–35 claims / admission transaction | `claim_acquire`, `claim_release`, `resolve_locked`, `may_block_locked`, `top_settled` | `src/check.c` |
+| §9, §14 fixed templates | `tm_*`, every `mk_*` and `comp_clause_*` | `src/lib.c` |
+| §39 diagrams, realization, canonical substitution | `diagram_declare`, `diagram_validate`, `diagram_build` | `src/compiler.c` |
+| §41 singleton maps | `down`, `emit_collapse`, `emit_expand`, `diagram_collapse`, `diagram_expand` | `src/compiler.c` |
+| §42 identity compilation | `graph_pair`, `derive_identity`, `compile_identity`, `certificate_verify` | `src/compiler.c` |
+| §43 invocation | `mk_tcall` (`src/term.c`), `mk_transform_call`, `compiler_decode_call`; `evaluate` T_TCALL and `pop_locked` (`src/eval.c`); `rule_op` OP_APPLY_TRANSFORM and `apply_rule` A_CONTINUE_REFERENCE (`src/net.c`); `infer_head` T_TCALL (`src/check.c`) | — |
+| §44 equivalence, residual, cut, contractible fibre | `derive_equivalence`, `derive_residual`, `derive_cut`, `derive_contractible` | `src/compiler.c` |
 | §35 quiescence | `reserve_job`, `enqueue_reserved`, `finish_job`, `eval_run`, `whnf`; `push_active`, `net_finish_job`, `net_run_with_eval` | `src/eval.c`, `src/net.c` |
 | §36 ownership | `cont_release`, `gather_free`, `rootbox_release`, `eval_free` | `src/eval.c` |
 | §37 comparison | `canon_export`, `graph_match` (`unify`, `solve`) | `src/canon.c`, `src/match.c` |
@@ -141,9 +147,21 @@ level per `COMP` origin for the evaluator to read, which makes the clause output
 whether admission ran, or (c) accepting the per-type-instance templates. The author should
 choose; (c) is implemented.
 
-### Open item: §39–48
+### §39–48
 
-The identity compiler (§39–48) is the next, additive increment; it is not in this commit.
+Implemented in `src/compiler.c` (README, "Identity compiler"); the eleven §47 cases are in
+`tests/test_compiler.c` and case 10 in `tests/test_schedule.c`. Two readings to confirm:
+
+1. `TRANSFORM_CALL` stores σ as fields (one per parameter of the transform's context, in
+   context order) rather than as a `MapId` payload, so that reindexing a view of the call
+   composes σ with the map by the ordinary opening of fields; the call's support is then the
+   union of the images' supports, the argument's, the annotations' and the required face's,
+   which contains the instantiated body's support. A reindexed call and a call built directly
+   at the reindexed data open to the same `(id, dir, σ, a, annotations)` but are different
+   `RefId`s, as for every other origin.
+2. The compiled record's parameter context for an identity is `Γ, y` with `y` keyed by the
+   ordered diagram pair; the collapse/expand templates of a diagram have their own `y_d`, and
+   the pair template instantiates them at the common `y` by parameter substitution.
 
 ## 6. Representation choices a reviewer should know
 

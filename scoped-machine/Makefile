@@ -2,10 +2,10 @@ CC      ?= gcc
 CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c
+SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -38,10 +38,15 @@ build/review-regressions: $(OBJ) tests/review_regressions.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 
+build/compiler: $(OBJ) tests/test_compiler.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
 test: all
 	./build/check
 	./build/match
 	./build/templates
+	./build/compiler
 	./build/review-regressions
 	./build/review-regressions recursive
 	./build/review-regressions concurrent
@@ -53,8 +58,9 @@ test: all
 	CUBICAL_WORKERS=4 ./build/schedule
 	CUBICAL_WORKERS=4 ./build/check
 	CUBICAL_WORKERS=4 ./build/templates
+	CUBICAL_WORKERS=4 ./build/compiler
 
-TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates review_regressions
+TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
@@ -66,6 +72,7 @@ tsan:
 	CUBICAL_WORKERS=4 ./build/tsan/test_check
 	./build/tsan/test_match
 	CUBICAL_WORKERS=4 ./build/tsan/test_templates
+	CUBICAL_WORKERS=4 ./build/tsan/test_compiler
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions recursive
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions concurrent

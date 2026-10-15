@@ -1,5 +1,7 @@
 #include "eval.h"
 #include "lib.h"
+#include "net.h"
+#include "compiler.h"
 
 /* ---------------- continuations, joins, results ----------------
  *
@@ -53,7 +55,8 @@ struct Cont {
     ExternalDeliver ext_fn; void *ext_ctx; void (*ext_free)(void *);   /* EXTERNAL */
 };
 
-typedef struct { bool is_resume; EntryId entry; Cont *k; EvalResult *r; } Task;
+/* a job: EVALUATE(entry), RESUME(k, r), or a NET_PAIR of the evaluator's net (§43) */
+typedef struct { bool is_resume, is_pair; EntryId entry; Cont *k; EvalResult *r; Active pair; } Task;
 
 static struct {
     /* cache */
@@ -71,6 +74,9 @@ static struct {
     VEC(EvalResult *) results; pthread_mutex_t res_mu;
     /* live joins: a join that never fills (stuck children) is dismantled at teardown */
     VEC(Gather *) joins; pthread_mutex_t join_mu;
+    /* the evaluator's net (§43): APPLY_TRANSFORM / CONTINUE_REFERENCE pairs
+     * are jobs of this scheduler (one outstanding count) */
+    Net net; SchedPolicy pair_policy;
     /* counters */
     size_t tasks_created;
     EvalEvents ev;
@@ -90,6 +96,21 @@ EvalEvents eval_events(void) {
     return v;
 }
 void eval_set_policy(SchedPolicy p, uint64_t seed) { E.policy = p; E.rng = seed ? seed : 0x9E3779B97F4A7C15ULL; }
+void eval_set_pair_policy(SchedPolicy p, uint64_t seed) {
+    E.pair_policy = p;
+    E.net.policy = p == POL_LIFO ? 0 : p == POL_FIFO ? 1 : 2;
+    E.net.rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
+}
+Net *eval_net(void) { return &E.net; }
+EvalNetEvents eval_net_events(void) {
+    EvalNetEvents v;
+    v.apply = __atomic_load_n(&E.net.n_apply, __ATOMIC_SEQ_CST);
+    v.continue_ref = __atomic_load_n(&E.net.n_continue, __ATOMIC_SEQ_CST);
+    v.op = __atomic_load_n(&E.net.n_op, __ATOMIC_SEQ_CST);
+    v.eval_deliver = __atomic_load_n(&E.net.n_eval_deliver, __ATOMIC_SEQ_CST);
+    v.retries = __atomic_load_n(&E.net.retries, __ATOMIC_SEQ_CST);
+    return v;
+}
 static uint64_t rng_next(void) { E.rng ^= E.rng << 13; E.rng ^= E.rng >> 7; E.rng ^= E.rng << 17; return E.rng; }
 
 static void *worker_main(void *arg);
@@ -104,6 +125,9 @@ void eval_init(void) {
     pthread_cond_init(&E.idle_cv, NULL);
     pthread_mutex_init(&E.res_mu, NULL);
     pthread_mutex_init(&E.join_mu, NULL);
+    net_init(&E.net);
+    net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
+    E.net.policy = 1;   /* pairs FIFO by default */
 }
 
 static void gather_free(Gather *g) {
@@ -137,6 +161,7 @@ static Entry *ENT(EntryId e) { return (Entry *)chunked_get(&E.entries, e - 1); }
 
 void eval_free(void) {
     stop_workers();
+    net_free(&E.net);           /* after the workers: a pending pair is a job */
     for (size_t i = 0; i < E.n_entries; i++) {
         Entry *e = ENT(i + 1);
         for (size_t w = 0; w < e->waiters.len; w++) {                 /* suspended forever: stuck demands */
@@ -228,11 +253,21 @@ static void finish_job(void) {
     if (--E.outstanding == 0) pthread_cond_broadcast(&E.idle_cv);
     pthread_mutex_unlock(&E.q_mu);
 }
-static void enqueue_resume(Cont *k, EvalResult *r) { Task t = { true, 0, k, r }; enqueue(t); }
+static void enqueue_resume(Cont *k, EvalResult *r) { Task t; memset(&t, 0, sizeof t); t.is_resume = true; t.k = k; t.r = r; enqueue(t); }
 
 /* pick the next job under q_mu according to the policy */
 static bool pop_locked(Task *out) {
-    if (E.qhead >= E.queue.len) { E.queue.len = 0; E.qhead = 0; return false; }
+    size_t npairs = net_pending_pairs_locked(&E.net);
+    bool have_jobs = E.qhead < E.queue.len;
+    if (!have_jobs) { E.queue.len = 0; E.qhead = 0; }
+    if (npairs) {
+        /* two queues, each with its own policy; which queue goes first is
+         * itself a policy choice (FIFO: jobs first, LIFO: pairs first,
+         * RANDOM: a coin) */
+        bool pairs_first = !have_jobs || E.policy == POL_LIFO || (E.policy == POL_RANDOM && (rng_next() & 1));
+        if (pairs_first) { memset(out, 0, sizeof *out); out->is_pair = true; require(net_pop_pair_locked(&E.net, &out->pair), "pair queue"); return true; }
+    }
+    if (!have_jobs) return false;
     size_t pick = E.qhead;
     if (E.policy == POL_LIFO) pick = E.queue.len - 1;
     else if (E.policy == POL_RANDOM) pick = E.qhead + (size_t)(rng_next() % (E.queue.len - E.qhead));
@@ -340,7 +375,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     pthread_mutex_unlock(&e->mu);
     add_count(&E.ev.launch);
     add_count(&E.tasks_created);
-    Task job = { false, eid, NULL, NULL };
+    Task job; memset(&job, 0, sizeof job); job.entry = eid;
     enqueue_reserved(job);               /* enqueue after the entry lock is released */
 }
 
@@ -420,6 +455,25 @@ static void evaluate(EntryId eid) {
     case T_SYSTEM:
         eval_system_head(t, &h, chi, eid);
         break;
+    case T_TCALL: {
+        /* §43: consume this frame; allocate APPLY_TRANSFORM(id,dir,σ) with
+         * REF(a) on its principal port and CONTINUE_REFERENCE(K) on its
+         * result; K stays RUNNING, its suspended evaluation is now owned by
+         * the receiver. Connecting the principal ports enqueues the pair
+         * before this job finishes. */
+        uint64_t id; int dir; MapId sigma; RefId a;
+        require(compiler_decode_call(&h, &id, &dir, &sigma, &a), "malformed TRANSFORM_CALL");
+        Payload P = {0}; P.a = id; P.b = (uint64_t)dir; P.c = sigma;
+        NodeId op = net_operation(&E.net, OP_APPLY_TRANSFORM, P);
+        Payload Pr = {0}; Pr.ref = a;
+        NodeId d = net_descriptor(&E.net, D_REF, Pr);
+        Payload Pk = {0}; Pk.a = eid; Pk.face = chi;
+        int8_t pol[1] = { -1 };
+        NodeId cr = net_node(&E.net, A_CONTINUE_REFERENCE, 1, pol, Pk);
+        net_connect(&E.net, op, 1, cr, 0);
+        net_connect(&E.net, op, 0, d, 0);
+        break;
+    }
     case T_COMP: {
         FaceId phi = h.f[1].id;
         if (fc_entails(chi, phi)) {            /* tube coverage first */
@@ -603,12 +657,17 @@ static void resume(Cont *k, EvalResult *r) {
     head_free(&h);
 }
 
-/* one elementary frame step */
+/* one elementary frame step, or one local rule of the evaluator's net
+ * (counted in the net's rule classes, not as an evaluator step) */
 static void execute(Task t) {
+    if (t.is_pair) { net_step_pair(&E.net, t.pair); return; }
     add_count(&E.ev.eval_step);
     if (t.is_resume) { resume(t.k, t.r); cont_release(t.k); }   /* single consumer: released once resumed */
     else evaluate(t.entry);
 }
+
+/* §43 FORWARD_RESULT(K): the receiver's request; delivery publishes into K */
+void eval_forward_result(EntryId K, RefId v) { forward(v, ENT(K)->face, K); }
 
 static void *worker_main(void *arg) {
     (void)arg;

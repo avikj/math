@@ -1,5 +1,6 @@
 #include "net.h"
 #include "lib.h"
+#include "compiler.h"
 
 /* ------------------------------------------------------------------ */
 /* nodes and wiring                                                     */
@@ -105,12 +106,24 @@ static __thread ActiveVec *tls_pending = NULL;
 static void push_active(Net *n, NodeId a, uint64_t gen) {
     Active it = { a, gen };
     if (tls_pending) { vec_push(tls_pending, it); return; }
+    if (n->shared.mu) {
+        pthread_mutex_lock(n->shared.mu);
+        (*n->shared.outstanding)++;
+        vec_push(&n->active, it);
+        pthread_cond_signal(n->shared.cv);
+        pthread_mutex_unlock(n->shared.mu);
+        return;
+    }
     pthread_mutex_lock(&n->act_mu);
     n->outstanding++;
     vec_push(&n->active, it);
     pthread_cond_signal(&n->act_cv);
     pthread_mutex_unlock(&n->act_mu);
 }
+void net_share_scheduler(Net *n, pthread_mutex_t *mu, pthread_cond_t *cv, size_t *outstanding) {
+    n->shared.mu = mu; n->shared.cv = cv; n->shared.outstanding = outstanding;
+}
+size_t net_pending_pairs_locked(const Net *n) { return n->active.len; }
 static void net_finish_job(Net *n) {
     pthread_mutex_lock(&n->act_mu);
     require(n->outstanding > 0, "net finish without outstanding job");
@@ -342,6 +355,14 @@ static void unlock_two(Net *n, NodeId a, NodeId b) {
 
 static void flush_pending(Net *n, ActiveVec *pend) {
     if (!pend->len) { vec_free(pend); return; }
+    if (n->shared.mu) {
+        pthread_mutex_lock(n->shared.mu);
+        for (size_t i = 0; i < pend->len; i++) { (*n->shared.outstanding)++; vec_push(&n->active, pend->data[i]); }
+        pthread_cond_broadcast(n->shared.cv);
+        pthread_mutex_unlock(n->shared.mu);
+        vec_free(pend);
+        return;
+    }
     pthread_mutex_lock(&n->act_mu);
     for (size_t i = 0; i < pend->len; i++) { n->outstanding++; vec_push(&n->active, pend->data[i]); }
     pthread_cond_broadcast(&n->act_cv);
@@ -505,6 +526,21 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
     case OP_GET_SUPPORT: { WANT(D_REF); Payload p = {0}; p.a = ref_support(Q.ref); res = net_descriptor(n, D_DIMSET, p); break; }
     case OP_REINDEX_HEAD: WANT(D_HEAD_RECIPE); res = desc_recipe(n, reindex(d->head->owner, P.a)); break;
     case OP_MATERIALIZE: WANT(D_HEAD_RECIPE); res = materialize(n, d->head); break;
+    case OP_APPLY_TRANSFORM: {
+        /* §43: the one replacement — v := reindex(template, σ + slot ↦ a);
+         * no evaluation of a, the proof, or v */
+        WANT(D_REF);
+        RefId body; TermVarId slot;
+        require(compiler_template(P.a, (int)P.b, &body, &slot), "APPLY_TRANSFORM of an unknown compiled transform");
+        MapBuilder b; mapb_init(&b);
+        size_t nt = map_n_terms(P.c), nd = map_n_dims(P.c);
+        for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(P.c, k, &x, &im); mapb_term(&b, x, im); }
+        for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(P.c, k, &i, &im); mapb_dim(&b, i, im); }
+        mapb_term(&b, slot, Q.ref);
+        res = desc_ref(n, reindex(body, mapb_finish(&b)));
+        count(&n->n_apply);
+        break;
+    }
     case OP_EVAL: {
         WANT(D_REF);
         /* the result endpoint transfers into the continuation; the request
@@ -553,6 +589,19 @@ static bool apply_rule(Net *n, NodeId neg, NodeId pos) {
         else if (is_shell(ps->kind)) rule_erase_shell(n, neg, pos);
         else return false;
         count(&n->n_erase);
+        return true;
+    }
+    if (ng->kind == A_CONTINUE_REFERENCE) {
+        /* §43 receiver: CONTINUE_REFERENCE(K) -- REF(v)  →  REQ(key(v, face K), FORWARD_RESULT(K)).
+         * The shells retire after the parent's suspended evaluation has been
+         * transferred to the request's continuation. */
+        if (ps->kind != D_REF) return false;
+        EntryId K = (EntryId)ng->p.a; RefId v = ps->p.ref;
+        Replacement r; rep_init(&r);
+        rep_remove(&r, neg); rep_remove(&r, pos);
+        rep_commit(n, &r);
+        eval_forward_result(K, v);
+        count(&n->n_continue);
         return true;
     }
     return false;
@@ -631,6 +680,18 @@ static bool step(Net *n, Active cand) {
         return did;
     }
     return false;
+}
+
+bool net_step_pair(Net *n, Active a) { return step(n, a); }
+bool net_pop_pair_locked(Net *n, Active *out) {
+    if (!n->active.len) return false;
+    size_t pick = n->active.len - 1;
+    if (n->policy == 1) pick = 0;
+    else if (n->policy == 2) { n->rng ^= n->rng << 13; n->rng ^= n->rng >> 7; n->rng ^= n->rng << 17; pick = (size_t)(n->rng % n->active.len); }
+    *out = n->active.data[pick];
+    n->active.data[pick] = n->active.data[n->active.len - 1];
+    n->active.len--;
+    return true;
 }
 
 static bool pop_active_locked(Net *n, Active *out) {

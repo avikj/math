@@ -1,5 +1,6 @@
 #include "check.h"
 #include "lib.h"
+#include "compiler.h"
 
 /* ------------------------------------------------------------------ */
 /* state: request claims, memo, budget                                  */
@@ -795,6 +796,26 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         ContextId Gs = origin_context(h.origin);
         st = check_map(G, C, h.map, Gs, fc_true(), reason);
         if (st == CK_VALID) *type = reindex(global_type(s), h.map);
+        break;
+    }
+    case T_TCALL: {
+        /* §43: a validated compiled record, a typed parameter map whose
+         * source face entails required_face[σ], the argument at the
+         * instantiated domain; the annotations must be the instantiated
+         * domain and codomain; the result type is the output annotation */
+        uint64_t id; int dir; MapId sigma; RefId a;
+        if (!compiler_decode_call(&h, &id, &dir, &sigma, &a)) { *reason = "malformed TRANSFORM_CALL or unknown transform"; st = CK_INVALID; break; }
+        const CompiledTransform *tr = transform_get(id);
+        st = check_map(G, C, sigma, tr->parameters, tr->required_face, reason);
+        if (st != CK_VALID) break;
+        RefId dom = reindex(dir ? tr->codomain : tr->domain, sigma), cod = reindex(dir ? tr->domain : tr->codomain, sigma);
+        size_t np = context_size(tr->parameters);
+        ConvStatus c1 = conv_type_clause(G, C, h.f[np + 1].id, dom);
+        ConvStatus c2 = c1 == CV_EQUAL ? conv_type_clause(G, C, h.f[np + 2].id, cod) : c1;
+        if (c2 == CV_UNEQUAL) { *reason = "TRANSFORM_CALL annotations differ from the instantiated domain/codomain"; st = CK_INVALID; break; }
+        if (c2 == CV_UNRESOLVED) { *reason = "unresolved: TRANSFORM_CALL annotation conversion"; st = CK_UNRESOLVED; break; }
+        st = check_clause(G, C, a, dom, reason);
+        if (st == CK_VALID) *type = h.f[np + 2].id;
         break;
     }
     }

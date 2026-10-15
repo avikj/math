@@ -12,6 +12,7 @@
 #define CUBICAL_EVAL_H
 
 #include "term.h"
+struct Net;
 
 typedef enum {
     R_INTRODUCTION = 1,
@@ -89,6 +90,14 @@ EvalEvents eval_events(void);
  * form (up to renaming of allocated identities) must not depend on it. */
 typedef enum { POL_FIFO = 0, POL_LIFO, POL_RANDOM } SchedPolicy;
 void eval_set_policy(SchedPolicy p, uint64_t seed);
+/* §43: the evaluator's net holds the APPLY_TRANSFORM / CONTINUE_REFERENCE
+ * pairs as jobs of the same scheduler (one outstanding count); the pair queue
+ * has its own selection policy */
+void eval_set_pair_policy(SchedPolicy p, uint64_t seed);
+typedef struct { size_t apply, continue_ref, op, eval_deliver, retries; } EvalNetEvents;
+EvalNetEvents eval_net_events(void);
+struct Net *eval_net(void);
+void eval_forward_result(EntryId K, RefId v);        /* the receiver's request (net rule) */
 
 /* cache introspection (tests) */
 EntryId eval_entry_lookup(RefId t, FaceId chi);     /* 0 when absent */

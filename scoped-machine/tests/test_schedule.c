@@ -16,10 +16,12 @@
 #include "../src/lib.h"
 #include "../src/net.h"
 #include "../src/canon.h"
+#include "assoc.h"
 
 typedef struct {
     EvalEvents ev;
     size_t net_op, net_dup, net_erase, net_deliver, net_rewrites;
+    EvalNetEvents en;    /* the evaluator's net: APPLY_TRANSFORM / CONTINUE_REFERENCE events (§43, §45) */
     unsigned net_root_kind[4];
     size_t running_after_ok;
     /* exported result graph (results = ordered roots, keys = set roots) */
@@ -47,8 +49,10 @@ static void observe(RefId t, FaceId chi, Run *R) {
 static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     memset(R, 0, sizeof *R);
     nroots = 0;
-    machine_init(); eval_init(); if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
+    machine_init(); eval_init(); check_init(); compiler_init();
+    if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     eval_set_policy(pol, seed);
+    eval_set_pair_policy((SchedPolicy)(netpol == 0 ? POL_LIFO : netpol == 1 ? POL_FIFO : POL_RANDOM), seed ? seed * 7 + 3 : 5);
     RefId U0 = mk_universe(0);
     RefId A = var(U0), B = var(U0), T = var(U0);
     DimVarId i = declare_dim(), k = declare_dim(), m = declare_dim(), n = declare_dim();
@@ -106,6 +110,41 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     observe(mk_fst(mk_unglue(U0, fc_true(), U0, mk_id_equiv(U0), tr)), fc_true(), R);
     observe(t0, fc_true(), R);
 
+    /* §47 case 10: duplicate transformed-reference demands. The associativity
+     * transform is invoked in both orientations; the same call is demanded
+     * under three faces and after a dimension substitution, and its
+     * components and output path are observed. */
+    { const char *why; Assoc As; assoc_build(&As, &why);
+      require(As.T, "associativity must compile in the schedule workload");
+      MapId sigma = assoc_sigma(&As, As.rhs);
+      RefId r = assoc_left_arg(&As, sigma);
+      RefId call = mk_transform_call(As.T, DIR_FORWARD, sigma, r);
+      DimVarId j = declare_dim();
+      observe(call, fc_true(), R);
+      observe(call, fc_lit(j, 0), R);                     /* same key: j is not in the call's support */
+      observe(mk_fst(call), fc_true(), R);
+      RefId path = mk_snd(mk_snd(call));
+      observe(path, fc_true(), R);
+      observe(mk_papp_const(As.X, As.rhs, As.rhs, path, iv_var(j)), fc_true(), R);
+      observe(mk_papp_const(As.X, As.rhs, As.rhs, path, iv_var(j)), fc_lit(j, 1), R);
+      RefId rcall = mk_transform_call(As.T, DIR_REVERSE, sigma, assoc_right_arg(&As, sigma));
+      observe(rcall, fc_true(), R);
+      observe(mk_fst(rcall), fc_true(), R);
+      observe(mk_fst(mk_snd(rcall)), fc_true(), R);
+      /* a call whose boundary moves along k, demanded whole and specialized */
+      DimVarId kk = declare_dim();
+      RefId yk = mk_papp_const(As.X, As.lhs, As.rhs, As.alpha, iv_var(kk));
+      MapId sk = assoc_sigma(&As, yk);
+      DimVarId i2 = declare_dim();
+      RefId w = mk_plam(i2, mk_papp_const(As.X, As.lhs, As.rhs, As.alpha, iv_meet(iv_var(i2), iv_var(kk))));
+      RefId RLk = reindex(transform_get(As.T)->domain, sk);
+      RefId rk = mk_pair_at(RLk, As.mab, mk_pair_at(apply_term_binder(RLk, 0, 1, As.mab), mk_refl(As.X, As.mab), w));
+      RefId callk = mk_transform_call(As.T, DIR_FORWARD, sk, rk);
+      observe(callk, fc_true(), R);
+      observe(callk, fc_lit(kk, 0), R);
+      observe(reindex_dim(callk, kk, iv_one()), fc_true(), R);
+      observe(mk_fst(reindex_dim(callk, kk, iv_one())), fc_true(), R); }
+
     /* descriptor net under the net policy: two EVAL agents on one key, and
      * duplication of a materialized system head */
     Net net; net_init(&net); net.policy = netpol; net.rng = seed ? seed * 3 + 1 : 1;
@@ -133,6 +172,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     net_free(&net);
 
     R->ev = eval_events();
+    R->en = eval_net_events();
     R->ready_hit = R->ev.ready_hit; R->running_hit = R->ev.running_hit;
 
     /* exact canonical dump: root observations in a fixed order, then every
@@ -154,7 +194,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     R->n_refs = interner_count(&M.refs); R->n_origins = interner_count(&M.origins); R->n_maps = interner_count(&M.maps);
     R->n_faces = interner_count(&M.faces); R->n_intervals = interner_count(&M.intervals); R->n_nominal = interner_count(&M.nominal);
     R->n_terms = M.n_term_vars; R->n_dims = M.n_dim_vars;
-    eval_free(); machine_free();
+    compiler_free(); check_free(); eval_free(); machine_free();
 }
 
 static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed) {
@@ -165,6 +205,9 @@ static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed)
     if (a->net_op != b->net_op || a->net_dup != b->net_dup || a->net_erase != b->net_erase || a->net_deliver != b->net_deliver) {
         printf("  FAIL [%s seed %llu]: net rule counts differ\n", name, (unsigned long long)seed); ok = false;
     }
+    if (a->en.apply != b->en.apply || a->en.continue_ref != b->en.continue_ref || a->en.op != b->en.op || a->en.eval_deliver != b->en.eval_deliver) {
+        printf("  FAIL [%s seed %llu]: evaluator-net rule counts differ (apply %zu/%zu continue %zu/%zu)\n", name, (unsigned long long)seed, a->en.apply, b->en.apply, a->en.continue_ref, b->en.continue_ref); ok = false;
+    }
     for (int q = 0; q < 4; q++) if (a->net_root_kind[q] != b->net_root_kind[q]) { printf("  FAIL [%s seed %llu]: net root %d differs\n", name, (unsigned long long)seed, q); ok = false; }
     MatchReport mr;
     if (!graph_match(a->graph, b->graph, &mr)) { printf("  FAIL [%s seed %llu]: result graphs are not equal modulo renaming: %s\n", name, (unsigned long long)seed, mr.reason); ok = false; }
@@ -172,8 +215,8 @@ static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed)
 }
 
 static void show(const char *name, const Run *r) {
-    printf("  %-14s W=(REQUEST %zu, EVAL_STEP %zu, PUB %zu, DELIVER %zu | op %zu, dup %zu, erase %zu, eval-deliver %zu)  hits ready/running %zu/%zu\n",
-           name, r->ev.request, r->ev.eval_step, r->ev.publish, r->ev.deliver, r->net_op, r->net_dup, r->net_erase, r->net_deliver, r->ready_hit, r->running_hit);
+    printf("  %-14s W=(REQUEST %zu, EVAL_STEP %zu, PUB %zu, DELIVER %zu | op %zu, dup %zu, erase %zu, eval-deliver %zu | apply %zu, continue %zu)  hits ready/running %zu/%zu\n",
+           name, r->ev.request, r->ev.eval_step, r->ev.publish, r->ev.deliver, r->net_op, r->net_dup, r->net_erase, r->net_deliver, r->en.apply, r->en.continue_ref, r->ready_hit, r->running_hit);
 }
 
 int main(void) {
