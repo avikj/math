@@ -22,8 +22,9 @@ typedef struct {
     size_t net_op, net_dup, net_erase, net_deliver, net_rewrites;
     unsigned net_root_kind[4];
     size_t running_after_ok;
-    /* canonical dumps */
-    char *results;      /* RESULT lines + reachable record graph */
+    /* exported result graph (results = ordered roots, keys = set roots) */
+    Graph *graph;
+    char *results;      /* diagnostic text dump */
     /* diagnostics */
     size_t entries, n_refs, n_origins, n_maps, n_faces, n_intervals, n_nominal, n_terms, n_dims;
     size_t ready_hit, running_hit;
@@ -146,30 +147,14 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
         size_t req, del, pub; eval_entry_events(eid, &req, &del, &pub);
         canon_add_key(c, eval_entry_ref(eid), eval_entry_face(eid), req, del, pub, (int)eval_entry_state(eid));
     }
-    size_t len; const char *buf = canon_finish(c, &len);
-    R->results = strdup(buf);
+    R->graph = canon_export(c);
+    R->results = strdup("");
     canon_free(c);
     R->entries = ne;
     R->n_refs = interner_count(&M.refs); R->n_origins = interner_count(&M.origins); R->n_maps = interner_count(&M.maps);
     R->n_faces = interner_count(&M.faces); R->n_intervals = interner_count(&M.intervals); R->n_nominal = interner_count(&M.nominal);
     R->n_terms = M.n_term_vars; R->n_dims = M.n_dim_vars;
     eval_free(); machine_free();
-}
-
-static void first_diff(const char *label, const char *a, const char *b) {
-    const char *pa = a, *pb = b;
-    size_t line = 1;
-    while (*pa && *pb) {
-        const char *ea = strchr(pa, '\n'), *eb = strchr(pb, '\n');
-        size_t la = ea ? (size_t)(ea - pa) : strlen(pa), lb = eb ? (size_t)(eb - pb) : strlen(pb);
-        if (la != lb || memcmp(pa, pb, la) != 0) {
-            printf("    first divergent %s line %zu:\n      A: %.*s\n      B: %.*s\n", label, line, (int)la, pa, (int)lb, pb);
-            return;
-        }
-        if (!ea || !eb) break;
-        pa = ea + 1; pb = eb + 1; line++;
-    }
-    if (*pa || *pb) printf("    %s: one dump is a prefix of the other (line %zu)\n", label, line);
 }
 
 static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed) {
@@ -181,7 +166,8 @@ static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed)
         printf("  FAIL [%s seed %llu]: net rule counts differ\n", name, (unsigned long long)seed); ok = false;
     }
     for (int q = 0; q < 4; q++) if (a->net_root_kind[q] != b->net_root_kind[q]) { printf("  FAIL [%s seed %llu]: net root %d differs\n", name, (unsigned long long)seed, q); ok = false; }
-    if (strcmp(a->results, b->results) != 0) { printf("  FAIL [%s seed %llu]: canonical result graphs differ\n", name, (unsigned long long)seed); first_diff("result line", a->results, b->results); ok = false; }
+    MatchReport mr;
+    if (!graph_match(a->graph, b->graph, &mr)) { printf("  FAIL [%s seed %llu]: result graphs are not equal modulo renaming: %s\n", name, (unsigned long long)seed, mr.reason); ok = false; }
     return ok;
 }
 
@@ -211,16 +197,17 @@ int main(void) {
                 printf("  note [%s]: allocation diagnostics differ (refs %zu/%zu origins %zu/%zu nominal %zu/%zu names %zu+%zu/%zu+%zu entries %zu/%zu) — not part of the invariant\n",
                        name, base.n_refs, other.n_refs, base.n_origins, other.n_origins, base.n_nominal, other.n_nominal, base.n_terms, base.n_dims, other.n_terms, other.n_dims, base.entries, other.entries);
             if (s == nseeds - 1 && (ep == 2 && np == 2)) show(name, &other);
-            free(other.results);
+            free(other.results); graph_free(other.graph);
             runs++;
         }
     }
-    printf("  %zu root observations, %zu cache keys, canonical result graph %zu bytes; %d schedules compared\n", nroots, base.entries, strlen(base.results), runs);
+    { MatchReport mr; graph_match(base.graph, base.graph, &mr);
+      printf("  %zu root observations, %zu cache keys, result graph %zu nodes (%zu joint refinement classes); %d schedules compared by exact matching\n", nroots, base.entries, base.graph->nodes.len, mr.classes_joint, runs); }
     printf("  ready-hit/running-hit diagnostics %s across schedules; REQUEST − launches = %zu is invariant\n", hits_vary ? "vary" : "coincide", base.ready_hit + base.running_hit);
     printf("  allocation diagnostics (base): refs %zu origins %zu maps %zu faces %zu intervals %zu nominal %zu names %zu+%zu\n", base.n_refs, base.n_origins, base.n_maps, base.n_faces, base.n_intervals, base.n_nominal, base.n_terms, base.n_dims);
     if (base.running_after_ok) { printf("  FAIL: a completed root left %zu RUNNING entries in its demand network\n", base.running_after_ok); fails++; }
     else printf("  no RUNNING entry survives a completed root observation\n");
-    free(base.results);
+    free(base.results); graph_free(base.graph);
     printf(fails ? "SCHEDULE CHECK FAILED\n" : "schedule check passed\n");
     return fails ? 1 : 0;
 }

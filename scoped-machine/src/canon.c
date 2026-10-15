@@ -4,33 +4,22 @@
 /* ---- graph ---- */
 typedef enum { G_REF = 1, G_NOMINAL, G_FACE, G_INTERVAL, G_CLAUSE, G_LITERAL, G_ENTRY, G_INPUT_VAR, G_INPUT_DIM, G_CONST, G_RESULT, G_KEY } GKind;
 
-typedef struct {
-    GKind kind;
-    char *label;              /* own label */
-    VEC(size_t) ordered;      /* child node indices, order significant */
-    VEC(size_t) unordered;    /* child node indices, a set */
-    size_t cls;               /* refinement class */
-    size_t num;               /* DFS number (0 = not yet) */
-    size_t req, del, pub; int state;   /* keys */
-} GNode;
-
 struct Canon {
-    VEC(GNode) g;
+    Graph *g;                 /* nodes, roots (results), setroots (keys) */
     WordMap index;            /* (kind, id) → node index + 1 */
-    VEC(size_t) roots;
-    VEC(size_t) keys;
     VEC(char *) root_labels;
+    size_t *cls, *num;        /* diagnostic dump only */
     char *buf; size_t len, cap;
 };
 
-Canon *canon_new(void) { Canon *c = calloc(1, sizeof *c); require(c, "out of memory"); wordmap_init(&c->index); return c; }
+Canon *canon_new(void) { Canon *c = calloc(1, sizeof *c); require(c, "out of memory"); c->g = graph_new(); wordmap_init(&c->index); return c; }
 void canon_free(Canon *c) {
-    for (size_t i = 0; i < c->g.len; i++) { free(c->g.data[i].label); vec_free(&c->g.data[i].ordered); vec_free(&c->g.data[i].unordered); }
-    vec_free(&c->g); wordmap_free(&c->index); vec_free(&c->roots); vec_free(&c->keys);
+    graph_free(c->g); wordmap_free(&c->index);
     for (size_t i = 0; i < c->root_labels.len; i++) free(c->root_labels.data[i]);
     vec_free(&c->root_labels);
-    free(c->buf); free(c);
+    free(c->cls); free(c->num); free(c->buf); free(c);
 }
+Graph *canon_export(Canon *c) { Graph *g = c->g; c->g = graph_new(); return g; }
 
 static void text(Canon *c, const char *s) {
     size_t n = strlen(s);
@@ -38,20 +27,15 @@ static void text(Canon *c, const char *s) {
     memcpy(c->buf + c->len, s, n + 1); c->len += n;
 }
 
-static size_t node_new(Canon *c, GKind kind, const char *label) {
-    GNode n; memset(&n, 0, sizeof n);
-    n.kind = kind; n.label = strdup(label);
-    vec_push(&c->g, n);
-    return c->g.len - 1;
-}
+static size_t node_new(Canon *c, GKind kind, const char *label) { return graph_node(c->g, (int)kind, label); }
 static bool lookup(Canon *c, GKind kind, uint64_t id, size_t *out) {
     uint64_t k[2] = { kind, id }, v;
     if (!wordmap_get(&c->index, k, 2, &v)) return false;
     *out = (size_t)(v - 1); return true;
 }
 static void remember(Canon *c, GKind kind, uint64_t id, size_t idx) { uint64_t k[2] = { kind, id }; wordmap_put(&c->index, k, 2, idx + 1); }
-static void add_ordered(Canon *c, size_t parent, size_t child) { vec_push(&c->g.data[parent].ordered, child); }
-static void add_unordered(Canon *c, size_t parent, size_t child) { vec_push(&c->g.data[parent].unordered, child); }
+static void add_ordered(Canon *c, size_t parent, size_t child) { graph_ordered(c->g, parent, child); }
+static void add_unordered(Canon *c, size_t parent, size_t child) { graph_unordered(c->g, parent, child); }
 
 static uint64_t input_index_term(TermVarId x) { uint64_t k = 0; for (TermVarId y = 1; y < x; y++) if (term_var_provenance(y) == 0) k++; return k; }
 static uint64_t input_index_dim(DimVarId i) { uint64_t k = 0; for (DimVarId j = 1; j < i; j++) if (dim_var_provenance(j) == 0) k++; return k; }
@@ -141,6 +125,9 @@ static size_t g_ref(Canon *c, RefId t) {
     for (size_t k = 0; k < nf && sl < 400; k++) { Field f = origin_field(o, (FieldIndex)k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " f%d@%d", (int)f.kind, f.slot == NO_SLOT ? -1 : (int)f.slot); }
     idx = node_new(c, G_REF, full);
     remember(c, G_REF, t, idx);
+    { FaceId declared = origin_declared_required(o);        /* §2 annotation is part of the record */
+      size_t ann = declared ? g_face(c, declared) : node_new(c, G_CONST, "noreq");
+      add_ordered(c, idx, ann); }
     for (size_t k = 0; k < nb; k++) {
         Binder b = origin_binder(o, (BinderSlot)k);
         add_ordered(c, idx, b.sort == S_TERM ? g_var(c, b.formal) : g_dim(c, b.formal));
@@ -176,20 +163,19 @@ void canon_add_result(Canon *c, const char *label, const EvalResult *r) {
     case R_NO_OBSERVATION: idx = node_new(c, G_RESULT, "RESULT NO_OBSERVATION"); break;
     default: { char lab[256]; snprintf(lab, sizeof lab, "RESULT INVALID %s", r->message ? r->message : ""); idx = node_new(c, G_RESULT, lab); break; }
     }
-    vec_push(&c->roots, idx);
+    graph_root(c->g, idx);
     vec_push(&c->root_labels, strdup(label));
 }
 
 void canon_add_key(Canon *c, RefId ref, FaceId face, size_t req, size_t del, size_t pub, int state) {
-    size_t idx = node_new(c, G_KEY, "KEY");
+    char lab[128]; snprintf(lab, sizeof lab, "KEY REQ=%zu DELIVER=%zu PUB=%zu state=%d", req, del, pub, state);
+    size_t idx = node_new(c, G_KEY, lab);
     add_ordered(c, idx, g_ref(c, ref));
     add_ordered(c, idx, g_face(c, face));
-    GNode *n = &c->g.data[idx];
-    n->req = req; n->del = del; n->pub = pub; n->state = state;
-    vec_push(&c->keys, idx);
+    graph_setroot(c->g, idx);
 }
 
-/* ---- exact partition refinement ---- */
+/* ---- diagnostic dump: refinement classes + DFS numbering ---- */
 
 typedef struct { size_t node; Words sig; } Sig;
 static Canon *sort_ctx;
@@ -202,73 +188,71 @@ static int cmp_sig(const void *a, const void *b) {
 }
 static int cmp_label_idx(const void *a, const void *b) {
     size_t x = *(const size_t *)a, y = *(const size_t *)b;
-    return strcmp(sort_ctx->g.data[x].label, sort_ctx->g.data[y].label);
+    const GNode *p = &sort_ctx->g->nodes.data[x], *q = &sort_ctx->g->nodes.data[y];
+    if (p->kind != q->kind) return p->kind < q->kind ? -1 : 1;
+    return strcmp(p->label, q->label);
+}
+static int cmp_by_cls(const void *a, const void *b) {
+    size_t x = *(const size_t *)a, y = *(const size_t *)b;
+    size_t cx = sort_ctx->cls[x], cy = sort_ctx->cls[y];
+    return cx < cy ? -1 : cx > cy ? 1 : 0;
 }
 
 static size_t refine(Canon *c) {
-    size_t n = c->g.len;
+    size_t n = c->g->nodes.len;
+    free(c->cls); c->cls = calloc(n ? n : 1, sizeof(size_t));
     size_t *order = malloc((n ? n : 1) * sizeof(size_t));
     for (size_t i = 0; i < n; i++) order[i] = i;
     sort_ctx = c;
     qsort(order, n, sizeof(size_t), cmp_label_idx);
     size_t ncls = 0;
     for (size_t i = 0; i < n; i++) {
-        if (i > 0 && strcmp(c->g.data[order[i]].label, c->g.data[order[i - 1]].label) != 0) ncls++;
-        c->g.data[order[i]].cls = ncls + 1;
+        if (i > 0 && cmp_label_idx(&order[i], &order[i - 1]) != 0) ncls++;
+        c->cls[order[i]] = ncls + 1;
     }
     ncls = n ? ncls + 1 : 0;
     free(order);
     Sig *sigs = malloc((n ? n : 1) * sizeof(Sig));
     for (size_t round = 0; round < n + 2; round++) {
         for (size_t i = 0; i < n; i++) {
-            GNode *g = &c->g.data[i];
+            GNode *g = &c->g->nodes.data[i];
             sigs[i].node = i; words_init(&sigs[i].sig);
-            words_push(&sigs[i].sig, g->cls);
+            words_push(&sigs[i].sig, c->cls[i]);
             words_push(&sigs[i].sig, g->ordered.len);
-            for (size_t k = 0; k < g->ordered.len; k++) words_push(&sigs[i].sig, c->g.data[g->ordered.data[k]].cls);
+            for (size_t k = 0; k < g->ordered.len; k++) words_push(&sigs[i].sig, c->cls[g->ordered.data[k]]);
             size_t base = sigs[i].sig.n;
-            for (size_t k = 0; k < g->unordered.len; k++) words_push(&sigs[i].sig, c->g.data[g->unordered.data[k]].cls);
+            for (size_t k = 0; k < g->unordered.len; k++) words_push(&sigs[i].sig, c->cls[g->unordered.data[k]]);
             qsort(sigs[i].sig.w + base, g->unordered.len, sizeof(uint64_t), cmp_u64);
         }
         qsort(sigs, n, sizeof(Sig), cmp_sig);
         size_t k = 0;
-        for (size_t i = 0; i < n; i++) {
-            if (i > 0 && cmp_sig(&sigs[i], &sigs[i - 1]) != 0) k++;
-            c->g.data[sigs[i].node].cls = k + 1;
-        }
+        for (size_t i = 0; i < n; i++) { if (i > 0 && cmp_sig(&sigs[i], &sigs[i - 1]) != 0) k++; c->cls[sigs[i].node] = k + 1; }
         for (size_t i = 0; i < n; i++) words_free(&sigs[i].sig);
         size_t newn = n ? k + 1 : 0;
-        if (newn == ncls) break;              /* stable partition: classes depend only on the graph */
+        if (newn == ncls) break;
         ncls = newn;
     }
     free(sigs);
     return ncls;
 }
 
-/* ---- dump ---- */
-static int cmp_by_cls(const void *a, const void *b) {
-    size_t x = *(const size_t *)a, y = *(const size_t *)b;
-    size_t cx = sort_ctx->g.data[x].cls, cy = sort_ctx->g.data[y].cls;
-    return cx < cy ? -1 : cx > cy ? 1 : 0;
-}
-
 static size_t dump(Canon *c, size_t idx, size_t *next) {
-    if (c->g.data[idx].num) return c->g.data[idx].num;
-    c->g.data[idx].num = ++*next;
-    size_t mine = c->g.data[idx].num;
-    size_t nord = c->g.data[idx].ordered.len, nun = c->g.data[idx].unordered.len;
+    if (c->num[idx]) return c->num[idx];
+    c->num[idx] = ++*next;
+    size_t mine = c->num[idx];
+    GNode *g = &c->g->nodes.data[idx];
+    size_t nord = g->ordered.len, nun = g->unordered.len;
     size_t *ord = malloc((nord ? nord : 1) * sizeof(size_t));
-    for (size_t k = 0; k < nord; k++) ord[k] = dump(c, c->g.data[idx].ordered.data[k], next);
+    for (size_t k = 0; k < nord; k++) ord[k] = dump(c, c->g->nodes.data[idx].ordered.data[k], next);
     size_t *un = malloc((nun ? nun : 1) * sizeof(size_t));
-    if (nun) memcpy(un, c->g.data[idx].unordered.data, nun * sizeof(size_t));
+    if (nun) memcpy(un, c->g->nodes.data[idx].unordered.data, nun * sizeof(size_t));
     sort_ctx = c;
     qsort(un, nun, sizeof(size_t), cmp_by_cls);
     size_t *unn = malloc((nun ? nun : 1) * sizeof(size_t));
     for (size_t k = 0; k < nun; k++) unn[k] = dump(c, un[k], next);
-    GNode *g = &c->g.data[idx];
+    g = &c->g->nodes.data[idx];
     char head[96];
     snprintf(head, sizeof head, "#%zu ", mine); text(c, head); text(c, g->label);
-    if (g->kind == G_KEY) { snprintf(head, sizeof head, " REQ=%zu DELIVER=%zu PUB=%zu state=%d", g->req, g->del, g->pub, g->state); text(c, head); }
     for (size_t k = 0; k < nord; k++) { snprintf(head, sizeof head, " #%zu", ord[k]); text(c, head); }
     if (nun) text(c, " {");
     for (size_t k = 0; k < nun; k++) { snprintf(head, sizeof head, " #%zu", unn[k]); text(c, head); }
@@ -278,30 +262,23 @@ static size_t dump(Canon *c, size_t idx, size_t *next) {
     return mine;
 }
 
-static int cmp_key_canon(const void *a, const void *b) {
-    size_t x = *(const size_t *)a, y = *(const size_t *)b;
-    const GNode *gx = &sort_ctx->g.data[x], *gy = &sort_ctx->g.data[y];
-    size_t cx0 = sort_ctx->g.data[gx->ordered.data[0]].cls, cy0 = sort_ctx->g.data[gy->ordered.data[0]].cls;
-    if (cx0 != cy0) return cx0 < cy0 ? -1 : 1;
-    size_t cx1 = sort_ctx->g.data[gx->ordered.data[1]].cls, cy1 = sort_ctx->g.data[gy->ordered.data[1]].cls;
-    if (cx1 != cy1) return cx1 < cy1 ? -1 : 1;
-    return 0;
-}
-
 const char *canon_finish(Canon *c, size_t *len) {
     size_t ncls = refine(c);
+    size_t n = c->g->nodes.len;
+    free(c->num); c->num = calloc(n ? n : 1, sizeof(size_t));
+    c->len = 0;
     size_t next = 0;
     char head[160];
-    snprintf(head, sizeof head, "GRAPH nodes=%zu classes=%zu\n", c->g.len, ncls); text(c, head);
-    for (size_t i = 0; i < c->roots.len; i++) {
-        size_t num = dump(c, c->roots.data[i], &next);
+    snprintf(head, sizeof head, "GRAPH nodes=%zu classes=%zu\n", n, ncls); text(c, head);
+    for (size_t i = 0; i < c->g->roots.len; i++) {
+        size_t num = dump(c, c->g->roots.data[i], &next);
         snprintf(head, sizeof head, "ROOT %s -> #%zu\n", c->root_labels.data[i], num); text(c, head);
     }
-    size_t *ks = malloc((c->keys.len ? c->keys.len : 1) * sizeof(size_t));
-    if (c->keys.len) memcpy(ks, c->keys.data, c->keys.len * sizeof(size_t));
+    size_t *ks = malloc((c->g->setroots.len ? c->g->setroots.len : 1) * sizeof(size_t));
+    if (c->g->setroots.len) memcpy(ks, c->g->setroots.data, c->g->setroots.len * sizeof(size_t));
     sort_ctx = c;
-    qsort(ks, c->keys.len, sizeof(size_t), cmp_key_canon);
-    for (size_t i = 0; i < c->keys.len; i++) { size_t num = dump(c, ks[i], &next); snprintf(head, sizeof head, "KEYROOT -> #%zu\n", num); text(c, head); }
+    qsort(ks, c->g->setroots.len, sizeof(size_t), cmp_by_cls);
+    for (size_t i = 0; i < c->g->setroots.len; i++) { size_t num = dump(c, ks[i], &next); snprintf(head, sizeof head, "KEYROOT -> #%zu\n", num); text(c, head); }
     free(ks);
     if (len) *len = c->len;
     return c->buf ? c->buf : "";
