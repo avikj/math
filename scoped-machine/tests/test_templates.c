@@ -192,6 +192,34 @@ int main(void) {
         CHECK(check(Gd, fc_true(), dw, mk_path_const(0, A, a, b), &why) == CK_INVALID, "Down rejects a scope with a false result annotation (%s)", why);
         CHECK(check(Gd, fc_true(), du, mk_path_const(0, A, a, b), &why) == CK_INVALID, "Down rejects a scope available only on false (%s)", why); }
 
+      /* structural scope validity (§50.1–2): independent of faces, before opening */
+      { const char *w2 = "";
+        LocalDecl dd = { S_DIM, 0, LEVEL_NONE, fc_true() };
+        LocalDecl dt = { S_TERM, A, 0, fc_true() };
+        Val vb;
+        /* depth: a bound occurrence with no enclosing telescope */
+        vb = (Val){ VS_REF, ref_var(bound_id(1, 0)) };
+        CHECK(!scope_validate(scope_intern(1, &dd, vb, A, 0, fc_false()), &w2), "an escaping bound occurrence is structurally invalid even under false (%s)", w2);
+        /* sort: a term occurrence at a dimension slot */
+        vb = (Val){ VS_REF, ref_var(bound_id(0, 0)) };
+        CHECK(!scope_validate(scope_intern(1, &dd, vb, A, 0, fc_false()), &w2), "a wrong-sort bound occurrence is structurally invalid (%s)", w2);
+        /* slot range */
+        vb = (Val){ VS_REF, ref_var(bound_id(0, 3)) };
+        CHECK(!scope_validate(scope_intern(1, &dt, vb, A, 0, fc_true()), &w2), "an out-of-range slot is structurally invalid (%s)", w2);
+        /* prefix: a local's declaration may use only earlier slots */
+        LocalDecl two[2] = { { S_TERM, mk_path_const(0, A, ref_var(bound_id(0, 1)), a), 0, fc_true() }, { S_TERM, A, 0, fc_true() } };
+        vb = (Val){ VS_REF, a };
+        CHECK(!scope_validate(scope_intern(2, two, vb, A, 0, fc_true()), &w2), "a local declaration using a later slot is structurally invalid (%s)", w2);
+        LocalDecl ok2[2] = { { S_TERM, A, 0, fc_true() }, { S_TERM, mk_path_const(0, A, ref_var(bound_id(0, 0)), a), 0, fc_true() } };
+        CHECK(scope_validate(scope_intern(2, ok2, vb, A, 0, fc_true()), &w2), "a local declaration over its prefix is valid (%s)", w2);
+        /* nested: an inner scope may use an outer telescope's slot of the right sort */
+        TermVarId vxo = tv(A);
+        ScopeId inner = capture_dim1(j, mk_path_const(0, A, ref_var(vxo), a), U0, 1, fc_true());
+        ScopeId outer = capture_term2(vxo, A, 0, tv(A), A, 0, mk_coe(0, inner, mk_refl(0, A, ref_var(vxo))), mk_path_const(0, A, ref_var(vxo), a), 0, fc_true());
+        CHECK(scope_validate(outer, &w2), "a nested scope using an outer local is valid (%s)", w2);
+        /* a captured library scope is valid */
+        CHECK(scope_validate(capture_dim1(i, A, U0, 1, fc_true()), &w2), "a captured family scope is valid (%s)", w2); }
+
       /* escaped constructor locals (review F3): a child of IdEquiv over its
        * local w keeps w's declaration; a valid substitute checks and the
        * child's typed boundary reindexes canonically */

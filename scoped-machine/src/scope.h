@@ -31,6 +31,8 @@ typedef struct {
     IntervalId (*dim)(uint64_t i, unsigned depth, void *ctx);    /* 0 = keep */
     uint64_t key;                                                /* memo key of this traversal */
     void *ctx;
+    void (*enter)(ScopeId S, unsigned depth, void *ctx);         /* optional: a scope's records are about to be traversed at depth */
+    void (*leave)(ScopeId S, unsigned depth, void *ctx);
 } Trav;
 RefId trav_ref(RefId t, const Trav *tv, unsigned depth);
 IntervalId trav_iv(IntervalId r, const Trav *tv, unsigned depth);
@@ -56,6 +58,13 @@ FaceId forall_scope(ScopeId S);           /* unary dimension scope of total face
 /* open with fresh concrete locals minted from `key` (checking); ids receives
  * the minted identities in slot order */
 TypedPartial open_scope_fresh(ScopeId S, uint64_t key, uint64_t *ids);
+/* §50.1–2 structural validity, independent of any face: every bound
+ * occurrence in the scope's records (and in scopes nested anywhere inside
+ * them, through views and template environments) names an existing
+ * enclosing telescope, an in-range slot of the right sort; a local's
+ * declaration uses only earlier slots of its own telescope; required
+ * metadata is present. Must hold before the scope is opened. */
+bool scope_validate(ScopeId S, const char **reason);
 
 /* free (unbound) part of a dimension set / variable set */
 DimSetId dimset_free(DimSetId s);

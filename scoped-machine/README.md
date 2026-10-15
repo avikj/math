@@ -311,10 +311,12 @@ still takes them as premises and reports ill-typed demands it reaches as `R_INVA
   validating it; while frozen, `define_global` returns 0 and `set_global_body` returns false.
   `check_open_environment()` opens a new candidate environment: a fresh checker session
   (claims, admission verdict, diagnostics) and a reset evaluator (all observations retired;
-  workers and policies kept). It is a closed session boundary: no checker, compiler or
-  observation client may be in progress and evaluator work must have drained (both
-  enforced); `EvalResult` and diagnostic pointers from before it are dead. A new machine
-  starts with an open environment (the version counter is never reused). An admission verdict is reused for its environment version
+  workers and policies kept). It is a closed session boundary and a host precondition: the caller stops admitting
+  clients and waits for whole public calls to return and evaluator work to drain (the
+  in-progress counter, the attempt flag and `eval_reset`'s outstanding check are partial
+  assertions of this, not its enforcement); `EvalResult` and diagnostic pointers from before
+  it are dead. A new machine starts with an open environment (the version counter is never
+  reused), and a thread's template source face κ is qualified by the machine generation. An admission verdict is reused for its environment version
   when settled, and an UNRESOLVED one only within the attempt that produced it
   (`check_new_attempt`, or a changed budget, begins a new attempt; a top-level request's
   budget is fixed when it enters).
@@ -332,9 +334,11 @@ still takes them as premises and reports ill-typed demands it reaches as `R_INVA
   parameter signature and result type remain the retained boundary. Every library parameter
   is declared (partial ones with their guard); an instance is validated at its boundary
   before its head: reference and local images against the instantiated declared types on
-  their declared guards; scope arguments first for their own validity (locals' declarations
-  form at their required levels under their own required faces, result type and body under
-  the supplied guard) and then against their contextual signatures (common fresh telescope,
+  their declared guards; scope arguments first for their finite structure (`scope_validate`, before any
+  opening and independent of faces: bound occurrences name existing telescopes and slots of
+  the right sort, declarations use their prefix, metadata present) and their own validity
+  (locals' declarations form at their required levels under their own required faces,
+  result type and body under the supplied guard) and then against their contextual signatures (common fresh telescope,
   declarations by conversion, expected guard ⊢ supplied guard, result types converted under
   the expected guard); and the inferred type against the program's declared result type.
   Checking forms (λ, pair, path λ, system) enter the same boundary.

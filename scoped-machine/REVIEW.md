@@ -12,16 +12,16 @@ says how to check it without trusting the implementer's summary.
                   # the acceptance, schedule, checking, template and compiler suites with 4-thread
                   # pools; then the reviews' reproductions (review-followup in 4 modes,
                   # review-claim-wait, review-checker-lifecycle, review-ae756a1 in 11 modes,
-                  # review-0f787a3 in 6 modes),
+                  # review-0f787a3 in 6 modes, review-9eadaf2 in 6 modes),
                   # each exiting nonzero on a miss
     make tsan     # every suite under ThreadSanitizer, including the review's concurrent case and
                   # the three reproductions with halt_on_error (several minutes)
 
-Expected: `78 passed, 0 failed`, `12 passed, 0 failed`, `73 passed, 0 failed`, `85 passed, 0 failed`, every
+Expected: `78 passed, 0 failed`, `12 passed, 0 failed`, `80 passed, 0 failed`, `85 passed, 0 failed`, every
 `(expected …)` line of `review-regressions` matching its expectation, `124 passed, 0 failed`,
 `35 net checks passed`, `schedule check passed`, `concurrent check passed`, the reproductions
 printing their observations without a `FAIL:` line (`<mode>: 0 expectation failures` for each
-review_ae756a1 and review_0f787a3 mode), and `make tsan` ending with the same lines and no `WARNING`. Where LeakSanitizer cannot run (restricted `/proc`), `ASAN_OPTIONS=detect_leaks=0`
+review_ae756a1, review_0f787a3 and review_9eadaf2 mode), and `make tsan` ending with the same lines and no `WARNING`. Where LeakSanitizer cannot run (restricted `/proc`), `ASAN_OPTIONS=detect_leaks=0`
 keeps ASan/UBSan; leak checking was run here.
 
 ## 2. Where each spec section lives
@@ -213,13 +213,20 @@ they use freely (F3).
 | F4 fresh machine frozen | `machine_init` opens the environment (`env_control_init`); the version counter is not reused | `term.c`, `machine.c` | `review-0f787a3 machine-restart` |
 | regressions / docs | `review_ae756a1 missing-level` keeps the original unannotated negative case and the annotated positive case; README's composition paragraph and the `level_ok1` comment corrected | — | — |
 
-Two readings to confirm. (1) A new candidate environment retires every observation
-(`eval_reset`): `EvalResult` pointers obtained before `check_open_environment` are dead
-afterwards; the alternative, keeping old results while invalidating memo entries that
-depend on changed symbols, is not what §57 R1 asks for. (2) Binder locals of constructor
-nodes (the `x` of a template `Π`) are declared by the binding node's own domain field, which
-is always the parent in the opened structure; the typed closure therefore closes over
-parameter and scope-local declarations, not over node-binder locals.
+## 5e. The review of 9eadaf2: corrections made
+
+| Finding | Correction | Where | Regression |
+| --- | --- | --- | --- |
+| R1 finite scope before opening | `scope_validate` runs before any opening, independent of faces: through the traversal engine with scope enter/leave hooks it checks that every bound occurrence (in the records and in scopes nested anywhere inside them, through views and template environments) names an existing enclosing telescope, an in-range slot of the right sort; each local's declaration is traversed over its prefix telescope; required metadata is present; the scope's free identities must be declared in the occurrence context. `check_scope_own` then performs the guarded formation and body checks | `scope.c`, `check.c` | `review-9eadaf2 scope-depth`, `scope-sort`, `nested-control`; `test_templates.c` (depth, sort, slot range, prefix, nested outer use, captured library scopes) |
+| R2 κ across machine lifetimes | The thread's κ is qualified by the machine generation (`machine_generation`, incremented by `machine_init`, never reused); a thread entering a later machine observes the default true face; overrides and `comp_clause`'s save/restore stay within their machine | `machine.c`, `template.c` | `review-9eadaf2 kappa-restart`, `kappa-alias`, `kappa-thread` (a retained client thread) |
+
+The session boundary (`check_open_environment`) is a host precondition: the caller stops
+admitting new clients and waits for whole public calls (checker, compiler, observation) to
+return and for evaluator work to drain. The in-progress counter, the admission-attempt flag
+and `eval_reset`'s outstanding-work check are partial assertions of that precondition, not
+its enforcement: `top_leave` releases the counter before `top_settled`, and compound compiler
+and observation calls have intervals outside individual checker entries. No concurrent reset
+is supported.
 
 ## 6. Representation choices a reviewer should know
 

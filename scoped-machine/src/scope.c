@@ -159,6 +159,7 @@ ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result
 static ScopeId trav_scope_records(ScopeId S, const Trav *tv, unsigned rd) {
     uint64_t key[4] = { 2, S, tv->key, rd }, out;
     if (tv->key && wordmap_get(&M.trav_memo, key, 4, &out)) return out;
+    if (tv->enter) tv->enter(S, rd, tv->ctx);
     size_t n = scope_arity(S);
     LocalDecl *ls = malloc((n ? n : 1) * sizeof(LocalDecl));
     for (size_t k = 0; k < n; k++) {
@@ -171,10 +172,68 @@ static ScopeId trav_scope_records(ScopeId S, const Trav *tv, unsigned rd) {
     FaceId g = trav_fc(scope_guard(S), tv, rd);
     out = scope_intern(n, ls, b, ty, scope_level(S), g);
     free(ls);
+    if (tv->leave) tv->leave(S, rd, tv->ctx);
     if (tv->key) wordmap_put(&M.trav_memo, key, 4, out);
     return out;
 }
 ScopeId trav_scope(ScopeId S, const Trav *tv, unsigned depth) { return trav_scope_records(S, tv, depth + 1); }
+
+/* ------------------------------------------------------------------ */
+/* structural validation (§50.1–2)                                       */
+
+typedef struct { VEC(ScopeId) stack; const char *why; } ValCtx;
+static bool val_atom(ValCtx *v, uint64_t id, unsigned depth, Sort want) {
+    uint32_t d = bound_depth(id), s = bound_slot(id);
+    if (d >= depth || d >= v->stack.len) { v->why = "bound occurrence names no enclosing telescope"; return false; }
+    ScopeId T = v->stack.data[v->stack.len - 1 - d];
+    if (s >= scope_arity(T)) { v->why = "bound occurrence names a slot outside its telescope"; return false; }
+    if (scope_local(T, s).sort != want) { v->why = "bound occurrence has the wrong sort for its slot"; return false; }
+    return true;
+}
+static RefId val_term(uint64_t x, unsigned depth, void *c) { ValCtx *v = c; if (is_bound_id(x) && !v->why) val_atom(v, x, depth, S_TERM); return 0; }
+static IntervalId val_dim(uint64_t i, unsigned depth, void *c) { ValCtx *v = c; if (is_bound_id(i) && !v->why) val_atom(v, i, depth, S_DIM); return 0; }
+static void val_leave(ScopeId S, unsigned depth, void *c) { (void)S; (void)depth; ValCtx *v = c; v->stack.len--; }
+/* a prefix view of a telescope: the first k locals */
+static ScopeId prefix_scope(ScopeId S, size_t k) {
+    LocalDecl *ls = malloc((k ? k : 1) * sizeof(LocalDecl));
+    for (size_t q = 0; q < k; q++) ls[q] = scope_local(S, q);
+    Val b = { VS_FACE, fc_true() };
+    ScopeId P = scope_intern(k, ls, b, 0, LEVEL_NONE, fc_true());
+    free(ls); return P;
+}
+/* entering a scope (top-level or nested anywhere inside the records):
+ * metadata, then each local's declaration over its prefix telescope and the
+ * enclosing stack; then the scope itself is pushed for its body, result
+ * type and guard (traversed by the engine) */
+static void val_enter(ScopeId S, unsigned depth, void *c) {
+    ValCtx *v = c;
+    size_t n = scope_arity(S);
+    Val body = scope_body(S);
+    for (size_t k = 0; k < n && !v->why; k++) {
+        LocalDecl d = scope_local(S, k);
+        if (d.sort == S_TERM && !d.type) v->why = "term local without a declared type";
+        else if (d.sort == S_DIM && d.type) v->why = "dimension local with a type";
+    }
+    if (!v->why && body.sort == VS_REF && !scope_type(S)) v->why = "reference scope without a declared result type";
+    Trav tv = { val_term, val_dim, 0, v, val_enter, val_leave };
+    for (size_t k = 0; k < n && !v->why; k++) {
+        LocalDecl d = scope_local(S, k);
+        vec_push(&v->stack, prefix_scope(S, k));
+        if (d.type) trav_ref(d.type, &tv, depth);
+        if (!v->why) trav_fc(d.required, &tv, depth);
+        v->stack.len--;
+        if (v->why) v->why = "local declaration uses a later or absent slot";
+    }
+    vec_push(&v->stack, S);
+}
+bool scope_validate(ScopeId S, const char **reason) {
+    ValCtx v; memset(&v, 0, sizeof v);
+    Trav tv = { val_term, val_dim, 0, &v, val_enter, val_leave };
+    (void)trav_scope(S, &tv, 0);          /* no outer telescope at the top level */
+    vec_free(&v.stack);
+    if (v.why) { *reason = v.why; return false; }
+    return true;
+}
 
 /* ------------------------------------------------------------------ */
 /* application and ambient reindexing                                    */

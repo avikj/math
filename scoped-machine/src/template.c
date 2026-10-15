@@ -25,10 +25,17 @@ typedef struct {
 } TDef;
 
 static struct { TDef defs[TD_COUNT]; uint64_t index_counter[TD_COUNT]; bool init; pthread_mutex_t mu; } TPL;
+/* the thread's source face κ is a handle of one machine: it is qualified by
+ * the machine generation, and a thread entering a later machine lifetime
+ * observes that machine's default true face (review R2 of 9eadaf2) */
 static __thread FaceId tl_kappa;
+static __thread uint64_t tl_kappa_gen;
 
-void template_set_kappa(FaceId kappa) { tl_kappa = kappa; }
-FaceId template_kappa(void) { return tl_kappa ? tl_kappa : fc_true(); }
+void template_set_kappa(FaceId kappa) { tl_kappa = kappa; tl_kappa_gen = machine_generation(); }
+FaceId template_kappa(void) {
+    if (tl_kappa_gen != machine_generation()) { tl_kappa = 0; tl_kappa_gen = machine_generation(); }
+    return tl_kappa ? tl_kappa : fc_true();
+}
 
 /* ------------------------------------------------------------------ */
 /* expressions: interned records [kind, words...]                        */

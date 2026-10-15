@@ -915,6 +915,14 @@ static CheckStatus infer_clause(ContextId G, FaceId C, RefId t, RefId *type, con
  * metadata requirements hold whatever the guards; the typing judgments are
  * vacuous where the guards are false. */
 static CheckStatus check_scope_own(ContextId G, FaceId C, ScopeId S, const char **reason) {
+    /* finite structure first, independent of any face: bound occurrences
+     * name existing telescopes/slots of the right sort, declarations use
+     * their prefix, metadata is present; and the scope's free identities
+     * are declared in the occurrence context */
+    if (!scope_validate(S, reason)) return CK_INVALID;
+    { size_t m; const uint64_t *fv = varset_get(scope_freevars(S), &m);
+      for (size_t q = 0; q < m; q++) if (!context_declares_term(G, fv[q], NULL)) { *reason = "scope mentions a variable not declared in the occurrence context"; return CK_INVALID; }
+      if (!dims_declared(G, scope_support(S))) { *reason = "scope mentions a dimension not declared in the occurrence context"; return CK_INVALID; } }
     size_t n = scope_arity(S);
     uint64_t *ids = malloc((n ? n : 1) * sizeof(uint64_t)); Val *args = malloc((n ? n : 1) * sizeof(Val));
     require(ids && args, "out of memory");
