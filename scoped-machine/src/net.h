@@ -50,15 +50,30 @@ typedef struct {
     Payload p;
     Head *head;               /* materialized recipe (A_HEAD / D_HEAD_RECIPE) */
     Tag tag;
+    uint64_t gen;             /* generation: bumped at retirement; stale handles are detected */
+    pthread_mutex_t mu;       /* owner lock: guards live, peer[], and the fields above */
 } Node;
 
+typedef struct { NodeId node; uint64_t gen; } Active;
+
+/* Nodes live in non-moving storage and are never freed during a run, so a
+ * worker holding a NodeId can always dereference it (pinning is trivial);
+ * generations detect stale identity. A replacement locks the redex owners
+ * and every surviving boundary owner in a consistent total order (by id),
+ * revalidates the redex and its boundary, installs, publishes and retires,
+ * then enqueues the new active pairs after releasing the locks (§20). */
 typedef struct {
-    VEC(Node) nodes;
-    VEC(NodeId) active;       /* candidate active pairs (by one member) */
+    Chunked nodes; size_t nnodes;
+    pthread_mutex_t alloc_mu;
+    VEC(Active) active;       /* candidate active pairs (by one member, with generation) */
+    pthread_mutex_t act_mu; pthread_cond_t act_cv, idle_cv;
+    size_t busy; bool stop;
+    pthread_t *workers; size_t nworkers;
     size_t rewrites;
-    /* local rule instances by class (diamond-balanced event classes) */
+    /* local rule instances by class (diamond-balanced event classes), committed only */
     size_t n_op, n_dup, n_erase, n_eval_deliver;
-    int policy;               /* 0 LIFO, 1 FIFO, 2 random */
+    size_t retries;           /* diagnostics: replacements abandoned after revalidation */
+    int policy;               /* 0 LIFO, 1 FIFO, 2 random (sequential selection only) */
     uint64_t rng;
 } Net;
 
@@ -68,8 +83,12 @@ NodeId net_descriptor(Net *n, NodeKind kind, Payload p);
 NodeId net_operation(Net *n, NodeKind kind, Payload p);
 NodeId net_node(Net *n, NodeKind kind, uint8_t nports, const int8_t *polarity, Payload p);
 void net_connect(Net *n, NodeId a, uint16_t pa, NodeId b, uint16_t pb);
+void net_disconnect(Net *n, NodeId a, uint16_t pa);   /* client-side: free a port (quiescent net) */
 Endpoint net_peer(const Net *n, NodeId a, uint16_t pa);
 bool net_is_live(const Net *n, NodeId a);
+Node *net_node_ptr(const Net *n, NodeId a);           /* quiescent inspection only */
+size_t net_node_count(Net *n);
+void net_set_workers(Net *n, size_t workers);          /* 0 = sequential */
 /* run local rules until no active pair remains; returns rewrite count */
 size_t net_run(Net *n);
 /* evaluation requests suspended in the cache are resumed by the eval

@@ -229,7 +229,8 @@ static void test_binders(void) {
 
 /* ---------------------------------------------------------------- */
 static size_t ext_calls; static EvalResult *ext_last[2];
-static void ext_deliver(void *ctx, EvalResult *r) { ext_last[(size_t)ctx] = r; ext_calls++; }
+/* written from worker threads: accessed atomically */
+static void ext_deliver(void *ctx, EvalResult *r) { __atomic_store_n(&ext_last[(size_t)ctx], r, __ATOMIC_SEQ_CST); __atomic_add_fetch(&ext_calls, 1, __ATOMIC_SEQ_CST); }
 
 static void test_eval_basic(void) {
     SECTION("§10–12 evaluation and face-sensitive cache");
@@ -289,10 +290,11 @@ static void test_eval_basic(void) {
     RefId fresh = mk_app(id, mk_pair(a, bb));
     size_t tasks0 = eval_task_count();
     ext_calls = 0;
-    eval_request(fresh, fc_true(), cont_external(ext_deliver, (void *)0));
-    eval_request(fresh, fc_true(), cont_external(ext_deliver, (void *)1));
+    eval_request(fresh, fc_true(), cont_external(ext_deliver, (void *)0, NULL));
+    eval_request(fresh, fc_true(), cont_external(ext_deliver, (void *)1, NULL));
     r = whnf(fresh, fc_true(), &st);
-    CHECK(ext_calls == 2 && ext_last[0] == ext_last[1] && ext_last[0] == r, "both waiters receive the same result");
+    eval_run();                                   /* the other two deliveries are ordinary queued jobs */
+    CHECK(__atomic_load_n(&ext_calls, __ATOMIC_SEQ_CST) == 2 && __atomic_load_n(&ext_last[0], __ATOMIC_SEQ_CST) == __atomic_load_n(&ext_last[1], __ATOMIC_SEQ_CST) && __atomic_load_n(&ext_last[0], __ATOMIC_SEQ_CST) == r, "both waiters receive the same result");
     (void)tasks0;
     CHECK(eval_entry_runs(eval_entry_lookup(fresh, fc_true())) == 1, "exactly one EVALUATE task for the key");
 
@@ -493,15 +495,52 @@ static void test_comp_clauses(void) {
     (void)b; (void)k;
 }
 
+static void test_contexts(void) {
+    SECTION("§2 occurrence contexts");
+    WhnfStatus st;
+    RefId A = var(U0);
+    TermVarId x = tv(A); RefId a = var(A);
+    DimVarId i = declare_dim();
+    RefId p = var(mk_path_const(A, a, a));
+    RefId t = mk_papp_const(A, a, a, p, iv_var(i));
+    CtxDecl ds[4] = { { S_TERM, ref_var_id(A), U0 }, { S_TERM, ref_var_id(a), A }, { S_TERM, ref_var_id(p), mk_path_const(A, a, a) }, { S_DIM, i, 0 } };
+    ContextId full = context_make(4, ds, fc_true());
+    CHECK(occurrence_validate(t, full, NULL) == OCC_VALID, "fully declared occurrence is valid");
+    ContextId no_dim = context_make(3, ds, fc_true());
+    uint64_t culprit = 0;
+    CHECK(occurrence_validate(t, no_dim, &culprit) == OCC_UNDECLARED_DIM && culprit == i, "missing dimension declaration is reported");
+    CtxDecl bad[4] = { ds[0], { S_TERM, ref_var_id(a), U0 }, ds[2], ds[3] };
+    CHECK(occurrence_validate(t, context_make(4, bad, fc_true()), &culprit) == OCC_TYPE_MISMATCH && culprit == ref_var_id(a), "declared type must be the variable's declaration type");
+    CHECK(occurrence_validate(t, context_make(2, ds, fc_true()), &culprit) == OCC_UNDECLARED_TERM && culprit == ref_var_id(p), "missing term declaration is reported (first in free-variable order)");
+    /* weakening keeps the reference and changes only the context */
+    ContextId weak = context_extend_term(full, x, A);
+    CHECK(occurrence_validate(t, weak, NULL) == OCC_VALID && context_size(weak) == 5, "weakening");
+    /* required faces: a system occurrence needs the assumption */
+    FaceId fs[2] = { fc_lit(i, 0), fc_lit(i, 1) }; RefId ts[2] = { a, a };
+    RefId sys = mk_system(2, fs, ts);
+    CHECK(occurrence_validate(sys, full, NULL) == OCC_FACE_NOT_ENTAILED, "system under the true assumption is not a valid occurrence");
+    ContextId restricted = context_restrict(full, fc_lit(i, 0));
+    CHECK(occurrence_validate(sys, restricted, NULL) == OCC_VALID && context_assumption(restricted) == fc_lit(i, 0), "restriction strengthens the assumption");
+    EvalResult *r = whnf_in(sys, restricted, &st);
+    CHECK(st == W_OK && r->ref == a, "whnf_in observes under the context assumption");
+    r = whnf_in(t, no_dim, &st);
+    CHECK(st == W_INVALID, "whnf_in refuses an invalid occurrence");
+    r = whnf_in(t, context_restrict(full, fc_lit(i, 1)), &st);
+    CHECK(st == W_OK && r->ref == a, "endpoint under the context assumption");
+    CHECK(context_make(4, ds, fc_true()) == full, "contexts are interned by structure");
+}
+
 /* ---------------------------------------------------------------- */
 int main(void) {
     machine_init();
     eval_init();
+    if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     U0 = mk_universe(0);
     test_intervals_faces();
     test_face_laws();
     test_substitution();
     test_binders();
+    test_contexts();
     test_eval_basic();
     test_eval_glue_system();
     test_comp_clauses();

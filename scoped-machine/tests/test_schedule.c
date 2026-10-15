@@ -24,7 +24,6 @@ typedef struct {
     size_t running_after_ok;
     /* canonical dumps */
     char *results;      /* RESULT lines + reachable record graph */
-    char *events;       /* per-key event multiset, sorted lines */
     /* diagnostics */
     size_t entries, n_refs, n_origins, n_maps, n_faces, n_intervals, n_nominal, n_terms, n_dims;
     size_t ready_hit, running_hit;
@@ -43,12 +42,11 @@ static void observe(RefId t, FaceId chi, Run *R) {
     root_ref[nroots] = t; root_face[nroots] = chi; root_res[nroots] = r; root_st[nroots] = st; nroots++;
 }
 
-static int cmp_lines(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
 
 static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     memset(R, 0, sizeof *R);
     nroots = 0;
-    machine_init(); eval_init();
+    machine_init(); eval_init(); if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     eval_set_policy(pol, seed);
     RefId U0 = mk_universe(0);
     RefId A = var(U0), B = var(U0), T = var(U0);
@@ -110,6 +108,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     /* descriptor net under the net policy: two EVAL agents on one key, and
      * duplication of a materialized system head */
     Net net; net_init(&net); net.policy = netpol; net.rng = seed ? seed * 3 + 1 : 1;
+    if (getenv("CUBICAL_WORKERS")) net_set_workers(&net, (size_t)atoi(getenv("CUBICAL_WORKERS")));
     int8_t pneg[1] = { -1 }, pdup[3] = { -1, +1, +1 }; Payload P = {0};
     NodeId roots[4];
     for (int q = 0; q < 4; q++) roots[q] = net_node(&net, A_ROOT, 1, pneg, P);
@@ -135,36 +134,21 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     R->ev = eval_events();
     R->ready_hit = R->ev.ready_hit; R->running_hit = R->ev.running_hit;
 
-    /* canonical dump of all root observations (roots in a fixed order) */
+    /* exact canonical dump: root observations in a fixed order, then every
+     * cache key with its per-key event counts in canonical order */
     Canon *c = canon_new();
     for (size_t q = 0; q < nroots; q++) {
-        char line[64]; snprintf(line, sizeof line, "ROOT %zu status %d ", q, (int)root_st[q]); canon_text(c, line);
-        if (root_res[q]) canon_dump_result(c, root_res[q]); else canon_text(c, "RESULT PENDING\n");
+        char line[64]; snprintf(line, sizeof line, "%zu status %d", q, (int)root_st[q]);
+        canon_add_result(c, line, root_res[q]);
     }
-    size_t len; const char *buf = canon_buffer(c, &len);
-    R->results = strdup(buf);
-    /* per-key event multiset: one line per cache entry, sorted */
-    Canon *ce = canon_new();
     size_t ne = eval_entry_count();
-    char **lines = malloc((ne ? ne : 1) * sizeof(char *));
     for (EntryId eid = 1; eid <= ne; eid++) {
         size_t req, del, pub; eval_entry_events(eid, &req, &del, &pub);
-        size_t mark; canon_buffer(ce, &mark);
-        char head[128];
-        snprintf(head, sizeof head, "KEY h=%016llx face=", (unsigned long long)canon_hash_ref(ce, eval_entry_ref(eid)));
-        canon_text(ce, head); canon_dump_face_text(ce, eval_entry_face(eid));
-        snprintf(head, sizeof head, " REQ=%zu DELIVER=%zu PUB=%zu state=%d\n", req, del, pub, (int)eval_entry_state(eid));
-        canon_text(ce, head);
-        size_t now; const char *b2 = canon_buffer(ce, &now);
-        lines[eid - 1] = strndup(b2 + mark, now - mark);
+        canon_add_key(c, eval_entry_ref(eid), eval_entry_face(eid), req, del, pub, (int)eval_entry_state(eid));
     }
-    qsort(lines, ne, sizeof(char *), cmp_lines);
-    size_t tot = 1; for (size_t q = 0; q < ne; q++) tot += strlen(lines[q]);
-    R->events = malloc(tot); R->events[0] = 0;
-    for (size_t q = 0; q < ne; q++) { strcat(R->events, lines[q]); free(lines[q]); }
-    free(lines);
-    canon_free(c); canon_free(ce);
-
+    size_t len; const char *buf = canon_finish(c, &len);
+    R->results = strdup(buf);
+    canon_free(c);
     R->entries = ne;
     R->n_refs = interner_count(&M.refs); R->n_origins = interner_count(&M.origins); R->n_maps = interner_count(&M.maps);
     R->n_faces = interner_count(&M.faces); R->n_intervals = interner_count(&M.intervals); R->n_nominal = interner_count(&M.nominal);
@@ -198,7 +182,6 @@ static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed)
     }
     for (int q = 0; q < 4; q++) if (a->net_root_kind[q] != b->net_root_kind[q]) { printf("  FAIL [%s seed %llu]: net root %d differs\n", name, (unsigned long long)seed, q); ok = false; }
     if (strcmp(a->results, b->results) != 0) { printf("  FAIL [%s seed %llu]: canonical result graphs differ\n", name, (unsigned long long)seed); first_diff("result line", a->results, b->results); ok = false; }
-    if (strcmp(a->events, b->events) != 0) { printf("  FAIL [%s seed %llu]: per-key event multisets differ\n", name, (unsigned long long)seed); first_diff("event", a->events, b->events); ok = false; }
     return ok;
 }
 
@@ -210,7 +193,7 @@ static void show(const char *name, const Run *r) {
 int main(void) {
     printf("== §28–31 schedule independence of interaction work and observed normal forms\n");
     Run base, other;
-    workload(&base, SCHED_FIFO, 1, 0);
+    workload(&base, POL_FIFO, 1, 0);
     show("FIFO/net-FIFO", &base);
     int fails = 0, runs = 1;
     const char *enames[3] = { "FIFO", "LIFO", "random" }, *nnames[3] = { "LIFO", "FIFO", "random" };
@@ -228,7 +211,7 @@ int main(void) {
                 printf("  note [%s]: allocation diagnostics differ (refs %zu/%zu origins %zu/%zu nominal %zu/%zu names %zu+%zu/%zu+%zu entries %zu/%zu) — not part of the invariant\n",
                        name, base.n_refs, other.n_refs, base.n_origins, other.n_origins, base.n_nominal, other.n_nominal, base.n_terms, base.n_dims, other.n_terms, other.n_dims, base.entries, other.entries);
             if (s == nseeds - 1 && (ep == 2 && np == 2)) show(name, &other);
-            free(other.results); free(other.events);
+            free(other.results);
             runs++;
         }
     }
@@ -237,7 +220,7 @@ int main(void) {
     printf("  allocation diagnostics (base): refs %zu origins %zu maps %zu faces %zu intervals %zu nominal %zu names %zu+%zu\n", base.n_refs, base.n_origins, base.n_maps, base.n_faces, base.n_intervals, base.n_nominal, base.n_terms, base.n_dims);
     if (base.running_after_ok) { printf("  FAIL: a completed root left %zu RUNNING entries in its demand network\n", base.running_after_ok); fails++; }
     else printf("  no RUNNING entry survives a completed root observation\n");
-    free(base.results); free(base.events);
+    free(base.results);
     printf(fails ? "SCHEDULE CHECK FAILED\n" : "schedule check passed\n");
     return fails ? 1 : 0;
 }

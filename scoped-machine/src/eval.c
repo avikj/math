@@ -1,21 +1,40 @@
 #include "eval.h"
 #include "lib.h"
 
-/* ---------------- continuations and tasks ---------------- */
+/* ---------------- continuations, joins, results ----------------
+ *
+ * Ownership (§19–§20): a continuation is single-consumer and is freed when
+ * it has been resumed; a join box is freed when it publishes; a published
+ * result is owned by its READY cache entry for the life of the machine (the
+ * entry retains it), and a control result delivered without an entry is
+ * rooted in the machine's result list. Nothing is reclaimed while a live
+ * root, entry, descriptor or continuation can still reach it. */
 
 typedef enum {
     K_ROOT = 1, K_FORWARD, K_APP, K_FST, K_SND, K_PAPP, K_UNGLUE, K_COMP_FAMILY, K_BRANCH, K_EXTERNAL
 } ContKind;
 
-/* branchwise evaluation of a guarded system: one continuation per branch,
- * the guarded results are gathered and published together */
 typedef struct {
     EntryId dest;
     size_t n, arrived;
     FaceId *faces;
     EvalResult **results;
     bool failed;
+    pthread_mutex_t mu;
 } Gather;
+
+typedef struct {
+    pthread_mutex_t mu; pthread_cond_t cv;
+    bool done; EvalResult *result;
+    int refs;                 /* client + root continuation; the last one frees */
+} RootBox;
+
+static void rootbox_release(RootBox *b) {
+    pthread_mutex_lock(&b->mu);
+    int left = --b->refs;
+    pthread_mutex_unlock(&b->mu);
+    if (left == 0) { pthread_mutex_destroy(&b->mu); pthread_cond_destroy(&b->cv); free(b); }
+}
 
 struct Cont {
     ContKind kind;
@@ -28,51 +47,102 @@ struct Cont {
     RefId tube;         /* COMP: tube body at j */
     FaceId phi;         /* COMP: tube face */
     RefId cap;          /* COMP: cap */
-    /* BRANCH */
-    Gather *gather;
-    size_t branch;
-    /* ROOT */
-    EvalResult **root_out;
-    bool *root_done;
-    /* EXTERNAL */
-    ExternalDeliver ext_fn;
-    void *ext_ctx;
+    Gather *gather; size_t branch;   /* BRANCH */
+    RootBox *root;                   /* ROOT */
+    ExternalDeliver ext_fn; void *ext_ctx; void (*ext_free)(void *);   /* EXTERNAL */
 };
 
 typedef struct { bool is_resume; EntryId entry; Cont *k; EvalResult *r; } Task;
 
 static struct {
+    /* cache */
     Interner keys;                 /* (ref, face) → EntryId */
-    Entry *entries; size_t n_entries, cap_entries;
+    Chunked entries;               /* Entry per EntryId-1, non-moving */
+    size_t n_entries;              /* under entries_mu */
+    pthread_mutex_t entries_mu;    /* key lookup / entry creation */
+    /* ready jobs (a multiset) */
     VEC(Task) queue; size_t qhead;
-    VEC(Cont *) conts;             /* all allocated continuations (rooted) */
-    VEC(EvalResult *) results;     /* all allocated results (rooted) */
-    VEC(Gather *) gathers;
+    pthread_mutex_t q_mu; pthread_cond_t q_cv, idle_cv;
+    size_t busy; bool stop;
+    pthread_t *workers; size_t nworkers;
+    /* rooted results (immutable payloads) */
+    VEC(EvalResult *) results; pthread_mutex_t res_mu;
+    /* counters */
     size_t tasks_created;
     EvalEvents ev;
     SchedPolicy policy; uint64_t rng;
 } E;
 
-EvalEvents eval_events(void) { return E.ev; }
+static size_t add_count(size_t *p) { return __atomic_add_fetch(p, 1, __ATOMIC_RELAXED); }
+EvalEvents eval_events(void) {
+    EvalEvents v;
+    v.request = __atomic_load_n(&E.ev.request, __ATOMIC_SEQ_CST);
+    v.eval_step = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
+    v.publish = __atomic_load_n(&E.ev.publish, __ATOMIC_SEQ_CST);
+    v.deliver = __atomic_load_n(&E.ev.deliver, __ATOMIC_SEQ_CST);
+    v.ready_hit = __atomic_load_n(&E.ev.ready_hit, __ATOMIC_SEQ_CST);
+    v.running_hit = __atomic_load_n(&E.ev.running_hit, __ATOMIC_SEQ_CST);
+    v.launch = __atomic_load_n(&E.ev.launch, __ATOMIC_SEQ_CST);
+    return v;
+}
 void eval_set_policy(SchedPolicy p, uint64_t seed) { E.policy = p; E.rng = seed ? seed : 0x9E3779B97F4A7C15ULL; }
 static uint64_t rng_next(void) { E.rng ^= E.rng << 13; E.rng ^= E.rng >> 7; E.rng ^= E.rng << 17; return E.rng; }
+
+static void *worker_main(void *arg);
 
 void eval_init(void) {
     memset(&E, 0, sizeof E);
     interner_init(&E.keys);
+    chunked_init(&E.entries, sizeof(Entry));
+    pthread_mutex_init(&E.entries_mu, NULL);
+    pthread_mutex_init(&E.q_mu, NULL);
+    pthread_cond_init(&E.q_cv, NULL);
+    pthread_cond_init(&E.idle_cv, NULL);
+    pthread_mutex_init(&E.res_mu, NULL);
 }
 
+static void stop_workers(void) {
+    if (!E.nworkers) return;
+    pthread_mutex_lock(&E.q_mu);
+    E.stop = true;
+    pthread_cond_broadcast(&E.q_cv);
+    pthread_mutex_unlock(&E.q_mu);
+    for (size_t i = 0; i < E.nworkers; i++) pthread_join(E.workers[i], NULL);
+    free(E.workers); E.workers = NULL; E.nworkers = 0; E.stop = false;
+}
+
+void eval_set_workers(size_t n) {
+    stop_workers();
+    if (!n) return;
+    E.workers = calloc(n, sizeof(pthread_t));
+    require(E.workers, "out of memory");
+    E.nworkers = n;
+    for (size_t i = 0; i < n; i++) require(pthread_create(&E.workers[i], NULL, worker_main, NULL) == 0, "cannot start worker");
+}
+size_t eval_workers(void) { return E.nworkers; }
+
+static Entry *ENT(EntryId e) { return (Entry *)chunked_get(&E.entries, e - 1); }
+
 void eval_free(void) {
+    stop_workers();
+    for (size_t i = 0; i < E.n_entries; i++) {
+        Entry *e = ENT(i + 1);
+        for (size_t w = 0; w < e->waiters.len; w++) {                 /* suspended forever: stuck demands */
+            Cont *k = e->waiters.data[w];
+            if (k->kind == K_EXTERNAL && k->ext_free) k->ext_free(k->ext_ctx);
+            if (k->kind == K_ROOT) rootbox_release(k->root);
+            free(k);
+        }
+        vec_free(&e->waiters);
+        pthread_mutex_destroy(&e->mu);
+    }
     interner_free(&E.keys);
-    for (size_t i = 0; i < E.n_entries; i++) vec_free(&E.entries[i].waiters);
-    free(E.entries);
-    for (size_t i = 0; i < E.conts.len; i++) free(E.conts.data[i]);
-    vec_free(&E.conts);
+    chunked_free(&E.entries);
     for (size_t i = 0; i < E.results.len; i++) { free(E.results.data[i]->faces); free(E.results.data[i]->terms); free(E.results.data[i]); }
     vec_free(&E.results);
-    for (size_t i = 0; i < E.gathers.len; i++) { free(E.gathers.data[i]->faces); free(E.gathers.data[i]->results); free(E.gathers.data[i]); }
-    vec_free(&E.gathers);
     vec_free(&E.queue);
+    pthread_mutex_destroy(&E.entries_mu); pthread_mutex_destroy(&E.q_mu); pthread_mutex_destroy(&E.res_mu);
+    pthread_cond_destroy(&E.q_cv); pthread_cond_destroy(&E.idle_cv);
     memset(&E, 0, sizeof E);
 }
 
@@ -80,13 +150,13 @@ static Cont *cont_new(ContKind kind, EntryId dest, FaceId chi) {
     Cont *k = calloc(1, sizeof *k);
     require(k, "out of memory");
     k->kind = kind; k->dest = dest; k->chi = chi;
-    vec_push(&E.conts, k);
     return k;
 }
+static void cont_release(Cont *k) { free(k); }
 
-Cont *cont_external(ExternalDeliver fn, void *ctx) {
+Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *)) {
     Cont *k = cont_new(K_EXTERNAL, 0, 0);
-    k->ext_fn = fn; k->ext_ctx = ctx;
+    k->ext_fn = fn; k->ext_ctx = ctx; k->ext_free = free_ctx;
     return k;
 }
 
@@ -94,7 +164,9 @@ static EvalResult *result_new(ResultClass cls, RefId ref) {
     EvalResult *r = calloc(1, sizeof *r);
     require(r, "out of memory");
     r->cls = cls; r->ref = ref;
+    pthread_mutex_lock(&E.res_mu);
     vec_push(&E.results, r);
+    pthread_mutex_unlock(&E.res_mu);
     return r;
 }
 
@@ -114,14 +186,28 @@ static EvalResult *result_system(RefId owner, size_t n, const FaceId *faces, con
     return r;
 }
 
-static void enqueue_evaluate(EntryId e) {
-    Task t = { false, e, NULL, NULL };
+/* ---------------- job queue ---------------- */
+
+static void enqueue(Task t) {
+    pthread_mutex_lock(&E.q_mu);
     vec_push(&E.queue, t);
-    E.tasks_created++;
+    pthread_cond_signal(&E.q_cv);
+    pthread_mutex_unlock(&E.q_mu);
 }
-static void enqueue_resume(Cont *k, EvalResult *r) {
-    Task t = { true, 0, k, r };
-    vec_push(&E.queue, t);
+static void enqueue_evaluate(EntryId e) { Task t = { false, e, NULL, NULL }; add_count(&E.tasks_created); enqueue(t); }
+static void enqueue_resume(Cont *k, EvalResult *r) { Task t = { true, 0, k, r }; enqueue(t); }
+
+/* pick the next job under q_mu according to the policy */
+static bool pop_locked(Task *out) {
+    if (E.qhead >= E.queue.len) { E.queue.len = 0; E.qhead = 0; return false; }
+    size_t pick = E.qhead;
+    if (E.policy == POL_LIFO) pick = E.queue.len - 1;
+    else if (E.policy == POL_RANDOM) pick = E.qhead + (size_t)(rng_next() % (E.queue.len - E.qhead));
+    *out = E.queue.data[pick];
+    E.queue.data[pick] = E.queue.data[E.qhead];
+    E.qhead++;
+    if (E.qhead == E.queue.len) { E.queue.len = 0; E.qhead = 0; }
+    return true;
 }
 
 /* ---------------- entries ---------------- */
@@ -129,54 +215,55 @@ static void enqueue_resume(Cont *k, EvalResult *r) {
 static EntryId entry_intern(RefId t, FaceId eta) {
     uint64_t w[2] = { t, eta };
     bool created;
+    pthread_mutex_lock(&E.entries_mu);
     EntryId id = interner_intern(&E.keys, w, 2, &created);
     if (created) {
-        if (id > E.cap_entries) {
-            size_t nc = E.cap_entries ? E.cap_entries * 2 : 64;
-            while (nc < id) nc *= 2;
-            E.entries = realloc(E.entries, nc * sizeof(Entry));
-            require(E.entries, "out of memory");
-            E.cap_entries = nc;
-        }
-        Entry *e = &E.entries[id - 1];
+        Entry *e = (Entry *)chunked_at(&E.entries, id - 1);
         memset(e, 0, sizeof *e);
         e->ref = t; e->face = eta; e->state = E_UNEVALUATED;
+        pthread_mutex_init(&e->mu, NULL);
         E.n_entries = id;
     }
+    pthread_mutex_unlock(&E.entries_mu);
     return id;
 }
 
 EntryId eval_entry_lookup(RefId t, FaceId chi) {
     size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
     uint64_t w[2] = { t, fc_project(chi, S, n) };
-    return interner_find(&E.keys, w, 2);
+    pthread_mutex_lock(&E.entries_mu);
+    EntryId id = interner_find(&E.keys, w, 2);
+    pthread_mutex_unlock(&E.entries_mu);
+    return id;
 }
-EntryState eval_entry_state(EntryId e) { return E.entries[e - 1].state; }
-FaceId eval_entry_face(EntryId e) { return E.entries[e - 1].face; }
-size_t eval_entry_count(void) { return E.n_entries; }
-size_t eval_entry_runs(EntryId e) { return E.entries[e - 1].runs; }
-RefId eval_entry_ref(EntryId e) { return E.entries[e - 1].ref; }
-void eval_entry_events(EntryId e, size_t *req, size_t *deliver, size_t *pub) { *req = E.entries[e - 1].n_req; *deliver = E.entries[e - 1].n_deliver; *pub = E.entries[e - 1].n_pub; }
-size_t eval_running_count(void) { size_t c = 0; for (size_t i = 0; i < E.n_entries; i++) if (E.entries[i].state == E_RUNNING) c++; return c; }
-size_t eval_task_count(void) { return E.tasks_created; }
+EntryState eval_entry_state(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); EntryState s = x->state; pthread_mutex_unlock(&x->mu); return s; }
+FaceId eval_entry_face(EntryId e) { return ENT(e)->face; }
+size_t eval_entry_count(void) { pthread_mutex_lock(&E.entries_mu); size_t n = E.n_entries; pthread_mutex_unlock(&E.entries_mu); return n; }
+size_t eval_entry_runs(EntryId e) { return ENT(e)->runs; }
+RefId eval_entry_ref(EntryId e) { return ENT(e)->ref; }
+void eval_entry_events(EntryId e, size_t *req, size_t *deliver, size_t *pub) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); *req = x->n_req; *deliver = x->n_deliver; *pub = x->n_pub; pthread_mutex_unlock(&x->mu); }
+size_t eval_running_count(void) { size_t c = 0, n = eval_entry_count(); for (size_t i = 1; i <= n; i++) if (eval_entry_state(i) == E_RUNNING) c++; return c; }
+size_t eval_task_count(void) { return __atomic_load_n(&E.tasks_created, __ATOMIC_SEQ_CST); }
 
 /* DELIVER is counted here, on the common delivery path, for ready hits and
- * for publication alike; the resumed frame step is counted in eval_run as an
- * EVAL_STEP when the RESUME job executes. */
-static void deliver(Cont *k, EvalResult *r) { E.ev.deliver++; enqueue_resume(k, r); }
-static void deliver_from(EntryId eid, Cont *k, EvalResult *r) { E.entries[eid - 1].n_deliver++; deliver(k, r); }
+ * for publication alike; the resumed frame step is counted when the RESUME
+ * job executes (EVAL_STEP). Delivery never happens under an entry lock. */
+static void deliver(Cont *k, EvalResult *r) { add_count(&E.ev.deliver); enqueue_resume(k, r); }
 
 static void publish(EntryId eid, EvalResult *r) {
-    Entry *e = &E.entries[eid - 1];
-    require(e->state == E_RUNNING, "publish into an entry that is not running");
+    Entry *e = ENT(eid);
     require(r->cls != R_NO_OBSERVATION, "no observation is never a published value");
-    E.ev.publish++; e->n_pub++;
+    pthread_mutex_lock(&e->mu);
+    require(e->state == E_RUNNING, "publish into an entry that is not running");
     e->result = r;
-    e->state = E_READY;
-    /* detach all waiters, then deliver */
+    e->n_pub++;
+    e->n_deliver += e->waiters.len;
+    __atomic_store_n(&e->state, E_READY, __ATOMIC_RELEASE);
     Cont **ws = e->waiters.data; size_t n = e->waiters.len;
     e->waiters.data = NULL; e->waiters.len = e->waiters.cap = 0;
-    for (size_t i = 0; i < n; i++) deliver_from(eid, ws[i], r);
+    pthread_mutex_unlock(&e->mu);
+    add_count(&E.ev.publish);
+    for (size_t i = 0; i < n; i++) deliver(ws[i], r);
     free(ws);
 }
 
@@ -192,14 +279,33 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
     FaceId eta = fc_project(chi, S, n);
     EntryId eid = entry_intern(t, eta);
-    Entry *e = &E.entries[eid - 1];
-    E.ev.request++; e->n_req++;
-    if (e->state == E_READY) { E.ev.ready_hit++; deliver_from(eid, k, e->result); return; }
-    if (e->state == E_RUNNING) { E.ev.running_hit++; vec_push(&e->waiters, k); return; }
-    E.ev.launch++;
+    Entry *e = ENT(eid);
+    add_count(&E.ev.request);
+    /* readiness check and waiter registration under the same lock (§10) */
+    pthread_mutex_lock(&e->mu);
+    e->n_req++;
+    if (e->state == E_READY) {
+        EvalResult *r = e->result;
+        e->n_deliver++;
+        pthread_mutex_unlock(&e->mu);
+        add_count(&E.ev.ready_hit);
+        deliver(k, r);                       /* after unlock */
+        return;
+    }
+    if (e->state == E_RUNNING) {
+        vec_push(&e->waiters, k);
+        pthread_mutex_unlock(&e->mu);
+        add_count(&E.ev.running_hit);
+        return;
+    }
+    /* U → R({c}) + EVAL(K) is one transition (§26): the task is enqueued
+     * before RUNNING can be observed by anyone else, so no requester can see
+     * a running key whose evaluator is not yet runnable. */
     e->state = E_RUNNING;
     vec_push(&e->waiters, k);
     enqueue_evaluate(eid);
+    pthread_mutex_unlock(&e->mu);
+    add_count(&E.ev.launch);
 }
 
 static void forward(RefId t, FaceId chi, EntryId dest) { eval_request(t, chi, cont_new(K_FORWARD, dest, chi)); }
@@ -227,9 +333,11 @@ static void eval_system_head(RefId t, const Head *h, FaceId chi, EntryId dest) {
 }
 
 static void evaluate(EntryId eid) {
-    Entry *e = &E.entries[eid - 1];
+    Entry *e = ENT(eid);
+    pthread_mutex_lock(&e->mu);
     require(e->state == E_RUNNING && e->runs == 0, "a key is evaluated by exactly one task");
     e->runs++;
+    pthread_mutex_unlock(&e->mu);
     RefId t = e->ref;
     FaceId chi = e->face;      /* evaluate under the key's face, not a requester's */
     if (ref_is_var(t)) { publish(eid, result_new(R_NEUTRAL, t)); return; }
@@ -312,8 +420,9 @@ static RefId rebuild_elim(const Cont *k, RefId scrut) {
     return out;
 }
 
-/* Act branchwise: demand each guarded term under chi ∧ phi_k, then publish
- * the reconstructed guarded result (§12). */
+/* Act branchwise: demand each guarded term under chi ∧ phi_k; the join box
+ * publishes the reconstructed guarded result once every box is full (§12,
+ * §26). Each box has one producer; the last arrival publishes. */
 static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId *faces, const RefId *terms) {
     Gather *g = calloc(1, sizeof *g);
     require(g, "out of memory");
@@ -322,7 +431,8 @@ static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId 
     g->results = calloc(n ? n : 1, sizeof(EvalResult *));
     require(g->faces && g->results, "out of memory");
     if (n) memcpy(g->faces, faces, n * sizeof(FaceId));
-    vec_push(&E.gathers, g);
+    pthread_mutex_init(&g->mu, NULL);
+    if (n == 0) { pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g); publish(dest, result_system(mk_system(0, NULL, NULL), 0, NULL, NULL)); return; }
     for (size_t i = 0; i < n; i++) {
         Cont *k = cont_new(K_BRANCH, dest, fc_meet(chi, faces[i]));
         k->gather = g; k->branch = i; k->orig = terms[i];
@@ -332,16 +442,24 @@ static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId 
 
 static void resume_branch(Cont *k, EvalResult *r) {
     Gather *g = k->gather;
+    pthread_mutex_lock(&g->mu);
     g->results[k->branch] = r;
     if (r->cls == R_INVALID || r->cls == R_NO_OBSERVATION) g->failed = true;
-    if (++g->arrived < g->n) return;           /* the join is enabled only when every box is full */
+    bool full = (++g->arrived == g->n);
+    pthread_mutex_unlock(&g->mu);
+    if (!full) return;                          /* the join is enabled only when every box is full */
+    EntryId dest = g->dest;
     if (g->failed) {
-        /* report the first failing branch in branch order, independent of arrival order */
-        for (size_t i = 0; i < g->n; i++) {
+        /* select the failure by original branch order, independent of arrival order */
+        EvalResult *out = NULL;
+        for (size_t i = 0; i < g->n && !out; i++) {
             EvalResult *b = g->results[i];
-            if (b->cls == R_INVALID) { publish(g->dest, b); return; }
-            if (b->cls == R_NO_OBSERVATION) { publish(g->dest, result_invalid("branch under an inconsistent guard")); return; }
+            if (b->cls == R_INVALID) out = b;
+            else if (b->cls == R_NO_OBSERVATION) out = result_invalid("branch under an inconsistent guard");
         }
+        pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g);
+        publish(dest, out);
+        return;
     }
     /* reconstruct: nested system results are flattened under conjoined guards */
     Words fs, ts; words_init(&fs); words_init(&ts);
@@ -351,9 +469,11 @@ static void resume_branch(Cont *k, EvalResult *r) {
             for (size_t j = 0; j < b->nbr; j++) { words_push(&fs, fc_meet(g->faces[i], b->faces[j])); words_push(&ts, b->terms[j]); }
         } else { words_push(&fs, g->faces[i]); words_push(&ts, b->ref); }
     }
+    pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g);
     RefId owner = mk_system(fs.n, fs.w, ts.w);
-    publish(g->dest, result_system(owner, fs.n, fs.w, ts.w));
+    EvalResult *res = result_system(owner, fs.n, fs.w, ts.w);
     words_free(&fs); words_free(&ts);
+    publish(dest, res);
 }
 
 static void distribute(const Cont *k, const EvalResult *sys) {
@@ -403,7 +523,14 @@ static void resume_comp_family(Cont *k, EvalResult *r) {
 
 static void resume(Cont *k, EvalResult *r) {
     switch (k->kind) {
-    case K_ROOT: *k->root_out = r; *k->root_done = true; return;
+    case K_ROOT: {
+        RootBox *b = k->root;
+        pthread_mutex_lock(&b->mu); b->result = r; b->done = true; pthread_cond_broadcast(&b->cv); pthread_mutex_unlock(&b->mu);
+        /* wake clients waiting for either their root or quiescence */
+        pthread_mutex_lock(&E.q_mu); pthread_cond_broadcast(&E.idle_cv); pthread_mutex_unlock(&E.q_mu);
+        rootbox_release(b);
+        return;
+    }
     case K_EXTERNAL: k->ext_fn(k->ext_ctx, r); return;
     case K_BRANCH: resume_branch(k, r); return;
     default: break;
@@ -437,31 +564,79 @@ static void resume(Cont *k, EvalResult *r) {
     head_free(&h);
 }
 
+/* one elementary frame step */
+static void execute(Task t) {
+    add_count(&E.ev.eval_step);
+    if (t.is_resume) { resume(t.k, t.r); cont_release(t.k); }   /* single consumer: released once resumed */
+    else evaluate(t.entry);
+}
+
+static void *worker_main(void *arg) {
+    (void)arg;
+    pthread_mutex_lock(&E.q_mu);
+    for (;;) {
+        Task t;
+        while (!E.stop && !pop_locked(&t)) {
+            if (E.busy == 0) pthread_cond_broadcast(&E.idle_cv);
+            pthread_cond_wait(&E.q_cv, &E.q_mu);
+        }
+        if (E.stop) break;
+        E.busy++;
+        pthread_mutex_unlock(&E.q_mu);
+        execute(t);
+        pthread_mutex_lock(&E.q_mu);
+        E.busy--;
+        if (E.busy == 0 && E.qhead >= E.queue.len) pthread_cond_broadcast(&E.idle_cv);
+    }
+    pthread_mutex_unlock(&E.q_mu);
+    return NULL;
+}
+
 size_t eval_run(void) {
+    if (E.nworkers) {
+        /* wait until the ready multiset is empty and no worker is busy */
+        pthread_mutex_lock(&E.q_mu);
+        size_t before = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
+        while (E.busy > 0 || E.qhead < E.queue.len) pthread_cond_wait(&E.idle_cv, &E.q_mu);
+        size_t n = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST) - before;
+        pthread_mutex_unlock(&E.q_mu);
+        return n;
+    }
     size_t n = 0;
-    while (E.qhead < E.queue.len) {
-        /* the ready jobs form a multiset; the policy only picks which one runs next */
-        size_t pick = E.qhead;
-        if (E.policy == SCHED_LIFO) pick = E.queue.len - 1;
-        else if (E.policy == SCHED_RANDOM) pick = E.qhead + (size_t)(rng_next() % (E.queue.len - E.qhead));
-        Task t = E.queue.data[pick];
-        E.queue.data[pick] = E.queue.data[E.qhead];
-        E.qhead++;
-        E.ev.eval_step++;
-        if (t.is_resume) resume(t.k, t.r); else evaluate(t.entry);
+    for (;;) {
+        Task t;
+        pthread_mutex_lock(&E.q_mu);
+        bool got = pop_locked(&t);
+        pthread_mutex_unlock(&E.q_mu);
+        if (!got) break;
+        execute(t);
         n++;
     }
-    E.queue.len = 0; E.qhead = 0;
     return n;
 }
-static void run(void) { eval_run(); }
 
 EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
-    EvalResult *out = NULL; bool done = false;
+    RootBox *box = calloc(1, sizeof *box); require(box, "out of memory");
+    pthread_mutex_init(&box->mu, NULL); pthread_cond_init(&box->cv, NULL); box->refs = 2;
     Cont *root = cont_new(K_ROOT, 0, chi);
-    root->root_out = &out; root->root_done = &done;
+    root->root = box;
     eval_request(t, chi, root);
-    run();
+    if (E.nworkers) {
+        /* wait for this root, or for quiescence of the whole machine (stuck) */
+        pthread_mutex_lock(&E.q_mu);
+        for (;;) {
+            pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
+            if (d || (E.busy == 0 && E.qhead >= E.queue.len)) break;
+            pthread_cond_wait(&E.idle_cv, &E.q_mu);
+        }
+        pthread_mutex_unlock(&E.q_mu);
+    } else eval_run();
+    pthread_mutex_lock(&box->mu);
+    bool done = box->done; EvalResult *out = box->result;
+    pthread_mutex_unlock(&box->mu);
+    /* a stuck root keeps its continuation as a waiter; the box survives
+     * until that continuation is resumed or the machine is freed */
+    rootbox_release(box);
     if (!done) { if (status) *status = W_STUCK; return NULL; }
     if (status) {
         if (out->cls == R_NO_OBSERVATION) *status = W_NO_OBSERVATION;
@@ -469,6 +644,19 @@ EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
         else *status = W_OK;
     }
     return out;
+}
+
+EvalResult *whnf_in(RefId t, ContextId ctx, WhnfStatus *status) {
+    uint64_t culprit;
+    OccStatus os = occurrence_validate(t, ctx, &culprit);
+    if (os != OCC_VALID) {
+        static const char *msgs[] = { "", "free term variable not declared in the occurrence context", "free dimension not declared in the occurrence context",
+                                      "declared type differs from the variable's declaration", "context assumption does not entail the required face" };
+        EvalResult *r = result_invalid(msgs[os]);
+        if (status) *status = W_INVALID;
+        return r;
+    }
+    return whnf(t, context_assumption(ctx), status);
 }
 
 void print_result(const EvalResult *r, FILE *f) {

@@ -44,6 +44,7 @@ typedef struct {
     VEC(Cont *) waiters;
     size_t runs;        /* EVALUATE tasks executed for this key (must be ≤ 1) */
     size_t n_req, n_deliver, n_pub;   /* per-key event counts (for schedule comparison) */
+    pthread_mutex_t mu; /* guards state, result, waiters and the counters above */
 } Entry;
 
 typedef enum { W_OK = 0, W_NO_OBSERVATION, W_INVALID, W_STUCK } WhnfStatus;
@@ -58,8 +59,19 @@ void eval_request(RefId t, FaceId chi, Cont *k);
  * or otherwise suspended demand); nothing was published for it. */
 EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status);
 
-/* run queued evaluation tasks until the queue is empty; returns tasks run */
+/* Observation of an occurrence (§2): validates the occurrence against its
+ * context (declared variables and dimensions, declared types by identity,
+ * assumption entails the required face) and then observes under the
+ * context's assumption. An invalid occurrence yields W_INVALID. */
+EvalResult *whnf_in(RefId t, ContextId ctx, WhnfStatus *status);
+
+/* run queued evaluation tasks until the queue is empty; returns tasks run.
+ * With a worker pool, waits until the ready multiset is empty and every
+ * worker is idle. */
 size_t eval_run(void);
+/* start n worker threads (0 = sequential, the default); replaces any pool */
+void eval_set_workers(size_t n);
+size_t eval_workers(void);
 
 /* Interaction-work vector (§26–§29). REQUEST is one event class whatever the
  * entry state; the hit counters are diagnostics only (not diamond-balanced). */
@@ -75,7 +87,7 @@ EvalEvents eval_events(void);
 /* Job selection policy of the sequential scheduler. The abstract machine's
  * reductions commute (§25–§27), so the event vector and the observed normal
  * form (up to renaming of allocated identities) must not depend on it. */
-typedef enum { SCHED_FIFO = 0, SCHED_LIFO, SCHED_RANDOM } SchedPolicy;
+typedef enum { POL_FIFO = 0, POL_LIFO, POL_RANDOM } SchedPolicy;
 void eval_set_policy(SchedPolicy p, uint64_t seed);
 
 /* cache introspection (tests) */
@@ -91,7 +103,7 @@ size_t eval_task_count(void);                       /* EVALUATE tasks created so
 
 /* continuation constructors used by the net layer */
 typedef void (*ExternalDeliver)(void *ctx, EvalResult *r);
-Cont *cont_external(ExternalDeliver fn, void *ctx);
+Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *));   /* free_ctx releases ctx if never delivered */
 
 void print_result(const EvalResult *r, FILE *f);
 

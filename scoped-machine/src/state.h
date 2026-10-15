@@ -9,6 +9,11 @@
 #include "common.h"
 #include "intern.h"
 
+typedef struct { VarSetId ft; DimSetId fd; FaceId required; } OriginSide;
+typedef struct { DimSetId support; VarSetId freevars; FaceId required; } RefSide;
+typedef struct { RefId type; FaceId required; uint64_t prov; } TermDecl;
+typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; } Def;
+
 typedef struct {
     Interner intervals;   /* IntervalId  → canonical interval DNF words */
     Interner faces;       /* FaceId      → canonical face DNF words */
@@ -18,33 +23,24 @@ typedef struct {
     Interner origins;     /* OriginId    → origin record */
     Interner refs;        /* RefId       → reference record */
     Interner nominal;     /* binder identities (owner,slot,sort) and keyed fresh names */
+    Interner contexts;    /* ContextId   → occurrence context record */
     WordMap reindex_memo; /* (RefId, MapId) → RefId */
     WordMap compose_memo; /* (MapId, MapId) → MapId */
 
-    /* side data of origins, indexed by OriginId-1 */
-    struct { VarSetId ft; DimSetId fd; FaceId required; } *origin_side;
-    size_t origin_side_cap;
-    /* side data of references, indexed by RefId-1 */
-    struct { DimSetId support; VarSetId freevars; FaceId required; } *ref_side;
-    size_t ref_side_cap;
+    /* side data, non-moving; an element is written before its id is
+     * published and never changes afterwards */
+    Chunked origin_side;  /* OriginSide per OriginId-1 */
+    Chunked ref_side;     /* RefSide per RefId-1 */
+    Chunked term_decl;    /* TermDecl per TermVarId-1 (frozen once made) */
+    Chunked dim_prov;     /* uint64_t provenance per DimVarId-1 */
+    Chunked nominal_val;  /* uint64_t minted name per nominal id-1 */
+    Chunked defs;         /* Def per SymbolId-1 */
+    size_t n_term_vars, n_dim_vars, n_defs;   /* under term_mu */
 
-    /* term variable declarations, indexed by TermVarId-1 (frozen once made) */
-    struct { RefId type; FaceId required; } *term_decl;
-    size_t n_term_vars, term_decl_cap;
-    uint64_t n_dim_vars;
-
-    /* global definitions, indexed by SymbolId-1 */
-    struct { RefId body; VarSetId params; DimSetId dims; const char *name; } *defs;
-    size_t n_defs, defs_cap;
-
-    /* nominal payloads: for TERM binder identities, the minted TermVarId; for
-     * DIM identities the minted DimVarId; indexed by nominal id-1 */
-    uint64_t *nominal_val;
-    size_t nominal_cap;
-    /* provenance: the nominal id that minted a generated name (0 = input name
-     * declared directly by the client); indexed by TermVarId-1 / DimVarId-1 */
-    uint64_t *term_prov; size_t term_prov_cap;
-    uint64_t *dim_prov; size_t dim_prov_cap;
+    /* one recursive mutex serializes creation in the term layer (origins,
+     * references, declarations, nominal minting, definitions); reads of
+     * published records and side data are lock-free */
+    pthread_mutex_t term_mu;
 } Machine;
 
 extern Machine M;

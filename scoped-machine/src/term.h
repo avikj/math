@@ -141,6 +141,27 @@ typedef struct {
 void open_ref(RefId t, Head *h);
 void head_free(Head *h);
 
+/* ---- occurrence contexts (§2) ----
+ * A context is an ordered list of declarations DIM(i) or TERM(x, type) with
+ * a face assumption. It is interned by structure and is not part of RefId.
+ * An occurrence (reference, context) is valid when the context declares
+ * every free dimension and every free term variable of the reference with
+ * its declared type, and its assumption entails the reference's required
+ * face. Types are compared by reference identity; a conversion check is
+ * not part of this contract. */
+typedef struct { Sort sort; uint64_t id; RefId type; } CtxDecl;
+ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption);
+ContextId context_extend_term(ContextId ctx, TermVarId x, RefId type);
+ContextId context_extend_dim(ContextId ctx, DimVarId i);
+ContextId context_restrict(ContextId ctx, FaceId phi);     /* strengthen the assumption */
+FaceId context_assumption(ContextId ctx);
+size_t context_size(ContextId ctx);
+CtxDecl context_decl(ContextId ctx, size_t k);
+bool context_declares_term(ContextId ctx, TermVarId x, RefId *type_out);
+bool context_declares_dim(ContextId ctx, DimVarId i);
+typedef enum { OCC_VALID = 0, OCC_UNDECLARED_TERM, OCC_UNDECLARED_DIM, OCC_TYPE_MISMATCH, OCC_FACE_NOT_ENTAILED } OccStatus;
+OccStatus occurrence_validate(RefId t, ContextId ctx, uint64_t *culprit);
+
 /* ---- globals ---- */
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims);
 void set_global_body(SymbolId s, RefId body);

@@ -4,20 +4,46 @@
  * exactly when their word sequences are equal; hash equality alone is never
  * taken as equality (collisions are resolved by comparing the words).
  * Ids are dense, start at 1, and are never reused.
+ *
+ * Concurrency: find-or-insert is atomic (one mutex per table), so two threads
+ * interning the same record obtain the same id. Record storage never moves:
+ * a pointer returned by interner_get stays valid for the table's lifetime,
+ * and a reader that has obtained an id through any synchronized channel may
+ * read its record without taking the lock.
  */
 #ifndef CUBICAL_INTERN_H
 #define CUBICAL_INTERN_H
 
 #include "common.h"
+#include <pthread.h>
+
+#define CHUNK_BITS 11
+#define CHUNK_SIZE ((size_t)1 << CHUNK_BITS)
+#define MAX_CHUNKS ((size_t)1 << 15)
+
+/* Non-moving, lazily chunked array of fixed-size elements. Element i lives
+ * at a stable address once created. Creation of a chunk is done under the
+ * caller's lock; the chunk pointer is published with release semantics so a
+ * reader that learned of index i through a synchronized channel can read it
+ * without the lock. */
+typedef struct {
+    void *dir[MAX_CHUNKS];
+    size_t elem;
+} Chunked;
+
+void chunked_init(Chunked *c, size_t elem);
+void chunked_free(Chunked *c);
+void *chunked_at(Chunked *c, size_t i);           /* creates the chunk if needed (zeroed) */
+void *chunked_get(const Chunked *c, size_t i);    /* read-only: chunk must exist */
+
+typedef struct { uint64_t *w; size_t n; uint64_t hash; } Rec;
 
 typedef struct {
-    uint64_t *store;          /* concatenated words of all records */
-    size_t store_len, store_cap;
-    size_t *off, *len;        /* per id (index id-1) */
-    uint64_t *hash;           /* per id */
-    size_t n, cap;
-    uint64_t *slots;          /* open addressing table of ids (0 = empty) */
+    Chunked recs;             /* Rec per id (index id-1) */
+    size_t n;                 /* records so far (read under lock, or as a snapshot) */
+    uint64_t *slots;          /* open addressing table of ids (0 = empty), under lock */
     size_t nslots;
+    pthread_mutex_t mu;
 } Interner;
 
 void interner_init(Interner *t);
@@ -25,15 +51,14 @@ void interner_free(Interner *t);
 /* returns id; *created set to true when the record did not exist before */
 uint64_t interner_intern(Interner *t, const uint64_t *w, size_t n, bool *created);
 /* lookup without creating; returns 0 when absent */
-uint64_t interner_find(const Interner *t, const uint64_t *w, size_t n);
+uint64_t interner_find(Interner *t, const uint64_t *w, size_t n);
 const uint64_t *interner_get(const Interner *t, uint64_t id, size_t *n);
-static inline size_t interner_count(const Interner *t) { return t->n; }
+size_t interner_count(Interner *t);
 
-/* Small key→value hash map on word tuples (memo tables). */
+/* Small key→value hash map on word tuples (memo tables); thread-safe. */
 typedef struct {
     Interner keys;
-    uint64_t *vals;
-    size_t cap;
+    Chunked vals;             /* uint64_t per key id */
 } WordMap;
 
 void wordmap_init(WordMap *m);

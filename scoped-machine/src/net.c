@@ -4,27 +4,71 @@
 /* ------------------------------------------------------------------ */
 /* nodes and wiring                                                     */
 
-void net_init(Net *n) { memset(n, 0, sizeof *n); n->rng = 0x9E3779B97F4A7C15ULL; Node dummy = {0}; vec_push(&n->nodes, dummy); /* id 0 unused */ }
+static void *net_worker_main(void *arg);
 
-void net_free(Net *n) {
-    for (size_t i = 0; i < n->nodes.len; i++) {
-        free(n->nodes.data[i].peer); free(n->nodes.data[i].polarity);
-        if (n->nodes.data[i].head) { head_free(n->nodes.data[i].head); free(n->nodes.data[i].head); }
-    }
-    vec_free(&n->nodes); vec_free(&n->active);
+void net_init(Net *n) {
+    memset(n, 0, sizeof *n);
+    n->rng = 0x9E3779B97F4A7C15ULL;
+    chunked_init(&n->nodes, sizeof(Node));
+    pthread_mutex_init(&n->alloc_mu, NULL);
+    pthread_mutex_init(&n->act_mu, NULL);
+    pthread_cond_init(&n->act_cv, NULL);
+    pthread_cond_init(&n->idle_cv, NULL);
 }
 
-static Node *N(Net *n, NodeId id) { require(id && id < n->nodes.len, "bad node id"); return &n->nodes.data[id]; }
+static void net_stop_workers(Net *n) {
+    if (!n->nworkers) return;
+    pthread_mutex_lock(&n->act_mu);
+    n->stop = true;
+    pthread_cond_broadcast(&n->act_cv);
+    pthread_mutex_unlock(&n->act_mu);
+    for (size_t i = 0; i < n->nworkers; i++) pthread_join(n->workers[i], NULL);
+    free(n->workers); n->workers = NULL; n->nworkers = 0; n->stop = false;
+}
+
+typedef struct { Net *net; } WorkerArg;
+
+void net_set_workers(Net *n, size_t workers) {
+    net_stop_workers(n);
+    if (!workers) return;
+    n->workers = calloc(workers, sizeof(pthread_t));
+    require(n->workers, "out of memory");
+    n->nworkers = workers;
+    for (size_t i = 0; i < workers; i++) require(pthread_create(&n->workers[i], NULL, net_worker_main, n) == 0, "cannot start net worker");
+}
+
+static Node *N(const Net *n, NodeId id) { require(id, "bad node id 0"); return (Node *)chunked_get(&n->nodes, id); }
+Node *net_node_ptr(const Net *n, NodeId a) { return N(n, a); }
+size_t net_node_count(Net *n) { pthread_mutex_lock(&n->alloc_mu); size_t c = n->nnodes; pthread_mutex_unlock(&n->alloc_mu); return c; }
+
+void net_free(Net *n) {
+    net_stop_workers(n);
+    for (size_t i = 1; i <= n->nnodes; i++) {
+        Node *x = N(n, (NodeId)i);
+        free(x->peer); free(x->polarity);
+        if (x->head) { head_free(x->head); free(x->head); }
+        pthread_mutex_destroy(&x->mu);
+    }
+    chunked_free(&n->nodes); vec_free(&n->active);
+    pthread_mutex_destroy(&n->alloc_mu); pthread_mutex_destroy(&n->act_mu);
+    pthread_cond_destroy(&n->act_cv); pthread_cond_destroy(&n->idle_cv);
+}
 
 NodeId net_node(Net *n, NodeKind kind, uint8_t nports, const int8_t *polarity, Payload p) {
-    Node x; memset(&x, 0, sizeof x);
-    x.kind = kind; x.live = true; x.nports = nports; x.p = p;
-    x.peer = calloc(nports ? nports : 1, sizeof(Endpoint));
-    x.polarity = malloc((nports ? nports : 1) * sizeof(int8_t));
-    require(x.peer && x.polarity, "out of memory");
-    memcpy(x.polarity, polarity, nports);
-    vec_push(&n->nodes, x);
-    return (NodeId)(n->nodes.len - 1);
+    /* the node is fully initialized before its id is published */
+    pthread_mutex_lock(&n->alloc_mu);
+    NodeId id = (NodeId)(n->nnodes + 1);
+    Node *x = (Node *)chunked_at(&n->nodes, id);
+    memset(x, 0, sizeof *x);
+    x->kind = kind; x->live = true; x->nports = nports; x->p = p; x->gen = 1;
+    x->peer = calloc(nports ? nports : 1, sizeof(Endpoint));
+    x->polarity = malloc((nports ? nports : 1) * sizeof(int8_t));
+    require(x->peer && x->polarity, "out of memory");
+    memcpy(x->polarity, polarity, nports);
+    pthread_mutex_init(&x->mu, NULL);
+    n->nnodes = id;
+    pthread_mutex_unlock(&n->alloc_mu);
+    return id;
 }
 
 static bool is_descriptor(NodeKind k) { return k >= D_REF && k <= D_STATUS; }
@@ -44,8 +88,31 @@ NodeId net_operation(Net *n, NodeKind kind, Payload p) {
 
 static NodeId net_pending(Net *n) { Payload p = {0}; int8_t pol[1] = { +1 }; return net_node(n, (NodeKind)0, 1, pol, p); }
 
-bool net_is_live(const Net *n, NodeId a) { return a && a < n->nodes.len && n->nodes.data[a].live; }
+bool net_is_live(const Net *n, NodeId a) {
+    if (!a) return false;
+    Node *x = (Node *)chunked_get(&n->nodes, a);
+    pthread_mutex_lock(&x->mu);
+    bool live = x->live;
+    pthread_mutex_unlock(&x->mu);
+    return live;
+}
 
+/* new active pairs created inside a replacement are collected here and
+ * enqueued after the replacement's locks are released */
+typedef VEC(Active) ActiveVec;
+static __thread ActiveVec *tls_pending = NULL;
+
+static void push_active(Net *n, NodeId a, uint64_t gen) {
+    Active it = { a, gen };
+    if (tls_pending) { vec_push(tls_pending, it); return; }
+    pthread_mutex_lock(&n->act_mu);
+    vec_push(&n->active, it);
+    pthread_cond_signal(&n->act_cv);
+    pthread_mutex_unlock(&n->act_mu);
+}
+
+/* Callers hold the owner locks of a and b unless the node is fresh (private
+ * to the replacement) or the net is quiescent (client wiring). */
 void net_connect(Net *n, NodeId a, uint16_t pa, NodeId b, uint16_t pb) {
     Node *x = N(n, a), *y = N(n, b);
     require(x->live && y->live, "connecting a retired node");
@@ -53,16 +120,26 @@ void net_connect(Net *n, NodeId a, uint16_t pa, NodeId b, uint16_t pb) {
     require(x->polarity[pa] + y->polarity[pb] == 0, "polarity violation: only opposite polarities connect");
     x->peer[pa].node = b; x->peer[pa].port = pb;
     y->peer[pb].node = a; y->peer[pb].port = pa;
-    if (pa == 0 && pb == 0) vec_push(&n->active, a);
+    if (pa == 0 && pb == 0) push_active(n, a, x->gen);
 }
 
-Endpoint net_peer(const Net *n, NodeId a, uint16_t pa) { return n->nodes.data[a].peer[pa]; }
+void net_disconnect(Net *n, NodeId a, uint16_t pa) {
+    Node *x = N(n, a);
+    Endpoint q = x->peer[pa];
+    x->peer[pa].node = 0;
+    if (q.node) N(n, q.node)->peer[q.port].node = 0;
+}
+
+Endpoint net_peer(const Net *n, NodeId a, uint16_t pa) { return N(n, a)->peer[pa]; }
 
 static void retire(Net *n, NodeId a) {
     Node *x = N(n, a);
-    x->live = false;
+    x->live = false;                 /* under the owner lock */
+    __atomic_add_fetch(&x->gen, 1, __ATOMIC_ACQ_REL);
     for (uint16_t k = 0; k < x->nports; k++) x->peer[k].node = 0;
 }
+
+static void count(size_t *c) { __atomic_add_fetch(c, 1, __ATOMIC_RELAXED); }
 
 /* ------------------------------------------------------------------ */
 /* local replacement with explicit boundary (§20)                       */
@@ -146,7 +223,6 @@ static void rep_commit(Net *n, Replacement *r) {
     }
     free(done); free(old);
     for (size_t i = 0; i < r->nrem; i++) retire(n, r->removed[i]);
-    n->rewrites++;
 }
 
 /* ------------------------------------------------------------------ */
@@ -247,22 +323,55 @@ static NodeId materialize(Net *n, const Head *h) {
 
 typedef struct { Net *net; NodeId pending; } EvalCtx;
 
+static void lock_two(Net *n, NodeId a, NodeId b) {
+    if (a == b) { pthread_mutex_lock(&N(n, a)->mu); return; }
+    if (a < b) { pthread_mutex_lock(&N(n, a)->mu); pthread_mutex_lock(&N(n, b)->mu); }
+    else { pthread_mutex_lock(&N(n, b)->mu); pthread_mutex_lock(&N(n, a)->mu); }
+}
+static void unlock_two(Net *n, NodeId a, NodeId b) {
+    pthread_mutex_unlock(&N(n, a)->mu);
+    if (a != b) pthread_mutex_unlock(&N(n, b)->mu);
+}
+
+static void flush_pending(Net *n, ActiveVec *pend) {
+    if (!pend->len) { vec_free(pend); return; }
+    pthread_mutex_lock(&n->act_mu);
+    for (size_t i = 0; i < pend->len; i++) vec_push(&n->active, pend->data[i]);
+    pthread_cond_broadcast(&n->act_cv);
+    pthread_mutex_unlock(&n->act_mu);
+    vec_free(pend);
+}
+
+/* Publication of a result into the net: runs on an evaluation worker. The
+ * pending node is replaced by the result descriptor; its single boundary
+ * endpoint (the consumer) is locked together with it, in id order, and
+ * revalidated after locking. */
 static void net_eval_deliver(void *ctx, EvalResult *r) {
     EvalCtx *c = ctx;
     Net *n = c->net;
     NodeId pend = c->pending;
     free(c);
-    if (!net_is_live(n, pend)) return;    /* consumer released the endpoint */
-    Payload p = {0}; p.a = (uint64_t)(uintptr_t)r; p.ref = r->ref;
-    NodeId d = net_descriptor(n, r->cls == R_NO_OBSERVATION ? D_STATUS : D_EVAL_RESULT, p);
-    if (r->cls == R_NO_OBSERVATION) N(n, d)->p.a = ST_NO_OBSERVATION;
-    Replacement rp; rep_init(&rp);
-    rep_remove(&rp, pend);
-    /* the pending node's only port is its principal: the boundary is its peer */
-    Endpoint q = N(n, pend)->peer[0];
-    retire(n, pend);
-    n->rewrites++; n->n_eval_deliver++;
-    if (q.node) net_connect(n, d, 0, q.node, q.port);
+    for (;;) {
+        Node *x = N(n, pend);
+        pthread_mutex_lock(&x->mu);
+        if (!x->live) { pthread_mutex_unlock(&x->mu); return; }   /* consumer released the endpoint */
+        Endpoint q = x->peer[0];
+        pthread_mutex_unlock(&x->mu);
+        if (q.node) lock_two(n, pend, q.node); else pthread_mutex_lock(&x->mu);
+        if (!x->live) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); return; }
+        if (x->peer[0].node != q.node || x->peer[0].port != q.port) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); count(&n->retries); continue; }
+        ActiveVec pending = {0}; tls_pending = &pending;
+        Payload p = {0}; p.a = (uint64_t)(uintptr_t)r; p.ref = r->ref;
+        NodeId d = net_descriptor(n, r->cls == R_NO_OBSERVATION ? D_STATUS : D_EVAL_RESULT, p);
+        if (r->cls == R_NO_OBSERVATION) N(n, d)->p.a = ST_NO_OBSERVATION;
+        retire(n, pend);
+        if (q.node) net_connect(n, d, 0, q.node, q.port);
+        count(&n->rewrites); count(&n->n_eval_deliver);
+        tls_pending = NULL;
+        if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu);
+        flush_pending(n, &pending);
+        return;
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -397,7 +506,7 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         EvalCtx *ctx = malloc(sizeof *ctx); require(ctx, "out of memory");
         ctx->net = n; ctx->pending = pend;
         one_result(n, op, data, pend);
-        eval_request(Q.ref, P.face, cont_external(net_eval_deliver, ctx));
+        eval_request(Q.ref, P.face, cont_external(net_eval_deliver, ctx, free));
         return;
     }
     default: die("unknown operation");
@@ -409,79 +518,189 @@ out:
 
 static bool is_shell(NodeKind k) { return k == A_HEAD || k == A_BRANCH_NIL || k == A_BRANCH_CONS || k == A_BRANCH; }
 
-static bool step(Net *n, NodeId a) {
-    Node *x = N(n, a);
-    if (!x->live) return false;
-    Endpoint q = x->peer[0];
-    if (!q.node || q.port != 0) return false;
-    NodeId b = q.node;
-    Node *y = N(n, b);
-    if (!y->live) return false;
-    /* orient: negative principal (agent) vs positive principal (data/shell) */
-    NodeId neg = x->polarity[0] < 0 ? a : b, pos = x->polarity[0] < 0 ? b : a;
+/* apply the rule for an oriented, validated, fully locked active pair */
+static bool apply_rule(Net *n, NodeId neg, NodeId pos) {
     Node *ng = N(n, neg), *ps = N(n, pos);
     if (ng->kind == A_ROOT || ps->kind == (NodeKind)0) return false;   /* observation root / pending: no rule */
     if (is_operation(ng->kind)) {
-        if (is_descriptor(ps->kind)) { rule_op(n, neg, pos); n->n_op++; return true; }
+        if (is_descriptor(ps->kind)) { rule_op(n, neg, pos); count(&n->n_op); return true; }
         /* an operation meeting a shell is a sort mismatch */
         Replacement r; rep_init(&r);
         rep_remove(&r, neg);
         rep_fresh(&r, neg, 1, status_node(n, ST_SORT_MISMATCH, 0, 0), 0);
         rep_commit(n, &r);
-        /* the shell keeps its principal free; erase it */
         int8_t per[1] = { -1 }; Payload e = {0};
         net_connect(n, net_node(n, A_ERASE, 1, per, e), 0, pos, 0);
-        n->n_op++;
+        count(&n->n_op);
         return true;
     }
     if (ng->kind == A_DUP) {
         if (is_descriptor(ps->kind)) rule_dup_data(n, neg, pos);
         else if (is_shell(ps->kind)) rule_dup_shell(n, neg, pos);
         else return false;
-        n->n_dup++;
+        count(&n->n_dup);
         return true;
     }
     if (ng->kind == A_ERASE) {
         if (is_descriptor(ps->kind)) rule_erase_data(n, neg, pos);
         else if (is_shell(ps->kind)) rule_erase_shell(n, neg, pos);
         else return false;
-        n->n_erase++;
+        count(&n->n_erase);
         return true;
     }
     return false;
 }
 
-size_t net_run(Net *n) {
-    size_t count = 0;
-    while (n->active.len) {
-        size_t pick = n->active.len - 1;
-        if (n->policy == 1) pick = 0;
-        else if (n->policy == 2) { n->rng ^= n->rng << 13; n->rng ^= n->rng >> 7; n->rng ^= n->rng << 17; pick = (size_t)(n->rng % n->active.len); }
-        NodeId a = n->active.data[pick];
-        n->active.data[pick] = n->active.data[n->active.len - 1];
-        n->active.len--;
-        if (step(n, a)) count++;
+static int cmp_nodeid(const void *a, const void *b) { NodeId x = *(const NodeId *)a, y = *(const NodeId *)b; return x < y ? -1 : x > y ? 1 : 0; }
+
+/* One candidate active pair. Returns true when a replacement was committed. */
+static bool step(Net *n, Active cand) {
+    NodeId a = cand.node;
+    for (int attempt = 0; attempt < 64; attempt++) {
+        Node *x = N(n, a);
+        pthread_mutex_lock(&x->mu);
+        if (!x->live || x->gen != cand.gen) { pthread_mutex_unlock(&x->mu); return false; }
+        Endpoint q = x->peer[0];
+        pthread_mutex_unlock(&x->mu);
+        if (!q.node || q.port != 0) return false;
+        NodeId b = q.node;
+        /* lock the redex owners in id order and validate the pair */
+        lock_two(n, a, b);
+        Node *y = N(n, b);
+        bool valid = x->live && y->live && x->gen == cand.gen && x->peer[0].node == b && x->peer[0].port == 0 && y->peer[0].node == a && y->peer[0].port == 0;
+        if (!valid) { unlock_two(n, a, b); if (!x->live || x->gen != cand.gen) return false; count(&n->retries); continue; }
+        uint64_t gen_b = y->gen;
+        /* collect the surviving boundary: every auxiliary neighbour of a and b */
+        NodeId set[64]; Endpoint exp[64]; uint64_t expgen[64]; size_t ns = 0;
+        set[ns++] = a; set[ns++] = b;
+        Node *two[2] = { x, y };
+        for (int t = 0; t < 2; t++)
+            for (uint16_t k = 1; k < two[t]->nports; k++) {
+                Endpoint e = two[t]->peer[k];
+                if (!e.node || e.node == a || e.node == b) continue;
+                require(ns < 64, "redex boundary too large");
+                set[ns] = e.node; exp[ns] = e; expgen[ns] = __atomic_load_n(&N(n, e.node)->gen, __ATOMIC_ACQUIRE); ns++;
+            }
+        unlock_two(n, a, b);
+        /* lock the whole affected set in a consistent total order */
+        NodeId sorted[64]; memcpy(sorted, set, ns * sizeof(NodeId));
+        qsort(sorted, ns, sizeof(NodeId), cmp_nodeid);
+        size_t nu = 0;
+        for (size_t i = 0; i < ns; i++) if (nu == 0 || sorted[nu - 1] != sorted[i]) sorted[nu++] = sorted[i];
+        for (size_t i = 0; i < nu; i++) pthread_mutex_lock(&N(n, sorted[i])->mu);
+        /* revalidate the redex and its boundary */
+        bool ok = x->live && y->live && x->gen == cand.gen && y->gen == gen_b && x->peer[0].node == b && x->peer[0].port == 0 && y->peer[0].node == a && y->peer[0].port == 0;
+        for (size_t i = 2; i < ns && ok; i++) {
+            Node *z = N(n, set[i]);
+            if (!z->live || z->gen != expgen[i]) ok = false;
+            else { NodeId back = z->peer[exp[i].port].node; if (back != a && back != b) ok = false; }   /* the boundary port still faces the redex */
+        }
+        /* and that a's and b's aux peers are still the recorded ones */
+        if (ok) {
+            size_t idx = 2;
+            for (int t = 0; t < 2 && ok; t++)
+                for (uint16_t k = 1; k < two[t]->nports && ok; k++) {
+                    Endpoint e = two[t]->peer[k];
+                    if (!e.node || e.node == a || e.node == b) { if (e.node) continue; else continue; }
+                    if (idx >= ns || e.node != exp[idx].node || e.port != exp[idx].port) ok = false;
+                    idx++;
+                }
+            if (ok && idx != ns) ok = false;
+        }
+        if (!ok) {
+            for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
+            if (!x->live || x->gen != cand.gen) return false;
+            count(&n->retries);
+            continue;
+        }
+        /* orient: negative principal (agent) vs positive principal (data/shell) */
+        NodeId neg = x->polarity[0] < 0 ? a : b, pos = x->polarity[0] < 0 ? b : a;
+        ActiveVec pending = {0}; tls_pending = &pending;
+        bool did = apply_rule(n, neg, pos);
+        if (did) count(&n->rewrites);
+        tls_pending = NULL;
+        for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
+        flush_pending(n, &pending);
+        return did;
     }
-    return count;
+    return false;
 }
 
+static bool pop_active_locked(Net *n, Active *out) {
+    if (!n->active.len) return false;
+    size_t pick = n->active.len - 1;
+    if (n->policy == 1) pick = 0;
+    else if (n->policy == 2) { n->rng ^= n->rng << 13; n->rng ^= n->rng >> 7; n->rng ^= n->rng << 17; pick = (size_t)(n->rng % n->active.len); }
+    *out = n->active.data[pick];
+    n->active.data[pick] = n->active.data[n->active.len - 1];
+    n->active.len--;
+    return true;
+}
+
+static void *net_worker_main(void *arg) {
+    Net *n = arg;
+    pthread_mutex_lock(&n->act_mu);
+    for (;;) {
+        Active it;
+        while (!n->stop && !pop_active_locked(n, &it)) {
+            if (n->busy == 0) pthread_cond_broadcast(&n->idle_cv);
+            pthread_cond_wait(&n->act_cv, &n->act_mu);
+        }
+        if (n->stop) break;
+        n->busy++;
+        pthread_mutex_unlock(&n->act_mu);
+        step(n, it);
+        pthread_mutex_lock(&n->act_mu);
+        n->busy--;
+        if (n->busy == 0 && n->active.len == 0) pthread_cond_broadcast(&n->idle_cv);
+    }
+    pthread_mutex_unlock(&n->act_mu);
+    return NULL;
+}
+
+size_t net_run(Net *n) {
+    if (n->nworkers) {
+        pthread_mutex_lock(&n->act_mu);
+        size_t before = __atomic_load_n(&n->rewrites, __ATOMIC_SEQ_CST);
+        while (n->busy > 0 || n->active.len > 0) pthread_cond_wait(&n->idle_cv, &n->act_mu);
+        size_t after = __atomic_load_n(&n->rewrites, __ATOMIC_SEQ_CST);
+        pthread_mutex_unlock(&n->act_mu);
+        return after - before;
+    }
+    size_t c = 0;
+    for (;;) {
+        Active it;
+        pthread_mutex_lock(&n->act_mu);
+        bool got = pop_active_locked(n, &it);
+        pthread_mutex_unlock(&n->act_mu);
+        if (!got) break;
+        if (step(n, it)) c++;
+    }
+    return c;
+}
+
+/* Drive both schedulers to joint quiescence: a round in which neither the
+ * net nor the evaluator performed any work, each having drained its own
+ * ready multiset with all its workers idle. */
 size_t net_run_with_eval(Net *n) {
     size_t total = 0;
     for (;;) {
+        size_t before = __atomic_load_n(&n->rewrites, __ATOMIC_SEQ_CST);
         size_t c = net_run(n);
         size_t e = eval_run();
+        size_t after = __atomic_load_n(&n->rewrites, __ATOMIC_SEQ_CST);
         total += c;
-        if (c == 0 && e == 0) break;
+        if (c == 0 && e == 0 && after == before) break;
     }
     return total;
 }
 
 bool net_root_read(const Net *n, NodeId root, NodeKind *kind, Payload *p) {
-    const Node *x = &n->nodes.data[root];
+    const Node *x = N(n, root);
     if (!x->live || x->kind != A_ROOT) return false;
     Endpoint q = x->peer[0];
     if (!q.node) return false;
-    const Node *y = &n->nodes.data[q.node];
+    const Node *y = N(n, q.node);
     if (kind) *kind = y->kind;
     if (p) *p = y->p;
     return true;
@@ -507,6 +726,7 @@ static bool run_op(Net *n, NodeKind opk, Payload P, NodeKind dk, Payload Q, Node
 void test_net(void) {
     printf("== §19–20 scope agents and local replacement\n");
     Net net; net_init(&net);
+    if (getenv("CUBICAL_WORKERS")) net_set_workers(&net, (size_t)atoi(getenv("CUBICAL_WORKERS")));
     RefId U = mk_universe(0);
     RefId A = ref_var(declare_term(U, fc_true()));
     TermVarId x = declare_term(A, fc_true());
@@ -576,14 +796,14 @@ void test_net(void) {
     net_connect(&net, mat, 1, root, 0); net_connect(&net, mat, 0, recipe, 0);
     net_run(&net);
     Endpoint h = net_peer(&net, root, 0);
-    bool shape = net_is_live(&net, h.node) && net.nodes.data[h.node].kind == A_HEAD && net.nodes.data[h.node].tag == T_SYSTEM;
+    bool shape = net_is_live(&net, h.node) && net_node_ptr(&net, h.node)->kind == A_HEAD && net_node_ptr(&net, h.node)->tag == T_SYSTEM;
     if (shape) {
         Endpoint l = net_peer(&net, h.node, 1);
-        shape = net.nodes.data[l.node].kind == A_BRANCH_CONS;
+        shape = net_node_ptr(&net, l.node)->kind == A_BRANCH_CONS;
         Endpoint br = net_peer(&net, l.node, 1);
-        shape = shape && net.nodes.data[br.node].kind == A_BRANCH && net.nodes.data[net_peer(&net, br.node, 1).node].kind == D_FACE && net.nodes.data[net_peer(&net, br.node, 2).node].kind == D_REF;
+        shape = shape && net_node_ptr(&net, br.node)->kind == A_BRANCH && net_node_ptr(&net, net_peer(&net, br.node, 1).node)->kind == D_FACE && net_node_ptr(&net, net_peer(&net, br.node, 2).node)->kind == D_REF;
         Endpoint l2 = net_peer(&net, l.node, 2);
-        shape = shape && net.nodes.data[l2.node].kind == A_BRANCH_CONS && net.nodes.data[net_peer(&net, l2.node, 2).node].kind == A_BRANCH_NIL;
+        shape = shape && net_node_ptr(&net, l2.node)->kind == A_BRANCH_CONS && net_node_ptr(&net, net_peer(&net, l2.node, 2).node)->kind == A_BRANCH_NIL;
     }
     TCHECK(shape, "SYSTEM materializes as HEAD → CONS(BRANCH(FACE,REF), CONS(BRANCH, NIL))");
     /* duplicate the shell fieldwise, then erase one copy */
@@ -592,28 +812,28 @@ void test_net(void) {
     NodeId ra = mk_root(&net), rb = mk_root(&net);
     net_connect(&net, dup2, 1, ra, 0); net_connect(&net, dup2, 2, rb, 0);
     /* detach root from head, attach dup */
-    net.nodes.data[root].peer[0].node = 0;
+    net_disconnect(&net, root, 0);
     net_connect(&net, dup2, 0, h.node, 0);
-    size_t live_before = 0; for (size_t k = 1; k < net.nodes.len; k++) if (net.nodes.data[k].live) live_before++;
+    size_t live_before = 0; for (size_t k = 1; k <= net_node_count(&net); k++) if (net_is_live(&net, (NodeId)k)) live_before++;
     net_run(&net);
     Endpoint ha = net_peer(&net, ra, 0), hb = net_peer(&net, rb, 0);
-    TCHECK(net_is_live(&net, ha.node) && net_is_live(&net, hb.node) && net.nodes.data[ha.node].kind == A_HEAD && net.nodes.data[hb.node].kind == A_HEAD && ha.node != hb.node, "shell duplication yields two shells");
+    TCHECK(net_is_live(&net, ha.node) && net_is_live(&net, hb.node) && net_node_ptr(&net, ha.node)->kind == A_HEAD && net_node_ptr(&net, hb.node)->kind == A_HEAD && ha.node != hb.node, "shell duplication yields two shells");
     TCHECK(interner_count(&M.refs) == refs0 && interner_count(&M.origins) == org0, "shell duplication still allocates nothing in the tables");
     NodeId er2 = net_node(&net, A_ERASE, 1, per, e);
-    net.nodes.data[rb].peer[0].node = 0;
+    net_disconnect(&net, rb, 0);
     net_connect(&net, er2, 0, hb.node, 0);
     net_run(&net);
-    size_t live_after = 0; for (size_t k = 1; k < net.nodes.len; k++) if (net.nodes.data[k].live) live_after++;
+    size_t live_after = 0; for (size_t k = 1; k <= net_node_count(&net); k++) if (net_is_live(&net, (NodeId)k)) live_after++;
     TCHECK(!net_is_live(&net, hb.node) && live_after < live_before + 20, "erasing a shell retires it and its fields");
     /* every live port is either free or connected to a live node of opposite polarity */
     bool wiring_ok = true;
-    for (size_t k = 1; k < net.nodes.len; k++) {
-        Node *nd = &net.nodes.data[k];
+    for (size_t k = 1; k <= net_node_count(&net); k++) {
+        Node *nd = net_node_ptr(&net, (NodeId)k);
         if (!nd->live) continue;
         for (uint16_t q = 0; q < nd->nports; q++) {
             Endpoint pe = nd->peer[q];
             if (!pe.node) continue;
-            Node *o = &net.nodes.data[pe.node];
+            Node *o = net_node_ptr(&net, pe.node);
             if (!o->live || o->peer[pe.port].node != k || o->peer[pe.port].port != q || o->polarity[pe.port] + nd->polarity[q] != 0) wiring_ok = false;
         }
     }
