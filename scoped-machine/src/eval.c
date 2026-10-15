@@ -291,10 +291,12 @@ static bool pop_locked(Task *out) {
 /* ---------------- entries ---------------- */
 
 static EntryId entry_intern(RefId t, FaceId eta) {
-    uint64_t w[2] = { t, eta };
+    /* an observation belongs to one definition environment: a candidate
+     * mutation makes earlier observations unreachable (§57 R1) */
+    uint64_t w[3] = { t, eta, global_env_version() };
     bool created;
     pthread_mutex_lock(&E.entries_mu);
-    EntryId id = interner_intern(&E.keys, w, 2, &created);
+    EntryId id = interner_intern(&E.keys, w, 3, &created);
     if (created) {
         Entry *e = (Entry *)chunked_at(&E.entries, id - 1);
         memset(e, 0, sizeof *e);
@@ -308,9 +310,9 @@ static EntryId entry_intern(RefId t, FaceId eta) {
 
 EntryId eval_entry_lookup(RefId t, FaceId chi) {
     size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
-    uint64_t w[2] = { t, fc_project(chi, S, n) };
+    uint64_t w[3] = { t, fc_project(chi, S, n), global_env_version() };
     pthread_mutex_lock(&E.entries_mu);
-    EntryId id = interner_find(&E.keys, w, 2);
+    EntryId id = interner_find(&E.keys, w, 3);
     pthread_mutex_unlock(&E.entries_mu);
     return id;
 }

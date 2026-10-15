@@ -166,6 +166,22 @@ int main(void) {
       RefId ts4[2] = { b, b };
       CHECK(convert_term(Gk, fc_join(k0, k1), sys, mk_system(2, fs, ts4), A) == CV_UNEQUAL, "systems differing on one clause are unequal"); }
 
+    /* candidate-environment mutation (§57 R1): verdicts, conversions and
+     * observations made before a body is registered are not reused after;
+     * the correctly typed body is accepted and its value observed */
+    { uint64_t params[2] = { vA, va };
+      SymbolId cand = define_global("cand", varset_make(params, 2), dimset_make(NULL, 0), A);
+      Inference I0 = infer(G, fc_true(), global_ref(cand));
+      CHECK(I0.st == CK_VALID && I0.type == A, "an opaque candidate checks at its declaration (%s)", I0.reason);
+      CHECK(convert_term(G, fc_true(), global_ref(cand), a, A) == CV_UNEQUAL, "opaque candidate vs a: UNEQUAL before the body exists");
+      WhnfStatus st0; EvalResult *r0 = whnf(global_ref(cand), fc_true(), &st0);
+      CHECK(st0 == W_OK && r0->cls == R_NEUTRAL, "the opaque candidate observes as a neutral");
+      CHECK(set_global_body(cand, a), "the candidate environment accepts the body");
+      CHECK(convert_term(G, fc_true(), global_ref(cand), a, A) == CV_EQUAL, "after the body cand := a the conversion is recomputed: EQUAL");
+      WhnfStatus st1; EvalResult *r1 = whnf(global_ref(cand), fc_true(), &st1);
+      CHECK(st1 == W_OK && r1->ref == a, "the observation is recomputed in the new environment");
+      CHECK(check(G, fc_true(), global_ref(cand), A, &why) == CK_VALID, "the defined candidate checks (%s)", why); }
+
     /* checked observation through the admission gate (the environment is admissible so far) */
     { WhnfStatus st; EvalResult *r = observe_checked(G, mk_app(id, a), &st, &why);
       CHECK(st == W_OK && r && r->ref == a, "observe_checked: (λx.x) a ⇝ a (%s)", why);

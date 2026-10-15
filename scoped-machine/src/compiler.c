@@ -19,6 +19,7 @@ typedef struct {
     RefId collapse, expand; TermVarId r_slot, q_slot;
     /* validation */
     int valid_state; FaceId valid_face; const char *valid_reason;   /* 0 none, 1 valid, 2 invalid */
+    uint64_t valid_session, valid_env;                              /* the checker session and environment the verdict belongs to */
 } Diagram;
 
 typedef struct {
@@ -59,7 +60,16 @@ void compiler_free(void) {
 }
 static void ensure_init(void) { if (!CR.init) compiler_init(); }
 
-static Diagram *DG(DiagramId d) { require(d >= 1 && d <= CR.diagrams.len, "unknown diagram"); return CR.diagrams.data[d - 1]; }
+/* the registry vector grows under CR.mu; a lookup takes the lock for the id
+ * check and the stable heap pointer (the Diagram itself is retained until
+ * compiler teardown). Callers never hold CR.mu while calling DG. */
+static Diagram *DG(DiagramId d) {
+    pthread_mutex_lock(&CR.mu);
+    require(d >= 1 && d <= CR.diagrams.len, "unknown diagram");
+    Diagram *p = CR.diagrams.data[d - 1];
+    pthread_mutex_unlock(&CR.mu);
+    return p;
+}
 
 /* ------------------------------------------------------------------ */
 /* anchored names (§40): owning identity, compilation role, node, slot    */
@@ -160,10 +170,14 @@ RefId diagram_canonical(DiagramId d) { diagram_build(d); return DG(d)->C; }
 
 CheckStatus diagram_validate(DiagramId id, FaceId required, const char **reason) {
     Diagram *d = DG(id);
+    /* a cached verdict belongs to one checker session and one environment:
+     * after a session reset its diagnostic text is dead and its semantic
+     * outcome is not the new environment's; revalidate */
     pthread_mutex_lock(&CR.mu);
     int vs = d->valid_state; FaceId vf = d->valid_face; const char *vr = d->valid_reason;
+    bool current = d->valid_session == check_session_id() && d->valid_env == global_env_version();
     pthread_mutex_unlock(&CR.mu);
-    if (vs && vf == required) { if (vs == 2) *reason = vr; return vs == 1 ? CK_VALID : CK_INVALID; }
+    if (vs && current && vf == required) { if (vs == 2) *reason = vr; return vs == 1 ? CK_VALID : CK_INVALID; }
     CheckStatus st = check_context(d->params, reason);
     ContextId G = d->params;
     for (size_t k = 0; k < d->n && st == CK_VALID; k++) {
@@ -202,6 +216,7 @@ CheckStatus diagram_validate(DiagramId id, FaceId required, const char **reason)
     if (st != CK_UNRESOLVED) {
         pthread_mutex_lock(&CR.mu);
         d->valid_state = st == CK_VALID ? 1 : 2; d->valid_face = required; d->valid_reason = *reason;
+        d->valid_session = check_session_id(); d->valid_env = global_env_version();
         pthread_mutex_unlock(&CR.mu);
     }
     return st;

@@ -226,12 +226,38 @@ static void val_enter(ScopeId S, unsigned depth, void *c) {
     }
     vec_push(&v->stack, S);
 }
+/* positive outcomes are immutable facts about immutable records: memoized */
+static bool validated_before(uint64_t kind, uint64_t id) {
+    uint64_t k[2] = { kind, id }, v;
+    pthread_mutex_lock(&M.term_mu); bool have = wordmap_get(&M.trav_memo, k, 2, &v); pthread_mutex_unlock(&M.term_mu);
+    return have;
+}
+static void remember_validated(uint64_t kind, uint64_t id) {
+    uint64_t k[2] = { kind, id };
+    pthread_mutex_lock(&M.term_mu); wordmap_put(&M.trav_memo, k, 2, 1); pthread_mutex_unlock(&M.term_mu);
+}
 bool scope_validate(ScopeId S, const char **reason) {
+    if (validated_before(0x5CA1, S)) return true;
     ValCtx v; memset(&v, 0, sizeof v);
     Trav tv = { val_term, val_dim, 0, &v, val_enter, val_leave };
     (void)trav_scope(S, &tv, 0);          /* no outer telescope at the top level */
     vec_free(&v.stack);
     if (v.why) { *reason = v.why; return false; }
+    remember_validated(0x5CA1, S);
+    return true;
+}
+/* a reference at the top level (no enclosing telescope): a bound atom in
+ * it, outside any scope, names nothing; scopes nested anywhere inside
+ * (through template environments) are validated with their actual stack */
+bool ref_validate(RefId t, const char **reason) {
+    if (ref_is_var(t)) { if (is_bound_id(ref_var_id(t))) { *reason = "bound occurrence outside any telescope"; return false; } return true; }
+    if (validated_before(0x4EF1, t)) return true;
+    ValCtx v; memset(&v, 0, sizeof v);
+    Trav tv = { val_term, val_dim, 0, &v, val_enter, val_leave };
+    (void)trav_ref(t, &tv, 0);
+    vec_free(&v.stack);
+    if (v.why) { *reason = v.why; return false; }
+    remember_validated(0x4EF1, t);
     return true;
 }
 

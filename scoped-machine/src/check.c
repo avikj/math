@@ -90,6 +90,7 @@ void check_free(void) {
     for (size_t k = 0; k < DIAG.items.len; k++) free(DIAG.items.data[k]);
     vec_free(&DIAG.items); pthread_mutex_destroy(&DIAG.mu); memset(&DIAG, 0, sizeof DIAG);
 }
+uint64_t check_session_id(void) { return session_gen; }
 void check_set_budget(size_t steps) {
     pthread_mutex_lock(&K.mu);
     if (K.budget != steps) { K.budget = steps; K.attempt++; }   /* a changed budget is a new attempt */
@@ -107,13 +108,16 @@ static uint64_t tid_locked(void) {
     return tl_tid;
 }
 
+/* every claim belongs to one definition environment (§57 R1 / §59.4): the
+ * key carries the environment version, so a successful candidate mutation
+ * makes every earlier environment-dependent verdict unreachable */
 static size_t claim_index_locked(uint64_t kind, const uint64_t *w, size_t n) {
-    uint64_t key[8] = { kind }; memcpy(key + 1, w, n * sizeof(uint64_t));
+    uint64_t key[10] = { kind, global_env_version() }; memcpy(key + 2, w, n * sizeof(uint64_t));
     uint64_t v;
-    if (wordmap_get(&K.idx, key, n + 1, &v)) return (size_t)v - 1;
+    if (wordmap_get(&K.idx, key, n + 2, &v)) return (size_t)v - 1;
     Claim c; memset(&c, 0, sizeof c); words_init(&c.deps); c.is_symbol = kind == CL_SYMBOL;
     vec_push(&K.recs, c);
-    wordmap_put(&K.idx, key, n + 1, K.recs.len);
+    wordmap_put(&K.idx, key, n + 2, K.recs.len);
     return K.recs.len - 1;
 }
 
@@ -559,6 +563,7 @@ CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma,
          * obligations below are vacuous on false (§33) */
         RefId image = map_term_image(sigma, d.id);
         { size_t m; const uint64_t *fv = varset_get(ref_freevars(image), &m);
+          if (!ref_validate(image, reason)) { st = CK_INVALID; break; }
           for (size_t q = 0; q < m && st == CK_VALID; q++) if (!context_declares_term(Delta, fv[q], NULL)) { *reason = "term image mentions a variable not declared in the source context"; st = CK_INVALID; }
           if (st == CK_VALID && !dims_declared(Delta, ref_support(image))) { *reason = "term image mentions a dimension not declared in the source context"; st = CK_INVALID; } }
         if (st != CK_VALID) break;
@@ -662,7 +667,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
     Head h; open_ref(t, &h);
     CheckStatus st = CK_VALID;
     switch (h.tag) {
-    case T_UNIVERSE: *type = mk_universe(h.payload + 1); break;
+    case T_UNIVERSE: *type = mk_universe(level_succ(h.payload)); break;   /* checked successor: overflow is a host failure (§59.1) */
     case T_PI: case T_SIGMA: {
         uint64_t i, j;
         st = level_of(G, C, h.f[0].id, &i, reason);
@@ -895,6 +900,7 @@ static CheckStatus infer_clause(ContextId G, FaceId C, RefId t, RefId *type, con
     if (!budget_ok()) { *reason = R_BUDGET; return CK_UNRESOLVED; }
     G = under(G, C);
     if (ref_is_var(t)) return infer_head(G, C, t, type, reason);
+    if (!fc_entails(C, ref_required(t))) { *reason = "occurrence outside its required face"; return CK_INVALID; }
     if (ref_is_tview(t)) return infer_tview(G, C, t, type, reason);
     if (origin_tag(ref_origin(t)) == T_GLOBAL) return infer_head(G, C, t, type, reason);
     OriginId O = ref_origin(t);
@@ -1028,8 +1034,16 @@ static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **r
     if (a == ACQ_DONE) { if (v == 1) return CK_VALID; *reason = why; return ck_of(v); }
     if (a == ACQ_CYCLE) { *reason = "unresolved: template boundary validation depends on itself"; return CK_UNRESOLVED; }
     CheckStatus st = CK_VALID;
-    ParamSig sig[16]; size_t ns = tnode_signature(t, sig, 16);
     TEnvId E = tenv_of(t);
+    /* finite structure of every retained image before any signature recipe
+     * can apply a supplied scope (§50.1–2, review R3) */
+    for (size_t q = 0, ne = tenv_size(E); q < ne && st == CK_VALID; q++) {
+        uint64_t slot; TVal val; tenv_entry(E, q, &slot, &val);
+        if (val.sort == PS_SCOPE && !scope_validate((ScopeId)val.id, reason)) st = CK_INVALID;
+        else if (val.sort == PS_REF && !ref_validate(val.id, reason)) st = CK_INVALID;
+    }
+    if (st != CK_VALID) { claim_release(cl, ck_code(st), *reason, NULL); return st; }
+    ParamSig sig[16]; size_t ns = tnode_signature(t, sig, 16);
     for (size_t k = 0; k < ns && st == CK_VALID; k++) {
         size_t ne = tenv_size(E); uint64_t image = 0; bool have = false;
         for (size_t q = 0; q < ne; q++) { uint64_t slot; TVal val; tenv_entry(E, q, &slot, &val); if (slot == sig[k].slot) { image = val.id; have = true; } }
@@ -1080,6 +1094,7 @@ static CheckStatus infer_tview(ContextId G, FaceId C, RefId t, RefId *type, cons
 
 static CheckStatus scope_ok(ContextId G, FaceId chi, RefId t, const char **reason) {
     if (!dims_declared(G, face_dims(chi))) { *reason = "face mentions an undeclared dimension"; return CK_INVALID; }
+    if (!ref_validate(t, reason)) return CK_INVALID;      /* finite structure, independent of the face (§50.1–2) */
     size_t n; const uint64_t *xs = varset_get(ref_freevars(t), &n);
     for (size_t k = 0; k < n; k++) if (!context_declares_term(G, xs[k], NULL)) { *reason = "unbound variable"; return CK_INVALID; }
     if (!dims_declared(G, ref_support(t))) { *reason = "unbound dimension"; return CK_INVALID; }
@@ -1113,6 +1128,9 @@ static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const c
     if (!budget_ok()) { *reason = R_BUDGET; return CK_UNRESOLVED; }
     G = under(G, C);
     Tag tag = 0;
+    /* §2/§33: an occurrence is used only under a clause entailing its
+     * required face — on every path, the checking forms included */
+    if (!ref_is_var(t) && !fc_entails(C, ref_required(t))) { *reason = "occurrence outside its required face"; return CK_INVALID; }
     if (!ref_is_var(t)) tag = ref_tag(t);
     if (tag == T_LAM || tag == T_PAIR || tag == T_PLAM || tag == T_SYSTEM) {
         if (ref_is_tview(t)) { CheckStatus bs = tview_boundary(G, C, t, reason); if (bs != CK_VALID) return bs; }   /* the checking form does not bypass the template boundary */

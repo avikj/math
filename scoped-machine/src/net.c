@@ -512,7 +512,9 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
     case OP_LIFT_TERM: case OP_LIFT_DIMENSION: {
         WANT(D_MAP);
         RefId owner = P.a; BinderSlot slot = (BinderSlot)P.b;
-        if (ref_is_var(owner) || Q.a != ref_map(owner)) { res = status_node(n, ST_INVALID_MAP, 0, 0); break; }
+        /* lifting is defined for a raw view's own map; a template view has
+         * an environment, not a map: a status, never a raw-origin access */
+        if (ref_is_var(owner) || ref_is_tview(owner) || Q.a != ref_map(owner)) { res = status_node(n, ST_INVALID_MAP, 0, 0); break; }
         Binder b = origin_binder(ref_origin(owner), slot);
         if ((k == OP_LIFT_TERM) != (b.sort == S_TERM)) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
         res = desc_map(n, lifted_map(owner, slot, NULL), Q.b, Q.c);
@@ -521,7 +523,7 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
     case OP_OPEN: WANT(D_REF); res = desc_recipe(n, Q.ref); break;
     case OP_UNFOLD_GLOBAL:
         WANT(D_REF);
-        if (ref_is_var(Q.ref) || origin_tag(ref_origin(Q.ref)) != T_GLOBAL) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
+        if (ref_is_var(Q.ref) || ref_is_tview(Q.ref) || origin_tag(ref_origin(Q.ref)) != T_GLOBAL) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
         res = desc_ref(n, unfold_global(Q.ref));
         break;
     case OP_REINDEX_TERM_BINDER: WANT(D_TERM_BINDER); res = desc_binder(n, D_TERM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
@@ -536,8 +538,13 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         DimOpen o = resolve_dim_binder(owner, (BinderSlot)Q.b, (FieldIndex)Q.c);
         MapId at_r = map_single_dim(o.j, P.a);
         /* both body and guard are specialized at r (the guard of a valid tube
-         * is independent of the bound dimension, so this leaves it unchanged) */
-        FaceId guard = fc_reindex(fc_reindex(origin_field(ref_origin(owner), (FieldIndex)Q.d).id, ref_map(owner)), at_r);
+         * is independent of the bound dimension, so this leaves it unchanged);
+         * the guard is read through the uniform opened head, where the
+         * owner's map or template environment is already applied (§55) */
+        Head oh; open_ref(owner, &oh);
+        require((size_t)Q.d < oh.n && oh.f[Q.d].kind == F_FACE, "APPLY_PARTIAL_DIM_BINDER: guard field");
+        FaceId guard = fc_reindex(oh.f[Q.d].id, at_r);
+        head_free(&oh);
         res = desc_partial(n, guard, reindex(o.body, at_r));
         break;
     }

@@ -204,7 +204,10 @@ uint64_t origin_levels(OriginId c) {
     size_t n; const uint64_t *w = interner_get(&M.origins, c, &n);
     return w[n - 1];
 }
-uint64_t levels_pack(uint64_t m, uint64_t n) { return (m & 0xffffffffULL) | ((n & 0xffffffffULL) << 32); }
+/* §51.2 / §59.1: a level is a number below LEVEL_NONE or the sentinel itself;
+ * anything else is a host failure, never a wrapped level */
+static void level_check(uint64_t l) { require(l <= LEVEL_NONE, "universe level out of the representable range"); }
+uint64_t levels_pack(uint64_t m, uint64_t n) { level_check(m); level_check(n); return m | (n << 32); }
 uint64_t levels_first(uint64_t lv) { return lv & 0xffffffffULL; }
 uint64_t levels_second(uint64_t lv) { return lv >> 32; }
 uint64_t level_max(uint64_t a, uint64_t b) { if (a == LEVEL_NONE || b == LEVEL_NONE) return LEVEL_NONE; return a > b ? a : b; }
@@ -742,7 +745,7 @@ static RefId view0(Tag tag, uint64_t payload, const Field *f, size_t nf, const B
     return make_view(origin_make(tag, payload, f, nf, b, nb), map_identity());
 }
 
-RefId mk_universe(uint64_t level) { return view0(T_UNIVERSE, level, NULL, 0, NULL, 0); }
+RefId mk_universe(uint64_t level) { require(level < LEVEL_NONE, "universe level out of the representable range"); return view0(T_UNIVERSE, level, NULL, 0, NULL, 0); }
 
 /* annotated forms (§59.1): the formation levels are set for the origin
  * being built and recorded in its record */

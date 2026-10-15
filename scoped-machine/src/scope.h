@@ -65,6 +65,10 @@ TypedPartial open_scope_fresh(ScopeId S, uint64_t key, uint64_t *ids);
  * declaration uses only earlier slots of its own telescope; required
  * metadata is present. Must hold before the scope is opened. */
 bool scope_validate(ScopeId S, const char **reason);
+/* the same finite check for a whole reference used at the top level
+ * (outside any telescope): every scope reachable through its template
+ * environments is validated with its actual enclosing stack */
+bool ref_validate(RefId t, const char **reason);
 
 /* free (unbound) part of a dimension set / variable set */
 DimSetId dimset_free(DimSetId s);

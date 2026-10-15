@@ -320,6 +320,13 @@ still takes them as premises and reports ill-typed demands it reaches as `R_INVA
   when settled, and an UNRESOLVED one only within the attempt that produced it
   (`check_new_attempt`, or a changed budget, begins a new attempt; a top-level request's
   budget is fixed when it enters).
+- **Environment-qualified caches (§57 R1).** Every checker claim and every evaluator memo
+  entry is keyed by the definition-environment version, so registering a declaration or a
+  body in an open candidate environment makes all earlier verdicts, conversions and
+  observations unreachable; nothing from before a mutation can establish validity after it.
+  An occurrence is used only under a clause entailing its required face, on every checking
+  path. Finite structural validity of references and scopes (`ref_validate`, `scope_validate`)
+  is checked before any opening, independent of faces.
 - **Levels are required (§59.1).** Every type position of admitted core syntax carries its
   level: `LEVEL_NONE` at a Π/Σ/λ/Path/PApp/Glue/comp/annotated-pair position is INVALID in
   inference and in checking, and the evaluator instantiates no composition clause for an

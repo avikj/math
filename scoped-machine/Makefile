@@ -5,7 +5,7 @@ LDFLAGS ?= -fsanitize=address,undefined -pthread
 SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -72,6 +72,12 @@ build/review-9eadaf2: $(OBJ) tests/review_9eadaf2.o
 
 REVIEW_9E_MODES := scope-depth scope-sort nested-control kappa-restart kappa-alias kappa-thread
 
+build/review-end-to-end: $(OBJ) tests/review_end_to_end.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+REVIEW_E2E_MODES := candidate guard false-scope coe-scope net-tview diagram-session net-race positive
+
 test: all
 	./build/check
 	./build/match
@@ -98,8 +104,10 @@ test: all
 	for m in $(REVIEW_AE_MODES); do ./build/review-ae756a1 $$m || exit 1; done
 	for m in $(REVIEW_0F_MODES); do ./build/review-0f787a3 $$m || exit 1; done
 	for m in $(REVIEW_9E_MODES); do ./build/review-9eadaf2 $$m || exit 1; done
+	for m in $(REVIEW_E2E_MODES) universe packed-level; do ./build/review-end-to-end $$m || exit 1; done
+	CUBICAL_WORKERS=4 ./build/review-end-to-end positive
 
-TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2
+TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
@@ -121,6 +129,8 @@ tsan:
 	for m in $(REVIEW_AE_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_ae756a1 $$m || exit 1; done
 	for m in $(REVIEW_0F_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_0f787a3 $$m || exit 1; done
 	for m in $(REVIEW_9E_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_9eadaf2 $$m || exit 1; done
+	for m in $(REVIEW_E2E_MODES) diagram-race; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_end_to_end $$m || exit 1; done
+	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_end_to_end positive
 	$(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -o build/tsan/review_claim_wait tests/review_claim_wait.c $(filter-out build/tsan/check.o,$(TSAN_CORE))
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_claim_wait
 

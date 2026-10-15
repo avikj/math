@@ -73,6 +73,7 @@ CheckStatus check_admission(const char **reason);
  * compiler or observation client may be in progress and evaluator work must
  * have drained (both enforced); stop admitting new clients while crossing. */
 void check_open_environment(void);
+uint64_t check_session_id(void);   /* changes with every checker session; session-dependent caches are qualified by it */
 
 /* the parameter context of an origin: its free dimensions, then its free
  * term variables in dependency order with their declared types; assumption

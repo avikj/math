@@ -12,12 +12,13 @@ says how to check it without trusting the implementer's summary.
                   # the acceptance, schedule, checking, template and compiler suites with 4-thread
                   # pools; then the reviews' reproductions (review-followup in 4 modes,
                   # review-claim-wait, review-checker-lifecycle, review-ae756a1 in 11 modes,
-                  # review-0f787a3 in 6 modes, review-9eadaf2 in 6 modes),
+                  # review-0f787a3 in 6 modes, review-9eadaf2 in 6 modes, review-end-to-end
+                  # in 10 modes plus the four-worker pipeline),
                   # each exiting nonzero on a miss
     make tsan     # every suite under ThreadSanitizer, including the review's concurrent case and
                   # the three reproductions with halt_on_error (several minutes)
 
-Expected: `78 passed, 0 failed`, `12 passed, 0 failed`, `80 passed, 0 failed`, `85 passed, 0 failed`, every
+Expected: `85 passed, 0 failed`, `12 passed, 0 failed`, `80 passed, 0 failed`, `85 passed, 0 failed`, every
 `(expected …)` line of `review-regressions` matching its expectation, `124 passed, 0 failed`,
 `35 net checks passed`, `schedule check passed`, `concurrent check passed`, the reproductions
 printing their observations without a `FAIL:` line (`<mode>: 0 expectation failures` for each
@@ -227,6 +228,23 @@ and `eval_reset`'s outstanding-work check are partial assertions of that precond
 its enforcement: `top_leave` releases the counter before `top_settled`, and compound compiler
 and observation calls have intervals outside individual checker entries. No concurrent reset
 is supported.
+
+## 5f. The end-to-end review of e9c7dcb: corrections made
+
+The reviewer's `tests/review_end_to_end.c` (nine negative modes, the checked associativity
+pipeline in both orientations with repeated-demand sharing, the four-worker adjacent-redex
+stress) is in `make test` and `make tsan` unchanged (`universe`/`packed-level` under
+ASan, `diagram-race` under TSan, as the runner distributes them).
+
+| Finding | Correction | Where | Regression |
+| --- | --- | --- | --- |
+| R1 old claims survive a candidate mutation | Every claim key and every evaluator memo key carries the environment version, so a successful registration makes all earlier environment-dependent verdicts, conversions and observations unreachable; a previously checked opaque declaration is re-validated with its body at admission | `check.c` `claim_index_locked`, `eval.c` `entry_intern`/`eval_entry_lookup` | `review-end-to-end candidate`; `test_check.c` positive companion (opaque → body `a`: conversion recomputed to EQUAL, observation recomputed, admission valid) |
+| R2 checking forms bypass the required face | `check_clause` and `infer_clause` require the clause to entail every non-variable occurrence's required face before any form-specific path (vacuous under false, which has no clauses) | `check.c` | `review-end-to-end guard` (total check and total admission INVALID; under `i=0` VALID) |
+| R3 structural validation before every use | `ref_validate` (the structural traversal at the top level, through template environments and nested scopes with their actual stack) runs in `scope_ok` and on every map image; `tview_boundary` validates every retained scope and reference image before any signature recipe can apply a scope; positive outcomes memoized per record | `scope.c`, `check.c` | `review-end-to-end false-scope`, `coe-scope` |
+| R4 partial dimension binder on a TVIEW | The guard is read through the opened head; `LIFT_*` and `UNFOLD_GLOBAL` return a status for a template view instead of a raw-origin access | `net.c` | `review-end-to-end net-tview` |
+| R5 diagram verdict after a session reset | A diagram's cached verdict is qualified by checker session and environment version; a later call revalidates and returns currently owned text | `compiler.c` | `review-end-to-end diagram-session` (ASan clean) |
+| R6 registry lookup race | `DG` takes the registry lock for the id check and the stable pointer; no caller holds the lock across it | `compiler.c` | `review-end-to-end diagram-race` (TSan clean) |
+| R7 universe wrap | `levels_pack` and `mk_universe` require the representable range (host failure); the universe rule uses the checked successor | `term.c`, `check.c` | `review-end-to-end universe`, `packed-level` (child aborts) |
 
 ## 6. Representation choices a reviewer should know
 
