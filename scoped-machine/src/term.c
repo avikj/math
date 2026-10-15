@@ -187,13 +187,34 @@ VarSetId origin_ft(OriginId c) { return OSIDE(c)->ft; }
 DimSetId origin_fd(OriginId c) { return OSIDE(c)->fd; }
 FaceId origin_required(OriginId c) { return OSIDE(c)->required; }
 
+static __thread FaceId tl_req_scope[16]; static __thread size_t tl_req_depth;
+void term_require_push(FaceId phi) {
+    require(tl_req_depth < 16, "required-face scope too deep");
+    FaceId f = tl_req_depth ? fc_meet(tl_req_scope[tl_req_depth - 1], phi) : phi;
+    tl_req_scope[tl_req_depth++] = f;
+}
+void term_require_pop(void) { require(tl_req_depth > 0, "required-face scope underflow"); tl_req_depth--; }
+static FaceId current_declared_required(void) { return tl_req_depth ? tl_req_scope[tl_req_depth - 1] : 0; }
+FaceId origin_declared_required(OriginId c) {
+    size_t n; const uint64_t *w = interner_get(&M.origins, c, &n);
+    return w[n - 1];
+}
+
 static OriginId origin_intern(Tag tag, uint64_t payload, const Field *fields, size_t nf,
                               const Binder *binders, size_t nb, VarSetId ft, DimSetId fd, FaceId req) {
+    FaceId declared = current_declared_required();
+    if (declared) {
+        req = fc_meet(req, declared);
+        Words dd; words_init(&dd); fc_dims(declared, &dd);
+        fd = dimset_union(fd, dimset_make(dd.w, dd.n));
+        words_free(&dd);
+    }
     Words w; words_init(&w);
     words_push(&w, tag); words_push(&w, payload); words_push(&w, nf);
     for (size_t k = 0; k < nf; k++) { words_push(&w, fields[k].kind); words_push(&w, fields[k].slot); words_push(&w, fields[k].id); }
     words_push(&w, nb);
     for (size_t k = 0; k < nb; k++) { words_push(&w, binders[k].sort); words_push(&w, binders[k].formal); words_push(&w, binders[k].domain_field); }
+    words_push(&w, declared);                 /* annotation is part of the record */
     bool created;
     term_lock();
     OriginId id = interner_intern(&M.origins, w.w, w.n, &created);
@@ -600,11 +621,11 @@ OccStatus occurrence_validate(RefId t, ContextId ctx, uint64_t *culprit) {
 
 /* ================= globals ================= */
 
-SymbolId define_global(const char *name, VarSetId params, DimSetId dims) {
+SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type) {
     term_lock();
     SymbolId s = (SymbolId)(M.n_defs + 1);
     Def *d = DEF(s);
-    d->body = 0; d->params = params; d->dims = dims; d->name = name;
+    d->body = 0; d->params = params; d->dims = dims; d->name = name; d->type = type;
     M.n_defs++;
     term_unlock();
     return s;
@@ -620,6 +641,13 @@ void set_global_body(SymbolId s, RefId body) {
     for (size_t k = 0; k < n; k++) require(dimset_contains(d->dims, ds[k]), "global body has an undeclared free dimension");
     __atomic_store_n(&d->body, body, __ATOMIC_RELEASE);
 }
+
+RefId global_type(SymbolId s) { return DEF(s)->type; }
+RefId global_body(SymbolId s) { return __atomic_load_n(&DEF(s)->body, __ATOMIC_ACQUIRE); }
+VarSetId global_params(SymbolId s) { return DEF(s)->params; }
+DimSetId global_dims(SymbolId s) { return DEF(s)->dims; }
+const char *global_name(SymbolId s) { return DEF(s)->name; }
+size_t global_count(void) { return M.n_defs; }
 
 RefId global_ref(SymbolId s) {
     require(s >= 1 && s <= M.n_defs, "unknown symbol");

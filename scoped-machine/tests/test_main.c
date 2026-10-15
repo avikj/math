@@ -300,14 +300,14 @@ static void test_eval_basic(void) {
 
     /* globals: unfold through a fixed body */
     uint64_t Aparam[1] = { ref_var_id(A) };
-    SymbolId K = define_global("K", varset_make(Aparam, 1), dimset_make(NULL, 0));
+    SymbolId K = define_global("K", varset_make(Aparam, 1), dimset_make(NULL, 0), mk_fun(A, mk_fun(A, A)));
     TermVarId y = tv(A);
     set_global_body(K, mk_lam(x, A, mk_lam(y, A, ref_var(x))));
     r = whnf(mk_app(mk_app(global_ref(K), a), bb), fc_true(), &st);
     CHECK(st == W_OK && r->ref == a, "K a b ⇝ a through global unfolding");
 
     /* running self-demand: loop := loop */
-    SymbolId L = define_global("loop", varset_make(NULL, 0), dimset_make(NULL, 0));
+    SymbolId L = define_global("loop", varset_make(NULL, 0), dimset_make(NULL, 0), U0);
     set_global_body(L, global_ref(L));
     r = whnf(global_ref(L), fc_true(), &st);
     CHECK(st == W_STUCK && r == NULL, "loop is reported stuck, never neutral or ready");

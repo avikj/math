@@ -21,6 +21,7 @@ typedef struct {
     EvalResult **results;
     bool failed;
     pthread_mutex_t mu;
+    size_t slot;              /* index in the live-join registry */
 } Gather;
 
 typedef struct {
@@ -63,10 +64,13 @@ static struct {
     /* ready jobs (a multiset) */
     VEC(Task) queue; size_t qhead;
     pthread_mutex_t q_mu; pthread_cond_t q_cv, idle_cv;
-    size_t busy; bool stop;
+    size_t outstanding;            /* §35: queued jobs + executing jobs (+ reserved launches) */
+    bool stop;
     pthread_t *workers; size_t nworkers;
     /* rooted results (immutable payloads) */
     VEC(EvalResult *) results; pthread_mutex_t res_mu;
+    /* live joins: a join that never fills (stuck children) is dismantled at teardown */
+    VEC(Gather *) joins; pthread_mutex_t join_mu;
     /* counters */
     size_t tasks_created;
     EvalEvents ev;
@@ -99,6 +103,14 @@ void eval_init(void) {
     pthread_cond_init(&E.q_cv, NULL);
     pthread_cond_init(&E.idle_cv, NULL);
     pthread_mutex_init(&E.res_mu, NULL);
+    pthread_mutex_init(&E.join_mu, NULL);
+}
+
+static void gather_free(Gather *g) {
+    pthread_mutex_lock(&E.join_mu);
+    E.joins.data[g->slot] = NULL;
+    pthread_mutex_unlock(&E.join_mu);
+    pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g);
 }
 
 static void stop_workers(void) {
@@ -140,6 +152,10 @@ void eval_free(void) {
     chunked_free(&E.entries);
     for (size_t i = 0; i < E.results.len; i++) { free(E.results.data[i]->faces); free(E.results.data[i]->terms); free(E.results.data[i]); }
     vec_free(&E.results);
+    /* dismantle suspended joins (their branch continuations were waiters of stuck entries) */
+    for (size_t i = 0; i < E.joins.len; i++) if (E.joins.data[i]) { Gather *g = E.joins.data[i]; pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g); }
+    vec_free(&E.joins);
+    pthread_mutex_destroy(&E.join_mu);
     vec_free(&E.queue);
     pthread_mutex_destroy(&E.entries_mu); pthread_mutex_destroy(&E.q_mu); pthread_mutex_destroy(&E.res_mu);
     pthread_cond_destroy(&E.q_cv); pthread_cond_destroy(&E.idle_cv);
@@ -188,13 +204,30 @@ static EvalResult *result_system(RefId owner, size_t n, const FaceId *faces, con
 
 /* ---------------- job queue ---------------- */
 
-static void enqueue(Task t) {
+/* §35 quiescence protocol: outstanding = queued + executing. A launch
+ * reserves its job (outstanding += 1) while the entry lock is held, so no
+ * observer can see the key RUNNING with outstanding == 0; the job itself is
+ * put on the queue after the entry lock is released. */
+static void reserve_job(void) { pthread_mutex_lock(&E.q_mu); E.outstanding++; pthread_mutex_unlock(&E.q_mu); }
+static void enqueue_reserved(Task t) {
     pthread_mutex_lock(&E.q_mu);
     vec_push(&E.queue, t);
     pthread_cond_signal(&E.q_cv);
     pthread_mutex_unlock(&E.q_mu);
 }
-static void enqueue_evaluate(EntryId e) { Task t = { false, e, NULL, NULL }; add_count(&E.tasks_created); enqueue(t); }
+static void enqueue(Task t) {
+    pthread_mutex_lock(&E.q_mu);
+    E.outstanding++;
+    vec_push(&E.queue, t);
+    pthread_cond_signal(&E.q_cv);
+    pthread_mutex_unlock(&E.q_mu);
+}
+static void finish_job(void) {
+    pthread_mutex_lock(&E.q_mu);
+    require(E.outstanding > 0, "finish without outstanding job");
+    if (--E.outstanding == 0) pthread_cond_broadcast(&E.idle_cv);
+    pthread_mutex_unlock(&E.q_mu);
+}
 static void enqueue_resume(Cont *k, EvalResult *r) { Task t = { true, 0, k, r }; enqueue(t); }
 
 /* pick the next job under q_mu according to the policy */
@@ -303,9 +336,12 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
      * a running key whose evaluator is not yet runnable. */
     e->state = E_RUNNING;
     vec_push(&e->waiters, k);
-    enqueue_evaluate(eid);
+    reserve_job();                       /* outstanding += 1 before RUNNING can be observed */
     pthread_mutex_unlock(&e->mu);
     add_count(&E.ev.launch);
+    add_count(&E.tasks_created);
+    Task job = { false, eid, NULL, NULL };
+    enqueue_reserved(job);               /* enqueue after the entry lock is released */
 }
 
 static void forward(RefId t, FaceId chi, EntryId dest) { eval_request(t, chi, cont_new(K_FORWARD, dest, chi)); }
@@ -347,7 +383,9 @@ static void evaluate(EntryId eid) {
         publish(eid, result_new(R_INTRODUCTION, t));
         break;
     case T_GLOBAL:
-        forward(unfold_global(t), chi, eid);
+        /* a declared symbol without a body is an opaque constant: neutral */
+        if (!global_body((SymbolId)h.payload)) publish(eid, result_new(R_NEUTRAL, t));
+        else forward(unfold_global(t), chi, eid);
         break;
     case T_APP: {
         Cont *k = cont_new(K_APP, eid, chi); k->orig = t; k->a = h.f[1].id;
@@ -432,7 +470,8 @@ static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId 
     require(g->faces && g->results, "out of memory");
     if (n) memcpy(g->faces, faces, n * sizeof(FaceId));
     pthread_mutex_init(&g->mu, NULL);
-    if (n == 0) { pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g); publish(dest, result_system(mk_system(0, NULL, NULL), 0, NULL, NULL)); return; }
+    pthread_mutex_lock(&E.join_mu); g->slot = E.joins.len; vec_push(&E.joins, g); pthread_mutex_unlock(&E.join_mu);
+    if (n == 0) { gather_free(g); publish(dest, result_system(mk_system(0, NULL, NULL), 0, NULL, NULL)); return; }
     for (size_t i = 0; i < n; i++) {
         Cont *k = cont_new(K_BRANCH, dest, fc_meet(chi, faces[i]));
         k->gather = g; k->branch = i; k->orig = terms[i];
@@ -457,7 +496,7 @@ static void resume_branch(Cont *k, EvalResult *r) {
             if (b->cls == R_INVALID) out = b;
             else if (b->cls == R_NO_OBSERVATION) out = result_invalid("branch under an inconsistent guard");
         }
-        pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g);
+        gather_free(g);
         publish(dest, out);
         return;
     }
@@ -469,7 +508,7 @@ static void resume_branch(Cont *k, EvalResult *r) {
             for (size_t j = 0; j < b->nbr; j++) { words_push(&fs, fc_meet(g->faces[i], b->faces[j])); words_push(&ts, b->terms[j]); }
         } else { words_push(&fs, g->faces[i]); words_push(&ts, b->ref); }
     }
-    pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g);
+    gather_free(g);
     RefId owner = mk_system(fs.n, fs.w, ts.w);
     EvalResult *res = result_system(owner, fs.n, fs.w, ts.w);
     words_free(&fs); words_free(&ts);
@@ -576,17 +615,12 @@ static void *worker_main(void *arg) {
     pthread_mutex_lock(&E.q_mu);
     for (;;) {
         Task t;
-        while (!E.stop && !pop_locked(&t)) {
-            if (E.busy == 0) pthread_cond_broadcast(&E.idle_cv);
-            pthread_cond_wait(&E.q_cv, &E.q_mu);
-        }
+        while (!E.stop && !pop_locked(&t)) pthread_cond_wait(&E.q_cv, &E.q_mu);   /* take_job */
         if (E.stop) break;
-        E.busy++;
         pthread_mutex_unlock(&E.q_mu);
-        execute(t);
+        execute(t);                      /* all child jobs are enqueued before the job finishes */
+        finish_job();
         pthread_mutex_lock(&E.q_mu);
-        E.busy--;
-        if (E.busy == 0 && E.qhead >= E.queue.len) pthread_cond_broadcast(&E.idle_cv);
     }
     pthread_mutex_unlock(&E.q_mu);
     return NULL;
@@ -594,10 +628,10 @@ static void *worker_main(void *arg) {
 
 size_t eval_run(void) {
     if (E.nworkers) {
-        /* wait until the ready multiset is empty and no worker is busy */
+        /* wait until outstanding == 0 (no queued, reserved or executing job) */
         pthread_mutex_lock(&E.q_mu);
         size_t before = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
-        while (E.busy > 0 || E.qhead < E.queue.len) pthread_cond_wait(&E.idle_cv, &E.q_mu);
+        while (E.outstanding > 0) pthread_cond_wait(&E.idle_cv, &E.q_mu);
         size_t n = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST) - before;
         pthread_mutex_unlock(&E.q_mu);
         return n;
@@ -610,6 +644,7 @@ size_t eval_run(void) {
         pthread_mutex_unlock(&E.q_mu);
         if (!got) break;
         execute(t);
+        finish_job();
         n++;
     }
     return n;
@@ -626,7 +661,7 @@ EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
         pthread_mutex_lock(&E.q_mu);
         for (;;) {
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
-            if (d || (E.busy == 0 && E.qhead >= E.queue.len)) break;
+            if (d || E.outstanding == 0) break;
             pthread_cond_wait(&E.idle_cv, &E.q_mu);
         }
         pthread_mutex_unlock(&E.q_mu);

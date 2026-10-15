@@ -12,7 +12,7 @@
 typedef struct { VarSetId ft; DimSetId fd; FaceId required; } OriginSide;
 typedef struct { DimSetId support; VarSetId freevars; FaceId required; } RefSide;
 typedef struct { RefId type; FaceId required; uint64_t prov; } TermDecl;
-typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; } Def;
+typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
 
 typedef struct {
     Interner intervals;   /* IntervalId  → canonical interval DNF words */

@@ -67,7 +67,7 @@ static void *client(void *arg) {
     return NULL;
 }
 
-typedef struct { EvalEvents ev; char *dump; size_t entries; size_t bad_runs, bad_pub, bad_deliver, mismatched; } Outcome;
+typedef struct { EvalEvents ev; Graph *graph; size_t entries; size_t bad_runs, bad_pub, bad_deliver, mismatched; } Outcome;
 
 static Outcome run(size_t workers, int clients) {
     Outcome o; memset(&o, 0, sizeof o);
@@ -98,7 +98,7 @@ static Outcome run(size_t workers, int clients) {
         if (eval_entry_state(e) == E_READY && req != del) o.bad_deliver++;
         canon_add_key(cn, eval_entry_ref(e), eval_entry_face(e), req, del, pub, (int)eval_entry_state(e));
     }
-    size_t len; o.dump = strdup(canon_finish(cn, &len));
+    o.graph = canon_export(cn);
     canon_free(cn);
     o.ev = eval_events(); o.entries = ne;
     eval_free(); machine_free();
@@ -125,7 +125,7 @@ static int storm(size_t workers, int clients, int rounds, bool cyclic) {
         machine_init(); eval_init(); eval_set_workers(workers);
         RefId U0 = mk_universe(0), A = var(U0), a = var(A), b = var(A);
         if (cyclic) {
-            SymbolId L = define_global("loop", varset_make(NULL, 0), dimset_make(NULL, 0));
+            SymbolId L = define_global("loop", varset_make(NULL, 0), dimset_make(NULL, 0), U0);
             set_global_body(L, global_ref(L));
             storm_ref = global_ref(L);
         } else {
@@ -151,9 +151,30 @@ static int storm(size_t workers, int clients, int rounds, bool cyclic) {
     return bad;
 }
 
+/* §36/§38: teardown of a stuck branchwise join (LeakSanitizer must be clean) */
+static int stuck_join_teardown(size_t workers) {
+    machine_init(); eval_init(); if (workers) eval_set_workers(workers);
+    RefId U0 = mk_universe(0), A = var(U0), a = var(A);
+    uint64_t params[1] = { ref_var_id(A) };
+    SymbolId L = define_global("loopf", varset_make(params, 1), dimset_make(NULL, 0), mk_fun(A, A));
+    set_global_body(L, global_ref(L));
+    DimVarId k = declare_dim();
+    FaceId fs[2] = { fc_lit(k, 0), fc_lit(k, 1) };
+    RefId ts[2] = { global_ref(L), mk_lam(declare_term(A, fc_true()), A, a) };
+    WhnfStatus st;
+    EvalResult *r = whnf(mk_app(mk_system(2, fs, ts), a), fc_join(fs[0], fs[1]), &st);
+    int bad = (st != W_STUCK || r != NULL) ? 1 : 0;
+    if (eval_running_count() == 0) bad++;
+    eval_free(); machine_free();
+    return bad;
+}
+
 int main(void) {
     printf("== concurrent clients against the shared cache\n");
     int fails = 0;
+    { int b = stuck_join_teardown(0) + stuck_join_teardown(4);
+      printf("  stuck branchwise join: W_STUCK, nothing published, join dismantled at teardown (%d anomalies)\n", b);
+      if (b) fails++; }
     { int b1 = storm(1, 8, 300, false), b4 = storm(4, 8, 300, false);
       printf("  storm on one fresh key, 8 clients x 300 rounds: %d anomalies with 1 worker, %d with 4 workers\n", b1, b4);
       if (b1 || b4) fails++; }
@@ -167,19 +188,20 @@ int main(void) {
         for (int rep = 0; rep < 3; rep++) {
             Outcome c = run(cfg[k][0], (int)cfg[k][1]);
             Outcome s4 = (cfg[k][1] == 4) ? seq : run(0, (int)cfg[k][1]);
+            MatchReport mr; bool same_graph = graph_match(c.graph, s4.graph, &mr);
             bool ok = c.ev.request == s4.ev.request && c.ev.eval_step == s4.ev.eval_step && c.ev.publish == s4.ev.publish && c.ev.deliver == s4.ev.deliver
-                      && c.bad_runs == 0 && c.bad_pub == 0 && c.bad_deliver == 0 && c.mismatched == 0 && strcmp(c.dump, s4.dump) == 0;
+                      && c.bad_runs == 0 && c.bad_pub == 0 && c.bad_deliver == 0 && c.mismatched == 0 && same_graph;
             if (!ok) {
                 fails++;
                 printf("  FAIL workers=%zu clients=%zu rep=%d: W=(%zu,%zu,%zu,%zu) vs seq (%zu,%zu,%zu,%zu) runs>1:%zu pub>1:%zu req!=deliver:%zu mismatched:%zu dump %s\n",
                        cfg[k][0], cfg[k][1], rep, c.ev.request, c.ev.eval_step, c.ev.publish, c.ev.deliver, s4.ev.request, s4.ev.eval_step, s4.ev.publish, s4.ev.deliver,
-                       c.bad_runs, c.bad_pub, c.bad_deliver, c.mismatched, strcmp(c.dump, s4.dump) == 0 ? "equal" : "DIFFERENT");
+                       c.bad_runs, c.bad_pub, c.bad_deliver, c.mismatched, same_graph ? "equal" : mr.reason);
             } else if (rep == 0) printf("  workers=%zu clients=%zu: W and canonical graph equal to the sequential run; one task and one publication per key\n", cfg[k][0], cfg[k][1]);
-            free(c.dump);
-            if (cfg[k][1] != 4) free(s4.dump);
+            graph_free(c.graph);
+            if (cfg[k][1] != 4) graph_free(s4.graph);
         }
     }
-    free(seq.dump);
+    graph_free(seq.graph);
     printf(fails ? "CONCURRENT CHECK FAILED\n" : "concurrent check passed\n");
     return fails ? 1 : 0;
 }

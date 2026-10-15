@@ -242,19 +242,23 @@ RefId comp_clause_glue(DimVarId i, RefId fam, FaceId psi, RefId u_i, RefId u_0) 
     RefId a_i = reindex_dim(Afill, rho, iv_var(i));
     RefId a1 = reindex_dim(Afill, rho, one);
 
-    /* on delta = ∀i alpha_i the fibre line is available */
+    /* on delta = ∀i alpha_i the fibre line is available: the constructions
+     * below are declared partial on delta (§2 required_face annotation) */
     FaceId delta = fc_forall(i, alpha_i);
+    RefId f_i = equiv_map(e_i), f_1 = equiv_map(e_1);      /* partial on alpha_i / alpha_1 by their own data */
+    term_require_push(delta);
     RefId Tfill = mk_fill(i, T_i, psi, u_i, u_0, iv_var(rho));
     RefId t_i = reindex_dim(Tfill, rho, iv_var(i));
     RefId t1p = reindex_dim(Tfill, rho, one);
-    RefId f_i = equiv_map(e_i), f_1 = equiv_map(e_1);
     DimVarId q = kdim(N_CG_Q, fam, psi, u_i, u_0, i);
     FaceId wf[3] = { psi, fc_lit(q, 0), fc_lit(q, 1) };
     RefId wt[3] = { a_i, mk_app(f_i, t_i), a_i };
     RefId omega_q = mk_comp(i, A_i, fc_join(psi, fc_join(wf[1], wf[2])), mk_system(3, wf, wt), a0);
     RefId omega = mk_plam(q, omega_q);                      /* f_1(t1') = a1 */
+    term_require_pop();
 
     /* under alpha_1: extend [delta ↦ (t1', omega), psi ↦ (u_1, refl)] in fib(f_1, a1) */
+    term_require_push(alpha_1);
     RefId fibT = mk_fib(T_1, A_1, f_1, a1);
     FaceId pf[2] = { delta, psi };
     RefId pt[2] = { mk_pair(t1p, omega), mk_pair(u_1, mk_refl(A_1, a1)) };
@@ -262,6 +266,7 @@ RefId comp_clause_glue(DimVarId i, RefId fam, FaceId psi, RefId u_i, RefId u_0) 
     RefId C = equiv_contr(e_1, a1);
     RefId ext = mk_extend_contr(fibT, mk_fst(C), mk_snd(C), fc_join(delta, psi), P);
     RefId t1 = mk_fst(ext), p = mk_snd(ext);                /* p : f_1(t1) = a1 */
+    term_require_pop();
 
     /* repair the base endpoint */
     DimVarId q2 = kdim(N_CG_Q2, fam, psi, u_i, u_0, i);

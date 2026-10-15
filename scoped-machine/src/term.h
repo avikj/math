@@ -64,6 +64,13 @@ FaceId fc_reindex(FaceId phi, MapId m);
 MapId compose(MapId sigma, MapId tau);   /* apply sigma then tau */
 
 /* ---- origins ---- */
+/* Declared required face (§2 `required_face` annotation): origins created
+ * while a scope is pushed carry the scope's face as part of their record;
+ * their required face is the structural one strengthened by it. Library
+ * clauses use it for constructions that are only typed on a guard. */
+void term_require_push(FaceId phi);
+void term_require_pop(void);
+FaceId origin_declared_required(OriginId c);
 OriginId origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nfields,
                      const Binder *binders, size_t nbinders);
 Tag origin_tag(OriginId c);
@@ -147,8 +154,9 @@ void head_free(Head *h);
  * An occurrence (reference, context) is valid when the context declares
  * every free dimension and every free term variable of the reference with
  * its declared type, and its assumption entails the reference's required
- * face. Types are compared by reference identity; a conversion check is
- * not part of this contract. */
+ * face. This is the structural check; `occurrence_validate` compares declared
+ * types by identity, and the typed check with conversion is `src/check.c`
+ * (§33 item 3, `observe_checked`). */
 typedef struct { Sort sort; uint64_t id; RefId type; } CtxDecl;
 ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption);
 ContextId context_extend_term(ContextId ctx, TermVarId x, RefId type);
@@ -163,7 +171,16 @@ typedef enum { OCC_VALID = 0, OCC_UNDECLARED_TERM, OCC_UNDECLARED_DIM, OCC_TYPE_
 OccStatus occurrence_validate(RefId t, ContextId ctx, uint64_t *culprit);
 
 /* ---- globals ---- */
-SymbolId define_global(const char *name, VarSetId params, DimSetId dims);
+/* a declared symbol: parameters (term variables with their declared types),
+ * free dimensions, and its declared type over them; a symbol without a body
+ * is an opaque constant of the signature */
+SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type);
+RefId global_type(SymbolId s);
+RefId global_body(SymbolId s);          /* 0 when opaque */
+VarSetId global_params(SymbolId s);
+DimSetId global_dims(SymbolId s);
+const char *global_name(SymbolId s);
+size_t global_count(void);
 void set_global_body(SymbolId s, RefId body);
 RefId global_ref(SymbolId s);          /* VIEW(GLOBAL(s), identity) */
 RefId unfold_global(RefId t);          /* reindex(definition body, map) */

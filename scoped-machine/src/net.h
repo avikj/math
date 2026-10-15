@@ -67,7 +67,7 @@ typedef struct {
     pthread_mutex_t alloc_mu;
     VEC(Active) active;       /* candidate active pairs (by one member, with generation) */
     pthread_mutex_t act_mu; pthread_cond_t act_cv, idle_cv;
-    size_t busy; bool stop;
+    size_t outstanding; bool stop;   /* §35: queued + executing active pairs */
     pthread_t *workers; size_t nworkers;
     size_t rewrites;
     /* local rule instances by class (diamond-balanced event classes), committed only */

@@ -106,8 +106,15 @@ static void push_active(Net *n, NodeId a, uint64_t gen) {
     Active it = { a, gen };
     if (tls_pending) { vec_push(tls_pending, it); return; }
     pthread_mutex_lock(&n->act_mu);
+    n->outstanding++;
     vec_push(&n->active, it);
     pthread_cond_signal(&n->act_cv);
+    pthread_mutex_unlock(&n->act_mu);
+}
+static void net_finish_job(Net *n) {
+    pthread_mutex_lock(&n->act_mu);
+    require(n->outstanding > 0, "net finish without outstanding job");
+    if (--n->outstanding == 0) pthread_cond_broadcast(&n->idle_cv);
     pthread_mutex_unlock(&n->act_mu);
 }
 
@@ -336,7 +343,7 @@ static void unlock_two(Net *n, NodeId a, NodeId b) {
 static void flush_pending(Net *n, ActiveVec *pend) {
     if (!pend->len) { vec_free(pend); return; }
     pthread_mutex_lock(&n->act_mu);
-    for (size_t i = 0; i < pend->len; i++) vec_push(&n->active, pend->data[i]);
+    for (size_t i = 0; i < pend->len; i++) { n->outstanding++; vec_push(&n->active, pend->data[i]); }
     pthread_cond_broadcast(&n->act_cv);
     pthread_mutex_unlock(&n->act_mu);
     vec_free(pend);
@@ -642,17 +649,12 @@ static void *net_worker_main(void *arg) {
     pthread_mutex_lock(&n->act_mu);
     for (;;) {
         Active it;
-        while (!n->stop && !pop_active_locked(n, &it)) {
-            if (n->busy == 0) pthread_cond_broadcast(&n->idle_cv);
-            pthread_cond_wait(&n->act_cv, &n->act_mu);
-        }
+        while (!n->stop && !pop_active_locked(n, &it)) pthread_cond_wait(&n->act_cv, &n->act_mu);
         if (n->stop) break;
-        n->busy++;
         pthread_mutex_unlock(&n->act_mu);
-        step(n, it);
+        step(n, it);                     /* new active pairs are flushed (enqueued) inside step */
+        net_finish_job(n);
         pthread_mutex_lock(&n->act_mu);
-        n->busy--;
-        if (n->busy == 0 && n->active.len == 0) pthread_cond_broadcast(&n->idle_cv);
     }
     pthread_mutex_unlock(&n->act_mu);
     return NULL;
@@ -662,7 +664,7 @@ size_t net_run(Net *n) {
     if (n->nworkers) {
         pthread_mutex_lock(&n->act_mu);
         size_t before = __atomic_load_n(&n->rewrites, __ATOMIC_SEQ_CST);
-        while (n->busy > 0 || n->active.len > 0) pthread_cond_wait(&n->idle_cv, &n->act_mu);
+        while (n->outstanding > 0) pthread_cond_wait(&n->idle_cv, &n->act_mu);
         size_t after = __atomic_load_n(&n->rewrites, __ATOMIC_SEQ_CST);
         pthread_mutex_unlock(&n->act_mu);
         return after - before;
@@ -675,6 +677,7 @@ size_t net_run(Net *n) {
         pthread_mutex_unlock(&n->act_mu);
         if (!got) break;
         if (step(n, it)) c++;
+        net_finish_job(n);
     }
     return c;
 }
