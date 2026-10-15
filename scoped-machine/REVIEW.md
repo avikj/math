@@ -10,16 +10,17 @@ says how to check it without trusting the implementer's summary.
                   # identity compiler (85), the review's regression cases (4 modes), acceptance/law
                   # (124 + 35 net), 24-schedule comparison, concurrent clients (storms, pools); then
                   # the acceptance, schedule, checking, template and compiler suites with 4-thread
-                  # pools; then the second review's reproductions (review-followup in 4 modes,
-                  # review-claim-wait, review-checker-lifecycle), each exiting nonzero on a miss
+                  # pools; then the reviews' reproductions (review-followup in 4 modes,
+                  # review-claim-wait, review-checker-lifecycle, review-ae756a1 in 11 modes),
+                  # each exiting nonzero on a miss
     make tsan     # every suite under ThreadSanitizer, including the review's concurrent case and
                   # the three reproductions with halt_on_error (several minutes)
 
-Expected: `76 passed, 0 failed`, `12 passed, 0 failed`, `61 passed, 0 failed`, `85 passed, 0 failed`, every
+Expected: `78 passed, 0 failed`, `12 passed, 0 failed`, `61 passed, 0 failed`, `85 passed, 0 failed`, every
 `(expected …)` line of `review-regressions` matching its expectation, `124 passed, 0 failed`,
 `35 net checks passed`, `schedule check passed`, `concurrent check passed`, the reproductions
-printing their observations without a `FAIL:` line, and `make tsan` ending with the same lines
-and no `WARNING`. Where LeakSanitizer cannot run (restricted `/proc`), `ASAN_OPTIONS=detect_leaks=0`
+printing their observations without a `FAIL:` line (`<mode>: 0 expectation failures` for each
+review_ae756a1 mode), and `make tsan` ending with the same lines and no `WARNING`. Where LeakSanitizer cannot run (restricted `/proc`), `ASAN_OPTIONS=detect_leaks=0`
 keeps ASan/UBSan; leak checking was run here.
 
 ## 2. Where each spec section lives
@@ -170,11 +171,37 @@ composition clauses as fixed programs, `Down` over a captured scope, the §55 de
 operations (`test_net`: each rule agrees with the host operation and allocates no origin),
 and the exported graph labels for TVIEWs, scopes and bound atoms (`canon.c`).
 
-One implementation note for the reviewer: the signature check of a template instance covers
-its retained *reference* parameters (declared type instantiated by the environment, skipped
-when the declared type mentions a slot the node does not retain or an unannotated level);
-scope parameters are validated through their uses in the opened head, i.e. by the ordinary
-constructor rules on the instantiated field recipes.
+## 5c. The review of ae756a1: corrections made
+
+Both implementation notes of ae756a1 were deviations, as the review said, and are withdrawn:
+declared parameter types are never skipped (R2) and no untyped scope or unknown level reaches
+the fixed library (R4). The reviewer's `tests/review_ae756a1.c` is in `make test` and
+`make tsan` with all nine modes, the `environment` mode adapted as the review directed once
+registration fails closed, plus two concurrent modes the review asked for.
+
+| Finding | Correction | Where | Regression |
+| --- | --- | --- | --- |
+| R1 environment freeze, attempt caching | `check_admission` freezes the environment first; `define_global` returns 0 and `set_global_body` false while frozen; `check_open_environment` opens a candidate environment with a fresh checker session (claims, admission state, diagnostics) and a reset evaluator (every observation retired, workers and policies kept); the admission verdict is keyed by environment version and reused only when settled or within the attempt that produced it; the budget is fixed per top-level request on entry | `term.c` (`env_freeze/unfreeze`), `check.c` (`check_admission`, `check_open_environment`, `top_enter`), `eval.c` (`eval_reset`) | `review-ae756a1 environment`, `retry`; `test_check.c` (fail-closed registration, open environment) |
+| R2 template typed closure | A node's environment is closed under the declared types / levels / signatures of its retained parameters (`decl_closure`), the root node also under the declared result type (`rtype`); every reference parameter of the library has a declared type (`EquivMap`/`EquivContr` now take their levels and types; the clause caps, `ExtendContr`'s `k` and `Down`'s parameters are declared); `tnode_signature` never substitutes a missing type; the instance's inferred type must convert to the declared result type | `template.c`, `check.c` `tview_boundary`, `infer_tview` | `review-ae756a1 signature` (`Refl(0,A,x) ≠ Refl(0,B,x) ≠ Refl(1,A,x)`, both rejected); `test_templates.c` sharing laws still hold |
+| R3 scope signatures | Every scope parameter has a contextual signature (`psig`: expected telescope, result type, level, guard, κ-relative); `check_scope_arg` opens signature and argument at one common fresh telescope, compares local declarations by conversion, requires expected guard ⊢ supplied guard under the source clause, forms the supplied result type at its stated level, converts it to the expected one, and checks the body under the supplied guard; face/interval scopes are compared as total syntax | `template.c` (`SIG_*`), `check.c` `check_scope_arg` | `review-ae756a1 scope` (false result annotation; false-only family at a total formal) |
+| R4 checking forms, missing levels | `check_clause` validates a λ's stored domain level and an annotated pair's stored Σ (forms at its level, converts to the expected type, governs the components); a TVIEW in a checking form enters the template boundary first; `LEVEL_NONE` at a required type position is INVALID in both modes; `comp_clause` instantiates no clause for an unannotated family (the demand is reported invalid); internal constructions carry levels (`mk_pi_lv`/`mk_sigma_lv` for synthesized types, `mk_papp_lv`/`mk_unglue_lv` in η-conversion and in the evaluator's eliminator rebuild) | `check.c`, `lib.c`, `eval.c` | `review-ae756a1 annotations`, `missing-level` |
+| R5 partial declarations | Declaration formation and compatibility run under the projected prefix assumption conjoined with the declaration's guard | `check.c` `check_context` | `review-ae756a1 partial-context` |
+| R6 duplicate publication | Compiled records are interned by the structural key (environment version, schema, every certificate input, the derived record data; no registry numbers); the key is claimed under the registry lock, both call origins are built privately, one record is published and waiting clients receive it; diagrams are interned by their declaration likewise | `compiler.c` `record_key`, `transform_publish`, `diagram_new` | `review-ae756a1 publication`, `publication-concurrent` (eight clients, one record) |
+| R7 raw-origin levels in comparison | The exported raw-origin label carries the packed level annotation | `canon.c` | `review-ae756a1 canon` |
+| diagnostics buffer | Runtime diagnostics are immutable strings owned by the checker session | `check.c` `diag_intern` | `review-ae756a1 diagnostics-concurrent` |
+
+One further defect surfaced by the concurrent publication case and fixed: without a worker
+pool, a client thread whose demand was being executed by another client thread drained an
+empty queue and reported `W_STUCK`; `whnf` now waits for its root or for quiescence in that
+configuration too (`eval.c`).
+
+Two readings to confirm. (1) A new candidate environment retires every observation
+(`eval_reset`): `EvalResult` pointers obtained before `check_open_environment` are dead
+afterwards; the alternative, keeping old results while invalidating memo entries that
+depend on changed symbols, is not what §57 R1 asks for. (2) Binder locals of constructor
+nodes (the `x` of a template `Π`) are declared by the binding node's own domain field, which
+is always the parent in the opened structure; the typed closure therefore closes over
+parameter and scope-local declarations, not over node-binder locals.
 
 ## 6. Representation choices a reviewer should know
 

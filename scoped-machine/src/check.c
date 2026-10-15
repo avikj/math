@@ -53,17 +53,27 @@ static __thread uint64_t tl_tid, tl_gen;
 /* §57 R1 / §59.4: the whole-environment admission transaction. One attempt
  * per environment version runs at a time; concurrent public clients wait for
  * its result; a changed environment begins a new attempt. */
-static struct { bool running, have; uint64_t version; CheckStatus status; const char *reason; } ADM;
+static struct { bool running, have; uint64_t version, attempt; CheckStatus status; const char *reason; } ADM;
+/* diagnostics built at runtime are immutable strings owned by the checker
+ * session (a published claim keeps a pointer to its text) */
+static struct { VEC(char *) items; pthread_mutex_t mu; } DIAG;
+static const char *diag_intern(const char *text) {
+    char *copy = strdup(text); require(copy, "out of memory");
+    pthread_mutex_lock(&DIAG.mu); vec_push(&DIAG.items, copy); pthread_mutex_unlock(&DIAG.mu);
+    return copy;
+}
 static __thread VEC(Frame) tl_frames;
 static __thread Words tl_pending;        /* symbols a finished top-level verdict still rests on */
-static __thread size_t tl_steps, tl_depth;
+static __thread size_t tl_steps, tl_depth, tl_budget;   /* the budget is fixed for a top-level request when it enters */
 static const char *R_BUDGET = "budget exhausted";
 
-enum { CL_CTX = 1, CL_MAP, CL_ORIGIN, CL_SYMBOL, CL_CONV, CL_TVIEW };
+enum { CL_CTX = 1, CL_MAP, CL_ORIGIN, CL_SYMBOL, CL_CONV, CL_TVIEW, CL_TBOUND };
 typedef enum { ACQ_OWNER, ACQ_DONE, ACQ_CYCLE } Acq;
 
 void check_init(void) {
     memset(&K, 0, sizeof K);
+    memset(&ADM, 0, sizeof ADM);
+    memset(&DIAG, 0, sizeof DIAG); pthread_mutex_init(&DIAG.mu, NULL);
     session_gen++;
     K.attempt = 1;
     wordmap_init(&K.idx);
@@ -76,6 +86,8 @@ void check_free(void) {
     wordmap_free(&K.idx);
     pthread_mutex_destroy(&K.mu); pthread_cond_destroy(&K.cv);
     memset(&K, 0, sizeof K);
+    for (size_t k = 0; k < DIAG.items.len; k++) free(DIAG.items.data[k]);
+    vec_free(&DIAG.items); pthread_mutex_destroy(&DIAG.mu); memset(&DIAG, 0, sizeof DIAG);
 }
 void check_set_budget(size_t steps) {
     pthread_mutex_lock(&K.mu);
@@ -86,7 +98,7 @@ void check_new_attempt(void) { pthread_mutex_lock(&K.mu); K.attempt++; pthread_m
 const char *check_status_name(CheckStatus s) { return s == CK_VALID ? "VALID" : s == CK_INVALID ? "INVALID" : "UNRESOLVED"; }
 const char *conv_status_name(ConvStatus s) { return s == CV_EQUAL ? "EQUAL" : s == CV_UNEQUAL ? "UNEQUAL" : "UNRESOLVED"; }
 
-static bool budget_ok(void) { tl_steps++; return K.budget == 0 || tl_steps <= K.budget; }
+static bool budget_ok(void) { tl_steps++; size_t b = tl_depth ? tl_budget : K.budget; return b == 0 || tl_steps <= b; }
 
 /* thread identity, assigned on first use (under K.mu) */
 static uint64_t tid_locked(void) {
@@ -279,7 +291,7 @@ static void assume_symbol(size_t c) {
  * taken as an assumption to break a wait cycle; the verdict is then not
  * final: top_settled waits for those validations and asks the caller to
  * recompute (the recomputation finds committed or withdrawn claims). */
-static void top_enter(void) { if (tl_depth++ == 0) { tl_steps = 0; frame_push(0); } }
+static void top_enter(void) { if (tl_depth++ == 0) { tl_steps = 0; tl_budget = __atomic_load_n(&K.budget, __ATOMIC_ACQUIRE); frame_push(0); } }
 static void top_leave(void) {
     if (--tl_depth == 0) {
         Frame *f = top_frame(); require(f && f->claim == 0, "root frame mismatch");
@@ -480,7 +492,10 @@ CheckStatus check_context(ContextId G, const char **reason) {
         }
         if (st == CK_VALID && !dims_declared(P, face_dims(term_var_required(d.id)))) { *reason = "declaration's required face mentions a dimension not declared earlier"; st = CK_INVALID; }
         if (st == CK_VALID) {
-            FaceId *cs; size_t nc = clauses_of(proj, &cs);
+            /* §59.2: a declaration partial on φ_x forms under the projected
+             * prefix assumption conjoined with φ_x (its type may use earlier
+             * declarations available only there); scope was checked above */
+            FaceId *cs; size_t nc = clauses_of(fc_meet(proj, term_var_required(d.id)), &cs);
             for (size_t c = 0; c < nc && st == CK_VALID; c++) {
                 uint64_t l; st = level_of(P, cs[c], d.type, &l, reason);
                 if (st == CK_VALID && decl != d.type) {
@@ -627,8 +642,9 @@ static CheckStatus glue_data_ok(ContextId G, FaceId C, RefId A, FaceId alpha, Re
 
 /* an annotation is validated when present; LEVEL_NONE means the source
  * supplied none and the inferred level stands (migration, §59.5) */
-static bool level_ok1(uint64_t levels, uint64_t inferred) { uint64_t m = levels_first(levels); return m == LEVEL_NONE || m == inferred; }
-static bool level_ok2(uint64_t levels, uint64_t i, uint64_t j) { uint64_t m = levels_first(levels), n = levels_second(levels); return (m == LEVEL_NONE || m == i) && (n == LEVEL_NONE || n == j); }
+static bool level_ok1(uint64_t levels, uint64_t inferred) { return levels_first(levels) == inferred; }
+static bool level_ok2(uint64_t levels, uint64_t i, uint64_t j) { return levels_first(levels) == i && levels_second(levels) == j; }
+static const char *level_why(uint64_t levels, const char *differs) { return levels == LEVELS_NONE || levels_first(levels) == LEVEL_NONE ? "missing universe annotation at a required type position (§59.1)" : differs; }
 
 static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const char **reason) {
     if (!budget_ok()) { *reason = R_BUDGET; return CK_UNRESOLVED; }
@@ -651,7 +667,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         if (st != CK_VALID) break;
         TermOpen o = resolve_term_binder(t, 0, 1);
         st = level_of(extend_term(G, o.x, o.type), C, o.body, &j, reason);
-        if (st == CK_VALID && !level_ok2(h.levels, i, j)) { *reason = "universe annotation differs from the formation levels"; st = CK_INVALID; }
+        if (st == CK_VALID && !level_ok2(h.levels, i, j)) { *reason = level_why(h.levels, "universe annotation differs from the formation levels"); st = CK_INVALID; }
         if (st == CK_VALID) *type = mk_universe(i > j ? i : j);
         break;
     }
@@ -659,11 +675,12 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         uint64_t i;
         st = level_of(G, C, h.f[0].id, &i, reason);
         if (st != CK_VALID) break;
-        if (!level_ok1(h.levels, i)) { *reason = "lambda domain level annotation differs"; st = CK_INVALID; break; }
+        if (!level_ok1(h.levels, i)) { *reason = level_why(h.levels, "lambda domain level annotation differs"); st = CK_INVALID; break; }
         TermOpen o = resolve_term_binder(t, 0, 1);
-        RefId B;
+        RefId B; uint64_t j;
         st = infer_clause(extend_term(G, o.x, o.type), C, o.body, &B, reason);
-        if (st == CK_VALID) *type = mk_pi(o.x, o.type, B);
+        if (st == CK_VALID) st = level_of(extend_term(G, o.x, o.type), C, B, &j, reason);
+        if (st == CK_VALID) *type = mk_pi_lv(i, j, o.x, o.type, B);
         break;
     }
     case T_APP: {
@@ -683,15 +700,17 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
              * annotation as a type and the form against it (§33) */
             uint64_t l;
             st = level_of(G, C, h.f[2].id, &l, reason);
-            if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = "pair annotation level differs"; st = CK_INVALID; }
+            if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "pair annotation level differs"); st = CK_INVALID; }
             if (st == CK_VALID) st = check_clause(G, C, t, h.f[2].id, reason);
             if (st == CK_VALID) *type = h.f[2].id;
             break;
         }
-        RefId A, B;
+        RefId A, B; uint64_t la, lb;
         st = infer_clause(G, C, h.f[0].id, &A, reason);
         if (st == CK_VALID) st = infer_clause(G, C, h.f[1].id, &B, reason);
-        if (st == CK_VALID) { TermVarId x = conv_var(t, t, A, 0, A); *type = mk_sigma(x, A, B); }
+        if (st == CK_VALID) st = level_of(G, C, A, &la, reason);
+        if (st == CK_VALID) st = level_of(G, C, B, &lb, reason);
+        if (st == CK_VALID) { TermVarId x = conv_var(t, t, A, 0, A); *type = mk_sigma_lv(la, lb, x, A, B); }
         break;
     }
     case T_FST: case T_SND: {
@@ -708,7 +727,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         DimOpen o = resolve_dim_binder(t, 0, 0);
         uint64_t l;
         st = level_of(extend_dim(G, o.j), C, o.body, &l, reason);
-        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = "path family level annotation differs"; st = CK_INVALID; }
+        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "path family level annotation differs"); st = CK_INVALID; }
         if (st == CK_VALID) st = check_clause(G, C, h.f[1].id, reindex_dim(o.body, o.j, iv_zero()), reason);
         if (st == CK_VALID) st = check_clause(G, C, h.f[2].id, reindex_dim(o.body, o.j, iv_one()), reason);
         if (st == CK_VALID) *type = mk_universe(l);
@@ -725,7 +744,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         DimOpen o = resolve_dim_binder(t, 0, 0);
         uint64_t l;
         st = level_of(extend_dim(G, o.j), C, o.body, &l, reason);
-        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = "path application family level annotation differs"; st = CK_INVALID; }
+        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "path application family level annotation differs"); st = CK_INVALID; }
         if (st == CK_VALID) st = check_clause(G, C, h.f[1].id, reindex_dim(o.body, o.j, iv_zero()), reason);
         if (st == CK_VALID) st = check_clause(G, C, h.f[2].id, reindex_dim(o.body, o.j, iv_one()), reason);
         if (st == CK_VALID && !dims_declared(G, iv_dimset(h.f[4].id))) { *reason = "path applied to an out-of-scope interval"; st = CK_INVALID; }
@@ -736,7 +755,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
     case T_GLUE_TYPE: {
         uint64_t l;
         st = glue_data_ok(G, C, h.f[0].id, h.f[1].id, h.f[2].id, h.f[3].id, &l, reason);
-        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = "Glue level annotation differs"; st = CK_INVALID; }
+        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "Glue level annotation differs"); st = CK_INVALID; }
         if (st == CK_VALID) *type = mk_universe(l);
         break;
     }
@@ -744,7 +763,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         uint64_t l;
         RefId A = h.f[0].id, T = h.f[2].id, e = h.f[3].id, tt = h.f[4].id, a = h.f[5].id; FaceId alpha = h.f[1].id;
         st = glue_data_ok(G, C, A, alpha, T, e, &l, reason);
-        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = "glue level annotation differs"; st = CK_INVALID; }
+        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "glue level annotation differs"); st = CK_INVALID; }
         if (st == CK_VALID) st = check_clause(G, C, a, A, reason);
         FaceId Ca = fc_meet(C, alpha);
         if (st == CK_VALID && !fc_is_false(Ca)) {
@@ -765,7 +784,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         uint64_t l;
         RefId A = h.f[0].id, T = h.f[2].id, e = h.f[3].id, v = h.f[4].id; FaceId alpha = h.f[1].id;
         st = glue_data_ok(G, C, A, alpha, T, e, &l, reason);
-        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = "unglue level annotation differs"; st = CK_INVALID; }
+        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "unglue level annotation differs"); st = CK_INVALID; }
         if (st == CK_VALID) st = check_clause(G, C, v, mk_glue_type_lv(l, A, alpha, T, e), reason);
         if (st == CK_VALID) *type = A;
         break;
@@ -776,7 +795,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         ContextId Gj = extend_dim(G, fam.j);
         uint64_t l;
         st = level_of(Gj, C, fam.body, &l, reason);
-        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = "composition family level annotation differs"; st = CK_INVALID; }
+        if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "composition family level annotation differs"); st = CK_INVALID; }
         if (st == CK_VALID && (!dims_declared(G, face_dims(phi)) || dimset_contains(face_dims(phi), fam.j))) { *reason = "composition face must be in scope and independent of the bound dimension"; st = CK_INVALID; }
         RefId A0 = reindex_dim(fam.body, fam.j, iv_zero());
         if (st == CK_VALID) st = check_clause(G, C, a0, A0, reason);
@@ -886,41 +905,130 @@ static CheckStatus infer_clause(ContextId G, FaceId C, RefId t, RefId *type, con
     return CK_VALID;
 }
 
-/* A template instance (§51.4): its declared required face must be entailed;
- * its retained reference parameters are checked against the signature's
- * declared types; the opened head is checked by the existing constructor
- * rules (fields are the instantiated recipes, child views recursively).
- * Memoized per (view, declarations, projected clause). */
-static CheckStatus infer_tview(ContextId G, FaceId C, RefId t, RefId *type, const char **reason) {
+/* §50.2–4, §51.4: a scope argument S against the expected contextual
+ * signature Sig (locals = expected telescope, body = expected result type,
+ * level, guard). Both are opened at one common fresh telescope (the
+ * signature's); the supplied declarations are compared by conversion, the
+ * expected guard must entail the supplied one under the source clause, the
+ * supplied result type must form at its stated level and convert to the
+ * expected one, and the body is checked at it under the supplied guard. A
+ * face / interval scope is total syntax: arity, sorts and guard only. */
+static CheckStatus check_scope_arg(ContextId G, FaceId C, ScopeId S, ScopeId Sig, const char **reason) {
+    size_t n = scope_arity(S);
+    if (n != scope_arity(Sig)) { *reason = "scope argument telescope length differs from the signature"; return CK_INVALID; }
+    for (size_t k = 0; k < n; k++) if (scope_local(S, k).sort != scope_local(Sig, k).sort) { *reason = "scope argument telescope sorts differ from the signature"; return CK_INVALID; }
+    Val sb = scope_body(S), gb = scope_body(Sig);
+    if (sb.sort != gb.sort) { *reason = "scope argument body sort differs from the signature"; return CK_INVALID; }
+    uint64_t *ids = malloc((n ? n : 1) * sizeof(uint64_t)); Val *args = malloc((n ? n : 1) * sizeof(Val));
+    require(ids && args, "out of memory");
+    TypedPartial sig = open_scope_fresh(Sig, 0x51, ids);
+    ContextId Gx = G;
+    CheckStatus st = CK_VALID;
+    for (size_t k = 0; k < n && st == CK_VALID; k++) {
+        LocalDecl d = scope_local(Sig, k);
+        if (d.sort == S_DIM) { args[k].sort = VS_INTERVAL; args[k].id = iv_var((DimVarId)ids[k]); Gx = extend_dim(Gx, (DimVarId)ids[k]); continue; }
+        args[k].sort = VS_REF; args[k].id = ref_var((TermVarId)ids[k]);
+        RefId sty, ety = term_var_type((TermVarId)ids[k]); FaceId sreq; uint64_t slv;
+        scope_local_at(S, k, args, &sty, &sreq, &slv);
+        if (!sty) { *reason = "scope argument local has no declared type"; st = CK_INVALID; break; }
+        /* the supplied declaration forms (in the prefix) at its stated level and converts to the expected one */
+        uint64_t l; st = check_is_type(Gx, C, sty, &l, reason);
+        if (st == CK_INVALID) { *reason = "scope argument local type is not a type"; break; }
+        if (st != CK_VALID) break;
+        if (slv != LEVEL_NONE && slv != l) { *reason = "scope argument local level differs from its formation level"; st = CK_INVALID; break; }
+        ConvStatus cv = conv_type_clause(Gx, C, sty, ety);
+        if (cv == CV_UNEQUAL) { *reason = "scope argument local type differs from the signature"; st = CK_INVALID; break; }
+        if (cv == CV_UNRESOLVED) { *reason = "unresolved: scope argument local type conversion"; st = CK_UNRESOLVED; break; }
+        Gx = extend_term(Gx, (TermVarId)ids[k], ety);
+    }
+    if (st == CK_VALID) {
+        TypedPartial sup = apply_scope(S, n, args);
+        /* availability: expected guard ⊢ supplied guard under the source clause */
+        if (!fc_entails(fc_meet(C, sig.guard), sup.guard)) { *reason = "scope argument is not available where the signature requires it"; st = CK_INVALID; }
+        else if (sb.sort == VS_REF) {
+            if (!sup.type) { *reason = "scope argument has no declared result type"; st = CK_INVALID; }
+            FaceId *cs = NULL; size_t nc = st == CK_VALID ? clauses_of(fc_meet(C, sig.guard), &cs) : 0;
+            for (size_t c = 0; c < nc && st == CK_VALID; c++) {
+                uint64_t l; st = check_is_type(Gx, cs[c], sup.type, &l, reason);
+                if (st == CK_INVALID) { *reason = "scope argument result type is not a type"; break; }
+                if (st != CK_VALID) break;
+                if (sup.level != l) { *reason = "scope argument result level differs from its formation level"; st = CK_INVALID; break; }
+                ConvStatus cv = conv_type_clause(Gx, cs[c], sup.type, sig.body.id);
+                if (cv == CV_UNEQUAL) { *reason = "scope argument result type differs from the signature"; st = CK_INVALID; break; }
+                if (cv == CV_UNRESOLVED) { *reason = "unresolved: scope argument result type conversion"; st = CK_UNRESOLVED; break; }
+            }
+            free(cs);
+            /* the body at the supplied result type under the supplied guard (vacuous where that is false) */
+            FaceId *bs = NULL; size_t nb = st == CK_VALID ? clauses_of(fc_meet(C, sup.guard), &bs) : 0;
+            for (size_t c = 0; c < nb && st == CK_VALID; c++) st = check_clause(Gx, bs[c], sup.body.id, sup.type, reason);
+            free(bs);
+        }
+    }
+    free(ids); free(args);
+    return st;
+}
+
+/* the template boundary of an instance (§51.4, §59.1): its declared required
+ * face must be entailed; every retained reference parameter image is checked
+ * against the signature's instantiated declared type and every retained scope
+ * against its contextual signature. Memoized per (view, declarations,
+ * projected clause). */
+static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **reason) {
     if (!fc_entails(C, ref_required(t))) { *reason = "template instance used outside its declared required face"; return CK_INVALID; }
+    size_t n; const uint64_t *ds = dimset_get(ref_support(t), &n);
+    uint64_t key[3] = { t, under(G, fc_true()), fc_project(C, ds, n) }, v; const char *why = NULL;
+    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_TBOUND, key, 3); pthread_mutex_unlock(&K.mu);
+    Acq a = claim_acquire(cl, &v, &why, NULL);
+    if (a == ACQ_DONE) { if (v == 1) return CK_VALID; *reason = why; return ck_of(v); }
+    if (a == ACQ_CYCLE) { *reason = "unresolved: template boundary validation depends on itself"; return CK_UNRESOLVED; }
+    CheckStatus st = CK_VALID;
+    ParamSig sig[16]; size_t ns = tnode_signature(t, sig, 16);
+    TEnvId E = tenv_of(t);
+    for (size_t k = 0; k < ns && st == CK_VALID; k++) {
+        size_t ne = tenv_size(E); uint64_t image = 0; bool have = false;
+        for (size_t q = 0; q < ne; q++) { uint64_t slot; TVal val; tenv_entry(E, q, &slot, &val); if (slot == sig[k].slot) { image = val.id; have = true; } }
+        require(have, "template boundary: a retained slot has no image");
+        if (sig[k].sort == PS_REF) {
+            if (!sig[k].type) continue;                     /* an undeclared parameter (none in the library) */
+            st = check_clause(G, C, image, sig[k].type, reason);
+            if (st == CK_INVALID) { char buf[256]; snprintf(buf, sizeof buf, "template parameter image is not of its declared type (%s slot %zu: %s)", tdef_name(tnode_def(ref_tnode(t))), sig[k].slot, *reason); *reason = diag_intern(buf); }
+        } else if (sig[k].sort == PS_SCOPE) {
+            if (!sig[k].sig) continue;
+            st = check_scope_arg(G, C, (ScopeId)image, sig[k].sig, reason);
+            if (st == CK_INVALID) { char buf[256]; snprintf(buf, sizeof buf, "template scope argument does not meet its signature (%s slot %zu: %s)", tdef_name(tnode_def(ref_tnode(t))), sig[k].slot, *reason); *reason = diag_intern(buf); }
+        }
+    }
+    claim_release(cl, ck_code(st), *reason, NULL);
+    return st;
+}
+
+/* A template instance: boundary, then the opened head by the existing
+ * constructor rules; when the instance is a program's root its inferred type
+ * must convert to the declared result type instantiated by the environment. */
+static CheckStatus infer_tview(ContextId G, FaceId C, RefId t, RefId *type, const char **reason) {
     size_t n; const uint64_t *ds = dimset_get(ref_support(t), &n);
     uint64_t key[3] = { t, under(G, fc_true()), fc_project(C, ds, n) }, v, aux[3] = { 0, 0, 0 }; const char *why = NULL;
     pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_TVIEW, key, 3); pthread_mutex_unlock(&K.mu);
     Acq a = claim_acquire(cl, &v, &why, aux);
     if (a == ACQ_DONE) { if (v == 1) { *type = aux[0]; return CK_VALID; } *reason = why; return ck_of(v); }
     if (a == ACQ_CYCLE) { *reason = "unresolved: template instance validation depends on itself"; return CK_UNRESOLVED; }
-    CheckStatus st = CK_VALID;
-    ParamSig sig[16]; size_t ns = tnode_signature(t, sig, 16);
-    TEnvId E = tenv_of(t);
-    for (size_t k = 0; k < ns && st == CK_VALID; k++) {
-        if (sig[k].sort != PS_REF || !sig[k].type) continue;
-        /* the image stored for this slot */
-        size_t ne = tenv_size(E); RefId image = 0;
-        for (size_t q = 0; q < ne; q++) { uint64_t slot; TVal val; tenv_entry(E, q, &slot, &val); if (slot == sig[k].slot) image = val.id; }
-        if (!image) continue;
-        st = check_clause(G, C, image, sig[k].type, reason);
-        if (st == CK_INVALID) { static char buf[256]; snprintf(buf, sizeof buf, "template parameter image is not of its declared type (%s slot %zu: %s)", tdef_name(tnode_def(ref_tnode(t))), sig[k].slot, *reason); *reason = buf; }
-    }
+    CheckStatus st = tview_boundary(G, C, t, reason);
     RefId ty = 0;
     if (st == CK_VALID) st = infer_head(G, C, t, &ty, reason);
+    if (st == CK_VALID) {
+        RefId declared; uint64_t dl;
+        if (tnode_result(t, &declared, &dl)) {
+            ConvStatus cv = conv_type_clause(G, C, ty, declared);
+            if (cv == CV_UNEQUAL) { char buf[256]; snprintf(buf, sizeof buf, "library instance type differs from its declared result type (%s)", tdef_name(tnode_def(ref_tnode(t)))); *reason = diag_intern(buf); st = CK_INVALID; }
+            else if (cv == CV_UNRESOLVED) { *reason = "unresolved: declared result type conversion"; st = CK_UNRESOLVED; }
+        }
+    }
     aux[0] = ty;
     claim_release(cl, ck_code(st), *reason, aux);
     if (st == CK_VALID) *type = ty;
     return st;
 }
 
-/* scope validity independent of the face: every free variable and dimension
- * is declared, and the face itself is in scope */
 static CheckStatus scope_ok(ContextId G, FaceId chi, RefId t, const char **reason) {
     if (!dims_declared(G, face_dims(chi))) { *reason = "face mentions an undeclared dimension"; return CK_INVALID; }
     size_t n; const uint64_t *xs = varset_get(ref_freevars(t), &n);
@@ -948,6 +1056,7 @@ Inference infer(ContextId G, FaceId chi, RefId t) {
   }
 }
 
+
 /* ------------------------------------------------------------------ */
 /* checking against an expected type                                    */
 
@@ -957,6 +1066,7 @@ static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const c
     Tag tag = 0;
     if (!ref_is_var(t)) tag = ref_tag(t);
     if (tag == T_LAM || tag == T_PAIR || tag == T_PLAM || tag == T_SYSTEM) {
+        if (ref_is_tview(t)) { CheckStatus bs = tview_boundary(G, C, t, reason); if (bs != CK_VALID) return bs; }   /* the checking form does not bypass the template boundary */
         Head h; open_ref(t, &h);
         CheckStatus st = CK_VALID;
         RefId P;
@@ -968,12 +1078,24 @@ static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const c
             ConvStatus cv = conv_type_clause(G, C, h.f[0].id, D);
             if (cv == CV_UNEQUAL) { *reason = "lambda domain differs from the expected domain"; st = CK_INVALID; break; }
             if (cv == CV_UNRESOLVED) { *reason = "unresolved: lambda domain conversion"; st = CK_UNRESOLVED; break; }
-            { uint64_t l; st = level_of(G, C, h.f[0].id, &l, reason); if (st != CK_VALID) break; }   /* the annotation is a type */
+            { uint64_t l; st = level_of(G, C, h.f[0].id, &l, reason); if (st != CK_VALID) break;   /* the annotation is a type at its stored level */
+              if (!level_ok1(h.levels, l)) { *reason = level_why(h.levels, "lambda domain level annotation differs"); st = CK_INVALID; break; } }
             TermVarId x = conv_var(t, P, P, 0, D);
             st = check_clause(extend_term(G, x, D), C, apply_term_binder(t, 0, 1, ref_var(x)), apply_term_binder(P, 0, 1, ref_var(x)), reason);
             break;
         }
         case T_PAIR: {
+            if (h.n == 3) {
+                /* annotated pair (§59.2): the stored Σ forms at its stored
+                 * level, is convertible with the expected type, and governs
+                 * the component checks */
+                uint64_t l; st = level_of(G, C, h.f[2].id, &l, reason); if (st != CK_VALID) break;
+                if (!level_ok1(h.levels, l)) { *reason = level_why(h.levels, "pair annotation level differs"); st = CK_INVALID; break; }
+                ConvStatus cv = conv_type_clause(G, C, h.f[2].id, A);
+                if (cv == CV_UNEQUAL) { *reason = "pair annotation differs from the expected type"; st = CK_INVALID; break; }
+                if (cv == CV_UNRESOLVED) { *reason = "unresolved: pair annotation conversion"; st = CK_UNRESOLVED; break; }
+                A = h.f[2].id;
+            }
             st = observe_head(C, A, T_SIGMA, &P, reason);
             if (st != CK_VALID) { if (st == CK_INVALID) *reason = "pair checked against a non-sum type"; break; }
             Head hp; open_ref(P, &hp); RefId D = hp.f[0].id; head_free(&hp);
@@ -1178,13 +1300,15 @@ static ConvStatus conv_term_clause(ContextId G, FaceId C, RefId t, RefId u, RefI
             DimVarId j = conv_dim(t, u, 0);
             DimOpen o = resolve_dim_binder(rA->ref, 0, 0);
             RefId Bj = reindex_dim(o.body, o.j, iv_var(j));
-            out = conv_term_clause(extend_dim(G, j), C, mk_papp(o.j, o.body, h.f[1].id, h.f[2].id, t, iv_var(j)), mk_papp(o.j, o.body, h.f[1].id, h.f[2].id, u, iv_var(j)), Bj);
+            { uint64_t n = levels_first(h.levels);
+              out = conv_term_clause(extend_dim(G, j), C, mk_papp_lv(n, o.j, o.body, h.f[1].id, h.f[2].id, t, iv_var(j)), mk_papp_lv(n, o.j, o.body, h.f[1].id, h.f[2].id, u, iv_var(j)), Bj); }
             break;
         }
         case T_GLUE_TYPE: {
             /* non-collapsed Glue (C does not entail alpha): Glue eta */
             RefId Ab = h.f[0].id, T = h.f[2].id, e = h.f[3].id; FaceId alpha = h.f[1].id;
-            out = conv_term_clause(G, C, mk_unglue(Ab, alpha, T, e, t), mk_unglue(Ab, alpha, T, e, u), Ab);
+            { uint64_t n = levels_first(h.levels);
+              out = conv_term_clause(G, C, mk_unglue_lv(n, Ab, alpha, T, e, t), mk_unglue_lv(n, Ab, alpha, T, e, u), Ab); }
             FaceId Ca = fc_meet(C, alpha);
             if (out == CV_EQUAL && !fc_is_false(Ca)) {
                 FaceId *cs; size_t nc = clauses_of(Ca, &cs);
@@ -1357,11 +1481,16 @@ static CheckStatus validate_symbol(SymbolId s, const char **reason) {
 }
 
 CheckStatus check_admission(const char **reason) {
+    env_freeze();                        /* the freeze boundary precedes candidate admission */
     pthread_mutex_lock(&K.mu);
     for (;;) {
         uint64_t v = global_env_version();
-        if (!ADM.running && ADM.have && ADM.version == v) { CheckStatus st = ADM.status; *reason = ADM.reason; pthread_mutex_unlock(&K.mu); return st; }
-        if (!ADM.running) { ADM.running = true; ADM.version = v; K.attempt++; pthread_mutex_unlock(&K.mu); break; }
+        /* a settled verdict for this environment is reused; an UNRESOLVED
+         * verdict only within the attempt that produced it */
+        if (!ADM.running && ADM.have && ADM.version == v && (ADM.status != CK_UNRESOLVED || ADM.attempt == K.attempt)) {
+            CheckStatus st = ADM.status; *reason = ADM.reason; pthread_mutex_unlock(&K.mu); return st;
+        }
+        if (!ADM.running) { ADM.running = true; ADM.version = v; ADM.attempt = K.attempt; pthread_mutex_unlock(&K.mu); break; }
         pthread_cond_wait(&K.cv, &K.mu);
     }
     const char *why = "";
@@ -1372,6 +1501,21 @@ CheckStatus check_admission(const char **reason) {
     pthread_mutex_unlock(&K.mu);
     *reason = why;
     return st;
+}
+
+/* §57 R1 / §59.4: a new candidate environment. The previous environment's
+ * verdicts, claims and observations are retired (a fresh checker session and
+ * a reset evaluator); registration is open again until the next admission.
+ * Not callable while an admission attempt is running on another thread. */
+void check_open_environment(void) {
+    pthread_mutex_lock(&K.mu);
+    require(!ADM.running, "check_open_environment during a running admission attempt");
+    size_t budget = K.budget;
+    pthread_mutex_unlock(&K.mu);
+    check_free(); check_init();
+    pthread_mutex_lock(&K.mu); K.budget = budget; pthread_mutex_unlock(&K.mu);
+    eval_reset();
+    env_unfreeze();
 }
 
 EvalResult *observe_checked(ContextId G, RefId t, WhnfStatus *status, const char **reason) {

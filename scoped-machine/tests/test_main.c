@@ -188,14 +188,14 @@ static void test_binders(void) {
     SECTION("§8–9 binders and opening");
     RefId A = var(U0);
     TermVarId x = tv(A);
-    RefId id = mk_lam(x, A, ref_var(x));
+    RefId id = mk_lam_lv(0, x, A, ref_var(x));
     RefId a = var(A);
     CHECK(apply_term_binder(id, 0, 1, a) == a, "apply λx.x to a gives a");
     TermOpen o1 = resolve_term_binder(id, 0, 1), o2 = resolve_term_binder(id, 0, 1);
     CHECK(o1.x == o2.x && o1.x != x, "reopening the same owner/slot gives the same fresh binder identity");
     CHECK(o1.body == ref_var(o1.x) && o1.type == A, "opened body is VAR(x_new) at domain type");
     /* capture: substitute into the body a term mentioning the original formal */
-    RefId K = mk_lam(x, A, ref_var(tv(A)));
+    RefId K = mk_lam_lv(0, x, A, ref_var(tv(A)));
     RefId Kx = reindex1(K, x, a);
     CHECK(Kx == K, "formal not in boundary: substitution does nothing");
     /* dimension binder */
@@ -217,7 +217,7 @@ static void test_binders(void) {
     /* reindex_head: a view of a lambda under a map */
     RefId Bfam = var(mk_fun(0, 1, A, U0));
     TermVarId yv = tv(A);
-    RefId g = mk_lam(x, A, mk_app(Bfam, ref_var(yv)));
+    RefId g = mk_lam_lv(0, x, A, mk_app(Bfam, ref_var(yv)));
     RefId gsub = reindex1(g, yv, a);
     open_ref(gsub, &h);
     TermOpen og = resolve_term_binder(gsub, 0, 1);
@@ -238,7 +238,7 @@ static void test_eval_basic(void) {
     RefId A = var(U0);
     TermVarId x = tv(A);
     RefId a = var(A), bb = var(A);
-    RefId id = mk_lam(x, A, ref_var(x));
+    RefId id = mk_lam_lv(0, x, A, ref_var(x));
     EvalResult *r = whnf(mk_app(id, a), fc_true(), &st);
     CHECK(st == W_OK && r->cls == R_NEUTRAL && r->ref == a, "(λx.x) a ⇝ a (neutral variable)");
     r = whnf(mk_fst(mk_pair(a, bb)), fc_true(), &st);
@@ -302,7 +302,7 @@ static void test_eval_basic(void) {
     uint64_t Aparam[1] = { ref_var_id(A) };
     SymbolId K = define_global("K", varset_make(Aparam, 1), dimset_make(NULL, 0), mk_fun(0, 0, A, mk_fun(0, 0, A, A)));
     TermVarId y = tv(A);
-    set_global_body(K, mk_lam(x, A, mk_lam(y, A, ref_var(x))));
+    set_global_body(K, mk_lam_lv(0, x, A, mk_lam_lv(0, y, A, ref_var(x))));
     r = whnf(mk_app(mk_app(global_ref(K), a), bb), fc_true(), &st);
     CHECK(st == W_OK && r->ref == a, "K a b ⇝ a through global unfolding");
 
@@ -322,7 +322,7 @@ static void test_eval_glue_system(void) {
     RefId e = var(mk_equiv(0, 0, T, A));
     DimVarId i = declare_dim();
     FaceId i1 = fc_lit(i, 1);
-    RefId G = mk_glue_type(A, i1, T, e);
+    RefId G = mk_glue_type_lv(0, A, i1, T, e);
     EvalResult *r = whnf(G, fc_true(), &st);
     CHECK(st == W_OK && r->cls == R_INTRODUCTION && head_tag(r) == T_GLUE_TYPE, "Glue head exposed off its face");
     r = whnf(G, i1, &st);
@@ -337,15 +337,15 @@ static void test_eval_glue_system(void) {
     CHECK(base1 == A && whnf(base1, fc_true(), &st)->ref == A, "the retained base specialized at i=1 is still A");
 
     RefId t = var(T), a = var(A);
-    RefId gl = mk_glue_intro(A, i1, T, e, t, a);
-    r = whnf(mk_unglue(A, i1, T, e, gl), fc_true(), &st);
+    RefId gl = mk_glue_intro_lv(0, A, i1, T, e, t, a);
+    r = whnf(mk_unglue_lv(0, A, i1, T, e, gl), fc_true(), &st);
     CHECK(st == W_OK && r->ref == a, "unglue (glue t a) ⇝ a");
     r = whnf(gl, i1, &st);
     CHECK(st == W_OK && r->ref == t, "glue t a ⇝ t on the face");
     RefId v = var(G);
-    r = whnf(mk_unglue(A, i1, T, e, v), i1, &st);
+    r = whnf(mk_unglue_lv(0, A, i1, T, e, v), i1, &st);
     CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_APP, "unglue v ⇝ e.map v on the face (neutral application)");
-    r = whnf(mk_unglue(A, i1, T, e, v), fc_true(), &st);
+    r = whnf(mk_unglue_lv(0, A, i1, T, e, v), fc_true(), &st);
     CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_UNGLUE, "unglue v neutral off the face");
 
     /* systems */
@@ -363,7 +363,7 @@ static void test_eval_glue_system(void) {
     /* eliminator distributes branchwise */
     RefId f = var(mk_fun(0, 0, A, A));
     FaceId fs2[2] = { fc_lit(j, 0), fc_lit(j, 1) };
-    RefId ts2[2] = { mk_lam(tv(A), A, a), f };
+    RefId ts2[2] = { mk_lam_lv(0, tv(A), A, a), f };
     r = whnf(mk_app(mk_system(2, fs2, ts2), b), fc_join(fs2[0], fs2[1]), &st);
     CHECK(st == W_OK && r->cls == R_SYSTEM && r->nbr == 2, "application distributes over a system");
     CHECK(r->terms[0] == a && r->terms[1] == mk_app(f, b), "branches were evaluated under chi ∧ φ_k: (λ_.a) b ⇝ a, f b neutral");
@@ -375,25 +375,25 @@ static void test_eval_glue_system(void) {
     RefId X = var(U0);                                   /* neutral family */
     DimVarId m = declare_dim();
     RefId u = var(A);
-    RefId cmp = mk_comp(m, X, fc_true(), u, u);
+    RefId cmp = mk_comp_lv(0, m, X, fc_true(), u, u);
     r = whnf(cmp, fc_true(), &st);
     CHECK(st == W_OK && r->ref == u, "covered composition returns its tube at 1");
     DimOpen fam = resolve_dim_binder(cmp, 0, 0);
     CHECK(eval_entry_lookup(fam.body, fc_true()) == 0, "the family head was never demanded");
     /* neutral composition */
-    RefId cmp2 = mk_comp(m, X, fc_false(), mk_system(0, NULL, NULL), u);
+    RefId cmp2 = mk_comp_lv(0, m, X, fc_false(), mk_system(0, NULL, NULL), u);
     r = whnf(cmp2, fc_true(), &st);
     CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "composition in an unknown family is neutral and retains its data");
     /* type-family system: outer guards are ∀j and endpoint-only branches do not cover */
     FaceId gs[2] = { fc_lit(m, 0), fc_lit(m, 1) };
     RefId Ys[2] = { X, A };
-    RefId cmp3 = mk_comp(m, mk_system(2, gs, Ys), fc_false(), mk_system(0, NULL, NULL), u);
+    RefId cmp3 = mk_comp_lv(0, m, mk_system(2, gs, Ys), fc_false(), mk_system(0, NULL, NULL), u);
     r = whnf(cmp3, fc_true(), &st);
     CHECK(st == W_INVALID, "endpoint-only type-family branches do not cover the symbolic line");
     DimVarId n = declare_dim();
     FaceId gs2[2] = { fc_lit(n, 0), fc_lit(n, 1) };
     RefId Ys2[2] = { X, mk_fun(0, 0, A, A) };
-    RefId cmp4 = mk_comp(m, mk_system(2, gs2, Ys2), fc_false(), mk_system(0, NULL, NULL), u);
+    RefId cmp4 = mk_comp_lv(0, m, mk_system(2, gs2, Ys2), fc_false(), mk_system(0, NULL, NULL), u);
     r = whnf(cmp4, fc_join(gs2[0], gs2[1]), &st);
     CHECK(st == W_OK && r->cls == R_SYSTEM && r->nbr == 2 && r->faces[0] == gs2[0], "system of compositions with ∀m guards");
     r = whnf(cmp4, gs2[1], &st);
@@ -426,7 +426,7 @@ static void test_comp_clauses(void) {
 
     /* Σ: fst of a coe in Σ(x:A).B is a comp in A; whole thing is a pair */
     TermVarId x = tv(A);
-    RefId S = mk_sigma(x, A, B);
+    RefId S = mk_sigma_lv(0, 0, x, A, B);
     RefId z = var(S);
     RefId csg = mk_coe_at(0, i, S, z);
     r = whnf(csg, fc_true(), &st);
@@ -462,7 +462,7 @@ static void test_comp_clauses(void) {
     head_free(&h);
     /* with a tube: Glue [phi ↦ (U_1, LineEquiv)] A_0, and the equivalence is a coe in Equiv */
     DimVarId n = declare_dim();
-    RefId cu2 = mk_comp(i, U0, fc_lit(n, 0), B, A);
+    RefId cu2 = mk_comp_lv(0, i, U0, fc_lit(n, 0), B, A);
     r = whnf(cu2, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_GLUE_TYPE, "comp in U with a tube ⇝ Glue");
     r = whnf(cu2, fc_lit(n, 0), &st);
@@ -482,12 +482,12 @@ static void test_comp_clauses(void) {
     /* Glue composition where the Glue face is off: base family must be used generally */
     RefId T = var(U0), e = var(mk_equiv(0, 0, T, A));
     DimVarId m = declare_dim();
-    RefId Gm = mk_glue_type(A, fc_lit(m, 1), T, e);     /* constant in i, partial in m */
+    RefId Gm = mk_glue_type_lv(0, A, fc_lit(m, 1), T, e);     /* constant in i, partial in m */
     RefId g0 = var(Gm);
     RefId cg = mk_coe_at(0, i, Gm, g0);
     r = whnf(cg, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_GLUE_INTRO, "comp in Glue ⇝ glue intro off the Glue face");
-    r = whnf(mk_unglue(A, fc_lit(m, 1), T, e, cg), fc_true(), &st);
+    r = whnf(mk_unglue_lv(0, A, fc_lit(m, 1), T, e, cg), fc_true(), &st);
     CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "unglue of it is the (neutral) repaired base composition");
     r = whnf(cg, fc_lit(m, 1), &st);
     CHECK(st == W_OK && r->cls == R_NEUTRAL, "on the Glue face the fibre component is demanded (neutral in T)");

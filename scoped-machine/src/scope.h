@@ -50,6 +50,7 @@ FaceId scope_guard(ScopeId S);
 DimSetId scope_support(ScopeId S);        /* free dimensions (bound atoms excluded) */
 VarSetId scope_freevars(ScopeId S);
 TypedPartial apply_scope(ScopeId S, size_t n, const Val *args);
+void scope_local_at(ScopeId S, size_t k, const Val *args, RefId *type, FaceId *req, uint64_t *level);   /* local k's declaration at the prefix args[0..k) */
 ScopeId reindex_scope(ScopeId S, MapId sigma);
 FaceId forall_scope(ScopeId S);           /* unary dimension scope of total face syntax */
 /* open with fresh concrete locals minted from `key` (checking); ids receives

@@ -25,18 +25,18 @@ static void build(void) {
     TermVarId x = declare_term(A, fc_true()), y = declare_term(A, fc_true());
     RefId p = var(mk_path_const(0, A, a, b));
     RefId pi = mk_papp_const(0, A, a, b, p, iv_var(i));
-    RefId t0 = mk_app(mk_app(mk_lam(x, A, mk_lam(y, A, ref_var(x))), a), b);
+    RefId t0 = mk_app(mk_app(mk_lam_lv(0, x, A, mk_lam_lv(0, y, A, ref_var(x))), a), b);
     FaceId fs[2] = { fc_lit(k, 0), fc_lit(k, 1) };
-    RefId ts3[2] = { mk_lam(declare_term(A, fc_true()), A, t0), mk_lam(declare_term(A, fc_true()), A, t0) };
+    RefId ts3[2] = { mk_lam_lv(0, declare_term(A, fc_true()), A, t0), mk_lam_lv(0, declare_term(A, fc_true()), A, t0) };
     RefId e = var(mk_equiv(0, 0, T, A));
-    RefId Gm = mk_glue_type(A, fc_lit(m, 1), T, e);
+    RefId Gm = mk_glue_type_lv(0, A, fc_lit(m, 1), T, e);
     RefId cg = mk_coe_at(0, i, Gm, var(Gm));
     RefId ua = mk_ua(1, U0, U0, mk_id_equiv(1, U0));
     RefId tr = mk_coe_at(1, i, mk_papp_const(2, mk_universe(1), U0, U0, ua, iv_var(i)), A);
     FaceId gs[2] = { fc_lit(n, 0), fc_lit(n, 1) };
-    RefId Ys2[2] = { mk_fun(0, 0, A, B), mk_sigma(x, A, B) };
-    RefId cmp5 = mk_comp(m, mk_system(2, gs, Ys2), fc_false(), mk_system(0, NULL, NULL), var(A));
-    RefId S = mk_sigma(x, A, B);
+    RefId Ys2[2] = { mk_fun(0, 0, A, B), mk_sigma_lv(0, 0, x, A, B) };
+    RefId cmp5 = mk_comp_lv(0, m, mk_system(2, gs, Ys2), fc_false(), mk_system(0, NULL, NULL), var(A));
+    RefId S = mk_sigma_lv(0, 0, x, A, B);
     RefId csg = mk_coe_at(0, i, S, var(S));
     size_t q = 0;
     roots[q] = pi; faces[q++] = fc_true();
@@ -45,10 +45,10 @@ static void build(void) {
     roots[q] = t0; faces[q++] = fc_true();
     roots[q] = mk_app(mk_system(2, fs, ts3), b); faces[q++] = fc_join(fs[0], fs[1]);
     roots[q] = cg; faces[q++] = fc_true();
-    roots[q] = mk_unglue(A, fc_lit(m, 1), T, e, cg); faces[q++] = fc_true();
+    roots[q] = mk_unglue_lv(0, A, fc_lit(m, 1), T, e, cg); faces[q++] = fc_true();
     roots[q] = cg; faces[q++] = fc_lit(m, 1);
     roots[q] = tr; faces[q++] = fc_true();
-    roots[q] = mk_fst(mk_unglue(U0, fc_true(), U0, mk_id_equiv(0, U0), tr)); faces[q++] = fc_true();
+    roots[q] = mk_fst(mk_unglue_lv(0, U0, fc_true(), U0, mk_id_equiv(0, U0), tr)); faces[q++] = fc_true();
     roots[q] = cmp5; faces[q++] = fc_join(gs[0], gs[1]);
     roots[q] = cmp5; faces[q++] = gs[1];
     roots[q] = csg; faces[q++] = fc_true();
@@ -130,7 +130,7 @@ static int storm(size_t workers, int clients, int rounds, bool cyclic) {
             storm_ref = global_ref(L);
         } else {
             TermVarId x = declare_term(A, fc_true()), y = declare_term(A, fc_true());
-            storm_ref = mk_app(mk_app(mk_lam(x, A, mk_lam(y, A, ref_var(x))), a), b);   /* fresh each round */
+            storm_ref = mk_app(mk_app(mk_lam_lv(0, x, A, mk_lam_lv(0, y, A, ref_var(x))), a), b);   /* fresh each round */
         }
         storm_face = fc_true();
         pthread_barrier_init(&bar, NULL, (unsigned)clients);
@@ -160,7 +160,7 @@ static int stuck_join_teardown(size_t workers) {
     set_global_body(L, global_ref(L));
     DimVarId k = declare_dim();
     FaceId fs[2] = { fc_lit(k, 0), fc_lit(k, 1) };
-    RefId ts[2] = { global_ref(L), mk_lam(declare_term(A, fc_true()), A, a) };
+    RefId ts[2] = { global_ref(L), mk_lam_lv(0, declare_term(A, fc_true()), A, a) };
     WhnfStatus st;
     EvalResult *r = whnf(mk_app(mk_system(2, fs, ts), a), fc_join(fs[0], fs[1]), &st);
     int bad = (st != W_STUCK || r != NULL) ? 1 : 0;

@@ -58,8 +58,8 @@ RefId mk_fib(uint64_t l, uint64_t m, RefId X, RefId Y, RefId f, RefId y) { retur
 RefId mk_equiv(uint64_t l, uint64_t m, RefId X, RefId Y) { return CALLT(TD_EQUIV, VL(l), VL(m), VR(X), VR(Y)); }
 RefId mk_id_fun(uint64_t l, RefId X) { return CALLT(TD_IDFUN, VL(l), VR(X)); }
 RefId mk_id_equiv(uint64_t l, RefId X) { return CALLT(TD_IDEQUIV, VL(l), VR(X)); }
-RefId equiv_map(RefId e) { return CALLT(TD_EQUIVMAP, VR(e)); }
-RefId equiv_contr(RefId e, RefId y) { return CALLT(TD_EQUIVCONTR, VR(e), VR(y)); }
+RefId equiv_map(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e) { return CALLT(TD_EQUIVMAP, VL(l), VL(m), VR(X), VR(Y), VR(e)); }
+RefId equiv_contr(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e, RefId y) { return CALLT(TD_EQUIVCONTR, VL(l), VL(m), VR(X), VR(Y), VR(e), VR(y)); }
 RefId mk_fill(uint64_t l, ScopeId A, FaceId phi, ScopeId u, RefId cap, IntervalId r) { return CALLT(TD_FILL, VL(l), VS(A), VF(phi), VS(u), VR(cap), VI(r)); }
 RefId mk_hcomp(uint64_t l, RefId X, FaceId phi, ScopeId u, RefId cap) { return CALLT(TD_HCOMP, VL(l), VR(X), VF(phi), VS(u), VR(cap)); }
 RefId mk_coe(uint64_t l, ScopeId A, RefId cap) { return CALLT(TD_COE, VL(l), VS(A), VR(cap)); }
@@ -84,19 +84,22 @@ RefId mk_hcomp_at(uint64_t l, DimVarId j, RefId X, FaceId phi, RefId u_j, RefId 
 /* ------------------------------------------------------------------ */
 /* §54: capture the retained components of an exposed head and select the one fixed clause */
 
-/* an unannotated family (LEVEL_NONE) leaves the captured scopes' declared
- * types absent: the checker infers them (§59.1) */
-static RefId U_of(uint64_t l) { return l == LEVEL_NONE ? 0 : mk_universe(l); }
+/* §59.1: a family without its required level annotation is not admitted
+ * core syntax; no clause is instantiated for it (the evaluator reports the
+ * demand as invalid) and no scope is manufactured without its declared type */
+static RefId U_of(uint64_t l) { return mk_universe(l); }
 RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap, FaceId eta) {
     FaceId saved = template_kappa();
     template_set_kappa(eta);
     Head h; open_ref(fam, &h);
     RefId out = 0;
+    if ((h.tag == T_PI || h.tag == T_SIGMA || h.tag == T_PATH || h.tag == T_GLUE_TYPE) && (h.levels == LEVELS_NONE || levels_first(h.levels) == LEVEL_NONE || ((h.tag == T_PI || h.tag == T_SIGMA) && levels_second(h.levels) == LEVEL_NONE))) {
+        head_free(&h); template_set_kappa(saved); return 0;
+    }
     FaceId tube_guard = fc_meet(eta, phi);
     switch (h.tag) {
     case T_PI: case T_SIGMA: {
         uint64_t m = levels_first(h.levels), n = levels_second(h.levels);
-        if (h.levels == LEVELS_NONE) m = n = LEVEL_NONE;
         RefId domain = h.f[0].id;
         TermOpen o = resolve_term_binder(fam, 0, 1);                  /* resolved once: (x, D_j, codomain) */
         ScopeId D = capture_dim1(j, domain, U_of(m), level_succ(m), eta);
@@ -107,7 +110,7 @@ RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap, Fa
         break;
     }
     case T_PATH: {
-        uint64_t n = levels_first(h.levels); if (h.levels == LEVELS_NONE) n = LEVEL_NONE;
+        uint64_t n = levels_first(h.levels);
         DimOpen Bk = resolve_dim_binder(fam, 0, 0);                   /* (k, B(j,k)) */
         ScopeId B = capture_dim2(j, Bk.j, Bk.body, U_of(n), level_succ(n), eta);
         ScopeId left = capture_dim1(j, h.f[1].id, reindex_dim(Bk.body, Bk.j, iv_zero()), n, eta);
@@ -118,12 +121,12 @@ RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap, Fa
         break;
     }
     case T_GLUE_TYPE: {
-        uint64_t n = levels_first(h.levels); if (h.levels == LEVELS_NONE) n = LEVEL_NONE;
+        uint64_t n = levels_first(h.levels);
         RefId A_j = h.f[0].id, T_j = h.f[2].id, e_j = h.f[3].id; FaceId alpha_j = h.f[1].id;
         ScopeId A = capture_dim1(j, A_j, U_of(n), level_succ(n), eta);
         ScopeId alpha = capture_dim1_face(j, alpha_j);
         ScopeId T = capture_dim1(j, T_j, U_of(n), level_succ(n), fc_meet(eta, alpha_j));
-        ScopeId e = capture_dim1(j, e_j, n == LEVEL_NONE ? 0 : mk_equiv(n, n, T_j, A_j), n, fc_meet(eta, alpha_j));
+        ScopeId e = capture_dim1(j, e_j, mk_equiv(n, n, T_j, A_j), n, fc_meet(eta, alpha_j));
         ScopeId u = capture_dim1(j, tube_j, fam, n, tube_guard);
         TVal a[8] = { VL(n), VS(A), VS(alpha), VS(T), VS(e), VF(phi), VS(u), VR(cap) };
         out = template_call(TD_GLUECOMP, 8, a).id;

@@ -130,6 +130,14 @@ void eval_init(void) {
     E.net.policy = 1;   /* pairs FIFO by default */
 }
 
+/* a new definition environment retires every observation: the memo, the
+ * results and the pending pairs; the scheduler configuration survives */
+void eval_reset(void) {
+    size_t w = E.nworkers; SchedPolicy p = E.policy, pp = E.pair_policy; uint64_t rng = E.rng; int np = E.net.policy; uint64_t nrng = E.net.rng;
+    eval_free(); eval_init();
+    E.policy = p; E.pair_policy = pp; E.rng = rng; E.net.policy = np; E.net.rng = nrng;
+    if (w) eval_set_workers(w);
+}
 static void gather_free(Gather *g) {
     pthread_mutex_lock(&E.join_mu);
     E.joins.data[g->slot] = NULL;
@@ -502,10 +510,10 @@ static RefId rebuild_elim(const Cont *k, RefId scrut) {
     case K_SND: out = mk_snd(scrut); break;
     case K_PAPP: {
         DimOpen B = resolve_dim_binder(k->orig, 0, 0);
-        out = mk_papp(B.j, B.body, h.f[1].id, h.f[2].id, scrut, h.f[4].id);
+        out = mk_papp_lv(levels_first(h.levels), B.j, B.body, h.f[1].id, h.f[2].id, scrut, h.f[4].id);
         break;
     }
-    case K_UNGLUE: out = mk_unglue(h.f[0].id, h.f[1].id, h.f[2].id, h.f[3].id, scrut); break;
+    case K_UNGLUE: out = mk_unglue_lv(levels_first(h.levels), h.f[0].id, h.f[1].id, h.f[2].id, h.f[3].id, scrut); break;
     default: die("rebuild of a non-eliminator");
     }
     head_free(&h);
@@ -604,7 +612,7 @@ static void resume_comp_family(Cont *k, EvalResult *r) {
      * and instantiate the one fixed clause (§53–§54); the producer entry's
      * face is the clause's source annotation κ */
     RefId out = comp_clause(k->j, r->ref, k->phi, k->tube, k->cap, ENT(k->dest)->face);
-    if (!out) { publish(k->dest, result_invalid("composition in a family whose head is not a type former")); return; }
+    if (!out) { publish(k->dest, result_invalid("composition in a family whose head is not a type former or lacks its universe annotation")); return; }
     forward(out, k->chi, k->dest);
 }
 
@@ -718,7 +726,21 @@ EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
             pthread_cond_wait(&E.idle_cv, &E.q_mu);
         }
         pthread_mutex_unlock(&E.q_mu);
-    } else eval_run();
+    } else {
+        /* no pool: this client runs the queue; while another client thread
+         * is still executing a job (its publication may resume this root, or
+         * enqueue more work), wait for the root or for quiescence rather
+         * than reporting a stuck demand */
+        for (;;) {
+            eval_run();
+            pthread_mutex_lock(&E.q_mu);
+            pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
+            bool queued = E.qhead < E.queue.len || net_pending_pairs_locked(&E.net) > 0;
+            if (d || E.outstanding == 0) { pthread_mutex_unlock(&E.q_mu); break; }
+            if (!queued) pthread_cond_wait(&E.idle_cv, &E.q_mu);
+            pthread_mutex_unlock(&E.q_mu);
+        }
+    }
     pthread_mutex_lock(&box->mu);
     bool done = box->done; EvalResult *out = box->result;
     pthread_mutex_unlock(&box->mu);

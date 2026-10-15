@@ -26,7 +26,7 @@ int main(void) {
     left = right = A;
     for (int k = 0; k < 50; k++) {
         TermVarId x = declare_term(A, fc_true()), y = declare_term(A, fc_true());
-        left = mk_pi(x, A, left); right = mk_pi(y, A, right);
+        left = mk_pi_lv(0, 0, x, A, left); right = mk_pi_lv(0, 0, y, A, right);
     }
     pthread_t threads[7]; size_t ids[8];
     pthread_barrier_init(&gate, NULL, 8);

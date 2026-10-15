@@ -76,7 +76,7 @@ static Graph *build(Variant v) {
     RefId a = var(A), b = var(A);
     RefId e = var(mk_equiv(0, 0, T, A));
     FaceId guard = (v == V_GUARD) ? fc_lit(m, 0) : fc_lit(m, 1);
-    RefId Gm = mk_glue_type(A, guard, T, e);
+    RefId Gm = mk_glue_type_lv(0, A, guard, T, e);
     RefId cg = mk_coe_at(0, i, Gm, var(Gm));
     RefId p = var(mk_path_const(0, A, a, b));
     IntervalId s = (v == V_ENDPOINT) ? iv_negate(iv_var(i)) : iv_var(i);
@@ -86,7 +86,7 @@ static Graph *build(Variant v) {
     WhnfStatus st;
     Canon *c = canon_new();
     canon_add_result(c, "cg", whnf(cg, fc_true(), &st));
-    canon_add_result(c, "unglue", whnf(mk_unglue(A, guard, T, e, cg), fc_true(), &st));
+    canon_add_result(c, "unglue", whnf(mk_unglue_lv(0, A, guard, T, e, cg), fc_true(), &st));
     canon_add_result(c, "pi", whnf(pi, fc_true(), &st));
     canon_add_result(c, "pair", whnf(pair, fc_true(), &st));
     canon_add_result(c, "lvl", whnf(lvl, fc_true(), &st));
@@ -119,7 +119,7 @@ static Graph *build_shifted(bool shift) {
     DimVarId i = declare_dim();
     if (shift) { for (uint64_t k = 0; k < 7; k++) { KeyWord kw[2] = { { KW_CONST, 777 }, { KW_CONST, k } }; fresh_dim_keyed(kw, 2); } }   /* unrelated generated names first */
     TermVarId xx = declare_term(A, fc_true());
-    RefId S = mk_sigma(xx, A, B);
+    RefId S = mk_sigma_lv(0, 0, xx, A, B);
     RefId csg = mk_coe_at(0, i, S, var(S));
     WhnfStatus st;
     Canon *c = canon_new();

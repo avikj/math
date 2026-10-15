@@ -96,11 +96,11 @@ int main(void) {
       CHECK(mk_fun(0, 0, A, B) != mk_fun(0, 1, A, B), "differently annotated levels are distinct references"); }
     CHECK(mk_equiv(0, 0, A, B) == mk_equiv(0, 0, A, B) && mk_contr(0, A) == mk_contr(0, A) && mk_id_equiv(0, A) == mk_id_equiv(0, A), "shape-only templates are memoized");
     { /* extend_contr: c, k, v formals; the guard is shape */
-      TermVarId vcc = tv(A), vk = tv(mk_pi(tv(A), A, mk_path_const(0, A, ref_var(vcc), a)));   /* k : Π(x:A). Path A c a — shape stands in for the real contraction type */
+      TermVarId vcc = tv(A), vk = tv(mk_pi_lv(0, 0, tv(A), A, mk_path_const(0, A, ref_var(vcc), a)));   /* k : Π(x:A). Path A c a — shape stands in for the real contraction type */
       (void)vk;
       TermVarId vcen = tv(A), vcen2 = tv(A);
       TermVarId xk = tv(A);
-      RefId Kt = mk_pi(xk, A, mk_path_const(0, A, ref_var(vcen), ref_var(xk)));
+      RefId Kt = mk_pi_lv(0, 0, xk, A, mk_path_const(0, A, ref_var(vcen), ref_var(xk)));
       TermVarId vkk = tv(Kt);
       TermVarId vv = declare_term(A, fc_lit(k, 1)), vv2 = declare_term(A, fc_lit(k, 1));
       RefId ext = mk_extend_contr(0, A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vv));
@@ -149,7 +149,7 @@ int main(void) {
 
     /* the templates are typed: a clause output checks at the expected type
      * (the formals' declared types are the clause's typing) */
-    { TermVarId vs = tv(mk_sigma(tv(A), A, B));
+    { TermVarId vs = tv(mk_sigma_lv(0, 0, tv(A), A, B));
       TermVarId ctxv[] = { vA, vB, va, vb, vc, vf, vs };
       CtxDecl d[16]; size_t n = 0;
       d[n++] = (CtxDecl){ S_DIM, i, 0 }; d[n++] = (CtxDecl){ S_DIM, k, 0 };
@@ -177,6 +177,7 @@ int main(void) {
       CHECK(check(GA, fc_true(), global_ref(sh), A, &why) == CK_INVALID, "the rejected body itself");
       WhnfStatus ws; const char *r2 = "";
       CHECK(observe_checked(GA, global_ref(sk), &ws, &r2) == NULL && ws == W_INVALID, "no checked observation through a rejected component");
+      check_open_environment();          /* the checked observation admitted (froze) the environment */
       /* concurrent clients validating a recursive component from both ends */
       sym_ctx = GA; sym_type = A;
       SymbolId s1 = define_global("mc1", params, nod, A), s2 = define_global("mc2", params, nod, A);

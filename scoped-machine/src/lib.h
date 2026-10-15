@@ -37,8 +37,8 @@ RefId mk_fib(uint64_t l, uint64_t m, RefId X, RefId Y, RefId f, RefId y);
 RefId mk_equiv(uint64_t l, uint64_t m, RefId X, RefId Y);
 RefId mk_id_fun(uint64_t l, RefId X);
 RefId mk_id_equiv(uint64_t l, RefId X);
-RefId equiv_map(RefId e);
-RefId equiv_contr(RefId e, RefId y);
+RefId equiv_map(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e);          /* fst e : X → Y */
+RefId equiv_contr(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e, RefId y);/* (snd e) y : Contr(fib) */
 RefId mk_fill(uint64_t l, ScopeId A, FaceId phi, ScopeId u, RefId cap, IntervalId r);   /* A : [i]U_l, u : [i]A<i> on phi */
 RefId mk_hcomp(uint64_t l, RefId X, FaceId phi, ScopeId u, RefId cap);                  /* u : [j]X on phi */
 RefId mk_coe(uint64_t l, ScopeId A, RefId cap);

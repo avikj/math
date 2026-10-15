@@ -51,7 +51,7 @@ int main(int argc, char **argv) {
         RefId bad_ref = global_ref(bad), dependent_ref = global_ref(dependent);
         TermVarId x = declare_term(A, fc_true());
         RefId xx = ref_var(x);
-        RefId pairer = mk_lam(x, A, mk_pair(xx, xx));
+        RefId pairer = mk_lam_lv(0, x, A, mk_pair(xx, xx));
         set_global_body(bad, mk_app(pairer, dependent_ref));
         set_global_body(dependent, bad_ref);
         Inference first = infer(g, fc_true(), bad_ref);
@@ -74,8 +74,8 @@ int main(int argc, char **argv) {
         for (int k = 0; k < 50; ++k) {
             TermVarId x = declare_term(A, fc_true());
             TermVarId y = declare_term(A, fc_true());
-            storm_a = mk_pi(x, A, storm_a);
-            storm_b = mk_pi(y, A, storm_b);
+            storm_a = mk_pi_lv(0, 0, x, A, storm_a);
+            storm_b = mk_pi_lv(0, 0, y, A, storm_b);
         }
         CheckStatus c = check_context(storm_ctx, &why);
         printf("prechecked context: %s\n", check_status_name(c));
@@ -99,7 +99,7 @@ int main(int argc, char **argv) {
         printf("false-face map with undeclared image y: %s (expected INVALID)\n", check_status_name(s));
 
         TermVarId z = declare_term(U0, fc_true());
-        RefId beta_A = mk_app(mk_lam(z, U0, ref_var(z)), A);
+        RefId beta_A = mk_app(mk_lam_lv(1, z, U0, ref_var(z)), A);
         TermVarId va = declare_term(A, fc_true());
         ContextId prefix = context_for(1, &vA);
         printf("A versus (lambda Z:U0. Z) A: %s (expected EQUAL)\n", conv_status_name(convert_type(prefix, fc_true(), A, beta_A)));
@@ -113,7 +113,7 @@ int main(int argc, char **argv) {
         TermVarId vf = declare_term(AA, fc_true());
         TermVarId vz = declare_term(AA, fc_true());
         RefId f = ref_var(vf), a = ref_var(va);
-        RefId identity = mk_lam(vz, AA, ref_var(vz));
+        RefId identity = mk_lam_lv(0, vz, AA, ref_var(vz));
         TermVarId xs[] = { vA, va, vf };
         ContextId g = context_for(3, xs);
         printf("neutral ((lambda f. f) f) a versus f a: %s (expected EQUAL)\n",

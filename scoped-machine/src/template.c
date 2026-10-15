@@ -13,9 +13,12 @@ typedef struct {
     PSort sorts[MAXP];
     ExprId ptype[MAXP];            /* reference parameters: declared type expression (0 = none) */
     ExprId plevel[MAXP];           /* its level expression */
+    ExprId psig[MAXP];             /* scope parameters: the expected contextual signature (a scope expression whose body is the result type) */
     size_t nlocals;
     PSort lsort[MAXL];
     ExprId root;
+    ExprId rtype, rlevel;          /* the declared result type of the program and its level */
+    TNodeId root_node;             /* the root constructor node when the root is a node (0 when the root is a call) */
 } TDef;
 
 static struct { TDef defs[TD_COUNT]; uint64_t index_counter[TD_COUNT]; bool init; pthread_mutex_t mu; } TPL;
@@ -365,16 +368,6 @@ RefId tview_traverse(RefId t, const Trav *tv, unsigned depth) {
     return make_view_env(Q, &env);
 }
 
-static bool expr_available(ExprId e, const Env *env) {
-    SlotSet fs; memset(&fs, 0, sizeof fs); expr_free(e, env->def->nparams, &fs);
-    for (size_t k = 0; k < MAXSLOT; k++) {
-        if (!ss_has(&fs, k)) continue;
-        if (!env->has[k]) return false;
-        /* an unannotated level (LEVEL_NONE) carries no declared universe: the checker infers */
-        if (env->val[k].sort == PS_LEVEL && env->val[k].id == LEVEL_NONE) return false;
-    }
-    return true;
-}
 size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
     size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
@@ -383,14 +376,22 @@ size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
         size_t slot = (size_t)fl[k];
         if (slot >= env.def->nparams) continue;                 /* locals: bound by the enclosing opening */
         out[n].slot = slot; out[n].sort = env.def->sorts[slot];
-        /* a declared type is available at this node only when every slot
-         * it mentions is retained in the node's environment */
-        out[n].type = env.def->ptype[slot] && expr_available(env.def->ptype[slot], &env) ? interp(env.def->ptype[slot], &env).id : 0;
-        out[n].level = env.def->plevel[slot] && expr_available(env.def->plevel[slot], &env) ? interp(env.def->plevel[slot], &env).id : LEVEL_NONE;
+        /* the node's environment is closed under the declarations (NODE), so
+         * every declared type is interpretable here */
+        out[n].type = env.def->ptype[slot] ? interp(env.def->ptype[slot], &env).id : 0;
+        out[n].level = env.def->plevel[slot] ? interp(env.def->plevel[slot], &env).id : LEVEL_NONE;
+        out[n].sig = env.def->psig[slot] ? interp(env.def->psig[slot], &env).id : 0;
         out[n].guard = fc_true();
         n++;
     }
     return n;
+}
+bool tnode_result(RefId t, RefId *type, uint64_t *level) {
+    TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
+    if (!env.def->rtype || env.def->root_node != Q) return false;
+    *type = interp(env.def->rtype, &env).id;
+    *level = env.def->rlevel ? interp(env.def->rlevel, &env).id : LEVEL_NONE;
+    return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -412,6 +413,7 @@ static ExprId IVNOT(ExprId a) { return x1(X_IVNOT, a); }
 static ExprId IVAND(ExprId a, ExprId b) { return x2(X_IVAND, a, b); }
 static ExprId IVOR(ExprId a, ExprId b) { return x2(X_IVOR, a, b); }
 static ExprId FCF(void) { return x0(X_FCF); }
+static ExprId FCT(void) { return x0(X_FCT); }
 static ExprId FCAND(ExprId a, ExprId b) { return x2(X_FCAND, a, b); }
 static ExprId FCOR(ExprId a, ExprId b) { return x2(X_FCOR, a, b); }
 static ExprId FCEND(ExprId a, int eps) { return x2(X_FCEND, a, (uint64_t)eps); }
@@ -422,6 +424,27 @@ static ExprId CALLn(TDefKind f, size_t n, const ExprId *args) { uint64_t w[3 + M
 #define CALL(f, ...) ({ ExprId _a[] = { __VA_ARGS__ }; CALLn(f, sizeof _a / sizeof _a[0], _a); })
 
 static size_t newlocal(PSort s) { require(cd->nlocals < MAXL, "too many template locals"); cd->lsort[cd->nlocals] = s; return cd->nlocals++; }
+
+/* close a slot set under the parameter declarations of the current definition */
+static void decl_closure(SlotSet *fsl) {
+    size_t np = cd->nparams;
+    for (bool changed = true; changed; ) {
+        changed = false;
+        SlotSet add; memset(&add, 0, sizeof add);
+        for (size_t k = 0; k < np; k++) if (ss_has(fsl, k)) {
+            if (cd->ptype[k]) expr_free(cd->ptype[k], np, &add);
+            if (cd->plevel[k]) expr_free(cd->plevel[k], np, &add);
+            if (cd->psig[k]) expr_free(cd->psig[k], np, &add);
+        }
+        for (size_t k = 0; k < MAXSLOT; k++) if (ss_has(&add, k) && !ss_has(fsl, k)) { ss_set(fsl, k); changed = true; }
+    }
+}
+static void set_free_slots(TNodeId Q, const SlotSet *fsl) {
+    Words fl; words_init(&fl);
+    for (size_t k = 0; k < MAXSLOT; k++) if (ss_has(fsl, k)) words_push(&fl, k);
+    TNSIDE(Q)->free_slots = interner_intern(&M.keys, fl.w, fl.n, NULL);
+    words_free(&fl);
+}
 
 typedef struct { FieldKind kind; BinderSlot bslot; ExprId e; } FS;
 typedef struct { Sort sort; FieldIndex domfield; size_t lslot; } BS;
@@ -437,7 +460,10 @@ static ExprId NODE(Tag tag, ExprId payload, ExprId levels, size_t nf, const FS *
     TNodeId Q = interner_intern(&M.tnodes, w.w, w.n, &created);
     words_free(&w);
     require(created, "duplicate template node");
-    /* free slots: fields, payload, levels, required, minus own binder locals */
+    /* free slots: fields, payload, levels, required, minus own binder
+     * locals, closed under the declared types / levels / signatures of the
+     * retained parameters (§51.1, §59.1): a retained parameter keeps its
+     * typed dependency closure */
     SlotSet fsl; memset(&fsl, 0, sizeof fsl);
     size_t np = cd->nparams;
     for (size_t k = 0; k < nf; k++) expr_free(fs[k].e, np, &fsl);
@@ -445,10 +471,8 @@ static ExprId NODE(Tag tag, ExprId payload, ExprId levels, size_t nf, const FS *
     if (levels) expr_free(levels, np, &fsl);
     expr_free(req, np, &fsl);
     for (size_t k = 0; k < nb; k++) ss_clear(&fsl, np + bs[k].lslot);
-    Words fl; words_init(&fl);
-    for (size_t k = 0; k < MAXSLOT; k++) if (ss_has(&fsl, k)) words_push(&fl, k);
-    TNSIDE(Q)->free_slots = interner_intern(&M.keys, fl.w, fl.n, NULL);
-    words_free(&fl);
+    decl_closure(&fsl);
+    set_free_slots(Q, &fsl);
     return x1(X_NODE, Q);
 }
 
@@ -496,6 +520,53 @@ static ExprId DSCOPE1(JFn body, JFn type, void *ctx, ExprId level, ExprId guard)
 }
 
 
+/* ---- contextual signatures of scope parameters (§51.4): a scope whose
+ * locals are the expected telescope, whose body is the expected result type,
+ * with the expected level and guard ---- */
+typedef struct { ExprId a, b, c, d, e, f, t; } Cx;
+static ExprId t_univ(ExprId j, void *c); static ExprId t_fam_at(ExprId j, void *c); static ExprId t_const(ExprId j, void *c);
+typedef ExprId (*J2Fn)(ExprId a, ExprId b, void *ctx);
+static ExprId SIG_DIM1(JFn result, void *ctx, ExprId level, ExprId guard) { return DSCOPE1(result, NULL, ctx, level, guard); }
+static ExprId SIG_FACE1(ExprId guard) {
+    size_t s = newlocal(PS_INTERVAL); LS ls[1] = { { S_DIM, 0, 0, 0 } }; size_t sl[1] = { s };
+    return SCOPE(1, ls, sl, FCT(), 0, 0, guard);
+}
+static ExprId SIG_DIM2(J2Fn result, void *ctx, ExprId level, ExprId guard) {
+    size_t i = newlocal(PS_INTERVAL), j = newlocal(PS_INTERVAL);
+    LS ls[2] = { { S_DIM, 0, 0, 0 }, { S_DIM, 0, 0, 0 } }; size_t sl[2] = { i, j };
+    return SCOPE(2, ls, sl, result(L(i), L(j), ctx), 0, level, guard);
+}
+/* [i, x : dom(i)]. result(i, x) */
+static ExprId SIG_DIM_TERM(JFn dom, ExprId domlevel, J2Fn result, void *ctx, ExprId level, ExprId guard) {
+    size_t i = newlocal(PS_INTERVAL), x = newlocal(PS_REF);
+    LS ls[2] = { { S_DIM, 0, 0, 0 }, { S_TERM, dom(L(i), ctx), domlevel, 0 } }; size_t sl[2] = { i, x };
+    return SCOPE(2, ls, sl, result(L(i), L(x), ctx), 0, level, guard);
+}
+/* [x : A, e : etype(x)]. result(x, e) */
+static ExprId SIG_TERM2(ExprId A, ExprId lA, JFn etype, ExprId elevel, J2Fn result, void *ctx, ExprId level, ExprId guard) {
+    size_t x = newlocal(PS_REF), e = newlocal(PS_REF);
+    LS ls[2] = { { S_TERM, A, lA, 0 }, { S_TERM, etype(L(x), ctx), elevel, 0 } }; size_t sl[2] = { x, e };
+    return SCOPE(2, ls, sl, result(L(x), L(e), ctx), 0, level, guard);
+}
+/* result-type recipes used by the signatures */
+static ExprId r_pi_at(ExprId i, void *c) { Cx *x = c; /* a=m b=n c=D d=E */ size_t xl = newlocal(PS_REF); return nPI(x->a, x->b, xl, AP1(x->c, i), AP2(x->d, i, L(xl))); }
+static ExprId r_sigma_at(ExprId i, void *c) { Cx *x = c; size_t xl = newlocal(PS_REF); return nSIGMA(x->a, x->b, xl, AP1(x->c, i), AP2(x->d, i, L(xl))); }
+static ExprId r_E_dom(ExprId i, void *c) { Cx *x = c; return AP1(x->c, i); }
+static ExprId r_univ2(ExprId i, ExprId x, void *c) { (void)i; (void)x; return nUNIV(((Cx *)c)->t); }
+static ExprId r_path_at(ExprId i, void *c) { Cx *x = c; /* a=n b=B c=left d=right */ size_t k = newlocal(PS_INTERVAL); return nPATH(x->a, k, AP2(x->b, i, L(k)), AP1(x->c, i), AP1(x->d, i)); }
+static ExprId r_B_at0(ExprId i, void *c) { return AP2(((Cx *)c)->b, i, IV0()); }
+static ExprId r_B_at1(ExprId i, void *c) { return AP2(((Cx *)c)->b, i, IV1()); }
+static ExprId r_glue_at(ExprId i, void *c) { Cx *x = c; /* a=n b=A c=alpha d=T e=e */ return nGLUE(x->a, AP1(x->b, i), AP1(x->c, i), AP1(x->d, i), AP1(x->e, i)); }
+static ExprId r_equiv_TA(ExprId i, void *c) { Cx *x = c; return CALL(TD_EQUIV, x->a, x->a, AP1(x->d, i), AP1(x->b, i)); }
+static ExprId r_guard_alpha(ExprId i, void *c) { return FCAND(KAPPA(), AP1(((Cx *)c)->c, i)); }
+static ExprId r_down_etype(ExprId xl, void *c) { Cx *x = c; /* a=lA b=A c=t */ return CALL(TD_PATHCONST, x->a, x->b, x->c, xl); }
+static ExprId r_down_res(ExprId xl, ExprId el, void *c) { (void)xl; (void)el; return nUNIV(((Cx *)c)->t); }
+/* a unary dimension scope signature whose guard depends on the local */
+static ExprId SIG_DIM1_G(JFn result, JFn guard, void *ctx, ExprId level) {
+    size_t s = newlocal(PS_INTERVAL); LS ls[1] = { { S_DIM, 0, 0, 0 } }; size_t sl[1] = { s };
+    return SCOPE(1, ls, sl, result(L(s), ctx), 0, level, guard(L(s), ctx));
+}
+
 static void begin(TDefKind k, const char *name, size_t n, const PSort *sorts) {
     cur = k; cd = &TPL.defs[k]; memset(cd, 0, sizeof *cd);
     cd->name = name; cd->nparams = n + 1; cd->sorts[0] = PS_FACE;
@@ -503,13 +574,25 @@ static void begin(TDefKind k, const char *name, size_t n, const PSort *sorts) {
     under_face = 0;
 }
 static void ptype(size_t k, ExprId type, ExprId level) { cd->ptype[k + 1] = type; cd->plevel[k + 1] = level; }
-static void finish(ExprId root) { cd->root = root; }
+static void psig(size_t k, ExprId sig) { cd->psig[k + 1] = sig; }
+static void rtype(ExprId type, ExprId level) { cd->rtype = type; cd->rlevel = level; }
+static void finish(ExprId root) {
+    cd->root = root;
+    size_t n; const uint64_t *w = xw(root, &n);
+    if (w[0] != X_NODE) return;
+    TNodeId Q = w[1]; cd->root_node = Q;
+    /* the root node also retains the dependencies of the declared result type */
+    SlotSet fsl; memset(&fsl, 0, sizeof fsl); node_free(Q, &fsl);
+    if (cd->rtype) expr_free(cd->rtype, cd->nparams, &fsl);
+    if (cd->rlevel) expr_free(cd->rlevel, cd->nparams, &fsl);
+    decl_closure(&fsl);
+    set_free_slots(Q, &fsl);
+}
 #define SORTS(...) ((const PSort[]){ __VA_ARGS__ })
 static ExprId guard_now(void) { return under_face ? FCAND(KAPPA(), under_face) : KAPPA(); }
 
 /* ---- §52 programs ---- */
 
-typedef struct { ExprId a, b, c, d, e, f, t; } Cx;
 static ExprId b_pappnot(ExprId i, void *c) { Cx *x = c; return CALL(TD_PAPPCONST, x->a, x->b, x->c, x->d, x->e, IVNOT(i)); }
 static ExprId b_concat(ExprId i, void *c) {
     Cx *x = c;   /* a=l b=A c=x d=y e=z (p, q in f? use two) */
@@ -541,6 +624,7 @@ static ExprId b_pi_Dneg(ExprId j, void *c) { Cx *x = c; return AP1(x->a, IVNOT(j
 static ExprId t_univ(ExprId j, void *c) { (void)j; return nUNIV(((Cx *)c)->t); }
 static ExprId b_empty(ExprId j, void *c) { (void)j; (void)c; return nSYSTEM(0, NULL, NULL); }
 static ExprId t_fam_at(ExprId j, void *c) { return AP1(((Cx *)c)->t, j); }
+static ExprId t_const(ExprId j, void *c) { (void)j; return ((Cx *)c)->t; }
 static ExprId t_fam_neg(ExprId j, void *c) { return AP1(((Cx *)c)->t, IVNOT(j)); }
 static ExprId b_pi_V(ExprId r, void *c) {
     Cx *x = c; /* a=m b=D c=x1 */
@@ -553,8 +637,8 @@ static ExprId b_pi_V(ExprId r, void *c) {
 static ExprId b_sig_fstu(ExprId i, void *c) { Cx *x = c; return nFST(AP1(x->a, i)); }
 static ExprId b_sig_Afill(ExprId r, void *c) {
     Cx *x = c; /* a=m b=D c=phi d=u e=cap */
-    Cx both = { x->d, 0, 0, 0, 0, 0, 0 };
-    ExprId fstu = DSCOPE1(b_sig_fstu, NULL, &both, x->a, FCAND(KAPPA(), x->c));
+    Cx both = { x->d, 0, 0, 0, 0, 0, x->b };
+    ExprId fstu = DSCOPE1(b_sig_fstu, t_fam_at, &both, x->a, FCAND(KAPPA(), x->c));
     return CALL(TD_FILL, x->a, x->b, x->c, fstu, nFST(x->e), r);
 }
 static ExprId b_glue_base(ExprId i, void *c) { Cx *x = c; /* a=n b=A c=alpha d=T e=e f=u */ return nUNGLUE(x->a, AP1(x->b, i), AP1(x->c, i), AP1(x->d, i), AP1(x->e, i), AP1(x->f, i)); }
@@ -565,7 +649,7 @@ static ExprId b_glue_omega(ExprId q, void *c) {
     size_t il = newlocal(PS_INTERVAL);
     ExprId i = L(il);
     ExprId faces[3] = { x->c, FCEND(q, 0), FCEND(q, 1) };
-    ExprId terms[3] = { AP1(x->d, i), nAPP(CALL(TD_EQUIVMAP, AP1(x->e, i)), AP1(x->f, i)), AP1(x->d, i) };
+    ExprId terms[3] = { AP1(x->d, i), nAPP(CALL(TD_EQUIVMAP, x->a, x->a, AP1(x->t, i), AP1(x->b, i), AP1(x->e, i)), AP1(x->f, i)), AP1(x->d, i) };
     extern ExprId glue_a0_expr;
     return nCOMP(x->a, il, AP1(x->b, i), FCOR(x->c, FCOR(faces[1], faces[2])), nSYSTEM(3, faces, terms), glue_a0_expr);
 }
@@ -591,51 +675,68 @@ static void register_library(void) {
     /* PathConst(l, A, lft, r) = PathP(j. A, lft, r) */
     begin(TD_PATHCONST, "PathConst", 4, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(3, P(1), P(0));
+    rtype(nUNIV(P(0)), LSUCC(P(0)));
     { size_t j = newlocal(PS_INTERVAL); finish(nPATH(P(0), j, P(1), P(2), P(3))); }
     /* Refl(l, A, a) = PLam(j. a) */
     begin(TD_REFL, "Refl", 3, SORTS(PS_LEVEL, PS_REF, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0));
+    rtype(CALL(TD_PATHCONST, P(0), P(1), P(2), P(2)), P(0));
     { size_t j = newlocal(PS_INTERVAL); finish(nPLAM(j, P(2))); }
     /* PAppConst(l, A, lft, r, p, s) */
     begin(TD_PAPPCONST, "PAppConst", 6, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF, PS_INTERVAL));
     ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(3, P(1), P(0)); ptype(4, CALL(TD_PATHCONST, P(0), P(1), P(2), P(3)), P(0));
+    rtype(P(1), P(0));
     { size_t j = newlocal(PS_INTERVAL); finish(nPAPP(P(0), j, P(1), P(2), P(3), P(4), P(5))); }
     /* Reverse(l, A, lft, r, p) = PLam(i. PAppConst(A,l,r,p,not i)) */
     begin(TD_REVERSE, "Reverse", 5, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(3, P(1), P(0)); ptype(4, CALL(TD_PATHCONST, P(0), P(1), P(2), P(3)), P(0));
+    rtype(CALL(TD_PATHCONST, P(0), P(1), P(3), P(2)), P(0));
     { size_t i = newlocal(PS_INTERVAL); Cx c = { P(0), P(1), P(2), P(3), P(4), 0 }; finish(nPLAM(i, b_pappnot(L(i), &c))); }
     /* Concat(l, A, x, y, z, p, q) */
     begin(TD_CONCAT, "Concat", 7, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF, PS_REF, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(3, P(1), P(0)); ptype(4, P(1), P(0));
     ptype(5, CALL(TD_PATHCONST, P(0), P(1), P(2), P(3)), P(0)); ptype(6, CALL(TD_PATHCONST, P(0), P(1), P(3), P(4)), P(0));
+    rtype(CALL(TD_PATHCONST, P(0), P(1), P(2), P(4)), P(0));
     { size_t i = newlocal(PS_INTERVAL); Cx c = { P(0), P(1), P(2), P(3), P(4), 0 }; finish(nPLAM(i, b_concat(L(i), &c))); }
     /* Fun(l, m, X, Y) = Pi(x:X. Y) */
     begin(TD_FUN, "Fun", 4, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF));
     ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1)));
+    rtype(nUNIV(LMAX(P(0), P(1))), LSUCC(LMAX(P(0), P(1))));
     { size_t x = newlocal(PS_REF); finish(nPI(P(0), P(1), x, P(2), P(3))); }
     /* Contr(l, X) = Sigma(c:X. Pi(x:X. PathConst(X,c,x))) */
     begin(TD_CONTR, "Contr", 2, SORTS(PS_LEVEL, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0)));
+    rtype(nUNIV(P(0)), LSUCC(P(0)));
     { size_t c = newlocal(PS_REF), x = newlocal(PS_REF); finish(nSIGMA(P(0), P(0), c, P(1), nPI(P(0), P(0), x, P(1), CALL(TD_PATHCONST, P(0), P(1), L(c), L(x))))); }
     /* Fib(l, m, X, Y, f, y) = Sigma(x:X. PathConst(Y, App(f,x), y)) */
     begin(TD_FIB, "Fib", 6, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF));
     ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1))); ptype(4, CALL(TD_FUN, P(0), P(1), P(2), P(3)), LMAX(P(0), P(1))); ptype(5, P(3), P(1));
+    rtype(nUNIV(LMAX(P(0), P(1))), LSUCC(LMAX(P(0), P(1))));
     { size_t x = newlocal(PS_REF); finish(nSIGMA(P(0), P(1), x, P(2), CALL(TD_PATHCONST, P(1), P(3), nAPP(P(4), L(x)), P(5)))); }
     /* Equiv(l, m, X, Y) = Sigma(f:Fun(X,Y). Pi(y:Y. Contr(Fib(X,Y,f,y)))) */
     begin(TD_EQUIV, "Equiv", 4, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF));
     ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1)));
+    rtype(nUNIV(LMAX(P(0), P(1))), LSUCC(LMAX(P(0), P(1))));
     { size_t f = newlocal(PS_REF), y = newlocal(PS_REF); ExprId mx = LMAX(P(0), P(1));
       finish(nSIGMA(mx, mx, f, CALL(TD_FUN, P(0), P(1), P(2), P(3)), nPI(P(1), mx, y, P(3), CALL(TD_CONTR, mx, CALL(TD_FIB, P(0), P(1), P(2), P(3), L(f), L(y)))))); }
     /* IdFun(l, X) = Lam(x:X. x) */
     begin(TD_IDFUN, "IdFun", 2, SORTS(PS_LEVEL, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0)));
+    rtype(CALL(TD_FUN, P(0), P(0), P(1), P(1)), P(0));
     { size_t x = newlocal(PS_REF); finish(nLAM(P(0), x, P(1), L(x))); }
-    /* EquivMap(e) = Fst(e) ; EquivContr(e, y) = App(Snd(e), y) */
-    begin(TD_EQUIVMAP, "EquivMap", 1, SORTS(PS_REF)); finish(nFST(P(0)));
-    begin(TD_EQUIVCONTR, "EquivContr", 2, SORTS(PS_REF, PS_REF)); finish(nAPP(nSND(P(0)), P(1)));
+    /* EquivMap(l, m, X, Y, e) = Fst(e) ; EquivContr(l, m, X, Y, e, y) = App(Snd(e), y) */
+    begin(TD_EQUIVMAP, "EquivMap", 5, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF, PS_REF));
+    ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1))); ptype(4, CALL(TD_EQUIV, P(0), P(1), P(2), P(3)), LMAX(P(0), P(1)));
+    rtype(CALL(TD_FUN, P(0), P(1), P(2), P(3)), LMAX(P(0), P(1)));
+    finish(nFST(P(4)));
+    begin(TD_EQUIVCONTR, "EquivContr", 6, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF));
+    ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1))); ptype(4, CALL(TD_EQUIV, P(0), P(1), P(2), P(3)), LMAX(P(0), P(1))); ptype(5, P(3), P(1));
+    rtype(CALL(TD_CONTR, LMAX(P(0), P(1)), CALL(TD_FIB, P(0), P(1), P(2), P(3), CALL(TD_EQUIVMAP, P(0), P(1), P(2), P(3), P(4)), P(5))), LMAX(P(0), P(1)));
+    finish(nAPP(nSND(P(4)), P(5)));
     /* IdEquiv(l, X) */
     begin(TD_IDEQUIV, "IdEquiv", 2, SORTS(PS_LEVEL, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0)));
+    rtype(CALL(TD_EQUIV, P(0), P(0), P(1), P(1)), P(0));
     { ExprId l = P(0), X = P(1);
       ExprId f = CALL(TD_IDFUN, l, X);
       size_t y = newlocal(PS_REF), w = newlocal(PS_REF), i = newlocal(PS_INTERVAL);
@@ -648,25 +749,33 @@ static void register_library(void) {
     /* Fill(l, A:[i]U_l, phi, u:[i]A<i> on phi, cap:A<0>, r) */
     begin(TD_FILL, "Fill", 6, SORTS(PS_LEVEL, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF, PS_INTERVAL));
     ptype(4, AP1(P(1), IV0()), P(0));
+    { Cx cu = { 0, 0, 0, 0, 0, 0, P(0) }, ca = { 0, 0, 0, 0, 0, 0, P(1) };
+      psig(1, SIG_DIM1(t_univ, &cu, LSUCC(P(0)), KAPPA())); psig(3, SIG_DIM1(t_fam_at, &ca, P(0), FCAND(KAPPA(), P(2))));
+      rtype(AP1(P(1), P(5)), P(0)); }
     { size_t j = newlocal(PS_INTERVAL); ExprId rj = IVAND(P(5), L(j)); ExprId r0 = FCEND(P(5), 0);
       ExprId faces[2] = { P(2), r0 }, terms[2] = { AP1(P(3), rj), P(4) };
       finish(nCOMP(P(0), j, AP1(P(1), rj), FCOR(P(2), r0), nSYSTEM(2, faces, terms), P(4))); }
     /* HComp(l, X, phi, u:[j]X on phi, cap) */
     begin(TD_HCOMP, "HComp", 5, SORTS(PS_LEVEL, PS_REF, PS_FACE, PS_SCOPE, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(4, P(1), P(0));
+    { Cx cx = { 0, 0, 0, 0, 0, 0, P(1) }; psig(3, SIG_DIM1(t_const, &cx, P(0), FCAND(KAPPA(), P(2)))); rtype(P(1), P(0)); }
     { size_t j = newlocal(PS_INTERVAL); finish(nCOMP(P(0), j, P(1), P(2), AP1(P(3), L(j)), P(4))); }
     /* Coe(l, A:[i]U_l, cap:A<0>) */
     begin(TD_COE, "Coe", 3, SORTS(PS_LEVEL, PS_SCOPE, PS_REF));
     ptype(2, AP1(P(1), IV0()), P(0));
+    { Cx cu = { 0, 0, 0, 0, 0, 0, P(0) }; psig(1, SIG_DIM1(t_univ, &cu, LSUCC(P(0)), KAPPA())); rtype(AP1(P(1), IV1()), P(0)); }
     { size_t i = newlocal(PS_INTERVAL); finish(nCOMP(P(0), i, AP1(P(1), L(i)), FCF(), nSYSTEM(0, NULL, NULL), P(2))); }
     /* ExtendContr(l, X, c, k, theta, v on theta) */
     begin(TD_EXTENDCONTR, "ExtendContr", 6, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_FACE, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(5, P(1), P(0));
-    { Cx c = { P(0), P(1), P(2), P(5), P(3), 0 };
-      ExprId tube = DSCOPE1(b_ext_tube, NULL, &c, P(0), FCAND(KAPPA(), P(4)));
+    { size_t xk = newlocal(PS_REF); ptype(3, nPI(P(0), P(0), xk, P(1), CALL(TD_PATHCONST, P(0), P(1), P(2), L(xk))), P(0)); }
+    rtype(P(1), P(0));
+    { Cx c = { P(0), P(1), P(2), P(5), P(3), 0, P(1) };
+      ExprId tube = DSCOPE1(b_ext_tube, t_const, &c, P(0), FCAND(KAPPA(), P(4)));
       finish(CALL(TD_HCOMP, P(0), P(1), P(4), tube, P(2))); }
     /* LineEquiv(l, X:[i]U_l) = Coe([i]. Equiv(X<0>, X<i>), IdEquiv(X<0>)) */
     begin(TD_LINEEQUIV, "LineEquiv", 2, SORTS(PS_LEVEL, PS_SCOPE));
+    { Cx cu = { 0, 0, 0, 0, 0, 0, P(0) }; psig(1, SIG_DIM1(t_univ, &cu, LSUCC(P(0)), KAPPA())); rtype(CALL(TD_EQUIV, P(0), P(0), AP1(P(1), IV0()), AP1(P(1), IV1())), P(0)); }
     { ExprId X0 = AP1(P(1), IV0()); Cx c = { P(0), X0, P(1), 0, 0, 0, 0 };
       c.t = P(0);
       ExprId fam = DSCOPE1(b_lineeq_fam, t_univ, &c, LSUCC(P(0)), guard_now());
@@ -674,11 +783,18 @@ static void register_library(void) {
     /* Ua(l, X, Y, e) */
     begin(TD_UA, "Ua", 4, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF));
     ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, CALL(TD_EQUIV, P(0), P(0), P(1), P(2)), P(0));
+    rtype(CALL(TD_PATHCONST, LSUCC(P(0)), nUNIV(P(0)), P(1), P(2)), LSUCC(P(0)));
     { size_t i = newlocal(PS_INTERVAL); Cx c = { P(0), P(1), P(2), P(3), 0, 0 }; finish(nPLAM(i, b_ua(L(i), &c))); }
 
     /* ---- §53 composition clauses ---- */
     /* PiComp(m, n, D:[i]U_m, E:[i,x:D<i>]U_n, phi, u:[i]Pi on phi, cap) */
     begin(TD_PICOMP, "PiComp", 7, SORTS(PS_LEVEL, PS_LEVEL, PS_SCOPE, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF));
+    { Cx sg = { P(0), P(1), P(2), P(3), 0, 0, P(0) }, sn = { 0, 0, P(2), 0, 0, 0, P(1) };
+      psig(2, SIG_DIM1(t_univ, &sg, LSUCC(P(0)), KAPPA()));
+      psig(3, SIG_DIM_TERM(r_E_dom, P(0), r_univ2, &sn, LSUCC(P(1)), KAPPA()));
+      psig(5, SIG_DIM1(r_pi_at, &sg, LMAX(P(0), P(1)), FCAND(KAPPA(), P(4))));
+      ptype(6, r_pi_at(IV0(), &sg), LMAX(P(0), P(1)));
+      rtype(r_pi_at(IV1(), &sg), LMAX(P(0), P(1))); }
     { ExprId m = P(0), n = P(1), D = P(2), E = P(3), phi = P(4), u = P(5), cap = P(6);
       size_t x1 = newlocal(PS_REF), i = newlocal(PS_INTERVAL);
       Cx c = { m, D, L(x1), 0, 0, 0, D };
@@ -687,6 +803,12 @@ static void register_library(void) {
       finish(nLAM(m, x1, AP1(D, IV1()), nCOMP(n, i, AP2(E, L(i), Vi), phi, nAPP(AP1(u, L(i)), Vi), nAPP(cap, V0)))); }
     /* SigmaComp(m, n, D, E, phi, u, cap) */
     begin(TD_SIGMACOMP, "SigmaComp", 7, SORTS(PS_LEVEL, PS_LEVEL, PS_SCOPE, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF));
+    { Cx sg = { P(0), P(1), P(2), P(3), 0, 0, P(0) }, sn = { 0, 0, P(2), 0, 0, 0, P(1) };
+      psig(2, SIG_DIM1(t_univ, &sg, LSUCC(P(0)), KAPPA()));
+      psig(3, SIG_DIM_TERM(r_E_dom, P(0), r_univ2, &sn, LSUCC(P(1)), KAPPA()));
+      psig(5, SIG_DIM1(r_sigma_at, &sg, LMAX(P(0), P(1)), FCAND(KAPPA(), P(4))));
+      ptype(6, r_sigma_at(IV0(), &sg), LMAX(P(0), P(1)));
+      rtype(r_sigma_at(IV1(), &sg), LMAX(P(0), P(1))); }
     { ExprId m = P(0), n = P(1), D = P(2), E = P(3), phi = P(4), u = P(5), cap = P(6);
       size_t i = newlocal(PS_INTERVAL), x1 = newlocal(PS_REF);
       Cx c = { m, D, phi, u, cap, 0, D };
@@ -696,6 +818,13 @@ static void register_library(void) {
       finish(nPAIR_AT(LMAX(m, n), Sg1, AP1(Afill, IV1()), second)); }
     /* PathComp(n, B:[i,j]U_n, left:[i]B<i,0>, right:[i]B<i,1>, phi, u, cap) */
     begin(TD_PATHCOMP, "PathComp", 7, SORTS(PS_LEVEL, PS_SCOPE, PS_SCOPE, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF));
+    { Cx sg = { P(0), P(1), P(2), P(3), 0, 0, P(0) };
+      psig(1, SIG_DIM2(r_univ2, &sg, LSUCC(P(0)), KAPPA()));
+      psig(2, SIG_DIM1(r_B_at0, &sg, P(0), KAPPA()));
+      psig(3, SIG_DIM1(r_B_at1, &sg, P(0), KAPPA()));
+      psig(5, SIG_DIM1(r_path_at, &sg, P(0), FCAND(KAPPA(), P(4))));
+      ptype(6, r_path_at(IV0(), &sg), P(0));
+      rtype(r_path_at(IV1(), &sg), P(0)); }
     { ExprId n = P(0), B = P(1), left = P(2), right = P(3), phi = P(4), u = P(5), cap = P(6);
       size_t j = newlocal(PS_INTERVAL), i = newlocal(PS_INTERVAL), k1 = newlocal(PS_INTERVAL), k2 = newlocal(PS_INTERVAL);
       ExprId faces[3] = { phi, FCEND(L(j), 0), FCEND(L(j), 1) };
@@ -704,6 +833,14 @@ static void register_library(void) {
       finish(nPLAM(j, nCOMP(n, i, AP2(B, L(i), L(j)), FCOR(phi, FCOR(faces[1], faces[2])), nSYSTEM(3, faces, terms), capj))); }
     /* GlueComp(n, A:[i]U_n, alpha:[i]Face, T:[i]U_n on alpha, e:[i]Equiv(T,A) on alpha, psi, u, cap) */
     begin(TD_GLUECOMP, "GlueComp", 8, SORTS(PS_LEVEL, PS_SCOPE, PS_SCOPE, PS_SCOPE, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF));
+    { Cx sg = { P(0), P(1), P(2), P(3), P(4), 0, P(0) };
+      psig(1, SIG_DIM1(t_univ, &sg, LSUCC(P(0)), KAPPA()));
+      psig(2, SIG_FACE1(KAPPA()));
+      psig(3, SIG_DIM1_G(t_univ, r_guard_alpha, &sg, LSUCC(P(0))));
+      psig(4, SIG_DIM1_G(r_equiv_TA, r_guard_alpha, &sg, P(0)));
+      psig(6, SIG_DIM1(r_glue_at, &sg, P(0), FCAND(KAPPA(), P(5))));
+      ptype(7, r_glue_at(IV0(), &sg), P(0));
+      rtype(r_glue_at(IV1(), &sg), P(0)); }
     { ExprId n = P(0), A = P(1), alpha = P(2), T = P(3), e = P(4), psi = P(5), u = P(6), cap = P(7);
       ExprId A0 = AP1(A, IV0()), A1 = AP1(A, IV1()), T0 = AP1(T, IV0()), T1 = AP1(T, IV1()), e0 = AP1(e, IV0()), e1 = AP1(e, IV1());
       ExprId alpha0 = AP1(alpha, IV0()), alpha1 = AP1(alpha, IV1()), u1 = AP1(u, IV1());
@@ -721,28 +858,29 @@ static void register_library(void) {
       ExprId Tfill = DSCOPE1(b_glue_Tfill, t_fam_at, &tf, n, guard_now());
       ExprId t1prime = AP1(Tfill, IV1());
       size_t q = newlocal(PS_INTERVAL);
-      Cx om = { n, A, psi, Afill, e, Tfill, 0 };
+      Cx om = { n, A, psi, Afill, e, Tfill, T };
       ExprId omega = nPLAM(q, b_glue_omega(L(q), &om));
       under_face = saved;
       /* under alpha1 */
       saved = under_face; under_face = alpha1;
-      ExprId f1 = CALL(TD_EQUIVMAP, e1);
+      ExprId f1 = CALL(TD_EQUIVMAP, n, n, T1, A1, e1);
       ExprId fibre = CALL(TD_FIB, n, n, T1, A1, f1, a1);
       ExprId pf[2] = { delta, psi };
       ExprId pt[2] = { nPAIR_AT(n, fibre, t1prime, omega), nPAIR_AT(n, fibre, u1, CALL(TD_REFL, n, A1, a1)) };
       ExprId partial = nSYSTEM(2, pf, pt);
-      ExprId contraction = CALL(TD_EQUIVCONTR, e1, a1);
+      ExprId contraction = CALL(TD_EQUIVCONTR, n, n, T1, A1, e1, a1);
       ExprId extension = CALL(TD_EXTENDCONTR, n, fibre, nFST(contraction), nSND(contraction), FCOR(delta, psi), partial);
       ExprId t1 = nFST(extension), p = nSND(extension);
       under_face = saved;
       glue_p_expr = p;
-      Cx rp = { n, A1, alpha1, psi, nAPP(f1, t1), a1, 0 };
-      ExprId repairTube = DSCOPE1(b_glue_repair, NULL, &rp, n, FCAND(KAPPA(), FCOR(alpha1, psi)));
+      Cx rp = { n, A1, alpha1, psi, nAPP(f1, t1), a1, A1 };
+      ExprId repairTube = DSCOPE1(b_glue_repair, t_const, &rp, n, FCAND(KAPPA(), FCOR(alpha1, psi)));
       ExprId repaired = CALL(TD_HCOMP, n, A1, FCOR(alpha1, psi), repairTube, a1);
       finish(nGLUEINTRO(n, A1, alpha1, T1, e1, t1, repaired)); }
     /* UniverseComp(l, phi, types:[i]U_l on phi, cap:U_l) */
     begin(TD_UNIVERSECOMP, "UniverseComp", 4, SORTS(PS_LEVEL, PS_FACE, PS_SCOPE, PS_REF));
     ptype(3, nUNIV(P(0)), LSUCC(P(0)));
+    { Cx cu = { 0, 0, 0, 0, 0, 0, P(0) }; psig(2, SIG_DIM1(t_univ, &cu, LSUCC(P(0)), FCAND(KAPPA(), P(1)))); rtype(nUNIV(P(0)), LSUCC(P(0))); }
     { ExprId l = P(0), phi = P(1), types = P(2), cap = P(3);
       ExprId saved = under_face; under_face = phi;
       Cx c = { types, 0, 0, 0, 0, 0, l };
@@ -752,6 +890,11 @@ static void register_library(void) {
       finish(nGLUE(l, cap, phi, AP1(types, IV1()), equivalence)); }
     /* Down(l, lA, A, t, D:[x:A, e:Path(A,t,x)]U_l, x, e, z) = Coe([i]. D<e@¬i, ⟨j⟩e@(¬i∧j)>, z) */
     begin(TD_DOWN, "Down", 8, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF, PS_SCOPE, PS_REF, PS_REF, PS_REF));
+    ptype(2, nUNIV(P(1)), LSUCC(P(1))); ptype(3, P(2), P(1)); ptype(5, P(2), P(1)); ptype(6, CALL(TD_PATHCONST, P(1), P(2), P(3), P(5)), P(1));
+    ptype(7, AP2(P(4), P(5), P(6)), P(0));
+    { Cx sd = { P(1), P(2), P(3), 0, 0, 0, P(0) };
+      psig(4, SIG_TERM2(P(2), P(1), r_down_etype, P(1), r_down_res, &sd, LSUCC(P(0)), KAPPA()));
+      rtype(AP2(P(4), P(3), CALL(TD_REFL, P(1), P(2), P(3))), P(0)); }
     { ExprId l = P(0), lA = P(1), A = P(2), t = P(3), D = P(4), x = P(5), e = P(6), z = P(7);
       Cx c = { lA, A, t, D, x, e, l };
       ExprId fam = DSCOPE1(b_down_fam, t_univ, &c, LSUCC(l), guard_now());

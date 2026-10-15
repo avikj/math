@@ -102,7 +102,7 @@ int main(void) {
           DimVarId i2 = declare_dim();
           RefId w = mk_plam(i2, mk_papp_const(0, A.X, A.lhs, A.rhs, A.alpha, iv_meet(iv_var(i2), iv_var(k))));
           RefId RLk = reindex(t->domain, sk);
-          RefId rk = mk_pair_at(RLk, A.mab, mk_pair_at(apply_term_binder(RLk, 0, 1, A.mab), mk_refl(0, A.X, A.mab), w));
+          RefId rk = mk_pair_at_lv(0, RLk, A.mab, mk_pair_at_lv(0, apply_term_binder(RLk, 0, 1, A.mab), mk_refl(0, A.X, A.mab), w));
           RefId callk = mk_transform_call(A.T, DIR_FORWARD, sk, rk);
           CtxDecl dk[1] = { { S_DIM, k, 0 } }; ContextId Gk = context_extend_dim(A.G, k); (void)dk;
           CHECK(check(Gk, fc_true(), callk, reindex(t->codomain, sk), &why) == CK_VALID, "a call whose boundary depends on k checks (%s)", why);
@@ -287,7 +287,7 @@ int main(void) {
         TermVarId vu = tv(mk_path_const(0, B, C, z)), vv = tv(mk_path_const(0, B, D, z));
         ContextId Gz = context_extend_term(context_extend_term(context_extend_term(G, vz, B), vu, term_var_type(vu)), vv, term_var_type(vv));
         RefId Cut = t->domain;
-        RefId w = mk_pair_at(Cut, z, mk_pair_at(apply_term_binder(Cut, 0, 1, z), ref_var(vu), ref_var(vv)));
+        RefId w = mk_pair_at_lv(0, Cut, z, mk_pair_at_lv(0, apply_term_binder(Cut, 0, 1, z), ref_var(vu), ref_var(vv)));
         RefId call = mk_transform_call(cut, DIR_FORWARD, map_identity(), w);
         CHECK(check(Gz, fc_true(), call, mk_path_const(0, B, C, D), &why) == CK_VALID, "CUT_TO_PATH(z,u,v) : C = D (%s)", why);
         WhnfStatus st; EvalResult *r = whnf(call, fc_true(), &st);
@@ -335,7 +335,7 @@ int main(void) {
     { TermVarId vB = tv(U0); RefId B = ref_var(vB);
       TermVarId vR = tv(mk_fun(0, 1, B, U0)); RefId R = ref_var(vR);
       TermVarId xb = tv(B);
-      RefId Kt = mk_pi(xb, B, mk_contr(0, mk_app(R, ref_var(xb))));
+      RefId Kt = mk_pi_lv(0, 0, xb, B, mk_contr(0, mk_app(R, ref_var(xb))));
       TermVarId vk = tv(Kt); RefId k = ref_var(vk);
       CtxDecl d[3] = { { S_TERM, vB, U0 }, { S_TERM, vR, term_var_type(vR) }, { S_TERM, vk, Kt } };
       ContextId G = context_make(3, d, fc_true());
@@ -396,6 +396,7 @@ int main(void) {
         MapId sigma = assoc_sigma(&A, A.rhs);
         RefId RL = reindex(t->domain, sigma);
         uint64_t ps[6] = { A.vX, A.vm, A.va, A.vb, A.vc, A.valpha };
+        check_open_environment();          /* publication admitted (froze) the environment: open a candidate one */
         SymbolId loop = define_global("loop_r", varset_make(ps, 6), dimset_make(NULL, 0), RL);
         set_global_body(loop, global_ref(loop));
         RefId call = mk_transform_call(A.T, DIR_FORWARD, sigma, global_ref(loop));
@@ -404,10 +405,10 @@ int main(void) {
         /* a transform whose output is its argument: the identity equivalence at a cyclic argument */
         TermVarId vX = tv(U0); RefId X = ref_var(vX);
         CtxDecl d[1] = { { S_TERM, vX, U0 } }; ContextId G = context_make(1, d, fc_true());
-        TransformId ideq = compile_equivalence(G, fc_true(), X, 0, X, 0, mk_id_equiv(0, X), &why);
         uint64_t px[1] = { vX };
         SymbolId loopx = define_global("loop_x", varset_make(px, 1), dimset_make(NULL, 0), X);
         set_global_body(loopx, global_ref(loopx));
+        TransformId ideq = compile_equivalence(G, fc_true(), X, 0, X, 0, mk_id_equiv(0, X), &why);
         RefId call2 = mk_transform_call(ideq, DIR_FORWARD, map_identity(), global_ref(loopx));
         CHECK(check(G, fc_true(), call2, X, &why) == CK_VALID, "the call at the cyclic argument is well typed (%s)", why);
         EvalNetEvents n0 = eval_net_events();

@@ -54,7 +54,14 @@ RefId tview_traverse(RefId t, const Trav *tv, unsigned depth);
  * by an environment. For a reference parameter the declared type; for a
  * scope parameter the expected telescope / result type / guard opened at
  * fresh locals keyed by `key`. */
-typedef struct { PSort sort; size_t slot; uint64_t level; RefId type; FaceId guard; } ParamSig;
-size_t tnode_signature(RefId t, ParamSig *out, size_t max);       /* the retained slots of t's node, with instantiated declared types (type 0 when none) */
+typedef struct { PSort sort; size_t slot; uint64_t level; RefId type; FaceId guard; ScopeId sig; } ParamSig;
+/* the retained parameter slots of t's node with their instantiated declared
+ * types (reference parameters) or contextual signatures (scope parameters:
+ * a scope whose locals are the expected telescope, whose body is the
+ * expected result type, whose level and guard are the expected ones) */
+size_t tnode_signature(RefId t, ParamSig *out, size_t max);
+/* the program's declared result type instantiated by t's environment, when
+ * t is the root node of its definition */
+bool tnode_result(RefId t, RefId *type, uint64_t *level);
 
 #endif

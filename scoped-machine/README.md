@@ -307,6 +307,27 @@ still takes them as premises and reports ill-typed demands it reaches as `R_INVA
   performs this inside its frame (§55: no additional administrative agents for the same
   call); a family without level annotations yields scopes without declared types, which the
   checker infers.
+- **Environments (§57 R1).** `check_admission` freezes the registered environment before
+  validating it; while frozen, `define_global` returns 0 and `set_global_body` returns false.
+  `check_open_environment()` opens a new candidate environment: a fresh checker session
+  (claims, admission verdict, diagnostics) and a reset evaluator (all observations retired;
+  workers and policies kept). An admission verdict is reused for its environment version
+  when settled, and an UNRESOLVED one only within the attempt that produced it
+  (`check_new_attempt`, or a changed budget, begins a new attempt; a top-level request's
+  budget is fixed when it enters).
+- **Levels are required (§59.1).** Every type position of admitted core syntax carries its
+  level: `LEVEL_NONE` at a Π/Σ/λ/Path/PApp/Glue/comp/annotated-pair position is INVALID in
+  inference and in checking, and the evaluator instantiates no composition clause for an
+  unannotated family. The unannotated constructors remain for raw construction only.
+- **Template boundary (§51.4).** A node's environment is closed under the declared types,
+  levels and scope signatures of its retained parameters (so `Refl(0,A,x)`, `Refl(0,B,x)` and
+  `Refl(1,A,x)` are three references), every library parameter is declared, and an instance
+  is validated at its boundary before its head: reference images against the instantiated
+  declared types, scope arguments against their contextual signatures (common fresh
+  telescope, declarations by conversion, expected guard ⊢ supplied guard, result type formed
+  at its level and converted, body under the supplied guard), and the inferred type against
+  the program's declared result type; checking forms (λ, pair, path λ, system) enter the same
+  boundary.
 - **Claims and admission (§57, §59.4).** The claim table has a session generation (a fresh
   `check_init` re-registers thread identities, `review-checker-lifecycle`: eight identical
   conversions after a restart), per-attempt UNRESOLVED outcomes that are retried by a later
@@ -349,7 +370,10 @@ annotation, …), every type position carrying its explicit universe level (§59
   `compile_cut` (`Cut(C,D) = Σ(z:B).Σ(u:C=z).(D=z)`, `(z,u,v) ↦ u·v⁻¹`, `h ↦ (D,h,refl D)`),
   `compile_contractible_fibre` (`(b,r) ↦ b`, `b ↦ (b, fst(k b))` from a checked `k`). All are
   fixed templates with a certificate recording their retained inputs.
-- **Invocation (§43, §59.3).** Publication builds one fixed call origin per orientation,
+- **Invocation (§43, §59.3).** Compiled records are interned by their structural key (the
+  environment version, schema and every certificate input; registry numbers are not key
+  fields), so identical requests, sequential or concurrent, obtain one record; diagrams are
+  interned by their declaration likewise. Publication builds one fixed call origin per orientation,
   `generic_call[id,dir] = TRANSFORM_CALL(id, dir, identity images of the parameter context,
   VAR(argument_slot), domain, codomain, required)`; a record becomes visible only after both
   exist. `mk_transform_call(id, dir, σ, a) = reindex(generic_call[id,dir], σ|Γ + slot ↦ a)`,

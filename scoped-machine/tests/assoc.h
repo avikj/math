@@ -56,13 +56,13 @@ static inline RefId assoc_left_arg(const Assoc *A, MapId sigma) {
     const CompiledTransform *t = transform_get(A->T);
     RefId RL = reindex(t->domain, sigma);                       /* Σ(u:X).Σ(s:m(a,b)=u).(m(u,c)=y) */
     RefId inner = apply_term_binder(RL, 0, 1, A->mab);
-    return mk_pair_at(RL, A->mab, mk_pair_at(inner, mk_refl(0, A->X, A->mab), A->alpha));
+    return mk_pair_at_lv(0, RL, A->mab, mk_pair_at_lv(0, inner, mk_refl(0, A->X, A->mab), A->alpha));
 }
 static inline RefId assoc_right_arg(const Assoc *A, MapId sigma) {
     const CompiledTransform *t = transform_get(A->T);
     RefId RR = reindex(t->codomain, sigma);                     /* Σ(v:X).Σ(t:m(b,c)=v).(m(a,v)=y) with y = rhs */
     RefId inner = apply_term_binder(RR, 0, 1, A->mbc);
-    return mk_pair_at(RR, A->mbc, mk_pair_at(inner, mk_refl(0, A->X, A->mbc), mk_refl(0, A->X, A->rhs)));
+    return mk_pair_at_lv(0, RR, A->mbc, mk_pair_at_lv(0, inner, mk_refl(0, A->X, A->mbc), mk_refl(0, A->X, A->rhs)));
 }
 
 #endif

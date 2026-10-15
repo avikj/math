@@ -869,7 +869,7 @@ void test_net(void) {
     RefId A = ref_var(declare_term(U, fc_true()));
     TermVarId x = declare_term(A, fc_true());
     RefId a = ref_var(declare_term(A, fc_true()));
-    RefId id = mk_lam(x, A, ref_var(x));
+    RefId id = mk_lam_lv(0, x, A, ref_var(x));
     NodeKind ok; Payload op, P = {0}, Q = {0};
 
     /* REINDEX_TERM */
@@ -902,7 +902,7 @@ void test_net(void) {
     TCHECK(run_op(&net, OP_USE_PARTIAL, P, D_PARTIAL, Q, &ok, &op) && ok == D_REF && op.ref == a, "USE_PARTIAL covered yields the term");
     /* support */
     RefId pth = ref_var(declare_term(mk_path_const(0, A, a, a), fc_true()));
-    RefId at_i = mk_papp(j, A, a, a, pth, iv_var(i));
+    RefId at_i = mk_papp_lv(0, j, A, a, a, pth, iv_var(i));
     P = (Payload){0}; Q = (Payload){0}; Q.ref = at_i;
     TCHECK(run_op(&net, OP_GET_SUPPORT, P, D_REF, Q, &ok, &op) && ok == D_DIMSET && dimset_contains(op.a, i) && !dimset_contains(op.a, j), "GET_SUPPORT");
 

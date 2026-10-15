@@ -176,6 +176,9 @@ static size_t g_ref(Canon *c, RefId t) {
     char full[512]; size_t sl;
     if (tag == T_GLOBAL) sl = (size_t)snprintf(full, sizeof full, "W %s:%s", tag_name(tag), ((Def *)chunked_at(&M.defs, origin_payload(o) - 1))->name);
     else sl = (size_t)snprintf(full, sizeof full, "W %s:%llu", tag_name(tag), (unsigned long long)origin_payload(o));
+    { uint64_t lv = origin_levels(o);        /* §59.1: the immutable level annotation is part of the record */
+      if (lv == LEVELS_NONE) sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=-");
+      else sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=%llu/%llu", (unsigned long long)levels_first(lv), (unsigned long long)levels_second(lv)); }
     size_t nb = origin_nbinders(o), nf = origin_nfields(o);
     for (size_t k = 0; k < nb && sl < 400; k++) { Binder b = origin_binder(o, (BinderSlot)k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " b%d/%u", (int)b.sort, b.domain_field == NO_FIELD ? 99999u : (unsigned)b.domain_field); }
     for (size_t k = 0; k < nf && sl < 400; k++) { Field f = origin_field(o, (FieldIndex)k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " f%d@%d", (int)f.kind, f.slot == NO_SLOT ? -1 : (int)f.slot); }

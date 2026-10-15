@@ -52,6 +52,7 @@ typedef enum { W_OK = 0, W_NO_OBSERVATION, W_INVALID, W_STUCK } WhnfStatus;
 
 void eval_init(void);
 void eval_free(void);
+void eval_reset(void);           /* retire all observations; keep workers and policies (new environment session) */
 
 /* Request the observation of t under chi; k receives the result. */
 void eval_request(RefId t, FaceId chi, Cont *k);

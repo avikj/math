@@ -34,13 +34,16 @@ static struct {
     VEC(CompiledTransform *) transforms;
     VEC(GraphPairTemplate *) pairs;
     VEC(Certificate *) certs;
-    pthread_mutex_t mu;
+    WordMap tindex;           /* §59.3: structural compiled-record key → transform id */
+    WordMap dindex;           /* structural diagram key → diagram id */
+    pthread_mutex_t mu; pthread_cond_t cv;
     bool init;
 } CR;
 
 void compiler_init(void) {
     memset(&CR, 0, sizeof CR);
-    pthread_mutex_init(&CR.mu, NULL);
+    pthread_mutex_init(&CR.mu, NULL); pthread_cond_init(&CR.cv, NULL);
+    wordmap_init(&CR.tindex); wordmap_init(&CR.dindex);
     CR.init = true;
 }
 void compiler_free(void) {
@@ -50,7 +53,8 @@ void compiler_free(void) {
     for (size_t k = 0; k < CR.pairs.len; k++) free(CR.pairs.data[k]);
     for (size_t k = 0; k < CR.certs.len; k++) free(CR.certs.data[k]);
     vec_free(&CR.diagrams); vec_free(&CR.transforms); vec_free(&CR.pairs); vec_free(&CR.certs);
-    pthread_mutex_destroy(&CR.mu);
+    wordmap_free(&CR.tindex); wordmap_free(&CR.dindex);
+    pthread_mutex_destroy(&CR.mu); pthread_cond_destroy(&CR.cv);
     memset(&CR, 0, sizeof CR);
 }
 static void ensure_init(void) { if (!CR.init) compiler_init(); }
@@ -83,17 +87,27 @@ static __attribute__((unused)) DimVarId cdim(uint64_t role, uint64_t a, uint64_t
 /* ------------------------------------------------------------------ */
 /* diagrams                                                              */
 
+/* diagrams are interned by their structural declaration: the same
+ * declaration (in the same environment) is one diagram */
 static DiagramId diagram_new(ContextId params, size_t n, const DiagNode *nodes, RefId B, RefId o, RefId Z, uint64_t lB, bool residual) {
     ensure_init();
+    Words w; words_init(&w);
+    words_push(&w, global_env_version()); words_push(&w, params); words_push(&w, n);
+    for (size_t k = 0; k < n; k++) { words_push(&w, nodes[k].node_id); words_push(&w, nodes[k].x); words_push(&w, nodes[k].e); words_push(&w, nodes[k].A); words_push(&w, nodes[k].level); words_push(&w, nodes[k].t); }
+    words_push(&w, B); words_push(&w, o); words_push(&w, Z); words_push(&w, lB); words_push(&w, residual);
+    pthread_mutex_lock(&CR.mu);
+    uint64_t have;
+    if (wordmap_get(&CR.dindex, w.w, w.n, &have)) { pthread_mutex_unlock(&CR.mu); words_free(&w); return (DiagramId)have; }
     Diagram *d = calloc(1, sizeof *d); require(d, "out of memory");
     d->params = params; d->n = n;
     d->nodes = calloc(n ? n : 1, sizeof(DiagNode)); require(d->nodes, "out of memory");
     if (n) memcpy(d->nodes, nodes, n * sizeof(DiagNode));
     d->B = B; d->o = o; d->Z = Z; d->lB = lB; d->residual = residual;
-    pthread_mutex_lock(&CR.mu);
     vec_push(&CR.diagrams, d);
     DiagramId id = CR.diagrams.len;
+    wordmap_put(&CR.dindex, w.w, w.n, id);
     pthread_mutex_unlock(&CR.mu);
+    words_free(&w);
     return id;
 }
 DiagramId diagram_declare(ContextId params, size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o) { return diagram_new(params, n, nodes, B, o, 0, lB, false); }
@@ -267,10 +281,17 @@ RefId diagram_expand(DiagramId id, TermVarId *q_slot) {
 /* ------------------------------------------------------------------ */
 /* publication                                                           */
 
-static uint64_t cert_publish(Certificate *c) {
-    Certificate *p = malloc(sizeof *p); require(p, "out of memory"); *p = *c;
-    pthread_mutex_lock(&CR.mu); vec_push(&CR.certs, p); uint64_t id = CR.certs.len; pthread_mutex_unlock(&CR.mu);
-    return id;
+/* the structural compiled-record key (§59.3): the environment, the schema,
+ * every certificate input and the derived record data; no registry numbers */
+static void record_key(const Certificate *c, const CompiledTransform *t, Words *w) {
+    words_init(w);
+    words_push(w, global_env_version()); words_push(w, c->kind);
+    words_push(w, c->decl.id); words_push(w, c->decl.parameters); words_push(w, c->decl.required_face); words_push(w, c->decl.result_type); words_push(w, c->decl.result_level);
+    words_push(w, c->decl.left); words_push(w, c->decl.right); words_push(w, c->decl.evidence);
+    words_push(w, c->params); words_push(w, c->req); words_push(w, c->X); words_push(w, c->Y); words_push(w, c->e); words_push(w, c->B); words_push(w, c->C); words_push(w, c->D); words_push(w, c->R); words_push(w, c->k);
+    words_push(w, c->lX); words_push(w, c->lY); words_push(w, c->lB); words_push(w, c->L); words_push(w, c->Rd);
+    words_push(w, t->parameters); words_push(w, t->required_face); words_push(w, t->domain); words_push(w, t->codomain); words_push(w, t->domain_level); words_push(w, t->codomain_level);
+    words_push(w, t->forward_argument_slot); words_push(w, t->reverse_argument_slot); words_push(w, t->forward_body); words_push(w, t->reverse_body); words_push(w, t->evidence_kind);
 }
 /* §59.3: the fixed call origin of one orientation over the parameters and
  * the argument slot; invocations are views of it */
@@ -290,13 +311,31 @@ static RefId build_generic_call(TransformId id, int dir, const CompiledTransform
 }
 /* a compiled record becomes visible only after both call bodies exist; the
  * whole-environment admission gate (§57 R1) guards publication */
-static TransformId transform_publish(CompiledTransform *t, const char **reason) {
+/* a compiled record becomes visible only after both call bodies exist; the
+ * whole-environment admission gate (§57 R1) guards publication; structurally
+ * identical requests (sequential or concurrent) obtain one record */
+static TransformId transform_publish(CompiledTransform *t, Certificate *c, const char **reason) {
     if (check_admission(reason) != CK_VALID) return 0;
+    Words key; record_key(c, t, &key);
+    pthread_mutex_lock(&CR.mu);
+    uint64_t have;
+    if (wordmap_get(&CR.tindex, key.w, key.n, &have)) {
+        /* another client claimed this key: wait for its publication */
+        while (!CR.transforms.data[have - 1]->generic_call[1]) pthread_cond_wait(&CR.cv, &CR.mu);
+        pthread_mutex_unlock(&CR.mu); words_free(&key);
+        return (TransformId)have;
+    }
+    Certificate *cp = malloc(sizeof *cp); require(cp, "out of memory"); *cp = *c;
+    vec_push(&CR.certs, cp);
     CompiledTransform *p = malloc(sizeof *p); require(p, "out of memory"); *p = *t;
+    p->certificate = CR.certs.len;
     p->generic_call[0] = p->generic_call[1] = 0;
-    pthread_mutex_lock(&CR.mu); vec_push(&CR.transforms, p); p->id = CR.transforms.len; pthread_mutex_unlock(&CR.mu);   /* id reserved; not yet visible */
+    vec_push(&CR.transforms, p); p->id = CR.transforms.len;       /* id reserved and key claimed; not yet visible */
+    wordmap_put(&CR.tindex, key.w, key.n, p->id);
+    pthread_mutex_unlock(&CR.mu);
+    words_free(&key);
     RefId g0 = build_generic_call(p->id, DIR_FORWARD, p), g1 = build_generic_call(p->id, DIR_REVERSE, p);
-    pthread_mutex_lock(&CR.mu); p->generic_call[0] = g0; p->generic_call[1] = g1; pthread_mutex_unlock(&CR.mu);
+    pthread_mutex_lock(&CR.mu); p->generic_call[0] = g0; p->generic_call[1] = g1; pthread_cond_broadcast(&CR.cv); pthread_mutex_unlock(&CR.mu);
     return p->id;
 }
 const CompiledTransform *transform_get(TransformId id) {
@@ -402,8 +441,7 @@ TransformId compile_identity(const IdentityDecl *d, const char **reason) {
     CompiledTransform t;
     if (derive_identity(d, &t, reason) != CK_VALID) return 0;
     Certificate c; memset(&c, 0, sizeof c); c.kind = EV_IDENTITY; c.decl = *d;
-    t.certificate = cert_publish(&c);
-    return transform_publish(&t, reason);
+    return transform_publish(&t, &c, reason);
 }
 
 /* ------------------------------------------------------------------ */
@@ -424,8 +462,8 @@ static CheckStatus derive_equivalence(ContextId params, FaceId req, RefId X, uin
     out->parameters = params; out->required_face = req;
     out->domain = X; out->codomain = Y;
     out->forward_argument_slot = a; out->reverse_argument_slot = b;
-    out->forward_body = mk_app(equiv_map(e), ref_var(a));
-    out->reverse_body = mk_fst(mk_fst(equiv_contr(e, ref_var(b))));
+    out->forward_body = mk_app(equiv_map(lX, lY, X, Y, e), ref_var(a));
+    out->reverse_body = mk_fst(mk_fst(equiv_contr(lX, lY, X, Y, e, ref_var(b))));
     out->evidence_kind = EV_EQUIVALENCE;
     { ContextId Ga = context_extend_term(params, a, X), Gb2 = context_extend_term(params, b, Y);
       st = check_context(Ga, reason); if (st != CK_VALID) return st;
@@ -439,8 +477,7 @@ TransformId compile_equivalence(ContextId params, FaceId req, RefId X, uint64_t 
     CompiledTransform t;
     if (derive_equivalence(params, req, X, lX, Y, lY, e, &t, reason) != CK_VALID) return 0;
     Certificate c; memset(&c, 0, sizeof c); c.kind = EV_EQUIVALENCE; c.params = params; c.req = req; c.X = X; c.Y = Y; c.lX = lX; c.lY = lY; c.e = e;
-    t.certificate = cert_publish(&c);
-    return transform_publish(&t, reason);
+    return transform_publish(&t, &c, reason);
 }
 
 static CheckStatus derive_residual(ContextId params, FaceId req, DiagramId L, DiagramId R, RefId e, CompiledTransform *out, const char **reason) {
@@ -462,9 +499,9 @@ static CheckStatus derive_residual(ContextId params, FaceId req, DiagramId L, Di
     out->forward_argument_slot = r; out->reverse_argument_slot = q;
     /* forward = d_R ∘ e.map ∘ c_L ; reverse = d_L ∘ e⁻¹ ∘ c_R with e⁻¹(b) = fst(fst((snd e) b)) */
     RefId zl = reindex1(cL, rL, ref_var(r));
-    out->forward_body = reindex1(dR, qR, mk_app(equiv_map(e), zl));
+    out->forward_body = reindex1(dR, qR, mk_app(equiv_map(DG(L)->lB, DG(R)->lB, ZL, ZR, e), zl));
     RefId zr = reindex1(cR, rR, ref_var(q));
-    out->reverse_body = reindex1(dL, qL, mk_fst(mk_fst(equiv_contr(e, zr))));
+    out->reverse_body = reindex1(dL, qL, mk_fst(mk_fst(equiv_contr(DG(L)->lB, DG(R)->lB, ZL, ZR, e, zr))));
     out->evidence_kind = EV_RESIDUAL_EQUIVALENCE;
     { ContextId Ga = context_extend_term(params, r, out->domain), Gb2 = context_extend_term(params, q, out->codomain);
       st = check_context(Ga, reason); if (st != CK_VALID) return st;
@@ -478,8 +515,7 @@ TransformId compile_residual_equivalence(ContextId params, FaceId req, DiagramId
     CompiledTransform t;
     if (derive_residual(params, req, L, R, e, &t, reason) != CK_VALID) return 0;
     Certificate c; memset(&c, 0, sizeof c); c.kind = EV_RESIDUAL_EQUIVALENCE; c.params = params; c.req = req; c.L = L; c.Rd = R; c.e = e;
-    t.certificate = cert_publish(&c);
-    return transform_publish(&t, reason);
+    return transform_publish(&t, &c, reason);
 }
 
 /* Cut(C,D) = Σ(z:B). Σ(u : C=z). (D=z) ; CUT_TO_PATH (z,u,v) ↦ u·v⁻¹ ; h ↦ (D, h, refl D) */
@@ -523,8 +559,7 @@ TransformId compile_cut(ContextId params, FaceId req, RefId B, uint64_t lB, RefI
     CompiledTransform t;
     if (derive_cut(params, req, B, lB, C, D, &t, reason) != CK_VALID) return 0;
     Certificate c; memset(&c, 0, sizeof c); c.kind = EV_CUT; c.params = params; c.req = req; c.B = B; c.lB = lB; c.C = C; c.D = D;
-    t.certificate = cert_publish(&c);
-    return transform_publish(&t, reason);
+    return transform_publish(&t, &c, reason);
 }
 
 /* COLLAPSE_FIBRE: Σ(b:B).R(b) → B, (b,r) ↦ b ; reverse b ↦ (b, fst(k b)) with k : Π(b:B).Contr(R b) */
@@ -561,8 +596,7 @@ TransformId compile_contractible_fibre(ContextId params, FaceId req, RefId B, ui
     CompiledTransform t;
     if (derive_contractible(params, req, B, lB, R, k, &t, reason) != CK_VALID) return 0;
     Certificate c; memset(&c, 0, sizeof c); c.kind = EV_CONTRACTIBLE_FIBRE; c.params = params; c.req = req; c.B = B; c.lB = lB; c.R = R; c.k = k;
-    t.certificate = cert_publish(&c);
-    return transform_publish(&t, reason);
+    return transform_publish(&t, &c, reason);
 }
 
 /* ------------------------------------------------------------------ */

@@ -32,7 +32,7 @@ int main(void) {
     TermVarId va = tv(A), vb = tv(A), vbB = tv(B), vf = tv(mk_fun(0, 0, A, A)), vg = tv(mk_fun(0, 0, A, B));
     RefId a = ref_var(va), b = ref_var(vb), bB = ref_var(vbB), f = ref_var(vf), g = ref_var(vg);
     TermVarId x = tv(A), y = tv(A);
-    RefId Sg = mk_sigma(x, A, B);
+    RefId Sg = mk_sigma_lv(0, 0, x, A, B);
     TermVarId vp = tv(Sg), vq = tv(mk_path_const(0, A, a, b));
     RefId p = ref_var(vp), q = ref_var(vq);
     DimVarId k = declare_dim(), m = declare_dim();
@@ -58,7 +58,7 @@ int main(void) {
     CHECK(I.st == CK_VALID && I.type == A, "variable lookup");
     I = infer(G, fc_true(), mk_fun(0, 0, A, B));
     CHECK(I.st == CK_VALID && I.type == U0, "A → B : U0");
-    I = infer(G, fc_true(), mk_pi(tv(U0), U0, U0));
+    I = infer(G, fc_true(), mk_pi_lv(1, 1, tv(U0), U0, U0));
     CHECK(I.st == CK_VALID && I.type == U1, "Π(X:U0).U0 : U1 (max of levels)");
     I = infer(G, fc_true(), mk_app(f, a));
     CHECK(I.st == CK_VALID && I.type == A, "f a : A");
@@ -71,33 +71,33 @@ int main(void) {
       CHECK(I.st == CK_INVALID, "unbound dependency is rejected (%s)", I.reason); }
 
     /* β and η */
-    RefId id = mk_lam(x, A, ref_var(x));
+    RefId id = mk_lam_lv(0, x, A, ref_var(x));
     CHECK(convert_term(G, fc_true(), mk_app(id, a), a, A) == CV_EQUAL, "β: (λx.x) a ≡ a");
-    CHECK(convert_term(G, fc_true(), f, mk_lam(y, A, mk_app(f, ref_var(y))), mk_fun(0, 0, A, A)) == CV_EQUAL, "Π η: f ≡ λy. f y");
+    CHECK(convert_term(G, fc_true(), f, mk_lam_lv(0, y, A, mk_app(f, ref_var(y))), mk_fun(0, 0, A, A)) == CV_EQUAL, "Π η: f ≡ λy. f y");
     CHECK(convert_term(G, fc_true(), p, mk_pair(mk_fst(p), mk_snd(p)), Sg) == CV_EQUAL, "Σ η: p ≡ (fst p, snd p)");
     { DimVarId i = declare_dim();
       CHECK(convert_term(G, fc_true(), q, mk_plam(i, mk_papp_const(0, A, a, b, q, iv_var(i))), mk_path_const(0, A, a, b)) == CV_EQUAL, "Path η: q ≡ ⟨i⟩ q@i"); }
     CHECK(convert_term(G, fc_true(), a, b, A) == CV_UNEQUAL, "distinct variables are unequal");
     CHECK(convert_term(G, fc_true(), mk_app(f, a), mk_app(f, b), A) == CV_UNEQUAL, "neutral spines with unequal arguments are unequal");
     CHECK(convert_type(G, fc_true(), A, B) == CV_UNEQUAL, "distinct type variables are unequal");
-    CHECK(convert_type(G, fc_true(), mk_fun(0, 0, A, A), mk_pi(y, A, A)) == CV_EQUAL, "products compare up to the bound variable");
+    CHECK(convert_type(G, fc_true(), mk_fun(0, 0, A, A), mk_pi_lv(0, 0, y, A, A)) == CV_EQUAL, "products compare up to the bound variable");
     /* Glue η at a non-collapsed Glue type */
     { TermVarId vT = tv(U0); RefId T = ref_var(vT);
       TermVarId ve = tv(mk_equiv(0, 0, T, A)); RefId e = ref_var(ve);
-      RefId Gl = mk_glue_type(A, fc_lit(m, 1), T, e);
+      RefId Gl = mk_glue_type_lv(0, A, fc_lit(m, 1), T, e);
       TermVarId vv = tv(Gl); RefId v = ref_var(vv);
       TermVarId more[] = { vA, vB, va, vb, vbB, vf, vg, vp, vq, vT, ve, vv };
       ContextId Gg = ctx_of(2, dims, 12, more, fc_true());
       CHECK(check_context(Gg, &why) == CK_VALID, "context with Glue data: %s", why);
       I = infer(Gg, fc_true(), Gl);
       CHECK(I.st == CK_VALID && I.type == U0, "Glue type formation: %s", I.reason);
-      RefId eta = mk_glue_intro(A, fc_lit(m, 1), T, e, v, mk_unglue(A, fc_lit(m, 1), T, e, v));
+      RefId eta = mk_glue_intro_lv(0, A, fc_lit(m, 1), T, e, v, mk_unglue_lv(0, A, fc_lit(m, 1), T, e, v));
       CHECK(check(Gg, fc_true(), eta, Gl, &why) == CK_VALID, "glue[α ↦ v](unglue v) : Glue (%s)", why);
       CHECK(convert_term(Gg, fc_true(), eta, v, Gl) == CV_EQUAL, "Glue η: glue[α ↦ v](unglue v) ≡ v");
       /* Glue map agreement: glue t a requires e.map(t) ≡ a on α */
-      RefId Gid = mk_glue_type(A, fc_lit(m, 1), A, mk_id_equiv(0, A));
-      CHECK(check(Gg, fc_true(), mk_glue_intro(A, fc_lit(m, 1), A, mk_id_equiv(0, A), a, a), Gid, &why) == CK_VALID, "glue a a with the identity equivalence (%s)", why);
-      CHECK(check(Gg, fc_true(), mk_glue_intro(A, fc_lit(m, 1), A, mk_id_equiv(0, A), b, a), Gid, &why) == CK_INVALID, "glue b a is rejected: id.map(b) ≢ a (%s)", why);
+      RefId Gid = mk_glue_type_lv(0, A, fc_lit(m, 1), A, mk_id_equiv(0, A));
+      CHECK(check(Gg, fc_true(), mk_glue_intro_lv(0, A, fc_lit(m, 1), A, mk_id_equiv(0, A), a, a), Gid, &why) == CK_VALID, "glue a a with the identity equivalence (%s)", why);
+      CHECK(check(Gg, fc_true(), mk_glue_intro_lv(0, A, fc_lit(m, 1), A, mk_id_equiv(0, A), b, a), Gid, &why) == CK_INVALID, "glue b a is rejected: id.map(b) ≢ a (%s)", why);
       /* the library's equivalence data checks */
       CHECK(check(Gg, fc_true(), mk_id_equiv(0, A), mk_equiv(0, 0, A, A), &why) == CK_VALID, "IdEquiv(A) : Equiv(A, A) (%s)", why);
       CHECK(check(Gg, fc_true(), mk_ua(0, A, A, mk_id_equiv(0, A)), mk_path_const(0, U0, A, A), &why) == CK_VALID, "ua(IdEquiv) : Path U0 A A (%s)", why);
@@ -107,8 +107,8 @@ int main(void) {
     CHECK(check(G, fc_true(), a, B, &why) == CK_INVALID, "a : B is rejected (%s)", why);
     CHECK(check(G, fc_true(), id, mk_fun(0, 0, A, B), &why) == CK_INVALID, "λx.x : A → B is rejected (%s)", why);
     CHECK(check(G, fc_true(), id, mk_fun(0, 0, A, A), &why) == CK_VALID, "λx.x : A → A (%s)", why);
-    CHECK(check(G, fc_true(), mk_pair(a, bB), mk_sigma(x, A, B), &why) == CK_VALID, "(a, b) : Σ(x:A).B (%s)", why);
-    CHECK(check(G, fc_true(), mk_pair(bB, a), mk_sigma(x, A, B), &why) == CK_INVALID, "(b, a) : Σ(x:A).B is rejected");
+    CHECK(check(G, fc_true(), mk_pair(a, bB), mk_sigma_lv(0, 0, x, A, B), &why) == CK_VALID, "(a, b) : Σ(x:A).B (%s)", why);
+    CHECK(check(G, fc_true(), mk_pair(bB, a), mk_sigma_lv(0, 0, x, A, B), &why) == CK_INVALID, "(b, a) : Σ(x:A).B is rejected");
 
     /* dependent substitution images */
     { TermVarId vx2 = tv(A);
@@ -132,10 +132,10 @@ int main(void) {
     /* composition: cap/tube agreement, result type */
     { DimVarId i = declare_dim();
       FaceId k0 = fc_lit(k, 0);
-      RefId good = mk_comp(i, A, k0, a, a);
+      RefId good = mk_comp_lv(0, i, A, k0, a, a);
       I = infer(G, fc_true(), good);
       CHECK(I.st == CK_VALID && I.type == A, "comp^i A [(k=0) ↦ a] a : A (%s)", I.reason);
-      RefId bad = mk_comp(i, A, k0, b, a);
+      RefId bad = mk_comp_lv(0, i, A, k0, b, a);
       I = infer(G, fc_true(), bad);
       CHECK(I.st == CK_INVALID, "tube at 0 ≢ cap is rejected (%s)", I.reason);
       RefId cpi = mk_coe_at(0, i, mk_fun(0, 0, A, B), g);
@@ -172,6 +172,14 @@ int main(void) {
       r = observe_checked(G, mk_app(f, bB), &st, &why);
       CHECK(st == W_INVALID && r == NULL, "observe_checked refuses an ill-typed occurrence: %s", why); }
 
+    /* the environment was admitted (frozen) by the checked observation:
+     * registration is refused until a new candidate environment is opened */
+    { uint64_t params[1] = { vA };
+      CHECK(define_global("afterfreeze", varset_make(params, 1), dimset_make(NULL, 0), A) == 0, "registration into the admitted environment fails closed");
+      check_open_environment();
+      SymbolId ok = define_global("afteropen", varset_make(params, 1), dimset_make(NULL, 0), A);
+      CHECK(ok != 0, "a new candidate environment accepts registrations"); }
+
     /* unresolved: cyclic computation */
     { SymbolId L = define_global("loopA", varset_make(NULL, 0), dimset_make(NULL, 0), A);
       /* loopA : A is declared over the empty parameter list; A is a free variable of the type, so declare it as a parameter */
@@ -194,7 +202,7 @@ int main(void) {
     /* signature: a declared symbol with a well-typed body, and one without */
     { uint64_t params[1] = { vA };
       SymbolId Kc = define_global("Kc", varset_make(params, 1), dimset_make(NULL, 0), mk_fun(0, 0, A, mk_fun(0, 0, A, A)));
-      set_global_body(Kc, mk_lam(x, A, mk_lam(y, A, ref_var(x))));
+      set_global_body(Kc, mk_lam_lv(0, x, A, mk_lam_lv(0, y, A, ref_var(x))));
       CheckStatus cs = check_signature(&why);
       CHECK(cs == CK_INVALID && strstr(why, "declared type") == NULL, "signature with loopA (type A over no parameters) is rejected: %s", why);
       I = infer(G, fc_true(), mk_app(mk_app(global_ref(Kc), a), b));
@@ -206,7 +214,7 @@ int main(void) {
       WhnfStatus st;
       TermVarId vz = tv(Sg), vT = tv(U0); RefId T = ref_var(vT);
       TermVarId ve = tv(mk_equiv(0, 0, T, A)); RefId e = ref_var(ve);
-      RefId Gl = mk_glue_type(A, fc_lit(m, 1), T, e);
+      RefId Gl = mk_glue_type_lv(0, A, fc_lit(m, 1), T, e);
       TermVarId vv = tv(Gl); RefId v = ref_var(vv);
       TermVarId vpa = tv(mk_path_const(0, A, a, a));
       TermVarId more[] = { vA, vB, va, vb, vbB, vf, vg, vp, vq, vz, vT, ve, vv, vpa };
@@ -245,12 +253,12 @@ int main(void) {
       I = infer(G, fc_true(), global_ref(bad));
       CHECK(I.st == CK_INVALID, "a symbol with an ill-typed body is rejected on use (%s)", I.reason);
       /* the same comparison at two convertible but distinct Π types */
-      RefId domA = mk_app(mk_lam(tv(U0), U0, A), U0);        /* (λ_.A) U0 ≡ A */
-      RefId AA2 = mk_pi(tv(domA), domA, A);
+      RefId domA = mk_app(mk_lam_lv(1, tv(U0), U0, A), U0);        /* (λ_.A) U0 ≡ A */
+      RefId AA2 = mk_pi_lv(0, 0, tv(domA), domA, A);
       CHECK(convert_term(G, fc_true(), f, g, mk_fun(0, 0, A, A)) == CV_UNEQUAL && convert_term(G, fc_true(), f, f, AA2) == CV_EQUAL, "fresh comparison variables are keyed by the expected type head too");
       /* lambda domain annotation must be a type even in checking mode */
-      RefId notatype = mk_app(mk_lam(tv(U0), U0, A), mk_fst(U0));
-      CHECK(check(G, fc_true(), mk_lam(tv(notatype), notatype, a), mk_fun(0, 0, A, A), &why) == CK_INVALID, "λ with an ill-formed domain annotation is rejected in check mode (%s)", why);
+      RefId notatype = mk_app(mk_lam_lv(1, tv(U0), U0, A), mk_fst(U0));
+      CHECK(check(G, fc_true(), mk_lam_lv(0, tv(notatype), notatype, a), mk_fun(0, 0, A, A), &why) == CK_INVALID, "λ with an ill-formed domain annotation is rejected in check mode (%s)", why);
       /* scope is validated even under the false face */
       TermVarId vu = tv(A);
       CHECK(check(G, fc_false(), ref_var(vu), A, &why) == CK_INVALID, "unbound variable under the false face is rejected (%s)", why);

@@ -66,6 +66,8 @@ CheckStatus check_signature(const char **reason);
  * once per version, and returns the environment's verdict; public checked
  * execution and compiler publication require VALID. */
 CheckStatus check_admission(const char **reason);
+/* open a new candidate environment after an admission: retires the checker session and every observation; registration is open again */
+void check_open_environment(void);
 
 /* the parameter context of an origin: its free dimensions, then its free
  * term variables in dependency order with their declared types; assumption

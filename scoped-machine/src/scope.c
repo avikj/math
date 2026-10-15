@@ -216,6 +216,16 @@ TypedPartial apply_scope(ScopeId S, size_t n, const Val *args) {
     return p;
 }
 
+/* the k-th local's declaration instantiated at the argument prefix args[0..k) */
+void scope_local_at(ScopeId S, size_t k, const Val *args, RefId *type, FaceId *req, uint64_t *level) {
+    LocalDecl d = scope_local(S, k);
+    ApplyCtx a = { k, args };
+    Trav tv = { apply_term, apply_dim, 0x200000000ULL + args_key(k, args), &a };
+    *type = d.type ? trav_ref(d.type, &tv, 0) : 0;
+    *req = trav_fc(d.required, &tv, 0);
+    *level = d.level;
+}
+
 typedef struct { MapId sigma; } ReCtx;
 static RefId re_term(uint64_t x, unsigned depth, void *c) { (void)depth; if (is_bound_id(x)) return 0; RefId im = map_term_image(((ReCtx *)c)->sigma, x); return im == ref_var(x) ? 0 : im; }
 static IntervalId re_dim(uint64_t i, unsigned depth, void *c) { (void)depth; if (is_bound_id(i)) return 0; IntervalId im = map_dim_image(((ReCtx *)c)->sigma, i); return im == iv_var(i) ? 0 : im; }
