@@ -35,6 +35,7 @@ void chunked_init(Chunked *c, size_t elem);
 void chunked_free(Chunked *c);
 void *chunked_at(Chunked *c, size_t i);           /* creates the chunk if needed (zeroed) */
 void *chunked_get(const Chunked *c, size_t i);    /* read-only: chunk must exist */
+void *chunked_peek(const Chunked *c, size_t i);   /* read-only: NULL when the chunk does not exist yet */
 
 typedef struct { uint64_t *w; size_t n; uint64_t hash; } Rec;
 

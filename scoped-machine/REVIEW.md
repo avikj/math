@@ -1,18 +1,24 @@
 # Reviewer guide
 
-This is a from-scratch C11 implementation of `HANDOFF.md` (*Scoped references and face
-sensitive cubical evaluation with interaction optimality*, 14 October 2026). The guide
+This is a from-scratch C11 implementation of §§1–38 of `HANDOFF.md` (*Scoped cubical
+interaction machine and identity compiler*, 14 October 2026; §§39–48 are the next
+increment). The guide
 says how to check it without trusting the implementer's summary.
 
 ## 1. Run
 
-    make test     # ASan/UBSan/LSan: checking (74), comparison (12), acceptance/law (124 + 23 net),
+    make test     # ASan/UBSan/LSan: checking (74), comparison (12), templates and admission (52),
+                  # the review's regression cases (4 modes), acceptance/law (124 + 23 net),
                   # 24-schedule comparison, concurrent clients (storms, pools); then the acceptance,
-                  # schedule and checking suites again with 4-thread pools
-    make tsan     # the same suites under ThreadSanitizer (several minutes)
+                  # schedule, checking and template suites again with 4-thread pools
+    make tsan     # every suite under ThreadSanitizer, including the review's concurrent case
+                  # with halt_on_error (several minutes)
 
-Expected: `74 passed, 0 failed`, `12 passed, 0 failed`, `124 passed, 0 failed`, `schedule check
-passed`, `concurrent check passed`, and `make tsan` ending with the same lines and no `WARNING`.
+Expected: `74 passed, 0 failed`, `12 passed, 0 failed`, `52 passed, 0 failed`, every
+`(expected …)` line of `review-regressions` matching its expectation, `124 passed, 0 failed`,
+`schedule check passed`, `concurrent check passed`, and `make tsan` ending with the same lines
+and no `WARNING`. Where LeakSanitizer cannot run (restricted `/proc`), `ASAN_OPTIONS=detect_leaks=0`
+keeps ASan/UBSan; leak checking was run here.
 
 ## 2. Where each spec section lives
 
@@ -95,22 +101,54 @@ on first use, λ-domain annotations are checked as types in check mode, scope is
 under the false face, the conversion cache key is the projected face over the
 declarations, and the required-face annotation is part of the exported graph.
 
-## 5. Open items for the spec author
+## 5. The review of 8bfd227: corrections made
 
-1. **Control deliveries.** A false-face or invalid-occurrence request is a DELIVER with no
-   REQUEST/PUB (§10 says the continuation receives `NO_OBSERVATION`; §26's four transitions
-   do not list it). It is deterministic per configuration; the author may want to name it
-   as an event class.
-2. **Recursive symbols.** While a symbol's body is validated, its recursive occurrences are
-   typed by the declaration (the signature is the assumption). §34's "no coinductive
-   assumption closes a circular typing proof" is read as applying to conversion and to
-   typing derivations of terms, not to checking a declared signature; confirm.
+| Finding | Correction | Where | Regression |
+| --- | --- | --- | --- |
+| R1 provisional recursive validation | Claims with provisional premises; commit only when the symbol's body is accepted; rejected premises withdraw dependents; mutual recursion commits as a component; top-level requests settle before returning | `check.c` `claim_*`, `resolve_locked`, `top_settled` | `review-regressions recursive`; `test_templates.c` (mutual recursion valid / invalid, 8-client storms from both ends) |
+| R2 memo key visible before value storage | `wordmap_get` reads the value chunk with an acquire load and reports a miss when it does not exist yet (`chunked_peek`) | `intern.c` | `review-regressions wordmap-window` |
+| R3 timing-dependent UNRESOLVED | One producer per request, all other clients wait and receive its outcome; wait cycles detected on the wait-for graph; a symbol on the cycle yields by assumption; only a cycle without a symbol is a cyclic request | `check.c` `claim_acquire`, `may_block_locked` | `review-regressions concurrent` (8 identical conversions: all EQUAL), also under TSan |
+| R4 per-invocation construction | Fixed templates: one origin per definition and shape, formals for term/interval arguments, invocation = `reindex(body, σ)`; pairs annotated with their Σ type | `lib.c`, `term.c` `mk_pair_at`, `check.c` PAIR synthesis | `test_templates.c`: specialize/instantiate commute and share one producer for refl, Path, papp (term and interval formals), reversal, concatenation, fib, ua, extend_contr (partial formal), fill (cap and interval formals), the Π/Σ/Path/U/Glue clauses (cap; tube where in place; renamed face); clause outputs still check |
+| R5 false-face map scope | Term images are scope-checked independently of the clause loop; only typing is vacuous on false | `check.c` `check_map` | `review-regressions` default mode |
+| R6 pointer-equality context compatibility | Declared type compatible with the recorded declaration by conversion under each clause; UNRESOLVED propagated | `check.c` `check_context` | `review-regressions` default mode |
+
+Two further corrections that the fix pass required: `check_map` checks a target
+declaration's image under `ψ ∧ φ_x[σ]` (a declaration partial on φ_x is only used under
+φ_x) instead of demanding `ψ ⊢ φ_x[σ]`, and `make_view` lets an image that is available on
+all of a partial formal's guard add no requirement to the view; both are what templates
+with partial tube formals need and both are the §33 reading of "the target's required face
+obligations".
+
+Q1 and Q2 are answered as the author stated: control outcomes stay in DELIVER
+(`NO_OBSERVATION` for a false face, `INVALID` for a failed occurrence guard; neither adds
+REQUEST or PUB), and recursive occurrences use their declared signatures while provisional
+successes stay uncommitted until the dependency checks succeed.
+
+### Open item: type parameters of templates
+
+The review prescribed `refl` as `PLAM(j, VAR(value))` over `type : U_ℓ`, `value : type`.
+Term formals are implemented exactly so; a *type* formal needs the universe level ℓ of the
+argument at invocation, because levels are exact (no cumulativity) and the instantiated view
+is checked by `check_map` against `U_ℓ`. The evaluator invokes the composition clauses with
+the exposed family head and has no ℓ: `COMP` carries no level annotation, and the level of a
+Π/Σ/Path/Glue head is not syntactic. So type and family arguments are the template's shape
+(one fixed origin per type instance, canonicalized over dimension formals), and the law
+`reindex(T(a), τ) = T(a[τ])` holds for τ on term and interval formals and for
+order-preserving renamings of the shape's dimensions, not for τ that changes a type
+argument. Full parametricity in types needs one of: (a) a universe-level annotation on
+`COMP` (and on the derived definitions' API), (b) the checker recording the inferred family
+level per `COMP` origin for the evaluator to read, which makes the clause output depend on
+whether admission ran, or (c) accepting the per-type-instance templates. The author should
+choose; (c) is implemented.
+
+### Open item: §39–48
+
+The identity compiler (§39–48) is the next, additive increment; it is not in this commit.
 
 ## 6. Representation choices a reviewer should know
 
 Listed in `README.md` under "Representation decisions". The two most likely to raise an
 eyebrow: a neutral result retains the original eliminator reference (as §12 says) rather
-than a rebuilt head around the evaluated scrutinee; and the composition clauses are C
-definitions building core terms with provenance-keyed fresh names rather than `GLOBAL`
-bodies, because a family parameter with a free dimension cannot be passed through a term
-variable in this representation.
+than a rebuilt head around the evaluated scrutinee (the review accepted this); and the
+composition clauses are fixed templates whose type/family/face arguments are shape data
+rather than formals, for the reason in §5 above.

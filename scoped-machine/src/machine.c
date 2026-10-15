@@ -1,4 +1,5 @@
 #include "state.h"
+#include "lib.h"
 
 Machine M;
 
@@ -28,6 +29,7 @@ void machine_init(void) {
 }
 
 void machine_free(void) {
+    lib_free();
     interner_free(&M.intervals);
     interner_free(&M.faces);
     interner_free(&M.dimsets);

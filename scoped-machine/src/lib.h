@@ -10,6 +10,11 @@
 
 #include "term.h"
 
+/* the fixed-template table lives for the machine's lifetime; machine_free
+ * releases it. */
+void lib_free(void);
+size_t lib_template_count(void);
+
 /* interval lines */
 IntervalId iv_line(IntervalId r, IntervalId s, DimVarId j);  /* (r∧¬j)∨(s∧j) */
 

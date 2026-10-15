@@ -105,6 +105,7 @@ DimVarId binder_dim_var(RefId owner, BinderSlot slot);
 typedef enum { KW_CONST = 0, KW_REF, KW_FACE, KW_INTERVAL, KW_DIM, KW_VAR } KeyKind;
 typedef struct { KeyKind kind; uint64_t v; } KeyWord;
 TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type);
+TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required);   /* a partial formal */
 DimVarId fresh_dim_keyed(const KeyWord *key, size_t n);
 /* provenance of a generated name: nominal id (0 for an input name) */
 uint64_t term_var_provenance(TermVarId x);
@@ -192,6 +193,7 @@ RefId mk_sigma(TermVarId x, RefId A, RefId B);
 RefId mk_lam(TermVarId x, RefId A, RefId body);
 RefId mk_app(RefId f, RefId a);
 RefId mk_pair(RefId a, RefId b);
+RefId mk_pair_at(RefId S, RefId a, RefId b);        /* PAIR with its Σ type annotation (field 2) */
 RefId mk_fst(RefId p);
 RefId mk_snd(RefId p);
 RefId mk_path(DimVarId j, RefId B_j, RefId l, RefId r);

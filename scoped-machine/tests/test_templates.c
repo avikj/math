@@ -1,0 +1,184 @@
+/* Fixed-template laws (§9, §14; review finding R4) and the admission
+ * transaction under concurrent clients (§34–§35; review findings R1, R3).
+ *
+ * For every derived definition T: instantiate-then-specialize equals
+ * specialize-then-instantiate as references,
+ *     reindex(T(a), τ) == T(a[τ])
+ * for τ acting on term formals, on interval formals, and (as an order-
+ * preserving renaming) on the dimensions of the shape; and two such
+ * invocations observed from a cold cache launch one producer. */
+#define _POSIX_C_SOURCE 200809L
+#include "../src/check.h"
+#include "../src/lib.h"
+#include <pthread.h>
+
+static int np = 0, nf = 0;
+#define CHECK(c, ...) do { if (c) np++; else { nf++; printf("  FAIL (%d): ", __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
+
+static TermVarId tv(RefId type) { return declare_term(type, fc_true()); }
+
+/* the two references must be identical and must share one evaluation */
+static void same_and_shared(RefId p, RefId q, const char *what) {
+    CHECK(p == q, "%s: specialize/instantiate commute (identical references)", what);
+    WhnfStatus s1, s2;
+    (void)whnf(p, fc_true(), &s1); eval_run();
+    EvalEvents e0 = eval_events();
+    (void)whnf(q, fc_true(), &s2); eval_run();
+    EvalEvents e1 = eval_events();
+    CHECK(e1.launch == e0.launch, "%s: the second observation launches no producer (%zu launched)", what, e1.launch - e0.launch);
+}
+
+/* ---- concurrent symbol validation ---- */
+static pthread_barrier_t gate;
+static ContextId sym_ctx; static RefId sym_ref[2]; static RefId sym_type;
+static CheckStatus sym_result[8];
+static void *sym_client(void *arg) {
+    size_t k = *(size_t *)arg;
+    pthread_barrier_wait(&gate);
+    const char *why;
+    sym_result[k] = check(sym_ctx, fc_true(), sym_ref[k % 2], sym_type, &why);
+    return NULL;
+}
+
+int main(void) {
+    printf("== fixed templates and the admission transaction\n");
+    machine_init(); eval_init(); check_init();
+    if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
+    const char *why = "";
+    RefId U0 = mk_universe(0);
+    TermVarId vA = tv(U0), vB = tv(U0); RefId A = ref_var(vA), B = ref_var(vB);
+    TermVarId vx = tv(A), vy = tv(A), vz = tv(A), va = tv(A), vb = tv(A), vc = tv(A);
+    RefId x = ref_var(vx), y = ref_var(vy), z = ref_var(vz), a = ref_var(va), b = ref_var(vb), c = ref_var(vc);
+    DimVarId i = declare_dim(), j = declare_dim(), k = declare_dim(), m = declare_dim();   /* i < j < k < m */
+
+    /* refl, path type, path application, reversal, concatenation: term formals */
+    same_and_shared(reindex1(mk_refl(A, x), vx, a), mk_refl(A, a), "refl");
+    same_and_shared(reindex1(mk_path_const(A, x, y), vx, a), mk_path_const(A, a, y), "Path");
+    TermVarId vp = tv(mk_path_const(A, x, y)), vq = tv(mk_path_const(A, y, z));
+    RefId p = ref_var(vp), q = ref_var(vq);
+    TermVarId vpa = tv(mk_path_const(A, a, y));
+    RefId pa = ref_var(vpa);
+    { MapBuilder mb; mapb_init(&mb); mapb_term(&mb, vx, a); mapb_term(&mb, vp, pa); MapId s = mapb_finish(&mb);
+      same_and_shared(reindex(mk_papp_const(A, x, y, p, iv_var(k)), s), mk_papp_const(A, a, y, pa, iv_var(k)), "papp (term formals)");
+      same_and_shared(reindex(mk_path_rev(A, x, y, p), s), mk_path_rev(A, a, y, pa), "reversal");
+      same_and_shared(reindex(mk_path_concat(A, x, y, z, p, q), s), mk_path_concat(A, a, y, z, pa, q), "concatenation"); }
+    /* interval formal: the application point */
+    same_and_shared(reindex_dim(mk_papp_const(A, x, y, p, iv_var(k)), k, iv_zero()), mk_papp_const(A, x, y, p, iv_zero()), "papp (interval formal)");
+    same_and_shared(reindex_dim(mk_papp_const(A, x, y, p, iv_var(k)), k, iv_meet(iv_var(j), iv_var(m))), mk_papp_const(A, x, y, p, iv_meet(iv_var(j), iv_var(m))), "papp (interval formal, compound)");
+
+    /* fibres, equivalences, ua: term formals */
+    TermVarId vf = tv(mk_fun(A, B)), vg = tv(mk_fun(A, B)); RefId f = ref_var(vf), g = ref_var(vg);
+    TermVarId vbb = tv(B); RefId bb = ref_var(vbb);
+    same_and_shared(reindex1(mk_fib(A, B, f, bb), vf, g), mk_fib(A, B, g, bb), "fib");
+    TermVarId ve = tv(mk_equiv(A, B)), ve2 = tv(mk_equiv(A, B)); RefId e = ref_var(ve), e2 = ref_var(ve2);
+    same_and_shared(reindex1(mk_ua(A, B, e), ve, e2), mk_ua(A, B, e2), "ua");
+    CHECK(mk_equiv(A, B) == mk_equiv(A, B) && mk_contr(A) == mk_contr(A) && mk_id_equiv(A) == mk_id_equiv(A), "shape-only templates are memoized");
+    { /* extend_contr: c, k, v formals; the guard is shape */
+      TermVarId vcc = tv(A), vk = tv(mk_pi(tv(A), A, mk_path_const(A, ref_var(vcc), a)));   /* k : Π(x:A). Path A c a — shape stands in for the real contraction type */
+      (void)vk;
+      TermVarId vcen = tv(A), vcen2 = tv(A);
+      TermVarId xk = tv(A);
+      RefId Kt = mk_pi(xk, A, mk_path_const(A, ref_var(vcen), ref_var(xk)));
+      TermVarId vkk = tv(Kt);
+      TermVarId vv = declare_term(A, fc_lit(k, 1)), vv2 = declare_term(A, fc_lit(k, 1));
+      RefId ext = mk_extend_contr(A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vv));
+      same_and_shared(reindex1(ext, vv, ref_var(vv2)), mk_extend_contr(A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vv2)), "extend_contr (partial formal)");
+      (void)vcen2; }
+
+    /* fill: cap formal and interval formal; the family and tube are shape */
+    { DimVarId r = declare_dim();
+      RefId tube = mk_system(0, NULL, NULL);
+      RefId F1 = mk_fill(i, A, fc_false(), tube, x, iv_var(r));
+      same_and_shared(reindex1(F1, vx, a), mk_fill(i, A, fc_false(), tube, a, iv_var(r)), "fill (cap formal)");
+      same_and_shared(reindex_dim(F1, r, iv_one()), mk_fill(i, A, fc_false(), tube, x, iv_one()), "fill (interval formal)"); }
+
+    /* dimension renaming of the shape (order preserving): a family in k renamed to m */
+    { RefId Pk = mk_path_const(A, x, y);                           /* constant family */
+      TermVarId vpk = tv(mk_path_const(A, a, b)); RefId pk = ref_var(vpk);
+      /* a path type whose endpoints depend on k through a path application */
+      RefId Ak = mk_path_const(A, mk_papp_const(A, a, b, pk, iv_var(k)), y);
+      RefId Am = reindex_dim(Ak, k, iv_var(m));
+      same_and_shared(reindex_dim(mk_refl(Ak, x), k, iv_var(m)), mk_refl(Am, x), "refl under a renaming of the shape's dimension");
+      (void)Pk; }
+
+    /* composition clauses: the opened dimension is the evaluator's */
+    { RefId AB = mk_fun(A, B);
+      TermVarId vu = declare_term(AB, fc_lit(k, 1)), vu2 = declare_term(AB, fc_lit(k, 1));
+      RefId ucl = comp_clause_pi(i, AB, fc_lit(k, 1), ref_var(vu), f);
+      same_and_shared(reindex1(ucl, vu, ref_var(vu2)), comp_clause_pi(i, AB, fc_lit(k, 1), ref_var(vu2), f), "Π clause (tube formal)");
+      same_and_shared(reindex1(ucl, vf, g), comp_clause_pi(i, AB, fc_lit(k, 1), ref_var(vu), g), "Π clause (cap formal)");
+      same_and_shared(reindex_dim(ucl, k, iv_var(m)), comp_clause_pi(i, AB, fc_lit(m, 1), reindex_dim(ref_var(vu), k, iv_var(m)), f), "Π clause (face renamed)");
+      TermVarId xs = tv(A); RefId Sg = mk_sigma(xs, A, B);
+      TermVarId vs = tv(Sg), vs2 = tv(Sg);
+      RefId scl = comp_clause_sigma(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs));
+      same_and_shared(reindex1(scl, vs, ref_var(vs2)), comp_clause_sigma(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs2)), "Σ clause (cap formal)");
+      RefId PT = mk_path_const(A, a, b);
+      TermVarId vpt = tv(PT), vpt2 = tv(PT), vput = declare_term(PT, fc_lit(k, 1));
+      RefId pcl = comp_clause_path(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt));
+      same_and_shared(reindex1(pcl, vpt, ref_var(vpt2)), comp_clause_path(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt2)), "Path clause (cap formal)");
+      RefId ucl2 = comp_clause_universe(i, U0, fc_false(), mk_system(0, NULL, NULL), A);
+      same_and_shared(reindex1(ucl2, vA, B), comp_clause_universe(i, U0, fc_false(), mk_system(0, NULL, NULL), B), "universe clause (cap formal)");
+      TermVarId vT = tv(U0); RefId T = ref_var(vT);
+      TermVarId veq = tv(mk_equiv(T, A));
+      RefId Gl = mk_glue_type(A, fc_lit(m, 1), T, ref_var(veq));
+      TermVarId vgl = tv(Gl), vgl2 = tv(Gl);
+      RefId gcl = comp_clause_glue(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl));
+      same_and_shared(reindex1(gcl, vgl, ref_var(vgl2)), comp_clause_glue(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl2)), "Glue clause (cap formal)"); }
+
+    /* the templates are typed: a clause output checks at the expected type
+     * (the formals' declared types are the clause's typing) */
+    { TermVarId vs = tv(mk_sigma(tv(A), A, B));
+      TermVarId ctxv[] = { vA, vB, va, vb, vc, vf, vs };
+      CtxDecl d[16]; size_t n = 0;
+      d[n++] = (CtxDecl){ S_DIM, i, 0 }; d[n++] = (CtxDecl){ S_DIM, k, 0 };
+      for (size_t q2 = 0; q2 < 7; q2++) d[n++] = (CtxDecl){ S_TERM, ctxv[q2], term_var_type(ctxv[q2]) };
+      ContextId G = context_make(n, d, fc_true());
+      WhnfStatus st; EvalResult *r = whnf(mk_coe(i, term_var_type(vs), ref_var(vs)), fc_true(), &st);
+      CHECK(st == W_OK && check(G, fc_true(), r->ref, term_var_type(vs), &why) == CK_VALID, "Σ clause output checks (%s)", why);
+      r = whnf(mk_coe(i, mk_fun(A, B), f), fc_true(), &st);
+      CHECK(st == W_OK && check(G, fc_true(), r->ref, mk_fun(A, B), &why) == CK_VALID, "Π clause output checks (%s)", why);
+      CHECK(check(G, fc_true(), mk_path_concat(A, a, b, c, mk_refl(A, a), mk_refl(A, b)), mk_path_const(A, a, c), &why) == CK_INVALID, "ill-typed concatenation is rejected");
+      CHECK(check(G, fc_true(), mk_path_concat(A, a, a, a, mk_refl(A, a), mk_refl(A, a)), mk_path_const(A, a, a), &why) == CK_VALID, "refl·refl : Path A a a (%s)", why); }
+
+    /* ---- admission transaction (R1/Q2): mutual recursion ---- */
+    { uint64_t ps[] = { vA }; VarSetId params = varset_make(ps, 1); DimSetId nod = dimset_make(NULL, 0);
+      CtxDecl d[1] = { { S_TERM, vA, U0 } }; ContextId GA = context_make(1, d, fc_true());
+      /* well-typed mutual recursion: f := g, g := f (no termination claim) */
+      SymbolId sf = define_global("mf", params, nod, A), sg = define_global("mg", params, nod, A);
+      set_global_body(sf, global_ref(sg)); set_global_body(sg, global_ref(sf));
+      CHECK(check(GA, fc_true(), global_ref(sf), A, &why) == CK_VALID, "well-typed mutual recursion is accepted (%s)", why);
+      CHECK(check(GA, fc_true(), global_ref(sg), A, &why) == CK_VALID, "and its partner (%s)", why);
+      /* ill-typed component: h := (k0, k0), k0 := h ; both rejected whichever is asked first */
+      SymbolId sh = define_global("mh", params, nod, A), sk = define_global("mk", params, nod, A);
+      set_global_body(sh, mk_pair(global_ref(sk), global_ref(sk))); set_global_body(sk, global_ref(sh));
+      CHECK(check(GA, fc_true(), global_ref(sk), A, &why) == CK_INVALID, "a dependent of a rejected body is rejected when asked first");
+      CHECK(check(GA, fc_true(), global_ref(sh), A, &why) == CK_INVALID, "the rejected body itself");
+      WhnfStatus ws; const char *r2 = "";
+      CHECK(observe_checked(GA, global_ref(sk), &ws, &r2) == NULL && ws == W_INVALID, "no checked observation through a rejected component");
+      /* concurrent clients validating a recursive component from both ends */
+      sym_ctx = GA; sym_type = A;
+      SymbolId s1 = define_global("mc1", params, nod, A), s2 = define_global("mc2", params, nod, A);
+      set_global_body(s1, global_ref(s2)); set_global_body(s2, global_ref(s1));
+      sym_ref[0] = global_ref(s1); sym_ref[1] = global_ref(s2);
+      pthread_t ts[8]; size_t ids[8];
+      pthread_barrier_init(&gate, NULL, 8);
+      for (size_t q2 = 0; q2 < 8; q2++) { ids[q2] = q2; pthread_create(&ts[q2], NULL, sym_client, &ids[q2]); }
+      for (size_t q2 = 0; q2 < 8; q2++) pthread_join(ts[q2], NULL);
+      bool all = true; for (size_t q2 = 0; q2 < 8; q2++) all = all && sym_result[q2] == CK_VALID;
+      CHECK(all, "eight concurrent clients agree on a mutually recursive component");
+      pthread_barrier_destroy(&gate);
+      /* the same storm on an ill-typed component */
+      SymbolId s3 = define_global("mc3", params, nod, A), s4 = define_global("mc4", params, nod, A);
+      set_global_body(s3, mk_pair(global_ref(s4), global_ref(s4))); set_global_body(s4, global_ref(s3));
+      sym_ref[0] = global_ref(s3); sym_ref[1] = global_ref(s4);
+      pthread_barrier_init(&gate, NULL, 8);
+      for (size_t q2 = 0; q2 < 8; q2++) { ids[q2] = q2; pthread_create(&ts[q2], NULL, sym_client, &ids[q2]); }
+      for (size_t q2 = 0; q2 < 8; q2++) pthread_join(ts[q2], NULL);
+      all = true; for (size_t q2 = 0; q2 < 8; q2++) all = all && sym_result[q2] == CK_INVALID;
+      CHECK(all, "eight concurrent clients all reject an ill-typed component");
+      pthread_barrier_destroy(&gate); }
+
+    printf("  %d passed, %d failed\n", np, nf);
+    check_free(); eval_free(); machine_free();
+    return nf ? 1 : 0;
+}

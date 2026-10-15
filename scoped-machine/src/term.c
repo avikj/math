@@ -344,7 +344,11 @@ RefId make_view(OriginId c, MapId sigma) {
             RefId im = map_term_image(m, xs[k]);
             fv = varset_union(fv, ref_freevars(im));
             sup = dimset_union(sup, ref_support(im));
-            req = fc_meet(req, ref_required(im));
+            /* a formal declared partial on phi_x is only used under phi_x
+             * inside the origin, so its image need only be available there:
+             * an image available on all of phi_x[m] adds no requirement */
+            FaceId guard = fc_reindex(TDECL(xs[k])->required, m);
+            if (!fc_entails(guard, ref_required(im))) req = fc_meet(req, ref_required(im));
         }
         const uint64_t *ds = dimset_get(fd, &n);
         Words d; words_init(&d);
@@ -416,19 +420,21 @@ DimVarId binder_dim_var(RefId owner, BinderSlot slot) {
     term_unlock();
     return r;
 }
-TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type) {
+TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required) {
     KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
     w[0].kind = KW_CONST; w[0].v = 2; memcpy(w + 1, key, n * sizeof(KeyWord));
     bool created;
     term_lock();
     uint64_t id = nominal_lookup(w, n + 1, &created);
     free(w);
-    if (created) { *NVAL(id) = declare_term(type, fc_true()); set_term_prov(*NVAL(id), id); }
-    else require(term_var_type((TermVarId)*NVAL(id)) == type, "keyed fresh variable reused at a different type");
+    if (created) { *NVAL(id) = declare_term(type, required); set_term_prov(*NVAL(id), id); }
+    else require(term_var_type((TermVarId)*NVAL(id)) == type && term_var_required((TermVarId)*NVAL(id)) == required,
+                 "keyed fresh variable reused at a different type or required face");
     TermVarId r = (TermVarId)*NVAL(id);
     term_unlock();
     return r;
 }
+TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type) { return fresh_term_keyed_req(key, n, type, fc_true()); }
 DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
     KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
     w[0].kind = KW_CONST; w[0].v = 3; memcpy(w + 1, key, n * sizeof(KeyWord));
@@ -684,6 +690,9 @@ RefId mk_sigma(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_SIG
 RefId mk_lam(TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, x, A, body); }
 RefId mk_app(RefId fn, RefId a) { Field f[2] = { { F_REF, NO_SLOT, fn }, { F_REF, NO_SLOT, a } }; return view0(T_APP, 0, f, 2, NULL, 0); }
 RefId mk_pair(RefId a, RefId b) { Field f[2] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b } }; return view0(T_PAIR, 0, f, 2, NULL, 0); }
+/* a pair annotated with its Σ type (§33: a checking-only form synthesizes
+ * from its stored annotation); the annotation is the third field */
+RefId mk_pair_at(RefId S, RefId a, RefId b) { Field f[3] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b }, { F_REF, NO_SLOT, S } }; return view0(T_PAIR, 0, f, 3, NULL, 0); }
 RefId mk_fst(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_FST, 0, f, 1, NULL, 0); }
 RefId mk_snd(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_SND, 0, f, 1, NULL, 0); }
 RefId mk_path(DimVarId j, RefId B_j, RefId l, RefId r) {

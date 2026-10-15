@@ -2,32 +2,66 @@
 #include "lib.h"
 
 /* ------------------------------------------------------------------ */
-/* state: memo tables and budget                                        */
-static WordMap sym_memo; static bool sym_memo_init;
+/* state: request claims, memo, budget                                  */
 
-typedef struct { int state; ContextId ctx; FaceId req; RefId type; const char *reason; } OriginRec;  /* state: 0 none, 1 running, 2 valid, 3 invalid */
+/* Every memoized checking request (context validity, typed map, origin
+ * validation, symbol validation, clause conversion) is a *claim*: one
+ * producer computes it, every other client waits for that producer's
+ * outcome, and the outcome is published once. A request already running on
+ * the same thread, or on a thread that is (transitively) waiting for this
+ * thread, is a genuine cycle in the demand graph: for conversion, origins,
+ * contexts and maps it yields no verdict (UNRESOLVED); for a symbol it means
+ * the recursive occurrence is typed by the declaration (§34).
+ *
+ * Verdicts obtained while some symbol's body validation is still running are
+ * *provisional* on those symbols: the claim records them, and it is committed
+ * only when every such symbol validates; if one is rejected (or reaches no
+ * verdict), the provisional claims are withdrawn and recomputed on demand.
+ * This is the admission transaction of §34 (Q2 of the review): declared
+ * signatures are assumptions while a body is checked, and no success that
+ * rests on them escapes before the bodies they belong to are accepted. */
+typedef struct {
+    int state;              /* 0 absent, 1 running, 2 done */
+    uint64_t owner;         /* producing thread while running */
+    uint64_t result;        /* nonzero verdict code when done */
+    const char *reason;
+    uint64_t aux[3];        /* origin: context, required face, type */
+    Words deps;             /* symbol claims this verdict is provisional on */
+    bool is_symbol;
+} Claim;
+
+typedef struct { size_t claim; Words deps; } Frame;
 
 static struct {
-    WordMap origin_idx;          /* OriginId → index+1 */
-    VEC(OriginRec) origins; pthread_mutex_t mu;
-    WordMap ctx_memo;            /* ContextId → 1 valid / 2 invalid */
-    WordMap map_memo;            /* (Delta,psi,sigma,Gamma,chi) → 1 / 2 */
-    WordMap conv_memo;           /* (mode,G,face,A,B,T) → 1 equal / 2 unequal / 3 running */
+    WordMap idx;            /* (kind, words...) → claim index + 1 */
+    VEC(Claim) recs;
+    pthread_mutex_t mu; pthread_cond_t cv;
+    VEC(uint64_t) wait_on;  /* per thread id: claim index + 1 the thread is blocked on (0 = none) */
+    VEC(uint8_t) assume;    /* per thread id: released from a wait on a symbol with "typed by the declaration" */
+    uint64_t ntids;
     size_t budget;
 } K;
 
+static __thread uint64_t tl_tid;
+static __thread VEC(Frame) tl_frames;
+static __thread Words tl_pending;        /* symbols a finished top-level verdict still rests on */
 static __thread size_t tl_steps, tl_depth;
 static const char *R_BUDGET = "budget exhausted";
 
+enum { CL_CTX = 1, CL_MAP, CL_ORIGIN, CL_SYMBOL, CL_CONV };
+typedef enum { ACQ_OWNER, ACQ_DONE, ACQ_CYCLE } Acq;
+
 void check_init(void) {
     memset(&K, 0, sizeof K);
-    wordmap_init(&K.origin_idx); wordmap_init(&K.ctx_memo); wordmap_init(&K.map_memo); wordmap_init(&K.conv_memo);
-    pthread_mutex_init(&K.mu, NULL);
+    wordmap_init(&K.idx);
+    pthread_mutex_init(&K.mu, NULL); pthread_cond_init(&K.cv, NULL);
+    vec_push(&K.wait_on, 0); vec_push(&K.assume, 0);
 }
 void check_free(void) {
-    if (sym_memo_init) { wordmap_free(&sym_memo); sym_memo_init = false; }
-    wordmap_free(&K.origin_idx); wordmap_free(&K.ctx_memo); wordmap_free(&K.map_memo); wordmap_free(&K.conv_memo);
-    vec_free(&K.origins); pthread_mutex_destroy(&K.mu);
+    for (size_t k = 0; k < K.recs.len; k++) words_free(&K.recs.data[k].deps);
+    vec_free(&K.recs); vec_free(&K.wait_on); vec_free(&K.assume);
+    wordmap_free(&K.idx);
+    pthread_mutex_destroy(&K.mu); pthread_cond_destroy(&K.cv);
     memset(&K, 0, sizeof K);
 }
 void check_set_budget(size_t steps) { K.budget = steps; }
@@ -35,8 +69,226 @@ const char *check_status_name(CheckStatus s) { return s == CK_VALID ? "VALID" : 
 const char *conv_status_name(ConvStatus s) { return s == CV_EQUAL ? "EQUAL" : s == CV_UNEQUAL ? "UNEQUAL" : "UNRESOLVED"; }
 
 static bool budget_ok(void) { tl_steps++; return K.budget == 0 || tl_steps <= K.budget; }
-#define ENTER() do { if (tl_depth++ == 0) tl_steps = 0; } while (0)
-#define LEAVE() do { tl_depth--; } while (0)
+
+/* thread identity, assigned on first use (under K.mu) */
+static uint64_t tid_locked(void) {
+    if (!tl_tid) { tl_tid = ++K.ntids; vec_push(&K.wait_on, 0); vec_push(&K.assume, 0); }
+    return tl_tid;
+}
+
+static size_t claim_index_locked(uint64_t kind, const uint64_t *w, size_t n) {
+    uint64_t key[8] = { kind }; memcpy(key + 1, w, n * sizeof(uint64_t));
+    uint64_t v;
+    if (wordmap_get(&K.idx, key, n + 1, &v)) return (size_t)v - 1;
+    Claim c; memset(&c, 0, sizeof c); words_init(&c.deps); c.is_symbol = kind == CL_SYMBOL;
+    vec_push(&K.recs, c);
+    wordmap_put(&K.idx, key, n + 1, K.recs.len);
+    return K.recs.len - 1;
+}
+
+static bool words_contains(const Words *w, uint64_t x) { for (size_t k = 0; k < w->n; k++) if (w->w[k] == x) return true; return false; }
+static void words_add(Words *w, uint64_t x) { if (!words_contains(w, x)) words_push(w, x); }
+static void words_remove(Words *w, uint64_t x) { size_t j = 0; for (size_t k = 0; k < w->n; k++) if (w->w[k] != x) w->w[j++] = w->w[k]; w->n = j; }
+
+/* Would blocking on a claim owned by `owner` close a wait cycle back to this
+ * thread? When it would, and some thread on the cycle is blocked on a
+ * *symbol* claim, that wait is the one to yield: the symbol's declaration
+ * becomes that thread's assumption (exactly what a single thread does when
+ * it meets its own running symbol), and the caller may block. Only a cycle
+ * with no symbol on it is a genuine cyclic request. */
+static bool wait_cycle_locked(uint64_t owner, uint64_t me, uint64_t *symbol_waiter) {
+    uint64_t cur = owner;
+    *symbol_waiter = 0;
+    for (uint64_t steps = 0; steps <= K.ntids; steps++) {
+        if (cur == me) return true;
+        uint64_t w = K.wait_on.data[cur];
+        if (!w) return false;
+        Claim *c = &K.recs.data[w - 1];
+        if (c->is_symbol && c->state == 1 && !*symbol_waiter) *symbol_waiter = cur;
+        if (c->state != 1) return false;
+        cur = c->owner;
+    }
+    return true;
+}
+/* decide how to treat a claim owned by another thread: true = block on it,
+ * false = it is a genuine cycle */
+static bool may_block_locked(uint64_t owner, uint64_t me) {
+    uint64_t sw;
+    if (!wait_cycle_locked(owner, me, &sw)) return true;
+    if (!sw) return false;
+    K.assume.data[sw] = 1;
+    pthread_cond_broadcast(&K.cv);
+    return true;
+}
+
+static void resolve_locked(void);
+static Frame *top_frame(void) { return tl_frames.len ? &tl_frames.data[tl_frames.len - 1] : NULL; }
+static void frame_push(size_t claim) { Frame f; f.claim = claim; words_init(&f.deps); vec_push(&tl_frames, f); }
+static void inherit_locked(const Words *deps) { Frame *f = top_frame(); if (f) for (size_t k = 0; k < deps->n; k++) words_add(&f->deps, deps->w[k]); }
+
+/* acquire claim `c`: ACQ_OWNER (this thread computes it, a frame is pushed),
+ * ACQ_DONE (verdict copied out, provisional premises inherited), or
+ * ACQ_CYCLE (the request is on this thread's own demand path). */
+static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64_t aux[3]) {
+    pthread_mutex_lock(&K.mu);
+    uint64_t me = tid_locked();
+    for (;;) {
+        Claim *r = &K.recs.data[c];
+        if (r->state == 2) {
+            /* a verdict provisional on symbols: a rejected premise withdraws
+             * it (recomputed now, by us); a premise another thread is still
+             * validating is waited for unless waiting would close a cycle
+             * (then the declaration is our assumption too) */
+            bool waited = false;
+            for (size_t k = 0; k < r->deps.n && !waited; k++) {
+                size_t d = r->deps.w[k];
+                Claim *dc = &K.recs.data[d];
+                if (dc->state == 2 && dc->result != 1) { resolve_locked(); waited = true; break; }
+                if (dc->state == 1 && dc->owner != me && may_block_locked(dc->owner, me)) {
+                    K.wait_on.data[me] = d + 1;
+                    pthread_cond_wait(&K.cv, &K.mu);
+                    K.wait_on.data[me] = 0;
+                    if (K.assume.data[me]) { K.assume.data[me] = 0; break; }   /* told to assume: inherit */
+                    waited = true;
+                }
+            }
+            if (waited) continue;
+            *result = r->result; if (reason) *reason = r->reason; if (aux) memcpy(aux, r->aux, sizeof r->aux);
+            inherit_locked(&r->deps);
+            pthread_mutex_unlock(&K.mu);
+            return ACQ_DONE;
+        }
+        if (r->state == 0) {
+            r->state = 1; r->owner = me;
+            frame_push(c);
+            pthread_mutex_unlock(&K.mu);
+            return ACQ_OWNER;
+        }
+        if (r->owner == me || !may_block_locked(r->owner, me)) { pthread_mutex_unlock(&K.mu); return ACQ_CYCLE; }
+        K.wait_on.data[me] = c + 1;
+        pthread_cond_wait(&K.cv, &K.mu);
+        K.wait_on.data[me] = 0;
+        if (K.assume.data[me]) { K.assume.data[me] = 0; pthread_mutex_unlock(&K.mu); return ACQ_CYCLE; }
+    }
+}
+
+/* Resolve provisional verdicts against the symbols they rest on:
+ *   - a premise rejected (or withdrawn and recomputed as rejected) withdraws
+ *     the dependent verdict, which is recomputed on demand;
+ *   - a committed premise is discharged;
+ *   - a set of accepted symbol verdicts resting only on each other (mutual
+ *     recursion validated from both ends) is committed together: it is the
+ *     greatest set of accepted symbols closed under their premises.
+ * Runs under K.mu after a symbol verdict is published. */
+static void resolve_locked(void) {
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (size_t c = 0; c < K.recs.len; c++) {
+            Claim *r = &K.recs.data[c];
+            if (r->state != 2 || r->deps.n == 0) continue;
+            for (size_t k = 0; k < r->deps.n; ) {
+                Claim *d = &K.recs.data[r->deps.w[k]];
+                if (d->state == 2 && d->result != 1) { r->state = 0; r->deps.n = 0; changed = true; break; }
+                if (d->state == 2 && d->result == 1 && d->deps.n == 0) { words_remove(&r->deps, r->deps.w[k]); changed = true; continue; }
+                k++;
+            }
+        }
+        /* mutually dependent accepted symbols */
+        bool *in = calloc(K.recs.len ? K.recs.len : 1, sizeof(bool));
+        size_t nin = 0;
+        for (size_t c = 0; c < K.recs.len; c++) { Claim *r = &K.recs.data[c]; if (r->is_symbol && r->state == 2 && r->result == 1 && r->deps.n) { in[c] = true; nin++; } }
+        bool shrink = true;
+        while (shrink && nin) {
+            shrink = false;
+            for (size_t c = 0; c < K.recs.len; c++) {
+                if (!in[c]) continue;
+                Claim *r = &K.recs.data[c];
+                for (size_t k = 0; k < r->deps.n; k++) {
+                    Claim *d = &K.recs.data[r->deps.w[k]];
+                    bool ok = in[r->deps.w[k]] || (d->state == 2 && d->result == 1 && d->deps.n == 0);
+                    if (!ok) { in[c] = false; nin--; shrink = true; break; }
+                }
+            }
+        }
+        for (size_t c = 0; c < K.recs.len; c++) if (in[c]) { K.recs.data[c].deps.n = 0; changed = true; }
+        free(in);
+    }
+}
+
+/* release the claim this thread owns at the top of its stack. result 0 = no
+ * verdict (the claim returns to absent); otherwise the verdict is published,
+ * provisional on the running symbols the computation relied on. */
+static void claim_release(size_t c, uint64_t result, const char *reason, const uint64_t aux[3]) {
+    pthread_mutex_lock(&K.mu);
+    Frame *f = top_frame();
+    require(f && f->claim == c, "claim release out of order");
+    Words deps = f->deps; tl_frames.len--;
+    Claim *r = &K.recs.data[c];
+    if (r->is_symbol) words_remove(&deps, c);        /* self-recursion is closed by this verdict */
+    if (result == 0) {
+        r->state = 0;
+    } else {
+        r->state = 2; r->result = result; r->reason = reason;
+        if (aux) memcpy(r->aux, aux, sizeof r->aux); else memset(r->aux, 0, sizeof r->aux);
+        r->deps.n = 0; words_append(&r->deps, deps.w, deps.n);
+    }
+    if (r->is_symbol) resolve_locked();
+    inherit_locked(&deps);
+    words_free(&deps);
+    pthread_cond_broadcast(&K.cv);
+    pthread_mutex_unlock(&K.mu);
+}
+
+/* a recursive occurrence of a running symbol: typed by its declaration,
+ * provisionally on that symbol's validation */
+static void assume_symbol(size_t c) {
+    pthread_mutex_lock(&K.mu);
+    Frame *f = top_frame();
+    if (f) words_add(&f->deps, c);
+    pthread_mutex_unlock(&K.mu);
+}
+
+/* Top-level requests run in a root frame. A root frame may end with
+ * provisional premises only when a symbol validated on another thread was
+ * taken as an assumption to break a wait cycle; the verdict is then not
+ * final: top_settled waits for those validations and asks the caller to
+ * recompute (the recomputation finds committed or withdrawn claims). */
+static void top_enter(void) { if (tl_depth++ == 0) { tl_steps = 0; frame_push(0); } }
+static void top_leave(void) {
+    if (--tl_depth == 0) {
+        Frame *f = top_frame(); require(f && f->claim == 0, "root frame mismatch");
+        tl_pending.n = 0; words_append(&tl_pending, f->deps.w, f->deps.n);
+        words_free(&f->deps); tl_frames.len--;
+        if (tl_frames.len == 0) vec_free(&tl_frames);   /* thread-local storage is released at the outermost exit */
+    }
+}
+static bool top_settled(void) {
+    if (tl_depth > 0) return true;
+    if (tl_pending.n == 0) { words_free(&tl_pending); return true; }
+    pthread_mutex_lock(&K.mu);
+    uint64_t me = tid_locked();
+    for (size_t k = 0; k < tl_pending.n; k++) {
+        size_t d = tl_pending.w[k];
+        while (K.recs.data[d].state == 1 && K.recs.data[d].owner != me) {
+            K.wait_on.data[me] = d + 1;
+            pthread_cond_wait(&K.cv, &K.mu);
+            K.wait_on.data[me] = 0;
+            K.assume.data[me] = 0;
+        }
+    }
+    resolve_locked();
+    pthread_mutex_unlock(&K.mu);
+    words_free(&tl_pending);
+    return false;
+}
+#define ENTER() top_enter()
+#define LEAVE() top_leave()
+
+static uint64_t ck_code(CheckStatus s) { return s == CK_VALID ? 1 : s == CK_INVALID ? 2 : 0; }
+static CheckStatus ck_of(uint64_t v) { return v == 1 ? CK_VALID : CK_INVALID; }
+static uint64_t cv_code(ConvStatus s) { return s == CV_EQUAL ? 1 : s == CV_UNEQUAL ? 2 : 0; }
+static ConvStatus cv_of(uint64_t v) { return v == 1 ? CV_EQUAL : CV_UNEQUAL; }
 
 /* ------------------------------------------------------------------ */
 /* faces: clauses and clause substitution                               */
@@ -158,9 +410,13 @@ ContextId origin_context(OriginId C) {
 }
 
 CheckStatus check_context(ContextId G, const char **reason) {
-    uint64_t key[1] = { G }, v;
-    if (wordmap_get(&K.ctx_memo, key, 1, &v)) { if (v == 1) return CK_VALID; *reason = "context previously found invalid"; return CK_INVALID; }
+  for (;;) {
+    uint64_t key[1] = { G }, v; const char *why = NULL;
+    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_CTX, key, 1); pthread_mutex_unlock(&K.mu);
     ENTER();
+    Acq a = claim_acquire(cl, &v, &why, NULL);
+    if (a == ACQ_DONE) { LEAVE(); if (v != 1) *reason = why; if (top_settled()) return ck_of(v); continue; }
+    if (a == ACQ_CYCLE) { LEAVE(); (void)top_settled(); *reason = "unresolved: context validation depends on itself"; return CK_UNRESOLVED; }
     CheckStatus st = CK_VALID;
     size_t n = context_size(G);
     FaceId assumption = context_assumption(G);
@@ -177,7 +433,9 @@ CheckStatus check_context(ContextId G, const char **reason) {
         for (size_t q = 0; q < m; q++) if (!dimset_contains(all, fd[q])) { *reason = "assumption mentions an undeclared dimension"; st = CK_INVALID; }
     }
     /* 2. each term declaration's type and required face use only the prefix;
-     * the type is a type under the assumption projected to the prefix dims */
+     * the type is a type under the assumption projected to the prefix dims,
+     * and it is compatible (convertible under each clause) with the
+     * variable's recorded declaration (§2, §33 item 3) */
     for (size_t k = 0; k < n && st == CK_VALID; k++) {
         CtxDecl d = context_decl(G, k);
         if (d.sort != S_TERM) continue;
@@ -188,21 +446,34 @@ CheckStatus check_context(ContextId G, const char **reason) {
         FaceId proj = fc_project(assumption, dimset_get(pds, &npd), npd);
         ContextId P = context_make(k, prefix, proj);
         free(prefix); free(pd);
-        size_t m; const uint64_t *fv = varset_get(ref_freevars(d.type), &m);
-        for (size_t q = 0; q < m && st == CK_VALID; q++) if (!context_declares_term(P, fv[q], NULL)) { *reason = "declaration type mentions a variable not declared earlier"; st = CK_INVALID; }
-        if (st == CK_VALID && !dims_declared(P, ref_support(d.type))) { *reason = "declaration type mentions a dimension not declared earlier"; st = CK_INVALID; }
+        RefId decl = term_var_type(d.id);
+        RefId both[2] = { d.type, decl };
+        for (int w = 0; w < 2 && st == CK_VALID; w++) {
+            size_t m; const uint64_t *fv = varset_get(ref_freevars(both[w]), &m);
+            for (size_t q = 0; q < m && st == CK_VALID; q++) if (!context_declares_term(P, fv[q], NULL)) { *reason = "declaration type mentions a variable not declared earlier"; st = CK_INVALID; }
+            if (st == CK_VALID && !dims_declared(P, ref_support(both[w]))) { *reason = "declaration type mentions a dimension not declared earlier"; st = CK_INVALID; }
+        }
         if (st == CK_VALID && !dims_declared(P, face_dims(term_var_required(d.id)))) { *reason = "declaration's required face mentions a dimension not declared earlier"; st = CK_INVALID; }
-        if (st == CK_VALID && d.type != term_var_type(d.id)) { *reason = "declared type differs from the variable's declaration"; st = CK_INVALID; }
         if (st == CK_VALID) {
             FaceId *cs; size_t nc = clauses_of(proj, &cs);
-            for (size_t c = 0; c < nc && st == CK_VALID; c++) { uint64_t l; st = level_of(P, cs[c], d.type, &l, reason); }
+            for (size_t c = 0; c < nc && st == CK_VALID; c++) {
+                uint64_t l; st = level_of(P, cs[c], d.type, &l, reason);
+                if (st == CK_VALID && decl != d.type) {
+                    st = level_of(P, cs[c], decl, &l, reason);
+                    if (st != CK_VALID) break;
+                    ConvStatus cv = conv_type_clause(P, cs[c], d.type, decl);
+                    if (cv == CV_UNEQUAL) { *reason = "declared type is not convertible to the variable's declaration"; st = CK_INVALID; }
+                    else if (cv == CV_UNRESOLVED) { *reason = "unresolved: declaration type compatibility"; st = CK_UNRESOLVED; }
+                }
+            }
             free(cs);
         }
     }
     free(dims);
-    if (st != CK_UNRESOLVED) wordmap_put(&K.ctx_memo, key, 1, st == CK_VALID ? 1 : 2);
+    claim_release(cl, ck_code(st), *reason, NULL);
     LEAVE();
-    return st;
+    if (top_settled()) return st;
+  }
 }
 
 /* the judgment Γ;χ: the context carries χ as its assumption, so that
@@ -223,10 +494,14 @@ static ContextId extend_dim(ContextId G, DimVarId j) { return context_extend_dim
 /* typed maps and origins (substitution lemma)                          */
 
 CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma, FaceId chi, const char **reason) {
-    Delta = under(Delta, psi); Gamma = under(Gamma, chi);
-    uint64_t key[5] = { Delta, psi, sigma, Gamma, chi }, v;
-    if (wordmap_get(&K.map_memo, key, 5, &v)) { if (v == 1) return CK_VALID; *reason = "map previously found invalid"; return CK_INVALID; }
+  Delta = under(Delta, psi); Gamma = under(Gamma, chi);
+  for (;;) {
+    uint64_t key[5] = { Delta, psi, sigma, Gamma, chi }, v; const char *why = NULL;
+    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_MAP, key, 5); pthread_mutex_unlock(&K.mu);
     ENTER();
+    Acq a = claim_acquire(cl, &v, &why, NULL);
+    if (a == ACQ_DONE) { LEAVE(); if (v != 1) *reason = why; if (top_settled()) return ck_of(v); continue; }
+    if (a == ACQ_CYCLE) { LEAVE(); (void)top_settled(); *reason = "unresolved: map validation depends on itself"; return CK_UNRESOLVED; }
     CheckStatus st = check_context(Gamma, reason);
     if (st == CK_VALID) st = check_context(Delta, reason);
     size_t n = context_size(Gamma);
@@ -237,41 +512,46 @@ CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma,
             if (!dims_declared(Delta, iv_dimset(map_dim_image(sigma, d.id)))) { *reason = "dimension image mentions an undeclared source dimension"; st = CK_INVALID; }
             continue;
         }
-        /* term image against A[sigma] under the source face (vacuous on false) */
+        /* the term image (the identity image when the entry is absent) is in
+         * the source scope whatever the source face: only the typing
+         * obligations below are vacuous on false (§33) */
         RefId image = map_term_image(sigma, d.id);
+        { size_t m; const uint64_t *fv = varset_get(ref_freevars(image), &m);
+          for (size_t q = 0; q < m && st == CK_VALID; q++) if (!context_declares_term(Delta, fv[q], NULL)) { *reason = "term image mentions a variable not declared in the source context"; st = CK_INVALID; }
+          if (st == CK_VALID && !dims_declared(Delta, ref_support(image))) { *reason = "term image mentions a dimension not declared in the source context"; st = CK_INVALID; } }
+        if (st != CK_VALID) break;
+        /* the target declaration's required-face obligation: a declaration
+         * partial on phi_x is only used under phi_x in the target, so its
+         * image is checked against A[sigma] under psi ∧ phi_x[sigma] */
         RefId Asub = reindex(d.type, sigma);
-        FaceId *cs; size_t nc = clauses_of(psi, &cs);
+        FaceId where = fc_meet(psi, fc_reindex(term_var_required(d.id), sigma));
+        FaceId *cs; size_t nc = clauses_of(where, &cs);
         for (size_t c = 0; c < nc && st == CK_VALID; c++) st = check_clause(Delta, cs[c], image, Asub, reason);
         free(cs);
-        /* the target declaration's own required face obligation */
-        if (st == CK_VALID && !fc_entails(psi, fc_reindex(term_var_required(d.id), sigma))) { *reason = "source face does not entail a target declaration's required face"; st = CK_INVALID; }
     }
     if (st == CK_VALID && !fc_entails(psi, fc_reindex(chi, sigma))) { *reason = "source face does not entail the substituted target assumption"; st = CK_INVALID; }
-    if (st != CK_UNRESOLVED) wordmap_put(&K.map_memo, key, 5, st == CK_VALID ? 1 : 2);
+    claim_release(cl, ck_code(st), *reason, NULL);
     LEAVE();
-    return st;
+    if (top_settled()) return st;
+  }
 }
 
 static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const char **reason);
 static CheckStatus validate_symbol(SymbolId s, const char **reason);
 
 CheckStatus check_origin(OriginId C, ContextId *ctx_out, FaceId *req_out, RefId *type_out, const char **reason) {
-    uint64_t key[1] = { C }, idx;
-    pthread_mutex_lock(&K.mu);
-    if (!wordmap_get(&K.origin_idx, key, 1, &idx)) {
-        OriginRec rec; memset(&rec, 0, sizeof rec);
-        vec_push(&K.origins, rec);
-        idx = K.origins.len;
-        wordmap_put(&K.origin_idx, key, 1, idx);
-    }
-    OriginRec snap = K.origins.data[idx - 1];
-    int state = snap.state;
-    if (state == 0) K.origins.data[idx - 1].state = 1;
-    pthread_mutex_unlock(&K.mu);
-    if (state == 2) { if (ctx_out) *ctx_out = snap.ctx; if (req_out) *req_out = snap.req; if (type_out) *type_out = snap.type; return CK_VALID; }
-    if (state == 3) { *reason = snap.reason; return CK_INVALID; }
-    if (state == 1) { *reason = "unresolved: origin validation is already in progress (cyclic dependency)"; return CK_UNRESOLVED; }
+  for (;;) {
+    uint64_t key[1] = { C }, v, aux[3] = { 0, 0, 0 }; const char *why = NULL;
+    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_ORIGIN, key, 1); pthread_mutex_unlock(&K.mu);
     ENTER();
+    Acq a = claim_acquire(cl, &v, &why, aux);
+    if (a == ACQ_DONE) {
+        LEAVE();
+        if (!top_settled()) continue;
+        if (v == 1) { if (ctx_out) *ctx_out = aux[0]; if (req_out) *req_out = aux[1]; if (type_out) *type_out = aux[2]; return CK_VALID; }
+        *reason = why; return CK_INVALID;
+    }
+    if (a == ACQ_CYCLE) { LEAVE(); (void)top_settled(); *reason = "unresolved: origin validation depends on itself (cyclic dependency)"; return CK_UNRESOLVED; }
     ContextId ctx = origin_context(C);
     FaceId req = origin_required(C);
     RefId type = 0;
@@ -291,15 +571,13 @@ CheckStatus check_origin(OriginId C, ContextId *ctx_out, FaceId *req_out, RefId 
         }
         free(types); free(cs);
     }
-    pthread_mutex_lock(&K.mu);
-    { OriginRec *r = &K.origins.data[idx - 1];
-      if (st == CK_VALID) { r->state = 2; r->ctx = ctx; r->req = req; r->type = type; }
-      else if (st == CK_INVALID) { r->state = 3; r->reason = *reason; }
-      else r->state = 0; }                              /* unresolved: not a verdict */
-    pthread_mutex_unlock(&K.mu);
-    if (st == CK_VALID) { if (ctx_out) *ctx_out = ctx; if (req_out) *req_out = req; if (type_out) *type_out = type; }
+    aux[0] = ctx; aux[1] = req; aux[2] = type;
+    claim_release(cl, ck_code(st), *reason, aux);
     LEAVE();
+    if (!top_settled()) continue;
+    if (st == CK_VALID) { if (ctx_out) *ctx_out = ctx; if (req_out) *req_out = req; if (type_out) *type_out = type; }
     return st;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -368,6 +646,15 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         break;
     }
     case T_PAIR: {
+        if (h.n == 3) {
+            /* annotated: the stored Σ type is the expected type; validate the
+             * annotation as a type and the form against it (§33) */
+            uint64_t l;
+            st = level_of(G, C, h.f[2].id, &l, reason);
+            if (st == CK_VALID) st = check_clause(G, C, t, h.f[2].id, reason);
+            if (st == CK_VALID) *type = h.f[2].id;
+            break;
+        }
         RefId A, B;
         st = infer_clause(G, C, h.f[0].id, &A, reason);
         if (st == CK_VALID) st = infer_clause(G, C, h.f[1].id, &B, reason);
@@ -543,10 +830,11 @@ static CheckStatus scope_ok(ContextId G, FaceId chi, RefId t, const char **reaso
 }
 
 Inference infer(ContextId G, FaceId chi, RefId t) {
+  for (;;) {
     Inference out = { CK_VALID, 0, NULL };
     ENTER();
     out.st = scope_ok(G, chi, t, &out.reason);
-    if (out.st != CK_VALID) { LEAVE(); return out; }
+    if (out.st != CK_VALID) { LEAVE(); (void)top_settled(); return out; }
     FaceId *cs; size_t nc = clauses_of(chi, &cs);
     RefId *types = malloc((nc ? nc : 1) * sizeof(RefId));
     for (size_t c = 0; c < nc && out.st == CK_VALID; c++) out.st = infer_clause(G, cs[c], t, &types[c], &out.reason);
@@ -556,7 +844,8 @@ Inference infer(ContextId G, FaceId chi, RefId t) {
     }
     free(types); free(cs);
     LEAVE();
-    return out;
+    if (top_settled()) return out;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -652,32 +941,32 @@ static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const c
 }
 
 CheckStatus check(ContextId G, FaceId chi, RefId t, RefId A, const char **reason) {
+  for (;;) {
     ENTER();
     CheckStatus st = scope_ok(G, chi, t, reason);
     if (st == CK_VALID) st = scope_ok(G, chi, A, reason);
-    if (st != CK_VALID) { LEAVE(); return st; }
+    if (st != CK_VALID) { LEAVE(); (void)top_settled(); return st; }
     FaceId *cs; size_t nc = clauses_of(chi, &cs);
     for (size_t c = 0; c < nc && st == CK_VALID; c++) st = check_clause(G, cs[c], t, A, reason);
     free(cs);
     LEAVE();
-    return st;
+    if (top_settled()) return st;
+  }
 }
 
 /* ------------------------------------------------------------------ */
 /* conversion                                                           */
 
-static ConvStatus conv_memo_get(uint64_t mode, ContextId G, FaceId C, RefId a, RefId b, RefId T, uint64_t key[6], bool *found) {
+/* conversion requests are claims keyed by (mode, context without assumption,
+ * face projected to the support of the request, a, b, T) */
+static size_t conv_claim(uint64_t mode, ContextId G, FaceId C, RefId a, RefId b, RefId T) {
     DimSetId S = dimset_union(ref_support(a), ref_support(b));
     if (T) S = dimset_union(S, ref_support(T));
     size_t n; const uint64_t *ds = dimset_get(S, &n);
-    key[0] = mode; key[1] = under(G, fc_true()); key[2] = fc_project(C, ds, n); key[3] = a; key[4] = b; key[5] = T;
-    uint64_t v;
-    *found = wordmap_get(&K.conv_memo, key, 6, &v);
-    if (!*found) return CV_UNRESOLVED;
-    return v == 1 ? CV_EQUAL : v == 2 ? CV_UNEQUAL : CV_UNRESOLVED;   /* 3 = running: a cycle */
+    uint64_t key[6] = { mode, under(G, fc_true()), fc_project(C, ds, n), a, b, T };
+    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_CONV, key, 6); pthread_mutex_unlock(&K.mu);
+    return cl;
 }
-static void conv_memo_set(uint64_t key[6], ConvStatus s) { wordmap_put(&K.conv_memo, key, 6, s == CV_EQUAL ? 1 : s == CV_UNEQUAL ? 2 : 3); }
-static void conv_memo_clear_running(uint64_t key[6]) { wordmap_put(&K.conv_memo, key, 6, 4); }   /* 4 = no verdict */
 
 static ConvStatus and3(ConvStatus a, ConvStatus b) {
     if (a == CV_UNEQUAL || b == CV_UNEQUAL) return CV_UNEQUAL;
@@ -698,10 +987,10 @@ static ConvStatus conv_type_clause(ContextId G, FaceId C, RefId A, RefId B) {
     if (A == B) return CV_EQUAL;
     if (!budget_ok()) return CV_UNRESOLVED;
     G = under(G, C);
-    uint64_t key[6]; bool found;
-    ConvStatus memo = conv_memo_get(1, G, C, A, B, 0, key, &found);
-    if (found) { uint64_t v; wordmap_get(&K.conv_memo, key, 6, &v); if (v == 1 || v == 2) return memo; if (v == 3) return CV_UNRESOLVED; }
-    conv_memo_set(key, CV_UNRESOLVED);          /* running */
+    size_t cl = conv_claim(1, G, C, A, B, 0); uint64_t v;
+    Acq acq = claim_acquire(cl, &v, NULL, NULL);
+    if (acq == ACQ_DONE) return cv_of(v);
+    if (acq == ACQ_CYCLE) return CV_UNRESOLVED;  /* the comparison depends on itself: no coinductive assumption */
     ConvStatus out = CV_UNRESOLVED;
     EvalResult *ra, *rb;
     if (observe_both(C, A, B, &ra, &rb) != CV_EQUAL) goto done;
@@ -748,7 +1037,7 @@ static ConvStatus conv_type_clause(ContextId G, FaceId C, RefId A, RefId B) {
         head_free(&ha); head_free(&hb);
     }
 done:
-    if (out == CV_UNRESOLVED) conv_memo_clear_running(key); else conv_memo_set(key, out);
+    claim_release(cl, cv_code(out), NULL, NULL);
     return out;
 }
 
@@ -756,10 +1045,10 @@ static ConvStatus conv_term_clause(ContextId G, FaceId C, RefId t, RefId u, RefI
     if (t == u) return CV_EQUAL;
     if (!budget_ok()) return CV_UNRESOLVED;
     G = under(G, C);
-    uint64_t key[6]; bool found;
-    ConvStatus memo = conv_memo_get(2, G, C, t, u, A, key, &found);
-    if (found) { uint64_t v; wordmap_get(&K.conv_memo, key, 6, &v); if (v == 1 || v == 2) return memo; if (v == 3) return CV_UNRESOLVED; }
-    conv_memo_set(key, CV_UNRESOLVED);
+    size_t cl = conv_claim(2, G, C, t, u, A); uint64_t v;
+    Acq acq = claim_acquire(cl, &v, NULL, NULL);
+    if (acq == ACQ_DONE) return cv_of(v);
+    if (acq == ACQ_CYCLE) return CV_UNRESOLVED;
     ConvStatus out = CV_UNRESOLVED;
     EvalResult *rA; const char *reason;
     if (observe(C, A, &rA, &reason) != CK_VALID) goto done;
@@ -810,7 +1099,7 @@ static ConvStatus conv_term_clause(ContextId G, FaceId C, RefId t, RefId u, RefI
         else out = CV_UNEQUAL;
     } else out = CV_UNRESOLVED;                 /* a system type under a single clause is not a covered type */
 done:
-    if (out == CV_UNRESOLVED) conv_memo_clear_running(key); else conv_memo_set(key, out);
+    claim_release(cl, cv_code(out), NULL, NULL);
     return out;
 }
 
@@ -905,47 +1194,58 @@ done:
 ConvStatus convert_type(ContextId G, FaceId chi, RefId A, RefId B) {
     const char *why;
     if (scope_ok(G, chi, A, &why) != CK_VALID || scope_ok(G, chi, B, &why) != CK_VALID) return CV_UNRESOLVED;
-    ENTER();
-    FaceId *cs; size_t nc = clauses_of(chi, &cs);
-    ConvStatus out = CV_EQUAL;
-    for (size_t c = 0; c < nc; c++) { ConvStatus r = conv_type_clause(G, cs[c], A, B); out = and3(out, r); if (out == CV_UNEQUAL) break; }
-    free(cs);
-    LEAVE();
-    return out;
+    for (;;) {
+        ENTER();
+        FaceId *cs; size_t nc = clauses_of(chi, &cs);
+        ConvStatus out = CV_EQUAL;
+        for (size_t c = 0; c < nc; c++) { ConvStatus r = conv_type_clause(G, cs[c], A, B); out = and3(out, r); if (out == CV_UNEQUAL) break; }
+        free(cs);
+        LEAVE();
+        if (top_settled()) return out;
+    }
 }
 ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A) {
     const char *why;
     if (scope_ok(G, chi, t, &why) != CK_VALID || scope_ok(G, chi, u, &why) != CK_VALID || scope_ok(G, chi, A, &why) != CK_VALID) return CV_UNRESOLVED;
-    ENTER();
-    FaceId *cs; size_t nc = clauses_of(chi, &cs);
-    ConvStatus out = CV_EQUAL;
-    for (size_t c = 0; c < nc; c++) { ConvStatus r = conv_term_clause(G, cs[c], t, u, A); out = and3(out, r); if (out == CV_UNEQUAL) break; }
-    free(cs);
-    LEAVE();
-    return out;
+    for (;;) {
+        ENTER();
+        FaceId *cs; size_t nc = clauses_of(chi, &cs);
+        ConvStatus out = CV_EQUAL;
+        for (size_t c = 0; c < nc; c++) { ConvStatus r = conv_term_clause(G, cs[c], t, u, A); out = and3(out, r); if (out == CV_UNEQUAL) break; }
+        free(cs);
+        LEAVE();
+        if (top_settled()) return out;
+    }
 }
 
 /* A declared symbol is validated once: its declared type is a type over its
  * parameters, and its registered body (if any) checks against that type.
  * While a symbol's own body is being validated, its recursive occurrences
  * use the declared type: the signature's declaration is the assumption the
- * body is checked under; this does not prove termination. */
+ * body is checked under (this does not prove termination). Every verdict
+ * reached under that assumption is provisional on the symbol and is
+ * committed by claim_release only when the body is accepted. */
 static CheckStatus validate_symbol(SymbolId s, const char **reason) {
-    if (!sym_memo_init) { wordmap_init(&sym_memo); sym_memo_init = true; }
-    uint64_t key[1] = { s }, v;
-    if (wordmap_get(&sym_memo, key, 1, &v) && v != 4) { if (v == 1 || v == 3) return CK_VALID; *reason = "symbol previously found invalid"; return CK_INVALID; }
+  for (;;) {
+    uint64_t key[1] = { s }, v; const char *why = NULL;
+    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_SYMBOL, key, 1); pthread_mutex_unlock(&K.mu);
+    ENTER();
+    Acq a = claim_acquire(cl, &v, &why, NULL);
+    if (a == ACQ_DONE) { LEAVE(); if (v != 1) *reason = why; if (top_settled()) return ck_of(v); continue; }
+    if (a == ACQ_CYCLE) { assume_symbol(cl); LEAVE(); require(tl_depth > 0 || tl_pending.n == 0, "declaration assumed at the top level"); return CK_VALID; }   /* recursive occurrence: typed by the declaration */
     RefId type = global_type(s);
-    if (!type) { *reason = "symbol without a declared type"; wordmap_put(&sym_memo, key, 1, 2); return CK_INVALID; }
-    wordmap_put(&sym_memo, key, 1, 3);                 /* running: recursive uses see the declaration */
+    CheckStatus st = CK_VALID;
+    if (!type) { *reason = "symbol without a declared type"; st = CK_INVALID; }
     OriginId o = ref_origin(global_ref(s));
     ContextId Gs = origin_context(o);
-    CheckStatus st = check_context(Gs, reason);
+    if (st == CK_VALID) st = check_context(Gs, reason);
     if (st == CK_VALID) { uint64_t l; st = level_of(Gs, fc_true(), type, &l, reason); }
     RefId body = global_body(s);
     if (st == CK_VALID && body) st = check(Gs, fc_true(), body, type, reason);
-    if (st == CK_UNRESOLVED) { wordmap_put(&sym_memo, key, 1, 4); return st; }   /* 4: no verdict */
-    wordmap_put(&sym_memo, key, 1, st == CK_VALID ? 1 : 2);
-    return st;
+    claim_release(cl, ck_code(st), *reason, NULL);
+    LEAVE();
+    if (top_settled()) return st;
+  }
 }
 
 EvalResult *observe_checked(ContextId G, RefId t, WhnfStatus *status, const char **reason) {

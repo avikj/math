@@ -60,13 +60,27 @@ references (`reindex_dim(C, j, r)`), never `component(whnf(family at r))`.
 - A neutral result retains the original eliminator reference (all operands and
   annotations), as §12 requires; a consumer that needs the evaluated scrutinee re-demands
   the field (cached).
-- Fresh names inside library definitions are minted deterministically from typed
-  provenance keys (`fresh_*_keyed`), so identical invocations intern identically, no image
-  can contain the minted name, and every generated name can be compared across runs by
-  its provenance. The Π/Σ/PathP/Glue/U clauses are C definitions that build core terms
-  this way rather than `GLOBAL` bodies: a family parameter with a free dimension cannot
-  be passed to a `GLOBAL` through a term variable in this representation, and interning
-  provides the sharing of intermediates §14 asks for (the Σ filler is one `RefId`).
+- Library definitions are **fixed templates** (`src/lib.c`): each derived definition and
+  each composition clause is compiled once into an origin over formal parameters, and an
+  invocation is `reindex(body, σ)` with σ sending the formals to the arguments. Term-sorted
+  arguments used at the template's own dimension points (values, paths, functions, caps,
+  tubes used in place) are term formals (a tube is declared partial on its guard, so its
+  image adds no requirement beyond the guard); interval arguments (a path application
+  point, the fill parameter) are interval formals; types, families, faces, and a tube the
+  body re-scopes (`u_i` at `i ↦ r∧j`) are the template's **shape**, canonicalized over
+  template dimension formals and part of the key. Because reindexing composes,
+  `reindex(T(a), τ) = T(a[τ])` holds as an identity of references for τ acting on formals
+  (term, interval) and for order-preserving renamings of the shape's dimensions; a family
+  cannot be a term formal because a variable occurrence carries no dimension substitution
+  (`VAR(u)[i ↦ 1] = VAR(u)` would lose the specialization), so scoped families enter as
+  references with their scope maps, as the spec's clause formulas write them. Generated
+  names are keyed by (definition, role, slot, shape), so provenance compares up to
+  renaming and never depends on the arguments. Pairs built by templates carry their Σ type
+  (`mk_pair_at`), the §33 annotation that lets a checking-only form synthesize.
+- Full parametricity in *type* arguments (`type : U_ℓ` as a formal) needs the universe level
+  ℓ at invocation: the core's levels are exact and `COMP` carries no level annotation, so
+  the evaluator cannot supply ℓ when it invokes a clause. Type arguments are therefore
+  shape data; see REVIEW.md §5 for the question this leaves with the author.
 
 ## Occurrence contexts and checking (§2, §33–§34)
 
@@ -77,10 +91,13 @@ check is `src/check.c`:
 
 - `check_context(Γ)`: unique identities; the assumption over declared dimensions; each
   declaration's type and required face over its prefix; each type is a type under the
-  assumption projected to the prefix dimensions.
-- `check_map(Δ,ψ,σ,Γ,χ)`: dimension images over Δ; each term image against `A[σ]` under
-  every consistent clause of ψ, in target declaration order; `ψ ⇒ χ[σ]` and the targets'
-  required faces.
+  assumption projected to the prefix dimensions, and is compatible with the variable's
+  recorded declaration by conversion under each clause (not by identity).
+- `check_map(Δ,ψ,σ,Γ,χ)`: dimension images over Δ; every term image (the identity image
+  when an entry is absent) in Δ's scope whatever the source face; each term image against
+  `A[σ]` under every consistent clause of `ψ ∧ φ_x[σ]`, where φ_x is the target
+  declaration's required face (a declaration partial on φ_x is only used under φ_x), in
+  target declaration order; `ψ ⇒ χ[σ]`.
 - `check_origin(C)`: an origin is validated once (memoized per `OriginId`) in its own
   parameter context (`origin_context`: free dimensions, then free variables in dependency
   order) under its required face; a view `VIEW(C,σ)` is then typed by the substitution
@@ -95,6 +112,20 @@ check is `src/check.c`:
   (type is a type; body, if any, checks against the type, with recursive occurrences using
   the declaration); a symbol without a body is an opaque constant and observes as a
   neutral.
+- **Claims and the admission transaction.** Every memoized request (context, map, origin,
+  symbol, clause conversion) is a *claim*: one producer computes it, every other client
+  waits for its outcome, and the outcome is published once (`claim_acquire` /
+  `claim_release`). A request met again on its own demand path is a cycle: UNRESOLVED for
+  conversion, origins, contexts and maps; "typed by the declaration" for a symbol. Across
+  threads a wait cycle is detected on the wait-for graph; if a symbol lies on it, the
+  thread blocked on that symbol yields by taking the declaration as its assumption, exactly
+  as one thread does. Verdicts reached under such an assumption are *provisional* on the
+  symbol and are committed only when its body is accepted (`resolve_locked`): a rejected
+  premise withdraws the dependents, which are recomputed on demand; mutually dependent
+  accepted symbols (recursion validated from both ends) commit together. A top-level
+  request never returns a provisional verdict: it waits for the symbols it rests on and
+  recomputes (`top_settled`). `check_signature` validates every symbol; `observe_checked`
+  admits only committed verdicts.
 - Conversion (`convert_type`, `convert_term`): per consistent clause; weak-head observation
   of both sides; reflexive fast path on identical references; type formers compared
   structurally with one fresh identity applied to both binders; term conversion by expected
@@ -103,8 +134,8 @@ check is `src/check.c`:
   path application modulo the clause, unglue, blocked composition, opaque constants); fresh
   comparison identities keyed by the request record (both sides, expected head, slot) in a
   distinct namespace. Requests are cached by (mode, declarations, projected face, inputs,
-  expected type); a running request met again is a cycle and yields UNRESOLVED; UNRESOLVED
-  is never cached as inequality. A step budget (`check_set_budget`) yields UNRESOLVED.
+  expected type) as claims; UNRESOLVED is never cached as inequality. A step budget
+  (`check_set_budget`) yields UNRESOLVED.
 - `observe_checked(Γ, t)` validates then observes; `check_signature` validates all symbols.
 
 Checking runs synchronously on the caller's thread as an admission phase; its weak-head
@@ -186,9 +217,10 @@ local-rule classes `n_op`, `n_dup`, `n_erase`, `n_eval_deliver`. Counting bounda
   replacements only.
 - `ready_hit`, `running_hit`, `launch` are diagnostics: their split is not
   diamond-balanced (a request can cross a publication); their sum is `REQUEST`.
-- A request on the false face or on an invalid occurrence forms no key: it is a DELIVER
-  of a control status with no REQUEST or PUB. This is outside the four §26 transitions
-  but is a deterministic function of the configuration, so W stays schedule-invariant.
+- A request on the false face is a DELIVER of `NO_OBSERVATION`, and a request under a
+  nonfalse face that fails the occurrence guard is a DELIVER of `INVALID(reason)`; neither
+  forms a key, so neither contributes REQUEST or PUB (control outcomes stay in DELIVER, as
+  the author confirmed). Both are fixed by the request data, so W stays schedule-invariant.
 
 The join of a branchwise system stores each branch's outcome in its original slot and
 publishes exactly once when every launched branch has delivered; a failure is selected by

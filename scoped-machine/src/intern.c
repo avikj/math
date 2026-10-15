@@ -22,6 +22,13 @@ void *chunked_get(const Chunked *c, size_t i) {
     require(p, "chunked read of a missing element");
     return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
 }
+void *chunked_peek(const Chunked *c, size_t i) {
+    size_t ch = i >> CHUNK_BITS;
+    if (ch >= MAX_CHUNKS) return NULL;
+    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
+    if (!p) return NULL;
+    return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
+}
 
 /* ---- interner ---- */
 static uint64_t hash_words(const uint64_t *w, size_t n) {
@@ -134,7 +141,11 @@ void wordmap_free(WordMap *m) { interner_free(&m->keys); chunked_free(&m->vals);
 bool wordmap_get(WordMap *m, const uint64_t *k, size_t n, uint64_t *out) {
     uint64_t id = interner_find(&m->keys, k, n);
     if (!id) return false;
-    uint64_t v = __atomic_load_n((uint64_t *)chunked_get(&m->vals, id - 1), __ATOMIC_ACQUIRE);
+    /* The key becomes discoverable before the writer stores its value: an
+     * absent value chunk, like a zero value, means "not yet published". */
+    uint64_t *slot = chunked_peek(&m->vals, id - 1);
+    if (!slot) return false;
+    uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
     if (!v) return false;            /* key created, value not yet published */
     *out = v;
     return true;
