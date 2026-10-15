@@ -13,6 +13,8 @@ typedef struct { VarSetId ft; DimSetId fd; FaceId required; } OriginSide;
 typedef struct { DimSetId support; VarSetId freevars; FaceId required; } RefSide;
 typedef struct { RefId type; FaceId required; uint64_t prov; } TermDecl;
 typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
+typedef struct { DimSetId support; VarSetId freevars; } ScopeSide;
+typedef struct { uint64_t free_slots; /* interned word list */ } TNodeSide;
 
 typedef struct {
     Interner intervals;   /* IntervalId  → canonical interval DNF words */
@@ -24,6 +26,16 @@ typedef struct {
     Interner refs;        /* RefId       → reference record */
     Interner nominal;     /* binder identities (owner,slot,sort) and keyed fresh names */
     Interner contexts;    /* ContextId   → occurrence context record */
+    Interner scopes;      /* ScopeId     → scope record (§50) */
+    Interner exprs;       /* template expression DAG nodes (§51) */
+    Interner tnodes;      /* template constructor nodes */
+    Interner tenvs;       /* template environments */
+    Interner tdefs;       /* template definitions (signature + root) */
+    Interner keys;        /* interned word tuples used as memo keys */
+    WordMap trav_memo;    /* scoped traversals (close / apply / reindex) */
+    WordMap interp_memo;  /* template expression results per environment */
+    Chunked scope_side;   /* ScopeSide per ScopeId-1 */
+    Chunked tnode_side;   /* TNodeSide per node-1: computed free-slot sets */
     WordMap reindex_memo; /* (RefId, MapId) → RefId */
     WordMap compose_memo; /* (MapId, MapId) → MapId */
 

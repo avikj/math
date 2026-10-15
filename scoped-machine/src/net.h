@@ -11,6 +11,7 @@
 #define CUBICAL_NET_H
 
 #include "eval.h"
+#include "template.h"
 
 typedef uint32_t NodeId;      /* 0 = none */
 typedef struct { NodeId node; uint16_t port; } Endpoint;
@@ -19,6 +20,7 @@ typedef enum {
     /* data descriptors (positive principal, no auxiliaries) */
     D_REF = 1, D_MAP, D_INTERVAL, D_FACE, D_TERM_BINDER, D_DIM_BINDER, D_PARTIAL,
     D_PARTIAL_DIM_BINDER, D_CONTEXT, D_HEAD_RECIPE, D_DIMSET, D_EVAL_RESULT, D_STATUS,
+    D_SCOPE, D_TEMPLATE_ENV, D_TYPED_PARTIAL,      /* §55: a = ScopeId / TEnvId; typed partial: ref = body, b = type, c = level, face = guard */
     /* one-result operations (negative principal, aux 1 = positive result) */
     OP_REINDEX_TERM, OP_REINDEX_INTERVAL, OP_REINDEX_FACE, OP_COMPOSE_MAP, OP_RESTRICT_MAP,
     OP_LIFT_TERM, OP_LIFT_DIMENSION, OP_OPEN, OP_UNFOLD_GLOBAL, OP_REINDEX_TERM_BINDER,
@@ -26,6 +28,9 @@ typedef enum {
     OP_APPLY_TERM_BINDER, OP_APPLY_DIM_BINDER, OP_APPLY_PARTIAL_DIM_BINDER,
     OP_FORALL_DIMENSION, OP_PROJECT_FACE, OP_FACE_COVERAGE, OP_USE_PARTIAL, OP_GET_SUPPORT,
     OP_REINDEX_HEAD, OP_MATERIALIZE, OP_APPLY_TRANSFORM, OP_EVAL,
+    /* §55 scope / template operations (payload conventions in net.c) */
+    OP_CAPTURE_REF_SCOPE, OP_CAPTURE_FACE_SCOPE, OP_CAPTURE_INTERVAL_SCOPE, OP_REINDEX_SCOPE, OP_APPLY_SCOPE, OP_FORALL_SCOPE,
+    OP_REINDEX_TEMPLATE_ENV, OP_INSTANTIATE_TEMPLATE, OP_REINDEX_TYPED_PARTIAL, OP_USE_TYPED_PARTIAL, OP_TYPED_PARTIAL_TYPE, OP_TYPED_PARTIAL_GUARD,
     /* structural agents */
     A_DUP,        /* negative principal; aux 1,2 positive results */
     A_ERASE,      /* negative principal */
@@ -34,6 +39,11 @@ typedef enum {
     A_BRANCH_NIL, A_BRANCH_CONS, A_BRANCH,
     A_ROOT        /* observation root: one negative port */
 } NodeKind;
+
+/* §55 operand records: a capture telescope Δ and a scope argument list are
+ * immutable interned payloads (handles), never wires */
+uint64_t net_capture_decls(size_t n, const CaptureDecl *d);      /* OP_CAPTURE_*: payload a */
+uint64_t net_scope_args(size_t n, const Val *args);              /* OP_APPLY_SCOPE: payload a */
 
 /* payload records held by descriptors / parameters held by operations */
 typedef struct {

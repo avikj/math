@@ -20,27 +20,27 @@ static inline RefId m2(RefId m, RefId x, RefId y) { return mk_app(mk_app(m, x), 
 static inline void assoc_build(Assoc *A, const char **why) {
     RefId U0 = mk_universe(0);
     A->vX = declare_term(U0, fc_true()); A->X = ref_var(A->vX);
-    RefId XX = mk_fun(A->X, A->X), XXX = mk_fun(A->X, XX);
+    RefId XX = mk_fun(0, 0, A->X, A->X), XXX = mk_fun(0, 0, A->X, XX);
     A->vm = declare_term(XXX, fc_true()); A->m = ref_var(A->vm);
     A->va = declare_term(A->X, fc_true()); A->a = ref_var(A->va);
     A->vb = declare_term(A->X, fc_true()); A->b = ref_var(A->vb);
     A->vc = declare_term(A->X, fc_true()); A->c = ref_var(A->vc);
     A->mab = m2(A->m, A->a, A->b); A->mbc = m2(A->m, A->b, A->c);
     A->lhs = m2(A->m, A->mab, A->c); A->rhs = m2(A->m, A->a, A->mbc);
-    A->valpha = declare_term(mk_path_const(A->X, A->lhs, A->rhs), fc_true()); A->alpha = ref_var(A->valpha);
+    A->valpha = declare_term(mk_path_const(0, A->X, A->lhs, A->rhs), fc_true()); A->alpha = ref_var(A->valpha);
     CtxDecl d[6] = { { S_TERM, A->vX, U0 }, { S_TERM, A->vm, XXX }, { S_TERM, A->va, A->X }, { S_TERM, A->vb, A->X }, { S_TERM, A->vc, A->X }, { S_TERM, A->valpha, term_var_type(A->valpha) } };
     A->G = context_make(6, d, fc_true());
     /* left: u = m(a,b), s : m(a,b) = u, output m(u,c) */
     A->vu = declare_term(A->X, fc_true());
-    A->vs = declare_term(mk_path_const(A->X, A->mab, ref_var(A->vu)), fc_true());
-    DiagNode ln = { 1, A->vu, A->vs, A->X, A->mab };
-    A->L = diagram_declare(A->G, 1, &ln, A->X, m2(A->m, ref_var(A->vu), A->c));
+    A->vs = declare_term(mk_path_const(0, A->X, A->mab, ref_var(A->vu)), fc_true());
+    DiagNode ln = { 1, A->vu, A->vs, A->X, 0, A->mab };
+    A->L = diagram_declare(A->G, 1, &ln, A->X, 0, m2(A->m, ref_var(A->vu), A->c));
     /* right: v = m(b,c), t : m(b,c) = v, output m(a,v) */
     A->vv = declare_term(A->X, fc_true());
-    A->vt = declare_term(mk_path_const(A->X, A->mbc, ref_var(A->vv)), fc_true());
-    DiagNode rn = { 2, A->vv, A->vt, A->X, A->mbc };
-    A->R = diagram_declare(A->G, 1, &rn, A->X, m2(A->m, A->a, ref_var(A->vv)));
-    IdentityDecl decl = { 1, A->G, fc_true(), A->X, A->L, A->R, A->alpha };
+    A->vt = declare_term(mk_path_const(0, A->X, A->mbc, ref_var(A->vv)), fc_true());
+    DiagNode rn = { 2, A->vv, A->vt, A->X, 0, A->mbc };
+    A->R = diagram_declare(A->G, 1, &rn, A->X, 0, m2(A->m, A->a, ref_var(A->vv)));
+    IdentityDecl decl = { 1, A->G, fc_true(), A->X, 0, A->L, A->R, A->alpha };
     A->T = compile_identity(&decl, why);
 }
 
@@ -56,13 +56,13 @@ static inline RefId assoc_left_arg(const Assoc *A, MapId sigma) {
     const CompiledTransform *t = transform_get(A->T);
     RefId RL = reindex(t->domain, sigma);                       /* Σ(u:X).Σ(s:m(a,b)=u).(m(u,c)=y) */
     RefId inner = apply_term_binder(RL, 0, 1, A->mab);
-    return mk_pair_at(RL, A->mab, mk_pair_at(inner, mk_refl(A->X, A->mab), A->alpha));
+    return mk_pair_at(RL, A->mab, mk_pair_at(inner, mk_refl(0, A->X, A->mab), A->alpha));
 }
 static inline RefId assoc_right_arg(const Assoc *A, MapId sigma) {
     const CompiledTransform *t = transform_get(A->T);
     RefId RR = reindex(t->codomain, sigma);                     /* Σ(v:X).Σ(t:m(b,c)=v).(m(a,v)=y) with y = rhs */
     RefId inner = apply_term_binder(RR, 0, 1, A->mbc);
-    return mk_pair_at(RR, A->mbc, mk_pair_at(inner, mk_refl(A->X, A->mbc), mk_refl(A->X, A->rhs)));
+    return mk_pair_at(RR, A->mbc, mk_pair_at(inner, mk_refl(0, A->X, A->mbc), mk_refl(0, A->X, A->rhs)));
 }
 
 #endif

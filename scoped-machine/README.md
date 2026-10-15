@@ -1,7 +1,7 @@
 # Scoped cubical interaction machine and identity compiler
 
 A from-scratch C11 implementation of the handoff specification *Scoped cubical
-interaction machine and identity compiler* (§§1–48, 14 October 2026). Nothing
+interaction machine and identity compiler* (§§1–59, 14 October 2026). Nothing
 here is derived from earlier runtime code; the spec is the only source.
 
     make test        # ASan/UBSan/LSan: every suite, then the acceptance, schedule, checking, template and compiler suites again with 4-thread pools
@@ -16,7 +16,11 @@ here is derived from earlier runtime code; the spec is the only source.
 | §4–5 | `src/face.*` | Face DNF with contradiction removal before absorption/projection; endpoint formulas; `entails` by clause containment; `fc_forall` (deletes clauses) vs `fc_project` (deletes literals); interned dimension/variable sets |
 | §6–9 | `src/term.*` | Raw simultaneous maps (identity entries removed, single lookup); origins with fields/binders and dependency-closed typed boundary; references `VAR(x)` / `VIEW(C,σ)` with instantiated support, free variables and required face frozen at interning; `make_view` restriction to the typed boundary; memoized `reindex`; `compose` including τ-only keys; binder identity `(owner, slot, sort)`; lifting; `open`; `GLOBAL` definitions unfolded as views of a fixed body |
 | §10–13 | `src/eval.*` | `EvalKey = (t, π_{S(t)} χ)`; entries `UNEVALUATED/RUNNING/READY` with waiters; continuation-based scheduler (no blocking on a running key; a reentrant demand is left suspended and reported `W_STUCK`, never published); dispatch table with the stated precedences; systems; composition opening one shared dimension for family and tube; retained components specialized by `reindex` |
-| §14–18 | `src/lib.*` | `fill`, `hcomp`, `coe`, lines, path operations, `Contr/fib/Equiv`, `IdEquiv`, `ExtendContr`, `LineEquiv`, `ua`, and the Π / Σ / PathP / Glue / Universe composition clauses term by term |
+| §14–18, §52–54 | `src/lib.*` | The library as fixed template programs with explicit universe levels: `fill`, `hcomp`, `coe`, lines, path operations, `Contr/fib/Equiv`, `IdEquiv`, `ExtendContr`, `LineEquiv`, `ua`, `Down`; the Π / Σ / PathP / Glue / Universe composition clauses; `comp_clause` captures the exposed head's components into scopes and instantiates the one fixed clause |
+| §49–50 | `src/scope.*`, bound atoms in `src/term.h` | Scopes: a reference / interval / face abstracted over an ordered local telescope, locals as `(depth, slot)` atoms in the id space; `capture_scope`, `apply_scope` (simultaneous substitution to a typed partial), `reindex_scope` (free identities only), `forall_scope`; one depth-aware traversal engine shared with references and template environments |
+| §51 | `src/template.*` | Template definitions as acyclic expression DAGs over typed parameters (reference, interval, face, scope, level) with κ as slot 0; fixed constructor nodes; `TVIEW(node, environment)` as the third reference form, opened by interpreting the node's finite field recipes, reindexed by reindexing the environment; `tnode_signature` for checking; environments restricted to the node's free slots |
+| §55 | `src/net.*` | `SCOPE`, `TEMPLATE_ENV`, `TYPED_PARTIAL` descriptors and the twelve scope/template operations as one-result rules over immutable payloads |
+| §57, §59.4 | `src/check.c` | The whole-environment admission gate (`check_admission`, keyed by the global environment version; `observe_checked` and compiler publication enter it first); claim sessions and attempts |
 | §19–20 | `src/net.*` | Polarized descriptor and operation agents, the one-result rule table (all rows), `MATERIALIZE` (heads, `BRANCH_NIL/CONS/BRANCH` for systems), handle-copying duplication and erasure (also fieldwise for shells), `EVAL` agents registered as cache continuations, and `rep_commit`: every removed auxiliary port accounted for exactly once, boundary paths followed through connectors, closed wire components counted, only opposite polarities connected |
 | §2 contexts | `src/term.*` (`context_*`, `occurrence_validate`, `term_require_push`), `whnf_in` in `src/eval.*` | Interned occurrence contexts; structural validity; declared required-face annotation on origins |
 | §33–34 | `src/check.*` | `check_context`, `check_map`, `check_origin`, `infer`, `check`, `convert_type`, `convert_term`, `check_signature`, `observe_checked`; outcomes VALID/INVALID/UNRESOLVED, EQUAL/UNEQUAL/UNRESOLVED |
@@ -24,8 +28,8 @@ here is derived from earlier runtime code; the spec is the only source.
 | §37 | `src/match.*`, `src/canon.*` | Exported labelled graph; exact matching with backtracking; refinement as candidate filter only |
 | §25–31 | `src/eval.*` (counters, policies, worker pool), `src/net.*` (rule counters, policies, worker pool), `src/canon.*` | Interaction-work vector, deterministic joins, exact canonical comparison modulo renaming |
 | §23 | `tests/test_main.c`, `test_net` in `src/net.c` | Every row of the acceptance table, plus the exhaustive projection/quantifier law check on all 48 canonical faces over two dimensions (2 880 + 240 comparisons) |
-| §39–48 | `src/compiler.*`, `T_TCALL` in `src/term.*`, `OP_APPLY_TRANSFORM` / `A_CONTINUE_REFERENCE` in `src/net.*`, `evaluate` (T_TCALL) and the pair jobs in `src/eval.*`, the T_TCALL rule in `src/check.c` | Diagrams, realization telescopes, canonical substitution, `down`/expand, collapse/expand templates, `compile_identity` with the graph-pair template, equivalence / residual / cut / contractible-fibre schemas, certificates, `TRANSFORM_CALL`, the application and receiver rules, one outstanding count for evaluator jobs and net pairs |
-| §28–31, §38, §47 | `tests/test_schedule.c`, `tests/test_concurrent.c`, `tests/test_match.c`, `tests/test_check.c`, `tests/test_templates.c`, `tests/test_compiler.c`, `tests/review_regressions.c` | 24 schedule combinations (now with the associativity transform in the workload); client storms and multi-client runs; comparison acceptance/rejection incl. ambiguous refinement; checking acceptance/rejection/unresolved; template laws and the admission transaction; the §47 compiler cases; the review's regression cases; `make tsan` |
+| §39–48, §59.3 | `src/compiler.*`, `T_TCALL` in `src/term.*`, `OP_APPLY_TRANSFORM` / `A_CONTINUE_REFERENCE` in `src/net.*`, `evaluate` (T_TCALL) and the pair jobs in `src/eval.*`, the T_TCALL rule in `src/check.c` | Diagrams, realization telescopes, canonical substitution, `Down`/expand, collapse/expand templates, `compile_identity` with the graph-pair template, equivalence / residual / cut / contractible-fibre schemas, certificates, one fixed `TRANSFORM_CALL` origin per transform and orientation with invocations as its views, the application and receiver rules, one outstanding count for evaluator jobs and net pairs |
+| §28–31, §38, §47 | `tests/test_schedule.c`, `tests/test_concurrent.c`, `tests/test_match.c`, `tests/test_check.c`, `tests/test_templates.c`, `tests/test_compiler.c`, `tests/review_regressions.c`, `tests/review_followup.c`, `tests/review_claim_wait.c`, `tests/review_checker_lifecycle.c` | 24 schedule combinations (now with the associativity transform in the workload); client storms and multi-client runs; comparison acceptance/rejection incl. ambiguous refinement; checking acceptance/rejection/unresolved; template laws and the admission transaction; the §47 compiler cases; the review's regression cases; `make tsan` |
 
 ## The central distinction, as implemented
 
@@ -268,22 +272,69 @@ a cycle.
 Typing premises of the cubical rules are now checked by `src/check.c`; the evaluator itself
 still takes them as premises and reports ill-typed demands it reaches as `R_INVALID`.
 
+## Contextual templates and explicit levels (§49–§56, §59)
+
+- **Scopes (§50).** `ScopeId` interns `(locals, body, result type, level, guard)`; local
+  occurrences are `bound_id(depth, slot)` atoms (`BOUND_BIT`, below the atom shift of the
+  interval/face encodings) in the variable and dimension id spaces, so every existing
+  structural operation treats them as identities it never substitutes. `capture_scope`
+  closes concrete identities (depth-shifting scopes already inside), `apply_scope` returns a
+  `TypedPartial{body, type, level, guard}` by one simultaneous traversal, `reindex_scope`
+  touches free identities only, `forall_scope` quantifies the unary dimension of a total face
+  scope. The traversal engine (`Trav`) is depth-aware and memoized per traversal key.
+- **Templates (§51).** Each library definition is registered once as an expression DAG with
+  typed parameters (κ in slot 0, levels as parameters) and fixed constructor nodes
+  (`NODE` records with field recipes, binder slots, payload/levels/required-face recipes).
+  `template_call` interprets the root program; a constructor node yields
+  `TVIEW(node, environment)` with the environment restricted to the node's free slots, so
+  `reindex(T(a), τ) = T(a[τ])` is an identity of references for every parameter including
+  type and family arguments (`test_templates.c`: refl/Fun/Equiv/IdEquiv under a type-changing
+  substitution, `Down` under a reindexed scope). Opening a TVIEW interprets its field recipes;
+  reindexing reindexes the environment and runs no field program.
+- **Levels (§59.1).** Every origin record carries a packed levels word; the annotated
+  constructors `mk_pi_lv`, `mk_sigma_lv`, `mk_lam_lv`, `mk_comp_lv`, `mk_path_lv`,
+  `mk_glue_*_lv`, `mk_pair_at_lv` set it, `LEVEL_NONE` marks an unannotated user term whose
+  level the checker infers. Templates always annotate; the library API takes the exact levels
+  of its type arguments (`mk_fun(l, m, X, Y)`, `mk_refl(l, A, a)`, `mk_coe_at(l, i, A_i, cap)`,
+  …). The checker validates every annotation against the formation level it infers
+  (`level_ok1/2`), a template instance's retained reference parameters against the
+  signature's instantiated declared types (`tnode_signature`), and a `TRANSFORM_CALL`'s
+  annotations against the record's stored levels.
+- **Composition (§53–§54).** `comp_clause(j, fam, φ, tube_j, cap, η)` captures the exposed
+  head's components (`D`, `E`, `B`, `left`, `right`, `A`, `α`, `T`, `e`, the tube) into scopes
+  over the evaluator's dimension with the producer entry's face as κ and instantiates the one
+  fixed clause (`PiComp`, `SigmaComp`, `PathComp`, `GlueComp`, `UniverseComp`). The evaluator
+  performs this inside its frame (§55: no additional administrative agents for the same
+  call); a family without level annotations yields scopes without declared types, which the
+  checker infers.
+- **Claims and admission (§57, §59.4).** The claim table has a session generation (a fresh
+  `check_init` re-registers thread identities, `review-checker-lifecycle`: eight identical
+  conversions after a restart), per-attempt UNRESOLVED outcomes that are retried by a later
+  attempt, and every wait re-reads its claim pointer after resuming (`review-claim-wait`
+  forces claim-vector growth during a wait). `check_admission` validates the whole registered
+  environment once per environment version; `observe_checked` and every compiler publication
+  enter it first, so a rejected registered body blocks checked execution of every term
+  (`review-followup admission`, `test_check.c`).
+
 ## Identity compiler (§39–§48)
 
 `src/compiler.c` is additive to the runtime above and emits only annotated core syntax
 through the existing constructors and the fixed library templates (§40 builders: `refl`,
-`inverse` = `mk_path_rev`, `concat` = `mk_path_concat`, `coe` = `mk_coe`, `pair` with its Σ
-annotation, …).
+`inverse` = `mk_path_rev`, `concat` = `mk_path_concat`, `Down`, `pair` with its Σ
+annotation, …), every type position carrying its explicit universe level (§59.1).
 
-- **Diagrams.** `diagram_declare(Γ, nodes, B, o)` / `residual_declare(Γ, nodes, Z)`; a node
-  is `(node_id, x, e, A, t)` with the user's variables `x : A`, `e : Path_A(t, x)`.
-  `diagram_validate` checks the typed telescope in order under the required face (and that
-  the realization type is a type). `diagram_realization` is the right fold
+- **Diagrams.** `diagram_declare(Γ, nodes, B, ℓ_B, o)` / `residual_declare(Γ, nodes, Z, ℓ_Z)`;
+  a node is `(node_id, x, e, A, ℓ_A, t)` with the user's variables `x : A`, `e : Path_A(t, x)`.
+  `diagram_validate` checks the typed telescope in order under the required face, that every
+  type position is a type (`check_is_type`: the inferred type is observed and must be a
+  universe, §59.5) and that its formation level equals the annotation. `diagram_realization` is the right fold
   `R_k = Σ(x_k:A_k).Σ(e_k:Path(t_k,x_k)).R_{k+1}`, `R_n = Path_B(o, y_d)` (residual: `Z`);
   the canonical substitution `ν` extends by `x_k ↦ t_k[ν], e_k ↦ refl` and `C = o[ν]`, so a
   shared node has one image and the DAG is not expanded.
-- **Singleton maps (§41).** `down(A,t,D,x,e,z) = coe^i D(e@¬i, ⟨j⟩e@(¬i∧j)) z` substitutes
-  both `x_k` and `e_k` in the complete tail; `emit_collapse` / `emit_expand` follow the
+- **Singleton maps (§41, §54).** `Down(ℓ, ℓ_A, A, t, D, x, e, z) = coe^i D⟨e@¬i, ⟨j⟩e@(¬i∧j)⟩ z`
+  with `D` the captured scope `[x_k : A, e_k : Path_A(t, x_k)]. R_{k+1}[prefix]`: the fixed
+  template applies the scope by contextual substitution, so the tail is specialized without
+  any APP/LAM pair and the same origin serves every diagram; `emit_collapse` / `emit_expand` follow the
   stated recursions; `diagram_collapse(d)` and `diagram_expand(d)` are cached per diagram
   and role with formals `r_d : R_0` and `q_d : Path_B(C, y_d)` anchored in the diagram.
 - **Identity (§42).** `graph_pair(L, R)` is the proof-parameterized template cached by the
@@ -298,12 +349,15 @@ annotation, …).
   `compile_cut` (`Cut(C,D) = Σ(z:B).Σ(u:C=z).(D=z)`, `(z,u,v) ↦ u·v⁻¹`, `h ↦ (D,h,refl D)`),
   `compile_contractible_fibre` (`(b,r) ↦ b`, `b ↦ (b, fst(k b))` from a checked `k`). All are
   fixed templates with a certificate recording their retained inputs.
-- **Invocation (§43).** `mk_transform_call(id, dir, σ, a)` builds the `TRANSFORM_CALL` origin:
-  payload `2·id+dir`, fields = σ's images in parameter order, then `a`, then the instantiated
-  input and output types, required face `required[σ]`; reindexing a view composes σ and
-  reindexes the rest. The checker validates the record, `σ` as a typed map whose face entails
-  `required[σ]`, `a` at the instantiated domain and the annotations, and returns the output
-  annotation. The evaluator's dispatch allocates `APPLY_TRANSFORM(id,dir,σ) -- REF(a)` with
+- **Invocation (§43, §59.3).** Publication builds one fixed call origin per orientation,
+  `generic_call[id,dir] = TRANSFORM_CALL(id, dir, identity images of the parameter context,
+  VAR(argument_slot), domain, codomain, required)`; a record becomes visible only after both
+  exist. `mk_transform_call(id, dir, σ, a) = reindex(generic_call[id,dir], σ|Γ + slot ↦ a)`,
+  so a reindexed call and a call built at the reindexed data are one `RefId` and share one
+  application/receiver pair (`review-followup call`). The checker validates the record, `σ`
+  as a typed map whose face entails `required[σ]`, `a` at the instantiated domain, the
+  annotations by conversion and their formation levels against the record's stored
+  `domain_level`/`codomain_level`, and returns the output annotation. The evaluator's dispatch allocates `APPLY_TRANSFORM(id,dir,σ) -- REF(a)` with
   `CONTINUE_REFERENCE(K)` on the result in the evaluator's own net; the application rule
   produces `REF(reindex(template, σ + slot ↦ a))` without evaluating anything; the receiver
   rule issues `REQ(key(v, face K), FORWARD_RESULT(K))`; delivery publishes `K` through the

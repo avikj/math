@@ -52,78 +52,100 @@ int main(void) {
     DimVarId i = declare_dim(), j = declare_dim(), k = declare_dim(), m = declare_dim();   /* i < j < k < m */
 
     /* refl, path type, path application, reversal, concatenation: term formals */
-    same_and_shared(reindex1(mk_refl(A, x), vx, a), mk_refl(A, a), "refl");
-    same_and_shared(reindex1(mk_path_const(A, x, y), vx, a), mk_path_const(A, a, y), "Path");
-    TermVarId vp = tv(mk_path_const(A, x, y)), vq = tv(mk_path_const(A, y, z));
+    same_and_shared(reindex1(mk_refl(0, A, x), vx, a), mk_refl(0, A, a), "refl");
+    same_and_shared(reindex1(mk_path_const(0, A, x, y), vx, a), mk_path_const(0, A, a, y), "Path");
+    TermVarId vp = tv(mk_path_const(0, A, x, y)), vq = tv(mk_path_const(0, A, y, z));
     RefId p = ref_var(vp), q = ref_var(vq);
-    TermVarId vpa = tv(mk_path_const(A, a, y));
+    TermVarId vpa = tv(mk_path_const(0, A, a, y));
     RefId pa = ref_var(vpa);
     { MapBuilder mb; mapb_init(&mb); mapb_term(&mb, vx, a); mapb_term(&mb, vp, pa); MapId s = mapb_finish(&mb);
-      same_and_shared(reindex(mk_papp_const(A, x, y, p, iv_var(k)), s), mk_papp_const(A, a, y, pa, iv_var(k)), "papp (term formals)");
-      same_and_shared(reindex(mk_path_rev(A, x, y, p), s), mk_path_rev(A, a, y, pa), "reversal");
-      same_and_shared(reindex(mk_path_concat(A, x, y, z, p, q), s), mk_path_concat(A, a, y, z, pa, q), "concatenation"); }
+      same_and_shared(reindex(mk_papp_const(0, A, x, y, p, iv_var(k)), s), mk_papp_const(0, A, a, y, pa, iv_var(k)), "papp (term formals)");
+      same_and_shared(reindex(mk_path_rev(0, A, x, y, p), s), mk_path_rev(0, A, a, y, pa), "reversal");
+      same_and_shared(reindex(mk_path_concat(0, A, x, y, z, p, q), s), mk_path_concat(0, A, a, y, z, pa, q), "concatenation"); }
     /* interval formal: the application point */
-    same_and_shared(reindex_dim(mk_papp_const(A, x, y, p, iv_var(k)), k, iv_zero()), mk_papp_const(A, x, y, p, iv_zero()), "papp (interval formal)");
-    same_and_shared(reindex_dim(mk_papp_const(A, x, y, p, iv_var(k)), k, iv_meet(iv_var(j), iv_var(m))), mk_papp_const(A, x, y, p, iv_meet(iv_var(j), iv_var(m))), "papp (interval formal, compound)");
+    same_and_shared(reindex_dim(mk_papp_const(0, A, x, y, p, iv_var(k)), k, iv_zero()), mk_papp_const(0, A, x, y, p, iv_zero()), "papp (interval formal)");
+    same_and_shared(reindex_dim(mk_papp_const(0, A, x, y, p, iv_var(k)), k, iv_meet(iv_var(j), iv_var(m))), mk_papp_const(0, A, x, y, p, iv_meet(iv_var(j), iv_var(m))), "papp (interval formal, compound)");
 
     /* fibres, equivalences, ua: term formals */
-    TermVarId vf = tv(mk_fun(A, B)), vg = tv(mk_fun(A, B)); RefId f = ref_var(vf), g = ref_var(vg);
+    TermVarId vf = tv(mk_fun(0, 0, A, B)), vg = tv(mk_fun(0, 0, A, B)); RefId f = ref_var(vf), g = ref_var(vg);
     TermVarId vbb = tv(B); RefId bb = ref_var(vbb);
-    same_and_shared(reindex1(mk_fib(A, B, f, bb), vf, g), mk_fib(A, B, g, bb), "fib");
-    TermVarId ve = tv(mk_equiv(A, B)), ve2 = tv(mk_equiv(A, B)); RefId e = ref_var(ve), e2 = ref_var(ve2);
-    same_and_shared(reindex1(mk_ua(A, B, e), ve, e2), mk_ua(A, B, e2), "ua");
-    CHECK(mk_equiv(A, B) == mk_equiv(A, B) && mk_contr(A) == mk_contr(A) && mk_id_equiv(A) == mk_id_equiv(A), "shape-only templates are memoized");
+    same_and_shared(reindex1(mk_fib(0, 0, A, B, f, bb), vf, g), mk_fib(0, 0, A, B, g, bb), "fib");
+    TermVarId ve = tv(mk_equiv(0, 0, A, B)), ve2 = tv(mk_equiv(0, 0, A, B)); RefId e = ref_var(ve), e2 = ref_var(ve2);
+    same_and_shared(reindex1(mk_ua(0, A, B, e), ve, e2), mk_ua(0, A, B, e2), "ua");
+
+    /* §49/§59.1: type and family arguments are template parameters too, so
+     * specialization at a type is one reference and one producer */
+    { TermVarId vC = tv(U0); RefId Cc = ref_var(vC);
+      TermVarId vxC = tv(Cc); RefId xC = ref_var(vxC);
+      MapBuilder tb; mapb_init(&tb); mapb_term(&tb, vA, Cc); mapb_term(&tb, vx, xC); MapId tau = mapb_finish(&tb);
+      same_and_shared(reindex(mk_refl(0, A, x), tau), mk_refl(0, Cc, xC), "refl under a type-changing substitution");
+      CHECK(reindex(mk_fun(0, 0, A, B), tau) == mk_fun(0, 0, Cc, B), "A → B specialized at the type parameter is one reference");
+      CHECK(reindex(mk_equiv(0, 0, A, B), tau) == mk_equiv(0, 0, Cc, B), "Equiv specialized at the type parameter is one reference");
+      CHECK(reindex(mk_id_equiv(0, A), tau) == mk_id_equiv(0, Cc), "IdEquiv specialized at the type parameter is one reference");
+      /* Down: the scope argument D = [x_k, e_k]. body is reindexed with the ambient map */
+      TermVarId vxk = tv(A), vek = tv(mk_path_const(0, A, a, ref_var(vxk)));
+      RefId body = mk_path_const(0, A, ref_var(vxk), b);                         /* D(x_k, e_k) : U0 */
+      ScopeId D = capture_term2(vxk, A, 0, vek, mk_path_const(0, A, a, ref_var(vxk)), 0, body, U0, 1, fc_true());
+      TermVarId vz = tv(mk_path_const(0, A, a, b)), vee = tv(mk_path_const(0, A, a, a));
+      RefId dn = mk_down(0, 0, A, a, D, a, ref_var(vee), ref_var(vz));
+      MapBuilder bb; mapb_init(&bb); mapb_term(&bb, vb, c); MapId sb = mapb_finish(&bb);
+      ScopeId Dc = capture_term2(vxk, A, 0, vek, mk_path_const(0, A, a, ref_var(vxk)), 0, mk_path_const(0, A, ref_var(vxk), c), U0, 1, fc_true());
+      CHECK(reindex_scope(D, sb) == Dc, "a captured scope reindexed on its free identities is the capture of the reindexed body");
+      same_and_shared(reindex(dn, sb), mk_down(0, 0, A, a, Dc, a, ref_var(vee), reindex(ref_var(vz), sb)), "Down with a reindexed scope argument");
+      /* levels are part of the record: the same arguments at another level are another reference */
+      CHECK(mk_fun(0, 0, A, B) != mk_fun(0, 1, A, B), "differently annotated levels are distinct references"); }
+    CHECK(mk_equiv(0, 0, A, B) == mk_equiv(0, 0, A, B) && mk_contr(0, A) == mk_contr(0, A) && mk_id_equiv(0, A) == mk_id_equiv(0, A), "shape-only templates are memoized");
     { /* extend_contr: c, k, v formals; the guard is shape */
-      TermVarId vcc = tv(A), vk = tv(mk_pi(tv(A), A, mk_path_const(A, ref_var(vcc), a)));   /* k : Π(x:A). Path A c a — shape stands in for the real contraction type */
+      TermVarId vcc = tv(A), vk = tv(mk_pi(tv(A), A, mk_path_const(0, A, ref_var(vcc), a)));   /* k : Π(x:A). Path A c a — shape stands in for the real contraction type */
       (void)vk;
       TermVarId vcen = tv(A), vcen2 = tv(A);
       TermVarId xk = tv(A);
-      RefId Kt = mk_pi(xk, A, mk_path_const(A, ref_var(vcen), ref_var(xk)));
+      RefId Kt = mk_pi(xk, A, mk_path_const(0, A, ref_var(vcen), ref_var(xk)));
       TermVarId vkk = tv(Kt);
       TermVarId vv = declare_term(A, fc_lit(k, 1)), vv2 = declare_term(A, fc_lit(k, 1));
-      RefId ext = mk_extend_contr(A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vv));
-      same_and_shared(reindex1(ext, vv, ref_var(vv2)), mk_extend_contr(A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vv2)), "extend_contr (partial formal)");
+      RefId ext = mk_extend_contr(0, A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vv));
+      same_and_shared(reindex1(ext, vv, ref_var(vv2)), mk_extend_contr(0, A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vv2)), "extend_contr (partial formal)");
       (void)vcen2; }
 
     /* fill: cap formal and interval formal; the family and tube are shape */
     { DimVarId r = declare_dim();
       RefId tube = mk_system(0, NULL, NULL);
-      RefId F1 = mk_fill(i, A, fc_false(), tube, x, iv_var(r));
-      same_and_shared(reindex1(F1, vx, a), mk_fill(i, A, fc_false(), tube, a, iv_var(r)), "fill (cap formal)");
-      same_and_shared(reindex_dim(F1, r, iv_one()), mk_fill(i, A, fc_false(), tube, x, iv_one()), "fill (interval formal)"); }
+      RefId F1 = mk_fill_at(0, i, A, fc_false(), tube, x, iv_var(r));
+      same_and_shared(reindex1(F1, vx, a), mk_fill_at(0, i, A, fc_false(), tube, a, iv_var(r)), "fill (cap formal)");
+      same_and_shared(reindex_dim(F1, r, iv_one()), mk_fill_at(0, i, A, fc_false(), tube, x, iv_one()), "fill (interval formal)"); }
 
     /* dimension renaming of the shape (order preserving): a family in k renamed to m */
-    { RefId Pk = mk_path_const(A, x, y);                           /* constant family */
-      TermVarId vpk = tv(mk_path_const(A, a, b)); RefId pk = ref_var(vpk);
+    { RefId Pk = mk_path_const(0, A, x, y);                           /* constant family */
+      TermVarId vpk = tv(mk_path_const(0, A, a, b)); RefId pk = ref_var(vpk);
       /* a path type whose endpoints depend on k through a path application */
-      RefId Ak = mk_path_const(A, mk_papp_const(A, a, b, pk, iv_var(k)), y);
+      RefId Ak = mk_path_const(0, A, mk_papp_const(0, A, a, b, pk, iv_var(k)), y);
       RefId Am = reindex_dim(Ak, k, iv_var(m));
-      same_and_shared(reindex_dim(mk_refl(Ak, x), k, iv_var(m)), mk_refl(Am, x), "refl under a renaming of the shape's dimension");
+      same_and_shared(reindex_dim(mk_refl(0, Ak, x), k, iv_var(m)), mk_refl(0, Am, x), "refl under a renaming of the shape's dimension");
       (void)Pk; }
 
     /* composition clauses: the opened dimension is the evaluator's */
-    { RefId AB = mk_fun(A, B);
+    { RefId AB = mk_fun(0, 0, A, B);
       TermVarId vu = declare_term(AB, fc_lit(k, 1)), vu2 = declare_term(AB, fc_lit(k, 1));
-      RefId ucl = comp_clause_pi(i, AB, fc_lit(k, 1), ref_var(vu), f);
-      same_and_shared(reindex1(ucl, vu, ref_var(vu2)), comp_clause_pi(i, AB, fc_lit(k, 1), ref_var(vu2), f), "Π clause (tube formal)");
-      same_and_shared(reindex1(ucl, vf, g), comp_clause_pi(i, AB, fc_lit(k, 1), ref_var(vu), g), "Π clause (cap formal)");
-      same_and_shared(reindex_dim(ucl, k, iv_var(m)), comp_clause_pi(i, AB, fc_lit(m, 1), reindex_dim(ref_var(vu), k, iv_var(m)), f), "Π clause (face renamed)");
-      TermVarId xs = tv(A); RefId Sg = mk_sigma(xs, A, B);
+      RefId ucl = comp_clause(i, AB, fc_lit(k, 1), ref_var(vu), f, fc_true());
+      same_and_shared(reindex1(ucl, vu, ref_var(vu2)), comp_clause(i, AB, fc_lit(k, 1), ref_var(vu2), f, fc_true()), "Π clause (tube formal)");
+      same_and_shared(reindex1(ucl, vf, g), comp_clause(i, AB, fc_lit(k, 1), ref_var(vu), g, fc_true()), "Π clause (cap formal)");
+      same_and_shared(reindex_dim(ucl, k, iv_var(m)), comp_clause(i, AB, fc_lit(m, 1), reindex_dim(ref_var(vu), k, iv_var(m)), f, fc_true()), "Π clause (face renamed)");
+      TermVarId xs = tv(A); RefId Sg = mk_sigma_lv(0, 0, xs, A, B);
       TermVarId vs = tv(Sg), vs2 = tv(Sg);
-      RefId scl = comp_clause_sigma(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs));
-      same_and_shared(reindex1(scl, vs, ref_var(vs2)), comp_clause_sigma(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs2)), "Σ clause (cap formal)");
-      RefId PT = mk_path_const(A, a, b);
+      RefId scl = comp_clause(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs), fc_true());
+      same_and_shared(reindex1(scl, vs, ref_var(vs2)), comp_clause(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs2), fc_true()), "Σ clause (cap formal)");
+      RefId PT = mk_path_const(0, A, a, b);
       TermVarId vpt = tv(PT), vpt2 = tv(PT), vput = declare_term(PT, fc_lit(k, 1));
-      RefId pcl = comp_clause_path(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt));
-      same_and_shared(reindex1(pcl, vpt, ref_var(vpt2)), comp_clause_path(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt2)), "Path clause (cap formal)");
-      RefId ucl2 = comp_clause_universe(i, U0, fc_false(), mk_system(0, NULL, NULL), A);
-      same_and_shared(reindex1(ucl2, vA, B), comp_clause_universe(i, U0, fc_false(), mk_system(0, NULL, NULL), B), "universe clause (cap formal)");
+      RefId pcl = comp_clause(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt), fc_true());
+      same_and_shared(reindex1(pcl, vpt, ref_var(vpt2)), comp_clause(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt2), fc_true()), "Path clause (cap formal)");
+      RefId ucl2 = comp_clause(i, U0, fc_false(), mk_system(0, NULL, NULL), A, fc_true());
+      same_and_shared(reindex1(ucl2, vA, B), comp_clause(i, U0, fc_false(), mk_system(0, NULL, NULL), B, fc_true()), "universe clause (cap formal)");
       TermVarId vT = tv(U0); RefId T = ref_var(vT);
-      TermVarId veq = tv(mk_equiv(T, A));
-      RefId Gl = mk_glue_type(A, fc_lit(m, 1), T, ref_var(veq));
+      TermVarId veq = tv(mk_equiv(0, 0, T, A));
+      RefId Gl = mk_glue_type_lv(0, A, fc_lit(m, 1), T, ref_var(veq));
       TermVarId vgl = tv(Gl), vgl2 = tv(Gl);
-      RefId gcl = comp_clause_glue(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl));
-      same_and_shared(reindex1(gcl, vgl, ref_var(vgl2)), comp_clause_glue(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl2)), "Glue clause (cap formal)"); }
+      RefId gcl = comp_clause(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl), fc_true());
+      same_and_shared(reindex1(gcl, vgl, ref_var(vgl2)), comp_clause(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl2), fc_true()), "Glue clause (cap formal)"); }
 
     /* the templates are typed: a clause output checks at the expected type
      * (the formals' declared types are the clause's typing) */
@@ -133,12 +155,12 @@ int main(void) {
       d[n++] = (CtxDecl){ S_DIM, i, 0 }; d[n++] = (CtxDecl){ S_DIM, k, 0 };
       for (size_t q2 = 0; q2 < 7; q2++) d[n++] = (CtxDecl){ S_TERM, ctxv[q2], term_var_type(ctxv[q2]) };
       ContextId G = context_make(n, d, fc_true());
-      WhnfStatus st; EvalResult *r = whnf(mk_coe(i, term_var_type(vs), ref_var(vs)), fc_true(), &st);
+      WhnfStatus st; EvalResult *r = whnf(mk_coe_at(0, i, term_var_type(vs), ref_var(vs)), fc_true(), &st);
       CHECK(st == W_OK && check(G, fc_true(), r->ref, term_var_type(vs), &why) == CK_VALID, "Σ clause output checks (%s)", why);
-      r = whnf(mk_coe(i, mk_fun(A, B), f), fc_true(), &st);
-      CHECK(st == W_OK && check(G, fc_true(), r->ref, mk_fun(A, B), &why) == CK_VALID, "Π clause output checks (%s)", why);
-      CHECK(check(G, fc_true(), mk_path_concat(A, a, b, c, mk_refl(A, a), mk_refl(A, b)), mk_path_const(A, a, c), &why) == CK_INVALID, "ill-typed concatenation is rejected");
-      CHECK(check(G, fc_true(), mk_path_concat(A, a, a, a, mk_refl(A, a), mk_refl(A, a)), mk_path_const(A, a, a), &why) == CK_VALID, "refl·refl : Path A a a (%s)", why); }
+      r = whnf(mk_coe_at(0, i, mk_fun(0, 0, A, B), f), fc_true(), &st);
+      CHECK(st == W_OK && check(G, fc_true(), r->ref, mk_fun(0, 0, A, B), &why) == CK_VALID, "Π clause output checks (%s)", why);
+      CHECK(check(G, fc_true(), mk_path_concat(0, A, a, b, c, mk_refl(0, A, a), mk_refl(0, A, b)), mk_path_const(0, A, a, c), &why) == CK_INVALID, "ill-typed concatenation is rejected");
+      CHECK(check(G, fc_true(), mk_path_concat(0, A, a, a, a, mk_refl(0, A, a), mk_refl(0, A, a)), mk_path_const(0, A, a, a), &why) == CK_VALID, "refl·refl : Path A a a (%s)", why); }
 
     /* ---- admission transaction (R1/Q2): mutual recursion ---- */
     { uint64_t ps[] = { vA }; VarSetId params = varset_make(ps, 1); DimSetId nod = dimset_make(NULL, 0);

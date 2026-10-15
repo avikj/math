@@ -20,15 +20,16 @@
 typedef uint64_t DiagramId;
 typedef uint64_t TransformId;
 
-/* one node of a finite construction diagram: value variable x : A,
- * witness variable e : Path_A(t, x), defining term t : A */
-typedef struct { uint64_t node_id; TermVarId x, e; RefId A, t; } DiagNode;
+/* one node of a finite construction diagram: value variable x : A (A : U_level),
+ * witness variable e : Path_A(t, x), defining term t : A (§59.1: every type
+ * position carries its universe level) */
+typedef struct { uint64_t node_id; TermVarId x, e; RefId A; uint64_t level; RefId t; } DiagNode;
 
 /* ---- diagrams (§39) ---- */
-/* an ordinary diagram with output type B and output term o */
-DiagramId diagram_declare(ContextId params, size_t n, const DiagNode *nodes, RefId B, RefId o);
-/* a residual description (§44): the telescope ends in the terminal type Z */
-DiagramId residual_declare(ContextId params, size_t n, const DiagNode *nodes, RefId Z);
+/* an ordinary diagram with output type B : U_lB and output term o */
+DiagramId diagram_declare(ContextId params, size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o);
+/* a residual description (§44): the telescope ends in the terminal type Z : U_lZ */
+DiagramId residual_declare(ContextId params, size_t n, const DiagNode *nodes, RefId Z, uint64_t lZ);
 /* typed telescope check under the required face */
 CheckStatus diagram_validate(DiagramId d, FaceId required, const char **reason);
 TermVarId diagram_output_param(DiagramId d);       /* the diagram's own y : B (0 for a residual) */
@@ -49,6 +50,7 @@ typedef struct {
     ContextId parameters;     /* Γ */
     FaceId required_face;     /* φ */
     RefId result_type;        /* B */
+    uint64_t result_level;    /* B : U_result_level */
     DiagramId left, right;
     RefId evidence;           /* p : Path_B(C_left, C_right) */
 } IdentityDecl;
@@ -58,6 +60,8 @@ typedef struct {
     ContextId parameters;     /* identity: Γ, y */
     FaceId required_face;
     RefId domain, codomain;
+    uint64_t domain_level, codomain_level;   /* TypeAt levels (§59.1) */
+    RefId generic_call[2];    /* §59.3: the fixed call origin per orientation, over the parameters and the argument slot */
     TermVarId forward_argument_slot, reverse_argument_slot;
     RefId forward_body, reverse_body;
     EvidenceKind evidence_kind;
@@ -75,10 +79,10 @@ typedef struct {
 
 /* each returns the published transform id, or 0 with *reason */
 TransformId compile_identity(const IdentityDecl *d, const char **reason);
-TransformId compile_equivalence(ContextId params, FaceId req, RefId X, RefId Y, RefId e, const char **reason);
+TransformId compile_equivalence(ContextId params, FaceId req, RefId X, uint64_t lX, RefId Y, uint64_t lY, RefId e, const char **reason);
 TransformId compile_residual_equivalence(ContextId params, FaceId req, DiagramId L, DiagramId R, RefId e, const char **reason);
-TransformId compile_cut(ContextId params, FaceId req, RefId B, RefId C, RefId D, const char **reason);
-TransformId compile_contractible_fibre(ContextId params, FaceId req, RefId B, RefId R, RefId k, const char **reason);
+TransformId compile_cut(ContextId params, FaceId req, RefId B, uint64_t lB, RefId C, RefId D, const char **reason);
+TransformId compile_contractible_fibre(ContextId params, FaceId req, RefId B, uint64_t lB, RefId R, RefId k, const char **reason);
 
 const CompiledTransform *transform_get(TransformId id);      /* NULL when unknown */
 const GraphPairTemplate *graph_pair_get(uint64_t id);
@@ -87,8 +91,9 @@ size_t transform_count(void);
  * with the registered record (§39) */
 CheckStatus certificate_verify(TransformId id, const char **reason);
 
-/* ---- invocation (§43) ---- */
-/* TRANSFORM_CALL(id, dir, σ, a); σ maps the transform's parameters */
+/* ---- invocation (§43, §59.3) ---- */
+/* TRANSFORM_CALL(id, dir, σ, a) = reindex(generic_call[id,dir], σ + slot ↦ a):
+ * one fixed call origin per transform and orientation */
 RefId mk_transform_call(TransformId id, int dir, MapId sigma, RefId a);
 bool compiler_decode_call(const Head *h, uint64_t *id, int *dir, MapId *sigma, RefId *a);
 /* the fixed template body and its argument slot for an orientation */

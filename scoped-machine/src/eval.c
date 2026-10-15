@@ -589,7 +589,8 @@ static void resume_comp_family(Cont *k, EvalResult *r) {
             FaceId g = fc_forall(k->j, r->faces[i]);
             if (fc_is_false(fc_meet(k->chi, g))) continue;
             faces[kept] = g;
-            terms[kept] = mk_comp(k->j, r->terms[i], k->phi, k->tube, k->cap);
+            { Head ho; open_ref(k->orig, &ho); uint64_t lv = levels_first(ho.levels); if (ho.levels == LEVELS_NONE) lv = LEVEL_NONE; head_free(&ho);
+              terms[kept] = mk_comp_lv(lv, k->j, r->terms[i], k->phi, k->tube, k->cap); }
             kept++;
             uni = fc_join(uni, g);
         }
@@ -599,18 +600,11 @@ static void resume_comp_family(Cont *k, EvalResult *r) {
         free(faces); free(terms);
         return;
     }
-    /* introduction: dispatch on the exposed family head */
-    Head h; open_ref(r->ref, &h);
-    Tag tag = h.tag; head_free(&h);
-    RefId out;
-    switch (tag) {
-    case T_PI: out = comp_clause_pi(k->j, r->ref, k->phi, k->tube, k->cap); break;
-    case T_SIGMA: out = comp_clause_sigma(k->j, r->ref, k->phi, k->tube, k->cap); break;
-    case T_PATH: out = comp_clause_path(k->j, r->ref, k->phi, k->tube, k->cap); break;
-    case T_GLUE_TYPE: out = comp_clause_glue(k->j, r->ref, k->phi, k->tube, k->cap); break;
-    case T_UNIVERSE: out = comp_clause_universe(k->j, r->ref, k->phi, k->tube, k->cap); break;
-    default: publish(k->dest, result_invalid("composition in a family whose head is not a type former")); return;
-    }
+    /* introduction: capture the retained components of the exposed head
+     * and instantiate the one fixed clause (§53–§54); the producer entry's
+     * face is the clause's source annotation κ */
+    RefId out = comp_clause(k->j, r->ref, k->phi, k->tube, k->cap, ENT(k->dest)->face);
+    if (!out) { publish(k->dest, result_invalid("composition in a family whose head is not a type former")); return; }
     forward(out, k->chi, k->dest);
 }
 

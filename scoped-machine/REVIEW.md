@@ -1,21 +1,24 @@
 # Reviewer guide
 
 This is a from-scratch C11 implementation of `HANDOFF.md` (*Scoped cubical interaction
-machine and identity compiler*, §§1–48, 14 October 2026). The guide
+machine and identity compiler*, §§1–59, 14 October 2026). The guide
 says how to check it without trusting the implementer's summary.
 
 ## 1. Run
 
-    make test     # ASan/UBSan/LSan: checking (74), comparison (12), templates and admission (52),
-                  # identity compiler (77), the review's regression cases (4 modes), acceptance/law
-                  # (124 + 23 net), 24-schedule comparison, concurrent clients (storms, pools); then
-                  # the acceptance, schedule, checking, template and compiler suites with 4-thread pools
-    make tsan     # every suite under ThreadSanitizer, including the review's concurrent case
-                  # with halt_on_error (several minutes)
+    make test     # ASan/UBSan/LSan: checking (76), comparison (12), templates and admission (61),
+                  # identity compiler (85), the review's regression cases (4 modes), acceptance/law
+                  # (124 + 35 net), 24-schedule comparison, concurrent clients (storms, pools); then
+                  # the acceptance, schedule, checking, template and compiler suites with 4-thread
+                  # pools; then the second review's reproductions (review-followup in 4 modes,
+                  # review-claim-wait, review-checker-lifecycle), each exiting nonzero on a miss
+    make tsan     # every suite under ThreadSanitizer, including the review's concurrent case and
+                  # the three reproductions with halt_on_error (several minutes)
 
-Expected: `74 passed, 0 failed`, `12 passed, 0 failed`, `52 passed, 0 failed`, `77 passed, 0 failed`, every
+Expected: `76 passed, 0 failed`, `12 passed, 0 failed`, `61 passed, 0 failed`, `85 passed, 0 failed`, every
 `(expected …)` line of `review-regressions` matching its expectation, `124 passed, 0 failed`,
-`schedule check passed`, `concurrent check passed`, and `make tsan` ending with the same lines
+`35 net checks passed`, `schedule check passed`, `concurrent check passed`, the reproductions
+printing their observations without a `FAIL:` line, and `make tsan` ending with the same lines
 and no `WARNING`. Where LeakSanitizer cannot run (restricted `/proc`), `ASAN_OPTIONS=detect_leaks=0`
 keeps ASan/UBSan; leak checking was run here.
 
@@ -35,7 +38,7 @@ See the table in `README.md`. Entry points worth reading first:
 | §10 cache protocol | `eval_request`, `publish`, `evaluate` | `src/eval.c` |
 | §12 dispatch | `evaluate`, `resume`, `eval_system_head`, `publish_branchwise`, `resume_branch` | `src/eval.c` |
 | §13 comp with retained components | `evaluate` (T_COMP), `resume_comp_family` | `src/eval.c` |
-| §14–17 clauses | `mk_fill`, `comp_clause_*`, `mk_line_equiv`, `mk_ua`, `mk_id_equiv` | `src/lib.c` |
+| §14–17, §52–54 clauses | `mk_fill`, `comp_clause`, `mk_line_equiv`, `mk_ua`, `mk_id_equiv`, `mk_down` (thin wrappers over `template_call`) | `src/lib.c` |
 | §19 rule table, materialization, duplication | `rule_op`, `materialize`, `rule_dup_*`, `net_eval_deliver` | `src/net.c` |
 | §20 replacement discipline | `rep_commit`, `step` | `src/net.c` |
 | §26 events | counters in `eval_request`, `deliver`, `publish`, `execute` | `src/eval.c` |
@@ -43,7 +46,11 @@ See the table in `README.md`. Entry points worth reading first:
 | §33 checking | `check_context`, `check_map`, `check_origin`, `infer_head`, `check_clause`, `validate_symbol` | `src/check.c` |
 | §34 conversion | `conv_type_clause`, `conv_term_clause`, `spine`, `conv_claim` | `src/check.c` |
 | §34–35 claims / admission transaction | `claim_acquire`, `claim_release`, `resolve_locked`, `may_block_locked`, `top_settled` | `src/check.c` |
-| §9, §14 fixed templates | `tm_*`, every `mk_*` and `comp_clause_*` | `src/lib.c` |
+| §49–51 scopes, templates, TVIEW | `capture_scope`, `apply_scope`, `reindex_scope`, `forall_scope`, `trav_*` (`src/scope.c`); `register_library` (the DSL), `interp`, `make_view_env`, `tview_open`, `tview_reindex`, `tnode_signature` (`src/template.c`); `ref_intern_tview`, `open_ref`/`reindex` dispatch (`src/term.c`) | — |
+| §55 scope/template agents | `rule_op` OP_CAPTURE_* … OP_TYPED_PARTIAL_GUARD; `test_net` | `src/net.c` |
+| §57, §59.4 admission gate, sessions | `check_admission`, `observe_checked`, `tid_locked`, `check_new_attempt` | `src/check.c` |
+| §59.1 levels | `origin_levels`, `mk_*_lv`, `term_levels_push` (`src/term.c`); `level_ok1/2`, `check_is_type`, `infer_tview` (`src/check.c`) | — |
+| §59.3 fixed call origin | `build_generic_call`, `transform_publish`, `mk_transform_call` | `src/compiler.c` |
 | §39 diagrams, realization, canonical substitution | `diagram_declare`, `diagram_validate`, `diagram_build` | `src/compiler.c` |
 | §41 singleton maps | `down`, `emit_collapse`, `emit_expand`, `diagram_collapse`, `diagram_expand` | `src/compiler.c` |
 | §42 identity compilation | `graph_pair`, `derive_identity`, `compile_identity`, `certificate_verify` | `src/compiler.c` |
@@ -130,43 +137,50 @@ Q1 and Q2 are answered as the author stated: control outcomes stay in DELIVER
 REQUEST or PUB), and recursive occurrences use their declared signatures while provisional
 successes stay uncommitted until the dependency checks succeed.
 
-### Open item: type parameters of templates
+### Type parameters of templates: resolved by §59.1
 
-The review prescribed `refl` as `PLAM(j, VAR(value))` over `type : U_ℓ`, `value : type`.
-Term formals are implemented exactly so; a *type* formal needs the universe level ℓ of the
-argument at invocation, because levels are exact (no cumulativity) and the instantiated view
-is checked by `check_map` against `U_ℓ`. The evaluator invokes the composition clauses with
-the exposed family head and has no ℓ: `COMP` carries no level annotation, and the level of a
-Π/Σ/Path/Glue head is not syntactic. So type and family arguments are the template's shape
-(one fixed origin per type instance, canonicalized over dimension formals), and the law
-`reindex(T(a), τ) = T(a[τ])` holds for τ on term and interval formals and for
-order-preserving renamings of the shape's dimensions, not for τ that changes a type
-argument. Full parametricity in types needs one of: (a) a universe-level annotation on
-`COMP` (and on the derived definitions' API), (b) the checker recording the inferred family
-level per `COMP` origin for the evaluator to read, which makes the clause output depend on
-whether admission ran, or (c) accepting the per-type-instance templates. The author should
-choose; (c) is implemented.
+The author chose explicit universe annotations. Type and family arguments are now ordinary
+template parameters (`src/template.c`, §51), every type position carries its level, and the
+sharing law `reindex(T(a), τ) = T(a[τ])` is an identity of references for every parameter;
+the per-type-instance templates are gone. `review-followup` (default mode) is the author's
+reproduction: `reindex(refl(A, x), [A ↦ B, x ↦ y]) == refl(B, y)` and one producer.
 
 ### §39–48
 
 Implemented in `src/compiler.c` (README, "Identity compiler"); the eleven §47 cases are in
-`tests/test_compiler.c` and case 10 in `tests/test_schedule.c`. Two readings to confirm:
+`tests/test_compiler.c` and case 10 in `tests/test_schedule.c`. The two readings offered with
+8329456 were confirmed by §59.2/§59.3 (map-as-fields and the common `y`), with the
+correction that invocations are views of one fixed call origin per orientation.
 
-1. `TRANSFORM_CALL` stores σ as fields (one per parameter of the transform's context, in
-   context order) rather than as a `MapId` payload, so that reindexing a view of the call
-   composes σ with the map by the ordinary opening of fields; the call's support is then the
-   union of the images' supports, the argument's, the annotations' and the required face's,
-   which contains the instantiated body's support. A reindexed call and a call built directly
-   at the reindexed data open to the same `(id, dir, σ, a, annotations)` but are different
-   `RefId`s, as for every other origin.
-2. The compiled record's parameter context for an identity is `Γ, y` with `y` keyed by the
-   ordered diagram pair; the collapse/expand templates of a diagram have their own `y_d`, and
-   the pair template instantiates them at the common `y` by parameter substitution.
+## 5b. The review of 8329456: corrections made (§59)
+
+| Finding | Correction | Where | Regression |
+| --- | --- | --- | --- |
+| §59.1 explicit levels | Levels word on every origin; annotated constructors; level-bearing library API; templates always annotate; checker validates every annotation and every template parameter image against its instantiated declared type | `term.*`, `lib.*`, `template.*`, `check.c` | `test_templates.c` (type-changing specialization is one reference; distinct levels are distinct references); `test_compiler.c` (wrong annotation rejected; stored record levels) |
+| §59.2 guarded substitution, annotated pairs | `check_map` checks an image under `ψ ∧ φ_x[σ]`; pairs carry and validate their Σ annotation (now with its level) | `check.c`, `term.c` | existing R4/R5 cases |
+| §59.3 one fixed call origin | `generic_call[id,dir]` built at publication over the parameters and the argument slot; `mk_transform_call = reindex(generic, σ|Γ + slot ↦ a)`; visibility only after both orientations exist | `compiler.c` | `review-followup call` (identical reference, one application pair); `test_compiler.c` 8b |
+| Checker wait through a freed claim pointer | Every wait re-reads `&K.recs.data[idx]` after resuming; the dependency vector may grow during a wait | `check.c` `claim_acquire` | `review-claim-wait` (200 claims interned while a reader waits), ASan and TSan |
+| Thread identities reused across checker restart | Session generation: `tl_gen != session_gen` re-registers the thread; attempts number UNRESOLVED outcomes so a later attempt retries them | `check.c` `tid_locked`, `check_new_attempt` | `review-checker-lifecycle` (8/8 EQUAL after `check_free(); check_init()`) |
+| Residual validation accepted a term for a type | `check_is_type`: the inferred type is observed and must be a universe; used for every type position of diagrams, declarations and the λ domain | `check.c`, `compiler.c` | `review-followup formation`; `test_compiler.c` bad node type |
+| Admission gate not connected | `check_admission` keyed by the global environment version; entered by `observe_checked` and by every compiler publication | `check.c`, `compiler.c` | `review-followup admission`; `test_check.c` (a well-typed term is refused once a rejected body is registered) |
+
+§§49–56 are implemented alongside (README, "Contextual templates and explicit levels"):
+scopes with bound atoms, template programs and TVIEW references, the library and all five
+composition clauses as fixed programs, `Down` over a captured scope, the §55 descriptors and
+operations (`test_net`: each rule agrees with the host operation and allocates no origin),
+and the exported graph labels for TVIEWs, scopes and bound atoms (`canon.c`).
+
+One implementation note for the reviewer: the signature check of a template instance covers
+its retained *reference* parameters (declared type instantiated by the environment, skipped
+when the declared type mentions a slot the node does not retain or an unannotated level);
+scope parameters are validated through their uses in the opened head, i.e. by the ordinary
+constructor rules on the instantiated field recipes.
 
 ## 6. Representation choices a reviewer should know
 
 Listed in `README.md` under "Representation decisions". The two most likely to raise an
 eyebrow: a neutral result retains the original eliminator reference (as §12 says) rather
-than a rebuilt head around the evaluated scrutinee (the review accepted this); and the
-composition clauses are fixed templates whose type/family/face arguments are shape data
-rather than formals, for the reason in §5 above.
+than a rebuilt head around the evaluated scrutinee (the review accepted this); and bound
+atoms of scopes live in the variable/dimension id spaces (`BOUND_BIT = 1<<61`, below the
+atom shift of the interval and face encodings) so that no existing structural operation
+needed a new case for them.

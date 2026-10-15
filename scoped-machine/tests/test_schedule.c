@@ -61,13 +61,13 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     RefId id = mk_lam(x, A, ref_var(x));
 
     /* neutral path application under three faces, and after reindexing */
-    RefId p = var(mk_path_const(A, a, b));
-    RefId pi = mk_papp_const(A, a, b, p, iv_var(i));
+    RefId p = var(mk_path_const(0, A, a, b));
+    RefId pi = mk_papp_const(0, A, a, b, p, iv_var(i));
     observe(pi, fc_true(), R); observe(pi, fc_lit(i, 0), R); observe(pi, fc_lit(i, 1), R);
     observe(reindex_dim(pi, i, iv_var(k)), fc_lit(k, 0), R);
     /* branchwise application over a system */
     FaceId fs[2] = { fc_lit(k, 0), fc_lit(k, 1) };
-    RefId ts[2] = { mk_lam(tv(A), A, a), var(mk_fun(A, A)) };
+    RefId ts[2] = { mk_lam(tv(A), A, a), var(mk_fun(0, 0, A, A)) };
     observe(mk_app(mk_system(2, fs, ts), b), fc_join(fs[0], fs[1]), R);
     /* repeated demand of one key from two concurrently launched frames: both
      * branches forward to the same closed reference t0, so one request hits
@@ -78,36 +78,36 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     RefId ts4[2] = { mk_lam(tv(A), A, mk_fst(mk_pair(t0, a))), mk_lam(tv(A), A, mk_snd(mk_pair(b, t0))) };
     observe(mk_app(mk_system(2, fs, ts4), b), fc_join(fs[0], fs[1]), R);
     /* composition clauses */
-    RefId f = var(mk_fun(A, B));
-    RefId cpi = mk_coe(i, mk_fun(A, B), f);
+    RefId f = var(mk_fun(0, 0, A, B));
+    RefId cpi = mk_coe_at(0, i, mk_fun(0, 0, A, B), f);
     observe(cpi, fc_true(), R); observe(mk_app(cpi, a), fc_true(), R);
     RefId S = mk_sigma(x, A, B);
-    RefId csg = mk_coe(i, S, var(S));
+    RefId csg = mk_coe_at(0, i, S, var(S));
     observe(csg, fc_true(), R); observe(mk_fst(csg), fc_true(), R); observe(mk_snd(csg), fc_true(), R);
-    RefId cpa = mk_coe(i, mk_path_const(A, a, a), var(mk_path_const(A, a, a)));
-    observe(mk_papp_const(A, a, a, cpa, iv_var(k)), fc_true(), R);
-    observe(mk_papp_const(A, a, a, cpa, iv_var(k)), fc_lit(k, 1), R);
+    RefId cpa = mk_coe_at(0, i, mk_path_const(0, A, a, a), var(mk_path_const(0, A, a, a)));
+    observe(mk_papp_const(0, A, a, a, cpa, iv_var(k)), fc_true(), R);
+    observe(mk_papp_const(0, A, a, a, cpa, iv_var(k)), fc_lit(k, 1), R);
     observe(mk_comp(i, U0, fc_lit(n, 0), B, A), fc_true(), R);
     /* type-family system with ∀ guards: a system of compositions, each
      * branch evaluated under its guard by the join */
     FaceId gs[2] = { fc_lit(n, 0), fc_lit(n, 1) };
-    RefId Ys[2] = { T, mk_fun(A, A) };
+    RefId Ys[2] = { T, mk_fun(0, 0, A, A) };
     RefId cmp4 = mk_comp(m, mk_system(2, gs, Ys), fc_false(), mk_system(0, NULL, NULL), var(A));
     observe(cmp4, fc_join(gs[0], gs[1]), R); observe(cmp4, gs[1], R);
-    RefId Ys2[2] = { mk_fun(A, B), mk_sigma(x, A, B) };
+    RefId Ys2[2] = { mk_fun(0, 0, A, B), mk_sigma(x, A, B) };
     RefId cmp5 = mk_comp(m, mk_system(2, gs, Ys2), fc_false(), mk_system(0, NULL, NULL), var(A));
     observe(cmp5, fc_join(gs[0], gs[1]), R);
     /* Glue composition off and on the Glue face, and transport along ua */
-    RefId e = var(mk_equiv(T, A));
+    RefId e = var(mk_equiv(0, 0, T, A));
     RefId Gm = mk_glue_type(A, fc_lit(m, 1), T, e);
-    RefId cg = mk_coe(i, Gm, var(Gm));
+    RefId cg = mk_coe_at(0, i, Gm, var(Gm));
     observe(cg, fc_true(), R);
     observe(mk_unglue(A, fc_lit(m, 1), T, e, cg), fc_true(), R);
     observe(cg, fc_lit(m, 1), R);
-    RefId ua = mk_ua(U0, U0, mk_id_equiv(U0));
-    RefId tr = mk_coe(i, mk_papp_const(mk_universe(1), U0, U0, ua, iv_var(i)), A);
+    RefId ua = mk_ua(1, U0, U0, mk_id_equiv(1, U0));
+    RefId tr = mk_coe_at(1, i, mk_papp_const(2, mk_universe(1), U0, U0, ua, iv_var(i)), A);
     observe(tr, fc_true(), R);
-    observe(mk_fst(mk_unglue(U0, fc_true(), U0, mk_id_equiv(U0), tr)), fc_true(), R);
+    observe(mk_fst(mk_unglue(U0, fc_true(), U0, mk_id_equiv(0, U0), tr)), fc_true(), R);
     observe(t0, fc_true(), R);
 
     /* §47 case 10: duplicate transformed-reference demands. The associativity
@@ -115,7 +115,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
      * under three faces and after a dimension substitution, and its
      * components and output path are observed. */
     { const char *why; Assoc As; assoc_build(&As, &why);
-      require(As.T, "associativity must compile in the schedule workload");
+      require(As.T, "associativity must compile in the schedule workload (%s)", why);
       MapId sigma = assoc_sigma(&As, As.rhs);
       RefId r = assoc_left_arg(&As, sigma);
       RefId call = mk_transform_call(As.T, DIR_FORWARD, sigma, r);
@@ -125,20 +125,20 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
       observe(mk_fst(call), fc_true(), R);
       RefId path = mk_snd(mk_snd(call));
       observe(path, fc_true(), R);
-      observe(mk_papp_const(As.X, As.rhs, As.rhs, path, iv_var(j)), fc_true(), R);
-      observe(mk_papp_const(As.X, As.rhs, As.rhs, path, iv_var(j)), fc_lit(j, 1), R);
+      observe(mk_papp_const(0, As.X, As.rhs, As.rhs, path, iv_var(j)), fc_true(), R);
+      observe(mk_papp_const(0, As.X, As.rhs, As.rhs, path, iv_var(j)), fc_lit(j, 1), R);
       RefId rcall = mk_transform_call(As.T, DIR_REVERSE, sigma, assoc_right_arg(&As, sigma));
       observe(rcall, fc_true(), R);
       observe(mk_fst(rcall), fc_true(), R);
       observe(mk_fst(mk_snd(rcall)), fc_true(), R);
       /* a call whose boundary moves along k, demanded whole and specialized */
       DimVarId kk = declare_dim();
-      RefId yk = mk_papp_const(As.X, As.lhs, As.rhs, As.alpha, iv_var(kk));
+      RefId yk = mk_papp_const(0, As.X, As.lhs, As.rhs, As.alpha, iv_var(kk));
       MapId sk = assoc_sigma(&As, yk);
       DimVarId i2 = declare_dim();
-      RefId w = mk_plam(i2, mk_papp_const(As.X, As.lhs, As.rhs, As.alpha, iv_meet(iv_var(i2), iv_var(kk))));
+      RefId w = mk_plam(i2, mk_papp_const(0, As.X, As.lhs, As.rhs, As.alpha, iv_meet(iv_var(i2), iv_var(kk))));
       RefId RLk = reindex(transform_get(As.T)->domain, sk);
-      RefId rk = mk_pair_at(RLk, As.mab, mk_pair_at(apply_term_binder(RLk, 0, 1, As.mab), mk_refl(As.X, As.mab), w));
+      RefId rk = mk_pair_at(RLk, As.mab, mk_pair_at(apply_term_binder(RLk, 0, 1, As.mab), mk_refl(0, As.X, As.mab), w));
       RefId callk = mk_transform_call(As.T, DIR_FORWARD, sk, rk);
       observe(callk, fc_true(), R);
       observe(callk, fc_lit(kk, 0), R);

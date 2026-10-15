@@ -1,11 +1,11 @@
 CC      ?= gcc
-CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
+CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
+SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -42,6 +42,19 @@ build/compiler: $(OBJ) tests/test_compiler.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 
+build/review-followup: $(OBJ) tests/review_followup.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+# includes check.c directly to stage a claim interleaving: linked without check.o
+build/review-claim-wait: $(filter-out src/check.o,$(OBJ)) tests/review_claim_wait.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+build/review-checker-lifecycle: $(OBJ) tests/review_checker_lifecycle.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
 test: all
 	./build/check
 	./build/match
@@ -59,8 +72,14 @@ test: all
 	CUBICAL_WORKERS=4 ./build/check
 	CUBICAL_WORKERS=4 ./build/templates
 	CUBICAL_WORKERS=4 ./build/compiler
+	./build/review-followup
+	./build/review-followup formation
+	./build/review-followup admission
+	./build/review-followup call
+	./build/review-claim-wait
+	./build/review-checker-lifecycle
 
-TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions
+TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
@@ -77,6 +96,10 @@ tsan:
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions recursive
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions concurrent
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions wordmap-window
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_followup call
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_checker_lifecycle
+	$(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -o build/tsan/review_claim_wait tests/review_claim_wait.c $(filter-out build/tsan/check.o,$(TSAN_CORE))
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_claim_wait
 
 clean:
 	rm -f src/*.o tests/*.o

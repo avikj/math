@@ -37,6 +37,9 @@ void check_free(void);
 /* budget of checking/conversion steps per top-level request (0 = unlimited);
  * exceeding it yields UNRESOLVED("budget") */
 void check_set_budget(size_t steps);
+/* §59.4: begin a new admission attempt (unresolved outcomes of the previous
+ * attempt are recomputed on demand) */
+void check_new_attempt(void);
 
 CheckStatus check_context(ContextId G, const char **reason);
 /* sigma : (Delta;psi) -> (Gamma;chi) */
@@ -45,6 +48,8 @@ CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma,
  * required face and checked type */
 CheckStatus check_origin(OriginId C, ContextId *ctx_out, FaceId *required_out, RefId *type_out, const char **reason);
 Inference infer(ContextId G, FaceId chi, RefId t);
+/* Γ;χ ⊢ A : U_level (formation in a universe; a term with some type is not a type) */
+CheckStatus check_is_type(ContextId G, FaceId chi, RefId A, uint64_t *level, const char **reason);
 CheckStatus check(ContextId G, FaceId chi, RefId t, RefId A, const char **reason);
 ConvStatus convert_type(ContextId G, FaceId chi, RefId A, RefId B);
 ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A);
@@ -53,8 +58,14 @@ ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A);
  * §33 item 3), then observes. An INVALID or UNRESOLVED check yields
  * W_INVALID / W_STUCK respectively with no observation. */
 EvalResult *observe_checked(ContextId G, RefId t, WhnfStatus *status, const char **reason);
-/* validate every declared symbol with a body against its declared type */
+/* validate every declared symbol with a body against its declared type
+ * (the private driver of the admission transaction) */
 CheckStatus check_signature(const char **reason);
+/* §57 R1: the whole-environment admission gate. Freezes the registered
+ * declarations and bodies (the environment version), validates all of them
+ * once per version, and returns the environment's verdict; public checked
+ * execution and compiler publication require VALID. */
+CheckStatus check_admission(const char **reason);
 
 /* the parameter context of an origin: its free dimensions, then its free
  * term variables in dependency order with their declared types; assumption

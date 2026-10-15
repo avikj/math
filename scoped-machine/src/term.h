@@ -36,6 +36,33 @@ typedef struct {
     FieldIndex domain_field; /* term binders: field holding the domain type */
 } Binder;
 
+/* ---- universe levels (§59.1): explicit formation annotations ----
+ * An origin record carries a packed pair of levels; LEVEL_NONE marks an
+ * annotation the source did not supply (the checker then infers it; the
+ * fixed templates always supply theirs). */
+#define LEVEL_NONE  0xffffffffULL
+#define LEVELS_NONE 0xffffffffffffffffULL
+uint64_t levels_pack(uint64_t m, uint64_t n);
+uint64_t levels_first(uint64_t lv);
+uint64_t levels_second(uint64_t lv);
+uint64_t level_max(uint64_t a, uint64_t b);      /* LEVEL_NONE absorbs */
+uint64_t level_succ(uint64_t a);
+uint64_t origin_levels(OriginId c);
+/* set the levels for the next annotated construction on this thread (the
+ * template layer uses it around its constructor nodes) */
+void term_levels_push(uint64_t m, uint64_t n);
+void term_levels_pop(void);
+
+/* ---- bound local occurrences (§50) ----
+ * A local of a scope telescope is a (depth, slot) atom encoded in the
+ * variable / dimension id space with the top bit set; it has no declaration
+ * record and no free support. */
+#define BOUND_BIT (1ULL << 61)           /* below the atom shift of the interval/face encodings */
+static inline uint64_t bound_id(uint32_t depth, uint32_t slot) { return BOUND_BIT | ((uint64_t)depth << 32) | slot; }
+static inline bool is_bound_id(uint64_t id) { return (id & BOUND_BIT) != 0; }
+static inline uint32_t bound_depth(uint64_t id) { return (uint32_t)((id & ~BOUND_BIT) >> 32) & 0x1fffffffu; }
+static inline uint32_t bound_slot(uint64_t id) { return (uint32_t)(id & 0xffffffffULL); }
+
 const char *tag_name(Tag t);
 
 /* ---- declarations ---- */
@@ -87,6 +114,14 @@ FaceId origin_required(OriginId c);
 /* ---- references ---- */
 RefId ref_var(TermVarId x);
 bool ref_is_var(RefId t);
+/* TVIEW(template_node, environment) references (§49): the third reference
+ * form; their operations live in the template layer */
+bool ref_is_tview(RefId t);
+Tag ref_tag(RefId t);                 /* the head tag of a non-variable reference (VIEW origin or TVIEW node) */
+uint64_t ref_tnode(RefId t);
+uint64_t ref_tenv(RefId t);
+RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required);
+
 TermVarId ref_var_id(RefId t);
 OriginId ref_origin(RefId t);
 MapId ref_map(RefId t);
@@ -118,8 +153,8 @@ const uint64_t *nominal_key(uint64_t nid, size_t *npairs);
  * formal's entry, then formal ↦ fresh. *fresh receives the minted name. */
 MapId lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);
 
-typedef struct { TermVarId x; RefId type; RefId body; } TermOpen;
-typedef struct { DimVarId j; RefId body; } DimOpen;
+typedef struct TermOpen { TermVarId x; RefId type; RefId body; } TermOpen;
+typedef struct DimOpen { DimVarId j; RefId body; } DimOpen;
 TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 DimOpen resolve_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 RefId apply_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field, RefId a);
@@ -135,13 +170,14 @@ typedef struct {
     uint64_t id;          /* substituted RefId / IntervalId / FaceId when !is_binder */
 } HField;
 
-typedef struct {
+typedef struct Head {
     bool is_var;
     TermVarId var;
     Tag tag;
     uint64_t payload;
+    uint64_t levels;      /* packed formation levels (§59.1) */
     RefId owner;
-    OriginId origin;
+    OriginId origin;      /* raw views */
     MapId map;
     size_t n;
     HField *f;
@@ -149,6 +185,12 @@ typedef struct {
 
 void open_ref(RefId t, Head *h);
 void head_free(Head *h);
+/* TVIEW operations (template.c) */
+RefId tview_reindex(RefId t, MapId sigma);
+Tag tnode_tag(uint64_t Q);           /* template.c */
+void tview_open(RefId t, Head *h);
+TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
+DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 
 /* ---- occurrence contexts (§2) ----
  * A context is an ordered list of declarations DIM(i) or TERM(x, type) with
@@ -185,6 +227,7 @@ const char *global_name(SymbolId s);
 size_t global_count(void);
 void set_global_body(SymbolId s, RefId body);
 RefId global_ref(SymbolId s);          /* VIEW(GLOBAL(s), identity) */
+uint64_t global_env_version(void);     /* changes with every declaration / body registration */
 RefId unfold_global(RefId t);          /* reindex(definition body, map) */
 
 /* ---- constructors (identity views of fresh origins) ---- */
@@ -192,6 +235,9 @@ RefId mk_universe(uint64_t level);
 RefId mk_pi(TermVarId x, RefId A, RefId B);
 RefId mk_sigma(TermVarId x, RefId A, RefId B);
 RefId mk_lam(TermVarId x, RefId A, RefId body);
+RefId mk_pi_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B);     /* A : U_m, B : U_n */
+RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B);
+RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body);
 RefId mk_app(RefId f, RefId a);
 RefId mk_pair(RefId a, RefId b);
 RefId mk_pair_at(RefId S, RefId a, RefId b);        /* PAIR with its Σ type annotation (field 2) */
@@ -204,6 +250,14 @@ RefId mk_glue_type(RefId A, FaceId alpha, RefId T, RefId e);
 RefId mk_glue_intro(RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a);
 RefId mk_unglue(RefId A, FaceId alpha, RefId T, RefId e, RefId v);
 RefId mk_comp(DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap);
+/* annotated forms (§59.1): n is the family's / type's universe level */
+RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap);
+RefId mk_path_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r);
+RefId mk_papp_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s);
+RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e);
+RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a);
+RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v);
+RefId mk_pair_at_lv(uint64_t l, RefId S, RefId a, RefId b);
 RefId mk_system(size_t n, const FaceId *faces, const RefId *terms);
 /* TRANSFORM_CALL(id, dir, σ, a) with checked instantiated type annotations:
  * payload = 2·id + dir; fields = the images of the template's parameters in

@@ -161,7 +161,7 @@ static void test_substitution(void) {
     CHECK(reindex1(reindex1(Rx, x, a), x, bb) == reindex1(Rx, x, a), "second substitution is a separate operation");
 
     /* typed boundary through declaration types: w : P(x) depends on x */
-    RefId Pfam = var(mk_fun(A, U0));
+    RefId Pfam = var(mk_fun(0, 1, A, U0));
     TermVarId w = tv(mk_app(Pfam, ref_var(x)));
     RefId W = ref_var(w);
     CHECK(varset_contains(ref_freevars(W), x), "boundary of VAR(w) includes x through w's declaration type");
@@ -172,8 +172,8 @@ static void test_substitution(void) {
 
     /* instantiated support: image of x introduces dimension j */
     DimVarId j = declare_dim();
-    RefId pth = var(mk_path_const(A, a, bb));
-    RefId at_j = mk_papp_const(A, a, bb, pth, iv_var(j));   /* depends on j */
+    RefId pth = var(mk_path_const(0, A, a, bb));
+    RefId at_j = mk_papp_const(0, A, a, bb, pth, iv_var(j));   /* depends on j */
     RefId T = mk_pair(ref_var(x), ref_var(y));
     CHECK(!dimset_contains(ref_support(T), j), "origin has no j");
     RefId Tj = reindex1(T, x, at_j);
@@ -200,8 +200,8 @@ static void test_binders(void) {
     CHECK(Kx == K, "formal not in boundary: substitution does nothing");
     /* dimension binder */
     DimVarId i = declare_dim();
-    RefId p = var(mk_path_const(A, a, a));
-    RefId pl = mk_plam(i, mk_papp_const(A, a, a, p, iv_var(i)));
+    RefId p = var(mk_path_const(0, A, a, a));
+    RefId pl = mk_plam(i, mk_papp_const(0, A, a, a, p, iv_var(i)));
     DimOpen d = resolve_dim_binder(pl, 0, 0);
     CHECK(d.j != i, "opened dimension is fresh");
     { Head hh; open_ref(apply_dim_binder(pl, 0, 0, iv_one()), &hh);
@@ -215,7 +215,7 @@ static void test_binders(void) {
     CHECK(h.tag == T_LAM && h.f[1].is_binder && h.f[1].sort == S_TERM, "open of lambda exposes a term binder handle");
     head_free(&h);
     /* reindex_head: a view of a lambda under a map */
-    RefId Bfam = var(mk_fun(A, U0));
+    RefId Bfam = var(mk_fun(0, 1, A, U0));
     TermVarId yv = tv(A);
     RefId g = mk_lam(x, A, mk_app(Bfam, ref_var(yv)));
     RefId gsub = reindex1(g, yv, a);
@@ -253,8 +253,8 @@ static void test_eval_basic(void) {
 
     /* neutral path p@i under true / i=0 / i=1 */
     DimVarId i = declare_dim(), k = declare_dim();
-    RefId p = var(mk_path_const(A, a, bb));
-    RefId pi = mk_papp_const(A, a, bb, p, iv_var(i));
+    RefId p = var(mk_path_const(0, A, a, bb));
+    RefId pi = mk_papp_const(0, A, a, bb, p, iv_var(i));
     r = whnf(pi, fc_true(), &st);
     CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_PAPP, "p@i neutral under true");
     r = whnf(pi, fc_lit(i, 0), &st);
@@ -278,10 +278,10 @@ static void test_eval_basic(void) {
     CHECK(st == W_OK && r->ref == a, "p@k under k=0 observes the left endpoint");
 
     /* plam β and endpoint priority on a neutral path */
-    RefId pl = mk_plam(i, mk_papp_const(A, a, bb, p, iv_negate(iv_var(i))));
-    r = whnf(mk_papp_const(A, bb, a, pl, iv_var(k)), fc_lit(k, 0), &st);
+    RefId pl = mk_plam(i, mk_papp_const(0, A, a, bb, p, iv_negate(iv_var(i))));
+    r = whnf(mk_papp_const(0, A, bb, a, pl, iv_var(k)), fc_lit(k, 0), &st);
     CHECK(st == W_OK && r->ref == bb, "(⟨i⟩ p(¬i)) @ k under k=0 ⇝ b by the endpoint test");
-    r = whnf(mk_papp_const(A, bb, a, pl, iv_var(k)), fc_true(), &st);
+    r = whnf(mk_papp_const(0, A, bb, a, pl, iv_var(k)), fc_true(), &st);
     { Head hh; open_ref(r->ref, &hh);
       CHECK(st == W_OK && r->cls == R_NEUTRAL && hh.tag == T_PAPP && hh.f[3].id == p && hh.f[4].id == iv_negate(iv_var(k)), "(⟨i⟩ p(¬i)) @ k ⇝ p(¬k) neutral");
       head_free(&hh); }
@@ -300,7 +300,7 @@ static void test_eval_basic(void) {
 
     /* globals: unfold through a fixed body */
     uint64_t Aparam[1] = { ref_var_id(A) };
-    SymbolId K = define_global("K", varset_make(Aparam, 1), dimset_make(NULL, 0), mk_fun(A, mk_fun(A, A)));
+    SymbolId K = define_global("K", varset_make(Aparam, 1), dimset_make(NULL, 0), mk_fun(0, 0, A, mk_fun(0, 0, A, A)));
     TermVarId y = tv(A);
     set_global_body(K, mk_lam(x, A, mk_lam(y, A, ref_var(x))));
     r = whnf(mk_app(mk_app(global_ref(K), a), bb), fc_true(), &st);
@@ -319,7 +319,7 @@ static void test_eval_glue_system(void) {
     SECTION("§12 Glue, systems, composition priorities");
     WhnfStatus st;
     RefId A = var(U0), T = var(U0);
-    RefId e = var(mk_equiv(T, A));
+    RefId e = var(mk_equiv(0, 0, T, A));
     DimVarId i = declare_dim();
     FaceId i1 = fc_lit(i, 1);
     RefId G = mk_glue_type(A, i1, T, e);
@@ -361,7 +361,7 @@ static void test_eval_glue_system(void) {
     r = whnf(sys, fc_true(), &st);
     CHECK(st == W_INVALID, "a system outside its required face is an invalid occurrence, not a value");
     /* eliminator distributes branchwise */
-    RefId f = var(mk_fun(A, A));
+    RefId f = var(mk_fun(0, 0, A, A));
     FaceId fs2[2] = { fc_lit(j, 0), fc_lit(j, 1) };
     RefId ts2[2] = { mk_lam(tv(A), A, a), f };
     r = whnf(mk_app(mk_system(2, fs2, ts2), b), fc_join(fs2[0], fs2[1]), &st);
@@ -392,7 +392,7 @@ static void test_eval_glue_system(void) {
     CHECK(st == W_INVALID, "endpoint-only type-family branches do not cover the symbolic line");
     DimVarId n = declare_dim();
     FaceId gs2[2] = { fc_lit(n, 0), fc_lit(n, 1) };
-    RefId Ys2[2] = { X, mk_fun(A, A) };
+    RefId Ys2[2] = { X, mk_fun(0, 0, A, A) };
     RefId cmp4 = mk_comp(m, mk_system(2, gs2, Ys2), fc_false(), mk_system(0, NULL, NULL), u);
     r = whnf(cmp4, fc_join(gs2[0], gs2[1]), &st);
     CHECK(st == W_OK && r->cls == R_SYSTEM && r->nbr == 2 && r->faces[0] == gs2[0], "system of compositions with ∀m guards");
@@ -408,8 +408,8 @@ static void test_comp_clauses(void) {
     EvalResult *r;
 
     /* Π: coe in a constant Π family yields a λ; applying it yields a comp in B */
-    RefId f = var(mk_fun(A, B));
-    RefId cpi = mk_coe(i, mk_fun(A, B), f);
+    RefId f = var(mk_fun(0, 0, A, B));
+    RefId cpi = mk_coe_at(0, i, mk_fun(0, 0, A, B), f);
     r = whnf(cpi, fc_true(), &st);
     CHECK(st == W_OK && r->cls == R_INTRODUCTION && head_tag(r) == T_LAM, "coe in Π ⇝ λ");
     RefId a = var(A);
@@ -428,7 +428,7 @@ static void test_comp_clauses(void) {
     TermVarId x = tv(A);
     RefId S = mk_sigma(x, A, B);
     RefId z = var(S);
-    RefId csg = mk_coe(i, S, z);
+    RefId csg = mk_coe_at(0, i, S, z);
     r = whnf(csg, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_PAIR, "coe in Σ ⇝ pair");
     r = whnf(mk_fst(csg), fc_true(), &st);
@@ -443,18 +443,18 @@ static void test_comp_clauses(void) {
 
     /* PathP: coe in Path A a b ⇝ plam; its application at an endpoint reduces */
     RefId b = var(B);
-    RefId pA = var(mk_path_const(A, a, a));
-    RefId cpa = mk_coe(i, mk_path_const(A, a, a), pA);
+    RefId pA = var(mk_path_const(0, A, a, a));
+    RefId cpa = mk_coe_at(0, i, mk_path_const(0, A, a, a), pA);
     r = whnf(cpa, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_PLAM, "coe in Path ⇝ ⟨j⟩ …");
     DimVarId k = declare_dim();
-    r = whnf(mk_papp_const(A, a, a, cpa, iv_var(k)), fc_lit(k, 0), &st);
+    r = whnf(mk_papp_const(0, A, a, a, cpa, iv_var(k)), fc_lit(k, 0), &st);
     CHECK(st == W_OK && r->ref == a, "its application at 0 is the endpoint a (tube coverage)");
-    r = whnf(mk_papp_const(A, a, a, cpa, iv_var(k)), fc_true(), &st);
+    r = whnf(mk_papp_const(0, A, a, a, cpa, iv_var(k)), fc_true(), &st);
     CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "in the interior it is a composition in A");
 
     /* universe: comp in U ⇝ Glue */
-    RefId cu = mk_coe(i, U0, A);
+    RefId cu = mk_coe_at(1, i, U0, A);
     r = whnf(cu, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_GLUE_TYPE, "comp in U ⇝ Glue");
     open_ref(r->ref, &h);
@@ -470,9 +470,9 @@ static void test_comp_clauses(void) {
 
     /* transport along ua(idEquiv U) of a type: Glue composition fires and
      * the result collapses on alpha_1 = true to the extended fibre point */
-    RefId ua = mk_ua(U0, U0, mk_id_equiv(U0));
-    RefId uai = mk_papp_const(mk_universe(1), U0, U0, ua, iv_var(i));
-    RefId tr = mk_coe(i, uai, A);
+    RefId ua = mk_ua(1, U0, U0, mk_id_equiv(1, U0));
+    RefId uai = mk_papp_const(2, mk_universe(1), U0, U0, ua, iv_var(i));
+    RefId tr = mk_coe_at(1, i, uai, A);
     r = whnf(tr, fc_true(), &st);
     CHECK(st == W_OK, "transport along ua evaluates (status %d)", (int)st);
     if (st == W_OK) {
@@ -480,11 +480,11 @@ static void test_comp_clauses(void) {
         CHECK(r->cls == R_INTRODUCTION && head_tag(r) == T_GLUE_TYPE, "…to a Glue type (an hcomp in U over the fibre data), not a stuck term");
     }
     /* Glue composition where the Glue face is off: base family must be used generally */
-    RefId T = var(U0), e = var(mk_equiv(T, A));
+    RefId T = var(U0), e = var(mk_equiv(0, 0, T, A));
     DimVarId m = declare_dim();
     RefId Gm = mk_glue_type(A, fc_lit(m, 1), T, e);     /* constant in i, partial in m */
     RefId g0 = var(Gm);
-    RefId cg = mk_coe(i, Gm, g0);
+    RefId cg = mk_coe_at(0, i, Gm, g0);
     r = whnf(cg, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_GLUE_INTRO, "comp in Glue ⇝ glue intro off the Glue face");
     r = whnf(mk_unglue(A, fc_lit(m, 1), T, e, cg), fc_true(), &st);
@@ -501,9 +501,9 @@ static void test_contexts(void) {
     RefId A = var(U0);
     TermVarId x = tv(A); RefId a = var(A);
     DimVarId i = declare_dim();
-    RefId p = var(mk_path_const(A, a, a));
-    RefId t = mk_papp_const(A, a, a, p, iv_var(i));
-    CtxDecl ds[4] = { { S_TERM, ref_var_id(A), U0 }, { S_TERM, ref_var_id(a), A }, { S_TERM, ref_var_id(p), mk_path_const(A, a, a) }, { S_DIM, i, 0 } };
+    RefId p = var(mk_path_const(0, A, a, a));
+    RefId t = mk_papp_const(0, A, a, a, p, iv_var(i));
+    CtxDecl ds[4] = { { S_TERM, ref_var_id(A), U0 }, { S_TERM, ref_var_id(a), A }, { S_TERM, ref_var_id(p), mk_path_const(0, A, a, a) }, { S_DIM, i, 0 } };
     ContextId full = context_make(4, ds, fc_true());
     CHECK(occurrence_validate(t, full, NULL) == OCC_VALID, "fully declared occurrence is valid");
     ContextId no_dim = context_make(3, ds, fc_true());

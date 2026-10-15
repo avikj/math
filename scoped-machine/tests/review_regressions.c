@@ -109,7 +109,7 @@ int main(int argc, char **argv) {
         failures += s != CK_VALID;
         printf("context with beta-equivalent declaration: %s (expected VALID); %s\n", check_status_name(s), why);
 
-        RefId AA = mk_fun(A, A);
+        RefId AA = mk_fun(0, 0, A, A);
         TermVarId vf = declare_term(AA, fc_true());
         TermVarId vz = declare_term(AA, fc_true());
         RefId f = ref_var(vf), a = ref_var(va);
@@ -120,10 +120,10 @@ int main(int argc, char **argv) {
                conv_status_name(convert_term(g, fc_true(), mk_app(mk_app(identity, f), a), mk_app(f, a), A)));
 
         TermVarId vxA = declare_term(A, fc_true());
-        RefId before_substitution = reindex1(mk_refl(A, ref_var(vxA)), vxA, a);
-        RefId after_substitution = mk_refl(A, a);
+        RefId before_substitution = reindex1(mk_refl(0, A, ref_var(vxA)), vxA, a);
+        RefId after_substitution = mk_refl(0, A, a);
         failures += before_substitution != after_substitution;
-        printf("fixed-template refl: reindex(mk_refl(A,x),x->a) == mk_refl(A,a): %s (expected identical references)\n",
+        printf("fixed-template refl: reindex(mk_refl(0, A,x),x->a) == mk_refl(0, A,a): %s (expected identical references)\n",
                before_substitution == after_substitution ? "identical" : "distinct");
         EvalEvents ev0 = eval_events(); WhnfStatus ws;
         (void)whnf(before_substitution, fc_true(), &ws);
@@ -133,7 +133,7 @@ int main(int argc, char **argv) {
         failures += ev1.launch - ev0.launch != 1;
         printf("fixed-template refl observations: %zu new producer launches (expected 1)\n", ev1.launch - ev0.launch);
         printf("same refl terms remain mathematically convertible: %s\n",
-               conv_status_name(convert_term(g, fc_true(), before_substitution, after_substitution, mk_path_const(A, a, a))));
+               conv_status_name(convert_term(g, fc_true(), before_substitution, after_substitution, mk_path_const(0, A, a, a))));
     }
     check_free(); eval_free(); machine_free();
     return failures ? 1 : 0;

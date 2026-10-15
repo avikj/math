@@ -72,8 +72,8 @@ NodeId net_node(Net *n, NodeKind kind, uint8_t nports, const int8_t *polarity, P
     return id;
 }
 
-static bool is_descriptor(NodeKind k) { return k >= D_REF && k <= D_STATUS; }
-static bool is_operation(NodeKind k) { return k >= OP_REINDEX_TERM && k <= OP_EVAL; }
+static bool is_descriptor(NodeKind k) { return k >= D_REF && k <= D_TYPED_PARTIAL; }
+static bool is_operation(NodeKind k) { return k >= OP_REINDEX_TERM && k <= OP_TYPED_PARTIAL_GUARD; }
 
 NodeId net_descriptor(Net *n, NodeKind kind, Payload p) {
     require(is_descriptor(kind), "not a descriptor kind");
@@ -465,6 +465,32 @@ static void rule_erase_shell(Net *n, NodeId er, NodeId sh) {
     rep_commit(n, &r);
 }
 
+/* §55 operand records in the key interner: [n, (sort,id,type,level,required)*] and [n, (sort,id)*] */
+uint64_t net_capture_decls(size_t n, const CaptureDecl *d) {
+    Words w; words_init(&w); words_push(&w, 0xCA9); words_push(&w, n);
+    for (size_t k = 0; k < n; k++) { words_push(&w, d[k].sort); words_push(&w, d[k].id); words_push(&w, d[k].type); words_push(&w, d[k].level); words_push(&w, d[k].required); }
+    uint64_t id = interner_intern(&M.keys, w.w, w.n, NULL); words_free(&w); return id;
+}
+uint64_t net_scope_args(size_t n, const Val *a) {
+    Words w; words_init(&w); words_push(&w, 0xA96); words_push(&w, n);
+    for (size_t k = 0; k < n; k++) { words_push(&w, a[k].sort); words_push(&w, a[k].id); }
+    uint64_t id = interner_intern(&M.keys, w.w, w.n, NULL); words_free(&w); return id;
+}
+static size_t capture_decls_get(uint64_t h, CaptureDecl *out, size_t max) {
+    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(w[0] == 0xCA9, "not a capture telescope");
+    size_t m = (size_t)w[1]; require(m <= max, "capture telescope too long");
+    for (size_t k = 0; k < m; k++) { out[k].sort = (Sort)w[2 + 5 * k]; out[k].id = w[3 + 5 * k]; out[k].type = w[4 + 5 * k]; out[k].level = w[5 + 5 * k]; out[k].required = w[6 + 5 * k]; }
+    return m;
+}
+static size_t scope_args_get(uint64_t h, Val *out, size_t max) {
+    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(w[0] == 0xA96, "not a scope argument list");
+    size_t m = (size_t)w[1]; require(m <= max, "scope argument list too long");
+    for (size_t k = 0; k < m; k++) { out[k].sort = (ValSort)w[2 + 2 * k]; out[k].id = w[3 + 2 * k]; }
+    return m;
+}
+static NodeId desc_scope(Net *n, ScopeId S) { Payload p = {0}; p.a = S; return net_descriptor(n, D_SCOPE, p); }
+static NodeId desc_typed_partial(Net *n, RefId body, RefId type, uint64_t level, FaceId guard) { Payload p = {0}; p.ref = body; p.b = type; p.c = level; p.face = guard; return net_descriptor(n, D_TYPED_PARTIAL, p); }
+
 static void rule_op(Net *n, NodeId op, NodeId data) {
     Node os = *N(n, op), ds = *N(n, data);
     const Node *o = &os, *d = &ds;
@@ -541,6 +567,54 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         count(&n->n_apply);
         break;
     }
+    /* ---- §55: scope and template agents; each is one finite pure operation ---- */
+    case OP_CAPTURE_REF_SCOPE: {
+        WANT(D_REF);
+        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
+        Val body = { VS_REF, Q.ref };
+        res = desc_scope(n, capture_scope(m, d, body, P.ref, P.c, P.face));     /* P: a = Δ, ref = type, c = level, face = guard */
+        break;
+    }
+    case OP_CAPTURE_FACE_SCOPE: {
+        WANT(D_FACE);
+        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
+        Val body = { VS_FACE, Q.face };
+        res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
+        break;
+    }
+    case OP_CAPTURE_INTERVAL_SCOPE: {
+        WANT(D_INTERVAL);
+        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
+        Val body = { VS_INTERVAL, Q.a };
+        res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
+        break;
+    }
+    case OP_REINDEX_SCOPE: WANT(D_SCOPE); res = desc_scope(n, reindex_scope(Q.a, P.a)); break;
+    case OP_APPLY_SCOPE: {
+        WANT(D_SCOPE);
+        Val args[16]; size_t m = scope_args_get(P.a, args, 16);
+        TypedPartial tp = apply_scope(Q.a, m, args);
+        if (tp.body.sort == VS_REF) res = desc_typed_partial(n, tp.body.id, tp.type, tp.level, tp.guard);
+        else if (tp.body.sort == VS_FACE) res = desc_face(n, tp.body.id);
+        else res = desc_interval(n, tp.body.id);
+        break;
+    }
+    case OP_FORALL_SCOPE: {
+        WANT(D_SCOPE);
+        if (scope_arity(Q.a) != 1 || scope_local(Q.a, 0).sort != S_DIM || scope_body(Q.a).sort != VS_FACE) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
+        res = desc_face(n, forall_scope(Q.a));
+        break;
+    }
+    case OP_REINDEX_TEMPLATE_ENV: { WANT(D_TEMPLATE_ENV); Payload p = {0}; p.a = tenv_reindex(Q.a, P.a); res = net_descriptor(n, D_TEMPLATE_ENV, p); break; }
+    case OP_INSTANTIATE_TEMPLATE: WANT(D_TEMPLATE_ENV); res = desc_ref(n, tenv_instantiate(P.a, Q.a)); break;
+    case OP_REINDEX_TYPED_PARTIAL: WANT(D_TYPED_PARTIAL); res = desc_typed_partial(n, reindex(Q.ref, P.a), Q.b ? reindex(Q.b, P.a) : 0, Q.c, fc_reindex(Q.face, P.a)); break;
+    case OP_USE_TYPED_PARTIAL:
+        WANT(D_TYPED_PARTIAL);
+        if (fc_entails(P.face, Q.face)) res = desc_ref(n, Q.ref);
+        else { res = status_node(n, ST_NOT_COVERED, Q.face, Q.ref); N(n, res)->p.b = Q.b; N(n, res)->p.c = Q.c; }   /* retains the typed partial */
+        break;
+    case OP_TYPED_PARTIAL_TYPE: WANT(D_TYPED_PARTIAL); res = desc_ref(n, Q.b); break;      /* retained as type data, not observed */
+    case OP_TYPED_PARTIAL_GUARD: WANT(D_TYPED_PARTIAL); res = desc_face(n, Q.face); break;
     case OP_EVAL: {
         WANT(D_REF);
         /* the result endpoint transfers into the continuation; the request
@@ -827,10 +901,44 @@ void test_net(void) {
     P.face = fc_lit(i, 0);
     TCHECK(run_op(&net, OP_USE_PARTIAL, P, D_PARTIAL, Q, &ok, &op) && ok == D_REF && op.ref == a, "USE_PARTIAL covered yields the term");
     /* support */
-    RefId pth = ref_var(declare_term(mk_path_const(A, a, a), fc_true()));
+    RefId pth = ref_var(declare_term(mk_path_const(0, A, a, a), fc_true()));
     RefId at_i = mk_papp(j, A, a, a, pth, iv_var(i));
     P = (Payload){0}; Q = (Payload){0}; Q.ref = at_i;
     TCHECK(run_op(&net, OP_GET_SUPPORT, P, D_REF, Q, &ok, &op) && ok == D_DIMSET && dimset_contains(op.a, i) && !dimset_contains(op.a, j), "GET_SUPPORT");
+
+    /* §55 scope / template agents: capture, reindex, apply, forall; template
+     * environments; typed partials. Each is one pure replacement that agrees
+     * with the host operation. */
+    { CaptureDecl dl[1] = { { S_DIM, i, 0, LEVEL_NONE, fc_true() } };
+      size_t orgS = interner_count(&M.origins);
+      P = (Payload){0}; P.a = net_capture_decls(1, dl); P.ref = A; P.c = 0; P.face = fc_true();
+      Q = (Payload){0}; Q.ref = at_i;
+      TCHECK(run_op(&net, OP_CAPTURE_REF_SCOPE, P, D_REF, Q, &ok, &op) && ok == D_SCOPE, "CAPTURE_REF_SCOPE gives a scope");
+      ScopeId S = op.a;
+      Val body = { VS_REF, at_i };
+      TCHECK(S == capture_scope(1, dl, body, A, 0, fc_true()), "the captured scope is the host capture");
+      Q = (Payload){0}; Q.a = S; P = (Payload){0}; P.a = map_single_term(x, a);
+      TCHECK(run_op(&net, OP_REINDEX_SCOPE, P, D_SCOPE, Q, &ok, &op) && ok == D_SCOPE && op.a == reindex_scope(S, map_single_term(x, a)), "REINDEX_SCOPE");
+      Val args[1] = { { VS_INTERVAL, iv_one() } };
+      P = (Payload){0}; P.a = net_scope_args(1, args);
+      TCHECK(run_op(&net, OP_APPLY_SCOPE, P, D_SCOPE, Q, &ok, &op) && ok == D_TYPED_PARTIAL && op.ref == reindex_dim(at_i, i, iv_one()) && op.b == A, "APPLY_SCOPE gives the typed partial at the argument");
+      Payload tpart = op;
+      P = (Payload){0}; P.face = fc_true();
+      TCHECK(run_op(&net, OP_USE_TYPED_PARTIAL, P, D_TYPED_PARTIAL, tpart, &ok, &op) && ok == D_REF && op.ref == tpart.ref, "USE_TYPED_PARTIAL under a covering face");
+      TCHECK(run_op(&net, OP_TYPED_PARTIAL_TYPE, P, D_TYPED_PARTIAL, tpart, &ok, &op) && ok == D_REF && op.ref == A, "TYPED_PARTIAL_TYPE retains the type");
+      TCHECK(run_op(&net, OP_TYPED_PARTIAL_GUARD, P, D_TYPED_PARTIAL, tpart, &ok, &op) && ok == D_FACE && op.face == fc_true(), "TYPED_PARTIAL_GUARD");
+      /* a face scope and its ∀ */
+      P = (Payload){0}; P.a = net_capture_decls(1, dl); Q = (Payload){0}; Q.face = fc_join(fc_lit(i, 0), fc_lit(j, 0));
+      TCHECK(run_op(&net, OP_CAPTURE_FACE_SCOPE, P, D_FACE, Q, &ok, &op) && ok == D_SCOPE, "CAPTURE_FACE_SCOPE");
+      Q = (Payload){0}; Q.a = op.a; P = (Payload){0};
+      TCHECK(run_op(&net, OP_FORALL_SCOPE, P, D_SCOPE, Q, &ok, &op) && ok == D_FACE && op.face == fc_lit(j, 0), "FORALL_SCOPE agrees with FORALL_DIMENSION");
+      /* template environments: reindex then instantiate equals the reindexed view */
+      RefId rf = mk_refl(0, A, ref_var(x));
+      Q = (Payload){0}; Q.a = tenv_of(rf); P = (Payload){0}; P.a = map_single_term(x, a);
+      TCHECK(run_op(&net, OP_REINDEX_TEMPLATE_ENV, P, D_TEMPLATE_ENV, Q, &ok, &op) && ok == D_TEMPLATE_ENV, "REINDEX_TEMPLATE_ENV");
+      Q = (Payload){0}; Q.a = op.a; P = (Payload){0}; P.a = tnode_of(rf);
+      TCHECK(run_op(&net, OP_INSTANTIATE_TEMPLATE, P, D_TEMPLATE_ENV, Q, &ok, &op) && ok == D_REF && op.ref == mk_refl(0, A, a), "INSTANTIATE_TEMPLATE of the reindexed environment is the specialized view");
+      TCHECK(interner_count(&M.origins) == orgS, "no scope or template rule allocated an origin"); }
 
     /* duplication copies handles: no new interned records */
     size_t refs0 = interner_count(&M.refs), org0 = interner_count(&M.origins);

@@ -74,14 +74,14 @@ static Graph *build(Variant v) {
      * anchored by declaration index, so this must be rejected like any other
      * change of the input; generated names are renamed freely across runs */
     RefId a = var(A), b = var(A);
-    RefId e = var(mk_equiv(T, A));
+    RefId e = var(mk_equiv(0, 0, T, A));
     FaceId guard = (v == V_GUARD) ? fc_lit(m, 0) : fc_lit(m, 1);
     RefId Gm = mk_glue_type(A, guard, T, e);
-    RefId cg = mk_coe(i, Gm, var(Gm));
-    RefId p = var(mk_path_const(A, a, b));
+    RefId cg = mk_coe_at(0, i, Gm, var(Gm));
+    RefId p = var(mk_path_const(0, A, a, b));
     IntervalId s = (v == V_ENDPOINT) ? iv_negate(iv_var(i)) : iv_var(i);
-    RefId pi = mk_papp_const(A, a, b, p, s);
-    RefId pair = (v == V_ALIAS) ? mk_pair(cg, mk_coe(i, Gm, var(Gm))) : mk_pair(cg, cg);   /* aliasing: both fields one reference */
+    RefId pi = mk_papp_const(0, A, a, b, p, s);
+    RefId pair = (v == V_ALIAS) ? mk_pair(cg, mk_coe_at(0, i, Gm, var(Gm))) : mk_pair(cg, cg);   /* aliasing: both fields one reference */
     RefId lvl = (v == V_PAYLOAD) ? mk_universe(1) : mk_universe(0);
     WhnfStatus st;
     Canon *c = canon_new();
@@ -120,7 +120,7 @@ static Graph *build_shifted(bool shift) {
     if (shift) { for (uint64_t k = 0; k < 7; k++) { KeyWord kw[2] = { { KW_CONST, 777 }, { KW_CONST, k } }; fresh_dim_keyed(kw, 2); } }   /* unrelated generated names first */
     TermVarId xx = declare_term(A, fc_true());
     RefId S = mk_sigma(xx, A, B);
-    RefId csg = mk_coe(i, S, var(S));
+    RefId csg = mk_coe_at(0, i, S, var(S));
     WhnfStatus st;
     Canon *c = canon_new();
     canon_add_result(c, "csg", whnf(csg, fc_true(), &st));

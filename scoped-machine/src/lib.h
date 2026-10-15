@@ -1,56 +1,64 @@
-/* lib.h — derived definitions over the core signature (§14–18).
+/* lib.h — the fixed library (§14–§18, §52–§54) through the template layer.
  *
- * These construct references; they never evaluate. Every helper is a
- * definition in the object language built from the core constructors; the
- * composition clauses are invoked by the evaluator once a family head has
- * been exposed at a symbolic dimension.
- */
+ * Every helper is one fixed template program over typed parameters with
+ * explicit universe levels (§59.1); an invocation is a TVIEW of the
+ * program's root node, so specialization and invocation commute as an
+ * identity of references for every parameter, type and family arguments
+ * included. Nothing here evaluates. The composition clauses are instantiated
+ * by `comp_clause` from the captured components of an exposed family head
+ * (§54). */
 #ifndef CUBICAL_LIB_H
 #define CUBICAL_LIB_H
 
-#include "term.h"
+#include "template.h"
 
-/* the fixed-template table lives for the machine's lifetime; machine_free
- * releases it. */
 void lib_free(void);
 size_t lib_template_count(void);
 
-/* interval lines */
-IntervalId iv_line(IntervalId r, IntervalId s, DimVarId j);  /* (r∧¬j)∨(s∧j) */
+/* interval line (r∧¬j)∨(s∧j): canonical interval syntax, no reference */
+IntervalId iv_line(IntervalId r, IntervalId s, DimVarId j);
 
-/* fill^i A_i [phi ↦ u_i] a0 (r) */
-RefId mk_fill(DimVarId i, RefId A_i, FaceId phi, RefId u_i, RefId a0, IntervalId r);
-/* hcomp^j_X [phi ↦ u_j] cap */
-RefId mk_hcomp(DimVarId j, RefId X, FaceId phi, RefId u_j, RefId cap);
-/* transport 0→1 along i ↦ A_i (empty tube) */
-RefId mk_coe(DimVarId i, RefId A_i, RefId a0);
-RefId mk_refl(RefId A, RefId a);                      /* ⟨_⟩ a : Path A a a */
-RefId mk_path_const(RefId A, RefId l, RefId r);       /* Path A l r */
-RefId mk_papp_const(RefId A, RefId l, RefId r, RefId p, IntervalId s);
-RefId mk_path_rev(RefId A, RefId l, RefId r, RefId p);/* ⟨i⟩ p(¬i) */
-RefId mk_path_concat(RefId A, RefId x, RefId y, RefId z, RefId p, RefId q);
+/* ---- capture adapters (§54): abstract concrete identities into scopes ---- */
+ScopeId capture_dim1(DimVarId j, RefId body, RefId type, uint64_t level, FaceId guard);                 /* [j]. body */
+ScopeId capture_dim1_face(DimVarId j, FaceId body);                                                       /* [j]. face (total syntax) */
+ScopeId capture_dim2(DimVarId i, DimVarId j, RefId body, RefId type, uint64_t level, FaceId guard);     /* [i, j]. body */
+ScopeId capture_dim_term(DimVarId j, TermVarId x, RefId xtype, uint64_t xlevel, RefId body, RefId type, uint64_t level, FaceId guard);   /* [j, x:xtype]. body */
+ScopeId capture_term2(TermVarId x, RefId xtype, uint64_t xlevel, TermVarId e, RefId etype, uint64_t elevel, RefId body, RefId type, uint64_t level, FaceId guard);   /* [x, e]. body */
 
-/* equivalence data (§15) */
-RefId mk_contr(RefId X);                              /* Σ(c:X).Π(x:X).Path X c x */
-RefId mk_fib(RefId X, RefId Y, RefId f, RefId y);     /* Σ(x:X).Path Y (f x) y */
-RefId mk_fun(RefId X, RefId Y);                       /* non-dependent Π */
-RefId mk_equiv(RefId X, RefId Y);
-RefId mk_id_fun(RefId X);
-RefId mk_id_equiv(RefId X);
-RefId equiv_map(RefId e);                             /* fst e */
-RefId equiv_contr(RefId e, RefId y);                  /* (snd e) y : Contr(fib) */
-/* ExtendContr(c,k; theta, v) = hcomp^j_X [theta ↦ k(v)@j] c */
-RefId mk_extend_contr(RefId X, RefId c, RefId k, FaceId theta, RefId v);
-RefId mk_line_equiv(DimVarId j, RefId X_j);           /* coe in Equiv(X_0, X_j) of IdEquiv(X_0) */
-RefId mk_ua(RefId X, RefId Y, RefId e);               /* ⟨i⟩ Glue [(i=0)↦(X,e),(i=1)↦(Y,id)] Y */
+/* ---- §52 programs; l, m are the exact universe levels of the type arguments ---- */
+RefId mk_path_const(uint64_t l, RefId A, RefId lft, RefId r);
+RefId mk_refl(uint64_t l, RefId A, RefId a);
+RefId mk_papp_const(uint64_t l, RefId A, RefId lft, RefId r, RefId p, IntervalId s);
+RefId mk_path_rev(uint64_t l, RefId A, RefId lft, RefId r, RefId p);
+RefId mk_path_concat(uint64_t l, RefId A, RefId x, RefId y, RefId z, RefId p, RefId q);
+RefId mk_fun(uint64_t l, uint64_t m, RefId X, RefId Y);
+RefId mk_contr(uint64_t l, RefId X);
+RefId mk_fib(uint64_t l, uint64_t m, RefId X, RefId Y, RefId f, RefId y);
+RefId mk_equiv(uint64_t l, uint64_t m, RefId X, RefId Y);
+RefId mk_id_fun(uint64_t l, RefId X);
+RefId mk_id_equiv(uint64_t l, RefId X);
+RefId equiv_map(RefId e);
+RefId equiv_contr(RefId e, RefId y);
+RefId mk_fill(uint64_t l, ScopeId A, FaceId phi, ScopeId u, RefId cap, IntervalId r);   /* A : [i]U_l, u : [i]A<i> on phi */
+RefId mk_hcomp(uint64_t l, RefId X, FaceId phi, ScopeId u, RefId cap);                  /* u : [j]X on phi */
+RefId mk_coe(uint64_t l, ScopeId A, RefId cap);
+RefId mk_extend_contr(uint64_t l, RefId X, RefId c, RefId k, FaceId theta, RefId v);
+RefId mk_line_equiv(uint64_t l, ScopeId X);
+RefId mk_ua(uint64_t l, RefId X, RefId Y, RefId e);
+/* Down(l, lA, A, t, D, x, e, z) with D : [x:A, e:Path_A(t,x)] U_l (§54) */
+RefId mk_down(uint64_t l, uint64_t lA, RefId A, RefId t, ScopeId D, RefId x, RefId e, RefId z);
 
-/* structural composition clauses: the family has been exposed at dimension
- * i with head reference `fam` (an INTRODUCTION of the indicated tag). The
- * tube u_i and face phi are those of the composition opened at the same i. */
-RefId comp_clause_pi(DimVarId i, RefId fam, FaceId phi, RefId u_i, RefId cap);
-RefId comp_clause_sigma(DimVarId i, RefId fam, FaceId phi, RefId u_i, RefId cap);
-RefId comp_clause_path(DimVarId i, RefId fam, FaceId phi, RefId u_i, RefId cap);
-RefId comp_clause_glue(DimVarId i, RefId fam, FaceId phi, RefId u_i, RefId cap);
-RefId comp_clause_universe(DimVarId i, RefId fam, FaceId phi, RefId u_i, RefId cap);
+/* conveniences over a concrete dimension (capture then invoke) */
+RefId mk_coe_at(uint64_t l, DimVarId i, RefId A_i, RefId cap);
+RefId mk_fill_at(uint64_t l, DimVarId i, RefId A_i, FaceId phi, RefId u_i, RefId cap, IntervalId r);
+RefId mk_hcomp_at(uint64_t l, DimVarId j, RefId X, FaceId phi, RefId u_j, RefId cap);
+
+/* ---- §53/§54: the structural composition clause for an exposed head ----
+ * fam is the family head opened at the evaluator's dimension j (an
+ * introduction of tag Π/Σ/PathP/Glue/U), tube_j the tube at j, phi its
+ * face, cap the cap; eta is the producer entry's face (the clause's source
+ * annotation κ). Returns the clause instance, or 0 for a tag without a
+ * clause. */
+RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap, FaceId eta);
 
 #endif

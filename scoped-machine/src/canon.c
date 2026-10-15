@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include "canon.h"
+#include "template.h"
 
 /* ---- graph ---- */
 typedef enum { G_REF = 1, G_NOMINAL, G_FACE, G_INTERVAL, G_CLAUSE, G_LITERAL, G_ENTRY, G_INPUT_VAR, G_INPUT_DIM, G_CONST, G_RESULT, G_KEY } GKind;
@@ -45,7 +46,14 @@ static size_t g_face(Canon *c, FaceId f);
 static size_t g_interval(Canon *c, IntervalId r);
 static size_t g_nominal(Canon *c, uint64_t nid);
 
+/* bound atoms (§50): exact (depth, slot) labels */
+static size_t g_bound(Canon *c, GKind kind, uint64_t id) {
+    size_t idx; if (lookup(c, kind, id, &idx)) return idx;
+    char lab[64]; snprintf(lab, sizeof lab, "%s %u/%u", kind == G_INPUT_VAR ? "bx" : "bi", (unsigned)bound_depth(id), (unsigned)bound_slot(id));
+    idx = node_new(c, kind, lab); remember(c, kind, id, idx); return idx;
+}
 static size_t g_var(Canon *c, TermVarId x) {
+    if (is_bound_id(x)) return g_bound(c, G_INPUT_VAR, x);
     uint64_t p = term_var_provenance(x);
     if (p) return g_nominal(c, p);
     size_t idx;
@@ -55,6 +63,7 @@ static size_t g_var(Canon *c, TermVarId x) {
     return idx;
 }
 static size_t g_dim(Canon *c, DimVarId i) {
+    if (is_bound_id(i)) return g_bound(c, G_INPUT_DIM, i);
     uint64_t p = dim_var_provenance(i);
     if (p) return g_nominal(c, p);
     size_t idx;
@@ -106,6 +115,52 @@ static size_t g_dnf(Canon *c, GKind kind, uint64_t id, const Dnf *d, bool face) 
 static size_t g_face(Canon *c, FaceId f) { size_t idx; if (lookup(c, G_FACE, f, &idx)) return idx; Dnf d; fc_to_dnf(f, &d); idx = g_dnf(c, G_FACE, f, &d, true); dnf_free(&d); return idx; }
 static size_t g_interval(Canon *c, IntervalId r) { size_t idx; if (lookup(c, G_INTERVAL, r, &idx)) return idx; Dnf d; iv_to_dnf(r, &d); idx = g_dnf(c, G_INTERVAL, r, &d, false); dnf_free(&d); return idx; }
 
+static size_t g_val(Canon *c, ValSort s, uint64_t id) { return s == VS_REF ? g_ref(c, id) : s == VS_INTERVAL ? g_interval(c, id) : g_face(c, id); }
+/* a scope (§50): its ordered local telescope (sort, type, level, required),
+ * body, result type / level and guard; bound atoms are exact labels */
+static size_t g_scope(Canon *c, ScopeId S) {
+    size_t idx; if (lookup(c, G_NOMINAL, S | (1ULL << 62), &idx)) return idx;
+    size_t n = scope_arity(S);
+    char lab[64]; snprintf(lab, sizeof lab, "SCOPE %zu lv=%llu", n, (unsigned long long)scope_level(S));
+    idx = node_new(c, G_REF, lab); remember(c, G_NOMINAL, S | (1ULL << 62), idx);
+    for (size_t k = 0; k < n; k++) {
+        LocalDecl d = scope_local(S, k);
+        char dl[64]; snprintf(dl, sizeof dl, "LOCAL %d lv=%llu", (int)d.sort, (unsigned long long)d.level);
+        size_t e = node_new(c, G_ENTRY, dl);
+        add_ordered(c, e, d.type ? g_ref(c, d.type) : node_new(c, G_CONST, "notype"));
+        add_ordered(c, e, g_face(c, d.required));
+        add_ordered(c, idx, e);
+    }
+    Val b = scope_body(S);
+    add_ordered(c, idx, g_val(c, b.sort, b.id));
+    add_ordered(c, idx, scope_type(S) ? g_ref(c, scope_type(S)) : node_new(c, G_CONST, "notype"));
+    add_ordered(c, idx, g_face(c, scope_guard(S)));
+    return idx;
+}
+/* a template view (§49): the definition name and node index label the fixed
+ * node; the environment's (slot, value) entries follow in slot order */
+static size_t g_tview(Canon *c, RefId t) {
+    size_t idx;
+    TNodeId Q = tnode_of(t); TEnvId E = tenv_of(t);
+    char lab[128]; snprintf(lab, sizeof lab, "T %s:%llu %s", tdef_name(tnode_def(Q)), (unsigned long long)tnode_index(Q), tag_name(tnode_tag(Q)));
+    idx = node_new(c, G_REF, lab); remember(c, G_REF, t, idx);
+    size_t n = tenv_size(E);
+    for (size_t k = 0; k < n; k++) {
+        uint64_t slot; TVal v; tenv_entry(E, k, &slot, &v);
+        char el[64]; snprintf(el, sizeof el, "Es %llu/%d", (unsigned long long)slot, (int)v.sort);
+        size_t e = node_new(c, G_ENTRY, el);
+        size_t ch;
+        switch (v.sort) {
+        case PS_REF: ch = g_ref(c, v.id); break;
+        case PS_INTERVAL: ch = g_interval(c, v.id); break;
+        case PS_FACE: ch = g_face(c, v.id); break;
+        case PS_SCOPE: ch = g_scope(c, v.id); break;
+        default: { char ll[32]; snprintf(ll, sizeof ll, "lv %llu", (unsigned long long)v.id); ch = node_new(c, G_LITERAL, ll); break; }
+        }
+        add_ordered(c, e, ch); add_ordered(c, idx, e);
+    }
+    return idx;
+}
 static size_t g_ref(Canon *c, RefId t) {
     size_t idx;
     if (lookup(c, G_REF, t, &idx)) return idx;
@@ -115,6 +170,7 @@ static size_t g_ref(Canon *c, RefId t) {
         add_ordered(c, idx, g_var(c, ref_var_id(t)));
         return idx;
     }
+    if (ref_is_tview(t)) return g_tview(c, t);
     OriginId o = ref_origin(t); MapId m = ref_map(t);
     Tag tag = origin_tag(o);
     char full[512]; size_t sl;

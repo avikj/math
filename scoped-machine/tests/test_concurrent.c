@@ -23,21 +23,21 @@ static void build(void) {
     DimVarId i = declare_dim(), k = declare_dim(), m = declare_dim(), n = declare_dim();
     RefId a = var(A), b = var(A);
     TermVarId x = declare_term(A, fc_true()), y = declare_term(A, fc_true());
-    RefId p = var(mk_path_const(A, a, b));
-    RefId pi = mk_papp_const(A, a, b, p, iv_var(i));
+    RefId p = var(mk_path_const(0, A, a, b));
+    RefId pi = mk_papp_const(0, A, a, b, p, iv_var(i));
     RefId t0 = mk_app(mk_app(mk_lam(x, A, mk_lam(y, A, ref_var(x))), a), b);
     FaceId fs[2] = { fc_lit(k, 0), fc_lit(k, 1) };
     RefId ts3[2] = { mk_lam(declare_term(A, fc_true()), A, t0), mk_lam(declare_term(A, fc_true()), A, t0) };
-    RefId e = var(mk_equiv(T, A));
+    RefId e = var(mk_equiv(0, 0, T, A));
     RefId Gm = mk_glue_type(A, fc_lit(m, 1), T, e);
-    RefId cg = mk_coe(i, Gm, var(Gm));
-    RefId ua = mk_ua(U0, U0, mk_id_equiv(U0));
-    RefId tr = mk_coe(i, mk_papp_const(mk_universe(1), U0, U0, ua, iv_var(i)), A);
+    RefId cg = mk_coe_at(0, i, Gm, var(Gm));
+    RefId ua = mk_ua(1, U0, U0, mk_id_equiv(1, U0));
+    RefId tr = mk_coe_at(1, i, mk_papp_const(2, mk_universe(1), U0, U0, ua, iv_var(i)), A);
     FaceId gs[2] = { fc_lit(n, 0), fc_lit(n, 1) };
-    RefId Ys2[2] = { mk_fun(A, B), mk_sigma(x, A, B) };
+    RefId Ys2[2] = { mk_fun(0, 0, A, B), mk_sigma(x, A, B) };
     RefId cmp5 = mk_comp(m, mk_system(2, gs, Ys2), fc_false(), mk_system(0, NULL, NULL), var(A));
     RefId S = mk_sigma(x, A, B);
-    RefId csg = mk_coe(i, S, var(S));
+    RefId csg = mk_coe_at(0, i, S, var(S));
     size_t q = 0;
     roots[q] = pi; faces[q++] = fc_true();
     roots[q] = pi; faces[q++] = fc_lit(i, 0);
@@ -48,13 +48,13 @@ static void build(void) {
     roots[q] = mk_unglue(A, fc_lit(m, 1), T, e, cg); faces[q++] = fc_true();
     roots[q] = cg; faces[q++] = fc_lit(m, 1);
     roots[q] = tr; faces[q++] = fc_true();
-    roots[q] = mk_fst(mk_unglue(U0, fc_true(), U0, mk_id_equiv(U0), tr)); faces[q++] = fc_true();
+    roots[q] = mk_fst(mk_unglue(U0, fc_true(), U0, mk_id_equiv(0, U0), tr)); faces[q++] = fc_true();
     roots[q] = cmp5; faces[q++] = fc_join(gs[0], gs[1]);
     roots[q] = cmp5; faces[q++] = gs[1];
     roots[q] = csg; faces[q++] = fc_true();
     roots[q] = mk_fst(csg); faces[q++] = fc_true();
     roots[q] = mk_snd(csg); faces[q++] = fc_true();
-    roots[q] = mk_coe(i, mk_fun(A, B), var(mk_fun(A, B))); faces[q++] = fc_true();
+    roots[q] = mk_coe_at(0, i, mk_fun(0, 0, A, B), var(mk_fun(0, 0, A, B))); faces[q++] = fc_true();
     require(q == NROOTS, "root count");
 }
 
@@ -156,7 +156,7 @@ static int stuck_join_teardown(size_t workers) {
     machine_init(); eval_init(); if (workers) eval_set_workers(workers);
     RefId U0 = mk_universe(0), A = var(U0), a = var(A);
     uint64_t params[1] = { ref_var_id(A) };
-    SymbolId L = define_global("loopf", varset_make(params, 1), dimset_make(NULL, 0), mk_fun(A, A));
+    SymbolId L = define_global("loopf", varset_make(params, 1), dimset_make(NULL, 0), mk_fun(0, 0, A, A));
     set_global_body(L, global_ref(L));
     DimVarId k = declare_dim();
     FaceId fs[2] = { fc_lit(k, 0), fc_lit(k, 1) };
