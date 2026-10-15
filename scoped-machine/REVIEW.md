@@ -6,11 +6,13 @@ says how to check it without trusting the implementer's summary.
 
 ## 1. Run
 
-    make test     # ASan/UBSan: 124 acceptance/law checks + 23 net checks; 24-schedule comparison;
-                  # concurrent clients (storms, pools); then the first two suites again with 4-thread pools
+    make test     # ASan/UBSan/LSan: checking (74), comparison (12), acceptance/law (124 + 23 net),
+                  # 24-schedule comparison, concurrent clients (storms, pools); then the acceptance,
+                  # schedule and checking suites again with 4-thread pools
     make tsan     # the same suites under ThreadSanitizer (several minutes)
 
-Expected final lines: `124 passed, 0 failed`, `schedule check passed`, `concurrent check passed`.
+Expected: `74 passed, 0 failed`, `12 passed, 0 failed`, `124 passed, 0 failed`, `schedule check
+passed`, `concurrent check passed`, and `make tsan` ending with the same lines and no `WARNING`.
 
 ## 2. Where each spec section lives
 
@@ -33,7 +35,11 @@ See the table in `README.md`. Entry points worth reading first:
 | §20 replacement discipline | `rep_commit`, `step` | `src/net.c` |
 | §26 events | counters in `eval_request`, `deliver`, `publish`, `execute` | `src/eval.c` |
 | §2 contexts | `context_make`, `occurrence_validate`, `whnf_in` | `src/term.c`, `src/eval.c` |
-| §31 comparison | `canon_finish` | `src/canon.c` |
+| §33 checking | `check_context`, `check_map`, `check_origin`, `infer_head`, `check_clause`, `validate_symbol` | `src/check.c` |
+| §34 conversion | `conv_type_clause`, `conv_term_clause`, `spine`, `conv_memo_get` | `src/check.c` |
+| §35 quiescence | `reserve_job`, `enqueue_reserved`, `finish_job`, `eval_run`, `whnf`; `push_active`, `net_finish_job`, `net_run_with_eval` | `src/eval.c`, `src/net.c` |
+| §36 ownership | `cont_release`, `gather_free`, `rootbox_release`, `eval_free` | `src/eval.c` |
+| §37 comparison | `canon_export`, `graph_match` (`unify`, `solve`) | `src/canon.c`, `src/match.c` |
 
 ## 3. What the tests establish, and what they do not
 
@@ -58,6 +64,12 @@ See the table in `README.md`. Entry points worth reading first:
   with exact signatures, DFS numbering, aliasing preserved). Input names are anchored by
   declaration index, generated names by provenance, globals by name.
 
+- `tests/test_check.c`: the §38 checking list (β/η acceptance, rejections, dependent maps,
+  comp agreement, path endpoints, Glue map agreement, system coverage/overlaps, UNRESOLVED
+  for cycles and budget), that every composition clause's output checks at its type, opaque
+  constants, symbol validation on first use, scope under the false face.
+- `tests/test_match.c`: §37/§38 comparison list, including graphs refinement cannot separate.
+
 ## 4. Independent audits already performed
 
 Two audits by an agent that had not seen the code being written, against the spec text:
@@ -73,17 +85,26 @@ the entry's critical section, root boxes are reference-counted between client an
 continuation, and `make tsan` runs all three suites. The auditor's storm scenario is now a
 permanent test.
 
+A third audit, of the §32–§38 work, found no deviation in the scheduler protocol, the
+required-face annotation, or the typing rules' acceptance, and four real bugs, all fixed
+and now covered by tests: the matcher's backtracking did not revisit inner choices
+(incomplete, never unsound); observing an opaque constant aborted instead of yielding a
+neutral; a Π-conversion fresh variable was keyed without its expected type head; a stuck
+branchwise join leaked at teardown. Its deviations are also closed: symbols are validated
+on first use, λ-domain annotations are checked as types in check mode, scope is checked
+under the false face, the conversion cache key is the projected face over the
+declarations, and the required-face annotation is part of the exported graph.
+
 ## 5. Open items for the spec author
 
-1. **Conversion of types in occurrence validity (§2, §22 item 4).** `occurrence_validate`
-   compares a context's declared type with the variable's declaration type by reference
-   identity. The spec gives no definitional-equality procedure and says it does not prove
-   equations by pointer identity; a conversion check is a design decision the author must
-   make (structural only, full bidirectional checker with conversion via `whnf`, or none).
-2. **Control deliveries.** A false-face or invalid-occurrence request is a DELIVER with no
+1. **Control deliveries.** A false-face or invalid-occurrence request is a DELIVER with no
    REQUEST/PUB (§10 says the continuation receives `NO_OBSERVATION`; §26's four transitions
    do not list it). It is deterministic per configuration; the author may want to name it
    as an event class.
+2. **Recursive symbols.** While a symbol's body is validated, its recursive occurrences are
+   typed by the declaration (the signature is the assumption). §34's "no coinductive
+   assumption closes a circular typing proof" is read as applying to conversion and to
+   typing derivations of terms, not to checking a declared signature; confirm.
 
 ## 6. Representation choices a reviewer should know
 

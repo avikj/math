@@ -18,10 +18,13 @@ here is derived from earlier runtime code; the spec is the only source.
 | §10–13 | `src/eval.*` | `EvalKey = (t, π_{S(t)} χ)`; entries `UNEVALUATED/RUNNING/READY` with waiters; continuation-based scheduler (no blocking on a running key; a reentrant demand is left suspended and reported `W_STUCK`, never published); dispatch table with the stated precedences; systems; composition opening one shared dimension for family and tube; retained components specialized by `reindex` |
 | §14–18 | `src/lib.*` | `fill`, `hcomp`, `coe`, lines, path operations, `Contr/fib/Equiv`, `IdEquiv`, `ExtendContr`, `LineEquiv`, `ua`, and the Π / Σ / PathP / Glue / Universe composition clauses term by term |
 | §19–20 | `src/net.*` | Polarized descriptor and operation agents, the one-result rule table (all rows), `MATERIALIZE` (heads, `BRANCH_NIL/CONS/BRANCH` for systems), handle-copying duplication and erasure (also fieldwise for shells), `EVAL` agents registered as cache continuations, and `rep_commit`: every removed auxiliary port accounted for exactly once, boundary paths followed through connectors, closed wire components counted, only opposite polarities connected |
-| §2 contexts | `src/term.*` (`context_*`, `occurrence_validate`), `whnf_in` in `src/eval.*` | Interned occurrence contexts; structural validity of an occurrence |
+| §2 contexts | `src/term.*` (`context_*`, `occurrence_validate`, `term_require_push`), `whnf_in` in `src/eval.*` | Interned occurrence contexts; structural validity; declared required-face annotation on origins |
+| §33–34 | `src/check.*` | `check_context`, `check_map`, `check_origin`, `infer`, `check`, `convert_type`, `convert_term`, `check_signature`, `observe_checked`; outcomes VALID/INVALID/UNRESOLVED, EQUAL/UNEQUAL/UNRESOLVED |
+| §35–36 | `src/eval.c`, `src/net.c` | `outstanding` quiescence protocol, reservation under the entry lock, enqueue after unlock, ownership and teardown |
+| §37 | `src/match.*`, `src/canon.*` | Exported labelled graph; exact matching with backtracking; refinement as candidate filter only |
 | §25–31 | `src/eval.*` (counters, policies, worker pool), `src/net.*` (rule counters, policies, worker pool), `src/canon.*` | Interaction-work vector, deterministic joins, exact canonical comparison modulo renaming |
 | §23 | `tests/test_main.c`, `test_net` in `src/net.c` | Every row of the acceptance table, plus the exhaustive projection/quantifier law check on all 48 canonical faces over two dimensions (2 880 + 240 comparisons) |
-| §28–31 | `tests/test_schedule.c`, `tests/test_concurrent.c` | 24 schedule combinations on fresh machines; concurrent client threads with worker pools; `make tsan` |
+| §28–31, §38 | `tests/test_schedule.c`, `tests/test_concurrent.c`, `tests/test_match.c`, `tests/test_check.c` | 24 schedule combinations; client storms and multi-client runs; comparison acceptance/rejection incl. ambiguous refinement; checking acceptance/rejection/unresolved; `make tsan` |
 
 ## The central distinction, as implemented
 
@@ -65,15 +68,53 @@ references (`reindex_dim(C, j, r)`), never `component(whnf(family at r))`.
   be passed to a `GLOBAL` through a term variable in this representation, and interning
   provides the sharing of intermediates §14 asks for (the Σ filler is one `RefId`).
 
-## Occurrence contexts (§2)
+## Occurrence contexts and checking (§2, §33–§34)
 
 `context_make` interns an ordered list of `DIM(i)` / `TERM(x, type)` declarations with a
-face assumption. `occurrence_validate(t, ctx)` checks that every free dimension and free
-term variable of `t` is declared, that each declared type is the variable's declaration
-type, and that the assumption entails `required(t)`; `whnf_in(t, ctx)` validates and then
-observes under the assumption. Weakening (`context_extend_*`) and restriction
-(`context_restrict`) change the context and keep the reference. Types are compared by
-reference identity: the spec supplies no conversion algorithm, and none is assumed here.
+face assumption; `occurrence_validate` is the structural check (declared variables and
+dimensions, declared type by identity, assumption entails the required face). The typed
+check is `src/check.c`:
+
+- `check_context(Γ)`: unique identities; the assumption over declared dimensions; each
+  declaration's type and required face over its prefix; each type is a type under the
+  assumption projected to the prefix dimensions.
+- `check_map(Δ,ψ,σ,Γ,χ)`: dimension images over Δ; each term image against `A[σ]` under
+  every consistent clause of ψ, in target declaration order; `ψ ⇒ χ[σ]` and the targets'
+  required faces.
+- `check_origin(C)`: an origin is validated once (memoized per `OriginId`) in its own
+  parameter context (`origin_context`: free dimensions, then free variables in dependency
+  order) under its required face; a view `VIEW(C,σ)` is then typed by the substitution
+  lemma: `check_map` into that context and `A_C[σ]`. Views never recheck a copied body.
+- `infer`/`check`: the §33 constructor table, clausewise under the consistent clauses of
+  the face (the result type under a disjunctive face is the common type, or a system of
+  the per-clause types); exact universe levels, no cumulativity; checking forms (λ, pair,
+  path lambda, system) against the expected head; composition cap/tube agreement, path
+  endpoints, Glue data and map agreement, system coverage and overlaps; scope is checked
+  even under the false face, where the remaining obligations are vacuous.
+- Declared symbols carry a type over their parameters; a symbol is validated on first use
+  (type is a type; body, if any, checks against the type, with recursive occurrences using
+  the declaration); a symbol without a body is an opaque constant and observes as a
+  neutral.
+- Conversion (`convert_type`, `convert_term`): per consistent clause; weak-head observation
+  of both sides; reflexive fast path on identical references; type formers compared
+  structurally with one fresh identity applied to both binders; term conversion by expected
+  type with the Π, Σ, Path and Glue η rules (Glue: `unglue` in the base and the fibre on
+  `C ∧ α`); neutral-spine comparison per the §34 table (variables, application, projections,
+  path application modulo the clause, unglue, blocked composition, opaque constants); fresh
+  comparison identities keyed by the request record (both sides, expected head, slot) in a
+  distinct namespace. Requests are cached by (mode, declarations, projected face, inputs,
+  expected type); a running request met again is a cycle and yields UNRESOLVED; UNRESOLVED
+  is never cached as inequality. A step budget (`check_set_budget`) yields UNRESOLVED.
+- `observe_checked(Γ, t)` validates then observes; `check_signature` validates all symbols.
+
+Checking runs synchronously on the caller's thread as an admission phase; its weak-head
+observations go through the ordinary cache and count as ordinary evaluation events.
+
+The §2 `required_face` annotation: `term_require_push(φ)` makes constructors created in the
+scope carry φ in their origin record and required face. The Glue composition clause uses it
+for the constructions that are only typed on `δ = ∀i α_i` and on `α_1`. The checker's test
+suite confirms that every composition clause output (Π, Σ, PathP, Glue, universe, transport
+along `ua`) checks at its expected type.
 
 ## Concurrency (§10, §20)
 
@@ -82,11 +123,15 @@ so two threads interning the same record get one id; side data is written before
 published. The term layer serializes creation (origins, references, declarations, nominal
 minting, definitions) under one recursive mutex; reads of published records are lock-free.
 
-Cache: each entry has an owner lock; readiness check, waiter registration and, for a
-launch, enqueueing the EVALUATE job happen in the same critical section (so `U → R({c}) +
-EVAL(K)` is one transition and no thread can observe a running key whose evaluator is not
-yet runnable); `publish` sets the result, flips to READY, detaches the waiters and delivers
-after unlocking; one evaluator task per key is asserted. The ready jobs are a
+Cache: each entry has an owner lock; readiness check and waiter registration happen in the
+same critical section; a launch *reserves* its job (`outstanding += 1`) while the entry lock
+is held and enqueues it after unlocking (§35), so `U → R({c}) + EVAL(K)` is one transition as
+far as any observer of quiescence can tell, and no continuation code or interning runs under
+an entry lock; `publish` sets the result, flips to READY, detaches the waiters and delivers
+after unlocking, and the publishing job stays active until those deliveries are enqueued;
+one evaluator task per key is asserted. Quiescence is `outstanding = queued + executing
+(+ reserved) = 0`; `finish_job` runs after a job's children are enqueued; `whnf` waits for
+its root or for quiescence (then `W_STUCK`, with nothing published). The ready jobs are a
 multiset served by a worker pool (`eval_set_workers`); `whnf` waits for its root or for
 quiescence. Joins (`Gather`) have their own lock and are published by the last arrival.
 
@@ -103,14 +148,24 @@ and with concurrent client threads. The abstract machine's elementary events are
 in every mode: the worker runs report the same W and the same canonical result graph as
 the sequential runs (`tests/test_concurrent.c`).
 
-## Reclamation (§19–§20)
+## Ownership and teardown (§19–§20, §36)
 
-A continuation is freed when it is resumed (single consumer); a join box when it
-publishes; net nodes are retired (live flag, generation bump) and their storage reclaimed
-at `net_free`. A published result is owned by its READY entry for the life of the machine
-(it is the cache); control results delivered without an entry are rooted in the machine's
-result list. Nothing is reclaimed while a live root, entry, descriptor or continuation can
-reach it, and no live semantic work is ever cancelled.
+| Holder | Owns |
+| --- | --- |
+| record tables | immutable records and side data, for the machine's lifetime |
+| READY entry | its result, for the machine's lifetime (no eviction during a counted workload) |
+| RUNNING entry | its waiter collection |
+| queue / executing worker | the job and its captured payloads |
+| continuation | its destination and arguments until consumed (freed on resume, exactly once) |
+| join | its slot values until it publishes (freed by the last arrival) |
+| root box | shared by the client and the root continuation (refcount; the last releases) |
+| descriptor / external root | its payload while live; an undelivered external context is released at teardown |
+
+Teardown (`eval_free` before `machine_free`): stop and join the workers, dismantle the
+suspended waiter/continuation graph (stuck entries' waiters, undelivered external
+contexts, root boxes, unfilled joins), free results, then the cache and record tables.
+The concurrent suite tears down stuck cyclic keys and a stuck branchwise join under
+LeakSanitizer.
 
 ## Interaction-work vector and schedule independence (§25–§31)
 
@@ -143,23 +198,39 @@ original branch order, never by arrival order.
 active pair runs next. `tests/test_schedule.c` builds one initial configuration on a fresh
 machine for 24 combinations of the two policies and seeds and requires: the same W, the
 same net rule counts, the same per-key event multiset (REQ/DELIVER/PUB per canonical key,
-so a failure names the first divergent event), and the same canonical dump of the complete
-reachable result graph and of every cache key with its event counts. The dump
-(`src/canon.c`) is exact: the reachable records are exported as a labelled graph
-(references, provenance records, faces, intervals, clauses, literals, map entries, input
-names), node classes are computed by partition refinement with exact signatures until the
-partition is stable, unordered collections are ordered by class, and records are numbered
-by one DFS from the roots, so aliasing is preserved and no hash enters the comparison.
-Generated names are identified by provenance, input names by declaration index, global
-symbols by name. Interned-record and name allocation totals are reported as diagnostics
-only. `W_STUCK` remains a quiescence diagnostic: a root left pending with an empty queue,
+so a failure names the first divergent event), and the result graphs equal modulo renaming. `src/canon.c` exports the records reachable from the
+results and the cache keys as a labelled graph (references with tag, payload, binder and
+field shape and the required-face annotation; provenance records; faces, intervals,
+clauses, literals; map entries; input names by declaration index; globals by name), with
+ordered and unordered edges and sharing preserved. `src/match.c` decides equality by exact
+matching (§37): joint partition refinement only filters candidates; a complete depth-first
+search over bijections, with backtracking that revisits inner choices, must preserve kinds,
+labels, ordered children by position, unordered children as sets and the bijection's
+consistency (aliasing). `tests/test_match.c` includes graphs that refinement cannot separate
+but that differ in sharing, isomorphic graphs that need backtracking, and rejected changes
+of payload, endpoint, guard, aliasing and anchored input. Interned-record and name
+allocation totals are reported as diagnostics only. `W_STUCK` remains a quiescence diagnostic: a root left pending with an empty queue,
 with nothing published; a RUNNING entry met during evaluation is a waiter, not evidence of
 a cycle.
 
-## What the spec leaves to its author
+## Status against §38
 
-- "Compatible types" in occurrence validity (§2, §22 item 4) is checked by reference
-  identity. A conversion check between type references would need a definitional-equality
-  procedure the spec deliberately does not provide; it is the one open design question.
-- Typing premises of the cubical rules (§12, §22 item 12) are premises: ill-typed demands
-  that evaluation reaches are reported as `R_INVALID` host status, never as values.
+- Checking: β and the Π/Σ/Path/Glue η conversions accepted; incompatible declared types and
+  unbound dependencies rejected; dependent substitution images, composition cap/tube
+  agreement, path endpoints, Glue map agreement, system coverage and overlaps validated;
+  cyclic computation and exhausted budgets reported UNRESOLVED (`tests/test_check.c`).
+- Concurrency: duplicate requests, request/publication races, unique interning, branch joins
+  and quiescence exercised with worker pools and client storms; one evaluator and one
+  publication per key; `make tsan` clean (`tests/test_concurrent.c`).
+- Reclamation: continuations consumed once, joins released, memo entries retained through
+  the workload, successful and stuck workloads (cyclic key, stuck join) torn down under
+  LeakSanitizer.
+- Comparison: consistent renaming with preserved sharing accepted; changed payload,
+  endpoint, guard, aliasing and anchored input rejected; ambiguous-refinement cases decided
+  by exact matching (`tests/test_match.c`).
+- Scheduling: job and active-pair policies varied, including mixed, from one initial
+  configuration; W and the exact result graph compared; seed and first mismatch reported
+  (`tests/test_schedule.c`).
+
+Typing premises of the cubical rules are now checked by `src/check.c`; the evaluator itself
+still takes them as premises and reports ill-typed demands it reaches as `R_INVALID`.

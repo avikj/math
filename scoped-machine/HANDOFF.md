@@ -26,6 +26,8 @@ The scope operations, face algorithms, cache contract, and their local correctne
 
 Sections 25–31 extend the construction with an explicit event protocol and derive random descent and geodesic optimality for the combined abstract interaction machine. They specify the counted elementary events, close the cache's overlapping transitions, and state how a demand-driven root observation reaches a complete normal form of its demand network. This establishes interaction-work optimality for a fixed initial configuration and reduction relation; it does not equate that cost with elapsed time, arbitrary C instruction counts, or the cost of arbitrary alternative source programs.
 
+Sections 32–38 settle the remaining implementation scope: checking the annotated core against its declared global signature, a configurable concurrent worker pool, explicit ownership and teardown, and exact comparison modulo generated-name renaming. Structural scope checking alone does not certify a typed occurrence. Partition refinement alone does not certify graph isomorphism.
+
 The most recent assistant reply and the worker's report are reproduced verbatim in the appendices. The preceding assistant reply is available in the current context only as a detailed retained summary. Its technical content is reconstructed explicitly and is not labelled a verbatim transcript. Accordingly, exact textual preservation is claimed only for the two available messages, not for the unavailable original wording.
 
 ## 2. Signature and identity
@@ -1223,6 +1225,298 @@ For the C transcription:
 The resulting theorem is: **for every normalizing initial configuration of this abstract machine, every complete reduction has the same interaction-work vector, and every forward reduction to its normal form is a minimum-cost path in the reversible graph of the same elementary interactions, for every nonnegative diamond-balanced weighting.**
 
 This states the inherited optimality positively and precisely. It neither needs nor asserts a separate theorem choosing the fastest arbitrary algorithm from all source programs. Elapsed time, memory peaks, processor scheduling, and raw C instruction counts are different observables. The interaction theorem does not identify them with the defined event cost.
+
+## 32. Completion scope for the four reported gaps
+
+Contexts and typing require checking the annotated core, including its declared definitional equality. This is not implicit type inference for a new surface language, unification, proof search, or conversion by arbitrary proved identities. The existing origin signature and typing annotations supply the checking boundary. Sections 33–34 specify the operations and constructor cases.
+
+Concurrency is in scope. Implement a configurable worker pool, retaining one worker as the deterministic debugging mode. Its implementation can occupy a separate commit, but it is not an unanswered scope question or a reason to call a sequential-only build the completed concurrent machine. The exact quiescence protocol is in section 35.
+
+Reclamation and the exact comparison harness are also in scope. Use the ownership rules in section 36 and the exact matching procedure in section 37. Complete these changes, run their relevant checks, and deliver the resulting code and current handoff together. No further permission checkpoint is introduced by this section.
+
+## 33. Checking contexts and the annotated core
+
+The kernel judgments are
+
+\[
+\Gamma;\chi\vdash A:U_\ell,\qquad
+\Gamma;\chi\vdash t:A,\qquad
+\Gamma;\chi\vdash t\equiv u:A,
+\]
+
+and validity of a typed substitution from a source occurrence context to a target context. Checking is relative to the declared, immutable global signature. Imported constant declarations are explicit assumptions; checking against that signature does not prove those assumptions or prove termination of recursive programs.
+
+Expose the following operations:
+
+```text
+check_context(Gamma)
+check_map(Delta,psi,sigma,Gamma,chi)
+check_origin(C)
+infer(Gamma,chi,t) -> checked type reference, or failure/unresolved
+check(Gamma,chi,t,A)
+convert_type(Gamma,chi,A,B)
+convert_term(Gamma,chi,t,u,A)
+```
+
+Host outcomes distinguish `VALID`, `INVALID(reason)`, and `UNRESOLVED(reason)`. For conversion, use `EQUAL`, `UNEQUAL`, and `UNRESOLVED`. An interrupted or cyclic normalization does not establish inequality and is never accepted as a successful typing judgment.
+
+### Context and map validation
+
+1. Variable identities in a context are unique. Its assumption uses only declared dimension identities.
+2. Process declarations in order. Each term declaration's type and required face use only its available prefix. Check that type is a type. When the context's final assumption mentions later dimensions, project that assumption to dimensions in the prefix for this check; do not make later declarations available to an earlier type.
+3. A reference occurrence must find every dependency of its complete typed boundary in the occurrence context, with the recorded declaration identities and compatible types. Its required face must be entailed.
+4. For a map `sigma : Delta -> Gamma`, each dimension image is an interval over dimensions of `Delta`. For each target term declaration `x:A`, check `term_image(sigma,x)` against `A[sigma]` under the source face. Since `A` uses only earlier target declarations, this is a dependent, ordered check even though the substitution itself is simultaneous.
+5. Require `psi entails chi[sigma]`, including the target's required face obligations. Missing map entries mean identity and still require the corresponding source declarations to be available.
+
+Never regard a reference's type annotation as a proof merely because it is present. Validate an origin against its annotation in its own declared parameter context and required face. After that validation, a checked typed map gives
+
+\[
+\Gamma_C\vdash C:A_C,\quad\sigma:\Delta\to\Gamma_C
+\quad\Longrightarrow\quad
+\Delta\vdash\operatorname{VIEW}(C,\sigma):A_C[\sigma].
+\]
+
+This is the substitution lemma applied to the representation. It avoids rechecking a copied body at every occurrence. Validation results can be memoized; a pending validation is not already a proof. Runtime origins generated by the fixed, validated clauses use the same typed constructors and maps.
+
+### Universe and formation rules
+
+Use the explicit predicative levels of the core: `U_l : U_(l+1)`. If `A:U_i` and `B:U_j` under `x:A`, then `Pi(x:A).B` and `Sigma(x:A).B` have type `U_max(i,j)`. A path family in `U_l` forms a path type in `U_l`. Glue has base and partial fibre in the same `U_l`, with the indicated equivalence between them.
+
+Compare declared universe levels exactly. This specification does not introduce cumulativity, universe resizing, or conversion of equivalent types into definitionally identical types. In particular, univalence constructs paths in a universe; it does not change the universe-level conversion rule.
+
+### Constructor rules
+
+For each rule, scope and required-face checks are prerequisites. Type comparison means section 34's conversion, not pointer inequality. Checking-only constructors use their existing type annotations when a caller requests synthesis. An annotation must itself denote a checked type.
+
+| Constructor | Required checks and resulting type |
+| --- | --- |
+| `VAR(x)` | Look up the checked declaration; return its type. |
+| `UNIVERSE(l)` | Require a valid level; return `U_(l+1)`. |
+| `PI(A,B)` | Check `A:U_i`; open `B` under fresh `x:A` and check it in `U_j`; return `U_max(i,j)`. |
+| `SIGMA(A,B)` | The same formation premises and universe calculation as `PI`. |
+| `LAM(A,h)` | Against a product `Pi(x:D).B`, require `A` convertible to `D`; apply the body handle and codomain handle to the same fresh `x:D`, and check the body against `B(x)`. |
+| `APP(f,a)` | Infer and weak-head observe the checked type of `f` as `Pi(x:A).B`; check `a:A`; result type is `B(a)`. |
+| `PAIR(a,b)` | Against `Sigma(x:A).B`, check `a:A` and `b:B(a)`. |
+| `FST(p)` | Infer a pair type `Sigma(x:A).B` for `p`; result type is `A`. |
+| `SND(p)` | Infer the same pair type; result type is `B(fst p)`. |
+| `PATH(h,l,r)` | At fresh `j`, check the family `B(j):U_l`; check endpoints in `B(0)` and `B(1)`; result type is `U_l`. |
+| `PLAM(h)` | Against `PathP(j.B(j),l,r)`, check the body at fresh `j` in `B(j)`; compare its endpoint specializations to `l` and `r` in their respective endpoint types. |
+| `PAPP(B,l,r,p,s)` | Check the retained path type data; check `p` at that path type and `s` as an in-scope interval; result type is `B(s)`. |
+| `GLUE_TYPE(A,alpha,T,e)` | Check `A:U_l`; under `chi AND alpha`, check `T:U_l` and `e:Equiv(T,A)`; result type is `U_l`. |
+| `GLUE_INTRO(A,alpha,T,e,t,a)` | Validate the supplied Glue type data; check `a:A`; under `chi AND alpha`, check `t:T` and `e.map(t)` convertible to `a` in `A`; result is the supplied Glue type. |
+| `UNGLUE(A,alpha,T,e,v)` | Validate the supplied Glue type data and check `v` at that Glue type; result type is `A`. |
+| `COMP(hA,phi,hu,a0)` | At fresh `j`, check `A(j):U_l`; require `phi` independent of `j`; check `a0:A(0)` and, under `chi AND phi`, `u(j):A(j)` and `u(0)` convertible to `a0`; result type is `A(1)`. |
+| `SYSTEM([(phi_k,t_k)])` | Against `A`, require coverage `chi entails OR_k phi_k`; check each branch in `A` under `chi AND phi_k`; check each pair of branches convertible in `A` on its overlap. |
+| `GLOBAL(symbol,sigma)` | Require a declared symbol and a checked parameter substitution; return its declared type reindexed by that substitution. Validate a supplied definition body against its declaration according to the declared signature; unfolding is precisely the registered body, not an invented equation. |
+
+For a general check `t:A`, synthesize a checked type where the constructor synthesizes; require it convertible to `A`. For lambdas, pairs, path lambdas, and systems, use the expected type directly. To synthesize one of those checking forms, use its stored annotation as the expected type and validate the form against it first.
+
+Check Glue introductions and eliminations using their explicitly retained Glue data. Do not try to recover those data from a type already collapsed to its fibre on an entailed face. After deriving the supplied Glue type, compare it to the requested type under the actual face.
+
+Under a false face, checking and conversion obligations are vacuous once the finite syntax and scope are valid. Do not demand a weak-head observation on the empty face. Under a nontrivial face, the clause procedure in section 34 handles conditional type heads, including systems.
+
+For a system's overlap checks, false overlaps are skipped. The checks are finite in number; their conversion computations may still be nonterminating if the declared computation language admits general recursion. No total decision procedure for unrestricted recursive computation is asserted.
+
+## 34. Definitional conversion procedure
+
+Definitional conversion uses the registered computation rules, their congruence, the interval and face algebra, and the function, pair, path, and Glue eta rules stated here. A separately supplied path `p:A=B` is used through transport; it is not an instruction to add `A=B` as a global conversion rule.
+
+The procedure is type directed. It runs on checked terms and types; conversion alone is not a substitute for checking their annotations and scope.
+
+### Face clauses
+
+Normalize `chi` to DNF. Conversion under `chi` requires conversion under every consistent clause `C` of that DNF. Keep the context and use `C` as the ambient face. Do not substitute endpoints through term-variable declarations and then silently forget their dependent contexts.
+
+For comparing interval expressions under `C`, substitute the endpoints fixed by `C` into the interval expressions and compare their canonical De Morgan DNFs. For comparing faces `phi` and `psi`, compare the canonical DNFs of `C AND phi` and `C AND psi`.
+
+A valid covered system always has an available branch under a single clause `C`: coverage entails that `C` contains a clause of some branch guard. The ordinary evaluator therefore selects such a branch under `C`. Its original branch order gives a deterministic selection; checked overlap compatibility makes the selection valid.
+
+Conversion under false succeeds. For a disjunction of clauses, combine their outcomes in fixed clause/provenance order for diagnostics: all equal gives `EQUAL`; a witnessed mismatch gives `UNEQUAL`; otherwise unresolved obligations give `UNRESOLVED`. Parallel checking uses a full join before final diagnostics, as in the machine's system checks.
+
+### Type conversion
+
+Weak-head observe both type references under the clause. Equal references provide the reflexive fast path after their validity is established. Otherwise compare their exposed type constructors:
+
+- Universes: compare level expressions.
+- Products and sums: compare domains; introduce one fresh variable at the left domain and apply both codomain binders to that same variable; compare the resulting types.
+- Path types: introduce one fresh dimension and compare the family bodies; compare endpoints at the respective family endpoints.
+- Glue types: compare guards as faces under the clause; compare bases generally; on the common partial face compare fibre types and equivalence terms at `Equiv(T,A)` using term conversion.
+- Neutral types: use neutral-spine comparison below.
+
+Different irreducible constructor tags give `UNEQUAL`. A computation still awaiting a result does not count as an irreducible constructor. No type equivalence is accepted merely because an equivalence witness exists.
+
+Fresh comparison variables and dimensions are keyed by an immutable comparison-request record and logical slot, in a distinct owner namespace. Construct that record first and mint identities fresh relative to both compared boundaries. Apply the two binders to the same fresh identity. Never identify their independently allocated binder numbers by numeric coincidence.
+
+### Term conversion by expected type
+
+Once both terms are checked at the expected type, identical reference handles give the reflexive `EQUAL` fast path. Otherwise weak-head observe the checked expected type and use the following extensional comparisons:
+
+\[
+\operatorname{Eq}_{\Pi(x:A).B}(f,g)
+\iff\operatorname{Eq}_{B(x)}(f\,x,g\,x)
+\quad(x\text{ fresh}),
+\]
+
+\[
+\operatorname{Eq}_{\Sigma(x:A).B}(p,q)
+\iff\operatorname{Eq}_{A}(\operatorname{fst}p,\operatorname{fst}q)
+\ \land\
+\operatorname{Eq}_{B(\operatorname{fst}p)}(\operatorname{snd}p,\operatorname{snd}q).
+\]
+
+The second pair comparison uses conversion of the already-compared first fields to identify the two dependent field types.
+
+\[
+\operatorname{Eq}_{\operatorname{PathP}(j.B,l,r)}(p,q)
+\iff\operatorname{Eq}_{B(j)}(p@j,q@j)
+\quad(j\text{ fresh}).
+\]
+
+At a non-collapsed Glue type `G = Glue[alpha -> (T,e)] A`, compare
+
+\[
+\operatorname{unglue}(u)\equiv\operatorname{unglue}(v):A
+\quad\text{under }C,
+\]
+
+and
+
+\[
+u\equiv v:T\quad\text{under }C\wedge\alpha.
+\]
+
+These two comparisons are exactly the components of Glue eta and constructor congruence; arbitrary fibre information is not discarded. If the face already entails `alpha`, the expected type observes as `T` and the ordinary type-directed case applies. At a universe, term conversion is type conversion. At a neutral expected type, weak-head observe the terms and compare their neutral structures.
+
+### Neutral-spine comparison
+
+Neutral comparison is structural on the **neutral head and elimination spine**, with typed conversion for argument data. Do not eta-expand the neutral head again while recursively comparing its spine: that would turn comparing `f x` and `g x` into an artificial loop through comparing `f` and `g` extensionally again.
+
+| Neutral form | Comparison |
+| --- | --- |
+| Free variable | Same declared identity; comparison-bound variables have already been aligned by the common fresh variable. |
+| Application | Compare function neutral spines structurally; compare arguments at the checked function domain. |
+| First or second projection | Require the same projection tag; compare the pair neutral spines structurally. |
+| Path application | Compare path neutral spines structurally and intervals modulo the clause. Retained typing/endpoints have already been checked against that path's type. |
+| Unglue | Compare the retained guards modulo the clause, the base types, and the fibre/equivalence data on their common guard; compare the value neutral spines structurally, without recursively invoking Glue eta on that spine head. |
+| Blocked composition | Align the family binders at one fresh dimension; compare their type families, faces, caps, and tubes, with tube comparison on the common tube face. Families compare at their declared universe, caps at the starting type, and tubes at the generic family type. |
+| Declared opaque constant, if present in the signature | Same symbol and compatible instantiated parameter data in declaration order. Transparent definitions unfold through ordinary evaluation. |
+
+Different irreducible neutral heads or elimination tags give `UNEQUAL`. Redundant annotations are first validated; they are not unconstrained extra data permitted to alter an otherwise fixed path application's endpoint semantics. Semantic operands of blocked composition are all retained and compared.
+
+### Scheduling and unresolved computations
+
+Cache a conversion request by its mode, ordered input references, expected type when applicable, typed boundary/signature, and the face projected to their combined support. The request must retain all data on which its answer depends. Identical running requests wait through the same request/publication/delivery protocol; encountering a running request is not permission to assume equality or immediately return a timing-dependent failure.
+
+An actual unresolved demand cycle is reported at workload quiescence. Resource exhaustion or an explicit budget interruption also yields `UNRESOLVED`, never `EQUAL` or a proved mismatch. An unresolved control outcome is not a permanent mathematical inequality cached for all future attempts. A finite successful checking derivation is the evidence for accepting a term; no coinductive assumption closes a circular typing proof.
+
+Checking can be a separately measured admission phase, or its deterministic checking/conversion frames can use the same job protocol as evaluation. If end-to-end interaction costs include checking, count those frames explicitly. If reporting runtime-only costs, fix the post-validation starting state and cache snapshot. Do not silently precompute during validation and then describe the remaining runtime count as the total computation cost.
+
+## 35. Concurrent worker pool and quiescence
+
+Use a configurable positive worker count. One worker executes the same event protocol as multiple workers; it is a debugging and deterministic scheduling mode.
+
+Every cache state transition and waiter-list mutation is protected by its entry lock. Publish a fully initialized immutable result before exposing `READY`. A requester retains the result before dropping the lock. Detach waiters while holding the entry lock, release it, and enqueue deliveries afterward. Keep the publishing job active until those deliveries have been enqueued.
+
+Do not invoke arbitrary continuation code or recursively acquire interning/entry locks while holding an entry lock. Compute canonical keys and immutable payloads outside that lock. Canonical interning uses its own atomic lookup-or-insert protocol; losing private candidates are released without publishing duplicate canonical objects.
+
+For scheduler quiescence maintain
+
+\[
+\operatorname{outstanding}
+=\#\text{queued jobs}+\#\text{executing jobs}.
+\]
+
+```text
+enqueue(job):
+    under scheduler lock:
+        outstanding += 1
+        put job on queue
+        signal waiting workers
+
+take_job():
+    under scheduler lock:
+        remove one queued job
+        // outstanding is unchanged: the job is now executing
+
+finish_job():
+    // all child jobs must already be enqueued
+    under scheduler lock:
+        outstanding -= 1
+        if outstanding == 0:
+            signal workload-quiescence observer
+```
+
+At a closed workload boundary, `outstanding == 0` is quiescence. An empty queue with an executing job is not quiescence. Workers wait rather than report `W_STUCK` while outstanding work remains. External workload admission and completion observation use the same admission/epoch synchronization; a benchmark workload closes admission after its initial roots are installed.
+
+At true quiescence, inspect root and demand-network state. A completed root produces `W_OK`; an unresolved cyclic demand has no fabricated publication and produces `W_STUCK` or the checking layer's corresponding `UNRESOLVED` control result. Check the no-orphan-live-demand invariant for successful roots.
+
+For branch joins, each child writes its original branch slot exactly once under the join's synchronization. Publish only when every launched slot is full. Select any failure diagnostic by original branch order, not arrival order; retaining the first arriving error until the join fills is still nondeterministic. Snapshot/retain the complete joined outcome before releasing the final join ownership.
+
+Net replacement retains the pin, lock-in-total-order, revalidate, install, retire protocol from section 20, including surviving boundary endpoint owners. A stale redex retry is diagnostic work, not a successfully committed interaction. No observer may see a partially installed semantic replacement.
+
+Check concurrency with actual simultaneous requests, publication/request races, and contended interning. Use a race detector for data races and separate address/undefined-behaviour/leak checks for their respective failure classes. A sequential schedule suite establishes neither race freedom nor correct memory publication. Compare the same semantic event vectors and exact results across the sequential policies and selected multi-worker runs.
+
+## 36. Ownership, cache retention, and teardown
+
+Keep an explicit ownership account:
+
+| Holder | Required ownership |
+| --- | --- |
+| Intern arenas | Their immutable records and the referenced metadata required for the arena's lifetime. |
+| Ready cache entry | Its immutable result until the counted workload ends or the entire owning machine is destroyed. |
+| Running cache entry | Its waiter collection and associated live evaluation ownership. |
+| Queue or executing worker | Each owned job and its captured payloads. |
+| Continuation | Its parent/destination, arguments, and join ownership until consumed or safely torn down. |
+| Join | All delivered slot values until its joined result/continuation has retained what it needs. |
+| Descriptor or external root | Its referenced payload for as long as it is live. |
+
+Transfer ownership when a continuation moves from a request into a waiter collection and later into a delivery job. Consume it once. Release join and argument ownership when that consumption is complete. Atomic reference counts or equivalent synchronized ownership are required for objects crossing worker boundaries.
+
+Do not evict a ready memo entry during a counted workload and later rerun the same key. That would change the at-most-once property and the event system used by the optimality proof. Cache retention is part of the operational contract, not merely a performance hint. Arena-owned immutable records and memo tables may be reclaimed together at machine teardown; temporary job and continuation objects need not live that long.
+
+Reference counting alone does not collect ownership cycles. In particular, a stuck demand may contain a waiter retaining a parent entry that reaches the same waiter. At closed-workload teardown, first stop/join workers and prevent further admission, then detach the suspended waiter/continuation ownership graph and release its payloads, then destroy cache and immutable arenas in their declared lifetime order. No live observer or queued job may retain an object after its arena is destroyed. Do not recursively free through an arena after its storage has already been released.
+
+This teardown is not a new semantic cancellation rule inside a successful counted run. It disposes of a finished or explicitly abandoned workload after execution has stopped. Successful live work is never canceled by reclamation.
+
+AddressSanitizer can expose invalid accesses; it does not establish the ownership proof or detect all logical retention problems. Use leak checking and teardown cases as well, including a stuck demand cycle. A completed run must release temporary continuations and joins, while intentional cache/arena retention remains owned until the declared teardown boundary.
+
+## 37. Exact schedule comparison modulo renaming
+
+Partition refinement is useful preprocessing, but iterated refinement alone is not a general exact canonical-labelling algorithm. Nonisomorphic graphs can retain the same refined colour classes. Unique provenance and input indices may resolve all classes for a particular graph; unresolved classes still require exact matching.
+
+The harness needs pairwise exact comparison, not necessarily a universal canonical serializer. Compare the reachable result and reference graphs while preserving their sharing. Anchor input roots, original free-variable identities, source declarations, and global symbols by their known input identities. Generated identities may be renamed, but their owner/slot provenance must be preserved.
+
+```text
+match(left,right,bijection):
+    if left is already mapped:
+        require its image is right
+        return
+    require right has no different preimage
+    require identical kinds and non-renamable scalar payloads
+    extend the bijection with left -> right
+    compare ordered fields by field position
+    compare generated-identity provenance by owner, slot, and sort
+    compare unordered collections as sets under the same bijection
+    recursively check every referenced payload and incidence
+```
+
+For an unresolved unordered match, use exact backtracking: choose an unmatched left element, try the admissible right candidates in its refinement class, propagate the bijection and ordered/provenance constraints, and undo the tentative assignments on failure. Accept only after one complete bijection preserves every relevant label, field, edge, dimension expression, face clause, and sharing relationship. If no candidate yields such a bijection, reject.
+
+Exact structural partitions and provenance propagation should resolve the common cases cheaply. Hashes may accelerate candidate lookup but never decide equality without exact verification. Numeric allocation order is not an anchor for a generated identity. Two references to one object must map to two references to one corresponding object, not to two separately matching copies.
+
+Compare result classes and complete retained heads, not just constructor tags. For blocked results compare their retained operands and diagnostic state with the same identity discipline. Compare the balanced event vector separately. Counts of transient interned records and raw allocations remain diagnostics unless their creation is included in the specified invariant cost model; comparing reachable canonical structure is the semantic test.
+
+## 38. Handoff checks for the completed scope
+
+The relevant checks are finite and directed at the newly implemented obligations:
+
+- Checking: accept beta and the stated product, pair, path, and Glue eta conversions; reject incompatible declared types and unbound dependencies; validate dependent substitution images, composition cap/tube agreement, path endpoints, Glue map agreement, system coverage and overlaps. Report unresolved conversion without accepting it or calling it proved unequal.
+- Concurrency: exercise duplicate requests, request/publication races, unique interning, branch joins, and quiescence with an empty queue while another job is executing. Ensure fixed-order diagnostics and one evaluator/publication per key.
+- Reclamation: consume each continuation once, release completed joins, preserve memo entries throughout the counted workload, and reclaim both successful and stuck workloads at teardown without invalid accesses or unintended retained ownership.
+- Comparison: accept a consistent renaming with preserved sharing; reject a changed payload, endpoint, guard, or aliasing pattern. Include an ambiguous refinement case so equality cannot accidentally be decided by refinement colours or hashes alone.
+- Scheduling: vary both job and active-pair policies, including mixed policies, from the same initial state; compare the balanced event vector and exact reachable result graph. Retain seeds and a useful first mismatch record.
+
+Deliver the implementation, the current handoff, and the actual validation results together. Source changes can be separated into reviewable commits for checking, concurrency, ownership, and comparison; none of those four is left as an unanswered author decision by this specification. This section specifies the work and its checks; it does not assert that another agent's uninspected implementation has passed them.
 
 ## Appendix A. Latest assistant reply verbatim
 
