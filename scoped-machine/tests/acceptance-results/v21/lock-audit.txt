@@ -1,0 +1,33 @@
+site                     max-fine-steps-under-outermost-lock  suite
+src/net.c:740               32519 compiler  
+src/template.c:1036         21639 tests  
+src/work.c:1050              4610 reuse  
+src/check.c:198              1794 review-audit-budget 256  
+src/check.c:292              1572 review-audit-budget 256  
+src/proof.c:268              1050 review-audit-budget 256  
+src/work.c:818                477 reuse  
+src/work.c:1268               350 work  
+src/work.c:628                315 work  
+src/work.c:1061               258 reuse  
+src/work.c:1937               192 proof-use  
+src/term.c:348                154 runtime  
+src/compiler.c:348            145 compiler  
+src/check.c:1065              113 runtime  
+src/check.c:578               107 runtime  
+src/compiler.c:114            100 compiler  
+src/eval.c:289                 98 schedule  
+src/check.c:1107               98 check  
+src/check.c:490                96 runtime  
+src/check.c:1301               96 runtime  
+src/term.c:376                 60 tests  
+src/intern.c:165               56 schedule  
+src/proof.c:27                 44 review-audit-budget 256  
+src/term.c:513                 40 tests  
+src/term.c:336                 40 tests  
+src/term.c:409                 35 templates  
+src/kcont.c:48                 17 review-v20-intern 300  
+src/eval.c:371                 13 review-v20 evaluator 1024  
+src/term.c:437                 10 review-kernel-budget 64  
+src/term.c:477                  6 review-v20 independent  
+src/eval.c:457                  6 review-v20 evaluator 1024  
+src/eval.c:394                  6 review-v20 evaluator 1024  

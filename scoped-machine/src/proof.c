@@ -265,7 +265,8 @@ ProofUse proof_use(ContextId G, FaceId face, RefId e, RefId E) {
     words_push(&r, assumptions.n); words_append(&r, assumptions.w, assumptions.n);
     words_push(&r, recursive.n); words_append(&r, recursive.w, recursive.n);
     words_push(&r, deps.n / 2); words_append(&r, deps.w, deps.n);
-    pthread_mutex_lock(&P.mu); rec = interner_intern(&P.records, r.w, r.n, NULL); wordmap_put(&P.verdicts, key, 4, rec); pthread_mutex_unlock(&P.mu);
+    rec = interner_intern(&P.records, r.w, r.n, NULL);   /* the interner is internally synchronized: hashing, comparison and the copy run outside P.mu */
+    pthread_mutex_lock(&P.mu); wordmap_put(&P.verdicts, key, 4, rec); pthread_mutex_unlock(&P.mu);
     words_free(&r); words_free(&roots); words_free(&assumptions); words_free(&recursive); words_free(&deps);
     return decode(rec, G, face, e, E);
 }
