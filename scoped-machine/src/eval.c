@@ -2,6 +2,7 @@
 #include "lib.h"
 #include "net.h"
 #include "compiler.h"
+#include "reuse.h"
 
 /* ---------------- continuations, joins, results ----------------
  *
@@ -53,14 +54,23 @@ struct Cont {
     Gather *gather; size_t branch;   /* BRANCH */
     RootBox *root;                   /* ROOT */
     ExternalDeliver ext_fn; void *ext_ctx; void (*ext_free)(void *);   /* EXTERNAL */
+    uint64_t prefix;                 /* §78: receipt of the rules applied before this request was issued (FORWARD) */
+    EntryId child;                   /* the entry this continuation waits on */
 };
 
 /* a job: EVALUATE(entry), RESUME(k, r), or a NET_PAIR of the evaluator's net (§43) */
 typedef struct { bool is_resume, is_pair; EntryId entry; Cont *k; EvalResult *r; Active pair; } Task;
+typedef struct { VEC(EntryId) entries; VEC(RefId) refs; } ShapeSide;
 
 static struct {
-    /* cache */
-    Interner keys;                 /* (ref, face) → EntryId */
+    /* cache (§76.3): base key (shape, projected face) → head of the chain of
+     * historical entries; per shape: its entries at every face and the
+     * references requested with that shape (for the edge index) */
+    Interner keys;                 /* (shape, face) → base id */
+    Chunked heads;                 /* EntryId head per base id-1 */
+    Interner shape_ids;            /* shape → dense slot */
+    Chunked shape_side;            /* ShapeSide per slot-1 */
+    Interner receipts;             /* receipt records */
     Chunked entries;               /* Entry per EntryId-1, non-moving */
     size_t n_entries;              /* under entries_mu */
     pthread_mutex_t entries_mu;    /* key lookup / entry creation */
@@ -120,7 +130,9 @@ static void *worker_main(void *arg);
 void eval_init(void) {
     memset(&E, 0, sizeof E);
     pthread_mutex_init(&E.roots_mu, NULL);
-    interner_init(&E.keys);
+    interner_init(&E.keys); chunked_init(&E.heads, sizeof(EntryId));
+    interner_init(&E.shape_ids); chunked_init(&E.shape_side, sizeof(ShapeSide));
+    interner_init(&E.receipts);
     chunked_init(&E.entries, sizeof(Entry));
     pthread_mutex_init(&E.entries_mu, NULL);
     pthread_mutex_init(&E.q_mu, NULL);
@@ -185,10 +197,13 @@ void eval_free(void) {
             free(k);
         }
         vec_free(&e->waiters);
-        vec_free(&e->deps);
+        vec_free(&e->deps); vec_free(&e->gdeps);
         pthread_mutex_destroy(&e->mu);
     }
-    interner_free(&E.keys);
+    { size_t ns = interner_count(&E.shape_ids); for (size_t i = 0; i < ns; i++) { ShapeSide *ss = chunked_peek(&E.shape_side, i); if (ss) { vec_free(&ss->entries); vec_free(&ss->refs); } } }
+    interner_free(&E.keys); chunked_free(&E.heads);
+    interner_free(&E.shape_ids); chunked_free(&E.shape_side);
+    interner_free(&E.receipts);
     chunked_free(&E.entries);
     for (size_t i = 0; i < E.results.len; i++) { free(E.results.data[i]->faces); free(E.results.data[i]->terms); free(E.results.data[i]); }
     vec_free(&E.results);
@@ -295,19 +310,63 @@ static bool pop_locked(Task *out) {
 
 /* ---------------- entries ---------------- */
 
+/* ---- receipts (§78.1) ---- */
+static uint64_t rc(uint64_t a, uint64_t b, uint64_t c, uint64_t d, size_t n) { uint64_t w[4] = { a, b, c, d }; return interner_intern(&E.receipts, w, n, NULL); }
+static uint64_t rc_refl(RefId t) { return rc(RC_REFL, t, 0, 0, 2); }
+static uint64_t rc_seq(uint64_t a, uint64_t b) { if (!a) return b; if (!b) return a; return rc(RC_SEQ, a, b, 0, 3); }
+static uint64_t rc_rule(uint64_t rule, uint64_t x, uint64_t y) { return rc(RC_RULE, rule, x, y, 4); }
+const uint64_t *eval_receipt_words(uint64_t r, size_t *n) { return interner_get(&E.receipts, r, n); }
+
+/* ---- dependency validity (§79.2) ---- */
+static bool gdeps_valid_locked(const Entry *e) {
+    reuse_bump(REUSE_DEPENDENCY_CHECK);
+    for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) if (global_revision(e->gdeps.data[k]) != e->gdeps.data[k + 1]) return false;
+    return true;
+}
+static void gdeps_add(Entry *e, SymbolId sym, uint64_t rev) {
+    for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) if (e->gdeps.data[k] == sym) { require(e->gdeps.data[k + 1] == rev, "a producer read two revisions of one symbol"); return; }
+    vec_push(&e->gdeps, sym); vec_push(&e->gdeps, rev);
+}
+
+static ShapeSide *shape_side_locked(ShapeId s, bool create) {
+    uint64_t w[1] = { s };
+    uint64_t slot = create ? interner_intern(&E.shape_ids, w, 1, NULL) : interner_find(&E.shape_ids, w, 1);
+    if (!slot) return NULL;
+    return (ShapeSide *)chunked_at(&E.shape_side, slot - 1);
+}
+/* the entry of the chain under (shape, face) that is reusable now: a READY
+ * answer whose recorded dependencies are current, or a producer still
+ * running in the current environment snapshot; 0 when none */
+static EntryId chain_pick_locked(EntryId head) {
+    uint64_t env = global_env_version();
+    for (EntryId e = head; e; e = ENT(e)->next_alt) {
+        Entry *x = ENT(e);
+        pthread_mutex_lock(&x->mu);
+        EntryState st = x->state; bool ok = st == E_READY ? gdeps_valid_locked(x) : x->env == env;
+        pthread_mutex_unlock(&x->mu);
+        if (ok) return e;
+    }
+    return 0;
+}
 static EntryId entry_intern(RefId t, FaceId eta) {
-    /* an observation belongs to one definition environment: a candidate
-     * mutation makes earlier observations unreachable (§57 R1) */
-    uint64_t w[3] = { t, eta, global_env_version() };
+    ShapeId s = shape_of(t);
+    uint64_t w[2] = { s, eta };
     bool created;
     pthread_mutex_lock(&E.entries_mu);
-    EntryId id = interner_intern(&E.keys, w, 3, &created);
-    if (created) {
+    ShapeSide *ss = shape_side_locked(s, true);
+    { bool have = false; for (size_t k = 0; k < ss->refs.len; k++) if (ss->refs.data[k] == t) { have = true; break; } if (!have) vec_push(&ss->refs, t); }
+    uint64_t base = interner_intern(&E.keys, w, 2, &created);
+    EntryId *head = (EntryId *)chunked_at(&E.heads, base - 1);
+    if (created) *head = 0;
+    EntryId id = *head ? chain_pick_locked(*head) : 0;
+    if (!id) {
+        id = ++E.n_entries;
         Entry *e = (Entry *)chunked_at(&E.entries, id - 1);
         memset(e, 0, sizeof *e);
-        e->ref = t; e->face = eta; e->state = E_UNEVALUATED; e->env = w[2];
+        e->ref = t; e->face = eta; e->state = E_UNEVALUATED; e->env = global_env_version(); e->shape = s;
+        e->next_alt = *head; *head = id;
         pthread_mutex_init(&e->mu, NULL);
-        E.n_entries = id;
+        vec_push(&ss->entries, id);
     }
     pthread_mutex_unlock(&E.entries_mu);
     return id;
@@ -315,11 +374,67 @@ static EntryId entry_intern(RefId t, FaceId eta) {
 
 EntryId eval_entry_lookup(RefId t, FaceId chi) {
     size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
-    uint64_t w[3] = { t, fc_project(chi, S, n), global_env_version() };
+    uint64_t w[2] = { shape_of(t), fc_project(chi, S, n) };
     pthread_mutex_lock(&E.entries_mu);
-    EntryId id = interner_find(&E.keys, w, 3);
+    uint64_t base = interner_find(&E.keys, w, 2);
+    EntryId id = base ? chain_pick_locked(*(EntryId *)chunked_at(&E.heads, base - 1)) : 0;
     pthread_mutex_unlock(&E.entries_mu);
     return id;
+}
+ShapeId eval_entry_shape(EntryId e) { return ENT(e)->shape; }
+RefId eval_entry_residual(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); RefId r = x->state == E_READY ? x->residual : 0; pthread_mutex_unlock(&x->mu); return r; }
+uint64_t eval_entry_receipt(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); uint64_t r = x->state == E_READY ? x->receipt : 0; pthread_mutex_unlock(&x->mu); return r; }
+size_t eval_entry_gdeps(EntryId e, const uint64_t **pairs) { Entry *x = ENT(e); *pairs = x->gdeps.data; return x->gdeps.len / 2; }
+bool eval_entry_deps_valid(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); bool ok = gdeps_valid_locked(x); pthread_mutex_unlock(&x->mu); return ok; }
+EntryId eval_entry_adapter_source(EntryId e) { return ENT(e)->adapter_src; }
+bool eval_entry_is_alias(EntryId e) { return ENT(e)->is_alias; }
+
+/* §78.3–78.4: a completed receipt this new producer can continue from.
+ * (a) the same shape at a weaker face (restriction is the identity
+ * substitution with an entailment premise); (b) a recorded instantiation
+ * edge dest = reindex(src, σ) whose source has a completed answer at a face
+ * entailed by this one. The candidate must make progress: its continuation
+ * key must differ from this key. Dependencies of the source must be current. */
+static bool adapter_candidate(Entry *src_e, EntryId src, MapId sigma, FaceId eta, ShapeId s, RefId *out, uint64_t *prefix) {
+    pthread_mutex_lock(&src_e->mu);
+    bool ok = src_e->state == E_READY && src_e->residual && gdeps_valid_locked(src_e);
+    RefId residual = src_e->residual; FaceId sface = src_e->face;
+    pthread_mutex_unlock(&src_e->mu);
+    if (!ok) return false;
+    FaceId need = map_is_identity(sigma) ? sface : fc_reindex(sface, sigma);
+    if (!fc_entails(eta, need)) return false;
+    RefId r = map_is_identity(sigma) ? residual : reindex(residual, sigma);
+    size_t n; const uint64_t *S = dimset_get(ref_support(r), &n);
+    FaceId reta = fc_project(eta, S, n);
+    if (reta == eta && shape_of(r) == s) return false;                    /* no progress: would wait on itself */
+    if (!fc_entails(reta, ref_required(r))) return false;
+    *out = r; *prefix = map_is_identity(sigma) ? rc(RC_RESTRICT, src, eta, 0, 3) : rc(RC_SPEC, src, sigma, 0, 3);
+    return true;
+}
+static bool find_adapter(RefId t, ShapeId s, FaceId eta, EntryId self, RefId *out, uint64_t *prefix, EntryId *src_out) {
+    pthread_mutex_lock(&E.entries_mu);
+    ShapeSide *ss = shape_side_locked(s, false);
+    VEC(EntryId) cands = {0}; VEC(uint64_t) maps = {0};
+    if (ss) {
+        for (size_t k = 0; k < ss->entries.len; k++) if (ss->entries.data[k] != self) { vec_push(&cands, ss->entries.data[k]); vec_push(&maps, map_identity()); }
+        /* edges of this reference and of every reference requested with this shape */
+        for (size_t k = 0; k <= ss->refs.len; k++) {
+            RefId r = k < ss->refs.len ? ss->refs.data[k] : t;
+            const uint64_t *pairs; size_t np = instantiation_edges(r, &pairs);
+            for (size_t q = 0; q < np; q++) {
+                ShapeSide *src_side = shape_side_locked(shape_of(pairs[2 * q]), false);
+                if (!src_side) continue;
+                for (size_t j = 0; j < src_side->entries.len; j++) { vec_push(&cands, src_side->entries.data[j]); vec_push(&maps, pairs[2 * q + 1]); }
+            }
+        }
+    }
+    pthread_mutex_unlock(&E.entries_mu);
+    bool found = false;
+    for (size_t k = 0; k < cands.len && !found; k++) {
+        if (adapter_candidate(ENT(cands.data[k]), cands.data[k], maps.data[k], eta, s, out, prefix)) { *src_out = cands.data[k]; found = true; }
+    }
+    vec_free(&cands); vec_free(&maps);
+    return found;
 }
 EntryState eval_entry_state(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); EntryState s = x->state; pthread_mutex_unlock(&x->mu); return s; }
 FaceId eval_entry_face(EntryId e) { return ENT(e)->face; }
@@ -349,12 +464,31 @@ size_t eval_root_occurrences(EntryId **out) {
  * job executes (EVAL_STEP). Delivery never happens under an entry lock. */
 static void deliver(Cont *k, EvalResult *r) { add_count(&E.ev.deliver); enqueue_resume(k, r); }
 
-static void publish(EntryId eid, EvalResult *r) {
+/* publication: the result, the answer's residual and receipt, and the
+ * dependency set (direct reads ∪ the READY children's recorded reads, §79.1) */
+static void publish_with(EntryId eid, EvalResult *r, RefId residual, uint64_t receipt) {
     Entry *e = ENT(eid);
     require(r->cls != R_NO_OBSERVATION, "no observation is never a published value");
+    bool success = r->cls != R_INVALID;
+    /* children's dependencies, collected outside the entry lock */
+    pthread_mutex_lock(&e->mu);
+    size_t nd = e->deps.len; EntryId *kids = nd ? malloc(nd * sizeof(EntryId)) : NULL; require(!nd || kids, "out of memory");
+    if (nd) memcpy(kids, e->deps.data, nd * sizeof(EntryId));
+    pthread_mutex_unlock(&e->mu);
+    VEC(uint64_t) acc = {0};
+    for (size_t i = 0; i < nd; i++) {
+        Entry *c = ENT(kids[i]); if (c == e) continue;
+        pthread_mutex_lock(&c->mu);
+        if (c->state == E_READY) for (size_t k = 0; k + 1 < c->gdeps.len; k += 2) { vec_push(&acc, c->gdeps.data[k]); vec_push(&acc, c->gdeps.data[k + 1]); }
+        pthread_mutex_unlock(&c->mu);
+    }
+    free(kids);
     pthread_mutex_lock(&e->mu);
     require(e->state == E_RUNNING, "publish into an entry that is not running");
+    for (size_t k = 0; k + 1 < acc.len; k += 2) gdeps_add(e, acc.data[k], acc.data[k + 1]);
+    vec_free(&acc);
     e->result = r;
+    e->residual = success ? residual : 0; e->receipt = success ? receipt : 0;
     e->n_pub++;
     e->n_deliver += e->waiters.len;
     __atomic_store_n(&e->state, E_READY, __ATOMIC_RELEASE);
@@ -364,7 +498,33 @@ static void publish(EntryId eid, EvalResult *r) {
     add_count(&E.ev.publish);
     for (size_t i = 0; i < n; i++) deliver(ws[i], r);
     free(ws);
+    /* §76.3 / §78: the residual is head-normal under this face by
+     * construction (an introduction, or an eliminator rebuilt around a
+     * neutral residual); its own key receives the same answer without
+     * running a body — an alias publication. A key already claimed by
+     * another producer is left alone. */
+    if (success && residual && residual != e->ref) {
+        size_t ns; const uint64_t *S = dimset_get(ref_support(residual), &ns);
+        FaceId reta = fc_project(e->face, S, ns);
+        if (fc_entails(reta, ref_required(residual))) {
+            EntryId aid = entry_intern(residual, reta);
+            if (aid != eid) {
+                Entry *a = ENT(aid);
+                pthread_mutex_lock(&a->mu);
+                if (a->state == E_UNEVALUATED) {
+                    pthread_mutex_lock(&e->mu); for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) gdeps_add(a, e->gdeps.data[k], e->gdeps.data[k + 1]); pthread_mutex_unlock(&e->mu);
+                    a->result = r; a->residual = residual; a->receipt = rc_refl(residual); a->is_alias = true;
+                    __atomic_store_n(&a->state, E_READY, __ATOMIC_RELEASE);
+                }
+                pthread_mutex_unlock(&a->mu);
+            }
+        }
+    }
 }
+/* a result that is its own residual (introduction, free neutral, system) */
+static void publish(EntryId eid, EvalResult *r) { publish_with(eid, r, r->ref, r->ref ? rc_refl(r->ref) : 0); }
+static RefId residual_of(EntryId child) { Entry *c = ENT(child); pthread_mutex_lock(&c->mu); RefId r = c->residual; pthread_mutex_unlock(&c->mu); return r; }
+static uint64_t receipt_of(EntryId child) { Entry *c = ENT(child); pthread_mutex_lock(&c->mu); uint64_t r = c->receipt; pthread_mutex_unlock(&c->mu); return r; }
 
 static bool validate_occurrence(RefId t, FaceId chi) {
     /* the ambient face must entail the reference's required face (which
@@ -379,6 +539,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     FaceId eta = fc_project(chi, S, n);
     EntryId eid = entry_intern(t, eta);
     Entry *e = ENT(eid);
+    k->child = eid;
     add_count(&E.ev.request);
     /* §60 trace: the consumer occurrence (owner, slot, requested key) */
     if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { pthread_mutex_lock(&E.roots_mu); vec_push(&E.roots, eid); pthread_mutex_unlock(&E.roots_mu); }
@@ -390,16 +551,26 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
         EvalResult *r = e->result;
         e->n_deliver++;
         pthread_mutex_unlock(&e->mu);
-        add_count(&E.ev.ready_hit);
+        add_count(&E.ev.ready_hit); reuse_bump(REUSE_READY_HIT);
         deliver(k, r);                       /* after unlock */
         return;
     }
     if (e->state == E_RUNNING) {
         vec_push(&e->waiters, k);
         pthread_mutex_unlock(&e->mu);
-        add_count(&E.ev.running_hit);
+        add_count(&E.ev.running_hit); reuse_bump(REUSE_RUNNING_JOIN);
         return;
     }
+    /* §78.3–78.4: before the body runs, look for a completed receipt this
+     * producer can continue from (computed outside the entry lock; the
+     * launcher installs it) */
+    pthread_mutex_unlock(&e->mu);
+    RefId ad = 0; uint64_t adp = 0; EntryId ads = 0;
+    bool have_ad = find_adapter(t, e->shape, eta, eid, &ad, &adp, &ads);
+    pthread_mutex_lock(&e->mu);
+    if (e->state == E_READY) { EvalResult *r = e->result; e->n_deliver++; pthread_mutex_unlock(&e->mu); add_count(&E.ev.ready_hit); reuse_bump(REUSE_READY_HIT); deliver(k, r); return; }
+    if (e->state == E_RUNNING) { vec_push(&e->waiters, k); pthread_mutex_unlock(&e->mu); add_count(&E.ev.running_hit); reuse_bump(REUSE_RUNNING_JOIN); return; }
+    if (have_ad) { e->adapter = ad; e->adapter_prefix = adp; e->adapter_src = ads; }
     /* U → R({c}) + EVAL(K) is one transition (§26): the task is enqueued
      * before RUNNING can be observed by anyone else, so no requester can see
      * a running key whose evaluator is not yet runnable. */
@@ -414,6 +585,8 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
 }
 
 static void forward(RefId t, FaceId chi, EntryId dest) { eval_request(t, chi, cont_new(K_FORWARD, dest, chi)); }
+/* forward with the receipt of the rules applied so far (§78.2) */
+static void forward_rc(RefId t, FaceId chi, EntryId dest, uint64_t prefix) { Cont *k = cont_new(K_FORWARD, dest, chi); k->prefix = prefix; eval_request(t, chi, k); }
 
 /* ---------------- dispatch ---------------- */
 
@@ -428,12 +601,13 @@ static void eval_system_head(RefId t, const Head *h, FaceId chi, EntryId dest) {
         FaceId phi = h->f[2 * k].id;
         RefId tk = h->f[2 * k + 1].id;
         if (fc_is_false(fc_meet(chi, phi))) continue;           /* inconsistent branch dropped */
-        if (fc_entails(chi, phi)) { free(faces); free(terms); forward(tk, chi, dest); return; }
+        if (fc_entails(chi, phi)) { free(faces); free(terms); reuse_bump(REUSE_SYSTEM_RULE); forward_rc(tk, chi, dest, rc_rule(RR_SYSTEM, phi, 0)); return; }
         faces[kept] = phi; terms[kept] = tk; kept++;
         uni = fc_join(uni, phi);
     }
     if (!fc_entails(chi, uni)) { free(faces); free(terms); publish(dest, result_invalid("system does not cover the ambient face")); return; }
-    publish(dest, result_system(t, kept, faces, terms));
+    reuse_bump(REUSE_SYSTEM_RULE);
+    publish_with(dest, result_system(t, kept, faces, terms), t, rc_rule(RR_SYSTEM, 0, 0));
     free(faces); free(terms);
 }
 
@@ -445,17 +619,29 @@ static void evaluate(EntryId eid) {
     pthread_mutex_unlock(&e->mu);
     RefId t = e->ref;
     FaceId chi = e->face;      /* evaluate under the key's face, not a requester's */
+    if (e->adapter) {
+        /* §78.3: continue from the completed receipt: observe the specialized
+         * / restricted residual; its own further reduction is ordinary work */
+        reuse_bump(REUSE_RECEIPT_INSTANCE);
+        forward_rc(e->adapter, chi, eid, e->adapter_prefix);
+        return;
+    }
+    reuse_bump(REUSE_EVAL_BODY);
     if (ref_is_var(t)) { publish(eid, result_new(R_NEUTRAL, t)); return; }
     Head h; open_ref(t, &h);
     switch (h.tag) {
     case T_UNIVERSE: case T_PI: case T_SIGMA: case T_LAM: case T_PAIR: case T_PATH: case T_PLAM:
         publish(eid, result_new(R_INTRODUCTION, t));
         break;
-    case T_GLOBAL:
-        /* a declared symbol without a body is an opaque constant: neutral */
-        if (!global_body((SymbolId)h.payload)) publish(eid, result_new(R_NEUTRAL, t));
-        else forward(unfold_global(t), chi, eid);
+    case T_GLOBAL: {
+        /* a declared symbol without a body is an opaque constant: neutral;
+         * either way the observed revision is a dependency of the answer (§79.1) */
+        SymbolId sym = (SymbolId)h.payload; uint64_t rev = global_revision(sym);
+        pthread_mutex_lock(&e->mu); gdeps_add(e, sym, rev); pthread_mutex_unlock(&e->mu);
+        if (!global_body(sym)) publish(eid, result_new(R_NEUTRAL, t));
+        else { reuse_bump(REUSE_GLOBAL_UNFOLD); forward_rc(unfold_global(t), chi, eid, rc_rule(RR_UNFOLD, sym, rev)); }
         break;
+    }
     case T_APP: {
         Cont *k = cont_new(K_APP, eid, chi); k->orig = t; k->a = h.f[1].id;
         eval_request(h.f[0].id, chi, k);
@@ -468,22 +654,22 @@ static void evaluate(EntryId eid) {
     }
     case T_PAPP: {
         IntervalId s = h.f[4].id;
-        if (fc_entails(chi, fc_endpoint(s, 0))) { forward(h.f[1].id, chi, eid); break; }
-        if (fc_entails(chi, fc_endpoint(s, 1))) { forward(h.f[2].id, chi, eid); break; }
+        if (fc_entails(chi, fc_endpoint(s, 0))) { reuse_bump(REUSE_ENDPOINT); forward_rc(h.f[1].id, chi, eid, rc_rule(RR_ENDPOINT, 0, 0)); break; }
+        if (fc_entails(chi, fc_endpoint(s, 1))) { reuse_bump(REUSE_ENDPOINT); forward_rc(h.f[2].id, chi, eid, rc_rule(RR_ENDPOINT, 1, 0)); break; }
         Cont *k = cont_new(K_PAPP, eid, chi); k->orig = t; k->s = s;
         eval_request(h.f[3].id, chi, k);
         break;
     }
     case T_GLUE_TYPE:
-        if (fc_entails(chi, h.f[1].id)) forward(h.f[2].id, chi, eid);
+        if (fc_entails(chi, h.f[1].id)) { reuse_bump(REUSE_GLUE_RULE); forward_rc(h.f[2].id, chi, eid, rc_rule(RR_GLUE, h.f[1].id, 0)); }
         else publish(eid, result_new(R_INTRODUCTION, t));
         break;
     case T_GLUE_INTRO:
-        if (fc_entails(chi, h.f[1].id)) forward(h.f[4].id, chi, eid);
+        if (fc_entails(chi, h.f[1].id)) { reuse_bump(REUSE_GLUE_RULE); forward_rc(h.f[4].id, chi, eid, rc_rule(RR_GLUE, h.f[1].id, 1)); }
         else publish(eid, result_new(R_INTRODUCTION, t));
         break;
     case T_UNGLUE:
-        if (fc_entails(chi, h.f[1].id)) forward(mk_app(mk_fst(h.f[3].id), h.f[4].id), chi, eid);
+        if (fc_entails(chi, h.f[1].id)) { reuse_bump(REUSE_GLUE_RULE); forward_rc(mk_app(mk_fst(h.f[3].id), h.f[4].id), chi, eid, rc_rule(RR_GLUE, h.f[1].id, 2)); }
         else { Cont *k = cont_new(K_UNGLUE, eid, chi); k->orig = t; eval_request(h.f[4].id, chi, k); }
         break;
     case T_SYSTEM:
@@ -511,7 +697,8 @@ static void evaluate(EntryId eid) {
     case T_COMP: {
         FaceId phi = h.f[1].id;
         if (fc_entails(chi, phi)) {            /* tube coverage first */
-            forward(apply_dim_binder(t, 0, 2, iv_one()), chi, eid);
+            reuse_bump(REUSE_COMP_EXPAND);
+            forward_rc(apply_dim_binder(t, 0, 2, iv_one()), chi, eid, rc_rule(RR_COMP_TUBE, phi, 0));
             break;
         }
         DimOpen fam = resolve_dim_binder(t, 0, 0);
@@ -600,7 +787,8 @@ static void resume_branch(Cont *k, EvalResult *r) {
     RefId owner = mk_system(fs.n, fs.w, ts.w);
     EvalResult *res = result_system(owner, fs.n, fs.w, ts.w);
     words_free(&fs); words_free(&ts);
-    publish(dest, res);
+    reuse_bump(REUSE_SYSTEM_RULE);
+    publish_with(dest, res, owner, rc_rule(RR_SYSTEM_DIST, 0, 0));
 }
 
 static void distribute(const Cont *k, const EvalResult *sys) {
@@ -612,7 +800,14 @@ static void distribute(const Cont *k, const EvalResult *sys) {
 }
 
 static void resume_comp_family(Cont *k, EvalResult *r) {
-    if (r->cls == R_NEUTRAL) { publish(k->dest, result_new(R_NEUTRAL, k->orig)); return; }
+    if (r->cls == R_NEUTRAL) {
+        /* rebuild the composition around the residual family: no re-evaluation of the family */
+        Head ho; open_ref(k->orig, &ho); uint64_t lv = levels_first(ho.levels); if (ho.levels == LEVELS_NONE) lv = LEVEL_NONE; head_free(&ho);
+        RefId fam_res = residual_of(k->child);
+        RefId residual = fam_res ? mk_comp_lv(lv, k->j, fam_res, k->phi, k->tube, k->cap) : k->orig;
+        publish_with(k->dest, result_new(R_NEUTRAL, k->orig), residual, rc_rule(RR_CONG_COMP, receipt_of(k->child), 0));
+        return;
+    }
     if (r->cls == R_SYSTEM) {
         /* branch available along the whole j line: outer guard ∀j.phi_k */
         FaceId *faces = malloc((r->nbr ? r->nbr : 1) * sizeof(FaceId));
@@ -639,7 +834,8 @@ static void resume_comp_family(Cont *k, EvalResult *r) {
      * face is the clause's source annotation κ */
     RefId out = comp_clause(k->j, r->ref, k->phi, k->tube, k->cap, ENT(k->dest)->face);
     if (!out) { publish(k->dest, result_invalid("composition in a family whose head is not a type former or lacks its universe annotation")); return; }
-    forward(out, k->chi, k->dest);
+    reuse_bump(REUSE_COMP_EXPAND);
+    forward_rc(out, k->chi, k->dest, rc_seq(rc_rule(RR_CONG_COMP, receipt_of(k->child), 0), rc_rule(RR_COMP_EXPAND, 0, 0)));
 }
 
 static void resume(Cont *k, EvalResult *r) {
@@ -656,29 +852,40 @@ static void resume(Cont *k, EvalResult *r) {
     case K_BRANCH: resume_branch(k, r); return;
     default: break;
     }
-    if (r->cls == R_NO_OBSERVATION || r->cls == R_INVALID) { publish(k->dest, r); return; }
-    if (k->kind == K_FORWARD) { publish(k->dest, r); return; }
+    if (r->cls == R_NO_OBSERVATION || r->cls == R_INVALID) { publish_with(k->dest, r, 0, 0); return; }
+    if (k->kind == K_FORWARD) { publish_with(k->dest, r, residual_of(k->child), rc_seq(k->prefix, receipt_of(k->child))); return; }
     if (k->kind == K_COMP_FAMILY) { resume_comp_family(k, r); return; }
-    if (r->cls == R_NEUTRAL) { publish(k->dest, result_new(R_NEUTRAL, k->orig)); return; }
+    static const uint64_t cong_of[] = { 0, 0, 0, RR_CONG_APP, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE };
+    uint64_t cong = rc_rule(cong_of[k->kind], receipt_of(k->child), 0);
+    if (r->cls == R_NEUTRAL) {
+        /* §78.2: the residual is the eliminator rebuilt around the scrutinee's residual */
+        RefId sres = residual_of(k->child);
+        publish_with(k->dest, result_new(R_NEUTRAL, k->orig), sres ? rebuild_elim(k, sres) : k->orig, cong);
+        return;
+    }
     if (r->cls == R_SYSTEM) { distribute(k, r); return; }
     /* introduction under an eliminator */
     Head h; open_ref(r->ref, &h);
     switch (k->kind) {
     case K_APP:
         if (h.tag != T_LAM) { publish(k->dest, result_invalid("application of a non-function introduction")); break; }
-        forward(apply_term_binder(r->ref, 0, 1, k->a), k->chi, k->dest);
+        reuse_bump(REUSE_BETA);
+        forward_rc(apply_term_binder(r->ref, 0, 1, k->a), k->chi, k->dest, rc_seq(cong, rc_rule(RR_BETA, 0, 0)));
         break;
     case K_FST: case K_SND:
         if (h.tag != T_PAIR) { publish(k->dest, result_invalid("projection of a non-pair introduction")); break; }
-        forward(h.f[k->kind == K_FST ? 0 : 1].id, k->chi, k->dest);
+        reuse_bump(k->kind == K_FST ? REUSE_FST : REUSE_SND);
+        forward_rc(h.f[k->kind == K_FST ? 0 : 1].id, k->chi, k->dest, rc_seq(cong, rc_rule(k->kind == K_FST ? RR_FST : RR_SND, 0, 0)));
         break;
     case K_PAPP:
         if (h.tag != T_PLAM) { publish(k->dest, result_invalid("path application of a non-path introduction")); break; }
-        forward(apply_dim_binder(r->ref, 0, 0, k->s), k->chi, k->dest);
+        reuse_bump(REUSE_PATH_BETA);
+        forward_rc(apply_dim_binder(r->ref, 0, 0, k->s), k->chi, k->dest, rc_seq(cong, rc_rule(RR_PATH_BETA, 0, 0)));
         break;
     case K_UNGLUE:
         if (h.tag != T_GLUE_INTRO) { publish(k->dest, result_invalid("unglue of a non-glue introduction")); break; }
-        forward(h.f[5].id, k->chi, k->dest);
+        reuse_bump(REUSE_GLUE_RULE);
+        forward_rc(h.f[5].id, k->chi, k->dest, rc_seq(cong, rc_rule(RR_GLUE, 0, 3)));
         break;
     default: die("unreachable continuation kind");
     }
@@ -697,7 +904,7 @@ static void execute(Task t) {
 }
 
 /* §43 FORWARD_RESULT(K): the receiver's request; delivery publishes into K */
-void eval_forward_result(EntryId K, RefId v) { forward(v, ENT(K)->face, K); }
+void eval_forward_result(EntryId K, RefId v) { forward_rc(v, ENT(K)->face, K, rc_rule(RR_IDENTITY_APPLY, v, 0)); }
 
 static void *worker_main(void *arg) {
     (void)arg;

@@ -403,12 +403,13 @@ RefId make_view(OriginId c, MapId sigma) {
     return id;
 }
 
+static void record_edge(RefId dest, RefId src, MapId sigma);
 RefId reindex(RefId t, MapId sigma) {
     if (map_is_identity(sigma)) return t;
     if (ref_is_var(t)) return map_term_image(sigma, ref_var_id(t));
     uint64_t key[2] = { t, sigma }, out;
     if (wordmap_get(&M.reindex_memo, key, 2, &out)) return out;
-    if (ref_is_tview(t)) { out = tview_reindex(t, sigma); wordmap_put(&M.reindex_memo, key, 2, out); return out; }
+    if (ref_is_tview(t)) { out = tview_reindex(t, sigma); wordmap_put(&M.reindex_memo, key, 2, out); if (out != t) record_edge(out, t, sigma); return out; }
     OriginId c = ref_origin(t);
     MapId tau = ref_map(t);
     MapBuilder b; mapb_init(&b);
@@ -418,7 +419,28 @@ RefId reindex(RefId t, MapId sigma) {
     for (size_t k = 0; k < n; k++) mapb_dim(&b, ds[k], iv_reindex(map_dim_image(tau, ds[k]), sigma));
     out = make_view(c, mapb_finish(&b));
     wordmap_put(&M.reindex_memo, key, 2, out);
+    if (out != t) record_edge(out, t, sigma);
     return out;
+}
+/* §78.4: edge lists are interned word lists [src0, map0, src1, map1, ...];
+ * duplicates are interned away by the list identity */
+static void record_edge(RefId dest, RefId src, MapId sigma) {
+    uint64_t key[1] = { dest }, old = 0;
+    term_lock();
+    wordmap_get(&M.edges, key, 1, &old);
+    Words w; words_init(&w);
+    if (old) { size_t n; const uint64_t *l = interner_get(&M.edge_lists, old, &n); for (size_t k = 0; k + 1 < n; k += 2) if (l[k] == src && l[k + 1] == sigma) { words_free(&w); term_unlock(); return; } words_append(&w, l, n); }
+    words_push(&w, src); words_push(&w, sigma);
+    uint64_t id = interner_intern(&M.edge_lists, w.w, w.n, NULL);
+    words_free(&w);
+    wordmap_put(&M.edges, key, 1, id);
+    term_unlock();
+}
+size_t instantiation_edges(RefId dest, const uint64_t **pairs) {
+    uint64_t key[1] = { dest }, id = 0;
+    term_lock(); bool have = wordmap_get(&M.edges, key, 1, &id); term_unlock();
+    if (!have) { *pairs = NULL; return 0; }
+    size_t n; *pairs = interner_get(&M.edge_lists, id, &n); return n / 2;
 }
 
 RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_term(x, a)); }
@@ -695,7 +717,7 @@ SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId t
     if (env_is_frozen()) { term_unlock(); return 0; }
     SymbolId s = (SymbolId)(M.n_defs + 1);
     Def *d = DEF(s);
-    d->body = 0; d->params = params; d->dims = dims; d->name = name; d->type = type;
+    d->body = 0; d->params = params; d->dims = dims; d->name = name; d->type = type; d->revision = 1;
     M.n_defs++;
     env_bump();
     term_unlock();
@@ -712,9 +734,11 @@ bool set_global_body(SymbolId s, RefId body) {
     const uint64_t *ds = dimset_get(ref_support(body), &n);
     for (size_t k = 0; k < n; k++) require(dimset_contains(d->dims, ds[k]), "global body has an undeclared free dimension");
     __atomic_store_n(&d->body, body, __ATOMIC_RELEASE);
+    __atomic_add_fetch(&d->revision, 1, __ATOMIC_ACQ_REL);
     env_bump();
     return true;
 }
+uint64_t global_revision(SymbolId s) { require(s >= 1 && s <= M.n_defs, "unknown symbol"); return __atomic_load_n(&DEF(s)->revision, __ATOMIC_ACQUIRE); }
 
 RefId global_type(SymbolId s) { return DEF(s)->type; }
 RefId global_body(SymbolId s) { return __atomic_load_n(&DEF(s)->body, __ATOMIC_ACQUIRE); }

@@ -292,6 +292,61 @@ back-reference rejection in `step_proof` guards the in-progress mark rather than
 a constructible input; (v) the EQUAL constructor exists only for the §70.3
 displayed equality and the checker re-derives the image structurally.
 
+## 5i. The §§74–82 increment: uniform reuse
+
+Baseline `3a0d7c4`. Handoff v9 is `HANDOFF.md` (§§74–82 normative), the
+amendment alone is `AMENDMENT-74-82.md`, the worker brief `WORKER-v9.txt`; the
+assessment's diagnostics and captured results are in `tests/baseline-3a0d7c4/`
+and its three target acceptance sources are `tests/accept_*.c` (gated,
+sequential and under `CUBICAL_WORKERS=4`, ASan/UBSan/LSan and TSan).
+`tests/run_reuse_acceptance.py` is the supplied runner (run it with
+`tests/` on the include path, as the Makefile does).
+
+Section → function → test:
+
+| Spec | Functions | Tests |
+| --- | --- | --- |
+| §74.2 counters | `reuse_bump/reuse_count` (`src/reuse.*`), bump sites in `eval.c`, `net.c`, `check.c`, `work.c`, `shape.c` | every A-case; `accept_*` |
+| §75.1–75.3 persistent jobs, keys, handles | `Op` (job), `job_key`, `job_for`, `push` (join/create/deliver), `service`, `op_step`, `op_release`, `reduction_record`, proof-check job | `work` case 8 (A14 handles), `accept_shared_work_handle`, `accept … work`, A12, A13, A21 |
+| §76 shape | `shape_under/shape_of`, `entry_intern`, `chain_pick_locked`, `ShapeSide` | A1, A2, A3, `origin`, `alpha` |
+| §77.1 action identity, provenance | `record_key`, `transform_publish`, `transform_sources` | A10, A11, `identity-name` |
+| §77.2 projected judgments | `project_context`, `conv_claim` | A15, `checker`, e2e |
+| §78.1–78.2 receipts/residuals | `publish_with`, `rc_*`, `forward_rc`, `rebuild_elim`, `resume`, `resume_comp_family`, `eval_system_head`, `eval_forward_result` | A4, A5, A7, A16, A18 |
+| §78.3–78.5 adapters, edges | `record_edge`/`instantiation_edges` (term.c), `find_adapter`, `adapter_candidate`, `evaluate` (adapter branch), alias publication | A4–A7, A16, A17, A18, A20, `face`, `specialize` |
+| §79 revisions, validity, session | `global_revision`, `gdeps_*`, `eval_entry_deps_valid`, claim `gdeps`, `check_open_environment` | A8, A9, `environment` |
+| §80 runtime action | `identity_pair`, `identity_action` | A19, e2e |
+| §81 accounting, bounded helpers | `FR_PRODUCER_LOOKUP/ALIAS_DELIVERY/SHAPE_NODE/DEPENDENCY_CHECK/RECEIPT`, `atom_producer_at` (shape, face, snapshot), `dgraph_mark_alias`, SORT frames, framed relocation, indices | A20, A21, `work` cases 1, 9, 10 |
+
+Semantic producer counts before/after for A1–A20 are read in `tests/test_reuse.c`
+through the counters: A1–A3 second demands 0 bodies/0 betas (before: 1 body + 1
+beta each, 2 bodies for A2); A4 0 betas and 1 receipt instance (before: 1 beta);
+A5 exactly 1 new beta (the exposed redex) and no stale neutral; A6 0 betas
+(before 1); A7 1 endpoint rule / 1 glue rule, no leak; A8 0 bodies after an
+unrelated declaration (before 3 producers); A9 1 unfold on the new revision, the
+old answer invalid; A10 0 APPLY and 0 bodies (before 1 + 1); A11 two actions;
+A12 0 reduce bodies / 0 proof bodies on repeat (before a full rerun); A13 one
+new reduction under the changed model; A14 six concurrent alpha-variant demands:
+1 run, 6 requests, 6 deliveries, 1 publication; A15 0 conversion bodies under
+weakening (before 2 claims); A16 0 betas, 1 projection on the substituted
+instance; A17 0 betas on either adaptation, 1 path beta; A18 no self-wait, the
+genuine cycle stuck; A19 0 transforms published, 0 APPLY; A20 one shared
+producer counted once with two consumer occurrences and the record equal to
+the run's events.
+
+Fine-cost obligation (§81.2, §82.3): **not complete**. The bounded-helper audit
+in README lists two unrefined classes — kernel calls reached from
+specialization and preparation frames, and the constructor-level synchronous
+APIs — so the §65 constant-factor refinement is claimed only for the formula /
+set / cost / certificate / realization / demand / family operations. The old
+work suite's 217 checks are regression evidence, not that proof.
+
+Adapted assertions (each names its clause and keeps the mathematical
+assertion): `tests/test_work.c` case 8 (§75.2: an already completed key
+completes at once, so each suspension test uses a fresh instance and a third
+handle checks persistence); `demo_speculation` is unchanged — the restricted
+decision is still the same result object because the branch's residual key is
+alias-published (§76.3/§78).
+
 ## 6. Representation choices a reviewer should know
 
 Listed in `README.md` under "Representation decisions". The two most likely to raise an

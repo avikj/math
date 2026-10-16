@@ -128,6 +128,7 @@ DGraphId dgraph_new(void);
 void dgraph_add_producer(DGraphId g, AtomId producer, uint64_t steps);
 void dgraph_add_occurrence(DGraphId g, AtomId owner, AtomId child);   /* slot = ordinal among the owner's occurrences */
 void dgraph_add_apply(DGraphId g, AtomId receiver, uint64_t transform, int dir, MapId sigma, RefId arg);
+void dgraph_mark_alias(DGraphId g, AtomId producer);                  /* an alias publication (§76.3): no PUB, no steps */
 void dgraph_add_root(DGraphId g, AtomId root);                        /* a root consumer occurrence (owner 0) */
 /* the graph of the actual run so far: every evaluator entry is a producer
  * with its recorded occurrences and frame steps; root/external requests are
@@ -265,7 +266,8 @@ typedef enum { OP_RUNNING = 1, OP_COMPLETE, OP_RESOURCE_LIMIT, OP_INVALID } OpSt
 typedef enum {
     FR_PREPARE_VISIT = 0, FR_VALIDATE_PREPARED_BOUNDARY, FR_FORMULA_VISIT, FR_FORMULA_INTERN_STEP, FR_COFACTOR_VISIT, FR_COFACTOR_REBUILD,
     FR_SUPPORT_CHUNK, FR_MUST_CHUNK, FR_COST_ADD_CHUNK, FR_COST_COMPARE_CHUNK, FR_CERTIFICATE_VISIT, FR_REALIZATION_VISIT,
-    FR_ALLOCATE_CHUNK, FR_RELEASE_CHUNK, FR_TABLE_PROBE, FR_DEMAND_VISIT, FR_SPECIALIZE_VISIT, FR_FAMILY_CHUNK, FR_GEODESIC_VISIT, FR_COUNT
+    FR_ALLOCATE_CHUNK, FR_RELEASE_CHUNK, FR_TABLE_PROBE, FR_DEMAND_VISIT, FR_SPECIALIZE_VISIT, FR_FAMILY_CHUNK, FR_GEODESIC_VISIT,
+    FR_PRODUCER_LOOKUP, FR_ALIAS_DELIVERY, FR_SHAPE_NODE, FR_DEPENDENCY_CHECK, FR_RECEIPT, FR_COUNT   /* §81.1 */
 } FrameFamily;
 typedef enum { PH_PREPARE = 0, PH_REWRITE, PH_CHECK, PH_COMMIT, PH_EXECUTE, PH_COUNT } Phase;
 const char *frame_family_name(FrameFamily f);

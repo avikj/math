@@ -228,6 +228,10 @@ size_t global_count(void);
 bool set_global_body(SymbolId s, RefId body);   /* false: the environment is frozen (admitted); open a new one first */
 RefId global_ref(SymbolId s);          /* VIEW(GLOBAL(s), identity) */
 uint64_t global_env_version(void);     /* changes with every declaration / body registration */
+uint64_t global_revision(SymbolId s);  /* §79.1: the symbol's declaration/body slot revision (1 opaque; 2 once a body is set) */
+/* §78.4: the recorded instantiation edges of a reference: pairs (source, map)
+ * such that dest = reindex(source, map) was constructed; n pairs */
+size_t instantiation_edges(RefId dest, const uint64_t **pairs);
 void env_control_init(void); void env_freeze(void); void env_unfreeze(void); bool env_is_frozen(void);   /* §57 R1: define_global returns 0 and set_global_body false while frozen */
 RefId unfold_global(RefId t);          /* reindex(definition body, map) */
 

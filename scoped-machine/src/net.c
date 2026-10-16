@@ -1,4 +1,5 @@
 #include "net.h"
+#include "reuse.h"
 #include "lib.h"
 #include "compiler.h"
 
@@ -575,7 +576,7 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(P.c, k, &i, &im); mapb_dim(&b, i, im); }
         mapb_term(&b, slot, Q.ref);
         res = desc_ref(n, reindex(body, mapb_finish(&b)));
-        count(&n->n_apply);
+        count(&n->n_apply); reuse_bump(REUSE_IDENTITY_APPLY);
         { NetTraceEvent ev = { NT_APPLY_TRANSFORM, P.a, (int)P.b, P.c, Q.ref, N(n, res)->p.ref, 0 };
           Endpoint rp = o->peer[1];
           if (rp.node && N(n, rp.node)->kind == A_CONTINUE_REFERENCE) ev.K = N(n, rp.node)->p.a;

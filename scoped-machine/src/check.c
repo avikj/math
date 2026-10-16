@@ -1,4 +1,5 @@
 #include "check.h"
+#include "reuse.h"
 #include "lib.h"
 #include "compiler.h"
 
@@ -29,10 +30,11 @@ typedef struct {
     const char *reason;
     uint64_t aux[3];        /* origin: context, required face, type */
     Words deps;             /* symbol claims this verdict is provisional on */
+    Words gdeps;            /* §79: (symbol, revision) pairs the verdict read; reusable only while they are current */
     bool is_symbol;
 } Claim;
 
-typedef struct { size_t claim; Words deps; } Frame;
+typedef struct { size_t claim; Words deps; Words gdeps; } Frame;
 
 static struct {
     WordMap idx;            /* (kind, words...) → claim index + 1 */
@@ -82,7 +84,7 @@ void check_init(void) {
     vec_push(&K.wait_on, 0); vec_push(&K.assume, 0);
 }
 void check_free(void) {
-    for (size_t k = 0; k < K.recs.len; k++) words_free(&K.recs.data[k].deps);
+    for (size_t k = 0; k < K.recs.len; k++) { words_free(&K.recs.data[k].deps); words_free(&K.recs.data[k].gdeps); }
     vec_free(&K.recs); vec_free(&K.wait_on); vec_free(&K.assume);
     wordmap_free(&K.idx);
     pthread_mutex_destroy(&K.mu); pthread_cond_destroy(&K.cv);
@@ -112,10 +114,13 @@ static uint64_t tid_locked(void) {
  * key carries the environment version, so a successful candidate mutation
  * makes every earlier environment-dependent verdict unreachable */
 static size_t claim_index_locked(uint64_t kind, const uint64_t *w, size_t n) {
-    uint64_t key[10] = { kind, global_env_version() }; memcpy(key + 2, w, n * sizeof(uint64_t));
+    /* §79.2: the whole-signature admission (CL_SYMBOL) stays keyed by the
+     * environment version; every other judgment is keyed by its semantic
+     * request and validated by the symbol revisions it actually read */
+    uint64_t key[10] = { kind, kind == CL_SYMBOL ? global_env_version() : 0 }; memcpy(key + 2, w, n * sizeof(uint64_t));
     uint64_t v;
     if (wordmap_get(&K.idx, key, n + 2, &v)) return (size_t)v - 1;
-    Claim c; memset(&c, 0, sizeof c); words_init(&c.deps); c.is_symbol = kind == CL_SYMBOL;
+    Claim c; memset(&c, 0, sizeof c); words_init(&c.deps); words_init(&c.gdeps); c.is_symbol = kind == CL_SYMBOL;
     vec_push(&K.recs, c);
     wordmap_put(&K.idx, key, n + 2, K.recs.len);
     return K.recs.len - 1;
@@ -158,8 +163,14 @@ static bool may_block_locked(uint64_t owner, uint64_t me) {
 
 static void resolve_locked(void);
 static Frame *top_frame(void) { return tl_frames.len ? &tl_frames.data[tl_frames.len - 1] : NULL; }
-static void frame_push(size_t claim) { Frame f; f.claim = claim; words_init(&f.deps); vec_push(&tl_frames, f); }
+static void frame_push(size_t claim) { Frame f; f.claim = claim; words_init(&f.deps); words_init(&f.gdeps); vec_push(&tl_frames, f); }
 static void inherit_locked(const Words *deps) { Frame *f = top_frame(); if (f) for (size_t k = 0; k < deps->n; k++) words_add(&f->deps, deps->w[k]); }
+/* §79.1: dependency-recording reads */
+static void gdeps_add_pair(Words *g, uint64_t sym, uint64_t rev) { for (size_t k = 0; k + 1 < g->n; k += 2) if (g->w[k] == sym) return; words_push(g, sym); words_push(g, rev); }
+static void note_symbol(SymbolId s) { Frame *f = top_frame(); if (f) gdeps_add_pair(&f->gdeps, s, global_revision(s)); }
+static void note_entry(EntryId e) { Frame *f = top_frame(); if (!f || !e) return; const uint64_t *p; size_t n = eval_entry_gdeps(e, &p); for (size_t k = 0; k < n; k++) gdeps_add_pair(&f->gdeps, p[2 * k], p[2 * k + 1]); }
+static void inherit_gdeps(const Words *g) { Frame *f = top_frame(); if (f) for (size_t k = 0; k + 1 < g->n; k += 2) gdeps_add_pair(&f->gdeps, g->w[k], g->w[k + 1]); }
+static bool gdeps_current(const Words *g) { reuse_bump(REUSE_DEPENDENCY_CHECK); for (size_t k = 0; k + 1 < g->n; k += 2) if (global_revision(g->w[k]) != g->w[k + 1]) return false; return true; }
 
 /* acquire claim `c`: ACQ_OWNER (this thread computes it, a frame is pushed),
  * ACQ_DONE (verdict copied out, provisional premises inherited), or
@@ -173,6 +184,7 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
          * reacquired by index at the top of every iteration (§59.4) */
         Claim *r = &K.recs.data[c];
         if (r->state == 2 && r->result == 3 && r->attempt != K.attempt) r->state = 0;   /* an old attempt's unresolved outcome */
+        if (r->state == 2 && !r->is_symbol && !gdeps_current(&r->gdeps)) { r->state = 0; r->deps.n = 0; r->gdeps.n = 0; }   /* §79.2: a read dependency changed */
         if (r->state == 2) {
             /* a verdict provisional on symbols: a rejected premise withdraws
              * it (recomputed now, by us); a premise another thread is still
@@ -193,7 +205,7 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
             }
             if (waited) continue;
             *result = r->result; if (reason) *reason = r->reason; if (aux) memcpy(aux, r->aux, sizeof r->aux);
-            inherit_locked(&r->deps);
+            inherit_locked(&r->deps); inherit_gdeps(&r->gdeps);
             pthread_mutex_unlock(&K.mu);
             return ACQ_DONE;
         }
@@ -261,9 +273,10 @@ static void claim_release(size_t c, uint64_t result, const char *reason, const u
     pthread_mutex_lock(&K.mu);
     Frame *f = top_frame();
     require(f && f->claim == c, "claim release out of order");
-    Words deps = f->deps; tl_frames.len--;
+    Words deps = f->deps, gdeps = f->gdeps; tl_frames.len--;
     Claim *r = &K.recs.data[c];
     if (r->is_symbol) words_remove(&deps, c);        /* self-recursion is closed by this verdict */
+    r->gdeps.n = 0; words_append(&r->gdeps, gdeps.w, gdeps.n);
     if (result == 0) {
         /* no verdict in this attempt: the attempt's waiters receive the
          * unresolved outcome (one producer per attempt, §59.4); a new attempt
@@ -276,8 +289,8 @@ static void claim_release(size_t c, uint64_t result, const char *reason, const u
         r->deps.n = 0; words_append(&r->deps, deps.w, deps.n);
     }
     if (r->is_symbol) resolve_locked();
-    inherit_locked(&deps);
-    words_free(&deps);
+    inherit_locked(&deps); inherit_gdeps(&gdeps);
+    words_free(&deps); words_free(&gdeps);
     pthread_cond_broadcast(&K.cv);
     pthread_mutex_unlock(&K.mu);
 }
@@ -301,7 +314,7 @@ static void top_leave(void) {
     if (--tl_depth == 0) {
         Frame *f = top_frame(); require(f && f->claim == 0, "root frame mismatch");
         tl_pending.n = 0; words_append(&tl_pending, f->deps.w, f->deps.n);
-        words_free(&f->deps); tl_frames.len--;
+        words_free(&f->deps); words_free(&f->gdeps); tl_frames.len--;
         if (tl_frames.len == 0) vec_free(&tl_frames);   /* thread-local storage is released at the outermost exit */
         __atomic_sub_fetch(&K.clients, 1, __ATOMIC_ACQ_REL);
     }
@@ -384,7 +397,7 @@ static DimVarId conv_dim(RefId l, RefId r, uint64_t slot) {
 static CheckStatus observe(FaceId C, RefId t, EvalResult **out, const char **reason) {
     WhnfStatus st;
     EvalResult *r = whnf(t, C, &st);
-    if (st == W_OK) { *out = r; return CK_VALID; }
+    if (st == W_OK) { note_entry(eval_entry_lookup(t, C)); *out = r; return CK_VALID; }
     *out = NULL;
     if (st == W_STUCK) { *reason = "unresolved: weak-head observation did not complete (cyclic or suspended demand)"; return CK_UNRESOLVED; }
     *reason = r && r->message ? r->message : "invalid observation";
@@ -859,6 +872,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         if (st != CK_VALID) break;
         ContextId Gs = origin_context(h.origin);
         st = check_map(G, C, h.map, Gs, fc_true(), reason);
+        note_symbol(s);
         if (st == CK_VALID) *type = reindex(global_type(s), h.map);
         break;
     }
@@ -1248,11 +1262,22 @@ CheckStatus check(ContextId G, FaceId chi, RefId t, RefId A, const char **reason
 
 /* conversion requests are claims keyed by (mode, context without assumption,
  * face projected to the support of the request, a, b, T) */
+/* §77.2: the judgment's context projected to the dependency-closed free
+ * declarations of its operands (free variables are already closed through
+ * declaration types and required faces), in the original telescope order */
+static ContextId project_context(ContextId G, VarSetId vs, DimSetId ds) {
+    size_t n = context_size(G); CtxDecl *kept = malloc((n ? n : 1) * sizeof(CtxDecl)); require(kept, "out of memory"); size_t m = 0;
+    for (size_t k = 0; k < n; k++) { CtxDecl d = context_decl(G, k); if (d.sort == S_TERM ? varset_contains(vs, d.id) : dimset_contains(ds, d.id)) kept[m++] = d; }
+    ContextId out = context_make(m, kept, fc_true()); free(kept); return out;
+}
 static size_t conv_claim(uint64_t mode, ContextId G, FaceId C, RefId a, RefId b, RefId T) {
     DimSetId S = dimset_union(ref_support(a), ref_support(b));
-    if (T) S = dimset_union(S, ref_support(T));
+    VarSetId V = varset_union(ref_freevars(a), ref_freevars(b));
+    if (T) { S = dimset_union(S, ref_support(T)); V = varset_union(V, ref_freevars(T)); }
     size_t n; const uint64_t *ds = dimset_get(S, &n);
-    uint64_t key[6] = { mode, under(G, fc_true()), fc_project(C, ds, n), a, b, T };
+    FaceId Cp = fc_project(C, ds, n);
+    { Words dd; words_init(&dd); fc_dims(Cp, &dd); S = dimset_union(S, dimset_make(dd.w, dd.n)); words_free(&dd); }
+    uint64_t key[6] = { mode, project_context(G, V, S), Cp, a, b, T };
     pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_CONV, key, 6); pthread_mutex_unlock(&K.mu);
     return cl;
 }
@@ -1288,6 +1313,7 @@ static ConvStatus conv_type_clause(ContextId G, FaceId C, RefId A, RefId B) {
     Acq acq = claim_acquire(cl, &v, NULL, NULL);
     if (acq == ACQ_DONE) return cv_of(v);
     if (acq == ACQ_CYCLE) return CV_UNRESOLVED;  /* the comparison depends on itself: no coinductive assumption */
+    reuse_bump(REUSE_CONVERSION_BODY);
     ConvStatus out = CV_UNRESOLVED;
     EvalResult *ra, *rb;
     if (observe_both(C, A, B, &ra, &rb) != CV_EQUAL) goto done;
@@ -1346,6 +1372,7 @@ static ConvStatus conv_term_clause(ContextId G, FaceId C, RefId t, RefId u, RefI
     Acq acq = claim_acquire(cl, &v, NULL, NULL);
     if (acq == ACQ_DONE) return cv_of(v);
     if (acq == ACQ_CYCLE) return CV_UNRESOLVED;
+    reuse_bump(REUSE_CONVERSION_BODY);
     ConvStatus out = CV_UNRESOLVED;
     EvalResult *rA; const char *reason;
     if (observe(C, A, &rA, &reason) != CK_VALID) goto done;
@@ -1532,7 +1559,7 @@ static CheckStatus validate_symbol(SymbolId s, const char **reason) {
     Acq a = claim_acquire(cl, &v, &why, NULL);
     if (a == ACQ_DONE) { LEAVE(); if (v != 1) *reason = why; if (top_settled()) return ck_of(v); continue; }
     if (a == ACQ_CYCLE) { assume_symbol(cl); LEAVE(); require(tl_depth > 0 || tl_pending.n == 0, "declaration assumed at the top level"); return CK_VALID; }   /* recursive occurrence: typed by the declaration */
-    RefId type = global_type(s);
+    RefId type = global_type(s); note_symbol(s);
     CheckStatus st = CK_VALID;
     if (!type) { *reason = "symbol without a declared type"; st = CK_INVALID; }
     OriginId o = ref_origin(global_ref(s));
@@ -1586,7 +1613,8 @@ void check_open_environment(void) {
     pthread_mutex_unlock(&K.mu);
     check_free(); check_init();
     pthread_mutex_lock(&K.mu); K.budget = budget; pthread_mutex_unlock(&K.mu);
-    eval_reset();
+    /* §79.3: a new admission session; persistent mathematical answers of the
+     * evaluator survive and are filtered by their recorded dependencies */
     env_unfreeze();
 }
 

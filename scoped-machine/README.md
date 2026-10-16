@@ -30,6 +30,7 @@ here is derived from earlier runtime code; the spec is the only source.
 | §23 | `tests/test_main.c`, `test_net` in `src/net.c` | Every row of the acceptance table, plus the exhaustive projection/quantifier law check on all 48 canonical faces over two dimensions (2 880 + 240 comparisons) |
 | §39–48, §59.3 | `src/compiler.*`, `T_TCALL` in `src/term.*`, `OP_APPLY_TRANSFORM` / `A_CONTINUE_REFERENCE` in `src/net.*`, `evaluate` (T_TCALL) and the pair jobs in `src/eval.*`, the T_TCALL rule in `src/check.c` | Diagrams, realization telescopes, canonical substitution, `Down`/expand, collapse/expand templates, `compile_identity` with the graph-pair template, equivalence / residual / cut / contractible-fibre schemas, certificates, one fixed `TRANSFORM_CALL` origin per transform and orientation with invocations as its views, the application and receiver rules, one outstanding count for evaluator jobs and net pairs |
 | §§60–71 under §73 | `src/work.*`, trace fields in `src/eval.*` (`deps`, `steps`, `env`, root occurrences) and `src/net.*` (identity-application trace), `tests/test_work.c` | Identity-execution accounting and cost refinement: work identities, demand closure with ready cuts, the resource algebra, Boolean direct image under specialization, cost differences, typed plan/connector/expression/cost-model records, the formula DAG with `restrict`, realization reconstruction, verification of supplied proof DAGs and geodesic certificates, Must-factoring / disjoint decomposition / the shared-choice equality, schemas, the bounded-frame engine and the fine ledger. No solver, no frontier. See the section below. |
+| §§74–82 | `src/shape.*`, `src/reuse.*` + `src/reuse_stats.h`, evaluator keys/receipts/adapters in `src/eval.*`, revisions and instantiation edges in `src/term.*`, action identity and `identity_action` in `src/compiler.*`, projected judgments and dependency-validated claims in `src/check.c`, the persistent job engine in `src/work.c`; `tests/test_reuse.c`, `tests/accept_*.c` | Uniform reuse: structural computation identity, dependency-validated persistent answers, residual receipts with specialization/restriction adapters, one action per content, the runtime proof action, persistent pure-operation producers with shared continuations, and the §74.2 counter contract. See the section below. |
 | §28–31, §38, §47 | `tests/test_schedule.c`, `tests/test_concurrent.c`, `tests/test_match.c`, `tests/test_check.c`, `tests/test_templates.c`, `tests/test_compiler.c`, `tests/review_regressions.c`, `tests/review_followup.c`, `tests/review_claim_wait.c`, `tests/review_checker_lifecycle.c` | 24 schedule combinations (now with the associativity transform in the workload); client storms and multi-client runs; comparison acceptance/rejection incl. ambiguous refinement; checking acceptance/rejection/unresolved; template laws and the admission transaction; the §47 compiler cases; the review's regression cases; `make tsan` |
 
 ## The central distinction, as implemented
@@ -587,3 +588,164 @@ families, memo reuse and reclamation.
 frontier, no cached inequality from an interrupted check. Ordinary execution
 never consults a prepared family; `realization_reference` returns a reference the
 checker already accepted and the evaluator runs it by its fixed recipe.
+
+
+## Uniform reuse (§§74–82): identity-execution accounting on persistent computations
+
+The increment makes mathematical work belong to persistent computations and
+reusable answers, not to temporary handles, source labels, whole-environment
+counters or unused context declarations. The accepted cubical formulas, scope
+machinery, typed occurrence records, validation regressions and the
+one-producer protocol are unchanged; §73's exclusions stay in force (no
+solver, no frontier, no plan search, no learn/retire subsystem).
+
+**Four records (§74.1).** *Occurrence*: the requested `RefId`, its context,
+ambient face and validation — retained in full (every negative check is
+unchanged). *Computation*: `(shape, projected face)` — the evaluator's
+`Entry`, whose canonical reference is the first requester's. *Answer*: the
+result, its residual and reduction receipt, and the `(symbol, revision)` pairs
+it read. *Delivery*: each consumer's own REQUEST/DELIVER events (and, for
+alias publications, the residual key's own entry).
+
+**Structural identity (§76, `src/shape.*`).** `shape(t, ρ)` is the interned
+descriptor `[SH_NODE, tag, payload, levels, required face, fields…]` of the
+opened construction, with binder-bound identities replaced by `(depth, slot)`
+tokens through the existing binder resolution (`resolve_*_binder`, so the
+domain is shaped in its prefix context and fields under one slot share one
+local), free identities anchored, intervals/faces in their existing normal
+forms with bound atoms renamed. No evaluation, no GLOBAL unfolding; views and
+template views are opened through their existing APIs so a direct
+constructor, a specialized view and an equal template view have one shape
+(A1–A3); levels, required faces, proofs and distinct free variables keep
+their distinctions. Memoized per (reference, ρ, depth); each constructed node
+is `REUSE_SHAPE_NODE`.
+
+**Producers (§76.3, §79).** `entry_intern` keys by `(shape, π_{S(t)} χ)` and
+keeps a chain of historical entries under that key. A READY entry is reusable
+when every recorded `(symbol, revision)` is current
+(`global_revision`, bumped by `set_global_body`; an opaque observation
+records revision 1, "absent body"); a RUNNING entry is reusable while the
+environment version it was created under is current. Dependencies are the
+producer's direct reads (`T_GLOBAL` dispatch) ∪ the READY children's sets,
+fixed at publication. An unrelated declaration therefore changes nothing (A8,
+`environment`); an opaque→body transition retires exactly the answers that
+read that symbol (A9). `check_open_environment` opens a new checker session
+and leaves the evaluator's answers in place.
+
+**Receipts, residuals, adapters (§78).** Every rule site emits its receipt
+(`RC_REFL | RC_SEQ | RC_RULE(rule, …) | RC_RESTRICT(src, face) |
+RC_SPEC(src, map)`, rules per the §78.2 table) and the entry records its
+residual: the forwarded child's residual after a reduction prefix, or the
+eliminator rebuilt around a neutral scrutinee's residual (`rebuild_elim`,
+also for `comp` around a neutral family). A new producer first consults
+(a) the same shape at a weaker face and (b) the recorded instantiation edges
+`dest = reindex(src, σ)` of the requested reference and of every reference
+requested with its shape; a READY, dependency-valid source whose face
+premise is entailed supplies an adapter: the producer continues from
+`reindex(residual, σ)` (or the residual itself under the stronger face) and
+observes it normally — a formerly neutral residual may reduce further (A5),
+an endpoint may be reached (A7). A candidate whose continuation key is this
+key gives no progress and is skipped (A18). Adapters count as
+`REUSE_RECEIPT_INSTANCE`, never as a rule or body. A residual that differs
+from the producer's reference is head-normal under its face by construction
+and receives the same answer under its own key (alias publication, no body
+run) so later demands of it are ready hits.
+
+**One action per content (§77.1).** The compiled record key is the semantic
+content (schema, typed inputs, derived record); `IdentityDecl.id` and the
+environment counter are gone from it. Source declarations are a provenance
+index (`transform_sources`); a relabelled declaration returns the same
+`TransformId`, the same generic call, and its second call performs no second
+`APPLY_TRANSFORM` (A10); different evidence stays a different action (A11).
+
+**Projected judgments (§77.2).** Conversion claims are keyed by the context
+projected to the dependency-closed free declarations of the operands and
+type, in telescope order; every claim records the symbol revisions it read
+(directly, or through the evaluator entries its observations used) and a
+verdict whose dependency changed is recomputed. Whole-signature admission
+(`CL_SYMBOL`) stays keyed by the environment version. Weakening by an unused
+declaration reuses the judgment (A15, `checker`).
+
+**Runtime proof action (§80).** `identity_pair(L, R, B, lB, params)` exposes
+the graph-pair template; `identity_action(pair, dir, σ, proof, argument)`
+instantiates one orientation by a single simultaneous map (σ on the
+parameters, `P ↦ proof`, `r ↦ argument`; the images are not reindexed again).
+The result is an ordinary core term: a program `λP. λr. (action(P, r), P)`
+applied to a projection-computed proof runs through the evaluator with no
+compilation, publication or `APPLY_TRANSFORM` (A19); it agrees with the
+compiled transform by conversion.
+
+**Persistent pure operations (§75, `src/work.c`).** Every shared operation
+family (formula constructors, restrict/subst, support/Must, set operations,
+sums, specialization, preparation, realization, certificate and proof
+checks, reduction, antichains, geodesic checks, schema maps) is a `Job`
+keyed by family + immutable operands + the external versions it reads
+(rule-set version for proofs/reductions; environment for specialization;
+session+environment for preparation/certificate checks; builder revision for
+demand graphs and geodesic builders). A job's frame stack is its shared
+continuation; private helpers (interning, probes, sorts, lists, visits with
+pointers) run on that stack, and a request for another shared operation
+joins its job (`waiting_on`), creates it, or receives the READY answer at
+once. `op_step(handle, budget)` services enabled jobs in the handle's cone,
+one frame per unit of budget; two handles on one key step one job
+(`handles`), releasing a handle retires only the handle, budget exhaustion
+leaves the continuation resumable. Reduction answers are keyed by
+`(formula, model, rule set)`, realizations by `(problem, support)`, demand
+records by `(graph, revision, roots, ready)`: no sequence-qualified
+mathematical results remain (`work`, A12). Work atoms for producers name
+`(shape, face, snapshot)` — the shared instance — with a representative
+reference for specialization kept beside, not inside, the identity.
+
+**Counters (§74.2, `src/reuse_stats.h`).** `reuse_count` reads the
+production counters: `EVAL_BODY`, the rule counters (`BETA`, `FST`, `SND`,
+`PATH_BETA`, `ENDPOINT`, `GLOBAL_UNFOLD`, `GLUE_RULE`, `SYSTEM_RULE`,
+`COMP_EXPAND`, `IDENTITY_APPLY`), `CONVERSION_BODY`, `REDUCE_BODY`,
+`PROOF_CHECK_BODY`, and the administration `SHAPE_NODE`,
+`DEPENDENCY_CHECK`, `RECEIPT_INSTANCE`, `READY_HIT`, `RUNNING_JOIN` — bumped
+where the rule executes, never on delivery; monotone until `machine_free`.
+
+**Measured before/after (the eight assessment cases, `tests/baseline-3a0d7c4/results.json` vs the gates now).**
+
+| Case | 3a0d7c4 | now |
+| --- | --- | --- |
+| construction route (A1) | 1 producer, 4 frames for the direct construction | 0 producers, 1 delivery frame; one shape |
+| bound names (A2) | 2 producers, 5 frames | 0 producers, 1 frame |
+| generic then specialized (A4) | 1 producer, 4 frames incl. the beta | 1 adapter launch, 3 frames, 0 betas (receipt instance) |
+| stronger face (A6) | 1 producer, 4 frames incl. the beta | 1 adapter launch, 3 frames, 0 betas |
+| unrelated global (A8) | 3 producers, 6 frames | 0 producers, 1 frame |
+| identity source name (A10) | second record, second call, 1 APPLY_TRANSFORM, 1 producer | same record and call, 0 APPLY, 0 producers |
+| repeated reduction (A12) | 1 365 then 965 frames, different result records | 1 206 then 0 frames, one result record |
+| conversion under weakening (A15) | 2 new claims, 2 steps | 0 conversion bodies |
+
+**Schedule claims (§78.5, §81.3).** The fixed-recipe event-vector theorem is
+retained for a fixed initial ready set and a fixed selected reuse graph
+(`test_schedule`, `demo_speculation` unchanged). Opportunistic receipt
+discovery can change which adapter a producer takes under another schedule;
+the selected edge is recorded (`eval_entry_adapter_source`) and no equality
+of the fine counts is asserted across policies.
+
+**Bounded-helper audit (§81.2).** Word size 64 bits; checked natural costs
+below 2^62 with overflow reported as `OP_RESOURCE_LIMIT`; chunk bound
+`CHUNK_WORDS = 32`; allocator model: `malloc/free/realloc` of a block are one
+step each, vector growth amortized one word per pushed word (charged as
+`alloc_words`). Synchronous helpers reachable from `op_step`:
+
+| Helper | Status |
+| --- | --- |
+| hashing, probing, word comparison, record copy (`INTERN/LOOKUP`) | framed: one word / one probe / one word per frame |
+| table growth | framed: `CHUNK_WORDS` old slots relocated per frame (`INTERN` phase 4); a probe by another job first completes a pending relocation (counted, not budget-bounded for that other handle) |
+| set merge, subset, Must/support merge, sums, comparisons | framed, one element / limb per frame |
+| sorting (specialization images, extraction, family normalization) | framed heap sort: one sift (≤ 64 compares) per frame, one element per dedupe frame |
+| demand-graph node lookup, atom-map lookup, weight override lookup | fixed-size-key probes (`WordMap` / `find_sync`, ≤ 4 words): bounded hashing, counted probes |
+| `expr_boundary` | memoized per node; first computation of a node is charged one VALIDATE step per node of its subtree (amortized bounded over the preparation traversal) |
+| shared-choice image, MAPP value recomputation | framed (`MKF`, `SUM` requests) |
+| proof/list/reduction record interning inside a frame | `intern_sync` of ≤ 8-word records: bounded |
+| `set_has` in demand | binary search ≤ 64 compares: bounded |
+| kernel calls from `ATOMSPEC` / `PREPARE` boundary checks (`reindex`, `fc_reindex`, `ref_validate`, `shape_of`, `eval_entry_lookup`, `check`, `check_map`) | **not refined**: charged as `kernel_calls`; their traversal is the kernel's own |
+| constructor-level synchronous APIs (`set_make`, `plan_make`, `connector_make`, `model_with_weight`, `boundary_make`) | outside the bounded API (no bounded-step claim) |
+
+Consequently the §65 constant-factor refinement is **not claimed** for
+bounded operations whose frames reach the kernel (specialization of producer
+atoms, preparation's typing checks); it is claimed for the formula, set,
+cost, certificate, realization, demand and family operations, whose every
+frame is one of the bounded bodies above.

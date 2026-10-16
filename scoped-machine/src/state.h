@@ -12,7 +12,7 @@
 typedef struct { VarSetId ft; DimSetId fd; FaceId required; } OriginSide;
 typedef struct { DimSetId support; VarSetId freevars; FaceId required; } RefSide;
 typedef struct { RefId type; FaceId required; uint64_t prov; } TermDecl;
-typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
+typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ uint64_t revision; /* §79.1: changes when the body slot changes */ } Def;
 typedef struct { DimSetId support; VarSetId freevars; } ScopeSide;
 typedef struct { uint64_t free_slots; /* interned word list */ } TNodeSide;
 
@@ -38,6 +38,15 @@ typedef struct {
     Chunked tnode_side;   /* TNodeSide per node-1: computed free-slot sets */
     WordMap reindex_memo; /* (RefId, MapId) → RefId */
     WordMap compose_memo; /* (MapId, MapId) → MapId */
+    /* §78.4: structural instantiation edges — destination reference → the
+     * interned list of (source reference, restricted map) pairs that
+     * constructed it through reindex; metadata about construction work */
+    Interner edge_lists;  /* interned word lists of (source, map) pairs */
+    WordMap edges;        /* (destination RefId) → edge list id */
+    /* §76: structural normal forms */
+    Interner shapes;      /* ShapeId → structural descriptor words */
+    WordMap shape_memo;   /* (RefId, renaming map, depth) → ShapeId */
+    pthread_mutex_t shape_mu;
 
     /* side data, non-moving; an element is written before its id is
      * published and never changes afterwards */

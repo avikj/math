@@ -85,6 +85,18 @@ TransformId compile_cut(ContextId params, FaceId req, RefId B, uint64_t lB, RefI
 TransformId compile_contractible_fibre(ContextId params, FaceId req, RefId B, uint64_t lB, RefId R, RefId k, const char **reason);
 
 const CompiledTransform *transform_get(TransformId id);      /* NULL when unknown */
+/* §77.1: identical actions share one record; every source identity
+ * declaration that produced it is retained here (returns the count; fills
+ * up to cap ids) */
+size_t transform_sources(TransformId id, uint64_t *out, size_t cap);
+/* §80: the graph-pair template of (L, R) as an ordinary open core term over
+ * its complete telescope (parameters, common output y, proof P, realization
+ * argument r). identity_action instantiates one orientation at σ (the
+ * parameters), a proof and an argument already in the target; the result is
+ * an ordinary reference that the checker validates and the evaluator runs
+ * with no compilation, publication or registration. */
+uint64_t identity_pair(DiagramId L, DiagramId R, RefId B, uint64_t lB, ContextId params);
+RefId identity_action(uint64_t pair, int dir, MapId sigma, RefId proof, RefId argument);
 const GraphPairTemplate *graph_pair_get(uint64_t id);
 size_t transform_count(void);
 /* reconstruct the derivation the certificate records and compare it exactly

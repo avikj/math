@@ -1,11 +1,11 @@
 CC      ?= gcc
-CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
+CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread -Isrc
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c
+SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c src/shape.c src/reuse.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -13,6 +13,22 @@ build/tests: $(OBJ) tests/test_main.o
 
 %.o: %.c src/*.h
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+build/accept-boundaries: $(OBJ) tests/accept_sharing_boundaries.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+build/accept-checker: $(OBJ) tests/accept_check_weakening.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+build/accept-handles: $(OBJ) tests/accept_shared_work_handle.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+build/reuse: $(OBJ) tests/test_reuse.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
 
 build/work: $(OBJ) tests/test_work.o
 	@mkdir -p build
@@ -122,12 +138,18 @@ test: all
 	./build/demo-speculation
 	./build/work
 	CUBICAL_WORKERS=4 ./build/work
+	./build/reuse
+	CUBICAL_WORKERS=4 ./build/reuse
+	for m in $(ACCEPT_MODES); do ./build/accept-boundaries $$m || exit 1; done
+	./build/accept-checker
+	./build/accept-handles
 
-TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_work
+ACCEPT_MODES := origin alpha face specialize environment identity-name work
+TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_work test_reuse accept_sharing_boundaries accept_check_weakening accept_shared_work_handle
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
-	for f in $(SRC) $(patsubst %,tests/%.c,$(TSAN_TESTS)); do $(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -c -o build/tsan/$$(basename $$f .c).o $$f || exit 1; done
+	for f in $(SRC) $(patsubst %,tests/%.c,$(TSAN_TESTS)); do $(CC) -std=c11 -O1 -g -pthread -Isrc -fsanitize=thread -c -o build/tsan/$$(basename $$f .c).o $$f || exit 1; done
 	for t in $(TSAN_TESTS); do $(CC) -pthread -fsanitize=thread -o build/tsan/$$t $(TSAN_CORE) build/tsan/$$t.o || exit 1; done
 	CUBICAL_WORKERS=4 ./build/tsan/test_main
 	CUBICAL_WORKERS=4 ./build/tsan/test_schedule
@@ -152,6 +174,11 @@ tsan:
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_claim_wait
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_work
 	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_work
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_reuse
+	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_reuse
+	for m in $(ACCEPT_MODES); do CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/accept_sharing_boundaries $$m || exit 1; done
+	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/accept_check_weakening
+	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/accept_shared_work_handle
 
 clean:
 	rm -f src/*.o tests/*.o

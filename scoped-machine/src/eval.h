@@ -12,6 +12,7 @@
 #define CUBICAL_EVAL_H
 
 #include "term.h"
+#include "shape.h"
 struct Net;
 
 typedef enum {
@@ -46,8 +47,17 @@ typedef struct {
     size_t runs;        /* EVALUATE tasks executed for this key (must be ≤ 1) */
     size_t n_req, n_deliver, n_pub;   /* per-key event counts (for schedule comparison) */
     size_t steps;       /* §60 trace: EVALUATE/RESUME frame steps charged to this producer */
-    uint64_t env;       /* the environment version of the key */
+    uint64_t env;       /* the environment version at the key's creation (§79.2: a running producer stays tied to its snapshot) */
     VEC(EntryId) deps;  /* §60 trace: consumer occurrences owned by this producer, in request order (slot = index) */
+    /* §76.3 / §78 / §79: the structural computation identity, the historical
+     * chain under the same (shape, face), the answer's residual and receipt,
+     * and the symbol revisions the answer actually read */
+    ShapeId shape;
+    EntryId next_alt;
+    RefId residual; uint64_t receipt;
+    VEC(uint64_t) gdeps;        /* pairs (symbol, revision) */
+    RefId adapter; uint64_t adapter_prefix; EntryId adapter_src;   /* §78.3–78.4: continue from a completed receipt instead of evaluating the body */
+    bool is_alias;              /* §76.3: published as the residual of another producer's answer; it never ran a body */
     pthread_mutex_t mu; /* guards state, result, waiters and the counters above */
 } Entry;
 
@@ -121,6 +131,20 @@ size_t eval_task_count(void);                       /* EVALUATE tasks created so
 size_t eval_entry_deps(EntryId e, EntryId **out);   /* copies the owner's occurrences; caller frees *out */
 size_t eval_entry_steps(EntryId e);
 uint64_t eval_entry_env(EntryId e);
+ShapeId eval_entry_shape(EntryId e);
+/* §78: the answer's residual (the expression after the established
+ * reduction prefix) and its reduction receipt; 0 for an unsuccessful or
+ * unpublished entry */
+RefId eval_entry_residual(EntryId e);
+uint64_t eval_entry_receipt(EntryId e);
+size_t eval_entry_gdeps(EntryId e, const uint64_t **pairs);   /* (symbol, revision) pairs the answer read */
+bool eval_entry_deps_valid(EntryId e);                       /* every recorded revision is current */
+EntryId eval_entry_adapter_source(EntryId e);                /* the entry whose receipt this producer continued from, or 0 */
+bool eval_entry_is_alias(EntryId e);
+/* receipt records: [RC_REFL, t] | [RC_SEQ, first, then] | [RC_RULE, rule, x, y] | [RC_RESTRICT, source entry, face] | [RC_SPEC, source entry, map] */
+enum { RC_REFL = 1, RC_SEQ, RC_RULE, RC_RESTRICT, RC_SPEC };
+enum { RR_CONG_APP = 1, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE, RR_CONG_COMP, RR_BETA, RR_FST, RR_SND, RR_PATH_BETA, RR_ENDPOINT, RR_UNFOLD, RR_GLUE, RR_SYSTEM, RR_SYSTEM_DIST, RR_COMP_TUBE, RR_COMP_EXPAND, RR_IDENTITY_APPLY };
+const uint64_t *eval_receipt_words(uint64_t receipt, size_t *n);
 size_t eval_root_occurrences(EntryId **out);        /* copies the root occurrence list; caller frees *out */
 
 /* continuation constructors used by the net layer */

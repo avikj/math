@@ -1,5 +1,6 @@
 #include "state.h"
 #include "lib.h"
+#include "reuse.h"
 
 Machine M;
 /* the machine lifetime generation: thread-local construction state that
@@ -24,6 +25,8 @@ void machine_init(void) {
     chunked_init(&M.scope_side, sizeof(ScopeSide)); chunked_init(&M.tnode_side, sizeof(TNodeSide));
     wordmap_init(&M.reindex_memo);
     wordmap_init(&M.compose_memo);
+    interner_init(&M.edge_lists); wordmap_init(&M.edges);
+    interner_init(&M.shapes); wordmap_init(&M.shape_memo); pthread_mutex_init(&M.shape_mu, NULL);
     chunked_init(&M.origin_side, sizeof(OriginSide));
     chunked_init(&M.ref_side, sizeof(RefSide));
     chunked_init(&M.term_decl, sizeof(TermDecl));
@@ -53,6 +56,9 @@ void machine_free(void) {
     chunked_free(&M.scope_side); chunked_free(&M.tnode_side);
     wordmap_free(&M.reindex_memo);
     wordmap_free(&M.compose_memo);
+    interner_free(&M.edge_lists); wordmap_free(&M.edges);
+    interner_free(&M.shapes); wordmap_free(&M.shape_memo); pthread_mutex_destroy(&M.shape_mu);
+    reuse_reset_all();
     chunked_free(&M.origin_side);
     chunked_free(&M.ref_side);
     chunked_free(&M.term_decl);

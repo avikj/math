@@ -29,12 +29,14 @@ typedef struct {
     uint64_t lX, lY, lB;
     DiagramId L, Rd;
 } Certificate;
+typedef struct { TransformId transform; size_t cert; } ProvEntry;
 
 static struct {
     VEC(Diagram *) diagrams;
     VEC(CompiledTransform *) transforms;
     VEC(GraphPairTemplate *) pairs;
     VEC(Certificate *) certs;
+    VEC(ProvEntry) prov;          /* §77.1: (transform, certificate) source associations */
     WordMap tindex;           /* §59.3: structural compiled-record key → transform id */
     WordMap dindex;           /* structural diagram key → diagram id */
     pthread_mutex_t mu; pthread_cond_t cv;
@@ -53,7 +55,7 @@ void compiler_free(void) {
     for (size_t k = 0; k < CR.transforms.len; k++) free(CR.transforms.data[k]);
     for (size_t k = 0; k < CR.pairs.len; k++) free(CR.pairs.data[k]);
     for (size_t k = 0; k < CR.certs.len; k++) free(CR.certs.data[k]);
-    vec_free(&CR.diagrams); vec_free(&CR.transforms); vec_free(&CR.pairs); vec_free(&CR.certs);
+    vec_free(&CR.diagrams); vec_free(&CR.transforms); vec_free(&CR.pairs); vec_free(&CR.certs); vec_free(&CR.prov);
     wordmap_free(&CR.tindex); wordmap_free(&CR.dindex);
     pthread_mutex_destroy(&CR.mu); pthread_cond_destroy(&CR.cv);
     memset(&CR, 0, sizeof CR);
@@ -298,10 +300,14 @@ RefId diagram_expand(DiagramId id, TermVarId *q_slot) {
 
 /* the structural compiled-record key (§59.3): the environment, the schema,
  * every certificate input and the derived record data; no registry numbers */
+/* §77.1: the action key is semantic content only — the schema, its typed
+ * inputs and the derived record; neither the source declaration's id nor the
+ * environment counter nor any registry number. Source declarations are kept
+ * in a separate provenance index (transform_sources). */
 static void record_key(const Certificate *c, const CompiledTransform *t, Words *w) {
     words_init(w);
-    words_push(w, global_env_version()); words_push(w, c->kind);
-    words_push(w, c->decl.id); words_push(w, c->decl.parameters); words_push(w, c->decl.required_face); words_push(w, c->decl.result_type); words_push(w, c->decl.result_level);
+    words_push(w, c->kind);
+    words_push(w, c->decl.parameters); words_push(w, c->decl.required_face); words_push(w, c->decl.result_type); words_push(w, c->decl.result_level);
     words_push(w, c->decl.left); words_push(w, c->decl.right); words_push(w, c->decl.evidence);
     words_push(w, c->params); words_push(w, c->req); words_push(w, c->X); words_push(w, c->Y); words_push(w, c->e); words_push(w, c->B); words_push(w, c->C); words_push(w, c->D); words_push(w, c->R); words_push(w, c->k);
     words_push(w, c->lX); words_push(w, c->lY); words_push(w, c->lB); words_push(w, c->L); words_push(w, c->Rd);
@@ -335,7 +341,9 @@ static TransformId transform_publish(CompiledTransform *t, Certificate *c, const
     pthread_mutex_lock(&CR.mu);
     uint64_t have;
     if (wordmap_get(&CR.tindex, key.w, key.n, &have)) {
-        /* another client claimed this key: wait for its publication */
+        /* the same action: record this source declaration as a further
+         * provenance receipt and join its publication */
+        if (c->kind == EV_IDENTITY) { Certificate *cp = malloc(sizeof *cp); require(cp, "out of memory"); *cp = *c; vec_push(&CR.certs, cp); { ProvEntry pe = { (TransformId)have, CR.certs.len }; vec_push(&CR.prov, pe); } }
         while (!CR.transforms.data[have - 1]->generic_call[1]) pthread_cond_wait(&CR.cv, &CR.mu);
         pthread_mutex_unlock(&CR.mu); words_free(&key);
         return (TransformId)have;
@@ -344,6 +352,7 @@ static TransformId transform_publish(CompiledTransform *t, Certificate *c, const
     vec_push(&CR.certs, cp);
     CompiledTransform *p = malloc(sizeof *p); require(p, "out of memory"); *p = *t;
     p->certificate = CR.certs.len;
+    { ProvEntry pe = { (TransformId)(CR.transforms.len + 1), CR.certs.len }; vec_push(&CR.prov, pe); }
     p->generic_call[0] = p->generic_call[1] = 0;
     vec_push(&CR.transforms, p); p->id = CR.transforms.len;       /* id reserved and key claimed; not yet visible */
     wordmap_put(&CR.tindex, key.w, key.n, p->id);
@@ -638,6 +647,39 @@ CheckStatus certificate_verify(TransformId id, const char **reason) {
                 again.domain_level == t->domain_level && again.codomain_level == t->codomain_level;
     if (!same) { *reason = "registered record differs from the re-emitted derivation"; return CK_INVALID; }
     return CK_VALID;
+}
+
+/* §77.1: the source declaration ids associated with an action (identity
+ * declarations only; other schemas have no source id) */
+size_t transform_sources(TransformId id, uint64_t *out, size_t cap) {
+    size_t n = 0;
+    pthread_mutex_lock(&CR.mu);
+    for (size_t k = 0; k < CR.prov.len; k++) if (CR.prov.data[k].transform == id) { Certificate *c = CR.certs.data[CR.prov.data[k].cert - 1]; if (c->kind == EV_IDENTITY) { if (n < cap) out[n] = c->decl.id; n++; } }
+    pthread_mutex_unlock(&CR.mu);
+    return n;
+}
+
+/* ------------------------------------------------------------------ */
+/* §80: the identity action as an ordinary open core term                 */
+
+uint64_t identity_pair(DiagramId L, DiagramId R, RefId B, uint64_t lB, ContextId params) {
+    ensure_init();
+    require(DG(L) && DG(R), "unknown diagram");
+    return graph_pair(L, R, B, lB, params)->id;
+}
+RefId identity_action(uint64_t pair, int dir, MapId sigma, RefId proof, RefId argument) {
+    const GraphPairTemplate *t = graph_pair_get(pair);
+    require(t, "unknown graph-pair template");
+    /* one simultaneous map: σ on the diagram/common-output parameters,
+     * P ↦ proof, r ↦ argument; the images are already in the target and are
+     * not reindexed again; make_view restricts to the body's typed boundary */
+    MapBuilder b; mapb_init(&b);
+    size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
+    for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); if (x != t->P && x != t->r_left && x != t->r_right) mapb_term(&b, x, im); }
+    for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im); mapb_dim(&b, i, im); }
+    mapb_term(&b, t->P, proof);
+    mapb_term(&b, dir ? t->r_right : t->r_left, argument);
+    return reindex(dir ? t->reverse : t->forward, mapb_finish(&b));
 }
 
 /* ------------------------------------------------------------------ */

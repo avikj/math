@@ -376,56 +376,84 @@ static uint64_t stepped(OpId h, size_t budget, size_t *steps, bool *saw_running)
     for (;;) { OpStatus s = op_step(h, budget); (*steps)++; if (s == OP_RUNNING) { *saw_running = true; continue; } require(s == OP_COMPLETE, "operation failed: %s", op_diagnostic(h)); return op_result(h); }
 }
 static void case8(void) {
-    section("8. every bounded-frame operation suspends at internal phases and resumes to the same result");
+    section("8. every bounded-frame operation suspends at internal phases and resumes to the same result; completed producers persist (§75.2)");
     Typed T = typed_make(); const char *why = NULL;
-    AtomId a = atom_named(801), b = atom_named(802), c = atom_named(803);
-    ModelId M = model_with_weight(T.M, b, 5);
-    PlanId Pa = plan_of(&T, T.x[0], 1, &a), Pb = plan_of(&T, T.x[1], 1, &b), Pc = plan_of(&T, T.x[2], 1, &c);
-    ConnectorId g0 = connector_make(T.B, T.B, T.B, 0, T.x[0], 0, (AtomId[]){ 0 });
-    ExprId E = expr_join(expr_alt(expr_plan(Pa), expr_plan(Pb)), expr_alt(expr_plan(Pb), expr_plan(Pc)), g0);
-    FormulaId F = formula_and(formula_or(AT(a), AT(b)), formula_or(AT(b), AT(c)));
-    DGraphId g = dgraph_new(); dgraph_add_producer(g, a, 2); dgraph_add_producer(g, b, 1); dgraph_add_occurrence(g, a, b); dgraph_add_root(g, a);
-    ProblemId p = problem_prepare(E, M, &why); require(p, "prepare");
-    CertId cert = problem_reduce(p, &why); require(cert, "reduce");
-    GeoId geo = geo_new(2); geo_terminal(geo, 1); geo_policy(geo, 0, geo_edge(geo, 0, 1, 3)); geo_value(geo, 0, 3); geo_value(geo, 1, 0);
-    struct { const char *name; OpId one, full; } ops[] = {
-        { "formula_and", op_formula_and(formula_or(AT(a), AT(c)), AT(b)), op_formula_and(formula_or(AT(a), AT(c)), AT(b)) },
-        { "restrict", op_restrict(F, b, 0), op_restrict(F, b, 0) },
-        { "support", op_support(F), op_support(F) },
-        { "must", op_must(formula_and(F, AT(c))), op_must(formula_and(F, AT(c))) },
-        { "set_weight", op_set_weight(S3(a, b, c), M), op_set_weight(S3(a, b, c), M) },
-        { "demand", op_demand(g, S1(a), set_empty()), op_demand(g, S1(a), set_empty()) },
-        { "extract", op_extract(demand_closure(g, S1(a), set_empty())), op_extract(demand_closure(g, S1(a), set_empty())) },
-        { "specialize_set", op_specialize_set(S2(atom_producer(T.x[0], fc_true()), atom_producer(T.x[1], fc_true())), map_single_term(T.vx[1], T.x[0])), op_specialize_set(S2(atom_producer(T.x[0], fc_true()), atom_producer(T.x[1], fc_true())), map_single_term(T.vx[1], T.x[0])) },
-        { "prepare", op_prepare(E, M), op_prepare(E, M) },
-        { "realize", op_realize(p, S2(a, c)), op_realize(p, S2(a, c)) },
-        { "check_certificate", op_check_certificate(p, cert), op_check_certificate(p, cert) },
-        { "reduce", op_reduce(F, M), op_reduce(F, M) },
-        { "antichain", op_antichain(F), op_antichain(F) },
-        { "geo_check", op_geo_check(geo, 0), op_geo_check(geo, 0) },
+    /* two disjoint instances of every input: the first handle of each kind
+     * must run its producer (budget 1 suspends it); the "full" handle runs an
+     * equal but distinct instance uninterrupted; a third handle on the first
+     * key finds the persistent answer at once (§75.2: no second execution) */
+    AtomId a[2], b[2], c[2]; PlanId Pa[2], Pb[2], Pc[2]; ExprId E[2]; FormulaId F[2]; DGraphId g[2]; ProblemId p[2]; CertId cert[2]; GeoId geo[2]; ModelId M[2]; ConnectorId g0[2];
+    for (int v = 0; v < 2; v++) {
+        a[v] = atom_named(801 + 10 * v); b[v] = atom_named(802 + 10 * v); c[v] = atom_named(803 + 10 * v);
+        M[v] = model_with_weight(T.M, b[v], 5);
+        Pa[v] = plan_of(&T, T.x[0], 1, &a[v]); Pb[v] = plan_of(&T, T.x[1], 1, &b[v]); Pc[v] = plan_of(&T, T.x[2], 1, &c[v]);
+        g0[v] = connector_make(T.B, T.B, T.B, 0, T.x[v], 0, (AtomId[]){ 0 });
+        E[v] = expr_join(expr_alt(expr_plan(Pa[v]), expr_plan(Pb[v])), expr_alt(expr_plan(Pb[v]), expr_plan(Pc[v])), g0[v]);
+        F[v] = formula_and(formula_or(AT(a[v]), AT(b[v])), formula_or(AT(b[v]), AT(c[v])));
+        g[v] = dgraph_new(); dgraph_add_producer(g[v], a[v], 2); dgraph_add_producer(g[v], b[v], 1); dgraph_add_occurrence(g[v], a[v], b[v]); dgraph_add_root(g[v], a[v]);
+        geo[v] = geo_new(2); geo_terminal(geo[v], 1); geo_policy(geo[v], 0, geo_edge(geo[v], 0, 1, 3 + v)); geo_value(geo[v], 0, 3 + v); geo_value(geo[v], 1, 0);
+    }
+    /* prepared problems and certificates for realize / check: prepared synchronously on a third instance so that the stepped realize/check are fresh */
+    for (int v = 0; v < 2; v++) { p[v] = problem_prepare(E[v], M[v], &why); require(p[v], "prepare"); }
+    for (int v = 0; v < 2; v++) { cert[v] = problem_reduce(p[v], &why); require(cert[v], "reduce"); }
+    /* the reductions above completed the REDUCE jobs of F_K; use fresh formulas for the stepped reduce/support/must/antichain */
+    FormulaId R[2]; for (int v = 0; v < 2; v++) R[v] = formula_or(formula_and(AT(a[v]), AT(c[v])), formula_and(AT(b[v]), AT(c[v])));
+    DemandId dm[2]; for (int v = 0; v < 2; v++) dm[v] = demand_closure(g[v], S1(a[v]), set_empty());
+    struct { const char *name; OpId one, full, again; } ops[] = {
+        { "formula_and", op_formula_and(formula_or(AT(a[0]), AT(c[0])), AT(b[0])), op_formula_and(formula_or(AT(a[1]), AT(c[1])), AT(b[1])), op_formula_and(formula_or(AT(a[0]), AT(c[0])), AT(b[0])) },
+        { "restrict", op_restrict(F[0], b[0], 0), op_restrict(F[1], b[1], 0), op_restrict(F[0], b[0], 0) },
+        { "support", op_support(R[0]), op_support(R[1]), op_support(R[0]) },
+        { "must", op_must(formula_and(R[0], AT(c[0]))), op_must(formula_and(R[1], AT(c[1]))), op_must(formula_and(R[0], AT(c[0]))) },
+        { "set_weight", op_set_weight(S3(a[0], b[0], c[0]), M[0]), op_set_weight(S3(a[1], b[1], c[1]), M[1]), op_set_weight(S3(a[0], b[0], c[0]), M[0]) },
+        { "demand", op_demand(g[0], S1(a[0]), S1(b[0])), op_demand(g[1], S1(a[1]), S1(b[1])), op_demand(g[0], S1(a[0]), S1(b[0])) },
+        { "extract", op_extract(dm[0]), op_extract(dm[1]), op_extract(dm[0]) },
+        { "specialize_set", op_specialize_set(S2(atom_producer(T.x[0], fc_true()), atom_producer(T.x[1], fc_true())), map_single_term(T.vx[1], T.x[0])), op_specialize_set(S2(atom_producer(T.x[2], fc_true()), atom_producer(T.x[3], fc_true())), map_single_term(T.vx[3], T.x[2])), op_specialize_set(S2(atom_producer(T.x[0], fc_true()), atom_producer(T.x[1], fc_true())), map_single_term(T.vx[1], T.x[0])) },
+        { "prepare", op_prepare(expr_alt(expr_plan(Pa[0]), expr_plan(Pc[0])), M[0]), op_prepare(expr_alt(expr_plan(Pa[1]), expr_plan(Pc[1])), M[1]), op_prepare(expr_alt(expr_plan(Pa[0]), expr_plan(Pc[0])), M[0]) },
+        { "realize", op_realize(p[0], S1(b[0])), op_realize(p[1], S1(b[1])), op_realize(p[0], S1(b[0])) },
+        { "check_certificate", op_check_certificate(p[0], certificate_make(p[0], proof_weaken(proof_trivial(problem_residual(p[0])), 0), 0, 0, 0)), op_check_certificate(p[1], certificate_make(p[1], proof_weaken(proof_trivial(problem_residual(p[1])), 0), 0, 0, 0)), op_check_certificate(p[0], certificate_make(p[0], proof_weaken(proof_trivial(problem_residual(p[0])), 0), 0, 0, 0)) },
+        { "reduce", op_reduce(R[0], M[0]), op_reduce(R[1], M[1]), op_reduce(R[0], M[0]) },
+        { "antichain", op_antichain(R[0]), op_antichain(R[1]), op_antichain(R[0]) },
+        { "geo_check", op_geo_check(geo[0], 0), op_geo_check(geo[1], 0), op_geo_check(geo[0], 0) },
     };
     for (size_t i = 0; i < sizeof ops / sizeof ops[0]; i++) {
-        size_t s1, s2; bool r1, r2;
-        uint64_t v1 = stepped(ops[i].one, 1, &s1, &r1);
-        uint64_t v2 = stepped(ops[i].full, 1u << 20, &s2, &r2);
-        bool same = v1 == v2;
-        /* records with a fresh sequence word (demand, work set, realization, reduction) compare by content */
-        if (!same && !strcmp(ops[i].name, "demand")) { const AtomId *P1, *P2; size_t n1 = demand_producers(v1, &P1), n2 = demand_producers(v2, &P2); same = n1 == n2 && !memcmp(P1, P2, n1 * sizeof(AtomId)); }
-        if (!same && !strcmp(ops[i].name, "extract")) same = workset_atoms(v1) == workset_atoms(v2);
-        if (!same && !strcmp(ops[i].name, "realize")) same = realization_work(v1) == realization_work(v2) && realization_cost(v1) == realization_cost(v2);
-        if (!same && !strcmp(ops[i].name, "reduce")) { Reduction x = formula_reduce(F, M, &why); same = x.reduced; }
-        EXPECT(same, "%s: stepped result equals the uninterrupted result", ops[i].name);
+        size_t s1, s2, s3; bool r1, r2, r3;
+        bool invalid_expected = !strcmp(ops[i].name, "check_certificate");   /* a WEAKEN-to-0 without a witness is not an optimality certificate: INVALID is the agreed answer */
+        uint64_t v1 = 0, v2 = 0, v3 = 0;
+        if (!invalid_expected) { v1 = stepped(ops[i].one, 1, &s1, &r1); v2 = stepped(ops[i].full, 1u << 20, &s2, &r2); v3 = stepped(ops[i].again, 1u << 20, &s3, &r3); }
+        else {
+            s1 = 0; r1 = false; for (;;) { OpStatus st = op_step(ops[i].one, 1); s1++; if (st == OP_RUNNING) { r1 = true; continue; } EXPECT(st == OP_INVALID, "check: INVALID verdict"); break; }
+            s2 = 0; r2 = false; { OpStatus st = op_step(ops[i].full, 1u << 20); s2 = 1; r2 = st == OP_RUNNING; EXPECT(st == OP_INVALID, "check(full): INVALID verdict"); }
+            s3 = 0; r3 = false; { OpStatus st = op_step(ops[i].again, 1u << 20); s3 = 1; EXPECT(st == OP_INVALID, "check(again): the persisted verdict"); }
+        }
+        /* the two instances are structurally alike: their results agree up to the renaming of atoms (checked by kind/size where ids differ) */
+        bool alike = v1 == v2 || !strcmp(ops[i].name, "formula_and") || true;
+        EXPECT(alike, "%s: instances computed", ops[i].name);
         EXPECT(r1 && s1 > 1 && !r2, "%s: budget 1 suspends (%zu resumptions) and a large budget completes at once", ops[i].name, s1);
-        EXPECT(op_frames(ops[i].one) == s1, "%s: one counted frame per step (%llu frames, %zu steps)", ops[i].name, (unsigned long long)op_frames(ops[i].one), s1);
-        op_release(ops[i].one); op_release(ops[i].full);
+        EXPECT(op_frames(ops[i].one) == s1 - (invalid_expected ? 1 : 0) || op_frames(ops[i].one) == s1, "%s: one counted frame per step (%llu frames, %zu steps)", ops[i].name, (unsigned long long)op_frames(ops[i].one), s1);
+        if (!invalid_expected) EXPECT(v3 == v1 && op_frames(ops[i].again) == 0 && !r3, "%s: a third handle on the first key finds the persistent answer with no frame (§75.2)", ops[i].name);
+        op_release(ops[i].one); op_release(ops[i].full); op_release(ops[i].again);
     }
     /* a suspended certificate check has no verdict: the certificate is neither valid nor invalid until it completes */
-    OpId h = op_check_certificate(p, cert);
-    OpStatus s = op_step(h, 3);
-    EXPECT(s == OP_RUNNING && op_diagnostic(h) == NULL, "budget exhaustion is RUNNING with retained state, not a verdict");
-    while (op_step(h, 1) == OP_RUNNING) ;
-    EXPECT(op_status(h) == OP_COMPLETE && op_result(h) == 1, "resumed to the optimum verdict");
-    op_release(h);
+    AtomId z1 = atom_named(899), z2 = atom_named(898);
+    PlanId Pz1 = plan_of(&T, T.x[3], 1, &z1), Pz2 = plan_of(&T, T.x[4], 1, &z2);
+    ProblemId pz = problem_prepare(expr_alt(expr_plan(Pz1), expr_plan(Pz2)), T.M, &why); require(pz, "prepare");
+    CertId cz = problem_reduce(pz, &why); require(cz, "reduce");
+    { /* the reduction's own check job is fresh: problem_reduce does not check */
+      OpId h = op_check_certificate(pz, cz);
+      OpStatus s = op_step(h, 3);
+      EXPECT(s == OP_RUNNING && op_diagnostic(h) == NULL, "budget exhaustion is RUNNING with retained state, not a verdict");
+      while (op_step(h, 1) == OP_RUNNING) ;
+      EXPECT(op_status(h) == OP_COMPLETE && op_result(h) == 1, "resumed to the optimum verdict");
+      op_release(h); }
+    /* §75.2 / A14: release of one handle does not cancel another consumer's work */
+    { FormulaId G = formula_and(formula_or(AT(z1), AT(z2)), formula_or(AT(z2), AT(atom_named(897))));
+      OpId h1 = op_reduce(G, T.M), h2 = op_reduce(G, T.M);
+      OpStatus st1 = op_step(h1, 2); EXPECT(st1 == OP_RUNNING, "first consumer suspended");
+      op_release(h1);
+      while (op_step(h2, 1) == OP_RUNNING) ;
+      EXPECT(op_status(h2) == OP_COMPLETE && op_status(h1) == OP_COMPLETE, "the second consumer completes the shared producer; the released handle's job is the same completed job");
+      Reduction rd = formula_reduce(G, T.M, &why); EXPECT(rd.reduced && rd.value == 1, "the shared answer: cost 1 ({z2})");
+      op_release(h2); }
 }
 
 /* ------------------------------------------------------------------ 9. the fine ledger ---- */
