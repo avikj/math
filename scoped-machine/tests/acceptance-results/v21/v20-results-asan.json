@@ -1,0 +1,195 @@
+{
+  "tree": "/home/claude/cubical",
+  "sanitizer": "asan",
+  "detect_leaks": "1",
+  "reused_objects": false,
+  "results": [
+    {
+      "name": "independent",
+      "args": [
+        "independent"
+      ],
+      "exit_code": 0,
+      "stdout": "independent root: steps=3554 complete=1 foreign_done=-1 same_owner=0 first_status=1\n",
+      "stderr": "",
+      "seconds": 0.0687197020001804
+    },
+    {
+      "name": "independent-release",
+      "args": [
+        "independent-release"
+      ],
+      "exit_code": 0,
+      "stdout": "independent root: steps=3554 complete=1 foreign_done=-1 same_owner=0 first_status=1\n",
+      "stderr": "",
+      "seconds": 0.0902109990001918
+    },
+    {
+      "name": "independent-cone",
+      "args": [
+        "independent-cone"
+      ],
+      "exit_code": 0,
+      "stdout": "independent cones: second root advanced first continuation by 0 transitions\n",
+      "stderr": "",
+      "seconds": 0.03575668900020901
+    },
+    {
+      "name": "retry",
+      "args": [
+        "retry"
+      ],
+      "exit_code": 0,
+      "stdout": "retry first=4 diagnostic=proof use UNRESOLVED: connecting evidence could not be checked in this attempt\nretry oracle=0 second=2 diagnostic=(null)\n",
+      "stderr": "",
+      "seconds": 0.032215698000072734
+    },
+    {
+      "name": "prepare-retry",
+      "args": [
+        "prepare-retry"
+      ],
+      "exit_code": 0,
+      "stdout": "prepare retry first=4 reason=proof use UNRESOLVED: connecting evidence could not be checked in this attempt\nprepare retry oracle=0 second=2 reason=(null)\n",
+      "stderr": "",
+      "seconds": 0.04093099900001107
+    },
+    {
+      "name": "lifecycle",
+      "args": [
+        "lifecycle"
+      ],
+      "exit_code": 0,
+      "stdout": "work lifecycle 0 unreleased_words=512\nwork lifecycle 1 unreleased_words=0\nwork lifecycle 2 unreleased_words=0\n",
+      "stderr": "",
+      "seconds": 0.032033034000050975
+    },
+    {
+      "name": "fresh-retire",
+      "args": [
+        "fresh-retire"
+      ],
+      "exit_code": 0,
+      "stdout": "fresh retirement: out=4096 in=4096\n",
+      "stderr": "",
+      "seconds": 0.01547576500024661
+    },
+    {
+      "name": "evaluator-32",
+      "args": [
+        "evaluator",
+        "32"
+      ],
+      "exit_code": 0,
+      "stdout": "evaluator n=32 status=2 units=2013 max_fine_per_unit=52 max_fields_per_unit=1\n",
+      "stderr": "",
+      "seconds": 0.04359828899987406
+    },
+    {
+      "name": "evaluator-256",
+      "args": [
+        "evaluator",
+        "256"
+      ],
+      "exit_code": 0,
+      "stdout": "evaluator n=256 status=2 units=13219 max_fine_per_unit=52 max_fields_per_unit=1\n",
+      "stderr": "",
+      "seconds": 0.10464476000015566
+    },
+    {
+      "name": "evaluator-1024",
+      "args": [
+        "evaluator",
+        "1024"
+      ],
+      "exit_code": 0,
+      "stdout": "evaluator n=1024 status=2 units=51623 max_fine_per_unit=52 max_fields_per_unit=1\n",
+      "stderr": "",
+      "seconds": 0.313428599999952
+    },
+    {
+      "name": "map-sort-64",
+      "args": [
+        "map-sort",
+        "64"
+      ],
+      "exit_code": 0,
+      "stdout": "map compose n=64 kernel_qsort_max=0 status=2 units=1623\n",
+      "stderr": "",
+      "seconds": 0.04219619399964358
+    },
+    {
+      "name": "map-sort-512",
+      "args": [
+        "map-sort",
+        "512"
+      ],
+      "exit_code": 0,
+      "stdout": "map compose n=512 kernel_qsort_max=0 status=2 units=12841\n",
+      "stderr": "",
+      "seconds": 0.10552079600029174
+    },
+    {
+      "name": "collision-64",
+      "args": [
+        "64"
+      ],
+      "exit_code": 0,
+      "stdout": "collision chain n=64 units=5 max_transitions=32 result=0\n",
+      "stderr": "",
+      "seconds": 0.01656030100002681
+    },
+    {
+      "name": "collision-300",
+      "args": [
+        "300"
+      ],
+      "exit_code": 0,
+      "stdout": "collision chain n=300 units=12 max_transitions=32 result=0\n",
+      "stderr": "",
+      "seconds": 0.020306443000208674
+    },
+    {
+      "name": "delivered-kernel-probe",
+      "args": [
+        "64"
+      ],
+      "exit_code": 0,
+      "stdout": "cold N=64: units=23134 kernel_units=22919 kernel_calls=7 max_kernel_transitions_per_unit=52 max_kernel_calls_per_unit=1 result==set_specialize:1\njoin: second handle started mid-kernel; results equal; kernel calls after the join=5 (the joined job's remaining calls only; no second reindex of the same term)\nready reuse: kernel calls=0 kernel transitions=0\n",
+      "stderr": "",
+      "seconds": 0.3570589410001048
+    },
+    {
+      "name": "production-check",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "== \u00a733\u201334 checking and conversion\n  85 passed, 0 failed\n",
+      "stderr": "",
+      "seconds": 0.8797027659998093
+    },
+    {
+      "name": "production-reuse",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "A1\u2013A3. structural identity: direct vs specialized view, alpha renaming, raw node vs template view\nA4\u2013A7. completed reductions reused under specialization and restriction; the residual is observed\nA8\u2013A9. unrelated environment extension keeps answers; a changed dependency does not\nA10\u2013A11. one semantic action per content; distinct proof paths stay distinct\nA12\u2013A13. repeated reduction / proof check repeat no producer; a changed model recomputes\nA14\u2013A15. concurrent duplicate requests share one producer; weakening reuses the pure judgment\nA16\u2013A18. nested neutral eliminators drop the reduced prefix; receipt maps compose; no self-wait on reflexive receipts; cycles stay stuck\nA19. runtime proof parameter: one ordinary core program computes its proof and applies the fixed diagram action\nA20\u2013A21. accounting with shared producers, adapters and ready cuts; the bounded API suspends inside helpers\nEnd to end: generic reduction, specialization, runtime proof action, a reused checker judgment and actual work extraction in one run\n  run: bodies 80 betas 2 apply 1 receipt instances 7; record REQUEST 378 DELIVER 378 PUB 81 EVAL 148\nreuse: 101 checks, 0 failures\n",
+      "stderr": "",
+      "seconds": 0.3668086709999443
+    },
+    {
+      "name": "production-compiler",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "== \u00a739\u201348 identity compiler\n  85 passed, 0 failed\n",
+      "stderr": "",
+      "seconds": 0.4045458749997124
+    },
+    {
+      "name": "production-runtime",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "reuse counters: shape nodes 188947, dependency checks 400638, receipt instances 30, ready hits 106926, running joins 1, identity applies 0\nruntime: 85 checks, 0 failures; 51 fixed templates\n",
+      "stderr": "",
+      "seconds": 12.657794772000216
+    }
+  ]
+}
