@@ -831,6 +831,19 @@ probes (`WordMap` in the demand graph, `find_sync` for weights and atom maps),
 amortized buffer growth inside a unit, and the kernel/audit calls charged as
 `kernel_calls`. The bounded-machine contract is not marked complete.
 
+### The b8ba937 review — R2 through the §96 entry (`REVIEW-b8ba937.md`)
+
+The review of the §96 delivery retains `rt_node_fun` and its tests, reports no
+new defect in the wrapper, and adds one regression as coverage for R2:
+`tests/review_node_level.c` checks `node_(2,0,0)` in the empty context — the
+declared type forms at level 3 and the body must check VALID. On the corrected
+tree it does (the body failed on the pre-R2 singleton annotation). It is gated
+under both sanitizers, and the consolidated runner
+`tests/run_b8ba937_review.py` (the twelve ba09e33 jobs, this regression, and
+the production `test_runtime` suite) passes 14/14 under ASan+LSan and TSan
+(`tests/acceptance-results/v15/`). The author's bundle is kept in
+`tests/review-b8ba937/`.
+
 ### §83 — presentations, diagram values and the generic action as core terms (`src/runtime.c`)
 
 Every construction is one fixed template per universe-level tuple, built once

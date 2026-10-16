@@ -420,7 +420,10 @@ framed reduction records) are corrected as tabulated in README ("The ba09e33
 review — six corrections"); its nine regressions (`review_work_edges`,
 `review_runtime_edges`) and the unchanged §96 witness are gated, and
 `run_ba09e33_review.py` (12 jobs) passes under both sanitizers
-(`tests/acceptance-results/v14/`).
+(`tests/acceptance-results/v14/`). The b8ba937 review retains `rt_node_fun`
+and adds `review_node_level` (`node_(2,0,0)` VALID at level 3) as R2 coverage;
+it is gated, and `run_b8ba937_review.py` (14 jobs) passes under both
+sanitizers (`tests/acceptance-results/v15/`).
 
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the
