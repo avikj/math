@@ -756,7 +756,8 @@ between units:
 | `PREPARE` order list and hypotheses set; `FAMOP` plus | ownership transfer: the order list is accumulated as the record itself (`K_LIST` first) and handed to `LIST`; the hypotheses are handed to the framed `SORT` (one sift / one dedupe element per unit) whose `INTERN` yields the set — no sort or copy inside the unit; `FAMOP` plus pushes one member per unit and hands its buffer to `NORMALIZE` | `buf2`, `buf3` |
 | a frame's own buffers, frame stacks, cone paths, waiter registries, demand producers/occurrences, realization plans/connectors (`src/arena.c`, `Paged`) | paged: fixed pages (`ARENA_PAGE` = 512 words) reached through at most two fixed directory levels; push, read, write, pop, truncate and ownership transfer are O(1), a filled page takes one page from the arena's free list, nothing is copied on growth; a released buffer is *retired* in O(1) and its pages are returned one per unit (`arena_reap` in `op_step`). The public readers of demand/realization lists materialize a contiguous view once, synchronously (outside the bounded API) | `Paged` descriptor (pages, directories) |
 | the allocator under the bounded bodies (`src/arena.c`) | one host operation at initialization reserves a fixed virtual range (2^31 words, pages committed on first touch); afterwards no host allocation of input-dependent size is made by the engine. Blocks are powers of two pages on per-order free lists: an allocation pops its order or splits the smallest larger free block (≤ `ARENA_ORDERS` = 23 steps, architecture-fixed), a release pushes (one step; no coalescing — a released block is reused by its order or smaller). The record store's block (`store_begin_grow`) and the slot arrays come from the arena; **clearing is in units**: the next slot array is taken uncleared and zeroed `CHUNK_WORDS` per unit (`ktab_prepare_grow`) before the relocation into it begins; the store block is never cleared (every word is written before it is readable). Copying is only the relocation units above. Remaining fixed-size host calls: the `Op`/`Demand`/`Real`/`WorkSetInfo` records and the `Chunked` chunks of the side and offset tables (constant-size `calloc`), one per object or chunk | `KTab.fresh/cleared`, arena free lists, retirement queue |
-| kernel calls from `ATOMSPEC` / `PREPARE` / proof-use audit (`reindex`, `fc_reindex`, `ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`, `check_map`, `proof_use`) | **not refined**: charged as `kernel_calls`; the reuse administration they perform is charged retrospectively into `SHAPE_NODE` / `DEPENDENCY_CHECK` / `RECEIPT` from the kernel's counters (`kernel_mark/kernel_charge`), and the audit's traversal steps into `AUDIT_STEPS` (fine vector); none of these is resumable | — |
+| the proof-use dependency audit (§88.3–88.4) at `PREPARE` | framed (`SYMS`, `EDGES`, `AUDIT`): one stored-syntax item per unit (`proof_node_item`, the same enumeration `proof_use` performs), symbol sets as `K_SET` records built by the framed `SORT`/`SETOP` union one element per unit, node sets memoized in `[K_MEMO, 0xA5, kind, id]`, a global's edge set in `[K_MEMO, 0xA6, s, rev]`, the verdict in `[K_MEMO, 0xA7, Γ, φ, e, E]` (a list `[status, assumptions, recursive, deps]`) revalidated one recorded revision per unit before reuse; discovery one symbol/edge per unit with per-operation marks; Tarjan's components one edge or one pop per unit with the per-symbol index/low/stack-link/on-stack in the side of `[K_MARK, op, 7, s]`; the assumptions reach the problem one symbol per unit (`PREPARE` ph 14) | the frames' buffers (children, symbols, worklist / call stack, deps), `acc…`, marks |
+| kernel calls from `ATOMSPEC` / `PREPARE` (`reindex`, `compose`, `fc_reindex`, `ref_validate`, `shape_of`, `eval_entry_lookup`, `infer` of a connecting evidence, `transform_evidence`) | **not refined**: charged as `kernel_calls` (at most one per unit); the reuse administration they perform is charged retrospectively into `SHAPE_NODE` / `DEPENDENCY_CHECK` / `RECEIPT` from the kernel's counters (`kernel_mark/kernel_charge`); none is resumable | — |
 | constructor-level synchronous APIs (`set_make`, `plan_make`, `connector_make`, `model_with_weight`, `boundary_make`, `job_sync` entries) | outside the bounded API (no bounded-step claim) | — |
 
 `tests/review_work_budget.c` (the author's probe, white-box over the NORMALIZE
@@ -766,8 +767,8 @@ a shared support job with 256 waiting parents performs at most one delivery
 per unit (before: 256 in the completing unit).
 
 Consequently the §65 constant-factor refinement is **not claimed** for units
-that reach the kernel (specialization of producer atoms, preparation's typing
-and proof-use checks); it is claimed for the formula, set, cost,
+that reach the kernel (specialization of producer atoms, the typing of a
+connecting evidence); it is claimed for the formula, set, cost,
 certificate, realization, demand, family, scheduling, delivery and boundary
 operations and for the allocator beneath them (`src/arena.c`: one fixed
 reservation, then free-list operations with an architecture-fixed step bound,
@@ -922,13 +923,36 @@ reservation probe's own `words_reserve` call on the store is a no-op because
 the store's first arena block is 2^20 words (a `realloc` of an arena block
 would be invalid; the probe never reaches one).
 
-Still outside the unit bound, stated exactly: the kernel and audit calls made
-from `ATOMSPEC`, `PREPARE` and the proof-use audit (`reindex`, `fc_reindex`,
-`ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`,
-`check_map`, `proof_use`, `transform_proof_use`) — charged as `kernel_calls`
-with their reuse administration charged retrospectively; none has a
-persistent continuation through its own loops. The bounded-machine contract
-is not marked complete.
+### The proof-use audit in units (§88 in §94) — `SYMS` / `EDGES` / `AUDIT`
+
+The audit that `PREPARE` runs on every connecting evidence is now engine
+operations (private frames, memoized in records) rather than the synchronous
+`proof_use`: `proof_node_item` (proof.c) addresses the stored-syntax items of
+a node by (source, index) in O(1) each, so a unit visits one item; sets are
+`K_SET` records over symbol ids built by the framed `SORT` and united by the
+framed `SETOP`; node sets, edge sets (revision-keyed) and verdicts are
+records; a verdict is reused only after its recorded revisions are
+re-checked one per unit; discovery and Tarjan's components run one edge or
+one pop per unit with the per-symbol state in record sides. The verdict is
+the one `proof_use` computes (same enumeration, same component rule), as the
+gated suites show (`test_proof_use` 21, `test_proof_boundary` 11, through
+preparation: CORE prepares, ASSUMED records the opaque premises, PENDING
+rejects — connectors' reference and transform evidence included).
+`tests/review_audit_budget.c` (gated under both sanitizers; N = 256 / 64):
+over a chain of N+1 globals, the preparation makes at most one audit unit
+and at most one kernel call per unit; the problem's assumptions equal
+`proof_use`'s; a second judgment over the same evidence costs N+1 revision
+checks and no traversal; after the chain's root is made recursive the framed
+audit rejects PENDING exactly as `proof_use`.
+
+Still outside the unit bound, stated exactly: the kernel calls made from
+`ATOMSPEC` and `PREPARE` (`reindex`, `compose`, `fc_reindex`, `ref_validate`,
+`shape_of`, `eval_entry_lookup`, the `infer` that types a connecting
+evidence, `transform_evidence`) — charged as `kernel_calls`, at most one per
+unit, their reuse administration charged retrospectively; none has a
+persistent continuation through its own loops. These are the checker's and
+evaluator's own recursions; refining them is a kernel-wide change, not an
+engine one. The bounded-machine contract is not marked complete.
 
 ### §83 — presentations, diagram values and the generic action as core terms (`src/runtime.c`)
 

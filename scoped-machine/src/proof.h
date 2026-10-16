@@ -40,6 +40,13 @@ typedef struct {
     const char *reason;
 } ProofUse;
 
+/* §94: the stored-syntax items of an audit node, addressed by (source, index) — O(1) each (the framed audit in work.c) */
+enum { N_REF = 1, N_SCOPE = 2, N_CTX = 3 };
+enum { PN_NONE = 0, PN_CHILD = 1, PN_SYMBOL = 2 };
+#define PN_SOURCES 6u
+typedef struct { int what; uint64_t kind, id; } PNodeItem;
+bool proof_node_item(uint64_t kind, uint64_t id, unsigned src, size_t k, PNodeItem *out);
+
 /* audit (Γ, φ, e, E): admission, context validity, formation of E, e : E,
  * then the dependency audit; cached per judgment and reused while every
  * recorded symbol revision is current */

@@ -1,0 +1,116 @@
+{
+  "tree": "/home/claude/cubical",
+  "sanitizer": "asan",
+  "detect_leaks": "1",
+  "reused_objects": false,
+  "results": [
+    {
+      "name": "review_work_edges",
+      "args": [
+        "interleave"
+      ],
+      "exit_code": 0,
+      "stdout": "alternating public op_support: a=6 b=7; records=(2,6),(2,7); correct=1\n",
+      "stderr": "",
+      "seconds": 0.09656191499971101
+    },
+    {
+      "name": "review_work_edges",
+      "args": [
+        "same-key"
+      ],
+      "exit_code": 0,
+      "stdout": "alternating public op_support: a=6 b=6; records=(2,6),(2,6); correct=1\n",
+      "stderr": "",
+      "seconds": 0.09721014700016894
+    },
+    {
+      "name": "review_work_edges",
+      "args": [
+        "growth"
+      ],
+      "exit_code": 0,
+      "stdout": "growth before publication: slots 1024 -> 8192; framed_set=3010 canonical_set=3010 equal=1\n",
+      "stderr": "",
+      "seconds": 0.09851399900026081
+    },
+    {
+      "name": "review_work_edges",
+      "args": [
+        "drain"
+      ],
+      "exit_code": 0,
+      "stdout": "one reduction unit: charged_units=1 old_slots=4096 cursor=0 relocation_pending=1 (expected cursor<=32)\n",
+      "stderr": "",
+      "seconds": 0.09722681599987482
+    },
+    {
+      "name": "review_reservation_budget",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "reserve n=64 budget=1 units=1 payload_words_written=0 capacity_already_present=1\ncompleted record correct and canonical=1\nreserve n=4096 budget=1 units=1 payload_words_written=0 capacity_already_present=1\ncompleted record correct and canonical=1\n",
+      "stderr": "",
+      "seconds": 0.10496203499997137
+    },
+    {
+      "name": "review_store_growth",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "growth unit: new block allocated, words copied=0, store.n unchanged=1\nrelocation units=32768 max_words_per_unit=32 (CHUNK_WORDS=32) expected_units=32768\ncompleted record correct and canonical=1; 209708 earlier records intact\n",
+      "stderr": "",
+      "seconds": 0.25476972800015574
+    },
+    {
+      "name": "review_store_interleave",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "writer before/after copy cursor: mirrored=1; framed lookup during relocation=1; final payload correct and canonical=1\n",
+      "stderr": "",
+      "seconds": 0.2472515790000216
+    },
+    {
+      "name": "review_work_budget",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "normalize n=64 budget=1 handle_frames=1 ledger_frames=1 flags_written=32\nnormalize n=4096 budget=1 handle_frames=1 ledger_frames=1 flags_written=32\nfanout parents=256 budget=1 max_deliveries_in_one_step=1\n",
+      "stderr": "",
+      "seconds": 0.1187315000001945
+    },
+    {
+      "name": "production_work",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "1. two consumers of one producer: one producer's work, two request/delivery occurrences\n2. a ready root cuts its cone; a ready intermediate cuts only the paths through it\n3. specialization identifies work keys before costs and cuts; stale annotations are not reused\n4. (a \u2228 b) \u2227 b = b and (a \u2228 b) \u2227 (b \u2228 c) = b \u2228 (a \u2227 c), with witnesses preserved\n5. incompatible composition rejects; omitted connector work or evidence rejects; formula equality merges nothing\n6. supplied lower-bound/attainment certificates check; every corruption rejects; nothing is filled in by search\n7. Must-factoring and disjoint decomposition agree with the semantic normal form; guards are re-established after specialization\n8. every bounded-frame operation suspends at internal phases and resumes to the same result; completed producers persist (\u00a775.2)\n9. every helper loop and memory operation is in the ledger; memoized reuse keeps its lookup/delivery cost\n10. associativity in both orientations through the net/evaluator: repeated and overlapping demands, actual work record, supplied derivation, commit\nwork: 217 checks, 0 failures\n",
+      "stderr": "",
+      "seconds": 0.29745119200015324
+    },
+    {
+      "name": "production_reuse",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "A1\u2013A3. structural identity: direct vs specialized view, alpha renaming, raw node vs template view\nA4\u2013A7. completed reductions reused under specialization and restriction; the residual is observed\nA8\u2013A9. unrelated environment extension keeps answers; a changed dependency does not\nA10\u2013A11. one semantic action per content; distinct proof paths stay distinct\nA12\u2013A13. repeated reduction / proof check repeat no producer; a changed model recomputes\nA14\u2013A15. concurrent duplicate requests share one producer; weakening reuses the pure judgment\nA16\u2013A18. nested neutral eliminators drop the reduced prefix; receipt maps compose; no self-wait on reflexive receipts; cycles stay stuck\nA19. runtime proof parameter: one ordinary core program computes its proof and applies the fixed diagram action\nA20\u2013A21. accounting with shared producers, adapters and ready cuts; the bounded API suspends inside helpers\nEnd to end: generic reduction, specialization, runtime proof action, a reused checker judgment and actual work extraction in one run\n  run: bodies 80 betas 2 apply 1 receipt instances 7; record REQUEST 378 DELIVER 378 PUB 81 EVAL 148\nreuse: 101 checks, 0 failures\n",
+      "stderr": "",
+      "seconds": 0.8316526950002299
+    },
+    {
+      "name": "review_prepare_boundary",
+      "args": [
+        "64"
+      ],
+      "exit_code": 0,
+      "stdout": "PREPARE depth=64 budget=1 units=1 boundary_nodes_visited=0\ncompleted correct boundary=1; max_boundary_steps_per_unit=1; ready reuse adds zero boundary work=1\n",
+      "stderr": "",
+      "seconds": 0.10690002499995899
+    },
+    {
+      "name": "review_prepare_boundary",
+      "args": [
+        "4096"
+      ],
+      "exit_code": 0,
+      "stdout": "PREPARE depth=4096 budget=1 units=1 boundary_nodes_visited=0\n",
+      "stderr": "",
+      "seconds": 0.10361884499980079
+    }
+  ]
+}

@@ -241,7 +241,8 @@ enum {   /* operation families (frame kinds) */
     OF_SPEC_SET, OF_SPEC_FORMULA, OF_PREPARE, OF_EXPRF, OF_REALIZE, OF_REALVISIT, OF_CHECKCERT, OF_PROOF, OF_REDUCE, OF_ANTICHAIN,
     OF_FAMOP, OF_NORMALIZE, OF_SUBSET, OF_GEO, OF_MAPF, OF_MAPP, OF_MAPSET, OF_ATOMSPEC, OF_LIST, OF_SORT,
     OF_JOIN,  /* §94.2(4): the bounded request of a shared operation — key interning, then join/create/deliver */
-    OF_BOUNDARY /* shared expression-boundary computation, one node phase per unit */
+    OF_BOUNDARY, /* shared expression-boundary computation, one node phase per unit */
+    OF_SYMS, OF_EDGES, OF_AUDIT   /* §94: the proof-use audit as units (private frames; memoized in records) */
 };
 enum { SO_UNION = 1, SO_INTER, SO_DIFF };
 
@@ -283,7 +284,7 @@ static void frame_free(Frame *f);
 static Op *JOB(uint64_t id) { Op *o = (Op *)side(id)->ptr; require(o && side(id)->kind == K_JOB, "not a job"); return o; }
 static Handle *HND(OpId h) { require(h && h <= W.nops, "unknown operation handle"); return (Handle *)chunked_get(&W.ops, h - 1); }
 static bool shared_family(uint16_t fam) {
-    switch (fam) { case OF_INTERN: case OF_LOOKUP: case OF_LIST: case OF_NORMALIZE: case OF_REALVISIT: case OF_SORT: return false; default: return true; }
+    switch (fam) { case OF_INTERN: case OF_LOOKUP: case OF_LIST: case OF_NORMALIZE: case OF_REALVISIT: case OF_SORT: case OF_SYMS: case OF_EDGES: case OF_AUDIT: return false; default: return true; }   /* the audit's frames are private: reuse is through its memo records, revalidated per use (§94) */
 }
 /* the persistent key of a shared frame: family, operands, and the external
  * versions the operation reads (§75.1) */
@@ -436,6 +437,9 @@ static void step_spec_set(Op *o, Frame *f);
 static void step_atomspec(Op *o, Frame *f);
 static void step_spec_formula(Op *o, Frame *f);
 static void step_boundary(Op *o, Frame *f);
+static void step_syms(Op *o, Frame *f);
+static void step_edges(Op *o, Frame *f);
+static void step_audit(Op *o, Frame *f);
 static void step_prepare(Op *o, Frame *f);
 static void step_exprf(Op *o, Frame *f);
 static void step_realize(Op *o, Frame *f);
@@ -470,6 +474,7 @@ static FrameFamily family_of(const Frame *f) {
     case OF_DEMAND: case OF_EXTRACT: return FR_DEMAND_VISIT;
     case OF_SPEC_SET: case OF_ATOMSPEC: return FR_SPECIALIZE_VISIT;
     case OF_BOUNDARY: return FR_VALIDATE_PREPARED_BOUNDARY;
+    case OF_SYMS: case OF_EDGES: case OF_AUDIT: return FR_PROOF_USE_AUDIT;
     case OF_PREPARE: return f->ph == 1 ? FR_VALIDATE_PREPARED_BOUNDARY : FR_PREPARE_VISIT;
     case OF_REALIZE: case OF_REALVISIT: return FR_REALIZATION_VISIT;
     case OF_CHECKCERT: case OF_PROOF: case OF_MAPP: return FR_CERTIFICATE_VISIT;
@@ -499,6 +504,9 @@ static void step(Op *o) {
     case OF_ATOMSPEC: step_atomspec(o, f); break;
     case OF_SPEC_FORMULA: step_spec_formula(o, f); break;
     case OF_BOUNDARY: step_boundary(o, f); break;
+    case OF_SYMS: step_syms(o, f); break;
+    case OF_EDGES: step_edges(o, f); break;
+    case OF_AUDIT: step_audit(o, f); break;
     case OF_PREPARE: step_prepare(o, f); break;
     case OF_EXPRF: step_exprf(o, f); break;
     case OF_REALIZE: step_realize(o, f); break;
@@ -1459,31 +1467,210 @@ PlanId plan_specialize(PlanId p, MapId sigma, ContextId target, FaceId target_fa
     PlanId q = plan_make(nb, r, ev, m, ord, why); free(ord); return q;
 }
 
-/* §88.4: audit one evidence use at preparation; CORE/ASSUMED pass (the
- * assumptions are appended to buf3), the other outcomes fail the operation
- * with the audit's own diagnostic */
-static bool audit_use(Op *o, Frame *f, ProofUse u) {
-    charge(FR_PROOF_USE_AUDIT); W.L.kernel_calls++;
-    switch (u.status) {
-    case PU_CORE: return true;
-    case PU_ASSUMED: f->d = (uint64_t)(uintptr_t)u.assumptions; f->e = u.nassumptions; return true;   /* §94: copied one symbol per unit by PREPARE ph 14 (the verdict record is immutable, never moved) */
-    case PU_PENDING: fail(o, "proof use PENDING: connecting evidence depends on a recursive declaration component and has no logical witness yet"); return false;
-    case PU_INVALID: fail(o, "proof use INVALID: connecting evidence does not type in its occurrence context"); return false;
-    default: fail(o, "proof use UNRESOLVED: connecting evidence could not be checked in this session"); return false;
+/* ---------------------------------------------------------------- 7b. the framed proof-use audit (§88 in §94 units) ----
+ * The dependency audit of §88.3–88.4 as engine operations: every unit is one
+ * stored-syntax item, one framed lookup/intern, one set-union element or one
+ * Tarjan edge. Symbol sets are K_SET records over symbol ids (sorted,
+ * interned by the framed SORT/INTERN); node sets are memoized in
+ * [K_MEMO, 0xA5, kind, id], a global's edge set in [K_MEMO, 0xA6, s, rev],
+ * a verdict in [K_MEMO, 0xA7, G, face, e, E] whose value is the list
+ * [K_LIST, status, assumptions, recursive, deps] (deps: [K_LIST, (s, rev)...]).
+ * The traversal's "already on the stack" rule uses per-operation marks
+ * [K_MARK, op, 5, kind, id]; discovery uses [K_MARK, op, 6, s]; Tarjan's
+ * per-symbol state lives in the side of [K_MARK, op, 7, s] (val = index,
+ * support = low, must = the symbol below it on Tarjan's stack, has_val =
+ * on the stack). The synchronous `proof_use` (proof.c) computes the same
+ * verdict by the same enumeration (`proof_node_item`). */
+enum { AU_SYMS_MEMO = 0xA5, AU_EDGES_MEMO = 0xA6, AU_VERDICT_MEMO = 0xA7, AU_MARK_NODE = 5, AU_MARK_SEEN = 6, AU_MARK_TARJAN = 7 };
+static void push_union(Op *o, SetId a, SetId b) { push(o, fr(OF_SETOP, SO_UNION, a, b, 0)); }
+
+/* SYMS: a = node kind, b = node id. buf = children (kind, id pairs), buf2 = direct symbols; acc2 = accumulated set */
+static void step_syms(Op *o, Frame *f) {
+    switch (f->ph) {
+    case 0: { if (f->a == N_CTX) { f->ph = 1; o->ret = 0; return; } uint64_t k[4] = { K_MEMO, AU_SYMS_MEMO, f->a, f->b }; f->ph = 1; push_lookup(o, k, 4); return; }   /* contexts are not memoized (as in proof.c) */
+    case 1: {
+        if (o->ret && side(o->ret)->has_val) { W.L.memo_hit++; W.L.memo_deliver++; fin(o, side(o->ret)->val); return; }
+        uint64_t k[5] = { K_MARK, o->id, AU_MARK_NODE, f->a, f->b }; f->ph = 2; push_lookup(o, k, 5); return;
+    }
+    case 2: {
+        if (o->ret) { fin(o, W.EMPTY); return; }   /* reached again before completion: contributes nothing here (counted where it completes) */
+        uint64_t k[5] = { K_MARK, o->id, AU_MARK_NODE, f->a, f->b }; f->ph = 3; push_intern(o, k, 5); return;
+    }
+    case 3: f->acc2 = W.EMPTY; f->i = 0; f->j = 0; f->ph = 4; return;
+    case 4: {   /* one stored-syntax item per unit */
+        if (f->i >= PN_SOURCES) { f->acc = 0; f->ph = 6; return; }
+        PNodeItem it;
+        if (!proof_node_item(f->a, f->b, (unsigned)f->i, f->j, &it)) { f->i++; f->j = 0; return; }
+        f->j++;
+        if (it.what == PN_CHILD) { pw_push(&f->buf, it.kind); pw_push(&f->buf, it.id); }
+        else if (it.what == PN_SYMBOL) pw_push(&f->buf2, it.id);
+        return;
+    }
+    case 6:   /* children, one request each; then the direct symbols */
+        if (f->acc + 1 < f->buf.n) { uint64_t ck = pw_get(&f->buf, f->acc), cid = pw_get(&f->buf, f->acc + 1); f->acc += 2; f->ph = 7; push(o, fr(OF_SYMS, ck, cid, 0, 0)); return; }
+        f->ph = 8; push(o, fr_sort_own(K_SET, &f->buf2)); return;
+    case 7: f->ph = 9; push_union(o, f->acc2, o->ret); return;
+    case 9: f->acc2 = o->ret; f->ph = 6; return;
+    case 8: f->ph = 10; push_union(o, f->acc2, o->ret); return;
+    case 10: { f->acc2 = o->ret; if (f->a == N_CTX) { fin(o, f->acc2); return; } uint64_t k[4] = { K_MEMO, AU_SYMS_MEMO, f->a, f->b }; f->ph = 11; push_intern(o, k, 4); return; }
+    case 11: { Side *s = side(o->ret); s->val = f->acc2; s->has_val = true; fin(o, f->acc2); return; }
     }
 }
-static bool audit_reference_use(Op *o, Frame *f, BoundaryId b, RefId evidence) {
-    size_t n; const uint64_t *bw = rec_words(b, &n); ContextId ctx = bw[3]; FaceId face = bw[4];
-    W.L.kernel_calls++; Inference q = infer(ctx, face, evidence);
-    if (q.st != CK_VALID) { fail(o, q.st == CK_INVALID ? "proof use INVALID: connecting evidence does not type in its occurrence context" : "proof use UNRESOLVED: connecting evidence could not be checked in this session"); return false; }
-    return audit_use(o, f, proof_use(ctx, face, evidence, q.type));
+/* EDGES: a = symbol. c = its revision; acc2 = accumulated set; i = source cursor (0 type, 1 body, 2+k parameter k) */
+static void step_edges(Op *o, Frame *f) {
+    SymbolId s = f->a;
+    switch (f->ph) {
+    case 0: { f->c = global_revision(s); uint64_t k[4] = { K_MEMO, AU_EDGES_MEMO, s, f->c }; f->ph = 1; push_lookup(o, k, 4); return; }
+    case 1: if (o->ret && side(o->ret)->has_val) { W.L.memo_hit++; W.L.memo_deliver++; fin(o, side(o->ret)->val); return; } f->acc2 = W.EMPTY; f->i = 0; f->ph = 2; return;
+    case 2: {
+       
+        if (f->i == 0) { f->ph = 3; push(o, fr(OF_SYMS, N_REF, global_type(s), 0, 0)); return; }
+        if (f->i == 1) { RefId body = global_body(s); if (!body) { f->i++; return; } f->ph = 3; push(o, fr(OF_SYMS, N_REF, body, 0, 0)); return; }
+        size_t n; const uint64_t *params = varset_get(global_params(s), &n); size_t k = f->i - 2;
+        if (k >= n) { uint64_t key[4] = { K_MEMO, AU_EDGES_MEMO, s, f->c }; f->ph = 4; push_intern(o, key, 4); return; }
+        f->ph = 3; push(o, fr(OF_SYMS, N_REF, term_var_type(params[k]), 0, 0)); return;
+    }
+    case 3: f->ph = 5; push_union(o, f->acc2, o->ret); return;
+    case 5: f->acc2 = o->ret; f->i++; f->ph = 2; return;
+    case 4: { Side *sd = side(o->ret); sd->val = f->acc2; sd->has_val = true; fin(o, f->acc2); return; }
+    }
 }
+/* AUDIT: a = Γ, b = φ, c = e, d = E. Result: the verdict list record.
+ * buf = discovery worklist, then Tarjan's call stack (s, k, edges triples);
+ * buf2 = assumptions, then cyclic members; buf3 = [K_LIST, (s, rev)...] deps.
+ * acc = verdict / Tarjan root cursor, acc2 = roots set / assumptions set,
+ * acc3 = current symbol, acc4 = recursive set, e = edges set / next index */
+static Side *tarjan_side(uint64_t ret) { return ret ? side(ret) : NULL; }
+static void step_audit(Op *o, Frame *f) {
+    switch (f->ph) {
+    case 0: {
+        if (fc_is_false(f->b)) { uint64_t v[5] = { K_LIST, PU_CORE, W.EMPTY, W.EMPTY, 0 }; f->ph = 30; push_intern(o, v, 5); return; }   /* vacuous: a judgment under the false face is local to that face */
+        uint64_t k[6] = { K_MEMO, AU_VERDICT_MEMO, f->a, f->b, f->c, f->d }; f->ph = 1; push_lookup(o, k, 6); return;
+    }
+    case 30: fin(o, o->ret); return;
+    case 1: if (o->ret && side(o->ret)->has_val) { f->acc = side(o->ret)->val; f->i = 0; f->ph = 2; return; } f->ph = 3; return;
+    case 2: {   /* a cached verdict is reused while every recorded revision is current: one dependency per unit */
+        const uint64_t *l; size_t n = rec_w(f->acc, 4) ? list_get(rec_w(f->acc, 4), &l) : 0;
+        if (f->i + 1 < n) { if (global_revision(l[f->i]) != l[f->i + 1]) { f->ph = 3; return; } f->i += 2; return; }
+        W.L.memo_hit++; W.L.memo_deliver++; fin(o, f->acc); return;
+    }
+    /* roots: the context declarations, the expected type, the evidence */
+    case 3: f->ph = 4; push(o, fr(OF_SYMS, N_CTX, f->a, 0, 0)); return;
+    case 4: f->acc2 = o->ret; f->ph = 5; push(o, fr(OF_SYMS, N_REF, f->d, 0, 0)); return;
+    case 5: f->ph = 6; push_union(o, f->acc2, o->ret); return;
+    case 6: f->acc2 = o->ret; f->ph = 7; push(o, fr(OF_SYMS, N_REF, f->c, 0, 0)); return;
+    case 7: f->ph = 8; push_union(o, f->acc2, o->ret); return;
+    case 8: f->acc2 = o->ret; f->i = 0; pw_push(&f->buf3, K_LIST); f->ph = 9; return;
+    case 9: { size_t n; const AtomId *R = set_atoms(f->acc2, &n); if (f->i < n) { pw_push(&f->buf, R[f->i++]); return; } f->ph = 10; return; }   /* the worklist, one root per unit */
+    /* discovery */
+    case 10: {
+        if (!f->buf.n) { f->ph = 20; return; }
+        f->acc3 = pw_get(&f->buf, f->buf.n - 1); paged_pop(&f->buf);
+        uint64_t k[4] = { K_MARK, o->id, AU_MARK_SEEN, f->acc3 }; f->ph = 11; push_lookup(o, k, 4); return;
+    }
+    case 11: { if (o->ret) { f->ph = 10; return; } uint64_t k[4] = { K_MARK, o->id, AU_MARK_SEEN, f->acc3 }; f->ph = 12; push_intern(o, k, 4); return; }
+    case 12: {
+        SymbolId s = f->acc3;
+        pw_push(&f->buf3, s); pw_push(&f->buf3, global_revision(s));
+        if (!global_body(s)) pw_push(&f->buf2, s);
+        f->ph = 13; push(o, fr(OF_EDGES, s, 0, 0, 0)); return;
+    }
+    case 13: f->e = o->ret; f->j = 0; f->ph = 14; return;
+    case 14: { size_t n; const AtomId *E = set_atoms(f->e, &n); if (f->j < n) { uint64_t k[4] = { K_MARK, o->id, AU_MARK_SEEN, E[f->j] }; f->ph = 15; push_lookup(o, k, 4); return; } f->ph = 10; return; }
+    case 15: { size_t n; const AtomId *E = set_atoms(f->e, &n); if (!o->ret) pw_push(&f->buf, E[f->j]); f->j++; f->ph = 14; return; }
+    /* the assumptions set, then Tarjan's components over the reached symbols (deps order) */
+    case 20: f->ph = 21; push(o, fr_sort_own(K_SET, &f->buf2)); return;
+    case 21: f->acc2 = o->ret; f->acc = 1; f->e = 0; f->i = 0; f->ph = 22; return;    /* acc = cursor over buf3 pairs (from 1); e = next index; i = Tarjan's stack top (0: empty); buf2 now collects cyclic members */
+    case 22: {   /* next unvisited root */
+        if (f->acc + 1 >= f->buf3.n) { f->ph = 40; return; }
+        f->acc3 = pw_get(&f->buf3, f->acc); f->acc += 2;
+        uint64_t k[4] = { K_MARK, o->id, AU_MARK_TARJAN, f->acc3 }; f->ph = 23; push_lookup(o, k, 4); return;
+    }
+    case 23: { if (o->ret && side(o->ret)->val) { f->ph = 22; return; } uint64_t k[4] = { K_MARK, o->id, AU_MARK_TARJAN, f->acc3 }; f->ph = 24; push_intern(o, k, 4); return; }
+    case 24: {   /* visit root: index = low = ++next; onto the stack; call frame (s, 0, edges) */
+        Side *sd = side(o->ret); sd->val = sd->support = ++f->e; sd->must = f->i; f->i = f->acc3; sd->has_val = true;   /* index, low, stack link (the symbol below), on-stack */
+        pw_push(&f->buf, f->acc3); pw_push(&f->buf, 0); f->ph = 25; push(o, fr(OF_EDGES, f->acc3, 0, 0, 0)); return;
+    }
+    case 25: pw_push(&f->buf, o->ret); f->ph = 26; return;
+    case 26: {   /* one edge of the top call frame per unit */
+        if (f->buf.n < 3) { f->ph = 22; return; }
+        SymbolId s = pw_get(&f->buf, f->buf.n - 3); uint64_t k = pw_get(&f->buf, f->buf.n - 2); SetId es = pw_get(&f->buf, f->buf.n - 1);
+        size_t m; const AtomId *E = set_atoms(es, &m);
+        if (k < m) { pw_set(&f->buf, f->buf.n - 2, k + 1); f->acc3 = E[k]; uint64_t key[4] = { K_MARK, o->id, AU_MARK_TARJAN, f->acc3 }; f->ph = 27; push_lookup(o, key, 4); return; }
+        /* all edges done: s's own state */
+        uint64_t key[4] = { K_MARK, o->id, AU_MARK_TARJAN, s }; f->ph = 31; push_lookup(o, key, 4); return;
+    }
+    case 27: {   /* edge s → d */
+        Side *d = tarjan_side(o->ret);
+        if (!d || !d->val) { uint64_t key[4] = { K_MARK, o->id, AU_MARK_TARJAN, f->acc3 }; f->ph = 28; push_intern(o, key, 4); return; }   /* unvisited: descend */
+        if (d->has_val) { f->acc4 = d->val; uint64_t key[4] = { K_MARK, o->id, AU_MARK_TARJAN, pw_get(&f->buf, f->buf.n - 3) }; f->ph = 29; push_lookup(o, key, 4); return; }   /* on the stack: low[s] = min(low[s], index[d]) */
+        f->ph = 26; return;
+    }
+    case 28: { Side *d = side(o->ret); d->val = d->support = ++f->e; d->must = f->i; f->i = f->acc3; d->has_val = true; pw_push(&f->buf, f->acc3); pw_push(&f->buf, 0); f->ph = 25; push(o, fr(OF_EDGES, f->acc3, 0, 0, 0)); return; }
+    case 29: { Side *s = side(o->ret); if (f->acc4 < s->support) s->support = f->acc4; f->ph = 26; return; }
+    case 31: {   /* s finished its edges: a component root pops the stack down to s; then the parent's low */
+        Side *s = side(o->ret); f->acc4 = o->ret;
+        if (s->support == s->val) { pw_set(&f->buf, f->buf.n - 2, f->buf2.n); f->ph = 32; return; }   /* the call frame's cursor slot now records where this component's members start in buf2 */
+        f->ph = 35; return;
+    }
+    case 32: {   /* pop one member per unit: the symbol on top of Tarjan's stack */
+        SymbolId top = f->i; uint64_t key[4] = { K_MARK, o->id, AU_MARK_TARJAN, top }; f->acc3 = top; f->ph = 33; push_lookup(o, key, 4); return;
+    }
+    case 33: {
+        Side *d = side(o->ret); d->has_val = false; f->i = d->must;   /* off the stack; the stack top moves down */
+        pw_push(&f->buf2, f->acc3);                                     /* a provisional member */
+        SymbolId s = pw_get(&f->buf, f->buf.n - 3);
+        if (f->acc3 != s) { f->ph = 32; return; }
+        f->j = 0; f->ph = 34; return;   /* the component is complete: cyclic iff more than one member or a self-edge */
+    }
+    case 34: {   /* self-edge scan, one edge per unit; then keep or drop the provisional members */
+        SymbolId s = pw_get(&f->buf, f->buf.n - 3); size_t m; const AtomId *E = set_atoms(pw_get(&f->buf, f->buf.n - 1), &m);
+        size_t start = pw_get(&f->buf, f->buf.n - 2), members = f->buf2.n - start;
+        bool cyclic = members > 1;
+        if (!cyclic && f->j < m) { if (E[f->j] == s) cyclic = true; else { f->j++; return; } }
+        if (!cyclic) paged_truncate(&f->buf2, start);   /* an acyclic singleton is not recursive */
+        f->ph = 35; return;
+    }
+    case 35: {   /* pop the call frame; parent.low = min(parent.low, low[s]) */
+        Side *s = side(f->acc4); uint64_t low = s->support;
+        paged_pop(&f->buf); paged_pop(&f->buf); paged_pop(&f->buf);
+        if (f->buf.n < 3) { f->ph = 22; return; }
+        f->acc4 = low; uint64_t key[4] = { K_MARK, o->id, AU_MARK_TARJAN, pw_get(&f->buf, f->buf.n - 3) }; f->ph = 36; push_lookup(o, key, 4); return;
+    }
+    case 36: { Side *p = side(o->ret); if (f->acc4 < p->support) p->support = f->acc4; f->ph = 26; return; }
+    /* the verdict */
+    case 40: f->ph = 41; push(o, fr_sort_own(K_SET, &f->buf2)); return;
+    case 41: { f->acc4 = o->ret; Frame g = fr(OF_LIST, 0, 0, 0, 0); paged_take(&g.buf, &f->buf3); f->ph = 42; push(o, g); return; }
+    case 42: {
+        size_t na, nr; set_atoms(f->acc2, &na); set_atoms(f->acc4, &nr);
+        uint64_t st = nr ? PU_PENDING : na ? PU_ASSUMED : PU_CORE;
+        uint64_t v[5] = { K_LIST, st, f->acc2, f->acc4, o->ret }; f->ph = 43; push_intern(o, v, 5); return;
+    }
+    case 43: { f->acc = o->ret; uint64_t k[6] = { K_MEMO, AU_VERDICT_MEMO, f->a, f->b, f->c, f->d }; f->ph = 44; push_intern(o, k, 6); return; }
+    case 44: { Side *s = side(o->ret); s->val = f->acc; s->has_val = true; fin(o, f->acc); return; }
+    }
+}
+
 /* PREPARE: a = expr, b = model. buf = node stack, buf2 = atom order, buf3 = hypotheses.
  * ph0 pop/validate/push children; ph7–9 atom order loop over the node's
  * ordered work list; ph2 formula; ph3 F_K; ph4 order list; ph5 problem record.
  * ph14 copies an ASSUMED audit's assumptions into buf3 one per unit (d = source,
  * e = remaining, c = the phase to resume); ph18 is a JOIN's second audit. */
-static void audit_continue(Frame *f, uint16_t next) { f->c = next; f->ph = 14; }
+/* §88.4 in units: the evidence is typed by the kernel (`infer`: a kernel
+ * call, charged), then its dependency audit runs as the framed AUDIT; the
+ * verdict list is read at ph 16 — CORE continues, ASSUMED copies the
+ * assumptions set one symbol per unit (ph 14), PENDING fails. c = the phase
+ * to resume, d = the assumptions set, e = its cursor. */
+static bool audit_request(Op *o, Frame *f, ContextId ctx, FaceId face, RefId evidence, uint16_t next) {
+    W.L.kernel_calls++; Inference q = infer(ctx, face, evidence);
+    if (q.st != CK_VALID) { fail(o, q.st == CK_INVALID ? "proof use INVALID: connecting evidence does not type in its occurrence context" : "proof use UNRESOLVED: connecting evidence could not be checked in this session"); return false; }
+    f->c = next; f->ph = 16; push(o, fr(OF_AUDIT, ctx, face, evidence, q.type)); return true;
+}
+static bool audit_transform_request(Op *o, Frame *f, TransformId id, uint16_t next) {
+    ContextId G; FaceId face; RefId e, E; W.L.kernel_calls++;
+    if (!transform_evidence(id, &G, &face, &e, &E)) { fail(o, "proof use INVALID: connecting evidence does not type in its occurrence context"); return false; }
+    f->c = next; f->ph = 16; push(o, fr(OF_AUDIT, G, face, e, E)); return true;
+}
 static void step_prepare(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: {
@@ -1505,7 +1692,7 @@ static void step_prepare(Op *o, Frame *f) {
         case EX_EMPTY: f->ph = 7; return;
         case EX_PLAN: {
             PlanId p = rec_w(e, 2); f->acc4 = rec_w(p, 5);
-            if (plan_evidence(p)) { if (!audit_reference_use(o, f, plan_boundary(p), plan_evidence(p))) return; audit_continue(f, 7); return; }
+            if (plan_evidence(p)) { size_t n; const uint64_t *bw = rec_words(plan_boundary(p), &n); audit_request(o, f, bw[3], bw[4], plan_evidence(p), 7); return; }
             f->ph = 7; return;
         }
         case EX_ALT: pw_push(&f->buf, rec_w(e, 3)); pw_push(&f->buf, rec_w(e, 2)); f->ph = 7; return;
@@ -1518,7 +1705,7 @@ static void step_prepare(Op *o, Frame *f) {
             if (!rec_w(g, 7)) { fail(o, "connector without its work set"); return; }
             pw_push(&f->buf, rec_w(e, 3)); pw_push(&f->buf, rec_w(e, 2));
             f->acc4 = rec_w(g, 7);
-            if (rec_w(g, 4)) { if (!audit_use(o, f, transform_proof_use(rec_w(g, 4)))) return; audit_continue(f, 18); return; }
+            if (rec_w(g, 4)) { audit_transform_request(o, f, rec_w(g, 4), 18); return; }
             f->ph = 18; return;
         }
         }
@@ -1526,11 +1713,20 @@ static void step_prepare(Op *o, Frame *f) {
     }
     case 18: {   /* a JOIN's reference evidence, after its transform evidence */
         ExprId e = f->acc3; ConnectorId g = rec_w(e, 4);
-        if (rec_w(g, 5)) { if (!audit_reference_use(o, f, rec_w(g, 3), rec_w(g, 5))) return; audit_continue(f, 7); return; }
+        if (rec_w(g, 5)) { size_t n; const uint64_t *bw = rec_words(rec_w(g, 3), &n); audit_request(o, f, bw[3], bw[4], rec_w(g, 5), 7); return; }
         f->ph = 7; return;
     }
+    case 16: {   /* the verdict */
+        uint64_t v = o->ret; charge(FR_PROOF_USE_AUDIT);
+        switch ((ProofUseStatus)rec_w(v, 1)) {
+        case PU_CORE: f->ph = (uint16_t)f->c; f->c = 0; return;
+        case PU_ASSUMED: f->d = rec_w(v, 2); f->e = 0; f->ph = 14; return;
+        default: fail(o, "proof use PENDING: connecting evidence depends on a recursive declaration component and has no logical witness yet"); return;
+        }
+    }
     case 14: {   /* one assumption symbol per unit into the hypotheses buffer (§94) */
-        if (f->e) { pw_push(&f->buf3, ((const uint64_t *)(uintptr_t)f->d)[0]); f->d += sizeof(uint64_t); f->e--; charge(FR_ALLOCATE_CHUNK); return; }
+        size_t n; const AtomId *A = set_atoms(f->d, &n);
+        if (f->e < n) { pw_push(&f->buf3, A[f->e++]); charge(FR_ALLOCATE_CHUNK); return; }
         f->d = 0; f->ph = (uint16_t)f->c; f->c = 0; return;
     }
     case 7: {

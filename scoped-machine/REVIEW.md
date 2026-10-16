@@ -438,8 +438,13 @@ made in README: the host-allocator assumption is stated for the block
 allocation/clearing/release calls, and fixed word-size bounds are documented
 as constants. The `PU_ASSUMED` copy is lowered in the same commit;
 `run_v16_review.py` (12 jobs) passes under both sanitizers
-(`tests/acceptance-results/v17/`). Remaining: kernel/audit continuations,
-the allocator, private-buffer growth (README, "The v16 review").
+(`tests/acceptance-results/v17/`). The two commits after it complete the
+allocator (`src/arena.c`: one reservation, free lists, paged buffers,
+chunked clearing; README "The allocator") and lower the proof-use audit to
+engine units (`SYMS`/`EDGES`/`AUDIT`; README "The proof-use audit in
+units"); `review_arena_budget` and `review_audit_budget` are gated.
+Remaining: the kernel's own calls from `ATOMSPEC`/`PREPARE` (README, same
+section).
 
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the

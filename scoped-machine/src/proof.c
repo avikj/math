@@ -33,7 +33,6 @@ static void memo_put(uint64_t kind, uint64_t a, uint64_t b, uint64_t v) { uint64
  * taking memoized results where present; a finished node's set is the
  * union of its own symbols and its children's sets. The traversal visits
  * stored syntax only: no evaluation, no scope opening, no global unfolding. */
-enum { N_REF = 1, N_SCOPE = 2, N_CTX = 3 };
 typedef struct { uint64_t kind, id; Words children; Words syms; size_t next; bool expanded; } TFrame;
 
 static void push_child(Words *c, uint64_t kind, uint64_t id) { if (id) { words_push(c, kind); words_push(c, id); } }
@@ -69,6 +68,59 @@ static void expand(TFrame *f) {
     size_t n; const uint64_t *xs = varset_get(origin_ft(o), &n);
     for (size_t k = 0; k < n; k++) push_child(&f->children, N_REF, term_var_type(xs[k]));
 }
+/* ---- §94: the stored-syntax items of a node, one per call (for the framed audit in work.c) ----
+ * The same enumeration `expand` performs, addressed by (source, index):
+ * `proof_node_item` is O(1) and returns false when source `src` has no item
+ * `k` (the caller advances to the next source; PN_SOURCES sources). An item
+ * is a child node (PN_CHILD), a directly contributed symbol (PN_SYMBOL) or
+ * nothing (PN_NONE: a stored slot without a reference), so a traversal that
+ * walks (src, k) in order visits exactly what the synchronous audit visits. */
+bool proof_node_item(uint64_t kind, uint64_t id, unsigned src, size_t k, PNodeItem *out) {
+    out->what = PN_NONE; out->kind = N_REF; out->id = 0;
+    if (kind == N_CTX) {
+        if (src != 0 || k >= context_size(id)) return false;
+        CtxDecl d = context_decl(id, k); if (d.sort == S_TERM && d.type) { out->what = PN_CHILD; out->id = d.type; }
+        return true;
+    }
+    if (kind == N_SCOPE) {
+        ScopeId S = id;
+        if (src == 0) { if (k >= scope_arity(S)) return false; LocalDecl d = scope_local(S, k); if (d.type) { out->what = PN_CHILD; out->id = d.type; } return true; }
+        if (src == 1) { if (k) return false; Val b = scope_body(S); if (b.sort == VS_REF && b.id) { out->what = PN_CHILD; out->id = b.id; } return true; }
+        if (src == 2) { if (k) return false; if (scope_type(S)) { out->what = PN_CHILD; out->id = scope_type(S); } return true; }
+        return false;
+    }
+    RefId t = id;
+    if (ref_is_var(t)) {
+        if (src != 0 || k) return false;
+        TermVarId x = ref_var_id(t); if (!is_bound_id(x) && term_var_type(x)) { out->what = PN_CHILD; out->id = term_var_type(x); }
+        return true;
+    }
+    if (ref_is_tview(t)) {
+        if (src != 0) return false;
+        TEnvId E = tenv_of(t); if (k >= tenv_size(E)) return false;
+        uint64_t slot; TVal v; tenv_entry(E, k, &slot, &v);
+        if (v.sort == PS_REF && v.id) { out->what = PN_CHILD; out->id = v.id; }
+        else if (v.sort == PS_SCOPE && v.id) { out->what = PN_CHILD; out->kind = N_SCOPE; out->id = v.id; }
+        return true;
+    }
+    OriginId o = ref_origin(t); MapId m = ref_map(t); Tag tag = origin_tag(o);
+    switch (src) {
+    case 0: if (k) return false; if (tag == T_GLOBAL) { out->what = PN_SYMBOL; out->id = origin_payload(o); } return true;
+    case 1: {
+        if (tag != T_TCALL || k >= 5) return false;
+        const CompiledTransform *tr = transform_get(origin_payload(o) / 2); require(tr, "proof audit: call of an unknown transform");
+        uint64_t v = k == 0 ? tr->parameters : k == 1 ? tr->domain : k == 2 ? tr->codomain : k == 3 ? tr->forward_body : tr->reverse_body;
+        if (v) { out->what = PN_CHILD; out->kind = k == 0 ? N_CTX : N_REF; out->id = v; }
+        return true;
+    }
+    case 2: { if (k >= origin_nfields(o)) return false; Field fl = origin_field(o, (FieldIndex)k); if (fl.kind == F_REF && fl.id) { out->what = PN_CHILD; out->id = fl.id; } return true; }
+    case 3: { if (k >= origin_nbinders(o)) return false; Binder b = origin_binder(o, (BinderSlot)k); if (b.sort == S_TERM && term_var_type(b.formal)) { out->what = PN_CHILD; out->id = term_var_type(b.formal); } return true; }
+    case 4: { if (k >= map_n_terms(m)) return false; TermVarId x; RefId im; map_term_entry(m, k, &x, &im); if (im) { out->what = PN_CHILD; out->id = im; } return true; }
+    case 5: { size_t n; const uint64_t *xs = varset_get(origin_ft(o), &n); if (k >= n) return false; if (term_var_type(xs[k])) { out->what = PN_CHILD; out->id = term_var_type(xs[k]); } return true; }
+    default: return false;
+    }
+}
+
 static bool node_memo(uint64_t kind, uint64_t id, uint64_t *set) { return kind == N_CTX ? false : memo_get(kind == N_REF ? 1 : 2, id, 0, set); }
 /* the symbol set of a node, by the explicit stack; charged one step per
  * expansion and per child visit; memoized per reference and scope */
