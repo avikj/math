@@ -15,6 +15,7 @@ static struct {
     bool live;
 } P;
 
+/* §R5: initialized in the serial lifecycle (compiler_init), torn down at the quiescent boundary (compiler_free); public entries require it live */
 void proof_init(void) { if (P.live) return; memset(&P, 0, sizeof P); interner_init(&P.sets); wordmap_init(&P.ref_memo); wordmap_init(&P.verdicts); interner_init(&P.records); pthread_mutex_init(&P.mu, NULL); P.live = true; }
 void proof_free(void) { if (!P.live) return; interner_free(&P.sets); wordmap_free(&P.ref_memo); wordmap_free(&P.verdicts); interner_free(&P.records); pthread_mutex_destroy(&P.mu); P.live = false; }
 uint64_t proof_audit_steps(void) { return __atomic_load_n(&P.steps, __ATOMIC_SEQ_CST); }
@@ -100,7 +101,7 @@ static uint64_t symbols_of(uint64_t kind, uint64_t id) {
     vec_free(&st);
     return result;
 }
-size_t ref_symbols(RefId t, const uint64_t **out) { proof_init(); uint64_t s = symbols_of(N_REF, t); size_t n; *out = set_get(s, &n); return n; }
+size_t ref_symbols(RefId t, const uint64_t **out) { require(P.live, "proof-use audit before compiler_init"); uint64_t s = symbols_of(N_REF, t); size_t n; *out = set_get(s, &n); return n; }
 
 /* the outgoing edges of a global: symbols in its declared type, parameter
  * declarations and body; memoized per (symbol, revision) */
@@ -182,7 +183,7 @@ static ProofUse decode(uint64_t rec, ContextId G, FaceId face, RefId e, RefId E)
 static bool deps_current(const uint64_t *d, size_t nd) { for (size_t k = 0; k < nd; k++) if (global_revision(d[2 * k]) != d[2 * k + 1]) return false; return true; }
 
 ProofUse proof_use(ContextId G, FaceId face, RefId e, RefId E) {
-    proof_init();
+    require(P.live, "proof-use audit before compiler_init");
     ProofUse out; memset(&out, 0, sizeof out);
     out.context = G; out.face = face; out.evidence = e; out.type = E; out.reason = "";
     CheckStatus st = check_admission(&out.reason);

@@ -50,6 +50,7 @@ void compiler_init(void) {
     pthread_mutex_init(&CR.mu, NULL); pthread_cond_init(&CR.cv, NULL);
     wordmap_init(&CR.tindex); wordmap_init(&CR.dindex);
     CR.init = true;
+    rt_init(); proof_init();   /* §R5: the runtime-construction and proof-use modules belong to the same serial lifecycle */
 }
 void compiler_free(void) {
     proof_free(); rt_free();          /* the proof-use boundary caches reference compiler records */

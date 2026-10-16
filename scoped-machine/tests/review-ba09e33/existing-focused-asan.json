@@ -1,0 +1,90 @@
+[
+  {
+    "name": "review-alias-scope",
+    "args": [
+      "0"
+    ],
+    "exit": 0,
+    "seconds": 0.062349836007342674,
+    "stdout": "workers=0 alias=1 returned_source=0 escaped_z=0 returned_term_check=0 reason=\n",
+    "stderr": ""
+  },
+  {
+    "name": "review-alias-scope",
+    "args": [
+      "4"
+    ],
+    "exit": 0,
+    "seconds": 0.06783318800444249,
+    "stdout": "workers=4 alias=1 returned_source=0 escaped_z=0 returned_term_check=0 reason=\n",
+    "stderr": ""
+  },
+  {
+    "name": "review-alias-faces",
+    "args": [
+      "0"
+    ],
+    "exit": 0,
+    "seconds": 0.07002517399087083,
+    "stdout": "workers=0 before=1 after=1 same_returned_ref=0 both_return_face_specific_source=0\n",
+    "stderr": ""
+  },
+  {
+    "name": "review-alias-faces",
+    "args": [
+      "4"
+    ],
+    "exit": 0,
+    "seconds": 0.08171931399556343,
+    "stdout": "workers=4 before=1 after=1 same_returned_ref=0 both_return_face_specific_source=0\n",
+    "stderr": ""
+  },
+  {
+    "name": "review-work-budget",
+    "args": [],
+    "exit": 0,
+    "seconds": 0.05846746699535288,
+    "stdout": "normalize n=64 budget=1 handle_frames=1 ledger_frames=1 flags_written=32\nnormalize n=4096 budget=1 handle_frames=1 ledger_frames=1 flags_written=32\nfanout parents=256 budget=1 max_deliveries_in_one_step=1\n",
+    "stderr": ""
+  },
+  {
+    "name": "proof-use",
+    "args": [],
+    "exit": 0,
+    "seconds": 0.14043040599790402,
+    "stdout": "proof-use: 19 checks, 0 failures\n",
+    "stderr": ""
+  },
+  {
+    "name": "fine",
+    "args": [],
+    "exit": 0,
+    "seconds": 0.9825273339956766,
+    "stdout": "branches=1 stored_fields=2 coarse: request=2 eval=4 pub=2 deliver=2 | fine total=249 fields_opened=4\nbranches=64 stored_fields=128 coarse: request=2 eval=4 pub=2 deliver=2 | fine total=1887 fields_opened=256\nbranches=1024 stored_fields=2048 coarse: request=2 eval=4 pub=2 deliver=2 | fine total=26847 fields_opened=4096\n\nfine counter                        n=1         n=64       n=1024\nfields_opened                         4          256         4096\nhead_cells                            2            2            2\nreindex_calls                         0            0            0\nmap_entries                           0            0            0\nintern_words_hashed                  75          642         9282\nintern_probes                        34           97         1057\nintern_word_compares                 30          219         3099\nintern_words_copied                  35          413         6173\nintern_slots_relocated                0            0            0\ndnf_clause_steps                     27           27           27\nface_ops                             12          201         3081\nwaiters_delivered                     2            2            2\nconts_registered                      2            2            2\nqueue_ops                             9            9            9\nlock_attempts                        10           10           10\ncells_allocated                       5            5            5\ncells_released                        2            2            2\nnet_actions                           0            0            0\nnet_retries                           0            0            0\ncheck_frames                          0            0            0\naudit_steps                           0            0            0\nTOTAL                               249         1887        26847\nfine-cost: 14 checks, 0 failures\n",
+    "stderr": ""
+  },
+  {
+    "name": "work",
+    "args": [],
+    "exit": 0,
+    "seconds": 0.1816390029998729,
+    "stdout": "1. two consumers of one producer: one producer's work, two request/delivery occurrences\n2. a ready root cuts its cone; a ready intermediate cuts only the paths through it\n3. specialization identifies work keys before costs and cuts; stale annotations are not reused\n4. (a \u2228 b) \u2227 b = b and (a \u2228 b) \u2227 (b \u2228 c) = b \u2228 (a \u2227 c), with witnesses preserved\n5. incompatible composition rejects; omitted connector work or evidence rejects; formula equality merges nothing\n6. supplied lower-bound/attainment certificates check; every corruption rejects; nothing is filled in by search\n7. Must-factoring and disjoint decomposition agree with the semantic normal form; guards are re-established after specialization\n8. every bounded-frame operation suspends at internal phases and resumes to the same result; completed producers persist (\u00a775.2)\n9. every helper loop and memory operation is in the ledger; memoized reuse keeps its lookup/delivery cost\n10. associativity in both orientations through the net/evaluator: repeated and overlapping demands, actual work record, supplied derivation, commit\nwork: 217 checks, 0 failures\n",
+    "stderr": ""
+  },
+  {
+    "name": "runtime",
+    "args": [
+      "full"
+    ],
+    "exit": null,
+    "error": "timeout after 180 seconds; not counted as passing or as a new correctness finding"
+  },
+  {
+    "name": "runtime",
+    "args": [],
+    "exit": 0,
+    "seconds": 12.495314646002953,
+    "stdout": "reuse counters: shape nodes 135893, dependency checks 176821, receipt instances 26, ready hits 48460, running joins 1, identity applies 0\nruntime: 76 checks, 0 failures; 26 fixed templates\n",
+    "stderr": ""
+  }
+]

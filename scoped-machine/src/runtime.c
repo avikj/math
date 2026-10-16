@@ -10,10 +10,15 @@ enum { RT_MAPS_TYPE = 1, RT_MAPS_ID, RT_MAPS_COMPOSE, RT_MAPS_INV, RT_PRES_TYPE,
        RT_ACTION_F, RT_ACTION_G, RT_ACTION_FUN_F, RT_ACTION_FUN_G, RT_MIDDLE, RT_ACTION_MAPS,
        RT_J, RT_LUNIT, RT_RINV, RT_LINV, RT_ASSOC, RT_AP, RT_REUSE, RT_NODE_FUN, RT_KBASE };
 
+/* §R5: the module is initialized in the serial lifecycle (compiler_init →
+ * rt_init) before clients are admitted and torn down at the quiescent
+ * boundary (compiler_free → rt_free); public entry points never mutate the
+ * module's state on first use — they require it live */
 static struct { WordMap memo; pthread_mutex_t mu; size_t count; bool live; } RT;
-static void rt_init(void) { if (RT.live) return; wordmap_init(&RT.memo); pthread_mutex_init(&RT.mu, NULL); RT.count = 0; RT.live = true; }
+void rt_init(void) { if (RT.live) return; wordmap_init(&RT.memo); pthread_mutex_init(&RT.mu, NULL); RT.count = 0; RT.live = true; }
 void rt_free(void) { if (!RT.live) return; wordmap_free(&RT.memo); pthread_mutex_destroy(&RT.mu); RT.live = false; }
-size_t rt_template_count(void) { return RT.count; }
+static void rt_live(void) { require(RT.live, "runtime constructions used before compiler_init"); }
+size_t rt_template_count(void) { rt_live(); pthread_mutex_lock(&RT.mu); size_t n = RT.count; pthread_mutex_unlock(&RT.mu); return n; }
 
 /* a keyed formal of one template: (construction, levels, slot) */
 typedef struct { uint64_t cons, a, b, c; } Key;
@@ -70,13 +75,13 @@ static RefId maps_value(uint64_t a, uint64_t b, RefId MT, RefId c, RefId d, RefI
     return mk_pair_at_lv(ab, MT, c, mk_pair_at_lv(ab, M1, d, mk_pair_at_lv(ab, M2, h, kk)));
 }
 RefId rt_maps_type(uint64_t a, uint64_t b, RefId X, RefId Z) {
-    rt_init(); Key k = { RT_MAPS_TYPE, a, b, 0 }; RefId t;
+    rt_live(); Key k = { RT_MAPS_TYPE, a, b, 0 }; RefId t;
     TermVarId vX = tv(k, 0, mk_universe(a)), vZ = tv(k, 1, mk_universe(b));
     if (!memo_get(k, &t)) { t = maps_type_direct(k, a, b, ref_var(vX), ref_var(vZ)); memo_put(k, t); }
     TermVarId xs[2] = { vX, vZ }; RefId im[2] = { X, Z }; return inst(t, 2, xs, im);
 }
 RefId rt_maps_id(uint64_t a, RefId X) {
-    rt_init(); Key k = { RT_MAPS_ID, a, 0, 0 }; RefId t;
+    rt_live(); Key k = { RT_MAPS_ID, a, 0, 0 }; RefId t;
     TermVarId vX = tv(k, 0, mk_universe(a));
     if (!memo_get(k, &t)) {
         RefId Xv = ref_var(vX), MT = rt_maps_type(a, a, Xv, Xv), id = mk_id_fun(a, Xv);
@@ -86,13 +91,18 @@ RefId rt_maps_id(uint64_t a, RefId X) {
     }
     return inst(t, 1, &vX, &X);
 }
+/* ap(f)(p) = ⟨i⟩ f(p@i): one template per (l, m) over A : U_l, B : U_m,
+ * f : A → B, x y : A, p : Path_A(x,y), instantiated in one simultaneous map */
 RefId rt_ap(uint64_t l, uint64_t m, RefId A, RefId Bt, RefId f, RefId x, RefId y, RefId p) {
-    rt_init(); Key k = { RT_AP, l, m, 0 };
-    (void)Bt; DimVarId i = dv(k, 0);
-    return mk_plam(i, mk_app(f, mk_papp_const(l, A, x, y, p, iv_var(i))));
+    rt_live(); Key k = { RT_AP, l, m, 0 }; RefId t;
+    TermVarId vA = tv(k, 0, mk_universe(l)), vB = tv(k, 1, mk_universe(m)); RefId Av = ref_var(vA), Bv = ref_var(vB);
+    TermVarId vf = tv(k, 2, mk_fun(l, m, Av, Bv)), vx = tv(k, 3, Av), vy = tv(k, 4, Av);
+    TermVarId vp = tv(k, 5, mk_path_const(l, Av, ref_var(vx), ref_var(vy)));
+    if (!memo_get(k, &t)) { DimVarId i = dv(k, 0); t = mk_plam(i, mk_app(ref_var(vf), mk_papp_const(l, Av, ref_var(vx), ref_var(vy), ref_var(vp), iv_var(i)))); memo_put(k, t); }
+    TermVarId xs[6] = { vA, vB, vf, vx, vy, vp }; RefId im[6] = { A, Bt, f, x, y, p }; return inst(t, 6, xs, im);
 }
 RefId rt_maps_compose(uint64_t a, uint64_t b, uint64_t c, RefId X, RefId Y, RefId Z, RefId E, RefId F) {
-    rt_init(); Key k = { RT_MAPS_COMPOSE, a, b, c }; RefId t;
+    rt_live(); Key k = { RT_MAPS_COMPOSE, a, b, c }; RefId t;
     TermVarId vX = tv(k, 0, mk_universe(a)), vY = tv(k, 1, mk_universe(b)), vZ = tv(k, 2, mk_universe(c));
     RefId Xv = ref_var(vX), Yv = ref_var(vY), Zv = ref_var(vZ);
     TermVarId vE = tv(k, 3, rt_maps_type(a, b, Xv, Yv)), vF = tv(k, 4, rt_maps_type(b, c, Yv, Zv));
@@ -115,7 +125,7 @@ RefId rt_maps_compose(uint64_t a, uint64_t b, uint64_t c, RefId X, RefId Y, RefI
     TermVarId xs[5] = { vX, vY, vZ, vE, vF }; RefId im[5] = { X, Y, Z, E, F }; return inst(t, 5, xs, im);
 }
 RefId rt_maps_inverse(uint64_t a, uint64_t b, RefId X, RefId Z, RefId E) {
-    rt_init(); Key k = { RT_MAPS_INV, a, b, 0 }; RefId t;
+    rt_live(); Key k = { RT_MAPS_INV, a, b, 0 }; RefId t;
     TermVarId vX = tv(k, 0, mk_universe(a)), vZ = tv(k, 1, mk_universe(b));
     RefId Xv = ref_var(vX), Zv = ref_var(vZ);
     TermVarId vE = tv(k, 2, rt_maps_type(a, b, Xv, Zv));
@@ -123,14 +133,14 @@ RefId rt_maps_inverse(uint64_t a, uint64_t b, RefId X, RefId Z, RefId E) {
     TermVarId xs[3] = { vX, vZ, vE }; RefId im[3] = { X, Z, E }; return inst(t, 3, xs, im);
 }
 RefId rt_pres_type(uint64_t a, uint64_t b, RefId Z) {
-    rt_init(); Key k = { RT_PRES_TYPE, a, b, 0 }; RefId t;
+    rt_live(); Key k = { RT_PRES_TYPE, a, b, 0 }; RefId t;
     TermVarId vZ = tv(k, 0, mk_universe(b));
     if (!memo_get(k, &t)) { TermVarId X = tv(k, 10, mk_universe(a)); t = mk_sigma_lv(level_succ(a), LMAX(a, b), X, mk_universe(a), rt_maps_type(a, b, ref_var(X), ref_var(vZ))); memo_put(k, t); }
     return inst(t, 1, &vZ, &Z);
 }
 static RefId pres_value(uint64_t a, uint64_t b, RefId PT, RefId X, RefId maps) { return mk_pair_at_lv(LMAX(level_succ(a), b), PT, X, maps); }
 RefId rt_pres_const(uint64_t a, RefId Z) {
-    rt_init(); Key k = { RT_PRES_CONST, a, 0, 0 }; RefId t;
+    rt_live(); Key k = { RT_PRES_CONST, a, 0, 0 }; RefId t;
     TermVarId vZ = tv(k, 0, mk_universe(a));
     if (!memo_get(k, &t)) { RefId Zv = ref_var(vZ); t = pres_value(a, a, rt_pres_type(a, a, Zv), Zv, rt_maps_id(a, Zv)); memo_put(k, t); }
     return inst(t, 1, &vZ, &Z);
@@ -144,7 +154,7 @@ static SingFormals sing_formals(Key k, uint64_t a, uint64_t r) {
     SingFormals s; s.vA = tv(k, 0, mk_universe(a)); s.A = ref_var(s.vA);
     s.vt = tv(k, 1, s.A); s.t = ref_var(s.vt);
     s.vx = tv(k, 10, s.A); s.Ex = mk_path_const(a, s.A, s.t, ref_var(s.vx)); s.ve = tv(k, 11, s.Ex);
-    s.DT = mk_pi_lv(a, level_succ(r), s.vx, s.A, mk_pi_lv(a, level_succ(r), s.ve, s.Ex, mk_universe(r)));
+    s.DT = mk_pi_lv(a, LMAX(a, level_succ(r)), s.vx, s.A, mk_pi_lv(a, level_succ(r), s.ve, s.Ex, mk_universe(r)));
     s.vD = tv(k, 2, s.DT); s.D = ref_var(s.vD);
     return s;
 }
@@ -153,7 +163,7 @@ static RefId sing_S(const SingFormals *s, uint64_t a, uint64_t r) {
     return mk_sigma_lv(a, LMAX(a, r), s->vx, s->A, mk_sigma_lv(a, r, s->ve, s->Ex, Dx));
 }
 RefId rt_singleton_type(uint64_t a, uint64_t r, RefId A, RefId t, RefId D) {
-    rt_init(); Key k = { RT_SING_TYPE, a, r, 0 }; RefId tp; SingFormals s = sing_formals(k, a, r);
+    rt_live(); Key k = { RT_SING_TYPE, a, r, 0 }; RefId tp; SingFormals s = sing_formals(k, a, r);
     if (!memo_get(k, &tp)) { tp = sing_S(&s, a, r); memo_put(k, tp); }
     TermVarId xs[3] = { s.vA, s.vt, s.vD }; RefId im[3] = { A, t, D }; return inst(tp, 3, xs, im);
 }
@@ -182,12 +192,12 @@ static RefId sing_maps_build(Key k, uint64_t a, uint64_t r, const SingFormals *s
     return maps_value(lS, r, rt_maps_type(lS, r, S, Z), down, up, h, kz);
 }
 RefId rt_singleton_maps(uint64_t a, uint64_t r, RefId A, RefId t, RefId D) {
-    rt_init(); Key k = { RT_SING_MAPS, a, r, 0 }; RefId tp; SingFormals s = sing_formals(k, a, r);
+    rt_live(); Key k = { RT_SING_MAPS, a, r, 0 }; RefId tp; SingFormals s = sing_formals(k, a, r);
     if (!memo_get(k, &tp)) { tp = sing_maps_build(k, a, r, &s); memo_put(k, tp); }
     TermVarId xs[3] = { s.vA, s.vt, s.vD }; RefId im[3] = { A, t, D }; return inst(tp, 3, xs, im);
 }
 RefId rt_singleton(uint64_t a, uint64_t r, RefId A, RefId t, RefId D) {
-    rt_init(); Key k = { RT_SING, a, r, 0 }; RefId tp; SingFormals s = sing_formals(k, a, r);
+    rt_live(); Key k = { RT_SING, a, r, 0 }; RefId tp; SingFormals s = sing_formals(k, a, r);
     if (!memo_get(k, &tp)) {
         uint64_t lS = LMAX(a, r); RefId Z = app2(s.D, s.t, mk_refl(a, s.A, s.t));
         tp = pres_value(lS, r, rt_pres_type(lS, r, Z), rt_singleton_type(a, r, s.A, s.t, s.D), rt_singleton_maps(a, r, s.A, s.t, s.D)); memo_put(k, tp);
@@ -200,7 +210,7 @@ RefId rt_singleton(uint64_t a, uint64_t r, RefId A, RefId t, RefId D) {
 
 static uint64_t diag_level(uint64_t b, uint64_t r) { return LMAX(b, level_succ(r)); }
 RefId rt_diagram_type(uint64_t b, uint64_t r, RefId B) {
-    rt_init(); Key k = { RT_DIAG_TYPE, b, r, 0 }; RefId t;
+    rt_live(); Key k = { RT_DIAG_TYPE, b, r, 0 }; RefId t;
     TermVarId vB = tv(k, 0, mk_universe(b));
     if (!memo_get(k, &t)) {
         RefId Bv = ref_var(vB);
@@ -216,7 +226,7 @@ static RefId diag_value(uint64_t b, uint64_t r, RefId DT, RefId C, RefId R, RefI
     return mk_pair_at_lv(l, DT, C, mk_pair_at_lv(l, D1, R, maps));
 }
 RefId rt_diagram_zero(uint64_t b, RefId B, RefId C) {
-    rt_init(); Key k = { RT_DIAG_ZERO, b, 0, 0 }; RefId t;
+    rt_live(); Key k = { RT_DIAG_ZERO, b, 0, 0 }; RefId t;
     TermVarId vB = tv(k, 0, mk_universe(b)); RefId Bv = ref_var(vB); TermVarId vC = tv(k, 1, Bv);
     if (!memo_get(k, &t)) {
         RefId Cv = ref_var(vC); TermVarId y = tv(k, 10, Bv); RefId Py = mk_path_const(b, Bv, Cv, ref_var(y));
@@ -227,7 +237,7 @@ RefId rt_diagram_zero(uint64_t b, RefId B, RefId C) {
     TermVarId xs[2] = { vB, vC }; RefId im[2] = { B, C }; return inst(t, 2, xs, im);
 }
 RefId rt_diagram_extend(uint64_t a, uint64_t b, uint64_t r, RefId A, RefId t, RefId Q, RefId B) {
-    rt_init(); Key k = { RT_DIAG_EXTEND, a, b, r }; RefId tp;
+    rt_live(); Key k = { RT_DIAG_EXTEND, a, b, r }; RefId tp;
     TermVarId vB = tv(k, 0, mk_universe(b)), vA = tv(k, 1, mk_universe(a)); RefId Bv = ref_var(vB), Av = ref_var(vA);
     TermVarId vt = tv(k, 2, Av); RefId tv_ = ref_var(vt);
     TermVarId vx = tv(k, 10, Av); RefId Ex = mk_path_const(a, Av, tv_, ref_var(vx)); TermVarId ve = tv(k, 11, Ex);
@@ -253,7 +263,7 @@ RefId rt_diagram_extend(uint64_t a, uint64_t b, uint64_t r, RefId A, RefId t, Re
 }
 
 RefId rt_node_fun(uint64_t a, uint64_t b, uint64_t r, RefId *type) {
-    rt_init(); Key k = { RT_NODE_FUN, a, b, r }; RefId t;
+    rt_live(); Key k = { RT_NODE_FUN, a, b, r }; RefId t;
     uint64_t s = LMAX(a, r), lDT = diag_level(b, r), outl = diag_level(b, s);
     RefId UA = mk_universe(a), UB = mk_universe(b);
     TermVarId vB = tv(k, 0, UB), vA = tv(k, 1, UA); RefId Bv = ref_var(vB), Av = ref_var(vA);
@@ -300,12 +310,12 @@ static RefId act_body(uint64_t b, const ActFormals *f, int dir) {
     return mk_app(rt_maps_d(rt_diagram_maps(f->L, f->y)), q);
 }
 RefId rt_action(int dir, uint64_t b, uint64_t rl, uint64_t rr, RefId B, RefId L, RefId R, RefId p, RefId y, RefId arg) {
-    rt_init(); Key k = { dir ? RT_ACTION_G : RT_ACTION_F, b, rl, rr }; RefId t; ActFormals f = act_formals(k, b, rl, rr, dir);
+    rt_live(); Key k = { dir ? RT_ACTION_G : RT_ACTION_F, b, rl, rr }; RefId t; ActFormals f = act_formals(k, b, rl, rr, dir);
     if (!memo_get(k, &t)) { t = act_body(b, &f, dir); memo_put(k, t); }
     TermVarId xs[6] = { f.vB, f.vL, f.vR, f.vp, f.vy, f.va }; RefId im[6] = { B, L, R, p, y, arg }; return inst(t, 6, xs, im);
 }
 RefId rt_action_fun(int dir, uint64_t b, uint64_t rl, uint64_t rr, RefId B, RefId *type) {
-    rt_init(); Key k = { dir ? RT_ACTION_FUN_G : RT_ACTION_FUN_F, b, rl, rr }; RefId t; ActFormals f = act_formals(k, b, rl, rr, dir);
+    rt_live(); Key k = { dir ? RT_ACTION_FUN_G : RT_ACTION_FUN_F, b, rl, rr }; RefId t; ActFormals f = act_formals(k, b, rl, rr, dir);
     uint64_t lDL = diag_level(b, rl), lDR = diag_level(b, rr), lin = dir ? rr : rl, lout = dir ? rl : rr;
     RefId in = dir ? f.RR : f.RL, out = dir ? f.RL : f.RR;
     RefId T = mk_pi_lv(lin, lout, f.va, in, out);
@@ -327,11 +337,26 @@ RefId rt_action_fun(int dir, uint64_t b, uint64_t rl, uint64_t rr, RefId B, RefI
 /* ------------------------------------------------------------------ */
 /* §83.4 path induction and the groupoid laws                            */
 
+/* J(P, d, b, p) = coe^i P(p@i, ⟨j⟩p@(i∧j)) d: one template per (l, lp) over
+ * A : U_l, a : A, P : (b:A) → (a=b) → U_lp (outer Π at max(l, lp+1)),
+ * d : P a refl, b : A, p : Path_A(a,b) */
 RefId rt_J(uint64_t l, uint64_t lp, RefId A, RefId a, RefId P, RefId d, RefId b, RefId p) {
-    rt_init(); Key k = { RT_J, l, lp, 0 }; DimVarId i = dv(k, 0), j = dv(k, 1);
-    RefId pi = mk_papp_const(l, A, a, b, p, iv_var(i));
-    RefId pij = mk_plam(j, mk_papp_const(l, A, a, b, p, iv_meet(iv_var(i), iv_var(j))));
-    return mk_coe_at(lp, i, app2(P, pi, pij), d);
+    rt_live(); Key k = { RT_J, l, lp, 0 }; RefId t;
+    TermVarId vA = tv(k, 0, mk_universe(l)); RefId Av = ref_var(vA);
+    TermVarId va = tv(k, 1, Av); RefId av = ref_var(va);
+    TermVarId vbb = tv(k, 10, Av); RefId Eb = mk_path_const(l, Av, av, ref_var(vbb)); TermVarId vq = tv(k, 11, Eb);
+    RefId PT = mk_pi_lv(l, LMAX(l, level_succ(lp)), vbb, Av, mk_pi_lv(l, level_succ(lp), vq, Eb, mk_universe(lp)));
+    TermVarId vP = tv(k, 2, PT); RefId Pv = ref_var(vP);
+    TermVarId vd = tv(k, 3, app2(Pv, av, mk_refl(l, Av, av)));
+    TermVarId vb = tv(k, 4, Av); RefId bv = ref_var(vb);
+    TermVarId vp = tv(k, 5, mk_path_const(l, Av, av, bv)); RefId pv = ref_var(vp);
+    if (!memo_get(k, &t)) {
+        DimVarId i = dv(k, 0), j = dv(k, 1);
+        RefId pi = mk_papp_const(l, Av, av, bv, pv, iv_var(i));
+        RefId pij = mk_plam(j, mk_papp_const(l, Av, av, bv, pv, iv_meet(iv_var(i), iv_var(j))));
+        t = mk_coe_at(lp, i, app2(Pv, pi, pij), ref_var(vd)); memo_put(k, t);
+    }
+    TermVarId xs[6] = { vA, va, vP, vd, vb, vp }; RefId im[6] = { A, a, P, d, b, p }; return inst(t, 6, xs, im);
 }
 /* words at a point and K(w) : w = refl (§83.4) */
 typedef enum { W_REFL = 1, W_INV, W_CAT } WordTag;
@@ -393,7 +418,7 @@ static LawFormals law_formals(Key k, uint64_t l) { LawFormals f; f.vA = tv(k, 0,
 static RefId PathT(uint64_t l, RefId A, RefId x, RefId y) { return mk_path_const(l, A, x, y); }
 
 RefId rt_lunit(uint64_t l, RefId A, RefId a, RefId b, RefId q) {
-    rt_init(); Key k = { RT_LUNIT, l, 0, 0 }; RefId t; LawFormals f = law_formals(k, l);
+    rt_live(); Key k = { RT_LUNIT, l, 0, 0 }; RefId t; LawFormals f = law_formals(k, l);
     TermVarId vb = tv(k, 2, f.A); RefId bv = ref_var(vb); TermVarId vq = tv(k, 3, PathT(l, f.A, f.a, bv));
     if (!memo_get(k, &t)) {
         KCtx c = kctx(k, l, f.A, f.a); RefId qv = ref_var(vq);
@@ -424,7 +449,7 @@ RefId rt_rinv(uint64_t l, RefId A, RefId a, RefId b, RefId p) { rt_init(); Key k
 RefId rt_linv(uint64_t l, RefId A, RefId a, RefId b, RefId p) { rt_init(); Key k = { RT_LINV, l, 0, 0 }; return inv_law(k, l, A, a, b, p, false); }
 
 RefId rt_assoc(uint64_t l, RefId A, RefId a, RefId b, RefId c, RefId d, RefId p, RefId q, RefId r) {
-    rt_init(); Key k = { RT_ASSOC, l, 0, 0 }; RefId t; LawFormals f = law_formals(k, l);
+    rt_live(); Key k = { RT_ASSOC, l, 0, 0 }; RefId t; LawFormals f = law_formals(k, l);
     TermVarId vb = tv(k, 2, f.A), vc = tv(k, 3, f.A), vd = tv(k, 4, f.A); RefId bv = ref_var(vb), cv = ref_var(vc), dvv = ref_var(vd);
     TermVarId vp = tv(k, 5, PathT(l, f.A, f.a, bv)), vq = tv(k, 6, PathT(l, f.A, bv, cv)), vr = tv(k, 7, PathT(l, f.A, cv, dvv));
     if (!memo_get(k, &t)) {
@@ -464,7 +489,7 @@ RefId rt_assoc(uint64_t l, RefId A, RefId a, RefId b, RefId c, RefId d, RefId p,
 
 /* the middle maps of the action at y with both inverse witnesses */
 RefId rt_action_middle(uint64_t b, RefId B, RefId CL, RefId CR, RefId p, RefId y) {
-    rt_init(); Key k = { RT_MIDDLE, b, 0, 0 }; RefId t;
+    rt_live(); Key k = { RT_MIDDLE, b, 0, 0 }; RefId t;
     TermVarId vB = tv(k, 0, mk_universe(b)); RefId Bv = ref_var(vB);
     TermVarId vCL = tv(k, 1, Bv), vCR = tv(k, 2, Bv), vy = tv(k, 3, Bv); RefId CLv = ref_var(vCL), CRv = ref_var(vCR), yv = ref_var(vy);
     TermVarId vp = tv(k, 4, PathT(b, Bv, CLv, CRv)); RefId pv = ref_var(vp);
@@ -501,7 +526,7 @@ RefId rt_action_middle(uint64_t b, RefId B, RefId CL, RefId CR, RefId p, RefId y
     TermVarId xs[5] = { vB, vCL, vCR, vy, vp }; RefId im[5] = { B, CL, CR, y, p }; return inst(t, 5, xs, im);
 }
 RefId rt_action_maps(uint64_t b, uint64_t rl, uint64_t rr, RefId B, RefId L, RefId R, RefId p, RefId y) {
-    rt_init(); Key k = { RT_ACTION_MAPS, b, rl, rr }; RefId t; ActFormals f = act_formals(k, b, rl, rr, 0);
+    rt_live(); Key k = { RT_ACTION_MAPS, b, rl, rr }; RefId t; ActFormals f = act_formals(k, b, rl, rr, 0);
     if (!memo_get(k, &t)) {
         RefId CL = rt_diagram_value(f.L), CR = rt_diagram_value(f.R), QL = PathT(b, f.B, CL, f.y), QR = PathT(b, f.B, CR, f.y);
         RefId mid = rt_action_middle(b, f.B, CL, CR, f.p, f.y);
@@ -515,21 +540,30 @@ RefId rt_action_maps(uint64_t b, uint64_t rl, uint64_t rr, RefId B, RefId L, Ref
 /* ------------------------------------------------------------------ */
 /* §84                                                                   */
 
+/* reuse(O, p, a) = coe^i O(p@i) a: one template per (lb, lo) over B : U_lb,
+ * O : B → U_lo, x y : B, p : Path_B(x,y), a : O x */
 RefId rt_reuse(uint64_t lb, uint64_t lo, RefId B, RefId O, RefId x, RefId y, RefId p, RefId a) {
-    rt_init(); Key k = { RT_REUSE, lb, lo, 0 }; DimVarId i = dv(k, 0);
-    return mk_coe_at(lo, i, mk_app(O, mk_papp_const(lb, B, x, y, p, iv_var(i))), a);
+    rt_live(); Key k = { RT_REUSE, lb, lo, 0 }; RefId t;
+    TermVarId vB = tv(k, 0, mk_universe(lb)); RefId Bv = ref_var(vB);
+    TermVarId vz = tv(k, 10, Bv);
+    TermVarId vO = tv(k, 1, mk_pi_lv(lb, level_succ(lo), vz, Bv, mk_universe(lo))); RefId Ov = ref_var(vO);
+    TermVarId vx = tv(k, 2, Bv), vy = tv(k, 3, Bv); RefId xv = ref_var(vx), yv = ref_var(vy);
+    TermVarId vp = tv(k, 4, mk_path_const(lb, Bv, xv, yv)), va = tv(k, 5, mk_app(Ov, xv));
+    if (!memo_get(k, &t)) { DimVarId i = dv(k, 0); t = mk_coe_at(lo, i, mk_app(Ov, mk_papp_const(lb, Bv, xv, yv, ref_var(vp), iv_var(i))), ref_var(va)); memo_put(k, t); }
+    TermVarId xs[6] = { vB, vO, vx, vy, vp, va }; RefId im[6] = { B, O, x, y, p, a }; return inst(t, 6, xs, im);
 }
 
 /* the host diagram as the right fold of extensions ending in zero (ordinary
  * diagrams) or of singleton presentations ending in the constant presentation
  * (residual descriptions); memoized per diagram id */
-static RefId export_fold(size_t k, size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o, bool residual, uint64_t *level) {
-    if (k == n) { *level = lB; return residual ? rt_pres_const(lB, o) : rt_diagram_zero(lB, B, o); }
-    uint64_t inner; RefId tail = export_fold(k + 1, n, nodes, B, lB, o, residual, &inner);
+static RefId export_fold(size_t k, size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o, bool residual, uint64_t *level, RefId *canonical) {
+    if (k == n) { *level = lB; *canonical = residual ? o : 0; return residual ? rt_pres_const(lB, o) : rt_diagram_zero(lB, B, o); }
+    uint64_t inner; RefId child_canonical; RefId tail = export_fold(k + 1, n, nodes, B, lB, o, residual, &inner, &child_canonical);
     const DiagNode *nd = &nodes[k];
     RefId Pk = mk_path_const(nd->level, nd->A, nd->t, ref_var(nd->x));
     *level = level_max(nd->level, inner);
     if (!residual) {
+        *canonical = 0; /* unused on the ordinary-diagram branch */
         RefId Q = mk_lam_lv(nd->level, nd->x, nd->A, mk_lam_lv(nd->level, nd->e, Pk, tail));
         return rt_diagram_extend(nd->level, lB, inner, nd->A, nd->t, Q, B);
     }
@@ -537,16 +571,16 @@ static RefId export_fold(size_t k, size_t n, const DiagNode *nodes, RefId B, uin
     RefId D = mk_lam_lv(nd->level, nd->x, nd->A, mk_lam_lv(nd->level, nd->e, Pk, rt_pres_X(tail)));
     RefId refl = mk_refl(nd->level, nd->A, nd->t);
     MapBuilder mb; mapb_init(&mb); mapb_term(&mb, nd->x, nd->t); mapb_term(&mb, nd->e, refl); MapId nu = mapb_finish(&mb);
-    RefId centre = reindex(tail, nu), Zc = reindex(o, nu);
+    RefId centre = reindex(tail, nu), Zc = reindex(child_canonical, nu); *canonical = Zc;
     RefId S = rt_singleton_type(nd->level, inner, nd->A, nd->t, D), Y = rt_pres_X(centre);
     RefId maps = rt_maps_compose(*level, inner, lB, S, Y, Zc, rt_singleton_maps(nd->level, inner, nd->A, nd->t, D), rt_pres_maps(centre));
     return pres_value(*level, lB, rt_pres_type(*level, lB, Zc), S, maps);
 }
 RefId rt_diagram_export(DiagramId d, RefId *type) {
-    rt_init(); Key k = { RT_KBASE + 1, d, 0, 0 }; RefId t;
+    rt_live(); Key k = { RT_KBASE + 1, d, 0, 0 }; RefId t;
     size_t n; const DiagNode *nodes; RefId B, o; uint64_t lB; bool residual;
     n = diagram_nodes(d, &nodes); o = diagram_output(d, &B, &lB, &residual);
-    if (!memo_get(k, &t)) { uint64_t level; t = export_fold(0, n, nodes, B, lB, o, residual, &level); memo_put(k, t); }
+    if (!memo_get(k, &t)) { uint64_t level; RefId canonical; t = export_fold(0, n, nodes, B, lB, o, residual, &level, &canonical); memo_put(k, t); }
     if (type) {
         uint64_t lv = lB; for (size_t i = n; i-- > 0; ) lv = level_max(nodes[i].level, lv);
         *type = residual ? rt_pres_type(lv, lB, diagram_canonical(d)) : rt_diagram_type(lB, lv, B);

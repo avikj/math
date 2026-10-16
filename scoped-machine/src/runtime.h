@@ -94,6 +94,7 @@ RefId rt_diagram_export(DiagramId d, RefId *type);
 RefId rt_reuse(uint64_t lb, uint64_t lo, RefId B, RefId O, RefId x, RefId y, RefId p, RefId a);
 
 size_t rt_template_count(void);     /* fixed templates built so far */
+void rt_init(void);                 /* serial lifecycle: called by compiler_init before clients */
 void rt_free(void);
 
 #endif

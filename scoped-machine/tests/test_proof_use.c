@@ -33,6 +33,12 @@ int main(void) {
     EXPECT(u1.status == PU_CORE, "refl: CORE (%s)", proof_use_name(u1.status));
     EXPECT(u2.status == PU_ASSUMED && u2.nassumptions == 1 && u2.assumptions[0] == ax, "opaque symbol: ASSUMED on itself (%s)", proof_use_name(u2.status));
     EXPECT(u3.status == PU_PENDING && u3.nrecursive == 1 && u3.recursive[0] == loop, "cyclic symbol: PENDING on its component (%s)", proof_use_name(u3.status));
+    /* §96.6: a computed proof enters the same interface as a supplied one — snd of a pair reducing to refl audits CORE, and a pair hiding the cyclic proof audits PENDING */
+    { RefId PairT = mk_sigma_lv(0, 0, declare_term(A, fc_true()), A, PT);
+      ProofUse uc = proof_use(G, fc_true(), mk_snd(mk_pair_at_lv(0, PairT, a, core)), PT);
+      ProofUse ul = proof_use(G, fc_true(), mk_snd(mk_pair_at_lv(0, PairT, a, global_ref(loop))), PT);
+      EXPECT(uc.status == PU_CORE, "computed proof (snd of a pair): CORE (%s)", proof_use_name(uc.status));
+      EXPECT(ul.status == PU_PENDING && ul.nrecursive == 1, "computed proof hiding the cyclic symbol: PENDING (%s)", proof_use_name(ul.status)); }
     /* program typing accepts all three: the audit is a separate judgment */
     EXPECT(check(G, fc_true(), global_ref(loop), PT, &why) == CK_VALID, "check accepts the recursive proof as a program");
     /* a cached verdict is reused and revalidated by symbol revisions */

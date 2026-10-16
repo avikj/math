@@ -414,6 +414,14 @@ count now precedes the publication. `eval.c::eval_reset` — drains work a
 client left outstanding under a worker pool before enforcing quiescence
 (`review_alias_faces 4` aborted under load).
 
+The ba09e33 review's six findings (R1 interning transaction, R2 singleton
+level, R3 residual export, R4 ap/J/reuse templates, R5 lifecycle init, R6
+framed reduction records) are corrected as tabulated in README ("The ba09e33
+review — six corrections"); its nine regressions (`review_work_edges`,
+`review_runtime_edges`) and the unchanged §96 witness are gated, and
+`run_ba09e33_review.py` (12 jobs) passes under both sanitizers
+(`tests/acceptance-results/v14/`).
+
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the
 host export and validated against the compiler's emitted maps by conversion;

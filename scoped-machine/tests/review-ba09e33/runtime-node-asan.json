@@ -1,0 +1,55 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-ba09e33/scoped-machine",
+  "sanitizer": "asan",
+  "detect_leaks": "0",
+  "source_sha256": {
+    "canon.c": "24ee309f23afcdb8cf437290f650e5a35ab9a12c55d7c6a0eb09c498cfc69c85",
+    "check.c": "27ada1e84c4fb519caddb693d1a0b4543387406db0d020f917c090d8b0a85f0d",
+    "compiler.c": "5cfb9505fc703906b6958cb294aeec81b77eb9e344bb470da4f57b4e0dcee9ee",
+    "dnf.c": "08cd00181275199ffd8c31f1b20e3bccf55e7831db9d62cd875e35ef940caf17",
+    "eval.c": "4c3e9882a98841a8e53c10993d3e47e664f25c4f916be01aa6fca7ada5d95cf2",
+    "face.c": "5adfb99cab5b5f8329cca5d640832e1fb226c94c2f3e9d46924a5722f1915a9f",
+    "fine.c": "e00a9c4645795803e9bac5deec33a78f7afc7452b017964ad969671f23af7e01",
+    "intern.c": "c6137e87585cd045e036914457a4029c97391e0813882a257760fadcd0815d27",
+    "interval.c": "746463058aa336467e6972463a91b2fe7cfed502195d2832344d64fdc1dee1bb",
+    "lib.c": "23355014f7121f54b176eaf6600ed16ad190309ff0230b8c73be3634cc480a1d",
+    "machine.c": "fdc981ef80402e42e6a2f5d015f5ba3719778a1133f9666f7dbef2c32b251d2d",
+    "match.c": "4f53e7df6cf742e0f92b35e4c68744419e6d5ee3fa1bb27a037aef22bb02e0e3",
+    "net.c": "2fc8b40d8b9b8680934b37d607dd19cfd46f2d3e34d30d97d9daebe5b4bbaae5",
+    "proof.c": "1a11691ad378ac4fe67051d71802282be757e774e70715bb6a81ae305e078824",
+    "reuse.c": "dd5e8973b2bf30744b3f7f0757666a82685a087f52d3ae11e2e260762a6e7ff8",
+    "runtime.c": "71377b75518a4043721dea6955b3789f05c8de3d0b5cee1052375c54b044c736",
+    "scope.c": "0d8857502d168a8d76d2757788b7435e56ffc23830ba2d9d1a2e9820ca42b4e5",
+    "shape.c": "a9603b7cf4dfed730a1467e0488f21c304a690ee03224d628fd2b30bab01c863",
+    "template.c": "1528d618c339e1e6a5ee9c10d9c71f22590eaa24b4380cef9faaa0bc22ae59a6",
+    "term.c": "d1e2ac8d0d15f0defd3da415d51de061404b1dbf3d66f66fb616559a9990d922",
+    "work.c": "c7c7eb97bcee493da949a59ba9d77b1256dcee95df09e14630a4f85910d41a83"
+  },
+  "results": [
+    {
+      "workers": 0,
+      "mode": "runtime",
+      "exit_code": 0,
+      "stdout": "actual_workers=0\nPASS closed nonempty node, arbitrary dependent runtime tail, all four fields\nPASS runtime nonempty node with tail centre depending on bound x\nPASS computed node centre\nPASS computed node collapse, expansion and both inverse proofs\nPASS expansion of an arbitrary output path\nPASS collapse of the expanded realization\nPASS runtime collapse-after-expansion proof\nPASS runtime expansion-after-collapse proof\nPASS first proof source endpoint\nPASS first proof target endpoint\nPASS second proof source endpoint\nPASS second proof target endpoint\nregistered_transforms=0\n",
+      "stderr": "",
+      "seconds": 1.448
+    },
+    {
+      "workers": 4,
+      "mode": "runtime",
+      "exit_code": 0,
+      "stdout": "actual_workers=4\nPASS closed nonempty node, arbitrary dependent runtime tail, all four fields\nPASS runtime nonempty node with tail centre depending on bound x\nPASS computed node centre\nPASS computed node collapse, expansion and both inverse proofs\nPASS expansion of an arbitrary output path\nPASS collapse of the expanded realization\nPASS runtime collapse-after-expansion proof\nPASS runtime expansion-after-collapse proof\nPASS first proof source endpoint\nPASS first proof target endpoint\nPASS second proof source endpoint\nPASS second proof target endpoint\nregistered_transforms=0\n",
+      "stderr": "",
+      "seconds": 1.48
+    },
+    {
+      "workers": 0,
+      "mode": "levels",
+      "exit_code": 0,
+      "stdout": "actual_workers=0\nPASS closed node with exact levels a=1 b=0 r=0\nPASS closed node with exact levels a=0 b=1 r=0\nPASS closed node with exact levels a=0 b=0 r=1\n",
+      "stderr": "",
+      "seconds": 0.863
+    }
+  ],
+  "witness_sha256": "7036f81442db4cccecf69226e25aca2545f97670b00a47899f9ddb8cc1b59d68"
+}

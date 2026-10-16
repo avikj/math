@@ -735,7 +735,7 @@ between units:
 
 | Operation | Status | Retained state |
 | --- | --- | --- |
-| hashing, probing, word comparison, record copy (`INTERN/LOOKUP`) | framed: one word / one probe / one word per unit | `i` (word), `j` (probe slot), `acc3` (candidate) |
+| hashing, probing, word comparison, record copy (`INTERN/LOOKUP`) | framed: one word / one probe / one word per unit. A suspended insertion is one transaction (R1 of the ba09e33 review): the record's whole extent is reserved in the store in one unit before any word is copied, so no other candidate's words can interleave; the record is unpublished (no id, no slot) until complete; a saved probe cursor is valid only for the slot array's generation (`KTab.gen`) and otherwise restarts from the hash; after copying, the probe is re-established in the current table — an equal key interned meanwhile is returned as the one canonical id and the reserved extent is abandoned (counted as released), otherwise the complete record is published at the slot the fresh probe found | `i`, `j`, `e` (generation), `acc2` (reserved offset), `acc3` (candidate), `acc4` (held) |
 | table growth | framed: one relocation unit = at most `CHUNK_WORDS` source-slot visits + probes in total, the collision chain in progress resumed from its probe cursor (`KTab.moving/probe`); a frame that meets a relocation another job began advances it one unit per unit (`INTERN` ph 4, `LOOKUP` ph 3) and never drains it synchronously | `cursor`, `moving`, `probe` |
 | request of a shared operation (`push`) | framed `JOIN`: the key interned by the framed `INTERN`, then one unit to find/create/deliver; a join of a running job commits its wait only after a cycle check of one chain hop per unit (`CYCLE_CHECK`) | JOIN frame: key words, `acc2` (job), `acc3` (hop cursor) |
 | delivery to waiting parents | one delivery per unit: a finished job answers the waiter below it on the servicing root's cone path (`deliver_to`); other waiters are answered one each when their own roots are stepped; a job whose child is complete but whose delivery is pending stays schedulable; `waiters` keeps one registration per join | root `path` |
@@ -746,9 +746,9 @@ between units:
 | set merge, subset, Must/support merge, sums, comparisons | framed, one element / limb per unit | `i`, `j` |
 | sorting | framed heap sort: one sift (≤ 64 compares) per unit, one element per dedupe unit | `i`, `j` |
 | `expr_boundary` | memoized per node; first computation charged one VALIDATE step per node | memo |
-| proof/list/reduction record interning inside a frame | framed `INTERN` through `push_intern` | as INTERN |
+| proof / aux-list / reduction / mapped-proof / hypotheses-set records inside a frame | framed: `REDUCE` and `MAPP` end in a finishing sequence of framed `INTERN` children (aux list, proof, reduction record; `MKF` for the mapped formula), `PREPARE` interns its hypotheses set by `push_intern_own`; no `intern_sync` is reached from `service/step` (R6) | `acc`, `acc2`, `acc3`, `i`, `j`, `c`, `d`, `e`, `buf3` |
 | `set_has` in demand | binary search ≤ 64 compares | — |
-| demand-graph node index, atom-map index, weight override lookup (`WordMap` / `find_sync`, ≤ 4-word keys) | bounded hashing, **probes counted but not unit-bounded** (a collision chain is walked inside the unit) | — |
+| demand-graph node index, atom-map index, weight override lookup (`WordMap` / `find_sync`, ≤ 4-word keys) | bounded hashing; `find_sync` never drains a relocation (during one it also probes the old slot array); **probes counted but not unit-bounded** (a collision chain is walked inside the unit) | — |
 | buffer growth inside a unit (`words_push`, `vec_push`) | **amortized only**: a push that doubles the buffer copies it inside the unit; the words are charged (`alloc_words`) but the individual call is not suspended | — |
 | kernel calls from `ATOMSPEC` / `PREPARE` / proof-use audit (`reindex`, `fc_reindex`, `ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`, `check_map`, `proof_use`) | **not refined**: charged as `kernel_calls`; the reuse administration they perform is charged retrospectively into `SHAPE_NODE` / `DEPENDENCY_CHECK` / `RECEIPT` from the kernel's counters (`kernel_mark/kernel_charge`), and the audit's traversal steps into `AUDIT_STEPS` (fine vector); none of these is resumable | — |
 | constructor-level synchronous APIs (`set_make`, `plan_make`, `connector_make`, `model_with_weight`, `boundary_make`, `job_sync` entries) | outside the bounded API (no bounded-step claim) | — |
@@ -810,6 +810,26 @@ compaction are chunked; frame buffers are transferred by ownership into
 `SORT`/`INTERN`/`LIST`; table relocation keeps a probe cursor and is never
 drained synchronously by another handle. Two new ledger families,
 `SCHEDULE_STEP` and `CYCLE_CHECK`, count the scheduler's units.
+
+### The ba09e33 review — six corrections (`REVIEW-ba09e33.md`)
+
+| Finding | Correction | Regression |
+| --- | --- | --- |
+| R1 interning across suspension | `step_intern` is a transaction (table row above): reserved extent, unpublished until complete, generation-checked cursors, re-probe before publication, one canonical id; `step_lookup` cursors generation-checked; `find_sync` no longer drains | `review_work_edges interleave / same-key / growth` |
+| R2 singleton Π level | `sing_formals`: outer codomain `max(a, r+1)` (author's patch) | `review_runtime_edges levels` (`a=2, r=0`) |
+| R3 dependent residual export | `export_fold` carries the tail's already-specialized terminal `Z_k = Z_{k+1}[ν_k]` outward (author's patch) | `review_runtime_edges residual` (two-node loop residual) |
+| R4 `rt_ap`, `rt_J`, `rt_reuse` | fixed templates over typed formals (`A,B,f,x,y,p`; `A,a,P,d,b,p` with the corrected outer Π level; `B,O,x,y,p,a`), one body per level tuple, one simultaneous instantiation — `reindex(inst σ₁, m) == inst (m∘σ₁)` as references | `review_runtime_edges commute` (three reference equalities) |
+| R5 cold concurrency | `rt_init`/`proof_init` run inside `compiler_init` (serial lifecycle) and are torn down in `compiler_free`; public entries only require the module live; `rt_template_count` reads under the mutex | `review_runtime_edges runtime-cold / proof-cold` (8 clients, TSan) |
+| R6 reduction unit draining growth | `REDUCE`/`MAPP` finish through framed `INTERN` children; `PREPARE`'s hypotheses set framed; `find_sync` non-draining; no `intern_sync` reachable from `service/step` | `review_work_edges drain` (cursor 0 ≤ 32, relocation retained) |
+
+One more defined-behaviour fix found by the TSan run of `review_runtime_edges
+residual`: `check` now writes an empty diagnostic on VALID (callers print the
+reason after a valid check; it was left unassigned).
+
+Still outside the unit bound after R6 (unchanged disclosure): fixed-key index
+probes (`WordMap` in the demand graph, `find_sync` for weights and atom maps),
+amortized buffer growth inside a unit, and the kernel/audit calls charged as
+`kernel_calls`. The bounded-machine contract is not marked complete.
 
 ### §83 — presentations, diagram values and the generic action as core terms (`src/runtime.c`)
 
@@ -889,6 +909,13 @@ operations over one store of references, substitutions, scopes, templates,
 persistent entries, dependencies and receipts; nothing here is a second
 representation of mathematical values, and the shared storage is not offered
 as the §5.26 reflection, which remains the author-side obligation it was.
+Mathematical use of a proof field follows the same proof-use contract whether
+the proof was supplied or computed (`test_proof_use`: `snd` of a pair
+reducing to `refl` audits CORE, a pair hiding the cyclic symbol audits
+PENDING). §96.5's work reading is the ledger's existing behaviour: a cache hit
+is charged its lookup and delivery (`PRODUCER_LOOKUP`, `ALIAS_DELIVERY`), never
+the cached computation again, and a historical receipt does not remove current
+validation or delivery work (`DEPENDENCY_CHECK`, `RECEIPT` are charged per use).
 
 ### §88 — the proof-use boundary (`src/proof.c`)
 

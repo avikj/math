@@ -43,6 +43,7 @@ typedef struct {
     uint64_t *slots; size_t nslots, n;
     uint64_t *old; size_t old_n, cursor;   /* an incremental relocation in progress (framed growth) */
     uint64_t moving; size_t probe;          /* §94.2(4): the old slot being placed and its probe cursor */
+    uint64_t gen;                           /* R1: slot-array generation; a saved probe cursor is valid only for its generation */
 } KTab;
 
 static struct {
@@ -88,7 +89,7 @@ static void kernel_charge(KernelMark m) {
 static void ktab_begin_grow(void) {
     KTab *t = &W.tab;
     size_t ns = t->nslots * 2; uint64_t *sl = calloc(ns, sizeof(uint64_t)); require(sl, "out of memory");
-    t->old = t->slots; t->old_n = t->nslots; t->cursor = 0;
+    t->old = t->slots; t->old_n = t->nslots; t->cursor = 0; t->gen++;
     t->slots = sl; t->nslots = ns; W.L.alloc_words += ns; charge(FR_ALLOCATE_CHUNK);
 }
 /* one relocation unit: at most CHUNK_WORDS source-slot visits plus probes in
@@ -144,23 +145,31 @@ static uint64_t intern_sync(const uint64_t *w, size_t n, bool *created) {
     if (created) *created = true;
     return id;
 }
-static uint64_t find_sync(const uint64_t *w, size_t n) {
-    KTab *t = &W.tab;
-    ktab_settle();
-    uint64_t h = 0x9E3779B97F4A7C15ULL ^ n;
-    for (size_t i = 0; i < n; i++) { h = hash_step(h, w[i]); W.L.limb_ops++; charge(FR_FORMULA_INTERN_STEP); }
-    size_t j = h & (t->nslots - 1);
+/* a fixed-key lookup (≤ 4-word keys): never drains a relocation another
+ * operation began — during one, a record not yet moved is still found in the
+ * old slot array; probes are counted (R6: a collision chain is walked inside
+ * the caller's unit; disclosed in the bounded-helper table) */
+static uint64_t find_in(const uint64_t *slots, size_t nslots, uint64_t h, const uint64_t *w, size_t n) {
+    size_t j = h & (nslots - 1);
     for (;;) {
         W.L.probes++; charge(FR_TABLE_PROBE);
-        uint64_t id = t->slots[j];
+        uint64_t id = slots[j];
         if (!id) return 0;
         if (rec_hash(id) == h) {
             size_t m; const uint64_t *v = rec_words(id, &m);
             bool eq = m == n; for (size_t i = 0; eq && i < n; i++) { W.L.word_compares++; charge(FR_FORMULA_INTERN_STEP); eq = v[i] == w[i]; }
             if (eq) return id;
         }
-        j = (j + 1) & (t->nslots - 1);
+        j = (j + 1) & (nslots - 1);
     }
+}
+static uint64_t find_sync(const uint64_t *w, size_t n) {
+    KTab *t = &W.tab;
+    uint64_t h = 0x9E3779B97F4A7C15ULL ^ n;
+    for (size_t i = 0; i < n; i++) { h = hash_step(h, w[i]); W.L.limb_ops++; charge(FR_FORMULA_INTERN_STEP); }
+    uint64_t id = find_in(t->slots, t->nslots, h, w, n);
+    if (!id && t->old) id = find_in(t->old, t->old_n, h, w, n);
+    return id;
 }
 static void *own(void *p) { vec_push(&W.owned, p); return p; }
 
@@ -382,7 +391,7 @@ static void push_intern(Op *o, const uint64_t *w, size_t n);
 
 static FrameFamily family_of(const Frame *f) {
     switch (f->fam) {
-    case OF_INTERN: return f->ph == 3 ? FR_ALLOCATE_CHUNK : f->ph == 0 ? FR_FORMULA_INTERN_STEP : FR_TABLE_PROBE;   /* ph 4: relocation chunk */
+    case OF_INTERN: return (f->ph == 3 || f->ph == 5) ? FR_ALLOCATE_CHUNK : f->ph == 0 ? FR_FORMULA_INTERN_STEP : FR_TABLE_PROBE;   /* ph 4: relocation unit */
     case OF_LOOKUP: return f->ph == 0 ? FR_FORMULA_INTERN_STEP : FR_TABLE_PROBE;
     case OF_JOIN: return f->ph == 0 ? FR_PRODUCER_LOOKUP : FR_SCHEDULE_STEP;
     case OF_MKF: case OF_EXPRF: case OF_MAPF: case OF_SPEC_FORMULA: return FR_FORMULA_VISIT;
@@ -509,6 +518,21 @@ static uint64_t run_op(int family, Phase ph, Frame f, const char **why) { (void)
 /* INTERN: a = unused, buf = the key words.  ph0 HASH(i) → ph1 PROBE → ph2 COMPARE(j) → ph3 COPY(i) → done.
  * Growth is performed synchronously-counted when the load bound is reached
  * (every moved slot is a counted probe). */
+/* INTERN (R1, §94.2(4)): a suspended insertion is one transaction.
+ *   ph0 HASH one word per unit;
+ *   ph4 one relocation unit of a growth in progress (then re-probe from the hash);
+ *   ph1 PROBE one slot per unit — a saved cursor is valid only for the slot
+ *       array's generation (e), otherwise the probe restarts from the hash;
+ *   ph2 COMPARE one word per unit against a candidate equal-hash record;
+ *   ph5 RESERVE: the record's whole extent (header + payload) is reserved in
+ *       the store in one unit, so no other candidate can interleave its words;
+ *       the record stays unpublished (no id, no slot) until complete;
+ *   ph3 COPY one word per unit into the reserved extent;
+ *   then back to ph1 with the candidate held (acc4): the probe is
+ *   re-established in the current table; an equal key interned meanwhile is
+ *   returned as the canonical id (the reserved extent is abandoned, counted
+ *   as released), otherwise the complete record is published at the slot the
+ *   fresh probe found. */
 static void step_intern(Op *o, Frame *f) {
     KTab *t = &W.tab;
     switch (f->ph) {
@@ -516,30 +540,44 @@ static void step_intern(Op *o, Frame *f) {
         if (f->i == 0) f->acc = 0x9E3779B97F4A7C15ULL ^ f->buf.n;
         if (f->i < f->buf.n) { f->acc = hash_step(f->acc, f->buf.w[f->i]); f->i++; W.L.limb_ops++; return; }
         if (t->old || (t->n + 1) * 2 > t->nslots) { if (!t->old) ktab_begin_grow(); f->ph = 4; return; }
-        f->j = f->acc & (t->nslots - 1); f->ph = 1; return;
-    case 4:   /* one relocation chunk per frame */
-        if (ktab_grow_chunk()) { f->j = f->acc & (t->nslots - 1); f->ph = 1; }
+        f->j = f->acc & (t->nslots - 1); f->e = t->gen; f->ph = 1; return;
+    case 4:   /* one relocation unit */
+        if (ktab_grow_chunk()) { f->j = f->acc & (t->nslots - 1); f->e = t->gen; f->ph = 1; }
         return;
     case 1: {   /* one probe */
-        if (t->old) { f->ph = 4; return; }     /* a relocation another job began: advanced one unit at a time, then re-probed */
+        if (t->old) { f->ph = 4; return; }
+        if (f->e != t->gen) { f->j = f->acc & (t->nslots - 1); f->e = t->gen; }   /* the table changed since this cursor was taken */
         W.L.probes++;
         uint64_t id = t->slots[f->j];
-        if (!id) { f->ph = 3; f->i = 0; f->acc2 = t->store.n; words_push(&t->store, f->acc); words_push(&t->store, f->buf.n); return; }
+        if (!id) {
+            if (!f->acc4) { f->ph = 5; return; }                                 /* no candidate yet: reserve */
+            /* publish the complete candidate at this slot */
+            vec_push(&t->off, (size_t)f->acc2); t->n++;
+            uint64_t nid = t->n; t->slots[f->j] = nid;
+            Side *sd = side(nid); memset(sd, 0, sizeof *sd); sd->kind = (uint8_t)f->buf.w[0];
+            o->ret = 0; fin(o, nid); o->ret = nid; return;
+        }
         if (rec_hash(id) == f->acc) { size_t m; rec_words(id, &m); if (m == f->buf.n) { f->acc3 = id; f->i = 0; f->ph = 2; return; } }
         f->j = (f->j + 1) & (t->nslots - 1); return;
     }
     case 2: {   /* compare one word */
+        if (t->old || f->e != t->gen) { f->ph = 1; return; }                     /* re-probe: the table moved under the comparison */
         size_t m; const uint64_t *v = rec_words(f->acc3, &m);
         W.L.word_compares++;
         if (f->i < m) { if (v[f->i] != f->buf.w[f->i]) { f->j = (f->j + 1) & (t->nslots - 1); f->ph = 1; return; } f->i++; return; }
+        if (f->acc4) { W.L.release_words += f->buf.n + 2; charge(FR_RELEASE_CHUNK); }   /* an equal key was interned meanwhile: the candidate is abandoned */
         fin(o, f->acc3); return;
     }
-    case 3: {   /* copy one word into storage; then publish the slot */
-        if (f->i < f->buf.n) { words_push(&t->store, f->buf.w[f->i]); f->i++; W.L.alloc_words++; return; }
-        vec_push(&t->off, (size_t)f->acc2); t->n++;
-        uint64_t id = t->n; t->slots[f->j] = id;
-        Side *s = side(id); memset(s, 0, sizeof *s); s->kind = (uint8_t)f->buf.w[0];
-        o->ret = 0; fin(o, id); o->ret = id; return;
+    case 5: {   /* reserve the record's extent: header now, payload words zero until copied */
+        f->acc2 = t->store.n;
+        words_push(&t->store, f->acc); words_push(&t->store, f->buf.n);
+        for (size_t k = 0; k < f->buf.n; k++) words_push(&t->store, 0);          /* one allocation unit for the extent (amortized growth, charged) */
+        W.L.alloc_words += f->buf.n + 2; charge(FR_ALLOCATE_CHUNK);
+        f->i = 0; f->ph = 3; return;
+    }
+    case 3: {   /* copy one word into the reserved extent; then re-probe with the candidate held */
+        if (f->i < f->buf.n) { t->store.w[f->acc2 + 2 + f->i] = f->buf.w[f->i]; f->i++; return; }
+        f->acc4 = 1; f->ph = 1; return;
     }
     }
 }
@@ -550,12 +588,13 @@ static void step_lookup(Op *o, Frame *f) {
     case 0:
         if (f->i == 0) f->acc = 0x9E3779B97F4A7C15ULL ^ f->buf.n;
         if (f->i < f->buf.n) { f->acc = hash_step(f->acc, f->buf.w[f->i]); f->i++; W.L.limb_ops++; return; }
-        f->j = f->acc & (t->nslots - 1); f->ph = 1; return;
+        f->j = f->acc & (t->nslots - 1); f->e = t->gen; f->ph = 1; return;
     case 3:   /* one relocation unit of a growth in progress, then re-probe */
-        if (ktab_grow_chunk()) { f->j = f->acc & (t->nslots - 1); f->ph = 1; }
+        if (ktab_grow_chunk()) { f->j = f->acc & (t->nslots - 1); f->e = t->gen; f->ph = 1; }
         return;
     case 1: {
         if (t->old) { f->ph = 3; return; }
+        if (f->e != t->gen) { f->j = f->acc & (t->nslots - 1); f->e = t->gen; }
         W.L.probes++;
         uint64_t id = t->slots[f->j];
         if (!id) { fin(o, 0); return; }
@@ -563,6 +602,7 @@ static void step_lookup(Op *o, Frame *f) {
         f->j = (f->j + 1) & (t->nslots - 1); return;
     }
     case 2: {
+        if (t->old || f->e != t->gen) { f->ph = 1; return; }
         size_t m; const uint64_t *v = rec_words(f->acc3, &m);
         W.L.word_compares++;
         if (f->i < m) { if (v[f->i] != f->buf.w[f->i]) { f->j = (f->j + 1) & (t->nslots - 1); f->ph = 1; return; } f->i++; return; }
@@ -1356,8 +1396,10 @@ static void step_prepare(Op *o, Frame *f) {
     case 9: { const uint64_t *l; list_get(f->acc4, &l); words_push(&f->buf2, l[f->i]); f->i++; f->ph = 7; return; }
     case 2: f->acc3 = o->ret; f->ph = 3; push(o, fr(OF_SUBST, f->acc3, model_completed(f->b), 1, 0)); return;
     case 3: { f->acc4 = o->ret; Frame g = fr(OF_LIST, 0, 0, 0, 0); words_push(&g.buf, K_LIST); words_append(&g.buf, f->buf2.w, f->buf2.n); f->ph = 4; push(o, g); return; }
-    case 4: { f->acc = o->ret; f->buf3.n = sort_unique_u64(f->buf3.w, f->buf3.n); SetId hyps = set_intern_sorted(f->buf3.w, f->buf3.n);
-              uint64_t w[10] = { K_PROBLEM, check_session_id(), global_env_version(), f->acc2, f->b, f->a, f->acc3, f->acc4, f->acc, hyps }; f->ph = 5; push_intern(o, w, 10); return; }
+    case 4: { f->acc = o->ret; f->buf3.n = sort_unique_u64(f->buf3.w, f->buf3.n);
+              Words hw; words_init(&hw); words_push(&hw, K_SET); words_append(&hw, f->buf3.w, f->buf3.n); f->buf3.n = 0;
+              f->ph = 6; push_intern_own(o, &hw); return; }   /* the hypotheses set by the framed INTERN (R6) */
+    case 6: { uint64_t w[10] = { K_PROBLEM, check_session_id(), global_env_version(), f->acc2, f->b, f->a, f->acc3, f->acc4, f->acc, o->ret }; f->ph = 5; push_intern(o, w, 10); return; }
     case 5: fin(o, o->ret); return;
     }
 }
@@ -1608,37 +1650,51 @@ OpId op_check_certificate(ProblemId p, CertId c) { LOCK; OpId h = op_new(OF_CHEC
 typedef struct { Reduction r; } RedRec;
 /* §75.3: the answer is identified by (formula, model, rule set); it holds the
  * reduced flag, bound, proof and attaining support */
-static uint64_t reduction_record(Op *o, Frame *f, Reduction r) {
+/* R6: the reduction's records are interned by framed INTERN children, one
+ * per record (aux list, proof, reduction), never synchronously inside a unit.
+ * The finishing data is retained in the frame: acc = value, acc2 = attaining,
+ * acc3 = proof rule (or the interned proof once built), i/j = aux words,
+ * c/d = child proofs, e = flags (1 reduced, 2 aux is a two-element list). */
+static void reduce_finish(Op *o, Frame *f, bool reduced, Cost value, SetId attaining, ProofRule rule, bool aux_list, uint64_t aux0, uint64_t aux1, ProofId c1, ProofId c2) {
     (void)o;
-    uint64_t w[4] = { K_REDUCTION, f->a, f->b, RULES_VERSION }; uint64_t id = intern_sync(w, 4, NULL);
-    if (!side(id)->ptr) { RedRec *rr = own(calloc(1, sizeof *rr)); require(rr, "out of memory"); rr->r = r; rr->r.formula = f->a; side(id)->ptr = rr; }
-    return id;
+    f->acc = value; f->acc2 = attaining; f->acc3 = rule; f->i = aux0; f->j = aux1; f->c = c1; f->d = c2;
+    f->e = (reduced ? 1u : 0u) | (aux_list ? 2u : 0u);
+    f->ph = 90;
 }
 static Reduction *RED(uint64_t id) { return &((RedRec *)side(id)->ptr)->r; }
 static void step_reduce(Op *o, Frame *f) {
-    FormulaId F = f->a; ModelId model = f->b; Reduction r; memset(&r, 0, sizeof r);
+    FormulaId F = f->a; ModelId model = f->b;
     switch (f->ph) {
+    /* ---- the framed finish (R6) ---- */
+    case 90: if (f->e & 2) { uint64_t w[3] = { K_LIST, f->i, f->j }; f->ph = 91; push_intern(o, w, 3); return; } f->ph = 92; return;
+    case 91: f->i = o->ret; f->ph = 92; return;
+    case 92: if (f->e & 1) { uint64_t w[7] = { K_PROOF, f->acc3, F, f->i, f->c, f->d, f->acc }; f->ph = 93; push_intern(o, w, 7); return; } f->acc3 = 0; f->ph = 94; return;
+    case 93: f->acc3 = o->ret; f->ph = 94; return;
+    case 94: { uint64_t w[4] = { K_REDUCTION, F, model, RULES_VERSION }; f->ph = 95; push_intern(o, w, 4); return; }
+    case 95: {
+        uint64_t id = o->ret;
+        if (!side(id)->ptr) { RedRec *rr = own(calloc(1, sizeof *rr)); require(rr, "out of memory"); rr->r.formula = F; rr->r.reduced = (f->e & 1) != 0; rr->r.value = f->acc; rr->r.lower = f->acc3; rr->r.attaining = f->acc2; side(id)->ptr = rr; }
+        fin(o, id); return;
+    }
     case 0: reuse_bump(REUSE_REDUCE_BODY); f->ph = 1; return;   /* the body starts: the persistent job is the memo (§75.3) */
     case 1:
         switch (formula_tag(F)) {
-        case FM_ZERO: r.reduced = true; r.value = COST_INF; r.lower = proof_intern(PR_FALSE, W.ZERO, 0, 0, 0, COST_INF); r.attaining = 0; fin(o, reduction_record(o, f, r)); return;
-        case FM_ONE: r.reduced = true; r.value = 0; r.lower = proof_intern(PR_TRIVIAL, W.ONE, 0, 0, 0, 0); r.attaining = W.EMPTY; fin(o, reduction_record(o, f, r)); return;
+        case FM_ZERO: reduce_finish(o, f, true, COST_INF, 0, PR_FALSE, false, 0, 0, 0, 0); return;
+        case FM_ONE: reduce_finish(o, f, true, 0, W.EMPTY, PR_TRIVIAL, false, 0, 0, 0, 0); return;
         case FM_ATOM: { uint64_t w[2] = { K_SET, formula_atom_of(F) }; f->ph = 2; push_intern(o, w, 2); return; }
         case FM_OR: f->ph = 10; push(o, fr(OF_REDUCE, formula_left(F), model, 0, 0)); return;
         case FM_AND: f->ph = 20; push(o, fr(OF_SUPPORT, formula_left(F), 0, 0, 0)); return;
         }
         return;
     case 2: { f->acc = o->ret; f->ph = 3; push(o, fr(OF_SUM, f->acc, model, 0, 0)); return; }
-    case 3: r.reduced = true; r.value = o->ret; r.lower = proof_intern(PR_MANDATORY, F, f->acc, 0, 0, o->ret); r.attaining = f->acc; fin(o, reduction_record(o, f, r)); return;
+    case 3: reduce_finish(o, f, true, o->ret, f->acc, PR_MANDATORY, false, f->acc, 0, 0, 0); return;
     /* OR */
     case 10: f->acc = o->ret; f->ph = 11; push(o, fr(OF_REDUCE, formula_right(F), model, 0, 0)); return;
     case 11: {
         Reduction *l = RED(f->acc), *rg = RED(o->ret);
-        if (!l->reduced || !rg->reduced) { r.reduced = false; fin(o, reduction_record(o, f, r)); return; }
+        if (!l->reduced || !rg->reduced) { reduce_finish(o, f, false, 0, 0, 0, false, 0, 0, 0, 0); return; }
         charge(FR_COST_COMPARE_CHUNK); Cost v = cmin(l->value, rg->value);
-        r.reduced = true; r.value = v; r.lower = proof_intern(PR_OR_BOUND, F, list_make_locked(2, (uint64_t[]){ formula_left(F), formula_right(F) }), l->lower, rg->lower, v);
-        r.attaining = l->value <= rg->value ? l->attaining : rg->attaining;
-        fin(o, reduction_record(o, f, r)); return;
+        reduce_finish(o, f, true, v, l->value <= rg->value ? l->attaining : rg->attaining, PR_OR_BOUND, true, formula_left(F), formula_right(F), l->lower, rg->lower); return;
     }
     /* AND */
     case 20: f->acc = o->ret; f->ph = 21; push(o, fr(OF_SUPPORT, formula_right(F), 0, 0, 0)); return;
@@ -1649,23 +1705,21 @@ static void step_reduce(Op *o, Frame *f) {
     case 23: f->acc3 = o->ret; f->ph = 24; push(o, fr(OF_REDUCE, formula_right(F), model, 0, 0)); return;
     case 24: {
         Reduction *l = RED(f->acc3), *rg = RED(o->ret);
-        if (!l->reduced || !rg->reduced) { r.reduced = false; fin(o, reduction_record(o, f, r)); return; }
+        if (!l->reduced || !rg->reduced) { reduce_finish(o, f, false, 0, 0, 0, false, 0, 0, 0, 0); return; }
         Cost v; if (!add_checked(l->value, rg->value, &v)) { limit(o, "cost sum not representable"); return; }
         f->acc4 = o->ret; f->acc = v;
         if (l->attaining && rg->attaining) { f->ph = 25; push(o, fr(OF_SETOP, SO_UNION, l->attaining, rg->attaining, 0)); return; }
-        r.reduced = true; r.value = v; r.lower = proof_intern(PR_DISJOINT_AND, F, list_make_locked(2, (uint64_t[]){ formula_left(F), formula_right(F) }), l->lower, rg->lower, v); r.attaining = 0;
-        fin(o, reduction_record(o, f, r)); return;
+        reduce_finish(o, f, true, v, 0, PR_DISJOINT_AND, true, formula_left(F), formula_right(F), l->lower, rg->lower); return;
     }
     case 25: {
         Reduction *l = RED(f->acc3), *rg = RED(f->acc4);
-        r.reduced = true; r.value = f->acc; r.lower = proof_intern(PR_DISJOINT_AND, F, list_make_locked(2, (uint64_t[]){ formula_left(F), formula_right(F) }), l->lower, rg->lower, f->acc); r.attaining = o->ret;
-        fin(o, reduction_record(o, f, r)); return;
+        reduce_finish(o, f, true, f->acc, o->ret, PR_DISJOINT_AND, true, formula_left(F), formula_right(F), l->lower, rg->lower); return;
     }
     case 30: {   /* Must(F) */
         f->acc = o->ret;
         if (f->acc != W.EMPTY) { f->ph = 31; push(o, fr(OF_SUBST, F, f->acc, 1, 0)); return; }
         FormulaId X, Y, Z;
-        if (!shared_or_parts(F, &X, &Y, &Z)) { r.reduced = false; fin(o, reduction_record(o, f, r)); return; }
+        if (!shared_or_parts(F, &X, &Y, &Z)) { reduce_finish(o, f, false, 0, 0, 0, false, 0, 0, 0, 0); return; }
         f->acc3 = X; f->ph = 38; push(o, fr_mkf(FM_AND, Y, Z)); return;
     }
     case 38: f->ph = 39; push(o, fr_mkf(FM_OR, f->acc3, o->ret)); return;
@@ -1673,21 +1727,20 @@ static void step_reduce(Op *o, Frame *f) {
     case 31: f->acc2 = o->ret; f->ph = 32; push(o, fr(OF_REDUCE, f->acc2, model, 0, 0)); return;
     case 32: {
         Reduction *g = RED(o->ret);
-        if (!g->reduced) { r.reduced = false; fin(o, reduction_record(o, f, r)); return; }
+        if (!g->reduced) { reduce_finish(o, f, false, 0, 0, 0, false, 0, 0, 0, 0); return; }
         f->acc3 = o->ret; f->ph = 33; push(o, fr(OF_SUM, f->acc, model, 0, 0)); return;
     }
     case 33: {
         Reduction *g = RED(f->acc3); Cost v; if (!add_checked(o->ret, g->value, &v)) { limit(o, "cost sum not representable"); return; }
         f->acc4 = v;
         if (g->attaining) { f->ph = 34; push(o, fr(OF_SETOP, SO_UNION, f->acc, g->attaining, 0)); return; }
-        r.reduced = true; r.value = v; r.lower = proof_intern(PR_FACTOR, F, f->acc, g->lower, 0, v); r.attaining = 0; fin(o, reduction_record(o, f, r)); return;
+        reduce_finish(o, f, true, v, 0, PR_FACTOR, false, f->acc, 0, g->lower, 0); return;
     }
-    case 34: { Reduction *g = RED(f->acc3); r.reduced = true; r.value = f->acc4; r.lower = proof_intern(PR_FACTOR, F, f->acc, g->lower, 0, f->acc4); r.attaining = o->ret; fin(o, reduction_record(o, f, r)); return; }
+    case 34: { Reduction *g = RED(f->acc3); reduce_finish(o, f, true, f->acc4, o->ret, PR_FACTOR, false, f->acc, 0, g->lower, 0); return; }
     case 40: {
         Reduction *g = RED(o->ret);
-        if (!g->reduced) { r.reduced = false; fin(o, reduction_record(o, f, r)); return; }
-        r.reduced = true; r.value = g->value; r.lower = proof_intern(PR_EQUAL, F, list_make_locked(2, (uint64_t[]){ f->acc2, EQ_SHARED_OR }), g->lower, 0, g->value); r.attaining = g->attaining;
-        fin(o, reduction_record(o, f, r)); return;
+        if (!g->reduced) { reduce_finish(o, f, false, 0, 0, 0, false, 0, 0, 0, 0); return; }
+        reduce_finish(o, f, true, g->value, g->attaining, PR_EQUAL, true, f->acc2, EQ_SHARED_OR, g->lower, 0); return;
     }
     }
 }
@@ -1741,15 +1794,27 @@ static void step_mapset(Op *o, Frame *f) {
     fin(o, o->ret);
 }
 /* MAPP: a = proof, b = map, c = model: rebuild the proof node over the mapped formulas/sets with recomputed values */
+/* R6: the mapped proof's records (aux list, proof) are interned by framed
+ * children; the finishing data lives in the frame as for REDUCE (acc3 = rule
+ * → proof, acc4 = mapped formula, i/j = aux words, buf3 = child proofs) */
+static void mapp_finish(Op *o, Frame *f, ProofRule rule, FormulaId formula, bool aux_list, uint64_t aux0, uint64_t aux1, ProofId c1, ProofId c2, Cost value) {
+    (void)o; f->acc3 = rule; f->acc4 = formula; f->i = aux0; f->j = aux1; f->acc = value; f->e = aux_list ? 2u : 0u;
+    f->buf3.n = 0; words_push(&f->buf3, c1); words_push(&f->buf3, c2);
+    f->ph = 90;
+}
 static void step_mapp(Op *o, Frame *f) {
     size_t n; const uint64_t *w = rec_words(f->a, &n); ProofRule rule = (ProofRule)w[1]; uint64_t aux = w[3]; ProofId c1 = w[4], c2 = w[5];
     switch (f->ph) {
+    case 90: if (f->e & 2) { uint64_t lw[3] = { K_LIST, f->i, f->j }; f->ph = 91; push_intern(o, lw, 3); return; } f->ph = 92; return;
+    case 91: f->i = o->ret; f->ph = 92; return;
+    case 92: { uint64_t pw[7] = { K_PROOF, f->acc3, f->acc4, f->i, f->buf3.w[0], f->buf3.w[1], f->acc }; f->ph = 93; push_intern(o, pw, 7); return; }
+    case 93: fin(o, o->ret); return;
     case 0: f->ph = 1; push(o, fr(OF_MAPF, w[2], f->b, 0, 0)); return;
     case 1:
         f->acc = o->ret;   /* mapped F */
         switch (rule) {
-        case PR_TRIVIAL: fin(o, proof_intern(PR_TRIVIAL, f->acc, 0, 0, 0, 0)); return;
-        case PR_FALSE: fin(o, proof_intern(PR_FALSE, W.ZERO, 0, 0, 0, COST_INF)); return;
+        case PR_TRIVIAL: mapp_finish(o, f, PR_TRIVIAL, f->acc, false, 0, 0, 0, 0, 0); return;
+        case PR_FALSE: mapp_finish(o, f, PR_FALSE, W.ZERO, false, 0, 0, 0, 0, COST_INF); return;
         case PR_MANDATORY: case PR_FACTOR: f->ph = 2; push(o, fr(OF_MAPSET, aux, f->b, 0, 0)); return;
         case PR_SPLIT: f->acc2 = amap_apply(f->b, aux); f->ph = 4; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
         case PR_DISJOINT_AND: case PR_OR_BOUND: { const uint64_t *l; list_get(aux, &l); f->ph = 6; push(o, fr(OF_MAPF, l[0], f->b, 0, 0)); return; }
@@ -1758,22 +1823,25 @@ static void step_mapp(Op *o, Frame *f) {
         default: fail(o, "unknown proof rule"); return;
         }
     case 2: f->acc2 = o->ret; f->ph = rule == PR_MANDATORY ? 13 : 3; push(o, fr(OF_SUM, f->acc2, f->c, 0, 0)); return;
-    case 13: fin(o, proof_intern(PR_MANDATORY, f->acc, f->acc2, 0, 0, o->ret)); return;
+    case 13: mapp_finish(o, f, PR_MANDATORY, f->acc, false, f->acc2, 0, 0, 0, o->ret); return;
     case 3: f->acc3 = o->ret; f->ph = 14; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
-    case 14: { Cost v; add_checked(f->acc3, rec_w(o->ret, 6), &v); fin(o, proof_intern(PR_FACTOR, f->acc, f->acc2, o->ret, 0, v)); return; }
+    case 14: { Cost v; add_checked(f->acc3, rec_w(o->ret, 6), &v); mapp_finish(o, f, PR_FACTOR, f->acc, false, f->acc2, 0, o->ret, 0, v); return; }
     case 4: f->acc3 = o->ret; f->ph = 5; push(o, fr(OF_MAPP, c2, f->b, f->c, 0)); return;
-    case 5: { Cost wc; add_checked(weight_locked(f->c, f->acc2), rec_w(o->ret, 6), &wc); Cost v = cmin(rec_w(f->acc3, 6), wc); fin(o, proof_intern(PR_SPLIT, f->acc, f->acc2, f->acc3, o->ret, v)); return; }
+    case 5: { Cost wc; add_checked(weight_locked(f->c, f->acc2), rec_w(o->ret, 6), &wc); Cost v = cmin(rec_w(f->acc3, 6), wc); mapp_finish(o, f, PR_SPLIT, f->acc, false, f->acc2, 0, f->acc3, o->ret, v); return; }
     case 6: { const uint64_t *l; list_get(aux, &l); f->acc2 = o->ret; f->ph = 7; push(o, fr(OF_MAPF, l[1], f->b, 0, 0)); return; }
     case 7: f->acc3 = o->ret; f->ph = 8; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
     case 8: f->acc4 = o->ret; f->ph = 9; push(o, fr(OF_MAPP, c2, f->b, f->c, 0)); return;
-    case 9: {
-        uint64_t lst = list_make_locked(2, (uint64_t[]){ f->acc2, f->acc3 });
-        if (rule == PR_DISJOINT_AND) { Cost v; add_checked(rec_w(f->acc4, 6), rec_w(o->ret, 6), &v); fin(o, proof_intern(PR_DISJOINT_AND, mkf_locked(FM_AND, f->acc2, f->acc3), lst, f->acc4, o->ret, v)); return; }
-        fin(o, proof_intern(PR_OR_BOUND, mkf_locked(FM_OR, f->acc2, f->acc3), lst, f->acc4, o->ret, cmin(rec_w(f->acc4, 6), rec_w(o->ret, 6)))); return;
+    case 9: {   /* the mapped formula by the framed MKF, then the framed finish */
+        f->acc = o->ret;   /* second mapped child proof (the mapped F in acc is no longer needed) */
+        f->ph = 15; push(o, fr_mkf(rule == PR_DISJOINT_AND ? FM_AND : FM_OR, f->acc2, f->acc3)); return;
     }
-    case 10: fin(o, proof_intern(PR_WEAKEN, f->acc, 0, o->ret, 0, w[6])); return;
+    case 15: {
+        Cost v; if (rule == PR_DISJOINT_AND) add_checked(rec_w(f->acc4, 6), rec_w(f->acc, 6), &v); else v = cmin(rec_w(f->acc4, 6), rec_w(f->acc, 6));
+        mapp_finish(o, f, rule, o->ret, true, f->acc2, f->acc3, f->acc4, f->acc, v); return;
+    }
+    case 10: mapp_finish(o, f, PR_WEAKEN, f->acc, false, 0, 0, o->ret, 0, w[6]); return;
     case 11: f->acc2 = o->ret; f->ph = 12; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
-    case 12: { const uint64_t *l; list_get(aux, &l); fin(o, proof_intern(PR_EQUAL, f->acc, list_make_locked(2, (uint64_t[]){ f->acc2, l[1] }), o->ret, 0, rec_w(o->ret, 6))); return; }
+    case 12: { const uint64_t *l; list_get(aux, &l); mapp_finish(o, f, PR_EQUAL, f->acc, true, f->acc2, l[1], o->ret, 0, rec_w(o->ret, 6)); return; }
     }
 }
 FormulaId formula_map_atoms(FormulaId f, AtomMapId map) { LOCK; FormulaId r = run_op(OF_MAPF, PH_PREPARE, fr(OF_MAPF, f, map, 0, 0), NULL); UNLOCK; return r; }

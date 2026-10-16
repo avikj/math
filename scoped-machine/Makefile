@@ -5,7 +5,7 @@ LDFLAGS ?= -fsanitize=address,undefined -pthread
 SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c src/shape.c src/reuse.c src/fine.c src/proof.c src/runtime.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles build/fine build/proof-use build/runtime build/review-alias-scope build/review-alias-faces build/review-work-budget build/review-proof-boundary build/review-certificate-boundary build/review-frame-cost build/review-singleton build/review-generic-action build/review-runtime-presentations build/review-runtime-nodes
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles build/fine build/proof-use build/runtime build/review-alias-scope build/review-alias-faces build/review-work-budget build/review-proof-boundary build/review-certificate-boundary build/review-frame-cost build/review-singleton build/review-generic-action build/review-runtime-presentations build/review-runtime-nodes build/review-runtime-edges build/review-work-edges
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -161,9 +161,11 @@ test: all
 	./build/review-runtime-nodes 0
 	./build/review-runtime-nodes 4
 	./build/review-runtime-nodes 0 levels
+	for m in levels residual commute runtime-cold proof-cold; do ./build/review-runtime-edges $$m || exit 1; done
+	for m in interleave same-key growth drain; do ./build/review-work-edges $$m || exit 1; done
 
 ACCEPT_MODES := origin alpha face specialize environment identity-name work
-TSAN_TESTS := review_runtime_nodes test_fine_cost test_proof_use review_alias_scope review_alias_faces test_proof_boundary review_certificate_boundary review_frame_cost review_singleton_witnesses review_generic_identity_action review_runtime_presentations test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_work test_reuse accept_sharing_boundaries accept_check_weakening accept_shared_work_handle
+TSAN_TESTS := review_runtime_edges review_runtime_nodes test_fine_cost test_proof_use review_alias_scope review_alias_faces test_proof_boundary review_certificate_boundary review_frame_cost review_singleton_witnesses review_generic_identity_action review_runtime_presentations test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_work test_reuse accept_sharing_boundaries accept_check_weakening accept_shared_work_handle
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
@@ -214,6 +216,9 @@ tsan:
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_runtime_nodes 0
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_runtime_nodes 4
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_runtime_nodes 0 levels
+	for m in levels residual commute runtime-cold proof-cold; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_runtime_edges $$m || exit 1; done
+	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -o build/tsan/review_work_edges tests/review_work_edges.c $(filter-out build/tsan/work.o,$(TSAN_CORE))
+	for m in interleave same-key growth drain; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_work_edges $$m || exit 1; done
 	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -o build/tsan/review_work_budget tests/review_work_budget.c $(filter-out build/tsan/work.o,$(TSAN_CORE))
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_work_budget
 
@@ -273,3 +278,9 @@ runtime-full:
 build/review-runtime-nodes: $(OBJ) tests/review_runtime_nodes.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
+build/review-runtime-edges: $(OBJ) tests/review_runtime_edges.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+build/review-work-edges: $(filter-out src/work.o,$(OBJ)) tests/review_work_edges.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/review_work_edges.c $(filter-out src/work.o,$(OBJ))

@@ -1,0 +1,131 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-ba09e33/scoped-machine",
+  "sanitizer": "asan",
+  "detect_leaks": "0",
+  "reused_objects": true,
+  "results": [
+    {
+      "name": "review_work_edges",
+      "args": [
+        "interleave"
+      ],
+      "exit_code": 1,
+      "stdout": "alternating public op_support: a=6 b=7; records=(1790477323352341347,2),(2,2); correct=0\n",
+      "stderr": "",
+      "seconds": 0.06512407500122208
+    },
+    {
+      "name": "review_work_edges",
+      "args": [
+        "same-key"
+      ],
+      "exit_code": 1,
+      "stdout": "alternating public op_support: a=6 b=6; records=(15956000213513843540,2),(2,2); correct=0\n",
+      "stderr": "",
+      "seconds": 0.06218229699879885
+    },
+    {
+      "name": "review_work_edges",
+      "args": [
+        "growth"
+      ],
+      "exit_code": 1,
+      "stdout": "growth before publication: slots 1024 -> 8192; framed_set=3010 canonical_set=3011 equal=0\n",
+      "stderr": "",
+      "seconds": 0.08328302900190465
+    },
+    {
+      "name": "review_work_edges",
+      "args": [
+        "drain"
+      ],
+      "exit_code": 1,
+      "stdout": "one reduction unit: charged_units=1 old_slots=4096 cursor=4096 relocation_pending=0 (expected cursor<=32)\n",
+      "stderr": "",
+      "seconds": 0.07549858599668369
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "levels"
+      ],
+      "exit_code": 1,
+      "stdout": "singleton a=2 r=0 expected=VALID observed=INVALID reason=universe annotation differs from the formation levels\n",
+      "stderr": "",
+      "seconds": 0.08688335299666505
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "residual"
+      ],
+      "exit_code": 1,
+      "stdout": "two-node dependent residual export expected=VALID observed=INVALID reason=unbound variable\n",
+      "stderr": "",
+      "seconds": 0.0957809149986133
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "commute"
+      ],
+      "exit_code": 1,
+      "stdout": "all six helper terms typecheck; all three substitution pairs convert equal\nfixed-template substitution equality: ap=0 reuse=0 J=0 (expected all 1)\n",
+      "stderr": "",
+      "seconds": 0.12087237999367062
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "runtime-cold"
+      ],
+      "exit_code": 0,
+      "stdout": "cold concurrent calls completed\n",
+      "stderr": "",
+      "seconds": 0.07576554101251531
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "proof-cold"
+      ],
+      "exit_code": 0,
+      "stdout": "cold concurrent calls completed\n",
+      "stderr": "",
+      "seconds": 0.07241577800596133
+    },
+    {
+      "name": "review_runtime_nodes",
+      "args": [
+        "0",
+        "runtime"
+      ],
+      "exit_code": 0,
+      "stdout": "actual_workers=0\nPASS closed nonempty node, arbitrary dependent runtime tail, all four fields\nPASS runtime nonempty node with tail centre depending on bound x\nPASS computed node centre\nPASS computed node collapse, expansion and both inverse proofs\nPASS expansion of an arbitrary output path\nPASS collapse of the expanded realization\nPASS runtime collapse-after-expansion proof\nPASS runtime expansion-after-collapse proof\nPASS first proof source endpoint\nPASS first proof target endpoint\nPASS second proof source endpoint\nPASS second proof target endpoint\nregistered_transforms=0\n",
+      "stderr": "",
+      "seconds": 1.5859092500031693
+    },
+    {
+      "name": "review_runtime_nodes",
+      "args": [
+        "4",
+        "runtime"
+      ],
+      "exit_code": 0,
+      "stdout": "actual_workers=4\nPASS closed nonempty node, arbitrary dependent runtime tail, all four fields\nPASS runtime nonempty node with tail centre depending on bound x\nPASS computed node centre\nPASS computed node collapse, expansion and both inverse proofs\nPASS expansion of an arbitrary output path\nPASS collapse of the expanded realization\nPASS runtime collapse-after-expansion proof\nPASS runtime expansion-after-collapse proof\nPASS first proof source endpoint\nPASS first proof target endpoint\nPASS second proof source endpoint\nPASS second proof target endpoint\nregistered_transforms=0\n",
+      "stderr": "",
+      "seconds": 1.554211608992773
+    },
+    {
+      "name": "review_runtime_nodes",
+      "args": [
+        "0",
+        "levels"
+      ],
+      "exit_code": 0,
+      "stdout": "actual_workers=0\nPASS closed node with exact levels a=1 b=0 r=0\nPASS closed node with exact levels a=0 b=1 r=0\nPASS closed node with exact levels a=0 b=0 r=1\n",
+      "stderr": "",
+      "seconds": 0.9081008369976189
+    }
+  ]
+}

@@ -1245,6 +1245,7 @@ static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const c
 }
 
 CheckStatus check(ContextId G, FaceId chi, RefId t, RefId A, const char **reason) {
+  *reason = "";   /* a VALID verdict leaves a defined (empty) diagnostic: callers print it */
   for (;;) {
     ENTER();
     CheckStatus st = scope_ok(G, chi, t, reason);
