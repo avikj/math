@@ -5,7 +5,7 @@ LDFLAGS ?= -fsanitize=address,undefined -pthread
 SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/demo-speculation
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -76,6 +76,10 @@ build/review-end-to-end: $(OBJ) tests/review_end_to_end.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 
+build/review-nested-scope: $(OBJ) tests/review_nested_scope.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
 build/demo-speculation: $(OBJ) tests/demo_speculation.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
@@ -110,9 +114,10 @@ test: all
 	for m in $(REVIEW_9E_MODES); do ./build/review-9eadaf2 $$m || exit 1; done
 	for m in $(REVIEW_E2E_MODES) universe packed-level; do ./build/review-end-to-end $$m || exit 1; done
 	CUBICAL_WORKERS=4 ./build/review-end-to-end positive
+	./build/review-nested-scope
 	./build/demo-speculation
 
-TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end
+TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
@@ -136,6 +141,7 @@ tsan:
 	for m in $(REVIEW_9E_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_9eadaf2 $$m || exit 1; done
 	for m in $(REVIEW_E2E_MODES) diagram-race; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_end_to_end $$m || exit 1; done
 	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_end_to_end positive
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_nested_scope
 	$(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -o build/tsan/review_claim_wait tests/review_claim_wait.c $(filter-out build/tsan/check.o,$(TSAN_CORE))
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_claim_wait
 

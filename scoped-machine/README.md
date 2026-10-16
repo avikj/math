@@ -326,7 +326,10 @@ still takes them as premises and reports ill-typed demands it reaches as `R_INVA
   observations unreachable; nothing from before a mutation can establish validity after it.
   An occurrence is used only under a clause entailing its required face, on every checking
   path. Finite structural validity of references and scopes (`ref_validate`, `scope_validate`)
-  is checked before any opening, independent of faces.
+  is checked before any opening, independent of faces, by a walk separate from the
+  substitution traversal: it covers boundary images, the stored fields of raw origins
+  (inactive branches included), template environments and every nested scope with its
+  actual telescope stack.
 - **Levels are required (§59.1).** Every type position of admitted core syntax carries its
   level: `LEVEL_NONE` at a Π/Σ/λ/Path/PApp/Glue/comp/annotated-pair position is INVALID in
   inference and in checking, and the evaluator instantiates no composition clause for an

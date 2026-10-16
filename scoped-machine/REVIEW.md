@@ -13,7 +13,7 @@ says how to check it without trusting the implementer's summary.
                   # pools; then the reviews' reproductions (review-followup in 4 modes,
                   # review-claim-wait, review-checker-lifecycle, review-ae756a1 in 11 modes,
                   # review-0f787a3 in 6 modes, review-9eadaf2 in 6 modes, review-end-to-end
-                  # in 10 modes plus the four-worker pipeline),
+                  # in 10 modes plus the four-worker pipeline, review-nested-scope),
                   # each exiting nonzero on a miss
     make tsan     # every suite under ThreadSanitizer, including the review's concurrent case and
                   # the three reproductions with halt_on_error (several minutes)
@@ -245,6 +245,12 @@ ASan, `diagram-race` under TSan, as the runner distributes them).
 | R5 diagram verdict after a session reset | A diagram's cached verdict is qualified by checker session and environment version; a later call revalidates and returns currently owned text | `compiler.c` | `review-end-to-end diagram-session` (ASan clean) |
 | R6 registry lookup race | `DG` takes the registry lock for the id check and the stable pointer; no caller holds the lock across it | `compiler.c` | `review-end-to-end diagram-race` (TSan clean) |
 | R7 universe wrap | `levels_pack` and `mk_universe` require the representable range (host failure); the universe rule uses the checked successor | `term.c`, `check.c` | `review-end-to-end universe`, `packed-level` (child aborts) |
+
+## 5g. The review of fec0f69: the remaining R3 correction
+
+| Finding | Correction | Where | Regression |
+| --- | --- | --- | --- |
+| R3 raw-origin children escaped structural validation | The validator is a separate finite walk, distinct from the substitution traversal (which, by the representation contract, visits only a raw view's boundary images): it visits boundary images, the stored fields of raw origins (binders are ordinary identities, so the depth is unchanged — inactive branches and metadata included), the environments of template views, and every scope reachable from them with the actual enclosing telescope stack; memoized per (record, telescope stack), so validity inside a telescope is never reused at the top level; GLOBAL bodies are not unfolded | `scope.c` `val_ref`, `val_scope` | `review-nested-scope` (fst-wrapped malformed tube under false, system with the malformed tube in its false branch at true, zero-arity scope holding the wrapper; positive: a valid tube below a raw annotated pair and fst) |
 
 ## 6. Representation choices a reviewer should know
 
