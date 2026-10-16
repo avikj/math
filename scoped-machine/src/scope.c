@@ -1,4 +1,5 @@
 #include "scope.h"
+#include "fine.h"
 #include "template.h"   /* the validator walks template environments */
 
 /* template layer: traversal of a TVIEW's environment (template.c) */
@@ -95,21 +96,24 @@ ScopeId scope_intern(size_t n, const LocalDecl *locals, Val body, RefId result_t
     words_push(&w, n);
     for (size_t k = 0; k < n; k++) { words_push(&w, locals[k].sort); words_push(&w, locals[k].type); words_push(&w, locals[k].level); words_push(&w, locals[k].required); }
     words_push(&w, body.sort); words_push(&w, result_type); words_push(&w, result_level); words_push(&w, guard); words_push(&w, body.id);
+    pthread_mutex_lock(&M.term_mu); ScopeId have = interner_find(&M.scopes, w.w, w.n); pthread_mutex_unlock(&M.term_mu);
+    if (have) { words_free(&w); return have; }
+    /* free boundary: every record, bound atoms excluded — computed outside
+     * the lock on immutable data (§94: its loops are transition points of a
+     * kernel continuation); the lock is held to intern and publish only */
+    DimSetId sup = dimset_make(NULL, 0); VarSetId fv = varset_make(NULL, 0);
+    for (size_t k = 0; k < n; k++) {
+        if (locals[k].type) { Val tv = { VS_REF, locals[k].type }; acc_val(tv, &sup, &fv); }
+        Val rv = { VS_FACE, locals[k].required }; acc_val(rv, &sup, &fv);
+    }
+    if (result_type) { Val tv = { VS_REF, result_type }; acc_val(tv, &sup, &fv); }
+    { Val gv = { VS_FACE, guard }; acc_val(gv, &sup, &fv); }
+    acc_val(body, &sup, &fv);
+    DimSetId sup_id = dimset_free(sup); VarSetId fv_id = varset_free(fv);
     bool created;
     pthread_mutex_lock(&M.term_mu);
     ScopeId id = interner_intern(&M.scopes, w.w, w.n, &created);
-    if (created) {
-        /* free boundary: every record, bound atoms excluded */
-        DimSetId sup = dimset_make(NULL, 0); VarSetId fv = varset_make(NULL, 0);
-        for (size_t k = 0; k < n; k++) {
-            if (locals[k].type) { Val tv = { VS_REF, locals[k].type }; acc_val(tv, &sup, &fv); }
-            Val rv = { VS_FACE, locals[k].required }; acc_val(rv, &sup, &fv);
-        }
-        if (result_type) { Val tv = { VS_REF, result_type }; acc_val(tv, &sup, &fv); }
-        { Val gv = { VS_FACE, guard }; acc_val(gv, &sup, &fv); }
-        acc_val(body, &sup, &fv);
-        ScopeSide *s = SSIDE(id); s->support = dimset_free(sup); s->freevars = varset_free(fv);
-    }
+    if (created) { ScopeSide *s = SSIDE(id); s->support = sup_id; s->freevars = fv_id; }
     pthread_mutex_unlock(&M.term_mu);
     words_free(&w);
     return id;
@@ -195,12 +199,12 @@ typedef struct { VEC(ScopeId) stack; const char *why; } ValCtx;
 static uint64_t stack_key(const ValCtx *v) { return v->stack.len ? interner_intern(&M.keys, v->stack.data, v->stack.len, NULL) : 0; }
 static bool validated_before(uint64_t kind, uint64_t id, uint64_t stk) {
     uint64_t k[3] = { kind, id, stk }, val;
-    pthread_mutex_lock(&M.term_mu); bool have = wordmap_get(&M.trav_memo, k, 3, &val); pthread_mutex_unlock(&M.term_mu);
+    bool have = wordmap_get(&M.trav_memo, k, 3, &val);   /* the map is internally synchronized (§94: no outer lock around its hashing) */
     return have;
 }
 static void remember_validated(uint64_t kind, uint64_t id, uint64_t stk) {
     uint64_t k[3] = { kind, id, stk };
-    pthread_mutex_lock(&M.term_mu); wordmap_put(&M.trav_memo, k, 3, 1); pthread_mutex_unlock(&M.term_mu);
+    wordmap_put(&M.trav_memo, k, 3, 1);
 }
 static bool val_atom(ValCtx *v, uint64_t id, Sort want) {
     uint32_t d = bound_depth(id), s = bound_slot(id);
@@ -220,10 +224,11 @@ static void val_ref(RefId t, ValCtx *v) {
     if (ref_is_var(t)) { uint64_t x = ref_var_id(t); if (is_bound_id(x)) val_atom(v, x, S_TERM); return; }
     uint64_t stk = stack_key(v);
     if (validated_before(0x4EF1, t, stk)) return;
+    fine_bump(FC_VALIDATE_STEPS);   /* §94: one transition per node, field and local visited */
     if (ref_is_tview(t)) {
         TEnvId E = tenv_of(t); size_t n = tenv_size(E);
         for (size_t k = 0; k < n && !v->why; k++) {
-            uint64_t slot; TVal val; tenv_entry(E, k, &slot, &val);
+            uint64_t slot; TVal val; tenv_entry(E, k, &slot, &val); fine_bump(FC_VALIDATE_STEPS);
             switch (val.sort) {
             case PS_REF: val_ref(val.id, v); break;
             case PS_INTERVAL: val_iv(val.id, v); break;
@@ -236,18 +241,19 @@ static void val_ref(RefId t, ValCtx *v) {
         OriginId c = ref_origin(t); MapId tau = ref_map(t);
         /* boundary images */
         size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
-        for (size_t k = 0; k < n && !v->why; k++) val_ref(map_term_image(tau, xs[k]), v);
+        for (size_t k = 0; k < n && !v->why; k++) { fine_bump(FC_VALIDATE_STEPS); val_ref(map_term_image(tau, xs[k]), v); }
         const uint64_t *ds = dimset_get(origin_fd(c), &n);
-        for (size_t k = 0; k < n && !v->why; k++) val_iv(map_dim_image(tau, ds[k]), v);
+        for (size_t k = 0; k < n && !v->why; k++) { fine_bump(FC_VALIDATE_STEPS); val_iv(map_dim_image(tau, ds[k]), v); }
         /* stored fields, including inactive branches and metadata */
         size_t nf = origin_nfields(c);
         for (size_t k = 0; k < nf && !v->why; k++) {
-            Field f = origin_field(c, (FieldIndex)k);
+            Field f = origin_field(c, (FieldIndex)k); fine_bump(FC_VALIDATE_STEPS);
             if (f.kind == F_REF) val_ref(f.id, v); else if (f.kind == F_INTERVAL) val_iv(f.id, v); else val_fc(f.id, v);
         }
         if (!v->why && origin_declared_required(c)) val_fc(origin_declared_required(c), v);   /* 0 = no annotation */
     }
     if (!v->why) remember_validated(0x4EF1, t, stk);
+    fine_bump(FC_VALIDATE_STEPS);   /* the node's exit is a transition too (the unwinding of a deep term) */
 }
 /* a prefix view of a telescope: the first k locals */
 static ScopeId prefix_scope(ScopeId S, size_t k) {
@@ -261,6 +267,7 @@ static void val_scope(ScopeId S, ValCtx *v) {
     if (v->why) return;
     uint64_t stk = stack_key(v);
     if (validated_before(0x5CA1, S, stk)) return;
+    fine_bump(FC_VALIDATE_STEPS);
     size_t n = scope_arity(S);
     Val body = scope_body(S);
     for (size_t k = 0; k < n && !v->why; k++) {
@@ -271,7 +278,7 @@ static void val_scope(ScopeId S, ValCtx *v) {
     if (!v->why && body.sort == VS_REF && !scope_type(S)) v->why = "reference scope without a declared result type";
     /* each local's declaration over its prefix telescope and the enclosing stack */
     for (size_t k = 0; k < n && !v->why; k++) {
-        LocalDecl d = scope_local(S, k);
+        LocalDecl d = scope_local(S, k); fine_bump(FC_VALIDATE_STEPS);
         vec_push(&v->stack, prefix_scope(S, k));
         if (d.type) val_ref(d.type, v);
         if (!v->why) val_fc(d.required, v);
@@ -286,6 +293,7 @@ static void val_scope(ScopeId S, ValCtx *v) {
     if (!v->why) val_fc(scope_guard(S), v);
     v->stack.len--;
     if (!v->why) remember_validated(0x5CA1, S, stk);
+    fine_bump(FC_VALIDATE_STEPS);
 }
 bool scope_validate(ScopeId S, const char **reason) {
     ValCtx v; memset(&v, 0, sizeof v);

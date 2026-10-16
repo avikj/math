@@ -147,17 +147,17 @@ MapId compose(MapId sigma, MapId tau) {
      * keys present only in tau */
     Words keys; words_init(&keys);
     size_t ns = map_n_terms(sigma), nt = map_n_terms(tau);
-    fine_bump(FC_REINDEX_CALLS); fine_add(FC_MAP_ENTRIES, ns + nt + map_n_dims(sigma) + map_n_dims(tau));
-    for (size_t k = 0; k < ns; k++) { TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); words_push(&keys, x); }
-    for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(tau, k, &x, &im); words_push(&keys, x); }
+    fine_bump(FC_REINDEX_CALLS);   /* §94: one fine step per entry visited (the transition points of a kernel continuation) */
+    for (size_t k = 0; k < ns; k++) { TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); words_push(&keys, x); fine_bump(FC_MAP_ENTRIES); }
+    for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(tau, k, &x, &im); words_push(&keys, x); fine_bump(FC_MAP_ENTRIES); }
     keys.n = sort_unique_u64(keys.w, keys.n);
-    for (size_t k = 0; k < keys.n; k++) mapb_term(&b, keys.w[k], reindex(map_term_image(sigma, keys.w[k]), tau));
+    for (size_t k = 0; k < keys.n; k++) { mapb_term(&b, keys.w[k], reindex(map_term_image(sigma, keys.w[k]), tau)); fine_bump(FC_MAP_ENTRIES); }
     keys.n = 0;
     ns = map_n_dims(sigma); nt = map_n_dims(tau);
-    for (size_t k = 0; k < ns; k++) { DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im); words_push(&keys, i); }
-    for (size_t k = 0; k < nt; k++) { DimVarId i; IntervalId im; map_dim_entry(tau, k, &i, &im); words_push(&keys, i); }
+    for (size_t k = 0; k < ns; k++) { DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im); words_push(&keys, i); fine_bump(FC_MAP_ENTRIES); }
+    for (size_t k = 0; k < nt; k++) { DimVarId i; IntervalId im; map_dim_entry(tau, k, &i, &im); words_push(&keys, i); fine_bump(FC_MAP_ENTRIES); }
     keys.n = sort_unique_u64(keys.w, keys.n);
-    for (size_t k = 0; k < keys.n; k++) mapb_dim(&b, keys.w[k], iv_reindex(map_dim_image(sigma, keys.w[k]), tau));
+    for (size_t k = 0; k < keys.n; k++) { mapb_dim(&b, keys.w[k], iv_reindex(map_dim_image(sigma, keys.w[k]), tau)); fine_bump(FC_MAP_ENTRIES); }
     words_free(&keys);
     out = mapb_finish(&b);
     wordmap_put(&M.compose_memo, key, 2, out);
@@ -365,44 +365,49 @@ RefId make_view(OriginId c, MapId sigma) {
     DimSetId fd = origin_fd(c);
     MapBuilder b; mapb_init(&b);
     size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
-    fine_bump(FC_REINDEX_CALLS); fine_add(FC_MAP_ENTRIES, nt + nd);
+    fine_bump(FC_REINDEX_CALLS);
     for (size_t k = 0; k < nt; k++) {
-        TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im);
+        TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); fine_bump(FC_MAP_ENTRIES);
         if (varset_contains(ft, x)) mapb_term(&b, x, im);
     }
     for (size_t k = 0; k < nd; k++) {
-        DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im);
+        DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im); fine_bump(FC_MAP_ENTRIES);
         if (dimset_contains(fd, i)) mapb_dim(&b, i, im);
     }
     MapId m = mapb_finish(&b);
     uint64_t w[3] = { 2, c, m };
+    /* an existing view: one find under the lock */
+    term_lock(); RefId have = interner_find(&M.refs, w, 3); term_unlock();
+    if (have) return have;
+    /* instantiated support and free variables (§7), computed outside the
+     * lock on immutable data (§94: the loop's transitions are suspension
+     * points of a kernel continuation; the lock is held only to intern and
+     * publish the side data, which another creator of the same view would
+     * compute identically) */
+    VarSetId fv = varset_make(NULL, 0);
+    DimSetId sup = dimset_make(NULL, 0);
+    FaceId req = fc_reindex(origin_required(c), m);
+    size_t n; const uint64_t *xs = varset_get(ft, &n);
+    for (size_t k = 0; k < n; k++) {
+        fine_bump(FC_MAP_ENTRIES);
+        RefId im = map_term_image(m, xs[k]);
+        fv = varset_union(fv, ref_freevars(im));
+        sup = dimset_union(sup, ref_support(im));
+        /* a formal declared partial on phi_x is only used under phi_x
+         * inside the origin, so its image need only be available there:
+         * an image available on all of phi_x[m] adds no requirement */
+        FaceId guard = fc_reindex(TDECL(xs[k])->required, m);
+        if (!fc_entails(guard, ref_required(im))) req = fc_meet(req, ref_required(im));
+    }
+    const uint64_t *ds = dimset_get(fd, &n);
+    Words d; words_init(&d);
+    for (size_t k = 0; k < n; k++) iv_dims(map_dim_image(m, ds[k]), &d);
+    sup = dimset_union(sup, dimset_make(d.w, d.n));
+    words_free(&d);
     bool created;
     term_lock();
     RefId id = interner_intern(&M.refs, w, 3, &created);
-    if (created) {
-        /* instantiated support and free variables (§7) */
-        VarSetId fv = varset_make(NULL, 0);
-        DimSetId sup = dimset_make(NULL, 0);
-        FaceId req = fc_reindex(origin_required(c), m);
-        size_t n; const uint64_t *xs = varset_get(ft, &n);
-        fine_add(FC_MAP_ENTRIES, n);
-        for (size_t k = 0; k < n; k++) {
-            RefId im = map_term_image(m, xs[k]);
-            fv = varset_union(fv, ref_freevars(im));
-            sup = dimset_union(sup, ref_support(im));
-            /* a formal declared partial on phi_x is only used under phi_x
-             * inside the origin, so its image need only be available there:
-             * an image available on all of phi_x[m] adds no requirement */
-            FaceId guard = fc_reindex(TDECL(xs[k])->required, m);
-            if (!fc_entails(guard, ref_required(im))) req = fc_meet(req, ref_required(im));
-        }
-        const uint64_t *ds = dimset_get(fd, &n);
-        Words d; words_init(&d);
-        for (size_t k = 0; k < n; k++) iv_dims(map_dim_image(m, ds[k]), &d);
-        sup = dimset_union(sup, dimset_make(d.w, d.n));
-        words_free(&d);
-        ref_side_set(id, sup, fv, req);
-    }
+    if (created) ref_side_set(id, sup, fv, req);   /* side data published before the lock is released */
     term_unlock();
     return id;
 }
@@ -418,11 +423,10 @@ RefId reindex(RefId t, MapId sigma) {
     MapId tau = ref_map(t);
     MapBuilder b; mapb_init(&b);
     size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
-    fine_bump(FC_REINDEX_CALLS); fine_add(FC_MAP_ENTRIES, n);
-    for (size_t k = 0; k < n; k++) mapb_term(&b, xs[k], reindex(map_term_image(tau, xs[k]), sigma));
+    fine_bump(FC_REINDEX_CALLS);
+    for (size_t k = 0; k < n; k++) { fine_bump(FC_MAP_ENTRIES); mapb_term(&b, xs[k], reindex(map_term_image(tau, xs[k]), sigma)); }
     const uint64_t *ds = dimset_get(origin_fd(c), &n);
-    fine_add(FC_MAP_ENTRIES, n);
-    for (size_t k = 0; k < n; k++) mapb_dim(&b, ds[k], iv_reindex(map_dim_image(tau, ds[k]), sigma));
+    for (size_t k = 0; k < n; k++) { fine_bump(FC_MAP_ENTRIES); mapb_dim(&b, ds[k], iv_reindex(map_dim_image(tau, ds[k]), sigma)); }
     out = make_view(c, mapb_finish(&b));
     wordmap_put(&M.reindex_memo, key, 2, out);
     if (out != t) record_edge(out, t, sigma);
@@ -431,16 +435,19 @@ RefId reindex(RefId t, MapId sigma) {
 /* §78.4: edge lists are interned word lists [src0, map0, src1, map1, ...];
  * duplicates are interned away by the list identity */
 static void record_edge(RefId dest, RefId src, MapId sigma) {
-    uint64_t key[1] = { dest }, old = 0;
-    term_lock();
-    wordmap_get(&M.edges, key, 1, &old);
-    Words w; words_init(&w);
-    if (old) { size_t n; const uint64_t *l = interner_get(&M.edge_lists, old, &n); for (size_t k = 0; k + 1 < n; k += 2) if (l[k] == src && l[k + 1] == sigma) { words_free(&w); term_unlock(); return; } words_append(&w, l, n); }
-    words_push(&w, src); words_push(&w, sigma);
-    uint64_t id = interner_intern(&M.edge_lists, w.w, w.n, NULL);
-    words_free(&w);
-    wordmap_put(&M.edges, key, 1, id);
-    term_unlock();
+    uint64_t key[1] = { dest };
+    for (;;) {   /* §94: read, build and intern the new list outside the lock (one transition per entry), publish under it if the list is still the one read; else retry */
+        uint64_t old = 0;
+        term_lock(); wordmap_get(&M.edges, key, 1, &old); term_unlock();
+        Words w; words_init(&w);
+        if (old) { size_t n; const uint64_t *l = interner_get(&M.edge_lists, old, &n); for (size_t k = 0; k + 1 < n; k += 2) { fine_bump(FC_MAP_ENTRIES); if (l[k] == src && l[k + 1] == sigma) { words_free(&w); return; } } for (size_t k = 0; k < n; k++) { words_push(&w, l[k]); fine_bump(FC_MAP_ENTRIES); } }
+        words_push(&w, src); words_push(&w, sigma);
+        uint64_t id = interner_intern(&M.edge_lists, w.w, w.n, NULL);
+        words_free(&w);
+        uint64_t now = 0;
+        term_lock(); wordmap_get(&M.edges, key, 1, &now); bool same = now == old; if (same) wordmap_put(&M.edges, key, 1, id); term_unlock();
+        if (same) return;
+    }
 }
 size_t instantiation_edges(RefId dest, const uint64_t **pairs) {
     uint64_t key[1] = { dest }, id = 0;

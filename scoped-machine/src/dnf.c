@@ -29,17 +29,17 @@ static void clause_reserve(Clause *c, size_t n) {
 }
 
 void dnf_add_clause(Dnf *d, const uint64_t *atoms, size_t n) {
-    Clause *c = dnf_new_clause(d); fine_add(FC_DNF_CLAUSE_STEPS, n + 1);
+    Clause *c = dnf_new_clause(d); fine_bump(FC_DNF_CLAUSE_STEPS);
     clause_reserve(c, n);
-    if (n) memcpy(c->a, atoms, n * sizeof(uint64_t));
+    for (size_t i = 0; i < n; i++) { c->a[i] = atoms[i]; fine_bump(FC_DNF_CLAUSE_STEPS); }   /* one transition per literal (§94) */
     c->n = n;
 }
 
 void dnf_add_clause_union(Dnf *d, const Clause *x, const Clause *y) {
-    Clause *c = dnf_new_clause(d); fine_add(FC_DNF_CLAUSE_STEPS, x->n + y->n + 1);
+    Clause *c = dnf_new_clause(d); fine_bump(FC_DNF_CLAUSE_STEPS);
     clause_reserve(c, x->n + y->n);
-    if (x->n) memcpy(c->a, x->a, x->n * sizeof(uint64_t));
-    if (y->n) memcpy(c->a + x->n, y->a, y->n * sizeof(uint64_t));
+    for (size_t i = 0; i < x->n; i++) { c->a[i] = x->a[i]; fine_bump(FC_DNF_CLAUSE_STEPS); }
+    for (size_t i = 0; i < y->n; i++) { c->a[x->n + i] = y->a[i]; fine_bump(FC_DNF_CLAUSE_STEPS); }
     c->n = x->n + y->n;
 }
 
@@ -58,14 +58,26 @@ bool clause_subset(const Clause *small, const Clause *big) {
 static int clause_cmp(const void *pa, const void *pb) {
     const Clause *a = pa, *b = pb;
     if (a->n != b->n) return a->n < b->n ? -1 : 1;
-    for (size_t i = 0; i < a->n; i++)
+    for (size_t i = 0; i < a->n; i++) {
+        fine_bump(FC_DNF_CLAUSE_STEPS);
         if (a->a[i] != b->a[i]) return a->a[i] < b->a[i] ? -1 : 1;
+    }
     return 0;
+}
+/* §94: clauses are heap-sorted, one sift per transition (≤ 64 iterations of a bounded comparison each) */
+static bool clause_gt(const Clause *a, const Clause *b) { return clause_cmp(a, b) > 0; }
+static void clause_sift(Clause *h, size_t n, size_t i) {
+    for (;;) { size_t l = 2 * i + 1, r = l + 1, m = i; if (l < n && clause_gt(&h[l], &h[m])) m = l; if (r < n && clause_gt(&h[r], &h[m])) m = r; if (m == i) return; Clause t = h[i]; h[i] = h[m]; h[m] = t; i = m; }
+}
+static void clauses_sort(Clause *c, size_t n) {
+    if (n < 2) return;
+    for (size_t i = n / 2; i > 0; i--) { clause_sift(c, n, i - 1); fine_bump(FC_SORT_STEPS); }
+    for (size_t e = n - 1; e > 0; e--) { Clause t = c[0]; c[0] = c[e]; c[e] = t; clause_sift(c, e, 0); fine_bump(FC_SORT_STEPS); }
 }
 
 void dnf_normalize(Dnf *d, bool (*contradiction)(const Clause *)) {
     /* 1. normalize each clause */
-    for (size_t i = 0; i < d->n; i++) { fine_add(FC_DNF_CLAUSE_STEPS, d->c[i].n + 1); d->c[i].n = sort_unique_u64(d->c[i].a, d->c[i].n); }
+    for (size_t i = 0; i < d->n; i++) { fine_bump(FC_DNF_CLAUSE_STEPS); d->c[i].n = sort_unique_u64(d->c[i].a, d->c[i].n); }   /* the sort's sifts are transitions (common.h) */
     /* 2. drop contradictory clauses (faces only) */
     if (contradiction) {
         size_t j = 0;
@@ -76,7 +88,7 @@ void dnf_normalize(Dnf *d, bool (*contradiction)(const Clause *)) {
         d->n = j;
     }
     /* 3. sort clauses, remove duplicates */
-    if (d->n > 1) qsort(d->c, d->n, sizeof(Clause), clause_cmp);
+    clauses_sort(d->c, d->n);
     {
         size_t j = 0;
         for (size_t i = 0; i < d->n; i++) {

@@ -914,7 +914,16 @@ static void resume(Cont *k, EvalResult *r) {
 
 /* one elementary frame step, or one local rule of the evaluator's net
  * (counted in the net's rule classes, not as an evaluator step) */
+static void execute_task(Task t);
 static void execute(Task t) {
+    /* §94: an evaluator task is one elementary frame step; a kernel
+     * continuation does not suspend inside it (kcont.h: counted like a held
+     * lock), so a suspended continuation never owns an in-flight task */
+    kc_lock_depth++;
+    execute_task(t);
+    kc_lock_depth--;
+}
+static void execute_task(Task t) {
     if (t.is_pair) { net_step_pair(&E.net, t.pair); return; }
     add_count(&E.ev.eval_step);
     { EntryId owner = t.is_resume ? t.k->dest : t.entry;    /* §60 trace: the frame step belongs to the producer it advances */

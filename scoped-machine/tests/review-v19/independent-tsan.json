@@ -1,0 +1,79 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-v19/scoped-machine-v19",
+  "sanitizer": "tsan",
+  "changed_sources_compiled_fresh": [
+    "work.c",
+    "proof.c",
+    "arena.c"
+  ],
+  "unchanged_objects": "independent v14 objects, source bytes verified",
+  "detect_leaks": false,
+  "results": [
+    {
+      "name": "review_v19",
+      "args": [
+        "arena-directory"
+      ],
+      "exit_code": -6,
+      "stdout": "pages=513 (second directory present=1)\nreap units=515 words_out=264192 words_in=263680 missing=512\n",
+      "stderr": "review_v19: /workspace/scratch/1d0fbe01e383/review-v19/review_v19.c:22: main: Assertion `st.words_out==st.words_in' failed.\n",
+      "seconds": 0.024305316001118626
+    },
+    {
+      "name": "review_v19",
+      "args": [
+        "arena-empty"
+      ],
+      "exit_code": -6,
+      "stdout": "empty retire: elem=0 per=0\n",
+      "stderr": "review_v19: /workspace/scratch/1d0fbe01e383/review-v19/review_v19.c:15: main: Assertion `p.elem==sizeof(uint64_t)&&p.per==ARENA_PAGE' failed.\n",
+      "seconds": 0.011219021002034424
+    },
+    {
+      "name": "review_v19",
+      "args": [
+        "audit-admission"
+      ],
+      "exit_code": -6,
+      "stdout": "after bad body: prepare=40 core=1 reason=\noracle=INVALID\n",
+      "stderr": "review_v19: /workspace/scratch/1d0fbe01e383/review-v19/review_v19.c:43: main: Assertion `pr==0' failed.\n",
+      "seconds": 0.08071309600200038
+    },
+    {
+      "name": "review_v19",
+      "args": [
+        "audit-marks"
+      ],
+      "exit_code": -6,
+      "stdout": "two audits: assumptions=1 core=0\nseparate reuse: assumptions=1/0 core=0/1\n",
+      "stderr": "review_v19: /workspace/scratch/1d0fbe01e383/review-v19/review_v19.c:56: main: Assertion `na==1&&nb==1&&ha[0]==ax&&hb[0]==ax&&!problem_core(qa)&&!problem_core(qb)' failed.\n",
+      "seconds": 0.07981558400206268
+    },
+    {
+      "name": "review_assumption_copy",
+      "args": [
+        "both"
+      ],
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "review_assumption_copy: /workspace/scratch/1d0fbe01e383/review-v17/review_assumption_copy.c:57: main: Assertion `total==tu.nassumptions+ru.nassumptions' failed.\n",
+      "seconds": 0.3222513870023249
+    },
+    {
+      "name": "production_work",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "1. two consumers of one producer: one producer's work, two request/delivery occurrences\n2. a ready root cuts its cone; a ready intermediate cuts only the paths through it\n3. specialization identifies work keys before costs and cuts; stale annotations are not reused\n4. (a \u2228 b) \u2227 b = b and (a \u2228 b) \u2227 (b \u2228 c) = b \u2228 (a \u2227 c), with witnesses preserved\n5. incompatible composition rejects; omitted connector work or evidence rejects; formula equality merges nothing\n6. supplied lower-bound/attainment certificates check; every corruption rejects; nothing is filled in by search\n7. Must-factoring and disjoint decomposition agree with the semantic normal form; guards are re-established after specialization\n8. every bounded-frame operation suspends at internal phases and resumes to the same result; completed producers persist (\u00a775.2)\n9. every helper loop and memory operation is in the ledger; memoized reuse keeps its lookup/delivery cost\n10. associativity in both orientations through the net/evaluator: repeated and overlapping demands, actual work record, supplied derivation, commit\nwork: 217 checks, 0 failures\n",
+      "stderr": "",
+      "seconds": 0.36910048500067205
+    },
+    {
+      "name": "production_proof_use",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "proof-use: 21 checks, 0 failures\n",
+      "stderr": "",
+      "seconds": 0.2375921279999602
+    }
+  ]
+}

@@ -26,10 +26,13 @@
  * caller's lock; the chunk pointer is published with release semantics so a
  * reader that learned of index i through a synchronized channel can read it
  * without the lock. */
+typedef void *(*ChunkAlloc)(size_t bytes, void *ctx);   /* §94: an arena-backed, pre-cleared chunk supplier (work.c) */
 typedef struct {
     void *dir[MAX_CHUNKS];
     size_t elem;
+    ChunkAlloc alloc; void *alloc_ctx;   /* NULL: calloc (the kernel's own tables) */
 } Chunked;
+void chunked_set_alloc(Chunked *c, ChunkAlloc alloc, void *ctx);
 
 void chunked_init(Chunked *c, size_t elem);
 void chunked_free(Chunked *c);
@@ -44,6 +47,7 @@ typedef struct {
     size_t n;                 /* records so far (read under lock, or as a snapshot) */
     uint64_t *slots;          /* open addressing table of ids (0 = empty), under lock */
     size_t nslots;
+    uint64_t *old; size_t old_n, cursor;   /* §94: a growth in progress — the previous array, migrated CHUNK_WORDS slots per operation */
     pthread_mutex_t mu;
 } Interner;
 

@@ -18,6 +18,7 @@
  */
 #include "work.h"
 #include "arena.h"
+#include "kcont.h"
 #include "proof.h"
 #include "scope.h"
 #include "net.h"
@@ -58,6 +59,11 @@ static struct {
     Paged owned;            /* kind-specific structs to free (pointers; paged) */
     pthread_mutex_t mu;
     uint64_t mark_seq;
+    size_t grant, extra;        /* §94: the transitions the current unit may grant a kernel continuation; the transitions it took beyond one */
+    struct Spare { uint64_t *block; size_t words, cleared, need; } spare[3];   /* §94: the next chunk of the side / handle / offset tables, taken from the arena and cleared CHUNK_WORDS per unit ahead of need */
+    Paged pool[16]; size_t pool_sizes[16];   /* fixed-size records (Op, Demand, Real, …) from arena pages: one slot, cleared, per record */
+    uint64_t sync_clear_words;             /* words a chunk had to clear synchronously because its spare was not ready (counted) */
+    KCont *kc_active; uint64_t kc_owner;   /* the one kernel continuation in progress and its job id */
     bool live;
 } W;
 
@@ -105,7 +111,6 @@ static KernelMark kernel_mark(void) { KernelMark m = { reuse_count(REUSE_SHAPE_N
 static void kernel_charge(KernelMark m) {
     uint64_t a = reuse_count(REUSE_SHAPE_NODE) - m.shape, b = reuse_count(REUSE_DEPENDENCY_CHECK) - m.dep, c = reuse_count(REUSE_RECEIPT_INSTANCE) - m.rc;
     W.L.frames[FR_SHAPE_NODE] += a; W.L.frames[FR_DEPENDENCY_CHECK] += b; W.L.frames[FR_RECEIPT] += c; W.L.by_phase[W.phase] += a + b + c;
-    W.L.kernel_calls++;
 }
 /* growth: a new slot array is allocated and the old one relocated in chunks
  * of CHUNK_WORDS slots; a framed INTERN performs one chunk per frame, every
@@ -231,6 +236,37 @@ static uint64_t find_sync(const uint64_t *w, size_t n) {
     return id;
 }
 static void *own(void *p) { *(void **)paged_push(&W.owned) = p; return p; }
+/* §94: the engine's fixed-size records come from arena pages (a slot per
+ * record, cleared: a constant-size initialization); its chunked tables take
+ * their chunks from spares the engine clears CHUNK_WORDS per unit ahead of
+ * need (`arena_tend`, one step per unit); a chunk needed before its spare is
+ * ready clears the remainder synchronously, counted in `sync_clear_words`.
+ * No host allocation remains on a unit's path. */
+static void *pool_take(size_t bytes) {
+    size_t k = 0; while (k < 16 && W.pool_sizes[k] && W.pool_sizes[k] != bytes) k++;
+    require(k < 16, "record pools exhausted");
+    if (!W.pool_sizes[k]) { W.pool_sizes[k] = bytes; paged_init(&W.pool[k], bytes); }
+    void *p = paged_push(&W.pool[k]); memset(p, 0, bytes); return p;
+}
+static void spare_init(struct Spare *sp, size_t bytes) { sp->need = (bytes + 7) / 8; sp->block = NULL; sp->words = sp->cleared = 0; }
+static bool spare_tend(struct Spare *sp) {   /* one bounded step; true when the spare is ready */
+    if (!sp->block) { sp->block = arena_alloc(sp->need, &sp->words); sp->cleared = 0; W.L.alloc_words += sp->words; charge(FR_ALLOCATE_CHUNK); return false; }
+    if (sp->cleared >= sp->need) return true;
+    size_t end = sp->cleared + CHUNK_WORDS; if (end > sp->need) end = sp->need;
+    for (size_t x = sp->cleared; x < end; x++) sp->block[x] = 0;
+    sp->cleared = end; charge(FR_ALLOCATE_CHUNK);
+    return sp->cleared >= sp->need;
+}
+static void *chunk_from_spare(size_t bytes, void *ctx) {
+    struct Spare *sp = ctx; require((bytes + 7) / 8 == sp->need, "chunk size");
+    while (!spare_tend(sp)) if (sp->block && sp->cleared < sp->need) W.sync_clear_words += CHUNK_WORDS;   /* not ready: the remainder is cleared here, counted */
+    void *b = sp->block; sp->block = NULL; sp->words = sp->cleared = 0;
+    return b;
+}
+static void arena_tend(void) {   /* one maintenance step per unit: a retired page, and one clearing step of the first spare that needs it */
+    if (arena_reap()) charge(FR_RELEASE_CHUNK);
+    for (int i = 0; i < 3; i++) if (!W.spare[i].block || W.spare[i].cleared < W.spare[i].need) { spare_tend(&W.spare[i]); break; }
+}
 
 /* ---------------------------------------------------------------- 2. frames ---- */
 typedef struct DGraph DGraph; typedef struct Geo Geo;
@@ -242,8 +278,14 @@ enum {   /* operation families (frame kinds) */
     OF_FAMOP, OF_NORMALIZE, OF_SUBSET, OF_GEO, OF_MAPF, OF_MAPP, OF_MAPSET, OF_ATOMSPEC, OF_LIST, OF_SORT,
     OF_JOIN,  /* §94.2(4): the bounded request of a shared operation — key interning, then join/create/deliver */
     OF_BOUNDARY, /* shared expression-boundary computation, one node phase per unit */
-    OF_SYMS, OF_EDGES, OF_AUDIT   /* §94: the proof-use audit as units (private frames; memoized in records) */
+    OF_SYMS, OF_EDGES, OF_AUDIT,  /* §94: shared audit judgments with private traversal helpers */
+    OF_KERNEL                     /* §94: a kernel call as a continuation stepped one fine transition per unit (kcont.h); a = kind */
 };
+/* the kernel calls units make (kcont.h): pure ones are shared jobs keyed by
+ * their operands (and the checker session / environment version where the
+ * call reads them); the evaluator-state lookup is private */
+enum { KK_REINDEX = 1, KK_COMPOSE, KK_FC_REINDEX, KK_REF_VALIDATE, KK_FC_PROJECT, KK_ENTAILS, KK_ENTRY_LOOKUP, KK_SHAPE_OF,
+       KK_INFER, KK_ADMISSION, KK_CONTEXT, KK_IS_TYPE, KK_CHECK, KK_TRANSFORM_EVIDENCE };
 enum { SO_UNION = 1, SO_INTER, SO_DIFF };
 
 typedef struct {
@@ -284,7 +326,7 @@ static void frame_free(Frame *f);
 static Op *JOB(uint64_t id) { Op *o = (Op *)side(id)->ptr; require(o && side(id)->kind == K_JOB, "not a job"); return o; }
 static Handle *HND(OpId h) { require(h && h <= W.nops, "unknown operation handle"); return (Handle *)chunked_get(&W.ops, h - 1); }
 static bool shared_family(uint16_t fam) {
-    switch (fam) { case OF_INTERN: case OF_LOOKUP: case OF_LIST: case OF_NORMALIZE: case OF_REALVISIT: case OF_SORT: case OF_SYMS: case OF_EDGES: case OF_AUDIT: return false; default: return true; }   /* the audit's frames are private: reuse is through its memo records, revalidated per use (§94) */
+    switch (fam) { case OF_INTERN: case OF_LOOKUP: case OF_LIST: case OF_NORMALIZE: case OF_REALVISIT: case OF_SORT: case OF_SYMS: case OF_EDGES: return false; default: return true; }   /* AUDIT is a shared judgment producer; SYMS/EDGES are private helpers with completed-result memos. */
 }
 /* the persistent key of a shared frame: family, operands, and the external
  * versions the operation reads (§75.1) */
@@ -293,9 +335,10 @@ static size_t job_key(const Frame *f, uint64_t *w) {
     switch (f->fam) {
     case OF_PROOF: case OF_REDUCE: w[n++] = RULES_VERSION; break;
     case OF_SPEC_SET: case OF_SPEC_FORMULA: case OF_ATOMSPEC: w[n++] = global_env_version(); break;
-    case OF_PREPARE: case OF_CHECKCERT: w[n++] = check_session_id(); w[n++] = global_env_version(); break;
+    case OF_PREPARE: case OF_CHECKCERT: case OF_AUDIT: w[n++] = check_session_id(); w[n++] = global_env_version(); break;
     case OF_GEO: w[n++] = geo_rev((Geo *)side(f->a)->ptr); break;
     case OF_DEMAND: w[n++] = dgraph_rev((DGraph *)side(f->a)->ptr); break;
+    case OF_KERNEL: w[n++] = f->e; if (f->a >= KK_INFER) { w[n++] = check_session_id(); w[n++] = global_env_version(); } break;
     default: break;
     }
     return n;
@@ -303,13 +346,13 @@ static size_t job_key(const Frame *f, uint64_t *w) {
 static Phase phase_of_family(uint16_t fam) {
     switch (fam) {
     case OF_BOUNDARY: case OF_PREPARE: case OF_EXPRF: case OF_DEMAND: case OF_EXTRACT: case OF_SPEC_SET: case OF_SPEC_FORMULA: case OF_ATOMSPEC: case OF_MAPF: case OF_MAPP: case OF_MAPSET: return PH_PREPARE;
-    case OF_CHECKCERT: case OF_PROOF: case OF_GEO: return PH_CHECK;
+    case OF_CHECKCERT: case OF_PROOF: case OF_GEO: case OF_AUDIT: case OF_KERNEL: return PH_CHECK;
     case OF_REALIZE: return PH_COMMIT;
     default: return PH_REWRITE;
     }
 }
 static Op *op_new_record(uint64_t id, uint16_t fam) {   /* a fixed-size host allocation (constant) */
-    Op *o = own(calloc(1, sizeof *o)); require(o, "out of memory");
+    Op *o = pool_take(sizeof *o);
     o->id = id; o->st = OP_RUNNING; o->phase = phase_of_family(fam); o->family = fam;
     paged_init(&o->stack, sizeof(Frame)); paged_init(&o->waiters, sizeof(uint64_t)); paged_init(&o->path, sizeof(uint64_t));
     return o;
@@ -352,7 +395,7 @@ static void push_intern(Op *o, const uint64_t *w, size_t n);
  * frame's operands travel in the JOIN frame (shared frames carry no
  * buffers; a private root never passes through here). */
 static void push(Op *o, Frame f) {
-    if (!shared_family(f.fam)) { *(Frame *)paged_push(&o->stack) = f; return; }
+    if (!shared_family(f.fam) || (f.fam == OF_KERNEL && f.a == KK_ENTRY_LOOKUP)) { *(Frame *)paged_push(&o->stack) = f; return; }   /* the evaluator-state lookup is not a pure function of its operands: private */
     require(f.buf.n == 0 && f.buf2.n == 0 && f.buf3.n == 0, "a shared frame carries no buffer");
     Frame j = fr(OF_JOIN, f.a, f.b, f.c, f.d); j.acc = f.fam; j.e = f.e;
     uint64_t w[10]; size_t n = job_key(&f, w); pw_append(&j.buf, w, n);
@@ -440,6 +483,8 @@ static void step_boundary(Op *o, Frame *f);
 static void step_syms(Op *o, Frame *f);
 static void step_edges(Op *o, Frame *f);
 static void step_audit(Op *o, Frame *f);
+static void step_kernel(Op *o, Frame *f);
+static Frame kfr(uint64_t kind, uint64_t b, uint64_t c, uint64_t d, uint64_t e);
 static void step_prepare(Op *o, Frame *f);
 static void step_exprf(Op *o, Frame *f);
 static void step_realize(Op *o, Frame *f);
@@ -475,6 +520,7 @@ static FrameFamily family_of(const Frame *f) {
     case OF_SPEC_SET: case OF_ATOMSPEC: return FR_SPECIALIZE_VISIT;
     case OF_BOUNDARY: return FR_VALIDATE_PREPARED_BOUNDARY;
     case OF_SYMS: case OF_EDGES: case OF_AUDIT: return FR_PROOF_USE_AUDIT;
+    case OF_KERNEL: return FR_KERNEL_TRANSITION;
     case OF_PREPARE: return f->ph == 1 ? FR_VALIDATE_PREPARED_BOUNDARY : FR_PREPARE_VISIT;
     case OF_REALIZE: case OF_REALVISIT: return FR_REALIZATION_VISIT;
     case OF_CHECKCERT: case OF_PROOF: case OF_MAPP: return FR_CERTIFICATE_VISIT;
@@ -507,6 +553,7 @@ static void step(Op *o) {
     case OF_SYMS: step_syms(o, f); break;
     case OF_EDGES: step_edges(o, f); break;
     case OF_AUDIT: step_audit(o, f); break;
+    case OF_KERNEL: step_kernel(o, f); break;
     case OF_PREPARE: step_prepare(o, f); break;
     case OF_EXPRF: step_exprf(o, f); break;
     case OF_REALIZE: step_realize(o, f); break;
@@ -562,7 +609,13 @@ static OpId op_new(int family, Phase ph, Frame f) { (void)family; (void)ph; retu
 OpStatus op_step(OpId h, size_t budget) {
     pthread_mutex_lock(&W.mu);
     Handle *hd = HND(h); Op *root = JOB(hd->job);
-    while (root->st == OP_RUNNING && budget) { if (!service(root)) break; budget--; hd->frames++; if (arena_reap()) charge(FR_RELEASE_CHUNK); }   /* one retired page released per unit (§94) */
+    while (root->st == OP_RUNNING && budget) {
+        W.grant = budget; W.extra = 0;
+        if (!service(root)) break;
+        size_t took = 1 + W.extra; if (took > budget) took = budget;   /* a kernel continuation may take several transitions in one hand-off, each a unit */
+        budget -= took; hd->frames += took;
+        arena_tend();   /* one retired page released and one spare-chunk clearing step per unit (§94) */
+    }
     OpStatus s = root->st;
     pthread_mutex_unlock(&W.mu);
     return s;
@@ -576,7 +629,7 @@ uint64_t op_frames(OpId h) { pthread_mutex_lock(&W.mu); uint64_t n = HND(h)->fra
 void op_release(OpId h) { pthread_mutex_lock(&W.mu); Handle *hd = HND(h); hd->released = true; charge(FR_RELEASE_CHUNK); pthread_mutex_unlock(&W.mu); }
 /* drive a job's cone to a non-running state under the lock; returns the result, or 0 with *why */
 static uint64_t run_locked(Op *o, const char **why) {
-    while (o->st == OP_RUNNING) if (!service(o)) break;
+    while (o->st == OP_RUNNING) { W.grant = KC_UNBOUNDED; W.extra = 0; if (!service(o)) break; arena_tend(); }   /* the synchronous driver grants a kernel continuation its whole run in one hand-off */
     if (o->st != OP_COMPLETE) { if (why) *why = o->st == OP_RUNNING ? "operation suspended: no enabled job (cyclic wait)" : o->diag; return 0; }
     return o->result;
 }
@@ -722,7 +775,7 @@ static AtomId atom_producer_at(ShapeId s, FaceId eta, uint64_t env) {
 static AtomId atom_producer_ref(RefId t, FaceId chi) {
     size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
     FaceId eta = fc_project(chi, S, n); W.L.kernel_calls += 2;
-    LOCK; KernelMark km = kernel_mark(); UNLOCK;
+    LOCK; KernelMark km = kernel_mark(); W.L.kernel_calls += 2; UNLOCK;
     EntryId e = eval_entry_lookup(t, eta); ShapeId sh = shape_of(t);
     LOCK; kernel_charge(km); UNLOCK;
     AtomId a = atom_producer_at(sh, eta, e ? eval_entry_env(e) : global_env_version());
@@ -970,7 +1023,7 @@ typedef struct { SetId atoms; WorkCounts counts; } WorkSetInfo;
 static DGraph *DG(DGraphId g) { require(rec_kind(g) == K_DGRAPH, "not a demand graph"); return (DGraph *)side(g)->ptr; }
 DGraphId dgraph_new(void) {
     LOCK; static uint64_t seq; uint64_t w[2] = { K_DGRAPH, ++seq }; DGraphId g = intern_sync(w, 2, NULL);
-    DGraph *d = own(calloc(1, sizeof *d)); require(d, "out of memory"); d->id = g; side(g)->ptr = d; charge(FR_ALLOCATE_CHUNK); UNLOCK; return g;
+    DGraph *d = pool_take(sizeof *d); d->id = g; side(g)->ptr = d; charge(FR_ALLOCATE_CHUNK); UNLOCK; return g;
 }
 static DNode *dnode(DGraph *d, AtomId p) { uint64_t k[4] = { K_MEMO, 0xD6, d->id, p }; W.L.memo_lookup++; uint64_t id = find_sync(k, 4); if (!id || !side(id)->has_val) return NULL; return &d->nodes.data[side(id)->val - 1]; }   /* synchronous constructors only */
 static DNode *dnode_at(DGraph *d, uint64_t ret) { return ret && side(ret)->has_val ? &d->nodes.data[side(ret)->val - 1] : NULL; }   /* from a framed LOOKUP's delivery */
@@ -1025,7 +1078,7 @@ static void step_demand(Op *o, Frame *f) {
     size_t nr, nk; const AtomId *R = set_atoms(f->b, &nr), *K = set_atoms(f->c, &nk);
     switch (f->ph) {
     case 0: {
-        if (!dm) { dm = own(calloc(1, sizeof *dm)); require(dm, "out of memory"); paged_init(&dm->producers, sizeof(AtomId)); paged_init(&dm->occ, sizeof(Occurrence)); f->acc4 = (uint64_t)(uintptr_t)dm; }
+        if (!dm) { dm = pool_take(sizeof *dm); paged_init(&dm->producers, sizeof(AtomId)); paged_init(&dm->occ, sizeof(Occurrence)); f->acc4 = (uint64_t)(uintptr_t)dm; }
         if (f->i < nk) { uint64_t k[4] = { K_MARK, o->id, 1, K[f->i++] }; push_intern(o, k, 4); return; }
         f->i = 0; f->ph = 1; return;
     }
@@ -1099,7 +1152,7 @@ size_t demand_occurrences(DemandId d, const Occurrence **out) {
 static void step_extract(Op *o, Frame *f) {
     Demand *dm = DM(f->a); DGraph *d = DG(rec_w(f->a, 1));
     WorkSetInfo *wi = (WorkSetInfo *)(uintptr_t)f->acc4;
-    if (!wi) { wi = own(calloc(1, sizeof *wi)); require(wi, "out of memory"); f->acc4 = (uint64_t)(uintptr_t)wi; }
+    if (!wi) { wi = pool_take(sizeof *wi); f->acc4 = (uint64_t)(uintptr_t)wi; }
     switch (f->ph) {
     case 0:
         if (f->i < dm->occ.n) {
@@ -1157,18 +1210,9 @@ static void step_atomspec(Op *o, Frame *f) {
     switch (f->ph) {
     case 0:
         switch (k) {
-        case WK_PRODUCER: {
+        case WK_PRODUCER: {   /* §94: each kernel call is a continuation stepped per unit (KERNEL); acc4 = t, acc3 = χ, acc2 = η, acc = environment */
             RefId src_ref = (RefId)side(f->a)->val; if (!src_ref) { fail(o, "producer identity without a representative reference"); return; }
-            RefId t = reindex(src_ref, f->b); W.L.kernel_calls++;
-            const char *why = NULL;
-            if (!ref_validate(t, &why)) { fail(o, "specialized reference fails structural validation"); return; }
-            W.L.kernel_calls++;
-            FaceId chi = fc_reindex(w[3], f->b); size_t ns; const uint64_t *S = dimset_get(ref_support(t), &ns);
-            FaceId eta = fc_project(chi, S, ns); W.L.kernel_calls += 2;
-            if (!fc_entails(eta, ref_required(t))) { fail(o, "specialized occurrence outside its required face"); return; }
-            { KernelMark km = kernel_mark(); EntryId ex = eval_entry_lookup(t, eta); ShapeId sh = shape_of(t); kernel_charge(km);
-              uint64_t v[5] = { K_ATOM, WK_PRODUCER, sh, eta, ex ? eval_entry_env(ex) : global_env_version() };
-              f->acc4 = t; f->ph = 9; push_intern(o, v, 5); return; }
+            f->ph = 10; push(o, kfr(KK_REINDEX, src_ref, f->b, 0, 0)); return;
         }
         case WK_REQUEST: case WK_DELIVER:
             if (w[2]) { f->ph = 1; push(o, fr(OF_ATOMSPEC, w[2], f->b, 0, 0)); return; }
@@ -1177,10 +1221,19 @@ static void step_atomspec(Op *o, Frame *f) {
         case WK_APPLY: f->ph = 4; push(o, fr(OF_ATOMSPEC, w[6], f->b, 0, 0)); return;
         default: fin(o, f->a); return;
         }
+    case 10: f->acc4 = o->ret; f->ph = 11; push(o, kfr(KK_REF_VALIDATE, f->acc4, 0, 0, 0)); return;
+    case 11: f->ph = 12; push(o, kfr(KK_FC_REINDEX, w[3], f->b, 0, 0)); return;
+    case 12: f->acc3 = o->ret; f->ph = 13; push(o, kfr(KK_FC_PROJECT, f->acc3, f->acc4, 0, 0)); return;
+    case 13: f->acc2 = o->ret; f->ph = 14; push(o, kfr(KK_ENTAILS, f->acc2, f->acc4, 0, 0)); return;
+    case 14: f->ph = 15; push(o, kfr(KK_ENTRY_LOOKUP, f->acc4, f->acc2, 0, 0)); return;
+    case 15: f->acc = rec_w(o->ret, 2); f->ph = 16; push(o, kfr(KK_SHAPE_OF, f->acc4, 0, 0, 0)); return;
+    case 16: { uint64_t v[5] = { K_ATOM, WK_PRODUCER, o->ret, f->acc2, f->acc }; f->ph = 9; push_intern(o, v, 5); return; }
     case 1: f->acc = o->ret; f->ph = 2; push(o, fr(OF_ATOMSPEC, w[4], f->b, 0, 0)); return;
     case 2: { uint64_t v[5] = { K_ATOM, k, f->acc, w[3], o->ret }; f->ph = 9; push_intern(o, v, 5); return; }
     case 3: { uint64_t v[4] = { K_ATOM, k, o->ret, w[3] }; f->ph = 9; push_intern(o, v, k == WK_PUB ? 3 : 4); return; }
-    case 4: { W.L.kernel_calls += 2; uint64_t v[8] = { K_ATOM, WK_APPLY, w[2], w[3], compose(w[4], f->b), reindex(w[5], f->b), o->ret, w[7] }; f->ph = 9; push_intern(o, v, 8); return; }
+    case 4: f->acc = o->ret; f->ph = 17; push(o, kfr(KK_COMPOSE, w[4], f->b, 0, 0)); return;
+    case 17: f->acc2 = o->ret; f->ph = 18; push(o, kfr(KK_REINDEX, w[5], f->b, 0, 0)); return;
+    case 18: { uint64_t v[8] = { K_ATOM, WK_APPLY, w[2], w[3], f->acc2, o->ret, f->acc, w[7] }; f->ph = 9; push_intern(o, v, 8); return; }
     case 9: if (k == WK_PRODUCER && f->acc4 && !side(o->ret)->val) side(o->ret)->val = f->acc4; fin(o, o->ret); return;
     }
 }
@@ -1359,7 +1412,7 @@ CostDiffId costdiff_make(SetId a, SetId b, SetId k, SetId c, ModelId m) {
     W.L.limb_ops += 2; charge(FR_COST_ADD_CHUNK); charge(FR_COST_ADD_CHUNK);
     uint64_t w[8] = { K_COSTDIFF, a, b, k, c, m, check_session_id(), global_env_version() };
     CostDiffId id = intern_sync(w, 8, NULL);
-    if (!side(id)->ptr) { CostDiffInfo *in = own(calloc(1, sizeof *in)); require(in, "out of memory"); in->eps = (int64_t)ca - (int64_t)cb; in->masked = (int64_t)ma - (int64_t)mb; side(id)->ptr = in; }
+    if (!side(id)->ptr) { CostDiffInfo *in = pool_take(sizeof *in); in->eps = (int64_t)ca - (int64_t)cb; in->masked = (int64_t)ma - (int64_t)mb; side(id)->ptr = in; }
     UNLOCK; return id;
 }
 int64_t costdiff_epsilon(CostDiffId d) { return ((CostDiffInfo *)side(d)->ptr)->eps; }
@@ -1493,10 +1546,10 @@ static void step_syms(Op *o, Frame *f) {
         uint64_t k[5] = { K_MARK, o->id, AU_MARK_NODE, f->a, f->b }; f->ph = 2; push_lookup(o, k, 5); return;
     }
     case 2: {
-        if (o->ret) { fin(o, W.EMPTY); return; }   /* reached again before completion: contributes nothing here (counted where it completes) */
+        if (o->ret && side(o->ret)->has_val) { fin(o, W.EMPTY); return; }   /* active ancestor only */
         uint64_t k[5] = { K_MARK, o->id, AU_MARK_NODE, f->a, f->b }; f->ph = 3; push_intern(o, k, 5); return;
     }
-    case 3: f->acc2 = W.EMPTY; f->i = 0; f->j = 0; f->ph = 4; return;
+    case 3: f->d = o->ret; side(f->d)->has_val = true; f->acc2 = W.EMPTY; f->i = 0; f->j = 0; f->ph = 4; return;
     case 4: {   /* one stored-syntax item per unit */
         if (f->i >= PN_SOURCES) { f->acc = 0; f->ph = 6; return; }
         PNodeItem it;
@@ -1512,7 +1565,7 @@ static void step_syms(Op *o, Frame *f) {
     case 7: f->ph = 9; push_union(o, f->acc2, o->ret); return;
     case 9: f->acc2 = o->ret; f->ph = 6; return;
     case 8: f->ph = 10; push_union(o, f->acc2, o->ret); return;
-    case 10: { f->acc2 = o->ret; if (f->a == N_CTX) { fin(o, f->acc2); return; } uint64_t k[4] = { K_MEMO, AU_SYMS_MEMO, f->a, f->b }; f->ph = 11; push_intern(o, k, 4); return; }
+    case 10: { side(f->d)->has_val = false; f->acc2 = o->ret; if (f->a == N_CTX) { fin(o, f->acc2); return; } uint64_t k[4] = { K_MEMO, AU_SYMS_MEMO, f->a, f->b }; f->ph = 11; push_intern(o, k, 4); return; }
     case 11: { Side *s = side(o->ret); s->val = f->acc2; s->has_val = true; fin(o, f->acc2); return; }
     }
 }
@@ -1543,7 +1596,14 @@ static void step_edges(Op *o, Frame *f) {
 static Side *tarjan_side(uint64_t ret) { return ret ? side(ret) : NULL; }
 static void step_audit(Op *o, Frame *f) {
     switch (f->ph) {
-    case 0: {
+    /* The same prerequisites as proof_use, before even a false-face or
+     * cached verdict. Each is one separately charged opaque kernel call;
+     * these calls remain in the already-open kernel-lowering obligation. */
+    case 0: f->ph = 50; push(o, kfr(KK_ADMISSION, 0, 0, 0, 0)); return;                    /* each prerequisite a kernel continuation (§94); a rejection fails this job with the kernel's diagnostic */
+    case 50: f->ph = 51; push(o, kfr(KK_CONTEXT, f->a, 0, 0, 0)); return;
+    case 51: f->ph = 52; push(o, kfr(KK_IS_TYPE, f->a, f->b, f->d, 0)); return;
+    case 52: f->ph = 53; push(o, kfr(KK_CHECK, f->a, f->b, f->c, f->d)); return;
+    case 53: {
         if (fc_is_false(f->b)) { uint64_t v[5] = { K_LIST, PU_CORE, W.EMPTY, W.EMPTY, 0 }; f->ph = 30; push_intern(o, v, 5); return; }   /* vacuous: a judgment under the false face is local to that face */
         uint64_t k[6] = { K_MEMO, AU_VERDICT_MEMO, f->a, f->b, f->c, f->d }; f->ph = 1; push_lookup(o, k, 6); return;
     }
@@ -1651,26 +1711,92 @@ static void step_audit(Op *o, Frame *f) {
     }
 }
 
+
+/* ---------------------------------------------------------------- 7c. kernel calls as continuations (§94, kcont.h) ----
+ * KERNEL: a = kind, b/c/d/e = operands. The call runs on its own continuation
+ * (a thread whose stack is the retained continuation); a unit grants it
+ * W.grant transitions — one under op_step(h, 1), the whole run under the
+ * synchronous drivers — and the transitions taken are the units charged
+ * (FR_KERNEL_TRANSITION). Exactly one continuation is in progress at a time:
+ * a kernel frame whose continuation cannot start advances the active one by
+ * its grant instead (a frame that meets a relocation another job began
+ * advances it, §94.2(4)), so progress is never withheld. The job's result is
+ * published only when the call has completed. */
+static void kernel_call(KCont *k) {
+    const char *why = NULL; uint64_t level = 0;
+    switch (k->arg[0]) {
+    case KK_REINDEX: k->out[0] = reindex(k->arg[1], k->arg[2]); k->ok = true; break;
+    case KK_COMPOSE: k->out[0] = compose(k->arg[1], k->arg[2]); k->ok = true; break;
+    case KK_FC_REINDEX: k->out[0] = fc_reindex(k->arg[1], k->arg[2]); k->ok = true; break;
+    case KK_REF_VALIDATE: k->ok = ref_validate(k->arg[1], &why); k->why = k->ok ? "" : "specialized reference fails structural validation"; break;
+    case KK_FC_PROJECT: { size_t n; const uint64_t *S = dimset_get(ref_support(k->arg[2]), &n); k->out[0] = fc_project(k->arg[1], S, n); k->ok = true; break; }
+    case KK_ENTAILS: k->ok = fc_entails(k->arg[1], ref_required(k->arg[2])); k->why = k->ok ? "" : "specialized occurrence outside its required face"; break;
+    case KK_ENTRY_LOOKUP: { EntryId e = eval_entry_lookup(k->arg[1], k->arg[2]); k->out[0] = e; k->out[1] = e ? eval_entry_env(e) : global_env_version(); k->ok = true; break; }
+    case KK_SHAPE_OF: k->out[0] = shape_of(k->arg[1]); k->ok = true; break;
+    case KK_INFER: { Inference q = infer(k->arg[1], k->arg[2], k->arg[3]); k->out[0] = q.type; k->out[1] = q.st; k->ok = q.st == CK_VALID;
+        k->why = q.st == CK_VALID ? "" : q.st == CK_INVALID ? "proof use INVALID: connecting evidence does not type in its occurrence context" : "proof use UNRESOLVED: connecting evidence could not be checked in this session"; break; }
+    case KK_ADMISSION: case KK_CONTEXT: case KK_IS_TYPE: case KK_CHECK: {
+        CheckStatus st = k->arg[0] == KK_ADMISSION ? check_admission(&why) : k->arg[0] == KK_CONTEXT ? check_context(k->arg[1], &why)
+                       : k->arg[0] == KK_IS_TYPE ? check_is_type(k->arg[1], k->arg[2], k->arg[3], &level, &why) : check(k->arg[1], k->arg[2], k->arg[3], k->arg[4], &why);
+        k->out[0] = level; k->out[1] = st; k->ok = st == CK_VALID;
+        k->why = st == CK_VALID ? "" : st == CK_INVALID ? "proof use INVALID: judgment prerequisite rejected" : "proof use UNRESOLVED: judgment prerequisite unresolved"; break;
+    }
+    case KK_TRANSFORM_EVIDENCE: { ContextId G; FaceId face; RefId e, E; k->ok = transform_evidence(k->arg[1], &G, &face, &e, &E);
+        if (k->ok) { k->out[0] = G; k->out[1] = face; k->out[2] = e; k->out[3] = E; } else k->why = "proof use INVALID: connecting evidence does not type in its occurrence context"; break; }
+    default: k->ok = false; k->why = "unknown kernel call"; break;
+    }
+}
+static void kernel_grant(KCont *k) {
+    size_t used = kc_grant(k, W.grant ? W.grant : 1);
+    if (used > 1) { W.extra += used - 1; W.L.frames[FR_KERNEL_TRANSITION] += used - 1; W.L.by_phase[W.phase] += used - 1; }
+}
+static Frame kfr(uint64_t kind, uint64_t b, uint64_t c, uint64_t d, uint64_t e) { Frame f = fr(OF_KERNEL, kind, b, c, d); f.e = e; return f; }
+static void step_kernel(Op *o, Frame *f) {
+    switch (f->ph) {
+    case 0: {
+        if (W.kc_active && W.kc_owner != o->id) { kernel_grant(W.kc_active); return; }   /* another continuation is in progress: advance it */
+        uint64_t args[6] = { f->a, f->b, f->c, f->d, f->e, 0 };
+        KCont *k = kc_new(kernel_call, args, 5);
+        f->acc = (uint64_t)(uintptr_t)k; f->acc2 = (uint64_t)(uintptr_t)pool_take(sizeof(KernelMark)); *(KernelMark *)(uintptr_t)f->acc2 = kernel_mark();
+        W.kc_active = k; W.kc_owner = o->id; W.L.kernel_calls++;
+        f->ph = 1;
+    }
+    /* fall through */
+    case 1: {
+        KCont *k = (KCont *)(uintptr_t)f->acc;
+        if (!kc_done(k)) kernel_grant(k);
+        if (!kc_done(k)) return;                                   /* the same frame, retained: resumed by the next unit */
+        W.kc_active = NULL; W.kc_owner = 0;
+        kernel_charge(*(KernelMark *)(uintptr_t)f->acc2);
+        bool ok = k->ok; uint64_t out[4] = { k->out[0], k->out[1], k->out[2], k->out[3] }; const char *why = k->why;
+        kc_free(k); f->acc = 0;
+        if (!ok) { fail(o, why); return; }
+        switch (f->a) {
+        case KK_ENTRY_LOOKUP: f->acc3 = out[1]; f->ph = 2; { uint64_t lw[3] = { K_LIST, out[0], out[1] }; push_intern(o, lw, 3); } return;   /* (entry, environment) as a list record */
+        case KK_TRANSFORM_EVIDENCE: { uint64_t lw[5] = { K_LIST, out[0], out[1], out[2], out[3] }; f->ph = 2; push_intern(o, lw, 5); return; }
+        case KK_REF_VALIDATE: case KK_ENTAILS: case KK_ADMISSION: case KK_CONTEXT: case KK_CHECK: fin(o, 1); return;
+        default: fin(o, out[0]); return;   /* REINDEX, COMPOSE, FC_REINDEX, FC_PROJECT, SHAPE_OF, INFER (the type), IS_TYPE (the level) */
+        }
+    }
+    case 2: fin(o, o->ret); return;
+    }
+}
+
 /* PREPARE: a = expr, b = model. buf = node stack, buf2 = atom order, buf3 = hypotheses.
  * ph0 pop/validate/push children; ph7–9 atom order loop over the node's
  * ordered work list; ph2 formula; ph3 F_K; ph4 order list; ph5 problem record.
  * ph14 copies an ASSUMED audit's assumptions into buf3 one per unit (d = source,
  * e = remaining, c = the phase to resume); ph18 is a JOIN's second audit. */
-/* §88.4 in units: the evidence is typed by the kernel (`infer`: a kernel
- * call, charged), then its dependency audit runs as the framed AUDIT; the
+/* §88.4 in units: infer/extract supplies the evidence judgment, then
+ * shared AUDIT checks all proof_use prerequisites before the dependency walk; the
  * verdict list is read at ph 16 — CORE continues, ASSUMED copies the
  * assumptions set one symbol per unit (ph 14), PENDING fails. c = the phase
  * to resume, d = the assumptions set, e = its cursor. */
-static bool audit_request(Op *o, Frame *f, ContextId ctx, FaceId face, RefId evidence, uint16_t next) {
-    W.L.kernel_calls++; Inference q = infer(ctx, face, evidence);
-    if (q.st != CK_VALID) { fail(o, q.st == CK_INVALID ? "proof use INVALID: connecting evidence does not type in its occurrence context" : "proof use UNRESOLVED: connecting evidence could not be checked in this session"); return false; }
-    f->c = next; f->ph = 16; push(o, fr(OF_AUDIT, ctx, face, evidence, q.type)); return true;
-}
-static bool audit_transform_request(Op *o, Frame *f, TransformId id, uint16_t next) {
-    ContextId G; FaceId face; RefId e, E; W.L.kernel_calls++;
-    if (!transform_evidence(id, &G, &face, &e, &E)) { fail(o, "proof use INVALID: connecting evidence does not type in its occurrence context"); return false; }
-    f->c = next; f->ph = 16; push(o, fr(OF_AUDIT, G, face, e, E)); return true;
-}
+/* the evidence judgment: INFER (ph 19 plan / 21 connector reference) and
+ * TRANSFORM_EVIDENCE (ph 20) are kernel continuations; their delivery
+ * requests the shared AUDIT */
+static void plan_judgment(Frame *f, ContextId *ctx, FaceId *face, RefId *ev) { PlanId p = rec_w(f->acc3, 2); size_t n; const uint64_t *bw = rec_words(plan_boundary(p), &n); *ctx = bw[3]; *face = bw[4]; *ev = plan_evidence(p); }
+static void join_judgment(Frame *f, ContextId *ctx, FaceId *face, RefId *ev) { ConnectorId g = rec_w(f->acc3, 4); size_t n; const uint64_t *bw = rec_words(rec_w(g, 3), &n); *ctx = bw[3]; *face = bw[4]; *ev = rec_w(g, 5); }
 static void step_prepare(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: {
@@ -1692,7 +1818,7 @@ static void step_prepare(Op *o, Frame *f) {
         case EX_EMPTY: f->ph = 7; return;
         case EX_PLAN: {
             PlanId p = rec_w(e, 2); f->acc4 = rec_w(p, 5);
-            if (plan_evidence(p)) { size_t n; const uint64_t *bw = rec_words(plan_boundary(p), &n); audit_request(o, f, bw[3], bw[4], plan_evidence(p), 7); return; }
+            if (plan_evidence(p)) { ContextId ctx; FaceId face; RefId ev; plan_judgment(f, &ctx, &face, &ev); f->ph = 19; push(o, kfr(KK_INFER, ctx, face, ev, 0)); return; }
             f->ph = 7; return;
         }
         case EX_ALT: pw_push(&f->buf, rec_w(e, 3)); pw_push(&f->buf, rec_w(e, 2)); f->ph = 7; return;
@@ -1705,7 +1831,7 @@ static void step_prepare(Op *o, Frame *f) {
             if (!rec_w(g, 7)) { fail(o, "connector without its work set"); return; }
             pw_push(&f->buf, rec_w(e, 3)); pw_push(&f->buf, rec_w(e, 2));
             f->acc4 = rec_w(g, 7);
-            if (rec_w(g, 4)) { audit_transform_request(o, f, rec_w(g, 4), 18); return; }
+            if (rec_w(g, 4)) { f->ph = 20; push(o, kfr(KK_TRANSFORM_EVIDENCE, rec_w(g, 4), 0, 0, 0)); return; }
             f->ph = 18; return;
         }
         }
@@ -1713,9 +1839,12 @@ static void step_prepare(Op *o, Frame *f) {
     }
     case 18: {   /* a JOIN's reference evidence, after its transform evidence */
         ExprId e = f->acc3; ConnectorId g = rec_w(e, 4);
-        if (rec_w(g, 5)) { size_t n; const uint64_t *bw = rec_words(rec_w(g, 3), &n); audit_request(o, f, bw[3], bw[4], rec_w(g, 5), 7); return; }
+        if (rec_w(g, 5)) { ContextId ctx; FaceId face; RefId ev; join_judgment(f, &ctx, &face, &ev); f->ph = 21; push(o, kfr(KK_INFER, ctx, face, ev, 0)); return; }
         f->ph = 7; return;
     }
+    case 19: { ContextId ctx; FaceId face; RefId ev; plan_judgment(f, &ctx, &face, &ev); f->c = 7; f->ph = 16; push(o, fr(OF_AUDIT, ctx, face, ev, o->ret)); return; }
+    case 21: { ContextId ctx; FaceId face; RefId ev; join_judgment(f, &ctx, &face, &ev); f->c = 7; f->ph = 16; push(o, fr(OF_AUDIT, ctx, face, ev, o->ret)); return; }
+    case 20: { const uint64_t *l; list_get(o->ret, &l); f->c = 18; f->ph = 16; push(o, fr(OF_AUDIT, l[0], l[1], l[2], l[3])); return; }
     case 16: {   /* the verdict */
         uint64_t v = o->ret; charge(FR_PROOF_USE_AUDIT);
         switch ((ProofUseStatus)rec_w(v, 1)) {
@@ -1793,7 +1922,7 @@ static void step_realize(Op *o, Frame *f) {
     Real *R = (Real *)(uintptr_t)f->acc4;
     switch (f->ph) {
     case 0: {
-        if (!R) { R = own(calloc(1, sizeof *R)); require(R, "out of memory"); paged_init(&R->plans, sizeof(PlanId)); paged_init(&R->conns, sizeof(ConnectorId)); f->acc4 = (uint64_t)(uintptr_t)R; R->support = f->b; }
+        if (!R) { R = pool_take(sizeof *R); paged_init(&R->plans, sizeof(PlanId)); paged_init(&R->conns, sizeof(ConnectorId)); f->acc4 = (uint64_t)(uintptr_t)R; R->support = f->b; }
         f->ph = 1; push(o, fr(OF_SETOP, SO_UNION, f->b, model_completed(problem_model(f->a)), 0)); return;   /* S ∪ K */
     }
     case 1: {   /* mark every available atom */
@@ -2027,7 +2156,7 @@ static void step_reduce(Op *o, Frame *f) {
     case 94: { uint64_t w[4] = { K_REDUCTION, F, model, RULES_VERSION }; f->ph = 95; push_intern(o, w, 4); return; }
     case 95: {
         uint64_t id = o->ret;
-        if (!side(id)->ptr) { RedRec *rr = own(calloc(1, sizeof *rr)); require(rr, "out of memory"); rr->r.formula = F; rr->r.reduced = (f->e & 1) != 0; rr->r.value = f->acc; rr->r.lower = f->acc3; rr->r.attaining = f->acc2; side(id)->ptr = rr; }
+        if (!side(id)->ptr) { RedRec *rr = pool_take(sizeof *rr); rr->r.formula = F; rr->r.reduced = (f->e & 1) != 0; rr->r.value = f->acc; rr->r.lower = f->acc3; rr->r.attaining = f->acc2; side(id)->ptr = rr; }
         fin(o, id); return;
     }
     case 0: reuse_bump(REUSE_REDUCE_BODY); f->ph = 1; return;   /* the body starts: the persistent job is the memo (§75.3) */
@@ -2224,7 +2353,7 @@ static uint64_t geo_rev(const Geo *g) { return g->rev; }
 static Geo *GEO(GeoId g) { require(rec_kind(g) == K_GEO, "not a geodesic certificate"); return (Geo *)side(g)->ptr; }
 GeoId geo_new(size_t nstates) {
     LOCK; static uint64_t seq; uint64_t w[3] = { K_GEO, nstates, ++seq }; GeoId g = intern_sync(w, 3, NULL);
-    Geo *x = own(calloc(1, sizeof *x)); require(x, "out of memory"); x->n = nstates;
+    Geo *x = pool_take(sizeof *x); x->n = nstates;
     x->V = own(calloc(nstates, sizeof(Cost))); x->terminal = own(calloc(nstates, 1)); x->policy = own(calloc(nstates, sizeof(uint64_t))); x->rank = own(calloc(nstates, sizeof(uint64_t))); x->has_rank = own(calloc(nstates, 1));
     for (size_t i = 0; i < nstates; i++) x->V[i] = COST_INF;
     side(g)->ptr = x; charge(FR_ALLOCATE_CHUNK); UNLOCK; return g;
@@ -2272,7 +2401,7 @@ CertStatus geo_check(GeoId g, uint64_t root, Cost *value, const char **why) {
 OpId op_geo_check(GeoId g, uint64_t root) { LOCK; OpId h = op_new(OF_GEO, PH_CHECK, fr(OF_GEO, g, root, 0, 0)); UNLOCK; return h; }
 
 /* ---------------------------------------------------------------- 9. ledger, lifecycle ---- */
-static const char *fam_names[FR_COUNT] = { "PREPARE_VISIT", "VALIDATE_PREPARED_BOUNDARY", "FORMULA_VISIT", "FORMULA_INTERN_STEP", "COFACTOR_VISIT", "COFACTOR_REBUILD", "SUPPORT_CHUNK", "MUST_CHUNK", "COST_ADD_CHUNK", "COST_COMPARE_CHUNK", "CERTIFICATE_VISIT", "REALIZATION_VISIT", "ALLOCATE_CHUNK", "RELEASE_CHUNK", "TABLE_PROBE", "DEMAND_VISIT", "SPECIALIZE_VISIT", "FAMILY_CHUNK", "GEODESIC_VISIT", "PRODUCER_LOOKUP", "ALIAS_DELIVERY", "SHAPE_NODE", "DEPENDENCY_CHECK", "RECEIPT", "PROOF_USE_AUDIT", "SCHEDULE_STEP", "CYCLE_CHECK" };
+static const char *fam_names[FR_COUNT] = { "PREPARE_VISIT", "VALIDATE_PREPARED_BOUNDARY", "FORMULA_VISIT", "FORMULA_INTERN_STEP", "COFACTOR_VISIT", "COFACTOR_REBUILD", "SUPPORT_CHUNK", "MUST_CHUNK", "COST_ADD_CHUNK", "COST_COMPARE_CHUNK", "CERTIFICATE_VISIT", "REALIZATION_VISIT", "ALLOCATE_CHUNK", "RELEASE_CHUNK", "TABLE_PROBE", "DEMAND_VISIT", "SPECIALIZE_VISIT", "FAMILY_CHUNK", "GEODESIC_VISIT", "PRODUCER_LOOKUP", "ALIAS_DELIVERY", "SHAPE_NODE", "DEPENDENCY_CHECK", "RECEIPT", "PROOF_USE_AUDIT", "SCHEDULE_STEP", "CYCLE_CHECK", "KERNEL_TRANSITION" };
 const char *frame_family_name(FrameFamily f) { return fam_names[f]; }
 WorkLedger work_ledger(void) { LOCK; WorkLedger l = W.L; UNLOCK; return l; }
 void work_ledger_reset(void) { LOCK; memset(&W.L, 0, sizeof W.L); UNLOCK; }
@@ -2292,7 +2421,9 @@ void work_init(void) {
     memset(&W, 0, sizeof W);
     pthread_mutex_init(&W.mu, NULL);
     arena_init(); paged_init(&W.owned, sizeof(void *));
+    spare_init(&W.spare[0], CHUNK_SIZE * sizeof(Side)); spare_init(&W.spare[1], CHUNK_SIZE * sizeof(Handle)); spare_init(&W.spare[2], CHUNK_SIZE * sizeof(size_t));
     ktab_init(&W.tab); chunked_init(&W.side, sizeof(Side)); chunked_init(&W.ops, sizeof(Handle));
+    chunked_set_alloc(&W.side, chunk_from_spare, &W.spare[0]); chunked_set_alloc(&W.ops, chunk_from_spare, &W.spare[1]); chunked_set_alloc(&W.tab.off, chunk_from_spare, &W.spare[2]);
     uint64_t z[4] = { K_FORMULA, FM_ZERO, 0, 0 }, one[4] = { K_FORMULA, FM_ONE, 0, 0 }, e[1] = { K_SET };
     W.ZERO = intern_sync(z, 4, NULL); W.ONE = intern_sync(one, 4, NULL); W.EMPTY = intern_sync(e, 1, NULL);
     uint64_t f0[1] = { K_FAMILY }, f1[2] = { K_FAMILY, W.EMPTY };
@@ -2316,6 +2447,10 @@ void work_free(void) {
     for (size_t i = 0; i < W.owned.n; i++) free(*(void **)paged_at(&W.owned, i));
     paged_retire(&W.owned);
     ktab_free(&W.tab); chunked_free(&W.side); chunked_free(&W.ops);
+    if (W.kc_active) { kc_free(W.kc_active); W.kc_active = NULL; W.kc_owner = 0; }   /* an abandoned handle's continuation completes before teardown */
+    kc_shutdown();
+    for (int i = 0; i < 16; i++) if (W.pool_sizes[i]) paged_retire(&W.pool[i]);
+    for (int i = 0; i < 3; i++) if (W.spare[i].block) arena_release(W.spare[i].block, W.spare[i].words);
     arena_reap_all(); arena_free();
     pthread_mutex_destroy(&W.mu);
     W.live = false;

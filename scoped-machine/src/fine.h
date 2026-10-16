@@ -39,12 +39,19 @@ typedef enum {
     FC_NET_RETRIES,
     FC_CHECK_FRAMES,          /* checker budget steps */
     FC_AUDIT_STEPS,           /* proof-use audit traversal steps */
+    FC_SHAPE_NODES,           /* shape nodes constructed (shape_of) */
+    FC_VALIDATE_STEPS,        /* structural validation: nodes, fields and locals visited */
+    FC_ALLOC_OPS,             /* kalloc: slots taken or returned */
+    FC_ALLOC_WORDS,           /* kalloc: words cleared (calloc) or copied (realloc), one transition each */
+    FC_SORT_STEPS,            /* sort_unique_u64: one sift (≤ 64 iterations) or one dedupe step */
     FC_COUNT
 } FineCounter;
 
 extern uint64_t fine_counters[FC_COUNT];
-static inline void fine_bump(FineCounter c) { __atomic_add_fetch(&fine_counters[c], 1, __ATOMIC_RELAXED); }
-static inline void fine_add(FineCounter c, uint64_t n) { __atomic_add_fetch(&fine_counters[c], n, __ATOMIC_RELAXED); }
+/* §94: a fine step is the transition point of a kernel continuation (kcont.h) */
+struct KCont; extern __thread struct KCont *kc_tl; extern __thread int kc_last_counter; void kc_tick(void);
+static inline void fine_bump(FineCounter c) { __atomic_add_fetch(&fine_counters[c], 1, __ATOMIC_RELAXED); if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
+static inline void fine_add(FineCounter c, uint64_t n) { __atomic_add_fetch(&fine_counters[c], n, __ATOMIC_RELAXED); if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
 uint64_t fine_count(FineCounter c);
 const char *fine_name(FineCounter c);
 void fine_reset(void);          /* machine teardown only */

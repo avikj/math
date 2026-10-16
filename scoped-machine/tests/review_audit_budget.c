@@ -65,9 +65,10 @@ int main(int argc, char **argv) {
     WorkLedger b3 = work_ledger(); while (op_status(h3) == OP_RUNNING) op_step(h3, 1); WorkLedger c3 = work_ledger();
     uint64_t revalidation = c3.frames[FR_PROOF_USE_AUDIT] - b3.frames[FR_PROOF_USE_AUDIT];
     assert(op_status(h3) == OP_COMPLETE);
-    printf("cached verdict: audit units on reuse=%llu (lookup, hit, N+1 revision checks, delivery, verdict read = %zu; no traversal)\n", (unsigned long long)revalidation, N + 5);
-    assert(revalidation <= N + 5);
+    printf("cached verdict: audit units on reuse=%llu (four prerequisites, lookup, hit, N+1 revision checks, delivery, verdict read = %zu; no traversal)\n", (unsigned long long)revalidation, N + 9);
+    assert(revalidation <= N + 9);
     /* make the chain's root recursive: the framed audit revalidates by revision and now rejects PENDING, like proof_use */
+    check_open_environment(); /* the preceding preparation correctly froze admission */
     require(set_global_body(g[0], global_ref(g[0])), "body");
     ProofUse u2 = proof_use(G, fc_true(), global_ref(g[N]), PT); assert(u2.status == PU_PENDING);
     AtomId w3 = atom_named(9103); PlanId P3 = plan_make(B, a, global_ref(g[N]), 1, &w3, &why); require(P3, "plan: %s", why);

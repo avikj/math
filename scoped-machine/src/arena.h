@@ -25,12 +25,15 @@
 
 #define ARENA_PAGE   512u                       /* words per page (4 KiB) */
 #define ARENA_ORDERS 23u                        /* orders 0..22: page × 2^k, the largest the whole range */
-#define ARENA_WORDS  ((size_t)ARENA_PAGE << (ARENA_ORDERS - 1))   /* 2^31 words = 16 GiB of address space */
+#define ARENA_WORDS  ((size_t)ARENA_PAGE << (ARENA_ORDERS - 1))   /* 2^31 words = 16 GiB of address space: the lower half on the free lists, the upper half the fresh (zero) region */
+#define ARENA_FRESH_WORDS (ARENA_WORDS / 2)
 
 void arena_init(void);                           /* the one reservation */
 void arena_free(void);                           /* the one release */
 bool arena_live(void);
+const void *arena_base(void);                    /* the reservation's start (kalloc: ownership test) */
 uint64_t *arena_alloc(size_t words, size_t *got);   /* a block of at least `words` words (rounded to the order); not cleared */
+uint64_t *arena_alloc_zero(size_t words, size_t *got);   /* a never-used block from the fresh region: zero by the reservation (no clearing), never reused after release */
 void arena_release(uint64_t *p, size_t words);      /* `words` as returned in *got */
 size_t arena_order_words(size_t words);             /* the block size a request of `words` receives */
 

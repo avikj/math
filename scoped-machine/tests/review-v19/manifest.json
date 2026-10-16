@@ -1,0 +1,34 @@
+{
+  "reviewed_tree_label": "v19 / 5a8e0db (worker-provided attachment)",
+  "input_zip_sha256": "159ad1292527dc1e1ed49ae89f52a3f7970302b6617a315549fdb70a4ca35ebe",
+  "patch_production_files": [
+    "src/arena.c",
+    "src/work.c"
+  ],
+  "patch_test_files": [
+    "tests/review_audit_budget.c"
+  ],
+  "files": {
+    "MESSAGE.md": "e8c77f4e2c36b0d2a6b20787c2b7323817545f1e754fac19da0768c1444c36c3",
+    "v19-corrections.patch": "23a4622ed8fc3770c513bc61bc27826477db01e779b22967d959d1526f236579",
+    "review_v19.c": "cc1d9f2bc4740d22cd822edaea3480361287f015132ab9de3ccf546fa3df4256",
+    "review_v19_work.c": "cf6f6287d9d7671fcdca8a3b15bb0a028f1e4efe2b9c01a5097635a31b2268d0",
+    "review_assumption_copy.c": "e399fad54af87e7854e5c11b9955c58f119812444d30b295ec5bca3444d474ca",
+    "run_v19_review.py": "61e91d0b239cf0caa8331b2cc690bfe815ce8f415eeeaf4b1065daf64d652a48",
+    "independent-asan.json": "47fdf845f0a2919b76a613aac94699e9da70a66812f5cbcf6264080aaa49b519",
+    "independent-tsan.json": "b7220bb1fc0c3ce1d94ef9dbfb836d9d70cd7c0f8739415dcdbc83dac06dd04f",
+    "candidate-independent-asan.json": "16361d3390b171cab0e99cb4745a41e71ea768ceb96fe07c418663392b1dde44",
+    "candidate-independent-tsan.json": "5f16a56bda7265b27a98ee08ec7af3188adecac8307da761eab96a6aeffb5e66"
+  },
+  "candidate_source_sha256": {
+    "src/arena.c": "3bb60165b617112335203ef80e53179be5a82c78f2d59b9160cd14832f283ff5",
+    "src/work.c": "55af651c0e601f9845eea3ba49c65b12d323ab44c6603f5bd129270d9a0bef0b",
+    "src/proof.c": "0bbd4e351b1b58802c3223920b10250142fbff37a7ca62ced3285fca88a65067",
+    "tests/review_audit_budget.c": "95376b18034795299d5a94ab30e167141ff298e9d461fc25b1745736ab81bf87"
+  },
+  "independent_detection": {
+    "asan": "ASan/UBSan; detect_leaks=0",
+    "tsan": "halt_on_error=1"
+  },
+  "full_gates": "worker-reported, not independently repeated"
+}

@@ -443,8 +443,20 @@ allocator (`src/arena.c`: one reservation, free lists, paged buffers,
 chunked clearing; README "The allocator") and lower the proof-use audit to
 engine units (`SYMS`/`EDGES`/`AUDIT`; README "The proof-use audit in
 units"); `review_arena_budget` and `review_audit_budget` are gated.
-Remaining: the kernel's own calls from `ATOMSPEC`/`PREPARE` (README, same
-section).
+The v19 review's corrections (R1 prerequisites before every verdict, R2 the
+audit as a shared judgment with per-judgment marks, R3 paged retirement) are
+applied as supplied and its probes gated; the kernel calls units make are now
+kernel continuations (`src/kcont.c`: a thread whose stack is the retained
+continuation, one fine transition per unit, yielding only lock-free, shared
+jobs for pure calls), the engine's remaining fixed-size records and chunked
+tables come from the arena with chunk clearing in units, and the kernel's
+interner hashes/compares/copies outside its lock. The kernel's allocator
+(`src/kalloc.c` over the arena, clearing/copying one word per step), its
+interner (unlocked hashing/comparison/copy, incremental growth from fresh
+zero arrays) and its sorts (one sift per step) are in transitions as well;
+what remains is stated in README ("The v19 review and the kernel
+continuations": the transition-free evaluator task and the constant added by
+a yield deferred past a locked section).
 
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the

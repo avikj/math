@@ -2,6 +2,7 @@
 #include "shape.h"
 #include "state.h"
 #include "reuse.h"
+#include "fine.h"
 
 static ShapeId shape_intern(const Words *w) { pthread_mutex_lock(&M.shape_mu); ShapeId id = interner_intern(&M.shapes, w->w, w->n, NULL); pthread_mutex_unlock(&M.shape_mu); return id; }
 static bool memo_get(RefId t, MapId rho, uint32_t depth, ShapeId *out) { uint64_t k[3] = { t, rho, depth }; pthread_mutex_lock(&M.shape_mu); bool h = wordmap_get(&M.shape_memo, k, 3, out); pthread_mutex_unlock(&M.shape_mu); return h; }
@@ -71,7 +72,7 @@ ShapeId shape_under(RefId t, MapId rho, uint32_t depth) {
         }
         head_free(&h);
     }
-    reuse_bump(REUSE_SHAPE_NODE);
+    reuse_bump(REUSE_SHAPE_NODE); fine_bump(FC_SHAPE_NODES);
     ShapeId id = shape_intern(&w);
     words_free(&w);
     memo_put(t, rho, depth, id);
