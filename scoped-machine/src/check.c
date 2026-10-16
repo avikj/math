@@ -4,6 +4,7 @@
 #include "fine.h"
 #include "lib.h"
 #include "compiler.h"
+#include <sys/mman.h>
 
 /* ------------------------------------------------------------------ */
 /* state: request claims, memo, budget                                  */
@@ -50,6 +51,7 @@ static struct {
     uint64_t attempt;       /* §59.4: a changed budget or a retry begins a new attempt */
     size_t clients;         /* top-level requests in progress (atomic): the session boundary requires zero */
 } K;
+#define CLAIM_CAP ((size_t)1 << 24)
 
 /* §59.4: thread identities are session-qualified; the generation allocator
  * survives check_free so a reused client thread re-registers in a new session */
@@ -83,12 +85,20 @@ void check_init(void) {
     session_gen++;
     K.attempt = 1;
     wordmap_init(&K.idx);
+    /* the claim records live in one fixed reservation (never-touched pages,
+     * zero on first use): a claim is created under K.mu without growing or
+     * copying the array, and its address is stable (lock-section audit:
+     * claim_index_locked was the vector's doubling copy under K.mu) */
+    K.recs.cap = CLAIM_CAP;
+    K.recs.data = mmap(NULL, CLAIM_CAP * sizeof(Claim), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    require(K.recs.data != MAP_FAILED, "check: claim reservation");
     pthread_mutex_init(&K.mu, NULL); pthread_cond_init(&K.cv, NULL);
     vec_push(&K.wait_on, 0); vec_push(&K.assume, 0); vec_push(&K.kcont, NULL);
 }
 void check_free(void) {
     for (size_t k = 0; k < K.recs.len; k++) { words_free(&K.recs.data[k].deps); words_free(&K.recs.data[k].gdeps); }
-    vec_free(&K.recs); vec_free(&K.wait_on); vec_free(&K.assume); vec_free(&K.kcont);
+    if (K.recs.data) munmap(K.recs.data, CLAIM_CAP * sizeof(Claim));
+    vec_free(&K.wait_on); vec_free(&K.assume); vec_free(&K.kcont);
     wordmap_free(&K.idx);
     pthread_mutex_destroy(&K.mu); pthread_cond_destroy(&K.cv);
     memset(&K, 0, sizeof K);
@@ -129,7 +139,8 @@ static size_t claim_index_locked(uint64_t kind, const uint64_t *w, size_t n) {
     uint64_t v;
     if (wordmap_get(&K.idx, key, n + 2, &v)) return (size_t)v - 1;
     Claim c; memset(&c, 0, sizeof c); words_init(&c.deps); words_init(&c.gdeps); c.is_symbol = kind == CL_SYMBOL;
-    vec_push(&K.recs, c);
+    require(K.recs.len < K.recs.cap, "check: claim reservation exhausted");
+    K.recs.data[K.recs.len++] = c;   /* within the reservation: no growth */
     wordmap_put(&K.idx, key, n + 2, K.recs.len);
     return K.recs.len - 1;
 }
