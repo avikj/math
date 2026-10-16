@@ -423,7 +423,14 @@ review — six corrections"); its nine regressions (`review_work_edges`,
 (`tests/acceptance-results/v14/`). The b8ba937 review retains `rt_node_fun`
 and adds `review_node_level` (`node_(2,0,0)` VALID at level 3) as R2 coverage;
 it is gated, and `run_b8ba937_review.py` (14 jobs) passes under both
-sanitizers (`tests/acceptance-results/v15/`).
+sanitizers (`tests/acceptance-results/v15/`). The v14 review accepts R1–R5 and
+the R6 drain case; its `reservation.patch` (no payload zero-fill in the
+reservation unit) is applied and its probe gated, and the §94 lowering is
+continued — chunked record-store relocation with a non-moving offset table,
+framed lookups for the fixed-key indices consulted from units, ownership
+transfer for `PREPARE`'s list/hypotheses and `FAMOP` plus; `run_v14_review.py`
+(15 jobs) passes under both sanitizers (`tests/acceptance-results/v16/`). The
+remaining unrefined bodies are listed in README ("The v14 review").
 
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the

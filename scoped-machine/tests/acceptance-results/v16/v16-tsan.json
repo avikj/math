@@ -1,0 +1,155 @@
+{
+  "tree": "/home/claude/cubical",
+  "sanitizer": "tsan",
+  "detect_leaks": "1",
+  "reused_objects": false,
+  "results": [
+    {
+      "name": "review_work_edges",
+      "args": [
+        "interleave"
+      ],
+      "exit_code": 0,
+      "stdout": "alternating public op_support: a=6 b=7; records=(2,6),(2,7); correct=1\n",
+      "stderr": "",
+      "seconds": 0.11829798099984146
+    },
+    {
+      "name": "review_work_edges",
+      "args": [
+        "same-key"
+      ],
+      "exit_code": 0,
+      "stdout": "alternating public op_support: a=6 b=6; records=(2,6),(2,6); correct=1\n",
+      "stderr": "",
+      "seconds": 0.11754735700014862
+    },
+    {
+      "name": "review_work_edges",
+      "args": [
+        "growth"
+      ],
+      "exit_code": 0,
+      "stdout": "growth before publication: slots 1024 -> 8192; framed_set=3010 canonical_set=3010 equal=1\n",
+      "stderr": "",
+      "seconds": 0.12049625300005573
+    },
+    {
+      "name": "review_work_edges",
+      "args": [
+        "drain"
+      ],
+      "exit_code": 0,
+      "stdout": "one reduction unit: charged_units=1 old_slots=4096 cursor=0 relocation_pending=1 (expected cursor<=32)\n",
+      "stderr": "",
+      "seconds": 0.12668558399991525
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "levels"
+      ],
+      "exit_code": 0,
+      "stdout": "singleton a=2 r=0 expected=VALID observed=VALID reason=\n",
+      "stderr": "",
+      "seconds": 0.3346077469998363
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "residual"
+      ],
+      "exit_code": 0,
+      "stdout": "two-node dependent residual export expected=VALID observed=VALID reason=\n",
+      "stderr": "",
+      "seconds": 13.246331353000187
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "commute"
+      ],
+      "exit_code": 0,
+      "stdout": "all six helper terms typecheck; all three substitution pairs convert equal\nfixed-template substitution equality: ap=1 reuse=1 J=1 (expected all 1)\n",
+      "stderr": "",
+      "seconds": 0.17815750099998695
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "runtime-cold"
+      ],
+      "exit_code": 0,
+      "stdout": "cold concurrent calls completed\n",
+      "stderr": "",
+      "seconds": 0.13085122400002547
+    },
+    {
+      "name": "review_runtime_edges",
+      "args": [
+        "proof-cold"
+      ],
+      "exit_code": 0,
+      "stdout": "cold concurrent calls completed\n",
+      "stderr": "",
+      "seconds": 0.13648614099997758
+    },
+    {
+      "name": "review_runtime_nodes",
+      "args": [
+        "0",
+        "runtime"
+      ],
+      "exit_code": 0,
+      "stdout": "actual_workers=0\nPASS closed nonempty node, arbitrary dependent runtime tail, all four fields\nPASS runtime nonempty node with tail centre depending on bound x\nPASS computed node centre\nPASS computed node collapse, expansion and both inverse proofs\nPASS expansion of an arbitrary output path\nPASS collapse of the expanded realization\nPASS runtime collapse-after-expansion proof\nPASS runtime expansion-after-collapse proof\nPASS first proof source endpoint\nPASS first proof target endpoint\nPASS second proof source endpoint\nPASS second proof target endpoint\nregistered_transforms=0\n",
+      "stderr": "",
+      "seconds": 4.069827665000048
+    },
+    {
+      "name": "review_runtime_nodes",
+      "args": [
+        "4",
+        "runtime"
+      ],
+      "exit_code": 0,
+      "stdout": "actual_workers=4\nPASS closed nonempty node, arbitrary dependent runtime tail, all four fields\nPASS runtime nonempty node with tail centre depending on bound x\nPASS computed node centre\nPASS computed node collapse, expansion and both inverse proofs\nPASS expansion of an arbitrary output path\nPASS collapse of the expanded realization\nPASS runtime collapse-after-expansion proof\nPASS runtime expansion-after-collapse proof\nPASS first proof source endpoint\nPASS first proof target endpoint\nPASS second proof source endpoint\nPASS second proof target endpoint\nregistered_transforms=0\n",
+      "stderr": "",
+      "seconds": 4.922588044999884
+    },
+    {
+      "name": "review_runtime_nodes",
+      "args": [
+        "0",
+        "levels"
+      ],
+      "exit_code": 0,
+      "stdout": "actual_workers=0\nPASS closed node with exact levels a=1 b=0 r=0\nPASS closed node with exact levels a=0 b=1 r=0\nPASS closed node with exact levels a=0 b=0 r=1\n",
+      "stderr": "",
+      "seconds": 2.6235919800001284
+    },
+    {
+      "name": "review_node_level",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "node_(2,0,0) signature formation=VALID level=3\nnode_(2,0,0) body=VALID reason=\n",
+      "stderr": "",
+      "seconds": 2.0071380619999672
+    },
+    {
+      "name": "production_runtime",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "reuse counters: shape nodes 188947, dependency checks 400638, receipt instances 30, ready hits 106926, running joins 1, identity applies 0\nruntime: 85 checks, 0 failures; 51 fixed templates\n",
+      "stderr": "",
+      "seconds": 53.15563739999993
+    },
+    {
+      "name": "review_reservation_budget",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "reserve n=64 budget=1 units=1 payload_words_written=0 capacity_already_present=1\ncompleted record correct and canonical=1\nreserve n=4096 budget=1 units=1 payload_words_written=0 capacity_already_present=1\ncompleted record correct and canonical=1\n",
+      "stderr": "",
+      "seconds": 0.1305152340000859
+    }
+  ]
+}

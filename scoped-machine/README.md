@@ -748,8 +748,10 @@ between units:
 | `expr_boundary` | memoized per node; first computation charged one VALIDATE step per node | memo |
 | proof / aux-list / reduction / mapped-proof / hypotheses-set records inside a frame | framed: `REDUCE` and `MAPP` end in a finishing sequence of framed `INTERN` children (aux list, proof, reduction record; `MKF` for the mapped formula), `PREPARE` interns its hypotheses set by `push_intern_own`; no `intern_sync` is reached from `service/step` (R6) | `acc`, `acc2`, `acc3`, `i`, `j`, `c`, `d`, `e`, `buf3` |
 | `set_has` in demand | binary search ≤ 64 compares | — |
-| demand-graph node index, atom-map index, weight override lookup (`WordMap` / `find_sync`, ≤ 4-word keys) | bounded hashing; `find_sync` never drains a relocation (during one it also probes the old slot array); **probes counted but not unit-bounded** (a collision chain is walked inside the unit) | — |
-| buffer growth inside a unit (`words_push`, `vec_push`) | **amortized only**: a push that doubles the buffer copies it inside the unit; the words are charged (`alloc_words`) but the individual call is not suspended | — |
+| demand-graph node index, atom-map index, weight override lookup from a unit (≤ 4-word keys) | framed `LOOKUP` (one hashed word / one probe / one compared word per unit; generation-checked): the demand graph's producer → node index is a record `[K_MEMO, 0xD6, graph, producer]` looked up once per popped producer (`DEMAND` ph 12, `EXTRACT` ph 24); atom images (`MAPF` ph 7, `MAPSET` ph 2, `MAPP` ph 16) and the split atom's weight (`PROOF` ph 45, `MAPP` ph 17) are delivered by the framed lookup. `find_sync` remains for the synchronous constructors only (it never drains a relocation; its collision chain is walked inside the caller, outside the bounded API) | `acc3` (node record), `acc2`/`d` (held operands) |
+| record-store growth (`INTERN` ph 5) | framed: reservation is a logical extent (header words only; the payload is written one word per unit by the copy phase and never zero-filled — the v14 review's `reservation.patch`); when the store has no capacity, one unit allocates the new block (no copy) and each following unit relocates at most `CHUNK_WORDS` words of the old block (`store_grow_chunk`); during the relocation every record below the old extent is read from the old block, which stays complete (a write below it is mirrored once the copy cursor has passed), and a reservation waits for the relocation to finish; the offset table is a non-moving chunked array (no relocation on growth). The synchronous paths complete a pending store relocation before touching the store (`store_settle`) | `KTab.sold`, `sold_n`, `smoved` |
+| `PREPARE` order list and hypotheses set; `FAMOP` plus | ownership transfer: the order list is accumulated as the record itself (`K_LIST` first) and handed to `LIST`; the hypotheses are handed to the framed `SORT` (one sift / one dedupe element per unit) whose `INTERN` yields the set — no sort or copy inside the unit; `FAMOP` plus pushes one member per unit and hands its buffer to `NORMALIZE` | `buf2`, `buf3` |
+| growth of a frame's own buffers and of the per-operation vectors (`words_push` on `buf/buf2/buf3`, `vec_push` on demand producers/occurrences, frame stacks) | **amortized only**: a push that doubles a private buffer copies it inside the unit; the words are charged (`alloc_words`) but the call is not suspended. (The shared record store and the offset table are no longer in this row.) | — |
 | kernel calls from `ATOMSPEC` / `PREPARE` / proof-use audit (`reindex`, `fc_reindex`, `ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`, `check_map`, `proof_use`) | **not refined**: charged as `kernel_calls`; the reuse administration they perform is charged retrospectively into `SHAPE_NODE` / `DEPENDENCY_CHECK` / `RECEIPT` from the kernel's counters (`kernel_mark/kernel_charge`), and the audit's traversal steps into `AUDIT_STEPS` (fine vector); none of these is resumable | — |
 | constructor-level synchronous APIs (`set_make`, `plan_make`, `connector_make`, `model_with_weight`, `boundary_make`, `job_sync` entries) | outside the bounded API (no bounded-step claim) | — |
 
@@ -761,8 +763,8 @@ per unit (before: 256 in the completing unit).
 
 Consequently the §65 constant-factor refinement is **not claimed** for units
 that reach the kernel (specialization of producer atoms, preparation's typing
-and proof-use checks), for the fixed-key `WordMap`/`find_sync` indices, or for
-the amortized buffer growth; it is claimed for the formula, set, cost,
+and proof-use checks, and the assumptions a `PU_ASSUMED` audit appends) or for
+the amortized growth of a frame's private buffers; it is claimed for the formula, set, cost,
 certificate, realization, demand, family, scheduling and delivery operations,
 whose every unit is one of the bounded bodies above. `FR_SHAPE_NODE`,
 `FR_DEPENDENCY_CHECK` and `FR_RECEIPT` are now charged (from the kernel's
@@ -843,6 +845,35 @@ under both sanitizers, and the consolidated runner
 the production `test_runtime` suite) passes 14/14 under ASan+LSan and TSan
 (`tests/acceptance-results/v15/`). The author's bundle is kept in
 `tests/review-b8ba937/`.
+
+### The v14 review — reservation and the §94 lowering continued (`REVIEW-v14.md`)
+
+The v14 review accepts R1–R5 and the original R6 drain defect as corrected and
+finds one more variable-size body inside R6: the reservation phase zero-filled
+the payload in one unit. Its `reservation.patch` is applied as is
+(`tests/review_reservation_budget.c`: n = 64 and n = 4096 payload words,
+budget 1, payload words written in the reservation unit = 0, record completed
+and canonical), and the lowering it asks for next is continued as the revised
+rows above state: record-store growth in `CHUNK_WORDS` units with a non-moving
+offset table (`tests/review_store_growth.c`: at capacity, one allocation unit
+copies nothing; 128 relocation units of ≤ 32 words for a 4 096-word store;
+records readable and findable throughout; the reservation waits), fixed-key
+index probes from units through the framed `LOOKUP` (demand-graph node index,
+atom-map images, split-atom weights), and `PREPARE`'s order-list copy and
+hypotheses `qsort` replaced by ownership transfer into `LIST`/`SORT`
+(`FAMOP` plus likewise). Both probes are gated under ASan/UBSan/LSan and TSan;
+`run_v14_review.py` (fifteen jobs) passes under both
+(`tests/acceptance-results/v16/`); the author's bundle is in `tests/review-v14/`.
+
+Still outside the unit bound, stated exactly: (1) kernel and audit calls made
+from `ATOMSPEC`, `PREPARE` and the proof-use audit (`reindex`, `fc_reindex`,
+`ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`,
+`check_map`, `proof_use`, `transform_proof_use`) — charged as `kernel_calls`
+with their reuse administration charged retrospectively, not resumable;
+(2) the `words_append` of a `PU_ASSUMED` audit's assumptions into `buf3`
+(kernel-sized); (3) amortized growth of a frame's private buffers and the
+per-operation vectors; (4) `set_has` and the heap sift are bounded by 64
+compares, not by one. The bounded-machine contract is not marked complete.
 
 ### §83 — presentations, diagram values and the generic action as core terms (`src/runtime.c`)
 

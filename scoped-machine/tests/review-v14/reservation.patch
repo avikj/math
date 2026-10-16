@@ -1,0 +1,19 @@
+--- a/src/work.c
++++ b/src/work.c
+@@ -568,10 +568,13 @@
+         if (f->acc4) { W.L.release_words += f->buf.n + 2; charge(FR_RELEASE_CHUNK); }   /* an equal key was interned meanwhile: the candidate is abandoned */
+         fin(o, f->acc3); return;
+     }
+-    case 5: {   /* reserve the record's extent: header now, payload words zero until copied */
++    case 5: {   /* reserve an exclusive extent; only copied payload is published */
++        require(t->store.n <= SIZE_MAX - 2 && f->buf.n <= SIZE_MAX - t->store.n - 2, "record extent overflow");
++        words_reserve(&t->store, f->buf.n + 2);  /* capacity growth remains a separately disclosed obligation */
+         f->acc2 = t->store.n;
+-        words_push(&t->store, f->acc); words_push(&t->store, f->buf.n);
+-        for (size_t k = 0; k < f->buf.n; k++) words_push(&t->store, 0);          /* one allocation unit for the extent (amortized growth, charged) */
++        t->store.n += f->buf.n + 2;
++        t->store.w[f->acc2] = f->acc;
++        t->store.w[f->acc2 + 1] = f->buf.n;
+         W.L.alloc_words += f->buf.n + 2; charge(FR_ALLOCATE_CHUNK);
+         f->i = 0; f->ph = 3; return;
+     }

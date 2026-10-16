@@ -39,7 +39,8 @@ typedef struct {            /* per-record side data */
 #define CHUNK_WORDS 32          /* §81.2: the fixed chunk of a copy / relocation / release frame */
 typedef struct {
     Words store;            /* [hash, n, w0..w_{n-1}] per record at off[id-1] */
-    VEC(size_t) off;
+    uint64_t *sold; size_t sold_n, smoved;   /* §94: a store relocation in progress — the previous block, its extent, the copy cursor */
+    Chunked off;            /* record offsets: non-moving chunks (no relocation on growth) */
     uint64_t *slots; size_t nslots, n;
     uint64_t *old; size_t old_n, cursor;   /* an incremental relocation in progress (framed growth) */
     uint64_t moving; size_t probe;          /* §94.2(4): the old slot being placed and its probe cursor */
@@ -60,10 +61,21 @@ static struct {
 
 static uint64_t hash_step(uint64_t h, uint64_t w) { h ^= w + 0x9E3779B97F4A7C15ULL + (h << 6) + (h >> 2); return h * 0xBF58476D1CE4E5B9ULL; }
 
-static void ktab_init(KTab *t) { words_init(&t->store); t->off.data = NULL; t->off.len = t->off.cap = 0; t->nslots = 1024; t->slots = calloc(t->nslots, sizeof(uint64_t)); require(t->slots, "out of memory"); t->n = 0; }
-static void ktab_free(KTab *t) { words_free(&t->store); vec_free(&t->off); free(t->slots); free(t->old); }
-static const uint64_t *rec_words(uint64_t id, size_t *n) { size_t o = W.tab.off.data[id - 1]; *n = (size_t)W.tab.store.w[o + 1]; return W.tab.store.w + o + 2; }
-static uint64_t rec_hash(uint64_t id) { return W.tab.store.w[W.tab.off.data[id - 1]]; }
+static void ktab_init(KTab *t) { words_init(&t->store); t->sold = NULL; t->sold_n = t->smoved = 0; chunked_init(&t->off, sizeof(size_t)); t->nslots = 1024; t->slots = calloc(t->nslots, sizeof(uint64_t)); require(t->slots, "out of memory"); t->n = 0; }
+static void ktab_free(KTab *t) { words_free(&t->store); free(t->sold); t->sold = NULL; chunked_free(&t->off); free(t->slots); free(t->old); }
+/* §94: the record store never copies inside a unit. Growth allocates the new
+ * block (one allocation step) and relocates the old one CHUNK_WORDS per unit
+ * (`store_grow_chunk`, driven by the framed INTERN's reservation phase, and
+ * completed by the synchronous paths before they touch the store). During a
+ * relocation every word below the old extent is read from the old block,
+ * which stays complete: a write below that extent lands in the old block and
+ * is mirrored into the new one once the copy cursor has passed it. */
+static const uint64_t *store_at(size_t x) { const KTab *t = &W.tab; return (t->sold && x < t->sold_n) ? t->sold + x : t->store.w + x; }
+static void store_write(size_t x, uint64_t v) { KTab *t = &W.tab; if (t->sold && x < t->sold_n) { t->sold[x] = v; if (x < t->smoved) t->store.w[x] = v; } else t->store.w[x] = v; }
+static size_t rec_off(uint64_t id) { return *(size_t *)chunked_get(&W.tab.off, id - 1); }
+static const uint64_t *rec_words(uint64_t id, size_t *n) { size_t o = rec_off(id); const uint64_t *p = store_at(o); *n = (size_t)p[1]; return p + 2; }
+static uint64_t rec_hash(uint64_t id) { return *store_at(rec_off(id)); }
+static void rec_publish_off(size_t off) { KTab *t = &W.tab; *(size_t *)chunked_at(&t->off, t->n) = off; t->n++; }
 static Side *side(uint64_t id) { return (Side *)chunked_at(&W.side, id - 1); }
 static uint8_t rec_kind(uint64_t id) { size_t n; return (uint8_t)rec_words(id, &n)[0]; }
 static uint64_t rec_w(uint64_t id, size_t i) { size_t n; const uint64_t *w = rec_words(id, &n); require(i < n, "record field"); return w[i]; }
@@ -117,9 +129,29 @@ static bool ktab_grow_chunk(void) {
 }
 static void ktab_settle(void) { while (!ktab_grow_chunk()) ; }
 static void ktab_grow(void) { ktab_settle(); ktab_begin_grow(); ktab_settle(); }
+/* store growth: begin = one allocation step; one relocation unit = at most
+ * CHUNK_WORDS words copied; true when no relocation is pending */
+static void store_begin_grow(size_t extra) {
+    KTab *t = &W.tab;
+    size_t nc = t->store.cap ? t->store.cap * 2 : 16;
+    while (nc < t->store.n + extra) { require(nc <= SIZE_MAX / 2, "record store exhausted"); nc *= 2; }
+    uint64_t *nw = malloc(nc * sizeof(uint64_t)); require(nw, "out of memory");
+    t->sold = t->store.w; t->sold_n = t->store.n; t->smoved = 0;
+    t->store.w = nw; t->store.cap = nc; W.L.alloc_words += nc; charge(FR_ALLOCATE_CHUNK);
+}
+static bool store_grow_chunk(void) {
+    KTab *t = &W.tab;
+    if (!t->sold) return true;
+    size_t end = t->smoved + CHUNK_WORDS; if (end > t->sold_n) end = t->sold_n;
+    for (size_t x = t->smoved; x < end; x++) t->store.w[x] = t->sold[x];
+    t->smoved = end; charge(FR_ALLOCATE_CHUNK);
+    if (t->smoved >= t->sold_n) { free(t->sold); t->sold = NULL; W.L.release_words += t->sold_n; charge(FR_RELEASE_CHUNK); return true; }
+    return false;
+}
+static void store_settle(void) { while (!store_grow_chunk()) ; }
 static uint64_t intern_sync(const uint64_t *w, size_t n, bool *created) {
     KTab *t = &W.tab;
-    ktab_settle();
+    ktab_settle(); store_settle();
     if (created) *created = false;
     uint64_t h = 0x9E3779B97F4A7C15ULL ^ n;
     for (size_t i = 0; i < n; i++) { h = hash_step(h, w[i]); W.L.limb_ops++; charge(FR_FORMULA_INTERN_STEP); }
@@ -139,7 +171,7 @@ static uint64_t intern_sync(const uint64_t *w, size_t n, bool *created) {
     size_t off = t->store.n;
     words_push(&t->store, h); words_push(&t->store, n);
     for (size_t i = 0; i < n; i++) { words_push(&t->store, w[i]); W.L.alloc_words++; charge(FR_ALLOCATE_CHUNK); }
-    vec_push(&t->off, off); t->n++;
+    rec_publish_off(off);
     uint64_t id = t->n; t->slots[j] = id;
     Side *s = side(id); memset(s, 0, sizeof *s); s->kind = (uint8_t)w[0];
     if (created) *created = true;
@@ -552,7 +584,7 @@ static void step_intern(Op *o, Frame *f) {
         if (!id) {
             if (!f->acc4) { f->ph = 5; return; }                                 /* no candidate yet: reserve */
             /* publish the complete candidate at this slot */
-            vec_push(&t->off, (size_t)f->acc2); t->n++;
+            rec_publish_off((size_t)f->acc2);
             uint64_t nid = t->n; t->slots[f->j] = nid;
             Side *sd = side(nid); memset(sd, 0, sizeof *sd); sd->kind = (uint8_t)f->buf.w[0];
             o->ret = 0; fin(o, nid); o->ret = nid; return;
@@ -568,15 +600,19 @@ static void step_intern(Op *o, Frame *f) {
         if (f->acc4) { W.L.release_words += f->buf.n + 2; charge(FR_RELEASE_CHUNK); }   /* an equal key was interned meanwhile: the candidate is abandoned */
         fin(o, f->acc3); return;
     }
-    case 5: {   /* reserve the record's extent: header now, payload words zero until copied */
+    case 5: {   /* reserve an exclusive extent; only copied payload is published */
+        require(t->store.n <= SIZE_MAX - 2 && f->buf.n <= SIZE_MAX - t->store.n - 2, "record extent overflow");
+        if (t->sold) { store_grow_chunk(); return; }                                /* a store relocation in progress: one unit of it, then re-check */
+        if (t->store.n + f->buf.n + 2 > t->store.cap) { store_begin_grow(f->buf.n + 2); return; }   /* growth: one allocation unit; the copy proceeds in units */
         f->acc2 = t->store.n;
-        words_push(&t->store, f->acc); words_push(&t->store, f->buf.n);
-        for (size_t k = 0; k < f->buf.n; k++) words_push(&t->store, 0);          /* one allocation unit for the extent (amortized growth, charged) */
+        t->store.n += f->buf.n + 2;
+        store_write(f->acc2, f->acc);
+        store_write(f->acc2 + 1, f->buf.n);
         W.L.alloc_words += f->buf.n + 2; charge(FR_ALLOCATE_CHUNK);
         f->i = 0; f->ph = 3; return;
     }
     case 3: {   /* copy one word into the reserved extent; then re-probe with the candidate held */
-        if (f->i < f->buf.n) { t->store.w[f->acc2 + 2 + f->i] = f->buf.w[f->i]; f->i++; return; }
+        if (f->i < f->buf.n) { store_write(f->acc2 + 2 + f->i, f->buf.w[f->i]); f->i++; return; }
         f->acc4 = 1; f->ph = 1; return;
     }
     }
@@ -619,6 +655,14 @@ static Frame fr_lookup(const uint64_t *w, size_t n) { Frame f = fr(OF_LOOKUP, 0,
 static void push_intern(Op *o, const uint64_t *w, size_t n) { push(o, fr_intern(w, n)); }
 static void push_intern_own(Op *o, Words *w) { push(o, fr_intern_own(w)); }
 static void push_lookup(Op *o, const uint64_t *w, size_t n) { W.L.memo_lookup++; push(o, fr_lookup(w, n)); }
+static Cost kind_weight(ModelId m, AtomId a);
+/* §94: fixed-key indices consulted from a unit go through the framed LOOKUP
+ * (one hashed word / one probe / one compared word per unit); the delivered
+ * record id is read by these */
+static Cost weight_from(uint64_t ret, ModelId m, AtomId a) { if (ret && side(ret)->has_val) { W.L.memo_hit++; W.L.memo_deliver++; return side(ret)->val; } return kind_weight(m, a); }
+static void push_weight_lookup(Op *o, ModelId m, AtomId a) { uint64_t k[3] = { K_WEIGHT, m, a }; push_lookup(o, k, 3); }
+static AtomId amap_from(uint64_t ret, AtomId a) { if (ret && side(ret)->has_val) { W.L.memo_hit++; W.L.memo_deliver++; return side(ret)->val; } return a; }
+static void push_amap_lookup(Op *o, AtomMapId m, AtomId a) { uint64_t e[4] = { K_MEMO, 0xA3, m, a }; push_lookup(o, e, 4); }
 
 /* ---------------------------------------------------------------- 3. atoms, sets, formulas ---- */
 
@@ -812,7 +856,6 @@ bool set_subset(SetId a, SetId b) { LOCK; bool r = subset_locked(a, b); UNLOCK; 
 bool set_disjoint(SetId a, SetId b) { LOCK; SetId i = setop(SO_INTER, a, b); UNLOCK; return i == W.EMPTY; }
 
 /* SUM: a = set, b = model: per atom, weight lookup (override table then kind weight), checked add */
-static Cost kind_weight(ModelId m, AtomId a);
 static void step_sum(Op *o, Frame *f) {
     size_t n; const AtomId *S = set_atoms(f->a, &n);
     switch (f->ph) {
@@ -866,7 +909,7 @@ static void step_list(Op *o, Frame *f) { if (f->ph == 0) { f->ph = 1; push_inter
 
 typedef struct { AtomId producer; uint64_t steps; bool alias; VEC(AtomId) occ; VEC(uint64_t) applies; } DNode;   /* applies: indices into graph applies */
 typedef struct { uint64_t transform; int dir; MapId sigma; RefId arg; AtomId receiver; } DApply;
-struct DGraph { VEC(DNode) nodes; VEC(AtomId) roots; VEC(DApply) applies; uint64_t rev; WordMap index; /* producer → node index + 1 (fixed-size key: a bounded probe) */ };
+struct DGraph { VEC(DNode) nodes; VEC(AtomId) roots; VEC(DApply) applies; uint64_t rev; DGraphId id; /* the producer → node index is a record [K_MEMO, 0xD6, graph, producer] (side value = index + 1): a framed LOOKUP from a unit (§94) */ };
 static uint64_t dgraph_rev(const DGraph *g) { return g->rev; }
 typedef struct { VEC(AtomId) producers; VEC(Occurrence) occ; } Demand;
 typedef struct { SetId atoms; WorkCounts counts; } WorkSetInfo;
@@ -874,12 +917,16 @@ typedef struct { SetId atoms; WorkCounts counts; } WorkSetInfo;
 static DGraph *DG(DGraphId g) { require(rec_kind(g) == K_DGRAPH, "not a demand graph"); return (DGraph *)side(g)->ptr; }
 DGraphId dgraph_new(void) {
     LOCK; static uint64_t seq; uint64_t w[2] = { K_DGRAPH, ++seq }; DGraphId g = intern_sync(w, 2, NULL);
-    DGraph *d = own(calloc(1, sizeof *d)); require(d, "out of memory"); wordmap_init(&d->index); side(g)->ptr = d; charge(FR_ALLOCATE_CHUNK); UNLOCK; return g;
+    DGraph *d = own(calloc(1, sizeof *d)); require(d, "out of memory"); d->id = g; side(g)->ptr = d; charge(FR_ALLOCATE_CHUNK); UNLOCK; return g;
 }
-static DNode *dnode(DGraph *d, AtomId p) { uint64_t k[1] = { p }, v; W.L.probes++; if (!wordmap_get(&d->index, k, 1, &v)) return NULL; return &d->nodes.data[v - 1]; }
+static DNode *dnode(DGraph *d, AtomId p) { uint64_t k[4] = { K_MEMO, 0xD6, d->id, p }; W.L.memo_lookup++; uint64_t id = find_sync(k, 4); if (!id || !side(id)->has_val) return NULL; return &d->nodes.data[side(id)->val - 1]; }   /* synchronous constructors only */
+static DNode *dnode_at(DGraph *d, uint64_t ret) { return ret && side(ret)->has_val ? &d->nodes.data[side(ret)->val - 1] : NULL; }   /* from a framed LOOKUP's delivery */
+static void push_dnode_lookup(Op *o, DGraph *d, AtomId p) { uint64_t k[4] = { K_MEMO, 0xD6, d->id, p }; push_lookup(o, k, 4); }
 void dgraph_add_producer(DGraphId g, AtomId producer, uint64_t steps) {
     LOCK; DGraph *d = DG(g); require(!dnode(d, producer), "producer already in the graph");
-    DNode n; memset(&n, 0, sizeof n); n.producer = producer; n.steps = steps; vec_push(&d->nodes, n); { uint64_t k[1] = { producer }; wordmap_put(&d->index, k, 1, d->nodes.len); } d->rev++; charge(FR_ALLOCATE_CHUNK); UNLOCK;
+    DNode n; memset(&n, 0, sizeof n); n.producer = producer; n.steps = steps; vec_push(&d->nodes, n);
+    { uint64_t k[4] = { K_MEMO, 0xD6, g, producer }; uint64_t id = intern_sync(k, 4, NULL); side(id)->val = d->nodes.len; side(id)->has_val = true; }
+    d->rev++; charge(FR_ALLOCATE_CHUNK); UNLOCK;
 }
 void dgraph_add_occurrence(DGraphId g, AtomId owner, AtomId child) { LOCK; DGraph *d = DG(g); DNode *n = dnode(d, owner); require(n, "occurrence of an unknown owner"); vec_push(&n->occ, child); d->rev++; charge(FR_ALLOCATE_CHUNK); UNLOCK; }
 void dgraph_add_apply(DGraphId g, AtomId receiver, uint64_t transform, int dir, MapId sigma, RefId arg) {
@@ -953,23 +1000,23 @@ static void step_demand(Op *o, Frame *f) {
         if (f->buf.n <= f->acc) { uint64_t w[5] = { K_DEMAND, f->a, f->b, f->c, dgraph_rev(d) }; f->ph = 6; push_intern(o, w, 5); return; }
         f->acc2 = f->buf.w[f->acc++];
         vec_push(&dm->producers, f->acc2); charge(FR_ALLOCATE_CHUNK);
-        f->j = 0; f->ph = 3; return;
+        f->j = 0; f->ph = 12; push_dnode_lookup(o, d, f->acc2); return;   /* the producer's node by the framed LOOKUP (§94) */
     }
+    case 12: { DNode *n = dnode_at(d, o->ret); if (!n) { fail(o, "demanded producer has no recipe in the graph"); return; } f->acc3 = o->ret; f->ph = 3; return; }
     case 3: {   /* next occurrence of the popped producer */
-        DNode *n = dnode(d, f->acc2);
-        if (!n) { fail(o, "demanded producer has no recipe in the graph"); return; }
+        DNode *n = dnode_at(d, f->acc3);
         if (f->j >= n->occ.len) { f->ph = 2; return; }
         AtomId child = n->occ.data[f->j];
         Occurrence oc = { f->acc2, f->j, child }; vec_push(&dm->occ, oc); charge(FR_ALLOCATE_CHUNK);
         uint64_t k[4] = { K_MARK, o->id, 1, child }; f->ph = 4; push_lookup(o, k, 4); return;
     }
     case 4: {
-        DNode *n = dnode(d, f->acc2); AtomId child = n->occ.data[f->j];
+        DNode *n = dnode_at(d, f->acc3); AtomId child = n->occ.data[f->j];
         if (o->ret) { W.L.memo_hit++; f->j++; f->ph = 3; return; }           /* ready child: cut */
         uint64_t k[4] = { K_MARK, o->id, 2, child }; f->ph = 5; push_intern(o, k, 4); return;
     }
     case 5: {
-        DNode *n = dnode(d, f->acc2); AtomId child = n->occ.data[f->j];
+        DNode *n = dnode_at(d, f->acc3); AtomId child = n->occ.data[f->j];
         Side *s = side(o->ret);
         if (!s->has_val) { s->has_val = true; words_push(&f->buf, child); }
         f->j++; f->ph = 3; return;
@@ -1006,7 +1053,9 @@ static void step_extract(Op *o, Frame *f) {
         f->ph = 0; return;
     case 1: {
         if (f->i >= dm->producers.len) { f->ph = 2; return; }
-        AtomId p = dm->producers.data[f->i]; DNode *n = dnode(d, p);
+        AtomId p = dm->producers.data[f->i];
+        if (!f->acc3) { f->ph = 24; push_dnode_lookup(o, d, p); return; }   /* the producer's node once per producer, by the framed LOOKUP (§94) */
+        DNode *n = dnode_at(d, f->acc3);
         if (f->j == 0) { if (n->alias) { f->j = 1; return; } uint64_t w[3] = { K_ATOM, WK_PUB, p }; f->ph = 21; push_intern(o, w, 3); return; }   /* an alias publication ran no producer */
         if (f->j - 1 < n->steps) { uint64_t w[4] = { K_ATOM, WK_EVAL, p, f->j - 1 }; f->ph = 22; push_intern(o, w, 4); return; }
         size_t ka = f->j - 1 - n->steps;
@@ -1015,8 +1064,9 @@ static void step_extract(Op *o, Frame *f) {
             uint64_t w[8] = { K_ATOM, WK_APPLY, a.transform, (uint64_t)a.dir, a.sigma, a.arg, a.receiver, n->applies.data[ka] };
             f->ph = 23; push_intern(o, w, 8); return;
         }
-        f->i++; f->j = 0; return;
+        f->i++; f->j = 0; f->acc3 = 0; return;
     }
+    case 24: if (!dnode_at(d, o->ret)) { fail(o, "demanded producer has no recipe in the graph"); return; } f->acc3 = o->ret; f->ph = 1; return;
     case 21: words_push(&f->buf, o->ret); wi->counts.pub++; f->j++; f->ph = 1; return;
     case 22: words_push(&f->buf, o->ret); wi->counts.eval++; f->j++; f->ph = 1; return;
     case 23: words_push(&f->buf, o->ret); wi->counts.apply++; f->j++; f->ph = 1; return;
@@ -1143,14 +1193,18 @@ static void step_famop(Op *o, Frame *f) {
     size_t na, nb; const SetId *A, *B; na = family_sets(f->b, &A); nb = family_sets(f->c, &B);
     switch (f->ph) {
     case 0:
-        if (f->a == 1) { for (size_t i = 0; i < na; i++) words_push(&f->buf, A[i]); for (size_t j = 0; j < nb; j++) words_push(&f->buf, B[j]); charge(FR_ALLOCATE_CHUNK); f->ph = 3; return; }
+        if (f->a == 1) {   /* plus: one member per unit (§94) */
+            if (f->i < na) { words_push(&f->buf, A[f->i++]); charge(FR_ALLOCATE_CHUNK); return; }
+            if (f->j < nb) { words_push(&f->buf, B[f->j++]); charge(FR_ALLOCATE_CHUNK); return; }
+            f->ph = 3; return;
+        }
         f->ph = 1; return;
     case 1:   /* pairwise unions */
         if (f->i >= na) { f->ph = 3; return; }
         if (f->j >= nb) { f->i++; f->j = 0; return; }
         f->ph = 2; push(o, fr(OF_SETOP, SO_UNION, A[f->i], B[f->j], 0)); return;
     case 2: words_push(&f->buf, o->ret); f->j++; f->ph = 1; return;
-    case 3: { Frame g = fr(OF_NORMALIZE, 0, 0, 0, 0); words_append(&g.buf, f->buf.w, f->buf.n); f->ph = 4; push(o, g); return; }
+    case 3: { Frame g = fr(OF_NORMALIZE, 0, 0, 0, 0); words_take(&g.buf, &f->buf); f->ph = 4; push(o, g); return; }   /* ownership transfer, no copy (§94) */
     case 4: fin(o, o->ret); return;
     }
 }
@@ -1349,7 +1403,7 @@ static bool audit_reference_use(Op *o, Frame *f, BoundaryId b, RefId evidence) {
 static void step_prepare(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: {
-        if (f->acc == 0) { words_push(&f->buf, f->a); f->acc = 1; f->acc2 = expr_boundary(f->a); if (!f->acc2) { fail(o, "expression has no common complete boundary"); return; } }
+        if (f->acc == 0) { words_push(&f->buf, f->a); words_push(&f->buf2, K_LIST); f->acc = 1; f->acc2 = expr_boundary(f->a); if (!f->acc2) { fail(o, "expression has no common complete boundary"); return; } }   /* buf2 is the order list record itself (K_LIST first): handed to LIST by ownership */
         if (!f->buf.n) { f->ph = 2; push(o, fr(OF_EXPRF, f->a, 0, 0, 0)); return; }
         ExprId e = f->buf.w[--f->buf.n];
         f->acc3 = e; f->ph = 1; return;
@@ -1395,10 +1449,8 @@ static void step_prepare(Op *o, Frame *f) {
     }
     case 9: { const uint64_t *l; list_get(f->acc4, &l); words_push(&f->buf2, l[f->i]); f->i++; f->ph = 7; return; }
     case 2: f->acc3 = o->ret; f->ph = 3; push(o, fr(OF_SUBST, f->acc3, model_completed(f->b), 1, 0)); return;
-    case 3: { f->acc4 = o->ret; Frame g = fr(OF_LIST, 0, 0, 0, 0); words_push(&g.buf, K_LIST); words_append(&g.buf, f->buf2.w, f->buf2.n); f->ph = 4; push(o, g); return; }
-    case 4: { f->acc = o->ret; f->buf3.n = sort_unique_u64(f->buf3.w, f->buf3.n);
-              Words hw; words_init(&hw); words_push(&hw, K_SET); words_append(&hw, f->buf3.w, f->buf3.n); f->buf3.n = 0;
-              f->ph = 6; push_intern_own(o, &hw); return; }   /* the hypotheses set by the framed INTERN (R6) */
+    case 3: { f->acc4 = o->ret; Frame g = fr(OF_LIST, 0, 0, 0, 0); words_take(&g.buf, &f->buf2); f->ph = 4; push(o, g); return; }   /* no copy: ownership transfer (§94) */
+    case 4: f->acc = o->ret; f->ph = 6; push(o, fr_sort_own(K_SET, &f->buf3)); return;   /* the hypotheses set by the framed SORT (one sift / one dedupe element per unit) and its INTERN; no sort or copy inside the unit (§94) */
     case 6: { uint64_t w[10] = { K_PROBLEM, check_session_id(), global_env_version(), f->acc2, f->b, f->a, f->acc3, f->acc4, f->acc, o->ret }; f->ph = 5; push_intern(o, w, 10); return; }
     case 5: fin(o, o->ret); return;
     }
@@ -1577,8 +1629,9 @@ static void step_proof(Op *o, Frame *f) {
     case 41: if (!c1 || o->ret != proof_formula(c1)) { fail(o, "SPLIT: wrong cofactor at e := 0"); return; } f->ph = 42; push(o, fr(OF_RESTRICT, F, aux, 1, 0)); return;
     case 42: if (!c2 || o->ret != proof_formula(c2)) { fail(o, "SPLIT: wrong cofactor at e := 1"); return; } f->ph = 43; push(o, fr(OF_PROOF, c1, model, 0, 0)); return;
     case 43: f->acc = o->ret; f->ph = 44; push(o, fr(OF_PROOF, c2, model, 0, 0)); return;
-    case 44: {
-        Cost l1 = o->ret, wc; if (!add_checked(weight_locked(model, aux), l1, &wc)) { limit(o, "cost sum not representable"); return; }
+    case 44: f->acc2 = o->ret; f->ph = 45; push_weight_lookup(o, model, aux); return;   /* the split atom's weight by the framed LOOKUP (§94) */
+    case 45: {
+        Cost l1 = f->acc2, wc; if (!add_checked(weight_from(o->ret, model, aux), l1, &wc)) { limit(o, "cost sum not representable"); return; }
         charge(FR_COST_COMPARE_CHUNK); Cost v = cmin(f->acc, wc);
         if (v != value) { fail(o, "SPLIT value is not the minimum of its branches"); return; }
         proof_done(o, f, v); return;
@@ -1766,7 +1819,6 @@ AtomMapId atom_map_make(size_t n, const AtomId *from, const AtomId *to) {
     for (size_t i = 0; i < n; i++) { uint64_t e[4] = { K_MEMO, 0xA3, m, from[i] }; uint64_t id = intern_sync(e, 4, NULL); side(id)->val = to[i]; side(id)->has_val = true; }   /* one entry record per slot: a fixed-size probe at use */
     UNLOCK; return m;
 }
-static AtomId amap_apply(AtomMapId m, AtomId a) { uint64_t e[4] = { K_MEMO, 0xA3, m, a }; uint64_t id = find_sync(e, 4); return id && side(id)->has_val ? side(id)->val : a; }
 /* MAPF: a = F, b = map; memo (F, map) */
 static void step_mapf(Op *o, Frame *f) {
     FormulaId F = f->a;
@@ -1774,7 +1826,7 @@ static void step_mapf(Op *o, Frame *f) {
     case 0: {
         FormulaTag t = formula_tag(F);
         if (t == FM_ZERO || t == FM_ONE) { fin(o, F); return; }
-        if (t == FM_ATOM) { f->ph = 5; push(o, fr_mkf(FM_ATOM, amap_apply(f->b, formula_atom_of(F)), 0)); return; }
+        if (t == FM_ATOM) { f->ph = 7; push_amap_lookup(o, f->b, formula_atom_of(F)); return; }
         uint64_t k[4] = { K_MEMO, 0xA1, F, f->b }; f->ph = 1; push_lookup(o, k, 4); return;
     }
     case 1:
@@ -1785,13 +1837,17 @@ static void step_mapf(Op *o, Frame *f) {
     case 4: { f->acc3 = o->ret; uint64_t k[4] = { K_MEMO, 0xA1, F, f->b }; f->ph = 6; push_intern(o, k, 4); return; }
     case 5: fin(o, o->ret); return;
     case 6: { Side *s = side(o->ret); s->val = f->acc3; s->has_val = true; fin(o, f->acc3); return; }
+    case 7: f->ph = 5; push(o, fr_mkf(FM_ATOM, amap_from(o->ret, formula_atom_of(F)), 0)); return;   /* the atom's image by the framed LOOKUP (§94) */
     }
 }
 /* MAPSET: a = set, b = map: direct image */
 static void step_mapset(Op *o, Frame *f) {
     size_t n; const AtomId *S = set_atoms(f->a, &n);
-    if (f->ph == 0) { if (f->i < n) { words_push(&f->buf, amap_apply(f->b, S[f->i++])); return; } f->ph = 1; push(o, fr_sort_own(K_SET, &f->buf)); return; }
-    fin(o, o->ret);
+    switch (f->ph) {
+    case 0: if (f->i < n) { f->ph = 2; push_amap_lookup(o, f->b, S[f->i]); return; } f->ph = 1; push(o, fr_sort_own(K_SET, &f->buf)); return;
+    case 2: words_push(&f->buf, amap_from(o->ret, S[f->i])); f->i++; f->ph = 0; return;   /* one image per framed LOOKUP (§94) */
+    case 1: fin(o, o->ret); return;
+    }
 }
 /* MAPP: a = proof, b = map, c = model: rebuild the proof node over the mapped formulas/sets with recomputed values */
 /* R6: the mapped proof's records (aux list, proof) are interned by framed
@@ -1816,7 +1872,7 @@ static void step_mapp(Op *o, Frame *f) {
         case PR_TRIVIAL: mapp_finish(o, f, PR_TRIVIAL, f->acc, false, 0, 0, 0, 0, 0); return;
         case PR_FALSE: mapp_finish(o, f, PR_FALSE, W.ZERO, false, 0, 0, 0, 0, COST_INF); return;
         case PR_MANDATORY: case PR_FACTOR: f->ph = 2; push(o, fr(OF_MAPSET, aux, f->b, 0, 0)); return;
-        case PR_SPLIT: f->acc2 = amap_apply(f->b, aux); f->ph = 4; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
+        case PR_SPLIT: f->ph = 16; push_amap_lookup(o, f->b, aux); return;
         case PR_DISJOINT_AND: case PR_OR_BOUND: { const uint64_t *l; list_get(aux, &l); f->ph = 6; push(o, fr(OF_MAPF, l[0], f->b, 0, 0)); return; }
         case PR_WEAKEN: f->ph = 10; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
         case PR_EQUAL: { const uint64_t *l; list_get(aux, &l); f->ph = 11; push(o, fr(OF_MAPF, l[0], f->b, 0, 0)); return; }
@@ -1827,7 +1883,9 @@ static void step_mapp(Op *o, Frame *f) {
     case 3: f->acc3 = o->ret; f->ph = 14; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
     case 14: { Cost v; add_checked(f->acc3, rec_w(o->ret, 6), &v); mapp_finish(o, f, PR_FACTOR, f->acc, false, f->acc2, 0, o->ret, 0, v); return; }
     case 4: f->acc3 = o->ret; f->ph = 5; push(o, fr(OF_MAPP, c2, f->b, f->c, 0)); return;
-    case 5: { Cost wc; add_checked(weight_locked(f->c, f->acc2), rec_w(o->ret, 6), &wc); Cost v = cmin(rec_w(f->acc3, 6), wc); mapp_finish(o, f, PR_SPLIT, f->acc, false, f->acc2, 0, f->acc3, o->ret, v); return; }
+    case 16: f->acc2 = amap_from(o->ret, aux); f->ph = 4; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;   /* the split atom's image by the framed LOOKUP (§94) */
+    case 5: f->d = o->ret; f->ph = 17; push_weight_lookup(o, f->c, f->acc2); return;                   /* its weight by the framed LOOKUP (§94) */
+    case 17: { Cost wc; add_checked(weight_from(o->ret, f->c, f->acc2), rec_w(f->d, 6), &wc); Cost v = cmin(rec_w(f->acc3, 6), wc); mapp_finish(o, f, PR_SPLIT, f->acc, false, f->acc2, 0, f->acc3, f->d, v); return; }
     case 6: { const uint64_t *l; list_get(aux, &l); f->acc2 = o->ret; f->ph = 7; push(o, fr(OF_MAPF, l[1], f->b, 0, 0)); return; }
     case 7: f->acc3 = o->ret; f->ph = 8; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
     case 8: f->acc4 = o->ret; f->ph = 9; push(o, fr(OF_MAPP, c2, f->b, f->c, 0)); return;
@@ -1946,7 +2004,7 @@ void work_free(void) {
         Side *s = side(i); if (!s->ptr) continue;
         switch (s->kind) {
         case K_JOB: { Op *o = s->ptr; for (size_t k = 0; k < o->stack.len; k++) { words_free(&o->stack.data[k].buf); words_free(&o->stack.data[k].buf2); words_free(&o->stack.data[k].buf3); } vec_free(&o->stack); vec_free(&o->waiters); vec_free(&o->path); break; }
-        case K_DGRAPH: { DGraph *d = s->ptr; for (size_t k = 0; k < d->nodes.len; k++) { vec_free(&d->nodes.data[k].occ); vec_free(&d->nodes.data[k].applies); } vec_free(&d->nodes); vec_free(&d->roots); vec_free(&d->applies); wordmap_free(&d->index); break; }
+        case K_DGRAPH: { DGraph *d = s->ptr; for (size_t k = 0; k < d->nodes.len; k++) { vec_free(&d->nodes.data[k].occ); vec_free(&d->nodes.data[k].applies); } vec_free(&d->nodes); vec_free(&d->roots); vec_free(&d->applies); break; }
         case K_DEMAND: { Demand *d = s->ptr; vec_free(&d->producers); vec_free(&d->occ); break; }
         case K_REAL: { Real *r = s->ptr; vec_free(&r->plans); vec_free(&r->conns); break; }
         case K_GEO: { Geo *g = s->ptr; vec_free(&g->edges); break; }
