@@ -1,5 +1,7 @@
 # Scoped cubical interaction machine and identity compiler
 
+> **Current implementation direction — 15 October 2026:** §§1–59 and their delivered review corrections are accepted at `24b2bfb`. Section 73 is normative for the next increment and supersedes the earlier blanket instruction to implement §§60–72. Retain the specified accounting, resource algebra, direct rewrites, certificate checking and bounded-frame work. The automatic cofactor solver and branch-and-bound selector are not required. The earlier selector text remains below as reference material.
+
 Implementation handoff — 14 October 2026
 
 Identity-to-agent compiler completion — 14 October 2026
@@ -7,6 +9,10 @@ Identity-to-agent compiler completion — 14 October 2026
 Scoped-template representation and review corrections completed — 14 October 2026
 
 Fix/compiler pass decisions and reproduced corrections — 15 October 2026
+
+Demand-sensitive sharing and cost semantics, §§60–66 — 15 October 2026
+
+Executable finite selection and certificates, §§67–72 — 15 October 2026
 
 ## 1. Scope and central invariant
 
@@ -36,9 +42,9 @@ Sections 32–38 settle the runtime implementation scope: checking the annotated
 
 Sections 39–48 supply the identity-to-agent compiler: checked diagram declarations, generated realization maps, exact application wiring, an internal call instruction, and an end-to-end associativity instance. These sections are additive to the existing runtime.
 
-Sections 49–58 give the exact scoped-family parameter encoding, fixed template programs for every derived helper and composition clause, added scope-agent rules, and the normative corrections from the implementation review. The complete implementation target is §§1–59. Section 59 resolves the next worker report, makes universe annotation storage explicit, and records the additional reproduced corrections.
+Sections 49–58 give the exact scoped-family parameter encoding, fixed template programs for every derived helper and composition clause, added scope-agent rules, and the normative corrections from the implementation review. The current kernel and identity-compiler implementation target is §§1–59, together with the subsequently delivered review corrections. Section 59 makes universe annotation storage explicit and records reproduced corrections. Sections 60–66 extend the mathematical cost semantics with demand-sensitive sharing, alternative resource plans, substitution laws, identity cost differences, and precise premises for problem-level optimality and constant-factor implementation transfer. Sections 67–72 specify exact finite selection over prepared shared-work alternatives, its certificate verifier, interruption with proved bounds, mandatory-work factoring, and the complete selection/execution ledger.
 
-The most recent assistant reply and the worker's report are reproduced verbatim in the appendices. The preceding assistant reply is available in the current context only as a detailed retained summary. Its technical content is reconstructed explicitly and is not labelled a verbatim transcript. Accordingly, exact textual preservation is claimed only for the two available messages, not for the unavailable original wording.
+The historical assistant reply and worker report that motivated this handoff are preserved verbatim in the appendices. The preceding assistant reply is available in the current context only as a detailed retained summary. Its technical content is reconstructed explicitly and is not labelled a verbatim transcript. Accordingly, exact textual preservation is claimed only for the two available messages, not for the unavailable original wording.
 
 ## 2. Signature and identity
 
@@ -2938,6 +2944,904 @@ Keep the compiler and the working runtime construction. First repair the claim p
 Acceptance includes the original review regressions, the full existing compiler/schedule suites, and the new focused cases: type-changing Refl specialization has one producer; reindexed/direct transform calls share one application/receiver pair; a rejected registered body blocks whole-environment checked execution; checker restart preserves eight identical conversion outcomes; the forced claim-vector growth/wake interleaving has no invalid access; a term-valued residual terminal fails formation. Rerun ownership/sanitizer checks on the actual completed C tree. Passing the pre-existing suite alone is not evidence that these reproduced cases are fixed.
 
 The new sections specify the corrected target. The pinned review records the actual implementation state and the validation performed; it does not claim that the worker has already applied this section.
+
+## 60. Demand graphs, sharing, and the precise object being costed
+
+Sections 60–66 develop the next mathematical layer: alternative identity-generated implementations, sharing-sensitive cost, and the conditions for transferring a geodesic theorem to a C implementation. The current worker correction pass remains the implementation of §§1–59 subject to the delivered reviews. These new sections preserve that evaluator and its conversion rules. They give proved accounting laws and explicit premises for stronger optimality statements; code implementing the new planning/certificate layer is a separate subsequent increment.
+
+### 60.1 Typed plans and work identities
+
+A plan is a checked realization of a requested boundary, retaining its dependency structure and its evidence connecting the result to that boundary. The boundary includes the definition environment, context, face, references, types, scope maps, result interface, and continuation obligations. Different proofs or merely homotopic values do not acquire identical cache keys by declaration. Any transport required by a consumer remains in the plan.
+
+Keep three notions distinct in the records:
+
+1. **A producer key** identifies a deterministic computation with the complete instantiated typed boundary. The existing evaluator key is the initial example.
+2. **A consumer occurrence** identifies one request and its continuation. Distinct uses may share a producer without sharing their request/delivery occurrences.
+3. **A primitive work occurrence** identifies one actual counted step of a producer, consumer, allocator, normalizer, or scheduler. A key must identify the operation and operands, not just its rule class or cost.
+
+Reusing one producer preserves its key. Creating two consumers creates two consumer occurrences. For two requests of the same key k, the combined abstract event set has two REQUESTs, two DELIVERs, and one producer's EVAL frames and PUB. Interning an event description does not mean that its execution is free.
+
+The fixed-plan lemmas below concern finite successful demand graphs with their active guards and deterministic producer recipes fixed. Unresolved conditional recipes are retained symbolically until the relevant observation. A genuine cycle without a result has no finite successful-plan certificate.
+
+### 60.2 Demand closure at a ready cache
+
+Let P be a selected finite acyclic producer graph, R its requested root keys, and K the initial ready keys. A node v has a finite ordered list of consumer occurrences Use_P(v), each with a requested producer key. Write dep_P(v) for the set of those keys. K is a quiescent initial snapshot; any pre-existing running producer must instead be included in the counted initial workload.
+
+The producers that actually execute are the least fixed point
+
+\[
+D_P(R,K)=\mu X.\left((R\setminus K)\cup
+\bigcup_{v\in X}(\operatorname{dep}_P(v)\setminus K)\right).
+\]
+
+This is a finite reachability computation: begin from uncached roots; for every newly reached producer, inspect its demanded occurrences; enter an uncached child once. Keep the occurrence edges even when several request the same child.
+
+The crucial cache rule is a cut. If a root or intermediate producer is ready, traversal does not enter its prerequisite cone through that occurrence. For example, a root r that would demand a is already ready when K={r}; then D_P({r},K) is empty even if a is absent from K. Subtracting K from the cold graph's node set would incorrectly charge a.
+
+There is an exact special case in which plain subtraction suffices. If K is closed under P's prerequisite relation, then
+
+\[
+D_P(R,K)=D_P(R,\varnothing)\setminus K.
+\]
+
+Proof: a path from a root to an uncached vertex cannot pass through a cached vertex, since prerequisite closure would then make that vertex cached as well. Thus every vertex on the right remains reachable without crossing the cache cut. The opposite inclusion is immediate.
+
+For a fixed compatible producer graph, simultaneous roots share exactly by union:
+
+\[
+D_P(R_1\cup R_2,K)=D_P(R_1,K)\cup D_P(R_2,K).
+\]
+
+Proof: reachability distributes over the initial root set. Root consumer occurrences remain distinct when the same root key is requested twice.
+
+### 60.3 Complete work extraction
+
+For valid productive requests, let O_R be the root consumer occurrences and
+
+\[
+O=O_R\cup\bigcup_{v\in D_P(R,K)}\operatorname{Use}_P(v).
+\]
+
+The abstract work has one REQUEST and DELIVER per occurrence in O, one PUB per producer in D_P, and that producer's actual EVAL and local-interaction steps. A request of a ready child still has its REQUEST and DELIVER; its child's producer steps are absent. False-face and invalid-occurrence control deliveries retain their existing distinct protocol behavior and are added as their actual control events.
+
+This extraction reproduces the existing unique-producer/waiter protocol. The prerequisite graph retains causality. Commutativity of the resulting work-set union is an accounting property and does not permit reversing dependent computations.
+
+If candidate plans assign different implementations to what is intended to be one shared producer, select a consistent realization before forming a union. In the current evaluator, a RefId already has a fixed recipe. The planning layer must not silently change that recipe while retaining the same ordinary evaluation key.
+
+### 60.4 The minimum-work theorem for a fixed dependency recipe
+
+Assume every occurrence in Use_P(v) is a required premise of the selected recipe when v executes. Every successful execution must execute every producer in D_P(R,K): an uncached root must be produced, and induction along its required uncached dependencies forces each newly reached node. Conversely, evaluating each reached producer once in dependency order satisfies all those premises. The unique-producer protocol attains this bound while emitting the prescribed consumer events.
+
+Thus the demanded closure gives a necessary and sufficient set of producer work for that fixed recipe and cache. Reducing it further requires a different valid recipe, an additional initially available result, or a demonstrated redundant premise. Sharing itself requires no search over schedules. Alternative identity-derived recipes are compared by the subsequent sections.
+
+## 61. Alternative plans, continuation-sensitive dominance, and antichains
+
+### 61.1 The resource algebra
+
+Fix a common typed continuation boundary, compatible work occurrences, and nonnegative weights c(e). An expanded resource alternative is a finite required-work set A. It is obtained from a valid plan under its stated demand conditions; it does not replace the demand graph from §60.
+
+For finite families of such alternatives define
+
+\[
+\mathcal A\oplus\mathcal B=N(\mathcal A\cup\mathcal B),\qquad
+\mathcal A\otimes\mathcal B=N\{A\cup B:A\in\mathcal A,\ B\in\mathcal B\},
+\]
+
+where N removes duplicate sets and strict inclusion supersets. The operations apply inside a compatible common boundary/guard class. Incompatible choices cannot be combined as if they were a valid program.
+
+The units are 0=the empty family and 1=the singleton family containing the empty work set. On compatible resource expressions, union gives commutativity, associativity, idempotence, distribution, and absorption:
+
+\[
+\mathcal A\otimes(\mathcal B\oplus\mathcal C)
+=(\mathcal A\otimes\mathcal B)\oplus(\mathcal A\otimes\mathcal C),
+\qquad
+\mathcal A\oplus(\mathcal A\otimes\mathcal B)=\mathcal A.
+\]
+
+These are the positive-DNF antichain laws. A work atom means that its particular occurrence is required. Repeating an existing atom is idempotent. Two newly created requests are first assigned distinct occurrence identities and therefore are not collapsed by that law.
+
+Preserve a factored expression DAG where useful. The expanded antichain is a semantic normal form; eager expansion is not required, and every expansion/absorption operation actually performed is counted.
+
+### 61.2 Why scalar pruning is not compositional
+
+Let producer a cost 5 and b cost 6. One obligation allows either, while a second needs b. Ignoring identical consumer overhead,
+
+\[
+\{\{a\},\{b\}\}\otimes\{\{b\}\}
+=N\{\{a,b\},\{b\}\}=\{\{b\}\}.
+\]
+
+Selecting the first obligation's cheaper producer in isolation costs 11 jointly; preserving the alternative allows cost 6. The scalar projection
+
+\[
+m(\mathcal A)=\min_{A\in\mathcal A}\sum_{e\in A}c(e)
+\]
+
+therefore does not generally turn shared composition into addition.
+
+By contrast, if A is a subset of B and both alternatives deliver the same complete boundary, then A union C is a subset of B union C for every compatible fixed resource continuation C. Thus inclusion absorption is safe in this algebra. A semantic equivalence between outputs must be realized at the continuation before using this rule; dropping a needed transport is not absorption.
+
+### 61.3 Exact contextual-dominance theorem for fixed resource alternatives
+
+Assume positive atom weights and define the resource residual profile
+
+\[
+f_{\mathcal A}(K)=\min_{A\in\mathcal A}\sum_{e\in A\setminus K}c(e),
+\]
+
+with the minimum of an empty family equal to infinity. Here K is a completed-work resource context for this fixed-set algebra. General ready-cache behavior is computed by §60 first; K in this formula must not be confused with an arbitrary producer cache that changes the demanded subgraph.
+
+Then
+
+\[
+\left[\forall K,\ f_{\mathcal A}(K)\le f_{\mathcal B}(K)\right]
+\quad\Longleftrightarrow\quad
+\left[\forall B\in\mathcal B,\ \exists A\in\mathcal A:\ A\subseteq B\right].
+\]
+
+Proof of the reverse implication: choose a minimizing B at K and its subset A; A minus K is a subset of B minus K. For the forward implication, choose K=B. Then f_B(K)=0, so some A has zero residual cost. Positivity forces A to be a subset of B. Empty-family cases follow from the infinity convention.
+
+Consequently, two finite antichain families have identical profiles for all resource contexts if and only if the families are equal. Mutual subset coverage of antichains forces equality of their minimal elements. Thus the antichain is a complete representation of this form of contextual resource behavior, not merely a sufficient optimization heuristic. With zero-weight atoms, the conclusion concerns positive-cost supports; finite structural and semantic obligations are still retained separately.
+
+For full programs, contextual dominance additionally ranges over admissible caches, continuations, guards, and their demanded subgraphs. The fixed-resource theorem applies where those obligations have been discharged. It does not justify pruning an unopened conditional plan by its cold scalar score.
+
+## 62. Specialization merges work identities: the Boolean image law
+
+### 62.1 Work-key specialization
+
+The specialization of a producer occurrence reindexes its complete typed reference boundary, projects the observation face as already specified, and interns the resulting key. Consumer anchors remain distinct unless they are literally the same occurrence after the valid owner/slot construction. No equality of keys is inferred from an unvalidated annotation or from a semantic equation alone.
+
+Let s map the valid work identities of a fixed guarded resource expression to their specialized identities. This map can be noninjective: distinct instantiated views can become the same reference after substitution.
+
+The correct image of a finite work set is the Boolean direct image
+
+\[
+s_!(A)=\{s(e):e\in A\},\qquad
+\mathbf 1_{s_!A}(u)=\bigvee_{e:\,s(e)=u}\mathbf 1_A(e).
+\]
+
+It satisfies
+
+\[
+s_!(A\cup B)=s_!A\cup s_!B,\qquad
+(t\circ s)_!=t_!\circ s_!.
+\]
+
+Proof: both equations follow by unpacking membership as existence of a source element. This is the algebraic form of preserving shared handles under simultaneous substitution and then interning their images.
+
+### 62.2 Absorption commutes with specialization, after renormalizing
+
+Because direct image preserves inclusion,
+
+\[
+N\{s_!A:A\in N(\mathcal A)\}
+=N\{s_!A:A\in\mathcal A\}.
+\]
+
+Proof: every removed set had a retained subset; its image still has the image of that subset. Specialization can introduce additional equalities or inclusions, which the final N removes.
+
+Thus earlier subset absorption remains sound. One need not restore already dominated alternatives after specializing. Scalar cost choices have no corresponding general law, because both sharing and weights of instantiated work can change.
+
+### 62.3 Cache subtraction does not commute with a noninjective image
+
+Take A={a}, K={b}, a different from b, and s(a)=s(b)=z. Then
+
+\[
+s_!(A\setminus K)=\{z\},\qquad
+s_!A\setminus s_!K=\varnothing.
+\]
+
+The specialized demand is already shared with the specialized ready work. Subtracting before key identification loses this fact.
+
+Likewise, a signed difference of work-incidence vectors cannot be specialized by ordinary linear pushforward. For A={a,b}, B={c}, with all three mapped to z, the specialized sets agree and their difference is zero, whereas the linear image of e_a+e_b-e_c is e_z. Retain the work expressions on both sides; compute their images and deduplicate before forming a difference.
+
+The required ordering is therefore:
+
+```text
+reindex complete typed recipes and their guards
+    -> validate their applicable boundary premises
+    -> intern specialized producer/occurrence keys
+    -> resolve actual guarded demand and cut at ready keys
+    -> extract shared primitive work
+    -> compare or accumulate costs
+```
+
+This law concerns work-key expressions under their valid guards. It does not assert that every recorded evaluation trace survives arbitrary substitution unchanged. Specialization can expose a new redex or change a head/guard premise. Retain the recipe, and let the ordinary evaluator establish the specialized demand graph; an old terminal-neutral observation is not automatically a specialized terminal observation.
+
+## 63. An identity carries a contextual work difference
+
+### 63.1 Exact cost along an execution
+
+For a selected deterministic implementation P beginning in machine state S, let Cost(P,S) be its actual counted work and let S_P be its resulting state, including the retained cache. For sequential composition with the instantiated continuation Q_P,
+
+\[
+\operatorname{Cost}(P;Q,S)
+=\operatorname{Cost}(P,S)+\operatorname{Cost}(Q_P,S_P).
+\]
+
+This is ordinary trace concatenation. Sharing is expressed by the changed state S_P; the second term is evaluated with its cache cuts, not against an independently cold cache. The equality assumes successful execution and the same accounting boundary on both sides.
+
+### 63.2 Cost difference of an identity
+
+For a checked identity alpha relating compatible realizations P and Q, define its contextual work difference
+
+\[
+\epsilon_\alpha(S)=\operatorname{Cost}(P,S)-\operatorname{Cost}(Q,S).
+\]
+
+This is a difference of costs of the two realizations from the same state. Applying the identity at runtime has its own nonnegative execution cost, which remains a counted operation. A negative difference is a saving between alternatives, not a negative-cost machine instruction.
+
+For identities alpha:P~Q and beta:Q~R, at the same boundary and initial state,
+
+\[
+\epsilon_{\beta\circ\alpha}(S)
+=\epsilon_\alpha(S)+\epsilon_\beta(S),\qquad
+\epsilon_{\alpha^{-1}}(S)=-\epsilon_\alpha(S).
+\]
+
+Proof: the middle realization's cost cancels. These are identities of cost differences; composing two implementations of transport still incurs the transport work actually executed.
+
+For a continuation C, the exact contextual law is
+
+\[
+\epsilon_{\alpha;C}(S)
+=\epsilon_\alpha(S)
++\operatorname{Cost}(C_P,S_P)
+-\operatorname{Cost}(C_Q,S_Q).
+\]
+
+Both the instantiated continuation and its cache state are retained. This formula precisely accounts for a locally dearer realization that leaves more useful shared work for its continuation.
+
+### 63.3 The overlap mask in the fixed-resource case
+
+When the two plans and continuation have fixed compatible resource supports A, B, C, write a,b,c for their Boolean incidence vectors. Coordinatewise,
+
+\[
+a\lor c=a+c-ac,
+\qquad
+(a\lor c)-(b\lor c)=(1-c)(a-b).
+\]
+
+With a completed-work context K and incidence vector k, their remaining signed cost difference is
+
+\[
+\sum_e c(e)(1-k_e)(1-c_e)(a_e-b_e),
+\]
+
+where c(e) is the weight and c_e is the continuation's incidence coordinate. Work already present in the continuation or completed context cancels from the comparison. This overlap mask is the fixed-resource specialization of the stateful law above.
+
+The implementation retains both source work expressions and their typed identity evidence. A cached signed scalar or signed vector may be derived for a particular state; it must not replace the source expressions before subsequent substitution or continuation composition, by §62.
+
+### 63.4 Coherence of cost differences
+
+For any cycle of compatible realizations P_0~P_1~...~P_n=P_0 at one initial state, the sum of these cost differences is zero. More generally, two paths between the same realizations have the same total cost difference, by telescoping. This cost annotation therefore respects higher coherence automatically once its endpoint realizations, state, and work identities are fixed. After specialization, compute the specialized endpoint costs as in §62; the same theorem applies there. The physical work of traversing either sequence of identity applications remains its own nonnegative trace cost.
+
+## 64. Identity-generated execution spaces and geodesic certificates
+
+### 64.1 The execution relation
+
+Fix an admitted identity theory, its typed substitution/context closure, the chosen observation, and an initial machine state. The relation includes the operations actually admitted from those generators. A compiler transformation produces a checked realization or transformation call through the existing mechanism. A supplied propositional identity does not silently become a global definitional-conversion rule.
+
+Alternative realizations belong to the planning layer. Ordinary kernel WHNF continues to use its fixed reduction semantics. When an alternative produces a propositionally related result, retain and apply the evidence/transport needed at its consumers. A race between implementations must not choose the meaning of a kernel cache entry.
+
+Coverage means that every implementation in the specified comparison class has a corresponding permitted realization with its required evidence and cost accounting. This is an explicit premise of a problem-level optimality claim. Merely registering some useful identities does not itself prove coverage of all algorithms for that problem.
+
+### 64.2 Adding a checked shortcut
+
+Let d_0 be distance in the existing nonnegatively weighted graph and D_0(x)=d_0(x,Done). Add one instantiated edge u -> v of cost c. Then
+
+\[
+D_1(x)=\min\{D_0(x),\ d_0(x,u)+c+D_0(v)\}.
+\]
+
+Proof: a successful path either avoids the new edge or uses it. Repeated occurrences enclose a nonnegative cycle, which can be removed. Paths using it once have an old prefix and suffix. Conversely, every finite candidate in the formula has such a path. Use infinity for unreachable vertices.
+
+For both orientations, of costs c_+ and c_-, add the candidate d_0(x,v)+c_-+D_0(u) to that minimum. A shortest path need not use both orientations because doing so repeats an endpoint and forms a removable cycle. A schema with many instances induces the corresponding closure of distance relaxations.
+
+Here u and v are complete states for the chosen accounting model. Opposite mathematical orientations need not be reverse edges between the same physical states: executing a transport can retain additional cached results. Instantiate each orientation at its actual state, including that cache; use the two-edge formula only when its stated endpoints really agree. An abstract inverse of a semantic construction is not an instruction to erase live observations.
+
+The old distances survive precisely when every added directed edge obeys
+
+\[
+D_0(u)\le c+D_0(v).
+\]
+
+Necessity follows by starting at u; sufficiency follows by telescoping this lower-bound inequality along any path. Where the inequality fails, the new identity genuinely improves the available bound. Older longer paths remain mathematically valid.
+
+### 64.3 A finite, checkable optimality certificate
+
+For a nonnegative cost model, a lower-bound certificate is a function V on the compared machine states with V(t)=0 at successful terminals and
+
+\[
+V(s)\le c(e)+V(s')\quad\text{for every admitted edge }e:s\to s'.
+\]
+
+It follows by summing these inequalities that every successful path from s costs at least V(s). An attaining policy chooses an admitted edge at every nonterminal state in its domain and proves
+
+\[
+V(s)=c(e)+V(s').
+\]
+
+Successful execution of that policy therefore costs exactly V(s). If V is natural-valued and each selected step has positive integer cost, it terminates in at most V(s) steps, provided the policy supplies a step at every nonterminal state in its invariant domain. If zero-cost transitions are included, also supply a well-founded secondary rank decreasing on selected zero-cost transitions; the lexicographic pair supplies progress. Equality at a selected edge without progress or a successful path is not a termination certificate.
+
+For a finite explicit graph, backward shortest-path computation supplies these distances and attaining choices for reachable states. Its own work is measurable preprocessing. For symbolic families, a schema proof of the inequalities and a total attaining construction supplies the certificate without requiring a precomputed table of every state. Both presentations use the same theorem.
+
+The certificate record contains the compared state/interface domain, cost model, lower-bound function or table, proofs for the admitted rule schemas, attaining policy, and progress evidence. It must be checked against the actual admitted transitions, including identity applications and administrative operations charged by that model. A certificate of optimality for one fixed presented relation does not certify a larger relation until its additional edges satisfy the same obligations.
+
+### 64.4 Observations versus implementation choices
+
+For adaptive computations, an implementation is selected before an unknown observation chooses its branch. The worst-case objective is min over plans followed by max over allowed observations, with shared work counted on the resulting branch. The two quantifiers cannot be interchanged.
+
+For comparison sorting, a partial order P represents the current possible total-order extensions. Its optimal remaining comparison count is 0 when the total order is determined and otherwise
+
+\[
+C(P)=1+\min_{a\parallel_P b}\max\{C(P+(a<b)),\ C(P+(b<a))\},
+\]
+
+with transitive closure included. Every decision tree makes one such useful first comparison, giving the lower bound; choosing an attaining comparison recursively gives the matching algorithm. Each branch strictly increases known comparisons, so this recurrence terminates for a finite input set.
+
+This proves an optimal comparison strategy in that model. The cost of constructing the decision policy, maintaining residual orders, and executing comparisons belongs to the appropriate full implementation ledger. A sorting identity generates a valid factorization; the displayed recurrence or a stronger derived certificate determines its cost claim.
+
+## 65. Constant-factor transfer to C, including the selection cost
+
+### 65.1 Bounded-work primitives
+
+Fix a backend and count elementary transitions with bounded word reads, writes, arithmetic, branches, and bounded-size record changes. Variable-length operations are suspended frames that process bounded pieces. Scope traversal processes retained components; compound-key interning processes key components; DNF algorithms process atoms/clauses incrementally; allocation and reclamation process bounded chunks. Traversals, retries and synchronization are not hidden inside a nominal unit event.
+
+Every memo or interning-table state that changes this counted work belongs to the compared machine state. If a helper computation is represented as a memoized producer, its readiness participates in the demand graph as well. Producer-cache readiness alone is not a complete state description for fine host-instruction accounting.
+
+For a backend with a bounded nonzero instruction expansion for each counted primitive, its executed instruction count and fully refined trace cost differ by fixed factors and fixed setup terms. Constants may depend on the fixed backend and word architecture, not on the problem instance. Word overflow and allocation failure retain their checked host-control behavior; the theorem concerns executions within the specified resource domain.
+
+Use the deterministic executor as the reference implementation for this cost statement. Parallel execution includes its actual scheduling/synchronization work. The earlier abstract event vector remains a projection of the fine trace. A diamond balanced in the coarse vector need not be balanced after variable host routines are exposed; finer schedule-invariant cost requires the corresponding finer balance proof.
+
+### 65.2 The optimality-transfer lemma
+
+Let A be the chosen abstract relation and C the class of compared concrete implementations, all with the same input, observation, admission obligations, and allowed initial resources. Assume:
+
+1. **Cost-reflecting coverage.** Every successful concrete implementation p in C has an admitted abstract realization pi_p with Cost_A(pi_p) <= a Instr_C(p)+b.
+2. **Bounded implementation.** The selected abstract realization pi_* has a C implementation with Instr_C(emit(pi_*)) <= c Cost_A(pi_*)+d.
+3. **Abstract optimality.** pi_* minimizes Cost_A among the admitted realizations for the problem, established for example by §64's certificate.
+
+Then, writing I_best for the least concrete cost in C,
+
+\[
+\operatorname{Instr}_C(\operatorname{emit}(\pi_*))
+\le c\,\operatorname{Cost}_A(\pi_*)+d
+\le c(aI_{\rm best}+b)+d.
+\]
+
+This is the exact constant-factor inheritance theorem. Per-trace bounded implementation alone supplies premise 2; it does not supply cost-reflecting coverage or abstract problem-level optimality.
+
+### 65.3 Include selection, proof and compilation work
+
+If selecting and certifying pi_* is instance-dependent, the whole cost is
+
+\[
+I_{\rm whole}=I_{\rm select}+I_{\rm emit}+I_{\rm execute},
+\]
+
+with admission, normalization, interning and proof processing assigned to their actual stages. An end-to-end constant-factor result follows when the same construction also bounds its selection/emission overhead against the comparison baseline, or when those operations already lie inside the compared abstract execution and certificate. A fixed precompiled library can be part of the fixed initial resource; instance-dependent computation cannot be moved into that category merely by calling it compilation.
+
+Thus the target is a certificate for the complete selected process, including the work that obtains its plan. The resource profiles and identity cost differences above provide the accounting needed to state and check that certificate. They do not make plan search costless.
+
+## 66. Consequences for the next compiler increment
+
+The following records are additional compiler/certificate data over the current typed references and scoped programs. They do not alter the object-language constructor table or weaken kernel conversion.
+
+```text
+PlanBoundary:
+    admitted environment and source typing context/face
+    input references and required observation/result interface
+    output/continuation interface and checked connecting evidence
+
+ProducerRecipe:
+    canonical instantiated producer key
+    fixed operation program and guarded dependency recipes
+    typed result interface
+
+ConsumerOccurrence:
+    stable root or producer-owner/slot occurrence identity
+    requested producer key and continuation
+
+PlanExpression:
+    fixed guarded producer/dependency recipes
+    alternative, compatible composition, and scoped-specialization nodes
+    retained output evidence
+
+CostModel:
+    counted elementary operations and their nonnegative weights
+    initial-resource convention
+    backend simulation bounds where supplied
+
+OptimalityCertificate:
+    admitted comparison relation and invariant domain
+    lower-bound proof for each admitted transition/schema
+    attaining realization/policy and progress proof
+    complete accounting boundary, including selection when applicable
+```
+
+The derived operations have precise meanings:
+
+- **Specialize:** reindex typed recipes; intern their images; preserve original evidence and instantiate it. Apply Boolean identification of work keys. Re-establish any guard/head premises used for demand extraction.
+- **Demand:** compute the least closure of §60 with ready-key cuts and retain all actual consumer occurrences.
+- **Compose:** connect compatible typed interfaces; use one consistent recipe per shared producer; union identical work occurrences while retaining dependency edges and transports.
+- **Form alternatives:** retain checked realizations of the same requested interface. Keep guards and conditional branches explicit.
+- **Absorb:** use the proved fixed-resource subset rule where its interface/demand conditions hold, or a checked stronger contextual-dominance certificate. Do not discard an alternative solely because it has a worse cold scalar cost.
+- **Extract work:** enumerate actual counted operations of the demanded realization, including requests/deliveries, host administrative frames, and identity applications.
+- **Check optimality:** validate the lower-bound, attainment, progress, coverage, and accounting premises of §§64–65 for the exact claimed comparison class.
+
+The next increment must preserve these acceptance identities: overlapping producers execute once while distinct consumers remain distinct; a ready root cuts its prerequisites; specialization can identify previously distinct producer keys; subset normalization remains sound after specialization; cache subtraction is performed after that identification; call/binder/scope declarations survive in complete typed boundaries; and no instance-dependent optimization work disappears from the measured execution.
+
+The proved advances in these sections are the demand-closure laws, the fixed-resource contextual-dominance theorem, the specialization/absorption laws, the contextual identity-cost equations, the shortcut-distance formula, the geodesic-certificate theorem, and the constant-factor optimality-transfer lemma. Applying them to a universal inference procedure requires a construction satisfying their stated coverage, attainment, progress, and whole-process cost premises. That stronger conclusion is not asserted solely from the existence of the current identity compiler or from schedule independence of its fixed-program evaluator.
+
+
+## 67. An executable selector for finite identity-generated alternatives
+
+Sections 67–72 give the next compiler operation concretely: choose and certify a least-cost realization from a finite prepared family, preserving shared work. The operation runs outside ordinary kernel reduction and produces a realization plus evidence. It does not change the meaning of an existing evaluation key. Its own execution is measured. The worker's current review corrections remain applicable without implementing this increment first.
+
+### 67.1 The input and its exact scope
+
+A prepared selection problem contains:
+
+```text
+SelectionProblem:
+    admitted environment/session identity
+    complete common typed observation and continuation boundary
+    initial-resource convention and the snapshot to which the certificate applies
+    finite prepared plan expression, with realization witnesses
+    ordered table of elementary work identities and nonnegative integer weights
+    work-model identity and evidence relating prepared plans to that model
+    any already-completed elementary work admitted by that model
+```
+
+Preparation means that the compatibility, observation, guard, and demand conditions of §§60–61 have been discharged for the compared plans. Each plan retains a valid dependency order and its connecting evidence. An unresolved observation-dependent branch is not treated as a freely selectable implementation. For adaptive worst-case choice use §64.4's observation branches and min/max order. The operation specified here solves the fixed-resource alternatives after those conditions have been established.
+
+The always-valid finite presentation is an ordered list of complete prepared plans. More compact composition is permitted when there is a certificate that every represented combination is compatible. In particular, a shared producer has one recipe; distinct consumer occurrences remain distinct; and connecting transports and their work are present. If only some pairs of alternatives compose, explicitly retain the compatible pairs. The cost of finding and preparing those pairs is preparation work.
+
+A presentation consists of these nodes:
+
+```text
+EMPTY                         no realization
+PLAN(p, A)                    prepared realization p with finite work set A
+ALT(E, F)                     alternatives at the same complete boundary
+JOIN(E, F, g)                 certified compatible composition with connector g
+```
+
+`JOIN` carries the connector's work set and a witness that its work and interface apply to all represented combinations. If its connector depends on a choice, specialize the composition to that choice first. Do not erase such dependence to obtain a smaller formula.
+
+Every actual work occurrence has one weight in this problem. Two descriptions with the same work key must agree on the operation, operands, premises, and weight. Semantic equality of outputs alone does not identify work occurrences.
+
+### 67.2 The positive Boolean representation
+
+Introduce one Boolean control atom e for each distinct work occurrence. It means “this occurrence is available in the selected resource set.” These are finite, decidable planning decisions, not cubical interval variables or new object-language primitives.
+
+Translate the prepared expression to a shared formula DAG:
+
+\[
+F(\mathrm{EMPTY})=0,\qquad
+F(\mathrm{PLAN}(p,A))=\bigwedge_{e\in A} e,
+\]
+
+\[
+F(\mathrm{ALT}(E,G))=F(E)\lor F(G),
+\qquad
+F(\mathrm{JOIN}(E,G,g))=F(E)\land F(G)\land\bigwedge_{e\in W(g)}e.
+\]
+
+An empty conjunction is 1. The formula contains only 0, 1, atoms, conjunction, and disjunction. Retain the original typed expression and its witnesses beside the formula. Formula equivalence does not erase differences between proof objects or turn propositionally related references into identical kernel keys.
+
+**Representation theorem.** A set S satisfies F exactly when S contains the work set of some represented realization. Proof is structural: an alternative chooses a child, and a compatible composition unions the children's work and the connector's work. Conversely, each represented realization supplies a satisfying set. Thus F's inclusion-minimal satisfying sets are exactly §61's antichain of minimal work sets.
+
+Consequently, for nonnegative weights,
+
+\[
+\min_{p\text{ represented}}\sum_{e\in W(p)}w_e
+=\min_{S\models F}\sum_{e\in S}w_e.
+\]
+
+This converts selection with sharing into a precise finite optimization problem. It does not require expanding F to DNF. Repeated uses of the same atom contribute once because S is a set.
+
+### 67.3 Completed resources and cache cuts
+
+First establish the demanded graph with the ready-producer cuts of §60. Then, where the fixed-resource model permits an already-completed set K, form
+
+\[
+F_K=F[e:=1\text{ for }e\in K].
+\]
+
+Only the remaining atoms incur this selection problem's residual execution cost. Substitution into typed references and identification of work keys occur before this operation, as required by §62. An arbitrary ready-producer cache is not substituted into F as if readiness merely paid for a single atom: readiness can remove its entire prerequisite cone.
+
+The input evidence records which of these operations produced the prepared formula. A cached result for one snapshot is not reused as a certificate for another snapshot merely because their displayed formulas look similar.
+
+## 68. Exact selection by cofactors
+
+### 68.1 Formula operations and stable ordering
+
+Store fixed-arity formula records:
+
+```text
+ZERO | ONE | ATOM(work_id) | AND(left, right) | OR(left, right)
+```
+
+Intern exact records; hash collisions require structural comparison. The initial implementation needs only the following constructor simplifications:
+
+```text
+0 AND X = 0        1 AND X = X        X AND X = X
+1 OR  X = 1        0 OR  X = X        X OR  X = X
+```
+
+No global formula-equivalence oracle is needed. Ordered children may be retained. The absence of further simplification affects space and running time, not correctness.
+
+Assign atom order by deterministic traversal of the prepared expression's ordered fields, retaining each work identity at its first occurrence. This avoids using allocation-number magnitude as semantic order. Anchor that order in the problem record. Restricting an existing formula uses that same order. The indices are host control data, not names in the cubical context.
+
+`restrict(F,e,b)` recursively replaces the selected atom by 0 or 1, preserves other atoms, and rebuilds AND/OR with the above simplifications. Memoize its visits by `(F,e,b)` within the problem. It processes each reachable formula node once per such traversal. Rebuilding a formula does not evaluate any object-language reference.
+
+### 68.2 The recurrence and algorithm
+
+Let the uncompleted atoms be e_0,...,e_(m-1). A solver state `(F,i)` has no atoms before i. Define the tagged value INFINITY separately from every finite natural number.
+
+```text
+solve(F, i):
+    if F == ZERO: return (INFINITY, IMPOSSIBLE)
+    if F == ONE:  return (0, FINISH)
+    require 0 <= i < m and support(F) subset {e_i,...,e_(m-1)}
+
+    if e_i is absent from F:
+        q = solve(F, i+1)
+        return (q.cost, SKIP(q))
+
+    q0 = solve(restrict(F,e_i,0), i+1)
+    q1 = solve(restrict(F,e_i,1), i+1)
+    c0 = q0.cost
+    c1 = w[e_i] + q1.cost
+
+    if c0 <= c1: return (c0, OMIT(q0,q1))
+    else:        return (c1, TAKE(q0,q1))
+```
+
+`w + INFINITY = INFINITY`. On an infinite optimum return IMPOSSIBLE, retaining the proof of both impossible branches rather than a successful TAKE/OMIT witness. Finite ties choose OMIT. At a terminal ONE, all unassigned atoms are omitted. These conventions specify a reproducible least-cost assignment; they do not require mathematical uniqueness of the realizing plan.
+
+Memoize results by `(SelectionProblemId, residual_formula, next_atom_index)`. A result includes its proof/decision record, not only a scalar. The problem identity retains the environment, instantiated typed boundary, atom identities and order, weights, resource snapshot, and model evidence. A parameterized certificate can use a smaller key only when its declared parameters and validity guards account for everything removed.
+
+All recursive calls increase i. The algorithm terminates. A straightforward search has at most 2^(m+1)-1 binary decision-tree positions before memoization and skipping, and every cofactor has at most the original DAG's node count before extra equivalence simplifications. This is an explicit finite bound, not a claim that an arbitrary family has a small decision DAG. Every actual visit, dictionary operation, and arithmetic operation is counted.
+
+**Optimality proof.** Every satisfying assignment either omits e_i or includes it. The two disjoint cases are exactly the two cofactors. The included case pays w[e_i] once, and subsequent cofactors contain no further charge for e_i. Taking their minimum is therefore both a lower bound and attainable. Induction on m-i proves the result, including ZERO, ONE, and absent-atom cases. Combined with §67.2, this is exact optimality over the prepared realizations.
+
+### 68.3 Recover a typed realization
+
+Follow the selected finite decisions to obtain S. Evaluate the original prepared expression's formula nodes under S union K, memoizing truth values. For an ALT choose its first satisfied child; for a JOIN use both satisfied children and its connector; for a PLAN return its stored realization and evidence. This constructs a witness p with W(p) contained in S union K.
+
+By nonnegativity its residual cost is at most the selected assignment's cost. It is also a represented feasible realization, so it cannot have cost below the proved minimum. The costs therefore agree. With positive weights its charged support has no surplus selected atoms; zero-weight surplus atoms may be discarded without deleting any required structural or typing obligation.
+
+Build this witness as shared reference/template records with the existing scope discipline. A formula atom is never substituted for the object-language proof connecting the resulting realization to its requested observation.
+
+### 68.4 Substitution and changes of theory
+
+Reindex the complete prepared recipes and evidence, identify the resulting work keys, re-establish preparation conditions, then solve the resulting problem. An old chosen branch is a valid candidate when its premises survive, but is not automatically still cheapest.
+
+For example, let all weights be 1 and the alternatives be `{a,b}` and `{c,d,e}`. The first is initially cheaper. A specialization identifying c,d,e with one work key z while keeping a,b distinct makes the second cheaper. The exact formula and absorption laws commute with specialization; choosing one minimum before specialization need not do so.
+
+For an added prepared alternative G at the same boundary and resource model, the new optimum is `min(opt(F),opt(G))`. For an added identity schema, preparation may add many instantiated alternatives. The old winner remains a valid upper bound where its premises survive; its certificate of optimality does not cover the added alternatives until they are checked too.
+
+## 69. Certificates, interruption, and bounded search
+
+### 69.1 A checkable finite certificate
+
+The solver emits a DAG whose nodes contain `(F,i,value,decision,child_ids)`. Verification checks:
+
+1. The selection problem is prepared and the root formula represents it.
+2. ZERO and ONE have exactly their prescribed values and statuses.
+3. A SKIP atom is absent, and the child has `(F,i+1)`.
+4. Decision children have the correct cofactors and index i+1.
+5. The parent value is exactly the minimum of the omitted and charged included values, and its selected finite child attains that value.
+6. The recovered realization and its connecting evidence match the prepared boundary and attain that value.
+
+Cofactor correctness is checked by structural computation or by a checked structural derivation, not by trusting a solver-provided name. The increasing index prevents circular certificate proofs. A solver table entry that is RUNNING is not a proof premise. Concurrent requests for the same entry use the existing one-producer protocol; they do not independently assume its value.
+
+Finite values use checked natural arithmetic. If a fixed-width implementation cannot represent a sum, it reports a resource limit or continues in explicitly counted multiword arithmetic. It must not turn overflow into INFINITY, wrap to a smaller cost, or report the branch impossible.
+
+The verifier need not enumerate all represented plans separately. Its work is the actual certificate traversal, structural restriction checks, arithmetic, witness checking, and table operations. A large certificate still has a large verification cost.
+
+### 69.2 A certified incumbent while search is incomplete
+
+Selection may be suspended at any counted elementary step. A valid prepared baseline gives an initial incumbent: a realization p and its cost U. Without one, U is INFINITY. Maintain a frontier of partial assignments:
+
+```text
+SearchCell:
+    residual formula F
+    remaining atom positions
+    selected-prefix work set and its cost g
+    a proved residual lower bound l
+    derivation connecting this cell to the root alternatives
+```
+
+The cell's total lower bound is g+l. Its assignments represent exactly its remaining subtree. Initially there is one root cell with g=0. Each step either closes a terminal cell, splits a cell on its next atom into the two cofactor cells, or closes it using a sound lower bound. Store the parent certificate while constructing children; an interrupted operation must not temporarily remove that region from the frontier's coverage.
+
+For any nonzero positive formula define `Must(F)` as the atoms present in every satisfying assignment. Section 70 gives a direct computation. Its weight sum is a sound l. ZERO has residual lower bound INFINITY and no realization. ONE has exact residual cost 0.
+
+If g+l >= U and a finite incumbent is held, this cell cannot improve the cost and may be closed with that bound certificate. A later smaller incumbent preserves this conclusion. A pruned cell is not thereby unsatisfiable: do not memoize it as ZERO or INFINITY, or as an exact residual cost. Reusable entries retain their actual lower-bound proof and any separately established upper witness.
+
+Let B be the open frontier. Then
+
+\[
+L=\min\bigl(U,\ \min_{b\in B}(g_b+l_b)\bigr)
+\quad\text{satisfies}\quad
+L\le\operatorname{opt}(F_{\rm root})\le U.
+\]
+
+The empty inner minimum is INFINITY. Previously closed improving leaves have updated U; pruned regions have lower bounds at least the current U; impossible regions have no realization. These facts prove the displayed invariant. When L=U is finite, the incumbent is optimal even if some frontier cells remain. If the entire frontier closes with U=INFINITY, the represented family has no realization. An uncompleted search with U=INFINITY is merely unresolved.
+
+For deterministic reproduction, use a stack of search cells, branch on the first remaining atom, and visit OMIT before TAKE. On equal-cost complete witnesses retain the current incumbent. This branch-and-bound convention promises a deterministic optimum value and a valid attaining witness, not the lexicographically first witness of §68's exhaustive recurrence.
+
+### 69.3 Observable selector states
+
+```text
+PENDING(problem, continuation, optional incumbent, lower_bound)
+CERTIFIED_OPTIMUM(problem, realization, value, certificate)
+CERTIFIED_EMPTY(problem, certificate)
+RESOURCE_LIMIT(problem, suspended_state, optional incumbent, lower_bound)
+INVALID(problem, diagnostic)
+```
+
+An incumbent can be returned for execution when requested, carrying the explicit interval `[L,U]`. It is never labelled optimal unless L=U has been established. A budget exhaustion does not become a cached inequality or an impossibility proof. No incumbent can be returned without its typed realization and boundary evidence.
+
+Stopping selection retires only its owned continuations and search work after the usual ownership conditions are satisfied. It does not cancel work retained by other consumers or discard an ordinary evaluator result. The selection result is a planning record; ordinary kernel entries still publish only the result of their fixed recipes.
+
+### 69.4 One proof format for exhaustive and interrupted search
+
+A lower-bound proof has judgment `LB(F,l)`, meaning that every satisfying resource set of F has weight at least l. Its constructors are:
+
+```text
+TRIVIAL(F):                  LB(F,0)
+FALSE:                       LB(ZERO,INFINITY)
+MANDATORY(F,M):               LB(F,sum_weight(M)), where M = Must(F)
+SPLIT(F,e,p0,p1):             LB(F,min(l0,w[e]+l1))
+FACTOR(F,M,p):                LB(F,sum_weight(M)+l)
+DISJOINT_AND(F,G,p,q):        LB(F AND G,lF+lG)
+OR_BOUND(F,G,p,q):            LB(F OR G,min(lF,lG))
+WEAKEN(p,k):                  LB(F,k), where 0 <= k <= l
+```
+
+SPLIT checks that p0 and p1 prove bounds for the two exact cofactors, whose supports omit e. FACTOR checks `M=Must(F)` and that p concerns `F[M:=1]`. MANDATORY and FACTOR use a nonzero F. DISJOINT_AND checks disjoint supports; OR_BOUND checks its two child formulas. Every rule checks the computed value with exact arithmetic. Only finite acyclic proof DAGs are accepted; a back-reference to a proof still being checked is invalid.
+
+A separate upper witness contains a represented typed realization, its checked support, and its computed residual cost U. An optimality certificate is a lower proof for L together with an upper witness for U with L=U. An emptiness certificate is a lower proof for INFINITY and no upper witness. Finiteness of the atom set and finite weights makes an infinite lower bound incompatible with any satisfying assignment.
+
+The exhaustive recurrence builds SPLIT proofs; a ONE terminal uses TRIVIAL and its empty witness. An interrupted search retains a SPLIT tree with sound lower proofs at its frontier leaves. A pruned leaf retains its existing lower proof. Thus both search modes use the same verifier, and closure of a branch never acquires a meaning stronger than the proof actually stored. The factoring and disjointness shortcuts in §70 are the corresponding constructors above.
+
+## 70. Factoring shared obligations and the directly solvable fragment
+
+### 70.1 Compute mandatory work structurally
+
+For a nonzero positive formula, mandatory atoms obey:
+
+```text
+Must(ONE)       = empty set
+Must(ATOM(e))   = {e}
+Must(AND(F,G))  = Must(F) union Must(G)
+Must(OR(F,G))   = Must(F) intersection Must(G)
+```
+
+Simplify ZERO first: an AND with ZERO is ZERO, and an OR with ZERO is its other child. With only positive atoms, a formula with no surviving ZERO obstruction is satisfiable by setting all its atoms to 1. In an AND, an atom is optional precisely when both children can be satisfied without it: unioning their positive satisfying assignments supplies a common assignment. In an OR it is mandatory precisely when both alternatives require it. This proves the structural equations.
+
+If M=Must(F), then
+
+\[
+F\equiv\left(\bigwedge_{e\in M}e\right)\land F[M:=1],
+\qquad
+\operatorname{opt}(F)=\sum_{e\in M}w_e+\operatorname{opt}(F[M:=1]).
+\]
+
+Every solution already includes M, and substituting M removes exactly those future charges. This factors compulsory shared work once. Computing set unions, intersections, and substitutions has its actual measured cost; no unbounded bitset operation counts as one elementary step.
+
+Example: `(a OR b) AND b` has Must={b}; after setting b to 1 its residual is ONE. The selector returns b, including when b is individually more expensive than a. This exactly resolves the sharing example of §61 without enumerating its complete alternatives.
+
+### 70.2 Independent residuals
+
+If `support(F)` and `support(G)` are disjoint, then
+
+\[
+\operatorname{opt}(F\land G)=\operatorname{opt}(F)+\operatorname{opt}(G).
+\]
+
+The minimum of a disjunction is always the minimum of its children's optima. The conjunction equation requires disjoint charged supports: each child's optimum can be attained without affecting the other's charges, and every joint assignment pays both lower bounds. These are statements within the compatible prepared-plan domain of §67.
+
+Therefore, after mandatory-work factoring, a formula whose remaining conjunctions have disjoint support can be solved by bottom-up min and addition, with memoization of repeated formula nodes. The number of value-combination operations is linear in the traversed DAG. Support checks, factor construction, set operations, natural arithmetic, and dictionary work remain separately counted. A disjointness certificate must apply after specialization and resource identification, since two previously distinct atoms may become the same key.
+
+### 70.3 Resolve the shared choice itself
+
+For `(a OR b) AND (b OR c)`, branching on b gives:
+
+```text
+b omitted: a AND c
+b included: ONE, with b charged once
+```
+
+Hence its optimum is `min(w[a]+w[c], w[b])` when a,b,c are distinct charged atoms. This is the general cofactor recurrence applied exactly at a shared decision. It does not independently choose a locally cheapest producer for each conjunct.
+
+Factoring, disjoint decomposition, and cofactor branching can be combined in one selector. Each is justified by an equation above. A faster implementation can emit the corresponding short certificate instead of the full binary recurrence, provided the verifier checks that equation's premises. The exhaustive recurrence remains a complete fallback for every finite prepared formula.
+
+### 70.4 Compile and reuse selection schemas
+
+A registered identity family can carry a scoped selection schema consisting of a prepared formula construction, the equations used to factor it, its interface evidence, and any disjointness or weight-comparison guards. The existing scoped-template machinery instantiates those parameters and proofs. It is unnecessary to rediscover the same derivation separately for every input.
+
+Reusing a schema means checking or establishing its instantiated guards, then obtaining its attaining realization through the fixed template. It does not mean reusing a previously selected branch when substitution changes its guards, weights, work identities, or ready resources. These distinctions are represented in the schema's typed parameters and selection-problem key.
+
+This is a concrete route from a mathematical family identity to a reusable efficient selector: the identity provides valid alternatives, and the resource equations provide a reusable choice derivation. All its arithmetic and guard checking remain executable, counted operations.
+
+## 71. Selection is measured computation
+
+### 71.1 Elementary frames
+
+The recursive pseudocode is executed as explicit continuation frames. Each frame performs a bounded part of one operation and reschedules its next phase. Required frame families are:
+
+```text
+PREPARE_VISIT / VALIDATE_PREPARED_BOUNDARY
+FORMULA_VISIT / FORMULA_INTERN_STEP
+COFACTOR_VISIT / COFACTOR_REBUILD
+SUPPORT_CHUNK / MUST_CHUNK
+SOLVE_ENTER / SOLVE_JOIN
+FRONTIER_SPLIT / FRONTIER_CLOSE
+COST_ADD_CHUNK / COST_COMPARE_CHUNK
+CERTIFICATE_VISIT / REALIZATION_VISIT
+ALLOCATE_CHUNK / RELEASE_CHUNK
+```
+
+These are host implementation states, not additions to the object-language signature. A frame may read/write bounded fields, make a bounded arithmetic step, or advance one limb, key component, set chunk, or allocator step. Any table probe or collision-chain step is counted; any variable-size equality comparison is resumed componentwise. No frame is allowed to hide a whole scope traversal, proof check, allocation sweep, or formula normalization.
+
+An explicit frame stores the operation operands, current component index, partial result, and continuation. Binary traversals have phases ENTER, WAIT_LEFT, WAIT_RIGHT, and FINISH. Unvisited children become requests for the corresponding memoized operation. Published memo results wake the waiting frame through the ordinary delivery protocol. Omit WAIT_RIGHT for unary work. Every continuation is consumed once; partially built records remain private until their fields and proofs are complete.
+
+The finite set of bounded frame bodies provides §65's constant-factor relation to a fixed C backend, within its stated resource domain. Constructor names alone do not provide that bound: the required refinement includes the helper loops and memory management just listed. Cross-schedule equality of this fine cost is a separate property and is not inferred from equality of the old coarse event vectors.
+
+### 71.2 The exact total ledger
+
+For one run, split the actual trace into preparation, selection/certification, commitment/emission, and execution. Then
+
+\[
+I_{\rm total}=I_{\rm prepare}+I_{\rm select/check}+I_{\rm commit}+I_{\rm execute}.
+\]
+
+Each term counts what actually ran, with execution starting from the state left by the preceding phases. Shared helper results already obtained by preparation or selection can be reused; their earlier computation is charged in its earlier phase and a later lookup/delivery is charged when it occurs.
+
+A certificate for the prepared resource model establishes the selected realization's minimum in that model. To use its number as the exact execution ledger, the commitment evidence must establish the model's starting-state and work-occurrence premises for the actual execution. To use it for a C bound, use §65's simulation premises. A change in allocator, interning, or cache state must not silently be ignored in a claim about exact host-instruction cost. Conversely, a certificate only claiming abstract producer work need not pretend to predict allocator instructions.
+
+If an implementation isolates a model's execution state from selection state, the setup and any duplication of state are part of commitment. If it reuses a warmed state, it uses the applicable demand and simulation argument for that state. Merely naming preparation “compilation” proves neither alternative's cost bound.
+
+### 71.3 Reuse and amortization
+
+Let S be the actual one-time cost of building and checking a reusable selection schema. For calls j=1,...,N let L_j include instantiation, guard checking, selection lookup, and commitment, and let E_j be actual execution. Relative to the stated allowed initial resources, the exact total is
+
+\[
+S+\sum_{j=1}^N(L_j+E_j).
+\]
+
+Suppose a schema's checked family theorem and backend relation establish `E_j <= c O_j+d`, where O_j is the optimum in its declared comparison class, and its instantiated selection/commitment work satisfies `L_j <= a O_j+b`. Then
+
+\[
+I_{\rm total}\le S+(a+c)\sum_{j=1}^N O_j+(b+d)N.
+\]
+
+This proves an end-to-end family bound with explicit setup. If S is an allowed fixed initial library resource, or is itself bounded by the compared workload, the corresponding constant-factor conclusion follows. A precomputed per-input answer table is not a fixed library resource merely because it is stored in the same registry.
+
+The finite selector supplies exact choice and a certificate. The fast fragment and reusable schemas supply concrete cases in which obtaining that choice avoids exhaustive branching. No uniform bound on selection overhead for every identity theory is inferred from the existence of these algorithms. Such a family bound is established by the two displayed per-call inequalities and coverage of the specified comparison class.
+
+## 72. Integration and acceptance obligations
+
+The additional API has the following behavior:
+
+```text
+prepare_selection(finite alternatives, boundary, resource model)
+    -> prepared problem or INVALID / RESOURCE_LIMIT
+
+begin_selection(prepared problem, optional checked baseline)
+    -> selection handle
+
+step_selection(handle, elementary_step_budget)
+    -> one of the states in §69.3
+
+check_selection_certificate(problem, certificate)
+    -> VALID / INVALID / UNRESOLVED
+
+commit_selection(problem, realization, witness)
+    -> checked realization/reference at the required boundary
+```
+
+Preparation checks finite supplied realizations; it does not promise to enumerate all instances of an unrestricted identity theory. Coverage is exactly the prepared expression plus its closure evidence, if supplied. The certificate records that domain. `commit_selection` validates the retained premises and evidence before exposing the requested realization. It does not relabel a different recipe with an existing evaluation key or install propositional equality as kernel conversion.
+
+The implementation acceptance cases are:
+
+1. EMPTY is certified empty; an empty valid work set has cost 0 and a realization. These outcomes remain distinct.
+2. Two consumers of one producer retain both consumer costs and one producer cost.
+3. A ready producer cuts its prerequisites before fixed-resource selection begins.
+4. `(a OR b) AND b` selects b; `(a OR b) AND (b OR c)` has the cost equation of §70.3.
+5. A shared atom is charged once after cofactoring; all cost arithmetic is exact or reports resource exhaustion.
+6. Incompatible alternative pairs cannot become feasible through an unchecked AND. Required connector work is present.
+7. A specialization merging work keys can change the winner; the former optimum is not returned as a cached optimum for the new problem.
+8. Search interruption preserves the frontier cover and a valid `[L,U]`; a pruned cell is never recorded as impossible.
+9. An invalid child value, wrong cofactor, missing alternative, omitted connector, changed weight, or wrong boundary causes certificate rejection.
+10. Formula equality does not merge distinct proof witnesses or overwrite a kernel reference's fixed result semantics.
+11. The mandatory-work and disjoint-support shortcuts agree with exhaustive selection; the latter's guard is re-established after specialization.
+12. Selection, certificate verification, emission, table maintenance, and reclamation appear in the fine work ledger. Memoized reuse retains its lookup/delivery cost.
+
+These sections fully specify finite prepared selection, its exact optimality certificate, a preemptible search with sound bounds, and a structurally solvable fragment with reusable schemas. The implementation consequence is concrete: identity-generated alternatives can now be selected by their joint shared work, with a checkable attaining realization and an explicit account of what selecting it cost. Applying this operation to a larger or infinite execution space uses an accompanying coverage/family theorem; that theorem is not silently manufactured by the selector.
+
+
+## 73. Corrected implementation disposition after §59 acceptance
+
+### 73.1 Decision and mathematical boundary
+
+**Proceed with the work below now. Do not pause the whole increment. Do not implement the §68 automatic cofactor solver or the §69 frontier/incumbent machinery as a required component.** Removing branch-and-bound alone would retain exhaustive plan search and would not correct the architectural detour.
+
+The existing identity compiler gives checked executable transformations. The next authorized work makes the retained sharing, demand, specialization and cost structure explicit around those actual transformations and executions. The author-added comparison of independently prepared programs is not substituted for normalization of a posed declaration.
+
+The source's §5.28 identifies its claimed minimum over identity-application orders from the same posed declaration. Keep that comparison domain explicit. Resource equalities, interaction diamonds and concrete implementation costs each require their own stated interpretation; a cost formula is not permission to change a kernel reference's recipe. This amendment gives an implementable infrastructure increment, not a new proof or implementation of the source's full declaration-to-answer claim.
+
+### 73.2 Exact section disposition
+
+| Material | Required action |
+| --- | --- |
+| §60 | Implement demand extraction with ready-key cuts, required dependency occurrences, one shared producer and separate consumers. Obtain demand premises from the admitted recipe and actual observation; retain unresolved guarded demand rather than inventing dependencies. |
+| §61 | Implement the finite resource algebra and valid subset-absorption checks. Retain factored DAGs. An expanded antichain is a semantic normal form, not a requirement to enumerate a family or choose a program. |
+| §62 | Implement typed specialization, work-key identification and Boolean direct image before cache cuts/cost calculation. Re-establish applicable guard/head premises. |
+| §63 | Implement the contextual work annotations and differences of two supplied, compatible realizations. Retain both source expressions, connecting evidence and starting state. A difference is an annotation; executing a transport has its actual nonnegative cost. |
+| §64 | Retain the transition-domain, lower-bound, attainment and progress certificate contracts. Validate supplied finite certificates against their stated domain. Do not add shortest-path search or the sorting-policy recurrence as a runtime requirement. The mathematical lemmas remain reference material. |
+| §65 | Implement the bounded-step refinement and backend-accounting obligations. Count helper work and actual initial resources. The transfer lemma remains conditional on its displayed coverage and optimality premises. |
+| §66 | Implement the declared boundary, recipe, consumer, expression, cost-model and certificate records and their direct operations. The word `Plan` in a record name does not require a planner. A record may describe an existing checked construction or actual execution. |
+| §67 | Retain finite expression/compatibility validation and the shared positive formula representation as resource annotations. Keep typed witnesses and connector costs. Do not enumerate realizations or make preparation of a plan family a prerequisite for ordinary machine execution. |
+| §68.1 | Implement formula interning, stated constructor simplifications, stable atom order and `restrict` as a syntactic operation. |
+| §68.2 | Automatic `solve(F,i)`, recursive OMIT/TAKE exploration and the selection memo table are excluded from this increment. |
+| §68.3 | Retain realization reconstruction when a checked support/witness is supplied. Reconstruction does not create or search for that witness. |
+| §68.4 | Retain specialization and environment invalidation laws for work annotations and supplied certificates. |
+| §69.1 and §69.4 | Retain verification of supplied finite proof DAGs and upper witnesses, including exact arithmetic and boundary checks. Checking a supplied SPLIT proof does not launch a search for its children. No certificate is synthesized by assuming its desired conclusion. |
+| §69.2–§69.3 | Remove the required SearchCell frontier, incumbent, pruning and selector-state API. Suspension is ordinary continuation suspension, with no inferred mathematical verdict. |
+| §70 | Implement Must, mandatory factoring, disjoint-support checks, the displayed directly derivable resource equalities, and instantiation of supplied scoped schemas. A rule fires only when its checked premises hold. An unreduced resource expression is retained; it does not trigger fallback enumeration. |
+| §71 | Implement bounded continuation frames, memo reuse and the actual total-work ledger for the retained operations. Omit SOLVE and FRONTIER frame families. Count certificate checking and any explicitly requested resource analysis where they actually run. |
+| §72 | Replace the automatic selector API and selection acceptance interpretation with §73.3–§73.5 below. The non-search invariants remain required. |
+
+The old algorithm text is retained as reference material so the change is explicit and lossless. It is not an active implementation mandate.
+
+### 73.3 Operations and integration
+
+Expose the direct operations already defined in §66: specialize, demand, compatible compose, form supplied alternatives, justified absorb, extract work, and check supplied cost/optimality evidence. Add the formula and proof operations retained in the table. These are explicit requests over existing checked records; none implicitly invokes an optimizer.
+
+Connect them to the accepted identity-compiler and evaluator APIs:
+
+1. A compiled identity transformation retains its complete instantiated boundary and connecting evidence. Its actual application/receiver and evaluator work use the existing counted producer/consumer occurrences.
+2. Work annotations retain operation and operand identity. Coincident output values do not identify unrelated work. Two requests for the same producer retain two request/delivery pairs.
+3. For actual-run reporting, use the actual execution trace and its initial resources. For symbolic recipe accounting, retain the recipe's guard/head premises and certify its relationship to that trace before describing it as an exact execution prediction.
+4. Resource simplification never overwrites an ordinary evaluator key with a different recipe. Any executable change uses an existing checked transformation and carries the required connection to its consumer boundary.
+5. Finite certificate verification accepts an exact supplied domain with all required edges/alternatives, or instantiated schema evidence for that domain. Incomplete coverage is not silently treated as complete. Checking a lower bound, a successful trace, or an empty supplied family does not establish uninhabitability of an arbitrary declaration.
+
+For bounded execution of these host operations, use the ordinary operation handle and continuation discipline: RUNNING with retained state; COMPLETE with a result; RESOURCE_LIMIT with resumable retained state where resumption is supported; INVALID with a diagnostic. These are operational states, not new object-language datatypes or additional logical answers. `step(handle,budget)` advances only counted bounded frames and does not create an incumbent or a search frontier.
+
+The §72 names `begin_selection`, `step_selection` and `commit_selection` are not required. Ordinary execution continues through the accepted machine; an explicitly supplied checked transformation or witness is instantiated through its existing interface.
+
+### 73.4 Work accounting and sharing
+
+Retain §60's demand closure and §65's instruction-accounting refinement as distinct levels. The coarse event vector remains available. The fine ledger exposes bounded word/key/set/limb/allocator steps, including table probes and variable-length comparisons. Merely incrementing a counter once around an unbounded C helper does not implement this requirement.
+
+Use the deterministic executor for the bounded-backend correspondence. Record the actual synchronization and scheduling work of parallel executions. Require schedule independence only for the event classes whose balance has been established; do not silently infer it for all fine administrative work.
+
+Charge each phase that actually executes: annotation preparation, explicit resource rewriting, certificate checking, transformation instantiation/commitment and ordinary execution. Record reuse with its lookup/delivery cost. The source expressions, typed evidence and complete relevant environment/resource snapshot remain available after a derived scalar is calculated.
+
+### 73.5 Acceptance and delivery
+
+Keep every existing accepted regression and full sanitizer gate. Add these concrete cases, using the existing compiler/runtime for integration:
+
+1. Two consumers of one producer yield one producer's work and two request/delivery occurrences.
+2. A ready root cuts its prerequisite cone; a ready intermediate cuts only the demand paths that pass through it.
+3. Substitution that identifies work keys deduplicates before costs/cache cuts; a stale annotation/certificate is not reused after its premises change.
+4. Resource equalities include `(a OR b) AND b = b` and `(a OR b) AND (b OR c) = b OR (a AND c)`, with witnesses/connectors preserved. At positive distinct-atom weights, the latter has cost `min(w[b], w[a]+w[c])` by the displayed equality. Implement that supplied derivation without a general recursive decision procedure.
+5. Incompatible composition rejects; omitted connector work or evidence rejects. Formula equality alone does not merge proof witnesses or kernel references.
+6. Supplied lower-bound/attainment certificates check. Corrupted cofactors, arithmetic, weights, domain coverage, connectors or boundary evidence reject. Checking an explicit proof never fills missing nodes by search.
+7. Mandatory-work and disjoint-support rewrites preserve their resource meaning. Re-establish disjointness after specialization.
+8. Suspend and resume each retained bounded-frame operation at internal phases. Its completed result agrees with uninterrupted execution, while budget exhaustion produces no false impossibility or optimality verdict.
+9. Every actual helper loop and memory-management operation in the claimed fine ledger is accounted for. Repeated memoized calls include lookup/delivery cost and do not rerun an already completed producer.
+10. Execute the accepted associativity transformations in both orientations, with repeated and overlapping demands. Exercise capture/reindexing, extract the actual work record and validate its annotation. An extra typed example should exercise identity-related work expressions and a supplied resource/cost derivation; it must execute its actual transformation through the accepted net/evaluator path.
+
+Deliver the implementation, section-to-function/test mapping, full sanitizer results and commit identifier. Identify this deliverable as **identity-execution accounting and cost refinement**. It closes these retained post-§60 obligations. Acceptance of it does not silently relabel the excluded finite selector as the original invention or certify the full declaration-to-answer construction.
+
+This is an implementation instruction, not a request for another choice between search and a total hold.
+
 
 ## Appendix A. Latest assistant reply verbatim
 

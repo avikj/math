@@ -45,6 +45,9 @@ typedef struct {
     VEC(Cont *) waiters;
     size_t runs;        /* EVALUATE tasks executed for this key (must be ≤ 1) */
     size_t n_req, n_deliver, n_pub;   /* per-key event counts (for schedule comparison) */
+    size_t steps;       /* §60 trace: EVALUATE/RESUME frame steps charged to this producer */
+    uint64_t env;       /* the environment version of the key */
+    VEC(EntryId) deps;  /* §60 trace: consumer occurrences owned by this producer, in request order (slot = index) */
     pthread_mutex_t mu; /* guards state, result, waiters and the counters above */
 } Entry;
 
@@ -110,6 +113,15 @@ size_t eval_running_count(void);
 RefId eval_entry_ref(EntryId e);
 void eval_entry_events(EntryId e, size_t *req, size_t *deliver, size_t *pub);                    /* entries currently RUNNING */
 size_t eval_task_count(void);                       /* EVALUATE tasks created so far */
+
+/* §60 / §73 trace of the actual run: every request is a consumer occurrence
+ * (owner producer key or 0 for a root/external request, slot = its ordinal
+ * among the owner's occurrences, requested key). Root occurrences are
+ * numbered globally in request order. */
+size_t eval_entry_deps(EntryId e, EntryId **out);   /* copies the owner's occurrences; caller frees *out */
+size_t eval_entry_steps(EntryId e);
+uint64_t eval_entry_env(EntryId e);
+size_t eval_root_occurrences(EntryId **out);        /* copies the root occurrence list; caller frees *out */
 
 /* continuation constructors used by the net layer */
 typedef void (*ExternalDeliver)(void *ctx, EvalResult *r);

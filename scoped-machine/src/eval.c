@@ -77,6 +77,8 @@ static struct {
     /* the evaluator's net (§43): APPLY_TRANSFORM / CONTINUE_REFERENCE pairs
      * are jobs of this scheduler (one outstanding count) */
     Net net; SchedPolicy pair_policy;
+    /* §60 trace: root / external consumer occurrences in request order */
+    VEC(EntryId) roots; pthread_mutex_t roots_mu;
     /* counters */
     size_t tasks_created;
     EvalEvents ev;
@@ -117,6 +119,7 @@ static void *worker_main(void *arg);
 
 void eval_init(void) {
     memset(&E, 0, sizeof E);
+    pthread_mutex_init(&E.roots_mu, NULL);
     interner_init(&E.keys);
     chunked_init(&E.entries, sizeof(Entry));
     pthread_mutex_init(&E.entries_mu, NULL);
@@ -171,6 +174,7 @@ static Entry *ENT(EntryId e) { return (Entry *)chunked_get(&E.entries, e - 1); }
 
 void eval_free(void) {
     stop_workers();
+    vec_free(&E.roots); pthread_mutex_destroy(&E.roots_mu);
     net_free(&E.net);           /* after the workers: a pending pair is a job */
     for (size_t i = 0; i < E.n_entries; i++) {
         Entry *e = ENT(i + 1);
@@ -181,6 +185,7 @@ void eval_free(void) {
             free(k);
         }
         vec_free(&e->waiters);
+        vec_free(&e->deps);
         pthread_mutex_destroy(&e->mu);
     }
     interner_free(&E.keys);
@@ -300,7 +305,7 @@ static EntryId entry_intern(RefId t, FaceId eta) {
     if (created) {
         Entry *e = (Entry *)chunked_at(&E.entries, id - 1);
         memset(e, 0, sizeof *e);
-        e->ref = t; e->face = eta; e->state = E_UNEVALUATED;
+        e->ref = t; e->face = eta; e->state = E_UNEVALUATED; e->env = w[2];
         pthread_mutex_init(&e->mu, NULL);
         E.n_entries = id;
     }
@@ -324,6 +329,20 @@ RefId eval_entry_ref(EntryId e) { return ENT(e)->ref; }
 void eval_entry_events(EntryId e, size_t *req, size_t *deliver, size_t *pub) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); *req = x->n_req; *deliver = x->n_deliver; *pub = x->n_pub; pthread_mutex_unlock(&x->mu); }
 size_t eval_running_count(void) { size_t c = 0, n = eval_entry_count(); for (size_t i = 1; i <= n; i++) if (eval_entry_state(i) == E_RUNNING) c++; return c; }
 size_t eval_task_count(void) { return __atomic_load_n(&E.tasks_created, __ATOMIC_SEQ_CST); }
+size_t eval_entry_deps(EntryId e, EntryId **out) {
+    Entry *x = ENT(e); pthread_mutex_lock(&x->mu);
+    size_t n = x->deps.len; *out = n ? malloc(n * sizeof(EntryId)) : NULL; require(!n || *out, "out of memory");
+    if (n) memcpy(*out, x->deps.data, n * sizeof(EntryId));
+    pthread_mutex_unlock(&x->mu); return n;
+}
+uint64_t eval_entry_env(EntryId e) { return ENT(e)->env; }
+size_t eval_entry_steps(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); size_t s = x->steps; pthread_mutex_unlock(&x->mu); return s; }
+size_t eval_root_occurrences(EntryId **out) {
+    pthread_mutex_lock(&E.roots_mu);
+    size_t n = E.roots.len; *out = n ? malloc(n * sizeof(EntryId)) : NULL; require(!n || *out, "out of memory");
+    if (n) memcpy(*out, E.roots.data, n * sizeof(EntryId));
+    pthread_mutex_unlock(&E.roots_mu); return n;
+}
 
 /* DELIVER is counted here, on the common delivery path, for ready hits and
  * for publication alike; the resumed frame step is counted when the RESUME
@@ -361,6 +380,9 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     EntryId eid = entry_intern(t, eta);
     Entry *e = ENT(eid);
     add_count(&E.ev.request);
+    /* §60 trace: the consumer occurrence (owner, slot, requested key) */
+    if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { pthread_mutex_lock(&E.roots_mu); vec_push(&E.roots, eid); pthread_mutex_unlock(&E.roots_mu); }
+    else { Entry *o = ENT(k->dest); pthread_mutex_lock(&o->mu); vec_push(&o->deps, eid); pthread_mutex_unlock(&o->mu); }
     /* readiness check and waiter registration under the same lock (§10) */
     pthread_mutex_lock(&e->mu);
     e->n_req++;
@@ -668,6 +690,8 @@ static void resume(Cont *k, EvalResult *r) {
 static void execute(Task t) {
     if (t.is_pair) { net_step_pair(&E.net, t.pair); return; }
     add_count(&E.ev.eval_step);
+    { EntryId owner = t.is_resume ? t.k->dest : t.entry;    /* §60 trace: the frame step belongs to the producer it advances */
+      if (owner && !(t.is_resume && (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL))) { Entry *o = ENT(owner); pthread_mutex_lock(&o->mu); o->steps++; pthread_mutex_unlock(&o->mu); } }
     if (t.is_resume) { resume(t.k, t.r); cont_release(t.k); }   /* single consumer: released once resumed */
     else evaluate(t.entry);
 }

@@ -252,6 +252,46 @@ ASan, `diagram-race` under TSan, as the runner distributes them).
 | --- | --- | --- | --- |
 | R3 raw-origin children escaped structural validation | The validator is a separate finite walk, distinct from the substitution traversal (which, by the representation contract, visits only a raw view's boundary images): it visits boundary images, the stored fields of raw origins (binders are ordinary identities, so the depth is unchanged — inactive branches and metadata included), the environments of template views, and every scope reachable from them with the actual enclosing telescope stack; memoized per (record, telescope stack), so validity inside a telescope is never reused at the top level; GLOBAL bodies are not unfolded | `scope.c` `val_ref`, `val_scope` | `review-nested-scope` (fst-wrapped malformed tube under false, system with the malformed tube in its false branch at true, zero-arity scope holding the wrapper; positive: a valid tube below a raw annotated pair and fst) |
 
+## 5h. The §73 increment: identity-execution accounting and cost refinement
+
+Baseline `24b2bfb`. New: `src/work.{h,c}`, `tests/test_work.c` (198 checks, run
+sequentially and with `CUBICAL_WORKERS=4` under ASan/UBSan/LSan and under TSan),
+trace fields in the evaluator and net, HANDOFF v8 (`HANDOFF.md`) and the §73
+direction (`DIRECTION-73.md`). All previous gates unchanged and passing.
+
+Section → function → acceptance case (§73.5):
+
+| Spec | Functions | Cases |
+| --- | --- | --- |
+| §60.1 identities | `atom_producer/request/deliver/pub/eval/apply`, evaluator `deps/steps/env`, net trace | 1, 10 |
+| §60.2 closure, cuts, laws | `demand_closure`, `work_ready_snapshot` | 1, 2, 10 |
+| §60.3 extraction | `work_extract`, `workset_counts` (= coarse events) | 1, 10 |
+| §61.1–61.3 algebra, dominance | `family_make/plus/times`, `formula_antichain`, `family_dominates`, `family_residual` | 4, 7 |
+| §62.1–62.3 specialization | `set_specialize`, `formula_specialize`, `plan_specialize` (reindex → validate → intern → dedupe → then cuts/costs) | 3, 7 |
+| §63 differences | `costdiff_make/epsilon/masked/current` | 3, 10 |
+| §64.3 geodesic certificates | `geo_new/edge/value/policy/rank/check` | 6 |
+| §65.1, §71 frames and ledger | `op_*`, `work_ledger`, `work_record_execution` | 8, 9 |
+| §66–67 records, compatibility | `boundary_make`, `plan_make`, `connector_make`, `expr_*`, `problem_prepare` | 4, 5, 6 |
+| §68.1 formulas | `formula_and/or/atom/restrict/subst/support/must` | 4, 6, 8 |
+| §68.3 reconstruction | `realize`, `realization_reference` | 3, 4, 5, 10 |
+| §68.4 invalidation | `problem_current`, certificate problem identity | 3, 6 |
+| §69.1/69.4 verification | `proof_*`, `certificate_make/check` | 6, 7 |
+| §70.1–70.3 direct fragment | `formula_reduce`, `problem_reduce`, EQUAL/shared-or | 4, 7 |
+| §70.4 schemas | `schema_make`, `atom_map_make`, `schema_instantiate` | 7 |
+| §73.3 integration | `dgraph_from_trace_since`, case 10 (associativity, both orientations, overlapping demands, APPLY atoms, commit through `observe_checked`) | 10 |
+
+Boundaries a reviewer should know: (i) the atom order anchored in a problem is the
+first-occurrence order over the plans' and connectors' *ordered* work lists
+(`plan_make` takes a list, keeps a set beside it); (ii) kernel helpers reached from
+the accounting layer (`reindex`, `fc_reindex`, `ref_validate`, `check`,
+`check_map`) are charged as `kernel_calls`, not refined into frames — the fine
+ledger covers the retained §71 operations; (iii) `OP_RESOURCE_LIMIT` is reserved
+for checked-arithmetic overflow and is not resumable; budget exhaustion is
+`OP_RUNNING`; (iv) hash-consed proof records cannot form a cycle, so the
+back-reference rejection in `step_proof` guards the in-progress mark rather than
+a constructible input; (v) the EQUAL constructor exists only for the §70.3
+displayed equality and the checker re-derives the image structurally.
+
 ## 6. Representation choices a reviewer should know
 
 Listed in `README.md` under "Representation decisions". The two most likely to raise an

@@ -29,6 +29,7 @@ here is derived from earlier runtime code; the spec is the only source.
 | §25–31 | `src/eval.*` (counters, policies, worker pool), `src/net.*` (rule counters, policies, worker pool), `src/canon.*` | Interaction-work vector, deterministic joins, exact canonical comparison modulo renaming |
 | §23 | `tests/test_main.c`, `test_net` in `src/net.c` | Every row of the acceptance table, plus the exhaustive projection/quantifier law check on all 48 canonical faces over two dimensions (2 880 + 240 comparisons) |
 | §39–48, §59.3 | `src/compiler.*`, `T_TCALL` in `src/term.*`, `OP_APPLY_TRANSFORM` / `A_CONTINUE_REFERENCE` in `src/net.*`, `evaluate` (T_TCALL) and the pair jobs in `src/eval.*`, the T_TCALL rule in `src/check.c` | Diagrams, realization telescopes, canonical substitution, `Down`/expand, collapse/expand templates, `compile_identity` with the graph-pair template, equivalence / residual / cut / contractible-fibre schemas, certificates, one fixed `TRANSFORM_CALL` origin per transform and orientation with invocations as its views, the application and receiver rules, one outstanding count for evaluator jobs and net pairs |
+| §§60–71 under §73 | `src/work.*`, trace fields in `src/eval.*` (`deps`, `steps`, `env`, root occurrences) and `src/net.*` (identity-application trace), `tests/test_work.c` | Identity-execution accounting and cost refinement: work identities, demand closure with ready cuts, the resource algebra, Boolean direct image under specialization, cost differences, typed plan/connector/expression/cost-model records, the formula DAG with `restrict`, realization reconstruction, verification of supplied proof DAGs and geodesic certificates, Must-factoring / disjoint decomposition / the shared-choice equality, schemas, the bounded-frame engine and the fine ledger. No solver, no frontier. See the section below. |
 | §28–31, §38, §47 | `tests/test_schedule.c`, `tests/test_concurrent.c`, `tests/test_match.c`, `tests/test_check.c`, `tests/test_templates.c`, `tests/test_compiler.c`, `tests/review_regressions.c`, `tests/review_followup.c`, `tests/review_claim_wait.c`, `tests/review_checker_lifecycle.c` | 24 schedule combinations (now with the associativity transform in the workload); client storms and multi-client runs; comparison acceptance/rejection incl. ambiguous refinement; checking acceptance/rejection/unresolved; template laws and the admission transaction; the §47 compiler cases; the review's regression cases; `make tsan` |
 
 ## The central distinction, as implemented
@@ -443,3 +444,146 @@ annotation, …), every type position carrying its explicit universe level (§59
   synthesized). `tests/test_schedule.c` demands the same calls under three faces and after a
   dimension substitution and compares W (including the two new rule classes) and the exact
   result graphs across 24 schedules.
+
+
+## Identity-execution accounting and cost refinement (§§60–71 as disposed by §73)
+
+`src/work.*` adds the accounting layer over the accepted machine. Nothing in it
+selects a program: every operation is an explicit request over existing checked
+records, and the two components §73 excludes — the §68.2 cofactor solver and the
+§69.2–69.3 frontier/incumbent — are absent. A formula no direct rule reduces is
+returned unreduced (`Reduction.reduced == false`); no fallback enumerates it.
+
+**Work identities (§60.1, §62.1).** An atom is an interned record
+`[kind, operands…]`: `WK_PRODUCER (ref, projected face, env version)` is the
+evaluator key; `WK_REQUEST / WK_DELIVER (owner producer or 0, slot, child)` are
+one consumer occurrence's two events (slot = the ordinal among the owner's
+occurrences, so two requests of the same key by the same owner are two atoms);
+`WK_PUB (producer)`, `WK_EVAL (producer, ordinal)` are its publication and each
+of its frame steps; `WK_APPLY (transform, dir, σ, argument, receiving producer,
+ordinal)` is one identity application; `WK_SLOT` is a schema parameter;
+`WK_NAMED` a host control atom. A key names operation and operands, never a
+value: two atoms with coincident outputs stay distinct.
+
+**The trace (§73.3(1)–(2)).** The evaluator now records, per entry, its consumer
+occurrences in request order (`Entry.deps`), its frame steps (`Entry.steps`,
+EVALUATE and RESUME jobs whose destination is the entry) and its environment
+version; root and external requests form a global root-occurrence list. The net
+records every committed `APPLY_TRANSFORM` (with the `CONTINUE_REFERENCE(K)` it
+feeds) and every `CONTINUE_REFERENCE`. `dgraph_from_trace_since(first_root)`
+turns this into a producer graph; `work_ready_snapshot()` is the quiescent K of
+a run (every key READY now).
+
+**Demand (§60.2–60.4).** `demand_closure(graph, roots, K)` is the least fixpoint
+with the cut: a ready root or child contributes its REQUEST/DELIVER occurrence
+and nothing of its cone. `work_extract` enumerates the work: one REQUEST and one
+DELIVER per occurrence, PUB and the EVAL steps per demanded producer, the APPLY
+atoms a demanded producer received. On the actual run (`test_work` cases 1 and
+10) the extracted counts equal the coarse event deltas: REQUEST = `request`,
+DELIVER = `deliver`, PUB = `publish`, EVAL + (root/external delivery frames) =
+`eval_step`, APPLY = `apply`. The §60.2 laws (closed K ⇒ subtraction; union of
+roots) are checked on recipe graphs.
+
+**Algebra (§61).** Families are interned antichains of sets; `family_plus/times`
+apply N (duplicates and strict supersets removed, each subset test a merge walk);
+`formula_antichain` is the counted expansion to the semantic normal form;
+`family_dominates` is the subset-coverage criterion of §61.3; `family_residual`
+is f_A(K). The tests check absorption, distribution, and the sharing example.
+
+**Specialization (§62).** `set_specialize` / `formula_specialize` / `plan_specialize`
+reindex the complete typed boundary of every identity, validate it
+(`ref_validate`, required face), re-intern, then deduplicate: the Boolean direct
+image. Cache subtraction and costs come after that identification (case 3
+reproduces §62.3 both ways). `plan_specialize` checks σ with `check_map`,
+re-checks the realization under the target context and keeps the first-occurrence
+order of the image.
+
+**Cost differences (§63).** `costdiff_make(A, B, K, C, model)` retains both
+supports, K, C, the model and the session/environment snapshot and derives
+ε = cost(A∖K) − cost(B∖K) and the overlap-masked difference. Inversion and
+telescoping are checked on the associativity realizations.
+
+**Typed records (§66–67).** `boundary_make` (context, face, inputs, type and
+level — `check_is_type` at creation — continuation evidence) is interned with the
+session and environment version; `plan_make` checks `r : type` and the typing of
+its connecting evidence and anchors an ordered work list; `connector_make`
+carries left/right/result boundaries, a transform or evidence reference, and its
+work (absent work and absent evidence are distinct rejections);
+`expr_empty/plan/alt/join`. `problem_prepare` validates the expression
+(common boundary, connector interfaces equal to the composed boundaries,
+evidence and work present), fixes the atom order by first occurrence in the
+pre-order traversal of the ordered fields, builds F (PLAN = ∧ of its list, ALT =
+∨, JOIN = ∧ with the connector's atoms) and F_K = F[e := 1 for e ∈ K], and
+interns the problem with session, environment, boundary, model, expression, F,
+F_K and order list — the key a certificate must name.
+
+**Formulas (§68.1).** `ZERO | ONE | ATOM | AND | OR` records with exactly the six
+constructor simplifications; `formula_restrict` is syntactic, memoized by
+(F, e, b); `formula_subst` iterates it over a set. Support and Must are cached per
+formula node.
+
+**Realization (§68.3).** `realize(problem, S)` marks S ∪ K, evaluates the
+expression (ALT: first satisfied child; JOIN: both children and the connector;
+PLAN: all atoms available), rolls back witnesses of unsatisfied subtrees, and
+checks W(p) ⊆ S ∪ K; its residual cost is Σ_{W(p)∖K} w. `realization_reference`
+exposes the plan's own checked reference; execution is the ordinary machine.
+
+**Certificates (§69.1, §69.4).** Proof nodes `(rule, F, aux, c1, c2, value)` for
+TRIVIAL, FALSE, MANDATORY, SPLIT, FACTOR, DISJOINT_AND, OR_BOUND, WEAKEN and
+EQUAL (the §70.3 displayed equality (X∨Y)∧(X∨Z) = X∨(Y∧Z), re-derived
+structurally by the checker). `certificate_check` requires the certificate to
+name the problem being checked, the problem to be current, the root formula to
+be F_K, recomputes every premise (cofactors by `restrict`, Must, substitution,
+disjointness, the equality image) and every value with checked arithmetic,
+rejects a missing child and a back-reference to a node under check, reconstructs
+the upper witness from its support and requires L = U finite (optimum) or L =
+INFINITY with no witness (emptiness). A sum outside the checked range is
+`CERT_UNRESOLVED` (resource limit), never INFINITY. `geo_check` validates a
+supplied finite geodesic certificate against exactly its stated edges: terminal
+V = 0, V(s) ≤ c + V(s′) on every edge, an attaining admitted step at every
+finite-V nonterminal, progress by positive cost or a supplied decreasing rank.
+
+**The direct fragment (§70).** `formula_reduce` is bottom-up: ZERO/ONE/ATOM
+directly; OR by OR_BOUND; AND by DISJOINT_AND when the supports are disjoint,
+else by FACTOR when Must(F) ≠ ∅ (recursing on F[M := 1], strictly fewer atoms),
+else by EQUAL/shared-or when F has the shape (X∨Y)∧(X∨Z); otherwise
+unreduced. `problem_reduce` turns a reduction into a certificate whose upper
+witness is the realization of the attaining support. Case 7 checks the values
+against the expanded antichain on six formulas and checks the factoring and
+disjoint-additivity equations. `schema_make/instantiate`: a formula, proof and
+attaining set over slot atoms; instantiation maps atoms (possibly identifying
+slots), rebuilds the proof with recomputed values and runs the checker, which
+re-establishes Must, disjointness and weights — an instance identifying two slots
+of a DISJOINT_AND is refused with "supports are not disjoint".
+
+**Frames and the ledger (§65, §71).** Every operation is an `OpId` with a frame
+stack; `op_step(h, budget)` executes at most `budget` frames and returns
+`OP_RUNNING` (resumable), `OP_COMPLETE`, `OP_RESOURCE_LIMIT` (checked-arithmetic
+overflow; state retained) or `OP_INVALID` (diagnostic). Frame bodies are bounded:
+interning hashes one word per step, probes one slot per step, compares one word
+per step, copies one word per step (`FORMULA_INTERN_STEP / TABLE_PROBE /
+ALLOCATE_CHUNK`); set union/intersection/difference, subset and Must/support
+merges advance one element per step (`SUPPORT_CHUNK / MUST_CHUNK`); sums add one
+limb per step (`COST_ADD_CHUNK`); traversals have ENTER / WAIT_LEFT / WAIT_RIGHT /
+FINISH phases with memo lookups as counted probes. Families PREPARE_VISIT,
+VALIDATE_PREPARED_BOUNDARY, FORMULA_VISIT, FORMULA_INTERN_STEP, COFACTOR_VISIT,
+COFACTOR_REBUILD, SUPPORT_CHUNK, MUST_CHUNK, COST_ADD_CHUNK, COST_COMPARE_CHUNK,
+CERTIFICATE_VISIT, REALIZATION_VISIT, ALLOCATE_CHUNK, RELEASE_CHUNK are the
+required ones; SOLVE and FRONTIER are omitted as §73.2 says; TABLE_PROBE,
+DEMAND_VISIT, SPECIALIZE_VISIT, FAMILY_CHUNK and GEODESIC_VISIT are the
+additional families of the retained operations. The ledger (`work_ledger`)
+counts frames by family and by phase (prepare / rewrite / check / commit /
+execute), probes, word comparisons, limb operations, allocated and released
+words, memo lookups/hits/deliveries, and the execute phase as the coarse event
+vector of the run (`work_record_execution`) — the §65.1 projection. Calls into
+the kernel (`reindex`, face operations, `ref_validate`, the checker) are counted
+as `kernel_calls`; their internal traversal is the kernel's own, not refined
+here. Case 8 suspends every operation at budget 1 and checks that the result,
+and the number of frames, equal the uninterrupted run; case 9 checks the phases,
+families, memo reuse and reclamation.
+
+**What stays outside.** No `begin_selection/step_selection/commit_selection`;
+`op_step` on an operation handle is the bounded interface. No incumbent, no
+frontier, no cached inequality from an interrupted check. Ordinary execution
+never consults a prepared family; `realization_reference` returns a reference the
+checker already accepted and the evaluator runs it by its fixed recipe.

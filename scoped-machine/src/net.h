@@ -67,6 +67,9 @@ typedef struct {
 
 typedef struct { NodeId node; uint64_t gen; } Active;
 
+typedef enum { NT_APPLY_TRANSFORM = 1, NT_CONTINUE_REFERENCE } NetTraceKind;
+typedef struct { NetTraceKind kind; uint64_t transform; int dir; MapId sigma; RefId arg, result; uint64_t K; } NetTraceEvent;
+
 /* Nodes live in non-moving storage and are never freed during a run, so a
  * worker holding a NodeId can always dereference it (pinning is trivial);
  * generations detect stale identity. A replacement locks the redex owners
@@ -85,6 +88,11 @@ typedef struct Net {
     size_t n_op, n_dup, n_erase, n_eval_deliver;
     size_t n_apply, n_continue;   /* §43/§45: APPLY_TRANSFORM and CONTINUE_REFERENCE rule events */
     size_t retries;           /* diagnostics: replacements abandoned after revalidation */
+    /* §73.3(1): identity applications of the actual run, in commit order.
+     * APPLY: (transform, dir, σ, argument, result reference, receiving
+     * producer key K when the result port is a CONTINUE_REFERENCE(K));
+     * CONTINUE: (K, forwarded reference). */
+    VEC(NetTraceEvent) trace; pthread_mutex_t trace_mu;
     /* §43: when shared is set, pending active pairs are jobs of the shared
      * scheduler: pushes count in *shared.outstanding under *shared.mu and
      * signal *shared.cv; the shared scheduler pops them (net_pop_pair) and
@@ -96,6 +104,8 @@ typedef struct Net {
 
 void net_init(Net *n);
 void net_free(Net *n);
+size_t net_trace_count(Net *n);
+NetTraceEvent net_trace_get(Net *n, size_t i);
 NodeId net_descriptor(Net *n, NodeKind kind, Payload p);
 NodeId net_operation(Net *n, NodeKind kind, Payload p);
 NodeId net_node(Net *n, NodeKind kind, uint8_t nports, const int8_t *polarity, Payload p);

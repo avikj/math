@@ -2,10 +2,10 @@ CC      ?= gcc
 CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
+SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -13,6 +13,10 @@ build/tests: $(OBJ) tests/test_main.o
 
 %.o: %.c src/*.h
 	$(CC) $(CFLAGS) -c -o $@ $<
+
+build/work: $(OBJ) tests/test_work.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
 
 build/schedule: $(OBJ) tests/test_schedule.o
 	@mkdir -p build
@@ -116,8 +120,10 @@ test: all
 	CUBICAL_WORKERS=4 ./build/review-end-to-end positive
 	./build/review-nested-scope
 	./build/demo-speculation
+	./build/work
+	CUBICAL_WORKERS=4 ./build/work
 
-TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope
+TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_work
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
@@ -144,6 +150,8 @@ tsan:
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_nested_scope
 	$(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -o build/tsan/review_claim_wait tests/review_claim_wait.c $(filter-out build/tsan/check.o,$(TSAN_CORE))
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_claim_wait
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_work
+	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_work
 
 clean:
 	rm -f src/*.o tests/*.o

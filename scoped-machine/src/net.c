@@ -15,7 +15,10 @@ void net_init(Net *n) {
     pthread_mutex_init(&n->act_mu, NULL);
     pthread_cond_init(&n->act_cv, NULL);
     pthread_cond_init(&n->idle_cv, NULL);
+    pthread_mutex_init(&n->trace_mu, NULL);
 }
+size_t net_trace_count(Net *n) { pthread_mutex_lock(&n->trace_mu); size_t c = n->trace.len; pthread_mutex_unlock(&n->trace_mu); return c; }
+NetTraceEvent net_trace_get(Net *n, size_t i) { pthread_mutex_lock(&n->trace_mu); NetTraceEvent e = n->trace.data[i]; pthread_mutex_unlock(&n->trace_mu); return e; }
 
 static void net_stop_workers(Net *n) {
     if (!n->nworkers) return;
@@ -44,6 +47,7 @@ size_t net_node_count(Net *n) { pthread_mutex_lock(&n->alloc_mu); size_t c = n->
 
 void net_free(Net *n) {
     net_stop_workers(n);
+    vec_free(&n->trace); pthread_mutex_destroy(&n->trace_mu);
     for (size_t i = 1; i <= n->nnodes; i++) {
         Node *x = N(n, (NodeId)i);
         free(x->peer); free(x->polarity);
@@ -572,6 +576,10 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         mapb_term(&b, slot, Q.ref);
         res = desc_ref(n, reindex(body, mapb_finish(&b)));
         count(&n->n_apply);
+        { NetTraceEvent ev = { NT_APPLY_TRANSFORM, P.a, (int)P.b, P.c, Q.ref, N(n, res)->p.ref, 0 };
+          Endpoint rp = o->peer[1];
+          if (rp.node && N(n, rp.node)->kind == A_CONTINUE_REFERENCE) ev.K = N(n, rp.node)->p.a;
+          pthread_mutex_lock(&n->trace_mu); vec_push(&n->trace, ev); pthread_mutex_unlock(&n->trace_mu); }
         break;
     }
     /* ---- §55: scope and template agents; each is one finite pure operation ---- */
@@ -681,6 +689,8 @@ static bool apply_rule(Net *n, NodeId neg, NodeId pos) {
         Replacement r; rep_init(&r);
         rep_remove(&r, neg); rep_remove(&r, pos);
         rep_commit(n, &r);
+        { NetTraceEvent ev = { NT_CONTINUE_REFERENCE, 0, 0, 0, 0, v, K };
+          pthread_mutex_lock(&n->trace_mu); vec_push(&n->trace, ev); pthread_mutex_unlock(&n->trace_mu); }
         eval_forward_result(K, v);
         count(&n->n_continue);
         return true;
