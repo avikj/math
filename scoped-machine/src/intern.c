@@ -56,7 +56,7 @@ void interner_init(Interner *t) {
     t->n = 0;
     t->nslots = 1024;
     t->slots = arena_alloc_zero(t->nslots, NULL);   /* a fresh zero block: no clearing */
-    t->old = NULL; t->old_n = t->cursor = 0; t->moving = 0; t->mprobe = 0; t->gen = 1;
+    t->old = NULL; t->old_n = t->cursor = 0; t->moving = 0; t->mprobe = 0; t->gen = 1; t->placed = 0;
     pthread_mutex_init(&t->mu, NULL);
 }
 
@@ -105,7 +105,7 @@ static void migrate_chunk(Interner *t) {
         }
         fine_bump(FC_INTERN_PROBES); budget--;
         if (t->slots[t->mprobe]) { t->mprobe = (t->mprobe + 1) & (t->nslots - 1); continue; }
-        t->slots[t->mprobe] = t->moving; t->moving = 0; fine_bump(FC_INTERN_SLOTS_RELOCATED);
+        t->slots[t->mprobe] = t->moving; t->moving = 0; t->placed++; fine_bump(FC_INTERN_SLOTS_RELOCATED);
     }
     if (t->cursor >= t->old_n && !t->moving) { arena_release(t->old, t->old_n); t->old = NULL; t->old_n = t->cursor = 0; t->gen++; }
 }
@@ -158,28 +158,28 @@ static uint64_t match_unlocked(const Interner *t, const uint64_t *cand, size_t k
 }
 /* scan the chain for w; 0 when absent. On return with 0, *seen_out is the
  * record count and *gen_out the generation of the completing section */
-static uint64_t scan(Interner *t, uint64_t h, const uint64_t *w, size_t n, uint64_t above, uint64_t *seen_out, uint64_t *gen_out, size_t *empty_out) {
+static uint64_t scan(Interner *t, uint64_t h, const uint64_t *w, size_t n, uint64_t above, uint64_t *seen_out, uint64_t *gen_out, size_t *empty_out, uint64_t *placed_out) {
     Cursor cu = { 0, 0, 0, false, 0 }; uint64_t cand[CAND_MAX];
     for (;;) {
         bool complete;
         pthread_mutex_lock(&t->mu);
         size_t k = probe_section(t, &cu, h, n, above, cand, &complete);
-        uint64_t seen = t->n, gen = t->gen;
+        uint64_t seen = t->n, gen = t->gen, placed = t->placed;
         pthread_mutex_unlock(&t->mu);
         kc_safepoint();   /* between two locked sections: a spent grant yields here */
         uint64_t id = match_unlocked(t, cand, k, h, w, n);
         if (id) return id;
-        if (complete) { *seen_out = seen; *gen_out = gen; if (empty_out) *empty_out = cu.empty0; return 0; }
+        if (complete) { *seen_out = seen; *gen_out = gen; if (empty_out) *empty_out = cu.empty0; if (placed_out) *placed_out = placed; return 0; }
     }
 }
 uint64_t interner_find(Interner *t, const uint64_t *w, size_t n) {
     uint64_t h = hash_words(w, n), seen, gen;
-    return scan(t, h, w, n, 0, &seen, &gen, NULL);
+    return scan(t, h, w, n, 0, &seen, &gen, NULL, NULL);
 }
 
 uint64_t interner_intern(Interner *t, const uint64_t *w, size_t n, bool *created) {
-    uint64_t h = hash_words(w, n), seen, gen; size_t empty;
-    uint64_t id = scan(t, h, w, n, 0, &seen, &gen, &empty);
+    uint64_t h = hash_words(w, n), seen, gen, placed; size_t empty;
+    uint64_t id = scan(t, h, w, n, 0, &seen, &gen, &empty, &placed);
     if (id) { if (created) *created = false; return id; }
     /* a new record: prepared outside the lock, one transition per word; the
      * record chunk the new id will need is created outside the lock too */
@@ -188,16 +188,17 @@ uint64_t interner_intern(Interner *t, const uint64_t *w, size_t n, bool *created
     { size_t at = __atomic_load_n(&t->n, __ATOMIC_RELAXED); (void)chunked_at(&t->recs, at); (void)chunked_at(&t->recs, at + 1); }
     for (;;) {
         pthread_mutex_lock(&t->mu);
-        if (t->n == seen && t->gen == gen) break;   /* nothing published since the complete scan: insert */
+        if (t->n == seen && t->gen == gen && t->placed == placed) break;   /* nothing published or migrated since the complete scan: insert */
+        uint64_t above = t->gen == gen ? seen : 0;   /* a new generation: rescan everything; else only the newcomers (a migrated record was
+                                                        compared where the scan met it in the old array, which a migration does not clear) */
         pthread_mutex_unlock(&t->mu);
-        uint64_t above = t->gen == gen ? seen : 0;   /* a new generation: rescan everything; else only the newcomers */
-        uint64_t dup = scan(t, h, w, n, above, &seen, &gen, &empty);
+        uint64_t dup = scan(t, h, w, n, above, &seen, &gen, &empty, &placed);
         if (dup) { free(copy); if (created) *created = false; return dup; }
     }
     Rec *r = chunked_at(&t->recs, t->n);
     r->w = copy; r->n = n; r->hash = h;
     id = (uint64_t)__atomic_add_fetch(&t->n, 1, __ATOMIC_RELEASE);   /* the count is read unlocked (relaxed) by the chunk pre-creation */
-    require(!t->slots[empty], "interner: the scanned chain end is taken");   /* nothing was published since the complete scan: the chain's empty slot is where the scan found it — one write */
+    require(!t->slots[empty], "interner: the scanned chain end is taken");   /* nothing was published or migrated since the complete scan: the chain's empty slot is where the scan found it — one write */
     t->slots[empty] = id;
     if (t->n * 2 > t->nslots) grow_begin(t);   /* one fresh allocation; the migration proceeds a chunk per operation */
     pthread_mutex_unlock(&t->mu);

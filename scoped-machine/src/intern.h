@@ -49,6 +49,7 @@ typedef struct {
     size_t nslots;
     uint64_t *old; size_t old_n, cursor;   /* §94: a growth in progress — the previous array, migrated CHUNK_WORDS slots per operation */
     uint64_t gen;                          /* bumped when an array is replaced or released: a probe cursor is valid for one generation */
+    uint64_t placed;                       /* migration placements into the current array (a scanned chain end may have been filled) */
     uint64_t moving; size_t mprobe;        /* the old entry being placed by the migration and its probe position */
     pthread_mutex_t mu;
 } Interner;
