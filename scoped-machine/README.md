@@ -358,6 +358,20 @@ still takes them as premises and reports ill-typed demands it reaches as `R_INVA
   enter it first, so a rejected registered body blocks checked execution of every term
   (`review-followup admission`, `test_check.c`).
 
+## A worked program: speculation under faces (`tests/demo_speculation.c`)
+
+A latency-critical decision — on the next tick send one of two orders, both depending on
+an expensive shared model evaluation — written as terms: the tick is a dimension `i`, the
+decision is the partial element `[i=0 ↦ down(pre), i=1 ↦ up(pre)]` defined on the boundary
+`i=0 ∨ i=1`. The program shows, with the event counters: the decision is not observable in
+the interior (demanding it under ⊤ is refused); speculating is demanding it under each
+outcome face, and the shared prefix is one memo key for both (the second branch finds it
+ready); when the tick arrives the demand under `i=1` launches no producer and returns the
+speculative result object; the decision reindexed at `i=1` resolves to the same object in one
+dispatch step; specializing the decision to another model input by substitution re-evaluates
+only what mentions it; and W is identical under FIFO, LIFO and random scheduling with and
+without a worker pool. It runs in `make test`.
+
 ## Identity compiler (§39–§48)
 
 `src/compiler.c` is additive to the runtime above and emits only annotated core syntax
