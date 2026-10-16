@@ -265,6 +265,7 @@ static void *chunk_from_spare(size_t bytes, void *ctx) {
 }
 static void arena_tend(void) {   /* one maintenance step per unit: a retired page, and one clearing step of the first spare that needs it */
     if (arena_reap()) charge(FR_RELEASE_CHUNK);
+    if (arena_tend_zero()) charge(FR_ALLOCATE_CHUNK);   /* one clearing step of a retired zero block (§94 R4) */
     for (int i = 0; i < 3; i++) if (!W.spare[i].block || W.spare[i].cleared < W.spare[i].need) { spare_tend(&W.spare[i]); break; }
 }
 
@@ -2462,6 +2463,11 @@ void work_init(void) {
 }
 void work_free(void) {
     if (!W.live) return;
+    for (size_t i = 1; i <= W.tab.n; i++) {   /* abandoned handles' continuations complete before teardown */
+        Side *sd = side(i); if (!sd->ptr || sd->kind != K_JOB) continue; Op *o = sd->ptr;
+        for (size_t k = 0; k < o->stack.n; k++) { Frame *f = paged_at(&o->stack, k); if (f->fam == OF_KERNEL && f->ph == 1 && f->acc) { kc_free((KCont *)(uintptr_t)f->acc); f->acc = 0; } }
+    }
+    kc_shutdown();
     for (size_t i = 1; i <= W.tab.n; i++) {
         Side *s = side(i); if (!s->ptr) continue;
         switch (s->kind) {
@@ -2476,11 +2482,6 @@ void work_free(void) {
     for (size_t i = 0; i < W.owned.n; i++) free(*(void **)paged_at(&W.owned, i));
     paged_retire(&W.owned);
     ktab_free(&W.tab); chunked_free(&W.side); chunked_free(&W.ops);
-    for (size_t i = 1; i <= W.tab.n; i++) {   /* abandoned handles' continuations complete before teardown */
-        Side *sd = side(i); if (!sd->ptr || sd->kind != K_JOB) continue; Op *o = sd->ptr;
-        for (size_t k = 0; k < o->stack.n; k++) { Frame *f = paged_at(&o->stack, k); if (f->fam == OF_KERNEL && f->ph == 1 && f->acc) { kc_free((KCont *)(uintptr_t)f->acc); f->acc = 0; } }
-    }
-    kc_shutdown();
     for (int i = 0; i < 16; i++) if (W.pool_sizes[i]) paged_retire(&W.pool[i]);
     for (int i = 0; i < 3; i++) if (W.spare[i].block) arena_release(W.spare[i].block, W.spare[i].words);
     arena_reap_all(); arena_free();

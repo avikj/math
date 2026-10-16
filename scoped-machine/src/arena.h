@@ -33,7 +33,8 @@ void arena_free(void);                           /* the one release */
 bool arena_live(void);
 const void *arena_base(void);                    /* the reservation's start (kalloc: ownership test) */
 uint64_t *arena_alloc(size_t words, size_t *got);   /* a block of at least `words` words (rounded to the order); not cleared */
-uint64_t *arena_alloc_zero(size_t words, size_t *got);   /* a never-used block from the fresh region: zero by the reservation (no clearing), never reused after release */
+uint64_t *arena_alloc_zero(size_t words, size_t *got);   /* a zero block: from the cleared pool, else a never-used block of the fresh region; released ones are cleared in maintenance steps and reused */
+bool arena_tend_zero(void);                              /* one clearing step (32 words) of a retired zero block; false when none is pending */
 void arena_release(uint64_t *p, size_t words);      /* `words` as returned in *got */
 size_t arena_order_words(size_t words);             /* the block size a request of `words` receives */
 

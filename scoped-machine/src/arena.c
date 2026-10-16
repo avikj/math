@@ -8,6 +8,9 @@ static struct {
     uint64_t *base; size_t words;
     uint64_t *heads[ARENA_ORDERS];     /* free lists: the first word of a free block links the next */
     size_t fresh;                      /* the fresh region's bump cursor (words from base + ARENA_WORDS/2) */
+    uint64_t *zdirty[ARENA_ORDERS], *zready[ARENA_ORDERS];   /* §94 R4: retired zero-region blocks awaiting clearing / cleared and reusable, per order */
+    size_t zcursor;                    /* words of the head dirty block (lowest order with one) already cleared */
+    uint64_t zero_fresh, zero_reused, zero_sync_words;        /* zero blocks served from the fresh cursor / from the cleared pool; words cleared synchronously at a shortage */
     ArenaStats st;
     bool live;
     pthread_mutex_t mu;                /* the engine (under its lock) and kalloc's threads share the free lists */
@@ -65,20 +68,55 @@ uint64_t *arena_alloc(size_t words, size_t *got) {
     if (got) *got = (size_t)ARENA_PAGE << k;
     return b;
 }
-uint64_t *arena_alloc_zero(size_t words, size_t *got) {   /* fresh pages are zero (anonymous mapping): initialization costs nothing and nothing is cleared under a lock */
+/* zero blocks: a cleared block of the order from the reusable pool when
+ * there is one, else a never-used block of the fresh region (zero by the
+ * anonymous mapping). A retired zero-region block is dirty: it is cleared
+ * CHUNK_WORDS per maintenance step (`arena_tend_zero`, driven once per unit
+ * by the engine) and then published to the pool. When neither is available
+ * and dirty blocks exist, the shortage clears a dirty block here, counted in
+ * `zero_sync_words` (the fresh region is 2^30 words: the counted case is the
+ * exhaustion of that). */
+static bool zero_tend_locked(void) {
+    for (unsigned k = 0; k < ARENA_ORDERS; k++) {
+        uint64_t *b = A.zdirty[k]; if (!b) continue;
+        size_t w = (size_t)ARENA_PAGE << k, start = A.zcursor ? A.zcursor : 1, end = start + 32; if (end > w) end = w;
+        BLOCK_UNPOISON(b, w);
+        for (size_t x = start; x < end; x++) b[x] = 0;   /* word 0 holds the dirty-list link until the block is done */
+        A.zcursor = end;
+        if (A.zcursor >= w) { A.zdirty[k] = *(uint64_t **)b; *(uint64_t **)b = A.zready[k]; A.zready[k] = b; A.zcursor = 0; }   /* the pool link takes word 0; the taker zeroes it */
+        BLOCK_POISON(b, w);
+        return true;
+    }
+    return false;
+}
+bool arena_tend_zero(void) { pthread_mutex_lock(&A.mu); bool did = zero_tend_locked(); pthread_mutex_unlock(&A.mu); return did; }
+uint64_t *arena_alloc_zero(size_t words, size_t *got) {
     if (!A.live) arena_init();
-    size_t w = arena_order_words(words);
+    unsigned k = order_of(words); size_t w = (size_t)ARENA_PAGE << k;
     pthread_mutex_lock(&A.mu);
-    require(A.fresh + w <= ARENA_FRESH_WORDS, "arena: fresh region exhausted");
-    uint64_t *b = A.base + ARENA_WORDS / 2 + A.fresh; A.fresh += w; A.st.allocs++; A.st.words_out += w;
+    uint64_t *b = A.zready[k];
+    if (b) { LINK_UNPOISON(b); A.zready[k] = *(uint64_t **)b; BLOCK_UNPOISON(b, w); b[0] = 0; A.zero_reused++; }   /* the pool: the link word is zeroed again */
+    else if (A.fresh + w <= ARENA_FRESH_WORDS) { b = A.base + ARENA_WORDS / 2 + A.fresh; A.fresh += w; A.zero_fresh++; BLOCK_UNPOISON(b, w); }
+    else {   /* shortage: clear the dirty block of this order here, counted */
+        require(A.zdirty[k], "arena: zero region exhausted and no dirty block to clear");
+        while (!A.zready[k]) { uint64_t *d = A.zdirty[k]; (void)d; zero_tend_locked(); A.zero_sync_words += 32; }
+        b = A.zready[k]; LINK_UNPOISON(b); A.zready[k] = *(uint64_t **)b; BLOCK_UNPOISON(b, w); b[0] = 0; A.zero_reused++;
+    }
+    A.st.allocs++; A.st.words_out += w;
     pthread_mutex_unlock(&A.mu);
-    BLOCK_UNPOISON(b, w);
     if (got) *got = w;
     return b;
 }
 void arena_release(uint64_t *p, size_t words) {
     if (!p || !A.live) return;
-    if (p >= A.base + ARENA_WORDS / 2) { BLOCK_POISON(p, arena_order_words(words)); return; }   /* a fresh-region block is retired, never reused: it may have been assumed zero */
+    if (p >= A.base + ARENA_WORDS / 2) {   /* a zero-region block: dirty until cleared in maintenance steps, then reusable */
+        unsigned k = order_of(words);
+        pthread_mutex_lock(&A.mu);
+        LINK_UNPOISON(p); *(uint64_t **)p = A.zdirty[k]; A.zdirty[k] = p; A.st.releases++; A.st.words_in += (size_t)ARENA_PAGE << k;
+        pthread_mutex_unlock(&A.mu);
+        BLOCK_POISON(p, (size_t)ARENA_PAGE << k);
+        return;
+    }
     unsigned k = order_of(words);
     BLOCK_POISON(p, (size_t)ARENA_PAGE << k);
     pthread_mutex_lock(&A.mu);
