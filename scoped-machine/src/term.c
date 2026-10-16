@@ -1,3 +1,4 @@
+#include <sched.h>
 #include "term.h"
 #include "fine.h"
 
@@ -19,8 +20,8 @@ const char *tag_name(Tag t) {
 #define DPROV(i) ((uint64_t *)chunked_at(&M.dim_prov, (i) - 1))
 #define NVAL(id) ((uint64_t *)chunked_at(&M.nominal_val, (id) - 1))
 #define DEF(s) ((Def *)chunked_at(&M.defs, (s) - 1))
-static void term_lock(void) { pthread_mutex_lock(&M.term_mu); }
-static void term_unlock(void) { pthread_mutex_unlock(&M.term_mu); }
+#define term_lock() pthread_mutex_lock(&M.term_mu)      /* a macro: the lock-section audit attributes each section to its caller */
+#define term_unlock() pthread_mutex_unlock(&M.term_mu)
 
 /* ================= declarations ================= */
 
@@ -254,12 +255,17 @@ static OriginId origin_intern(Tag tag, uint64_t payload, const Field *fields, si
     for (size_t k = 0; k < nb; k++) { words_push(&w, binders[k].sort); words_push(&w, binders[k].formal); words_push(&w, binders[k].domain_field); }
     words_push(&w, declared);                 /* annotation is part of the record */
     words_push(&w, tl_levels);                /* formation levels (§59.1), part of the record */
+    /* the interner is internally synchronized (hashing, comparison and the
+     * copy outside its lock); the side is published by the creator right
+     * after the interning returns — no transition in between — and a thread
+     * that found the record waits for the publication (lock-section audit:
+     * the interning used to run under the term lock) */
     bool created;
-    term_lock();
     OriginId id = interner_intern(&M.origins, w.w, w.n, &created);
+    OriginSide *o = OSIDE(id);
+    if (created) { o->ft = ft; o->fd = fd; o->required = req; __atomic_store_n(&o->ready, 1, __ATOMIC_RELEASE); }
+    else while (!__atomic_load_n(&o->ready, __ATOMIC_ACQUIRE)) sched_yield();
     words_free(&w);
-    if (created) { OriginSide *o = OSIDE(id); o->ft = ft; o->fd = fd; o->required = req; }
-    term_unlock();
     return id;
 }
 
