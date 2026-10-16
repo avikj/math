@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
     AtomId a2 = atom_producer(t2, fc_true()); SetId S2 = set_make(1, &a2);
     OpId h1 = op_specialize_set(S2, sigma);
     size_t steps = 0; while (op_status(h1) == OP_RUNNING && !(W.kc_active)) { op_step(h1, 1); assert(++steps < 100000); }
-    assert(W.kc_active);   /* mid-kernel */
+    assert(W.kc_active && !kc_done(W.kc_active));   /* mid-kernel (W.kc_active: the continuation most recently granted) */
     uint64_t calls_before = work_ledger().kernel_calls;
     OpId h2 = op_specialize_set(S2, sigma);   /* the same specialization: the atom's ATOMSPEC job and its kernel jobs are shared */
     while (op_status(h2) == OP_RUNNING) op_step(h2, 1);

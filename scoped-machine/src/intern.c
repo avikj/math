@@ -5,7 +5,13 @@
 /* ---- chunked arrays ---- */
 void chunked_init(Chunked *c, size_t elem) { memset(c->dir, 0, sizeof c->dir); c->elem = elem; c->alloc = NULL; c->alloc_ctx = NULL; }
 void chunked_set_alloc(Chunked *c, ChunkAlloc alloc, void *ctx) { c->alloc = alloc; c->alloc_ctx = ctx; }
-void chunked_free(Chunked *c) { if (!c->alloc) for (size_t k = 0; k < MAX_CHUNKS; k++) if (c->dir[k]) arena_release(c->dir[k], (CHUNK_SIZE * c->elem + 7) / 8); memset(c->dir, 0, sizeof c->dir); }   /* engine chunks (hooked) belong to their spares' arena lists */
+void chunked_free(Chunked *c) {
+    /* Both suppliers return owned arena chunks. A spare ceases to own its
+     * chunk when it hands it to this table; release before dropping the directory. */
+    for (size_t k = 0; k < MAX_CHUNKS; k++)
+        if (c->dir[k]) arena_release(c->dir[k], (CHUNK_SIZE * c->elem + 7) / 8);
+    memset(c->dir, 0, sizeof c->dir);
+}
 void *chunked_at(Chunked *c, size_t i) {
     size_t ch = i >> CHUNK_BITS;
     require(ch < MAX_CHUNKS, "chunked array exhausted");

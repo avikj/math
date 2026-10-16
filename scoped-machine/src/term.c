@@ -52,15 +52,38 @@ void mapb_init(MapBuilder *b) { words_init(&b->t); words_init(&b->d); }
 void mapb_term(MapBuilder *b, TermVarId x, RefId image) { words_push(&b->t, x); words_push(&b->t, image); }
 void mapb_dim(MapBuilder *b, DimVarId i, IntervalId image) { words_push(&b->d, i); words_push(&b->d, image); }
 
-static int cmp_pair(const void *a, const void *b) {
-    const uint64_t *x = a, *y = b;
-    return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0;
+
+/* Pair-key sorting must expose the same bounded sifts as word sorting.
+ * A comparison examines one key word; a sift has at most the word-width
+ * number of levels. Duplicate-key/image checking remains in mapb_finish. */
+static void pair_sift(uint64_t *p, size_t n, size_t i) {
+    for (;;) {
+        size_t l = 2 * i + 1, r = l + 1, m = i;
+        if (l < n && p[2 * l] > p[2 * m]) m = l;
+        if (r < n && p[2 * r] > p[2 * m]) m = r;
+        if (m == i) return;
+        uint64_t key = p[2 * i], image = p[2 * i + 1];
+        p[2 * i] = p[2 * m]; p[2 * i + 1] = p[2 * m + 1];
+        p[2 * m] = key; p[2 * m + 1] = image; i = m;
+    }
+}
+static void pair_sort(uint64_t *p, size_t n) {
+    if (n < 2) return;
+    for (size_t i = n / 2; i > 0; i--) {
+        pair_sift(p, n, i - 1); fine_bump(FC_SORT_STEPS);
+    }
+    for (size_t e = n - 1; e > 0; e--) {
+        uint64_t key = p[0], image = p[1];
+        p[0] = p[2 * e]; p[1] = p[2 * e + 1];
+        p[2 * e] = key; p[2 * e + 1] = image;
+        pair_sift(p, e, 0); fine_bump(FC_SORT_STEPS);
+    }
 }
 
 MapId mapb_finish(MapBuilder *b) {
     size_t nt = b->t.n / 2, nd = b->d.n / 2;
-    if (nt > 1) qsort(b->t.w, nt, 2 * sizeof(uint64_t), cmp_pair);
-    if (nd > 1) qsort(b->d.w, nd, 2 * sizeof(uint64_t), cmp_pair);
+    pair_sort(b->t.w, nt);
+    pair_sort(b->d.w, nd);
     Words w; words_init(&w);
     words_push(&w, 0);
     size_t kept = 0;

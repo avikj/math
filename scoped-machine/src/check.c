@@ -1,5 +1,6 @@
 #include "check.h"
 #include "reuse.h"
+#include "kcont.h"
 #include "fine.h"
 #include "lib.h"
 #include "compiler.h"
@@ -42,6 +43,7 @@ static struct {
     VEC(Claim) recs;
     pthread_mutex_t mu; pthread_cond_t cv;
     VEC(uint64_t) wait_on;  /* per thread id: claim index + 1 the thread is blocked on (0 = none) */
+    VEC(void *) kcont;      /* per thread id: the kernel continuation running on it (§94: a waiter that is a continuation yields to that continuation's job) */
     VEC(uint8_t) assume;    /* per thread id: released from a wait on a symbol with "typed by the declaration" */
     uint64_t ntids;
     size_t budget;
@@ -82,11 +84,11 @@ void check_init(void) {
     K.attempt = 1;
     wordmap_init(&K.idx);
     pthread_mutex_init(&K.mu, NULL); pthread_cond_init(&K.cv, NULL);
-    vec_push(&K.wait_on, 0); vec_push(&K.assume, 0);
+    vec_push(&K.wait_on, 0); vec_push(&K.assume, 0); vec_push(&K.kcont, NULL);
 }
 void check_free(void) {
     for (size_t k = 0; k < K.recs.len; k++) { words_free(&K.recs.data[k].deps); words_free(&K.recs.data[k].gdeps); }
-    vec_free(&K.recs); vec_free(&K.wait_on); vec_free(&K.assume);
+    vec_free(&K.recs); vec_free(&K.wait_on); vec_free(&K.assume); vec_free(&K.kcont);
     wordmap_free(&K.idx);
     pthread_mutex_destroy(&K.mu); pthread_cond_destroy(&K.cv);
     memset(&K, 0, sizeof K);
@@ -100,6 +102,7 @@ void check_set_budget(size_t steps) {
     pthread_mutex_unlock(&K.mu);
 }
 void check_new_attempt(void) { pthread_mutex_lock(&K.mu); K.attempt++; pthread_mutex_unlock(&K.mu); }
+uint64_t check_attempt(void) { pthread_mutex_lock(&K.mu); uint64_t a = K.attempt; pthread_mutex_unlock(&K.mu); return a; }
 const char *check_status_name(CheckStatus s) { return s == CK_VALID ? "VALID" : s == CK_INVALID ? "INVALID" : "UNRESOLVED"; }
 const char *conv_status_name(ConvStatus s) { return s == CV_EQUAL ? "EQUAL" : s == CV_UNEQUAL ? "UNEQUAL" : "UNRESOLVED"; }
 
@@ -107,9 +110,13 @@ static bool budget_ok(void) { tl_steps++; fine_bump(FC_CHECK_FRAMES); size_t b =
 
 /* thread identity, assigned on first use (under K.mu) */
 static uint64_t tid_locked(void) {
-    if (!tl_tid || tl_gen != session_gen) { tl_tid = ++K.ntids; tl_gen = session_gen; vec_push(&K.wait_on, 0); vec_push(&K.assume, 0); }
+    if (!tl_tid || tl_gen != session_gen) { tl_tid = ++K.ntids; tl_gen = session_gen; vec_push(&K.wait_on, 0); vec_push(&K.assume, 0); vec_push(&K.kcont, NULL); }
+    K.kcont.data[tl_tid] = kc_current();   /* refreshed at every entry: a pooled continuation thread serves many continuations */
     return tl_tid;
 }
+/* §94: a wait on a claim another thread owns — a continuation yields to the
+ * owner's continuation (a represented dependency), a plain thread waits */
+static void claim_wait_locked(uint64_t owner) { kc_wait(&K.cv, &K.mu, owner < K.kcont.len ? (KCont *)K.kcont.data[owner] : NULL); }
 
 /* every claim belongs to one definition environment (§57 R1 / §59.4): the
  * key carries the environment version, so a successful candidate mutation
@@ -198,7 +205,7 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
                 if (dc->state == 2 && dc->result != 1) { resolve_locked(); waited = true; break; }
                 if (dc->state == 1 && dc->owner != me && d != assumed && may_block_locked(dc->owner, me)) {
                     K.wait_on.data[me] = d + 1;
-                    pthread_cond_wait(&K.cv, &K.mu);
+                    claim_wait_locked(dc->owner);
                     K.wait_on.data[me] = 0;
                     if (K.assume.data[me]) { K.assume.data[me] = 0; assumed = d; }   /* told to assume: inherit on the next pass */
                     waited = true;
@@ -218,7 +225,7 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
         }
         if (r->owner == me || !may_block_locked(r->owner, me)) { pthread_mutex_unlock(&K.mu); return ACQ_CYCLE; }
         K.wait_on.data[me] = c + 1;
-        pthread_cond_wait(&K.cv, &K.mu);
+        claim_wait_locked(r->owner);
         K.wait_on.data[me] = 0;
         if (K.assume.data[me]) { K.assume.data[me] = 0; pthread_mutex_unlock(&K.mu); return ACQ_CYCLE; }
     }
@@ -329,7 +336,7 @@ static bool top_settled(void) {
         size_t d = tl_pending.w[k];
         while (K.recs.data[d].state == 1 && K.recs.data[d].owner != me) {
             K.wait_on.data[me] = d + 1;
-            pthread_cond_wait(&K.cv, &K.mu);
+            claim_wait_locked(K.recs.data[d].owner);
             K.wait_on.data[me] = 0;
             K.assume.data[me] = 0;
         }

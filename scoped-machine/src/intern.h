@@ -26,7 +26,7 @@
  * caller's lock; the chunk pointer is published with release semantics so a
  * reader that learned of index i through a synchronized channel can read it
  * without the lock. */
-typedef void *(*ChunkAlloc)(size_t bytes, void *ctx);   /* §94: an arena-backed, pre-cleared chunk supplier (work.c) */
+typedef void *(*ChunkAlloc)(size_t bytes, void *ctx);   /* Returns an owned arena block; chunked_free releases it. */
 typedef struct {
     void *dir[MAX_CHUNKS];
     size_t elem;

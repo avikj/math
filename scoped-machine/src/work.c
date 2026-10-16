@@ -60,10 +60,10 @@ static struct {
     pthread_mutex_t mu;
     uint64_t mark_seq;
     size_t grant, extra;        /* §94: the transitions the current unit may grant a kernel continuation; the transitions it took beyond one */
+    KCont *kc_active; uint64_t kc_owner;   /* inspection only (white-box probes): the continuation most recently granted and its job — continuations are per job and independent */
     struct Spare { uint64_t *block; size_t words, cleared, need; } spare[3];   /* §94: the next chunk of the side / handle / offset tables, taken from the arena and cleared CHUNK_WORDS per unit ahead of need */
     Paged pool[16]; size_t pool_sizes[16];   /* fixed-size records (Op, Demand, Real, …) from arena pages: one slot, cleared, per record */
     uint64_t sync_clear_words;             /* words a chunk had to clear synchronously because its spare was not ready (counted) */
-    KCont *kc_active; uint64_t kc_owner;   /* the one kernel continuation in progress and its job id */
     bool live;
 } W;
 
@@ -313,6 +313,7 @@ typedef struct {
     Paged stack;                 /* frames: paged (§94: O(1) push/pop, no copy on growth) */
     Phase phase; int family;
     uint64_t waiting_on;         /* job id this job is suspended on, 0 when enabled */
+    uint64_t unresolved;         /* §94 R2: the checker attempt in which this job failed UNRESOLVED (0: a settled outcome); a request in a later attempt restarts it */
     Paged waiters;               /* jobs suspended on this job (one registration per join; delivered one per unit); paged */
     uint64_t frames;
     /* §94.2(2–3): the cone path of this job when it is driven as a root:
@@ -357,6 +358,20 @@ static Op *op_new_record(uint64_t id, uint16_t fam) {   /* a fixed-size host all
     paged_init(&o->stack, sizeof(Frame)); paged_init(&o->waiters, sizeof(uint64_t)); paged_init(&o->path, sizeof(uint64_t));
     return o;
 }
+/* §94 R2: a job that failed UNRESOLVED in an earlier checker attempt is not a
+ * settled verdict — a request in a later attempt restarts it from the
+ * requested frame (its completed dependencies are READY jobs and are joined
+ * again, not recomputed); a settled outcome, valid or invalid, is reused */
+static void frame_free(Frame *f);
+static bool job_restart_if_stale(Op *o, const Frame *f) {
+    if (o->st != OP_INVALID || !o->unresolved || o->unresolved == check_attempt()) return false;
+    for (size_t k = 0; k < o->stack.n; k++) frame_free((Frame *)paged_at(&o->stack, k));
+    paged_retire(&o->stack); paged_init(&o->stack, sizeof(Frame));
+    paged_retire(&o->path); paged_init(&o->path, sizeof(uint64_t));
+    o->st = OP_RUNNING; o->diag = NULL; o->unresolved = 0; o->waiting_on = 0; o->ret = 0; o->result = 0;
+    *(Frame *)paged_push(&o->stack) = *f;
+    return true;
+}
 /* find or create the job of a shared frame; *created tells whether its stack was just started */
 static Op *job_for(Frame f, bool *created) {
     uint64_t w[10]; size_t n = job_key(&f, w);
@@ -372,6 +387,7 @@ static Op *job_for(Frame f, bool *created) {
         *created = true;
         return o;
     }
+    if (job_restart_if_stale((Op *)sd->ptr, &f)) { *created = true; return (Op *)sd->ptr; }
     frame_free(&f);
     *created = false;
     return (Op *)sd->ptr;
@@ -412,14 +428,15 @@ static Op *job_at(uint64_t id, const Frame *f, bool *created) {
         *(Frame *)paged_push(&o->stack) = *f;
         sd->ptr = o; sd->kind = K_JOB;
         *created = true;
-    }
+    } else if (job_restart_if_stale((Op *)sd->ptr, f)) *created = true;
     return (Op *)sd->ptr;
 }
 /* one delivery: the finished job j answers waiter w (one unit, charged) */
 static void deliver_to(Op *w, Op *j) {
     w->waiting_on = 0;
+    if (w->stack.n && top(w)->fam == OF_KERNEL && top(w)->ph == 1) return;   /* a continuation that waited for j's continuation: it re-examines its own condition */
     if (j->st == OP_COMPLETE) { w->ret = j->result; W.L.memo_deliver++; charge(FR_ALIAS_DELIVERY); reuse_bump(REUSE_READY_HIT); }
-    else if (j->st == OP_INVALID) fail(w, j->diag);
+    else if (j->st == OP_INVALID) { if (j->unresolved) w->unresolved = j->unresolved; fail(w, j->diag); }   /* an attempt-local failure stays attempt-local in the dependents */
     else limit(w, j->diag);
 }
 static void step_join(Op *o, Frame *f) {
@@ -1734,12 +1751,14 @@ static void kernel_call(KCont *k) {
     case KK_ENTRY_LOOKUP: { EntryId e = eval_entry_lookup(k->arg[1], k->arg[2]); k->out[0] = e; k->out[1] = e ? eval_entry_env(e) : global_env_version(); k->ok = true; break; }
     case KK_SHAPE_OF: k->out[0] = shape_of(k->arg[1]); k->ok = true; break;
     case KK_INFER: { Inference q = infer(k->arg[1], k->arg[2], k->arg[3]); k->out[0] = q.type; k->out[1] = q.st; k->ok = q.st == CK_VALID;
-        k->why = q.st == CK_VALID ? "" : q.st == CK_INVALID ? "proof use INVALID: connecting evidence does not type in its occurrence context" : "proof use UNRESOLVED: connecting evidence could not be checked in this session"; break; }
+        k->outcome = q.st == CK_VALID ? KO_OK : q.st == CK_INVALID ? KO_INVALID : KO_UNRESOLVED;
+        k->why = q.st == CK_VALID ? "" : q.st == CK_INVALID ? "proof use INVALID: connecting evidence does not type in its occurrence context" : "proof use UNRESOLVED: connecting evidence could not be checked in this attempt"; break; }
     case KK_ADMISSION: case KK_CONTEXT: case KK_IS_TYPE: case KK_CHECK: {
         CheckStatus st = k->arg[0] == KK_ADMISSION ? check_admission(&why) : k->arg[0] == KK_CONTEXT ? check_context(k->arg[1], &why)
                        : k->arg[0] == KK_IS_TYPE ? check_is_type(k->arg[1], k->arg[2], k->arg[3], &level, &why) : check(k->arg[1], k->arg[2], k->arg[3], k->arg[4], &why);
         k->out[0] = level; k->out[1] = st; k->ok = st == CK_VALID;
-        k->why = st == CK_VALID ? "" : st == CK_INVALID ? "proof use INVALID: judgment prerequisite rejected" : "proof use UNRESOLVED: judgment prerequisite unresolved"; break;
+        k->outcome = st == CK_VALID ? KO_OK : st == CK_INVALID ? KO_INVALID : KO_UNRESOLVED;
+        k->why = st == CK_VALID ? "" : st == CK_INVALID ? "proof use INVALID: judgment prerequisite rejected" : "proof use UNRESOLVED: judgment prerequisite unresolved in this attempt"; break;
     }
     case KK_TRANSFORM_EVIDENCE: { ContextId G; FaceId face; RefId e, E; k->ok = transform_evidence(k->arg[1], &G, &face, &e, &E);
         if (k->ok) { k->out[0] = G; k->out[1] = face; k->out[2] = e; k->out[3] = E; } else k->why = "proof use INVALID: connecting evidence does not type in its occurrence context"; break; }
@@ -1747,6 +1766,7 @@ static void kernel_call(KCont *k) {
     }
 }
 static void kernel_grant(KCont *k) {
+    W.kc_active = k; W.kc_owner = k->job;
     size_t used = kc_grant(k, W.grant ? W.grant : 1);
     if (used > 1) { W.extra += used - 1; W.L.frames[FR_KERNEL_TRANSITION] += used - 1; W.L.by_phase[W.phase] += used - 1; }
 }
@@ -1754,23 +1774,32 @@ static Frame kfr(uint64_t kind, uint64_t b, uint64_t c, uint64_t d, uint64_t e) 
 static void step_kernel(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: {
-        if (W.kc_active && W.kc_owner != o->id) { kernel_grant(W.kc_active); return; }   /* another continuation is in progress: advance it */
         uint64_t args[6] = { f->a, f->b, f->c, f->d, f->e, 0 };
-        KCont *k = kc_new(kernel_call, args, 5);
+        KCont *k = kc_new(kernel_call, args, 5); k->job = o->id;
         f->acc = (uint64_t)(uintptr_t)k; f->acc2 = (uint64_t)(uintptr_t)pool_take(sizeof(KernelMark)); *(KernelMark *)(uintptr_t)f->acc2 = kernel_mark();
-        W.kc_active = k; W.kc_owner = o->id; W.L.kernel_calls++;
+        W.L.kernel_calls++;
         f->ph = 1;
     }
     /* fall through */
     case 1: {
         KCont *k = (KCont *)(uintptr_t)f->acc;
         if (!kc_done(k)) kernel_grant(k);
-        if (!kc_done(k)) return;                                   /* the same frame, retained: resumed by the next unit */
-        W.kc_active = NULL; W.kc_owner = 0;
+        if (!kc_done(k)) {
+            /* the same frame, retained: resumed by the next unit. A continuation
+             * that waits for another continuation names it: this job then waits
+             * on that job (a represented dependency the scheduler drives) */
+            if (k->blocked && k->blocked_on && k->blocked_on->job && k->blocked_on->job != o->id) {
+                Op *dep = JOB(k->blocked_on->job);
+                if (dep->st == OP_RUNNING) o->waiting_on = dep->id;
+            }
+            return;
+        }
         kernel_charge(*(KernelMark *)(uintptr_t)f->acc2);
-        bool ok = k->ok; uint64_t out[4] = { k->out[0], k->out[1], k->out[2], k->out[3] }; const char *why = k->why;
+        KOutcome oc = k->outcome; uint64_t out[4] = { k->out[0], k->out[1], k->out[2], k->out[3] }; const char *why = k->why;
+        if (W.kc_active == k) { W.kc_active = NULL; W.kc_owner = 0; }
         kc_free(k); f->acc = 0;
-        if (!ok) { fail(o, why); return; }
+        if (oc == KO_UNRESOLVED) { o->unresolved = check_attempt(); fail(o, why); return; }   /* attempt-local: retried by a request in a later attempt */
+        if (oc != KO_OK) { fail(o, why); return; }                                           /* settled */
         switch (f->a) {
         case KK_ENTRY_LOOKUP: f->acc3 = out[1]; f->ph = 2; { uint64_t lw[3] = { K_LIST, out[0], out[1] }; push_intern(o, lw, 3); } return;   /* (entry, environment) as a list record */
         case KK_TRANSFORM_EVIDENCE: { uint64_t lw[5] = { K_LIST, out[0], out[1], out[2], out[3] }; f->ph = 2; push_intern(o, lw, 5); return; }
@@ -2447,7 +2476,10 @@ void work_free(void) {
     for (size_t i = 0; i < W.owned.n; i++) free(*(void **)paged_at(&W.owned, i));
     paged_retire(&W.owned);
     ktab_free(&W.tab); chunked_free(&W.side); chunked_free(&W.ops);
-    if (W.kc_active) { kc_free(W.kc_active); W.kc_active = NULL; W.kc_owner = 0; }   /* an abandoned handle's continuation completes before teardown */
+    for (size_t i = 1; i <= W.tab.n; i++) {   /* abandoned handles' continuations complete before teardown */
+        Side *sd = side(i); if (!sd->ptr || sd->kind != K_JOB) continue; Op *o = sd->ptr;
+        for (size_t k = 0; k < o->stack.n; k++) { Frame *f = paged_at(&o->stack, k); if (f->fam == OF_KERNEL && f->ph == 1 && f->acc) { kc_free((KCont *)(uintptr_t)f->acc); f->acc = 0; } }
+    }
     kc_shutdown();
     for (int i = 0; i < 16; i++) if (W.pool_sizes[i]) paged_retire(&W.pool[i]);
     for (int i = 0; i < 3; i++) if (W.spare[i].block) arena_release(W.spare[i].block, W.spare[i].words);

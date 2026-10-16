@@ -30,14 +30,19 @@
 typedef struct KCont KCont;
 typedef void (*KFn)(KCont *k);
 
+typedef enum { KO_PENDING = 0, KO_OK, KO_INVALID, KO_UNRESOLVED } KOutcome;   /* a settled verdict, or an attempt-local one (retried in a new attempt) */
 struct KCont {
     pthread_t thread; pthread_mutex_t mu; pthread_cond_t cv;
     int state;                  /* 0 waiting for a grant, 1 running, 2 completed */
     size_t budget, used;        /* the current grant and the transitions taken under it */
     uint64_t steps;             /* transitions over the whole call */
     KFn fn; uint64_t arg[6];    /* the call */
-    uint64_t out[4]; bool ok; const char *why;   /* its result */
+    uint64_t out[4]; bool ok; const char *why; KOutcome outcome;   /* its result */
     bool started;
+    uint64_t job;               /* the engine job that owns this continuation (0: none) */
+    struct KCont *blocked_on;   /* set by kc_wait: the continuation whose completion this one waits for (NULL: a plain thread's) */
+    bool blocked;               /* the last yield was a wait (not a budget exhaustion) */
+    bool in_eval;               /* suspended inside an evaluator task (the task's ownership is retained on this stack) */
 };
 
 KCont *kc_new(KFn fn, const uint64_t *args, size_t nargs);   /* the thread is created at the first grant */
@@ -50,4 +55,12 @@ void kc_shutdown(void);                     /* joins the parked continuation thr
 extern __thread KCont *kc_tl;
 extern __thread int kc_lock_depth;
 void kc_tick(void);
+/* a wait on a condition another thread will signal: a continuation yields
+ * instead (the wait is one blocked transition, charged; `on` names the
+ * continuation whose progress it needs when known), a plain thread waits on
+ * the condition variable. The caller holds `mu` and re-checks its condition
+ * after the call, exactly as after pthread_cond_wait. */
+void kc_wait(pthread_cond_t *cv, pthread_mutex_t *mu, KCont *on);
+KCont *kc_current(void);                    /* the continuation running on this thread (NULL for a plain thread) */
+size_t kc_suspended_in_eval(KCont **out, size_t max);   /* continuations suspended inside an evaluator task */
 #endif

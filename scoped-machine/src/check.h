@@ -40,6 +40,7 @@ void check_set_budget(size_t steps);
 /* §59.4: begin a new admission attempt (unresolved outcomes of the previous
  * attempt are recomputed on demand) */
 void check_new_attempt(void);
+uint64_t check_attempt(void);   /* the current attempt (a changed budget or check_new_attempt starts one): an UNRESOLVED outcome is local to it */
 
 CheckStatus check_context(ContextId G, const char **reason);
 /* sigma : (Delta;psi) -> (Gamma;chi) */

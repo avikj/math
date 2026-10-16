@@ -4,6 +4,7 @@
 #include "compiler.h"
 #include "reuse.h"
 #include "fine.h"
+#include "kcont.h"
 
 /* ---------------- continuations, joins, results ----------------
  *
@@ -916,12 +917,22 @@ static void resume(Cont *k, EvalResult *r) {
  * (counted in the net's rule classes, not as an evaluator step) */
 static void execute_task(Task t);
 static void execute(Task t) {
-    /* §94: an evaluator task is one elementary frame step; a kernel
-     * continuation does not suspend inside it (kcont.h: counted like a held
-     * lock), so a suspended continuation never owns an in-flight task */
-    kc_lock_depth++;
+    /* §94: an evaluator task is owned, unfinished work of the thread running
+     * it; a kernel continuation may suspend inside it (its stack retains the
+     * task, the entry stays RUNNING, the outstanding count is held) and is
+     * marked `in_eval` so a waiter can name it as its dependency */
+    KCont *k = kc_current(); bool outer = k && !k->in_eval; if (outer) k->in_eval = true;
     execute_task(t);
-    kc_lock_depth--;
+    if (outer) k->in_eval = false;
+}
+/* §94: a wait for the machine's progress — a continuation yields, naming a
+ * continuation suspended inside an evaluator task when there is one (its
+ * job is then driven as this job's dependency); a plain thread waits */
+static void eval_wait_locked(void) {
+    KCont *k = kc_current();
+    if (!k) { pthread_cond_wait(&E.idle_cv, &E.q_mu); return; }
+    KCont *held[4]; size_t n = kc_suspended_in_eval(held, 4);
+    kc_wait(&E.idle_cv, &E.q_mu, n ? held[0] : NULL);
 }
 static void execute_task(Task t) {
     if (t.is_pair) { net_step_pair(&E.net, t.pair); return; }
@@ -956,7 +967,7 @@ size_t eval_run(void) {
         /* wait until outstanding == 0 (no queued, reserved or executing job) */
         pthread_mutex_lock(&E.q_mu);
         size_t before = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
-        while (E.outstanding > 0) pthread_cond_wait(&E.idle_cv, &E.q_mu);
+        while (E.outstanding > 0) eval_wait_locked();
         size_t n = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST) - before;
         pthread_mutex_unlock(&E.q_mu);
         return n;
@@ -987,7 +998,7 @@ EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
         for (;;) {
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
             if (d || E.outstanding == 0) break;
-            pthread_cond_wait(&E.idle_cv, &E.q_mu);
+            eval_wait_locked();
         }
         pthread_mutex_unlock(&E.q_mu);
     } else {
@@ -1001,7 +1012,7 @@ EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
             bool queued = E.qhead < E.queue.len || net_pending_pairs_locked(&E.net) > 0;
             if (d || E.outstanding == 0) { pthread_mutex_unlock(&E.q_mu); break; }
-            if (!queued) pthread_cond_wait(&E.idle_cv, &E.q_mu);
+            if (!queued) eval_wait_locked();
             pthread_mutex_unlock(&E.q_mu);
         }
     }
