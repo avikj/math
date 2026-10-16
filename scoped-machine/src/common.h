@@ -50,6 +50,9 @@ void *k_malloc(size_t n); void *k_calloc(size_t a, size_t b); void *k_realloc(vo
 #define free(p) k_free(p)
 #endif
 
+/* a variable-length word copy: one fine transition per word (FC_COPY_WORDS) */
+void k_copy_words(uint64_t *dst, const uint64_t *src, size_t n);
+
 typedef uint64_t TermVarId;
 typedef uint64_t DimVarId;
 typedef uint64_t ContextId;
@@ -93,7 +96,7 @@ static inline void words_reserve(Words *b, size_t extra) {
 static inline void words_push(Words *b, uint64_t x) { words_reserve(b, 1); b->w[b->n++] = x; }
 static inline void words_append(Words *b, const uint64_t *x, size_t n) {
     words_reserve(b, n);
-    if (n) memcpy(b->w + b->n, x, n * sizeof(uint64_t));
+    k_copy_words(b->w + b->n, x, n);
     b->n += n;
 }
 

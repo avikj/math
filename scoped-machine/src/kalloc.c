@@ -117,3 +117,7 @@ void *k_realloc(void *p, size_t n) {
     return q;
 }
 uint64_t kalloc_pages(void) { return KA.pages; }
+
+void k_copy_words(uint64_t *dst, const uint64_t *src, size_t n) {
+    for (size_t i = 0; i < n; i++) { dst[i] = src[i]; fine_bump(FC_COPY_WORDS); }
+}

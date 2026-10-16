@@ -23,7 +23,7 @@ typedef enum {
     R_INVALID           /* host control status: invalid occurrence / ill-typed demand */
 } ResultClass;
 
-typedef struct {
+typedef struct EvalResult {
     ResultClass cls;
     RefId ref;          /* INTRODUCTION/NEUTRAL: reference whose open() is the head;
                          * SYSTEM: the owner system reference */
@@ -31,6 +31,7 @@ typedef struct {
     FaceId *faces;
     RefId *terms;
     const char *message;/* INVALID: diagnostic */
+    struct EvalResult *all_next;   /* every result, for teardown (an intrusive list: no growth under res_mu) */
 } EvalResult;
 
 typedef uint64_t EntryId;

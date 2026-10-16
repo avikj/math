@@ -1,4 +1,6 @@
 #include "eval.h"
+#include <sys/mman.h>
+#define ROOTS_CAP ((size_t)1 << 24)
 #include "lib.h"
 #include "net.h"
 #include "compiler.h"
@@ -83,7 +85,7 @@ static struct {
     bool stop;
     pthread_t *workers; size_t nworkers;
     /* rooted results (immutable payloads) */
-    VEC(EvalResult *) results; pthread_mutex_t res_mu;
+    EvalResult *results; pthread_mutex_t res_mu;
     /* live joins: a join that never fills (stuck children) is dismantled at teardown */
     VEC(Gather *) joins; pthread_mutex_t join_mu;
     /* the evaluator's net (§43): APPLY_TRANSFORM / CONTINUE_REFERENCE pairs
@@ -132,6 +134,9 @@ static void *worker_main(void *arg);
 void eval_init(void) {
     memset(&E, 0, sizeof E);
     pthread_mutex_init(&E.roots_mu, NULL);
+    E.roots.cap = ROOTS_CAP;   /* root occurrences in one fixed reservation: recorded under roots_mu without growth */
+    E.roots.data = mmap(NULL, ROOTS_CAP * sizeof(EntryId), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    require(E.roots.data != MAP_FAILED, "eval: roots reservation");
     interner_init(&E.keys); chunked_init(&E.heads, sizeof(EntryId));
     interner_init(&E.shape_ids); chunked_init(&E.shape_side, sizeof(ShapeSide));
     interner_init(&E.receipts);
@@ -193,7 +198,8 @@ static Entry *ENT(EntryId e) { return (Entry *)chunked_get(&E.entries, e - 1); }
 
 void eval_free(void) {
     stop_workers();
-    vec_free(&E.roots); pthread_mutex_destroy(&E.roots_mu);
+    if (E.roots.data) munmap(E.roots.data, ROOTS_CAP * sizeof(EntryId));
+    E.roots.data = NULL; E.roots.len = E.roots.cap = 0; pthread_mutex_destroy(&E.roots_mu);
     net_free(&E.net);           /* after the workers: a pending pair is a job */
     for (size_t i = 0; i < E.n_entries; i++) {
         Entry *e = ENT(i + 1);
@@ -212,8 +218,8 @@ void eval_free(void) {
     interner_free(&E.shape_ids); chunked_free(&E.shape_side);
     interner_free(&E.receipts);
     chunked_free(&E.entries);
-    for (size_t i = 0; i < E.results.len; i++) { free(E.results.data[i]->faces); free(E.results.data[i]->terms); free(E.results.data[i]); }
-    vec_free(&E.results);
+    for (EvalResult *r = E.results, *n; r; r = n) { n = r->all_next; free(r->faces); free(r->terms); free(r); }
+    E.results = NULL;
     /* dismantle suspended joins (their branch continuations were waiters of stuck entries) */
     for (size_t i = 0; i < E.joins.len; i++) if (E.joins.data[i]) { Gather *g = E.joins.data[i]; pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g); }
     vec_free(&E.joins);
@@ -243,7 +249,7 @@ static EvalResult *result_new(ResultClass cls, RefId ref) {
     require(r, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
     r->cls = cls; r->ref = ref;
     pthread_mutex_lock(&E.res_mu);
-    vec_push(&E.results, r);
+    r->all_next = E.results; E.results = r;
     pthread_mutex_unlock(&E.res_mu);
     return r;
 }
@@ -572,7 +578,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     k->child = eid;
     add_count(&E.ev.request);
     /* §60 trace: the consumer occurrence (owner, slot, requested key) */
-    if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { pthread_mutex_lock(&E.roots_mu); vec_push(&E.roots, eid); pthread_mutex_unlock(&E.roots_mu); }
+    if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { pthread_mutex_lock(&E.roots_mu); require(E.roots.len < E.roots.cap, "eval: roots reservation exhausted"); E.roots.data[E.roots.len++] = eid; pthread_mutex_unlock(&E.roots_mu); }
     else { Entry *o = ENT(k->dest); pthread_mutex_lock(&o->mu); vec_push(&o->deps, eid); pthread_mutex_unlock(&o->mu); }
     /* readiness check and waiter registration under the same lock (§10) */
     fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
