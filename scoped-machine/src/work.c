@@ -213,7 +213,8 @@ enum {   /* operation families (frame kinds) */
     OF_INTERN = 1, OF_LOOKUP, OF_MKF, OF_RESTRICT, OF_SUPPORT, OF_MUST, OF_SUBST, OF_SUM, OF_SETOP, OF_DEMAND, OF_EXTRACT,
     OF_SPEC_SET, OF_SPEC_FORMULA, OF_PREPARE, OF_EXPRF, OF_REALIZE, OF_REALVISIT, OF_CHECKCERT, OF_PROOF, OF_REDUCE, OF_ANTICHAIN,
     OF_FAMOP, OF_NORMALIZE, OF_SUBSET, OF_GEO, OF_MAPF, OF_MAPP, OF_MAPSET, OF_ATOMSPEC, OF_LIST, OF_SORT,
-    OF_JOIN   /* §94.2(4): the bounded request of a shared operation — key interning, then join/create/deliver */
+    OF_JOIN,  /* §94.2(4): the bounded request of a shared operation — key interning, then join/create/deliver */
+    OF_BOUNDARY /* shared expression-boundary computation, one node phase per unit */
 };
 enum { SO_UNION = 1, SO_INTER, SO_DIFF };
 
@@ -273,7 +274,7 @@ static size_t job_key(const Frame *f, uint64_t *w) {
 }
 static Phase phase_of_family(uint16_t fam) {
     switch (fam) {
-    case OF_PREPARE: case OF_EXPRF: case OF_DEMAND: case OF_EXTRACT: case OF_SPEC_SET: case OF_SPEC_FORMULA: case OF_ATOMSPEC: case OF_MAPF: case OF_MAPP: case OF_MAPSET: return PH_PREPARE;
+    case OF_BOUNDARY: case OF_PREPARE: case OF_EXPRF: case OF_DEMAND: case OF_EXTRACT: case OF_SPEC_SET: case OF_SPEC_FORMULA: case OF_ATOMSPEC: case OF_MAPF: case OF_MAPP: case OF_MAPSET: return PH_PREPARE;
     case OF_CHECKCERT: case OF_PROOF: case OF_GEO: return PH_CHECK;
     case OF_REALIZE: return PH_COMMIT;
     default: return PH_REWRITE;
@@ -402,6 +403,7 @@ static void step_extract(Op *o, Frame *f);
 static void step_spec_set(Op *o, Frame *f);
 static void step_atomspec(Op *o, Frame *f);
 static void step_spec_formula(Op *o, Frame *f);
+static void step_boundary(Op *o, Frame *f);
 static void step_prepare(Op *o, Frame *f);
 static void step_exprf(Op *o, Frame *f);
 static void step_realize(Op *o, Frame *f);
@@ -435,6 +437,7 @@ static FrameFamily family_of(const Frame *f) {
     case OF_SETOP: case OF_SUBSET: case OF_LIST: case OF_MAPSET: case OF_SORT: return FR_SUPPORT_CHUNK;
     case OF_DEMAND: case OF_EXTRACT: return FR_DEMAND_VISIT;
     case OF_SPEC_SET: case OF_ATOMSPEC: return FR_SPECIALIZE_VISIT;
+    case OF_BOUNDARY: return FR_VALIDATE_PREPARED_BOUNDARY;
     case OF_PREPARE: return f->ph == 1 ? FR_VALIDATE_PREPARED_BOUNDARY : FR_PREPARE_VISIT;
     case OF_REALIZE: case OF_REALVISIT: return FR_REALIZATION_VISIT;
     case OF_CHECKCERT: case OF_PROOF: case OF_MAPP: return FR_CERTIFICATE_VISIT;
@@ -463,6 +466,7 @@ static void step(Op *o) {
     case OF_SPEC_SET: step_spec_set(o, f); break;
     case OF_ATOMSPEC: step_atomspec(o, f); break;
     case OF_SPEC_FORMULA: step_spec_formula(o, f); break;
+    case OF_BOUNDARY: step_boundary(o, f); break;
     case OF_PREPARE: step_prepare(o, f); break;
     case OF_EXPRF: step_exprf(o, f); break;
     case OF_REALIZE: step_realize(o, f); break;
@@ -1343,21 +1347,49 @@ ExprId expr_plan(PlanId p) { return expr_intern(EX_PLAN, p, 0, 0); }
 ExprId expr_alt(ExprId e, ExprId f) { return expr_intern(EX_ALT, e, f, 0); }
 ExprId expr_join(ExprId e, ExprId f, ConnectorId g) { return expr_intern(EX_JOIN, e, f, g); }
 ExprTag expr_tag(ExprId e) { require(rec_kind(e) == K_EXPR, "not an expression"); return (ExprTag)rec_w(e, 1); }
-/* memoized per node: each expression node's boundary is computed once
- * (charged as one VALIDATE step); later calls are one bounded read */
-BoundaryId expr_boundary(ExprId e) {
+/* Shared postorder boundary job. No recursive C traversal and no unchecked
+ * cold lookup from PREPARE. Published expression syntax is immutable. */
+static void step_boundary(Op *o, Frame *f) {
+    ExprId e = f->a;
     Side *sd = side(e);
-    if (sd->has_val) return sd->val;
     BoundaryId out = 0;
-    switch (expr_tag(e)) {
-    case EX_EMPTY: out = rec_w(e, 2); break;
-    case EX_PLAN: out = plan_boundary(rec_w(e, 2)); break;
-    case EX_ALT: { BoundaryId l = expr_boundary(rec_w(e, 2)), r = expr_boundary(rec_w(e, 3)); out = l && l == r ? l : 0; break; }
-    case EX_JOIN: { BoundaryId l = expr_boundary(rec_w(e, 2)), r = expr_boundary(rec_w(e, 3)); ConnectorId g = rec_w(e, 4); if (!l || !r || !g) { out = 0; break; } out = rec_w(g, 1) == l && rec_w(g, 2) == r ? rec_w(g, 3) : 0; break; }
+    switch (f->ph) {
+    case 0:
+        if (sd->has_val) { fin(o, sd->val); return; }
+        switch (expr_tag(e)) {
+        case EX_EMPTY: out = rec_w(e, 2); break;
+        case EX_PLAN: out = plan_boundary(rec_w(e, 2)); break;
+        case EX_ALT: case EX_JOIN:
+            f->ph = 1; push(o, fr(OF_BOUNDARY, rec_w(e, 2), 0, 0, 0)); return;
+        }
+        break;
+    case 1:
+        f->acc = o->ret; f->ph = 2;
+        push(o, fr(OF_BOUNDARY, rec_w(e, 3), 0, 0, 0)); return;
+    case 2: {
+        BoundaryId l = f->acc, r = o->ret;
+        if (expr_tag(e) == EX_ALT) out = l && l == r ? l : 0;
+        else {
+            ConnectorId g = rec_w(e, 4);
+            if (l && r && g && rec_w(g, 1) == l && rec_w(g, 2) == r) out = rec_w(g, 3);
+        }
+        break;
     }
-    charge(FR_VALIDATE_PREPARED_BOUNDARY);
+    default: die("invalid boundary frame phase");
+    }
     sd->val = out; sd->has_val = true;
-    return out;
+    fin(o, out);
+}
+BoundaryId expr_boundary(ExprId e) {
+    LOCK;
+    Side *sd = side(e);
+    BoundaryId out = sd->has_val ? sd->val : run_op(OF_BOUNDARY, PH_PREPARE, fr(OF_BOUNDARY, e, 0, 0, 0), NULL);
+    UNLOCK; return out;
+}
+/* Root-boundary completion has already visited both children of every
+ * reachable ALT/JOIN, even when a child's boundary is invalid (zero). */
+static BoundaryId prepared_boundary(ExprId e) {
+    Side *sd = side(e); require(sd->has_val, "boundary requested before preparation"); return sd->val;
 }
 PlanId plan_specialize(PlanId p, MapId sigma, ContextId target, FaceId target_face, const char **why) {
     BoundaryId b = plan_boundary(p); size_t n; const uint64_t *bw = rec_words(b, &n);
@@ -1385,7 +1417,7 @@ static bool audit_use(Op *o, Frame *f, ProofUse u) {
     charge(FR_PROOF_USE_AUDIT); W.L.kernel_calls++;
     switch (u.status) {
     case PU_CORE: return true;
-    case PU_ASSUMED: words_append(&f->buf3, u.assumptions, u.nassumptions); return true;
+    case PU_ASSUMED: f->d = (uint64_t)(uintptr_t)u.assumptions; f->e = u.nassumptions; return true;   /* §94: copied one symbol per unit by PREPARE ph 14 (the verdict record is immutable, never moved) */
     case PU_PENDING: fail(o, "proof use PENDING: connecting evidence depends on a recursive declaration component and has no logical witness yet"); return false;
     case PU_INVALID: fail(o, "proof use INVALID: connecting evidence does not type in its occurrence context"); return false;
     default: fail(o, "proof use UNRESOLVED: connecting evidence could not be checked in this session"); return false;
@@ -1399,42 +1431,58 @@ static bool audit_reference_use(Op *o, Frame *f, BoundaryId b, RefId evidence) {
 }
 /* PREPARE: a = expr, b = model. buf = node stack, buf2 = atom order, buf3 = hypotheses.
  * ph0 pop/validate/push children; ph7–9 atom order loop over the node's
- * ordered work list; ph2 formula; ph3 F_K; ph4 order list; ph5 problem record. */
+ * ordered work list; ph2 formula; ph3 F_K; ph4 order list; ph5 problem record.
+ * ph14 copies an ASSUMED audit's assumptions into buf3 one per unit (d = source,
+ * e = remaining, c = the phase to resume); ph18 is a JOIN's second audit. */
+static void audit_continue(Frame *f, uint16_t next) { f->c = next; f->ph = 14; }
 static void step_prepare(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: {
-        if (f->acc == 0) { words_push(&f->buf, f->a); words_push(&f->buf2, K_LIST); f->acc = 1; f->acc2 = expr_boundary(f->a); if (!f->acc2) { fail(o, "expression has no common complete boundary"); return; } }   /* buf2 is the order list record itself (K_LIST first): handed to LIST by ownership */
+        if (f->acc == 0) { f->ph = 10; push(o, fr(OF_BOUNDARY, f->a, 0, 0, 0)); return; }
         if (!f->buf.n) { f->ph = 2; push(o, fr(OF_EXPRF, f->a, 0, 0, 0)); return; }
         ExprId e = f->buf.w[--f->buf.n];
         f->acc3 = e; f->ph = 1; return;
     }
+    case 10:
+        f->acc2 = o->ret;
+        if (!f->acc2) { fail(o, "expression has no common complete boundary"); return; }
+        words_push(&f->buf, f->a); words_push(&f->buf2, K_LIST);
+        f->acc = 1; f->ph = 0; return;
     case 1: {   /* VALIDATE_PREPARED_BOUNDARY */
         ExprId e = f->acc3; ExprTag t = expr_tag(e);
-        if (expr_boundary(e) != f->acc2 && t != EX_JOIN) { fail(o, "alternative at a different boundary"); return; }
-        f->acc4 = 0;   /* ordered atom list to scan */
+        if (prepared_boundary(e) != f->acc2 && t != EX_JOIN) { fail(o, "alternative at a different boundary"); return; }
+        f->acc4 = 0; f->i = 0; f->e = 0;   /* ordered atom list to scan; no assumptions pending */
         switch (t) {
-        case EX_EMPTY: break;
+        case EX_EMPTY: f->ph = 7; return;
         case EX_PLAN: {
             PlanId p = rec_w(e, 2); f->acc4 = rec_w(p, 5);
-            if (plan_evidence(p) && !audit_reference_use(o, f, plan_boundary(p), plan_evidence(p))) return;
-            break;
+            if (plan_evidence(p)) { if (!audit_reference_use(o, f, plan_boundary(p), plan_evidence(p))) return; audit_continue(f, 7); return; }
+            f->ph = 7; return;
         }
-        case EX_ALT: words_push(&f->buf, rec_w(e, 3)); words_push(&f->buf, rec_w(e, 2)); break;
+        case EX_ALT: words_push(&f->buf, rec_w(e, 3)); words_push(&f->buf, rec_w(e, 2)); f->ph = 7; return;
         case EX_JOIN: {
-            ConnectorId g = rec_w(e, 4); BoundaryId l = expr_boundary(rec_w(e, 2)), r = expr_boundary(rec_w(e, 3));
+            ConnectorId g = rec_w(e, 4); BoundaryId l = prepared_boundary(rec_w(e, 2)), r = prepared_boundary(rec_w(e, 3));
             if (!g) { fail(o, "composition without a connector"); return; }
             if (rec_w(g, 1) != l || rec_w(g, 2) != r) { fail(o, "incompatible composition: connector interfaces differ from the composed boundaries"); return; }
-            if (rec_w(g, 3) != f->acc2 && expr_boundary(e) != f->acc2) { fail(o, "composition result at a different boundary"); return; }
+            if (rec_w(g, 3) != f->acc2 && prepared_boundary(e) != f->acc2) { fail(o, "composition result at a different boundary"); return; }
             if (!rec_w(g, 4) && !rec_w(g, 5)) { fail(o, "connector without connecting evidence"); return; }
             if (!rec_w(g, 7)) { fail(o, "connector without its work set"); return; }
-            if (rec_w(g, 4) && !audit_use(o, f, transform_proof_use(rec_w(g, 4)))) return;
-            if (rec_w(g, 5) && !audit_reference_use(o, f, rec_w(g, 3), rec_w(g, 5))) return;
             words_push(&f->buf, rec_w(e, 3)); words_push(&f->buf, rec_w(e, 2));
             f->acc4 = rec_w(g, 7);
-            break;
+            if (rec_w(g, 4)) { if (!audit_use(o, f, transform_proof_use(rec_w(g, 4)))) return; audit_continue(f, 18); return; }
+            f->ph = 18; return;
         }
         }
-        f->i = 0; f->ph = 7; return;
+        return;
+    }
+    case 18: {   /* a JOIN's reference evidence, after its transform evidence */
+        ExprId e = f->acc3; ConnectorId g = rec_w(e, 4);
+        if (rec_w(g, 5)) { if (!audit_reference_use(o, f, rec_w(g, 3), rec_w(g, 5))) return; audit_continue(f, 7); return; }
+        f->ph = 7; return;
+    }
+    case 14: {   /* one assumption symbol per unit into the hypotheses buffer (§94) */
+        if (f->e) { words_push(&f->buf3, ((const uint64_t *)(uintptr_t)f->d)[0]); f->d += sizeof(uint64_t); f->e--; charge(FR_ALLOCATE_CHUNK); return; }
+        f->d = 0; f->ph = (uint16_t)f->c; f->c = 0; return;
     }
     case 7: {
         if (!f->acc4) { f->ph = 0; return; }

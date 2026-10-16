@@ -430,7 +430,16 @@ continued — chunked record-store relocation with a non-moving offset table,
 framed lookups for the fixed-key indices consulted from units, ownership
 transfer for `PREPARE`'s list/hypotheses and `FAMOP` plus; `run_v14_review.py`
 (15 jobs) passes under both sanitizers (`tests/acceptance-results/v16/`). The
-remaining unrefined bodies are listed in README ("The v14 review").
+remaining unrefined bodies are listed in README ("The v14 review"). The v16
+review accepts that increment, supplies `prepare-boundary.patch` (the cold
+`expr_boundary` recursion in `PREPARE` becomes the shared `BOUNDARY` job) —
+applied, with its two probes gated — and directs two accounting corrections,
+made in README: the host-allocator assumption is stated for the block
+allocation/clearing/release calls, and fixed word-size bounds are documented
+as constants. The `PU_ASSUMED` copy is lowered in the same commit;
+`run_v16_review.py` (12 jobs) passes under both sanitizers
+(`tests/acceptance-results/v17/`). Remaining: kernel/audit continuations,
+the allocator, private-buffer growth (README, "The v16 review").
 
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the

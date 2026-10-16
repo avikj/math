@@ -744,14 +744,16 @@ between units:
 | family normalization (`NORMALIZE`) | keep-flag initialization `CHUNK_WORDS` per unit; pair tests one unit each; survivor compaction `CHUNK_WORDS` per unit; the survivors are handed to `SORT` by ownership transfer | `i`, `j`, `acc` (write cursor), `buf2` |
 | variable payloads into `SORT` / `INTERN` / `LIST` from a frame's own buffer | ownership transfer (`fr_sort_own`, `fr_intern_own`, `push_intern_own`): constant work, no copy | — |
 | set merge, subset, Must/support merge, sums, comparisons | framed, one element / limb per unit | `i`, `j` |
-| sorting | framed heap sort: one sift (≤ 64 compares) per unit, one element per dedupe unit | `i`, `j` |
-| `expr_boundary` | memoized per node; first computation charged one VALIDATE step per node | memo |
+| sorting | framed heap sort: one sift per unit — at most 64 iterations and 128 charged comparisons in the 64-bit addressable-array domain (an architecture-fixed bound; the v16 review: fixed word-size bounds meet the constant-factor criterion and are not split further) — one element per dedupe unit | `i`, `j` |
+| expression boundary (`BOUNDARY`, the v16 review's `prepare-boundary.patch`) | a shared job keyed by the expression node: EMPTY/PLAN finish in one unit, ALT/JOIN request each child through the JOIN protocol and then perform fixed-field checks; each completed node installs the expression-side memo; `PREPARE` awaits the root boundary first (ph 10) and then reads established child boundaries; the synchronous `expr_boundary` drives the same job — no recursive traversal inside a unit | the job's frames, `acc` (left child) |
+| `PU_ASSUMED` audit assumptions into `PREPARE`'s hypotheses | one symbol per unit (`PREPARE` ph 14; the audit's verdict record is immutable and never moved) | `d` (source), `e` (remaining), `c` (resume phase) |
 | proof / aux-list / reduction / mapped-proof / hypotheses-set records inside a frame | framed: `REDUCE` and `MAPP` end in a finishing sequence of framed `INTERN` children (aux list, proof, reduction record; `MKF` for the mapped formula), `PREPARE` interns its hypotheses set by `push_intern_own`; no `intern_sync` is reached from `service/step` (R6) | `acc`, `acc2`, `acc3`, `i`, `j`, `c`, `d`, `e`, `buf3` |
-| `set_has` in demand | binary search ≤ 64 compares | — |
+| `set_has` in demand | binary search, at most 64 comparisons (architecture-fixed; not split further) | — |
 | demand-graph node index, atom-map index, weight override lookup from a unit (≤ 4-word keys) | framed `LOOKUP` (one hashed word / one probe / one compared word per unit; generation-checked): the demand graph's producer → node index is a record `[K_MEMO, 0xD6, graph, producer]` looked up once per popped producer (`DEMAND` ph 12, `EXTRACT` ph 24); atom images (`MAPF` ph 7, `MAPSET` ph 2, `MAPP` ph 16) and the split atom's weight (`PROOF` ph 45, `MAPP` ph 17) are delivered by the framed lookup. `find_sync` remains for the synchronous constructors only (it never drains a relocation; its collision chain is walked inside the caller, outside the bounded API) | `acc3` (node record), `acc2`/`d` (held operands) |
 | record-store growth (`INTERN` ph 5) | framed: reservation is a logical extent (header words only; the payload is written one word per unit by the copy phase and never zero-filled — the v14 review's `reservation.patch`); when the store has no capacity, one unit allocates the new block (no copy) and each following unit relocates at most `CHUNK_WORDS` words of the old block (`store_grow_chunk`); during the relocation every record below the old extent is read from the old block, which stays complete (a write below it is mirrored once the copy cursor has passed), and a reservation waits for the relocation to finish; the offset table is a non-moving chunked array (no relocation on growth). The synchronous paths complete a pending store relocation before touching the store (`store_settle`) | `KTab.sold`, `sold_n`, `smoved` |
 | `PREPARE` order list and hypotheses set; `FAMOP` plus | ownership transfer: the order list is accumulated as the record itself (`K_LIST` first) and handed to `LIST`; the hypotheses are handed to the framed `SORT` (one sift / one dedupe element per unit) whose `INTERN` yields the set — no sort or copy inside the unit; `FAMOP` plus pushes one member per unit and hands its buffer to `NORMALIZE` | `buf2`, `buf3` |
 | growth of a frame's own buffers and of the per-operation vectors (`words_push` on `buf/buf2/buf3`, `vec_push` on demand producers/occurrences, frame stacks) | **amortized only**: a push that doubles a private buffer copies it inside the unit; the words are charged (`alloc_words`) but the call is not suspended. (The shared record store and the offset table are no longer in this row.) | — |
+| the allocator under the bounded bodies (`store_begin_grow`: variable-sized `malloc`; `ktab_begin_grow`: variable-sized `calloc`; the chunk `calloc`s of `Chunked`; the `free` of a retired block) | **host operations, not refined**: the relocation loops above are bounded, but the block allocation, its zero-initialization (`calloc`) and its release are each one host call of input-dependent size; the "one step per allocator call" model stated at the top of this table is weaker than §§89/94's bounded arena / free-list operations with growth, clearing and copying charged separately. Every unit that performs one of these calls is bounded **under that allocator assumption** and not by a C-instruction bound | — |
 | kernel calls from `ATOMSPEC` / `PREPARE` / proof-use audit (`reindex`, `fc_reindex`, `ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`, `check_map`, `proof_use`) | **not refined**: charged as `kernel_calls`; the reuse administration they perform is charged retrospectively into `SHAPE_NODE` / `DEPENDENCY_CHECK` / `RECEIPT` from the kernel's counters (`kernel_mark/kernel_charge`), and the audit's traversal steps into `AUDIT_STEPS` (fine vector); none of these is resumable | — |
 | constructor-level synchronous APIs (`set_make`, `plan_make`, `connector_make`, `model_with_weight`, `boundary_make`, `job_sync` entries) | outside the bounded API (no bounded-step claim) | — |
 
@@ -763,10 +765,12 @@ per unit (before: 256 in the completing unit).
 
 Consequently the §65 constant-factor refinement is **not claimed** for units
 that reach the kernel (specialization of producer atoms, preparation's typing
-and proof-use checks, and the assumptions a `PU_ASSUMED` audit appends) or for
-the amortized growth of a frame's private buffers; it is claimed for the formula, set, cost,
-certificate, realization, demand, family, scheduling and delivery operations,
-whose every unit is one of the bounded bodies above. `FR_SHAPE_NODE`,
+and proof-use checks) or for the amortized growth of a frame's private
+buffers, and for units that allocate, clear or release a block it is claimed
+only under the stated host-allocator assumption; it is claimed for the
+formula, set, cost, certificate, realization, demand, family, scheduling,
+delivery and boundary operations, whose every unit is one of the bounded
+bodies above. `FR_SHAPE_NODE`,
 `FR_DEPENDENCY_CHECK` and `FR_RECEIPT` are now charged (from the kernel's
 counts) but remain accounted rather than resumable families.
 
@@ -865,15 +869,40 @@ hypotheses `qsort` replaced by ownership transfer into `LIST`/`SORT`
 `run_v14_review.py` (fifteen jobs) passes under both
 (`tests/acceptance-results/v16/`); the author's bundle is in `tests/review-v14/`.
 
+### The v16 review — cold boundary traversal, allocator qualification (`REVIEW-v16.md`)
+
+The v16 review accepts the reservation correction and the lowering increment
+and finds the remaining recursive body in `PREPARE`: the cold `expr_boundary`
+traversal (65 and 4 097 nodes visited in one unit at ALT depths 64 and
+4 096). Its `prepare-boundary.patch` is applied as is (`BOUNDARY` row above);
+`tests/review_prepare_boundary.c` at depths 64 and 4 096 (0 nodes visited in
+the first unit; depth 64 completes with at most one boundary frame per unit
+and a second identical preparation adds no boundary work) and the review's
+`tests/review_store_interleave.c` (a writer behind and ahead of the store's
+copy cursor, a framed lookup during the relocation, correct canonical data
+after the old block is freed) are gated under both sanitizers. In the same
+pass the `PU_ASSUMED` assumptions copy is lowered to one symbol per unit
+(`PREPARE` ph 14), and the accounting is corrected as the review directs: the
+allocator row above states the host-allocator assumption explicitly, and the
+fixed word-size bounds (`set_has`, the heap sift at ≤ 64 iterations / 128
+charged comparisons) are documented as architecture-fixed constants rather
+than listed as pending splits. `run_v16_review.py` (twelve focused jobs)
+passes under both sanitizers (`tests/acceptance-results/v17/`); the author's
+bundle is in `tests/review-v16/`.
+
 Still outside the unit bound, stated exactly: (1) kernel and audit calls made
 from `ATOMSPEC`, `PREPARE` and the proof-use audit (`reindex`, `fc_reindex`,
 `ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`,
 `check_map`, `proof_use`, `transform_proof_use`) — charged as `kernel_calls`
-with their reuse administration charged retrospectively, not resumable;
-(2) the `words_append` of a `PU_ASSUMED` audit's assumptions into `buf3`
-(kernel-sized); (3) amortized growth of a frame's private buffers and the
-per-operation vectors; (4) `set_has` and the heap sift are bounded by 64
-compares, not by one. The bounded-machine contract is not marked complete.
+with their reuse administration charged retrospectively; none has a
+persistent continuation through its own loops; (2) the allocator under the
+bounded bodies — variable-sized `malloc`/`calloc`/`free` for the store block,
+the slot array, `Chunked` chunks and retired blocks — so the units performing
+them are bounded only under the stated allocator assumption, not by a
+C-instruction bound; (3) amortized growth of a frame's private buffers and the
+per-operation vectors (`words_push` on `buf/buf2/buf3`, `vec_push` on demand
+producers/occurrences, frame stacks). The bounded-machine contract is not
+marked complete.
 
 ### §83 — presentations, diagram values and the generic action as core terms (`src/runtime.c`)
 
