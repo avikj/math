@@ -17,8 +17,23 @@ static MapId rho_extend(MapId rho, Sort sort, uint64_t concrete, uint32_t depth,
     return mapb_finish(&b);
 }
 
+/* ρ restricted to the free boundary of t: a shared subterm under different
+ * unrelated binders has one memo entry (the §76 form depends only on the
+ * bound identities of t's own free variables and dimensions) */
+static MapId rho_restrict(MapId rho, RefId t) {
+    if (map_is_identity(rho)) return rho;
+    VarSetId fv = ref_freevars(t); DimSetId sup = ref_support(t);
+    Words rd; words_init(&rd); fc_dims(ref_required(t), &rd); DimSetId reqd = dimset_make(rd.w, rd.n); words_free(&rd);   /* the required face may mention dimensions outside the support */
+    MapBuilder b; mapb_init(&b);
+    size_t nt = map_n_terms(rho), nd = map_n_dims(rho);
+    for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(rho, k, &x, &im); if (varset_contains(fv, x)) mapb_term(&b, x, im); }
+    for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(rho, k, &i, &im); if (dimset_contains(sup, i) || dimset_contains(reqd, i)) mapb_dim(&b, i, im); }
+    return mapb_finish(&b);
+}
+
 ShapeId shape_under(RefId t, MapId rho, uint32_t depth) {
     ShapeId memo;
+    rho = rho_restrict(rho, t);
     if (memo_get(t, rho, depth, &memo)) return memo;
     Words w; words_init(&w);
     if (ref_is_var(t)) {

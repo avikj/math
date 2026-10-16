@@ -1,4 +1,5 @@
 #include "term.h"
+#include "fine.h"
 
 const char *tag_name(Tag t) {
     switch (t) {
@@ -134,7 +135,7 @@ MapId map_single_dim(DimVarId i, IntervalId r) { MapBuilder b; mapb_init(&b); ma
 
 static IntervalId map_img_cb(DimVarId i, void *ctx) { return map_dim_image(*(MapId *)ctx, i); }
 IntervalId iv_reindex(IntervalId r, MapId m) { return map_is_identity(m) ? r : iv_substitute(r, map_img_cb, &m); }
-FaceId fc_reindex(FaceId phi, MapId m) { return map_is_identity(m) ? phi : fc_substitute(phi, map_img_cb, &m); }
+FaceId fc_reindex(FaceId phi, MapId m) { fine_bump(FC_FACE_OPS); return map_is_identity(m) ? phi : fc_substitute(phi, map_img_cb, &m); }
 
 MapId compose(MapId sigma, MapId tau) {
     if (map_is_identity(sigma)) return tau;
@@ -146,6 +147,7 @@ MapId compose(MapId sigma, MapId tau) {
      * keys present only in tau */
     Words keys; words_init(&keys);
     size_t ns = map_n_terms(sigma), nt = map_n_terms(tau);
+    fine_bump(FC_REINDEX_CALLS); fine_add(FC_MAP_ENTRIES, ns + nt + map_n_dims(sigma) + map_n_dims(tau));
     for (size_t k = 0; k < ns; k++) { TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); words_push(&keys, x); }
     for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(tau, k, &x, &im); words_push(&keys, x); }
     keys.n = sort_unique_u64(keys.w, keys.n);
@@ -363,6 +365,7 @@ RefId make_view(OriginId c, MapId sigma) {
     DimSetId fd = origin_fd(c);
     MapBuilder b; mapb_init(&b);
     size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
+    fine_bump(FC_REINDEX_CALLS); fine_add(FC_MAP_ENTRIES, nt + nd);
     for (size_t k = 0; k < nt; k++) {
         TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im);
         if (varset_contains(ft, x)) mapb_term(&b, x, im);
@@ -382,6 +385,7 @@ RefId make_view(OriginId c, MapId sigma) {
         DimSetId sup = dimset_make(NULL, 0);
         FaceId req = fc_reindex(origin_required(c), m);
         size_t n; const uint64_t *xs = varset_get(ft, &n);
+        fine_add(FC_MAP_ENTRIES, n);
         for (size_t k = 0; k < n; k++) {
             RefId im = map_term_image(m, xs[k]);
             fv = varset_union(fv, ref_freevars(im));
@@ -414,8 +418,10 @@ RefId reindex(RefId t, MapId sigma) {
     MapId tau = ref_map(t);
     MapBuilder b; mapb_init(&b);
     size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
+    fine_bump(FC_REINDEX_CALLS); fine_add(FC_MAP_ENTRIES, n);
     for (size_t k = 0; k < n; k++) mapb_term(&b, xs[k], reindex(map_term_image(tau, xs[k]), sigma));
     const uint64_t *ds = dimset_get(origin_fd(c), &n);
+    fine_add(FC_MAP_ENTRIES, n);
     for (size_t k = 0; k < n; k++) mapb_dim(&b, ds[k], iv_reindex(map_dim_image(tau, ds[k]), sigma));
     out = make_view(c, mapb_finish(&b));
     wordmap_put(&M.reindex_memo, key, 2, out);
@@ -603,7 +609,9 @@ void open_ref(RefId t, Head *h) {
     h->n = origin_nfields(c);
     h->f = calloc(h->n ? h->n : 1, sizeof(HField));
     require(h->f, "out of memory");
+    fine_bump(FC_HEAD_CELLS);
     for (size_t k = 0; k < h->n; k++) {
+        fine_bump(FC_FIELDS_OPENED);
         Field f = origin_field(c, (FieldIndex)k);
         h->f[k].kind = f.kind;
         h->f[k].index = (FieldIndex)k;

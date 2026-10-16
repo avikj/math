@@ -1,4 +1,6 @@
 #include "compiler.h"
+#include "proof.h"
+#include "runtime.h"
 
 /* ------------------------------------------------------------------ */
 /* registries                                                            */
@@ -50,6 +52,7 @@ void compiler_init(void) {
     CR.init = true;
 }
 void compiler_free(void) {
+    proof_free(); rt_free();          /* the proof-use boundary caches reference compiler records */
     if (!CR.init) return;
     for (size_t k = 0; k < CR.diagrams.len; k++) { free(CR.diagrams.data[k]->nodes); free(CR.diagrams.data[k]->R); free(CR.diagrams.data[k]->RL); free(CR.diagrams.data[k]); }
     for (size_t k = 0; k < CR.transforms.len; k++) free(CR.transforms.data[k]);
@@ -124,6 +127,9 @@ static DiagramId diagram_new(ContextId params, size_t n, const DiagNode *nodes, 
 }
 DiagramId diagram_declare(ContextId params, size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o) { return diagram_new(params, n, nodes, B, o, 0, lB, false); }
 DiagramId residual_declare(ContextId params, size_t n, const DiagNode *nodes, RefId Z, uint64_t lZ) { return diagram_new(params, n, nodes, 0, 0, Z, lZ, true); }
+size_t diagram_nodes(DiagramId d, const DiagNode **nodes) { Diagram *g = DG(d); require(g, "unknown diagram"); *nodes = g->nodes; return g->n; }
+RefId diagram_output(DiagramId d, RefId *B, uint64_t *lB, bool *residual) { Diagram *g = DG(d); require(g, "unknown diagram"); *B = g->B; *lB = g->lB; *residual = g->residual; return g->residual ? g->Z : g->o; }
+ContextId diagram_params(DiagramId d) { Diagram *g = DG(d); require(g, "unknown diagram"); return g->params; }
 
 /* the realization telescope, canonical substitution and value (§39) */
 static void diagram_build(DiagramId id) {
@@ -647,6 +653,30 @@ CheckStatus certificate_verify(TransformId id, const char **reason) {
                 again.domain_level == t->domain_level && again.codomain_level == t->codomain_level;
     if (!same) { *reason = "registered record differs from the re-emitted derivation"; return CK_INVALID; }
     return CK_VALID;
+}
+
+bool transform_evidence(TransformId id, ContextId *G, FaceId *face, RefId *evidence, RefId *type) {
+    const CompiledTransform *t = transform_get(id);
+    if (!t) return false;
+    pthread_mutex_lock(&CR.mu); Certificate c = *CR.certs.data[t->certificate - 1]; pthread_mutex_unlock(&CR.mu);
+    switch (c.kind) {
+    case EV_IDENTITY:
+        *G = c.decl.parameters; *face = c.decl.required_face; *evidence = c.decl.evidence;
+        *type = mk_path_const(c.decl.result_level, c.decl.result_type, diagram_canonical(c.decl.left), diagram_canonical(c.decl.right));
+        return true;
+    case EV_EQUIVALENCE:
+        *G = c.params; *face = c.req; *evidence = c.e; *type = mk_equiv(c.lX, c.lY, c.X, c.Y); return true;
+    case EV_RESIDUAL_EQUIVALENCE:
+        *G = c.params; *face = c.req; *evidence = c.e; *type = mk_equiv(DG(c.L)->lB, DG(c.Rd)->lB, diagram_canonical(c.L), diagram_canonical(c.Rd)); return true;
+    case EV_CUT:
+        *G = context_extend_term(t->parameters, t->forward_argument_slot, t->domain); *face = t->required_face; *evidence = t->forward_body; *type = t->codomain; return true;
+    case EV_CONTRACTIBLE_FIBRE: {
+        TermVarId bb = cterm_typed(ROLE_CF_BIND, c.R, c.B);
+        ContextId Gb = context_extend_term(c.params, bb, c.B); uint64_t lR; const char *why;
+        if (check_is_type(Gb, c.req, mk_app(c.R, ref_var(bb)), &lR, &why) != CK_VALID) return false;
+        *G = c.params; *face = c.req; *evidence = c.k; *type = mk_pi_lv(c.lB, lR, bb, c.B, mk_contr(lR, mk_app(c.R, ref_var(bb)))); return true; }
+    default: return false;
+    }
 }
 
 /* §77.1: the source declaration ids associated with an action (identity

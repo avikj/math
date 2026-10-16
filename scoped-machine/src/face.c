@@ -1,4 +1,5 @@
 #include "face.h"
+#include "fine.h"
 
 static bool face_contradiction(const Clause *c) {
     /* sorted: (i=0) = 2i and (i=1) = 2i+1 are adjacent when both present */
@@ -34,6 +35,7 @@ bool fc_is_false(FaceId a) { size_t n; const uint64_t *w = interner_get(&M.faces
 bool fc_is_true(FaceId a) { size_t n; const uint64_t *w = interner_get(&M.faces, a, &n); return w[0] == 1 && w[1] == 0; }
 
 FaceId fc_join(FaceId a, FaceId b) {
+    fine_bump(FC_FACE_OPS);
     Dnf x, y; fc_to_dnf(a, &x); fc_to_dnf(b, &y);
     for (size_t i = 0; i < y.n; i++) dnf_add_clause(&x, y.c[i].a, y.c[i].n);
     dnf_free(&y);
@@ -41,6 +43,7 @@ FaceId fc_join(FaceId a, FaceId b) {
 }
 
 FaceId fc_meet(FaceId a, FaceId b) {
+    fine_bump(FC_FACE_OPS);
     Dnf x, y, out; fc_to_dnf(a, &x); fc_to_dnf(b, &y); dnf_init(&out);
     for (size_t i = 0; i < x.n; i++)
         for (size_t j = 0; j < y.n; j++)
@@ -94,12 +97,15 @@ FaceId fc_substitute(FaceId phi, DimImageFn img, void *ctx) {
 }
 
 bool fc_entails(FaceId chi, FaceId phi) {
+    fine_bump(FC_FACE_OPS);
     Dnf x, y; fc_to_dnf(chi, &x); fc_to_dnf(phi, &y);
     bool ok = true;
     for (size_t i = 0; i < x.n && ok; i++) {
         bool found = false;
-        for (size_t j = 0; j < y.n && !found; j++)
+        for (size_t j = 0; j < y.n && !found; j++) {
+            fine_bump(FC_DNF_CLAUSE_STEPS);
             if (clause_subset(&y.c[j], &x.c[i])) found = true;
+        }
         ok = found;
     }
     dnf_free(&x); dnf_free(&y);
@@ -107,6 +113,7 @@ bool fc_entails(FaceId chi, FaceId phi) {
 }
 
 FaceId fc_forall(DimVarId i, FaceId phi) {
+    fine_bump(FC_FACE_OPS);
     Dnf a, out; fc_to_dnf(phi, &a); dnf_init(&out);
     for (size_t c = 0; c < a.n; c++) {
         bool mentions = false;
@@ -128,6 +135,7 @@ static bool sorted_contains(const uint64_t *S, size_t n, uint64_t x) {
 }
 
 FaceId fc_project(FaceId chi, const uint64_t *S, size_t nS) {
+    fine_bump(FC_FACE_OPS);
     /* chi is canonical: contradictory clauses are already gone */
     Dnf a, out; fc_to_dnf(chi, &a); dnf_init(&out);
     Words buf; words_init(&buf);

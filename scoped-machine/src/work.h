@@ -198,6 +198,15 @@ BoundaryId problem_boundary(ProblemId p);
 ModelId problem_model(ProblemId p);
 ExprId problem_expr(ProblemId p);
 bool problem_current(ProblemId p);                                 /* session and environment unchanged since preparation */
+/* §88.4: the proof-use boundary at preparation. Every connecting evidence
+ * (a plan's continuation evidence, a connector's transform certificate or
+ * checked reference) is audited by proof_use (proof.h). CORE and ASSUMED
+ * uses prepare; the opaque symbols every ASSUMED use depends on are recorded
+ * in the problem as its explicit hypotheses. PENDING, INVALID and UNRESOLVED
+ * uses reject preparation with the audit's diagnostic: a pending audit is
+ * never treated as a refutation, only as a missing mathematical witness. */
+size_t problem_assumptions(ProblemId p, const uint64_t **out);     /* sorted opaque symbols the problem's evidence uses depend on */
+bool problem_core(ProblemId p);                                    /* every evidence use audited CORE (no hypotheses) */
 
 /* ---- realization reconstruction from a supplied support (§68.3) ---- */
 RealizationId realize(ProblemId p, SetId support, const char **why);   /* 0 with *why when S ∪ K does not satisfy the expression */
@@ -267,7 +276,9 @@ typedef enum {
     FR_PREPARE_VISIT = 0, FR_VALIDATE_PREPARED_BOUNDARY, FR_FORMULA_VISIT, FR_FORMULA_INTERN_STEP, FR_COFACTOR_VISIT, FR_COFACTOR_REBUILD,
     FR_SUPPORT_CHUNK, FR_MUST_CHUNK, FR_COST_ADD_CHUNK, FR_COST_COMPARE_CHUNK, FR_CERTIFICATE_VISIT, FR_REALIZATION_VISIT,
     FR_ALLOCATE_CHUNK, FR_RELEASE_CHUNK, FR_TABLE_PROBE, FR_DEMAND_VISIT, FR_SPECIALIZE_VISIT, FR_FAMILY_CHUNK, FR_GEODESIC_VISIT,
-    FR_PRODUCER_LOOKUP, FR_ALIAS_DELIVERY, FR_SHAPE_NODE, FR_DEPENDENCY_CHECK, FR_RECEIPT, FR_COUNT   /* §81.1 */
+    FR_PRODUCER_LOOKUP, FR_ALIAS_DELIVERY, FR_SHAPE_NODE, FR_DEPENDENCY_CHECK, FR_RECEIPT,   /* §81.1 */
+    FR_PROOF_USE_AUDIT,            /* §88: one frame per audited evidence use at preparation */
+    FR_SCHEDULE_STEP, FR_CYCLE_CHECK, FR_COUNT   /* §94.2(3): one cone-path hop / one cycle-check hop per unit */
 } FrameFamily;
 typedef enum { PH_PREPARE = 0, PH_REWRITE, PH_CHECK, PH_COMMIT, PH_EXECUTE, PH_COUNT } Phase;
 const char *frame_family_name(FrameFamily f);

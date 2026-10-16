@@ -347,6 +347,84 @@ handle checks persistence); `demo_speculation` is unchanged — the restricted
 decision is still the same result object because the branch's residual key is
 alias-published (§76.3/§78).
 
+## 5j. The b612a07 review (R1, R2) and the §§83–84/88–89 increment
+
+Baseline `b612a07`. Masters: `HANDOFF.md` is the v12 master (§§92–95 inserted
+before the appendices); the amendments alone are `AMENDMENT-83-87.md`,
+`AMENDMENT-88-91.md`, `AMENDMENT-92-95.md`; the briefs `WORKER-v10.txt`,
+`WORKER-v11.txt`, `WORKER-v12.txt`. The author's probes and runners are
+gated unchanged: `tests/review_alias_scope.c`, `review_alias_faces.c`,
+`review_work_budget.c` (white-box over `work.c`), `review_workers.c` +
+`run_review.py` (17 runs, ASan+LSan and TSan), `run_boundaries.py` (6 runs),
+`run_core_witnesses.py` (3 witnesses), `test_proof_boundary.c` (11 cases),
+`review_certificate_boundary.c`, `review_frame_cost.c`, the three §83
+witnesses, and the v9 `run_reuse_acceptance.py` (9 jobs).
+
+Correction → function → test:
+
+| Correction | Functions | Tests |
+| --- | --- | --- |
+| R1 §93 alias publication | `publish_with` (eval.c): `result_new(cls, residual)` / `result_system(residual, …)` for the alias descriptor; the alias is published before the source's READY store | `review_alias_scope` 0/4, `review_alias_faces` 0/4, `test_reuse` (101), `test_check` (85), `demo_speculation` |
+| R2 §94.2(1) NORMALIZE / payload copies | `step_normalize` ph 0 (chunked flags) ph 3 (chunked compaction), `words_take`, `fr_intern_own`, `fr_sort_own`, `push_intern_own` and their callers (support/Must merge, set ops, SORT dedupe, LIST, workset, atom-set specialization, MAPSET) | `review_work_budget` normalize 64/4096: 32 flags per unit; `test_work` (217) |
+| R2 §94.2(2) delivery | `deliver_to`, `service` (pop-and-deliver), `waiters` registration in `step_join` | `review_work_budget` fanout 256: ≤ 1 delivery per unit; `accept_shared_work_handle`; `test_work` case 8 |
+| R2 §94.2(3) scheduling, cycle checks | `Op.path`, `tip_of`, `service`, `step_join` ph 2 (`CYCLE_CHECK` one hop per unit), `FR_SCHEDULE_STEP` | `test_work` cases 1, 8, 9; `accept_*`; A12–A14, A18 |
+| R2 §94.2(4) table operations | `OF_JOIN` (`push` → framed key `INTERN`), `KTab.moving/probe`, `ktab_grow_chunk` (probe-bounded units), `step_intern` ph 1/4 and `step_lookup` ph 1/3 (no synchronous `ktab_settle`) | `test_work` case 9 (ledger), `review_work_budget` |
+| R2 §94.2(5) allocation/release | `fail` retains the stack; `service` releases one frame per unit; ownership transfer removes the copies; buffer growth remains amortized (disclosed) | `test_work`; LSan clean |
+| R2 §94.2(6) kernel administration | `kernel_mark/kernel_charge` charging `FR_SHAPE_NODE/DEPENDENCY_CHECK/RECEIPT` from `reuse_count` around kernel calls in `ATOMSPEC` and `atom_producer_ref`; `FC_AUDIT_STEPS` | `test_runtime` case 7, `test_proof_use` ledger check |
+
+Section → function → test for the increment:
+
+| Spec | Functions | Tests |
+| --- | --- | --- |
+| §83.1 Maps, presentations | `rt_maps_type/id/compose/inverse`, `rt_pres_type/const`, projections | `test_runtime` block 1; `review_runtime_presentations` |
+| §83.2 singleton with h,k | `rt_singleton_type/maps/singleton` (levels `(a,r)`, `D` formal, scope `capture_term2`) | `test_runtime` block 2; `review_singleton_witnesses` |
+| §83.3 Diagram, zero, extend | `rt_diagram_type/zero/extend`, `rt_diagram_value/family/maps` | `test_runtime` block 3, case 2 |
+| §83.4 action, middle maps, groupoid laws | `rt_action`, `rt_action_fun`, `rt_action_middle`, `rt_action_maps`, `rt_J`, `rt_lunit/rinv/linv/assoc`, `rt_ap`, `K_of`/`k_base`/`words_equal` | `test_runtime` groupoid block, `runtime full`; `review_generic_identity_action` |
+| §84.1 export, comparison with the compiler | `rt_diagram_export`, `diagram_nodes/output/params` (compiler.c) | `test_runtime` case 3 (empty, two-node, shared predecessor, loop residual) |
+| §84.2 reuse along an identity | `rt_reuse` | `test_runtime` case 2 |
+| §87 cases 1–7 | as listed in README | `test_runtime`, witnesses |
+| §88.1–88.3 audit | `proof_use`, `symbols_of` (explicit stack, memo per ref/scope), `global_edges` (memo per `(symbol, revision)`), `audit_graph` (iterative Tarjan), verdict cache with `deps_current` | `test_proof_boundary` (11 via the `proof_boundary.h` shim), `test_proof_use`, `test_runtime` case 6 |
+| §88.2 original evidence and expected type | `transform_evidence` (compiler.c), `transform_proof_use` | `test_proof_use` (recursive equivalence: `check` VALID, `certificate_verify` VALID, audit PENDING), `review_certificate_boundary` |
+| §88.4 mathematical use | `audit_use`, `audit_reference_use`, `step_prepare` ph 1, `problem_assumptions`, `problem_core`, `FR_PROOF_USE_AUDIT` | `test_proof_use` (plan evidence, connector reference, connector transform; CORE / ASSUMED / PENDING outcomes) |
+| §89 fine accounting | `src/fine.*`, instrumentation in `term.c`, `intern.c`, `dnf.c`, `face.c`, `eval.c`, `net.c`, `check.c`, `proof.c` | `test_fine_cost` (coarse constant, fine growing), `review_frame_cost` |
+
+Measured before/after of the two R2 counterexamples: NORMALIZE 64 / 4,096
+candidates at budget 1 — 64 / 4,096 flags written per unit before, 32 after;
+fan-out of 256 waiting parents — 256 deliveries in the completing unit
+before, at most 1 per unit after. Alias regressions: `escaped_z` 1 → 0,
+`returned_term_check` INVALID → VALID; conversion of `f a` and `g a` after
+opposite-face warm-ups EQUAL → UNEQUAL (unchanged from before the warm-ups).
+
+Fine-cost obligation (§81.2, §89, §94): the bounded-helper table in README
+is the exact contract; three classes remain outside the unit bound and are
+named there (kernel calls, fixed-key index probes, amortized buffer growth).
+The constant-factor simulation theorem is not claimed.
+
+Two further corrections found while gating the increment (both in v9 code):
+`shape.c::shape_under` — memo keyed by the whole ρ made shape computation
+exponential on shared subterms under distinct binders; ρ is restricted to the
+subterm's free boundary (`rho_restrict`) before the lookup, shapes unchanged
+(`test_reuse` 101 and the eight boundaries pass; `test_main`'s map table
+16,636 → 991). `net.c` — the `CONTINUE_REFERENCE` event counter was
+incremented after `eval_forward_result`, a diagnostic ordering race visible as
+`test_compiler` (67) failing with workers on a 2-core host, at b612a07 too; the
+count now precedes the publication. `eval.c::eval_reset` — drains work a
+client left outstanding under a worker pool before enforcing quiescence
+(`review_alias_faces 4` aborted under load).
+
+Integration status of §§83–84 / §88, stated precisely: the constructors and
+the generic action are production templates in `src/runtime.c`, used by the
+host export and validated against the compiler's emitted maps by conversion;
+the compiler's `identity_pair/identity_action` remain the host-prepared
+convenience, their bodies not re-routed through `rt_action` (the equality of
+the two is checked by conversion in `test_runtime`, not assumed). The
+proof-use boundary is production code in `src/proof.c`, invoked at
+preparation for every evidence use; it is not invoked by `check`,
+`certificate_verify`, `compile_*` or the evaluator, whose meanings are
+unchanged. Verdict caching is per judgment with revision dependencies; the
+author's whole-environment `environment` guard survives only as the `env`
+snapshot field of `ProofUse`.
+
 ## 6. Representation choices a reviewer should know
 
 Listed in `README.md` under "Representation decisions". The two most likely to raise an

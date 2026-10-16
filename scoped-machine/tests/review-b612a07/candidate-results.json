@@ -1,0 +1,130 @@
+[
+  {
+    "sanitizer": "asan",
+    "name": "review_alias_scope",
+    "workers": 0,
+    "exit_code": 0,
+    "stdout": "workers=0 alias=1 returned_source=0 escaped_z=0 returned_term_check=0 reason=\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "name": "review_alias_scope",
+    "workers": 4,
+    "exit_code": 0,
+    "stdout": "workers=4 alias=1 returned_source=0 escaped_z=0 returned_term_check=0 reason=\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "name": "review_alias_faces",
+    "workers": 0,
+    "exit_code": 0,
+    "stdout": "workers=0 before=1 after=1 same_returned_ref=0 both_return_face_specific_source=0\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "name": "review_alias_faces",
+    "workers": 4,
+    "exit_code": 0,
+    "stdout": "workers=4 before=1 after=1 same_returned_ref=0 both_return_face_specific_source=0\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "name": "test_reuse",
+    "workers": 0,
+    "exit_code": 0,
+    "stdout": "A1\u2013A3. structural identity: direct vs specialized view, alpha renaming, raw node vs template view\nA4\u2013A7. completed reductions reused under specialization and restriction; the residual is observed\nA8\u2013A9. unrelated environment extension keeps answers; a changed dependency does not\nA10\u2013A11. one semantic action per content; distinct proof paths stay distinct\nA12\u2013A13. repeated reduction / proof check repeat no producer; a changed model recomputes\nA14\u2013A15. concurrent duplicate requests share one producer; weakening reuses the pure judgment\nA16\u2013A18. nested neutral eliminators drop the reduced prefix; receipt maps compose; no self-wait on reflexive receipts; cycles stay stuck\nA19. runtime proof parameter: one ordinary core program computes its proof and applies the fixed diagram action\nA20\u2013A21. accounting with shared producers, adapters and ready cuts; the bounded API suspends inside helpers\nEnd to end: generic reduction, specialization, runtime proof action, a reused checker judgment and actual work extraction in one run\n  run: bodies 80 betas 2 apply 1 receipt instances 7; record REQUEST 378 DELIVER 378 PUB 81 EVAL 148\nreuse: 101 checks, 0 failures\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "name": "test_reuse",
+    "workers": 4,
+    "exit_code": 0,
+    "stdout": "A1\u2013A3. structural identity: direct vs specialized view, alpha renaming, raw node vs template view\nA4\u2013A7. completed reductions reused under specialization and restriction; the residual is observed\nA8\u2013A9. unrelated environment extension keeps answers; a changed dependency does not\nA10\u2013A11. one semantic action per content; distinct proof paths stay distinct\nA12\u2013A13. repeated reduction / proof check repeat no producer; a changed model recomputes\nA14\u2013A15. concurrent duplicate requests share one producer; weakening reuses the pure judgment\nA16\u2013A18. nested neutral eliminators drop the reduced prefix; receipt maps compose; no self-wait on reflexive receipts; cycles stay stuck\nA19. runtime proof parameter: one ordinary core program computes its proof and applies the fixed diagram action\nA20\u2013A21. accounting with shared producers, adapters and ready cuts; the bounded API suspends inside helpers\nEnd to end: generic reduction, specialization, runtime proof action, a reused checker judgment and actual work extraction in one run\n  run: bodies 80 betas 2 apply 1 receipt instances 7; record REQUEST 378 DELIVER 378 PUB 81 EVAL 148\nreuse: 101 checks, 0 failures\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "name": "test_check",
+    "workers": 0,
+    "exit_code": 0,
+    "stdout": "== \u00a733\u201334 checking and conversion\n  85 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "name": "test_check",
+    "workers": 4,
+    "exit_code": 0,
+    "stdout": "== \u00a733\u201334 checking and conversion\n  85 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "name": "review_alias_scope",
+    "workers": 0,
+    "exit_code": 0,
+    "stdout": "workers=0 alias=1 returned_source=0 escaped_z=0 returned_term_check=0 reason=\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "name": "review_alias_scope",
+    "workers": 4,
+    "exit_code": 0,
+    "stdout": "workers=4 alias=1 returned_source=0 escaped_z=0 returned_term_check=0 reason=\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "name": "review_alias_faces",
+    "workers": 0,
+    "exit_code": 0,
+    "stdout": "workers=0 before=1 after=1 same_returned_ref=0 both_return_face_specific_source=0\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "name": "review_alias_faces",
+    "workers": 4,
+    "exit_code": 0,
+    "stdout": "workers=4 before=1 after=1 same_returned_ref=0 both_return_face_specific_source=0\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "name": "test_reuse",
+    "workers": 0,
+    "exit_code": 0,
+    "stdout": "A1\u2013A3. structural identity: direct vs specialized view, alpha renaming, raw node vs template view\nA4\u2013A7. completed reductions reused under specialization and restriction; the residual is observed\nA8\u2013A9. unrelated environment extension keeps answers; a changed dependency does not\nA10\u2013A11. one semantic action per content; distinct proof paths stay distinct\nA12\u2013A13. repeated reduction / proof check repeat no producer; a changed model recomputes\nA14\u2013A15. concurrent duplicate requests share one producer; weakening reuses the pure judgment\nA16\u2013A18. nested neutral eliminators drop the reduced prefix; receipt maps compose; no self-wait on reflexive receipts; cycles stay stuck\nA19. runtime proof parameter: one ordinary core program computes its proof and applies the fixed diagram action\nA20\u2013A21. accounting with shared producers, adapters and ready cuts; the bounded API suspends inside helpers\nEnd to end: generic reduction, specialization, runtime proof action, a reused checker judgment and actual work extraction in one run\n  run: bodies 80 betas 2 apply 1 receipt instances 7; record REQUEST 378 DELIVER 378 PUB 81 EVAL 148\nreuse: 101 checks, 0 failures\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "name": "test_reuse",
+    "workers": 4,
+    "exit_code": 0,
+    "stdout": "A1\u2013A3. structural identity: direct vs specialized view, alpha renaming, raw node vs template view\nA4\u2013A7. completed reductions reused under specialization and restriction; the residual is observed\nA8\u2013A9. unrelated environment extension keeps answers; a changed dependency does not\nA10\u2013A11. one semantic action per content; distinct proof paths stay distinct\nA12\u2013A13. repeated reduction / proof check repeat no producer; a changed model recomputes\nA14\u2013A15. concurrent duplicate requests share one producer; weakening reuses the pure judgment\nA16\u2013A18. nested neutral eliminators drop the reduced prefix; receipt maps compose; no self-wait on reflexive receipts; cycles stay stuck\nA19. runtime proof parameter: one ordinary core program computes its proof and applies the fixed diagram action\nA20\u2013A21. accounting with shared producers, adapters and ready cuts; the bounded API suspends inside helpers\nEnd to end: generic reduction, specialization, runtime proof action, a reused checker judgment and actual work extraction in one run\n  run: bodies 80 betas 2 apply 1 receipt instances 7; record REQUEST 378 DELIVER 378 PUB 81 EVAL 148\nreuse: 101 checks, 0 failures\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "name": "test_check",
+    "workers": 0,
+    "exit_code": 0,
+    "stdout": "== \u00a733\u201334 checking and conversion\n  85 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "name": "test_check",
+    "workers": 4,
+    "exit_code": 0,
+    "stdout": "== \u00a733\u201334 checking and conversion\n  85 passed, 0 failed\n",
+    "stderr": ""
+  }
+]

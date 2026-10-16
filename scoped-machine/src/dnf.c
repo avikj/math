@@ -1,4 +1,5 @@
 #include "dnf.h"
+#include "fine.h"
 
 void dnf_init(Dnf *d) { d->c = NULL; d->n = d->cap = 0; }
 
@@ -28,14 +29,14 @@ static void clause_reserve(Clause *c, size_t n) {
 }
 
 void dnf_add_clause(Dnf *d, const uint64_t *atoms, size_t n) {
-    Clause *c = dnf_new_clause(d);
+    Clause *c = dnf_new_clause(d); fine_add(FC_DNF_CLAUSE_STEPS, n + 1);
     clause_reserve(c, n);
     if (n) memcpy(c->a, atoms, n * sizeof(uint64_t));
     c->n = n;
 }
 
 void dnf_add_clause_union(Dnf *d, const Clause *x, const Clause *y) {
-    Clause *c = dnf_new_clause(d);
+    Clause *c = dnf_new_clause(d); fine_add(FC_DNF_CLAUSE_STEPS, x->n + y->n + 1);
     clause_reserve(c, x->n + y->n);
     if (x->n) memcpy(c->a, x->a, x->n * sizeof(uint64_t));
     if (y->n) memcpy(c->a + x->n, y->a, y->n * sizeof(uint64_t));
@@ -45,6 +46,7 @@ void dnf_add_clause_union(Dnf *d, const Clause *x, const Clause *y) {
 bool clause_subset(const Clause *small, const Clause *big) {
     size_t i = 0, j = 0;
     while (i < small->n) {
+        fine_bump(FC_DNF_CLAUSE_STEPS);
         if (j >= big->n) return false;
         if (small->a[i] == big->a[j]) { i++; j++; }
         else if (small->a[i] > big->a[j]) j++;
@@ -63,7 +65,7 @@ static int clause_cmp(const void *pa, const void *pb) {
 
 void dnf_normalize(Dnf *d, bool (*contradiction)(const Clause *)) {
     /* 1. normalize each clause */
-    for (size_t i = 0; i < d->n; i++) d->c[i].n = sort_unique_u64(d->c[i].a, d->c[i].n);
+    for (size_t i = 0; i < d->n; i++) { fine_add(FC_DNF_CLAUSE_STEPS, d->c[i].n + 1); d->c[i].n = sort_unique_u64(d->c[i].a, d->c[i].n); }
     /* 2. drop contradictory clauses (faces only) */
     if (contradiction) {
         size_t j = 0;
@@ -92,6 +94,7 @@ void dnf_normalize(Dnf *d, bool (*contradiction)(const Clause *)) {
         for (size_t i = 0; i < d->n; i++) {
             if (dead[i]) continue;
             for (size_t k = i + 1; k < d->n; k++) {
+                fine_bump(FC_DNF_CLAUSE_STEPS);
                 if (dead[k] || d->c[k].n <= d->c[i].n) continue;
                 if (clause_subset(&d->c[i], &d->c[k])) dead[k] = true;
             }

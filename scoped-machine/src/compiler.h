@@ -28,6 +28,11 @@ typedef struct { uint64_t node_id; TermVarId x, e; RefId A; uint64_t level; RefI
 /* ---- diagrams (§39) ---- */
 /* an ordinary diagram with output type B : U_lB and output term o */
 DiagramId diagram_declare(ContextId params, size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o);
+/* the declaration data of a diagram (§84.1 export reads it): nodes in order;
+ * the output term o (a residual: its terminal type Z), *B (0 for a residual), *lB and *residual */
+size_t diagram_nodes(DiagramId d, const DiagNode **nodes);
+RefId diagram_output(DiagramId d, RefId *B, uint64_t *lB, bool *residual);
+ContextId diagram_params(DiagramId d);
 /* a residual description (§44): the telescope ends in the terminal type Z : U_lZ */
 DiagramId residual_declare(ContextId params, size_t n, const DiagNode *nodes, RefId Z, uint64_t lZ);
 /* typed telescope check under the required face */
@@ -102,6 +107,16 @@ size_t transform_count(void);
 /* reconstruct the derivation the certificate records and compare it exactly
  * with the registered record (§39) */
 CheckStatus certificate_verify(TransformId id, const char **reason);
+/* §88.2: the actual evidence a record's certificate consumed and the exact
+ * type the compiler checked it at, in the record's own parameter context and
+ * required face — the input of the proof-use audit (proof.h):
+ *   IDENTITY      p : Path_B(C_L, C_R)
+ *   EQUIVALENCE   e : X ≃ Y
+ *   RESIDUAL      e : Z_L[ν_L] ≃ Z_R[ν_R]
+ *   CUT           the forward body under Γ, w : Cut, at Path_B(C, D)   (the cut has no external evidence; its own construction is audited)
+ *   CONTRACTIBLE  k : Π(b : B). isContr(R b)
+ * false when the transform is unknown */
+bool transform_evidence(TransformId id, ContextId *G, FaceId *face, RefId *evidence, RefId *type);
 
 /* ---- invocation (§43, §59.3) ---- */
 /* TRANSFORM_CALL(id, dir, σ, a) = reindex(generic_call[id,dir], σ + slot ↦ a):

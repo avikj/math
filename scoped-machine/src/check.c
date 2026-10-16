@@ -1,5 +1,6 @@
 #include "check.h"
 #include "reuse.h"
+#include "fine.h"
 #include "lib.h"
 #include "compiler.h"
 
@@ -102,7 +103,7 @@ void check_new_attempt(void) { pthread_mutex_lock(&K.mu); K.attempt++; pthread_m
 const char *check_status_name(CheckStatus s) { return s == CK_VALID ? "VALID" : s == CK_INVALID ? "INVALID" : "UNRESOLVED"; }
 const char *conv_status_name(ConvStatus s) { return s == CV_EQUAL ? "EQUAL" : s == CV_UNEQUAL ? "UNEQUAL" : "UNRESOLVED"; }
 
-static bool budget_ok(void) { tl_steps++; size_t b = tl_depth ? tl_budget : K.budget; return b == 0 || tl_steps <= b; }
+static bool budget_ok(void) { tl_steps++; fine_bump(FC_CHECK_FRAMES); size_t b = tl_depth ? tl_budget : K.budget; return b == 0 || tl_steps <= b; }
 
 /* thread identity, assigned on first use (under K.mu) */
 static uint64_t tid_locked(void) {

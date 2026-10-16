@@ -1,6 +1,7 @@
 #include "state.h"
 #include "lib.h"
 #include "reuse.h"
+#include "fine.h"
 
 Machine M;
 /* the machine lifetime generation: thread-local construction state that
@@ -58,7 +59,7 @@ void machine_free(void) {
     wordmap_free(&M.compose_memo);
     interner_free(&M.edge_lists); wordmap_free(&M.edges);
     interner_free(&M.shapes); wordmap_free(&M.shape_memo); pthread_mutex_destroy(&M.shape_mu);
-    reuse_reset_all();
+    reuse_reset_all(); fine_reset();
     chunked_free(&M.origin_side);
     chunked_free(&M.ref_side);
     chunked_free(&M.term_decl);

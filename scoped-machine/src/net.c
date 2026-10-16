@@ -1,5 +1,6 @@
 #include "net.h"
 #include "reuse.h"
+#include "fine.h"
 #include "lib.h"
 #include "compiler.h"
 
@@ -203,6 +204,7 @@ static int rep_find(const Replacement *r, NodeId a, uint16_t pa) {
  * to the surviving endpoint reached by following old wires through
  * connectors; a path that returns to its origin is a closed wire component. */
 static void rep_commit(Net *n, Replacement *r) {
+    fine_bump(FC_NET_ACTIONS);
     /* validate: every aux port of every removed node is covered */
     for (size_t i = 0; i < r->nrem; i++) {
         Node *x = N(n, r->removed[i]);
@@ -392,7 +394,7 @@ static void net_eval_deliver(void *ctx, EvalResult *r) {
         pthread_mutex_unlock(&x->mu);
         if (q.node) lock_two(n, pend, q.node); else pthread_mutex_lock(&x->mu);
         if (!x->live) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); return; }
-        if (x->peer[0].node != q.node || x->peer[0].port != q.port) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); count(&n->retries); continue; }
+        if (x->peer[0].node != q.node || x->peer[0].port != q.port) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); count(&n->retries); fine_bump(FC_NET_RETRIES); continue; }
         ActiveVec pending = {0}; tls_pending = &pending;
         Payload p = {0}; p.a = (uint64_t)(uintptr_t)r; p.ref = r->ref;
         NodeId d = net_descriptor(n, r->cls == R_NO_OBSERVATION ? D_STATUS : D_EVAL_RESULT, p);
@@ -692,8 +694,8 @@ static bool apply_rule(Net *n, NodeId neg, NodeId pos) {
         rep_commit(n, &r);
         { NetTraceEvent ev = { NT_CONTINUE_REFERENCE, 0, 0, 0, 0, v, K };
           pthread_mutex_lock(&n->trace_mu); vec_push(&n->trace, ev); pthread_mutex_unlock(&n->trace_mu); }
+        count(&n->n_continue);          /* counted before the forward publication: a reader woken by the result sees the rule event (ordering race fixed) */
         eval_forward_result(K, v);
-        count(&n->n_continue);
         return true;
     }
     return false;
@@ -716,7 +718,7 @@ static bool step(Net *n, Active cand) {
         lock_two(n, a, b);
         Node *y = N(n, b);
         bool valid = x->live && y->live && x->gen == cand.gen && x->peer[0].node == b && x->peer[0].port == 0 && y->peer[0].node == a && y->peer[0].port == 0;
-        if (!valid) { unlock_two(n, a, b); if (!x->live || x->gen != cand.gen) return false; count(&n->retries); continue; }
+        if (!valid) { unlock_two(n, a, b); if (!x->live || x->gen != cand.gen) return false; count(&n->retries); fine_bump(FC_NET_RETRIES); continue; }
         uint64_t gen_b = y->gen;
         /* collect the surviving boundary: every auxiliary neighbour of a and b */
         NodeId set[64]; Endpoint exp[64]; uint64_t expgen[64]; size_t ns = 0;
@@ -758,7 +760,7 @@ static bool step(Net *n, Active cand) {
         if (!ok) {
             for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
             if (!x->live || x->gen != cand.gen) return false;
-            count(&n->retries);
+            count(&n->retries); fine_bump(FC_NET_RETRIES);
             continue;
         }
         /* orient: negative principal (agent) vs positive principal (data/shell) */

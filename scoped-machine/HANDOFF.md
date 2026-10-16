@@ -1,6 +1,12 @@
 # Scoped cubical interaction machine and identity compiler
 
-> **Current implementation direction — 16 October 2026:** Continue from `3a0d7c4`. Sections 74–82 are normative for the next increment: uniform reuse of persistent computations, structural identity, dependency validity, residual specialization, ordinary runtime proof actions and bounded cost accounting. They supersede the earlier administrative sharing boundaries and qualify the schedule/cost claims as stated there. Section 73’s exclusions of automatic plan search remain in force. Preserve the accepted cubical core and validation corrections; the §§60–71 accounting delivered at `3a0d7c4` is the base to extend, not evidence that the new reuse or fine-cost obligations are already met.
+> **Current implementation direction — 16 October 2026, v12:** Work from the delivered `b612a07` implementation of §§74–82. Sections 92–95 review that exact revision, correct residual alias publication and the bounded-step claim, and carry §§83–91 forward onto it. Existing full sanitizer gates and the v9 acceptance jobs pass, but new tests expose a context/face leak that changes conversion and unbounded work inside a budgeted step. A localized alias fix passes the focused regressions. Runtime-construction and proof-use witnesses have been rerun on this base with actual worker pools. Keep the delivered reuse construction; the complete adaptive diamond, fine-step-to-C simulation and reflected kernel are not established by this review. Section 73’s exclusion of automatic plan search remains in force.
+
+Revision-specific review and forward handoff, §§92–95 — 16 October 2026
+
+Executable proof-use boundary and measured cost correction, §§88–91 — 16 October 2026
+
+Runtime construction and completion audit, §§83–87 — 16 October 2026
 
 Uniform reuse amendment, §§74–82 — 16 October 2026
 
@@ -38,7 +44,7 @@ where \(S(t)\) is the free dimension support of the **instantiated, typed bounda
 
 The scope operations, face algorithms, cache contract, and their local correctness arguments are specified below. The cubical clauses are included to make their use by the evaluator explicit. This is a specification and derivation, not a report of a compiled or tested implementation. The face-projection theorem proves the stated cache optimization under the evaluator invariants; it is not, by itself, a proof of every cubical clause or a certification of an existing codebase.
 
-Sections 25–31 extend the construction with an explicit event protocol and derive random descent and geodesic optimality for the combined abstract interaction machine. They specify the counted elementary events, close the cache's overlapping transitions, and state how a demand-driven root observation reaches a complete normal form of its demand network. This establishes interaction-work optimality for a fixed initial configuration and reduction relation; it does not equate that cost with elapsed time, arbitrary C instruction counts, or the cost of arbitrary alternative source programs.
+Sections 25–31 state the event protocol and a random-descent argument conditional on the specified relation satisfying its diamond hypotheses. Sections 85 and 90 correct the scope of that claim: it is not an established theorem for every transition of the actual evaluator with adaptive reuse. Section 89 supplies a C reproduction showing that the current macro-event count also fails to bound variable-size helper work by a uniform constant. Keep the fixed-recipe scheduler evidence, the adaptive diamond obligation and the C-work simulation distinct.
 
 Sections 32–38 settle the runtime implementation scope: checking the annotated core against its declared global signature, a configurable concurrent worker pool, explicit ownership and teardown, and exact comparison modulo generated-name renaming. Structural scope checking alone does not certify a typed occurrence. Partition refinement alone does not certify graph isomorphism.
 
@@ -4162,6 +4168,633 @@ Keep all existing sanitizer suites and review regressions, adapting assertions o
 Return the commit, section-to-function/test table, exact before/after semantic producer counts for A1–A20, sanitizer logs, and the §81 bounded-helper table. State separately whether the fine-cost obligation is complete; do not treat the old 198 accounting tests as proof of it. Include a single end-to-end run combining generic reduction, specialization, runtime proof action, a reused checker judgment and actual work extraction.
 
 No instruction in this amendment authorizes replacing the construction with an external optimizer or declaring the whole original system complete on the strength of these finite regressions. It gives the worker an implementable next increment with explicit correctness and reuse obligations.
+
+## 83. Runtime construction of presentations and actions
+
+This section removes §80's restriction to host-prepared diagram pairs. The input to an identity action may itself be computed: its types, realization families, collapse/expansion maps, and inverse witnesses are ordinary values. No registry publication is required for such values to act. The existing declaration compiler remains an adapter from source diagrams to these values.
+
+All records below abbreviate nested existing Σ types. Functions, paths, application and projection have their existing core meanings. No Nat, Bool, list, syntax-oracle, proof-search or datatype handler is added. All formulas are universe-indexed families of ordinary definitions; do not introduce U:U or silently identify distinct universe levels.
+
+All judgments and definitions are under their complete occurrence context and required face Γ;φ. Retain that annotation and the dependency-closed field declarations in the existing scope/template representation. An ordinary record representation does not make a partial field globally available or weaken any previously required formation check.
+
+### 83.1 Retain the inverse witnesses as terms
+
+For X:U_a and Z:U_b define
+
+\[
+\operatorname{Maps}(X,Z)=
+\Sigma(c:X\to Z).\Sigma(d:Z\to X).
+  (\Pi x:X.\operatorname{Path}_X(d(c(x)),x))
+  \times(\Pi z:Z.\operatorname{Path}_Z(c(d(z)),z)).
+\]
+
+Write its fields c,d,h,k. Its universe is U_max(a,b). This is the explicit inverse data used by the construction, not a new primitive equivalence type. The proof fields are retained, including higher distinctions between them. No proof irrelevance or claim that this entire record type is proposition-valued is made.
+
+A presentation of Z with realization level a is
+
+\[
+\operatorname{Pres}_{a,b}(Z)=\Sigma(X:U_a).\operatorname{Maps}(X,Z).
+\]
+
+It is in U_max(a+1,b). Write X_P,c_P,d_P,h_P,k_P for its projections. A program can compute P:Pres(Z), pass P to another program, project X_P as a type, and apply c_P or d_P. The type checker already supports these dependent projections; there is no host type-query callback in their execution.
+
+The constant presentation is `(Z,id,id,λz.refl(z),λz.refl(z))` at a=b. Its level is not implicitly raised. General level combinations use the displayed exact maxima and existing annotated constructors.
+
+For maps E=(f,g,h,k):Maps(X,Y) and F=(u,v,H,K):Maps(Y,Z), their composite has
+
+\[
+\begin{aligned}
+f'&=u\circ f,&g'&=g\circ v,\\
+h'(x)&=\operatorname{ap}(g)(H(fx))\cdot h(x),&
+k'(z)&=\operatorname{ap}(u)(k(vz))\cdot K(z).
+\end{aligned}
+\]
+
+Inverse swaps f,g and h,k. Identity uses identity maps and refl. Here `ap(f,p)=⟨i⟩f(p@i)` and concatenation is exactly §40. These definitions fix both the executable maps and their proof terms.
+
+### 83.2 The dependent singleton constructor, with both proofs
+
+Let A:U_a, t:A and D:(x:A)→Path_A(t,x)→U_r. Define
+
+\[
+S_D=\Sigma(x:A).\Sigma(e:t=x).D(x,e),\qquad Z=D(t,\operatorname{refl}(t)).
+\]
+
+The singleton constructor is a value of Pres_max(a,r),r(Z). Its maps are exactly §41:
+
+\[
+\begin{aligned}
+c(x,e,z)&=\operatorname{coe}^{j}D(e@\neg j,\langle k\rangle e@(\neg j\wedge k))\ z,\\
+d(z_0)&=(t,\operatorname{refl}(t),z_0).
+\end{aligned}
+\]
+
+The following two core terms supply the previously host-certified inverse witnesses. For w=(x,e,z), set
+
+\[
+B_w(j)=D(e@\neg j,\langle k\rangle e@(\neg j\wedge k)),\qquad
+b_w(j)=\operatorname{fill}^{j'}B_w(j')\,[\bot]\ z\ j.
+\]
+
+Then
+
+\[
+h(w)=\langle i\rangle
+ (e@i,\langle k\rangle e@(i\wedge k),b_w(\neg i))
+ : d(c(w))=w.
+\]
+
+For z_0:Z, let `b₀(j)=fill^{j'} Z [⊥] z₀ j`. Then
+
+\[
+k(z_0)=\langle i\rangle b_0(\neg i):c(d(z_0))=z_0.
+\]
+
+The endpoints use fill's boundary equations and path/Σ η. They do not assert judgmental regularity for constant-family coe. D is arbitrary and may depend on both x and e. The whole family is passed and specialized together.
+
+`review_singleton_witnesses.c` constructs all four terms with the existing APIs and checks them in the context `A:U₀,t:A,D:(x:A)→(t=x)→U₀`. Both inverse proofs pass on the current core. This is a generic dependent-family check, not just a check at a constant example.
+
+### 83.3 Build any finite diagram by ordinary constructor applications
+
+For B:U_b define the value type
+
+\[
+\operatorname{Diagram}_{b,r}(B)=
+\Sigma(C:B).
+\Sigma(R:(y:B)\to U_r).
+\Pi(y:B).\operatorname{Maps}(R(y),\operatorname{Path}_B(C,y)).
+\]
+
+This type is in U_max(b,r+1). Its fields are a canonical value C, a realization family R, and its maps and witnesses. It retains the realized construction as R and its executable maps; it is not a quotient which forgets residual constraints or routes. Ordinary reference DAGs retain sharing. Source labels can remain attached as provenance without participating in semantic keys.
+
+`zero(B,C)` has R(y)=Path_B(C,y) and the identity maps. Its realization level is b.
+
+The dependent extension constructor takes
+
+\[
+A:U_a,\ t:A,\ Q:(x:A)\to(t=x)\to\operatorname{Diagram}_{b,r}(B).
+\]
+
+Its result has realization level max(a,r), canonical value `C₀=C_(Q(t,refl))`, and family
+
+\[
+R'(y)=\Sigma(x:A).\Sigma(e:t=x).R_{Q(x,e)}(y).
+\]
+
+For each y, instantiate §83.2 at `D(x,e)=R_(Q(x,e))(y)`. Compose that singleton presentation with the maps of `Q(t,refl)` at y using §83.1. Concretely, if s_c,s_d,s_h,s_k are the singleton maps and q_c,q_d,q_h,q_k are the centre tail's maps, then
+
+\[
+\begin{aligned}
+c'&=q_c\circ s_c,&d'&=s_d\circ q_d,\\
+h'(w)&=\operatorname{ap}(s_d)(q_h(s_cw))\cdot s_h(w),&
+k'(z)&=\operatorname{ap}(q_c)(s_k(q_dz))\cdot q_k(z).
+\end{aligned}
+\]
+
+Every field is now specified by an ordinary term. No evaluator rule dispatches on a DiagramId or allocates a new native handler.
+
+The host array in §39 elaborates by a right fold of this constructor ending in zero. A runtime program constructs the same values by the same functions. Tail dependencies stay under ordinary binders, and shared predecessor references remain shared. The number of constructed nodes is not a compile-time parameter of the constructor. A recursively computed finite diagram is supported to the extent that its producing core program terminates; there is no assumption that every recursively defined producer terminates.
+
+Residual descriptions use the same extension with an arbitrary terminal family Z(x,e,…) and a terminal identity presentation. Retain those constraints. Ordinary diagrams are the case whose terminal family is an output path.
+
+These values provide runtime construction of the required semantic diagrams. They are not claimed to be a quotation datatype for every piece of C implementation syntax. Full reflection of the checker/evaluator is a distinct status item in §87.
+
+### 83.4 Action on runtime-computed diagrams
+
+Given runtime L:Diagram(B), R:Diagram(B), p:Path_B(C_L,C_R), y:B, define
+
+\[
+\begin{aligned}
+F(L,R,p,y,r)&=d_R(y)(p^{-1}\cdot c_L(y)(r)),\\
+G(L,R,p,y,s)&=d_L(y)(p\cdot c_R(y)(s)).
+\end{aligned}
+\]
+
+These are the existing §42 expressions, now parameterized over the diagram values themselves. The host compiler specializes this ordinary definition; it does not own a stronger operation than the running language. L, R and p may each be computed by programs. Their fields remain lazy references.
+
+`review_generic_identity_action.c` constructs and checks both complete functions with L, R, p, y and the realization argument universally bound. Its only free assumption is B:U₀; no specific diagram pair is imported. Both functions check with zero registered transforms on the current core.
+
+For the middle path-space maps `f(q)=p⁻¹·q`, `g(s)=p·s`, the two inverse paths are
+
+\[
+\begin{aligned}
+h(q)&=\operatorname{assoc}(p,p^{-1},q)^{-1}
+ \cdot\operatorname{ap}(\lambda v.v\cdot q)(\operatorname{rinv}(p))
+ \cdot\operatorname{lunit}(q),\\
+k(s)&=\operatorname{assoc}(p^{-1},p,s)^{-1}
+ \cdot\operatorname{ap}(\lambda v.v\cdot s)(\operatorname{linv}(p))
+ \cdot\operatorname{lunit}(s).
+\end{aligned}
+\]
+
+Here assoc has orientation `(p·q)·r = p·(q·r)`, rinv is `p·p⁻¹=refl`, and linv is `p⁻¹·p=refl`. Compose these maps and witnesses with L's collapse and R's expansion using §83.1. This gives the full action and both inverse proofs, not merely functions with compatible types.
+
+For precise lowering of these groupoid witnesses, use the following finite construction, not new trusted axioms. Path induction is the ordinary term
+
+\[
+J(P,d,b,p)=\operatorname{coe}^{i}P(p@i,\langle j\rangle p@(i\wedge j))\ d.
+\]
+
+Generate each named groupoid law by path induction on its path arguments from left to right, retaining later endpoints and paths under Π in the motive. The base case has all paths refl. For any word w built from refl, inverse and concatenation at a point a, construct K(w):w=refl recursively:
+
+* K(refl)=refl.
+* K(v⁻¹)=ap(inverse,K(v)); inverse(refl) is the constant path by its definition.
+* K(v·w) is `⟨k⟩(K(v)@k)·(K(w)@k)` followed by K(refl·refl).
+* `K(refl·refl)@k@i = fill^j_A [(i=0)↦a,(i=1)↦a] a (¬k)`.
+
+The equality between two base words u,v is K(u)·K(v)⁻¹. This terminates structurally and emits only the existing coe/fill/path constructors. It specifies the base evidence even where constant hcomp is not judgmentally regular. Register each resulting law as one fixed typed template per level tuple; do not repeat this generation at each invocation.
+
+### 83.5 The other existing schemas remain ordinary values
+
+For supplied e:Equiv(X,Y), take `c=fst(e)`. The inverse d(y) is the X-coordinate of the centre of `(snd e)(y)`. Its k(y) is the centre's path `c(d(y))=y`; h(x) is `ap(fst)` of that fibre's contraction at `(x,refl)` in the fibre over c(x). This yields Maps(X,Y) without inverse search.
+
+A residual equivalence composes the two residual presentations with those maps. For CUT_TO_PATH retain exactly §44's maps `(z,u,v)↦u·v⁻¹` and `h↦(D,h,refl(D))`. Their inverse witnesses are obtained by the same path-induction lowering in §83.4: eliminate h for the path-space round trip; for the cut round trip eliminate v:D=z then u:C=D (reverse u first when using induction anchored at D), keeping the other dependent data in the motive. At refl bases use K for path components, Σ paths for the tuples, and the displayed centre. No loop is discarded.
+
+For COLLAPSE_FIBRE, with k:Πb.Contr(R b), the maps are `fst` and `λb.(b,fst(k b))`. The first inverse path at `(b,r)` is `⟨i⟩(b,(snd(k b)(r))@i)`; the other is refl(b). k is an ordinary argument and may be computed at runtime.
+
+All five previous certificate schemas therefore have ordinary typed value counterparts. Keep their host certificate/source records for provenance, import validation and specialization. Do not make those host records prerequisites for applying a value already admitted by the core typing rules.
+
+## 84. One witness interface across supplied and produced identities
+
+### 84.1 The uniform execution rule
+
+A supplied proof and a proof computed by evaluation have the same type and enter the same action term. The elaborator must not dispatch on their provenance. `compile_identity` is a source adapter which produces/specializes the §83.4 term; it is not a mandatory runtime installation step.
+
+For an explicitly passed action value, application uses existing APP, projection, substitution and cubical composition. No new native agent type is required. Existing APPLY_TRANSFORM/CONTINUE_REFERENCE may remain a specialization of this route with the same typed body and recorded cost. Do not add independent runtime handlers for the five evidence schemas.
+
+The host source adapter should export an ordinary Diagram term and its occurrence evidence for each checked source diagram. Memoize this pure export by the complete structural diagram/boundary key. The exported term's c,d fields must compare by conversion to the current emitted collapse/expand templates. Its h,k must check at their stated types. The source diagram's extra residual constraints stay in its terminal family.
+
+Where a runtime producer constructs the same value, §76 supplies structural sharing and §78 supplies established-reduction sharing. Source provenance can distinguish occurrences without forcing duplicate mathematical producers. Do not turn paths between values into untyped aliasing of the values.
+
+### 84.2 Reuse along an arbitrary known identity
+
+For a family O:B→U, p:x=y and a:O(x), the general reuse operation is
+
+\[
+\operatorname{reuse}(O,p,a)=\operatorname{coe}^{i}O(p@i)\ a:O(y).
+\]
+
+This is already an ordinary core program. §78's definitional reduction receipts are a particularly direct source of reusable facts; they are not the only admissible evidence. A propositionally established identity supplies transport, with its residual and actual cost, instead of permission to substitute one cached WHNF class for another.
+
+Evidence is retained as a reference. Its already-completed computations are shared by the same producer mechanism. A map on evidence is a scope view where the existing substitution law applies, not a traversal replaying the derivation. Evaluating the resulting transport is still computation; reuse does not assert it is free.
+
+A finite prefix receipt for t⇒u can be exposed once that prefix and its premises are committed, even if later work on u is pending. It is available through the same source/map/face/dependency rules as a completed prefix in §78. No fabricated proof of the unfinished suffix is published. Publishing the prefix must not mark the whole evaluation READY.
+
+This closes the value-level compile/run distinction for these constructions. It does not replace a missing inference algorithm by the phrase “the identity is available.” Constructing a witness, passing it, applying it, and retaining its completed work are now all specified operations.
+
+## 85. The interaction-length obligation must refer to the actual machine
+
+The equal-length theorem in `docs/index.html` §5.13 takes a one-step diamond for a particular relation Step and a finite trace to a normal form. Its conclusion is about that relation. It does not follow from type safety, from two local rule schemas inside a larger evaluator, or from a same-key one-producer invariant alone.
+
+V9 §78.5 expressly allows a different claim: opportunistic discovery may change the selected reuse graph and work. This is adequate as a statement of that implementation's observed behavior; it is not completion of the user's stronger equal-interaction-length requirement. Do not present its qualified schedule comparison as that theorem.
+
+The attached finite executable model makes the distinction precise. There are independent generic and instance requests. If the instance runs first, it computes directly. If the generic result becomes ready first, the instance uses a two-step adapter. Both terminate with the same answers, but lengths are two and three and their first steps have no one-step join. The model is not alleged to reproduce a particular C timing. It shows that ready-state-sensitive recipe choice plus memoization does not imply the required diamond. One request reads readiness another request changes; disjoint principal-pair reasoning cannot simply be applied to those two transitions.
+
+Accordingly the full interaction-length requirement remains a proof obligation on a concrete whole-machine local transition relation, including producer cells, subscriptions, structural maps, receipt propagation and cost frames. Its proof must account for reuse becoming available during evaluation. Fixing a reuse graph proves a conditional result about that graph; it does not prove that all identities have been incorporated into a uniquely forced initial graph.
+
+Likewise, counting C instructions as new fine steps establishes a cost measure; it does not by itself prove that C work is within a constant factor of the earlier coarse interaction count. To claim that factor, exhibit the simulation from the chosen native relation, a uniform bound for each simulated step and charged administrative work. The bounded-helper implementation in §81 is necessary to this audit, not a substitute for the simulation theorem.
+
+The worker should preserve actual counters and the selected dependency graph, finish the specified reusable core, and avoid claiming this theorem from schedule tests. Resolving the native relation and proof is specification-author work, not an invitation to choose an optimizer or a fallback search.
+
+## 86. Declaration-to-answer is distinct from executing a supplied action
+
+The source's §5.27 asks for more than the evaluator/compiler implemented here. It asks that posing a declaration with its identities produces a computation whose normalization yields an inhabitant or establishes absence. The currently exposed interfaces check, convert, observe or apply supplied terms. None is a specified general posing operation from a type to an answer-producing interaction object.
+
+For a constructive complete handoff of that additional feature, the missing component must have explicit input/output types and term/agent equations. In particular it must explain how a request for Q becomes a computation yielding an a:Q without assuming such an a in its input, and how its supported obstruction outcomes are represented and justified. “Normalize Q” observes the type expression; it is not by itself a construction of an inhabitant of Q. “Take the centre of a contraction” presupposes a supplied contraction.
+
+This distinction is already explicit in the repository's `research/PNP_GEODESIC_REDUCTION_20260916.md`, A2–A5. The fibre of a truncation is described conditional on a point of the truncation; forming a type, receiving a witness and deciding inhabitation are different judgments. The unique-fold theorem likewise takes an existing derivation as input. Its recursor reads each derivation; uniqueness of that reader does not construct a derivation from two endpoints.
+
+The diamond theorem settles neither this posing operation nor termination. A deterministic relation `n→n+1` has the one-step diamond and no normal form. Its valid equal-length theorem does not produce a finite obstruction report. Nontermination allowed by the source and the runtime cannot silently be identified with a completed proof of absence.
+
+If the full claim additionally requires a guaranteed finite inhabitant-or-obstruction decision for every arbitrary computably represented goal, including termination goals for this machine, that total effective claim is incompatible with unrestricted computation. For a program e, a finite halting-trace type is inhabited exactly when e halts. A total procedure returning either a witness or a sound decisive absence result would decide halting. Permitting a pending or infinite execution avoids that contradiction; it also does not meet the stated total finite-decision claim. This is a precise qualification of that claim, not a reason to discard executable identities or the uniform construction above.
+
+No replacement inference/search algorithm is invented in this amendment. There is no faithful concrete implementation of an unspecified posing rule to give the worker. The generic arbitrary-goal completion claim therefore cannot currently be signed off. Domain-specific constructive introductions/identities can still produce answers through the fully specified ordinary programs; their actual definitions determine what they compute.
+
+### 86.1 Recursive program typing is not a total-proof certificate
+
+There is a second, concrete semantic distinction in the current implementation. On `3a0d7c4`, register
+
+```text
+loop : (X : U₀) → X
+loop := loop
+```
+
+`check_admission` returns VALID, checking `loop` at that type returns VALID, and `observe_checked` returns W_STUCK with no result. `review_recursive_proof_boundary.c` reproduces this. The type itself is expressible using only the existing Π and universe constructors; no Empty or Nat primitive is needed.
+
+This behavior is consistent with a type system for partial programs. It is not a total constructive inhabitant of `(X:U₀)→X`. The provisional-claim mechanism prevents some circular cache errors; it does not prove termination or guard recursion merely by checking a recursive body under its own declared signature. Requiring only WHNF would not fix the logical issue: a lambda can hide the same divergence in its body.
+
+Consequently a compiled record must not acquire an unconditional mathematical proof/equivalence guarantee solely because its evidence has CK_VALID typing in an unrestricted recursive signature. Preserve the distinction between operationally typed code, a committed logical premise, and a total or appropriately guarded proof. Evidence imported as an explicit assumption remains a conditional assumption; it must not be mistaken for a theorem proved by a recursive definition.
+
+The immediate precise requirement is that any unconditional proof-admission claim account for the recursive components on which the evidence and its types depend. A checked well-founded recursion or a guarded recursion rule for a declared coinductive type can discharge the corresponding obligation. Merely reaching a signature SCC fixed point cannot. The current specification has not supplied those certificate types and recursion rules; choosing them is further author-side work. Do not patch this by rejecting all executable recursive programs or by treating W_STUCK as a proof of emptiness.
+
+The supplied recursive-boundary source is a diagnostic of the current contract, not an acceptance test demanding that the contract remain unchanged. Its observed VALID/W_STUCK combination must be cited when stating what current checks establish. The ordinary generic witnesses in §83 require no recursive globals and do not depend on this issue.
+
+## 87. Worker instructions and completion status
+
+### 87.1 Implementable work
+
+Continue §§74–82 and add §§83–84. Preserve the accepted runtime and all its validation checks. Implement the fixed templates for Maps, presentation composition, the dependent singleton including h/k, diagram zero/extension, and the generic runtime identity action. Export host diagrams through this same construction. Retain the existing source certificate schemas and compare their maps against the exported ordinary terms.
+
+Acceptance must cover:
+
+1. The three attached existing-core witnesses pass unchanged: generic dependent down/up/h/k check; computed presentation arguments execute with zero registered transforms; and both fully parameterized identity actions check with no prepared diagram pair.
+2. A core program constructs a nonempty diagram using runtime-computed tail data and applies a runtime-computed identity. It must not call a host compiler after evaluation starts.
+3. Reify each existing §47 example through the ordinary presentation export; check both inverse witnesses and compare old/new maps at their expected types. Nontrivial loop residuals remain.
+4. The zero/node and action constructions commute with simultaneous term/dimension substitution, including dependent types, scope metadata and required faces.
+5. An identity obtained from an earlier computation is passed to the same action definition used for a supplied identity. Repeated computation and adaptation satisfy §§74–82's producer-count requirements.
+6. An unavailable guard, malformed nested scope, wrong level or uncommitted premise is still rejected. Circular proof data supplies no unconditional mathematical equivalence certificate. A partial program may nevertheless compute a forward projection while its reverse stays stuck; §88 gives the exact reproduction and certificate-use rule.
+7. Record actual adaptation work and retain the selected graph. Do not label a fixed-graph comparison as a proof of adaptive equal-length normalization.
+
+The three supplied C sources are review witnesses, not production changes. Use fixed templates and existing shared environments in production; do not copy the host-building code into every call. The worker still owns implementation and integration testing of the complete constructor family and the v9 reuse changes.
+
+### 87.2 Exact status
+
+| Requirement | Status after this amendment |
+| --- | --- |
+| Accepted cubical evaluator, checker, scopes and prior compiler | Existing implementation, with the previously reviewed fixes |
+| Eight measured administrative sharing boundaries | Specified in §§74–82; worker implementation still required |
+| Runtime proof parameter for a prepared pair | Specified in §80 |
+| Runtime construction of semantic diagram/presentation values and their actions | Derived explicitly in §§83–84; foundational generic terms checked on the existing C core |
+| Same execution mechanism for supplied and produced identity values | Specified in §84; no per-proof host registration required |
+| Unconditional logical proof admission in the presence of general recursive globals | Not established; §86.1 has a concrete VALID/W_STUCK reproduction and the required distinction |
+| Full self-representation and execution of the checker/compiler/evaluator as object-language programs | Not supplied by these sections; semantic diagram values do not constitute a reflected implementation of the whole kernel |
+| Full native interaction diamond including adaptive reuse | Not proved; §85 identifies the exact unsupported inference |
+| Constant-factor refinement from that native interaction relation to C work | Not proved; bounded helpers and a simulation theorem are required |
+| General declaration-to-answer posing operation | Not specified by the current executable construction; §86 gives the missing interface and the limit of the cited arguments |
+| Universal finite answer-or-obstruction procedure over unrestricted computation | Cannot be promised as an effective total operation |
+
+The prior useful construction remains useful. These statuses must not be compressed into “everything is done” or into a percentage. In particular this package closes a concrete runtime-construction boundary and records the remaining mathematical/representation gaps explicitly; it is not a full-system sign-off.
+
+## 88. Executable distinction between a checked program and established evidence
+
+This section supplies an immediate conservative implementation for the proof-admission issue in §86.1. It preserves general recursive execution, the ordinary runtime constructions in §§83–84, and the existing compiler. It does not introduce a second object language or a compile-time-only proof facility.
+
+### 88.1 What the existing certificate actually verifies
+
+On source `3a0d7c4`, the following construction passes `check`, `compile_equivalence` and `certificate_verify`:
+
+1. In context `A:U₀, a:A, b:A`, define `f = λx:A. a`.
+2. Let `K = Πy:A. Contr(Fib(A,A,f,y))`.
+3. Register `k:K` with body `k`.
+4. Construct `e = (f,k) : Equiv(A,A)`.
+
+The compiled forward call at b returns a. The reverse call at a remains stuck. The evidence itself has a PAIR weak-head form. These observations hold with one and four workers. `review_certificate_boundary.c` reproduces all of them. Interpreting A as a discrete two-point type and a,b as distinct points makes the constant forward map noninvertible. This is a counterexample to an unconditional equivalence interpretation, not merely a slow reverse computation.
+
+Thus neither successful program typing, successful compiler re-emission, nor successful WHNF observation establishes that e is a mathematical equivalence. In this example the entire alleged inverse justification resides in a circular declaration. The forward computation remains a valid partial-program computation; it is not evidence that the declared equivalence has been proved.
+
+The distinction is operationally significant: a future identity-reuse mechanism must not use this certificate to identify mathematical results, discharge a proof obligation, or erase a residual as contractible. Executing its typed forward code is a different operation and remains permitted.
+
+### 88.2 The immediate, exact result contract
+
+Add a proof-use result for the complete judgment `(Γ, φ, e, E, definition dependencies)`. Keep `check` and `certificate_verify` as their existing program-typing and compiler-derivation operations. Never reinterpret their existing VALID bit as the new result.
+
+The attached `proof_boundary.h/.c` implements these statuses against the current public C interfaces:
+
+| Status | Meaning | Permitted mathematical use |
+| --- | --- | --- |
+| `PB_CORE` | The existing checks succeed and the audited dependency closure expands into the acyclic cubical core. | Evidence of E relative to the retained Γ and φ and the soundness of the core checking rules. |
+| `PB_ASSUMED` | The same check has explicit reachable opaque declarations. | Evidence relative to Γ, φ **and those declarations**; retain them as hypotheses. |
+| `PB_PENDING` | The finite audit reaches a cyclic declaration/body component. | No unconditional mathematical certificate. Retain the pending dependency; execution remains allowed. |
+| `PB_INVALID` | A required structural, formation or typing check rejects. | No evidence. |
+| `PB_UNRESOLVED` | An existing check is interrupted or unresolved. | No verdict on the proposition. |
+
+`PB_CORE` does not mean that an arbitrary supplied Γ is inhabited. It means the ordinary sequent under that context. Likewise a judgment under false is local to false; it cannot be published as evidence under true. The result retains the context, face, evidence, expected type and snapshot identity, as well as the opaque and cyclic dependencies.
+
+This is a conservative certificate boundary, not a termination decider. A syntactically recursive total program may remain pending. No pending outcome is cached as refutation or inequality. There is no claim here that every total recursive function can be recognized by this audit.
+
+### 88.3 Finite algorithm and its coverage
+
+First run the current admission transaction, context validation, formation of E and checking of e:E. Failure and interruption retain their existing meanings. For a successfully checked judgment under false, record the vacuous face-local judgment; preserve the face.
+
+For a nonfalse judgment, collect dependencies from the complete context declarations, E and e using a memoized finite stored-syntax walk. The implementation deliberately does not reuse the substitution traversal, does not evaluate, and does not open a scope outside its telescope.
+
+The required cases are:
+
+| Record | Dependencies traversed |
+| --- | --- |
+| Ordinary variable | Its declared type; a bound scope atom is handled through its enclosing scope's declarations. |
+| Raw view | Every stored reference field, every term image of its map, binder domain declarations, and the types of retained free variables. Inactive branches are included. |
+| Template view | All retained reference and scope values in its declaration-closed environment. |
+| Scope | Every local declaration type, the reference body and the declared reference result type; nested scopes recurse through their containing views/environments. |
+| Global occurrence | Record the symbol; inspect its type, parameter declarations and body when building the symbol dependency graph. |
+| Transform call | Both stored transform bodies, domain/codomain, parameter context and the ordinary call fields/images. Decode the payload as `2*id + direction`. |
+| Interval, face, level | These contain no global-reference constructor. Structural validation still checks them; they introduce no additional symbol edges. |
+
+For the present fixed template interpreter, all reference inputs come from its retained typed environment. The expression opcode table has no embedded literal-reference/global opcode. This fact is part of the audit argument. If an extension adds such an opcode or permits new program constants, its constants and their declarations must become explicit traversal edges before that extension can receive `PB_CORE`.
+
+For each reached global s, its outgoing edges are all globals reached in its declaration, parameter types and body. No body gives an explicit opaque assumption. Compute the strongly connected components of the reached graph. A component is cyclic exactly when it has at least two vertices or has a self-edge. Any reached cyclic component yields `PB_PENDING`; otherwise reachable opaque declarations yield `PB_ASSUMED`; otherwise return `PB_CORE`.
+
+The supplied C uses a finite DFS/Tarjan implementation. Its roots and edge sets are explicit; global bodies are not unfolded recursively into syntax. The stored-syntax walk intentionally retains some dependencies which substitution or reduction can later remove. This conservatism can delay a certificate, but cannot justify an unsupported proof. It must not be advertised as minimal logical support. The worker's measured dependency projection may refine this traversal only with a preservation argument; dropping declarations, inactive syntax or scope metadata without that argument repeats earlier review failures.
+
+Soundness of the acyclic case is by topological expansion: immutable ordinary syntax, scope records and the fixed template programs are finite; nonrecursive global bodies and their types can be expanded in dependency order; compiled calls expand through their stored checked bodies. The resulting term belongs to the existing cubical core under Γ plus the explicit opaque declarations. Its proof claim is therefore the claim supplied by that core's typing rules. This argument adds no general recursion rule to the logical core and makes no new claim that the C checker itself has been formally verified.
+
+The scan includes the expected type and context, not just the evidence's executable fields. Otherwise an apparently harmless term could rely on a circular type-level definition. Existing face, scope and universe checks remain prerequisites.
+
+### 88.4 Runtime-produced proofs follow the same rule
+
+Suppose a recursive producer evaluates to a finite residual r. Submit `(Γ,φ,r,E)` to exactly the same proof-use operation used for supplied evidence. Its computation history does not itself become an assumption of r.
+
+The test uses `(λz:P. refl(a)) loop`, where `loop:P` is circular. The conservative source audit is pending. Evaluation returns the finite reflexivity term; its audit is `PB_CORE`. No host identity compiler, environment reset, alternate evidence encoding or special trusted producer is involved.
+
+Conversely, `λx. loop` remains pending despite being a lambda WHNF; a pair retaining a circular contraction proof also remains pending. Inspect all retained proof data, including under binders. Inspecting only the head is insufficient.
+
+An already established proof in Γ is usable as a variable under that Γ. Importing an opaque symbol does not turn it into a newly proved theorem. Discharging an opaque assumption requires a checked replacement in the same typed context; apply ordinary simultaneous substitution and certify the resulting judgment. Do not flip a flag or use a successful partial-program typecheck as the discharge.
+
+This keeps production and consumption in the same running language. It distinguishes unfinished evidence from established evidence; it does not distinguish evidence by whether it was written before or during execution.
+
+### 88.5 Integration into identity compilation and reuse
+
+The existing compiler may continue publishing a well-typed executable transform record, including a partial transform. Keep `certificate_verify` explicitly documented as verification of the compiler derivation. Attach the new proof-use result to any request to use the record as an established mathematical identity/equivalence.
+
+For each evidence schema, the root audit includes its actual evidence and expected type: the identity path, the equivalence value, the terminal residual equivalence, or the pointwise contraction. CUT_TO_PATH's generic construction has its ordinary core proof. Checking only the emitted forward body would miss an unused inverse obligation.
+
+Mathematical reuse is authorized only by `PB_CORE`, or by `PB_ASSUMED` with every recorded hypothesis explicitly retained in the occurrence context. `PB_PENDING`, `PB_INVALID` and `PB_UNRESOLVED` authorize no unconditional theorem use. They do not prohibit evaluation of well-typed code or reuse of genuine operational reduction receipts.
+
+A proof-use result is immutable. Cache its complete judgment and dependency certificate under the same producer discipline as other work. A caller's budget interruption does not destroy completed audit work or become a mathematical result. The supplied integration module records the current environment version because that is the base ABI; integration with §§74–82 must use its exact immutable definition revisions and dependency-closed context, rather than reintroducing whole-environment invalidation for independent results.
+
+Do not confuse an operational prefix receipt `t ⇒* u` in the partial language with an unconditional logical inhabitant of every proposition that t was assigned as a program type. A returned finite proof u may be checked independently. The prefix receipt itself justifies the recorded reduction/reuse under its actual operational definitions.
+
+### 88.6 What the code closes
+
+The new finite algorithm and eleven positive/negative cases are executable now. The strong compiler reproduction additionally asserts that both the alleged equivalence and its compiled forward call receive `PB_PENDING`. The existing partial behavior is preserved.
+
+This closes a concrete unsafe interpretation of the existing VALID/certificate bits. It does not supply universal termination recognition, a new coinduction principle, or proof of every implementation function. Such claims cannot be obtained merely by broadening the meaning of VALID.
+
+## 89. Measured correction to the C-work claim
+
+### 89.1 A counterexample in the actual C evaluator
+
+`review_frame_cost.c` checks a system whose first branch is total and whose remaining branches have false faces. Every branch contains the same well-typed variable. After admission it explicitly resets the evaluator and measures a fresh observation.
+
+On `3a0d7c4`, with one and four workers:
+
+| System branches | Stored fields opened | REQUEST | EVAL | PUB | DELIVER |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 2 | 2 | 4 | 2 | 2 |
+| 64 | 128 | 2 | 4 | 2 | 2 |
+| 1,024 | 2,048 | 2 | 4 | 2 | 2 |
+
+`open_ref` allocates the head-field array and iterates over every field before the evaluator selects the first branch. Consequently those four evaluator frames perform work increasing with the branch count. This is a structural counterexample to a size-independent constant-factor C-work bound based only on the current event vector. It does not depend on timing noise, a hypothetical optimizer, or the v10 abstract scheduling example.
+
+Admission is excluded explicitly in this experiment, not silently declared free. Counting admission as well requires charging its own walks and conversions.
+
+### 89.2 Exact unit required for the transfer theorem
+
+Retain the current event vector as a useful semantic diagnostic. It is not the full instruction-cost measure. Refine unbounded helpers into resumable frames whose elementary steps do a bounded number of machine-word operations. A word is of the implementation's declared width; arbitrary-precision values are sequences of words and their traversal is counted.
+
+Use a small-step state `(pc, fixed registers, owned cursor/continuation handles, store)`. Each transition executes one fixed opcode case. The complete opcode families needed are word load/store, fixed-width arithmetic/comparison, bounded cell construction/retirement, cursor advance, branch, enqueue/dequeue, request/publication/delivery bookkeeping, and a single atomic attempt. Higher-level algorithms are loops over these operations. A bulk scan, hash, comparison, allocation or rewrite is not one step merely because C gives it one function name.
+
+For the current source, the lowering obligations are:
+
+| Existing operation | Work that must be exposed |
+| --- | --- |
+| `open_ref` / `tview_open` | Field cursor, per-field recipe interpretation and substitution work, bounded head-cell allocation. |
+| Map construction/composition/reindex | Each visited image/declaration and each exact map lookup; all normalization and interning work. |
+| Interval/face DNF | Atom/clauses examined, generated conjunction products, absorption/comparison work, quantifier and entailment traversal. Do not hide output-size growth. |
+| Exact interning | Reading/hashing key words, bucket/trie traversal, collision comparisons, insertion and resize/copy work. A hash hit is not exact equality. |
+| Request/publication | Each continuation registration, each waiter visited, each delivery and queue operation; an unbounded waiter list is not one constant-cost PUB implementation. |
+| Net replacement | Each fixed-size agent action plus any descriptor/list traversal, validation or allocation it invokes. |
+| Checker/compiler/audit | Every structural/typing frame, certificate dependency edge, emitted record and graph traversal; typechecking is not a free prelude to an end-to-end claim. |
+| Memory/ownership | Cells allocated, released, scanned or copied; collection, arena growth, teardown, failed atomic attempts and retries when included in the claimed interval. |
+
+Every loop in the counted path must either execute counted cursor steps or have a literal bound independent of input size. A pure helper called from several places has one shared implementation and the same accounting in every place. The coarse vector and the fine vector are separate reports: do not add both and charge one operation twice. A fixed-size allocation opcode must use bounded arena/free-list operations; arena growth, clearing and copying are separate counted loops. A host allocator call is not automatically a bounded primitive.
+
+The useful simulation statement is:
+
+`C_steps(run) ≤ c · microsteps(run) + c₀ · fixed_host_boundary_work`.
+
+For an explicit interpreter performing one bounded dispatch per microstep, a corresponding lower bound holds for that implementation under its stated machine model. Constants may depend on the fixed program and word model, not the term size, map size, DNF size, waiter count or proof length. Variable-size input ingestion/output and teardown must be included or reported as separately counted intervals.
+
+This is a straightforward implementation theorem only **after** the bounded-step machine has been implemented and the helpers audited. It is not already proved for the present C source by the words “interaction net.” The supplied cost reproduction must account for every field actually opened. There are two legitimate outcomes: retain the full head opening and count its growing work, or make opening demand-driven so the unused fields are not traversed. Do not require avoidable scans merely to satisfy a counter. In either case retain the result assertion and report the actual fine work alongside the coarse event vector.
+
+Parallel contention also needs its own accounting. An adversarially scheduled retry loop can perform arbitrary attempts without a semantic reduction. Charge those attempts, or state a serialized-work bound and a separate contention bound. No statement about wall time or arbitrary OS scheduling follows from the semantic event count.
+
+## 90. Exact scope of the diamond and identity-cost arguments
+
+### 90.1 Preserve the theorem's actual hypotheses
+
+The one-step diamond theorem proves random descent for the specified relation when a normal form is reachable. A one-producer memo table alone is not that hypothesis. Nor does the local confluence of APPLY_TRANSFORM prove the property of every checker, cache, adaptation and host helper around it.
+
+The v10 ready-cache model establishes a failed implication, not a C-runtime counterexample. The C counterexample in §89 establishes a separate cost-granularity defect. Keep those findings separate. The current fixed-recipe scheduler's existing schedule tests remain useful evidence for that scheduler.
+
+For a claimed fine-step diamond, enumerate reachable overlaps in the actual relation and supply a commuting square or an explicitly weighted commuting diagram. The relevant overlaps include request/publication, concurrent same-key interning, native evaluation/receipt adaptation, generic reduction/specialization, claim settlement/dependency invalidation, and subscription delivery/cancellation. Two transitions which inspect or modify a shared readiness fact are not disjoint merely because their application agents occupy different cells.
+
+Each adaptation must retain the source, map, face, dependencies and exact operational/proof receipt. A failed or unfinished alternative does not become evidence. Do not add branch-and-bound or an outer planner to resolve this obligation.
+
+### 90.2 Why forcing generic evaluation first is not a repair
+
+The attached test now reproduces this on the C core. For a path p:a=b, endpoint application computes `p@0=a` without evaluating p. If p is an unproductive recursive path producer, generic application `p@i` can remain stuck while its endpoint instance returns immediately. Requiring a generic result before permitting every specialization therefore changes the evaluator's termination behavior.
+
+More generally, a specializing face may make a branch unnecessary. A sharing policy may reuse an established generic receipt, but it may not force an otherwise unnecessary generic computation as a prerequisite to a terminating instance. This is already required by the path endpoint and face rules. Any stronger shared-redex representation must prove preservation of those demand rules.
+
+### 90.3 An identity supplies a transformation, not zero-cost optimal selection
+
+For proved `p:x=y`, transport in a family O supplies `O(x)→O(y)` and the inverse transport, with their homotopies. This is the concrete runtime operation in §84.2. It can transfer already computed evidence and its shared dependencies. It does not create a missing inhabitant of O(x), nor prove that discovering p has zero cost.
+
+For a finite chain of certified rewrites with measured costs `w₀,…,wₙ`, record each difference `Δᵢ=wᵢ₊₁−wᵢ`. Then `ΣΔᵢ=wₙ−w₀` by telescoping. Shared costs must be measured on the relevant producer union and cache boundary, as in §§60–66; summing occurrence-local costs can double-count shared work.
+
+A scalar potential on a connected undirected rewrite graph exists with those edge differences exactly when every closed walk has zero sum: necessity follows by telescoping; for sufficiency, define the potential by summing along a path from a chosen base and use the closed-walk condition for path independence. This is a cost-consistency theorem. It does not imply that every equivalent route is cheapest, that all primitive traces have equal length, or that the graph can be explored without cost.
+
+Adding a compiled macro shortcut while charging it one step changes the relation and metric unless its constituent work is retained. If both a one-step shortcut and its longer original implementation are admitted as unit-cost paths to the same normal form, the equal-length conclusion fails. Lowering both to the same primitive rules can avoid that particular mismatch; it still requires the actual primitive overlap proof.
+
+Accordingly the complete adaptive diamond is still an author-side theorem obligation. There is no honest implementation instruction that makes it proved by adding a counter or renaming an evaluator frame. The worker can implement the concrete reuse and proof-boundary contracts while that stronger claim remains explicitly unaccepted.
+
+## 91. Completion criterion and the next worker pass
+
+### 91.1 Concrete changes now ready for integration
+
+Keep the accepted core. Continue the uniform reuse work in §§74–82 and the ordinary runtime construction work in §§83–84. Add the §88 evidence boundary at mathematical-certificate consumption, without rejecting general recursive program execution. Preserve ordinary proof values and the same runtime action for supplied and computed evidence.
+
+Integrate the attached proof-boundary module or an equivalent implementation with the same traversed inputs and outcomes. Its conservative treatment of source syntax must be documented. Run `test_proof_boundary.c`, `review_certificate_boundary.c` and `review_frame_cost.c`; the supplied runner compiles the base source afresh. Keep the old program/compiler assertions and add the new evidence-boundary assertions. The reference module has no persistent memo of its own; integrate it with the existing producer/dependency protocol rather than copying this one-shot allocation policy into every runtime request.
+
+For production integration, replace recursive host graph walks with suspendable frames or an explicit owned stack, account for that work under §89, and retain completed subresults across budget interruption. This is traversal of known finite records, not exploration of alternative programs. Its error and ownership behavior must be tested under the worker's full sanitizer gates.
+
+Return an exact table of semantic-frame counts, fine-work counts and proof-use outcomes. Report the three different questions separately: whether the code is well typed, whether a mathematical certificate is established under its stated assumptions, and whether the requested observation completes.
+
+### 91.2 What cannot be filled by an implementation choice
+
+The existing constructors transform supplied realizations and proofs. They do not supply a universal terminating operation which, from an arbitrary mathematical specification, returns a witness or a finite proof that no witness exists.
+
+The elementary obstruction is explicit: if a total effective procedure decided whether each program halts on its input, define D(x) to loop when that procedure says x halts on x and to return otherwise. Applying the procedure to D on D contradicts either answer. Describing a program's finite syntax and all of its reduction rules does not remove this construction. Supplying a non-effective oracle containing the needed answers changes the premise.
+
+This does not prohibit partial inference, complete procedures for restricted classes, arbitrary improvement through discovered identities, or proof-producing programs with broad practical reach. It prevents declaring the unrestricted total answer-or-obstruction promise implemented by this kernel. The exact endpoint when a producer has not supplied a witness is a pending computation; quiescence, a budget or an unrecognized recursive proof is not a refutation.
+
+Full object-language quotation and execution of the C checker/evaluator is also distinct from §83's semantic diagram values. An exported diagram is not the source code of the kernel. No reflected checker/evaluator has been produced in this pass; the handoff must not claim that feature has been supplied. Reflection would additionally require an explicit syntax encoding, typed decoding, a simulation and a level discipline. None is obtained simply by accepting the finite presentation witnesses.
+
+### 91.3 Validation and exact status of this pass
+
+The six fresh-build runs of the new C witnesses (three binaries, one/four workers) pass ASan/UBSan against `3a0d7c4`. Leak detection was disabled because the preceding attempt in this host failed in LeakSanitizer's process-inspection environment; this pass does not claim LSan or TSan success. The worker must run those gates on its supported host. No production branch was changed or pushed in this pass.
+
+The result is concrete progress: an executable conservative proof-use boundary, a stronger compiler-level reproduction, a real C cost counterexample, and explicit implementation constraints. It is not a proof that the complete intended adaptive optimal machine already exists. Universal finite inference in the unrestricted sense is an invalid completion requirement; full reflection and the whole-machine diamond/cost simulation remain substantive uncompleted work, rather than unspecified details for a worker to guess.
+
+
+## 92. Review baseline: uniform reuse delivered at b612a07
+
+This amendment applies to `b612a07602bfccdcbb4ce2513ab169721cc38d56`, directory `scoped-machine/`, implementing §§74–82 on `3a0d7c4`. It supersedes the older base named in the v10/v11 implementation directions. Preserve the delivered implementation; apply the corrections below to it. Sections 83–91 remain the subsequent increment, not work the v9 delivery claimed to have implemented.
+
+The author retrieved the exact commit and verified every reviewed source file against its Git blob SHA. The unmodified `make test` passed with ASan/UBSan and `detect_leaks=0`; `make tsan` passed. The nine supplied v9 acceptance jobs also passed under ASan/UBSan. Leak detection was attempted but failed in this host's `/proc` inspection environment, so this review makes no independent LSan claim. The worker's reported LSan result is separate evidence.
+
+The delivery contains substantive implementation of the requested construction: persistent shared operation jobs and continuations, structural alpha/view producer identity, source-independent compiled action records, projected conversion contexts, symbol-revision validity, residual/receipt adaptation, and ordinary proof-parameterized identity actions. These are retained. The review identifies one semantic publication defect and an incomplete bounded-step refinement; it does not replace those mechanisms with another runtime or a search system.
+
+Passing the existing gates did not expose the publication defect. The new review runner reports five failing configurations on the unmodified tree: two alias tests in sequential and four-worker modes, and one work-budget test. Twelve next-increment witness runs pass. The same pattern occurs under ASan/UBSan and TSan.
+
+### 92.1 Exact review evidence
+
+| Check | Result on b612a07 |
+| --- | --- |
+| Existing complete `make test` | Pass, ASan/UBSan; host LSan unavailable |
+| Existing complete `make tsan` | Pass |
+| Nine v9 acceptance jobs | Pass |
+| Neutral alias stays in caller context | Fail with 0 and 4 actual workers |
+| Opposite-face warmups preserve conversion inequality | Fail with 0 and 4 actual workers |
+| A budget of one bounds normalization and delivery work | Fail |
+| Runtime presentation, singleton inverse proofs, generic diagram actions | Pass with 0 and 4 actual workers |
+| Recursive-proof boundary diagnostic and conservative audit module | Pass with 0 and 4 actual workers; confirms the integration requirement remains |
+| Coarse evaluator cost counterexample | Reproduced with 0 and 4 actual workers |
+
+The alias-publication candidate patch passes both new alias regressions, the existing 101-check reuse suite, and the existing 85-check checker suite, under both sanitizers and with zero/four workers: 16 successful runs. This is focused patch validation; the worker still runs the complete gates after applying it. No production branch was modified or pushed by this review.
+
+## 93. R1: residual aliases must publish results at their own boundary
+
+**Affected contract:** §§10–12, 76.3, 78.1–78.5. **Affected implementation:** `src/eval.c`, `publish_with`, the residual alias branch assigning `a->result = r`.
+
+A source observation may intentionally retain its original neutral eliminator in `EvalResult.ref`. That reference is valid at the source observation's context and face. A residual alias can have a smaller free boundary and a weaker projected face. Copying the source result pointer into that alias transfers the original expression to a boundary at which it need not be scoped or convertible to the residual.
+
+### 93.1 Scope reproduction
+
+Let `A : U`, `a : A`, `f : A → A`, and introduce an additional variable `z : A`. Evaluate
+
+`source = ((λw:A. f) z) a`.
+
+Its neutral residual is `f a`. The source's returned neutral reference is the original `source`, which still mentions `z`. The current alias publication stores that same result pointer under the key of `f a`.
+
+A later `observe_checked` of `f a` in the smaller context containing only `A,a,f` returns success but returns a reference mentioning undeclared `z`. Checking that returned reference in the requesting context reports `INVALID: unbound variable`.
+
+`review_alias_scope.c` reproduces this using valid input terms. Its expected exit status after correction is zero. It currently exits one, with `escaped_z=1` and `returned_term_check=INVALID`, under both sequential execution and four workers.
+
+### 93.2 Conversion reproduction
+
+Let `f,g : A → A`, `a : A`, and `p : Path (A → A) f g`. Define
+
+`source(i) = (p @ i) a`.
+
+In a generic context, `f a` and `g a` are distinct neutrals: `convert_term` initially returns `UNEQUAL`. A propositional path between `f` and `g` does not make these terms definitionally equal.
+
+Evaluate the same source reference under `i=0` and under `i=1`. Its respective residuals are `f a` and `g a`. The current code aliases both residual keys to neutral results retaining the same original `source(i)` reference. After these warmups, conversion of `f a` and `g a` under `true` returns `EQUAL`. Cache history has changed the answer of conversion.
+
+`review_alias_faces.c` reproduces this. Before warmup the enum value is `CV_UNEQUAL=1`; after warmup it is `CV_EQUAL=0`. Both aliases return the same face-specific original reference. This is a semantic error, not just a difference in printing or allocation.
+
+### 93.3 Required correction
+
+An alias answer must describe the residual in the alias entry's own boundary. Preserve the original producer's result and its receipt. Publish a distinct immutable result descriptor for the alias:
+
+```c
+a->result = r->cls == R_SYSTEM
+    ? result_system(residual, r->nbr, r->faces, r->terms)
+    : result_new(r->cls, residual);
+a->residual = residual;
+a->receipt = rc_refl(residual);
+a->is_alias = true;
+```
+
+Keep the existing dependency copying, occurrence validation, projected-face calculation, single-producer locking, and alias-without-PUB convention. The patch supplied with this review makes exactly this change. The source-specific original expression belongs in the source result/provenance, not in the alias's semantic head.
+
+The publication invariant is: the returned head and every retained system branch must be well scoped at the receiving entry's boundary, valid under its face/branch guards, and represent the receiving residual there. Equality of result pointers across different keys is not required. Repeated demands on one key still receive its single published answer.
+
+Do not disable residual sharing, strengthen every alias to the source's larger boundary, add global cache clearing, or change conversion to conceal the bad alias. Those would discard the requested reuse instead of repairing its result descriptor.
+
+## 94. R2: finish the bounded-step refinement inside work.c
+
+**Affected contract:** §§65, 71, 75.2, 81.1–81.2, 89. **Affected implementation:** `src/work.c` and the README's bounded-helper table.
+
+The worker correctly disclosed unrefined kernel helpers. There are additional variable-size operations inside the families for which the README claims constant-factor refinement. They are not covered by excluding specialization and preparation.
+
+### 94.1 Executed counterexamples
+
+`review_work_budget.c` stages the production NORMALIZE frame and uses public support-operation handles to stage a shared child with multiple waiting parents. It links the actual `work.c`; it does not replace any algorithm with a mock.
+
+| Case | Supplied budget | Charged handle frames | Actual work inside the step |
+| --- | --- | --- | --- |
+| NORMALIZE, 64 candidates | 1 | 1 | Initializes 64 keep flags; ledger also charges only one frame |
+| NORMALIZE, 4,096 candidates | 1 | 1 | Initializes 4,096 keep flags; ledger also charges only one frame |
+| Shared support result, 256 waiting parents | 1 | 1 for the servicing call | Delivers to all 256 parents before returning |
+
+The second example is already counted as many alias-delivery ledger events, but executes all of them inside one budget unit. Retrospective accounting alone does not satisfy the suspension contract. The first example additionally hides variable work in a single ledger event. Both occur without calling the term/checker kernel.
+
+### 94.2 Complete the existing frame representation
+
+1. **Normalization and family buffers.** Split keep-flag initialization, survivor compaction, family-plus input copying, and the buffer copy into NORMALIZE into bounded chunks with retained cursors. `fr_sort`, `fr_intern`, and `fr_lookup` also must not synchronously copy a variable payload inside a budgeted frame. Transfer ownership in constant work where it is already exclusive; otherwise copy in chunks.
+2. **Delivery.** Store a delivery cursor or queue of pending parent deliveries. Publishing the answer makes a shared immutable result available; each delivery consumes its own bounded work unit. A job whose child is complete but whose delivery is pending must remain schedulable. Preserve one delivery per registered parent and the persistence of jobs after consumer-handle release.
+3. **Scheduling and cycle checks.** `enabled_job` and `waits_on` currently walk dependency chains synchronously. Charge and suspend those walks, or maintain an explicit runnable structure with bounded operations and a separately accounted cycle-check job. One unit may not traverse an arbitrary chain before entering the frame body.
+4. **Table operations.** A key of eight words bounds key hashing, not the number of collision probes. Inner `job_for`, `intern_sync`, `find_sync`, and `WordMap` calls must respect the bounded interface. Preserve hash/probe/compare/insert state across frames. During incremental growth, preserve a relocation probe cursor as well as a source-slot cursor; moving 32 slots does not bound the collision chains traversed for those slots. Do not force another handle to finish the whole outstanding relocation through `ktab_settle` before it can return.
+5. **Allocation and release.** Account for vector expansion, copying, initialization and stack/buffer destruction under the stated allocator model. An amortized total bound and an individual-call suspension bound are different obligations. A bulk realloc/copy or arbitrary-depth `stack_drop` is not a bounded step merely because the total number of words is recorded afterward.
+6. **Kernel traversal and new reuse administration.** Retain the previously disclosed work: reindexing, face operations, structural validation, shape construction, dependency validation, lookup and checking. `FR_SHAPE_NODE`, `FR_DEPENDENCY_CHECK` and `FR_RECEIPT` currently occur only in the frame-family enum; semantic `reuse_count` counters are useful diagnostics but do not implement these resumable frame families. Finish their operational accounting where the full-machine C bound is claimed.
+
+The mathematical operations, persistent producer keys, result interning and receipt reuse do not change. This pass refines their execution into the already required bounded machine steps. The contract remains: `op_step(h,b)` advances at most the stated budget of bounded steps and retains the continuation. Hidden unbounded work in child lookup, delivery, allocation or cleanup is included in that contract.
+
+Keep the coarse semantic vector as a projection. Keep actual fine costs even when schedules produce different administrative counts. No search frontier, incumbent, pruning algorithm or alternative-program enumeration is introduced by these corrections.
+
+### 94.3 Correct the test configuration claim
+
+The original author-supplied v9 acceptance sources and v10/v11 standalone witnesses do not read `CUBICAL_WORKERS` or install a worker pool. Setting that variable in their runner did not make those particular binaries concurrent. The production `test_reuse` and other explicit concurrency suites do install workers, so this does not invalidate their concurrency evidence.
+
+The new runner uses `review_workers.c` with link-time wrapping of `eval_init` for the older witnesses, calls `eval_set_workers`, and asserts/prints `eval_workers`. The new alias tests install their own explicit pool. Results labeled `actual_workers=0` mean the sequential caller-driven evaluator; `actual_workers=4` mean four installed evaluator workers. All twelve next-increment witness runs have now passed on b612a07 under both ASan/UBSan and TSan with those configurations. This corrects the earlier author's one/four-worker labeling; it is not a defect attributed to the worker.
+
+## 95. Forward handoff after the b612a07 review
+
+Work from b612a07. Apply R1 first and retain both new negative regressions. Complete R2 as a refinement of the existing engine, keeping the successful reuse cases. The immediate review bundle contains the exact candidate patch, three new C probes, the runner, source manifest, original gate logs, new sanitizer results, and the existing v10/v11 witness sources.
+
+Then integrate §§83–84 and §88 using the delivered v9 mechanisms:
+
+- **Runtime construction:** promote the ordinary-core presentation/diagram constructors and generic identity actions from the supplied witnesses into the implementation interface/templates. The diagrams themselves, as well as their identity proofs and realization arguments, are ordinary computed values. Host-prepared `identity_pair` remains an import/specialization convenience, not a prerequisite for runtime construction. Both forward/reverse maps and their inverse proofs are retained. No new primitive Nat/Bool handler, registry dispatch on a computed diagram, or compile/run phase boundary is required.
+- **Mathematical use of evidence:** integrate the conservative proof-boundary judgment with persistent jobs and actual dependency revisions. The same interface accepts supplied and runtime-produced evidence. Preserve its context, face, expected type and opaque assumptions. A recursive proof dependency is pending, not a theorem or a proof of inequality. Preserve executable recursive programs and the existing compiler re-emission check. Audit the original evidence and its expected type when an equivalence is used mathematically; a PAIR head or a terminating forward projection is insufficient.
+- **Reuse of those operations:** a suspended audit or constructor operation retains its continuation; a duplicate demand joins it; a completed result is reused wherever its dependency/face premises hold. The standalone audit's whole-environment guard is an integration scaffold, not an instruction to restore whole-environment invalidation to the v9 cache. Reading an opaque declaration's absent body is a revision dependency. A computed finite residual can receive its own audit; discarded recursive syntax does not permanently taint it.
+- **Cost:** carry §89 and R2 through these additions. The old coarse-vector witness still gives `(REQUEST,EVAL,PUB,DELIVER)=(2,4,2,2)` for systems storing 2, 128 and 2,048 fields on b612a07. The new budget witness identifies additional work-engine loops. Both are implementation-level evidence; neither is a claim about wall-clock timing.
+
+On b612a07 the recursive-equivalence diagnostic still accepts the program and compiler certificate, executes its constant forward map, and leaves its reverse call stuck. The standalone audit reports PENDING. This confirms §88 is still needed; it does not mean that v9 failed a requirement that had already been implemented. Likewise, passing the ordinary-core construction witnesses demonstrates compatibility and concrete implementability, not that their public library integration already shipped.
+
+No part of this review claims that the complete adaptive diamond, a full fine-step-to-C simulation, or a reflected checker/evaluator has been proved by the passing tests. The author-side obligations recorded in §§85–91 are preserved; they are not discretionary choices for the worker to fill with a planner. This amendment brings the implementation instructions and evidence forward to the actual delivered revision.
+
 
 ## Appendix A. Latest assistant reply verbatim
 

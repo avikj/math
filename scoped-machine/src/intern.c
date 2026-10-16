@@ -1,4 +1,5 @@
 #include "intern.h"
+#include "fine.h"
 
 /* ---- chunked arrays ---- */
 void chunked_init(Chunked *c, size_t elem) { memset(c->dir, 0, sizeof c->dir); c->elem = elem; }
@@ -63,7 +64,9 @@ static Rec *rec_of(const Interner *t, uint64_t id) { return (Rec *)chunked_get(&
 static bool rec_equal(const Interner *t, uint64_t id, uint64_t h, const uint64_t *w, size_t n) {
     Rec *r = rec_of(t, id);
     if (r->hash != h || r->n != n) return false;
-    return n == 0 || memcmp(r->w, w, n * sizeof(uint64_t)) == 0;
+    /* a hash hit is not equality: every word is compared (§89.2) */
+    for (size_t i = 0; i < n; i++) { fine_bump(FC_INTERN_WORD_COMPARES); if (r->w[i] != w[i]) return false; }
+    return true;
 }
 
 static void grow_slots(Interner *t) {
@@ -74,8 +77,8 @@ static void grow_slots(Interner *t) {
         uint64_t id = t->slots[s];
         if (!id) continue;
         size_t p = rec_of(t, id)->hash & (ns - 1);
-        while (slots[p]) p = (p + 1) & (ns - 1);
-        slots[p] = id;
+        while (slots[p]) { p = (p + 1) & (ns - 1); fine_bump(FC_INTERN_PROBES); }
+        slots[p] = id; fine_bump(FC_INTERN_SLOTS_RELOCATED);
     }
     free(t->slots);
     t->slots = slots;
@@ -85,15 +88,16 @@ static void grow_slots(Interner *t) {
 static uint64_t find_locked(const Interner *t, uint64_t h, const uint64_t *w, size_t n) {
     size_t p = h & (t->nslots - 1);
     while (t->slots[p]) {
-        uint64_t id = t->slots[p];
+        uint64_t id = t->slots[p]; fine_bump(FC_INTERN_PROBES);
         if (rec_equal(t, id, h, w, n)) return id;
         p = (p + 1) & (t->nslots - 1);
     }
+    fine_bump(FC_INTERN_PROBES);
     return 0;
 }
 
 uint64_t interner_find(Interner *t, const uint64_t *w, size_t n) {
-    uint64_t h = hash_words(w, n);
+    uint64_t h = hash_words(w, n); fine_add(FC_INTERN_WORDS_HASHED, n);
     pthread_mutex_lock(&t->mu);
     uint64_t id = find_locked(t, h, w, n);
     pthread_mutex_unlock(&t->mu);
@@ -101,7 +105,7 @@ uint64_t interner_find(Interner *t, const uint64_t *w, size_t n) {
 }
 
 uint64_t interner_intern(Interner *t, const uint64_t *w, size_t n, bool *created) {
-    uint64_t h = hash_words(w, n);
+    uint64_t h = hash_words(w, n); fine_add(FC_INTERN_WORDS_HASHED, n);
     pthread_mutex_lock(&t->mu);
     uint64_t id = find_locked(t, h, w, n);
     if (id) { pthread_mutex_unlock(&t->mu); if (created) *created = false; return id; }
@@ -109,10 +113,11 @@ uint64_t interner_intern(Interner *t, const uint64_t *w, size_t n, bool *created
     r->w = malloc((n ? n : 1) * sizeof(uint64_t));
     require(r->w, "out of memory");
     if (n) memcpy(r->w, w, n * sizeof(uint64_t));
+    fine_add(FC_INTERN_WORDS_COPIED, n);
     r->n = n; r->hash = h;
     id = (uint64_t)(++t->n);
     size_t p = h & (t->nslots - 1);
-    while (t->slots[p]) p = (p + 1) & (t->nslots - 1);
+    while (t->slots[p]) { p = (p + 1) & (t->nslots - 1); fine_bump(FC_INTERN_PROBES); }
     t->slots[p] = id;
     if (t->n * 2 > t->nslots) grow_slots(t);
     pthread_mutex_unlock(&t->mu);

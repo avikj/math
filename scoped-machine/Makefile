@@ -1,11 +1,11 @@
 CC      ?= gcc
-CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread -Isrc
+CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread -Isrc -Itests
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c src/shape.c src/reuse.c
+SRC := src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c src/shape.c src/reuse.c src/fine.c src/proof.c src/runtime.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles build/fine build/proof-use build/runtime build/review-alias-scope build/review-alias-faces build/review-work-budget build/review-proof-boundary build/review-certificate-boundary build/review-frame-cost build/review-singleton build/review-generic-action build/review-runtime-presentations
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -143,14 +143,30 @@ test: all
 	for m in $(ACCEPT_MODES); do ./build/accept-boundaries $$m || exit 1; done
 	./build/accept-checker
 	./build/accept-handles
+	./build/fine
+	./build/proof-use
+	CUBICAL_WORKERS=4 ./build/proof-use
+	./build/runtime
+	./build/review-alias-scope 0
+	./build/review-alias-scope 4
+	./build/review-alias-faces 0
+	./build/review-alias-faces 4
+	./build/review-work-budget
+	./build/review-proof-boundary
+	./build/review-certificate-boundary
+	./build/review-frame-cost
+	./build/review-singleton
+	./build/review-generic-action
+	./build/review-runtime-presentations
 
 ACCEPT_MODES := origin alpha face specialize environment identity-name work
-TSAN_TESTS := test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_work test_reuse accept_sharing_boundaries accept_check_weakening accept_shared_work_handle
+TSAN_TESTS := test_fine_cost test_proof_use review_alias_scope review_alias_faces test_proof_boundary review_certificate_boundary review_frame_cost review_singleton_witnesses review_generic_identity_action review_runtime_presentations test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_work test_reuse accept_sharing_boundaries accept_check_weakening accept_shared_work_handle
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
-	for f in $(SRC) $(patsubst %,tests/%.c,$(TSAN_TESTS)); do $(CC) -std=c11 -O1 -g -pthread -Isrc -fsanitize=thread -c -o build/tsan/$$(basename $$f .c).o $$f || exit 1; done
-	for t in $(TSAN_TESTS); do $(CC) -pthread -fsanitize=thread -o build/tsan/$$t $(TSAN_CORE) build/tsan/$$t.o || exit 1; done
+	for f in $(SRC) $(patsubst %,tests/%.c,$(TSAN_TESTS)); do $(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -c -o build/tsan/$$(basename $$f .c).o $$f || exit 1; done
+	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -c -o build/tsan/proof_boundary.o tests/proof_boundary.c
+	for t in $(TSAN_TESTS); do $(CC) -pthread -fsanitize=thread -o build/tsan/$$t $(TSAN_CORE) build/tsan/$$t.o build/tsan/proof_boundary.o || exit 1; done
 	CUBICAL_WORKERS=4 ./build/tsan/test_main
 	CUBICAL_WORKERS=4 ./build/tsan/test_schedule
 	./build/tsan/test_concurrent
@@ -179,9 +195,72 @@ tsan:
 	for m in $(ACCEPT_MODES); do CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/accept_sharing_boundaries $$m || exit 1; done
 	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/accept_check_weakening
 	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/accept_shared_work_handle
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_fine_cost
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_proof_use
+	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_proof_use
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_alias_scope 0
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_alias_scope 4
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_alias_faces 0
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_alias_faces 4
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_proof_boundary
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_certificate_boundary
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_frame_cost
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_singleton_witnesses
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_generic_identity_action
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_runtime_presentations
+	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -o build/tsan/review_work_budget tests/review_work_budget.c $(filter-out build/tsan/work.o,$(TSAN_CORE))
+	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_work_budget
 
 clean:
 	rm -f src/*.o tests/*.o
 	rm -rf build
 
 .PHONY: all test tsan clean
+
+build/fine: $(OBJ) tests/test_fine_cost.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+build/runtime: $(OBJ) tests/test_runtime.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+build/proof-use: $(OBJ) tests/test_proof_use.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+build/review-alias-scope: $(OBJ) tests/review_alias_scope.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+build/review-alias-faces: $(OBJ) tests/review_alias_faces.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+build/review-work-budget: $(filter-out src/work.o,$(OBJ)) tests/review_work_budget.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) -Itests $(LDFLAGS) -o $@ tests/review_work_budget.c $(filter-out src/work.o,$(OBJ))
+build/review-proof-boundary: $(OBJ) tests/proof_boundary.o tests/test_proof_boundary.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+build/review-certificate-boundary: $(OBJ) tests/proof_boundary.o tests/review_certificate_boundary.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+build/review-frame-cost: $(OBJ) tests/review_frame_cost.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+build/review-singleton: $(OBJ) tests/review_singleton_witnesses.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+build/review-generic-action: $(OBJ) tests/review_generic_identity_action.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+build/review-runtime-presentations: $(OBJ) tests/review_runtime_presentations.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+# §83/§87 evidence run: the direct checker over the fully expanded composites
+# (two-level action maps, exported two-node diagram); unsanitized build —
+# under ASan the expanded two-node export exceeds the host's memory
+runtime-full:
+	@mkdir -p build/plain
+	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -o build/plain/runtime tests/test_runtime.c $(SRC)
+	./build/plain/runtime full

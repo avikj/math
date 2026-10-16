@@ -91,7 +91,14 @@ static Run run(SchedPolicy pol, uint64_t seed, size_t workers) {
     out.spec = decision; out.up = ts[1];
     { RefId restricted = reindex(decision, map_single_dim(i, iv_one()));
       EvalEvents b0 = eval_events(); EvalResult *rr = whnf(restricted, fc_true(), &st); EvalEvents b1 = eval_events();
-      require(st == W_OK && rr == spec_up && b1.launch - b0.launch == 1, "the restricted decision resolves to the speculative up result (one dispatch launch, no branch work)"); }
+      /* §93.3: the branch's key is alias-published from the speculative run with
+       * its own descriptor (head = the branch residual); result pointers across
+       * different keys are not required to coincide — the answer is the same
+       * residual (the speculative entry's own residual, the rebuilt eliminator
+       * around the evaluated prefix) and class, with one dispatch launch and no
+       * branch work */
+      RefId spec_residual = eval_entry_residual(eval_entry_lookup(decision, fs[1]));
+      require(st == W_OK && rr->cls == spec_up->cls && rr->ref == spec_residual && b1.launch - b0.launch == 1, "the restricted decision resolves to the speculative up result (one dispatch launch, no branch work)"); }
     /* 4. specialization shares: the decision at m2 shares nothing of pre (which mentions m) but shares up/down */
     RefId decision2 = reindex(decision, map_single_term(vm, m2));
     require(decision2 != decision, "a different model input is a different decision");

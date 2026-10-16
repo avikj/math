@@ -3,6 +3,7 @@
 #include "net.h"
 #include "compiler.h"
 #include "reuse.h"
+#include "fine.h"
 
 /* ---------------- continuations, joins, results ----------------
  *
@@ -148,6 +149,11 @@ void eval_init(void) {
 /* a new definition environment retires every observation: the memo, the
  * results and the pending pairs; the scheduler configuration survives */
 void eval_reset(void) {
+    /* the session boundary requires quiescence: work a client left queued or
+     * executing (a conversion that returned while its sibling job was still
+     * running under a worker pool) is drained first — it is finite and
+     * belongs to the retiring session; then no job may be outstanding */
+    eval_run();
     pthread_mutex_lock(&E.q_mu); size_t pending = E.outstanding; pthread_mutex_unlock(&E.q_mu);
     require(pending == 0, "eval_reset with outstanding evaluator work (the session boundary requires quiescence)");
     size_t w = E.nworkers; SchedPolicy p = E.policy, pp = E.pair_policy; uint64_t rng = E.rng; int np = E.net.policy; uint64_t nrng = E.net.rng;
@@ -159,7 +165,7 @@ static void gather_free(Gather *g) {
     pthread_mutex_lock(&E.join_mu);
     E.joins.data[g->slot] = NULL;
     pthread_mutex_unlock(&E.join_mu);
-    pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g);
+    pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g); fine_bump(FC_CELLS_RELEASED);
 }
 
 static void stop_workers(void) {
@@ -219,11 +225,11 @@ void eval_free(void) {
 
 static Cont *cont_new(ContKind kind, EntryId dest, FaceId chi) {
     Cont *k = calloc(1, sizeof *k);
-    require(k, "out of memory");
+    require(k, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
     k->kind = kind; k->dest = dest; k->chi = chi;
     return k;
 }
-static void cont_release(Cont *k) { free(k); }
+static void cont_release(Cont *k) { fine_bump(FC_CELLS_RELEASED); free(k); }
 
 Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *)) {
     Cont *k = cont_new(K_EXTERNAL, 0, 0);
@@ -233,7 +239,7 @@ Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *)) {
 
 static EvalResult *result_new(ResultClass cls, RefId ref) {
     EvalResult *r = calloc(1, sizeof *r);
-    require(r, "out of memory");
+    require(r, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
     r->cls = cls; r->ref = ref;
     pthread_mutex_lock(&E.res_mu);
     vec_push(&E.results, r);
@@ -265,12 +271,14 @@ static EvalResult *result_system(RefId owner, size_t n, const FaceId *faces, con
  * put on the queue after the entry lock is released. */
 static void reserve_job(void) { pthread_mutex_lock(&E.q_mu); E.outstanding++; pthread_mutex_unlock(&E.q_mu); }
 static void enqueue_reserved(Task t) {
+    fine_bump(FC_QUEUE_OPS); fine_bump(FC_LOCK_ATTEMPTS);
     pthread_mutex_lock(&E.q_mu);
     vec_push(&E.queue, t);
     pthread_cond_signal(&E.q_cv);
     pthread_mutex_unlock(&E.q_mu);
 }
 static void enqueue(Task t) {
+    fine_bump(FC_QUEUE_OPS); fine_bump(FC_LOCK_ATTEMPTS);
     pthread_mutex_lock(&E.q_mu);
     E.outstanding++;
     vec_push(&E.queue, t);
@@ -287,6 +295,7 @@ static void enqueue_resume(Cont *k, EvalResult *r) { Task t; memset(&t, 0, sizeo
 
 /* pick the next job under q_mu according to the policy */
 static bool pop_locked(Task *out) {
+    fine_bump(FC_QUEUE_OPS);
     size_t npairs = net_pending_pairs_locked(&E.net);
     bool have_jobs = E.qhead < E.queue.len;
     if (!have_jobs) { E.queue.len = 0; E.qhead = 0; }
@@ -360,7 +369,7 @@ static EntryId entry_intern(RefId t, FaceId eta) {
     if (created) *head = 0;
     EntryId id = *head ? chain_pick_locked(*head) : 0;
     if (!id) {
-        id = ++E.n_entries;
+        id = ++E.n_entries; fine_bump(FC_CELLS_ALLOCATED);
         Entry *e = (Entry *)chunked_at(&E.entries, id - 1);
         memset(e, 0, sizeof *e);
         e->ref = t; e->face = eta; e->state = E_UNEVALUATED; e->env = global_env_version(); e->shape = s;
@@ -483,26 +492,19 @@ static void publish_with(EntryId eid, EvalResult *r, RefId residual, uint64_t re
         pthread_mutex_unlock(&c->mu);
     }
     free(kids);
-    pthread_mutex_lock(&e->mu);
+    fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
     require(e->state == E_RUNNING, "publish into an entry that is not running");
     for (size_t k = 0; k + 1 < acc.len; k += 2) gdeps_add(e, acc.data[k], acc.data[k + 1]);
     vec_free(&acc);
-    e->result = r;
-    e->residual = success ? residual : 0; e->receipt = success ? receipt : 0;
-    e->n_pub++;
-    e->n_deliver += e->waiters.len;
-    __atomic_store_n(&e->state, E_READY, __ATOMIC_RELEASE);
-    Cont **ws = e->waiters.data; size_t n = e->waiters.len;
-    e->waiters.data = NULL; e->waiters.len = e->waiters.cap = 0;
     pthread_mutex_unlock(&e->mu);
-    add_count(&E.ev.publish);
-    for (size_t i = 0; i < n; i++) deliver(ws[i], r);
-    free(ws);
     /* §76.3 / §78: the residual is head-normal under this face by
      * construction (an introduction, or an eliminator rebuilt around a
      * neutral residual); its own key receives the same answer without
      * running a body — an alias publication. A key already claimed by
-     * another producer is left alone. */
+     * another producer is left alone. The alias is published before the
+     * source becomes READY, so a consumer woken by the source's answer finds
+     * the residual's key already answered (no window in which the source is
+     * observable and its residual key is not). */
     if (success && residual && residual != e->ref) {
         size_t ns; const uint64_t *S = dimset_get(ref_support(residual), &ns);
         FaceId reta = fc_project(e->face, S, ns);
@@ -513,13 +515,31 @@ static void publish_with(EntryId eid, EvalResult *r, RefId residual, uint64_t re
                 pthread_mutex_lock(&a->mu);
                 if (a->state == E_UNEVALUATED) {
                     pthread_mutex_lock(&e->mu); for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) gdeps_add(a, e->gdeps.data[k], e->gdeps.data[k + 1]); pthread_mutex_unlock(&e->mu);
-                    a->result = r; a->residual = residual; a->receipt = rc_refl(residual); a->is_alias = true;
+                    /* §93 (R1): the alias answers at its own boundary — a distinct
+                     * immutable descriptor whose head is the residual itself (system
+                     * branches retained); the source's original expression stays in
+                     * the source result and provenance, never at a smaller or
+                     * weaker-faced key */
+                    a->result = r->cls == R_SYSTEM ? result_system(residual, r->nbr, r->faces, r->terms) : result_new(r->cls, residual);
+                    a->residual = residual; a->receipt = rc_refl(residual); a->is_alias = true;
                     __atomic_store_n(&a->state, E_READY, __ATOMIC_RELEASE);
                 }
                 pthread_mutex_unlock(&a->mu);
             }
         }
     }
+    fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
+    e->result = r;
+    e->residual = success ? residual : 0; e->receipt = success ? receipt : 0;
+    e->n_pub++;
+    e->n_deliver += e->waiters.len;
+    __atomic_store_n(&e->state, E_READY, __ATOMIC_RELEASE);
+    Cont **ws = e->waiters.data; size_t n = e->waiters.len;
+    e->waiters.data = NULL; e->waiters.len = e->waiters.cap = 0;
+    pthread_mutex_unlock(&e->mu);
+    add_count(&E.ev.publish);
+    for (size_t i = 0; i < n; i++) { fine_bump(FC_WAITERS_DELIVERED); deliver(ws[i], r); }
+    free(ws);
 }
 /* a result that is its own residual (introduction, free neutral, system) */
 static void publish(EntryId eid, EvalResult *r) { publish_with(eid, r, r->ref, r->ref ? rc_refl(r->ref) : 0); }
@@ -545,18 +565,18 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { pthread_mutex_lock(&E.roots_mu); vec_push(&E.roots, eid); pthread_mutex_unlock(&E.roots_mu); }
     else { Entry *o = ENT(k->dest); pthread_mutex_lock(&o->mu); vec_push(&o->deps, eid); pthread_mutex_unlock(&o->mu); }
     /* readiness check and waiter registration under the same lock (§10) */
-    pthread_mutex_lock(&e->mu);
+    fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
     e->n_req++;
     if (e->state == E_READY) {
         EvalResult *r = e->result;
         e->n_deliver++;
         pthread_mutex_unlock(&e->mu);
-        add_count(&E.ev.ready_hit); reuse_bump(REUSE_READY_HIT);
+        add_count(&E.ev.ready_hit); reuse_bump(REUSE_READY_HIT); fine_bump(FC_WAITERS_DELIVERED);
         deliver(k, r);                       /* after unlock */
         return;
     }
     if (e->state == E_RUNNING) {
-        vec_push(&e->waiters, k);
+        vec_push(&e->waiters, k); fine_bump(FC_CONTS_REGISTERED);
         pthread_mutex_unlock(&e->mu);
         add_count(&E.ev.running_hit); reuse_bump(REUSE_RUNNING_JOIN);
         return;
@@ -575,7 +595,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
      * before RUNNING can be observed by anyone else, so no requester can see
      * a running key whose evaluator is not yet runnable. */
     e->state = E_RUNNING;
-    vec_push(&e->waiters, k);
+    vec_push(&e->waiters, k); fine_bump(FC_CONTS_REGISTERED);
     reserve_job();                       /* outstanding += 1 before RUNNING can be observed */
     pthread_mutex_unlock(&e->mu);
     add_count(&E.ev.launch);
@@ -738,7 +758,7 @@ static RefId rebuild_elim(const Cont *k, RefId scrut) {
  * §26). Each box has one producer; the last arrival publishes. */
 static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId *faces, const RefId *terms) {
     Gather *g = calloc(1, sizeof *g);
-    require(g, "out of memory");
+    require(g, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
     g->dest = dest; g->n = n;
     g->faces = malloc((n ? n : 1) * sizeof(FaceId));
     g->results = calloc(n ? n : 1, sizeof(EvalResult *));

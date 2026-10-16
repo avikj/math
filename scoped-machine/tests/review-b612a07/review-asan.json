@@ -1,0 +1,143 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-b612a07/scoped-machine",
+  "sanitizer": "asan",
+  "detect_leaks": "0",
+  "results": [
+    {
+      "name": "review_alias_scope",
+      "actual_workers": 0,
+      "kind": "v9-correction",
+      "exit_code": 1,
+      "stdout": "workers=0 alias=1 returned_source=1 escaped_z=1 returned_term_check=1 reason=unbound variable\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_alias_scope",
+      "actual_workers": 4,
+      "kind": "v9-correction",
+      "exit_code": 1,
+      "stdout": "workers=4 alias=1 returned_source=1 escaped_z=1 returned_term_check=1 reason=unbound variable\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_alias_faces",
+      "actual_workers": 0,
+      "kind": "v9-correction",
+      "exit_code": 1,
+      "stdout": "workers=0 before=1 after=0 same_returned_ref=1 both_return_face_specific_source=1\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_alias_faces",
+      "actual_workers": 4,
+      "kind": "v9-correction",
+      "exit_code": 1,
+      "stdout": "workers=4 before=1 after=0 same_returned_ref=1 both_return_face_specific_source=1\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_work_budget",
+      "actual_workers": 0,
+      "kind": "v9-correction",
+      "exit_code": 1,
+      "stdout": "normalize n=64 budget=1 handle_frames=1 ledger_frames=1 flags_written=64\nnormalize n=4096 budget=1 handle_frames=1 ledger_frames=1 flags_written=4096\nfanout parents=256 budget=1 max_deliveries_in_one_step=256\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_runtime_presentations",
+      "actual_workers": 0,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=0\nPASS computed presentations: checked generic action, result is input, registered transforms=0\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_runtime_presentations",
+      "actual_workers": 4,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=4\nPASS computed presentations: checked generic action, result is input, registered transforms=0\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_singleton_witnesses",
+      "actual_workers": 0,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=0\nPASS generic singleton down\nPASS generic singleton up\nPASS generic dependent singleton up-down homotopy\nPASS generic dependent singleton down-up homotopy\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_singleton_witnesses",
+      "actual_workers": 4,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=4\nPASS generic singleton down\nPASS generic singleton up\nPASS generic dependent singleton up-down homotopy\nPASS generic dependent singleton down-up homotopy\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_generic_identity_action",
+      "actual_workers": 0,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=0\nPASS fully parameterized forward identity action on diagram values\nPASS fully parameterized reverse identity action on diagram values\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_generic_identity_action",
+      "actual_workers": 4,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=4\nPASS fully parameterized forward identity action on diagram values\nPASS fully parameterized reverse identity action on diagram values\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_certificate_boundary",
+      "actual_workers": 0,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=0\ncertificate_boundary typing=VALID certificate=VALID forward=constant(a) reverse=STUCK transforms=1\nevidence_head=PAIR; inspecting the head does not validate its proof field\nproof_boundary(evidence)=PENDING proof_boundary(forward_call)=PENDING\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_certificate_boundary",
+      "actual_workers": 4,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=4\ncertificate_boundary typing=VALID certificate=VALID forward=constant(a) reverse=STUCK transforms=1\nevidence_head=PAIR; inspecting the head does not validate its proof field\nproof_boundary(evidence)=PENDING proof_boundary(forward_call)=PENDING\n",
+      "stderr": ""
+    },
+    {
+      "name": "test_proof_boundary",
+      "actual_workers": 0,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=0\nPASS demand preservation: generic path application STUCK, specialized endpoint returns a\nPASS proof/demand boundary: 11 cases (finite, opaque, direct/mutual recursion, lambda, computed residual, templates, compiled call, specialization)\n",
+      "stderr": ""
+    },
+    {
+      "name": "test_proof_boundary",
+      "actual_workers": 4,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=4\nPASS demand preservation: generic path application STUCK, specialized endpoint returns a\nPASS proof/demand boundary: 11 cases (finite, opaque, direct/mutual recursion, lambda, computed residual, templates, compiled call, specialization)\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_frame_cost",
+      "actual_workers": 0,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=0\nbranches=1 stored_fields=2 request=2 eval=4 pub=2 deliver=2\nreview actual_workers=0\nbranches=64 stored_fields=128 request=2 eval=4 pub=2 deliver=2\nreview actual_workers=0\nbranches=1024 stored_fields=2048 request=2 eval=4 pub=2 deliver=2\n",
+      "stderr": ""
+    },
+    {
+      "name": "review_frame_cost",
+      "actual_workers": 4,
+      "kind": "next-increment-witness",
+      "exit_code": 0,
+      "stdout": "review actual_workers=4\nbranches=1 stored_fields=2 request=2 eval=4 pub=2 deliver=2\nreview actual_workers=4\nbranches=64 stored_fields=128 request=2 eval=4 pub=2 deliver=2\nreview actual_workers=4\nbranches=1024 stored_fields=2048 request=2 eval=4 pub=2 deliver=2\n",
+      "stderr": ""
+    }
+  ]
+}

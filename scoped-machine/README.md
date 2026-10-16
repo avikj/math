@@ -724,28 +724,244 @@ discovery can change which adapter a producer takes under another schedule;
 the selected edge is recorded (`eval_entry_adapter_source`) and no equality
 of the fine counts is asserted across policies.
 
-**Bounded-helper audit (§81.2).** Word size 64 bits; checked natural costs
-below 2^62 with overflow reported as `OP_RESOURCE_LIMIT`; chunk bound
-`CHUNK_WORDS = 32`; allocator model: `malloc/free/realloc` of a block are one
-step each, vector growth amortized one word per pushed word (charged as
-`alloc_words`). Synchronous helpers reachable from `op_step`:
+**Bounded-helper audit (§81.2, revised by §94).** Word size 64 bits; checked
+natural costs below 2^62 with overflow reported as `OP_RESOURCE_LIMIT`; chunk
+bound `CHUNK_WORDS = 32`; allocator model: `malloc/free/realloc` of a block are
+one step each, vector growth amortized one word per pushed word (charged as
+`alloc_words`). The contract of `op_step(h, b)` is: at most `b` units, each one
+of the bounded bodies below, and the continuation retained. The table lists
+every variable-size operation reachable from a unit, with the state it keeps
+between units:
 
-| Helper | Status |
-| --- | --- |
-| hashing, probing, word comparison, record copy (`INTERN/LOOKUP`) | framed: one word / one probe / one word per frame |
-| table growth | framed: `CHUNK_WORDS` old slots relocated per frame (`INTERN` phase 4); a probe by another job first completes a pending relocation (counted, not budget-bounded for that other handle) |
-| set merge, subset, Must/support merge, sums, comparisons | framed, one element / limb per frame |
-| sorting (specialization images, extraction, family normalization) | framed heap sort: one sift (≤ 64 compares) per frame, one element per dedupe frame |
-| demand-graph node lookup, atom-map lookup, weight override lookup | fixed-size-key probes (`WordMap` / `find_sync`, ≤ 4 words): bounded hashing, counted probes |
-| `expr_boundary` | memoized per node; first computation of a node is charged one VALIDATE step per node of its subtree (amortized bounded over the preparation traversal) |
-| shared-choice image, MAPP value recomputation | framed (`MKF`, `SUM` requests) |
-| proof/list/reduction record interning inside a frame | `intern_sync` of ≤ 8-word records: bounded |
-| `set_has` in demand | binary search ≤ 64 compares: bounded |
-| kernel calls from `ATOMSPEC` / `PREPARE` boundary checks (`reindex`, `fc_reindex`, `ref_validate`, `shape_of`, `eval_entry_lookup`, `check`, `check_map`) | **not refined**: charged as `kernel_calls`; their traversal is the kernel's own |
-| constructor-level synchronous APIs (`set_make`, `plan_make`, `connector_make`, `model_with_weight`, `boundary_make`) | outside the bounded API (no bounded-step claim) |
+| Operation | Status | Retained state |
+| --- | --- | --- |
+| hashing, probing, word comparison, record copy (`INTERN/LOOKUP`) | framed: one word / one probe / one word per unit | `i` (word), `j` (probe slot), `acc3` (candidate) |
+| table growth | framed: one relocation unit = at most `CHUNK_WORDS` source-slot visits + probes in total, the collision chain in progress resumed from its probe cursor (`KTab.moving/probe`); a frame that meets a relocation another job began advances it one unit per unit (`INTERN` ph 4, `LOOKUP` ph 3) and never drains it synchronously | `cursor`, `moving`, `probe` |
+| request of a shared operation (`push`) | framed `JOIN`: the key interned by the framed `INTERN`, then one unit to find/create/deliver; a join of a running job commits its wait only after a cycle check of one chain hop per unit (`CYCLE_CHECK`) | JOIN frame: key words, `acc2` (job), `acc3` (hop cursor) |
+| delivery to waiting parents | one delivery per unit: a finished job answers the waiter below it on the servicing root's cone path (`deliver_to`); other waiters are answered one each when their own roots are stepped; a job whose child is complete but whose delivery is pending stays schedulable; `waiters` keeps one registration per join | root `path` |
+| scheduling (finding the enabled job) | the root keeps its cone path root → … → tip; a unit extends it by one hop, pops a finished tip (delivering), or steps the tip (`SCHEDULE_STEP`); no unit walks a chain | `Op.path` |
+| failure cleanup | `fail` retains the stack; one retained frame is released per unit when the failed job is a cone tip (`RELEASE_CHUNK`); `work_free` releases the rest | the stack itself |
+| family normalization (`NORMALIZE`) | keep-flag initialization `CHUNK_WORDS` per unit; pair tests one unit each; survivor compaction `CHUNK_WORDS` per unit; the survivors are handed to `SORT` by ownership transfer | `i`, `j`, `acc` (write cursor), `buf2` |
+| variable payloads into `SORT` / `INTERN` / `LIST` from a frame's own buffer | ownership transfer (`fr_sort_own`, `fr_intern_own`, `push_intern_own`): constant work, no copy | — |
+| set merge, subset, Must/support merge, sums, comparisons | framed, one element / limb per unit | `i`, `j` |
+| sorting | framed heap sort: one sift (≤ 64 compares) per unit, one element per dedupe unit | `i`, `j` |
+| `expr_boundary` | memoized per node; first computation charged one VALIDATE step per node | memo |
+| proof/list/reduction record interning inside a frame | framed `INTERN` through `push_intern` | as INTERN |
+| `set_has` in demand | binary search ≤ 64 compares | — |
+| demand-graph node index, atom-map index, weight override lookup (`WordMap` / `find_sync`, ≤ 4-word keys) | bounded hashing, **probes counted but not unit-bounded** (a collision chain is walked inside the unit) | — |
+| buffer growth inside a unit (`words_push`, `vec_push`) | **amortized only**: a push that doubles the buffer copies it inside the unit; the words are charged (`alloc_words`) but the individual call is not suspended | — |
+| kernel calls from `ATOMSPEC` / `PREPARE` / proof-use audit (`reindex`, `fc_reindex`, `ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`, `check_map`, `proof_use`) | **not refined**: charged as `kernel_calls`; the reuse administration they perform is charged retrospectively into `SHAPE_NODE` / `DEPENDENCY_CHECK` / `RECEIPT` from the kernel's counters (`kernel_mark/kernel_charge`), and the audit's traversal steps into `AUDIT_STEPS` (fine vector); none of these is resumable | — |
+| constructor-level synchronous APIs (`set_make`, `plan_make`, `connector_make`, `model_with_weight`, `boundary_make`, `job_sync` entries) | outside the bounded API (no bounded-step claim) | — |
 
-Consequently the §65 constant-factor refinement is **not claimed** for
-bounded operations whose frames reach the kernel (specialization of producer
-atoms, preparation's typing checks); it is claimed for the formula, set,
-cost, certificate, realization, demand and family operations, whose every
-frame is one of the bounded bodies above.
+`tests/review_work_budget.c` (the author's probe, white-box over the NORMALIZE
+frame) measures the correction: with budget 1, NORMALIZE over 64 and 4,096
+candidates writes 32 keep flags per unit (before: 64 and 4,096 in one unit);
+a shared support job with 256 waiting parents performs at most one delivery
+per unit (before: 256 in the completing unit).
+
+Consequently the §65 constant-factor refinement is **not claimed** for units
+that reach the kernel (specialization of producer atoms, preparation's typing
+and proof-use checks), for the fixed-key `WordMap`/`find_sync` indices, or for
+the amortized buffer growth; it is claimed for the formula, set, cost,
+certificate, realization, demand, family, scheduling and delivery operations,
+whose every unit is one of the bounded bodies above. `FR_SHAPE_NODE`,
+`FR_DEPENDENCY_CHECK` and `FR_RECEIPT` are now charged (from the kernel's
+counts) but remain accounted rather than resumable families.
+
+## Runtime constructions, the proof-use boundary and fine cost (§§83–84, 88–89, 92–95)
+
+Baseline `b612a07` (the v9 delivery, reviewed in §92). The two review
+corrections come first; then the next increment.
+
+### R1 — residual aliases answer at their own boundary (§93)
+
+`publish_with` (eval.c) used to copy the source result pointer into the
+residual alias entry; the source's neutral `EvalResult.ref` is the original
+expression, valid only at the source's context and face. The alias now
+publishes a distinct immutable descriptor whose head is the residual itself
+(`result_new(r->cls, residual)`, or `result_system(residual, …)` retaining
+the branches); the dependency copy, projected face, single-producer lock and
+the no-PUB alias convention are unchanged, and the alias is now published
+before the source entry becomes READY (a consumer woken by the source's
+answer finds the residual's key already answered — the author's scope probe
+read the alias entry immediately after `whnf` returned and, with workers,
+could run before the alias existed). `tests/review_alias_scope.c` (a
+returned reference may not mention an undeclared variable) and
+`tests/review_alias_faces.c` (opposite-face warm-ups may not change
+`convert_term`) are gated with 0 and 4 installed workers. One adapted
+assertion: `demo_speculation` step 3 compared result pointers across two keys
+(the restricted decision and the speculative branch); the branch key is
+alias-published and now carries its own descriptor whose head is the
+residual, so the step asserts the speculative entry's residual (the rebuilt
+`up` eliminator around the evaluated prefix) and class with one dispatch
+launch and no branch work, which is the mathematical content (§93.3: pointer
+equality across keys is not required; the neutral at the source key keeps
+its original eliminator reference per §12).
+
+### R2 — bounded units inside work.c (§94)
+
+The bounded-helper table above is the revised contract. The engine changes:
+`push` of a shared frame is a `JOIN` frame (key interning through the framed
+`INTERN`, then one unit to join/create/deliver, with a one-hop-per-unit cycle
+check); the scheduler keeps a per-root cone path instead of walking the
+waiting chain; delivery is one waiter per unit; `fail` retains the stack and
+the scheduler releases one frame per unit; NORMALIZE's flag initialization and
+compaction are chunked; frame buffers are transferred by ownership into
+`SORT`/`INTERN`/`LIST`; table relocation keeps a probe cursor and is never
+drained synchronously by another handle. Two new ledger families,
+`SCHEDULE_STEP` and `CYCLE_CHECK`, count the scheduler's units.
+
+### §83 — presentations, diagram values and the generic action as core terms (`src/runtime.c`)
+
+Every construction is one fixed template per universe-level tuple, built once
+over keyed formal variables (`fresh_term_keyed`) and instantiated by
+`reindex`; `rt_template_count()` reports how many exist. No registry, no
+evaluator rule and no compiler call is involved in constructing or applying
+them.
+
+| §83 | Definition | Function |
+| --- | --- | --- |
+| 83.1 `Maps_{a,b}(X,Z) = Σc.Σd.(Πx. d(cx)=x)×(Πz. c(dz)=z)` | `rt_maps_type`; value `(c,(d,(h,k)))` | `rt_maps_id` (id, id, refl, refl), `rt_maps_compose` (`f'=u∘f`, `g'=g∘v`, `h'(x)=ap(g)(H(fx))·h(x)`, `k'(z)=ap(u)(k(vz))·K(z)`), `rt_maps_inverse` (swap) |
+| 83.1 `Pres_{a,b}(Z) = Σ(X:U_a).Maps(X,Z)` | `rt_pres_type`, `rt_pres_const` | levels `max(a+1,b)`, never raised |
+| 83.2 dependent singleton over `A, t, D:(x:A)→(t=x)→U_r` | `rt_singleton_type` (`S_D`), `rt_singleton_maps` (`c = Down`, `d = λz.(t,refl,z)`, `h = λw.⟨i⟩(e@i, ⟨k⟩e@(i∧k), fill(¬i))`, `k = λz.⟨i⟩fill_Z(¬i)`), `rt_singleton` (the presentation) | the author's witness terms, generalized to levels `(a, r)` with `D` a formal |
+| 83.3 `Diagram_{b,r}(B) = Σ(C:B).Σ(R:B→U_r).Π(y:B).Maps(R y, Path_B(C,y))` | `rt_diagram_type`, `rt_diagram_zero` (`R y = Path(C,y)`, identity maps), `rt_diagram_extend` (`C' = C_{Q t refl}`, `R'(y) = Σx.Σe.R_{Q x e}(y)`, `maps'(y) = compose(singleton_{D_y}, maps_{Q t refl}(y))` with `D_y = λx e. R_{Q x e}(y)`) | accessors `rt_diagram_value/family/maps` |
+| 83.4 action | `rt_action(dir, …)`: `F = d_R(y)(p⁻¹·c_L(y)(r))`, `G = d_L(y)(p·c_R(y)(s))`; `rt_action_fun` the closed `λL R p y r.` form with its type | `rt_action_middle`: `(λq.p⁻¹·q, λs.p·s, h, k)` with `h = assoc⁻¹ · ap(λv.v·q)(rinv p) · lunit q`, `k = assoc⁻¹ · ap(λv.v·s)(linv p) · lunit s`; `rt_action_maps = compose(compose(collapse_L, middle), inverse(maps_R))` |
+| 83.4 groupoid laws | `rt_J` (`coe^i P(p@i, ⟨j⟩p@(i∧j)) d`), `rt_lunit`, `rt_rinv`, `rt_linv`, `rt_assoc` | generated by path induction left to right with later paths under Π in the motive; base cases by the finite word construction `K(w) : w = refl` (`K(refl)=refl`, `K(v⁻¹)=ap(inverse)(K v)`, `K(v·w)=⟨k⟩(K v@k)·(K w@k) · K(refl·refl)`, `K(refl·refl)@k@i = fill^j_A[(i=0)↦a,(i=1)↦a] a (¬k)`); two base words are equated by `K(u)·K(v)⁻¹` |
+| 84.1 export | `rt_diagram_export(d, &type)`: right fold of `rt_diagram_extend` ending in `rt_diagram_zero(B, o)` (ordinary) or of singleton presentations composed at the centre ending in `rt_pres_const(Z)` (residual), memoized per diagram | compared with the compiler's `diagram_canonical`, `diagram_collapse`, `diagram_expand` by conversion (test case 3) |
+| 84.2 reuse | `rt_reuse(O, p, a) = coe^i O(p@i) a` | — |
+
+Checked facts (`tests/test_runtime.c`, all with `transform_count() == 0`):
+the generic constructions type-check with only their parameters free (Maps,
+id, compose, inverse, constant presentation, singleton maps and
+presentation, Diagram type at `U_1`, zero, extend, both closed actions); the
+four groupoid laws check at their stated types in a generic context; the
+middle maps check with both witnesses; the full action maps are validated at
+template level (compose checked once generically; each image of the
+instantiating substitution checked at its formal's type) and their `c`/`d`
+are convertible with `F`/`G`. `make runtime-full` (unsanitized) additionally
+runs the direct checker over the fully expanded two-level composite and over
+the exported one- and two-node diagrams with all four witnesses: 84 checks,
+2 min 19 s on the reference host (the two-node export alone is most of it; under
+ASan that one check exceeds the host's 8 GB, so the sanitized gate runs the
+default mode: 76 checks in 20 s). §87 cases: (2) a core program builds a
+nonempty diagram from delayed tail data, applies a computed identity (`snd`
+of a pair) and evaluates both orientations and the round trip with no
+transform registered; (3) the §47 examples (empty, two-node with a
+witness-dependent tail, shared predecessor, a loop residual) export with
+`C ≡ canonical`, `R(y) ≡ Real_0`, `c ≡ collapse`, `d ≡ expand`, and the
+residual's `X_P ≡ Real_0` (the loop Σ-type is retained); (4) `zero[σ] ≡
+zero(C[σ])`, `F(…)[σ] ≡ F(…[σ])` and `singleton(…)[σ] ≡ singleton(…[σ])` under a
+simultaneous term/dimension substitution between contexts with required
+faces; (5) a supplied and a computed proof instantiate one template, evaluate
+to convertible results and the repeat runs no body and no beta; (6) wrong
+level, mismatched type, unavailable guard, malformed family are rejected, and
+the cyclic proof `loop := loop` types as a program, audits PENDING, its action
+over a variable type is a neutral composition that still carries the pending
+proof, and demanding the proof's interior is STUCK — no witness is
+fabricated; (7) the administration counters are printed.
+
+Two kernel corrections this increment needed, both in the delivered v9 code:
+`shape_under` memoized by the whole binder environment ρ, so a shared
+subterm under different unrelated binders was recomputed per binder path — on
+the composite witnesses this was exponential (the two-node export's `R(y)`
+conversion interned millions of maps and did not finish in 8 GB); ρ is now
+restricted to the free boundary of the subterm (free variables, support,
+required-face dimensions) before the memo lookup, which does not change any
+shape (the form depends only on those entries) and also cuts `test_main`'s map
+table from 16,636 to 991 records. And `net.c` counted the
+`CONTINUE_REFERENCE` rule event after the forward publication, so a reader
+woken by the result could read the event counter before the increment
+(`test_compiler` with workers on a 2-core host); the count now precedes the
+publication. A third, at the session boundary: `eval_reset` aborted when a
+client left work queued or executing under a worker pool (a conversion that
+returned while its sibling job was still running — `review_alias_faces 4`
+under load); the reset now drains that finite work (`eval_run`) before the
+quiescence requirement is enforced.
+
+### §88 — the proof-use boundary (`src/proof.c`)
+
+`check` establishes program typing for a partial language; `certificate_verify`
+establishes that a record is the compiler's own re-emission of its inputs.
+Neither is a mathematical witness: a recursive declaration can carry a
+circular proof. `proof_use(Γ, φ, e, E)` runs admission, context validity,
+formation of `E` and `e : E`, then the dependency audit: a memoized
+stored-syntax traversal with an explicit owned stack (inactive branches,
+binder domains, map images, scope declarations, template environments and
+compiled call bodies included; no evaluation, no scope opening, no
+unfolding), Tarjan components over the reached globals' declaration/parameter/
+body edges, verdict `PENDING` on a cyclic component, `ASSUMED` with the
+opaque symbols listed, else `CORE`; the false face is `CORE` locally. The
+verdict is cached per judgment with the `(symbol, revision)` pairs it read
+and reused while they are current (§79); sub-traversals are memoized per
+reference / scope / `(symbol, revision)`. `transform_proof_use(id)` audits a
+record's **original** evidence at the type the compiler checked it at
+(`transform_evidence`: the identity path, the equivalence, the terminal
+equivalence, the contraction, a cut's own construction) — not its forward
+body or WHNF. The author's `proof_boundary.h` interface is served by this
+module (`tests/proof_boundary.c`); the reference implementation is kept in
+`tests/reference/`. Mathematical use is at preparation (`step_prepare`,
+`audit_use`): every plan continuation evidence, connector reference and
+connector transform is audited; `CORE` and `ASSUMED` prepare, with the
+assumptions recorded on the problem (`problem_assumptions`, `problem_core`);
+`PENDING`/`INVALID`/`UNRESOLVED` reject with the audit's diagnostic, and the
+diagnostic names a missing witness, never a refutation or an inequality.
+
+Proof-use outcomes measured (`tests/test_proof_use.c`, `tests/test_runtime.c`
+case 6, the author's 11-case `test_proof_boundary.c` and
+`review_certificate_boundary.c`):
+
+| Evidence | `check` | `certificate_verify` | `proof_use` | at preparation |
+| --- | --- | --- | --- | --- |
+| `refl`, finite definitions, lambdas, templates, compiled calls of core records | VALID | VALID | CORE | prepares, no hypotheses |
+| an opaque declaration | VALID | — | ASSUMED {symbol} | prepares; symbol recorded on the problem |
+| `loop := loop` (direct), a mutual pair, a lambda hiding the loop, a program through the loop | VALID | — | PENDING {component} | rejected: "proof use PENDING …" |
+| the recursive equivalence certificate (§86.1) | VALID | VALID (re-emission) | PENDING | rejected at use; forward call still evaluates (constant), reverse call STUCK |
+| the identity equivalence certificate | VALID | VALID | CORE | prepares |
+| a judgment under the false face | VALID | — | CORE (local) | — |
+
+Three questions, answered separately for the recursive-equivalence example:
+the code is well typed (VALID); the certificate is the compiler's derivation
+(VALID); the mathematical equivalence is **not established** (PENDING) and the
+reverse observation does not complete (STUCK).
+
+### §89 — fine C-work accounting (`src/fine.c`)
+
+`tests/review_frame_cost.c` and `tests/test_fine_cost.c`: a system with 1 / 64
+/ 1024 branches has the coarse vector `(REQUEST, EVAL, PUB, DELIVER) =
+(2, 4, 2, 2)` in all three cases while storing 2 / 128 / 2048 fields. The fine
+vector is counted where the loops run (one increment per field opened, key
+word hashed, probe, compared word, copied word, relocated slot, map entry,
+DNF clause step, face operation, waiter delivered, continuation registered,
+queue operation, lock acquisition, cell allocated/released, net action/retry,
+checker frame, audit step) and reported beside the coarse one, never added
+to it. The microstep table for the three systems (ASan build):
+
+| fine counter | n=1 | n=64 | n=1024 |
+| --- | ---: | ---: | ---: |
+| fields_opened | 4 | 256 | 4096 |
+| head_cells | 2 | 2 | 2 |
+| intern_words_hashed | 75 | 642 | 9282 |
+| intern_probes | 34 | 97 | 1057 |
+| intern_word_compares | 30 | 219 | 3099 |
+| intern_words_copied | 35 | 413 | 6173 |
+| dnf_clause_steps | 27 | 27 | 27 |
+| face_ops | 12 | 201 | 3081 |
+| waiters_delivered / conts_registered | 2 / 2 | 2 / 2 | 2 / 2 |
+| queue_ops / lock_attempts | 9 / 8 | 9 / 8 | 9 / 8 |
+| cells_allocated / released | 5 / 2 | 5 / 2 | 5 / 2 |
+| TOTAL | 247 | 1885 | 26845 |
+
+The coarse vector is a semantic projection; the fine total grows with the
+stored size (the system head is opened twice per observation: once for the
+head inspection, once for the system rule). This is a cost measure; it is not
+a constant-factor simulation theorem (§85, §94.2(6)).
+
+### What is not claimed
+
+The whole-machine adaptive one-step diamond and the equal-interaction-length
+theorem (§85); the fine-step-to-C simulation with a uniform bound (§85,
+§94); a reflected checker/evaluator (§83.3); unconditional proof admission in
+the presence of general recursion (§86.1 — PENDING is the answer); a
+declaration-to-answer posing operation or any universal finite
+answer-or-obstruction procedure (§86). §73's exclusions remain: no solver,
+frontier, incumbent, planner or replacement runtime.
