@@ -18,12 +18,25 @@
 /* §94 (kernel continuations, kcont.h): every mutex acquisition is counted per
  * thread so a continuation yields only where it holds no lock */
 extern __thread int kc_lock_depth;
+#ifdef KC_LOCK_AUDIT
+/* the lock-section audit (tests/lock_audit): the fine steps taken between the
+ * outermost acquisition and the matching release, per acquisition site */
+void kc_audit_enter(const char *site); void kc_audit_leave(void);
+static inline int kc_mutex_lock_at(pthread_mutex_t *m, const char *site) { int r = (pthread_mutex_lock)(m); if (kc_lock_depth++ == 0) kc_audit_enter(site); return r; }
+static inline int kc_mutex_unlock(pthread_mutex_t *m) { if (--kc_lock_depth == 0) kc_audit_leave(); return (pthread_mutex_unlock)(m); }
+static inline int kc_mutex_trylock_at(pthread_mutex_t *m, const char *site) { int r = (pthread_mutex_trylock)(m); if (r == 0 && kc_lock_depth++ == 0) kc_audit_enter(site); return r; }
+#define KC_STR2(x) #x
+#define KC_STR(x) KC_STR2(x)
+#define pthread_mutex_lock(m) kc_mutex_lock_at((m), __FILE__ ":" KC_STR(__LINE__))
+#define pthread_mutex_trylock(m) kc_mutex_trylock_at((m), __FILE__ ":" KC_STR(__LINE__))
+#else
 static inline int kc_mutex_lock(pthread_mutex_t *m) { int r = (pthread_mutex_lock)(m); kc_lock_depth++; return r; }
 static inline int kc_mutex_unlock(pthread_mutex_t *m) { kc_lock_depth--; return (pthread_mutex_unlock)(m); }
 static inline int kc_mutex_trylock(pthread_mutex_t *m) { int r = (pthread_mutex_trylock)(m); if (r == 0) kc_lock_depth++; return r; }
 #define pthread_mutex_lock(m) kc_mutex_lock(m)
-#define pthread_mutex_unlock(m) kc_mutex_unlock(m)
 #define pthread_mutex_trylock(m) kc_mutex_trylock(m)
+#endif
+#define pthread_mutex_unlock(m) kc_mutex_unlock(m)
 
 /* §§89/94: the kernel's and the engine's allocations are served by kalloc.c
  * over the arena (size-class free lists, clearing and copying one word per

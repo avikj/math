@@ -127,3 +127,31 @@ void kc_tick(void) {
 #endif
     yield_now(k);
 }
+
+#ifdef KC_LOCK_AUDIT
+/* ---- the lock-section audit: per outermost acquisition site, the maximum
+ * number of fine steps this thread took while holding it, and the maximum
+ * distinct-site count; printed at exit (single-threaded runs give exact
+ * per-thread attribution; fine counters are global, so run the audit with
+ * CUBICAL_WORKERS=0) ---- */
+#include "fine.h"
+typedef struct { const char *site; uint64_t max, calls, total; } AuditSite;
+static AuditSite audit[512]; static size_t naudit; static pthread_mutex_t audit_mu = PTHREAD_MUTEX_INITIALIZER;
+static __thread const char *cur_site; static __thread uint64_t cur_start;
+static uint64_t fine_total(void) { return fine_tl_steps; }
+void kc_audit_enter(const char *site) { cur_site = site; cur_start = fine_total(); }
+static void audit_report(void) {
+    fprintf(stderr, "lock-section audit: %zu sites (max fine steps under the outermost lock)\n", naudit);
+    for (size_t pass = 0; pass < naudit; pass++) { size_t best = pass; for (size_t j = pass + 1; j < naudit; j++) if (audit[j].max > audit[best].max) best = j; AuditSite t = audit[pass]; audit[pass] = audit[best]; audit[best] = t; }
+    for (size_t i = 0; i < naudit; i++) fprintf(stderr, "  %-28s max=%-8llu calls=%-10llu mean=%.2f\n", audit[i].site, (unsigned long long)audit[i].max, (unsigned long long)audit[i].calls, audit[i].calls ? (double)audit[i].total / audit[i].calls : 0.0);
+}
+void kc_audit_leave(void) {
+    uint64_t d = fine_total() - cur_start; const char *site = cur_site; cur_site = NULL;
+    (pthread_mutex_lock)(&audit_mu);
+    static bool registered; if (!registered) { registered = true; atexit(audit_report); }
+    size_t i = 0; while (i < naudit && audit[i].site != site) i++;
+    if (i == naudit && naudit < 512) { audit[naudit].site = site; audit[naudit].max = 0; audit[naudit].calls = 0; audit[naudit].total = 0; naudit++; }
+    if (i < naudit) { if (d > audit[i].max) audit[i].max = d; audit[i].calls++; audit[i].total += d; }
+    (pthread_mutex_unlock)(&audit_mu);
+}
+#endif

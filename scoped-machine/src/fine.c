@@ -1,5 +1,6 @@
 #include "fine.h"
 uint64_t fine_counters[FC_COUNT];
+__thread uint64_t fine_tl_steps;
 #define counters fine_counters
 static const char *names[FC_COUNT] = { "fields_opened", "head_cells", "reindex_calls", "map_entries", "intern_words_hashed", "intern_probes", "intern_word_compares", "intern_words_copied", "intern_slots_relocated", "dnf_clause_steps", "face_ops", "waiters_delivered", "conts_registered", "queue_ops", "lock_attempts", "cells_allocated", "cells_released", "net_actions", "net_retries", "check_frames", "audit_steps", "shape_nodes", "validate_steps", "alloc_ops", "alloc_words", "sort_steps" };
 uint64_t fine_count(FineCounter c) { return __atomic_load_n(&counters[c], __ATOMIC_SEQ_CST); }

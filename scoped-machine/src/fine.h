@@ -50,8 +50,9 @@ typedef enum {
 extern uint64_t fine_counters[FC_COUNT];
 /* §94: a fine step is the transition point of a kernel continuation (kcont.h) */
 struct KCont; extern __thread struct KCont *kc_tl; extern __thread int kc_last_counter; void kc_tick(void);
-static inline void fine_bump(FineCounter c) { __atomic_add_fetch(&fine_counters[c], 1, __ATOMIC_RELAXED); if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
-static inline void fine_add(FineCounter c, uint64_t n) { __atomic_add_fetch(&fine_counters[c], n, __ATOMIC_RELAXED); if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
+extern __thread uint64_t fine_tl_steps;   /* this thread's fine steps (the lock-section audit) */
+static inline void fine_bump(FineCounter c) { __atomic_add_fetch(&fine_counters[c], 1, __ATOMIC_RELAXED); fine_tl_steps++; if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
+static inline void fine_add(FineCounter c, uint64_t n) { __atomic_add_fetch(&fine_counters[c], n, __ATOMIC_RELAXED); fine_tl_steps += n; if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
 uint64_t fine_count(FineCounter c);
 const char *fine_name(FineCounter c);
 void fine_reset(void);          /* machine teardown only */
