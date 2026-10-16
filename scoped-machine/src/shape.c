@@ -4,9 +4,11 @@
 #include "reuse.h"
 #include "fine.h"
 
-static ShapeId shape_intern(const Words *w) { pthread_mutex_lock(&M.shape_mu); ShapeId id = interner_intern(&M.shapes, w->w, w->n, NULL); pthread_mutex_unlock(&M.shape_mu); return id; }
-static bool memo_get(RefId t, MapId rho, uint32_t depth, ShapeId *out) { uint64_t k[3] = { t, rho, depth }; pthread_mutex_lock(&M.shape_mu); bool h = wordmap_get(&M.shape_memo, k, 3, out); pthread_mutex_unlock(&M.shape_mu); return h; }
-static void memo_put(RefId t, MapId rho, uint32_t depth, ShapeId v) { uint64_t k[3] = { t, rho, depth }; pthread_mutex_lock(&M.shape_mu); wordmap_put(&M.shape_memo, k, 3, v); pthread_mutex_unlock(&M.shape_mu); }
+/* §94: the shape interner and memo are internally synchronized; no outer lock
+ * is held around the hashing/copy of an input-sized shape record */
+static ShapeId shape_intern(const Words *w) { return interner_intern(&M.shapes, w->w, w->n, NULL); }
+static bool memo_get(RefId t, MapId rho, uint32_t depth, ShapeId *out) { uint64_t k[3] = { t, rho, depth }; return wordmap_get(&M.shape_memo, k, 3, out); }
+static void memo_put(RefId t, MapId rho, uint32_t depth, ShapeId v) { uint64_t k[3] = { t, rho, depth }; wordmap_put(&M.shape_memo, k, 3, v); }
 
 /* ρ extended by one bound identity */
 static MapId rho_extend(MapId rho, Sort sort, uint64_t concrete, uint32_t depth, BinderSlot slot) {

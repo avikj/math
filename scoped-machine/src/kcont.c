@@ -111,6 +111,7 @@ void kc_wait(pthread_cond_t *cv, pthread_mutex_t *mu, KCont *on) {
     k->blocked = false; k->blocked_on = NULL;
     pthread_mutex_lock(mu);
 }
+void kc_safepoint(void) { KCont *k = kc_tl; if (!k || k->budget == KC_UNBOUNDED || k->used < k->budget || kc_lock_depth > 0) return; yield_now(k); }
 void kc_tick(void) {
     KCont *k = kc_tl; if (!k) return;
     k->steps++;
@@ -119,7 +120,7 @@ void kc_tick(void) {
     if (k->used < k->budget) return;
 #ifdef KC_TRACE
     static __thread uint64_t deferred[64]; static __thread int dmax;
-    if (kc_lock_depth > 0) { deferred[kc_last_counter & 63]++; if (kc_lock_depth > dmax) dmax = kc_lock_depth; return; }
+    if (kc_lock_depth > 0) { deferred[kc_last_counter & 63]++; if (kc_lock_depth > dmax) dmax = kc_lock_depth; if (getenv("KC_ABORT_AT") && deferred[4] == (uint64_t)atoi(getenv("KC_ABORT_AT"))) abort(); return; }
     { uint64_t tot = 0; for (int i = 0; i < 64; i++) tot += deferred[i]; if (tot > 64) { fprintf(stderr, "deferred kind=%llu depth=%d:", (unsigned long long)k->arg[0], dmax); for (int i = 0; i < 64; i++) if (deferred[i]) fprintf(stderr, " c%d=%llu", i, (unsigned long long)deferred[i]); fprintf(stderr, "\n"); } memset(deferred, 0, sizeof deferred); dmax = 0; }
 #else
     if (kc_lock_depth > 0) return;

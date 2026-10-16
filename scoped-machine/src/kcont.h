@@ -55,6 +55,7 @@ void kc_shutdown(void);                     /* joins the parked continuation thr
 extern __thread KCont *kc_tl;
 extern __thread int kc_lock_depth;
 void kc_tick(void);
+void kc_safepoint(void);                    /* a suspension point without a transition: yields if the grant is spent (lock-free here by contract) */
 /* a wait on a condition another thread will signal: a continuation yields
  * instead (the wait is one blocked transition, charged; `on` names the
  * continuation whose progress it needs when known), a plain thread waits on

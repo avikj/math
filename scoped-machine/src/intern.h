@@ -48,6 +48,8 @@ typedef struct {
     uint64_t *slots;          /* open addressing table of ids (0 = empty), under lock */
     size_t nslots;
     uint64_t *old; size_t old_n, cursor;   /* §94: a growth in progress — the previous array, migrated CHUNK_WORDS slots per operation */
+    uint64_t gen;                          /* bumped when an array is replaced or released: a probe cursor is valid for one generation */
+    uint64_t moving; size_t mprobe;        /* the old entry being placed by the migration and its probe position */
     pthread_mutex_t mu;
 } Interner;
 
