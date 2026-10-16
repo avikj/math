@@ -432,7 +432,7 @@ static bool adapter_candidate(Entry *src_e, EntryId src, MapId sigma, FaceId eta
  * an instantiation edge, an entry of the edge's source shape) and the
  * candidate is tested outside the lock (lock-section audit: the former
  * collection of every candidate under entries_mu) */
-typedef struct { int phase; size_t k, q, j; } AdapterCursor;
+typedef struct { int phase; size_t k, q, j; bool have_src; ShapeId src_shape; RefId src_ref; } AdapterCursor;
 static int adapter_next_locked(AdapterCursor *c, RefId t, ShapeId s, EntryId self, EntryId *e, uint64_t *m) {
     ShapeSide *ss = shape_side_locked(s, false);
     if (!ss) return 0;
@@ -443,9 +443,10 @@ static int adapter_next_locked(AdapterCursor *c, RefId t, ShapeId s, EntryId sel
     if (c->k > ss->refs.len) return 0;
     RefId r = c->k < ss->refs.len ? ss->refs.data[c->k] : t;
     const uint64_t *pairs; size_t np = instantiation_edges(r, &pairs);
-    if (c->q >= np) { c->k++; c->q = c->j = 0; return 2; }
-    ShapeSide *src_side = shape_side_locked(shape_of(pairs[2 * c->q]), false);
-    if (!src_side || c->j >= src_side->entries.len) { c->q++; c->j = 0; return 2; }
+    if (c->q >= np) { c->k++; c->q = c->j = 0; c->have_src = false; return 2; }
+    if (!c->have_src) { c->src_ref = pairs[2 * c->q]; return 3; }   /* the source's shape is computed outside the lock */
+    ShapeSide *src_side = shape_side_locked(c->src_shape, false);
+    if (!src_side || c->j >= src_side->entries.len) { c->q++; c->j = 0; c->have_src = false; return 2; }
     *e = src_side->entries.data[c->j++]; *m = pairs[2 * c->q + 1];
     return 1;
 }
@@ -458,6 +459,7 @@ static bool find_adapter(RefId t, ShapeId s, FaceId eta, EntryId self, RefId *ou
         pthread_mutex_unlock(&E.entries_mu);
         fine_bump(FC_ADAPTER_STEPS);
         if (st == 0) return false;
+        if (st == 3) { c.src_shape = shape_of(c.src_ref); c.have_src = true; continue; }
         if (st == 1 && adapter_candidate(ENT(e), e, m, eta, s, out, prefix)) { *src_out = e; return true; }
     }
 }
