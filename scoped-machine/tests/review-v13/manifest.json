@@ -1,0 +1,19 @@
+{
+  "reviewed_revision": "b612a07602bfccdcbb4ce2513ab169721cc38d56",
+  "production_changes": "No repository edits; author baseline explicitly includes the R1 alias-publication correction.",
+  "files": {
+    "README.md": "c7a11d6a5146c49911e2857a4a4f6aeeefff98195a215af8d9d09b0c9ca4281c",
+    "WORKER.txt": "8f06fbd8e608c87ba77d199b78a78ecaef40e3fa15209ba0538f0b4fd2042464",
+    "AMENDMENT-96.md": "0e7e5a82322c24878ea28b4d0d613e0c48eb92904d11f516752bfb95f72c6178",
+    "scoped-cubical-machine-handoff.md": "2bbf20b5a287f92c7b9277fd4832b062bec599105dbf5828f2a062853b8dd50d",
+    "review_runtime_nodes.c": "7036f81442db4cccecf69226e25aca2545f97670b00a47899f9ddb8cc1b59d68",
+    "run_runtime_nodes.py": "a157c455ab670b33ee2da6b9e17032534ab50c5b7b442a03cc97a990dad8d790",
+    "results.json": "a41bc0ba42801102024b2bbf2c549b2160edd02a94cbd19e10a88b02fe3ad9dc",
+    "generic-tsan-results.json": "8df9137a4ee46c8e5d72f6d8be5c3ef7e63b3bda7640f6ec54a6447a84043412",
+    "tsan-levels.log": "1a33b19a13e4bb42eccd27d3ab9efbbacb223b4990938e2146300ff4f68ea6de",
+    "tsan-4-sequential.log": "d49c7ae4a480429e6bdae56d5e3a71180cbc0601103dc91e59667ec334d417d6",
+    "tsan-4-limited.log": "d49c7ae4a480429e6bdae56d5e3a71180cbc0601103dc91e59667ec334d417d6",
+    "alias-publication.patch": "8c4500d74aaea42a48eb9c666263f0526672f69a39d0a233acfd6d05097fb96b",
+    "candidate_eval.c": "8108d6a7fe8babb916ad192330c75279fdb405102921717219ac12e587841622"
+  }
+}

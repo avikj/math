@@ -48,6 +48,12 @@ RefId rt_diagram_zero(uint64_t b, RefId B, RefId C);                            
 /* A : U_a, t : A, Q : (x:A) → (t=x) → Diagram_{b,r}(B) ↦ Diagram_{b,max(a,r)}(B) with
  * C' = C_{Q t refl}, R'(y) = Σx.Σe.R_{Q x e}(y), maps' = singleton ∘ centre maps */
 RefId rt_diagram_extend(uint64_t a, uint64_t b, uint64_t r, RefId A, RefId t, RefId Q, RefId B);
+/* §96.2: the closed node function
+ *   node_{a,b,r} : (B:U_b) → (A:U_a) → (t:A) → ((x:A) → Path_A(t,x) → Diagram_{b,r}(B)) → Diagram_{b,max(a,r)}(B)
+ * = λB A t Q. rt_diagram_extend(a,b,r,A,t,Q,B); one fixed template per level
+ * tuple; *type receives its (exact-level) Π type. A tail computed at runtime
+ * is an ordinary argument of this function. */
+RefId rt_node_fun(uint64_t a, uint64_t b, uint64_t r, RefId *type);
 RefId rt_diagram_value(RefId d);                     /* C */
 RefId rt_diagram_family(RefId d, RefId y);           /* R y */
 RefId rt_diagram_maps(RefId d, RefId y);             /* Maps(R y, Path_B(C,y)) */

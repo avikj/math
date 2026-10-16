@@ -349,10 +349,11 @@ alias-published (§76.3/§78).
 
 ## 5j. The b612a07 review (R1, R2) and the §§83–84/88–89 increment
 
-Baseline `b612a07`. Masters: `HANDOFF.md` is the v12 master (§§92–95 inserted
-before the appendices); the amendments alone are `AMENDMENT-83-87.md`,
-`AMENDMENT-88-91.md`, `AMENDMENT-92-95.md`; the briefs `WORKER-v10.txt`,
-`WORKER-v11.txt`, `WORKER-v12.txt`. The author's probes and runners are
+Baseline `b612a07`. Masters: `HANDOFF.md` is the v13 master (§§92–96
+inserted before the appendices); the amendments alone are `AMENDMENT-83-87.md`,
+`AMENDMENT-88-91.md`, `AMENDMENT-92-95.md`, `AMENDMENT-96.md`; the briefs
+`WORKER-v10.txt` … `WORKER-v13.txt`; the author's §96 evidence is in
+`tests/review-v13/`. The author's probes and runners are
 gated unchanged: `tests/review_alias_scope.c`, `review_alias_faces.c`,
 `review_work_budget.c` (white-box over `work.c`), `review_workers.c` +
 `run_review.py` (17 runs, ASan+LSan and TSan), `run_boundaries.py` (6 runs),
@@ -380,6 +381,7 @@ Section → function → test for the increment:
 | §83.2 singleton with h,k | `rt_singleton_type/maps/singleton` (levels `(a,r)`, `D` formal, scope `capture_term2`) | `test_runtime` block 2; `review_singleton_witnesses` |
 | §83.3 Diagram, zero, extend | `rt_diagram_type/zero/extend`, `rt_diagram_value/family/maps` | `test_runtime` block 3, case 2 |
 | §83.4 action, middle maps, groupoid laws | `rt_action`, `rt_action_fun`, `rt_action_middle`, `rt_action_maps`, `rt_J`, `rt_lunit/rinv/linv/assoc`, `rt_ap`, `K_of`/`k_base`/`words_equal` | `test_runtime` groupoid block, `runtime full`; `review_generic_identity_action` |
+| §96.2–96.4 closed node function | `rt_node_fun` (runtime.c) over `rt_diagram_extend`'s template | `test_runtime` §96 block (four level tuples, computed tail, β-equality with `extend`); `review_runtime_nodes` 0/4 + levels (ASan+LSan), generic+levels (TSan); `run_runtime_nodes.py` |
 | §84.1 export, comparison with the compiler | `rt_diagram_export`, `diagram_nodes/output/params` (compiler.c) | `test_runtime` case 3 (empty, two-node, shared predecessor, loop residual) |
 | §84.2 reuse along an identity | `rt_reuse` | `test_runtime` case 2 |
 | §87 cases 1–7 | as listed in README | `test_runtime`, witnesses |

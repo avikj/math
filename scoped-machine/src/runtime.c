@@ -8,7 +8,7 @@
 enum { RT_MAPS_TYPE = 1, RT_MAPS_ID, RT_MAPS_COMPOSE, RT_MAPS_INV, RT_PRES_TYPE, RT_PRES_CONST,
        RT_SING_TYPE, RT_SING_MAPS, RT_SING, RT_DIAG_TYPE, RT_DIAG_ZERO, RT_DIAG_EXTEND,
        RT_ACTION_F, RT_ACTION_G, RT_ACTION_FUN_F, RT_ACTION_FUN_G, RT_MIDDLE, RT_ACTION_MAPS,
-       RT_J, RT_LUNIT, RT_RINV, RT_LINV, RT_ASSOC, RT_AP, RT_REUSE, RT_KBASE };
+       RT_J, RT_LUNIT, RT_RINV, RT_LINV, RT_ASSOC, RT_AP, RT_REUSE, RT_NODE_FUN, RT_KBASE };
 
 static struct { WordMap memo; pthread_mutex_t mu; size_t count; bool live; } RT;
 static void rt_init(void) { if (RT.live) return; wordmap_init(&RT.memo); pthread_mutex_init(&RT.mu, NULL); RT.count = 0; RT.live = true; }
@@ -250,6 +250,32 @@ RefId rt_diagram_extend(uint64_t a, uint64_t b, uint64_t r, RefId A, RefId t, Re
         tp = diag_value(b, r2, rt_diagram_type(b, r2, Bv), C0, Rp, maps); memo_put(k, tp);
     }
     TermVarId xs[4] = { vB, vA, vt, vQ }; RefId im[4] = { B, A, t, Q }; return inst(tp, 4, xs, im);
+}
+
+RefId rt_node_fun(uint64_t a, uint64_t b, uint64_t r, RefId *type) {
+    rt_init(); Key k = { RT_NODE_FUN, a, b, r }; RefId t;
+    uint64_t s = LMAX(a, r), lDT = diag_level(b, r), outl = diag_level(b, s);
+    RefId UA = mk_universe(a), UB = mk_universe(b);
+    TermVarId vB = tv(k, 0, UB), vA = tv(k, 1, UA); RefId Bv = ref_var(vB), Av = ref_var(vA);
+    TermVarId vt = tv(k, 2, Av); RefId tv_ = ref_var(vt);
+    TermVarId vx = tv(k, 10, Av); RefId Ex = mk_path_const(a, Av, tv_, ref_var(vx)); TermVarId ve = tv(k, 11, Ex);
+    RefId DT = rt_diagram_type(b, r, Bv);
+    RefId QT = mk_pi_lv(a, LMAX(a, lDT), vx, Av, mk_pi_lv(a, lDT, ve, Ex, DT)); uint64_t ql = LMAX(a, lDT);
+    TermVarId vQ = tv(k, 3, QT);
+    if (!memo_get(k, &t)) {
+        RefId body = rt_diagram_extend(a, b, r, Av, tv_, ref_var(vQ), Bv);
+        body = mk_lam_lv(ql, vQ, QT, body); body = mk_lam_lv(a, vt, Av, body);
+        body = mk_lam_lv(level_succ(a), vA, UA, body); body = mk_lam_lv(level_succ(b), vB, UB, body);
+        t = body; memo_put(k, t);
+    }
+    if (type) {
+        RefId T = mk_pi_lv(ql, outl, vQ, QT, rt_diagram_type(b, s, Bv)); uint64_t l = LMAX(ql, outl);
+        T = mk_pi_lv(a, l, vt, Av, T); l = LMAX(a, l);
+        T = mk_pi_lv(level_succ(a), l, vA, UA, T); l = LMAX(level_succ(a), l);
+        T = mk_pi_lv(level_succ(b), l, vB, UB, T);
+        *type = T;
+    }
+    return t;
 }
 
 /* ------------------------------------------------------------------ */

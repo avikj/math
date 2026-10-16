@@ -61,6 +61,31 @@ int main(int argc, char **argv) {
       CHECK(chk(G3, rt_diagram_extend(0, 0, 0, A, t, ref_var(vQ), B), DT) == CK_VALID, "extend(A,t,Q) : Diagram with composed singleton maps (%s)", why);
       CHECK(transform_count() == 0, "no transform registered by the constructions"); }
 
+    /* ---- §96: the closed node function per exact level tuple; a computed tail is an ordinary argument ---- */
+    { ContextId empty = context_make(0, NULL, fc_true());
+      const uint64_t lv[4][3] = { { 0, 0, 0 }, { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } };
+      for (int j = 0; j < 4; j++) { RefId NT; RefId N = rt_node_fun(lv[j][0], lv[j][1], lv[j][2], &NT);
+          CHECK(chk(empty, N, NT) == CK_VALID, "closed node_(%llu,%llu,%llu) with arbitrary dependent tail and all four fields (%s)", (unsigned long long)lv[j][0], (unsigned long long)lv[j][1], (unsigned long long)lv[j][2], why); }
+      size_t templates = rt_template_count(); rt_node_fun(0, 0, 0, NULL);
+      CHECK(rt_template_count() == templates, "node_(0,0,0) is one fixed template (no rebuild per invocation)");
+      /* the author's §96.4 example: Q = λx e. zero(A, x) through an identity application, applied to the closed function */
+      TermVarId vA = tv(U0); RefId A = ref_var(vA); TermVarId vt = tv(A), vy = tv(A); RefId t = ref_var(vt), y = ref_var(vy);
+      RefId P = mk_path_const(0, A, t, y); TermVarId vp = tv(P); RefId p = ref_var(vp);
+      CtxDecl ds[4] = { { S_TERM, vA, U0 }, { S_TERM, vt, A }, { S_TERM, vy, A }, { S_TERM, vp, P } }; ContextId G = context_make(4, ds, fc_true());
+      TermVarId vx = tv(A); RefId Ex = mk_path_const(0, A, t, ref_var(vx)); TermVarId ve = tv(Ex);
+      RefId DT = rt_diagram_type(0, 0, A);
+      RefId QT = mk_pi_lv(0, 1, vx, A, mk_pi_lv(0, 1, ve, Ex, DT));
+      RefId Q = mk_lam_lv(0, vx, A, mk_lam_lv(0, ve, Ex, rt_diagram_zero(0, A, ref_var(vx))));
+      RefId computedQ = mk_app(mk_id_fun(1, QT), Q);
+      RefId N = rt_node_fun(0, 0, 0, NULL);
+      RefId D = app2(app2(N, A, A), t, computedQ);
+      CHECK(convert_term(G, fc_true(), rt_diagram_value(D), t, A) == CV_EQUAL, "node applied to a computed tail: centre ≡ t");
+      RefId S = rt_diagram_family(D, y), E = rt_diagram_maps(D, y);
+      RefId w = mk_app(rt_maps_d(E), p), fw = mk_app(rt_maps_c(E), w);
+      CHECK(chk(G, w, S) == CK_VALID && chk(G, fw, P) == CK_VALID, "expansion of an output path and its collapse type-check (%s)", why);
+      CHECK(convert_term(G, fc_true(), D, rt_diagram_extend(0, 0, 0, A, t, computedQ, A), DT) == CV_EQUAL, "node_(0,0,0)(B,A,t,Q) ≡ extend(A,t,Q) — the same template instance by β");
+      CHECK(transform_count() == 0, "no transform registered"); }
+
     /* ---- groupoid witnesses by path induction ---- */
     { TermVarId vA = tv(U0); RefId A = ref_var(vA); TermVarId va = tv(A), vb = tv(A), vc = tv(A), vd = tv(A);
       RefId a = ref_var(va), b = ref_var(vb), c = ref_var(vc), dd = ref_var(vd);
