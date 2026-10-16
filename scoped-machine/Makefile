@@ -176,8 +176,8 @@ test: all
 	for m in both transform reference; do ./build/review-assumption-copy $$m || exit 1; done
 	./build/review-kernel-budget 64
 	for m in independent independent-release independent-cone retry prepare-retry lifecycle fresh-retire; do ./build/review-v20 $$m || exit 1; done
-	./build/review-v20 evaluator 32
-	./build/review-v20 map-sort 64
+	for n in 32 256 1024; do ./build/review-v20 evaluator $$n || exit 1; done
+	for n in 64 512; do ./build/review-v20 map-sort $$n || exit 1; done
 	for n in 64 300; do ./build/review-v20-intern $$n || exit 1; done
 
 ACCEPT_MODES := origin alpha face specialize environment identity-name work
@@ -258,6 +258,12 @@ tsan:
 	for m in both transform reference; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_assumption_copy $$m || exit 1; done
 	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -o build/tsan/review_kernel_budget tests/review_kernel_budget.c $(filter-out build/tsan/work.o,$(TSAN_CORE))
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_kernel_budget 32
+	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -Wl,--wrap=qsort -o build/tsan/review_v20 tests/review_v20.c $(filter-out build/tsan/work.o,$(TSAN_CORE))
+	for m in independent independent-release independent-cone retry prepare-retry lifecycle fresh-retire; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_v20 $$m || exit 1; done
+	for n in 32 256; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_v20 evaluator $$n || exit 1; done
+	for n in 64 512; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_v20 map-sort $$n || exit 1; done
+	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -o build/tsan/review_v20_intern tests/review_v20_intern.c $(TSAN_CORE)
+	for n in 64 300; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_v20_intern $$n || exit 1; done
 
 clean:
 	rm -f src/*.o tests/*.o
