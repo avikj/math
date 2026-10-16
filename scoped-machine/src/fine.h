@@ -44,6 +44,8 @@ typedef enum {
     FC_ALLOC_OPS,             /* kalloc: slots taken or returned */
     FC_ALLOC_WORDS,           /* kalloc: words cleared (calloc) or copied (realloc), one transition each */
     FC_SORT_STEPS,            /* sort_unique_u64: one sift (≤ 64 iterations) or one dedupe step */
+    FC_ADAPTER_STEPS,         /* find_adapter: one candidate position examined under entries_mu */
+    FC_COPY_WORDS,            /* words_append / variable-length copies: one word per transition */
     FC_COUNT
 } FineCounter;
 

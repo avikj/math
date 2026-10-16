@@ -421,30 +421,39 @@ static bool adapter_candidate(Entry *src_e, EntryId src, MapId sigma, FaceId eta
     *out = r; *prefix = map_is_identity(sigma) ? rc(RC_RESTRICT, src, eta, 0, 3) : rc(RC_SPEC, src, sigma, 0, 3);
     return true;
 }
-static bool find_adapter(RefId t, ShapeId s, FaceId eta, EntryId self, RefId *out, uint64_t *prefix, EntryId *src_out) {
-    pthread_mutex_lock(&E.entries_mu);
+/* the candidates are visited by a cursor: each acquisition of entries_mu
+ * examines one position (an entry of this shape, a reference of this shape,
+ * an instantiation edge, an entry of the edge's source shape) and the
+ * candidate is tested outside the lock (lock-section audit: the former
+ * collection of every candidate under entries_mu) */
+typedef struct { int phase; size_t k, q, j; } AdapterCursor;
+static int adapter_next_locked(AdapterCursor *c, RefId t, ShapeId s, EntryId self, EntryId *e, uint64_t *m) {
     ShapeSide *ss = shape_side_locked(s, false);
-    VEC(EntryId) cands = {0}; VEC(uint64_t) maps = {0};
-    if (ss) {
-        for (size_t k = 0; k < ss->entries.len; k++) if (ss->entries.data[k] != self) { vec_push(&cands, ss->entries.data[k]); vec_push(&maps, map_identity()); }
-        /* edges of this reference and of every reference requested with this shape */
-        for (size_t k = 0; k <= ss->refs.len; k++) {
-            RefId r = k < ss->refs.len ? ss->refs.data[k] : t;
-            const uint64_t *pairs; size_t np = instantiation_edges(r, &pairs);
-            for (size_t q = 0; q < np; q++) {
-                ShapeSide *src_side = shape_side_locked(shape_of(pairs[2 * q]), false);
-                if (!src_side) continue;
-                for (size_t j = 0; j < src_side->entries.len; j++) { vec_push(&cands, src_side->entries.data[j]); vec_push(&maps, pairs[2 * q + 1]); }
-            }
-        }
+    if (!ss) return 0;
+    if (c->phase == 0) {
+        if (c->k < ss->entries.len) { EntryId x = ss->entries.data[c->k++]; if (x == self) return 2; *e = x; *m = map_identity(); return 1; }
+        c->phase = 1; c->k = c->q = c->j = 0; return 2;
     }
-    pthread_mutex_unlock(&E.entries_mu);
-    bool found = false;
-    for (size_t k = 0; k < cands.len && !found; k++) {
-        if (adapter_candidate(ENT(cands.data[k]), cands.data[k], maps.data[k], eta, s, out, prefix)) { *src_out = cands.data[k]; found = true; }
+    if (c->k > ss->refs.len) return 0;
+    RefId r = c->k < ss->refs.len ? ss->refs.data[c->k] : t;
+    const uint64_t *pairs; size_t np = instantiation_edges(r, &pairs);
+    if (c->q >= np) { c->k++; c->q = c->j = 0; return 2; }
+    ShapeSide *src_side = shape_side_locked(shape_of(pairs[2 * c->q]), false);
+    if (!src_side || c->j >= src_side->entries.len) { c->q++; c->j = 0; return 2; }
+    *e = src_side->entries.data[c->j++]; *m = pairs[2 * c->q + 1];
+    return 1;
+}
+static bool find_adapter(RefId t, ShapeId s, FaceId eta, EntryId self, RefId *out, uint64_t *prefix, EntryId *src_out) {
+    AdapterCursor c = {0};
+    for (;;) {
+        EntryId e = 0; uint64_t m = 0;
+        pthread_mutex_lock(&E.entries_mu);
+        int st = adapter_next_locked(&c, t, s, self, &e, &m);
+        pthread_mutex_unlock(&E.entries_mu);
+        fine_bump(FC_ADAPTER_STEPS);
+        if (st == 0) return false;
+        if (st == 1 && adapter_candidate(ENT(e), e, m, eta, s, out, prefix)) { *src_out = e; return true; }
     }
-    vec_free(&cands); vec_free(&maps);
-    return found;
 }
 EntryState eval_entry_state(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); EntryState s = x->state; pthread_mutex_unlock(&x->mu); return s; }
 FaceId eval_entry_face(EntryId e) { return ENT(e)->face; }
