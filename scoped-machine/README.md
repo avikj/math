@@ -726,9 +726,11 @@ of the fine counts is asserted across policies.
 
 **Bounded-helper audit (§81.2, revised by §94).** Word size 64 bits; checked
 natural costs below 2^62 with overflow reported as `OP_RESOURCE_LIMIT`; chunk
-bound `CHUNK_WORDS = 32`; allocator model: `malloc/free/realloc` of a block are
-one step each, vector growth amortized one word per pushed word (charged as
-`alloc_words`). The contract of `op_step(h, b)` is: at most `b` units, each one
+bound `CHUNK_WORDS = 32`; allocator: `src/arena.c` — one host reservation at
+initialization, then free-list operations with an architecture-fixed step
+bound; clearing and copying only in `CHUNK_WORDS` units; the only host calls
+inside a unit are constant-size (`alloc_words`/`release_words` count the words
+taken and returned). The contract of `op_step(h, b)` is: at most `b` units, each one
 of the bounded bodies below, and the continuation retained. The table lists
 every variable-size operation reachable from a unit, with the state it keeps
 between units:
@@ -752,8 +754,8 @@ between units:
 | demand-graph node index, atom-map index, weight override lookup from a unit (≤ 4-word keys) | framed `LOOKUP` (one hashed word / one probe / one compared word per unit; generation-checked): the demand graph's producer → node index is a record `[K_MEMO, 0xD6, graph, producer]` looked up once per popped producer (`DEMAND` ph 12, `EXTRACT` ph 24); atom images (`MAPF` ph 7, `MAPSET` ph 2, `MAPP` ph 16) and the split atom's weight (`PROOF` ph 45, `MAPP` ph 17) are delivered by the framed lookup. `find_sync` remains for the synchronous constructors only (it never drains a relocation; its collision chain is walked inside the caller, outside the bounded API) | `acc3` (node record), `acc2`/`d` (held operands) |
 | record-store growth (`INTERN` ph 5) | framed: reservation is a logical extent (header words only; the payload is written one word per unit by the copy phase and never zero-filled — the v14 review's `reservation.patch`); when the store has no capacity, one unit allocates the new block (no copy) and each following unit relocates at most `CHUNK_WORDS` words of the old block (`store_grow_chunk`); during the relocation every record below the old extent is read from the old block, which stays complete (a write below it is mirrored once the copy cursor has passed), and a reservation waits for the relocation to finish; the offset table is a non-moving chunked array (no relocation on growth). The synchronous paths complete a pending store relocation before touching the store (`store_settle`) | `KTab.sold`, `sold_n`, `smoved` |
 | `PREPARE` order list and hypotheses set; `FAMOP` plus | ownership transfer: the order list is accumulated as the record itself (`K_LIST` first) and handed to `LIST`; the hypotheses are handed to the framed `SORT` (one sift / one dedupe element per unit) whose `INTERN` yields the set — no sort or copy inside the unit; `FAMOP` plus pushes one member per unit and hands its buffer to `NORMALIZE` | `buf2`, `buf3` |
-| growth of a frame's own buffers and of the per-operation vectors (`words_push` on `buf/buf2/buf3`, `vec_push` on demand producers/occurrences, frame stacks) | **amortized only**: a push that doubles a private buffer copies it inside the unit; the words are charged (`alloc_words`) but the call is not suspended. (The shared record store and the offset table are no longer in this row.) | — |
-| the allocator under the bounded bodies (`store_begin_grow`: variable-sized `malloc`; `ktab_begin_grow`: variable-sized `calloc`; the chunk `calloc`s of `Chunked`; the `free` of a retired block) | **host operations, not refined**: the relocation loops above are bounded, but the block allocation, its zero-initialization (`calloc`) and its release are each one host call of input-dependent size; the "one step per allocator call" model stated at the top of this table is weaker than §§89/94's bounded arena / free-list operations with growth, clearing and copying charged separately. Every unit that performs one of these calls is bounded **under that allocator assumption** and not by a C-instruction bound | — |
+| a frame's own buffers, frame stacks, cone paths, waiter registries, demand producers/occurrences, realization plans/connectors (`src/arena.c`, `Paged`) | paged: fixed pages (`ARENA_PAGE` = 512 words) reached through at most two fixed directory levels; push, read, write, pop, truncate and ownership transfer are O(1), a filled page takes one page from the arena's free list, nothing is copied on growth; a released buffer is *retired* in O(1) and its pages are returned one per unit (`arena_reap` in `op_step`). The public readers of demand/realization lists materialize a contiguous view once, synchronously (outside the bounded API) | `Paged` descriptor (pages, directories) |
+| the allocator under the bounded bodies (`src/arena.c`) | one host operation at initialization reserves a fixed virtual range (2^31 words, pages committed on first touch); afterwards no host allocation of input-dependent size is made by the engine. Blocks are powers of two pages on per-order free lists: an allocation pops its order or splits the smallest larger free block (≤ `ARENA_ORDERS` = 23 steps, architecture-fixed), a release pushes (one step; no coalescing — a released block is reused by its order or smaller). The record store's block (`store_begin_grow`) and the slot arrays come from the arena; **clearing is in units**: the next slot array is taken uncleared and zeroed `CHUNK_WORDS` per unit (`ktab_prepare_grow`) before the relocation into it begins; the store block is never cleared (every word is written before it is readable). Copying is only the relocation units above. Remaining fixed-size host calls: the `Op`/`Demand`/`Real`/`WorkSetInfo` records and the `Chunked` chunks of the side and offset tables (constant-size `calloc`), one per object or chunk | `KTab.fresh/cleared`, arena free lists, retirement queue |
 | kernel calls from `ATOMSPEC` / `PREPARE` / proof-use audit (`reindex`, `fc_reindex`, `ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`, `check_map`, `proof_use`) | **not refined**: charged as `kernel_calls`; the reuse administration they perform is charged retrospectively into `SHAPE_NODE` / `DEPENDENCY_CHECK` / `RECEIPT` from the kernel's counters (`kernel_mark/kernel_charge`), and the audit's traversal steps into `AUDIT_STEPS` (fine vector); none of these is resumable | — |
 | constructor-level synchronous APIs (`set_make`, `plan_make`, `connector_make`, `model_with_weight`, `boundary_make`, `job_sync` entries) | outside the bounded API (no bounded-step claim) | — |
 
@@ -765,12 +767,13 @@ per unit (before: 256 in the completing unit).
 
 Consequently the §65 constant-factor refinement is **not claimed** for units
 that reach the kernel (specialization of producer atoms, preparation's typing
-and proof-use checks) or for the amortized growth of a frame's private
-buffers, and for units that allocate, clear or release a block it is claimed
-only under the stated host-allocator assumption; it is claimed for the
-formula, set, cost, certificate, realization, demand, family, scheduling,
-delivery and boundary operations, whose every unit is one of the bounded
-bodies above. `FR_SHAPE_NODE`,
+and proof-use checks); it is claimed for the formula, set, cost,
+certificate, realization, demand, family, scheduling, delivery and boundary
+operations and for the allocator beneath them (`src/arena.c`: one fixed
+reservation, then free-list operations with an architecture-fixed step bound,
+clearing and copying in `CHUNK_WORDS` units), whose every unit is one of the
+bounded bodies above; the only host calls left inside a unit are
+constant-size (`calloc` of a fixed record or chunk). `FR_SHAPE_NODE`,
 `FR_DEPENDENCY_CHECK` and `FR_RECEIPT` are now charged (from the kernel's
 counts) but remain accounted rather than resumable families.
 
@@ -832,10 +835,10 @@ One more defined-behaviour fix found by the TSan run of `review_runtime_edges
 residual`: `check` now writes an empty diagnostic on VALID (callers print the
 reason after a valid check; it was left unassigned).
 
-Still outside the unit bound after R6 (unchanged disclosure): fixed-key index
-probes (`WordMap` in the demand graph, `find_sync` for weights and atom maps),
-amortized buffer growth inside a unit, and the kernel/audit calls charged as
-`kernel_calls`. The bounded-machine contract is not marked complete.
+Outside the unit bound after R6 at that commit (4d51993): fixed-key index
+probes, amortized buffer growth inside a unit, and the kernel/audit calls —
+the first two are lowered in the later passes below (framed lookups; the
+arena and paged buffers); the kernel/audit calls remain (see "The allocator").
 
 ### The b8ba937 review — R2 through the §96 entry (`REVIEW-b8ba937.md`)
 
@@ -890,19 +893,42 @@ than listed as pending splits. `run_v16_review.py` (twelve focused jobs)
 passes under both sanitizers (`tests/acceptance-results/v17/`); the author's
 bundle is in `tests/review-v16/`.
 
-Still outside the unit bound, stated exactly: (1) kernel and audit calls made
+### The allocator (§§89/94) — `src/arena.c`
+
+The same pass completes the allocator the v16 review required under the
+bounded bodies. `arena_init` makes the one host reservation (a fixed virtual
+range of 2^31 words, `MAP_NORESERVE`; pages are committed by first touch);
+every block the engine uses afterwards — the record store's blocks, the slot
+arrays, every page of every paged buffer — comes from per-order free lists
+over that range (pop, or split the smallest larger free block in at most 23
+steps; release is one push; no coalescing). The frame buffers, frame stacks,
+cone paths, waiter registries, demand producers/occurrences and realization
+plans/connectors are `Paged` (fixed 512-word pages behind at most two fixed
+directory levels): O(1) push/read/write/pop/truncate/transfer, no copy on
+growth, release by retirement with one page returned per unit. Slot-array
+growth is now three kinds of unit — one allocation, `CHUNK_WORDS` slots
+cleared, `CHUNK_WORDS` slots relocated — and the synchronous `expr`/`set`
+constructors run the same steps to completion. `tests/review_arena_budget.c`
+(gated under both sanitizers): 100 000 pushes move no element and make at most
+two arena allocations per push (197 pages); an INTERN through a table at its
+load bound clears at most 32 slots and relocates at most 32 per unit with at
+most 2 arena operations per unit (1 024 → 2 048 slots in 126 units); a SORT
+over an 8-page buffer releases at most one page per unit. The author's
+white-box probes (`review_work_budget`, `review_work_edges`,
+`review_reservation_budget`, `review_store_growth`, `review_store_interleave`,
+`review_prepare_boundary`) are unchanged: `words_push` on a frame buffer
+dispatches to the paged push, `.len`/`.n` both name a paged count, and the
+reservation probe's own `words_reserve` call on the store is a no-op because
+the store's first arena block is 2^20 words (a `realloc` of an arena block
+would be invalid; the probe never reaches one).
+
+Still outside the unit bound, stated exactly: the kernel and audit calls made
 from `ATOMSPEC`, `PREPARE` and the proof-use audit (`reindex`, `fc_reindex`,
 `ref_validate`, `shape_of`, `eval_entry_lookup`, `infer`, `check`,
 `check_map`, `proof_use`, `transform_proof_use`) — charged as `kernel_calls`
 with their reuse administration charged retrospectively; none has a
-persistent continuation through its own loops; (2) the allocator under the
-bounded bodies — variable-sized `malloc`/`calloc`/`free` for the store block,
-the slot array, `Chunked` chunks and retired blocks — so the units performing
-them are bounded only under the stated allocator assumption, not by a
-C-instruction bound; (3) amortized growth of a frame's private buffers and the
-per-operation vectors (`words_push` on `buf/buf2/buf3`, `vec_push` on demand
-producers/occurrences, frame stacks). The bounded-machine contract is not
-marked complete.
+persistent continuation through its own loops. The bounded-machine contract
+is not marked complete.
 
 ### §83 — presentations, diagram values and the generic action as core terms (`src/runtime.c`)
 
