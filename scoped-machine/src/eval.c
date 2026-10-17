@@ -1,6 +1,7 @@
 #include "eval.h"
 #include <sys/mman.h>
 #define ROOTS_CAP ((size_t)1 << 24)
+#define QUEUE_CAP ((size_t)1 << 24)
 #include "lib.h"
 #include "net.h"
 #include "compiler.h"
@@ -143,6 +144,9 @@ void eval_init(void) {
     chunked_init(&E.entries, sizeof(Entry));
     pthread_mutex_init(&E.entries_mu, NULL);
     pthread_mutex_init(&E.q_mu, NULL);
+    E.queue.cap = QUEUE_CAP;
+    E.queue.data = mmap(NULL, QUEUE_CAP * sizeof(*E.queue.data), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    require(E.queue.data != MAP_FAILED, "eval: queue reservation");
     pthread_cond_init(&E.q_cv, NULL);
     pthread_cond_init(&E.idle_cv, NULL);
     pthread_mutex_init(&E.res_mu, NULL);
@@ -224,7 +228,8 @@ void eval_free(void) {
     for (size_t i = 0; i < E.joins.len; i++) if (E.joins.data[i]) { Gather *g = E.joins.data[i]; pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g); }
     vec_free(&E.joins);
     pthread_mutex_destroy(&E.join_mu);
-    vec_free(&E.queue);
+    if (E.queue.data) munmap(E.queue.data, QUEUE_CAP * sizeof(*E.queue.data));
+    E.queue.data = NULL; E.queue.len = E.queue.cap = 0;
     pthread_mutex_destroy(&E.entries_mu); pthread_mutex_destroy(&E.q_mu); pthread_mutex_destroy(&E.res_mu);
     pthread_cond_destroy(&E.q_cv); pthread_cond_destroy(&E.idle_cv);
     memset(&E, 0, sizeof E);
@@ -280,7 +285,7 @@ static void reserve_job(void) { pthread_mutex_lock(&E.q_mu); E.outstanding++; pt
 static void enqueue_reserved(Task t) {
     fine_bump(FC_QUEUE_OPS); fine_bump(FC_LOCK_ATTEMPTS);
     pthread_mutex_lock(&E.q_mu);
-    vec_push(&E.queue, t);
+    require(E.queue.len < E.queue.cap, "eval: queue reservation exhausted"); E.queue.data[E.queue.len++] = t;   /* a fixed reservation: no growth under q_mu */
     pthread_cond_signal(&E.q_cv);
     pthread_mutex_unlock(&E.q_mu);
 }
@@ -288,7 +293,7 @@ static void enqueue(Task t) {
     fine_bump(FC_QUEUE_OPS); fine_bump(FC_LOCK_ATTEMPTS);
     pthread_mutex_lock(&E.q_mu);
     E.outstanding++;
-    vec_push(&E.queue, t);
+    require(E.queue.len < E.queue.cap, "eval: queue reservation exhausted"); E.queue.data[E.queue.len++] = t;   /* a fixed reservation: no growth under q_mu */
     pthread_cond_signal(&E.q_cv);
     pthread_mutex_unlock(&E.q_mu);
 }

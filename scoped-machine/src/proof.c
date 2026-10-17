@@ -22,10 +22,11 @@ uint64_t proof_audit_steps(void) { return __atomic_load_n(&P.steps, __ATOMIC_SEQ
 static void step(void) { __atomic_add_fetch(&P.steps, 1, __ATOMIC_RELAXED); fine_bump(FC_AUDIT_STEPS); }
 const char *proof_use_name(ProofUseStatus s) { static const char *n[] = { "CORE", "ASSUMED", "PENDING", "INVALID", "UNRESOLVED" }; return n[s]; }
 
-static uint64_t set_intern(uint64_t *w, size_t n) { n = sort_unique_u64(w, n); pthread_mutex_lock(&P.mu); uint64_t id = interner_intern(&P.sets, w, n, NULL); pthread_mutex_unlock(&P.mu); return id; }
+/* the interner and the word map are internally synchronized (§94): no outer P.mu section around them */
+static uint64_t set_intern(uint64_t *w, size_t n) { n = sort_unique_u64(w, n); return interner_intern(&P.sets, w, n, NULL); }
 static const uint64_t *set_get(uint64_t id, size_t *n) { return interner_get(&P.sets, id, n); }
-static bool memo_get(uint64_t kind, uint64_t a, uint64_t b, uint64_t *out) { uint64_t k[3] = { kind, a, b }; pthread_mutex_lock(&P.mu); bool h = wordmap_get(&P.ref_memo, k, 3, out); pthread_mutex_unlock(&P.mu); return h; }
-static void memo_put(uint64_t kind, uint64_t a, uint64_t b, uint64_t v) { uint64_t k[3] = { kind, a, b }; pthread_mutex_lock(&P.mu); wordmap_put(&P.ref_memo, k, 3, v); pthread_mutex_unlock(&P.mu); }
+static bool memo_get(uint64_t kind, uint64_t a, uint64_t b, uint64_t *out) { uint64_t k[3] = { kind, a, b }; bool h = wordmap_get(&P.ref_memo, k, 3, out); return h; }
+static void memo_put(uint64_t kind, uint64_t a, uint64_t b, uint64_t v) { uint64_t k[3] = { kind, a, b }; wordmap_put(&P.ref_memo, k, 3, v); }
 
 /* ---- the explicit owned traversal stack (§88.3) ----
  * A frame holds one node, its enumerated children (kind, id pairs) and the
