@@ -132,7 +132,7 @@ static void migrate_chunk(Interner *t) {
  * again outside the lock. No section hashes, compares or copies a record. */
 #define CAND_MAX 8
 #define PROBE_CHUNK 32
-typedef struct { unsigned arr; size_t p; uint64_t gen; bool started; size_t empty0; } Cursor;   /* arr 0 = current array, 1 = old; empty0 = the chain's empty slot in the current array */
+typedef struct { unsigned arr; size_t p; uint64_t gen; bool started; size_t empty0; uint64_t seen0, placed0; } Cursor;   /* seen0/placed0: the count and placements in the section that found empty0 */   /* arr 0 = current array, 1 = old; empty0 = the chain's empty slot in the current array */
 /* one locked section: ≤ PROBE_CHUNK probes; returns candidates in cand[0..k); *complete when the scan is finished */
 static size_t probe_section(Interner *t, Cursor *cu, uint64_t h, size_t n, uint64_t above, uint64_t *cand, bool *complete) {
     migrate_chunk(t);
@@ -143,7 +143,7 @@ static size_t probe_section(Interner *t, Cursor *cu, uint64_t h, size_t n, uint6
         if (!slots) { *complete = true; return k; }
         uint64_t id = slots[cu->p]; fine_bump(FC_INTERN_PROBES);
         if (!id) {   /* the chain ends in this array */
-            if (cu->arr == 0) { cu->empty0 = cu->p; if (t->old) { cu->arr = 1; cu->p = h & (t->old_n - 1); continue; } }
+            if (cu->arr == 0) { cu->empty0 = cu->p; cu->seen0 = t->n; cu->placed0 = t->placed; if (t->old) { cu->arr = 1; cu->p = h & (t->old_n - 1); continue; } }
             *complete = true; return k;
         }
         cu->p = (cu->p + 1) & (nslots - 1);
@@ -159,17 +159,17 @@ static uint64_t match_unlocked(const Interner *t, const uint64_t *cand, size_t k
 /* scan the chain for w; 0 when absent. On return with 0, *seen_out is the
  * record count and *gen_out the generation of the completing section */
 static uint64_t scan(Interner *t, uint64_t h, const uint64_t *w, size_t n, uint64_t above, uint64_t *seen_out, uint64_t *gen_out, size_t *empty_out, uint64_t *placed_out) {
-    Cursor cu = { 0, 0, 0, false, 0 }; uint64_t cand[CAND_MAX];
+    Cursor cu = { 0, 0, 0, false, 0, 0, 0 }; uint64_t cand[CAND_MAX];
     for (;;) {
         bool complete;
         pthread_mutex_lock(&t->mu);
         size_t k = probe_section(t, &cu, h, n, above, cand, &complete);
-        uint64_t seen = t->n, gen = t->gen, placed = t->placed;
+        uint64_t gen = t->gen;
         pthread_mutex_unlock(&t->mu);
         kc_safepoint();   /* between two locked sections: a spent grant yields here */
         uint64_t id = match_unlocked(t, cand, k, h, w, n);
         if (id) return id;
-        if (complete) { *seen_out = seen; *gen_out = gen; if (empty_out) *empty_out = cu.empty0; if (placed_out) *placed_out = placed; return 0; }
+        if (complete) { *seen_out = cu.seen0; *gen_out = gen; if (empty_out) *empty_out = cu.empty0; if (placed_out) *placed_out = cu.placed0; return 0; }   /* the snapshot of the section that found the chain end: a record published after it is a newcomer */
     }
 }
 uint64_t interner_find(Interner *t, const uint64_t *w, size_t n) {

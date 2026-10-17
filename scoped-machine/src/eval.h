@@ -59,6 +59,9 @@ typedef struct {
     VEC(uint64_t) gdeps;        /* pairs (symbol, revision) */
     RefId adapter; uint64_t adapter_prefix; EntryId adapter_src;   /* §78.3–78.4: continue from a completed receipt instead of evaluating the body */
     bool is_alias;              /* §76.3: published as the residual of another producer's answer; it never ran a body */
+    struct PrefixFact *prefix_head;   /* §84.2: the latest committed prefix fact of this producer (immutable facts, newest first; published with release) */
+    size_t n_prefix;                  /* facts published (under mu) */
+    const struct PrefixFact *adapter_fact;   /* the immutable prefix fact this producer continued from, or NULL */
     pthread_mutex_t mu; /* guards state, result, waiters and the counters above */
 } Entry;
 
@@ -142,10 +145,35 @@ size_t eval_entry_gdeps(EntryId e, const uint64_t **pairs);   /* (symbol, revisi
 bool eval_entry_deps_valid(EntryId e);                       /* every recorded revision is current */
 EntryId eval_entry_adapter_source(EntryId e);                /* the entry whose receipt this producer continued from, or 0 */
 bool eval_entry_is_alias(EntryId e);
-/* receipt records: [RC_REFL, t] | [RC_SEQ, first, then] | [RC_RULE, rule, x, y] | [RC_RESTRICT, source entry, face] | [RC_SPEC, source entry, map] */
-enum { RC_REFL = 1, RC_SEQ, RC_RULE, RC_RESTRICT, RC_SPEC };
+/* receipt records: [RC_REFL, t] | [RC_SEQ, first, then] | [RC_RULE, rule, x, y] | [RC_RESTRICT, source entry, face] | [RC_SPEC, source entry, map]
+ * | [RC_PREFIX_RESTRICT, prefix fact, face] | [RC_PREFIX_SPEC, prefix fact, map] (§84.2: an adapter from an immutable committed prefix) */
+enum { RC_REFL = 1, RC_SEQ, RC_RULE, RC_RESTRICT, RC_SPEC, RC_PREFIX_RESTRICT, RC_PREFIX_SPEC };
 enum { RR_CONG_APP = 1, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE, RR_CONG_COMP, RR_BETA, RR_FST, RR_SND, RR_PATH_BETA, RR_ENDPOINT, RR_UNFOLD, RR_GLUE, RR_SYSTEM, RR_SYSTEM_DIST, RR_COMP_TUBE, RR_COMP_EXPAND, RR_IDENTITY_APPLY };
 const uint64_t *eval_receipt_words(uint64_t receipt, size_t *n);
+
+/* §84.2 committed prefixes. A prefix fact is the immutable judgment
+ * face ⊢ source ⇒* residual, with its receipt and the (symbol, revision)
+ * premises the derivation used; a RUNNING producer publishes one at each
+ * forwarding cut (STEP / SEQ) and lifts a child's fact through its pending
+ * eliminator (CONTEXT). A fact is not a READY answer: the completed-answer
+ * accessors above are unchanged. */
+typedef struct PrefixFact {
+    uint64_t id;                 /* 1, 2, ... in publication order (machine-wide) */
+    EntryId src;                 /* the producer that published it */
+    RefId source; FaceId face;   /* the judgment's source and face (the producer's key face) */
+    RefId residual;              /* the cut it reached */
+    uint64_t receipt;            /* the receipt DAG of source ⇒* residual */
+    const uint64_t *gdeps; size_t ngdeps;   /* (symbol, revision) pairs the derivation used */
+    EntryId origin;              /* the producer whose own rule committed the first step (a lift never returns to it) */
+    struct PrefixFact *next;     /* the producer's previous fact */
+    struct PrefixFact *all_next; /* every fact, for teardown */
+} PrefixFact;
+const PrefixFact *eval_entry_prefix(EntryId e);              /* the latest committed prefix of e, or NULL (pinned: facts are immutable) */
+size_t eval_entry_prefix_count(EntryId e);
+const PrefixFact *eval_entry_adapter_fact(EntryId e);        /* the prefix fact this producer continued from, or NULL */
+bool eval_prefix_valid(const PrefixFact *f);                 /* every recorded revision is current */
+typedef struct { size_t published, lifted, notify_steps, adapters; } EvalPrefixEvents;
+EvalPrefixEvents eval_prefix_events(void);
 size_t eval_root_occurrences(EntryId **out);        /* copies the root occurrence list; caller frees *out */
 
 /* continuation constructors used by the net layer */
