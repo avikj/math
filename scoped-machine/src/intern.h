@@ -16,19 +16,21 @@
 
 #include "common.h"
 #include <pthread.h>
+#include "radix.h"
 
 #define CHUNK_BITS 11
 #define CHUNK_SIZE ((size_t)1 << CHUNK_BITS)
-#define MAX_CHUNKS ((size_t)1 << 15)
+/* The pointer index covers size_t; there is no fixed chunk count. */
 
-/* Non-moving, lazily chunked array of fixed-size elements. Element i lives
+/* Non-moving, lazily chunked array of fixed-size elements over a full-width
+ * sparse directory; there is no fixed maximum chunk count. Element i lives
  * at a stable address once created. Creation of a chunk is done under the
  * caller's lock; the chunk pointer is published with release semantics so a
  * reader that learned of index i through a synchronized channel can read it
  * without the lock. */
 typedef void *(*ChunkAlloc)(size_t bytes, void *ctx);   /* Returns an owned arena block; chunked_free releases it. */
 typedef struct {
-    void *dir[MAX_CHUNKS];
+    Radix dir;
     size_t elem;
     ChunkAlloc alloc; void *alloc_ctx;   /* NULL: calloc (the kernel's own tables) */
 } Chunked;

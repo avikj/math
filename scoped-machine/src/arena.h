@@ -13,15 +13,18 @@
  * growth does); copying is never performed here.
  *
  * Paged buffers: a variable-size buffer is a sequence of fixed pages reached
- * through a directory of at most two fixed levels — push, read, write, pop and
- * ownership transfer are O(1) with one fixed-size page taken from the arena
- * when a page fills; nothing is ever copied on growth. Release of a buffer's
- * pages is retired to a queue drained one page per unit (`arena_reap`). */
+ * through a lazy radix directory over the full size_t index domain. Its
+ * maximum path length follows from native index width, not an input-size
+ * restriction. Data never move. Retirement returns one data/directory page
+ * per arena_reap call. The allocator's separate fixed reservation limit is
+ * still pending the completion specified in BOUNDS-COMPLETION.md.
+ */
 #ifndef ARENA_H
 #define ARENA_H
 #include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "radix.h"
 
 #define ARENA_PAGE   512u                       /* words per page (4 KiB) */
 #define ARENA_ORDERS 23u                        /* orders 0..22: page × 2^k, the largest the whole range */
@@ -48,8 +51,7 @@ typedef struct {
     union { size_t n, len; };   /* elements (both names: white-box probes read either) */
     size_t pages;           /* pages allocated (kept across pops; released at retirement) */
     void *pg0;              /* page 0 */
-    void **dir;             /* pages 1..DIR-1 (dir[0] unused): one arena page of pointers */
-    void ***dir2;           /* dir2[k] = directory of pages k·DIR .. k·DIR+DIR-1 */
+    Radix index;            /* every resident page indexed over the full size_t domain */
 } Paged;
 #define PAGED_DIR (ARENA_PAGE)                   /* pointers per directory page */
 

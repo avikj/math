@@ -213,15 +213,28 @@ VarSetId origin_ft(OriginId c) { return OSIDE(c)->ft; }
 DimSetId origin_fd(OriginId c) { return OSIDE(c)->fd; }
 FaceId origin_required(OriginId c) { return OSIDE(c)->required; }
 
-static __thread FaceId tl_req_scope[16]; static __thread size_t tl_req_depth;
+typedef struct RequiredScope { FaceId face; struct RequiredScope *prev; } RequiredScope;
+static __thread RequiredScope *tl_req_scope;
+static __thread uint64_t tl_req_generation;
+static void required_scope_current(void) {
+    uint64_t g = machine_generation();
+    if (tl_req_generation != g) {
+        while (tl_req_scope) { RequiredScope *p = tl_req_scope; tl_req_scope = p->prev; free(p); }
+        tl_req_generation = g;
+    }
+}
 static __thread uint64_t tl_levels = LEVELS_NONE;   /* formation levels of the origin being built (§59.1) */
 void term_require_push(FaceId phi) {
-    require(tl_req_depth < 16, "required-face scope too deep");
-    FaceId f = tl_req_depth ? fc_meet(tl_req_scope[tl_req_depth - 1], phi) : phi;
-    tl_req_scope[tl_req_depth++] = f;
+    required_scope_current();
+    FaceId f = tl_req_scope ? fc_meet(tl_req_scope->face, phi) : phi;
+    RequiredScope *p = malloc(sizeof *p); require(p, "out of memory");
+    p->face = f; p->prev = tl_req_scope; tl_req_scope = p;
 }
-void term_require_pop(void) { require(tl_req_depth > 0, "required-face scope underflow"); tl_req_depth--; }
-static FaceId current_declared_required(void) { return tl_req_depth ? tl_req_scope[tl_req_depth - 1] : 0; }
+void term_require_pop(void) {
+    required_scope_current(); require(tl_req_scope, "required-face scope underflow");
+    RequiredScope *p = tl_req_scope; tl_req_scope = p->prev; free(p);
+}
+static FaceId current_declared_required(void) { required_scope_current(); return tl_req_scope ? tl_req_scope->face : 0; }
 FaceId origin_declared_required(OriginId c) {
     size_t n; const uint64_t *w = interner_get(&M.origins, c, &n);
     return w[n - 2];
@@ -320,6 +333,16 @@ OriginId origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nf,
     }
     return origin_intern(tag, payload, fields, nf, binders, nb, ft, fd, req);
 }
+
+/* Bound atoms retain both coordinates; the tag marks a table identity. */
+uint64_t bound_id(size_t depth, size_t slot) {
+    uint64_t w[2] = { depth, slot };
+    uint64_t id = interner_intern(&M.bound_atoms, w, 2, NULL);
+    require(id < BOUND_BIT, "bound atom address space exhausted");
+    return BOUND_BIT | id;
+}
+size_t bound_depth(uint64_t id) { size_t n; require(is_bound_id(id), "not a bound atom"); return (size_t)interner_get(&M.bound_atoms, id & ~BOUND_BIT, &n)[0]; }
+size_t bound_slot(uint64_t id) { size_t n; require(is_bound_id(id), "not a bound atom"); return (size_t)interner_get(&M.bound_atoms, id & ~BOUND_BIT, &n)[1]; }
 
 /* ================= references ================= */
 /* record: [1, x] for VAR ; [2, origin, map] for VIEW */

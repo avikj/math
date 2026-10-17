@@ -54,14 +54,14 @@ void term_levels_push(uint64_t m, uint64_t n);
 void term_levels_pop(void);
 
 /* ---- bound local occurrences (§50) ----
- * A local of a scope telescope is a (depth, slot) atom encoded in the
+ * A local of a scope telescope is an interned (depth, slot) atom tagged in the
  * variable / dimension id space with the top bit set; it has no declaration
  * record and no free support. */
 #define BOUND_BIT (1ULL << 61)           /* below the atom shift of the interval/face encodings */
-static inline uint64_t bound_id(uint32_t depth, uint32_t slot) { return BOUND_BIT | ((uint64_t)depth << 32) | slot; }
+uint64_t bound_id(size_t depth, size_t slot);
 static inline bool is_bound_id(uint64_t id) { return (id & BOUND_BIT) != 0; }
-static inline uint32_t bound_depth(uint64_t id) { return (uint32_t)((id & ~BOUND_BIT) >> 32) & 0x1fffffffu; }
-static inline uint32_t bound_slot(uint64_t id) { return (uint32_t)(id & 0xffffffffULL); }
+size_t bound_depth(uint64_t id);
+size_t bound_slot(uint64_t id);
 
 const char *tag_name(Tag t);
 

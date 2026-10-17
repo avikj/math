@@ -64,11 +64,11 @@ typedef uint64_t FaceId;
 typedef uint64_t SymbolId;
 typedef uint64_t DimSetId;   /* interned sorted set of DimVarId */
 typedef uint64_t VarSetId;   /* interned sorted set of TermVarId */
-typedef uint32_t BinderSlot;
-typedef uint32_t FieldIndex;
+typedef size_t BinderSlot;
+typedef size_t FieldIndex;
 
-#define NO_SLOT ((BinderSlot)0xFFFFFFFFu)
-#define NO_FIELD ((FieldIndex)0xFFFFFFFFu)
+#define NO_SLOT ((BinderSlot)SIZE_MAX)
+#define NO_FIELD ((FieldIndex)SIZE_MAX)
 
 /* ---- fatal errors (host failures, never object-language values) ---- */
 #define die(...) do { fprintf(stderr, "fatal: "); fprintf(stderr, __VA_ARGS__); \

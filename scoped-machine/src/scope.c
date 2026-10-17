@@ -3,7 +3,7 @@
 #include "template.h"   /* the validator walks template environments */
 
 /* template layer: traversal of a TVIEW's environment (template.c) */
-RefId tview_traverse(RefId t, const Trav *tv, unsigned depth);
+RefId tview_traverse(RefId t, const Trav *tv, size_t depth);
 
 #define SSIDE(id) ((ScopeSide *)chunked_at(&M.scope_side, (id) - 1))
 
@@ -23,16 +23,16 @@ VarSetId varset_free(VarSetId s) {
 /* ------------------------------------------------------------------ */
 /* traversal                                                             */
 
-typedef struct { const Trav *tv; unsigned depth; } DimCb;
+typedef struct { const Trav *tv; size_t depth; } DimCb;
 static IntervalId dim_cb(DimVarId i, void *ctx) {
     DimCb *c = ctx;
     IntervalId r = c->tv->dim ? c->tv->dim(i, c->depth, c->tv->ctx) : 0;
     return r ? r : iv_var(i);
 }
-IntervalId trav_iv(IntervalId r, const Trav *tv, unsigned depth) { DimCb c = { tv, depth }; return iv_substitute(r, dim_cb, &c); }
-FaceId trav_fc(FaceId f, const Trav *tv, unsigned depth) { DimCb c = { tv, depth }; return fc_substitute(f, dim_cb, &c); }
+IntervalId trav_iv(IntervalId r, const Trav *tv, size_t depth) { DimCb c = { tv, depth }; return iv_substitute(r, dim_cb, &c); }
+FaceId trav_fc(FaceId f, const Trav *tv, size_t depth) { DimCb c = { tv, depth }; return fc_substitute(f, dim_cb, &c); }
 
-RefId trav_ref(RefId t, const Trav *tv, unsigned depth) {
+RefId trav_ref(RefId t, const Trav *tv, size_t depth) {
     if (ref_is_var(t)) {
         RefId r = tv->term ? tv->term(ref_var_id(t), depth, tv->ctx) : 0;
         return r ? r : t;
@@ -54,7 +54,7 @@ RefId trav_ref(RefId t, const Trav *tv, unsigned depth) {
     return out;
 }
 
-Val trav_val(Val v, const Trav *tv, unsigned depth) {
+Val trav_val(Val v, const Trav *tv, size_t depth) {
     Val o = v;
     switch (v.sort) {
     case VS_REF: o.id = trav_ref(v.id, tv, depth); break;
@@ -123,16 +123,16 @@ ScopeId scope_intern(size_t n, const LocalDecl *locals, Val body, RefId result_t
 /* capture: close the concrete locals of Δ into (depth, slot) atoms         */
 
 typedef struct { size_t n; const CaptureDecl *d; } CloseCtx;
-static RefId close_term(uint64_t x, unsigned depth, void *c) {
+static RefId close_term(uint64_t x, size_t depth, void *c) {
     CloseCtx *cc = c;
     if (is_bound_id(x)) return 0;
-    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_TERM && cc->d[k].id == x) return ref_var(bound_id(depth, (uint32_t)k));
+    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_TERM && cc->d[k].id == x) return ref_var(bound_id(depth, k));
     return 0;
 }
-static IntervalId close_dim(uint64_t i, unsigned depth, void *c) {
+static IntervalId close_dim(uint64_t i, size_t depth, void *c) {
     CloseCtx *cc = c;
     if (is_bound_id(i)) return 0;
-    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_DIM && cc->d[k].id == i) return iv_var(bound_id(depth, (uint32_t)k));
+    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_DIM && cc->d[k].id == i) return iv_var(bound_id(depth, k));
     return 0;
 }
 static uint64_t ids_key(size_t n, const CaptureDecl *d) {
@@ -181,7 +181,7 @@ static ScopeId trav_scope_records(ScopeId S, const Trav *tv, unsigned rd) {
     if (tv->key) wordmap_put(&M.trav_memo, key, 4, out);
     return out;
 }
-ScopeId trav_scope(ScopeId S, const Trav *tv, unsigned depth) { return trav_scope_records(S, tv, depth + 1); }
+ScopeId trav_scope(ScopeId S, const Trav *tv, size_t depth) { return trav_scope_records(S, tv, depth + 1); }
 
 /* ------------------------------------------------------------------ */
 /* structural validation (§50.1–2)                                       */
@@ -207,7 +207,7 @@ static void remember_validated(uint64_t kind, uint64_t id, uint64_t stk) {
     wordmap_put(&M.trav_memo, k, 3, 1);
 }
 static bool val_atom(ValCtx *v, uint64_t id, Sort want) {
-    uint32_t d = bound_depth(id), s = bound_slot(id);
+    size_t d = bound_depth(id), s = bound_slot(id);
     if (d >= v->stack.len) { v->why = "bound occurrence names no enclosing telescope"; return false; }
     ScopeId T = v->stack.data[v->stack.len - 1 - d];
     if (s >= scope_arity(T)) { v->why = "bound occurrence names a slot outside its telescope"; return false; }
@@ -314,18 +314,18 @@ bool ref_validate(RefId t, const char **reason) {
 /* application and ambient reindexing                                    */
 
 typedef struct { size_t n; const Val *args; } ApplyCtx;
-static RefId apply_term(uint64_t x, unsigned depth, void *c) {
+static RefId apply_term(uint64_t x, size_t depth, void *c) {
     ApplyCtx *a = c;
     if (!is_bound_id(x)) return 0;
-    uint32_t d = bound_depth(x), s = bound_slot(x);
+    size_t d = bound_depth(x), s = bound_slot(x);
     if (d < depth) return 0;
     if (d == depth) { require(s < a->n && a->args[s].sort == VS_REF && a->args[s].id, "scope application: missing or ill-sorted term argument"); return a->args[s].id; }
     return ref_var(bound_id(d - 1, s));
 }
-static IntervalId apply_dim(uint64_t i, unsigned depth, void *c) {
+static IntervalId apply_dim(uint64_t i, size_t depth, void *c) {
     ApplyCtx *a = c;
     if (!is_bound_id(i)) return 0;
-    uint32_t d = bound_depth(i), s = bound_slot(i);
+    size_t d = bound_depth(i), s = bound_slot(i);
     if (d < depth) return 0;
     if (d == depth) { require(s < a->n && a->args[s].sort == VS_INTERVAL && a->args[s].id, "scope application: missing or ill-sorted interval argument"); return a->args[s].id; }
     return iv_var(bound_id(d - 1, s));
@@ -361,8 +361,8 @@ void scope_local_at(ScopeId S, size_t k, const Val *args, RefId *type, FaceId *r
 }
 
 typedef struct { MapId sigma; } ReCtx;
-static RefId re_term(uint64_t x, unsigned depth, void *c) { (void)depth; if (is_bound_id(x)) return 0; RefId im = map_term_image(((ReCtx *)c)->sigma, x); return im == ref_var(x) ? 0 : im; }
-static IntervalId re_dim(uint64_t i, unsigned depth, void *c) { (void)depth; if (is_bound_id(i)) return 0; IntervalId im = map_dim_image(((ReCtx *)c)->sigma, i); return im == iv_var(i) ? 0 : im; }
+static RefId re_term(uint64_t x, size_t depth, void *c) { (void)depth; if (is_bound_id(x)) return 0; RefId im = map_term_image(((ReCtx *)c)->sigma, x); return im == ref_var(x) ? 0 : im; }
+static IntervalId re_dim(uint64_t i, size_t depth, void *c) { (void)depth; if (is_bound_id(i)) return 0; IntervalId im = map_dim_image(((ReCtx *)c)->sigma, i); return im == iv_var(i) ? 0 : im; }
 ScopeId reindex_scope(ScopeId S, MapId sigma) {
     if (map_is_identity(sigma)) return S;
     ReCtx c = { sigma };
@@ -371,8 +371,8 @@ ScopeId reindex_scope(ScopeId S, MapId sigma) {
 }
 
 /* remove the single binder level after ∀ */
-static RefId lower_term(uint64_t x, unsigned depth, void *c) { (void)c; if (!is_bound_id(x)) return 0; uint32_t d = bound_depth(x); require(d != depth, "forall: a local remained"); return d > depth ? ref_var(bound_id(d - 1, bound_slot(x))) : 0; }
-static IntervalId lower_dim(uint64_t i, unsigned depth, void *c) { (void)c; if (!is_bound_id(i)) return 0; uint32_t d = bound_depth(i); require(d != depth, "forall: a local remained"); return d > depth ? iv_var(bound_id(d - 1, bound_slot(i))) : 0; }
+static RefId lower_term(uint64_t x, size_t depth, void *c) { (void)c; if (!is_bound_id(x)) return 0; size_t d = bound_depth(x); require(d != depth, "forall: a local remained"); return d > depth ? ref_var(bound_id(d - 1, bound_slot(x))) : 0; }
+static IntervalId lower_dim(uint64_t i, size_t depth, void *c) { (void)c; if (!is_bound_id(i)) return 0; size_t d = bound_depth(i); require(d != depth, "forall: a local remained"); return d > depth ? iv_var(bound_id(d - 1, bound_slot(i))) : 0; }
 FaceId forall_scope(ScopeId S) {
     require(scope_arity(S) == 1 && scope_local(S, 0).sort == S_DIM && scope_body(S).sort == VS_FACE, "forall of a non-unary face scope");
     FaceId f = fc_forall(bound_id(0, 0), scope_body(S).id);

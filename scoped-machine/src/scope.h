@@ -27,18 +27,18 @@ typedef struct { Val body; RefId type; uint64_t level; FaceId guard; } TypedPart
 
 /* ---- generic depth-aware traversal over scoped values ---- */
 typedef struct {
-    RefId (*term)(uint64_t x, unsigned depth, void *ctx);        /* 0 = keep the occurrence */
-    IntervalId (*dim)(uint64_t i, unsigned depth, void *ctx);    /* 0 = keep */
+    RefId (*term)(uint64_t x, size_t depth, void *ctx);        /* 0 = keep the occurrence */
+    IntervalId (*dim)(uint64_t i, size_t depth, void *ctx);    /* 0 = keep */
     uint64_t key;                                                /* memo key of this traversal */
     void *ctx;
-    void (*enter)(ScopeId S, unsigned depth, void *ctx);         /* optional: a scope's records are about to be traversed at depth */
-    void (*leave)(ScopeId S, unsigned depth, void *ctx);
+    void (*enter)(ScopeId S, size_t depth, void *ctx);         /* optional: a scope's records are about to be traversed at depth */
+    void (*leave)(ScopeId S, size_t depth, void *ctx);
 } Trav;
-RefId trav_ref(RefId t, const Trav *tv, unsigned depth);
-IntervalId trav_iv(IntervalId r, const Trav *tv, unsigned depth);
-FaceId trav_fc(FaceId f, const Trav *tv, unsigned depth);
-ScopeId trav_scope(ScopeId S, const Trav *tv, unsigned depth);    /* the scope's records are at depth+1 */
-Val trav_val(Val v, const Trav *tv, unsigned depth);
+RefId trav_ref(RefId t, const Trav *tv, size_t depth);
+IntervalId trav_iv(IntervalId r, const Trav *tv, size_t depth);
+FaceId trav_fc(FaceId f, const Trav *tv, size_t depth);
+ScopeId trav_scope(ScopeId S, const Trav *tv, size_t depth);    /* the scope's records are at depth+1 */
+Val trav_val(Val v, const Trav *tv, size_t depth);
 
 /* ---- scopes ---- */
 ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result_type, uint64_t result_level, FaceId guard);

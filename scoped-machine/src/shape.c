@@ -7,11 +7,11 @@
 /* §94: the shape interner and memo are internally synchronized; no outer lock
  * is held around the hashing/copy of an input-sized shape record */
 static ShapeId shape_intern(const Words *w) { return interner_intern(&M.shapes, w->w, w->n, NULL); }
-static bool memo_get(RefId t, MapId rho, uint32_t depth, ShapeId *out) { uint64_t k[3] = { t, rho, depth }; return wordmap_get(&M.shape_memo, k, 3, out); }
-static void memo_put(RefId t, MapId rho, uint32_t depth, ShapeId v) { uint64_t k[3] = { t, rho, depth }; wordmap_put(&M.shape_memo, k, 3, v); }
+static bool memo_get(RefId t, MapId rho, size_t depth, ShapeId *out) { uint64_t k[3] = { t, rho, depth }; return wordmap_get(&M.shape_memo, k, 3, out); }
+static void memo_put(RefId t, MapId rho, size_t depth, ShapeId v) { uint64_t k[3] = { t, rho, depth }; wordmap_put(&M.shape_memo, k, 3, v); }
 
 /* ρ extended by one bound identity */
-static MapId rho_extend(MapId rho, Sort sort, uint64_t concrete, uint32_t depth, BinderSlot slot) {
+static MapId rho_extend(MapId rho, Sort sort, uint64_t concrete, size_t depth, BinderSlot slot) {
     MapBuilder b; mapb_init(&b);
     size_t nt = map_n_terms(rho), nd = map_n_dims(rho);
     for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(rho, k, &x, &im); if (!(sort == S_TERM && x == concrete)) mapb_term(&b, x, im); }
@@ -34,7 +34,7 @@ static MapId rho_restrict(MapId rho, RefId t) {
     return mapb_finish(&b);
 }
 
-ShapeId shape_under(RefId t, MapId rho, uint32_t depth) {
+ShapeId shape_under(RefId t, MapId rho, size_t depth) {
     ShapeId memo;
     rho = rho_restrict(rho, t);
     if (memo_get(t, rho, depth, &memo)) return memo;

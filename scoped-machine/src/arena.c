@@ -143,21 +143,14 @@ void paged_init(Paged *p, size_t elem) {
     require(elem && elem <= ARENA_PAGE * sizeof(uint64_t), "paged: element size");
     memset(p, 0, sizeof *p); p->elem = elem; p->per = (ARENA_PAGE * sizeof(uint64_t)) / elem;
 }
-static void *page_ptr(const Paged *p, size_t k) {   /* page k (exists) */
-    if (k == 0) return p->pg0;
-    if (k < PAGED_DIR) return p->dir[k];
-    return p->dir2[k / PAGED_DIR][k % PAGED_DIR];
-}
+static void *page_ptr(const Paged *p, size_t k) { return k ? radix_get(&p->index, k) : p->pg0; }
 static void page_set(Paged *p, size_t k, void *pg) {
-    if (k == 0) { p->pg0 = pg; return; }
-    if (k < PAGED_DIR) { if (!p->dir) p->dir = page_new(); p->dir[k] = pg; return; }
-    require(k / PAGED_DIR < PAGED_DIR, "paged: buffer exhausted");
-    if (!p->dir2) p->dir2 = page_new();
-    if (k % PAGED_DIR == 0) p->dir2[k / PAGED_DIR] = page_new();
-    p->dir2[k / PAGED_DIR][k % PAGED_DIR] = pg;
+    if (!k) { p->pg0 = pg; return; }
+    void **slot = radix_slot(&p->index, k, true); *slot = pg;
 }
 void *paged_at(const Paged *p, size_t i) { require(i < p->n, "paged: index"); return (char *)page_ptr(p, i / p->per) + (i % p->per) * p->elem; }
 void *paged_push(Paged *p) {
+    require(p->n < SIZE_MAX, "paged: address space exhausted");
     size_t i = p->n; size_t k = i / p->per;
     if (k >= p->pages) { page_set(p, k, page_new()); p->pages = k + 1; }   /* a new page: one fixed-size block from the free list */
     p->n++;
@@ -168,29 +161,22 @@ size_t paged_pages(const Paged *p) { return p->pages; }
 /* retirement: a buffer's pages and directory pages are released one per
  * `arena_reap`. The queue is intrusive: a retiree's descriptor lives in its
  * own page 0 (every retiree has one) */
-typedef struct { size_t pages, per, elem; void **dir; void ***dir2; size_t subdirs; void *next; } Retiree;
+typedef struct Retiree { size_t pages; Radix index; RadixRetire cursor; bool clearing_dirs; struct Retiree *next; } Retiree;
+_Static_assert(sizeof(Retiree) <= ARENA_PAGE * sizeof(uint64_t), "retirement cursor must fit a fixed page");
 static Retiree *R_head, *R_tail;
 static void enqueue(Retiree *r) { r->next = NULL; if (R_tail) R_tail->next = r; else R_head = r; R_tail = r; }
 void paged_retire(Paged *p) {
-    if (!p->pg0) { size_t elem = p->elem; paged_init(p, elem); return; }   /* never had a page */
-    Retiree *r = (Retiree *)p->pg0;   /* page 0 is 4 KiB: the descriptor fits */
-    Retiree d = { p->pages, p->per, p->elem, p->dir, p->dir2, 0, NULL };
-    if (d.dir2) d.subdirs = (p->pages - 1) / PAGED_DIR; /* live indices are 1..subdirs; index 0 is unused */
-    *r = d; enqueue(r);
-    size_t elem = p->elem; memset(p, 0, sizeof *p); p->elem = elem; p->per = (ARENA_PAGE * sizeof(uint64_t)) / elem;
+    if (!p->pg0) { size_t elem = p->elem; paged_init(p, elem); return; }
+    Retiree *r = p->pg0;
+    *r = (Retiree){ .pages = p->pages, .index = p->index };
+    enqueue(r); size_t elem = p->elem; paged_init(p, elem);
 }
 bool arena_reap(void) {
     Retiree *r = R_head; if (!r) return false;
-    if (r->pages > 1) {   /* data pages from the top down (page 0 holds the descriptor: last) */
-        size_t k = r->pages - 1; void *pg = k < PAGED_DIR ? r->dir[k] : r->dir2[k / PAGED_DIR][k % PAGED_DIR];
-        page_del(pg); r->pages--; return true;
-    }
-    if (r->subdirs) { page_del(r->dir2[r->subdirs--]); return true; }
-    if (r->dir2) { page_del(r->dir2); r->dir2 = NULL; return true; }
-    if (r->dir) { page_del(r->dir); r->dir = NULL; return true; }
-    R_head = r->next; if (!R_head) R_tail = NULL;
-    page_del(r);      /* page 0 last */
-    return true;
+    if (r->pages > 1) { page_del(radix_get(&r->index, --r->pages)); return true; }
+    if (!r->clearing_dirs) { radix_retire_begin(&r->cursor, &r->index); r->clearing_dirs = true; }
+    if (radix_retire_step(&r->cursor)) return true;
+    R_head = r->next; if (!R_head) R_tail = NULL; page_del(r); return true;
 }
 void arena_reap_all(void) { while (arena_reap()) ; }
 void paged_pop(Paged *p) { require(p->n, "paged: pop on empty"); p->n--; }   /* pages are kept for reuse; released at retirement */

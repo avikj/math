@@ -363,7 +363,7 @@ RefId tview_reindex(RefId t, MapId sigma) {
     for (size_t k = 0; k < n; k++) if (env.has[k]) env.val[k] = reindex_tval(env.val[k], sigma);
     return make_view_env(Q, &env);
 }
-RefId tview_traverse(RefId t, const Trav *tv, unsigned depth) {
+RefId tview_traverse(RefId t, const Trav *tv, size_t depth) {
     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
     size_t n = env.def->nparams + env.def->nlocals;
     for (size_t k = 0; k < n; k++) if (env.has[k]) {
@@ -384,8 +384,11 @@ size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
     size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
     size_t n = 0;
     size_t np = env.def->nparams;
-    for (size_t k = 0; k < nf && n < max; k++) {
+    for (size_t k = 0; k < nf; k++) {
         size_t slot = (size_t)fl[k];
+        if (slot >= np && (env.def->lsort[slot-np] != PS_REF || !env.def->ltype[slot-np])) continue;
+        if (!out) { n++; continue; }
+        require(n < max, "template signature output buffer too small; query complete size first");
         /* the node's environment is closed under the declarations (finish),
          * so every declared type is interpretable here */
         if (slot < np) {

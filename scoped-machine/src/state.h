@@ -26,6 +26,7 @@ typedef struct {
     Interner refs;        /* RefId       → reference record */
     Interner nominal;     /* binder identities (owner,slot,sort) and keyed fresh names */
     Interner contexts;    /* ContextId   → occurrence context record */
+    Interner bound_atoms; /* exact address-sized (depth, slot) pairs, never packed together */
     Interner scopes;      /* ScopeId     → scope record (§50) */
     Interner exprs;       /* template expression DAG nodes (§51) */
     Interner tnodes;      /* template constructor nodes */

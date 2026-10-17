@@ -13,7 +13,7 @@
 #include "eval.h"
 #include "template.h"
 
-typedef uint32_t NodeId;      /* 0 = none */
+typedef uint64_t NodeId;      /* 0 = none */
 typedef struct { NodeId node; uint16_t port; } Endpoint;
 
 typedef enum {

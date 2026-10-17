@@ -1179,7 +1179,10 @@ static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **r
         else if (val.sort == PS_REF && !ref_validate(val.id, reason)) st = CK_INVALID;
     }
     if (st != CK_VALID) { claim_release(cl, ck_code(st), *reason, NULL); return st; }
-    ParamSig sig[16]; size_t ns = tnode_signature(t, sig, 16);
+    size_t ns = tnode_signature(t, NULL, 0);
+    require(ns <= SIZE_MAX / sizeof(ParamSig), "template signature allocation overflow");
+    ParamSig *sig = ns ? malloc(ns * sizeof *sig) : NULL;
+    tnode_signature(t, sig, ns);
     for (size_t k = 0; k < ns && st == CK_VALID; k++) {
         size_t ne = tenv_size(E); uint64_t image = 0; bool have = false;
         for (size_t q = 0; q < ne; q++) { uint64_t slot; TVal val; tenv_entry(E, q, &slot, &val); if (slot == sig[k].slot) { image = val.id; have = true; } }
@@ -1197,6 +1200,7 @@ static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **r
             if (st == CK_INVALID) { char buf[256]; snprintf(buf, sizeof buf, "template scope argument does not meet its signature (%s slot %zu: %s)", tdef_name(tnode_def(ref_tnode(t))), sig[k].slot, *reason); *reason = diag_intern(buf); }
         }
     }
+    free(sig);
     claim_release(cl, ck_code(st), *reason, NULL);
     return st;
 }

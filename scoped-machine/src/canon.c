@@ -49,7 +49,7 @@ static size_t g_nominal(Canon *c, uint64_t nid);
 /* bound atoms (§50): exact (depth, slot) labels */
 static size_t g_bound(Canon *c, GKind kind, uint64_t id) {
     size_t idx; if (lookup(c, kind, id, &idx)) return idx;
-    char lab[64]; snprintf(lab, sizeof lab, "%s %u/%u", kind == G_INPUT_VAR ? "bx" : "bi", (unsigned)bound_depth(id), (unsigned)bound_slot(id));
+    char lab[64]; snprintf(lab, sizeof lab, "%s %zu/%zu", kind == G_INPUT_VAR ? "bx" : "bi", bound_depth(id), bound_slot(id));
     idx = node_new(c, kind, lab); remember(c, kind, id, idx); return idx;
 }
 static size_t g_var(Canon *c, TermVarId x) {

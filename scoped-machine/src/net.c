@@ -483,15 +483,19 @@ uint64_t net_scope_args(size_t n, const Val *a) {
     for (size_t k = 0; k < n; k++) { words_push(&w, a[k].sort); words_push(&w, a[k].id); }
     uint64_t id = interner_intern(&M.keys, w.w, w.n, NULL); words_free(&w); return id;
 }
-static size_t capture_decls_get(uint64_t h, CaptureDecl *out, size_t max) {
-    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(w[0] == 0xCA9, "not a capture telescope");
-    size_t m = (size_t)w[1]; require(m <= max, "capture telescope too long");
+static size_t capture_decls_get(uint64_t h, CaptureDecl **result) {
+    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(n >= 2 && w[0] == 0xCA9, "not a capture telescope");
+    size_t m = (size_t)w[1]; require(n >= 2 && m <= (n - 2) / 5 && n == 2 + 5 * m, "malformed capture telescope");
+    require(m <= SIZE_MAX / sizeof(CaptureDecl), "capture telescope allocation overflow");
+    CaptureDecl *out = m ? malloc(m * sizeof *out) : NULL; *result = out;
     for (size_t k = 0; k < m; k++) { out[k].sort = (Sort)w[2 + 5 * k]; out[k].id = w[3 + 5 * k]; out[k].type = w[4 + 5 * k]; out[k].level = w[5 + 5 * k]; out[k].required = w[6 + 5 * k]; }
     return m;
 }
-static size_t scope_args_get(uint64_t h, Val *out, size_t max) {
-    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(w[0] == 0xA96, "not a scope argument list");
-    size_t m = (size_t)w[1]; require(m <= max, "scope argument list too long");
+static size_t scope_args_get(uint64_t h, Val **result) {
+    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(n >= 2 && w[0] == 0xA96, "not a scope argument list");
+    size_t m = (size_t)w[1]; require(n >= 2 && m <= (n - 2) / 2 && n == 2 + 2 * m, "malformed scope argument list");
+    require(m <= SIZE_MAX / sizeof(Val), "scope argument allocation overflow");
+    Val *out = m ? malloc(m * sizeof *out) : NULL; *result = out;
     for (size_t k = 0; k < m; k++) { out[k].sort = (ValSort)w[2 + 2 * k]; out[k].id = w[3 + 2 * k]; }
     return m;
 }
@@ -588,30 +592,33 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
     /* ---- §55: scope and template agents; each is one finite pure operation ---- */
     case OP_CAPTURE_REF_SCOPE: {
         WANT(D_REF);
-        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
+        CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
         Val body = { VS_REF, Q.ref };
         res = desc_scope(n, capture_scope(m, d, body, P.ref, P.c, P.face));     /* P: a = Δ, ref = type, c = level, face = guard */
+        free(d);
         break;
     }
     case OP_CAPTURE_FACE_SCOPE: {
         WANT(D_FACE);
-        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
+        CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
         Val body = { VS_FACE, Q.face };
         res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
+        free(d);
         break;
     }
     case OP_CAPTURE_INTERVAL_SCOPE: {
         WANT(D_INTERVAL);
-        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
+        CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
         Val body = { VS_INTERVAL, Q.a };
         res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
+        free(d);
         break;
     }
     case OP_REINDEX_SCOPE: WANT(D_SCOPE); res = desc_scope(n, reindex_scope(Q.a, P.a)); break;
     case OP_APPLY_SCOPE: {
         WANT(D_SCOPE);
-        Val args[16]; size_t m = scope_args_get(P.a, args, 16);
-        TypedPartial tp = apply_scope(Q.a, m, args);
+        Val *args; size_t m = scope_args_get(P.a, &args);
+        TypedPartial tp = apply_scope(Q.a, m, args); free(args);
         if (tp.body.sort == VS_REF) res = desc_typed_partial(n, tp.body.id, tp.type, tp.level, tp.guard);
         else if (tp.body.sort == VS_FACE) res = desc_face(n, tp.body.id);
         else res = desc_interval(n, tp.body.id);

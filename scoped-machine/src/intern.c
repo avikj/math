@@ -4,40 +4,32 @@
 #include "kcont.h"
 
 /* ---- chunked arrays ---- */
-void chunked_init(Chunked *c, size_t elem) { memset(c->dir, 0, sizeof c->dir); c->elem = elem; c->alloc = NULL; c->alloc_ctx = NULL; }
+void chunked_init(Chunked *c, size_t elem) { radix_init(&c->dir); c->elem = elem; c->alloc = NULL; c->alloc_ctx = NULL; }
 void chunked_set_alloc(Chunked *c, ChunkAlloc alloc, void *ctx) { c->alloc = alloc; c->alloc_ctx = ctx; }
-void chunked_free(Chunked *c) {
-    /* Both suppliers return owned arena chunks. A spare ceases to own its
-     * chunk when it hands it to this table; release before dropping the directory. */
-    for (size_t k = 0; k < MAX_CHUNKS; k++)
-        if (c->dir[k]) arena_release(c->dir[k], (CHUNK_SIZE * c->elem + 7) / 8);
-    memset(c->dir, 0, sizeof c->dir);
-}
+/* both suppliers return owned arena chunks: a spare ceases to own its chunk
+ * when it hands it to this table; release before dropping the directory */
+static void chunk_release(void *p, void *ctx) { Chunked *c = ctx; arena_release(p, (CHUNK_SIZE * c->elem + 7) / 8); }
+void chunked_free(Chunked *c) { radix_free(&c->dir, chunk_release, c); }
 void *chunked_at(Chunked *c, size_t i) {
-    size_t ch = i >> CHUNK_BITS;
-    require(ch < MAX_CHUNKS, "chunked array exhausted");
-    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
+    require(c->elem <= (SIZE_MAX - 7) / CHUNK_SIZE, "chunk allocation size overflow");
+    void **slot = radix_slot(&c->dir, i >> CHUNK_BITS, true);
+    void *p = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
     if (!p) {
-        void *fresh = c->alloc ? c->alloc(CHUNK_SIZE * c->elem, c->alloc_ctx) : arena_alloc_zero((CHUNK_SIZE * c->elem + 7) / 8, NULL);   /* §94: a kernel chunk is a fresh zero block of the arena — no clearing, possibly under a lock */
-        require(fresh, "out of memory");
-        void *expected = NULL;
-        if (__atomic_compare_exchange_n(&c->dir[ch], &expected, fresh, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) p = fresh;
-        else { if (!c->alloc) arena_release(fresh, (CHUNK_SIZE * c->elem + 7) / 8); p = expected; }   /* an arena chunk lost the race: returned at teardown with the arena (the engine's tables are filled under one lock, so this does not occur there) */
+        void *fresh = c->alloc ? c->alloc(CHUNK_SIZE * c->elem, c->alloc_ctx) : arena_alloc_zero((CHUNK_SIZE * c->elem + 7) / 8, NULL);   /* §94: a kernel chunk is a zero block of the arena — no clearing, possibly under a lock */
+        require(fresh, "out of memory"); void *expected = NULL;
+        if (__atomic_compare_exchange_n(slot, &expected, fresh, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) p = fresh;
+        else { arena_release(fresh, (CHUNK_SIZE * c->elem + 7) / 8); p = expected; }   /* the losing candidate is retired */
     }
     return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
 }
 void *chunked_get(const Chunked *c, size_t i) {
-    size_t ch = i >> CHUNK_BITS;
-    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
+    void *p = radix_get(&c->dir, i >> CHUNK_BITS);
     require(p, "chunked read of a missing element");
     return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
 }
 void *chunked_peek(const Chunked *c, size_t i) {
-    size_t ch = i >> CHUNK_BITS;
-    if (ch >= MAX_CHUNKS) return NULL;
-    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
-    if (!p) return NULL;
-    return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
+    void *p = radix_get(&c->dir, i >> CHUNK_BITS);
+    return p ? (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem : NULL;
 }
 
 /* ---- interner ---- */

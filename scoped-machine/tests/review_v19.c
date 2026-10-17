@@ -15,7 +15,7 @@ int main(int argc,char **argv){
    assert(p.elem==sizeof(uint64_t)&&p.per==ARENA_PAGE);pw_push(&p,42);assert(pw_get(&p,0)==42);
   }else{
    for(size_t i=0;i<(size_t)ARENA_PAGE*PAGED_DIR+1;i++)pw_push(&p,i);
-   printf("pages=%zu (second directory present=%d)\n",paged_pages(&p),!!p.dir2);
+   printf("pages=%zu (second directory present=%d)\n",paged_pages(&p),!!p.index.root[1]);
   }
   paged_retire(&p);size_t units=0;while(arena_reap())units++;
   ArenaStats st=arena_stats();printf("reap units=%zu words_out=%llu words_in=%llu missing=%llu\n",units,(unsigned long long)st.words_out,(unsigned long long)st.words_in,(unsigned long long)(st.words_out-st.words_in));

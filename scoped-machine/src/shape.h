@@ -22,7 +22,7 @@ typedef uint64_t ShapeId;
 enum { SH_FREE = 1, SH_BOUND = 2, SH_NODE = 3 };
 
 ShapeId shape_of(RefId t);                                   /* ρ = identity, depth 0 */
-ShapeId shape_under(RefId t, MapId rho, uint32_t depth);
+ShapeId shape_under(RefId t, MapId rho, size_t depth);
 const uint64_t *shape_words(ShapeId s, size_t *n);           /* [SH_FREE, x] | [SH_BOUND, token] | [SH_NODE, tag, payload, levels, required, nfields, (kind, binder sort or 0, value)...] */
 size_t shape_count(void);
 
