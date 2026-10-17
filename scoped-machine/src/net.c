@@ -502,22 +502,44 @@ static size_t scope_args_get(uint64_t h, Val **result) {
 static NodeId desc_scope(Net *n, ScopeId S) { Payload p = {0}; p.a = S; return net_descriptor(n, D_SCOPE, p); }
 static NodeId desc_typed_partial(Net *n, RefId body, RefId type, uint64_t level, FaceId guard) { Payload p = {0}; p.ref = body; p.b = type; p.c = level; p.face = guard; return net_descriptor(n, D_TYPED_PARTIAL, p); }
 
-static void rule_op(Net *n, NodeId op, NodeId data) {
-    Node os = *N(n, op), ds = *N(n, data);
-    const Node *o = &os, *d = &ds;
+/* §94 lowering: an operation rule's kernel work (reindex, compose, face
+ * operations, binder application, scope/template operations, opening a head)
+ * is computed into an OpSpec from snapshots of the two nodes BEFORE the
+ * redex and its boundary are locked; under the locks the commit only creates
+ * the result node and rewires (a fixed amount of net work). A spec computed
+ * for a pair whose nodes changed meanwhile is discarded with the retry (its
+ * values are pure, interned results). */
+enum { SP_DESC = 1, SP_STATUS, SP_RECIPE, SP_MATERIALIZE, SP_APPLY, SP_EVAL };
+typedef struct OpSpec { int kind; NodeKind dk; Payload p; Head *head; uint64_t ap_id; int ap_dir; MapId ap_map; RefId ap_arg; RefId ev_ref; FaceId ev_face; } OpSpec;
+static void sp_desc(OpSpec *s, NodeKind k, Payload p) { s->kind = SP_DESC; s->dk = k; s->p = p; }
+static void sp_status(OpSpec *s, uint64_t code, FaceId face, RefId ref) { Payload p = {0}; p.a = code; p.face = face; p.ref = ref; s->kind = SP_STATUS; s->dk = D_STATUS; s->p = p; }
+static void sp_ref(OpSpec *s, RefId t) { Payload p = {0}; p.ref = t; sp_desc(s, D_REF, p); }
+static void sp_face(OpSpec *s, FaceId f) { Payload p = {0}; p.face = f; sp_desc(s, D_FACE, p); }
+static void sp_interval(OpSpec *s, IntervalId r) { Payload p = {0}; p.a = r; sp_desc(s, D_INTERVAL, p); }
+static void sp_map(OpSpec *s, MapId m, FaceId src, FaceId tgt) { Payload p = {0}; p.a = m; p.b = src; p.c = tgt; sp_desc(s, D_MAP, p); }
+static void sp_binder(OpSpec *s, NodeKind kind, RefId owner, BinderSlot slot, FieldIndex field, FieldIndex guard) { Payload p = {0}; p.a = owner; p.b = slot; p.c = field; p.d = guard; sp_desc(s, kind, p); }
+static void sp_partial(OpSpec *s, FaceId f, RefId t) { Payload p = {0}; p.face = f; p.ref = t; sp_desc(s, D_PARTIAL, p); }
+static void sp_scope(OpSpec *s, ScopeId S) { Payload p = {0}; p.a = S; sp_desc(s, D_SCOPE, p); }
+static void sp_typed_partial(OpSpec *s, RefId body, RefId type, uint64_t level, FaceId guard) { Payload p = {0}; p.ref = body; p.b = type; p.c = level; p.face = guard; sp_desc(s, D_TYPED_PARTIAL, p); }
+static void sp_recipe(OpSpec *s, RefId t) {
+    Payload p = {0}; p.ref = t; s->kind = SP_RECIPE; s->dk = D_HEAD_RECIPE; s->p = p;
+    s->head = malloc(sizeof(Head)); require(s->head, "out of memory"); open_ref(t, s->head);   /* opened before the locks */
+}
+static void spec_discard(OpSpec *s) { if (s->head) { head_free(s->head); free(s->head); s->head = NULL; } }
+static void op_compute(const Node *o, const Node *d, OpSpec *out) {
     NodeKind k = o->kind, dk = d->kind;
     Payload P = o->p, Q = d->p;
-    NodeId res = 0;
-#define WANT(kind) do { if (dk != (kind)) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); goto out; } } while (0)
+    OpSpec sp; memset(&sp, 0, sizeof sp);
+#define WANT(kind) do { if (dk != (kind)) { sp_status(&sp, ST_SORT_MISMATCH, 0, 0); goto out; } } while (0)
     switch (k) {
-    case OP_REINDEX_TERM: WANT(D_REF); res = desc_ref(n, reindex(Q.ref, P.a)); break;
-    case OP_REINDEX_INTERVAL: WANT(D_INTERVAL); res = desc_interval(n, iv_reindex(Q.a, P.a)); break;
-    case OP_REINDEX_FACE: WANT(D_FACE); res = desc_face(n, fc_reindex(Q.face, P.a)); break;
-    case OP_COMPOSE_MAP: WANT(D_MAP); res = desc_map(n, compose(P.a, Q.a), 0, 0); break;
+    case OP_REINDEX_TERM: WANT(D_REF); sp_ref(&sp, reindex(Q.ref, P.a)); break;
+    case OP_REINDEX_INTERVAL: WANT(D_INTERVAL); sp_interval(&sp, iv_reindex(Q.a, P.a)); break;
+    case OP_REINDEX_FACE: WANT(D_FACE); sp_face(&sp, fc_reindex(Q.face, P.a)); break;
+    case OP_COMPOSE_MAP: WANT(D_MAP); sp_map(&sp, compose(P.a, Q.a), 0, 0); break;
     case OP_RESTRICT_MAP: {
         WANT(D_MAP);
         FaceId src = Q.b ? Q.b : fc_true(), tgt = Q.c ? Q.c : fc_true();
-        res = desc_map(n, Q.a, fc_meet(src, fc_reindex(P.face, Q.a)), fc_meet(tgt, P.face));
+        sp_map(&sp, Q.a, fc_meet(src, fc_reindex(P.face, Q.a)), fc_meet(tgt, P.face));
         break;
     }
     case OP_LIFT_TERM: case OP_LIFT_DIMENSION: {
@@ -525,24 +547,24 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         RefId owner = P.a; BinderSlot slot = (BinderSlot)P.b;
         /* lifting is defined for a raw view's own map; a template view has
          * an environment, not a map: a status, never a raw-origin access */
-        if (ref_is_var(owner) || ref_is_tview(owner) || Q.a != ref_map(owner)) { res = status_node(n, ST_INVALID_MAP, 0, 0); break; }
+        if (ref_is_var(owner) || ref_is_tview(owner) || Q.a != ref_map(owner)) { sp_status(&sp, ST_INVALID_MAP, 0, 0); break; }
         Binder b = origin_binder(ref_origin(owner), slot);
-        if ((k == OP_LIFT_TERM) != (b.sort == S_TERM)) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
-        res = desc_map(n, lifted_map(owner, slot, NULL), Q.b, Q.c);
+        if ((k == OP_LIFT_TERM) != (b.sort == S_TERM)) { sp_status(&sp, ST_SORT_MISMATCH, 0, 0); break; }
+        sp_map(&sp, lifted_map(owner, slot, NULL), Q.b, Q.c);
         break;
     }
-    case OP_OPEN: WANT(D_REF); res = desc_recipe(n, Q.ref); break;
+    case OP_OPEN: WANT(D_REF); sp_recipe(&sp, Q.ref); break;
     case OP_UNFOLD_GLOBAL:
         WANT(D_REF);
-        if (ref_is_var(Q.ref) || ref_is_tview(Q.ref) || origin_tag(ref_origin(Q.ref)) != T_GLOBAL) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
-        res = desc_ref(n, unfold_global(Q.ref));
+        if (ref_is_var(Q.ref) || ref_is_tview(Q.ref) || origin_tag(ref_origin(Q.ref)) != T_GLOBAL) { sp_status(&sp, ST_SORT_MISMATCH, 0, 0); break; }
+        sp_ref(&sp, unfold_global(Q.ref));
         break;
-    case OP_REINDEX_TERM_BINDER: WANT(D_TERM_BINDER); res = desc_binder(n, D_TERM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
-    case OP_REINDEX_DIM_BINDER: WANT(D_DIM_BINDER); res = desc_binder(n, D_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
-    case OP_REINDEX_PARTIAL_DIM_BINDER: WANT(D_PARTIAL_DIM_BINDER); res = desc_binder(n, D_PARTIAL_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, (FieldIndex)Q.d); break;
-    case OP_REINDEX_PARTIAL: WANT(D_PARTIAL); res = desc_partial(n, fc_reindex(Q.face, P.a), reindex(Q.ref, P.a)); break;
-    case OP_APPLY_TERM_BINDER: WANT(D_TERM_BINDER); res = desc_ref(n, apply_term_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.ref)); break;
-    case OP_APPLY_DIM_BINDER: WANT(D_DIM_BINDER); res = desc_ref(n, apply_dim_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.a)); break;
+    case OP_REINDEX_TERM_BINDER: WANT(D_TERM_BINDER); sp_binder(&sp, D_TERM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
+    case OP_REINDEX_DIM_BINDER: WANT(D_DIM_BINDER); sp_binder(&sp, D_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
+    case OP_REINDEX_PARTIAL_DIM_BINDER: WANT(D_PARTIAL_DIM_BINDER); sp_binder(&sp, D_PARTIAL_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, (FieldIndex)Q.d); break;
+    case OP_REINDEX_PARTIAL: WANT(D_PARTIAL); sp_partial(&sp, fc_reindex(Q.face, P.a), reindex(Q.ref, P.a)); break;
+    case OP_APPLY_TERM_BINDER: WANT(D_TERM_BINDER); sp_ref(&sp, apply_term_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.ref)); break;
+    case OP_APPLY_DIM_BINDER: WANT(D_DIM_BINDER); sp_ref(&sp, apply_dim_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.a)); break;
     case OP_APPLY_PARTIAL_DIM_BINDER: {
         WANT(D_PARTIAL_DIM_BINDER);
         RefId owner = Q.a;
@@ -556,20 +578,20 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         require((size_t)Q.d < oh.n && oh.f[Q.d].kind == F_FACE, "APPLY_PARTIAL_DIM_BINDER: guard field");
         FaceId guard = fc_reindex(oh.f[Q.d].id, at_r);
         head_free(&oh);
-        res = desc_partial(n, guard, reindex(o.body, at_r));
+        sp_partial(&sp, guard, reindex(o.body, at_r));
         break;
     }
-    case OP_FORALL_DIMENSION: WANT(D_FACE); res = desc_face(n, fc_forall(P.a, Q.face)); break;
-    case OP_PROJECT_FACE: { WANT(D_FACE); size_t m; const uint64_t *S = dimset_get(P.a, &m); res = desc_face(n, fc_project(Q.face, S, m)); break; }
-    case OP_FACE_COVERAGE: WANT(D_FACE); res = status_node(n, fc_entails(P.face, Q.face) ? ST_COVERED : ST_NOT_COVERED, 0, 0); break;
+    case OP_FORALL_DIMENSION: WANT(D_FACE); sp_face(&sp, fc_forall(P.a, Q.face)); break;
+    case OP_PROJECT_FACE: { WANT(D_FACE); size_t m; const uint64_t *S = dimset_get(P.a, &m); sp_face(&sp, fc_project(Q.face, S, m)); break; }
+    case OP_FACE_COVERAGE: WANT(D_FACE); sp_status(&sp, fc_entails(P.face, Q.face) ? ST_COVERED : ST_NOT_COVERED, 0, 0); break;
     case OP_USE_PARTIAL:
         WANT(D_PARTIAL);
-        if (fc_entails(P.face, Q.face)) res = desc_ref(n, Q.ref);
-        else res = status_node(n, ST_NOT_COVERED, Q.face, Q.ref);      /* retains the partial payload */
+        if (fc_entails(P.face, Q.face)) sp_ref(&sp, Q.ref);
+        else sp_status(&sp, ST_NOT_COVERED, Q.face, Q.ref);      /* retains the partial payload */
         break;
-    case OP_GET_SUPPORT: { WANT(D_REF); Payload p = {0}; p.a = ref_support(Q.ref); res = net_descriptor(n, D_DIMSET, p); break; }
-    case OP_REINDEX_HEAD: WANT(D_HEAD_RECIPE); res = desc_recipe(n, reindex(d->head->owner, P.a)); break;
-    case OP_MATERIALIZE: WANT(D_HEAD_RECIPE); res = materialize(n, d->head); break;
+    case OP_GET_SUPPORT: { WANT(D_REF); Payload p = {0}; p.a = ref_support(Q.ref); sp_desc(&sp, D_DIMSET, p); break; }
+    case OP_REINDEX_HEAD: WANT(D_HEAD_RECIPE); sp_recipe(&sp, reindex(d->head->owner, P.a)); break;
+    case OP_MATERIALIZE: WANT(D_HEAD_RECIPE); sp.kind = SP_MATERIALIZE; break;
     case OP_APPLY_TRANSFORM: {
         /* §43: the one replacement — v := reindex(template, σ + slot ↦ a);
          * no evaluation of a, the proof, or v */
@@ -581,12 +603,7 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(P.c, k, &x, &im); mapb_term(&b, x, im); }
         for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(P.c, k, &i, &im); mapb_dim(&b, i, im); }
         mapb_term(&b, slot, Q.ref);
-        res = desc_ref(n, reindex(body, mapb_finish(&b)));
-        count(&n->n_apply); reuse_bump(REUSE_IDENTITY_APPLY);
-        { NetTraceEvent ev = { NT_APPLY_TRANSFORM, P.a, (int)P.b, P.c, Q.ref, N(n, res)->p.ref, 0 };
-          Endpoint rp = o->peer[1];
-          if (rp.node && N(n, rp.node)->kind == A_CONTINUE_REFERENCE) ev.K = N(n, rp.node)->p.a;
-          pthread_mutex_lock(&n->trace_mu); vec_push(&n->trace, ev); pthread_mutex_unlock(&n->trace_mu); }
+        sp_ref(&sp, reindex(body, mapb_finish(&b))); sp.kind = SP_APPLY; sp.ap_id = P.a; sp.ap_dir = (int)P.b; sp.ap_map = P.c; sp.ap_arg = Q.ref;
         break;
     }
     /* ---- §55: scope and template agents; each is one finite pure operation ---- */
@@ -594,7 +611,7 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         WANT(D_REF);
         CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
         Val body = { VS_REF, Q.ref };
-        res = desc_scope(n, capture_scope(m, d, body, P.ref, P.c, P.face));     /* P: a = Δ, ref = type, c = level, face = guard */
+        sp_scope(&sp, capture_scope(m, d, body, P.ref, P.c, P.face));     /* P: a = Δ, ref = type, c = level, face = guard */
         free(d);
         break;
     }
@@ -602,7 +619,7 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         WANT(D_FACE);
         CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
         Val body = { VS_FACE, Q.face };
-        res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
+        sp_scope(&sp, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
         free(d);
         break;
     }
@@ -610,62 +627,87 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         WANT(D_INTERVAL);
         CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
         Val body = { VS_INTERVAL, Q.a };
-        res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
+        sp_scope(&sp, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
         free(d);
         break;
     }
-    case OP_REINDEX_SCOPE: WANT(D_SCOPE); res = desc_scope(n, reindex_scope(Q.a, P.a)); break;
+    case OP_REINDEX_SCOPE: WANT(D_SCOPE); sp_scope(&sp, reindex_scope(Q.a, P.a)); break;
     case OP_APPLY_SCOPE: {
         WANT(D_SCOPE);
         Val *args; size_t m = scope_args_get(P.a, &args);
         TypedPartial tp = apply_scope(Q.a, m, args); free(args);
-        if (tp.body.sort == VS_REF) res = desc_typed_partial(n, tp.body.id, tp.type, tp.level, tp.guard);
-        else if (tp.body.sort == VS_FACE) res = desc_face(n, tp.body.id);
-        else res = desc_interval(n, tp.body.id);
+        if (tp.body.sort == VS_REF) sp_typed_partial(&sp, tp.body.id, tp.type, tp.level, tp.guard);
+        else if (tp.body.sort == VS_FACE) sp_face(&sp, tp.body.id);
+        else sp_interval(&sp, tp.body.id);
         break;
     }
     case OP_FORALL_SCOPE: {
         WANT(D_SCOPE);
-        if (scope_arity(Q.a) != 1 || scope_local(Q.a, 0).sort != S_DIM || scope_body(Q.a).sort != VS_FACE) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
-        res = desc_face(n, forall_scope(Q.a));
+        if (scope_arity(Q.a) != 1 || scope_local(Q.a, 0).sort != S_DIM || scope_body(Q.a).sort != VS_FACE) { sp_status(&sp, ST_SORT_MISMATCH, 0, 0); break; }
+        sp_face(&sp, forall_scope(Q.a));
         break;
     }
-    case OP_REINDEX_TEMPLATE_ENV: { WANT(D_TEMPLATE_ENV); Payload p = {0}; p.a = tenv_reindex(Q.a, P.a); res = net_descriptor(n, D_TEMPLATE_ENV, p); break; }
-    case OP_INSTANTIATE_TEMPLATE: WANT(D_TEMPLATE_ENV); res = desc_ref(n, tenv_instantiate(P.a, Q.a)); break;
-    case OP_REINDEX_TYPED_PARTIAL: WANT(D_TYPED_PARTIAL); res = desc_typed_partial(n, reindex(Q.ref, P.a), Q.b ? reindex(Q.b, P.a) : 0, Q.c, fc_reindex(Q.face, P.a)); break;
+    case OP_REINDEX_TEMPLATE_ENV: { WANT(D_TEMPLATE_ENV); Payload p = {0}; p.a = tenv_reindex(Q.a, P.a); sp_desc(&sp, D_TEMPLATE_ENV, p); break; }
+    case OP_INSTANTIATE_TEMPLATE: WANT(D_TEMPLATE_ENV); sp_ref(&sp, tenv_instantiate(P.a, Q.a)); break;
+    case OP_REINDEX_TYPED_PARTIAL: WANT(D_TYPED_PARTIAL); sp_typed_partial(&sp, reindex(Q.ref, P.a), Q.b ? reindex(Q.b, P.a) : 0, Q.c, fc_reindex(Q.face, P.a)); break;
     case OP_USE_TYPED_PARTIAL:
         WANT(D_TYPED_PARTIAL);
-        if (fc_entails(P.face, Q.face)) res = desc_ref(n, Q.ref);
-        else { res = status_node(n, ST_NOT_COVERED, Q.face, Q.ref); N(n, res)->p.b = Q.b; N(n, res)->p.c = Q.c; }   /* retains the typed partial */
+        if (fc_entails(P.face, Q.face)) sp_ref(&sp, Q.ref);
+        else { sp_status(&sp, ST_NOT_COVERED, Q.face, Q.ref); sp.p.b = Q.b; sp.p.c = Q.c; }   /* retains the typed partial */
         break;
-    case OP_TYPED_PARTIAL_TYPE: WANT(D_TYPED_PARTIAL); res = desc_ref(n, Q.b); break;      /* retained as type data, not observed */
-    case OP_TYPED_PARTIAL_GUARD: WANT(D_TYPED_PARTIAL); res = desc_face(n, Q.face); break;
-    case OP_EVAL: {
-        WANT(D_REF);
-        /* the result endpoint transfers into the continuation; the request
-         * descriptors retire. */
-        NodeId pend = net_pending(n);
-        EvalCtx *ctx = malloc(sizeof *ctx); require(ctx, "out of memory");
-        ctx->net = n; ctx->pending = pend;
-        one_result(n, op, data, pend);
-        eval_request(Q.ref, P.face, cont_external(net_eval_deliver, ctx, free));
-        return;
-    }
+    case OP_TYPED_PARTIAL_TYPE: WANT(D_TYPED_PARTIAL); sp_ref(&sp, Q.b); break;      /* retained as type data, not observed */
+    case OP_TYPED_PARTIAL_GUARD: WANT(D_TYPED_PARTIAL); sp_face(&sp, Q.face); break;
+    case OP_EVAL: WANT(D_REF); sp.kind = SP_EVAL; sp.ev_ref = Q.ref; sp.ev_face = P.face; break;
     default: die("unknown operation");
     }
 out:
 #undef WANT
+    *out = sp;
+}
+static void op_commit(Net *n, NodeId op, NodeId data, OpSpec *sp) {
+    NodeId res = 0;
+    switch (sp->kind) {
+    case SP_DESC: case SP_STATUS: res = net_descriptor(n, sp->dk, sp->p); break;
+    case SP_RECIPE: { res = net_descriptor(n, D_HEAD_RECIPE, sp->p); Node *x = N(n, res); x->head = sp->head; sp->head = NULL; x->tag = x->head->is_var ? 0 : x->head->tag; break; }
+    case SP_MATERIALIZE: res = materialize(n, N(n, data)->head); break;
+    case SP_APPLY: {
+        res = net_descriptor(n, D_REF, sp->p);
+        count(&n->n_apply); reuse_bump(REUSE_IDENTITY_APPLY);
+        NetTraceEvent ev = { NT_APPLY_TRANSFORM, sp->ap_id, sp->ap_dir, sp->ap_map, sp->ap_arg, sp->p.ref, 0 };
+        Endpoint rp = N(n, op)->peer[1];
+        if (rp.node && N(n, rp.node)->kind == A_CONTINUE_REFERENCE) ev.K = N(n, rp.node)->p.a;
+        pthread_mutex_lock(&n->trace_mu); vec_push(&n->trace, ev); pthread_mutex_unlock(&n->trace_mu);
+        break;
+    }
+    case SP_EVAL: {
+        /* the result endpoint transfers into the continuation; the request descriptors retire */
+        NodeId pend = net_pending(n);
+        EvalCtx *ctx = malloc(sizeof *ctx); require(ctx, "out of memory");
+        ctx->net = n; ctx->pending = pend;
+        one_result(n, op, data, pend);
+        eval_request(sp->ev_ref, sp->ev_face, cont_external(net_eval_deliver, ctx, free));
+        return;
+    }
+    default: die("unknown operation spec");
+    }
     one_result(n, op, data, res);
+}
+static void rule_op(Net *n, NodeId op, NodeId data, OpSpec *pre) {
+    OpSpec sp;
+    if (pre) sp = *pre;
+    else op_compute(N(n, op), N(n, data), &sp);
+    op_commit(n, op, data, &sp);
+    if (pre) pre->head = sp.head;   /* consumed by the commit (NULL) */
 }
 
 static bool is_shell(NodeKind k) { return k == A_HEAD || k == A_BRANCH_NIL || k == A_BRANCH_CONS || k == A_BRANCH; }
 
 /* apply the rule for an oriented, validated, fully locked active pair */
-static bool apply_rule(Net *n, NodeId neg, NodeId pos) {
+static bool apply_rule(Net *n, NodeId neg, NodeId pos, OpSpec *pre) {
     Node *ng = N(n, neg), *ps = N(n, pos);
     if (ng->kind == A_ROOT || ps->kind == (NodeKind)0) return false;   /* observation root / pending: no rule */
     if (is_operation(ng->kind)) {
-        if (is_descriptor(ps->kind)) { rule_op(n, neg, pos); count(&n->n_op); return true; }
+        if (is_descriptor(ps->kind)) { rule_op(n, neg, pos, pre); count(&n->n_op); return true; }
         /* an operation meeting a shell is a sort mismatch */
         Replacement r; rep_init(&r);
         rep_remove(&r, neg);
@@ -713,34 +755,49 @@ static int cmp_nodeid(const void *a, const void *b) { NodeId x = *(const NodeId 
 /* One candidate active pair. Returns true when a replacement was committed. */
 static bool step(Net *n, Active cand) {
     NodeId a = cand.node;
-    for (int attempt = 0; attempt < 64; attempt++) {
+    /* the boundary arrays: a fixed fast path, extended for a node of larger arity (no arity cap) */
+    NodeId set_s[64], sorted_s[64]; Endpoint exp_s[64]; uint64_t expgen_s[64];
+    NodeId *set = set_s, *sorted = sorted_s; Endpoint *exp = exp_s; uint64_t *expgen = expgen_s; size_t cap = 64;
+    bool result = false;
+    for (;;) {   /* a retry follows another thread's committed replacement: progress is global */
         Node *x = N(n, a);
         pthread_mutex_lock(&x->mu);
-        if (!x->live || x->gen != cand.gen) { pthread_mutex_unlock(&x->mu); return false; }
+        if (!x->live || x->gen != cand.gen) { pthread_mutex_unlock(&x->mu); result = false; break; }
         Endpoint q = x->peer[0];
         pthread_mutex_unlock(&x->mu);
-        if (!q.node || q.port != 0) return false;
+        if (!q.node || q.port != 0) { result = false; break; }
         NodeId b = q.node;
         /* lock the redex owners in id order and validate the pair */
         lock_two(n, a, b);
         Node *y = N(n, b);
         bool valid = x->live && y->live && x->gen == cand.gen && x->peer[0].node == b && x->peer[0].port == 0 && y->peer[0].node == a && y->peer[0].port == 0;
-        if (!valid) { unlock_two(n, a, b); if (!x->live || x->gen != cand.gen) return false; count(&n->retries); fine_bump(FC_NET_RETRIES); continue; }
+        if (!valid) { unlock_two(n, a, b); if (!x->live || x->gen != cand.gen) { result = false; break; } count(&n->retries); fine_bump(FC_NET_RETRIES); continue; }
         uint64_t gen_b = y->gen;
         /* collect the surviving boundary: every auxiliary neighbour of a and b */
-        NodeId set[64]; Endpoint exp[64]; uint64_t expgen[64]; size_t ns = 0;
+        size_t need = 2 + (size_t)x->nports + (size_t)y->nports;
+        if (need > cap) {
+            if (set != set_s) { free(set); free(sorted); free(exp); free(expgen); }
+            cap = need; set = malloc(cap * sizeof *set); sorted = malloc(cap * sizeof *sorted); exp = malloc(cap * sizeof *exp); expgen = malloc(cap * sizeof *expgen);
+            require(set && sorted && exp && expgen, "out of memory");
+        }
+        size_t ns = 0;
         set[ns++] = a; set[ns++] = b;
         Node *two[2] = { x, y };
         for (int t = 0; t < 2; t++)
             for (uint16_t k = 1; k < two[t]->nports; k++) {
                 Endpoint e = two[t]->peer[k];
                 if (!e.node || e.node == a || e.node == b) continue;
-                require(ns < 64, "redex boundary too large");
                 set[ns] = e.node; exp[ns] = e; expgen[ns] = __atomic_load_n(&N(n, e.node)->gen, __ATOMIC_ACQUIRE); ns++;
             }
+        /* snapshots of the pair (their payloads are fixed while their generations are) */
+        Node xs = *x, ys = *y;
         unlock_two(n, a, b);
+        /* an operation rule's kernel work is computed here, outside every node lock */
+        const Node *negs = xs.polarity[0] < 0 ? &xs : &ys, *poss = xs.polarity[0] < 0 ? &ys : &xs;
+        OpSpec spec; bool have_spec = false; memset(&spec, 0, sizeof spec);
+        if (is_operation(negs->kind) && is_descriptor(poss->kind)) { op_compute(negs, poss, &spec); have_spec = true; }
         /* lock the whole affected set in a consistent total order */
-        NodeId sorted[64]; memcpy(sorted, set, ns * sizeof(NodeId));
+        memcpy(sorted, set, ns * sizeof(NodeId));
         qsort(sorted, ns, sizeof(NodeId), cmp_nodeid);
         size_t nu = 0;
         for (size_t i = 0; i < ns; i++) if (nu == 0 || sorted[nu - 1] != sorted[i]) sorted[nu++] = sorted[i];
@@ -766,21 +823,24 @@ static bool step(Net *n, Active cand) {
         }
         if (!ok) {
             for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
-            if (!x->live || x->gen != cand.gen) return false;
+            spec_discard(&spec);
+            if (!x->live || x->gen != cand.gen) { result = false; break; }
             count(&n->retries); fine_bump(FC_NET_RETRIES);
             continue;
         }
         /* orient: negative principal (agent) vs positive principal (data/shell) */
         NodeId neg = x->polarity[0] < 0 ? a : b, pos = x->polarity[0] < 0 ? b : a;
         ActiveVec pending = {0}; tls_pending = &pending;
-        bool did = apply_rule(n, neg, pos);
+        bool did = apply_rule(n, neg, pos, have_spec ? &spec : NULL);
+        spec_discard(&spec);
         if (did) count(&n->rewrites);
         tls_pending = NULL;
         for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
         flush_pending(n, &pending);
-        return did;
+        result = did; break;
     }
-    return false;
+    if (set != set_s) { free(set); free(sorted); free(exp); free(expgen); }
+    return result;
 }
 
 bool net_step_pair(Net *n, Active a) { return step(n, a); }
