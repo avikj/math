@@ -1,44 +1,66 @@
 #include "common.h"
 #include "arena.h"
+#include "fine.h"
 #include <sys/mman.h>
 #include <string.h>
 
-/* ---- the reservation and the free lists ---- */
+/* ---- extents and the block pools (BOUNDS-COMPLETION §5) ----
+ *
+ * The allocator owns a collection of extents, each a page-aligned anonymous
+ * mapping requested from the host when the pools cannot satisfy a demand
+ * (EXTEND: a host resource action; the initial extent size is a growth
+ * policy, never a capacity). A block is (extent, offset, order): offsets are
+ * extent-relative and orders go up to the native address width. Every block
+ * not owned by a caller is in exactly one state:
+ *   FRESH       — never used: the unconsumed tail of an extent (zero by the mapping)
+ *   DIRTY_FREE  — released: per-order lists `dirty`; ordinary allocations take
+ *                 these directly; zero allocations need them cleared first
+ *   CLEARING    — the one block detached for clearing (`zactive`, cursor `zcursor`)
+ *   ZERO_READY  — cleared: per-order lists `ready`
+ * Ordinary allocation: DIRTY_FREE of the order, else ZERO_READY of the
+ * order, else one split of a larger DIRTY_FREE block (the other half stays
+ * dirty), else FRESH, else EXTEND. Zero allocation: ZERO_READY, else FRESH,
+ * else EXTEND (never an input-sized clearing loop under the lock; a host
+ * refusal is reported as a resource condition). Clearing advances 32 words
+ * of the detached block per `arena_tend_zero` (driven per unit). Released
+ * blocks become DIRTY_FREE whatever their origin. No merge across extents. */
+#define ARENA_MIN_EXTENT_WORDS ((size_t)ARENA_PAGE << 11)   /* default growth policy: 2^20 words (8 MiB) per new extent at least */
+typedef struct Extent { uint64_t *base; size_t words; size_t fresh; struct Extent *next; } Extent;
 static struct {
-    uint64_t *base; size_t words;
-    uint64_t *heads[ARENA_ORDERS];     /* free lists: the first word of a free block links the next */
-    size_t fresh;                      /* the fresh region's bump cursor (words from base + ARENA_WORDS/2) */
-    uint64_t *zdirty[ARENA_ORDERS], *zready[ARENA_ORDERS];   /* §94 R4: retired zero-region blocks awaiting clearing / cleared and reusable, per order */
-    uint64_t *zactive;                 /* detached dirty block owned by the clearing continuation */
-    unsigned zorder;
-    size_t zcursor;                    /* cleared prefix of zactive; queue insertions cannot change its owner */
-    uint64_t zero_fresh, zero_reused, zero_sync_words;        /* zero blocks served from the fresh cursor / from the cleared pool; words cleared synchronously at a shortage */
+    Extent *extents, *cur;             /* every owned extent; `cur` serves FRESH blocks */
+    size_t nextents, owned_words, extent_policy;
+    uint64_t *dirty[ARENA_ORDERS], *ready[ARENA_ORDERS];
+    uint64_t *zactive; unsigned zorder; size_t zcursor;       /* CLEARING: the detached block, its order and cleared prefix */
+    uint64_t zero_fresh, zero_reused, zero_sync_words;
     ArenaStats st;
     bool live;
-    pthread_mutex_t mu;                /* the engine (under its lock) and kalloc's threads share the free lists */
+    pthread_mutex_t mu;                /* the engine (under its lock) and kalloc's threads share the pools */
 } A = { .mu = PTHREAD_MUTEX_INITIALIZER };
 
+void arena_set_extent_policy(size_t words) { pthread_mutex_lock(&A.mu); A.extent_policy = words; pthread_mutex_unlock(&A.mu); }
 void arena_init(void) {
     pthread_mutex_lock(&A.mu);
-    if (A.live) { pthread_mutex_unlock(&A.mu); return; }
-    size_t bytes = ARENA_WORDS * sizeof(uint64_t);
-    void *p = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-    require(p != MAP_FAILED, "arena: cannot reserve the address range");
-    A.base = p; A.words = ARENA_WORDS; memset(A.heads, 0, sizeof A.heads); memset(&A.st, 0, sizeof A.st);
-    A.heads[ARENA_ORDERS - 2] = A.base; *(uint64_t **)A.base = NULL;   /* the lower half: one block of the largest list order */
-    A.fresh = 0;
-    A.live = true;
+    if (!A.live) { A.live = true; if (!A.extent_policy) A.extent_policy = ARENA_MIN_EXTENT_WORDS; }
     pthread_mutex_unlock(&A.mu);
 }
-/* the reservation lives for the process: kernel blocks (kalloc.c) outlive the engine's lifecycle; the engine returns its own blocks to the free lists */
+/* the extents live for the process: kernel blocks (kalloc.c) outlive the engine's lifecycle; the engine returns its own blocks to the pools */
 void arena_free(void) { }
 bool arena_live(void) { return A.live; }
-const void *arena_base(void) { return A.base; }
+/* the exact index of owned extents (kalloc's ownership test): extents are
+ * only ever prepended and never released, so a reader traverses the list
+ * without the lock (acquire loads of release-published records) */
+bool arena_owns(const void *p) {
+    for (Extent *e = __atomic_load_n(&A.extents, __ATOMIC_ACQUIRE); e; e = e->next)
+        if ((const uint64_t *)p >= e->base && (const uint64_t *)p < e->base + e->words) return true;
+    return false;
+}
+size_t arena_extents(void) { pthread_mutex_lock(&A.mu); size_t n = A.nextents; pthread_mutex_unlock(&A.mu); return n; }
+size_t arena_owned_words(void) { pthread_mutex_lock(&A.mu); size_t n = A.owned_words; pthread_mutex_unlock(&A.mu); return n; }
 ArenaStats arena_stats(void) { pthread_mutex_lock(&A.mu); ArenaStats s = A.st; pthread_mutex_unlock(&A.mu); return s; }
 
 static unsigned order_of(size_t words) {
     unsigned k = 0; size_t b = ARENA_PAGE;
-    while (b < words) { b <<= 1; k++; require(k < ARENA_ORDERS, "arena: block larger than the reservation"); }
+    while (b < words) { require(k + 1 < ARENA_ORDERS && b <= SIZE_MAX / 2, "arena: block larger than the address space"); b <<= 1; k++; }
     return k;
 }
 size_t arena_order_words(size_t words) { return (size_t)ARENA_PAGE << order_of(words); }
@@ -53,36 +75,50 @@ void __asan_unpoison_memory_region(void const volatile *addr, size_t size);
 #define BLOCK_POISON(b, n) ((void)0)
 #define BLOCK_UNPOISON(b, n) ((void)0)
 #endif
-/* the free-list link lives in the block's first word (kalloc poisons free blocks under ASan: the link word is unpoisoned for the list) */
-static uint64_t *pop(unsigned k) { uint64_t *b = A.heads[k]; if (b) { LINK_UNPOISON(b); A.heads[k] = *(uint64_t **)b; } return b; }
-static void push(unsigned k, uint64_t *b) { LINK_UNPOISON(b); *(uint64_t **)b = A.heads[k]; A.heads[k] = b; }
-uint64_t *arena_alloc(size_t words, size_t *got) {
-    if (!A.live) arena_init();
-    unsigned k = order_of(words);
-    pthread_mutex_lock(&A.mu);
-    unsigned j = k; while (j < ARENA_ORDERS && !A.heads[j]) j++;
-    require(j < ARENA_ORDERS, "arena: reservation exhausted");
-    uint64_t *b = pop(j);
-    while (j > k) { j--; push(j, b + ((size_t)ARENA_PAGE << j)); A.st.splits++; }   /* split: the upper half is freed at the lower order */
-    A.st.allocs++; A.st.words_out += (size_t)ARENA_PAGE << k;
-    pthread_mutex_unlock(&A.mu);
-    BLOCK_UNPOISON(b, (size_t)ARENA_PAGE << k);   /* a block is addressable while allocated and poisoned while free (ASan) */
-    if (got) *got = (size_t)ARENA_PAGE << k;
+/* a list link lives in the block's first word */
+static uint64_t *pop_list(uint64_t **head) { uint64_t *b = *head; if (b) { LINK_UNPOISON(b); *head = *(uint64_t **)b; } return b; }
+static void push_list(uint64_t **head, uint64_t *b) { LINK_UNPOISON(b); *(uint64_t **)b = *head; *head = b; }
+/* EXTEND: one host mapping of at least `w` words (page-aligned by the host) */
+static bool extend_locked(size_t w) {
+    size_t words = A.extent_policy; while (words < w) { require(words <= SIZE_MAX / 2, "arena: extent size overflow"); words <<= 1; }
+    require(words <= SIZE_MAX / sizeof(uint64_t), "arena: extent size overflow");
+    void *p = mmap(NULL, words * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
+    if (p == MAP_FAILED) return false;   /* the host could not supply storage: a resource condition */
+    Extent *e = (calloc)(1, sizeof *e); if (!e) { munmap(p, words * sizeof(uint64_t)); return false; }   /* extent records are host allocations (never inside an extent) */
+    e->base = p; e->words = words; e->fresh = 0; e->next = A.extents; __atomic_store_n(&A.extents, e, __ATOMIC_RELEASE); A.cur = e; A.nextents++; A.owned_words += words;
+    BLOCK_POISON(e->base, words);
+    return true;
+}
+/* FRESH: the next `w` words of the current extent (alignment by order is not
+ * required: offsets are extent-relative and no buddy merge crosses blocks) */
+static uint64_t *fresh_locked(size_t w) {
+    if (!A.cur || A.cur->words - A.cur->fresh < w) { if (!extend_locked(w)) return NULL; }
+    uint64_t *b = A.cur->base + A.cur->fresh; A.cur->fresh += w;
     return b;
 }
-/* zero blocks: a cleared block of the order from the reusable pool when
- * there is one, else a never-used block of the fresh region (zero by the
- * anonymous mapping). A retired zero-region block is dirty: it is cleared
- * CHUNK_WORDS per maintenance step (`arena_tend_zero`, driven once per unit
- * by the engine) and then published to the pool. When neither is available
- * and dirty blocks exist, the shortage clears a dirty block here, counted in
- * `zero_sync_words` (the fresh region is 2^30 words: the counted case is the
- * exhaustion of that). */
+uint64_t *arena_alloc(size_t words, size_t *got) {
+    if (!A.live) arena_init();
+    unsigned k = order_of(words); size_t w = (size_t)ARENA_PAGE << k;
+    pthread_mutex_lock(&A.mu);
+    uint64_t *b = pop_list(&A.dirty[k]);
+    if (!b) b = pop_list(&A.ready[k]);
+    if (!b) {   /* one split chain of the smallest larger dirty block: each split publishes the other half as dirty */
+        unsigned j = k + 1; while (j < ARENA_ORDERS && !A.dirty[j]) j++;
+        if (j < ARENA_ORDERS) { b = pop_list(&A.dirty[j]); while (j > k) { j--; push_list(&A.dirty[j], b + ((size_t)ARENA_PAGE << j)); A.st.splits++; } }
+    }
+    if (!b) b = fresh_locked(w);
+    require(b, "arena: the host could not supply storage");
+    A.st.allocs++; A.st.words_out += w;
+    pthread_mutex_unlock(&A.mu);
+    BLOCK_UNPOISON(b, w);   /* a block is addressable while allocated and poisoned while free (ASan) */
+    if (got) *got = w;
+    return b;
+}
 static bool zero_tend_locked(void) {
     if (!A.zactive) {
         for (unsigned k = 0; k < ARENA_ORDERS; k++) {
-            uint64_t *b = A.zdirty[k]; if (!b) continue;
-            LINK_UNPOISON(b); A.zdirty[k] = *(uint64_t **)b;
+            uint64_t *b = A.dirty[k]; if (!b) continue;
+            LINK_UNPOISON(b); A.dirty[k] = *(uint64_t **)b;
             A.zactive = b; A.zorder = k; A.zcursor = 0;
             break;
         }
@@ -93,10 +129,7 @@ static bool zero_tend_locked(void) {
     BLOCK_UNPOISON(b, w);
     for (size_t x = A.zcursor; x < end; x++) b[x] = 0;
     A.zcursor = end;
-    if (end == w) {
-        *(uint64_t **)b = A.zready[k]; A.zready[k] = b;
-        A.zactive = NULL; A.zcursor = 0;
-    }
+    if (end == w) { *(uint64_t **)b = A.ready[k]; A.ready[k] = b; A.zactive = NULL; A.zcursor = 0; }
     BLOCK_POISON(b, w);
     return true;
 }
@@ -105,13 +138,25 @@ uint64_t *arena_alloc_zero(size_t words, size_t *got) {
     if (!A.live) arena_init();
     unsigned k = order_of(words); size_t w = (size_t)ARENA_PAGE << k;
     pthread_mutex_lock(&A.mu);
-    uint64_t *b = A.zready[k];
-    if (b) { LINK_UNPOISON(b); A.zready[k] = *(uint64_t **)b; BLOCK_UNPOISON(b, w); b[0] = 0; A.zero_reused++; }   /* the pool: the link word is zeroed again */
-    else if (A.fresh + w <= ARENA_FRESH_WORDS) { b = A.base + ARENA_WORDS / 2 + A.fresh; A.fresh += w; A.zero_fresh++; BLOCK_UNPOISON(b, w); }
-    else {   /* shortage: clear the dirty block of this order here, counted */
-        require(A.zdirty[k] || (A.zactive && A.zorder == k), "arena: zero region exhausted and no dirty block to clear");
-        while (!A.zready[k]) { uint64_t *d = A.zdirty[k]; (void)d; zero_tend_locked(); A.zero_sync_words += 32; }
-        b = A.zready[k]; LINK_UNPOISON(b); A.zready[k] = *(uint64_t **)b; BLOCK_UNPOISON(b, w); b[0] = 0; A.zero_reused++;
+    uint64_t *b = A.ready[k];
+    if (b) { LINK_UNPOISON(b); A.ready[k] = *(uint64_t **)b; BLOCK_UNPOISON(b, w); b[0] = 0; A.zero_reused++; }   /* ZERO_READY: the link word is zeroed again */
+    else {
+        /* a DIRTY_FREE block of the order (or one split off a larger one) is
+         * detached for this requester and cleared after the lock is released,
+         * one word per transition: no clearing under the lock, no growth while
+         * reusable storage exists */
+        uint64_t *d = pop_list(&A.dirty[k]);
+        if (!d) { unsigned j = k + 1; while (j < ARENA_ORDERS && !A.dirty[j]) j++;
+                  if (j < ARENA_ORDERS) { d = pop_list(&A.dirty[j]); while (j > k) { j--; push_list(&A.dirty[j], d + ((size_t)ARENA_PAGE << j)); A.st.splits++; } } }
+        if (d) {
+            A.zero_sync_words += w; A.zero_reused++; A.st.allocs++; A.st.words_out += w;
+            pthread_mutex_unlock(&A.mu);
+            BLOCK_UNPOISON(d, w);
+            for (size_t x = 0; x < w; x++) { d[x] = 0; fine_bump(FC_ALLOC_WORDS); }
+            if (got) *got = w;
+            return d;
+        }
+        b = fresh_locked(w); require(b, "arena: the host could not supply storage"); BLOCK_UNPOISON(b, w); A.zero_fresh++;   /* FRESH (EXTEND when the extent is consumed) */
     }
     A.st.allocs++; A.st.words_out += w;
     pthread_mutex_unlock(&A.mu);
@@ -120,20 +165,13 @@ uint64_t *arena_alloc_zero(size_t words, size_t *got) {
 }
 void arena_release(uint64_t *p, size_t words) {
     if (!p || !A.live) return;
-    if (p >= A.base + ARENA_WORDS / 2) {   /* a zero-region block: dirty until cleared in maintenance steps, then reusable */
-        unsigned k = order_of(words);
-        pthread_mutex_lock(&A.mu);
-        LINK_UNPOISON(p); *(uint64_t **)p = A.zdirty[k]; A.zdirty[k] = p; A.st.releases++; A.st.words_in += (size_t)ARENA_PAGE << k;
-        BLOCK_POISON(p, (size_t)ARENA_PAGE << k);
-        pthread_mutex_unlock(&A.mu);
-        return;
-    }
     unsigned k = order_of(words);
-    BLOCK_POISON(p, (size_t)ARENA_PAGE << k);
     pthread_mutex_lock(&A.mu);
-    push(k, p); A.st.releases++; A.st.words_in += (size_t)ARENA_PAGE << k;
+    LINK_UNPOISON(p); push_list(&A.dirty[k], p); A.st.releases++; A.st.words_in += (size_t)ARENA_PAGE << k;
+    BLOCK_POISON(p, (size_t)ARENA_PAGE << k);   /* before the lock is released: a competing allocation may take it next */
     pthread_mutex_unlock(&A.mu);
 }
+ArenaZeroStats arena_zero_stats(void) { pthread_mutex_lock(&A.mu); ArenaZeroStats z = { A.zero_fresh, A.zero_reused, A.zero_sync_words }; pthread_mutex_unlock(&A.mu); return z; }
 
 /* ---- paged buffers ---- */
 static void *page_new(void) { return arena_alloc(ARENA_PAGE, NULL); }

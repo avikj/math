@@ -71,8 +71,7 @@ static void *take(size_t n) {
 }
 static bool ours(const void *p, Hdr *out) {
     if (!p || !arena_live()) return false;
-    const char *base = (const char *)arena_base(); size_t bytes = ARENA_WORDS * sizeof(uint64_t);
-    if ((const char *)p < base + HDR || (const char *)p >= base + bytes) return false;
+    if (!arena_owns((const char *)p - HDR)) return false;   /* the exact extent index */
     const Hdr *h = (const Hdr *)((const char *)p - HDR);
     UNPOISON(h, HDR); *out = *h; POISON(h, HDR);
     return (out->magic_class & MAGIC_MASK) == MAGIC_SMALL || (out->magic_class & MAGIC_MASK) == MAGIC_LARGE;

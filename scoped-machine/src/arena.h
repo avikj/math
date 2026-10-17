@@ -27,14 +27,17 @@
 #include "radix.h"
 
 #define ARENA_PAGE   512u                       /* words per page (4 KiB) */
-#define ARENA_ORDERS 23u                        /* orders 0..22: page × 2^k, the largest the whole range */
-#define ARENA_WORDS  ((size_t)ARENA_PAGE << (ARENA_ORDERS - 1))   /* 2^31 words = 16 GiB of address space: the lower half on the free lists, the upper half the fresh (zero) region */
-#define ARENA_FRESH_WORDS (ARENA_WORDS / 2)
+#define ARENA_ORDERS ((unsigned)(sizeof(size_t) * 8 - 12))   /* orders 0..: page × 2^k up to the native address width (no fixed total) */
 
-void arena_init(void);                           /* the one reservation */
-void arena_free(void);                           /* the one release */
+void arena_init(void);                           /* the allocator (extents are requested on demand) */
+void arena_free(void);                           /* extents live for the process */
 bool arena_live(void);
-const void *arena_base(void);                    /* the reservation's start (kalloc: ownership test) */
+bool arena_owns(const void *p);                  /* p lies in an owned extent (kalloc: ownership test) */
+size_t arena_extents(void);                      /* extents requested from the host so far */
+size_t arena_owned_words(void);                  /* words of all owned extents */
+void arena_set_extent_policy(size_t words);      /* growth policy: the minimum words of a new extent (tests use tiny extents) */
+typedef struct { uint64_t fresh, reused, sync_words; } ArenaZeroStats;
+ArenaZeroStats arena_zero_stats(void);
 uint64_t *arena_alloc(size_t words, size_t *got);   /* a block of at least `words` words (rounded to the order); not cleared */
 uint64_t *arena_alloc_zero(size_t words, size_t *got);   /* a zero block: from the cleared pool, else a never-used block of the fresh region; released ones are cleared in maintenance steps and reused */
 bool arena_tend_zero(void);                              /* one clearing step (32 words) of a retired zero block; false when none is pending */
