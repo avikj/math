@@ -1,7 +1,5 @@
 #include "eval.h"
 #include <sys/mman.h>
-#define ROOTS_CAP ((size_t)1 << 24)
-#define QUEUE_CAP ((size_t)1 << 24)
 #include "lib.h"
 #include "net.h"
 #include "compiler.h"
@@ -81,7 +79,7 @@ static struct {
     size_t n_entries;              /* under entries_mu */
     pthread_mutex_t entries_mu;    /* key lookup / entry creation */
     /* ready jobs (a multiset) */
-    VEC(Task) queue; size_t qhead;
+    Chunked qtab; size_t qhead, qtail;   /* V21 R4: a segmented queue over monotone positions; consumed chunks are retired */
     pthread_mutex_t q_mu; pthread_cond_t q_cv, idle_cv;
     size_t outstanding;            /* §35: queued jobs + executing jobs (+ reserved launches) */
     bool stop;
@@ -94,7 +92,7 @@ static struct {
      * are jobs of this scheduler (one outstanding count) */
     Net net; SchedPolicy pair_policy;
     /* §60 trace: root / external consumer occurrences in request order */
-    VEC(EntryId) roots; pthread_mutex_t roots_mu;
+    Chunked roots_tab; size_t n_roots; pthread_mutex_t roots_mu;   /* V21 R4: extensible, stable */
     /* counters */
     size_t tasks_created;
     EvalEvents ev;
@@ -138,18 +136,14 @@ static void *worker_main(void *arg);
 void eval_init(void) {
     memset(&E, 0, sizeof E);
     pthread_mutex_init(&E.roots_mu, NULL);
-    E.roots.cap = ROOTS_CAP;   /* root occurrences in one fixed reservation: recorded under roots_mu without growth */
-    E.roots.data = mmap(NULL, ROOTS_CAP * sizeof(EntryId), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-    require(E.roots.data != MAP_FAILED, "eval: roots reservation");
+    chunked_init(&E.roots_tab, sizeof(EntryId)); E.n_roots = 0;
     interner_init(&E.keys); chunked_init(&E.heads, sizeof(EntryId));
     interner_init(&E.shape_ids); chunked_init(&E.shape_side, sizeof(ShapeSide));
     interner_init(&E.receipts);
     chunked_init(&E.entries, sizeof(Entry));
     pthread_mutex_init(&E.entries_mu, NULL);
     pthread_mutex_init(&E.q_mu, NULL);
-    E.queue.cap = QUEUE_CAP;
-    E.queue.data = mmap(NULL, QUEUE_CAP * sizeof(*E.queue.data), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-    require(E.queue.data != MAP_FAILED, "eval: queue reservation");
+    chunked_init(&E.qtab, sizeof(Task)); E.qhead = E.qtail = 0;
     pthread_cond_init(&E.q_cv, NULL);
     pthread_cond_init(&E.idle_cv, NULL);
     pthread_mutex_init(&E.res_mu, NULL);
@@ -205,8 +199,7 @@ static Entry *ENT(EntryId e) { return (Entry *)chunked_get(&E.entries, e - 1); }
 
 void eval_free(void) {
     stop_workers();
-    if (E.roots.data) munmap(E.roots.data, ROOTS_CAP * sizeof(EntryId));
-    E.roots.data = NULL; E.roots.len = E.roots.cap = 0; pthread_mutex_destroy(&E.roots_mu);
+    chunked_free(&E.roots_tab); E.n_roots = 0; pthread_mutex_destroy(&E.roots_mu);
     net_free(&E.net);           /* after the workers: a pending pair is a job */
     for (size_t i = 0; i < E.n_entries; i++) {
         Entry *e = ENT(i + 1);
@@ -234,8 +227,7 @@ void eval_free(void) {
     for (size_t i = 0; i < E.joins.len; i++) if (E.joins.data[i]) { Gather *g = E.joins.data[i]; pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g); }
     vec_free(&E.joins);
     pthread_mutex_destroy(&E.join_mu);
-    if (E.queue.data) munmap(E.queue.data, QUEUE_CAP * sizeof(*E.queue.data));
-    E.queue.data = NULL; E.queue.len = E.queue.cap = 0;
+    chunked_free(&E.qtab); E.qhead = E.qtail = 0;
     pthread_mutex_destroy(&E.entries_mu); pthread_mutex_destroy(&E.q_mu); pthread_mutex_destroy(&E.res_mu);
     pthread_cond_destroy(&E.q_cv); pthread_cond_destroy(&E.idle_cv);
     memset(&E, 0, sizeof E);
@@ -289,18 +281,24 @@ static EvalResult *result_system(RefId owner, size_t n, const FaceId *faces, con
  * observer can see the key RUNNING with outstanding == 0; the job itself is
  * put on the queue after the entry lock is released. */
 static void reserve_job(void) { pthread_mutex_lock(&E.q_mu); E.outstanding++; pthread_mutex_unlock(&E.q_mu); }
+/* the chunk the next positions need, created outside q_mu (a racing
+ * candidate is retired by chunked_at); under q_mu the slot write is then a
+ * stable store */
+static void queue_prepare(void) { size_t at = __atomic_load_n(&E.qtail, __ATOMIC_ACQUIRE); (void)chunked_at(&E.qtab, at); (void)chunked_at(&E.qtab, at + 1); }
 static void enqueue_reserved(Task t) {
     fine_bump(FC_QUEUE_OPS); fine_bump(FC_LOCK_ATTEMPTS);
+    queue_prepare();
     pthread_mutex_lock(&E.q_mu);
-    require(E.queue.len < E.queue.cap, "eval: queue reservation exhausted"); E.queue.data[E.queue.len++] = t;   /* a fixed reservation: no growth under q_mu */
+    *(Task *)chunked_at(&E.qtab, E.qtail) = t; __atomic_store_n(&E.qtail, E.qtail + 1, __ATOMIC_RELEASE);   /* a stable slot; the chunk was created before q_mu (queue_prepare) */
     pthread_cond_signal(&E.q_cv);
     pthread_mutex_unlock(&E.q_mu);
 }
 static void enqueue(Task t) {
     fine_bump(FC_QUEUE_OPS); fine_bump(FC_LOCK_ATTEMPTS);
+    queue_prepare();
     pthread_mutex_lock(&E.q_mu);
     E.outstanding++;
-    require(E.queue.len < E.queue.cap, "eval: queue reservation exhausted"); E.queue.data[E.queue.len++] = t;   /* a fixed reservation: no growth under q_mu */
+    *(Task *)chunked_at(&E.qtab, E.qtail) = t; __atomic_store_n(&E.qtail, E.qtail + 1, __ATOMIC_RELEASE);   /* a stable slot; the chunk was created before q_mu (queue_prepare) */
     pthread_cond_signal(&E.q_cv);
     pthread_mutex_unlock(&E.q_mu);
 }
@@ -316,8 +314,7 @@ static void enqueue_resume(Cont *k, EvalResult *r) { Task t; memset(&t, 0, sizeo
 static bool pop_locked(Task *out) {
     fine_bump(FC_QUEUE_OPS);
     size_t npairs = net_pending_pairs_locked(&E.net);
-    bool have_jobs = E.qhead < E.queue.len;
-    if (!have_jobs) { E.queue.len = 0; E.qhead = 0; }
+    bool have_jobs = E.qhead < E.qtail;
     if (npairs) {
         /* two queues, each with its own policy; which queue goes first is
          * itself a policy choice (FIFO: jobs first, LIFO: pairs first,
@@ -327,12 +324,12 @@ static bool pop_locked(Task *out) {
     }
     if (!have_jobs) return false;
     size_t pick = E.qhead;
-    if (E.policy == POL_LIFO) pick = E.queue.len - 1;
-    else if (E.policy == POL_RANDOM) pick = E.qhead + (size_t)(rng_next() % (E.queue.len - E.qhead));
-    *out = E.queue.data[pick];
-    E.queue.data[pick] = E.queue.data[E.qhead];
+    if (E.policy == POL_LIFO) pick = E.qtail - 1;
+    else if (E.policy == POL_RANDOM) pick = E.qhead + (size_t)(rng_next() % (E.qtail - E.qhead));
+    Task *tp = (Task *)chunked_get(&E.qtab, pick), *hp = (Task *)chunked_get(&E.qtab, E.qhead);
+    *out = *tp; *tp = *hp;
     E.qhead++;
-    if (E.qhead == E.queue.len) { E.queue.len = 0; E.qhead = 0; }
+    if ((E.qhead & (CHUNK_SIZE - 1)) == 0) chunked_release_chunk(&E.qtab, (E.qhead >> CHUNK_BITS) - 1);   /* a fully consumed chunk is retired */
     return true;
 }
 
@@ -507,8 +504,8 @@ uint64_t eval_entry_env(EntryId e) { return ENT(e)->env; }
 size_t eval_entry_steps(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); size_t s = x->steps; pthread_mutex_unlock(&x->mu); return s; }
 size_t eval_root_occurrences(EntryId **out) {
     pthread_mutex_lock(&E.roots_mu);
-    size_t n = E.roots.len; *out = n ? malloc(n * sizeof(EntryId)) : NULL; require(!n || *out, "out of memory");
-    if (n) memcpy(*out, E.roots.data, n * sizeof(EntryId));
+    size_t n = E.n_roots; *out = n ? malloc(n * sizeof(EntryId)) : NULL; require(!n || *out, "out of memory");
+    for (size_t i = 0; i < n; i++) (*out)[i] = *(EntryId *)chunked_get(&E.roots_tab, i);   /* inspection (tests): a copy of the trace */
     pthread_mutex_unlock(&E.roots_mu); return n;
 }
 
@@ -606,7 +603,8 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     k->child = eid; k->req = t;
     add_count(&E.ev.request);
     /* §60 trace: the consumer occurrence (owner, slot, requested key) */
-    if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { pthread_mutex_lock(&E.roots_mu); require(E.roots.len < E.roots.cap, "eval: roots reservation exhausted"); E.roots.data[E.roots.len++] = eid; pthread_mutex_unlock(&E.roots_mu); }
+    if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { size_t at = __atomic_load_n(&E.n_roots, __ATOMIC_ACQUIRE); (void)chunked_at(&E.roots_tab, at); (void)chunked_at(&E.roots_tab, at + 1);   /* the chunk, outside roots_mu */
+      pthread_mutex_lock(&E.roots_mu); *(EntryId *)chunked_at(&E.roots_tab, E.n_roots) = eid; __atomic_store_n(&E.n_roots, E.n_roots + 1, __ATOMIC_RELEASE); pthread_mutex_unlock(&E.roots_mu); }
     else { Entry *o = ENT(k->dest); pthread_mutex_lock(&o->mu); vec_push(&o->deps, eid); pthread_mutex_unlock(&o->mu); }
     /* readiness check and waiter registration under the same lock (§10) */
     fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
@@ -1227,7 +1225,7 @@ EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
             uint64_t job = 0; KCont *on = kc_current() ? producer_owner(root_entry, &job) : NULL;
             pthread_mutex_lock(&E.q_mu);
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
-            bool queued = E.qhead < E.queue.len || net_pending_pairs_locked(&E.net) > 0;
+            bool queued = E.qhead < E.qtail || net_pending_pairs_locked(&E.net) > 0;
             if (d || E.outstanding == 0) { pthread_mutex_unlock(&E.q_mu); break; }
             if (!queued) eval_wait_locked_for(on, job);
             pthread_mutex_unlock(&E.q_mu);

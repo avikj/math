@@ -41,7 +41,7 @@ typedef struct { size_t claim; Words deps; Words gdeps; } Frame;
 
 static struct {
     WordMap idx;            /* (kind, words...) → claim index + 1 */
-    VEC(Claim) recs;
+    Chunked recs; size_t nrecs;   /* V21 R4: claim records at stable addresses in an extensible table (full-width directory, no fixed capacity) */
     pthread_mutex_t mu; pthread_cond_t cv;
     VEC(uint64_t) wait_on;  /* per thread id: claim index + 1 the thread is blocked on (0 = none) */
     VEC(void *) kcont;      /* per thread id: the kernel continuation running on it (§94: a waiter that is a continuation yields to that continuation's job) */
@@ -52,7 +52,7 @@ static struct {
     size_t clients;         /* top-level requests in progress (atomic): the session boundary requires zero */
     uint64_t crev;          /* bumped (under mu) when a published verdict is withdrawn or a premise discharged: a stepped resolution revalidates against it */
 } K;
-#define CLAIM_CAP ((size_t)1 << 24)
+#define CLAIM(i) ((Claim *)chunked_get(&K.recs, (i)))
 
 /* §59.4: thread identities are session-qualified; the generation allocator
  * survives check_free so a reused client thread re-registers in a new session */
@@ -86,19 +86,17 @@ void check_init(void) {
     session_gen++;
     K.attempt = 1;
     wordmap_init(&K.idx);
-    /* the claim records live in one fixed reservation (never-touched pages,
-     * zero on first use): a claim is created under K.mu without growing or
-     * copying the array, and its address is stable (lock-section audit:
-     * claim_index_locked was the vector's doubling copy under K.mu) */
-    K.recs.cap = CLAIM_CAP;
-    K.recs.data = mmap(NULL, CLAIM_CAP * sizeof(Claim), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
-    require(K.recs.data != MAP_FAILED, "check: claim reservation");
+    /* V21 R4: the claim records live in an extensible chunked table (stable
+     * addresses, full-width directory): a claim is created under K.mu
+     * without growing or copying an array; the chunk it needs is created
+     * before K.mu is taken (claim_index) */
+    chunked_init(&K.recs, sizeof(Claim)); K.nrecs = 0;
     pthread_mutex_init(&K.mu, NULL); pthread_cond_init(&K.cv, NULL);
     vec_push(&K.wait_on, 0); vec_push(&K.assume, 0); vec_push(&K.kcont, NULL);
 }
 void check_free(void) {
-    for (size_t k = 0; k < K.recs.len; k++) { words_free(&K.recs.data[k].deps); words_free(&K.recs.data[k].gdeps); }
-    if (K.recs.data) munmap(K.recs.data, CLAIM_CAP * sizeof(Claim));
+    for (size_t k = 0; k < K.nrecs; k++) { words_free(&CLAIM(k)->deps); words_free(&CLAIM(k)->gdeps); }
+    chunked_free(&K.recs); K.nrecs = 0;
     vec_free(&K.wait_on); vec_free(&K.assume); vec_free(&K.kcont);
     wordmap_free(&K.idx);
     pthread_mutex_destroy(&K.mu); pthread_cond_destroy(&K.cv);
@@ -144,10 +142,9 @@ static size_t claim_of_slot_locked(uint64_t *slot, uint64_t kind) {
     uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
     if (v) return (size_t)v - 1;
     Claim c; memset(&c, 0, sizeof c); words_init(&c.deps); words_init(&c.gdeps); c.is_symbol = kind == CL_SYMBOL;
-    require(K.recs.len < K.recs.cap, "check: claim reservation exhausted");
-    K.recs.data[K.recs.len++] = c;   /* within the reservation: no growth */
-    __atomic_store_n(slot, K.recs.len, __ATOMIC_RELEASE);
-    return K.recs.len - 1;
+    *(Claim *)chunked_at(&K.recs, K.nrecs) = c; __atomic_store_n(&K.nrecs, K.nrecs + 1, __ATOMIC_RELEASE);   /* a stable slot; a new chunk is a zero block (no copy, no clearing under K.mu) */
+    __atomic_store_n(slot, K.nrecs, __ATOMIC_RELEASE);
+    return K.nrecs - 1;
 }
 __attribute__((unused)) static size_t claim_index_locked(uint64_t kind, const uint64_t *w, size_t n) {   /* the white-box probes call it under K.mu */
     uint64_t key[10]; claim_key(kind, w, n, key);
@@ -162,6 +159,7 @@ static size_t claim_index(uint64_t kind, const uint64_t *w, size_t n) {
     uint64_t *slot = (uint64_t *)chunked_at(&K.idx.vals, id - 1);
     uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
     if (v) return (size_t)v - 1;
+    { size_t at = __atomic_load_n(&K.nrecs, __ATOMIC_ACQUIRE); (void)chunked_at(&K.recs, at); (void)chunked_at(&K.recs, at + 1); }   /* the next chunk, published outside K.mu (a racing candidate is retired) */
     pthread_mutex_lock(&K.mu); size_t c = claim_of_slot_locked(slot, kind); pthread_mutex_unlock(&K.mu);
     return c;
 }
@@ -183,7 +181,7 @@ static bool wait_cycle_locked(uint64_t owner, uint64_t me, uint64_t *symbol_wait
         if (cur == me) return true;
         uint64_t w = K.wait_on.data[cur];
         if (!w) return false;
-        Claim *c = &K.recs.data[w - 1];
+        Claim *c = CLAIM(w - 1);
         if (c->is_symbol && c->state == 1 && !*symbol_waiter) *symbol_waiter = cur;
         if (c->state != 1) return false;
         cur = c->owner;
@@ -222,7 +220,7 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
     for (;;) {
         /* K.recs may have been reallocated during any wait: records are
          * reacquired by index at the top of every iteration (§59.4) */
-        Claim *r = &K.recs.data[c];
+        Claim *r = CLAIM(c);
         if (r->state == 2 && r->result == 3 && r->attempt != K.attempt) { r->state = 0; K.crev++; }   /* an old attempt's unresolved outcome */
         /* §94: the verdict's lists are examined one entry per K.mu section
          * (resolve_pause: one fine transition between sections). Any
@@ -235,7 +233,7 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
             bool stale = false, moved = false;
             reuse_bump(REUSE_DEPENDENCY_CHECK);
             for (size_t k = 0;; k += 2) {
-                r = &K.recs.data[c];
+                r = CLAIM(c);
                 if (r->state != 2 || K.crev != rev0) { moved = true; break; }
                 if (k + 1 >= r->gdeps.n) break;
                 if (global_revision(r->gdeps.w[k]) != r->gdeps.w[k + 1]) { stale = true; break; }
@@ -251,11 +249,11 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
              * (then the declaration is our assumption too) */
             bool waited = false;
             for (size_t k = 0; !waited; k++) {
-                r = &K.recs.data[c];
+                r = CLAIM(c);
                 if (r->state != 2 || K.crev != rev0) { waited = true; break; }
                 if (k >= r->deps.n) break;
                 size_t d = r->deps.w[k];
-                Claim *dc = &K.recs.data[d];
+                Claim *dc = CLAIM(d);
                 if (dc->state == 2 && dc->result != 1) { resolve_locked(); waited = true; break; }
                 if (dc->state == 1 && dc->owner != me && d != assumed && may_block_locked(dc->owner, me)) {
                     K.wait_on.data[me] = d + 1;
@@ -271,7 +269,7 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
             *result = r->result; if (reason) *reason = r->reason; if (aux) memcpy(aux, r->aux, sizeof r->aux);
             bool moved = false;
             for (size_t k = 0;; k++) {   /* premises, one per section, into this thread's frame */
-                r = &K.recs.data[c];
+                r = CLAIM(c);
                 if (r->state != 2 || K.crev != rev0) { moved = true; break; }
                 if (k >= r->deps.n) break;
                 uint64_t d = r->deps.w[k];
@@ -281,7 +279,7 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
                 pthread_mutex_lock(&K.mu);
             }
             for (size_t k = 0; !moved; k += 2) {   /* read dependencies, one pair per section */
-                r = &K.recs.data[c];
+                r = CLAIM(c);
                 if (r->state != 2 || K.crev != rev0) { moved = true; break; }
                 if (k + 1 >= r->gdeps.n) break;
                 uint64_t sym = r->gdeps.w[k], rev = r->gdeps.w[k + 1];
@@ -332,11 +330,11 @@ static void resolve_locked(void) {
         bool changed = true;
         while (changed) {
             changed = false;
-            for (size_t c = 0; c < K.recs.len; c++) {
+            for (size_t c = 0; c < K.nrecs; c++) {
                 for (size_t k = 0;;) {
-                    Claim *r = &K.recs.data[c];
+                    Claim *r = CLAIM(c);
                     if (r->state != 2 || k >= r->deps.n) break;
-                    Claim *d = &K.recs.data[r->deps.w[k]];
+                    Claim *d = CLAIM(r->deps.w[k]);
                     if (d->state == 2 && d->result != 1) { r->state = 0; r->deps.n = 0; K.crev++; changed = true; break; }
                     if (d->state == 2 && d->result == 1 && d->deps.n == 0) { r->deps.w[k] = r->deps.w[--r->deps.n]; K.crev++; changed = true; }   /* discharged (the premises are a set) */
                     else k++;
@@ -345,14 +343,14 @@ static void resolve_locked(void) {
                 resolve_pause();
             }
         }
-        uint64_t rev0 = K.crev; size_t n0 = K.recs.len;
+        uint64_t rev0 = K.crev; size_t n0 = K.nrecs;
         pthread_mutex_unlock(&K.mu);
         bool *in = calloc(n0 ? n0 : 1, sizeof(bool));
         pthread_mutex_lock(&K.mu);
         bool restart = K.crev != rev0, committed = false;
         size_t nin = 0;
         for (size_t c = 0; c < n0 && !restart; c++) {
-            Claim *r = &K.recs.data[c];
+            Claim *r = CLAIM(c);
             if (r->is_symbol && r->state == 2 && r->result == 1 && r->deps.n) { in[c] = true; nin++; }
             resolve_pause(); restart = K.crev != rev0;
         }
@@ -362,9 +360,9 @@ static void resolve_locked(void) {
             for (size_t c = 0; c < n0 && !restart; c++) {
                 if (!in[c]) continue;
                 for (size_t k = 0;; k++) {
-                    Claim *r = &K.recs.data[c];
+                    Claim *r = CLAIM(c);
                     if (k >= r->deps.n) break;
-                    size_t dd = r->deps.w[k]; Claim *d = &K.recs.data[dd];
+                    size_t dd = r->deps.w[k]; Claim *d = CLAIM(dd);
                     bool ok = (dd < n0 && in[dd]) || (d->state == 2 && d->result == 1 && d->deps.n == 0);
                     if (!ok) { in[c] = false; nin--; shrink = true; }
                     resolve_pause(); restart = K.crev != rev0;
@@ -375,7 +373,7 @@ static void resolve_locked(void) {
         for (size_t c = 0; c < n0 && nin && !restart; c++) {
             if (!in[c]) continue;
             if (K.crev != rev0) { restart = true; break; }
-            K.recs.data[c].deps.n = 0; committed = true;
+            (*CLAIM(c)).deps.n = 0; committed = true;
             resolve_pause();
         }
         free(in);
@@ -392,7 +390,7 @@ static void claim_release(size_t c, uint64_t result, const char *reason, const u
     Frame *f = top_frame();
     require(f && f->claim == c, "claim release out of order");
     Words deps = f->deps, gdeps = f->gdeps; tl_frames.len--;
-    Claim *r = &K.recs.data[c];                     /* a stable address: the claim records are one fixed reservation */
+    Claim *r = CLAIM(c);                     /* a stable address: the claim records are one fixed reservation */
     if (r->is_symbol) words_remove(&deps, c);        /* self-recursion is closed by this verdict */
     Words gnew, dnew; words_init(&gnew); words_init(&dnew);
     words_append(&gnew, gdeps.w, gdeps.n);
@@ -448,9 +446,9 @@ static bool top_settled(void) {
     uint64_t me = tid_locked();
     for (size_t k = 0; k < tl_pending.n; k++) {
         size_t d = tl_pending.w[k];
-        while (K.recs.data[d].state == 1 && K.recs.data[d].owner != me) {
+        while ((*CLAIM(d)).state == 1 && (*CLAIM(d)).owner != me) {
             K.wait_on.data[me] = d + 1;
-            claim_wait_locked(K.recs.data[d].owner);
+            claim_wait_locked((*CLAIM(d)).owner);
             K.wait_on.data[me] = 0;
             K.assume.data[me] = 0;
         }

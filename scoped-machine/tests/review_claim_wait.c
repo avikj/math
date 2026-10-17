@@ -27,8 +27,8 @@ int main(void) {
     pthread_mutex_unlock(&K.mu);
     ENTER(); require(claim_acquire(symbol, &v, NULL, NULL) == ACQ_OWNER, "main owns symbol");
     pthread_mutex_lock(&K.mu);
-    K.recs.data[dependent].state = 2; K.recs.data[dependent].result = 1;
-    words_add(&K.recs.data[dependent].deps, symbol);
+    (*CLAIM(dependent)).state = 2; (*CLAIM(dependent)).result = 1;
+    words_add(&CLAIM(dependent)->deps, symbol);
     pthread_mutex_unlock(&K.mu);
     pthread_t t; pthread_create(&t, NULL, reader, NULL);
     for (;;) {

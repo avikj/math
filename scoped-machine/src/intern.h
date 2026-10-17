@@ -38,6 +38,7 @@ void chunked_set_alloc(Chunked *c, ChunkAlloc alloc, void *ctx);
 
 void chunked_init(Chunked *c, size_t elem);
 void chunked_free(Chunked *c);
+void chunked_release_chunk(Chunked *c, size_t chunk);   /* retire one consumed chunk (index >> CHUNK_BITS) */
 void *chunked_at(Chunked *c, size_t i);           /* creates the chunk if needed (zeroed) */
 void *chunked_get(const Chunked *c, size_t i);    /* read-only: chunk must exist */
 void *chunked_peek(const Chunked *c, size_t i);   /* read-only: NULL when the chunk does not exist yet */

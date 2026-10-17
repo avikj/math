@@ -22,6 +22,13 @@ void *chunked_at(Chunked *c, size_t i) {
     }
     return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
 }
+/* V21 R4: a consumed chunk of a monotone table (a queue's prefix) is retired:
+ * one directory slot exchanged, one arena release */
+void chunked_release_chunk(Chunked *c, size_t chunk) {
+    void **slot = radix_slot(&c->dir, chunk, false); if (!slot) return;
+    void *p = __atomic_exchange_n(slot, NULL, __ATOMIC_ACQ_REL);
+    if (p) arena_release(p, (CHUNK_SIZE * c->elem + 7) / 8);
+}
 void *chunked_get(const Chunked *c, size_t i) {
     void *p = radix_get(&c->dir, i >> CHUNK_BITS);
     require(p, "chunked read of a missing element");
