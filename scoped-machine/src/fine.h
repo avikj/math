@@ -46,6 +46,7 @@ typedef enum {
     FC_SORT_STEPS,            /* sort_unique_u64: one sift (≤ 64 iterations) or one dedupe step */
     FC_ADAPTER_STEPS,         /* find_adapter: one candidate position examined under entries_mu */
     FC_COPY_WORDS,            /* words_append / variable-length copies: one word per transition */
+    FC_CLAIM_STEPS,           /* checker claim resolution: one claim or one premise examined under K.mu */
     FC_COUNT
 } FineCounter;
 

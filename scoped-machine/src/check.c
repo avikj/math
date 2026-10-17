@@ -50,6 +50,7 @@ static struct {
     size_t budget;
     uint64_t attempt;       /* §59.4: a changed budget or a retry begins a new attempt */
     size_t clients;         /* top-level requests in progress (atomic): the session boundary requires zero */
+    uint64_t crev;          /* bumped (under mu) when a published verdict is withdrawn or a premise discharged: a stepped resolution revalidates against it */
 } K;
 #define CLAIM_CAP ((size_t)1 << 24)
 
@@ -202,8 +203,8 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
         /* K.recs may have been reallocated during any wait: records are
          * reacquired by index at the top of every iteration (§59.4) */
         Claim *r = &K.recs.data[c];
-        if (r->state == 2 && r->result == 3 && r->attempt != K.attempt) r->state = 0;   /* an old attempt's unresolved outcome */
-        if (r->state == 2 && !r->is_symbol && !gdeps_current(&r->gdeps)) { r->state = 0; r->deps.n = 0; r->gdeps.n = 0; }   /* §79.2: a read dependency changed */
+        if (r->state == 2 && r->result == 3 && r->attempt != K.attempt) { r->state = 0; K.crev++; }   /* an old attempt's unresolved outcome */
+        if (r->state == 2 && !r->is_symbol && !gdeps_current(&r->gdeps)) { r->state = 0; r->deps.n = 0; r->gdeps.n = 0; K.crev++; }   /* §79.2: a read dependency changed */
         if (r->state == 2) {
             /* a verdict provisional on symbols: a rejected premise withdraws
              * it (recomputed now, by us); a premise another thread is still
@@ -250,38 +251,70 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
  *     recursion validated from both ends) is committed together: it is the
  *     greatest set of accepted symbols closed under their premises.
  * Runs under K.mu after a symbol verdict is published. */
+/* §94: the resolution is stepped. K.mu is held for one claim or one premise
+ * at a time and released between steps (each step is one fine transition,
+ * FC_CLAIM_STEPS, so a continuation may suspend between them); the caller
+ * holds K.mu on entry and on return. A withdrawal or discharge is decided on
+ * the state seen under the lock at that step. The greatest committed set is
+ * computed against a snapshot of `crev`: a withdrawal or discharge by any
+ * thread meanwhile restarts the resolution; each commit (clearing a member's
+ * premises) is made under the lock only while `crev` is unchanged since the
+ * set was computed — a commit made before a later change is the commit the
+ * atomic resolution would have made at that point. */
+static void resolve_pause(void) { pthread_mutex_unlock(&K.mu); fine_bump(FC_CLAIM_STEPS); pthread_mutex_lock(&K.mu); }
 static void resolve_locked(void) {
-    bool changed = true;
-    while (changed) {
-        changed = false;
-        for (size_t c = 0; c < K.recs.len; c++) {
-            Claim *r = &K.recs.data[c];
-            if (r->state != 2 || r->deps.n == 0) continue;
-            for (size_t k = 0; k < r->deps.n; ) {
-                Claim *d = &K.recs.data[r->deps.w[k]];
-                if (d->state == 2 && d->result != 1) { r->state = 0; r->deps.n = 0; changed = true; break; }
-                if (d->state == 2 && d->result == 1 && d->deps.n == 0) { words_remove(&r->deps, r->deps.w[k]); changed = true; continue; }
-                k++;
+    for (;;) {
+        bool changed = true;
+        while (changed) {
+            changed = false;
+            for (size_t c = 0; c < K.recs.len; c++) {
+                for (size_t k = 0;;) {
+                    Claim *r = &K.recs.data[c];
+                    if (r->state != 2 || k >= r->deps.n) break;
+                    Claim *d = &K.recs.data[r->deps.w[k]];
+                    if (d->state == 2 && d->result != 1) { r->state = 0; r->deps.n = 0; K.crev++; changed = true; break; }
+                    if (d->state == 2 && d->result == 1 && d->deps.n == 0) { r->deps.w[k] = r->deps.w[--r->deps.n]; K.crev++; changed = true; }   /* discharged (the premises are a set) */
+                    else k++;
+                    resolve_pause();
+                }
+                resolve_pause();
             }
         }
-        bool *in = calloc(K.recs.len ? K.recs.len : 1, sizeof(bool));
+        uint64_t rev0 = K.crev; size_t n0 = K.recs.len;
+        pthread_mutex_unlock(&K.mu);
+        bool *in = calloc(n0 ? n0 : 1, sizeof(bool));
+        pthread_mutex_lock(&K.mu);
+        bool restart = K.crev != rev0, committed = false;
         size_t nin = 0;
-        for (size_t c = 0; c < K.recs.len; c++) { Claim *r = &K.recs.data[c]; if (r->is_symbol && r->state == 2 && r->result == 1 && r->deps.n) { in[c] = true; nin++; } }
+        for (size_t c = 0; c < n0 && !restart; c++) {
+            Claim *r = &K.recs.data[c];
+            if (r->is_symbol && r->state == 2 && r->result == 1 && r->deps.n) { in[c] = true; nin++; }
+            resolve_pause(); restart = K.crev != rev0;
+        }
         bool shrink = true;
-        while (shrink && nin) {
+        while (shrink && nin && !restart) {
             shrink = false;
-            for (size_t c = 0; c < K.recs.len; c++) {
+            for (size_t c = 0; c < n0 && !restart; c++) {
                 if (!in[c]) continue;
-                Claim *r = &K.recs.data[c];
-                for (size_t k = 0; k < r->deps.n; k++) {
-                    Claim *d = &K.recs.data[r->deps.w[k]];
-                    bool ok = in[r->deps.w[k]] || (d->state == 2 && d->result == 1 && d->deps.n == 0);
-                    if (!ok) { in[c] = false; nin--; shrink = true; break; }
+                for (size_t k = 0;; k++) {
+                    Claim *r = &K.recs.data[c];
+                    if (k >= r->deps.n) break;
+                    size_t dd = r->deps.w[k]; Claim *d = &K.recs.data[dd];
+                    bool ok = (dd < n0 && in[dd]) || (d->state == 2 && d->result == 1 && d->deps.n == 0);
+                    if (!ok) { in[c] = false; nin--; shrink = true; }
+                    resolve_pause(); restart = K.crev != rev0;
+                    if (!ok || restart) break;
                 }
             }
         }
-        for (size_t c = 0; c < K.recs.len; c++) if (in[c]) { K.recs.data[c].deps.n = 0; changed = true; }
+        for (size_t c = 0; c < n0 && nin && !restart; c++) {
+            if (!in[c]) continue;
+            if (K.crev != rev0) { restart = true; break; }
+            K.recs.data[c].deps.n = 0; committed = true;
+            resolve_pause();
+        }
         free(in);
+        if (!restart && !committed) return;
     }
 }
 
@@ -289,13 +322,18 @@ static void resolve_locked(void) {
  * verdict (the claim returns to absent); otherwise the verdict is published,
  * provisional on the running symbols the computation relied on. */
 static void claim_release(size_t c, uint64_t result, const char *reason, const uint64_t aux[3]) {
-    pthread_mutex_lock(&K.mu);
+    /* the frame is this thread's; the published lists are prepared outside
+     * K.mu and swapped in under it (one constant step) */
     Frame *f = top_frame();
     require(f && f->claim == c, "claim release out of order");
     Words deps = f->deps, gdeps = f->gdeps; tl_frames.len--;
-    Claim *r = &K.recs.data[c];
+    Claim *r = &K.recs.data[c];                     /* a stable address: the claim records are one fixed reservation */
     if (r->is_symbol) words_remove(&deps, c);        /* self-recursion is closed by this verdict */
-    r->gdeps.n = 0; words_append(&r->gdeps, gdeps.w, gdeps.n);
+    Words gnew, dnew; words_init(&gnew); words_init(&dnew);
+    words_append(&gnew, gdeps.w, gdeps.n);
+    if (result != 0) words_append(&dnew, deps.w, deps.n);
+    pthread_mutex_lock(&K.mu);
+    { Words t = r->gdeps; r->gdeps = gnew; gnew = t; }
     if (result == 0) {
         /* no verdict in this attempt: the attempt's waiters receive the
          * unresolved outcome (one producer per attempt, §59.4); a new attempt
@@ -305,13 +343,13 @@ static void claim_release(size_t c, uint64_t result, const char *reason, const u
     } else {
         r->state = 2; r->result = result; r->reason = reason;
         if (aux) memcpy(r->aux, aux, sizeof r->aux); else memset(r->aux, 0, sizeof r->aux);
-        r->deps.n = 0; words_append(&r->deps, deps.w, deps.n);
+        { Words t = r->deps; r->deps = dnew; dnew = t; }
     }
-    if (r->is_symbol) resolve_locked();
-    inherit_locked(&deps); inherit_gdeps(&gdeps);
-    words_free(&deps); words_free(&gdeps);
-    pthread_cond_broadcast(&K.cv);
+    pthread_cond_broadcast(&K.cv);                  /* the verdict is published before the stepped resolution releases K.mu */
+    if (r->is_symbol) { resolve_locked(); pthread_cond_broadcast(&K.cv); }
     pthread_mutex_unlock(&K.mu);
+    inherit_locked(&deps); inherit_gdeps(&gdeps);   /* into this thread's enclosing frame */
+    words_free(&deps); words_free(&gdeps); words_free(&gnew); words_free(&dnew);
 }
 
 /* a recursive occurrence of a running symbol: typed by its declaration,
