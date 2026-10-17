@@ -72,6 +72,17 @@ ShapeId shape_under(RefId t, MapId rho, uint32_t depth) {
                 words_push(&w, shape_under(o.body, rho2, depth + 1));
             }
         }
+        if (h.tag == T_GLOBAL && !ref_is_tview(t)) {
+            /* a global's free boundary is carried by its view map, not by
+             * fields: the images of its declared parameters and dimensions
+             * are part of its structural identity (F and F[i↦0] are
+             * different computations) */
+            SymbolId sym = (SymbolId)h.payload; MapId vm = ref_map(t);
+            size_t np; const uint64_t *ps = varset_get(global_params(sym), &np);
+            for (size_t k = 0; k < np; k++) words_push(&w, shape_under(map_term_image(vm, ps[k]), rho, depth));
+            const uint64_t *dsx = dimset_get(global_dims(sym), &np);
+            for (size_t k = 0; k < np; k++) words_push(&w, iv_reindex(map_dim_image(vm, dsx[k]), rho));
+        }
         head_free(&h);
     }
     reuse_bump(REUSE_SHAPE_NODE); fine_bump(FC_SHAPE_NODES);
