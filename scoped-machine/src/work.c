@@ -54,7 +54,8 @@ static struct {
     KTab tab;
     Chunked side;
     WorkLedger L; Phase phase;
-    uint64_t late_base[PH_COUNT][3];   /* V21 R3: late totals at the last ledger reset */
+    uint64_t late_base[PH_COUNT][3];
+    Paged dead;                         /* retired job stacks (Paged descriptors) awaiting frame-by-frame release */   /* V21 R3: late totals at the last ledger reset */
     Chunked ops; size_t nops;    /* handles */
     FormulaId ZERO, ONE; SetId EMPTY; FamilyId FAM0, FAM1;
     Paged owned;            /* kind-specific structs to free (pointers; paged) */
@@ -271,10 +272,12 @@ static void *chunk_from_spare(size_t bytes, void *ctx) {
     void *b = sp->block; sp->block = NULL; sp->words = sp->cleared = 0;
     return b;
 }
+static void dead_stack_step(void);
 static void arena_tend(void) {   /* one maintenance step per unit: a retired page, and one clearing step of the first spare that needs it */
     if (arena_reap()) charge(FR_RELEASE_CHUNK);
     if (arena_tend_zero()) charge(FR_ALLOCATE_CHUNK);   /* one clearing step of a retired zero block (§94 R4) */
     for (int i = 0; i < 3; i++) if (!W.spare[i].block || W.spare[i].cleared < W.spare[i].need) { spare_tend(&W.spare[i]); break; }
+    dead_stack_step();   /* one frame of a restarted job's old stack */
 }
 
 /* ---------------------------------------------------------------- 2. frames ---- */
@@ -375,8 +378,10 @@ static Op *op_new_record(uint64_t id, uint16_t fam) {   /* a fixed-size host all
 static void frame_free(Frame *f);
 static bool job_restart_if_stale(Op *o, const Frame *f) {
     if (o->st != OP_INVALID || !o->unresolved || o->unresolved == check_attempt()) return false;
-    for (size_t k = 0; k < o->stack.n; k++) frame_free((Frame *)paged_at(&o->stack, k));
-    paged_retire(&o->stack); paged_init(&o->stack, sizeof(Frame));
+    /* the old frames are handed to the dead-stack queue in one step and
+     * released one frame per unit (dead_stack_step) — no input-sized loop
+     * here (V21 review: reachable from a framed JOIN through job_at) */
+    *(Paged *)paged_push(&W.dead) = o->stack; paged_init(&o->stack, sizeof(Frame));
     paged_retire(&o->path); paged_init(&o->path, sizeof(uint64_t));
     o->st = OP_RUNNING; o->diag = NULL; o->unresolved = 0; o->waiting_on = 0; o->ret = 0; o->result = 0;
     *(Frame *)paged_push(&o->stack) = *f;
@@ -407,6 +412,13 @@ static void frame_free(Frame *f) {   /* O(1): the pages are retired and released
     size_t n = f->buf.n + f->buf2.n;
     W.L.release_words += n; if (n) charge(FR_RELEASE_CHUNK);
     paged_retire(&f->buf); paged_retire(&f->buf2); paged_retire(&f->buf3);
+}
+/* one frame of the first dead stack per call; the empty stack's pages are then retired */
+static void dead_stack_step(void) {
+    if (!W.dead.n) return;
+    Paged *st = (Paged *)paged_at(&W.dead, W.dead.n - 1);
+    if (st->n) { frame_free((Frame *)paged_at(st, st->n - 1)); paged_pop(st); return; }
+    paged_retire(st); paged_pop(&W.dead);
 }
 static void pw_append(Paged *p, const uint64_t *w, size_t n) { for (size_t i = 0; i < n; i++) pw_push(p, w[i]); }   /* bounded callers pass fixed-size keys; synchronous entries pass their inputs */
 static Frame *top(Op *o) { return (Frame *)paged_at(&o->stack, o->stack.n - 1); }
@@ -2479,7 +2491,7 @@ void work_init(void) {
     { static const ReuseCounter rc_of[3] = { REUSE_SHAPE_NODE, REUSE_DEPENDENCY_CHECK, REUSE_RECEIPT_INSTANCE };
       for (int ph = 0; ph < PH_COUNT; ph++) for (int k = 0; k < 3; k++) W.late_base[ph][k] = reuse_scope_late(ph, rc_of[k]); }
     pthread_mutex_init(&W.mu, NULL);
-    arena_init(); paged_init(&W.owned, sizeof(void *));
+    arena_init(); paged_init(&W.owned, sizeof(void *)); paged_init(&W.dead, sizeof(Paged));
     spare_init(&W.spare[0], CHUNK_SIZE * sizeof(Side)); spare_init(&W.spare[1], CHUNK_SIZE * sizeof(Handle)); spare_init(&W.spare[2], CHUNK_SIZE * sizeof(size_t));
     ktab_init(&W.tab); chunked_init(&W.side, sizeof(Side)); chunked_init(&W.ops, sizeof(Handle));
     chunked_set_alloc(&W.side, chunk_from_spare, &W.spare[0]); chunked_set_alloc(&W.ops, chunk_from_spare, &W.spare[1]); chunked_set_alloc(&W.tab.off, chunk_from_spare, &W.spare[2]);
@@ -2532,6 +2544,8 @@ void work_free(void) {
         default: break;
         }
     }
+    while (W.dead.n) dead_stack_step();   /* teardown: the remaining dead frames */
+    paged_retire(&W.dead);
     for (size_t i = 0; i < W.owned.n; i++) free(*(void **)paged_at(&W.owned, i));
     paged_retire(&W.owned);
     ktab_free(&W.tab); chunked_free(&W.side); chunked_free(&W.ops);
