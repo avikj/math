@@ -297,7 +297,8 @@ enum {   /* operation families (frame kinds) */
  * their operands (and the checker session / environment version where the
  * call reads them); the evaluator-state lookup is private */
 enum { KK_REINDEX = 1, KK_COMPOSE, KK_FC_REINDEX, KK_REF_VALIDATE, KK_FC_PROJECT, KK_ENTAILS, KK_ENTRY_LOOKUP, KK_SHAPE_OF,
-       KK_INFER, KK_ADMISSION, KK_CONTEXT, KK_IS_TYPE, KK_CHECK, KK_TRANSFORM_EVIDENCE };
+       KK_INFER, KK_ADMISSION, KK_CONTEXT, KK_IS_TYPE, KK_CHECK, KK_TRANSFORM_EVIDENCE, KK_NAT };
+enum { CA_ADD = 1, CA_MIN, CA_CMP };   /* KK_NAT operations on costs (BOUNDS-COMPLETION §3) */
 enum { SO_UNION = 1, SO_INTER, SO_DIFF };
 
 typedef struct {
@@ -500,6 +501,7 @@ static bool add_checked(Cost a, Cost b, Cost *out) { W.L.limb_ops++; *out = cost
 Cost cost_add(Cost a, Cost b, bool *overflow) { if (overflow) *overflow = false; return cost_sum(a, b); }
 
 /* ---- the frame bodies ---- */
+static bool cost_op(Op *o, Frame *f, int kind, Cost a, Cost b, uint16_t resume, Cost *out);
 static void step_intern(Op *o, Frame *f);
 static void step_lookup(Op *o, Frame *f);
 static void step_mkf(Op *o, Frame *f);
@@ -1010,9 +1012,10 @@ static void step_sum(Op *o, Frame *f) {
     case 1: {
         Cost w = (o->ret && side(o->ret)->has_val) ? side(o->ret)->val : kind_weight(f->b, S[f->i]);
         if (o->ret && side(o->ret)->has_val) { W.L.memo_hit++; W.L.memo_deliver++; }
-        Cost r; add_checked(f->acc, w, &r);
-        f->acc = r; f->i++; f->ph = 0; return;
+        Cost r; if (!cost_op(o, f, CA_ADD, f->acc, w, 2, &r)) return; o->ret = r;
     }
+    /* fall through */
+    case 2: f->acc = o->ret; f->i++; f->ph = 0; return;
     }
 }
 Cost set_weight(SetId s, ModelId m, bool *overflow) {
@@ -1796,6 +1799,11 @@ static void kernel_call(KCont *k) {
     }
     case KK_TRANSFORM_EVIDENCE: { ContextId G; FaceId face; RefId e, E; k->ok = transform_evidence(k->arg[1], &G, &face, &e, &E);
         if (k->ok) { k->out[0] = G; k->out[1] = face; k->out[2] = e; k->out[3] = E; } else k->why = "proof use INVALID: connecting evidence does not type in its occurrence context"; break; }
+    case KK_NAT: {   /* exact cost arithmetic: one transition per limb (nat.c) */
+        Cost a = k->arg[2], b = k->arg[3];
+        k->out[0] = k->arg[1] == CA_ADD ? cost_sum(a, b) : k->arg[1] == CA_MIN ? (cost_cmp(a, b) <= 0 ? a : b) : (uint64_t)(cost_cmp(a, b) + 1);
+        k->ok = true; break;
+    }
     default: k->ok = false; k->why = "unknown kernel call"; break;
     }
 }
@@ -1805,6 +1813,21 @@ static void kernel_grant(KCont *k) {
     if (used > 1) { W.extra += used - 1; W.L.frames[FR_KERNEL_TRANSITION] += used - 1; W.L.by_phase[W.phase] += used - 1; }
 }
 static Frame kfr(uint64_t kind, uint64_t b, uint64_t c, uint64_t d, uint64_t e) { Frame f = fr(OF_KERNEL, kind, b, c, d); f.e = e; return f; }
+/* BOUNDS-COMPLETION §3: cost arithmetic in units. Immediate operands (and
+ * INFINITY) take one bounded word operation in this unit; boxed operands
+ * request the shared NAT job — a kernel continuation keyed by the operation
+ * and its immutable operands, one transition per limb — and the frame
+ * resumes at `resume` with the result in o->ret. True when *out holds the
+ * result now (the caller then continues at `resume` itself). */
+static bool cost_op(Op *o, Frame *f, int kind, Cost a, Cost b, uint16_t resume, Cost *out) {
+    W.L.limb_ops++;
+    bool small = (a == COST_INF || nat_is_small(a)) && (b == COST_INF || nat_is_small(b));
+    if (small) {
+        if (kind == CA_ADD) { *out = cost_sum(a, b); return true; }   /* two immediates: one word addition (a carry past 2^63 boxes one limb) */
+        int c = cost_cmp(a, b); *out = kind == CA_MIN ? (c <= 0 ? a : b) : (uint64_t)(c + 1); return true;
+    }
+    f->ph = resume; push(o, kfr(KK_NAT, kind, a, b, 0)); return false;
+}
 static void step_kernel(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: {
@@ -2123,30 +2146,37 @@ static void step_proof(Op *o, Frame *f) {
     case 42: if (!c2 || o->ret != proof_formula(c2)) { fail(o, "SPLIT: wrong cofactor at e := 1"); return; } f->ph = 43; push(o, fr(OF_PROOF, c1, model, 0, 0)); return;
     case 43: f->acc = o->ret; f->ph = 44; push(o, fr(OF_PROOF, c2, model, 0, 0)); return;
     case 44: f->acc2 = o->ret; f->ph = 45; push_weight_lookup(o, model, aux); return;   /* the split atom's weight by the framed LOOKUP (§94) */
-    case 45: {
-        Cost l1 = f->acc2, wc; if (!add_checked(weight_from(o->ret, model, aux), l1, &wc)) { limit(o, "cost sum not representable"); return; }
-        charge(FR_COST_COMPARE_CHUNK); Cost v = cmin(f->acc, wc);
-        if (v != value) { fail(o, "SPLIT value is not the minimum of its branches"); return; }
-        proof_done(o, f, v); return;
-    }
+    case 45: { Cost wc; if (!cost_op(o, f, CA_ADD, weight_from(o->ret, model, aux), f->acc2, 46, &wc)) return; o->ret = wc; }
+    /* fall through */
+    case 46: { charge(FR_COST_COMPARE_CHUNK); Cost v; if (!cost_op(o, f, CA_MIN, f->acc, o->ret, 47, &v)) return; o->ret = v; }
+    /* fall through */
+    case 47: { Cost v = o->ret; if (v != value) { fail(o, "SPLIT value is not the minimum of its branches"); return; } proof_done(o, f, v); return; }
     /* FACTOR */
     case 51: if (o->ret != aux) { fail(o, "FACTOR set is not Must(F)"); return; } f->ph = 52; push(o, fr(OF_SUBST, F, aux, 1, 0)); return;
     case 52: if (!c1 || o->ret != proof_formula(c1)) { fail(o, "FACTOR child does not concern F[M := 1]"); return; } f->ph = 53; push(o, fr(OF_PROOF, c1, model, 0, 0)); return;
     case 53: f->acc = o->ret; f->ph = 54; push(o, fr(OF_SUM, aux, model, 0, 0)); return;
-    case 54: { Cost v; if (!add_checked(o->ret, f->acc, &v)) { limit(o, "cost sum not representable"); return; } if (v != value) { fail(o, "FACTOR value is not weight(M) + residual bound"); return; } proof_done(o, f, v); return; }
+    case 54: { Cost v; if (!cost_op(o, f, CA_ADD, o->ret, f->acc, 55, &v)) return; o->ret = v; }
+    /* fall through */
+    case 55: { Cost v = o->ret; if (v != value) { fail(o, "FACTOR value is not weight(M) + residual bound"); return; } proof_done(o, f, v); return; }
     /* DISJOINT_AND */
     case 61: { const uint64_t *l; list_get(aux, &l); if (o->ret != F) { fail(o, "DISJOINT_AND node formula is not the conjunction of its parts"); return; } if (!c1 || !c2 || proof_formula(c1) != l[0] || proof_formula(c2) != l[1]) { fail(o, "DISJOINT_AND children prove other formulas"); return; } f->ph = 62; push(o, fr(OF_SUPPORT, l[0], 0, 0, 0)); return; }
     case 62: { const uint64_t *l; list_get(aux, &l); f->acc = o->ret; f->ph = 63; push(o, fr(OF_SUPPORT, l[1], 0, 0, 0)); return; }
     case 63: f->ph = 64; push(o, fr(OF_SETOP, SO_INTER, f->acc, o->ret, 0)); return;
     case 64: if (o->ret != W.EMPTY) { fail(o, "DISJOINT_AND: supports are not disjoint"); return; } f->ph = 65; push(o, fr(OF_PROOF, c1, model, 0, 0)); return;
     case 65: f->acc = o->ret; f->ph = 66; push(o, fr(OF_PROOF, c2, model, 0, 0)); return;
-    case 66: { Cost v; if (!add_checked(f->acc, o->ret, &v)) { limit(o, "cost sum not representable"); return; } if (v != value) { fail(o, "DISJOINT_AND value is not the sum of its parts"); return; } proof_done(o, f, v); return; }
+    case 66: { Cost v; if (!cost_op(o, f, CA_ADD, f->acc, o->ret, 67, &v)) return; o->ret = v; }
+    /* fall through */
+    case 67: { Cost v = o->ret; if (v != value) { fail(o, "DISJOINT_AND value is not the sum of its parts"); return; } proof_done(o, f, v); return; }
     /* OR_BOUND */
     case 71: { const uint64_t *l; list_get(aux, &l); if (o->ret != F) { fail(o, "OR_BOUND node formula is not the disjunction of its parts"); return; } if (!c1 || !c2 || proof_formula(c1) != l[0] || proof_formula(c2) != l[1]) { fail(o, "OR_BOUND children prove other formulas"); return; } f->ph = 72; push(o, fr(OF_PROOF, c1, model, 0, 0)); return; }
     case 72: f->acc = o->ret; f->ph = 73; push(o, fr(OF_PROOF, c2, model, 0, 0)); return;
-    case 73: { charge(FR_COST_COMPARE_CHUNK); Cost v = cmin(f->acc, o->ret); if (v != value) { fail(o, "OR_BOUND value is not the minimum of its parts"); return; } proof_done(o, f, v); return; }
+    case 73: { charge(FR_COST_COMPARE_CHUNK); Cost v; if (!cost_op(o, f, CA_MIN, f->acc, o->ret, 74, &v)) return; o->ret = v; }
+    /* fall through */
+    case 74: { Cost v = o->ret; if (v != value) { fail(o, "OR_BOUND value is not the minimum of its parts"); return; } proof_done(o, f, v); return; }
     /* WEAKEN */
-    case 81: { charge(FR_COST_COMPARE_CHUNK); W.L.limb_ops++; if (cost_cmp(value, o->ret) > 0) { fail(o, "WEAKEN claims more than its child"); return; } proof_done(o, f, value); return; }
+    case 81: { charge(FR_COST_COMPARE_CHUNK); Cost c; if (!cost_op(o, f, CA_CMP, value, o->ret, 82, &c)) return; o->ret = c; }
+    /* fall through */
+    case 82: { if (o->ret == 2) { fail(o, "WEAKEN claims more than its child"); return; } proof_done(o, f, value); return; }   /* CA_CMP: 0 less, 1 equal, 2 greater */
     /* EQUAL */
     case 92: f->ph = 93; push(o, fr_mkf(FM_OR, f->acc, o->ret)); return;
     case 93: { const uint64_t *l; list_get(aux, &l); if (o->ret != l[0]) { fail(o, "equality premise fails: the image is not X∨(Y∧Z)"); return; } f->ph = 91; push(o, fr(OF_PROOF, c1, model, 0, 0)); return; }
@@ -2239,8 +2269,13 @@ static void step_reduce(Op *o, Frame *f) {
     case 11: {
         Reduction *l = RED(f->acc), *rg = RED(o->ret);
         if (!l->reduced || !rg->reduced) { reduce_finish(o, f, false, 0, 0, 0, false, 0, 0, 0, 0); return; }
-        charge(FR_COST_COMPARE_CHUNK); Cost v = cmin(l->value, rg->value);
-        reduce_finish(o, f, true, v, cost_cmp(l->value, rg->value) <= 0 ? l->attaining : rg->attaining, PR_OR_BOUND, true, formula_left(F), formula_right(F), l->lower, rg->lower); return;
+        charge(FR_COST_COMPARE_CHUNK); f->acc2 = o->ret;
+        Cost c; if (!cost_op(o, f, CA_CMP, l->value, rg->value, 12, &c)) return; o->ret = c;
+    }
+    /* fall through */
+    case 12: {
+        Reduction *l = RED(f->acc), *rg = RED(f->acc2); bool left = o->ret <= 1;
+        reduce_finish(o, f, true, left ? l->value : rg->value, left ? l->attaining : rg->attaining, PR_OR_BOUND, true, formula_left(F), formula_right(F), l->lower, rg->lower); return;
     }
     /* AND */
     case 20: f->acc = o->ret; f->ph = 21; push(o, fr(OF_SUPPORT, formula_right(F), 0, 0, 0)); return;
@@ -2252,8 +2287,12 @@ static void step_reduce(Op *o, Frame *f) {
     case 24: {
         Reduction *l = RED(f->acc3), *rg = RED(o->ret);
         if (!l->reduced || !rg->reduced) { reduce_finish(o, f, false, 0, 0, 0, false, 0, 0, 0, 0); return; }
-        Cost v; if (!add_checked(l->value, rg->value, &v)) { limit(o, "cost sum not representable"); return; }
-        f->acc4 = o->ret; f->acc = v;
+        f->acc4 = o->ret;
+        Cost v; if (!cost_op(o, f, CA_ADD, l->value, rg->value, 26, &v)) return; o->ret = v;
+    }
+    /* fall through */
+    case 26: {
+        Reduction *l = RED(f->acc3), *rg = RED(f->acc4); Cost v = o->ret; f->acc = v;
         if (l->attaining && rg->attaining) { f->ph = 25; push(o, fr(OF_SETOP, SO_UNION, l->attaining, rg->attaining, 0)); return; }
         reduce_finish(o, f, true, v, 0, PR_DISJOINT_AND, true, formula_left(F), formula_right(F), l->lower, rg->lower); return;
     }
@@ -2277,7 +2316,11 @@ static void step_reduce(Op *o, Frame *f) {
         f->acc3 = o->ret; f->ph = 33; push(o, fr(OF_SUM, f->acc, model, 0, 0)); return;
     }
     case 33: {
-        Reduction *g = RED(f->acc3); Cost v; if (!add_checked(o->ret, g->value, &v)) { limit(o, "cost sum not representable"); return; }
+        Reduction *g0 = RED(f->acc3); Cost v0; if (!cost_op(o, f, CA_ADD, o->ret, g0->value, 35, &v0)) return; o->ret = v0;
+    }
+    /* fall through */
+    case 35: {
+        Reduction *g = RED(f->acc3); Cost v = o->ret;
         f->acc4 = v;
         if (g->attaining) { f->ph = 34; push(o, fr(OF_SETOP, SO_UNION, f->acc, g->attaining, 0)); return; }
         reduce_finish(o, f, true, v, 0, PR_FACTOR, false, f->acc, 0, g->lower, 0); return;
@@ -2374,11 +2417,17 @@ static void step_mapp(Op *o, Frame *f) {
     case 2: f->acc2 = o->ret; f->ph = rule == PR_MANDATORY ? 13 : 3; push(o, fr(OF_SUM, f->acc2, f->c, 0, 0)); return;
     case 13: mapp_finish(o, f, PR_MANDATORY, f->acc, false, f->acc2, 0, 0, 0, o->ret); return;
     case 3: f->acc3 = o->ret; f->ph = 14; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
-    case 14: { Cost v; add_checked(f->acc3, rec_w(o->ret, 6), &v); mapp_finish(o, f, PR_FACTOR, f->acc, false, f->acc2, 0, o->ret, 0, v); return; }
+    case 14: { f->acc4 = o->ret; Cost v; if (!cost_op(o, f, CA_ADD, f->acc3, rec_w(o->ret, 6), 18, &v)) return; o->ret = v; }
+    /* fall through */
+    case 18: mapp_finish(o, f, PR_FACTOR, f->acc, false, f->acc2, 0, f->acc4, 0, o->ret); return;
     case 4: f->acc3 = o->ret; f->ph = 5; push(o, fr(OF_MAPP, c2, f->b, f->c, 0)); return;
     case 16: f->acc2 = amap_from(o->ret, aux); f->ph = 4; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;   /* the split atom's image by the framed LOOKUP (§94) */
     case 5: f->d = o->ret; f->ph = 17; push_weight_lookup(o, f->c, f->acc2); return;                   /* its weight by the framed LOOKUP (§94) */
-    case 17: { Cost wc; add_checked(weight_from(o->ret, f->c, f->acc2), rec_w(f->d, 6), &wc); Cost v = cmin(rec_w(f->acc3, 6), wc); mapp_finish(o, f, PR_SPLIT, f->acc, false, f->acc2, 0, f->acc3, f->d, v); return; }
+    case 17: { Cost wc; if (!cost_op(o, f, CA_ADD, weight_from(o->ret, f->c, f->acc2), rec_w(f->d, 6), 19, &wc)) return; o->ret = wc; }
+    /* fall through */
+    case 19: { Cost v; if (!cost_op(o, f, CA_MIN, rec_w(f->acc3, 6), o->ret, 20, &v)) return; o->ret = v; }
+    /* fall through */
+    case 20: mapp_finish(o, f, PR_SPLIT, f->acc, false, f->acc2, 0, f->acc3, f->d, o->ret); return;
     case 6: { const uint64_t *l; list_get(aux, &l); f->acc2 = o->ret; f->ph = 7; push(o, fr(OF_MAPF, l[1], f->b, 0, 0)); return; }
     case 7: f->acc3 = o->ret; f->ph = 8; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
     case 8: f->acc4 = o->ret; f->ph = 9; push(o, fr(OF_MAPP, c2, f->b, f->c, 0)); return;
@@ -2386,10 +2435,10 @@ static void step_mapp(Op *o, Frame *f) {
         f->acc = o->ret;   /* second mapped child proof (the mapped F in acc is no longer needed) */
         f->ph = 15; push(o, fr_mkf(rule == PR_DISJOINT_AND ? FM_AND : FM_OR, f->acc2, f->acc3)); return;
     }
-    case 15: {
-        Cost v; if (rule == PR_DISJOINT_AND) add_checked(rec_w(f->acc4, 6), rec_w(f->acc, 6), &v); else v = cmin(rec_w(f->acc4, 6), rec_w(f->acc, 6));
-        mapp_finish(o, f, rule, o->ret, true, f->acc2, f->acc3, f->acc4, f->acc, v); return;
-    }
+    case 15: { f->i = o->ret;   /* the mapped formula */
+        Cost v; if (!cost_op(o, f, rule == PR_DISJOINT_AND ? CA_ADD : CA_MIN, rec_w(f->acc4, 6), rec_w(f->acc, 6), 21, &v)) return; o->ret = v; }
+    /* fall through */
+    case 21: mapp_finish(o, f, rule, f->i, true, f->acc2, f->acc3, f->acc4, f->acc, o->ret); return;
     case 10: mapp_finish(o, f, PR_WEAKEN, f->acc, false, 0, 0, o->ret, 0, w[6]); return;
     case 11: f->acc2 = o->ret; f->ph = 12; push(o, fr(OF_MAPP, c1, f->b, f->c, 0)); return;
     case 12: { const uint64_t *l; list_get(aux, &l); mapp_finish(o, f, PR_EQUAL, f->acc, true, f->acc2, l[1], o->ret, 0, rec_w(o->ret, 6)); return; }
@@ -2434,11 +2483,13 @@ static void step_geo(Op *o, Frame *f) {
         if (f->i >= x->edges.len) { f->i = 0; f->ph = 1; return; }
         GEdge e = x->edges.data[f->i++];
         if (e.from >= x->n || e.to >= x->n) { fail(o, "edge outside the stated state domain"); return; }
-        Cost rhs; if (!add_checked(e.c, x->V[e.to], &rhs)) { limit(o, "cost sum not representable"); return; }
-        charge(FR_COST_COMPARE_CHUNK); W.L.limb_ops++;
-        if (cost_cmp(x->V[e.from], rhs) > 0) { fail(o, "lower-bound inequality V(s) <= c + V(s') fails on an admitted edge"); return; }
-        return;
+        f->j = f->i - 1;   /* the edge under examination */
+        Cost rhs; if (!cost_op(o, f, CA_ADD, e.c, x->V[e.to], 2, &rhs)) return; o->ret = rhs;
     }
+    /* fall through */
+    case 2: { GEdge e = x->edges.data[f->j]; charge(FR_COST_COMPARE_CHUNK); Cost c; if (!cost_op(o, f, CA_CMP, x->V[e.from], o->ret, 3, &c)) return; o->ret = c; }
+    /* fall through */
+    case 3: if (o->ret == 2) { fail(o, "lower-bound inequality V(s) <= c + V(s') fails on an admitted edge"); return; } f->ph = 0; return;
     case 1: {
         if (f->i >= x->n) { fin(o, x->V[f->b]); return; }
         uint64_t s = f->i++;
@@ -2447,8 +2498,14 @@ static void step_geo(Op *o, Frame *f) {
         if (!x->policy[s]) { fail(o, "no attaining step at a nonterminal state of the domain"); return; }
         GEdge e = x->edges.data[x->policy[s] - 1];
         if (e.from != s) { fail(o, "selected step does not start at its state"); return; }
-        Cost rhs; add_checked(e.c, x->V[e.to], &rhs); charge(FR_COST_COMPARE_CHUNK); W.L.limb_ops++;
-        if (x->V[s] != rhs) { fail(o, "selected step does not attain V(s) = c + V(s')"); return; }
+        f->j = s; charge(FR_COST_COMPARE_CHUNK);
+        Cost rhs; if (!cost_op(o, f, CA_ADD, e.c, x->V[e.to], 4, &rhs)) return; o->ret = rhs;
+    }
+    /* fall through */
+    case 4: {
+        uint64_t s = f->j; GEdge e = x->edges.data[x->policy[s] - 1];
+        f->ph = 1;
+        if (x->V[s] != o->ret) { fail(o, "selected step does not attain V(s) = c + V(s')"); return; }
         if (e.c == 0 && !(x->has_rank[s] && x->has_rank[e.to] && x->rank[s] > x->rank[e.to])) { fail(o, "no progress evidence on a selected zero-cost step"); return; }
         return;
     }
