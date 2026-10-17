@@ -484,6 +484,17 @@ CONTEXT), and selected as immutable pinned facts by the adapter search.
 schedule and proof-use cases. README ("§84.2 committed prefixes") lists what
 is not implemented.
 
+The V21 review (`tests/review-v21/`) is implemented: the reviewer's zero-block
+patch unchanged (R1); evaluator waits name the continuation advancing the
+awaited producer, with stable job handles and predicate revalidation (R2);
+exclusive event attribution through reuse scopes (R3); extensible claim,
+root and queue tables and no continuation registry (R4); dependency-driven
+teardown with closed-session discard (R5). `bounds.patch` is merged; the
+arena grows by host extents; levels, costs and differences are exact
+naturals with framed arithmetic in the engine; the kernel's recursion runs on
+on-demand stack segments. README ("The V21 review and the bounds contract")
+lists results and what is not done.
+
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the
 host export and validated against the compiler's emitted maps by conversion;
