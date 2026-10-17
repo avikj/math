@@ -27,7 +27,7 @@ typedef struct {
     EvalResult **results;
     bool failed;
     pthread_mutex_t mu;
-    size_t slot;              /* index in the live-join registry */
+    int refs;                 /* LIVE-CUT-ADOPTION §5: the creator and every branch Cut retain the join; the last release frees it */
 } Gather;
 
 typedef struct {
@@ -61,11 +61,60 @@ struct Cont {
     RefId req;                       /* the reference this continuation requested (§84.2: a child's prefix is lifted only when it is a fact about this exact reference) */
     EntryId child;                   /* the entry this continuation waits on */
     EntryId prefix_premise;          /* BRANCH: immutable READY scrutinee used by its guarded entry receipt */
+    /* LIVE-CUT-ADOPTION: a producer-owned request is a ticket of a Cut (its
+     * logical slot); `gen` is the ticket's generation (requested residual,
+     * prefix receipt and dependency certificate). In a resume view, `aq` /
+     * `ad` carry the winning ticket's prefix receipt and certificate. */
+    struct Cut *cut; struct Gen *gen;
+    uint64_t aq;
 };
 
 /* a job: EVALUATE(entry), RESUME(k, r), or a NET_PAIR of the evaluator's net (§43) */
-typedef struct { bool is_resume, is_pair, is_notify; EntryId entry; Cont *k; EvalResult *r; Active pair; const struct PrefixFact *fact; size_t idx, limit; bool catchup; } Task;   /* is_notify: §84.2 deliver `fact` of `entry` to its waiter `idx` (one waiter per task) */
-typedef struct { VEC(EntryId) entries; VEC(RefId) refs; } ShapeSide;
+/* op (LIVE-CUT-ADOPTION): 0 for the jobs above; subscription, history replay,
+ * publication notice, proposal preparation, installation, the replacement
+ * request and instantiation-edge watches are administrative jobs of the same
+ * scheduler, each one bounded step owned by the Cut's producer */
+enum { OP_NONE = 0, OP_SUB, OP_REPLAY, OP_FACTNOTE, OP_PREPARE, OP_INSTALL, OP_REQUEST, OP_EDGE };
+typedef struct { bool is_resume, is_pair, is_notify; EntryId entry; Cont *k; EvalResult *r; Active pair; const struct PrefixFact *fact; size_t idx, limit; bool catchup;
+                 uint8_t op; void *p, *p2; RefId r1, r2; uint64_t sigma; } Task;   /* is_notify: §84.2 deliver `fact` of `entry` to its waiter `idx` (one waiter per task) */
+typedef struct { VEC(EntryId) entries; VEC(RefId) refs;
+                 struct Sub *subs; const struct PrefixFact *sfacts;   /* LIVE-CUT-ADOPTION §2: subscriptions and committed facts of this shape, newest first (under sub_mu) */
+               } ShapeSide;
+
+/* ---- LIVE-CUT-ADOPTION records ----
+ * Gen: one generation of a Cut — its residual r with key face, the receipt
+ * q : s0 ⇒* r (0 = REFL), the dependency certificate, the generation it
+ * replaced, and the owner's occurrence ordinal of its request. Immutable once
+ * installed except the occurrence ordinal (written under the owner's lock).
+ * The generation token is the record's identity, retained by the Cut, its
+ * ticket, its subscriptions and every proposal captured at it (no reuse of a
+ * live identity; no counter). */
+typedef struct Gen {
+    int refs;
+    RefId r; FaceId eta; uint64_t q;
+    uint64_t *d; size_t nd;
+    struct Gen *prev;
+    size_t dep_idx; bool have_dep;
+} Gen;
+typedef enum { CUT_WAITING = 0, CUT_RESUMING, CUT_CLOSED } CutState;
+typedef struct Cut {
+    int refs; pthread_mutex_t mu;
+    EntryId owner; RefId s0; FaceId psi;
+    Cont K;                 /* immutable resume recipe (no ticket fields) */
+    Gather *join;           /* K_BRANCH: the retained join handle */
+    CutState state; Gen *cur;
+    size_t installs;
+} Cut;
+typedef struct Sub { Cut *cut; Gen *gen; uint64_t sigma; struct Sub *next, *all_next; } Sub;
+typedef struct Proposal {
+    Cut *cut; Gen *gen; const struct PrefixFact *f; uint64_t sigma;
+    int phase; size_t k; bool revalidating;
+    RefId v; FaceId veta; uint64_t adrc, q; Words d; uint64_t stamp;
+} Proposal;
+typedef struct { int state; RefId v; FaceId veta; uint64_t adrc; } PrepMemo;   /* state: 0 absent, 1 applicable, 2 inapplicable */
+static void ticket_release(Cont *k);
+static void sub_free(Sub *n);
+static void eval_edge_hook(RefId dest, RefId src, uint64_t sigma);
 
 static struct {
     /* cache (§76.3): base key (shape, projected face) → head of the chain of
@@ -87,8 +136,16 @@ static struct {
     pthread_t *workers; size_t nworkers;
     /* rooted results (immutable payloads) */
     EvalResult *results; pthread_mutex_t res_mu;
-    /* live joins: a join that never fills (stuck children) is dismantled at teardown */
-    VEC(Gather *) joins; pthread_mutex_t join_mu;
+    /* LIVE-CUT-ADOPTION: subscriptions (per shape, newest first) and their
+     * publication partition (one lock, constant sections); every subscription
+     * node for teardown; the shared preparation cache; held jobs (scheduler
+     * policy); counters */
+    pthread_mutex_t sub_mu; struct Sub *subs_all; size_t live_subs;
+    Interner prep_keys; Chunked prep_tab; pthread_mutex_t prep_mu;
+    pthread_mutex_t held_mu; Task *held; size_t nheld, capheld;
+    bool (*hold)(const EvalTaskInfo *, void *); void *hold_ctx;
+    bool live;
+    EvalCutEvents cev;
     /* the evaluator's net (§43): APPLY_TRANSFORM / CONTINUE_REFERENCE pairs
      * are jobs of this scheduler (one outstanding count) */
     Net net; SchedPolicy pair_policy;
@@ -148,10 +205,13 @@ void eval_init(void) {
     pthread_cond_init(&E.q_cv, NULL);
     pthread_cond_init(&E.idle_cv, NULL);
     pthread_mutex_init(&E.res_mu, NULL);
-    pthread_mutex_init(&E.join_mu, NULL);
+    pthread_mutex_init(&E.sub_mu, NULL); pthread_mutex_init(&E.prep_mu, NULL); pthread_mutex_init(&E.held_mu, NULL);
+    interner_init(&E.prep_keys); chunked_init(&E.prep_tab, sizeof(PrepMemo));
     net_init(&E.net);
     net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
     E.net.policy = 1;   /* pairs FIFO by default */
+    term_edge_hook = eval_edge_hook;
+    __atomic_store_n(&E.live, true, __ATOMIC_RELEASE);
 }
 
 /* a new definition environment retires every observation: the memo, the
@@ -169,10 +229,9 @@ void eval_reset(void) {
     E.policy = p; E.pair_policy = pp; E.rng = rng; E.net.policy = np; E.net.rng = nrng;
     if (w) eval_set_workers(w);
 }
-static void gather_free(Gather *g) {
-    pthread_mutex_lock(&E.join_mu);
-    E.joins.data[g->slot] = NULL;
-    pthread_mutex_unlock(&E.join_mu);
+static void gather_ref(Gather *g) { __atomic_add_fetch(&g->refs, 1, __ATOMIC_RELAXED); }
+static void gather_unref(Gather *g) {
+    if (!g || __atomic_sub_fetch(&g->refs, 1, __ATOMIC_ACQ_REL) != 0) return;
     pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g); fine_bump(FC_CELLS_RELEASED);
 }
 
@@ -198,20 +257,36 @@ size_t eval_workers(void) { return E.nworkers; }
 
 static Entry *ENT(EntryId e) { return (Entry *)chunked_get(&E.entries, e - 1); }
 
+static void task_discard(Task t);
 void eval_free(void) {
     stop_workers();
+    __atomic_store_n(&E.live, false, __ATOMIC_RELEASE);
+    if (term_edge_hook == eval_edge_hook) term_edge_hook = NULL;
     chunked_free(&E.roots_tab); E.n_roots = 0; pthread_mutex_destroy(&E.roots_mu);
     net_free(&E.net);           /* after the workers: a pending pair is a job */
+    /* LIVE-CUT-ADOPTION §5 teardown (closed-session precondition: no client
+     * can still use these objects): unrun and held jobs and pending tickets
+     * are retired without any semantic delivery */
+    for (size_t i = E.qhead; i < E.qtail; i++) task_discard(*(Task *)chunked_get(&E.qtab, i));
+    E.qhead = E.qtail;
+    for (size_t i = 0; i < E.nheld; i++) task_discard(E.held[i]);
+    free(E.held); E.held = NULL; E.nheld = E.capheld = 0;
     for (size_t i = 0; i < E.n_entries; i++) {
         Entry *e = ENT(i + 1);
         for (size_t w = 0; w < e->waiters.len; w++) {                 /* suspended forever: stuck demands */
             Cont *k = e->waiters.data[w];
+            if (k->cut) { add_count(&E.cev.retired_tickets); ticket_release(k); continue; }
             if (k->kind == K_EXTERNAL && k->ext_free) k->ext_free(k->ext_ctx);
             if (k->kind == K_ROOT) rootbox_release(k->root);
             free(k);
         }
         vec_free(&e->waiters);
-        vec_free(&e->deps); vec_free(&e->gdeps);
+    }
+    for (struct Sub *n = E.subs_all, *nx; n; n = nx) { nx = n->all_next; sub_free(n); }
+    E.subs_all = NULL;
+    for (size_t i = 0; i < E.n_entries; i++) {
+        Entry *e = ENT(i + 1);
+        vec_free(&e->deps); vec_free(&e->dep_hist); vec_free(&e->gdeps);
         reuse_scope_unref(e->scope);
         pthread_mutex_destroy(&e->mu);
     }
@@ -224,10 +299,8 @@ void eval_free(void) {
     E.results = NULL;
     for (PrefixFact *f = E.facts, *n; f; f = n) { n = f->all_next; free((void *)f->gdeps); free(f); }
     E.facts = NULL;
-    /* dismantle suspended joins (their branch continuations were waiters of stuck entries) */
-    for (size_t i = 0; i < E.joins.len; i++) if (E.joins.data[i]) { Gather *g = E.joins.data[i]; pthread_mutex_destroy(&g->mu); free(g->faces); free(g->results); free(g); }
-    vec_free(&E.joins);
-    pthread_mutex_destroy(&E.join_mu);
+    interner_free(&E.prep_keys); chunked_free(&E.prep_tab);
+    pthread_mutex_destroy(&E.sub_mu); pthread_mutex_destroy(&E.prep_mu); pthread_mutex_destroy(&E.held_mu);
     chunked_free(&E.qtab); E.qhead = E.qtail = 0;
     pthread_mutex_destroy(&E.entries_mu); pthread_mutex_destroy(&E.q_mu); pthread_mutex_destroy(&E.res_mu);
     pthread_cond_destroy(&E.q_cv); pthread_cond_destroy(&E.idle_cv);
@@ -247,6 +320,47 @@ Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *)) {
     Cont *k = cont_new(K_EXTERNAL, 0, 0);
     k->ext_fn = fn; k->ext_ctx = ctx; k->ext_free = free_ctx;
     return k;
+}
+
+/* ---- LIVE-CUT-ADOPTION ownership: generations, Cuts, tickets, subscriptions ---- */
+static void gen_ref(Gen *g) { if (g) __atomic_add_fetch(&g->refs, 1, __ATOMIC_RELAXED); }
+static void gen_unref(Gen *g) {
+    while (g && __atomic_sub_fetch(&g->refs, 1, __ATOMIC_ACQ_REL) == 0) { Gen *p = g->prev; free(g->d); free(g); fine_bump(FC_CELLS_RELEASED); g = p; }
+}
+static Gen *gen_new(RefId r, FaceId eta, uint64_t q, uint64_t *d, size_t nd, Gen *prev) {
+    Gen *g = calloc(1, sizeof *g); require(g, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
+    g->refs = 1; g->r = r; g->eta = eta; g->q = q; g->d = d; g->nd = nd; g->prev = prev; gen_ref(prev);
+    return g;
+}
+static void cut_ref(Cut *c) { if (c) __atomic_add_fetch(&c->refs, 1, __ATOMIC_RELAXED); }
+static void cut_unref(Cut *c) {
+    if (!c || __atomic_sub_fetch(&c->refs, 1, __ATOMIC_ACQ_REL) != 0) return;
+    gen_unref(c->cur); gather_unref(c->join);
+    pthread_mutex_destroy(&c->mu); free(c); fine_bump(FC_CELLS_RELEASED);
+    add_count(&E.cev.cuts_freed);
+}
+/* a ticket owns one reference to its Cut and one to its generation */
+static void ticket_release(Cont *k) { Cut *c = k->cut; Gen *g = k->gen; cont_release(k); gen_unref(g); cut_unref(c); }
+static void sub_free(Sub *n) { cut_unref(n->cut); gen_unref(n->gen); free(n); fine_bump(FC_CELLS_RELEASED); }
+static FaceId key_face(RefId r, FaceId psi) { size_t n; const uint64_t *S = dimset_get(ref_support(r), &n); return fc_project(psi, S, n); }
+/* §2.1: commit Cut(s0, ψ, K, WAITING, g, s0, REFL, ∅); the opening
+ * continuation becomes the generation-g ticket */
+static void cut_open(Cont *k, RefId t, FaceId chi) {
+    Cut *c = calloc(1, sizeof *c); require(c, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
+    pthread_mutex_init(&c->mu, NULL);
+    c->refs = 1;                                  /* the ticket */
+    c->owner = k->dest; c->s0 = t; c->psi = chi;
+    c->K = *k; c->K.cut = NULL; c->K.gen = NULL; c->K.aq = 0;
+    if (k->kind == K_BRANCH) { c->join = k->gather; gather_ref(c->join); }
+    c->state = CUT_WAITING;
+    c->cur = gen_new(t, key_face(t, chi), 0, NULL, 0, NULL);
+    k->cut = c; k->gen = c->cur; gen_ref(k->gen);
+    add_count(&E.cev.cuts); add_count(&E.cev.tickets);
+}
+static Cont *ticket_new(Cut *c, Gen *g) {
+    Cont *t = calloc(1, sizeof *t); require(t, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
+    *t = c->K; t->cut = c; cut_ref(c); t->gen = g; gen_ref(g); t->child = 0; t->req = 0;
+    return t;
 }
 
 static EvalResult *result_new(ResultClass cls, RefId ref) {
@@ -497,6 +611,12 @@ RefId eval_entry_ref(EntryId e) { return ENT(e)->ref; }
 void eval_entry_events(EntryId e, size_t *req, size_t *deliver, size_t *pub) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); *req = x->n_req; *deliver = x->n_deliver; *pub = x->n_pub; pthread_mutex_unlock(&x->mu); }
 size_t eval_running_count(void) { size_t c = 0, n = eval_entry_count(); for (size_t i = 1; i <= n; i++) if (eval_entry_state(i) == E_RUNNING) c++; return c; }
 size_t eval_task_count(void) { return __atomic_load_n(&E.tasks_created, __ATOMIC_SEQ_CST); }
+size_t eval_entry_active_deps(EntryId e, EntryId **out) {
+    Entry *x = ENT(e); pthread_mutex_lock(&x->mu);
+    size_t n = 0; EntryId *o = malloc((x->deps.len ? x->deps.len : 1) * sizeof(EntryId)); require(o, "out of memory");
+    for (size_t i = 0; i < x->deps.len; i++) if (!x->dep_hist.data[i]) o[n++] = x->deps.data[i];
+    pthread_mutex_unlock(&x->mu); *out = o; return n;
+}
 size_t eval_entry_deps(EntryId e, EntryId **out) {
     Entry *x = ENT(e); pthread_mutex_lock(&x->mu);
     size_t n = x->deps.len; *out = n ? malloc(n * sizeof(EntryId)) : NULL; require(!n || *out, "out of memory");
@@ -525,8 +645,8 @@ static void publish_with(EntryId eid, EvalResult *r, RefId residual, uint64_t re
     bool success = r->cls != R_INVALID;
     /* children's dependencies, collected outside the entry lock */
     pthread_mutex_lock(&e->mu);
-    size_t nd = e->deps.len; EntryId *kids = nd ? malloc(nd * sizeof(EntryId)) : NULL; require(!nd || kids, "out of memory");
-    if (nd) memcpy(kids, e->deps.data, nd * sizeof(EntryId));
+    size_t nall = e->deps.len, nd = 0; EntryId *kids = nall ? malloc(nall * sizeof(EntryId)) : NULL; require(!nall || kids, "out of memory");
+    for (size_t i = 0; i < nall; i++) if (!e->dep_hist.data[i]) kids[nd++] = e->deps.data[i];   /* active-slot edges only (LIVE-CUT-ADOPTION §5) */
     pthread_mutex_unlock(&e->mu);
     VEC(uint64_t) acc = {0};
     for (size_t i = 0; i < nd; i++) {
@@ -589,6 +709,8 @@ static void publish_with(EntryId eid, EvalResult *r, RefId residual, uint64_t re
 static void publish(EntryId eid, EvalResult *r) { publish_with(eid, r, r->ref, r->ref ? rc_refl(r->ref) : 0); }
 static RefId residual_of(EntryId child) { Entry *c = ENT(child); pthread_mutex_lock(&c->mu); RefId r = c->residual; pthread_mutex_unlock(&c->mu); return r; }
 static uint64_t receipt_of(EntryId child) { Entry *c = ENT(child); pthread_mutex_lock(&c->mu); uint64_t r = c->receipt; pthread_mutex_unlock(&c->mu); return r; }
+/* the slot's receipt s0 ⇒* (child's answer): the winning ticket's prefix, then the child's own receipt */
+static uint64_t child_rc(const Cont *k) { return rc_seq(k->aq, receipt_of(k->child)); }
 
 static bool validate_occurrence(RefId t, FaceId chi) {
     /* the ambient face must entail the reference's required face (which
@@ -605,7 +727,20 @@ static Task prefix_catchup_locked(EntryId eid, Entry *e, size_t idx) {
     }
     return t;
 }
+static void request_inner(RefId t, FaceId chi, Cont *k);
+static void sub_enqueue(Cut *c, Gen *g);
+/* LIVE-CUT-ADOPTION §2: a producer-owned request opens its Cut (unless the
+ * continuation already is a ticket of one: an installed replacement), the
+ * ordinary request is issued through the ticket, and the subscription job of
+ * that generation is enqueued (it watches facts; it demands nothing) */
 void eval_request(RefId t, FaceId chi, Cont *k) {
+    if (!k->cut && k->dest && k->kind != K_ROOT && k->kind != K_EXTERNAL) cut_open(k, t, chi);
+    Cut *c = k->cut; Gen *g = k->gen;
+    if (c) { cut_ref(c); gen_ref(g); }            /* the subscription job's references (the ticket may be consumed meanwhile) */
+    request_inner(t, chi, k);
+    if (c) sub_enqueue(c, g);
+}
+static void request_inner(RefId t, FaceId chi, Cont *k) {
     if (fc_is_false(chi)) { deliver(k, result_new(R_NO_OBSERVATION, t)); return; }
     if (!validate_occurrence(t, chi)) { deliver(k, result_invalid("occurrence outside its required face")); return; }
     size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
@@ -617,7 +752,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     /* §60 trace: the consumer occurrence (owner, slot, requested key) */
     if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { size_t at = __atomic_load_n(&E.n_roots, __ATOMIC_ACQUIRE); (void)chunked_at(&E.roots_tab, at); (void)chunked_at(&E.roots_tab, at + 1);   /* the chunk, outside roots_mu */
       pthread_mutex_lock(&E.roots_mu); *(EntryId *)chunked_at(&E.roots_tab, E.n_roots) = eid; __atomic_store_n(&E.n_roots, E.n_roots + 1, __ATOMIC_RELEASE); pthread_mutex_unlock(&E.roots_mu); }
-    else { Entry *o = ENT(k->dest); pthread_mutex_lock(&o->mu); vec_push(&o->deps, eid); pthread_mutex_unlock(&o->mu); }
+    else { Entry *o = ENT(k->dest); pthread_mutex_lock(&o->mu); if (k->gen) { k->gen->dep_idx = o->deps.len; k->gen->have_dep = true; } vec_push(&o->deps, eid); vec_push(&o->dep_hist, 0); pthread_mutex_unlock(&o->mu); }
     /* readiness check and waiter registration under the same lock (§10) */
     fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
     e->n_req++;
@@ -870,7 +1005,8 @@ static void adapter_inherit(Entry *e) {
     e->gdeps.data = g.w; e->gdeps.len = g.n; e->gdeps.cap = g.cap;
     pthread_mutex_unlock(&e->mu);
 }
-static void prefix_publish_on(EntryId dest, RefId target, uint64_t receipt, const PrefixFact *parent, EntryId origin, FaceId guard, EntryId premise, bool branch) {
+static void fact_index(PrefixFact *f, ShapeId s);
+static void prefix_publish_on(EntryId dest, RefId target, uint64_t receipt, const PrefixFact *parent, EntryId origin, FaceId guard, EntryId premise, bool branch, const uint64_t *xd, size_t nxd) {
     if (!dest || !receipt || !target) return;
     Entry *e = ENT(dest);
     if (target == e->ref) return;                         /* no progress: not a useful fact */
@@ -885,12 +1021,13 @@ static void prefix_publish_on(EntryId dest, RefId target, uint64_t receipt, cons
     else for (size_t i = 0;; i++) {
         pthread_mutex_lock(&e->mu);
         if (i >= e->deps.len) { pthread_mutex_unlock(&e->mu); break; }
-        EntryId c = e->deps.data[i];
+        EntryId c = e->deps.data[i]; bool hist = e->dep_hist.data[i];
         pthread_mutex_unlock(&e->mu);
         fine_bump(FC_ADAPTER_STEPS);
-        if (c != dest) prefix_copy_pairs(ENT(c), true, &g);
+        if (c != dest && !hist) prefix_copy_pairs(ENT(c), true, &g);
     }
     if (parent) for (size_t k = 0; k < parent->ngdeps; k++) { words_push(&g, parent->gdeps[k]); fine_bump(FC_ADAPTER_STEPS); }
+    for (size_t k = 0; k < nxd; k++) { words_push(&g, xd[k]); fine_bump(FC_ADAPTER_STEPS); }   /* the slot generation's adoption certificate */
     PrefixFact *f = calloc(1, sizeof *f); require(f, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
     f->src = dest; f->source = e->ref; f->face = guard; f->residual = target; f->receipt = receipt;
     f->gdeps = g.w; f->ngdeps = g.n; f->origin = origin;
@@ -907,17 +1044,43 @@ static void prefix_publish_on(EntryId dest, RefId target, uint64_t receipt, cons
     add_count(parent ? &E.pev.lifted : &E.pev.published);
     Task t; memset(&t, 0, sizeof t); t.is_notify = true; t.entry = dest; t.fact = f; t.idx = 0; t.limit = notify_limit;
     enqueue(t);
+    fact_index(f, e->shape);
 }
 static void prefix_publish(EntryId dest, RefId target, uint64_t receipt, const PrefixFact *parent, EntryId origin) {
-    if (dest) prefix_publish_on(dest, target, receipt, parent, origin, ENT(dest)->face, 0, false);
+    if (dest) prefix_publish_on(dest, target, receipt, parent, origin, ENT(dest)->face, 0, false, NULL, 0);
 }
 static RefId rebuild_elim(const Cont *k, RefId scrut);
+/* the lift of `res` (reached from the slot's requested reference by `rcpt`)
+ * through the slot's recipe: SEQ for a forwarding or join slot, CONTEXT
+ * through the eliminator's one-hole context; a family rewrite must hold
+ * along the whole bound dimension (∀j) */
+static bool lift_through(const Cont *kc, RefId res, uint64_t rcpt, FaceId fface, RefId *target, uint64_t *receipt, FaceId *child_guard) {
+    static const uint64_t cong_of[] = { 0, 0, 0, RR_CONG_APP, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE };
+    switch (kc->kind) {
+    case K_FORWARD: *target = res; *receipt = rc_seq(kc->prefix, rcpt); break;                                    /* SEQ */
+    case K_APP: case K_FST: case K_SND: case K_PAPP: case K_UNGLUE:                                              /* CONTEXT */
+        *target = rebuild_elim(kc, res); *receipt = rc_rule(cong_of[kc->kind], rcpt, 0); break;
+    case K_COMP_FAMILY: {
+        Head ho; open_ref(kc->orig, &ho); uint64_t lv = levels_first(ho.levels); if (ho.levels == LEVELS_NONE) lv = LEVEL_NONE; head_free(&ho);
+        *target = mk_comp_lv(lv, kc->j, res, kc->phi, kc->tube, kc->cap); *receipt = rc_rule(RR_CONG_COMP, rcpt, 0); break;
+    }
+    case K_BRANCH:
+        /* The branch's guarded entry receipt was captured before it was
+         * launched; the join is reached only through the Cut's retained
+         * handle, never through a copied pointer. */
+        *target = res; *receipt = rc_seq(kc->prefix, rcpt); break;
+    default: return false;
+    }
+    *child_guard = kc->kind == K_COMP_FAMILY ? fc_forall(kc->j, fface) : fface;
+    return true;
+}
 /* one notification: the fact of `entry` to its waiter `idx`, then the cursor advances */
 static void prefix_notify(Task t) {
     Entry *e = ENT(t.entry);
     pthread_mutex_lock(&e->mu);
     if (e->state != E_RUNNING || t.idx >= t.limit || t.idx >= e->waiters.len) { pthread_mutex_unlock(&e->mu); return; }
     Cont kc = *e->waiters.data[t.idx];       /* a copy: the waiter may be resumed and released once the lock is dropped */
+    if (kc.cut) { cut_ref(kc.cut); gen_ref(kc.gen); }   /* the ticket's Cut and generation, retained for this step */
     pthread_mutex_unlock(&e->mu);
     add_count(&E.pev.notify_steps);
     { Task n = t;
@@ -925,30 +1088,18 @@ static void prefix_notify(Task t) {
       else { n.idx++; if (n.idx < n.limit) enqueue(n); }
     }
     const PrefixFact *f = t.fact;
-    if (kc.req != f->source || !kc.dest || kc.dest == f->origin || kc.dest == t.entry) return;
-    static const uint64_t cong_of[] = { 0, 0, 0, RR_CONG_APP, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE };
-    RefId target = 0; uint64_t receipt = 0;
-    switch (kc.kind) {
-    case K_FORWARD: target = f->residual; receipt = rc_seq(kc.prefix, f->receipt); break;                        /* SEQ */
-    case K_APP: case K_FST: case K_SND: case K_PAPP: case K_UNGLUE:                                              /* CONTEXT */
-        target = rebuild_elim(&kc, f->residual); receipt = rc_rule(cong_of[kc.kind], f->receipt, 0); break;
-    case K_COMP_FAMILY: {
-        Head ho; open_ref(kc.orig, &ho); uint64_t lv = levels_first(ho.levels); if (ho.levels == LEVELS_NONE) lv = LEVEL_NONE; head_free(&ho);
-        target = mk_comp_lv(lv, kc.j, f->residual, kc.phi, kc.tube, kc.cap); receipt = rc_rule(RR_CONG_COMP, f->receipt, 0); break;
+    bool live = true; uint64_t q = 0; const uint64_t *xd = NULL; size_t nxd = 0;
+    if (kc.cut) {   /* only the current generation of a WAITING slot lifts (a superseded ticket's slot has moved on) */
+        pthread_mutex_lock(&kc.cut->mu); live = kc.cut->state == CUT_WAITING && kc.cut->cur == kc.gen; pthread_mutex_unlock(&kc.cut->mu);
+        q = kc.gen->q; xd = kc.gen->d; nxd = kc.gen->nd;
     }
-    case K_BRANCH:
-        /* The branch's guarded entry receipt was captured before it was
-         * launched. No Gather pointer is dereferenced: another delivery may
-         * have freed that join after we copied this continuation. */
-        target = f->residual; receipt = rc_seq(kc.prefix, f->receipt); break;
-    default: return;
+    RefId target = 0; uint64_t receipt = 0; FaceId child_guard = 0;
+    if (live && kc.req == f->source && kc.dest && kc.dest != f->origin && kc.dest != t.entry
+        && lift_through(&kc, f->residual, rc_seq(q, f->receipt), f->face, &target, &receipt, &child_guard)) {
+        FaceId guard = fc_meet(ENT(kc.dest)->face, fc_meet(kc.chi, child_guard));
+        if (!fc_is_false(guard)) prefix_publish_on(kc.dest, target, receipt, f, f->origin, guard, kc.prefix_premise, kc.kind == K_BRANCH, xd, nxd);
     }
-    /* A family rewrite must hold along the whole bound dimension. An
-     * endpoint-only fact cannot rewrite that family's composition. */
-    FaceId child_guard = kc.kind == K_COMP_FAMILY ? fc_forall(kc.j, f->face) : f->face;
-    FaceId guard = fc_meet(ENT(kc.dest)->face, fc_meet(kc.chi, child_guard));
-    if (fc_is_false(guard)) return;
-    prefix_publish_on(kc.dest, target, receipt, f, f->origin, guard, kc.prefix_premise, kc.kind == K_BRANCH);
+    if (kc.cut) { gen_unref(kc.gen); cut_unref(kc.cut); }
 }
 const PrefixFact *eval_entry_prefix(EntryId e) { return __atomic_load_n(&ENT(e)->prefix_head, __ATOMIC_ACQUIRE); }
 size_t eval_entry_prefix_count(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); size_t n = x->n_prefix; pthread_mutex_unlock(&x->mu); return n; }
@@ -958,6 +1109,299 @@ EvalPrefixEvents eval_prefix_events(void) {
     EvalPrefixEvents v;
     v.published = __atomic_load_n(&E.pev.published, __ATOMIC_SEQ_CST); v.lifted = __atomic_load_n(&E.pev.lifted, __ATOMIC_SEQ_CST);
     v.notify_steps = __atomic_load_n(&E.pev.notify_steps, __ATOMIC_SEQ_CST); v.adapters = __atomic_load_n(&E.pev.adapters, __ATOMIC_SEQ_CST);
+    return v;
+}
+
+/* ---------------- LIVE-CUT-ADOPTION: subscriptions, proposals, installation, delivery ----------------
+ *
+ * Every step below is one job of the evaluator's scheduler, owned by the
+ * Cut's producer (its reuse scope and executing continuation); no job holds
+ * a lock across a variable-size traversal, and every lock section is
+ * constant-size: the Cut's lock (state / generation test and the installation
+ * of prepared handles), sub_mu (one list push and one head capture), an
+ * entry lock (one occurrence flag, one dependency pair), prep_mu (one cache
+ * record). */
+static ShapeSide *shape_side(ShapeId s, bool create) { pthread_mutex_lock(&E.entries_mu); ShapeSide *ss = shape_side_locked(s, create); pthread_mutex_unlock(&E.entries_mu); return ss; }
+static Task op_task(uint8_t op) { Task t; memset(&t, 0, sizeof t); t.op = op; return t; }
+static bool cut_live(Cut *c, Gen *g) { pthread_mutex_lock(&c->mu); bool l = c->state == CUT_WAITING && c->cur == g; pthread_mutex_unlock(&c->mu); return l; }
+static void proposal_free(Proposal *p) { words_free(&p->d); gen_unref(p->gen); cut_unref(p->cut); free(p); fine_bump(FC_CELLS_RELEASED); }
+
+/* §2.2, publication side of the partition: under sub_mu the fact enters its
+ * shape's history and the current subscriber list is captured; every
+ * subscriber registered before is noticed (one per job), every later one
+ * replays the fact from history — each (fact, subscription) pair exactly once */
+static void fact_index(PrefixFact *f, ShapeId s) {
+    ShapeSide *ss = shape_side(s, true);
+    pthread_mutex_lock(&E.sub_mu);
+    f->shape_next = ss->sfacts; ss->sfacts = f;
+    Sub *h = ss->subs;
+    pthread_mutex_unlock(&E.sub_mu);
+    if (h) { Task t = op_task(OP_FACTNOTE); t.p = h; t.fact = f; enqueue(t); }
+}
+static void sub_enqueue(Cut *c, Gen *g) { Task t = op_task(OP_SUB); t.p = c; t.p2 = g; enqueue(t); }   /* the caller's references move into the job */
+/* §2.2, registration side: the subscription enters its shape's list and the
+ * immutable history boundary is captured in the same section */
+static void sub_register(Cut *c, Gen *g, uint64_t sigma, ShapeId s) {
+    Sub *n = calloc(1, sizeof *n); require(n, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
+    n->cut = c; cut_ref(c); n->gen = g; gen_ref(g); n->sigma = sigma;
+    ShapeSide *ss = shape_side(s, true);
+    pthread_mutex_lock(&E.sub_mu);
+    n->next = ss->subs; ss->subs = n; const PrefixFact *hist = ss->sfacts;
+    n->all_next = E.subs_all; E.subs_all = n;
+    pthread_mutex_unlock(&E.sub_mu);
+    __atomic_add_fetch(&E.live_subs, 1, __ATOMIC_RELAXED);
+    add_count(&E.cev.subscriptions);
+    if (hist) { Task t = op_task(OP_REPLAY); t.p = n; t.fact = hist; enqueue(t); }
+}
+/* a fact meets a live subscription: a proposal (preparation job) is made
+ * unless the fact is the slot's own (its owner's, or its current child key's,
+ * which §84.2 notification lifts) */
+static void consider(Sub *n, const PrefixFact *f) {
+    Cut *c = n->cut; Gen *g = n->gen;
+    if (!cut_live(c, g)) return;
+    if (f->src == c->owner || f->origin == c->owner) return;
+    Entry *src = ENT(f->src);
+    if (src->ref == g->r && src->face == g->eta) return;
+    Proposal *p = calloc(1, sizeof *p); require(p, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
+    p->cut = c; cut_ref(c); p->gen = g; gen_ref(g); p->f = f; p->sigma = n->sigma; words_init(&p->d);
+    add_count(&E.cev.proposals);
+    Task t = op_task(OP_PREPARE); t.p = p; enqueue(t);
+}
+/* subscription job of one generation: the residual's own shape, then one
+ * recorded instantiation edge of the residual per step */
+static void sub_step(Task t) {
+    Cut *c = t.p; Gen *g = t.p2;
+    if (cut_live(c, g)) {
+        if (t.idx == 0) { sub_register(c, g, map_identity(), shape_of(g->r)); t.idx = 1; enqueue(t); return; }
+        const uint64_t *pairs; size_t np = instantiation_edges(g->r, &pairs);
+        size_t e = t.idx - 1;
+        if (e < np) { add_count(&E.cev.edge_watches); sub_register(c, g, pairs[2 * e + 1], shape_of(pairs[2 * e])); t.idx++; enqueue(t); return; }
+    }
+    gen_unref(g); cut_unref(c);
+}
+static void replay_step(Task t) {
+    Sub *n = t.p; add_count(&E.cev.replays);
+    consider(n, t.fact);
+    if (t.fact->shape_next && cut_live(n->cut, n->gen)) { t.fact = t.fact->shape_next; enqueue(t); }
+}
+static void notice_step(Task t) {
+    Sub *n = t.p; add_count(&E.cev.notices);
+    consider(n, t.fact);
+    if (n->next) { t.p = n->next; enqueue(t); }
+}
+/* §2: an instantiation edge recorded after a subscription: a Cut whose
+ * current residual is the edge's destination watches its source shape */
+static void eval_edge_hook(RefId dest, RefId src, uint64_t sigma) {
+    if (!__atomic_load_n(&E.live, __ATOMIC_ACQUIRE) || !__atomic_load_n(&E.live_subs, __ATOMIC_RELAXED)) return;
+    Task t = op_task(OP_EDGE); t.r1 = dest; t.r2 = src; t.sigma = sigma; enqueue(t);
+}
+static void edge_step(Task t) {
+    Sub *n = t.p;
+    if (!n) {
+        ShapeSide *ss = shape_side(shape_of(t.r1), false); if (!ss) return;
+        pthread_mutex_lock(&E.sub_mu); n = ss->subs; pthread_mutex_unlock(&E.sub_mu);
+        if (!n) return;
+    }
+    if (map_is_identity(n->sigma) && n->gen->r == t.r1 && cut_live(n->cut, n->gen)) { add_count(&E.cev.edge_watches); sub_register(n->cut, n->gen, t.sigma, shape_of(t.r2)); }
+    if (n->next) { t.p = n->next; enqueue(t); }
+}
+/* §3 preparation, one bounded step per job, outside every lock:
+ *   0  boundary correspondence s[σ] = r, required face ψ ⊢ φ[σ], adapted
+ *      residual v and its key under the destination's projected face, the
+ *      unchanged-key and revisited-key rejections (a shared cached result);
+ *   1  one premise (symbol, revision) per step against the captured stamp;
+ *   2  one dependency pair of Δq ∪ Δ(r⇒v) per step;
+ *   then q' = q ; ρ and the installation job. */
+static void prepare_step(Task t) {
+    Proposal *p = t.p; Cut *c = p->cut; Gen *g = p->gen; const PrefixFact *f = p->f;
+    add_count(&E.cev.prep_steps); fine_bump(FC_ADAPTER_STEPS);
+    if (!cut_live(c, g)) { proposal_free(p); return; }        /* superseded or resumed meanwhile: ownership released, nothing altered */
+    if (p->phase == 0) {
+        p->stamp = global_env_version();
+        uint64_t key[4] = { f->id, g->r, c->psi, p->sigma };
+        uint64_t id = interner_intern(&E.prep_keys, key, 4, NULL);
+        (void)chunked_at(&E.prep_tab, id - 1);
+        pthread_mutex_lock(&E.prep_mu); PrepMemo m = *(PrepMemo *)chunked_at(&E.prep_tab, id - 1); pthread_mutex_unlock(&E.prep_mu);
+        if (m.state == 0) {
+            bool ident = map_is_identity(p->sigma);
+            bool ok = (ident ? f->source : reindex(f->source, p->sigma)) == g->r;
+            FaceId need = 0;
+            if (ok) { need = ident ? f->face : fc_reindex(f->face, p->sigma); ok = fc_entails(c->psi, need); }
+            m.v = 0; m.veta = 0; m.adrc = 0;
+            if (ok) {
+                m.v = ident ? f->residual : reindex(f->residual, p->sigma);
+                m.veta = key_face(m.v, c->psi);
+                ok = !(shape_of(m.v) == shape_of(g->r) && m.veta == g->eta) && fc_entails(m.veta, ref_required(m.v));
+            }
+            if (ok) m.adrc = ident ? rc(RC_PREFIX_RESTRICT, f->id, g->eta, 0, 3) : rc(RC_PREFIX_SPEC, f->id, p->sigma, 0, 3);
+            m.state = ok ? 1 : 2;
+            pthread_mutex_lock(&E.prep_mu); *(PrepMemo *)chunked_at(&E.prep_tab, id - 1) = m; pthread_mutex_unlock(&E.prep_mu);
+            add_count(&E.cev.prep_computed);
+        } else add_count(&E.cev.prep_shared);
+        bool ok = m.state == 1;
+        for (Gen *h = g; ok && h; h = h->prev) if (shape_of(h->r) == shape_of(m.v) && h->eta == m.veta) ok = false;   /* no return to a key this slot already passed */
+        if (!ok) { add_count(&E.cev.prep_rejected); proposal_free(p); return; }
+        p->v = m.v; p->veta = m.veta; p->adrc = m.adrc;
+        p->phase = 1; p->k = 0; enqueue(t); return;
+    }
+    if (p->phase == 1) {
+        if (p->k + 1 < f->ngdeps) {
+            if (global_revision(f->gdeps[p->k]) != f->gdeps[p->k + 1]) { add_count(p->revalidating ? &E.cev.revalidation_failed : &E.cev.prep_rejected); proposal_free(p); return; }
+            p->k += 2; enqueue(t); return;
+        }
+        if (p->revalidating) { Task n = op_task(OP_INSTALL); n.p = p; enqueue(n); return; }
+        p->phase = 2; p->k = 0; enqueue(t); return;
+    }
+    size_t total = g->nd + f->ngdeps;
+    if (p->k + 1 < total) {
+        const uint64_t *src = p->k < g->nd ? g->d + p->k : f->gdeps + (p->k - g->nd);
+        words_push(&p->d, src[0]); words_push(&p->d, src[1]);
+        p->k += 2; enqueue(t); return;
+    }
+    p->q = rc_seq(g->q, p->adrc);
+    Task n = op_task(OP_INSTALL); n.p = p; enqueue(n);
+}
+/* §4 installation under the Cut's lock: WAITING, the captured generation, the
+ * validated stamp (else the same proposal revalidates its premises); then the
+ * prepared handles are installed, the replacement request's launch reserved,
+ * and it is enqueued after unlocking. The superseded ticket stays live. */
+static void install_step(Task t) {
+    Proposal *p = t.p; Cut *c = p->cut;
+    pthread_mutex_lock(&c->mu);
+    if (c->state != CUT_WAITING) { pthread_mutex_unlock(&c->mu); add_count(&E.cev.install_not_waiting); proposal_free(p); return; }
+    if (c->cur != p->gen) { pthread_mutex_unlock(&c->mu); add_count(&E.cev.install_stale_generation); proposal_free(p); return; }
+    uint64_t now = global_env_version();
+    if (now != p->stamp) {
+        pthread_mutex_unlock(&c->mu);
+        add_count(&E.cev.revalidations);
+        p->stamp = now; p->phase = 1; p->k = 0; p->revalidating = true;
+        Task n = op_task(OP_PREPARE); n.p = p; enqueue(n); return;
+    }
+    Gen *ng = gen_new(p->v, p->veta, p->q, p->d.w, p->d.n, p->gen); words_init(&p->d);
+    Gen *old = c->cur; c->cur = ng; c->installs++;
+    Cont *tk = ticket_new(c, ng);
+    reserve_job();
+    pthread_mutex_unlock(&c->mu);
+    add_count(&E.cev.installs); add_count(&E.cev.tickets);
+    Entry *o = ENT(c->owner);
+    pthread_mutex_lock(&o->mu); if (old->have_dep && old->dep_idx < o->dep_hist.len) o->dep_hist.data[old->dep_idx] = 1; pthread_mutex_unlock(&o->mu);   /* the superseded request becomes a historical edge */
+    gen_unref(old);                                  /* the Cut's reference; the new generation retains it */
+    Task rq = op_task(OP_REQUEST); rq.k = tk; enqueue_reserved(rq);
+    /* the owner's derived prefix (K applied to v) through the bounded publication protocol */
+    const PrefixFact *f = p->f;
+    FaceId need = map_is_identity(p->sigma) ? f->face : fc_reindex(f->face, p->sigma);
+    RefId target = 0; uint64_t receipt = 0; FaceId cg = 0;
+    if (lift_through(&c->K, ng->r, ng->q, need, &target, &receipt, &cg)) {
+        FaceId guard = fc_meet(o->face, fc_meet(c->K.chi, cg));
+        if (!fc_is_false(guard)) prefix_publish_on(c->owner, target, receipt, f, f->origin, guard, c->K.prefix_premise, c->K.kind == K_BRANCH, ng->d, ng->nd);
+    }
+    proposal_free(p);
+}
+static void request_step(Task t) {
+    Cont *k = t.k; RefId v = k->gen->r; FaceId psi = k->cut->psi;
+    eval_request(v, psi, k);                         /* a new real consumer occurrence of the owner */
+}
+/* a dependency pair of the winning generation's certificate; a conflicting
+ * revision is kept beside the other (the answer's validity check rejects it) */
+static void gdeps_add_cert(Entry *e, SymbolId sym, uint64_t rev) {
+    for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) if (e->gdeps.data[k] == sym && e->gdeps.data[k + 1] == rev) return;
+    vec_push(&e->gdeps, sym); vec_push(&e->gdeps, rev);
+}
+static void resume(Cont *k, EvalResult *r);
+/* §5 delivery: consumed once; the current generation of a WAITING slot wins
+ * WAITING → RESUMING and executes the recipe once; any other ticket is
+ * released with no semantic resume and no parent publication */
+static void cut_deliver(Cont *k, EvalResult *r) {
+    Cut *c = k->cut;
+    pthread_mutex_lock(&c->mu);
+    bool win = c->state == CUT_WAITING && c->cur == k->gen;
+    if (win) c->state = CUT_RESUMING;
+    pthread_mutex_unlock(&c->mu);
+    if (!win) { add_count(&E.cev.deliveries_stale); ticket_release(k); return; }
+    add_count(&E.cev.deliveries_current);
+    Gen *g = k->gen;
+    if (g->nd) { Entry *o = ENT(c->owner); for (size_t i = 0; i + 1 < g->nd; i += 2) { pthread_mutex_lock(&o->mu); gdeps_add_cert(o, g->d[i], g->d[i + 1]); pthread_mutex_unlock(&o->mu); fine_bump(FC_ADAPTER_STEPS); } }
+    Cont view = c->K; view.child = k->child; view.req = k->req; view.aq = g->q;
+    resume(&view, r);
+    pthread_mutex_lock(&c->mu); c->state = CUT_CLOSED; pthread_mutex_unlock(&c->mu);
+    add_count(&E.cev.resumes);
+    ticket_release(k);
+}
+static void op_dispatch(Task t) {
+    switch (t.op) {
+    case OP_SUB: sub_step(t); break;
+    case OP_REPLAY: replay_step(t); break;
+    case OP_FACTNOTE: notice_step(t); break;
+    case OP_PREPARE: prepare_step(t); break;
+    case OP_INSTALL: install_step(t); break;
+    case OP_REQUEST: request_step(t); break;
+    case OP_EDGE: edge_step(t); break;
+    default: die("unknown evaluator job");
+    }
+}
+static EvalTaskInfo task_info(const Task *t) {
+    EvalTaskInfo in; memset(&in, 0, sizeof in);
+    if (t->is_pair) { in.kind = ET_PAIR; return in; }
+    if (t->is_notify) { in.kind = ET_NOTIFY; in.producer = t->entry; return in; }
+    if (t->is_resume) { in.kind = ET_RESUME; in.producer = t->k->kind == K_ROOT || t->k->kind == K_EXTERNAL ? 0 : t->k->dest; in.child = t->k->child; in.ticket = t->k->cut != NULL; return in; }
+    switch (t->op) {
+    case OP_NONE: in.kind = ET_EVALUATE; in.producer = t->entry; break;
+    case OP_SUB: in.kind = ET_SUBSCRIBE; in.producer = ((Cut *)t->p)->owner; break;
+    case OP_REPLAY: in.kind = ET_REPLAY; in.producer = ((Sub *)t->p)->cut->owner; in.fact = t->fact; break;
+    case OP_FACTNOTE: in.kind = ET_NOTICE; in.producer = ((Sub *)t->p)->cut->owner; in.fact = t->fact; break;
+    case OP_PREPARE: in.kind = ET_PREPARE; in.producer = ((Proposal *)t->p)->cut->owner; in.fact = ((Proposal *)t->p)->f; break;
+    case OP_INSTALL: in.kind = ET_INSTALL; in.producer = ((Proposal *)t->p)->cut->owner; in.fact = ((Proposal *)t->p)->f; break;
+    case OP_REQUEST: in.kind = ET_REQUEST; in.producer = t->k->dest; in.ticket = true; break;
+    case OP_EDGE: in.kind = ET_EDGE; break;
+    }
+    return in;
+}
+/* teardown of a job that will never run (closed-session precondition) */
+static void task_discard(Task t) {
+    if (t.is_resume) {
+        Cont *k = t.k;
+        if (k->cut) { add_count(&E.cev.retired_tickets); ticket_release(k); return; }
+        if (k->kind == K_EXTERNAL && k->ext_free) k->ext_free(k->ext_ctx);
+        if (k->kind == K_ROOT) rootbox_release(k->root);
+        free(k); return;
+    }
+    switch (t.op) {
+    case OP_SUB: gen_unref(t.p2); cut_unref(t.p); break;
+    case OP_PREPARE: case OP_INSTALL: proposal_free(t.p); break;
+    case OP_REQUEST: add_count(&E.cev.retired_tickets); ticket_release(t.k); break;
+    default: break;
+    }
+}
+/* scheduler policy: a held job is set aside (not outstanding) */
+static bool hold_take(Task t) {
+    bool (*h)(const EvalTaskInfo *, void *) = __atomic_load_n(&E.hold, __ATOMIC_ACQUIRE);
+    if (!h) return false;
+    EvalTaskInfo in = task_info(&t);
+    if (!h(&in, E.hold_ctx)) return false;
+    pthread_mutex_lock(&E.held_mu);
+    if (E.nheld == E.capheld) {
+        size_t nc = E.capheld ? 2 * E.capheld : 16;
+        pthread_mutex_unlock(&E.held_mu);
+        Task *nb = malloc(nc * sizeof(Task)); require(nb, "out of memory");   /* the larger buffer is made outside the lock */
+        pthread_mutex_lock(&E.held_mu);
+        if (E.nheld == E.capheld && nc > E.capheld) { if (E.nheld) memcpy(nb, E.held, E.nheld * sizeof(Task)); free(E.held); E.held = nb; E.capheld = nc; nb = NULL; }
+        free(nb);
+        if (E.nheld == E.capheld) { pthread_mutex_unlock(&E.held_mu); return hold_take(t); }
+    }
+    E.held[E.nheld++] = t;
+    pthread_mutex_unlock(&E.held_mu);
+    return true;
+}
+void eval_set_hold(bool (*pred)(const EvalTaskInfo *, void *), void *ctx) { E.hold_ctx = ctx; __atomic_store_n(&E.hold, pred, __ATOMIC_RELEASE); }
+size_t eval_held_count(void) { pthread_mutex_lock(&E.held_mu); size_t n = E.nheld; pthread_mutex_unlock(&E.held_mu); return n; }
+size_t eval_release_held(void) {
+    pthread_mutex_lock(&E.held_mu); Task *h = E.held; size_t n = E.nheld; E.held = NULL; E.nheld = E.capheld = 0; pthread_mutex_unlock(&E.held_mu);
+    for (size_t i = 0; i < n; i++) enqueue(h[i]);
+    free(h); return n;
+}
+EvalCutEvents eval_cut_events(void) {
+    EvalCutEvents v; size_t *d = (size_t *)&v; const size_t *s = (const size_t *)&E.cev;
+    for (size_t i = 0; i < sizeof v / sizeof(size_t); i++) d[i] = __atomic_load_n(&s[i], __ATOMIC_SEQ_CST);
     return v;
 }
 
@@ -973,8 +1417,8 @@ static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId 
     require(g->faces && g->results, "out of memory");
     if (n) memcpy(g->faces, faces, n * sizeof(FaceId));
     pthread_mutex_init(&g->mu, NULL);
-    pthread_mutex_lock(&E.join_mu); g->slot = E.joins.len; vec_push(&E.joins, g); pthread_mutex_unlock(&E.join_mu);
-    if (n == 0) { gather_free(g); publish(dest, result_system(mk_system(0, NULL, NULL), 0, NULL, NULL)); return; }
+    g->refs = 1;                               /* the creator; each branch Cut retains the join (LIVE-CUT-ADOPTION §5) */
+    if (n == 0) { gather_unref(g); publish(dest, result_system(mk_system(0, NULL, NULL), 0, NULL, NULL)); return; }
     for (size_t i = 0; i < n; i++) {
         Cont *k = cont_new(K_BRANCH, dest, fc_meet(chi, faces[i]));
         k->gather = g; k->branch = i; k->orig = terms[i];
@@ -982,6 +1426,7 @@ static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId 
         k->prefix = rc_seq(congruence, rc_rule(RR_SYSTEM_BRANCH, terms[i], faces[i]));
         eval_request(terms[i], k->chi, k);
     }
+    gather_unref(g);
 }
 
 static void resume_branch(Cont *k, EvalResult *r) {
@@ -1001,8 +1446,7 @@ static void resume_branch(Cont *k, EvalResult *r) {
             if (b->cls == R_INVALID) out = b;
             else if (b->cls == R_NO_OBSERVATION) out = result_invalid("branch under an inconsistent guard");
         }
-        gather_free(g);
-        publish(dest, out);
+        publish(dest, out);                     /* the join's storage stays with its retaining Cuts */
         return;
     }
     /* reconstruct: nested system results are flattened under conjoined guards */
@@ -1013,7 +1457,6 @@ static void resume_branch(Cont *k, EvalResult *r) {
             for (size_t j = 0; j < b->nbr; j++) { words_push(&fs, fc_meet(g->faces[i], b->faces[j])); words_push(&ts, b->terms[j]); }
         } else { words_push(&fs, g->faces[i]); words_push(&ts, b->ref); }
     }
-    gather_free(g);
     RefId owner = mk_system(fs.n, fs.w, ts.w);
     EvalResult *res = result_system(owner, fs.n, fs.w, ts.w);
     words_free(&fs); words_free(&ts);
@@ -1026,7 +1469,7 @@ static void distribute(const Cont *k, const EvalResult *sys) {
     require(terms, "out of memory");
     for (size_t i = 0; i < sys->nbr; i++) terms[i] = rebuild_elim(k, sys->terms[i]);
     static const uint64_t cong_of[] = { 0, 0, 0, RR_CONG_APP, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE };
-    publish_branchwise(k->dest, k->chi, sys->nbr, sys->faces, terms, k->child, rc_rule(cong_of[k->kind], receipt_of(k->child), 0));
+    publish_branchwise(k->dest, k->chi, sys->nbr, sys->faces, terms, k->child, rc_rule(cong_of[k->kind], child_rc(k), 0));
     free(terms);
 }
 
@@ -1036,7 +1479,7 @@ static void resume_comp_family(Cont *k, EvalResult *r) {
         Head ho; open_ref(k->orig, &ho); uint64_t lv = levels_first(ho.levels); if (ho.levels == LEVELS_NONE) lv = LEVEL_NONE; head_free(&ho);
         RefId fam_res = residual_of(k->child);
         RefId residual = fam_res ? mk_comp_lv(lv, k->j, fam_res, k->phi, k->tube, k->cap) : k->orig;
-        publish_with(k->dest, result_new(R_NEUTRAL, k->orig), residual, rc_rule(RR_CONG_COMP, receipt_of(k->child), 0));
+        publish_with(k->dest, result_new(R_NEUTRAL, k->orig), residual, rc_rule(RR_CONG_COMP, child_rc(k), 0));
         return;
     }
     if (r->cls == R_SYSTEM) {
@@ -1056,7 +1499,7 @@ static void resume_comp_family(Cont *k, EvalResult *r) {
         }
         if (!fc_entails(k->chi, uni)) { free(faces); free(terms); publish(k->dest, result_invalid("type-family system has no branch along the whole composition line")); return; }
         for (size_t i = 0; i < kept; i++) if (fc_entails(k->chi, faces[i])) { RefId ti = terms[i]; free(faces); free(terms); forward(ti, k->chi, k->dest); return; }
-        publish_branchwise(k->dest, k->chi, kept, faces, terms, k->child, rc_rule(RR_CONG_COMP, receipt_of(k->child), 0));
+        publish_branchwise(k->dest, k->chi, kept, faces, terms, k->child, rc_rule(RR_CONG_COMP, child_rc(k), 0));
         free(faces); free(terms);
         return;
     }
@@ -1066,7 +1509,7 @@ static void resume_comp_family(Cont *k, EvalResult *r) {
     RefId out = comp_clause(k->j, r->ref, k->phi, k->tube, k->cap, ENT(k->dest)->face);
     if (!out) { publish(k->dest, result_invalid("composition in a family whose head is not a type former or lacks its universe annotation")); return; }
     reuse_bump(REUSE_COMP_EXPAND);
-    forward_rc(out, k->chi, k->dest, rc_seq(rc_rule(RR_CONG_COMP, receipt_of(k->child), 0), rc_rule(RR_COMP_EXPAND, 0, 0)));
+    forward_rc(out, k->chi, k->dest, rc_seq(rc_rule(RR_CONG_COMP, child_rc(k), 0), rc_rule(RR_COMP_EXPAND, 0, 0)));
 }
 
 static void resume(Cont *k, EvalResult *r) {
@@ -1084,10 +1527,10 @@ static void resume(Cont *k, EvalResult *r) {
     default: break;
     }
     if (r->cls == R_NO_OBSERVATION || r->cls == R_INVALID) { publish_with(k->dest, r, 0, 0); return; }
-    if (k->kind == K_FORWARD) { publish_with(k->dest, r, residual_of(k->child), rc_seq(k->prefix, receipt_of(k->child))); return; }
+    if (k->kind == K_FORWARD) { publish_with(k->dest, r, residual_of(k->child), rc_seq(k->prefix, child_rc(k))); return; }
     if (k->kind == K_COMP_FAMILY) { resume_comp_family(k, r); return; }
     static const uint64_t cong_of[] = { 0, 0, 0, RR_CONG_APP, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE };
-    uint64_t cong = rc_rule(cong_of[k->kind], receipt_of(k->child), 0);
+    uint64_t cong = rc_rule(cong_of[k->kind], child_rc(k), 0);
     if (r->cls == R_NEUTRAL) {
         /* §78.2: the residual is the eliminator rebuilt around the scrutinee's residual */
         RefId sres = residual_of(k->child);
@@ -1137,7 +1580,7 @@ static void execute(Task t) {
      * task, the entry stays RUNNING, the outstanding count is held). The
      * producer whose task it runs records the continuation (exec_kc) */
     KCont *k = kc_current(); bool outer = k && !k->in_eval; if (outer) k->in_eval = true;
-    EntryId owner = t.is_pair || t.is_notify ? 0 : t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
+    EntryId owner = t.is_pair || t.is_notify ? 0 : t.op ? task_info(&t).producer : t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
     ExecNode node = { k, k ? k->job : 0, owner, NULL, NULL };
     KCont *prev_kc = NULL; uint64_t prev_job = 0;
     if (k) {
@@ -1170,10 +1613,11 @@ static KCont *producer_owner(EntryId want, uint64_t *job) {
         if (k) { found = k; *job = __atomic_load_n(&x->exec_job, __ATOMIC_ACQUIRE); break; }
         for (size_t i = 0;; i++) {
             pthread_mutex_lock(&x->mu);
-            bool more = x->state == E_RUNNING && i < x->deps.len; EntryId c = more ? x->deps.data[i] : 0;
+            bool more = x->state == E_RUNNING && i < x->deps.len; EntryId c = more ? x->deps.data[i] : 0; bool hist = more && x->dep_hist.data[i];
             pthread_mutex_unlock(&x->mu);
             fine_bump(FC_ADAPTER_STEPS);
             if (!more) break;
+            if (hist) continue;                          /* a superseded request is not awaited work */
             Entry *cx = ENT(c); pthread_mutex_lock(&cx->mu); bool running = cx->state == E_RUNNING; pthread_mutex_unlock(&cx->mu);
             if (running) words_push(&stack, c);
         }
@@ -1204,13 +1648,23 @@ static void eval_wait_locked(void) {
 static void execute_task(Task t) {
     if (t.is_pair) { net_step_pair(&E.net, t.pair); return; }
     if (t.is_notify) { prefix_notify(t); return; }   /* §84.2 administrative work: not an evaluator frame step */
+    if (t.op) {                                       /* LIVE-CUT-ADOPTION administrative jobs, charged to the Cut's producer */
+        EntryId ow = task_info(&t).producer;
+        ReuseScope *prev = ow ? reuse_scope_enter(ENT(ow)->scope) : reuse_tl_scope;
+        op_dispatch(t);
+        reuse_scope_leave(prev);
+        return;
+    }
     add_count(&E.ev.eval_step);
     { EntryId owner = t.is_resume ? t.k->dest : t.entry;    /* §60 trace: the frame step belongs to the producer it advances */
       if (owner && !(t.is_resume && (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL))) { Entry *o = ENT(owner); pthread_mutex_lock(&o->mu); o->steps++; pthread_mutex_unlock(&o->mu); } }
     /* V21 R3: the task's events are charged to the scope owning its producer */
     EntryId owner = t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
     ReuseScope *prev = owner ? reuse_scope_enter(ENT(owner)->scope) : reuse_tl_scope;
-    if (t.is_resume) { resume(t.k, t.r); cont_release(t.k); }   /* single consumer: released once resumed */
+    if (t.is_resume) {
+        if (t.k->cut) cut_deliver(t.k, t.r);                     /* a ticket: consumed once, the slot resumes at most once */
+        else { resume(t.k, t.r); cont_release(t.k); }            /* single consumer: released once resumed */
+    }
     else evaluate(t.entry);
     reuse_scope_leave(prev);
 }
@@ -1226,6 +1680,7 @@ static void *worker_main(void *arg) {
         while (!E.stop && !pop_locked(&t)) pthread_cond_wait(&E.q_cv, &E.q_mu);   /* take_job */
         if (E.stop) break;
         pthread_mutex_unlock(&E.q_mu);
+        if (hold_take(t)) { finish_job(); pthread_mutex_lock(&E.q_mu); continue; }
         execute(t);                      /* all child jobs are enqueued before the job finishes */
         finish_job();
         pthread_mutex_lock(&E.q_mu);
@@ -1251,6 +1706,24 @@ size_t eval_run(void) {
         bool got = pop_locked(&t);
         pthread_mutex_unlock(&E.q_mu);
         if (!got) break;
+        if (hold_take(t)) { finish_job(); continue; }
+        execute(t);
+        finish_job();
+        n++;
+    }
+    return n;
+}
+/* the sequential scheduler under a budget: at most `max_jobs` jobs */
+size_t eval_run_budget(size_t max_jobs) {
+    require(!E.nworkers, "a budgeted run drives the sequential scheduler");
+    size_t n = 0;
+    while (n < max_jobs) {
+        Task t;
+        pthread_mutex_lock(&E.q_mu);
+        bool got = pop_locked(&t);
+        pthread_mutex_unlock(&E.q_mu);
+        if (!got) break;
+        if (hold_take(t)) { finish_job(); continue; }
         execute(t);
         finish_job();
         n++;

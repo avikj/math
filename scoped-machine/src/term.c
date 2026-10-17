@@ -481,6 +481,7 @@ RefId make_view(OriginId c, MapId sigma) {
     return id;
 }
 
+void (*term_edge_hook)(RefId dest, RefId src, MapId sigma);
 static void record_edge(RefId dest, RefId src, MapId sigma);
 RefId reindex(RefId t, MapId sigma) {
     if (map_is_identity(sigma)) return t;
@@ -515,7 +516,7 @@ static void record_edge(RefId dest, RefId src, MapId sigma) {
         words_free(&w);
         uint64_t now = 0;
         term_lock(); wordmap_get(&M.edges, key, 1, &now); bool same = now == old; if (same) wordmap_put(&M.edges, key, 1, id); term_unlock();
-        if (same) return;
+        if (same) { void (*h)(RefId, RefId, MapId) = __atomic_load_n(&term_edge_hook, __ATOMIC_ACQUIRE); if (h) h(dest, src, sigma); return; }
     }
 }
 size_t instantiation_edges(RefId dest, const uint64_t **pairs) {

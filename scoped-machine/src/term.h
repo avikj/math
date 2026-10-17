@@ -232,6 +232,7 @@ uint64_t global_revision(SymbolId s);  /* §79.1: the symbol's declaration/body 
 /* §78.4: the recorded instantiation edges of a reference: pairs (source, map)
  * such that dest = reindex(source, map) was constructed; n pairs */
 size_t instantiation_edges(RefId dest, const uint64_t **pairs);
+extern void (*term_edge_hook)(RefId dest, RefId src, MapId sigma);   /* called after a new instantiation edge is recorded (no term lock held) */
 void env_control_init(void); void env_freeze(void); void env_unfreeze(void); bool env_is_frozen(void);   /* §57 R1: define_global returns 0 and set_global_body false while frozen */
 RefId unfold_global(RefId t);          /* reindex(definition body, map) */
 

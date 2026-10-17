@@ -49,7 +49,8 @@ typedef struct {
     size_t n_req, n_deliver, n_pub;   /* per-key event counts (for schedule comparison) */
     size_t steps;       /* §60 trace: EVALUATE/RESUME frame steps charged to this producer */
     uint64_t env;       /* the environment version at the key's creation (§79.2: a running producer stays tied to its snapshot) */
-    VEC(EntryId) deps;  /* §60 trace: consumer occurrences owned by this producer, in request order (slot = index) */
+    VEC(EntryId) deps;  /* §60 trace: consumer occurrences owned by this producer, in request order (slot = index): the historical request edges */
+    VEC(uint8_t) dep_hist;   /* LIVE-CUT-ADOPTION §5: 1 when the occurrence at that index was superseded by an adoption (historical, not an active-slot edge) */
     /* §76.3 / §78 / §79: the structural computation identity, the historical
      * chain under the same (shape, face), the answer's residual and receipt,
      * and the symbol revisions the answer actually read */
@@ -169,6 +170,7 @@ typedef struct PrefixFact {
     EntryId origin;              /* the producer whose own rule committed the first step (a lift never returns to it) */
     struct PrefixFact *next;     /* the producer's previous fact */
     struct PrefixFact *all_next; /* every fact, for teardown */
+    const struct PrefixFact *shape_next;   /* LIVE-CUT-ADOPTION: the previous fact of the same source shape (the subscription index) */
 } PrefixFact;
 const PrefixFact *eval_entry_prefix(EntryId e);              /* the latest committed prefix of e, or NULL (pinned: facts are immutable) */
 size_t eval_entry_prefix_count(EntryId e);
@@ -177,6 +179,37 @@ bool eval_prefix_valid(const PrefixFact *f);                 /* every recorded r
 typedef struct { size_t published, lifted, notify_steps, adapters; } EvalPrefixEvents;
 EvalPrefixEvents eval_prefix_events(void);
 size_t eval_root_occurrences(EntryId **out);        /* copies the root occurrence list; caller frees *out */
+
+/* LIVE-CUT-ADOPTION. Every producer-owned request slot (an eliminator's
+ * child, a forwarding request, each join slot, the net's suspended
+ * subrequest) is a Cut: source s0, occurrence face, immutable resume recipe,
+ * state WAITING | RESUMING | CLOSED, its current generation (residual r,
+ * receipt q : s0 ⇒* r, dependency certificate) and owned tickets. A fact of
+ * another producer whose source is r (or reindexes to r along a recorded
+ * instantiation edge) at a face the occurrence entails is prepared as a
+ * proposal outside every lock and installed under the Cut's lock only if the
+ * Cut is still WAITING at the captured generation and the environment stamp
+ * is the validated one (a changed stamp revalidates the premises first). The
+ * installation issues an ordinary request for the adapted residual through a
+ * new ticket; a delivery resumes the slot only for the current generation
+ * (WAITING → RESUMING once); a superseded ticket's delivery is consumed with
+ * no semantic resume. */
+typedef struct {
+    size_t cuts, subscriptions, replays, notices, edge_watches;
+    size_t proposals, prep_steps, prep_computed, prep_shared, prep_rejected;
+    size_t installs, install_stale_generation, install_not_waiting, revalidations, revalidation_failed;
+    size_t tickets, deliveries_current, deliveries_stale, resumes, retired_tickets, cuts_freed;
+} EvalCutEvents;
+EvalCutEvents eval_cut_events(void);
+size_t eval_entry_active_deps(EntryId e, EntryId **out);   /* the active-slot edges (historical edges excluded); caller frees *out */
+/* scheduler policy (tests): a held job is set aside (not outstanding) until
+ * released; a budgeted run executes at most n jobs (sequential scheduler) */
+typedef enum { ET_EVALUATE = 1, ET_RESUME, ET_NOTIFY, ET_PAIR, ET_SUBSCRIBE, ET_REPLAY, ET_NOTICE, ET_PREPARE, ET_INSTALL, ET_REQUEST, ET_EDGE } EvalTaskKind;
+typedef struct { EvalTaskKind kind; EntryId producer; EntryId child; bool ticket; const struct PrefixFact *fact; } EvalTaskInfo;   /* fact: the proposal's fact (PREPARE / INSTALL), the noticed or replayed fact */
+void eval_set_hold(bool (*pred)(const EvalTaskInfo *, void *), void *ctx);
+size_t eval_release_held(void);
+size_t eval_held_count(void);
+size_t eval_run_budget(size_t max_jobs);
 
 /* continuation constructors used by the net layer */
 typedef void (*ExternalDeliver)(void *ctx, EvalResult *r);
