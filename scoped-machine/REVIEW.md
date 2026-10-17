@@ -474,6 +474,16 @@ sites that remain, with their measured maxima. `run_v20_review.py` 19/19 and
 `run_v19_review.py` 16/16 under ASan+LSan and TSan; `make test` and
 `make tsan` clean with the v20 probes gated.
 
+The foundation review (`tests/review-foundation/`, `PREFIX-CONTRACT.md`,
+`FOUNDATION-ROUTE.md` at the repository root) is integrated at the
+producer/receipt boundary: committed prefix facts published at every
+forwarding cut, lifted to waiters by one-waiter notification jobs (SEQ and
+CONTEXT), and selected as immutable pinned facts by the adapter search.
+`review_live_prefix` and `run_live_prefix.py` pass (4/4 ASan+LSan, 4/4 TSan);
+`tests/test_prefix.c` covers the contract's nested, premise, face, joined,
+schedule and proof-use cases. README ("§84.2 committed prefixes") lists what
+is not implemented.
+
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the
 host export and validated against the compiler's emitted maps by conversion;

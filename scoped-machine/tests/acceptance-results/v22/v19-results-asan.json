@@ -1,0 +1,160 @@
+{
+  "tree": "/home/claude/cubical",
+  "sanitizer": "asan",
+  "detect_leaks": "1",
+  "reused_objects": false,
+  "results": [
+    {
+      "name": "review_v19",
+      "args": [
+        "arena-directory"
+      ],
+      "exit_code": 0,
+      "stdout": "pages=513 (second directory present=1)\nreap units=516 words_out=264192 words_in=264192 missing=0\n",
+      "stderr": "",
+      "seconds": 0.021301285999925312
+    },
+    {
+      "name": "review_v19",
+      "args": [
+        "arena-empty"
+      ],
+      "exit_code": 0,
+      "stdout": "empty retire: elem=8 per=512\nreap units=1 words_out=512 words_in=512 missing=0\n",
+      "stderr": "",
+      "seconds": 0.015511015999891242
+    },
+    {
+      "name": "review_v19",
+      "args": [
+        "audit-admission"
+      ],
+      "exit_code": 0,
+      "stdout": "after bad body: prepare=0 core=-1 reason=proof use INVALID: judgment prerequisite rejected\noracle=INVALID\n",
+      "stderr": "",
+      "seconds": 0.05336780099992211
+    },
+    {
+      "name": "review_v19",
+      "args": [
+        "audit-marks"
+      ],
+      "exit_code": 0,
+      "stdout": "two audits: assumptions=1 core=0\nseparate reuse: assumptions=1/1 core=0/0\n",
+      "stderr": "",
+      "seconds": 0.04993805499998416
+    },
+    {
+      "name": "review_v19_work",
+      "args": [
+        "sync-reap"
+      ],
+      "exit_code": 0,
+      "stdout": "synchronous set union: page releases=2\n",
+      "stderr": "",
+      "seconds": 0.03163448800000879
+    },
+    {
+      "name": "review_v19_work",
+      "args": [
+        "audit-sharing"
+      ],
+      "exit_code": 0,
+      "stdout": "interleaved preparations: audit producers=1 max_kernel=1 max_audit=1 units=2291\n",
+      "stderr": "",
+      "seconds": 0.04251154600001428
+    },
+    {
+      "name": "review_assumption_copy",
+      "args": [
+        "both"
+      ],
+      "exit_code": 0,
+      "stdout": "both: transform assumptions=65 reference assumptions=65 copied=130 max_symbols_per_unit=1 final_union=66 ready_reuse=1\n",
+      "stderr": "",
+      "seconds": 0.19054718400002457
+    },
+    {
+      "name": "review_assumption_copy",
+      "args": [
+        "transform"
+      ],
+      "exit_code": 0,
+      "stdout": "transform: transform assumptions=1 reference assumptions=0 copied=1 max_symbols_per_unit=1 final_union=1 ready_reuse=1\n",
+      "stderr": "",
+      "seconds": 0.09154305199990631
+    },
+    {
+      "name": "review_assumption_copy",
+      "args": [
+        "reference"
+      ],
+      "exit_code": 0,
+      "stdout": "reference: transform assumptions=0 reference assumptions=1 copied=1 max_symbols_per_unit=1 final_union=1 ready_reuse=1\n",
+      "stderr": "",
+      "seconds": 0.1349098299999696
+    },
+    {
+      "name": "review_arena_budget",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "paged: pushes=100000 pages=196 arena_allocs=197 max_allocs_per_push=2 elements_moved=0\nslots: 1024 -> 2048; units=126 clear_units=63 max_slots_cleared_per_unit=32 max_slots_relocated_per_unit=22 max_arena_ops_per_unit=5\nrelease: buffer pages=8 sort units=18443 max_page_releases_per_unit=1\n",
+      "stderr": "",
+      "seconds": 0.048130161000017324
+    },
+    {
+      "name": "review_audit_budget",
+      "args": [
+        "256"
+      ],
+      "exit_code": 0,
+      "stdout": "chain N=256: units=125602 audit_steps=18890 max_audit_steps_per_unit=1 max_kernel_calls_per_unit=1 assumptions=1 (== proof_use: 1)\ncached verdict: audit units on reuse=265 (four prerequisites, lookup, hit, N+1 revision checks, delivery, verdict read = 265; no traversal)\nafter the root turns cyclic: prepare=rejected (proof use PENDING: connecting evidence depends on a recursive declaration component and has no logical witness yet)\n",
+      "stderr": "",
+      "seconds": 21.925125465999827
+    },
+    {
+      "name": "review_store_interleave",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "writer before/after copy cursor: mirrored=1; framed lookup during relocation=1; final payload correct and canonical=1\n",
+      "stderr": "",
+      "seconds": 0.17033377400002792
+    },
+    {
+      "name": "review_prepare_boundary",
+      "args": [
+        "64"
+      ],
+      "exit_code": 0,
+      "stdout": "PREPARE depth=64 budget=1 units=1 boundary_nodes_visited=0\ncompleted correct boundary=1; max_boundary_steps_per_unit=1; ready reuse adds zero boundary work=1\n",
+      "stderr": "",
+      "seconds": 0.046537863999901674
+    },
+    {
+      "name": "review_prepare_boundary",
+      "args": [
+        "4096"
+      ],
+      "exit_code": 0,
+      "stdout": "PREPARE depth=4096 budget=1 units=1 boundary_nodes_visited=0\n",
+      "stderr": "",
+      "seconds": 0.033594620999792824
+    },
+    {
+      "name": "production_work",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "1. two consumers of one producer: one producer's work, two request/delivery occurrences\n2. a ready root cuts its cone; a ready intermediate cuts only the paths through it\n3. specialization identifies work keys before costs and cuts; stale annotations are not reused\n4. (a \u2228 b) \u2227 b = b and (a \u2228 b) \u2227 (b \u2228 c) = b \u2228 (a \u2227 c), with witnesses preserved\n5. incompatible composition rejects; omitted connector work or evidence rejects; formula equality merges nothing\n6. supplied lower-bound/attainment certificates check; every corruption rejects; nothing is filled in by search\n7. Must-factoring and disjoint decomposition agree with the semantic normal form; guards are re-established after specialization\n8. every bounded-frame operation suspends at internal phases and resumes to the same result; completed producers persist (\u00a775.2)\n9. every helper loop and memory operation is in the ledger; memoized reuse keeps its lookup/delivery cost\n10. associativity in both orientations through the net/evaluator: repeated and overlapping demands, actual work record, supplied derivation, commit\nwork: 217 checks, 0 failures\n",
+      "stderr": "",
+      "seconds": 0.15372288999992634
+    },
+    {
+      "name": "production_proof_use",
+      "args": [],
+      "exit_code": 0,
+      "stdout": "proof-use: 21 checks, 0 failures\n",
+      "stderr": "",
+      "seconds": 0.0972530359999837
+    }
+  ]
+}

@@ -1145,6 +1145,80 @@ and 19/19 under TSan; `run_v19_review.py` 16/16 under both; `make test` and
 ASan, 32/256 under TSan; map-sort 64/512) and `review_v20_intern` (64, 300)
 gated (`tests/acceptance-results/v21/`, TEST.log, TSAN.log).
 
+### §84.2 committed prefixes (`PREFIX-CONTRACT.md`, `src/eval.c`)
+
+A RUNNING producer publishes the finite derivation it has already performed
+as an immutable fact `PrefixFact` (`eval.h`): source, the producer's key face,
+the residual cut, the receipt DAG of source ⇒* residual, and the (symbol,
+revision) pairs the derivation used. Facts are not READY answers:
+`eval_entry_residual` / `eval_entry_receipt` still answer only for READY.
+
+- STEP / SEQ at the forwarding cut: `forward_rc` calls `prefix_publish(dest,
+  target, receipt, …)` before it requests the suffix. The premises are the
+  producer's direct reads and those of the READY children it consumed (as
+  publication collects them, §79.1), copied one pair per lock section
+  (`prefix_copy_pairs`, `FC_ADAPTER_STEPS`). The fact is published by one
+  release store into the producer's head (`prefix_head`, newest first) while
+  the producer is RUNNING; a producer answered meanwhile publishes nothing.
+- Notification is a retained cursor: each published fact enqueues one
+  notification job per waiter (`prefix_notify`: one waiter, then the next
+  job). A FORWARD waiter composes the fact after its own prefix (SEQ:
+  `rc_seq(k->prefix, f->receipt)`); an eliminator waiter (application,
+  projections, path application, unglue, composition family) lifts it through
+  its one-hole context with the existing rebuilding recipe (CONTEXT:
+  `rebuild_elim`, `RR_CONG_*`); the result is published as the waiter's own
+  fact, with the parent's premises. A fact is lifted only to a waiter that
+  requested exactly the fact's source reference, never back into the
+  producer whose rule committed the first step (`origin`), and never into
+  roots, external consumers or join branches. Notification jobs are not
+  evaluator frame steps (`eval_events` unchanged); they are counted in
+  `eval_prefix_events`.
+- Selection: `adapter_candidate` prefers a READY answer as before; for a
+  RUNNING source it pins the latest fact (one acquire load; the fact is never
+  re-read through the producer's moving head), validates the fact's own
+  premises (`prefix_valid`), applies the same face entailment, map, progress
+  and required-face checks as the READY path, and records the adapter as
+  `[RC_PREFIX_RESTRICT | RC_PREFIX_SPEC, fact, face | map]` with the fact in
+  `Entry.adapter_fact` (`eval_entry_adapter_fact`). The instance then observes
+  the specialized / restricted residual normally; no wait on the generic
+  source.
+
+Evidence: `review_live_prefix` (the author's regression; gated, both modes,
+0/4 workers, ASan and TSan) and `run_live_prefix.py` 4/4 under ASan+LSan and
+4/4 under TSan: the specialized and restricted instances return `x` with 0
+repeated betas while the source stays RUNNING with no final answer.
+`tests/test_prefix.c` (gated under both sanitizers):
+`nested` — `(((λz. k@i) x) x) x` with a pending `k : Path (A→A→A) f2 f2`: the
+beta prefix is lifted through two pending applications; the instance runs
+only `f2`'s two betas (not the lifted one), from the pinned outer fact;
+`deps` — the beta prefix records no premise on the pending global's body; a
+prefix through an unfolded global `F` records `(F, revision)`; `face` — a
+fact at `j=0` serves an instance at `j=0` and is not used under true (where
+the beta is performed); `joined` — two clients of one instance key: one
+adapter computation, two deliveries, one publication, no repeated rule;
+`schedules` — FIFO, LIFO, 16 random seeds and 4 workers give the same answers
+and beta counts; `proofuse` — the proof-use audit of the recursive program still
+answers PENDING.
+
+Corrected on the way: a GLOBAL view's structural identity now includes the
+images of its declared parameters and dimensions (`shape.c`); before,
+`F[i↦0] x` shared the key of `F x` and joined its pending producer. The
+interner's insertion snapshot (`n`, placements) is taken in the section that
+found the chain end (`intern.c`); taking it at the completing section let an
+insertion between the two sections go unseen.
+
+Not implemented, exactly: adoption of a new fact by an already RUNNING
+target producer at a later cut (the contract permits it; facts are consulted
+when a producer starts); separate facts for the branches of a pending system
+join; a revision-invalidation regression (a body revision changes only from
+opaque to defined, and in this evaluator a prefix that read an opaque global
+ends in a neutral answer, not a pending suffix — the premise recording and
+`prefix_valid` are tested positively); facts are retained until the machine
+is freed or reset (`eval_free`), not reclaimed earlier when their owners are
+gone; suspension at every publication phase is exercised through the
+scheduler policies and the worker pool, not by a dedicated kernel-continuation
+probe.
+
 ### §83 — presentations, diagram values and the generic action as core terms (`src/runtime.c`)
 
 Every construction is one fixed template per universe-level tuple, built once

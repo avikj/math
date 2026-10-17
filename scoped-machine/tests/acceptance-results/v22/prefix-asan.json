@@ -1,0 +1,40 @@
+{
+  "tree": "/home/claude/cubical",
+  "sanitizer": "asan",
+  "detect_leaks": "1",
+  "reused_objects": false,
+  "results": [
+    {
+      "mode": "specialize",
+      "workers": 0,
+      "exit_code": 0,
+      "stdout": "mode=specialize workers=0 semantic_ok=1 source_pending=1 repeated_beta=0 expected=0\n",
+      "stderr": "",
+      "seconds": 0.08546212999999625
+    },
+    {
+      "mode": "specialize",
+      "workers": 4,
+      "exit_code": 0,
+      "stdout": "mode=specialize workers=4 semantic_ok=1 source_pending=1 repeated_beta=0 expected=0\n",
+      "stderr": "",
+      "seconds": 0.07583303599994906
+    },
+    {
+      "mode": "restrict",
+      "workers": 0,
+      "exit_code": 0,
+      "stdout": "mode=restrict workers=0 semantic_ok=1 source_pending=1 repeated_beta=0 expected=0\n",
+      "stderr": "",
+      "seconds": 0.07191303400009019
+    },
+    {
+      "mode": "restrict",
+      "workers": 4,
+      "exit_code": 0,
+      "stdout": "mode=restrict workers=4 semantic_ok=1 source_pending=1 repeated_beta=0 expected=0\n",
+      "stderr": "",
+      "seconds": 0.08068011599993952
+    }
+  ]
+}

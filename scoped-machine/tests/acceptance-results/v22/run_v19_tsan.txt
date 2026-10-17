@@ -1,0 +1,27 @@
+In file included from /home/claude/cubical/src/state.h:9,
+                 from /home/claude/cubical/src/term.h:13,
+                 from /home/claude/cubical/src/term.c:2:
+/home/claude/cubical/src/common.h:9: warning: "_POSIX_C_SOURCE" redefined
+    9 | #define _POSIX_C_SOURCE 200809L
+      | 
+In file included from /usr/include/sched.h:22,
+                 from /home/claude/cubical/src/term.c:1:
+/usr/include/features.h:321: note: this is the location of the previous definition
+  321 | # define _POSIX_C_SOURCE 199506L
+      | 
+review_v19 ['arena-directory'] exit 0
+review_v19 ['arena-empty'] exit 0
+review_v19 ['audit-admission'] exit 0
+review_v19 ['audit-marks'] exit 0
+review_v19_work ['sync-reap'] exit 0
+review_v19_work ['audit-sharing'] exit 0
+review_assumption_copy ['both'] exit 0
+review_assumption_copy ['transform'] exit 0
+review_assumption_copy ['reference'] exit 0
+review_arena_budget [] exit 0
+review_audit_budget ['256'] exit 0
+review_store_interleave [] exit 0
+review_prepare_boundary ['64'] exit 0
+review_prepare_boundary ['4096'] exit 0
+production_work [] exit 0
+production_proof_use [] exit 0
