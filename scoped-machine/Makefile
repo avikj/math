@@ -418,13 +418,8 @@ build/review-bounds: $(OBJ) tests/review_bounds.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 bounds-test: build/review-bounds
-	./build/review-bounds interval 129
-	./build/review-bounds scope 129
-	./build/review-bounds net-capture 17
-	./build/review-bounds net-capture 129
-	./build/review-bounds net-apply 17
-	./build/review-bounds net-apply 129
-	./build/review-bounds mixed 129
+	for n in 1 16 17 63 64 65 129; do for m in interval scope net-capture net-apply; do ./build/review-bounds $$m $$n || exit 1; done; done
+	for n in 3 63 129; do ./build/review-bounds mixed $$n || exit 1; done
 	./build/review-bounds required 4096
 	./build/review-bounds chunked
 	./build/review-bounds sparse
