@@ -1,8 +1,8 @@
-lock-section audit (-DKC_LOCK_AUDIT, CUBICAL_WORKERS=0): per outermost acquisition site, the maximum fine steps taken while holding it, over the suites listed in lock-audit-raw.txt
+lock-section audit (-DKC_LOCK_AUDIT, CUBICAL_WORKERS=0): per outermost acquisition site, the maximum fine steps taken while holding it, over the suites in lock-audit-raw.txt
 src/net.c:740               32519 compiler  
 src/template.c:1036         21639 tests  
 src/work.c:1050              4610 reuse  
-src/check.c:199              1794 review-audit-budget 256  
+src/check.c:200              1794 review-audit-budget 256  
 src/work.c:818                477 reuse  
 src/work.c:1268               350 work  
 src/work.c:628                315 work  
@@ -10,17 +10,17 @@ src/work.c:1061               258 reuse
 src/work.c:1937               192 proof-use  
 src/term.c:348                154 runtime  
 src/compiler.c:348            145 compiler  
-src/check.c:1103              113 runtime  
-src/check.c:616               107 runtime  
+src/check.c:1149              113 runtime  
+src/check.c:662               107 runtime  
 src/compiler.c:114            100 compiler  
 src/eval.c:289                 98 schedule  
-src/check.c:1145               98 check  
-src/check.c:528                96 runtime  
-src/check.c:1339               96 runtime  
+src/check.c:1191               98 check  
+src/check.c:574                96 runtime  
+src/check.c:1385               96 runtime  
 src/term.c:477                 85 runtime  
 src/term.c:513                 81 runtime  
 src/eval.c:457                 76 runtime  
-src/check.c:662                72 compiler  
+src/check.c:708                72 compiler  
 src/intern.c:165               61 compiler  
 src/term.c:376                 60 tests  
 src/term.c:523                 56 check  
@@ -34,7 +34,7 @@ src/scope.c:99                 31 templates
 src/scope.c:114                30 tests  
 src/term.c:534                 30 proof-use  
 src/term.c:549                 29 templates  
-src/check.c:1615               22 review-audit-budget 256  
+src/check.c:1661               22 review-audit-budget 256  
 src/kcont.c:48                 17 review-v20-intern 300  
 src/eval.c:371                 13 review-v20 evaluator 1024  
 src/eval.c:394                  6 review-v20 evaluator 1024  

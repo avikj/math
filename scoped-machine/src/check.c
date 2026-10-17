@@ -277,8 +277,8 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
         }
         if (r->state == 0) {
             r->state = 1; r->owner = me;
-            frame_push(c);
             pthread_mutex_unlock(&K.mu);
+            frame_push(c);   /* this thread's frame stack: its growth is outside K.mu */
             return ACQ_OWNER;
         }
         if (r->owner == me || !may_block_locked(r->owner, me)) { pthread_mutex_unlock(&K.mu); return ACQ_CYCLE; }
