@@ -345,9 +345,13 @@ RefId ref_var(TermVarId x) {
         return id;
     }
     require(x >= 1 && x <= n_terms_now(), "VAR of undeclared variable %llu", (unsigned long long)x);
-    term_lock();                                /* side data is published before the lock is released */
+    term_lock();
     RefId id = interner_find(&M.refs, w, 2);
-    if (id) { term_unlock(); return id; }
+    term_unlock();
+    if (id) return id;
+    /* the side data is computed outside the term lock (it is the closed
+     * boundary of the declaration type: input-sized); the record is created
+     * and its side published under the lock, after a second find */
     RefId type = TDECL(x)->type;
     FaceId req = fc_meet(TDECL(x)->required, ref_required(type));
     /* typed boundary: x itself plus the closed boundary of its declaration
@@ -357,10 +361,14 @@ RefId ref_var(TermVarId x) {
     Words d; words_init(&d); fc_dims(req, &d);
     DimSetId sup = dimset_union(ref_support(type), dimset_make(d.w, d.n));
     words_free(&d);
-    bool created;
-    id = interner_intern(&M.refs, w, 2, &created);
-    require(created, "ref_var race");
-    ref_side_set(id, sup, fv, req);
+    term_lock();                                /* side data is published before the lock is released */
+    id = interner_find(&M.refs, w, 2);
+    if (!id) {
+        bool created;
+        id = interner_intern(&M.refs, w, 2, &created);
+        require(created, "ref_var race");
+        ref_side_set(id, sup, fv, req);
+    }
     term_unlock();
     return id;
 }
