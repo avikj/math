@@ -458,6 +458,22 @@ what remains is stated in README ("The v19 review and the kernel
 continuations": the transition-free evaluator task and the constant added by
 a yield deferred past a locked section).
 
+The v20 review (`REVIEW-v20.md`, bundle in `tests/review-v20/`) is
+implemented: the reviewer's `v20-local-fixes.patch` unchanged; per-job
+kernel continuations with yielding checker and evaluator waits (R1);
+attempt-local UNRESOLVED outcomes restarted on a later attempt and
+propagated to dependent jobs (R2); the evaluator task inside the ordinary
+accounting, cursor-based interner probing with unlocked comparison and a
+publication check on `n`/`gen`/migration placements, heap-sorted maps (R3);
+reusable zero blocks through dirty lists cleared in units (R4). The outer
+critical sections were audited per acquisition site
+(`tests/acceptance-results/v21/lock-audit.txt`) and the input-sized ones in
+the checker, the evaluator, the term layer and the proof-use boundary were
+moved out of their locks or stepped; README ("The v20 review") lists the
+sites that remain, with their measured maxima. `run_v20_review.py` 19/19 and
+`run_v19_review.py` 16/16 under ASan+LSan and TSan; `make test` and
+`make tsan` clean with the v20 probes gated.
+
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the
 host export and validated against the compiler's emitted maps by conversion;

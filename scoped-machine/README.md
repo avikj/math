@@ -1093,13 +1093,22 @@ root occurrences a fixed reservation; origins are interned outside the term
 lock (the creator publishes the side with release, a finder awaits it);
 `ref_var` computes the declaration's closed boundary outside the term lock;
 proof-use verdict records are interned outside `P.mu`; `words_append` copies
-one word per transition (`FC_COPY_WORDS`). The audit's kernel sites now
-measure at most 43 fine steps (term lock), 32 (interner), 40 (checker),
-13 (evaluator entries), with the same maxima at N = 64 and N = 256 in the
-kernel probe and at N = 32 and N = 1 024 in the evaluator probe. A unit's
-transitions are its grant plus the sections a deferred yield crosses before
-the next unlocked transition point: at most 94 in `review_kernel_budget`
-(N = 256), 52 in `review_v20 evaluator`, 32 in `review_v20_intern`.
+one word per transition (`FC_COPY_WORDS`); checker claim keys are interned
+outside `K.mu`, which is held only to create the claim of a new key;
+proof-use sets and memos are interned without an outer `P.mu` section; the
+evaluator queue is a fixed reservation. The kernel sections the audit lists
+after these corrections are an interner section (≤ `PROBE_CHUNK` probes plus
+one migration step of ≤ `MIGRATE_CHUNK` visits: measured 63) and the sections
+of `term.c`, `scope.c` and `eval.c` that wrap a fixed-size-key interner call
+and the publication of its side data under the term lock or the evaluator's
+entry lock (measured ≤ 85; such a section runs the interner's sections back
+to back, one per 32 slots of the key's probe chain). The maxima are the same
+at N = 64 and N = 256 in the kernel probe, at N = 32 and N = 1 024 in the
+evaluator probe and at 64 and 300 colliding keys in the interner probe. A
+unit's transitions are its grant plus the sections a deferred yield crosses
+before the next unlocked transition point: at most 94 in
+`review_kernel_budget` (N = 256), 52 in `review_v20 evaluator`, 32 in
+`review_v20_intern`.
 
 The sites the audit still lists above those constants, exactly:
 - `net.c:740` (≤ 32 519 fine steps, compiler suite): a redex's rule is applied
@@ -1109,10 +1118,17 @@ The sites the audit still lists above those constants, exactly:
 - `template.c:1036` (21 639): the one-time registration of the template
   library under its `once` mutex; the library is fixed, so the section does
   not depend on the input.
-- `work.c` sites under the engine `LOCK` (≤ 4 610 at `work.c:1050`, 477, 350,
-  315, 258): the synchronous constructors and drivers (`dgraph_add_*`,
-  `set_make`, `set_specialize` and the other `run_locked` entry points), which
-  are one hand-off by definition; the bounded interface is `op_step`.
+- `work.c` sites under the engine `LOCK` (≤ 4 610 at `work.c:1050`; 477, 350,
+  315, 258, 192): the synchronous constructors and drivers (`dgraph_add_*`,
+  `set_make`, `set_specialize`, `problem_prepare` and the other `run_locked`
+  entry points), which are one hand-off by definition; the bounded interface
+  is `op_step`.
+- `compiler.c:348`, `compiler.c:114` (145, 100): the compiler's record and
+  diagram indices are looked up under `CR.mu` with the certificate's
+  variable-length key (the synchronous `compile_*` path).
+- A section that wraps an interner call under an outer lock is bounded by the
+  key's probe-chain length over 32, not by a constant independent of the
+  table's contents (above).
 
 **Arena reuse (R4).** Engine chunks released by `chunked_free` return to their
 arena supplier (the reviewer's patch; `review_v20 lifecycle`: 0 unreleased

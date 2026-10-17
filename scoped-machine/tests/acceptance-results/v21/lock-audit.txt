@@ -1,44 +1,41 @@
 lock-section audit (-DKC_LOCK_AUDIT, CUBICAL_WORKERS=0): per outermost acquisition site, the maximum fine steps taken while holding it, over the suites in lock-audit-raw.txt
-src/net.c:740               32519 compiler  
-src/template.c:1036         21639 tests  
-src/work.c:1050              4610 reuse  
-src/check.c:200              1794 review-audit-budget 256  
-src/work.c:818                477 reuse  
-src/work.c:1268               350 work  
-src/work.c:628                315 work  
-src/work.c:1061               258 reuse  
-src/work.c:1937               192 proof-use  
-src/term.c:348                154 runtime  
-src/compiler.c:348            145 compiler  
-src/check.c:1149              113 runtime  
-src/check.c:662               107 runtime  
-src/compiler.c:114            100 compiler  
-src/eval.c:289                 98 schedule  
-src/check.c:1191               98 check  
-src/check.c:574                96 runtime  
-src/check.c:1385               96 runtime  
-src/term.c:477                 85 runtime  
-src/term.c:513                 81 runtime  
-src/eval.c:457                 76 runtime  
-src/check.c:708                72 compiler  
-src/intern.c:165               61 compiler  
-src/term.c:376                 60 tests  
-src/term.c:523                 56 check  
-src/eval.c:282                 50 schedule  
-src/term.c:336                 49 schedule  
-src/proof.c:27                 44 review-audit-budget 256  
-src/term.c:437                 42 schedule  
-src/proof.c:28                 40 review-audit-budget 256  
-src/term.c:409                 35 templates  
-src/scope.c:99                 31 templates  
-src/scope.c:114                30 tests  
-src/term.c:534                 30 proof-use  
-src/term.c:549                 29 templates  
-src/check.c:1661               22 review-audit-budget 256  
-src/kcont.c:48                 17 review-v20-intern 300  
-src/eval.c:371                 13 review-v20 evaluator 1024  
-src/eval.c:394                  6 review-v20 evaluator 1024  
-src/term.c:470                  2 review-v20 independent  
-src/eval.c:608                  2 review-v20 evaluator 1024  
-src/eval.c:995                  1 review-v20 evaluator 1024  
-src/eval.c:584                  1 review-v20 evaluator 1024  
+src/net.c:740               32522 compiler
+src/template.c:1036         21639 tests
+src/work.c:1050              4610 reuse
+src/work.c:818                477 reuse
+src/work.c:1268               350 work
+src/work.c:628                315 work
+src/work.c:1061               258 reuse
+src/work.c:1937               192 proof-use
+src/compiler.c:348            145 compiler
+src/compiler.c:114            100 compiler
+src/term.c:485                 85 runtime
+src/term.c:521                 81 runtime
+src/term.c:364                 81 runtime
+src/eval.c:462                 76 runtime
+src/eval.c:376                 72 runtime
+src/term.c:336                 71 runtime
+src/term.c:531                 66 runtime
+src/term.c:542                 66 runtime
+src/term.c:348                 64 runtime
+src/intern.c:165               63 reuse
+src/term.c:557                 62 runtime
+src/term.c:384                 60 tests
+src/scope.c:99                 59 runtime
+src/term.c:417                 45 check
+src/term.c:445                 42 schedule
+src/check.c:219                40 templates
+src/scope.c:114                31 schedule
+src/work.c:1460                30 work
+src/eval.c:981                 22 concurrent
+src/eval.c:538                 18 concurrent
+src/kcont.c:48                 17 review-v20-intern 64
+src/work.c:1445                11 review-audit-budget 64
+src/proof.c:252                10 review-audit-budget 64
+src/proof.c:270                10 review-audit-budget 64
+src/term.c:478                  7 review-kernel-budget 256
+src/eval.c:399                  6 review-v20 evaluator 32
+src/eval.c:613                  2 review-v20 evaluator 32
+src/eval.c:1000                 1 review-v20 evaluator 32
+src/eval.c:589                  1 review-v20 evaluator 32
+src/eval.c:506                  1 review-v20 evaluator 32
