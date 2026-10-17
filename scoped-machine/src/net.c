@@ -509,6 +509,7 @@ static NodeId desc_typed_partial(Net *n, RefId body, RefId type, uint64_t level,
  * the result node and rewires (a fixed amount of net work). A spec computed
  * for a pair whose nodes changed meanwhile is discarded with the retry (its
  * values are pure, interned results). */
+static __thread RefId tls_eval_ref; static __thread FaceId tls_eval_face; static __thread void *tls_eval_ctx;   /* an EVAL rule's deferred request */
 enum { SP_DESC = 1, SP_STATUS, SP_RECIPE, SP_MATERIALIZE, SP_APPLY, SP_EVAL };
 typedef struct OpSpec { int kind; NodeKind dk; Payload p; Head *head; uint64_t ap_id; int ap_dir; MapId ap_map; RefId ap_arg; RefId ev_ref; FaceId ev_face; } OpSpec;
 static void sp_desc(OpSpec *s, NodeKind k, Payload p) { s->kind = SP_DESC; s->dk = k; s->p = p; }
@@ -685,7 +686,7 @@ static void op_commit(Net *n, NodeId op, NodeId data, OpSpec *sp) {
         EvalCtx *ctx = malloc(sizeof *ctx); require(ctx, "out of memory");
         ctx->net = n; ctx->pending = pend;
         one_result(n, op, data, pend);
-        eval_request(sp->ev_ref, sp->ev_face, cont_external(net_eval_deliver, ctx, free));
+        tls_eval_ref = sp->ev_ref; tls_eval_face = sp->ev_face; tls_eval_ctx = ctx;   /* the request itself is issued after the locks are released */
         return;
     }
     default: die("unknown operation spec");
@@ -700,6 +701,7 @@ static void rule_op(Net *n, NodeId op, NodeId data, OpSpec *pre) {
     if (pre) pre->head = sp.head;   /* consumed by the commit (NULL) */
 }
 
+static __thread EntryId tls_forward_K; static __thread RefId tls_forward_v;   /* a CONTINUE_REFERENCE rule's deferred request */
 static bool is_shell(NodeKind k) { return k == A_HEAD || k == A_BRANCH_NIL || k == A_BRANCH_CONS || k == A_BRANCH; }
 
 /* apply the rule for an oriented, validated, fully locked active pair */
@@ -744,7 +746,9 @@ static bool apply_rule(Net *n, NodeId neg, NodeId pos, OpSpec *pre) {
         { NetTraceEvent ev = { NT_CONTINUE_REFERENCE, 0, 0, 0, 0, v, K };
           pthread_mutex_lock(&n->trace_mu); vec_push(&n->trace, ev); pthread_mutex_unlock(&n->trace_mu); }
         count(&n->n_continue);          /* counted before the forward publication: a reader woken by the result sees the rule event (ordering race fixed) */
-        eval_forward_result(K, v);
+        /* the receiver's request is evaluator work (entry lookup, shape, prefix
+         * publication): it is issued after the redex's locks are released */
+        tls_forward_K = K; tls_forward_v = v;
         return true;
     }
     return false;
@@ -836,6 +840,8 @@ static bool step(Net *n, Active cand) {
         if (did) count(&n->rewrites);
         tls_pending = NULL;
         for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
+        if (tls_eval_ctx) { void *ctx = tls_eval_ctx; RefId r = tls_eval_ref; FaceId f = tls_eval_face; tls_eval_ctx = NULL; eval_request(r, f, cont_external(net_eval_deliver, ctx, free)); }
+        if (tls_forward_K) { EntryId K = tls_forward_K; RefId v = tls_forward_v; tls_forward_K = 0; tls_forward_v = 0; eval_forward_result(K, v); }   /* outside every node lock */
         flush_pending(n, &pending);
         result = did; break;
     }

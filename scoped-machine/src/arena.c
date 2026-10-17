@@ -137,10 +137,11 @@ bool arena_tend_zero(void) { pthread_mutex_lock(&A.mu); bool did = zero_tend_loc
 uint64_t *arena_alloc_zero(size_t words, size_t *got) {
     if (!A.live) arena_init();
     unsigned k = order_of(words); size_t w = (size_t)ARENA_PAGE << k;
+    bool caller_locked = kc_lock_depth > 0;   /* a requester holding a lock never clears here: it takes FRESH storage */
     pthread_mutex_lock(&A.mu);
     uint64_t *b = A.ready[k];
     if (b) { LINK_UNPOISON(b); A.ready[k] = *(uint64_t **)b; BLOCK_UNPOISON(b, w); b[0] = 0; A.zero_reused++; }   /* ZERO_READY: the link word is zeroed again */
-    else {
+    else if (!caller_locked) {
         /* a DIRTY_FREE block of the order (or one split off a larger one) is
          * detached for this requester and cleared after the lock is released,
          * one word per transition: no clearing under the lock, no growth while
@@ -158,6 +159,7 @@ uint64_t *arena_alloc_zero(size_t words, size_t *got) {
         }
         b = fresh_locked(w); require(b, "arena: the host could not supply storage"); BLOCK_UNPOISON(b, w); A.zero_fresh++;   /* FRESH (EXTEND when the extent is consumed) */
     }
+    else { b = fresh_locked(w); require(b, "arena: the host could not supply storage"); BLOCK_UNPOISON(b, w); A.zero_fresh++; }   /* under a caller's lock: FRESH (no clearing) */
     A.st.allocs++; A.st.words_out += w;
     pthread_mutex_unlock(&A.mu);
     if (got) *got = w;
