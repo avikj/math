@@ -145,6 +145,9 @@ static struct {
     pthread_mutex_t held_mu; Task *held; size_t nheld, capheld;
     bool (*hold)(const EvalTaskInfo *, void *); void *hold_ctx;
     bool live;
+    /* jobs of another layer (eval_job): their own FIFO of the same scheduler, taken only by plain threads
+     * (never by an evaluation nested inside a kernel continuation), counted apart from `outstanding` */
+    struct ExtNode *ext_head, *ext_tail; size_t ext_n;
     XCount cevx[sizeof(EvalCutEvents) / sizeof(size_t)];
     /* the evaluator's net (§43): APPLY_TRANSFORM / CONTINUE_REFERENCE pairs
      * are jobs of this scheduler (one outstanding count) */
@@ -254,6 +257,8 @@ size_t eval_workers(void) { return E.nworkers; }
 static Entry *ENT(EntryId e) { return (Entry *)chunked_get(&E.entries, e - 1); }
 
 static void task_discard(Task t);
+typedef struct ExtNode { Task t; struct ExtNode *next; } ExtNode;
+static void ext_push(Task t);
 void eval_free(void) {
     stop_workers();
     __atomic_store_n(&E.live, false, __ATOMIC_RELEASE);
@@ -265,6 +270,8 @@ void eval_free(void) {
      * are retired without any semantic delivery */
     for (size_t i = E.qhead; i < E.qtail; i++) task_discard(*(Task *)chunked_get(&E.qtab, i));
     E.qhead = E.qtail;
+    for (ExtNode *x = E.ext_head, *nx; x; x = nx) { nx = x->next; free(x); }
+    E.ext_head = E.ext_tail = NULL; E.ext_n = 0;
     for (size_t i = 0; i < E.nheld; i++) task_discard(E.held[i]);
     free(E.held); E.held = NULL; E.nheld = E.capheld = 0;
     for (size_t i = 0; i < E.n_entries; i++) {
@@ -1398,10 +1405,31 @@ void eval_set_hold(bool (*pred)(const EvalTaskInfo *, void *), void *ctx) { E.ho
 size_t eval_held_count(void) { pthread_mutex_lock(&E.held_mu); size_t n = E.nheld; pthread_mutex_unlock(&E.held_mu); return n; }
 size_t eval_release_held(void) {
     pthread_mutex_lock(&E.held_mu); Task *h = E.held; size_t n = E.nheld; E.held = NULL; E.nheld = E.capheld = 0; pthread_mutex_unlock(&E.held_mu);
-    for (size_t i = 0; i < n; i++) enqueue(h[i]);
+    for (size_t i = 0; i < n; i++) { if (h[i].op == OP_EXT) ext_push(h[i]); else enqueue(h[i]); }
     free(h); return n;
 }
-void eval_job(void (*fn)(void *), void *arg, int tag) { Task t = op_task(OP_EXT); t.p = (void *)fn; t.p2 = arg; t.idx = (size_t)tag; enqueue(t); }
+static void ext_push(Task t) {
+    ExtNode *n = malloc(sizeof *n); require(n, "out of memory"); n->t = t; n->next = NULL;   /* made before q_mu */
+    pthread_mutex_lock(&E.q_mu);
+    if (E.ext_tail) E.ext_tail->next = n; else E.ext_head = n;
+    E.ext_tail = n; E.ext_n++;
+    pthread_cond_signal(&E.q_cv);
+    pthread_mutex_unlock(&E.q_mu);
+}
+void eval_job(void (*fn)(void *), void *arg, int tag) { Task t = op_task(OP_EXT); t.p = (void *)fn; t.p2 = arg; t.idx = (size_t)tag; ext_push(t); }
+/* under q_mu; the node is freed by the caller after unlocking */
+static ExtNode *pop_ext_locked(Task *out) {
+    if (kc_current() || !E.ext_head) return NULL;
+    ExtNode *n = E.ext_head; E.ext_head = n->next; if (!E.ext_head) E.ext_tail = NULL;
+    *out = n->t; return n;
+}
+static void finish_ext(void) {
+    pthread_mutex_lock(&E.q_mu);
+    require(E.ext_n > 0, "finish without an outstanding external job");
+    if (--E.ext_n == 0 && E.outstanding == 0) pthread_cond_broadcast(&E.idle_cv);
+    pthread_mutex_unlock(&E.q_mu);
+}
+static void finish_any(const Task *t) { if (t->op == OP_EXT) finish_ext(); else finish_job(); }
 EvalCutEvents eval_cut_events(void) {
     EvalCutEvents v; xproject(E.cevx, (size_t *)&v, sizeof v / sizeof(size_t), "cut event");
     return v;
@@ -1687,12 +1715,14 @@ static void *worker_main(void *arg) {
     pthread_mutex_lock(&E.q_mu);
     for (;;) {
         Task t;
-        while (!E.stop && !pop_locked(&t)) pthread_cond_wait(&E.q_cv, &E.q_mu);   /* take_job */
+        ExtNode *xn = NULL;
+        while (!E.stop && !pop_locked(&t) && !(xn = pop_ext_locked(&t))) pthread_cond_wait(&E.q_cv, &E.q_mu);   /* take_job */
         if (E.stop) break;
         pthread_mutex_unlock(&E.q_mu);
-        if (hold_take(t)) { finish_job(); pthread_mutex_lock(&E.q_mu); continue; }
+        free(xn);
+        if (hold_take(t)) { finish_any(&t); pthread_mutex_lock(&E.q_mu); continue; }
         execute(t);                      /* all child jobs are enqueued before the job finishes */
-        finish_job();
+        finish_any(&t);
         pthread_mutex_lock(&E.q_mu);
     }
     pthread_mutex_unlock(&E.q_mu);
@@ -1704,7 +1734,7 @@ size_t eval_run(void) {
         /* wait until outstanding == 0 (no queued, reserved or executing job) */
         pthread_mutex_lock(&E.q_mu);
         size_t before = eval_events().eval_step;
-        while (E.outstanding > 0) eval_wait_locked();
+        while (E.outstanding > 0 || (!kc_current() && E.ext_n > 0)) eval_wait_locked();
         size_t n = eval_events().eval_step - before;
         pthread_mutex_unlock(&E.q_mu);
         return n;
@@ -1713,12 +1743,14 @@ size_t eval_run(void) {
     for (;;) {
         Task t;
         pthread_mutex_lock(&E.q_mu);
-        bool got = pop_locked(&t);
+        ExtNode *xn = NULL;
+        bool got = pop_locked(&t) || (xn = pop_ext_locked(&t)) != NULL;
         pthread_mutex_unlock(&E.q_mu);
+        free(xn);
         if (!got) break;
-        if (hold_take(t)) { finish_job(); continue; }
+        if (hold_take(t)) { finish_any(&t); continue; }
         execute(t);
-        finish_job();
+        finish_any(&t);
         n++;
     }
     return n;
@@ -1730,12 +1762,14 @@ size_t eval_run_budget(size_t max_jobs) {
     while (n < max_jobs) {
         Task t;
         pthread_mutex_lock(&E.q_mu);
-        bool got = pop_locked(&t);
+        ExtNode *xn = NULL;
+        bool got = pop_locked(&t) || (xn = pop_ext_locked(&t)) != NULL;
         pthread_mutex_unlock(&E.q_mu);
+        free(xn);
         if (!got) break;
-        if (hold_take(t)) { finish_job(); continue; }
+        if (hold_take(t)) { finish_any(&t); continue; }
         execute(t);
-        finish_job();
+        finish_any(&t);
         n++;
     }
     return n;
@@ -1768,7 +1802,7 @@ EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
             uint64_t job = 0; KCont *on = kc_current() ? producer_owner(root_entry, &job) : NULL;
             pthread_mutex_lock(&E.q_mu);
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
-            bool queued = E.qhead < E.qtail || net_pending_pairs_locked(&E.net) > 0;
+            bool queued = E.qhead < E.qtail || net_pending_pairs_locked(&E.net) > 0 || (!kc_current() && E.ext_head);
             if (d || E.outstanding == 0) { pthread_mutex_unlock(&E.q_mu); break; }
             if (!queued) eval_wait_locked_for(on, job);
             pthread_mutex_unlock(&E.q_mu);

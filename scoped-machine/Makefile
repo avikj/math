@@ -2,10 +2,10 @@ CC      ?= gcc
 CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread -Isrc -Itests
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/xcount.c src/radix.c src/nat.c src/kstack.c src/arena.c src/kalloc.c src/kcont.c src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c src/shape.c src/reuse.c src/fine.c src/proof.c src/runtime.c
+SRC := src/xcount.c src/radix.c src/nat.c src/kstack.c src/arena.c src/kalloc.c src/kcont.c src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c src/shape.c src/reuse.c src/fine.c src/proof.c src/runtime.c src/effect.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles build/fine build/proof-use build/runtime build/review-alias-scope build/review-alias-faces build/review-work-budget build/review-proof-boundary build/review-certificate-boundary build/review-frame-cost build/review-singleton build/review-generic-action build/review-runtime-presentations build/review-runtime-nodes build/review-runtime-edges build/review-work-edges build/review-node-level build/review-reservation-budget build/review-store-growth build/review-store-interleave build/review-prepare-boundary build/review-arena-budget build/review-audit-budget build/review-v19 build/review-v19-work build/review-assumption-copy build/review-kernel-budget build/review-v20 build/review-v20-intern build/review-live-prefix build/test-prefix build/review-v21 build/review-bounds build/test-v21-extra build/test-arena-extents build/test-exact build/test-deep build/review-v22 build/test-live-cut build/review-v23 build/test-v23-closure
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles build/fine build/proof-use build/runtime build/review-alias-scope build/review-alias-faces build/review-work-budget build/review-proof-boundary build/review-certificate-boundary build/review-frame-cost build/review-singleton build/review-generic-action build/review-runtime-presentations build/review-runtime-nodes build/review-runtime-edges build/review-work-edges build/review-node-level build/review-reservation-budget build/review-store-growth build/review-store-interleave build/review-prepare-boundary build/review-arena-budget build/review-audit-budget build/review-v19 build/review-v19-work build/review-assumption-copy build/review-kernel-budget build/review-v20 build/review-v20-intern build/review-live-prefix build/test-prefix build/review-v21 build/review-bounds build/test-v21-extra build/test-arena-extents build/test-exact build/test-deep build/review-v22 build/test-live-cut build/review-v23 build/test-v23-closure build/test-effect-witness
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -184,6 +184,7 @@ test: all
 	for w in 0 4; do for p in fifo lifo random; do ./build/test-live-cut all $$w $$p || exit 1; done; done
 	for m in canon-tail export-universe export-template export-runtime long-name cleanup-long counter-wrap small-stack-validation deep-capture; do ./build/review-v23 $$m || exit 1; done
 	./build/test-v23-closure all
+	for w in 0 4; do ./build/test-effect-witness $$w || exit 1; done
 	for m in zero-head zero-order ledger capacity wait-owner cleanup-wait cleanup-drain zero-stress; do ./build/review-v21 $$m || exit 1; done
 	$(MAKE) --no-print-directory bounds-test
 	for m in ledger-mixed wait-shared wait-early growth cleanup-orders; do ./build/test-v21-extra $$m || exit 1; done
@@ -299,6 +300,8 @@ tsan:
 	for m in canon-tail export-universe export-template export-runtime long-name cleanup-long counter-wrap small-stack-validation deep-capture; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_v23 $$m || exit 1; done
 	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -o build/tsan/test_v23_closure tests/test_v23_closure.c $(filter-out build/tsan/work.o,$(TSAN_CORE))
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_v23_closure all
+	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -o build/tsan/test_effect_witness tests/test_effect_witness.c $(TSAN_CORE)
+	for w in 0 4; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_effect_witness $$w || exit 1; done
 	for a in 'interval 129' 'scope 129' 'net-capture 129' 'net-apply 129' 'mixed 129' 'required 4096' chunked sparse bound-encoding signature; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_bounds $$a || exit 1; done
 
 clean:
@@ -423,6 +426,9 @@ build/review-v23: $(OBJ) tests/review_v23.c
 build/test-v23-closure: $(OBJ) tests/test_v23_closure.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/test_v23_closure.c $(filter-out src/work.o,$(OBJ))
+build/test-effect-witness: $(OBJ) tests/test_effect_witness.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/test_effect_witness.c $(OBJ)
 build/test-live-cut: $(OBJ) tests/test_live_cut.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/test_live_cut.c $(OBJ)

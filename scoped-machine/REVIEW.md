@@ -495,6 +495,16 @@ naturals with framed arithmetic in the engine; the kernel's recursion runs on
 on-demand stack segments. README ("The V21 review and the bounds contract")
 lists results and what is not done.
 
+The V22 review (`tests/review-v22/`) and the V23 review (`tests/review-v23/`)
+are implemented: `prefix-integration.patch`, live adoption at committed cuts
+(`LIVE-CUT-ADOPTION.md`: Cuts, tickets, generations, shape-indexed
+subscriptions, stepped proposals, generation-checked installation, one
+semantic resume), `scope-depth.patch` and `exact-export.patch`, destruction
+of unfinished continuations at a closed boundary (R3), a radix ownership
+index (R4), exact work counts (R5), and the authority boundary of
+`EFFECT-AUTHORITY.md` with its ten-part witness. README ("The V22 review…",
+"The V23 review…") lists the records, the tests and what remains.
+
 Integration status of §§83–84 / §88, stated precisely: the constructors and
 the generic action are production templates in `src/runtime.c`, used by the
 host export and validated against the compiler's emitted maps by conversion;
