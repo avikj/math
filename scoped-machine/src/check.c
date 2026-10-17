@@ -182,6 +182,7 @@ static bool may_block_locked(uint64_t owner, uint64_t me) {
 }
 
 static void resolve_locked(void);
+static void resolve_pause(void);
 static Frame *top_frame(void) { return tl_frames.len ? &tl_frames.data[tl_frames.len - 1] : NULL; }
 static void frame_push(size_t claim) { Frame f; f.claim = claim; words_init(&f.deps); words_init(&f.gdeps); vec_push(&tl_frames, f); }
 static void inherit_locked(const Words *deps) { Frame *f = top_frame(); if (f) for (size_t k = 0; k < deps->n; k++) words_add(&f->deps, deps->w[k]); }
@@ -204,14 +205,36 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
          * reacquired by index at the top of every iteration (§59.4) */
         Claim *r = &K.recs.data[c];
         if (r->state == 2 && r->result == 3 && r->attempt != K.attempt) { r->state = 0; K.crev++; }   /* an old attempt's unresolved outcome */
-        if (r->state == 2 && !r->is_symbol && !gdeps_current(&r->gdeps)) { r->state = 0; r->deps.n = 0; r->gdeps.n = 0; K.crev++; }   /* §79.2: a read dependency changed */
+        /* §94: the verdict's lists are examined one entry per K.mu section
+         * (resolve_pause: one fine transition between sections). Any
+         * withdrawal or discharge meanwhile (crev) restarts the examination;
+         * entries already inherited into this thread's frame are extra
+         * premises / read dependencies — conservative, and deduplicated on
+         * the next pass. */
+        uint64_t rev0 = K.crev;
+        if (r->state == 2 && !r->is_symbol) {   /* §79.2: a read dependency changed */
+            bool stale = false, moved = false;
+            reuse_bump(REUSE_DEPENDENCY_CHECK);
+            for (size_t k = 0;; k += 2) {
+                r = &K.recs.data[c];
+                if (r->state != 2 || K.crev != rev0) { moved = true; break; }
+                if (k + 1 >= r->gdeps.n) break;
+                if (global_revision(r->gdeps.w[k]) != r->gdeps.w[k + 1]) { stale = true; break; }
+                resolve_pause();
+            }
+            if (moved) continue;
+            if (stale) { r->state = 0; r->deps.n = 0; r->gdeps.n = 0; K.crev++; }
+        }
         if (r->state == 2) {
             /* a verdict provisional on symbols: a rejected premise withdraws
              * it (recomputed now, by us); a premise another thread is still
              * validating is waited for unless waiting would close a cycle
              * (then the declaration is our assumption too) */
             bool waited = false;
-            for (size_t k = 0; k < r->deps.n && !waited; k++) {
+            for (size_t k = 0; !waited; k++) {
+                r = &K.recs.data[c];
+                if (r->state != 2 || K.crev != rev0) { waited = true; break; }
+                if (k >= r->deps.n) break;
                 size_t d = r->deps.w[k];
                 Claim *dc = &K.recs.data[d];
                 if (dc->state == 2 && dc->result != 1) { resolve_locked(); waited = true; break; }
@@ -221,11 +244,34 @@ static Acq claim_acquire(size_t c, uint64_t *result, const char **reason, uint64
                     K.wait_on.data[me] = 0;
                     if (K.assume.data[me]) { K.assume.data[me] = 0; assumed = d; }   /* told to assume: inherit on the next pass */
                     waited = true;
+                    break;
                 }
+                resolve_pause();
             }
             if (waited) continue;
             *result = r->result; if (reason) *reason = r->reason; if (aux) memcpy(aux, r->aux, sizeof r->aux);
-            inherit_locked(&r->deps); inherit_gdeps(&r->gdeps);
+            bool moved = false;
+            for (size_t k = 0;; k++) {   /* premises, one per section, into this thread's frame */
+                r = &K.recs.data[c];
+                if (r->state != 2 || K.crev != rev0) { moved = true; break; }
+                if (k >= r->deps.n) break;
+                uint64_t d = r->deps.w[k];
+                pthread_mutex_unlock(&K.mu);
+                { Frame *f = top_frame(); if (f) words_add(&f->deps, d); }
+                fine_bump(FC_CLAIM_STEPS);
+                pthread_mutex_lock(&K.mu);
+            }
+            for (size_t k = 0; !moved; k += 2) {   /* read dependencies, one pair per section */
+                r = &K.recs.data[c];
+                if (r->state != 2 || K.crev != rev0) { moved = true; break; }
+                if (k + 1 >= r->gdeps.n) break;
+                uint64_t sym = r->gdeps.w[k], rev = r->gdeps.w[k + 1];
+                pthread_mutex_unlock(&K.mu);
+                { Frame *f = top_frame(); if (f) gdeps_add_pair(&f->gdeps, sym, rev); }
+                fine_bump(FC_CLAIM_STEPS);
+                pthread_mutex_lock(&K.mu);
+            }
+            if (moved) continue;
             pthread_mutex_unlock(&K.mu);
             return ACQ_DONE;
         }

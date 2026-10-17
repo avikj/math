@@ -1,0 +1,192 @@
+tests   src/template.c:1036          max=21639    calls=50         mean=432.78
+tests   src/net.c:740                max=811      calls=81         mean=55.27
+tests   src/term.c:348               max=70       calls=4587       mean=8.99
+tests   src/term.c:376               max=60       calls=2646       mean=10.01
+tests   src/eval.c:289               max=50       calls=157        mean=0.32
+tests   src/intern.c:165             max=49       calls=83958      mean=3.00
+tests   src/term.c:513               max=40       calls=342        mean=23.40
+tests   src/term.c:336               max=40       calls=327        mean=8.41
+tests   src/scope.c:99               max=30       calls=687        mean=21.72
+tests   src/scope.c:114              max=30       calls=56         mean=22.64
+tests   src/term.c:549               max=27       calls=27         mean=25.44
+tests   src/term.c:523               max=24       calls=589        mean=20.29
+check   src/template.c:1036          max=21639    calls=110        mean=196.72
+check   src/check.c:199              max=114      calls=25058      mean=0.04
+check   src/term.c:348               max=101      calls=14652      mean=7.93
+check   src/check.c:1145             max=98       calls=5911       mean=15.96
+check   src/check.c:1103             max=88       calls=2385       mean=19.52
+check   src/check.c:616              max=83       calls=5466       mean=18.81
+check   src/check.c:528              max=66       calls=1167       mean=11.81
+check   src/check.c:1339             max=62       calls=4651       mean=20.94
+check   src/term.c:523               max=56       calls=2444       mean=21.38
+check   src/term.c:513               max=53       calls=2619       mean=22.27
+check   src/intern.c:165             max=52       calls=455044     mean=3.02
+check   src/term.c:376               max=51       calls=13060      mean=9.33
+work   src/net.c:740                max=31043    calls=4          mean=17724.75
+work   src/template.c:1036          max=21639    calls=32         mean=676.22
+work   src/work.c:1050              max=578      calls=118        mean=9.27
+work   src/work.c:1268              max=350      calls=11         mean=90.64
+work   src/work.c:628               max=315      calls=4281       mean=0.15
+work   src/work.c:1937              max=175      calls=28         mean=38.75
+work   src/work.c:818               max=110      calls=73         mean=7.25
+work   src/compiler.c:348           max=110      calls=1          mean=110.00
+work   src/term.c:348               max=79       calls=7618       mean=8.64
+work   src/compiler.c:114           max=77       calls=2          mean=76.50
+work   src/check.c:199              max=58       calls=1508       mean=0.12
+work   src/term.c:513               max=36       calls=68         mean=25.32
+proof-use   src/template.c:1036          max=21639    calls=18         mean=1202.17
+proof-use   src/work.c:1937              max=192      calls=8          mean=76.50
+proof-use   src/compiler.c:348           max=110      calls=2          mean=108.50
+proof-use   src/term.c:348               max=65       calls=2974       mean=8.17
+proof-use   src/check.c:199              max=58       calls=1240       mean=0.20
+proof-use   src/intern.c:165             max=35       calls=31738      mean=2.05
+proof-use   src/term.c:513               max=34       calls=438        mean=21.56
+proof-use   src/check.c:616              max=32       calls=74         mean=18.08
+proof-use   src/check.c:1339             max=31       calls=444        mean=19.59
+proof-use   src/term.c:336               max=31       calls=168        mean=8.49
+proof-use   src/check.c:1103             max=30       calls=282        mean=17.52
+proof-use   src/term.c:534               max=30       calls=60         mean=28.63
+compiler   src/net.c:740                max=32519    calls=26         mean=6814.08
+compiler   src/template.c:1036          max=21639    calls=190        mean=113.89
+compiler   src/compiler.c:348           max=145      calls=9          mean=111.56
+compiler   src/term.c:348               max=123      calls=35485      mean=9.06
+compiler   src/compiler.c:114           max=100      calls=12         mean=77.42
+compiler   src/check.c:616              max=100      calls=1405       mean=20.74
+compiler   src/check.c:1103             max=83       calls=1069       mean=20.09
+compiler   src/check.c:1145             max=80       calls=1490       mean=17.64
+compiler   src/check.c:662              max=72       calls=1393       mean=10.01
+compiler   src/check.c:528              max=66       calls=1229       mean=10.80
+compiler   src/check.c:1339             max=62       calls=1993       mean=21.44
+compiler   src/intern.c:165             max=61       calls=198796     mean=2.94
+runtime   src/template.c:1036          max=21639    calls=473        mean=45.75
+runtime   src/check.c:199              max=226      calls=230733     mean=0.01
+runtime   src/term.c:348               max=154      calls=1483715    mean=8.10
+runtime   src/check.c:1103             max=113      calls=28237      mean=18.51
+runtime   src/check.c:616              max=107      calls=50886      mean=19.20
+runtime   src/compiler.c:114           max=100      calls=4          mean=77.75
+runtime   src/check.c:528              max=96       calls=22005      mean=11.44
+runtime   src/check.c:1339             max=96       calls=47266      mean=20.88
+runtime   src/check.c:1145             max=95       calls=31451      mean=15.78
+runtime   src/term.c:477               max=85       calls=25127      mean=8.76
+runtime   src/term.c:513               max=81       calls=48816      mean=23.66
+runtime   src/eval.c:457               max=76       calls=65848      mean=9.28
+reuse   src/net.c:740                max=31895    calls=10         mean=11391.00
+reuse   src/template.c:1036          max=21639    calls=137        mean=157.95
+reuse   src/work.c:1050              max=4610     calls=922        mean=14.87
+reuse   src/work.c:818               max=477      calls=10         mean=105.30
+reuse   src/work.c:1061              max=258      calls=314        mean=1.65
+reuse   src/check.c:199              max=114      calls=7671       mean=0.14
+reuse   src/term.c:348               max=112      calls=45196      mean=8.29
+reuse   src/compiler.c:348           max=110      calls=6          mean=101.50
+reuse   src/check.c:616              max=89       calls=1919       mean=21.01
+reuse   src/check.c:1145             max=77       calls=921        mean=15.26
+reuse   src/check.c:1103             max=77       calls=361        mean=19.73
+reuse   src/compiler.c:114           max=77       calls=8          mean=76.12
+schedule   src/net.c:740                max=30220    calls=624        mean=3830.03
+schedule   src/template.c:1036          max=21639    calls=1680       mean=309.13
+schedule   src/term.c:348               max=110      calls=323760     mean=7.68
+schedule   src/compiler.c:348           max=110      calls=24         mean=110.00
+schedule   src/eval.c:289               max=98       calls=20688      mean=0.10
+schedule   src/compiler.c:114           max=77       calls=48         mean=76.50
+schedule   src/check.c:199              max=58       calls=30912      mean=0.14
+schedule   src/intern.c:165             max=56       calls=2792640    mean=2.41
+schedule   src/eval.c:282               max=50       calls=4824       mean=0.04
+schedule   src/term.c:336               max=49       calls=9024       mean=8.42
+schedule   src/term.c:376               max=43       calls=75696      mean=9.18
+schedule   src/term.c:437               max=42       calls=5496       mean=8.99
+templates   src/template.c:1036          max=21639    calls=122        mean=177.37
+templates   src/term.c:348               max=70       calls=1835       mean=10.43
+templates   src/term.c:376               max=51       calls=1083       mean=9.64
+templates   src/intern.c:165             max=41       calls=39810      mean=2.16
+templates   src/check.c:199              max=41       calls=357        mean=0.23
+templates   src/term.c:513               max=36       calls=95         mean=26.86
+templates   src/term.c:409               max=35       calls=394        mean=10.28
+templates   src/term.c:336               max=34       calls=89         mean=9.33
+templates   src/scope.c:99               max=31       calls=414        mean=20.61
+templates   src/scope.c:114              max=30       calls=77         mean=23.18
+templates   src/term.c:534               max=30       calls=31         mean=25.68
+templates   src/term.c:549               max=29       calls=105        mean=25.53
+review-v20 independent   src/template.c:1036          max=21639    calls=1          mean=21639.00
+review-v20 independent   src/work.c:628               max=51       calls=3601       mean=0.09
+review-v20 independent   src/term.c:348               max=49       calls=169        mean=7.20
+review-v20 independent   src/term.c:437               max=9        calls=19         mean=8.05
+review-v20 independent   src/term.c:376               max=8        calls=1          mean=8.00
+review-v20 independent   src/term.c:477               max=6        calls=9          mean=6.00
+review-v20 independent   src/term.c:409               max=5        calls=19         mean=4.05
+review-v20 independent   src/work.c:818               max=5        calls=2          mean=5.00
+review-v20 independent   src/eval.c:394               max=3        calls=3          mean=3.00
+review-v20 independent   src/intern.c:165             max=2        calls=483        mean=1.74
+review-v20 independent   src/term.c:470               max=2        calls=9          mean=2.00
+review-v20 independent   src/arena.c:20               max=0        calls=2          mean=0.00
+review-v20 evaluator 1024   src/work.c:628               max=51       calls=51623      mean=0.00
+review-v20 evaluator 1024   src/term.c:348               max=36       calls=1          mean=36.00
+review-v20 evaluator 1024   src/eval.c:371               max=13       calls=3          mean=12.00
+review-v20 evaluator 1024   src/term.c:437               max=8        calls=2          mean=8.00
+review-v20 evaluator 1024   src/eval.c:457               max=6        calls=10         mean=4.80
+review-v20 evaluator 1024   src/eval.c:394               max=6        calls=1          mean=6.00
+review-v20 evaluator 1024   src/term.c:409               max=4        calls=2          mean=4.00
+review-v20 evaluator 1024   src/intern.c:165             max=2        calls=6190       mean=2.00
+review-v20 evaluator 1024   src/eval.c:608               max=2        calls=2          mean=2.00
+review-v20 evaluator 1024   src/eval.c:282               max=1        calls=2          mean=0.50
+review-v20 evaluator 1024   src/eval.c:995               max=1        calls=5          mean=1.00
+review-v20 evaluator 1024   src/eval.c:584               max=1        calls=1          mean=1.00
+review-v20 map-sort 512   src/term.c:348               max=103      calls=1027       mean=22.19
+review-v20 map-sort 512   src/work.c:628               max=51       calls=12841      mean=0.00
+review-v20 map-sort 512   src/term.c:409               max=32       calls=3          mean=13.33
+review-v20 map-sort 512   src/term.c:437               max=8        calls=2          mean=8.00
+review-v20 map-sort 512   src/intern.c:165             max=2        calls=1051       mean=1.99
+review-v20 map-sort 512   src/intern.c:190             max=0        calls=11         mean=0.00
+review-v20 map-sort 512   src/kalloc.c:90              max=0        calls=2621       mean=0.00
+review-v20 map-sort 512   src/kalloc.c:64              max=0        calls=1592       mean=0.00
+review-v20 map-sort 512   src/arena.c:60               max=0        calls=4          mean=0.00
+review-v20 map-sort 512   src/term.c:29                max=0        calls=513        mean=0.00
+review-v20 map-sort 512   src/kalloc.c:57              max=0        calls=15         mean=0.00
+review-v20 map-sort 512   src/kalloc.c:85              max=0        calls=15         mean=0.00
+review-v20-intern 300   src/intern.c:165             max=32       calls=1570       mean=28.95
+review-v20-intern 300   src/kcont.c:48               max=17       calls=1          mean=17.00
+review-v20-intern 300   src/arena.c:20               max=0        calls=1          mean=0.00
+review-v20-intern 300   src/kalloc.c:64              max=0        calls=301        mean=0.00
+review-v20-intern 300   src/intern.c:190             max=0        calls=300        mean=0.00
+review-v20-intern 300   src/kcont.c:70               max=0        calls=12         mean=0.00
+review-v20-intern 300   src/kcont.c:16               max=0        calls=1          mean=0.00
+review-v20-intern 300   src/arena.c:96               max=0        calls=2          mean=0.00
+review-v20-intern 300   src/kcont.c:58               max=0        calls=1          mean=0.00
+review-v20-intern 300   src/kcont.c:38               max=0        calls=2          mean=0.00
+review-v20-intern 300   src/kcont.c:23               max=0        calls=1          mean=0.00
+review-v20-intern 300   src/kcont.c:76               max=0        calls=12         mean=0.00
+review-kernel-budget 64   src/template.c:1036          max=21639    calls=1          mean=21639.00
+review-kernel-budget 64   src/work.c:628               max=51       calls=46235      mean=0.01
+review-kernel-budget 64   src/term.c:348               max=49       calls=2314       mean=6.84
+review-kernel-budget 64   src/term.c:409               max=10       calls=321        mean=4.91
+review-kernel-budget 64   src/term.c:437               max=10       calls=257        mean=8.02
+review-kernel-budget 64   src/term.c:376               max=8        calls=1          mean=8.00
+review-kernel-budget 64   src/intern.c:165             max=6        calls=6909       mean=1.79
+review-kernel-budget 64   src/term.c:477               max=6        calls=128        mean=6.00
+review-kernel-budget 64   src/work.c:818               max=5        calls=2          mean=5.00
+review-kernel-budget 64   src/eval.c:394               max=3        calls=4          mean=3.00
+review-kernel-budget 64   src/term.c:470               max=2        calls=128        mean=2.00
+review-kernel-budget 64   src/arena.c:20               max=0        calls=2          mean=0.00
+review-audit-budget 64   src/template.c:1036          max=21639    calls=1          mean=21639.00
+review-audit-budget 64   src/check.c:199              max=450      calls=1636       mean=15.08
+review-audit-budget 64   src/work.c:1937              max=175      calls=1          mean=175.00
+review-audit-budget 64   src/work.c:628               max=51       calls=77130      mean=0.00
+review-audit-budget 64   src/term.c:348               max=49       calls=282        mean=7.25
+review-audit-budget 64   src/check.c:1339             max=27       calls=10         mean=27.00
+review-audit-budget 64   src/check.c:616              max=24       calls=338        mean=16.43
+review-audit-budget 64   src/term.c:523               max=20       calls=5          mean=20.00
+review-audit-budget 64   src/check.c:1145             max=18       calls=330        mean=12.27
+review-audit-budget 64   src/check.c:1103             max=18       calls=5          mean=18.00
+review-audit-budget 64   src/check.c:1615             max=14       calls=593        mean=10.31
+review-audit-budget 64   src/eval.c:371               max=13       calls=366        mean=10.02
+review-audit-budget 256   src/template.c:1036          max=21639    calls=1          mean=21639.00
+review-audit-budget 256   src/check.c:199              max=1794     calls=6244       mean=58.45
+review-audit-budget 256   src/work.c:1937              max=175      calls=1          mean=175.00
+review-audit-budget 256   src/work.c:628               max=51       calls=517221     mean=0.00
+review-audit-budget 256   src/term.c:348               max=49       calls=1050       mean=7.91
+review-audit-budget 256   src/proof.c:27               max=44       calls=2072       mean=8.20
+review-audit-budget 256   src/check.c:616              max=40       calls=1298       mean=17.65
+review-audit-budget 256   src/proof.c:28               max=40       calls=519        mean=8.82
+review-audit-budget 256   src/check.c:1339             max=27       calls=10         mean=27.00
+review-audit-budget 256   src/check.c:1615             max=22       calls=2321       mean=10.87
+review-audit-budget 256   src/term.c:523               max=20       calls=5          mean=20.00
+review-audit-budget 256   src/check.c:1145             max=18       calls=1290       mean=13.05
