@@ -230,6 +230,17 @@ static void t_multi(void) {
     EXPECT(Ve && eval_entry_runs(Ve) == 1 && req >= 2 && del >= 2 && pub == 1, "the adapted key's producer is shared: runs=%zu requests=%zu deliveries=%zu", Ve ? eval_entry_runs(Ve) : 0, req, del);
     printf("multi workers=%zu: proposals=%zu installs=%zu stale_generation=%zu not_waiting=%zu adapted key runs=%zu requests=%zu deliveries=%zu\n", g_workers, c1.proposals, c1.installs, c1.install_stale_generation, c1.install_not_waiting, Ve ? eval_entry_runs(Ve) : 0, req, del);
     eval_set_hold(NULL, NULL); eval_release_held(); eval_run();
+    /* detachment: both clients resumed, so their first generations' subscriptions on the source's shape are
+     * dead; a later publication on that shape detaches them from the list and frees them (their Cuts with them) */
+    { EvalCutEvents d0 = cev();
+      SymbolId W3 = wrap(&w, "client3", Fr, 1, di); FaceId If2 = fc_lit(w.i, 1);
+      WhnfStatus s3; whnf(global_ref(W3), If2, &s3); whnf(Fr, If2, &s3); eval_run();
+      EvalCutEvents d1 = cev();
+      EXPECT(d1.subs_unlinked >= d0.subs_unlinked + 2 && d1.subs_freed >= d0.subs_freed + 2 && d1.cuts_freed > d0.cuts_freed,
+             "dead subscriptions are detached and freed by a later publication on their shape, releasing their Cuts (unlinked=%zu freed=%zu cuts freed=%zu)",
+             d1.subs_unlinked - d0.subs_unlinked, d1.subs_freed - d0.subs_freed, d1.cuts_freed - d0.cuts_freed);
+      printf("multi detach workers=%zu: subscriptions unlinked=%zu freed=%zu cuts freed=%zu (live subscriptions now %zu of %zu)\n", g_workers,
+             d1.subs_unlinked - d0.subs_unlinked, d1.subs_freed - d0.subs_freed, d1.cuts_freed - d0.cuts_freed, d1.subscriptions - d1.subs_freed, d1.subscriptions); }
     stop();
 }
 

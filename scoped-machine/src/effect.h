@@ -64,14 +64,20 @@ EffProposal *eff_proposal_reindex(const EffProposal *P, MapId sigma, uint64_t re
 /* EFFECT_REQUEST: install or join the request's descriptor; k receives its outcome (once, by a counted delivery job) */
 EffCommit *eff_request(EffProposal *P, EffDeliver k, void *ctx);
 EffOutcomeKind eff_commit_state(const EffCommit *d);  /* PENDING while preparing / reserving */
-bool eff_commit_unresolved(const EffCommit *d);       /* a required proof is pending (the descriptor stays pending) */
+bool eff_commit_unresolved(const EffCommit *d);       /* a required proof is pending (the descriptor stays pending, its clients attached) */
+size_t eff_retry(void);                              /* a new attempt: re-run the audits of every pending descriptor; returns how many */
 
 /* readings of the current cut (a reserved cell is resolved through its descriptor's state) */
 const EffHead *eff_head(EffAuthority *a);
 RefId eff_head_state(const EffHead *h);
 const EffOcc *eff_head_producer(const EffHead *h);    /* NULL: genesis */
 bool eff_port_open(EffPort *m);
-size_t eff_ports(EffPort ***out);                     /* every emitted port (caller frees *out) */
+/* a consistent cut: the logical head of every authority and every open port, read between two equal even
+ * values of the commit sequence (no commit transition intervenes) */
+typedef struct { size_t nheads; EffAuthority **auth; const EffHead **head; size_t nopen; EffPort **open; } EffCut;
+bool eff_cut_snapshot(EffCut *out);
+void eff_cut_free(EffCut *c);
+size_t eff_ports(EffPort ***out);                     /* every port of an accepted occurrence (caller frees *out) */
 size_t eff_authorities(EffAuthority ***out);
 RefId eff_port_payload(const EffPort *m);
 EffAuthority *eff_port_recipient(const EffPort *m);
@@ -91,6 +97,8 @@ size_t eff_occ_assumptions(const EffOcc *e, const uint64_t **syms);   /* admitte
 uint64_t eff_occ_env(const EffOcc *e);                                 /* the environment snapshot preparation pinned */
 typedef struct { XSnap prepare_steps, audit_units, reservations, waits, commit, finalizes, deliveries, emits; } EffOccWork;
 EffOccWork eff_occ_work(const EffOcc *e);
+void eff_unattributed(XSnap *prep, XSnap *audit);   /* preparation work of descriptors without an occurrence record (invalid or pending) */
+size_t eff_pending_emissions(void);                 /* committed outputs not yet emitted (obligations a durable boundary would retain) */
 /* ReceiptView(E, σ, η): a transported description of the same accepted
  * occurrence; η is checked: the same port occurrence and recipient, and the
  * payload's transport reindex(payload, σ) equal to the claimed payload and
@@ -105,6 +113,6 @@ size_t eff_outbox(EffAuthority *a, EffPort ***out);   /* emitted ports addressed
 /* the accepted history and the event ledger (exact) */
 size_t eff_history(const EffOcc ***out);               /* accepted occurrences in commit order (caller frees *out) */
 size_t eff_occurrences(const EffOcc ***out);           /* every prepared occurrence record, accepted or not (caller frees *out) */
-typedef struct { size_t requests, joins, request_conflicts, prepares, prepare_steps, audits, audit_units, invalid, unresolved, reservations, waits, helps, commits, aborts, finalizes, deliveries, emits; } EffEvents;
+typedef struct { size_t requests, joins, request_conflicts, prepares, prepare_steps, audits, audit_units, invalid, unresolved, reservations, waits, helps, commits, aborts, finalizes, deliveries, deliveries_unattributed, emits; } EffEvents;
 EffEvents eff_events(void);                            /* checked word projections of the exact counts */
 #endif

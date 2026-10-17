@@ -4,15 +4,16 @@
 #include "fine.h"
 #include "lib.h"
 #include <string.h>
+#include <sched.h>
 
 struct EffSchema { const char *name; ContextId G; FaceId kappa; RefId In, Out, R; int port_role; EffSchema *all_next; };
 /* a head cell: AVAILABLE(head) when res == NULL, else RESERVED(res, slot) —
- * interpreted by the descriptor's state (RESERVING: unavailable; COMMITTED:
- * its successor; ABORTED: the former head) */
+ * interpreted by the descriptor's state (RESERVING: unavailable, the former
+ * head; COMMITTED: its successor; ABORTED: the former head) */
 typedef struct EffCell { uint64_t id; pthread_mutex_t mu; const EffHead *head; EffCommit *res; size_t slot; } EffCell;
 struct EffHead { uint64_t id; EffAuthority *auth; EffPort *port; RefId state; const EffOcc *producer; const EffHead *pred; bool consumed; EffHead *all_next; };
 struct EffAuthority { uint64_t id; const char *name; ContextId G; FaceId kappa; RefId type; EffCell cell; EffPort **outbox; size_t nout, capout; EffAuthority *all_next; };
-struct EffPort { uint64_t id; const EffOcc *issuer; size_t slot; RefId payload; EffAuthority *recipient, *refund_to; const EffHead *token; EffCell cell; bool emitted; EffPort *all_next; };   /* token: its unconsumed head */
+struct EffPort { uint64_t id; const EffOcc *issuer; size_t slot; RefId payload; EffAuthority *recipient, *refund_to; const EffHead *token; EffCell cell; bool emitted; EffPort *all_next, *pub_next; };
 struct EffCap { uint64_t id; EffAuthority *auth; EffCap *all_next; };
 typedef struct { XCount prepare_steps, audit_units, reservations, waits, commit, finalizes, deliveries, emits; } OccWork;
 struct EffOcc {
@@ -20,7 +21,6 @@ struct EffOcc {
     RefId s, t, witness, edge;          /* the admitted judgment p : R s t */
     uint64_t *assume; size_t nassume; uint64_t env;
     EffPort **ports; size_t nports;
-    bool accepted;                      /* set at the commit transition (atomic) */
     OccWork work;
     EffOcc *all_next;
 };
@@ -32,25 +32,30 @@ struct EffProposal {
     EffIn *in; size_t nin, capin; EffOutH *oh; size_t noh, capoh; EffOutP *op; size_t nop, capop;
     RefId witness; EffCap **caps; size_t ncaps, capcaps;
 };
-typedef struct Waiter { EffDeliver k; void *ctx; struct Waiter *next; } Waiter;
+/* a client's delivery obligation: owned by the registry until teardown; the job that performs it marks it done */
+typedef struct Delivery { EffDeliver k; void *ctx; EffOutcome o; EffOcc *occ; struct Delivery *next, *all_next; bool done; } Delivery;
+typedef struct { EffCommit *d; size_t k; bool emit; } FinArg;
 enum { D_PREPARING = 0, D_RESERVING, D_COMMITTED, D_ABORTED, D_INVALID };
 struct EffCommit {
     EffProposal *P; int state; bool unresolved; const char *why; const EffOcc *holder;
-    pthread_mutex_t mu; Waiter *waiters; EffCommit **joined; size_t njoined, capjoined;
+    pthread_mutex_t mu; Delivery *waiters; EffCommit **joined; size_t njoined, capjoined;
     int phase; size_t k;                 /* preparation phase and cursor; reservation cursor */
     OpId audit; RefId s, t, edge;
     XCount wprep, waudit;                /* preparation work before the occurrence record exists (moved into it at phase 6) */
     uint64_t *assume; size_t nassume;
     size_t *order;                       /* inputs sorted by cell identity */
     EffCell **cells; const EffHead **expected; EffHead **succ;   /* per sorted input */
+    FinArg *fin, *emit;                  /* the finalization / emission job arguments (owned, preallocated) */
     EffOcc *occ;
-    EffCommit *all_next;
+    EffCommit *all_next, *unres_next; bool in_unres;
 };
 
 static struct {
     pthread_mutex_t mu;                  /* registries, request index, history: constant sections */
-    uint64_t ids;
-    EffSchema *schemas; EffAuthority *auths; EffHead *heads; EffPort *ports; EffCap *caps; EffOcc *occs; EffCommit *commits;
+    pthread_mutex_t commit_mu;           /* serializes the commit transition with the cut sequence */
+    uint64_t ids, cut_seq;               /* cut_seq: odd while a commit transition is in progress */
+    EffSchema *schemas; EffAuthority *auths; EffHead *heads; EffPort *ports, *published; EffCap *caps; EffOcc *occs; EffCommit *commits, *unres;
+    Delivery *deliveries;
     WordMap index;                       /* (ns, request) -> descriptor */
     const EffOcc **hist; size_t nhist, caphist;
     XCount ev[sizeof(EffEvents) / sizeof(size_t)];
@@ -60,24 +65,25 @@ static struct {
 static uint64_t fresh_id(void) { return __atomic_add_fetch(&X.ids, 1, __ATOMIC_RELAXED); }
 #define GROW(arr, n, cap) do { if ((n) == (cap)) { (cap) = (cap) ? 2 * (cap) : 4; (arr) = realloc((arr), (cap) * sizeof *(arr)); require((arr), "out of memory"); } } while (0)
 
-void effect_init(void) { memset(&X, 0, sizeof X); pthread_mutex_init(&X.mu, NULL); wordmap_init(&X.index); X.live = true; }
+void effect_init(void) { memset(&X, 0, sizeof X); pthread_mutex_init(&X.mu, NULL); pthread_mutex_init(&X.commit_mu, NULL); wordmap_init(&X.index); X.live = true; }
+static void proposal_free(EffProposal *P) { free(P->in); free(P->oh); free(P->op); free(P->caps); free(P); }
 void effect_free(void) {
     if (!X.live) return;
     for (EffCommit *d = X.commits, *n; d; d = n) {
         n = d->all_next;
-        for (Waiter *w = d->waiters, *wn; w; w = wn) { wn = w->next; free(w); }
-        EffProposal *P = d->P; free(P->in); free(P->oh); free(P->op); free(P->caps); free(P);
-        free(d->joined); free(d->order); free(d->cells); free(d->expected); free(d->succ); free(d->assume);
+        proposal_free(d->P);
+        free(d->joined); free(d->order); free(d->cells); free(d->expected); free(d->succ); free(d->assume); free(d->fin); free(d->emit);
         if (d->audit) op_release(d->audit);
         pthread_mutex_destroy(&d->mu); free(d);
     }
+    for (Delivery *v = X.deliveries, *n; v; v = n) { n = v->all_next; free(v); }
     for (EffOcc *e = X.occs, *n; e; e = n) { n = e->all_next; free(e->ports); free(e->assume); free(e); }
     for (EffPort *m = X.ports, *n; m; m = n) { n = m->all_next; pthread_mutex_destroy(&m->cell.mu); free(m); }
     for (EffAuthority *a = X.auths, *n; a; a = n) { n = a->all_next; free(a->outbox); pthread_mutex_destroy(&a->cell.mu); free(a); }
     for (EffHead *h = X.heads, *n; h; h = n) { n = h->all_next; free(h); }
     for (EffCap *c = X.caps, *n; c; c = n) { n = c->all_next; free(c); }
     for (EffSchema *s = X.schemas, *n; s; s = n) { n = s->all_next; free(s); }
-    free(X.hist); wordmap_free(&X.index); pthread_mutex_destroy(&X.mu);
+    free(X.hist); wordmap_free(&X.index); pthread_mutex_destroy(&X.mu); pthread_mutex_destroy(&X.commit_mu);
     memset(&X, 0, sizeof X);
 }
 EffEvents eff_events(void) { EffEvents v; size_t *d = (size_t *)&v; for (size_t i = 0; i < sizeof v / sizeof(size_t); i++) d[i] = (size_t)xs_u64_checked(xc_snap(&X.ev[i]), "effect event"); return v; }
@@ -115,11 +121,12 @@ static bool cap_valid(const EffCap *c, const EffAuthority *a) {
 
 EffProposal *eff_proposal(EffSchema *s, uint64_t ns, uint64_t request) { EffProposal *P = calloc(1, sizeof *P); require(P, "out of memory"); P->schema = s; P->ns = ns; P->request = request; return P; }
 void eff_in_head(EffProposal *P, EffAuthority *a, const EffHead *expected) { GROW(P->in, P->nin, P->capin); P->in[P->nin++] = (EffIn){ 0, a, NULL, expected }; }
-void eff_in_port(EffProposal *P, EffPort *m) { GROW(P->in, P->nin, P->capin); P->in[P->nin++] = (EffIn){ 1, NULL, m, m->token }; }
+void eff_in_port(EffProposal *P, EffPort *m) { GROW(P->in, P->nin, P->capin); P->in[P->nin++] = (EffIn){ 1, NULL, m, m ? m->token : NULL }; }
 void eff_out_head(EffProposal *P, EffAuthority *a, RefId state) { GROW(P->oh, P->noh, P->capoh); P->oh[P->noh++] = (EffOutH){ a, state }; }
 void eff_out_port(EffProposal *P, RefId payload, EffAuthority *recipient, EffAuthority *refund_to) { GROW(P->op, P->nop, P->capop); P->op[P->nop++] = (EffOutP){ payload, recipient, refund_to }; }
 void eff_witness(EffProposal *P, RefId p) { P->witness = p; }
 void eff_cap(EffProposal *P, EffCap *c) { GROW(P->caps, P->ncaps, P->capcaps); P->caps[P->ncaps++] = c; }
+void eff_proposal_free(EffProposal *P) { if (P) proposal_free(P); }
 EffProposal *eff_proposal_reindex(const EffProposal *P, MapId sigma, uint64_t request) {
     EffProposal *Q = eff_proposal(P->schema, P->ns, request);
     for (size_t i = 0; i < P->nin; i++) { GROW(Q->in, Q->nin, Q->capin); Q->in[Q->nin++] = P->in[i]; }
@@ -129,13 +136,13 @@ EffProposal *eff_proposal_reindex(const EffProposal *P, MapId sigma, uint64_t re
     for (size_t i = 0; i < P->ncaps; i++) eff_cap(Q, P->caps[i]);
     return Q;
 }
-static void proposal_free(EffProposal *P) { free(P->in); free(P->oh); free(P->op); free(P->caps); free(P); }
-void eff_proposal_free(EffProposal *P) { if (P) proposal_free(P); }
+/* the anchored proposal data, including its explicit authorization premises */
 static bool same_anchor(const EffProposal *a, const EffProposal *b) {
-    if (a->schema != b->schema || a->nin != b->nin || a->noh != b->noh || a->nop != b->nop || a->witness != b->witness) return false;
+    if (a->schema != b->schema || a->nin != b->nin || a->noh != b->noh || a->nop != b->nop || a->witness != b->witness || a->ncaps != b->ncaps) return false;
     for (size_t i = 0; i < a->nin; i++) if (a->in[i].kind != b->in[i].kind || a->in[i].auth != b->in[i].auth || a->in[i].port != b->in[i].port || a->in[i].expected != b->in[i].expected) return false;
     for (size_t i = 0; i < a->noh; i++) if (a->oh[i].auth != b->oh[i].auth || a->oh[i].state != b->oh[i].state) return false;
     for (size_t i = 0; i < a->nop; i++) if (a->op[i].payload != b->op[i].payload || a->op[i].recipient != b->op[i].recipient || a->op[i].refund_to != b->op[i].refund_to) return false;
+    for (size_t i = 0; i < a->ncaps; i++) if (a->caps[i] != b->caps[i]) return false;
     return true;
 }
 
@@ -143,30 +150,34 @@ static bool same_anchor(const EffProposal *a, const EffProposal *b) {
 static void prepare_job(void *p);
 static void reserve_job(void *p);
 static void commit_job(void *p);
-typedef struct { EffCommit *d; size_t k; bool emit; } FinArg;
 static void finalize_job(void *p);
-typedef struct { EffDeliver k; void *ctx; EffOutcome o; EffOcc *occ; } DelArg;
-static void deliver_job(void *p) { DelArg *a = p; if (a->occ) xc_inc(&a->occ->work.deliveries); EV(deliveries); a->k(a->ctx, a->o); free(a); }
+static void deliver_job(void *p) {
+    Delivery *v = p;
+    if (v->occ) xc_inc(&v->occ->work.deliveries); else EV(deliveries_unattributed);
+    EV(deliveries); v->done = true; v->k(v->ctx, v->o);
+}
+static Delivery *delivery_new(EffDeliver k, void *ctx) {
+    Delivery *v = calloc(1, sizeof *v); require(v, "out of memory"); v->k = k; v->ctx = ctx;
+    pthread_mutex_lock(&X.mu); v->all_next = X.deliveries; X.deliveries = v; pthread_mutex_unlock(&X.mu);
+    return v;
+}
 static EffOutcome outcome_of(EffCommit *d) {
-    EffOutcome o = { EO_PENDING, NULL, NULL, d->why };
-    int st = __atomic_load_n(&d->state, __ATOMIC_ACQUIRE);
+    int st = __atomic_load_n(&d->state, __ATOMIC_ACQUIRE);        /* the state first: why / holder / occurrence are written before its release */
+    EffOutcome o = { EO_PENDING, NULL, NULL, NULL };
     if (st == D_COMMITTED) { o.kind = EO_ACCEPTED; o.receipt = d->occ; }
-    else if (st == D_ABORTED) { o.kind = EO_CONFLICT; o.holder = d->holder; }
-    else if (st == D_INVALID) o.kind = EO_INVALID;
+    else if (st == D_ABORTED) { o.kind = EO_CONFLICT; o.holder = d->holder; o.why = d->why; }
+    else if (st == D_INVALID) { o.kind = EO_INVALID; o.why = d->why; }
     return o;
 }
-static void deliver_to(EffDeliver k, void *ctx, EffOutcome o, EffOcc *occ) {
-    DelArg *a = calloc(1, sizeof *a); require(a, "out of memory"); a->k = k; a->ctx = ctx; a->o = o; a->occ = occ;
-    eval_job(deliver_job, a, EFF_TAG_DELIVER);
-}
+static void deliver(Delivery *v, EffOutcome o, EffOcc *occ) { v->o = o; v->occ = occ; eval_job(deliver_job, v, EFF_TAG_DELIVER); }
 /* a terminal transition: deliver to the attached clients (one job each) and wake the descriptors joined on this one */
 static void settle(EffCommit *d) {
     pthread_mutex_lock(&d->mu);
-    Waiter *w = d->waiters; d->waiters = NULL;
+    Delivery *w = d->waiters; d->waiters = NULL;
     EffCommit **j = d->joined; size_t nj = d->njoined; d->joined = NULL; d->njoined = d->capjoined = 0;
     pthread_mutex_unlock(&d->mu);
     EffOutcome o = outcome_of(d);
-    while (w) { Waiter *n = w->next; deliver_to(w->k, w->ctx, o, o.kind == EO_ACCEPTED ? d->occ : NULL); free(w); w = n; }
+    while (w) { Delivery *n = w->next; deliver(w, o, o.kind == EO_ACCEPTED ? d->occ : NULL); w = n; }
     for (size_t i = 0; i < nj; i++) eval_job(reserve_job, j[i], EFF_TAG_RESERVE);   /* recheck that cell */
     free(j);
 }
@@ -174,24 +185,24 @@ static void settle(EffCommit *d) {
 EffCommit *eff_request(EffProposal *P, EffDeliver k, void *ctx) {
     EV(requests);
     uint64_t key[2] = { P->ns, P->request }, have = 0;
+    Delivery *v = k ? delivery_new(k, ctx) : NULL;
     pthread_mutex_lock(&X.mu);
     if (wordmap_get(&X.index, key, 2, &have)) {
         EffCommit *d = (EffCommit *)(uintptr_t)have;
         pthread_mutex_unlock(&X.mu);
-        if (!same_anchor(d->P, P)) { EV(request_conflicts); EffOutcome o = { EO_REQUEST_CONFLICT, NULL, NULL, "request identity reused with different anchored proposal data" }; proposal_free(P); if (k) deliver_to(k, ctx, o, NULL); return d; }
+        if (!same_anchor(d->P, P)) { EV(request_conflicts); EffOutcome o = { EO_REQUEST_CONFLICT, NULL, NULL, "request identity reused with different anchored proposal data" }; proposal_free(P); if (v) deliver(v, o, NULL); return d; }
         proposal_free(P); EV(joins);
-        if (!k) return d;
+        if (!v) return d;
         pthread_mutex_lock(&d->mu);
         int st = __atomic_load_n(&d->state, __ATOMIC_ACQUIRE);
         bool terminal = st == D_COMMITTED || st == D_ABORTED || st == D_INVALID;
-        if (!terminal) { Waiter *w = calloc(1, sizeof *w); require(w, "out of memory"); w->k = k; w->ctx = ctx; w->next = d->waiters; d->waiters = w; }
+        if (!terminal) { v->next = d->waiters; d->waiters = v; }
         pthread_mutex_unlock(&d->mu);
-        if (terminal) deliver_to(k, ctx, outcome_of(d), st == D_COMMITTED ? d->occ : NULL);   /* the same receipt; no second occurrence */
+        if (terminal) deliver(v, outcome_of(d), st == D_COMMITTED ? d->occ : NULL);   /* the same receipt; no second occurrence */
         return d;
     }
     EffCommit *d = calloc(1, sizeof *d); require(d, "out of memory");
-    d->P = P; pthread_mutex_init(&d->mu, NULL); d->state = D_PREPARING;
-    if (k) { Waiter *w = calloc(1, sizeof *w); require(w, "out of memory"); w->k = k; w->ctx = ctx; d->waiters = w; }
+    d->P = P; pthread_mutex_init(&d->mu, NULL); d->state = D_PREPARING; d->waiters = v;
     wordmap_put(&X.index, key, 2, (uint64_t)(uintptr_t)d);
     d->all_next = X.commits; X.commits = d;
     pthread_mutex_unlock(&X.mu);
@@ -201,17 +212,28 @@ EffCommit *eff_request(EffProposal *P, EffDeliver k, void *ctx) {
 }
 EffOutcomeKind eff_commit_state(const EffCommit *d) { return outcome_of((EffCommit *)d).kind; }
 bool eff_commit_unresolved(const EffCommit *d) { return __atomic_load_n(&d->unresolved, __ATOMIC_ACQUIRE); }
+/* the descriptors whose required proof was pending keep their clients; a new attempt re-runs their audits */
+size_t eff_retry(void) {
+    pthread_mutex_lock(&X.mu); EffCommit *u = X.unres; X.unres = NULL;
+    size_t n = 0; for (EffCommit *d = u; d; d = d->unres_next) { d->in_unres = false; n++; }
+    pthread_mutex_unlock(&X.mu);
+    while (u) { EffCommit *nx = u->unres_next; __atomic_store_n(&u->unresolved, false, __ATOMIC_RELEASE); u->phase = 3; eval_job(prepare_job, u, EFF_TAG_AUDIT); u = nx; }
+    return n;
+}
 
 static void invalid(EffCommit *d, const char *why) { d->why = why; EV(invalid); __atomic_store_n(&d->state, D_INVALID, __ATOMIC_RELEASE); settle(d); }
 static RefId tuple(const RefId *xs, size_t n) { if (!n) return 0; RefId t = xs[n - 1]; for (size_t i = n - 1; i-- > 0; ) t = mk_pair(xs[i], t); return t; }
-static const EffHead *cell_logical(EffCell *c, bool *reserved);
+static bool occ_accepted(const EffOcc *e) { return __atomic_load_n(&e->d->state, __ATOMIC_ACQUIRE) == D_COMMITTED; }
 
 /* PREPARE_EFFECT: one phase step per job
- *   0  interface, one input per step: unique cells, port role, authorization (a valid issued capability)
- *   1  outputs: each consumed head has a successor head for its authority
+ *   0  interface, one input per step: unique cells, a port issued by an accepted occurrence, the port role,
+ *      authorization (a valid issued capability of the required authority)
+ *   1  outputs, exactly: one successor head per consumed head's authority and no other output head; a
+ *      consumed port's authority receives a successor head; output ports name their recipient
  *   2  the judgment: s = tuple of input states, t = tuple of output states and port payloads, R s t
  *   3,4,5  the audits of s : In, t : Out, p : R s t — one engine unit per job
- *   6  pin the environment snapshot; prepare the occurrence, successor heads, consumed-port markers and the reservation order */
+ *   6  pin the environment snapshot; prepare the occurrence, its (unpublished) ports, successor heads,
+ *      consumed-port markers, the reservation order and the job arguments */
 static int audit_step(EffCommit *d, RefId e, RefId E) {
     EffSchema *s = d->P->schema;
     if (!d->audit) { d->audit = op_proof_audit(s->G, s->kappa, e, E); EV(audits); }
@@ -231,6 +253,8 @@ static void prepare_job(void *p) {
     case 0: {
         if (d->k >= P->nin) { d->phase = 1; d->k = 0; break; }
         EffIn *in = &P->in[d->k];
+        if (in->kind && (!in->port || !occ_accepted(in->port->issuer))) { invalid(d, "the input port was not issued by an accepted occurrence"); return; }
+        if (!in->kind && !in->auth) { invalid(d, "an input head names no authority"); return; }
         EffCell *c = in->kind ? &in->port->cell : &in->auth->cell;
         for (size_t j = 0; j < d->k; j++) { EffCell *cj = P->in[j].kind ? &P->in[j].port->cell : &P->in[j].auth->cell; if (cj == c) { invalid(d, "an input occurrence appears twice"); return; } }
         EffAuthority *need = in->kind ? (S->port_role == EFF_PORT_REFUND ? in->port->refund_to : in->port->recipient) : in->auth;
@@ -240,9 +264,18 @@ static void prepare_job(void *p) {
         d->k++; break;
     }
     case 1: {
+        size_t heads = 0;
         for (size_t i = 0; i < P->nin; i++) if (!P->in[i].kind) {
-            bool succ = false; for (size_t j = 0; j < P->noh && !succ; j++) succ = P->oh[j].auth == P->in[i].auth;
-            if (!succ) { invalid(d, "a consumed head has no successor head for its authority"); return; }
+            size_t succ = 0; for (size_t j = 0; j < P->noh; j++) succ += P->oh[j].auth == P->in[i].auth;
+            if (succ != 1) { invalid(d, succ ? "two successor heads for one consumed head" : "a consumed head has no successor head for its authority"); return; }
+            heads++;
+        }
+        if (heads != P->noh) { invalid(d, "an output head for an authority whose head is not consumed"); return; }
+        for (size_t j = 0; j < P->nop; j++) if (!P->op[j].recipient) { invalid(d, "an output port names no recipient"); return; }
+        for (size_t i = 0; i < P->nin; i++) if (P->in[i].kind) {
+            EffAuthority *to = S->port_role == EFF_PORT_REFUND ? P->in[i].port->refund_to : P->in[i].port->recipient;
+            bool has = false; for (size_t j = 0; j < P->noh && !has; j++) has = P->oh[j].auth == to;
+            if (!has) { invalid(d, "a consumed port's authority receives no successor head"); return; }
         }
         if (!P->witness) { invalid(d, "no edge witness"); return; }
         d->phase = 2; break;
@@ -261,14 +294,20 @@ static void prepare_job(void *p) {
         int v = audit_step(d, e, E);
         if (v < 0) { eval_job(prepare_job, d, EFF_TAG_AUDIT); return; }          /* the audit continues next unit */
         if (v == PU_INVALID) { invalid(d, d->phase == 5 ? "the edge witness is not admitted at R(s,t)" : "a state is not admitted at its interface type"); return; }
-        if (v == PU_PENDING || v == PU_UNRESOLVED) { __atomic_store_n(&d->unresolved, true, __ATOMIC_RELEASE); EV(unresolved); d->why = "a required proof is pending"; return; }   /* stays pending with its continuation */
+        if (v == PU_PENDING || v == PU_UNRESOLVED) {                            /* stays pending, its clients attached; eff_retry re-runs the audits */
+            d->why = "a required proof is pending";
+            pthread_mutex_lock(&X.mu); if (!d->in_unres) { d->in_unres = true; d->unres_next = X.unres; X.unres = d; } pthread_mutex_unlock(&X.mu);
+            __atomic_store_n(&d->unresolved, true, __ATOMIC_RELEASE); EV(unresolved);
+            return;
+        }
         d->phase++; break;
     }
     case 6: {
         size_t n = P->nin;
         d->order = malloc((n ? n : 1) * sizeof *d->order); d->cells = malloc((n ? n : 1) * sizeof *d->cells);
         d->expected = malloc((n ? n : 1) * sizeof *d->expected); d->succ = malloc((n ? n : 1) * sizeof *d->succ);
-        require(d->order && d->cells && d->expected && d->succ, "out of memory");
+        d->fin = calloc(n ? n : 1, sizeof *d->fin); d->emit = calloc(P->nop ? P->nop : 1, sizeof *d->emit);
+        require(d->order && d->cells && d->expected && d->succ && d->fin && d->emit, "out of memory");
         EffOcc *e = calloc(1, sizeof *e); require(e, "out of memory");
         e->id = fresh_id(); e->schema = S; e->d = d; e->s = d->s; e->t = d->t; e->witness = P->witness; e->edge = d->edge;
         e->assume = d->assume; e->nassume = d->nassume; d->assume = NULL; d->nassume = 0; e->env = global_env_version();
@@ -276,8 +315,9 @@ static void prepare_job(void *p) {
         for (size_t i = 0; i < P->nop; i++) {
             EffPort *m = calloc(1, sizeof *m); require(m, "out of memory");
             m->id = fresh_id(); m->issuer = e; m->slot = i; m->payload = P->op[i].payload; m->recipient = P->op[i].recipient; m->refund_to = P->op[i].refund_to;
-            m->token = head_new(NULL, m, m->payload, e, NULL, false); cell_init(&m->cell, m->token);   /* its unconsumed token: readable only after acceptance */
+            m->token = head_new(NULL, m, m->payload, e, NULL, false); cell_init(&m->cell, m->token);   /* reachable only after acceptance */
             e->ports[i] = m;
+            d->emit[i] = (FinArg){ d, i, true };
         }
         for (size_t i = 0; i < n; i++) d->order[i] = i;
         for (size_t i = 1; i < n; i++) for (size_t j = i; j > 0; j--) {               /* the fixed total order of cell identities */
@@ -292,6 +332,7 @@ static void prepare_job(void *p) {
             d->expected[r] = in->expected;
             if (in->kind) d->succ[r] = head_new(NULL, in->port, in->port->payload, e, in->expected, true);   /* the consumed marker */
             else { RefId st = 0; for (size_t j = 0; j < P->noh; j++) if (P->oh[j].auth == in->auth) st = P->oh[j].state; d->succ[r] = head_new(in->auth, NULL, st, e, in->expected, false); }
+            d->fin[r] = (FinArg){ d, r, false };
         }
         pthread_mutex_lock(&X.mu); e->all_next = X.occs; X.occs = e; for (size_t i = 0; i < P->nop; i++) { e->ports[i]->all_next = X.ports; X.ports = e->ports[i]; } pthread_mutex_unlock(&X.mu);
         xc_add_snap(&e->work.prepare_steps, xc_take(&d->wprep)); xc_add_snap(&e->work.audit_units, xc_take(&d->waudit));
@@ -309,7 +350,7 @@ static void abort_commit(EffCommit *d, const EffOcc *holder, const char *why) {
     int exp = D_RESERVING;
     if (!__atomic_compare_exchange_n(&d->state, &exp, D_ABORTED, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return;
     EV(aborts);
-    for (size_t r = 0; r < d->k; r++) { FinArg *a = malloc(sizeof *a); require(a, "out of memory"); a->d = d; a->k = r; a->emit = false; eval_job(finalize_job, a, EFF_TAG_FINALIZE); }   /* rollback of the cells it reserved */
+    for (size_t r = 0; r < d->k; r++) eval_job(finalize_job, &d->fin[r], EFF_TAG_FINALIZE);   /* rollback of the cells it reserved */
     settle(d);
 }
 /* RESERVE_NEXT(D, k): one input cell per job, under its lock only */
@@ -350,26 +391,35 @@ static void reserve_job(void *p) {
     EV(helps);
     eval_job(reserve_job, d, EFF_TAG_RESERVE);
 }
-/* the one acceptance event */
+/* the one acceptance event: the state transition, inside the cut sequence (readers retry across it) */
 static void commit_job(void *p) {
     EffCommit *d = p;
-    int exp = D_RESERVING;
-    if (!__atomic_compare_exchange_n(&d->state, &exp, D_COMMITTED, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return;
     EffOcc *e = d->occ;
-    __atomic_store_n(&e->accepted, true, __ATOMIC_RELEASE);
+    pthread_mutex_lock(&X.commit_mu);
+    __atomic_add_fetch(&X.cut_seq, 1, __ATOMIC_ACQ_REL);
+    int exp = D_RESERVING;
+    bool won = __atomic_compare_exchange_n(&d->state, &exp, D_COMMITTED, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+    if (won) {   /* the accepted ports become reachable in the same section */
+        pthread_mutex_lock(&X.mu);
+        GROW(X.hist, X.nhist, X.caphist); X.hist[X.nhist++] = e;
+        for (size_t i = 0; i < e->nports; i++) { e->ports[i]->pub_next = X.published; X.published = e->ports[i]; }
+        pthread_mutex_unlock(&X.mu);
+    }
+    __atomic_add_fetch(&X.cut_seq, 1, __ATOMIC_ACQ_REL);
+    pthread_mutex_unlock(&X.commit_mu);
+    if (!won) return;
     EV(commits); xc_inc(&e->work.commit);
-    pthread_mutex_lock(&X.mu); GROW(X.hist, X.nhist, X.caphist); X.hist[X.nhist++] = e; pthread_mutex_unlock(&X.mu);
-    for (size_t r = 0; r < d->P->nin; r++) { FinArg *a = malloc(sizeof *a); require(a, "out of memory"); a->d = d; a->k = r; a->emit = false; eval_job(finalize_job, a, EFF_TAG_FINALIZE); }
-    for (size_t i = 0; i < e->nports; i++) { FinArg *a = malloc(sizeof *a); require(a, "out of memory"); a->d = d; a->k = i; a->emit = true; eval_job(finalize_job, a, EFF_TAG_EMIT); }
+    for (size_t r = 0; r < d->P->nin; r++) eval_job(finalize_job, &d->fin[r], EFF_TAG_FINALIZE);
+    for (size_t i = 0; i < e->nports; i++) eval_job(finalize_job, &d->emit[i], EFF_TAG_EMIT);
     settle(d);
 }
-/* FINALIZE(D, k): materialize the reservation (successor if committed, former head if aborted); EMIT for k = -1-slot */
+/* FINALIZE(D, k): materialize the reservation (successor if committed, former head if aborted); EMIT(E, slot) */
 static void finalize_job(void *p) {
-    FinArg *a = p; EffCommit *d = a->d; size_t r = a->k; bool emit = a->emit; free(a);
-    if (emit) {   /* EMIT(E, slot): the committed port's description to its endpoint's outbox */
+    FinArg *a = p; EffCommit *d = a->d; size_t r = a->k;
+    if (a->emit) {   /* EMIT: the committed port's description to its endpoint's outbox */
         EffPort *m = d->occ->ports[r];
         EffAuthority *to = m->recipient;
-        pthread_mutex_lock(&to->cell.mu); GROW(to->outbox, to->nout, to->capout); to->outbox[to->nout++] = m; m->emitted = true; pthread_mutex_unlock(&to->cell.mu);
+        pthread_mutex_lock(&to->cell.mu); GROW(to->outbox, to->nout, to->capout); to->outbox[to->nout++] = m; __atomic_store_n(&m->emitted, true, __ATOMIC_RELEASE); pthread_mutex_unlock(&to->cell.mu);
         EV(emits); xc_inc(&d->occ->work.emits);
         return;
     }
@@ -381,26 +431,21 @@ static void finalize_job(void *p) {
 }
 
 /* ---------------- readings ---------------- */
-static const EffHead *cell_logical(EffCell *c, bool *reserved) {
+static const EffHead *cell_logical(EffCell *c) {
     pthread_mutex_lock(&c->mu);
-    const EffHead *h = c->head; bool res = false;
-    if (c->res) {
-        int st = __atomic_load_n(&c->res->state, __ATOMIC_ACQUIRE);
-        if (st == D_COMMITTED) h = c->res->succ[c->slot];
-        else { h = c->res->expected[c->slot]; res = st == D_RESERVING; }
-    }
+    const EffHead *h = c->head;
+    if (c->res) h = __atomic_load_n(&c->res->state, __ATOMIC_ACQUIRE) == D_COMMITTED ? c->res->succ[c->slot] : c->res->expected[c->slot];
     pthread_mutex_unlock(&c->mu);
-    if (reserved) *reserved = res;
     return h;
 }
-const EffHead *eff_head(EffAuthority *a) { return cell_logical(&a->cell, NULL); }
+const EffHead *eff_head(EffAuthority *a) { return cell_logical(&a->cell); }
 RefId eff_head_state(const EffHead *h) { return h->state; }
 const EffOcc *eff_head_producer(const EffHead *h) { return h->producer; }
-bool eff_port_open(EffPort *m) { if (!__atomic_load_n(&m->issuer->accepted, __ATOMIC_ACQUIRE)) return false; return !cell_logical(&m->cell, NULL)->consumed; }
-const EffOcc *eff_port_consumer(EffPort *m) { const EffHead *h = cell_logical(&m->cell, NULL); return h->consumed ? h->producer : NULL; }
-size_t eff_ports(EffPort ***out) {
-    pthread_mutex_lock(&X.mu); size_t n = 0; for (EffPort *m = X.ports; m; m = m->all_next) n++;
-    EffPort **v = malloc((n ? n : 1) * sizeof *v); require(v, "out of memory"); size_t i = n; for (EffPort *m = X.ports; m; m = m->all_next) v[--i] = m;
+bool eff_port_open(EffPort *m) { return occ_accepted(m->issuer) && !cell_logical(&m->cell)->consumed; }
+const EffOcc *eff_port_consumer(EffPort *m) { const EffHead *h = cell_logical(&m->cell); return h->consumed ? h->producer : NULL; }
+size_t eff_ports(EffPort ***out) {   /* the ports of accepted occurrences */
+    pthread_mutex_lock(&X.mu); size_t n = 0; for (EffPort *m = X.published; m; m = m->pub_next) n++;
+    EffPort **v = malloc((n ? n : 1) * sizeof *v); require(v, "out of memory"); size_t i = n; for (EffPort *m = X.published; m; m = m->pub_next) v[--i] = m;
     pthread_mutex_unlock(&X.mu); *out = v; return n;
 }
 size_t eff_authorities(EffAuthority ***out) {
@@ -408,16 +453,32 @@ size_t eff_authorities(EffAuthority ***out) {
     EffAuthority **v = malloc((n ? n : 1) * sizeof *v); require(v, "out of memory"); size_t i = n; for (EffAuthority *a = X.auths; a; a = a->all_next) v[--i] = a;
     pthread_mutex_unlock(&X.mu); *out = v; return n;
 }
+/* a consistent cut: every logical head and every open port, read between two equal even values of the commit sequence */
+bool eff_cut_snapshot(EffCut *out) {
+    for (;;) {
+        uint64_t s1 = __atomic_load_n(&X.cut_seq, __ATOMIC_ACQUIRE);
+        if (s1 & 1) { sched_yield(); continue; }
+        EffAuthority **as; size_t na = eff_authorities(&as);
+        EffPort **ps; size_t np = eff_ports(&ps);
+        const EffHead **hs = malloc((na ? na : 1) * sizeof *hs); EffPort **open = malloc((np ? np : 1) * sizeof *open); require(hs && open, "out of memory");
+        for (size_t i = 0; i < na; i++) hs[i] = cell_logical(&as[i]->cell);
+        size_t no = 0; for (size_t i = 0; i < np; i++) if (!cell_logical(&ps[i]->cell)->consumed) open[no++] = ps[i];
+        free(ps);
+        if (__atomic_load_n(&X.cut_seq, __ATOMIC_ACQUIRE) == s1) { out->nheads = na; out->auth = as; out->head = hs; out->nopen = no; out->open = open; return true; }
+        free(as); free(hs); free(open);
+    }
+}
+void eff_cut_free(EffCut *c) { free(c->auth); free(c->head); free(c->open); memset(c, 0, sizeof *c); }
 RefId eff_port_payload(const EffPort *m) { return m->payload; }
 EffAuthority *eff_port_recipient(const EffPort *m) { return m->recipient; }
 const EffOcc *eff_port_issuer(const EffPort *m) { return m->issuer; }
 uint64_t eff_occ_id(const EffOcc *e) { return e->id; }
-bool eff_occ_accepted(const EffOcc *e) { return __atomic_load_n(&e->accepted, __ATOMIC_ACQUIRE); }
+bool eff_occ_accepted(const EffOcc *e) { return occ_accepted(e); }
 const char *eff_occ_schema(const EffOcc *e) { return e->schema->name; }
-size_t eff_occ_nports(const EffOcc *e) { return e->nports; }
-EffPort *eff_occ_port(const EffOcc *e, size_t slot) { return slot < e->nports ? e->ports[slot] : NULL; }
+size_t eff_occ_nports(const EffOcc *e) { return occ_accepted(e) ? e->nports : 0; }
+EffPort *eff_occ_port(const EffOcc *e, size_t slot) { return occ_accepted(e) && slot < e->nports ? e->ports[slot] : NULL; }
 RefId eff_receipt_observe(const EffOcc *e, int field) {
-    require(eff_occ_accepted(e), "receipt observation of an occurrence that was not accepted");
+    require(occ_accepted(e), "receipt observation of an occurrence that was not accepted");
     switch (field) { case EFF_FIELD_WITNESS: return e->witness; case EFF_FIELD_SOURCE: return e->s; case EFF_FIELD_TARGET: return e->t; case EFF_FIELD_EDGE_TYPE: return e->edge; }
     return 0;
 }
@@ -432,8 +493,21 @@ EffOccWork eff_occ_work(const EffOcc *e) {
     w.waits = xc_snap(&e->work.waits); w.commit = xc_snap(&e->work.commit); w.finalizes = xc_snap(&e->work.finalizes); w.deliveries = xc_snap(&e->work.deliveries); w.emits = xc_snap(&e->work.emits);
     return w;
 }
+/* the preparation work of descriptors that have no occurrence record (settled invalid, or pending) */
+void eff_unattributed(XSnap *prep, XSnap *audit) {
+    XCount p = {0}, a = {0};
+    pthread_mutex_lock(&X.mu);
+    for (EffCommit *d = X.commits; d; d = d->all_next) if (!d->occ) { xc_add_snap(&p, xc_snap(&d->wprep)); xc_add_snap(&a, xc_snap(&d->waudit)); }
+    pthread_mutex_unlock(&X.mu);
+    *prep = xc_snap(&p); *audit = xc_snap(&a);
+}
+size_t eff_pending_emissions(void) {   /* committed outputs not yet emitted: obligations a durable boundary would have to retain */
+    size_t n = 0; pthread_mutex_lock(&X.mu);
+    for (EffPort *m = X.published; m; m = m->pub_next) if (!__atomic_load_n(&m->emitted, __ATOMIC_ACQUIRE)) n++;
+    pthread_mutex_unlock(&X.mu); return n;
+}
 bool eff_receipt_view(const EffOcc *e, MapId sigma, size_t slot, RefId claimed_payload, EffAuthority *claimed_recipient, EffView *out, const char **why) {
-    if (!eff_occ_accepted(e)) { *why = "not an accepted occurrence"; return false; }
+    if (!occ_accepted(e)) { *why = "not an accepted occurrence"; return false; }
     if (slot >= e->nports) { *why = "no such port occurrence"; return false; }
     EffPort *m = e->ports[slot];
     if (claimed_recipient != m->recipient) { *why = "the view changes the recipient without a boundary transport"; return false; }

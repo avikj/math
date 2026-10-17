@@ -15,7 +15,7 @@
  *                   allocator's owned footprint and the worker count stable
  *   index         — the ownership index with four-page extents: first,
  *                   middle and last extents, one-past-end, holes, foreign
- *                   pointers; every lookup visits at most ADDR_BITS+1 nodes
+ *                   pointers; every lookup visits at most one node per address byte
  *                   while the number of extents grows
  *   counts        — exact counts across 2^64: a fine counter, a reuse
  *                   counter, a closed scope with late contributions, a
@@ -173,8 +173,8 @@ static void t_index(void) {
         printf("index round %d: extents=%zu index nodes=%zu max nodes per lookup so far=%zu\n", round, ne, arena_index_nodes(), maxsteps);
     }
     EXPECT(all_ok, "index: membership exact for first/middle/last extents, one-past-end, holes and foreign pointers");
-    EXPECT(maxsteps <= sizeof(uintptr_t) * 8 + 1, "index: lookups bounded by the address width (%zu)", maxsteps);
-    printf("index: %zu queries, max nodes per lookup=%zu (bound %zu)\n", checks, maxsteps, sizeof(uintptr_t) * 8 + 1);
+    EXPECT(maxsteps <= sizeof(uintptr_t), "index: lookups bounded by the address width in bytes (%zu)", maxsteps);
+    printf("index: %zu queries, max nodes per lookup=%zu (bound %zu)\n", checks, maxsteps, sizeof(uintptr_t));
     arena_set_extent_policy((size_t)ARENA_PAGE << 11);   /* the default growth policy */
     done();
 }
@@ -203,7 +203,7 @@ static void t_counts(void) {
     EXPECT(is_2_64_plus(g, 1), "global reuse counter: 2^64 - 2 + 3 = 2^64 + 1 exactly");
     EXPECT(xs_u64(late0, &d) && d == 0 && is_2_64_plus(late, 2), "closed scope folded once: 2^64 - 1 + 2 into the late total, then its late event: 2^64 + 2");
     /* a continuation's steps across 2^64 */
-    KCont *k = kc_new(counting, NULL, 0); k->steps = UINT64_MAX - 2;
+    KCont *k = kc_new(counting, NULL, 0); k->steps = UINT64_MAX - 2 - XC_HALF; k->steps_carry = xc_carry_push(NULL);   /* the valid exact state 2^64 - 3 */
     while (!kc_done(k)) kc_grant(k, 1);
     XSnap ks = kc_steps(k);
     EXPECT(is_2_64_plus(ks, 2), "continuation steps: 2^64 - 3 + 5 = 2^64 + 2 exactly");
@@ -215,7 +215,7 @@ static void t_counts(void) {
     for (int i = 0; i < 2000; i++) { Nat v = xs_nat(xc_snap(&shared)); if (nat_compare(v, last) < 0) mono = false; last = v; }
     for (int i = 0; i < 8; i++) pthread_join(th[i], NULL);
     XSnap fin = xc_snap(&shared);
-    EXPECT(mono && is_2_64_plus(fin, 4999) && xs_carries(fin) == 1, "eight writers across the boundary: snapshots monotone, final 2^64 - 3001 + 8000 = 2^64 + 4999 exactly");
+    EXPECT(mono && is_2_64_plus(fin, 4999), "eight writers across the boundary: snapshots monotone, final 2^64 - 3001 + 8000 = 2^64 + 4999 exactly");
     uint64_t dd; XSnap a = { 5, NULL }, b = { 7, NULL };
     EXPECT(!xs_delta_u64(a, b, &dd), "a delta of out-of-order snapshots is refused, not wrapped");
     printf("counts: fine=2^64+0 reuse=2^64+1 late=2^64+2 kcont steps=2^64+2 concurrent=2^64+4999 monotone=%d\n", mono);

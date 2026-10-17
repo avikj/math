@@ -58,19 +58,20 @@ static bool hold_pred(const EvalTaskInfo *in, void *ctx) {
 }
 
 static EffAuthority *A, *B; static EffCap *capA, *capB;
+typedef struct { int seen[8]; } Probe;
+static bool probe_pred(const EvalTaskInfo *in, void *ctx) { Probe *p = ctx; if (in->kind == ET_EXTERNAL && in->tag >= EFF_TAG_PREPARE && in->tag <= EFF_TAG_EMIT) p->seen[in->tag - EFF_TAG_PREPARE]++; return false; }
+static EffOutcomeKind eff_commit_state_of_last(Client *c) { return c->delivered ? c->o.kind : EO_PENDING; }
 static EffSchema *SEND, *RECV, *REFUND;
 static ContextId G0;
 static uint64_t next_req = 100;
 /* V(F): balances of the account heads on the current cut + quantities of the unconsumed transfer ports */
-static int valuation(int *open_ports) {
-    int v = 0, np = 0;
-    EffAuthority **as; size_t na = eff_authorities(&as);
-    for (size_t i = 0; i < na; i++) v += nread(eff_head_state(eff_head(as[i])));
-    free(as);
-    EffPort **ps; size_t n = eff_ports(&ps);
-    for (size_t i = 0; i < n; i++) if (eff_port_open(ps[i])) { v += nread(eff_port_payload(ps[i])); np++; }
-    free(ps);
-    if (open_ports) *open_ports = np;
+static int valuation(int *open_ports) {   /* read from one consistent cut */
+    EffCut c; eff_cut_snapshot(&c);
+    int v = 0;
+    for (size_t i = 0; i < c.nheads; i++) v += nread(eff_head_state(c.head[i]));
+    for (size_t i = 0; i < c.nopen; i++) v += nread(eff_port_payload(c.open[i]));
+    if (open_ports) *open_ports = (int)c.nopen;
+    eff_cut_free(&c);
     return v;
 }
 static int bal(EffAuthority *a) { return nread(eff_head_state(eff_head(a))); }
@@ -155,15 +156,19 @@ int main(int argc, char **argv) {
     Hold hk = { true, Gq, f0, {0}, 0 };
     eval_set_hold(hold_pred, &hk);
     WhnfStatus ws; whnf(global_ref(W0), f0, &ws);                         /* waiting before publication */
+    EntryId W0e = eval_entry_lookup(global_ref(W0), f0);
+    EXPECT(W0e && eval_entry_state(W0e) == E_RUNNING, "the first consumer waits on its held child before any fact exists");
+    size_t inst0 = eval_cut_events().installs;
     uint64_t beta0 = reuse_count(REUSE_BETA);
     whnf(Gq, fc_true(), &ws);                                             /* the generic commits its beta prefix and stays pending */
+    EXPECT(eval_entry_state(W0e) == E_READY && eval_cut_events().installs > inst0, "the consumer waiting before publication adopted the new fact at its cut");
     EvalResult *r1 = whnf(global_ref(W1), f0, &ws), *r2 = whnf(global_ref(W2), f0, &ws), *r0 = whnf(global_ref(W0), f0, &ws);
     EntryId Ge = eval_entry_lookup(Gq, fc_true());
     EXPECT(r0 && r1 && r2 && r0->ref == numeral(3) && r1->ref == numeral(3) && r2->ref == numeral(3), "three consumers answer 3");
     EXPECT(reuse_count(REUSE_BETA) - beta0 == 1 && eval_entry_state(Ge) == E_RUNNING && eval_entry_runs(Ge) == 1, "one historical beta, the generic still pending");
     RefId v = mk_papp_const(1, N, numeral(3), numeral(3), global_ref(pq), iv_var(i)); EntryId Ve = eval_entry_lookup(v, f0);
     size_t vreq = 0, vdel = 0, vpub = 0; if (Ve) eval_entry_events(Ve, &vreq, &vdel, &vpub);
-    EXPECT(Ve && eval_entry_runs(Ve) == 1 && vreq >= 3 && vdel >= 3, "the adapted key's producer is shared, its requests and deliveries distinct (runs=%zu req=%zu del=%zu)", Ve ? eval_entry_runs(Ve) : 0, vreq, vdel);
+    EXPECT(Ve && eval_entry_runs(Ve) == 1 && vreq == 3 && vdel == 3, "the adapted key's producer is shared: one run, three counted requests and deliveries (runs=%zu req=%zu del=%zu)", Ve ? eval_entry_runs(Ve) : 0, vreq, vdel);
     printf("item 2: generic pending=%d, consumers adopted (cut installs=%zu), adapted producer requests=%zu deliveries=%zu\n", eval_entry_state(Ge) == E_RUNNING, eval_cut_events().installs, vreq, vdel);
     RefId q_from_prefix = r1->ref;                                         /* the quantity the send uses */
     eval_set_hold(NULL, NULL);
@@ -188,7 +193,8 @@ int main(int argc, char **argv) {
     EffPort *m1 = last_port_to(B);
     EXPECT(m1 && eff_port_issuer(m1) == E_send && eff_port_open(m1), "the transfer port is emitted to B's outbox");
 
-    /* ---- 4. the same port to two clients plus a duplicate, reordered packet ---- */
+    /* ---- 4. the same port to two clients plus a duplicate packet (one request identity), then two
+     *         independent receives (distinct identities) racing on one port ---- */
     Client c1 = {0}, c2 = {0}, c3 = {0};
     uint64_t rid = 5000 + eff_occ_id(E_send);                              /* the receive request identity is the port's (B's endpoint) */
     EffPort *packets[3] = { m1, m1, m1 };                                  /* a duplicate and a retransmission; delivered out of order below */
@@ -203,19 +209,29 @@ int main(int argc, char **argv) {
     EXPECT(bal(B) == 5 && !eff_port_open(m1) && valuation(NULL) == 9, "one credit: B=5, port consumed, V=9 (B=%d)", bal(B));
     const EffOcc *E_recv = c1.o.receipt;
     printf("item 4: joins=%zu deliveries so far=%zu accepted receives of the port=1 B=%d\n", ev4.joins, ev4.deliveries, bal(B));
+    { Client cs = {0}; send(A, capA, B, 1, 0, &cs, next_req++); eval_run();
+      EffPort *m = last_port_to(B);
+      Client x1 = {0}, x2 = {0};
+      EffCommit *e1 = receive(B, capB, m, &x1, next_req++), *e2 = receive(B, capB, m, &x2, next_req++);   /* distinct identities: contention on the port cell */
+      eval_run();
+      bool w1 = eff_commit_state(e1) == EO_ACCEPTED, w2 = eff_commit_state(e2) == EO_ACCEPTED;
+      EXPECT(e1 != e2 && w1 != w2 && (w1 ? x2.o.kind : x1.o.kind) == EO_CONFLICT && (w1 ? x2.o.holder : x1.o.holder) == (w1 ? x1.o.receipt : x2.o.receipt),
+             "two independent receives of one port: exactly one commits, the other reports the consuming occurrence");
+      EXPECT(valuation(NULL) == 9 && !eff_port_open(m), "one credit; V = 9");
+      printf("item 4: independent receives of one port: winner=%s\n", w1 ? "first" : "second"); }
 
     /* ---- 5. delivery vs authorized refund of another pending port, both orders; a pending proof manufactures nothing ---- */
     int winners[2] = { 0, 0 };
     for (int order = 0; order < 2; order++) {
-        Client cs = {0}; send(A, capA, B, 1, NULL, &cs, next_req++); eval_run();
+        Client cs = {0}; send(A, capA, B, 1, 0, &cs, next_req++); eval_run();
         EffPort *m = last_port_to(B);
         /* a refund whose witness is a pending recursive proof stays pending */
         Client cp = {0}; EffCommit *dp = refund(A, capA, m, mk_app(global_ref(pend), numeral(bal(A) + 1)), &cp, next_req++); eval_run();
         EXPECT(eff_commit_state(dp) == EO_PENDING && eff_commit_unresolved(dp) && cp.delivered == 0 && eff_port_open(m), "order %d: a refund whose proof is pending is not accepted and consumes nothing", order);
         Client cr = {0}, cf = {0};
         EffCommit *a1, *a2;
-        if (order == 0) { a1 = receive(B, capB, m, &cr, next_req++); a2 = refund(A, capA, m, NULL, &cf, next_req++); }
-        else { a2 = refund(A, capA, m, NULL, &cf, next_req++); a1 = receive(B, capB, m, &cr, next_req++); }
+        if (order == 0) { a1 = receive(B, capB, m, &cr, next_req++); a2 = refund(A, capA, m, 0, &cf, next_req++); }
+        else { a2 = refund(A, capA, m, 0, &cf, next_req++); a1 = receive(B, capB, m, &cr, next_req++); }
         eval_run();
         bool rw = eff_commit_state(a1) == EO_ACCEPTED, fw = eff_commit_state(a2) == EO_ACCEPTED;
         EXPECT(rw != fw, "order %d: exactly one of receive / refund commits (receive=%d refund=%d)", order, rw, fw);
@@ -224,6 +240,20 @@ int main(int argc, char **argv) {
         winners[order] = rw ? 1 : 2;
     }
     printf("item 5: external choices — order 0 winner=%s, order 1 winner=%s; A=%d B=%d\n", winners[0] == 1 ? "receive" : "refund", winners[1] == 1 ? "receive" : "refund", bal(A), bal(B));
+    { size_t r = eff_retry(); eval_run();                                  /* a new attempt: the recursive proofs are still pending */
+      size_t c0 = eff_events().commits; (void)c0;
+      EXPECT(r == 2 && eff_events().unresolved >= 4, "the two pending refunds are retried and stay pending (%zu)", r);
+      /* a proof unresolved within one attempt's checker budget keeps its client; the next attempt resumes it */
+      check_set_budget(3);
+      /* a fresh witness (refl at the unreduced sum, never audited before): its conversion needs more than 3 checker steps */
+      int bb = bal(B);
+      Client cu = {0}; EffCommit *du = send(B, capB, A, 1, mk_refl(1, N, add(numeral(bb - 1), numeral(1))), &cu, next_req++); eval_run();
+      bool was_pending = eff_commit_state(du) == EO_PENDING && eff_commit_unresolved(du) && cu.delivered == 0;
+      check_set_budget(0); eff_retry(); eval_run();
+      EXPECT(was_pending && eff_commit_state(du) == EO_ACCEPTED && cu.delivered == 1, "an attempt-unresolved send stays pending with its client and is accepted on the next attempt");
+      if (!(was_pending && cu.delivered == 1)) printf("  budget probe: pending=%d unresolved=%d delivered=%d state=%d\n", eff_commit_state(du) == EO_PENDING, eff_commit_unresolved(du), cu.delivered, eff_commit_state(du));
+      Client cr2 = {0}; receive(A, capA, last_port_to(A), &cr2, next_req++); eval_run();
+      EXPECT(cr2.o.kind == EO_ACCEPTED && valuation(NULL) == 9, "its port received; V = 9"); }
 
     /* ---- 7. receipt observations copied and reindexed ---- */
     { MapBuilder mb; mapb_init(&mb); mapb_dim(&mb, i, iv_zero()); MapId sig = mapb_finish(&mb);
@@ -247,8 +277,8 @@ int main(int argc, char **argv) {
       Client cx = {0}; receive(B, capB, m1, &cx, next_req++); eval_run();
       EXPECT(cx.o.kind == EO_CONFLICT && cx.o.holder == E_recv && bal(B) == b0 && eff_events().emits == em0, "a second receive of a consumed port conflicts with its consumer; no credit, no emission");
       Client s1 = {0}, s2 = {0};
-      send(A, capA, B, 1, NULL, &s1, next_req++); eval_run();
-      send(A, capA, B, 1, NULL, &s2, next_req++); eval_run();
+      send(A, capA, B, 1, 0, &s1, next_req++); eval_run();
+      send(A, capA, B, 1, 0, &s2, next_req++); eval_run();
       EXPECT(s1.o.kind == EO_ACCEPTED && s2.o.kind == EO_ACCEPTED && s1.o.receipt != s2.o.receipt
              && eff_port_payload(eff_occ_port(s1.o.receipt, 0)) == eff_port_payload(eff_occ_port(s2.o.receipt, 0))
              && eff_occ_port(s1.o.receipt, 0) != eff_occ_port(s2.o.receipt, 0), "equal payloads from distinct input occurrences: two legitimate effects, two port identities");
@@ -261,8 +291,10 @@ int main(int argc, char **argv) {
     size_t hist0; { const EffOcc **h; hist0 = eff_history(&h); free(h); }
     int back = bal(B) - 2;
     bool all_ok = true; size_t steps = 0; int tags_seen = 0;
+    Probe pr = {0};
     if (!workers) {
-        Client sb = {0}; send(B, capB, A, back, NULL, &sb, next_req++);
+        eval_set_hold(probe_pred, &pr);
+        Client sb = {0}; send(B, capB, A, back, 0, &sb, next_req++);
         while (eval_run_budget(1)) { steps++; int npp; if (valuation(&npp) != 9) all_ok = false; }
         EffPort *mb = last_port_to(A);
         Client rb = {0}; EffCommit *drb = receive(A, capA, mb, &rb, next_req++);
@@ -274,16 +306,37 @@ int main(int argc, char **argv) {
             if (!(former || after) || valuation(NULL) != 9) all_ok = false;
             if (eff_commit_state(drb) == EO_ACCEPTED) tags_seen |= 1;
         }
+        eval_set_hold(NULL, NULL);
         EXPECT(sb.o.kind == EO_ACCEPTED && rb.o.kind == EO_ACCEPTED, "send-back and its receive accepted");
+        EXPECT(all_ok && tags_seen && pr.seen[EFF_TAG_PREPARE - EFF_TAG_PREPARE] && pr.seen[EFF_TAG_AUDIT - EFF_TAG_PREPARE] && pr.seen[EFF_TAG_RESERVE - EFF_TAG_PREPARE] >= 3
+               && pr.seen[EFF_TAG_COMMIT - EFF_TAG_PREPARE] >= 2 && pr.seen[EFF_TAG_FINALIZE - EFF_TAG_PREPARE] >= 3 && pr.seen[EFF_TAG_EMIT - EFF_TAG_PREPARE] >= 1 && pr.seen[EFF_TAG_DELIVER - EFF_TAG_PREPARE] >= 2,
+               "item 9: suspended before preparation, inside the audits, between the receive's two reservations, after each commit before its finalizations, and before each delivery: V = 9 and no partial receive at every one of %zu points", steps);
+        printf("item 9: %zu one-job suspension points; jobs seen: prepare=%d audit=%d reserve=%d commit=%d finalize=%d deliver=%d emit=%d\n", steps,
+               pr.seen[0], pr.seen[1], pr.seen[2], pr.seen[3], pr.seen[4], pr.seen[5], pr.seen[6]);
     } else {
-        Client sb = {0}; send(B, capB, A, back, NULL, &sb, next_req++); eval_run();
-        Client rb = {0}; receive(A, capA, last_port_to(A), &rb, next_req++); eval_run();
-        EXPECT(sb.o.kind == EO_ACCEPTED && rb.o.kind == EO_ACCEPTED, "send-back and its receive accepted");
+        /* concurrent readers: cut valuations taken while worker threads run the jobs */
+        Client sb = {0}; send(B, capB, A, back, 0, &sb, next_req++);
+        size_t polls = 0; while (eff_commit_state_of_last(&sb) == EO_PENDING && polls < 1000000) { if (valuation(NULL) != 9) all_ok = false; polls++; }
+        eval_run();
+        Client rb = {0}; EffPort *mb = last_port_to(A); receive(A, capA, mb, &rb, next_req++);
+        size_t polls2 = 0; while (rb.delivered == 0 && polls2 < 1000000) { if (valuation(NULL) != 9) all_ok = false; polls2++; }
+        eval_run();
+        EXPECT(sb.o.kind == EO_ACCEPTED && rb.o.kind == EO_ACCEPTED && all_ok, "item 9 (workers): %zu + %zu cut valuations taken while the send-back and its receive ran concurrently all read 9", polls, polls2);
+        printf("item 9 (workers): %zu + %zu concurrent cut valuations, all 9\n", polls, polls2);
     }
-    EXPECT(all_ok, "item 9: at every one-job suspension point V = 9 and no partially accepted receive (%zu steps)", steps);
     { const EffOcc **h; size_t nh = eff_history(&h); free(h);
       EXPECT(bal(A) == 7 && bal(B) == 2 && nh > hist0 && nh >= 10, "item 6: initial external balances A=7 B=2 restored; the accepted history grew to %zu occurrences", nh);
-      EXPECT(eval_entry_state(Ge) == E_RUNNING && eval_entry_prefix(Ge) && eff_receipt_observe(E_send, EFF_FIELD_WITNESS) == w_action, "item 6: the computed identity and the pending prefix facts are retained"); }
+      EXPECT(eval_entry_state(Ge) == E_RUNNING && eval_entry_prefix(Ge) && eff_receipt_observe(E_send, EFF_FIELD_WITNESS) == w_action, "item 6: the computed identity and the pending prefix facts are retained");
+      /* a compatible identity transport applied to the live boundary: the identity equivalence's map on A's state */
+      EffCut before; eff_cut_snapshot(&before);
+      RefId moved = mk_app(rt_maps_c(rt_maps_id(1, N)), eff_head_state(eff_head(A)));
+      WhnfStatus st; EvalResult *mr = whnf(moved, fc_true(), &st);
+      EffCut after; eff_cut_snapshot(&after);
+      bool same = before.nheads == after.nheads && before.nopen == after.nopen; for (size_t k = 0; same && k < before.nheads; k++) same = before.head[k] == after.head[k];
+      { const EffOcc **h2; size_t nh2 = eff_history(&h2); free(h2); same = same && nh2 == nh; }
+      EXPECT(st == W_OK && mr && convert_term(G0, fc_true(), mr->ref, eff_head_state(eff_head(A)), N) == CV_EQUAL && same,
+             "item 6: the identity transport of A's state is A's state; heads, open ports and history are unchanged by it");
+      eff_cut_free(&before); eff_cut_free(&after); }
 
     /* ---- 10. readings of the same event DAG ---- */
     { const EffOcc **all; size_t n = eff_occurrences(&all);
@@ -296,8 +349,13 @@ int main(int argc, char **argv) {
       }
       for (size_t k = 0; k < n; k++) {
           EffOccWork ow = eff_occ_work(all[k]);
-          if (xs_u64(ow.commit, &w)) sum_commit += w; if (xs_u64(ow.reservations, &w)) sum_res += w; if (xs_u64(ow.finalizes, &w)) sum_fin += w;
-          if (xs_u64(ow.deliveries, &w)) sum_del += w; if (xs_u64(ow.emits, &w)) sum_emit += w; if (xs_u64(ow.prepare_steps, &w)) sum_prep += w; if (xs_u64(ow.audit_units, &w)) sum_aud += w;
+          if (xs_u64(ow.commit, &w)) sum_commit += w;
+          if (xs_u64(ow.reservations, &w)) sum_res += w;
+          if (xs_u64(ow.finalizes, &w)) sum_fin += w;
+          if (xs_u64(ow.deliveries, &w)) sum_del += w;
+          if (xs_u64(ow.emits, &w)) sum_emit += w;
+          if (xs_u64(ow.prepare_steps, &w)) sum_prep += w;
+          if (xs_u64(ow.audit_units, &w)) sum_aud += w;
       }
       EffEvents ev = eff_events();
       int nopen; int V = valuation(&nopen);
@@ -310,7 +368,12 @@ int main(int argc, char **argv) {
       EXPECT(sum_commit == ev.commits && nh == ev.commits && sum_res == ev.reservations && sum_fin == ev.finalizes && sum_emit == ev.emits,
              "exact work: per-occurrence readings sum to the global counts (commits %llu/%zu reservations %llu/%zu finalizes %llu/%zu emits %llu/%zu)",
              (unsigned long long)sum_commit, ev.commits, (unsigned long long)sum_res, ev.reservations, (unsigned long long)sum_fin, ev.finalizes, (unsigned long long)sum_emit, ev.emits);
-      EXPECT(sum_del <= ev.deliveries, "deliveries: accepted-receipt deliveries are attributed to their occurrence (%llu of %zu; the rest are conflict outcomes)", (unsigned long long)sum_del, ev.deliveries);
+      XSnap up, ua; eff_unattributed(&up, &ua); uint64_t upw = 0, uaw = 0; xs_u64(up, &upw); xs_u64(ua, &uaw);
+      EXPECT(sum_prep + upw == ev.prepare_steps && sum_aud + uaw == ev.audit_units, "exact work: preparation steps and audit units sum over occurrences and the descriptors without one (%llu+%llu/%zu, %llu+%llu/%zu)",
+             (unsigned long long)sum_prep, (unsigned long long)upw, ev.prepare_steps, (unsigned long long)sum_aud, (unsigned long long)uaw, ev.audit_units);
+      EXPECT(sum_del + ev.deliveries_unattributed == ev.deliveries, "deliveries: accepted receipts attributed to their occurrence, every other outcome counted apart (%llu + %zu = %zu)", (unsigned long long)sum_del, ev.deliveries_unattributed, ev.deliveries);
+      EXPECT(eff_pending_emissions() == 0, "no committed output is left unemitted");
+      EXPECT(eval_entry_runs(Ge) == 1 && vreq == 3, "historical sharing: one run of the pending generic producer; three counted requests of the adapted producer");
       printf("item 10: occurrences=%zu accepted=%zu open ports=%d V=%d; events: requests=%zu joins=%zu prepares=%zu prepare_steps=%zu (attributed %llu) audits=%zu audit_units=%zu (attributed %llu) reservations=%zu waits=%zu helps=%zu commits=%zu aborts=%zu finalizes=%zu deliveries=%zu emits=%zu invalid=%zu unresolved=%zu\n",
              n, nh, nopen, V, ev.requests, ev.joins, ev.prepares, ev.prepare_steps, (unsigned long long)sum_prep, ev.audits, ev.audit_units, (unsigned long long)sum_aud, ev.reservations, ev.waits, ev.helps, ev.commits, ev.aborts, ev.finalizes, ev.deliveries, ev.emits, ev.invalid, ev.unresolved);
       printf("item 10: evaluator: generic producer runs=%zu (pending), adapted producer requests=%zu; beta events total=%llu\n", eval_entry_runs(Ge), vreq, (unsigned long long)reuse_count(REUSE_BETA));

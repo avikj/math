@@ -200,6 +200,7 @@ typedef struct {
     size_t proposals, prep_steps, prep_computed, prep_shared, prep_rejected;
     size_t installs, install_stale_generation, install_not_waiting, revalidations, revalidation_failed;
     size_t tickets, deliveries_current, deliveries_stale, resumes, retired_tickets, cuts_freed;
+    size_t subs_unlinked, subs_freed, prep_joined;   /* dead subscriptions detached from their shape lists and freed; phase-0 joins on a computing record */
 } EvalCutEvents;
 EvalCutEvents eval_cut_events(void);
 size_t eval_entry_active_deps(EntryId e, EntryId **out);   /* the active-slot edges (historical edges excluded); caller frees *out */

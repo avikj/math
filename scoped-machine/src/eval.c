@@ -95,6 +95,7 @@ typedef struct Gen {
     uint64_t *d; size_t nd;
     struct Gen *prev;
     size_t dep_idx; bool have_dep;
+    bool dead;              /* superseded or resumed: its subscriptions are detached lazily */
 } Gen;
 typedef enum { CUT_WAITING = 0, CUT_RESUMING, CUT_CLOSED } CutState;
 typedef struct Cut {
@@ -105,15 +106,17 @@ typedef struct Cut {
     CutState state; Gen *cur;
     size_t installs;
 } Cut;
-typedef struct Sub { Cut *cut; Gen *gen; uint64_t sigma; struct Sub *next, *all_next; } Sub;
+/* a subscription: owned by its predecessor's next pointer (or the shape head) and by each job at it;
+ * a node owns its next pointer's reference, so a detached node still leads into the list */
+typedef struct Sub { int refs; Cut *cut; Gen *gen; uint64_t sigma; struct Sub *next; } Sub;
 typedef struct Proposal {
     Cut *cut; Gen *gen; const struct PrefixFact *f; uint64_t sigma;
     int phase; size_t k; bool revalidating;
     RefId v; FaceId veta; uint64_t adrc, q; Words d; uint64_t stamp;
 } Proposal;
-typedef struct { int state; RefId v; FaceId veta; uint64_t adrc; } PrepMemo;   /* state: 0 absent, 1 applicable, 2 inapplicable */
+typedef struct { int state; RefId v; FaceId veta; uint64_t adrc; } PrepMemo;   /* state: 0 absent, 1 applicable, 2 inapplicable, 3 being computed (a join) */
 static void ticket_release(Cont *k);
-static void sub_free(Sub *n);
+static void sub_unref(Sub *n);
 static void eval_edge_hook(RefId dest, RefId src, uint64_t sigma);
 
 static struct {
@@ -140,7 +143,7 @@ static struct {
      * publication partition (one lock, constant sections); every subscription
      * node for teardown; the shared preparation cache; held jobs (scheduler
      * policy); counters */
-    pthread_mutex_t sub_mu; struct Sub *subs_all; size_t live_subs;
+    pthread_mutex_t sub_mu; size_t live_subs;
     Interner prep_keys; Chunked prep_tab; pthread_mutex_t prep_mu;
     pthread_mutex_t held_mu; Task *held; size_t nheld, capheld;
     bool (*hold)(const EvalTaskInfo *, void *); void *hold_ctx;
@@ -285,8 +288,7 @@ void eval_free(void) {
         }
         vec_free(&e->waiters);
     }
-    for (struct Sub *n = E.subs_all, *nx; n; n = nx) { nx = n->all_next; sub_free(n); }
-    E.subs_all = NULL;
+    { size_t ns = interner_count(&E.shape_ids); for (size_t i = 0; i < ns; i++) { ShapeSide *ss = chunked_peek(&E.shape_side, i); if (ss && ss->subs) { Sub *h = ss->subs; ss->subs = NULL; sub_unref(h); } } }
     for (size_t i = 0; i < E.n_entries; i++) {
         Entry *e = ENT(i + 1);
         vec_free(&e->deps); vec_free(&e->dep_hist); vec_free(&e->gdeps);
@@ -345,7 +347,23 @@ static void cut_unref(Cut *c) {
 }
 /* a ticket owns one reference to its Cut and one to its generation */
 static void ticket_release(Cont *k) { Cut *c = k->cut; Gen *g = k->gen; cont_release(k); gen_unref(g); cut_unref(c); }
-static void sub_free(Sub *n) { cut_unref(n->cut); gen_unref(n->gen); free(n); fine_bump(FC_CELLS_RELEASED); }
+static void sub_ref(Sub *n) { if (n) __atomic_add_fetch(&n->refs, 1, __ATOMIC_RELAXED); }
+static void sub_unref(Sub *n) {   /* iterative: a freed node releases its next pointer's reference */
+    while (n && __atomic_sub_fetch(&n->refs, 1, __ATOMIC_ACQ_REL) == 0) {
+        Sub *nx = n->next; cut_unref(n->cut); gen_unref(n->gen); free(n); fine_bump(FC_CELLS_RELEASED);
+        __atomic_sub_fetch(&E.live_subs, 1, __ATOMIC_RELAXED); XINC(cevx, EvalCutEvents, subs_freed);
+        n = nx;
+    }
+}
+static bool sub_dead(const Sub *n) { return __atomic_load_n(&n->gen->dead, __ATOMIC_ACQUIRE); }
+/* under sub_mu, constant work: detach one dead node after *link (the shape head or a node's next);
+ * returns the detached node, whose reference the caller drops after unlocking */
+static Sub *sub_unlink_one_locked(Sub **link) {
+    Sub *d = *link; if (!d || !sub_dead(d)) return NULL;
+    *link = d->next; sub_ref(d->next);
+    XINC(cevx, EvalCutEvents, subs_unlinked);
+    return d;
+}
 static FaceId key_face(RefId r, FaceId psi) { size_t n; const uint64_t *S = dimset_get(ref_support(r), &n); return fc_project(psi, S, n); }
 /* §2.1: commit Cut(s0, ψ, K, WAITING, g, s0, REFL, ∅); the opening
  * continuation becomes the generation-g ticket */
@@ -1141,8 +1159,10 @@ static void fact_index(PrefixFact *f, ShapeId s) {
     ShapeSide *ss = shape_side(s, true);
     pthread_mutex_lock(&E.sub_mu);
     f->shape_next = ss->sfacts; ss->sfacts = f;
-    Sub *h = ss->subs;
+    Sub *drop = sub_unlink_one_locked(&ss->subs);
+    Sub *h = ss->subs; sub_ref(h);
     pthread_mutex_unlock(&E.sub_mu);
+    sub_unref(drop);
     if (h) { Task t = op_task(OP_FACTNOTE); t.p = h; t.fact = f; enqueue(t); }
 }
 static void sub_enqueue(Cut *c, Gen *g) { Task t = op_task(OP_SUB); t.p = c; t.p2 = g; enqueue(t); }   /* the caller's references move into the job */
@@ -1150,13 +1170,15 @@ static void sub_enqueue(Cut *c, Gen *g) { Task t = op_task(OP_SUB); t.p = c; t.p
  * immutable history boundary is captured in the same section */
 static void sub_register(Cut *c, Gen *g, uint64_t sigma, ShapeId s) {
     Sub *n = calloc(1, sizeof *n); require(n, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
-    n->cut = c; cut_ref(c); n->gen = g; gen_ref(g); n->sigma = sigma;
+    n->refs = 1; n->cut = c; cut_ref(c); n->gen = g; gen_ref(g); n->sigma = sigma;
+    __atomic_add_fetch(&E.live_subs, 1, __ATOMIC_RELAXED);
     ShapeSide *ss = shape_side(s, true);
     pthread_mutex_lock(&E.sub_mu);
-    n->next = ss->subs; ss->subs = n; const PrefixFact *hist = ss->sfacts;
-    n->all_next = E.subs_all; E.subs_all = n;
+    Sub *drop = sub_unlink_one_locked(&ss->subs);
+    n->next = ss->subs; ss->subs = n; const PrefixFact *hist = ss->sfacts;   /* the head's reference moves to n->next */
+    if (hist) sub_ref(n);
     pthread_mutex_unlock(&E.sub_mu);
-    __atomic_add_fetch(&E.live_subs, 1, __ATOMIC_RELAXED);
+    sub_unref(drop);
     XINC(cevx, EvalCutEvents, subscriptions);
     if (hist) { Task t = op_task(OP_REPLAY); t.p = n; t.fact = hist; enqueue(t); }
 }
@@ -1189,12 +1211,23 @@ static void sub_step(Task t) {
 static void replay_step(Task t) {
     Sub *n = t.p; XINC(cevx, EvalCutEvents, replays);
     consider(n, t.fact);
-    if (t.fact->shape_next && cut_live(n->cut, n->gen)) { t.fact = t.fact->shape_next; enqueue(t); }
+    if (t.fact->shape_next && !sub_dead(n) && cut_live(n->cut, n->gen)) { t.fact = t.fact->shape_next; enqueue(t); return; }
+    sub_unref(n);
+}
+/* the job's reference moves from n to its live successor; one dead successor is detached per step */
+static Sub *sub_advance(Sub *n) {
+    pthread_mutex_lock(&E.sub_mu);
+    Sub *drop = sub_unlink_one_locked(&n->next);
+    Sub *nx = n->next; sub_ref(nx);
+    pthread_mutex_unlock(&E.sub_mu);
+    sub_unref(drop); sub_unref(n);
+    return nx;
 }
 static void notice_step(Task t) {
     Sub *n = t.p; XINC(cevx, EvalCutEvents, notices);
-    consider(n, t.fact);
-    if (n->next) { t.p = n->next; enqueue(t); }
+    if (!sub_dead(n)) consider(n, t.fact);
+    Sub *nx = sub_advance(n);
+    if (nx) { t.p = nx; enqueue(t); }
 }
 /* §2: an instantiation edge recorded after a subscription: a Cut whose
  * current residual is the edge's destination watches its source shape */
@@ -1206,11 +1239,13 @@ static void edge_step(Task t) {
     Sub *n = t.p;
     if (!n) {
         ShapeSide *ss = shape_side(shape_of(t.r1), false); if (!ss) return;
-        pthread_mutex_lock(&E.sub_mu); n = ss->subs; pthread_mutex_unlock(&E.sub_mu);
+        pthread_mutex_lock(&E.sub_mu); Sub *drop = sub_unlink_one_locked(&ss->subs); n = ss->subs; sub_ref(n); pthread_mutex_unlock(&E.sub_mu);
+        sub_unref(drop);
         if (!n) return;
     }
-    if (map_is_identity(n->sigma) && n->gen->r == t.r1 && cut_live(n->cut, n->gen)) { XINC(cevx, EvalCutEvents, edge_watches); sub_register(n->cut, n->gen, t.sigma, shape_of(t.r2)); }
-    if (n->next) { t.p = n->next; enqueue(t); }
+    if (!sub_dead(n) && map_is_identity(n->sigma) && n->gen->r == t.r1 && cut_live(n->cut, n->gen)) { XINC(cevx, EvalCutEvents, edge_watches); sub_register(n->cut, n->gen, t.sigma, shape_of(t.r2)); }
+    Sub *nx = sub_advance(n);
+    if (nx) { t.p = nx; enqueue(t); }
 }
 /* §3 preparation, one bounded step per job, outside every lock:
  *   0  boundary correspondence s[σ] = r, required face ψ ⊢ φ[σ], adapted
@@ -1228,7 +1263,11 @@ static void prepare_step(Task t) {
         uint64_t key[4] = { f->id, g->r, c->psi, p->sigma };
         uint64_t id = interner_intern(&E.prep_keys, key, 4, NULL);
         (void)chunked_at(&E.prep_tab, id - 1);
-        pthread_mutex_lock(&E.prep_mu); PrepMemo m = *(PrepMemo *)chunked_at(&E.prep_tab, id - 1); pthread_mutex_unlock(&E.prep_mu);
+        pthread_mutex_lock(&E.prep_mu);
+        PrepMemo *slot = chunked_at(&E.prep_tab, id - 1); PrepMemo m = *slot;
+        if (m.state == 0) slot->state = 3;                   /* this job computes it; any other joins */
+        pthread_mutex_unlock(&E.prep_mu);
+        if (m.state == 3) { XINC(cevx, EvalCutEvents, prep_joined); enqueue(t); return; }   /* joined: retried after the computing job publishes */
         if (m.state == 0) {
             bool ident = map_is_identity(p->sigma);
             bool ok = (ident ? f->source : reindex(f->source, p->sigma)) == g->r;
@@ -1251,9 +1290,10 @@ static void prepare_step(Task t) {
         p->v = m.v; p->veta = m.veta; p->adrc = m.adrc;
         p->phase = 1; p->k = 0; enqueue(t); return;
     }
-    if (p->phase == 1) {
-        if (p->k + 1 < f->ngdeps) {
-            if (global_revision(f->gdeps[p->k]) != f->gdeps[p->k + 1]) { xc_inc(p->revalidating ? XSLOT(cevx, EvalCutEvents, revalidation_failed) : XSLOT(cevx, EvalCutEvents, prep_rejected)); proposal_free(p); return; }
+    if (p->phase == 1) {   /* the fact's premises, then the generation's inherited certificate, against the stamp */
+        if (p->k + 1 < f->ngdeps + g->nd) {
+            const uint64_t *pr = p->k < f->ngdeps ? f->gdeps + p->k : g->d + (p->k - f->ngdeps);
+            if (global_revision(pr[0]) != pr[1]) { xc_inc(p->revalidating ? XSLOT(cevx, EvalCutEvents, revalidation_failed) : XSLOT(cevx, EvalCutEvents, prep_rejected)); proposal_free(p); return; }
             p->k += 2; enqueue(t); return;
         }
         if (p->revalidating) { Task n = op_task(OP_INSTALL); n.p = p; enqueue(n); return; }
@@ -1286,6 +1326,7 @@ static void install_step(Task t) {
     }
     Gen *ng = gen_new(p->v, p->veta, p->q, p->d.w, p->d.n, p->gen); words_init(&p->d);
     Gen *old = c->cur; c->cur = ng; c->installs++;
+    __atomic_store_n(&old->dead, true, __ATOMIC_RELEASE);
     Cont *tk = ticket_new(c, ng);
     reserve_job();
     pthread_mutex_unlock(&c->mu);
@@ -1322,7 +1363,7 @@ static void cut_deliver(Cont *k, EvalResult *r) {
     Cut *c = k->cut;
     pthread_mutex_lock(&c->mu);
     bool win = c->state == CUT_WAITING && c->cur == k->gen;
-    if (win) c->state = CUT_RESUMING;
+    if (win) { c->state = CUT_RESUMING; __atomic_store_n(&k->gen->dead, true, __ATOMIC_RELEASE); }
     pthread_mutex_unlock(&c->mu);
     if (!win) { XINC(cevx, EvalCutEvents, deliveries_stale); ticket_release(k); return; }
     XINC(cevx, EvalCutEvents, deliveries_current);
@@ -1376,6 +1417,7 @@ static void task_discard(Task t) {
     }
     switch (t.op) {
     case OP_SUB: gen_unref(t.p2); cut_unref(t.p); break;
+    case OP_REPLAY: case OP_FACTNOTE: case OP_EDGE: sub_unref(t.p); break;
     case OP_PREPARE: case OP_INSTALL: proposal_free(t.p); break;
     case OP_REQUEST: XINC(cevx, EvalCutEvents, retired_tickets); ticket_release(t.k); break;
     default: break;

@@ -10,12 +10,11 @@ XSnap fine_snap(FineCounter c) { return xc_snap(&counters[c]); }
 void fine_seed(FineCounter c, uint64_t low) { xc_seed(&counters[c], low); }
 /* exact reading: low + 2^64 · carries, the carry count folded one record per step */
 Nat xs_nat(XSnap s) {
-    Nat k = 0;
-    for (const XCarry *r = s.carry; r; r = r->next) k = nat_successor(k);
-    if (!k) return nat_from_word(s.low);
-    size_t n; uint64_t t; const uint64_t *kl = nat_limbs(k, &n, &t);
-    uint64_t *w = (malloc)((n + 1) * sizeof(uint64_t)); w[0] = s.low; for (size_t i = 0; i < n; i++) w[i + 1] = kl[i];
-    Nat v = nat_from_limbs(n + 1, w); (free)(w); return v;
+    size_t k = xs_carries(s);                                    /* value = low + 2^63·k */
+    unsigned __int128 t = (unsigned __int128)s.low + (unsigned __int128)(k & 1) * XC_HALF;
+    uint64_t lo = (uint64_t)t, hi = (uint64_t)(k >> 1) + (uint64_t)(t >> 64);
+    if (!hi) return nat_from_word(lo);
+    uint64_t w[2] = { lo, hi }; return nat_from_limbs(2, w);
 }
 uint64_t fine_exact(FineCounter c) { return xs_nat(fine_snap(c)); }
 const char *fine_name(FineCounter c) { return names[c]; }
