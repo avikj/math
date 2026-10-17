@@ -494,14 +494,10 @@ static void fin(Op *o, uint64_t v) { Frame *t = top(o); frame_free(t); paged_pop
 static void fail(Op *o, const char *why) { if (o->st != OP_RUNNING) return; o->st = OP_INVALID; o->diag = why; }   /* retained frames are released one per unit by the scheduler (§94.2(5)) */
 static void limit(Op *o, const char *why) { if (o->st != OP_RUNNING) return; o->st = OP_RESOURCE_LIMIT; o->diag = why; }   /* state retained, not resumable */
 
-/* checked natural arithmetic: one limb operation */
-static bool add_checked(Cost a, Cost b, Cost *out) {
-    W.L.limb_ops++;
-    if (a == COST_INF || b == COST_INF) { *out = COST_INF; return true; }
-    if (a >= COST_MAX - b) return false;
-    *out = a + b; return true;
-}
-Cost cost_add(Cost a, Cost b, bool *overflow) { Cost r; bool ok = add_checked(a, b, &r); if (overflow) *overflow = !ok; return ok ? r : COST_MAX; }
+/* exact natural arithmetic (nat.h): one limb operation per limb; the sum is
+ * always representable (INFINITY absorbs) */
+static bool add_checked(Cost a, Cost b, Cost *out) { W.L.limb_ops++; *out = cost_sum(a, b); return true; }
+Cost cost_add(Cost a, Cost b, bool *overflow) { if (overflow) *overflow = false; return cost_sum(a, b); }
 
 /* ---- the frame bodies ---- */
 static void step_intern(Op *o, Frame *f);
@@ -1014,7 +1010,7 @@ static void step_sum(Op *o, Frame *f) {
     case 1: {
         Cost w = (o->ret && side(o->ret)->has_val) ? side(o->ret)->val : kind_weight(f->b, S[f->i]);
         if (o->ret && side(o->ret)->has_val) { W.L.memo_hit++; W.L.memo_deliver++; }
-        Cost r; if (!add_checked(f->acc, w, &r)) { limit(o, "cost sum not representable in the checked natural range"); return; }
+        Cost r; add_checked(f->acc, w, &r);
         f->acc = r; f->i++; f->ph = 0; return;
     }
     }
@@ -1022,7 +1018,7 @@ static void step_sum(Op *o, Frame *f) {
 Cost set_weight(SetId s, ModelId m, bool *overflow) {
     LOCK; Op *o = job_sync(fr(OF_SUM, s, m, 0, 0));
     uint64_t r = run_locked(o, NULL); bool ov = o->st == OP_RESOURCE_LIMIT;
-    UNLOCK; if (overflow) *overflow = ov; return ov ? COST_MAX : r;
+    UNLOCK; if (overflow) *overflow = ov; return r;
 }
 OpId op_set_weight(SetId s, ModelId m) { LOCK; OpId h = op_new(OF_SUM, PH_REWRITE, fr(OF_SUM, s, m, 0, 0)); UNLOCK; return h; }
 
@@ -1411,7 +1407,7 @@ bool family_dominates(FamilyId a, FamilyId b) {
 }
 Cost family_residual(FamilyId a, SetId k, ModelId m) {
     LOCK; size_t na; const SetId *A0; na = family_sets(a, &A0); uint64_t *A = copy_words(A0, na); Cost best = COST_INF;
-    for (size_t i = 0; i < na; i++) { SetId d = setop(SO_DIFF, A[i], k); Cost c = run_op(OF_SUM, PH_REWRITE, fr(OF_SUM, d, m, 0, 0), NULL); W.L.limb_ops++; charge(FR_COST_COMPARE_CHUNK); if (c < best) best = c; }
+    for (size_t i = 0; i < na; i++) { SetId d = setop(SO_DIFF, A[i], k); Cost c = run_op(OF_SUM, PH_REWRITE, fr(OF_SUM, d, m, 0, 0), NULL); W.L.limb_ops++; charge(FR_COST_COMPARE_CHUNK); if (cost_cmp(c, best) < 0) best = c; }
     free(A);
     UNLOCK; return best;
 }
@@ -1454,7 +1450,7 @@ Cost model_weight(ModelId m, AtomId a) { LOCK; Cost c = weight_locked(m, a); UNL
 SetId model_completed(ModelId m) { return rec_w(m, 10); }
 
 /* ---- cost differences (§63) ---- */
-typedef struct { int64_t eps, masked; } CostDiffInfo;
+typedef struct { NatDiff eps, masked; } CostDiffInfo;   /* exact signed differences of finite costs */
 CostDiffId costdiff_make(SetId a, SetId b, SetId k, SetId c, ModelId m) {
     LOCK;
     SetId ak = setop(SO_DIFF, a, k), bk = setop(SO_DIFF, b, k);
@@ -1464,11 +1460,14 @@ CostDiffId costdiff_make(SetId a, SetId b, SetId k, SetId c, ModelId m) {
     W.L.limb_ops += 2; charge(FR_COST_ADD_CHUNK); charge(FR_COST_ADD_CHUNK);
     uint64_t w[8] = { K_COSTDIFF, a, b, k, c, m, check_session_id(), global_env_version() };
     CostDiffId id = intern_sync(w, 8, NULL);
-    if (!side(id)->ptr) { CostDiffInfo *in = pool_take(sizeof *in); in->eps = (int64_t)ca - (int64_t)cb; in->masked = (int64_t)ma - (int64_t)mb; side(id)->ptr = in; }
+    if (!side(id)->ptr) { CostDiffInfo *in = pool_take(sizeof *in); require(cost_finite(ca) && cost_finite(cb) && cost_finite(ma) && cost_finite(mb), "a cost difference has finite premises"); in->eps = nat_diff(ca, cb); in->masked = nat_diff(ma, mb); side(id)->ptr = in; }
     UNLOCK; return id;
 }
-int64_t costdiff_epsilon(CostDiffId d) { return ((CostDiffInfo *)side(d)->ptr)->eps; }
-int64_t costdiff_masked(CostDiffId d) { return ((CostDiffInfo *)side(d)->ptr)->masked; }
+static int64_t diff_i64(NatDiff d) { uint64_t m; if (!nat_to_u64(d.magnitude, &m) || m > (uint64_t)INT64_MAX) return INT64_MIN; return d.sign < 0 ? -(int64_t)m : (int64_t)m; }
+int64_t costdiff_epsilon(CostDiffId d) { return diff_i64(((CostDiffInfo *)side(d)->ptr)->eps); }
+int64_t costdiff_masked(CostDiffId d) { return diff_i64(((CostDiffInfo *)side(d)->ptr)->masked); }
+NatDiff costdiff_epsilon_exact(CostDiffId d) { return ((CostDiffInfo *)side(d)->ptr)->eps; }
+NatDiff costdiff_masked_exact(CostDiffId d) { return ((CostDiffInfo *)side(d)->ptr)->masked; }
 bool costdiff_current(CostDiffId d) { return rec_w(d, 6) == check_session_id() && rec_w(d, 7) == global_env_version(); }
 
 /* ---------------------------------------------------------------- 6. typed records, preparation, realization (§66–§68.3) ---- */
@@ -2057,8 +2056,8 @@ RefId realization_reference(RealizationId r, RefId *evidence) { Real *R = RL(r);
 /* proof records: [K_PROOF, rule, F, aux, c1, c2, value]; aux = atom (SPLIT), set (MANDATORY, FACTOR), list [F,G] (DISJOINT_AND, OR_BOUND), list [G, rule] (EQUAL) */
 static ProofId proof_intern(ProofRule rule, FormulaId f, uint64_t aux, ProofId c1, ProofId c2, Cost value) { uint64_t w[7] = { K_PROOF, rule, f, aux, c1, c2, value }; return intern_sync(w, 7, NULL); }
 static FormulaId mkf_locked(uint64_t tag, FormulaId l, FormulaId r) { return run_op(OF_MKF, W.phase, fr_mkf(tag, l, r), NULL); }
-static Cost sum_locked(SetId s, ModelId m, bool *ov) { Op *o = job_sync(fr(OF_SUM, s, m, 0, 0)); uint64_t r = run_locked(o, NULL); if (ov) *ov = o->st == OP_RESOURCE_LIMIT; return o->st == OP_RESOURCE_LIMIT ? COST_MAX : r; }
-static Cost cmin(Cost a, Cost b) { W.L.limb_ops++; return a < b ? a : b; }
+static Cost sum_locked(SetId s, ModelId m, bool *ov) { Op *o = job_sync(fr(OF_SUM, s, m, 0, 0)); uint64_t r = run_locked(o, NULL); if (ov) *ov = o->st == OP_RESOURCE_LIMIT; return r; }
+static Cost cmin(Cost a, Cost b) { W.L.limb_ops++; return cost_cmp(a, b) < 0 ? a : b; }
 ProofId proof_trivial(FormulaId f) { LOCK; ProofId p = proof_intern(PR_TRIVIAL, f, 0, 0, 0, 0); UNLOCK; return p; }
 ProofId proof_false(void) { LOCK; ProofId p = proof_intern(PR_FALSE, W.ZERO, 0, 0, 0, COST_INF); UNLOCK; return p; }
 ProofId proof_mandatory(FormulaId f, SetId m, ModelId model) { LOCK; Cost v = sum_locked(m, model, NULL); ProofId p = proof_intern(PR_MANDATORY, f, m, 0, 0, v); UNLOCK; return p; }
@@ -2147,7 +2146,7 @@ static void step_proof(Op *o, Frame *f) {
     case 72: f->acc = o->ret; f->ph = 73; push(o, fr(OF_PROOF, c2, model, 0, 0)); return;
     case 73: { charge(FR_COST_COMPARE_CHUNK); Cost v = cmin(f->acc, o->ret); if (v != value) { fail(o, "OR_BOUND value is not the minimum of its parts"); return; } proof_done(o, f, v); return; }
     /* WEAKEN */
-    case 81: { charge(FR_COST_COMPARE_CHUNK); W.L.limb_ops++; if (value > o->ret) { fail(o, "WEAKEN claims more than its child"); return; } proof_done(o, f, value); return; }
+    case 81: { charge(FR_COST_COMPARE_CHUNK); W.L.limb_ops++; if (cost_cmp(value, o->ret) > 0) { fail(o, "WEAKEN claims more than its child"); return; } proof_done(o, f, value); return; }
     /* EQUAL */
     case 92: f->ph = 93; push(o, fr_mkf(FM_OR, f->acc, o->ret)); return;
     case 93: { const uint64_t *l; list_get(aux, &l); if (o->ret != l[0]) { fail(o, "equality premise fails: the image is not X∨(Y∧Z)"); return; } f->ph = 91; push(o, fr(OF_PROOF, c1, model, 0, 0)); return; }
@@ -2241,7 +2240,7 @@ static void step_reduce(Op *o, Frame *f) {
         Reduction *l = RED(f->acc), *rg = RED(o->ret);
         if (!l->reduced || !rg->reduced) { reduce_finish(o, f, false, 0, 0, 0, false, 0, 0, 0, 0); return; }
         charge(FR_COST_COMPARE_CHUNK); Cost v = cmin(l->value, rg->value);
-        reduce_finish(o, f, true, v, l->value <= rg->value ? l->attaining : rg->attaining, PR_OR_BOUND, true, formula_left(F), formula_right(F), l->lower, rg->lower); return;
+        reduce_finish(o, f, true, v, cost_cmp(l->value, rg->value) <= 0 ? l->attaining : rg->attaining, PR_OR_BOUND, true, formula_left(F), formula_right(F), l->lower, rg->lower); return;
     }
     /* AND */
     case 20: f->acc = o->ret; f->ph = 21; push(o, fr(OF_SUPPORT, formula_right(F), 0, 0, 0)); return;
@@ -2437,7 +2436,7 @@ static void step_geo(Op *o, Frame *f) {
         if (e.from >= x->n || e.to >= x->n) { fail(o, "edge outside the stated state domain"); return; }
         Cost rhs; if (!add_checked(e.c, x->V[e.to], &rhs)) { limit(o, "cost sum not representable"); return; }
         charge(FR_COST_COMPARE_CHUNK); W.L.limb_ops++;
-        if (x->V[e.from] > rhs) { fail(o, "lower-bound inequality V(s) <= c + V(s') fails on an admitted edge"); return; }
+        if (cost_cmp(x->V[e.from], rhs) > 0) { fail(o, "lower-bound inequality V(s) <= c + V(s') fails on an admitted edge"); return; }
         return;
     }
     case 1: {

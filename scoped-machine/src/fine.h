@@ -47,6 +47,7 @@ typedef enum {
     FC_ADAPTER_STEPS,         /* find_adapter: one candidate position examined under entries_mu */
     FC_COPY_WORDS,            /* words_append / variable-length copies: one word per transition */
     FC_CLAIM_STEPS,           /* checker claim resolution: one claim or one premise examined under K.mu */
+    FC_NAT_LIMBS,             /* exact naturals: one limb read, produced or compared */
     FC_COUNT
 } FineCounter;
 

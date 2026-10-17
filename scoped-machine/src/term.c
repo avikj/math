@@ -1,5 +1,6 @@
 #include <sched.h>
 #include "term.h"
+#include "nat.h"
 #include "fine.h"
 
 const char *tag_name(Tag t) {
@@ -243,14 +244,22 @@ uint64_t origin_levels(OriginId c) {
     size_t n; const uint64_t *w = interner_get(&M.origins, c, &n);
     return w[n - 1];
 }
-/* §51.2 / §59.1: a level is a number below LEVEL_NONE or the sentinel itself;
- * anything else is a host failure, never a wrapped level */
-static void level_check(uint64_t l) { require(l <= LEVEL_NONE, "universe level out of the representable range"); }
-uint64_t levels_pack(uint64_t m, uint64_t n) { level_check(m); level_check(n); return m | (n << 32); }
-uint64_t levels_first(uint64_t lv) { return lv & 0xffffffffULL; }
-uint64_t levels_second(uint64_t lv) { return lv >> 32; }
-uint64_t level_max(uint64_t a, uint64_t b) { if (a == LEVEL_NONE || b == LEVEL_NONE) return LEVEL_NONE; return a > b ? a : b; }
-uint64_t level_succ(uint64_t a) { if (a == LEVEL_NONE) return LEVEL_NONE; require(a < LEVEL_NONE - 1, "universe level overflow"); return a + 1; }
+/* §51.2 / §59.1, BOUNDS-COMPLETION §2: a level is an exact natural (nat.h)
+ * or the absent tag LEVEL_NONE; a pair of formation levels is an interned
+ * tuple of two optional levels (LEVELS_NONE when both are absent), read
+ * through the accessors — no packing, no width limit */
+static void level_check(uint64_t l) { require(l == LEVEL_NONE || nat_valid(l), "not an exact level (use nat_from_word for an external word)"); }
+uint64_t levels_pack(uint64_t m, uint64_t n) {
+    level_check(m); level_check(n);
+    if (m == LEVEL_NONE && n == LEVEL_NONE) return LEVELS_NONE;
+    uint64_t w[3] = { 0x1E7E15, m, n };
+    uint64_t id = interner_intern(&M.keys, w, 3, NULL);
+    return id;   /* a handle (never LEVELS_NONE) */
+}
+uint64_t levels_first(uint64_t lv) { if (lv == LEVELS_NONE) return LEVEL_NONE; size_t n; const uint64_t *w = interner_get(&M.keys, lv, &n); require(n == 3 && w[0] == 0x1E7E15, "not a level pair"); return w[1]; }
+uint64_t levels_second(uint64_t lv) { if (lv == LEVELS_NONE) return LEVEL_NONE; size_t n; const uint64_t *w = interner_get(&M.keys, lv, &n); require(n == 3 && w[0] == 0x1E7E15, "not a level pair"); return w[2]; }
+uint64_t level_max(uint64_t a, uint64_t b) { if (a == LEVEL_NONE || b == LEVEL_NONE) return LEVEL_NONE; return nat_max(a, b); }
+uint64_t level_succ(uint64_t a) { if (a == LEVEL_NONE) return LEVEL_NONE; return nat_successor(a); }
 
 static OriginId origin_intern(Tag tag, uint64_t payload, const Field *fields, size_t nf,
                               const Binder *binders, size_t nb, VarSetId ft, DimSetId fd, FaceId req) {
@@ -844,7 +853,7 @@ static RefId view0(Tag tag, uint64_t payload, const Field *f, size_t nf, const B
     return make_view(origin_make(tag, payload, f, nf, b, nb), map_identity());
 }
 
-RefId mk_universe(uint64_t level) { require(level < LEVEL_NONE, "universe level out of the representable range"); return view0(T_UNIVERSE, level, NULL, 0, NULL, 0); }
+RefId mk_universe(uint64_t level) { require(level != LEVEL_NONE && nat_valid(level), "a universe level is an exact natural (use nat_from_word for an external word)"); return view0(T_UNIVERSE, level, NULL, 0, NULL, 0); }
 
 /* annotated forms (§59.1): the formation levels are set for the origin
  * being built and recorded in its record */
@@ -975,7 +984,7 @@ static void pr(RefId t, FILE *f, int depth) {
     if (ref_is_var(t)) { fprintf(f, "x%llu", (unsigned long long)ref_var_id(t)); return; }
     if (depth <= 0) { fprintf(f, "#%llu", (unsigned long long)t); return; }
     Head h; open_ref(t, &h);
-    if (h.tag == T_UNIVERSE) { fprintf(f, "U%llu", (unsigned long long)h.payload); head_free(&h); return; }
+    if (h.tag == T_UNIVERSE) { char d[512]; nat_decimal(h.payload, d, sizeof d); fprintf(f, "U%s", d); head_free(&h); return; }
     if (h.tag == T_GLOBAL) {
         fprintf(f, "%s", DEF(h.payload)->name);
         if (!map_is_identity(h.map)) {

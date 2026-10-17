@@ -17,7 +17,7 @@ static SetId S1(AtomId a) { return set_make(1, &a); }
 static SetId S2(AtomId a, AtomId b) { AtomId x[2] = { a, b }; return set_make(2, x); }
 static SetId S3(AtomId a, AtomId b, AtomId c) { AtomId x[3] = { a, b, c }; return set_make(3, x); }
 static FormulaId AT(AtomId a) { return formula_atom(a); }
-static Cost wsum(SetId s, ModelId m) { bool ov; Cost c = set_weight(s, m, &ov); return ov ? COST_MAX : c; }
+static Cost wsum(SetId s, ModelId m) { bool ov; Cost c = set_weight(s, m, &ov); return c; }
 /* the minimum weight over the expanded antichain (§61 semantic normal form): an independent oracle for the direct fragment */
 static Cost oracle_min(FormulaId F, ModelId m) { return family_residual(formula_antichain(F), set_empty(), m); }
 
@@ -293,12 +293,19 @@ static void case6(void) {
     CertId c0 = problem_reduce(p0, &why); RealizationId r0 = realize(p0, set_empty(), &why);
     EXPECT(c0 && certificate_check(p0, c0, &why) == CERT_VALID && r0 && realization_cost(r0) == 0, "an empty valid work set: cost 0 with a realization");
     EXPECT(realize(pe, set_empty(), &why) == 0, "EMPTY has no realization");
-    /* exact arithmetic: a sum beyond the checked range is a resource limit, never INFINITY, a wrap or impossibility */
-    ModelId Mbig = model_with_weight(model_with_weight(T.M, a, COST_MAX - 1), c, COST_MAX - 1);
-    bool ov = false; Cost s = set_weight(S2(a, c), Mbig, &ov);
-    EXPECT(ov && s != COST_INF, "overflow reports a resource limit");
+    /* exact arithmetic (BOUNDS-COMPLETION §2): weights beyond 2^62 and 2^63 sum
+     * exactly past 2^64 — no resource limit, wrap or INFINITY */
+    Cost w63 = nat_from_word(UINT64_C(1) << 63);
+    ModelId Mbig = model_with_weight(model_with_weight(T.M, a, w63), c, w63);
+    bool ov = true; Cost s = set_weight(S2(a, c), Mbig, &ov);
+    uint64_t two64[2] = { 0, 1 };
+    EXPECT(!ov && s == nat_from_limbs(2, two64), "2^63 + 2^63 = 2^64 exactly");
     ProblemId pbig = problem_prepare(expr_join(expr_plan(Pa), expr_plan(Pc), g0), Mbig, &why); require(pbig, "prepare");
-    EXPECT(problem_reduce(pbig, &why) == 0 && certificate_check(pbig, certificate_make(pbig, proof_raw(PR_MANDATORY, problem_residual(pbig), S2(a, c), 0, 0, 7), 0, 7, 7), &why) == CERT_UNRESOLVED, "an unrepresentable certificate sum is UNRESOLVED (%s)", why ? why : "");
+    CertId cbig = problem_reduce(pbig, &why);
+    EXPECT(cbig && certificate_check(pbig, cbig, &why) == CERT_VALID, "a certificate beyond 2^64 is exact and VALID (%s)", why ? why : "");
+    EXPECT(certificate_check(pbig, certificate_make(pbig, proof_raw(PR_MANDATORY, problem_residual(pbig), S2(a, c), 0, 0, 7), 0, 7, 7), &why) == CERT_INVALID, "a wrong small value against an exact large sum is INVALID (%s)", why ? why : "");
+    { Cost w62 = nat_from_word((UINT64_C(1) << 62) + 1); ModelId M62 = model_with_weight(model_with_weight(T.M, a, w62), c, w62);
+      Cost s62 = set_weight(S2(a, c), M62, &ov); EXPECT(s62 == nat_from_word((UINT64_C(1) << 63) + 2), "costs beyond 2^62 stay exact"); }
     /* §64.3: a supplied geodesic certificate on an explicit finite graph */
     GeoId g = geo_new(4); geo_terminal(g, 3);
     uint64_t e01 = geo_edge(g, 0, 1, 2), e13 = geo_edge(g, 1, 3, 3), e02 = geo_edge(g, 0, 2, 1), e23 = geo_edge(g, 2, 3, 10);

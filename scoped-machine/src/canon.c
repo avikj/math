@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include "nat.h"
 #include "canon.h"
 #include "template.h"
 
@@ -47,6 +48,8 @@ static size_t g_interval(Canon *c, IntervalId r);
 static size_t g_nominal(Canon *c, uint64_t nid);
 
 /* bound atoms (§50): exact (depth, slot) labels */
+/* an exact level as text: its decimal value, or "-" when absent (never a handle number) */
+static void lvtxt(uint64_t l, char *buf, size_t cap) { if (l == LEVEL_NONE) snprintf(buf, cap, "-"); else nat_decimal(l, buf, cap); }
 static size_t g_bound(Canon *c, GKind kind, uint64_t id) {
     size_t idx; if (lookup(c, kind, id, &idx)) return idx;
     char lab[64]; snprintf(lab, sizeof lab, "%s %zu/%zu", kind == G_INPUT_VAR ? "bx" : "bi", bound_depth(id), bound_slot(id));
@@ -121,11 +124,11 @@ static size_t g_val(Canon *c, ValSort s, uint64_t id) { return s == VS_REF ? g_r
 static size_t g_scope(Canon *c, ScopeId S) {
     size_t idx; if (lookup(c, G_NOMINAL, S | (1ULL << 62), &idx)) return idx;
     size_t n = scope_arity(S);
-    char lab[64]; snprintf(lab, sizeof lab, "SCOPE %zu lv=%llu", n, (unsigned long long)scope_level(S));
+    char lt[128], lab[192]; lvtxt(scope_level(S), lt, sizeof lt); snprintf(lab, sizeof lab, "SCOPE %zu lv=%s", n, lt);
     idx = node_new(c, G_REF, lab); remember(c, G_NOMINAL, S | (1ULL << 62), idx);
     for (size_t k = 0; k < n; k++) {
         LocalDecl d = scope_local(S, k);
-        char dl[64]; snprintf(dl, sizeof dl, "LOCAL %d lv=%llu", (int)d.sort, (unsigned long long)d.level);
+        char lt[128], dl[192]; lvtxt(d.level, lt, sizeof lt); snprintf(dl, sizeof dl, "LOCAL %d lv=%s", (int)d.sort, lt);
         size_t e = node_new(c, G_ENTRY, dl);
         add_ordered(c, e, d.type ? g_ref(c, d.type) : node_new(c, G_CONST, "notype"));
         add_ordered(c, e, g_face(c, d.required));
@@ -178,7 +181,7 @@ static size_t g_ref(Canon *c, RefId t) {
     else sl = (size_t)snprintf(full, sizeof full, "W %s:%llu", tag_name(tag), (unsigned long long)origin_payload(o));
     { uint64_t lv = origin_levels(o);        /* §59.1: the immutable level annotation is part of the record */
       if (lv == LEVELS_NONE) sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=-");
-      else sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=%llu/%llu", (unsigned long long)levels_first(lv), (unsigned long long)levels_second(lv)); }
+      else { char a1[128], a2[128]; lvtxt(levels_first(lv), a1, sizeof a1); lvtxt(levels_second(lv), a2, sizeof a2); sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=%s/%s", a1, a2); } }
     size_t nb = origin_nbinders(o), nf = origin_nfields(o);
     for (size_t k = 0; k < nb && sl < 400; k++) { Binder b = origin_binder(o, (BinderSlot)k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " b%d/%u", (int)b.sort, b.domain_field == NO_FIELD ? 99999u : (unsigned)b.domain_field); }
     for (size_t k = 0; k < nf && sl < 400; k++) { Field f = origin_field(o, (FieldIndex)k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " f%d@%d", (int)f.kind, f.slot == NO_SLOT ? -1 : (int)f.slot); }

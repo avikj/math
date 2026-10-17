@@ -37,11 +37,11 @@ typedef struct {
 } Binder;
 
 /* ---- universe levels (§59.1): explicit formation annotations ----
- * An origin record carries a packed pair of levels; LEVEL_NONE marks an
+ * An origin record carries an interned pair of exact levels (nat.h); LEVEL_NONE marks an
  * annotation the source did not supply (the checker then infers it; the
  * fixed templates always supply theirs). */
-#define LEVEL_NONE  0xffffffffULL
-#define LEVELS_NONE 0xffffffffffffffffULL
+#define LEVEL_NONE  UINT64_MAX              /* absent (the reserved non-Nat word) */
+#define LEVELS_NONE UINT64_MAX              /* both absent; otherwise an interned pair handle */
 uint64_t levels_pack(uint64_t m, uint64_t n);
 uint64_t levels_first(uint64_t lv);
 uint64_t levels_second(uint64_t lv);

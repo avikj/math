@@ -29,11 +29,16 @@
 typedef uint64_t AtomId, SetId, FormulaId, ExprId, BoundaryId, PlanId, ConnectorId, ModelId, ProblemId,
     RealizationId, ProofId, CertId, FamilyId, SchemaId, GeoId, DGraphId, DemandId, WorkSetId, CostDiffId, AtomMapId, OpId;
 
-/* ---- costs: checked natural numbers and a distinct INFINITY (§68.2, §69.1) ---- */
+/* ---- costs: exact naturals and a distinct INFINITY (§68.2, §69.1; BOUNDS-COMPLETION §2) ----
+ * A finite cost is a Nat (nat.h: immediate below 2^63, else a canonical limb
+ * record); COST_INF is the reserved non-Nat word. There is no finite ceiling.
+ * Equality is word equality; order is cost_cmp (never C `<` on handles). */
+#include "nat.h"
 typedef uint64_t Cost;
 #define COST_INF UINT64_MAX
-#define COST_MAX (UINT64_C(1) << 62)         /* finite costs are < COST_MAX; a larger sum is a resource limit, never INFINITY */
 static inline bool cost_finite(Cost c) { return c != COST_INF; }
+static inline int cost_cmp(Cost a, Cost b) { if (a == b) return 0; if (a == COST_INF) return 1; if (b == COST_INF) return -1; return nat_compare(a, b); }
+static inline Cost cost_sum(Cost a, Cost b) { return a == COST_INF || b == COST_INF ? COST_INF : nat_add(a, b); }   /* INFINITY absorbs */
 
 /* ---- work identities (§60.1, §62.1) ---- */
 typedef enum {
@@ -182,8 +187,10 @@ FamilyId family_specialize(FamilyId a, MapId sigma, const char **why);
  * continuation support C; both source sets, K, C, the model and the
  * environment snapshot are retained in the record */
 CostDiffId costdiff_make(SetId a, SetId b, SetId k, SetId c, ModelId m);
-int64_t costdiff_epsilon(CostDiffId d);
+int64_t costdiff_epsilon(CostDiffId d);                            /* compatibility: INT64_MIN when not representable in int64_t (use the exact readers) */
 int64_t costdiff_masked(CostDiffId d);
+NatDiff costdiff_epsilon_exact(CostDiffId d);                      /* exact signed difference: sign and Nat magnitude */
+NatDiff costdiff_masked_exact(CostDiffId d);
 bool costdiff_current(CostDiffId d);                               /* its environment/session snapshot is the current one */
 
 /* ---- prepared problems (§67, §68.1) ---- */
