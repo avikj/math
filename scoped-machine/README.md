@@ -757,7 +757,7 @@ between units:
 | a frame's own buffers, frame stacks, cone paths, waiter registries, demand producers/occurrences, realization plans/connectors (`src/arena.c`, `Paged`) | paged: fixed pages (`ARENA_PAGE` = 512 words) reached through at most two fixed directory levels; push, read, write, pop, truncate and ownership transfer are O(1), a filled page takes one page from the arena's free list, nothing is copied on growth; a released buffer is *retired* in O(1) and its pages are returned one per unit (`arena_reap` in `op_step`). The public readers of demand/realization lists materialize a contiguous view once, synchronously (outside the bounded API) | `Paged` descriptor (pages, directories) |
 | the allocator under the bounded bodies (`src/arena.c`) | one host operation at initialization reserves a fixed virtual range (2^31 words, pages committed on first touch); afterwards no host allocation of input-dependent size is made by the engine. Blocks are powers of two pages on per-order free lists: an allocation pops its order or splits the smallest larger free block (≤ `ARENA_ORDERS` = 23 steps, architecture-fixed), a release pushes (one step; no coalescing — a released block is reused by its order or smaller). The record store's block (`store_begin_grow`) and the slot arrays come from the arena; **clearing is in units**: the next slot array is taken uncleared and zeroed `CHUNK_WORDS` per unit (`ktab_prepare_grow`) before the relocation into it begins; the store block is never cleared (every word is written before it is readable). Copying is only the relocation units above. Remaining fixed-size host calls: the `Op`/`Demand`/`Real`/`WorkSetInfo` records and the `Chunked` chunks of the side and offset tables (constant-size `calloc`), one per object or chunk | `KTab.fresh/cleared`, arena free lists, retirement queue |
 | the proof-use dependency audit (§88.3–88.4) at `PREPARE` | framed (`SYMS`, `EDGES`, `AUDIT`): one stored-syntax item per unit (`proof_node_item`, the same enumeration `proof_use` performs), symbol sets as `K_SET` records built by the framed `SORT`/`SETOP` union one element per unit, node sets memoized in `[K_MEMO, 0xA5, kind, id]`, a global's edge set in `[K_MEMO, 0xA6, s, rev]`, the verdict in `[K_MEMO, 0xA7, Γ, φ, e, E]` (a list `[status, assumptions, recursive, deps]`) revalidated one recorded revision per unit before reuse; discovery one symbol/edge per unit with per-operation marks; Tarjan's components one edge or one pop per unit with the per-symbol index/low/stack-link/on-stack in the side of `[K_MARK, op, 7, s]`; the assumptions reach the problem one symbol per unit (`PREPARE` ph 14) | the frames' buffers (children, symbols, worklist / call stack, deps), `acc…`, marks |
-| kernel calls from `ATOMSPEC` / `PREPARE` / `AUDIT` (`reindex`, `compose`, `fc_reindex`, `ref_validate`, `fc_project`, `fc_entails`, `eval_entry_lookup`, `shape_of`, `infer`, `check_admission`, `check_context`, `check_is_type`, `check`, `transform_evidence`); inside them the kernel's allocator (`kalloc.c`: size-class free lists, clearing and copying one word per step), its interner (unlocked hashing/comparison/copy, incremental growth) and its sorts (one sift per step) | **kernel continuations** (`KERNEL`, `src/kcont.c`): the call runs on its own continuation — a thread whose stack is the retained continuation — and a unit grants it one *transition*: one fine step of the kernel's instrumented loops (`fine_bump`: a field opened, a map entry visited, a validation node, a checker frame, a face operation, a DNF clause step, a word hashed / probed / compared / copied, a shape node); it yields at the first transition point where it holds no mutex (every acquisition is counted per thread, `common.h`) and never inside an evaluator task; the synchronous drivers grant the whole run in one hand-off (`run_locked`); pure calls are shared jobs keyed by their operands (and the checker session / environment version for the checker's), the evaluator-state lookup is private; one continuation is in progress at a time — a kernel frame that cannot start advances the active one by its grant; the result is published only when the call has completed. Transitions are charged as `KERNEL_TRANSITION`; a yield deferred past a locked section adds that section's transitions to the unit (a fixed-size interning: ≤ ~33 here) | the continuation's stack; `KCont` (grant, transitions, result) |
+| kernel calls from `ATOMSPEC` / `PREPARE` / `AUDIT` (`reindex`, `compose`, `fc_reindex`, `ref_validate`, `fc_project`, `fc_entails`, `eval_entry_lookup`, `shape_of`, `infer`, `check_admission`, `check_context`, `check_is_type`, `check`, `transform_evidence`); inside them the kernel's allocator (`kalloc.c`: size-class free lists, clearing and copying one word per step), its interner (unlocked hashing/comparison/copy, incremental growth) and its sorts (one sift per step) | **kernel continuations** (`KERNEL`, `src/kcont.c`): the call runs on its own continuation — a thread whose stack is the retained continuation — and a unit grants it one *transition*: one fine step of the kernel's instrumented loops (`fine_bump`: a field opened, a map entry visited, a validation node, a checker frame, a face operation, a DNF clause step, a word hashed / probed / compared / copied, a shape node); it yields at the first transition point where it holds no mutex (every acquisition is counted per thread, `common.h`) and never inside an evaluator task; the synchronous drivers grant the whole run in one hand-off (`run_locked`); pure calls are shared jobs keyed by their operands (and the checker session / environment version for the checker's), the evaluator-state lookup is private; each job owns its continuation and independent jobs advance independently (a checker wait on another running claim yields with the dependency recorded); the result is published only when the call has completed, and an UNRESOLVED outcome is attempt-local. Transitions are charged as `KERNEL_TRANSITION`; a yield deferred past a locked section adds that section's transitions to the unit (per-site maxima: `tests/acceptance-results/v21/lock-audit.txt`; ≤ 94 transitions in any unit of the gated probes) | the continuation's stack; `KCont` (grant, transitions, result) |
 | the record store, the slot arrays, the frame buffers, the side / handle / offset tables and the fixed-size records (`Op`, `Demand`, `Real`, `WorkSetInfo`, `DGraph`, `Geo`, `RedRec`, `CostDiffInfo`, `KernelMark`) | all from the arena: pages for records (one cleared slot per record, a constant), spare chunks for the chunked tables cleared `CHUNK_WORDS` per unit ahead of need (`arena_tend`; a chunk needed before its spare is ready clears the remainder synchronously, counted in `sync_clear_words`). No host allocation remains on a unit's path in the engine | spares, pools |
 | constructor-level synchronous APIs (`set_make`, `plan_make`, `connector_make`, `model_with_weight`, `boundary_make`, `job_sync` entries) | outside the bounded API (no bounded-step claim) | — |
 
@@ -960,8 +960,8 @@ first transition point where it holds no mutex — every acquisition is counted
 per thread by the wrappers in `common.h` — and never inside an evaluator task
 (`execute`), so a suspended continuation never blocks another thread on a lock
 or an in-flight task it owns; a yield deferred past a locked section adds that
-section's transitions to the unit (a fixed-size interning, ≤ ~33 transitions,
-in the gated probe). `op_step(h, 1)` grants one transition per unit and the
+section's transitions to the unit (see "The v20 review" below for the
+per-site table). `op_step(h, 1)` grants one transition per unit and the
 frame stays the same frame until the call ends; `op_step(h, b)` grants the
 remaining budget in one hand-off and charges the transitions taken; the
 synchronous drivers (`run_locked`) grant the whole run — the same
@@ -974,7 +974,7 @@ completed; a rejection fails the job with the kernel's diagnostic.
 `tests/review_kernel_budget.c` (gated under both sanitizers; N = 64 / 32): the
 cold specialization of a producer atom over f^N x at budget 1 takes thousands
 of kernel units for seven kernel calls (the continuations span the units), at
-most one kernel call per unit and at most 33 transitions in any unit; the
+most one kernel call per unit and at most 94 transitions in any unit (N = 256); the
 result equals the synchronous `set_specialize`; a second handle started
 mid-kernel joins the running job; a third request after completion is READY
 with zero kernel transitions. `test_work` (217), `test_reuse` (101),
@@ -999,22 +999,12 @@ the size, then `MIGRATE_CHUNK` = 32 old slots migrated per operation
 one meanwhile. `sort_unique_u64` (varsets, keys, DNF clauses) and the DNF
 clause ordering are in-place heap sorts with one sift (≤ 64 iterations) per
 fine step (`FC_SORT_STEPS`); DNF clauses are built one literal per step. The
-locked sections that remain in the kernel are now all constant-size — a
-fixed-size key's hashing/probing/comparison and one migration chunk — so a
-yield deferred past one adds at most ~80 transitions to a unit (the gated
-probe: 78 at N = 256). `make_view`, `scope_intern` and `record_edge` compute
+locked sections that remain, and their measured maxima, are listed in "The
+v20 review" below. `make_view`, `scope_intern` and `record_edge` compute
 their side data and new lists outside the term lock and publish under it.
 
-What remains inside a kernel transition, stated exactly: (1) an evaluator
-task (`execute`) is one transition-free section by construction (its steps
-are counted; the continuation suspends after it); (2) fixed-size `memcpy`s of
-record headers and the libc `qsort`s of the canonicalization and matching
-tools (`canon.c`, `match.c`), which no unit calls; (3) a yield deferred past a
-locked section adds that section's constant-size transitions to the unit.
-With these, every unit of the engine, of its allocator and of every call a
-unit makes into the kernel is one bounded body or one fine transition; the
-remaining host operations are the one reservation, the threads of the
-continuation pool (created once, reused) and the mutexes.
+What remains inside a kernel transition is stated in "The v20 review"
+below, from the lock-section audit.
 
 ### The proof-use audit in units (§88 in §94) — `SYMS` / `EDGES` / `AUDIT`
 
@@ -1041,6 +1031,103 @@ audit rejects PENDING exactly as `proof_use`.
 (The kernel calls this section left as `kernel_calls` are kernel continuations
 since the v19 round; see "The v19 review and the kernel continuations" above
 for what remains.)
+
+### The v20 review: per-job continuations, attempt-local outcomes, the lock-section audit, reusable zero blocks (§§75/77/89/94)
+
+**Continuations belong to jobs (R1).** `src/kcont.c` keeps one continuation
+per kernel job; `step_kernel` grants the job's own continuation, never a
+global active one (`W.kc_active` / `W.kc_owner` are inspection-only: the
+most recently granted continuation and its job). A finished continuation is
+published by whichever kernel frame of its job runs next (the reviewer's
+patch). A checker wait on a claim another continuation is validating yields
+(`kc_wait`, `check.c: claim_wait_locked`) with the dependency recorded
+(`blocked_on`), so the waiting job is suspended and every other job can be
+stepped; the claim/wait-cycle rules are the checker's. `review_v20
+independent` / `independent-release`: the second root completes in 3 554
+steps with the first handle paused (respectively released); `independent-cone`:
+stepping the second root advances the first continuation by 0 transitions.
+Shared-key joining and READY reuse are unchanged (`review_kernel_budget`:
+join after mid-kernel start, 5 remaining calls; READY with 0 transitions).
+
+**UNRESOLVED is attempt-local (R2).** A kernel call returns a typed outcome
+(`KOutcome`: OK, INVALID, UNRESOLVED). An UNRESOLVED job is tagged with the
+checker attempt (`Op.unresolved`); `job_restart_if_stale` restarts it on a
+later attempt, and delivery propagates the tag to the dependent jobs
+(PREPARE re-examines its kernel frames). Settled outcomes are reused under
+their dependency conditions. `review_v20 retry`: budget 1 → UNRESOLVED; budget
+raised → the same kernel job VALID; `prepare-retry`: the public preparation
+likewise.
+
+**The fine-step boundary (R3).** (1) The evaluator task is no longer exempt:
+`execute` runs inside the continuation with the ordinary accounting and yields
+at its transition points; an evaluator wait yields (`eval_wait_locked`).
+`review_v20 evaluator 32 / 256 / 1024`: at most 52 fine steps in any unit
+and one field opened per unit, at every size. (2) The interner probes by a
+cursor: one locked section inspects ≤ `PROBE_CHUNK` = 32 slots (after one
+migration step of ≤ `MIGRATE_CHUNK` = 32 visits, the placement cursor
+`moving`/`mprobe` retained across steps), collects ≤ `CAND_MAX` = 8
+candidates of equal hash and length, and the candidates are compared outside
+the lock (records are immutable); insertion is one write at the scanned chain
+end, made only if no record was published and no migration placement
+happened since the complete scan (`n`, `gen`, `placed`), otherwise the scan
+resumes over the newcomers. `review_v20_intern 64 / 300`: 32 transitions per
+grant. (3) `mapb_finish` sorts by a heap sort, one sift per transition (the
+reviewer's patch): `map-sort 64 / 512`, no libc `qsort` reached.
+
+The outer critical sections were audited by a build of the lock wrappers that
+records, per outermost acquisition site and thread, the fine steps taken
+while the lock is held (`-DKC_LOCK_AUDIT`; `tests/acceptance-results/v21/
+lock-audit.txt`, from the production suites and the review probes at
+CUBICAL_WORKERS=0). Corrected from that audit: the checker's claim records
+are one fixed reservation (no doubling copy under `K.mu`); the claim
+resolution (`resolve_locked`) holds `K.mu` for one claim or one premise at a
+time (`FC_CLAIM_STEPS`), computing the committed set against a revision of
+the claim graph (`crev`) and committing each member only while that revision
+is unchanged; `claim_acquire` examines a verdict's read dependencies, premises
+and inheritance one entry per section, and pushes the owner's frame after
+releasing `K.mu`; `claim_release` prepares the published lists outside `K.mu`
+and swaps them in; `find_adapter` visits its candidates by a cursor, one
+position per `entries_mu` section, computing the edge source's shape and
+testing the candidate outside it; evaluator results are an intrusive list and
+root occurrences a fixed reservation; origins are interned outside the term
+lock (the creator publishes the side with release, a finder awaits it);
+`ref_var` computes the declaration's closed boundary outside the term lock;
+proof-use verdict records are interned outside `P.mu`; `words_append` copies
+one word per transition (`FC_COPY_WORDS`). The audit's kernel sites now
+measure at most 43 fine steps (term lock), 32 (interner), 40 (checker),
+13 (evaluator entries), with the same maxima at N = 64 and N = 256 in the
+kernel probe and at N = 32 and N = 1 024 in the evaluator probe. A unit's
+transitions are its grant plus the sections a deferred yield crosses before
+the next unlocked transition point: at most 94 in `review_kernel_budget`
+(N = 256), 52 in `review_v20 evaluator`, 32 in `review_v20_intern`.
+
+The sites the audit still lists above those constants, exactly:
+- `net.c:740` (≤ 32 519 fine steps, compiler suite): a redex's rule is applied
+  under the locks of the redex and its boundary nodes, and `rule_op` computes
+  the operation's kernel result (reindex, compose, face operations) inside
+  that section.
+- `template.c:1036` (21 639): the one-time registration of the template
+  library under its `once` mutex; the library is fixed, so the section does
+  not depend on the input.
+- `work.c` sites under the engine `LOCK` (≤ 4 610 at `work.c:1050`, 477, 350,
+  315, 258): the synchronous constructors and drivers (`dgraph_add_*`,
+  `set_make`, `set_specialize` and the other `run_locked` entry points), which
+  are one hand-off by definition; the bounded interface is `op_step`.
+
+**Arena reuse (R4).** Engine chunks released by `chunked_free` return to their
+arena supplier (the reviewer's patch; `review_v20 lifecycle`: 0 unreleased
+words after the first warm cycle). Zero blocks are reusable: a released
+fresh-region block goes to a dirty list, `arena_tend` (each unit) clears 32
+words per step and publishes cleared blocks to per-order zero-ready pools;
+`arena_alloc_zero` takes a ready block first, then the fresh cursor, and a
+shortage clears the remainder synchronously, counted in `zero_sync_words`
+(`review_v20 fresh-retire`: 4 096 words out, 4 096 returned).
+
+Results: `run_v20_review.py` 19/19 under ASan+UBSan+LSan (`detect_leaks=1`)
+and 19/19 under TSan; `run_v19_review.py` 16/16 under both; `make test` and
+`make tsan` clean with `review_v20` (all modes; evaluator 32/256/1024 under
+ASan, 32/256 under TSan; map-sort 64/512) and `review_v20_intern` (64, 300)
+gated (`tests/acceptance-results/v21/`, TEST.log, TSAN.log).
 
 ### §83 — presentations, diagram values and the generic action as core terms (`src/runtime.c`)
 

@@ -132,18 +132,38 @@ static void claim_wait_locked(uint64_t owner) { kc_wait(&K.cv, &K.mu, owner < K.
 /* every claim belongs to one definition environment (§57 R1 / §59.4): the
  * key carries the environment version, so a successful candidate mutation
  * makes every earlier environment-dependent verdict unreachable */
-static size_t claim_index_locked(uint64_t kind, const uint64_t *w, size_t n) {
+static void claim_key(uint64_t kind, const uint64_t *w, size_t n, uint64_t key[10]) {
     /* §79.2: the whole-signature admission (CL_SYMBOL) stays keyed by the
      * environment version; every other judgment is keyed by its semantic
      * request and validated by the symbol revisions it actually read */
-    uint64_t key[10] = { kind, kind == CL_SYMBOL ? global_env_version() : 0 }; memcpy(key + 2, w, n * sizeof(uint64_t));
-    uint64_t v;
-    if (wordmap_get(&K.idx, key, n + 2, &v)) return (size_t)v - 1;
+    key[0] = kind; key[1] = kind == CL_SYMBOL ? global_env_version() : 0; memcpy(key + 2, w, n * sizeof(uint64_t));
+}
+/* the claim of an interned key: created under K.mu (one constant step) when
+ * the key's value is still unpublished */
+static size_t claim_of_slot_locked(uint64_t *slot, uint64_t kind) {
+    uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+    if (v) return (size_t)v - 1;
     Claim c; memset(&c, 0, sizeof c); words_init(&c.deps); words_init(&c.gdeps); c.is_symbol = kind == CL_SYMBOL;
     require(K.recs.len < K.recs.cap, "check: claim reservation exhausted");
     K.recs.data[K.recs.len++] = c;   /* within the reservation: no growth */
-    wordmap_put(&K.idx, key, n + 2, K.recs.len);
+    __atomic_store_n(slot, K.recs.len, __ATOMIC_RELEASE);
     return K.recs.len - 1;
+}
+__attribute__((unused)) static size_t claim_index_locked(uint64_t kind, const uint64_t *w, size_t n) {   /* the white-box probes call it under K.mu */
+    uint64_t key[10]; claim_key(kind, w, n, key);
+    uint64_t id = interner_intern(&K.idx.keys, key, n + 2, NULL);
+    return claim_of_slot_locked((uint64_t *)chunked_at(&K.idx.vals, id - 1), kind);
+}
+/* §94: the key is interned outside K.mu (the interner's cursor sections);
+ * K.mu is held only to create the claim of a new key */
+static size_t claim_index(uint64_t kind, const uint64_t *w, size_t n) {
+    uint64_t key[10]; claim_key(kind, w, n, key);
+    uint64_t id = interner_intern(&K.idx.keys, key, n + 2, NULL);
+    uint64_t *slot = (uint64_t *)chunked_at(&K.idx.vals, id - 1);
+    uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+    if (v) return (size_t)v - 1;
+    pthread_mutex_lock(&K.mu); size_t c = claim_of_slot_locked(slot, kind); pthread_mutex_unlock(&K.mu);
+    return c;
 }
 
 static bool words_contains(const Words *w, uint64_t x) { for (size_t k = 0; k < w->n; k++) if (w->w[k] == x) return true; return false; }
@@ -191,7 +211,6 @@ static void gdeps_add_pair(Words *g, uint64_t sym, uint64_t rev) { for (size_t k
 static void note_symbol(SymbolId s) { Frame *f = top_frame(); if (f) gdeps_add_pair(&f->gdeps, s, global_revision(s)); }
 static void note_entry(EntryId e) { Frame *f = top_frame(); if (!f || !e) return; const uint64_t *p; size_t n = eval_entry_gdeps(e, &p); for (size_t k = 0; k < n; k++) gdeps_add_pair(&f->gdeps, p[2 * k], p[2 * k + 1]); }
 static void inherit_gdeps(const Words *g) { Frame *f = top_frame(); if (f) for (size_t k = 0; k + 1 < g->n; k += 2) gdeps_add_pair(&f->gdeps, g->w[k], g->w[k + 1]); }
-static bool gdeps_current(const Words *g) { reuse_bump(REUSE_DEPENDENCY_CHECK); for (size_t k = 0; k + 1 < g->n; k += 2) if (global_revision(g->w[k]) != g->w[k + 1]) return false; return true; }
 
 /* acquire claim `c`: ACQ_OWNER (this thread computes it, a frame is pushed),
  * ACQ_DONE (verdict copied out, provisional premises inherited), or
@@ -571,7 +590,7 @@ ContextId origin_context(OriginId C) {
 CheckStatus check_context(ContextId G, const char **reason) {
   for (;;) {
     uint64_t key[1] = { G }, v; const char *why = NULL;
-    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_CTX, key, 1); pthread_mutex_unlock(&K.mu);
+    size_t cl = claim_index(CL_CTX, key, 1);
     ENTER();
     Acq a = claim_acquire(cl, &v, &why, NULL);
     if (a == ACQ_DONE) { LEAVE(); if (v != 1) *reason = why; if (top_settled()) return ck_of(v); continue; }
@@ -659,7 +678,7 @@ CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma,
   Delta = under(Delta, psi); Gamma = under(Gamma, chi);
   for (;;) {
     uint64_t key[5] = { Delta, psi, sigma, Gamma, chi }, v; const char *why = NULL;
-    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_MAP, key, 5); pthread_mutex_unlock(&K.mu);
+    size_t cl = claim_index(CL_MAP, key, 5);
     ENTER();
     Acq a = claim_acquire(cl, &v, &why, NULL);
     if (a == ACQ_DONE) { LEAVE(); if (v != 1) *reason = why; if (top_settled()) return ck_of(v); continue; }
@@ -705,7 +724,7 @@ static CheckStatus validate_symbol(SymbolId s, const char **reason);
 CheckStatus check_origin(OriginId C, ContextId *ctx_out, FaceId *req_out, RefId *type_out, const char **reason) {
   for (;;) {
     uint64_t key[1] = { C }, v, aux[3] = { 0, 0, 0 }; const char *why = NULL;
-    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_ORIGIN, key, 1); pthread_mutex_unlock(&K.mu);
+    size_t cl = claim_index(CL_ORIGIN, key, 1);
     ENTER();
     Acq a = claim_acquire(cl, &v, &why, aux);
     if (a == ACQ_DONE) {
@@ -1146,7 +1165,7 @@ static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **r
     if (!fc_entails(C, ref_required(t))) { *reason = "template instance used outside its declared required face"; return CK_INVALID; }
     size_t n; const uint64_t *ds = dimset_get(ref_support(t), &n);
     uint64_t key[3] = { t, under(G, fc_true()), fc_project(C, ds, n) }, v; const char *why = NULL;
-    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_TBOUND, key, 3); pthread_mutex_unlock(&K.mu);
+    size_t cl = claim_index(CL_TBOUND, key, 3);
     Acq a = claim_acquire(cl, &v, &why, NULL);
     if (a == ACQ_DONE) { if (v == 1) return CK_VALID; *reason = why; return ck_of(v); }
     if (a == ACQ_CYCLE) { *reason = "unresolved: template boundary validation depends on itself"; return CK_UNRESOLVED; }
@@ -1188,7 +1207,7 @@ static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **r
 static CheckStatus infer_tview(ContextId G, FaceId C, RefId t, RefId *type, const char **reason) {
     size_t n; const uint64_t *ds = dimset_get(ref_support(t), &n);
     uint64_t key[3] = { t, under(G, fc_true()), fc_project(C, ds, n) }, v, aux[3] = { 0, 0, 0 }; const char *why = NULL;
-    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_TVIEW, key, 3); pthread_mutex_unlock(&K.mu);
+    size_t cl = claim_index(CL_TVIEW, key, 3);
     Acq a = claim_acquire(cl, &v, &why, aux);
     if (a == ACQ_DONE) { if (v == 1) { *type = aux[0]; return CK_VALID; } *reason = why; return ck_of(v); }
     if (a == ACQ_CYCLE) { *reason = "unresolved: template instance validation depends on itself"; return CK_UNRESOLVED; }
@@ -1382,7 +1401,7 @@ static size_t conv_claim(uint64_t mode, ContextId G, FaceId C, RefId a, RefId b,
     FaceId Cp = fc_project(C, ds, n);
     { Words dd; words_init(&dd); fc_dims(Cp, &dd); S = dimset_union(S, dimset_make(dd.w, dd.n)); words_free(&dd); }
     uint64_t key[6] = { mode, project_context(G, V, S), Cp, a, b, T };
-    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_CONV, key, 6); pthread_mutex_unlock(&K.mu);
+    size_t cl = claim_index(CL_CONV, key, 6);
     return cl;
 }
 
@@ -1658,7 +1677,7 @@ ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A) {
 static CheckStatus validate_symbol(SymbolId s, const char **reason) {
   for (;;) {
     uint64_t key[1] = { s }, v; const char *why = NULL;
-    pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_SYMBOL, key, 1); pthread_mutex_unlock(&K.mu);
+    size_t cl = claim_index(CL_SYMBOL, key, 1);
     ENTER();
     Acq a = claim_acquire(cl, &v, &why, NULL);
     if (a == ACQ_DONE) { LEAVE(); if (v != 1) *reason = why; if (top_settled()) return ck_of(v); continue; }
