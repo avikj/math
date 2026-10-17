@@ -40,7 +40,8 @@ struct KCont {
     uint64_t out[4]; bool ok; const char *why; KOutcome outcome;   /* its result */
     bool started;
     uint64_t job;               /* the engine job that owns this continuation (0: none) */
-    struct KCont *blocked_on;   /* set by kc_wait: the continuation whose completion this one waits for (NULL: a plain thread's) */
+    struct KCont *blocked_on;   /* set by kc_wait: the continuation that can advance the awaited predicate (for inspection; compared, never dereferenced) */
+    uint64_t blocked_job;       /* V21 R2: that continuation's job, read when the wait was installed (the stable dependency handle) */
     bool blocked;               /* the last yield was a wait (not a budget exhaustion) */
     bool in_eval;               /* suspended inside an evaluator task (the task's ownership is retained on this stack) */
     struct ReuseScope *acct;    /* V21 R3: the accounting owner of the work executed on this continuation */
@@ -64,5 +65,5 @@ void kc_safepoint(void);                    /* a suspension point without a tran
  * after the call, exactly as after pthread_cond_wait. */
 void kc_wait(pthread_cond_t *cv, pthread_mutex_t *mu, KCont *on);
 KCont *kc_current(void);                    /* the continuation running on this thread (NULL for a plain thread) */
-size_t kc_suspended_in_eval(KCont **out, size_t max);   /* continuations suspended inside an evaluator task */
+void kc_wait_job(pthread_cond_t *cv, pthread_mutex_t *mu, KCont *on, uint64_t on_job);   /* kc_wait with the dependency's job given by the caller */
 #endif

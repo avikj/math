@@ -322,6 +322,7 @@ typedef struct {
     Paged stack;                 /* frames: paged (§94: O(1) push/pop, no copy on growth) */
     Phase phase; int family;
     uint64_t waiting_on;         /* job id this job is suspended on, 0 when enabled */
+    bool kwait;                  /* V21 R2: the wait is a kernel continuation's predicate wait (rechecked after each unit of the dependency), not a JOIN */
     uint64_t unresolved;         /* §94 R2: the checker attempt in which this job failed UNRESOLVED (0: a settled outcome); a request in a later attempt restarts it */
     Paged waiters;               /* jobs suspended on this job (one registration per join; delivered one per unit); paged */
     uint64_t frames;
@@ -458,7 +459,7 @@ static void step_join(Op *o, Frame *f) {
         W.L.memo_lookup++;
         if (j == o) { fail(o, "cyclic request: an operation requested itself"); return; }
         if (j->st != OP_RUNNING) { frame_free(f); paged_pop(&o->stack); deliver_to(o, j); return; }
-        if (created) { frame_free(f); paged_pop(&o->stack); o->waiting_on = j->id; pw_push(&j->waiters, o->id); return; }
+        if (created) { frame_free(f); paged_pop(&o->stack); o->waiting_on = j->id; o->kwait = false; pw_push(&j->waiters, o->id); return; }
         /* join a running job: the cycle check walks j's chain one hop per
          * unit before the wait is committed (§94.2(3)) */
         reuse_bump(REUSE_RUNNING_JOIN);
@@ -472,7 +473,7 @@ static void step_join(Op *o, Frame *f) {
         uint64_t next = c->st == OP_RUNNING ? c->waiting_on : 0;
         if (next == o->id) { fail(o, "cyclic request among running operations"); return; }
         if (next) { f->acc3 = next; return; }
-        frame_free(f); paged_pop(&o->stack); o->waiting_on = j->id; pw_push(&j->waiters, o->id); return;
+        frame_free(f); paged_pop(&o->stack); o->waiting_on = j->id; o->kwait = false; pw_push(&j->waiters, o->id); return;
     }
     }
 }
@@ -617,12 +618,23 @@ static bool service(Op *root) {
     if (t->st != OP_RUNNING) {
         if (t->stack.n) { frame_free(top(t)); paged_pop(&t->stack); if (!t->stack.n) paged_retire(&t->stack); charge(FR_RELEASE_CHUNK); }   /* retained frames of a failed job, one per unit */
         else if (!root->path.n) progressed = false;                   /* the root itself is finished */
-        else { paged_pop(&root->path); Op *w = tip_of(root); if (w->waiting_on == t->id) deliver_to(w, t); else charge(FR_SCHEDULE_STEP); }
+        else { paged_pop(&root->path); Op *w = tip_of(root); if (w->waiting_on == t->id && w->kwait) { w->waiting_on = 0; w->kwait = false; charge(FR_SCHEDULE_STEP); } else if (w->waiting_on == t->id) deliver_to(w, t); else charge(FR_SCHEDULE_STEP); }
     } else if (t->waiting_on) {
         Op *n = JOB(t->waiting_on);
-        if (n->st != OP_RUNNING) deliver_to(t, n);
+        if (n->st != OP_RUNNING && t->kwait) { t->waiting_on = 0; t->kwait = false; charge(FR_SCHEDULE_STEP); }   /* a predicate wait: the dependency finished; the waiter rechecks */
+        else if (n->st != OP_RUNNING) deliver_to(t, n);
         else { pw_push(&root->path, n->id); charge(FR_SCHEDULE_STEP); }
-    } else step(t);
+    } else {
+        step(t);
+        /* V21 R2: a kernel predicate wait is revalidated after one unit of its
+         * dependency: the waiter is stepped again (its continuation rechecks
+         * the awaited predicate and, if it still holds, waits again) — the
+         * wait is on that predicate, not on the dependency's whole call */
+        if (root->path.n && t->st == OP_RUNNING) {
+            Op *below = root->path.n >= 2 ? JOB(pw_get(&root->path, root->path.n - 2)) : root;
+            if (below->waiting_on == t->id && below->kwait) { paged_pop(&root->path); below->waiting_on = 0; below->kwait = false; }
+        }
+    }
     W.phase = saved;
     return progressed;
 }
@@ -1799,9 +1811,9 @@ static void step_kernel(Op *o, Frame *f) {
             /* the same frame, retained: resumed by the next unit. A continuation
              * that waits for another continuation names it: this job then waits
              * on that job (a represented dependency the scheduler drives) */
-            if (k->blocked && k->blocked_on && k->blocked_on->job && k->blocked_on->job != o->id) {
-                Op *dep = JOB(k->blocked_on->job);
-                if (dep->st == OP_RUNNING) o->waiting_on = dep->id;
+            if (k->blocked && k->blocked_job && k->blocked_job != o->id) {
+                Op *dep = JOB(k->blocked_job);
+                if (dep->st == OP_RUNNING) { o->waiting_on = dep->id; o->kwait = true; }   /* V21 R2: a predicate wait, revalidated after each unit of the dependency */
             }
             return;
         }

@@ -13,11 +13,7 @@ __thread int kc_last_counter;
 typedef struct KWorker { pthread_t thread; pthread_mutex_t mu; pthread_cond_t cv; KCont *k; struct KWorker *next, *all_next; bool stop; } KWorker;
 static pthread_mutex_t P_mu = PTHREAD_MUTEX_INITIALIZER;
 static KWorker *parked, *all;
-static KCont *live[256]; static size_t nlive;   /* continuations started and not yet completed (for the evaluator's wait) */
-static void live_add(KCont *k) { pthread_mutex_lock(&P_mu); require(nlive < 256, "kcont: too many live continuations"); live[nlive++] = k; pthread_mutex_unlock(&P_mu); }
-static void live_del(KCont *k) { pthread_mutex_lock(&P_mu); for (size_t i = 0; i < nlive; i++) if (live[i] == k) { live[i] = live[--nlive]; break; } pthread_mutex_unlock(&P_mu); }
 KCont *kc_current(void) { return kc_tl; }
-size_t kc_suspended_in_eval(KCont **out, size_t max) { size_t n = 0; pthread_mutex_lock(&P_mu); for (size_t i = 0; i < nlive && n < max; i++) if (live[i]->in_eval && live[i]->state == 0) out[n++] = live[i]; pthread_mutex_unlock(&P_mu); return n; }
 
 static void run_one(KCont *k) {
     kc_tl = k;
@@ -29,7 +25,6 @@ static void run_one(KCont *k) {
     reuse_scope_leave(prev_acct);
     require(kc_lock_depth == 0, "kernel continuation completed holding a lock");
     if (k->outcome == KO_PENDING) k->outcome = k->ok ? KO_OK : KO_INVALID;
-    live_del(k);
     kc_tl = NULL;
     pthread_mutex_lock(&k->mu);
     k->state = 2; pthread_cond_broadcast(&k->cv);
@@ -75,7 +70,7 @@ size_t kc_grant(KCont *k, size_t budget) {
     pthread_cond_broadcast(&k->cv);
     bool first = !k->started; k->started = true;
     pthread_mutex_unlock(&k->mu);
-    if (first) { live_add(k); assign(k); }
+    if (first) assign(k);
     pthread_mutex_lock(&k->mu);
     while (k->state == 1) pthread_cond_wait(&k->cv, &k->mu);   /* until it yields or completes */
     size_t used = k->used;
@@ -102,18 +97,19 @@ static void yield_now(KCont *k) {
     while (k->state != 1) pthread_cond_wait(&k->cv, &k->mu);
     pthread_mutex_unlock(&k->mu);
 }
-void kc_wait(pthread_cond_t *cv, pthread_mutex_t *mu, KCont *on) {
+void kc_wait_job(pthread_cond_t *cv, pthread_mutex_t *mu, KCont *on, uint64_t on_job) {
     KCont *k = kc_tl;
     if (!k || (k->budget == KC_UNBOUNDED && !on)) { pthread_cond_wait(cv, mu); return; }   /* a plain thread, or a synchronous run waiting on another plain thread */
     /* a continuation: the wait is one transition; it yields with the dependency recorded */
     k->steps++; k->used++;
-    k->blocked = true; k->blocked_on = on;
+    k->blocked = true; k->blocked_on = on; k->blocked_job = on ? on_job : 0;
     pthread_mutex_unlock(mu);
     require(kc_lock_depth == 0, "kernel continuation waits while holding another lock");
     yield_now(k);
-    k->blocked = false; k->blocked_on = NULL;
+    k->blocked = false; k->blocked_on = NULL; k->blocked_job = 0;
     pthread_mutex_lock(mu);
 }
+void kc_wait(pthread_cond_t *cv, pthread_mutex_t *mu, KCont *on) { kc_wait_job(cv, mu, on, on ? on->job : 0); }
 void kc_safepoint(void) { KCont *k = kc_tl; if (!k || k->budget == KC_UNBOUNDED || k->used < k->budget || kc_lock_depth > 0) return; yield_now(k); }
 void kc_tick(void) {
     KCont *k = kc_tl; if (!k) return;

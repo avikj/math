@@ -62,6 +62,7 @@ typedef struct {
     struct PrefixFact *prefix_head;   /* §84.2: the latest committed prefix fact of this producer (immutable facts, newest first; published with release) */
     size_t n_prefix;                  /* facts published (under mu) */
     const struct PrefixFact *adapter_fact;   /* the immutable prefix fact this producer continued from, or NULL */
+    struct KCont *exec_kc; uint64_t exec_job;   /* V21 R2: the continuation (and its job) executing a task of this producer now, or NULL */
     struct ReuseScope *scope;         /* V21 R3: the accounting owner of this producer's tasks (the launching request's scope), referenced */
     pthread_mutex_t mu; /* guards state, result, waiters and the counters above */
 } Entry;

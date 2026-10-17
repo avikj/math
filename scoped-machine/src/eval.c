@@ -1068,23 +1068,80 @@ static void resume(Cont *k, EvalResult *r) {
 /* one elementary frame step, or one local rule of the evaluator's net
  * (counted in the net's rule classes, not as an evaluator step) */
 static void execute_task(Task t);
+/* V21 R2: the continuations executing evaluator tasks, each with the producer
+ * whose task it runs (a node on the executing stack, linked while it runs):
+ * a waiter names the one advancing the producer it actually awaits */
+typedef struct ExecNode { KCont *k; uint64_t job; EntryId owner; struct ExecNode *prev, *next; } ExecNode;
+static ExecNode *exec_head; static pthread_mutex_t exec_mu = PTHREAD_MUTEX_INITIALIZER;
 static void execute(Task t) {
     /* §94: an evaluator task is owned, unfinished work of the thread running
      * it; a kernel continuation may suspend inside it (its stack retains the
-     * task, the entry stays RUNNING, the outstanding count is held) and is
-     * marked `in_eval` so a waiter can name it as its dependency */
+     * task, the entry stays RUNNING, the outstanding count is held). The
+     * producer whose task it runs records the continuation (exec_kc) */
     KCont *k = kc_current(); bool outer = k && !k->in_eval; if (outer) k->in_eval = true;
+    EntryId owner = t.is_pair || t.is_notify ? 0 : t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
+    ExecNode node = { k, k ? k->job : 0, owner, NULL, NULL };
+    KCont *prev_kc = NULL; uint64_t prev_job = 0;
+    if (k) {
+        pthread_mutex_lock(&exec_mu); node.next = exec_head; if (exec_head) exec_head->prev = &node; exec_head = &node; pthread_mutex_unlock(&exec_mu);
+        if (owner) { Entry *o = ENT(owner); prev_kc = __atomic_exchange_n(&o->exec_kc, k, __ATOMIC_ACQ_REL); prev_job = __atomic_exchange_n(&o->exec_job, k->job, __ATOMIC_ACQ_REL); }
+    }
     execute_task(t);
+    if (k) {
+        if (owner) { Entry *o = ENT(owner); __atomic_store_n(&o->exec_job, prev_job, __ATOMIC_RELEASE); __atomic_store_n(&o->exec_kc, prev_kc, __ATOMIC_RELEASE); }
+        pthread_mutex_lock(&exec_mu); if (node.prev) node.prev->next = node.next; else exec_head = node.next; if (node.next) node.next->prev = node.prev; pthread_mutex_unlock(&exec_mu);
+    }
     if (outer) k->in_eval = false;
 }
-/* §94: a wait for the machine's progress — a continuation yields, naming a
- * continuation suspended inside an evaluator task when there is one (its
- * job is then driven as this job's dependency); a plain thread waits */
-static void eval_wait_locked(void) {
+/* V21 R2: the continuation that can advance the publication of `want`: one
+ * executing a task of `want`, or of a RUNNING producer `want` (transitively)
+ * consumes. A retained traversal over the actual consumer occurrences, one
+ * entry per step (FC_ADAPTER_STEPS); no unrelated task is ever named. */
+static KCont *producer_owner(EntryId want, uint64_t *job) {
+    if (!want) return NULL;
+    Words stack, seen; words_init(&stack); words_init(&seen);
+    words_push(&stack, want);
+    KCont *found = NULL;
+    while (stack.n && !found) {
+        EntryId e = stack.w[--stack.n];
+        bool dup = false; for (size_t i = 0; i < seen.n && !dup; i++) { fine_bump(FC_ADAPTER_STEPS); dup = seen.w[i] == e; }
+        if (dup) continue;
+        words_push(&seen, e);
+        Entry *x = ENT(e);
+        KCont *k = __atomic_load_n(&x->exec_kc, __ATOMIC_ACQUIRE);
+        if (k) { found = k; *job = __atomic_load_n(&x->exec_job, __ATOMIC_ACQUIRE); break; }
+        for (size_t i = 0;; i++) {
+            pthread_mutex_lock(&x->mu);
+            bool more = x->state == E_RUNNING && i < x->deps.len; EntryId c = more ? x->deps.data[i] : 0;
+            pthread_mutex_unlock(&x->mu);
+            fine_bump(FC_ADAPTER_STEPS);
+            if (!more) break;
+            Entry *cx = ENT(c); pthread_mutex_lock(&cx->mu); bool running = cx->state == E_RUNNING; pthread_mutex_unlock(&cx->mu);
+            if (running) words_push(&stack, c);
+        }
+    }
+    words_free(&stack); words_free(&seen);
+    return found;
+}
+/* §94 / V21 R2: a wait for the machine's progress. A continuation waiting
+ * for the publication of a producer names the continuation advancing it
+ * (`producer_owner`, computed by the caller before taking q_mu); a wait for
+ * quiescence names a continuation executing a task, every one of which
+ * quiescence requires. A plain thread waits on the condition. The caller
+ * re-checks its predicate after the call. */
+static void eval_wait_locked_for(KCont *on, uint64_t on_job) {
     KCont *k = kc_current();
     if (!k) { pthread_cond_wait(&E.idle_cv, &E.q_mu); return; }
-    KCont *held[4]; size_t n = kc_suspended_in_eval(held, 4);
-    kc_wait(&E.idle_cv, &E.q_mu, n ? held[0] : NULL);
+    kc_wait_job(&E.idle_cv, &E.q_mu, on, on_job);
+}
+static void eval_wait_locked(void) {
+    KCont *on = NULL; uint64_t job = 0;
+    if (kc_current()) {
+        pthread_mutex_lock(&exec_mu);
+        for (ExecNode *n = exec_head; n && !on; n = n->next) if (n->k != kc_current()) { on = n->k; job = n->job; }
+        pthread_mutex_unlock(&exec_mu);
+    }
+    eval_wait_locked_for(on, job);
 }
 static void execute_task(Task t) {
     if (t.is_pair) { net_step_pair(&E.net, t.pair); return; }
@@ -1149,15 +1206,17 @@ EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
     Cont *root = cont_new(K_ROOT, 0, chi);
     root->root = box;
     eval_request(t, chi, root);
+    EntryId root_entry = eval_entry_lookup(t, chi);   /* the producer this root awaits (the root continuation itself may already be resumed and released) */
     if (E.nworkers) {
         /* wait for this root, or for quiescence of the whole machine (stuck) */
-        pthread_mutex_lock(&E.q_mu);
         for (;;) {
+            uint64_t job = 0; KCont *on = kc_current() ? producer_owner(root_entry, &job) : NULL;   /* outside q_mu: entry locks precede it */
+            pthread_mutex_lock(&E.q_mu);
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
-            if (d || E.outstanding == 0) break;
-            eval_wait_locked();
+            if (d || E.outstanding == 0) { pthread_mutex_unlock(&E.q_mu); break; }
+            eval_wait_locked_for(on, job);
+            pthread_mutex_unlock(&E.q_mu);
         }
-        pthread_mutex_unlock(&E.q_mu);
     } else {
         /* no pool: this client runs the queue; while another client thread
          * is still executing a job (its publication may resume this root, or
@@ -1165,11 +1224,12 @@ EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
          * than reporting a stuck demand */
         for (;;) {
             eval_run();
+            uint64_t job = 0; KCont *on = kc_current() ? producer_owner(root_entry, &job) : NULL;
             pthread_mutex_lock(&E.q_mu);
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
             bool queued = E.qhead < E.queue.len || net_pending_pairs_locked(&E.net) > 0;
             if (d || E.outstanding == 0) { pthread_mutex_unlock(&E.q_mu); break; }
-            if (!queued) eval_wait_locked();
+            if (!queued) eval_wait_locked_for(on, job);
             pthread_mutex_unlock(&E.q_mu);
         }
     }
