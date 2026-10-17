@@ -33,7 +33,14 @@ static IntervalId dim_cb(DimVarId i, void *ctx) {
 IntervalId trav_iv(IntervalId r, const Trav *tv, size_t depth) { DimCb c = { tv, depth }; return iv_substitute(r, dim_cb, &c); }
 FaceId trav_fc(FaceId f, const Trav *tv, size_t depth) { DimCb c = { tv, depth }; return fc_substitute(f, dim_cb, &c); }
 
+static RefId trav_ref_body(RefId t, const Trav *tv, size_t depth);
+typedef struct { RefId t; const Trav *tv; size_t depth; RefId out; } trav_ref_args;
+static void trav_ref_thunk(void *p) { trav_ref_args *a = p; a->out = trav_ref_body(a->t, a->tv, a->depth); }
 RefId trav_ref(RefId t, const Trav *tv, size_t depth) {
+    if (!kstack_low()) return trav_ref_body(t, tv, depth);
+    trav_ref_args a = { t, tv, depth, 0 }; kstack_run(trav_ref_thunk, &a); return a.out;
+}
+static RefId trav_ref_body(RefId t, const Trav *tv, size_t depth) {
     if (ref_is_var(t)) {
         RefId r = tv->term ? tv->term(ref_var_id(t), depth, tv->ctx) : 0;
         return r ? r : t;
@@ -162,7 +169,14 @@ ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result
 }
 
 /* traverse a scope whose own records sit at `rd` */
-static ScopeId trav_scope_records(ScopeId S, const Trav *tv, unsigned rd) {
+static ScopeId trav_scope_records_body(ScopeId S, const Trav *tv, size_t rd);
+typedef struct { ScopeId S; const Trav *tv; size_t rd; ScopeId out; } trav_scope_args;
+static void trav_scope_thunk(void *p) { trav_scope_args *a = p; a->out = trav_scope_records_body(a->S, a->tv, a->rd); }
+static ScopeId trav_scope_records(ScopeId S, const Trav *tv, size_t rd) {
+    if (!kstack_low()) return trav_scope_records_body(S, tv, rd);
+    trav_scope_args a = { S, tv, rd, 0 }; kstack_run(trav_scope_thunk, &a); return a.out;
+}
+static ScopeId trav_scope_records_body(ScopeId S, const Trav *tv, size_t rd) {
     uint64_t key[4] = { 2, S, tv->key, rd }, out;
     if (tv->key && wordmap_get(&M.trav_memo, key, 4, &out)) return out;
     if (tv->enter) tv->enter(S, rd, tv->ctx);
@@ -225,7 +239,7 @@ static void val_ref_body(RefId t, ValCtx *v);
 typedef struct { RefId t; ValCtx *v; } val_ref_args;
 static void val_ref_thunk(void *p) { val_ref_args *a = p; val_ref_body(a->t, a->v); }
 static void val_ref(RefId t, ValCtx *v) {
-    if (!kstack_low()) val_ref_body(t, v); return;
+    if (!kstack_low()) { val_ref_body(t, v); return; }
     val_ref_args a = { t, v }; kstack_run(val_ref_thunk, &a);
 }
 static void val_ref_body(RefId t, ValCtx *v) {
@@ -277,7 +291,7 @@ static void val_scope_body(ScopeId S, ValCtx *v);
 typedef struct { ScopeId S; ValCtx *v; } val_scope_args;
 static void val_scope_thunk(void *p) { val_scope_args *a = p; val_scope_body(a->S, a->v); }
 static void val_scope(ScopeId S, ValCtx *v) {
-    if (!kstack_low()) val_scope_body(S, v); return;
+    if (!kstack_low()) { val_scope_body(S, v); return; }
     val_scope_args a = { S, v }; kstack_run(val_scope_thunk, &a);
 }
 static void val_scope_body(ScopeId S, ValCtx *v) {

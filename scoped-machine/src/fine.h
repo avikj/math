@@ -16,6 +16,7 @@
 #define CUBICAL_FINE_H
 #include <stdint.h>
 #include <stddef.h>
+#include "xcount.h"
 
 typedef enum {
     FC_FIELDS_OPENED = 0,     /* open_ref / tview_open: one per stored field */
@@ -51,13 +52,20 @@ typedef enum {
     FC_COUNT
 } FineCounter;
 
-extern uint64_t fine_counters[FC_COUNT];
+/* V23 R5: each counter is an exact natural (xcount.h); fine_count and
+ * FineVector are checked word projections (fatal when a count no longer fits
+ * a word), fine_snap / fine_exact the authoritative exact readings */
+extern XCount fine_counters[FC_COUNT];
 /* §94: a fine step is the transition point of a kernel continuation (kcont.h) */
 struct KCont; extern __thread struct KCont *kc_tl; extern __thread int kc_last_counter; void kc_tick(void);
 extern __thread uint64_t fine_tl_steps;   /* this thread's fine steps (the lock-section audit) */
-static inline void fine_bump(FineCounter c) { __atomic_add_fetch(&fine_counters[c], 1, __ATOMIC_RELAXED); fine_tl_steps++; if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
-static inline void fine_add(FineCounter c, uint64_t n) { __atomic_add_fetch(&fine_counters[c], n, __ATOMIC_RELAXED); fine_tl_steps += n; if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
-uint64_t fine_count(FineCounter c);
+static inline void fine_bump(FineCounter c) { xc_add(&fine_counters[c], 1); fine_tl_steps++; if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
+static inline void fine_add(FineCounter c, uint64_t n) { xc_add(&fine_counters[c], n); fine_tl_steps += n; if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
+uint64_t fine_count(FineCounter c);            /* checked word projection */
+XSnap fine_snap(FineCounter c);                /* exact snapshot */
+uint64_t xs_nat(XSnap s);                      /* an exact snapshot as a Nat (nat.h) */
+uint64_t fine_exact(FineCounter c);            /* the exact reading as a Nat (nat.h; needs a live machine for boxed values) */
+void fine_seed(FineCounter c, uint64_t low);   /* tests: a valid boundary state */
 const char *fine_name(FineCounter c);
 void fine_reset(void);          /* machine teardown only */
 typedef struct { uint64_t v[FC_COUNT]; } FineVector;

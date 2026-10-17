@@ -46,8 +46,9 @@ typedef struct {
     EvalResult *result; /* present exactly when READY */
     VEC(Cont *) waiters;
     size_t runs;        /* EVALUATE tasks executed for this key (must be ≤ 1) */
-    size_t n_req, n_deliver, n_pub;   /* per-key event counts (for schedule comparison) */
-    size_t steps;       /* §60 trace: EVALUATE/RESUME frame steps charged to this producer */
+    size_t n_req, n_deliver, n_pub;   /* per-key event counts (for schedule comparison): V23 R5 low digits, under mu ... */
+    const struct XCarry *n_req_cx, *n_deliver_cx, *n_pub_cx;   /* ... and their carries */
+    uint64_t steps; const struct XCarry *steps_carry;   /* §60 trace: EVALUATE/RESUME frame steps charged to this producer (V23 R5: exact, low digit + carries, under mu) */
     uint64_t env;       /* the environment version at the key's creation (§79.2: a running producer stays tied to its snapshot) */
     VEC(EntryId) deps;  /* §60 trace: consumer occurrences owned by this producer, in request order (slot = index): the historical request edges */
     VEC(uint8_t) dep_hist;   /* LIVE-CUT-ADOPTION §5: 1 when the occurrence at that index was superseded by an adoption (historical, not an active-slot edge) */
@@ -204,8 +205,10 @@ EvalCutEvents eval_cut_events(void);
 size_t eval_entry_active_deps(EntryId e, EntryId **out);   /* the active-slot edges (historical edges excluded); caller frees *out */
 /* scheduler policy (tests): a held job is set aside (not outstanding) until
  * released; a budgeted run executes at most n jobs (sequential scheduler) */
-typedef enum { ET_EVALUATE = 1, ET_RESUME, ET_NOTIFY, ET_PAIR, ET_SUBSCRIBE, ET_REPLAY, ET_NOTICE, ET_PREPARE, ET_INSTALL, ET_REQUEST, ET_EDGE } EvalTaskKind;
-typedef struct { EvalTaskKind kind; EntryId producer; EntryId child; bool ticket; const struct PrefixFact *fact; } EvalTaskInfo;   /* fact: the proposal's fact (PREPARE / INSTALL), the noticed or replayed fact */
+typedef enum { ET_EVALUATE = 1, ET_RESUME, ET_NOTIFY, ET_PAIR, ET_SUBSCRIBE, ET_REPLAY, ET_NOTICE, ET_PREPARE, ET_INSTALL, ET_REQUEST, ET_EDGE, ET_EXTERNAL } EvalTaskKind;
+typedef struct { EvalTaskKind kind; EntryId producer; EntryId child; bool ticket; const struct PrefixFact *fact; int tag; } EvalTaskInfo;   /* tag: an external job's class (effect.h) */
+/* a job of another layer (the effect boundary) on this scheduler: one bounded step fn(arg); `tag` classifies it for policies */
+void eval_job(void (*fn)(void *), void *arg, int tag);   /* fact: the proposal's fact (PREPARE / INSTALL), the noticed or replayed fact */
 void eval_set_hold(bool (*pred)(const EvalTaskInfo *, void *), void *ctx);
 size_t eval_release_held(void);
 size_t eval_held_count(void);

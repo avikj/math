@@ -1,0 +1,50 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-v23/scoped-machine-v23",
+  "sanitizer": "asan",
+  "detect_leaks": "0",
+  "reused_objects": true,
+  "results": [
+    {
+      "mode": "canon-tail",
+      "exit_code": 1,
+      "stdout": "canon-tail: distinct 155-digit annotations compare_equal=1 expected=0\n",
+      "stderr": "",
+      "seconds": 0.008150977999321185
+    },
+    {
+      "mode": "export-universe",
+      "exit_code": 1,
+      "stdout": "export-order universe: same value after unrelated Nat allocation exports_equal=0 expected=1\nFIRST\nGRAPH nodes=3 classes=3\n#3 noreq\n#2 W U:9223372036854775809 lv=- #3\n#1 RESULT INTRO #2\nROOT root -> #1\nSECOND\nGRAPH nodes=3 classes=3\n#3 noreq\n#2 W U:9223372036854775810 lv=- #3\n#1 RESULT INTRO #2\nROOT root -> #1\n",
+      "stderr": "",
+      "seconds": 0.011110390005342197
+    },
+    {
+      "mode": "export-template",
+      "exit_code": 1,
+      "stdout": "export-order template: same value after unrelated Nat allocation exports_equal=0 expected=1\nFIRST\nGRAPH nodes=13 classes=13\n#5 C\n#4 F { #5 }\n#3 Es 0/3 #4\n#7 lv 9223372036854775809\n#6 Es 1/5 #7\n#10 x0\n#9 V #10\n#8 Es 2/1 #9\n#13 x1\n#12 V #13\n#11 Es 3/1 #12\n#2 T Refl:1 plam #3 #6 #8 #11\n#1 RESULT INTRO #2\nROOT root -> #1\nSECOND\nGRAPH nodes=13 classes=13\n#5 C\n#4 F { #5 }\n#3 Es 0/3 #4\n#7 lv 9223372036854775810\n#6 Es 1/5 #7\n#10 x0\n#9 V #10\n#8 Es 2/1 #9\n#13 x1\n#12 V #13\n#11 Es 3/1 #12\n#2 T Refl:1 plam #3 #6 #8 #11\n#1 RESULT INTRO #2\nROOT root -> #1\n",
+      "stderr": "",
+      "seconds": 0.01748782699723961
+    },
+    {
+      "mode": "export-runtime",
+      "exit_code": 1,
+      "stdout": "export-order runtime: same value after unrelated Nat allocation exports_equal=0 expected=1\n",
+      "stderr": "",
+      "seconds": 0.020026254002004862
+    },
+    {
+      "mode": "long-name",
+      "exit_code": 1,
+      "stdout": "long-name: distinct names compare_equal=1 expected=0\n",
+      "stderr": "",
+      "seconds": 0.0075737139995908365
+    },
+    {
+      "mode": "cleanup-long",
+      "exit_code": 1,
+      "stdout": "cleanup-long: finite call completed=0; native workers retained after closed teardown=1 expected=0\n",
+      "stderr": "",
+      "seconds": 0.013996081994264387
+    }
+  ]
+}

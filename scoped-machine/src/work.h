@@ -24,6 +24,7 @@
 #ifndef CUBICAL_WORK_H
 #define CUBICAL_WORK_H
 
+#include "xcount.h"
 #include "compiler.h"
 
 typedef uint64_t AtomId, SetId, FormulaId, ExprId, BoundaryId, PlanId, ConnectorId, ModelId, ProblemId,
@@ -306,6 +307,8 @@ OpId op_check_certificate(ProblemId p, CertId c);
 OpId op_reduce(FormulaId f, ModelId m);
 OpId op_antichain(FormulaId f);
 OpId op_geo_check(GeoId g, uint64_t root);
+OpId op_proof_audit(ContextId G, FaceId phi, RefId e, RefId E);   /* EFFECT-AUTHORITY §3: the framed audit of e : E in Γ;φ */
+int op_audit_verdict(OpId h, size_t *nassume, const uint64_t **assume);   /* -1 running, else a ProofUseStatus (proof.h); assumptions: the reached opaque symbols */
 OpStatus op_step(OpId h, size_t budget);                            /* advances at most budget counted frames */
 OpStatus op_status(OpId h);
 uint64_t op_result(OpId h);
@@ -322,7 +325,13 @@ typedef struct {
     uint64_t kernel_calls;            /* calls into the term/face/checker layers (reindex, validation, checking): charged as calls, their traversal is the kernel's own */
     EvalEvents exec_eval; EvalNetEvents exec_net;   /* the execute phase: the coarse event vector as a projection (§65.1) */
 } WorkLedger;
-WorkLedger work_ledger(void);
+WorkLedger work_ledger(void);        /* V23 R5: checked word projections of the exact ledger (fatal when a reading exceeds a word) */
+/* V23 R5: the authoritative exact ledger (xcount.h): every family, phase and component count */
+typedef struct {
+    XSnap frames[FR_COUNT], by_phase[PH_COUNT];
+    XSnap probes, word_compares, limb_ops, alloc_words, release_words, memo_lookup, memo_hit, memo_deliver, kernel_calls;
+} WorkLedgerExact;
+WorkLedgerExact work_ledger_exact(void);   /* the late contributions of closed scopes are folded into the readings work_ledger reports; this is the engine's own exact part */
 void work_ledger_reset(void);
 void work_set_phase(Phase p);
 Phase work_phase(void);

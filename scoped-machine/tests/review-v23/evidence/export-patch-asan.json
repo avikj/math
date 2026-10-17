@@ -1,0 +1,43 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-v23/patched-tree",
+  "sanitizer": "asan",
+  "detect_leaks": "0",
+  "reused_objects": false,
+  "results": [
+    {
+      "mode": "canon-tail",
+      "exit_code": 0,
+      "stdout": "canon-tail: distinct 155-digit annotations compare_equal=0 expected=0\n",
+      "stderr": "",
+      "seconds": 0.008956063000368886
+    },
+    {
+      "mode": "export-universe",
+      "exit_code": 0,
+      "stdout": "export-order universe: same value after unrelated Nat allocation exports_equal=1 expected=1\n",
+      "stderr": "",
+      "seconds": 0.01056168699869886
+    },
+    {
+      "mode": "export-template",
+      "exit_code": 0,
+      "stdout": "export-order template: same value after unrelated Nat allocation exports_equal=1 expected=1\n",
+      "stderr": "",
+      "seconds": 0.01723726299678674
+    },
+    {
+      "mode": "export-runtime",
+      "exit_code": 0,
+      "stdout": "export-order runtime: same value after unrelated Nat allocation exports_equal=1 expected=1\n",
+      "stderr": "",
+      "seconds": 0.02519238700187998
+    },
+    {
+      "mode": "long-name",
+      "exit_code": 0,
+      "stdout": "long-name: distinct names compare_equal=0 expected=0\n",
+      "stderr": "",
+      "seconds": 0.017549397998664062
+    }
+  ]
+}

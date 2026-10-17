@@ -43,6 +43,7 @@ static inline int kc_mutex_trylock(pthread_mutex_t *m) { int r = (pthread_mutex_
  * fine step); a block from the host (strdup, pre-arena) is recognized and
  * returned to the host */
 #ifndef KALLOC_IMPL
+extern __thread int kalloc_unowned_depth;   /* V23 R3: allocations made while > 0 belong to a process-lifetime structure, not to the running continuation */
 void *k_malloc(size_t n); void *k_calloc(size_t a, size_t b); void *k_realloc(void *p, size_t n); void k_free(void *p);
 #define malloc(n) k_malloc(n)
 #define calloc(a, b) k_calloc((a), (b))

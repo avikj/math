@@ -138,7 +138,7 @@ TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type);
 DimVarId binder_dim_var(RefId owner, BinderSlot slot);
 /* Keyed fresh names for library definitions: deterministic per key. A key is
  * a typed tuple so that provenance can be compared up to renaming. */
-typedef enum { KW_CONST = 0, KW_REF, KW_FACE, KW_INTERVAL, KW_DIM, KW_VAR } KeyKind;
+typedef enum { KW_CONST = 0, KW_REF, KW_FACE, KW_INTERVAL, KW_DIM, KW_VAR, KW_NAT } KeyKind;
 typedef struct { KeyKind kind; uint64_t v; } KeyWord;
 TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type);
 TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required);   /* a partial formal */

@@ -81,6 +81,7 @@ enum { CL_CTX = 1, CL_MAP, CL_ORIGIN, CL_SYMBOL, CL_CONV, CL_TVIEW, CL_TBOUND };
 typedef enum { ACQ_OWNER, ACQ_DONE, ACQ_CYCLE } Acq;
 
 void check_init(void) {
+    kc_session(KC_MOD_CHECK, true);
     memset(&K, 0, sizeof K);
     memset(&ADM, 0, sizeof ADM);
     memset(&DIAG, 0, sizeof DIAG); pthread_mutex_init(&DIAG.mu, NULL);
@@ -104,6 +105,7 @@ void check_free(void) {
     memset(&K, 0, sizeof K);
     for (size_t k = 0; k < DIAG.items.len; k++) free(DIAG.items.data[k]);
     vec_free(&DIAG.items); pthread_mutex_destroy(&DIAG.mu); memset(&DIAG, 0, sizeof DIAG);
+    kc_session(KC_MOD_CHECK, false);
 }
 uint64_t check_session_id(void) { return session_gen; }
 void check_set_budget(size_t steps) {

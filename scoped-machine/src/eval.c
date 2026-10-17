@@ -74,7 +74,7 @@ struct Cont {
  * publication notice, proposal preparation, installation, the replacement
  * request and instantiation-edge watches are administrative jobs of the same
  * scheduler, each one bounded step owned by the Cut's producer */
-enum { OP_NONE = 0, OP_SUB, OP_REPLAY, OP_FACTNOTE, OP_PREPARE, OP_INSTALL, OP_REQUEST, OP_EDGE };
+enum { OP_NONE = 0, OP_SUB, OP_REPLAY, OP_FACTNOTE, OP_PREPARE, OP_INSTALL, OP_REQUEST, OP_EDGE, OP_EXT };
 typedef struct { bool is_resume, is_pair, is_notify; EntryId entry; Cont *k; EvalResult *r; Active pair; const struct PrefixFact *fact; size_t idx, limit; bool catchup;
                  uint8_t op; void *p, *p2; RefId r1, r2; uint64_t sigma; } Task;   /* is_notify: §84.2 deliver `fact` of `entry` to its waiter `idx` (one waiter per task) */
 typedef struct { VEC(EntryId) entries; VEC(RefId) refs;
@@ -145,30 +145,27 @@ static struct {
     pthread_mutex_t held_mu; Task *held; size_t nheld, capheld;
     bool (*hold)(const EvalTaskInfo *, void *); void *hold_ctx;
     bool live;
-    EvalCutEvents cev;
+    XCount cevx[sizeof(EvalCutEvents) / sizeof(size_t)];
     /* the evaluator's net (§43): APPLY_TRANSFORM / CONTINUE_REFERENCE pairs
      * are jobs of this scheduler (one outstanding count) */
     Net net; SchedPolicy pair_policy;
     /* §60 trace: root / external consumer occurrences in request order */
     Chunked roots_tab; size_t n_roots; pthread_mutex_t roots_mu;   /* V21 R4: extensible, stable */
     /* counters */
-    size_t tasks_created;
-    EvalEvents ev;
+    XCount tasks_created;
+    XCount evx[sizeof(EvalEvents) / sizeof(size_t)];      /* V23 R5: exact event counts (EvalEvents field order) */
     SchedPolicy policy; uint64_t rng;
     /* §84.2 committed prefix facts (immutable; reclaimed with the machine) */
-    PrefixFact *facts; uint64_t fact_ids; EvalPrefixEvents pev;
+    PrefixFact *facts; uint64_t fact_ids; XCount pevx[sizeof(EvalPrefixEvents) / sizeof(size_t)];
 } E;
 
-static size_t add_count(size_t *p) { return __atomic_add_fetch(p, 1, __ATOMIC_RELAXED); }
+/* V23 R5: the evaluator's event counts are exact (xcount.h); the public
+ * structs are checked word projections of them */
+#define XSLOT(arr, T, f) (&E.arr[offsetof(T, f) / sizeof(size_t)])
+#define XINC(arr, T, f) xc_inc(XSLOT(arr, T, f))
+static void xproject(const XCount *a, size_t *out, size_t n, const char *what) { for (size_t i = 0; i < n; i++) out[i] = (size_t)xs_u64_checked(xc_snap(&a[i]), what); }
 EvalEvents eval_events(void) {
-    EvalEvents v;
-    v.request = __atomic_load_n(&E.ev.request, __ATOMIC_SEQ_CST);
-    v.eval_step = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
-    v.publish = __atomic_load_n(&E.ev.publish, __ATOMIC_SEQ_CST);
-    v.deliver = __atomic_load_n(&E.ev.deliver, __ATOMIC_SEQ_CST);
-    v.ready_hit = __atomic_load_n(&E.ev.ready_hit, __ATOMIC_SEQ_CST);
-    v.running_hit = __atomic_load_n(&E.ev.running_hit, __ATOMIC_SEQ_CST);
-    v.launch = __atomic_load_n(&E.ev.launch, __ATOMIC_SEQ_CST);
+    EvalEvents v; xproject(E.evx, (size_t *)&v, sizeof v / sizeof(size_t), "evaluator event");
     return v;
 }
 void eval_set_policy(SchedPolicy p, uint64_t seed) { E.policy = p; E.rng = seed ? seed : 0x9E3779B97F4A7C15ULL; }
@@ -180,11 +177,9 @@ void eval_set_pair_policy(SchedPolicy p, uint64_t seed) {
 Net *eval_net(void) { return &E.net; }
 EvalNetEvents eval_net_events(void) {
     EvalNetEvents v;
-    v.apply = __atomic_load_n(&E.net.n_apply, __ATOMIC_SEQ_CST);
-    v.continue_ref = __atomic_load_n(&E.net.n_continue, __ATOMIC_SEQ_CST);
-    v.op = __atomic_load_n(&E.net.n_op, __ATOMIC_SEQ_CST);
-    v.eval_deliver = __atomic_load_n(&E.net.n_eval_deliver, __ATOMIC_SEQ_CST);
-    v.retries = __atomic_load_n(&E.net.retries, __ATOMIC_SEQ_CST);
+#define NETX(f) (size_t)xs_u64_checked(xc_snap2((const uint64_t *)&E.net.f, &E.net.f##_cx), "net event")
+    v.apply = NETX(n_apply); v.continue_ref = NETX(n_continue); v.op = NETX(n_op); v.eval_deliver = NETX(n_eval_deliver); v.retries = NETX(retries);
+#undef NETX
     return v;
 }
 static uint64_t rng_next(void) { E.rng ^= E.rng << 13; E.rng ^= E.rng >> 7; E.rng ^= E.rng << 17; return E.rng; }
@@ -212,6 +207,7 @@ void eval_init(void) {
     E.net.policy = 1;   /* pairs FIFO by default */
     term_edge_hook = eval_edge_hook;
     __atomic_store_n(&E.live, true, __ATOMIC_RELEASE);
+    kc_session(KC_MOD_EVAL, true);
 }
 
 /* a new definition environment retires every observation: the memo, the
@@ -275,7 +271,7 @@ void eval_free(void) {
         Entry *e = ENT(i + 1);
         for (size_t w = 0; w < e->waiters.len; w++) {                 /* suspended forever: stuck demands */
             Cont *k = e->waiters.data[w];
-            if (k->cut) { add_count(&E.cev.retired_tickets); ticket_release(k); continue; }
+            if (k->cut) { XINC(cevx, EvalCutEvents, retired_tickets); ticket_release(k); continue; }
             if (k->kind == K_EXTERNAL && k->ext_free) k->ext_free(k->ext_ctx);
             if (k->kind == K_ROOT) rootbox_release(k->root);
             free(k);
@@ -306,6 +302,7 @@ void eval_free(void) {
     pthread_cond_destroy(&E.q_cv); pthread_cond_destroy(&E.idle_cv);
     memset(&E, 0, sizeof E);
     reuse_scope_reclaim();
+    kc_session(KC_MOD_EVAL, false);
 }
 
 static Cont *cont_new(ContKind kind, EntryId dest, FaceId chi) {
@@ -337,7 +334,7 @@ static void cut_unref(Cut *c) {
     if (!c || __atomic_sub_fetch(&c->refs, 1, __ATOMIC_ACQ_REL) != 0) return;
     gen_unref(c->cur); gather_unref(c->join);
     pthread_mutex_destroy(&c->mu); free(c); fine_bump(FC_CELLS_RELEASED);
-    add_count(&E.cev.cuts_freed);
+    XINC(cevx, EvalCutEvents, cuts_freed);
 }
 /* a ticket owns one reference to its Cut and one to its generation */
 static void ticket_release(Cont *k) { Cut *c = k->cut; Gen *g = k->gen; cont_release(k); gen_unref(g); cut_unref(c); }
@@ -355,7 +352,7 @@ static void cut_open(Cont *k, RefId t, FaceId chi) {
     c->state = CUT_WAITING;
     c->cur = gen_new(t, key_face(t, chi), 0, NULL, 0, NULL);
     k->cut = c; k->gen = c->cur; gen_ref(k->gen);
-    add_count(&E.cev.cuts); add_count(&E.cev.tickets);
+    XINC(cevx, EvalCutEvents, cuts); XINC(cevx, EvalCutEvents, tickets);
 }
 static Cont *ticket_new(Cut *c, Gen *g) {
     Cont *t = calloc(1, sizeof *t); require(t, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
@@ -608,9 +605,14 @@ FaceId eval_entry_face(EntryId e) { return ENT(e)->face; }
 size_t eval_entry_count(void) { pthread_mutex_lock(&E.entries_mu); size_t n = E.n_entries; pthread_mutex_unlock(&E.entries_mu); return n; }
 size_t eval_entry_runs(EntryId e) { return ENT(e)->runs; }
 RefId eval_entry_ref(EntryId e) { return ENT(e)->ref; }
-void eval_entry_events(EntryId e, size_t *req, size_t *deliver, size_t *pub) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); *req = x->n_req; *deliver = x->n_deliver; *pub = x->n_pub; pthread_mutex_unlock(&x->mu); }
+void eval_entry_events(EntryId e, size_t *req, size_t *deliver, size_t *pub) {
+    Entry *x = ENT(e); pthread_mutex_lock(&x->mu);
+    XSnap a = { x->n_req, x->n_req_cx }, b = { x->n_deliver, x->n_deliver_cx }, c = { x->n_pub, x->n_pub_cx };
+    pthread_mutex_unlock(&x->mu);
+    *req = (size_t)xs_u64_checked(a, "requests"); *deliver = (size_t)xs_u64_checked(b, "deliveries"); *pub = (size_t)xs_u64_checked(c, "publications");
+}
 size_t eval_running_count(void) { size_t c = 0, n = eval_entry_count(); for (size_t i = 1; i <= n; i++) if (eval_entry_state(i) == E_RUNNING) c++; return c; }
-size_t eval_task_count(void) { return __atomic_load_n(&E.tasks_created, __ATOMIC_SEQ_CST); }
+size_t eval_task_count(void) { return (size_t)xs_u64_checked(xc_snap(&E.tasks_created), "evaluator tasks"); }
 size_t eval_entry_active_deps(EntryId e, EntryId **out) {
     Entry *x = ENT(e); pthread_mutex_lock(&x->mu);
     size_t n = 0; EntryId *o = malloc((x->deps.len ? x->deps.len : 1) * sizeof(EntryId)); require(o, "out of memory");
@@ -624,7 +626,7 @@ size_t eval_entry_deps(EntryId e, EntryId **out) {
     pthread_mutex_unlock(&x->mu); return n;
 }
 uint64_t eval_entry_env(EntryId e) { return ENT(e)->env; }
-size_t eval_entry_steps(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); size_t s = x->steps; pthread_mutex_unlock(&x->mu); return s; }
+size_t eval_entry_steps(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); XSnap s = { x->steps, x->steps_carry }; pthread_mutex_unlock(&x->mu); return (size_t)xs_u64_checked(s, "producer steps"); }
 size_t eval_root_occurrences(EntryId **out) {
     pthread_mutex_lock(&E.roots_mu);
     size_t n = E.n_roots; *out = n ? malloc(n * sizeof(EntryId)) : NULL; require(!n || *out, "out of memory");
@@ -635,7 +637,7 @@ size_t eval_root_occurrences(EntryId **out) {
 /* DELIVER is counted here, on the common delivery path, for ready hits and
  * for publication alike; the resumed frame step is counted when the RESUME
  * job executes (EVAL_STEP). Delivery never happens under an entry lock. */
-static void deliver(Cont *k, EvalResult *r) { add_count(&E.ev.deliver); enqueue_resume(k, r); }
+static void deliver(Cont *k, EvalResult *r) { XINC(evx, EvalEvents, deliver); enqueue_resume(k, r); }
 
 /* publication: the result, the answer's residual and receipt, and the
  * dependency set (direct reads ∪ the READY children's recorded reads, §79.1) */
@@ -695,13 +697,13 @@ static void publish_with(EntryId eid, EvalResult *r, RefId residual, uint64_t re
     fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
     e->result = r;
     e->residual = success ? residual : 0; e->receipt = success ? receipt : 0;
-    e->n_pub++;
-    e->n_deliver += e->waiters.len;
+    xl_add((uint64_t *)&e->n_pub, &e->n_pub_cx, 1);
+    xl_add((uint64_t *)&e->n_deliver, &e->n_deliver_cx, e->waiters.len);
     __atomic_store_n(&e->state, E_READY, __ATOMIC_RELEASE);
     Cont **ws = e->waiters.data; size_t n = e->waiters.len;
     e->waiters.data = NULL; e->waiters.len = e->waiters.cap = 0;
     pthread_mutex_unlock(&e->mu);
-    add_count(&E.ev.publish);
+    XINC(evx, EvalEvents, publish);
     for (size_t i = 0; i < n; i++) { fine_bump(FC_WAITERS_DELIVERED); deliver(ws[i], r); }
     free(ws);
 }
@@ -748,19 +750,19 @@ static void request_inner(RefId t, FaceId chi, Cont *k) {
     EntryId eid = entry_intern(t, eta);
     Entry *e = ENT(eid);
     k->child = eid; k->req = t;
-    add_count(&E.ev.request);
+    XINC(evx, EvalEvents, request);
     /* §60 trace: the consumer occurrence (owner, slot, requested key) */
     if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { size_t at = __atomic_load_n(&E.n_roots, __ATOMIC_ACQUIRE); (void)chunked_at(&E.roots_tab, at); (void)chunked_at(&E.roots_tab, at + 1);   /* the chunk, outside roots_mu */
       pthread_mutex_lock(&E.roots_mu); *(EntryId *)chunked_at(&E.roots_tab, E.n_roots) = eid; __atomic_store_n(&E.n_roots, E.n_roots + 1, __ATOMIC_RELEASE); pthread_mutex_unlock(&E.roots_mu); }
     else { Entry *o = ENT(k->dest); pthread_mutex_lock(&o->mu); if (k->gen) { k->gen->dep_idx = o->deps.len; k->gen->have_dep = true; } vec_push(&o->deps, eid); vec_push(&o->dep_hist, 0); pthread_mutex_unlock(&o->mu); }
     /* readiness check and waiter registration under the same lock (§10) */
     fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
-    e->n_req++;
+    xl_add((uint64_t *)&e->n_req, &e->n_req_cx, 1);
     if (e->state == E_READY) {
         EvalResult *r = e->result;
-        e->n_deliver++;
+        xl_add((uint64_t *)&e->n_deliver, &e->n_deliver_cx, 1);
         pthread_mutex_unlock(&e->mu);
-        add_count(&E.ev.ready_hit); reuse_bump(REUSE_READY_HIT); fine_bump(FC_WAITERS_DELIVERED);
+        XINC(evx, EvalEvents, ready_hit); reuse_bump(REUSE_READY_HIT); fine_bump(FC_WAITERS_DELIVERED);
         deliver(k, r);                       /* after unlock */
         return;
     }
@@ -770,7 +772,7 @@ static void request_inner(RefId t, FaceId chi, Cont *k) {
         Task replay = prefix_catchup_locked(eid, e, idx);
         pthread_mutex_unlock(&e->mu);
         if (replay.fact) enqueue_reserved(replay);
-        add_count(&E.ev.running_hit); reuse_bump(REUSE_RUNNING_JOIN);
+        XINC(evx, EvalEvents, running_hit); reuse_bump(REUSE_RUNNING_JOIN);
         return;
     }
     /* §78.3–78.4: before the body runs, look for a completed receipt this
@@ -780,16 +782,16 @@ static void request_inner(RefId t, FaceId chi, Cont *k) {
     RefId ad = 0; uint64_t adp = 0; EntryId ads = 0; const PrefixFact *adf = NULL;
     bool have_ad = find_adapter(t, e->shape, eta, eid, &ad, &adp, &ads, &adf);
     pthread_mutex_lock(&e->mu);
-    if (e->state == E_READY) { EvalResult *r = e->result; e->n_deliver++; pthread_mutex_unlock(&e->mu); add_count(&E.ev.ready_hit); reuse_bump(REUSE_READY_HIT); deliver(k, r); return; }
+    if (e->state == E_READY) { EvalResult *r = e->result; xl_add((uint64_t *)&e->n_deliver, &e->n_deliver_cx, 1); pthread_mutex_unlock(&e->mu); XINC(evx, EvalEvents, ready_hit); reuse_bump(REUSE_READY_HIT); deliver(k, r); return; }
     if (e->state == E_RUNNING) {
         size_t idx = e->waiters.len; vec_push(&e->waiters, k); fine_bump(FC_CONTS_REGISTERED);
         Task replay = prefix_catchup_locked(eid, e, idx);
         pthread_mutex_unlock(&e->mu);
         if (replay.fact) enqueue_reserved(replay);
-        add_count(&E.ev.running_hit); reuse_bump(REUSE_RUNNING_JOIN); return;
+        XINC(evx, EvalEvents, running_hit); reuse_bump(REUSE_RUNNING_JOIN); return;
     }
     e->scope = reuse_tl_scope; reuse_scope_ref(e->scope);   /* the launching request owns this producer's work */
-    if (have_ad) { e->adapter = ad; e->adapter_prefix = adp; e->adapter_src = ads; e->adapter_fact = adf; if (adf) add_count(&E.pev.adapters); }
+    if (have_ad) { e->adapter = ad; e->adapter_prefix = adp; e->adapter_src = ads; e->adapter_fact = adf; if (adf) XINC(pevx, EvalPrefixEvents, adapters); }
     /* U → R({c}) + EVAL(K) is one transition (§26): the task is enqueued
      * before RUNNING can be observed by anyone else, so no requester can see
      * a running key whose evaluator is not yet runnable. */
@@ -797,8 +799,8 @@ static void request_inner(RefId t, FaceId chi, Cont *k) {
     vec_push(&e->waiters, k); fine_bump(FC_CONTS_REGISTERED);
     reserve_job();                       /* outstanding += 1 before RUNNING can be observed */
     pthread_mutex_unlock(&e->mu);
-    add_count(&E.ev.launch);
-    add_count(&E.tasks_created);
+    XINC(evx, EvalEvents, launch);
+    xc_inc(&E.tasks_created);
     Task job; memset(&job, 0, sizeof job); job.entry = eid;
     enqueue_reserved(job);               /* enqueue after the entry lock is released */
 }
@@ -1041,7 +1043,7 @@ static void prefix_publish_on(EntryId dest, RefId target, uint64_t receipt, cons
     pthread_mutex_unlock(&e->mu);
     PrefixFact *h = __atomic_load_n(&E.facts, __ATOMIC_RELAXED);
     do f->all_next = h; while (!__atomic_compare_exchange_n(&E.facts, &h, f, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED));
-    add_count(parent ? &E.pev.lifted : &E.pev.published);
+    if (parent) XINC(pevx, EvalPrefixEvents, lifted); else XINC(pevx, EvalPrefixEvents, published);
     Task t; memset(&t, 0, sizeof t); t.is_notify = true; t.entry = dest; t.fact = f; t.idx = 0; t.limit = notify_limit;
     enqueue(t);
     fact_index(f, e->shape);
@@ -1082,7 +1084,7 @@ static void prefix_notify(Task t) {
     Cont kc = *e->waiters.data[t.idx];       /* a copy: the waiter may be resumed and released once the lock is dropped */
     if (kc.cut) { cut_ref(kc.cut); gen_ref(kc.gen); }   /* the ticket's Cut and generation, retained for this step */
     pthread_mutex_unlock(&e->mu);
-    add_count(&E.pev.notify_steps);
+    XINC(pevx, EvalPrefixEvents, notify_steps);
     { Task n = t;
       if (t.catchup) { n.fact = t.fact->next; if (n.fact) enqueue(n); }
       else { n.idx++; if (n.idx < n.limit) enqueue(n); }
@@ -1106,9 +1108,7 @@ size_t eval_entry_prefix_count(EntryId e) { Entry *x = ENT(e); pthread_mutex_loc
 const PrefixFact *eval_entry_adapter_fact(EntryId e) { return ENT(e)->adapter_fact; }
 bool eval_prefix_valid(const PrefixFact *f) { return f && prefix_valid(f); }
 EvalPrefixEvents eval_prefix_events(void) {
-    EvalPrefixEvents v;
-    v.published = __atomic_load_n(&E.pev.published, __ATOMIC_SEQ_CST); v.lifted = __atomic_load_n(&E.pev.lifted, __ATOMIC_SEQ_CST);
-    v.notify_steps = __atomic_load_n(&E.pev.notify_steps, __ATOMIC_SEQ_CST); v.adapters = __atomic_load_n(&E.pev.adapters, __ATOMIC_SEQ_CST);
+    EvalPrefixEvents v; xproject(E.pevx, (size_t *)&v, sizeof v / sizeof(size_t), "prefix event");
     return v;
 }
 
@@ -1150,7 +1150,7 @@ static void sub_register(Cut *c, Gen *g, uint64_t sigma, ShapeId s) {
     n->all_next = E.subs_all; E.subs_all = n;
     pthread_mutex_unlock(&E.sub_mu);
     __atomic_add_fetch(&E.live_subs, 1, __ATOMIC_RELAXED);
-    add_count(&E.cev.subscriptions);
+    XINC(cevx, EvalCutEvents, subscriptions);
     if (hist) { Task t = op_task(OP_REPLAY); t.p = n; t.fact = hist; enqueue(t); }
 }
 /* a fact meets a live subscription: a proposal (preparation job) is made
@@ -1164,7 +1164,7 @@ static void consider(Sub *n, const PrefixFact *f) {
     if (src->ref == g->r && src->face == g->eta) return;
     Proposal *p = calloc(1, sizeof *p); require(p, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
     p->cut = c; cut_ref(c); p->gen = g; gen_ref(g); p->f = f; p->sigma = n->sigma; words_init(&p->d);
-    add_count(&E.cev.proposals);
+    XINC(cevx, EvalCutEvents, proposals);
     Task t = op_task(OP_PREPARE); t.p = p; enqueue(t);
 }
 /* subscription job of one generation: the residual's own shape, then one
@@ -1175,17 +1175,17 @@ static void sub_step(Task t) {
         if (t.idx == 0) { sub_register(c, g, map_identity(), shape_of(g->r)); t.idx = 1; enqueue(t); return; }
         const uint64_t *pairs; size_t np = instantiation_edges(g->r, &pairs);
         size_t e = t.idx - 1;
-        if (e < np) { add_count(&E.cev.edge_watches); sub_register(c, g, pairs[2 * e + 1], shape_of(pairs[2 * e])); t.idx++; enqueue(t); return; }
+        if (e < np) { XINC(cevx, EvalCutEvents, edge_watches); sub_register(c, g, pairs[2 * e + 1], shape_of(pairs[2 * e])); t.idx++; enqueue(t); return; }
     }
     gen_unref(g); cut_unref(c);
 }
 static void replay_step(Task t) {
-    Sub *n = t.p; add_count(&E.cev.replays);
+    Sub *n = t.p; XINC(cevx, EvalCutEvents, replays);
     consider(n, t.fact);
     if (t.fact->shape_next && cut_live(n->cut, n->gen)) { t.fact = t.fact->shape_next; enqueue(t); }
 }
 static void notice_step(Task t) {
-    Sub *n = t.p; add_count(&E.cev.notices);
+    Sub *n = t.p; XINC(cevx, EvalCutEvents, notices);
     consider(n, t.fact);
     if (n->next) { t.p = n->next; enqueue(t); }
 }
@@ -1202,7 +1202,7 @@ static void edge_step(Task t) {
         pthread_mutex_lock(&E.sub_mu); n = ss->subs; pthread_mutex_unlock(&E.sub_mu);
         if (!n) return;
     }
-    if (map_is_identity(n->sigma) && n->gen->r == t.r1 && cut_live(n->cut, n->gen)) { add_count(&E.cev.edge_watches); sub_register(n->cut, n->gen, t.sigma, shape_of(t.r2)); }
+    if (map_is_identity(n->sigma) && n->gen->r == t.r1 && cut_live(n->cut, n->gen)) { XINC(cevx, EvalCutEvents, edge_watches); sub_register(n->cut, n->gen, t.sigma, shape_of(t.r2)); }
     if (n->next) { t.p = n->next; enqueue(t); }
 }
 /* §3 preparation, one bounded step per job, outside every lock:
@@ -1214,7 +1214,7 @@ static void edge_step(Task t) {
  *   then q' = q ; ρ and the installation job. */
 static void prepare_step(Task t) {
     Proposal *p = t.p; Cut *c = p->cut; Gen *g = p->gen; const PrefixFact *f = p->f;
-    add_count(&E.cev.prep_steps); fine_bump(FC_ADAPTER_STEPS);
+    XINC(cevx, EvalCutEvents, prep_steps); fine_bump(FC_ADAPTER_STEPS);
     if (!cut_live(c, g)) { proposal_free(p); return; }        /* superseded or resumed meanwhile: ownership released, nothing altered */
     if (p->phase == 0) {
         p->stamp = global_env_version();
@@ -1236,17 +1236,17 @@ static void prepare_step(Task t) {
             if (ok) m.adrc = ident ? rc(RC_PREFIX_RESTRICT, f->id, g->eta, 0, 3) : rc(RC_PREFIX_SPEC, f->id, p->sigma, 0, 3);
             m.state = ok ? 1 : 2;
             pthread_mutex_lock(&E.prep_mu); *(PrepMemo *)chunked_at(&E.prep_tab, id - 1) = m; pthread_mutex_unlock(&E.prep_mu);
-            add_count(&E.cev.prep_computed);
-        } else add_count(&E.cev.prep_shared);
+            XINC(cevx, EvalCutEvents, prep_computed);
+        } else XINC(cevx, EvalCutEvents, prep_shared);
         bool ok = m.state == 1;
         for (Gen *h = g; ok && h; h = h->prev) if (shape_of(h->r) == shape_of(m.v) && h->eta == m.veta) ok = false;   /* no return to a key this slot already passed */
-        if (!ok) { add_count(&E.cev.prep_rejected); proposal_free(p); return; }
+        if (!ok) { XINC(cevx, EvalCutEvents, prep_rejected); proposal_free(p); return; }
         p->v = m.v; p->veta = m.veta; p->adrc = m.adrc;
         p->phase = 1; p->k = 0; enqueue(t); return;
     }
     if (p->phase == 1) {
         if (p->k + 1 < f->ngdeps) {
-            if (global_revision(f->gdeps[p->k]) != f->gdeps[p->k + 1]) { add_count(p->revalidating ? &E.cev.revalidation_failed : &E.cev.prep_rejected); proposal_free(p); return; }
+            if (global_revision(f->gdeps[p->k]) != f->gdeps[p->k + 1]) { xc_inc(p->revalidating ? XSLOT(cevx, EvalCutEvents, revalidation_failed) : XSLOT(cevx, EvalCutEvents, prep_rejected)); proposal_free(p); return; }
             p->k += 2; enqueue(t); return;
         }
         if (p->revalidating) { Task n = op_task(OP_INSTALL); n.p = p; enqueue(n); return; }
@@ -1268,12 +1268,12 @@ static void prepare_step(Task t) {
 static void install_step(Task t) {
     Proposal *p = t.p; Cut *c = p->cut;
     pthread_mutex_lock(&c->mu);
-    if (c->state != CUT_WAITING) { pthread_mutex_unlock(&c->mu); add_count(&E.cev.install_not_waiting); proposal_free(p); return; }
-    if (c->cur != p->gen) { pthread_mutex_unlock(&c->mu); add_count(&E.cev.install_stale_generation); proposal_free(p); return; }
+    if (c->state != CUT_WAITING) { pthread_mutex_unlock(&c->mu); XINC(cevx, EvalCutEvents, install_not_waiting); proposal_free(p); return; }
+    if (c->cur != p->gen) { pthread_mutex_unlock(&c->mu); XINC(cevx, EvalCutEvents, install_stale_generation); proposal_free(p); return; }
     uint64_t now = global_env_version();
     if (now != p->stamp) {
         pthread_mutex_unlock(&c->mu);
-        add_count(&E.cev.revalidations);
+        XINC(cevx, EvalCutEvents, revalidations);
         p->stamp = now; p->phase = 1; p->k = 0; p->revalidating = true;
         Task n = op_task(OP_PREPARE); n.p = p; enqueue(n); return;
     }
@@ -1282,7 +1282,7 @@ static void install_step(Task t) {
     Cont *tk = ticket_new(c, ng);
     reserve_job();
     pthread_mutex_unlock(&c->mu);
-    add_count(&E.cev.installs); add_count(&E.cev.tickets);
+    XINC(cevx, EvalCutEvents, installs); XINC(cevx, EvalCutEvents, tickets);
     Entry *o = ENT(c->owner);
     pthread_mutex_lock(&o->mu); if (old->have_dep && old->dep_idx < o->dep_hist.len) o->dep_hist.data[old->dep_idx] = 1; pthread_mutex_unlock(&o->mu);   /* the superseded request becomes a historical edge */
     gen_unref(old);                                  /* the Cut's reference; the new generation retains it */
@@ -1317,14 +1317,14 @@ static void cut_deliver(Cont *k, EvalResult *r) {
     bool win = c->state == CUT_WAITING && c->cur == k->gen;
     if (win) c->state = CUT_RESUMING;
     pthread_mutex_unlock(&c->mu);
-    if (!win) { add_count(&E.cev.deliveries_stale); ticket_release(k); return; }
-    add_count(&E.cev.deliveries_current);
+    if (!win) { XINC(cevx, EvalCutEvents, deliveries_stale); ticket_release(k); return; }
+    XINC(cevx, EvalCutEvents, deliveries_current);
     Gen *g = k->gen;
     if (g->nd) { Entry *o = ENT(c->owner); for (size_t i = 0; i + 1 < g->nd; i += 2) { pthread_mutex_lock(&o->mu); gdeps_add_cert(o, g->d[i], g->d[i + 1]); pthread_mutex_unlock(&o->mu); fine_bump(FC_ADAPTER_STEPS); } }
     Cont view = c->K; view.child = k->child; view.req = k->req; view.aq = g->q;
     resume(&view, r);
     pthread_mutex_lock(&c->mu); c->state = CUT_CLOSED; pthread_mutex_unlock(&c->mu);
-    add_count(&E.cev.resumes);
+    XINC(cevx, EvalCutEvents, resumes);
     ticket_release(k);
 }
 static void op_dispatch(Task t) {
@@ -1336,6 +1336,7 @@ static void op_dispatch(Task t) {
     case OP_INSTALL: install_step(t); break;
     case OP_REQUEST: request_step(t); break;
     case OP_EDGE: edge_step(t); break;
+    case OP_EXT: ((void (*)(void *))t.p)(t.p2); break;
     default: die("unknown evaluator job");
     }
 }
@@ -1353,6 +1354,7 @@ static EvalTaskInfo task_info(const Task *t) {
     case OP_INSTALL: in.kind = ET_INSTALL; in.producer = ((Proposal *)t->p)->cut->owner; in.fact = ((Proposal *)t->p)->f; break;
     case OP_REQUEST: in.kind = ET_REQUEST; in.producer = t->k->dest; in.ticket = true; break;
     case OP_EDGE: in.kind = ET_EDGE; break;
+    case OP_EXT: in.kind = ET_EXTERNAL; in.tag = (int)t->idx; break;
     }
     return in;
 }
@@ -1360,7 +1362,7 @@ static EvalTaskInfo task_info(const Task *t) {
 static void task_discard(Task t) {
     if (t.is_resume) {
         Cont *k = t.k;
-        if (k->cut) { add_count(&E.cev.retired_tickets); ticket_release(k); return; }
+        if (k->cut) { XINC(cevx, EvalCutEvents, retired_tickets); ticket_release(k); return; }
         if (k->kind == K_EXTERNAL && k->ext_free) k->ext_free(k->ext_ctx);
         if (k->kind == K_ROOT) rootbox_release(k->root);
         free(k); return;
@@ -1368,7 +1370,7 @@ static void task_discard(Task t) {
     switch (t.op) {
     case OP_SUB: gen_unref(t.p2); cut_unref(t.p); break;
     case OP_PREPARE: case OP_INSTALL: proposal_free(t.p); break;
-    case OP_REQUEST: add_count(&E.cev.retired_tickets); ticket_release(t.k); break;
+    case OP_REQUEST: XINC(cevx, EvalCutEvents, retired_tickets); ticket_release(t.k); break;
     default: break;
     }
 }
@@ -1399,9 +1401,9 @@ size_t eval_release_held(void) {
     for (size_t i = 0; i < n; i++) enqueue(h[i]);
     free(h); return n;
 }
+void eval_job(void (*fn)(void *), void *arg, int tag) { Task t = op_task(OP_EXT); t.p = (void *)fn; t.p2 = arg; t.idx = (size_t)tag; enqueue(t); }
 EvalCutEvents eval_cut_events(void) {
-    EvalCutEvents v; size_t *d = (size_t *)&v; const size_t *s = (const size_t *)&E.cev;
-    for (size_t i = 0; i < sizeof v / sizeof(size_t); i++) d[i] = __atomic_load_n(&s[i], __ATOMIC_SEQ_CST);
+    EvalCutEvents v; xproject(E.cevx, (size_t *)&v, sizeof v / sizeof(size_t), "cut event");
     return v;
 }
 
@@ -1574,6 +1576,16 @@ static void execute_task(Task t);
  * a waiter names the one advancing the producer it actually awaits */
 typedef struct ExecNode { KCont *k; uint64_t job; EntryId owner; struct ExecNode *prev, *next; } ExecNode;
 static ExecNode *exec_head; static pthread_mutex_t exec_mu = PTHREAD_MUTEX_INITIALIZER;
+typedef struct { ExecNode *node; EntryId owner; KCont *prev_kc; uint64_t prev_job; } ExecUndo;
+/* unlink the stack-resident node and restore the producer's executing
+ * continuation: the normal return path, and (V23 R3) the release a cancelled
+ * continuation runs before its stack is unwound */
+static void exec_undo(void *p) {
+    ExecUndo *u = p;
+    if (u->owner) { Entry *o = ENT(u->owner); __atomic_store_n(&o->exec_job, u->prev_job, __ATOMIC_RELEASE); __atomic_store_n(&o->exec_kc, u->prev_kc, __ATOMIC_RELEASE); }
+    ExecNode *n = u->node;
+    pthread_mutex_lock(&exec_mu); if (n->prev) n->prev->next = n->next; else exec_head = n->next; if (n->next) n->next->prev = n->prev; pthread_mutex_unlock(&exec_mu);
+}
 static void execute(Task t) {
     /* §94: an evaluator task is owned, unfinished work of the thread running
      * it; a kernel continuation may suspend inside it (its stack retains the
@@ -1582,16 +1594,14 @@ static void execute(Task t) {
     KCont *k = kc_current(); bool outer = k && !k->in_eval; if (outer) k->in_eval = true;
     EntryId owner = t.is_pair || t.is_notify ? 0 : t.op ? task_info(&t).producer : t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
     ExecNode node = { k, k ? k->job : 0, owner, NULL, NULL };
-    KCont *prev_kc = NULL; uint64_t prev_job = 0;
+    ExecUndo undo = { &node, owner, NULL, 0 }; KCleanup cl;
     if (k) {
         pthread_mutex_lock(&exec_mu); node.next = exec_head; if (exec_head) exec_head->prev = &node; exec_head = &node; pthread_mutex_unlock(&exec_mu);
-        if (owner) { Entry *o = ENT(owner); prev_kc = __atomic_exchange_n(&o->exec_kc, k, __ATOMIC_ACQ_REL); prev_job = __atomic_exchange_n(&o->exec_job, k->job, __ATOMIC_ACQ_REL); }
+        if (owner) { Entry *o = ENT(owner); undo.prev_kc = __atomic_exchange_n(&o->exec_kc, k, __ATOMIC_ACQ_REL); undo.prev_job = __atomic_exchange_n(&o->exec_job, k->job, __ATOMIC_ACQ_REL); }
+        kc_cleanup_push(&cl, exec_undo, &undo);
     }
     execute_task(t);
-    if (k) {
-        if (owner) { Entry *o = ENT(owner); __atomic_store_n(&o->exec_job, prev_job, __ATOMIC_RELEASE); __atomic_store_n(&o->exec_kc, prev_kc, __ATOMIC_RELEASE); }
-        pthread_mutex_lock(&exec_mu); if (node.prev) node.prev->next = node.next; else exec_head = node.next; if (node.next) node.next->prev = node.prev; pthread_mutex_unlock(&exec_mu);
-    }
+    if (k) { kc_cleanup_pop(&cl); exec_undo(&undo); }
     if (outer) k->in_eval = false;
 }
 /* V21 R2: the continuation that can advance the publication of `want`: one
@@ -1655,9 +1665,9 @@ static void execute_task(Task t) {
         reuse_scope_leave(prev);
         return;
     }
-    add_count(&E.ev.eval_step);
+    XINC(evx, EvalEvents, eval_step);
     { EntryId owner = t.is_resume ? t.k->dest : t.entry;    /* §60 trace: the frame step belongs to the producer it advances */
-      if (owner && !(t.is_resume && (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL))) { Entry *o = ENT(owner); pthread_mutex_lock(&o->mu); o->steps++; pthread_mutex_unlock(&o->mu); } }
+      if (owner && !(t.is_resume && (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL))) { Entry *o = ENT(owner); pthread_mutex_lock(&o->mu); xl_add(&o->steps, &o->steps_carry, 1); pthread_mutex_unlock(&o->mu); } }
     /* V21 R3: the task's events are charged to the scope owning its producer */
     EntryId owner = t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
     ReuseScope *prev = owner ? reuse_scope_enter(ENT(owner)->scope) : reuse_tl_scope;
@@ -1693,9 +1703,9 @@ size_t eval_run(void) {
     if (E.nworkers) {
         /* wait until outstanding == 0 (no queued, reserved or executing job) */
         pthread_mutex_lock(&E.q_mu);
-        size_t before = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
+        size_t before = eval_events().eval_step;
         while (E.outstanding > 0) eval_wait_locked();
-        size_t n = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST) - before;
+        size_t n = eval_events().eval_step - before;
         pthread_mutex_unlock(&E.q_mu);
         return n;
     }

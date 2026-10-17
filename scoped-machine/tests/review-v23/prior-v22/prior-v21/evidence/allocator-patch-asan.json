@@ -1,0 +1,29 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-v21/scoped-machine-v21",
+  "sanitizer": "asan",
+  "detect_leaks": "0",
+  "reused_objects": true,
+  "results": [
+    {
+      "mode": "zero-head",
+      "exit_code": 0,
+      "stdout": "zero-head: nonzero_words=0 first_nonzero=18446744073709551615\n",
+      "stderr": "",
+      "seconds": 0.006054343000869267
+    },
+    {
+      "mode": "zero-order",
+      "exit_code": 0,
+      "stdout": "zero-order: nonzero_words=0 first_nonzero=18446744073709551615\n",
+      "stderr": "",
+      "seconds": 0.004876227998465765
+    },
+    {
+      "mode": "zero-stress",
+      "exit_code": 0,
+      "stdout": "zero-stress: 4000 allocations, every returned word zero\n",
+      "stderr": "",
+      "seconds": 0.10796409299655352
+    }
+  ]
+}

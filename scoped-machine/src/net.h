@@ -83,11 +83,11 @@ typedef struct Net {
     pthread_mutex_t act_mu; pthread_cond_t act_cv, idle_cv;
     size_t outstanding; bool stop;   /* §35: queued + executing active pairs */
     pthread_t *workers; size_t nworkers;
-    size_t rewrites;
+    size_t rewrites; const struct XCarry *rewrites_cx;   /* V23 R5: each count is exact — the word is its low digit, the list its carries (xcount.h) */
     /* local rule instances by class (diamond-balanced event classes), committed only */
-    size_t n_op, n_dup, n_erase, n_eval_deliver;
-    size_t n_apply, n_continue;   /* §43/§45: APPLY_TRANSFORM and CONTINUE_REFERENCE rule events */
-    size_t retries;           /* diagnostics: replacements abandoned after revalidation */
+    size_t n_op, n_dup, n_erase, n_eval_deliver; const struct XCarry *n_op_cx, *n_dup_cx, *n_erase_cx, *n_eval_deliver_cx;
+    size_t n_apply, n_continue; const struct XCarry *n_apply_cx, *n_continue_cx;   /* §43/§45: APPLY_TRANSFORM and CONTINUE_REFERENCE rule events */
+    size_t retries; const struct XCarry *retries_cx;   /* diagnostics: replacements abandoned after revalidation */
     /* §73.3(1): identity applications of the actual run, in commit order.
      * APPLY: (transform, dir, σ, argument, result reference, receiving
      * producer key K when the result port is a CONTINUE_REFERENCE(K));

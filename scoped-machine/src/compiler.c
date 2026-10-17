@@ -1,6 +1,7 @@
 #include "compiler.h"
 #include "proof.h"
 #include "runtime.h"
+#include "kcont.h"
 
 /* ------------------------------------------------------------------ */
 /* registries                                                            */
@@ -49,7 +50,7 @@ void compiler_init(void) {
     memset(&CR, 0, sizeof CR);
     pthread_mutex_init(&CR.mu, NULL); pthread_cond_init(&CR.cv, NULL);
     wordmap_init(&CR.tindex); wordmap_init(&CR.dindex);
-    CR.init = true;
+    CR.init = true; kc_session(KC_MOD_COMPILER, true);
     rt_init(); proof_init();   /* §R5: the runtime-construction and proof-use modules belong to the same serial lifecycle */
 }
 void compiler_free(void) {
@@ -63,6 +64,7 @@ void compiler_free(void) {
     wordmap_free(&CR.tindex); wordmap_free(&CR.dindex);
     pthread_mutex_destroy(&CR.mu); pthread_cond_destroy(&CR.cv);
     memset(&CR, 0, sizeof CR);
+    kc_session(KC_MOD_COMPILER, false);
 }
 static void ensure_init(void) { if (!CR.init) compiler_init(); }
 

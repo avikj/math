@@ -35,7 +35,8 @@ struct KCont {
     pthread_t thread; pthread_mutex_t mu; pthread_cond_t cv;
     int state;                  /* 0 waiting for a grant, 1 running, 2 completed */
     size_t budget, used;        /* the current grant and the transitions taken under it */
-    uint64_t steps;             /* transitions over the whole call */
+    uint64_t steps;             /* transitions over the whole call: V23 R5 the exact count's low digit (written by the continuation's thread only) ... */
+    const struct XCarry *steps_carry;   /* ... and its carry records: steps + 2^64·length (kc_steps) */
     KFn fn; uint64_t arg[6];    /* the call */
     uint64_t out[4]; bool ok; const char *why; KOutcome outcome;   /* its result */
     bool started;
@@ -46,13 +47,43 @@ struct KCont {
     bool in_eval;               /* suspended inside an evaluator task (the task's ownership is retained on this stack) */
     bool abandoned;             /* V21 R5: discarded at closed-session teardown; never granted again */
     struct ReuseScope *acct;    /* V21 R3: the accounting owner of the work executed on this continuation */
+    bool cancel;                /* V23 R3: destroyed at a closed boundary: the next resumption unwinds instead of continuing */
+    struct KOwn *own;           /* V23 R3: the allocations this continuation made and still owns (kalloc registry) */
+    struct KCleanup *cleanups;  /* V23 R3: non-storage ownership registered by frames on this stack (innermost first) */
 };
+/* V23 R3: a frame that links stack-resident state into shared structures
+ * registers its release; cancellation runs the registered releases
+ * (innermost first) before unwinding, a normal return pops without running */
+typedef struct KCleanup { void (*fn)(void *); void *arg; struct KCleanup *prev; } KCleanup;
+void kc_cleanup_push(KCleanup *c, void (*fn)(void *), void *arg);
+void kc_cleanup_pop(KCleanup *c);
+/* the allocation registry (kalloc.c): an allocation made on a continuation is
+ * linked to its KOwn until freed; a completed continuation releases the
+ * registry (its live allocations belong to whatever retains them); a
+ * cancelled continuation's registry is reaped after the machine's own
+ * structures are freed (kc_reap_storage, from machine_free) */
+struct KOwn { pthread_mutex_t mu; void *head; size_t live; bool released; struct KOwn *next; };
+typedef struct KOwn KOwn;
+size_t kalloc_reap_owner(KOwn *o);          /* kalloc.c: frees every allocation still registered to o; returns their count */
+void kalloc_release_owner(KOwn *o);        /* kalloc.c: the owner completed: its registry dissolves as its allocations are freed */
+KOwn *kc_owner_current(void);
+void kc_reap_storage(void);
+/* the machine's live subsystems (machine, evaluator, checker, compiler, engine): the registries of cancelled
+ * continuations are reaped when the last one is freed (their published allocations are freed with them first) */
+enum { KC_MOD_MACHINE = 1, KC_MOD_EVAL = 2, KC_MOD_CHECK = 4, KC_MOD_COMPILER = 8, KC_MOD_WORK = 16 };
+void kc_session(int module, bool live);
+typedef struct { size_t cancelled, unwound_cleanups, reaped_allocations, live_workers; } KcStats;
+KcStats kc_stats(void);
 
+#include "xcount.h"
+static inline XSnap kc_steps(const KCont *k) { XSnap s = { k->steps, k->steps_carry }; return s; }
 KCont *kc_new(KFn fn, const uint64_t *args, size_t nargs);   /* the thread is created at the first grant */
 size_t kc_grant(KCont *k, size_t budget);   /* run up to `budget` transitions (or to completion); returns the transitions taken */
 bool kc_done(const KCont *k);
 void kc_free(KCont *k);                     /* completes the call if it is not finished (unbounded grant); the thread parks for reuse */
-void kc_abandon(KCont *k);                  /* V21 R5: closed-session destruction of an uncompleted continuation */
+void kc_abandon(KCont *k);                  /* = kc_cancel */
+void kc_cancel(KCont *k);                   /* V23 R3: closed-session destruction of a started, uncompleted continuation: its thread unwinds
+                                               (registered releases, its stack segments) back to its base and parks; the record is freed */
 void kc_shutdown(void);                     /* joins the parked continuation threads (engine teardown) */
 
 /* called from fine_bump on every thread; a transition point of the running continuation */

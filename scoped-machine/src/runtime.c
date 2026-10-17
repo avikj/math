@@ -23,11 +23,11 @@ size_t rt_template_count(void) { rt_live(); pthread_mutex_lock(&RT.mu); size_t n
 /* a keyed formal of one template: (construction, levels, slot) */
 typedef struct { uint64_t cons, a, b, c; } Key;
 static TermVarId tv(Key k, uint64_t slot, RefId type) {
-    KeyWord w[6] = { { KW_CONST, 9000 }, { KW_CONST, k.cons }, { KW_CONST, k.a }, { KW_CONST, k.b }, { KW_CONST, k.c }, { KW_CONST, slot } };
+    KeyWord w[6] = { { KW_CONST, 9000 }, { KW_CONST, k.cons }, { KW_NAT, k.a }, { KW_NAT, k.b }, { KW_NAT, k.c }, { KW_CONST, slot } };
     return fresh_term_keyed(w, 6, type);
 }
 static DimVarId dv(Key k, uint64_t slot) {
-    KeyWord w[6] = { { KW_CONST, 9001 }, { KW_CONST, k.cons }, { KW_CONST, k.a }, { KW_CONST, k.b }, { KW_CONST, k.c }, { KW_CONST, slot } };
+    KeyWord w[6] = { { KW_CONST, 9001 }, { KW_CONST, k.cons }, { KW_NAT, k.a }, { KW_NAT, k.b }, { KW_NAT, k.c }, { KW_CONST, slot } };
     return fresh_dim_keyed(w, 6);
 }
 static bool memo_get(Key k, RefId *out) { uint64_t w[4] = { k.cons, k.a, k.b, k.c }; pthread_mutex_lock(&RT.mu); bool h = wordmap_get(&RT.memo, w, 4, out); pthread_mutex_unlock(&RT.mu); return h; }

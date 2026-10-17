@@ -1,0 +1,118 @@
+[
+  {
+    "sanitizer": "asan",
+    "suite": "test_schedule",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "== \u00a728\u201331 schedule independence of interaction work and observed normal forms\n  FIFO/net-FIFO  W=(REQUEST 862, EVAL_STEP 1067, PUB 205, DELIVER 862 | op 4, dup 10, erase 0, eval-deliver 2 | apply 3, continue 3)  hits ready/running 655/2\n  note [LIFO/net-LIFO]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-FIFO]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-random]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-random]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-random]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-random]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-LIFO]: allocation diagnostics differ (refs 1093/1088 origins 138/133 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-LIFO]: allocation diagnostics differ (refs 1093/1088 origins 138/133 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-LIFO]: allocation diagnostics differ (refs 1093/1089 origins 138/134 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-LIFO]: allocation diagnostics differ (refs 1093/1090 origins 138/135 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-FIFO]: allocation diagnostics differ (refs 1093/1087 origins 138/132 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-FIFO]: allocation diagnostics differ (refs 1093/1087 origins 138/132 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-FIFO]: allocation diagnostics differ (refs 1093/1090 origins 138/135 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-FIFO]: allocation diagnostics differ (refs 1093/1088 origins 138/133 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-random]: allocation diagnostics differ (refs 1093/1087 origins 138/132 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-random]: allocation diagnostics differ (refs 1093/1089 origins 138/134 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-random]: allocation diagnostics differ (refs 1093/1088 origins 138/133 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  random/net-random W=(REQUEST 862, EVAL_STEP 1067, PUB 205, DELIVER 862 | op 4, dup 10, erase 0, eval-deliver 2 | apply 3, continue 3)  hits ready/running 655/2\n  37 root observations, 209 cache keys, result graph 3684 nodes (1069 joint refinement classes); 24 schedules compared by exact matching\n  ready-hit/running-hit diagnostics coincide across schedules; REQUEST \u2212 launches = 657 is invariant\n  allocation diagnostics (base): refs 1093 origins 138 maps 1530 faces 143 intervals 428 nominal 451 names 162+327\n  no RUNNING entry survives a completed root observation\nschedule check passed\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "suite": "test_match",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "== \u00a737 exact comparison modulo renaming\n  12 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "suite": "test_templates",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "== fixed templates and the admission transaction\n  80 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "suite": "test_runtime",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "reuse counters: shape nodes 188947, dependency checks 504480, receipt instances 30, ready hits 106926, running joins 1, identity applies 0\nruntime: 85 checks, 0 failures; 51 fixed templates\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "suite": "test_exact",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "level 2^32+1: inferred type U4294967298\nlevel 2^64: inferred type U18446744073709551617; printed U18446744073709551616\n2^192 = 6277101735386680763835789423207666416102355444464034512896\n3 - 2^64 = -18446744073709551613\n256-limb addition under one-step grants: units=1281 max transitions per grant=1 result 2^16384 exact=1\nengine SUM of boxed weights: units=106 kernel transitions=28 result exact=1\ntest_exact: 0 failures\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "suite": "test_deep",
+    "args": [
+      "2000"
+    ],
+    "exit_code": 0,
+    "stdout": "depth 2000 on a 256 KiB thread: shape=1 validate=1 whnf=1 check=VALID segments=71\n",
+    "stderr": "==166==WARNING: ASan doesn't fully support makecontext/swapcontext functions and may produce false positives in some cases!\n"
+  },
+  {
+    "sanitizer": "asan",
+    "suite": "review_nested_scope",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "direct valid=0; nested valid=0; infer=INVALID; check=INVALID; map=INVALID\nsystem with malformed scope in false branch at true: INVALID\nscope containing raw wrapper: valid=0\nvalid scope below raw pair/fst: valid=1; check=VALID\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "suite": "test_schedule",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "== \u00a728\u201331 schedule independence of interaction work and observed normal forms\n  FIFO/net-FIFO  W=(REQUEST 862, EVAL_STEP 1067, PUB 205, DELIVER 862 | op 4, dup 10, erase 0, eval-deliver 2 | apply 3, continue 3)  hits ready/running 655/2\n  note [LIFO/net-LIFO]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-FIFO]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-random]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-random]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-random]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [LIFO/net-random]: allocation diagnostics differ (refs 1093/1079 origins 138/124 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-LIFO]: allocation diagnostics differ (refs 1093/1088 origins 138/133 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-LIFO]: allocation diagnostics differ (refs 1093/1088 origins 138/133 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-LIFO]: allocation diagnostics differ (refs 1093/1089 origins 138/134 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-LIFO]: allocation diagnostics differ (refs 1093/1090 origins 138/135 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-FIFO]: allocation diagnostics differ (refs 1093/1087 origins 138/132 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-FIFO]: allocation diagnostics differ (refs 1093/1087 origins 138/132 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-FIFO]: allocation diagnostics differ (refs 1093/1090 origins 138/135 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-FIFO]: allocation diagnostics differ (refs 1093/1088 origins 138/133 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-random]: allocation diagnostics differ (refs 1093/1087 origins 138/132 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-random]: allocation diagnostics differ (refs 1093/1089 origins 138/134 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  note [random/net-random]: allocation diagnostics differ (refs 1093/1088 origins 138/133 nominal 451/451 names 162+327/162+327 entries 209/209) \u2014 not part of the invariant\n  random/net-random W=(REQUEST 862, EVAL_STEP 1067, PUB 205, DELIVER 862 | op 4, dup 10, erase 0, eval-deliver 2 | apply 3, continue 3)  hits ready/running 655/2\n  37 root observations, 209 cache keys, result graph 3684 nodes (1069 joint refinement classes); 24 schedules compared by exact matching\n  ready-hit/running-hit diagnostics coincide across schedules; REQUEST \u2212 launches = 657 is invariant\n  allocation diagnostics (base): refs 1093 origins 138 maps 1530 faces 143 intervals 428 nominal 451 names 162+327\n  no RUNNING entry survives a completed root observation\nschedule check passed\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "suite": "test_match",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "== \u00a737 exact comparison modulo renaming\n  12 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "suite": "test_templates",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "== fixed templates and the admission transaction\n  80 passed, 0 failed\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "suite": "test_runtime",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "reuse counters: shape nodes 188947, dependency checks 504480, receipt instances 30, ready hits 106926, running joins 1, identity applies 0\nruntime: 85 checks, 0 failures; 51 fixed templates\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "suite": "test_exact",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "level 2^32+1: inferred type U4294967298\nlevel 2^64: inferred type U18446744073709551617; printed U18446744073709551616\n2^192 = 6277101735386680763835789423207666416102355444464034512896\n3 - 2^64 = -18446744073709551613\n256-limb addition under one-step grants: units=1281 max transitions per grant=1 result 2^16384 exact=1\nengine SUM of boxed weights: units=106 kernel transitions=28 result exact=1\ntest_exact: 0 failures\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "suite": "test_deep",
+    "args": [
+      "2000"
+    ],
+    "exit_code": 0,
+    "stdout": "depth 2000 on a 256 KiB thread: shape=1 validate=1 whnf=1 check=VALID segments=32\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "suite": "review_nested_scope",
+    "args": [],
+    "exit_code": 0,
+    "stdout": "direct valid=0; nested valid=0; infer=INVALID; check=INVALID; map=INVALID\nsystem with malformed scope in false branch at true: INVALID\nscope containing raw wrapper: valid=0\nvalid scope below raw pair/fst: valid=1; check=VALID\n",
+    "stderr": ""
+  }
+]

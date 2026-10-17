@@ -12,12 +12,14 @@ static pthread_mutex_t nt_mu = PTHREAD_MUTEX_INITIALIZER;
 static void nt_init(void) {
     if (__atomic_load_n(&nt_live, __ATOMIC_ACQUIRE)) return;
     pthread_mutex_lock(&nt_mu);
-    if (!nt_live) { interner_init(&NT); __atomic_store_n(&nt_live, 1, __ATOMIC_RELEASE); }
+    if (!nt_live) { kalloc_unowned_depth++; interner_init(&NT); kalloc_unowned_depth--; __atomic_store_n(&nt_live, 1, __ATOMIC_RELEASE); }
     pthread_mutex_unlock(&nt_mu);
 }
 static Nat box_limbs(size_t n, const uint64_t *l) {   /* canonical, value >= 2^63 */
     nt_init();
+    kalloc_unowned_depth++;                  /* V23 R3: the limb interner lives for the process: its storage is never a continuation's private temporary */
     uint64_t id = interner_intern(&NT, l, n, NULL);
+    kalloc_unowned_depth--;
     require(id < NAT_BOX - 1, "nat: handle namespace exhausted");
     return NAT_BOX | id;
 }

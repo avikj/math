@@ -1,0 +1,50 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-v23/scoped-machine-v23",
+  "sanitizer": "tsan",
+  "detect_leaks": "0",
+  "reused_objects": true,
+  "results": [
+    {
+      "mode": "canon-tail",
+      "exit_code": 1,
+      "stdout": "canon-tail: distinct 155-digit annotations compare_equal=1 expected=0\n",
+      "stderr": "",
+      "seconds": 0.012340034998487681
+    },
+    {
+      "mode": "export-universe",
+      "exit_code": 1,
+      "stdout": "export-order universe: same value after unrelated Nat allocation exports_equal=0 expected=1\nFIRST\nGRAPH nodes=3 classes=3\n#3 noreq\n#2 W U:9223372036854775809 lv=- #3\n#1 RESULT INTRO #2\nROOT root -> #1\nSECOND\nGRAPH nodes=3 classes=3\n#3 noreq\n#2 W U:9223372036854775810 lv=- #3\n#1 RESULT INTRO #2\nROOT root -> #1\n",
+      "stderr": "",
+      "seconds": 0.017363118000503164
+    },
+    {
+      "mode": "export-template",
+      "exit_code": 1,
+      "stdout": "export-order template: same value after unrelated Nat allocation exports_equal=0 expected=1\nFIRST\nGRAPH nodes=13 classes=13\n#5 C\n#4 F { #5 }\n#3 Es 0/3 #4\n#7 lv 9223372036854775809\n#6 Es 1/5 #7\n#10 x0\n#9 V #10\n#8 Es 2/1 #9\n#13 x1\n#12 V #13\n#11 Es 3/1 #12\n#2 T Refl:1 plam #3 #6 #8 #11\n#1 RESULT INTRO #2\nROOT root -> #1\nSECOND\nGRAPH nodes=13 classes=13\n#5 C\n#4 F { #5 }\n#3 Es 0/3 #4\n#7 lv 9223372036854775810\n#6 Es 1/5 #7\n#10 x0\n#9 V #10\n#8 Es 2/1 #9\n#13 x1\n#12 V #13\n#11 Es 3/1 #12\n#2 T Refl:1 plam #3 #6 #8 #11\n#1 RESULT INTRO #2\nROOT root -> #1\n",
+      "stderr": "",
+      "seconds": 0.0325690109966672
+    },
+    {
+      "mode": "export-runtime",
+      "exit_code": 1,
+      "stdout": "export-order runtime: same value after unrelated Nat allocation exports_equal=0 expected=1\n",
+      "stderr": "",
+      "seconds": 0.040839995999704115
+    },
+    {
+      "mode": "long-name",
+      "exit_code": 66,
+      "stdout": "",
+      "stderr": "ThreadSanitizer:DEADLYSIGNAL\n==49==ERROR: ThreadSanitizer: SEGV on unknown address (pc 0x7f2ee934c299 bp 0x7ffcd69f1370 sp 0x7ffcd69f1368 T49)\n==49==The signal is caused by a READ memory access.\n==49==Hint: this fault was caused by a dereference of a high value address (see register values below).  Disassemble the provided pc to learn which register was used.\n    #0 __sanitizer::atomic_uint32_t::Type __sanitizer::atomic_load<__sanitizer::atomic_uint32_t>(__sanitizer::atomic_uint32_t const volatile*, __sanitizer::memory_order) ../../../../src/libsanitizer/sanitizer_common/sanitizer_atomic_clang_x86.h:37 (libtsan.so.2+0xb1299) (BuildId: 2a13a7710e361d06f7babbea53065ca2be93f738)\n    #1 __tsan::LoadShadow(__tsan::RawShadow*) ../../../../src/libsanitizer/tsan/tsan_shadow.h:183 (libtsan.so.2+0xb1299)\n    #2 __tsan::ContainsSameAccess(__tsan::RawShadow*, __tsan::Shadow, int, int, unsigned long) ../../../../src/libsanitizer/tsan/tsan_rtl_access.cpp:176 (libtsan.so.2+0xb1299)\n    #3 __tsan::MemoryAccess(__tsan::ThreadState*, unsigned long, unsigned long, unsigned long, unsigned long) ../../../../src/libsanitizer/tsan/tsan_rtl_access.cpp:436 (libtsan.so.2+0xb1299)\n    #4 __tsan_read8 ../../../../src/libsanitizer/tsan/tsan_interface.inc:34 (libtsan.so.2+0xb1299)\n    #5 canon_export /workspace/scratch/1d0fbe01e383/review-v23/scoped-machine-v23/src/canon.c:24 (review_v23+0x2dccd) (BuildId: e7cca18c1d9af5c7cc6ed413647852d2278d5fa4)\n    #6 export_ref /workspace/scratch/1d0fbe01e383/review-v23/package/review_v23.c:22 (review_v23+0x62ca) (BuildId: e7cca18c1d9af5c7cc6ed413647852d2278d5fa4)\n    #7 long_name /workspace/scratch/1d0fbe01e383/review-v23/package/review_v23.c:56 (review_v23+0x293d5) (BuildId: e7cca18c1d9af5c7cc6ed413647852d2278d5fa4)\n    #8 main /workspace/scratch/1d0fbe01e383/review-v23/package/review_v23.c:76 (review_v23+0x298b5) (BuildId: e7cca18c1d9af5c7cc6ed413647852d2278d5fa4)\n    #9 <null> <null> (libc.so.6+0x2a1c9) (BuildId: 274eec488d230825a136fa9c4d85370fed7a0a5e)\n    #10 __libc_start_main <null> (libc.so.6+0x2a28a) (BuildId: 274eec488d230825a136fa9c4d85370fed7a0a5e)\n    #11 _start <null> (review_v23+0x3bb4) (BuildId: e7cca18c1d9af5c7cc6ed413647852d2278d5fa4)\n\nThreadSanitizer can not provide additional info.\nSUMMARY: ThreadSanitizer: SEGV ../../../../src/libsanitizer/sanitizer_common/sanitizer_atomic_clang_x86.h:37 in __sanitizer::atomic_uint32_t::Type __sanitizer::atomic_load<__sanitizer::atomic_uint32_t>(__sanitizer::atomic_uint32_t const volatile*, __sanitizer::memory_order)\n==49==ABORTING\n",
+      "seconds": 0.03172324600018328
+    },
+    {
+      "mode": "cleanup-long",
+      "exit_code": 1,
+      "stdout": "cleanup-long: finite call completed=0; native workers retained after closed teardown=1 expected=0\n",
+      "stderr": "",
+      "seconds": 1.061526577002951
+    }
+  ]
+}

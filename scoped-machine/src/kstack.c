@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <sys/mman.h>
 #include <ucontext.h>
+#include <setjmp.h>
 
 #if defined(__SANITIZE_ADDRESS__)
 void __sanitizer_start_switch_fiber(void **fake_stack_save, const void *bottom, size_t size);
@@ -19,6 +20,8 @@ void __tsan_destroy_fiber(void *fiber);
 void __tsan_switch_to_fiber(void *fiber, unsigned flags);
 #endif
 
+__thread void *kstack_unwind;
+static __thread bool seg_cancelled;   /* the segment just left was left by a cancellation unwind */
 static __thread char *seg_lo;          /* lowest usable address of the current segment */
 static __thread size_t nseg;
 static __thread void (*run_fn)(void *); static __thread void *run_arg;
@@ -42,12 +45,19 @@ bool kstack_low(void) {
     return sp < seg_lo || (size_t)(sp - seg_lo) < KSTACK_RESERVE;
 }
 size_t kstack_segments(void) { return nseg; }
+static size_t live_segs;
+size_t kstack_live_segments(void) { return __atomic_load_n(&live_segs, __ATOMIC_RELAXED); }
 
 static void trampoline(void) {
 #if defined(__SANITIZE_ADDRESS__)
     __sanitizer_finish_switch_fiber(NULL, &asan_ret_bottom, &asan_ret_size);
 #endif
-    run_fn(run_arg);
+    {
+        jmp_buf jb; void *save = kstack_unwind; kstack_unwind = &jb;
+        if (setjmp(jb) == 0) run_fn(run_arg);
+        else seg_cancelled = true;              /* unwound to this segment's entry: return to the parent, which continues the unwind */
+        kstack_unwind = save;
+    }
     /* back to the caller's segment (uc_link is not used: the sanitizer
      * switch has to be announced before the final switch) */
 #if defined(__SANITIZE_ADDRESS__)
@@ -74,7 +84,7 @@ void kstack_run(void (*fn)(void *), void *arg) {
 #if defined(__SANITIZE_ADDRESS__)
     const void *ab_save = asan_ret_bottom; size_t as_save = asan_ret_size; void *fake = NULL;
 #endif
-    run_fn = fn; run_arg = arg; ret_ctx = &here; seg_lo = seg + 4096; nseg++;
+    run_fn = fn; run_arg = arg; ret_ctx = &here; seg_lo = seg + 4096; nseg++; __atomic_add_fetch(&live_segs, 1, __ATOMIC_RELAXED);
 #if defined(__SANITIZE_ADDRESS__)
     __sanitizer_start_switch_fiber(&fake, seg, KSTACK_SEG);
 #endif
@@ -91,4 +101,6 @@ void kstack_run(void (*fn)(void *), void *arg) {
 #endif
     seg_lo = lo_save; run_fn = fn_save; run_arg = arg_save; ret_ctx = ret_save;
     munmap(seg, KSTACK_SEG);
+    __atomic_sub_fetch(&live_segs, 1, __ATOMIC_RELAXED);
+    if (seg_cancelled) { seg_cancelled = false; longjmp(*(jmp_buf *)kstack_unwind, 1); }   /* continue the unwind in the parent segment */
 }

@@ -1,0 +1,15 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-v23/fresh-application/scoped-machine-v23",
+  "sanitizer": "tsan",
+  "detect_leaks": "0",
+  "reused_objects": true,
+  "results": [
+    {
+      "mode": "small-stack-validation",
+      "exit_code": 0,
+      "stdout": "small-stack-validation: malformed ref valid=0 scope valid=0 check-under-false=INVALID segments=3\n",
+      "stderr": "",
+      "seconds": 0.018752082003629766
+    }
+  ]
+}

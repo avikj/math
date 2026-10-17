@@ -1,0 +1,64 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-v23/scoped-machine-v23",
+  "sanitizer": "tsan",
+  "detect_leaks": "0",
+  "reused_objects": true,
+  "results": [
+    {
+      "mode": "zero-head",
+      "exit_code": 0,
+      "stdout": "zero-head: nonzero_words=0 first_nonzero=18446744073709551615\n",
+      "stderr": "",
+      "seconds": 0.008269776997622102
+    },
+    {
+      "mode": "zero-order",
+      "exit_code": 0,
+      "stdout": "zero-order: nonzero_words=0 first_nonzero=18446744073709551615\n",
+      "stderr": "",
+      "seconds": 0.007758571002341341
+    },
+    {
+      "mode": "ledger",
+      "exit_code": 0,
+      "stdout": "interleaved shape accounting: actual=19 charged=19\n",
+      "stderr": "",
+      "seconds": 0.04111392200138653
+    },
+    {
+      "mode": "capacity",
+      "exit_code": 0,
+      "stdout": "257 live continuations completed\n",
+      "stderr": "",
+      "seconds": 0.08675969899923075
+    },
+    {
+      "mode": "wait-owner",
+      "exit_code": 0,
+      "stdout": "wait owner: actual_owner=1 unrelated_owner=0\n",
+      "stderr": "",
+      "seconds": 0.05223804300476331
+    },
+    {
+      "mode": "cleanup-wait",
+      "exit_code": 0,
+      "stdout": "cleanup-wait: waiter and owner suspended; starting teardown\ncleanup-wait: teardown returned\n",
+      "stderr": "",
+      "seconds": 0.030711116996826604
+    },
+    {
+      "mode": "cleanup-drain",
+      "exit_code": 0,
+      "stdout": "cleanup-wait: waiter and owner suspended; starting teardown\ncleanup-drain: actual owner and waiter completed\ncleanup-wait: teardown returned\n",
+      "stderr": "",
+      "seconds": 0.10077724300208502
+    },
+    {
+      "mode": "zero-stress",
+      "exit_code": 0,
+      "stdout": "zero-stress: 4000 allocations, every returned word zero\n",
+      "stderr": "",
+      "seconds": 0.08037785300257383
+    }
+  ]
+}

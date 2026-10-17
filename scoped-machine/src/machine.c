@@ -2,6 +2,7 @@
 #include "lib.h"
 #include "reuse.h"
 #include "fine.h"
+#include "kcont.h"
 
 Machine M;
 /* the machine lifetime generation: thread-local construction state that
@@ -11,6 +12,7 @@ uint64_t machine_generation(void) { return __atomic_load_n(&machine_gen_ctr, __A
 
 void machine_init(void) {
     memset(&M, 0, sizeof M);
+    kc_session(KC_MOD_MACHINE, true);
     __atomic_add_fetch(&machine_gen_ctr, 1, __ATOMIC_ACQ_REL);
     interner_init(&M.intervals);
     interner_init(&M.faces);
@@ -68,4 +70,5 @@ void machine_free(void) {
     chunked_free(&M.defs);
     pthread_mutex_destroy(&M.term_mu);
     memset(&M, 0, sizeof M);
+    kc_session(KC_MOD_MACHINE, false);   /* V23 R3: with the last subsystem, what cancelled continuations still owned privately is reaped */
 }

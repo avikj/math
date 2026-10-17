@@ -8,19 +8,19 @@
 #include "reuse.h"
 #include <string.h>
 
-static uint64_t counters[REUSE_COUNTER_COUNT];
+static XCount counters[REUSE_COUNTER_COUNT];
 
 __thread ReuseScope *reuse_tl_scope;
-static uint64_t late[REUSE_PHASES][REUSE_COUNTER_COUNT];
+static XCount late[REUSE_PHASES][REUSE_COUNTER_COUNT];
 static ReuseScope *all_scopes;
 void reuse_bump(ReuseCounter c) {
-    __atomic_add_fetch(&counters[c], 1, __ATOMIC_RELAXED);
+    xc_add(&counters[c], 1);
     ReuseScope *s = reuse_tl_scope;
     if (!s) return;
-    __atomic_add_fetch(&s->c[c], 1, __ATOMIC_SEQ_CST);
+    xc_add(&s->c[c], 1);
     if (__atomic_load_n(&s->closed, __ATOMIC_SEQ_CST)) {   /* closed: fold this event (and any racing one) exactly once */
-        uint64_t v = __atomic_exchange_n(&s->c[c], 0, __ATOMIC_SEQ_CST);
-        if (v) __atomic_add_fetch(&late[s->phase][c], v, __ATOMIC_SEQ_CST);
+        XSnap v = xc_take(&s->c[c]);
+        xc_add_snap(&late[s->phase][c], v);
     }
 }
 ReuseScope *reuse_scope_new(int phase) {
@@ -34,15 +34,18 @@ void reuse_scope_ref(ReuseScope *s) { if (s) __atomic_add_fetch(&s->refs, 1, __A
 void reuse_scope_unref(ReuseScope *s) { if (s) __atomic_sub_fetch(&s->refs, 1, __ATOMIC_ACQ_REL); }
 ReuseScope *reuse_scope_enter(ReuseScope *s) { ReuseScope *p = reuse_tl_scope; reuse_tl_scope = s; return p; }
 void reuse_scope_leave(ReuseScope *prev) { reuse_tl_scope = prev; }
-uint64_t reuse_scope_take(ReuseScope *s, ReuseCounter c) { return __atomic_exchange_n(&s->c[c], 0, __ATOMIC_SEQ_CST); }
+XSnap reuse_scope_take(ReuseScope *s, ReuseCounter c) { return xc_take(&s->c[c]); }
 void reuse_scope_close(ReuseScope *s) {
     __atomic_store_n(&s->closed, 1, __ATOMIC_SEQ_CST);
-    for (int c = 0; c < REUSE_COUNTER_COUNT; c++) { uint64_t v = __atomic_exchange_n(&s->c[c], 0, __ATOMIC_SEQ_CST); if (v) __atomic_add_fetch(&late[s->phase][c], v, __ATOMIC_SEQ_CST); }
+    for (int c = 0; c < REUSE_COUNTER_COUNT; c++) { XSnap v = xc_take(&s->c[c]); xc_add_snap(&late[s->phase][c], v); }
 }
-uint64_t reuse_scope_late(int phase, ReuseCounter c) { return __atomic_load_n(&late[phase][c], __ATOMIC_SEQ_CST); }
+uint64_t reuse_scope_late(int phase, ReuseCounter c) { return xs_u64_checked(xc_snap(&late[phase][c]), "reuse late total"); }
+XSnap reuse_scope_late_snap(int phase, ReuseCounter c) { return xc_snap(&late[phase][c]); }
+XSnap reuse_snap(ReuseCounter c) { return xc_snap(&counters[c]); }
+void reuse_seed(ReuseCounter c, uint64_t low) { xc_seed(&counters[c], low); }
 void reuse_scope_reclaim(void) {
     ReuseScope **pp = &all_scopes;
     while (*pp) { ReuseScope *s = *pp; if (__atomic_load_n(&s->refs, __ATOMIC_ACQUIRE) <= 0) { *pp = s->all_next; free(s); } else pp = &s->all_next; }
 }
-void reuse_reset_all(void) { for (int i = 0; i < REUSE_COUNTER_COUNT; i++) __atomic_store_n(&counters[i], 0, __ATOMIC_SEQ_CST); memset(late, 0, sizeof late); }
-uint64_t reuse_count(ReuseCounter c) { return __atomic_load_n(&counters[c], __ATOMIC_SEQ_CST); }
+void reuse_reset_all(void) { for (int i = 0; i < REUSE_COUNTER_COUNT; i++) xc_reset(&counters[i]); for (int p = 0; p < REUSE_PHASES; p++) for (int i = 0; i < REUSE_COUNTER_COUNT; i++) xc_reset(&late[p][i]); }
+uint64_t reuse_count(ReuseCounter c) { return xs_u64_checked(xc_snap(&counters[c]), "reuse count"); }   /* checked word projection */

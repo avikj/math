@@ -2,6 +2,7 @@
 #define CUBICAL_REUSE_H
 #include "common.h"
 #include "reuse_stats.h"
+#include "xcount.h"
 void reuse_bump(ReuseCounter c);
 void reuse_reset_all(void);    /* machine teardown only */
 
@@ -13,7 +14,7 @@ void reuse_reset_all(void);    /* machine teardown only */
  * taken by one atomic exchange); an event arriving after the close is folded
  * by its own exchange into the late totals (`reuse_scope_late`). */
 typedef struct ReuseScope {
-    uint64_t c[REUSE_COUNTER_COUNT];
+    XCount c[REUSE_COUNTER_COUNT];   /* V23 R5: exact */
     int phase;                       /* the owner's ledger phase */
     int closed;                      /* atomic */
     int refs;                        /* atomic: the owner + every producer entry it launched */
@@ -25,9 +26,12 @@ void reuse_scope_ref(ReuseScope *s);
 void reuse_scope_unref(ReuseScope *s);                  /* storage is retained until reuse_scope_reclaim */
 ReuseScope *reuse_scope_enter(ReuseScope *s);           /* returns the previous scope */
 void reuse_scope_leave(ReuseScope *prev);
-uint64_t reuse_scope_take(ReuseScope *s, ReuseCounter c);   /* atomically take the counts not yet folded */
+XSnap reuse_scope_take(ReuseScope *s, ReuseCounter c);      /* atomically take the counts not yet folded (exact) */
 void reuse_scope_close(ReuseScope *s);
-uint64_t reuse_scope_late(int phase, ReuseCounter c);   /* events folded after their scope closed, per phase */
+uint64_t reuse_scope_late(int phase, ReuseCounter c);   /* events folded after their scope closed, per phase (checked word projection) */
+XSnap reuse_scope_late_snap(int phase, ReuseCounter c);
+XSnap reuse_snap(ReuseCounter c);                      /* exact global count */
+void reuse_seed(ReuseCounter c, uint64_t low);         /* tests: a valid boundary state */
 void reuse_scope_reclaim(void);                          /* machine teardown: free unreferenced scopes */
 #define REUSE_PHASES 8
 #endif

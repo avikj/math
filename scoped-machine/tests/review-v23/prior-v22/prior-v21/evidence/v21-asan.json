@@ -1,0 +1,65 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-v21/scoped-machine-v21",
+  "sanitizer": "asan",
+  "detect_leaks": "0",
+  "reused_objects": true,
+  "results": [
+    {
+      "mode": "zero-head",
+      "exit_code": 1,
+      "stdout": "zero-head: nonzero_words=32 first_nonzero=1\n",
+      "stderr": "",
+      "seconds": 0.005912829998123925
+    },
+    {
+      "mode": "zero-order",
+      "exit_code": 1,
+      "stdout": "zero-order: nonzero_words=32 first_nonzero=1\n",
+      "stderr": "",
+      "seconds": 0.006331646000035107
+    },
+    {
+      "mode": "ledger",
+      "exit_code": 1,
+      "stdout": "interleaved shape accounting: actual=19 charged=29\n",
+      "stderr": "",
+      "seconds": 0.0361315679983818
+    },
+    {
+      "mode": "capacity",
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "fatal: kcont: too many live continuations\n",
+      "seconds": 0.03605721300118603
+    },
+    {
+      "mode": "wait-owner",
+      "exit_code": 1,
+      "stdout": "wait owner: actual_owner=0 unrelated_owner=1\n",
+      "stderr": "",
+      "seconds": 0.05087385599472327
+    },
+    {
+      "mode": "cleanup-wait",
+      "exit_code": null,
+      "error": "timeout",
+      "stdout": "cleanup-wait: waiter and owner suspended; starting teardown\n",
+      "stderr": "",
+      "seconds": 10.014586915000109
+    },
+    {
+      "mode": "cleanup-drain",
+      "exit_code": 0,
+      "stdout": "cleanup-wait: waiter and owner suspended; starting teardown\ncleanup-drain: actual owner and waiter completed\ncleanup-wait: teardown returned\n",
+      "stderr": "",
+      "seconds": 0.08623078299569897
+    },
+    {
+      "mode": "zero-stress",
+      "exit_code": -6,
+      "stdout": "",
+      "stderr": "review_v21: /workspace/scratch/1d0fbe01e383/review-v21/package/review_v21.c:83: zero_worker: Assertion `p[i]==0' failed.\nreview_v21: /workspace/scratch/1d0fbe01e383/review-v21/package/review_v21.c:83: zero_worker: Assertion `p[i]==0' failed.\nreview_v21: /workspace/scratch/1d0fbe01e383/review-v21/package/review_v21.c:83: zero_worker: Assertion `p[i]==0' failed.\n",
+      "seconds": 0.01046776000293903
+    }
+  ]
+}

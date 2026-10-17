@@ -29,7 +29,9 @@
  *                 current tickets pending and jobs held; an external consumer
  *                 is delivered exactly once across adoption and the
  *                 superseded delivery
- * Run: test_live_cut {pending|race-deliver|race-adopt|multi|premise|guards|budget|teardown|all} [workers] [fifo|lifo|random] */
+ *   edge        — an instantiation edge recorded after the slot subscribed
+ *                 registers a new watch (history replayed) and the slot adopts
+ * Run: test_live_cut {pending|race-deliver|race-adopt|multi|premise|guards|budget|teardown|edge|all} [workers] [fifo|lifo|random] */
 #include "check.h"
 #include "lib.h"
 #include "compiler.h"
@@ -439,6 +441,33 @@ static void t_teardown(void) {
       EXPECT(e.freed == 0, "(b) a delivered consumer is not released again"); }
 }
 
+/* ---- an instantiation edge recorded after the slot subscribed ---- */
+static void t_edge(void) {
+    start(); World w; world(&w);
+    RefId term = simple_term(&w, w.i);
+    MapBuilder m; mapb_init(&m); mapb_dim(&m, w.i, iv_var(w.j)); RefId term2 = reindex(term, mapb_finish(&m));   /* (λz. p@j) x */
+    RefId r = at0(term, w.i);                                           /* (λz. p@0) x; its recorded edge comes from term */
+    uint64_t di[] = { w.i };
+    SymbolId W = wrap(&w, "wrap", term, 1, di);
+    RefId I = at0(global_ref(W), w.i);                                  /* unfolds to r */
+    Hold h = { true, r, fc_true(), false, false, 0, NULL };
+    eval_set_hold(hold_pred, &h);
+    WhnfStatus s; whnf(I, fc_true(), &s);
+    EntryId Ie = eval_entry_lookup(I, fc_true());
+    whnf(term2, fc_true(), &s);                                         /* term2's fact: no edge relates it to r yet */
+    EXPECT(eval_entry_state(Ie) == E_RUNNING && cev().installs == 0, "edge: no recorded correspondence, no adoption");
+    size_t ew0 = cev().edge_watches;
+    MapBuilder m2; mapb_init(&m2); mapb_dim(&m2, w.j, iv_zero());
+    RefId r2 = reindex(term2, mapb_finish(&m2));                        /* records the edge r ← term2 */
+    EXPECT(r2 == r, "edge: term2[j↦0] is the slot's residual");
+    eval_run();
+    EvalResult *ri = whnf(I, fc_true(), &s);
+    EXPECT(cev().edge_watches > ew0 && cev().installs == 1 && s == W_OK && ri && ri->ref == w.x, "edge: the new edge registers a watch and the slot adopts term2's fact (watches %zu->%zu installs=%zu)", ew0, cev().edge_watches, cev().installs);
+    printf("edge workers=%zu: watches=%zu installs=%zu answer x=%d\n", g_workers, cev().edge_watches - ew0, cev().installs, ri && ri->ref == w.x);
+    eval_set_hold(NULL, NULL); eval_release_held(); eval_run();
+    stop();
+}
+
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
     const char *m = argc > 1 ? argv[1] : "all";
@@ -453,6 +482,7 @@ int main(int argc, char **argv) {
     if (all || !strcmp(m, "guards")) t_guards();
     if (all || !strcmp(m, "budget")) t_budget();
     if (all || !strcmp(m, "teardown")) t_teardown();
+    if (all || !strcmp(m, "edge")) t_edge();
     printf("test_live_cut %s: %d failures\n", m, fails);
     return fails ? 1 : 0;
 }

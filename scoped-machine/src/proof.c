@@ -11,15 +11,15 @@ static struct {
     WordMap verdicts;       /* (ctx, face, e, E) → verdict record id */
     Interner records;       /* verdict records: [status, nassump, assump..., nrec, rec..., ndeps, (sym,rev)...] */
     pthread_mutex_t mu;
-    uint64_t steps;
+    XCount steps;   /* V23 R5: exact */
     bool live;
 } P;
 
 /* §R5: initialized in the serial lifecycle (compiler_init), torn down at the quiescent boundary (compiler_free); public entries require it live */
 void proof_init(void) { if (P.live) return; memset(&P, 0, sizeof P); interner_init(&P.sets); wordmap_init(&P.ref_memo); wordmap_init(&P.verdicts); interner_init(&P.records); pthread_mutex_init(&P.mu, NULL); P.live = true; }
 void proof_free(void) { if (!P.live) return; interner_free(&P.sets); wordmap_free(&P.ref_memo); wordmap_free(&P.verdicts); interner_free(&P.records); pthread_mutex_destroy(&P.mu); P.live = false; }
-uint64_t proof_audit_steps(void) { return __atomic_load_n(&P.steps, __ATOMIC_SEQ_CST); }
-static void step(void) { __atomic_add_fetch(&P.steps, 1, __ATOMIC_RELAXED); fine_bump(FC_AUDIT_STEPS); }
+uint64_t proof_audit_steps(void) { return xs_u64_checked(xc_snap(&P.steps), "proof audit steps"); }
+static void step(void) { xc_add(&P.steps, 1); fine_bump(FC_AUDIT_STEPS); }
 const char *proof_use_name(ProofUseStatus s) { static const char *n[] = { "CORE", "ASSUMED", "PENDING", "INVALID", "UNRESOLVED" }; return n[s]; }
 
 /* the interner and the word map are internally synchronized (§94): no outer P.mu section around them */

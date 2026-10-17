@@ -3,6 +3,8 @@
 #include "fine.h"
 #include <sys/mman.h>
 #include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
 /* ---- extents and the block pools (BOUNDS-COMPLETION §5) ----
  *
@@ -46,14 +48,68 @@ void arena_init(void) {
 /* the extents live for the process: kernel blocks (kalloc.c) outlive the engine's lifecycle; the engine returns its own blocks to the pools */
 void arena_free(void) { }
 bool arena_live(void) { return A.live; }
-/* the exact index of owned extents (kalloc's ownership test): extents are
- * only ever prepended and never released, so a reader traverses the list
- * without the lock (acquire loads of release-published records) */
-bool arena_owns(const void *p) {
-    for (Extent *e = __atomic_load_n(&A.extents, __ATOMIC_ACQUIRE); e; e = e->next)
-        if ((const uint64_t *)p >= e->base && (const uint64_t *)p < e->base + e->words) return true;
+/* V23 R4: the ownership index — a persistent binary trie over native
+ * uintptr_t addresses. Each extent [b,e) is decomposed into aligned dyadic
+ * blocks (at most twice the address width of them); each block's prefix is
+ * marked OWNED. A lookup follows at most one child per address bit and stops
+ * at an OWNED marker or a missing child, independently of the number of
+ * extents. Insertions copy the path (new nodes fully initialized, then the
+ * root published with release; readers acquire it); old roots and nodes stay
+ * valid (extents are never released). Index nodes are host records, never
+ * arena storage, so building the index cannot recurse into it. */
+#define ADDR_BITS (sizeof(uintptr_t) * 8)
+typedef struct INode { const struct INode *child[2]; bool owned; struct INode *all_next; } INode;
+static const INode *I_root; static INode *I_all; static size_t I_nodes;
+static INode *inode_new(const INode *from) {
+    INode *n = (calloc)(1, sizeof *n); require(n, "arena: the host could not supply an index record");
+    if (from) { n->child[0] = from->child[0]; n->child[1] = from->child[1]; n->owned = from->owned; }
+    n->all_next = I_all; I_all = n; I_nodes++; fine_bump(FC_ALLOC_OPS);
+    return n;
+}
+/* the root with prefix (addr's top `len` bits) marked owned; path copied (locked: extent acquisition) */
+static const INode *inode_insert(const INode *root, uintptr_t addr, unsigned len) {
+    INode *nr = inode_new(root), *cur = nr;
+    for (unsigned d = 0; d < len; d++) {
+        if (cur->owned) return nr;                               /* an enclosing prefix is already owned */
+        unsigned bit = (unsigned)((addr >> (ADDR_BITS - 1 - d)) & 1);
+        INode *c = inode_new(cur->child[bit]); cur->child[bit] = c; cur = c;
+    }
+    cur->owned = true; cur->child[0] = cur->child[1] = NULL;
+    return nr;
+}
+static void index_extent_locked(uintptr_t b, uintptr_t e) {
+    const INode *root = I_root;
+    while (b < e) {
+        unsigned k = 0;                                          /* the largest aligned block at b inside [b,e) */
+        while (k + 1 < ADDR_BITS && (b & (((uintptr_t)1 << (k + 1)) - 1)) == 0 && ((uintptr_t)1 << (k + 1)) <= e - b) k++;
+        root = inode_insert(root, b, (unsigned)ADDR_BITS - k);
+        b += (uintptr_t)1 << k;
+    }
+    __atomic_store_n(&I_root, root, __ATOMIC_RELEASE);
+}
+bool arena_owns_steps(const void *p, size_t *steps) {
+    uintptr_t a = (uintptr_t)p; size_t n = 0;
+    const INode *x = __atomic_load_n(&I_root, __ATOMIC_ACQUIRE);
+    for (unsigned d = 0; x; d++) {
+        n++;
+        if (x->owned) { if (steps) *steps = n; return true; }
+        if (d == ADDR_BITS) break;
+        x = x->child[(a >> (ADDR_BITS - 1 - d)) & 1];
+    }
+    if (steps) *steps = n;
     return false;
 }
+bool arena_owns(const void *p) {
+    bool r = arena_owns_steps(p, NULL);
+    return r;
+}
+bool arena_extent_bounds(size_t i, uintptr_t *b, uintptr_t *e) {
+    pthread_mutex_lock(&A.mu); Extent *x = A.extents; size_t k = A.nextents; bool ok = i < k;
+    for (size_t j = 0; ok && j + 1 < k - i; j++) x = x->next;   /* extents are prepended: index 0 is the oldest */
+    if (ok) { *b = (uintptr_t)x->base; *e = (uintptr_t)(x->base + x->words); }
+    pthread_mutex_unlock(&A.mu); return ok;
+}
+size_t arena_index_nodes(void) { pthread_mutex_lock(&A.mu); size_t n = I_nodes; pthread_mutex_unlock(&A.mu); return n; }
 size_t arena_extents(void) { pthread_mutex_lock(&A.mu); size_t n = A.nextents; pthread_mutex_unlock(&A.mu); return n; }
 size_t arena_owned_words(void) { pthread_mutex_lock(&A.mu); size_t n = A.owned_words; pthread_mutex_unlock(&A.mu); return n; }
 ArenaStats arena_stats(void) { pthread_mutex_lock(&A.mu); ArenaStats s = A.st; pthread_mutex_unlock(&A.mu); return s; }
@@ -85,7 +141,9 @@ static bool extend_locked(size_t w) {
     void *p = mmap(NULL, words * sizeof(uint64_t), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE, -1, 0);
     if (p == MAP_FAILED) return false;   /* the host could not supply storage: a resource condition */
     Extent *e = (calloc)(1, sizeof *e); if (!e) { munmap(p, words * sizeof(uint64_t)); return false; }   /* extent records are host allocations (never inside an extent) */
-    e->base = p; e->words = words; e->fresh = 0; e->next = A.extents; __atomic_store_n(&A.extents, e, __ATOMIC_RELEASE); A.cur = e; A.nextents++; A.owned_words += words;
+    e->base = p; e->words = words; e->fresh = 0; e->next = A.extents;
+    index_extent_locked((uintptr_t)p, (uintptr_t)p + words * sizeof(uint64_t));   /* V23 R4: indexed before any block of it is handed out */
+    __atomic_store_n(&A.extents, e, __ATOMIC_RELEASE); A.cur = e; A.nextents++; A.owned_words += words;
     BLOCK_POISON(e->base, words);
     return true;
 }

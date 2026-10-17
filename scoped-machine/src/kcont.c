@@ -1,7 +1,9 @@
 #include "common.h"
 #include "kcont.h"
 #include "reuse.h"
+#include "kstack.h"
 #include <string.h>
+#include <setjmp.h>
 
 __thread KCont *kc_tl;
 __thread int kc_lock_depth;
@@ -16,7 +18,26 @@ typedef struct KWorker { pthread_t thread; pthread_mutex_t mu; pthread_cond_t cv
  * record after the machine's storage is retired (V21 R5) */
 static pthread_mutex_t P_mu = PTHREAD_MUTEX_INITIALIZER;
 static KWorker *parked, *all;
+static KOwn *reap_list;                 /* registries of cancelled continuations, reaped after the machine's structures (kc_reap_storage) */
+static size_t st_cancelled, st_cleanups, st_reaped, st_workers;
 KCont *kc_current(void) { return kc_tl; }
+KOwn *kc_owner_current(void) { KCont *k = kc_tl; return k ? k->own : NULL; }
+void kc_cleanup_push(KCleanup *c, void (*fn)(void *), void *arg) { KCont *k = kc_tl; c->fn = fn; c->arg = arg; c->prev = NULL; if (!k) return; c->prev = k->cleanups; k->cleanups = c; }
+void kc_cleanup_pop(KCleanup *c) { KCont *k = kc_tl; if (!k) return; require(k->cleanups == c, "kcont: cleanup records pop in order"); k->cleanups = c->prev; }
+KcStats kc_stats(void) { KcStats s; pthread_mutex_lock(&P_mu); s.cancelled = st_cancelled; s.unwound_cleanups = st_cleanups; s.reaped_allocations = st_reaped; s.live_workers = st_workers; pthread_mutex_unlock(&P_mu); return s; }
+/* V23 R3: the cancellation return path. At a resumption point the thread
+ * holds no lock (every yield is taken at lock depth 0); the registered
+ * releases run innermost first while their frames are still live, then the
+ * thread jumps to the innermost unwind target (its segment's entry or the
+ * continuation's base) — never across a segment boundary. */
+static void kc_unwind(KCont *k) {
+    require(kc_lock_depth == 0, "kcont: cancellation at a resumption point holding a lock");
+    size_t n = 0;
+    for (KCleanup *c = k->cleanups; c; c = c->prev) { c->fn(c->arg); n++; }
+    k->cleanups = NULL;
+    if (n) { pthread_mutex_lock(&P_mu); st_cleanups += n; pthread_mutex_unlock(&P_mu); }
+    longjmp(*(jmp_buf *)kstack_unwind, 1);
+}
 
 static void run_one(KCont *k, pthread_mutex_t *wmu, KCont **wrunning) {
     kc_tl = k;
@@ -24,10 +45,19 @@ static void run_one(KCont *k, pthread_mutex_t *wmu, KCont **wrunning) {
     while (k->state != 1) pthread_cond_wait(&k->cv, &k->mu);   /* the first grant */
     pthread_mutex_unlock(&k->mu);
     ReuseScope *prev_acct = reuse_scope_enter(k->acct);
-    k->fn(k);
+    KOwn *own = (calloc)(1, sizeof *own); require(own, "out of memory"); pthread_mutex_init(&own->mu, NULL);
+    k->own = own;
+    jmp_buf base; void *prev_target = kstack_unwind; kstack_unwind = &base;
+    volatile bool cancelled = false;
+    if (setjmp(base) == 0) k->fn(k);
+    else cancelled = true;                       /* V23 R3: unwound by cancellation; no result is published */
+    kstack_unwind = prev_target;
     reuse_scope_leave(prev_acct);
     require(kc_lock_depth == 0, "kernel continuation completed holding a lock");
-    if (k->outcome == KO_PENDING) k->outcome = k->ok ? KO_OK : KO_INVALID;
+    k->own = NULL;
+    if (cancelled) { pthread_mutex_lock(&P_mu); own->next = reap_list; reap_list = own; pthread_mutex_unlock(&P_mu); }
+    else kalloc_release_owner(own);              /* its live allocations belong to whatever retains them */
+    if (!cancelled && k->outcome == KO_PENDING) k->outcome = k->ok ? KO_OK : KO_INVALID;
     kc_tl = NULL;
     pthread_mutex_lock(wmu); *wrunning = NULL; pthread_mutex_unlock(wmu);   /* before completion is visible: the record may be freed after it */
     pthread_mutex_lock(&k->mu);
@@ -53,7 +83,7 @@ static void assign(KCont *k) {
     else {
         w = (calloc)(1, sizeof *w); require(w, "out of memory");
         pthread_mutex_init(&w->mu, NULL); pthread_cond_init(&w->cv, NULL);
-        w->all_next = all; all = w;
+        w->all_next = all; all = w; st_workers++;
         require(pthread_create(&w->thread, NULL, kc_worker, w) == 0, "kcont: thread");
     }
     pthread_mutex_unlock(&P_mu);
@@ -87,21 +117,42 @@ void kc_free(KCont *k) {
     if (k->started) while (k->state != 2) kc_grant(k, KC_UNBOUNDED);
     pthread_mutex_destroy(&k->mu); pthread_cond_destroy(&k->cv); (free)(k);
 }
-/* V21 R5: closed-session destruction of a started continuation that cannot
- * be completed: it is never granted again; its parked thread is detached at
- * shutdown and keeps its record (held no lock at its last yield) */
-void kc_abandon(KCont *k) {
+/* V23 R3: closed-session destruction of a started, uncompleted continuation
+ * (the closed-session precondition: no client retains it). It is resumed
+ * once with `cancel` set: its thread runs the registered releases, unwinds
+ * through its stack segments to its base, hands its allocation registry to
+ * the reap list and parks; then the record is freed. Nothing is evaluated
+ * and no result is published. */
+void kc_cancel(KCont *k) {
     if (!k) return;
     if (!k->started || k->state == 2) { kc_free(k); return; }
-    pthread_mutex_lock(&k->mu); k->abandoned = true; pthread_mutex_unlock(&k->mu);
+    pthread_mutex_lock(&k->mu);
+    k->cancel = true; k->abandoned = true; k->state = 1; pthread_cond_broadcast(&k->cv);
+    while (k->state != 2) pthread_cond_wait(&k->cv, &k->mu);
+    pthread_mutex_unlock(&k->mu);
+    pthread_mutex_lock(&P_mu); st_cancelled++; pthread_mutex_unlock(&P_mu);
+    kc_free(k);
 }
-void kc_shutdown(void) {   /* teardown: every continuation has completed, so every worker is parked or about to park */
+void kc_abandon(KCont *k) { kc_cancel(k); }
+/* after the machine's own structures are freed: allocations still registered
+ * to a cancelled continuation were private to it (anything it had published
+ * was freed with the structure retaining it, which unregistered it) */
+void kc_reap_storage(void) {
+    pthread_mutex_lock(&P_mu); KOwn *o = reap_list; reap_list = NULL; pthread_mutex_unlock(&P_mu);
+    while (o) { KOwn *n = o->next; size_t c = kalloc_reap_owner(o); pthread_mutex_lock(&P_mu); st_reaped += c; pthread_mutex_unlock(&P_mu); o = n; }
+}
+static int live_modules;
+void kc_session(int module, bool live) {
+    pthread_mutex_lock(&P_mu); if (live) live_modules |= module; else live_modules &= ~module; bool reap = live_modules == 0 && reap_list; pthread_mutex_unlock(&P_mu);
+    if (reap) kc_reap_storage();
+}
+void kc_shutdown(void) {   /* teardown: every continuation has completed or been cancelled, so every worker is parked or about to park */
     pthread_mutex_lock(&P_mu); KWorker *w = all; all = NULL; parked = NULL; pthread_mutex_unlock(&P_mu);
     while (w) {
         KWorker *n = w->all_next;
-        pthread_mutex_lock(&w->mu); bool abandoned = w->running && w->running->abandoned; w->stop = true; pthread_cond_broadcast(&w->cv); pthread_mutex_unlock(&w->mu);
-        if (abandoned) pthread_detach(w->thread);   /* parked forever inside an abandoned continuation: detached, its records kept */
-        else { pthread_join(w->thread, NULL); pthread_mutex_destroy(&w->mu); pthread_cond_destroy(&w->cv); (free)(w); }
+        pthread_mutex_lock(&w->mu); w->stop = true; pthread_cond_broadcast(&w->cv); pthread_mutex_unlock(&w->mu);
+        pthread_join(w->thread, NULL); pthread_mutex_destroy(&w->mu); pthread_cond_destroy(&w->cv); (free)(w);
+        pthread_mutex_lock(&P_mu); st_workers--; pthread_mutex_unlock(&P_mu);
         w = n;
     }
     /* a worker that finished its continuation during the drain parks itself
@@ -116,13 +167,15 @@ static void yield_now(KCont *k) {
     pthread_mutex_lock(&k->mu);
     k->state = 0; pthread_cond_broadcast(&k->cv);
     while (k->state != 1) pthread_cond_wait(&k->cv, &k->mu);
+    bool cancel = k->cancel;
     pthread_mutex_unlock(&k->mu);
+    if (cancel) kc_unwind(k);
 }
 void kc_wait_job(pthread_cond_t *cv, pthread_mutex_t *mu, KCont *on, uint64_t on_job) {
     KCont *k = kc_tl;
     if (!k || (k->budget == KC_UNBOUNDED && !on)) { pthread_cond_wait(cv, mu); return; }   /* a plain thread, or a synchronous run waiting on another plain thread */
     /* a continuation: the wait is one transition; it yields with the dependency recorded */
-    k->steps++; k->used++;
+    xl_add(&k->steps, &k->steps_carry, 1); k->used++;
     k->blocked = true; k->blocked_on = on; k->blocked_job = on ? on_job : 0;
     pthread_mutex_unlock(mu);
     require(kc_lock_depth == 0, "kernel continuation waits while holding another lock");
@@ -134,7 +187,7 @@ void kc_wait(pthread_cond_t *cv, pthread_mutex_t *mu, KCont *on) { kc_wait_job(c
 void kc_safepoint(void) { KCont *k = kc_tl; if (!k || k->budget == KC_UNBOUNDED || k->used < k->budget || kc_lock_depth > 0) return; yield_now(k); }
 void kc_tick(void) {
     KCont *k = kc_tl; if (!k) return;
-    k->steps++;
+    xl_add(&k->steps, &k->steps_carry, 1);
     if (k->budget == KC_UNBOUNDED) { k->used++; return; }
     k->used++;
     if (k->used < k->budget) return;

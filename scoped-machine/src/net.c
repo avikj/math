@@ -165,7 +165,8 @@ static void retire(Net *n, NodeId a) {
     for (uint16_t k = 0; k < x->nports; k++) x->peer[k].node = 0;
 }
 
-static void count(size_t *c) { __atomic_add_fetch(c, 1, __ATOMIC_RELAXED); }
+#include "xcount.h"
+_Static_assert(sizeof(size_t) == sizeof(uint64_t), "net counts: a word is the low digit");
 
 /* ------------------------------------------------------------------ */
 /* local replacement with explicit boundary (§20)                       */
@@ -394,14 +395,14 @@ static void net_eval_deliver(void *ctx, EvalResult *r) {
         pthread_mutex_unlock(&x->mu);
         if (q.node) lock_two(n, pend, q.node); else pthread_mutex_lock(&x->mu);
         if (!x->live) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); return; }
-        if (x->peer[0].node != q.node || x->peer[0].port != q.port) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); count(&n->retries); fine_bump(FC_NET_RETRIES); continue; }
+        if (x->peer[0].node != q.node || x->peer[0].port != q.port) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); xc_add2((uint64_t *)&n->retries, &n->retries_cx, 1); fine_bump(FC_NET_RETRIES); continue; }
         ActiveVec pending = {0}; tls_pending = &pending;
         Payload p = {0}; p.a = (uint64_t)(uintptr_t)r; p.ref = r->ref;
         NodeId d = net_descriptor(n, r->cls == R_NO_OBSERVATION ? D_STATUS : D_EVAL_RESULT, p);
         if (r->cls == R_NO_OBSERVATION) N(n, d)->p.a = ST_NO_OBSERVATION;
         retire(n, pend);
         if (q.node) net_connect(n, d, 0, q.node, q.port);
-        count(&n->rewrites); count(&n->n_eval_deliver);
+        xc_add2((uint64_t *)&n->rewrites, &n->rewrites_cx, 1); xc_add2((uint64_t *)&n->n_eval_deliver, &n->n_eval_deliver_cx, 1);
         tls_pending = NULL;
         if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu);
         flush_pending(n, &pending);
@@ -673,7 +674,7 @@ static void op_commit(Net *n, NodeId op, NodeId data, OpSpec *sp) {
     case SP_MATERIALIZE: res = materialize(n, N(n, data)->head); break;
     case SP_APPLY: {
         res = net_descriptor(n, D_REF, sp->p);
-        count(&n->n_apply); reuse_bump(REUSE_IDENTITY_APPLY);
+        xc_add2((uint64_t *)&n->n_apply, &n->n_apply_cx, 1); reuse_bump(REUSE_IDENTITY_APPLY);
         NetTraceEvent ev = { NT_APPLY_TRANSFORM, sp->ap_id, sp->ap_dir, sp->ap_map, sp->ap_arg, sp->p.ref, 0 };
         Endpoint rp = N(n, op)->peer[1];
         if (rp.node && N(n, rp.node)->kind == A_CONTINUE_REFERENCE) ev.K = N(n, rp.node)->p.a;
@@ -709,7 +710,7 @@ static bool apply_rule(Net *n, NodeId neg, NodeId pos, OpSpec *pre) {
     Node *ng = N(n, neg), *ps = N(n, pos);
     if (ng->kind == A_ROOT || ps->kind == (NodeKind)0) return false;   /* observation root / pending: no rule */
     if (is_operation(ng->kind)) {
-        if (is_descriptor(ps->kind)) { rule_op(n, neg, pos, pre); count(&n->n_op); return true; }
+        if (is_descriptor(ps->kind)) { rule_op(n, neg, pos, pre); xc_add2((uint64_t *)&n->n_op, &n->n_op_cx, 1); return true; }
         /* an operation meeting a shell is a sort mismatch */
         Replacement r; rep_init(&r);
         rep_remove(&r, neg);
@@ -717,21 +718,21 @@ static bool apply_rule(Net *n, NodeId neg, NodeId pos, OpSpec *pre) {
         rep_commit(n, &r);
         int8_t per[1] = { -1 }; Payload e = {0};
         net_connect(n, net_node(n, A_ERASE, 1, per, e), 0, pos, 0);
-        count(&n->n_op);
+        xc_add2((uint64_t *)&n->n_op, &n->n_op_cx, 1);
         return true;
     }
     if (ng->kind == A_DUP) {
         if (is_descriptor(ps->kind)) rule_dup_data(n, neg, pos);
         else if (is_shell(ps->kind)) rule_dup_shell(n, neg, pos);
         else return false;
-        count(&n->n_dup);
+        xc_add2((uint64_t *)&n->n_dup, &n->n_dup_cx, 1);
         return true;
     }
     if (ng->kind == A_ERASE) {
         if (is_descriptor(ps->kind)) rule_erase_data(n, neg, pos);
         else if (is_shell(ps->kind)) rule_erase_shell(n, neg, pos);
         else return false;
-        count(&n->n_erase);
+        xc_add2((uint64_t *)&n->n_erase, &n->n_erase_cx, 1);
         return true;
     }
     if (ng->kind == A_CONTINUE_REFERENCE) {
@@ -745,7 +746,7 @@ static bool apply_rule(Net *n, NodeId neg, NodeId pos, OpSpec *pre) {
         rep_commit(n, &r);
         { NetTraceEvent ev = { NT_CONTINUE_REFERENCE, 0, 0, 0, 0, v, K };
           pthread_mutex_lock(&n->trace_mu); vec_push(&n->trace, ev); pthread_mutex_unlock(&n->trace_mu); }
-        count(&n->n_continue);          /* counted before the forward publication: a reader woken by the result sees the rule event (ordering race fixed) */
+        xc_add2((uint64_t *)&n->n_continue, &n->n_continue_cx, 1);          /* counted before the forward publication: a reader woken by the result sees the rule event (ordering race fixed) */
         /* the receiver's request is evaluator work (entry lookup, shape, prefix
          * publication): it is issued after the redex's locks are released */
         tls_forward_K = K; tls_forward_v = v;
@@ -775,7 +776,7 @@ static bool step(Net *n, Active cand) {
         lock_two(n, a, b);
         Node *y = N(n, b);
         bool valid = x->live && y->live && x->gen == cand.gen && x->peer[0].node == b && x->peer[0].port == 0 && y->peer[0].node == a && y->peer[0].port == 0;
-        if (!valid) { unlock_two(n, a, b); if (!x->live || x->gen != cand.gen) { result = false; break; } count(&n->retries); fine_bump(FC_NET_RETRIES); continue; }
+        if (!valid) { unlock_two(n, a, b); if (!x->live || x->gen != cand.gen) { result = false; break; } xc_add2((uint64_t *)&n->retries, &n->retries_cx, 1); fine_bump(FC_NET_RETRIES); continue; }
         uint64_t gen_b = y->gen;
         /* collect the surviving boundary: every auxiliary neighbour of a and b */
         size_t need = 2 + (size_t)x->nports + (size_t)y->nports;
@@ -829,7 +830,7 @@ static bool step(Net *n, Active cand) {
             for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
             spec_discard(&spec);
             if (!x->live || x->gen != cand.gen) { result = false; break; }
-            count(&n->retries); fine_bump(FC_NET_RETRIES);
+            xc_add2((uint64_t *)&n->retries, &n->retries_cx, 1); fine_bump(FC_NET_RETRIES);
             continue;
         }
         /* orient: negative principal (agent) vs positive principal (data/shell) */
@@ -837,7 +838,7 @@ static bool step(Net *n, Active cand) {
         ActiveVec pending = {0}; tls_pending = &pending;
         bool did = apply_rule(n, neg, pos, have_spec ? &spec : NULL);
         spec_discard(&spec);
-        if (did) count(&n->rewrites);
+        if (did) xc_add2((uint64_t *)&n->rewrites, &n->rewrites_cx, 1);
         tls_pending = NULL;
         for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
         if (tls_eval_ctx) { void *ctx = tls_eval_ctx; RefId r = tls_eval_ref; FaceId f = tls_eval_face; tls_eval_ctx = NULL; eval_request(r, f, cont_external(net_eval_deliver, ctx, free)); }

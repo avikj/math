@@ -32,7 +32,10 @@
 void arena_init(void);                           /* the allocator (extents are requested on demand) */
 void arena_free(void);                           /* extents live for the process */
 bool arena_live(void);
-bool arena_owns(const void *p);                  /* p lies in an owned extent (kalloc: ownership test) */
+bool arena_owns(const void *p);                  /* p lies in an owned extent (kalloc: ownership test) — V23 R4: a radix lookup, at most one node per address bit */
+bool arena_owns_steps(const void *p, size_t *steps);   /* the same, reporting the index nodes visited */
+size_t arena_index_nodes(void);
+bool arena_extent_bounds(size_t i, uintptr_t *b, uintptr_t *e);   /* tests: extent i (0 = oldest) as [b,e) */
 size_t arena_extents(void);                      /* extents requested from the host so far */
 size_t arena_owned_words(void);                  /* words of all owned extents */
 void arena_set_extent_policy(size_t words);      /* growth policy: the minimum words of a new extent (tests use tiny extents) */
