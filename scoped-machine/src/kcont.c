@@ -10,12 +10,15 @@ __thread int kc_last_counter;
 /* continuation threads are reused: a thread whose call completed parks and
  * takes the next continuation (no thread creation per kernel call after the
  * first few; the parked set is a free list) */
-typedef struct KWorker { pthread_t thread; pthread_mutex_t mu; pthread_cond_t cv; KCont *k; struct KWorker *next, *all_next; bool stop; } KWorker;
+typedef struct KWorker { pthread_t thread; pthread_mutex_t mu; pthread_cond_t cv; KCont *k; KCont *running; struct KWorker *next, *all_next; bool stop; } KWorker;
+/* continuation records and workers are host allocations (not the machine's
+ * arena): an abandoned continuation's parked thread keeps referring to its
+ * record after the machine's storage is retired (V21 R5) */
 static pthread_mutex_t P_mu = PTHREAD_MUTEX_INITIALIZER;
 static KWorker *parked, *all;
 KCont *kc_current(void) { return kc_tl; }
 
-static void run_one(KCont *k) {
+static void run_one(KCont *k, pthread_mutex_t *wmu, KCont **wrunning) {
     kc_tl = k;
     pthread_mutex_lock(&k->mu);
     while (k->state != 1) pthread_cond_wait(&k->cv, &k->mu);   /* the first grant */
@@ -26,6 +29,7 @@ static void run_one(KCont *k) {
     require(kc_lock_depth == 0, "kernel continuation completed holding a lock");
     if (k->outcome == KO_PENDING) k->outcome = k->ok ? KO_OK : KO_INVALID;
     kc_tl = NULL;
+    pthread_mutex_lock(wmu); *wrunning = NULL; pthread_mutex_unlock(wmu);   /* before completion is visible: the record may be freed after it */
     pthread_mutex_lock(&k->mu);
     k->state = 2; pthread_cond_broadcast(&k->cv);
     pthread_mutex_unlock(&k->mu);
@@ -36,9 +40,9 @@ static void *kc_worker(void *p) {
         pthread_mutex_lock(&w->mu);
         while (!w->k && !w->stop) pthread_cond_wait(&w->cv, &w->mu);
         if (!w->k) { pthread_mutex_unlock(&w->mu); return NULL; }
-        KCont *k = w->k; w->k = NULL;
+        KCont *k = w->k; w->k = NULL; w->running = k;
         pthread_mutex_unlock(&w->mu);
-        run_one(k);
+        run_one(k, &w->mu, &w->running);
         pthread_mutex_lock(&P_mu); w->next = parked; parked = w; pthread_mutex_unlock(&P_mu);   /* park */
     }
 }
@@ -47,7 +51,7 @@ static void assign(KCont *k) {
     KWorker *w = parked;
     if (w) parked = w->next;
     else {
-        w = calloc(1, sizeof *w); require(w, "out of memory");
+        w = (calloc)(1, sizeof *w); require(w, "out of memory");
         pthread_mutex_init(&w->mu, NULL); pthread_cond_init(&w->cv, NULL);
         w->all_next = all; all = w;
         require(pthread_create(&w->thread, NULL, kc_worker, w) == 0, "kcont: thread");
@@ -57,7 +61,7 @@ static void assign(KCont *k) {
 }
 
 KCont *kc_new(KFn fn, const uint64_t *args, size_t nargs) {
-    KCont *k = calloc(1, sizeof *k); require(k, "out of memory");
+    KCont *k = (calloc)(1, sizeof *k); require(k, "out of memory");
     pthread_mutex_init(&k->mu, NULL); pthread_cond_init(&k->cv, NULL);
     k->fn = fn; require(nargs <= 6, "kcont args"); for (size_t i = 0; i < nargs; i++) k->arg[i] = args[i];
     k->why = "";
@@ -81,11 +85,25 @@ bool kc_done(const KCont *k) { return k->state == 2; }
 void kc_free(KCont *k) {
     if (!k) return;
     if (k->started) while (k->state != 2) kc_grant(k, KC_UNBOUNDED);
-    pthread_mutex_destroy(&k->mu); pthread_cond_destroy(&k->cv); free(k);
+    pthread_mutex_destroy(&k->mu); pthread_cond_destroy(&k->cv); (free)(k);
+}
+/* V21 R5: closed-session destruction of a started continuation that cannot
+ * be completed: it is never granted again; its parked thread is detached at
+ * shutdown and keeps its record (held no lock at its last yield) */
+void kc_abandon(KCont *k) {
+    if (!k) return;
+    if (!k->started || k->state == 2) { kc_free(k); return; }
+    pthread_mutex_lock(&k->mu); k->abandoned = true; pthread_mutex_unlock(&k->mu);
 }
 void kc_shutdown(void) {   /* teardown: every continuation has completed, so every worker is parked or about to park */
     pthread_mutex_lock(&P_mu); KWorker *w = all; all = NULL; parked = NULL; pthread_mutex_unlock(&P_mu);
-    while (w) { KWorker *n = w->all_next; pthread_mutex_lock(&w->mu); w->stop = true; pthread_cond_broadcast(&w->cv); pthread_mutex_unlock(&w->mu); pthread_join(w->thread, NULL); pthread_mutex_destroy(&w->mu); pthread_cond_destroy(&w->cv); free(w); w = n; }
+    while (w) {
+        KWorker *n = w->all_next;
+        pthread_mutex_lock(&w->mu); bool abandoned = w->running && w->running->abandoned; w->stop = true; pthread_cond_broadcast(&w->cv); pthread_mutex_unlock(&w->mu);
+        if (abandoned) pthread_detach(w->thread);   /* parked forever inside an abandoned continuation: detached, its records kept */
+        else { pthread_join(w->thread, NULL); pthread_mutex_destroy(&w->mu); pthread_cond_destroy(&w->cv); (free)(w); }
+        w = n;
+    }
 }
 /* one transition of the running continuation: under a bounded grant, the
  * budget's last transition yields — at the first transition point where the

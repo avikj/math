@@ -44,6 +44,7 @@ struct KCont {
     uint64_t blocked_job;       /* V21 R2: that continuation's job, read when the wait was installed (the stable dependency handle) */
     bool blocked;               /* the last yield was a wait (not a budget exhaustion) */
     bool in_eval;               /* suspended inside an evaluator task (the task's ownership is retained on this stack) */
+    bool abandoned;             /* V21 R5: discarded at closed-session teardown; never granted again */
     struct ReuseScope *acct;    /* V21 R3: the accounting owner of the work executed on this continuation */
 };
 
@@ -51,6 +52,7 @@ KCont *kc_new(KFn fn, const uint64_t *args, size_t nargs);   /* the thread is cr
 size_t kc_grant(KCont *k, size_t budget);   /* run up to `budget` transitions (or to completion); returns the transitions taken */
 bool kc_done(const KCont *k);
 void kc_free(KCont *k);                     /* completes the call if it is not finished (unbounded grant); the thread parks for reuse */
+void kc_abandon(KCont *k);                  /* V21 R5: closed-session destruction of an uncompleted continuation */
 void kc_shutdown(void);                     /* joins the parked continuation threads (engine teardown) */
 
 /* called from fine_bump on every thread; a transition point of the running continuation */

@@ -2492,9 +2492,33 @@ void work_init(void) {
 }
 void work_free(void) {
     if (!W.live) return;
-    for (size_t i = 1; i <= W.tab.n; i++) {   /* abandoned handles' continuations complete before teardown */
-        Side *sd = side(i); if (!sd->ptr || sd->kind != K_JOB) continue; Op *o = sd->ptr;
-        for (size_t k = 0; k < o->stack.n; k++) { Frame *f = paged_at(&o->stack, k); if (f->fam == OF_KERNEL && f->ph == 1 && f->acc) { kc_free((KCont *)(uintptr_t)f->acc); f->acc = 0; } }
+    /* V21 R5: started continuations are drained through their dependencies:
+     * a pass grants every continuation that is not waiting on another
+     * uncompleted one (a bounded grant each); passes repeat while one
+     * completes. What remains — waits on each other (a pending cycle), on a
+     * plain thread, or runs on without completing within its pass — is
+     * discarded under the closed-session precondition (kc_abandon), never
+     * completed in isolation. Record order is not a progress rule. */
+    {
+        Words ks, jobs; words_init(&ks); words_init(&jobs);
+        for (size_t i = 1; i <= W.tab.n; i++) {
+            Side *sd = side(i); if (!sd->ptr || sd->kind != K_JOB) continue; Op *o = sd->ptr;
+            for (size_t k = 0; k < o->stack.n; k++) { Frame *f = paged_at(&o->stack, k); if (f->fam == OF_KERNEL && f->ph == 1 && f->acc) { words_push(&ks, f->acc); words_push(&jobs, o->id); f->acc = 0; } }
+        }
+        for (bool completed = true; completed;) {
+            completed = false;
+            for (size_t i = 0; i < ks.n; i++) {
+                KCont *k = (KCont *)(uintptr_t)ks.w[i]; if (!k || kc_done(k)) continue;
+                bool waits = false;
+                if (k->blocked && k->blocked_job) for (size_t j = 0; j < ks.n && !waits; j++) if (jobs.w[j] == k->blocked_job && ks.w[j] && !kc_done((KCont *)(uintptr_t)ks.w[j])) waits = true;
+                if (waits) continue;
+                if (!k->started) continue;
+                kc_grant(k, (size_t)1 << 20);
+                if (kc_done(k)) completed = true;
+            }
+        }
+        for (size_t i = 0; i < ks.n; i++) { KCont *k = (KCont *)(uintptr_t)ks.w[i]; if (!k) continue; if (k->acct && kc_done(k)) { reuse_scope_close(k->acct); reuse_scope_unref(k->acct); } kc_abandon(k); }
+        words_free(&ks); words_free(&jobs);
     }
     kc_shutdown();
     for (size_t i = 1; i <= W.tab.n; i++) {
