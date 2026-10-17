@@ -490,23 +490,18 @@ A trace is proof because its type constrains which transformations can inhabit i
 
 A trace is transport because it carries an object between representations or states.
 
-Thus:
+These are different interfaces onto one typed symbolic object:
 
 ```math
-\boxed{
-\text{Data}
-\;\simeq\;
-\text{Program}
-\;\simeq\;
-\text{Execution}
-\;\simeq\;
-\text{Proof}
-\;\simeq\;
-\text{Transport}
-}
+\begin{array}{rcl}
+\mathrm{store}(\tau) &:& \text{data},\\
+\mathrm{execute}(\tau) &:& \text{program / execution},\\
+\mathrm{type}(\tau) &:& \text{proof obligation},\\
+\mathrm{apply}(\tau) &:& \text{transport}.
+\end{array}
 ```
 
-These are different interfaces onto one typed symbolic object.
+The claim is not that these interface types are pairwise equivalent. The same trace can be stored, executed, checked, and applied through each interface.
 
 ## 11. Metacircular execution
 
