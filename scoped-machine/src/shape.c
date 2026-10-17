@@ -1,4 +1,5 @@
 /* shape.c — structural computation identity (§76). See shape.h. */
+#include "kstack.h"
 #include "shape.h"
 #include "state.h"
 #include "reuse.h"
@@ -34,7 +35,15 @@ static MapId rho_restrict(MapId rho, RefId t) {
     return mapb_finish(&b);
 }
 
+/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
+static ShapeId shape_under_body(RefId t, MapId rho, size_t depth);
+typedef struct { RefId t; MapId rho; size_t depth; ShapeId out; } shape_under_args;
+static void shape_under_thunk(void *p) { shape_under_args *a = p; a->out = shape_under_body(a->t, a->rho, a->depth); }
 ShapeId shape_under(RefId t, MapId rho, size_t depth) {
+    if (!kstack_low()) return shape_under_body(t, rho, depth);
+    shape_under_args a = { t, rho, depth, 0 }; kstack_run(shape_under_thunk, &a); return a.out;
+}
+static ShapeId shape_under_body(RefId t, MapId rho, size_t depth) {
     ShapeId memo;
     rho = rho_restrict(rho, t);
     if (memo_get(t, rho, depth, &memo)) return memo;

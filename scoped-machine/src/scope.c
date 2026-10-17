@@ -1,3 +1,4 @@
+#include "kstack.h"
 #include "scope.h"
 #include "fine.h"
 #include "template.h"   /* the validator walks template environments */
@@ -219,7 +220,15 @@ static void val_scope(ScopeId S, ValCtx *v);
 static void val_dims(const Words *w, ValCtx *v) { for (size_t k = 0; k < w->n && !v->why; k++) if (is_bound_id(w->w[k])) val_atom(v, w->w[k], S_DIM); }
 static void val_iv(IntervalId r, ValCtx *v) { Words w; words_init(&w); iv_dims(r, &w); val_dims(&w, v); words_free(&w); }
 static void val_fc(FaceId f, ValCtx *v) { Words w; words_init(&w); fc_dims(f, &w); val_dims(&w, v); words_free(&w); }
+/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
+static void val_ref_body(RefId t, ValCtx *v);
+typedef struct { RefId t; ValCtx *v; } val_ref_args;
+static void val_ref_thunk(void *p) { val_ref_args *a = p; val_ref_body(a->t, a->v); }
 static void val_ref(RefId t, ValCtx *v) {
+    if (!kstack_low()) val_ref_body(t, v); return;
+    val_ref_args a = { t, v }; kstack_run(val_ref_thunk, &a);
+}
+static void val_ref_body(RefId t, ValCtx *v) {
     if (v->why) return;
     if (ref_is_var(t)) { uint64_t x = ref_var_id(t); if (is_bound_id(x)) val_atom(v, x, S_TERM); return; }
     uint64_t stk = stack_key(v);
@@ -263,7 +272,15 @@ static ScopeId prefix_scope(ScopeId S, size_t k) {
     ScopeId P = scope_intern(k, ls, b, 0, LEVEL_NONE, fc_true());
     free(ls); return P;
 }
+/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
+static void val_scope_body(ScopeId S, ValCtx *v);
+typedef struct { ScopeId S; ValCtx *v; } val_scope_args;
+static void val_scope_thunk(void *p) { val_scope_args *a = p; val_scope_body(a->S, a->v); }
 static void val_scope(ScopeId S, ValCtx *v) {
+    if (!kstack_low()) val_scope_body(S, v); return;
+    val_scope_args a = { S, v }; kstack_run(val_scope_thunk, &a);
+}
+static void val_scope_body(ScopeId S, ValCtx *v) {
     if (v->why) return;
     uint64_t stk = stack_key(v);
     if (validated_before(0x5CA1, S, stk)) return;

@@ -1,3 +1,4 @@
+#include "kstack.h"
 #include "check.h"
 #include "reuse.h"
 #include "kcont.h"
@@ -1030,7 +1031,15 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
 /* inference of an arbitrary reference under a clause: variables directly,
  * views through the substitution lemma */
 static CheckStatus infer_tview(ContextId G, FaceId C, RefId t, RefId *type, const char **reason);
+/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
+static CheckStatus infer_clause_body(ContextId G, FaceId C, RefId t, RefId *type, const char **reason);
+typedef struct { ContextId G; FaceId C; RefId t; RefId *type; const char **reason; CheckStatus out; } infer_clause_args;
+static void infer_clause_thunk(void *p) { infer_clause_args *a = p; a->out = infer_clause_body(a->G, a->C, a->t, a->type, a->reason); }
 static CheckStatus infer_clause(ContextId G, FaceId C, RefId t, RefId *type, const char **reason) {
+    if (!kstack_low()) return infer_clause_body(G, C, t, type, reason);
+    infer_clause_args a = { G, C, t, type, reason, 0 }; kstack_run(infer_clause_thunk, &a); return a.out;
+}
+static CheckStatus infer_clause_body(ContextId G, FaceId C, RefId t, RefId *type, const char **reason) {
     if (!budget_ok()) { *reason = R_BUDGET; return CK_UNRESOLVED; }
     G = under(G, C);
     if (ref_is_var(t)) return infer_head(G, C, t, type, reason);
@@ -1262,7 +1271,15 @@ Inference infer(ContextId G, FaceId chi, RefId t) {
 /* ------------------------------------------------------------------ */
 /* checking against an expected type                                    */
 
+/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
+static CheckStatus check_clause_body(ContextId G, FaceId C, RefId t, RefId A, const char **reason);
+typedef struct { ContextId G; FaceId C; RefId t; RefId A; const char **reason; CheckStatus out; } check_clause_args;
+static void check_clause_thunk(void *p) { check_clause_args *a = p; a->out = check_clause_body(a->G, a->C, a->t, a->A, a->reason); }
 static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const char **reason) {
+    if (!kstack_low()) return check_clause_body(G, C, t, A, reason);
+    check_clause_args a = { G, C, t, A, reason, 0 }; kstack_run(check_clause_thunk, &a); return a.out;
+}
+static CheckStatus check_clause_body(ContextId G, FaceId C, RefId t, RefId A, const char **reason) {
     if (!budget_ok()) { *reason = R_BUDGET; return CK_UNRESOLVED; }
     G = under(G, C);
     Tag tag = 0;
@@ -1430,7 +1447,15 @@ static ConvStatus observe_both(FaceId C, RefId a, RefId b, EvalResult **ra, Eval
     return CV_EQUAL;
 }
 
+/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
+static ConvStatus conv_type_clause_body(ContextId G, FaceId C, RefId A, RefId B);
+typedef struct { ContextId G; FaceId C; RefId A; RefId B; ConvStatus out; } conv_type_clause_args;
+static void conv_type_clause_thunk(void *p) { conv_type_clause_args *a = p; a->out = conv_type_clause_body(a->G, a->C, a->A, a->B); }
 static ConvStatus conv_type_clause(ContextId G, FaceId C, RefId A, RefId B) {
+    if (!kstack_low()) return conv_type_clause_body(G, C, A, B);
+    conv_type_clause_args a = { G, C, A, B, 0 }; kstack_run(conv_type_clause_thunk, &a); return a.out;
+}
+static ConvStatus conv_type_clause_body(ContextId G, FaceId C, RefId A, RefId B) {
     if (A == B) return CV_EQUAL;
     if (!budget_ok()) return CV_UNRESOLVED;
     G = under(G, C);
@@ -1489,7 +1514,15 @@ done:
     return out;
 }
 
+/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
+static ConvStatus conv_term_clause_body(ContextId G, FaceId C, RefId t, RefId u, RefId A);
+typedef struct { ContextId G; FaceId C; RefId t; RefId u; RefId A; ConvStatus out; } conv_term_clause_args;
+static void conv_term_clause_thunk(void *p) { conv_term_clause_args *a = p; a->out = conv_term_clause_body(a->G, a->C, a->t, a->u, a->A); }
 static ConvStatus conv_term_clause(ContextId G, FaceId C, RefId t, RefId u, RefId A) {
+    if (!kstack_low()) return conv_term_clause_body(G, C, t, u, A);
+    conv_term_clause_args a = { G, C, t, u, A, 0 }; kstack_run(conv_term_clause_thunk, &a); return a.out;
+}
+static ConvStatus conv_term_clause_body(ContextId G, FaceId C, RefId t, RefId u, RefId A) {
     if (t == u) return CV_EQUAL;
     if (!budget_ok()) return CV_UNRESOLVED;
     G = under(G, C);
@@ -1555,7 +1588,15 @@ done:
 }
 
 /* structural comparison of neutral spines; n1, n2 are neutral result references */
+/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
+static ConvStatus spine_body(ContextId G, FaceId C, RefId n1, RefId n2);
+typedef struct { ContextId G; FaceId C; RefId n1; RefId n2; ConvStatus out; } spine_args;
+static void spine_thunk(void *p) { spine_args *a = p; a->out = spine_body(a->G, a->C, a->n1, a->n2); }
 static ConvStatus spine(ContextId G, FaceId C, RefId n1, RefId n2) {
+    if (!kstack_low()) return spine_body(G, C, n1, n2);
+    spine_args a = { G, C, n1, n2, 0 }; kstack_run(spine_thunk, &a); return a.out;
+}
+static ConvStatus spine_body(ContextId G, FaceId C, RefId n1, RefId n2) {
     if (n1 == n2) return CV_EQUAL;
     if (!budget_ok()) return CV_UNRESOLVED;
     G = under(G, C);

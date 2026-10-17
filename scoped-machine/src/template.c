@@ -1,3 +1,4 @@
+#include "kstack.h"
 #include "template.h"
 
 /* ------------------------------------------------------------------ */
@@ -235,7 +236,15 @@ static TVal interp_scope(ExprId e, Env *env) {
     TVal v = { PS_SCOPE, S }; return v;
 }
 
+/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
+static TVal interp_body(ExprId e, Env *env);
+typedef struct { ExprId e; Env *env; TVal out; } interp_args;
+static void interp_thunk(void *p) { interp_args *a = p; a->out = interp_body(a->e, a->env); }
 static TVal interp(ExprId e, Env *env) {
+    if (!kstack_low()) return interp_body(e, env);
+    interp_args a = { e, env, 0 }; kstack_run(interp_thunk, &a); return a.out;
+}
+static TVal interp_body(ExprId e, Env *env) {
     size_t n; const uint64_t *w = xw(e, &n);
     switch (w[0]) {
     case X_PARAM: require(env->has[w[1]], "template: parameter %llu unset", (unsigned long long)w[1]); return env->val[w[1]];
