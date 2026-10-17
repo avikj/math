@@ -60,10 +60,11 @@ struct Cont {
     uint64_t prefix;                 /* §78: receipt of the rules applied before this request was issued (FORWARD) */
     RefId req;                       /* the reference this continuation requested (§84.2: a child's prefix is lifted only when it is a fact about this exact reference) */
     EntryId child;                   /* the entry this continuation waits on */
+    EntryId prefix_premise;          /* BRANCH: immutable READY scrutinee used by its guarded entry receipt */
 };
 
 /* a job: EVALUATE(entry), RESUME(k, r), or a NET_PAIR of the evaluator's net (§43) */
-typedef struct { bool is_resume, is_pair, is_notify; EntryId entry; Cont *k; EvalResult *r; Active pair; const struct PrefixFact *fact; size_t idx; } Task;   /* is_notify: §84.2 deliver `fact` of `entry` to its waiter `idx` (one waiter per task) */
+typedef struct { bool is_resume, is_pair, is_notify; EntryId entry; Cont *k; EvalResult *r; Active pair; const struct PrefixFact *fact; size_t idx, limit; bool catchup; } Task;   /* is_notify: §84.2 deliver `fact` of `entry` to its waiter `idx` (one waiter per task) */
 typedef struct { VEC(EntryId) entries; VEC(RefId) refs; } ShapeSide;
 
 static struct {
@@ -421,34 +422,36 @@ bool eval_entry_is_alias(EntryId e) { return ENT(e)->is_alias; }
  * entailed by this one. The candidate must make progress: its continuation
  * key must differ from this key. Dependencies of the source must be current. */
 static bool prefix_valid(const PrefixFact *f);
-static bool adapter_candidate(Entry *src_e, EntryId src, MapId sigma, FaceId eta, ShapeId s, RefId *out, uint64_t *prefix, const PrefixFact **fact_out) {
-    pthread_mutex_lock(&src_e->mu);
-    bool ok = src_e->state == E_READY && src_e->residual && gdeps_valid_locked(src_e);
-    RefId residual = src_e->residual; FaceId sface = src_e->face;
-    bool running = src_e->state == E_RUNNING;
-    pthread_mutex_unlock(&src_e->mu);
-    const PrefixFact *f = NULL;
-    if (!ok && running) {
-        /* §84.2: a RUNNING source's latest committed prefix — one immutable
-         * fact, pinned here and never re-read through the producer's moving
-         * handle; its own premises are validated (a structural prefix that
-         * did not read a changed body stays usable) */
-        f = __atomic_load_n(&src_e->prefix_head, __ATOMIC_ACQUIRE);
-        if (!f || !prefix_valid(f)) return false;
-        residual = f->residual; sface = f->face;
-    } else if (!ok) return false;
+static bool adapt_residual(RefId residual, FaceId sface, MapId sigma, FaceId eta, ShapeId s, RefId *out) {
     FaceId need = map_is_identity(sigma) ? sface : fc_reindex(sface, sigma);
     if (!fc_entails(eta, need)) return false;
     RefId r = map_is_identity(sigma) ? residual : reindex(residual, sigma);
     size_t n; const uint64_t *S = dimset_get(ref_support(r), &n);
     FaceId reta = fc_project(eta, S, n);
-    if (reta == eta && shape_of(r) == s) return false;                    /* no progress: would wait on itself */
+    if (reta == eta && shape_of(r) == s) return false;
     if (!fc_entails(reta, ref_required(r))) return false;
-    *out = r;
-    if (f) *prefix = map_is_identity(sigma) ? rc(RC_PREFIX_RESTRICT, f->id, eta, 0, 3) : rc(RC_PREFIX_SPEC, f->id, sigma, 0, 3);
-    else *prefix = map_is_identity(sigma) ? rc(RC_RESTRICT, src, eta, 0, 3) : rc(RC_SPEC, src, sigma, 0, 3);
-    *fact_out = f;
-    return true;
+    *out = r; return true;
+}
+static bool adapter_candidate(Entry *src_e, EntryId src, MapId sigma, FaceId eta, ShapeId s, RefId *out, uint64_t *prefix, const PrefixFact **fact_out) {
+    pthread_mutex_lock(&src_e->mu);
+    bool ok = src_e->state == E_READY && src_e->residual && gdeps_valid_locked(src_e);
+    RefId residual = src_e->residual; FaceId sface = src_e->face;
+    const PrefixFact *head = __atomic_load_n(&src_e->prefix_head, __ATOMIC_ACQUIRE);
+    pthread_mutex_unlock(&src_e->mu);
+    if (ok && adapt_residual(residual, sface, sigma, eta, s, out)) {
+        *prefix = map_is_identity(sigma) ? rc(RC_RESTRICT, src, eta, 0, 3) : rc(RC_SPEC, src, sigma, 0, 3);
+        *fact_out = NULL; return true;
+    }
+    /* A finite fact's validity is independent of its producer's final state.
+     * Pin this immutable list snapshot and consider older facts when the
+     * newest has inapplicable premises/face or makes no progress. */
+    for (const PrefixFact *f = head; f; f = f->next) {
+        fine_bump(FC_ADAPTER_STEPS);
+        if (!prefix_valid(f) || !adapt_residual(f->residual, f->face, sigma, eta, s, out)) continue;
+        *prefix = map_is_identity(sigma) ? rc(RC_PREFIX_RESTRICT, f->id, eta, 0, 3) : rc(RC_PREFIX_SPEC, f->id, sigma, 0, 3);
+        *fact_out = f; return true;
+    }
+    return false;
 }
 /* the candidates are visited by a cursor: each acquisition of entries_mu
  * examines one position (an entry of this shape, a reference of this shape,
@@ -593,6 +596,15 @@ static bool validate_occurrence(RefId t, FaceId chi) {
     return fc_entails(chi, ref_required(t));
 }
 
+static Task prefix_catchup_locked(EntryId eid, Entry *e, size_t idx) {
+    Task t; memset(&t, 0, sizeof t);
+    t.fact = __atomic_load_n(&e->prefix_head, __ATOMIC_ACQUIRE);
+    if (t.fact) {
+        t.is_notify = true; t.entry = eid; t.idx = idx; t.limit = idx + 1; t.catchup = true;
+        reserve_job();
+    }
+    return t;
+}
 void eval_request(RefId t, FaceId chi, Cont *k) {
     if (fc_is_false(chi)) { deliver(k, result_new(R_NO_OBSERVATION, t)); return; }
     if (!validate_occurrence(t, chi)) { deliver(k, result_invalid("occurrence outside its required face")); return; }
@@ -618,8 +630,11 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
         return;
     }
     if (e->state == E_RUNNING) {
+        size_t idx = e->waiters.len;
         vec_push(&e->waiters, k); fine_bump(FC_CONTS_REGISTERED);
+        Task replay = prefix_catchup_locked(eid, e, idx);
         pthread_mutex_unlock(&e->mu);
+        if (replay.fact) enqueue_reserved(replay);
         add_count(&E.ev.running_hit); reuse_bump(REUSE_RUNNING_JOIN);
         return;
     }
@@ -631,7 +646,13 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     bool have_ad = find_adapter(t, e->shape, eta, eid, &ad, &adp, &ads, &adf);
     pthread_mutex_lock(&e->mu);
     if (e->state == E_READY) { EvalResult *r = e->result; e->n_deliver++; pthread_mutex_unlock(&e->mu); add_count(&E.ev.ready_hit); reuse_bump(REUSE_READY_HIT); deliver(k, r); return; }
-    if (e->state == E_RUNNING) { vec_push(&e->waiters, k); pthread_mutex_unlock(&e->mu); add_count(&E.ev.running_hit); reuse_bump(REUSE_RUNNING_JOIN); return; }
+    if (e->state == E_RUNNING) {
+        size_t idx = e->waiters.len; vec_push(&e->waiters, k); fine_bump(FC_CONTS_REGISTERED);
+        Task replay = prefix_catchup_locked(eid, e, idx);
+        pthread_mutex_unlock(&e->mu);
+        if (replay.fact) enqueue_reserved(replay);
+        add_count(&E.ev.running_hit); reuse_bump(REUSE_RUNNING_JOIN); return;
+    }
     e->scope = reuse_tl_scope; reuse_scope_ref(e->scope);   /* the launching request owns this producer's work */
     if (have_ad) { e->adapter = ad; e->adapter_prefix = adp; e->adapter_src = ads; e->adapter_fact = adf; if (adf) add_count(&E.pev.adapters); }
     /* U → R({c}) + EVAL(K) is one transition (§26): the task is enqueued
@@ -681,6 +702,7 @@ static void eval_system_head(RefId t, const Head *h, FaceId chi, EntryId dest) {
     free(faces); free(terms);
 }
 
+static void adapter_inherit(Entry *e);
 static void evaluate(EntryId eid) {
     Entry *e = ENT(eid);
     pthread_mutex_lock(&e->mu);
@@ -692,6 +714,7 @@ static void evaluate(EntryId eid) {
     if (e->adapter) {
         /* §78.3: continue from the completed receipt: observe the specialized
          * / restricted residual; its own further reduction is ordinary work */
+        adapter_inherit(e);
         reuse_bump(REUSE_RECEIPT_INSTANCE);
         forward_rc(e->adapter, chi, eid, e->adapter_prefix);
         return;
@@ -831,7 +854,23 @@ static void prefix_copy_pairs(Entry *x, bool ready_only, Words *out) {
         words_push(out, a); words_push(out, b); fine_bump(FC_ADAPTER_STEPS);
     }
 }
-static void prefix_publish(EntryId dest, RefId target, uint64_t receipt, const PrefixFact *parent, EntryId origin) {
+/* The adapter uses its source derivation as a premise. Install that
+ * immutable dependency snapshot before publishing any derived prefix or
+ * requesting the residual. This evaluator owns the still-empty direct-read
+ * vector; transfer ownership in one lock section rather than copying it
+ * under the lock. */
+static void adapter_inherit(Entry *e) {
+    Words g; words_init(&g);
+    if (e->adapter_fact) {
+        const PrefixFact *f = e->adapter_fact;
+        for (size_t k = 0; k < f->ngdeps; k++) { words_push(&g, f->gdeps[k]); fine_bump(FC_ADAPTER_STEPS); }
+    } else if (e->adapter_src) prefix_copy_pairs(ENT(e->adapter_src), true, &g);
+    pthread_mutex_lock(&e->mu);
+    require(e->gdeps.len == 0 && e->gdeps.data == NULL, "adapter prerequisites installed before direct reads");
+    e->gdeps.data = g.w; e->gdeps.len = g.n; e->gdeps.cap = g.cap;
+    pthread_mutex_unlock(&e->mu);
+}
+static void prefix_publish_on(EntryId dest, RefId target, uint64_t receipt, const PrefixFact *parent, EntryId origin, FaceId guard, EntryId premise, bool branch) {
     if (!dest || !receipt || !target) return;
     Entry *e = ENT(dest);
     if (target == e->ref) return;                         /* no progress: not a useful fact */
@@ -842,7 +881,8 @@ static void prefix_publish(EntryId dest, RefId target, uint64_t receipt, const P
      * the parent fact's premises for a SEQ / CONTEXT fact */
     Words g; words_init(&g);
     prefix_copy_pairs(e, false, &g);
-    for (size_t i = 0;; i++) {
+    if (branch) { if (premise) prefix_copy_pairs(ENT(premise), true, &g); }
+    else for (size_t i = 0;; i++) {
         pthread_mutex_lock(&e->mu);
         if (i >= e->deps.len) { pthread_mutex_unlock(&e->mu); break; }
         EntryId c = e->deps.data[i];
@@ -852,7 +892,7 @@ static void prefix_publish(EntryId dest, RefId target, uint64_t receipt, const P
     }
     if (parent) for (size_t k = 0; k < parent->ngdeps; k++) { words_push(&g, parent->gdeps[k]); fine_bump(FC_ADAPTER_STEPS); }
     PrefixFact *f = calloc(1, sizeof *f); require(f, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
-    f->src = dest; f->source = e->ref; f->face = e->face; f->residual = target; f->receipt = receipt;
+    f->src = dest; f->source = e->ref; f->face = guard; f->residual = target; f->receipt = receipt;
     f->gdeps = g.w; f->ngdeps = g.n; f->origin = origin;
     pthread_mutex_lock(&e->mu);
     if (e->state != E_RUNNING) { pthread_mutex_unlock(&e->mu); free(g.w); free(f); return; }   /* answered meanwhile: the fact is not published */
@@ -860,23 +900,30 @@ static void prefix_publish(EntryId dest, RefId target, uint64_t receipt, const P
     f->next = e->prefix_head;
     __atomic_store_n(&e->prefix_head, f, __ATOMIC_RELEASE);
     e->n_prefix++;
+    size_t notify_limit = e->waiters.len;
     pthread_mutex_unlock(&e->mu);
     PrefixFact *h = __atomic_load_n(&E.facts, __ATOMIC_RELAXED);
     do f->all_next = h; while (!__atomic_compare_exchange_n(&E.facts, &h, f, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED));
     add_count(parent ? &E.pev.lifted : &E.pev.published);
-    Task t; memset(&t, 0, sizeof t); t.is_notify = true; t.entry = dest; t.fact = f; t.idx = 0;
+    Task t; memset(&t, 0, sizeof t); t.is_notify = true; t.entry = dest; t.fact = f; t.idx = 0; t.limit = notify_limit;
     enqueue(t);
+}
+static void prefix_publish(EntryId dest, RefId target, uint64_t receipt, const PrefixFact *parent, EntryId origin) {
+    if (dest) prefix_publish_on(dest, target, receipt, parent, origin, ENT(dest)->face, 0, false);
 }
 static RefId rebuild_elim(const Cont *k, RefId scrut);
 /* one notification: the fact of `entry` to its waiter `idx`, then the cursor advances */
 static void prefix_notify(Task t) {
     Entry *e = ENT(t.entry);
     pthread_mutex_lock(&e->mu);
-    if (e->state != E_RUNNING || t.idx >= e->waiters.len) { pthread_mutex_unlock(&e->mu); return; }
+    if (e->state != E_RUNNING || t.idx >= t.limit || t.idx >= e->waiters.len) { pthread_mutex_unlock(&e->mu); return; }
     Cont kc = *e->waiters.data[t.idx];       /* a copy: the waiter may be resumed and released once the lock is dropped */
     pthread_mutex_unlock(&e->mu);
     add_count(&E.pev.notify_steps);
-    { Task n = t; n.idx = t.idx + 1; enqueue(n); }
+    { Task n = t;
+      if (t.catchup) { n.fact = t.fact->next; if (n.fact) enqueue(n); }
+      else { n.idx++; if (n.idx < n.limit) enqueue(n); }
+    }
     const PrefixFact *f = t.fact;
     if (kc.req != f->source || !kc.dest || kc.dest == f->origin || kc.dest == t.entry) return;
     static const uint64_t cong_of[] = { 0, 0, 0, RR_CONG_APP, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE };
@@ -889,9 +936,19 @@ static void prefix_notify(Task t) {
         Head ho; open_ref(kc.orig, &ho); uint64_t lv = levels_first(ho.levels); if (ho.levels == LEVELS_NONE) lv = LEVEL_NONE; head_free(&ho);
         target = mk_comp_lv(lv, kc.j, f->residual, kc.phi, kc.tube, kc.cap); receipt = rc_rule(RR_CONG_COMP, f->receipt, 0); break;
     }
-    default: return;                          /* roots, external consumers and join branches hold no producer to lift into */
+    case K_BRANCH:
+        /* The branch's guarded entry receipt was captured before it was
+         * launched. No Gather pointer is dereferenced: another delivery may
+         * have freed that join after we copied this continuation. */
+        target = f->residual; receipt = rc_seq(kc.prefix, f->receipt); break;
+    default: return;
     }
-    prefix_publish(kc.dest, target, receipt, f, f->origin);
+    /* A family rewrite must hold along the whole bound dimension. An
+     * endpoint-only fact cannot rewrite that family's composition. */
+    FaceId child_guard = kc.kind == K_COMP_FAMILY ? fc_forall(kc.j, f->face) : f->face;
+    FaceId guard = fc_meet(ENT(kc.dest)->face, fc_meet(kc.chi, child_guard));
+    if (fc_is_false(guard)) return;
+    prefix_publish_on(kc.dest, target, receipt, f, f->origin, guard, kc.prefix_premise, kc.kind == K_BRANCH);
 }
 const PrefixFact *eval_entry_prefix(EntryId e) { return __atomic_load_n(&ENT(e)->prefix_head, __ATOMIC_ACQUIRE); }
 size_t eval_entry_prefix_count(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); size_t n = x->n_prefix; pthread_mutex_unlock(&x->mu); return n; }
@@ -907,7 +964,7 @@ EvalPrefixEvents eval_prefix_events(void) {
 /* Act branchwise: demand each guarded term under chi ∧ phi_k; the join box
  * publishes the reconstructed guarded result once every box is full (§12,
  * §26). Each box has one producer; the last arrival publishes. */
-static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId *faces, const RefId *terms) {
+static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId *faces, const RefId *terms, EntryId premise, uint64_t congruence) {
     Gather *g = calloc(1, sizeof *g);
     require(g, "out of memory"); fine_bump(FC_CELLS_ALLOCATED);
     g->dest = dest; g->n = n;
@@ -921,6 +978,8 @@ static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId 
     for (size_t i = 0; i < n; i++) {
         Cont *k = cont_new(K_BRANCH, dest, fc_meet(chi, faces[i]));
         k->gather = g; k->branch = i; k->orig = terms[i];
+        k->prefix_premise = premise;
+        k->prefix = rc_seq(congruence, rc_rule(RR_SYSTEM_BRANCH, terms[i], faces[i]));
         eval_request(terms[i], k->chi, k);
     }
 }
@@ -966,7 +1025,8 @@ static void distribute(const Cont *k, const EvalResult *sys) {
     RefId *terms = malloc((sys->nbr ? sys->nbr : 1) * sizeof(RefId));
     require(terms, "out of memory");
     for (size_t i = 0; i < sys->nbr; i++) terms[i] = rebuild_elim(k, sys->terms[i]);
-    publish_branchwise(k->dest, k->chi, sys->nbr, sys->faces, terms);
+    static const uint64_t cong_of[] = { 0, 0, 0, RR_CONG_APP, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE };
+    publish_branchwise(k->dest, k->chi, sys->nbr, sys->faces, terms, k->child, rc_rule(cong_of[k->kind], receipt_of(k->child), 0));
     free(terms);
 }
 
@@ -996,7 +1056,7 @@ static void resume_comp_family(Cont *k, EvalResult *r) {
         }
         if (!fc_entails(k->chi, uni)) { free(faces); free(terms); publish(k->dest, result_invalid("type-family system has no branch along the whole composition line")); return; }
         for (size_t i = 0; i < kept; i++) if (fc_entails(k->chi, faces[i])) { RefId ti = terms[i]; free(faces); free(terms); forward(ti, k->chi, k->dest); return; }
-        publish_branchwise(k->dest, k->chi, kept, faces, terms);
+        publish_branchwise(k->dest, k->chi, kept, faces, terms, k->child, rc_rule(RR_CONG_COMP, receipt_of(k->child), 0));
         free(faces); free(terms);
         return;
     }

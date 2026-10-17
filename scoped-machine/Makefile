@@ -5,7 +5,7 @@ LDFLAGS ?= -fsanitize=address,undefined -pthread
 SRC := src/radix.c src/nat.c src/kstack.c src/arena.c src/kalloc.c src/kcont.c src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c src/shape.c src/reuse.c src/fine.c src/proof.c src/runtime.c
 OBJ := $(SRC:.c=.o)
 
-all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles build/fine build/proof-use build/runtime build/review-alias-scope build/review-alias-faces build/review-work-budget build/review-proof-boundary build/review-certificate-boundary build/review-frame-cost build/review-singleton build/review-generic-action build/review-runtime-presentations build/review-runtime-nodes build/review-runtime-edges build/review-work-edges build/review-node-level build/review-reservation-budget build/review-store-growth build/review-store-interleave build/review-prepare-boundary build/review-arena-budget build/review-audit-budget build/review-v19 build/review-v19-work build/review-assumption-copy build/review-kernel-budget build/review-v20 build/review-v20-intern build/review-live-prefix build/test-prefix build/review-v21 build/review-bounds build/test-v21-extra build/test-arena-extents build/test-exact build/test-deep
+all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles build/fine build/proof-use build/runtime build/review-alias-scope build/review-alias-faces build/review-work-budget build/review-proof-boundary build/review-certificate-boundary build/review-frame-cost build/review-singleton build/review-generic-action build/review-runtime-presentations build/review-runtime-nodes build/review-runtime-edges build/review-work-edges build/review-node-level build/review-reservation-budget build/review-store-growth build/review-store-interleave build/review-prepare-boundary build/review-arena-budget build/review-audit-budget build/review-v19 build/review-v19-work build/review-assumption-copy build/review-kernel-budget build/review-v20 build/review-v20-intern build/review-live-prefix build/test-prefix build/review-v21 build/review-bounds build/test-v21-extra build/test-arena-extents build/test-exact build/test-deep build/review-v22
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -187,6 +187,7 @@ test: all
 	./build/test-arena-extents
 	./build/test-exact
 	./build/test-deep 20000
+	for m in ready-prefix late-context adapter-premise branch-prefix comp-guard subscriber-race; do for w in 0 4; do ./build/review-v22 $$m $$w || exit 1; done; done
 
 ACCEPT_MODES := origin alpha face specialize environment identity-name work
 TSAN_TESTS := review_v19 review_node_level review_runtime_edges review_runtime_nodes test_fine_cost test_proof_use review_alias_scope review_alias_faces test_proof_boundary review_certificate_boundary review_frame_cost review_singleton_witnesses review_generic_identity_action review_runtime_presentations test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_work test_reuse accept_sharing_boundaries accept_check_weakening accept_shared_work_handle
@@ -287,6 +288,8 @@ tsan:
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_exact
 	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -o build/tsan/test_deep tests/test_deep.c $(TSAN_CORE)
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/test_deep 5000
+	$(CC) -std=c11 -O1 -g -pthread -Isrc -Itests -fsanitize=thread -o build/tsan/review_v22 tests/review_v22.c $(TSAN_CORE)
+	for m in ready-prefix late-context adapter-premise branch-prefix comp-guard subscriber-race; do for w in 0 4; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_v22 $$m $$w || exit 1; done; done
 	for a in 'interval 129' 'scope 129' 'net-capture 129' 'net-apply 129' 'mixed 129' 'required 4096' chunked sparse bound-encoding signature; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_bounds $$a || exit 1; done
 
 clean:
@@ -384,6 +387,9 @@ build/review-kernel-budget: $(filter-out src/work.o,$(OBJ)) tests/review_kernel_
 build/review-v20: $(filter-out src/work.o,$(OBJ)) tests/review_v20.c src/work.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(LDFLAGS) -Wl,--wrap=qsort -o $@ tests/review_v20.c $(filter-out src/work.o,$(OBJ))
+build/review-v22: $(OBJ) tests/review_v22.c
+	@mkdir -p build
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/review_v22.c $(OBJ)
 build/test-deep: $(OBJ) tests/test_deep.c
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/test_deep.c $(OBJ)

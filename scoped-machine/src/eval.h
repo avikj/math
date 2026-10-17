@@ -150,7 +150,7 @@ bool eval_entry_is_alias(EntryId e);
 /* receipt records: [RC_REFL, t] | [RC_SEQ, first, then] | [RC_RULE, rule, x, y] | [RC_RESTRICT, source entry, face] | [RC_SPEC, source entry, map]
  * | [RC_PREFIX_RESTRICT, prefix fact, face] | [RC_PREFIX_SPEC, prefix fact, map] (§84.2: an adapter from an immutable committed prefix) */
 enum { RC_REFL = 1, RC_SEQ, RC_RULE, RC_RESTRICT, RC_SPEC, RC_PREFIX_RESTRICT, RC_PREFIX_SPEC };
-enum { RR_CONG_APP = 1, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE, RR_CONG_COMP, RR_BETA, RR_FST, RR_SND, RR_PATH_BETA, RR_ENDPOINT, RR_UNFOLD, RR_GLUE, RR_SYSTEM, RR_SYSTEM_DIST, RR_COMP_TUBE, RR_COMP_EXPAND, RR_IDENTITY_APPLY };
+enum { RR_CONG_APP = 1, RR_CONG_FST, RR_CONG_SND, RR_CONG_PAPP, RR_CONG_UNGLUE, RR_CONG_COMP, RR_BETA, RR_FST, RR_SND, RR_PATH_BETA, RR_ENDPOINT, RR_UNFOLD, RR_GLUE, RR_SYSTEM, RR_SYSTEM_DIST, RR_COMP_TUBE, RR_COMP_EXPAND, RR_IDENTITY_APPLY, RR_SYSTEM_BRANCH };
 const uint64_t *eval_receipt_words(uint64_t receipt, size_t *n);
 
 /* §84.2 committed prefixes. A prefix fact is the immutable judgment

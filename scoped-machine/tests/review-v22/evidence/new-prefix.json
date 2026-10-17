@@ -1,0 +1,44 @@
+[
+  {
+    "sanitizer": "asan",
+    "mode": "ready-prefix",
+    "exit_code": 1,
+    "stdout": "ready-prefix: semantic_ok=1 valid_old_prefix=1 added_beta=1 expected=0\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "mode": "late-context",
+    "exit_code": 1,
+    "stdout": "late-context: child_fact=1 parent_fact=0 expected=1\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "asan",
+    "mode": "adapter-premise",
+    "exit_code": 1,
+    "stdout": "adapter-premise: source_reads_F=1 derived_facts=1 all_preserve_F=0 expected=1\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "mode": "ready-prefix",
+    "exit_code": 1,
+    "stdout": "ready-prefix: semantic_ok=1 valid_old_prefix=1 added_beta=1 expected=0\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "mode": "late-context",
+    "exit_code": 1,
+    "stdout": "late-context: child_fact=1 parent_fact=0 expected=1\n",
+    "stderr": ""
+  },
+  {
+    "sanitizer": "tsan",
+    "mode": "adapter-premise",
+    "exit_code": 1,
+    "stdout": "adapter-premise: source_reads_F=1 derived_facts=1 all_preserve_F=0 expected=1\n",
+    "stderr": ""
+  }
+]
