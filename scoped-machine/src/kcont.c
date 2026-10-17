@@ -104,6 +104,9 @@ void kc_shutdown(void) {   /* teardown: every continuation has completed, so eve
         else { pthread_join(w->thread, NULL); pthread_mutex_destroy(&w->mu); pthread_cond_destroy(&w->cv); (free)(w); }
         w = n;
     }
+    /* a worker that finished its continuation during the drain parks itself
+     * after its grant returned: the joined workers' park entries are dropped */
+    pthread_mutex_lock(&P_mu); parked = NULL; pthread_mutex_unlock(&P_mu);
 }
 /* one transition of the running continuation: under a bounded grant, the
  * budget's last transition yields — at the first transition point where the
