@@ -1,3 +1,4 @@
+#include "kcont.h"
 #include "kstack.h"
 #include "template.h"
 
@@ -1043,11 +1044,19 @@ static void register_library(void) {
       finish(CALL(TD_COE, l, fam, z)); }
 }
 
+/* the fixed library is registered by one thread outside the `once` mutex
+ * (which only records the registration state); others wait for it */
 void templates_init(void) {
     static pthread_mutex_t once = PTHREAD_MUTEX_INITIALIZER;
+    static pthread_cond_t done_cv = PTHREAD_COND_INITIALIZER;
+    static int registering;
     pthread_mutex_lock(&once);
-    if (!TPL.init) { memset(&TPL, 0, sizeof TPL); pthread_mutex_init(&TPL.mu, NULL); register_library(); TPL.init = true; }
+    while (!TPL.init && registering) kc_wait(&done_cv, &once, NULL);
+    if (TPL.init) { pthread_mutex_unlock(&once); return; }
+    registering = 1; memset(&TPL, 0, sizeof TPL); pthread_mutex_init(&TPL.mu, NULL);
     pthread_mutex_unlock(&once);
+    register_library();
+    pthread_mutex_lock(&once); TPL.init = true; registering = 0; pthread_cond_broadcast(&done_cv); pthread_mutex_unlock(&once);
 }
 void templates_free(void) {
     if (!TPL.init) return;

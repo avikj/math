@@ -111,6 +111,9 @@ static DiagramId diagram_new(ContextId params, size_t n, const DiagNode *nodes, 
     words_push(&w, global_env_version()); words_push(&w, params); words_push(&w, n);
     for (size_t k = 0; k < n; k++) { words_push(&w, nodes[k].node_id); words_push(&w, nodes[k].x); words_push(&w, nodes[k].e); words_push(&w, nodes[k].A); words_push(&w, nodes[k].level); words_push(&w, nodes[k].t); }
     words_push(&w, B); words_push(&w, o); words_push(&w, Z); words_push(&w, lB); words_push(&w, residual);
+    /* the declaration is interned outside CR.mu (the interner is internally
+     * synchronized); the index under CR.mu is keyed by its one-word id */
+    uint64_t kw[2] = { 0xD1A6, interner_intern(&M.keys, w.w, w.n, NULL) }; words_free(&w); words_init(&w); words_push(&w, kw[0]); words_push(&w, kw[1]);
     pthread_mutex_lock(&CR.mu);
     uint64_t have;
     if (wordmap_get(&CR.dindex, w.w, w.n, &have)) { pthread_mutex_unlock(&CR.mu); words_free(&w); return (DiagramId)have; }
@@ -345,6 +348,7 @@ static RefId build_generic_call(TransformId id, int dir, const CompiledTransform
 static TransformId transform_publish(CompiledTransform *t, Certificate *c, const char **reason) {
     if (check_admission(reason) != CK_VALID) return 0;
     Words key; record_key(c, t, &key);
+    { uint64_t kid = interner_intern(&M.keys, key.w, key.n, NULL); key.n = 0; words_push(&key, 0x7EC0); words_push(&key, kid); }   /* interned outside CR.mu; a one-word index key under it */
     pthread_mutex_lock(&CR.mu);
     uint64_t have;
     if (wordmap_get(&CR.tindex, key.w, key.n, &have)) {
