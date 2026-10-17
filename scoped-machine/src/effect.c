@@ -12,7 +12,7 @@ struct EffSchema { const char *name; ContextId G; FaceId kappa; RefId In, Out, R
  * head; COMMITTED: its successor; ABORTED: the former head) */
 typedef struct EffCell { uint64_t id; pthread_mutex_t mu; const EffHead *head; EffCommit *res; size_t slot; } EffCell;
 struct EffHead { uint64_t id; EffAuthority *auth; EffPort *port; RefId state; const EffOcc *producer; const EffHead *pred; bool consumed; EffHead *all_next; };
-struct EffAuthority { uint64_t id; const char *name; ContextId G; FaceId kappa; RefId type; EffCell cell; EffPort **outbox; size_t nout, capout; EffAuthority *all_next; };
+struct EffAuthority { uint64_t id; const EffHead *genesis; const char *name; ContextId G; FaceId kappa; RefId type; EffCell cell; EffPort **outbox; size_t nout, capout; EffAuthority *all_next; };
 struct EffPort { uint64_t id; const EffOcc *issuer; size_t slot; RefId payload; EffAuthority *recipient, *refund_to; const EffHead *token; EffCell cell; bool emitted; EffPort *all_next, *pub_next; };
 struct EffCap { uint64_t id; EffAuthority *auth; EffCap *all_next; };
 typedef struct { XCount prepare_steps, audit_units, reservations, waits, commit, finalizes, deliveries, emits; } OccWork;
@@ -57,6 +57,7 @@ static struct {
     EffSchema *schemas; EffAuthority *auths; EffHead *heads; EffPort *ports, *published; EffCap *caps; EffOcc *occs; EffCommit *commits, *unres;
     Delivery *deliveries;
     WordMap index;                       /* (ns, request) -> descriptor */
+    ChainMapT *resmap; WordMap stepocc;  /* the resource reading: B, and step cell -> occurrence */
     const EffOcc **hist; size_t nhist, caphist;
     XCount ev[sizeof(EffEvents) / sizeof(size_t)];
     bool live;
@@ -65,7 +66,7 @@ static struct {
 static uint64_t fresh_id(void) { return __atomic_add_fetch(&X.ids, 1, __ATOMIC_RELAXED); }
 #define GROW(arr, n, cap) do { if ((n) == (cap)) { (cap) = (cap) ? 2 * (cap) : 4; (arr) = realloc((arr), (cap) * sizeof *(arr)); require((arr), "out of memory"); } } while (0)
 
-void effect_init(void) { memset(&X, 0, sizeof X); pthread_mutex_init(&X.mu, NULL); pthread_mutex_init(&X.commit_mu, NULL); wordmap_init(&X.index); X.live = true; }
+void effect_init(void) { memset(&X, 0, sizeof X); pthread_mutex_init(&X.mu, NULL); pthread_mutex_init(&X.commit_mu, NULL); wordmap_init(&X.index); wordmap_init(&X.stepocc); X.live = true; }
 static void proposal_free(EffProposal *P) { free(P->in); free(P->oh); free(P->op); free(P->caps); free(P); }
 void effect_free(void) {
     if (!X.live) return;
@@ -83,7 +84,7 @@ void effect_free(void) {
     for (EffHead *h = X.heads, *n; h; h = n) { n = h->all_next; free(h); }
     for (EffCap *c = X.caps, *n; c; c = n) { n = c->all_next; free(c); }
     for (EffSchema *s = X.schemas, *n; s; s = n) { n = s->all_next; free(s); }
-    free(X.hist); wordmap_free(&X.index); pthread_mutex_destroy(&X.mu); pthread_mutex_destroy(&X.commit_mu);
+    free(X.hist); wordmap_free(&X.index); wordmap_free(&X.stepocc); pthread_mutex_destroy(&X.mu); pthread_mutex_destroy(&X.commit_mu);
     memset(&X, 0, sizeof X);
 }
 EffEvents eff_events(void) { EffEvents v; size_t *d = (size_t *)&v; for (size_t i = 0; i < sizeof v / sizeof(size_t); i++) d[i] = (size_t)xs_u64_checked(xc_snap(&X.ev[i]), "effect event"); return v; }
@@ -105,7 +106,7 @@ static void cell_init(EffCell *c, const EffHead *h) { c->id = fresh_id(); pthrea
 EffAuthority *eff_genesis(const char *name, ContextId G, FaceId kappa, RefId state, RefId type, EffCap **owner) {
     EffAuthority *a = calloc(1, sizeof *a); require(a, "out of memory");
     a->id = fresh_id(); a->name = name; a->G = G; a->kappa = kappa; a->type = type;
-    cell_init(&a->cell, head_new(a, NULL, state, NULL, NULL, false));
+    a->genesis = head_new(a, NULL, state, NULL, NULL, false); cell_init(&a->cell, a->genesis);
     EffCap *c = calloc(1, sizeof *c); require(c, "out of memory"); c->id = fresh_id(); c->auth = a;
     pthread_mutex_lock(&X.mu); a->all_next = X.auths; X.auths = a; c->all_next = X.caps; X.caps = c; pthread_mutex_unlock(&X.mu);
     if (owner) *owner = c;
@@ -533,3 +534,88 @@ size_t eff_history(const EffOcc ***out) {
     pthread_mutex_lock(&X.mu); size_t n = X.nhist; const EffOcc **v = malloc((n ? n : 1) * sizeof *v); require(v, "out of memory"); if (n) memcpy(v, X.hist, n * sizeof *v); pthread_mutex_unlock(&X.mu);
     *out = v; return n;
 }
+
+/* ---------------- resource occurrences and the incidence reading ---------------- */
+static EffRes res_head(const EffHead *h) { EffRes r = { 0, h->id, h->state, h->auth }; return r; }
+static EffRes res_port(const EffPort *m) { EffRes r = { 1, m->id, m->payload, m->recipient }; return r; }
+size_t eff_occ_consumed(const EffOcc *e, EffRes *out, size_t max) {
+    EffCommit *d = e->d; size_t n = d->P->nin;
+    for (size_t r = 0; r < n && r < max; r++) { EffIn *in = &d->P->in[d->order[r]]; out[r] = in->kind ? res_port(in->port) : res_head(d->expected[r]); }
+    return n;
+}
+size_t eff_occ_produced(const EffOcc *e, EffRes *out, size_t max) {
+    EffCommit *d = e->d; size_t n = 0;
+    for (size_t r = 0; r < d->P->nin; r++) if (!d->P->in[d->order[r]].kind) { if (n < max) out[n] = res_head(d->succ[r]); n++; }
+    for (size_t i = 0; i < e->nports; i++) { if (n < max) out[n] = res_port(e->ports[i]); n++; }
+    return n;
+}
+size_t eff_cut_resources(const EffCut *c, EffRes *out, size_t max) {
+    size_t n = 0;
+    for (size_t i = 0; i < c->nheads; i++) { if (n < max) out[n] = res_head(c->head[i]); n++; }
+    for (size_t i = 0; i < c->nopen; i++) { if (n < max) out[n] = res_port(c->open[i]); n++; }
+    return n;
+}
+size_t eff_genesis_resources(EffRes *out, size_t max) {
+    EffAuthority **as; size_t na = eff_authorities(&as);
+    for (size_t i = 0; i < na && i < max; i++) out[i] = res_head(as[i]->genesis);
+    free(as); return na;
+}
+CellId eff_res_cell(const EffRes *r) { return cell_declared(EFF_NS_RES, ((uint64_t)r->kind << 63) | r->id, 0, chain_zero(0), NULL); }
+ChainId eff_resources_chain(const EffRes *r, size_t n) {
+    CellId *c = malloc((n ? n : 1) * sizeof *c); ModId *m = malloc((n ? n : 1) * sizeof *m); require(c && m, "out of memory");
+    for (size_t k = 0; k < n; k++) { c[k] = eff_res_cell(&r[k]); m[k] = mod_int(zx_i64(1)); }
+    ChainId out = chain_from(0, n, c, m); free(c); free(m); return out;
+}
+CellId eff_event_cell(const EffOcc *e) {
+    require(occ_accepted(e), "only an accepted occurrence is an event of the incidence complex");
+    EffRes in[16], outp[16]; size_t ni = eff_occ_consumed(e, in, 16), no = eff_occ_produced(e, outp, 16);
+    require(ni <= 16 && no <= 16, "event arity");
+    ChainId b = chain_sub(eff_resources_chain(outp, no), eff_resources_chain(in, ni));
+    const char *why = NULL; CellId x = cell_declared(EFF_NS_EVENT, e->id, 1, b, &why);
+    if (!x) die("event admission: %s", why ? why : "?");
+    return x;
+}
+ChainId eff_cut_chain(const EffCut *c) {
+    size_t n = eff_cut_resources(c, NULL, 0); EffRes *r = malloc((n ? n : 1) * sizeof *r); require(r, "out of memory");
+    eff_cut_resources(c, r, n); ChainId b = eff_resources_chain(r, n); free(r); return b;
+}
+CellId eff_state_cell(ChainId b0) { return cell_presented(EFF_NS_STATE, b0, 0, NULL, NULL); }
+static ChainId resmap_act(void *ctx, CellId x) {
+    (void)ctx; uint64_t ns; uint64_t tag = cell_tag(x, &ns);
+    if (ns == EFF_NS_STATE) return (ChainId)tag;                                   /* B_0(s): the state's exposed occurrences */
+    require(ns == EFF_NS_STEP, "the resource reading maps execution states and steps");
+    uint64_t key[1] = { x }, v = 0; require(wordmap_get(&X.stepocc, key, 1, &v), "a step of a replayed execution");
+    const EffOcc *e = (const EffOcc *)(uintptr_t)v;
+    return chain_gen(eff_event_cell(e), mod_int(zx_i64(1)));                       /* B_1(e): the event */
+}
+ChainMapT *eff_resource_map(void) {
+    pthread_mutex_lock(&X.mu); if (!X.resmap) X.resmap = chainmap_new(resmap_act, NULL, 0); ChainMapT *F = X.resmap; pthread_mutex_unlock(&X.mu);
+    return F;
+}
+const EffOcc *eff_step_occurrence(CellId step) { uint64_t key[1] = { step }, v = 0; return wordmap_get(&X.stepocc, key, 1, &v) ? (const EffOcc *)(uintptr_t)v : NULL; }
+bool eff_execution(EffExecution *out, const char **why) {
+    const EffOcc **h; size_t n = eff_history(&h);
+    memset(out, 0, sizeof *out);
+    out->states = malloc((n + 1) * sizeof *out->states); out->steps = malloc((n ? n : 1) * sizeof *out->steps); out->occ = malloc((n ? n : 1) * sizeof *out->occ);
+    require(out->states && out->steps && out->occ, "out of memory");
+    size_t ng = eff_genesis_resources(NULL, 0); EffRes *g = malloc((ng ? ng : 1) * sizeof *g); require(g, "out of memory");
+    eff_genesis_resources(g, ng); ChainId cur = eff_resources_chain(g, ng); free(g);
+    out->states[0] = eff_state_cell(cur);
+    for (size_t k = 0; k < n; k++) {
+        EffRes in[16], pr[16]; size_t ni = eff_occ_consumed(h[k], in, 16), np = eff_occ_produced(h[k], pr, 16);
+        for (size_t r = 0; r < ni; r++) {
+            ModId c = chain_coef(cur, eff_res_cell(&in[r]));
+            if (mod_is_zero(c)) { if (why) *why = "a replayed input occurrence is not exposed at its cut"; free(h); eff_execution_free(out); return false; }
+        }
+        cur = chain_add(chain_sub(cur, eff_resources_chain(in, ni)), eff_resources_chain(pr, np));
+        out->states[k + 1] = eff_state_cell(cur);
+        CellId f[2] = { out->states[k], out->states[k + 1] };
+        out->steps[k] = cell_presented(EFF_NS_STEP, h[k]->id, 1, f, why);
+        if (!out->steps[k]) { free(h); eff_execution_free(out); return false; }
+        out->occ[k] = h[k];
+        uint64_t key[1] = { out->steps[k] }; wordmap_put(&X.stepocc, key, 1, (uint64_t)(uintptr_t)h[k]);
+    }
+    out->n = n; free(h);
+    return true;
+}
+void eff_execution_free(EffExecution *x) { free(x->states); free(x->steps); free(x->occ); memset(x, 0, sizeof *x); }

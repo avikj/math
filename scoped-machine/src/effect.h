@@ -25,6 +25,7 @@
 #include "check.h"
 #include "proof.h"
 #include "xcount.h"
+#include "chain.h"
 
 typedef struct EffSchema EffSchema;
 typedef struct EffAuthority EffAuthority;
@@ -115,4 +116,31 @@ size_t eff_history(const EffOcc ***out);               /* accepted occurrences i
 size_t eff_occurrences(const EffOcc ***out);           /* every prepared occurrence record, accepted or not (caller frees *out) */
 typedef struct { size_t requests, joins, request_conflicts, prepares, prepare_steps, audits, audit_units, invalid, unresolved, reservations, waits, helps, commits, aborts, finalizes, deliveries, deliveries_unattributed, emits; } EffEvents;
 EffEvents eff_events(void);                            /* checked word projections of the exact counts */
+
+/* ---- resource occurrences of the accepted records ---- */
+typedef struct { int kind; uint64_t id; RefId payload; EffAuthority *auth; } EffRes;   /* kind 0: a head occurrence (payload: its state), 1: a port occurrence (payload; auth: its recipient) */
+size_t eff_occ_consumed(const EffOcc *e, EffRes *out, size_t max);   /* the input occurrences, in cell order */
+size_t eff_occ_produced(const EffOcc *e, EffRes *out, size_t max);   /* successor heads, then output ports */
+size_t eff_cut_resources(const EffCut *c, EffRes *out, size_t max);  /* the cut's heads, then its open ports */
+size_t eff_genesis_resources(EffRes *out, size_t max);               /* every authority's genesis head */
+
+/* ---- the resource incidence reading (CUBICAL-STOKES-ADDENDUM §7) ----
+ * degree 0: anchored resource occurrences (head and port occurrences, by identity);
+ * degree 1: accepted events, ∂_res[e] = Σ produced − Σ consumed (a declared boundary).
+ * The execution presentation replays the accepted history from the same records:
+ * states are the complete cuts s_0 (genesis) … s_n, steps are the accepted
+ * occurrences s_(k−1) → s_k. B maps a state to B_0(s) (its exposed occurrences)
+ * and a step to its event; the chain-map condition ∂_res B_1(e) = B_0(t) − B_0(s)
+ * is the boundary witness of B on each step. */
+enum { EFF_NS_RES = 0x524553, EFF_NS_EVENT = 0x45564E54, EFF_NS_STATE = 0x5354415445, EFF_NS_STEP = 0x53544550 };
+CellId eff_res_cell(const EffRes *r);
+CellId eff_event_cell(const EffOcc *e);
+ChainId eff_resources_chain(const EffRes *r, size_t n);
+ChainId eff_cut_chain(const EffCut *c);                 /* B_0(c) */
+typedef struct { size_t n; CellId *states; CellId *steps; const EffOcc **occ; } EffExecution;
+bool eff_execution(EffExecution *out, const char **why);   /* fails when a replayed input is not exposed at its cut */
+void eff_execution_free(EffExecution *x);
+CellId eff_state_cell(ChainId b0);
+ChainMapT *eff_resource_map(void);                       /* B (shared for the session) */
+const EffOcc *eff_step_occurrence(CellId step);
 #endif
