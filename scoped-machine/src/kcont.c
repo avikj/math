@@ -1,5 +1,6 @@
 #include "common.h"
 #include "kcont.h"
+#include "reuse.h"
 #include <string.h>
 
 __thread KCont *kc_tl;
@@ -23,7 +24,9 @@ static void run_one(KCont *k) {
     pthread_mutex_lock(&k->mu);
     while (k->state != 1) pthread_cond_wait(&k->cv, &k->mu);   /* the first grant */
     pthread_mutex_unlock(&k->mu);
+    ReuseScope *prev_acct = reuse_scope_enter(k->acct);
     k->fn(k);
+    reuse_scope_leave(prev_acct);
     require(kc_lock_depth == 0, "kernel continuation completed holding a lock");
     if (k->outcome == KO_PENDING) k->outcome = k->ok ? KO_OK : KO_INVALID;
     live_del(k);

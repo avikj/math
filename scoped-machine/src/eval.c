@@ -218,6 +218,7 @@ void eval_free(void) {
         }
         vec_free(&e->waiters);
         vec_free(&e->deps); vec_free(&e->gdeps);
+        reuse_scope_unref(e->scope);
         pthread_mutex_destroy(&e->mu);
     }
     { size_t ns = interner_count(&E.shape_ids); for (size_t i = 0; i < ns; i++) { ShapeSide *ss = chunked_peek(&E.shape_side, i); if (ss) { vec_free(&ss->entries); vec_free(&ss->refs); } } }
@@ -238,6 +239,7 @@ void eval_free(void) {
     pthread_mutex_destroy(&E.entries_mu); pthread_mutex_destroy(&E.q_mu); pthread_mutex_destroy(&E.res_mu);
     pthread_cond_destroy(&E.q_cv); pthread_cond_destroy(&E.idle_cv);
     memset(&E, 0, sizeof E);
+    reuse_scope_reclaim();
 }
 
 static Cont *cont_new(ContKind kind, EntryId dest, FaceId chi) {
@@ -632,6 +634,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     pthread_mutex_lock(&e->mu);
     if (e->state == E_READY) { EvalResult *r = e->result; e->n_deliver++; pthread_mutex_unlock(&e->mu); add_count(&E.ev.ready_hit); reuse_bump(REUSE_READY_HIT); deliver(k, r); return; }
     if (e->state == E_RUNNING) { vec_push(&e->waiters, k); pthread_mutex_unlock(&e->mu); add_count(&E.ev.running_hit); reuse_bump(REUSE_RUNNING_JOIN); return; }
+    e->scope = reuse_tl_scope; reuse_scope_ref(e->scope);   /* the launching request owns this producer's work */
     if (have_ad) { e->adapter = ad; e->adapter_prefix = adp; e->adapter_src = ads; e->adapter_fact = adf; if (adf) add_count(&E.pev.adapters); }
     /* U → R({c}) + EVAL(K) is one transition (§26): the task is enqueued
      * before RUNNING can be observed by anyone else, so no requester can see
@@ -1089,8 +1092,12 @@ static void execute_task(Task t) {
     add_count(&E.ev.eval_step);
     { EntryId owner = t.is_resume ? t.k->dest : t.entry;    /* §60 trace: the frame step belongs to the producer it advances */
       if (owner && !(t.is_resume && (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL))) { Entry *o = ENT(owner); pthread_mutex_lock(&o->mu); o->steps++; pthread_mutex_unlock(&o->mu); } }
+    /* V21 R3: the task's events are charged to the scope owning its producer */
+    EntryId owner = t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
+    ReuseScope *prev = owner ? reuse_scope_enter(ENT(owner)->scope) : reuse_tl_scope;
     if (t.is_resume) { resume(t.k, t.r); cont_release(t.k); }   /* single consumer: released once resumed */
     else evaluate(t.entry);
+    reuse_scope_leave(prev);
 }
 
 /* §43 FORWARD_RESULT(K): the receiver's request; delivery publishes into K */

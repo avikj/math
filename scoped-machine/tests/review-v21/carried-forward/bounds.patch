@@ -1,0 +1,1120 @@
+--- a/scoped-machine/Makefile
++++ b/scoped-machine/Makefile
+@@ -2,7 +2,7 @@
+ CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread -Isrc -Itests
+ LDFLAGS ?= -fsanitize=address,undefined -pthread
+ 
+-SRC := src/arena.c src/kalloc.c src/kcont.c src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c src/shape.c src/reuse.c src/fine.c src/proof.c src/runtime.c
++SRC := src/radix.c src/arena.c src/kalloc.c src/kcont.c src/intern.c src/dnf.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/work.c src/shape.c src/reuse.c src/fine.c src/proof.c src/runtime.c
+ OBJ := $(SRC:.c=.o)
+ 
+ all: build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation build/work build/reuse build/accept-boundaries build/accept-checker build/accept-handles build/fine build/proof-use build/runtime build/review-alias-scope build/review-alias-faces build/review-work-budget build/review-proof-boundary build/review-certificate-boundary build/review-frame-cost build/review-singleton build/review-generic-action build/review-runtime-presentations build/review-runtime-nodes build/review-runtime-edges build/review-work-edges build/review-node-level build/review-reservation-budget build/review-store-growth build/review-store-interleave build/review-prepare-boundary build/review-arena-budget build/review-audit-budget build/review-v19 build/review-v19-work build/review-assumption-copy build/review-kernel-budget
+@@ -350,3 +350,23 @@
+ build/review-work-edges: $(filter-out src/work.o,$(OBJ)) tests/review_work_edges.c
+ 	@mkdir -p build
+ 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ tests/review_work_edges.c $(filter-out src/work.o,$(OBJ))
++
++# Bounds correction regressions implemented in the supplied patch.
++# Exact-number and allocator completion probes are separately tracked in BOUNDS-COMPLETION.md.
++build/review-bounds: $(OBJ) tests/review_bounds.o
++	@mkdir -p build
++	$(CC) $(LDFLAGS) -o $@ $^
++bounds-test: build/review-bounds
++	./build/review-bounds interval 129
++	./build/review-bounds scope 129
++	./build/review-bounds net-capture 17
++	./build/review-bounds net-capture 129
++	./build/review-bounds net-apply 17
++	./build/review-bounds net-apply 129
++	./build/review-bounds mixed 129
++	./build/review-bounds required 4096
++	./build/review-bounds chunked
++	./build/review-bounds sparse
++	./build/review-bounds bound-encoding
++	./build/review-bounds signature
++.PHONY: bounds-test
+--- /dev/null
++++ b/scoped-machine/BOUNDS-COMPLETION.md
+@@ -0,0 +1,165 @@
++# Exact representation contract and remaining integration
++
++This document implements the user's rule: no arbitrary bound on an input, mathematical value, telescope, nesting depth, or represented structure before actual resource exhaustion. It supplements the V20 review and the bounds review. It does not change the mathematical calculus, the identity compiler, or the notion of sharing.
++
++The supplied patch is an independently tested implementation of scope-vector growth, construction-face stacks, complete template signatures, full-width sparse table/page directories, and injective bound-atom coordinates. The arena's fixed total reservation, exact-number migration, and removal of dependence on a finite native call stack are **not implemented by that patch**. Their required integration is specified below. The earlier V20 progress/retry/fine-accounting/reclamation findings remain in force; this addendum does not sign them off.
++
++## 1. Machine words, values, and addresses
++
++Three categories must remain distinct.
++
++1. An address/index into physically resident storage may use `size_t`, with checked arithmetic. The radix directory in the patch covers every `size_t` key. A fixed directory fanout, number of bits in an address, or finite primitive-rule arity is not an input cutoff.
++2. A mathematical natural such as a universe level or finite cost must support an arbitrary finite limb sequence. A number much larger than a machine word can require only a few limbs. Its numeric magnitude does not justify resource failure.
++3. A handle identifies a resident immutable object. A word-sized handle is valid when the record footprint means exhausting its available identifiers would already exhaust the native address space. Numeric coordinates must not be packed into that handle and thereby lose bits.
++
++The patch changes bound atoms from packed `(depth,slot)` values to interned pairs and uses address-sized coordinates. It also widens `BinderSlot`, `FieldIndex`, shape/traversal depths, and net node identifiers. It does not turn a huge *coordinate* into a valid telescope: structural validation still requires an existing enclosing telescope and a declared slot of the correct sort.
++
++## 2. Exact naturals: representation and API
++
++Use one canonical representation for finite naturals. Keep the existing small-value fast path; represent larger values by immutable, interned, little-endian 64-bit limb vectors with no high zero limbs. Zero has zero limbs. Length is an address-sized physical vector length, not the value's magnitude.
++
++A concrete word ABI is:
++
++```
++Nat: bit 63 clear => immediate value in [0, 2^63)
++     bit 63 set   => handle to a canonical non-small limb record
++```
++
++Reserve `UINT64_MAX` for the existing explicitly typed sentinel use; do not admit it as a Nat handle. At least a record header and limb are needed for each boxed value, so available resident memory is exhausted before the remaining handle namespace. Never interpret the handle's numeric order as the value's order. Canonicalization ensures two handles denote the same natural iff they are equal in the same machine lifetime.
++
++Provide these interfaces, with persistent implementations as specified in §3:
++
++```
++nat_from_word(uint64_t) -> Nat
++nat_from_limbs(length, immutable_limbs) -> Nat
++nat_compare(Nat, Nat) -> LESS | EQUAL | GREATER
++nat_add(Nat, Nat) -> Nat
++nat_sub_ge(Nat a, Nat b) -> Nat           // premise a >= b
++nat_successor(Nat) -> Nat
++nat_max(Nat, Nat) -> Nat
++nat_export(Nat) -> canonical length and limbs
++```
++
++`nat_from_word` boxes values whose top bit is set. Callers must use it for external numeric words: directly casting such a word to `Nat` would turn a value into a handle. Small literals remain usable through the documented immediate constructor.
++
++Costs are `Finite(Nat) | Infinity`. In the current word ABI `COST_INF` can remain the distinct reserved sentinel; it must never mean overflow or allocation failure. Addition has the existing absorbing-infinity rule. Order places infinity above every finite cost. Remove `COST_MAX` as a semantic ceiling.
++
++Levels are naturals; absence is an option tag. Replace packed level pairs by an interned tuple of two optional levels. The opaque pair handle is stored where the packed word lived; every reader uses accessors. `mk_universe(n)` stores the exact natural `n`, formation produces `U_(n+1)`, and level equality is exact equality. A concrete large level does not require enumerating the smaller universes.
++
++Signed cost differences are `Zero | Positive(Nat nonzero) | Negative(Nat nonzero)`. Their premises require finite costs; infinity is never coerced to an integer or used to form an undefined infinity-minus-infinity difference. `costdiff_epsilon` and `costdiff_masked` need exact accessors. A compatibility conversion to `int64_t` may explicitly return “not representable in requested host type”; it must not be the machine's stored result or silently alter it.
++
++## 3. Persistent arithmetic frames
++
++Arithmetic on a variable number of limbs must run through the existing shared operation protocol. Add arithmetic job families to that protocol; do not place a complete multiprecision operation inside one engine frame.
++
++Keys are `(family, immutable operands)`. Arithmetic itself has no environment/session dependency. Repeated requests join one running job or reuse its completed answer. The output limb builder is owned by the job. Budget exhaustion preserves it, its cursor and its carry/borrow. Publication occurs only after canonical interning completes through the existing framed interner.
++
++| Family/state | One transition | Retained next state |
++|---|---|---|
++| FROM_LIMBS/TRIM | Inspect one high limb; discard it logically if zero | Decremented high index, or known canonical length |
++| FROM_LIMBS/COPY | Copy one retained limb | Next limb index and output builder |
++| ADD/INIT | Read operand lengths, set `i=0`, `carry=0`, `used=0` | ADD/LIMB |
++| ADD/LIMB | Read `a_i,b_i` (zero beyond their lengths), produce one sum limb | `i+1`, carry, highest nonzero output position |
++| ADD/CARRY | Append the final nonzero carry if present | Complete canonical length |
++| COMPARE/LENGTH | Compare canonical limb counts | Result, or highest common limb index |
++| COMPARE/LIMB | Compare one pair of limbs from high to low | Result, or previous index |
++| SUB_GE/LIMB | Read one pair of limbs, subtract with borrow, write one output limb | Next index, borrow, highest nonzero output position |
++| INTERN | Join/request the existing framed canonical interner | Waiter continuation; no synchronous payload scan |
++| RETURN | Publish the canonical Nat or comparison result once | READY |
++
++For a limb addition without compiler-specific wide integers:
++
++```
++u  = a_i + b_i                 // unsigned word arithmetic
++c1 = (u < a_i)
++v  = u + carry
++c2 = (v < u)
++output_i = v
++carry = c1 || c2
++```
++
++For subtraction:
++
++```
++u = b_i + borrow
++c = (u < b_i)
++output_i = a_i - u
++borrow = c || (a_i < u)
++```
++
++The final borrow is zero under the `a >= b` premise. Recording the highest nonzero output position while producing limbs avoids an uncharged trailing-zero sweep. `successor` is ADD with one. `max` returns one operand after COMPARE. Signed difference requests COMPARE, then the correctly oriented SUB_GE, and retains the sign. Both zero and infinity require no limb allocation.
++
++Every work-engine site currently using a C arithmetic/comparison expression on `Cost` must request these operations and resume from a saved program counter. In particular this includes SUM, residual family minima, proof SPLIT/FACTOR/DISJOINT/OR/WEAKEN, certificate comparisons, reduction/mapped-proof clauses, and geodesic edge inequalities. Replacing only `cost_add` is insufficient. C comparisons of *canonical handles for equality* remain valid; ordering uses COMPARE.
++
++The checker and evaluator use the same exact level operations. Their synchronous public drivers drive these same retained operations to completion. Existing kernel lowering must allow suspension at their dependencies; a second, synchronous arithmetic implementation is unnecessary.
++
++Proof of arithmetic correctness is the loop invariant
++
++`sum of emitted limbs + carry * 2^(64*i) = sum of the two consumed prefixes`
++
++for ADD, with the analogous borrow equation for SUB_GE. Canonicalization and exact interning preserve the value and its identity. Each limb transition uses a bounded number of word instructions. Increasing precision increases the number of transitions, never the domain of a transition.
++
++## 4. Serialization, keys, and annotations
++
++Interning inside one machine may key records by canonical Nat handles. Cross-machine export/comparison must export their normalized limbs, with the finite/infinity/absent/sign tags. Never print or compare boxed handle numbers as though they were mathematical values.
++
++Migrate every occurrence of levels: universe payloads, paired formation annotations, template level parameters, scope signatures, diagram/transform record annotations, exported graph labels, and compiler certificates. Read stored annotations through their accessors; no `>>32`, masks, or narrowing casts remain as a numeric interpretation.
++
++Migrate every occurrence of costs: model weights/overrides, accumulated work costs, lower and upper certificates, geodesic potentials, signed differences and diagnostic output. Values crossing the former thresholds must preserve sharing and check against the same exact expectations as small values.
++
++Native `size_t` arithmetic for allocating limb storage is checked before addition/multiplication. Overflow there describes an unaddressable physical allocation; overflow of an individual arithmetic limb is carried to another limb.
++
++## 5. Extensible arena: allocation state machine
++
++Keep the existing ownership and retirement rules. Replace the fixed total reservation and the fixed fresh half with a collection of allocator-owned extents. Any initial extent size is a growth policy, not a capacity limit. Maintain an exact index of owned extents for `kalloc` ownership tests: checking only `arena_base <= p < arena_base + ARENA_WORDS` is no longer valid.
++
++Use page-sized allocation units. A block descriptor is `(extent, page_offset, order, state)`. Buddy offsets are relative to that extent, so the extent's starting virtual address need only satisfy page alignment. Use native-address-derived orders rather than the constant 23. A block's state is exactly one of OWNED, DIRTY_FREE, CLEARING, ZERO_READY, or MERGED. The descriptor itself remains owned until its block is installed in a free structure or released to the host.
++
++| Allocation phase | Action | Rule |
++|---|---|---|
++| LOOKUP | Inspect the requested order's reusable blocks | Available nonzero blocks can satisfy ordinary allocation; zero requests require ZERO_READY |
++| SPLIT | Split one larger reusable block into two buddies | Retain one, publish the other; repeat in later units |
++| CLEAR | Clear at most `CHUNK_WORDS` of the selected dirty block | Cursor is retained; no other requester can use a partially cleared block |
++| CLAIM | Install the completed block for this requester | Exactly one owner; publish after initialization |
++| EXTEND | Request additional address space when reusable blocks cannot satisfy the demand | Actual host allocation outcome, never a fixed reservation ceiling |
++| WAIT_RESOURCE | Retain the request and completed work if supply is unavailable | Does not imply invalid mathematics, inequality, infinity, or a permanent failed judgment |
++
++The allocator must reclaim dead fresh blocks. DIRTY_FREE is reusable storage, not a permanent graveyard. Ordinary allocations may consume it directly; zero allocations clear it in bounded chunks. Retiring an already-owned block never cancels live work. Coalescing free buddies performs one merge per transition; it never merges across extent ownership boundaries.
++
++Extent metadata and directory publication also belong to counted, retained work. On growth, live object addresses remain stable. A block requiring contiguous storage must obtain a sufficiently large addressable extent; segmented representations already used by the engine continue to allocate fixed pages.
++
++An operating-system allocation is a host resource action, not an asserted constant-time theorem about the operating system. Keep that action explicit in the host/resource model and account for all variable work performed by the runtime itself. A fixed per-step C bound must never conceal a variable-size clear, copy, scan, allocation fallback, or lock-held completion loop.
++
++`malloc/calloc/realloc`-style kernel callers that can need a pending allocation must prepare it before taking the publication lock, then lock, revalidate and publish. Losing a publication race releases the private candidate through the same ownership protocol. Do not wait for a shared allocator job while retaining an unrelated machine lock.
++
++## 6. Native stack and construction state
++
++The patch removes the explicitly imposed 16-deep construction-face stack. A pthread stack retained as a kernel continuation still has a host-configured capacity. It must not become a hidden maximum mathematical nesting depth.
++
++The portable completion is the same defunctionalization already used by the engine: recursive kernel calls become explicit frames containing `(operation, immutable operands, local cursor/state, return continuation)`. A call pushes a child request and stores the parent's return program counter. Returning delivers the child result to that continuation. Iterate the dispatcher instead of recursively calling C.
++
++Apply this to recursive components reached by arbitrary input structure, including scoped traversal/validation, shape construction, template interpretation, checking/conversion, and recursive diagram construction. Preserve the existing operation keys, required faces, running-state/cycle handling, and checked outcomes. Do not turn recursive definitions into unbounded *eager* unfolding while doing this lowering.
++
++For scope validation, the telescope stack is a persistent linked stack of scope handles. A validation frame retains the exact stack handle and the local declaration-prefix cursor. Its memo key remains `(record, exact telescope stack)`. Changing the storage of the stack does not justify reusing a validity result under a different telescope or outside its binder.
++
++This is a control-flow translation: every call/return in the existing algorithm corresponds to a frame request/delivery. It adds no inference rule or search strategy. Frame allocation can suspend through §5. Increase in nesting consumes more resident frames, ending only at an actual resource condition.
++
++## 7. Integration order and completion gates
++
++1. Apply the tested patch or port its changes onto the worker's current tree. It targets `c365d86`; do not overwrite newer corrections. The directory change subsumes the old `chunked_free` ownership fix from the earlier V20 patch.
++2. Complete extent ownership/reuse and allocator request continuations with the already required V20 lock/progress corrections. Keep the sparse directory implementation or an equivalent full-address-domain structure.
++3. Add exact Nat storage and shared arithmetic frames; migrate levels, costs, signed differences and export together. Remove obsolete tests that assert that a large *mathematical value* is a host failure, replacing them with exact-value tests.
++4. Finish kernel frame lowering, including allocation dependencies and native-stack independence. Keep attempt-local UNRESOLVED handling and independence of unrelated demands from the earlier V20 review.
++5. Run the following acceptance cases and the existing semantic/concurrency gates. Report actual results, not a claim based solely on source shape.
++
++Required acceptance:
++
++- All scope-agent forms agree with the host operation at arities 0, 1, 16, 17, 63, 64, 65 and 129, including mixed dependent locals, partial guards, and empty telescopes.
++- A complete signature is checked even when it would exceed a former temporary buffer. A final invalid obligation is rejected, rather than omitted.
++- Sparse indices past 2^26 and across several radix boundaries preserve old addresses and values. The full-width directory test reaches `SIZE_MAX` without allocating intervening payloads.
++- Tiny test extents cross several allocator growth boundaries; old references stay valid, dirty blocks are reused after bounded clearing, and a repeated allocate/retire workload reaches a stable owned-storage footprint. No result depends on the chosen initial extent size.
++- Level `2^32+1`, costs beyond `2^62` and `2^64`, a multi-limb carry chain, and a negative difference beyond `int64_t` remain exact through storage, operations and export. One-step budgets advance at most one declared arithmetic transition, including canonical interning rather than an uncharged completion scan.
++- More than 16 required-face scopes preserve push/pop semantics. Deep structural terms run with a deliberately small native thread stack using the explicit-frame driver, so the test demonstrates independence from native stack depth.
++- Same-key clients join a pending growth/arithmetic request. An unrelated finite request progresses while another request is suspended. Retrying after resource/budget suspension preserves completed shared work and does not cache a false mathematical verdict.
++
++Completion means these interfaces are implemented and gated. The supplied source patch is a verified increment toward that condition, not a claim that the unchanged arena, packed numerics, or pthread-stack kernel already satisfy it.
+--- /dev/null
++++ b/scoped-machine/tests/review_bounds.c
+@@ -0,0 +1,148 @@
++#include "net.h"
++#include "lib.h"
++#include "work.h"
++#include <assert.h>
++
++static void net_op(Net *net, NodeKind op, Payload p, NodeKind data, Payload q, NodeKind *kind, Payload *result) {
++    int8_t minus = -1;
++    NodeId root = net_node(net, A_ROOT, 1, &minus, (Payload){0});
++    NodeId o = net_operation(net, op, p);
++    net_connect(net, o, 1, root, 0);
++    net_connect(net, o, 0, net_descriptor(net, data, q), 0);
++    net_run(net);
++    assert(net_root_read(net, root, kind, result));
++}
++
++static void mixed(size_t n) {
++    assert(n >= 3 && n % 3 == 0);
++    CaptureDecl *d = calloc(n, sizeof *d); Val *args = calloc(n, sizeof *args);
++    RefId U = mk_universe(0), B = ref_var(declare_term(U, fc_true()));
++    RefId b = ref_var(declare_term(B, fc_true())), body = 0, type = 0;
++    FaceId guard = fc_true();
++    for (size_t k = 0; k < n; k += 3) {
++        DimVarId i = declare_dim(); FaceId f = fc_lit(i, 1); guard = fc_meet(guard, f);
++        TermVarId X = declare_term(U, fc_true()), x = declare_term(ref_var(X), f);
++        d[k] = (CaptureDecl){S_DIM, i, 0, LEVEL_NONE, fc_true()};
++        d[k+1] = (CaptureDecl){S_TERM, X, U, 1, fc_true()};
++        d[k+2] = (CaptureDecl){S_TERM, x, ref_var(X), 0, f};
++        args[k] = (Val){VS_INTERVAL, iv_one()};
++        args[k+1] = (Val){VS_REF, B}; args[k+2] = (Val){VS_REF, b};
++        body = ref_var(x); type = ref_var(X);
++    }
++    ScopeId host = capture_scope(n, d, (Val){VS_REF,body}, type, 0, guard);
++    const char *why = NULL; assert(scope_validate(host, &why));
++    TypedPartial h = apply_scope(host, n, args); assert(h.body.id == b && h.type == B && h.guard == fc_true());
++    Net net; net_init(&net); NodeKind kind; Payload r;
++    net_op(&net, OP_CAPTURE_REF_SCOPE, (Payload){.a=net_capture_decls(n,d),.ref=type,.c=0,.face=guard}, D_REF, (Payload){.ref=body}, &kind, &r);
++    assert(kind == D_SCOPE && r.a == host);
++    net_op(&net, OP_APPLY_SCOPE, (Payload){.a=net_scope_args(n,args)}, D_SCOPE, (Payload){.a=host}, &kind, &r);
++    assert(kind == D_TYPED_PARTIAL && r.ref == b && r.b == B && r.face == fc_true());
++    net_op(&net, OP_CAPTURE_FACE_SCOPE, (Payload){.a=net_capture_decls(n,d)}, D_FACE, (Payload){.face=guard}, &kind, &r);
++    assert(kind == D_SCOPE);
++    net_op(&net, OP_APPLY_SCOPE, (Payload){.a=net_scope_args(n,args)}, D_SCOPE, r, &kind, &r);
++    assert(kind == D_FACE && r.face == fc_true());
++    net_free(&net); free(d); free(args);
++    printf("mixed dependent telescope %zu: reference/face capture and application agree\n", n);
++}
++
++int main(int argc, char **argv) {
++    assert(argc >= 2);
++    const char *mode = argv[1];
++    size_t n = argc > 2 ? strtoull(argv[2], NULL, 10) : 129;
++    machine_init();
++    if (!strcmp(mode, "bound-encoding")) {
++        uint64_t a = bound_id(0, 0), b = bound_id(1u << 29, 0);
++        printf("depth=0 id=%llu; depth=2^29 id=%llu; distinct=%d\n", (unsigned long long)a, (unsigned long long)b, a != b);
++        machine_free(); return a == b;
++    }
++    if (!strcmp(mode, "mixed")) {
++        mixed(n);
++    } else if (!strcmp(mode, "sparse")) {
++        Radix r; radix_init(&r); int values[5] = {1,2,3,4,5};
++        size_t indices[5] = {0, 512, (size_t)1 << 26, (size_t)1 << 40, SIZE_MAX};
++        for (size_t k = 0; k < 5; k++) *radix_slot(&r, indices[k], true) = &values[k];
++        for (size_t k = 0; k < 5; k++) assert(radix_get(&r, indices[k]) == &values[k]);
++        radix_free(&r, NULL, NULL); puts("sparse pointer directory covers SIZE_MAX without intervening allocation");
++    } else if (!strcmp(mode, "cost")) {
++        work_init();
++        bool overflow = false;
++        Cost sum = cost_add((1ULL << 62) - 1, 1, &overflow);
++        printf("(2^62-1)+1 = %llu; resource_limit=%d\n", (unsigned long long)sum, overflow);
++        work_free(); machine_free();
++        return overflow || sum != (1ULL << 62);
++    } else if (!strcmp(mode, "required")) {
++        for (size_t k = 0; k < n; k++) term_require_push(fc_true());
++        for (size_t k = 0; k < n; k++) term_require_pop();
++        printf("required depth=%zu OK\n", n);
++    } else if (!strcmp(mode, "levels")) {
++        RefId u = mk_universe((1ULL << 32) + 1);
++        assert(origin_payload(ref_origin(u)) == (1ULL << 32) + 1);
++        puts("universe level=2^32+1 preserved");
++    } else if (!strcmp(mode, "chunked")) {
++        Chunked *c = malloc(sizeof *c); chunked_init(c, sizeof(uint64_t));
++        size_t index = (size_t)1 << 26;
++        *(uint64_t *)chunked_at(c, index) = 73;
++        assert(*(uint64_t *)chunked_get(c, index) == 73);
++        printf("sparse table index=%zu OK\n", index);
++        chunked_free(c); free(c);
++    } else if (!strcmp(mode, "signature")) {
++        RefId U = mk_universe(0), A = ref_var(declare_term(U, fc_true()));
++        RefId x = ref_var(declare_term(A, fc_true())), t = mk_refl(0, A, x);
++        size_t count = tnode_signature(t, NULL, 0);
++        assert(count > 0); ParamSig *sig = malloc(count * sizeof *sig);
++        assert(tnode_signature(t, sig, count) == count);
++        printf("complete signature: %zu entries\n", count); free(sig);
++    } else if (!strcmp(mode, "template-width")) {
++        templates_init();
++        size_t max_nf = 0; TNodeId max_q = 0;
++        for (TNodeId q = 1; q <= interner_count(&M.tnodes); q++) {
++            TNodeSide *s = chunked_get(&M.tnode_side, q - 1);
++            size_t nf; interner_get(&M.keys, s->free_slots, &nf);
++            if (nf > max_nf) { max_nf = nf; max_q = q; }
++        }
++        printf("registered template max retained slots=%zu node=%llu definition=%s\n", max_nf, (unsigned long long)max_q, tdef_name(tnode_def(max_q)));
++    } else {
++        assert(n > 0);
++        CaptureDecl *d = calloc(n, sizeof *d);
++        Val *args = calloc(n, sizeof *args);
++        uint64_t *atoms = malloc(n * sizeof *atoms);
++        for (size_t k = 0; k < n; k++) {
++            DimVarId i = declare_dim();
++            d[k] = (CaptureDecl){S_DIM, i, 0, LEVEL_NONE, fc_true()};
++            atoms[k] = IV_ATOM(i, false);
++            args[k] = (Val){VS_INTERVAL, iv_one()};
++        }
++        Dnf dn; dnf_init(&dn); dnf_add_clause(&dn, atoms, n);
++        IntervalId r = iv_from_dnf(&dn); dnf_free(&dn);
++        Words ds; words_init(&ds); iv_dims(r, &ds); assert(ds.n == n); words_free(&ds);
++        if (!strcmp(mode, "interval")) {
++            MapBuilder m; mapb_init(&m);
++            for (size_t k = 0; k < n; k++) mapb_dim(&m, d[k].id, iv_one());
++            assert(iv_reindex(r, mapb_finish(&m)) == iv_one());
++            FaceId f = fc_endpoint(r, 1);
++            for (size_t k = 0; k < n; k++) assert(fc_entails(f, fc_lit(d[k].id, 1)));
++            assert(fc_is_false(fc_forall(d[n-1].id, f)));
++            printf("%zu distinct dimensions: DNF, substitution, entailment, forall OK\n", n);
++        } else {
++            ScopeId s = capture_scope(n, d, (Val){VS_INTERVAL, r}, 0, LEVEL_NONE, fc_true());
++            const char *why = NULL; assert(scope_validate(s, &why));
++            assert(apply_scope(s, n, args).body.id == iv_one());
++            if (!strcmp(mode, "scope")) printf("host scope capture/apply %zu OK\n", n);
++            else {
++                Net net; net_init(&net); NodeKind kind; Payload result;
++                if (!strcmp(mode, "net-capture")) {
++                    net_op(&net, OP_CAPTURE_INTERVAL_SCOPE, (Payload){.a=net_capture_decls(n,d)}, D_INTERVAL, (Payload){.a=r}, &kind, &result);
++                    assert(kind == D_SCOPE && result.a == s);
++                } else if (!strcmp(mode, "net-apply")) {
++                    net_op(&net, OP_APPLY_SCOPE, (Payload){.a=net_scope_args(n,args)}, D_SCOPE, (Payload){.a=s}, &kind, &result);
++                    assert(kind == D_INTERVAL && result.a == iv_one());
++                } else assert(!"unknown mode");
++                printf("%s %zu agrees with host operation\n", mode, n);
++                net_free(&net);
++            }
++        }
++        free(d); free(args); free(atoms);
++    }
++    machine_free();
++    return 0;
++}
+--- a/scoped-machine/tests/review_v19.c
++++ b/scoped-machine/tests/review_v19.c
+@@ -15,7 +15,7 @@
+    assert(p.elem==sizeof(uint64_t)&&p.per==ARENA_PAGE);pw_push(&p,42);assert(pw_get(&p,0)==42);
+   }else{
+    for(size_t i=0;i<(size_t)ARENA_PAGE*PAGED_DIR+1;i++)pw_push(&p,i);
+-   printf("pages=%zu (second directory present=%d)\n",paged_pages(&p),!!p.dir2);
++   printf("pages=%zu (second directory present=%d)\n",paged_pages(&p),!!p.index.root[1]);
+   }
+   paged_retire(&p);size_t units=0;while(arena_reap())units++;
+   ArenaStats st=arena_stats();printf("reap units=%zu words_out=%llu words_in=%llu missing=%llu\n",units,(unsigned long long)st.words_out,(unsigned long long)st.words_in,(unsigned long long)(st.words_out-st.words_in));
+--- a/scoped-machine/src/arena.c
++++ b/scoped-machine/src/arena.c
+@@ -94,21 +94,14 @@
+     require(elem && elem <= ARENA_PAGE * sizeof(uint64_t), "paged: element size");
+     memset(p, 0, sizeof *p); p->elem = elem; p->per = (ARENA_PAGE * sizeof(uint64_t)) / elem;
+ }
+-static void *page_ptr(const Paged *p, size_t k) {   /* page k (exists) */
+-    if (k == 0) return p->pg0;
+-    if (k < PAGED_DIR) return p->dir[k];
+-    return p->dir2[k / PAGED_DIR][k % PAGED_DIR];
+-}
++static void *page_ptr(const Paged *p, size_t k) { return k ? radix_get(&p->index, k) : p->pg0; }
+ static void page_set(Paged *p, size_t k, void *pg) {
+-    if (k == 0) { p->pg0 = pg; return; }
+-    if (k < PAGED_DIR) { if (!p->dir) p->dir = page_new(); p->dir[k] = pg; return; }
+-    require(k / PAGED_DIR < PAGED_DIR, "paged: buffer exhausted");
+-    if (!p->dir2) p->dir2 = page_new();
+-    if (k % PAGED_DIR == 0) p->dir2[k / PAGED_DIR] = page_new();
+-    p->dir2[k / PAGED_DIR][k % PAGED_DIR] = pg;
++    if (!k) { p->pg0 = pg; return; }
++    void **slot = radix_slot(&p->index, k, true); *slot = pg;
+ }
+ void *paged_at(const Paged *p, size_t i) { require(i < p->n, "paged: index"); return (char *)page_ptr(p, i / p->per) + (i % p->per) * p->elem; }
+ void *paged_push(Paged *p) {
++    require(p->n < SIZE_MAX, "paged: address space exhausted");
+     size_t i = p->n; size_t k = i / p->per;
+     if (k >= p->pages) { page_set(p, k, page_new()); p->pages = k + 1; }   /* a new page: one fixed-size block from the free list */
+     p->n++;
+@@ -119,29 +112,22 @@
+ /* retirement: a buffer's pages and directory pages are released one per
+  * `arena_reap`. The queue is intrusive: a retiree's descriptor lives in its
+  * own page 0 (every retiree has one) */
+-typedef struct { size_t pages, per, elem; void **dir; void ***dir2; size_t subdirs; void *next; } Retiree;
++typedef struct Retiree { size_t pages; Radix index; RadixRetire cursor; bool clearing_dirs; struct Retiree *next; } Retiree;
++_Static_assert(sizeof(Retiree) <= ARENA_PAGE * sizeof(uint64_t), "retirement cursor must fit a fixed page");
+ static Retiree *R_head, *R_tail;
+ static void enqueue(Retiree *r) { r->next = NULL; if (R_tail) R_tail->next = r; else R_head = r; R_tail = r; }
+ void paged_retire(Paged *p) {
+-    if (!p->pg0) { size_t elem = p->elem; paged_init(p, elem); return; }   /* never had a page */
+-    Retiree *r = (Retiree *)p->pg0;   /* page 0 is 4 KiB: the descriptor fits */
+-    Retiree d = { p->pages, p->per, p->elem, p->dir, p->dir2, 0, NULL };
+-    if (d.dir2) d.subdirs = (p->pages - 1) / PAGED_DIR; /* live indices are 1..subdirs; index 0 is unused */
+-    *r = d; enqueue(r);
+-    size_t elem = p->elem; memset(p, 0, sizeof *p); p->elem = elem; p->per = (ARENA_PAGE * sizeof(uint64_t)) / elem;
++    if (!p->pg0) { size_t elem = p->elem; paged_init(p, elem); return; }
++    Retiree *r = p->pg0;
++    *r = (Retiree){ .pages = p->pages, .index = p->index };
++    enqueue(r); size_t elem = p->elem; paged_init(p, elem);
+ }
+ bool arena_reap(void) {
+     Retiree *r = R_head; if (!r) return false;
+-    if (r->pages > 1) {   /* data pages from the top down (page 0 holds the descriptor: last) */
+-        size_t k = r->pages - 1; void *pg = k < PAGED_DIR ? r->dir[k] : r->dir2[k / PAGED_DIR][k % PAGED_DIR];
+-        page_del(pg); r->pages--; return true;
+-    }
+-    if (r->subdirs) { page_del(r->dir2[r->subdirs--]); return true; }
+-    if (r->dir2) { page_del(r->dir2); r->dir2 = NULL; return true; }
+-    if (r->dir) { page_del(r->dir); r->dir = NULL; return true; }
+-    R_head = r->next; if (!R_head) R_tail = NULL;
+-    page_del(r);      /* page 0 last */
+-    return true;
++    if (r->pages > 1) { page_del(radix_get(&r->index, --r->pages)); return true; }
++    if (!r->clearing_dirs) { radix_retire_begin(&r->cursor, &r->index); r->clearing_dirs = true; }
++    if (radix_retire_step(&r->cursor)) return true;
++    R_head = r->next; if (!R_head) R_tail = NULL; page_del(r); return true;
+ }
+ void arena_reap_all(void) { while (arena_reap()) ; }
+ void paged_pop(Paged *p) { require(p->n, "paged: pop on empty"); p->n--; }   /* pages are kept for reuse; released at retirement */
+--- a/scoped-machine/src/arena.h
++++ b/scoped-machine/src/arena.h
+@@ -13,15 +13,18 @@
+  * growth does); copying is never performed here.
+  *
+  * Paged buffers: a variable-size buffer is a sequence of fixed pages reached
+- * through a directory of at most two fixed levels — push, read, write, pop and
+- * ownership transfer are O(1) with one fixed-size page taken from the arena
+- * when a page fills; nothing is ever copied on growth. Release of a buffer's
+- * pages is retired to a queue drained one page per unit (`arena_reap`). */
++ * through a lazy radix directory over the full size_t index domain. Its
++ * maximum path length follows from native index width, not an input-size
++ * restriction. Data never move. Retirement returns one data/directory page
++ * per arena_reap call. The allocator's separate fixed reservation limit is
++ * still pending the completion specified in BOUNDS-COMPLETION.md.
++ */
+ #ifndef ARENA_H
+ #define ARENA_H
+ #include <stddef.h>
+ #include <stdint.h>
+ #include <stdbool.h>
++#include "radix.h"
+ 
+ #define ARENA_PAGE   512u                       /* words per page (4 KiB) */
+ #define ARENA_ORDERS 23u                        /* orders 0..22: page × 2^k, the largest the whole range */
+@@ -47,8 +50,7 @@
+     union { size_t n, len; };   /* elements (both names: white-box probes read either) */
+     size_t pages;           /* pages allocated (kept across pops; released at retirement) */
+     void *pg0;              /* page 0 */
+-    void **dir;             /* pages 1..DIR-1 (dir[0] unused): one arena page of pointers */
+-    void ***dir2;           /* dir2[k] = directory of pages k·DIR .. k·DIR+DIR-1 */
++    Radix index;            /* every resident page indexed over the full size_t domain */
+ } Paged;
+ #define PAGED_DIR (ARENA_PAGE)                   /* pointers per directory page */
+ 
+--- a/scoped-machine/src/canon.c
++++ b/scoped-machine/src/canon.c
+@@ -49,7 +49,7 @@
+ /* bound atoms (§50): exact (depth, slot) labels */
+ static size_t g_bound(Canon *c, GKind kind, uint64_t id) {
+     size_t idx; if (lookup(c, kind, id, &idx)) return idx;
+-    char lab[64]; snprintf(lab, sizeof lab, "%s %u/%u", kind == G_INPUT_VAR ? "bx" : "bi", (unsigned)bound_depth(id), (unsigned)bound_slot(id));
++    char lab[64]; snprintf(lab, sizeof lab, "%s %zu/%zu", kind == G_INPUT_VAR ? "bx" : "bi", bound_depth(id), bound_slot(id));
+     idx = node_new(c, kind, lab); remember(c, kind, id, idx); return idx;
+ }
+ static size_t g_var(Canon *c, TermVarId x) {
+--- a/scoped-machine/src/check.c
++++ b/scoped-machine/src/check.c
+@@ -1058,7 +1058,10 @@
+         else if (val.sort == PS_REF && !ref_validate(val.id, reason)) st = CK_INVALID;
+     }
+     if (st != CK_VALID) { claim_release(cl, ck_code(st), *reason, NULL); return st; }
+-    ParamSig sig[16]; size_t ns = tnode_signature(t, sig, 16);
++    size_t ns = tnode_signature(t, NULL, 0);
++    require(ns <= SIZE_MAX / sizeof(ParamSig), "template signature allocation overflow");
++    ParamSig *sig = ns ? malloc(ns * sizeof *sig) : NULL;
++    tnode_signature(t, sig, ns);
+     for (size_t k = 0; k < ns && st == CK_VALID; k++) {
+         size_t ne = tenv_size(E); uint64_t image = 0; bool have = false;
+         for (size_t q = 0; q < ne; q++) { uint64_t slot; TVal val; tenv_entry(E, q, &slot, &val); if (slot == sig[k].slot) { image = val.id; have = true; } }
+@@ -1076,6 +1079,7 @@
+             if (st == CK_INVALID) { char buf[256]; snprintf(buf, sizeof buf, "template scope argument does not meet its signature (%s slot %zu: %s)", tdef_name(tnode_def(ref_tnode(t))), sig[k].slot, *reason); *reason = diag_intern(buf); }
+         }
+     }
++    free(sig);
+     claim_release(cl, ck_code(st), *reason, NULL);
+     return st;
+ }
+--- a/scoped-machine/src/common.h
++++ b/scoped-machine/src/common.h
+@@ -48,11 +48,11 @@
+ typedef uint64_t SymbolId;
+ typedef uint64_t DimSetId;   /* interned sorted set of DimVarId */
+ typedef uint64_t VarSetId;   /* interned sorted set of TermVarId */
+-typedef uint32_t BinderSlot;
+-typedef uint32_t FieldIndex;
++typedef size_t BinderSlot;
++typedef size_t FieldIndex;
+ 
+-#define NO_SLOT ((BinderSlot)0xFFFFFFFFu)
+-#define NO_FIELD ((FieldIndex)0xFFFFFFFFu)
++#define NO_SLOT ((BinderSlot)SIZE_MAX)
++#define NO_FIELD ((FieldIndex)SIZE_MAX)
+ 
+ /* ---- fatal errors (host failures, never object-language values) ---- */
+ #define die(...) do { fprintf(stderr, "fatal: "); fprintf(stderr, __VA_ARGS__); \
+--- a/scoped-machine/src/intern.c
++++ b/scoped-machine/src/intern.c
+@@ -3,34 +3,30 @@
+ #include "arena.h"
+ 
+ /* ---- chunked arrays ---- */
+-void chunked_init(Chunked *c, size_t elem) { memset(c->dir, 0, sizeof c->dir); c->elem = elem; c->alloc = NULL; c->alloc_ctx = NULL; }
++void chunked_init(Chunked *c, size_t elem) { radix_init(&c->dir); c->elem = elem; c->alloc = NULL; c->alloc_ctx = NULL; }
+ void chunked_set_alloc(Chunked *c, ChunkAlloc alloc, void *ctx) { c->alloc = alloc; c->alloc_ctx = ctx; }
+-void chunked_free(Chunked *c) { if (!c->alloc) for (size_t k = 0; k < MAX_CHUNKS; k++) if (c->dir[k]) arena_release(c->dir[k], (CHUNK_SIZE * c->elem + 7) / 8); memset(c->dir, 0, sizeof c->dir); }   /* engine chunks (hooked) belong to their spares' arena lists */
++static void chunk_release(void *p, void *ctx) { Chunked *c = ctx; arena_release(p, (CHUNK_SIZE * c->elem + 7) / 8); }
++void chunked_free(Chunked *c) { radix_free(&c->dir, chunk_release, c); }
+ void *chunked_at(Chunked *c, size_t i) {
+-    size_t ch = i >> CHUNK_BITS;
+-    require(ch < MAX_CHUNKS, "chunked array exhausted");
+-    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
++    require(c->elem <= (SIZE_MAX - 7) / CHUNK_SIZE, "chunk allocation size overflow");
++    void **slot = radix_slot(&c->dir, i >> CHUNK_BITS, true);
++    void *p = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+     if (!p) {
+-        void *fresh = c->alloc ? c->alloc(CHUNK_SIZE * c->elem, c->alloc_ctx) : arena_alloc_zero((CHUNK_SIZE * c->elem + 7) / 8, NULL);   /* §94: a kernel chunk is a fresh zero block of the arena — no clearing, possibly under a lock */
+-        require(fresh, "out of memory");
+-        void *expected = NULL;
+-        if (__atomic_compare_exchange_n(&c->dir[ch], &expected, fresh, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) p = fresh;
+-        else { if (!c->alloc) arena_release(fresh, (CHUNK_SIZE * c->elem + 7) / 8); p = expected; }   /* an arena chunk lost the race: returned at teardown with the arena (the engine's tables are filled under one lock, so this does not occur there) */
++        void *fresh = c->alloc ? c->alloc(CHUNK_SIZE * c->elem, c->alloc_ctx) : arena_alloc_zero((CHUNK_SIZE * c->elem + 7) / 8, NULL);
++        require(fresh, "out of memory"); void *expected = NULL;
++        if (__atomic_compare_exchange_n(slot, &expected, fresh, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) p = fresh;
++        else { arena_release(fresh, (CHUNK_SIZE * c->elem + 7) / 8); p = expected; }
+     }
+     return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
+ }
+ void *chunked_get(const Chunked *c, size_t i) {
+-    size_t ch = i >> CHUNK_BITS;
+-    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
++    void *p = radix_get(&c->dir, i >> CHUNK_BITS);
+     require(p, "chunked read of a missing element");
+     return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
+ }
+ void *chunked_peek(const Chunked *c, size_t i) {
+-    size_t ch = i >> CHUNK_BITS;
+-    if (ch >= MAX_CHUNKS) return NULL;
+-    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
+-    if (!p) return NULL;
+-    return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
++    void *p = radix_get(&c->dir, i >> CHUNK_BITS);
++    return p ? (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem : NULL;
+ }
+ 
+ /* ---- interner ---- */
+--- a/scoped-machine/src/intern.h
++++ b/scoped-machine/src/intern.h
+@@ -16,19 +16,21 @@
+ 
+ #include "common.h"
+ #include <pthread.h>
++#include "radix.h"
+ 
+ #define CHUNK_BITS 11
+ #define CHUNK_SIZE ((size_t)1 << CHUNK_BITS)
+-#define MAX_CHUNKS ((size_t)1 << 15)
++/* The pointer index covers size_t; there is no fixed chunk count. */
+ 
+-/* Non-moving, lazily chunked array of fixed-size elements. Element i lives
++/* Non-moving, lazily chunked array of fixed-size elements over a full-width
++ * sparse directory; there is no fixed maximum chunk count. Element i lives
+  * at a stable address once created. Creation of a chunk is done under the
+  * caller's lock; the chunk pointer is published with release semantics so a
+  * reader that learned of index i through a synchronized channel can read it
+  * without the lock. */
+-typedef void *(*ChunkAlloc)(size_t bytes, void *ctx);   /* §94: an arena-backed, pre-cleared chunk supplier (work.c) */
++typedef void *(*ChunkAlloc)(size_t bytes, void *ctx);   /* transfers ownership of a pre-cleared arena chunk to this table */
+ typedef struct {
+-    void *dir[MAX_CHUNKS];
++    Radix dir;
+     size_t elem;
+     ChunkAlloc alloc; void *alloc_ctx;   /* NULL: calloc (the kernel's own tables) */
+ } Chunked;
+--- a/scoped-machine/src/machine.c
++++ b/scoped-machine/src/machine.c
+@@ -21,7 +21,7 @@
+     interner_init(&M.refs);
+     interner_init(&M.nominal);
+     interner_init(&M.contexts);
+-    interner_init(&M.scopes); interner_init(&M.exprs); interner_init(&M.tnodes); interner_init(&M.tenvs); interner_init(&M.tdefs); interner_init(&M.keys);
++    interner_init(&M.bound_atoms); interner_init(&M.scopes); interner_init(&M.exprs); interner_init(&M.tnodes); interner_init(&M.tenvs); interner_init(&M.tdefs); interner_init(&M.keys);
+     wordmap_init(&M.trav_memo); wordmap_init(&M.interp_memo);
+     chunked_init(&M.scope_side, sizeof(ScopeSide)); chunked_init(&M.tnode_side, sizeof(TNodeSide));
+     wordmap_init(&M.reindex_memo);
+@@ -52,7 +52,7 @@
+     interner_free(&M.refs);
+     interner_free(&M.nominal);
+     interner_free(&M.contexts);
+-    interner_free(&M.scopes); interner_free(&M.exprs); interner_free(&M.tnodes); interner_free(&M.tenvs); interner_free(&M.tdefs); interner_free(&M.keys);
++    interner_free(&M.bound_atoms); interner_free(&M.scopes); interner_free(&M.exprs); interner_free(&M.tnodes); interner_free(&M.tenvs); interner_free(&M.tdefs); interner_free(&M.keys);
+     wordmap_free(&M.trav_memo); wordmap_free(&M.interp_memo);
+     chunked_free(&M.scope_side); chunked_free(&M.tnode_side);
+     wordmap_free(&M.reindex_memo);
+--- a/scoped-machine/src/net.c
++++ b/scoped-machine/src/net.c
+@@ -483,15 +483,19 @@
+     for (size_t k = 0; k < n; k++) { words_push(&w, a[k].sort); words_push(&w, a[k].id); }
+     uint64_t id = interner_intern(&M.keys, w.w, w.n, NULL); words_free(&w); return id;
+ }
+-static size_t capture_decls_get(uint64_t h, CaptureDecl *out, size_t max) {
+-    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(w[0] == 0xCA9, "not a capture telescope");
+-    size_t m = (size_t)w[1]; require(m <= max, "capture telescope too long");
++static size_t capture_decls_get(uint64_t h, CaptureDecl **result) {
++    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(n >= 2 && w[0] == 0xCA9, "not a capture telescope");
++    size_t m = (size_t)w[1]; require(n >= 2 && m <= (n - 2) / 5 && n == 2 + 5 * m, "malformed capture telescope");
++    require(m <= SIZE_MAX / sizeof(CaptureDecl), "capture telescope allocation overflow");
++    CaptureDecl *out = m ? malloc(m * sizeof *out) : NULL; *result = out;
+     for (size_t k = 0; k < m; k++) { out[k].sort = (Sort)w[2 + 5 * k]; out[k].id = w[3 + 5 * k]; out[k].type = w[4 + 5 * k]; out[k].level = w[5 + 5 * k]; out[k].required = w[6 + 5 * k]; }
+     return m;
+ }
+-static size_t scope_args_get(uint64_t h, Val *out, size_t max) {
+-    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(w[0] == 0xA96, "not a scope argument list");
+-    size_t m = (size_t)w[1]; require(m <= max, "scope argument list too long");
++static size_t scope_args_get(uint64_t h, Val **result) {
++    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(n >= 2 && w[0] == 0xA96, "not a scope argument list");
++    size_t m = (size_t)w[1]; require(n >= 2 && m <= (n - 2) / 2 && n == 2 + 2 * m, "malformed scope argument list");
++    require(m <= SIZE_MAX / sizeof(Val), "scope argument allocation overflow");
++    Val *out = m ? malloc(m * sizeof *out) : NULL; *result = out;
+     for (size_t k = 0; k < m; k++) { out[k].sort = (ValSort)w[2 + 2 * k]; out[k].id = w[3 + 2 * k]; }
+     return m;
+ }
+@@ -588,30 +592,33 @@
+     /* ---- §55: scope and template agents; each is one finite pure operation ---- */
+     case OP_CAPTURE_REF_SCOPE: {
+         WANT(D_REF);
+-        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
++        CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
+         Val body = { VS_REF, Q.ref };
+         res = desc_scope(n, capture_scope(m, d, body, P.ref, P.c, P.face));     /* P: a = Δ, ref = type, c = level, face = guard */
++        free(d);
+         break;
+     }
+     case OP_CAPTURE_FACE_SCOPE: {
+         WANT(D_FACE);
+-        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
++        CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
+         Val body = { VS_FACE, Q.face };
+         res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
++        free(d);
+         break;
+     }
+     case OP_CAPTURE_INTERVAL_SCOPE: {
+         WANT(D_INTERVAL);
+-        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
++        CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
+         Val body = { VS_INTERVAL, Q.a };
+         res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
++        free(d);
+         break;
+     }
+     case OP_REINDEX_SCOPE: WANT(D_SCOPE); res = desc_scope(n, reindex_scope(Q.a, P.a)); break;
+     case OP_APPLY_SCOPE: {
+         WANT(D_SCOPE);
+-        Val args[16]; size_t m = scope_args_get(P.a, args, 16);
+-        TypedPartial tp = apply_scope(Q.a, m, args);
++        Val *args; size_t m = scope_args_get(P.a, &args);
++        TypedPartial tp = apply_scope(Q.a, m, args); free(args);
+         if (tp.body.sort == VS_REF) res = desc_typed_partial(n, tp.body.id, tp.type, tp.level, tp.guard);
+         else if (tp.body.sort == VS_FACE) res = desc_face(n, tp.body.id);
+         else res = desc_interval(n, tp.body.id);
+--- a/scoped-machine/src/net.h
++++ b/scoped-machine/src/net.h
+@@ -13,7 +13,7 @@
+ #include "eval.h"
+ #include "template.h"
+ 
+-typedef uint32_t NodeId;      /* 0 = none */
++typedef uint64_t NodeId;      /* 0 = none */
+ typedef struct { NodeId node; uint16_t port; } Endpoint;
+ 
+ typedef enum {
+--- /dev/null
++++ b/scoped-machine/src/radix.c
+@@ -0,0 +1,67 @@
++#include "common.h"
++#include "radix.h"
++#include "arena.h"
++
++static size_t width(size_t x) { size_t d = 0; while ((x >>= RADIX_BITS)) d++; return d; }
++void radix_init(Radix *r) { memset(r, 0, sizeof *r); }
++static void **directory(void **slot, bool create) {
++    void *p = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
++    if (!p && create) {
++        size_t words = (RADIX_FANOUT * sizeof(void *) + 7) / 8;
++        /* One fixed directory page; clearing is bounded by RADIX_FANOUT. */
++        void *fresh = arena_alloc(words, NULL), *expected = NULL;
++        memset(fresh, 0, RADIX_FANOUT * sizeof(void *));
++        if (__atomic_compare_exchange_n(slot, &expected, fresh, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) p = fresh;
++        else { arena_release(fresh, words); p = expected; }
++    }
++    return p;
++}
++void **radix_slot(Radix *r, size_t index, bool create) {
++    size_t d = width(index);
++    void **p = directory(&r->root[d], create);
++    if (!p) return NULL;
++    while (d) {
++        size_t k = (index >> (d * RADIX_BITS)) & (RADIX_FANOUT - 1);
++        p = directory(&p[k], create);
++        if (!p) return NULL;
++        d--;
++    }
++    return &p[index & (RADIX_FANOUT - 1)];
++}
++void *radix_get(const Radix *r, size_t index) {
++    void **slot = radix_slot((Radix *)r, index, false);
++    return slot ? __atomic_load_n(slot, __ATOMIC_ACQUIRE) : NULL;
++}
++void radix_retire_begin(RadixRetire *s, Radix *r) { memset(s, 0, sizeof *s); s->tree = *r; radix_init(r); }
++bool radix_retire_step(RadixRetire *s) {
++    for (;;) {
++        if (!s->depth) {
++            while (s->root < RADIX_LEVELS && !s->tree.root[s->root]) s->root++;
++            if (s->root == RADIX_LEVELS) return false;
++            s->stack[0] = s->tree.root[s->root]; s->next[0] = 0; s->depth = 1;
++        }
++        size_t at = s->depth - 1;
++        if (at < s->root) {
++            void **p = s->stack[at];
++            while (s->next[at] < RADIX_FANOUT && !p[s->next[at]]) s->next[at]++;
++            if (s->next[at] < RADIX_FANOUT) {
++                s->stack[s->depth] = p[s->next[at]++]; s->next[s->depth++] = 0; continue;
++            }
++        }
++        arena_release(s->stack[at], (RADIX_FANOUT * sizeof(void *) + 7) / 8);
++        s->depth--;
++        if (!s->depth) s->tree.root[s->root++] = NULL;
++        return true;
++    }
++}
++static void release_tree(void **p, size_t level, RadixLeafFn fn, void *ctx) {
++    for (size_t k = 0; k < RADIX_FANOUT; k++) if (p[k]) {
++        if (level) release_tree(p[k], level - 1, fn, ctx);
++        else if (fn) fn(p[k], ctx);
++    }
++    arena_release((uint64_t *)p, (RADIX_FANOUT * sizeof(void *) + 7) / 8);
++}
++void radix_free(Radix *r, RadixLeafFn fn, void *ctx) {
++    for (size_t d = 0; d < RADIX_LEVELS; d++) if (r->root[d]) release_tree(r->root[d], d, fn, ctx);
++    radix_init(r);
++}
+--- /dev/null
++++ b/scoped-machine/src/radix.h
+@@ -0,0 +1,30 @@
++/* Non-moving sparse pointer index over the entire size_t domain.
++ * Fixed fanout bounds one directory operation, not the represented size.
++ * Directory roots are partitioned by index width so existing roots never move.
++ */
++#ifndef CUBICAL_RADIX_H
++#define CUBICAL_RADIX_H
++#include <stddef.h>
++#include <stdint.h>
++#include <stdbool.h>
++#include <limits.h>
++#define RADIX_BITS 9u
++#define RADIX_FANOUT ((size_t)1 << RADIX_BITS)
++#define RADIX_LEVELS ((sizeof(size_t) * CHAR_BIT + RADIX_BITS - 1) / RADIX_BITS)
++typedef struct { void *root[RADIX_LEVELS]; } Radix;
++void radix_init(Radix *r);
++void **radix_slot(Radix *r, size_t index, bool create);
++void *radix_get(const Radix *r, size_t index);
++/* Quiescent retirement: one directory page per call, no payload release.
++ * The fixed-depth cursor lives with the owner until retirement completes. */
++typedef struct {
++    Radix tree;
++    void *stack[RADIX_LEVELS];
++    size_t next[RADIX_LEVELS];
++    size_t root, depth;
++} RadixRetire;
++void radix_retire_begin(RadixRetire *s, Radix *r);
++bool radix_retire_step(RadixRetire *s);
++typedef void (*RadixLeafFn)(void *value, void *ctx);
++void radix_free(Radix *r, RadixLeafFn release, void *ctx);
++#endif
+--- a/scoped-machine/src/scope.c
++++ b/scoped-machine/src/scope.c
+@@ -3,7 +3,7 @@
+ #include "template.h"   /* the validator walks template environments */
+ 
+ /* template layer: traversal of a TVIEW's environment (template.c) */
+-RefId tview_traverse(RefId t, const Trav *tv, unsigned depth);
++RefId tview_traverse(RefId t, const Trav *tv, size_t depth);
+ 
+ #define SSIDE(id) ((ScopeSide *)chunked_at(&M.scope_side, (id) - 1))
+ 
+@@ -23,16 +23,16 @@
+ /* ------------------------------------------------------------------ */
+ /* traversal                                                             */
+ 
+-typedef struct { const Trav *tv; unsigned depth; } DimCb;
++typedef struct { const Trav *tv; size_t depth; } DimCb;
+ static IntervalId dim_cb(DimVarId i, void *ctx) {
+     DimCb *c = ctx;
+     IntervalId r = c->tv->dim ? c->tv->dim(i, c->depth, c->tv->ctx) : 0;
+     return r ? r : iv_var(i);
+ }
+-IntervalId trav_iv(IntervalId r, const Trav *tv, unsigned depth) { DimCb c = { tv, depth }; return iv_substitute(r, dim_cb, &c); }
+-FaceId trav_fc(FaceId f, const Trav *tv, unsigned depth) { DimCb c = { tv, depth }; return fc_substitute(f, dim_cb, &c); }
+-
+-RefId trav_ref(RefId t, const Trav *tv, unsigned depth) {
++IntervalId trav_iv(IntervalId r, const Trav *tv, size_t depth) { DimCb c = { tv, depth }; return iv_substitute(r, dim_cb, &c); }
++FaceId trav_fc(FaceId f, const Trav *tv, size_t depth) { DimCb c = { tv, depth }; return fc_substitute(f, dim_cb, &c); }
++
++RefId trav_ref(RefId t, const Trav *tv, size_t depth) {
+     if (ref_is_var(t)) {
+         RefId r = tv->term ? tv->term(ref_var_id(t), depth, tv->ctx) : 0;
+         return r ? r : t;
+@@ -54,7 +54,7 @@
+     return out;
+ }
+ 
+-Val trav_val(Val v, const Trav *tv, unsigned depth) {
++Val trav_val(Val v, const Trav *tv, size_t depth) {
+     Val o = v;
+     switch (v.sort) {
+     case VS_REF: o.id = trav_ref(v.id, tv, depth); break;
+@@ -123,16 +123,16 @@
+ /* capture: close the concrete locals of Δ into (depth, slot) atoms         */
+ 
+ typedef struct { size_t n; const CaptureDecl *d; } CloseCtx;
+-static RefId close_term(uint64_t x, unsigned depth, void *c) {
++static RefId close_term(uint64_t x, size_t depth, void *c) {
+     CloseCtx *cc = c;
+     if (is_bound_id(x)) return 0;
+-    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_TERM && cc->d[k].id == x) return ref_var(bound_id(depth, (uint32_t)k));
++    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_TERM && cc->d[k].id == x) return ref_var(bound_id(depth, k));
+     return 0;
+ }
+-static IntervalId close_dim(uint64_t i, unsigned depth, void *c) {
++static IntervalId close_dim(uint64_t i, size_t depth, void *c) {
+     CloseCtx *cc = c;
+     if (is_bound_id(i)) return 0;
+-    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_DIM && cc->d[k].id == i) return iv_var(bound_id(depth, (uint32_t)k));
++    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_DIM && cc->d[k].id == i) return iv_var(bound_id(depth, k));
+     return 0;
+ }
+ static uint64_t ids_key(size_t n, const CaptureDecl *d) {
+@@ -181,7 +181,7 @@
+     if (tv->key) wordmap_put(&M.trav_memo, key, 4, out);
+     return out;
+ }
+-ScopeId trav_scope(ScopeId S, const Trav *tv, unsigned depth) { return trav_scope_records(S, tv, depth + 1); }
++ScopeId trav_scope(ScopeId S, const Trav *tv, size_t depth) { return trav_scope_records(S, tv, depth + 1); }
+ 
+ /* ------------------------------------------------------------------ */
+ /* structural validation (§50.1–2)                                       */
+@@ -207,7 +207,7 @@
+     wordmap_put(&M.trav_memo, k, 3, 1);
+ }
+ static bool val_atom(ValCtx *v, uint64_t id, Sort want) {
+-    uint32_t d = bound_depth(id), s = bound_slot(id);
++    size_t d = bound_depth(id), s = bound_slot(id);
+     if (d >= v->stack.len) { v->why = "bound occurrence names no enclosing telescope"; return false; }
+     ScopeId T = v->stack.data[v->stack.len - 1 - d];
+     if (s >= scope_arity(T)) { v->why = "bound occurrence names a slot outside its telescope"; return false; }
+@@ -314,18 +314,18 @@
+ /* application and ambient reindexing                                    */
+ 
+ typedef struct { size_t n; const Val *args; } ApplyCtx;
+-static RefId apply_term(uint64_t x, unsigned depth, void *c) {
++static RefId apply_term(uint64_t x, size_t depth, void *c) {
+     ApplyCtx *a = c;
+     if (!is_bound_id(x)) return 0;
+-    uint32_t d = bound_depth(x), s = bound_slot(x);
++    size_t d = bound_depth(x), s = bound_slot(x);
+     if (d < depth) return 0;
+     if (d == depth) { require(s < a->n && a->args[s].sort == VS_REF && a->args[s].id, "scope application: missing or ill-sorted term argument"); return a->args[s].id; }
+     return ref_var(bound_id(d - 1, s));
+ }
+-static IntervalId apply_dim(uint64_t i, unsigned depth, void *c) {
++static IntervalId apply_dim(uint64_t i, size_t depth, void *c) {
+     ApplyCtx *a = c;
+     if (!is_bound_id(i)) return 0;
+-    uint32_t d = bound_depth(i), s = bound_slot(i);
++    size_t d = bound_depth(i), s = bound_slot(i);
+     if (d < depth) return 0;
+     if (d == depth) { require(s < a->n && a->args[s].sort == VS_INTERVAL && a->args[s].id, "scope application: missing or ill-sorted interval argument"); return a->args[s].id; }
+     return iv_var(bound_id(d - 1, s));
+@@ -361,8 +361,8 @@
+ }
+ 
+ typedef struct { MapId sigma; } ReCtx;
+-static RefId re_term(uint64_t x, unsigned depth, void *c) { (void)depth; if (is_bound_id(x)) return 0; RefId im = map_term_image(((ReCtx *)c)->sigma, x); return im == ref_var(x) ? 0 : im; }
+-static IntervalId re_dim(uint64_t i, unsigned depth, void *c) { (void)depth; if (is_bound_id(i)) return 0; IntervalId im = map_dim_image(((ReCtx *)c)->sigma, i); return im == iv_var(i) ? 0 : im; }
++static RefId re_term(uint64_t x, size_t depth, void *c) { (void)depth; if (is_bound_id(x)) return 0; RefId im = map_term_image(((ReCtx *)c)->sigma, x); return im == ref_var(x) ? 0 : im; }
++static IntervalId re_dim(uint64_t i, size_t depth, void *c) { (void)depth; if (is_bound_id(i)) return 0; IntervalId im = map_dim_image(((ReCtx *)c)->sigma, i); return im == iv_var(i) ? 0 : im; }
+ ScopeId reindex_scope(ScopeId S, MapId sigma) {
+     if (map_is_identity(sigma)) return S;
+     ReCtx c = { sigma };
+@@ -371,8 +371,8 @@
+ }
+ 
+ /* remove the single binder level after ∀ */
+-static RefId lower_term(uint64_t x, unsigned depth, void *c) { (void)c; if (!is_bound_id(x)) return 0; uint32_t d = bound_depth(x); require(d != depth, "forall: a local remained"); return d > depth ? ref_var(bound_id(d - 1, bound_slot(x))) : 0; }
+-static IntervalId lower_dim(uint64_t i, unsigned depth, void *c) { (void)c; if (!is_bound_id(i)) return 0; uint32_t d = bound_depth(i); require(d != depth, "forall: a local remained"); return d > depth ? iv_var(bound_id(d - 1, bound_slot(i))) : 0; }
++static RefId lower_term(uint64_t x, size_t depth, void *c) { (void)c; if (!is_bound_id(x)) return 0; size_t d = bound_depth(x); require(d != depth, "forall: a local remained"); return d > depth ? ref_var(bound_id(d - 1, bound_slot(x))) : 0; }
++static IntervalId lower_dim(uint64_t i, size_t depth, void *c) { (void)c; if (!is_bound_id(i)) return 0; size_t d = bound_depth(i); require(d != depth, "forall: a local remained"); return d > depth ? iv_var(bound_id(d - 1, bound_slot(i))) : 0; }
+ FaceId forall_scope(ScopeId S) {
+     require(scope_arity(S) == 1 && scope_local(S, 0).sort == S_DIM && scope_body(S).sort == VS_FACE, "forall of a non-unary face scope");
+     FaceId f = fc_forall(bound_id(0, 0), scope_body(S).id);
+--- a/scoped-machine/src/scope.h
++++ b/scoped-machine/src/scope.h
+@@ -27,18 +27,18 @@
+ 
+ /* ---- generic depth-aware traversal over scoped values ---- */
+ typedef struct {
+-    RefId (*term)(uint64_t x, unsigned depth, void *ctx);        /* 0 = keep the occurrence */
+-    IntervalId (*dim)(uint64_t i, unsigned depth, void *ctx);    /* 0 = keep */
++    RefId (*term)(uint64_t x, size_t depth, void *ctx);        /* 0 = keep the occurrence */
++    IntervalId (*dim)(uint64_t i, size_t depth, void *ctx);    /* 0 = keep */
+     uint64_t key;                                                /* memo key of this traversal */
+     void *ctx;
+-    void (*enter)(ScopeId S, unsigned depth, void *ctx);         /* optional: a scope's records are about to be traversed at depth */
+-    void (*leave)(ScopeId S, unsigned depth, void *ctx);
++    void (*enter)(ScopeId S, size_t depth, void *ctx);         /* optional: a scope's records are about to be traversed at depth */
++    void (*leave)(ScopeId S, size_t depth, void *ctx);
+ } Trav;
+-RefId trav_ref(RefId t, const Trav *tv, unsigned depth);
+-IntervalId trav_iv(IntervalId r, const Trav *tv, unsigned depth);
+-FaceId trav_fc(FaceId f, const Trav *tv, unsigned depth);
+-ScopeId trav_scope(ScopeId S, const Trav *tv, unsigned depth);    /* the scope's records are at depth+1 */
+-Val trav_val(Val v, const Trav *tv, unsigned depth);
++RefId trav_ref(RefId t, const Trav *tv, size_t depth);
++IntervalId trav_iv(IntervalId r, const Trav *tv, size_t depth);
++FaceId trav_fc(FaceId f, const Trav *tv, size_t depth);
++ScopeId trav_scope(ScopeId S, const Trav *tv, size_t depth);    /* the scope's records are at depth+1 */
++Val trav_val(Val v, const Trav *tv, size_t depth);
+ 
+ /* ---- scopes ---- */
+ ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result_type, uint64_t result_level, FaceId guard);
+--- a/scoped-machine/src/shape.c
++++ b/scoped-machine/src/shape.c
+@@ -5,11 +5,11 @@
+ #include "fine.h"
+ 
+ static ShapeId shape_intern(const Words *w) { pthread_mutex_lock(&M.shape_mu); ShapeId id = interner_intern(&M.shapes, w->w, w->n, NULL); pthread_mutex_unlock(&M.shape_mu); return id; }
+-static bool memo_get(RefId t, MapId rho, uint32_t depth, ShapeId *out) { uint64_t k[3] = { t, rho, depth }; pthread_mutex_lock(&M.shape_mu); bool h = wordmap_get(&M.shape_memo, k, 3, out); pthread_mutex_unlock(&M.shape_mu); return h; }
+-static void memo_put(RefId t, MapId rho, uint32_t depth, ShapeId v) { uint64_t k[3] = { t, rho, depth }; pthread_mutex_lock(&M.shape_mu); wordmap_put(&M.shape_memo, k, 3, v); pthread_mutex_unlock(&M.shape_mu); }
++static bool memo_get(RefId t, MapId rho, size_t depth, ShapeId *out) { uint64_t k[3] = { t, rho, depth }; pthread_mutex_lock(&M.shape_mu); bool h = wordmap_get(&M.shape_memo, k, 3, out); pthread_mutex_unlock(&M.shape_mu); return h; }
++static void memo_put(RefId t, MapId rho, size_t depth, ShapeId v) { uint64_t k[3] = { t, rho, depth }; pthread_mutex_lock(&M.shape_mu); wordmap_put(&M.shape_memo, k, 3, v); pthread_mutex_unlock(&M.shape_mu); }
+ 
+ /* ρ extended by one bound identity */
+-static MapId rho_extend(MapId rho, Sort sort, uint64_t concrete, uint32_t depth, BinderSlot slot) {
++static MapId rho_extend(MapId rho, Sort sort, uint64_t concrete, size_t depth, BinderSlot slot) {
+     MapBuilder b; mapb_init(&b);
+     size_t nt = map_n_terms(rho), nd = map_n_dims(rho);
+     for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(rho, k, &x, &im); if (!(sort == S_TERM && x == concrete)) mapb_term(&b, x, im); }
+@@ -32,7 +32,7 @@
+     return mapb_finish(&b);
+ }
+ 
+-ShapeId shape_under(RefId t, MapId rho, uint32_t depth) {
++ShapeId shape_under(RefId t, MapId rho, size_t depth) {
+     ShapeId memo;
+     rho = rho_restrict(rho, t);
+     if (memo_get(t, rho, depth, &memo)) return memo;
+--- a/scoped-machine/src/shape.h
++++ b/scoped-machine/src/shape.h
+@@ -22,7 +22,7 @@
+ enum { SH_FREE = 1, SH_BOUND = 2, SH_NODE = 3 };
+ 
+ ShapeId shape_of(RefId t);                                   /* ρ = identity, depth 0 */
+-ShapeId shape_under(RefId t, MapId rho, uint32_t depth);
++ShapeId shape_under(RefId t, MapId rho, size_t depth);
+ const uint64_t *shape_words(ShapeId s, size_t *n);           /* [SH_FREE, x] | [SH_BOUND, token] | [SH_NODE, tag, payload, levels, required, nfields, (kind, binder sort or 0, value)...] */
+ size_t shape_count(void);
+ 
+--- a/scoped-machine/src/state.h
++++ b/scoped-machine/src/state.h
+@@ -26,6 +26,7 @@
+     Interner refs;        /* RefId       → reference record */
+     Interner nominal;     /* binder identities (owner,slot,sort) and keyed fresh names */
+     Interner contexts;    /* ContextId   → occurrence context record */
++    Interner bound_atoms; /* exact address-sized (depth, slot) pairs, never packed together */
+     Interner scopes;      /* ScopeId     → scope record (§50) */
+     Interner exprs;       /* template expression DAG nodes (§51) */
+     Interner tnodes;      /* template constructor nodes */
+--- a/scoped-machine/src/template.c
++++ b/scoped-machine/src/template.c
+@@ -363,7 +363,7 @@
+     for (size_t k = 0; k < n; k++) if (env.has[k]) env.val[k] = reindex_tval(env.val[k], sigma);
+     return make_view_env(Q, &env);
+ }
+-RefId tview_traverse(RefId t, const Trav *tv, unsigned depth) {
++RefId tview_traverse(RefId t, const Trav *tv, size_t depth) {
+     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
+     size_t n = env.def->nparams + env.def->nlocals;
+     for (size_t k = 0; k < n; k++) if (env.has[k]) {
+@@ -384,8 +384,11 @@
+     size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
+     size_t n = 0;
+     size_t np = env.def->nparams;
+-    for (size_t k = 0; k < nf && n < max; k++) {
++    for (size_t k = 0; k < nf; k++) {
+         size_t slot = (size_t)fl[k];
++        if (slot >= np && (env.def->lsort[slot-np] != PS_REF || !env.def->ltype[slot-np])) continue;
++        if (!out) { n++; continue; }
++        require(n < max, "template signature output buffer too small; query complete size first");
+         /* the node's environment is closed under the declarations (finish),
+          * so every declared type is interpretable here */
+         if (slot < np) {
+--- a/scoped-machine/src/template.h
++++ b/scoped-machine/src/template.h
+@@ -48,7 +48,7 @@
+ size_t tnode_nfields(TNodeId Q); size_t tnode_nbinders(TNodeId Q);
+ /* the field kind / binder slot of a template node's field */
+ FieldKind tnode_field_kind(TNodeId Q, size_t k); BinderSlot tnode_field_slot(TNodeId Q, size_t k); Sort tnode_binder_sort(TNodeId Q, BinderSlot s);
+-RefId tview_traverse(RefId t, const Trav *tv, unsigned depth);
++RefId tview_traverse(RefId t, const Trav *tv, size_t depth);
+ 
+ /* checking support: the parameter signature of a definition, instantiated
+  * by an environment. For a reference parameter the declared type; for a
+@@ -59,6 +59,7 @@
+  * types (reference parameters) or contextual signatures (scope parameters:
+  * a scope whose locals are the expected telescope, whose body is the
+  * expected result type, whose level and guard are the expected ones) */
++/* out == NULL queries the complete count; a non-NULL undersized output is rejected, never truncated. */
+ size_t tnode_signature(RefId t, ParamSig *out, size_t max);
+ /* the program's declared result type instantiated by t's environment, when
+  * t is the root node of its definition */
+--- a/scoped-machine/src/term.c
++++ b/scoped-machine/src/term.c
+@@ -189,15 +189,28 @@
+ DimSetId origin_fd(OriginId c) { return OSIDE(c)->fd; }
+ FaceId origin_required(OriginId c) { return OSIDE(c)->required; }
+ 
+-static __thread FaceId tl_req_scope[16]; static __thread size_t tl_req_depth;
++typedef struct RequiredScope { FaceId face; struct RequiredScope *prev; } RequiredScope;
++static __thread RequiredScope *tl_req_scope;
++static __thread uint64_t tl_req_generation;
++static void required_scope_current(void) {
++    uint64_t g = machine_generation();
++    if (tl_req_generation != g) {
++        while (tl_req_scope) { RequiredScope *p = tl_req_scope; tl_req_scope = p->prev; free(p); }
++        tl_req_generation = g;
++    }
++}
+ static __thread uint64_t tl_levels = LEVELS_NONE;   /* formation levels of the origin being built (§59.1) */
+ void term_require_push(FaceId phi) {
+-    require(tl_req_depth < 16, "required-face scope too deep");
+-    FaceId f = tl_req_depth ? fc_meet(tl_req_scope[tl_req_depth - 1], phi) : phi;
+-    tl_req_scope[tl_req_depth++] = f;
+-}
+-void term_require_pop(void) { require(tl_req_depth > 0, "required-face scope underflow"); tl_req_depth--; }
+-static FaceId current_declared_required(void) { return tl_req_depth ? tl_req_scope[tl_req_depth - 1] : 0; }
++    required_scope_current();
++    FaceId f = tl_req_scope ? fc_meet(tl_req_scope->face, phi) : phi;
++    RequiredScope *p = malloc(sizeof *p); require(p, "out of memory");
++    p->face = f; p->prev = tl_req_scope; tl_req_scope = p;
++}
++void term_require_pop(void) {
++    required_scope_current(); require(tl_req_scope, "required-face scope underflow");
++    RequiredScope *p = tl_req_scope; tl_req_scope = p->prev; free(p);
++}
++static FaceId current_declared_required(void) { required_scope_current(); return tl_req_scope ? tl_req_scope->face : 0; }
+ FaceId origin_declared_required(OriginId c) {
+     size_t n; const uint64_t *w = interner_get(&M.origins, c, &n);
+     return w[n - 2];
+@@ -291,6 +304,16 @@
+     }
+     return origin_intern(tag, payload, fields, nf, binders, nb, ft, fd, req);
+ }
++
++/* Bound atoms retain both coordinates; the tag marks a table identity. */
++uint64_t bound_id(size_t depth, size_t slot) {
++    uint64_t w[2] = { depth, slot };
++    uint64_t id = interner_intern(&M.bound_atoms, w, 2, NULL);
++    require(id < BOUND_BIT, "bound atom address space exhausted");
++    return BOUND_BIT | id;
++}
++size_t bound_depth(uint64_t id) { size_t n; require(is_bound_id(id), "not a bound atom"); return (size_t)interner_get(&M.bound_atoms, id & ~BOUND_BIT, &n)[0]; }
++size_t bound_slot(uint64_t id) { size_t n; require(is_bound_id(id), "not a bound atom"); return (size_t)interner_get(&M.bound_atoms, id & ~BOUND_BIT, &n)[1]; }
+ 
+ /* ================= references ================= */
+ /* record: [1, x] for VAR ; [2, origin, map] for VIEW */
+--- a/scoped-machine/src/term.h
++++ b/scoped-machine/src/term.h
+@@ -54,14 +54,14 @@
+ void term_levels_pop(void);
+ 
+ /* ---- bound local occurrences (§50) ----
+- * A local of a scope telescope is a (depth, slot) atom encoded in the
++ * A local of a scope telescope is an interned (depth, slot) atom tagged in the
+  * variable / dimension id space with the top bit set; it has no declaration
+  * record and no free support. */
+ #define BOUND_BIT (1ULL << 61)           /* below the atom shift of the interval/face encodings */
+-static inline uint64_t bound_id(uint32_t depth, uint32_t slot) { return BOUND_BIT | ((uint64_t)depth << 32) | slot; }
++uint64_t bound_id(size_t depth, size_t slot);
+ static inline bool is_bound_id(uint64_t id) { return (id & BOUND_BIT) != 0; }
+-static inline uint32_t bound_depth(uint64_t id) { return (uint32_t)((id & ~BOUND_BIT) >> 32) & 0x1fffffffu; }
+-static inline uint32_t bound_slot(uint64_t id) { return (uint32_t)(id & 0xffffffffULL); }
++size_t bound_depth(uint64_t id);
++size_t bound_slot(uint64_t id);
+ 
+ const char *tag_name(Tag t);
+ 

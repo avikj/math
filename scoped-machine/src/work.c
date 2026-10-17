@@ -54,6 +54,7 @@ static struct {
     KTab tab;
     Chunked side;
     WorkLedger L; Phase phase;
+    uint64_t late_base[PH_COUNT][3];   /* V21 R3: late totals at the last ledger reset */
     Chunked ops; size_t nops;    /* handles */
     FormulaId ZERO, ONE; SetId EMPTY; FamilyId FAM0, FAM1;
     Paged owned;            /* kind-specific structs to free (pointers; paged) */
@@ -106,11 +107,18 @@ static void charge(FrameFamily f) { W.L.frames[f]++; W.L.by_phase[W.phase]++; }
  * built, dependency checks, receipt instances) is charged into its ledger
  * families from the kernel's own counters around the call; these are
  * accounted, not resumable (see the bounded-helper table) */
-typedef struct { uint64_t shape, dep, rc; } KernelMark;
-static KernelMark kernel_mark(void) { KernelMark m = { reuse_count(REUSE_SHAPE_NODE), reuse_count(REUSE_DEPENDENCY_CHECK), reuse_count(REUSE_RECEIPT_INSTANCE) }; return m; }
-static void kernel_charge(KernelMark m) {
-    uint64_t a = reuse_count(REUSE_SHAPE_NODE) - m.shape, b = reuse_count(REUSE_DEPENDENCY_CHECK) - m.dep, c = reuse_count(REUSE_RECEIPT_INSTANCE) - m.rc;
-    W.L.frames[FR_SHAPE_NODE] += a; W.L.frames[FR_DEPENDENCY_CHECK] += b; W.L.frames[FR_RECEIPT] += c; W.L.by_phase[W.phase] += a + b + c;
+/* V21 R3: each such event is charged once, to the scope that owns the work
+ * executing it (reuse.h): a kernel call's continuation and the evaluator
+ * tasks of the producers it launched. A closed scope's counts reach the
+ * ledger through the late totals; work_ledger folds them in. No global
+ * before/after snapshot spans another job's work. */
+static void ledger_fold_late(WorkLedger *l) {
+    static const ReuseCounter rc_of[3] = { REUSE_SHAPE_NODE, REUSE_DEPENDENCY_CHECK, REUSE_RECEIPT_INSTANCE };
+    static const FrameFamily fr_of[3] = { FR_SHAPE_NODE, FR_DEPENDENCY_CHECK, FR_RECEIPT };
+    for (int ph = 0; ph < PH_COUNT; ph++) for (int k = 0; k < 3; k++) {
+        uint64_t v = reuse_scope_late(ph, rc_of[k]) - W.late_base[ph][k];
+        l->frames[fr_of[k]] += v; l->by_phase[ph] += v;
+    }
 }
 /* growth: a new slot array is allocated and the old one relocated in chunks
  * of CHUNK_WORDS slots; a framed INTERN performs one chunk per frame, every
@@ -793,9 +801,11 @@ static AtomId atom_producer_at(ShapeId s, FaceId eta, uint64_t env) {
 static AtomId atom_producer_ref(RefId t, FaceId chi) {
     size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
     FaceId eta = fc_project(chi, S, n); W.L.kernel_calls += 2;
-    LOCK; KernelMark km = kernel_mark(); W.L.kernel_calls += 2; UNLOCK;
+    LOCK; W.L.kernel_calls += 2; int ph = W.phase; UNLOCK;
+    ReuseScope sc; memset(&sc, 0, sizeof sc); sc.phase = ph; sc.refs = 1;   /* this synchronous call's own accounting scope */
+    ReuseScope *prev = reuse_scope_enter(&sc);
     EntryId e = eval_entry_lookup(t, eta); ShapeId sh = shape_of(t);
-    LOCK; kernel_charge(km); UNLOCK;
+    reuse_scope_leave(prev); reuse_scope_close(&sc);
     AtomId a = atom_producer_at(sh, eta, e ? eval_entry_env(e) : global_env_version());
     LOCK; if (!side(a)->val) side(a)->val = t; UNLOCK;    /* a representative reference for specialization (not part of the identity) */
     return a;
@@ -1776,8 +1786,8 @@ static void step_kernel(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: {
         uint64_t args[6] = { f->a, f->b, f->c, f->d, f->e, 0 };
-        KCont *k = kc_new(kernel_call, args, 5); k->job = o->id;
-        f->acc = (uint64_t)(uintptr_t)k; f->acc2 = (uint64_t)(uintptr_t)pool_take(sizeof(KernelMark)); *(KernelMark *)(uintptr_t)f->acc2 = kernel_mark();
+        KCont *k = kc_new(kernel_call, args, 5); k->job = o->id; k->acct = reuse_scope_new(W.phase);
+        f->acc = (uint64_t)(uintptr_t)k;
         W.L.kernel_calls++;
         f->ph = 1;
     }
@@ -1795,7 +1805,7 @@ static void step_kernel(Op *o, Frame *f) {
             }
             return;
         }
-        kernel_charge(*(KernelMark *)(uintptr_t)f->acc2);
+        reuse_scope_close(k->acct); reuse_scope_unref(k->acct);   /* every event of the call is charged once */
         KOutcome oc = k->outcome; uint64_t out[4] = { k->out[0], k->out[1], k->out[2], k->out[3] }; const char *why = k->why;
         if (W.kc_active == k) { W.kc_active = NULL; W.kc_owner = 0; }
         kc_free(k); f->acc = 0;
@@ -2433,8 +2443,13 @@ OpId op_geo_check(GeoId g, uint64_t root) { LOCK; OpId h = op_new(OF_GEO, PH_CHE
 /* ---------------------------------------------------------------- 9. ledger, lifecycle ---- */
 static const char *fam_names[FR_COUNT] = { "PREPARE_VISIT", "VALIDATE_PREPARED_BOUNDARY", "FORMULA_VISIT", "FORMULA_INTERN_STEP", "COFACTOR_VISIT", "COFACTOR_REBUILD", "SUPPORT_CHUNK", "MUST_CHUNK", "COST_ADD_CHUNK", "COST_COMPARE_CHUNK", "CERTIFICATE_VISIT", "REALIZATION_VISIT", "ALLOCATE_CHUNK", "RELEASE_CHUNK", "TABLE_PROBE", "DEMAND_VISIT", "SPECIALIZE_VISIT", "FAMILY_CHUNK", "GEODESIC_VISIT", "PRODUCER_LOOKUP", "ALIAS_DELIVERY", "SHAPE_NODE", "DEPENDENCY_CHECK", "RECEIPT", "PROOF_USE_AUDIT", "SCHEDULE_STEP", "CYCLE_CHECK", "KERNEL_TRANSITION" };
 const char *frame_family_name(FrameFamily f) { return fam_names[f]; }
-WorkLedger work_ledger(void) { LOCK; WorkLedger l = W.L; UNLOCK; return l; }
-void work_ledger_reset(void) { LOCK; memset(&W.L, 0, sizeof W.L); UNLOCK; }
+WorkLedger work_ledger(void) { LOCK; WorkLedger l = W.L; ledger_fold_late(&l); UNLOCK; return l; }
+void work_ledger_reset(void) {
+    LOCK; memset(&W.L, 0, sizeof W.L);
+    { static const ReuseCounter rc_of[3] = { REUSE_SHAPE_NODE, REUSE_DEPENDENCY_CHECK, REUSE_RECEIPT_INSTANCE };
+      for (int ph = 0; ph < PH_COUNT; ph++) for (int k = 0; k < 3; k++) W.late_base[ph][k] = reuse_scope_late(ph, rc_of[k]); }
+    UNLOCK;
+}
 void work_set_phase(Phase p) { LOCK; W.phase = p; UNLOCK; }
 Phase work_phase(void) { return W.phase; }
 uint64_t work_total_frames(void) { LOCK; uint64_t t = 0; for (int i = 0; i < FR_COUNT; i++) t += W.L.frames[i]; UNLOCK; return t; }
@@ -2449,6 +2464,8 @@ void work_record_execution(EvalEvents b, EvalNetEvents nb, EvalEvents a, EvalNet
 
 void work_init(void) {
     memset(&W, 0, sizeof W);
+    { static const ReuseCounter rc_of[3] = { REUSE_SHAPE_NODE, REUSE_DEPENDENCY_CHECK, REUSE_RECEIPT_INSTANCE };
+      for (int ph = 0; ph < PH_COUNT; ph++) for (int k = 0; k < 3; k++) W.late_base[ph][k] = reuse_scope_late(ph, rc_of[k]); }
     pthread_mutex_init(&W.mu, NULL);
     arena_init(); paged_init(&W.owned, sizeof(void *));
     spare_init(&W.spare[0], CHUNK_SIZE * sizeof(Side)); spare_init(&W.spare[1], CHUNK_SIZE * sizeof(Handle)); spare_init(&W.spare[2], CHUNK_SIZE * sizeof(size_t));

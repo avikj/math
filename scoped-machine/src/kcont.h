@@ -43,6 +43,7 @@ struct KCont {
     struct KCont *blocked_on;   /* set by kc_wait: the continuation whose completion this one waits for (NULL: a plain thread's) */
     bool blocked;               /* the last yield was a wait (not a budget exhaustion) */
     bool in_eval;               /* suspended inside an evaluator task (the task's ownership is retained on this stack) */
+    struct ReuseScope *acct;    /* V21 R3: the accounting owner of the work executed on this continuation */
 };
 
 KCont *kc_new(KFn fn, const uint64_t *args, size_t nargs);   /* the thread is created at the first grant */

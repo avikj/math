@@ -1,0 +1,40 @@
+{
+  "tree": "/workspace/scratch/1d0fbe01e383/review-v21/scoped-machine-v21",
+  "sanitizer": "asan",
+  "detect_leaks": "0",
+  "reused_objects": true,
+  "results": [
+    {
+      "mode": "specialize",
+      "workers": 0,
+      "exit_code": 1,
+      "stdout": "mode=specialize workers=0 semantic_ok=1 source_pending=1 repeated_beta=1 expected=0\n",
+      "stderr": "",
+      "seconds": 0.024696838998352177
+    },
+    {
+      "mode": "specialize",
+      "workers": 4,
+      "exit_code": 1,
+      "stdout": "mode=specialize workers=4 semantic_ok=1 source_pending=1 repeated_beta=1 expected=0\n",
+      "stderr": "",
+      "seconds": 0.0277423009974882
+    },
+    {
+      "mode": "restrict",
+      "workers": 0,
+      "exit_code": 1,
+      "stdout": "mode=restrict workers=0 semantic_ok=1 source_pending=1 repeated_beta=1 expected=0\n",
+      "stderr": "",
+      "seconds": 0.024482883003656752
+    },
+    {
+      "mode": "restrict",
+      "workers": 4,
+      "exit_code": 1,
+      "stdout": "mode=restrict workers=4 semantic_ok=1 source_pending=1 repeated_beta=1 expected=0\n",
+      "stderr": "",
+      "seconds": 0.030594964999181684
+    }
+  ]
+}
