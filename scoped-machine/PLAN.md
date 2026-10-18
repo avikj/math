@@ -180,3 +180,31 @@ no subagents; work only from the shared specifications; no second engine/store/c
    Consequence for §8: step 6 is "receipts as keyed specialization/restriction dependencies"
    (no frozen index); step 4 removes the global admission gate and shares judgment keys with
    evaluation.
+
+## 11. Step-2 machinery (as built) and the remaining step-2 design
+
+Built (2c): frame families `family_define(name, step, loc_size, pure)`; a step ends in exactly one
+of frame_request / frame_call (subroutine frame with a parent, no entry) / frame_yield /
+frame_finish; FR_* program-counter macros; per-family locals records from pools; pure keys omit
+the environment version. The §5 synchronous driver is `family_call`: never blocks, valid inside
+and outside jobs — READY returns the value; U is claimed (INLINE_CLAIM at the bottom of the waiter
+stack) and the producer is driven on the calling thread, then published to everyone who arrived;
+R elsewhere is computed on the calling thread without publication. It drives the same step
+functions (no second engine); its use disappears as callers become frame programs. Order is
+bottom-up through it: a converted family is awaited by converted callers and called through
+family_call by unconverted ones.
+
+Remaining step-2 sub-steps, each a commit with tests green:
+- 2d stepped interning: a record under construction is appended one word per step into pooled
+  pages with an incremental hash; trie descent, full-key comparison and record copy advance a
+  bounded number of words per step; the id is reserved before the copy, the leaf is published
+  by CAS, a lost race re-descends and compares (the reserved id stays unused). No mutex held
+  across steps.
+- 2e sets and DNF: dim/var sets (make, union, remove, contains), interval and face operations
+  (join, meet, negate, normalize with absorption, entails, forall, project, endpoint, substitute)
+  as pure producers keyed by interned operands; each step reads/compares/appends O(1) words;
+  clause positions are cursors in frame locals (no traversal to reach a field).
+- 2f maps: mapb_finish (sort = stepped merge, duplicate/identity removal), lookup (binary search,
+  one probe per step), compose, override, restriction.
+- 2g substitution: reindex, construction instance building (environment, support, free
+  variables, required face), environment maps, construction closure — producers over the above.

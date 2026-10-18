@@ -60,8 +60,10 @@ typedef enum {
 
 /* A continuation is single-consumer. A frame (K_FRAME) is the retained state
  * of one producer of a family between two of its steps: program counter and
- * bounded locals. A frame that requests its next child sets `keep` in its
- * resume function and is reused as that child's continuation. */
+ * bounded locals (w, and a fixed-size locals record of its family). A frame
+ * that requests its next child sets `keep` in its resume function and is
+ * reused as that child's continuation. A subroutine frame has no entry: it
+ * returns its value to its parent frame. */
 struct Cont {
     ContKind kind;
     EntryId dest;       /* entry to publish into (not for ROOT/EXTERNAL) */
@@ -78,7 +80,10 @@ struct Cont {
     ExternalDeliver ext_fn; void *ext_ctx; void (*ext_free)(void *);   /* EXTERNAL */
     /* K_FRAME */
     Family fam; uint32_t pc; bool keep;
+    bool inl;           /* driven by the synchronous inline driver (family_call) */
     uint64_t w[8];
+    void *loc;          /* the family's locals record (loc_size bytes, zeroed), or NULL */
+    Cont *parent;       /* subroutine frame: the frame its value returns to */
     Cont *next;         /* link in an entry's waiter stack / a delivery chain */
 };
 
@@ -106,6 +111,42 @@ Family eval_entry_family(EntryId e);
 uint64_t eval_entry_a(EntryId e);
 uint64_t eval_entry_b(EntryId e);
 size_t family_steps(Family f);       /* evaluator and resume steps executed for family f */
+
+/* ---- frame programs ----
+ * A frame family is defined by one step function `step(k, v)`: the frame's
+ * program counter selects where it continues, v is the value its last
+ * child (producer or subroutine) delivered, 0 at the first step. A step does
+ * a bounded amount of work and ends in exactly one of
+ *   frame_request(k, f, a, b)   await the producer (f, a, b)
+ *   frame_call(k, child)        await the subroutine frame `child`
+ *   frame_yield(k)              continue at the next step
+ *   frame_finish(k, v)          publish v (producer) / return v (subroutine)
+ * The producer key of a frame family is (f, a, b) and its frame starts with
+ * w[0] = a, w[1] = b. A pure family's key does not include the definition
+ * environment version: its value depends on its operands alone. */
+Family family_define(const char *name, FamResume step, size_t loc_size, bool pure);
+void frame_request(Cont *k, Family f, uint64_t a, uint64_t b);
+void frame_call(Cont *k, Cont *child);
+void frame_yield(Cont *k);
+void frame_finish(Cont *k, uint64_t v);
+Cont *frame_sub(Family f, const Cont *caller);    /* a subroutine frame of family f for caller */
+/* The synchronous driver (PLAN §5) for code that is not yet a frame program,
+ * valid inside and outside jobs, never blocking: a ready key returns its
+ * value; an unevaluated key is claimed and its producer is driven to
+ * publication on this thread (waiters that arrive meanwhile are delivered by
+ * that publication); a key running elsewhere is computed on this thread
+ * without publication. It drives the same step functions. */
+uint64_t family_call(Family f, uint64_t a, uint64_t b);
+
+/* program-counter macros for step functions (the step's value parameter is
+ * named v; one macro use per source line) */
+#define FR_BEGIN(k) switch ((k)->pc) { case 0:;
+#define FR_AWAIT(k, var, f, a, b) do { (k)->pc = __LINE__; frame_request((k), (f), (a), (b)); return; case __LINE__:; (var) = v; } while (0)
+#define FR_CALL(k, var, child) do { (k)->pc = __LINE__; frame_call((k), (child)); return; case __LINE__:; (var) = v; } while (0)
+#define FR_YIELD(k) do { (k)->pc = __LINE__; frame_yield(k); return; case __LINE__:; } while (0)
+#define FR_FINISH(k, val) do { frame_finish((k), (val)); return; } while (0)
+#define FR_END(k) } die("frame program ended without finishing (pc %u)", (unsigned)(k)->pc)
+#define FR_LOC(k, T) ((T *)(k)->loc)
 
 
 void eval_init(void);

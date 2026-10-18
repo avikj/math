@@ -36,6 +36,9 @@ static void rootbox_release(RootBox *b) {
 }
 
 #define ENTRY_READY ((Cont *)(uintptr_t)1)
+/* the bottom of the waiter stack of a key claimed by the inline driver: the
+ * key is running on the claiming thread, which publishes it */
+#define INLINE_CLAIM ((Cont *)(uintptr_t)2)
 
 /* a job: EVALUATE(entry); RESUME(k, v) — whose k may head a delivery chain of
  * entry `src`, of which each job delivers exactly one; or a NET_PAIR (§43) */
@@ -47,7 +50,7 @@ typedef struct { TaskKind kind; EntryId entry; Cont *k; uint64_t v; EntryId src;
 #define QCHUNK 254
 typedef struct QChunk { struct QChunk *prev, *next; uint32_t lo, hi; Task t[QCHUNK]; } QChunk;
 
-typedef struct { const char *name; FamStart start; FamResume resume; size_t steps; } FamilyDef;
+typedef struct { const char *name; FamStart start; FamResume resume; size_t steps; size_t loc_size; bool pure; } FamilyDef;
 static FamilyDef FAM[F_MAX];
 static size_t n_fam = F_WHNF + 1;  /* F_WHNF is built in; registered families follow */
 
@@ -62,6 +65,7 @@ static struct {
     bool stop;
     pthread_t *workers; size_t nworkers;
     Pool cont_pool, chunk_pool;
+    Pool loc_pool[F_MAX]; bool loc_ready[F_MAX]; pthread_mutex_t loc_mu;   /* frame locals records, per family */
     /* rooted results (immutable payloads), an intrusive list */
     EvalResult *results;
     /* live joins: a join that never fills (stuck children) is dismantled at teardown */
@@ -111,7 +115,13 @@ Family family_register(const char *name, FamStart start, FamResume resume) {
     for (size_t f = F_WHNF + 1; f < n_fam; f++) if (FAM[f].name == name || strcmp(FAM[f].name, name) == 0) { FAM[f].start = start; FAM[f].resume = resume; return (Family)f; }
     require(n_fam < F_MAX, "too many operation families");
     FAM[n_fam].name = name; FAM[n_fam].start = start; FAM[n_fam].resume = resume;
+    FAM[n_fam].loc_size = 0; FAM[n_fam].pure = false;
     return (Family)n_fam++;
+}
+Family family_define(const char *name, FamResume step, size_t loc_size, bool pure) {
+    Family f = family_register(name, NULL, step);
+    FAM[f].loc_size = loc_size; FAM[f].pure = pure;
+    return f;
 }
 
 static void *worker_main(void *arg);
@@ -126,6 +136,7 @@ void eval_init(void) {
     pthread_mutex_init(&E.join_mu, NULL);
     pool_init(&E.cont_pool, sizeof(Cont));
     pool_init(&E.chunk_pool, sizeof(QChunk));
+    pthread_mutex_init(&E.loc_mu, NULL);
     for (size_t f = 0; f < F_MAX; f++) FAM[f].steps = 0;
     net_init(&E.net);
     net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
@@ -190,7 +201,7 @@ void eval_free(void) {
         if (!e) continue;
         Cont *h = e->head;
         if (h == ENTRY_READY) continue;
-        for (Cont *k = h; k; k = k->next) cont_dispose(k);     /* suspended forever: stuck demands */
+        for (Cont *k = h; k && k != INLINE_CLAIM; k = k->next) cont_dispose(k);     /* suspended forever: stuck demands */
     }
     interner_free(&E.keys);
     chunked_free(&E.entries);
@@ -201,6 +212,8 @@ void eval_free(void) {
     pthread_mutex_destroy(&E.join_mu);
     pool_destroy(&E.cont_pool);
     pool_destroy(&E.chunk_pool);
+    for (size_t f = 0; f < F_MAX; f++) if (E.loc_ready[f]) pool_destroy(&E.loc_pool[f]);
+    pthread_mutex_destroy(&E.loc_mu);
     pthread_mutex_destroy(&E.q_mu);
     pthread_cond_destroy(&E.q_cv); pthread_cond_destroy(&E.idle_cv);
     memset(&E, 0, sizeof E);
@@ -211,8 +224,28 @@ static Cont *cont_new(ContKind kind, EntryId dest, FaceId chi) {
     k->kind = kind; k->dest = dest; k->chi = chi;
     return k;
 }
-static void cont_release(Cont *k) { pool_free(&E.cont_pool, k); }
-Cont *frame_new(Family f, EntryId dest) { Cont *k = cont_new(K_FRAME, dest, 0); k->fam = f; return k; }
+static Pool *loc_pool(Family f) {
+    if (!__atomic_load_n(&E.loc_ready[f], __ATOMIC_ACQUIRE)) {
+        pthread_mutex_lock(&E.loc_mu);
+        if (!E.loc_ready[f]) { pool_init(&E.loc_pool[f], FAM[f].loc_size); __atomic_store_n(&E.loc_ready[f], true, __ATOMIC_RELEASE); }
+        pthread_mutex_unlock(&E.loc_mu);
+    }
+    return &E.loc_pool[f];
+}
+static void cont_release(Cont *k) {
+    if (k->kind == K_FRAME && k->loc) pool_free(loc_pool(k->fam), k->loc);
+    pool_free(&E.cont_pool, k);
+}
+Cont *frame_new(Family f, EntryId dest) {
+    Cont *k = cont_new(K_FRAME, dest, 0); k->fam = f;
+    if (FAM[f].loc_size) k->loc = pool_alloc(loc_pool(f));
+    return k;
+}
+Cont *frame_sub(Family f, const Cont *caller) {
+    require(f > F_WHNF && f < n_fam && FAM[f].start == NULL, "a subroutine is a frame family");
+    Cont *k = frame_new(f, 0); k->inl = caller->inl;
+    return k;
+}
 
 Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *)) {
     Cont *k = cont_new(K_EXTERNAL, 0, 0);
@@ -332,7 +365,7 @@ static EntryId entry_intern(Family f, uint64_t a, uint64_t b) {
      * mutation makes earlier observations unreachable (§57 R1). The entry's
      * operands are read from its key record, so a zero entry is a complete U
      * state the moment its key is discoverable. */
-    uint64_t w[4] = { f, a, b, global_env_version() };
+    uint64_t w[4] = { f, a, b, FAM[f].pure ? 0 : global_env_version() };
     EntryId id = interner_intern(&E.keys, w, 4, NULL);
     chunked_at(&E.entries, id - 1);
     return id;
@@ -370,7 +403,7 @@ void family_publish(EntryId eid, uint64_t v) {
     require(w != NULL && w != ENTRY_READY, "publish into an entry that is not running");
     __atomic_store_n(&e->state, E_READY, __ATOMIC_RELEASE);
     add_count(&E.ev.publish);
-    deliver(w, v, eid);
+    if (w != INLINE_CLAIM) deliver(w, v, eid);
 }
 
 static void publish(EntryId eid, EvalResult *r) {
@@ -420,6 +453,101 @@ void family_request(Family f, uint64_t a, uint64_t b, Cont *k) {
     request_entry(entry_intern(f, a, b), k);
 }
 
+/* ---------------- frame programs ----------------
+ * A scheduled frame's step schedules its continuation (a request, the
+ * subroutine's first step, its own next step, a publication or the parent's
+ * resumption). An inline frame's step records its outcome for the inline
+ * driver, which runs the same step functions on the calling thread. */
+typedef enum { IN_NONE = 0, IN_REQUEST, IN_CALL, IN_YIELD, IN_FINISH } InKind;
+typedef struct { InKind kind; Family f; uint64_t a, b, v; Cont *child; } InOut;
+static __thread InOut tl_out;
+static __thread unsigned tl_inline_depth;
+
+static void enqueue_resume(Cont *k, uint64_t v) {
+    Task t; memset(&t, 0, sizeof t); t.kind = TK_RESUME; t.k = k; t.v = v;
+    enqueue(t);
+}
+static void inline_out(InKind kind, Family f, uint64_t a, uint64_t b, uint64_t v, Cont *child) {
+    require(tl_out.kind == IN_NONE, "an inline frame step ended in two outcomes");
+    tl_out.kind = kind; tl_out.f = f; tl_out.a = a; tl_out.b = b; tl_out.v = v; tl_out.child = child;
+}
+void frame_request(Cont *k, Family f, uint64_t a, uint64_t b) {
+    if (k->inl) { inline_out(IN_REQUEST, f, a, b, 0, NULL); return; }
+    k->keep = true;
+    family_request(f, a, b, k);
+}
+void frame_call(Cont *k, Cont *child) {
+    require(child->kind == K_FRAME && child->dest == 0 && child->inl == k->inl, "a subroutine frame of this caller");
+    if (k->inl) { inline_out(IN_CALL, 0, 0, 0, 0, child); return; }
+    child->parent = k; k->keep = true;
+    enqueue_resume(child, 0);
+}
+void frame_yield(Cont *k) {
+    if (k->inl) { inline_out(IN_YIELD, 0, 0, 0, 0, NULL); return; }
+    k->keep = true;
+    enqueue_resume(k, 0);
+}
+void frame_finish(Cont *k, uint64_t v) {
+    if (k->inl) { inline_out(IN_FINISH, 0, 0, 0, v, NULL); return; }
+    if (k->parent) { Cont *p = k->parent; k->parent = NULL; enqueue_resume(p, v); return; }
+    family_publish(k->dest, v);
+}
+
+/* drive one inline frame (and the subroutines it calls) to its value */
+static uint64_t inline_drive(Cont *k) {
+    InOut saved = tl_out;
+    VEC(Cont *) callers = { 0 };
+    uint64_t v = 0, result = 0;
+    for (;;) {
+        tl_out.kind = IN_NONE;
+        __atomic_add_fetch(&FAM[k->fam].steps, 1, __ATOMIC_RELAXED);
+        FAM[k->fam].resume(k, v);
+        InOut o = tl_out;
+        switch (o.kind) {
+        case IN_REQUEST: v = family_call(o.f, o.a, o.b); break;
+        case IN_YIELD: v = 0; break;
+        case IN_CALL: vec_push(&callers, k); k = o.child; v = 0; break;
+        case IN_FINISH:
+            cont_release(k);
+            if (!callers.len) { result = o.v; goto done; }
+            k = callers.data[--callers.len]; v = o.v;
+            break;
+        default: die("an inline frame step ended without an outcome (family %s, pc %u)", FAM[k->fam].name, (unsigned)k->pc);
+        }
+    }
+done:
+    vec_free(&callers);
+    tl_out = saved;
+    return result;
+}
+
+uint64_t family_call(Family f, uint64_t a, uint64_t b) {
+    require(f > F_WHNF && f < n_fam && FAM[f].start == NULL, "family_call needs a frame family");
+    require(++tl_inline_depth < (1u << 20), "inline call depth");
+    EntryId eid = entry_intern(f, a, b);
+    Entry *e = ENT(eid);
+    uint64_t out;
+    Cont *h = __atomic_load_n(&e->head, __ATOMIC_ACQUIRE);
+    if (h == ENTRY_READY) out = __atomic_load_n(&e->value, __ATOMIC_ACQUIRE);
+    else {
+        bool claimed = false;
+        if (h == NULL) {
+            claimed = __atomic_compare_exchange_n(&e->head, &h, INLINE_CLAIM, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+            if (!claimed && h == ENTRY_READY) { out = __atomic_load_n(&e->value, __ATOMIC_ACQUIRE); goto done; }
+        }
+        if (claimed) {
+            require(__atomic_fetch_add(&e->runs, 1, __ATOMIC_ACQ_REL) == 0, "a key is evaluated by exactly one task");
+            __atomic_store_n(&e->state, E_RUNNING, __ATOMIC_RELEASE);
+        }
+        Cont *k = frame_new(f, claimed ? eid : 0); k->inl = true; k->w[0] = a; k->w[1] = b;
+        out = inline_drive(k);
+        if (claimed) family_publish(eid, out);
+    }
+done:
+    tl_inline_depth--;
+    return out;
+}
+
 static bool validate_occurrence(RefId t, FaceId chi) {
     /* the ambient face must entail the reference's required face (which
      * already folds in the required faces of its free variables) */
@@ -466,7 +594,13 @@ static void evaluate(EntryId eid) {
     Family f = eval_entry_family(eid);
     __atomic_add_fetch(&FAM[f].steps, 1, __ATOMIC_RELAXED);
     if (f == F_WHNF) evaluate_whnf(eid);
-    else FAM[f].start(eid, eval_entry_a(eid), eval_entry_b(eid));
+    else if (FAM[f].start) FAM[f].start(eid, eval_entry_a(eid), eval_entry_b(eid));
+    else {
+        /* a frame family: its first step */
+        Cont *k = frame_new(f, eid); k->w[0] = eval_entry_a(eid); k->w[1] = eval_entry_b(eid);
+        FAM[f].resume(k, 0);
+        if (!k->keep) cont_release(k);
+    }
 }
 
 static void evaluate_whnf(EntryId eid) {
@@ -721,7 +855,7 @@ static void execute(Task t) {
     add_count(&E.ev.eval_step);
     if (t.kind == TK_EVAL) { evaluate(t.entry); return; }
     Cont *k = t.k;
-    if (k->next) { Cont *rest = k->next; k->next = NULL; deliver(rest, t.v, t.src); }   /* hand the chain on: one delivery per job */
+    if (k->next) { Cont *rest = k->next; k->next = NULL; if (rest != INLINE_CLAIM) deliver(rest, t.v, t.src); }   /* hand the chain on: one delivery per job */
     if (k->kind == K_FRAME) __atomic_add_fetch(&FAM[k->fam].steps, 1, __ATOMIC_RELAXED);
     else __atomic_add_fetch(&FAM[F_WHNF].steps, 1, __ATOMIC_RELAXED);
     k->keep = false;
