@@ -54,8 +54,8 @@ typedef struct RootBox RootBox;
 typedef void (*ExternalDeliver)(void *ctx, EvalResult *r);
 
 typedef enum {
-    K_ROOT = 1, K_FORWARD, K_APP, K_FST, K_SND, K_PAPP, K_UNGLUE, K_COMP_FAMILY, K_BRANCH, K_EXTERNAL,
-    K_FRAME            /* a family frame: resumed by its family's resume function */
+    K_ROOT = 1, K_BRANCH, K_EXTERNAL,
+    K_FRAME            /* a family frame: resumed by its family's step function */
 } ContKind;
 
 /* A continuation is single-consumer. A frame (K_FRAME) is the retained state
@@ -68,18 +68,12 @@ struct Cont {
     ContKind kind;
     EntryId dest;       /* entry to publish into (not for ROOT/EXTERNAL) */
     FaceId chi;         /* ambient face of the demanding evaluation */
-    RefId orig;         /* the eliminator / composition reference, retained */
-    RefId a;            /* APP argument */
-    IntervalId s;       /* PAPP interval */
-    DimVarId j;         /* COMP: the symbolic dimension */
-    RefId tube;         /* COMP: tube body at j */
-    FaceId phi;         /* COMP: tube face */
-    RefId cap;          /* COMP: cap */
-    Gather *gather; size_t branch;   /* BRANCH */
+    RefId orig;         /* BRANCH: the branch term */
+    Gather *gather; size_t branch;   /* BRANCH: the join and the box */
     RootBox *root;                   /* ROOT */
     ExternalDeliver ext_fn; void *ext_ctx; void (*ext_free)(void *);   /* EXTERNAL */
     /* K_FRAME */
-    Family fam; uint32_t pc; bool keep;
+    Family fam; uint32_t pc;
     bool inl;           /* driven by the synchronous inline driver (family_call) */
     uint64_t w[8];
     void *loc;          /* the family's locals record (loc_size bytes, zeroed), or NULL */
@@ -193,6 +187,8 @@ typedef struct {
     size_t publish;      /* PUB events */
     size_t deliver;      /* DELIVER events (ready hit or publication) */
     size_t ready_hit, running_hit, launch;   /* diagnostics */
+    size_t duplicate_step;   /* diagnostic: steps of keys the synchronous driver computed without publication */
+    size_t intern;           /* record insertions completed by the interning subroutine (each one event) */
 } EvalEvents;
 EvalEvents eval_events(void);
 

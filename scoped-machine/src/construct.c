@@ -16,6 +16,7 @@
 #include "template.h"
 
 static Family F_REFVAR, F_FCDIMS, F_FIELD, F_BINDER, F_CONSTRUCT;
+static Family F_ENVOF, F_INTERP, F_ENVSET;   /* template families (bound after their registration) */
 static Family F_REINDEX, F_IVRE, F_FCRE, F_CENV, F_CINST, F_IVDIMS, F_OVERRIDE;
 static Family F_DSUNION, F_VSUNION, F_DSREMOVE, F_VSREMOVE, F_FCMEET, F_FCJOIN, F_FCFORALL;
 
@@ -79,7 +80,16 @@ static void binder_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     { size_t n; const uint64_t *e = interner_get(&M.keys, k->w[1], &n); L->sort = e[0]; L->slot = e[1]; L->field = e[2]; L->image = e[3]; }
-    require(tview_is_construction(t), "binder application of a template instance through the construction family");
+    if (!tview_is_construction(t)) {
+        /* a template binder: the local's slot set to the image, the body recipe interpreted */
+        FR_AWAIT(k, L->m, F_ENVOF, ref_tnode(t), ref_tenv(t));
+        {   uint64_t es; ExprId be; tnode_template_binder(ref_tnode(t), (BinderSlot)L->slot, (FieldIndex)L->field, &es, &be);
+            uint64_t e[3] = { es, L->sort == S_TERM ? PS_REF : PS_INTERVAL, L->image };
+            FR_AWAIT(k, L->m, F_ENVSET, L->m, interner_intern(&M.keys, e, 3, NULL)); }
+        {   uint64_t es; ExprId be; tnode_template_binder(ref_tnode(t), (BinderSlot)L->slot, (FieldIndex)L->field, &es, &be);
+            FR_AWAIT(k, r, F_INTERP, be, L->m); }
+        { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
+    }
     {   TNodeId Q = ref_tnode(t);
         require(tnode_field_slot(Q, L->field) == (BinderSlot)L->slot && tnode_binder_sort(Q, (BinderSlot)L->slot) == (Sort)L->sort, "field is not under this binder"); }
     FR_AWAIT(k, L->m, F_CENV, ref_tenv(t), 0);
@@ -226,7 +236,7 @@ static void construct_step(Cont *k, uint64_t v) {
 
 /* a head's payload (w[1] = 0) or formation levels (w[1] = 1): constants of a
  * construction node, interpreted for a template node */
-static Family F_HEAD, F_ENVOF, F_INTERP;
+static Family F_HEAD;
 static void head_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
@@ -256,7 +266,7 @@ void construct_families_init(void) {
     F_HEAD = family_define("head.annotation", head_step, 0, true);
 }
 /* the template families register after the construction families; their ids are read lazily */
-void construct_bind_template_families(void) { F_ENVOF = family_lookup("template.envof"); F_INTERP = family_lookup("template.interp"); require(F_ENVOF && F_INTERP, "template families"); }
+void construct_bind_template_families(void) { F_ENVOF = family_lookup("template.envof"); F_INTERP = family_lookup("template.interp"); F_ENVSET = family_lookup("template.envset"); require(F_ENVOF && F_INTERP && F_ENVSET, "template families"); }
 
 /* ---------------- the operations (synchronous driver) ---------------- */
 RefId construct_request(const uint64_t *req, size_t n) { return family_call(F_CONSTRUCT, interner_intern(&M.keys, req, n, NULL), 0); }

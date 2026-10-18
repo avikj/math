@@ -93,6 +93,8 @@ EvalEvents eval_events(void) {
     v.ready_hit = __atomic_load_n(&E.ev.ready_hit, __ATOMIC_SEQ_CST);
     v.running_hit = __atomic_load_n(&E.ev.running_hit, __ATOMIC_SEQ_CST);
     v.launch = __atomic_load_n(&E.ev.launch, __ATOMIC_SEQ_CST);
+    v.duplicate_step = __atomic_load_n(&E.ev.duplicate_step, __ATOMIC_SEQ_CST);
+    v.intern = __atomic_load_n(&E.ev.intern, __ATOMIC_SEQ_CST);
     return v;
 }
 size_t family_steps(Family f) { require(f >= 1 && f < F_MAX, "bad family"); return __atomic_load_n(&FAM[f].steps, __ATOMIC_SEQ_CST); }
@@ -133,6 +135,7 @@ Family family_define(const char *name, FamResume step, size_t loc_size, bool pur
 }
 
 static void *worker_main(void *arg);
+static void evaluator_init(void);
 
 void eval_init(void) {
     memset(&E, 0, sizeof E);
@@ -152,6 +155,7 @@ void eval_init(void) {
     construct_families_init();
     scope_families_init();
     template_families_init();
+    evaluator_init();
     net_init(&E.net);
     net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
     E.net.policy = 1;   /* pairs FIFO by default */
@@ -421,10 +425,6 @@ void family_publish(EntryId eid, uint64_t v) {
     if (w != INLINE_CLAIM) deliver(w, v, eid);
 }
 
-static void publish(EntryId eid, EvalResult *r) {
-    require(r->cls != R_NO_OBSERVATION, "no observation is never a published value");
-    family_publish(eid, (uint64_t)(uintptr_t)r);
-}
 
 /* REQ(K,c): U → R({c}) + EVAL(K), R(W) → R(W ⊎ {c}), D(v) → D(v) + DELIVER(c,v) */
 static void request_entry(EntryId eid, Cont *k) {
@@ -525,6 +525,7 @@ static void intern_step(Cont *k, uint64_t v) {
     if (!intern_advance(s, INTERN_BUDGET)) { frame_yield(k); return; }
     bool *created = (bool *)(uintptr_t)k->w[0];
     if (created) *created = s->created;
+    add_count(&E.ev.intern);
     frame_finish(k, s->result);
 }
 Cont *intern_sub(const Cont *caller, Interner *t, WordBuf *buf, bool *created) {
@@ -534,14 +535,19 @@ Cont *intern_sub(const Cont *caller, Interner *t, WordBuf *buf, bool *created) {
     return k;
 }
 
-/* drive one inline frame (and the subroutines it calls) to its value */
-static uint64_t inline_drive(Cont *k) {
+/* drive one inline frame (and the subroutines it calls) to its value. The
+ * steps of a claimed producer are steps of the relation like any scheduled
+ * step and are counted in W; a key computed without publication (it was
+ * running elsewhere) is a duplicate and counts only in its family's steps. */
+static uint64_t inline_drive(Cont *k, bool counted) {
     InOut saved = tl_out;
     VEC(Cont *) callers = { 0 };
     uint64_t v = 0, result = 0;
     for (;;) {
         tl_out.kind = IN_NONE;
         __atomic_add_fetch(&FAM[k->fam].steps, 1, __ATOMIC_RELAXED);
+        if (k->fam == F_INTERN) { }
+        else if (counted) add_count(&E.ev.eval_step); else add_count(&E.ev.duplicate_step);
         FAM[k->fam].resume(k, v);
         InOut o = tl_out;
         switch (o.kind) {
@@ -581,7 +587,7 @@ uint64_t family_call(Family f, uint64_t a, uint64_t b) {
             __atomic_store_n(&e->state, E_RUNNING, __ATOMIC_RELEASE);
         }
         Cont *k = frame_new(f, claimed ? eid : 0); k->inl = true; k->w[0] = a; k->w[1] = b;
-        out = inline_drive(k);
+        out = inline_drive(k, claimed);
         if (claimed) family_publish(eid, out);
     }
 done:
@@ -603,38 +609,362 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     request_entry(entry_intern(F_WHNF, t, eta), k);
 }
 
-static void forward(RefId t, FaceId chi, EntryId dest) { eval_request(t, chi, cont_new(K_FORWARD, dest, chi)); }
 
-/* ---------------- dispatch ---------------- */
+/* ---------------- the evaluator: a frame program ----------------
+ * WHNF(t, χ) (χ projected to t's support) is a frame family like every
+ * other: each step does a constant amount of work and awaits its operands
+ * from their families (fields, binder application, face tests, projections,
+ * constructions) and its sub-observations through the observation
+ * subroutine. A branchwise result is a join: the frame issues one branch per
+ * step and is resumed by the last arrival (§12, §26). */
+static Family F_OBS, F_FWD, F_FIELDF, F_BINDERF, F_CONSTRUCTF, F_HEADF, F_FCENTF, F_FCPROJF, F_FCMEETF, F_FCJOINF, F_FCFORALLF, F_FCENDF;
+#define RES(x) ((EvalResult *)(uintptr_t)(x))
+#define RV(r) ((uint64_t)(uintptr_t)(r))
+static uint64_t binder_rec(Sort sort, BinderSlot slot, FieldIndex field, uint64_t image) { uint64_t e[4] = { sort, slot, field, image }; return interner_intern(&M.keys, e, 4, NULL); }
+/* a construction request (construct.c) made by the evaluator: no declared face */
+static uint64_t creq(Tag tag, uint64_t payload, uint64_t levels, size_t nf, const Field *f, size_t nb, const Binder *b) {
+    Words w; words_init(&w);
+    words_push(&w, tag); words_push(&w, payload); words_push(&w, levels); words_push(&w, 0); words_push(&w, 0); words_push(&w, 0); words_push(&w, nf);
+    for (size_t q = 0; q < nf; q++) { words_push(&w, f[q].kind); words_push(&w, f[q].slot); words_push(&w, f[q].id); }
+    words_push(&w, nb);
+    for (size_t q = 0; q < nb; q++) { words_push(&w, b[q].sort); words_push(&w, b[q].formal); words_push(&w, b[q].domain_field); }
+    uint64_t id = interner_intern(&M.keys, w.w, w.n, NULL);
+    words_free(&w);
+    return id;
+}
+static Cont *obs_sub(const Cont *k, RefId x, FaceId chi) { Cont *c = frame_sub(F_OBS, k); c->w[0] = x; c->w[1] = chi; return c; }
 
-static void eval_system_head(RefId t, const Head *h, FaceId chi, EntryId dest) {
-    size_t nb = h->n / 2;
-    FaceId *faces = malloc((nb ? nb : 1) * sizeof(FaceId));
-    RefId *terms = malloc((nb ? nb : 1) * sizeof(RefId));
-    require(faces && terms, "out of memory");
-    size_t kept = 0;
-    FaceId uni = fc_false();
-    for (size_t k = 0; k < nb; k++) {
-        FaceId phi = HF(h, 2 * k).id;
-        RefId tk = HF(h, 2 * k + 1).id;
-        if (fc_is_false(fc_meet(chi, phi))) continue;           /* inconsistent branch dropped */
-        if (fc_entails(chi, phi)) { free(faces); free(terms); forward(tk, chi, dest); return; }
-        faces[kept] = phi; terms[kept] = tk; kept++;
-        uni = fc_join(uni, phi);
-    }
-    if (!fc_entails(chi, uni)) { free(faces); free(terms); publish(dest, result_invalid("system does not cover the ambient face")); return; }
-    publish(dest, result_system(t, kept, faces, terms));
-    free(faces); free(terms);
+/* observe x under χ: no observation on the false face; an invalid occurrence
+ * outside x's required face; otherwise the producer (x, π_S(x) χ) */
+static void obs_step(Cont *k, uint64_t v) {
+    uint64_t r = 0;
+    RefId x = k->w[0]; FaceId chi = k->w[1];
+    FR_BEGIN(k);
+    if (fc_is_false(chi)) FR_FINISH(k, RV(result_new(R_NO_OBSERVATION, x)));
+    FR_AWAIT(k, r, F_FCENTF, chi, ref_required(x));
+    if (r != 2) FR_FINISH(k, RV(result_invalid("occurrence outside its required face")));
+    FR_AWAIT(k, r, F_FCPROJF, chi, ref_support(x));
+    FR_AWAIT(k, r, F_WHNF, x, r);
+    FR_FINISH(k, r);
+    FR_END(k);
+}
+/* the receiver of a transform call publishes the observation of v into K */
+static void fwd_step(Cont *k, uint64_t v) {
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    FR_CALL(k, r, obs_sub(k, k->w[0], k->w[1]));
+    FR_FINISH(k, r);
+    FR_END(k);
 }
 
-static void evaluate_whnf(EntryId eid);
+static Gather *gather_new(size_t n, Cont *frame) {
+    Gather *g = calloc(1, sizeof *g);
+    require(g, "out of memory");
+    g->frame = frame; g->n = n; g->pending = n + 1;
+    g->faces = malloc((n ? n : 1) * sizeof(FaceId));
+    g->results = calloc(n ? n : 1, sizeof(EvalResult *));
+    require(g->faces && g->results, "out of memory");
+    pthread_mutex_init(&g->mu, NULL);
+    pthread_mutex_lock(&E.join_mu); g->slot = E.joins.len; vec_push(&E.joins, g); pthread_mutex_unlock(&E.join_mu);
+    return g;
+}
+static bool gather_arrive(Gather *g) {
+    pthread_mutex_lock(&g->mu);
+    bool last = --g->pending == 0;
+    pthread_mutex_unlock(&g->mu);
+    return last;
+}
+/* branch i: observe term under χ_i; its value arrives at the join */
+static void branch_start(Gather *g, size_t i, RefId term, FaceId chi_i) {
+    Cont *bk = cont_new(K_BRANCH, 0, chi_i);
+    bk->gather = g; bk->branch = i; bk->orig = term;
+    Cont *ob = frame_new(F_OBS, 0); ob->w[0] = term; ob->w[1] = chi_i; ob->parent = bk;
+    enqueue_resume(ob, 0);
+}
+static void resume_branch(Cont *k, EvalResult *r) {
+    Gather *g = k->gather;
+    pthread_mutex_lock(&g->mu);
+    g->results[k->branch] = r;
+    if (r->cls == R_INVALID || r->cls == R_NO_OBSERVATION) g->failed = true;
+    g->arrived++;
+    pthread_mutex_unlock(&g->mu);
+    if (gather_arrive(g)) enqueue_resume(g->frame, 0);     /* the join is enabled when every box is full */
+}
+/* the frame has issued every branch: it waits for the last arrival (or
+ * continues at once if they all arrived) */
+static void frame_await_gather(Cont *k, Gather *g) {
+    keep_frame(k);
+    if (gather_arrive(g)) enqueue_resume(k, 0);
+}
+#define FR_JOIN(k, g) do { (k)->pc = __LINE__; frame_await_gather((k), (g)); return; case __LINE__:; } while (0)
+
+typedef struct {
+    Tag tag; uint64_t levels, payload, a1, a3, a4, x;
+    EvalResult *res;
+    size_t n, q, kept, m; FaceId uni, g; FaceId *faces; RefId *terms;
+    DimVarId j; RefId fam, tube, cap; FaceId phi;
+    Gather *gath; Words fs, ts;
+} WhLoc;
+static void wh_free(WhLoc *L) { free(L->faces); free(L->terms); L->faces = NULL; L->terms = NULL; }
+static void wh_alloc(WhLoc *L, size_t n) {
+    L->faces = malloc((n ? n : 1) * sizeof(FaceId)); L->terms = malloc((n ? n : 1) * sizeof(RefId));
+    require(L->faces && L->terms, "out of memory");
+}
+static bool intro_tag(Tag t) { return t == T_UNIVERSE || t == T_PI || t == T_SIGMA || t == T_LAM || t == T_PAIR || t == T_PATH || t == T_PLAM; }
+static bool elim_tag(Tag t) { return t == T_APP || t == T_FST || t == T_SND || t == T_PAPP || t == T_UNGLUE; }
+
+static void whnf_step(Cont *k, uint64_t v) {
+    WhLoc *L = FR_LOC(k, WhLoc);
+    RefId t = k->w[0]; FaceId chi = k->w[1];
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    if (ref_is_var(t)) FR_FINISH(k, RV(result_new(R_NEUTRAL, t)));
+    L->tag = ref_tag(t);
+    if (intro_tag(L->tag)) FR_FINISH(k, RV(result_new(R_INTRODUCTION, t)));
+
+    if (L->tag == T_GLOBAL) {
+        /* a declared symbol without a body is an opaque constant: neutral */
+        FR_AWAIT(k, L->payload, F_HEADF, t, 0);
+        if (!global_body((SymbolId)L->payload)) FR_FINISH(k, RV(result_new(R_NEUTRAL, t)));
+        L->x = unfold_global(t);
+        FR_CALL(k, r, obs_sub(k, L->x, chi));
+        FR_FINISH(k, r);
+    }
+
+    if (L->tag == T_GLUE_TYPE || L->tag == T_GLUE_INTRO) {
+        FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
+        FR_AWAIT(k, r, F_FCENTF, chi, L->a1);
+        if (r != 2) FR_FINISH(k, RV(result_new(R_INTRODUCTION, t)));
+        FR_AWAIT(k, L->x, F_FIELDF, t, L->tag == T_GLUE_TYPE ? 2 : 4);
+        FR_CALL(k, r, obs_sub(k, L->x, chi));
+        FR_FINISH(k, r);
+    }
+
+    if (elim_tag(L->tag)) {
+        if (L->tag == T_PAPP) {
+            FR_AWAIT(k, L->a4, F_FIELDF, t, 4);
+            FR_AWAIT(k, r, F_FCENDF, L->a4, 0);
+            FR_AWAIT(k, r, F_FCENTF, chi, r);
+            if (r == 2) { FR_AWAIT(k, L->x, F_FIELDF, t, 1); goto forward_x; }
+            FR_AWAIT(k, r, F_FCENDF, L->a4, 1);
+            FR_AWAIT(k, r, F_FCENTF, chi, r);
+            if (r == 2) { FR_AWAIT(k, L->x, F_FIELDF, t, 2); goto forward_x; }
+            FR_AWAIT(k, L->x, F_FIELDF, t, 3);
+        } else if (L->tag == T_UNGLUE) {
+            FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
+            FR_AWAIT(k, r, F_FCENTF, chi, L->a1);
+            if (r == 2) {
+                /* on the Glue face: (fst e) v */
+                FR_AWAIT(k, L->a3, F_FIELDF, t, 3);
+                FR_AWAIT(k, L->a4, F_FIELDF, t, 4);
+                { Field f[1] = { { F_REF, NO_SLOT, L->a3 } }; FR_AWAIT(k, L->x, F_CONSTRUCTF, creq(T_FST, 0, LEVELS_NONE, 1, f, 0, NULL), 0); }
+                { Field f[2] = { { F_REF, NO_SLOT, L->x }, { F_REF, NO_SLOT, L->a4 } }; FR_AWAIT(k, L->x, F_CONSTRUCTF, creq(T_APP, 0, LEVELS_NONE, 2, f, 0, NULL), 0); }
+                goto forward_x;
+            }
+            FR_AWAIT(k, L->x, F_FIELDF, t, 4);
+        } else {
+            if (L->tag == T_APP) FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
+            FR_AWAIT(k, L->x, F_FIELDF, t, 0);
+        }
+        /* the scrutinee */
+        FR_CALL(k, r, obs_sub(k, L->x, chi));
+        L->res = RES(r);
+        if (L->res->cls == R_NO_OBSERVATION || L->res->cls == R_INVALID) FR_FINISH(k, r);
+        if (L->res->cls == R_NEUTRAL) FR_FINISH(k, RV(result_new(R_NEUTRAL, t)));
+        if (L->res->cls == R_SYSTEM) {
+            /* distribute: the eliminator rebuilt around each branch */
+            L->n = L->res->nbr; wh_alloc(L, L->n);
+            FR_AWAIT(k, L->levels, F_HEADF, t, 1);
+            for (L->q = 0; L->q < L->n; L->q++) {
+                L->faces[L->q] = L->res->faces[L->q];
+                if (L->tag == T_APP) { Field f[2] = { { F_REF, NO_SLOT, L->res->terms[L->q] }, { F_REF, NO_SLOT, L->a1 } }; FR_AWAIT(k, r, F_CONSTRUCTF, creq(T_APP, 0, LEVELS_NONE, 2, f, 0, NULL), 0); }
+                else if (L->tag == T_FST || L->tag == T_SND) { Field f[1] = { { F_REF, NO_SLOT, L->res->terms[L->q] } }; FR_AWAIT(k, r, F_CONSTRUCTF, creq(L->tag, 0, LEVELS_NONE, 1, f, 0, NULL), 0); }
+                else if (L->tag == T_PAPP) {
+                    L->j = binder_dim_var(t, 0);
+                    FR_AWAIT(k, L->fam, F_BINDERF, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
+                    FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
+                    FR_AWAIT(k, L->a3, F_FIELDF, t, 2);
+                    { Field f[5] = { { F_REF, 0, L->fam }, { F_REF, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, L->res->terms[L->q] }, { F_INTERVAL, NO_SLOT, L->a4 } };
+                      Binder b[1] = { { S_DIM, L->j, NO_FIELD } };
+                      FR_AWAIT(k, r, F_CONSTRUCTF, creq(T_PAPP, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 1, b), 0); }
+                } else {
+                    FR_AWAIT(k, L->fam, F_FIELDF, t, 0);
+                    FR_AWAIT(k, L->a3, F_FIELDF, t, 2);
+                    FR_AWAIT(k, L->tube, F_FIELDF, t, 3);
+                    { Field f[5] = { { F_REF, NO_SLOT, L->fam }, { F_FACE, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, L->tube }, { F_REF, NO_SLOT, L->res->terms[L->q] } };
+                      FR_AWAIT(k, r, F_CONSTRUCTF, creq(T_UNGLUE, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 0, NULL), 0); }
+                }
+                L->terms[L->q] = r;
+            }
+            L->kept = L->n;
+            goto branchwise;
+        }
+        /* an introduction under the eliminator */
+        {   Tag ht = ref_tag(L->res->ref);
+            if (L->tag == T_APP && ht != T_LAM) FR_FINISH(k, RV(result_invalid("application of a non-function introduction")));
+            if ((L->tag == T_FST || L->tag == T_SND) && ht != T_PAIR) FR_FINISH(k, RV(result_invalid("projection of a non-pair introduction")));
+            if (L->tag == T_PAPP && ht != T_PLAM) FR_FINISH(k, RV(result_invalid("path application of a non-path introduction")));
+            if (L->tag == T_UNGLUE && ht != T_GLUE_INTRO) FR_FINISH(k, RV(result_invalid("unglue of a non-glue introduction"))); }
+        if (L->tag == T_APP) FR_AWAIT(k, L->x, F_BINDERF, L->res->ref, binder_rec(S_TERM, 0, 1, L->a1));
+        else if (L->tag == T_PAPP) FR_AWAIT(k, L->x, F_BINDERF, L->res->ref, binder_rec(S_DIM, 0, 0, L->a4));
+        else FR_AWAIT(k, L->x, F_FIELDF, L->res->ref, L->tag == T_FST ? 0 : L->tag == T_SND ? 1 : 5);
+        goto forward_x;
+    }
+
+    if (L->tag == T_SYSTEM) {
+        /* the covered, consistent branches; a branch entailed by χ is the value */
+        L->n = tnode_nfields(ref_tnode(t)) / 2; wh_alloc(L, L->n);
+        L->kept = 0; L->uni = fc_false();
+        for (L->q = 0; L->q < L->n; L->q++) {
+            FR_AWAIT(k, L->phi, F_FIELDF, t, 2 * L->q);
+            FR_AWAIT(k, r, F_FCMEETF, chi, L->phi);
+            if (fc_is_false(r)) continue;                       /* inconsistent branch dropped */
+            FR_AWAIT(k, L->x, F_FIELDF, t, 2 * L->q + 1);
+            FR_AWAIT(k, r, F_FCENTF, chi, L->phi);
+            if (r == 2) { wh_free(L); goto forward_x; }
+            L->faces[L->kept] = L->phi; L->terms[L->kept] = L->x; L->kept++;
+            FR_AWAIT(k, L->uni, F_FCJOINF, L->uni, L->phi);
+        }
+        FR_AWAIT(k, r, F_FCENTF, chi, L->uni);
+        if (r != 2) { wh_free(L); FR_FINISH(k, RV(result_invalid("system does not cover the ambient face"))); }
+        L->res = result_system(t, L->kept, L->faces, L->terms);
+        wh_free(L);
+        FR_FINISH(k, RV(L->res));
+    }
+
+    if (L->tag == T_TCALL) {
+        /* §43: allocate APPLY_TRANSFORM(id,dir,σ) with REF(a) on its principal
+         * port and CONTINUE_REFERENCE(K) on its result; K stays running and
+         * its evaluation is now owned by the receiver */
+        Head h; open_ref(t, &h);
+        uint64_t id; int dir; MapId sigma; RefId a;
+        require(compiler_decode_call(&h, &id, &dir, &sigma, &a), "malformed TRANSFORM_CALL");
+        Payload P = {0}; P.a = id; P.b = (uint64_t)dir; P.c = sigma;
+        NodeId op = net_operation(&E.net, OP_APPLY_TRANSFORM, P);
+        Payload Pr = {0}; Pr.ref = a;
+        NodeId d = net_descriptor(&E.net, D_REF, Pr);
+        Payload Pk = {0}; Pk.a = k->dest; Pk.face = chi;
+        int8_t pol[1] = { -1 };
+        NodeId cr = net_node(&E.net, A_CONTINUE_REFERENCE, 1, pol, Pk);
+        net_connect(&E.net, op, 1, cr, 0);
+        net_connect(&E.net, op, 0, d, 0);
+        frame_end_unpublished(k);
+        return;
+    }
+
+    if (L->tag == T_COMP) {
+        FR_AWAIT(k, L->phi, F_FIELDF, t, 1);
+        FR_AWAIT(k, r, F_FCENTF, chi, L->phi);
+        if (r == 2) { FR_AWAIT(k, L->x, F_BINDERF, t, binder_rec(S_DIM, 0, 2, iv_one())); goto forward_x; }   /* tube coverage first */
+        L->j = binder_dim_var(t, 0);
+        FR_AWAIT(k, L->fam, F_BINDERF, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
+        FR_AWAIT(k, L->tube, F_BINDERF, t, binder_rec(S_DIM, 0, 2, iv_var(L->j)));
+        FR_AWAIT(k, L->cap, F_FIELDF, t, 3);
+        FR_AWAIT(k, L->levels, F_HEADF, t, 1);
+        FR_CALL(k, r, obs_sub(k, L->fam, chi));
+        L->res = RES(r);
+        if (L->res->cls == R_NO_OBSERVATION || L->res->cls == R_INVALID) FR_FINISH(k, r);
+        if (L->res->cls == R_NEUTRAL) FR_FINISH(k, RV(result_new(R_NEUTRAL, t)));
+        if (L->res->cls == R_SYSTEM) {
+            /* a branch available along the whole j line: outer guard ∀j.φ_k */
+            L->n = L->res->nbr; wh_alloc(L, L->n);
+            L->kept = 0; L->uni = fc_false();
+            for (L->q = 0; L->q < L->n; L->q++) {
+                FR_AWAIT(k, L->g, F_FCFORALLF, L->res->faces[L->q], L->j);
+                FR_AWAIT(k, r, F_FCMEETF, chi, L->g);
+                if (fc_is_false(r)) continue;
+                {   uint64_t lv = L->levels == LEVELS_NONE ? LEVEL_NONE : levels_first(L->levels);
+                    Field f[4] = { { F_REF, 0, L->res->terms[L->q] }, { F_FACE, NO_SLOT, L->phi }, { F_REF, 0, L->tube }, { F_REF, NO_SLOT, L->cap } };
+                    Binder b[1] = { { S_DIM, L->j, NO_FIELD } };
+                    FR_AWAIT(k, r, F_CONSTRUCTF, creq(T_COMP, 0, levels_pack(lv, LEVEL_NONE), 4, f, 1, b), 0); }
+                L->faces[L->kept] = L->g; L->terms[L->kept] = r; L->kept++;
+                FR_AWAIT(k, L->uni, F_FCJOINF, L->uni, L->g);
+            }
+            FR_AWAIT(k, r, F_FCENTF, chi, L->uni);
+            if (r != 2) { wh_free(L); FR_FINISH(k, RV(result_invalid("type-family system has no branch along the whole composition line"))); }
+            for (L->q = 0; L->q < L->kept; L->q++) {
+                FR_AWAIT(k, r, F_FCENTF, chi, L->faces[L->q]);
+                if (r == 2) { L->x = L->terms[L->q]; wh_free(L); goto forward_x; }
+            }
+            goto branchwise;
+        }
+        /* an introduction: the one fixed clause, at the producer's face κ = χ (§53–§54) */
+        L->x = comp_clause(L->j, L->res->ref, L->phi, L->tube, L->cap, chi);
+        if (!L->x) FR_FINISH(k, RV(result_invalid("composition in a family whose head is not a type former or lacks its universe annotation")));
+        goto forward_x;
+    }
+    die("whnf: unhandled head tag %d", (int)L->tag);
+
+forward_x:
+    FR_CALL(k, r, obs_sub(k, L->x, chi));
+    FR_FINISH(k, r);
+
+branchwise:
+    /* demand each guarded term under χ ∧ φ_k; the join is enabled when every
+     * box is full; the result is reconstructed in the original branch order */
+    if (L->kept == 0) {
+        wh_free(L);
+        FR_AWAIT(k, r, F_CONSTRUCTF, creq(T_SYSTEM, 0, LEVELS_NONE, 0, NULL, 0, NULL), 0);
+        FR_FINISH(k, RV(result_system(r, 0, NULL, NULL)));
+    }
+    L->gath = gather_new(L->kept, k);
+    for (L->q = 0; L->q < L->kept; L->q++) L->gath->faces[L->q] = L->faces[L->q];
+    for (L->q = 0; L->q < L->kept; L->q++) {
+        FR_AWAIT(k, r, F_FCMEETF, chi, L->faces[L->q]);
+        branch_start(L->gath, L->q, L->terms[L->q], r);
+    }
+    wh_free(L);
+    FR_JOIN(k, L->gath);
+    if (L->gath->failed) {
+        /* the failure selected by original branch order, independent of arrival order */
+        for (L->q = 0; L->q < L->gath->n; L->q++) {
+            EvalResult *b = L->gath->results[L->q];
+            if (b->cls == R_INVALID) { gather_free(L->gath); FR_FINISH(k, RV(b)); }
+            if (b->cls == R_NO_OBSERVATION) { gather_free(L->gath); FR_FINISH(k, RV(result_invalid("branch under an inconsistent guard"))); }
+            FR_YIELD(k);
+        }
+    }
+    /* nested system results are flattened under conjoined guards */
+    words_init(&L->fs); words_init(&L->ts);
+    for (L->q = 0; L->q < L->gath->n; L->q++) {
+        L->res = L->gath->results[L->q];
+        if (L->res->cls == R_SYSTEM) {
+            for (L->m = 0; L->m < L->res->nbr; L->m++) {
+                FR_AWAIT(k, r, F_FCMEETF, L->gath->faces[L->q], L->res->faces[L->m]);
+                words_push(&L->fs, r); words_push(&L->ts, L->res->terms[L->m]);
+            }
+        } else { words_push(&L->fs, L->gath->faces[L->q]); words_push(&L->ts, L->res->ref); FR_YIELD(k); }
+    }
+    gather_free(L->gath); L->gath = NULL;
+    {   Field *f = malloc((2 * L->fs.n + 1) * sizeof(Field)); require(f, "out of memory");
+        for (size_t q = 0; q < L->fs.n; q++) { f[2 * q] = (Field){ F_FACE, NO_SLOT, L->fs.w[q] }; f[2 * q + 1] = (Field){ F_REF, NO_SLOT, L->ts.w[q] }; }
+        L->x = creq(T_SYSTEM, L->fs.n, LEVELS_NONE, 2 * L->fs.n, f, 0, NULL);
+        free(f); }
+    FR_AWAIT(k, r, F_CONSTRUCTF, L->x, 0);
+    L->res = result_system(r, L->fs.n, L->fs.w, L->ts.w);
+    words_free(&L->fs); words_free(&L->ts);
+    FR_FINISH(k, RV(L->res));
+    FR_END(k);
+}
+
+/* the evaluator family and its operand families (registered by eval_init) */
+static void evaluator_init(void) {
+    FAM[F_WHNF].name = "whnf"; FAM[F_WHNF].start = NULL; FAM[F_WHNF].resume = whnf_step;
+    FAM[F_WHNF].loc_size = sizeof(WhLoc); FAM[F_WHNF].pure = false;
+    F_OBS = family_define("whnf.observe", obs_step, 0, false);
+    F_FWD = family_define("whnf.forward", fwd_step, 0, false);
+    F_FIELDF = family_lookup("field"); F_BINDERF = family_lookup("binder"); F_CONSTRUCTF = family_lookup("construct"); F_HEADF = family_lookup("head.annotation");
+    F_FCENTF = family_lookup("fc.entails"); F_FCPROJF = family_lookup("fc.project"); F_FCMEETF = family_lookup("fc.meet");
+    F_FCJOINF = family_lookup("fc.join"); F_FCFORALLF = family_lookup("fc.forall"); F_FCENDF = family_lookup("fc.endpoint");
+    require(F_FIELDF && F_HEADF && F_FCENDF, "the evaluator's operand families are registered first");
+}
+
 static void evaluate(EntryId eid) {
     Entry *e = ENT(eid);
     require(__atomic_fetch_add(&e->runs, 1, __ATOMIC_ACQ_REL) == 0, "a key is evaluated by exactly one task");
     Family f = eval_entry_family(eid);
     __atomic_add_fetch(&FAM[f].steps, 1, __ATOMIC_RELAXED);
-    if (f == F_WHNF) evaluate_whnf(eid);
-    else if (FAM[f].start) FAM[f].start(eid, eval_entry_a(eid), eval_entry_b(eid));
+    if (FAM[f].start) FAM[f].start(eid, eval_entry_a(eid), eval_entry_b(eid));
     else {
         /* a frame family: its first step */
         Cont *k = frame_new(f, eid); k->w[0] = eval_entry_a(eid); k->w[1] = eval_entry_b(eid);
@@ -647,211 +977,11 @@ static void evaluate(EntryId eid) {
     }
 }
 
-static void evaluate_whnf(EntryId eid) {
-    RefId t = eval_entry_a(eid);
-    FaceId chi = eval_entry_b(eid);   /* evaluate under the key's face, not a requester's */
-    if (ref_is_var(t)) { publish(eid, result_new(R_NEUTRAL, t)); return; }
-    Head h; open_ref(t, &h);
-    switch (h.tag) {
-    case T_UNIVERSE: case T_PI: case T_SIGMA: case T_LAM: case T_PAIR: case T_PATH: case T_PLAM:
-        publish(eid, result_new(R_INTRODUCTION, t));
-        break;
-    case T_GLOBAL:
-        /* a declared symbol without a body is an opaque constant: neutral */
-        if (!global_body((SymbolId)h.payload)) publish(eid, result_new(R_NEUTRAL, t));
-        else forward(unfold_global(t), chi, eid);
-        break;
-    case T_APP: {
-        Cont *k = cont_new(K_APP, eid, chi); k->orig = t; k->a = HF(&h, 1).id;
-        eval_request(HF(&h, 0).id, chi, k);
-        break;
-    }
-    case T_FST: case T_SND: {
-        Cont *k = cont_new(h.tag == T_FST ? K_FST : K_SND, eid, chi); k->orig = t;
-        eval_request(HF(&h, 0).id, chi, k);
-        break;
-    }
-    case T_PAPP: {
-        IntervalId s = HF(&h, 4).id;
-        if (fc_entails(chi, fc_endpoint(s, 0))) { forward(HF(&h, 1).id, chi, eid); break; }
-        if (fc_entails(chi, fc_endpoint(s, 1))) { forward(HF(&h, 2).id, chi, eid); break; }
-        Cont *k = cont_new(K_PAPP, eid, chi); k->orig = t; k->s = s;
-        eval_request(HF(&h, 3).id, chi, k);
-        break;
-    }
-    case T_GLUE_TYPE:
-        if (fc_entails(chi, HF(&h, 1).id)) forward(HF(&h, 2).id, chi, eid);
-        else publish(eid, result_new(R_INTRODUCTION, t));
-        break;
-    case T_GLUE_INTRO:
-        if (fc_entails(chi, HF(&h, 1).id)) forward(HF(&h, 4).id, chi, eid);
-        else publish(eid, result_new(R_INTRODUCTION, t));
-        break;
-    case T_UNGLUE:
-        if (fc_entails(chi, HF(&h, 1).id)) forward(mk_app(mk_fst(HF(&h, 3).id), HF(&h, 4).id), chi, eid);
-        else { Cont *k = cont_new(K_UNGLUE, eid, chi); k->orig = t; eval_request(HF(&h, 4).id, chi, k); }
-        break;
-    case T_SYSTEM:
-        eval_system_head(t, &h, chi, eid);
-        break;
-    case T_TCALL: {
-        /* §43: consume this frame; allocate APPLY_TRANSFORM(id,dir,σ) with
-         * REF(a) on its principal port and CONTINUE_REFERENCE(K) on its
-         * result; K stays RUNNING, its suspended evaluation is now owned by
-         * the receiver. Connecting the principal ports enqueues the pair
-         * before this job finishes. */
-        uint64_t id; int dir; MapId sigma; RefId a;
-        require(compiler_decode_call(&h, &id, &dir, &sigma, &a), "malformed TRANSFORM_CALL");
-        Payload P = {0}; P.a = id; P.b = (uint64_t)dir; P.c = sigma;
-        NodeId op = net_operation(&E.net, OP_APPLY_TRANSFORM, P);
-        Payload Pr = {0}; Pr.ref = a;
-        NodeId d = net_descriptor(&E.net, D_REF, Pr);
-        Payload Pk = {0}; Pk.a = eid; Pk.face = chi;
-        int8_t pol[1] = { -1 };
-        NodeId cr = net_node(&E.net, A_CONTINUE_REFERENCE, 1, pol, Pk);
-        net_connect(&E.net, op, 1, cr, 0);
-        net_connect(&E.net, op, 0, d, 0);
-        break;
-    }
-    case T_COMP: {
-        FaceId phi = HF(&h, 1).id;
-        if (fc_entails(chi, phi)) {            /* tube coverage first */
-            forward(apply_dim_binder(t, 0, 2, iv_one()), chi, eid);
-            break;
-        }
-        DimOpen fam = resolve_dim_binder(t, 0, 0);
-        DimOpen tube = resolve_dim_binder(t, 0, 2);
-        require(fam.j == tube.j, "family and tube must share the composition dimension");
-        Cont *k = cont_new(K_COMP_FAMILY, eid, chi);
-        k->orig = t; k->j = fam.j; k->tube = tube.body; k->phi = phi; k->cap = HF(&h, 3).id;
-        eval_request(fam.body, chi, k);
-        break;
-    }
-    }
-    head_free(&h);
-}
-
-/* rebuild an eliminator around a new scrutinee (system distribution) */
-static RefId rebuild_elim(const Cont *k, RefId scrut) {
-    Head h; open_ref(k->orig, &h);
-    RefId out = 0;
-    switch (k->kind) {
-    case K_APP: out = mk_app(scrut, HF(&h, 1).id); break;
-    case K_FST: out = mk_fst(scrut); break;
-    case K_SND: out = mk_snd(scrut); break;
-    case K_PAPP: {
-        DimOpen B = resolve_dim_binder(k->orig, 0, 0);
-        out = mk_papp_lv(levels_first(h.levels), B.j, B.body, HF(&h, 1).id, HF(&h, 2).id, scrut, HF(&h, 4).id);
-        break;
-    }
-    case K_UNGLUE: out = mk_unglue_lv(levels_first(h.levels), HF(&h, 0).id, HF(&h, 1).id, HF(&h, 2).id, HF(&h, 3).id, scrut); break;
-    default: die("rebuild of a non-eliminator");
-    }
-    head_free(&h);
-    return out;
-}
-
-/* Act branchwise: demand each guarded term under chi ∧ phi_k; the join box
- * publishes the reconstructed guarded result once every box is full (§12,
- * §26). Each box has one producer; the last arrival publishes. */
-static void publish_branchwise(EntryId dest, FaceId chi, size_t n, const FaceId *faces, const RefId *terms) {
-    Gather *g = calloc(1, sizeof *g);
-    require(g, "out of memory");
-    g->dest = dest; g->n = n;
-    g->faces = malloc((n ? n : 1) * sizeof(FaceId));
-    g->results = calloc(n ? n : 1, sizeof(EvalResult *));
-    require(g->faces && g->results, "out of memory");
-    if (n) memcpy(g->faces, faces, n * sizeof(FaceId));
-    pthread_mutex_init(&g->mu, NULL);
-    pthread_mutex_lock(&E.join_mu); g->slot = E.joins.len; vec_push(&E.joins, g); pthread_mutex_unlock(&E.join_mu);
-    if (n == 0) { gather_free(g); publish(dest, result_system(mk_system(0, NULL, NULL), 0, NULL, NULL)); return; }
-    for (size_t i = 0; i < n; i++) {
-        Cont *k = cont_new(K_BRANCH, dest, fc_meet(chi, faces[i]));
-        k->gather = g; k->branch = i; k->orig = terms[i];
-        eval_request(terms[i], k->chi, k);
-    }
-}
-
-static void resume_branch(Cont *k, EvalResult *r) {
-    Gather *g = k->gather;
-    pthread_mutex_lock(&g->mu);
-    g->results[k->branch] = r;
-    if (r->cls == R_INVALID || r->cls == R_NO_OBSERVATION) g->failed = true;
-    bool full = (++g->arrived == g->n);
-    pthread_mutex_unlock(&g->mu);
-    if (!full) return;                          /* the join is enabled only when every box is full */
-    EntryId dest = g->dest;
-    if (g->failed) {
-        /* select the failure by original branch order, independent of arrival order */
-        EvalResult *out = NULL;
-        for (size_t i = 0; i < g->n && !out; i++) {
-            EvalResult *b = g->results[i];
-            if (b->cls == R_INVALID) out = b;
-            else if (b->cls == R_NO_OBSERVATION) out = result_invalid("branch under an inconsistent guard");
-        }
-        gather_free(g);
-        publish(dest, out);
-        return;
-    }
-    /* reconstruct: nested system results are flattened under conjoined guards */
-    Words fs, ts; words_init(&fs); words_init(&ts);
-    for (size_t i = 0; i < g->n; i++) {
-        EvalResult *b = g->results[i];
-        if (b->cls == R_SYSTEM) {
-            for (size_t j = 0; j < b->nbr; j++) { words_push(&fs, fc_meet(g->faces[i], b->faces[j])); words_push(&ts, b->terms[j]); }
-        } else { words_push(&fs, g->faces[i]); words_push(&ts, b->ref); }
-    }
-    gather_free(g);
-    RefId owner = mk_system(fs.n, fs.w, ts.w);
-    EvalResult *res = result_system(owner, fs.n, fs.w, ts.w);
-    words_free(&fs); words_free(&ts);
-    publish(dest, res);
-}
-
-static void distribute(const Cont *k, const EvalResult *sys) {
-    RefId *terms = malloc((sys->nbr ? sys->nbr : 1) * sizeof(RefId));
-    require(terms, "out of memory");
-    for (size_t i = 0; i < sys->nbr; i++) terms[i] = rebuild_elim(k, sys->terms[i]);
-    publish_branchwise(k->dest, k->chi, sys->nbr, sys->faces, terms);
-    free(terms);
-}
-
-static void resume_comp_family(Cont *k, EvalResult *r) {
-    if (r->cls == R_NEUTRAL) { publish(k->dest, result_new(R_NEUTRAL, k->orig)); return; }
-    if (r->cls == R_SYSTEM) {
-        /* branch available along the whole j line: outer guard ∀j.phi_k */
-        FaceId *faces = malloc((r->nbr ? r->nbr : 1) * sizeof(FaceId));
-        RefId *terms = malloc((r->nbr ? r->nbr : 1) * sizeof(RefId));
-        require(faces && terms, "out of memory");
-        size_t kept = 0; FaceId uni = fc_false();
-        for (size_t i = 0; i < r->nbr; i++) {
-            FaceId g = fc_forall(k->j, r->faces[i]);
-            if (fc_is_false(fc_meet(k->chi, g))) continue;
-            faces[kept] = g;
-            { Head ho; open_ref(k->orig, &ho); uint64_t lv = levels_first(ho.levels); if (ho.levels == LEVELS_NONE) lv = LEVEL_NONE; head_free(&ho);
-              terms[kept] = mk_comp_lv(lv, k->j, r->terms[i], k->phi, k->tube, k->cap); }
-            kept++;
-            uni = fc_join(uni, g);
-        }
-        if (!fc_entails(k->chi, uni)) { free(faces); free(terms); publish(k->dest, result_invalid("type-family system has no branch along the whole composition line")); return; }
-        for (size_t i = 0; i < kept; i++) if (fc_entails(k->chi, faces[i])) { RefId ti = terms[i]; free(faces); free(terms); forward(ti, k->chi, k->dest); return; }
-        publish_branchwise(k->dest, k->chi, kept, faces, terms);
-        free(faces); free(terms);
-        return;
-    }
-    /* introduction: capture the retained components of the exposed head
-     * and instantiate the one fixed clause (§53–§54); the producer entry's
-     * face is the clause's source annotation κ */
-    RefId out = comp_clause(k->j, r->ref, k->phi, k->tube, k->cap, eval_entry_b(k->dest));
-    if (!out) { publish(k->dest, result_invalid("composition in a family whose head is not a type former or lacks its universe annotation")); return; }
-    forward(out, k->chi, k->dest);
-}
 
 static void resume(Cont *k, uint64_t v) {
     EvalResult *r = (EvalResult *)(uintptr_t)v;
-    switch (k->kind) {
-    case K_FRAME: FAM[k->fam].resume(k, v); return;
-    case K_ROOT: {
+    if (k->kind == K_FRAME) { FAM[k->fam].resume(k, v); return; }
+    if (k->kind == K_ROOT) {
         RootBox *b = k->root;
         pthread_mutex_lock(&b->mu); b->result = v; b->done = true; pthread_cond_broadcast(&b->cv); pthread_mutex_unlock(&b->mu);
         /* wake clients waiting for either their root or quiescence */
@@ -859,44 +989,19 @@ static void resume(Cont *k, uint64_t v) {
         rootbox_release(b);
         return;
     }
-    case K_EXTERNAL: k->ext_fn(k->ext_ctx, r); return;
-    case K_BRANCH: resume_branch(k, r); return;
-    default: break;
-    }
-    if (r->cls == R_NO_OBSERVATION || r->cls == R_INVALID) { publish(k->dest, r); return; }
-    if (k->kind == K_FORWARD) { publish(k->dest, r); return; }
-    if (k->kind == K_COMP_FAMILY) { resume_comp_family(k, r); return; }
-    if (r->cls == R_NEUTRAL) { publish(k->dest, result_new(R_NEUTRAL, k->orig)); return; }
-    if (r->cls == R_SYSTEM) { distribute(k, r); return; }
-    /* introduction under an eliminator */
-    Head h; open_ref(r->ref, &h);
-    switch (k->kind) {
-    case K_APP:
-        if (h.tag != T_LAM) { publish(k->dest, result_invalid("application of a non-function introduction")); break; }
-        forward(apply_term_binder(r->ref, 0, 1, k->a), k->chi, k->dest);
-        break;
-    case K_FST: case K_SND:
-        if (h.tag != T_PAIR) { publish(k->dest, result_invalid("projection of a non-pair introduction")); break; }
-        forward(HF(&h, k->kind == K_FST ? 0 : 1).id, k->chi, k->dest);
-        break;
-    case K_PAPP:
-        if (h.tag != T_PLAM) { publish(k->dest, result_invalid("path application of a non-path introduction")); break; }
-        forward(apply_dim_binder(r->ref, 0, 0, k->s), k->chi, k->dest);
-        break;
-    case K_UNGLUE:
-        if (h.tag != T_GLUE_INTRO) { publish(k->dest, result_invalid("unglue of a non-glue introduction")); break; }
-        forward(HF(&h, 5).id, k->chi, k->dest);
-        break;
-    default: die("unreachable continuation kind");
-    }
-    head_free(&h);
+    if (k->kind == K_EXTERNAL) { k->ext_fn(k->ext_ctx, r); return; }
+    if (k->kind == K_BRANCH) { resume_branch(k, r); return; }
+    die("unreachable continuation kind");
 }
 
 /* one elementary frame step, or one local rule of the evaluator's net
  * (counted in the net's rule classes, not as an evaluator step) */
 static void execute(Task t) {
     if (t.kind == TK_PAIR) { net_step_pair(&E.net, t.pair); return; }
-    add_count(&E.ev.eval_step);
+    /* the interning subroutine's units are the record lookup itself (like the
+     * key lookup of a request): their number depends on what the table holds,
+     * so they are not steps of W; each completed insertion is one event */
+    if (!(t.kind == TK_RESUME && t.k->kind == K_FRAME && t.k->fam == F_INTERN)) add_count(&E.ev.eval_step);
     if (t.kind == TK_EVAL) { evaluate(t.entry); return; }
     Cont *k = t.k;
     if (k->next) { Cont *rest = k->next; k->next = NULL; if (rest != INLINE_CLAIM) deliver(rest, t.v, t.src); }   /* hand the chain on: one delivery per job */
@@ -911,7 +1016,10 @@ static void execute(Task t) {
 }
 
 /* §43 FORWARD_RESULT(K): the receiver's request; delivery publishes into K */
-void eval_forward_result(EntryId K, RefId v) { forward(v, eval_entry_b(K), K); }
+void eval_forward_result(EntryId K, RefId v) {
+    Cont *fk = frame_new(F_FWD, K); fk->w[0] = v; fk->w[1] = eval_entry_b(K);
+    enqueue_resume(fk, 0);
+}
 
 static void *worker_main(void *arg) {
     (void)arg;

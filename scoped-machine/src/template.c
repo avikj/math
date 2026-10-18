@@ -80,6 +80,16 @@ static void node_binder(TNodeId Q, BinderSlot s, Sort *sort, FieldIndex *domfiel
 Sort tnode_binder_sort(TNodeId Q, BinderSlot s) { Sort so; FieldIndex f; size_t l; node_binder(Q, s, &so, &f, &l); return so; }
 static ExprId node_required_e(TNodeId Q) { const uint64_t *b = node_btab(Q); return b[1 + 3 * b[0]]; }
 ExprId tnode_head_expr(TNodeId Q, int levels) { return levels ? node_levels_e(Q) : node_payload_e(Q); }
+static void node_binder(TNodeId Q, BinderSlot s, Sort *sort, FieldIndex *domfield, size_t *lslot);
+static void node_field(TNodeId Q, size_t k, FieldKind *kind, BinderSlot *bslot, ExprId *e);
+/* a template node's binder field: the environment slot of the binder's local
+ * and the field's recipe */
+void tnode_template_binder(TNodeId Q, BinderSlot slot, FieldIndex field, uint64_t *env_slot, ExprId *body_e) {
+    Sort so; FieldIndex df; size_t lslot; node_binder(Q, slot, &so, &df, &lslot);
+    FieldKind kd; BinderSlot bs; node_field(Q, field, &kd, &bs, body_e);
+    require(bs == slot, "template field is not under this binder");
+    *env_slot = TPL.defs[tnode_def(Q)].nparams + lslot;
+}
 const char *tdef_name(TDefId d) { return d >= 1 && d < TD_COUNT ? TPL.defs[d].name : "?"; }
 
 /* ------------------------------------------------------------------ */
