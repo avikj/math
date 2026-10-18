@@ -75,7 +75,7 @@ struct Cont {
  * publication notice, proposal preparation, installation, the replacement
  * request and instantiation-edge watches are administrative jobs of the same
  * scheduler, each one bounded step owned by the Cut's producer */
-enum { OP_NONE = 0, OP_SUB, OP_REPLAY, OP_FACTNOTE, OP_PREPARE, OP_INSTALL, OP_REQUEST, OP_EDGE, OP_EXT };
+enum { OP_NONE = 0, OP_SUB, OP_REPLAY, OP_FACTNOTE, OP_PREPARE, OP_INSTALL, OP_REQUEST, OP_EDGE, OP_EXT, OP_CHILDWATCH };
 typedef struct { bool is_resume, is_pair, is_notify; EntryId entry; Cont *k; EvalResult *r; Active pair; const struct PrefixFact *fact; size_t idx, limit; bool catchup;
                  uint8_t op; void *p, *p2; RefId r1, r2; uint64_t sigma; } Task;   /* is_notify: §84.2 deliver `fact` of `entry` to its waiter `idx` (one waiter per task) */
 typedef struct { VEC(EntryId) entries; VEC(RefId) refs;
@@ -110,12 +110,23 @@ typedef struct Cut {
 /* a subscription: owned by its predecessor's next pointer (or the shape head) and by each job at it;
  * a node owns its next pointer's reference, so a detached node still leads into the list */
 typedef struct Sub { int refs; Cut *cut; Gen *gen; uint64_t sigma; struct Sub *next; } Sub;
-typedef struct Proposal {
+/* HANDOFF §12 PreparedAdoption: the retained Cut and the captured (generation g, residual u = g->r, guard
+ * ψ = cut->psi); the pinned immutable fact P = (φ, s, r, ρ, Δ) and its simultaneous map σ with the exact
+ * boundary correspondence; ψ ⊢ φ[σ]; the checked connector χ : u ⇒* s[σ] (REFL when s[σ] = u, else the
+ * receipt of a committed fact of u's own shape from u to s[σ], whose guard ψ entails and whose premises
+ * join the certificate); q' = q ; χ ; ρ[σ]; the residual v = r[σ] under its key face; the union
+ * certificate Δq ∪ Δχ ∪ Δ; the snapshot it was validated against; and the preallocated replacement
+ * generation and ticket, installed or released whole. */
+typedef struct PreparedAdoption {
     Cut *cut; Gen *gen; const struct PrefixFact *f; uint64_t sigma;
     int phase; size_t k; bool revalidating;
     RefId v; FaceId veta; uint64_t adrc, q; Words d; uint64_t stamp;
-} Proposal;
-typedef struct { int state; RefId v; FaceId veta; uint64_t adrc; } PrepMemo;   /* state: 0 absent, 1 applicable, 2 inapplicable, 3 being computed (a join) */
+    const struct PrefixFact *conn;      /* the connector's fact (NULL: χ = REFL) */
+    const struct PrefixFact *scan;      /* connector search cursor (one fact per step) */
+    Gen *ng; Cont *tk;                  /* preallocated replacement */
+} PreparedAdoption;
+typedef PreparedAdoption Proposal;
+typedef struct { int state; RefId v; FaceId veta; uint64_t adrc; bool direct; } PrepMemo;   /* state: 0 absent, 1 applicable, 2 inapplicable, 3 being computed (a join); direct: s[σ] = r (else a connector is needed) */
 static void ticket_release(Cont *k);
 static void sub_unref(Sub *n);
 static void eval_edge_hook(RefId dest, RefId src, uint64_t sigma);
@@ -1062,6 +1073,7 @@ static void adapter_inherit(Entry *e) {
     pthread_mutex_unlock(&e->mu);
 }
 static void fact_index(PrefixFact *f, ShapeId s);
+static Task op_task(uint8_t op);
 static void prefix_publish_on(EntryId dest, RefId target, uint64_t receipt, const PrefixFact *parent, EntryId origin, FaceId guard, EntryId premise, bool branch, const uint64_t *xd, size_t nxd) {
     if (!dest || !receipt || !target) return;
     Entry *e = ENT(dest);
@@ -1101,6 +1113,9 @@ static void prefix_publish_on(EntryId dest, RefId target, uint64_t receipt, cons
     Task t; memset(&t, 0, sizeof t); t.is_notify = true; t.entry = dest; t.fact = f; t.idx = 0; t.limit = notify_limit;
     enqueue(t);
     fact_index(f, e->shape);
+    /* HANDOFF §12: a slot waiting on this producer may adopt a later fact about the producer's committed residual,
+     * through this fact as its connector: each waiting ticket registers a watch on that residual's shape */
+    Task w = op_task(OP_CHILDWATCH); w.entry = dest; w.fact = f; w.idx = 0; w.limit = notify_limit; enqueue(w);
 }
 static void prefix_publish(EntryId dest, RefId target, uint64_t receipt, const PrefixFact *parent, EntryId origin) {
     if (dest) prefix_publish_on(dest, target, receipt, parent, origin, ENT(dest)->face, 0, false, NULL, 0);
@@ -1178,7 +1193,8 @@ EvalPrefixEvents eval_prefix_events(void) {
 static ShapeSide *shape_side(ShapeId s, bool create) { pthread_mutex_lock(&E.entries_mu); ShapeSide *ss = shape_side_locked(s, create); pthread_mutex_unlock(&E.entries_mu); return ss; }
 static Task op_task(uint8_t op) { Task t; memset(&t, 0, sizeof t); t.op = op; return t; }
 static bool cut_live(Cut *c, Gen *g) { pthread_mutex_lock(&c->mu); bool l = c->state == CUT_WAITING && c->cur == g; pthread_mutex_unlock(&c->mu); return l; }
-static void proposal_free(Proposal *p) { words_free(&p->d); gen_unref(p->gen); cut_unref(p->cut); free(p); fine_bump(FC_CELLS_RELEASED); }
+static void ticket_release(Cont *k);
+static void proposal_free(Proposal *p) { if (p->tk) ticket_release(p->tk); if (p->ng) gen_unref(p->ng); words_free(&p->d); gen_unref(p->gen); cut_unref(p->cut); free(p); fine_bump(FC_CELLS_RELEASED); }
 
 /* §2.2, publication side of the partition: under sub_mu the fact enters its
  * shape's history and the current subscriber list is captured; every
@@ -1299,9 +1315,9 @@ static void prepare_step(Task t) {
         if (m.state == 3) { XINC(cevx, EvalCutEvents, prep_joined); enqueue(t); return; }   /* joined: retried after the computing job publishes */
         if (m.state == 0) {
             bool ident = map_is_identity(p->sigma);
-            bool ok = (ident ? f->source : reindex(f->source, p->sigma)) == g->r;
-            FaceId need = 0;
-            if (ok) { need = ident ? f->face : fc_reindex(f->face, p->sigma); ok = fc_entails(c->psi, need); }
+            m.direct = (ident ? f->source : reindex(f->source, p->sigma)) == g->r;
+            FaceId need = ident ? f->face : fc_reindex(f->face, p->sigma);
+            bool ok = fc_entails(c->psi, need);
             m.v = 0; m.veta = 0; m.adrc = 0;
             if (ok) {
                 m.v = ident ? f->residual : reindex(f->residual, p->sigma);
@@ -1317,24 +1333,44 @@ static void prepare_step(Task t) {
         for (Gen *h = g; ok && h; h = h->prev) if (shape_of(h->r) == shape_of(m.v) && h->eta == m.veta) ok = false;   /* no return to a key this slot already passed */
         if (!ok) { XINC(cevx, EvalCutEvents, prep_rejected); proposal_free(p); return; }
         p->v = m.v; p->veta = m.veta; p->adrc = m.adrc;
+        if (!m.direct) {   /* the fact's source is not the current residual: a connector u ⇒* s[σ] is required —
+                            * a committed fact of the slot's own child producer (source u), searched one per step */
+            EntryId ce = eval_entry_lookup(g->r, g->eta);
+            p->scan = ce ? eval_entry_prefix(ce) : NULL;
+            p->phase = 4; enqueue(t); return;
+        }
         p->phase = 1; p->k = 0; enqueue(t); return;
     }
-    if (p->phase == 1) {   /* the fact's premises, then the generation's inherited certificate, against the stamp */
-        if (p->k + 1 < f->ngdeps + g->nd) {
-            const uint64_t *pr = p->k < f->ngdeps ? f->gdeps + p->k : g->d + (p->k - f->ngdeps);
+    if (p->phase == 4) {   /* connector search: one committed fact of the child producer per step */
+        XINC(cevx, EvalCutEvents, connector_steps);
+        const PrefixFact *h = p->scan;
+        if (!h) { XINC(cevx, EvalCutEvents, connector_missing); XINC(cevx, EvalCutEvents, prep_rejected); proposal_free(p); return; }   /* two facts from one old source do not supply it */
+        p->scan = h->next;
+        RefId target = map_is_identity(p->sigma) ? f->source : reindex(f->source, p->sigma);
+        if (h != f && h->source == g->r && h->residual == target && fc_entails(c->psi, h->face)) { p->conn = h; p->phase = 1; p->k = 0; XINC(cevx, EvalCutEvents, connectors); }
+        enqueue(t); return;
+    }
+    if (p->phase == 1) {   /* the fact's premises, the connector's premises, then the generation's inherited certificate, against the stamp */
+        size_t nc = p->conn ? p->conn->ngdeps : 0;
+        if (p->k + 1 < f->ngdeps + nc + g->nd) {
+            const uint64_t *pr = p->k < f->ngdeps ? f->gdeps + p->k : p->k < f->ngdeps + nc ? p->conn->gdeps + (p->k - f->ngdeps) : g->d + (p->k - f->ngdeps - nc);
             if (global_revision(pr[0]) != pr[1]) { { XCount *sl = p->revalidating ? XSLOT(cevx, EvalCutEvents, revalidation_failed) : XSLOT(cevx, EvalCutEvents, prep_rejected); xc_inc(sl); XEV(cevx, sl); } proposal_free(p); return; }
             p->k += 2; enqueue(t); return;
         }
         if (p->revalidating) { Task n = op_task(OP_INSTALL); n.p = p; enqueue(n); return; }
         p->phase = 2; p->k = 0; enqueue(t); return;
     }
-    size_t total = g->nd + f->ngdeps;
+    size_t ncon = p->conn ? p->conn->ngdeps : 0;
+    size_t total = g->nd + ncon + f->ngdeps;
     if (p->k + 1 < total) {
-        const uint64_t *src = p->k < g->nd ? g->d + p->k : f->gdeps + (p->k - g->nd);
+        const uint64_t *src = p->k < g->nd ? g->d + p->k : p->k < g->nd + ncon ? p->conn->gdeps + (p->k - g->nd) : f->gdeps + (p->k - g->nd - ncon);
         words_push(&p->d, src[0]); words_push(&p->d, src[1]);
         p->k += 2; enqueue(t); return;
     }
-    p->q = rc_seq(g->q, p->adrc);
+    p->q = p->conn ? rc_seq(rc_seq(g->q, p->conn->receipt), p->adrc) : rc_seq(g->q, p->adrc);   /* q' = q ; χ ; ρ[σ] */
+    /* the replacement generation and its ticket are prepared here, so installation only links them */
+    p->ng = gen_new(p->v, p->veta, p->q, p->d.w, p->d.n, p->gen); words_init(&p->d);
+    p->tk = ticket_new(c, p->ng);
     Task n = op_task(OP_INSTALL); n.p = p; enqueue(n);
 }
 /* §4 installation under the Cut's lock: WAITING, the captured generation, the
@@ -1353,10 +1389,9 @@ static void install_step(Task t) {
         p->stamp = now; p->phase = 1; p->k = 0; p->revalidating = true;
         Task n = op_task(OP_PREPARE); n.p = p; enqueue(n); return;
     }
-    Gen *ng = gen_new(p->v, p->veta, p->q, p->d.w, p->d.n, p->gen); words_init(&p->d);
+    Gen *ng = p->ng; Cont *tk = p->tk; p->ng = NULL; p->tk = NULL;   /* the prepared handles move into the Cut and the request */
     Gen *old = c->cur; c->cur = ng; c->installs++;
     __atomic_store_n(&old->dead, true, __ATOMIC_RELEASE);
-    Cont *tk = ticket_new(c, ng);
     reserve_job();
     pthread_mutex_unlock(&c->mu);
     XINC(cevx, EvalCutEvents, installs); XINC(cevx, EvalCutEvents, tickets);
@@ -1373,6 +1408,21 @@ static void install_step(Task t) {
         if (!fc_is_false(guard)) prefix_publish_on(c->owner, target, receipt, f, f->origin, guard, c->K.prefix_premise, c->K.kind == K_BRANCH, ng->d, ng->nd);
     }
     proposal_free(p);
+}
+static void childwatch_step(Task t) {
+    Entry *e = ENT(t.entry);
+    if (t.idx >= t.limit) return;
+    pthread_mutex_lock(&e->mu);
+    Cont *k = t.idx < e->waiters.len ? e->waiters.data[t.idx] : NULL;
+    Cut *c = k && k->cut ? k->cut : NULL; Gen *g = c ? k->gen : NULL;
+    if (c) { cut_ref(c); gen_ref(g); }
+    bool more = t.idx + 1 < e->waiters.len;
+    pthread_mutex_unlock(&e->mu);
+    if (c) {
+        if (g->r == e->ref && cut_live(c, g)) { XINC(cevx, EvalCutEvents, child_watches); sub_register(c, g, map_identity(), shape_of(t.fact->residual)); }
+        gen_unref(g); cut_unref(c);
+    }
+    if (more) { t.idx++; enqueue(t); }
 }
 static void request_step(Task t) {
     Cont *k = t.k; RefId v = k->gen->r; FaceId psi = k->cut->psi;
@@ -1413,6 +1463,7 @@ static void op_dispatch(Task t) {
     case OP_INSTALL: install_step(t); break;
     case OP_REQUEST: request_step(t); break;
     case OP_EDGE: edge_step(t); break;
+    case OP_CHILDWATCH: childwatch_step(t); break;
     case OP_EXT: ((void (*)(void *))t.p)(t.p2); break;
     default: die("unknown evaluator job");
     }
@@ -1431,6 +1482,7 @@ static EvalTaskInfo task_info(const Task *t) {
     case OP_INSTALL: in.kind = ET_INSTALL; in.producer = ((Proposal *)t->p)->cut->owner; in.fact = ((Proposal *)t->p)->f; break;
     case OP_REQUEST: in.kind = ET_REQUEST; in.producer = t->k->dest; in.ticket = true; break;
     case OP_EDGE: in.kind = ET_EDGE; break;
+    case OP_CHILDWATCH: in.kind = ET_SUBSCRIBE; in.producer = t->entry; break;
     case OP_EXT: in.kind = ET_EXTERNAL; in.tag = (int)t->idx; break;
     }
     return in;

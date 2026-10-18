@@ -274,3 +274,9 @@ size_t ev_occ_intersection(const uint64_t *a, size_t na, const uint64_t *b, size
     while (i < na && j < nb) { if (a[i] < b[j]) i++; else if (b[j] < a[i]) j++; else { v[k++] = a[i++]; j++; } }
     *out = v; return k;
 }
+size_t ev_occ_difference(const uint64_t *a, size_t na, const uint64_t *b, size_t nb, uint64_t **out) {
+    uint64_t *v = (malloc)((na + 1) * sizeof *v); if (!v) abort();
+    size_t i = 0, j = 0, k = 0;
+    while (i < na) { if (j < nb && b[j] < a[i]) j++; else if (j < nb && b[j] == a[i]) { i++; j++; } else v[k++] = a[i++]; }
+    *out = v; return k;
+}

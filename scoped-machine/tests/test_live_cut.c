@@ -488,6 +488,51 @@ static void t_edge(void) {
     stop();
 }
 
+/* ---- HANDOFF §12 connector: u = (λz. (λw. p@i) x) x. The client's slot waits on its child u, whose first
+ * committed fact is A : u ⇒ m with m = (λw. p@i) x; the child forwards to m, whose producer commits B : m ⇒ p@i.
+ * The slot watches m's shape (its child's committed residual) and adopts B through the connector A, with
+ * q' = q ; A ; B[σ]; the child's own delivery is held and, released afterwards, disposed of without a resume. */
+typedef struct { RefId uref; } CHold;
+static bool chold_pred(const EvalTaskInfo *in, void *ctx) {
+    CHold *h = ctx;
+    return in->kind == ET_RESUME && in->ticket && in->child && eval_entry_ref(in->child) == h->uref;
+}
+static FaceId key_face_of(RefId t, FaceId f) { size_t n; const uint64_t *S = dimset_get(ref_support(t), &n); return fc_project(f, S, n); }
+static void t_connector(void) {
+    start(); World w; world(&w);
+    TermVarId z = declare_term(w.A, fc_true()), y = declare_term(w.A, fc_true());
+    RefId m = mk_app(mk_lam_lv(0, y, w.A, p_at(&w, iv_var(w.i))), w.x);
+    RefId u = mk_app(mk_lam_lv(0, z, w.A, m), w.x);
+    uint64_t di[] = { w.i };
+    SymbolId W = wrap(&w, "conn_client", u, 1, di);
+    RefId I = global_ref(W); FaceId If = fc_lit(w.i, 0);
+    CHold h = { u };
+    eval_set_hold(chold_pred, &h);
+    WhnfStatus s; whnf(I, If, &s); eval_run();
+    EntryId Ie = eval_entry_lookup(I, If);
+    EvalCutEvents c = cev();
+    EvalResult *r = whnf(I, If, &s);
+    EXPECT(c.connectors >= 1 && c.installs >= 1 && c.child_watches >= 1, "the slot adopted the child's successor fact through a connector (connectors=%zu installs=%zu child watches=%zu)", c.connectors, c.installs, c.child_watches);
+    EXPECT(Ie && eval_entry_state(Ie) == E_READY && s == W_OK && r && r->ref == w.x, "the client answers x (= p@0) by adoption while its child's own delivery is held");
+    /* HANDOFF §8: the client's actual incremental work relative to the available producer history is its support
+     * minus the producer's (the generic work is a sunk cost here and appears once in historical work) */
+    { ev_quiesce(); EvPrefix q = ev_prefix();
+      EntryId Ce = eval_entry_lookup(u, key_face_of(u, If)), Me = eval_entry_lookup(m, key_face_of(m, If));
+      uint64_t *sc, *sm, *inc; size_t nc = eval_entry_support(Ie, &sc), nm = Me ? eval_entry_support(Me, &sm) : 0;
+      if (!Me) sm = NULL;
+      size_t ni = ev_occ_difference(sc, nc, sm, nm, &inc);
+      EvFilter fa = { 0, -1, 0, sc, nc }, fi = { 0, -1, 0, inc, ni };
+      uint64_t all = ev_count_records(&q, &fa), incr = ev_count_records(&q, &fi);
+      EXPECT(Me && Ce && nm > 0 && incr < all && incr > 0, "incremental records of the client given m's producer history: %llu of %llu", (unsigned long long)incr, (unsigned long long)all);
+      printf("connector workers=%zu: client support %zu producers (%llu records); given m's history: %zu producers (%llu records)\n", g_workers, nc, (unsigned long long)all, ni, (unsigned long long)incr);
+      (free)(sc); if (sm) (free)(sm); (free)(inc); ev_prefix_free(&q); }
+    size_t stale0 = c.deliveries_stale;
+    eval_set_hold(NULL, NULL); eval_release_held(); eval_run();
+    EXPECT(cev().deliveries_stale >= stale0 + 1 && eval_entry_state(Ie) == E_READY, "the child's delivery, released, is disposed of without a second resume (stale=%zu)", cev().deliveries_stale - stale0);
+    printf("connector workers=%zu: connectors=%zu connector steps=%zu missing=%zu child watches=%zu installs=%zu stale deliveries=%zu\n", g_workers, cev().connectors, cev().connector_steps, cev().connector_missing, cev().child_watches, cev().installs, cev().deliveries_stale);
+    stop();
+}
+
 int main(int argc, char **argv) {
     setvbuf(stdout, NULL, _IONBF, 0);
     const char *m = argc > 1 ? argv[1] : "all";
@@ -503,6 +548,7 @@ int main(int argc, char **argv) {
     if (all || !strcmp(m, "budget")) t_budget();
     if (all || !strcmp(m, "teardown")) t_teardown();
     if (all || !strcmp(m, "edge")) t_edge();
+    if (all || !strcmp(m, "connector")) t_connector();
     printf("test_live_cut %s: %d failures\n", m, fails);
     return fails ? 1 : 0;
 }

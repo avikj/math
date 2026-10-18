@@ -79,6 +79,8 @@ uint64_t ev_count_records(const EvPrefix *p, const EvFilter *f);
 size_t ev_occ_union(const uint64_t *a, size_t na, const uint64_t *b, size_t nb, uint64_t **out);
 size_t ev_occ_intersection(const uint64_t *a, size_t na, const uint64_t *b, size_t nb, uint64_t **out);
 void ev_occ_sort(uint64_t *v, size_t *n);   /* sort and deduplicate in place */
+/* HANDOFF §8: incremental work from an available history H0 is W(support(P) \ support(H0)) */
+size_t ev_occ_difference(const uint64_t *a, size_t na, const uint64_t *b, size_t nb, uint64_t **out);
 /* shadow comparison of every registered family at a quiescent prefix: returns
  * the number of mismatching dimensions (reports each on stderr when verbose) */
 size_t ev_shadow_check(const EvPrefix *p, bool verbose);

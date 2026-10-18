@@ -203,6 +203,7 @@ typedef struct {
     size_t installs, install_stale_generation, install_not_waiting, revalidations, revalidation_failed;
     size_t tickets, deliveries_current, deliveries_stale, resumes, retired_tickets, cuts_freed;
     size_t subs_unlinked, subs_freed, prep_joined;   /* dead subscriptions detached from their shape lists and freed; phase-0 joins on a computing record */
+    size_t connector_steps, connectors, connector_missing, child_watches;   /* HANDOFF §12: connector search steps; adoptions through a checked connector u ⇒* s[σ]; facts with no connector from the current residual; watches registered on a waiting child's committed residual shape */
 } EvalCutEvents;
 EvalCutEvents eval_cut_events(void);
 size_t eval_entry_active_deps(EntryId e, EntryId **out);   /* the active-slot edges (historical edges excluded); caller frees *out */
