@@ -25,20 +25,21 @@ typedef struct { Sort sort; uint64_t id; RefId type; uint64_t level; FaceId requ
 
 typedef struct { Val body; RefId type; uint64_t level; FaceId guard; } TypedPartial;
 
-/* ---- generic depth-aware traversal over scoped values ---- */
-typedef struct {
-    RefId (*term)(uint64_t x, unsigned depth, void *ctx);        /* 0 = keep the occurrence */
-    IntervalId (*dim)(uint64_t i, unsigned depth, void *ctx);    /* 0 = keep */
-    uint64_t key;                                                /* memo key of this traversal */
-    void *ctx;
-    void (*enter)(ScopeId S, unsigned depth, void *ctx);         /* optional: a scope's records are about to be traversed at depth */
-    void (*leave)(ScopeId S, unsigned depth, void *ctx);
-} Trav;
-RefId trav_ref(RefId t, const Trav *tv, unsigned depth);
-IntervalId trav_iv(IntervalId r, const Trav *tv, unsigned depth);
-FaceId trav_fc(FaceId f, const Trav *tv, unsigned depth);
-ScopeId trav_scope(ScopeId S, const Trav *tv, unsigned depth);    /* the scope's records are at depth+1 */
-Val trav_val(Val v, const Trav *tv, unsigned depth);
+/* ---- scoped traversal (scopefam.c) ----
+ * A traversal key [kind, depth, context]: CLOSE (context [sort, id]* of the
+ * captured locals), APPLY (context [sort, value]* arguments), RE (context a
+ * map), LOWER. A scope's own records sit one level deeper than its occurrence. */
+enum { TR_CLOSE = 1, TR_APPLY, TR_RE, TR_LOWER };
+uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx);
+RefId trav_ref(RefId t, uint64_t tk);
+IntervalId trav_iv(IntervalId r, uint64_t tk);
+FaceId trav_fc(FaceId f, uint64_t tk);
+ScopeId trav_scope(ScopeId S, uint64_t tk);          /* an occurrence at tk's depth: records one deeper */
+ScopeId scope_records_traverse(ScopeId S, uint64_t tk);   /* records at tk's depth */
+Val trav_val(Val v, uint64_t tk);
+ScopeId scope_with_side(ScopeId S);                  /* writes S's side data (once) and returns S */
+ScopeId capture_request(const uint64_t *req, size_t n);
+void scope_families_init(void);
 
 /* ---- scopes ---- */
 ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result_type, uint64_t result_level, FaceId guard);

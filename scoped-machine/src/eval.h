@@ -149,7 +149,8 @@ void subst_families_init(void);   /* maps and substitution (subst.c) */
 void construct_families_init(void);   /* constructions, fields, binders, variables (construct.c) */
 
 /* program-counter macros for step functions (the step's value parameter is
- * named v; one macro use per source line) */
+ * named v; one macro use per source line; never inside a nested switch
+ * statement, whose case labels would capture the resumption points) */
 #define FR_BEGIN(k) switch ((k)->pc) { case 0:;
 #define FR_AWAIT(k, var, f, a, b) do { (k)->pc = __LINE__; frame_request((k), (f), (a), (b)); return; case __LINE__:; (var) = v; } while (0)
 #define FR_CALL(k, var, child) do { (k)->pc = __LINE__; frame_call((k), (child)); return; case __LINE__:; (var) = v; } while (0)

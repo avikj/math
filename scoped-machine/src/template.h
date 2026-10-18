@@ -48,7 +48,6 @@ const char *tdef_name(TDefId d);
 size_t tnode_nfields(TNodeId Q); size_t tnode_nbinders(TNodeId Q);
 /* the field kind / binder slot of a template node's field */
 FieldKind tnode_field_kind(TNodeId Q, size_t k); BinderSlot tnode_field_slot(TNodeId Q, size_t k); Sort tnode_binder_sort(TNodeId Q, BinderSlot s);
-RefId tview_traverse(RefId t, const Trav *tv, unsigned depth);
 
 /* checking support: the parameter signature of a definition, instantiated
  * by an environment. For a reference parameter the declared type; for a

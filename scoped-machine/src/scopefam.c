@@ -1,0 +1,320 @@
+/* scopefam.c — scoped traversal, scope records and capture as pure producer
+ * families (§50).
+ *
+ * A traversal is named by an interned key [kind, depth, context]:
+ *   CLOSE (context: [sort, id]* of the captured locals) — a captured
+ *         identity becomes the (depth, slot) atom;
+ *   APPLY (context: [sort, value]* arguments) — a depth atom becomes its
+ *         argument, a deeper atom is lowered;
+ *   RE    (context: a map) — free identities are substituted;
+ *   LOWER — the single binder level after ∀ is removed.
+ * TREF/TIV/TFC traverse a reference, interval or face at the key's depth; a
+ * scope's records sit one level deeper (TSCOPE with depth+1). A scope record
+ * and its side data (free support and variables, bound atoms excluded) are
+ * produced together by SCOPESIDE, so a scope id is never returned before its
+ * side data is written. Each step does a constant amount of work. */
+#include "eval.h"
+#include "template.h"
+
+#define SSIDE(id) ((ScopeSide *)chunked_at(&M.scope_side, (id) - 1))
+#define TMAXSLOT 64     /* template environments: at most this many slots (template.c MAXSLOT) */
+
+static Family F_TIMGT, F_TIMGD, F_TREF, F_TIV, F_TFC, F_TSCOPE, F_SCOPESIDE, F_SETFREE, F_CAPTURE;
+static Family F_MAPT, F_MAPD, F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_CINST, F_DSUNION, F_VSUNION, F_IVDIMS, F_FCDIMS;
+
+uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx) { uint64_t w[3] = { kind, depth, ctx }; return interner_intern(&M.keys, w, 3, NULL); }
+static void tk_get(uint64_t tk, unsigned *kind, unsigned *depth, uint64_t *ctx) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); *kind = (unsigned)w[0]; *depth = (unsigned)w[1]; *ctx = w[2]; }
+static uint64_t tk_deeper(uint64_t tk) { unsigned kd, d; uint64_t c; tk_get(tk, &kd, &d, &c); return trav_key(kd, d + 1, c); }
+
+/* APPLY / LOWER images of a bound atom (constant work); false = keep */
+static bool bound_image(unsigned kind, unsigned depth, uint64_t ctx, uint64_t x, bool dim, uint64_t *out) {
+    if (!is_bound_id(x)) return false;
+    uint32_t d = bound_depth(x), s = bound_slot(x);
+    if (d < depth) return false;
+    if (kind == TR_LOWER) require(d != depth, "forall: a local remained");
+    else if (d == depth) {
+        size_t n; const uint64_t *a = interner_get(&M.keys, ctx, &n);
+        require(2 * (size_t)s + 1 < n && a[2 * s] == (uint64_t)(dim ? VS_INTERVAL : VS_REF) && a[2 * s + 1],
+                dim ? "scope application: missing or ill-sorted interval argument" : "scope application: missing or ill-sorted term argument");
+        *out = a[2 * s + 1];
+        return true;
+    }
+    *out = dim ? iv_var(bound_id(d - 1, s)) : ref_var(bound_id(d - 1, s));
+    return true;
+}
+
+/* ---------------- identity images ----------------
+ * operand: the dimension (dim) or the VAR reference itself (kept when
+ * unchanged); key: the traversal */
+typedef struct { const uint64_t *c; size_t nc, q; } ImgLoc;
+static void image_step(Cont *k, uint64_t v, bool dim) {
+    ImgLoc *L = FR_LOC(k, ImgLoc);
+    uint64_t r = 0;
+    unsigned kind, depth; uint64_t ctx; tk_get(k->w[1], &kind, &depth, &ctx);
+    uint64_t x = dim ? k->w[0] : ref_var_id(k->w[0]);
+    uint64_t keep = dim ? iv_var(x) : k->w[0];
+    FR_BEGIN(k);
+    if (kind == TR_APPLY || kind == TR_LOWER) { uint64_t o = 0; FR_FINISH(k, bound_image(kind, depth, ctx, x, dim, &o) ? o : keep); }
+    if (is_bound_id(x)) FR_FINISH(k, keep);
+    if (kind == TR_RE) {
+        if (dim) FR_AWAIT(k, r, F_MAPD, ctx, x);
+        else FR_AWAIT(k, r, F_MAPT, ctx, x);
+        FR_FINISH(k, r);
+    }
+    /* CLOSE: the captured locals, one per step */
+    L->c = interner_get(&M.keys, ctx, &L->nc);
+    for (L->q = 0; 2 * L->q < L->nc; L->q++) {
+        if (L->c[2 * L->q] == (uint64_t)(dim ? S_DIM : S_TERM) && L->c[2 * L->q + 1] == x)
+            FR_FINISH(k, dim ? iv_var(bound_id(depth, (uint32_t)L->q)) : ref_var(bound_id(depth, (uint32_t)L->q)));
+        FR_YIELD(k);
+    }
+    FR_FINISH(k, keep);
+    FR_END(k);
+}
+static void timgt_step(Cont *k, uint64_t v) { image_step(k, v, false); }
+static void timgd_step(Cont *k, uint64_t v) { image_step(k, v, true); }
+
+/* ---------------- intervals and faces: each image inserted once ---------------- */
+typedef struct { const uint64_t *x; size_t nx, px, i; uint64_t acc, cl; } SubLoc;
+static void tiv_step(Cont *k, uint64_t v) {
+    SubLoc *L = FR_LOC(k, SubLoc);
+    uint64_t im = 0;
+    FR_BEGIN(k);
+    L->x = interner_get(&M.intervals, k->w[0], &L->nx);
+    L->acc = iv_zero();
+    for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
+        L->cl = iv_one();
+        for (L->i = L->px; L->x[L->i] != DNF_SEP; L->i++) {
+            FR_AWAIT(k, im, F_TIMGD, IV_ATOM_DIM(L->x[L->i]), k->w[1]);
+            if (IV_ATOM_NEG(L->x[L->i])) FR_AWAIT(k, im, F_IVNEG, im, 0);
+            FR_AWAIT(k, L->cl, F_IVMEET, L->cl, im);
+        }
+        FR_AWAIT(k, L->acc, F_IVJOIN, L->acc, L->cl);
+    }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
+}
+static void tfc_step(Cont *k, uint64_t v) {
+    SubLoc *L = FR_LOC(k, SubLoc);
+    uint64_t im = 0;
+    FR_BEGIN(k);
+    L->x = interner_get(&M.faces, k->w[0], &L->nx);
+    L->acc = fc_false();
+    for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
+        L->cl = fc_true();
+        for (L->i = L->px; L->x[L->i] != DNF_SEP; L->i++) {
+            FR_AWAIT(k, im, F_TIMGD, FC_LIT_DIM(L->x[L->i]), k->w[1]);
+            FR_AWAIT(k, im, F_FCEND, im, (uint64_t)FC_LIT_EPS(L->x[L->i]));
+            FR_AWAIT(k, L->cl, F_FCMEET, L->cl, im);
+        }
+        FR_AWAIT(k, L->acc, F_FCJOIN, L->acc, L->cl);
+    }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
+}
+
+/* ---------------- references: the environment, entry by entry ---------------- */
+typedef struct { size_t n, q; uint64_t slot; TVal val; bool changed; WordBuf out; bool created; TVal vals[TMAXSLOT]; uint64_t slots[TMAXSLOT]; } TrLoc;
+static void tref_step(Cont *k, uint64_t v) {
+    TrLoc *L = FR_LOC(k, TrLoc);
+    RefId t = k->w[0];
+    uint64_t r = 0, id = 0;
+    FR_BEGIN(k);
+    if (ref_is_var(t)) { FR_AWAIT(k, r, F_TIMGT, t, k->w[1]); FR_FINISH(k, r); }
+    L->n = tenv_size(ref_tenv(t)); L->changed = false;
+    if (tview_is_construction(t)) {
+        wordbuf_init(&L->out);
+        for (L->q = 0; L->q < L->n; L->q++) {
+            tenv_entry(ref_tenv(t), L->q, &L->slot, &L->val);
+            if (L->val.sort == PS_REF) FR_AWAIT(k, r, F_TREF, L->val.id, k->w[1]);
+            else FR_AWAIT(k, r, F_TIV, L->val.id, k->w[1]);
+            if (r != L->val.id) L->changed = true;
+            wordbuf_push(&L->out, L->slot); wordbuf_push(&L->out, L->val.sort); wordbuf_push(&L->out, r);
+        }
+        if (!L->changed) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, t); }
+        FR_CALL(k, id, intern_sub(k, &M.tenvs, &L->out, &L->created));
+        FR_AWAIT(k, r, F_CINST, ref_tnode(t), id);
+        FR_FINISH(k, r);
+    }
+    /* a template instance: every environment value; a scope one level deeper */
+    require(L->n <= TMAXSLOT, "template environment width");
+    for (L->q = 0; L->q < L->n; L->q++) {
+        tenv_entry(ref_tenv(t), L->q, &L->slots[L->q], &L->val);
+        /* (no switch statement here: the program-counter labels must belong
+         * to the step's own switch) */
+        if (L->val.sort == PS_REF) FR_AWAIT(k, r, F_TREF, L->val.id, k->w[1]);
+        else if (L->val.sort == PS_INTERVAL) FR_AWAIT(k, r, F_TIV, L->val.id, k->w[1]);
+        else if (L->val.sort == PS_FACE) FR_AWAIT(k, r, F_TFC, L->val.id, k->w[1]);
+        else if (L->val.sort == PS_SCOPE) FR_AWAIT(k, r, F_TSCOPE, L->val.id, tk_deeper(k->w[1]));
+        else r = L->val.id;
+        if (r != L->val.id) L->changed = true;
+        L->vals[L->q].sort = L->val.sort; L->vals[L->q].id = r;
+    }
+    if (!L->changed) FR_FINISH(k, t);
+    FR_FINISH(k, make_template_view(ref_tnode(t), L->n, L->vals, L->slots));    /* template layer (3b) */
+    FR_END(k);
+}
+
+/* ---------------- scopes ----------------
+ * record: [n, (sort, type, level, required)*, body_sort, type, level, guard, body] */
+static Family val_family(uint64_t sort) { return sort == VS_REF ? F_TREF : sort == VS_INTERVAL ? F_TIV : F_TFC; }
+typedef struct {
+    const uint64_t *s; size_t ns, n, q; uint64_t tk, r; bool changed; WordBuf out; bool created;
+    uint64_t sup, fv, ds;
+} ScLoc;
+/* the records of scope w[0] under traversal w[1] (records at the key's depth) */
+static void tscope_step(Cont *k, uint64_t v) {
+    ScLoc *L = FR_LOC(k, ScLoc);
+    uint64_t r = 0, id = 0;
+    FR_BEGIN(k);
+    L->s = interner_get(&M.scopes, k->w[0], &L->ns); L->n = (size_t)L->s[0]; L->changed = false;
+    wordbuf_init(&L->out); wordbuf_push(&L->out, L->n);
+    for (L->q = 0; L->q < L->n; L->q++) {
+        r = 0;
+        if (L->s[2 + 4 * L->q]) FR_AWAIT(k, r, F_TREF, L->s[2 + 4 * L->q], k->w[1]);
+        if (r != L->s[2 + 4 * L->q]) L->changed = true;
+        wordbuf_push(&L->out, L->s[1 + 4 * L->q]); wordbuf_push(&L->out, r); wordbuf_push(&L->out, L->s[3 + 4 * L->q]);
+        FR_AWAIT(k, r, F_TFC, L->s[4 + 4 * L->q], k->w[1]);
+        if (r != L->s[4 + 4 * L->q]) L->changed = true;
+        wordbuf_push(&L->out, r);
+    }
+    {   const uint64_t *t = L->s + 1 + 4 * L->n;
+        wordbuf_push(&L->out, t[0]); L->r = 0;
+        if (t[1]) FR_AWAIT(k, L->r, F_TREF, t[1], k->w[1]); }
+    {   const uint64_t *t = L->s + 1 + 4 * L->n;
+        if (L->r != t[1]) L->changed = true;
+        wordbuf_push(&L->out, L->r); wordbuf_push(&L->out, t[2]);
+        FR_AWAIT(k, r, F_TFC, t[3], k->w[1]); }
+    {   const uint64_t *t = L->s + 1 + 4 * L->n;
+        if (r != t[3]) L->changed = true;
+        wordbuf_push(&L->out, r);
+        FR_AWAIT(k, r, val_family(t[0]), t[4], k->w[1]); }
+    {   const uint64_t *t = L->s + 1 + 4 * L->n;
+        if (r != t[4]) L->changed = true;
+        wordbuf_push(&L->out, r); }
+    if (!L->changed) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, k->w[0]); }
+    FR_CALL(k, id, intern_sub(k, &M.scopes, &L->out, &L->created));
+    FR_AWAIT(k, r, F_SCOPESIDE, id, 0);
+    FR_FINISH(k, r);
+    FR_END(k);
+}
+
+/* the side data of scope w[0]: the support and free variables of every
+ * record, bound atoms excluded; written before the scope id is published */
+static void scopeside_step(Cont *k, uint64_t v) {
+    ScLoc *L = FR_LOC(k, ScLoc);
+    FR_BEGIN(k);
+    if (SSIDE(k->w[0])->support) FR_FINISH(k, k->w[0]);
+    L->s = interner_get(&M.scopes, k->w[0], &L->ns); L->n = (size_t)L->s[0];
+    L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
+    /* the reference records: local types, result type, body (when a reference) */
+    for (L->q = 0; L->q < L->n + 2; L->q++) {
+        {   const uint64_t *t = L->s + 1 + 4 * L->n;
+            L->r = L->q < L->n ? L->s[2 + 4 * L->q] : L->q == L->n ? t[1] : (t[0] == VS_REF ? t[4] : 0); }
+        if (!L->r) continue;
+        FR_AWAIT(k, L->sup, F_DSUNION, L->sup, ref_support(L->r));
+        FR_AWAIT(k, L->fv, F_VSUNION, L->fv, ref_freevars(L->r));
+    }
+    /* the face and interval records: required faces, guard, body (when not a reference) */
+    for (L->q = 0; L->q < L->n + 2; L->q++) {
+        {   const uint64_t *t = L->s + 1 + 4 * L->n;
+            if (L->q < L->n) { L->r = L->s[4 + 4 * L->q]; L->tk = F_FCDIMS; }
+            else if (L->q == L->n) { L->r = t[3]; L->tk = F_FCDIMS; }
+            else { L->r = t[0] == VS_REF ? 0 : t[4]; L->tk = t[0] == VS_INTERVAL ? F_IVDIMS : F_FCDIMS; } }
+        if (!L->r) continue;
+        FR_AWAIT(k, L->ds, (Family)L->tk, L->r, 0);
+        FR_AWAIT(k, L->sup, F_DSUNION, L->sup, L->ds);
+    }
+    FR_AWAIT(k, L->sup, F_SETFREE, L->sup, 0);
+    FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 1);
+    pthread_mutex_lock(&M.term_mu);
+    { ScopeSide *sd = SSIDE(k->w[0]);
+      if (!sd->support) { sd->freevars = L->fv; __atomic_store_n(&sd->support, L->sup, __ATOMIC_RELEASE); } }
+    pthread_mutex_unlock(&M.term_mu);
+    FR_FINISH(k, k->w[0]);
+    FR_END(k);
+}
+
+/* the free (unbound) part of a dimension set (w[1] = 0) or variable set */
+typedef struct { const uint64_t *x; size_t n, q; WordBuf out; bool created; } FreeLoc;
+static void setfree_step(Cont *k, uint64_t v) {
+    FreeLoc *L = FR_LOC(k, FreeLoc);
+    Interner *t = k->w[1] ? &M.varsets : &M.dimsets;
+    uint64_t id = 0;
+    FR_BEGIN(k);
+    L->x = interner_get(t, k->w[0], &L->n);
+    wordbuf_init(&L->out);
+    for (L->q = 0; L->q < L->n; L->q++) { if (!is_bound_id(L->x[L->q])) wordbuf_push(&L->out, L->x[L->q]); FR_YIELD(k); }
+    if (L->out.n == L->n) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, k->w[0]); }
+    FR_CALL(k, id, intern_sub(k, t, &L->out, &L->created));
+    FR_FINISH(k, id);
+    FR_END(k);
+}
+
+/* capture: request [n, (sort, id, type, level, required)*, body_sort, body, type, level, guard];
+ * the captured identities close into depth-0 atoms in every record */
+typedef struct { const uint64_t *c; size_t nc, n, q; uint64_t tk, r; WordBuf out; bool created; } CapLoc;
+static void capture_step(Cont *k, uint64_t v) {
+    CapLoc *L = FR_LOC(k, CapLoc);
+    uint64_t r = 0, id = 0;
+    FR_BEGIN(k);
+    L->c = interner_get(&M.keys, k->w[0], &L->nc); L->n = (size_t)L->c[0];
+    wordbuf_init(&L->out);
+    for (L->q = 0; L->q < L->n; L->q++) { wordbuf_push(&L->out, L->c[1 + 5 * L->q]); wordbuf_push(&L->out, L->c[2 + 5 * L->q]); FR_YIELD(k); }
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
+    L->tk = trav_key(TR_CLOSE, 0, id);
+    wordbuf_init(&L->out); wordbuf_push(&L->out, L->n);
+    for (L->q = 0; L->q < L->n; L->q++) {
+        r = 0;
+        if (L->c[3 + 5 * L->q]) FR_AWAIT(k, r, F_TREF, L->c[3 + 5 * L->q], L->tk);
+        wordbuf_push(&L->out, L->c[1 + 5 * L->q]); wordbuf_push(&L->out, r); wordbuf_push(&L->out, L->c[4 + 5 * L->q]);
+        FR_AWAIT(k, r, F_TFC, L->c[5 + 5 * L->q], L->tk);
+        wordbuf_push(&L->out, r);
+    }
+    {   const uint64_t *t = L->c + 1 + 5 * L->n;          /* body_sort, body, type, level, guard */
+        wordbuf_push(&L->out, t[0]); L->r = 0;
+        if (t[2]) FR_AWAIT(k, L->r, F_TREF, t[2], L->tk); }
+    {   const uint64_t *t = L->c + 1 + 5 * L->n;
+        wordbuf_push(&L->out, L->r); wordbuf_push(&L->out, t[3]);
+        FR_AWAIT(k, r, F_TFC, t[4], L->tk); }
+    {   const uint64_t *t = L->c + 1 + 5 * L->n;
+        wordbuf_push(&L->out, r);
+        FR_AWAIT(k, r, val_family(t[0]), t[1], L->tk); }
+    wordbuf_push(&L->out, r);
+    FR_CALL(k, id, intern_sub(k, &M.scopes, &L->out, &L->created));
+    FR_AWAIT(k, r, F_SCOPESIDE, id, 0);
+    FR_FINISH(k, r);
+    FR_END(k);
+}
+
+void scope_families_init(void) {
+    F_MAPT = family_lookup("map.term_image"); F_MAPD = family_lookup("map.dim_image");
+    F_IVNEG = family_lookup("iv.negate"); F_IVMEET = family_lookup("iv.meet"); F_IVJOIN = family_lookup("iv.join");
+    F_FCEND = family_lookup("fc.endpoint"); F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join");
+    F_CINST = family_lookup("construction.instance"); F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union");
+    F_IVDIMS = family_lookup("iv.dims"); F_FCDIMS = family_lookup("fc.dims");
+    require(F_MAPT && F_CINST && F_FCDIMS, "the substitution and construction families are registered first");
+    F_TIMGT = family_define("trav.term_image", timgt_step, sizeof(ImgLoc), true);
+    F_TIMGD = family_define("trav.dim_image", timgd_step, sizeof(ImgLoc), true);
+    F_TREF = family_define("trav.ref", tref_step, sizeof(TrLoc), true);
+    F_TIV = family_define("trav.interval", tiv_step, sizeof(SubLoc), true);
+    F_TFC = family_define("trav.face", tfc_step, sizeof(SubLoc), true);
+    F_TSCOPE = family_define("trav.scope", tscope_step, sizeof(ScLoc), true);
+    F_SCOPESIDE = family_define("scope.side", scopeside_step, sizeof(ScLoc), true);
+    F_SETFREE = family_define("set.free", setfree_step, sizeof(FreeLoc), true);
+    F_CAPTURE = family_define("scope.capture", capture_step, sizeof(CapLoc), true);
+}
+
+/* ---------------- the operations (synchronous driver) ---------------- */
+RefId trav_ref(RefId t, uint64_t tk) { return family_call(F_TREF, t, tk); }
+IntervalId trav_iv(IntervalId r, uint64_t tk) { return family_call(F_TIV, r, tk); }
+FaceId trav_fc(FaceId f, uint64_t tk) { return family_call(F_TFC, f, tk); }
+ScopeId trav_scope(ScopeId S, uint64_t tk) { return family_call(F_TSCOPE, S, tk_deeper(tk)); }
+Val trav_val(Val v, uint64_t tk) {
+    Val o = v;
+    o.id = v.sort == VS_REF ? trav_ref(v.id, tk) : v.sort == VS_INTERVAL ? trav_iv(v.id, tk) : trav_fc(v.id, tk);
+    return o;
+}
+ScopeId scope_with_side(ScopeId S) { return family_call(F_SCOPESIDE, S, 0); }
+ScopeId capture_request(const uint64_t *req, size_t n) { return family_call(F_CAPTURE, interner_intern(&M.keys, req, n, NULL), 0); }
+ScopeId scope_records_traverse(ScopeId S, uint64_t tk) { return family_call(F_TSCOPE, S, tk); }

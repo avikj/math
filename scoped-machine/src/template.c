@@ -491,25 +491,6 @@ TEnvId tenv_reindex(TEnvId E, MapId sigma) {
     for (size_t k = 0; k < n; k++) { tenv_entry(E, k, &slots[k], &vals[k]); vals[k] = reindex_tval(vals[k], sigma); }
     TEnvId out = tenv_make(n, slots, vals); free(slots); free(vals); return out;
 }
-static RefId cons_map_vals(RefId t, TVal (*f)(TVal, const void *), const void *ctx) {
-    TNodeId Q = ref_tnode(t); size_t np = tnode_nparams(Q);
-    TVal *vals = malloc((np ? np : 1) * sizeof(TVal)); require(vals, "out of memory");
-    cons_vals(ref_tenv(t), np, vals);
-    for (size_t k = 0; k < np; k++) vals[k] = f(vals[k], ctx);
-    RefId out = tnode_construction_view(Q, vals);
-    free(vals);
-    return out;
-}
-typedef struct { const Trav *tv; unsigned depth; } TravCtx;
-static TVal cons_trav_val(TVal v, const void *ctx) {
-    const TravCtx *c = ctx;
-    switch (v.sort) {
-    case PS_REF: v.id = trav_ref(v.id, c->tv, c->depth); break;
-    case PS_INTERVAL: v.id = trav_iv(v.id, c->tv, c->depth); break;
-    default: die("construction parameter of a non-substitutable sort");
-    }
-    return v;
-}
 RefId tenv_instantiate(TNodeId Q, TEnvId E) {
     if (node_construction(Q)) {
         size_t np = tnode_nparams(Q); TVal *vals = malloc((np ? np : 1) * sizeof(TVal)); require(vals, "out of memory");
@@ -525,23 +506,6 @@ RefId tview_reindex(RefId t, MapId sigma) {
     for (size_t k = 0; k < n; k++) if (env.has[k]) env.val[k] = reindex_tval(env.val[k], sigma);
     return make_view_env(Q, &env);
 }
-RefId tview_traverse(RefId t, const Trav *tv, unsigned depth) {
-    if (tview_is_construction(t)) { TravCtx c = { tv, depth }; return cons_map_vals(t, cons_trav_val, &c); }
-    TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
-    size_t n = env.def->nparams + env.def->nlocals;
-    for (size_t k = 0; k < n; k++) if (env.has[k]) {
-        TVal *v = &env.val[k];
-        switch (v->sort) {
-        case PS_REF: v->id = trav_ref(v->id, tv, depth); break;
-        case PS_INTERVAL: v->id = trav_iv(v->id, tv, depth); break;
-        case PS_FACE: v->id = trav_fc(v->id, tv, depth); break;
-        case PS_SCOPE: v->id = trav_scope(v->id, tv, depth); break;
-        case PS_LEVEL: break;
-        }
-    }
-    return make_view_env(Q, &env);
-}
-
 size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
     if (tview_is_construction(t)) return 0;          /* a construction has no template boundary */
     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
