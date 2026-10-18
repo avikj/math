@@ -79,6 +79,7 @@ static void node_binder(TNodeId Q, BinderSlot s, Sort *sort, FieldIndex *domfiel
 }
 Sort tnode_binder_sort(TNodeId Q, BinderSlot s) { Sort so; FieldIndex f; size_t l; node_binder(Q, s, &so, &f, &l); return so; }
 static ExprId node_required_e(TNodeId Q) { const uint64_t *b = node_btab(Q); return b[1 + 3 * b[0]]; }
+ExprId tnode_head_expr(TNodeId Q, int levels) { return levels ? node_levels_e(Q) : node_payload_e(Q); }
 const char *tdef_name(TDefId d) { return d >= 1 && d < TD_COUNT ? TPL.defs[d].name : "?"; }
 
 /* ------------------------------------------------------------------ */
@@ -534,6 +535,7 @@ void template_families_init(void) {
     F_INTERP = family_define("template.interp", interp_step, sizeof(InLoc), true);
     F_TVMAKE = family_define("template.view", tvmake_step, sizeof(MkLoc), true);
     F_ISCOPE = family_define("template.scope", iscope_step, sizeof(ScLoc), true);
+    construct_bind_template_families();
 }
 
 /* ------------------------------------------------------------------ */

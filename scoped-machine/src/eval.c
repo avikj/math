@@ -14,6 +14,8 @@
 
 struct Gather {
     EntryId dest;
+    Cont *frame;              /* the evaluator frame awaiting every branch */
+    size_t pending;           /* branches outstanding, plus one until the frame has issued them all */
     size_t n, arrived;
     FaceId *faces;
     EvalResult **results;
@@ -462,7 +464,7 @@ static void request_entry(EntryId eid, Cont *k) {
 }
 
 void family_request(Family f, uint64_t a, uint64_t b, Cont *k) {
-    require(f > F_WHNF && f < n_fam, "unregistered family");
+    require(f >= F_WHNF && f < n_fam && FAM[f].resume, "unregistered family");
     request_entry(entry_intern(f, a, b), k);
 }
 
@@ -471,6 +473,12 @@ void family_request(Family f, uint64_t a, uint64_t b, Cont *k) {
  * subroutine's first step, its own next step, a publication or the parent's
  * resumption). An inline frame's step records its outcome for the inline
  * driver, which runs the same step functions on the calling thread. */
+/* A scheduled step that reschedules its own frame records that here, before
+ * the frame can be resumed elsewhere; the executing job reads only this
+ * thread-local flag after the step (never the frame, which may already be
+ * running on another worker). */
+static __thread Cont *tl_step_frame; static __thread bool tl_kept;
+static void keep_frame(Cont *k) { if (k == tl_step_frame) tl_kept = true; }
 typedef enum { IN_NONE = 0, IN_REQUEST, IN_CALL, IN_YIELD, IN_FINISH } InKind;
 typedef struct { InKind kind; Family f; uint64_t a, b, v; Cont *child; } InOut;
 static __thread InOut tl_out;
@@ -486,18 +494,18 @@ static void inline_out(InKind kind, Family f, uint64_t a, uint64_t b, uint64_t v
 }
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b) {
     if (k->inl) { inline_out(IN_REQUEST, f, a, b, 0, NULL); return; }
-    k->keep = true;
+    keep_frame(k);
     family_request(f, a, b, k);
 }
 void frame_call(Cont *k, Cont *child) {
     require(child->kind == K_FRAME && child->dest == 0 && child->inl == k->inl, "a subroutine frame of this caller");
     if (k->inl) { inline_out(IN_CALL, 0, 0, 0, 0, child); return; }
-    child->parent = k; k->keep = true;
+    child->parent = k; keep_frame(k);
     enqueue_resume(child, 0);
 }
 void frame_yield(Cont *k) {
     if (k->inl) { inline_out(IN_YIELD, 0, 0, 0, 0, NULL); return; }
-    k->keep = true;
+    keep_frame(k);
     enqueue_resume(k, 0);
 }
 void frame_finish(Cont *k, uint64_t v) {
@@ -505,6 +513,9 @@ void frame_finish(Cont *k, uint64_t v) {
     if (k->parent) { Cont *p = k->parent; k->parent = NULL; enqueue_resume(p, v); return; }
     family_publish(k->dest, v);
 }
+/* the step hands its entry to another owner (the evaluator's net, §43): the
+ * frame ends, the entry stays running, and the owner publishes it later */
+static void frame_end_unpublished(Cont *k) { require(!k->inl, "an inline frame cannot hand its entry over"); }
 
 /* the interning subroutine: a bounded advance of the insertion per step */
 #define INTERN_BUDGET 8
@@ -627,8 +638,12 @@ static void evaluate(EntryId eid) {
     else {
         /* a frame family: its first step */
         Cont *k = frame_new(f, eid); k->w[0] = eval_entry_a(eid); k->w[1] = eval_entry_b(eid);
+        Cont *sf = tl_step_frame; bool sk = tl_kept;
+        tl_step_frame = k; tl_kept = false;
         FAM[f].resume(k, 0);
-        if (!k->keep) cont_release(k);
+        bool kept = tl_kept;
+        tl_step_frame = sf; tl_kept = sk;
+        if (!kept) cont_release(k);
     }
 }
 
@@ -887,9 +902,12 @@ static void execute(Task t) {
     if (k->next) { Cont *rest = k->next; k->next = NULL; if (rest != INLINE_CLAIM) deliver(rest, t.v, t.src); }   /* hand the chain on: one delivery per job */
     if (k->kind == K_FRAME) __atomic_add_fetch(&FAM[k->fam].steps, 1, __ATOMIC_RELAXED);
     else __atomic_add_fetch(&FAM[F_WHNF].steps, 1, __ATOMIC_RELAXED);
-    k->keep = false;
+    Cont *sf = tl_step_frame; bool sk = tl_kept;
+    tl_step_frame = k; tl_kept = false;
     resume(k, t.v);
-    if (!k->keep) cont_release(k);                 /* single consumer: released once resumed */
+    bool kept = tl_kept;
+    tl_step_frame = sf; tl_kept = sk;
+    if (!kept) cont_release(k);                    /* single consumer: released once resumed */
 }
 
 /* §43 FORWARD_RESULT(K): the receiver's request; delivery publishes into K */

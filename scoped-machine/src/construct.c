@@ -224,6 +224,22 @@ static void construct_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
+/* a head's payload (w[1] = 0) or formation levels (w[1] = 1): constants of a
+ * construction node, interpreted for a template node */
+static Family F_HEAD, F_ENVOF, F_INTERP;
+static void head_step(Cont *k, uint64_t v) {
+    RefId t = k->w[0];
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    {   TNodeId Q = ref_tnode(t);
+        if (tnode_is_construction(Q)) FR_FINISH(k, k->w[1] ? tnode_const_levels(Q) : tnode_const_payload(Q));
+        if (!tnode_head_expr(Q, (int)k->w[1])) FR_FINISH(k, k->w[1] ? LEVELS_NONE : 0); }
+    FR_AWAIT(k, r, F_ENVOF, ref_tnode(t), ref_tenv(t));
+    FR_AWAIT(k, r, F_INTERP, tnode_head_expr(ref_tnode(t), (int)k->w[1]), r);
+    { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
+    FR_END(k);
+}
+
 void construct_families_init(void) {
     F_REINDEX = family_lookup("reindex"); F_IVRE = family_lookup("iv.reindex"); F_FCRE = family_lookup("fc.reindex");
     F_CENV = family_lookup("construction.envmap"); F_CINST = family_lookup("construction.instance"); F_IVDIMS = family_lookup("iv.dims");
@@ -237,7 +253,10 @@ void construct_families_init(void) {
     F_FIELD = family_define("field", field_step, sizeof(FieldLoc), true);
     F_BINDER = family_define("binder", binder_step, sizeof(BindLoc), true);
     F_CONSTRUCT = family_define("construct", construct_step, sizeof(ConLoc), true);
+    F_HEAD = family_define("head.annotation", head_step, 0, true);
 }
+/* the template families register after the construction families; their ids are read lazily */
+void construct_bind_template_families(void) { F_ENVOF = family_lookup("template.envof"); F_INTERP = family_lookup("template.interp"); require(F_ENVOF && F_INTERP, "template families"); }
 
 /* ---------------- the operations (synchronous driver) ---------------- */
 RefId construct_request(const uint64_t *req, size_t n) { return family_call(F_CONSTRUCT, interner_intern(&M.keys, req, n, NULL), 0); }

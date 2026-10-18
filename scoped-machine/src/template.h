@@ -95,6 +95,8 @@ MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);
  * tnode_nparams(Q) entries. *req receives the node's required face there. */
 RefId tnode_generic(TNodeId Q, CtxDecl *decls, FaceId *req);
 MapId tview_generic_map(RefId t);                                    /* generic names ↦ t's images */
-void template_families_init(void);                                   /* interpretation families (registered by eval_init) */
+void template_families_init(void);
+ExprId tnode_head_expr(TNodeId Q, int levels);                     /* a template node's payload / levels recipe (0 = none) */
+void construct_bind_template_families(void);                                   /* interpretation families (registered by eval_init) */
 
 #endif
