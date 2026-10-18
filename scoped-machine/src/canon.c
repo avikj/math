@@ -1,8 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
-#include "nat.h"
 #include "canon.h"
 #include "template.h"
-#include <stdarg.h>
 
 /* ---- graph ---- */
 typedef enum { G_REF = 1, G_NOMINAL, G_FACE, G_INTERVAL, G_CLAUSE, G_LITERAL, G_ENTRY, G_INPUT_VAR, G_INPUT_DIM, G_CONST, G_RESULT, G_KEY } GKind;
@@ -31,13 +29,6 @@ static void text(Canon *c, const char *s) {
 }
 
 static size_t node_new(Canon *c, GKind kind, const char *label) { return graph_node(c->g, (int)kind, label); }
-static size_t node_fmt(Canon *c, GKind kind, const char *fmt, ...) {
-    va_list ap, aq; va_start(ap, fmt); va_copy(aq, ap);
-    int n = vsnprintf(NULL, 0, fmt, aq); va_end(aq); require(n >= 0, "graph label formatting");
-    char *s = malloc((size_t)n + 1); require(s, "out of memory");
-    vsnprintf(s, (size_t)n + 1, fmt, ap); va_end(ap);
-    size_t v = node_new(c, kind, s); free(s); return v;
-}
 static bool lookup(Canon *c, GKind kind, uint64_t id, size_t *out) {
     uint64_t k[2] = { kind, id }, v;
     if (!wordmap_get(&c->index, k, 2, &v)) return false;
@@ -56,19 +47,9 @@ static size_t g_interval(Canon *c, IntervalId r);
 static size_t g_nominal(Canon *c, uint64_t nid);
 
 /* bound atoms (§50): exact (depth, slot) labels */
-/* Exact scalar values are graph data, not truncated diagnostic strings or
- * intern handles. Little-endian limbs are canonical and ordered. */
-static size_t g_level(Canon *c, uint64_t l) {
-    if (l == LEVEL_NONE) return node_new(c, G_CONST, "NO_LEVEL");
-    require(nat_valid(l), "graph: invalid natural");
-    size_t idx = node_new(c, G_CONST, "NAT"), n; uint64_t tmp;
-    const uint64_t *w = nat_limbs(l, &n, &tmp);
-    for (size_t k = 0; k < n; k++) add_ordered(c, idx, node_fmt(c, G_LITERAL, "%016llx", (unsigned long long)w[k]));
-    return idx;
-}
 static size_t g_bound(Canon *c, GKind kind, uint64_t id) {
     size_t idx; if (lookup(c, kind, id, &idx)) return idx;
-    char lab[64]; snprintf(lab, sizeof lab, "%s %zu/%zu", kind == G_INPUT_VAR ? "bx" : "bi", bound_depth(id), bound_slot(id));
+    char lab[64]; snprintf(lab, sizeof lab, "%s %u/%u", kind == G_INPUT_VAR ? "bx" : "bi", (unsigned)bound_depth(id), (unsigned)bound_slot(id));
     idx = node_new(c, kind, lab); remember(c, kind, id, idx); return idx;
 }
 static size_t g_var(Canon *c, TermVarId x) {
@@ -109,7 +90,6 @@ static size_t g_nominal(Canon *c, uint64_t nid) {
         case KW_INTERVAL: ch = g_interval(c, v); break;
         case KW_DIM: ch = g_dim(c, v); break;
         case KW_VAR: ch = g_var(c, v); break;
-        case KW_NAT: ch = g_level(c, v); break;
         default: die("bad key kind");
         }
         add_ordered(c, idx, ch);
@@ -141,12 +121,12 @@ static size_t g_val(Canon *c, ValSort s, uint64_t id) { return s == VS_REF ? g_r
 static size_t g_scope(Canon *c, ScopeId S) {
     size_t idx; if (lookup(c, G_NOMINAL, S | (1ULL << 62), &idx)) return idx;
     size_t n = scope_arity(S);
-    idx = node_fmt(c, G_REF, "SCOPE %zu", n); remember(c, G_NOMINAL, S | (1ULL << 62), idx);
-    add_ordered(c, idx, g_level(c, scope_level(S)));
+    char lab[64]; snprintf(lab, sizeof lab, "SCOPE %zu lv=%llu", n, (unsigned long long)scope_level(S));
+    idx = node_new(c, G_REF, lab); remember(c, G_NOMINAL, S | (1ULL << 62), idx);
     for (size_t k = 0; k < n; k++) {
         LocalDecl d = scope_local(S, k);
-        size_t e = node_fmt(c, G_ENTRY, "LOCAL %d", (int)d.sort);
-        add_ordered(c, e, g_level(c, d.level));
+        char dl[64]; snprintf(dl, sizeof dl, "LOCAL %d lv=%llu", (int)d.sort, (unsigned long long)d.level);
+        size_t e = node_new(c, G_ENTRY, dl);
         add_ordered(c, e, d.type ? g_ref(c, d.type) : node_new(c, G_CONST, "notype"));
         add_ordered(c, e, g_face(c, d.required));
         add_ordered(c, idx, e);
@@ -162,7 +142,8 @@ static size_t g_scope(Canon *c, ScopeId S) {
 static size_t g_tview(Canon *c, RefId t) {
     size_t idx;
     TNodeId Q = tnode_of(t); TEnvId E = tenv_of(t);
-    idx = node_fmt(c, G_REF, "T %s:%llu %s", tdef_name(tnode_def(Q)), (unsigned long long)tnode_index(Q), tag_name(tnode_tag(Q))); remember(c, G_REF, t, idx);
+    char lab[128]; snprintf(lab, sizeof lab, "T %s:%llu %s", tdef_name(tnode_def(Q)), (unsigned long long)tnode_index(Q), tag_name(tnode_tag(Q)));
+    idx = node_new(c, G_REF, lab); remember(c, G_REF, t, idx);
     size_t n = tenv_size(E);
     for (size_t k = 0; k < n; k++) {
         uint64_t slot; TVal v; tenv_entry(E, k, &slot, &v);
@@ -174,8 +155,7 @@ static size_t g_tview(Canon *c, RefId t) {
         case PS_INTERVAL: ch = g_interval(c, v.id); break;
         case PS_FACE: ch = g_face(c, v.id); break;
         case PS_SCOPE: ch = g_scope(c, v.id); break;
-        case PS_LEVEL: ch = g_level(c, v.id); break;
-        default: die("bad template value sort");
+        default: { char ll[32]; snprintf(ll, sizeof ll, "lv %llu", (unsigned long long)v.id); ch = node_new(c, G_LITERAL, ll); break; }
         }
         add_ordered(c, e, ch); add_ordered(c, idx, e);
     }
@@ -193,26 +173,17 @@ static size_t g_ref(Canon *c, RefId t) {
     if (ref_is_tview(t)) return g_tview(c, t);
     OriginId o = ref_origin(t); MapId m = ref_map(t);
     Tag tag = origin_tag(o);
-    if (tag == T_GLOBAL) idx = node_fmt(c, G_REF, "W %s:%s", tag_name(tag), ((Def *)chunked_at(&M.defs, origin_payload(o) - 1))->name);
-    else if (tag == T_UNIVERSE) idx = node_new(c, G_REF, "W U");
-    else idx = node_fmt(c, G_REF, "W %s:%llu", tag_name(tag), (unsigned long long)origin_payload(o));
-    remember(c, G_REF, t, idx);
-    if (tag == T_UNIVERSE) add_ordered(c, idx, g_level(c, origin_payload(o)));
-    { uint64_t lv = origin_levels(o);
-      size_t ann = node_new(c, G_ENTRY, "LEVELS");
-      add_ordered(c, ann, g_level(c, levels_first(lv)));
-      add_ordered(c, ann, g_level(c, levels_second(lv)));
-      add_ordered(c, idx, ann); }
+    char full[512]; size_t sl;
+    if (tag == T_GLOBAL) sl = (size_t)snprintf(full, sizeof full, "W %s:%s", tag_name(tag), ((Def *)chunked_at(&M.defs, origin_payload(o) - 1))->name);
+    else sl = (size_t)snprintf(full, sizeof full, "W %s:%llu", tag_name(tag), (unsigned long long)origin_payload(o));
+    { uint64_t lv = origin_levels(o);        /* §59.1: the immutable level annotation is part of the record */
+      if (lv == LEVELS_NONE) sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=-");
+      else sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=%llu/%llu", (unsigned long long)levels_first(lv), (unsigned long long)levels_second(lv)); }
     size_t nb = origin_nbinders(o), nf = origin_nfields(o);
-    /* All binder/field metadata is retained, independent of arity. */
-    size_t binders = node_new(c, G_ENTRY, "BINDERS"), fields = node_new(c, G_ENTRY, "FIELDS");
-    for (size_t k = 0; k < nb; k++) { Binder b = origin_binder(o, (BinderSlot)k);
-        size_t e = b.domain_field == NO_FIELD ? node_fmt(c, G_ENTRY, "B %d none", (int)b.sort) : node_fmt(c, G_ENTRY, "B %d %llu", (int)b.sort, (unsigned long long)b.domain_field);
-        add_ordered(c, binders, e); }
-    for (size_t k = 0; k < nf; k++) { Field f = origin_field(o, (FieldIndex)k);
-        size_t e = f.slot == NO_SLOT ? node_fmt(c, G_ENTRY, "F %d none", (int)f.kind) : node_fmt(c, G_ENTRY, "F %d %llu", (int)f.kind, (unsigned long long)f.slot);
-        add_ordered(c, fields, e); }
-    add_ordered(c, idx, binders); add_ordered(c, idx, fields);
+    for (size_t k = 0; k < nb && sl < 400; k++) { Binder b = origin_binder(o, (BinderSlot)k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " b%d/%u", (int)b.sort, b.domain_field == NO_FIELD ? 99999u : (unsigned)b.domain_field); }
+    for (size_t k = 0; k < nf && sl < 400; k++) { Field f = origin_field(o, (FieldIndex)k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " f%d@%d", (int)f.kind, f.slot == NO_SLOT ? -1 : (int)f.slot); }
+    idx = node_new(c, G_REF, full);
+    remember(c, G_REF, t, idx);
     { FaceId declared = origin_declared_required(o);        /* §2 annotation is part of the record */
       size_t ann = declared ? g_face(c, declared) : node_new(c, G_CONST, "noreq");
       add_ordered(c, idx, ann); }
@@ -249,7 +220,7 @@ void canon_add_result(Canon *c, const char *label, const EvalResult *r) {
         add_ordered(c, idx, g_ref(c, r->ref));
         break;
     case R_NO_OBSERVATION: idx = node_new(c, G_RESULT, "RESULT NO_OBSERVATION"); break;
-    default: idx = node_fmt(c, G_RESULT, "RESULT INVALID %s", r->message ? r->message : ""); break;
+    default: { char lab[256]; snprintf(lab, sizeof lab, "RESULT INVALID %s", r->message ? r->message : ""); idx = node_new(c, G_RESULT, lab); break; }
     }
     graph_root(c->g, idx);
     vec_push(&c->root_labels, strdup(label));

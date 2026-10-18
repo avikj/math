@@ -35,7 +35,6 @@ typedef struct { EvalEvents ev; RefId spec, up, forwarded_up; size_t nbr, tick_s
 static Run run(SchedPolicy pol, uint64_t seed, size_t workers) {
     machine_init(); eval_init(); check_init();
     eval_set_policy(pol, seed);
-    eval_set_adoption(false);   /* the base evaluator: its work vector is schedule independent (with live adoption, whether a slot adopts depends on the race) */
     if (workers) eval_set_workers(workers);
     Run out; memset(&out, 0, sizeof out);
     RefId U0 = mk_universe(0);
@@ -92,14 +91,7 @@ static Run run(SchedPolicy pol, uint64_t seed, size_t workers) {
     out.spec = decision; out.up = ts[1];
     { RefId restricted = reindex(decision, map_single_dim(i, iv_one()));
       EvalEvents b0 = eval_events(); EvalResult *rr = whnf(restricted, fc_true(), &st); EvalEvents b1 = eval_events();
-      /* §93.3: the branch's key is alias-published from the speculative run with
-       * its own descriptor (head = the branch residual); result pointers across
-       * different keys are not required to coincide — the answer is the same
-       * residual (the speculative entry's own residual, the rebuilt eliminator
-       * around the evaluated prefix) and class, with one dispatch launch and no
-       * branch work */
-      RefId spec_residual = eval_entry_residual(eval_entry_lookup(decision, fs[1]));
-      require(st == W_OK && rr->cls == spec_up->cls && rr->ref == spec_residual && b1.launch - b0.launch == 1, "the restricted decision resolves to the speculative up result (one dispatch launch, no branch work)"); }
+      require(st == W_OK && rr == spec_up && b1.launch - b0.launch == 1, "the restricted decision resolves to the speculative up result (one dispatch launch, no branch work)"); }
     /* 4. specialization shares: the decision at m2 shares nothing of pre (which mentions m) but shares up/down */
     RefId decision2 = reindex(decision, map_single_term(vm, m2));
     require(decision2 != decision, "a different model input is a different decision");
@@ -137,6 +129,6 @@ int main(void) {
         printf("  %-24s W identical to FIFO/no pool: %s\n", cfg[k].name, eq ? "yes" : "NO");
         same = same && eq;
     }
-    printf("%s\n", same ? "W is a property of the demand, not of the schedule (the base evaluator, live adoption off)." : "MISMATCH");
+    printf("%s\n", same ? "W is a property of the demand, not of the schedule." : "MISMATCH");
     return same ? 0 : 1;
 }

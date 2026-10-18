@@ -28,11 +28,6 @@ typedef struct { uint64_t node_id; TermVarId x, e; RefId A; uint64_t level; RefI
 /* ---- diagrams (§39) ---- */
 /* an ordinary diagram with output type B : U_lB and output term o */
 DiagramId diagram_declare(ContextId params, size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o);
-/* the declaration data of a diagram (§84.1 export reads it): nodes in order;
- * the output term o (a residual: its terminal type Z), *B (0 for a residual), *lB and *residual */
-size_t diagram_nodes(DiagramId d, const DiagNode **nodes);
-RefId diagram_output(DiagramId d, RefId *B, uint64_t *lB, bool *residual);
-ContextId diagram_params(DiagramId d);
 /* a residual description (§44): the telescope ends in the terminal type Z : U_lZ */
 DiagramId residual_declare(ContextId params, size_t n, const DiagNode *nodes, RefId Z, uint64_t lZ);
 /* typed telescope check under the required face */
@@ -90,33 +85,11 @@ TransformId compile_cut(ContextId params, FaceId req, RefId B, uint64_t lB, RefI
 TransformId compile_contractible_fibre(ContextId params, FaceId req, RefId B, uint64_t lB, RefId R, RefId k, const char **reason);
 
 const CompiledTransform *transform_get(TransformId id);      /* NULL when unknown */
-/* §77.1: identical actions share one record; every source identity
- * declaration that produced it is retained here (returns the count; fills
- * up to cap ids) */
-size_t transform_sources(TransformId id, uint64_t *out, size_t cap);
-/* §80: the graph-pair template of (L, R) as an ordinary open core term over
- * its complete telescope (parameters, common output y, proof P, realization
- * argument r). identity_action instantiates one orientation at σ (the
- * parameters), a proof and an argument already in the target; the result is
- * an ordinary reference that the checker validates and the evaluator runs
- * with no compilation, publication or registration. */
-uint64_t identity_pair(DiagramId L, DiagramId R, RefId B, uint64_t lB, ContextId params);
-RefId identity_action(uint64_t pair, int dir, MapId sigma, RefId proof, RefId argument);
 const GraphPairTemplate *graph_pair_get(uint64_t id);
 size_t transform_count(void);
 /* reconstruct the derivation the certificate records and compare it exactly
  * with the registered record (§39) */
 CheckStatus certificate_verify(TransformId id, const char **reason);
-/* §88.2: the actual evidence a record's certificate consumed and the exact
- * type the compiler checked it at, in the record's own parameter context and
- * required face — the input of the proof-use audit (proof.h):
- *   IDENTITY      p : Path_B(C_L, C_R)
- *   EQUIVALENCE   e : X ≃ Y
- *   RESIDUAL      e : Z_L[ν_L] ≃ Z_R[ν_R]
- *   CUT           the forward body under Γ, w : Cut, at Path_B(C, D)   (the cut has no external evidence; its own construction is audited)
- *   CONTRACTIBLE  k : Π(b : B). isContr(R b)
- * false when the transform is unknown */
-bool transform_evidence(TransformId id, ContextId *G, FaceId *face, RefId *evidence, RefId *type);
 
 /* ---- invocation (§43, §59.3) ---- */
 /* TRANSFORM_CALL(id, dir, σ, a) = reindex(generic_call[id,dir], σ + slot ↦ a):
@@ -128,13 +101,6 @@ bool compiler_template(uint64_t id, int dir, RefId *body, TermVarId *slot);
 /* an external application pair: APPLY_TRANSFORM(id,dir,σ) -- REF(a), result to b */
 enum { DIR_FORWARD = 0, DIR_REVERSE = 1 };
 
-/* frame families (kframe.h) */
-#define diagram_canonical_PARAMS(X) X(DiagramId, d)
-#define transform_evidence_PARAMS(X) X(TransformId, id) X(ContextId *, G) X(FaceId *, face) X(RefId *, evidence) X(RefId *, type)
-#define compiler_decode_call_PARAMS(X) X(const Head *, h) X(uint64_t *, id) X(int *, dir) X(MapId *, sigma) X(RefId *, a)
-KF_PROTO(diagram_canonical, RefId, diagram_canonical_PARAMS);
-KF_PROTO(transform_evidence, bool, transform_evidence_PARAMS);
-KF_PROTO(compiler_decode_call, bool, compiler_decode_call_PARAMS);
 void compiler_init(void);
 void compiler_free(void);
 

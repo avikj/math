@@ -1,0 +1,13 @@
+Witnessed-source integration contract (17 October 2026), installed verbatim
+as required by tests/review-73be719/WORKER.txt.
+
+  contract/witnessed-source/HANDOFF.txt   sha256 2ea815c4669734857e5cdcf6606a1f156316c641617a49cd316eb72daa9e5cc6
+  contract/witnessed-source/reference/    the contracts it consolidates
+  contract/witnessed-source/SHA256SUMS.txt  the author's checksums of the bundle
+
+Precedence: HANDOFF.txt is the governing contract for the source, readings,
+records, publication, accounting, adoption, frames and acceptance (§§1–22).
+It is cumulative with, and takes precedence over conflicting text in, the older
+numbered HANDOFF.md (§§1–96) and its AMENDMENT-*.md files, which are retained
+unchanged for provenance. Corrective review of main 73be719:
+tests/review-73be719/ (REVIEW.txt, WORKER.txt, ACCEPTANCE-MAP.txt).

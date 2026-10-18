@@ -1,6 +1,0 @@
-{
-  "exit_code": 1,
-  "seconds": 0.11976791999768466,
-  "stdout": "node_(2,0,0) signature formation=VALID level=3\nnode_(2,0,0) body=INVALID reason=universe annotation differs from the formation levels\n",
-  "stderr": ""
-}

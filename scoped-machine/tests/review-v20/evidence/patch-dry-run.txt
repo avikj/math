@@ -1,4 +1,0 @@
-checking file src/work.c
-checking file src/term.c
-checking file src/intern.c
-checking file src/intern.h

@@ -1,7 +1,4 @@
 #include "compiler.h"
-#include "fine.h"
-#include "proof.h"
-#include "runtime.h"
 
 /* ------------------------------------------------------------------ */
 /* registries                                                            */
@@ -32,14 +29,12 @@ typedef struct {
     uint64_t lX, lY, lB;
     DiagramId L, Rd;
 } Certificate;
-typedef struct { TransformId transform; size_t cert; } ProvEntry;
 
 static struct {
     VEC(Diagram *) diagrams;
     VEC(CompiledTransform *) transforms;
     VEC(GraphPairTemplate *) pairs;
     VEC(Certificate *) certs;
-    VEC(ProvEntry) prov;          /* §77.1: (transform, certificate) source associations */
     WordMap tindex;           /* §59.3: structural compiled-record key → transform id */
     WordMap dindex;           /* structural diagram key → diagram id */
     pthread_mutex_t mu; pthread_cond_t cv;
@@ -51,16 +46,14 @@ void compiler_init(void) {
     pthread_mutex_init(&CR.mu, NULL); pthread_cond_init(&CR.cv, NULL);
     wordmap_init(&CR.tindex); wordmap_init(&CR.dindex);
     CR.init = true;
-    rt_init(); proof_init();   /* §R5: the runtime-construction and proof-use modules belong to the same serial lifecycle */
 }
 void compiler_free(void) {
-    proof_free(); rt_free();          /* the proof-use boundary caches reference compiler records */
     if (!CR.init) return;
     for (size_t k = 0; k < CR.diagrams.len; k++) { free(CR.diagrams.data[k]->nodes); free(CR.diagrams.data[k]->R); free(CR.diagrams.data[k]->RL); free(CR.diagrams.data[k]); }
     for (size_t k = 0; k < CR.transforms.len; k++) free(CR.transforms.data[k]);
     for (size_t k = 0; k < CR.pairs.len; k++) free(CR.pairs.data[k]);
     for (size_t k = 0; k < CR.certs.len; k++) free(CR.certs.data[k]);
-    vec_free(&CR.diagrams); vec_free(&CR.transforms); vec_free(&CR.pairs); vec_free(&CR.certs); vec_free(&CR.prov);
+    vec_free(&CR.diagrams); vec_free(&CR.transforms); vec_free(&CR.pairs); vec_free(&CR.certs);
     wordmap_free(&CR.tindex); wordmap_free(&CR.dindex);
     pthread_mutex_destroy(&CR.mu); pthread_cond_destroy(&CR.cv);
     memset(&CR, 0, sizeof CR);
@@ -86,28 +79,16 @@ enum { ROLE_Y = 1, ROLE_COLLAPSE_R, ROLE_EXPAND_Q, ROLE_DOWN_I, ROLE_DOWN_J,
        ROLE_EQ_A, ROLE_EQ_B, ROLE_CUT_W, ROLE_CUT_H, ROLE_CUT_Z, ROLE_CUT_U, ROLE_CF_W, ROLE_CF_B, ROLE_CF_BIND,
        ROLE_RES_R, ROLE_RES_Q };
 
-#define cterm_PARAMS(X) X(uint64_t, role) X(uint64_t, a) X(uint64_t, b) X(uint64_t, slot) X(RefId, type)
-KF_DECL(cterm, TermVarId, cterm_PARAMS, KeyWord k[5]; TermVarId x;)
-KF_STEP(cterm) {
-    KF_BEGIN(cterm);
-    F->k[0] = (KeyWord){ KW_CONST, 8000 }; F->k[1] = (KeyWord){ KW_CONST, F->role }; F->k[2] = (KeyWord){ KW_CONST, F->a }; F->k[3] = (KeyWord){ KW_CONST, F->b }; F->k[4] = (KeyWord){ KW_CONST, F->slot };
-    KF_CALL(fresh_term_keyed, &F->x, F->k, 5, F->type);
-    KF_RET(F->x);
-    KF_END;
+static TermVarId cterm(uint64_t role, uint64_t a, uint64_t b, uint64_t slot, RefId type) {
+    KeyWord k[5] = { { KW_CONST, 8000 }, { KW_CONST, role }, { KW_CONST, a }, { KW_CONST, b }, { KW_CONST, slot } };
+    return fresh_term_keyed(k, 5, type);
 }
-static TermVarId cterm(uint64_t role, uint64_t a, uint64_t b, uint64_t slot, RefId type) { TermVarId r; KStack *s_ = kf_sync_begin(); cterm_push(s_, &r, role, a, b, slot, type); kf_sync_run(s_); kf_sync_end(s_); return r; }
 /* a formal whose declared type is itself keyed (the equivalence / cut
  * schemas are indexed by their type data) */
-#define cterm_typed_PARAMS(X) X(uint64_t, role) X(uint64_t, a) X(RefId, type)
-KF_DECL(cterm_typed, TermVarId, cterm_typed_PARAMS, KeyWord k[4]; TermVarId x;)
-KF_STEP(cterm_typed) {
-    KF_BEGIN(cterm_typed);
-    F->k[0] = (KeyWord){ KW_CONST, 8001 }; F->k[1] = (KeyWord){ KW_CONST, F->role }; F->k[2] = (KeyWord){ KW_CONST, F->a }; F->k[3] = (KeyWord){ KW_REF, F->type };
-    KF_CALL(fresh_term_keyed, &F->x, F->k, 4, F->type);
-    KF_RET(F->x);
-    KF_END;
+static TermVarId cterm_typed(uint64_t role, uint64_t a, RefId type) {
+    KeyWord k[4] = { { KW_CONST, 8001 }, { KW_CONST, role }, { KW_CONST, a }, { KW_REF, type } };
+    return fresh_term_keyed(k, 4, type);
 }
-static TermVarId cterm_typed(uint64_t role, uint64_t a, RefId type) { TermVarId r; KStack *s_ = kf_sync_begin(); cterm_typed_push(s_, &r, role, a, type); kf_sync_run(s_); kf_sync_end(s_); return r; }
 static __attribute__((unused)) DimVarId cdim(uint64_t role, uint64_t a, uint64_t b, uint64_t slot) {
     KeyWord k[5] = { { KW_CONST, 8002 }, { KW_CONST, role }, { KW_CONST, a }, { KW_CONST, b }, { KW_CONST, slot } };
     return fresh_dim_keyed(k, 5);
@@ -124,9 +105,6 @@ static DiagramId diagram_new(ContextId params, size_t n, const DiagNode *nodes, 
     words_push(&w, global_env_version()); words_push(&w, params); words_push(&w, n);
     for (size_t k = 0; k < n; k++) { words_push(&w, nodes[k].node_id); words_push(&w, nodes[k].x); words_push(&w, nodes[k].e); words_push(&w, nodes[k].A); words_push(&w, nodes[k].level); words_push(&w, nodes[k].t); }
     words_push(&w, B); words_push(&w, o); words_push(&w, Z); words_push(&w, lB); words_push(&w, residual);
-    /* the declaration is interned outside CR.mu (the interner is internally
-     * synchronized); the index under CR.mu is keyed by its one-word id */
-    uint64_t kw[2] = { 0xD1A6, interner_intern(&M.keys, w.w, w.n, NULL) }; words_free(&w); words_init(&w); words_push(&w, kw[0]); words_push(&w, kw[1]);
     pthread_mutex_lock(&CR.mu);
     uint64_t have;
     if (wordmap_get(&CR.dindex, w.w, w.n, &have)) { pthread_mutex_unlock(&CR.mu); words_free(&w); return (DiagramId)have; }
@@ -144,66 +122,51 @@ static DiagramId diagram_new(ContextId params, size_t n, const DiagNode *nodes, 
 }
 DiagramId diagram_declare(ContextId params, size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o) { return diagram_new(params, n, nodes, B, o, 0, lB, false); }
 DiagramId residual_declare(ContextId params, size_t n, const DiagNode *nodes, RefId Z, uint64_t lZ) { return diagram_new(params, n, nodes, 0, 0, Z, lZ, true); }
-size_t diagram_nodes(DiagramId d, const DiagNode **nodes) { Diagram *g = DG(d); require(g, "unknown diagram"); *nodes = g->nodes; return g->n; }
-RefId diagram_output(DiagramId d, RefId *B, uint64_t *lB, bool *residual) { Diagram *g = DG(d); require(g, "unknown diagram"); *B = g->B; *lB = g->lB; *residual = g->residual; return g->residual ? g->Z : g->o; }
-ContextId diagram_params(DiagramId d) { Diagram *g = DG(d); require(g, "unknown diagram"); return g->params; }
 
 /* the realization telescope, canonical substitution and value (§39) */
-#define diagram_build_PARAMS(X) X(DiagramId, id)
-KF_DECL_DROP(diagram_build, void, diagram_build_PARAMS, diagram_build_drop,
-    Diagram *d; size_t n, k, q, nt; RefId *R; uint64_t *RL; TermVarId y; RefId Pk, t0, ak, Ak, C, vr, s2; uint64_t inner; MapBuilder b, c; MapId nu; bool built;)
-static void diagram_build_drop(diagram_build_F *F) { free(F->R); free(F->RL); F->R = NULL; F->RL = NULL; words_free(&F->b.t); words_free(&F->b.d); words_free(&F->c.t); words_free(&F->c.d); }
-KF_STEP(diagram_build) {
-    KF_BEGIN(diagram_build);
-    F->d = DG(F->id);
+static void diagram_build(DiagramId id) {
+    Diagram *d = DG(id);
     pthread_mutex_lock(&CR.mu);
-    F->built = F->d->built;
+    bool built = d->built;
     pthread_mutex_unlock(&CR.mu);
-    if (F->built) KF_RETV();
-    F->n = F->d->n;
-    F->R = calloc(F->n + 1, sizeof(RefId)); require(F->R, "out of memory");
-    F->RL = calloc(F->n + 1, sizeof(uint64_t)); require(F->RL, "out of memory");
-    F->y = 0;
-    if (F->d->residual) { F->R[F->n] = F->d->Z; F->RL[F->n] = F->d->lB; }
-    else { KF_CALL(cterm, &F->y, ROLE_Y, F->id, 0, 0, F->d->B); KF_CALL(ref_var, &F->vr, F->y); KF_CALL(mk_path_const, &F->R[F->n], F->d->lB, F->d->B, F->d->o, F->vr); F->RL[F->n] = F->d->lB; }
-    for (F->k = F->n; F->k-- > 0; ) {
-        KF_CALL(ref_var, &F->vr, F->d->nodes[F->k].x);
-        KF_CALL(mk_path_const, &F->Pk, F->d->nodes[F->k].level, F->d->nodes[F->k].A, F->d->nodes[F->k].t, F->vr);
-        KF_CALL(level_max, &F->inner, F->d->nodes[F->k].level, F->RL[F->k + 1]);
-        KF_CALL(mk_sigma_lv, &F->s2, F->d->nodes[F->k].level, F->RL[F->k + 1], F->d->nodes[F->k].e, F->Pk, F->R[F->k + 1]);
-        KF_CALL(mk_sigma_lv, &F->R[F->k], F->d->nodes[F->k].level, F->inner, F->d->nodes[F->k].x, F->d->nodes[F->k].A, F->s2);
-        KF_CALL(level_max, &F->RL[F->k], F->d->nodes[F->k].level, F->inner);
+    if (built) return;
+    size_t n = d->n;
+    RefId *R = calloc(n + 1, sizeof(RefId)); require(R, "out of memory");
+    uint64_t *RL = calloc(n + 1, sizeof(uint64_t)); require(RL, "out of memory");
+    TermVarId y = 0;
+    if (d->residual) { R[n] = d->Z; RL[n] = d->lB; }
+    else { y = cterm(ROLE_Y, id, 0, 0, d->B); R[n] = mk_path_const(d->lB, d->B, d->o, ref_var(y)); RL[n] = d->lB; }
+    for (size_t k = n; k-- > 0; ) {
+        const DiagNode *nd = &d->nodes[k];
+        RefId Pk = mk_path_const(nd->level, nd->A, nd->t, ref_var(nd->x));
+        uint64_t inner = level_max(nd->level, RL[k + 1]);
+        R[k] = mk_sigma_lv(nd->level, inner, nd->x, nd->A, mk_sigma_lv(nd->level, RL[k + 1], nd->e, Pk, R[k + 1]));
+        RL[k] = level_max(nd->level, inner);
     }
-    mapb_init(&F->b);
-    KF_CALL(mapb_finish, &F->nu, &F->b);
-    for (F->k = 0; F->k < F->n; F->k++) {
-        KF_CALL(reindex, &F->ak, F->d->nodes[F->k].t, F->nu);
-        KF_CALL(reindex, &F->Ak, F->d->nodes[F->k].A, F->nu);
-        mapb_init(&F->c);
-        F->nt = map_n_terms(F->nu);
-        KF_MAPB_RESERVE(&F->c, F->nt + 2, 0);
-        for (F->q = 0; F->q < F->nt; F->q++) { TermVarId x; RefId im; map_term_entry(F->nu, F->q, &x, &im); mapb_term(&F->c, x, im); fine_bump(FC_MAP_ENTRIES); KF_SAFE(); }
-        mapb_term(&F->c, F->d->nodes[F->k].x, F->ak);
-        KF_CALL(mk_refl, &F->t0, F->d->nodes[F->k].level, F->Ak, F->ak);
-        mapb_term(&F->c, F->d->nodes[F->k].e, F->t0);
-        KF_CALL(mapb_finish, &F->nu, &F->c);
+    MapBuilder b; mapb_init(&b);
+    MapId nu = mapb_finish(&b);
+    for (size_t k = 0; k < n; k++) {
+        const DiagNode *nd = &d->nodes[k];
+        RefId ak = reindex(nd->t, nu);
+        RefId Ak = reindex(nd->A, nu);
+        MapBuilder c; mapb_init(&c);
+        size_t nt = map_n_terms(nu);
+        for (size_t q = 0; q < nt; q++) { TermVarId x; RefId im; map_term_entry(nu, q, &x, &im); mapb_term(&c, x, im); }
+        mapb_term(&c, nd->x, ak);
+        mapb_term(&c, nd->e, mk_refl(nd->level, Ak, ak));
+        nu = mapb_finish(&c);
     }
-    KF_CALL(reindex, &F->C, F->d->residual ? F->d->Z : F->d->o, F->nu);
+    RefId C = reindex(d->residual ? d->Z : d->o, nu);
     pthread_mutex_lock(&CR.mu);
-    if (!F->d->built) { F->d->y = F->y; F->d->R = F->R; F->d->RL = F->RL; F->d->nu = F->nu; F->d->C = F->C; F->d->built = true; F->R = NULL; F->RL = NULL; }
+    if (!d->built) { d->y = y; d->R = R; d->RL = RL; d->nu = nu; d->C = C; d->built = true; }
+    else { free(R); free(RL); }
     pthread_mutex_unlock(&CR.mu);
-    free(F->R); free(F->RL); F->R = NULL; F->RL = NULL;
-    KF_RETV();
-    KF_END;
 }
-static void diagram_build(DiagramId id) { KStack *s_ = kf_sync_begin(); diagram_build_push(s_, NULL, id); kf_sync_run(s_); kf_sync_end(s_); }
 
 TermVarId diagram_output_param(DiagramId d) { diagram_build(d); return DG(d)->y; }
 RefId diagram_realization(DiagramId d) { diagram_build(d); return DG(d)->R[0]; }
 MapId diagram_canonical_subst(DiagramId d) { diagram_build(d); return DG(d)->nu; }
-KF_DECL_EXT(diagram_canonical, RefId, diagram_canonical_PARAMS, )
-KF_STEP(diagram_canonical) { KF_BEGIN(diagram_canonical); KF_CALL(diagram_build, NULL, F->d); KF_RET(DG(F->d)->C); KF_END; }
-KF_SYNC_DEF(diagram_canonical, RefId, diagram_canonical_PARAMS, diagram_canonical(DiagramId d))
+RefId diagram_canonical(DiagramId d) { diagram_build(d); return DG(d)->C; }
 
 CheckStatus diagram_validate(DiagramId id, FaceId required, const char **reason) {
     Diagram *d = DG(id);
@@ -335,14 +298,10 @@ RefId diagram_expand(DiagramId id, TermVarId *q_slot) {
 
 /* the structural compiled-record key (§59.3): the environment, the schema,
  * every certificate input and the derived record data; no registry numbers */
-/* §77.1: the action key is semantic content only — the schema, its typed
- * inputs and the derived record; neither the source declaration's id nor the
- * environment counter nor any registry number. Source declarations are kept
- * in a separate provenance index (transform_sources). */
 static void record_key(const Certificate *c, const CompiledTransform *t, Words *w) {
     words_init(w);
-    words_push(w, c->kind);
-    words_push(w, c->decl.parameters); words_push(w, c->decl.required_face); words_push(w, c->decl.result_type); words_push(w, c->decl.result_level);
+    words_push(w, global_env_version()); words_push(w, c->kind);
+    words_push(w, c->decl.id); words_push(w, c->decl.parameters); words_push(w, c->decl.required_face); words_push(w, c->decl.result_type); words_push(w, c->decl.result_level);
     words_push(w, c->decl.left); words_push(w, c->decl.right); words_push(w, c->decl.evidence);
     words_push(w, c->params); words_push(w, c->req); words_push(w, c->X); words_push(w, c->Y); words_push(w, c->e); words_push(w, c->B); words_push(w, c->C); words_push(w, c->D); words_push(w, c->R); words_push(w, c->k);
     words_push(w, c->lX); words_push(w, c->lY); words_push(w, c->lB); words_push(w, c->L); words_push(w, c->Rd);
@@ -373,13 +332,10 @@ static RefId build_generic_call(TransformId id, int dir, const CompiledTransform
 static TransformId transform_publish(CompiledTransform *t, Certificate *c, const char **reason) {
     if (check_admission(reason) != CK_VALID) return 0;
     Words key; record_key(c, t, &key);
-    { uint64_t kid = interner_intern(&M.keys, key.w, key.n, NULL); key.n = 0; words_push(&key, 0x7EC0); words_push(&key, kid); }   /* interned outside CR.mu; a one-word index key under it */
     pthread_mutex_lock(&CR.mu);
     uint64_t have;
     if (wordmap_get(&CR.tindex, key.w, key.n, &have)) {
-        /* the same action: record this source declaration as a further
-         * provenance receipt and join its publication */
-        if (c->kind == EV_IDENTITY) { Certificate *cp = malloc(sizeof *cp); require(cp, "out of memory"); *cp = *c; vec_push(&CR.certs, cp); { ProvEntry pe = { (TransformId)have, CR.certs.len }; vec_push(&CR.prov, pe); } }
+        /* another client claimed this key: wait for its publication */
         while (!CR.transforms.data[have - 1]->generic_call[1]) pthread_cond_wait(&CR.cv, &CR.mu);
         pthread_mutex_unlock(&CR.mu); words_free(&key);
         return (TransformId)have;
@@ -388,7 +344,6 @@ static TransformId transform_publish(CompiledTransform *t, Certificate *c, const
     vec_push(&CR.certs, cp);
     CompiledTransform *p = malloc(sizeof *p); require(p, "out of memory"); *p = *t;
     p->certificate = CR.certs.len;
-    { ProvEntry pe = { (TransformId)(CR.transforms.len + 1), CR.certs.len }; vec_push(&CR.prov, pe); }
     p->generic_call[0] = p->generic_call[1] = 0;
     vec_push(&CR.transforms, p); p->id = CR.transforms.len;       /* id reserved and key claimed; not yet visible */
     wordmap_put(&CR.tindex, key.w, key.n, p->id);
@@ -685,75 +640,6 @@ CheckStatus certificate_verify(TransformId id, const char **reason) {
     return CK_VALID;
 }
 
-KF_DECL_EXT(transform_evidence, bool, transform_evidence_PARAMS, const CompiledTransform *t; Certificate c; RefId cl, cr, x; TermVarId bb; ContextId Gb; uint64_t lR; RefId app, vb; CheckStatus ck; const char *why;)
-KF_STEP(transform_evidence) {
-    KF_BEGIN(transform_evidence);
-    F->t = transform_get(F->id);
-    if (!F->t) KF_RET(false);
-    pthread_mutex_lock(&CR.mu); F->c = *CR.certs.data[F->t->certificate - 1]; pthread_mutex_unlock(&CR.mu);
-    switch (F->c.kind) {
-    case EV_IDENTITY:
-        *F->G = F->c.decl.parameters; *F->face = F->c.decl.required_face; *F->evidence = F->c.decl.evidence;
-        KF_CALL(diagram_canonical, &F->cl, F->c.decl.left); KF_CALL(diagram_canonical, &F->cr, F->c.decl.right);
-        KF_CALL(mk_path_const, F->type, F->c.decl.result_level, F->c.decl.result_type, F->cl, F->cr);
-        KF_RET(true);
-    case EV_EQUIVALENCE:
-        *F->G = F->c.params; *F->face = F->c.req; *F->evidence = F->c.e; KF_CALL(mk_equiv, F->type, F->c.lX, F->c.lY, F->c.X, F->c.Y); KF_RET(true);
-    case EV_RESIDUAL_EQUIVALENCE:
-        *F->G = F->c.params; *F->face = F->c.req; *F->evidence = F->c.e;
-        KF_CALL(diagram_canonical, &F->cl, F->c.L); KF_CALL(diagram_canonical, &F->cr, F->c.Rd);
-        KF_CALL(mk_equiv, F->type, DG(F->c.L)->lB, DG(F->c.Rd)->lB, F->cl, F->cr); KF_RET(true);
-    case EV_CUT:
-        KF_CALL(context_extend_term, F->G, F->t->parameters, F->t->forward_argument_slot, F->t->domain); *F->face = F->t->required_face; *F->evidence = F->t->forward_body; *F->type = F->t->codomain; KF_RET(true);
-    case EV_CONTRACTIBLE_FIBRE: {
-        KF_CALL(cterm_typed, &F->bb, ROLE_CF_BIND, F->c.R, F->c.B);
-        KF_CALL(context_extend_term, &F->Gb, F->c.params, F->bb, F->c.B);
-        KF_CALL(ref_var, &F->vb, F->bb);
-        KF_CALL(mk_app, &F->app, F->c.R, F->vb);
-        KF_CALL(check_is_type, &F->ck, F->Gb, F->c.req, F->app, &F->lR, &F->why);
-        if (F->ck != CK_VALID) KF_RET(false);
-        *F->G = F->c.params; *F->face = F->c.req; *F->evidence = F->c.k;
-        KF_CALL(mk_contr, &F->x, F->lR, F->app);
-        KF_CALL(mk_pi_lv, F->type, F->c.lB, F->lR, F->bb, F->c.B, F->x); KF_RET(true); }
-    default: KF_RET(false);
-    }
-    KF_END;
-}
-KF_SYNC_DEF(transform_evidence, bool, transform_evidence_PARAMS, transform_evidence(TransformId id, ContextId *G, FaceId *face, RefId *evidence, RefId *type))
-
-/* §77.1: the source declaration ids associated with an action (identity
- * declarations only; other schemas have no source id) */
-size_t transform_sources(TransformId id, uint64_t *out, size_t cap) {
-    size_t n = 0;
-    pthread_mutex_lock(&CR.mu);
-    for (size_t k = 0; k < CR.prov.len; k++) if (CR.prov.data[k].transform == id) { Certificate *c = CR.certs.data[CR.prov.data[k].cert - 1]; if (c->kind == EV_IDENTITY) { if (n < cap) out[n] = c->decl.id; n++; } }
-    pthread_mutex_unlock(&CR.mu);
-    return n;
-}
-
-/* ------------------------------------------------------------------ */
-/* §80: the identity action as an ordinary open core term                 */
-
-uint64_t identity_pair(DiagramId L, DiagramId R, RefId B, uint64_t lB, ContextId params) {
-    ensure_init();
-    require(DG(L) && DG(R), "unknown diagram");
-    return graph_pair(L, R, B, lB, params)->id;
-}
-RefId identity_action(uint64_t pair, int dir, MapId sigma, RefId proof, RefId argument) {
-    const GraphPairTemplate *t = graph_pair_get(pair);
-    require(t, "unknown graph-pair template");
-    /* one simultaneous map: σ on the diagram/common-output parameters,
-     * P ↦ proof, r ↦ argument; the images are already in the target and are
-     * not reindexed again; make_view restricts to the body's typed boundary */
-    MapBuilder b; mapb_init(&b);
-    size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
-    for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); if (x != t->P && x != t->r_left && x != t->r_right) mapb_term(&b, x, im); }
-    for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im); mapb_dim(&b, i, im); }
-    mapb_term(&b, t->P, proof);
-    mapb_term(&b, dir ? t->r_right : t->r_left, argument);
-    return reindex(dir ? t->reverse : t->forward, mapb_finish(&b));
-}
-
 /* ------------------------------------------------------------------ */
 /* invocation (§43)                                                      */
 
@@ -780,26 +666,19 @@ RefId mk_transform_call(TransformId id, int dir, MapId sigma, RefId a) {
     return reindex(t->generic_call[dir ? 1 : 0], mapb_finish(&b));
 }
 
-KF_DECL_EXT_DROP(compiler_decode_call, bool, compiler_decode_call_PARAMS, compiler_decode_call_drop, const CompiledTransform *t; size_t n, k; MapBuilder b;)
-static void compiler_decode_call_drop(compiler_decode_call_F *F) { words_free(&F->b.t); words_free(&F->b.d); }
-KF_STEP(compiler_decode_call) {
-    KF_BEGIN(compiler_decode_call);
-    if (F->h->is_var || F->h->tag != T_TCALL) KF_RET(false);
-    *F->id = F->h->payload / 2; *F->dir = (int)(F->h->payload & 1);
-    F->t = transform_get(*F->id);
-    if (!F->t) KF_RET(false);
-    F->n = context_size(F->t->parameters);
-    if (F->h->n != F->n + 3) KF_RET(false);
-    mapb_init(&F->b);
-    KF_MAPB_RESERVE(&F->b, F->n, F->n);
-    for (F->k = 0; F->k < F->n; F->k++) {
-        CtxDecl d = context_decl(F->t->parameters, F->k);
-        if (d.sort == S_TERM) mapb_term(&F->b, d.id, F->h->f[F->k].id); else mapb_dim(&F->b, d.id, F->h->f[F->k].id);
-        fine_bump(FC_MAP_ENTRIES); KF_SAFE();
+bool compiler_decode_call(const Head *h, uint64_t *id, int *dir, MapId *sigma, RefId *a) {
+    if (h->is_var || h->tag != T_TCALL) return false;
+    *id = h->payload / 2; *dir = (int)(h->payload & 1);
+    const CompiledTransform *t = transform_get(*id);
+    if (!t) return false;
+    size_t n = context_size(t->parameters);
+    if (h->n != n + 3) return false;
+    MapBuilder b; mapb_init(&b);
+    for (size_t k = 0; k < n; k++) {
+        CtxDecl d = context_decl(t->parameters, k);
+        if (d.sort == S_TERM) mapb_term(&b, d.id, h->f[k].id); else mapb_dim(&b, d.id, h->f[k].id);
     }
-    KF_CALL(mapb_finish, F->sigma, &F->b);
-    *F->a = F->h->f[F->n].id;
-    KF_RET(true);
-    KF_END;
+    *sigma = mapb_finish(&b);
+    *a = h->f[n].id;
+    return true;
 }
-KF_SYNC_DEF(compiler_decode_call, bool, compiler_decode_call_PARAMS, compiler_decode_call(const Head *h, uint64_t *id, int *dir, MapId *sigma, RefId *a))

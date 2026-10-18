@@ -1,0 +1,23 @@
+# Worker direction: the common witnessed source
+
+Continue the integration on the current construction. HANDOFF.txt is the consolidated interpretation and operational contract; the reference directory carries the existing detailed rules it preserves. The main document takes precedence over the proposed mixed-coordinate rewrite and over interpretations that replace live adoption checks with equality of additive boundaries.
+
+The desired simplification is now explicit: each generating rule supplies a typed witness with its actual local boundary and realization. Evidence, resource incidence, dependencies and exact work are compatible readings of those records. Composite histories share actual primitive support. This turns the existing subsystems into implementations/readings of one source without requiring a replacement foundation.
+
+Implement these connections:
+
+1. Emit actual primitive events at the existing native rule sites, with unique stable occurrence identity and one accounting owner. Link semantic/macroscopic rules to that support. A macro and its primitives are not both added to fine work.
+2. Keep pure judgment/receipt interning separate from actual occurrence identity, linking them through realization metadata. One reusable proof can have several acquisition histories, and several consumers can reference one producing history without paying it again.
+3. Capture immutable event prefixes and use shared support-union folds. Exact counters become those projections; independent instrumentation checks coverage at the same prefix during migration. History observation records its own work in a later prefix.
+4. Consolidate live adoption into PreparedAdoption with the existing guard, current-residual connector, dependency snapshot and generation premises. The atomic installation checks remain. Preserve obsolete tickets and their actual events while permitting exactly one semantic resume.
+5. Expose actual incremental work at an adoption separately from a certified comparison with an alternative. A comparison requires its typed boundary, realization/cost witnesses and any connectors. Do not run an unused alternative merely to measure it and do not invent its cost from the successful run.
+6. Connect the current chain algebra to these production records through the stated maps. Face substitution supplies faces of admitted cells; it does not automatically create a filler for arbitrary competing histories. Keep complete-state, resource-incidence and observation domains explicitly typed.
+7. Continue explicit-frame lowering for bounded execution, ownership/disposal, reflection and thread independence using the existing frame discipline. Preserve the current De Morgan interval core; no new directed CubeView coordinate sort is required.
+
+The product-fold theorem applies to compatible generator actions. Shared historical work additionally uses event-identity union; unrolling an ordinary derivation tree is not that operation. Stokes then provides conservation and comparison defects from the same source. Unique consumption makes the resource history admissible; local rule witnesses establish the conservation equations that extend globally.
+
+HANDOFF.txt supplies records, publication ordering, exact support/count rules, adoption transitions, overlap classification, cut/network interpretation, cost/calibration premises, mapping to existing interfaces and production acceptance cases. The last sections retain reflection, posing and whole-machine theorem requirements explicitly; they are not silently certified by this refactor.
+
+The attached check_contract.py checks finite consequences and race-order models of this contract. It is author-side algebra/protocol evidence, not a substitute for make test, make tsan, the review runners, or production event-derived witnesses. The worker's newer chain.c source has not been independently inspected in this author pass.
+
+Proceed without another approval round. Preserve the current gates and useful construction. Report integration findings against the precise rule and boundary involved.

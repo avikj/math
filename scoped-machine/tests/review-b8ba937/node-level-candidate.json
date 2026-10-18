@@ -1,6 +1,0 @@
-{
-  "change": "Only prior R2: outer singleton Pi codomain level max(a,r+1)",
-  "exit_code": 0,
-  "stdout": "node_(2,0,0) signature formation=VALID level=3\nnode_(2,0,0) body=VALID reason=\n",
-  "stderr": ""
-}

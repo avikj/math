@@ -1,5 +1,0 @@
-{
-  "exit_code": 1,
-  "stdout": "reserve n=64 budget=1 units=1 payload_words_written=64 capacity_already_present=1\ncompleted record correct and canonical=1\nreserve n=4096 budget=1 units=1 payload_words_written=4096 capacity_already_present=1\ncompleted record correct and canonical=1\n",
-  "stderr": ""
-}

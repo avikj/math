@@ -13,7 +13,7 @@
 #include "eval.h"
 #include "template.h"
 
-typedef uint64_t NodeId;      /* 0 = none */
+typedef uint32_t NodeId;      /* 0 = none */
 typedef struct { NodeId node; uint16_t port; } Endpoint;
 
 typedef enum {
@@ -67,9 +67,6 @@ typedef struct {
 
 typedef struct { NodeId node; uint64_t gen; } Active;
 
-typedef enum { NT_APPLY_TRANSFORM = 1, NT_CONTINUE_REFERENCE } NetTraceKind;
-typedef struct { NetTraceKind kind; uint64_t transform; int dir; MapId sigma; RefId arg, result; uint64_t K; } NetTraceEvent;
-
 /* Nodes live in non-moving storage and are never freed during a run, so a
  * worker holding a NodeId can always dereference it (pinning is trivial);
  * generations detect stale identity. A replacement locks the redex owners
@@ -83,16 +80,11 @@ typedef struct Net {
     pthread_mutex_t act_mu; pthread_cond_t act_cv, idle_cv;
     size_t outstanding; bool stop;   /* §35: queued + executing active pairs */
     pthread_t *workers; size_t nworkers;
-    size_t rewrites; const struct XCarry *rewrites_cx;   /* V23 R5: each count is exact — the word is its low digit, the list its carries (xcount.h) */
+    size_t rewrites;
     /* local rule instances by class (diamond-balanced event classes), committed only */
-    size_t n_op, n_dup, n_erase, n_eval_deliver; const struct XCarry *n_op_cx, *n_dup_cx, *n_erase_cx, *n_eval_deliver_cx;
-    size_t n_apply, n_continue; const struct XCarry *n_apply_cx, *n_continue_cx;   /* §43/§45: APPLY_TRANSFORM and CONTINUE_REFERENCE rule events */
-    size_t retries; const struct XCarry *retries_cx;   /* diagnostics: replacements abandoned after revalidation */
-    /* §73.3(1): identity applications of the actual run, in commit order.
-     * APPLY: (transform, dir, σ, argument, result reference, receiving
-     * producer key K when the result port is a CONTINUE_REFERENCE(K));
-     * CONTINUE: (K, forwarded reference). */
-    VEC(NetTraceEvent) trace; pthread_mutex_t trace_mu;
+    size_t n_op, n_dup, n_erase, n_eval_deliver;
+    size_t n_apply, n_continue;   /* §43/§45: APPLY_TRANSFORM and CONTINUE_REFERENCE rule events */
+    size_t retries;           /* diagnostics: replacements abandoned after revalidation */
     /* §43: when shared is set, pending active pairs are jobs of the shared
      * scheduler: pushes count in *shared.outstanding under *shared.mu and
      * signal *shared.cv; the shared scheduler pops them (net_pop_pair) and
@@ -104,8 +96,6 @@ typedef struct Net {
 
 void net_init(Net *n);
 void net_free(Net *n);
-size_t net_trace_count(Net *n);
-NetTraceEvent net_trace_get(Net *n, size_t i);
 NodeId net_descriptor(Net *n, NodeKind kind, Payload p);
 NodeId net_operation(Net *n, NodeKind kind, Payload p);
 NodeId net_node(Net *n, NodeKind kind, uint8_t nports, const int8_t *polarity, Payload p);
@@ -120,8 +110,6 @@ void net_share_scheduler(Net *n, pthread_mutex_t *mu, pthread_cond_t *cv, size_t
 bool net_pop_pair_locked(Net *n, Active *out);         /* caller holds shared.mu */
 size_t net_pending_pairs_locked(const Net *n);
 bool net_step_pair(Net *n, Active a);                  /* one candidate pair; true when a replacement was committed */
-#define net_step_pair_PARAMS(X) X(Net *, n) X(Active, a)
-KF_PROTO(net_step_pair, bool, net_step_pair_PARAMS);  /* the same step as a frame family (kframe.h) */
 /* run local rules until no active pair remains; returns rewrite count */
 size_t net_run(Net *n);
 /* evaluation requests suspended in the cache are resumed by the eval
