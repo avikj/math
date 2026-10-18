@@ -22,7 +22,7 @@ typedef enum {
     R_INVALID           /* host control status: invalid occurrence / ill-typed demand */
 } ResultClass;
 
-typedef struct {
+typedef struct EvalResult {
     ResultClass cls;
     RefId ref;          /* INTRODUCTION/NEUTRAL: reference whose open() is the head;
                          * SYSTEM: the owner system reference */
@@ -30,25 +30,83 @@ typedef struct {
     FaceId *faces;
     RefId *terms;
     const char *message;/* INVALID: diagnostic */
+    struct EvalResult *next_alloc;   /* the machine's list of rooted results */
 } EvalResult;
 
+typedef enum { W_OK = 0, W_NO_OBSERVATION, W_INVALID, W_STUCK } WhnfStatus;
 typedef uint64_t EntryId;
 typedef enum { E_UNEVALUATED = 0, E_RUNNING, E_READY } EntryState;
 
+/* ---- the one execution protocol (§26), for every operation family ----
+ *
+ * A producer key is (family, a, b, environment version). Its entry moves
+ * U → R → D by compare-and-swap on `head`: NULL is U; the first requester
+ * installs itself as the only waiter and launches the one evaluator; later
+ * requesters push onto the waiter stack; publication stores the value and
+ * exchanges the stack for ENTRY_READY. Each delivery is its own job. Every
+ * transition is a bounded number of word operations. */
+typedef uint32_t Family;
+enum { F_WHNF = 1, F_MAX = 64 };
+
 typedef struct Cont Cont;
+typedef struct Gather Gather;
+typedef struct RootBox RootBox;
+typedef void (*ExternalDeliver)(void *ctx, EvalResult *r);
+
+typedef enum {
+    K_ROOT = 1, K_FORWARD, K_APP, K_FST, K_SND, K_PAPP, K_UNGLUE, K_COMP_FAMILY, K_BRANCH, K_EXTERNAL,
+    K_FRAME            /* a family frame: resumed by its family's resume function */
+} ContKind;
+
+/* A continuation is single-consumer. A frame (K_FRAME) is the retained state
+ * of one producer of a family between two of its steps: program counter and
+ * bounded locals. A frame that requests its next child sets `keep` in its
+ * resume function and is reused as that child's continuation. */
+struct Cont {
+    ContKind kind;
+    EntryId dest;       /* entry to publish into (not for ROOT/EXTERNAL) */
+    FaceId chi;         /* ambient face of the demanding evaluation */
+    RefId orig;         /* the eliminator / composition reference, retained */
+    RefId a;            /* APP argument */
+    IntervalId s;       /* PAPP interval */
+    DimVarId j;         /* COMP: the symbolic dimension */
+    RefId tube;         /* COMP: tube body at j */
+    FaceId phi;         /* COMP: tube face */
+    RefId cap;          /* COMP: cap */
+    Gather *gather; size_t branch;   /* BRANCH */
+    RootBox *root;                   /* ROOT */
+    ExternalDeliver ext_fn; void *ext_ctx; void (*ext_free)(void *);   /* EXTERNAL */
+    /* K_FRAME */
+    Family fam; uint32_t pc; bool keep;
+    uint64_t w[8];
+    Cont *next;         /* link in an entry's waiter stack / a delivery chain */
+};
 
 typedef struct {
-    RefId ref;
-    FaceId face;        /* the projected face the entry is evaluated under */
-    EntryState state;
-    EvalResult *result; /* present exactly when READY */
-    VEC(Cont *) waiters;
-    size_t runs;        /* EVALUATE tasks executed for this key (must be ≤ 1) */
+    Cont *head;         /* NULL: U; ENTRY_READY: D; otherwise R with this waiter stack */
+    uint64_t value;     /* published result (an EvalResult* for F_WHNF) */
+    size_t runs;        /* evaluator tasks executed for this key (must be ≤ 1) */
     size_t n_req, n_deliver, n_pub;   /* per-key event counts (for schedule comparison) */
-    pthread_mutex_t mu; /* guards state, result, waiters and the counters above */
+    EntryState state;   /* diagnostic mirror of head */
 } Entry;
 
-typedef enum { W_OK = 0, W_NO_OBSERVATION, W_INVALID, W_STUCK } WhnfStatus;
+typedef void (*FamStart)(EntryId e, uint64_t a, uint64_t b);
+typedef void (*FamResume)(Cont *k, uint64_t v);
+/* register a family (once per process, before use); returns its id */
+Family family_register(const char *name, FamStart start, FamResume resume);
+/* request the producer (f,a,b); k receives its value */
+void family_request(Family f, uint64_t a, uint64_t b, Cont *k);
+/* publish the value of a running entry (from its evaluator's last step) */
+void family_publish(EntryId e, uint64_t v);
+/* a fresh frame of family f whose producer publishes into dest */
+Cont *frame_new(Family f, EntryId dest);
+/* synchronous driver: request (f,a,b) and run jobs until it publishes */
+uint64_t family_run(Family f, uint64_t a, uint64_t b, WhnfStatus *status);
+Family eval_entry_family(EntryId e);
+uint64_t eval_entry_a(EntryId e);
+uint64_t eval_entry_b(EntryId e);
+size_t family_steps(Family f);       /* evaluator and resume steps executed for family f */
+
 
 void eval_init(void);
 void eval_free(void);
@@ -112,7 +170,6 @@ void eval_entry_events(EntryId e, size_t *req, size_t *deliver, size_t *pub);   
 size_t eval_task_count(void);                       /* EVALUATE tasks created so far */
 
 /* continuation constructors used by the net layer */
-typedef void (*ExternalDeliver)(void *ctx, EvalResult *r);
 Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *));   /* free_ctx releases ctx if never delivered */
 
 void print_result(const EvalResult *r, FILE *f);
