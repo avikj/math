@@ -130,6 +130,7 @@ typedef struct PreparedAdoption {
 typedef PreparedAdoption Proposal;
 typedef struct { int state; RefId v; FaceId veta; uint64_t adrc; bool direct; } PrepMemo;   /* state: 0 absent, 1 applicable, 2 inapplicable, 3 being computed (a join); direct: s[σ] = r (else a connector is needed) */
 static void ticket_release(Cont *k);
+static void cont_dispose(Cont *k);
 static void sub_unref(Sub *n);
 static void eval_edge_hook(RefId dest, RefId src, uint64_t sigma);
 
@@ -219,14 +220,14 @@ void eval_init(void) {
     EVB_pevx = ev_family("eval.prefix", sizeof(EvalPrefixEvents) / sizeof(size_t), E.pevx);
     EVB_tasks = ev_family("eval.tasks", 1, &E.tasks_created);
     pthread_mutex_init(&E.roots_mu, NULL);
-    chunked_init(&E.roots_tab, sizeof(EntryId)); E.n_roots = 0;
+    chunked_init(&E.roots_tab, sizeof(EntryId)); chunked_set_alloc(&E.roots_tab, chunk_uncleared, NULL); E.n_roots = 0;   /* a root slot is written before n_roots publishes it */
     interner_init(&E.keys); chunked_init(&E.heads, sizeof(EntryId));
     interner_init(&E.shape_ids); chunked_init(&E.shape_side, sizeof(ShapeSide)); interner_init(&E.shape_refs);
     interner_init(&E.receipts);
-    chunked_init(&E.entries, sizeof(Entry));
+    chunked_init(&E.entries, sizeof(Entry)); chunked_set_alloc(&E.entries, chunk_uncleared, NULL);   /* an entry is cleared at its creation (memset) before n_entries publishes it */
     pthread_mutex_init(&E.entries_mu, NULL);
     pthread_mutex_init(&E.q_mu, NULL);
-    chunked_init(&E.qtab, sizeof(Task)); E.qhead = E.qtail = 0;
+    chunked_init(&E.qtab, sizeof(Task)); chunked_set_alloc(&E.qtab, chunk_uncleared, NULL); E.qhead = E.qtail = 0;   /* a queue slot is written before qtail publishes it */
     pthread_cond_init(&E.q_cv, NULL);
     pthread_cond_init(&E.idle_cv, NULL);
     pthread_mutex_init(&E.res_mu, NULL);
@@ -285,6 +286,13 @@ static Entry *ENT(EntryId e) { return (Entry *)chunked_get(&E.entries, e - 1); }
 static void task_discard(Task t);
 typedef struct ExtNode { Task t; struct ExtNode *next; } ExtNode;
 static void ext_push(Task t);
+/* a continuation that will never be resumed: its ownership released (a ticket, an external context, a root box) */
+static void cont_dispose(Cont *k) {
+    if (k->cut) { XINC(cevx, EvalCutEvents, retired_tickets); ticket_release(k); return; }
+    if (k->kind == K_EXTERNAL && k->ext_free) k->ext_free(k->ext_ctx);
+    if (k->kind == K_ROOT) rootbox_release(k->root);
+    free(k);
+}
 void eval_free(void) {
     stop_workers();
     __atomic_store_n(&E.live, false, __ATOMIC_RELEASE);
@@ -302,19 +310,13 @@ void eval_free(void) {
     free(E.held); E.held = NULL; E.nheld = E.capheld = 0;
     for (size_t i = 0; i < E.n_entries; i++) {
         Entry *e = ENT(i + 1);
-        for (size_t w = 0; w < e->waiters.len; w++) {                 /* suspended forever: stuck demands */
-            Cont *k = e->waiters.data[w];
-            if (k->cut) { XINC(cevx, EvalCutEvents, retired_tickets); ticket_release(k); continue; }
-            if (k->kind == K_EXTERNAL && k->ext_free) k->ext_free(k->ext_ctx);
-            if (k->kind == K_ROOT) rootbox_release(k->root);
-            free(k);
-        }
-        vec_free(&e->waiters);
+        for (size_t w = 0; w < e->waiters.len; w++) cont_dispose((Cont *)(uintptr_t)pv_get(&e->waiters, w));   /* suspended forever: stuck demands */
+        pv_free(&e->waiters);
     }
     { size_t ns = interner_count(&E.shape_ids); for (size_t i = 0; i < ns; i++) { ShapeSide *ss = chunked_peek(&E.shape_side, i); if (ss && ss->subs) { Sub *h = ss->subs; ss->subs = NULL; sub_unref(h); } } }
     for (size_t i = 0; i < E.n_entries; i++) {
         Entry *e = ENT(i + 1);
-        vec_free(&e->deps); vec_free(&e->dep_hist); vec_free(&e->gdeps);
+        pv_free(&e->deps); pv_free(&e->dep_hist); pv_free(&e->gdeps);
         reuse_scope_unref(e->scope);
         pthread_mutex_destroy(&e->mu);
     }
@@ -538,13 +540,11 @@ const uint64_t *eval_receipt_words(uint64_t r, size_t *n) { return interner_get(
 /* ---- dependency validity (§79.2) ---- */
 static bool gdeps_valid_locked(const Entry *e) {
     reuse_bump(REUSE_DEPENDENCY_CHECK);
-    for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) if (global_revision(e->gdeps.data[k]) != e->gdeps.data[k + 1]) return false;
+    for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) if (global_revision(pv_get(&e->gdeps, k)) != pv_get(&e->gdeps, k + 1)) return false;
     return true;
 }
-static void gdeps_add(Entry *e, SymbolId sym, uint64_t rev) {
-    for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) if (e->gdeps.data[k] == sym) { require(e->gdeps.data[k + 1] == rev, "a producer read two revisions of one symbol"); return; }
-    vec_push(&e->gdeps, sym); vec_push(&e->gdeps, rev);
-}
+/* append a read dependency (two constant steps; no scan: the list is read as a set) */
+static void gdeps_add(Entry *e, SymbolId sym, uint64_t rev) { pv_push(&e->gdeps, sym); pv_push(&e->gdeps, rev); fine_bump(FC_DEP_PAIRS); }
 
 /* a shape's side record: its slot interned outside every lock (stable address) */
 #define shape_side_get_PARAMS(X) X(ShapeId, s) X(bool, create)
@@ -566,7 +566,7 @@ KF_STEP(shape_side_get) {
  * a READY answer's dependencies — immutable once it is READY — are checked
  * after it, one pair per transition. */
 #define chain_pick_PARAMS(X) X(EntryId, head) X(EntryId, stop)
-KF_DECL(chain_pick, EntryId, chain_pick_PARAMS, uint64_t env; EntryId e; bool ok, ready; const uint64_t *g; size_t ng, k;)
+KF_DECL(chain_pick, EntryId, chain_pick_PARAMS, uint64_t env; EntryId e; bool ok, ready; const PVec *g; size_t ng, k;)
 KF_STEP(chain_pick) {
     KF_BEGIN(chain_pick);
     F->env = global_env_version();
@@ -574,11 +574,11 @@ KF_STEP(chain_pick) {
         { Entry *x = ENT(F->e);
           pthread_mutex_lock(&x->mu);
           F->ready = x->state == E_READY; F->ok = F->ready || x->env == F->env;
-          if (F->ready) { F->g = x->gdeps.data; F->ng = x->gdeps.len; }
+          if (F->ready) { F->g = &x->gdeps; F->ng = x->gdeps.len; }
           pthread_mutex_unlock(&x->mu); }
         if (F->ready) {
             reuse_bump(REUSE_DEPENDENCY_CHECK);
-            for (F->k = 0; F->k + 1 < F->ng; F->k += 2) { if (global_revision(F->g[F->k]) != F->g[F->k + 1]) { F->ok = false; break; } fine_bump(FC_CLAIM_STEPS); KF_SAFE(); }
+            for (F->k = 0; F->k + 1 < F->ng; F->k += 2) { if (global_revision(pv_get(F->g, F->k)) != pv_get(F->g, F->k + 1)) { F->ok = false; break; } fine_bump(FC_DEP_PAIRS); KF_SAFE(); }
         }
         if (F->ok) KF_RET(F->e);
         fine_bump(FC_ADAPTER_STEPS); KF_SAFE();
@@ -650,7 +650,7 @@ KF_SYNC_DEF(eval_entry_lookup, EntryId, eval_entry_lookup_PARAMS, eval_entry_loo
 ShapeId eval_entry_shape(EntryId e) { return ENT(e)->shape; }
 RefId eval_entry_residual(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); RefId r = x->state == E_READY ? x->residual : 0; pthread_mutex_unlock(&x->mu); return r; }
 uint64_t eval_entry_receipt(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); uint64_t r = x->state == E_READY ? x->receipt : 0; pthread_mutex_unlock(&x->mu); return r; }
-size_t eval_entry_gdeps(EntryId e, const uint64_t **pairs) { Entry *x = ENT(e); *pairs = x->gdeps.data; return x->gdeps.len / 2; }
+size_t eval_entry_gdeps(EntryId e, const PVec **pairs) { Entry *x = ENT(e); *pairs = &x->gdeps; return pv_len(&x->gdeps) / 2; }
 bool eval_entry_deps_valid(EntryId e) { Entry *x = ENT(e); pthread_mutex_lock(&x->mu); bool ok = gdeps_valid_locked(x); pthread_mutex_unlock(&x->mu); return ok; }
 EntryId eval_entry_adapter_source(EntryId e) { return ENT(e)->adapter_src; }
 bool eval_entry_is_alias(EntryId e) { return ENT(e)->is_alias; }
@@ -774,7 +774,7 @@ size_t eval_task_count(void) { return (size_t)xs_u64_checked(xc_snap(&E.tasks_cr
 size_t eval_entry_active_deps(EntryId e, EntryId **out) {
     Entry *x = ENT(e); pthread_mutex_lock(&x->mu);
     size_t n = 0; EntryId *o = malloc((x->deps.len ? x->deps.len : 1) * sizeof(EntryId)); require(o, "out of memory");
-    for (size_t i = 0; i < x->deps.len; i++) if (!x->dep_hist.data[i]) o[n++] = x->deps.data[i];
+    for (size_t i = 0; i < x->deps.len; i++) if (!pv_get(&x->dep_hist, i)) o[n++] = pv_get(&x->deps, i);
     pthread_mutex_unlock(&x->mu); *out = o; return n;
 }
 /* HANDOFF §7 realization support: the producers whose actual work an entry's answer rests on — the entry
@@ -790,7 +790,7 @@ size_t eval_entry_support(EntryId e, uint64_t **out) {
         if (dup) continue;
         words_push(&seen, OCC(OCC_ENTRY, x));
         Entry *ex = ENT(x);
-        for (size_t i = 0;; i++) { pthread_mutex_lock(&ex->mu); bool more = i < ex->deps.len; EntryId c = more ? ex->deps.data[i] : 0; pthread_mutex_unlock(&ex->mu); if (!more) break; words_push(&stack, c); }
+        for (size_t i = 0; i < pv_len(&ex->deps); i++) words_push(&stack, pv_get(&ex->deps, i));   /* published elements never move */
     }
     words_free(&stack);
     size_t n = seen.n; uint64_t *v = (malloc)((n ? n : 1) * sizeof *v); require(v, "out of memory");
@@ -801,7 +801,7 @@ size_t eval_entry_support(EntryId e, uint64_t **out) {
 size_t eval_entry_deps(EntryId e, EntryId **out) {
     Entry *x = ENT(e); pthread_mutex_lock(&x->mu);
     size_t n = x->deps.len; *out = n ? malloc(n * sizeof(EntryId)) : NULL; require(!n || *out, "out of memory");
-    if (n) memcpy(*out, x->deps.data, n * sizeof(EntryId));
+    for (size_t i = 0; i < n; i++) (*out)[i] = pv_get(&x->deps, i);
     pthread_mutex_unlock(&x->mu); return n;
 }
 uint64_t eval_entry_env(EntryId e) { return ENT(e)->env; }
@@ -821,16 +821,32 @@ static void deliver(Cont *k, EvalResult *r) { XINC(evx, EvalEvents, deliver); en
 /* publication: the result, the answer's residual and receipt, and the
  * dependency set (direct reads ∪ the READY children's recorded reads, §79.1) */
 #define publish_with_PARAMS(X) X(EntryId, eid) X(EvalResult *, r) X(RefId, residual) X(uint64_t, receipt)
-KF_DECL(publish_with, void, publish_with_PARAMS, bool success, ok; FaceId reta; EntryId aid; uint64_t arc;)
-static void publish_collect(EntryId eid, Entry *e);
-static void publish_final(EntryId eid, Entry *e, EvalResult *r, RefId residual, uint64_t receipt, bool success);
+KF_DECL_DROP(publish_with, void, publish_with_PARAMS, publish_with_drop, bool success, ok; FaceId reta; EntryId aid; uint64_t arc; size_t i, k, n; EntryId c; PVec ag; PVec ws;)
+static void publish_with_drop(publish_with_F *F) {   /* the waiters not yet delivered are disposed with their ownership (no resume) */
+    pv_free(&F->ag);
+    for (size_t k = F->i; k < F->ws.len; k++) cont_dispose((Cont *)(uintptr_t)pv_get(&F->ws, k));
+    pv_free(&F->ws);
+}
 KF_STEP(publish_with) {
     KF_BEGIN(publish_with);
-    {
-        Entry *e = ENT(F->eid);
-        require(F->r->cls != R_NO_OBSERVATION, "no observation is never a published value");
-        F->success = F->r->cls != R_INVALID;
-        publish_collect(F->eid, e);
+    require(F->r->cls != R_NO_OBSERVATION, "no observation is never a published value");
+    F->success = F->r->cls != R_INVALID;
+    /* the dependency set: the READY children's recorded reads appended to the
+     * entry's own, one pair per transition (§79.1); an active-slot edge only
+     * (LIVE-CUT-ADOPTION §5). Published elements never move: the child lists
+     * are read by index without their locks; the entry is RUNNING and only
+     * this task appends to it. */
+    for (F->i = 0; F->i < pv_len(&ENT(F->eid)->deps); F->i++) {
+        if (pv_get(&ENT(F->eid)->dep_hist, F->i)) continue;
+        F->c = (EntryId)pv_get(&ENT(F->eid)->deps, F->i);
+        if (F->c == F->eid) continue;
+        { Entry *c = ENT(F->c); pthread_mutex_lock(&c->mu); bool ready = c->state == E_READY; pthread_mutex_unlock(&c->mu); F->n = ready ? pv_len(&c->gdeps) : 0; }   /* READY: its list is complete */
+        for (F->k = 0; F->k + 1 < F->n; F->k += 2) {
+            { Entry *c = ENT(F->c), *e = ENT(F->eid); uint64_t sym = pv_get(&c->gdeps, F->k), rev = pv_get(&c->gdeps, F->k + 1);
+              pthread_mutex_lock(&e->mu); require(e->state == E_RUNNING, "publish into an entry that is not running"); gdeps_add(e, sym, rev); pthread_mutex_unlock(&e->mu); }
+            KF_SAFE();
+        }
+        fine_bump(FC_ADAPTER_STEPS); KF_SAFE();
     }
     /* §76.3 / §78: the residual is head-normal under this face by
      * construction (an introduction, or an eliminator rebuilt around a
@@ -846,62 +862,48 @@ KF_STEP(publish_with) {
         if (F->ok) {
             KF_CALL(entry_intern, &F->aid, F->residual, F->reta);
             if (F->aid != F->eid) {
-                Entry *a = ENT(F->aid), *e = ENT(F->eid); EvalResult *r = F->r;
-                pthread_mutex_lock(&a->mu);
-                if (a->state == E_UNEVALUATED) {
-                    pthread_mutex_lock(&e->mu); for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) gdeps_add(a, e->gdeps.data[k], e->gdeps.data[k + 1]); pthread_mutex_unlock(&e->mu);
-                    /* §93 (R1): the alias answers at its own boundary — a distinct
-                     * immutable descriptor whose head is the residual itself (system
-                     * branches retained); the source's original expression stays in
-                     * the source result and provenance, never at a smaller or
-                     * weaker-faced key */
-                    a->result = r->cls == R_SYSTEM ? result_system(F->residual, r->nbr, r->faces, r->terms) : result_new(r->cls, F->residual);
-                    a->residual = F->residual; a->receipt = rc_refl_now(F->residual); a->is_alias = true;
-                    __atomic_store_n(&a->state, E_READY, __ATOMIC_RELEASE);
+                /* the alias's dependency list: a copy of the source's (complete: the
+                 * source is publishing), built outside both locks, installed whole */
+                F->n = pv_len(&ENT(F->eid)->gdeps);
+                for (F->k = 0; F->k < F->n; F->k++) { pv_push(&F->ag, pv_get(&ENT(F->eid)->gdeps, F->k)); fine_bump(FC_DEP_PAIRS); KF_SAFE(); }
+                {
+                    Entry *a = ENT(F->aid); EvalResult *r = F->r;
+                    pthread_mutex_lock(&a->mu);
+                    if (a->state == E_UNEVALUATED) {
+                        pv_free(&a->gdeps); a->gdeps = F->ag; memset(&F->ag, 0, sizeof F->ag);
+                        /* §93 (R1): the alias answers at its own boundary — a distinct
+                         * immutable descriptor whose head is the residual itself (system
+                         * branches retained); the source's original expression stays in
+                         * the source result and provenance, never at a smaller or
+                         * weaker-faced key */
+                        a->result = r->cls == R_SYSTEM ? result_system(F->residual, r->nbr, r->faces, r->terms) : result_new(r->cls, F->residual);
+                        a->residual = F->residual; a->receipt = rc_refl_now(F->residual); a->is_alias = true;
+                        __atomic_store_n(&a->state, E_READY, __ATOMIC_RELEASE);
+                    }
+                    pthread_mutex_unlock(&a->mu);
+                    pv_free(&F->ag);
                 }
-                pthread_mutex_unlock(&a->mu);
             }
         }
     }
-    publish_final(F->eid, ENT(F->eid), F->r, F->residual, F->receipt, F->success);
+    /* the answer: published under the entry lock (one constant section, the
+     * waiter list moved out whole); deliveries after it, one per transition */
+    {
+        Entry *e = ENT(F->eid);
+        fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
+        e->result = F->r;
+        e->residual = F->success ? F->residual : 0; e->receipt = F->success ? F->receipt : 0;
+        xl_add((uint64_t *)&e->n_pub, &e->n_pub_cx, 1);
+        xl_add((uint64_t *)&e->n_deliver, &e->n_deliver_cx, e->waiters.len);
+        __atomic_store_n(&e->state, E_READY, __ATOMIC_RELEASE);
+        F->ws = e->waiters; memset(&e->waiters, 0, sizeof e->waiters);
+        pthread_mutex_unlock(&e->mu);
+    }
+    XINC(evx, EvalEvents, publish);
+    for (F->i = F->k = 0; F->k < F->ws.len; F->k++) { fine_bump(FC_WAITERS_DELIVERED); deliver((Cont *)(uintptr_t)pv_get(&F->ws, F->k), F->r); F->i = F->k + 1; KF_SAFE(); }
+    pv_free(&F->ws);
     KF_RETV();
     KF_END;
-}
-/* children's dependencies, collected outside the entry lock */
-static void publish_collect(EntryId eid, Entry *e) {
-    pthread_mutex_lock(&e->mu);
-    size_t nall = e->deps.len, nd = 0; EntryId *kids = nall ? malloc(nall * sizeof(EntryId)) : NULL; require(!nall || kids, "out of memory");
-    for (size_t i = 0; i < nall; i++) if (!e->dep_hist.data[i]) kids[nd++] = e->deps.data[i];   /* active-slot edges only (LIVE-CUT-ADOPTION §5) */
-    pthread_mutex_unlock(&e->mu);
-    VEC(uint64_t) acc = {0};
-    for (size_t i = 0; i < nd; i++) {
-        Entry *c = ENT(kids[i]); if (c == e) continue;
-        pthread_mutex_lock(&c->mu);
-        if (c->state == E_READY) for (size_t k = 0; k + 1 < c->gdeps.len; k += 2) { vec_push(&acc, c->gdeps.data[k]); vec_push(&acc, c->gdeps.data[k + 1]); }
-        pthread_mutex_unlock(&c->mu);
-    }
-    free(kids);
-    fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
-    require(e->state == E_RUNNING, "publish into an entry that is not running");
-    for (size_t k = 0; k + 1 < acc.len; k += 2) gdeps_add(e, acc.data[k], acc.data[k + 1]);
-    vec_free(&acc);
-    pthread_mutex_unlock(&e->mu);
-    (void)eid;
-}
-static void publish_final(EntryId eid, Entry *e, EvalResult *r, RefId residual, uint64_t receipt, bool success) {
-    fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
-    e->result = r;
-    e->residual = success ? residual : 0; e->receipt = success ? receipt : 0;
-    xl_add((uint64_t *)&e->n_pub, &e->n_pub_cx, 1);
-    xl_add((uint64_t *)&e->n_deliver, &e->n_deliver_cx, e->waiters.len);
-    __atomic_store_n(&e->state, E_READY, __ATOMIC_RELEASE);
-    Cont **ws = e->waiters.data; size_t n = e->waiters.len;
-    e->waiters.data = NULL; e->waiters.len = e->waiters.cap = 0;
-    pthread_mutex_unlock(&e->mu);
-    XINC(evx, EvalEvents, publish);
-    for (size_t i = 0; i < n; i++) { fine_bump(FC_WAITERS_DELIVERED); deliver(ws[i], r); }
-    free(ws);
-    (void)eid;
 }
 /* a result that is its own residual (introduction, free neutral, system) */
 #define publish_PARAMS(X) X(EntryId, eid) X(EvalResult *, r)
@@ -960,7 +962,7 @@ static bool request_join_locked(Entry *e, EntryId eid, Cont *k) {
     }
     if (e->state == E_RUNNING) {
         size_t idx = e->waiters.len;
-        vec_push(&e->waiters, k); fine_bump(FC_CONTS_REGISTERED);
+        pv_push(&e->waiters, (uint64_t)(uintptr_t)k); fine_bump(FC_CONTS_REGISTERED);
         Task replay = prefix_catchup_locked(eid, e, idx);
         pthread_mutex_unlock(&e->mu);
         if (replay.fact) enqueue_reserved(replay);
@@ -985,7 +987,7 @@ KF_STEP(request_inner) {
         /* §60 trace: the consumer occurrence (owner, slot, requested key) */
         if (k->kind == K_ROOT || k->kind == K_EXTERNAL) { size_t at = __atomic_load_n(&E.n_roots, __ATOMIC_ACQUIRE); (void)chunked_at(&E.roots_tab, at); (void)chunked_at(&E.roots_tab, at + 1);   /* the chunk, outside roots_mu */
           pthread_mutex_lock(&E.roots_mu); *(EntryId *)chunked_at(&E.roots_tab, E.n_roots) = eid; __atomic_store_n(&E.n_roots, E.n_roots + 1, __ATOMIC_RELEASE); pthread_mutex_unlock(&E.roots_mu); }
-        else { Entry *o = ENT(k->dest); pthread_mutex_lock(&o->mu); if (k->gen) { k->gen->dep_idx = o->deps.len; k->gen->have_dep = true; } vec_push(&o->deps, eid); vec_push(&o->dep_hist, 0); pthread_mutex_unlock(&o->mu); }
+        else { Entry *o = ENT(k->dest); pthread_mutex_lock(&o->mu); if (k->gen) { k->gen->dep_idx = o->deps.len; k->gen->have_dep = true; } pv_push(&o->dep_hist, 0); pv_push(&o->deps, eid); pthread_mutex_unlock(&o->mu); }   /* dep_hist first: a lock-free reader below deps' published length finds its flag */
         /* readiness check and waiter registration under the same lock (§10) */
         fine_bump(FC_LOCK_ATTEMPTS); pthread_mutex_lock(&e->mu);
         xl_add((uint64_t *)&e->n_req, &e->n_req_cx, 1);
@@ -1007,7 +1009,7 @@ KF_STEP(request_inner) {
          * before RUNNING can be observed by anyone else, so no requester can see
          * a running key whose evaluator is not yet runnable. */
         e->state = E_RUNNING;
-        vec_push(&e->waiters, k); fine_bump(FC_CONTS_REGISTERED);
+        pv_push(&e->waiters, (uint64_t)(uintptr_t)k); fine_bump(FC_CONTS_REGISTERED);
         reserve_job();                       /* outstanding += 1 before RUNNING can be observed */
         pthread_mutex_unlock(&e->mu);
         XINC(evx, EvalEvents, launch);
@@ -1255,15 +1257,15 @@ KF_STEP(prefix_valid) {
 /* the (symbol, revision) pairs of x, one pair per section of x->mu; with
  * ready_only, only while x is READY (a READY entry's pairs are final) */
 #define prefix_copy_pairs_PARAMS(X) X(Entry *, x) X(bool, ready_only) X(Words *, out)
-KF_DECL(prefix_copy_pairs, void, prefix_copy_pairs_PARAMS, size_t k;)
+KF_DECL(prefix_copy_pairs, void, prefix_copy_pairs_PARAMS, size_t k; uint64_t a, b;)
 KF_STEP(prefix_copy_pairs) {
     KF_BEGIN(prefix_copy_pairs);
     for (F->k = 0;; F->k += 2) {
         pthread_mutex_lock(&F->x->mu);
         if ((F->ready_only && F->x->state != E_READY) || F->k + 1 >= F->x->gdeps.len) { pthread_mutex_unlock(&F->x->mu); KF_RETV(); }
-        { uint64_t a = F->x->gdeps.data[F->k], b = F->x->gdeps.data[F->k + 1];
-          pthread_mutex_unlock(&F->x->mu);
-          words_push(F->out, a); words_push(F->out, b); fine_bump(FC_ADAPTER_STEPS); }
+        F->a = pv_get(&F->x->gdeps, F->k); F->b = pv_get(&F->x->gdeps, F->k + 1);
+        pthread_mutex_unlock(&F->x->mu);
+        KF_WORDS_PUSH(F->out, F->a); KF_WORDS_PUSH(F->out, F->b); fine_bump(FC_DEP_PAIRS);
         KF_SAFE();
     }
     KF_END;
@@ -1274,19 +1276,20 @@ KF_STEP(prefix_copy_pairs) {
  * vector; transfer ownership in one lock section rather than copying it
  * under the lock. */
 #define adapter_inherit_PARAMS(X) X(Entry *, e)
-KF_DECL_DROP(adapter_inherit, void, adapter_inherit_PARAMS, adapter_inherit_drop, Words g; size_t k;)
-static void adapter_inherit_drop(adapter_inherit_F *F) { words_free(&F->g); }
+KF_DECL_DROP(adapter_inherit, void, adapter_inherit_PARAMS, adapter_inherit_drop, Words g; PVec pg; size_t k;)
+static void adapter_inherit_drop(adapter_inherit_F *F) { words_free(&F->g); pv_free(&F->pg); }
 KF_STEP(adapter_inherit) {
     KF_BEGIN(adapter_inherit);
     words_init(&F->g);
     if (F->e->adapter_fact) {
         for (F->k = 0; F->k < F->e->adapter_fact->ngdeps; F->k++) { words_push(&F->g, F->e->adapter_fact->gdeps[F->k]); fine_bump(FC_ADAPTER_STEPS); KF_SAFE(); }
     } else if (F->e->adapter_src) KF_CALL(prefix_copy_pairs, NULL, ENT(F->e->adapter_src), true, &F->g);
+    for (F->k = 0; F->k < F->g.n; F->k++) { pv_push(&F->pg, F->g.w[F->k]); fine_bump(FC_DEP_PAIRS); KF_SAFE(); }
+    words_free(&F->g);
     pthread_mutex_lock(&F->e->mu);
-    require(F->e->gdeps.len == 0 && F->e->gdeps.data == NULL, "adapter prerequisites installed before direct reads");
-    F->e->gdeps.data = F->g.w; F->e->gdeps.len = F->g.n; F->e->gdeps.cap = F->g.cap;
+    require(F->e->gdeps.len == 0 && F->e->gdeps.seg == NULL, "adapter prerequisites installed before direct reads");
+    F->e->gdeps = F->pg; memset(&F->pg, 0, sizeof F->pg);   /* ownership moved in one section */
     pthread_mutex_unlock(&F->e->mu);
-    words_init(&F->g);   /* ownership moved */
     KF_RETV();
     KF_END;
 }
@@ -1311,7 +1314,7 @@ KF_STEP(prefix_publish_on) {
     else for (F->i = 0;; F->i++) {
         pthread_mutex_lock(&F->e->mu);
         if (F->i >= F->e->deps.len) { pthread_mutex_unlock(&F->e->mu); break; }
-        { EntryId c = F->e->deps.data[F->i]; bool hist = F->e->dep_hist.data[F->i];
+        { EntryId c = pv_get(&F->e->deps, F->i); bool hist = pv_get(&F->e->dep_hist, F->i);
           pthread_mutex_unlock(&F->e->mu);
           fine_bump(FC_ADAPTER_STEPS);
           if (c != F->dest && !hist) { F->k = c; KF_CALL(prefix_copy_pairs, NULL, ENT((EntryId)F->k), true, &F->g); }
@@ -1392,7 +1395,7 @@ KF_STEP(prefix_notify) {
         Entry *e = ENT(F->t.entry);
         pthread_mutex_lock(&e->mu);
         if (e->state != E_RUNNING || F->t.idx >= F->t.limit || F->t.idx >= e->waiters.len) { pthread_mutex_unlock(&e->mu); KF_RETV(); }
-        F->kc = *e->waiters.data[F->t.idx];       /* a copy: the waiter may be resumed and released once the lock is dropped */
+        F->kc = *(Cont *)(uintptr_t)pv_get(&e->waiters, F->t.idx);       /* a copy: the waiter may be resumed and released once the lock is dropped */
         if (F->kc.cut) { cut_ref(F->kc.cut); gen_ref(F->kc.gen); }   /* the ticket's Cut and generation, retained for this step */
         pthread_mutex_unlock(&e->mu);
     }
@@ -1703,7 +1706,7 @@ KF_STEP(install_step) {
         gen_release_watches(old);                        /* the superseding event releases the old generation's watches */
         XINC(cevx, EvalCutEvents, installs); XINC(cevx, EvalCutEvents, tickets);
         Entry *o = ENT(c->owner);
-        pthread_mutex_lock(&o->mu); if (old->have_dep && old->dep_idx < o->dep_hist.len) o->dep_hist.data[old->dep_idx] = 1; pthread_mutex_unlock(&o->mu);   /* the superseded request becomes a historical edge */
+        pthread_mutex_lock(&o->mu); if (old->have_dep && old->dep_idx < o->dep_hist.len) pv_set(&o->dep_hist, old->dep_idx, 1); pthread_mutex_unlock(&o->mu);   /* the superseded request becomes a historical edge */
         gen_unref(old);                                  /* the Cut's reference; the new generation retains it */
         Task rq = op_task(OP_REQUEST); rq.k = tk; enqueue_reserved(rq);
         F->ng = ng; F->o = o;
@@ -1730,7 +1733,7 @@ KF_STEP(childwatch_step) {
         Entry *e = ENT(F->t.entry);
         if (F->t.idx >= F->t.limit) KF_RETV();
         pthread_mutex_lock(&e->mu);
-        Cont *k = F->t.idx < e->waiters.len ? e->waiters.data[F->t.idx] : NULL;
+        Cont *k = F->t.idx < e->waiters.len ? (Cont *)(uintptr_t)pv_get(&e->waiters, F->t.idx) : NULL;
         F->c = k && k->cut ? k->cut : NULL; F->g = F->c ? k->gen : NULL;
         if (F->c) { cut_ref(F->c); gen_ref(F->g); }
         F->more = F->t.idx + 1 < e->waiters.len;
@@ -1758,10 +1761,7 @@ KF_STEP(request_step) {
 }
 /* a dependency pair of the winning generation's certificate; a conflicting
  * revision is kept beside the other (the answer's validity check rejects it) */
-static void gdeps_add_cert(Entry *e, SymbolId sym, uint64_t rev) {
-    for (size_t k = 0; k + 1 < e->gdeps.len; k += 2) if (e->gdeps.data[k] == sym && e->gdeps.data[k + 1] == rev) return;
-    vec_push(&e->gdeps, sym); vec_push(&e->gdeps, rev);
-}
+static void gdeps_add_cert(Entry *e, SymbolId sym, uint64_t rev) { gdeps_add(e, sym, rev); }   /* appended: the list is read as a set */
 static void resume_push(KStack *ks, void *ret, Cont *k, EvalResult *r);
 /* §5 delivery: consumed once; the current generation of a WAITING slot wins
  * WAITING → RESUMING and executes the recipe once; any other ticket is
@@ -2178,7 +2178,7 @@ KF_STEP(producer_owner) {
         for (F->i = 0;; F->i++) {
             Entry *x = ENT(F->e);
             pthread_mutex_lock(&x->mu);
-            bool more = x->state == E_RUNNING && F->i < x->deps.len; EntryId c = more ? x->deps.data[F->i] : 0; bool hist = more && x->dep_hist.data[F->i];
+            bool more = x->state == E_RUNNING && F->i < x->deps.len; EntryId c = more ? pv_get(&x->deps, F->i) : 0; bool hist = more && pv_get(&x->dep_hist, F->i);
             pthread_mutex_unlock(&x->mu);
             fine_bump(FC_ADAPTER_STEPS);
             if (!more) break;

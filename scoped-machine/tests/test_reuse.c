@@ -161,8 +161,8 @@ static void a8_a9(void) {
     EvalResult *r0 = observe_r(gref, fc_true());
     EXPECT(r0->cls == R_NEUTRAL, "A9: opaque g is neutral");
     EntryId e_old = eval_entry_lookup(gref, fc_true());
-    const uint64_t *dp; size_t nd = eval_entry_gdeps(e_old, &dp);
-    EXPECT(nd == 1 && dp[0] == g && dp[1] == 1, "A9: the opaque observation records the symbol at revision 1 (absent body)");
+    const PVec *dp; size_t nd = eval_entry_gdeps(e_old, &dp);
+    EXPECT(nd == 1 && pv_get(dp, 0) == g && pv_get(dp, 1) == 1, "A9: the opaque observation records the symbol at revision 1 (absent body)");
     EXPECT(convert_term(b.G, fc_true(), gref, b.a, b.A) == CV_UNEQUAL, "A9: g is not convertible to a while opaque");
     EXPECT(set_global_body(g, b.a), "A9: body set");
     EXPECT(!eval_entry_deps_valid(e_old), "A9: the old answer's dependency is no longer current");

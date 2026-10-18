@@ -70,6 +70,7 @@ struct KStack {
     KFCtx *ctx;                 /* the suspended computation's dynamic state */
     KStack *sync_prev;          /* the next free synchronous record of this thread */
     KStack *sync_next_all;      /* every synchronous record of this thread (released at its exit) */
+    const char *due_fam; int due_counter, due_locks;   /* KF_REPORT: where the grant was spent (the stretch an overrun report names) */
 };
 
 /* the stack being stepped on this thread (NULL outside any step) */
@@ -80,7 +81,9 @@ void kf_overrun_note(const KStack *s);   /* KF_REPORT: a granted stack ran KF_OV
 enum { KF_OVERRUN_AT = 64 };
 static inline void kf_tick(int c) {
     KStack *s = kf_tl; if (!s) return;
-    kf_last_counter = c; s->used++; if (__builtin_expect(s->used == s->budget + KF_OVERRUN_AT, 0) && !s->sync && s->budget != KF_UNBOUNDED) kf_overrun_note(s); s->steps++; if (__builtin_expect(s->steps == XC_HALF, 0)) { s->steps_carry = xc_carry_push(s->steps_carry); s->steps = 0; }
+    kf_last_counter = c; s->used++;
+    if (__builtin_expect(s->used == s->budget, 0) && !s->sync) { s->due_fam = s->top ? s->top->fam->name : "-"; s->due_counter = c; s->due_locks = kf_lock_depth - s->lock_base; }
+    if (__builtin_expect(s->used == s->budget + KF_OVERRUN_AT, 0) && !s->sync && s->budget != KF_UNBOUNDED) kf_overrun_note(s); s->steps++; if (__builtin_expect(s->steps == XC_HALF, 0)) { s->steps_carry = xc_carry_push(s->steps_carry); s->steps = 0; }
 }
 static inline void kf_tickn(int c, uint64_t n) { KStack *s = kf_tl; if (!s) return; kf_last_counter = c; s->used += n; xl_add(&s->steps, &s->steps_carry, n); }
 static inline XSnap kf_steps(const KStack *s) { XSnap r = { s->steps, s->steps_carry }; return r; }

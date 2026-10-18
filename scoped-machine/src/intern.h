@@ -36,6 +36,7 @@ typedef struct {
     ChunkAlloc alloc; void *alloc_ctx;   /* NULL: calloc (the kernel's own tables) */
 } Chunked;
 void chunked_set_alloc(Chunked *c, ChunkAlloc alloc, void *ctx);
+void *chunk_uncleared(size_t bytes, void *ctx);   /* a supplier for tables whose slots are written before they are published: one arena block, never cleared */
 
 void chunked_init(Chunked *c, size_t elem);
 void chunked_free(Chunked *c);

@@ -52,6 +52,7 @@ typedef enum {
     FC_CLAIM_STEPS,           /* checker claim resolution: one claim or one premise examined under K.mu */
     FC_NAT_LIMBS,             /* exact naturals: one limb read, produced or compared */
     FC_CHAIN_STEPS,           /* chain readings: one unit of BOUNDARY / PAIR / MAP_CHAIN / cochain value / law instance / admission check */
+    FC_DEP_PAIRS,             /* producer read dependencies: one (symbol, revision) pair copied or checked */
     FC_COUNT
 } FineCounter;
 

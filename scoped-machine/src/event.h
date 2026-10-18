@@ -31,7 +31,7 @@
 #include "xcount.h"
 
 #define ED_MAX 1024                     /* dimension slots (families register at init) */
-#define ED_REUSE 31                     /* base of the reuse markers (fine transitions occupy 0..FC_COUNT-1) */
+#define ED_REUSE 32                     /* base of the reuse markers (fine transitions occupy 0..FC_COUNT-1) */
 typedef enum { EK_AMBIENT = 0, EK_EVAL_TASK, EK_NET_PAIR, EK_ENGINE_UNIT, EK_KERNEL_GRANT, EK_EFFECT_JOB, EK_CHAIN_STEP, EK_COUNT } EvKind;
 /* service owners (an event outside any client accounting scope) */
 enum { EO_AMBIENT = 1, EO_EVAL, EO_NET, EO_ENGINE, EO_KERNEL, EO_EFFECT, EO_CHAIN, EO_SERVICE_COUNT };

@@ -318,12 +318,13 @@ KF_STEP(frames_reserve) {
 /* §79.1: dependency-recording reads, appended to the enclosing frame */
 #define NOTE_SYMBOL(s) do { if (top_frame()) KF_CALL(gdeps_push, NULL, &top_frame()->gdeps, (s), global_revision(s)); } while (0)
 #define note_entry_PARAMS(X) X(EntryId, e)
-KF_DECL(note_entry, void, note_entry_PARAMS, const uint64_t *p; size_t n;)
-KF_STEP(note_entry) {   /* a ready entry's read dependencies (immutable once it is ready) */
+KF_DECL(note_entry, void, note_entry_PARAMS, const PVec *p; size_t n, k;)
+KF_STEP(note_entry) {   /* a ready entry's read dependencies (immutable once it is ready), one pair per transition */
     KF_BEGIN(note_entry);
     if (!top_frame() || !F->e) KF_RETV();
-    F->n = eval_entry_gdeps(F->e, &F->p);
-    KF_CALL(words_append, NULL, &top_frame()->gdeps, F->p, 2 * F->n);
+    F->n = 2 * eval_entry_gdeps(F->e, &F->p);
+    KF_CALL(words_reserve, NULL, &top_frame()->gdeps, F->n);
+    for (F->k = 0; F->k < F->n; F->k++) { Frame *f = top_frame(); f->gdeps.w[f->gdeps.n++] = pv_get(F->p, F->k); fine_bump(FC_DEP_PAIRS); KF_SAFE(); }
     KF_RETV();
     KF_END;
 }

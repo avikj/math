@@ -199,7 +199,7 @@ static void violation_note(const char *name) {
 void kf_overrun_note(const KStack *s) {
     if (getenv("KF_OVERRUN_ABORT")) abort();
     if (!getenv("KF_REPORT")) return;
-    char buf[96]; snprintf(buf, sizeof buf, "overrun %s counter=%d locks=%d", s->top ? s->top->fam->name : "-", kf_last_counter, kf_lock_depth - s->lock_base);
+    char buf[192]; snprintf(buf, sizeof buf, "overrun spent in %s (counter %d, locks %d), still running in %s (counter %d, locks %d)", s->due_fam ? s->due_fam : "-", s->due_counter, s->due_locks, s->top ? s->top->fam->name : "-", kf_last_counter, kf_lock_depth - s->lock_base);
     violation_note(buf);
 }
 static __thread KStack *sync_free;      /* records reused by this thread */

@@ -5,6 +5,7 @@
 /* ---- chunked arrays ---- */
 void chunked_init(Chunked *c, size_t elem) { radix_init(&c->dir); c->elem = elem; c->alloc = NULL; c->alloc_ctx = NULL; }
 void chunked_set_alloc(Chunked *c, ChunkAlloc alloc, void *ctx) { c->alloc = alloc; c->alloc_ctx = ctx; }
+void *chunk_uncleared(size_t bytes, void *ctx) { (void)ctx; return arena_alloc((bytes + 7) / 8, NULL); }
 /* both suppliers return owned arena chunks: a spare ceases to own its chunk
  * when it hands it to this table; release before dropping the directory */
 static void chunk_release(void *p, void *ctx) { Chunked *c = ctx; arena_release(p, (CHUNK_SIZE * c->elem + 7) / 8); }

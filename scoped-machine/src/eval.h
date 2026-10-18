@@ -44,14 +44,14 @@ typedef struct {
     FaceId face;        /* the projected face the entry is evaluated under */
     EntryState state;
     EvalResult *result; /* present exactly when READY */
-    VEC(Cont *) waiters;
+    PVec waiters;       /* Cont * (paged: a registration is one step, no copy) */
     size_t runs;        /* EVALUATE tasks executed for this key (must be ≤ 1) */
     size_t n_req, n_deliver, n_pub;   /* per-key event counts (for schedule comparison): V23 R5 low digits, under mu ... */
     const struct XCarry *n_req_cx, *n_deliver_cx, *n_pub_cx;   /* ... and their carries */
     uint64_t steps; const struct XCarry *steps_carry;   /* §60 trace: EVALUATE/RESUME frame steps charged to this producer (V23 R5: exact, low digit + carries, under mu) */
     uint64_t env;       /* the environment version at the key's creation (§79.2: a running producer stays tied to its snapshot) */
-    VEC(EntryId) deps;  /* §60 trace: consumer occurrences owned by this producer, in request order (slot = index): the historical request edges */
-    VEC(uint8_t) dep_hist;   /* LIVE-CUT-ADOPTION §5: 1 when the occurrence at that index was superseded by an adoption (historical, not an active-slot edge) */
+    PVec deps;          /* EntryId; §60 trace: consumer occurrences owned by this producer, in request order (slot = index): the historical request edges */
+    PVec dep_hist;      /* LIVE-CUT-ADOPTION §5: 1 when the occurrence at that index was superseded by an adoption (historical, not an active-slot edge) */
     /* §76.3 / §78 / §79: the structural computation identity, the historical
      * chain under the same (shape, face), the answer's residual and receipt,
      * and the symbol revisions the answer actually read */
@@ -60,7 +60,7 @@ typedef struct {
     EntryId shape_next;         /* the next entry of the same shape (insertion order; written once under entries_mu, read with acquire) */
     struct ShapeSide *sside;    /* its shape's side record (stable) */
     RefId residual; uint64_t receipt;
-    VEC(uint64_t) gdeps;        /* pairs (symbol, revision) */
+    PVec gdeps;                 /* pairs (symbol, revision), appended (a set when read: duplicates are equal pairs) */
     RefId adapter; uint64_t adapter_prefix; EntryId adapter_src;   /* §78.3–78.4: continue from a completed receipt instead of evaluating the body */
     bool is_alias;              /* §76.3: published as the residual of another producer's answer; it never ran a body */
     struct PrefixFact *prefix_head;   /* §84.2: the latest committed prefix fact of this producer (immutable facts, newest first; published with release) */
@@ -162,7 +162,7 @@ ShapeId eval_entry_shape(EntryId e);
  * unpublished entry */
 RefId eval_entry_residual(EntryId e);
 uint64_t eval_entry_receipt(EntryId e);
-size_t eval_entry_gdeps(EntryId e, const uint64_t **pairs);   /* (symbol, revision) pairs the answer read */
+size_t eval_entry_gdeps(EntryId e, const PVec **pairs);   /* (symbol, revision) pairs the answer read */
 bool eval_entry_deps_valid(EntryId e);                       /* every recorded revision is current */
 EntryId eval_entry_adapter_source(EntryId e);                /* the entry whose receipt this producer continued from, or 0 */
 bool eval_entry_is_alias(EntryId e);

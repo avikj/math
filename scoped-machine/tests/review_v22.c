@@ -51,9 +51,9 @@ static int adapter_premise(void){
     const PrefixFact*g=eval_entry_prefix(e);assert(g);
     bool ok=true;size_t n=0;for(const PrefixFact*q=g;q;q=q->next){n++;if(!has(q,F))ok=false;}
     RefId endpoint=at(src,w.i,iv_zero());EvalResult*r=whnf(endpoint,fc_true(),&st);
-    assert(st==W_OK&&r&&r->ref==w.x);const uint64_t*deps=NULL;
+    assert(st==W_OK&&r&&r->ref==w.x);const PVec*deps=NULL;
     size_t nd=eval_entry_gdeps(eval_entry_lookup(endpoint,fc_true()),&deps);bool final_has=false;
-    for(size_t k=0;k<nd;k++)if(deps[2*k]==F&&deps[2*k+1]==global_revision(F))final_has=true;
+    for(size_t k=0;k<nd;k++)if(pv_get(deps,2*k)==F&&pv_get(deps,2*k+1)==global_revision(F))final_has=true;
     printf("adapter-premise: source_reads_F=1 derived_facts=%zu all_preserve_F=%d final_preserves_F=%d expected=1/1\n",n,ok,final_has);
     ok=ok&&final_has;
     done();return ok?0:1;

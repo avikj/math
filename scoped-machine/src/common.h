@@ -100,6 +100,30 @@ static inline void words_append(Words *b, const uint64_t *x, size_t n) {
     b->n += n;
 }
 
+/* ---- paged vector of words: segment k holds 4·2^k words and never moves, so
+ * a push is one constant step (no copy) and an element's address is stable;
+ * readers that hold an index below a published length need no lock ---- */
+typedef struct { uint64_t **seg; size_t len; } PVec;
+enum { PV_SEGS = 60 };
+static inline unsigned pv_seg_(size_t i, size_t *off) { size_t j = i / 4 + 1; unsigned k = 63u - (unsigned)__builtin_clzll((unsigned long long)j); *off = i - 4 * (((size_t)1 << k) - 1); return k; }
+static inline uint64_t *pv_at(const PVec *v, size_t i) { size_t off; unsigned k = pv_seg_(i, &off); return &v->seg[k][off]; }
+static inline uint64_t pv_get(const PVec *v, size_t i) { return *pv_at(v, i); }
+static inline void pv_set(PVec *v, size_t i, uint64_t x) { *pv_at(v, i) = x; }
+/* segments are taken in order (segment k exactly when the length reaches its
+ * first index), so the directory is never read beyond the last taken slot and
+ * needs no clearing: every allocation here is one uncleared take */
+static inline void pv_push(PVec *v, uint64_t x) {
+    size_t off; unsigned k = pv_seg_(v->len, &off);
+    if (!v->seg) { v->seg = (uint64_t **)malloc(PV_SEGS * sizeof *v->seg); require(v->seg, "out of memory"); }
+    if (off == 0) { v->seg[k] = (uint64_t *)malloc(((size_t)4 << k) * sizeof(uint64_t)); require(v->seg[k], "out of memory"); }
+    v->seg[k][off] = x; __atomic_store_n(&v->len, v->len + 1, __ATOMIC_RELEASE);
+}
+static inline size_t pv_len(const PVec *v) { return __atomic_load_n(&v->len, __ATOMIC_ACQUIRE); }
+static inline void pv_free(PVec *v) {
+    if (v->seg) { if (v->len) { size_t off; unsigned last = pv_seg_(v->len - 1, &off); for (unsigned k = 0; k <= last; k++) free(v->seg[k]); } free(v->seg); }
+    v->seg = NULL; v->len = 0;
+}
+
 /* ---- generic pointer vector ---- */
 #define VEC(T) struct { T *data; size_t len, cap; }
 #define vec_push(v, x) do { \

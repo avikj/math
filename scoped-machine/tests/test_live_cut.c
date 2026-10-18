@@ -316,8 +316,8 @@ static void t_premise(void) {
     /* the held child was launched (and may have continued from the fact by
      * the launch-time adapter) while the premise held; if its answer carries
      * the premise, that answer is not reusable in the new environment */
-    { const uint64_t *pairs; size_t np = eval_entry_gdeps(Ib, &pairs); bool stale = false;
-      for (size_t k = 0; k < np; k++) if (pairs[2 * k] == q.O && pairs[2 * k + 1] == 1) stale = true;
+    { const PVec *pairs; size_t np = eval_entry_gdeps(Ib, &pairs); bool stale = false;
+      for (size_t k = 0; k < np; k++) if (pv_get(pairs, 2 * k) == q.O && pv_get(pairs, 2 * k + 1) == 1) stale = true;
       EXPECT(!stale || !eval_entry_deps_valid(Ib), "(b) an answer carrying the stale premise is not valid for reuse");
       printf("premise (b): answer carries the stale premise=%d (via the child's launch-time adapter=%d), valid for reuse=%d\n", stale, receipt_names_fact(eval_entry_receipt(Ib), bf->id, 0), eval_entry_deps_valid(Ib)); }
     /* (c) a structural prefix unaffected by the change is still adopted */
