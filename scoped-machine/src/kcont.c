@@ -2,6 +2,7 @@
 #include "kcont.h"
 #include "reuse.h"
 #include "kstack.h"
+#include "event.h"
 #include <string.h>
 #include <setjmp.h>
 
@@ -49,8 +50,11 @@ static void run_one(KCont *k, pthread_mutex_t *wmu, KCont **wrunning) {
     k->own = own;
     jmp_buf base; void *prev_target = kstack_unwind; kstack_unwind = &base;
     volatile bool cancelled = false;
+    size_t ev_base = ev_depth();
+    ev_begin(EK_KERNEL_GRANT, k->job, 0);        /* HANDOFF §6: each grant's transitions are one primitive event */
     if (setjmp(base) == 0) k->fn(k);
     else cancelled = true;                       /* V23 R3: unwound by cancellation; no result is published */
+    ev_unwind_to(ev_base);                       /* the last grant (and, after a cancellation, every unit it unwound) is published with its actual work */
     kstack_unwind = prev_target;
     reuse_scope_leave(prev_acct);
     require(kc_lock_depth == 0, "kernel continuation completed holding a lock");
@@ -59,6 +63,7 @@ static void run_one(KCont *k, pthread_mutex_t *wmu, KCont **wrunning) {
     else kalloc_release_owner(own);              /* its live allocations belong to whatever retains them */
     if (!cancelled && k->outcome == KO_PENDING) k->outcome = k->ok ? KO_OK : KO_INVALID;
     kc_tl = NULL;
+    ev_quiesce();                                /* published before the completion is visible */
     pthread_mutex_lock(wmu); *wrunning = NULL; pthread_mutex_unlock(wmu);   /* before completion is visible: the record may be freed after it */
     pthread_mutex_lock(&k->mu);
     k->state = 2; pthread_cond_broadcast(&k->cv);
@@ -73,6 +78,7 @@ static void *kc_worker(void *p) {
         KCont *k = w->k; w->k = NULL; w->running = k;
         pthread_mutex_unlock(&w->mu);
         run_one(k, &w->mu, &w->running);
+        ev_quiesce();
         pthread_mutex_lock(&P_mu); w->next = parked; parked = w; pthread_mutex_unlock(&P_mu);   /* park */
     }
 }
@@ -164,6 +170,7 @@ void kc_shutdown(void) {   /* teardown: every continuation has completed or been
  * thread holds no mutex (a yield deferred past a locked section adds that
  * section's transitions to the unit; they are counted) */
 static void yield_now(KCont *k) {
+    ev_owner_switch();   /* the innermost open unit's work so far is published as a segment before control returns (the units stay open on this stack) */
     pthread_mutex_lock(&k->mu);
     k->state = 0; pthread_cond_broadcast(&k->cv);
     while (k->state != 1) pthread_cond_wait(&k->cv, &k->mu);

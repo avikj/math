@@ -3,6 +3,7 @@
 #include "reuse.h"
 #include "fine.h"
 #include "kcont.h"
+#include "event.h"
 
 Machine M;
 /* the machine lifetime generation: thread-local construction state that
@@ -11,6 +12,8 @@ static uint64_t machine_gen_ctr;
 uint64_t machine_generation(void) { return __atomic_load_n(&machine_gen_ctr, __ATOMIC_ACQUIRE); }
 
 void machine_init(void) {
+    reuse_reset_all(); fine_reset();  /* a session's counts start with its stream (nothing between sessions is attributed to either) */
+    ev_init();                    /* the primitive execution stream of this session */
     memset(&M, 0, sizeof M);
     kc_session(KC_MOD_MACHINE, true);
     __atomic_add_fetch(&machine_gen_ctr, 1, __ATOMIC_ACQ_REL);
@@ -61,7 +64,6 @@ void machine_free(void) {
     wordmap_free(&M.compose_memo);
     interner_free(&M.edge_lists); wordmap_free(&M.edges);
     interner_free(&M.shapes); wordmap_free(&M.shape_memo); pthread_mutex_destroy(&M.shape_mu);
-    reuse_reset_all(); fine_reset();
     chunked_free(&M.origin_side);
     chunked_free(&M.ref_side);
     chunked_free(&M.term_decl);
@@ -71,4 +73,5 @@ void machine_free(void) {
     pthread_mutex_destroy(&M.term_mu);
     memset(&M, 0, sizeof M);
     kc_session(KC_MOD_MACHINE, false);   /* V23 R3: with the last subsystem, what cancelled continuations still owned privately is reaped */
+    reuse_reset_all(); fine_reset(); ev_free();   /* after every teardown step: the next session's counts and stream start together */
 }

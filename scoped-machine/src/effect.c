@@ -2,6 +2,7 @@
 #include "effect.h"
 #include "work.h"
 #include "fine.h"
+#include "event.h"
 #include "lib.h"
 #include <string.h>
 #include <sched.h>
@@ -62,11 +63,12 @@ static struct {
     XCount ev[sizeof(EffEvents) / sizeof(size_t)];
     bool live;
 } X;
-#define EV(f) xc_inc(&X.ev[offsetof(EffEvents, f) / sizeof(size_t)])
+static unsigned EVB_eff;
+#define EV(f) do { xc_inc(&X.ev[offsetof(EffEvents, f) / sizeof(size_t)]); ev_add(EVB_eff + (unsigned)(offsetof(EffEvents, f) / sizeof(size_t)), 1); } while (0)
 static uint64_t fresh_id(void) { return __atomic_add_fetch(&X.ids, 1, __ATOMIC_RELAXED); }
 #define GROW(arr, n, cap) do { if ((n) == (cap)) { (cap) = (cap) ? 2 * (cap) : 4; (arr) = realloc((arr), (cap) * sizeof *(arr)); require((arr), "out of memory"); } } while (0)
 
-void effect_init(void) { memset(&X, 0, sizeof X); pthread_mutex_init(&X.mu, NULL); pthread_mutex_init(&X.commit_mu, NULL); wordmap_init(&X.index); wordmap_init(&X.stepocc); X.live = true; }
+void effect_init(void) { memset(&X, 0, sizeof X); pthread_mutex_init(&X.mu, NULL); pthread_mutex_init(&X.commit_mu, NULL); wordmap_init(&X.index); wordmap_init(&X.stepocc); X.live = true; EVB_eff = ev_family("effect.events", sizeof(EffEvents) / sizeof(size_t), X.ev); }
 static void proposal_free(EffProposal *P) { free(P->in); free(P->oh); free(P->op); free(P->caps); free(P); }
 void effect_free(void) {
     if (!X.live) return;

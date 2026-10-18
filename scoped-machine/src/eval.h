@@ -92,6 +92,7 @@ EvalResult *whnf_in(RefId t, ContextId ctx, WhnfStatus *status);
  * With a worker pool, waits until the ready multiset is empty and every
  * worker is idle. */
 size_t eval_run(void);
+size_t eval_shadow_check(bool verbose);   /* every registered counter against its fold over the primitive stream, at a consistent cut (call when quiescent) */
 /* start n worker threads (0 = sequential, the default); replaces any pool */
 void eval_set_workers(size_t n);
 size_t eval_workers(void);

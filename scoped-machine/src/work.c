@@ -17,6 +17,7 @@
  * memo values, per-kind structs) lives in a parallel chunked array.
  */
 #include "work.h"
+#include "event.h"
 #include "arena.h"
 #include "kcont.h"
 #include "proof.h"
@@ -69,6 +70,9 @@ static struct {
     uint64_t sync_clear_words;             /* words a chunk had to clear synchronously because its spare was not ready (counted) */
     bool live;
 } W;
+static unsigned EVB_lx;   /* HANDOFF §7: the ledger's dimensions in the primitive stream (LX is one contiguous array of exact counts) */
+#define LXADD(field, n) do { uint64_t lx_n_ = (n); xc_add(&W.LX.field, lx_n_); ev_add(EVB_lx + (unsigned)(&W.LX.field - (XCount *)&W.LX), lx_n_); } while (0)
+
 
 static uint64_t hash_step(uint64_t h, uint64_t w) { h ^= w + 0x9E3779B97F4A7C15ULL + (h << 6) + (h >> 2); return h * 0xBF58476D1CE4E5B9ULL; }
 
@@ -104,7 +108,7 @@ static uint64_t rec_w(uint64_t id, size_t i) { size_t n; const uint64_t *w = rec
 /* synchronous interning, charged per hashed word, probe and compared word
  * (used by constructors that are not themselves framed operations; the
  * framed INTERN below performs the same steps one per frame) */
-static void charge(FrameFamily f) { xc_add(&W.LX.frames[f], 1); xc_add(&W.LX.by_phase[W.phase], 1); }
+static void charge(FrameFamily f) { LXADD(frames[f], 1); LXADD(by_phase[W.phase], 1); }
 /* §94.2(6): the reuse administration a kernel call performs (shape nodes
  * built, dependency checks, receipt instances) is charged into its ledger
  * families from the kernel's own counters around the call; these are
@@ -132,7 +136,7 @@ static void ledger_fold_late(WorkLedger *l) {
  * the relocation (`ktab_begin_grow`); meanwhile the current table serves */
 static bool ktab_prepare_grow(void) {   /* true when the fresh array is ready */
     KTab *t = &W.tab;
-    if (!t->fresh) { size_t ns = t->nslots * 2; t->fresh = arena_alloc(ns, NULL); t->fresh_n = ns; t->cleared = 0; xc_add(&W.LX.alloc_words, ns); charge(FR_ALLOCATE_CHUNK); return false; }
+    if (!t->fresh) { size_t ns = t->nslots * 2; t->fresh = arena_alloc(ns, NULL); t->fresh_n = ns; t->cleared = 0; LXADD(alloc_words, ns); charge(FR_ALLOCATE_CHUNK); return false; }
     size_t end = t->cleared + CHUNK_WORDS; if (end > t->fresh_n) end = t->fresh_n;
     for (size_t x = t->cleared; x < end; x++) t->fresh[x] = 0;
     t->cleared = end; charge(FR_ALLOCATE_CHUNK);
@@ -161,12 +165,12 @@ static bool ktab_grow_chunk(void) {
             t->moving = id; t->probe = rec_hash(id) & (t->nslots - 1);
             continue;
         }
-        xc_add(&W.LX.probes, 1); budget--;
+        LXADD(probes, 1); budget--;
         if (t->slots[t->probe]) { t->probe = (t->probe + 1) & (t->nslots - 1); continue; }
         t->slots[t->probe] = t->moving; t->moving = 0;
     }
     charge(FR_TABLE_PROBE);
-    if (t->cursor >= t->old_n && !t->moving) { arena_release(t->old, t->old_n); t->old = NULL; xc_add(&W.LX.release_words, t->old_n); charge(FR_RELEASE_CHUNK); return true; }
+    if (t->cursor >= t->old_n && !t->moving) { arena_release(t->old, t->old_n); t->old = NULL; LXADD(release_words, t->old_n); charge(FR_RELEASE_CHUNK); return true; }
     return false;
 }
 static void ktab_settle(void) { while (!ktab_grow_chunk()) ; }
@@ -179,7 +183,7 @@ static void store_begin_grow(size_t extra) {
     while (nc < t->store.n + extra) { require(nc <= SIZE_MAX / 2, "record store exhausted"); nc *= 2; }
     size_t got; uint64_t *nw = arena_alloc(nc, &got);   /* one bounded arena allocation (≤ ARENA_ORDERS split steps); no copy, no clearing */
     t->sold = t->store.w; t->sold_n = t->store.n; t->smoved = 0; t->sold_cap = t->store.cap;
-    t->store.w = nw; t->store.cap = got; xc_add(&W.LX.alloc_words, got); charge(FR_ALLOCATE_CHUNK);
+    t->store.w = nw; t->store.cap = got; LXADD(alloc_words, got); charge(FR_ALLOCATE_CHUNK);
 }
 static bool store_grow_chunk(void) {
     KTab *t = &W.tab;
@@ -187,7 +191,7 @@ static bool store_grow_chunk(void) {
     size_t end = t->smoved + CHUNK_WORDS; if (end > t->sold_n) end = t->sold_n;
     for (size_t x = t->smoved; x < end; x++) t->store.w[x] = t->sold[x];
     t->smoved = end; charge(FR_ALLOCATE_CHUNK);
-    if (t->smoved >= t->sold_n) { arena_release(t->sold, t->sold_cap); t->sold = NULL; xc_add(&W.LX.release_words, t->sold_n); charge(FR_RELEASE_CHUNK); return true; }
+    if (t->smoved >= t->sold_n) { arena_release(t->sold, t->sold_cap); t->sold = NULL; LXADD(release_words, t->sold_n); charge(FR_RELEASE_CHUNK); return true; }
     return false;
 }
 static void store_settle(void) { while (!store_grow_chunk()) ; }
@@ -196,16 +200,16 @@ static uint64_t intern_sync(const uint64_t *w, size_t n, bool *created) {
     ktab_settle(); store_settle();
     if (created) *created = false;
     uint64_t h = 0x9E3779B97F4A7C15ULL ^ n;
-    for (size_t i = 0; i < n; i++) { h = hash_step(h, w[i]); xc_add(&W.LX.limb_ops, 1); charge(FR_FORMULA_INTERN_STEP); }
+    for (size_t i = 0; i < n; i++) { h = hash_step(h, w[i]); LXADD(limb_ops, 1); charge(FR_FORMULA_INTERN_STEP); }
     if ((t->n + 1) * 2 > t->nslots) ktab_grow();
     size_t j = h & (t->nslots - 1);
     for (;;) {
-        xc_add(&W.LX.probes, 1); charge(FR_TABLE_PROBE);
+        LXADD(probes, 1); charge(FR_TABLE_PROBE);
         uint64_t id = t->slots[j];
         if (!id) break;
         if (rec_hash(id) == h) {
             size_t m; const uint64_t *v = rec_words(id, &m);
-            bool eq = m == n; for (size_t i = 0; eq && i < n; i++) { xc_add(&W.LX.word_compares, 1); charge(FR_FORMULA_INTERN_STEP); eq = v[i] == w[i]; }
+            bool eq = m == n; for (size_t i = 0; eq && i < n; i++) { LXADD(word_compares, 1); charge(FR_FORMULA_INTERN_STEP); eq = v[i] == w[i]; }
             if (eq) return id;
         }
         j = (j + 1) & (t->nslots - 1);
@@ -213,7 +217,7 @@ static uint64_t intern_sync(const uint64_t *w, size_t n, bool *created) {
     if (t->store.n + n + 2 > t->store.cap) { store_begin_grow(n + 2); store_settle(); }   /* synchronous path: the growth and its relocation run to completion here */
     size_t off = t->store.n;
     t->store.w[t->store.n++] = h; t->store.w[t->store.n++] = n;
-    for (size_t i = 0; i < n; i++) { t->store.w[t->store.n++] = w[i]; xc_add(&W.LX.alloc_words, 1); charge(FR_ALLOCATE_CHUNK); }
+    for (size_t i = 0; i < n; i++) { t->store.w[t->store.n++] = w[i]; LXADD(alloc_words, 1); charge(FR_ALLOCATE_CHUNK); }
     rec_publish_off(off);
     uint64_t id = t->n; t->slots[j] = id;
     Side *s = side(id); memset(s, 0, sizeof *s); s->kind = (uint8_t)w[0];
@@ -227,12 +231,12 @@ static uint64_t intern_sync(const uint64_t *w, size_t n, bool *created) {
 static uint64_t find_in(const uint64_t *slots, size_t nslots, uint64_t h, const uint64_t *w, size_t n) {
     size_t j = h & (nslots - 1);
     for (;;) {
-        xc_add(&W.LX.probes, 1); charge(FR_TABLE_PROBE);
+        LXADD(probes, 1); charge(FR_TABLE_PROBE);
         uint64_t id = slots[j];
         if (!id) return 0;
         if (rec_hash(id) == h) {
             size_t m; const uint64_t *v = rec_words(id, &m);
-            bool eq = m == n; for (size_t i = 0; eq && i < n; i++) { xc_add(&W.LX.word_compares, 1); charge(FR_FORMULA_INTERN_STEP); eq = v[i] == w[i]; }
+            bool eq = m == n; for (size_t i = 0; eq && i < n; i++) { LXADD(word_compares, 1); charge(FR_FORMULA_INTERN_STEP); eq = v[i] == w[i]; }
             if (eq) return id;
         }
         j = (j + 1) & (nslots - 1);
@@ -241,7 +245,7 @@ static uint64_t find_in(const uint64_t *slots, size_t nslots, uint64_t h, const 
 static uint64_t find_sync(const uint64_t *w, size_t n) {
     KTab *t = &W.tab;
     uint64_t h = 0x9E3779B97F4A7C15ULL ^ n;
-    for (size_t i = 0; i < n; i++) { h = hash_step(h, w[i]); xc_add(&W.LX.limb_ops, 1); charge(FR_FORMULA_INTERN_STEP); }
+    for (size_t i = 0; i < n; i++) { h = hash_step(h, w[i]); LXADD(limb_ops, 1); charge(FR_FORMULA_INTERN_STEP); }
     uint64_t id = find_in(t->slots, t->nslots, h, w, n);
     if (!id && t->old) id = find_in(t->old, t->old_n, h, w, n);
     return id;
@@ -261,7 +265,7 @@ static void *pool_take(size_t bytes) {
 }
 static void spare_init(struct Spare *sp, size_t bytes) { sp->need = (bytes + 7) / 8; sp->block = NULL; sp->words = sp->cleared = 0; }
 static bool spare_tend(struct Spare *sp) {   /* one bounded step; true when the spare is ready */
-    if (!sp->block) { sp->block = arena_alloc(sp->need, &sp->words); sp->cleared = 0; xc_add(&W.LX.alloc_words, sp->words); charge(FR_ALLOCATE_CHUNK); return false; }
+    if (!sp->block) { sp->block = arena_alloc(sp->need, &sp->words); sp->cleared = 0; LXADD(alloc_words, sp->words); charge(FR_ALLOCATE_CHUNK); return false; }
     if (sp->cleared >= sp->need) return true;
     size_t end = sp->cleared + CHUNK_WORDS; if (end > sp->need) end = sp->need;
     for (size_t x = sp->cleared; x < end; x++) sp->block[x] = 0;
@@ -395,9 +399,9 @@ static Op *job_for(Frame f, bool *created) {
     uint64_t w[10]; size_t n = job_key(&f, w);
     if (!shared_family(f.fam)) { w[1] = f.fam; w[2] = ++W.mark_seq; n = 3; }   /* a private root (buffer-carrying) is never shared */
     bool fresh; uint64_t id = intern_sync(w, n, &fresh);
-    xc_add(&W.LX.probes, 1); xc_add(&W.LX.memo_lookup, 1); charge(FR_PRODUCER_LOOKUP);
+    LXADD(probes, 1); LXADD(memo_lookup, 1); charge(FR_PRODUCER_LOOKUP);
     Side *sd = side(id);
-    if (sd->ptr && ((Op *)sd->ptr)->st == OP_COMPLETE) xc_add(&W.LX.memo_hit, 1);
+    if (sd->ptr && ((Op *)sd->ptr)->st == OP_COMPLETE) LXADD(memo_hit, 1);
     if (!sd->ptr) {
         Op *o = op_new_record(id, f.fam);
         *(Frame *)paged_push(&o->stack) = f;
@@ -413,7 +417,7 @@ static Op *job_for(Frame f, bool *created) {
 static Frame fr(uint16_t fam, uint64_t a, uint64_t b, uint64_t c, uint64_t d) { Frame f; memset(&f, 0, sizeof f); f.fam = fam; f.a = a; f.b = b; f.c = c; f.d = d; paged_init(&f.buf, sizeof(uint64_t)); paged_init(&f.buf2, sizeof(uint64_t)); paged_init(&f.buf3, sizeof(uint64_t)); return f; }
 static void frame_free(Frame *f) {   /* O(1): the pages are retired and released one per unit (arena_reap in op_step) */
     size_t n = f->buf.n + f->buf2.n;
-    xc_add(&W.LX.release_words, n); if (n) charge(FR_RELEASE_CHUNK);
+    LXADD(release_words, n); if (n) charge(FR_RELEASE_CHUNK);
     paged_retire(&f->buf); paged_retire(&f->buf2); paged_retire(&f->buf3);
 }
 /* one frame of the first dead stack per call; the empty stack's pages are then retired */
@@ -447,7 +451,7 @@ static void push(Op *o, Frame f) {
 static Op *job_at(uint64_t id, const Frame *f, bool *created) {
     Side *sd = side(id);
     *created = false;
-    if (sd->ptr && ((Op *)sd->ptr)->st == OP_COMPLETE) xc_add(&W.LX.memo_hit, 1);
+    if (sd->ptr && ((Op *)sd->ptr)->st == OP_COMPLETE) LXADD(memo_hit, 1);
     if (!sd->ptr) {
         Op *o = op_new_record(id, f->fam);
         *(Frame *)paged_push(&o->stack) = *f;
@@ -460,7 +464,7 @@ static Op *job_at(uint64_t id, const Frame *f, bool *created) {
 static void deliver_to(Op *w, Op *j) {
     w->waiting_on = 0;
     if (w->stack.n && top(w)->fam == OF_KERNEL && top(w)->ph == 1) return;   /* a continuation that waited for j's continuation: it re-examines its own condition */
-    if (j->st == OP_COMPLETE) { w->ret = j->result; xc_add(&W.LX.memo_deliver, 1); charge(FR_ALIAS_DELIVERY); reuse_bump(REUSE_READY_HIT); }
+    if (j->st == OP_COMPLETE) { w->ret = j->result; LXADD(memo_deliver, 1); charge(FR_ALIAS_DELIVERY); reuse_bump(REUSE_READY_HIT); }
     else if (j->st == OP_INVALID) { if (j->unresolved) w->unresolved = j->unresolved; fail(w, j->diag); }   /* an attempt-local failure stays attempt-local in the dependents */
     else limit(w, j->diag);
 }
@@ -471,7 +475,7 @@ static void step_join(Op *o, Frame *f) {
         Frame g = fr((uint16_t)f->acc, f->a, f->b, f->c, f->d); g.e = f->e;
         bool created; Op *j = job_at(o->ret, &g, &created);
         if (!created) frame_free(&g);
-        xc_add(&W.LX.memo_lookup, 1);
+        LXADD(memo_lookup, 1);
         if (j == o) { fail(o, "cyclic request: an operation requested itself"); return; }
         if (j->st != OP_RUNNING) { frame_free(f); paged_pop(&o->stack); deliver_to(o, j); return; }
         if (created) { frame_free(f); paged_pop(&o->stack); o->waiting_on = j->id; o->kwait = false; pw_push(&j->waiters, o->id); return; }
@@ -499,7 +503,7 @@ static void limit(Op *o, const char *why) { if (o->st != OP_RUNNING) return; o->
 
 /* exact natural arithmetic (nat.h): one limb operation per limb; the sum is
  * always representable (INFINITY absorbs) */
-static bool add_checked(Cost a, Cost b, Cost *out) { xc_add(&W.LX.limb_ops, 1); *out = cost_sum(a, b); return true; }
+static bool add_checked(Cost a, Cost b, Cost *out) { LXADD(limb_ops, 1); *out = cost_sum(a, b); return true; }
 Cost cost_add(Cost a, Cost b, bool *overflow) { if (overflow) *overflow = false; return cost_sum(a, b); }
 
 /* ---- the frame bodies ---- */
@@ -661,7 +665,8 @@ OpStatus op_step(OpId h, size_t budget) {
     Handle *hd = HND(h); Op *root = JOB(hd->job);
     while (root->st == OP_RUNNING && budget) {
         W.grant = budget; W.extra = 0;
-        if (!service(root)) break;
+        ev_begin(EK_ENGINE_UNIT, hd->job, 0); bool ok = service(root); ev_end();   /* HANDOFF §6: one engine unit, one primitive event */
+        if (!ok) break;
         size_t took = 1 + W.extra; if (took > budget) took = budget;   /* a kernel continuation may take several transitions in one hand-off, each a unit */
         budget -= took; hd->frames += took;
         arena_tend();   /* one retired page released and one spare-chunk clearing step per unit (§94) */
@@ -679,7 +684,7 @@ uint64_t op_frames(OpId h) { pthread_mutex_lock(&W.mu); uint64_t n = HND(h)->fra
 void op_release(OpId h) { pthread_mutex_lock(&W.mu); Handle *hd = HND(h); hd->released = true; charge(FR_RELEASE_CHUNK); pthread_mutex_unlock(&W.mu); }
 /* drive a job's cone to a non-running state under the lock; returns the result, or 0 with *why */
 static uint64_t run_locked(Op *o, const char **why) {
-    while (o->st == OP_RUNNING) { W.grant = KC_UNBOUNDED; W.extra = 0; if (!service(o)) break; arena_tend(); }   /* the synchronous driver grants a kernel continuation its whole run in one hand-off */
+    while (o->st == OP_RUNNING) { W.grant = KC_UNBOUNDED; W.extra = 0; ev_begin(EK_ENGINE_UNIT, o->id, 0); bool ok = service(o); ev_end(); if (!ok) break; arena_tend(); }   /* the synchronous driver grants a kernel continuation its whole run in one hand-off */
     if (o->st != OP_COMPLETE) { if (why) *why = o->st == OP_RUNNING ? "operation suspended: no enabled job (cyclic wait)" : o->diag; return 0; }
     return o->result;
 }
@@ -687,7 +692,7 @@ static uint64_t run_locked(Op *o, const char **why) {
  * (counting the lookup and, for a completed answer, its delivery) */
 static Op *job_sync(Frame f) {
     bool created; Op *j = job_for(f, &created);
-    if (!created && j->st == OP_COMPLETE) { xc_add(&W.LX.memo_deliver, 1); charge(FR_ALIAS_DELIVERY); reuse_bump(REUSE_READY_HIT); }
+    if (!created && j->st == OP_COMPLETE) { LXADD(memo_deliver, 1); charge(FR_ALIAS_DELIVERY); reuse_bump(REUSE_READY_HIT); }
     return j;
 }
 static uint64_t run_op(int family, Phase ph, Frame f, const char **why) { (void)family; (void)ph; return run_locked(job_sync(f), why); }
@@ -717,7 +722,7 @@ static void step_intern(Op *o, Frame *f) {
     switch (f->ph) {
     case 0:
         if (f->i == 0) f->acc = 0x9E3779B97F4A7C15ULL ^ f->buf.n;
-        if (f->i < f->buf.n) { f->acc = hash_step(f->acc, pw_get(&f->buf, f->i)); f->i++; xc_add(&W.LX.limb_ops, 1); return; }
+        if (f->i < f->buf.n) { f->acc = hash_step(f->acc, pw_get(&f->buf, f->i)); f->i++; LXADD(limb_ops, 1); return; }
         if (t->old) { f->ph = 4; return; }
         if ((t->n + 1) * 2 > t->nslots) { if (!ktab_prepare_grow()) return; ktab_begin_grow(); f->ph = 4; return; }   /* growth: one allocation unit, CHUNK_WORDS cleared per unit, then relocation units */
         f->j = f->acc & (t->nslots - 1); f->e = t->gen; f->ph = 1; return;
@@ -727,7 +732,7 @@ static void step_intern(Op *o, Frame *f) {
     case 1: {   /* one probe */
         if (t->old) { f->ph = 4; return; }
         if (f->e != t->gen) { f->j = f->acc & (t->nslots - 1); f->e = t->gen; }   /* the table changed since this cursor was taken */
-        xc_add(&W.LX.probes, 1);
+        LXADD(probes, 1);
         uint64_t id = t->slots[f->j];
         if (!id) {
             if (!f->acc4) { f->ph = 5; return; }                                 /* no candidate yet: reserve */
@@ -743,9 +748,9 @@ static void step_intern(Op *o, Frame *f) {
     case 2: {   /* compare one word */
         if (t->old || f->e != t->gen) { f->ph = 1; return; }                     /* re-probe: the table moved under the comparison */
         size_t m; const uint64_t *v = rec_words(f->acc3, &m);
-        xc_add(&W.LX.word_compares, 1);
+        LXADD(word_compares, 1);
         if (f->i < m) { if (v[f->i] != pw_get(&f->buf, f->i)) { f->j = (f->j + 1) & (t->nslots - 1); f->ph = 1; return; } f->i++; return; }
-        if (f->acc4) { xc_add(&W.LX.release_words, f->buf.n + 2); charge(FR_RELEASE_CHUNK); }   /* an equal key was interned meanwhile: the candidate is abandoned */
+        if (f->acc4) { LXADD(release_words, f->buf.n + 2); charge(FR_RELEASE_CHUNK); }   /* an equal key was interned meanwhile: the candidate is abandoned */
         fin(o, f->acc3); return;
     }
     case 5: {   /* reserve an exclusive extent; only copied payload is published */
@@ -756,7 +761,7 @@ static void step_intern(Op *o, Frame *f) {
         t->store.n += f->buf.n + 2;
         store_write(f->acc2, f->acc);
         store_write(f->acc2 + 1, f->buf.n);
-        xc_add(&W.LX.alloc_words, f->buf.n + 2); charge(FR_ALLOCATE_CHUNK);
+        LXADD(alloc_words, f->buf.n + 2); charge(FR_ALLOCATE_CHUNK);
         f->i = 0; f->ph = 3; return;
     }
     case 3: {   /* copy one word into the reserved extent; then re-probe with the candidate held */
@@ -771,7 +776,7 @@ static void step_lookup(Op *o, Frame *f) {
     switch (f->ph) {
     case 0:
         if (f->i == 0) f->acc = 0x9E3779B97F4A7C15ULL ^ f->buf.n;
-        if (f->i < f->buf.n) { f->acc = hash_step(f->acc, pw_get(&f->buf, f->i)); f->i++; xc_add(&W.LX.limb_ops, 1); return; }
+        if (f->i < f->buf.n) { f->acc = hash_step(f->acc, pw_get(&f->buf, f->i)); f->i++; LXADD(limb_ops, 1); return; }
         f->j = f->acc & (t->nslots - 1); f->e = t->gen; f->ph = 1; return;
     case 3:   /* one relocation unit of a growth in progress, then re-probe */
         if (ktab_grow_chunk()) { f->j = f->acc & (t->nslots - 1); f->e = t->gen; f->ph = 1; }
@@ -779,7 +784,7 @@ static void step_lookup(Op *o, Frame *f) {
     case 1: {
         if (t->old) { f->ph = 3; return; }
         if (f->e != t->gen) { f->j = f->acc & (t->nslots - 1); f->e = t->gen; }
-        xc_add(&W.LX.probes, 1);
+        LXADD(probes, 1);
         uint64_t id = t->slots[f->j];
         if (!id) { fin(o, 0); return; }
         if (rec_hash(id) == f->acc) { size_t m; rec_words(id, &m); if (m == f->buf.n) { f->acc3 = id; f->i = 0; f->ph = 2; return; } }
@@ -788,7 +793,7 @@ static void step_lookup(Op *o, Frame *f) {
     case 2: {
         if (t->old || f->e != t->gen) { f->ph = 1; return; }
         size_t m; const uint64_t *v = rec_words(f->acc3, &m);
-        xc_add(&W.LX.word_compares, 1);
+        LXADD(word_compares, 1);
         if (f->i < m) { if (v[f->i] != pw_get(&f->buf, f->i)) { f->j = (f->j + 1) & (t->nslots - 1); f->ph = 1; return; } f->i++; return; }
         fin(o, f->acc3); return;
     }
@@ -801,14 +806,14 @@ static Frame fr_intern_own(Paged *w) { Frame f = fr(OF_INTERN, 0, 0, 0, 0); page
 static Frame fr_lookup(const uint64_t *w, size_t n) { Frame f = fr(OF_LOOKUP, 0, 0, 0, 0); pw_append(&f.buf, w, n); return f; }
 static void push_intern(Op *o, const uint64_t *w, size_t n) { push(o, fr_intern(w, n)); }
 static void push_intern_own(Op *o, Paged *w) { push(o, fr_intern_own(w)); }
-static void push_lookup(Op *o, const uint64_t *w, size_t n) { xc_add(&W.LX.memo_lookup, 1); push(o, fr_lookup(w, n)); }
+static void push_lookup(Op *o, const uint64_t *w, size_t n) { LXADD(memo_lookup, 1); push(o, fr_lookup(w, n)); }
 static Cost kind_weight(ModelId m, AtomId a);
 /* §94: fixed-key indices consulted from a unit go through the framed LOOKUP
  * (one hashed word / one probe / one compared word per unit); the delivered
  * record id is read by these */
-static Cost weight_from(uint64_t ret, ModelId m, AtomId a) { if (ret && side(ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); return side(ret)->val; } return kind_weight(m, a); }
+static Cost weight_from(uint64_t ret, ModelId m, AtomId a) { if (ret && side(ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); return side(ret)->val; } return kind_weight(m, a); }
 static void push_weight_lookup(Op *o, ModelId m, AtomId a) { uint64_t k[3] = { K_WEIGHT, m, a }; push_lookup(o, k, 3); }
-static AtomId amap_from(uint64_t ret, AtomId a) { if (ret && side(ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); return side(ret)->val; } return a; }
+static AtomId amap_from(uint64_t ret, AtomId a) { if (ret && side(ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); return side(ret)->val; } return a; }
 static void push_amap_lookup(Op *o, AtomMapId m, AtomId a) { uint64_t e[4] = { K_MEMO, 0xA3, m, a }; push_lookup(o, e, 4); }
 
 /* ---------------------------------------------------------------- 3. atoms, sets, formulas ---- */
@@ -824,8 +829,8 @@ static AtomId atom_producer_at(ShapeId s, FaceId eta, uint64_t env) {
 }
 static AtomId atom_producer_ref(RefId t, FaceId chi) {
     size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
-    FaceId eta = fc_project(chi, S, n); xc_add(&W.LX.kernel_calls, 2);
-    LOCK; xc_add(&W.LX.kernel_calls, 2); int ph = W.phase; UNLOCK;
+    FaceId eta = fc_project(chi, S, n); LXADD(kernel_calls, 2);
+    LOCK; LXADD(kernel_calls, 2); int ph = W.phase; UNLOCK;
     ReuseScope sc; memset(&sc, 0, sizeof sc); sc.phase = ph; sc.refs = 1;   /* this synchronous call's own accounting scope */
     ReuseScope *prev = reuse_scope_enter(&sc);
     EntryId e = eval_entry_lookup(t, eta); ShapeId sh = shape_of(t);
@@ -845,7 +850,7 @@ AtomId atom_named(uint64_t name) { uint64_t w[3] = { K_ATOM, WK_NAMED, name }; r
 AtomKind atom_kind(AtomId a) { require(rec_kind(a) == K_ATOM, "not an atom"); return (AtomKind)rec_w(a, 1); }
 const uint64_t *atom_words(AtomId a, size_t *n) { const uint64_t *w = rec_words(a, n); (*n)--; return w + 1; }
 
-static int cmp_counted(const void *a, const void *b) { xc_add(&W.LX.word_compares, 1); uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y ? 1 : 0; }
+static int cmp_counted(const void *a, const void *b) { LXADD(word_compares, 1); uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y ? 1 : 0; }
 static void sort_counted(uint64_t *p, size_t n) { if (n > 1) qsort(p, n, sizeof(uint64_t), cmp_counted); }
 static SetId set_intern_sorted(const uint64_t *atoms, size_t n) { Words w; words_init(&w); words_push(&w, K_SET); words_append(&w, atoms, n); uint64_t id = intern_sync(w.w, w.n, NULL); words_free(&w); return id; }
 SetId set_make(size_t n, const AtomId *atoms) {
@@ -859,7 +864,7 @@ SetId set_make(size_t n, const AtomId *atoms) {
 }
 size_t set_size(SetId s) { size_t n; rec_words(s, &n); return n - 1; }
 const AtomId *set_atoms(SetId s, size_t *n) { const uint64_t *w = rec_words(s, n); require(w[0] == K_SET, "not a set"); (*n)--; return w + 1; }
-bool set_has(SetId s, AtomId a) { size_t n; const AtomId *x = set_atoms(s, &n); size_t lo = 0, hi = n; while (lo < hi) { size_t mid = (lo + hi) / 2; xc_add(&W.LX.word_compares, 1); charge(FR_SUPPORT_CHUNK); if (x[mid] == a) return true; if (x[mid] < a) lo = mid + 1; else hi = mid; } return false; }
+bool set_has(SetId s, AtomId a) { size_t n; const AtomId *x = set_atoms(s, &n); size_t lo = 0, hi = n; while (lo < hi) { size_t mid = (lo + hi) / 2; LXADD(word_compares, 1); charge(FR_SUPPORT_CHUNK); if (x[mid] == a) return true; if (x[mid] < a) lo = mid + 1; else hi = mid; } return false; }
 SetId set_empty(void) { return W.EMPTY; }
 
 /* formulas: [K_FORMULA, tag, l, r] with ATOM(e) = [K_FORMULA, FM_ATOM, e, 0] */
@@ -909,7 +914,7 @@ static void step_restrict(Op *o, Frame *f) {
         f->ph = 1; push_lookup(o, k, 4); return;
     }
     case 1:
-        if (o->ret && side(o->ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); fin(o, side(o->ret)->val); return; }
+        if (o->ret && side(o->ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); fin(o, side(o->ret)->val); return; }
         f->ph = 2; push(o, fr(OF_RESTRICT, formula_left(F), f->b, f->c, 0)); return;
     case 2: f->acc = o->ret; f->ph = 3; push(o, fr(OF_RESTRICT, formula_right(F), f->b, f->c, 0)); return;
     case 3: f->acc2 = o->ret; f->ph = 4; push(o, fr_mkf(formula_tag(F), f->acc, f->acc2)); return;
@@ -928,8 +933,8 @@ static void step_support(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: {
         SetId cached = must ? s->must : s->support;
-        xc_add(&W.LX.memo_lookup, 1);
-        if (cached) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); fin(o, cached); return; }
+        LXADD(memo_lookup, 1);
+        if (cached) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); fin(o, cached); return; }
         FormulaTag t = formula_tag(F);
         if (t == FM_ZERO) { if (must) { fail(o, "Must is defined on nonzero formulas only"); return; } fin(o, W.EMPTY); return; }
         if (t == FM_ONE) { fin(o, W.EMPTY); return; }
@@ -941,7 +946,7 @@ static void step_support(Op *o, Frame *f) {
     case 3: {
         size_t na, nb; const AtomId *A = set_atoms(f->acc, &na), *B = set_atoms(f->acc2, &nb);
         bool inter = must && formula_tag(F) == FM_OR;
-        xc_add(&W.LX.word_compares, 1);
+        LXADD(word_compares, 1);
         if (f->i < na && f->j < nb) {
             if (A[f->i] == B[f->j]) { pw_push(&f->buf, A[f->i]); f->i++; f->j++; }
             else if (A[f->i] < B[f->j]) { if (!inter) pw_push(&f->buf, A[f->i]); f->i++; }
@@ -974,7 +979,7 @@ static void step_setop(Op *o, Frame *f) {
     size_t na, nb; const AtomId *A = set_atoms(f->b, &na), *B = set_atoms(f->c, &nb);
     if (f->ph == 0) { pw_push(&f->buf, K_SET); f->ph = 1; return; }
     if (f->ph == 2) { fin(o, o->ret); return; }
-    xc_add(&W.LX.word_compares, 1);
+    LXADD(word_compares, 1);
     if (f->i < na && f->j < nb) {
         AtomId x = A[f->i], y = B[f->j];
         if (x == y) { if (f->a != SO_DIFF) pw_push(&f->buf, x); f->i++; f->j++; }
@@ -993,7 +998,7 @@ SetId set_diff(SetId a, SetId b) { LOCK; SetId s = setop(SO_DIFF, a, b); UNLOCK;
 /* SUBSET: a = A, b = B: merge-walk; result 1/0 */
 static void step_subset(Op *o, Frame *f) {
     size_t na, nb; const AtomId *A = set_atoms(f->a, &na), *B = set_atoms(f->b, &nb);
-    xc_add(&W.LX.word_compares, 1);
+    LXADD(word_compares, 1);
     if (f->i >= na) { fin(o, 1); return; }
     if (f->j >= nb) { fin(o, 0); return; }
     if (A[f->i] == B[f->j]) { f->i++; f->j++; return; }
@@ -1013,7 +1018,7 @@ static void step_sum(Op *o, Frame *f) {
         { uint64_t k[3] = { K_WEIGHT, f->b, S[f->i] }; f->ph = 1; push_lookup(o, k, 3); return; }
     case 1: {
         Cost w = (o->ret && side(o->ret)->has_val) ? side(o->ret)->val : kind_weight(f->b, S[f->i]);
-        if (o->ret && side(o->ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); }
+        if (o->ret && side(o->ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); }
         Cost r; if (!cost_op(o, f, CA_ADD, f->acc, w, 2, &r)) return; o->ret = r;
     }
     /* fall through */
@@ -1033,7 +1038,7 @@ OpId op_set_weight(SetId s, ModelId m) { LOCK; OpId h = op_new(OF_SUM, PH_REWRIT
  * the record is interned. The bounded API never sorts inside one frame. */
 static void sift_down(Paged *h, size_t n, size_t i) {   /* at most 64 iterations, 128 charged comparisons (64-bit index space) */
     for (;;) {
-        size_t l = 2 * i + 1, r = l + 1, m = i; xc_add(&W.LX.word_compares, 2);
+        size_t l = 2 * i + 1, r = l + 1, m = i; LXADD(word_compares, 2);
         uint64_t hm = pw_get(h, i), hl = l < n ? pw_get(h, l) : 0, hr = r < n ? pw_get(h, r) : 0;
         if (l < n && hl > hm) { m = l; hm = hl; }
         if (r < n && hr > hm) { m = r; hm = hr; }
@@ -1052,7 +1057,7 @@ static void step_sort(Op *o, Frame *f) {
         f->ph = 2; f->i = 0; f->j = 0; return;
     case 2:   /* dedupe: buf2 collects */
         if (f->j == 0) { pw_push(&f->buf2, f->a); f->j = 1; }
-        if (f->i < n) { xc_add(&W.LX.word_compares, 1); if (f->buf2.n == 1 || pw_get(&f->buf2, f->buf2.n - 1) != pw_get(&f->buf, f->i)) pw_push(&f->buf2, pw_get(&f->buf, f->i)); f->i++; return; }
+        if (f->i < n) { LXADD(word_compares, 1); if (f->buf2.n == 1 || pw_get(&f->buf2, f->buf2.n - 1) != pw_get(&f->buf, f->i)) pw_push(&f->buf2, pw_get(&f->buf, f->i)); f->i++; return; }
         f->ph = 3; push_intern_own(o, &f->buf2); return;
     case 3: fin(o, o->ret); return;
     }
@@ -1078,7 +1083,7 @@ DGraphId dgraph_new(void) {
     LOCK; static uint64_t seq; uint64_t w[2] = { K_DGRAPH, ++seq }; DGraphId g = intern_sync(w, 2, NULL);
     DGraph *d = pool_take(sizeof *d); d->id = g; side(g)->ptr = d; charge(FR_ALLOCATE_CHUNK); UNLOCK; return g;
 }
-static DNode *dnode(DGraph *d, AtomId p) { uint64_t k[4] = { K_MEMO, 0xD6, d->id, p }; xc_add(&W.LX.memo_lookup, 1); uint64_t id = find_sync(k, 4); if (!id || !side(id)->has_val) return NULL; return &d->nodes.data[side(id)->val - 1]; }   /* synchronous constructors only */
+static DNode *dnode(DGraph *d, AtomId p) { uint64_t k[4] = { K_MEMO, 0xD6, d->id, p }; LXADD(memo_lookup, 1); uint64_t id = find_sync(k, 4); if (!id || !side(id)->has_val) return NULL; return &d->nodes.data[side(id)->val - 1]; }   /* synchronous constructors only */
 static DNode *dnode_at(DGraph *d, uint64_t ret) { return ret && side(ret)->has_val ? &d->nodes.data[side(ret)->val - 1] : NULL; }   /* from a framed LOOKUP's delivery */
 static void push_dnode_lookup(Op *o, DGraph *d, AtomId p) { uint64_t k[4] = { K_MEMO, 0xD6, d->id, p }; push_lookup(o, k, 4); }
 void dgraph_add_producer(DGraphId g, AtomId producer, uint64_t steps) {
@@ -1146,7 +1151,7 @@ static void step_demand(Op *o, Frame *f) {
     }
     case 10: {  /* ready? → cut (the occurrence stays, the producer cone is not entered) */
         AtomId r = d->roots.data[f->i];
-        if (o->ret) { xc_add(&W.LX.memo_hit, 1); f->i++; f->ph = 1; return; }
+        if (o->ret) { LXADD(memo_hit, 1); f->i++; f->ph = 1; return; }
         uint64_t k[4] = { K_MARK, o->id, 2, r }; f->ph = 11; push_intern(o, k, 4); return;
     }
     case 11: {
@@ -1171,7 +1176,7 @@ static void step_demand(Op *o, Frame *f) {
     }
     case 4: {
         DNode *n = dnode_at(d, f->acc3); AtomId child = n->occ.data[f->j];
-        if (o->ret) { xc_add(&W.LX.memo_hit, 1); f->j++; f->ph = 3; return; }           /* ready child: cut */
+        if (o->ret) { LXADD(memo_hit, 1); f->j++; f->ph = 3; return; }           /* ready child: cut */
         uint64_t k[4] = { K_MARK, o->id, 2, child }; f->ph = 5; push_intern(o, k, 4); return;
     }
     case 5: {
@@ -1313,7 +1318,7 @@ static void step_spec_formula(Op *o, Frame *f) {
         uint64_t k[5] = { K_MEMO, 0xF00D, F, f->b, global_env_version() }; f->ph = 1; push_lookup(o, k, 5); return;
     }
     case 1:
-        if (o->ret && side(o->ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); fin(o, side(o->ret)->val); return; }
+        if (o->ret && side(o->ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); fin(o, side(o->ret)->val); return; }
         if (formula_tag(F) == FM_ATOM) { f->ph = 5; push(o, fr(OF_ATOMSPEC, formula_atom_of(F), f->b, 0, 0)); return; }
         f->ph = 2; push(o, fr(OF_SPEC_FORMULA, formula_left(F), f->b, 0, 0)); return;
     case 2: f->acc = o->ret; f->ph = 3; push(o, fr(OF_SPEC_FORMULA, formula_right(F), f->b, 0, 0)); return;
@@ -1342,7 +1347,7 @@ static void step_normalize(Op *o, Frame *f) {
         if (f->j >= n) { f->i++; f->j = 0; return; }
         if (f->j == f->i || !pw_get(&f->buf2, f->j) || !pw_get(&f->buf2, f->i)) { f->j++; return; }
         /* is buf[j] ⊆ buf[i]?  equal sets: keep the first (lower index) */
-        if (pw_get(&f->buf, f->j) == pw_get(&f->buf, f->i)) { xc_add(&W.LX.word_compares, 1); if (f->j < f->i) pw_set(&f->buf2, f->i, 0); f->j++; return; }
+        if (pw_get(&f->buf, f->j) == pw_get(&f->buf, f->i)) { LXADD(word_compares, 1); if (f->j < f->i) pw_set(&f->buf2, f->i, 0); f->j++; return; }
         f->ph = 2; push(o, fr(OF_SUBSET, pw_get(&f->buf, f->j), pw_get(&f->buf, f->i), 0, 0)); return;
     case 2: if (o->ret == 1) pw_set(&f->buf2, f->i, 0); f->j++; f->ph = 1; return;
     case 3: {   /* survivor compaction, CHUNK_WORDS per unit: i scans, acc writes */
@@ -1389,7 +1394,7 @@ static void step_antichain(Op *o, Frame *f) {
         uint64_t k[3] = { K_MEMO, 0xAC, F }; f->ph = 1; push_lookup(o, k, 3); return;
     }
     case 1:
-        if (o->ret && side(o->ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); fin(o, side(o->ret)->val); return; }
+        if (o->ret && side(o->ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); fin(o, side(o->ret)->val); return; }
         if (formula_tag(F) == FM_ATOM) { uint64_t w[2] = { K_SET, formula_atom_of(F) }; f->ph = 5; push_intern(o, w, 2); return; }
         f->ph = 2; push(o, fr(OF_ANTICHAIN, formula_left(F), 0, 0, 0)); return;
     case 2: f->acc = o->ret; f->ph = 3; push(o, fr(OF_ANTICHAIN, formula_right(F), 0, 0, 0)); return;
@@ -1412,7 +1417,7 @@ bool family_dominates(FamilyId a, FamilyId b) {
 }
 Cost family_residual(FamilyId a, SetId k, ModelId m) {
     LOCK; size_t na; const SetId *A0; na = family_sets(a, &A0); uint64_t *A = copy_words(A0, na); Cost best = COST_INF;
-    for (size_t i = 0; i < na; i++) { SetId d = setop(SO_DIFF, A[i], k); Cost c = run_op(OF_SUM, PH_REWRITE, fr(OF_SUM, d, m, 0, 0), NULL); xc_add(&W.LX.limb_ops, 1); charge(FR_COST_COMPARE_CHUNK); if (cost_cmp(c, best) < 0) best = c; }
+    for (size_t i = 0; i < na; i++) { SetId d = setop(SO_DIFF, A[i], k); Cost c = run_op(OF_SUM, PH_REWRITE, fr(OF_SUM, d, m, 0, 0), NULL); LXADD(limb_ops, 1); charge(FR_COST_COMPARE_CHUNK); if (cost_cmp(c, best) < 0) best = c; }
     free(A);
     UNLOCK; return best;
 }
@@ -1450,7 +1455,7 @@ ModelId model_with_weight(ModelId m, AtomId a, Cost wt) {
     ModelId r = intern_sync(nw, 12, NULL); model_register_overrides(r); UNLOCK; return r;
 }
 ModelId model_with_completed(ModelId m, SetId completed) { LOCK; size_t n; const uint64_t *w = rec_words(m, &n); uint64_t nw[12]; memcpy(nw, w, 12 * sizeof(uint64_t)); nw[10] = completed; ModelId r = intern_sync(nw, 12, NULL); model_register_overrides(r); UNLOCK; return r; }
-static Cost weight_locked(ModelId m, AtomId a) { uint64_t k[3] = { K_WEIGHT, m, a }; xc_add(&W.LX.memo_lookup, 1); uint64_t id = find_sync(k, 3); if (id && side(id)->has_val) { xc_add(&W.LX.memo_hit, 1); return side(id)->val; } return kind_weight(m, a); }
+static Cost weight_locked(ModelId m, AtomId a) { uint64_t k[3] = { K_WEIGHT, m, a }; LXADD(memo_lookup, 1); uint64_t id = find_sync(k, 3); if (id && side(id)->has_val) { LXADD(memo_hit, 1); return side(id)->val; } return kind_weight(m, a); }
 Cost model_weight(ModelId m, AtomId a) { LOCK; Cost c = weight_locked(m, a); UNLOCK; return c; }
 SetId model_completed(ModelId m) { return rec_w(m, 10); }
 
@@ -1462,7 +1467,7 @@ CostDiffId costdiff_make(SetId a, SetId b, SetId k, SetId c, ModelId m) {
     Cost ca = run_op(OF_SUM, PH_REWRITE, fr(OF_SUM, ak, m, 0, 0), NULL), cb = run_op(OF_SUM, PH_REWRITE, fr(OF_SUM, bk, m, 0, 0), NULL);
     SetId akc = setop(SO_DIFF, ak, c), bkc = setop(SO_DIFF, bk, c);
     Cost ma = run_op(OF_SUM, PH_REWRITE, fr(OF_SUM, akc, m, 0, 0), NULL), mb = run_op(OF_SUM, PH_REWRITE, fr(OF_SUM, bkc, m, 0, 0), NULL);
-    xc_add(&W.LX.limb_ops, 2); charge(FR_COST_ADD_CHUNK); charge(FR_COST_ADD_CHUNK);
+    LXADD(limb_ops, 2); charge(FR_COST_ADD_CHUNK); charge(FR_COST_ADD_CHUNK);
     uint64_t w[8] = { K_COSTDIFF, a, b, k, c, m, check_session_id(), global_env_version() };
     CostDiffId id = intern_sync(w, 8, NULL);
     if (!side(id)->ptr) { CostDiffInfo *in = pool_take(sizeof *in); require(cost_finite(ca) && cost_finite(cb) && cost_finite(ma) && cost_finite(mb), "a cost difference has finite premises"); in->eps = nat_diff(ca, cb); in->masked = nat_diff(ma, mb); side(id)->ptr = in; }
@@ -1478,7 +1483,7 @@ bool costdiff_current(CostDiffId d) { return rec_w(d, 6) == check_session_id() &
 /* ---------------------------------------------------------------- 6. typed records, preparation, realization (§66–§68.3) ---- */
 
 BoundaryId boundary_make(ContextId ctx, FaceId face, size_t ninputs, const RefId *inputs, RefId type, uint64_t level, RefId continuation) {
-    const char *why; uint64_t lv = 0; xc_add(&W.LX.kernel_calls, 1);
+    const char *why; uint64_t lv = 0; LXADD(kernel_calls, 1);
     if (check_is_type(ctx, face, type, &lv, &why) != CK_VALID || lv != level) return 0;
     LOCK; Words w; words_init(&w);
     uint64_t h[9] = { K_BOUNDARY, check_session_id(), global_env_version(), ctx, face, type, level, continuation, ninputs };
@@ -1492,9 +1497,9 @@ static SetId set_of_list_locked(uint64_t list) { const uint64_t *x; size_t n = l
 PlanId plan_make(BoundaryId b, RefId r, RefId evidence, size_t nwork, const AtomId *work, const char **why) {
     size_t n; const uint64_t *bw = rec_words(b, &n); require(bw[0] == K_BOUNDARY, "not a boundary");
     ContextId ctx = bw[3]; FaceId face = bw[4]; RefId type = bw[5];
-    xc_add(&W.LX.kernel_calls, 1);
+    LXADD(kernel_calls, 1);
     if (check(ctx, face, r, type, why) != CK_VALID) return 0;
-    if (evidence) { xc_add(&W.LX.kernel_calls, 1); Inference q = infer(ctx, face, evidence); if (q.st != CK_VALID) { if (why) *why = q.reason ? q.reason : "connecting evidence does not type"; return 0; } }
+    if (evidence) { LXADD(kernel_calls, 1); Inference q = infer(ctx, face, evidence); if (q.st != CK_VALID) { if (why) *why = q.reason ? q.reason : "connecting evidence does not type"; return 0; } }
     LOCK; uint64_t list = list_make_locked(nwork, work); SetId set = set_of_list_locked(list);
     uint64_t w[6] = { K_PLAN, b, r, evidence, set, list }; PlanId p = intern_sync(w, 6, NULL); UNLOCK; return p;
 }
@@ -1559,19 +1564,19 @@ static BoundaryId prepared_boundary(ExprId e) {
 }
 PlanId plan_specialize(PlanId p, MapId sigma, ContextId target, FaceId target_face, const char **why) {
     BoundaryId b = plan_boundary(p); size_t n; const uint64_t *bw = rec_words(b, &n);
-    xc_add(&W.LX.kernel_calls, 1);
+    LXADD(kernel_calls, 1);
     if (check_map(target, target_face, sigma, bw[3], bw[4], why) != CK_VALID) return 0;
-    RefId type = reindex(bw[5], sigma), cont = bw[7] ? reindex(bw[7], sigma) : 0; xc_add(&W.LX.kernel_calls, 2);
+    RefId type = reindex(bw[5], sigma), cont = bw[7] ? reindex(bw[7], sigma) : 0; LXADD(kernel_calls, 2);
     size_t ni = bw[8]; RefId *in = ni ? malloc(ni * sizeof(RefId)) : NULL; require(!ni || in, "out of memory");
-    for (size_t i = 0; i < ni; i++) { in[i] = reindex(bw[9 + i], sigma); xc_add(&W.LX.kernel_calls, 1); }
+    for (size_t i = 0; i < ni; i++) { in[i] = reindex(bw[9 + i], sigma); LXADD(kernel_calls, 1); }
     BoundaryId nb = boundary_make(target, target_face, ni, in, type, bw[6], cont); free(in);
     if (!nb) { if (why) *why = "specialized boundary type does not form"; return 0; }
-    RefId r = reindex(plan_reference(p), sigma), ev = plan_evidence(p) ? reindex(plan_evidence(p), sigma) : 0; xc_add(&W.LX.kernel_calls, 2);
+    RefId r = reindex(plan_reference(p), sigma), ev = plan_evidence(p) ? reindex(plan_evidence(p), sigma) : 0; LXADD(kernel_calls, 2);
     uint64_t *lst; size_t nl; { LOCK; const uint64_t *l0; nl = list_get(rec_w(p, 5), &l0); lst = nl ? malloc(nl * sizeof(uint64_t)) : NULL; require(!nl || lst, "out of memory"); if (nl) memcpy(lst, l0, nl * sizeof(uint64_t)); UNLOCK; }   /* copied: interning below may move the store */
     SetId img = set_specialize(plan_work(p), sigma, why); if (!img) { free(lst); return 0; }
     /* the ordered list of the image keeps first occurrences in the source order */
     AtomId *ord = nl ? malloc(nl * sizeof(AtomId)) : NULL; require(!nl || ord, "out of memory"); size_t m = 0;
-    for (size_t i = 0; i < nl; i++) { SetId one; { AtomId a1 = lst[i]; one = set_make(1, &a1); } SetId s1 = set_specialize(one, sigma, why); if (!s1) { free(ord); free(lst); return 0; } AtomId a = set_atoms(s1, &n)[0]; bool seen = false; for (size_t k = 0; k < m; k++) { xc_add(&W.LX.word_compares, 1); if (ord[k] == a) seen = true; } if (!seen) ord[m++] = a; }
+    for (size_t i = 0; i < nl; i++) { SetId one; { AtomId a1 = lst[i]; one = set_make(1, &a1); } SetId s1 = set_specialize(one, sigma, why); if (!s1) { free(ord); free(lst); return 0; } AtomId a = set_atoms(s1, &n)[0]; bool seen = false; for (size_t k = 0; k < m; k++) { LXADD(word_compares, 1); if (ord[k] == a) seen = true; } if (!seen) ord[m++] = a; }
     free(lst);
     PlanId q = plan_make(nb, r, ev, m, ord, why); free(ord); return q;
 }
@@ -1598,7 +1603,7 @@ static void step_syms(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: { if (f->a == N_CTX) { f->ph = 1; o->ret = 0; return; } uint64_t k[4] = { K_MEMO, AU_SYMS_MEMO, f->a, f->b }; f->ph = 1; push_lookup(o, k, 4); return; }   /* contexts are not memoized (as in proof.c) */
     case 1: {
-        if (o->ret && side(o->ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); fin(o, side(o->ret)->val); return; }
+        if (o->ret && side(o->ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); fin(o, side(o->ret)->val); return; }
         uint64_t k[5] = { K_MARK, o->id, AU_MARK_NODE, f->a, f->b }; f->ph = 2; push_lookup(o, k, 5); return;
     }
     case 2: {
@@ -1630,7 +1635,7 @@ static void step_edges(Op *o, Frame *f) {
     SymbolId s = f->a;
     switch (f->ph) {
     case 0: { f->c = global_revision(s); uint64_t k[4] = { K_MEMO, AU_EDGES_MEMO, s, f->c }; f->ph = 1; push_lookup(o, k, 4); return; }
-    case 1: if (o->ret && side(o->ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); fin(o, side(o->ret)->val); return; } f->acc2 = W.EMPTY; f->i = 0; f->ph = 2; return;
+    case 1: if (o->ret && side(o->ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); fin(o, side(o->ret)->val); return; } f->acc2 = W.EMPTY; f->i = 0; f->ph = 2; return;
     case 2: {
        
         if (f->i == 0) { f->ph = 3; push(o, fr(OF_SYMS, N_REF, global_type(s), 0, 0)); return; }
@@ -1668,7 +1673,7 @@ static void step_audit(Op *o, Frame *f) {
     case 2: {   /* a cached verdict is reused while every recorded revision is current: one dependency per unit */
         const uint64_t *l; size_t n = rec_w(f->acc, 4) ? list_get(rec_w(f->acc, 4), &l) : 0;
         if (f->i + 1 < n) { if (global_revision(l[f->i]) != l[f->i + 1]) { f->ph = 3; return; } f->i += 2; return; }
-        xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); fin(o, f->acc); return;
+        LXADD(memo_hit, 1); LXADD(memo_deliver, 1); fin(o, f->acc); return;
     }
     /* roots: the context declarations, the expected type, the evidence */
     case 3: f->ph = 4; push(o, fr(OF_SYMS, N_CTX, f->a, 0, 0)); return;
@@ -1812,7 +1817,7 @@ static void kernel_call(KCont *k) {
 static void kernel_grant(KCont *k) {
     W.kc_active = k; W.kc_owner = k->job;
     size_t used = kc_grant(k, W.grant ? W.grant : 1);
-    if (used > 1) { W.extra += used - 1; xc_add(&W.LX.frames[FR_KERNEL_TRANSITION], used - 1); xc_add(&W.LX.by_phase[W.phase], used - 1); }
+    if (used > 1) { W.extra += used - 1; LXADD(frames[FR_KERNEL_TRANSITION], used - 1); LXADD(by_phase[W.phase], used - 1); }
 }
 static Frame kfr(uint64_t kind, uint64_t b, uint64_t c, uint64_t d, uint64_t e) { Frame f = fr(OF_KERNEL, kind, b, c, d); f.e = e; return f; }
 /* BOUNDS-COMPLETION §3: cost arithmetic in units. Immediate operands (and
@@ -1822,7 +1827,7 @@ static Frame kfr(uint64_t kind, uint64_t b, uint64_t c, uint64_t d, uint64_t e) 
  * resumes at `resume` with the result in o->ret. True when *out holds the
  * result now (the caller then continues at `resume` itself). */
 static bool cost_op(Op *o, Frame *f, int kind, Cost a, Cost b, uint16_t resume, Cost *out) {
-    xc_add(&W.LX.limb_ops, 1);
+    LXADD(limb_ops, 1);
     bool small = (a == COST_INF || nat_is_small(a)) && (b == COST_INF || nat_is_small(b));
     if (small) {
         if (kind == CA_ADD) { *out = cost_sum(a, b); return true; }   /* two immediates: one word addition (a carry past 2^63 boxes one limb) */
@@ -1836,7 +1841,7 @@ static void step_kernel(Op *o, Frame *f) {
         uint64_t args[6] = { f->a, f->b, f->c, f->d, f->e, 0 };
         KCont *k = kc_new(kernel_call, args, 5); k->job = o->id; k->acct = reuse_scope_new(W.phase);
         f->acc = (uint64_t)(uintptr_t)k;
-        xc_add(&W.LX.kernel_calls, 1);
+        LXADD(kernel_calls, 1);
         f->ph = 1;
     }
     /* fall through */
@@ -1953,7 +1958,7 @@ static void step_prepare(Op *o, Frame *f) {
         uint64_t k[4] = { K_MARK, o->id, 4, l[f->i] }; f->ph = 8; push_lookup(o, k, 4); return;
     }
     case 8: {
-        if (o->ret) { xc_add(&W.LX.memo_hit, 1); f->i++; f->ph = 7; return; }
+        if (o->ret) { LXADD(memo_hit, 1); f->i++; f->ph = 7; return; }
         const uint64_t *l; list_get(f->acc4, &l);
         uint64_t k[4] = { K_MARK, o->id, 4, l[f->i] }; f->ph = 9; push_intern(o, k, 4); return;
     }
@@ -1971,7 +1976,7 @@ static void step_exprf(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: { uint64_t k[3] = { K_MEMO, 0xE0, e }; f->ph = 1; push_lookup(o, k, 3); return; }
     case 1:
-        if (o->ret && side(o->ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); fin(o, side(o->ret)->val); return; }
+        if (o->ret && side(o->ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); fin(o, side(o->ret)->val); return; }
         switch (expr_tag(e)) {
         case EX_EMPTY: f->acc = W.ZERO; f->ph = 20; return;
         case EX_PLAN: f->acc = W.ONE; f->acc4 = rec_w(rec_w(e, 2), 5); f->i = 0; f->ph = 10; return;
@@ -2056,7 +2061,7 @@ static void step_realvisit(Op *o, Frame *f) {
         if (f->i >= n) { if (expr_tag(e) == EX_PLAN) *(PlanId *)paged_push(&R->plans) = rec_w(e, 2); else *(ConnectorId *)paged_push(&R->conns) = rec_w(e, 4); charge(FR_ALLOCATE_CHUNK); fin(o, 1); return; }
         uint64_t k[4] = { K_MARK, o->id, 5, l[f->i] }; f->ph = 11; push_lookup(o, k, 4); return;
     }
-    case 11: if (!o->ret) { paged_truncate(&R->plans, f->acc); paged_truncate(&R->conns, f->acc2); fin(o, 0); return; } xc_add(&W.LX.memo_hit, 1); f->i++; f->ph = 10; return;
+    case 11: if (!o->ret) { paged_truncate(&R->plans, f->acc); paged_truncate(&R->conns, f->acc2); fin(o, 0); return; } LXADD(memo_hit, 1); f->i++; f->ph = 10; return;
     }
 }
 RealizationId realize(ProblemId p, SetId support, const char **why) { LOCK; RealizationId r = run_op(OF_REALIZE, PH_COMMIT, fr(OF_REALIZE, p, support, 0, 0), why); UNLOCK; return r; }
@@ -2082,7 +2087,7 @@ RefId realization_reference(RealizationId r, RefId *evidence) { Real *R = RL(r);
 static ProofId proof_intern(ProofRule rule, FormulaId f, uint64_t aux, ProofId c1, ProofId c2, Cost value) { uint64_t w[7] = { K_PROOF, rule, f, aux, c1, c2, value }; return intern_sync(w, 7, NULL); }
 static FormulaId mkf_locked(uint64_t tag, FormulaId l, FormulaId r) { return run_op(OF_MKF, W.phase, fr_mkf(tag, l, r), NULL); }
 static Cost sum_locked(SetId s, ModelId m, bool *ov) { Op *o = job_sync(fr(OF_SUM, s, m, 0, 0)); uint64_t r = run_locked(o, NULL); if (ov) *ov = o->st == OP_RESOURCE_LIMIT; return r; }
-static Cost cmin(Cost a, Cost b) { xc_add(&W.LX.limb_ops, 1); return cost_cmp(a, b) < 0 ? a : b; }
+static Cost cmin(Cost a, Cost b) { LXADD(limb_ops, 1); return cost_cmp(a, b) < 0 ? a : b; }
 ProofId proof_trivial(FormulaId f) { LOCK; ProofId p = proof_intern(PR_TRIVIAL, f, 0, 0, 0, 0); UNLOCK; return p; }
 ProofId proof_false(void) { LOCK; ProofId p = proof_intern(PR_FALSE, W.ZERO, 0, 0, 0, COST_INF); UNLOCK; return p; }
 ProofId proof_mandatory(FormulaId f, SetId m, ModelId model) { LOCK; Cost v = sum_locked(m, model, NULL); ProofId p = proof_intern(PR_MANDATORY, f, m, 0, 0, v); UNLOCK; return p; }
@@ -2104,7 +2109,7 @@ static bool shared_or_parts(FormulaId F, FormulaId *X, FormulaId *Y, FormulaId *
     FormulaId A = formula_left(F), B = formula_right(F);
     if (formula_tag(A) != FM_OR || formula_tag(B) != FM_OR) return false;
     FormulaId a[2] = { formula_left(A), formula_right(A) }, b[2] = { formula_left(B), formula_right(B) };
-    for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) { xc_add(&W.LX.word_compares, 1); if (a[i] == b[j]) { *X = a[i]; *Y = a[1 - i]; *Z = b[1 - j]; return true; } }
+    for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++) { LXADD(word_compares, 1); if (a[i] == b[j]) { *X = a[i]; *Y = a[1 - i]; *Z = b[1 - j]; return true; } }
     return false;
 }
 
@@ -2208,7 +2213,7 @@ static void step_checkcert(Op *o, Frame *f) {
     case 2: {
         Real *a = RL(o->ret), *b = RL(upper);
         if (a->cost != U || b->cost != U || a->work != b->work) { fail(o, "upper witness does not attain the claimed value"); return; }
-        charge(FR_COST_COMPARE_CHUNK); xc_add(&W.LX.limb_ops, 1);
+        charge(FR_COST_COMPARE_CHUNK); LXADD(limb_ops, 1);
         if (L != U || L == COST_INF) { fail(o, "lower bound below the witness: not an optimality certificate"); return; }
         fin(o, 1); return;
     }
@@ -2368,7 +2373,7 @@ static void step_mapf(Op *o, Frame *f) {
         uint64_t k[4] = { K_MEMO, 0xA1, F, f->b }; f->ph = 1; push_lookup(o, k, 4); return;
     }
     case 1:
-        if (o->ret && side(o->ret)->has_val) { xc_add(&W.LX.memo_hit, 1); xc_add(&W.LX.memo_deliver, 1); fin(o, side(o->ret)->val); return; }
+        if (o->ret && side(o->ret)->has_val) { LXADD(memo_hit, 1); LXADD(memo_deliver, 1); fin(o, side(o->ret)->val); return; }
         f->ph = 2; push(o, fr(OF_MAPF, formula_left(F), f->b, 0, 0)); return;
     case 2: f->acc = o->ret; f->ph = 3; push(o, fr(OF_MAPF, formula_right(F), f->b, 0, 0)); return;
     case 3: f->ph = 4; push(o, fr_mkf(formula_tag(F), f->acc, o->ret)); return;
@@ -2562,6 +2567,7 @@ static void ledger_zero(void) {
     for (int i = 0; i < PH_COUNT; i++) xc_reset(&W.LX.by_phase[i]);
     xc_reset(&W.LX.probes); xc_reset(&W.LX.word_compares); xc_reset(&W.LX.limb_ops); xc_reset(&W.LX.alloc_words); xc_reset(&W.LX.release_words);
     xc_reset(&W.LX.memo_lookup); xc_reset(&W.LX.memo_hit); xc_reset(&W.LX.memo_deliver); xc_reset(&W.LX.kernel_calls);
+    EVB_lx = ev_family("work.ledger", (unsigned)(sizeof W.LX / sizeof(XCount)), (XCount *)&W.LX);   /* the projection restarts with its shadow */
 }
 void work_ledger_reset(void) {
     LOCK; ledger_zero();
@@ -2577,12 +2583,13 @@ void work_record_execution(EvalEvents b, EvalNetEvents nb, EvalEvents a, EvalNet
     W.L.exec_eval.request += a.request - b.request; W.L.exec_eval.eval_step += a.eval_step - b.eval_step; W.L.exec_eval.publish += a.publish - b.publish; W.L.exec_eval.deliver += a.deliver - b.deliver;
     W.L.exec_eval.ready_hit += a.ready_hit - b.ready_hit; W.L.exec_eval.running_hit += a.running_hit - b.running_hit; W.L.exec_eval.launch += a.launch - b.launch;
     W.L.exec_net.apply += na.apply - nb.apply; W.L.exec_net.continue_ref += na.continue_ref - nb.continue_ref; W.L.exec_net.op += na.op - nb.op; W.L.exec_net.eval_deliver += na.eval_deliver - nb.eval_deliver; W.L.exec_net.retries += na.retries - nb.retries;
-    xc_add(&W.LX.by_phase[PH_EXECUTE], (a.eval_step - b.eval_step) + (na.op - nb.op) + (na.apply - nb.apply) + (na.continue_ref - nb.continue_ref));
+    LXADD(by_phase[PH_EXECUTE], (a.eval_step - b.eval_step) + (na.op - nb.op) + (na.apply - nb.apply) + (na.continue_ref - nb.continue_ref));
     UNLOCK;
 }
 
 void work_init(void) {
     memset(&W, 0, sizeof W);
+    EVB_lx = ev_family("work.ledger", (unsigned)(sizeof W.LX / sizeof(XCount)), (XCount *)&W.LX);
     { static const ReuseCounter rc_of[3] = { REUSE_SHAPE_NODE, REUSE_DEPENDENCY_CHECK, REUSE_RECEIPT_INSTANCE };
       for (int ph = 0; ph < PH_COUNT; ph++) for (int k = 0; k < 3; k++) W.late_base[ph][k] = reuse_scope_late_snap(ph, rc_of[k]); }
     pthread_mutex_init(&W.mu, NULL);

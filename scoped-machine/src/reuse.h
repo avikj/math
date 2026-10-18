@@ -18,6 +18,7 @@ typedef struct ReuseScope {
     int phase;                       /* the owner's ledger phase */
     int closed;                      /* atomic */
     int refs;                        /* atomic: the owner + every producer entry it launched */
+    uint64_t id;                     /* the accounting owner's identity in the event stream */
     struct ReuseScope *all_next;
 } ReuseScope;
 extern __thread ReuseScope *reuse_tl_scope;
@@ -26,6 +27,7 @@ void reuse_scope_ref(ReuseScope *s);
 void reuse_scope_unref(ReuseScope *s);                  /* storage is retained until reuse_scope_reclaim */
 ReuseScope *reuse_scope_enter(ReuseScope *s);           /* returns the previous scope */
 void reuse_scope_leave(ReuseScope *prev);
+uint64_t reuse_scope_id(const ReuseScope *s);
 XSnap reuse_scope_take(ReuseScope *s, ReuseCounter c);      /* atomically take the counts not yet folded (exact) */
 void reuse_scope_close(ReuseScope *s);
 uint64_t reuse_scope_late(int phase, ReuseCounter c);   /* events folded after their scope closed, per phase (checked word projection) */

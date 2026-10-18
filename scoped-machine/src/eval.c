@@ -6,6 +6,7 @@
 #include "reuse.h"
 #include "fine.h"
 #include "kcont.h"
+#include "event.h"
 
 /* ---------------- continuations, joins, results ----------------
  *
@@ -151,6 +152,7 @@ static struct {
     /* jobs of another layer (eval_job): their own FIFO of the same scheduler, taken only by plain threads
      * (never by an evaluation nested inside a kernel continuation), counted apart from `outstanding` */
     struct ExtNode *ext_head, *ext_tail; size_t ext_n;
+    size_t idle_workers;   /* workers waiting for a job, their ambient labels published */
     XCount cevx[sizeof(EvalCutEvents) / sizeof(size_t)];
     /* the evaluator's net (§43): APPLY_TRANSFORM / CONTINUE_REFERENCE pairs
      * are jobs of this scheduler (one outstanding count) */
@@ -168,7 +170,9 @@ static struct {
 /* V23 R5: the evaluator's event counts are exact (xcount.h); the public
  * structs are checked word projections of them */
 #define XSLOT(arr, T, f) (&E.arr[offsetof(T, f) / sizeof(size_t)])
-#define XINC(arr, T, f) xc_inc(XSLOT(arr, T, f))
+static unsigned EVB_cevx, EVB_evx, EVB_pevx, EVB_tasks;   /* HANDOFF §7: the event families' dimensions in the primitive stream */
+#define XEV(arr, slotp) ev_add(EVB_##arr + (unsigned)((slotp) - E.arr), 1)
+#define XINC(arr, T, f) do { xc_inc(XSLOT(arr, T, f)); XEV(arr, XSLOT(arr, T, f)); } while (0)
 static void xproject(const XCount *a, size_t *out, size_t n, const char *what) { for (size_t i = 0; i < n; i++) out[i] = (size_t)xs_u64_checked(xc_snap(&a[i]), what); }
 EvalEvents eval_events(void) {
     EvalEvents v; xproject(E.evx, (size_t *)&v, sizeof v / sizeof(size_t), "evaluator event");
@@ -194,6 +198,10 @@ static void *worker_main(void *arg);
 
 void eval_init(void) {
     memset(&E, 0, sizeof E);
+    EVB_cevx = ev_family("eval.cut", sizeof(EvalCutEvents) / sizeof(size_t), E.cevx);
+    EVB_evx = ev_family("eval.events", sizeof(EvalEvents) / sizeof(size_t), E.evx);
+    EVB_pevx = ev_family("eval.prefix", sizeof(EvalPrefixEvents) / sizeof(size_t), E.pevx);
+    EVB_tasks = ev_family("eval.tasks", 1, &E.tasks_created);
     pthread_mutex_init(&E.roots_mu, NULL);
     chunked_init(&E.roots_tab, sizeof(EntryId)); E.n_roots = 0;
     interner_init(&E.keys); chunked_init(&E.heads, sizeof(EntryId));
@@ -825,7 +833,7 @@ static void request_inner(RefId t, FaceId chi, Cont *k) {
     reserve_job();                       /* outstanding += 1 before RUNNING can be observed */
     pthread_mutex_unlock(&e->mu);
     XINC(evx, EvalEvents, launch);
-    xc_inc(&E.tasks_created);
+    xc_inc(&E.tasks_created); ev_add(EVB_tasks, 1);
     Task job; memset(&job, 0, sizeof job); job.entry = eid;
     enqueue_reserved(job);               /* enqueue after the entry lock is released */
 }
@@ -1293,7 +1301,7 @@ static void prepare_step(Task t) {
     if (p->phase == 1) {   /* the fact's premises, then the generation's inherited certificate, against the stamp */
         if (p->k + 1 < f->ngdeps + g->nd) {
             const uint64_t *pr = p->k < f->ngdeps ? f->gdeps + p->k : g->d + (p->k - f->ngdeps);
-            if (global_revision(pr[0]) != pr[1]) { xc_inc(p->revalidating ? XSLOT(cevx, EvalCutEvents, revalidation_failed) : XSLOT(cevx, EvalCutEvents, prep_rejected)); proposal_free(p); return; }
+            if (global_revision(pr[0]) != pr[1]) { { XCount *sl = p->revalidating ? XSLOT(cevx, EvalCutEvents, revalidation_failed) : XSLOT(cevx, EvalCutEvents, prep_rejected); xc_inc(sl); XEV(cevx, sl); } proposal_free(p); return; }
             p->k += 2; enqueue(t); return;
         }
         if (p->revalidating) { Task n = op_task(OP_INSTALL); n.p = p; enqueue(n); return; }
@@ -1713,7 +1721,7 @@ static KCont *producer_owner(EntryId want, uint64_t *job) {
  * re-checks its predicate after the call. */
 static void eval_wait_locked_for(KCont *on, uint64_t on_job) {
     KCont *k = kc_current();
-    if (!k) { pthread_cond_wait(&E.idle_cv, &E.q_mu); return; }
+    if (!k) { ev_quiesce(); pthread_cond_wait(&E.idle_cv, &E.q_mu); return; }
     kc_wait_job(&E.idle_cv, &E.q_mu, on, on_job);
 }
 static void eval_wait_locked(void) {
@@ -1725,7 +1733,16 @@ static void eval_wait_locked(void) {
     }
     eval_wait_locked_for(on, job);
 }
+static void execute_task_body(Task t);
+/* HANDOFF §6: each job is one primitive event (its kind, owner, occurrence); its label is the transitions it takes */
 static void execute_task(Task t) {
+    EvKind kind = t.is_pair ? EK_NET_PAIR : t.op == OP_EXT ? (t.idx >= 0x4E00 && t.idx < 0x4F00 ? EK_EFFECT_JOB : t.idx == 0x4C00 ? EK_CHAIN_STEP : EK_EVAL_TASK) : EK_EVAL_TASK;
+    uint64_t occ = t.is_pair ? t.pair.node : t.is_notify ? t.entry : t.op ? 0 : t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
+    ev_begin(kind, occ, 0);
+    execute_task_body(t);
+    ev_end();
+}
+static void execute_task_body(Task t) {
     if (t.is_pair) { net_step_pair(&E.net, t.pair); return; }
     if (t.is_notify) { prefix_notify(t); return; }   /* §84.2 administrative work: not an evaluator frame step */
     if (t.op) {                                       /* LIVE-CUT-ADOPTION administrative jobs, charged to the Cut's producer */
@@ -1752,13 +1769,20 @@ static void execute_task(Task t) {
 /* §43 FORWARD_RESULT(K): the receiver's request; delivery publishes into K */
 void eval_forward_result(EntryId K, RefId v) { forward_rc(v, ENT(K)->face, K, rc_rule(RR_IDENTITY_APPLY, v, 0)); }
 
+static __thread bool tl_eval_worker;
 static void *worker_main(void *arg) {
     (void)arg;
+    tl_eval_worker = true;
     pthread_mutex_lock(&E.q_mu);
     for (;;) {
         Task t;
         ExtNode *xn = NULL;
-        while (!E.stop && !pop_locked(&t) && !(xn = pop_ext_locked(&t))) pthread_cond_wait(&E.q_cv, &E.q_mu);   /* take_job */
+        while (!E.stop && !pop_locked(&t) && !(xn = pop_ext_locked(&t))) {   /* take_job; the ambient label is published before waiting */
+            ev_quiesce();
+            E.idle_workers++; pthread_cond_broadcast(&E.idle_cv);
+            pthread_cond_wait(&E.q_cv, &E.q_mu);
+            E.idle_workers--;
+        }
         if (E.stop) break;
         pthread_mutex_unlock(&E.q_mu);
         free(xn);
@@ -1768,15 +1792,27 @@ static void *worker_main(void *arg) {
         pthread_mutex_lock(&E.q_mu);
     }
     pthread_mutex_unlock(&E.q_mu);
+    ev_quiesce();
     return NULL;
 }
 
+/* HANDOFF §7: the whole-machine comparison at quiescence. Workers take and fail a dequeue, publish their
+ * ambient label and go idle inside one q_mu section, so holding q_mu while the shadows and the prefix are
+ * captured gives a consistent cut of the evaluator's threads. */
+size_t eval_shadow_check(bool verbose) {
+    pthread_mutex_lock(&E.q_mu);
+    size_t r = ev_shadow_check(NULL, verbose);
+    pthread_mutex_unlock(&E.q_mu);
+    return r;
+}
 size_t eval_run(void) {
     if (E.nworkers) {
         /* wait until outstanding == 0 (no queued, reserved or executing job) */
         pthread_mutex_lock(&E.q_mu);
         size_t before = eval_events().eval_step;
-        while (E.outstanding > 0 || (!kc_current() && E.ext_n > 0)) eval_wait_locked();
+        /* quiescence: no queued, reserved or executing job, and every worker idle with its stream published
+         * (a run nested in a worker's job or in a kernel continuation does not wait for its own thread) */
+        while (E.outstanding > 0 || (!kc_current() && E.ext_n > 0) || (!kc_current() && !tl_eval_worker && E.idle_workers < E.nworkers)) eval_wait_locked();
         size_t n = eval_events().eval_step - before;
         pthread_mutex_unlock(&E.q_mu);
         return n;

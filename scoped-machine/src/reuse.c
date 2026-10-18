@@ -6,6 +6,7 @@
 #include "common.h"
 #include "reuse_stats.h"
 #include "reuse.h"
+#include "event.h"
 #include <string.h>
 
 static XCount counters[REUSE_COUNTER_COUNT];
@@ -14,7 +15,7 @@ __thread ReuseScope *reuse_tl_scope;
 static XCount late[REUSE_PHASES][REUSE_COUNTER_COUNT];
 static ReuseScope *all_scopes;
 void reuse_bump(ReuseCounter c) {
-    xc_add(&counters[c], 1);
+    xc_add(&counters[c], 1); ev_add(ED_REUSE + (unsigned)c, 1);
     ReuseScope *s = reuse_tl_scope;
     if (!s) return;
     xc_add(&s->c[c], 1);
@@ -26,14 +27,16 @@ void reuse_bump(ReuseCounter c) {
 ReuseScope *reuse_scope_new(int phase) {
     ReuseScope *s = calloc(1, sizeof *s); require(s, "out of memory");
     s->phase = phase >= 0 && phase < REUSE_PHASES ? phase : 0; s->refs = 1;
+    static uint64_t next_id = EO_SERVICE_COUNT; s->id = __atomic_add_fetch(&next_id, 1, __ATOMIC_RELAXED);
     ReuseScope *h = __atomic_load_n(&all_scopes, __ATOMIC_RELAXED);
     do s->all_next = h; while (!__atomic_compare_exchange_n(&all_scopes, &h, s, false, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED));
     return s;
 }
 void reuse_scope_ref(ReuseScope *s) { if (s) __atomic_add_fetch(&s->refs, 1, __ATOMIC_ACQ_REL); }
 void reuse_scope_unref(ReuseScope *s) { if (s) __atomic_sub_fetch(&s->refs, 1, __ATOMIC_ACQ_REL); }
-ReuseScope *reuse_scope_enter(ReuseScope *s) { ReuseScope *p = reuse_tl_scope; reuse_tl_scope = s; return p; }
-void reuse_scope_leave(ReuseScope *prev) { reuse_tl_scope = prev; }
+ReuseScope *reuse_scope_enter(ReuseScope *s) { ReuseScope *p = reuse_tl_scope; if (p != s) { ev_owner_switch(); reuse_tl_scope = s; ev_owner_refresh(); } return p; }
+void reuse_scope_leave(ReuseScope *prev) { if (reuse_tl_scope != prev) { ev_owner_switch(); reuse_tl_scope = prev; ev_owner_refresh(); } }
+uint64_t reuse_scope_id(const ReuseScope *s) { return s->id; }
 XSnap reuse_scope_take(ReuseScope *s, ReuseCounter c) { return xc_take(&s->c[c]); }
 void reuse_scope_close(ReuseScope *s) {
     __atomic_store_n(&s->closed, 1, __ATOMIC_SEQ_CST);

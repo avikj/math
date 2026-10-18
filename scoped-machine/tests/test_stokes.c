@@ -27,6 +27,7 @@
 #include "chain.h"
 #include "fine.h"
 #include "reuse_stats.h"
+#include "event.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,7 +52,12 @@ static void start(void) {
     CtxDecl d[] = { { S_TERM, W.va, W.U }, { S_TERM, W.vx, W.A }, { S_TERM, W.vy, W.A } };
     W.G = context_make(3, d, fc_true());
 }
-static void stop(void) { chain_free(); compiler_free(); check_free(); eval_free(); machine_free(); }
+static void stop(void) {
+    eval_run();
+    size_t bad = eval_shadow_check(true);   /* HANDOFF §7: chain steps are primitive events; every counter is a projection */
+    EXPECT(bad == 0, "every registered counter equals its fold over the primitive stream (%zu mismatches)", bad);
+    chain_free(); compiler_free(); check_free(); eval_free(); machine_free();
+}
 static RefId p_at(IntervalId s) { return mk_papp_const(0, W.A, W.x, W.x, global_ref(W.loop), s); }
 /* a symbolic presented n-cube: the loop at (d1 ∧ d2) ∨ … over n fresh dimensions */
 static ScopeId cube_root(size_t n, unsigned salt) {

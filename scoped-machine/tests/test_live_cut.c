@@ -36,6 +36,7 @@
 #include "lib.h"
 #include "compiler.h"
 #include "reuse_stats.h"
+#include "event.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -52,7 +53,15 @@ static void start(void) {
     eval_set_policy(g_policy, 0x5EEDULL); eval_set_pair_policy(g_policy, 0x5EEDULL);
     if (g_workers) eval_set_workers(g_workers);
 }
-static void stop(void) { eval_set_hold(NULL, NULL); compiler_free(); check_free(); eval_free(); machine_free(); }
+static void stop(void) {
+    eval_set_hold(NULL, NULL);
+    if (eval_held_count() == 0) {                 /* quiescent (a teardown case keeps its held jobs) */
+        eval_run();
+        size_t bad = eval_shadow_check(true);   /* HANDOFF §7: every counter family is the projection of the primitive stream */
+        EXPECT(bad == 0, "every registered counter equals its fold over the primitive stream (%zu mismatches)", bad);
+    }
+    compiler_free(); check_free(); eval_free(); machine_free();
+}
 static void world(World *w) {
     w->U = mk_universe(0);
     w->va = declare_term(w->U, fc_true()); w->A = ref_var(w->va);

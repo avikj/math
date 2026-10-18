@@ -12,6 +12,7 @@
 #include "work.h"
 #include "effect.h"
 #include "reuse_stats.h"
+#include "event.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,7 +47,7 @@ static void cash_world(void) {
 
 /* ---- the clients: each records its delivered outcome ---- */
 typedef struct { int delivered; EffOutcome o; } Client;
-static void client_cb(void *ctx, EffOutcome o) { Client *c = ctx; c->delivered++; c->o = o; }
+static void client_cb(void *ctx, EffOutcome o) { Client *c = ctx; c->o = o; __atomic_add_fetch(&c->delivered, 1, __ATOMIC_RELEASE); }   /* published to a polling reader */
 
 /* ---- scheduler holds ---- */
 typedef struct { bool key_on; RefId ref; FaceId face; int tags[8]; int ntags; } Hold;
@@ -60,7 +61,7 @@ static bool hold_pred(const EvalTaskInfo *in, void *ctx) {
 static EffAuthority *A, *B; static EffCap *capA, *capB;
 typedef struct { int seen[8]; } Probe;
 static bool probe_pred(const EvalTaskInfo *in, void *ctx) { Probe *p = ctx; if (in->kind == ET_EXTERNAL && in->tag >= EFF_TAG_PREPARE && in->tag <= EFF_TAG_EMIT) p->seen[in->tag - EFF_TAG_PREPARE]++; return false; }
-static EffOutcomeKind eff_commit_state_of_last(Client *c) { return c->delivered ? c->o.kind : EO_PENDING; }
+static EffOutcomeKind eff_commit_state_of_last(Client *c) { return __atomic_load_n(&c->delivered, __ATOMIC_ACQUIRE) ? c->o.kind : EO_PENDING; }
 static EffSchema *SEND, *RECV, *REFUND;
 static ContextId G0;
 static uint64_t next_req = 100;
@@ -336,7 +337,7 @@ int main(int argc, char **argv) {
         size_t polls = 0; while (eff_commit_state_of_last(&sb) == EO_PENDING && polls < 1000000) { if (valuation(NULL) != 9) all_ok = false; polls++; }
         eval_run();
         Client rb = {0}; EffPort *mb = last_port_to(A); receive(A, capA, mb, &rb, next_req++);
-        size_t polls2 = 0; while (rb.delivered == 0 && polls2 < 1000000) { if (valuation(NULL) != 9) all_ok = false; polls2++; }
+        size_t polls2 = 0; while (__atomic_load_n(&rb.delivered, __ATOMIC_ACQUIRE) == 0 && polls2 < 1000000) { if (valuation(NULL) != 9) all_ok = false; polls2++; }
         eval_run();
         EXPECT(sb.o.kind == EO_ACCEPTED && rb.o.kind == EO_ACCEPTED && all_ok, "item 9 (workers): %zu + %zu cut valuations taken while the send-back and its receive ran concurrently all read 9", polls, polls2);
         printf("item 9 (workers): %zu + %zu concurrent cut valuations, all 9\n", polls, polls2);
@@ -493,6 +494,10 @@ int main(int argc, char **argv) {
       free(ones); free(oa); free(ob); free(regA); free(regB); free(ri); eff_execution_free(&ex); eff_cut_free(&cutN); }
 
     eval_set_hold(NULL, NULL); eval_release_held(); eval_run();
+    { size_t bad = eval_shadow_check(true);   /* HANDOFF §7: effect jobs, evaluator tasks, net pairs, engine units and kernel grants: every counter is a fold of the primitive stream */
+      EvStats es = ev_stats();
+      EXPECT(bad == 0, "every registered counter (fine, reuse, evaluator, cut, prefix, effect, ledger) equals its fold over the primitive stream (%zu mismatches)", bad);
+      printf("event stream: %llu records, %llu words, %llu streams; mismatches=%zu\n", (unsigned long long)es.records, (unsigned long long)es.words, (unsigned long long)es.streams, bad); }
     work_free(); compiler_free(); check_free(); eval_free(); effect_free(); chain_free(); machine_free();
     printf("test_effect_witness workers=%zu: %d failures\n", workers, fails);
     return fails ? 1 : 0;
