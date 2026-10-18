@@ -115,6 +115,12 @@ void term_require_pop(void);
  * boundary, instantiated at the boundary itself */
 RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nfields,
                 const Binder *binders, size_t nbinders);
+/* the construction families (construct.c) */
+RefId construct_request(const uint64_t *req, size_t n);
+uint64_t construction_field(RefId t, size_t k);
+RefId construction_binder(RefId t, Sort sort, BinderSlot slot, FieldIndex field, uint64_t image);
+RefId ref_var_family(TermVarId x);
+RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv, FaceId req);
 
 /* ---- references ---- */
 RefId ref_var(TermVarId x);

@@ -324,32 +324,24 @@ static void cons_vals(TEnvId E, size_t np, TVal *vals) {
     for (size_t k = 0; k < np; k++) { uint64_t slot; tenv_entry(E, k, &slot, &vals[k]); require(slot == k, "construction environment order"); }
 }
 
+/* a construction's binder opened at its keyed fresh name: the domain field,
+ * then the body constant with the binder's atom ↦ that name */
 static TermOpen cons_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     TNodeId Q = ref_tnode(owner);
     Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
     require(sort == S_TERM, "sort mismatch: expected term binder");
-    FieldKind kd; BinderSlot bs; ExprId de, be;
-    node_field(Q, domf, &kd, &bs, &de);
-    node_field(Q, body_field, &kd, &bs, &be);
-    require(bs == slot && kd == F_REF, "field is not under this binder");
-    MapId m = cons_envmap(ref_tenv(owner));
     TermOpen o;
-    o.type = reindex(xconst(de), m);
+    o.type = construction_field(owner, domf);
     o.x = binder_term_var(owner, slot, o.type);
-    o.body = reindex(xconst(be), map_override(m, S_TERM, obound_id((uint32_t)(tnode_nparams(Q) + lslot)), ref_var(o.x)));
+    o.body = construction_binder(owner, S_TERM, slot, body_field, ref_var(o.x));
     return o;
 }
 static DimOpen cons_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     TNodeId Q = ref_tnode(owner);
-    Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
-    require(sort == S_DIM, "sort mismatch: expected dimension binder");
-    FieldKind kd; BinderSlot bs; ExprId be;
-    node_field(Q, body_field, &kd, &bs, &be);
-    require(bs == slot && kd == F_REF, "field is not under this binder");
-    MapId m = cons_envmap(ref_tenv(owner));
+    require(tnode_binder_sort(Q, slot) == S_DIM, "sort mismatch: expected dimension binder");
     DimOpen o;
     o.j = binder_dim_var(owner, slot);
-    o.body = reindex(xconst(be), map_override(m, S_DIM, obound_id((uint32_t)(tnode_nparams(Q) + lslot)), iv_var(o.j)));
+    o.body = construction_binder(owner, S_DIM, slot, body_field, iv_var(o.j));
     return o;
 }
 MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh) {
@@ -438,11 +430,7 @@ HField tview_field(const Head *h, size_t k) {
     FieldKind kind; BinderSlot bs; ExprId fe; node_field(Q, k, &kind, &bs, &fe);
     x.kind = kind; x.index = (FieldIndex)k; x.slot = bs;
     if (bs != NO_SLOT) { x.is_binder = true; x.sort = tnode_binder_sort(Q, bs); x.id = 0; return x; }
-    if (node_construction(Q)) {
-        MapId m = cons_envmap(h->tenv); uint64_t c = xconst(fe);
-        x.id = kind == F_REF ? reindex(c, m) : kind == F_INTERVAL ? iv_reindex(c, m) : fc_reindex(c, m);
-        return x;
-    }
+    if (node_construction(Q)) { x.id = construction_field(h->owner, k); return x; }
     Env env; env_from_tenv(&env, Q, h->tenv);
     x.id = interp(fe, &env).id;
     return x;

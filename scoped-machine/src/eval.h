@@ -146,6 +146,7 @@ Cont *intern_sub(const Cont *caller, Interner *t, WordBuf *buf, bool *created);
 /* the set, interval and face families (dnfam.c), registered by eval_init */
 void dnf_families_init(void);
 void subst_families_init(void);   /* maps and substitution (subst.c) */
+void construct_families_init(void);   /* constructions, fields, binders, variables (construct.c) */
 
 /* program-counter macros for step functions (the step's value parameter is
  * named v; one macro use per source line) */

@@ -14,6 +14,9 @@ static Family F_MAPT, F_MAPD, F_OVERRIDE, F_COMPOSE, F_REINDEX, F_IVRE, F_FCRE, 
 static Family F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_FCENT, F_DSUNION, F_VSUNION;
 
 static const uint64_t *mrec(MapId m, size_t *n) { return interner_get(&M.maps, m, n); }
+/* an identity entry key ↦ VAR(key) / key, recognized without forming VAR(key) */
+static bool identity_image(bool dims, uint64_t key, uint64_t img) { return dims ? img == iv_var(key) : (ref_is_var(img) && ref_var_id(img) == key); }
+static Family refvar_family(void) { static Family f; if (!f) f = family_lookup("ref.var"); return f; }
 
 /* ---------------- image lookup ---------------- */
 typedef struct { const uint64_t *w; size_t n, base, lo, hi; } LookLoc;
@@ -30,7 +33,8 @@ static void look_step(Cont *k, uint64_t v, bool dims) {
         if (key < k->w[1]) L->lo = mid + 1; else L->hi = mid;
         FR_YIELD(k);
     }
-    FR_FINISH(k, dims ? iv_var(k->w[1]) : ref_var(k->w[1]));
+    if (dims) FR_FINISH(k, iv_var(k->w[1]));
+    { uint64_t r = 0; FR_AWAIT(k, r, refvar_family(), k->w[1], 0); FR_FINISH(k, r); }
     FR_END(k);
 }
 static void mapt_step(Cont *k, uint64_t v) { look_step(k, v, false); }
@@ -77,7 +81,7 @@ static void merge_step(Cont *k, uint64_t v, bool compose) {
                     L->img = r;
                 }
             } else { L->key = L->y[L->j]; L->img = L->y[L->j + 1]; L->j += 2; }
-            if (L->img != (L->dims ? iv_var(L->key) : ref_var(L->key))) {
+            if (!identity_image(L->dims, L->key, L->img)) {
                 wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->img);
                 if (!L->dims) L->kept++;
             }
@@ -105,13 +109,13 @@ static void override_step(Cont *k, uint64_t v) {
         for (L->i = L->dims ? 2 * L->tx : 0; L->i < (L->dims ? L->nx - 1 : 2 * L->tx); L->i += 2) {
             if (!L->placed && L->x[L->i] >= L->key) {
                 L->placed = true;
-                if (L->img != (L->dims ? iv_var(L->key) : ref_var(L->key))) { wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->img); if (!L->dims) L->kept++; }
+                if (!identity_image(L->dims, L->key, L->img)) { wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->img); if (!L->dims) L->kept++; }
                 if (L->x[L->i] == L->key) { FR_YIELD(k); continue; }
             }
             wordbuf_push(&L->out, L->x[L->i]); wordbuf_push(&L->out, L->x[L->i + 1]); if (!L->dims) L->kept++;
             FR_YIELD(k);
         }
-        if (!L->placed && L->img != (L->dims ? iv_var(L->key) : ref_var(L->key))) { wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->img); if (!L->dims) L->kept++; }
+        if (!L->placed && !identity_image(L->dims, L->key, L->img)) { wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->img); if (!L->dims) L->kept++; }
         if (L->dims) break;
     }
     wordbuf_push(&L->out, L->kept);
@@ -221,7 +225,7 @@ static void cenv_step(Cont *k, uint64_t v) {
             require(val.sort == PS_REF || val.sort == PS_INTERVAL, "construction parameter of a non-substitutable sort");
             if ((val.sort == PS_INTERVAL) == L->dims) {
                 uint64_t atom = obound_id((uint32_t)slot);
-                if (val.id != (L->dims ? iv_var(atom) : ref_var(atom))) {
+                if (!identity_image(L->dims, atom, val.id)) {
                     wordbuf_push(&L->out, atom); wordbuf_push(&L->out, val.id);
                     if (!L->dims) L->kept++;
                 }

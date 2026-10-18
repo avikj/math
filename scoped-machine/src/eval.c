@@ -147,6 +147,7 @@ void eval_init(void) {
     F_INTERN = family_define("intern", intern_step, sizeof(InternState), false);
     dnf_families_init();
     subst_families_init();
+    construct_families_init();
     net_init(&E.net);
     net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
     E.net.policy = 1;   /* pairs FIFO by default */

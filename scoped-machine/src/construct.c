@@ -1,0 +1,249 @@
+/* construct.c — constructions, field opening, binder application and
+ * variable references as pure producer families.
+ *
+ * CONSTRUCT(request) builds the construction node of a request record
+ *   [tag, payload, levels, declared, ft, fd, nf, (kind, slot, id)*, nb, (sort, formal, domain)*]
+ * (ft/fd = 0: the boundary is computed from the fields): its typed free
+ * boundary, required face, the closing substitution Φ (parameter k ↦ atom k,
+ * dimensions first), the field constants closed by Φ (a field under binder s
+ * also closes the formal into atom np+s), the closed parameter declarations,
+ * the node record, the environment of the boundary itself and the instance.
+ * FIELD(t, k) opens one field; BINDER(t, [sort, slot, field, image]) is a
+ * binder field with its atom ↦ image; REFVAR(x) is VAR(x) with its typed
+ * boundary. Every step does a constant amount of work; every intermediate is
+ * awaited from its family. */
+#include "eval.h"
+#include "template.h"
+
+static Family F_REFVAR, F_FCDIMS, F_FIELD, F_BINDER, F_CONSTRUCT;
+static Family F_REINDEX, F_IVRE, F_FCRE, F_CENV, F_CINST, F_IVDIMS, F_OVERRIDE;
+static Family F_DSUNION, F_VSUNION, F_DSREMOVE, F_VSREMOVE, F_FCMEET, F_FCJOIN, F_FCFORALL;
+
+/* ---------------- VAR(x) ---------------- */
+typedef struct { uint64_t fv, sup, req, ds; } VarLoc;
+static void refvar_step(Cont *k, uint64_t v) {
+    VarLoc *L = FR_LOC(k, VarLoc);
+    TermVarId x = k->w[0];
+    FR_BEGIN(k);
+    { uint64_t w[2] = { 1, x }; RefId id = interner_find(&M.refs, w, 2); if (id) FR_FINISH(k, id); }
+    if (is_local_atom(x)) FR_FINISH(k, ref_var(x));          /* an atom: constant side data */
+    {   RefId type = term_var_type(x);
+        uint64_t xs[1] = { x }; L->fv = varset_make(xs, 1); L->sup = ref_support(type); L->req = term_var_required(x); }
+    FR_AWAIT(k, L->fv, F_VSUNION, L->fv, ref_freevars(term_var_type(x)));
+    FR_AWAIT(k, L->req, F_FCMEET, L->req, ref_required(term_var_type(x)));
+    FR_AWAIT(k, L->ds, F_FCDIMS, L->req, 0);
+    FR_AWAIT(k, L->sup, F_DSUNION, L->sup, L->ds);
+    FR_FINISH(k, ref_var_publish(x, L->sup, L->fv, L->req));
+    FR_END(k);
+}
+
+/* the dimensions of a face as a set */
+typedef struct { const uint64_t *x; size_t nx, i; uint64_t acc; } DimsLoc;
+static void fcdims_step(Cont *k, uint64_t v) {
+    DimsLoc *L = FR_LOC(k, DimsLoc);
+    FR_BEGIN(k);
+    L->x = interner_get(&M.faces, k->w[0], &L->nx);
+    L->acc = dimset_make(NULL, 0);
+    for (L->i = 0; L->i < L->nx; L->i++) {
+        if (L->x[L->i] == DNF_SEP) continue;
+        { uint64_t d = FC_LIT_DIM(L->x[L->i]); FR_AWAIT(k, L->acc, F_DSUNION, L->acc, dimset_make(&d, 1)); }
+    }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
+}
+static Family dims_family(FieldKind kind) { return kind == F_INTERVAL ? F_IVDIMS : F_FCDIMS; }
+
+/* ---------------- field opening ---------------- */
+typedef struct { uint64_t m; } FieldLoc;
+static void field_step(Cont *k, uint64_t v) {
+    FieldLoc *L = FR_LOC(k, FieldLoc);
+    RefId t = k->w[0]; size_t q = (size_t)k->w[1];
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    if (!tview_is_construction(t)) { Head h; open_ref(t, &h); FR_FINISH(k, tview_field(&h, q).id); }   /* template program (step 3b) */
+    FR_AWAIT(k, L->m, F_CENV, ref_tenv(t), 0);
+    {   TNodeId Q = ref_tnode(t); FieldKind kd = tnode_field_kind(Q, q);
+        require(tnode_field_slot(Q, q) == NO_SLOT, "a binder field is opened through its binder");
+        if (kd == F_REF) FR_AWAIT(k, r, F_REINDEX, tnode_const_field(Q, q), L->m);
+        else if (kd == F_INTERVAL) FR_AWAIT(k, r, F_IVRE, tnode_const_field(Q, q), L->m);
+        else FR_AWAIT(k, r, F_FCRE, tnode_const_field(Q, q), L->m); }
+    FR_FINISH(k, r);
+    FR_END(k);
+}
+
+/* ---------------- binder fields: the binder's atom ↦ image ---------------- */
+typedef struct { uint64_t m, sort, slot, field, image; } BindLoc;
+static void binder_step(Cont *k, uint64_t v) {
+    BindLoc *L = FR_LOC(k, BindLoc);
+    RefId t = k->w[0];
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    { size_t n; const uint64_t *e = interner_get(&M.keys, k->w[1], &n); L->sort = e[0]; L->slot = e[1]; L->field = e[2]; L->image = e[3]; }
+    require(tview_is_construction(t), "binder application of a template instance through the construction family");
+    {   TNodeId Q = ref_tnode(t);
+        require(tnode_field_slot(Q, L->field) == (BinderSlot)L->slot && tnode_binder_sort(Q, (BinderSlot)L->slot) == (Sort)L->sort, "field is not under this binder"); }
+    FR_AWAIT(k, L->m, F_CENV, ref_tenv(t), 0);
+    {   TNodeId Q = ref_tnode(t);
+        uint64_t atom = obound_id((uint32_t)(tnode_nparams(Q) + L->slot));
+        uint64_t e[3] = { L->sort, atom, L->image };
+        FR_AWAIT(k, L->m, F_OVERRIDE, L->m, interner_intern(&M.keys, e, 3, NULL)); }
+    FR_AWAIT(k, r, F_REINDEX, tnode_const_field(ref_tnode(t), L->field), L->m);
+    FR_FINISH(k, r);
+    FR_END(k);
+}
+
+/* ---------------- constructions ---------------- */
+typedef struct {
+    const uint64_t *rq; size_t nrq;
+    uint64_t tag, payload, levels, declared; size_t nf, nb;
+    const uint64_t *fields, *binders;
+    uint64_t ft, fd, req, phi, mq, fv, ds, c, ty, g, E, Q;
+    const uint64_t *xs, *dset; size_t nt, nd, np, q;
+    WordBuf w; bool created;
+} ConLoc;
+static uint64_t con_field_kind(const ConLoc *L, size_t q) { return L->fields[3 * q]; }
+static uint64_t con_field_slot(const ConLoc *L, size_t q) { return L->fields[3 * q + 1]; }
+static uint64_t con_field_id(const ConLoc *L, size_t q) { return L->fields[3 * q + 2]; }
+static uint64_t con_binder_sort(const ConLoc *L, size_t s) { return L->binders[3 * s]; }
+static uint64_t con_binder_formal(const ConLoc *L, size_t s) { return L->binders[3 * s + 1]; }
+static uint64_t con_binder_domain(const ConLoc *L, size_t s) { return L->binders[3 * s + 2]; }
+static bool partial_position(uint64_t tag, size_t q) {
+    return (tag == T_COMP && q == 2) || (tag == T_GLUE_TYPE && (q == 2 || q == 3)) ||
+           (tag == T_GLUE_INTRO && (q == 2 || q == 3 || q == 4)) || (tag == T_UNGLUE && (q == 2 || q == 3));
+}
+static PSort psort_of(uint64_t kind) { return kind == F_REF ? PS_REF : kind == F_INTERVAL ? PS_INTERVAL : PS_FACE; }
+static Family reindex_family(uint64_t kind) { return kind == F_REF ? F_REINDEX : kind == F_INTERVAL ? F_IVRE : F_FCRE; }
+
+static void construct_step(Cont *k, uint64_t v) {
+    ConLoc *L = FR_LOC(k, ConLoc);
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    L->rq = interner_get(&M.keys, k->w[0], &L->nrq);
+    L->tag = L->rq[0]; L->payload = L->rq[1]; L->levels = L->rq[2]; L->declared = L->rq[3];
+    L->ft = L->rq[4]; L->fd = L->rq[5]; L->nf = (size_t)L->rq[6]; L->fields = L->rq + 7;
+    L->nb = (size_t)L->rq[7 + 3 * L->nf]; L->binders = L->rq + 8 + 3 * L->nf;
+    /* the typed free boundary: field boundaries (closed through declaration
+     * types) minus the formal bound at the field's binder */
+    if (!L->ft) {
+        L->ft = varset_make(NULL, 0); L->fd = dimset_make(NULL, 0);
+        for (L->q = 0; L->q < L->nf; L->q++) {
+            if (con_field_kind(L, L->q) == F_REF) { L->fv = ref_freevars(con_field_id(L, L->q)); L->ds = ref_support(con_field_id(L, L->q)); }
+            else { L->fv = varset_make(NULL, 0); FR_AWAIT(k, L->ds, dims_family((FieldKind)con_field_kind(L, L->q)), con_field_id(L, L->q), 0); }
+            if (con_field_slot(L, L->q) != NO_SLOT) {
+                require(con_field_slot(L, L->q) < L->nb, "field refers to a missing binder");
+                if (con_binder_sort(L, con_field_slot(L, L->q)) == S_TERM) FR_AWAIT(k, L->fv, F_VSREMOVE, L->fv, con_binder_formal(L, con_field_slot(L, L->q)));
+                else FR_AWAIT(k, L->ds, F_DSREMOVE, L->ds, con_binder_formal(L, con_field_slot(L, L->q)));
+            }
+            FR_AWAIT(k, L->ft, F_VSUNION, L->ft, L->fv);
+            FR_AWAIT(k, L->fd, F_DSUNION, L->fd, L->ds);
+        }
+    }
+    for (L->q = 0; L->q < L->nb; L->q++)
+        if (con_binder_sort(L, L->q) == S_TERM) require(con_binder_domain(L, L->q) < L->nf, "term binder without domain field");
+    /* the required face: a system requires the join of its guards; another
+     * construction what its total reference fields require (a field under a
+     * dimension binder along the whole line); partial positions are used
+     * under their guards only */
+    if (L->tag == T_SYSTEM) {
+        L->req = fc_false();
+        for (L->q = 0; L->q < L->nf; L->q += 2) FR_AWAIT(k, L->req, F_FCJOIN, L->req, con_field_id(L, L->q));
+    } else {
+        L->req = fc_true();
+        for (L->q = 0; L->q < L->nf; L->q++) {
+            if (con_field_kind(L, L->q) != F_REF || partial_position(L->tag, L->q)) continue;
+            L->g = ref_required(con_field_id(L, L->q));
+            if (con_field_slot(L, L->q) != NO_SLOT && con_binder_sort(L, con_field_slot(L, L->q)) == S_DIM)
+                FR_AWAIT(k, L->g, F_FCFORALL, L->g, con_binder_formal(L, con_field_slot(L, L->q)));
+            FR_AWAIT(k, L->req, F_FCMEET, L->req, L->g);
+        }
+    }
+    if (L->declared) {
+        FR_AWAIT(k, L->req, F_FCMEET, L->req, L->declared);
+        FR_AWAIT(k, L->ds, F_FCDIMS, L->declared, 0);
+        FR_AWAIT(k, L->fd, F_DSUNION, L->fd, L->ds);
+    }
+    L->dset = interner_get(&M.dimsets, L->fd, &L->nd);
+    L->xs = interner_get(&M.varsets, L->ft, &L->nt);
+    L->np = L->nd + L->nt;
+    /* Φ: term variable k ↦ atom nd+k, dimension k ↦ atom k (a map record:
+     * terms, then dimensions, then the term count) */
+    wordbuf_init(&L->w);
+    for (L->q = 0; L->q < L->nt; L->q++) {
+        require(!is_local_atom(L->xs[L->q]), "a construction's boundary contains a bound atom");
+        wordbuf_push(&L->w, L->xs[L->q]); wordbuf_push(&L->w, ref_var(obound_id((uint32_t)(L->nd + L->q))));
+        FR_YIELD(k);
+    }
+    for (L->q = 0; L->q < L->nd; L->q++) {
+        require(!is_local_atom(L->dset[L->q]), "a construction's boundary contains a bound atom");
+        wordbuf_push(&L->w, L->dset[L->q]); wordbuf_push(&L->w, iv_var(obound_id((uint32_t)L->q)));
+        FR_YIELD(k);
+    }
+    wordbuf_push(&L->w, L->nt);
+    FR_CALL(k, L->phi, intern_sub(k, &M.maps, &L->w, &L->created));
+    /* the node record */
+    wordbuf_init(&L->w);
+    wordbuf_push(&L->w, 0); wordbuf_push(&L->w, L->np); wordbuf_push(&L->w, L->tag);
+    wordbuf_push(&L->w, L->payload ? expr_level(L->payload) : 0);
+    wordbuf_push(&L->w, L->levels != LEVELS_NONE ? expr_level(L->levels) : 0);
+    wordbuf_push(&L->w, L->nf);
+    for (L->q = 0; L->q < L->nf; L->q++) {
+        L->mq = L->phi;
+        if (con_field_slot(L, L->q) != NO_SLOT) {
+            uint64_t s = con_field_slot(L, L->q), atom = obound_id((uint32_t)(L->np + s));
+            uint64_t img = con_binder_sort(L, s) == S_TERM ? ref_var(atom) : iv_var(atom);
+            uint64_t e[3] = { con_binder_sort(L, s), con_binder_formal(L, s), img };
+            FR_AWAIT(k, L->mq, F_OVERRIDE, L->phi, interner_intern(&M.keys, e, 3, NULL));
+        }
+        FR_AWAIT(k, L->c, reindex_family(con_field_kind(L, L->q)), con_field_id(L, L->q), L->mq);
+        wordbuf_push(&L->w, con_field_kind(L, L->q)); wordbuf_push(&L->w, con_field_slot(L, L->q));
+        wordbuf_push(&L->w, expr_const(psort_of(con_field_kind(L, L->q)), L->c));
+    }
+    wordbuf_push(&L->w, L->nb);
+    for (L->q = 0; L->q < L->nb; L->q++) { wordbuf_push(&L->w, con_binder_sort(L, L->q)); wordbuf_push(&L->w, con_binder_domain(L, L->q)); wordbuf_push(&L->w, L->q); FR_YIELD(k); }
+    FR_AWAIT(k, L->c, F_FCRE, L->req, L->phi);
+    wordbuf_push(&L->w, expr_const(PS_FACE, L->c));
+    if (L->declared) { FR_AWAIT(k, L->c, F_FCRE, L->declared, L->phi); wordbuf_push(&L->w, expr_const(PS_FACE, L->c)); }
+    else wordbuf_push(&L->w, 0);
+    for (L->q = 0; L->q < L->nd; L->q++) { wordbuf_push(&L->w, PS_INTERVAL); wordbuf_push(&L->w, 0); wordbuf_push(&L->w, 0); FR_YIELD(k); }
+    for (L->q = 0; L->q < L->nt; L->q++) {
+        FR_AWAIT(k, L->ty, F_REINDEX, term_var_type(L->xs[L->q]), L->phi);
+        FR_AWAIT(k, L->g, F_FCRE, term_var_required(L->xs[L->q]), L->phi);
+        wordbuf_push(&L->w, PS_REF); wordbuf_push(&L->w, expr_const(PS_REF, L->ty)); wordbuf_push(&L->w, expr_const(PS_FACE, L->g));
+    }
+    FR_CALL(k, L->Q, intern_sub(k, &M.tnodes, &L->w, &L->created));
+    /* the environment of the boundary itself */
+    wordbuf_init(&L->w);
+    for (L->q = 0; L->q < L->nd; L->q++) { wordbuf_push(&L->w, L->q); wordbuf_push(&L->w, PS_INTERVAL); wordbuf_push(&L->w, iv_var(L->dset[L->q])); FR_YIELD(k); }
+    for (L->q = 0; L->q < L->nt; L->q++) {
+        FR_AWAIT(k, r, F_REFVAR, L->xs[L->q], 0);
+        wordbuf_push(&L->w, L->nd + L->q); wordbuf_push(&L->w, PS_REF); wordbuf_push(&L->w, r);
+    }
+    FR_CALL(k, L->E, intern_sub(k, &M.tenvs, &L->w, &L->created));
+    FR_AWAIT(k, r, F_CINST, L->Q, L->E);
+    FR_FINISH(k, r);
+    FR_END(k);
+}
+
+void construct_families_init(void) {
+    F_REINDEX = family_lookup("reindex"); F_IVRE = family_lookup("iv.reindex"); F_FCRE = family_lookup("fc.reindex");
+    F_CENV = family_lookup("construction.envmap"); F_CINST = family_lookup("construction.instance"); F_IVDIMS = family_lookup("iv.dims");
+    F_OVERRIDE = family_lookup("map.override");
+    F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union");
+    F_DSREMOVE = family_lookup("dimset.remove"); F_VSREMOVE = family_lookup("varset.remove");
+    F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join"); F_FCFORALL = family_lookup("fc.forall");
+    require(F_REINDEX && F_CINST && F_FCFORALL, "the substitution families are registered first");
+    F_REFVAR = family_define("ref.var", refvar_step, sizeof(VarLoc), true);
+    F_FCDIMS = family_define("fc.dims", fcdims_step, sizeof(DimsLoc), true);
+    F_FIELD = family_define("field", field_step, sizeof(FieldLoc), true);
+    F_BINDER = family_define("binder", binder_step, sizeof(BindLoc), true);
+    F_CONSTRUCT = family_define("construct", construct_step, sizeof(ConLoc), true);
+}
+
+/* ---------------- the operations (synchronous driver) ---------------- */
+RefId construct_request(const uint64_t *req, size_t n) { return family_call(F_CONSTRUCT, interner_intern(&M.keys, req, n, NULL), 0); }
+uint64_t construction_field(RefId t, size_t k) { return family_call(F_FIELD, t, k); }
+RefId construction_binder(RefId t, Sort sort, BinderSlot slot, FieldIndex field, uint64_t image) {
+    uint64_t e[4] = { sort, slot, field, image };
+    return family_call(F_BINDER, t, interner_intern(&M.keys, e, 4, NULL));
+}
+RefId ref_var_family(TermVarId x) { return family_call(F_REFVAR, x, 0); }
