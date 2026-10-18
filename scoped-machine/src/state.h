@@ -31,7 +31,6 @@ typedef struct {
     Interner tdefs;       /* template definitions (signature + root) */
     Interner keys;        /* interned word tuples used as memo keys */
     WordMap trav_memo;    /* scoped traversals (close / apply / reindex) */
-    WordMap interp_memo;  /* template expression results per environment */
     Chunked scope_side;   /* ScopeSide per ScopeId-1 */
     Chunked tnode_side;   /* TNodeSide per node-1: computed free-slot sets */
 

@@ -1,4 +1,5 @@
 #include "template.h"
+#include "eval.h"
 
 /* ------------------------------------------------------------------ */
 /* definitions                                                           */
@@ -124,25 +125,10 @@ static void node_free(TNodeId Q, SlotSet *out) {
 static void node_free_list(TNodeId Q, size_t *n, const uint64_t **w) { *w = interner_get(&M.keys, TNSIDE(Q)->free_slots, n); }
 
 /* ------------------------------------------------------------------ */
-/* environments and interpretation                                       */
+/* environments and interpretation (as families, below)                 */
 
-typedef struct { const TDef *def; TDefId defid; TVal val[MAXSLOT]; bool has[MAXSLOT]; } Env;
-
-static uint64_t env_key(const Env *env, const SlotSet *only) {
-    Words w; words_init(&w);
-    size_t n = env->def->nparams + env->def->nlocals;
-    for (size_t k = 0; k < n; k++) if (env->has[k] && (!only || ss_has(only, k))) { words_push(&w, k); words_push(&w, env->val[k].sort); words_push(&w, env->val[k].id); }
-    uint64_t key = interner_intern(&M.keys, w.w, w.n, NULL);
-    words_free(&w);
-    return key;
-}
-
-static TVal interp(ExprId e, Env *env);
-
-static TVal tv_level(uint64_t n) { TVal v = { PS_LEVEL, n }; return v; }
 static TVal tv_ref(RefId r) { TVal v = { PS_REF, r }; return v; }
 static TVal tv_iv(IntervalId r) { TVal v = { PS_INTERVAL, r }; return v; }
-static TVal tv_fc(FaceId f) { TVal v = { PS_FACE, f }; return v; }
 
 /* TEnv record: [(slot, sort, id)*] in slot order */
 static const uint64_t *tenv_words(TEnvId E, size_t *n) { return interner_get(&M.tenvs, E, n); }
@@ -151,134 +137,17 @@ void tenv_entry(TEnvId E, size_t k, uint64_t *slot, TVal *v) { size_t n; const u
 TNodeId tnode_of(RefId t) { return ref_tnode(t); }
 TEnvId tenv_of(RefId t) { return ref_tenv(t); }
 
-static void env_from_tenv(Env *env, TNodeId Q, TEnvId E) {
-    memset(env, 0, sizeof *env);
-    env->defid = tnode_def(Q); env->def = &TPL.defs[env->defid];
-    size_t n = tenv_size(E);
-    for (size_t k = 0; k < n; k++) { uint64_t slot; TVal v; tenv_entry(E, k, &slot, &v); env->val[slot] = v; env->has[slot] = true; }
-}
-
-static void acc_tval(TVal v, DimSetId *sup, VarSetId *fv) {
-    switch (v.sort) {
-    case PS_REF: *sup = dimset_union(*sup, ref_support(v.id)); *fv = varset_union(*fv, ref_freevars(v.id)); break;
-    case PS_INTERVAL: { Words w; words_init(&w); iv_dims(v.id, &w); *sup = dimset_union(*sup, dimset_make(w.w, w.n)); words_free(&w); break; }
-    case PS_FACE: { Words w; words_init(&w); fc_dims(v.id, &w); *sup = dimset_union(*sup, dimset_make(w.w, w.n)); words_free(&w); break; }
-    case PS_SCOPE: *sup = dimset_union(*sup, scope_support(v.id)); *fv = varset_union(*fv, scope_freevars(v.id)); break;
-    case PS_LEVEL: break;
-    }
-}
-
-/* make_template_view (§51.1): restrict to the node's complete typed free
- * slots, intern, publish key and metadata together */
-static RefId make_view_env(TNodeId Q, const Env *env) {
-    size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
-    Words w; words_init(&w);
-    DimSetId sup = dimset_make(NULL, 0); VarSetId fv = varset_make(NULL, 0);
-    for (size_t k = 0; k < nf; k++) {
-        size_t slot = (size_t)fl[k];
-        require(env->has[slot], "template view: a required slot has no value (%s slot %zu)", env->def->name, slot);
-        words_push(&w, slot); words_push(&w, env->val[slot].sort); words_push(&w, env->val[slot].id);
-        acc_tval(env->val[slot], &sup, &fv);
-    }
-    TEnvId E = interner_intern(&M.tenvs, w.w, w.n, NULL);
+/* An interpretation environment: the interned record [def, (slot, sort, id)*]
+ * in slot order. An interpreted value is the interned pair [sort, id]. */
+static uint64_t tvrec(PSort sort, uint64_t id) { uint64_t w[2] = { sort, id }; return interner_intern(&M.keys, w, 2, NULL); }
+static TVal tvget(uint64_t rec) { size_t n; const uint64_t *w = interner_get(&M.keys, rec, &n); TVal v = { (PSort)w[0], w[1] }; return v; }
+static uint64_t envrec_host(TDefId def, size_t n, const uint64_t *slots, const TVal *vals) {
+    /* slots in increasing order */
+    Words w; words_init(&w); words_push(&w, def);
+    for (size_t k = 0; k < n; k++) { words_push(&w, slots[k]); words_push(&w, vals[k].sort); words_push(&w, vals[k].id); }
+    uint64_t er = interner_intern(&M.keys, w.w, w.n, NULL);
     words_free(&w);
-    /* required face: the instantiated declared recipe */
-    Env e2 = *env;
-    FaceId req = interp(node_required_e(Q), &e2).id;
-    return ref_intern_tview(Q, E, dimset_free(sup), varset_free(fv), req);
-}
-
-RefId make_template_view(TNodeId Q, size_t n, const TVal *slots, const uint64_t *slot_index) {
-    Env env; memset(&env, 0, sizeof env);
-    env.defid = tnode_def(Q); env.def = &TPL.defs[env.defid];
-    for (size_t k = 0; k < n; k++) { env.val[slot_index[k]] = slots[k]; env.has[slot_index[k]] = true; }
-    return make_view_env(Q, &env);
-}
-
-static TVal interp_scope(ExprId e, Env *env) {
-    size_t n; const uint64_t *w = xw(e, &n);
-    size_t nl = w[1]; const uint64_t *l = w + 2; const uint64_t *t = l + 5 * nl;
-    size_t np = env->def->nparams;
-    /* build key: the expression site and its restricted free environment */
-    SlotSet fs; memset(&fs, 0, sizeof fs); expr_free(e, np, &fs);
-    uint64_t kw[3] = { e, env_key(env, &fs), env->defid };
-    uint64_t key = interner_intern(&M.keys, kw, 3, NULL);
-    uint64_t mk[2] = { 0x5C0BE, key }, out;
-    if (wordmap_get(&M.interp_memo, mk, 2, &out)) { TVal v = { PS_SCOPE, out }; return v; }
-    CaptureDecl *cd = malloc((nl ? nl : 1) * sizeof(CaptureDecl));
-    Env inner = *env;
-    for (size_t k = 0; k < nl; k++) {
-        Sort sort = (Sort)l[5 * k]; size_t lslot = np + l[5 * k + 1];
-        KeyWord bk[4] = { { KW_CONST, 9100 }, { KW_CONST, key }, { KW_CONST, k }, { KW_CONST, sort } };
-        cd[k].sort = sort; cd[k].type = 0; cd[k].level = LEVEL_NONE; cd[k].required = fc_true();
-        if (sort == S_DIM) {
-            DimVarId j = fresh_dim_keyed(bk, 4);
-            cd[k].id = j; inner.val[lslot] = tv_iv(iv_var(j)); inner.has[lslot] = true;
-        } else {
-            RefId ty = interp(l[5 * k + 2], &inner).id;
-            uint64_t lv = l[5 * k + 3] ? interp(l[5 * k + 3], &inner).id : LEVEL_NONE;
-            FaceId rq = l[5 * k + 4] ? interp(l[5 * k + 4], &inner).id : fc_true();
-            TermVarId x = fresh_term_keyed_req(bk, 4, ty, rq);
-            cd[k].id = x; cd[k].type = ty; cd[k].level = lv; cd[k].required = rq;
-            inner.val[lslot] = tv_ref(ref_var(x)); inner.has[lslot] = true;
-        }
-    }
-    TVal bodyv = interp(t[0], &inner);
-    Val body = { bodyv.sort == PS_REF ? VS_REF : bodyv.sort == PS_INTERVAL ? VS_INTERVAL : VS_FACE, bodyv.id };
-    RefId ty = t[1] ? interp(t[1], &inner).id : 0;
-    uint64_t lv = t[2] ? interp(t[2], &inner).id : LEVEL_NONE;
-    FaceId g = interp(t[3], &inner).id;
-    ScopeId S = capture_scope(nl, cd, body, ty, lv, g);
-    free(cd);
-    wordmap_put(&M.interp_memo, mk, 2, S);
-    TVal v = { PS_SCOPE, S }; return v;
-}
-
-static TVal interp(ExprId e, Env *env) {
-    size_t n; const uint64_t *w = xw(e, &n);
-    switch (w[0]) {
-    case X_PARAM: require(env->has[w[1]], "template: parameter %llu unset", (unsigned long long)w[1]); return env->val[w[1]];
-    case X_LOCAL: { size_t s = env->def->nparams + w[1]; require(env->has[s], "template: local %llu unbound", (unsigned long long)w[1]); return env->val[s]; }
-    case X_LEVEL: return tv_level(w[1]);
-    case X_LSUCC: return tv_level(level_succ(interp(w[1], env).id));
-    case X_LFIRST: return tv_level(levels_first(interp(w[1], env).id));
-    case X_LMAX: return tv_level(level_max(interp(w[1], env).id, interp(w[2], env).id));
-    case X_LEVELS: return tv_level(levels_pack(interp(w[1], env).id, interp(w[2], env).id));
-    case X_NODE: return tv_ref(make_view_env(w[1], env));
-    case X_CALL: {
-        TDefId f = w[1]; const TDef *fd = &TPL.defs[f];
-        Env e2; memset(&e2, 0, sizeof e2); e2.defid = f; e2.def = fd;
-        e2.val[0] = env->val[0]; e2.has[0] = true;                 /* κ is inherited */
-        require(w[2] + 1 == fd->nparams, "template call arity (%s)", fd->name);
-        for (size_t k = 0; k < w[2]; k++) { e2.val[k + 1] = interp(w[3 + k], env); e2.has[k + 1] = true; require(e2.val[k + 1].sort == fd->sorts[k + 1], "template call sort (%s, %zu)", fd->name, k); }
-        return interp(fd->root, &e2);
-    }
-    case X_SCOPE: return interp_scope(e, env);
-    case X_APPLY: case X_APPLY_TYPE: case X_APPLY_GUARD: {
-        TVal sv = interp(w[1], env); require(sv.sort == PS_SCOPE, "scope application of a non-scope");
-        size_t na = w[2];
-        Val *args = malloc((na ? na : 1) * sizeof(Val));
-        for (size_t k = 0; k < na; k++) { TVal a = interp(w[3 + k], env); args[k].sort = a.sort == PS_REF ? VS_REF : a.sort == PS_INTERVAL ? VS_INTERVAL : VS_FACE; args[k].id = a.id; }
-        TypedPartial p = apply_scope(sv.id, na, args);
-        free(args);
-        if (w[0] == X_APPLY_TYPE) return tv_ref(p.type);
-        if (w[0] == X_APPLY_GUARD) return tv_fc(p.guard);
-        TVal v = { p.body.sort == VS_REF ? PS_REF : p.body.sort == VS_INTERVAL ? PS_INTERVAL : PS_FACE, p.body.id }; return v;
-    }
-    case X_IV0: return tv_iv(iv_zero());
-    case X_IV1: return tv_iv(iv_one());
-    case X_IVNOT: return tv_iv(iv_negate(interp(w[1], env).id));
-    case X_IVAND: return tv_iv(iv_meet(interp(w[1], env).id, interp(w[2], env).id));
-    case X_IVOR: return tv_iv(iv_join(interp(w[1], env).id, interp(w[2], env).id));
-    case X_FCF: return tv_fc(fc_false());
-    case X_FCT: return tv_fc(fc_true());
-    case X_FCAND: return tv_fc(fc_meet(interp(w[1], env).id, interp(w[2], env).id));
-    case X_FCOR: return tv_fc(fc_join(interp(w[1], env).id, interp(w[2], env).id));
-    case X_FCEND: return tv_fc(fc_endpoint(interp(w[1], env).id, (int)w[2]));
-    case X_FORALL: { TVal sv = interp(w[1], env); require(sv.sort == PS_SCOPE, "forall of a non-scope"); return tv_fc(forall_scope(sv.id)); }
-    case X_CONST: die("a construction constant interpreted outside its construction");
-    default: die("bad expression kind %llu", (unsigned long long)w[0]);
-    }
+    return er;
 }
 
 /* ------------------------------------------------------------------ */
@@ -410,7 +279,270 @@ MapId tview_generic_map(RefId t) {
 }
 
 /* ------------------------------------------------------------------ */
-/* TVIEW operations                                                      */
+/* interpretation families                                               */
+/* INTERP(e, env) interprets one expression; TVMAKE(Q, env) is the template
+ * view of a node (§51.1: restricted to the node's complete typed free slots,
+ * its required face the instantiated recipe); ISCOPE(e, env) a scope literal
+ * (fresh keyed locals, then capture); ENVLOOK(env, slot) the position of a
+ * slot; ENVSET(env, [slot, sort, id]) an environment with one slot set;
+ * ENVOF(Q, E) the environment of a template view. Each step does a constant
+ * amount of work. */
+
+static Family F_INTERP, F_TVMAKE, F_ISCOPE, F_ENVLOOK, F_ENVSET, F_ENVOF;
+static Family F_TREF, F_TIV, F_TFC, F_TSCOPE, F_CAPTURE, F_REFVAR, F_SETFREE, F_DSUNION, F_VSUNION, F_IVDIMS, F_FCDIMS;
+static Family F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_FCFORALL, F_REINDEX, F_IVRE, F_FCRE;
+
+/* position of slot w[1] in environment w[0], plus one (0: absent); one probe per step */
+typedef struct { const uint64_t *w; size_t n, lo, hi; } LookLoc;
+static void envlook_step(Cont *k, uint64_t v) {
+    LookLoc *L = FR_LOC(k, LookLoc);
+    FR_BEGIN(k);
+    L->w = interner_get(&M.keys, k->w[0], &L->n);
+    L->lo = 0; L->hi = (L->n - 1) / 3;
+    while (L->lo < L->hi) {
+        size_t mid = (L->lo + L->hi) / 2; uint64_t s = L->w[1 + 3 * mid];
+        if (s == k->w[1]) FR_FINISH(k, mid + 1);
+        if (s < k->w[1]) L->lo = mid + 1; else L->hi = mid;
+        FR_YIELD(k);
+    }
+    FR_FINISH(k, 0);
+    FR_END(k);
+}
+/* environment w[0] with the slot of entry w[1] = [slot, sort, id] set */
+typedef struct { const uint64_t *w, *e; size_t n, q; bool placed; WordBuf out; bool created; } SetLoc;
+static void envset_step(Cont *k, uint64_t v) {
+    SetLoc *L = FR_LOC(k, SetLoc);
+    uint64_t id = 0;
+    FR_BEGIN(k);
+    L->w = interner_get(&M.keys, k->w[0], &L->n);
+    { size_t m; L->e = interner_get(&M.keys, k->w[1], &m); }
+    wordbuf_init(&L->out); wordbuf_push(&L->out, L->w[0]); L->placed = false;
+    for (L->q = 1; L->q < L->n; L->q += 3) {
+        if (!L->placed && L->w[L->q] >= L->e[0]) {
+            wordbuf_push(&L->out, L->e[0]); wordbuf_push(&L->out, L->e[1]); wordbuf_push(&L->out, L->e[2]);
+            L->placed = true;
+            if (L->w[L->q] == L->e[0]) { FR_YIELD(k); continue; }
+        }
+        wordbuf_push(&L->out, L->w[L->q]); wordbuf_push(&L->out, L->w[L->q + 1]); wordbuf_push(&L->out, L->w[L->q + 2]);
+        FR_YIELD(k);
+    }
+    if (!L->placed) { wordbuf_push(&L->out, L->e[0]); wordbuf_push(&L->out, L->e[1]); wordbuf_push(&L->out, L->e[2]); }
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
+    FR_FINISH(k, id);
+    FR_END(k);
+}
+static uint64_t env_entry(uint64_t er, uint64_t slot, PSort sort, uint64_t id) { (void)er; uint64_t w[3] = { slot, sort, id }; return interner_intern(&M.keys, w, 3, NULL); }
+/* the environment of template view (Q, E): [def(Q), E's entries] */
+static void envof_step(Cont *k, uint64_t v) {
+    SetLoc *L = FR_LOC(k, SetLoc);
+    uint64_t id = 0;
+    FR_BEGIN(k);
+    L->w = tenv_words(k->w[1], &L->n);
+    wordbuf_init(&L->out); wordbuf_push(&L->out, tnode_def(k->w[0]));
+    for (L->q = 0; L->q < L->n; L->q++) { wordbuf_push(&L->out, L->w[L->q]); FR_YIELD(k); }
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
+    FR_FINISH(k, id);
+    FR_END(k);
+}
+
+static Family trav_of(PSort s) { return s == PS_REF ? F_TREF : s == PS_INTERVAL ? F_TIV : F_TFC; }
+static PSort psort_of_val(ValSort s) { return s == VS_REF ? PS_REF : s == VS_INTERVAL ? PS_INTERVAL : PS_FACE; }
+
+typedef struct { const uint64_t *w; size_t n, q; uint64_t a, b, er, S, tk; TVal t; WordBuf out; bool created; } InLoc;
+static void interp_step(Cont *k, uint64_t v) {
+    InLoc *L = FR_LOC(k, InLoc);
+    ExprId e = k->w[0]; uint64_t er = k->w[1];
+    uint64_t r = 0, id = 0;
+    FR_BEGIN(k);
+    L->w = xw(e, &L->n);
+    if (L->w[0] == X_PARAM || L->w[0] == X_LOCAL) {
+        {   size_t m; const uint64_t *ew = interner_get(&M.keys, er, &m);
+            uint64_t slot = L->w[0] == X_PARAM ? L->w[1] : TPL.defs[ew[0]].nparams + L->w[1];
+            FR_AWAIT(k, r, F_ENVLOOK, er, slot); }
+        require(r, "template: slot %llu unset", (unsigned long long)L->w[1]);
+        {   size_t m; const uint64_t *ew = interner_get(&M.keys, er, &m);
+            FR_FINISH(k, tvrec((PSort)ew[1 + 3 * (r - 1) + 1], ew[1 + 3 * (r - 1) + 2])); }
+    }
+    if (L->w[0] == X_LEVEL) FR_FINISH(k, tvrec(PS_LEVEL, L->w[1]));
+    if (L->w[0] == X_IV0) FR_FINISH(k, tvrec(PS_INTERVAL, iv_zero()));
+    if (L->w[0] == X_IV1) FR_FINISH(k, tvrec(PS_INTERVAL, iv_one()));
+    if (L->w[0] == X_FCF) FR_FINISH(k, tvrec(PS_FACE, fc_false()));
+    if (L->w[0] == X_FCT) FR_FINISH(k, tvrec(PS_FACE, fc_true()));
+    if (L->w[0] == X_CONST) die("a construction constant interpreted outside its construction");
+    if (L->w[0] == X_NODE) { FR_AWAIT(k, r, F_TVMAKE, L->w[1], er); FR_FINISH(k, tvrec(PS_REF, r)); }
+    if (L->w[0] == X_SCOPE) { FR_AWAIT(k, r, F_ISCOPE, e, er); FR_FINISH(k, tvrec(PS_SCOPE, r)); }
+    if (L->w[0] == X_CALL) {
+        /* the callee's environment: κ inherited, then the arguments */
+        require(L->w[2] + 1 == TPL.defs[L->w[1]].nparams, "template call arity (%s)", TPL.defs[L->w[1]].name);
+        FR_AWAIT(k, r, F_ENVLOOK, er, 0);
+        {   size_t m; const uint64_t *ew = interner_get(&M.keys, er, &m);
+            wordbuf_init(&L->out); wordbuf_push(&L->out, L->w[1]);
+            wordbuf_push(&L->out, 0); wordbuf_push(&L->out, PS_FACE); wordbuf_push(&L->out, ew[1 + 3 * (r - 1) + 2]); }
+        for (L->q = 0; L->q < L->w[2]; L->q++) {
+            FR_AWAIT(k, r, F_INTERP, L->w[3 + L->q], er);
+            L->t = tvget(r);
+            require(L->t.sort == TPL.defs[L->w[1]].sorts[L->q + 1], "template call sort (%s, %zu)", TPL.defs[L->w[1]].name, L->q);
+            wordbuf_push(&L->out, L->q + 1); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
+        }
+        FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->out, &L->created));
+        FR_AWAIT(k, r, F_INTERP, TPL.defs[L->w[1]].root, L->er);
+        FR_FINISH(k, r);
+    }
+    if (L->w[0] == X_APPLY || L->w[0] == X_APPLY_TYPE || L->w[0] == X_APPLY_GUARD) {
+        FR_AWAIT(k, r, F_INTERP, L->w[1], er);
+        L->t = tvget(r); require(L->t.sort == PS_SCOPE, "scope application of a non-scope");
+        L->S = L->t.id;
+        require(L->w[2] == scope_arity(L->S), "scope application arity");
+        wordbuf_init(&L->out);
+        for (L->q = 0; L->q < L->w[2]; L->q++) {
+            FR_AWAIT(k, r, F_INTERP, L->w[3 + L->q], er);
+            L->t = tvget(r);
+            wordbuf_push(&L->out, L->t.sort == PS_REF ? VS_REF : L->t.sort == PS_INTERVAL ? VS_INTERVAL : VS_FACE); wordbuf_push(&L->out, L->t.id);
+        }
+        FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
+        L->tk = trav_key(TR_APPLY, 0, id);
+        if (L->w[0] == X_APPLY_TYPE) { FR_AWAIT(k, r, F_TREF, scope_type(L->S), L->tk); FR_FINISH(k, tvrec(PS_REF, r)); }
+        if (L->w[0] == X_APPLY_GUARD) { FR_AWAIT(k, r, F_TFC, scope_guard(L->S), L->tk); FR_FINISH(k, tvrec(PS_FACE, r)); }
+        L->t.sort = psort_of_val(scope_body(L->S).sort);
+        FR_AWAIT(k, r, trav_of(L->t.sort), scope_body(L->S).id, L->tk);
+        FR_FINISH(k, tvrec(L->t.sort, r));
+    }
+    if (L->w[0] == X_FORALL) {
+        FR_AWAIT(k, r, F_INTERP, L->w[1], er);
+        L->t = tvget(r); require(L->t.sort == PS_SCOPE, "forall of a non-scope");
+        require(scope_arity(L->t.id) == 1 && scope_local(L->t.id, 0).sort == S_DIM && scope_body(L->t.id).sort == VS_FACE, "forall of a non-unary face scope");
+        FR_AWAIT(k, r, F_FCFORALL, scope_body(L->t.id).id, bound_id(0, 0));
+        FR_AWAIT(k, r, F_TFC, r, trav_key(TR_LOWER, 0, 0));
+        FR_FINISH(k, tvrec(PS_FACE, r));
+    }
+    /* unary and binary operators on levels, intervals and faces */
+    FR_AWAIT(k, r, F_INTERP, L->w[1], er);
+    L->a = tvget(r).id;
+    if (L->w[0] == X_LSUCC) FR_FINISH(k, tvrec(PS_LEVEL, level_succ(L->a)));
+    if (L->w[0] == X_LFIRST) FR_FINISH(k, tvrec(PS_LEVEL, levels_first(L->a)));
+    if (L->w[0] == X_IVNOT) { FR_AWAIT(k, r, F_IVNEG, L->a, 0); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
+    if (L->w[0] == X_FCEND) { FR_AWAIT(k, r, F_FCEND, L->a, L->w[2]); FR_FINISH(k, tvrec(PS_FACE, r)); }
+    FR_AWAIT(k, r, F_INTERP, L->w[2], er);
+    L->b = tvget(r).id;
+    if (L->w[0] == X_LMAX) FR_FINISH(k, tvrec(PS_LEVEL, level_max(L->a, L->b)));
+    if (L->w[0] == X_LEVELS) FR_FINISH(k, tvrec(PS_LEVEL, levels_pack(L->a, L->b)));
+    if (L->w[0] == X_IVAND) { FR_AWAIT(k, r, F_IVMEET, L->a, L->b); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
+    if (L->w[0] == X_IVOR) { FR_AWAIT(k, r, F_IVJOIN, L->a, L->b); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
+    if (L->w[0] == X_FCAND) { FR_AWAIT(k, r, F_FCMEET, L->a, L->b); FR_FINISH(k, tvrec(PS_FACE, r)); }
+    if (L->w[0] == X_FCOR) { FR_AWAIT(k, r, F_FCJOIN, L->a, L->b); FR_FINISH(k, tvrec(PS_FACE, r)); }
+    die("bad expression kind %llu", (unsigned long long)L->w[0]);
+    FR_END(k);
+}
+
+/* the template view of node w[0] in environment w[1] */
+typedef struct { const uint64_t *fl; size_t nf, q; uint64_t sup, fv, ds, E, req; TVal t; WordBuf out; bool created; } MkLoc;
+static void tvmake_step(Cont *k, uint64_t v) {
+    MkLoc *L = FR_LOC(k, MkLoc);
+    TNodeId Q = k->w[0]; uint64_t er = k->w[1];
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    L->fl = interner_get(&M.keys, TNSIDE(Q)->free_slots, &L->nf);
+    L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
+    wordbuf_init(&L->out);
+    for (L->q = 0; L->q < L->nf; L->q++) {
+        FR_AWAIT(k, r, F_ENVLOOK, er, L->fl[L->q]);
+        require(r, "template view: a required slot has no value (%s slot %zu)", TPL.defs[tnode_def(Q)].name, (size_t)L->fl[L->q]);
+        {   size_t m; const uint64_t *ew = interner_get(&M.keys, er, &m);
+            L->t.sort = (PSort)ew[1 + 3 * (r - 1) + 1]; L->t.id = ew[1 + 3 * (r - 1) + 2]; }
+        wordbuf_push(&L->out, L->fl[L->q]); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
+        if (L->t.sort == PS_REF) {
+            FR_AWAIT(k, L->sup, F_DSUNION, L->sup, ref_support(L->t.id));
+            FR_AWAIT(k, L->fv, F_VSUNION, L->fv, ref_freevars(L->t.id));
+        } else if (L->t.sort == PS_SCOPE) {
+            FR_AWAIT(k, L->sup, F_DSUNION, L->sup, scope_support(L->t.id));
+            FR_AWAIT(k, L->fv, F_VSUNION, L->fv, scope_freevars(L->t.id));
+        } else if (L->t.sort == PS_INTERVAL || L->t.sort == PS_FACE) {
+            FR_AWAIT(k, L->ds, L->t.sort == PS_INTERVAL ? F_IVDIMS : F_FCDIMS, L->t.id, 0);
+            FR_AWAIT(k, L->sup, F_DSUNION, L->sup, L->ds);
+        }
+    }
+    FR_CALL(k, L->E, intern_sub(k, &M.tenvs, &L->out, &L->created));
+    FR_AWAIT(k, r, F_INTERP, node_required_e(Q), er);
+    L->req = tvget(r).id;
+    FR_AWAIT(k, L->sup, F_SETFREE, L->sup, 0);
+    FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 1);
+    FR_FINISH(k, ref_intern_tview(Q, L->E, L->sup, L->fv, L->req));
+    FR_END(k);
+}
+
+/* a scope literal: [X_SCOPE, nloc, (sort, lslot, type_e, level_e, req_e)*, body, type, level, guard];
+ * its locals are fresh names keyed by (expression, environment, slot), the
+ * records interpreted over them, then captured */
+typedef struct { const uint64_t *w; size_t n, nl, q; uint64_t inner, ty, lv, rq, id, bsort, body, rtype, rlevel; WordBuf out; bool created; } ScLoc;
+static void iscope_step(Cont *k, uint64_t v) {
+    ScLoc *L = FR_LOC(k, ScLoc);
+    ExprId e = k->w[0]; uint64_t er = k->w[1];
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    L->w = xw(e, &L->n); L->nl = (size_t)L->w[1];
+    L->inner = er;
+    wordbuf_init(&L->out); wordbuf_push(&L->out, L->nl);
+    for (L->q = 0; L->q < L->nl; L->q++) {
+        {   const uint64_t *l = L->w + 2 + 5 * L->q;
+            KeyWord bk[5] = { { KW_CONST, 9100 }, { KW_CONST, e }, { KW_CONST, er }, { KW_CONST, L->q }, { KW_CONST, l[0] } };
+            if (l[0] == S_DIM) {
+                DimVarId j = fresh_dim_keyed(bk, 5);
+                wordbuf_push(&L->out, S_DIM); wordbuf_push(&L->out, j); wordbuf_push(&L->out, 0); wordbuf_push(&L->out, LEVEL_NONE); wordbuf_push(&L->out, fc_true());
+                L->id = j; L->ty = 0;
+            } else L->id = 0; }
+        if (L->id) {
+            size_t m; const uint64_t *ew = interner_get(&M.keys, er, &m);
+            FR_AWAIT(k, L->inner, F_ENVSET, L->inner, env_entry(L->inner, TPL.defs[ew[0]].nparams + L->w[2 + 5 * L->q + 1], PS_INTERVAL, iv_var(L->id)));
+            continue;
+        }
+        FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->q + 2], L->inner);
+        L->ty = tvget(r).id; L->lv = LEVEL_NONE; L->rq = fc_true();
+        if (L->w[2 + 5 * L->q + 3]) { FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->q + 3], L->inner); L->lv = tvget(r).id; }
+        if (L->w[2 + 5 * L->q + 4]) { FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->q + 4], L->inner); L->rq = tvget(r).id; }
+        {   KeyWord bk[5] = { { KW_CONST, 9100 }, { KW_CONST, e }, { KW_CONST, er }, { KW_CONST, L->q }, { KW_CONST, S_TERM } };
+            L->id = fresh_term_keyed_req(bk, 5, L->ty, L->rq); }
+        wordbuf_push(&L->out, S_TERM); wordbuf_push(&L->out, L->id); wordbuf_push(&L->out, L->ty); wordbuf_push(&L->out, L->lv); wordbuf_push(&L->out, L->rq);
+        FR_AWAIT(k, r, F_REFVAR, L->id, 0);
+        {   size_t m; const uint64_t *ew = interner_get(&M.keys, er, &m);
+            FR_AWAIT(k, L->inner, F_ENVSET, L->inner, env_entry(L->inner, TPL.defs[ew[0]].nparams + L->w[2 + 5 * L->q + 1], PS_REF, r)); }
+    }
+    {   const uint64_t *t = L->w + 2 + 5 * L->nl;          /* body, type, level, guard */
+        FR_AWAIT(k, r, F_INTERP, t[0], L->inner); }
+    {   TVal b = tvget(r); L->bsort = b.sort == PS_REF ? VS_REF : b.sort == PS_INTERVAL ? VS_INTERVAL : VS_FACE; L->body = b.id; }
+    L->rtype = 0; L->rlevel = LEVEL_NONE;
+    if (L->w[2 + 5 * L->nl + 1]) { FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->nl + 1], L->inner); L->rtype = tvget(r).id; }
+    if (L->w[2 + 5 * L->nl + 2]) { FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->nl + 2], L->inner); L->rlevel = tvget(r).id; }
+    FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->nl + 3], L->inner);
+    wordbuf_push(&L->out, L->bsort); wordbuf_push(&L->out, L->body); wordbuf_push(&L->out, L->rtype); wordbuf_push(&L->out, L->rlevel); wordbuf_push(&L->out, tvget(r).id);
+    FR_CALL(k, L->id, intern_sub(k, &M.keys, &L->out, &L->created));
+    FR_AWAIT(k, r, F_CAPTURE, L->id, 0);
+    FR_FINISH(k, r);
+    FR_END(k);
+}
+
+void template_families_init(void) {
+    F_TREF = family_lookup("trav.ref"); F_TIV = family_lookup("trav.interval"); F_TFC = family_lookup("trav.face"); F_TSCOPE = family_lookup("trav.scope");
+    F_CAPTURE = family_lookup("scope.capture"); F_REFVAR = family_lookup("ref.var"); F_SETFREE = family_lookup("set.free");
+    F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union"); F_IVDIMS = family_lookup("iv.dims"); F_FCDIMS = family_lookup("fc.dims");
+    F_IVNEG = family_lookup("iv.negate"); F_IVMEET = family_lookup("iv.meet"); F_IVJOIN = family_lookup("iv.join");
+    F_FCEND = family_lookup("fc.endpoint"); F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join"); F_FCFORALL = family_lookup("fc.forall");
+    F_REINDEX = family_lookup("reindex"); F_IVRE = family_lookup("iv.reindex"); F_FCRE = family_lookup("fc.reindex");
+    require(F_TREF && F_CAPTURE && F_REFVAR && F_FCRE, "the scope, construction and substitution families are registered first");
+    F_ENVLOOK = family_define("template.envlook", envlook_step, sizeof(LookLoc), true);
+    F_ENVSET = family_define("template.envset", envset_step, sizeof(SetLoc), true);
+    F_ENVOF = family_define("template.envof", envof_step, sizeof(SetLoc), true);
+    F_INTERP = family_define("template.interp", interp_step, sizeof(InLoc), true);
+    F_TVMAKE = family_define("template.view", tvmake_step, sizeof(MkLoc), true);
+    F_ISCOPE = family_define("template.scope", iscope_step, sizeof(ScLoc), true);
+}
+
+/* ------------------------------------------------------------------ */
+/* TVIEW operations (synchronous driver over the families)               */
+
+static uint64_t env_of(RefId t) { return family_call(F_ENVOF, ref_tnode(t), ref_tenv(t)); }
+static TVal interp_at(ExprId e, uint64_t er) { return tvget(family_call(F_INTERP, e, er)); }
+uint64_t tview_envrec(RefId t) { return env_of(t); }
+RefId tview_make(TNodeId Q, uint64_t er) { return family_call(F_TVMAKE, Q, er); }
 
 void tview_open(RefId t, Head *h) {
     TNodeId Q = ref_tnode(t); TEnvId E = ref_tenv(t);
@@ -419,9 +551,9 @@ void tview_open(RefId t, Head *h) {
     h->n = tnode_nfields(Q);
     if (node_construction(Q)) { h->payload = tnode_const_payload(Q); h->levels = tnode_const_levels(Q); return; }
     if (!node_payload_e(Q) && !node_levels_e(Q)) { h->payload = 0; h->levels = LEVELS_NONE; return; }
-    Env env; env_from_tenv(&env, Q, E);
-    h->payload = node_payload_e(Q) ? interp(node_payload_e(Q), &env).id : 0;
-    h->levels = node_levels_e(Q) ? interp(node_levels_e(Q), &env).id : LEVELS_NONE;
+    uint64_t er = env_of(t);
+    h->payload = node_payload_e(Q) ? interp_at(node_payload_e(Q), er).id : 0;
+    h->levels = node_levels_e(Q) ? interp_at(node_levels_e(Q), er).id : LEVELS_NONE;
 }
 
 HField tview_field(const Head *h, size_t k) {
@@ -431,52 +563,46 @@ HField tview_field(const Head *h, size_t k) {
     x.kind = kind; x.index = (FieldIndex)k; x.slot = bs;
     if (bs != NO_SLOT) { x.is_binder = true; x.sort = tnode_binder_sort(Q, bs); x.id = 0; return x; }
     if (node_construction(Q)) { x.id = construction_field(h->owner, k); return x; }
-    Env env; env_from_tenv(&env, Q, h->tenv);
-    x.id = interp(fe, &env).id;
+    x.id = interp_at(fe, env_of(h->owner)).id;
     return x;
 }
 
+/* a template binder field with its local ↦ image */
+static uint64_t tview_binder_body(RefId owner, BinderSlot slot, FieldIndex body_field, PSort sort, uint64_t image) {
+    TNodeId Q = ref_tnode(owner);
+    Sort so; FieldIndex domf; size_t lslot; node_binder(Q, slot, &so, &domf, &lslot);
+    FieldKind kd; BinderSlot bs; ExprId be; node_field(Q, body_field, &kd, &bs, &be);
+    require(bs == slot, "template field is not under this binder");
+    uint64_t er = env_of(owner);
+    uint64_t er2 = family_call(F_ENVSET, er, env_entry(er, TPL.defs[tnode_def(Q)].nparams + lslot, sort, image));
+    return interp_at(be, er2).id;
+}
 TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     if (tview_is_construction(owner)) return cons_term_binder(owner, slot, body_field);
-    TNodeId Q = ref_tnode(owner); Env env; env_from_tenv(&env, Q, ref_tenv(owner));
+    TNodeId Q = ref_tnode(owner);
     Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
     require(sort == S_TERM, "sort mismatch: expected term binder");
-    FieldKind kd; BinderSlot bs; ExprId de, be;
-    node_field(Q, domf, &kd, &bs, &de);
-    node_field(Q, body_field, &kd, &bs, &be);
-    require(bs == slot, "template field is not under this binder");
+    FieldKind kd; BinderSlot bs; ExprId de; node_field(Q, domf, &kd, &bs, &de);
     TermOpen o;
-    o.type = interp(de, &env).id;
+    o.type = interp_at(de, env_of(owner)).id;
     o.x = binder_term_var(owner, slot, o.type);
-    size_t s = env.def->nparams + lslot;
-    env.val[s] = tv_ref(ref_var(o.x)); env.has[s] = true;
-    o.body = interp(be, &env).id;
+    o.body = tview_binder_body(owner, slot, body_field, PS_REF, ref_var(o.x));
     return o;
 }
 DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     if (tview_is_construction(owner)) return cons_dim_binder(owner, slot, body_field);
-    TNodeId Q = ref_tnode(owner); Env env; env_from_tenv(&env, Q, ref_tenv(owner));
-    Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
-    require(sort == S_DIM, "sort mismatch: expected dimension binder");
-    FieldKind kd; BinderSlot bs; ExprId be;
-    node_field(Q, body_field, &kd, &bs, &be);
-    require(bs == slot, "template field is not under this binder");
+    require(tnode_binder_sort(ref_tnode(owner), slot) == S_DIM, "sort mismatch: expected dimension binder");
     DimOpen o;
     o.j = binder_dim_var(owner, slot);
-    size_t s = env.def->nparams + lslot;
-    env.val[s] = tv_iv(iv_var(o.j)); env.has[s] = true;
-    o.body = interp(be, &env).id;
+    o.body = tview_binder_body(owner, slot, body_field, PS_INTERVAL, iv_var(o.j));
     return o;
 }
 
 static TVal reindex_tval(TVal v, MapId sigma) {
-    switch (v.sort) {
-    case PS_REF: v.id = reindex(v.id, sigma); break;
-    case PS_INTERVAL: v.id = iv_reindex(v.id, sigma); break;
-    case PS_FACE: v.id = fc_reindex(v.id, sigma); break;
-    case PS_SCOPE: v.id = reindex_scope(v.id, sigma); break;
-    case PS_LEVEL: break;
-    }
+    if (v.sort == PS_REF) v.id = reindex(v.id, sigma);
+    else if (v.sort == PS_INTERVAL) v.id = iv_reindex(v.id, sigma);
+    else if (v.sort == PS_FACE) v.id = fc_reindex(v.id, sigma);
+    else if (v.sort == PS_SCOPE) v.id = reindex_scope(v.id, sigma);
     return v;
 }
 TEnvId tenv_make(size_t n, const uint64_t *slots, const TVal *vals) {
@@ -491,47 +617,55 @@ TEnvId tenv_reindex(TEnvId E, MapId sigma) {
     for (size_t k = 0; k < n; k++) { tenv_entry(E, k, &slots[k], &vals[k]); vals[k] = reindex_tval(vals[k], sigma); }
     TEnvId out = tenv_make(n, slots, vals); free(slots); free(vals); return out;
 }
+RefId make_template_view(TNodeId Q, size_t n, const TVal *slots_vals, const uint64_t *slot_index) {
+    /* slot order */
+    uint64_t *sl = malloc((n ? n : 1) * sizeof(uint64_t)); TVal *vl = malloc((n ? n : 1) * sizeof(TVal));
+    require(sl && vl, "out of memory");
+    for (size_t k = 0; k < n; k++) { sl[k] = slot_index[k]; vl[k] = slots_vals[k]; }
+    for (size_t a = 1; a < n; a++) for (size_t b = a; b > 0 && sl[b - 1] > sl[b]; b--) { uint64_t s = sl[b]; sl[b] = sl[b - 1]; sl[b - 1] = s; TVal t = vl[b]; vl[b] = vl[b - 1]; vl[b - 1] = t; }
+    uint64_t er = envrec_host(tnode_def(Q), n, sl, vl);
+    free(sl); free(vl);
+    return tview_make(Q, er);
+}
 RefId tenv_instantiate(TNodeId Q, TEnvId E) {
     if (node_construction(Q)) {
         size_t np = tnode_nparams(Q); TVal *vals = malloc((np ? np : 1) * sizeof(TVal)); require(vals, "out of memory");
         cons_vals(E, np, vals); RefId out = tnode_construction_view(Q, vals); free(vals); return out;
     }
-    Env env; env_from_tenv(&env, Q, E);
-    return make_view_env(Q, &env);
+    return tview_make(Q, family_call(F_ENVOF, Q, E));
 }
 RefId tview_reindex(RefId t, MapId sigma) {
     require(!tview_is_construction(t), "a construction is reindexed by the substitution family");
-    TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
-    size_t n = env.def->nparams + env.def->nlocals;
-    for (size_t k = 0; k < n; k++) if (env.has[k]) env.val[k] = reindex_tval(env.val[k], sigma);
-    return make_view_env(Q, &env);
+    TEnvId E = tenv_reindex(ref_tenv(t), sigma);
+    return tview_make(ref_tnode(t), family_call(F_ENVOF, ref_tnode(t), E));
 }
 size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
     if (tview_is_construction(t)) return 0;          /* a construction has no template boundary */
-    TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
+    TNodeId Q = ref_tnode(t); const TDef *def = &TPL.defs[tnode_def(Q)];
+    uint64_t er = env_of(t);
     size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
     size_t n = 0;
-    size_t np = env.def->nparams;
+    size_t np = def->nparams;
     for (size_t k = 0; k < nf && n < max; k++) {
         size_t slot = (size_t)fl[k];
         /* the node's environment is closed under the declarations (finish),
          * so every declared type is interpretable here */
         if (slot < np) {
-            out[n].slot = slot; out[n].sort = env.def->sorts[slot];
-            out[n].type = env.def->ptype[slot] ? interp(env.def->ptype[slot], &env).id : 0;
-            out[n].level = env.def->plevel[slot] ? interp(env.def->plevel[slot], &env).id : LEVEL_NONE;
-            out[n].sig = env.def->psig[slot] ? interp(env.def->psig[slot], &env).id : 0;
-            out[n].guard = env.def->pguard[slot] ? interp(env.def->pguard[slot], &env).id : fc_true();
+            out[n].slot = slot; out[n].sort = def->sorts[slot];
+            out[n].type = def->ptype[slot] ? interp_at(def->ptype[slot], er).id : 0;
+            out[n].level = def->plevel[slot] ? interp_at(def->plevel[slot], er).id : LEVEL_NONE;
+            out[n].sig = def->psig[slot] ? interp_at(def->psig[slot], er).id : 0;
+            out[n].guard = def->pguard[slot] ? interp_at(def->pguard[slot], er).id : fc_true();
         } else {
             /* a term local used freely by this node (bound by an enclosing
              * constructor or scope): its image is checked against the
              * declaration it was stored under */
             size_t l = slot - np;
-            if (env.def->lsort[l] != PS_REF || !env.def->ltype[l]) continue;
+            if (def->lsort[l] != PS_REF || !def->ltype[l]) continue;
             out[n].slot = slot; out[n].sort = PS_REF; out[n].sig = 0;
-            out[n].type = interp(env.def->ltype[l], &env).id;
-            out[n].level = env.def->llevel[l] ? interp(env.def->llevel[l], &env).id : LEVEL_NONE;
-            out[n].guard = env.def->lreq[l] ? interp(env.def->lreq[l], &env).id : fc_true();
+            out[n].type = interp_at(def->ltype[l], er).id;
+            out[n].level = def->llevel[l] ? interp_at(def->llevel[l], er).id : LEVEL_NONE;
+            out[n].guard = def->lreq[l] ? interp_at(def->lreq[l], er).id : fc_true();
         }
         n++;
     }
@@ -539,10 +673,11 @@ size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
 }
 bool tnode_result(RefId t, RefId *type, uint64_t *level) {
     if (tview_is_construction(t)) return false;
-    TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
-    if (!env.def->rtype || env.def->root_node != Q) return false;
-    *type = interp(env.def->rtype, &env).id;
-    *level = env.def->rlevel ? interp(env.def->rlevel, &env).id : LEVEL_NONE;
+    TNodeId Q = ref_tnode(t); const TDef *def = &TPL.defs[tnode_def(Q)];
+    if (!def->rtype || def->root_node != Q) return false;
+    uint64_t er = env_of(t);
+    *type = interp_at(def->rtype, er).id;
+    *level = def->rlevel ? interp_at(def->rlevel, er).id : LEVEL_NONE;
     return true;
 }
 
@@ -1177,8 +1312,11 @@ TVal template_call(TDefKind def, size_t nargs, const TVal *args) {
     templates_init();
     const TDef *d = &TPL.defs[def];
     require(nargs + 1 == d->nparams, "template_call arity (%s)", d->name);
-    Env env; memset(&env, 0, sizeof env); env.defid = def; env.def = d;
-    env.val[0] = tv_fc(template_kappa()); env.has[0] = true;
-    for (size_t k = 0; k < nargs; k++) { require(args[k].sort == d->sorts[k + 1], "template_call sort (%s, %zu)", d->name, k); env.val[k + 1] = args[k]; env.has[k + 1] = true; }
-    return interp(d->root, &env);
+    uint64_t *sl = malloc((nargs + 1) * sizeof(uint64_t)); TVal *vl = malloc((nargs + 1) * sizeof(TVal));
+    require(sl && vl, "out of memory");
+    sl[0] = 0; vl[0].sort = PS_FACE; vl[0].id = template_kappa();
+    for (size_t k = 0; k < nargs; k++) { require(args[k].sort == d->sorts[k + 1], "template_call sort (%s, %zu)", d->name, k); sl[k + 1] = k + 1; vl[k + 1] = args[k]; }
+    uint64_t er = envrec_host(def, nargs + 1, sl, vl);
+    free(sl); free(vl);
+    return interp_at(d->root, er);
 }
