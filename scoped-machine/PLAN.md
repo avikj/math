@@ -143,3 +143,23 @@ gate at the end).
 
 Standing rules: design each family completely before writing it; no defect-driven development;
 no subagents; work only from the shared specifications; no second engine/store/continuation form.
+
+## 9. Corrections adopted from the 14:54 attachment (binding on all later steps)
+
+1. No representation may insert a dependency absent from the object. Variable records are NOT
+   converted to cons sequences: reaching field k must not require traversing fields 0..k-1.
+   Records stay contiguous (O(1) access to any field); what becomes stepped is their
+   construction and interning: hashing, trie descent and full-key comparison of a variable
+   record are a family advancing a bounded number of words per step. (Sequence module removed.)
+2. Judgments depend on their actual premises, not on admission of everything registered.
+   Whole-environment admission (§57 R1 / §59.4 freeze-reopen lifecycle) is replaced by validity
+   of the judgment's dependency closure: the symbols its context, type and term actually reach,
+   with their declarations/bodies checked as premises (a cyclic dependency such as bad/dependent
+   still rejects when used). No global freeze, no session qualification of cached judgments.
+3. One route for identity actions. TRANSFORM_CALL, CompiledTransform, GraphPairTemplate,
+   certificate re-emission and APPLY_TRANSFORM/CONTINUE_REFERENCE are identified with the
+   ordinary generic action (§83.4 F/G on Diagram values). The host compiler becomes an input
+   adapter that builds Diagram values (with diagnostics); it defines no second semantic route.
+   This replaces "compiler as families" in step 5 and reduces it.
+4. Readings are folds of the local records of the steps that ran. No central event journal
+   into which subsystems report; no global serialization of histories.
