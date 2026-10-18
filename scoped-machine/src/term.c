@@ -243,6 +243,24 @@ OriginId origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nf,
     /* dependency-closed free boundary: union of field boundaries (which are
      * already closed through declaration types), minus formals bound at the
      * field's binder. */
+    /* close each binder's formal into its atom in the fields under it */
+    Field *cf = malloc((nf ? nf : 1) * sizeof(Field));
+    Binder *cb = malloc((nb ? nb : 1) * sizeof(Binder));
+    require(cf && cb, "out of memory");
+    if (nf) memcpy(cf, fields, nf * sizeof(Field));
+    for (size_t k = 0; k < nb; k++) {
+        cb[k] = binders[k];
+        uint64_t atom = obound_id((uint32_t)k);
+        MapId close = binders[k].sort == S_TERM ? map_single_term(binders[k].formal, ref_var(atom)) : map_single_dim(binders[k].formal, iv_var(atom));
+        for (size_t q = 0; q < nf; q++) {
+            if (cf[q].slot != (BinderSlot)k) continue;
+            if (cf[q].kind == F_REF) cf[q].id = reindex(cf[q].id, close);
+            else if (cf[q].kind == F_INTERVAL) cf[q].id = iv_reindex(cf[q].id, close);
+            else cf[q].id = fc_reindex(cf[q].id, close);
+        }
+        cb[k].formal = atom;
+    }
+    fields = cf; binders = cb;
     VarSetId ft = varset_make(NULL, 0);
     DimSetId fd = dimset_make(NULL, 0);
     FaceId req = fc_true();
@@ -287,7 +305,9 @@ OriginId origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nf,
             req = fc_meet(req, rk);
         }
     }
-    return origin_intern(tag, payload, fields, nf, binders, nb, ft, fd, req);
+    OriginId id = origin_intern(tag, payload, fields, nf, binders, nb, ft, fd, req);
+    free(cf); free(cb);
+    return id;
 }
 
 /* ================= references ================= */
@@ -299,7 +319,7 @@ static void ref_side_set(RefId id, DimSetId support, VarSetId fv, FaceId req) {
 
 RefId ref_var(TermVarId x) {
     uint64_t w[2] = { 1, x };
-    if (is_bound_id(x)) {
+    if (is_local_atom(x)) {
         /* a bound local occurrence (§50): no declaration record; its type and
          * guard live in the enclosing scope's telescope */
         term_lock();

@@ -53,7 +53,7 @@ static size_t g_bound(Canon *c, GKind kind, uint64_t id) {
     idx = node_new(c, kind, lab); remember(c, kind, id, idx); return idx;
 }
 static size_t g_var(Canon *c, TermVarId x) {
-    if (is_bound_id(x)) return g_bound(c, G_INPUT_VAR, x);
+    if (is_local_atom(x)) return g_bound(c, G_INPUT_VAR, x);
     uint64_t p = term_var_provenance(x);
     if (p) return g_nominal(c, p);
     size_t idx;
@@ -63,7 +63,7 @@ static size_t g_var(Canon *c, TermVarId x) {
     return idx;
 }
 static size_t g_dim(Canon *c, DimVarId i) {
-    if (is_bound_id(i)) return g_bound(c, G_INPUT_DIM, i);
+    if (is_local_atom(i)) return g_bound(c, G_INPUT_DIM, i);
     uint64_t p = dim_var_provenance(i);
     if (p) return g_nominal(c, p);
     size_t idx;

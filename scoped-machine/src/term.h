@@ -63,6 +63,17 @@ static inline bool is_bound_id(uint64_t id) { return (id & BOUND_BIT) != 0; }
 static inline uint32_t bound_depth(uint64_t id) { return (uint32_t)((id & ~BOUND_BIT) >> 32) & 0x1fffffffu; }
 static inline uint32_t bound_slot(uint64_t id) { return (uint32_t)(id & 0xffffffffULL); }
 
+/* ---- origin binder atoms ----
+ * An origin's binder k is the atom obound_id(k) inside that origin's fields:
+ * origin_make closes the supplied formal into it, so alpha-equivalent
+ * constructions are the same record. An atom never occurs in an origin's
+ * free boundary (it is removed at its binder), so atoms of different origins
+ * never meet in one map. Like scope locals, it has no declaration. */
+#define OBOUND_BIT (1ULL << 60)
+static inline uint64_t obound_id(uint32_t slot) { return OBOUND_BIT | slot; }
+static inline bool is_obound_id(uint64_t id) { return (id & OBOUND_BIT) != 0 && (id & BOUND_BIT) == 0; }
+static inline bool is_local_atom(uint64_t id) { return is_bound_id(id) || is_obound_id(id); }
+
 const char *tag_name(Tag t);
 
 /* ---- declarations ---- */
