@@ -286,18 +286,24 @@ static TVal interp(ExprId e, Env *env) {
 
 void tview_open(RefId t, Head *h) {
     TNodeId Q = ref_tnode(t); TEnvId E = ref_tenv(t);
-    Env env; env_from_tenv(&env, Q, E);
+    h->tnode = Q; h->tenv = E;
     h->tag = tnode_tag(Q);
+    h->n = tnode_nfields(Q);
+    if (!node_payload_e(Q) && !node_levels_e(Q)) { h->payload = 0; h->levels = LEVELS_NONE; return; }
+    Env env; env_from_tenv(&env, Q, E);
     h->payload = node_payload_e(Q) ? interp(node_payload_e(Q), &env).id : 0;
     h->levels = node_levels_e(Q) ? interp(node_levels_e(Q), &env).id : LEVELS_NONE;
-    h->n = tnode_nfields(Q);
-    h->f = calloc(h->n ? h->n : 1, sizeof(HField)); require(h->f, "out of memory");
-    for (size_t k = 0; k < h->n; k++) {
-        FieldKind kind; BinderSlot bs; ExprId fe; node_field(Q, k, &kind, &bs, &fe);
-        h->f[k].kind = kind; h->f[k].index = (FieldIndex)k; h->f[k].slot = bs;
-        if (bs != NO_SLOT) { h->f[k].is_binder = true; h->f[k].sort = tnode_binder_sort(Q, bs); h->f[k].id = 0; }
-        else h->f[k].id = interp(fe, &env).id;
-    }
+}
+
+HField tview_field(const Head *h, size_t k) {
+    TNodeId Q = h->tnode;
+    HField x; memset(&x, 0, sizeof x);
+    FieldKind kind; BinderSlot bs; ExprId fe; node_field(Q, k, &kind, &bs, &fe);
+    x.kind = kind; x.index = (FieldIndex)k; x.slot = bs;
+    if (bs != NO_SLOT) { x.is_binder = true; x.sort = tnode_binder_sort(Q, bs); x.id = 0; return x; }
+    Env env; env_from_tenv(&env, Q, h->tenv);
+    x.id = interp(fe, &env).id;
+    return x;
 }
 
 TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {

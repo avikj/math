@@ -676,9 +676,9 @@ bool compiler_decode_call(const Head *h, uint64_t *id, int *dir, MapId *sigma, R
     MapBuilder b; mapb_init(&b);
     for (size_t k = 0; k < n; k++) {
         CtxDecl d = context_decl(t->parameters, k);
-        if (d.sort == S_TERM) mapb_term(&b, d.id, h->f[k].id); else mapb_dim(&b, d.id, h->f[k].id);
+        if (d.sort == S_TERM) mapb_term(&b, d.id, HF(h, k).id); else mapb_dim(&b, d.id, HF(h, k).id);
     }
     *sigma = mapb_finish(&b);
-    *a = h->f[n].id;
+    *a = HF(h, n).id;
     return true;
 }

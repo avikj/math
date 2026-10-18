@@ -304,8 +304,8 @@ static NodeId materialize(Net *n, const Head *h) {
         NodeId tail = net_node(n, A_BRANCH_NIL, 1, polnil, e);
         for (size_t k = nb; k-- > 0;) {
             NodeId br = net_node(n, A_BRANCH, 3, polbr, e);
-            net_connect(n, br, 1, desc_face(n, h->f[2 * k].id), 0);
-            net_connect(n, br, 2, desc_ref(n, h->f[2 * k + 1].id), 0);
+            net_connect(n, br, 1, desc_face(n, HF(h, 2 * k).id), 0);
+            net_connect(n, br, 2, desc_ref(n, HF(h, 2 * k + 1).id), 0);
             NodeId cons = net_node(n, A_BRANCH_CONS, 3, polcons, e);
             net_connect(n, cons, 1, br, 0);
             net_connect(n, cons, 2, tail, 0);
@@ -320,7 +320,7 @@ static NodeId materialize(Net *n, const Head *h) {
     free(pol);
     N(n, hd)->tag = h->tag;
     for (size_t k = 0; k < h->n; k++) {
-        const HField *f = &h->f[k];
+        HField fv = HF(h, k); const HField *f = &fv;
         NodeId d;
         if (f->is_binder) {
             if (h->tag == T_COMP && k == 2) d = desc_binder(n, D_PARTIAL_DIM_BINDER, h->owner, f->slot, f->index, 1);
@@ -330,7 +330,7 @@ static NodeId materialize(Net *n, const Head *h) {
             bool partial = (h->tag == T_GLUE_TYPE && (k == 2 || k == 3)) ||
                            (h->tag == T_GLUE_INTRO && (k == 2 || k == 3 || k == 4)) ||
                            (h->tag == T_UNGLUE && (k == 2 || k == 3));
-            d = partial ? desc_partial(n, h->f[1].id, f->id) : desc_ref(n, f->id);
+            d = partial ? desc_partial(n, HF(h, 1).id, f->id) : desc_ref(n, f->id);
         } else if (f->kind == F_INTERVAL) d = desc_interval(n, f->id);
         else d = desc_face(n, f->id);
         net_connect(n, hd, (uint16_t)(k + 1), d, 0);
@@ -542,8 +542,8 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
          * the guard is read through the uniform opened head, where the
          * owner's map or template environment is already applied (§55) */
         Head oh; open_ref(owner, &oh);
-        require((size_t)Q.d < oh.n && oh.f[Q.d].kind == F_FACE, "APPLY_PARTIAL_DIM_BINDER: guard field");
-        FaceId guard = fc_reindex(oh.f[Q.d].id, at_r);
+        require((size_t)Q.d < oh.n && HF(&oh, Q.d).kind == F_FACE, "APPLY_PARTIAL_DIM_BINDER: guard field");
+        FaceId guard = fc_reindex(HF(&oh, Q.d).id, at_r);
         head_free(&oh);
         res = desc_partial(n, guard, reindex(o.body, at_r));
         break;

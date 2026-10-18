@@ -573,35 +573,33 @@ void open_ref(RefId t, Head *h) {
     if (ref_is_var(t)) { h->is_var = true; h->var = ref_var_id(t); return; }
     if (ref_is_tview(t)) { tview_open(t, h); return; }
     OriginId c = ref_origin(t);
-    MapId sigma = ref_map(t);
-    h->origin = c; h->map = sigma;
+    h->origin = c; h->map = ref_map(t);
     h->tag = origin_tag(c);
     h->payload = origin_payload(c);
     h->levels = origin_levels(c);
     h->n = origin_nfields(c);
-    h->f = calloc(h->n ? h->n : 1, sizeof(HField));
-    require(h->f, "out of memory");
-    for (size_t k = 0; k < h->n; k++) {
-        Field f = origin_field(c, (FieldIndex)k);
-        h->f[k].kind = f.kind;
-        h->f[k].index = (FieldIndex)k;
-        if (f.slot != NO_SLOT) {
-            h->f[k].is_binder = true;
-            h->f[k].slot = f.slot;
-            h->f[k].sort = origin_binder(c, f.slot).sort;
-            h->f[k].id = f.id;
-        } else {
-            h->f[k].slot = NO_SLOT;
-            switch (f.kind) {
-            case F_REF: h->f[k].id = reindex(f.id, sigma); break;
-            case F_INTERVAL: h->f[k].id = iv_reindex(f.id, sigma); break;
-            case F_FACE: h->f[k].id = fc_reindex(f.id, sigma); break;
-            }
-        }
-    }
 }
 
-void head_free(Head *h) { free(h->f); h->f = NULL; h->n = 0; }
+HField head_field(const Head *h, size_t k) {
+    require(!h->is_var && k < h->n, "head field out of range");
+    if (h->tnode) return tview_field(h, k);
+    HField x; memset(&x, 0, sizeof x);
+    Field f = origin_field(h->origin, (FieldIndex)k);
+    x.kind = f.kind; x.index = (FieldIndex)k;
+    if (f.slot != NO_SLOT) {
+        x.is_binder = true; x.slot = f.slot; x.sort = origin_binder(h->origin, f.slot).sort; x.id = f.id;
+    } else {
+        x.slot = NO_SLOT;
+        switch (f.kind) {
+        case F_REF: x.id = reindex(f.id, h->map); break;
+        case F_INTERVAL: x.id = iv_reindex(f.id, h->map); break;
+        case F_FACE: x.id = fc_reindex(f.id, h->map); break;
+        }
+    }
+    return x;
+}
+
+void head_free(Head *h) { h->n = 0; }
 
 /* ================= occurrence contexts ================= */
 /* record: [n, (sort, id, type)*, assumption] */
@@ -852,7 +850,7 @@ RefId mk_system(size_t n, const FaceId *faces, const RefId *terms) {
 static void pr(RefId t, FILE *f, int depth);
 
 static void pr_field(const Head *h, size_t k, FILE *f, int depth) {
-    const HField *x = &h->f[k];
+    HField xv = HF(h, k); const HField *x = &xv;
     if (x->is_binder) {
         if (x->sort == S_TERM) {
             TermOpen o = resolve_term_binder(h->owner, x->slot, x->index);

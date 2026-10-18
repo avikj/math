@@ -224,12 +224,12 @@ int main(void) {
        * local w keeps w's declaration; a valid substitute checks and the
        * child's typed boundary reindexes canonically */
       { RefId ie = mk_id_equiv(0, A);
-        Head h0; open_ref(ie, &h0); RefId outer = h0.f[1].id; head_free(&h0);
+        Head h0; open_ref(ie, &h0); RefId outer = HF(&h0, 1).id; head_free(&h0);
         TermOpen oy = resolve_term_binder(outer, 0, 1);
-        Head h1; open_ref(oy.body, &h1); RefId contraction = h1.f[1].id; head_free(&h1);
+        Head h1; open_ref(oy.body, &h1); RefId contraction = HF(&h1, 1).id; head_free(&h1);
         TermOpen ow = resolve_term_binder(contraction, 0, 1);
         DimOpen oi = resolve_dim_binder(ow.body, 0, 0);
-        Head h2; open_ref(oi.body, &h2); Head h3; open_ref(h2.f[0].id, &h3); RefId snd_w = h3.f[3].id; head_free(&h3); head_free(&h2);
+        Head h2; open_ref(oi.body, &h2); Head h3; open_ref(HF(&h2, 0).id, &h3); RefId snd_w = HF(&h3, 3).id; head_free(&h3); head_free(&h2);
         CHECK(ref_tag(snd_w) == T_SND, "located the projection from w");
         ContextId H = context_extend_term(G, oy.x, oy.type);
         TermVarId vq = tv(ow.type);                         /* a valid substitute: q : Fib(A, A, id, y) */

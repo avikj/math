@@ -205,14 +205,14 @@ static void test_binders(void) {
     DimOpen d = resolve_dim_binder(pl, 0, 0);
     CHECK(d.j != i, "opened dimension is fresh");
     { Head hh; open_ref(apply_dim_binder(pl, 0, 0, iv_one()), &hh);
-      CHECK(hh.tag == T_PAPP && hh.f[3].id == p && hh.f[4].id == iv_one(), "apply dim binder at 1 exposes p @ 1");
+      CHECK(hh.tag == T_PAPP && HF(&hh, 3).id == p && HF(&hh, 4).id == iv_one(), "apply dim binder at 1 exposes p @ 1");
       head_free(&hh); }
     /* open exposes substituted fields and binder handles */
     Head h; open_ref(mk_app(id, a), &h);
-    CHECK(h.tag == T_APP && h.f[0].id == id && h.f[1].id == a, "open of app");
+    CHECK(h.tag == T_APP && HF(&h, 0).id == id && HF(&h, 1).id == a, "open of app");
     head_free(&h);
     open_ref(id, &h);
-    CHECK(h.tag == T_LAM && h.f[1].is_binder && h.f[1].sort == S_TERM, "open of lambda exposes a term binder handle");
+    CHECK(h.tag == T_LAM && HF(&h, 1).is_binder && HF(&h, 1).sort == S_TERM, "open of lambda exposes a term binder handle");
     head_free(&h);
     /* reindex_head: a view of a lambda under a map */
     RefId Bfam = var(mk_fun(0, 1, A, U0));
@@ -222,7 +222,7 @@ static void test_binders(void) {
     open_ref(gsub, &h);
     TermOpen og = resolve_term_binder(gsub, 0, 1);
     { Head hh; open_ref(og.body, &hh);
-      CHECK(hh.tag == T_APP && hh.f[0].id == Bfam && hh.f[1].id == a, "opening a view substitutes images into the body");
+      CHECK(hh.tag == T_APP && HF(&hh, 0).id == Bfam && HF(&hh, 1).id == a, "opening a view substitutes images into the body");
       head_free(&hh); }
     head_free(&h);
 }
@@ -283,7 +283,7 @@ static void test_eval_basic(void) {
     CHECK(st == W_OK && r->ref == bb, "(⟨i⟩ p(¬i)) @ k under k=0 ⇝ b by the endpoint test");
     r = whnf(mk_papp_const(0, A, bb, a, pl, iv_var(k)), fc_true(), &st);
     { Head hh; open_ref(r->ref, &hh);
-      CHECK(st == W_OK && r->cls == R_NEUTRAL && hh.tag == T_PAPP && hh.f[3].id == p && hh.f[4].id == iv_negate(iv_var(k)), "(⟨i⟩ p(¬i)) @ k ⇝ p(¬k) neutral");
+      CHECK(st == W_OK && r->cls == R_NEUTRAL && hh.tag == T_PAPP && HF(&hh, 3).id == p && HF(&hh, 4).id == iv_negate(iv_var(k)), "(⟨i⟩ p(¬i)) @ k ⇝ p(¬k) neutral");
       head_free(&hh); }
 
     /* two concurrent requests for one key: one task, both waiters served */
@@ -329,7 +329,7 @@ static void test_eval_glue_system(void) {
     CHECK(st == W_OK && r->ref == T, "Glue ⇝ T on its face");
     /* retained component survives specialization even though the whole type collapses */
     Head h; open_ref(G, &h);
-    RefId base = h.f[0].id; head_free(&h);
+    RefId base = HF(&h, 0).id; head_free(&h);
     RefId base1 = reindex_dim(base, i, iv_one());
     RefId G1 = reindex_dim(G, i, iv_one());
     r = whnf(G1, fc_true(), &st);
@@ -417,9 +417,9 @@ static void test_comp_clauses(void) {
     CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "applying it gives a neutral composition in the (variable) codomain");
     /* v(1) = x1: the forward transport in the domain filler at 1 is the argument */
     Head h; open_ref(r->ref, &h);          /* comp^i B [] (f v(0)) */
-    RefId capapp = h.f[3].id; head_free(&h);
+    RefId capapp = HF(&h, 3).id; head_free(&h);
     open_ref(capapp, &h);
-    RefId v0 = h.f[1].id; head_free(&h);
+    RefId v0 = HF(&h, 1).id; head_free(&h);
     r = whnf(v0, fc_true(), &st);
     CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "v(0) is a backward transport of the argument in A (neutral)");
     RefId V = reindex_dim(v0, 0, iv_zero()); (void)V;
@@ -436,8 +436,8 @@ static void test_comp_clauses(void) {
     /* shared intermediate: the second component mentions the same filler reference */
     r = whnf(csg, fc_true(), &st);
     open_ref(r->ref, &h);
-    RefId a1 = h.f[0].id, b1 = h.f[1].id; head_free(&h);
-    open_ref(b1, &h); RefId famE = h.f[0].id; head_free(&h);     /* field under binder: raw origin field id */
+    RefId a1 = HF(&h, 0).id, b1 = HF(&h, 1).id; head_free(&h);
+    open_ref(b1, &h); RefId famE = HF(&h, 0).id; head_free(&h);     /* field under binder: raw origin field id */
     (void)famE; (void)a1;
     CHECK(true, "pair built");
 
@@ -458,7 +458,7 @@ static void test_comp_clauses(void) {
     r = whnf(cu, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_GLUE_TYPE, "comp in U ⇝ Glue");
     open_ref(r->ref, &h);
-    CHECK(h.f[0].id == A && fc_is_false(h.f[1].id), "with base A and the (empty) tube face");
+    CHECK(HF(&h, 0).id == A && fc_is_false(HF(&h, 1).id), "with base A and the (empty) tube face");
     head_free(&h);
     /* with a tube: Glue [phi ↦ (U_1, LineEquiv)] A_0, and the equivalence is a coe in Equiv */
     DimVarId n = declare_dim();

@@ -100,7 +100,7 @@ RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap, Fa
     switch (h.tag) {
     case T_PI: case T_SIGMA: {
         uint64_t m = levels_first(h.levels), n = levels_second(h.levels);
-        RefId domain = h.f[0].id;
+        RefId domain = HF(&h, 0).id;
         TermOpen o = resolve_term_binder(fam, 0, 1);                  /* resolved once: (x, D_j, codomain) */
         ScopeId D = capture_dim1(j, domain, U_of(m), level_succ(m), eta);
         ScopeId E = capture_dim_term(j, o.x, o.type, m, o.body, U_of(n), level_succ(n), eta);
@@ -113,8 +113,8 @@ RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap, Fa
         uint64_t n = levels_first(h.levels);
         DimOpen Bk = resolve_dim_binder(fam, 0, 0);                   /* (k, B(j,k)) */
         ScopeId B = capture_dim2(j, Bk.j, Bk.body, U_of(n), level_succ(n), eta);
-        ScopeId left = capture_dim1(j, h.f[1].id, reindex_dim(Bk.body, Bk.j, iv_zero()), n, eta);
-        ScopeId right = capture_dim1(j, h.f[2].id, reindex_dim(Bk.body, Bk.j, iv_one()), n, eta);
+        ScopeId left = capture_dim1(j, HF(&h, 1).id, reindex_dim(Bk.body, Bk.j, iv_zero()), n, eta);
+        ScopeId right = capture_dim1(j, HF(&h, 2).id, reindex_dim(Bk.body, Bk.j, iv_one()), n, eta);
         ScopeId u = capture_dim1(j, tube_j, fam, n, tube_guard);
         TVal a[7] = { VL(n), VS(B), VS(left), VS(right), VF(phi), VS(u), VR(cap) };
         out = template_call(TD_PATHCOMP, 7, a).id;
@@ -122,7 +122,7 @@ RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap, Fa
     }
     case T_GLUE_TYPE: {
         uint64_t n = levels_first(h.levels);
-        RefId A_j = h.f[0].id, T_j = h.f[2].id, e_j = h.f[3].id; FaceId alpha_j = h.f[1].id;
+        RefId A_j = HF(&h, 0).id, T_j = HF(&h, 2).id, e_j = HF(&h, 3).id; FaceId alpha_j = HF(&h, 1).id;
         ScopeId A = capture_dim1(j, A_j, U_of(n), level_succ(n), eta);
         ScopeId alpha = capture_dim1_face(j, alpha_j);
         ScopeId T = capture_dim1(j, T_j, U_of(n), level_succ(n), fc_meet(eta, alpha_j));

@@ -26,13 +26,13 @@ int main(void) {
         /* the emitted collapse is exactly coe^i Path_X(m(s@¬i, c), y) w */
         TermVarId rL; RefId cL = diagram_collapse(A.L, &rL);
         Head h; open_ref(cL, &h);
-        CHECK(h.tag == T_COMP && fc_is_false(h.f[1].id), "c_L is one composition with a false tube");
+        CHECK(h.tag == T_COMP && fc_is_false(HF(&h, 1).id), "c_L is one composition with a false tube");
         if (h.tag == T_COMP) {
             DimOpen fam = resolve_dim_binder(cL, 0, 0);
             Head hf; open_ref(fam.body, &hf);
             CHECK(hf.tag == T_PATH, "its family is a path type");
             head_free(&hf);
-            RefId cap = h.f[3].id; Head hc; open_ref(cap, &hc);
+            RefId cap = HF(&h, 3).id; Head hc; open_ref(cap, &hc);
             CHECK(hc.tag == T_SND, "its cap is w = snd(snd r)");
             head_free(&hc);
         }
@@ -40,7 +40,7 @@ int main(void) {
         /* the expansion is (m(b,c), refl, q) */
         TermVarId qR; RefId dR = diagram_expand(A.R, &qR);
         open_ref(dR, &h);
-        CHECK(h.tag == T_PAIR && h.n == 3 && h.f[0].id == A.mbc, "d_R(q) = (m(b,c), refl, q) with its Σ annotation");
+        CHECK(h.tag == T_PAIR && h.n == 3 && HF(&h, 0).id == A.mbc, "d_R(q) = (m(b,c), refl, q) with its Σ annotation");
         head_free(&h);
 
         /* forward invocation: σ with y := m(a, m(b,c)); r_L = (m(a,b), refl, α) */
@@ -116,7 +116,7 @@ int main(void) {
             CHECK(dec && id2 == A.T && dir2 == DIR_FORWARD && same_sigma && a2 == reindex_dim(rk, k, iv_zero()),
                   "opening reindex(TRANSFORM_CALL, k↦0) gives (id, dir, σ;[k↦0], a[k↦0])");
             size_t np2 = context_size(t->parameters);
-            CHECK(dec && ho.f[np2 + 1].id == reindex_dim(reindex(t->domain, sk), k, iv_zero()) && ho.f[np2 + 2].id == reindex_dim(reindex(t->codomain, sk), k, iv_zero()), "and its annotations are the reindexed annotations");
+            CHECK(dec && HF(&ho, np2 + 1).id == reindex_dim(reindex(t->domain, sk), k, iv_zero()) && HF(&ho, np2 + 2).id == reindex_dim(reindex(t->codomain, sk), k, iv_zero()), "and its annotations are the reindexed annotations");
             head_free(&ho); }
           CHECK(dimset_contains(ref_support(callk), k) && !dimset_contains(ref_support(at0), k), "the call's support follows its boundary");
           /* a strengthened face projects onto the call's support: the same key under ⊤ and under a face on an unrelated dimension */
@@ -215,10 +215,10 @@ int main(void) {
       RefId csh = diagram_collapse(Dsh, &rs);
       DimOpen fam = resolve_dim_binder(csh, 0, 0);
       Head hp; open_ref(fam.body, &hp);
-      RefId l = hp.f[1].id; head_free(&hp);
+      RefId l = HF(&hp, 1).id; head_free(&hp);
       Head ha; open_ref(l, &ha);                                 /* app(app(g, x_i), x_i) */
-      RefId arg2 = ha.f[1].id; RefId inner = ha.f[0].id; head_free(&ha);
-      open_ref(inner, &ha); RefId arg1 = ha.f[1].id; head_free(&ha);
+      RefId arg2 = HF(&ha, 1).id; RefId inner = HF(&ha, 0).id; head_free(&ha);
+      open_ref(inner, &ha); RefId arg1 = HF(&ha, 1).id; head_free(&ha);
       CHECK(arg1 == arg2, "both occurrences of the shared node use one instantiated reference s@¬i");
       CHECK(ref_support(l) != dimset_make(NULL, 0), "the family moves along i"); }
 

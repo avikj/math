@@ -447,8 +447,8 @@ static void eval_system_head(RefId t, const Head *h, FaceId chi, EntryId dest) {
     size_t kept = 0;
     FaceId uni = fc_false();
     for (size_t k = 0; k < nb; k++) {
-        FaceId phi = h->f[2 * k].id;
-        RefId tk = h->f[2 * k + 1].id;
+        FaceId phi = HF(h, 2 * k).id;
+        RefId tk = HF(h, 2 * k + 1).id;
         if (fc_is_false(fc_meet(chi, phi))) continue;           /* inconsistent branch dropped */
         if (fc_entails(chi, phi)) { free(faces); free(terms); forward(tk, chi, dest); return; }
         faces[kept] = phi; terms[kept] = tk; kept++;
@@ -484,34 +484,34 @@ static void evaluate_whnf(EntryId eid) {
         else forward(unfold_global(t), chi, eid);
         break;
     case T_APP: {
-        Cont *k = cont_new(K_APP, eid, chi); k->orig = t; k->a = h.f[1].id;
-        eval_request(h.f[0].id, chi, k);
+        Cont *k = cont_new(K_APP, eid, chi); k->orig = t; k->a = HF(&h, 1).id;
+        eval_request(HF(&h, 0).id, chi, k);
         break;
     }
     case T_FST: case T_SND: {
         Cont *k = cont_new(h.tag == T_FST ? K_FST : K_SND, eid, chi); k->orig = t;
-        eval_request(h.f[0].id, chi, k);
+        eval_request(HF(&h, 0).id, chi, k);
         break;
     }
     case T_PAPP: {
-        IntervalId s = h.f[4].id;
-        if (fc_entails(chi, fc_endpoint(s, 0))) { forward(h.f[1].id, chi, eid); break; }
-        if (fc_entails(chi, fc_endpoint(s, 1))) { forward(h.f[2].id, chi, eid); break; }
+        IntervalId s = HF(&h, 4).id;
+        if (fc_entails(chi, fc_endpoint(s, 0))) { forward(HF(&h, 1).id, chi, eid); break; }
+        if (fc_entails(chi, fc_endpoint(s, 1))) { forward(HF(&h, 2).id, chi, eid); break; }
         Cont *k = cont_new(K_PAPP, eid, chi); k->orig = t; k->s = s;
-        eval_request(h.f[3].id, chi, k);
+        eval_request(HF(&h, 3).id, chi, k);
         break;
     }
     case T_GLUE_TYPE:
-        if (fc_entails(chi, h.f[1].id)) forward(h.f[2].id, chi, eid);
+        if (fc_entails(chi, HF(&h, 1).id)) forward(HF(&h, 2).id, chi, eid);
         else publish(eid, result_new(R_INTRODUCTION, t));
         break;
     case T_GLUE_INTRO:
-        if (fc_entails(chi, h.f[1].id)) forward(h.f[4].id, chi, eid);
+        if (fc_entails(chi, HF(&h, 1).id)) forward(HF(&h, 4).id, chi, eid);
         else publish(eid, result_new(R_INTRODUCTION, t));
         break;
     case T_UNGLUE:
-        if (fc_entails(chi, h.f[1].id)) forward(mk_app(mk_fst(h.f[3].id), h.f[4].id), chi, eid);
-        else { Cont *k = cont_new(K_UNGLUE, eid, chi); k->orig = t; eval_request(h.f[4].id, chi, k); }
+        if (fc_entails(chi, HF(&h, 1).id)) forward(mk_app(mk_fst(HF(&h, 3).id), HF(&h, 4).id), chi, eid);
+        else { Cont *k = cont_new(K_UNGLUE, eid, chi); k->orig = t; eval_request(HF(&h, 4).id, chi, k); }
         break;
     case T_SYSTEM:
         eval_system_head(t, &h, chi, eid);
@@ -536,7 +536,7 @@ static void evaluate_whnf(EntryId eid) {
         break;
     }
     case T_COMP: {
-        FaceId phi = h.f[1].id;
+        FaceId phi = HF(&h, 1).id;
         if (fc_entails(chi, phi)) {            /* tube coverage first */
             forward(apply_dim_binder(t, 0, 2, iv_one()), chi, eid);
             break;
@@ -545,7 +545,7 @@ static void evaluate_whnf(EntryId eid) {
         DimOpen tube = resolve_dim_binder(t, 0, 2);
         require(fam.j == tube.j, "family and tube must share the composition dimension");
         Cont *k = cont_new(K_COMP_FAMILY, eid, chi);
-        k->orig = t; k->j = fam.j; k->tube = tube.body; k->phi = phi; k->cap = h.f[3].id;
+        k->orig = t; k->j = fam.j; k->tube = tube.body; k->phi = phi; k->cap = HF(&h, 3).id;
         eval_request(fam.body, chi, k);
         break;
     }
@@ -558,15 +558,15 @@ static RefId rebuild_elim(const Cont *k, RefId scrut) {
     Head h; open_ref(k->orig, &h);
     RefId out = 0;
     switch (k->kind) {
-    case K_APP: out = mk_app(scrut, h.f[1].id); break;
+    case K_APP: out = mk_app(scrut, HF(&h, 1).id); break;
     case K_FST: out = mk_fst(scrut); break;
     case K_SND: out = mk_snd(scrut); break;
     case K_PAPP: {
         DimOpen B = resolve_dim_binder(k->orig, 0, 0);
-        out = mk_papp_lv(levels_first(h.levels), B.j, B.body, h.f[1].id, h.f[2].id, scrut, h.f[4].id);
+        out = mk_papp_lv(levels_first(h.levels), B.j, B.body, HF(&h, 1).id, HF(&h, 2).id, scrut, HF(&h, 4).id);
         break;
     }
-    case K_UNGLUE: out = mk_unglue_lv(levels_first(h.levels), h.f[0].id, h.f[1].id, h.f[2].id, h.f[3].id, scrut); break;
+    case K_UNGLUE: out = mk_unglue_lv(levels_first(h.levels), HF(&h, 0).id, HF(&h, 1).id, HF(&h, 2).id, HF(&h, 3).id, scrut); break;
     default: die("rebuild of a non-eliminator");
     }
     head_free(&h);
@@ -699,7 +699,7 @@ static void resume(Cont *k, uint64_t v) {
         break;
     case K_FST: case K_SND:
         if (h.tag != T_PAIR) { publish(k->dest, result_invalid("projection of a non-pair introduction")); break; }
-        forward(h.f[k->kind == K_FST ? 0 : 1].id, k->chi, k->dest);
+        forward(HF(&h, k->kind == K_FST ? 0 : 1).id, k->chi, k->dest);
         break;
     case K_PAPP:
         if (h.tag != T_PLAM) { publish(k->dest, result_invalid("path application of a non-path introduction")); break; }
@@ -707,7 +707,7 @@ static void resume(Cont *k, uint64_t v) {
         break;
     case K_UNGLUE:
         if (h.tag != T_GLUE_INTRO) { publish(k->dest, result_invalid("unglue of a non-glue introduction")); break; }
-        forward(h.f[5].id, k->chi, k->dest);
+        forward(HF(&h, 5).id, k->chi, k->dest);
         break;
     default: die("unreachable continuation kind");
     }

@@ -179,16 +179,22 @@ typedef struct Head {
     RefId owner;
     OriginId origin;      /* raw views */
     MapId map;
+    uint64_t tnode, tenv; /* template views */
     size_t n;
-    HField *f;
 } Head;
 
+/* Opening exposes the head's tag, payload and levels; a field is computed
+ * only when it is read (head_field), so opening does work independent of
+ * the number of fields. */
 void open_ref(RefId t, Head *h);
+HField head_field(const Head *h, size_t k);
+#define HF(h, k) head_field((h), (k))
 void head_free(Head *h);
 /* TVIEW operations (template.c) */
 RefId tview_reindex(RefId t, MapId sigma);
 Tag tnode_tag(uint64_t Q);           /* template.c */
 void tview_open(RefId t, Head *h);
+HField tview_field(const Head *h, size_t k);
 TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 

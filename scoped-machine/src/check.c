@@ -670,7 +670,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
     case T_UNIVERSE: *type = mk_universe(level_succ(h.payload)); break;   /* checked successor: overflow is a host failure (§59.1) */
     case T_PI: case T_SIGMA: {
         uint64_t i, j;
-        st = level_of(G, C, h.f[0].id, &i, reason);
+        st = level_of(G, C, HF(&h, 0).id, &i, reason);
         if (st != CK_VALID) break;
         TermOpen o = resolve_term_binder(t, 0, 1);
         st = level_of(extend_term(G, o.x, o.type), C, o.body, &j, reason);
@@ -680,7 +680,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
     }
     case T_LAM: {
         uint64_t i;
-        st = level_of(G, C, h.f[0].id, &i, reason);
+        st = level_of(G, C, HF(&h, 0).id, &i, reason);
         if (st != CK_VALID) break;
         if (!level_ok1(h.levels, i)) { *reason = level_why(h.levels, "lambda domain level annotation differs"); st = CK_INVALID; break; }
         TermOpen o = resolve_term_binder(t, 0, 1);
@@ -692,13 +692,13 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
     }
     case T_APP: {
         RefId Tf, P;
-        st = infer_clause(G, C, h.f[0].id, &Tf, reason);
+        st = infer_clause(G, C, HF(&h, 0).id, &Tf, reason);
         if (st != CK_VALID) break;
         st = observe_head(C, Tf, T_PI, &P, reason);
         if (st != CK_VALID) { if (st == CK_INVALID) *reason = "application of a non-function"; break; }
-        Head hp; open_ref(P, &hp); RefId dom = hp.f[0].id; head_free(&hp);
-        st = check_clause(G, C, h.f[1].id, dom, reason);
-        if (st == CK_VALID) *type = apply_term_binder(P, 0, 1, h.f[1].id);
+        Head hp; open_ref(P, &hp); RefId dom = HF(&hp, 0).id; head_free(&hp);
+        st = check_clause(G, C, HF(&h, 1).id, dom, reason);
+        if (st == CK_VALID) *type = apply_term_binder(P, 0, 1, HF(&h, 1).id);
         break;
     }
     case T_PAIR: {
@@ -706,15 +706,15 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
             /* annotated: the stored Σ type is the expected type; validate the
              * annotation as a type and the form against it (§33) */
             uint64_t l;
-            st = level_of(G, C, h.f[2].id, &l, reason);
+            st = level_of(G, C, HF(&h, 2).id, &l, reason);
             if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "pair annotation level differs"); st = CK_INVALID; }
-            if (st == CK_VALID) st = check_clause(G, C, t, h.f[2].id, reason);
-            if (st == CK_VALID) *type = h.f[2].id;
+            if (st == CK_VALID) st = check_clause(G, C, t, HF(&h, 2).id, reason);
+            if (st == CK_VALID) *type = HF(&h, 2).id;
             break;
         }
         RefId A, B; uint64_t la, lb;
-        st = infer_clause(G, C, h.f[0].id, &A, reason);
-        if (st == CK_VALID) st = infer_clause(G, C, h.f[1].id, &B, reason);
+        st = infer_clause(G, C, HF(&h, 0).id, &A, reason);
+        if (st == CK_VALID) st = infer_clause(G, C, HF(&h, 1).id, &B, reason);
         if (st == CK_VALID) st = level_of(G, C, A, &la, reason);
         if (st == CK_VALID) st = level_of(G, C, B, &lb, reason);
         if (st == CK_VALID) { TermVarId x = conv_var(t, t, A, 0, A); *type = mk_sigma_lv(la, lb, x, A, B); }
@@ -722,12 +722,12 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
     }
     case T_FST: case T_SND: {
         RefId Tp, P;
-        st = infer_clause(G, C, h.f[0].id, &Tp, reason);
+        st = infer_clause(G, C, HF(&h, 0).id, &Tp, reason);
         if (st != CK_VALID) break;
         st = observe_head(C, Tp, T_SIGMA, &P, reason);
         if (st != CK_VALID) { if (st == CK_INVALID) *reason = "projection of a non-pair"; break; }
-        Head hp; open_ref(P, &hp); RefId dom = hp.f[0].id; head_free(&hp);
-        *type = h.tag == T_FST ? dom : apply_term_binder(P, 0, 1, mk_fst(h.f[0].id));
+        Head hp; open_ref(P, &hp); RefId dom = HF(&hp, 0).id; head_free(&hp);
+        *type = h.tag == T_FST ? dom : apply_term_binder(P, 0, 1, mk_fst(HF(&h, 0).id));
         break;
     }
     case T_PATH: {
@@ -735,8 +735,8 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         uint64_t l;
         st = level_of(extend_dim(G, o.j), C, o.body, &l, reason);
         if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "path family level annotation differs"); st = CK_INVALID; }
-        if (st == CK_VALID) st = check_clause(G, C, h.f[1].id, reindex_dim(o.body, o.j, iv_zero()), reason);
-        if (st == CK_VALID) st = check_clause(G, C, h.f[2].id, reindex_dim(o.body, o.j, iv_one()), reason);
+        if (st == CK_VALID) st = check_clause(G, C, HF(&h, 1).id, reindex_dim(o.body, o.j, iv_zero()), reason);
+        if (st == CK_VALID) st = check_clause(G, C, HF(&h, 2).id, reindex_dim(o.body, o.j, iv_one()), reason);
         if (st == CK_VALID) *type = mk_universe(l);
         break;
     }
@@ -752,23 +752,23 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         uint64_t l;
         st = level_of(extend_dim(G, o.j), C, o.body, &l, reason);
         if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "path application family level annotation differs"); st = CK_INVALID; }
-        if (st == CK_VALID) st = check_clause(G, C, h.f[1].id, reindex_dim(o.body, o.j, iv_zero()), reason);
-        if (st == CK_VALID) st = check_clause(G, C, h.f[2].id, reindex_dim(o.body, o.j, iv_one()), reason);
-        if (st == CK_VALID && !dims_declared(G, iv_dimset(h.f[4].id))) { *reason = "path applied to an out-of-scope interval"; st = CK_INVALID; }
-        if (st == CK_VALID) st = check_clause(G, C, h.f[3].id, mk_path_lv(l, o.j, o.body, h.f[1].id, h.f[2].id), reason);
-        if (st == CK_VALID) *type = reindex_dim(o.body, o.j, h.f[4].id);
+        if (st == CK_VALID) st = check_clause(G, C, HF(&h, 1).id, reindex_dim(o.body, o.j, iv_zero()), reason);
+        if (st == CK_VALID) st = check_clause(G, C, HF(&h, 2).id, reindex_dim(o.body, o.j, iv_one()), reason);
+        if (st == CK_VALID && !dims_declared(G, iv_dimset(HF(&h, 4).id))) { *reason = "path applied to an out-of-scope interval"; st = CK_INVALID; }
+        if (st == CK_VALID) st = check_clause(G, C, HF(&h, 3).id, mk_path_lv(l, o.j, o.body, HF(&h, 1).id, HF(&h, 2).id), reason);
+        if (st == CK_VALID) *type = reindex_dim(o.body, o.j, HF(&h, 4).id);
         break;
     }
     case T_GLUE_TYPE: {
         uint64_t l;
-        st = glue_data_ok(G, C, h.f[0].id, h.f[1].id, h.f[2].id, h.f[3].id, &l, reason);
+        st = glue_data_ok(G, C, HF(&h, 0).id, HF(&h, 1).id, HF(&h, 2).id, HF(&h, 3).id, &l, reason);
         if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "Glue level annotation differs"); st = CK_INVALID; }
         if (st == CK_VALID) *type = mk_universe(l);
         break;
     }
     case T_GLUE_INTRO: {
         uint64_t l;
-        RefId A = h.f[0].id, T = h.f[2].id, e = h.f[3].id, tt = h.f[4].id, a = h.f[5].id; FaceId alpha = h.f[1].id;
+        RefId A = HF(&h, 0).id, T = HF(&h, 2).id, e = HF(&h, 3).id, tt = HF(&h, 4).id, a = HF(&h, 5).id; FaceId alpha = HF(&h, 1).id;
         st = glue_data_ok(G, C, A, alpha, T, e, &l, reason);
         if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "glue level annotation differs"); st = CK_INVALID; }
         if (st == CK_VALID) st = check_clause(G, C, a, A, reason);
@@ -789,7 +789,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
     }
     case T_UNGLUE: {
         uint64_t l;
-        RefId A = h.f[0].id, T = h.f[2].id, e = h.f[3].id, v = h.f[4].id; FaceId alpha = h.f[1].id;
+        RefId A = HF(&h, 0).id, T = HF(&h, 2).id, e = HF(&h, 3).id, v = HF(&h, 4).id; FaceId alpha = HF(&h, 1).id;
         st = glue_data_ok(G, C, A, alpha, T, e, &l, reason);
         if (st == CK_VALID && !level_ok1(h.levels, l)) { *reason = level_why(h.levels, "unglue level annotation differs"); st = CK_INVALID; }
         if (st == CK_VALID) st = check_clause(G, C, v, mk_glue_type_lv(l, A, alpha, T, e), reason);
@@ -798,7 +798,7 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
     }
     case T_COMP: {
         DimOpen fam = resolve_dim_binder(t, 0, 0), tube = resolve_dim_binder(t, 0, 2);
-        FaceId phi = h.f[1].id; RefId a0 = h.f[3].id;
+        FaceId phi = HF(&h, 1).id; RefId a0 = HF(&h, 3).id;
         ContextId Gj = extend_dim(G, fam.j);
         uint64_t l;
         st = level_of(Gj, C, fam.body, &l, reason);
@@ -824,26 +824,26 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
     case T_SYSTEM: {
         size_t nb = h.n / 2;
         FaceId uni = fc_false();
-        for (size_t k = 0; k < nb; k++) uni = fc_join(uni, h.f[2 * k].id);
+        for (size_t k = 0; k < nb; k++) uni = fc_join(uni, HF(&h, 2 * k).id);
         if (!fc_entails(C, uni)) { *reason = "system does not cover the face"; st = CK_INVALID; break; }
         RefId *types = calloc(nb ? nb : 1, sizeof(RefId));
         size_t sel = nb;
         for (size_t k = 0; k < nb && st == CK_VALID; k++) {
-            FaceId Ck = fc_meet(C, h.f[2 * k].id);
-            if (!dims_declared(G, face_dims(h.f[2 * k].id))) { *reason = "system guard mentions an undeclared dimension"; st = CK_INVALID; break; }
+            FaceId Ck = fc_meet(C, HF(&h, 2 * k).id);
+            if (!dims_declared(G, face_dims(HF(&h, 2 * k).id))) { *reason = "system guard mentions an undeclared dimension"; st = CK_INVALID; break; }
             if (fc_is_false(Ck)) continue;
-            st = infer_clause(G, Ck, h.f[2 * k + 1].id, &types[k], reason);
-            if (st == CK_VALID && sel == nb && fc_entails(C, h.f[2 * k].id)) sel = k;
+            st = infer_clause(G, Ck, HF(&h, 2 * k + 1).id, &types[k], reason);
+            if (st == CK_VALID && sel == nb && fc_entails(C, HF(&h, 2 * k).id)) sel = k;
         }
         /* overlaps: branches agree in their (convertible) types */
         for (size_t k = 0; k < nb && st == CK_VALID; k++)
             for (size_t l = k + 1; l < nb && st == CK_VALID; l++) {
-                FaceId Ckl = fc_meet(C, fc_meet(h.f[2 * k].id, h.f[2 * l].id));
+                FaceId Ckl = fc_meet(C, fc_meet(HF(&h, 2 * k).id, HF(&h, 2 * l).id));
                 if (fc_is_false(Ckl)) continue;
                 FaceId *cs; size_t nc = clauses_of(Ckl, &cs);
                 for (size_t c = 0; c < nc && st == CK_VALID; c++) {
                     ConvStatus cv = conv_type_clause(G, cs[c], types[k], types[l]);
-                    if (cv == CV_EQUAL) cv = conv_term_clause(G, cs[c], h.f[2 * k + 1].id, h.f[2 * l + 1].id, types[k]);
+                    if (cv == CV_EQUAL) cv = conv_term_clause(G, cs[c], HF(&h, 2 * k + 1).id, HF(&h, 2 * l + 1).id, types[k]);
                     if (cv == CV_UNEQUAL) { *reason = "system branches disagree on an overlap"; st = CK_INVALID; }
                     else if (cv == CV_UNRESOLVED) { *reason = "unresolved: system overlap"; st = CK_UNRESOLVED; }
                 }
@@ -874,18 +874,18 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         if (st != CK_VALID) break;
         RefId dom = reindex(dir ? tr->codomain : tr->domain, sigma), cod = reindex(dir ? tr->domain : tr->codomain, sigma);
         size_t np = context_size(tr->parameters);
-        ConvStatus c1 = conv_type_clause(G, C, h.f[np + 1].id, dom);
-        ConvStatus c2 = c1 == CV_EQUAL ? conv_type_clause(G, C, h.f[np + 2].id, cod) : c1;
+        ConvStatus c1 = conv_type_clause(G, C, HF(&h, np + 1).id, dom);
+        ConvStatus c2 = c1 == CV_EQUAL ? conv_type_clause(G, C, HF(&h, np + 2).id, cod) : c1;
         if (c2 == CV_UNEQUAL) { *reason = "TRANSFORM_CALL annotations differ from the instantiated domain/codomain"; st = CK_INVALID; break; }
         if (c2 == CV_UNRESOLVED) { *reason = "unresolved: TRANSFORM_CALL annotation conversion"; st = CK_UNRESOLVED; break; }
         /* §59.1: the record's stored TypeAt levels are the formation levels of the annotations */
         { uint64_t ld, lc;
-          st = level_of(G, C, h.f[np + 1].id, &ld, reason); if (st != CK_VALID) break;
-          st = level_of(G, C, h.f[np + 2].id, &lc, reason); if (st != CK_VALID) break;
+          st = level_of(G, C, HF(&h, np + 1).id, &ld, reason); if (st != CK_VALID) break;
+          st = level_of(G, C, HF(&h, np + 2).id, &lc, reason); if (st != CK_VALID) break;
           uint64_t ed = dir ? tr->codomain_level : tr->domain_level, ec = dir ? tr->domain_level : tr->codomain_level;
           if (ld != ed || lc != ec) { *reason = "TRANSFORM_CALL annotation levels differ from the record's stored levels"; st = CK_INVALID; break; } }
         st = check_clause(G, C, a, dom, reason);
-        if (st == CK_VALID) *type = h.f[np + 2].id;
+        if (st == CK_VALID) *type = HF(&h, np + 2).id;
         break;
     }
     }
@@ -1141,11 +1141,11 @@ static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const c
         case T_LAM: {
             st = observe_head(C, A, T_PI, &P, reason);
             if (st != CK_VALID) { if (st == CK_INVALID) *reason = "lambda checked against a non-product type"; break; }
-            Head hp; open_ref(P, &hp); RefId D = hp.f[0].id; head_free(&hp);
-            ConvStatus cv = conv_type_clause(G, C, h.f[0].id, D);
+            Head hp; open_ref(P, &hp); RefId D = HF(&hp, 0).id; head_free(&hp);
+            ConvStatus cv = conv_type_clause(G, C, HF(&h, 0).id, D);
             if (cv == CV_UNEQUAL) { *reason = "lambda domain differs from the expected domain"; st = CK_INVALID; break; }
             if (cv == CV_UNRESOLVED) { *reason = "unresolved: lambda domain conversion"; st = CK_UNRESOLVED; break; }
-            { uint64_t l; st = level_of(G, C, h.f[0].id, &l, reason); if (st != CK_VALID) break;   /* the annotation is a type at its stored level */
+            { uint64_t l; st = level_of(G, C, HF(&h, 0).id, &l, reason); if (st != CK_VALID) break;   /* the annotation is a type at its stored level */
               if (!level_ok1(h.levels, l)) { *reason = level_why(h.levels, "lambda domain level annotation differs"); st = CK_INVALID; break; } }
             TermVarId x = conv_var(t, P, P, 0, D);
             st = check_clause(extend_term(G, x, D), C, apply_term_binder(t, 0, 1, ref_var(x)), apply_term_binder(P, 0, 1, ref_var(x)), reason);
@@ -1156,24 +1156,24 @@ static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const c
                 /* annotated pair (§59.2): the stored Σ forms at its stored
                  * level, is convertible with the expected type, and governs
                  * the component checks */
-                uint64_t l; st = level_of(G, C, h.f[2].id, &l, reason); if (st != CK_VALID) break;
+                uint64_t l; st = level_of(G, C, HF(&h, 2).id, &l, reason); if (st != CK_VALID) break;
                 if (!level_ok1(h.levels, l)) { *reason = level_why(h.levels, "pair annotation level differs"); st = CK_INVALID; break; }
-                ConvStatus cv = conv_type_clause(G, C, h.f[2].id, A);
+                ConvStatus cv = conv_type_clause(G, C, HF(&h, 2).id, A);
                 if (cv == CV_UNEQUAL) { *reason = "pair annotation differs from the expected type"; st = CK_INVALID; break; }
                 if (cv == CV_UNRESOLVED) { *reason = "unresolved: pair annotation conversion"; st = CK_UNRESOLVED; break; }
-                A = h.f[2].id;
+                A = HF(&h, 2).id;
             }
             st = observe_head(C, A, T_SIGMA, &P, reason);
             if (st != CK_VALID) { if (st == CK_INVALID) *reason = "pair checked against a non-sum type"; break; }
-            Head hp; open_ref(P, &hp); RefId D = hp.f[0].id; head_free(&hp);
-            st = check_clause(G, C, h.f[0].id, D, reason);
-            if (st == CK_VALID) st = check_clause(G, C, h.f[1].id, apply_term_binder(P, 0, 1, h.f[0].id), reason);
+            Head hp; open_ref(P, &hp); RefId D = HF(&hp, 0).id; head_free(&hp);
+            st = check_clause(G, C, HF(&h, 0).id, D, reason);
+            if (st == CK_VALID) st = check_clause(G, C, HF(&h, 1).id, apply_term_binder(P, 0, 1, HF(&h, 0).id), reason);
             break;
         }
         case T_PLAM: {
             st = observe_head(C, A, T_PATH, &P, reason);
             if (st != CK_VALID) { if (st == CK_INVALID) *reason = "path lambda checked against a non-path type"; break; }
-            Head hp; open_ref(P, &hp); RefId l = hp.f[1].id, r = hp.f[2].id; head_free(&hp);
+            Head hp; open_ref(P, &hp); RefId l = HF(&hp, 1).id, r = HF(&hp, 2).id; head_free(&hp);
             DimVarId j = conv_dim(t, P, 0);
             RefId body = apply_dim_binder(t, 0, 0, iv_var(j)), Bj = apply_dim_binder(P, 0, 0, iv_var(j));
             st = check_clause(extend_dim(G, j), C, body, Bj, reason);
@@ -1187,23 +1187,23 @@ static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const c
         case T_SYSTEM: {
             size_t nb = h.n / 2;
             FaceId uni = fc_false();
-            for (size_t k = 0; k < nb; k++) uni = fc_join(uni, h.f[2 * k].id);
+            for (size_t k = 0; k < nb; k++) uni = fc_join(uni, HF(&h, 2 * k).id);
             if (!fc_entails(C, uni)) { *reason = "system does not cover the face"; st = CK_INVALID; break; }
             for (size_t k = 0; k < nb && st == CK_VALID; k++) {
-                FaceId Ck = fc_meet(C, h.f[2 * k].id);
-                if (!dims_declared(G, face_dims(h.f[2 * k].id))) { *reason = "system guard mentions an undeclared dimension"; st = CK_INVALID; break; }
+                FaceId Ck = fc_meet(C, HF(&h, 2 * k).id);
+                if (!dims_declared(G, face_dims(HF(&h, 2 * k).id))) { *reason = "system guard mentions an undeclared dimension"; st = CK_INVALID; break; }
                 if (fc_is_false(Ck)) continue;
                 FaceId *cs; size_t nc = clauses_of(Ck, &cs);
-                for (size_t c = 0; c < nc && st == CK_VALID; c++) st = check_clause(G, cs[c], h.f[2 * k + 1].id, A, reason);
+                for (size_t c = 0; c < nc && st == CK_VALID; c++) st = check_clause(G, cs[c], HF(&h, 2 * k + 1).id, A, reason);
                 free(cs);
             }
             for (size_t k = 0; k < nb && st == CK_VALID; k++)
                 for (size_t l = k + 1; l < nb && st == CK_VALID; l++) {
-                    FaceId Ckl = fc_meet(C, fc_meet(h.f[2 * k].id, h.f[2 * l].id));
+                    FaceId Ckl = fc_meet(C, fc_meet(HF(&h, 2 * k).id, HF(&h, 2 * l).id));
                     if (fc_is_false(Ckl)) continue;
                     FaceId *cs; size_t nc = clauses_of(Ckl, &cs);
                     for (size_t c = 0; c < nc && st == CK_VALID; c++) {
-                        ConvStatus cv = conv_term_clause(G, cs[c], h.f[2 * k + 1].id, h.f[2 * l + 1].id, A);
+                        ConvStatus cv = conv_term_clause(G, cs[c], HF(&h, 2 * k + 1).id, HF(&h, 2 * l + 1).id, A);
                         if (cv == CV_UNEQUAL) { *reason = "system branches disagree on an overlap"; st = CK_INVALID; }
                         else if (cv == CV_UNRESOLVED) { *reason = "unresolved: system overlap"; st = CK_UNRESOLVED; }
                     }
@@ -1301,29 +1301,29 @@ static ConvStatus conv_type_clause(ContextId G, FaceId C, RefId A, RefId B) {
         else switch (ha.tag) {
         case T_UNIVERSE: out = ha.payload == hb.payload ? CV_EQUAL : CV_UNEQUAL; break;
         case T_PI: case T_SIGMA: {
-            out = conv_type_clause(G, C, ha.f[0].id, hb.f[0].id);
+            out = conv_type_clause(G, C, HF(&ha, 0).id, HF(&hb, 0).id);
             if (out != CV_EQUAL) break;
-            TermVarId x = conv_var(ra->ref, rb->ref, ra->ref, 0, ha.f[0].id);
-            out = conv_type_clause(extend_term(G, x, ha.f[0].id), C, apply_term_binder(ra->ref, 0, 1, ref_var(x)), apply_term_binder(rb->ref, 0, 1, ref_var(x)));
+            TermVarId x = conv_var(ra->ref, rb->ref, ra->ref, 0, HF(&ha, 0).id);
+            out = conv_type_clause(extend_term(G, x, HF(&ha, 0).id), C, apply_term_binder(ra->ref, 0, 1, ref_var(x)), apply_term_binder(rb->ref, 0, 1, ref_var(x)));
             break;
         }
         case T_PATH: {
             DimVarId j = conv_dim(ra->ref, rb->ref, 0);
             RefId Ba = apply_dim_binder(ra->ref, 0, 0, iv_var(j)), Bb = apply_dim_binder(rb->ref, 0, 0, iv_var(j));
             out = conv_type_clause(extend_dim(G, j), C, Ba, Bb);
-            if (out == CV_EQUAL) out = conv_term_clause(G, C, ha.f[1].id, hb.f[1].id, reindex_dim(Ba, j, iv_zero()));
-            if (out == CV_EQUAL) out = conv_term_clause(G, C, ha.f[2].id, hb.f[2].id, reindex_dim(Ba, j, iv_one()));
+            if (out == CV_EQUAL) out = conv_term_clause(G, C, HF(&ha, 1).id, HF(&hb, 1).id, reindex_dim(Ba, j, iv_zero()));
+            if (out == CV_EQUAL) out = conv_term_clause(G, C, HF(&ha, 2).id, HF(&hb, 2).id, reindex_dim(Ba, j, iv_one()));
             break;
         }
         case T_GLUE_TYPE: {
-            if (!fc_equal_under(C, ha.f[1].id, hb.f[1].id)) { out = CV_UNEQUAL; break; }
-            out = conv_type_clause(G, C, ha.f[0].id, hb.f[0].id);
-            FaceId Ca = fc_meet(C, ha.f[1].id);
+            if (!fc_equal_under(C, HF(&ha, 1).id, HF(&hb, 1).id)) { out = CV_UNEQUAL; break; }
+            out = conv_type_clause(G, C, HF(&ha, 0).id, HF(&hb, 0).id);
+            FaceId Ca = fc_meet(C, HF(&ha, 1).id);
             if (out == CV_EQUAL && !fc_is_false(Ca)) {
                 FaceId *cs; size_t nc = clauses_of(Ca, &cs);
                 for (size_t c = 0; c < nc && out == CV_EQUAL; c++) {
-                    out = conv_type_clause(G, cs[c], ha.f[2].id, hb.f[2].id);
-                    if (out == CV_EQUAL) { uint64_t gl = glue_level(G, cs[c], ha.levels, ha.f[0].id); if (gl == LEVEL_NONE) { out = CV_UNRESOLVED; break; } out = conv_term_clause(G, cs[c], ha.f[3].id, hb.f[3].id, mk_equiv(gl, gl, ha.f[2].id, ha.f[0].id)); }
+                    out = conv_type_clause(G, cs[c], HF(&ha, 2).id, HF(&hb, 2).id);
+                    if (out == CV_EQUAL) { uint64_t gl = glue_level(G, cs[c], ha.levels, HF(&ha, 0).id); if (gl == LEVEL_NONE) { out = CV_UNRESOLVED; break; } out = conv_term_clause(G, cs[c], HF(&ha, 3).id, HF(&hb, 3).id, mk_equiv(gl, gl, HF(&ha, 2).id, HF(&ha, 0).id)); }
                 }
                 free(cs);
             }
@@ -1353,13 +1353,13 @@ static ConvStatus conv_term_clause(ContextId G, FaceId C, RefId t, RefId u, RefI
         Head h; open_ref(rA->ref, &h);
         switch (h.tag) {
         case T_PI: {
-            TermVarId x = conv_var(t, u, rA->ref, 0, h.f[0].id);
+            TermVarId x = conv_var(t, u, rA->ref, 0, HF(&h, 0).id);
             RefId Bx = apply_term_binder(rA->ref, 0, 1, ref_var(x));
-            out = conv_term_clause(extend_term(G, x, h.f[0].id), C, mk_app(t, ref_var(x)), mk_app(u, ref_var(x)), Bx);
+            out = conv_term_clause(extend_term(G, x, HF(&h, 0).id), C, mk_app(t, ref_var(x)), mk_app(u, ref_var(x)), Bx);
             break;
         }
         case T_SIGMA: {
-            out = conv_term_clause(G, C, mk_fst(t), mk_fst(u), h.f[0].id);
+            out = conv_term_clause(G, C, mk_fst(t), mk_fst(u), HF(&h, 0).id);
             if (out == CV_EQUAL) out = conv_term_clause(G, C, mk_snd(t), mk_snd(u), apply_term_binder(rA->ref, 0, 1, mk_fst(t)));
             break;
         }
@@ -1368,12 +1368,12 @@ static ConvStatus conv_term_clause(ContextId G, FaceId C, RefId t, RefId u, RefI
             DimOpen o = resolve_dim_binder(rA->ref, 0, 0);
             RefId Bj = reindex_dim(o.body, o.j, iv_var(j));
             { uint64_t n = levels_first(h.levels);
-              out = conv_term_clause(extend_dim(G, j), C, mk_papp_lv(n, o.j, o.body, h.f[1].id, h.f[2].id, t, iv_var(j)), mk_papp_lv(n, o.j, o.body, h.f[1].id, h.f[2].id, u, iv_var(j)), Bj); }
+              out = conv_term_clause(extend_dim(G, j), C, mk_papp_lv(n, o.j, o.body, HF(&h, 1).id, HF(&h, 2).id, t, iv_var(j)), mk_papp_lv(n, o.j, o.body, HF(&h, 1).id, HF(&h, 2).id, u, iv_var(j)), Bj); }
             break;
         }
         case T_GLUE_TYPE: {
             /* non-collapsed Glue (C does not entail alpha): Glue eta */
-            RefId Ab = h.f[0].id, T = h.f[2].id, e = h.f[3].id; FaceId alpha = h.f[1].id;
+            RefId Ab = HF(&h, 0).id, T = HF(&h, 2).id, e = HF(&h, 3).id; FaceId alpha = HF(&h, 1).id;
             { uint64_t n = levels_first(h.levels);
               out = conv_term_clause(G, C, mk_unglue_lv(n, Ab, alpha, T, e, t), mk_unglue_lv(n, Ab, alpha, T, e, u), Ab); }
             FaceId Ca = fc_meet(C, alpha);
@@ -1414,55 +1414,55 @@ static ConvStatus spine(ContextId G, FaceId C, RefId n1, RefId n2) {
     switch (a.tag) {
     case T_APP: {
         EvalResult *fa, *fb;
-        if (observe_both(C, a.f[0].id, b.f[0].id, &fa, &fb) != CV_EQUAL) { out = CV_UNRESOLVED; break; }
+        if (observe_both(C, HF(&a, 0).id, HF(&b, 0).id, &fa, &fb) != CV_EQUAL) { out = CV_UNRESOLVED; break; }
         if (fa->cls != R_NEUTRAL || fb->cls != R_NEUTRAL) { out = CV_UNRESOLVED; break; }
         out = spine(G, C, fa->ref, fb->ref);
         if (out != CV_EQUAL) break;
         RefId Tf, P; const char *reason;
-        if (infer_clause(G, C, a.f[0].id, &Tf, &reason) != CK_VALID || observe_head(C, Tf, T_PI, &P, &reason) != CK_VALID) { out = CV_UNRESOLVED; break; }
-        Head hp; open_ref(P, &hp); RefId dom = hp.f[0].id; head_free(&hp);
-        out = conv_term_clause(G, C, a.f[1].id, b.f[1].id, dom);
+        if (infer_clause(G, C, HF(&a, 0).id, &Tf, &reason) != CK_VALID || observe_head(C, Tf, T_PI, &P, &reason) != CK_VALID) { out = CV_UNRESOLVED; break; }
+        Head hp; open_ref(P, &hp); RefId dom = HF(&hp, 0).id; head_free(&hp);
+        out = conv_term_clause(G, C, HF(&a, 1).id, HF(&b, 1).id, dom);
         break;
     }
     case T_FST: case T_SND: {
         EvalResult *pa, *pb;
-        if (observe_both(C, a.f[0].id, b.f[0].id, &pa, &pb) != CV_EQUAL || pa->cls != R_NEUTRAL || pb->cls != R_NEUTRAL) { out = CV_UNRESOLVED; break; }
+        if (observe_both(C, HF(&a, 0).id, HF(&b, 0).id, &pa, &pb) != CV_EQUAL || pa->cls != R_NEUTRAL || pb->cls != R_NEUTRAL) { out = CV_UNRESOLVED; break; }
         out = spine(G, C, pa->ref, pb->ref);
         break;
     }
     case T_PAPP: {
-        if (!iv_equal_under(C, a.f[4].id, b.f[4].id)) { out = CV_UNEQUAL; break; }
+        if (!iv_equal_under(C, HF(&a, 4).id, HF(&b, 4).id)) { out = CV_UNEQUAL; break; }
         EvalResult *pa, *pb;
-        if (observe_both(C, a.f[3].id, b.f[3].id, &pa, &pb) != CV_EQUAL || pa->cls != R_NEUTRAL || pb->cls != R_NEUTRAL) { out = CV_UNRESOLVED; break; }
+        if (observe_both(C, HF(&a, 3).id, HF(&b, 3).id, &pa, &pb) != CV_EQUAL || pa->cls != R_NEUTRAL || pb->cls != R_NEUTRAL) { out = CV_UNRESOLVED; break; }
         out = spine(G, C, pa->ref, pb->ref);
         break;
     }
     case T_UNGLUE: {
-        if (!fc_equal_under(C, a.f[1].id, b.f[1].id)) { out = CV_UNEQUAL; break; }
-        out = conv_type_clause(G, C, a.f[0].id, b.f[0].id);
-        FaceId Ca = fc_meet(C, a.f[1].id);
+        if (!fc_equal_under(C, HF(&a, 1).id, HF(&b, 1).id)) { out = CV_UNEQUAL; break; }
+        out = conv_type_clause(G, C, HF(&a, 0).id, HF(&b, 0).id);
+        FaceId Ca = fc_meet(C, HF(&a, 1).id);
         if (out == CV_EQUAL && !fc_is_false(Ca)) {
             FaceId *cs; size_t nc = clauses_of(Ca, &cs);
             for (size_t c = 0; c < nc && out == CV_EQUAL; c++) {
-                out = conv_type_clause(G, cs[c], a.f[2].id, b.f[2].id);
-                if (out == CV_EQUAL) { uint64_t gl = glue_level(G, cs[c], a.levels, a.f[0].id); if (gl == LEVEL_NONE) { out = CV_UNRESOLVED; break; } out = conv_term_clause(G, cs[c], a.f[3].id, b.f[3].id, mk_equiv(gl, gl, a.f[2].id, a.f[0].id)); }
+                out = conv_type_clause(G, cs[c], HF(&a, 2).id, HF(&b, 2).id);
+                if (out == CV_EQUAL) { uint64_t gl = glue_level(G, cs[c], a.levels, HF(&a, 0).id); if (gl == LEVEL_NONE) { out = CV_UNRESOLVED; break; } out = conv_term_clause(G, cs[c], HF(&a, 3).id, HF(&b, 3).id, mk_equiv(gl, gl, HF(&a, 2).id, HF(&a, 0).id)); }
             }
             free(cs);
         }
         if (out != CV_EQUAL) break;
         EvalResult *va, *vb;
-        if (observe_both(C, a.f[4].id, b.f[4].id, &va, &vb) != CV_EQUAL || va->cls != R_NEUTRAL || vb->cls != R_NEUTRAL) { out = CV_UNRESOLVED; break; }
+        if (observe_both(C, HF(&a, 4).id, HF(&b, 4).id, &va, &vb) != CV_EQUAL || va->cls != R_NEUTRAL || vb->cls != R_NEUTRAL) { out = CV_UNRESOLVED; break; }
         out = spine(G, C, va->ref, vb->ref);
         break;
     }
     case T_COMP: {
-        if (!fc_equal_under(C, a.f[1].id, b.f[1].id)) { out = CV_UNEQUAL; break; }
+        if (!fc_equal_under(C, HF(&a, 1).id, HF(&b, 1).id)) { out = CV_UNEQUAL; break; }
         DimVarId j = conv_dim(n1, n2, 0);
         RefId A1 = apply_dim_binder(n1, 0, 0, iv_var(j)), A2 = apply_dim_binder(n2, 0, 0, iv_var(j));
         ContextId Gj = extend_dim(G, j);
         out = conv_type_clause(Gj, C, A1, A2);
-        if (out == CV_EQUAL) out = conv_term_clause(G, C, a.f[3].id, b.f[3].id, reindex_dim(A1, j, iv_zero()));
-        FaceId Cp = fc_meet(C, a.f[1].id);
+        if (out == CV_EQUAL) out = conv_term_clause(G, C, HF(&a, 3).id, HF(&b, 3).id, reindex_dim(A1, j, iv_zero()));
+        FaceId Cp = fc_meet(C, HF(&a, 1).id);
         if (out == CV_EQUAL && !fc_is_false(Cp)) {
             RefId u1 = apply_dim_binder(n1, 0, 2, iv_var(j)), u2 = apply_dim_binder(n2, 0, 2, iv_var(j));
             FaceId *cs; size_t nc = clauses_of(Cp, &cs);

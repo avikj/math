@@ -8,7 +8,7 @@ static int failures;
 static void show(const char *label, Inference r) {
     printf("%s: %s (%s)\n", label, check_status_name(r.st), r.reason ? r.reason : "");
 }
-static RefId field(RefId t, size_t n) { Head h; open_ref(t,&h); RefId out=h.f[n].id; head_free(&h); return out; }
+static RefId field(RefId t, size_t n) { Head h; open_ref(t,&h); RefId out=HF(&h, n).id; head_free(&h); return out; }
 int main(int argc, char **argv) {
     const char *mode = argc > 1 ? argv[1] : "scope-level";
     machine_init(); eval_init(); check_init(); compiler_init();
