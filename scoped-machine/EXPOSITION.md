@@ -117,28 +117,6 @@ fixed by 5.13, minimal by 5.14, with no repeated work by 5.24; or (b) §4 establ
 inhabitant exists. **Remark 5.28**: the minimum is over orders of applying the identities from
 the posed term, not over choices of starting term.
 
-### I.4 The exact hypotheses, as the specification records them
-
-1. The diamond is a property of a particular relation `Step`. It holds when distinct redexes
-   are disjoint and each rule is deterministic. A machine in which one transition reads a
-   readiness fact that another transition changes does not satisfy it by that argument. The
-   specification's finite model (§85): a generic request and an instance request; if the
-   instance runs first it computes directly (2 steps); if the generic result becomes ready
-   first the instance uses a two-step adapter (3 steps total); both reach the same answers and
-   their first steps have no one-step join. Ready-state-sensitive recipe choice plus
-   memoization does not imply the diamond.
-2. The diamond does not give termination: `n → n+1` has the diamond and no normal form (§86).
-3. For a program `e`, the type of finite halting traces of `e` is inhabited exactly when `e`
-   halts. A total procedure returning, for every such type, a witness or a sound decisive
-   absence result would decide halting; the diagonal program `D(x)` = "loop if the procedure
-   says x halts on x, else return" refutes both answers on `D`. Case (b) of 5.27 is therefore
-   established emptiness where §4 supplies it; a pending computation, a budget exhaustion or a
-   recursive claim not yet recognized is neither (a) nor (b) (§§86, 91.2). This agrees with
-   5.26: the system does not decide its own halting.
-4. Adding a shortcut charged as one step while the original longer route also remains a
-   unit-cost route to the same normal form breaks equal length (§90.3). A shortcut belongs to
-   the relation with its constituent work, or the relation is restated.
-
 ---------------------------------------------------------------------------------------------
 
 ## Part II. Fibres, the carrier, and initiality (the Agda modules)
@@ -1498,10 +1476,9 @@ ill-scoped; and with `p : f = g`, observing `(p@i) a` under `i=0` and `i=1` and 
 residuals to the same original reference made `convert(f a, g a)` flip from `UNEQUAL` to `EQUAL`.
 The alias result is a new descriptor of the residual with a reflexive receipt.
 
-**Limit (§85, §90).** Opportunistic reuse, where which recipe runs depends on what is already
-ready, changes traces; the equal-length theorem of Part X is for a fixed recipe graph. Forcing the
-generic computation first is not a repair: for an unproductive path producer `p`, `p@i` can stay
-stuck while `p@0` returns its endpoint immediately.
+**Property of this design (§85, §90).** Here which recipe runs depends on what is already ready
+in the memo, so traces of one request differ in length (2 against 3 in the §85 model). That is a
+consequence of keeping results in a table outside the net; Part XVIII.
 
 ---------------------------------------------------------------------------------------------
 
@@ -1707,57 +1684,78 @@ Native cost: every primitive kind has a fixed word-operation bound and
 `slack(e) = ω(e) + dV(e) ≥ 0`, so `W(γ) − V(s) = Σ_{e∈γ} slack(e) ≥ 0`, equality along the selected
 path proving attainment.
 
-**Reflection and posing** (§18 of the contract; §§86–87, 91 of the specification). Reflecting a
-rule means exposing its parameter telescope, transition recipe, dependency conditions and semantic
-interpreter as ordinary typed data with a simulation of its native realization; the same
-definition drives the object interpreter and the native code. A request for a bare goal `Q` must
-expose its problem presentation, available constructive identities and programs, demanded
-observation, and a retained computation yielding a checked witness, a checked obstruction in its
-declared scope, or a pending continuation. Neither is supplied by the equations above; both are
-recorded as open in the specification.
 
 ---------------------------------------------------------------------------------------------
 
-## Part XVIII. The reverted tree: what exists, what was deleted, what remains to write
+## Part XVIII. The step bound, where the specified machine departs from Part I, what to build
 
-### XVIII.1 The revert point
+### XVIII.1 The step bound is the definition of a step
 
-`scoped-machine/` is restored to commit **24b2bfb** (15 October 19:59), the state after §§1–59
-and five rounds of review corrections. The next commit, 3a0d7c4 (15 October 21:34), added
-`work.c` and `work.h` (1,598 + 315 lines): a second execution system with its own keyed record
-table, its own operation and frame records and its own stepping driver, written for §§60–71, whose
-automatic selector parts §73 then excluded. All later commits are built on it. The duplications
-measured in the 18 October architecture review (two proof-use audits, `proof.c` and `work.c`; two
-keyed-record stores, `intern.c` and `work.c`; evaluator entries/continuations, checker claims,
-work frames and stack segments as four representations of pending computation) all descend from
-it. Source size: 9,208 lines at 24b2bfb versus 21,882 at 73be719.
+A rule replaces an active pair by a fixed finite net `R` on its auxiliary wires (5.5); the rule
+table is finite; cells have bounded arity. One step is therefore: read the two cell kinds, index
+the rule table, take `|R|` cells from a free list, write a bounded number of links, and push the
+new active pairs, which can only arise on wires `R` created (a bounded number). With `c` the
+largest per-rule instruction count,
 
-### XVIII.2 Measured state of 24b2bfb (18 October)
+```
+Instr_C(run) ≤ c · steps(run) + d
+```
 
-* `make test` (ASan/UBSan): passes, 75 s machine time.
-* `make tsan`: passes, 0 ThreadSanitizer reports, 84 s.
-* The §§83/96 runtime-construction witnesses (dependent singleton with both inverse proofs, generic
-  identity action on diagram values, computed presentations, nonempty runtime node with both
-  proofs) and the §88 proof-use module with its 11 cases pass unchanged on this core.
-* Two defects present here and recorded in the specification: `net.c` `materialize` narrows the
-  head arity to `uint8_t` (line 319), so a 252-field head fails; `open_ref` opens every field
-  (Part XVI).
+holds by construction. It is the correctness condition of an implementation, not a theorem to
+establish afterwards: any code executed within one step whose work depends on the size of a term,
+a face, a map, a waiter list or a table is an incorrect implementation of a step.
 
-### XVIII.3 What the specification requires beyond 24b2bfb
+### XVIII.2 Where the specified machine (Parts IV–X, XIV–XVII; tree 24b2bfb) departs
 
-Written as the next work, each a use of the existing representation and memo protocol rather than
-a second one:
+| Specified mechanism | Where | Why it is not a step of Part I |
+|---|---|---|
+| Sharing by interning references in a global hash table | §§2, 6, 49–56; `intern.c`, `term.c` | sharing is a duplicator cell (5.24); interning hashes and compares variable-size keys |
+| One-result rules that call host algorithms (§19: "may call these algorithms directly in C") | `net.c` `rule_op` | reindex, compose, DNF meet/negate/normalize, projection, ∀, support and `open` each traverse variable-size data |
+| Heads materialized with `n` ports | `net.c:319` | arity unbounded (narrowed to `uint8_t`) |
+| Memo table U/R/D with waiter lists | §§10, 26; `eval.c` | publication delivers to every waiter in one event (`eval.c:340–343`); lookup is a hash probe; the table is state outside the net, which is why §§26–27 had to re-derive the diamond and why §§74–82 lost it (§85) |
+| Locks | §§20, 35; 94 lock sites in 24b2bfb | distinct active pairs are disjoint (5.11); only a boundary link write needs one atomic exchange |
+| Checker, conversion, compiler, template interpreter as recursive C over the store | `check.c`, `compiler.c`, `template.c` | unbounded work per call; checking a proof is normalizing its term (5.1) |
+| Graph-isomorphism comparison of results across schedules | §37; `match.c`, `canon.c` | the normal form is unique (5.18) |
+| Work measured after the fact (fine ledgers, bounded-frame lowering, event streams, accounting owners) | §§65, 71, 81, 89, 94; contract §§6–7, 16 | the work reading is the product fold of II.3: the step increments its rule kind's counter, one word |
+| Automatic plan selection | §§60–72 | 5.28: once the declaration is posed there is no search over methods |
 
-1. Fixed templates for the Part XII constructions (Maps, presentation composition, singleton with
-   `h,k`, `zero`, `node`, the generic action), registered once per level tuple.
-2. The proof-use judgment of Part XV as a memoized request family of the same protocol.
-3. Reuse (Part XIV): structural shape, receipts and their specialization rule, symbol revisions,
-   projected judgment contexts, action keys without source labels, the alias boundary invariant.
-4. Demand and work records of Part XIII computed from the actual executed derivation, by the
-   product fold, not by a second traversal.
-5. Bounded microsteps of Part XVI, including on-demand field opening and arbitrary arity.
-6. The witnessed-source records of Part XVII where they are readings of the same steps.
+The departure is recorded in Appendix B of HANDOFF.md and its §1: the earlier λ-net could not
+substitute into a value, so `comp` evaluated type lines at a generic point, which collapsed Glue
+at endpoints. The response replaced the net by interned references, a C evaluator and a memo,
+instead of making substitution a rule of the net. Every runtime commit of `scoped-machine/`,
+24b2bfb included, is built on that replacement. Reverting inside `scoped-machine/` yields a
+smaller instance of the same departure.
 
-Open in the specification and not supplied by any implementation step: the diamond for a machine
-with adaptive reuse (§85), the native-to-C simulation theorem (§89), reflected evaluator/checker
-definitions (§§87, 91), the posing operation (§86).
+### XVIII.3 What carries over
+
+The mathematics: the interval and face algebra (Part V, as terms with their rewrite laws), the
+cubical clauses of Part VII, the library formulas of Part VIII, realization, singleton
+contraction and the identity compiler of Part XI as terms, the runtime diagrams of Part XII, the
+fibre facts of Part II, and the cost mathematics of Parts XIII and XVII read as functions of the
+step counts.
+
+### XVIII.4 What to build
+
+1. Cells of fixed arity with word-size payloads; a finite rule table; each rule a fixed right-hand
+   net.
+2. Sharing only by duplicator cells; erasure only by eraser cells. The effect cost (5.8) is counted
+   where an eraser or a merge fires; the length is the step count.
+3. Substitution as agents: a term- or interval-substitution cell moves one cell per step. A fresh
+   dimension is a variable cell. `comp` keeps its family's components as wires (shared by
+   duplicators), and specializing a component sends a substitution agent along its wire. That is
+   the retained-component fix of §13, made inside the net.
+4. Intervals and faces are nets with their De Morgan and face rules. A face test is an active pair
+   that fires when its interval arguments reach endpoints; until then the composition or system is
+   data waiting for that interaction.
+5. Composition dispatch is the active pair of `COMP` with the family's head constructor
+   (`PI`, `SIGMA`, `PATH`, `GLUE`, `U`), with the clause of Part VII as right-hand net; a composition
+   whose family is a variable is a cell waiting on that variable.
+6. No memo, no interning, no global table, no locks on pairs: disjoint pairs reduce in parallel,
+   with one atomic link operation at boundary wires.
+7. Each step increments its rule kind's counter.
+
+Every row of XVIII.2 is then replaced rather than instrumented, and XVIII.1 holds for the whole
+machine. The nearest existing realization is `collab/bend2-interactive-cubical` (cubical prelude
+on HVM4); its recorded gaps — type-former dispatch by evaluating a line at the marker `#IMark`,
+transport to a symbolic endpoint left stuck, some lines precomputed by the Haskell normaliser — are
+the points items 3–5 address.
