@@ -1687,40 +1687,52 @@ path proving attainment.
 
 ---------------------------------------------------------------------------------------------
 
-## Part XVIII. The step bound and what it makes incorrect in the tree
+## Part XVIII. The step bound, the departure from §5, and what to build
 
 ### XVIII.1 The step bound is the definition of a step
 
 A rule replaces an active pair by a fixed finite net on its auxiliary wires (5.5); the rule table
-is finite; cells have bounded arity. One step reads the two cell kinds, indexes the rule table,
-allocates a bounded number of cells and writes a bounded number of links, and the new active
-pairs lie on the wires it created. Hence
+is finite; cells have bounded arity. One step reads two cell kinds, indexes the rule table,
+allocates a bounded number of cells, writes a bounded number of links, and the new active pairs
+lie on wires it created. Hence `Instr_C(run) ≤ c · steps(run) + d`, `c` the largest per-rule cost.
+This is the correctness condition of the implementation. Operations of 24b2bfb that are not
+bounded steps: `open_ref` builds all `n` fields (`term.c:570`; §89 measurement); maps interned as
+whole sorted vectors (`mapb_finish`); `reindex`/`compose`/support traverse a whole boundary in one
+call; DNF meet, negation and normalization in one call; publication delivers to every waiter in
+one event (`eval.c:340–343`); `n`-port heads (`net.c:319`); checking, conversion, compilation and
+template interpretation as recursive C inside one frame.
 
-```
-Instr_C(run) ≤ c · steps(run) + d
-```
+### XVIII.2 Sharing outside the net is the departure
 
-with `c` the largest per-rule cost. This is the correctness condition of the implementation: a
-primitive operation whose work depends on the size of a term, map, face, field list or waiter
-list is not one step and must be expressed as several steps of the same machine, each counted.
+5.24: a shared subterm is held by a duplicator cell, wired like any cell, with no bookkeeping
+outside the net. The specified machine shares instead through two tables outside the net: the
+interner (equal references are one record) and the memo (equal keys `(t, π_S χ)` reach one
+producer, whose waiter list is an unbounded fan-out found by a hash lookup). The memo's readiness
+state is read by one transition and changed by another; that is why §§26–27 had to re-derive the
+diamond for the memo transitions and why §§74–82, where the recipe depends on what is ready, lost
+it (§85: the same request reduced in 2 or 3 steps). Substitution held as data in a view and a
+substitution cell propagated on demand cost the same per observed level; the representation of
+substitution is not the issue. The tables are.
 
-The representation of Parts IV–X is compatible with this: a view is an explicit substitution
-held as data (reindex never touches the body); interning a node whose fields are already interned
-handles is bounded work per node; a memo entry is the shared producer of one key, with consumers
-attached to it, so it realizes sharing (5.24) for equal keys. What violates the bound is the
-granularity at which 24b2bfb performs these operations.
+What carries over is the mathematics: the interval and face algebra, the cubical clauses (Part VII),
+the library formulas (Part VIII), realizations, singleton contraction and the identity compiler
+(Part XI) and runtime diagrams (Part XII) as terms, the fibre facts (Part II), and the cost
+mathematics read off the steps.
 
-### XVIII.2 Operations in 24b2bfb that are not bounded steps
+### XVIII.3 What to build
 
-| Operation | Where | Unbounded part | Bounded form |
-|---|---|---|---|
-| Opening a reference | `open_ref` (`term.c:570`), §89 measurement | builds all `n` fields before one is used | open one field per step, on demand |
-| Interning a map | `mapb_finish` (sort, dedup, intern a vector) | key is the whole image vector | maps as interned bounded nodes (one image per node) |
-| `reindex`, `compose`, `make_view`, support | `term.c` | traverse a whole boundary or map in one call | one image per step over the node representation |
-| Interval and face operations | `dnf.c`, `face.c`, `interval.c` | meet is a clause product, normalization compares all clause pairs, all in one call | clause and atom cells, one comparison or union per step |
-| Publication | `eval.c:340–343` | delivers to every waiter in one event | one delivery per step |
-| Head materialization | `net.c:319` | `n`-port head, arity narrowed to `uint8_t` | bounded-arity field sequence |
-| Checking, conversion, compilation, template interpretation | `check.c`, `compiler.c`, `template.c` | recursive C inside one evaluator frame | their rules as steps of the same machine |
-
-Each row is a granularity defect of an operation whose mathematics (Parts IV–IX) is kept. The
-step counter then counts the actual steps, and the coarse event vector is a projection of it.
+1. Cells of fixed arity with word-size payloads; a finite rule table; each rule a fixed right-hand net.
+2. Sharing only by duplicator cells; erasure by eraser cells. Length is the step count. Effect cost
+   is per step: a step merging `2^k` inputs into one costs `k` (5.8); a duplicator costs 0 (5.24);
+   it is charged for the bits the requested observation erases (5.10).
+3. Substitution (term and interval) as cells propagated on demand; a fresh dimension is a variable
+   cell; `comp` keeps its family's components as wires shared by duplicators and specializes them
+   by substitution, which is the retained-component requirement of §13.
+4. Intervals and faces as nets with their De Morgan and face rules; a face test is an interaction.
+   A composition whose tube face is not covered proceeds by the clause of its family's head with
+   the face symbolic; it waits only when the family's head is a variable.
+5. Composition dispatch is the active pair of `COMP` with the head cell (`PI`, `SIGMA`, `PATH`,
+   `GLUE`, `U`), the clause of Part VII as right-hand net.
+6. No interner, no memo, no global table; disjoint pairs reduce in parallel with one atomic link
+   operation at boundary wires.
+7. Each step increments its rule kind's counter.
