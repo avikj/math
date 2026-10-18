@@ -184,6 +184,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     }
     size_t ne = eval_entry_count();
     for (EntryId eid = 1; eid <= ne; eid++) {
+        if (!eval_entry_is_observation(eid)) continue;
         size_t req, del, pub; eval_entry_events(eid, &req, &del, &pub);
         canon_add_key(c, eval_entry_ref(eid), eval_entry_face(eid), req, del, pub, (int)eval_entry_state(eid));
     }

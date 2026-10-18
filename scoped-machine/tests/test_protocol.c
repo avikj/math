@@ -89,7 +89,7 @@ int main(void) {
     CHECK(v == 500500 && family_steps(F_SUM) == before, "a ready key is delivered without producer work");
     v = family_run(F_SUM, 1500, 0, &st) - 1;
     CHECK(v == 1125750 && family_steps(F_SUM) == before + 2 * 500, "a larger request runs only its new keys");
-    for (EntryId e = 1; e <= eval_entry_count(); e++) if (eval_entry_runs(e) > 1) { CHECK(0, "a key ran twice"); break; }
+    for (EntryId e = 1; e <= eval_entry_count(); e++) if (eval_entry_live(e) && eval_entry_runs(e) > 1) { CHECK(0, "a key ran twice"); break; }
 
     /* eight concurrent clients of one fresh key, sequential and with workers */
     for (int w = 0; w <= 4; w += 4) {
@@ -101,9 +101,9 @@ int main(void) {
         pthread_barrier_destroy(&gate);
         bool same = true; for (size_t i = 0; i < 8; i++) same = same && got[i] == 4501500;
         CHECK(same, w ? "eight clients, four workers: one value" : "eight clients, no pool: one value");
-        bool once = true; size_t ne = eval_entry_count();
-        for (EntryId e = 1; e <= ne; e++) if (eval_entry_runs(e) != 1) once = false;
-        CHECK(once && ne == 3001, "every key produced exactly once");
+        bool once = true; size_t ne = eval_entry_count(), live = 0;
+        for (EntryId e = 1; e <= ne; e++) { if (!eval_entry_live(e)) continue; live++; if (eval_entry_runs(e) != 1) once = false; }
+        CHECK(once && live == 3001, "every key produced exactly once");
         EvalEvents ev = eval_events();
         CHECK(ev.deliver == ev.request, "one delivery per request (chains deliver one per job)");
     }
@@ -127,7 +127,7 @@ int main(void) {
     v = family_call(F_USE, 300, 0);
     CHECK(v == use_expected(300), "inline: the same value from the same step functions");
     CHECK(family_steps(F_COUNT) - c0 == 301 && family_steps(F_TRI) - t0 == 301 + 300 && family_steps(F_USE) - u0 == 3, "inline: the same steps");
-    { bool once = true; for (EntryId e = 1; e <= eval_entry_count(); e++) if (eval_entry_state(e) != E_READY || eval_entry_runs(e) != 1) once = false;
+    { bool once = true; for (EntryId e = 1; e <= eval_entry_count(); e++) if (eval_entry_live(e) && (eval_entry_state(e) != E_READY || eval_entry_runs(e) != 1)) once = false;
       CHECK(once && eval_entry_count() == 302, "inline: every key claimed, run once and published"); }
     size_t before_inline = family_steps(F_TRI);
     CHECK(family_call(F_TRI, 300, 0) == 1 + 300 * 301 / 2 && family_steps(F_TRI) == before_inline, "inline: a ready key returns its value without steps");
@@ -140,7 +140,7 @@ int main(void) {
     priv_seen = 0;
     v = family_call(F_PRIV, 7, 0);
     CHECK(v == 42 && priv_seen == 1, "a re-entered running key is computed on the calling thread");
-    { EntryId e = 0; for (EntryId q = 1; q <= eval_entry_count(); q++) if (eval_entry_family(q) == F_PRIV) e = q;
+    { EntryId e = 0; for (EntryId q = 1; q <= eval_entry_count(); q++) if (eval_entry_live(q) && eval_entry_family(q) == F_PRIV) e = q;
       size_t rq, dl, pb; eval_entry_events(e, &rq, &dl, &pb);
       CHECK(e && eval_entry_runs(e) == 1 && pb == 1 && family_call(F_PRIV, 7, 0) == 42, "it published once, from its claimer"); }
     /* concurrent inline clients and workers */
@@ -154,7 +154,7 @@ int main(void) {
         bool same = true; for (size_t i = 0; i < 8; i++) same = same && inl_got[i] == use_expected(2000);
         CHECK(same, w ? "eight inline clients, four workers: one value" : "eight inline clients: one value");
         bool once = true; size_t ne = eval_entry_count();
-        for (EntryId e = 1; e <= ne; e++) if (eval_entry_runs(e) != 1 || eval_entry_state(e) != E_READY) once = false;
+        for (EntryId e = 1; e <= ne; e++) if (eval_entry_live(e) && (eval_entry_runs(e) != 1 || eval_entry_state(e) != E_READY)) once = false;
         CHECK(once, "every key claimed once and published");
     }
     eval_set_workers(0);

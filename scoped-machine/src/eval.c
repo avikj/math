@@ -53,6 +53,8 @@ typedef struct QChunk { struct QChunk *prev, *next; uint32_t lo, hi; Task t[QCHU
 typedef struct { const char *name; FamStart start; FamResume resume; size_t steps; size_t loc_size; bool pure; } FamilyDef;
 static FamilyDef FAM[F_MAX];
 static size_t n_fam = F_WHNF + 1;  /* F_WHNF is built in; registered families follow */
+static Family F_INTERN;
+static void intern_step(Cont *k, uint64_t v);
 
 static struct {
     /* cache */
@@ -118,6 +120,10 @@ Family family_register(const char *name, FamStart start, FamResume resume) {
     FAM[n_fam].loc_size = 0; FAM[n_fam].pure = false;
     return (Family)n_fam++;
 }
+Family family_lookup(const char *name) {
+    for (size_t f = F_WHNF + 1; f < n_fam; f++) if (strcmp(FAM[f].name, name) == 0) return (Family)f;
+    return 0;
+}
 Family family_define(const char *name, FamResume step, size_t loc_size, bool pure) {
     Family f = family_register(name, NULL, step);
     FAM[f].loc_size = loc_size; FAM[f].pure = pure;
@@ -138,6 +144,7 @@ void eval_init(void) {
     pool_init(&E.chunk_pool, sizeof(QChunk));
     pthread_mutex_init(&E.loc_mu, NULL);
     for (size_t f = 0; f < F_MAX; f++) FAM[f].steps = 0;
+    F_INTERN = family_define("intern", intern_step, sizeof(InternState), false);
     net_init(&E.net);
     net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
     E.net.policy = 1;   /* pairs FIFO by default */
@@ -180,7 +187,7 @@ void eval_set_workers(size_t n) {
 }
 size_t eval_workers(void) { return E.nworkers; }
 
-static Entry *ENT(EntryId e) { return (Entry *)chunked_get(&E.entries, e - 1); }
+static Entry *ENT(EntryId e) { return (Entry *)chunked_at(&E.entries, e - 1); }
 static const uint64_t *entry_key(EntryId e) { size_t n; return interner_get(&E.keys, e, &n); }
 Family eval_entry_family(EntryId e) { return (Family)entry_key(e)[0]; }
 uint64_t eval_entry_a(EntryId e) { return entry_key(e)[1]; }
@@ -382,13 +389,15 @@ EntryState eval_entry_state(EntryId e) {
 }
 FaceId eval_entry_face(EntryId e) { return eval_entry_b(e); }
 size_t eval_entry_count(void) { return interner_count(&E.keys); }
+bool eval_entry_live(EntryId e) { return interner_live(&E.keys, e); }
+bool eval_entry_is_observation(EntryId e) { return eval_entry_live(e) && eval_entry_family(e) == F_WHNF; }
 size_t eval_entry_runs(EntryId e) { return __atomic_load_n(&ENT(e)->runs, __ATOMIC_ACQUIRE); }
 RefId eval_entry_ref(EntryId e) { return eval_entry_a(e); }
 void eval_entry_events(EntryId e, size_t *req, size_t *dl, size_t *pub) {
     Entry *x = ENT(e);
     *req = __atomic_load_n(&x->n_req, __ATOMIC_ACQUIRE); *dl = __atomic_load_n(&x->n_deliver, __ATOMIC_ACQUIRE); *pub = __atomic_load_n(&x->n_pub, __ATOMIC_ACQUIRE);
 }
-size_t eval_running_count(void) { size_t c = 0, n = eval_entry_count(); for (size_t i = 1; i <= n; i++) if (eval_entry_state(i) == E_RUNNING) c++; return c; }
+size_t eval_running_count(void) { size_t c = 0, n = eval_entry_count(); for (size_t i = 1; i <= n; i++) if (eval_entry_live(i) && eval_entry_state(i) == E_RUNNING) c++; return c; }
 size_t eval_task_count(void) { return __atomic_load_n(&E.tasks_created, __ATOMIC_SEQ_CST); }
 
 /* PUB(K,v) + R(W) → D(v) + {DELIVER(c,v) : c ∈ W}: the value is stored, the
@@ -491,6 +500,23 @@ void frame_finish(Cont *k, uint64_t v) {
     if (k->inl) { inline_out(IN_FINISH, 0, 0, 0, v, NULL); return; }
     if (k->parent) { Cont *p = k->parent; k->parent = NULL; enqueue_resume(p, v); return; }
     family_publish(k->dest, v);
+}
+
+/* the interning subroutine: a bounded advance of the insertion per step */
+#define INTERN_BUDGET 8
+static void intern_step(Cont *k, uint64_t v) {
+    (void)v;
+    InternState *s = k->loc;
+    if (!intern_advance(s, INTERN_BUDGET)) { frame_yield(k); return; }
+    bool *created = (bool *)(uintptr_t)k->w[0];
+    if (created) *created = s->created;
+    frame_finish(k, s->result);
+}
+Cont *intern_sub(const Cont *caller, Interner *t, WordBuf *buf, bool *created) {
+    Cont *k = frame_sub(F_INTERN, caller);
+    intern_begin(k->loc, t, NULL, buf, buf->n);
+    k->w[0] = (uint64_t)(uintptr_t)created;
+    return k;
 }
 
 /* drive one inline frame (and the subroutines it calls) to its value */

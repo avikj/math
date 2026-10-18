@@ -92,6 +92,7 @@ static Outcome run(size_t workers, int clients) {
         for (int c = 1; c < clients; c++) if (results[c][q] != results[0][q]) o.mismatched++;
     }
     for (EntryId e = 1; e <= ne; e++) {
+        if (!eval_entry_live(e)) continue;
         size_t req, del, pub; eval_entry_events(e, &req, &del, &pub);
         if (eval_entry_runs(e) > 1) o.bad_runs++;
         if (pub > 1) o.bad_pub++;

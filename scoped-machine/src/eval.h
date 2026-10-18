@@ -125,6 +125,7 @@ size_t family_steps(Family f);       /* evaluator and resume steps executed for 
  * w[0] = a, w[1] = b. A pure family's key does not include the definition
  * environment version: its value depends on its operands alone. */
 Family family_define(const char *name, FamResume step, size_t loc_size, bool pure);
+Family family_lookup(const char *name);           /* 0 when not registered */
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b);
 void frame_call(Cont *k, Cont *child);
 void frame_yield(Cont *k);
@@ -137,6 +138,11 @@ Cont *frame_sub(Family f, const Cont *caller);    /* a subroutine frame of famil
  * that publication); a key running elsewhere is computed on this thread
  * without publication. It drives the same step functions. */
 uint64_t family_call(Family f, uint64_t a, uint64_t b);
+
+/* the interning subroutine: inserts the record held by *buf into t (the
+ * buffer's pages are released), returning its id; *created (when non-NULL,
+ * in storage that outlives the call) tells whether it was new */
+Cont *intern_sub(const Cont *caller, Interner *t, WordBuf *buf, bool *created);
 
 /* program-counter macros for step functions (the step's value parameter is
  * named v; one macro use per source line) */
@@ -203,7 +209,9 @@ void eval_forward_result(EntryId K, RefId v);        /* the receiver's request (
 EntryId eval_entry_lookup(RefId t, FaceId chi);     /* 0 when absent */
 EntryState eval_entry_state(EntryId e);
 FaceId eval_entry_face(EntryId e);
-size_t eval_entry_count(void);
+size_t eval_entry_count(void);                       /* entry ids reserved (some may be unused after a lost insertion race) */
+bool eval_entry_live(EntryId e);                    /* e names a key */
+bool eval_entry_is_observation(EntryId e);          /* a live F_WHNF key */
 size_t eval_entry_runs(EntryId e);
 size_t eval_running_count(void);
 RefId eval_entry_ref(EntryId e);

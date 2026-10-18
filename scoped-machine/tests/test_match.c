@@ -91,7 +91,7 @@ static Graph *build(Variant v) {
     canon_add_result(c, "pair", whnf(pair, fc_true(), &st));
     canon_add_result(c, "lvl", whnf(lvl, fc_true(), &st));
     size_t ne = eval_entry_count();
-    for (EntryId eid = 1; eid <= ne; eid++) { size_t r, d, pb; eval_entry_events(eid, &r, &d, &pb); canon_add_key(c, eval_entry_ref(eid), eval_entry_face(eid), r, d, pb, (int)eval_entry_state(eid)); }
+    for (EntryId eid = 1; eid <= ne; eid++) { if (!eval_entry_is_observation(eid)) continue; size_t r, d, pb; eval_entry_events(eid, &r, &d, &pb); canon_add_key(c, eval_entry_ref(eid), eval_entry_face(eid), r, d, pb, (int)eval_entry_state(eid)); }
     Graph *g = canon_export(c);
     canon_free(c); eval_free(); machine_free();
     return g;
