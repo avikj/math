@@ -44,9 +44,9 @@ void check_new_attempt(void);
 CheckStatus check_context(ContextId G, const char **reason);
 /* sigma : (Delta;psi) -> (Gamma;chi) */
 CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma, FaceId chi, const char **reason);
-/* validate an origin in its own parameter context; returns that context,
- * required face and checked type */
-CheckStatus check_origin(OriginId C, ContextId *ctx_out, FaceId *required_out, RefId *type_out, const char **reason);
+/* validate a construction node at its generic instance; returns that
+ * instance's context, required face and checked type */
+CheckStatus check_node(uint64_t node, ContextId *ctx_out, FaceId *required_out, RefId *type_out, const char **reason);
 Inference infer(ContextId G, FaceId chi, RefId t);
 /* Γ;χ ⊢ A : U_level (formation in a universe; a term with some type is not a type) */
 CheckStatus check_is_type(ContextId G, FaceId chi, RefId A, uint64_t *level, const char **reason);
@@ -75,10 +75,10 @@ CheckStatus check_admission(const char **reason);
 void check_open_environment(void);
 uint64_t check_session_id(void);   /* changes with every checker session; session-dependent caches are qualified by it */
 
-/* the parameter context of an origin: its free dimensions, then its free
- * term variables in dependency order with their declared types; assumption
- * = the origin's required face */
-ContextId origin_context(OriginId C);
+/* the context of a boundary: its dimensions, then its term variables in
+ * dependency order with their declared types; assumption = req */
+ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req);
+ContextId global_context(SymbolId s);
 
 const char *check_status_name(CheckStatus s);
 const char *conv_status_name(ConvStatus s);

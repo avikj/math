@@ -422,10 +422,10 @@ static CheckStatus level_of(ContextId G, FaceId C, RefId A, uint64_t *lvl, const
 /* ------------------------------------------------------------------ */
 /* contexts                                                             */
 
-ContextId origin_context(OriginId C) {
+ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req) {
     size_t nd, nt;
-    const uint64_t *ds = dimset_get(origin_fd(C), &nd);
-    const uint64_t *xs = varset_get(origin_ft(C), &nt);
+    const uint64_t *ds = dimset_get(fd, &nd);
+    const uint64_t *xs = varset_get(ft, &nt);
     CtxDecl *decls = malloc((nd + nt + 1) * sizeof(CtxDecl));
     size_t n = 0;
     for (size_t k = 0; k < nd; k++) { decls[n].sort = S_DIM; decls[n].id = ds[k]; decls[n].type = 0; n++; }
@@ -444,13 +444,14 @@ ContextId origin_context(OriginId C) {
             decls[n].sort = S_TERM; decls[n].id = xs[k]; decls[n].type = term_var_type(xs[k]); n++;
             placed[k] = true; done++; progress = true;
         }
-        require(progress, "cyclic declaration dependency in origin boundary");
+        require(progress, "cyclic declaration dependency in a boundary");
     }
     free(placed);
-    ContextId ctx = context_make(n, decls, origin_required(C));
+    ContextId ctx = context_make(n, decls, req);
     free(decls);
     return ctx;
 }
+ContextId global_context(SymbolId s) { return boundary_context(global_params(s), global_dims(s), fc_true()); }
 
 CheckStatus check_context(ContextId G, const char **reason) {
   for (;;) {
@@ -586,7 +587,10 @@ CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma,
 static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const char **reason);
 static CheckStatus validate_symbol(SymbolId s, const char **reason);
 
-CheckStatus check_origin(OriginId C, ContextId *ctx_out, FaceId *req_out, RefId *type_out, const char **reason) {
+/* a construction node, validated once at its generic instance (parameters at
+ * fresh names keyed by (node, slot), declared at the instantiated closed
+ * types); every instance is then typed by the substitution lemma */
+CheckStatus check_node(TNodeId C, ContextId *ctx_out, FaceId *req_out, RefId *type_out, const char **reason) {
   for (;;) {
     uint64_t key[1] = { C }, v, aux[3] = { 0, 0, 0 }; const char *why = NULL;
     pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_ORIGIN, key, 1); pthread_mutex_unlock(&K.mu);
@@ -598,13 +602,16 @@ CheckStatus check_origin(OriginId C, ContextId *ctx_out, FaceId *req_out, RefId 
         if (v == 1) { if (ctx_out) *ctx_out = aux[0]; if (req_out) *req_out = aux[1]; if (type_out) *type_out = aux[2]; return CK_VALID; }
         *reason = why; return ck_of(v);
     }
-    if (a == ACQ_CYCLE) { LEAVE(); (void)top_settled(); *reason = "unresolved: origin validation depends on itself (cyclic dependency)"; return CK_UNRESOLVED; }
-    ContextId ctx = origin_context(C);
-    FaceId req = origin_required(C);
+    if (a == ACQ_CYCLE) { LEAVE(); (void)top_settled(); *reason = "unresolved: construction validation depends on itself (cyclic dependency)"; return CK_UNRESOLVED; }
+    size_t np = tnode_nparams(C);
+    CtxDecl *decls = malloc((np ? np : 1) * sizeof(CtxDecl)); require(decls, "out of memory");
+    FaceId req;
+    RefId t = tnode_generic(C, decls, &req);
+    ContextId ctx = context_make(np, decls, req);
+    free(decls);
     RefId type = 0;
     CheckStatus st = check_context(ctx, reason);
     if (st == CK_VALID) {
-        RefId t = make_view(C, map_identity());
         /* a system's own required face is its coverage; the body is checked under it */
         FaceId *cs; size_t nc = clauses_of(req, &cs);
         RefId *types = malloc((nc ? nc : 1) * sizeof(RefId));
@@ -857,9 +864,10 @@ static CheckStatus infer_head(ContextId G, FaceId C, RefId t, RefId *type, const
         SymbolId s = (SymbolId)h.payload;
         st = validate_symbol(s, reason);
         if (st != CK_VALID) break;
-        ContextId Gs = origin_context(h.origin);
-        st = check_map(G, C, h.map, Gs, fc_true(), reason);
-        if (st == CK_VALID) *type = reindex(global_type(s), h.map);
+        ContextId Gs = global_context(s);
+        MapId args = global_args(t);
+        st = check_map(G, C, args, Gs, fc_true(), reason);
+        if (st == CK_VALID) *type = reindex(global_type(s), args);
         break;
     }
     case T_TCALL: {
@@ -901,15 +909,15 @@ static CheckStatus infer_clause(ContextId G, FaceId C, RefId t, RefId *type, con
     G = under(G, C);
     if (ref_is_var(t)) return infer_head(G, C, t, type, reason);
     if (!fc_entails(C, ref_required(t))) { *reason = "occurrence outside its required face"; return CK_INVALID; }
-    if (ref_is_tview(t)) return infer_tview(G, C, t, type, reason);
-    if (origin_tag(ref_origin(t)) == T_GLOBAL) return infer_head(G, C, t, type, reason);
-    OriginId O = ref_origin(t);
+    if (!tview_is_construction(t)) return infer_tview(G, C, t, type, reason);
+    if (ref_tag(t) == T_GLOBAL) return infer_head(G, C, t, type, reason);
     ContextId Gc; FaceId req; RefId Ac;
-    CheckStatus st = check_origin(O, &Gc, &req, &Ac, reason);
+    CheckStatus st = check_node(ref_tnode(t), &Gc, &req, &Ac, reason);
     if (st != CK_VALID) return st;
-    st = check_map(G, C, ref_map(t), Gc, req, reason);
+    MapId m = tview_generic_map(t);
+    st = check_map(G, C, m, Gc, req, reason);
     if (st != CK_VALID) return st;
-    *type = reindex(Ac, ref_map(t));
+    *type = reindex(Ac, m);
     return CK_VALID;
 }
 
@@ -1026,6 +1034,7 @@ static CheckStatus check_scope_arg(ContextId G, FaceId C, ScopeId S, ScopeId Sig
  * against its contextual signature. Memoized per (view, declarations,
  * projected clause). */
 static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **reason) {
+    if (tview_is_construction(t)) return CK_VALID;      /* a construction has no template boundary: its instance is checked concretely */
     if (!fc_entails(C, ref_required(t))) { *reason = "template instance used outside its declared required face"; return CK_INVALID; }
     size_t n; const uint64_t *ds = dimset_get(ref_support(t), &n);
     uint64_t key[3] = { t, under(G, fc_true()), fc_project(C, ds, n) }, v; const char *why = NULL;
@@ -1473,13 +1482,14 @@ static ConvStatus spine(ContextId G, FaceId C, RefId n1, RefId n2) {
     }
     case T_GLOBAL: {
         if (a.payload != b.payload) { out = CV_UNEQUAL; break; }
-        ContextId Gs = origin_context(a.origin);
+        ContextId Gs = global_context((SymbolId)a.payload);
+        MapId am = global_args(a.owner), bm = global_args(b.owner);
         out = CV_EQUAL;
         size_t n = context_size(Gs);
         for (size_t k = 0; k < n && out == CV_EQUAL; k++) {
             CtxDecl d = context_decl(Gs, k);
-            if (d.sort == S_DIM) { if (!iv_equal_under(C, map_dim_image(a.map, d.id), map_dim_image(b.map, d.id))) out = CV_UNEQUAL; }
-            else out = conv_term_clause(G, C, map_term_image(a.map, d.id), map_term_image(b.map, d.id), reindex(d.type, a.map));
+            if (d.sort == S_DIM) { if (!iv_equal_under(C, map_dim_image(am, d.id), map_dim_image(bm, d.id))) out = CV_UNEQUAL; }
+            else out = conv_term_clause(G, C, map_term_image(am, d.id), map_term_image(bm, d.id), reindex(d.type, am));
         }
         break;
     }
@@ -1535,8 +1545,7 @@ static CheckStatus validate_symbol(SymbolId s, const char **reason) {
     RefId type = global_type(s);
     CheckStatus st = CK_VALID;
     if (!type) { *reason = "symbol without a declared type"; st = CK_INVALID; }
-    OriginId o = ref_origin(global_ref(s));
-    ContextId Gs = origin_context(o);
+    ContextId Gs = global_context(s);
     if (st == CK_VALID) st = check_context(Gs, reason);
     if (st == CK_VALID) { uint64_t l; st = level_of(Gs, fc_true(), type, &l, reason); }
     RefId body = global_body(s);

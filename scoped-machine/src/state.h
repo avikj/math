@@ -9,7 +9,6 @@
 #include "common.h"
 #include "intern.h"
 
-typedef struct { VarSetId ft; DimSetId fd; FaceId required; } OriginSide;
 typedef struct { DimSetId support; VarSetId freevars; FaceId required; } RefSide;
 typedef struct { RefId type; FaceId required; uint64_t prov; } TermDecl;
 typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
@@ -22,7 +21,6 @@ typedef struct {
     Interner dimsets;     /* DimSetId    → sorted DimVarId list */
     Interner varsets;     /* VarSetId    → sorted TermVarId list */
     Interner maps;        /* MapId       → raw map record */
-    Interner origins;     /* OriginId    → origin record */
     Interner refs;        /* RefId       → reference record */
     Interner nominal;     /* binder identities (owner,slot,sort) and keyed fresh names */
     Interner contexts;    /* ContextId   → occurrence context record */
@@ -41,7 +39,6 @@ typedef struct {
 
     /* side data, non-moving; an element is written before its id is
      * published and never changes afterwards */
-    Chunked origin_side;  /* OriginSide per OriginId-1 */
     Chunked ref_side;     /* RefSide per RefId-1 */
     Chunked term_decl;    /* TermDecl per TermVarId-1 (frozen once made) */
     Chunked dim_prov;     /* uint64_t provenance per DimVarId-1 */
@@ -49,7 +46,7 @@ typedef struct {
     Chunked defs;         /* Def per SymbolId-1 */
     size_t n_term_vars, n_dim_vars, n_defs;   /* under term_mu */
 
-    /* one recursive mutex serializes creation in the term layer (origins,
+    /* one recursive mutex serializes creation in the term layer (constructions,
      * references, declarations, nominal minting, definitions); reads of
      * published records and side data are lock-free */
     pthread_mutex_t term_mu;

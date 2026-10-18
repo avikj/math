@@ -28,7 +28,7 @@ typedef struct {
     Graph *graph;
     char *results;      /* diagnostic text dump */
     /* diagnostics */
-    size_t entries, n_refs, n_origins, n_maps, n_faces, n_intervals, n_nominal, n_terms, n_dims;
+    size_t entries, n_refs, n_nodes, n_maps, n_faces, n_intervals, n_nominal, n_terms, n_dims;
     size_t ready_hit, running_hit;
 } Run;
 
@@ -191,7 +191,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     R->results = strdup("");
     canon_free(c);
     R->entries = ne;
-    R->n_refs = interner_count(&M.refs); R->n_origins = interner_count(&M.origins); R->n_maps = interner_count(&M.maps);
+    R->n_refs = interner_count(&M.refs); R->n_nodes = interner_count(&M.tnodes); R->n_maps = interner_count(&M.maps);
     R->n_faces = interner_count(&M.faces); R->n_intervals = interner_count(&M.intervals); R->n_nominal = interner_count(&M.nominal);
     R->n_terms = M.n_term_vars; R->n_dims = M.n_dim_vars;
     compiler_free(); check_free(); eval_free(); machine_free();
@@ -236,9 +236,9 @@ int main(void) {
             char name[64]; snprintf(name, sizeof name, "%s/net-%s", enames[ep], nnames[np]);
             if (!compare(&base, &other, name, seed)) { show(name, &other); fails++; }
             if (other.ready_hit != base.ready_hit || other.running_hit != base.running_hit) hits_vary = true;
-            if (other.n_refs != base.n_refs || other.n_origins != base.n_origins || other.n_nominal != base.n_nominal || other.n_terms != base.n_terms || other.n_dims != base.n_dims || other.entries != base.entries)
-                printf("  note [%s]: allocation diagnostics differ (refs %zu/%zu origins %zu/%zu nominal %zu/%zu names %zu+%zu/%zu+%zu entries %zu/%zu) — not part of the invariant\n",
-                       name, base.n_refs, other.n_refs, base.n_origins, other.n_origins, base.n_nominal, other.n_nominal, base.n_terms, base.n_dims, other.n_terms, other.n_dims, base.entries, other.entries);
+            if (other.n_refs != base.n_refs || other.n_nodes != base.n_nodes || other.n_nominal != base.n_nominal || other.n_terms != base.n_terms || other.n_dims != base.n_dims || other.entries != base.entries)
+                printf("  note [%s]: allocation diagnostics differ (refs %zu/%zu nodes %zu/%zu nominal %zu/%zu names %zu+%zu/%zu+%zu entries %zu/%zu) — not part of the invariant\n",
+                       name, base.n_refs, other.n_refs, base.n_nodes, other.n_nodes, base.n_nominal, other.n_nominal, base.n_terms, base.n_dims, other.n_terms, other.n_dims, base.entries, other.entries);
             if (s == nseeds - 1 && (ep == 2 && np == 2)) show(name, &other);
             free(other.results); graph_free(other.graph);
             runs++;
@@ -247,7 +247,7 @@ int main(void) {
     { MatchReport mr; graph_match(base.graph, base.graph, &mr);
       printf("  %zu root observations, %zu cache keys, result graph %zu nodes (%zu joint refinement classes); %d schedules compared by exact matching\n", nroots, base.entries, base.graph->nodes.len, mr.classes_joint, runs); }
     printf("  ready-hit/running-hit diagnostics %s across schedules; REQUEST − launches = %zu is invariant\n", hits_vary ? "vary" : "coincide", base.ready_hit + base.running_hit);
-    printf("  allocation diagnostics (base): refs %zu origins %zu maps %zu faces %zu intervals %zu nominal %zu names %zu+%zu\n", base.n_refs, base.n_origins, base.n_maps, base.n_faces, base.n_intervals, base.n_nominal, base.n_terms, base.n_dims);
+    printf("  allocation diagnostics (base): refs %zu nodes %zu maps %zu faces %zu intervals %zu nominal %zu names %zu+%zu\n", base.n_refs, base.n_nodes, base.n_maps, base.n_faces, base.n_intervals, base.n_nominal, base.n_terms, base.n_dims);
     if (base.running_after_ok) { printf("  FAIL: a completed root left %zu RUNNING entries in its demand network\n", base.running_after_ok); fails++; }
     else printf("  no RUNNING entry survives a completed root observation\n");
     free(base.results); graph_free(base.graph);

@@ -38,17 +38,7 @@ RefId trav_ref(RefId t, const Trav *tv, unsigned depth) {
     }
     uint64_t key[4] = { 1, t, tv->key, depth }, out;
     if (tv->key && wordmap_get(&M.trav_memo, key, 4, &out)) return out;
-    if (ref_is_tview(t)) out = tview_traverse(t, tv, depth);
-    else {
-        OriginId c = ref_origin(t);
-        MapId tau = ref_map(t);
-        MapBuilder b; mapb_init(&b);
-        size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
-        for (size_t k = 0; k < n; k++) mapb_term(&b, xs[k], trav_ref(map_term_image(tau, xs[k]), tv, depth));
-        const uint64_t *ds = dimset_get(origin_fd(c), &n);
-        for (size_t k = 0; k < n; k++) mapb_dim(&b, ds[k], trav_iv(map_dim_image(tau, ds[k]), tv, depth));
-        out = make_view(c, mapb_finish(&b));
-    }
+    out = tview_traverse(t, tv, depth);
     if (tv->key) wordmap_put(&M.trav_memo, key, 4, out);
     return out;
 }
@@ -182,12 +172,9 @@ ScopeId trav_scope(ScopeId S, const Trav *tv, unsigned depth) { return trav_scop
 /* ------------------------------------------------------------------ */
 /* structural validation (§50.1–2)                                       */
 
-/* A separate finite walk, distinct from the substitution traversal (which
- * visits only a raw view's boundary images by the representation contract):
- * it visits the boundary images, the stored fields of raw origins (binders
- * are ordinary identities, so the depth is unchanged), the environments of
- * template views, and every scope reachable from them with the actual
- * enclosing telescope stack. Memoized per (record, telescope stack): a
+/* A finite walk over the environments of references, the stored field
+ * constants of constructions, and every scope reachable from them with the
+ * actual enclosing telescope stack. Memoized per (record, telescope stack): a
  * validity established inside a telescope is never reused at another one.
  * GLOBAL bodies are not unfolded: their definitions are the admission
  * checker's. */
@@ -220,32 +207,30 @@ static void val_ref(RefId t, ValCtx *v) {
     if (ref_is_var(t)) { uint64_t x = ref_var_id(t); if (is_bound_id(x)) val_atom(v, x, S_TERM); return; }
     uint64_t stk = stack_key(v);
     if (validated_before(0x4EF1, t, stk)) return;
-    if (ref_is_tview(t)) {
-        TEnvId E = tenv_of(t); size_t n = tenv_size(E);
-        for (size_t k = 0; k < n && !v->why; k++) {
-            uint64_t slot; TVal val; tenv_entry(E, k, &slot, &val);
-            switch (val.sort) {
-            case PS_REF: val_ref(val.id, v); break;
-            case PS_INTERVAL: val_iv(val.id, v); break;
-            case PS_FACE: val_fc(val.id, v); break;
-            case PS_SCOPE: val_scope(val.id, v); break;
-            case PS_LEVEL: break;
-            }
+    /* the environment's images, then a construction's stored field constants
+     * (inactive branches and metadata included) and its declared face: a
+     * constant is closed over the node's own atoms, but a scope stored in it
+     * is validated at the actual telescope stack (binders are ordinary
+     * identities, so the depth is unchanged) */
+    TEnvId E = tenv_of(t); size_t n = tenv_size(E);
+    for (size_t k = 0; k < n && !v->why; k++) {
+        uint64_t slot; TVal val; tenv_entry(E, k, &slot, &val);
+        switch (val.sort) {
+        case PS_REF: val_ref(val.id, v); break;
+        case PS_INTERVAL: val_iv(val.id, v); break;
+        case PS_FACE: val_fc(val.id, v); break;
+        case PS_SCOPE: val_scope(val.id, v); break;
+        case PS_LEVEL: break;
         }
-    } else {
-        OriginId c = ref_origin(t); MapId tau = ref_map(t);
-        /* boundary images */
-        size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
-        for (size_t k = 0; k < n && !v->why; k++) val_ref(map_term_image(tau, xs[k]), v);
-        const uint64_t *ds = dimset_get(origin_fd(c), &n);
-        for (size_t k = 0; k < n && !v->why; k++) val_iv(map_dim_image(tau, ds[k]), v);
-        /* stored fields, including inactive branches and metadata */
-        size_t nf = origin_nfields(c);
+    }
+    TNodeId Q = tnode_of(t);
+    if (tnode_is_construction(Q)) {
+        size_t nf = tnode_nfields(Q);
         for (size_t k = 0; k < nf && !v->why; k++) {
-            Field f = origin_field(c, (FieldIndex)k);
-            if (f.kind == F_REF) val_ref(f.id, v); else if (f.kind == F_INTERVAL) val_iv(f.id, v); else val_fc(f.id, v);
+            uint64_t c = tnode_const_field(Q, k); FieldKind kd = tnode_field_kind(Q, k);
+            if (kd == F_REF) val_ref(c, v); else if (kd == F_INTERVAL) val_iv(c, v); else val_fc(c, v);
         }
-        if (!v->why && origin_declared_required(c)) val_fc(origin_declared_required(c), v);   /* 0 = no annotation */
+        if (!v->why && tnode_const_declared(Q)) val_fc(tnode_const_declared(Q), v);
     }
     if (!v->why) remember_validated(0x4EF1, t, stk);
 }

@@ -512,18 +512,18 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
     case OP_LIFT_TERM: case OP_LIFT_DIMENSION: {
         WANT(D_MAP);
         RefId owner = P.a; BinderSlot slot = (BinderSlot)P.b;
-        /* lifting is defined for a raw view's own map; a template view has
-         * an environment, not a map: a status, never a raw-origin access */
-        if (ref_is_var(owner) || ref_is_tview(owner) || Q.a != ref_map(owner)) { res = status_node(n, ST_INVALID_MAP, 0, 0); break; }
-        Binder b = origin_binder(ref_origin(owner), slot);
-        if ((k == OP_LIFT_TERM) != (b.sort == S_TERM)) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
+        /* lifting is defined for a construction's own environment map; a
+         * template instance interprets programs, it has no map: a status */
+        if (ref_is_var(owner) || !tview_is_construction(owner) || Q.a != tview_env_map(owner)) { res = status_node(n, ST_INVALID_MAP, 0, 0); break; }
+        if (slot >= tnode_nbinders(ref_tnode(owner))) { res = status_node(n, ST_INVALID_MAP, 0, 0); break; }
+        if ((k == OP_LIFT_TERM) != (tnode_binder_sort(ref_tnode(owner), slot) == S_TERM)) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
         res = desc_map(n, lifted_map(owner, slot, NULL), Q.b, Q.c);
         break;
     }
     case OP_OPEN: WANT(D_REF); res = desc_recipe(n, Q.ref); break;
     case OP_UNFOLD_GLOBAL:
         WANT(D_REF);
-        if (ref_is_var(Q.ref) || ref_is_tview(Q.ref) || origin_tag(ref_origin(Q.ref)) != T_GLOBAL) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
+        if (ref_is_var(Q.ref) || ref_tag(Q.ref) != T_GLOBAL) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
         res = desc_ref(n, unfold_global(Q.ref));
         break;
     case OP_REINDEX_TERM_BINDER: WANT(D_TERM_BINDER); res = desc_binder(n, D_TERM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
@@ -893,8 +893,8 @@ void test_net(void) {
     /* LIFT_TERM requires the owner's own map */
     P = (Payload){0}; P.a = id; P.b = 0; Q = (Payload){0}; Q.a = map_single_term(x, a);
     TCHECK(run_op(&net, OP_LIFT_TERM, P, D_MAP, Q, &ok, &op) && ok == D_STATUS && op.a == ST_INVALID_MAP, "LIFT_TERM with an unrelated map is a validation error");
-    Q.a = map_identity();
-    TCHECK(run_op(&net, OP_LIFT_TERM, P, D_MAP, Q, &ok, &op) && ok == D_MAP && map_n_terms(op.a) == 1, "LIFT_TERM with the owner's map gives the lifted map");
+    Q.a = tview_env_map(id);
+    TCHECK(run_op(&net, OP_LIFT_TERM, P, D_MAP, Q, &ok, &op) && ok == D_MAP && map_n_terms(op.a) == map_n_terms(Q.a) + 1, "LIFT_TERM with the owner's environment map gives the lifted map");
     /* faces */
     DimVarId i = declare_dim(), j = declare_dim();
     P = (Payload){0}; P.a = i; Q = (Payload){0}; Q.face = fc_join(fc_lit(i, 0), fc_lit(j, 0));
@@ -917,7 +917,7 @@ void test_net(void) {
      * environments; typed partials. Each is one pure replacement that agrees
      * with the host operation. */
     { CaptureDecl dl[1] = { { S_DIM, i, 0, LEVEL_NONE, fc_true() } };
-      size_t orgS = interner_count(&M.origins);
+      size_t orgS = interner_count(&M.tnodes);
       P = (Payload){0}; P.a = net_capture_decls(1, dl); P.ref = A; P.c = 0; P.face = fc_true();
       Q = (Payload){0}; Q.ref = at_i;
       TCHECK(run_op(&net, OP_CAPTURE_REF_SCOPE, P, D_REF, Q, &ok, &op) && ok == D_SCOPE, "CAPTURE_REF_SCOPE gives a scope");
@@ -945,10 +945,10 @@ void test_net(void) {
       TCHECK(run_op(&net, OP_REINDEX_TEMPLATE_ENV, P, D_TEMPLATE_ENV, Q, &ok, &op) && ok == D_TEMPLATE_ENV, "REINDEX_TEMPLATE_ENV");
       Q = (Payload){0}; Q.a = op.a; P = (Payload){0}; P.a = tnode_of(rf);
       TCHECK(run_op(&net, OP_INSTANTIATE_TEMPLATE, P, D_TEMPLATE_ENV, Q, &ok, &op) && ok == D_REF && op.ref == mk_refl(0, A, a), "INSTANTIATE_TEMPLATE of the reindexed environment is the specialized view");
-      TCHECK(interner_count(&M.origins) == orgS, "no scope or template rule allocated an origin"); }
+      TCHECK(interner_count(&M.tnodes) == orgS, "no scope or template rule allocated a node"); }
 
     /* duplication copies handles: no new interned records */
-    size_t refs0 = interner_count(&M.refs), org0 = interner_count(&M.origins);
+    size_t refs0 = interner_count(&M.refs), org0 = interner_count(&M.tnodes);
     int8_t pdup[3] = { -1, +1, +1 }; Payload e = {0};
     NodeId dup = net_node(&net, A_DUP, 3, pdup, e);
     NodeId r1 = mk_root(&net), r2 = mk_root(&net);
@@ -958,7 +958,7 @@ void test_net(void) {
     net_run(&net);
     Payload p1, p2;
     TCHECK(net_root_read(&net, r1, &ok, &p1) && net_root_read(&net, r2, NULL, &p2) && ok == D_REF && p1.ref == id && p2.ref == id, "duplicated descriptors share the payload handle");
-    TCHECK(interner_count(&M.refs) == refs0 && interner_count(&M.origins) == org0, "duplication allocates no origin, body or reference");
+    TCHECK(interner_count(&M.refs) == refs0 && interner_count(&M.tnodes) == org0, "duplication allocates no node, body or reference");
     /* erasure retires the descriptor */
     int8_t per[1] = { -1 };
     NodeId er = net_node(&net, A_ERASE, 1, per, e);
@@ -986,7 +986,7 @@ void test_net(void) {
     }
     TCHECK(shape, "SYSTEM materializes as HEAD → CONS(BRANCH(FACE,REF), CONS(BRANCH, NIL))");
     /* duplicate the shell fieldwise, then erase one copy */
-    refs0 = interner_count(&M.refs); org0 = interner_count(&M.origins);
+    refs0 = interner_count(&M.refs); org0 = interner_count(&M.tnodes);
     NodeId dup2 = net_node(&net, A_DUP, 3, pdup, e);
     NodeId ra = mk_root(&net), rb = mk_root(&net);
     net_connect(&net, dup2, 1, ra, 0); net_connect(&net, dup2, 2, rb, 0);
@@ -997,7 +997,7 @@ void test_net(void) {
     net_run(&net);
     Endpoint ha = net_peer(&net, ra, 0), hb = net_peer(&net, rb, 0);
     TCHECK(net_is_live(&net, ha.node) && net_is_live(&net, hb.node) && net_node_ptr(&net, ha.node)->kind == A_HEAD && net_node_ptr(&net, hb.node)->kind == A_HEAD && ha.node != hb.node, "shell duplication yields two shells");
-    TCHECK(interner_count(&M.refs) == refs0 && interner_count(&M.origins) == org0, "shell duplication still allocates nothing in the tables");
+    TCHECK(interner_count(&M.refs) == refs0 && interner_count(&M.tnodes) == org0, "shell duplication still allocates nothing in the tables");
     NodeId er2 = net_node(&net, A_ERASE, 1, per, e);
     net_disconnect(&net, rb, 0);
     net_connect(&net, er2, 0, hb.node, 0);

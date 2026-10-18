@@ -1,11 +1,13 @@
-/* term.h — simultaneous substitutions, origins, references, instantiated
+/* term.h — simultaneous substitutions, constructions, references, instantiated
  * support, binders and opening (§2, §6–9).
  *
- *   reference      = VIEW(origin, substitution) | VAR(x)
+ *   reference      = TVIEW(node, environment) | VAR(x)
  *   specialization = reindex(reference, substitution)
  *
- * Nothing in this file evaluates. reindex traverses finite image records,
- * never the body of an origin.
+ * A construction is a node whose fields are constants closed over positional
+ * atoms (template.h); a template program's node interprets field recipes.
+ * Nothing in this file evaluates. reindex traverses finite environments,
+ * never a node's fields.
  */
 #ifndef CUBICAL_TERM_H
 #define CUBICAL_TERM_H
@@ -18,7 +20,7 @@ typedef enum {
     T_UNIVERSE = 1, T_PI, T_SIGMA, T_LAM, T_APP, T_PAIR, T_FST, T_SND,
     T_PATH, T_PLAM, T_PAPP, T_GLUE_TYPE, T_GLUE_INTRO, T_UNGLUE, T_COMP,
     T_SYSTEM, T_GLOBAL,
-    T_TCALL            /* §43 TRANSFORM_CALL: an internal instruction origin, not an object-language datatype */
+    T_TCALL            /* §43 TRANSFORM_CALL: an internal instruction construction, not an object-language datatype */
 } Tag;
 
 typedef enum { F_REF = 1, F_INTERVAL, F_FACE } FieldKind;
@@ -32,12 +34,12 @@ typedef struct {
 
 typedef struct {
     Sort sort;
-    uint64_t formal;      /* TermVarId or DimVarId bound in the origin */
+    uint64_t formal;      /* TermVarId or DimVarId bound by the construction (closed into its atom) */
     FieldIndex domain_field; /* term binders: field holding the domain type */
 } Binder;
 
 /* ---- universe levels (§59.1): explicit formation annotations ----
- * An origin record carries a packed pair of levels; LEVEL_NONE marks an
+ * A construction record carries a packed pair of levels; LEVEL_NONE marks an
  * annotation the source did not supply (the checker then infers it; the
  * fixed templates always supply theirs). */
 #define LEVEL_NONE  0xffffffffULL
@@ -47,7 +49,6 @@ uint64_t levels_first(uint64_t lv);
 uint64_t levels_second(uint64_t lv);
 uint64_t level_max(uint64_t a, uint64_t b);      /* LEVEL_NONE absorbs */
 uint64_t level_succ(uint64_t a);
-uint64_t origin_levels(OriginId c);
 /* set the levels for the next annotated construction on this thread (the
  * template layer uses it around its constructor nodes) */
 void term_levels_push(uint64_t m, uint64_t n);
@@ -63,12 +64,12 @@ static inline bool is_bound_id(uint64_t id) { return (id & BOUND_BIT) != 0; }
 static inline uint32_t bound_depth(uint64_t id) { return (uint32_t)((id & ~BOUND_BIT) >> 32) & 0x1fffffffu; }
 static inline uint32_t bound_slot(uint64_t id) { return (uint32_t)(id & 0xffffffffULL); }
 
-/* ---- origin binder atoms ----
- * An origin's binder k is the atom obound_id(k) inside that origin's fields:
- * origin_make closes the supplied formal into it, so alpha-equivalent
- * constructions are the same record. An atom never occurs in an origin's
- * free boundary (it is removed at its binder), so atoms of different origins
- * never meet in one map. Like scope locals, it has no declaration. */
+/* ---- construction atoms ----
+ * Inside a construction node's field constants, parameter k is the atom
+ * obound_id(k) and the local of binder s is obound_id(np + s). The atoms of a
+ * node are interpreted only against that node's environment (they never
+ * occur in a construction's free boundary), so atoms of different nodes never
+ * meet in one map. Like scope locals, an atom has no declaration. */
 #define OBOUND_BIT (1ULL << 60)
 static inline uint64_t obound_id(uint32_t slot) { return OBOUND_BIT | slot; }
 static inline bool is_obound_id(uint64_t id) { return (id & OBOUND_BIT) != 0 && (id & BOUND_BIT) == 0; }
@@ -101,45 +102,35 @@ MapId map_single_dim(DimVarId i, IntervalId r);
 IntervalId iv_reindex(IntervalId r, MapId m);
 FaceId fc_reindex(FaceId phi, MapId m);
 MapId compose(MapId sigma, MapId tau);   /* apply sigma then tau */
+MapId map_override(MapId sigma, Sort sort, uint64_t key, uint64_t image);   /* sigma without key's entry, then key ↦ image */
 
-/* ---- origins ---- */
-/* Declared required face (§2 `required_face` annotation): origins created
+/* ---- constructions ---- */
+/* Declared required face (§2 `required_face` annotation): constructions made
  * while a scope is pushed carry the scope's face as part of their record;
  * their required face is the structural one strengthened by it. Library
  * clauses use it for constructions that are only typed on a guard. */
 void term_require_push(FaceId phi);
 void term_require_pop(void);
-FaceId origin_declared_required(OriginId c);
-OriginId origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nfields,
-                     const Binder *binders, size_t nbinders);
-Tag origin_tag(OriginId c);
-uint64_t origin_payload(OriginId c);
-size_t origin_nfields(OriginId c);
-Field origin_field(OriginId c, FieldIndex k);
-size_t origin_nbinders(OriginId c);
-Binder origin_binder(OriginId c, BinderSlot s);
-VarSetId origin_ft(OriginId c);
-DimSetId origin_fd(OriginId c);
-FaceId origin_required(OriginId c);
+/* the construction (tag, payload, fields, binders) over its typed free
+ * boundary, instantiated at the boundary itself */
+RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nfields,
+                const Binder *binders, size_t nbinders);
 
 /* ---- references ---- */
 RefId ref_var(TermVarId x);
 bool ref_is_var(RefId t);
-/* TVIEW(template_node, environment) references (§49): the third reference
- * form; their operations live in the template layer */
+/* TVIEW(node, environment) references (§49): every non-variable reference;
+ * their operations live in the template layer */
 bool ref_is_tview(RefId t);
-Tag ref_tag(RefId t);                 /* the head tag of a non-variable reference (VIEW origin or TVIEW node) */
+Tag ref_tag(RefId t);                 /* the head tag of a non-variable reference */
 uint64_t ref_tnode(RefId t);
 uint64_t ref_tenv(RefId t);
 RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required);
 
 TermVarId ref_var_id(RefId t);
-OriginId ref_origin(RefId t);
-MapId ref_map(RefId t);
 DimSetId ref_support(RefId t);
 VarSetId ref_freevars(RefId t);
 FaceId ref_required(RefId t);
-RefId make_view(OriginId c, MapId sigma);
 RefId reindex(RefId t, MapId sigma);
 RefId reindex1(RefId t, TermVarId x, RefId a);
 RefId reindex_dim(RefId t, DimVarId i, IntervalId r);
@@ -160,8 +151,9 @@ uint64_t dim_var_provenance(DimVarId i);
 /* a nominal record: typed key words (kind,value pairs) */
 const uint64_t *nominal_key(uint64_t nid, size_t *npairs);
 
-/* the lifted map of section 8 for a binder of `owner`: sigma without the
- * formal's entry, then formal ↦ fresh. *fresh receives the minted name. */
+/* the lifted map of section 8 for a binder of a construction `owner`: its
+ * environment map, then the binder's atom ↦ fresh. *fresh receives the
+ * minted name. */
 MapId lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);
 
 typedef struct TermOpen { TermVarId x; RefId type; RefId body; } TermOpen;
@@ -188,9 +180,7 @@ typedef struct Head {
     uint64_t payload;
     uint64_t levels;      /* packed formation levels (§59.1) */
     RefId owner;
-    OriginId origin;      /* raw views */
-    MapId map;
-    uint64_t tnode, tenv; /* template views */
+    uint64_t tnode, tenv; /* the node and its environment */
     size_t n;
 } Head;
 
@@ -243,12 +233,13 @@ DimSetId global_dims(SymbolId s);
 const char *global_name(SymbolId s);
 size_t global_count(void);
 bool set_global_body(SymbolId s, RefId body);   /* false: the environment is frozen (admitted); open a new one first */
-RefId global_ref(SymbolId s);          /* VIEW(GLOBAL(s), identity) */
+RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the definition's own parameters */
+MapId global_args(RefId t);            /* a global reference's images of the definition's parameters */
 uint64_t global_env_version(void);     /* changes with every declaration / body registration */
 void env_control_init(void); void env_freeze(void); void env_unfreeze(void); bool env_is_frozen(void);   /* §57 R1: define_global returns 0 and set_global_body false while frozen */
-RefId unfold_global(RefId t);          /* reindex(definition body, map) */
+RefId unfold_global(RefId t);          /* reindex(definition body, global_args) */
 
-/* ---- constructors (identity views of fresh origins) ---- */
+/* ---- constructors (constructions at their own boundary) ---- */
 RefId mk_universe(uint64_t level);
 RefId mk_pi(TermVarId x, RefId A, RefId B);
 RefId mk_sigma(TermVarId x, RefId A, RefId B);

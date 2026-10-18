@@ -166,7 +166,8 @@ static void test_substitution(void) {
     RefId W = ref_var(w);
     CHECK(varset_contains(ref_freevars(W), x), "boundary of VAR(w) includes x through w's declaration type");
     RefId Wsub = reindex1(mk_fst(mk_pair(W, W)), x, a);
-    CHECK(Wsub != mk_fst(mk_pair(W, W)) && varset_contains(origin_ft(ref_origin(Wsub)), x), "x is in the complete typed boundary through w's declaration type, so the map is retained");
+    { bool has_a = false; TEnvId E = tenv_of(Wsub); for (size_t q = 0; q < tenv_size(E); q++) { uint64_t sl; TVal v; tenv_entry(E, q, &sl, &v); if (v.sort == PS_REF && v.id == a) has_a = true; }
+      CHECK(Wsub != mk_fst(mk_pair(W, W)) && has_a, "x is in the complete typed boundary through w's declaration type, so its image is retained"); }
     RefId Wsub2 = reindex1(mk_fst(mk_pair(ref_var(y), ref_var(y))), x, a);
     CHECK(Wsub2 == mk_fst(mk_pair(ref_var(y), ref_var(y))), "a variable whose type is independent of x drops the x entry");
 
@@ -546,9 +547,9 @@ int main(void) {
     test_comp_clauses();
     test_net();
     printf("\n%d passed, %d failed\n", n_pass, n_fail);
-    printf("tables: %zu intervals, %zu faces, %zu maps, %zu origins, %zu refs, %zu eval entries\n",
+    printf("tables: %zu intervals, %zu faces, %zu maps, %zu nodes, %zu refs, %zu eval entries\n",
            interner_count(&M.intervals), interner_count(&M.faces), interner_count(&M.maps),
-           interner_count(&M.origins), interner_count(&M.refs), eval_entry_count());
+           interner_count(&M.tnodes), interner_count(&M.refs), eval_entry_count());
     eval_free();
     machine_free();
     return n_fail ? 1 : 0;

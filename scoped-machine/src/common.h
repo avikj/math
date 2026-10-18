@@ -17,7 +17,6 @@
 typedef uint64_t TermVarId;
 typedef uint64_t DimVarId;
 typedef uint64_t ContextId;
-typedef uint64_t OriginId;
 typedef uint64_t RefId;
 typedef uint64_t MapId;
 typedef uint64_t IntervalId;

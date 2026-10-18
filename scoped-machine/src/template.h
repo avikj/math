@@ -64,4 +64,36 @@ size_t tnode_signature(RefId t, ParamSig *out, size_t max);
  * t is the root node of its definition */
 bool tnode_result(RefId t, RefId *type, uint64_t *level);
 
+/* ---- constructions (the one construction representation) ----
+ * Every non-variable reference is TVIEW(node, environment). A construction
+ * built by the term layer is a node whose field programs are constants
+ * closed over positional atoms: parameter k (the construction's typed free
+ * boundary, dimensions first, then term variables in dependency order) is
+ * obound_id(k), and the local of binder s is obound_id(np + s). Its
+ * environment gives every parameter's image. Alpha-equivalent constructions
+ * are therefore one node, and a construction is a template view.
+ * Record: [0, np, tag, payload_e, levels_e, nf, (kind, slot, CONST)*, nb,
+ *          (sort, domain_field, s)*, required_e, declared_e, (sort, type_e, guard_e)*np] */
+ExprId expr_const(PSort sort, uint64_t id);
+ExprId expr_level(uint64_t n);
+TNodeId tnode_construction_intern(const uint64_t *words, size_t n);
+RefId tnode_construction_view(TNodeId Q, const TVal *vals);        /* vals: the np parameter images */
+bool tnode_is_construction(TNodeId Q);
+size_t tnode_nparams(TNodeId Q);
+void tnode_param(TNodeId Q, size_t k, PSort *sort, RefId *closed_type, FaceId *closed_guard);
+uint64_t tnode_const_field(TNodeId Q, size_t k);                    /* closed constant of field k */
+FaceId tnode_const_required(TNodeId Q);
+FaceId tnode_const_declared(TNodeId Q);                              /* 0 = no annotation */
+uint64_t tnode_const_payload(TNodeId Q);
+uint64_t tnode_const_levels(TNodeId Q);
+bool tview_is_construction(RefId t);
+MapId tview_env_map(RefId t);                                        /* atoms ↦ images */
+FaceId tview_declared_required(RefId t);                             /* 0 = no annotation */
+MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);
+/* generic instance of a construction node: parameters at fresh names keyed
+ * by (node, slot), declared at the instantiated closed types; decls has
+ * tnode_nparams(Q) entries. *req receives the node's required face there. */
+RefId tnode_generic(TNodeId Q, CtxDecl *decls, FaceId *req);
+MapId tview_generic_map(RefId t);                                    /* generic names ↦ t's images */
+
 #endif

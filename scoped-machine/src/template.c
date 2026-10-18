@@ -42,7 +42,8 @@ FaceId template_kappa(void) {
 
 enum {
     X_PARAM = 1, X_LOCAL, X_LEVEL, X_LSUCC, X_LMAX, X_LEVELS, X_LFIRST, X_NODE, X_CALL, X_SCOPE, X_APPLY, X_APPLY_TYPE, X_APPLY_GUARD,
-    X_IV0, X_IV1, X_IVNOT, X_IVAND, X_IVOR, X_FCF, X_FCT, X_FCAND, X_FCOR, X_FCEND, X_FORALL
+    X_IV0, X_IV1, X_IVNOT, X_IVAND, X_IVOR, X_FCF, X_FCT, X_FCAND, X_FCOR, X_FCEND, X_FORALL,
+    X_CONST            /* [X_CONST, sort, id]: a construction's closed field constant */
 };
 
 static ExprId xi(size_t n, const uint64_t *w) { return interner_intern(&M.exprs, w, n, NULL); }
@@ -94,7 +95,7 @@ static void expr_free(ExprId e, size_t np, SlotSet *out) {
     switch (w[0]) {
     case X_PARAM: ss_set(out, w[1]); break;
     case X_LOCAL: ss_set(out, np + w[1]); break;
-    case X_LEVEL: case X_IV0: case X_IV1: case X_FCF: case X_FCT: break;
+    case X_LEVEL: case X_IV0: case X_IV1: case X_FCF: case X_FCT: case X_CONST: break;
     case X_LSUCC: case X_LFIRST: case X_IVNOT: case X_FORALL: case X_APPLY_TYPE: case X_APPLY_GUARD: expr_free(w[1], np, out); break;
     case X_LMAX: case X_LEVELS: case X_IVAND: case X_IVOR: case X_FCAND: case X_FCOR: expr_free(w[1], np, out); expr_free(w[2], np, out); break;
     case X_FCEND: expr_free(w[1], np, out); break;
@@ -277,8 +278,184 @@ static TVal interp(ExprId e, Env *env) {
     case X_FCOR: return tv_fc(fc_join(interp(w[1], env).id, interp(w[2], env).id));
     case X_FCEND: return tv_fc(fc_endpoint(interp(w[1], env).id, (int)w[2]));
     case X_FORALL: { TVal sv = interp(w[1], env); require(sv.sort == PS_SCOPE, "forall of a non-scope"); return tv_fc(forall_scope(sv.id)); }
+    case X_CONST: die("a construction constant interpreted outside its construction");
     default: die("bad expression kind %llu", (unsigned long long)w[0]);
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* constructions: nodes with closed constant fields (template.h)          */
+
+ExprId expr_const(PSort sort, uint64_t id) { uint64_t w[3] = { X_CONST, sort, id }; return xi(3, w); }
+ExprId expr_level(uint64_t n) { return x1(X_LEVEL, n); }
+TNodeId tnode_construction_intern(const uint64_t *words, size_t n) {
+    require(n >= 2 && words[0] == 0, "malformed construction record");
+    return interner_intern(&M.tnodes, words, n, NULL);
+}
+static bool node_construction(TNodeId Q) { return tnode_def(Q) == 0; }
+bool tnode_is_construction(TNodeId Q) { return node_construction(Q); }
+bool tview_is_construction(RefId t) { return node_construction(ref_tnode(t)); }
+size_t tnode_nparams(TNodeId Q) { require(node_construction(Q), "not a construction node"); size_t n; return (size_t)nw(Q, &n)[1]; }
+static const uint64_t *node_ptab(TNodeId Q) { const uint64_t *b = node_btab(Q); return b + 1 + 3 * b[0] + 2; }
+static ExprId node_declared_e(TNodeId Q) { const uint64_t *b = node_btab(Q); return b[2 + 3 * b[0]]; }
+static uint64_t xconst(ExprId e) { size_t n; const uint64_t *w = xw(e, &n); require(w[0] == X_CONST, "construction field is not a constant"); return w[2]; }
+static uint64_t xlevel(ExprId e) { size_t n; const uint64_t *w = xw(e, &n); require(w[0] == X_LEVEL, "construction annotation is not a constant"); return w[1]; }
+void tnode_param(TNodeId Q, size_t k, PSort *sort, RefId *closed_type, FaceId *closed_guard) {
+    require(k < tnode_nparams(Q), "construction parameter out of range");
+    const uint64_t *p = node_ptab(Q) + 3 * k;
+    *sort = (PSort)p[0];
+    *closed_type = p[1] ? xconst(p[1]) : 0;
+    *closed_guard = p[2] ? xconst(p[2]) : 0;
+}
+uint64_t tnode_const_field(TNodeId Q, size_t k) { FieldKind kd; BinderSlot bs; ExprId e; node_field(Q, k, &kd, &bs, &e); return xconst(e); }
+FaceId tnode_const_required(TNodeId Q) { return xconst(node_required_e(Q)); }
+FaceId tnode_const_declared(TNodeId Q) { ExprId e = node_declared_e(Q); return e ? xconst(e) : 0; }
+uint64_t tnode_const_payload(TNodeId Q) { ExprId e = node_payload_e(Q); return e ? xlevel(e) : 0; }
+uint64_t tnode_const_levels(TNodeId Q) { ExprId e = node_levels_e(Q); return e ? xlevel(e) : LEVELS_NONE; }
+
+/* the environment of a construction as a substitution of its atoms */
+static MapId cons_envmap(TEnvId E) {
+    uint64_t key[3] = { 0xE7A9, E, 0 }, out;
+    if (wordmap_get(&M.reindex_memo, key, 3, &out)) return out;
+    MapBuilder b; mapb_init(&b);
+    size_t n = tenv_size(E);
+    for (size_t k = 0; k < n; k++) {
+        uint64_t slot; TVal v; tenv_entry(E, k, &slot, &v);
+        if (v.sort == PS_REF) mapb_term(&b, obound_id((uint32_t)slot), v.id);
+        else if (v.sort == PS_INTERVAL) mapb_dim(&b, obound_id((uint32_t)slot), v.id);
+        else die("construction parameter of a non-substitutable sort");
+    }
+    out = mapb_finish(&b);
+    wordmap_put(&M.reindex_memo, key, 3, out);
+    return out;
+}
+MapId tview_env_map(RefId t) { require(tview_is_construction(t), "environment map of a template instance"); return cons_envmap(ref_tenv(t)); }
+FaceId tview_declared_required(RefId t) {
+    TNodeId Q = ref_tnode(t);
+    if (!node_construction(Q)) return 0;
+    FaceId d = tnode_const_declared(Q);
+    return d ? fc_reindex(d, cons_envmap(ref_tenv(t))) : 0;
+}
+
+/* a construction instance: support and free variables of its images; its
+ * required face is the node's instantiated one strengthened by each image's
+ * requirement, except where the parameter's declared guard already entails
+ * it (a partial formal is only used under its guard) */
+RefId tnode_construction_view(TNodeId Q, const TVal *vals) {
+    size_t np = tnode_nparams(Q);
+    uint64_t *slots = malloc((np ? np : 1) * sizeof(uint64_t)); require(slots, "out of memory");
+    for (size_t k = 0; k < np; k++) slots[k] = k;
+    TEnvId E = tenv_make(np, slots, vals);
+    free(slots);
+    DimSetId sup = dimset_make(NULL, 0); VarSetId fv = varset_make(NULL, 0);
+    for (size_t k = 0; k < np; k++) acc_tval(vals[k], &sup, &fv);
+    MapId m = cons_envmap(E);
+    FaceId req = fc_reindex(tnode_const_required(Q), m);
+    for (size_t k = 0; k < np; k++) {
+        if (vals[k].sort != PS_REF) continue;
+        PSort so; RefId ty; FaceId g; tnode_param(Q, k, &so, &ty, &g);
+        FaceId guard = g ? fc_reindex(g, m) : fc_true();
+        FaceId r = ref_required(vals[k].id);
+        if (!fc_entails(guard, r)) req = fc_meet(req, r);
+    }
+    return ref_intern_tview(Q, E, sup, fv, req);
+}
+static void cons_vals(TEnvId E, size_t np, TVal *vals) {
+    require(tenv_size(E) == np, "construction environment arity");
+    for (size_t k = 0; k < np; k++) { uint64_t slot; tenv_entry(E, k, &slot, &vals[k]); require(slot == k, "construction environment order"); }
+}
+
+static TermOpen cons_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
+    TNodeId Q = ref_tnode(owner);
+    Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
+    require(sort == S_TERM, "sort mismatch: expected term binder");
+    FieldKind kd; BinderSlot bs; ExprId de, be;
+    node_field(Q, domf, &kd, &bs, &de);
+    node_field(Q, body_field, &kd, &bs, &be);
+    require(bs == slot && kd == F_REF, "field is not under this binder");
+    MapId m = cons_envmap(ref_tenv(owner));
+    TermOpen o;
+    o.type = reindex(xconst(de), m);
+    o.x = binder_term_var(owner, slot, o.type);
+    o.body = reindex(xconst(be), map_override(m, S_TERM, obound_id((uint32_t)(tnode_nparams(Q) + lslot)), ref_var(o.x)));
+    return o;
+}
+static DimOpen cons_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
+    TNodeId Q = ref_tnode(owner);
+    Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
+    require(sort == S_DIM, "sort mismatch: expected dimension binder");
+    FieldKind kd; BinderSlot bs; ExprId be;
+    node_field(Q, body_field, &kd, &bs, &be);
+    require(bs == slot && kd == F_REF, "field is not under this binder");
+    MapId m = cons_envmap(ref_tenv(owner));
+    DimOpen o;
+    o.j = binder_dim_var(owner, slot);
+    o.body = reindex(xconst(be), map_override(m, S_DIM, obound_id((uint32_t)(tnode_nparams(Q) + lslot)), iv_var(o.j)));
+    return o;
+}
+MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh) {
+    TNodeId Q = ref_tnode(owner);
+    require(node_construction(Q), "lifted map of a template instance");
+    Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
+    MapId m = cons_envmap(ref_tenv(owner));
+    uint64_t atom = obound_id((uint32_t)(tnode_nparams(Q) + lslot));
+    if (sort == S_TERM) {
+        FieldKind kd; BinderSlot bs; ExprId de; node_field(Q, domf, &kd, &bs, &de);
+        TermVarId x = binder_term_var(owner, slot, reindex(xconst(de), m));
+        if (fresh) *fresh = x;
+        return map_override(m, S_TERM, atom, ref_var(x));
+    }
+    DimVarId j = binder_dim_var(owner, slot);
+    if (fresh) *fresh = j;
+    return map_override(m, S_DIM, atom, iv_var(j));
+}
+
+/* generic instance: parameter k at a fresh name keyed by (node, k), its type
+ * the closed type instantiated by the earlier fresh names */
+RefId tnode_generic(TNodeId Q, CtxDecl *decls, FaceId *req) {
+    size_t np = tnode_nparams(Q);
+    TVal *vals = malloc((np ? np : 1) * sizeof(TVal)); require(vals, "out of memory");
+    MapBuilder b; mapb_init(&b);
+    MapId m = map_identity();
+    for (size_t k = 0; k < np; k++) {
+        PSort so; RefId ty; FaceId g; tnode_param(Q, k, &so, &ty, &g);
+        KeyWord key[3] = { { KW_CONST, 9300 }, { KW_CONST, Q }, { KW_CONST, k } };
+        if (so == PS_INTERVAL) {
+            DimVarId j = fresh_dim_keyed(key, 3);
+            vals[k] = tv_iv(iv_var(j));
+            decls[k].sort = S_DIM; decls[k].id = j; decls[k].type = 0;
+            mapb_dim(&b, obound_id((uint32_t)k), iv_var(j));
+        } else {
+            RefId type = reindex(ty, m);
+            FaceId guard = g ? fc_reindex(g, m) : fc_true();
+            TermVarId x = fresh_term_keyed_req(key, 3, type, guard);
+            vals[k] = tv_ref(ref_var(x));
+            decls[k].sort = S_TERM; decls[k].id = x; decls[k].type = type;
+            mapb_term(&b, obound_id((uint32_t)k), ref_var(x));
+        }
+        /* the map of the names so far (a builder is consumed by finishing) */
+        MapBuilder c; mapb_init(&c);
+        for (size_t q = 0; q < b.t.n; q += 2) mapb_term(&c, b.t.w[q], b.t.w[q + 1]);
+        for (size_t q = 0; q < b.d.n; q += 2) mapb_dim(&c, b.d.w[q], b.d.w[q + 1]);
+        m = mapb_finish(&c);
+    }
+    words_free(&b.t); words_free(&b.d);
+    if (req) *req = fc_reindex(tnode_const_required(Q), m);
+    RefId t = tnode_construction_view(Q, vals);
+    free(vals);
+    return t;
+}
+MapId tview_generic_map(RefId t) {
+    TNodeId Q = ref_tnode(t);
+    size_t np = tnode_nparams(Q);
+    CtxDecl *d = malloc((np ? np : 1) * sizeof(CtxDecl)); TVal *vals = malloc((np ? np : 1) * sizeof(TVal));
+    require(d && vals, "out of memory");
+    (void)tnode_generic(Q, d, NULL);
+    cons_vals(ref_tenv(t), np, vals);
+    MapBuilder b; mapb_init(&b);
+    for (size_t k = 0; k < np; k++) { if (d[k].sort == S_DIM) mapb_dim(&b, d[k].id, vals[k].id); else mapb_term(&b, d[k].id, vals[k].id); }
+    free(d); free(vals);
+    return mapb_finish(&b);
 }
 
 /* ------------------------------------------------------------------ */
@@ -289,6 +466,7 @@ void tview_open(RefId t, Head *h) {
     h->tnode = Q; h->tenv = E;
     h->tag = tnode_tag(Q);
     h->n = tnode_nfields(Q);
+    if (node_construction(Q)) { h->payload = tnode_const_payload(Q); h->levels = tnode_const_levels(Q); return; }
     if (!node_payload_e(Q) && !node_levels_e(Q)) { h->payload = 0; h->levels = LEVELS_NONE; return; }
     Env env; env_from_tenv(&env, Q, E);
     h->payload = node_payload_e(Q) ? interp(node_payload_e(Q), &env).id : 0;
@@ -301,12 +479,18 @@ HField tview_field(const Head *h, size_t k) {
     FieldKind kind; BinderSlot bs; ExprId fe; node_field(Q, k, &kind, &bs, &fe);
     x.kind = kind; x.index = (FieldIndex)k; x.slot = bs;
     if (bs != NO_SLOT) { x.is_binder = true; x.sort = tnode_binder_sort(Q, bs); x.id = 0; return x; }
+    if (node_construction(Q)) {
+        MapId m = cons_envmap(h->tenv); uint64_t c = xconst(fe);
+        x.id = kind == F_REF ? reindex(c, m) : kind == F_INTERVAL ? iv_reindex(c, m) : fc_reindex(c, m);
+        return x;
+    }
     Env env; env_from_tenv(&env, Q, h->tenv);
     x.id = interp(fe, &env).id;
     return x;
 }
 
 TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
+    if (tview_is_construction(owner)) return cons_term_binder(owner, slot, body_field);
     TNodeId Q = ref_tnode(owner); Env env; env_from_tenv(&env, Q, ref_tenv(owner));
     Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
     require(sort == S_TERM, "sort mismatch: expected term binder");
@@ -323,6 +507,7 @@ TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) 
     return o;
 }
 DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
+    if (tview_is_construction(owner)) return cons_dim_binder(owner, slot, body_field);
     TNodeId Q = ref_tnode(owner); Env env; env_from_tenv(&env, Q, ref_tenv(owner));
     Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
     require(sort == S_DIM, "sort mismatch: expected dimension binder");
@@ -359,17 +544,43 @@ TEnvId tenv_reindex(TEnvId E, MapId sigma) {
     for (size_t k = 0; k < n; k++) { tenv_entry(E, k, &slots[k], &vals[k]); vals[k] = reindex_tval(vals[k], sigma); }
     TEnvId out = tenv_make(n, slots, vals); free(slots); free(vals); return out;
 }
+static RefId cons_map_vals(RefId t, TVal (*f)(TVal, const void *), const void *ctx) {
+    TNodeId Q = ref_tnode(t); size_t np = tnode_nparams(Q);
+    TVal *vals = malloc((np ? np : 1) * sizeof(TVal)); require(vals, "out of memory");
+    cons_vals(ref_tenv(t), np, vals);
+    for (size_t k = 0; k < np; k++) vals[k] = f(vals[k], ctx);
+    RefId out = tnode_construction_view(Q, vals);
+    free(vals);
+    return out;
+}
+static TVal cons_reindex_val(TVal v, const void *ctx) { return reindex_tval(v, *(const MapId *)ctx); }
+typedef struct { const Trav *tv; unsigned depth; } TravCtx;
+static TVal cons_trav_val(TVal v, const void *ctx) {
+    const TravCtx *c = ctx;
+    switch (v.sort) {
+    case PS_REF: v.id = trav_ref(v.id, c->tv, c->depth); break;
+    case PS_INTERVAL: v.id = trav_iv(v.id, c->tv, c->depth); break;
+    default: die("construction parameter of a non-substitutable sort");
+    }
+    return v;
+}
 RefId tenv_instantiate(TNodeId Q, TEnvId E) {
+    if (node_construction(Q)) {
+        size_t np = tnode_nparams(Q); TVal *vals = malloc((np ? np : 1) * sizeof(TVal)); require(vals, "out of memory");
+        cons_vals(E, np, vals); RefId out = tnode_construction_view(Q, vals); free(vals); return out;
+    }
     Env env; env_from_tenv(&env, Q, E);
     return make_view_env(Q, &env);
 }
 RefId tview_reindex(RefId t, MapId sigma) {
+    if (tview_is_construction(t)) return cons_map_vals(t, cons_reindex_val, &sigma);
     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
     size_t n = env.def->nparams + env.def->nlocals;
     for (size_t k = 0; k < n; k++) if (env.has[k]) env.val[k] = reindex_tval(env.val[k], sigma);
     return make_view_env(Q, &env);
 }
 RefId tview_traverse(RefId t, const Trav *tv, unsigned depth) {
+    if (tview_is_construction(t)) { TravCtx c = { tv, depth }; return cons_map_vals(t, cons_trav_val, &c); }
     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
     size_t n = env.def->nparams + env.def->nlocals;
     for (size_t k = 0; k < n; k++) if (env.has[k]) {
@@ -386,6 +597,7 @@ RefId tview_traverse(RefId t, const Trav *tv, unsigned depth) {
 }
 
 size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
+    if (tview_is_construction(t)) return 0;          /* a construction has no template boundary */
     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
     size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
     size_t n = 0;
@@ -416,6 +628,7 @@ size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
     return n;
 }
 bool tnode_result(RefId t, RefId *type, uint64_t *level) {
+    if (tview_is_construction(t)) return false;
     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
     if (!env.def->rtype || env.def->root_node != Q) return false;
     *type = interp(env.def->rtype, &env).id;

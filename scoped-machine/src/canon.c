@@ -49,7 +49,9 @@ static size_t g_nominal(Canon *c, uint64_t nid);
 /* bound atoms (§50): exact (depth, slot) labels */
 static size_t g_bound(Canon *c, GKind kind, uint64_t id) {
     size_t idx; if (lookup(c, kind, id, &idx)) return idx;
-    char lab[64]; snprintf(lab, sizeof lab, "%s %u/%u", kind == G_INPUT_VAR ? "bx" : "bi", (unsigned)bound_depth(id), (unsigned)bound_slot(id));
+    char lab[64];
+    if (is_obound_id(id)) snprintf(lab, sizeof lab, "%s %u", kind == G_INPUT_VAR ? "ox" : "oi", (unsigned)bound_slot(id));   /* a construction atom */
+    else snprintf(lab, sizeof lab, "%s %u/%u", kind == G_INPUT_VAR ? "bx" : "bi", (unsigned)bound_depth(id), (unsigned)bound_slot(id));
     idx = node_new(c, kind, lab); remember(c, kind, id, idx); return idx;
 }
 static size_t g_var(Canon *c, TermVarId x) {
@@ -137,13 +139,53 @@ static size_t g_scope(Canon *c, ScopeId S) {
     add_ordered(c, idx, g_face(c, scope_guard(S)));
     return idx;
 }
-/* a template view (§49): the definition name and node index label the fixed
- * node; the environment's (slot, value) entries follow in slot order */
+/* a construction node: tag, payload, levels, binder sorts and field shapes
+ * label it; its declared face, closed field constants and closed parameter
+ * declarations follow (atoms are exact labels) */
+static size_t g_cnode(Canon *c, TNodeId Q) {
+    size_t idx; if (lookup(c, G_NOMINAL, Q | (1ULL << 61), &idx)) return idx;
+    Tag tag = tnode_tag(Q);
+    char full[512]; size_t sl;
+    uint64_t payload = tnode_const_payload(Q);
+    if (tag == T_GLOBAL) sl = (size_t)snprintf(full, sizeof full, "W %s:%s", tag_name(tag), global_name((SymbolId)payload));
+    else sl = (size_t)snprintf(full, sizeof full, "W %s:%llu", tag_name(tag), (unsigned long long)payload);
+    { uint64_t lv = tnode_const_levels(Q);        /* §59.1: the immutable level annotation is part of the record */
+      if (lv == LEVELS_NONE) sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=-");
+      else sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=%llu/%llu", (unsigned long long)levels_first(lv), (unsigned long long)levels_second(lv)); }
+    size_t nb = tnode_nbinders(Q), nf = tnode_nfields(Q), np = tnode_nparams(Q);
+    for (size_t k = 0; k < nb && sl < 400; k++) sl += (size_t)snprintf(full + sl, sizeof full - sl, " b%d", (int)tnode_binder_sort(Q, (BinderSlot)k));
+    for (size_t k = 0; k < nf && sl < 400; k++) { BinderSlot bs = tnode_field_slot(Q, k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " f%d@%d", (int)tnode_field_kind(Q, k), bs == NO_SLOT ? -1 : (int)bs); }
+    sl += (size_t)snprintf(full + sl, sizeof full - sl, " np=%zu", np);
+    idx = node_new(c, G_REF, full); remember(c, G_NOMINAL, Q | (1ULL << 61), idx);
+    { FaceId declared = tnode_const_declared(Q);        /* §2 annotation is part of the record */
+      add_ordered(c, idx, declared ? g_face(c, declared) : node_new(c, G_CONST, "noreq")); }
+    add_ordered(c, idx, g_face(c, tnode_const_required(Q)));
+    for (size_t k = 0; k < nf; k++) {
+        uint64_t id = tnode_const_field(Q, k); FieldKind kd = tnode_field_kind(Q, k);
+        add_ordered(c, idx, kd == F_REF ? g_ref(c, id) : kd == F_INTERVAL ? g_interval(c, id) : g_face(c, id));
+    }
+    for (size_t k = 0; k < np; k++) {
+        PSort so; RefId ty; FaceId g; tnode_param(Q, k, &so, &ty, &g);
+        size_t e = node_new(c, G_ENTRY, so == PS_INTERVAL ? "Pd" : "Pt");
+        if (so == PS_REF) { add_ordered(c, e, g_ref(c, ty)); add_ordered(c, e, g_face(c, g)); }
+        add_ordered(c, idx, e);
+    }
+    return idx;
+}
+/* a template or construction view (§49): the node — for a template the
+ * definition name and node index, for a construction its structure — then
+ * the environment's (slot, value) entries in slot order */
 static size_t g_tview(Canon *c, RefId t) {
     size_t idx;
     TNodeId Q = tnode_of(t); TEnvId E = tenv_of(t);
-    char lab[128]; snprintf(lab, sizeof lab, "T %s:%llu %s", tdef_name(tnode_def(Q)), (unsigned long long)tnode_index(Q), tag_name(tnode_tag(Q)));
-    idx = node_new(c, G_REF, lab); remember(c, G_REF, t, idx);
+    if (tnode_is_construction(Q)) {
+        size_t nd = g_cnode(c, Q);
+        idx = node_new(c, G_REF, "C"); remember(c, G_REF, t, idx);
+        add_ordered(c, idx, nd);
+    } else {
+        char lab[128]; snprintf(lab, sizeof lab, "T %s:%llu %s", tdef_name(tnode_def(Q)), (unsigned long long)tnode_index(Q), tag_name(tnode_tag(Q)));
+        idx = node_new(c, G_REF, lab); remember(c, G_REF, t, idx);
+    }
     size_t n = tenv_size(E);
     for (size_t k = 0; k < n; k++) {
         uint64_t slot; TVal v; tenv_entry(E, k, &slot, &v);
@@ -170,42 +212,7 @@ static size_t g_ref(Canon *c, RefId t) {
         add_ordered(c, idx, g_var(c, ref_var_id(t)));
         return idx;
     }
-    if (ref_is_tview(t)) return g_tview(c, t);
-    OriginId o = ref_origin(t); MapId m = ref_map(t);
-    Tag tag = origin_tag(o);
-    char full[512]; size_t sl;
-    if (tag == T_GLOBAL) sl = (size_t)snprintf(full, sizeof full, "W %s:%s", tag_name(tag), ((Def *)chunked_at(&M.defs, origin_payload(o) - 1))->name);
-    else sl = (size_t)snprintf(full, sizeof full, "W %s:%llu", tag_name(tag), (unsigned long long)origin_payload(o));
-    { uint64_t lv = origin_levels(o);        /* §59.1: the immutable level annotation is part of the record */
-      if (lv == LEVELS_NONE) sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=-");
-      else sl += (size_t)snprintf(full + sl, sizeof full - sl, " lv=%llu/%llu", (unsigned long long)levels_first(lv), (unsigned long long)levels_second(lv)); }
-    size_t nb = origin_nbinders(o), nf = origin_nfields(o);
-    for (size_t k = 0; k < nb && sl < 400; k++) { Binder b = origin_binder(o, (BinderSlot)k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " b%d/%u", (int)b.sort, b.domain_field == NO_FIELD ? 99999u : (unsigned)b.domain_field); }
-    for (size_t k = 0; k < nf && sl < 400; k++) { Field f = origin_field(o, (FieldIndex)k); sl += (size_t)snprintf(full + sl, sizeof full - sl, " f%d@%d", (int)f.kind, f.slot == NO_SLOT ? -1 : (int)f.slot); }
-    idx = node_new(c, G_REF, full);
-    remember(c, G_REF, t, idx);
-    { FaceId declared = origin_declared_required(o);        /* §2 annotation is part of the record */
-      size_t ann = declared ? g_face(c, declared) : node_new(c, G_CONST, "noreq");
-      add_ordered(c, idx, ann); }
-    for (size_t k = 0; k < nb; k++) {
-        Binder b = origin_binder(o, (BinderSlot)k);
-        add_ordered(c, idx, b.sort == S_TERM ? g_var(c, b.formal) : g_dim(c, b.formal));
-    }
-    for (size_t k = 0; k < nf; k++) {
-        Field f = origin_field(o, (FieldIndex)k);
-        size_t ch = f.kind == F_REF ? g_ref(c, f.id) : f.kind == F_INTERVAL ? g_interval(c, f.id) : g_face(c, f.id);
-        add_ordered(c, idx, ch);
-    }
-    size_t nt = map_n_terms(m), nd = map_n_dims(m);
-    for (size_t k = 0; k < nt; k++) {
-        TermVarId x; RefId im; map_term_entry(m, k, &x, &im);
-        size_t e = node_new(c, G_ENTRY, "Et"); add_ordered(c, e, g_var(c, x)); add_ordered(c, e, g_ref(c, im)); add_unordered(c, idx, e);
-    }
-    for (size_t k = 0; k < nd; k++) {
-        DimVarId i; IntervalId im; map_dim_entry(m, k, &i, &im);
-        size_t e = node_new(c, G_ENTRY, "Ed"); add_ordered(c, e, g_dim(c, i)); add_ordered(c, e, g_interval(c, im)); add_unordered(c, idx, e);
-    }
-    return idx;
+    return g_tview(c, t);
 }
 
 void canon_add_result(Canon *c, const char *label, const EvalResult *r) {

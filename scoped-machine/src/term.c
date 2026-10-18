@@ -1,4 +1,5 @@
 #include "term.h"
+#include "template.h"
 
 const char *tag_name(Tag t) {
     switch (t) {
@@ -12,7 +13,6 @@ const char *tag_name(Tag t) {
     return "?";
 }
 
-#define OSIDE(id) ((OriginSide *)chunked_at(&M.origin_side, (id) - 1))
 #define RSIDE(id) ((RefSide *)chunked_at(&M.ref_side, (id) - 1))
 #define TDECL(x) ((TermDecl *)chunked_at(&M.term_decl, (x) - 1))
 #define DPROV(i) ((uint64_t *)chunked_at(&M.dim_prov, (i) - 1))
@@ -162,30 +162,13 @@ MapId compose(MapId sigma, MapId tau) {
     return out;
 }
 
-/* ================= origins ================= */
-/* record: [tag, payload, nfields, (kind,slot,id)*, nbinders, (sort,formal,domain_field)*] */
-
-static const uint64_t *origin_words(OriginId c, size_t *n) { return interner_get(&M.origins, c, n); }
-Tag origin_tag(OriginId c) { size_t n; return (Tag)origin_words(c, &n)[0]; }
-uint64_t origin_payload(OriginId c) { size_t n; return origin_words(c, &n)[1]; }
-size_t origin_nfields(OriginId c) { size_t n; return (size_t)origin_words(c, &n)[2]; }
-Field origin_field(OriginId c, FieldIndex k) {
-    size_t n; const uint64_t *w = origin_words(c, &n);
-    require(k < w[2], "field index out of range");
-    Field f = { (FieldKind)w[3 + 3 * k], (BinderSlot)w[4 + 3 * k], w[5 + 3 * k] };
-    return f;
-}
-size_t origin_nbinders(OriginId c) { size_t n; const uint64_t *w = origin_words(c, &n); return (size_t)w[3 + 3 * w[2]]; }
-Binder origin_binder(OriginId c, BinderSlot s) {
-    size_t n; const uint64_t *w = origin_words(c, &n);
-    const uint64_t *b = w + 3 + 3 * w[2];
-    require(s < b[0], "binder slot out of range");
-    Binder r = { (Sort)b[1 + 3 * s], b[2 + 3 * s], (FieldIndex)b[3 + 3 * s] };
-    return r;
-}
-VarSetId origin_ft(OriginId c) { return OSIDE(c)->ft; }
-DimSetId origin_fd(OriginId c) { return OSIDE(c)->fd; }
-FaceId origin_required(OriginId c) { return OSIDE(c)->required; }
+/* ================= constructions ================= */
+/* A construction is a node of the one constructor-program representation
+ * (template.h): its fields are constants closed over positional atoms —
+ * parameter k of its typed free boundary is obound_id(k), the local of
+ * binder s is obound_id(np + s) — and its reference is TVIEW(node, images).
+ * Alpha-equivalent constructions are one node; a construction and a
+ * template view are one reference form. */
 
 static __thread FaceId tl_req_scope[16]; static __thread size_t tl_req_depth;
 static __thread uint64_t tl_levels = LEVELS_NONE;   /* formation levels of the origin being built (§59.1) */
@@ -196,14 +179,6 @@ void term_require_push(FaceId phi) {
 }
 void term_require_pop(void) { require(tl_req_depth > 0, "required-face scope underflow"); tl_req_depth--; }
 static FaceId current_declared_required(void) { return tl_req_depth ? tl_req_scope[tl_req_depth - 1] : 0; }
-FaceId origin_declared_required(OriginId c) {
-    size_t n; const uint64_t *w = interner_get(&M.origins, c, &n);
-    return w[n - 2];
-}
-uint64_t origin_levels(OriginId c) {
-    size_t n; const uint64_t *w = interner_get(&M.origins, c, &n);
-    return w[n - 1];
-}
 /* §51.2 / §59.1: a level is a number below LEVEL_NONE or the sentinel itself;
  * anything else is a host failure, never a wrapped level */
 static void level_check(uint64_t l) { require(l <= LEVEL_NONE, "universe level out of the representable range"); }
@@ -213,8 +188,16 @@ uint64_t levels_second(uint64_t lv) { return lv >> 32; }
 uint64_t level_max(uint64_t a, uint64_t b) { if (a == LEVEL_NONE || b == LEVEL_NONE) return LEVEL_NONE; return a > b ? a : b; }
 uint64_t level_succ(uint64_t a) { if (a == LEVEL_NONE) return LEVEL_NONE; require(a < LEVEL_NONE - 1, "universe level overflow"); return a + 1; }
 
-static OriginId origin_intern(Tag tag, uint64_t payload, const Field *fields, size_t nf,
-                              const Binder *binders, size_t nb, VarSetId ft, DimSetId fd, FaceId req) {
+
+static PSort psort_of(FieldKind k) { return k == F_REF ? PS_REF : k == F_INTERVAL ? PS_INTERVAL : PS_FACE; }
+static uint64_t reindex_kind(FieldKind k, uint64_t id, MapId m) {
+    return k == F_REF ? reindex(id, m) : k == F_INTERVAL ? iv_reindex(id, m) : fc_reindex(id, m);
+}
+
+/* the node of (fields, binders) over the boundary (ft, fd) with required
+ * face req, instantiated at the boundary itself */
+static RefId construction_build(Tag tag, uint64_t payload, const Field *fields, size_t nf,
+                                const Binder *binders, size_t nb, VarSetId ft, DimSetId fd, FaceId req) {
     FaceId declared = current_declared_required();
     if (declared) {
         req = fc_meet(req, declared);
@@ -222,45 +205,55 @@ static OriginId origin_intern(Tag tag, uint64_t payload, const Field *fields, si
         fd = dimset_union(fd, dimset_make(dd.w, dd.n));
         words_free(&dd);
     }
+    size_t nd, nt;
+    const uint64_t *ds = dimset_get(fd, &nd), *xs = varset_get(ft, &nt);
+    size_t np = nd + nt;
+    /* dimensions first, then term variables in declaration order, which is
+     * dependency order: a declared type only mentions earlier names */
+    MapBuilder pb; mapb_init(&pb);
+    for (size_t k = 0; k < nd; k++) { require(!is_local_atom(ds[k]), "a construction's boundary contains a bound atom"); mapb_dim(&pb, ds[k], iv_var(obound_id((uint32_t)k))); }
+    for (size_t k = 0; k < nt; k++) { require(!is_local_atom(xs[k]), "a construction's boundary contains a bound atom"); mapb_term(&pb, xs[k], ref_var(obound_id((uint32_t)(nd + k)))); }
+    MapId phi = mapb_finish(&pb);
     Words w; words_init(&w);
-    words_push(&w, tag); words_push(&w, payload); words_push(&w, nf);
-    for (size_t k = 0; k < nf; k++) { words_push(&w, fields[k].kind); words_push(&w, fields[k].slot); words_push(&w, fields[k].id); }
+    words_push(&w, 0); words_push(&w, np); words_push(&w, tag);
+    words_push(&w, payload ? expr_level(payload) : 0);
+    words_push(&w, tl_levels != LEVELS_NONE ? expr_level(tl_levels) : 0);
+    words_push(&w, nf);
+    for (size_t q = 0; q < nf; q++) {
+        MapId m = phi;
+        if (fields[q].slot != NO_SLOT) {
+            require(fields[q].slot < nb, "field refers to a missing binder");
+            const Binder *bd = &binders[fields[q].slot];
+            uint64_t atom = obound_id((uint32_t)(np + fields[q].slot));
+            m = bd->sort == S_TERM ? map_override(phi, S_TERM, bd->formal, ref_var(atom)) : map_override(phi, S_DIM, bd->formal, iv_var(atom));
+        }
+        words_push(&w, fields[q].kind); words_push(&w, fields[q].slot);
+        words_push(&w, expr_const(psort_of(fields[q].kind), reindex_kind(fields[q].kind, fields[q].id, m)));
+    }
     words_push(&w, nb);
-    for (size_t k = 0; k < nb; k++) { words_push(&w, binders[k].sort); words_push(&w, binders[k].formal); words_push(&w, binders[k].domain_field); }
-    words_push(&w, declared);                 /* annotation is part of the record */
-    words_push(&w, tl_levels);                /* formation levels (§59.1), part of the record */
-    bool created;
-    term_lock();
-    OriginId id = interner_intern(&M.origins, w.w, w.n, &created);
+    for (size_t s = 0; s < nb; s++) { words_push(&w, binders[s].sort); words_push(&w, binders[s].domain_field); words_push(&w, s); }
+    words_push(&w, expr_const(PS_FACE, fc_reindex(req, phi)));
+    words_push(&w, declared ? expr_const(PS_FACE, fc_reindex(declared, phi)) : 0);
+    TVal *vals = malloc((np ? np : 1) * sizeof(TVal)); require(vals, "out of memory");
+    for (size_t k = 0; k < nd; k++) { words_push(&w, PS_INTERVAL); words_push(&w, 0); words_push(&w, 0); vals[k].sort = PS_INTERVAL; vals[k].id = iv_var(ds[k]); }
+    for (size_t k = 0; k < nt; k++) {
+        words_push(&w, PS_REF);
+        words_push(&w, expr_const(PS_REF, reindex(TDECL(xs[k])->type, phi)));
+        words_push(&w, expr_const(PS_FACE, fc_reindex(TDECL(xs[k])->required, phi)));
+        vals[nd + k].sort = PS_REF; vals[nd + k].id = ref_var(xs[k]);
+    }
+    TNodeId Q = tnode_construction_intern(w.w, w.n);
     words_free(&w);
-    if (created) { OriginSide *o = OSIDE(id); o->ft = ft; o->fd = fd; o->required = req; }
-    term_unlock();
-    return id;
+    RefId t = tnode_construction_view(Q, vals);
+    free(vals);
+    return t;
 }
 
-OriginId origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nf,
-                     const Binder *binders, size_t nb) {
+RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nf,
+                const Binder *binders, size_t nb) {
     /* dependency-closed free boundary: union of field boundaries (which are
      * already closed through declaration types), minus formals bound at the
      * field's binder. */
-    /* close each binder's formal into its atom in the fields under it */
-    Field *cf = malloc((nf ? nf : 1) * sizeof(Field));
-    Binder *cb = malloc((nb ? nb : 1) * sizeof(Binder));
-    require(cf && cb, "out of memory");
-    if (nf) memcpy(cf, fields, nf * sizeof(Field));
-    for (size_t k = 0; k < nb; k++) {
-        cb[k] = binders[k];
-        uint64_t atom = obound_id((uint32_t)k);
-        MapId close = binders[k].sort == S_TERM ? map_single_term(binders[k].formal, ref_var(atom)) : map_single_dim(binders[k].formal, iv_var(atom));
-        for (size_t q = 0; q < nf; q++) {
-            if (cf[q].slot != (BinderSlot)k) continue;
-            if (cf[q].kind == F_REF) cf[q].id = reindex(cf[q].id, close);
-            else if (cf[q].kind == F_INTERVAL) cf[q].id = iv_reindex(cf[q].id, close);
-            else cf[q].id = fc_reindex(cf[q].id, close);
-        }
-        cb[k].formal = atom;
-    }
-    fields = cf; binders = cb;
     VarSetId ft = varset_make(NULL, 0);
     DimSetId fd = dimset_make(NULL, 0);
     FaceId req = fc_true();
@@ -305,13 +298,11 @@ OriginId origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nf,
             req = fc_meet(req, rk);
         }
     }
-    OriginId id = origin_intern(tag, payload, fields, nf, binders, nb, ft, fd, req);
-    free(cf); free(cb);
-    return id;
+    return construction_build(tag, payload, fields, nf, binders, nb, ft, fd, req);
 }
 
 /* ================= references ================= */
-/* record: [1, x] for VAR ; [2, origin, map] for VIEW */
+/* record: [1, x] for VAR ; [3, node, environment] for TVIEW */
 
 static void ref_side_set(RefId id, DimSetId support, VarSetId fv, FaceId req) {
     RefSide *r = RSIDE(id); r->support = support; r->freevars = fv; r->required = req;
@@ -355,7 +346,7 @@ RefId ref_var(TermVarId x) {
 }
 
 bool ref_is_var(RefId t) { size_t n; return interner_get(&M.refs, t, &n)[0] == 1; }
-bool ref_is_tview(RefId t) { size_t n; return interner_get(&M.refs, t, &n)[0] == 3; }
+bool ref_is_tview(RefId t) { return !ref_is_var(t); }
 uint64_t ref_tnode(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 3, "not a TVIEW"); return w[1]; }
 uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 3, "not a TVIEW"); return w[2]; }
 /* intern a TVIEW record with its computed side data (template layer) */
@@ -369,74 +360,17 @@ RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId f
     return id;
 }
 TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
-Tag ref_tag(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] != 1, "ref_tag of a variable"); return w[0] == 3 ? tnode_tag(w[1]) : origin_tag(w[1]); }
-OriginId ref_origin(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 2, "not a VIEW"); return w[1]; }
-MapId ref_map(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 2, "not a VIEW"); return w[2]; }
+Tag ref_tag(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] != 1, "ref_tag of a variable"); return tnode_tag(w[1]); }
 DimSetId ref_support(RefId t) { return RSIDE(t)->support; }
 VarSetId ref_freevars(RefId t) { return RSIDE(t)->freevars; }
 FaceId ref_required(RefId t) { return RSIDE(t)->required; }
-
-RefId make_view(OriginId c, MapId sigma) {
-    /* restrict keys to the complete typed free boundary of c, drop identity
-     * entries (mapb_finish), intern */
-    VarSetId ft = origin_ft(c);
-    DimSetId fd = origin_fd(c);
-    MapBuilder b; mapb_init(&b);
-    size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
-    for (size_t k = 0; k < nt; k++) {
-        TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im);
-        if (varset_contains(ft, x)) mapb_term(&b, x, im);
-    }
-    for (size_t k = 0; k < nd; k++) {
-        DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im);
-        if (dimset_contains(fd, i)) mapb_dim(&b, i, im);
-    }
-    MapId m = mapb_finish(&b);
-    uint64_t w[3] = { 2, c, m };
-    bool created;
-    term_lock();
-    RefId id = interner_intern(&M.refs, w, 3, &created);
-    if (created) {
-        /* instantiated support and free variables (§7) */
-        VarSetId fv = varset_make(NULL, 0);
-        DimSetId sup = dimset_make(NULL, 0);
-        FaceId req = fc_reindex(origin_required(c), m);
-        size_t n; const uint64_t *xs = varset_get(ft, &n);
-        for (size_t k = 0; k < n; k++) {
-            RefId im = map_term_image(m, xs[k]);
-            fv = varset_union(fv, ref_freevars(im));
-            sup = dimset_union(sup, ref_support(im));
-            /* a formal declared partial on phi_x is only used under phi_x
-             * inside the origin, so its image need only be available there:
-             * an image available on all of phi_x[m] adds no requirement */
-            FaceId guard = fc_reindex(TDECL(xs[k])->required, m);
-            if (!fc_entails(guard, ref_required(im))) req = fc_meet(req, ref_required(im));
-        }
-        const uint64_t *ds = dimset_get(fd, &n);
-        Words d; words_init(&d);
-        for (size_t k = 0; k < n; k++) iv_dims(map_dim_image(m, ds[k]), &d);
-        sup = dimset_union(sup, dimset_make(d.w, d.n));
-        words_free(&d);
-        ref_side_set(id, sup, fv, req);
-    }
-    term_unlock();
-    return id;
-}
 
 RefId reindex(RefId t, MapId sigma) {
     if (map_is_identity(sigma)) return t;
     if (ref_is_var(t)) return map_term_image(sigma, ref_var_id(t));
     uint64_t key[2] = { t, sigma }, out;
     if (wordmap_get(&M.reindex_memo, key, 2, &out)) return out;
-    if (ref_is_tview(t)) { out = tview_reindex(t, sigma); wordmap_put(&M.reindex_memo, key, 2, out); return out; }
-    OriginId c = ref_origin(t);
-    MapId tau = ref_map(t);
-    MapBuilder b; mapb_init(&b);
-    size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
-    for (size_t k = 0; k < n; k++) mapb_term(&b, xs[k], reindex(map_term_image(tau, xs[k]), sigma));
-    const uint64_t *ds = dimset_get(origin_fd(c), &n);
-    for (size_t k = 0; k < n; k++) mapb_dim(&b, ds[k], iv_reindex(map_dim_image(tau, ds[k]), sigma));
-    out = make_view(c, mapb_finish(&b));
+    out = tview_reindex(t, sigma);
     wordmap_put(&M.reindex_memo, key, 2, out);
     return out;
 }
@@ -511,8 +445,8 @@ DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
     return r;
 }
 
-/* lifted = sigma with the formal's entry removed, then formal ↦ fresh */
-static MapId lift_map(MapId sigma, Sort sort, uint64_t formal, uint64_t fresh_image) {
+/* sigma with key's entry removed, then key ↦ image */
+MapId map_override(MapId sigma, Sort sort, uint64_t formal, uint64_t fresh_image) {
     MapBuilder b; mapb_init(&b);
     size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
     for (size_t k = 0; k < nt; k++) {
@@ -530,50 +464,18 @@ static MapId lift_map(MapId sigma, Sort sort, uint64_t formal, uint64_t fresh_im
 }
 
 MapId lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh) {
-    require(!ref_is_var(owner) && !ref_is_tview(owner), "lifted map of a variable or template view");
-    OriginId c = ref_origin(owner);
-    MapId sigma = ref_map(owner);
-    Binder b = origin_binder(c, slot);
-    if (b.sort == S_TERM) {
-        TermVarId x = binder_term_var(owner, slot, reindex(origin_field(c, b.domain_field).id, sigma));
-        if (fresh) *fresh = x;
-        return lift_map(sigma, S_TERM, b.formal, ref_var(x));
-    }
-    DimVarId j = binder_dim_var(owner, slot);
-    if (fresh) *fresh = j;
-    return lift_map(sigma, S_DIM, b.formal, iv_var(j));
+    require(!ref_is_var(owner), "lifted map of a variable");
+    return tview_lifted_map(owner, slot, fresh);
 }
 
 TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     require(!ref_is_var(owner), "binder of a variable");
-    if (ref_is_tview(owner)) return tview_term_binder(owner, slot, body_field);
-    OriginId c = ref_origin(owner);
-    MapId sigma = ref_map(owner);
-    Binder b = origin_binder(c, slot);
-    require(b.sort == S_TERM, "sort mismatch: expected term binder");
-    Field dom = origin_field(c, b.domain_field);
-    Field body = origin_field(c, body_field);
-    require(body.slot == slot && body.kind == F_REF, "field is not under this binder");
-    TermOpen o;
-    o.type = reindex(dom.id, sigma);
-    o.x = binder_term_var(owner, slot, o.type);
-    o.body = reindex(body.id, lift_map(sigma, S_TERM, b.formal, ref_var(o.x)));
-    return o;
+    return tview_term_binder(owner, slot, body_field);
 }
 
 DimOpen resolve_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     require(!ref_is_var(owner), "binder of a variable");
-    if (ref_is_tview(owner)) return tview_dim_binder(owner, slot, body_field);
-    OriginId c = ref_origin(owner);
-    MapId sigma = ref_map(owner);
-    Binder b = origin_binder(c, slot);
-    require(b.sort == S_DIM, "sort mismatch: expected dimension binder");
-    Field body = origin_field(c, body_field);
-    require(body.slot == slot && body.kind == F_REF, "field is not under this binder");
-    DimOpen o;
-    o.j = binder_dim_var(owner, slot);
-    o.body = reindex(body.id, lift_map(sigma, S_DIM, b.formal, iv_var(o.j)));
-    return o;
+    return tview_dim_binder(owner, slot, body_field);
 }
 
 RefId apply_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field, RefId a) {
@@ -591,32 +493,12 @@ void open_ref(RefId t, Head *h) {
     memset(h, 0, sizeof *h);
     h->owner = t;
     if (ref_is_var(t)) { h->is_var = true; h->var = ref_var_id(t); return; }
-    if (ref_is_tview(t)) { tview_open(t, h); return; }
-    OriginId c = ref_origin(t);
-    h->origin = c; h->map = ref_map(t);
-    h->tag = origin_tag(c);
-    h->payload = origin_payload(c);
-    h->levels = origin_levels(c);
-    h->n = origin_nfields(c);
+    tview_open(t, h);
 }
 
 HField head_field(const Head *h, size_t k) {
     require(!h->is_var && k < h->n, "head field out of range");
-    if (h->tnode) return tview_field(h, k);
-    HField x; memset(&x, 0, sizeof x);
-    Field f = origin_field(h->origin, (FieldIndex)k);
-    x.kind = f.kind; x.index = (FieldIndex)k;
-    if (f.slot != NO_SLOT) {
-        x.is_binder = true; x.slot = f.slot; x.sort = origin_binder(h->origin, f.slot).sort; x.id = f.id;
-    } else {
-        x.slot = NO_SLOT;
-        switch (f.kind) {
-        case F_REF: x.id = reindex(f.id, h->map); break;
-        case F_INTERVAL: x.id = iv_reindex(f.id, h->map); break;
-        case F_FACE: x.id = fc_reindex(f.id, h->map); break;
-        }
-    }
-    return x;
+    return tview_field(h, k);
 }
 
 void head_free(Head *h) { h->n = 0; }
@@ -743,24 +625,42 @@ size_t global_count(void) { return M.n_defs; }
 
 RefId global_ref(SymbolId s) {
     require(s >= 1 && s <= M.n_defs, "unknown symbol");
-    OriginId c = origin_intern(T_GLOBAL, s, NULL, 0, NULL, 0, DEF(s)->params, DEF(s)->dims, fc_true());
-    return make_view(c, map_identity());
+    return construction_build(T_GLOBAL, s, NULL, 0, NULL, 0, DEF(s)->params, DEF(s)->dims, fc_true());
+}
+
+/* a global reference's environment as a substitution of the definition's
+ * parameters (its node's parameters are the definition's dimensions, then
+ * its parameters, in the construction order) */
+MapId global_args(RefId t) {
+    require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL, "global arguments of a non-global");
+    Head h; open_ref(t, &h);
+    SymbolId s = (SymbolId)h.payload;
+    size_t nd, nt;
+    const uint64_t *ds = dimset_get(DEF(s)->dims, &nd), *xs = varset_get(DEF(s)->params, &nt);
+    TEnvId E = ref_tenv(t);
+    require(tenv_size(E) == nd + nt, "global reference with a strengthened boundary");
+    MapBuilder b; mapb_init(&b);
+    for (size_t k = 0; k < nd + nt; k++) {
+        uint64_t slot; TVal v; tenv_entry(E, k, &slot, &v);
+        if (k < nd) mapb_dim(&b, ds[k], v.id); else mapb_term(&b, xs[k - nd], v.id);
+    }
+    return mapb_finish(&b);
 }
 
 RefId unfold_global(RefId t) {
-    require(!ref_is_var(t) && !ref_is_tview(t), "unfold of a variable");
-    OriginId c = ref_origin(t);
-    require(origin_tag(c) == T_GLOBAL, "unfold of a non-global");
-    SymbolId s = origin_payload(c);
+    require(!ref_is_var(t), "unfold of a variable");
+    require(ref_tag(t) == T_GLOBAL, "unfold of a non-global");
+    Head h; open_ref(t, &h);
+    SymbolId s = (SymbolId)h.payload;
     RefId body = __atomic_load_n(&DEF(s)->body, __ATOMIC_ACQUIRE);
     require(body != 0, "global %s has no body", DEF(s)->name);
-    return reindex(body, ref_map(t));
+    return reindex(body, global_args(t));
 }
 
 /* ================= constructors ================= */
 
 static RefId view0(Tag tag, uint64_t payload, const Field *f, size_t nf, const Binder *b, size_t nb) {
-    return make_view(origin_make(tag, payload, f, nf, b, nb), map_identity());
+    return construct(tag, payload, f, nf, b, nb);
 }
 
 RefId mk_universe(uint64_t level) { require(level < LEVEL_NONE, "universe level out of the representable range"); return view0(T_UNIVERSE, level, NULL, 0, NULL, 0); }
@@ -897,11 +797,12 @@ static void pr(RefId t, FILE *f, int depth) {
     if (h.tag == T_UNIVERSE) { fprintf(f, "U%llu", (unsigned long long)h.payload); head_free(&h); return; }
     if (h.tag == T_GLOBAL) {
         fprintf(f, "%s", DEF(h.payload)->name);
-        if (!map_is_identity(h.map)) {
+        MapId args = global_args(t);
+        if (!map_is_identity(args)) {
             fprintf(f, "[");
-            size_t nt = map_n_terms(h.map), nd = map_n_dims(h.map);
-            for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(h.map, k, &x, &im); fprintf(f, "%sx%llu:=", k ? "," : "", (unsigned long long)x); pr(im, f, depth - 1); }
-            for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(h.map, k, &i, &im); fprintf(f, "%sd%llu:=", (k || nt) ? "," : "", (unsigned long long)i); iv_print(im, f); }
+            size_t nt = map_n_terms(args), nd = map_n_dims(args);
+            for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(args, k, &x, &im); fprintf(f, "%sx%llu:=", k ? "," : "", (unsigned long long)x); pr(im, f, depth - 1); }
+            for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(args, k, &i, &im); fprintf(f, "%sd%llu:=", (k || nt) ? "," : "", (unsigned long long)i); iv_print(im, f); }
             fprintf(f, "]");
         }
         head_free(&h); return;

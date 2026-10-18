@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
                 TermVarId z=declare_term(A,fc_true());
                 RefId p=mk_pi_lv(UINT64_C(1)<<32,0,z,A,A);
                 q=infer(G,fc_true(),p);
-                printf("Pi with domain level 2^32: stored level=%llu, %s; type: ",(unsigned long long)levels_first(origin_levels(ref_origin(p))),check_status_name(q.st));
+                printf("Pi with domain level 2^32: stored level=%llu, %s; type: ",(unsigned long long)({Head hp; open_ref(p,&hp); levels_first(hp.levels);}),check_status_name(q.st));
             }
             if(q.type) print_ref(q.type,stdout);
             printf("\n");

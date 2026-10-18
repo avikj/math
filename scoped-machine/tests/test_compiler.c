@@ -206,7 +206,9 @@ int main(void) {
       head_free(&h);
       { RefId C = diagram_canonical(D2);
         CHECK(convert_term(G, fc_true(), C, m2(g, fx, fx), X) == CV_EQUAL, "C ≡ g(f x)(f x)");
-        CHECK(!ref_is_var(C) && map_n_terms(ref_map(C)) == 1 && map_term_image(ref_map(C), vu) == fx, "C = (g u u)[u ↦ f x]: one shared image, the DAG is not expanded"); }
+        size_t nfx = 0, nother = 0; TEnvId E = tenv_of(C);
+        for (size_t q = 0; q < tenv_size(E); q++) { uint64_t sl; TVal v; tenv_entry(E, q, &sl, &v); if (v.sort != PS_REF) continue; if (v.id == fx) nfx++; else if (!ref_is_var(v.id)) nother++; }
+        CHECK(!ref_is_var(C) && nfx == 1 && nother == 0, "C = (g u u)[u ↦ f x]: one shared image, the DAG is not expanded"); }
       /* shared predecessor: one block, identical repeated images in the collapse family */
       TermVarId vu2 = tv(X); TermVarId vs2 = tv(mk_path_const(0, X, fx, ref_var(vu2)));
       DiagNode one = { 1, vu2, vs2, X, 0, fx };
