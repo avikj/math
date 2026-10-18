@@ -21,8 +21,6 @@ void machine_init(void) {
     interner_init(&M.scopes); interner_init(&M.exprs); interner_init(&M.tnodes); interner_init(&M.tenvs); interner_init(&M.tdefs); interner_init(&M.keys);
     wordmap_init(&M.trav_memo); wordmap_init(&M.interp_memo);
     chunked_init(&M.scope_side, sizeof(ScopeSide)); chunked_init(&M.tnode_side, sizeof(TNodeSide));
-    wordmap_init(&M.reindex_memo);
-    wordmap_init(&M.compose_memo);
     chunked_init(&M.ref_side, sizeof(RefSide));
     chunked_init(&M.term_decl, sizeof(TermDecl));
     chunked_init(&M.dim_prov, sizeof(uint64_t));
@@ -48,8 +46,6 @@ void machine_free(void) {
     interner_free(&M.scopes); interner_free(&M.exprs); interner_free(&M.tnodes); interner_free(&M.tenvs); interner_free(&M.tdefs); interner_free(&M.keys);
     wordmap_free(&M.trav_memo); wordmap_free(&M.interp_memo);
     chunked_free(&M.scope_side); chunked_free(&M.tnode_side);
-    wordmap_free(&M.reindex_memo);
-    wordmap_free(&M.compose_memo);
     chunked_free(&M.ref_side);
     chunked_free(&M.term_decl);
     chunked_free(&M.dim_prov);

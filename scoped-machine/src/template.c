@@ -144,10 +144,10 @@ static TVal tv_ref(RefId r) { TVal v = { PS_REF, r }; return v; }
 static TVal tv_iv(IntervalId r) { TVal v = { PS_INTERVAL, r }; return v; }
 static TVal tv_fc(FaceId f) { TVal v = { PS_FACE, f }; return v; }
 
-/* TEnv record: [n, (slot, sort, id)*] */
+/* TEnv record: [(slot, sort, id)*] in slot order */
 static const uint64_t *tenv_words(TEnvId E, size_t *n) { return interner_get(&M.tenvs, E, n); }
-size_t tenv_size(TEnvId E) { size_t n; return (size_t)tenv_words(E, &n)[0]; }
-void tenv_entry(TEnvId E, size_t k, uint64_t *slot, TVal *v) { size_t n; const uint64_t *w = tenv_words(E, &n); *slot = w[1 + 3 * k]; v->sort = (PSort)w[2 + 3 * k]; v->id = w[3 + 3 * k]; }
+size_t tenv_size(TEnvId E) { size_t n; (void)tenv_words(E, &n); return n / 3; }
+void tenv_entry(TEnvId E, size_t k, uint64_t *slot, TVal *v) { size_t n; const uint64_t *w = tenv_words(E, &n); *slot = w[3 * k]; v->sort = (PSort)w[3 * k + 1]; v->id = w[3 * k + 2]; }
 TNodeId tnode_of(RefId t) { return ref_tnode(t); }
 TEnvId tenv_of(RefId t) { return ref_tenv(t); }
 
@@ -172,16 +172,14 @@ static void acc_tval(TVal v, DimSetId *sup, VarSetId *fv) {
  * slots, intern, publish key and metadata together */
 static RefId make_view_env(TNodeId Q, const Env *env) {
     size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
-    Words w; words_init(&w); words_push(&w, 0);
-    size_t kept = 0;
+    Words w; words_init(&w);
     DimSetId sup = dimset_make(NULL, 0); VarSetId fv = varset_make(NULL, 0);
     for (size_t k = 0; k < nf; k++) {
         size_t slot = (size_t)fl[k];
         require(env->has[slot], "template view: a required slot has no value (%s slot %zu)", env->def->name, slot);
-        words_push(&w, slot); words_push(&w, env->val[slot].sort); words_push(&w, env->val[slot].id); kept++;
+        words_push(&w, slot); words_push(&w, env->val[slot].sort); words_push(&w, env->val[slot].id);
         acc_tval(env->val[slot], &sup, &fv);
     }
-    w.w[0] = kept;
     TEnvId E = interner_intern(&M.tenvs, w.w, w.n, NULL);
     words_free(&w);
     /* required face: the instantiated declared recipe */
@@ -313,22 +311,6 @@ FaceId tnode_const_declared(TNodeId Q) { ExprId e = node_declared_e(Q); return e
 uint64_t tnode_const_payload(TNodeId Q) { ExprId e = node_payload_e(Q); return e ? xlevel(e) : 0; }
 uint64_t tnode_const_levels(TNodeId Q) { ExprId e = node_levels_e(Q); return e ? xlevel(e) : LEVELS_NONE; }
 
-/* the environment of a construction as a substitution of its atoms */
-static MapId cons_envmap(TEnvId E) {
-    uint64_t key[3] = { 0xE7A9, E, 0 }, out;
-    if (wordmap_get(&M.reindex_memo, key, 3, &out)) return out;
-    MapBuilder b; mapb_init(&b);
-    size_t n = tenv_size(E);
-    for (size_t k = 0; k < n; k++) {
-        uint64_t slot; TVal v; tenv_entry(E, k, &slot, &v);
-        if (v.sort == PS_REF) mapb_term(&b, obound_id((uint32_t)slot), v.id);
-        else if (v.sort == PS_INTERVAL) mapb_dim(&b, obound_id((uint32_t)slot), v.id);
-        else die("construction parameter of a non-substitutable sort");
-    }
-    out = mapb_finish(&b);
-    wordmap_put(&M.reindex_memo, key, 3, out);
-    return out;
-}
 MapId tview_env_map(RefId t) { require(tview_is_construction(t), "environment map of a template instance"); return cons_envmap(ref_tenv(t)); }
 FaceId tview_declared_required(RefId t) {
     TNodeId Q = ref_tnode(t);
@@ -337,29 +319,6 @@ FaceId tview_declared_required(RefId t) {
     return d ? fc_reindex(d, cons_envmap(ref_tenv(t))) : 0;
 }
 
-/* a construction instance: support and free variables of its images; its
- * required face is the node's instantiated one strengthened by each image's
- * requirement, except where the parameter's declared guard already entails
- * it (a partial formal is only used under its guard) */
-RefId tnode_construction_view(TNodeId Q, const TVal *vals) {
-    size_t np = tnode_nparams(Q);
-    uint64_t *slots = malloc((np ? np : 1) * sizeof(uint64_t)); require(slots, "out of memory");
-    for (size_t k = 0; k < np; k++) slots[k] = k;
-    TEnvId E = tenv_make(np, slots, vals);
-    free(slots);
-    DimSetId sup = dimset_make(NULL, 0); VarSetId fv = varset_make(NULL, 0);
-    for (size_t k = 0; k < np; k++) acc_tval(vals[k], &sup, &fv);
-    MapId m = cons_envmap(E);
-    FaceId req = fc_reindex(tnode_const_required(Q), m);
-    for (size_t k = 0; k < np; k++) {
-        if (vals[k].sort != PS_REF) continue;
-        PSort so; RefId ty; FaceId g; tnode_param(Q, k, &so, &ty, &g);
-        FaceId guard = g ? fc_reindex(g, m) : fc_true();
-        FaceId r = ref_required(vals[k].id);
-        if (!fc_entails(guard, r)) req = fc_meet(req, r);
-    }
-    return ref_intern_tview(Q, E, sup, fv, req);
-}
 static void cons_vals(TEnvId E, size_t np, TVal *vals) {
     require(tenv_size(E) == np, "construction environment arity");
     for (size_t k = 0; k < np; k++) { uint64_t slot; tenv_entry(E, k, &slot, &vals[k]); require(slot == k, "construction environment order"); }
@@ -533,7 +492,7 @@ static TVal reindex_tval(TVal v, MapId sigma) {
     return v;
 }
 TEnvId tenv_make(size_t n, const uint64_t *slots, const TVal *vals) {
-    Words w; words_init(&w); words_push(&w, n);
+    Words w; words_init(&w);
     for (size_t k = 0; k < n; k++) { words_push(&w, slots[k]); words_push(&w, vals[k].sort); words_push(&w, vals[k].id); }
     TEnvId E = interner_intern(&M.tenvs, w.w, w.n, NULL); words_free(&w); return E;
 }
@@ -553,7 +512,6 @@ static RefId cons_map_vals(RefId t, TVal (*f)(TVal, const void *), const void *c
     free(vals);
     return out;
 }
-static TVal cons_reindex_val(TVal v, const void *ctx) { return reindex_tval(v, *(const MapId *)ctx); }
 typedef struct { const Trav *tv; unsigned depth; } TravCtx;
 static TVal cons_trav_val(TVal v, const void *ctx) {
     const TravCtx *c = ctx;
@@ -573,7 +531,7 @@ RefId tenv_instantiate(TNodeId Q, TEnvId E) {
     return make_view_env(Q, &env);
 }
 RefId tview_reindex(RefId t, MapId sigma) {
-    if (tview_is_construction(t)) return cons_map_vals(t, cons_reindex_val, &sigma);
+    require(!tview_is_construction(t), "a construction is reindexed by the substitution family");
     TNodeId Q = ref_tnode(t); Env env; env_from_tenv(&env, Q, ref_tenv(t));
     size_t n = env.def->nparams + env.def->nlocals;
     for (size_t k = 0; k < n; k++) if (env.has[k]) env.val[k] = reindex_tval(env.val[k], sigma);

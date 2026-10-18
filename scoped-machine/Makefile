@@ -2,10 +2,10 @@ CC      ?= gcc
 CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
+SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
 OBJ := $(SRC:.c=.o)
 
-all: build/protocol build/records build/dnf build/alpha build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation
+all: build/protocol build/records build/dnf build/subst build/alpha build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation
 
 build/tests: $(OBJ) tests/test_main.o
 	@mkdir -p build
@@ -15,6 +15,10 @@ build/tests: $(OBJ) tests/test_main.o
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 build/alpha: $(OBJ) tests/test_alpha.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -o $@ $^
+
+build/subst: $(OBJ) tests/test_subst.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 
@@ -106,6 +110,7 @@ test: all
 	./build/protocol
 	./build/records
 	./build/dnf
+	./build/subst
 	./build/alpha
 	./build/check
 	./build/match
@@ -137,7 +142,7 @@ test: all
 	./build/review-nested-scope
 	./build/demo-speculation
 
-TSAN_TESTS := test_protocol test_records test_dnf test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope
+TSAN_TESTS := test_protocol test_records test_dnf test_subst test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan

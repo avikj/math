@@ -87,6 +87,7 @@ FaceId tnode_const_declared(TNodeId Q);                              /* 0 = no a
 uint64_t tnode_const_payload(TNodeId Q);
 uint64_t tnode_const_levels(TNodeId Q);
 bool tview_is_construction(RefId t);
+MapId cons_envmap(TEnvId E);                                         /* a construction environment as a substitution of its atoms (subst.c) */
 MapId tview_env_map(RefId t);                                        /* atoms ↦ images */
 FaceId tview_declared_required(RefId t);                             /* 0 = no annotation */
 MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);

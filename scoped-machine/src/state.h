@@ -34,8 +34,6 @@ typedef struct {
     WordMap interp_memo;  /* template expression results per environment */
     Chunked scope_side;   /* ScopeSide per ScopeId-1 */
     Chunked tnode_side;   /* TNodeSide per node-1: computed free-slot sets */
-    WordMap reindex_memo; /* (RefId, MapId) → RefId */
-    WordMap compose_memo; /* (MapId, MapId) → MapId */
 
     /* side data, non-moving; an element is written before its id is
      * published and never changes afterwards */

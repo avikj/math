@@ -45,7 +45,10 @@ RefId term_var_type(TermVarId x) { require(x >= 1 && x <= n_terms_now(), "undecl
 FaceId term_var_required(TermVarId x) { require(x >= 1 && x <= n_terms_now(), "undeclared term variable"); return TDECL(x)->required; }
 
 /* ================= raw maps ================= */
-/* record: [nt, (x,ref)*, nd, (i,intv)*], keys sorted, no identity entries */
+/* record: [(x,ref)*, (i,intv)*, nt] — keys sorted within each section, no
+ * identity entries; the count is the last word, so a map is written in one
+ * pass and both sections are reached in constant time. The operations on
+ * maps (image lookup, override, composition) are families (subst.c). */
 
 void mapb_init(MapBuilder *b) { words_init(&b->t); words_init(&b->d); }
 void mapb_term(MapBuilder *b, TermVarId x, RefId image) { words_push(&b->t, x); words_push(&b->t, image); }
@@ -61,7 +64,6 @@ MapId mapb_finish(MapBuilder *b) {
     if (nt > 1) qsort(b->t.w, nt, 2 * sizeof(uint64_t), cmp_pair);
     if (nd > 1) qsort(b->d.w, nd, 2 * sizeof(uint64_t), cmp_pair);
     Words w; words_init(&w);
-    words_push(&w, 0);
     size_t kept = 0;
     for (size_t k = 0; k < nt; k++) {
         uint64_t x = b->t.w[2 * k], img = b->t.w[2 * k + 1];
@@ -72,10 +74,6 @@ MapId mapb_finish(MapBuilder *b) {
         if (img == ref_var(x)) continue;   /* identity entry */
         words_push(&w, x); words_push(&w, img); kept++;
     }
-    w.w[0] = kept;
-    size_t ndpos = w.n;
-    words_push(&w, 0);
-    kept = 0;
     for (size_t k = 0; k < nd; k++) {
         uint64_t i = b->d.w[2 * k], img = b->d.w[2 * k + 1];
         if (k > 0 && b->d.w[2 * (k - 1)] == i) {
@@ -83,9 +81,9 @@ MapId mapb_finish(MapBuilder *b) {
             continue;
         }
         if (img == iv_var(i)) continue;
-        words_push(&w, i); words_push(&w, img); kept++;
+        words_push(&w, i); words_push(&w, img);
     }
-    w.w[ndpos] = kept;
+    words_push(&w, kept);
     MapId id = interner_intern(&M.maps, w.w, w.n, NULL);
     words_free(&w);
     words_free(&b->t); words_free(&b->d);
@@ -93,74 +91,22 @@ MapId mapb_finish(MapBuilder *b) {
 }
 
 MapId map_identity(void) { MapBuilder b; mapb_init(&b); return mapb_finish(&b); }
-bool map_is_identity(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return w[0] == 0 && w[1] == 0; }
-size_t map_n_terms(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (size_t)w[0]; }
-size_t map_n_dims(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (size_t)w[1 + 2 * w[0]]; }
+bool map_is_identity(MapId m) { size_t n; (void)interner_get(&M.maps, m, &n); return n == 1; }
+size_t map_n_terms(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (size_t)w[n - 1]; }
+size_t map_n_dims(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (n - 1 - 2 * (size_t)w[n - 1]) / 2; }
 void map_term_entry(MapId m, size_t k, TermVarId *x, RefId *img) {
     size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
-    require(k < w[0], "map entry out of range");
-    *x = w[1 + 2 * k]; *img = w[2 + 2 * k];
+    require(k < w[n - 1], "map entry out of range");
+    *x = w[2 * k]; *img = w[2 * k + 1];
 }
 void map_dim_entry(MapId m, size_t k, DimVarId *i, IntervalId *img) {
     size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
-    const uint64_t *d = w + 1 + 2 * w[0];
-    require(k < d[0], "map entry out of range");
-    *i = d[1 + 2 * k]; *img = d[2 + 2 * k];
-}
-
-static const uint64_t *pairs_find(const uint64_t *p, size_t n, uint64_t key) {
-    size_t lo = 0, hi = n;
-    while (lo < hi) {
-        size_t mid = (lo + hi) / 2;
-        if (p[2 * mid] == key) return p + 2 * mid;
-        if (p[2 * mid] < key) lo = mid + 1; else hi = mid;
-    }
-    return NULL;
-}
-
-RefId map_term_image(MapId m, TermVarId x) {
-    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
-    const uint64_t *e = pairs_find(w + 1, (size_t)w[0], x);
-    return e ? e[1] : ref_var(x);
-}
-IntervalId map_dim_image(MapId m, DimVarId i) {
-    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
-    const uint64_t *d = w + 1 + 2 * w[0];
-    const uint64_t *e = pairs_find(d + 1, (size_t)d[0], i);
-    return e ? e[1] : iv_var(i);
+    size_t nt = (size_t)w[n - 1];
+    require(k < (n - 1 - 2 * nt) / 2, "map entry out of range");
+    *i = w[2 * nt + 2 * k]; *img = w[2 * nt + 2 * k + 1];
 }
 MapId map_single_term(TermVarId x, RefId a) { MapBuilder b; mapb_init(&b); mapb_term(&b, x, a); return mapb_finish(&b); }
 MapId map_single_dim(DimVarId i, IntervalId r) { MapBuilder b; mapb_init(&b); mapb_dim(&b, i, r); return mapb_finish(&b); }
-
-static IntervalId map_img_cb(DimVarId i, void *ctx) { return map_dim_image(*(MapId *)ctx, i); }
-IntervalId iv_reindex(IntervalId r, MapId m) { return map_is_identity(m) ? r : iv_substitute(r, map_img_cb, &m); }
-FaceId fc_reindex(FaceId phi, MapId m) { return map_is_identity(m) ? phi : fc_substitute(phi, map_img_cb, &m); }
-
-MapId compose(MapId sigma, MapId tau) {
-    if (map_is_identity(sigma)) return tau;
-    if (map_is_identity(tau)) return sigma;
-    uint64_t key[2] = { sigma, tau }, out;
-    if (wordmap_get(&M.compose_memo, key, 2, &out)) return out;
-    MapBuilder b; mapb_init(&b);
-    /* keys of both maps; tau acts on sigma's images, sigma is identity on
-     * keys present only in tau */
-    Words keys; words_init(&keys);
-    size_t ns = map_n_terms(sigma), nt = map_n_terms(tau);
-    for (size_t k = 0; k < ns; k++) { TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); words_push(&keys, x); }
-    for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(tau, k, &x, &im); words_push(&keys, x); }
-    keys.n = sort_unique_u64(keys.w, keys.n);
-    for (size_t k = 0; k < keys.n; k++) mapb_term(&b, keys.w[k], reindex(map_term_image(sigma, keys.w[k]), tau));
-    keys.n = 0;
-    ns = map_n_dims(sigma); nt = map_n_dims(tau);
-    for (size_t k = 0; k < ns; k++) { DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im); words_push(&keys, i); }
-    for (size_t k = 0; k < nt; k++) { DimVarId i; IntervalId im; map_dim_entry(tau, k, &i, &im); words_push(&keys, i); }
-    keys.n = sort_unique_u64(keys.w, keys.n);
-    for (size_t k = 0; k < keys.n; k++) mapb_dim(&b, keys.w[k], iv_reindex(map_dim_image(sigma, keys.w[k]), tau));
-    words_free(&keys);
-    out = mapb_finish(&b);
-    wordmap_put(&M.compose_memo, key, 2, out);
-    return out;
-}
 
 /* ================= constructions ================= */
 /* A construction is a node of the one constructor-program representation
@@ -365,16 +311,6 @@ DimSetId ref_support(RefId t) { return RSIDE(t)->support; }
 VarSetId ref_freevars(RefId t) { return RSIDE(t)->freevars; }
 FaceId ref_required(RefId t) { return RSIDE(t)->required; }
 
-RefId reindex(RefId t, MapId sigma) {
-    if (map_is_identity(sigma)) return t;
-    if (ref_is_var(t)) return map_term_image(sigma, ref_var_id(t));
-    uint64_t key[2] = { t, sigma }, out;
-    if (wordmap_get(&M.reindex_memo, key, 2, &out)) return out;
-    out = tview_reindex(t, sigma);
-    wordmap_put(&M.reindex_memo, key, 2, out);
-    return out;
-}
-
 RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_term(x, a)); }
 RefId reindex_dim(RefId t, DimVarId i, IntervalId r) { return reindex(t, map_single_dim(i, r)); }
 
@@ -443,24 +379,6 @@ DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
     DimVarId r = (DimVarId)*NVAL(id);
     term_unlock();
     return r;
-}
-
-/* sigma with key's entry removed, then key ↦ image */
-MapId map_override(MapId sigma, Sort sort, uint64_t formal, uint64_t fresh_image) {
-    MapBuilder b; mapb_init(&b);
-    size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
-    for (size_t k = 0; k < nt; k++) {
-        TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im);
-        if (sort == S_TERM && x == formal) continue;
-        mapb_term(&b, x, im);
-    }
-    for (size_t k = 0; k < nd; k++) {
-        DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im);
-        if (sort == S_DIM && i == formal) continue;
-        mapb_dim(&b, i, im);
-    }
-    if (sort == S_TERM) mapb_term(&b, formal, fresh_image); else mapb_dim(&b, formal, fresh_image);
-    return mapb_finish(&b);
 }
 
 MapId lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh) {
