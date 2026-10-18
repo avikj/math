@@ -108,21 +108,19 @@ void dnf_normalize(Dnf *d, bool (*contradiction)(const Clause *)) {
 
 void dnf_decode(Dnf *d, const uint64_t *w, size_t n) {
     dnf_init(d);
-    require(n >= 1, "malformed DNF record");
-    size_t nc = (size_t)w[0], p = 1;
-    for (size_t i = 0; i < nc; i++) {
-        require(p < n, "malformed DNF record");
-        size_t len = (size_t)w[p++];
-        require(p + len <= n, "malformed DNF record");
-        dnf_add_clause(d, w + p, len);
-        p += len;
+    size_t p = 0;
+    while (p < n) {
+        size_t q = p;
+        while (q < n && w[q] != DNF_SEP) q++;
+        require(q < n, "malformed DNF record");
+        dnf_add_clause(d, w + p, q - p);
+        p = q + 1;
     }
 }
 
 void dnf_encode(const Dnf *d, Words *out) {
-    words_push(out, (uint64_t)d->n);
     for (size_t i = 0; i < d->n; i++) {
-        words_push(out, (uint64_t)d->c[i].n);
         words_append(out, d->c[i].a, d->c[i].n);
+        words_push(out, DNF_SEP);
     }
 }

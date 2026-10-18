@@ -6,12 +6,16 @@
  * no clause strictly containing another clause; clauses in a fixed total
  * order (length, then lexicographic).
  *
- * Word encoding of a canonical DNF: [nclauses, len_1, atoms..., len_2, ...].
+ * Word encoding of a canonical DNF: each clause's atoms followed by DNF_SEP,
+ * clauses in canonical order (false = no words, true = [DNF_SEP]). A clause
+ * is read by walking to its separator; every operation scans clauses in
+ * order, so no position is reached through an unrelated one.
  */
 #ifndef CUBICAL_DNF_H
 #define CUBICAL_DNF_H
 
 #include "common.h"
+#define DNF_SEP UINT64_MAX
 
 typedef struct {
     uint64_t *a;

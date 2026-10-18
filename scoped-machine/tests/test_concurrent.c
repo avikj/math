@@ -97,11 +97,13 @@ static Outcome run(size_t workers, int clients) {
         if (eval_entry_runs(e) > 1) o.bad_runs++;
         if (pub > 1) o.bad_pub++;
         if (eval_entry_state(e) == E_READY && req != del) o.bad_deliver++;
+        if (!eval_entry_is_observation(e)) continue;
         canon_add_key(cn, eval_entry_ref(e), eval_entry_face(e), req, del, pub, (int)eval_entry_state(e));
     }
     o.graph = canon_export(cn);
     canon_free(cn);
-    o.ev = eval_events(); o.entries = ne;
+    o.ev = eval_events(); o.entries = 0;
+    for (EntryId e = 1; e <= ne; e++) if (eval_entry_live(e)) o.entries++;
     eval_free(); machine_free();
     return o;
 }

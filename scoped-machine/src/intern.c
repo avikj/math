@@ -144,6 +144,13 @@ void wordbuf_push(WordBuf *b, uint64_t x) {
     for (int k = 0; k < 8; k++) { h ^= (x & 0xff); h *= 1099511628211ULL; x >>= 8; }
     b->h = h;
 }
+bool wordbuf_drain_one(WordBuf *b) {
+    WPage *p = b->head;
+    if (!p) { wordbuf_init(b); return false; }
+    b->head = p->next; wpage_release(p);
+    if (!b->head) wordbuf_init(b);
+    return true;
+}
 void wordbuf_clear(WordBuf *b) {
     for (WPage *p = b->head; p; ) { WPage *nx = p->next; wpage_release(p); p = nx; }
     wordbuf_init(b);

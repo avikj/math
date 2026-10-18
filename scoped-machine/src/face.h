@@ -29,8 +29,8 @@ FaceId fc_substitute(FaceId phi, DimImageFn img, void *ctx);
 bool fc_entails(FaceId chi, FaceId phi);
 /* ∀i.phi: retain the clauses with no literal on i */
 FaceId fc_forall(DimVarId i, FaceId phi);
-/* π_S(chi): delete literals whose dimension is not in S (sorted list) */
-FaceId fc_project(FaceId chi, const uint64_t *S, size_t nS);
+/* π_S(chi): delete literals whose dimension is not in the dimension set S */
+FaceId fc_project(FaceId chi, DimSetId S);
 void fc_dims(FaceId phi, Words *out);
 FaceId fc_from_dnf(Dnf *d);
 void fc_to_dnf(FaceId a, Dnf *d);

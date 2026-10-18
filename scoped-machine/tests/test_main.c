@@ -45,11 +45,11 @@ static void test_intervals_faces(void) {
 
     FaceId both = fc_meet(fc_lit(i, 0), fc_lit(j, 0));
     uint64_t Sj[1] = { j };
-    CHECK(fc_project(both, Sj, 1) == fc_lit(j, 0), "π_{j}((i=0)∧(j=0)) = (j=0)");
+    CHECK(fc_project(both, dimset_make(Sj, 1)) == fc_lit(j, 0), "π_{j}((i=0)∧(j=0)) = (j=0)");
     CHECK(fc_forall(i, both) == fc_false(), "∀i((i=0)∧(j=0)) = false");
     CHECK(fc_forall(i, fc_join(fc_lit(i, 0), fc_lit(j, 0))) == fc_lit(j, 0), "∀i((i=0)∨(j=0)) = (j=0)");
-    CHECK(fc_project(fc_false(), NULL, 0) == fc_false(), "π_∅(false) = false");
-    CHECK(fc_project(both, NULL, 0) == fc_true(), "π_∅ of a consistent face = true");
+    CHECK(fc_project(fc_false(), dimset_make(NULL, 0)) == fc_false(), "π_∅(false) = false");
+    CHECK(fc_project(both, dimset_make(NULL, 0)) == fc_true(), "π_∅ of a consistent face = true");
     CHECK(fc_entails(fc_false(), fc_lit(i, 0)) && fc_entails(fc_lit(i, 0), fc_true()), "false ⇒ φ, φ ⇒ true");
     CHECK(fc_entails(both, fc_lit(i, 0)) && !fc_entails(fc_lit(i, 0), both), "clause containment entailment");
 
@@ -95,10 +95,10 @@ static void test_face_laws(void) {
     for (int s = 0; s < 4; s++) {
         for (size_t a = 0; a < nf; a++) {
             FaceId chi = faces[a];
-            FaceId pr = fc_project(chi, Ss[s], Sn[s]);
+            FaceId pr = fc_project(chi, dimset_make(Ss[s], Sn[s]));
             /* chi ⇒ π_S chi ; idempotence */
             if (!fc_entails(chi, pr)) ok = false;
-            if (fc_project(pr, Ss[s], Sn[s]) != pr) ok = false;
+            if (fc_project(pr, dimset_make(Ss[s], Sn[s])) != pr) ok = false;
             for (size_t bb = 0; bb < nf; bb++) {
                 FaceId phi = faces[bb];
                 Words d; words_init(&d); fc_dims(phi, &d);

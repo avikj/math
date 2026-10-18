@@ -487,7 +487,7 @@ CheckStatus check_context(ContextId G, const char **reason) {
         uint64_t *pd = malloc((k ? k : 1) * sizeof(uint64_t)); size_t npd = 0;
         for (size_t j = 0; j < k; j++) { prefix[j] = context_decl(G, j); if (prefix[j].sort == S_DIM) pd[npd++] = prefix[j].id; }
         DimSetId pds = dimset_make(pd, npd);
-        FaceId proj = fc_project(assumption, dimset_get(pds, &npd), npd);
+        FaceId proj = fc_project(assumption, pds);
         ContextId P = context_make(k, prefix, proj);
         free(prefix); free(pd);
         RefId decl = term_var_type(d.id);
@@ -1036,8 +1036,7 @@ static CheckStatus check_scope_arg(ContextId G, FaceId C, ScopeId S, ScopeId Sig
 static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **reason) {
     if (tview_is_construction(t)) return CK_VALID;      /* a construction has no template boundary: its instance is checked concretely */
     if (!fc_entails(C, ref_required(t))) { *reason = "template instance used outside its declared required face"; return CK_INVALID; }
-    size_t n; const uint64_t *ds = dimset_get(ref_support(t), &n);
-    uint64_t key[3] = { t, under(G, fc_true()), fc_project(C, ds, n) }, v; const char *why = NULL;
+    uint64_t key[3] = { t, under(G, fc_true()), fc_project(C, ref_support(t)) }, v; const char *why = NULL;
     pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_TBOUND, key, 3); pthread_mutex_unlock(&K.mu);
     Acq a = claim_acquire(cl, &v, &why, NULL);
     if (a == ACQ_DONE) { if (v == 1) return CK_VALID; *reason = why; return ck_of(v); }
@@ -1078,8 +1077,7 @@ static CheckStatus tview_boundary(ContextId G, FaceId C, RefId t, const char **r
  * constructor rules; when the instance is a program's root its inferred type
  * must convert to the declared result type instantiated by the environment. */
 static CheckStatus infer_tview(ContextId G, FaceId C, RefId t, RefId *type, const char **reason) {
-    size_t n; const uint64_t *ds = dimset_get(ref_support(t), &n);
-    uint64_t key[3] = { t, under(G, fc_true()), fc_project(C, ds, n) }, v, aux[3] = { 0, 0, 0 }; const char *why = NULL;
+    uint64_t key[3] = { t, under(G, fc_true()), fc_project(C, ref_support(t)) }, v, aux[3] = { 0, 0, 0 }; const char *why = NULL;
     pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_TVIEW, key, 3); pthread_mutex_unlock(&K.mu);
     Acq a = claim_acquire(cl, &v, &why, aux);
     if (a == ACQ_DONE) { if (v == 1) { *type = aux[0]; return CK_VALID; } *reason = why; return ck_of(v); }
@@ -1260,8 +1258,7 @@ CheckStatus check(ContextId G, FaceId chi, RefId t, RefId A, const char **reason
 static size_t conv_claim(uint64_t mode, ContextId G, FaceId C, RefId a, RefId b, RefId T) {
     DimSetId S = dimset_union(ref_support(a), ref_support(b));
     if (T) S = dimset_union(S, ref_support(T));
-    size_t n; const uint64_t *ds = dimset_get(S, &n);
-    uint64_t key[6] = { mode, under(G, fc_true()), fc_project(C, ds, n), a, b, T };
+    uint64_t key[6] = { mode, under(G, fc_true()), fc_project(C, S), a, b, T };
     pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_CONV, key, 6); pthread_mutex_unlock(&K.mu);
     return cl;
 }

@@ -145,6 +145,7 @@ void eval_init(void) {
     pthread_mutex_init(&E.loc_mu, NULL);
     for (size_t f = 0; f < F_MAX; f++) FAM[f].steps = 0;
     F_INTERN = family_define("intern", intern_step, sizeof(InternState), false);
+    dnf_families_init();
     net_init(&E.net);
     net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
     E.net.policy = 1;   /* pairs FIFO by default */
@@ -372,15 +373,14 @@ static EntryId entry_intern(Family f, uint64_t a, uint64_t b) {
      * mutation makes earlier observations unreachable (§57 R1). The entry's
      * operands are read from its key record, so a zero entry is a complete U
      * state the moment its key is discoverable. */
-    uint64_t w[4] = { f, a, b, FAM[f].pure ? 0 : global_env_version() };
+    uint64_t w[4] = { f, a, b, FAM[f].pure ? (machine_generation() | (1ULL << 63)) : global_env_version() };
     EntryId id = interner_intern(&E.keys, w, 4, NULL);
     chunked_at(&E.entries, id - 1);
     return id;
 }
 
 EntryId eval_entry_lookup(RefId t, FaceId chi) {
-    size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
-    uint64_t w[4] = { F_WHNF, t, fc_project(chi, S, n), global_env_version() };
+    uint64_t w[4] = { F_WHNF, t, fc_project(chi, ref_support(t)), global_env_version() };
     return interner_find(&E.keys, w, 4);
 }
 EntryState eval_entry_state(EntryId e) {
@@ -584,8 +584,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) {
     k->next = NULL;
     if (fc_is_false(chi)) { deliver(k, (uint64_t)(uintptr_t)result_new(R_NO_OBSERVATION, t), 0); return; }
     if (!validate_occurrence(t, chi)) { deliver(k, (uint64_t)(uintptr_t)result_invalid("occurrence outside its required face"), 0); return; }
-    size_t n; const uint64_t *S = dimset_get(ref_support(t), &n);
-    FaceId eta = fc_project(chi, S, n);
+    FaceId eta = fc_project(chi, ref_support(t));
     request_entry(entry_intern(F_WHNF, t, eta), k);
 }
 

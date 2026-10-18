@@ -549,7 +549,7 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
         break;
     }
     case OP_FORALL_DIMENSION: WANT(D_FACE); res = desc_face(n, fc_forall(P.a, Q.face)); break;
-    case OP_PROJECT_FACE: { WANT(D_FACE); size_t m; const uint64_t *S = dimset_get(P.a, &m); res = desc_face(n, fc_project(Q.face, S, m)); break; }
+    case OP_PROJECT_FACE: { WANT(D_FACE); res = desc_face(n, fc_project(Q.face, (DimSetId)P.a)); break; }
     case OP_FACE_COVERAGE: WANT(D_FACE); res = status_node(n, fc_entails(P.face, Q.face) ? ST_COVERED : ST_NOT_COVERED, 0, 0); break;
     case OP_USE_PARTIAL:
         WANT(D_PARTIAL);

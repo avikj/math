@@ -81,6 +81,7 @@ typedef struct { WPage *head, *tail; size_t n; uint64_t h; } WordBuf;
 void wordbuf_init(WordBuf *b);
 void wordbuf_push(WordBuf *b, uint64_t x);
 void wordbuf_clear(WordBuf *b);       /* releases every page (one release per page) */
+bool wordbuf_drain_one(WordBuf *b);   /* releases one page; false when none is left (the buffer is then empty) */
 
 /* ---- stepped interning ----
  * The insertion of one record as a state machine: each unit of an advance is
