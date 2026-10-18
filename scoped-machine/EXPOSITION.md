@@ -1687,52 +1687,47 @@ path proving attainment.
 
 ---------------------------------------------------------------------------------------------
 
-## Part XVIII. The step bound, the departure from §5, and what to build
+## Part XVIII. The bounded step and the one execution mechanism
 
-### XVIII.1 The step bound is the definition of a step
+### XVIII.1 The step bound is the definition of a primitive
 
-A rule replaces an active pair by a fixed finite net on its auxiliary wires (5.5); the rule table
-is finite; cells have bounded arity. One step reads two cell kinds, indexes the rule table,
-allocates a bounded number of cells, writes a bounded number of links, and the new active pairs
-lie on wires it created. Hence `Instr_C(run) ≤ c · steps(run) + d`, `c` the largest per-rule cost.
-This is the correctness condition of the implementation. Operations of 24b2bfb that are not
-bounded steps: `open_ref` builds all `n` fields (`term.c:570`; §89 measurement); maps interned as
-whole sorted vectors (`mapb_finish`); `reindex`/`compose`/support traverse a whole boundary in one
-call; DNF meet, negation and normalization in one call; publication delivers to every waiter in
-one event (`eval.c:340–343`); `n`-port heads (`net.c:319`); checking, conversion, compilation and
-template interpretation as recursive C inside one frame.
+Every native mechanism is a bounded realization of a specified primitive, an execution of a
+derived definition through the common mechanism, or an index of existing data (reduction
+handoff §1). A primitive does a bounded number of word operations; variable data is a
+bounded-arity spine exposed one fragment per step (§4.5); multiword preparation, checking,
+traversal, allocation and retirement are executions of the same mechanism, not one call (§3).
+Hence `Instr_C(run) ≤ c · N(run) + d` with `N` the number of primitive occurrences (contract §16)
+holds by construction, and it identifies directly what is incorrect.
 
-### XVIII.2 Sharing outside the net is the departure
+### XVIII.2 Incorrect in 24b2bfb under that definition
 
-5.24: a shared subterm is held by a duplicator cell, wired like any cell, with no bookkeeping
-outside the net. The specified machine shares instead through two tables outside the net: the
-interner (equal references are one record) and the memo (equal keys `(t, π_S χ)` reach one
-producer, whose waiter list is an unbounded fan-out found by a hash lookup). The memo's readiness
-state is read by one transition and changed by another; that is why §§26–27 had to re-derive the
-diamond for the memo transitions and why §§74–82, where the recipe depends on what is ready, lost
-it (§85: the same request reduced in 2 or 3 steps). Substitution held as data in a view and a
-substitution cell propagated on demand cost the same per observed level; the representation of
-substitution is not the issue. The tables are.
+| Operation | Where | Unbounded part |
+|---|---|---|
+| Opening a reference | `open_ref`, `term.c:570`; §89 | builds all `n` fields before one is used |
+| Interning a map | `mapb_finish` | whole sorted image vector as one key |
+| `reindex`, `compose`, `make_view`, support | `term.c` | whole boundary or map per call |
+| Interval and face operations | `dnf.c`, `face.c`, `interval.c` | clause products and pairwise absorption per call |
+| Publication | `eval.c:340–343` | every waiter delivered in one event |
+| Head materialization | `net.c:319` | `n`-port head, arity narrowed to `uint8_t` |
+| Checking, conversion, compiler, template interpretation | `check.c`, `compiler.c`, `template.c` | recursive C inside one step |
+| Control | `eval.c` entries/continuations, `check.c` claims, `net.c` operation/evaluation adapters | three pending/ready protocols with bridges between them (§4.3) |
 
-What carries over is the mathematics: the interval and face algebra, the cubical clauses (Part VII),
-the library formulas (Part VIII), realizations, singleton contraction and the identity compiler
-(Part XI) and runtime diagrams (Part XII) as terms, the fibre facts (Part II), and the cost
-mathematics read off the steps.
+### XVIII.3 The one mechanism, as specified
 
-### XVIII.3 What to build
-
-1. Cells of fixed arity with word-size payloads; a finite rule table; each rule a fixed right-hand net.
-2. Sharing only by duplicator cells; erasure by eraser cells. Length is the step count. Effect cost
-   is per step: a step merging `2^k` inputs into one costs `k` (5.8); a duplicator costs 0 (5.24);
-   it is charged for the bits the requested observation erases (5.10).
-3. Substitution (term and interval) as cells propagated on demand; a fresh dimension is a variable
-   cell; `comp` keeps its family's components as wires shared by duplicators and specializes them
-   by substitution, which is the retained-component requirement of §13.
-4. Intervals and faces as nets with their De Morgan and face rules; a face test is an interaction.
-   A composition whose tube face is not covered proceeds by the clause of its family's head with
-   the face symbolic; it waits only when the family's head is a variable.
-5. Composition dispatch is the active pair of `COMP` with the head cell (`PI`, `SIGMA`, `PATH`,
-   `GLUE`, `U`), the clause of Part VII as right-hand net.
-6. No interner, no memo, no global table; disjoint pairs reduce in parallel with one atomic link
-   operation at boundary wires.
-7. Each step increments its rule kind's counter.
+* **One construction representation** (§4.4, HANDOFF §§49–51): a constructor-program node with
+  its simultaneous environment; a raw origin is the constant-field instance. Opening, boundary
+  closure, structural key and substitution are derived from that one definition, with
+  `C[ρ][σ] = C[ρ;σ]`, simultaneous substitution, dependency-closed restriction, and field opening
+  that does not evaluate.
+* **One execution protocol** (§3, §4.3): a rule instance is its rule definition with environment,
+  typed boundary, premises and witness; a pending computation is the same kind of construction
+  with an exposed demand and owned residual. A step executes one bounded instruction of a rule
+  program and yields its successor, a demand on a producer key, or a result. Producer keys give
+  one producer per key (HANDOFF §26); each delivery is its own step. Evaluator dispatch, checking
+  and conversion rules, substitution, interval/face operations, interning steps, the identity
+  compiler and proof use are rule programs of this one mechanism, with their distinct typed
+  policies kept in their definitions.
+* **The net executes the construction** (§4.5): an operation node names the program and its
+  operands; its interaction runs that program's continuation; DUP copies a reference.
+* **Readings** (§4.6, contract §§6–7): counts, support and histories are folds of the same
+  committed steps.
