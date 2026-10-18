@@ -95,10 +95,14 @@ Excluded: §§61–64, 66–73 (plan comparison/selection — the detour); §86 
 reflection (not meaningful as stated / no rule supplied; neither implemented nor claimed).
 
 The one contradiction: mid-run adoption (PREFIX-CONTRACT, LIVE-CUT-ADOPTION, prefixes of running
-computations) breaks the diamond (§85: lengths 2 and 3 from one state). Resolution consistent with
-5.13: every key's recipe is fixed at workload start; sharing within a run by key; receipt reuse
-(§78 receipts, specialization d[σ], restriction to stronger faces) from an index frozen per
-workload; receipts produced during a workload join the index for the next. EFFECT-AUTHORITY §10
+computations) breaks the diamond (§85: lengths 2 and 3 from one state) when a key's recipe consults
+whether some other result happens to exist yet. Resolution (superseding the earlier "index frozen per
+workload", which was a phase barrier — see §9.5): no recipe ever consults existence of a result.
+Reuse is a dependency named by the recipe itself: a specialization key (SPECIALIZE, d, σ) requests
+d and transports; a restriction to a stronger face is the same key by the projection theorem
+(t, π_S χ); a receipt is the published value of its producer's key. Each result is usable by every
+key whose recipe depends on it the moment it is published, in the same run, and the step count of
+every key is schedule-independent because its dependency set is fixed by its key. EFFECT-AUTHORITY §10
 item 2 realized by keyed sharing (two deliveries of one producer).
 
 ## 7. Time (derived upper bound)
@@ -136,7 +140,7 @@ gate at the end).
 3. Scope and template families; evaluator dispatch and composition clauses; net (arity-252 and shell copy disappear).
 4. Checking, conversion, admission families (no blocking claims, no nested whnf).
 5. Compiler and proof-use families; runtime-construction templates; content/context keys; revisions.
-6. Receipts and the frozen index.
+6. Receipts as keyed specialization/restriction dependencies (no frozen index; §10).
 7. Readings and exact counts.
 8. Effects and the Stokes interface; EFFECT-AUTHORITY §10 witness from one execution.
 9. Full gates.
@@ -163,3 +167,16 @@ no subagents; work only from the shared specifications; no second engine/store/c
    This replaces "compiler as families" in step 5 and reduces it.
 4. Readings are folds of the local records of the steps that ran. No central event journal
    into which subsystems report; no global serialization of histories.
+
+## 10. Rule from the 15:23 attachment (binding)
+
+5. No host distinction may change the dependency, admissibility or compositional behaviour of the
+   represented construction. Concretely: no phase barrier (check-then-run, finish-workload-then-
+   reuse, register-then-publish); no privileged preparatory language with its own state or
+   authority; a derived value (identity p, transform, receipt, completed prefix) acts through the
+   generic action wherever its type permits, as soon as it exists, with no "install" event between;
+   one judgment is executed once — the checker and the evaluator request the same keys rather than
+   re-deriving. Ability of an added mechanism to solve the problems it introduced is no defence of it.
+   Consequence for §8: step 6 is "receipts as keyed specialization/restriction dependencies"
+   (no frozen index); step 4 removes the global admission gate and shares judgment keys with
+   evaluation.
