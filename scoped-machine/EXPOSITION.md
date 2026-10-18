@@ -1687,75 +1687,40 @@ path proving attainment.
 
 ---------------------------------------------------------------------------------------------
 
-## Part XVIII. The step bound, where the specified machine departs from Part I, what to build
+## Part XVIII. The step bound and what it makes incorrect in the tree
 
 ### XVIII.1 The step bound is the definition of a step
 
-A rule replaces an active pair by a fixed finite net `R` on its auxiliary wires (5.5); the rule
-table is finite; cells have bounded arity. One step is therefore: read the two cell kinds, index
-the rule table, take `|R|` cells from a free list, write a bounded number of links, and push the
-new active pairs, which can only arise on wires `R` created (a bounded number). With `c` the
-largest per-rule instruction count,
+A rule replaces an active pair by a fixed finite net on its auxiliary wires (5.5); the rule table
+is finite; cells have bounded arity. One step reads the two cell kinds, indexes the rule table,
+allocates a bounded number of cells and writes a bounded number of links, and the new active
+pairs lie on the wires it created. Hence
 
 ```
 Instr_C(run) ≤ c · steps(run) + d
 ```
 
-holds by construction. It is the correctness condition of an implementation, not a theorem to
-establish afterwards: any code executed within one step whose work depends on the size of a term,
-a face, a map, a waiter list or a table is an incorrect implementation of a step.
+with `c` the largest per-rule cost. This is the correctness condition of the implementation: a
+primitive operation whose work depends on the size of a term, map, face, field list or waiter
+list is not one step and must be expressed as several steps of the same machine, each counted.
 
-### XVIII.2 Where the specified machine (Parts IV–X, XIV–XVII; tree 24b2bfb) departs
+The representation of Parts IV–X is compatible with this: a view is an explicit substitution
+held as data (reindex never touches the body); interning a node whose fields are already interned
+handles is bounded work per node; a memo entry is the shared producer of one key, with consumers
+attached to it, so it realizes sharing (5.24) for equal keys. What violates the bound is the
+granularity at which 24b2bfb performs these operations.
 
-| Specified mechanism | Where | Why it is not a step of Part I |
-|---|---|---|
-| Sharing by interning references in a global hash table | §§2, 6, 49–56; `intern.c`, `term.c` | sharing is a duplicator cell (5.24); interning hashes and compares variable-size keys |
-| One-result rules that call host algorithms (§19: "may call these algorithms directly in C") | `net.c` `rule_op` | reindex, compose, DNF meet/negate/normalize, projection, ∀, support and `open` each traverse variable-size data |
-| Heads materialized with `n` ports | `net.c:319` | arity unbounded (narrowed to `uint8_t`) |
-| Memo table U/R/D with waiter lists | §§10, 26; `eval.c` | publication delivers to every waiter in one event (`eval.c:340–343`); lookup is a hash probe; the table is state outside the net, which is why §§26–27 had to re-derive the diamond and why §§74–82 lost it (§85) |
-| Locks | §§20, 35; 94 lock sites in 24b2bfb | distinct active pairs are disjoint (5.11); only a boundary link write needs one atomic exchange |
-| Checker, conversion, compiler, template interpreter as recursive C over the store | `check.c`, `compiler.c`, `template.c` | unbounded work per call; checking a proof is normalizing its term (5.1) |
-| Graph-isomorphism comparison of results across schedules | §37; `match.c`, `canon.c` | the normal form is unique (5.18) |
-| Work measured after the fact (fine ledgers, bounded-frame lowering, event streams, accounting owners) | §§65, 71, 81, 89, 94; contract §§6–7, 16 | the work reading is the product fold of II.3: the step increments its rule kind's counter, one word |
-| Automatic plan selection | §§60–72 | 5.28: once the declaration is posed there is no search over methods |
+### XVIII.2 Operations in 24b2bfb that are not bounded steps
 
-The departure is recorded in Appendix B of HANDOFF.md and its §1: the earlier λ-net could not
-substitute into a value, so `comp` evaluated type lines at a generic point, which collapsed Glue
-at endpoints. The response replaced the net by interned references, a C evaluator and a memo,
-instead of making substitution a rule of the net. Every runtime commit of `scoped-machine/`,
-24b2bfb included, is built on that replacement. Reverting inside `scoped-machine/` yields a
-smaller instance of the same departure.
+| Operation | Where | Unbounded part | Bounded form |
+|---|---|---|---|
+| Opening a reference | `open_ref` (`term.c:570`), §89 measurement | builds all `n` fields before one is used | open one field per step, on demand |
+| Interning a map | `mapb_finish` (sort, dedup, intern a vector) | key is the whole image vector | maps as interned bounded nodes (one image per node) |
+| `reindex`, `compose`, `make_view`, support | `term.c` | traverse a whole boundary or map in one call | one image per step over the node representation |
+| Interval and face operations | `dnf.c`, `face.c`, `interval.c` | meet is a clause product, normalization compares all clause pairs, all in one call | clause and atom cells, one comparison or union per step |
+| Publication | `eval.c:340–343` | delivers to every waiter in one event | one delivery per step |
+| Head materialization | `net.c:319` | `n`-port head, arity narrowed to `uint8_t` | bounded-arity field sequence |
+| Checking, conversion, compilation, template interpretation | `check.c`, `compiler.c`, `template.c` | recursive C inside one evaluator frame | their rules as steps of the same machine |
 
-### XVIII.3 What carries over
-
-The mathematics: the interval and face algebra (Part V, as terms with their rewrite laws), the
-cubical clauses of Part VII, the library formulas of Part VIII, realization, singleton
-contraction and the identity compiler of Part XI as terms, the runtime diagrams of Part XII, the
-fibre facts of Part II, and the cost mathematics of Parts XIII and XVII read as functions of the
-step counts.
-
-### XVIII.4 What to build
-
-1. Cells of fixed arity with word-size payloads; a finite rule table; each rule a fixed right-hand
-   net.
-2. Sharing only by duplicator cells; erasure only by eraser cells. The effect cost (5.8) is counted
-   where an eraser or a merge fires; the length is the step count.
-3. Substitution as agents: a term- or interval-substitution cell moves one cell per step. A fresh
-   dimension is a variable cell. `comp` keeps its family's components as wires (shared by
-   duplicators), and specializing a component sends a substitution agent along its wire. That is
-   the retained-component fix of §13, made inside the net.
-4. Intervals and faces are nets with their De Morgan and face rules. A face test is an active pair
-   that fires when its interval arguments reach endpoints; until then the composition or system is
-   data waiting for that interaction.
-5. Composition dispatch is the active pair of `COMP` with the family's head constructor
-   (`PI`, `SIGMA`, `PATH`, `GLUE`, `U`), with the clause of Part VII as right-hand net; a composition
-   whose family is a variable is a cell waiting on that variable.
-6. No memo, no interning, no global table, no locks on pairs: disjoint pairs reduce in parallel,
-   with one atomic link operation at boundary wires.
-7. Each step increments its rule kind's counter.
-
-Every row of XVIII.2 is then replaced rather than instrumented, and XVIII.1 holds for the whole
-machine. The nearest existing realization is `collab/bend2-interactive-cubical` (cubical prelude
-on HVM4); its recorded gaps — type-former dispatch by evaluating a line at the marker `#IMark`,
-transport to a symbolic endpoint left stuck, some lines precomputed by the Haskell normaliser — are
-the points items 3–5 address.
+Each row is a granularity defect of an operation whose mathematics (Parts IV–IX) is kept. The
+step counter then counts the actual steps, and the coarse event vector is a projection of it.
