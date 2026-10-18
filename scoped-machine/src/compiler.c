@@ -324,13 +324,10 @@ static RefId build_generic_call(TransformId id, int dir, const CompiledTransform
     free(f);
     return r;
 }
-/* a compiled record becomes visible only after both call bodies exist; the
- * whole-environment admission gate (§57 R1) guards publication */
-/* a compiled record becomes visible only after both call bodies exist; the
- * whole-environment admission gate (§57 R1) guards publication; structurally
- * identical requests (sequential or concurrent) obtain one record */
+/* Each caller has checked the declaration and both emitted bodies. Publish
+ * after both call bodies exist; structurally identical requests (sequential
+ * or concurrent) obtain one record. Unrelated globals are not premises. */
 static TransformId transform_publish(CompiledTransform *t, Certificate *c, const char **reason) {
-    if (check_admission(reason) != CK_VALID) return 0;
     Words key; record_key(c, t, &key);
     pthread_mutex_lock(&CR.mu);
     uint64_t have;

@@ -1597,11 +1597,9 @@ void check_open_environment(void) {
 }
 
 EvalResult *observe_checked(ContextId G, RefId t, WhnfStatus *status, const char **reason) {
-    /* public checked execution enters the admission gate first */
-    CheckStatus st = check_admission(reason);
-    if (st == CK_INVALID) { if (status) *status = W_INVALID; return NULL; }
-    if (st == CK_UNRESOLVED) { if (status) *status = W_STUCK; return NULL; }
-    st = check_context(G, reason);
+    /* The premises are this context and term. T_GLOBAL inference validates
+     * each reached declaration/body, including its transitive dependencies. */
+    CheckStatus st = check_context(G, reason);
     if (st == CK_VALID) { Inference I = infer(G, context_assumption(G), t); st = I.st; if (st != CK_VALID) *reason = I.reason; }
     if (st == CK_INVALID) { if (status) *status = W_INVALID; return NULL; }
     if (st == CK_UNRESOLVED) { if (status) *status = W_STUCK; return NULL; }

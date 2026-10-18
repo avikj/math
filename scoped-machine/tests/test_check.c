@@ -182,19 +182,17 @@ int main(void) {
       CHECK(st1 == W_OK && r1->ref == a, "the observation is recomputed in the new environment");
       CHECK(check(G, fc_true(), global_ref(cand), A, &why) == CK_VALID, "the defined candidate checks (%s)", why); }
 
-    /* checked observation through the admission gate (the environment is admissible so far) */
+    /* checked observation validates its own judgment */
     { WhnfStatus st; EvalResult *r = observe_checked(G, mk_app(id, a), &st, &why);
       CHECK(st == W_OK && r && r->ref == a, "observe_checked: (λx.x) a ⇝ a (%s)", why);
       r = observe_checked(G, mk_app(f, bB), &st, &why);
       CHECK(st == W_INVALID && r == NULL, "observe_checked refuses an ill-typed occurrence: %s", why); }
 
-    /* the environment was admitted (frozen) by the checked observation:
-     * registration is refused until a new candidate environment is opened */
+    /* a local observation imposes no registry-wide phase boundary */
     { uint64_t params[1] = { vA };
-      CHECK(define_global("afterfreeze", varset_make(params, 1), dimset_make(NULL, 0), A) == 0, "registration into the admitted environment fails closed");
-      check_open_environment();
+      CHECK(define_global("after-observation", varset_make(params, 1), dimset_make(NULL, 0), A) != 0, "a checked observation leaves unrelated declarations possible");
       SymbolId ok = define_global("afteropen", varset_make(params, 1), dimset_make(NULL, 0), A);
-      CHECK(ok != 0, "a new candidate environment accepts registrations"); }
+      CHECK(ok != 0, "further declarations require no environment reopening"); }
 
     /* unresolved: cyclic computation */
     { SymbolId L = define_global("loopA", varset_make(NULL, 0), dimset_make(NULL, 0), A);
@@ -282,13 +280,10 @@ int main(void) {
       DimVarId zz = declare_dim();
       CHECK(check(G, fc_lit(zz, 0), a, A, &why) == CK_INVALID, "a face over an undeclared dimension is rejected (%s)", why); }
 
-    /* checked observation: the environment now holds rejected registered
-     * declarations (loopA's type is out of scope, badsym's body is ill
-     * typed), so the whole-environment admission gate (§57) refuses checked
-     * execution of every term, well-typed ones included */
+    /* unrelated rejected definitions do not become premises of this term */
     { WhnfStatus st; EvalResult *r = observe_checked(G, mk_app(id, a), &st, &why);
-      CHECK(st == W_INVALID && r == NULL, "observe_checked after a rejected registration is refused by the admission gate: %s", why);
-      CHECK(check_admission(&why) == CK_INVALID, "check_admission reports the rejected environment (%s)", why); }
+      CHECK(st == W_OK && r && r->ref == a, "observe_checked remains local despite unrelated rejected declarations: %s", why);
+      CHECK(check_signature(&why) == CK_INVALID, "explicit whole-signature checking reports the invalid definitions (%s)", why); }
 
     printf("  %d passed, %d failed\n", np, nf);
     check_free(); eval_free(); machine_free();

@@ -9,6 +9,7 @@ static int failures = 0;
 #define EXPECT(c, what) do { if (!(c)) { failures++; printf("  FAIL: %s\n", what); } } while (0)
 int main(int argc, char **argv) {
     machine_init(); eval_init(); check_init(); compiler_init();
+    if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)strtoul(getenv("CUBICAL_WORKERS"), NULL, 10));
     const char *why = "";
     RefId U = mk_universe(0);
     TermVarId va = declare_term(U, fc_true()), vb = declare_term(U, fc_true());
@@ -32,13 +33,39 @@ int main(int argc, char **argv) {
         VarSetId pars = varset_make(vs, 2); DimSetId ds = dimset_make(NULL, 0);
         SymbolId good = define_global("good", pars, ds, A);
         SymbolId bad = define_global("bad", pars, ds, A);
+        SymbolId dependent = define_global("dependent", pars, ds, A);
+        SymbolId bad_type = define_global("bad-type", pars, ds, U);
+        SymbolId bad_equiv = define_global("bad-equivalence", pars, ds, mk_equiv(0, 0, A, A));
         set_global_body(good, x); set_global_body(bad, mk_pair(x, x));
+        set_global_body(dependent, global_ref(bad));
+        set_global_body(bad_type, mk_pair(A, A));
+        set_global_body(bad_equiv, x);
         WhnfStatus st; EvalResult *r = observe_checked(GA, global_ref(good), &st, &why);
-        printf("checked execution with rejected registered body: status=%d result=%s\n", (int)st, r ? "present" : "absent");
-        EXPECT(st == W_INVALID && r == NULL, "a rejected registered body must block whole-environment checked execution");
+        printf("local checked execution with unrelated invalid bodies: status=%d result=%s\n", (int)st, r ? "present" : "absent");
+        EXPECT(st == W_OK && r && r->ref == x, "unrelated invalid definitions must not block a valid judgment");
+        TransformId id = compile_equivalence(GA, fc_true(), A, 0, A, 0, mk_id_equiv(0, A), &why);
+        EXPECT(id != 0, "unrelated invalid definitions must not block a checked transform");
+        if (id) {
+            EXPECT(certificate_verify(id, &why) == CK_VALID, "the local transform retains its checked certificate");
+            r = observe_checked(GA, mk_transform_call(id, DIR_FORWARD, map_identity(), x), &st, &why);
+            EXPECT(st == W_OK && r && r->ref == x, "the transform remains executable in the same environment");
+        }
+        EXPECT(!env_is_frozen(), "local judgment and transform publication must not freeze the registry");
+        r = observe_checked(GA, global_ref(bad), &st, &why);
+        EXPECT(st == W_INVALID && r == NULL, "an invalid definition must reject when actually used");
+        r = observe_checked(GA, global_ref(dependent), &st, &why);
+        EXPECT(st == W_INVALID && r == NULL, "an invalid transitive dependency must reject");
+        TermVarId z = declare_term(global_ref(bad_type), fc_true());
+        ContextId invalid_context = context_extend_term(GA, z, global_ref(bad_type));
+        r = observe_checked(invalid_context, x, &st, &why);
+        EXPECT(st == W_INVALID && r == NULL, "definitions used by the judgment context must also validate");
+        EXPECT(compile_equivalence(GA, fc_true(), A, 0, A, 0, global_ref(bad_equiv), &why) == 0,
+               "an invalid definition used as transform evidence must reject");
         CheckStatus ss = check_signature(&why);
         printf("whole signature: %s\n", check_status_name(ss));
-        EXPECT(ss == CK_INVALID, "the whole signature is INVALID");
+        EXPECT(ss == CK_INVALID, "an explicit check of the whole signature still reports its invalid bodies");
+        r = observe_checked(GA, global_ref(good), &st, &why);
+        EXPECT(st == W_OK && r && r->ref == x, "a failed whole-signature query must not invalidate an independent judgment");
     } else if (argc > 1 && !strcmp(argv[1], "call")) {
         CtxDecl d[] = {{S_TERM, va, U}};
         ContextId G = context_make(1, d, fc_true());

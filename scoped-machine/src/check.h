@@ -61,10 +61,10 @@ EvalResult *observe_checked(ContextId G, RefId t, WhnfStatus *status, const char
 /* validate every declared symbol with a body against its declared type
  * (the private driver of the admission transaction) */
 CheckStatus check_signature(const char **reason);
-/* §57 R1: the whole-environment admission gate. Freezes the registered
+/* Legacy explicit whole-environment admission operation. Freezes the registered
  * declarations and bodies (the environment version), validates all of them
- * once per version, and returns the environment's verdict; public checked
- * execution and compiler publication require VALID. */
+ * once per version, and returns the environment's verdict. Checked observation
+ * and compiler publication validate their own premises and do not call it. */
 CheckStatus check_admission(const char **reason);
 /* open a new candidate environment after an admission: retires the checker
  * session (claims, verdicts, diagnostic text) and every evaluator observation
