@@ -18,7 +18,7 @@ void reuse_bump(ReuseCounter c) {
     xc_add(&counters[c], 1); ev_add(ED_REUSE + (unsigned)c, 1);
     ReuseScope *s = reuse_tl_scope;
     if (!s) return;
-    xc_add(&s->c[c], 1);
+    xc_add(&s->c[c], 1); xc_add(&s->total[c], 1);
     if (__atomic_load_n(&s->closed, __ATOMIC_SEQ_CST)) {   /* closed: fold this event (and any racing one) exactly once */
         XSnap v = xc_take(&s->c[c]);
         xc_add_snap(&late[s->phase][c], v);

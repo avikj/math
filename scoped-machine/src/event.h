@@ -68,9 +68,17 @@ uint64_t ev_owner_current(EvKind kind); /* the owner a unit begun now would have
 typedef struct { size_t n; struct EvStream **s; uint64_t *len; } EvPrefix;
 EvPrefix ev_prefix(void);               /* every stream's published length, captured now */
 void ev_prefix_free(EvPrefix *p);
-typedef struct { uint64_t owner; int kind; uint64_t occ; } EvFilter;   /* 0 / -1 / 0: any */
+/* occurrence namespaces: a record's occurrence identity is (namespace, id) */
+enum { OCC_ENTRY = 1, OCC_NODE, OCC_OP, OCC_KJOB, OCC_EFFECT, OCC_CHAIN };
+#define OCC(ns, id) (((uint64_t)(ns) << 56) | ((uint64_t)(id) & (((uint64_t)1 << 56) - 1)))
+typedef struct { uint64_t owner; int kind; uint64_t occ; const uint64_t *occs; size_t nocc; } EvFilter;   /* 0 / -1 / 0 / NULL: any; occs: a sorted set of occurrence identities */
 void ev_fold_dims(const EvPrefix *p, const EvFilter *f, XCount *out);   /* out[ED_MAX]: exact per-dimension totals */
 uint64_t ev_count_records(const EvPrefix *p, const EvFilter *f);
+/* HANDOFF §7: historical work of a support set. W(support) is the fold of the records whose occurrence is in the
+ * set; the set is a union of realizations, so a shared producer's records are counted once (χ(A∪B) = χ(A)+χ(B)−χ(A∩B)) */
+size_t ev_occ_union(const uint64_t *a, size_t na, const uint64_t *b, size_t nb, uint64_t **out);
+size_t ev_occ_intersection(const uint64_t *a, size_t na, const uint64_t *b, size_t nb, uint64_t **out);
+void ev_occ_sort(uint64_t *v, size_t *n);   /* sort and deduplicate in place */
 /* shadow comparison of every registered family at a quiescent prefix: returns
  * the number of mismatching dimensions (reports each on stderr when verbose) */
 size_t ev_shadow_check(const EvPrefix *p, bool verbose);

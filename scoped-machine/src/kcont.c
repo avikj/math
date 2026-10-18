@@ -51,7 +51,7 @@ static void run_one(KCont *k, pthread_mutex_t *wmu, KCont **wrunning) {
     jmp_buf base; void *prev_target = kstack_unwind; kstack_unwind = &base;
     volatile bool cancelled = false;
     size_t ev_base = ev_depth();
-    ev_begin(EK_KERNEL_GRANT, k->job, 0);        /* HANDOFF §6: each grant's transitions are one primitive event */
+    ev_begin(EK_KERNEL_GRANT, OCC(OCC_OP, k->job), 0);        /* HANDOFF §6: each grant's transitions are one primitive event */
     if (setjmp(base) == 0) k->fn(k);
     else cancelled = true;                       /* V23 R3: unwound by cancellation; no result is published */
     ev_unwind_to(ev_base);                       /* the last grant (and, after a cancellation, every unit it unwound) is published with its actual work */

@@ -652,6 +652,27 @@ size_t eval_entry_active_deps(EntryId e, EntryId **out) {
     for (size_t i = 0; i < x->deps.len; i++) if (!x->dep_hist.data[i]) o[n++] = x->deps.data[i];
     pthread_mutex_unlock(&x->mu); *out = o; return n;
 }
+/* HANDOFF §7 realization support: the producers whose actual work an entry's answer rests on — the entry
+ * and, transitively, every producer it requested (historical requests included: their work happened). As
+ * sorted occurrence identities, so supports of different consumers combine by set union and a shared
+ * producer is counted once. */
+size_t eval_entry_support(EntryId e, uint64_t **out) {
+    Words stack, seen; words_init(&stack); words_init(&seen);
+    words_push(&stack, e);
+    while (stack.n) {
+        EntryId x = stack.w[--stack.n];
+        bool dup = false; for (size_t i = 0; i < seen.n && !dup; i++) dup = seen.w[i] == OCC(OCC_ENTRY, x);
+        if (dup) continue;
+        words_push(&seen, OCC(OCC_ENTRY, x));
+        Entry *ex = ENT(x);
+        for (size_t i = 0;; i++) { pthread_mutex_lock(&ex->mu); bool more = i < ex->deps.len; EntryId c = more ? ex->deps.data[i] : 0; pthread_mutex_unlock(&ex->mu); if (!more) break; words_push(&stack, c); }
+    }
+    words_free(&stack);
+    size_t n = seen.n; uint64_t *v = (malloc)((n ? n : 1) * sizeof *v); require(v, "out of memory");
+    memcpy(v, seen.w, n * sizeof *v); words_free(&seen);
+    ev_occ_sort(v, &n);
+    *out = v; return n;
+}
 size_t eval_entry_deps(EntryId e, EntryId **out) {
     Entry *x = ENT(e); pthread_mutex_lock(&x->mu);
     size_t n = x->deps.len; *out = n ? malloc(n * sizeof(EntryId)) : NULL; require(!n || *out, "out of memory");
@@ -1737,7 +1758,8 @@ static void execute_task_body(Task t);
 /* HANDOFF §6: each job is one primitive event (its kind, owner, occurrence); its label is the transitions it takes */
 static void execute_task(Task t) {
     EvKind kind = t.is_pair ? EK_NET_PAIR : t.op == OP_EXT ? (t.idx >= 0x4E00 && t.idx < 0x4F00 ? EK_EFFECT_JOB : t.idx == 0x4C00 ? EK_CHAIN_STEP : EK_EVAL_TASK) : EK_EVAL_TASK;
-    uint64_t occ = t.is_pair ? t.pair.node : t.is_notify ? t.entry : t.op ? 0 : t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
+    EntryId oe = t.is_notify ? t.entry : t.op ? (t.op == OP_EXT ? 0 : task_info(&t).producer) : t.is_resume ? (t.k->kind == K_ROOT || t.k->kind == K_EXTERNAL ? 0 : t.k->dest) : t.entry;
+    uint64_t occ = t.is_pair ? OCC(OCC_NODE, t.pair.node) : oe ? OCC(OCC_ENTRY, oe) : 0;
     ev_begin(kind, occ, 0);
     execute_task_body(t);
     ev_end();

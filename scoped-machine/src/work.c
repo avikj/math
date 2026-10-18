@@ -665,7 +665,7 @@ OpStatus op_step(OpId h, size_t budget) {
     Handle *hd = HND(h); Op *root = JOB(hd->job);
     while (root->st == OP_RUNNING && budget) {
         W.grant = budget; W.extra = 0;
-        ev_begin(EK_ENGINE_UNIT, hd->job, 0); bool ok = service(root); ev_end();   /* HANDOFF §6: one engine unit, one primitive event */
+        ev_begin(EK_ENGINE_UNIT, OCC(OCC_OP, hd->job), 0); bool ok = service(root); ev_end();   /* HANDOFF §6: one engine unit, one primitive event */
         if (!ok) break;
         size_t took = 1 + W.extra; if (took > budget) took = budget;   /* a kernel continuation may take several transitions in one hand-off, each a unit */
         budget -= took; hd->frames += took;
@@ -684,7 +684,7 @@ uint64_t op_frames(OpId h) { pthread_mutex_lock(&W.mu); uint64_t n = HND(h)->fra
 void op_release(OpId h) { pthread_mutex_lock(&W.mu); Handle *hd = HND(h); hd->released = true; charge(FR_RELEASE_CHUNK); pthread_mutex_unlock(&W.mu); }
 /* drive a job's cone to a non-running state under the lock; returns the result, or 0 with *why */
 static uint64_t run_locked(Op *o, const char **why) {
-    while (o->st == OP_RUNNING) { W.grant = KC_UNBOUNDED; W.extra = 0; ev_begin(EK_ENGINE_UNIT, o->id, 0); bool ok = service(o); ev_end(); if (!ok) break; arena_tend(); }   /* the synchronous driver grants a kernel continuation its whole run in one hand-off */
+    while (o->st == OP_RUNNING) { W.grant = KC_UNBOUNDED; W.extra = 0; ev_begin(EK_ENGINE_UNIT, OCC(OCC_OP, o->id), 0); bool ok = service(o); ev_end(); if (!ok) break; arena_tend(); }   /* the synchronous driver grants a kernel continuation its whole run in one hand-off */
     if (o->st != OP_COMPLETE) { if (why) *why = o->st == OP_RUNNING ? "operation suspended: no enabled job (cyclic wait)" : o->diag; return 0; }
     return o->result;
 }

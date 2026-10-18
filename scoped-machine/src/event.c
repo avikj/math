@@ -186,6 +186,7 @@ static bool match(const uint64_t *w, const EvFilter *f) {
     if (f->owner && w[1] != f->owner) return false;
     if (f->kind >= 0 && (int)((w[0] >> 52) & 0xFF) != f->kind) return false;
     if (f->occ && w[2] != f->occ) return false;
+    if (f->occs) { size_t lo = 0, hi = f->nocc; while (lo < hi) { size_t m = (lo + hi) / 2; if (f->occs[m] < w[2]) lo = m + 1; else hi = m; } if (lo == f->nocc || f->occs[lo] != w[2]) return false; }
     return true;
 }
 static void fold_from(const EvPrefix *p, const EvFilter *f, XCount *out, const Family *fam) {
@@ -253,4 +254,23 @@ __attribute__((constructor)) static void ev_register_core(void) {
     unsigned f = ev_family("fine", FC_COUNT, fine_counters);
     unsigned r = ev_family("reuse", REUSE_COUNTER_COUNT, NULL);
     if (f != 0 || r != ED_REUSE) { fprintf(stderr, "fatal: event: core families out of order\n"); abort(); }
+}
+
+static int cmp_u64(const void *a, const void *b) { uint64_t x = *(const uint64_t *)a, y = *(const uint64_t *)b; return x < y ? -1 : x > y; }
+void ev_occ_sort(uint64_t *v, size_t *n) {
+    qsort(v, *n, sizeof *v, cmp_u64);
+    size_t k = 0; for (size_t i = 0; i < *n; i++) if (!k || v[k - 1] != v[i]) v[k++] = v[i];
+    *n = k;
+}
+size_t ev_occ_union(const uint64_t *a, size_t na, const uint64_t *b, size_t nb, uint64_t **out) {
+    uint64_t *v = (malloc)((na + nb + 1) * sizeof *v); if (!v) abort();
+    size_t i = 0, j = 0, k = 0;
+    while (i < na || j < nb) { if (j == nb || (i < na && a[i] < b[j])) v[k++] = a[i++]; else if (i == na || b[j] < a[i]) v[k++] = b[j++]; else { v[k++] = a[i++]; j++; } }
+    *out = v; return k;
+}
+size_t ev_occ_intersection(const uint64_t *a, size_t na, const uint64_t *b, size_t nb, uint64_t **out) {
+    uint64_t *v = (malloc)(((na < nb ? na : nb) + 1) * sizeof *v); if (!v) abort();
+    size_t i = 0, j = 0, k = 0;
+    while (i < na && j < nb) { if (a[i] < b[j]) i++; else if (b[j] < a[i]) j++; else { v[k++] = a[i++]; j++; } }
+    *out = v; return k;
 }

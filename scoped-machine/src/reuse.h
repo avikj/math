@@ -19,6 +19,7 @@ typedef struct ReuseScope {
     int closed;                      /* atomic */
     int refs;                        /* atomic: the owner + every producer entry it launched */
     uint64_t id;                     /* the accounting owner's identity in the event stream */
+    XCount total[REUSE_COUNTER_COUNT];   /* every event ever attributed to this owner (validation shadow of the stream's owner projection) */
     struct ReuseScope *all_next;
 } ReuseScope;
 extern __thread ReuseScope *reuse_tl_scope;

@@ -138,6 +138,7 @@ size_t eval_task_count(void);                       /* EVALUATE tasks created so
  * among the owner's occurrences, requested key). Root occurrences are
  * numbered globally in request order. */
 size_t eval_entry_deps(EntryId e, EntryId **out);   /* copies the owner's occurrences; caller frees *out */
+size_t eval_entry_support(EntryId e, uint64_t **out);   /* HANDOFF §7: sorted occurrence identities of the producers e's answer rests on (host allocation: free with (free)) */
 size_t eval_entry_steps(EntryId e);
 uint64_t eval_entry_env(EntryId e);
 ShapeId eval_entry_shape(EntryId e);
