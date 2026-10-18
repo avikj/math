@@ -19,7 +19,6 @@
 #include "work.h"
 #include "event.h"
 #include "arena.h"
-#include "kcont.h"
 #include "proof.h"
 #include "scope.h"
 #include "net.h"
@@ -64,7 +63,7 @@ static struct {
     pthread_mutex_t mu;
     uint64_t mark_seq;
     size_t grant, extra;        /* §94: the transitions the current unit may grant a kernel continuation; the transitions it took beyond one */
-    KCont *kc_active; uint64_t kc_owner;   /* inspection only (white-box probes): the continuation most recently granted and its job — continuations are per job and independent */
+    KStack *kf_active; uint64_t kf_owner;   /* inspection only (white-box probes): the kernel frame stack most recently granted and its job — stacks are per job and independent */
     struct Spare { uint64_t *block; size_t words, cleared, need; } spare[3];   /* §94: the next chunk of the side / handle / offset tables, taken from the arena and cleared CHUNK_WORDS per unit ahead of need */
     Paged pool[16]; size_t pool_sizes[16];   /* fixed-size records (Op, Demand, Real, …) from arena pages: one slot, cleared, per record */
     uint64_t sync_clear_words;             /* words a chunk had to clear synchronously because its spare was not ready (counted) */
@@ -297,9 +296,9 @@ enum {   /* operation families (frame kinds) */
     OF_JOIN,  /* §94.2(4): the bounded request of a shared operation — key interning, then join/create/deliver */
     OF_BOUNDARY, /* shared expression-boundary computation, one node phase per unit */
     OF_SYMS, OF_EDGES, OF_AUDIT,  /* §94: shared audit judgments with private traversal helpers */
-    OF_KERNEL                     /* §94: a kernel call as a continuation stepped one fine transition per unit (kcont.h); a = kind */
+    OF_KERNEL                     /* §94: a kernel call as a frame stack granted one fine transition per unit (kframe.h); a = kind */
 };
-/* the kernel calls units make (kcont.h): pure ones are shared jobs keyed by
+/* the kernel calls units make (kframe.h): pure ones are shared jobs keyed by
  * their operands (and the checker session / environment version where the
  * call reads them); the evaluator-state lookup is private */
 enum { KK_REINDEX = 1, KK_COMPOSE, KK_FC_REINDEX, KK_REF_VALIDATE, KK_FC_PROJECT, KK_ENTAILS, KK_ENTRY_LOOKUP, KK_SHAPE_OF,
@@ -684,7 +683,7 @@ uint64_t op_frames(OpId h) { pthread_mutex_lock(&W.mu); uint64_t n = HND(h)->fra
 void op_release(OpId h) { pthread_mutex_lock(&W.mu); Handle *hd = HND(h); hd->released = true; charge(FR_RELEASE_CHUNK); pthread_mutex_unlock(&W.mu); }
 /* drive a job's cone to a non-running state under the lock; returns the result, or 0 with *why */
 static uint64_t run_locked(Op *o, const char **why) {
-    while (o->st == OP_RUNNING) { W.grant = KC_UNBOUNDED; W.extra = 0; ev_begin(EK_ENGINE_UNIT, OCC(OCC_OP, o->id), 0); bool ok = service(o); ev_end(); if (!ok) break; arena_tend(); }   /* the synchronous driver grants a kernel continuation its whole run in one hand-off */
+    while (o->st == OP_RUNNING) { W.grant = KF_UNBOUNDED; W.extra = 0; ev_begin(EK_ENGINE_UNIT, OCC(OCC_OP, o->id), 0); bool ok = service(o); ev_end(); if (!ok) break; arena_tend(); }   /* the synchronous driver grants a kernel frame stack its whole run in one hand-off */
     if (o->st != OP_COMPLETE) { if (why) *why = o->st == OP_RUNNING ? "operation suspended: no enabled job (cyclic wait)" : o->diag; return 0; }
     return o->result;
 }
@@ -1773,7 +1772,7 @@ static void step_audit(Op *o, Frame *f) {
 }
 
 
-/* ---------------------------------------------------------------- 7c. kernel calls as continuations (§94, kcont.h) ----
+/* ---------------------------------------------------------------- 7c. kernel calls as frame stacks (§94, kframe.h) ----
  * KERNEL: a = kind, b/c/d/e = operands. The call runs on its own continuation
  * (a thread whose stack is the retained continuation); a unit grants it
  * W.grant transitions — one under op_step(h, 1), the whole run under the
@@ -1783,40 +1782,51 @@ static void step_audit(Op *o, Frame *f) {
  * its grant instead (a frame that meets a relocation another job began
  * advances it, §94.2(4)), so progress is never withheld. The job's result is
  * published only when the call has completed. */
-static void kernel_call(KCont *k) {
-    const char *why = NULL; uint64_t level = 0;
-    switch (k->arg[0]) {
-    case KK_REINDEX: k->out[0] = reindex(k->arg[1], k->arg[2]); k->ok = true; break;
-    case KK_COMPOSE: k->out[0] = compose(k->arg[1], k->arg[2]); k->ok = true; break;
-    case KK_FC_REINDEX: k->out[0] = fc_reindex(k->arg[1], k->arg[2]); k->ok = true; break;
-    case KK_REF_VALIDATE: k->ok = ref_validate(k->arg[1], &why); k->why = k->ok ? "" : "specialized reference fails structural validation"; break;
-    case KK_FC_PROJECT: { size_t n; const uint64_t *S = dimset_get(ref_support(k->arg[2]), &n); k->out[0] = fc_project(k->arg[1], S, n); k->ok = true; break; }
-    case KK_ENTAILS: k->ok = fc_entails(k->arg[1], ref_required(k->arg[2])); k->why = k->ok ? "" : "specialized occurrence outside its required face"; break;
-    case KK_ENTRY_LOOKUP: { EntryId e = eval_entry_lookup(k->arg[1], k->arg[2]); k->out[0] = e; k->out[1] = e ? eval_entry_env(e) : global_env_version(); k->ok = true; break; }
-    case KK_SHAPE_OF: k->out[0] = shape_of(k->arg[1]); k->ok = true; break;
-    case KK_INFER: { Inference q = infer(k->arg[1], k->arg[2], k->arg[3]); k->out[0] = q.type; k->out[1] = q.st; k->ok = q.st == CK_VALID;
-        k->outcome = q.st == CK_VALID ? KO_OK : q.st == CK_INVALID ? KO_INVALID : KO_UNRESOLVED;
-        k->why = q.st == CK_VALID ? "" : q.st == CK_INVALID ? "proof use INVALID: connecting evidence does not type in its occurrence context" : "proof use UNRESOLVED: connecting evidence could not be checked in this attempt"; break; }
+/* the call's root frame: operands in the stack's arg[], the result in its out[] / ok / why / outcome */
+KF_DECL(kernel_call, void, KF_NOPARAMS, const char *why; uint64_t level; Inference q; CheckStatus st; bool b; ContextId G; FaceId face; RefId e, E; int c; EntryId entry;)
+KF_STEP(kernel_call) {
+    KF_BEGIN(kernel_call);
+    F->why = NULL; F->level = 0;
+    switch (ks->arg[0]) {
+    case KK_REINDEX: KF_CALL(reindex, &ks->out[0], ks->arg[1], ks->arg[2]); ks->ok = true; break;
+    case KK_COMPOSE: KF_CALL(compose, &ks->out[0], ks->arg[1], ks->arg[2]); ks->ok = true; break;
+    case KK_FC_REINDEX: KF_CALL(fc_reindex, &ks->out[0], ks->arg[1], ks->arg[2]); ks->ok = true; break;
+    case KK_REF_VALIDATE: KF_CALL(ref_validate, &F->b, ks->arg[1], &F->why); ks->ok = F->b; ks->why = ks->ok ? "" : "specialized reference fails structural validation"; break;
+    case KK_FC_PROJECT: { size_t n; const uint64_t *S = dimset_get(ref_support(ks->arg[2]), &n); KF_CALL(fc_project, &ks->out[0], ks->arg[1], S, n); } ks->ok = true; break;
+    case KK_ENTAILS: KF_CALL(fc_entails, &F->b, ks->arg[1], ref_required(ks->arg[2])); ks->ok = F->b; ks->why = ks->ok ? "" : "specialized occurrence outside its required face"; break;
+    case KK_ENTRY_LOOKUP: KF_CALL(eval_entry_lookup, &F->entry, ks->arg[1], ks->arg[2]); ks->out[0] = F->entry; ks->out[1] = F->entry ? eval_entry_env(F->entry) : global_env_version(); ks->ok = true; break;
+    case KK_SHAPE_OF: KF_CALL(shape_of, &ks->out[0], ks->arg[1]); ks->ok = true; break;
+    case KK_INFER: KF_CALL(infer, &F->q, ks->arg[1], ks->arg[2], ks->arg[3]); ks->out[0] = F->q.type; ks->out[1] = F->q.st; ks->ok = F->q.st == CK_VALID;
+        ks->outcome = F->q.st == CK_VALID ? KO_OK : F->q.st == CK_INVALID ? KO_INVALID : KO_UNRESOLVED;
+        ks->why = F->q.st == CK_VALID ? "" : F->q.st == CK_INVALID ? "proof use INVALID: connecting evidence does not type in its occurrence context" : "proof use UNRESOLVED: connecting evidence could not be checked in this attempt"; break;
     case KK_ADMISSION: case KK_CONTEXT: case KK_IS_TYPE: case KK_CHECK: {
-        CheckStatus st = k->arg[0] == KK_ADMISSION ? check_admission(&why) : k->arg[0] == KK_CONTEXT ? check_context(k->arg[1], &why)
-                       : k->arg[0] == KK_IS_TYPE ? check_is_type(k->arg[1], k->arg[2], k->arg[3], &level, &why) : check(k->arg[1], k->arg[2], k->arg[3], k->arg[4], &why);
-        k->out[0] = level; k->out[1] = st; k->ok = st == CK_VALID;
-        k->outcome = st == CK_VALID ? KO_OK : st == CK_INVALID ? KO_INVALID : KO_UNRESOLVED;
-        k->why = st == CK_VALID ? "" : st == CK_INVALID ? "proof use INVALID: judgment prerequisite rejected" : "proof use UNRESOLVED: judgment prerequisite unresolved in this attempt"; break;
+        if (ks->arg[0] == KK_ADMISSION) KF_CALL(check_admission, &F->st, &F->why);
+        else if (ks->arg[0] == KK_CONTEXT) KF_CALL(check_context, &F->st, ks->arg[1], &F->why);
+        else if (ks->arg[0] == KK_IS_TYPE) KF_CALL(check_is_type, &F->st, ks->arg[1], ks->arg[2], ks->arg[3], &F->level, &F->why);
+        else KF_CALL(check, &F->st, ks->arg[1], ks->arg[2], ks->arg[3], ks->arg[4], &F->why);
+        ks->out[0] = F->level; ks->out[1] = F->st; ks->ok = F->st == CK_VALID;
+        ks->outcome = F->st == CK_VALID ? KO_OK : F->st == CK_INVALID ? KO_INVALID : KO_UNRESOLVED;
+        ks->why = F->st == CK_VALID ? "" : F->st == CK_INVALID ? "proof use INVALID: judgment prerequisite rejected" : "proof use UNRESOLVED: judgment prerequisite unresolved in this attempt"; break;
     }
-    case KK_TRANSFORM_EVIDENCE: { ContextId G; FaceId face; RefId e, E; k->ok = transform_evidence(k->arg[1], &G, &face, &e, &E);
-        if (k->ok) { k->out[0] = G; k->out[1] = face; k->out[2] = e; k->out[3] = E; } else k->why = "proof use INVALID: connecting evidence does not type in its occurrence context"; break; }
+    case KK_TRANSFORM_EVIDENCE: KF_CALL(transform_evidence, &F->b, ks->arg[1], &F->G, &F->face, &F->e, &F->E); ks->ok = F->b;
+        if (ks->ok) { ks->out[0] = F->G; ks->out[1] = F->face; ks->out[2] = F->e; ks->out[3] = F->E; } else ks->why = "proof use INVALID: connecting evidence does not type in its occurrence context"; break;
     case KK_NAT: {   /* exact cost arithmetic: one transition per limb (nat.c) */
-        Cost a = k->arg[2], b = k->arg[3];
-        k->out[0] = k->arg[1] == CA_ADD ? cost_sum(a, b) : k->arg[1] == CA_MIN ? (cost_cmp(a, b) <= 0 ? a : b) : (uint64_t)(cost_cmp(a, b) + 1);
-        k->ok = true; break;
+        Cost a = ks->arg[2], b = ks->arg[3];
+        if (ks->arg[1] == CA_ADD) { if (a == COST_INF || b == COST_INF) ks->out[0] = COST_INF; else KF_CALL(nat_add, &ks->out[0], ks->arg[2], ks->arg[3]); }
+        else {
+            if (a == b) F->c = 0; else if (a == COST_INF) F->c = 1; else if (b == COST_INF) F->c = -1; else KF_CALL(nat_compare, &F->c, ks->arg[2], ks->arg[3]);
+            ks->out[0] = ks->arg[1] == CA_MIN ? (F->c <= 0 ? ks->arg[2] : ks->arg[3]) : (uint64_t)(F->c + 1);
+        }
+        ks->ok = true; break;
     }
-    default: k->ok = false; k->why = "unknown kernel call"; break;
+    default: ks->ok = false; ks->why = "unknown kernel call"; break;
     }
+    KF_RETV();
+    KF_END;
 }
-static void kernel_grant(KCont *k) {
-    W.kc_active = k; W.kc_owner = k->job;
-    size_t used = kc_grant(k, W.grant ? W.grant : 1);
+static void kernel_grant(KStack *k) {
+    W.kf_active = k; W.kf_owner = k->job;
+    size_t used = kf_grant(k, W.grant ? W.grant : 1);
     if (used > 1) { W.extra += used - 1; LXADD(frames[FR_KERNEL_TRANSITION], used - 1); LXADD(by_phase[W.phase], used - 1); }
 }
 static Frame kfr(uint64_t kind, uint64_t b, uint64_t c, uint64_t d, uint64_t e) { Frame f = fr(OF_KERNEL, kind, b, c, d); f.e = e; return f; }
@@ -1838,20 +1848,21 @@ static bool cost_op(Op *o, Frame *f, int kind, Cost a, Cost b, uint16_t resume, 
 static void step_kernel(Op *o, Frame *f) {
     switch (f->ph) {
     case 0: {
-        uint64_t args[6] = { f->a, f->b, f->c, f->d, f->e, 0 };
-        KCont *k = kc_new(kernel_call, args, 5); k->job = o->id; k->acct = reuse_scope_new(W.phase);
+        KStack *k = kf_new(); k->arg[0] = f->a; k->arg[1] = f->b; k->arg[2] = f->c; k->arg[3] = f->d; k->arg[4] = f->e;
+        k->job = o->id; k->acct = reuse_scope_new(W.phase);
+        kernel_call_push(k, NULL);                 /* the call's root frame: the job's kernel computation is this frame stack */
         f->acc = (uint64_t)(uintptr_t)k;
         LXADD(kernel_calls, 1);
         f->ph = 1;
     }
     /* fall through */
     case 1: {
-        KCont *k = (KCont *)(uintptr_t)f->acc;
-        if (!kc_done(k)) kernel_grant(k);
-        if (!kc_done(k)) {
-            /* the same frame, retained: resumed by the next unit. A continuation
-             * that waits for another continuation names it: this job then waits
-             * on that job (a represented dependency the scheduler drives) */
+        KStack *k = (KStack *)(uintptr_t)f->acc;
+        if (!kf_done(k)) kernel_grant(k);
+        if (!kf_done(k)) {
+            /* the same frame, retained: resumed by the next unit. A stack
+             * that waits for another stack names it: this job then waits on
+             * that job (a represented dependency the scheduler drives) */
             if (k->blocked && k->blocked_job && k->blocked_job != o->id) {
                 Op *dep = JOB(k->blocked_job);
                 if (dep->st == OP_RUNNING) { o->waiting_on = dep->id; o->kwait = true; }   /* V21 R2: a predicate wait, revalidated after each unit of the dependency */
@@ -1860,8 +1871,8 @@ static void step_kernel(Op *o, Frame *f) {
         }
         reuse_scope_close(k->acct); reuse_scope_unref(k->acct);   /* every event of the call is charged once */
         KOutcome oc = k->outcome; uint64_t out[4] = { k->out[0], k->out[1], k->out[2], k->out[3] }; const char *why = k->why;
-        if (W.kc_active == k) { W.kc_active = NULL; W.kc_owner = 0; }
-        kc_free(k); f->acc = 0;
+        if (W.kf_active == k) { W.kf_active = NULL; W.kf_owner = 0; }
+        kf_free(k); f->acc = 0;
         if (oc == KO_UNRESOLVED) { o->unresolved = check_attempt(); fail(o, why); return; }   /* attempt-local: retried by a request in a later attempt */
         if (oc != KO_OK) { fail(o, why); return; }                                           /* settled */
         switch (f->a) {
@@ -2602,19 +2613,19 @@ void work_init(void) {
     uint64_t f0[1] = { K_FAMILY }, f1[2] = { K_FAMILY, W.EMPTY };
     W.FAM0 = intern_sync(f0, 1, NULL); W.FAM1 = intern_sync(f1, 2, NULL);
     ledger_zero();
-    W.live = true; kc_session(KC_MOD_WORK, true);
+    W.live = true;
 }
 void work_free(void) {
     if (!W.live) return;
-    /* V23 R3: under the closed-session precondition every kernel continuation
-     * still attached to a frame is destroyed, not evaluated: a completed one
-     * is freed; a started, uncompleted one — a finite call that has not
-     * finished, a pending wait, a member of a waiting cycle — is cancelled:
-     * its thread runs its registered releases and unwinds through its stack
-     * segments to its base, its allocation registry is reaped after the
-     * machine's structures, and the record is freed (kc_cancel). Each
-     * continuation's accounting scope is closed and released exactly once;
-     * the events it executed stay counted. No result is published. */
+    /* under the closed-session precondition every kernel frame stack still
+     * attached to a job frame is destroyed, not evaluated (HANDOFF §15 DROP):
+     * a completed or unstarted one is freed; a started, uncompleted one — a
+     * finite call that has not finished, a pending wait, a member of a
+     * waiting cycle — is cancelled: each of its frames, innermost first,
+     * releases what it owns at its phase (claims, root entries, temporaries)
+     * and the stack is freed (kf_cancel). Each stack's accounting scope is
+     * closed and released exactly once; the events it executed stay counted.
+     * No result is published and no thread is involved. */
     {
         Words ks; words_init(&ks);
         for (size_t i = 1; i <= W.tab.n; i++) {
@@ -2622,15 +2633,14 @@ void work_free(void) {
             for (size_t k = 0; k < o->stack.n; k++) { Frame *f = paged_at(&o->stack, k); if (f->fam == OF_KERNEL && f->ph == 1 && f->acc) { words_push(&ks, f->acc); f->acc = 0; } }
         }
         for (size_t i = 0; i < ks.n; i++) {
-            KCont *k = (KCont *)(uintptr_t)ks.w[i]; if (!k) continue;
+            KStack *k = (KStack *)(uintptr_t)ks.w[i]; if (!k) continue;
             ReuseScope *acct = k->acct;
-            kc_cancel(k);                                 /* frees a completed or never-started record directly */
+            kf_cancel(k);                                 /* frees a completed or never-started record directly */
             if (acct) { reuse_scope_close(acct); reuse_scope_unref(acct); }
         }
-        W.kc_active = NULL; W.kc_owner = 0;
+        W.kf_active = NULL; W.kf_owner = 0;
         words_free(&ks);
     }
-    kc_shutdown();
     for (size_t i = 1; i <= W.tab.n; i++) {
         Side *s = side(i); if (!s->ptr) continue;
         switch (s->kind) {
@@ -2651,7 +2661,7 @@ void work_free(void) {
     for (int i = 0; i < 3; i++) if (W.spare[i].block) arena_release(W.spare[i].block, W.spare[i].words);
     arena_reap_all(); arena_free();
     pthread_mutex_destroy(&W.mu);
-    W.live = false; kc_session(KC_MOD_WORK, false);
+    W.live = false;
 }
 
 /* white-box probes that include this file stage frame buffers with

@@ -57,6 +57,8 @@ typedef struct {
      * and the symbol revisions the answer actually read */
     ShapeId shape;
     EntryId next_alt;
+    EntryId shape_next;         /* the next entry of the same shape (insertion order; written once under entries_mu, read with acquire) */
+    struct ShapeSide *sside;    /* its shape's side record (stable) */
     RefId residual; uint64_t receipt;
     VEC(uint64_t) gdeps;        /* pairs (symbol, revision) */
     RefId adapter; uint64_t adapter_prefix; EntryId adapter_src;   /* §78.3–78.4: continue from a completed receipt instead of evaluating the body */
@@ -64,7 +66,7 @@ typedef struct {
     struct PrefixFact *prefix_head;   /* §84.2: the latest committed prefix fact of this producer (immutable facts, newest first; published with release) */
     size_t n_prefix;                  /* facts published (under mu) */
     const struct PrefixFact *adapter_fact;   /* the immutable prefix fact this producer continued from, or NULL */
-    struct KCont *exec_kc; uint64_t exec_job;   /* V21 R2: the continuation (and its job) executing a task of this producer now, or NULL */
+    struct KStack *exec_ks; uint64_t exec_job;   /* the engine stack (and its job) executing a task of this producer now, or NULL */
     struct ReuseScope *scope;         /* V21 R3: the accounting owner of this producer's tasks (the launching request's scope), referenced */
     pthread_mutex_t mu; /* guards state, result, waiters and the counters above */
 } Entry;
@@ -77,10 +79,14 @@ void eval_reset(void);           /* retire all observations; keep workers and po
 
 /* Request the observation of t under chi; k receives the result. */
 void eval_request(RefId t, FaceId chi, Cont *k);
+#define eval_request_PARAMS(X) X(RefId, t) X(FaceId, chi) X(Cont *, k)
+KF_PROTO(eval_request, void, eval_request_PARAMS);
 /* Synchronous driver: request, run the scheduler, return the root result.
  * W_STUCK: the runnable queue emptied with the root still pending (cyclic
  * or otherwise suspended demand); nothing was published for it. */
 EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status);
+#define whnf_PARAMS(X) X(RefId, t) X(FaceId, chi) X(WhnfStatus *, status)
+KF_PROTO(whnf, EvalResult *, whnf_PARAMS);
 
 /* Observation of an occurrence (§2): validates the occurrence against its
  * context (declared variables and dimensions, declared types by identity,
@@ -92,6 +98,7 @@ EvalResult *whnf_in(RefId t, ContextId ctx, WhnfStatus *status);
  * With a worker pool, waits until the ready multiset is empty and every
  * worker is idle. */
 size_t eval_run(void);
+KF_PROTO(eval_run, size_t, KF_NOPARAMS);
 size_t eval_shadow_check(bool verbose);   /* every registered counter against its fold over the primitive stream, at a consistent cut (call when quiescent) */
 /* start n worker threads (0 = sequential, the default); replaces any pool */
 void eval_set_workers(size_t n);
@@ -113,6 +120,10 @@ EvalEvents eval_events(void);
  * form (up to renaming of allocated identities) must not depend on it. */
 typedef enum { POL_FIFO = 0, POL_LIFO, POL_RANDOM } SchedPolicy;
 void eval_set_policy(SchedPolicy p, uint64_t seed);
+/* live adoption (HANDOFF §12) on (the default) or off: off is the base evaluator, whose interaction work is
+ * schedule independent (§28–31); with adoption, whether a waiting slot adopts a fact depends on the schedule
+ * (each run retains its actual work) while the observed normal forms coincide */
+void eval_set_adoption(bool on);
 /* §43: the evaluator's net holds the APPLY_TRANSFORM / CONTINUE_REFERENCE
  * pairs as jobs of the same scheduler (one outstanding count); the pair queue
  * has its own selection policy */
@@ -121,9 +132,13 @@ typedef struct { size_t apply, continue_ref, op, eval_deliver, retries; } EvalNe
 EvalNetEvents eval_net_events(void);
 struct Net *eval_net(void);
 void eval_forward_result(EntryId K, RefId v);        /* the receiver's request (net rule) */
+#define eval_forward_result_PARAMS(X) X(EntryId, K) X(RefId, v)
+KF_PROTO(eval_forward_result, void, eval_forward_result_PARAMS);
 
 /* cache introspection (tests) */
 EntryId eval_entry_lookup(RefId t, FaceId chi);     /* 0 when absent */
+#define eval_entry_lookup_PARAMS(X) X(RefId, t) X(FaceId, chi)
+KF_PROTO(eval_entry_lookup, EntryId, eval_entry_lookup_PARAMS);
 EntryState eval_entry_state(EntryId e);
 FaceId eval_entry_face(EntryId e);
 size_t eval_entry_count(void);
@@ -202,14 +217,14 @@ typedef struct {
     size_t proposals, prep_steps, prep_computed, prep_shared, prep_rejected;
     size_t installs, install_stale_generation, install_not_waiting, revalidations, revalidation_failed;
     size_t tickets, deliveries_current, deliveries_stale, resumes, retired_tickets, cuts_freed;
-    size_t subs_unlinked, subs_freed, prep_joined;   /* dead subscriptions detached from their shape lists and freed; phase-0 joins on a computing record */
+    size_t subs_unlinked, subs_freed, prep_joined, subs_released;   /* subs_released: watches emptied by the event that killed their generation */   /* dead subscriptions detached from their shape lists and freed; phase-0 joins on a computing record */
     size_t connector_steps, connectors, connector_missing, child_watches;   /* HANDOFF §12: connector search steps; adoptions through a checked connector u ⇒* s[σ]; facts with no connector from the current residual; watches registered on a waiting child's committed residual shape */
 } EvalCutEvents;
 EvalCutEvents eval_cut_events(void);
 size_t eval_entry_active_deps(EntryId e, EntryId **out);   /* the active-slot edges (historical edges excluded); caller frees *out */
 /* scheduler policy (tests): a held job is set aside (not outstanding) until
  * released; a budgeted run executes at most n jobs (sequential scheduler) */
-typedef enum { ET_EVALUATE = 1, ET_RESUME, ET_NOTIFY, ET_PAIR, ET_SUBSCRIBE, ET_REPLAY, ET_NOTICE, ET_PREPARE, ET_INSTALL, ET_REQUEST, ET_EDGE, ET_EXTERNAL } EvalTaskKind;
+typedef enum { ET_EVALUATE = 1, ET_RESUME, ET_NOTIFY, ET_PAIR, ET_SUBSCRIBE, ET_REPLAY, ET_NOTICE, ET_PREPARE, ET_INSTALL, ET_REQUEST, ET_EDGE, ET_EXTERNAL, ET_RELEASE } EvalTaskKind;   /* ET_RELEASE: a killed generation's watches give up their Cut and generation */
 typedef struct { EvalTaskKind kind; EntryId producer; EntryId child; bool ticket; const struct PrefixFact *fact; int tag; } EvalTaskInfo;   /* tag: an external job's class (effect.h) */
 /* a job of another layer (the effect boundary) on this scheduler: one bounded step fn(arg); `tag` classifies it for policies */
 void eval_job(void (*fn)(void *), void *arg, int tag);   /* fact: the proposal's fact (PREPARE / INSTALL), the noticed or replayed fact */

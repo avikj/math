@@ -1,4 +1,3 @@
-#include "kstack.h"
 #include "scope.h"
 #include "fine.h"
 #include "template.h"   /* the validator walks template environments */
@@ -8,69 +7,121 @@ RefId tview_traverse(RefId t, const Trav *tv, size_t depth);
 
 #define SSIDE(id) ((ScopeSide *)chunked_at(&M.scope_side, (id) - 1))
 
-DimSetId dimset_free(DimSetId s) {
-    size_t n; const uint64_t *d = dimset_get(s, &n);
-    uint64_t *w = malloc((n ? n : 1) * sizeof(uint64_t)); size_t m = 0;
-    for (size_t k = 0; k < n; k++) if (!is_bound_id(d[k])) w[m++] = d[k];
-    DimSetId out = dimset_make(w, m); free(w); return out;
+/* the procedures of this file are frame families (kframe.h): traversal,
+ * capture, application and validation nest through heap frames, never the
+ * native stack */
+#define set_free_PARAMS(X) X(uint64_t, s) X(int, dims)
+KF_DECL_DROP(set_free, uint64_t, set_free_PARAMS, set_free_drop, uint64_t *w; uint64_t out;)
+static void set_free_drop(set_free_F *F) { free(F->w); F->w = NULL; }
+KF_STEP(set_free) {
+    KF_BEGIN(set_free);
+    {
+        size_t n; const uint64_t *d = F->dims ? dimset_get(F->s, &n) : varset_get(F->s, &n);
+        size_t m = 0;
+        F->w = malloc((n ? n : 1) * sizeof(uint64_t));
+        for (size_t k = 0; k < n; k++) if (!is_bound_id(d[k])) F->w[m++] = d[k];
+        if (F->dims) KF_CALL(dimset_make, &F->out, F->w, m);
+        else KF_CALL(varset_make, &F->out, F->w, m);
+    }
+    free(F->w); F->w = NULL;
+    KF_RET(F->out);
+    KF_END;
 }
-VarSetId varset_free(VarSetId s) {
-    size_t n; const uint64_t *d = varset_get(s, &n);
-    uint64_t *w = malloc((n ? n : 1) * sizeof(uint64_t)); size_t m = 0;
-    for (size_t k = 0; k < n; k++) if (!is_bound_id(d[k])) w[m++] = d[k];
-    VarSetId out = varset_make(w, m); free(w); return out;
-}
+KF_DECL_EXT(dimset_free, DimSetId, dimset_free_PARAMS, DimSetId r;)
+KF_STEP(dimset_free) { KF_BEGIN(dimset_free); KF_CALL(set_free, &F->r, F->s, 1); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(dimset_free, DimSetId, dimset_free_PARAMS, dimset_free(DimSetId s))
+KF_DECL_EXT(varset_free, VarSetId, varset_free_PARAMS, VarSetId r;)
+KF_STEP(varset_free) { KF_BEGIN(varset_free); KF_CALL(set_free, &F->r, F->s, 0); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(varset_free, VarSetId, varset_free_PARAMS, varset_free(VarSetId s))
 
 /* ------------------------------------------------------------------ */
 /* traversal                                                             */
 
 typedef struct { const Trav *tv; size_t depth; } DimCb;
-static IntervalId dim_cb(DimVarId i, void *ctx) {
-    DimCb *c = ctx;
-    IntervalId r = c->tv->dim ? c->tv->dim(i, c->depth, c->tv->ctx) : 0;
-    return r ? r : iv_var(i);
+#define dim_cb_PARAMS(X) X(DimVarId, i) X(void *, ctx)
+KF_DECL(dim_cb, IntervalId, dim_cb_PARAMS, IntervalId r;)
+KF_STEP(dim_cb) {
+    KF_BEGIN(dim_cb);
+    F->r = 0;
+    { DimCb *c = F->ctx; if (c->tv->dim) KF_CALLP(c->tv->dim, &F->r, F->i, c->depth, c->tv->ctx); }
+    if (!F->r) KF_CALL(iv_var, &F->r, F->i);
+    KF_RET(F->r);
+    KF_END;
 }
-IntervalId trav_iv(IntervalId r, const Trav *tv, size_t depth) { DimCb c = { tv, depth }; return iv_substitute(r, dim_cb, &c); }
-FaceId trav_fc(FaceId f, const Trav *tv, size_t depth) { DimCb c = { tv, depth }; return fc_substitute(f, dim_cb, &c); }
+KF_DECL_EXT(trav_iv, IntervalId, trav_iv_PARAMS, DimCb c; IntervalId out;)
+KF_STEP(trav_iv) {
+    KF_BEGIN(trav_iv);
+    F->c.tv = F->tv; F->c.depth = F->depth;
+    KF_CALL(iv_substitute, &F->out, F->r, dim_cb_push, &F->c);
+    KF_RET(F->out);
+    KF_END;
+}
+KF_SYNC_DEF(trav_iv, IntervalId, trav_iv_PARAMS, trav_iv(IntervalId r, const Trav *tv, size_t depth))
+KF_DECL_EXT(trav_fc, FaceId, trav_fc_PARAMS, DimCb c; FaceId out;)
+KF_STEP(trav_fc) {
+    KF_BEGIN(trav_fc);
+    F->c.tv = F->tv; F->c.depth = F->depth;
+    KF_CALL(fc_substitute, &F->out, F->f, dim_cb_push, &F->c);
+    KF_RET(F->out);
+    KF_END;
+}
+KF_SYNC_DEF(trav_fc, FaceId, trav_fc_PARAMS, trav_fc(FaceId f, const Trav *tv, size_t depth))
 
-static RefId trav_ref_body(RefId t, const Trav *tv, size_t depth);
-typedef struct { RefId t; const Trav *tv; size_t depth; RefId out; } trav_ref_args;
-static void trav_ref_thunk(void *p) { trav_ref_args *a = p; a->out = trav_ref_body(a->t, a->tv, a->depth); }
-RefId trav_ref(RefId t, const Trav *tv, size_t depth) {
-    if (!kstack_low()) return trav_ref_body(t, tv, depth);
-    trav_ref_args a = { t, tv, depth, 0 }; kstack_run(trav_ref_thunk, &a); return a.out;
-}
-static RefId trav_ref_body(RefId t, const Trav *tv, size_t depth) {
-    if (ref_is_var(t)) {
-        RefId r = tv->term ? tv->term(ref_var_id(t), depth, tv->ctx) : 0;
-        return r ? r : t;
+KF_DECL_EXT_DROP(trav_ref, RefId, trav_ref_PARAMS, trav_ref_drop, uint64_t key[4]; uint64_t out; bool have; OriginId c; MapId tau; MapBuilder b; size_t k, n; RefId r, im; IntervalId iv, dim; MapId m;)
+static void trav_ref_drop(trav_ref_F *F) { words_free(&F->b.t); words_free(&F->b.d); }
+KF_STEP(trav_ref) {
+    KF_BEGIN(trav_ref);
+    if (ref_is_var(F->t)) {
+        F->r = 0;
+        if (F->tv->term) KF_CALLP(F->tv->term, &F->r, ref_var_id(F->t), F->depth, F->tv->ctx);
+        KF_RET(F->r ? F->r : F->t);
     }
-    uint64_t key[4] = { 1, t, tv->key, depth }, out;
-    if (tv->key && wordmap_get(&M.trav_memo, key, 4, &out)) return out;
-    if (ref_is_tview(t)) out = tview_traverse(t, tv, depth);
+    F->key[0] = 1; F->key[1] = F->t; F->key[2] = F->tv->key; F->key[3] = F->depth;
+    if (F->tv->key) { KF_CALL(wordmap_get, &F->have, &M.trav_memo, F->key, 4, &F->out); if (F->have) KF_RET(F->out); }
+    if (ref_is_tview(F->t)) KF_CALL(tview_traverse, &F->out, F->t, F->tv, F->depth);
     else {
-        OriginId c = ref_origin(t);
-        MapId tau = ref_map(t);
-        MapBuilder b; mapb_init(&b);
-        size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
-        for (size_t k = 0; k < n; k++) mapb_term(&b, xs[k], trav_ref(map_term_image(tau, xs[k]), tv, depth));
-        const uint64_t *ds = dimset_get(origin_fd(c), &n);
-        for (size_t k = 0; k < n; k++) mapb_dim(&b, ds[k], trav_iv(map_dim_image(tau, ds[k]), tv, depth));
-        out = make_view(c, mapb_finish(&b));
+        F->c = ref_origin(F->t);
+        F->tau = ref_map(F->t);
+        mapb_init(&F->b);
+        KF_MAPB_RESERVE(&F->b, varset_n(origin_ft(F->c)), dimset_n(origin_fd(F->c)));
+        varset_get(origin_ft(F->c), &F->n);
+        for (F->k = 0; F->k < F->n; F->k++) {
+            size_t n; const uint64_t *xs = varset_get(origin_ft(F->c), &n);
+            KF_CALL(map_term_image, &F->im, F->tau, xs[F->k]);
+            KF_CALL(trav_ref, &F->r, F->im, F->tv, F->depth);
+            xs = varset_get(origin_ft(F->c), &n);
+            mapb_term(&F->b, xs[F->k], F->r);
+        }
+        dimset_get(origin_fd(F->c), &F->n);
+        for (F->k = 0; F->k < F->n; F->k++) {
+            size_t n; const uint64_t *ds = dimset_get(origin_fd(F->c), &n);
+            KF_CALL(map_dim_image, &F->dim, F->tau, ds[F->k]);
+            KF_CALL(trav_iv, &F->iv, F->dim, F->tv, F->depth);
+            ds = dimset_get(origin_fd(F->c), &n);
+            mapb_dim(&F->b, ds[F->k], F->iv);
+        }
+        KF_CALL(mapb_finish, &F->m, &F->b);   /* releases the builder */
+        KF_CALL(make_view, &F->out, F->c, F->m);
     }
-    if (tv->key) wordmap_put(&M.trav_memo, key, 4, out);
-    return out;
+    if (F->tv->key) KF_CALL(wordmap_put, NULL, &M.trav_memo, F->key, 4, F->out);
+    KF_RET(F->out);
+    KF_END;
 }
+KF_SYNC_DEF(trav_ref, RefId, trav_ref_PARAMS, trav_ref(RefId t, const Trav *tv, size_t depth))
 
-Val trav_val(Val v, const Trav *tv, size_t depth) {
-    Val o = v;
-    switch (v.sort) {
-    case VS_REF: o.id = trav_ref(v.id, tv, depth); break;
-    case VS_INTERVAL: o.id = trav_iv(v.id, tv, depth); break;
-    case VS_FACE: o.id = trav_fc(v.id, tv, depth); break;
+KF_DECL_EXT(trav_val, Val, trav_val_PARAMS, Val o;)
+KF_STEP(trav_val) {
+    KF_BEGIN(trav_val);
+    F->o = F->v;
+    switch (F->v.sort) {
+    case VS_REF: KF_CALL(trav_ref, &F->o.id, F->v.id, F->tv, F->depth); break;
+    case VS_INTERVAL: KF_CALL(trav_iv, &F->o.id, F->v.id, F->tv, F->depth); break;
+    case VS_FACE: KF_CALL(trav_fc, &F->o.id, F->v.id, F->tv, F->depth); break;
     }
-    return o;
+    KF_RET(F->o);
+    KF_END;
 }
+KF_SYNC_DEF(trav_val, Val, trav_val_PARAMS, trav_val(Val v, const Trav *tv, size_t depth))
 
 /* ------------------------------------------------------------------ */
 /* scope records: [n, (sort, type, level, required)*, result_sort, type, level, guard, body] */
@@ -91,112 +142,158 @@ FaceId scope_guard(ScopeId S) { return scope_tail(S)[3]; }
 DimSetId scope_support(ScopeId S) { return SSIDE(S)->support; }
 VarSetId scope_freevars(ScopeId S) { return SSIDE(S)->freevars; }
 
-static void acc_val(Val v, DimSetId *sup, VarSetId *fv) {
-    switch (v.sort) {
-    case VS_REF: *sup = dimset_union(*sup, ref_support(v.id)); *fv = varset_union(*fv, ref_freevars(v.id)); break;
-    case VS_INTERVAL: { Words w; words_init(&w); iv_dims(v.id, &w); *sup = dimset_union(*sup, dimset_make(w.w, w.n)); words_free(&w); break; }
-    case VS_FACE: { Words w; words_init(&w); fc_dims(v.id, &w); *sup = dimset_union(*sup, dimset_make(w.w, w.n)); words_free(&w); break; }
+#define acc_val_PARAMS(X) X(Val, v) X(DimSetId *, sup) X(VarSetId *, fv)
+KF_DECL_DROP(acc_val, void, acc_val_PARAMS, acc_val_drop, Words w; DimSetId d;)
+static void acc_val_drop(acc_val_F *F) { words_free(&F->w); }
+KF_STEP(acc_val) {
+    KF_BEGIN(acc_val);
+    switch (F->v.sort) {
+    case VS_REF: KF_CALL(dimset_union, F->sup, *F->sup, ref_support(F->v.id)); KF_CALL(varset_union, F->fv, *F->fv, ref_freevars(F->v.id)); break;
+    case VS_INTERVAL: case VS_FACE:
+        words_init(&F->w);
+        if (F->v.sort == VS_INTERVAL) iv_dims(F->v.id, &F->w); else fc_dims(F->v.id, &F->w);
+        KF_CALL(dimset_make, &F->d, F->w.w, F->w.n);
+        KF_CALL(dimset_union, F->sup, *F->sup, F->d);
+        words_free(&F->w);
+        break;
     }
+    KF_RETV();
+    KF_END;
 }
 
-ScopeId scope_intern(size_t n, const LocalDecl *locals, Val body, RefId result_type, uint64_t result_level, FaceId guard) {
-    Words w; words_init(&w);
-    words_push(&w, n);
-    for (size_t k = 0; k < n; k++) { words_push(&w, locals[k].sort); words_push(&w, locals[k].type); words_push(&w, locals[k].level); words_push(&w, locals[k].required); }
-    words_push(&w, body.sort); words_push(&w, result_type); words_push(&w, result_level); words_push(&w, guard); words_push(&w, body.id);
-    pthread_mutex_lock(&M.term_mu); ScopeId have = interner_find(&M.scopes, w.w, w.n); pthread_mutex_unlock(&M.term_mu);
-    if (have) { words_free(&w); return have; }
+KF_DECL_EXT_DROP(scope_intern, ScopeId, scope_intern_PARAMS, scope_intern_drop, Words w; ScopeId have, id; DimSetId sup, sup_id; VarSetId fv, fv_id; size_t k; Val tmp; bool created;)
+static void scope_intern_drop(scope_intern_F *F) { words_free(&F->w); }
+KF_STEP(scope_intern) {
+    KF_BEGIN(scope_intern);
+    words_init(&F->w); KF_CALL(words_reserve, NULL, &F->w, 6 + 4 * F->n);   /* the record's exact length: no growth */
+    words_push(&F->w, F->n);
+    for (size_t k = 0; k < F->n; k++) { words_push(&F->w, F->locals[k].sort); words_push(&F->w, F->locals[k].type); words_push(&F->w, F->locals[k].level); words_push(&F->w, F->locals[k].required); }
+    words_push(&F->w, F->body.sort); words_push(&F->w, F->result_type); words_push(&F->w, F->result_level); words_push(&F->w, F->guard); words_push(&F->w, F->body.id);
+    pthread_mutex_lock(&M.term_mu); F->have = interner_find(&M.scopes, F->w.w, F->w.n); pthread_mutex_unlock(&M.term_mu);
+    if (F->have) { words_free(&F->w); KF_RET(F->have); }
     /* free boundary: every record, bound atoms excluded — computed outside
-     * the lock on immutable data (§94: its loops are transition points of a
-     * kernel continuation); the lock is held to intern and publish only */
-    DimSetId sup = dimset_make(NULL, 0); VarSetId fv = varset_make(NULL, 0);
-    for (size_t k = 0; k < n; k++) {
-        if (locals[k].type) { Val tv = { VS_REF, locals[k].type }; acc_val(tv, &sup, &fv); }
-        Val rv = { VS_FACE, locals[k].required }; acc_val(rv, &sup, &fv);
+     * the lock on immutable data (§94: its loops are suspension points); the
+     * lock is held to intern and publish only */
+    KF_CALL(dimset_make, &F->sup, NULL, 0); KF_CALL(varset_make, &F->fv, NULL, 0);
+    for (F->k = 0; F->k < F->n; F->k++) {
+        if (F->locals[F->k].type) { F->tmp.sort = VS_REF; F->tmp.id = F->locals[F->k].type; KF_CALL(acc_val, NULL, F->tmp, &F->sup, &F->fv); }
+        F->tmp.sort = VS_FACE; F->tmp.id = F->locals[F->k].required; KF_CALL(acc_val, NULL, F->tmp, &F->sup, &F->fv);
     }
-    if (result_type) { Val tv = { VS_REF, result_type }; acc_val(tv, &sup, &fv); }
-    { Val gv = { VS_FACE, guard }; acc_val(gv, &sup, &fv); }
-    acc_val(body, &sup, &fv);
-    DimSetId sup_id = dimset_free(sup); VarSetId fv_id = varset_free(fv);
-    bool created;
+    if (F->result_type) { F->tmp.sort = VS_REF; F->tmp.id = F->result_type; KF_CALL(acc_val, NULL, F->tmp, &F->sup, &F->fv); }
+    F->tmp.sort = VS_FACE; F->tmp.id = F->guard; KF_CALL(acc_val, NULL, F->tmp, &F->sup, &F->fv);
+    KF_CALL(acc_val, NULL, F->body, &F->sup, &F->fv);
+    KF_CALL(dimset_free, &F->sup_id, F->sup); KF_CALL(varset_free, &F->fv_id, F->fv);
     pthread_mutex_lock(&M.term_mu);
-    ScopeId id = interner_intern(&M.scopes, w.w, w.n, &created);
-    if (created) { ScopeSide *s = SSIDE(id); s->support = sup_id; s->freevars = fv_id; }
+    F->id = interner_intern(&M.scopes, F->w.w, F->w.n, &F->created);
+    if (F->created) { ScopeSide *s = SSIDE(F->id); s->support = F->sup_id; s->freevars = F->fv_id; }
     pthread_mutex_unlock(&M.term_mu);
-    words_free(&w);
-    return id;
+    words_free(&F->w);
+    KF_RET(F->id);
+    KF_END;
+}
+KF_SYNC_DEF(scope_intern, ScopeId, scope_intern_PARAMS, scope_intern(size_t n, const LocalDecl *locals, Val body, RefId result_type, uint64_t result_level, FaceId guard))
+
+/* a word key of the (sort, id) pairs of a capture telescope or an argument list */
+#define pairs_key_PARAMS(X) X(size_t, n) X(const CaptureDecl *, d) X(const Val *, args)
+KF_DECL_DROP(pairs_key, uint64_t, pairs_key_PARAMS, pairs_key_drop, Words w; uint64_t key;)
+static void pairs_key_drop(pairs_key_F *F) { words_free(&F->w); }
+KF_STEP(pairs_key) {
+    KF_BEGIN(pairs_key);
+    words_init(&F->w); KF_CALL(words_reserve, NULL, &F->w, 2 * F->n);
+    for (size_t k = 0; k < F->n; k++) {
+        if (F->d) { words_push(&F->w, F->d[k].sort); words_push(&F->w, F->d[k].id); }
+        else { words_push(&F->w, F->args[k].sort); words_push(&F->w, F->args[k].id); }
+    }
+    KF_CALL(interner_intern, &F->key, &M.keys, F->w.w, F->w.n, NULL);
+    words_free(&F->w);
+    KF_RET(F->key);
+    KF_END;
 }
 
 /* ------------------------------------------------------------------ */
 /* capture: close the concrete locals of Δ into (depth, slot) atoms         */
 
 typedef struct { size_t n; const CaptureDecl *d; } CloseCtx;
-static RefId close_term(uint64_t x, size_t depth, void *c) {
-    CloseCtx *cc = c;
-    if (is_bound_id(x)) return 0;
-    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_TERM && cc->d[k].id == x) return ref_var(bound_id(depth, k));
-    return 0;
+#define trav_cb_PARAMS(X) X(uint64_t, x) X(size_t, depth) X(void *, c)
+KF_DECL(close_term, RefId, trav_cb_PARAMS, size_t k; uint64_t b; RefId r;)
+KF_STEP(close_term) {
+    KF_BEGIN(close_term);
+    if (is_bound_id(F->x)) KF_RET(0);
+    for (F->k = 0; F->k < ((CloseCtx *)F->c)->n; F->k++) {
+        const CaptureDecl *d = &((CloseCtx *)F->c)->d[F->k];
+        if (d->sort == S_TERM && d->id == F->x) { KF_CALL(bound_id, &F->b, F->depth, F->k); KF_CALL(ref_var, &F->r, F->b); KF_RET(F->r); }
+    }
+    KF_RET(0);
+    KF_END;
 }
-static IntervalId close_dim(uint64_t i, size_t depth, void *c) {
-    CloseCtx *cc = c;
-    if (is_bound_id(i)) return 0;
-    for (size_t k = 0; k < cc->n; k++) if (cc->d[k].sort == S_DIM && cc->d[k].id == i) return iv_var(bound_id(depth, k));
-    return 0;
-}
-static uint64_t ids_key(size_t n, const CaptureDecl *d) {
-    Words w; words_init(&w);
-    for (size_t k = 0; k < n; k++) { words_push(&w, d[k].sort); words_push(&w, d[k].id); }
-    uint64_t key = interner_intern(&M.keys, w.w, w.n, NULL);
-    words_free(&w);
-    return key;
+KF_DECL(close_dim, IntervalId, trav_cb_PARAMS, size_t k; IntervalId r; uint64_t b;)
+KF_STEP(close_dim) {
+    KF_BEGIN(close_dim);
+    if (is_bound_id(F->x)) KF_RET(0);
+    for (F->k = 0; F->k < ((CloseCtx *)F->c)->n; F->k++) {
+        const CaptureDecl *d = &((CloseCtx *)F->c)->d[F->k];
+        if (d->sort == S_DIM && d->id == F->x) { KF_CALL(bound_id, &F->b, F->depth, F->k); KF_CALL(iv_var, &F->r, F->b); KF_RET(F->r); }
+    }
+    KF_RET(0);
+    KF_END;
 }
 
-ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result_type, uint64_t result_level, FaceId guard) {
-    CloseCtx cc = { n, delta };
-    Trav tv = { close_term, close_dim, 0x100000000ULL + ids_key(n, delta), &cc };
-    LocalDecl *ls = malloc((n ? n : 1) * sizeof(LocalDecl));
-    for (size_t k = 0; k < n; k++) {
-        ls[k].sort = delta[k].sort; ls[k].level = delta[k].level;
-        ls[k].type = delta[k].type ? trav_ref(delta[k].type, &tv, 0) : 0;
-        ls[k].required = trav_fc(delta[k].required, &tv, 0);
+KF_DECL_EXT_DROP(capture_scope, ScopeId, capture_scope_PARAMS, capture_scope_drop, CloseCtx cc; Trav tv; LocalDecl *ls; size_t k; uint64_t key; Val b; RefId ty; FaceId g; ScopeId S;)
+static void capture_scope_drop(capture_scope_F *F) { free(F->ls); F->ls = NULL; }
+KF_STEP(capture_scope) {
+    KF_BEGIN(capture_scope);
+    F->cc.n = F->n; F->cc.d = F->delta;
+    KF_CALL(pairs_key, &F->key, F->n, F->delta, NULL);
+    memset(&F->tv, 0, sizeof F->tv);
+    F->tv.term = close_term_push; F->tv.dim = close_dim_push; F->tv.key = 0x100000000ULL + F->key; F->tv.ctx = &F->cc;
+    F->ls = malloc((F->n ? F->n : 1) * sizeof(LocalDecl));
+    for (F->k = 0; F->k < F->n; F->k++) {
+        F->ls[F->k].sort = F->delta[F->k].sort; F->ls[F->k].level = F->delta[F->k].level;
+        F->ls[F->k].type = 0;
+        if (F->delta[F->k].type) KF_CALL(trav_ref, &F->ls[F->k].type, F->delta[F->k].type, &F->tv, 0);
+        KF_CALL(trav_fc, &F->ls[F->k].required, F->delta[F->k].required, &F->tv, 0);
     }
-    Val b = trav_val(body, &tv, 0);
-    RefId ty = result_type ? trav_ref(result_type, &tv, 0) : 0;
-    FaceId g = trav_fc(guard, &tv, 0);
-    ScopeId S = scope_intern(n, ls, b, ty, result_level, g);
-    free(ls);
-    return S;
+    KF_CALL(trav_val, &F->b, F->body, &F->tv, 0);
+    F->ty = 0;
+    if (F->result_type) KF_CALL(trav_ref, &F->ty, F->result_type, &F->tv, 0);
+    KF_CALL(trav_fc, &F->g, F->guard, &F->tv, 0);
+    KF_CALL(scope_intern, &F->S, F->n, F->ls, F->b, F->ty, F->result_level, F->g);
+    free(F->ls); F->ls = NULL;
+    KF_RET(F->S);
+    KF_END;
 }
+KF_SYNC_DEF(capture_scope, ScopeId, capture_scope_PARAMS, capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result_type, uint64_t result_level, FaceId guard))
 
 /* traverse a scope whose own records sit at `rd` */
-static ScopeId trav_scope_records_body(ScopeId S, const Trav *tv, size_t rd);
-typedef struct { ScopeId S; const Trav *tv; size_t rd; ScopeId out; } trav_scope_args;
-static void trav_scope_thunk(void *p) { trav_scope_args *a = p; a->out = trav_scope_records_body(a->S, a->tv, a->rd); }
-static ScopeId trav_scope_records(ScopeId S, const Trav *tv, size_t rd) {
-    if (!kstack_low()) return trav_scope_records_body(S, tv, rd);
-    trav_scope_args a = { S, tv, rd, 0 }; kstack_run(trav_scope_thunk, &a); return a.out;
-}
-static ScopeId trav_scope_records_body(ScopeId S, const Trav *tv, size_t rd) {
-    uint64_t key[4] = { 2, S, tv->key, rd }, out;
-    if (tv->key && wordmap_get(&M.trav_memo, key, 4, &out)) return out;
-    if (tv->enter) tv->enter(S, rd, tv->ctx);
-    size_t n = scope_arity(S);
-    LocalDecl *ls = malloc((n ? n : 1) * sizeof(LocalDecl));
-    for (size_t k = 0; k < n; k++) {
-        ls[k] = scope_local(S, k);
-        if (ls[k].type) ls[k].type = trav_ref(ls[k].type, tv, rd);
-        ls[k].required = trav_fc(ls[k].required, tv, rd);
+#define trav_scope_records_PARAMS(X) X(ScopeId, S) X(const Trav *, tv) X(size_t, rd)
+KF_DECL_DROP(trav_scope_records, ScopeId, trav_scope_records_PARAMS, trav_scope_records_drop, uint64_t key[4]; uint64_t out; bool have; size_t n, k; LocalDecl *ls; Val b; RefId ty; FaceId g;)
+static void trav_scope_records_drop(trav_scope_records_F *F) { free(F->ls); F->ls = NULL; }
+KF_STEP(trav_scope_records) {
+    KF_BEGIN(trav_scope_records);
+    F->key[0] = 2; F->key[1] = F->S; F->key[2] = F->tv->key; F->key[3] = F->rd;
+    if (F->tv->key) { KF_CALL(wordmap_get, &F->have, &M.trav_memo, F->key, 4, &F->out); if (F->have) KF_RET(F->out); }
+    if (F->tv->enter) F->tv->enter(F->S, F->rd, F->tv->ctx);
+    F->n = scope_arity(F->S);
+    F->ls = malloc((F->n ? F->n : 1) * sizeof(LocalDecl));
+    for (F->k = 0; F->k < F->n; F->k++) {
+        F->ls[F->k] = scope_local(F->S, F->k);
+        if (F->ls[F->k].type) KF_CALL(trav_ref, &F->ls[F->k].type, F->ls[F->k].type, F->tv, F->rd);
+        KF_CALL(trav_fc, &F->ls[F->k].required, F->ls[F->k].required, F->tv, F->rd);
     }
-    Val b = trav_val(scope_body(S), tv, rd);
-    RefId ty = scope_type(S) ? trav_ref(scope_type(S), tv, rd) : 0;
-    FaceId g = trav_fc(scope_guard(S), tv, rd);
-    out = scope_intern(n, ls, b, ty, scope_level(S), g);
-    free(ls);
-    if (tv->leave) tv->leave(S, rd, tv->ctx);
-    if (tv->key) wordmap_put(&M.trav_memo, key, 4, out);
-    return out;
+    KF_CALL(trav_val, &F->b, scope_body(F->S), F->tv, F->rd);
+    F->ty = 0;
+    if (scope_type(F->S)) KF_CALL(trav_ref, &F->ty, scope_type(F->S), F->tv, F->rd);
+    KF_CALL(trav_fc, &F->g, scope_guard(F->S), F->tv, F->rd);
+    KF_CALL(scope_intern, &F->out, F->n, F->ls, F->b, F->ty, scope_level(F->S), F->g);
+    free(F->ls); F->ls = NULL;
+    if (F->tv->leave) F->tv->leave(F->S, F->rd, F->tv->ctx);
+    if (F->tv->key) KF_CALL(wordmap_put, NULL, &M.trav_memo, F->key, 4, F->out);
+    KF_RET(F->out);
+    KF_END;
 }
-ScopeId trav_scope(ScopeId S, const Trav *tv, size_t depth) { return trav_scope_records(S, tv, depth + 1); }
+KF_DECL_EXT(trav_scope, ScopeId, trav_scope_PARAMS, ScopeId r;)
+KF_STEP(trav_scope) { KF_BEGIN(trav_scope); KF_CALL(trav_scope_records, &F->r, F->S, F->tv, F->depth + 1); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(trav_scope, ScopeId, trav_scope_PARAMS, trav_scope(ScopeId S, const Trav *tv, size_t depth))
 
 /* ------------------------------------------------------------------ */
 /* structural validation (§50.1–2)                                       */
@@ -211,15 +308,14 @@ ScopeId trav_scope(ScopeId S, const Trav *tv, size_t depth) { return trav_scope_
  * GLOBAL bodies are not unfolded: their definitions are the admission
  * checker's. */
 typedef struct { VEC(ScopeId) stack; const char *why; } ValCtx;
-static uint64_t stack_key(const ValCtx *v) { return v->stack.len ? interner_intern(&M.keys, v->stack.data, v->stack.len, NULL) : 0; }
-static bool validated_before(uint64_t kind, uint64_t id, uint64_t stk) {
-    uint64_t k[3] = { kind, id, stk }, val;
-    bool have = wordmap_get(&M.trav_memo, k, 3, &val);   /* the map is internally synchronized (§94: no outer lock around its hashing) */
-    return have;
-}
-static void remember_validated(uint64_t kind, uint64_t id, uint64_t stk) {
-    uint64_t k[3] = { kind, id, stk };
-    wordmap_put(&M.trav_memo, k, 3, 1);
+#define stack_key_PARAMS(X) X(const ValCtx *, v)
+KF_DECL(stack_key, uint64_t, stack_key_PARAMS, uint64_t r;)
+KF_STEP(stack_key) {
+    KF_BEGIN(stack_key);
+    if (!F->v->stack.len) KF_RET(0);
+    KF_CALL(interner_intern, &F->r, &M.keys, F->v->stack.data, F->v->stack.len, NULL);
+    KF_RET(F->r);
+    KF_END;
 }
 static bool val_atom(ValCtx *v, uint64_t id, Sort want) {
     size_t d = bound_depth(id), s = bound_slot(id);
@@ -229,207 +325,307 @@ static bool val_atom(ValCtx *v, uint64_t id, Sort want) {
     if (scope_local(T, s).sort != want) { v->why = "bound occurrence has the wrong sort for its slot"; return false; }
     return true;
 }
-static void val_ref(RefId t, ValCtx *v);
-static void val_scope(ScopeId S, ValCtx *v);
 static void val_dims(const Words *w, ValCtx *v) { for (size_t k = 0; k < w->n && !v->why; k++) if (is_bound_id(w->w[k])) val_atom(v, w->w[k], S_DIM); }
 static void val_iv(IntervalId r, ValCtx *v) { Words w; words_init(&w); iv_dims(r, &w); val_dims(&w, v); words_free(&w); }
 static void val_fc(FaceId f, ValCtx *v) { Words w; words_init(&w); fc_dims(f, &w); val_dims(&w, v); words_free(&w); }
-/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
-static void val_ref_body(RefId t, ValCtx *v);
-typedef struct { RefId t; ValCtx *v; } val_ref_args;
-static void val_ref_thunk(void *p) { val_ref_args *a = p; val_ref_body(a->t, a->v); }
-static void val_ref(RefId t, ValCtx *v) {
-    if (!kstack_low()) { val_ref_body(t, v); return; }
-    val_ref_args a = { t, v }; kstack_run(val_ref_thunk, &a);
-}
-static void val_ref_body(RefId t, ValCtx *v) {
-    if (v->why) return;
-    if (ref_is_var(t)) { uint64_t x = ref_var_id(t); if (is_bound_id(x)) val_atom(v, x, S_TERM); return; }
-    uint64_t stk = stack_key(v);
-    if (validated_before(0x4EF1, t, stk)) return;
+
+#define val_scope_PARAMS(X) X(ScopeId, S) X(ValCtx *, v)
+KF_PROTO(val_scope, void, val_scope_PARAMS);
+#define val_ref_PARAMS(X) X(RefId, t) X(ValCtx *, v)
+KF_DECL(val_ref, void, val_ref_PARAMS, uint64_t stk, k[3], val; bool have; size_t i, n; OriginId c; MapId tau; RefId im; IntervalId dim;)
+KF_STEP(val_ref) {
+    KF_BEGIN(val_ref);
+    if (F->v->why) KF_RETV();
+    if (ref_is_var(F->t)) { uint64_t x = ref_var_id(F->t); if (is_bound_id(x)) val_atom(F->v, x, S_TERM); KF_RETV(); }
+    KF_CALL(stack_key, &F->stk, F->v);
+    F->k[0] = 0x4EF1; F->k[1] = F->t; F->k[2] = F->stk;
+    KF_CALL(wordmap_get, &F->have, &M.trav_memo, F->k, 3, &F->val);   /* the map is internally synchronized (§94: no outer lock around its hashing) */
+    if (F->have) KF_RETV();
     fine_bump(FC_VALIDATE_STEPS);   /* §94: one transition per node, field and local visited */
-    if (ref_is_tview(t)) {
-        TEnvId E = tenv_of(t); size_t n = tenv_size(E);
-        for (size_t k = 0; k < n && !v->why; k++) {
-            uint64_t slot; TVal val; tenv_entry(E, k, &slot, &val); fine_bump(FC_VALIDATE_STEPS);
+    if (ref_is_tview(F->t)) {
+        F->n = tenv_size(tenv_of(F->t));
+        for (F->i = 0; F->i < F->n && !F->v->why; F->i++) {
+            uint64_t slot; TVal val; tenv_entry(tenv_of(F->t), F->i, &slot, &val); fine_bump(FC_VALIDATE_STEPS);
             switch (val.sort) {
-            case PS_REF: val_ref(val.id, v); break;
-            case PS_INTERVAL: val_iv(val.id, v); break;
-            case PS_FACE: val_fc(val.id, v); break;
-            case PS_SCOPE: val_scope(val.id, v); break;
-            case PS_LEVEL: break;
+            case PS_REF: KF_CALL(val_ref, NULL, val.id, F->v); break;
+            case PS_INTERVAL: val_iv(val.id, F->v); KF_SAFE(); break;
+            case PS_FACE: val_fc(val.id, F->v); KF_SAFE(); break;
+            case PS_SCOPE: KF_CALL(val_scope, NULL, val.id, F->v); break;
+            case PS_LEVEL: KF_SAFE(); break;
             }
         }
     } else {
-        OriginId c = ref_origin(t); MapId tau = ref_map(t);
+        F->c = ref_origin(F->t); F->tau = ref_map(F->t);
         /* boundary images */
-        size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
-        for (size_t k = 0; k < n && !v->why; k++) { fine_bump(FC_VALIDATE_STEPS); val_ref(map_term_image(tau, xs[k]), v); }
-        const uint64_t *ds = dimset_get(origin_fd(c), &n);
-        for (size_t k = 0; k < n && !v->why; k++) { fine_bump(FC_VALIDATE_STEPS); val_iv(map_dim_image(tau, ds[k]), v); }
-        /* stored fields, including inactive branches and metadata */
-        size_t nf = origin_nfields(c);
-        for (size_t k = 0; k < nf && !v->why; k++) {
-            Field f = origin_field(c, (FieldIndex)k); fine_bump(FC_VALIDATE_STEPS);
-            if (f.kind == F_REF) val_ref(f.id, v); else if (f.kind == F_INTERVAL) val_iv(f.id, v); else val_fc(f.id, v);
+        varset_get(origin_ft(F->c), &F->n);
+        for (F->i = 0; F->i < F->n && !F->v->why; F->i++) {
+            size_t n; const uint64_t *xs = varset_get(origin_ft(F->c), &n);
+            fine_bump(FC_VALIDATE_STEPS);
+            KF_CALL(map_term_image, &F->im, F->tau, xs[F->i]);
+            KF_CALL(val_ref, NULL, F->im, F->v);
         }
-        if (!v->why && origin_declared_required(c)) val_fc(origin_declared_required(c), v);   /* 0 = no annotation */
+        dimset_get(origin_fd(F->c), &F->n);
+        for (F->i = 0; F->i < F->n && !F->v->why; F->i++) {
+            { size_t n; const uint64_t *ds = dimset_get(origin_fd(F->c), &n);
+              fine_bump(FC_VALIDATE_STEPS); KF_CALL(map_dim_image, &F->dim, F->tau, ds[F->i]); }
+            val_iv(F->dim, F->v); KF_SAFE();
+        }
+        /* stored fields, including inactive branches and metadata */
+        F->n = origin_nfields(F->c);
+        for (F->i = 0; F->i < F->n && !F->v->why; F->i++) {
+            Field f = origin_field(F->c, (FieldIndex)F->i); fine_bump(FC_VALIDATE_STEPS);
+            if (f.kind == F_REF) KF_CALL(val_ref, NULL, f.id, F->v);
+            else { if (f.kind == F_INTERVAL) val_iv(f.id, F->v); else val_fc(f.id, F->v); KF_SAFE(); }
+        }
+        if (!F->v->why && origin_declared_required(F->c)) val_fc(origin_declared_required(F->c), F->v);   /* 0 = no annotation */
     }
-    if (!v->why) remember_validated(0x4EF1, t, stk);
+    if (!F->v->why) { F->k[0] = 0x4EF1; F->k[1] = F->t; F->k[2] = F->stk; KF_CALL(wordmap_put, NULL, &M.trav_memo, F->k, 3, 1); }
     fine_bump(FC_VALIDATE_STEPS);   /* the node's exit is a transition too (the unwinding of a deep term) */
+    KF_RETV();
+    KF_END;
 }
 /* a prefix view of a telescope: the first k locals */
-static ScopeId prefix_scope(ScopeId S, size_t k) {
-    LocalDecl *ls = malloc((k ? k : 1) * sizeof(LocalDecl));
-    for (size_t q = 0; q < k; q++) ls[q] = scope_local(S, q);
-    Val b = { VS_FACE, fc_true() };
-    ScopeId P = scope_intern(k, ls, b, 0, LEVEL_NONE, fc_true());
-    free(ls); return P;
+#define prefix_scope_PARAMS(X) X(ScopeId, S) X(size_t, k)
+KF_DECL_DROP(prefix_scope, ScopeId, prefix_scope_PARAMS, prefix_scope_drop, LocalDecl *ls; Val b; FaceId t; ScopeId P;)
+static void prefix_scope_drop(prefix_scope_F *F) { free(F->ls); F->ls = NULL; }
+KF_STEP(prefix_scope) {
+    KF_BEGIN(prefix_scope);
+    F->ls = malloc((F->k ? F->k : 1) * sizeof(LocalDecl));
+    for (size_t q = 0; q < F->k; q++) F->ls[q] = scope_local(F->S, q);
+    KF_CALL0(fc_true, &F->t);
+    F->b.sort = VS_FACE; F->b.id = F->t;
+    KF_CALL(scope_intern, &F->P, F->k, F->ls, F->b, 0, LEVEL_NONE, F->t);
+    free(F->ls); F->ls = NULL;
+    KF_RET(F->P);
+    KF_END;
 }
-/* nesting continues on a fresh stack segment when this one is low (kstack.h) */
-static void val_scope_body(ScopeId S, ValCtx *v);
-typedef struct { ScopeId S; ValCtx *v; } val_scope_args;
-static void val_scope_thunk(void *p) { val_scope_args *a = p; val_scope_body(a->S, a->v); }
-static void val_scope(ScopeId S, ValCtx *v) {
-    if (!kstack_low()) { val_scope_body(S, v); return; }
-    val_scope_args a = { S, v }; kstack_run(val_scope_thunk, &a);
-}
-static void val_scope_body(ScopeId S, ValCtx *v) {
-    if (v->why) return;
-    uint64_t stk = stack_key(v);
-    if (validated_before(0x5CA1, S, stk)) return;
+KF_DECL_EXT(val_scope, void, val_scope_PARAMS, uint64_t stk, k[3], val; bool have; size_t n, i; Val body; LocalDecl d; ScopeId P;)
+KF_STEP(val_scope) {
+    KF_BEGIN(val_scope);
+    if (F->v->why) KF_RETV();
+    KF_CALL(stack_key, &F->stk, F->v);
+    F->k[0] = 0x5CA1; F->k[1] = F->S; F->k[2] = F->stk;
+    KF_CALL(wordmap_get, &F->have, &M.trav_memo, F->k, 3, &F->val);
+    if (F->have) KF_RETV();
     fine_bump(FC_VALIDATE_STEPS);
-    size_t n = scope_arity(S);
-    Val body = scope_body(S);
-    for (size_t k = 0; k < n && !v->why; k++) {
-        LocalDecl d = scope_local(S, k);
-        if (d.sort == S_TERM && !d.type) v->why = "term local without a declared type";
-        else if (d.sort == S_DIM && d.type) v->why = "dimension local with a type";
+    F->n = scope_arity(F->S);
+    F->body = scope_body(F->S);
+    for (size_t k = 0; k < F->n && !F->v->why; k++) {
+        LocalDecl d = scope_local(F->S, k);
+        if (d.sort == S_TERM && !d.type) F->v->why = "term local without a declared type";
+        else if (d.sort == S_DIM && d.type) F->v->why = "dimension local with a type";
     }
-    if (!v->why && body.sort == VS_REF && !scope_type(S)) v->why = "reference scope without a declared result type";
+    if (!F->v->why && F->body.sort == VS_REF && !scope_type(F->S)) F->v->why = "reference scope without a declared result type";
     /* each local's declaration over its prefix telescope and the enclosing stack */
-    for (size_t k = 0; k < n && !v->why; k++) {
-        LocalDecl d = scope_local(S, k); fine_bump(FC_VALIDATE_STEPS);
-        vec_push(&v->stack, prefix_scope(S, k));
-        if (d.type) val_ref(d.type, v);
-        if (!v->why) val_fc(d.required, v);
-        v->stack.len--;
-        if (v->why) v->why = "local declaration uses a later or absent slot";
+    for (F->i = 0; F->i < F->n && !F->v->why; F->i++) {
+        F->d = scope_local(F->S, F->i); fine_bump(FC_VALIDATE_STEPS);
+        KF_CALL(prefix_scope, &F->P, F->S, F->i);
+        vec_push(&F->v->stack, F->P);
+        if (F->d.type) KF_CALL(val_ref, NULL, F->d.type, F->v);
+        if (!F->v->why) val_fc(F->d.required, F->v);
+        F->v->stack.len--;
+        if (F->v->why) F->v->why = "local declaration uses a later or absent slot";
     }
-    if (v->why) return;
+    if (F->v->why) KF_RETV();
     /* body, result type and guard over the whole telescope */
-    vec_push(&v->stack, S);
-    switch (body.sort) { case VS_REF: val_ref(body.id, v); break; case VS_INTERVAL: val_iv(body.id, v); break; case VS_FACE: val_fc(body.id, v); break; }
-    if (!v->why && scope_type(S)) val_ref(scope_type(S), v);
-    if (!v->why) val_fc(scope_guard(S), v);
-    v->stack.len--;
-    if (!v->why) remember_validated(0x5CA1, S, stk);
+    vec_push(&F->v->stack, F->S);
+    switch (F->body.sort) { case VS_REF: KF_CALL(val_ref, NULL, F->body.id, F->v); break; case VS_INTERVAL: val_iv(F->body.id, F->v); break; case VS_FACE: val_fc(F->body.id, F->v); break; }
+    if (!F->v->why && scope_type(F->S)) KF_CALL(val_ref, NULL, scope_type(F->S), F->v);
+    if (!F->v->why) val_fc(scope_guard(F->S), F->v);
+    F->v->stack.len--;
+    if (!F->v->why) { F->k[0] = 0x5CA1; F->k[1] = F->S; F->k[2] = F->stk; KF_CALL(wordmap_put, NULL, &M.trav_memo, F->k, 3, 1); }
     fine_bump(FC_VALIDATE_STEPS);
+    KF_RETV();
+    KF_END;
 }
-bool scope_validate(ScopeId S, const char **reason) {
-    ValCtx v; memset(&v, 0, sizeof v);
-    val_scope(S, &v);                      /* no outer telescope at the top level */
-    vec_free(&v.stack);
-    if (v.why) { *reason = v.why; return false; }
-    return true;
+KF_DECL_EXT_DROP(scope_validate, bool, scope_validate_PARAMS, scope_validate_drop, ValCtx v;)
+static void scope_validate_drop(scope_validate_F *F) { vec_free(&F->v.stack); }
+KF_STEP(scope_validate) {
+    KF_BEGIN(scope_validate);
+    KF_CALL(val_scope, NULL, F->S, &F->v);                      /* no outer telescope at the top level */
+    vec_free(&F->v.stack);
+    if (F->v.why) { *F->reason = F->v.why; KF_RET(false); }
+    KF_RET(true);
+    KF_END;
 }
-bool ref_validate(RefId t, const char **reason) {
-    ValCtx v; memset(&v, 0, sizeof v);
-    val_ref(t, &v);
-    vec_free(&v.stack);
-    if (v.why) { *reason = v.why; return false; }
-    return true;
+KF_SYNC_DEF(scope_validate, bool, scope_validate_PARAMS, scope_validate(ScopeId S, const char **reason))
+KF_DECL_EXT_DROP(ref_validate, bool, ref_validate_PARAMS, ref_validate_drop, ValCtx v;)
+static void ref_validate_drop(ref_validate_F *F) { vec_free(&F->v.stack); }
+KF_STEP(ref_validate) {
+    KF_BEGIN(ref_validate);
+    KF_CALL(val_ref, NULL, F->t, &F->v);
+    vec_free(&F->v.stack);
+    if (F->v.why) { *F->reason = F->v.why; KF_RET(false); }
+    KF_RET(true);
+    KF_END;
 }
+KF_SYNC_DEF(ref_validate, bool, ref_validate_PARAMS, ref_validate(RefId t, const char **reason))
 
 /* ------------------------------------------------------------------ */
 /* application and ambient reindexing                                    */
 
 typedef struct { size_t n; const Val *args; } ApplyCtx;
-static RefId apply_term(uint64_t x, size_t depth, void *c) {
-    ApplyCtx *a = c;
-    if (!is_bound_id(x)) return 0;
-    size_t d = bound_depth(x), s = bound_slot(x);
-    if (d < depth) return 0;
-    if (d == depth) { require(s < a->n && a->args[s].sort == VS_REF && a->args[s].id, "scope application: missing or ill-sorted term argument"); return a->args[s].id; }
-    return ref_var(bound_id(d - 1, s));
+KF_DECL(apply_term, RefId, trav_cb_PARAMS, uint64_t b; RefId r;)
+KF_STEP(apply_term) {
+    KF_BEGIN(apply_term);
+    {
+        ApplyCtx *a = F->c;
+        if (!is_bound_id(F->x)) KF_RET(0);
+        size_t d = bound_depth(F->x), s = bound_slot(F->x);
+        if (d < F->depth) KF_RET(0);
+        if (d == F->depth) { require(s < a->n && a->args[s].sort == VS_REF && a->args[s].id, "scope application: missing or ill-sorted term argument"); KF_RET(a->args[s].id); }
+        KF_CALL(bound_id, &F->b, d - 1, s);
+    }
+    KF_CALL(ref_var, &F->r, F->b);
+    KF_RET(F->r);
+    KF_END;
 }
-static IntervalId apply_dim(uint64_t i, size_t depth, void *c) {
-    ApplyCtx *a = c;
-    if (!is_bound_id(i)) return 0;
-    size_t d = bound_depth(i), s = bound_slot(i);
-    if (d < depth) return 0;
-    if (d == depth) { require(s < a->n && a->args[s].sort == VS_INTERVAL && a->args[s].id, "scope application: missing or ill-sorted interval argument"); return a->args[s].id; }
-    return iv_var(bound_id(d - 1, s));
+KF_DECL(apply_dim, IntervalId, trav_cb_PARAMS, IntervalId r; uint64_t b;)
+KF_STEP(apply_dim) {
+    KF_BEGIN(apply_dim);
+    {
+        ApplyCtx *a = F->c;
+        if (!is_bound_id(F->x)) KF_RET(0);
+        size_t d = bound_depth(F->x), s = bound_slot(F->x);
+        if (d < F->depth) KF_RET(0);
+        if (d == F->depth) { require(s < a->n && a->args[s].sort == VS_INTERVAL && a->args[s].id, "scope application: missing or ill-sorted interval argument"); KF_RET(a->args[s].id); }
+        KF_CALL(bound_id, &F->b, d - 1, s);
+    }
+    KF_CALL(iv_var, &F->r, F->b);
+    KF_RET(F->r);
+    KF_END;
 }
-static uint64_t args_key(size_t n, const Val *args) {
-    Words w; words_init(&w);
-    for (size_t k = 0; k < n; k++) { words_push(&w, args[k].sort); words_push(&w, args[k].id); }
-    uint64_t key = interner_intern(&M.keys, w.w, w.n, NULL);
-    words_free(&w);
-    return key;
+KF_DECL_EXT(apply_scope, TypedPartial, apply_scope_PARAMS, ApplyCtx a; Trav tv; uint64_t key; TypedPartial p;)
+KF_STEP(apply_scope) {
+    KF_BEGIN(apply_scope);
+    require(F->n == scope_arity(F->S), "scope application arity");
+    F->a.n = F->n; F->a.args = F->args;
+    KF_CALL(pairs_key, &F->key, F->n, NULL, F->args);
+    F->tv.term = apply_term_push; F->tv.dim = apply_dim_push; F->tv.key = 0x200000000ULL + F->key; F->tv.ctx = &F->a;
+    KF_CALL(trav_val, &F->p.body, scope_body(F->S), &F->tv, 0);
+    F->p.type = 0;
+    if (scope_type(F->S)) KF_CALL(trav_ref, &F->p.type, scope_type(F->S), &F->tv, 0);
+    F->p.level = scope_level(F->S);
+    KF_CALL(trav_fc, &F->p.guard, scope_guard(F->S), &F->tv, 0);
+    KF_RET(F->p);
+    KF_END;
 }
-
-TypedPartial apply_scope(ScopeId S, size_t n, const Val *args) {
-    require(n == scope_arity(S), "scope application arity");
-    ApplyCtx a = { n, args };
-    Trav tv = { apply_term, apply_dim, 0x200000000ULL + args_key(n, args), &a };
-    TypedPartial p;
-    p.body = trav_val(scope_body(S), &tv, 0);
-    p.type = scope_type(S) ? trav_ref(scope_type(S), &tv, 0) : 0;
-    p.level = scope_level(S);
-    p.guard = trav_fc(scope_guard(S), &tv, 0);
-    return p;
-}
+KF_SYNC_DEF(apply_scope, TypedPartial, apply_scope_PARAMS, apply_scope(ScopeId S, size_t n, const Val *args))
 
 /* the k-th local's declaration instantiated at the argument prefix args[0..k) */
-void scope_local_at(ScopeId S, size_t k, const Val *args, RefId *type, FaceId *req, uint64_t *level) {
-    LocalDecl d = scope_local(S, k);
-    ApplyCtx a = { k, args };
-    Trav tv = { apply_term, apply_dim, 0x200000000ULL + args_key(k, args), &a };
-    *type = d.type ? trav_ref(d.type, &tv, 0) : 0;
-    *req = trav_fc(d.required, &tv, 0);
-    *level = d.level;
+KF_DECL_EXT(scope_local_at, void, scope_local_at_PARAMS, LocalDecl d; ApplyCtx a; Trav tv; uint64_t key;)
+KF_STEP(scope_local_at) {
+    KF_BEGIN(scope_local_at);
+    F->d = scope_local(F->S, F->k);
+    F->a.n = F->k; F->a.args = F->args;
+    KF_CALL(pairs_key, &F->key, F->k, NULL, F->args);
+    F->tv.term = apply_term_push; F->tv.dim = apply_dim_push; F->tv.key = 0x200000000ULL + F->key; F->tv.ctx = &F->a;
+    *F->type = 0;
+    if (F->d.type) KF_CALL(trav_ref, F->type, F->d.type, &F->tv, 0);
+    KF_CALL(trav_fc, F->req, F->d.required, &F->tv, 0);
+    *F->level = F->d.level;
+    KF_RETV();
+    KF_END;
 }
+KF_SYNC_VOID_DEF(scope_local_at, scope_local_at_PARAMS, scope_local_at(ScopeId S, size_t k, const Val *args, RefId *type, FaceId *req, uint64_t *level))
 
 typedef struct { MapId sigma; } ReCtx;
-static RefId re_term(uint64_t x, size_t depth, void *c) { (void)depth; if (is_bound_id(x)) return 0; RefId im = map_term_image(((ReCtx *)c)->sigma, x); return im == ref_var(x) ? 0 : im; }
-static IntervalId re_dim(uint64_t i, size_t depth, void *c) { (void)depth; if (is_bound_id(i)) return 0; IntervalId im = map_dim_image(((ReCtx *)c)->sigma, i); return im == iv_var(i) ? 0 : im; }
-ScopeId reindex_scope(ScopeId S, MapId sigma) {
-    if (map_is_identity(sigma)) return S;
-    ReCtx c = { sigma };
-    Trav tv = { re_term, re_dim, 0x300000000ULL + sigma, &c };
-    return trav_scope_records(S, &tv, 0);
+KF_DECL(re_term, RefId, trav_cb_PARAMS, RefId im, v;)
+KF_STEP(re_term) {
+    KF_BEGIN(re_term);
+    if (is_bound_id(F->x)) KF_RET(0);
+    KF_CALL(map_term_image, &F->im, ((ReCtx *)F->c)->sigma, F->x);
+    KF_CALL(ref_var, &F->v, F->x);
+    KF_RET(F->im == F->v ? 0 : F->im);
+    KF_END;
 }
+KF_DECL(re_dim, IntervalId, trav_cb_PARAMS, IntervalId im, v;)
+KF_STEP(re_dim) {
+    KF_BEGIN(re_dim);
+    if (is_bound_id(F->x)) KF_RET(0);
+    KF_CALL(map_dim_image, &F->im, ((ReCtx *)F->c)->sigma, F->x);
+    KF_CALL(iv_var, &F->v, F->x);
+    KF_RET(F->im == F->v ? 0 : F->im);
+    KF_END;
+}
+KF_DECL_EXT(reindex_scope, ScopeId, reindex_scope_PARAMS, ReCtx c; Trav tv; ScopeId r;)
+KF_STEP(reindex_scope) {
+    KF_BEGIN(reindex_scope);
+    if (map_is_identity(F->sigma)) KF_RET(F->S);
+    F->c.sigma = F->sigma;
+    F->tv.term = re_term_push; F->tv.dim = re_dim_push; F->tv.key = 0x300000000ULL + F->sigma; F->tv.ctx = &F->c;
+    KF_CALL(trav_scope_records, &F->r, F->S, &F->tv, 0);
+    KF_RET(F->r);
+    KF_END;
+}
+KF_SYNC_DEF(reindex_scope, ScopeId, reindex_scope_PARAMS, reindex_scope(ScopeId S, MapId sigma))
 
 /* remove the single binder level after ∀ */
-static RefId lower_term(uint64_t x, size_t depth, void *c) { (void)c; if (!is_bound_id(x)) return 0; size_t d = bound_depth(x); require(d != depth, "forall: a local remained"); return d > depth ? ref_var(bound_id(d - 1, bound_slot(x))) : 0; }
-static IntervalId lower_dim(uint64_t i, size_t depth, void *c) { (void)c; if (!is_bound_id(i)) return 0; size_t d = bound_depth(i); require(d != depth, "forall: a local remained"); return d > depth ? iv_var(bound_id(d - 1, bound_slot(i))) : 0; }
-FaceId forall_scope(ScopeId S) {
-    require(scope_arity(S) == 1 && scope_local(S, 0).sort == S_DIM && scope_body(S).sort == VS_FACE, "forall of a non-unary face scope");
-    FaceId f = fc_forall(bound_id(0, 0), scope_body(S).id);
-    Trav tv = { lower_term, lower_dim, 0x400000000ULL, NULL };
-    return trav_fc(f, &tv, 0);
+KF_DECL(lower_term, RefId, trav_cb_PARAMS, uint64_t b; RefId r;)
+KF_STEP(lower_term) {
+    KF_BEGIN(lower_term);
+    if (!is_bound_id(F->x)) KF_RET(0);
+    { size_t d = bound_depth(F->x); require(d != F->depth, "forall: a local remained"); if (d <= F->depth) KF_RET(0); KF_CALL(bound_id, &F->b, d - 1, bound_slot(F->x)); }
+    KF_CALL(ref_var, &F->r, F->b);
+    KF_RET(F->r);
+    KF_END;
 }
+KF_DECL(lower_dim, IntervalId, trav_cb_PARAMS, IntervalId r; uint64_t b;)
+KF_STEP(lower_dim) {
+    KF_BEGIN(lower_dim);
+    if (!is_bound_id(F->x)) KF_RET(0);
+    {
+        size_t d = bound_depth(F->x); require(d != F->depth, "forall: a local remained");
+        if (d <= F->depth) KF_RET(0);
+        KF_CALL(bound_id, &F->b, d - 1, bound_slot(F->x));
+    }
+    KF_CALL(iv_var, &F->r, F->b);
+    KF_RET(F->r);
+    KF_END;
+}
+KF_DECL_EXT(forall_scope, FaceId, forall_scope_PARAMS, FaceId f, r; Trav tv; uint64_t b;)
+KF_STEP(forall_scope) {
+    KF_BEGIN(forall_scope);
+    require(scope_arity(F->S) == 1 && scope_local(F->S, 0).sort == S_DIM && scope_body(F->S).sort == VS_FACE, "forall of a non-unary face scope");
+    KF_CALL(bound_id, &F->b, 0, 0);
+    KF_CALL(fc_forall, &F->f, F->b, scope_body(F->S).id);
+    F->tv.term = lower_term_push; F->tv.dim = lower_dim_push; F->tv.key = 0x400000000ULL; F->tv.ctx = NULL;
+    KF_CALL(trav_fc, &F->r, F->f, &F->tv, 0);
+    KF_RET(F->r);
+    KF_END;
+}
+KF_SYNC_DEF(forall_scope, FaceId, forall_scope_PARAMS, forall_scope(ScopeId S))
 
-TypedPartial open_scope_fresh(ScopeId S, uint64_t key, uint64_t *ids) {
-    size_t n = scope_arity(S);
-    Val *args = calloc(n ? n : 1, sizeof(Val));
-    for (size_t k = 0; k < n; k++) {
-        LocalDecl d = scope_local(S, k);
-        KeyWord kw[4] = { { KW_CONST, 9000 }, { KW_CONST, key }, { KW_CONST, S }, { KW_CONST, k } };
-        if (d.sort == S_DIM) { DimVarId j = fresh_dim_keyed(kw, 4); args[k].sort = VS_INTERVAL; args[k].id = iv_var(j); if (ids) ids[k] = j; }
-        else {
+KF_DECL_EXT_DROP(open_scope_fresh, TypedPartial, open_scope_fresh_PARAMS, open_scope_fresh_drop, size_t n, k; Val *args; LocalDecl d; KeyWord kw[4]; ApplyCtx a; Trav tv; RefId ty; FaceId rq; TypedPartial p; uint64_t nv;)
+static void open_scope_fresh_drop(open_scope_fresh_F *F) { free(F->args); F->args = NULL; }
+KF_STEP(open_scope_fresh) {
+    KF_BEGIN(open_scope_fresh);
+    F->n = scope_arity(F->S);
+    KF_CALL(k_zalloc, (void **)&F->args, F->n ? F->n : 1, sizeof(Val));
+    for (F->k = 0; F->k < F->n; F->k++) {
+        F->d = scope_local(F->S, F->k);
+        F->kw[0].kind = KW_CONST; F->kw[0].v = 9000; F->kw[1].kind = KW_CONST; F->kw[1].v = F->key;
+        F->kw[2].kind = KW_CONST; F->kw[2].v = F->S; F->kw[3].kind = KW_CONST; F->kw[3].v = F->k;
+        if (F->d.sort == S_DIM) {
+            KF_CALL(nominal_var, &F->nv, F->kw, 4, 3, S_DIM, 0, 0, false);
+            F->args[F->k].sort = VS_INTERVAL;
+            if (F->ids) F->ids[F->k] = F->nv;
+            KF_CALL(iv_var, &F->args[F->k].id, F->nv);
+        } else {
             /* the declaration type over the earlier fresh locals */
-            ApplyCtx a = { k, args };
-            Trav tv = { apply_term, apply_dim, 0, &a };
-            RefId ty = trav_ref(d.type, &tv, 0);
-            FaceId rq = trav_fc(d.required, &tv, 0);
-            TermVarId x = fresh_term_keyed_req(kw, 4, ty, rq);
-            args[k].sort = VS_REF; args[k].id = ref_var(x);
-            if (ids) ids[k] = x;
+            F->a.n = F->k; F->a.args = F->args;
+            F->tv.term = apply_term_push; F->tv.dim = apply_dim_push; F->tv.key = 0; F->tv.ctx = &F->a;
+            KF_CALL(trav_ref, &F->ty, F->d.type, &F->tv, 0);
+            KF_CALL(trav_fc, &F->rq, F->d.required, &F->tv, 0);
+            KF_CALL(nominal_var, &F->nv, F->kw, 4, 2, S_TERM, F->ty, F->rq, true);
+            F->args[F->k].sort = VS_REF;
+            if (F->ids) F->ids[F->k] = F->nv;
+            KF_CALL(ref_var, &F->args[F->k].id, F->nv);
         }
     }
-    TypedPartial p = apply_scope(S, n, args);
-    free(args);
-    return p;
+    KF_CALL(apply_scope, &F->p, F->S, F->n, F->args);
+    free(F->args); F->args = NULL;
+    KF_RET(F->p);
+    KF_END;
 }
+KF_SYNC_DEF(open_scope_fresh, TypedPartial, open_scope_fresh_PARAMS, open_scope_fresh(ScopeId S, uint64_t key, uint64_t *ids))

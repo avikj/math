@@ -1,8 +1,8 @@
 #include "state.h"
 #include "lib.h"
+#include "template.h"
 #include "reuse.h"
 #include "fine.h"
-#include "kcont.h"
 #include "event.h"
 
 Machine M;
@@ -15,7 +15,6 @@ void machine_init(void) {
     reuse_reset_all(); fine_reset();  /* a session's counts start with its stream (nothing between sessions is attributed to either) */
     ev_init();                    /* the primitive execution stream of this session */
     memset(&M, 0, sizeof M);
-    kc_session(KC_MOD_MACHINE, true);
     __atomic_add_fetch(&machine_gen_ctr, 1, __ATOMIC_ACQ_REL);
     interner_init(&M.intervals);
     interner_init(&M.faces);
@@ -44,6 +43,8 @@ void machine_init(void) {
     pthread_mutex_init(&M.term_mu, &a);
     pthread_mutexattr_destroy(&a);
     env_control_init();                /* the fresh machine's environment is open */
+    templates_init();                  /* the fixed template library: registered once per machine, here (service owner), never inside an engine step */
+    ev_quiesce();
 }
 
 void machine_free(void) {
@@ -72,6 +73,5 @@ void machine_free(void) {
     chunked_free(&M.defs);
     pthread_mutex_destroy(&M.term_mu);
     memset(&M, 0, sizeof M);
-    kc_session(KC_MOD_MACHINE, false);   /* V23 R3: with the last subsystem, what cancelled continuations still owned privately is reaped */
     reuse_reset_all(); fine_reset(); ev_free();   /* after every teardown step: the next session's counts and stream start together */
 }

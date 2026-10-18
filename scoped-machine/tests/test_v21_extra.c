@@ -54,7 +54,10 @@ static int ledger_mixed(void) {
     return bad;
 }
 
-static void observe(KCont *k) { WhnfStatus s; EvalResult *r = whnf(k->arg[0], fc_true(), &s); k->ok = s == W_OK && r; k->out[0] = s; }
+/* an observation on an engine stack: arg[0] the reference, arg[2] the face */
+KF_DECL(observe, void, KF_NOPARAMS, WhnfStatus s; EvalResult *r;)
+KF_STEP(observe) { KF_BEGIN(observe); KF_CALL(whnf, &F->r, ks->arg[0], ks->arg[2], &F->s); ks->ok = F->s == W_OK && F->r; ks->out[0] = F->s; KF_RETV(); KF_END; }
+static KStack *observer(RefId t) { KStack *k = kf_new(); k->arg[0] = t; k->arg[2] = fc_true(); observe_push(k, NULL); return k; }
 static RefId big_system(uint64_t level) {
     FaceId fs[16]; RefId ts[16];
     for (size_t i = 0; i < 16; i++) { fs[i] = i ? fc_false() : fc_true(); ts[i] = mk_universe(level); }
@@ -63,48 +66,51 @@ static RefId big_system(uint64_t level) {
 static int wait_shared(void) {
     init();
     RefId a = big_system(0), b = big_system(1);
-    uint64_t aa[] = { a }, bb[] = { b };
-    KCont *unrelated = kc_new(observe, aa, 1), *owner = kc_new(observe, bb, 1), *w1 = kc_new(observe, bb, 1), *w2 = kc_new(observe, bb, 1);
-    for (size_t n = 0; !unrelated->in_eval && n < 100000; n++) kc_grant(unrelated, 1);
-    for (size_t n = 0; !owner->in_eval && n < 100000; n++) kc_grant(owner, 1);
-    for (size_t n = 0; !w1->blocked && !kc_done(w1) && n < 100000; n++) kc_grant(w1, 1);
-    for (size_t n = 0; !w2->blocked && !kc_done(w2) && n < 100000; n++) kc_grant(w2, 1);
+    KStack *unrelated = observer(a), *owner = observer(b), *w1 = observer(b), *w2 = observer(b);
+    for (size_t n = 0; !unrelated->in_eval && n < 100000; n++) kf_grant(unrelated, 1);
+    for (size_t n = 0; !owner->in_eval && n < 100000; n++) kf_grant(owner, 1);
+    for (size_t n = 0; !w1->blocked && !kf_done(w1) && n < 100000; n++) kf_grant(w1, 1);
+    for (size_t n = 0; !w2->blocked && !kf_done(w2) && n < 100000; n++) kf_grant(w2, 1);
     bool ok = w1->blocked && w2->blocked && w1->blocked_on == owner && w2->blocked_on == owner && w1->blocked_job == owner->job;
     printf("wait-shared: both consumers name the owner=%d\n", ok);
-    while (!kc_done(owner)) kc_grant(owner, KC_UNBOUNDED);
-    while (!kc_done(w1)) kc_grant(w1, KC_UNBOUNDED);
-    while (!kc_done(w2)) kc_grant(w2, KC_UNBOUNDED);
-    bool unrelated_still = !kc_done(unrelated);
-    printf("wait-shared: consumers completed with the unrelated continuation still suspended=%d\n", unrelated_still);
+    while (!kf_done(owner)) kf_grant(owner, KF_UNBOUNDED);
+    while (!kf_done(w1)) kf_grant(w1, KF_UNBOUNDED);
+    while (!kf_done(w2)) kf_grant(w2, KF_UNBOUNDED);
+    bool unrelated_still = !kf_done(unrelated);
+    printf("wait-shared: consumers completed with the unrelated stack still suspended=%d\n", unrelated_still);
     ok = ok && owner->ok && w1->ok && w2->ok && unrelated_still;
-    while (!kc_done(unrelated)) kc_grant(unrelated, KC_UNBOUNDED);
-    kc_free(w1); kc_free(w2); kc_free(owner); kc_free(unrelated); done();
+    while (!kf_done(unrelated)) kf_grant(unrelated, KF_UNBOUNDED);
+    kf_free(w1); kf_free(w2); kf_free(owner); kf_free(unrelated); done();
     return ok ? 0 : 1;
 }
 
 /* the owner observes b, then performs further work (a second observation)
  * before its call returns; the consumer of b is released at b's publication */
-static void observe_then_more(KCont *k) {
-    WhnfStatus s; EvalResult *r = whnf(k->arg[0], fc_true(), &s);
-    k->out[1] = 1;   /* b is published */
-    EvalResult *r2 = whnf(k->arg[1], fc_true(), &s);
-    k->ok = r && r2;
+KF_DECL(observe_then_more, void, KF_NOPARAMS, WhnfStatus s; EvalResult *r, *r2;)
+KF_STEP(observe_then_more) {
+    KF_BEGIN(observe_then_more);
+    KF_CALL(whnf, &F->r, ks->arg[0], ks->arg[2], &F->s);
+    ks->out[1] = 1;   /* b is published */
+    KF_CALL(whnf, &F->r2, ks->arg[1], ks->arg[2], &F->s);
+    ks->ok = F->r && F->r2;
+    KF_RETV();
+    KF_END;
 }
 static int wait_early(void) {
     init();
     RefId b = big_system(1), c = big_system(2);
-    uint64_t oc[] = { b, c }, bb[] = { b };
-    KCont *owner = kc_new(observe_then_more, oc, 2), *w = kc_new(observe, bb, 1);
-    for (size_t n = 0; !owner->in_eval && n < 100000; n++) kc_grant(owner, 1);
-    for (size_t n = 0; !w->blocked && !kc_done(w) && n < 100000; n++) kc_grant(w, 1);
+    KStack *owner = kf_new(); owner->arg[0] = b; owner->arg[1] = c; owner->arg[2] = fc_true(); observe_then_more_push(owner, NULL);
+    KStack *w = observer(b);
+    for (size_t n = 0; !owner->in_eval && n < 100000; n++) kf_grant(owner, 1);
+    for (size_t n = 0; !w->blocked && !kf_done(w) && n < 100000; n++) kf_grant(w, 1);
     assert(w->blocked && w->blocked_on == owner);
-    for (size_t n = 0; !owner->out[1] && n < 1000000; n++) kc_grant(owner, 1);   /* until b is published, not the whole call */
-    bool owner_running = !kc_done(owner);
-    for (size_t n = 0; !kc_done(w) && n < 1000000; n++) kc_grant(w, 1);
-    bool early = kc_done(w) && w->ok && owner_running;
+    for (size_t n = 0; !owner->out[1] && n < 1000000; n++) kf_grant(owner, 1);   /* until b is published, not the whole call */
+    bool owner_running = !kf_done(owner);
+    for (size_t n = 0; !kf_done(w) && n < 1000000; n++) kf_grant(w, 1);
+    bool early = kf_done(w) && w->ok && owner_running;
     printf("wait-early: consumer completed while the owner's call is still running=%d\n", early);
-    while (!kc_done(owner)) kc_grant(owner, KC_UNBOUNDED);
-    kc_free(w); kc_free(owner); done();
+    while (!kf_done(owner)) kf_grant(owner, KF_UNBOUNDED);
+    kf_free(w); kf_free(owner); done();
     return early ? 0 : 1;
 }
 

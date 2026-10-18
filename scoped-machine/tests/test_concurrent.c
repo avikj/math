@@ -67,11 +67,12 @@ static void *client(void *arg) {
     return NULL;
 }
 
-typedef struct { EvalEvents ev; Graph *graph; size_t entries; size_t bad_runs, bad_pub, bad_deliver, mismatched; } Outcome;
+typedef struct { EvalEvents ev; Graph *graph, *roots; size_t entries; size_t bad_runs, bad_pub, bad_deliver, mismatched, installs; } Outcome;
 
-static Outcome run(size_t workers, int clients) {
+static Outcome run(size_t workers, int clients, bool adopt) {
     Outcome o; memset(&o, 0, sizeof o);
     machine_init(); eval_init();
+    eval_set_adoption(adopt);
     if (workers) eval_set_workers(workers);
     nclients = clients;
     build();
@@ -100,7 +101,10 @@ static Outcome run(size_t workers, int clients) {
     }
     o.graph = canon_export(cn);
     canon_free(cn);
-    o.ev = eval_events(); o.entries = ne;
+    { Canon *c2 = canon_new();
+      for (int q = 0; q < NROOTS; q++) { char lab[32]; snprintf(lab, sizeof lab, "%d", q); canon_add_result(c2, lab, results[0][q]); }
+      o.roots = canon_export(c2); canon_free(c2); }
+    o.ev = eval_events(); o.entries = ne; o.installs = eval_cut_events().installs;
     eval_free(); machine_free();
     return o;
 }
@@ -181,13 +185,14 @@ int main(void) {
     { int c1 = storm(1, 8, 50, true), c4 = storm(4, 8, 50, true);
       printf("  storm on a cyclic key: %d anomalies (every client W_STUCK, nothing published, one task)\n", c1 + c4);
       if (c1 || c4) fails++; }
-    Outcome seq = run(0, 4);
-    printf("  sequential 4 clients: W=(REQUEST %zu, EVAL_STEP %zu, PUB %zu, DELIVER %zu) keys=%zu\n", seq.ev.request, seq.ev.eval_step, seq.ev.publish, seq.ev.deliver, seq.entries);
+    /* the base evaluator (live adoption off): W and the complete canonical graph equal the sequential run */
+    Outcome seq = run(0, 4, false);
+    printf("  sequential 4 clients (adoption off): W=(REQUEST %zu, EVAL_STEP %zu, PUB %zu, DELIVER %zu) keys=%zu\n", seq.ev.request, seq.ev.eval_step, seq.ev.publish, seq.ev.deliver, seq.entries);
     size_t cfg[][2] = { {2, 2}, {4, 4}, {8, 4}, {3, 8}, {8, 8} };
     for (size_t k = 0; k < sizeof cfg / sizeof cfg[0]; k++) {
         for (int rep = 0; rep < 3; rep++) {
-            Outcome c = run(cfg[k][0], (int)cfg[k][1]);
-            Outcome s4 = (cfg[k][1] == 4) ? seq : run(0, (int)cfg[k][1]);
+            Outcome c = run(cfg[k][0], (int)cfg[k][1], false);
+            Outcome s4 = (cfg[k][1] == 4) ? seq : run(0, (int)cfg[k][1], false);
             MatchReport mr; bool same_graph = graph_match(c.graph, s4.graph, &mr);
             bool ok = c.ev.request == s4.ev.request && c.ev.eval_step == s4.ev.eval_step && c.ev.publish == s4.ev.publish && c.ev.deliver == s4.ev.deliver
                       && c.bad_runs == 0 && c.bad_pub == 0 && c.bad_deliver == 0 && c.mismatched == 0 && same_graph;
@@ -197,11 +202,32 @@ int main(void) {
                        cfg[k][0], cfg[k][1], rep, c.ev.request, c.ev.eval_step, c.ev.publish, c.ev.deliver, s4.ev.request, s4.ev.eval_step, s4.ev.publish, s4.ev.deliver,
                        c.bad_runs, c.bad_pub, c.bad_deliver, c.mismatched, same_graph ? "equal" : mr.reason);
             } else if (rep == 0) printf("  workers=%zu clients=%zu: W and canonical graph equal to the sequential run; one task and one publication per key\n", cfg[k][0], cfg[k][1]);
-            graph_free(c.graph);
-            if (cfg[k][1] != 4) graph_free(s4.graph);
+            graph_free(c.graph); graph_free(c.roots);
+            if (cfg[k][1] != 4) { graph_free(s4.graph); graph_free(s4.roots); }
         }
     }
-    graph_free(seq.graph);
+    /* live adoption (HANDOFF §12): whether a waiting slot adopts a fact depends on the interleaving; the observed
+     * normal forms coincide with the sequential run, and every key still runs once and publishes once */
+    {
+        Outcome aseq = run(0, 4, true);
+        MatchReport mr0; if (!graph_match(aseq.roots, seq.roots, &mr0)) { fails++; printf("  FAIL adoption changes an observed normal form (sequential): %s\n", mr0.reason); }
+        size_t imin = (size_t)-1, imax = 0; bool wvary = false;
+        for (size_t k = 0; k < sizeof cfg / sizeof cfg[0]; k++) for (int rep = 0; rep < 3; rep++) {
+            Outcome c = run(cfg[k][0], (int)cfg[k][1], true);
+            MatchReport mr; bool same = graph_match(c.roots, aseq.roots, &mr);
+            if (!same || c.bad_runs || c.bad_pub || c.bad_deliver || c.mismatched) {
+                fails++;
+                printf("  FAIL adoption workers=%zu clients=%zu rep=%d: runs>1:%zu pub>1:%zu req!=deliver:%zu mismatched:%zu roots %s\n", cfg[k][0], cfg[k][1], rep, c.bad_runs, c.bad_pub, c.bad_deliver, c.mismatched, same ? "equal" : mr.reason);
+            }
+            if (c.installs < imin) imin = c.installs;
+            if (c.installs > imax) imax = c.installs;
+            if (c.ev.request != aseq.ev.request) wvary = true;
+            graph_free(c.graph); graph_free(c.roots);
+        }
+        printf("  live adoption: observed normal forms equal to the sequential run in every configuration; one task and one publication per key; adoptions installed %zu..%zu; the work vector %s (each run retains its actual work)\n", imin, imax, wvary ? "varies with the interleaving" : "coincides");
+        graph_free(aseq.graph); graph_free(aseq.roots);
+    }
+    graph_free(seq.graph); graph_free(seq.roots);
     printf(fails ? "CONCURRENT CHECK FAILED\n" : "concurrent check passed\n");
     return fails ? 1 : 0;
 }

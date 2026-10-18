@@ -245,10 +245,12 @@ static void t_multi(void) {
       SymbolId W3 = wrap(&w, "client3", Fr, 1, di); FaceId If2 = fc_lit(w.i, 1);
       WhnfStatus s3; whnf(global_ref(W3), If2, &s3); whnf(Fr, If2, &s3); eval_run();
       EvalCutEvents d1 = cev();
-      EXPECT(d1.subs_unlinked >= d0.subs_unlinked + 2 && d1.subs_freed >= d0.subs_freed + 2 && d1.cuts_freed > d0.cuts_freed,
-             "dead subscriptions are detached and freed by a later publication on their shape, releasing their Cuts (unlinked=%zu freed=%zu cuts freed=%zu)",
-             d1.subs_unlinked - d0.subs_unlinked, d1.subs_freed - d0.subs_freed, d1.cuts_freed - d0.cuts_freed);
-      printf("multi detach workers=%zu: subscriptions unlinked=%zu freed=%zu cuts freed=%zu (live subscriptions now %zu of %zu)\n", g_workers,
+      EXPECT(d0.subs_released >= 2 && d0.cuts_freed >= 2,
+             "the events that killed the clients' generations released their watches and with them the Cuts (released=%zu cuts freed=%zu)", d0.subs_released, d0.cuts_freed);
+      EXPECT(d1.subs_unlinked >= d0.subs_unlinked + 2 && d1.subs_freed >= d0.subs_freed + 2,
+             "the hollow nodes are detached and freed by a later publication on their shape (unlinked=%zu freed=%zu)",
+             d1.subs_unlinked - d0.subs_unlinked, d1.subs_freed - d0.subs_freed);
+      printf("multi detach workers=%zu: released by the killing events=%zu (cuts freed %zu); later publication unlinked=%zu freed=%zu cuts freed=%zu (live subscriptions now %zu of %zu)\n", g_workers, d0.subs_released, d0.cuts_freed,
              d1.subs_unlinked - d0.subs_unlinked, d1.subs_freed - d0.subs_freed, d1.cuts_freed - d0.cuts_freed, d1.subscriptions - d1.subs_freed, d1.subscriptions); }
     stop();
 }

@@ -17,6 +17,7 @@
 #include "common.h"
 #include <pthread.h>
 #include "radix.h"
+#include "kframe.h"
 
 #define CHUNK_BITS 11
 #define CHUNK_SIZE ((size_t)1 << CHUNK_BITS)
@@ -40,6 +41,8 @@ void chunked_init(Chunked *c, size_t elem);
 void chunked_free(Chunked *c);
 void chunked_release_chunk(Chunked *c, size_t chunk);   /* retire one consumed chunk (index >> CHUNK_BITS) */
 void *chunked_at(Chunked *c, size_t i);           /* creates the chunk if needed (zeroed) */
+#define chunked_prepare_PARAMS(X) X(Chunked *, c) X(size_t, i)
+KF_PROTO(chunked_prepare, void, chunked_prepare_PARAMS);   /* the chunk of i created outside every lock, a reused block cleared one word per transition */
 void *chunked_get(const Chunked *c, size_t i);    /* read-only: chunk must exist */
 void *chunked_peek(const Chunked *c, size_t i);   /* read-only: NULL when the chunk does not exist yet */
 
@@ -64,6 +67,19 @@ uint64_t interner_intern(Interner *t, const uint64_t *w, size_t n, bool *created
 /* lookup without creating; returns 0 when absent */
 uint64_t interner_find(Interner *t, const uint64_t *w, size_t n);
 const uint64_t *interner_get(const Interner *t, uint64_t id, size_t *n);
+/* frame families (kframe.h): the same procedures as resumable frames */
+#define interner_find_PARAMS(X) X(Interner *, t) X(const uint64_t *, w) X(size_t, n)
+#define interner_intern_PARAMS(X) X(Interner *, t) X(const uint64_t *, w) X(size_t, n) X(bool *, created)
+KF_PROTO(interner_find, uint64_t, interner_find_PARAMS);
+KF_PROTO(interner_intern, uint64_t, interner_intern_PARAMS);
+/* interning with a publication: pub(id, ctx) runs inside the insertion's
+ * locked section, before the new id becomes reachable by any probe (its
+ * writes — the record's side data — happen before every lookup that finds
+ * the id); constant work, never a suspension */
+typedef void (*InternPub)(uint64_t id, void *ctx);
+#define interner_intern_pub_PARAMS(X) X(Interner *, t) X(const uint64_t *, w) X(size_t, n) X(bool *, created) X(InternPub, pub) X(void *, pub_ctx)
+KF_PROTO(interner_intern_pub, uint64_t, interner_intern_pub_PARAMS);
+uint64_t interner_intern_pub(Interner *t, const uint64_t *w, size_t n, bool *created, InternPub pub, void *pub_ctx);
 size_t interner_count(Interner *t);
 
 /* Small key→value hash map on word tuples (memo tables); thread-safe. */
@@ -76,5 +92,9 @@ void wordmap_init(WordMap *m);
 void wordmap_free(WordMap *m);
 bool wordmap_get(WordMap *m, const uint64_t *k, size_t n, uint64_t *out);
 void wordmap_put(WordMap *m, const uint64_t *k, size_t n, uint64_t v);
+#define wordmap_get_PARAMS(X) X(WordMap *, m) X(const uint64_t *, k) X(size_t, n) X(uint64_t *, out)
+#define wordmap_put_PARAMS(X) X(WordMap *, m) X(const uint64_t *, k) X(size_t, n) X(uint64_t, v)
+KF_PROTO(wordmap_get, bool, wordmap_get_PARAMS);
+KF_PROTO(wordmap_put, void, wordmap_put_PARAMS);
 
 #endif

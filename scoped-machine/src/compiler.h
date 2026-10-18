@@ -128,6 +128,13 @@ bool compiler_template(uint64_t id, int dir, RefId *body, TermVarId *slot);
 /* an external application pair: APPLY_TRANSFORM(id,dir,σ) -- REF(a), result to b */
 enum { DIR_FORWARD = 0, DIR_REVERSE = 1 };
 
+/* frame families (kframe.h) */
+#define diagram_canonical_PARAMS(X) X(DiagramId, d)
+#define transform_evidence_PARAMS(X) X(TransformId, id) X(ContextId *, G) X(FaceId *, face) X(RefId *, evidence) X(RefId *, type)
+#define compiler_decode_call_PARAMS(X) X(const Head *, h) X(uint64_t *, id) X(int *, dir) X(MapId *, sigma) X(RefId *, a)
+KF_PROTO(diagram_canonical, RefId, diagram_canonical_PARAMS);
+KF_PROTO(transform_evidence, bool, transform_evidence_PARAMS);
+KF_PROTO(compiler_decode_call, bool, compiler_decode_call_PARAMS);
 void compiler_init(void);
 void compiler_free(void);
 

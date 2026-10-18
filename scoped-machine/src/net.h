@@ -120,6 +120,8 @@ void net_share_scheduler(Net *n, pthread_mutex_t *mu, pthread_cond_t *cv, size_t
 bool net_pop_pair_locked(Net *n, Active *out);         /* caller holds shared.mu */
 size_t net_pending_pairs_locked(const Net *n);
 bool net_step_pair(Net *n, Active a);                  /* one candidate pair; true when a replacement was committed */
+#define net_step_pair_PARAMS(X) X(Net *, n) X(Active, a)
+KF_PROTO(net_step_pair, bool, net_step_pair_PARAMS);  /* the same step as a frame family (kframe.h) */
 /* run local rules until no active pair remains; returns rewrite count */
 size_t net_run(Net *n);
 /* evaluation requests suspended in the cache are resumed by the eval

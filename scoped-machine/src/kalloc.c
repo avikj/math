@@ -6,7 +6,7 @@
  * step to take or return a slot; a page refill is one arena allocation),
  * and whole arena blocks for larger requests. Clearing (calloc) and the copy
  * of a reallocation are performed one word at a time with a fine step each
- * (FC_ALLOC_WORDS): inside a kernel continuation they are transitions, so
+ * (FC_ALLOC_WORDS): inside a frame step they are transitions, so
  * an input-sized clear or copy is in units like any other loop. A pointer
  * not from here (strdup, a block from before the arena was live) is
  * recognized by its missing header and returned to the host allocator.
@@ -19,7 +19,6 @@
 #include "common.h"
 #include "arena.h"
 #include "fine.h"
-#include "kcont.h"
 #include <string.h>
 
 #if defined(__SANITIZE_ADDRESS__)
@@ -36,15 +35,8 @@ enum { HDR = 16, NCLASS = 8, MIN_SHIFT = 4 };            /* classes: 16, 32, …
 #define MAGIC_SMALL 0x5A11000000000000ULL
 #define MAGIC_LARGE 0x1A26000000000000ULL
 #define MAGIC_MASK  0xFFFF000000000000ULL
-#define OWNED_FLAG   0x0000800000000000ULL   /* V23 R3: the slot carries an owner record before its header */
 #define PAYLOAD_MASK 0x00007FFFFFFFFFFFULL
 typedef struct { uint64_t magic_class; uint64_t size; } Hdr;   /* magic | class (small) or magic (large); the request size */
-/* V23 R3: an allocation made on a kernel continuation is registered to that
- * continuation's KOwn until it is freed: [OwnRec][Hdr][payload] */
-typedef struct OwnRec { KOwn *own; struct OwnRec *prev, *next; uint64_t pad; } OwnRec;
-enum { OHDR = sizeof(OwnRec) };
-__thread int kalloc_unowned_depth;   /* > 0: allocations published into process-lifetime structures (never continuation-private) */
-
 static struct { pthread_mutex_t mu; void *free_list[NCLASS]; uint64_t pages, large; bool init; } KA = { PTHREAD_MUTEX_INITIALIZER, {0}, 0, 0, false };
 
 static unsigned class_of(size_t n) { unsigned c = 0; size_t s = (size_t)1 << MIN_SHIFT; while (s < n) { s <<= 1; c++; } return c; }
@@ -56,50 +48,23 @@ static void refill(unsigned c) {   /* one arena page carved into slots of class 
     for (size_t i = 0; i < k; i++) { char *s = page + i * slot; *(void **)(s + HDR) = KA.free_list[c]; KA.free_list[c] = s; }
     POISON(page, bytes);
 }
-/* the owner record of a live allocation stays unpoisoned (other threads unlink
- * its neighbours under the owner's lock); it is poisoned with the slot when freed */
-static void own_link(KOwn *o, char *base) {
-    OwnRec *r = (OwnRec *)base; UNPOISON(r, OHDR);
-    r->own = o; r->prev = NULL; r->pad = 0;
-    pthread_mutex_lock(&o->mu);
-    r->next = o->head; if (r->next) r->next->prev = r;
-    o->head = r; o->live++;
-    pthread_mutex_unlock(&o->mu);
-}
-/* unlink; true when the owner record itself is to be freed (released and empty) */
-static bool own_unlink(char *base) {
-    OwnRec *r = (OwnRec *)base;
-    KOwn *o = r->own;
-    pthread_mutex_lock(&o->mu);
-    if (r->prev) r->prev->next = r->next; else o->head = r->next;
-    if (r->next) r->next->prev = r->prev;
-    bool gone = --o->live == 0 && o->released;
-    pthread_mutex_unlock(&o->mu);
-    if (gone) { pthread_mutex_destroy(&o->mu); (free)(o); }
-    return gone;
-}
 static void *take(size_t n) {
     if (!arena_live()) arena_init();
     fine_bump(FC_ALLOC_OPS);
-    KOwn *o = kalloc_unowned_depth ? NULL : kc_owner_current();
-    size_t extra = o ? OHDR : 0;
-    uint64_t flag = o ? OWNED_FLAG : 0;
-    if (n + extra > ((size_t)1 << (MIN_SHIFT + NCLASS - 1))) {   /* a whole arena block */
-        size_t words = (n + extra + HDR + 7) / 8, got; uint64_t *b;
+    if (n > ((size_t)1 << (MIN_SHIFT + NCLASS - 1))) {   /* a whole arena block */
+        size_t words = (n + HDR + 7) / 8, got; uint64_t *b;
         pthread_mutex_lock(&KA.mu); b = arena_alloc(words, &got); KA.large++; pthread_mutex_unlock(&KA.mu);
         POISON(b, got * 8);
-        Hdr *h = (Hdr *)((char *)b + extra); UNPOISON(h, HDR); h->magic_class = MAGIC_LARGE | flag | (uint64_t)got; h->size = n; POISON(h, HDR);
-        if (o) own_link(o, (char *)b);
+        Hdr *h = (Hdr *)b; UNPOISON(h, HDR); h->magic_class = MAGIC_LARGE | (uint64_t)got; h->size = n; POISON(h, HDR);
         UNPOISON((char *)h + HDR, n);
         return (char *)h + HDR;
     }
-    unsigned c = class_of(n + extra ? n + extra : 1);
+    unsigned c = class_of(n ? n : 1);
     pthread_mutex_lock(&KA.mu);
     if (!KA.free_list[c]) refill(c);
     char *s = KA.free_list[c]; UNPOISON(s + HDR, sizeof(void *)); KA.free_list[c] = *(void **)(s + HDR);
     pthread_mutex_unlock(&KA.mu);
-    Hdr *h = (Hdr *)(s + extra); UNPOISON(h, HDR); h->magic_class = MAGIC_SMALL | flag | c; h->size = n; POISON(h, HDR);
-    if (o) own_link(o, s);
+    Hdr *h = (Hdr *)s; UNPOISON(h, HDR); h->magic_class = MAGIC_SMALL | c; h->size = n; POISON(h, HDR);
     UNPOISON((char *)h + HDR, n);
     return (char *)h + HDR;
 }
@@ -113,7 +78,6 @@ static bool ours(const void *p, Hdr *out) {
 static void give(void *p, const Hdr *h) {
     fine_bump(FC_ALLOC_OPS);
     char *s = (char *)p - HDR;
-    if (h->magic_class & OWNED_FLAG) { s -= OHDR; own_unlink(s); }
     if ((h->magic_class & MAGIC_MASK) == MAGIC_LARGE) {
         size_t got = h->magic_class & PAYLOAD_MASK; POISON(s, got * 8);
         pthread_mutex_lock(&KA.mu); arena_release((uint64_t *)s, got); pthread_mutex_unlock(&KA.mu);
@@ -151,27 +115,33 @@ void *k_realloc(void *p, size_t n) {
     return q;
 }
 uint64_t kalloc_pages(void) { return KA.pages; }
-/* V23 R3: the registry of a completed continuation dissolves as its
- * allocations are freed (each free unlinks; the record goes with the last) */
-void kalloc_release_owner(KOwn *o) {
-    pthread_mutex_lock(&o->mu); o->released = true; bool gone = o->live == 0; pthread_mutex_unlock(&o->mu);
-    if (gone) { pthread_mutex_destroy(&o->mu); (free)(o); }
-}
-/* the allocations still registered to a cancelled continuation, one per step */
-size_t kalloc_reap_owner(KOwn *o) {
-    size_t n = 0;
-    pthread_mutex_lock(&o->mu); o->released = true; bool empty = o->live == 0; pthread_mutex_unlock(&o->mu);
-    if (empty) { pthread_mutex_destroy(&o->mu); (free)(o); return 0; }
-    for (;;) {
-        pthread_mutex_lock(&o->mu); OwnRec *r = o->head; pthread_mutex_unlock(&o->mu);
-        UNPOISON((char *)r + OHDR, HDR); Hdr h = *(Hdr *)((char *)r + OHDR); POISON((char *)r + OHDR, HDR);
-        bool last = false;
-        { pthread_mutex_lock(&o->mu); last = o->live == 1; pthread_mutex_unlock(&o->mu); }
-        give((char *)r + OHDR + HDR, &h); n++;          /* the last give frees the record */
-        if (last) return n;
-    }
-}
 
-void k_copy_words(uint64_t *dst, const uint64_t *src, size_t n) {
-    for (size_t i = 0; i < n; i++) { dst[i] = src[i]; fine_bump(FC_COPY_WORDS); }
+/* the clearing allocation and the reallocation as frame families (kframe.h):
+ * the same steps and counts as k_calloc / k_realloc, with a suspension point
+ * after each word, so an input-sized clear or copy spans as many grants as
+ * it has words */
+KF_DECL_EXT_DROP(k_zalloc, void *, k_zalloc_PARAMS, k_zalloc_drop, char *p; size_t n, i, w;)
+static void k_zalloc_drop(k_zalloc_F *F) { if (F->p) k_free(F->p); F->p = NULL; }
+KF_STEP(k_zalloc) {
+    KF_BEGIN(k_zalloc);
+    F->n = F->a * F->b; require(!F->a || F->n / F->a == F->b, "calloc overflow");
+    F->p = take(F->n); F->w = F->n / 8;
+    for (F->i = 0; F->i < F->w; F->i++) { ((uint64_t *)F->p)[F->i] = 0; fine_bump(FC_ALLOC_WORDS); KF_SAFE(); }
+    for (size_t i = F->w * 8; i < F->n; i++) F->p[i] = 0;
+    { char *r = F->p; F->p = NULL; KF_RET(r); }
+    KF_END;
+}
+KF_DECL_EXT_DROP(k_regrow, void *, k_regrow_PARAMS, k_regrow_drop, char *q; Hdr h; size_t keep, i, w;)
+static void k_regrow_drop(k_regrow_F *F) { if (F->q) k_free(F->q); F->q = NULL; }
+KF_STEP(k_regrow) {
+    KF_BEGIN(k_regrow);
+    if (!F->p) KF_RET(take(F->n));
+    if (!ours(F->p, &F->h)) KF_RET((realloc)(F->p, F->n));
+    if (F->n <= F->h.size && (F->h.magic_class & MAGIC_MASK) == MAGIC_SMALL) KF_RET(k_realloc(F->p, F->n));   /* shrinking within the slot: in place, one step */
+    F->q = take(F->n); F->keep = F->h.size < F->n ? F->h.size : F->n; F->w = F->keep / 8;
+    for (F->i = 0; F->i < F->w; F->i++) { ((uint64_t *)F->q)[F->i] = ((const uint64_t *)F->p)[F->i]; fine_bump(FC_ALLOC_WORDS); KF_SAFE(); }
+    for (size_t i = F->w * 8; i < F->keep; i++) F->q[i] = ((char *)F->p)[i];
+    give(F->p, &F->h);
+    { char *r = F->q; F->q = NULL; KF_RET(r); }
+    KF_END;
 }

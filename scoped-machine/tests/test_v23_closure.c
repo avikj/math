@@ -2,29 +2,27 @@
  * White-box over the engine (includes work.c; link without work.o).
  *
  *   finite-long   — a finite kernel call needing 2^20+17 transitions, attached
- *                   to an engine frame, is destroyed at closed teardown: zero
- *                   native workers remain, it was not run to completion
- *   cycle         — two continuations waiting on each other (a genuine wait
- *                   cycle), in both allocation orders: destroyed, zero workers
- *   nested        — a continuation suspended 12 stack segments deep with a
- *                   registered release at every level: every release runs
- *                   once (innermost first), every segment is unmapped
- *   temporaries   — a continuation suspended while owning private
- *                   allocations: they are reaped after the machine's
- *                   structures; 30 init/cancel/free cycles keep the
- *                   allocator's owned footprint and the worker count stable
+ *                   to an engine frame, is destroyed at closed teardown (DROP):
+ *                   no frame stack remains, it was not run to completion
+ *   cycle         — two frame stacks waiting on each other (a genuine wait
+ *                   cycle), in both allocation orders: dropped, none remains
+ *   nested        — a stack suspended 12 frames deep, every frame owning a
+ *                   release: every frame's drop runs once (innermost first)
+ *   temporaries   — a stack suspended while its frame owns private
+ *                   allocations: its drop frees them at teardown; 60
+ *                   init/cancel/free cycles keep the allocator's owned
+ *                   footprint stable
  *   index         — the ownership index with four-page extents: first,
  *                   middle and last extents, one-past-end, holes, foreign
  *                   pointers; every lookup visits at most one node per address byte
  *                   while the number of extents grows
  *   counts        — exact counts across 2^64: a fine counter, a reuse
  *                   counter, a closed scope with late contributions, a
- *                   continuation's steps, eight threads updating while
+ *                   frame stack's steps, eight threads updating while
  *                   snapshots are taken; checked word projections refuse
  * Run: test_v23_closure {finite-long|cycle|nested|temporaries|index|counts|all} */
 #define _GNU_SOURCE
 #include "work.c"
-#include "kstack.h"
 #include "fine.h"
 #include "nat.h"
 #include <assert.h>
@@ -36,9 +34,9 @@ static int fails;
 
 static void init(void) { machine_init(); eval_init(); check_init(); compiler_init(); work_init(); }
 static void done(void) { work_free(); compiler_free(); check_free(); eval_free(); machine_free(); }
-/* attach a started continuation to a fresh engine kernel frame (as the engine does) */
-static OpId attach(KCont *k) {
-    static uint64_t distinct; RefId key = mk_universe(++distinct);   /* a distinct shared key per attached continuation */
+/* attach a started frame stack to a fresh engine kernel frame (as the engine does) */
+static OpId attach(KStack *k) {
+    static uint64_t distinct; RefId key = mk_universe(++distinct);   /* a distinct shared key per attached stack */
     pthread_mutex_lock(&W.mu);
     OpId h = op_new(OF_KERNEL, PH_CHECK, kfr(KK_SHAPE_OF, key, 0, 0, 0));
     Op *o = JOB(HND(h)->job); Frame *f = top(o);
@@ -49,75 +47,86 @@ static OpId attach(KCont *k) {
 
 /* ---- finite-long ---- */
 static bool slow_done;
-static void finite_slow(KCont *k) { for (size_t i = 0; i < ((size_t)1 << 20) + 17; i++) fine_bump(FC_NAT_LIMBS); slow_done = true; k->ok = true; }
+KF_DECL(finite_slow, void, KF_NOPARAMS, size_t i;)
+KF_STEP(finite_slow) { KF_BEGIN(finite_slow); for (F->i = 0; F->i < ((size_t)1 << 20) + 17; F->i++) { fine_bump(FC_NAT_LIMBS); KF_SAFE(); } slow_done = true; ks->ok = true; KF_RETV(); KF_END; }
 static void t_finite_long(void) {
     init();
-    KCont *k = kc_new(finite_slow, NULL, 0);
-    OpId h = attach(k); op_step(h, 1); EXPECT(!kc_done(k), "started, not complete"); op_release(h);
-    size_t c0 = kc_stats().cancelled;
+    KStack *k = kf_new(); finite_slow_push(k, NULL);
+    OpId h = attach(k); op_step(h, 1); EXPECT(!kf_done(k), "started, not complete"); op_release(h);
+    KfStats s0 = kf_stats();
     done();
-    KcStats st = kc_stats();
-    EXPECT(st.live_workers == 0 && !slow_done && st.cancelled == c0 + 1, "finite-long: destroyed, not completed (workers=%zu cancelled=%zu completed=%d)", st.live_workers, st.cancelled - c0, slow_done);
-    printf("finite-long: completed=%d workers after teardown=%zu cancelled=%zu\n", slow_done, st.live_workers, st.cancelled - c0);
+    KfStats st = kf_stats();
+    EXPECT(st.live_stacks == 0 && !slow_done && st.cancelled == s0.cancelled + 1, "finite-long: dropped, not completed (stacks=%zu cancelled=%llu completed=%d)", st.live_stacks, (unsigned long long)(st.cancelled - s0.cancelled), slow_done);
+    printf("finite-long: completed=%d frame stacks after teardown=%zu dropped stacks=%llu frames=%llu (no thread is involved)\n", slow_done, st.live_stacks, (unsigned long long)(st.cancelled - s0.cancelled), (unsigned long long)(st.dropped_frames - s0.dropped_frames));
 }
 
 /* ---- cycle ---- */
 static pthread_mutex_t cyc_mu = PTHREAD_MUTEX_INITIALIZER; static pthread_cond_t cyc_cv = PTHREAD_COND_INITIALIZER;
-static bool flag[2]; static KCont *peer[2];
-static void waiter(KCont *k) {
-    int me = (int)k->arg[0];
+static bool flag[2]; static KStack *peer[2];
+KF_DECL(waiter, void, KF_NOPARAMS, int me;)
+KF_STEP(waiter) {
+    KF_BEGIN(waiter);
+    F->me = (int)ks->arg[0];
     pthread_mutex_lock(&cyc_mu);
-    while (!flag[1 - me]) kc_wait(&cyc_cv, &cyc_mu, peer[1 - me]);   /* each waits for the other: a genuine cycle */
+    while (!flag[1 - F->me]) KF_WAIT(&cyc_cv, &cyc_mu, peer[1 - F->me], peer[1 - F->me]->job);   /* each waits for the other: a genuine cycle */
     pthread_mutex_unlock(&cyc_mu);
-    k->ok = true;
+    ks->ok = true;
+    KF_RETV();
+    KF_END;
 }
 static void t_cycle(int order) {
     init(); flag[0] = flag[1] = false;
-    uint64_t a0[1] = { 0 }, a1[1] = { 1 };
-    KCont *k0 = kc_new(waiter, a0, 1), *k1 = kc_new(waiter, a1, 1); peer[0] = k0; peer[1] = k1;
-    if (order == 0) { kc_grant(k0, 8); kc_grant(k1, 8); } else { kc_grant(k1, 8); kc_grant(k0, 8); }   /* each runs into its wait */
+    KStack *k0 = kf_new(), *k1 = kf_new(); k0->arg[0] = 0; k1->arg[0] = 1; waiter_push(k0, NULL); waiter_push(k1, NULL); peer[0] = k0; peer[1] = k1;
+    if (order == 0) { kf_grant(k0, 8); kf_grant(k1, 8); } else { kf_grant(k1, 8); kf_grant(k0, 8); }   /* each runs into its wait */
     OpId h0, h1;
     if (order == 0) { h0 = attach(k0); h1 = attach(k1); } else { h1 = attach(k1); h0 = attach(k0); }
-    EXPECT(!kc_done(k0) && !kc_done(k1) && k0->blocked && k1->blocked, "cycle/%d: both suspended in their waits", order);
+    EXPECT(!kf_done(k0) && !kf_done(k1) && k0->blocked && k1->blocked && k0->blocked_on == k1 && k1->blocked_on == k0, "cycle/%d: both suspended in their waits, each naming the other", order);
     op_release(h0); op_release(h1);
     done();
-    KcStats st = kc_stats();
-    EXPECT(st.live_workers == 0, "cycle/%d: zero workers after teardown (%zu)", order, st.live_workers);
-    printf("cycle order=%d: both waiting at teardown; workers after=%zu\n", order, st.live_workers);
+    KfStats st = kf_stats();
+    EXPECT(st.live_stacks == 0, "cycle/%d: no frame stack after teardown (%zu)", order, st.live_stacks);
+    printf("cycle order=%d: both waiting at teardown; frame stacks after=%zu\n", order, st.live_stacks);
 }
 
 /* ---- nested ---- */
 static int released[16], release_seq, depth_reached;
-static void rel(void *p) { int lvl = (int)(intptr_t)p; released[lvl] = ++release_seq; }
-static void nest(void *p) {
-    int lvl = (int)(intptr_t)p;
-    KCleanup c; kc_cleanup_push(&c, rel, (void *)(intptr_t)lvl);
-    if (lvl < 11) kstack_run(nest, (void *)(intptr_t)(lvl + 1));
-    else { depth_reached = lvl; for (;;) fine_bump(FC_NAT_LIMBS); }   /* suspends at a transition, never finishes */
-    kc_cleanup_pop(&c);
+#define nest_PARAMS(X) X(int, lvl)
+KF_DECL_DROP(nest, void, nest_PARAMS, nest_drop, int owned;)
+static void nest_drop(nest_F *F) { if (F->owned) { released[F->lvl] = ++release_seq; F->owned = 0; } }   /* this frame's release, at its phase */
+KF_STEP(nest) {
+    KF_BEGIN(nest);
+    F->owned = 1;
+    if (F->lvl < 11) KF_CALL(nest, NULL, F->lvl + 1);
+    else { depth_reached = F->lvl; for (;;) { fine_bump(FC_NAT_LIMBS); KF_SAFE(); } }   /* suspends at a transition, never finishes */
+    released[F->lvl] = ++release_seq; F->owned = 0;
+    KF_RETV();
+    KF_END;
 }
-static void nested_call(KCont *k) { nest((void *)(intptr_t)0); k->ok = true; }
 static void t_nested(void) {
     init(); memset(released, 0, sizeof released); release_seq = 0;
-    size_t segs0 = kstack_live_segments();
-    KCont *k = kc_new(nested_call, NULL, 0);
+    KfStats s0 = kf_stats();
+    KStack *k = kf_new(); nest_push(k, NULL, 0);
     OpId h = attach(k); op_step(h, 1);
     for (int i = 0; i < 4 && !depth_reached; i++) op_step(h, 1);
-    size_t segs_mid = kstack_live_segments();
+    size_t depth_mid = k->depth;
     op_release(h);
     done();
+    KfStats st = kf_stats();
     bool order = true; for (int l = 0; l < 12; l++) if (released[l] != 12 - l) order = false;
-    EXPECT(depth_reached == 11 && segs_mid == segs0 + 11 && kstack_live_segments() == segs0 && order && kc_stats().live_workers == 0,
-           "nested: 12 releases innermost first, 11 segments unmapped (depth=%d segments %zu->%zu->%zu)", depth_reached, segs0, segs_mid, kstack_live_segments());
-    printf("nested: depth=%d live segments during=%zu after=%zu releases in order=%d unwound cleanups total=%zu\n", depth_reached, segs_mid - segs0, kstack_live_segments() - segs0, order, kc_stats().unwound_cleanups);
+    EXPECT(depth_reached == 11 && depth_mid == 12 && order && st.live_stacks == 0 && st.dropped_frames - s0.dropped_frames == 12,
+           "nested: 12 drops innermost first (depth=%d frames=%zu dropped=%llu)", depth_reached, depth_mid, (unsigned long long)(st.dropped_frames - s0.dropped_frames));
+    printf("nested: depth=%d frames during=%zu dropped=%llu releases in order=%d\n", depth_reached, depth_mid, (unsigned long long)(st.dropped_frames - s0.dropped_frames), order);
 }
 
 /* ---- temporaries ---- */
-static void with_temporaries(KCont *k) {
-    void *t[8]; for (int i = 0; i < 8; i++) { t[i] = malloc((size_t)8192 << i); memset(t[i], 1, 64); }   /* private: never published */
-    for (;;) fine_bump(FC_NAT_LIMBS);
-    for (int i = 0; i < 8; i++) free(t[i]);
-    k->ok = true;
+static size_t temporaries_freed;
+KF_DECL_DROP(with_temporaries, void, KF_NOPARAMS, with_temporaries_drop, void *t[8];)
+static void with_temporaries_drop(with_temporaries_F *F) { for (int i = 0; i < 8; i++) if (F->t[i]) { free(F->t[i]); F->t[i] = NULL; temporaries_freed++; } }
+KF_STEP(with_temporaries) {
+    KF_BEGIN(with_temporaries);
+    for (int i = 0; i < 8; i++) { F->t[i] = malloc((size_t)8192 << i); memset(F->t[i], 1, 64); }   /* private: never published */
+    for (;;) { fine_bump(FC_NAT_LIMBS); KF_SAFE(); }
+    KF_END;
 }
 static void t_temporaries_baseline(size_t *grow) {
     size_t a = 0;
@@ -126,21 +135,21 @@ static void t_temporaries_baseline(size_t *grow) {
 }
 static void t_temporaries(void) {
     size_t base_growth; t_temporaries_baseline(&base_growth);
-    size_t owned[60]; size_t reaped0 = kc_stats().reaped_allocations;
+    size_t owned[60]; size_t freed0 = temporaries_freed;
     for (int c = 0; c < 60; c++) {
         init();
-        KCont *k = kc_new(with_temporaries, NULL, 0);
-        kc_grant(k, 4096);                                     /* runs past its allocations into its loop */
+        KStack *k = kf_new(); with_temporaries_push(k, NULL);
+        kf_grant(k, 4096);                                     /* runs past its allocations into its loop */
         OpId h = attach(k); op_release(h);
         done();
         owned[c] = arena_owned_words();
     }
-    size_t reaped = kc_stats().reaped_allocations - reaped0;
+    size_t freed = temporaries_freed - freed0;
     if (getenv("TMP_DEBUG")) for (int c = 0; c < 60; c += 5) printf("cycle %d owned %zu\n", c, owned[c]);
-    EXPECT(reaped >= 60 * 8, "temporaries: each cancelled continuation's private allocations reaped (%zu)", reaped);
-    EXPECT(owned[59] == owned[29] && kc_stats().live_workers == 0, "temporaries: stable owned footprint over cycles (%zu vs %zu words) and zero workers", owned[29], owned[59]);
+    EXPECT(freed == 60 * 8, "temporaries: each dropped frame released its private allocations (%zu)", freed);
+    EXPECT(owned[59] == owned[29] && kf_stats().live_stacks == 0, "temporaries: stable owned footprint over cycles (%zu vs %zu words), no stack left", owned[29], owned[59]);
     printf("temporaries: machine init/free alone grows the owned footprint by %zu words over the same cycles\n", base_growth);
-    printf("temporaries: 60 cycles, reaped allocations=%zu, owned words after cycle 30=%zu after cycle 60=%zu, workers=%zu\n", reaped, owned[29], owned[59], kc_stats().live_workers);
+    printf("temporaries: 60 cycles, allocations released by drops=%zu, owned words after cycle 30=%zu after cycle 60=%zu\n", freed, owned[29], owned[59]);
 }
 
 /* ---- index ---- */
@@ -183,7 +192,8 @@ static void t_index(void) {
 static bool is_2_64_plus(XSnap s, uint64_t k) { uint64_t l[2] = { k, 1 }; return xs_nat(s) == nat_from_limbs(2, l); }
 static XCount shared;
 static void *hammer(void *p) { (void)p; for (int i = 0; i < 1000; i++) xc_inc(&shared); return NULL; }
-static void counting(KCont *k) { for (int i = 0; i < 5; i++) fine_bump(FC_NAT_LIMBS); k->ok = true; }
+KF_DECL(counting, void, KF_NOPARAMS, int i;)
+KF_STEP(counting) { KF_BEGIN(counting); for (F->i = 0; F->i < 5; F->i++) { fine_bump(FC_NAT_LIMBS); KF_SAFE(); } ks->ok = true; KF_RETV(); KF_END; }
 static void t_counts(void) {
     init();
     uint64_t w;
@@ -202,12 +212,12 @@ static void t_counts(void) {
     uint64_t d;
     EXPECT(is_2_64_plus(g, 1), "global reuse counter: 2^64 - 2 + 3 = 2^64 + 1 exactly");
     EXPECT(xs_u64(late0, &d) && d == 0 && is_2_64_plus(late, 2), "closed scope folded once: 2^64 - 1 + 2 into the late total, then its late event: 2^64 + 2");
-    /* a continuation's steps across 2^64 */
-    KCont *k = kc_new(counting, NULL, 0); k->steps = UINT64_MAX - 2 - XC_HALF; k->steps_carry = xc_carry_push(NULL);   /* the valid exact state 2^64 - 3 */
-    while (!kc_done(k)) kc_grant(k, 1);
-    XSnap ks = kc_steps(k);
-    EXPECT(is_2_64_plus(ks, 2), "continuation steps: 2^64 - 3 + 5 = 2^64 + 2 exactly");
-    kc_free(k);
+    /* a frame stack's steps across 2^64 */
+    KStack *k = kf_new(); counting_push(k, NULL); k->steps = UINT64_MAX - 2 - XC_HALF; k->steps_carry = xc_carry_push(NULL);   /* the valid exact state 2^64 - 3 */
+    while (!kf_done(k)) kf_grant(k, 1);
+    XSnap kst = kf_steps(k);
+    EXPECT(is_2_64_plus(kst, 2), "frame stack steps: 2^64 - 3 + 5 = 2^64 + 2 exactly");
+    kf_free(k);
     /* concurrent updates and snapshots near the boundary */
     xc_seed(&shared, UINT64_MAX - 3000);
     pthread_t th[8]; for (int i = 0; i < 8; i++) pthread_create(&th[i], NULL, hammer, NULL);
@@ -218,7 +228,7 @@ static void t_counts(void) {
     EXPECT(mono && is_2_64_plus(fin, 4999), "eight writers across the boundary: snapshots monotone, final 2^64 - 3001 + 8000 = 2^64 + 4999 exactly");
     uint64_t dd; XSnap a = { 5, NULL }, b = { 7, NULL };
     EXPECT(!xs_delta_u64(a, b, &dd), "a delta of out-of-order snapshots is refused, not wrapped");
-    printf("counts: fine=2^64+0 reuse=2^64+1 late=2^64+2 kcont steps=2^64+2 concurrent=2^64+4999 monotone=%d\n", mono);
+    printf("counts: fine=2^64+0 reuse=2^64+1 late=2^64+2 frame steps=2^64+2 concurrent=2^64+4999 monotone=%d\n", mono);
     fine_seed(FC_NAT_LIMBS, 0); reuse_seed(REUSE_BETA, 0); xc_reset(&shared);
     done();
 }

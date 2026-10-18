@@ -74,7 +74,32 @@ CheckStatus check_admission(const char **reason);
  * compiler or observation client may be in progress and evaluator work must
  * have drained (both enforced); stop admitting new clients while crossing. */
 void check_open_environment(void);
-uint64_t check_session_id(void);   /* changes with every checker session; session-dependent caches are qualified by it */
+uint64_t check_session_id(void);
+/* frame families (kframe.h): the same judgments as resumable frames */
+#define origin_context_PARAMS(X) X(OriginId, C)
+#define check_context_PARAMS(X) X(ContextId, G) X(const char **, reason)
+#define check_map_PARAMS(X) X(ContextId, Delta) X(FaceId, psi) X(MapId, sigma) X(ContextId, Gamma) X(FaceId, chi) X(const char **, reason)
+#define check_origin_PARAMS(X) X(OriginId, C) X(ContextId *, ctx_out) X(FaceId *, required_out) X(RefId *, type_out) X(const char **, reason)
+#define infer_PARAMS(X) X(ContextId, G) X(FaceId, chi) X(RefId, t)
+#define check_is_type_PARAMS(X) X(ContextId, G) X(FaceId, chi) X(RefId, A) X(uint64_t *, level) X(const char **, reason)
+#define check_PARAMS(X) X(ContextId, G) X(FaceId, chi) X(RefId, t) X(RefId, A) X(const char **, reason)
+#define convert_type_PARAMS(X) X(ContextId, G) X(FaceId, chi) X(RefId, A) X(RefId, B)
+#define convert_term_PARAMS(X) X(ContextId, G) X(FaceId, chi) X(RefId, t) X(RefId, u) X(RefId, A)
+#define observe_checked_PARAMS(X) X(ContextId, G) X(RefId, t) X(WhnfStatus *, status) X(const char **, reason)
+#define check_signature_PARAMS(X) X(const char **, reason)
+#define check_admission_PARAMS(X) X(const char **, reason)
+KF_PROTO(origin_context, ContextId, origin_context_PARAMS);
+KF_PROTO(check_context, CheckStatus, check_context_PARAMS);
+KF_PROTO(check_map, CheckStatus, check_map_PARAMS);
+KF_PROTO(check_origin, CheckStatus, check_origin_PARAMS);
+KF_PROTO(infer, Inference, infer_PARAMS);
+KF_PROTO(check_is_type, CheckStatus, check_is_type_PARAMS);
+KF_PROTO(check, CheckStatus, check_PARAMS);
+KF_PROTO(convert_type, ConvStatus, convert_type_PARAMS);
+KF_PROTO(convert_term, ConvStatus, convert_term_PARAMS);
+KF_PROTO(observe_checked, EvalResult *, observe_checked_PARAMS);
+KF_PROTO(check_signature, CheckStatus, check_signature_PARAMS);
+KF_PROTO(check_admission, CheckStatus, check_admission_PARAMS);   /* changes with every checker session; session-dependent caches are qualified by it */
 
 /* the parameter context of an origin: its free dimensions, then its free
  * term variables in dependency order with their declared types; assumption

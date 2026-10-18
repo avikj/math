@@ -31,11 +31,25 @@ void dnf_add_clause(Dnf *d, const uint64_t *atoms, size_t n);
 void dnf_add_clause_union(Dnf *d, const Clause *x, const Clause *y);
 /* normalize in place. If contradiction(c) is non-NULL, clauses for which it
  * returns true are discarded BEFORE absorption (face rule). */
-void dnf_normalize(Dnf *d, bool (*contradiction)(const Clause *));
+typedef bool (*ClauseTest)(const Clause *);
+void dnf_normalize(Dnf *d, ClauseTest contradiction);
 /* decode from words / encode to words */
 void dnf_decode(Dnf *d, const uint64_t *w, size_t n);
 void dnf_encode(const Dnf *d, Words *out);
 /* clause containment: every atom of small is in big (both sorted) */
 bool clause_subset(const Clause *small, const Clause *big);
+/* frame families (kframe.h) */
+#define dnf_add_clause_PARAMS(X) X(Dnf *, d) X(const uint64_t *, atoms) X(size_t, n)
+#define dnf_add_clause_union_PARAMS(X) X(Dnf *, d) X(const Clause *, x) X(const Clause *, y)
+#define dnf_normalize_PARAMS(X) X(Dnf *, d) X(ClauseTest, contradiction)
+#define dnf_decode_PARAMS(X) X(Dnf *, d) X(const uint64_t *, w) X(size_t, n)
+#define dnf_encode_PARAMS(X) X(const Dnf *, d) X(Words *, out)
+#define clause_subset_PARAMS(X) X(const Clause *, small) X(const Clause *, big)
+KF_PROTO(dnf_add_clause, void, dnf_add_clause_PARAMS);
+KF_PROTO(dnf_add_clause_union, void, dnf_add_clause_union_PARAMS);
+KF_PROTO(dnf_normalize, void, dnf_normalize_PARAMS);
+KF_PROTO(dnf_decode, void, dnf_decode_PARAMS);
+KF_PROTO(dnf_encode, void, dnf_encode_PARAMS);
+KF_PROTO(clause_subset, bool, clause_subset_PARAMS);
 
 #endif

@@ -1,4 +1,4 @@
-/* §94 kernel continuations (kcont.h), white-box over work.c.
+/* §94 kernel frame stacks (kframe.h), white-box over work.c.
  * A producer atom over a term with N nested applications is specialized
  * under x2 := x1 (ATOMSPEC: reindex, structural validation, face
  * substitution/projection/entailment, producer lookup, shape — every one a
@@ -10,7 +10,7 @@
  *  3. a second handle for the same specialization, started while the first
  *     is mid-kernel, joins the running kernel job (one kernel call in all);
  *  4. a third request after completion is READY: zero kernel transitions;
- *  5. the continuation's thread is the retained frame: across the units the
+ *  5. the frame stack is retained: across the units the
  *     ATOMSPEC frame stays the same frame (same phase until the call ends).
  */
 #include "work.c"
@@ -53,8 +53,8 @@ int main(int argc, char **argv) {
     RefId t2 = x2; for (size_t i = 0; i < N; i++) t2 = mk_app(f, mk_app(f, t2));
     AtomId a2 = atom_producer(t2, fc_true()); SetId S2 = set_make(1, &a2);
     OpId h1 = op_specialize_set(S2, sigma);
-    size_t steps = 0; while (op_status(h1) == OP_RUNNING && !(W.kc_active)) { op_step(h1, 1); assert(++steps < 100000); }
-    assert(W.kc_active && !kc_done(W.kc_active));   /* mid-kernel (W.kc_active: the continuation most recently granted) */
+    size_t steps = 0; while (op_status(h1) == OP_RUNNING && !(W.kf_active)) { op_step(h1, 1); assert(++steps < 100000); }
+    assert(W.kf_active && !kf_done(W.kf_active));   /* mid-kernel (W.kf_active: the stack most recently granted) */
     uint64_t calls_before = work_ledger().kernel_calls;
     OpId h2 = op_specialize_set(S2, sigma);   /* the same specialization: the atom's ATOMSPEC job and its kernel jobs are shared */
     while (op_status(h2) == OP_RUNNING) op_step(h2, 1);

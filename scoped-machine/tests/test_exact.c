@@ -3,13 +3,12 @@
  *   level 2^32+1 and 2^64 stored, inferred (successor) and printed exactly;
  *   a multi-limb carry chain; canonical identity of equal values;
  *   costs beyond 2^62 and 2^64 and a negative difference beyond int64_t;
- *   one-step grants: an addition of 256-limb operands inside a kernel
- *   continuation advances a bounded number of transitions per grant. */
+ *   one-step grants: an addition of 256-limb operands on a kernel frame
+ *   stack advances a bounded number of transitions per grant. */
 #include "check.h"
 #include "lib.h"
 #include "nat.h"
 #include "work.h"
-#include "kcont.h"
 #include "compiler.h"
 #include <assert.h>
 #include <stdio.h>
@@ -19,7 +18,8 @@ static int fails;
 #define EXPECT(c, ...) do { if (!(c)) { fails++; printf("FAIL %s:%d: ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
 static Nat big_add_a, big_add_b, big_add_r;
-static void add_call(KCont *k) { (void)k; big_add_r = nat_add(big_add_a, big_add_b); k->ok = true; }
+KF_DECL(add_call, void, KF_NOPARAMS, )
+KF_STEP(add_call) { KF_BEGIN(add_call); KF_CALL(nat_add, &big_add_r, big_add_a, big_add_b); ks->ok = true; KF_RETV(); KF_END; }
 
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -65,14 +65,14 @@ int main(void) {
     /* one-step grants over a long addition */
     uint64_t la[256], lb[256]; for (size_t i = 0; i < 256; i++) { la[i] = UINT64_MAX; lb[i] = i == 0 ? 1 : 0; }
     big_add_a = nat_from_limbs(256, la); big_add_b = nat_from_limbs(256, lb);
-    KCont *k = kc_new(add_call, NULL, 0);
+    KStack *k = kf_new(); add_call_push(k, NULL);
     size_t units = 0, maxu = 0;
-    while (!kc_done(k)) { size_t u = kc_grant(k, 1); if (u > maxu) maxu = u; units++; }
+    while (!kf_done(k)) { size_t u = kf_grant(k, 1); if (u > maxu) maxu = u; units++; }
     const uint64_t *rl = nat_limbs(big_add_r, &nl, &t);
     bool okc = nl == 257 && rl[256] == 1; for (size_t i = 0; i < 256 && okc; i++) okc = rl[i] == 0;
     printf("256-limb addition under one-step grants: units=%zu max transitions per grant=%zu result 2^16384 exact=%d\n", units, maxu, okc);
     EXPECT(okc && units >= 256 && maxu <= 128, "one-step grants advance a bounded number of transitions; precision adds transitions, not per-transition work");
-    kc_free(k);
+    kf_free(k);
     /* the work engine: a SUM of boxed weights under one-unit steps — the
      * additions run as shared NAT jobs, one limb per transition */
     {

@@ -274,7 +274,6 @@ static void one_result(Net *n, NodeId op, NodeId data, NodeId result) {
 static NodeId desc_ref(Net *n, RefId t) { Payload p = {0}; p.ref = t; return net_descriptor(n, D_REF, p); }
 static NodeId desc_face(Net *n, FaceId f) { Payload p = {0}; p.face = f; return net_descriptor(n, D_FACE, p); }
 static NodeId desc_interval(Net *n, IntervalId r) { Payload p = {0}; p.a = r; return net_descriptor(n, D_INTERVAL, p); }
-static NodeId desc_map(Net *n, MapId m, FaceId src, FaceId tgt) { Payload p = {0}; p.a = m; p.b = src; p.c = tgt; return net_descriptor(n, D_MAP, p); }
 static NodeId desc_binder(Net *n, NodeKind kind, RefId owner, BinderSlot slot, FieldIndex field, FieldIndex guard) {
     Payload p = {0}; p.a = owner; p.b = slot; p.c = field; p.d = guard; return net_descriptor(n, kind, p);
 }
@@ -500,8 +499,6 @@ static size_t scope_args_get(uint64_t h, Val **result) {
     for (size_t k = 0; k < m; k++) { out[k].sort = (ValSort)w[2 + 2 * k]; out[k].id = w[3 + 2 * k]; }
     return m;
 }
-static NodeId desc_scope(Net *n, ScopeId S) { Payload p = {0}; p.a = S; return net_descriptor(n, D_SCOPE, p); }
-static NodeId desc_typed_partial(Net *n, RefId body, RefId type, uint64_t level, FaceId guard) { Payload p = {0}; p.ref = body; p.b = type; p.c = level; p.face = guard; return net_descriptor(n, D_TYPED_PARTIAL, p); }
 
 /* §94 lowering: an operation rule's kernel work (reindex, compose, face
  * operations, binder application, scope/template operations, opening a head)
@@ -523,149 +520,186 @@ static void sp_binder(OpSpec *s, NodeKind kind, RefId owner, BinderSlot slot, Fi
 static void sp_partial(OpSpec *s, FaceId f, RefId t) { Payload p = {0}; p.face = f; p.ref = t; sp_desc(s, D_PARTIAL, p); }
 static void sp_scope(OpSpec *s, ScopeId S) { Payload p = {0}; p.a = S; sp_desc(s, D_SCOPE, p); }
 static void sp_typed_partial(OpSpec *s, RefId body, RefId type, uint64_t level, FaceId guard) { Payload p = {0}; p.ref = body; p.b = type; p.c = level; p.face = guard; sp_desc(s, D_TYPED_PARTIAL, p); }
-static void sp_recipe(OpSpec *s, RefId t) {
+__attribute__((unused)) static void sp_recipe(OpSpec *s, RefId t) {
     Payload p = {0}; p.ref = t; s->kind = SP_RECIPE; s->dk = D_HEAD_RECIPE; s->p = p;
     s->head = malloc(sizeof(Head)); require(s->head, "out of memory"); open_ref(t, s->head);   /* opened before the locks */
 }
 static void spec_discard(OpSpec *s) { if (s->head) { head_free(s->head); free(s->head); s->head = NULL; } }
-static void op_compute(const Node *o, const Node *d, OpSpec *out) {
-    NodeKind k = o->kind, dk = d->kind;
-    Payload P = o->p, Q = d->p;
-    OpSpec sp; memset(&sp, 0, sizeof sp);
-#define WANT(kind) do { if (dk != (kind)) { sp_status(&sp, ST_SORT_MISMATCH, 0, 0); goto out; } } while (0)
-    switch (k) {
-    case OP_REINDEX_TERM: WANT(D_REF); sp_ref(&sp, reindex(Q.ref, P.a)); break;
-    case OP_REINDEX_INTERVAL: WANT(D_INTERVAL); sp_interval(&sp, iv_reindex(Q.a, P.a)); break;
-    case OP_REINDEX_FACE: WANT(D_FACE); sp_face(&sp, fc_reindex(Q.face, P.a)); break;
-    case OP_COMPOSE_MAP: WANT(D_MAP); sp_map(&sp, compose(P.a, Q.a), 0, 0); break;
+/* the operation rule's kernel work: a frame family (kframe.h), computed
+ * outside every node lock; every kernel procedure it uses is a resume point */
+#define op_compute_PARAMS(X) X(const Node *, o) X(const Node *, d) X(OpSpec *, out)
+KF_DECL_DROP(op_compute, void, op_compute_PARAMS, op_compute_drop,
+    NodeKind k, dk; Payload P, Q; OpSpec sp; RefId r1, r2; FaceId f1, f2, f3; IntervalId i1; MapId m1; bool b1;
+    Head *rh; Head oh; DimOpen o2; MapBuilder mb; CaptureDecl *cd; Val *args; size_t m, mk, mt, md; TypedPartial tp; ScopeId sc; uint64_t u1; TermVarId slot;)
+static void op_compute_drop(op_compute_F *F) {
+    spec_discard(&F->sp);
+    if (F->rh) { head_free(F->rh); free(F->rh); F->rh = NULL; }
+    head_free(&F->oh); words_free(&F->mb.t); words_free(&F->mb.d);
+    free(F->cd); F->cd = NULL; free(F->args); F->args = NULL;
+}
+/* a head recipe opened before the locks: the opened head moves into the spec */
+#define SP_RECIPE_F(t) do { F->rh = malloc(sizeof(Head)); require(F->rh, "out of memory"); memset(F->rh, 0, sizeof(Head)); \
+        KF_CALL(open_ref, NULL, (t), F->rh); { Payload p_ = {0}; p_.ref = (t); F->sp.kind = SP_RECIPE; F->sp.dk = D_HEAD_RECIPE; F->sp.p = p_; F->sp.head = F->rh; F->rh = NULL; } } while (0)
+KF_STEP(op_compute) {
+    KF_BEGIN(op_compute);
+    F->k = F->o->kind; F->dk = F->d->kind;
+    F->P = F->o->p; F->Q = F->d->p;
+    memset(&F->sp, 0, sizeof F->sp);
+#define WANT(kind) do { if (F->dk != (kind)) { sp_status(&F->sp, ST_SORT_MISMATCH, 0, 0); goto out; } } while (0)
+    switch (F->k) {
+    case OP_REINDEX_TERM: WANT(D_REF); KF_CALL(reindex, &F->r1, F->Q.ref, F->P.a); sp_ref(&F->sp, F->r1); break;
+    case OP_REINDEX_INTERVAL: WANT(D_INTERVAL); KF_CALL(iv_reindex, &F->i1, F->Q.a, F->P.a); sp_interval(&F->sp, F->i1); break;
+    case OP_REINDEX_FACE: WANT(D_FACE); KF_CALL(fc_reindex, &F->f1, F->Q.face, F->P.a); sp_face(&F->sp, F->f1); break;
+    case OP_COMPOSE_MAP: WANT(D_MAP); KF_CALL(compose, &F->m1, F->P.a, F->Q.a); sp_map(&F->sp, F->m1, 0, 0); break;
     case OP_RESTRICT_MAP: {
         WANT(D_MAP);
-        FaceId src = Q.b ? Q.b : fc_true(), tgt = Q.c ? Q.c : fc_true();
-        sp_map(&sp, Q.a, fc_meet(src, fc_reindex(P.face, Q.a)), fc_meet(tgt, P.face));
+        if (F->Q.b) F->f1 = F->Q.b; else KF_CALL0(fc_true, &F->f1);
+        if (F->Q.c) F->f2 = F->Q.c; else KF_CALL0(fc_true, &F->f2);
+        KF_CALL(fc_reindex, &F->f3, F->P.face, F->Q.a);
+        KF_CALL(fc_meet, &F->f1, F->f1, F->f3);
+        KF_CALL(fc_meet, &F->f2, F->f2, F->P.face);
+        sp_map(&F->sp, F->Q.a, F->f1, F->f2);
         break;
     }
     case OP_LIFT_TERM: case OP_LIFT_DIMENSION: {
         WANT(D_MAP);
-        RefId owner = P.a; BinderSlot slot = (BinderSlot)P.b;
         /* lifting is defined for a raw view's own map; a template view has
          * an environment, not a map: a status, never a raw-origin access */
-        if (ref_is_var(owner) || ref_is_tview(owner) || Q.a != ref_map(owner)) { sp_status(&sp, ST_INVALID_MAP, 0, 0); break; }
-        Binder b = origin_binder(ref_origin(owner), slot);
-        if ((k == OP_LIFT_TERM) != (b.sort == S_TERM)) { sp_status(&sp, ST_SORT_MISMATCH, 0, 0); break; }
-        sp_map(&sp, lifted_map(owner, slot, NULL), Q.b, Q.c);
+        { RefId owner = F->P.a; BinderSlot slot = (BinderSlot)F->P.b;
+          if (ref_is_var(owner) || ref_is_tview(owner) || F->Q.a != ref_map(owner)) { sp_status(&F->sp, ST_INVALID_MAP, 0, 0); break; }
+          Binder b = origin_binder(ref_origin(owner), slot);
+          if ((F->k == OP_LIFT_TERM) != (b.sort == S_TERM)) { sp_status(&F->sp, ST_SORT_MISMATCH, 0, 0); break; } }
+        KF_CALL(lifted_map, &F->m1, F->P.a, (BinderSlot)F->P.b, NULL);
+        sp_map(&F->sp, F->m1, F->Q.b, F->Q.c);
         break;
     }
-    case OP_OPEN: WANT(D_REF); sp_recipe(&sp, Q.ref); break;
+    case OP_OPEN: WANT(D_REF); SP_RECIPE_F(F->Q.ref); break;
     case OP_UNFOLD_GLOBAL:
         WANT(D_REF);
-        if (ref_is_var(Q.ref) || ref_is_tview(Q.ref) || origin_tag(ref_origin(Q.ref)) != T_GLOBAL) { sp_status(&sp, ST_SORT_MISMATCH, 0, 0); break; }
-        sp_ref(&sp, unfold_global(Q.ref));
+        if (ref_is_var(F->Q.ref) || ref_is_tview(F->Q.ref) || origin_tag(ref_origin(F->Q.ref)) != T_GLOBAL) { sp_status(&F->sp, ST_SORT_MISMATCH, 0, 0); break; }
+        KF_CALL(unfold_global, &F->r1, F->Q.ref); sp_ref(&F->sp, F->r1);
         break;
-    case OP_REINDEX_TERM_BINDER: WANT(D_TERM_BINDER); sp_binder(&sp, D_TERM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
-    case OP_REINDEX_DIM_BINDER: WANT(D_DIM_BINDER); sp_binder(&sp, D_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
-    case OP_REINDEX_PARTIAL_DIM_BINDER: WANT(D_PARTIAL_DIM_BINDER); sp_binder(&sp, D_PARTIAL_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, (FieldIndex)Q.d); break;
-    case OP_REINDEX_PARTIAL: WANT(D_PARTIAL); sp_partial(&sp, fc_reindex(Q.face, P.a), reindex(Q.ref, P.a)); break;
-    case OP_APPLY_TERM_BINDER: WANT(D_TERM_BINDER); sp_ref(&sp, apply_term_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.ref)); break;
-    case OP_APPLY_DIM_BINDER: WANT(D_DIM_BINDER); sp_ref(&sp, apply_dim_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.a)); break;
+    case OP_REINDEX_TERM_BINDER: WANT(D_TERM_BINDER); KF_CALL(reindex, &F->r1, F->Q.a, F->P.a); sp_binder(&F->sp, D_TERM_BINDER, F->r1, (BinderSlot)F->Q.b, (FieldIndex)F->Q.c, NO_FIELD); break;
+    case OP_REINDEX_DIM_BINDER: WANT(D_DIM_BINDER); KF_CALL(reindex, &F->r1, F->Q.a, F->P.a); sp_binder(&F->sp, D_DIM_BINDER, F->r1, (BinderSlot)F->Q.b, (FieldIndex)F->Q.c, NO_FIELD); break;
+    case OP_REINDEX_PARTIAL_DIM_BINDER: WANT(D_PARTIAL_DIM_BINDER); KF_CALL(reindex, &F->r1, F->Q.a, F->P.a); sp_binder(&F->sp, D_PARTIAL_DIM_BINDER, F->r1, (BinderSlot)F->Q.b, (FieldIndex)F->Q.c, (FieldIndex)F->Q.d); break;
+    case OP_REINDEX_PARTIAL: WANT(D_PARTIAL); KF_CALL(fc_reindex, &F->f1, F->Q.face, F->P.a); KF_CALL(reindex, &F->r1, F->Q.ref, F->P.a); sp_partial(&F->sp, F->f1, F->r1); break;
+    case OP_APPLY_TERM_BINDER: WANT(D_TERM_BINDER); KF_CALL(apply_term_binder, &F->r1, F->Q.a, (BinderSlot)F->Q.b, (FieldIndex)F->Q.c, F->P.ref); sp_ref(&F->sp, F->r1); break;
+    case OP_APPLY_DIM_BINDER: WANT(D_DIM_BINDER); KF_CALL(apply_dim_binder, &F->r1, F->Q.a, (BinderSlot)F->Q.b, (FieldIndex)F->Q.c, F->P.a); sp_ref(&F->sp, F->r1); break;
     case OP_APPLY_PARTIAL_DIM_BINDER: {
         WANT(D_PARTIAL_DIM_BINDER);
-        RefId owner = Q.a;
-        DimOpen o = resolve_dim_binder(owner, (BinderSlot)Q.b, (FieldIndex)Q.c);
-        MapId at_r = map_single_dim(o.j, P.a);
+        KF_CALL(resolve_dim_binder, &F->o2, F->Q.a, (BinderSlot)F->Q.b, (FieldIndex)F->Q.c);
+        KF_CALL(map_single_dim, &F->m1, F->o2.j, F->P.a);
         /* both body and guard are specialized at r (the guard of a valid tube
          * is independent of the bound dimension, so this leaves it unchanged);
          * the guard is read through the uniform opened head, where the
          * owner's map or template environment is already applied (§55) */
-        Head oh; open_ref(owner, &oh);
-        require((size_t)Q.d < oh.n && oh.f[Q.d].kind == F_FACE, "APPLY_PARTIAL_DIM_BINDER: guard field");
-        FaceId guard = fc_reindex(oh.f[Q.d].id, at_r);
-        head_free(&oh);
-        sp_partial(&sp, guard, reindex(o.body, at_r));
+        KF_CALL(open_ref, NULL, F->Q.a, &F->oh);
+        require((size_t)F->Q.d < F->oh.n && F->oh.f[F->Q.d].kind == F_FACE, "APPLY_PARTIAL_DIM_BINDER: guard field");
+        F->f2 = F->oh.f[F->Q.d].id;
+        head_free(&F->oh);
+        KF_CALL(fc_reindex, &F->f1, F->f2, F->m1);
+        KF_CALL(reindex, &F->r1, F->o2.body, F->m1);
+        sp_partial(&F->sp, F->f1, F->r1);
         break;
     }
-    case OP_FORALL_DIMENSION: WANT(D_FACE); sp_face(&sp, fc_forall(P.a, Q.face)); break;
-    case OP_PROJECT_FACE: { WANT(D_FACE); size_t m; const uint64_t *S = dimset_get(P.a, &m); sp_face(&sp, fc_project(Q.face, S, m)); break; }
-    case OP_FACE_COVERAGE: WANT(D_FACE); sp_status(&sp, fc_entails(P.face, Q.face) ? ST_COVERED : ST_NOT_COVERED, 0, 0); break;
+    case OP_FORALL_DIMENSION: WANT(D_FACE); KF_CALL(fc_forall, &F->f1, F->P.a, F->Q.face); sp_face(&F->sp, F->f1); break;
+    case OP_PROJECT_FACE: { WANT(D_FACE); { size_t m; const uint64_t *S = dimset_get(F->P.a, &m); KF_CALL(fc_project, &F->f1, F->Q.face, S, m); } sp_face(&F->sp, F->f1); break; }
+    case OP_FACE_COVERAGE: WANT(D_FACE); KF_CALL(fc_entails, &F->b1, F->P.face, F->Q.face); sp_status(&F->sp, F->b1 ? ST_COVERED : ST_NOT_COVERED, 0, 0); break;
     case OP_USE_PARTIAL:
         WANT(D_PARTIAL);
-        if (fc_entails(P.face, Q.face)) sp_ref(&sp, Q.ref);
-        else sp_status(&sp, ST_NOT_COVERED, Q.face, Q.ref);      /* retains the partial payload */
+        KF_CALL(fc_entails, &F->b1, F->P.face, F->Q.face);
+        if (F->b1) sp_ref(&F->sp, F->Q.ref);
+        else sp_status(&F->sp, ST_NOT_COVERED, F->Q.face, F->Q.ref);      /* retains the partial payload */
         break;
-    case OP_GET_SUPPORT: { WANT(D_REF); Payload p = {0}; p.a = ref_support(Q.ref); sp_desc(&sp, D_DIMSET, p); break; }
-    case OP_REINDEX_HEAD: WANT(D_HEAD_RECIPE); sp_recipe(&sp, reindex(d->head->owner, P.a)); break;
-    case OP_MATERIALIZE: WANT(D_HEAD_RECIPE); sp.kind = SP_MATERIALIZE; break;
+    case OP_GET_SUPPORT: { WANT(D_REF); Payload p = {0}; p.a = ref_support(F->Q.ref); sp_desc(&F->sp, D_DIMSET, p); break; }
+    case OP_REINDEX_HEAD: WANT(D_HEAD_RECIPE); KF_CALL(reindex, &F->r1, F->d->head->owner, F->P.a); SP_RECIPE_F(F->r1); break;
+    case OP_MATERIALIZE: WANT(D_HEAD_RECIPE); F->sp.kind = SP_MATERIALIZE; break;
     case OP_APPLY_TRANSFORM: {
         /* §43: the one replacement — v := reindex(template, σ + slot ↦ a);
          * no evaluation of a, the proof, or v */
         WANT(D_REF);
-        RefId body; TermVarId slot;
-        require(compiler_template(P.a, (int)P.b, &body, &slot), "APPLY_TRANSFORM of an unknown compiled transform");
-        MapBuilder b; mapb_init(&b);
-        size_t nt = map_n_terms(P.c), nd = map_n_dims(P.c);
-        for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(P.c, k, &x, &im); mapb_term(&b, x, im); }
-        for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(P.c, k, &i, &im); mapb_dim(&b, i, im); }
-        mapb_term(&b, slot, Q.ref);
-        sp_ref(&sp, reindex(body, mapb_finish(&b))); sp.kind = SP_APPLY; sp.ap_id = P.a; sp.ap_dir = (int)P.b; sp.ap_map = P.c; sp.ap_arg = Q.ref;
+        require(compiler_template(F->P.a, (int)F->P.b, &F->r2, &F->slot), "APPLY_TRANSFORM of an unknown compiled transform");
+        mapb_init(&F->mb);
+        F->mt = map_n_terms(F->P.c); F->md = map_n_dims(F->P.c);
+        KF_MAPB_RESERVE(&F->mb, F->mt + 1, F->md);
+        for (F->mk = 0; F->mk < F->mt; F->mk++) { TermVarId x; RefId im; map_term_entry(F->P.c, F->mk, &x, &im); mapb_term(&F->mb, x, im); fine_bump(FC_MAP_ENTRIES); KF_SAFE(); }
+        for (F->mk = 0; F->mk < F->md; F->mk++) { DimVarId i; IntervalId im; map_dim_entry(F->P.c, F->mk, &i, &im); mapb_dim(&F->mb, i, im); fine_bump(FC_MAP_ENTRIES); KF_SAFE(); }
+        mapb_term(&F->mb, F->slot, F->Q.ref);
+        KF_CALL(mapb_finish, &F->m1, &F->mb);
+        KF_CALL(reindex, &F->r1, F->r2, F->m1);
+        sp_ref(&F->sp, F->r1); F->sp.kind = SP_APPLY; F->sp.ap_id = F->P.a; F->sp.ap_dir = (int)F->P.b; F->sp.ap_map = F->P.c; F->sp.ap_arg = F->Q.ref;
         break;
     }
     /* ---- §55: scope and template agents; each is one finite pure operation ---- */
     case OP_CAPTURE_REF_SCOPE: {
         WANT(D_REF);
-        CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
-        Val body = { VS_REF, Q.ref };
-        sp_scope(&sp, capture_scope(m, d, body, P.ref, P.c, P.face));     /* P: a = Δ, ref = type, c = level, face = guard */
-        free(d);
+        F->m = capture_decls_get(F->P.a, &F->cd);
+        { Val body = { VS_REF, F->Q.ref }; KF_CALL(capture_scope, &F->sc, F->m, F->cd, body, F->P.ref, F->P.c, F->P.face); }     /* P: a = Δ, ref = type, c = level, face = guard */
+        sp_scope(&F->sp, F->sc);
+        free(F->cd); F->cd = NULL;
         break;
     }
     case OP_CAPTURE_FACE_SCOPE: {
         WANT(D_FACE);
-        CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
-        Val body = { VS_FACE, Q.face };
-        sp_scope(&sp, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
-        free(d);
+        F->m = capture_decls_get(F->P.a, &F->cd);
+        KF_CALL0(fc_true, &F->f1);
+        { Val body = { VS_FACE, F->Q.face }; KF_CALL(capture_scope, &F->sc, F->m, F->cd, body, 0, LEVEL_NONE, F->f1); }
+        sp_scope(&F->sp, F->sc);
+        free(F->cd); F->cd = NULL;
         break;
     }
     case OP_CAPTURE_INTERVAL_SCOPE: {
         WANT(D_INTERVAL);
-        CaptureDecl *d; size_t m = capture_decls_get(P.a, &d);
-        Val body = { VS_INTERVAL, Q.a };
-        sp_scope(&sp, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
-        free(d);
+        F->m = capture_decls_get(F->P.a, &F->cd);
+        KF_CALL0(fc_true, &F->f1);
+        { Val body = { VS_INTERVAL, F->Q.a }; KF_CALL(capture_scope, &F->sc, F->m, F->cd, body, 0, LEVEL_NONE, F->f1); }
+        sp_scope(&F->sp, F->sc);
+        free(F->cd); F->cd = NULL;
         break;
     }
-    case OP_REINDEX_SCOPE: WANT(D_SCOPE); sp_scope(&sp, reindex_scope(Q.a, P.a)); break;
+    case OP_REINDEX_SCOPE: WANT(D_SCOPE); KF_CALL(reindex_scope, &F->sc, F->Q.a, F->P.a); sp_scope(&F->sp, F->sc); break;
     case OP_APPLY_SCOPE: {
         WANT(D_SCOPE);
-        Val *args; size_t m = scope_args_get(P.a, &args);
-        TypedPartial tp = apply_scope(Q.a, m, args); free(args);
-        if (tp.body.sort == VS_REF) sp_typed_partial(&sp, tp.body.id, tp.type, tp.level, tp.guard);
-        else if (tp.body.sort == VS_FACE) sp_face(&sp, tp.body.id);
-        else sp_interval(&sp, tp.body.id);
+        F->m = scope_args_get(F->P.a, &F->args);
+        KF_CALL(apply_scope, &F->tp, F->Q.a, F->m, F->args); free(F->args); F->args = NULL;
+        if (F->tp.body.sort == VS_REF) sp_typed_partial(&F->sp, F->tp.body.id, F->tp.type, F->tp.level, F->tp.guard);
+        else if (F->tp.body.sort == VS_FACE) sp_face(&F->sp, F->tp.body.id);
+        else sp_interval(&F->sp, F->tp.body.id);
         break;
     }
     case OP_FORALL_SCOPE: {
         WANT(D_SCOPE);
-        if (scope_arity(Q.a) != 1 || scope_local(Q.a, 0).sort != S_DIM || scope_body(Q.a).sort != VS_FACE) { sp_status(&sp, ST_SORT_MISMATCH, 0, 0); break; }
-        sp_face(&sp, forall_scope(Q.a));
+        if (scope_arity(F->Q.a) != 1 || scope_local(F->Q.a, 0).sort != S_DIM || scope_body(F->Q.a).sort != VS_FACE) { sp_status(&F->sp, ST_SORT_MISMATCH, 0, 0); break; }
+        KF_CALL(forall_scope, &F->f1, F->Q.a); sp_face(&F->sp, F->f1);
         break;
     }
-    case OP_REINDEX_TEMPLATE_ENV: { WANT(D_TEMPLATE_ENV); Payload p = {0}; p.a = tenv_reindex(Q.a, P.a); sp_desc(&sp, D_TEMPLATE_ENV, p); break; }
-    case OP_INSTANTIATE_TEMPLATE: WANT(D_TEMPLATE_ENV); sp_ref(&sp, tenv_instantiate(P.a, Q.a)); break;
-    case OP_REINDEX_TYPED_PARTIAL: WANT(D_TYPED_PARTIAL); sp_typed_partial(&sp, reindex(Q.ref, P.a), Q.b ? reindex(Q.b, P.a) : 0, Q.c, fc_reindex(Q.face, P.a)); break;
+    case OP_REINDEX_TEMPLATE_ENV: { WANT(D_TEMPLATE_ENV); KF_CALL(tenv_reindex, &F->u1, F->Q.a, F->P.a); { Payload p = {0}; p.a = F->u1; sp_desc(&F->sp, D_TEMPLATE_ENV, p); } break; }
+    case OP_INSTANTIATE_TEMPLATE: WANT(D_TEMPLATE_ENV); KF_CALL(tenv_instantiate, &F->r1, F->P.a, F->Q.a); sp_ref(&F->sp, F->r1); break;
+    case OP_REINDEX_TYPED_PARTIAL:
+        WANT(D_TYPED_PARTIAL);
+        KF_CALL(reindex, &F->r1, F->Q.ref, F->P.a);
+        F->r2 = 0; if (F->Q.b) KF_CALL(reindex, &F->r2, F->Q.b, F->P.a);
+        KF_CALL(fc_reindex, &F->f1, F->Q.face, F->P.a);
+        sp_typed_partial(&F->sp, F->r1, F->r2, F->Q.c, F->f1);
+        break;
     case OP_USE_TYPED_PARTIAL:
         WANT(D_TYPED_PARTIAL);
-        if (fc_entails(P.face, Q.face)) sp_ref(&sp, Q.ref);
-        else { sp_status(&sp, ST_NOT_COVERED, Q.face, Q.ref); sp.p.b = Q.b; sp.p.c = Q.c; }   /* retains the typed partial */
+        KF_CALL(fc_entails, &F->b1, F->P.face, F->Q.face);
+        if (F->b1) sp_ref(&F->sp, F->Q.ref);
+        else { sp_status(&F->sp, ST_NOT_COVERED, F->Q.face, F->Q.ref); F->sp.p.b = F->Q.b; F->sp.p.c = F->Q.c; }   /* retains the typed partial */
         break;
-    case OP_TYPED_PARTIAL_TYPE: WANT(D_TYPED_PARTIAL); sp_ref(&sp, Q.b); break;      /* retained as type data, not observed */
-    case OP_TYPED_PARTIAL_GUARD: WANT(D_TYPED_PARTIAL); sp_face(&sp, Q.face); break;
-    case OP_EVAL: WANT(D_REF); sp.kind = SP_EVAL; sp.ev_ref = Q.ref; sp.ev_face = P.face; break;
+    case OP_TYPED_PARTIAL_TYPE: WANT(D_TYPED_PARTIAL); sp_ref(&F->sp, F->Q.b); break;      /* retained as type data, not observed */
+    case OP_TYPED_PARTIAL_GUARD: WANT(D_TYPED_PARTIAL); sp_face(&F->sp, F->Q.face); break;
+    case OP_EVAL: WANT(D_REF); F->sp.kind = SP_EVAL; F->sp.ev_ref = F->Q.ref; F->sp.ev_face = F->P.face; break;
     default: die("unknown operation");
     }
 out:
 #undef WANT
-    *out = sp;
+    *F->out = F->sp; F->sp.head = NULL;   /* the opened head (if any) moves into the caller's spec */
+    KF_RETV();
+    KF_END;
 }
+static void op_compute(const Node *o, const Node *d, OpSpec *out) { KStack *s_ = kf_sync_begin(); op_compute_push(s_, NULL, o, d, out); kf_sync_run(s_); kf_sync_end(s_); }
 static void op_commit(Net *n, NodeId op, NodeId data, OpSpec *sp) {
     NodeId res = 0;
     switch (sp->kind) {
@@ -703,6 +737,22 @@ static void rule_op(Net *n, NodeId op, NodeId data, OpSpec *pre) {
 }
 
 static __thread EntryId tls_forward_K; static __thread RefId tls_forward_v;   /* a CONTINUE_REFERENCE rule's deferred request */
+/* the deferred-request and pending-pair slots are computation-local (kframe.h): a suspended step carries them */
+static void *a_pending(void) { return &tls_pending; }
+static void *a_eval_ref(void) { return &tls_eval_ref; }
+static void *a_eval_face(void) { return &tls_eval_face; }
+static void *a_eval_ctx(void) { return &tls_eval_ctx; }
+static void *a_fwd_K(void) { return &tls_forward_K; }
+static void *a_fwd_v(void) { return &tls_forward_v; }
+static void release_eval_ctx(void *p) { void *c = *(void **)p; if (c) free(c); *(void **)p = NULL; }
+__attribute__((constructor)) static void net_ctx_register(void) {
+    kf_ctx_register(a_pending, sizeof tls_pending, NULL, NULL);
+    kf_ctx_register(a_eval_ref, sizeof tls_eval_ref, NULL, NULL);
+    kf_ctx_register(a_eval_face, sizeof tls_eval_face, NULL, NULL);
+    kf_ctx_register(a_eval_ctx, sizeof tls_eval_ctx, NULL, release_eval_ctx);
+    kf_ctx_register(a_fwd_K, sizeof tls_forward_K, NULL, NULL);
+    kf_ctx_register(a_fwd_v, sizeof tls_forward_v, NULL, NULL);
+}
 static bool is_shell(NodeKind k) { return k == A_HEAD || k == A_BRANCH_NIL || k == A_BRANCH_CONS || k == A_BRANCH; }
 
 /* apply the rule for an oriented, validated, fully locked active pair */
@@ -757,100 +807,130 @@ static bool apply_rule(Net *n, NodeId neg, NodeId pos, OpSpec *pre) {
 
 static int cmp_nodeid(const void *a, const void *b) { NodeId x = *(const NodeId *)a, y = *(const NodeId *)b; return x < y ? -1 : x > y ? 1 : 0; }
 
-/* One candidate active pair. Returns true when a replacement was committed. */
-static bool step(Net *n, Active cand) {
-    NodeId a = cand.node;
-    /* the boundary arrays: a fixed fast path, extended for a node of larger arity (no arity cap) */
+/* One candidate active pair. Returns true when a replacement was committed.
+ * A frame family (kframe.h): the operation rule's kernel work runs between
+ * the two locked sections as a child frame; the retries are transitions
+ * (suspension points, outside every lock). */
+KF_DECL_EXT_DROP(net_step_pair, bool, net_step_pair_PARAMS, net_step_drop,
     NodeId set_s[64], sorted_s[64]; Endpoint exp_s[64]; uint64_t expgen_s[64];
-    NodeId *set = set_s, *sorted = sorted_s; Endpoint *exp = exp_s; uint64_t *expgen = expgen_s; size_t cap = 64;
-    bool result = false;
-    for (;;) {   /* a retry follows another thread's committed replacement: progress is global */
-        Node *x = N(n, a);
-        pthread_mutex_lock(&x->mu);
-        if (!x->live || x->gen != cand.gen) { pthread_mutex_unlock(&x->mu); result = false; break; }
-        Endpoint q = x->peer[0];
-        pthread_mutex_unlock(&x->mu);
-        if (!q.node || q.port != 0) { result = false; break; }
-        NodeId b = q.node;
-        /* lock the redex owners in id order and validate the pair */
-        lock_two(n, a, b);
-        Node *y = N(n, b);
-        bool valid = x->live && y->live && x->gen == cand.gen && x->peer[0].node == b && x->peer[0].port == 0 && y->peer[0].node == a && y->peer[0].port == 0;
-        if (!valid) { unlock_two(n, a, b); if (!x->live || x->gen != cand.gen) { result = false; break; } xc_add2((uint64_t *)&n->retries, &n->retries_cx, 1); fine_bump(FC_NET_RETRIES); continue; }
-        uint64_t gen_b = y->gen;
-        /* collect the surviving boundary: every auxiliary neighbour of a and b */
-        size_t need = 2 + (size_t)x->nports + (size_t)y->nports;
-        if (need > cap) {
-            if (set != set_s) { free(set); free(sorted); free(exp); free(expgen); }
-            cap = need; set = malloc(cap * sizeof *set); sorted = malloc(cap * sizeof *sorted); exp = malloc(cap * sizeof *exp); expgen = malloc(cap * sizeof *expgen);
-            require(set && sorted && exp && expgen, "out of memory");
-        }
-        size_t ns = 0;
-        set[ns++] = a; set[ns++] = b;
-        Node *two[2] = { x, y };
-        for (int t = 0; t < 2; t++)
-            for (uint16_t k = 1; k < two[t]->nports; k++) {
-                Endpoint e = two[t]->peer[k];
-                if (!e.node || e.node == a || e.node == b) continue;
-                set[ns] = e.node; exp[ns] = e; expgen[ns] = __atomic_load_n(&N(n, e.node)->gen, __ATOMIC_ACQUIRE); ns++;
-            }
-        /* snapshots of the pair (their payloads are fixed while their generations are) */
-        Node xs = *x, ys = *y;
-        unlock_two(n, a, b);
-        /* an operation rule's kernel work is computed here, outside every node lock */
-        const Node *negs = xs.polarity[0] < 0 ? &xs : &ys, *poss = xs.polarity[0] < 0 ? &ys : &xs;
-        OpSpec spec; bool have_spec = false; memset(&spec, 0, sizeof spec);
-        if (is_operation(negs->kind) && is_descriptor(poss->kind)) { op_compute(negs, poss, &spec); have_spec = true; }
-        /* lock the whole affected set in a consistent total order */
-        memcpy(sorted, set, ns * sizeof(NodeId));
-        qsort(sorted, ns, sizeof(NodeId), cmp_nodeid);
-        size_t nu = 0;
-        for (size_t i = 0; i < ns; i++) if (nu == 0 || sorted[nu - 1] != sorted[i]) sorted[nu++] = sorted[i];
-        for (size_t i = 0; i < nu; i++) pthread_mutex_lock(&N(n, sorted[i])->mu);
-        /* revalidate the redex and its boundary */
-        bool ok = x->live && y->live && x->gen == cand.gen && y->gen == gen_b && x->peer[0].node == b && x->peer[0].port == 0 && y->peer[0].node == a && y->peer[0].port == 0;
-        for (size_t i = 2; i < ns && ok; i++) {
-            Node *z = N(n, set[i]);
-            if (!z->live || z->gen != expgen[i]) ok = false;
-            else { NodeId back = z->peer[exp[i].port].node; if (back != a && back != b) ok = false; }   /* the boundary port still faces the redex */
-        }
-        /* and that a's and b's aux peers are still the recorded ones */
-        if (ok) {
-            size_t idx = 2;
-            for (int t = 0; t < 2 && ok; t++)
-                for (uint16_t k = 1; k < two[t]->nports && ok; k++) {
-                    Endpoint e = two[t]->peer[k];
-                    if (!e.node || e.node == a || e.node == b) { if (e.node) continue; else continue; }
-                    if (idx >= ns || e.node != exp[idx].node || e.port != exp[idx].port) ok = false;
-                    idx++;
-                }
-            if (ok && idx != ns) ok = false;
-        }
-        if (!ok) {
-            for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
-            spec_discard(&spec);
-            if (!x->live || x->gen != cand.gen) { result = false; break; }
-            xc_add2((uint64_t *)&n->retries, &n->retries_cx, 1); fine_bump(FC_NET_RETRIES);
-            continue;
-        }
-        /* orient: negative principal (agent) vs positive principal (data/shell) */
-        NodeId neg = x->polarity[0] < 0 ? a : b, pos = x->polarity[0] < 0 ? b : a;
-        ActiveVec pending = {0}; tls_pending = &pending;
-        bool did = apply_rule(n, neg, pos, have_spec ? &spec : NULL);
-        spec_discard(&spec);
-        if (did) xc_add2((uint64_t *)&n->rewrites, &n->rewrites_cx, 1);
-        tls_pending = NULL;
-        for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
-        if (tls_eval_ctx) { void *ctx = tls_eval_ctx; RefId r = tls_eval_ref; FaceId f = tls_eval_face; tls_eval_ctx = NULL; eval_request(r, f, cont_external(net_eval_deliver, ctx, free)); }
-        if (tls_forward_K) { EntryId K = tls_forward_K; RefId v = tls_forward_v; tls_forward_K = 0; tls_forward_v = 0; eval_forward_result(K, v); }   /* outside every node lock */
-        flush_pending(n, &pending);
-        result = did; break;
-    }
-    if (set != set_s) { free(set); free(sorted); free(exp); free(expgen); }
-    return result;
+    NodeId *set, *sorted; Endpoint *exp; uint64_t *expgen; size_t cap, ns, nu; bool result, have_spec, did;
+    NodeId x_id, b; Node *x, *y; uint64_t gen_b; Node xs, ys; OpSpec spec; ActiveVec pending;)
+static void net_step_drop(net_step_pair_F *F) {
+    spec_discard(&F->spec);
+    if (F->set && F->set != F->set_s) { free(F->set); free(F->sorted); free(F->exp); free(F->expgen); }
+    F->set = NULL; vec_free(&F->pending);
 }
-
-bool net_step_pair(Net *n, Active a) { return step(n, a); }
+KF_STEP(net_step_pair) {
+    KF_BEGIN(net_step_pair);
+    F->x_id = F->a.node;
+    /* the boundary arrays: a fixed fast path, extended for a node of larger arity (no arity cap) */
+    F->set = F->set_s; F->sorted = F->sorted_s; F->exp = F->exp_s; F->expgen = F->expgen_s; F->cap = 64;
+    F->result = false;
+    for (;;) {   /* a retry follows another thread's committed replacement: progress is global */
+        Net *n = F->n; NodeId a = F->x_id;
+        F->x = N(n, a);
+        pthread_mutex_lock(&F->x->mu);
+        if (!F->x->live || F->x->gen != F->a.gen) { pthread_mutex_unlock(&F->x->mu); F->result = false; break; }
+        Endpoint q = F->x->peer[0];
+        pthread_mutex_unlock(&F->x->mu);
+        if (!q.node || q.port != 0) { F->result = false; break; }
+        F->b = q.node;
+        /* lock the redex owners in id order and validate the pair */
+        lock_two(n, a, F->b);
+        F->y = N(n, F->b);
+        { Node *x = F->x, *y = F->y; NodeId b = F->b;
+          bool valid = x->live && y->live && x->gen == F->a.gen && x->peer[0].node == b && x->peer[0].port == 0 && y->peer[0].node == a && y->peer[0].port == 0;
+          if (!valid) {
+              unlock_two(n, a, b);
+              if (!x->live || x->gen != F->a.gen) { F->result = false; break; }
+              xc_add2((uint64_t *)&n->retries, &n->retries_cx, 1); fine_bump(FC_NET_RETRIES);
+              KF_SAFE();
+              continue;
+          }
+          F->gen_b = y->gen;
+          /* collect the surviving boundary: every auxiliary neighbour of a and b */
+          size_t need = 2 + (size_t)x->nports + (size_t)y->nports;
+          if (need > F->cap) {
+              if (F->set != F->set_s) { free(F->set); free(F->sorted); free(F->exp); free(F->expgen); }
+              F->cap = need; F->set = malloc(F->cap * sizeof *F->set); F->sorted = malloc(F->cap * sizeof *F->sorted); F->exp = malloc(F->cap * sizeof *F->exp); F->expgen = malloc(F->cap * sizeof *F->expgen);
+              require(F->set && F->sorted && F->exp && F->expgen, "out of memory");
+          }
+          F->ns = 0;
+          F->set[F->ns++] = a; F->set[F->ns++] = b;
+          Node *two[2] = { x, y };
+          for (int t = 0; t < 2; t++)
+              for (uint16_t k = 1; k < two[t]->nports; k++) {
+                  Endpoint e = two[t]->peer[k];
+                  if (!e.node || e.node == a || e.node == b) continue;
+                  F->set[F->ns] = e.node; F->exp[F->ns] = e; F->expgen[F->ns] = __atomic_load_n(&N(n, e.node)->gen, __ATOMIC_ACQUIRE); F->ns++;
+              }
+          /* snapshots of the pair (their payloads are fixed while their generations are) */
+          F->xs = *x; F->ys = *y;
+          unlock_two(n, a, b); }
+        /* an operation rule's kernel work is computed here, outside every node lock */
+        memset(&F->spec, 0, sizeof F->spec); F->have_spec = false;
+        { const Node *negs = F->xs.polarity[0] < 0 ? &F->xs : &F->ys, *poss = F->xs.polarity[0] < 0 ? &F->ys : &F->xs;
+          if (is_operation(negs->kind) && is_descriptor(poss->kind)) { F->have_spec = true; KF_CALL(op_compute, NULL, negs, poss, &F->spec); } }
+        {
+            Net *n = F->n; NodeId a = F->x_id, b = F->b; Node *x = F->x, *y = F->y;
+            NodeId *set = F->set, *sorted = F->sorted; Endpoint *exp = F->exp; uint64_t *expgen = F->expgen; size_t ns = F->ns;
+            /* lock the whole affected set in a consistent total order */
+            memcpy(sorted, set, ns * sizeof(NodeId));
+            qsort(sorted, ns, sizeof(NodeId), cmp_nodeid);
+            size_t nu = 0;
+            for (size_t i = 0; i < ns; i++) if (nu == 0 || sorted[nu - 1] != sorted[i]) sorted[nu++] = sorted[i];
+            F->nu = nu;
+            for (size_t i = 0; i < nu; i++) pthread_mutex_lock(&N(n, sorted[i])->mu);
+            /* revalidate the redex and its boundary */
+            bool ok = x->live && y->live && x->gen == F->a.gen && y->gen == F->gen_b && x->peer[0].node == b && x->peer[0].port == 0 && y->peer[0].node == a && y->peer[0].port == 0;
+            for (size_t i = 2; i < ns && ok; i++) {
+                Node *z = N(n, set[i]);
+                if (!z->live || z->gen != expgen[i]) ok = false;
+                else { NodeId back = z->peer[exp[i].port].node; if (back != a && back != b) ok = false; }   /* the boundary port still faces the redex */
+            }
+            /* and that a's and b's aux peers are still the recorded ones */
+            if (ok) {
+                size_t idx = 2;
+                Node *two[2] = { x, y };
+                for (int t = 0; t < 2 && ok; t++)
+                    for (uint16_t k = 1; k < two[t]->nports && ok; k++) {
+                        Endpoint e = two[t]->peer[k];
+                        if (!e.node || e.node == a || e.node == b) continue;
+                        if (idx >= ns || e.node != exp[idx].node || e.port != exp[idx].port) ok = false;
+                        idx++;
+                    }
+                if (ok && idx != ns) ok = false;
+            }
+            if (!ok) {
+                for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
+                spec_discard(&F->spec);
+                if (!x->live || x->gen != F->a.gen) { F->result = false; break; }
+                xc_add2((uint64_t *)&n->retries, &n->retries_cx, 1); fine_bump(FC_NET_RETRIES);
+                goto retry;
+            }
+            /* orient: negative principal (agent) vs positive principal (data/shell) */
+            NodeId neg = x->polarity[0] < 0 ? a : b, pos = x->polarity[0] < 0 ? b : a;
+            memset(&F->pending, 0, sizeof F->pending); tls_pending = &F->pending;
+            F->did = apply_rule(n, neg, pos, F->have_spec ? &F->spec : NULL);
+            spec_discard(&F->spec);
+            if (F->did) xc_add2((uint64_t *)&n->rewrites, &n->rewrites_cx, 1);
+            tls_pending = NULL;
+            for (size_t i = 0; i < nu; i++) pthread_mutex_unlock(&N(n, sorted[i])->mu);
+            /* the deferred requests are evaluator work, issued outside every node lock (synchronous: evaluator unit) */
+            if (tls_eval_ctx) { void *ctx = tls_eval_ctx; RefId r = tls_eval_ref; FaceId f = tls_eval_face; tls_eval_ctx = NULL; eval_request(r, f, cont_external(net_eval_deliver, ctx, free)); }
+            if (tls_forward_K) { EntryId K = tls_forward_K; RefId v = tls_forward_v; tls_forward_K = 0; tls_forward_v = 0; eval_forward_result(K, v); }
+            flush_pending(n, &F->pending);
+            F->result = F->did; break;
+        }
+    retry:
+        KF_SAFE();
+    }
+    if (F->set != F->set_s) { free(F->set); free(F->sorted); free(F->exp); free(F->expgen); }
+    F->set = NULL;
+    KF_RET(F->result);
+    KF_END;
+}
+KF_SYNC_DEF(net_step_pair, bool, net_step_pair_PARAMS, net_step_pair(Net *n, Active a))
 bool net_pop_pair_locked(Net *n, Active *out) {
     if (!n->active.len) return false;
     size_t pick = n->active.len - 1;
@@ -881,7 +961,7 @@ static void *net_worker_main(void *arg) {
         while (!n->stop && !pop_active_locked(n, &it)) pthread_cond_wait(&n->act_cv, &n->act_mu);
         if (n->stop) break;
         pthread_mutex_unlock(&n->act_mu);
-        step(n, it);                     /* new active pairs are flushed (enqueued) inside step */
+        net_step_pair(n, it);            /* new active pairs are flushed (enqueued) inside the step */
         net_finish_job(n);
         pthread_mutex_lock(&n->act_mu);
     }
@@ -905,7 +985,7 @@ size_t net_run(Net *n) {
         bool got = pop_active_locked(n, &it);
         pthread_mutex_unlock(&n->act_mu);
         if (!got) break;
-        if (step(n, it)) c++;
+        if (net_step_pair(n, it)) c++;
         net_finish_job(n);
     }
     return c;

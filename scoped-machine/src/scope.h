@@ -26,9 +26,12 @@ typedef struct { Sort sort; uint64_t id; RefId type; uint64_t level; FaceId requ
 typedef struct { Val body; RefId type; uint64_t level; FaceId guard; } TypedPartial;
 
 /* ---- generic depth-aware traversal over scoped values ---- */
+/* the occurrence callbacks are frame families (kframe.h) given by their push functions */
+typedef void (*TravTermPush)(KStack *ks, RefId *ret, uint64_t x, size_t depth, void *ctx);       /* 0 = keep the occurrence */
+typedef void (*TravDimPush)(KStack *ks, IntervalId *ret, uint64_t i, size_t depth, void *ctx);   /* 0 = keep */
 typedef struct {
-    RefId (*term)(uint64_t x, size_t depth, void *ctx);        /* 0 = keep the occurrence */
-    IntervalId (*dim)(uint64_t i, size_t depth, void *ctx);    /* 0 = keep */
+    TravTermPush term;
+    TravDimPush dim;
     uint64_t key;                                                /* memo key of this traversal */
     void *ctx;
     void (*enter)(ScopeId S, size_t depth, void *ctx);         /* optional: a scope's records are about to be traversed at depth */
@@ -73,5 +76,39 @@ bool ref_validate(RefId t, const char **reason);
 /* free (unbound) part of a dimension set / variable set */
 DimSetId dimset_free(DimSetId s);
 VarSetId varset_free(VarSetId s);
+
+/* frame families (kframe.h) */
+#define trav_ref_PARAMS(X) X(RefId, t) X(const Trav *, tv) X(size_t, depth)
+#define trav_iv_PARAMS(X) X(IntervalId, r) X(const Trav *, tv) X(size_t, depth)
+#define trav_fc_PARAMS(X) X(FaceId, f) X(const Trav *, tv) X(size_t, depth)
+#define trav_scope_PARAMS(X) X(ScopeId, S) X(const Trav *, tv) X(size_t, depth)
+#define trav_val_PARAMS(X) X(Val, v) X(const Trav *, tv) X(size_t, depth)
+#define capture_scope_PARAMS(X) X(size_t, n) X(const CaptureDecl *, delta) X(Val, body) X(RefId, result_type) X(uint64_t, result_level) X(FaceId, guard)
+#define scope_intern_PARAMS(X) X(size_t, n) X(const LocalDecl *, locals) X(Val, body) X(RefId, result_type) X(uint64_t, result_level) X(FaceId, guard)
+#define apply_scope_PARAMS(X) X(ScopeId, S) X(size_t, n) X(const Val *, args)
+#define scope_local_at_PARAMS(X) X(ScopeId, S) X(size_t, k) X(const Val *, args) X(RefId *, type) X(FaceId *, req) X(uint64_t *, level)
+#define reindex_scope_PARAMS(X) X(ScopeId, S) X(MapId, sigma)
+#define forall_scope_PARAMS(X) X(ScopeId, S)
+#define open_scope_fresh_PARAMS(X) X(ScopeId, S) X(uint64_t, key) X(uint64_t *, ids)
+#define scope_validate_PARAMS(X) X(ScopeId, S) X(const char **, reason)
+#define ref_validate_PARAMS(X) X(RefId, t) X(const char **, reason)
+#define dimset_free_PARAMS(X) X(DimSetId, s)
+#define varset_free_PARAMS(X) X(VarSetId, s)
+KF_PROTO(trav_ref, RefId, trav_ref_PARAMS);
+KF_PROTO(trav_iv, IntervalId, trav_iv_PARAMS);
+KF_PROTO(trav_fc, FaceId, trav_fc_PARAMS);
+KF_PROTO(trav_scope, ScopeId, trav_scope_PARAMS);
+KF_PROTO(trav_val, Val, trav_val_PARAMS);
+KF_PROTO(capture_scope, ScopeId, capture_scope_PARAMS);
+KF_PROTO(scope_intern, ScopeId, scope_intern_PARAMS);
+KF_PROTO(apply_scope, TypedPartial, apply_scope_PARAMS);
+KF_PROTO(scope_local_at, void, scope_local_at_PARAMS);
+KF_PROTO(reindex_scope, ScopeId, reindex_scope_PARAMS);
+KF_PROTO(forall_scope, FaceId, forall_scope_PARAMS);
+KF_PROTO(open_scope_fresh, TypedPartial, open_scope_fresh_PARAMS);
+KF_PROTO(scope_validate, bool, scope_validate_PARAMS);
+KF_PROTO(ref_validate, bool, ref_validate_PARAMS);
+KF_PROTO(dimset_free, DimSetId, dimset_free_PARAMS);
+KF_PROTO(varset_free, VarSetId, varset_free_PARAMS);
 
 #endif

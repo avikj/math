@@ -35,6 +35,7 @@ typedef struct { EvalEvents ev; RefId spec, up, forwarded_up; size_t nbr, tick_s
 static Run run(SchedPolicy pol, uint64_t seed, size_t workers) {
     machine_init(); eval_init(); check_init();
     eval_set_policy(pol, seed);
+    eval_set_adoption(false);   /* the base evaluator: its work vector is schedule independent (with live adoption, whether a slot adopts depends on the race) */
     if (workers) eval_set_workers(workers);
     Run out; memset(&out, 0, sizeof out);
     RefId U0 = mk_universe(0);
@@ -136,6 +137,6 @@ int main(void) {
         printf("  %-24s W identical to FIFO/no pool: %s\n", cfg[k].name, eq ? "yes" : "NO");
         same = same && eq;
     }
-    printf("%s\n", same ? "W is a property of the demand, not of the schedule." : "MISMATCH");
+    printf("%s\n", same ? "W is a property of the demand, not of the schedule (the base evaluator, live adoption off)." : "MISMATCH");
     return same ? 0 : 1;
 }

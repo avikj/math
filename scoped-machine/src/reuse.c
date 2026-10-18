@@ -12,6 +12,9 @@
 static XCount counters[REUSE_COUNTER_COUNT];
 
 __thread ReuseScope *reuse_tl_scope;
+/* the accounting owner is computation-local state (kframe.h): a suspended engine stack resumes under the scope it was in */
+static void *a_scope(void) { return &reuse_tl_scope; }
+__attribute__((constructor)) static void reuse_ctx_register(void) { kf_ctx_register(a_scope, sizeof reuse_tl_scope, NULL, NULL); }
 static XCount late[REUSE_PHASES][REUSE_COUNTER_COUNT];
 static ReuseScope *all_scopes;
 void reuse_bump(ReuseCounter c) {

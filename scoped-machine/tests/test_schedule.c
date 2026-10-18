@@ -24,8 +24,11 @@ typedef struct {
     EvalNetEvents en;    /* the evaluator's net: APPLY_TRANSFORM / CONTINUE_REFERENCE events (§43, §45) */
     unsigned net_root_kind[4];
     size_t running_after_ok;
+    size_t running_at_quiescence;   /* RUNNING entries once the machine is quiescent after every root */
     /* exported result graph (results = ordered roots, keys = set roots) */
     Graph *graph;
+    Graph *roots;       /* the root observations alone */
+    size_t installs;    /* adoptions installed (work-changing, schedule dependent) */
     char *results;      /* diagnostic text dump */
     /* diagnostics */
     size_t entries, n_refs, n_origins, n_maps, n_faces, n_intervals, n_nominal, n_terms, n_dims;
@@ -46,12 +49,13 @@ static void observe(RefId t, FaceId chi, Run *R) {
 }
 
 
-static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
+static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed, bool adopt) {
     memset(R, 0, sizeof *R);
     nroots = 0;
     machine_init(); eval_init(); check_init(); compiler_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     eval_set_policy(pol, seed);
+    eval_set_adoption(adopt);
     eval_set_pair_policy((SchedPolicy)(netpol == 0 ? POL_LIFO : netpol == 1 ? POL_FIFO : POL_RANDOM), seed ? seed * 7 + 3 : 5);
     RefId U0 = mk_universe(0);
     RefId A = var(U0), B = var(U0), T = var(U0);
@@ -171,6 +175,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     R->net_op = net.n_op; R->net_dup = net.n_dup; R->net_erase = net.n_erase; R->net_deliver = net.n_eval_deliver; R->net_rewrites = net.rewrites;
     net_free(&net);
 
+    eval_run(); R->running_at_quiescence = eval_running_count();
     R->ev = eval_events();
     R->en = eval_net_events();
     R->ready_hit = R->ev.ready_hit; R->running_hit = R->ev.running_hit;
@@ -190,6 +195,10 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     R->graph = canon_export(c);
     R->results = strdup("");
     canon_free(c);
+    { Canon *c2 = canon_new();
+      for (size_t q = 0; q < nroots; q++) { char line[64]; snprintf(line, sizeof line, "%zu status %d", q, (int)root_st[q]); canon_add_result(c2, line, root_res[q]); }
+      R->roots = canon_export(c2); canon_free(c2); }
+    R->installs = eval_cut_events().installs;
     R->entries = ne;
     R->n_refs = interner_count(&M.refs); R->n_origins = interner_count(&M.origins); R->n_maps = interner_count(&M.maps);
     R->n_faces = interner_count(&M.faces); R->n_intervals = interner_count(&M.intervals); R->n_nominal = interner_count(&M.nominal);
@@ -219,38 +228,62 @@ static void show(const char *name, const Run *r) {
            name, r->ev.request, r->ev.eval_step, r->ev.publish, r->ev.deliver, r->net_op, r->net_dup, r->net_erase, r->net_deliver, r->en.apply, r->en.continue_ref, r->ready_hit, r->running_hit);
 }
 
-int main(void) {
-    printf("== §28–31 schedule independence of interaction work and observed normal forms\n");
-    Run base, other;
-    workload(&base, POL_FIFO, 1, 0);
-    show("FIFO/net-FIFO", &base);
-    int fails = 0, runs = 1;
+static void sweep(bool adopt, Run *base, int *fails, int *runs, bool *hits_vary) {
     const char *enames[3] = { "FIFO", "LIFO", "random" }, *nnames[3] = { "LIFO", "FIFO", "random" };
-    bool hits_vary = false;
+    Run other;
+    size_t imin = base->installs, imax = base->installs; bool wvary = false;
     for (int ep = 0; ep < 3; ep++) for (int np = 0; np < 3; np++) {
         int nseeds = (ep == 2 || np == 2) ? 4 : 1;
         for (int s = 0; s < nseeds; s++) {
             uint64_t seed = 0x2545F4914F6CDD1DULL * (uint64_t)(s + 1) + (uint64_t)(ep * 3 + np);
             if (ep == 0 && np == 1 && s == 0) continue;     /* base */
-            workload(&other, (SchedPolicy)ep, np, seed);
+            workload(&other, (SchedPolicy)ep, np, seed, adopt);
             char name[64]; snprintf(name, sizeof name, "%s/net-%s", enames[ep], nnames[np]);
-            if (!compare(&base, &other, name, seed)) { show(name, &other); fails++; }
-            if (other.ready_hit != base.ready_hit || other.running_hit != base.running_hit) hits_vary = true;
-            if (other.n_refs != base.n_refs || other.n_origins != base.n_origins || other.n_nominal != base.n_nominal || other.n_terms != base.n_terms || other.n_dims != base.n_dims || other.entries != base.entries)
-                printf("  note [%s]: allocation diagnostics differ (refs %zu/%zu origins %zu/%zu nominal %zu/%zu names %zu+%zu/%zu+%zu entries %zu/%zu) — not part of the invariant\n",
-                       name, base.n_refs, other.n_refs, base.n_origins, other.n_origins, base.n_nominal, other.n_nominal, base.n_terms, base.n_dims, other.n_terms, other.n_dims, base.entries, other.entries);
-            if (s == nseeds - 1 && (ep == 2 && np == 2)) show(name, &other);
-            free(other.results); graph_free(other.graph);
-            runs++;
+            if (!adopt) {
+                if (!compare(base, &other, name, seed)) { show(name, &other); (*fails)++; }
+                if (other.ready_hit != base->ready_hit || other.running_hit != base->running_hit) *hits_vary = true;
+                if (other.n_refs != base->n_refs || other.n_origins != base->n_origins || other.n_nominal != base->n_nominal || other.n_terms != base->n_terms || other.n_dims != base->n_dims || other.entries != base->entries)
+                    printf("  note [%s]: allocation diagnostics differ (refs %zu/%zu origins %zu/%zu nominal %zu/%zu names %zu+%zu/%zu+%zu entries %zu/%zu) — not part of the invariant\n",
+                           name, base->n_refs, other.n_refs, base->n_origins, other.n_origins, base->n_nominal, other.n_nominal, base->n_terms, base->n_dims, other.n_terms, other.n_dims, base->entries, other.entries);
+                if (s == nseeds - 1 && (ep == 2 && np == 2)) show(name, &other);
+            } else {
+                MatchReport mr;
+                if (!graph_match(base->roots, other.roots, &mr)) { printf("  FAIL [%s seed %llu, adoption]: observed normal forms are not equal modulo renaming: %s\n", name, (unsigned long long)seed, mr.reason); (*fails)++; }
+                if (other.installs < imin) imin = other.installs;
+                if (other.installs > imax) imax = other.installs;
+                if (other.ev.request != base->ev.request || other.ev.eval_step != base->ev.eval_step) wvary = true;
+            }
+            free(other.results); graph_free(other.graph); graph_free(other.roots);
+            (*runs)++;
         }
     }
+    if (adopt) printf("  live adoption: observed normal forms coincide across %d schedules; adoptions installed per schedule %zu..%zu; the work vector %s (each run retains its actual work)\n", *runs, imin, imax, wvary ? "varies with the races" : "coincides");
+}
+
+int main(void) {
+    printf("== §28–31 schedule independence of interaction work and observed normal forms (the base evaluator: live adoption off)\n");
+    Run base, abase;
+    workload(&base, POL_FIFO, 1, 0, false);
+    show("FIFO/net-FIFO", &base);
+    int fails = 0, runs = 1, aruns = 1;
+    bool hits_vary = false;
+    sweep(false, &base, &fails, &runs, &hits_vary);
     { MatchReport mr; graph_match(base.graph, base.graph, &mr);
       printf("  %zu root observations, %zu cache keys, result graph %zu nodes (%zu joint refinement classes); %d schedules compared by exact matching\n", nroots, base.entries, base.graph->nodes.len, mr.classes_joint, runs); }
     printf("  ready-hit/running-hit diagnostics %s across schedules; REQUEST − launches = %zu is invariant\n", hits_vary ? "vary" : "coincide", base.ready_hit + base.running_hit);
     printf("  allocation diagnostics (base): refs %zu origins %zu maps %zu faces %zu intervals %zu nominal %zu names %zu+%zu\n", base.n_refs, base.n_origins, base.n_maps, base.n_faces, base.n_intervals, base.n_nominal, base.n_terms, base.n_dims);
     if (base.running_after_ok) { printf("  FAIL: a completed root left %zu RUNNING entries in its demand network\n", base.running_after_ok); fails++; }
     else printf("  no RUNNING entry survives a completed root observation\n");
-    free(base.results); graph_free(base.graph);
+    printf("== the same configuration with live adoption (HANDOFF §12)\n");
+    workload(&abase, POL_FIFO, 1, 0, true);
+    { MatchReport mr; if (!graph_match(base.roots, abase.roots, &mr)) { printf("  FAIL: adoption changes an observed normal form: %s\n", mr.reason); fails++; } else printf("  adoption on and off observe the same normal forms (modulo renaming)\n"); }
+    sweep(true, &abase, &fails, &aruns, &hits_vary);
+    /* with adoption a superseded request's producer may still be finishing when the root it no longer serves
+     * completes (its work is retained); at quiescence no producer may remain RUNNING */
+    if (abase.running_at_quiescence) { printf("  FAIL: %zu RUNNING entries remain at quiescence (adoption)\n", abase.running_at_quiescence); fails++; }
+    else printf("  no RUNNING entry remains at quiescence (adoption; %zu superseded producers were still finishing when their former roots completed)\n", abase.running_after_ok);
+    free(base.results); graph_free(base.graph); graph_free(base.roots);
+    free(abase.results); graph_free(abase.graph); graph_free(abase.roots);
     printf(fails ? "SCHEDULE CHECK FAILED\n" : "schedule check passed\n");
     return fails ? 1 : 0;
 }

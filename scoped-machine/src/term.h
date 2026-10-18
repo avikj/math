@@ -73,6 +73,8 @@ FaceId term_var_required(TermVarId x);
 
 /* ---- raw maps ---- */
 typedef struct { Words t; Words d; } MapBuilder;   /* (key,image) pairs */
+/* inside a frame step: room for nt term and nd dimension entries, so the entries that follow do not grow the builder */
+#define KF_MAPB_RESERVE(b, nt, nd) do { KF_CALL(words_reserve, NULL, &(b)->t, 2 * (size_t)(nt)); KF_CALL(words_reserve, NULL, &(b)->d, 2 * (size_t)(nd)); } while (0)
 void mapb_init(MapBuilder *b);
 void mapb_term(MapBuilder *b, TermVarId x, RefId image);
 void mapb_dim(MapBuilder *b, DimVarId i, IntervalId image);
@@ -120,6 +122,8 @@ bool ref_is_tview(RefId t);
 Tag ref_tag(RefId t);                 /* the head tag of a non-variable reference (VIEW origin or TVIEW node) */
 uint64_t ref_tnode(RefId t);
 uint64_t ref_tenv(RefId t);
+#define ref_intern_tview_PARAMS(X) X(uint64_t, node) X(uint64_t, env) X(DimSetId, support) X(VarSetId, fv) X(FaceId, required)
+KF_PROTO(ref_intern_tview, RefId, ref_intern_tview_PARAMS);
 RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required);
 
 TermVarId ref_var_id(RefId t);
@@ -140,6 +144,11 @@ DimVarId binder_dim_var(RefId owner, BinderSlot slot);
  * a typed tuple so that provenance can be compared up to renaming. */
 typedef enum { KW_CONST = 0, KW_REF, KW_FACE, KW_INTERVAL, KW_DIM, KW_VAR, KW_NAT } KeyKind;
 typedef struct { KeyKind kind; uint64_t v; } KeyWord;
+#define nominal_var_PARAMS(X) X(const KeyWord *, key) X(size_t, n) X(uint64_t, prefix) X(Sort, sort) X(RefId, type) X(FaceId, req) X(bool, check)
+#define binder_var_PARAMS(X) X(RefId, owner) X(BinderSlot, slot) X(Sort, sort) X(RefId, type)
+KF_PROTO(nominal_var, uint64_t, nominal_var_PARAMS);   /* a keyed variable (prefix: a leading constant key word, 0 = none); check: a reuse must agree on type and face */
+KF_PROTO(binder_var, uint64_t, binder_var_PARAMS);     /* the variable of the binder (owner, slot) */
+uint64_t nominal_var(const KeyWord *key, size_t n, uint64_t prefix, Sort sort, RefId type, FaceId req, bool check);
 TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type);
 TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required);   /* a partial formal */
 DimVarId fresh_dim_keyed(const KeyWord *key, size_t n);
@@ -231,6 +240,8 @@ uint64_t global_env_version(void);     /* changes with every declaration / body 
 uint64_t global_revision(SymbolId s);  /* §79.1: the symbol's declaration/body slot revision (1 opaque; 2 once a body is set) */
 /* §78.4: the recorded instantiation edges of a reference: pairs (source, map)
  * such that dest = reindex(source, map) was constructed; n pairs */
+#define instantiation_edges_PARAMS(X) X(RefId, dest) X(const uint64_t **, pairs)
+KF_PROTO(instantiation_edges, size_t, instantiation_edges_PARAMS);
 size_t instantiation_edges(RefId dest, const uint64_t **pairs);
 extern void (*term_edge_hook)(RefId dest, RefId src, MapId sigma);   /* called after a new instantiation edge is recorded (no term lock held) */
 void env_control_init(void); void env_freeze(void); void env_unfreeze(void); bool env_is_frozen(void);   /* §57 R1: define_global returns 0 and set_global_body false while frozen */
@@ -275,5 +286,131 @@ RefId mk_tcall(uint64_t id, int dir, size_t nparams, const Field *params, RefId 
 /* ---- printing (presentation only) ---- */
 void print_ref(RefId t, FILE *f);
 void print_ref_depth(RefId t, FILE *f, int depth);
+
+
+/* ---- frame families (kframe.h): the same procedures as resumable frames ---- */
+#define mapb_finish_PARAMS(X) X(MapBuilder *, b)
+KF_PROTO(mapb_finish, MapId, mapb_finish_PARAMS);
+KF_PROTO(map_identity, MapId, KF_NOPARAMS);
+#define map_term_image_PARAMS(X) X(MapId, m) X(TermVarId, x)
+KF_PROTO(map_term_image, RefId, map_term_image_PARAMS);
+#define map_dim_image_PARAMS(X) X(MapId, m) X(DimVarId, i)
+KF_PROTO(map_dim_image, IntervalId, map_dim_image_PARAMS);
+#define map_single_term_PARAMS(X) X(TermVarId, x) X(RefId, a)
+KF_PROTO(map_single_term, MapId, map_single_term_PARAMS);
+#define map_single_dim_PARAMS(X) X(DimVarId, i) X(IntervalId, r0)
+KF_PROTO(map_single_dim, MapId, map_single_dim_PARAMS);
+#define iv_reindex_PARAMS(X) X(IntervalId, r) X(MapId, m)
+KF_PROTO(iv_reindex, IntervalId, iv_reindex_PARAMS);
+#define fc_reindex_PARAMS(X) X(FaceId, phi) X(MapId, m)
+KF_PROTO(fc_reindex, FaceId, fc_reindex_PARAMS);
+#define compose_PARAMS(X) X(MapId, sigma) X(MapId, tau)
+KF_PROTO(compose, MapId, compose_PARAMS);
+#define term_require_push_PARAMS(X) X(FaceId, phi)
+KF_PROTO(term_require_push, void, term_require_push_PARAMS);
+#define levels_pack_PARAMS(X) X(uint64_t, m) X(uint64_t, n)
+KF_PROTO(levels_pack, uint64_t, levels_pack_PARAMS);
+#define level_max_PARAMS(X) X(uint64_t, a) X(uint64_t, b)
+KF_PROTO(level_max, uint64_t, level_max_PARAMS);
+#define level_succ_PARAMS(X) X(uint64_t, a)
+KF_PROTO(level_succ, uint64_t, level_succ_PARAMS);
+#define origin_make_PARAMS(X) X(Tag, tag) X(uint64_t, payload) X(const Field *, fields) X(size_t, nf) X(const Binder *, binders) X(size_t, nb)
+KF_PROTO(origin_make, OriginId, origin_make_PARAMS);
+#define bound_id_PARAMS(X) X(size_t, depth) X(size_t, slot)
+KF_PROTO(bound_id, uint64_t, bound_id_PARAMS);
+#define ref_var_PARAMS(X) X(TermVarId, x)
+KF_PROTO(ref_var, RefId, ref_var_PARAMS);
+#define make_view_PARAMS(X) X(OriginId, c) X(MapId, sigma)
+KF_PROTO(make_view, RefId, make_view_PARAMS);
+#define reindex_PARAMS(X) X(RefId, t) X(MapId, sigma)
+KF_PROTO(reindex, RefId, reindex_PARAMS);
+#define reindex1_PARAMS(X) X(RefId, t) X(TermVarId, x) X(RefId, a)
+KF_PROTO(reindex1, RefId, reindex1_PARAMS);
+#define reindex_dim_PARAMS(X) X(RefId, t) X(DimVarId, i) X(IntervalId, r)
+KF_PROTO(reindex_dim, RefId, reindex_dim_PARAMS);
+#define fresh_term_keyed_PARAMS(X) X(const KeyWord *, key) X(size_t, n) X(RefId, type)
+KF_PROTO(fresh_term_keyed, TermVarId, fresh_term_keyed_PARAMS);
+#define lifted_map_PARAMS(X) X(RefId, owner) X(BinderSlot, slot) X(uint64_t *, fresh)
+KF_PROTO(lifted_map, MapId, lifted_map_PARAMS);
+#define resolve_term_binder_PARAMS(X) X(RefId, owner) X(BinderSlot, slot) X(FieldIndex, body_field)
+KF_PROTO(resolve_term_binder, TermOpen, resolve_term_binder_PARAMS);
+#define resolve_dim_binder_PARAMS(X) X(RefId, owner) X(BinderSlot, slot) X(FieldIndex, body_field)
+KF_PROTO(resolve_dim_binder, DimOpen, resolve_dim_binder_PARAMS);
+#define apply_term_binder_PARAMS(X) X(RefId, owner) X(BinderSlot, slot) X(FieldIndex, body_field) X(RefId, a)
+KF_PROTO(apply_term_binder, RefId, apply_term_binder_PARAMS);
+#define apply_dim_binder_PARAMS(X) X(RefId, owner) X(BinderSlot, slot) X(FieldIndex, body_field) X(IntervalId, iv)
+KF_PROTO(apply_dim_binder, RefId, apply_dim_binder_PARAMS);
+#define open_ref_PARAMS(X) X(RefId, t) X(Head *, h)
+KF_PROTO(open_ref, void, open_ref_PARAMS);
+#define context_make_PARAMS(X) X(size_t, n) X(const CtxDecl *, decls) X(FaceId, assumption)
+KF_PROTO(context_make, ContextId, context_make_PARAMS);
+#define context_extend_term_PARAMS(X) X(ContextId, c) X(TermVarId, x) X(RefId, type)
+KF_PROTO(context_extend_term, ContextId, context_extend_term_PARAMS);
+#define context_extend_dim_PARAMS(X) X(ContextId, c) X(DimVarId, i)
+KF_PROTO(context_extend_dim, ContextId, context_extend_dim_PARAMS);
+#define context_restrict_PARAMS(X) X(ContextId, c) X(FaceId, phi)
+KF_PROTO(context_restrict, ContextId, context_restrict_PARAMS);
+#define global_ref_PARAMS(X) X(SymbolId, s)
+KF_PROTO(global_ref, RefId, global_ref_PARAMS);
+#define unfold_global_PARAMS(X) X(RefId, t)
+KF_PROTO(unfold_global, RefId, unfold_global_PARAMS);
+#define mk_universe_PARAMS(X) X(uint64_t, level)
+KF_PROTO(mk_universe, RefId, mk_universe_PARAMS);
+#define mk_pi_PARAMS(X) X(TermVarId, x) X(RefId, A) X(RefId, B)
+KF_PROTO(mk_pi, RefId, mk_pi_PARAMS);
+#define mk_sigma_PARAMS(X) X(TermVarId, x) X(RefId, A) X(RefId, B)
+KF_PROTO(mk_sigma, RefId, mk_sigma_PARAMS);
+#define mk_lam_PARAMS(X) X(TermVarId, x) X(RefId, A) X(RefId, B)
+KF_PROTO(mk_lam, RefId, mk_lam_PARAMS);
+#define mk_pi_lv_PARAMS(X) X(uint64_t, m) X(uint64_t, n) X(TermVarId, x) X(RefId, A) X(RefId, B)
+KF_PROTO(mk_pi_lv, RefId, mk_pi_lv_PARAMS);
+#define mk_sigma_lv_PARAMS(X) X(uint64_t, m) X(uint64_t, n) X(TermVarId, x) X(RefId, A) X(RefId, B)
+KF_PROTO(mk_sigma_lv, RefId, mk_sigma_lv_PARAMS);
+#define mk_lam_lv_PARAMS(X) X(uint64_t, m) X(TermVarId, x) X(RefId, A) X(RefId, B)
+KF_PROTO(mk_lam_lv, RefId, mk_lam_lv_PARAMS);
+#define term_levels_push_PARAMS(X) X(uint64_t, m) X(uint64_t, n)
+KF_PROTO(term_levels_push, void, term_levels_push_PARAMS);
+#define mk_app_PARAMS(X) X(RefId, fn) X(RefId, a)
+KF_PROTO(mk_app, RefId, mk_app_PARAMS);
+#define mk_pair_PARAMS(X) X(RefId, a) X(RefId, b0)
+KF_PROTO(mk_pair, RefId, mk_pair_PARAMS);
+#define mk_pair_at_PARAMS(X) X(RefId, S) X(RefId, a) X(RefId, b0)
+KF_PROTO(mk_pair_at, RefId, mk_pair_at_PARAMS);
+#define mk_fst_PARAMS(X) X(RefId, p)
+KF_PROTO(mk_fst, RefId, mk_fst_PARAMS);
+#define mk_snd_PARAMS(X) X(RefId, p)
+KF_PROTO(mk_snd, RefId, mk_snd_PARAMS);
+#define mk_path_PARAMS(X) X(DimVarId, j) X(RefId, B_j) X(RefId, l) X(RefId, r0)
+KF_PROTO(mk_path, RefId, mk_path_PARAMS);
+#define mk_plam_PARAMS(X) X(DimVarId, j) X(RefId, body)
+KF_PROTO(mk_plam, RefId, mk_plam_PARAMS);
+#define mk_papp_PARAMS(X) X(DimVarId, j) X(RefId, B_j) X(RefId, l) X(RefId, r0) X(RefId, p) X(IntervalId, s)
+KF_PROTO(mk_papp, RefId, mk_papp_PARAMS);
+#define mk_glue_type_PARAMS(X) X(RefId, A) X(FaceId, alpha) X(RefId, T) X(RefId, e)
+KF_PROTO(mk_glue_type, RefId, mk_glue_type_PARAMS);
+#define mk_glue_intro_PARAMS(X) X(RefId, A) X(FaceId, alpha) X(RefId, T) X(RefId, e) X(RefId, t) X(RefId, a)
+KF_PROTO(mk_glue_intro, RefId, mk_glue_intro_PARAMS);
+#define mk_unglue_PARAMS(X) X(RefId, A) X(FaceId, alpha) X(RefId, T) X(RefId, e) X(RefId, v)
+KF_PROTO(mk_unglue, RefId, mk_unglue_PARAMS);
+#define mk_comp_PARAMS(X) X(DimVarId, j) X(RefId, A_j) X(FaceId, phi) X(RefId, u_j) X(RefId, cap)
+KF_PROTO(mk_comp, RefId, mk_comp_PARAMS);
+#define mk_comp_lv_PARAMS(X) X(uint64_t, n) X(DimVarId, j) X(RefId, A_j) X(FaceId, phi) X(RefId, u_j) X(RefId, cap)
+KF_PROTO(mk_comp_lv, RefId, mk_comp_lv_PARAMS);
+#define mk_path_lv_PARAMS(X) X(uint64_t, n) X(DimVarId, j) X(RefId, B_j) X(RefId, l) X(RefId, r0)
+KF_PROTO(mk_path_lv, RefId, mk_path_lv_PARAMS);
+#define mk_papp_lv_PARAMS(X) X(uint64_t, n) X(DimVarId, j) X(RefId, B_j) X(RefId, l) X(RefId, r0) X(RefId, p) X(IntervalId, s)
+KF_PROTO(mk_papp_lv, RefId, mk_papp_lv_PARAMS);
+#define mk_glue_type_lv_PARAMS(X) X(uint64_t, n) X(RefId, A) X(FaceId, alpha) X(RefId, T) X(RefId, e)
+KF_PROTO(mk_glue_type_lv, RefId, mk_glue_type_lv_PARAMS);
+#define mk_glue_intro_lv_PARAMS(X) X(uint64_t, n) X(RefId, A) X(FaceId, alpha) X(RefId, T) X(RefId, e) X(RefId, t) X(RefId, a)
+KF_PROTO(mk_glue_intro_lv, RefId, mk_glue_intro_lv_PARAMS);
+#define mk_unglue_lv_PARAMS(X) X(uint64_t, n) X(RefId, A) X(FaceId, alpha) X(RefId, T) X(RefId, e) X(RefId, v)
+KF_PROTO(mk_unglue_lv, RefId, mk_unglue_lv_PARAMS);
+#define mk_pair_at_lv_PARAMS(X) X(uint64_t, n) X(RefId, S) X(RefId, a) X(RefId, b0)
+KF_PROTO(mk_pair_at_lv, RefId, mk_pair_at_lv_PARAMS);
+#define mk_tcall_PARAMS(X) X(uint64_t, id) X(int, dir) X(size_t, nparams) X(const Field *, params) X(RefId, a) X(RefId, in_type) X(RefId, out_type) X(FaceId, required)
+KF_PROTO(mk_tcall, RefId, mk_tcall_PARAMS);
+#define mk_system_PARAMS(X) X(size_t, n) X(const FaceId *, faces) X(const RefId *, terms)
+KF_PROTO(mk_system, RefId, mk_system_PARAMS);
 
 #endif

@@ -11,6 +11,7 @@
 #ifndef CUBICAL_NAT_H
 #define CUBICAL_NAT_H
 #include "common.h"
+#include "kframe.h"
 
 typedef uint64_t Nat;
 #define NAT_BOX   (UINT64_C(1) << 63)
@@ -33,4 +34,19 @@ size_t nat_decimal(Nat n, char *buf, size_t cap);       /* decimal text (diagnos
 /* signed differences of finite costs: Zero | Positive(nonzero) | Negative(nonzero) */
 typedef struct { int sign; Nat magnitude; } NatDiff;
 NatDiff nat_diff(Nat a, Nat b);                         /* a - b, exact */
+/* frame families (kframe.h) */
+#define nat_from_limbs_PARAMS(X) X(size_t, n) X(const uint64_t *, limbs)
+#define nat_compare_PARAMS(X) X(Nat, a) X(Nat, b)
+#define nat_add_PARAMS(X) X(Nat, a) X(Nat, b)
+#define nat_sub_ge_PARAMS(X) X(Nat, a) X(Nat, b)
+#define nat_successor_PARAMS(X) X(Nat, a)
+#define nat_max_PARAMS(X) X(Nat, a) X(Nat, b)
+#define nat_diff_PARAMS(X) X(Nat, a) X(Nat, b)
+KF_PROTO(nat_from_limbs, Nat, nat_from_limbs_PARAMS);
+KF_PROTO(nat_compare, int, nat_compare_PARAMS);
+KF_PROTO(nat_add, Nat, nat_add_PARAMS);
+KF_PROTO(nat_sub_ge, Nat, nat_sub_ge_PARAMS);
+KF_PROTO(nat_successor, Nat, nat_successor_PARAMS);
+KF_PROTO(nat_max, Nat, nat_max_PARAMS);
+KF_PROTO(nat_diff, NatDiff, nat_diff_PARAMS);
 #endif

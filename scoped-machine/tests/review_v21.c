@@ -31,12 +31,14 @@ static int zero_interleave(bool different_order) {
     printf("zero-%s: nonzero_words=%zu first_nonzero=%zu\n",different_order?"order":"head",bad,first);
     arena_release(c,nc);arena_release(d,nd);return bad?1:0;
 }
-static void one_tick(KCont*k) { fine_bump(FC_VALIDATE_STEPS); k->ok=true; }
+/* one transition, then a suspension point: under a one-transition grant the stack suspends there */
+KF_DECL(one_tick,void,KF_NOPARAMS,)
+KF_STEP(one_tick) { KF_BEGIN(one_tick); fine_bump(FC_VALIDATE_STEPS); KF_SAFE(); ks->ok=true; KF_RETV(); KF_END; }
 static int capacity(void) {
-    KCont *ks[257];
-    for(size_t i=0;i<257;i++){ks[i]=kc_new(one_tick,NULL,0);kc_grant(ks[i],1);assert(!kc_done(ks[i]));}
-    for(size_t i=0;i<257;i++)kc_free(ks[i]);kc_shutdown();
-    puts("257 live continuations completed");return 0;
+    KStack *st[257];
+    for(size_t i=0;i<257;i++){st[i]=kf_new();one_tick_push(st[i],NULL);kf_grant(st[i],1);assert(!kf_done(st[i]));}
+    for(size_t i=0;i<257;i++)kf_free(st[i]);
+    puts("257 live suspended frame stacks completed (no thread per stack)");return 0;
 }
 static int ledger(void) {
     init(); RefId U=mk_universe(0);TermVarId va=declare_term(U,fc_true());RefId A=ref_var(va);
@@ -45,36 +47,35 @@ static int ledger(void) {
     RefId a=x,b=y;for(size_t i=0;i<8;i++){a=mk_app(f,a);b=mk_app(f,b);}
     OpId h1=kernel(KK_SHAPE_OF,a,0,0,0),h2=kernel(KK_SHAPE_OF,b,0,0,0);
     uint64_t actual0=reuse_count(REUSE_SHAPE_NODE),charged0=work_ledger().frames[FR_SHAPE_NODE];
-    op_step(h1,1);assert(W.kc_active&&!kc_done(W.kc_active));
+    op_step(h1,1);assert(W.kf_active&&!kf_done(W.kf_active));
     finish(h2);finish(h1);
     uint64_t actual=reuse_count(REUSE_SHAPE_NODE)-actual0,charged=work_ledger().frames[FR_SHAPE_NODE]-charged0;
     printf("interleaved shape accounting: actual=%llu charged=%llu\n",(unsigned long long)actual,(unsigned long long)charged);
     op_release(h1);op_release(h2);done();return actual==charged?0:1;
 }
-static void observe(KCont*k) {
-    WhnfStatus s; EvalResult*r=whnf(k->arg[0],fc_true(),&s);
-    k->ok=s==W_OK&&r; k->out[0]=s;
-}
+/* an observation on an engine stack: arg[0] the reference, arg[1] the face */
+KF_DECL(observe,void,KF_NOPARAMS,WhnfStatus s;EvalResult*r;)
+KF_STEP(observe) { KF_BEGIN(observe); KF_CALL(whnf,&F->r,ks->arg[0],ks->arg[1],&F->s); ks->ok=F->s==W_OK&&F->r; ks->out[0]=F->s; KF_RETV(); KF_END; }
+static KStack *observer(RefId t) { KStack *k=kf_new(); k->arg[0]=t; k->arg[1]=fc_true(); observe_push(k,NULL); return k; }
 static int wait_owner(void) {
     init();FaceId fs[16];RefId as[16],bs[16];
     for(size_t i=0;i<16;i++){fs[i]=i?fc_false():fc_true();as[i]=mk_universe(0);bs[i]=mk_universe(1);}
     RefId a=mk_system(16,fs,as),b=mk_system(16,fs,bs);
-    uint64_t aa[]={a},bb[]={b};
-    KCont *unrelated=kc_new(observe,aa,1),*owner=kc_new(observe,bb,1),*waiter=kc_new(observe,bb,1);
-    for(size_t n=0;!unrelated->in_eval&&n<100000;n++)kc_grant(unrelated,1);
-    assert(unrelated->in_eval&&!kc_done(unrelated));
-    for(size_t n=0;!owner->in_eval&&n<100000;n++)kc_grant(owner,1);
-    assert(owner->in_eval&&!kc_done(owner));
-    for(size_t n=0;!waiter->blocked&&!kc_done(waiter)&&n<100000;n++)kc_grant(waiter,1);
+    KStack *unrelated=observer(a),*owner=observer(b),*waiter=observer(b);
+    for(size_t n=0;!unrelated->in_eval&&n<100000;n++)kf_grant(unrelated,1);
+    assert(unrelated->in_eval&&!kf_done(unrelated));
+    for(size_t n=0;!owner->in_eval&&n<100000;n++)kf_grant(owner,1);
+    assert(owner->in_eval&&!kf_done(owner));
+    for(size_t n=0;!waiter->blocked&&!kf_done(waiter)&&n<100000;n++)kf_grant(waiter,1);
     assert(waiter->blocked);
     bool correct=waiter->blocked_on==owner;
     printf("wait owner: actual_owner=%d unrelated_owner=%d\n",correct,waiter->blocked_on==unrelated);
     /* The actual producer alone can discharge this observation. */
-    while(!kc_done(owner))kc_grant(owner,KC_UNBOUNDED);
-    while(!kc_done(waiter))kc_grant(waiter,KC_UNBOUNDED);
-    while(!kc_done(unrelated))kc_grant(unrelated,KC_UNBOUNDED);
+    while(!kf_done(owner))kf_grant(owner,KF_UNBOUNDED);
+    while(!kf_done(waiter))kf_grant(waiter,KF_UNBOUNDED);
+    while(!kf_done(unrelated))kf_grant(unrelated,KF_UNBOUNDED);
     assert(owner->ok&&waiter->ok&&unrelated->ok);
-    kc_free(waiter);kc_free(owner);kc_free(unrelated);done();return correct?0:1;
+    kf_free(waiter);kf_free(owner);kf_free(unrelated);done();return correct?0:1;
 }
 static void *zero_worker(void*arg) {
     size_t seed=(size_t)(uintptr_t)arg;
@@ -106,10 +107,10 @@ static int cleanup_wait(bool drain) {
         if(fine_count(FC_CHECK_FRAMES)>1){caught=true;break;}
     }
     assert(caught&&op_status(owner)==OP_RUNNING);
-    KCont*owner_k=W.kc_active;
-    KCont*waiter_k=NULL;
+    KStack*owner_k=W.kf_active;
+    KStack*waiter_k=NULL;
     for(size_t i=0;i<100000&&op_status(waiter)==OP_RUNNING;i++){
-        op_step(waiter,1);waiter_k=W.kc_active;
+        op_step(waiter,1);waiter_k=W.kf_active;
         if(waiter_k&&waiter_k!=owner_k&&waiter_k->blocked)break;
     }
     assert(waiter_k&&waiter_k->blocked&&waiter_k->blocked_on==owner_k);

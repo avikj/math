@@ -63,6 +63,13 @@ void ev_quiesce(void);                  /* publish this thread's ambient label *
 size_t ev_depth(void);                  /* open units on this thread */
 void ev_unwind_to(size_t depth);        /* a cancellation unwound past open units: each is published with the work it performed */
 uint64_t ev_owner_current(EvKind kind); /* the owner a unit begun now would have */
+/* a suspended computation carries the units its steps left open (kframe.h): detaching publishes each one's work
+ * so far (its own label as a segment, its set-aside enclosing label back to the enclosing unit) and removes it;
+ * attaching re-opens them on the resuming thread (owner: the one current there) */
+typedef struct { size_t n, cap; struct EvOpen { int kind; uint64_t occ, cause; } *u; } EvSaved;
+void ev_detach(size_t base, EvSaved *out);
+void ev_attach(EvSaved *in);            /* empties `in` */
+void ev_saved_free(EvSaved *s);
 
 /* prefixes and folds */
 typedef struct { size_t n; struct EvStream **s; uint64_t *len; } EvPrefix;

@@ -287,7 +287,7 @@ typedef enum {
     FR_PRODUCER_LOOKUP, FR_ALIAS_DELIVERY, FR_SHAPE_NODE, FR_DEPENDENCY_CHECK, FR_RECEIPT,   /* §81.1 */
     FR_PROOF_USE_AUDIT,            /* §88: one frame per audited evidence use at preparation */
     FR_SCHEDULE_STEP, FR_CYCLE_CHECK,   /* §94.2(3): one cone-path hop / one cycle-check hop per unit */
-    FR_KERNEL_TRANSITION, FR_COUNT      /* §94: one fine step of a kernel continuation (kcont.h) */
+    FR_KERNEL_TRANSITION, FR_COUNT      /* §94: one fine step of a kernel frame stack (kframe.h) */
 } FrameFamily;
 typedef enum { PH_PREPARE = 0, PH_REWRITE, PH_CHECK, PH_COMMIT, PH_EXECUTE, PH_COUNT } Phase;
 const char *frame_family_name(FrameFamily f);

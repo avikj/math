@@ -25,5 +25,10 @@ ShapeId shape_of(RefId t);                                   /* ρ = identity, d
 ShapeId shape_under(RefId t, MapId rho, size_t depth);
 const uint64_t *shape_words(ShapeId s, size_t *n);           /* [SH_FREE, x] | [SH_BOUND, token] | [SH_NODE, tag, payload, levels, required, nfields, (kind, binder sort or 0, value)...] */
 size_t shape_count(void);
+/* frame families (kframe.h) */
+#define shape_of_PARAMS(X) X(RefId, t)
+#define shape_under_PARAMS(X) X(RefId, t) X(MapId, rho) X(size_t, depth)
+KF_PROTO(shape_of, ShapeId, shape_of_PARAMS);
+KF_PROTO(shape_under, ShapeId, shape_under_PARAMS);
 
 #endif

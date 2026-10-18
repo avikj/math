@@ -5,7 +5,7 @@
 static size_t kernel_qsort_max;
 void __real_qsort(void*,size_t,size_t,int(*)(const void*,const void*));
 void __wrap_qsort(void*p,size_t n,size_t z,int(*cmp)(const void*,const void*)){
- if(kc_tl&&n>kernel_qsort_max)kernel_qsort_max=n;
+ if(kf_tl&&n>kernel_qsort_max)kernel_qsort_max=n;
  __real_qsort(p,n,z,cmp);
 }
 static void init(void) { machine_init(); eval_init(); check_init(); compiler_init(); work_init(); }
@@ -20,11 +20,11 @@ static int starve(int released) {
  RefId f=ref_var(declare_term(mk_fun(0,0,A,A),fc_true())); RefId t=x;for(size_t j=0;j<8;j++)t=mk_app(f,t);
  AtomId a=atom_producer(t,fc_true()),b=atom_producer(mk_app(f,t),fc_true());
  SetId sa=set_make(1,&a),sb=set_make(1,&b);MapId m=map_single_term(vx,y);
- OpId h1=op_specialize_set(sa,m);size_t i=0;while(!W.kc_active&&op_status(h1)==OP_RUNNING&&i++<10000)op_step(h1,1);
- assert(W.kc_active);if(released)op_release(h1);OpId h2=op_specialize_set(sb,m);uint64_t owner=W.kc_owner;
+ OpId h1=op_specialize_set(sa,m);size_t i=0;while(!W.kf_active&&op_status(h1)==OP_RUNNING&&i++<10000)op_step(h1,1);
+ assert(W.kf_active);if(released)op_release(h1);OpId h2=op_specialize_set(sb,m);uint64_t owner=W.kf_owner;
  for(i=0;i<30000&&op_status(h2)==OP_RUNNING;i++)op_step(h2,1);
  int ok=op_status(h2)==OP_COMPLETE;
- printf("independent root: steps=%zu complete=%d foreign_done=%d same_owner=%d first_status=%d\n",i,ok,W.kc_active?kc_done(W.kc_active):-1,W.kc_owner==owner,op_status(h1));
+ printf("independent root: steps=%zu complete=%d foreign_done=%d same_owner=%d first_status=%d\n",i,ok,W.kf_active?kf_done(W.kf_active):-1,W.kf_owner==owner,op_status(h1));
  op_release(h1);op_release(h2);done();return ok?0:1;
 }
 static int evalbound(size_t n) {
@@ -80,7 +80,7 @@ static int fresh_retire(void){arena_init();ArenaStats b=arena_stats();size_t got
 static int independent_cone(void) {
  init();RefId U=mk_universe(0);TermVarId va=declare_term(U,fc_true());RefId A=ref_var(va);TermVarId vx=declare_term(A,fc_true()),vy=declare_term(A,fc_true());RefId x=ref_var(vx),y=ref_var(vy);
  RefId f=ref_var(declare_term(mk_fun(0,0,A,A),fc_true()));RefId t=x;for(size_t i=0;i<64;i++)t=mk_app(f,t);
- OpId h1=kernel(KK_REINDEX,t,map_single_term(vx,y),0,0);op_step(h1,1);assert(W.kc_active&&!kc_done(W.kc_active));KCont*first=W.kc_active;uint64_t before=first->steps;
+ OpId h1=kernel(KK_REINDEX,t,map_single_term(vx,y),0,0);op_step(h1,1);assert(W.kf_active&&!kf_done(W.kf_active));KStack*first=W.kf_active;uint64_t before=first->steps;
  OpId h2=kernel(KK_REF_VALIDATE,U,0,0,0);op_step(h2,1);uint64_t advanced=first->steps-before;
  printf("independent cones: second root advanced first continuation by %llu transitions\n",(unsigned long long)advanced);
  op_release(h1);op_release(h2);done();return advanced==0?0:1;

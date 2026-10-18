@@ -1,7 +1,6 @@
 #include "intern.h"
 #include "fine.h"
 #include "arena.h"
-#include "kcont.h"
 
 /* ---- chunked arrays ---- */
 void chunked_init(Chunked *c, size_t elem) { radix_init(&c->dir); c->elem = elem; c->alloc = NULL; c->alloc_ctx = NULL; }
@@ -22,6 +21,22 @@ void *chunked_at(Chunked *c, size_t i) {
     }
     return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
 }
+/* the chunk of element i created ahead of a locked section (outside every
+ * lock): a reused block is cleared one word per transition (arena_zero) */
+KF_DECL_EXT_DROP(chunked_prepare, void, chunked_prepare_PARAMS, chunked_prepare_drop, void **slot; uint64_t *fresh;)
+static void chunked_prepare_drop(chunked_prepare_F *F) { if (F->fresh) arena_release(F->fresh, (CHUNK_SIZE * F->c->elem + 7) / 8); F->fresh = NULL; }
+KF_STEP(chunked_prepare) {
+    KF_BEGIN(chunked_prepare);
+    if (F->c->alloc) { (void)chunked_at(F->c, F->i); KF_RETV(); }   /* a table with its own supplier */
+    F->slot = radix_slot(&F->c->dir, F->i >> CHUNK_BITS, true);
+    if (__atomic_load_n(F->slot, __ATOMIC_ACQUIRE)) KF_RETV();
+    KF_CALL(arena_zero, &F->fresh, (CHUNK_SIZE * F->c->elem + 7) / 8);
+    { void *expected = NULL;
+      if (!__atomic_compare_exchange_n(F->slot, &expected, (void *)F->fresh, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) arena_release(F->fresh, (CHUNK_SIZE * F->c->elem + 7) / 8);   /* the losing candidate is retired */
+      F->fresh = NULL; }
+    KF_RETV();
+    KF_END;
+}
 /* V21 R4: a consumed chunk of a monotone table (a queue's prefix) is retired:
  * one directory slot exchanged, one arena release */
 void chunked_release_chunk(Chunked *c, size_t chunk) {
@@ -40,14 +55,21 @@ void *chunked_peek(const Chunked *c, size_t i) {
 }
 
 /* ---- interner ---- */
-static uint64_t hash_words(const uint64_t *w, size_t n) {
-    uint64_t h = 1469598103934665603ULL;
-    for (size_t i = 0; i < n; i++) {
-        uint64_t x = w[i]; fine_bump(FC_INTERN_WORDS_HASHED);   /* one transition per word (unlocked) */
-        for (int b = 0; b < 8; b++) { h ^= (x & 0xff); h *= 1099511628211ULL; x >>= 8; }
+/* the key-sized loops of the interner are frame families (kframe.h): one
+ * transition per word, a suspension point after each */
+#define hash_words_PARAMS(X) X(const uint64_t *, w) X(size_t, n)
+KF_DECL(hash_words, uint64_t, hash_words_PARAMS, uint64_t h; size_t i;)
+KF_STEP(hash_words) {
+    KF_BEGIN(hash_words);
+    F->h = 1469598103934665603ULL;
+    for (F->i = 0; F->i < F->n; F->i++) {
+        uint64_t x = F->w[F->i]; fine_bump(FC_INTERN_WORDS_HASHED);   /* one transition per word (unlocked) */
+        for (int b = 0; b < 8; b++) { F->h ^= (x & 0xff); F->h *= 1099511628211ULL; x >>= 8; }
+        KF_SAFE();
     }
-    h ^= (uint64_t)n; h *= 1099511628211ULL;
-    return h ? h : 1;
+    F->h ^= (uint64_t)F->n; F->h *= 1099511628211ULL;
+    KF_RET(F->h ? F->h : 1);
+    KF_END;
 }
 
 void interner_init(Interner *t) {
@@ -69,12 +91,16 @@ void interner_free(Interner *t) {
 
 static Rec *rec_of(const Interner *t, uint64_t id) { return (Rec *)chunked_get(&t->recs, id - 1); }
 
-static bool rec_equal(const Interner *t, uint64_t id, uint64_t h, const uint64_t *w, size_t n) {
-    Rec *r = rec_of(t, id);
-    if (r->hash != h || r->n != n) return false;
+#define rec_equal_PARAMS(X) X(const Interner *, t) X(uint64_t, id) X(uint64_t, h) X(const uint64_t *, w) X(size_t, n)
+KF_DECL(rec_equal, bool, rec_equal_PARAMS, Rec *r; size_t i;)
+KF_STEP(rec_equal) {
+    KF_BEGIN(rec_equal);
+    F->r = rec_of(F->t, F->id);
+    if (F->r->hash != F->h || F->r->n != F->n) KF_RET(false);
     /* a hash hit is not equality: every word is compared (§89.2) */
-    for (size_t i = 0; i < n; i++) { fine_bump(FC_INTERN_WORD_COMPARES); if (r->w[i] != w[i]) return false; }
-    return true;
+    for (F->i = 0; F->i < F->n; F->i++) { fine_bump(FC_INTERN_WORD_COMPARES); if (F->r->w[F->i] != F->w[F->i]) KF_RET(false); KF_SAFE(); }
+    KF_RET(true);
+    KF_END;
 }
 
 /* §94: growth is incremental. `grow_begin` takes a fresh zero array of twice
@@ -151,59 +177,84 @@ static size_t probe_section(Interner *t, Cursor *cu, uint64_t h, size_t n, uint6
     }
     return k;
 }
-static uint64_t match_unlocked(const Interner *t, const uint64_t *cand, size_t k, uint64_t h, const uint64_t *w, size_t n) {
-    for (size_t i = 0; i < k; i++) if (rec_equal(t, cand[i], h, w, n)) return cand[i];
-    return 0;
+#define match_unlocked_PARAMS(X) X(const Interner *, t) X(const uint64_t *, cand) X(size_t, k) X(uint64_t, h) X(const uint64_t *, w) X(size_t, n)
+KF_DECL(match_unlocked, uint64_t, match_unlocked_PARAMS, size_t i; bool eq;)
+KF_STEP(match_unlocked) {
+    KF_BEGIN(match_unlocked);
+    for (F->i = 0; F->i < F->k; F->i++) { KF_CALL(rec_equal, &F->eq, F->t, F->cand[F->i], F->h, F->w, F->n); if (F->eq) KF_RET(F->cand[F->i]); }
+    KF_RET(0);
+    KF_END;
 }
 /* scan the chain for w; 0 when absent. On return with 0, *seen_out is the
  * record count and *gen_out the generation of the completing section */
-static uint64_t scan(Interner *t, uint64_t h, const uint64_t *w, size_t n, uint64_t above, uint64_t *seen_out, uint64_t *gen_out, size_t *empty_out, uint64_t *placed_out) {
-    Cursor cu = { 0, 0, 0, false, 0, 0, 0 }; uint64_t cand[CAND_MAX];
+#define scan_PARAMS(X) X(Interner *, t) X(uint64_t, h) X(const uint64_t *, w) X(size_t, n) X(uint64_t, above) X(uint64_t *, seen_out) X(uint64_t *, gen_out) X(size_t *, empty_out) X(uint64_t *, placed_out)
+KF_DECL(scan, uint64_t, scan_PARAMS, Cursor cu; uint64_t cand[CAND_MAX]; bool complete; size_t k; uint64_t gen, id;)
+KF_STEP(scan) {
+    KF_BEGIN(scan);
     for (;;) {
-        bool complete;
-        pthread_mutex_lock(&t->mu);
-        size_t k = probe_section(t, &cu, h, n, above, cand, &complete);
-        uint64_t gen = t->gen;
-        pthread_mutex_unlock(&t->mu);
-        kc_safepoint();   /* between two locked sections: a spent grant yields here */
-        uint64_t id = match_unlocked(t, cand, k, h, w, n);
-        if (id) return id;
-        if (complete) { *seen_out = cu.seen0; *gen_out = gen; if (empty_out) *empty_out = cu.empty0; if (placed_out) *placed_out = cu.placed0; return 0; }   /* the snapshot of the section that found the chain end: a record published after it is a newcomer */
+        pthread_mutex_lock(&F->t->mu);
+        F->k = probe_section(F->t, &F->cu, F->h, F->n, F->above, F->cand, &F->complete);
+        F->gen = F->t->gen;
+        pthread_mutex_unlock(&F->t->mu);
+        KF_SAFE();   /* between two locked sections: a spent grant suspends here */
+        KF_CALL(match_unlocked, &F->id, F->t, F->cand, F->k, F->h, F->w, F->n);
+        if (F->id) KF_RET(F->id);
+        if (F->complete) {   /* the snapshot of the section that found the chain end: a record published after it is a newcomer */
+            *F->seen_out = F->cu.seen0; *F->gen_out = F->gen; if (F->empty_out) *F->empty_out = F->cu.empty0; if (F->placed_out) *F->placed_out = F->cu.placed0;
+            KF_RET(0);
+        }
     }
+    KF_END;
 }
-uint64_t interner_find(Interner *t, const uint64_t *w, size_t n) {
-    uint64_t h = hash_words(w, n), seen, gen;
-    return scan(t, h, w, n, 0, &seen, &gen, NULL, NULL);
+KF_DECL_EXT(interner_find, uint64_t, interner_find_PARAMS, uint64_t h, seen, gen, id;)
+KF_STEP(interner_find) {
+    KF_BEGIN(interner_find);
+    KF_CALL(hash_words, &F->h, F->w, F->n);
+    KF_CALL(scan, &F->id, F->t, F->h, F->w, F->n, 0, &F->seen, &F->gen, NULL, NULL);
+    KF_RET(F->id);
+    KF_END;
 }
+KF_SYNC_DEF(interner_find, uint64_t, interner_find_PARAMS, interner_find(Interner *t, const uint64_t *w, size_t n))
 
-uint64_t interner_intern(Interner *t, const uint64_t *w, size_t n, bool *created) {
-    uint64_t h = hash_words(w, n), seen, gen, placed; size_t empty;
-    uint64_t id = scan(t, h, w, n, 0, &seen, &gen, &empty, &placed);
-    if (id) { if (created) *created = false; return id; }
+KF_DECL_EXT(interner_intern_pub, uint64_t, interner_intern_pub_PARAMS, uint64_t h, seen, gen, placed, id, above, dup; size_t empty; uint64_t *copy; size_t i;)
+KF_STEP(interner_intern_pub) {
+    KF_BEGIN(interner_intern_pub);
+    KF_CALL(hash_words, &F->h, F->w, F->n);
+    KF_CALL(scan, &F->id, F->t, F->h, F->w, F->n, 0, &F->seen, &F->gen, &F->empty, &F->placed);
+    if (F->id) { if (F->created) *F->created = false; KF_RET(F->id); }
     /* a new record: prepared outside the lock, one transition per word; the
      * record chunk the new id will need is created outside the lock too */
-    uint64_t *copy = malloc((n ? n : 1) * sizeof(uint64_t)); require(copy, "out of memory");
-    for (size_t i = 0; i < n; i++) { copy[i] = w[i]; fine_bump(FC_INTERN_WORDS_COPIED); }
-    { size_t at = __atomic_load_n(&t->n, __ATOMIC_RELAXED); (void)chunked_at(&t->recs, at); (void)chunked_at(&t->recs, at + 1); }
+    F->copy = malloc((F->n ? F->n : 1) * sizeof(uint64_t)); require(F->copy, "out of memory");
+    for (F->i = 0; F->i < F->n; F->i++) { F->copy[F->i] = F->w[F->i]; fine_bump(FC_INTERN_WORDS_COPIED); KF_SAFE(); }
+    F->i = __atomic_load_n(&F->t->n, __ATOMIC_RELAXED); KF_CALL(chunked_prepare, NULL, &F->t->recs, F->i); KF_CALL(chunked_prepare, NULL, &F->t->recs, F->i + 1);
     for (;;) {
-        pthread_mutex_lock(&t->mu);
-        if (t->n == seen && t->gen == gen && t->placed == placed) break;   /* nothing published or migrated since the complete scan: insert */
-        uint64_t above = t->gen == gen ? seen : 0;   /* a new generation: rescan everything; else only the newcomers (a migrated record was
-                                                        compared where the scan met it in the old array, which a migration does not clear) */
-        pthread_mutex_unlock(&t->mu);
-        uint64_t dup = scan(t, h, w, n, above, &seen, &gen, &empty, &placed);
-        if (dup) { free(copy); if (created) *created = false; return dup; }
+        pthread_mutex_lock(&F->t->mu);
+        if (F->t->n == F->seen && F->t->gen == F->gen && F->t->placed == F->placed) break;   /* nothing published or migrated since the complete scan: insert */
+        F->above = F->t->gen == F->gen ? F->seen : 0;   /* a new generation: rescan everything; else only the newcomers (a migrated record was
+                                                           compared where the scan met it in the old array, which a migration does not clear) */
+        pthread_mutex_unlock(&F->t->mu);
+        KF_CALL(scan, &F->dup, F->t, F->h, F->w, F->n, F->above, &F->seen, &F->gen, &F->empty, &F->placed);
+        if (F->dup) { free(F->copy); F->copy = NULL; if (F->created) *F->created = false; KF_RET(F->dup); }
     }
-    Rec *r = chunked_at(&t->recs, t->n);
-    r->w = copy; r->n = n; r->hash = h;
-    id = (uint64_t)__atomic_add_fetch(&t->n, 1, __ATOMIC_RELEASE);   /* the count is read unlocked (relaxed) by the chunk pre-creation */
-    require(!t->slots[empty], "interner: the scanned chain end is taken");   /* nothing was published or migrated since the complete scan: the chain's empty slot is where the scan found it — one write */
-    t->slots[empty] = id;
-    if (t->n * 2 > t->nslots) grow_begin(t);   /* one fresh allocation; the migration proceeds a chunk per operation */
-    pthread_mutex_unlock(&t->mu);
-    if (created) *created = true;
-    return id;
+    {
+        Interner *t = F->t;
+        Rec *r = chunked_at(&t->recs, t->n);
+        r->w = F->copy; r->n = F->n; r->hash = F->h; F->copy = NULL;
+        F->id = (uint64_t)__atomic_add_fetch(&t->n, 1, __ATOMIC_RELEASE);   /* the count is read unlocked (relaxed) by the chunk pre-creation */
+        if (F->pub) F->pub(F->id, F->pub_ctx);   /* the side data, before the slot write publishes the id */
+        require(!t->slots[F->empty], "interner: the scanned chain end is taken");   /* nothing was published or migrated since the complete scan: the chain's empty slot is where the scan found it — one write */
+        t->slots[F->empty] = F->id;
+        if (t->n * 2 > t->nslots) grow_begin(t);   /* one fresh allocation; the migration proceeds a chunk per operation */
+        pthread_mutex_unlock(&t->mu);
+    }
+    if (F->created) *F->created = true;
+    KF_RET(F->id);
+    KF_END;
 }
+KF_SYNC_DEF(interner_intern_pub, uint64_t, interner_intern_pub_PARAMS, interner_intern_pub(Interner *t, const uint64_t *w, size_t n, bool *created, InternPub pub, void *pub_ctx))
+KF_DECL_EXT(interner_intern, uint64_t, interner_intern_PARAMS, uint64_t id;)
+KF_STEP(interner_intern) { KF_BEGIN(interner_intern); KF_CALL(interner_intern_pub, &F->id, F->t, F->w, F->n, F->created, NULL, NULL); KF_RET(F->id); KF_END; }
+KF_SYNC_DEF(interner_intern, uint64_t, interner_intern_PARAMS, interner_intern(Interner *t, const uint64_t *w, size_t n, bool *created))
 
 const uint64_t *interner_get(const Interner *t, uint64_t id, size_t *n) {
     require(id >= 1, "bad interned id 0");
@@ -223,21 +274,32 @@ size_t interner_count(Interner *t) {
 void wordmap_init(WordMap *m) { interner_init(&m->keys); chunked_init(&m->vals, sizeof(uint64_t)); }
 void wordmap_free(WordMap *m) { interner_free(&m->keys); chunked_free(&m->vals); }
 
-bool wordmap_get(WordMap *m, const uint64_t *k, size_t n, uint64_t *out) {
-    uint64_t id = interner_find(&m->keys, k, n);
-    if (!id) return false;
-    /* The key becomes discoverable before the writer stores its value: an
-     * absent value chunk, like a zero value, means "not yet published". */
-    uint64_t *slot = chunked_peek(&m->vals, id - 1);
-    if (!slot) return false;
-    uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
-    if (!v) return false;            /* key created, value not yet published */
-    *out = v;
-    return true;
+KF_DECL_EXT(wordmap_get, bool, wordmap_get_PARAMS, uint64_t id;)
+KF_STEP(wordmap_get) {
+    KF_BEGIN(wordmap_get);
+    KF_CALL(interner_find, &F->id, &F->m->keys, F->k, F->n);
+    if (!F->id) KF_RET(false);
+    {
+        /* The key becomes discoverable before the writer stores its value: an
+         * absent value chunk, like a zero value, means "not yet published". */
+        uint64_t *slot = chunked_peek(&F->m->vals, F->id - 1);
+        if (!slot) KF_RET(false);
+        uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+        if (!v) KF_RET(false);            /* key created, value not yet published */
+        *F->out = v;
+    }
+    KF_RET(true);
+    KF_END;
 }
-
-void wordmap_put(WordMap *m, const uint64_t *k, size_t n, uint64_t v) {
-    require(v != 0, "wordmap values are non-zero handles");
-    uint64_t id = interner_intern(&m->keys, k, n, NULL);
-    __atomic_store_n((uint64_t *)chunked_at(&m->vals, id - 1), v, __ATOMIC_RELEASE);
+KF_SYNC_DEF(wordmap_get, bool, wordmap_get_PARAMS, wordmap_get(WordMap *m, const uint64_t *k, size_t n, uint64_t *out))
+KF_DECL_EXT(wordmap_put, void, wordmap_put_PARAMS, uint64_t id;)
+KF_STEP(wordmap_put) {
+    KF_BEGIN(wordmap_put);
+    require(F->v != 0, "wordmap values are non-zero handles");
+    KF_CALL(interner_intern, &F->id, &F->m->keys, F->k, F->n, NULL);
+    KF_CALL(chunked_prepare, NULL, &F->m->vals, F->id - 1);
+    __atomic_store_n((uint64_t *)chunked_at(&F->m->vals, F->id - 1), F->v, __ATOMIC_RELEASE);
+    KF_RETV();
+    KF_END;
 }
+KF_SYNC_VOID_DEF(wordmap_put, wordmap_put_PARAMS, wordmap_put(WordMap *m, const uint64_t *k, size_t n, uint64_t v))

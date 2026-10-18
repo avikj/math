@@ -4,15 +4,20 @@
 #define _POSIX_C_SOURCE 200809L
 #include "../src/check.c"
 #include <sched.h>
+/* the claim transitions are frame families: driven synchronously here */
+#define ENTER() top_enter()
+static void LEAVE(void) { KStack *s = kf_sync_begin(); top_leave_push(s, NULL); kf_sync_run(s); kf_sync_end(s); }
+static Acq claim_acquire_sync(size_t c, uint64_t *v) { Acq a; KStack *s = kf_sync_begin(); claim_acquire_push(s, &a, c, v, NULL, NULL); kf_sync_run(s); kf_sync_end(s); return a; }
+static void claim_release_sync(size_t c, uint64_t r) { KStack *s = kf_sync_begin(); claim_release_push(s, NULL, c, r, NULL, NULL); kf_sync_run(s); kf_sync_end(s); }
 
 static size_t dependent, outer;
 static void *reader(void *unused) {
     (void)unused; uint64_t v;
     ENTER();
-    require(claim_acquire(outer, &v, NULL, NULL) == ACQ_OWNER, "reader owns outer");
-    Acq a = claim_acquire(dependent, &v, NULL, NULL);
+    require(claim_acquire_sync(outer, &v) == ACQ_OWNER, "reader owns outer");
+    Acq a = claim_acquire_sync(dependent, &v);
     printf("provisional claim resumed: %d value %llu\n", (int)a, (unsigned long long)v);
-    claim_release(outer, 1, NULL, NULL);
+    claim_release_sync(outer, 1);
     LEAVE();
     words_free(&tl_pending);
     return NULL;
@@ -25,10 +30,10 @@ int main(void) {
     dependent = claim_index_locked(CL_CTX, &key, 1);
     key = 2; outer = claim_index_locked(CL_CTX, &key, 1);
     pthread_mutex_unlock(&K.mu);
-    ENTER(); require(claim_acquire(symbol, &v, NULL, NULL) == ACQ_OWNER, "main owns symbol");
+    ENTER(); require(claim_acquire_sync(symbol, &v) == ACQ_OWNER, "main owns symbol");
     pthread_mutex_lock(&K.mu);
     (*CLAIM(dependent)).state = 2; (*CLAIM(dependent)).result = 1;
-    words_add(&CLAIM(dependent)->deps, symbol);
+    words_push(&CLAIM(dependent)->deps, symbol);
     pthread_mutex_unlock(&K.mu);
     pthread_t t; pthread_create(&t, NULL, reader, NULL);
     for (;;) {
@@ -45,7 +50,7 @@ int main(void) {
      * symbol waiter to resume by its declaration assumption. */
     require(may_block_locked(2, 1), "cycle is broken at symbol wait");
     pthread_mutex_unlock(&K.mu);
-    claim_release(symbol, 1, NULL, NULL); LEAVE(); words_free(&tl_pending);
+    claim_release_sync(symbol, 1); LEAVE(); words_free(&tl_pending);
     pthread_join(t, NULL);
     check_free(); eval_free(); machine_free();
     return 0;

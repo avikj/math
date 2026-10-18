@@ -201,10 +201,13 @@ static bool zero_tend_locked(void) {
     return true;
 }
 bool arena_tend_zero(void) { pthread_mutex_lock(&A.mu); bool did = zero_tend_locked(); pthread_mutex_unlock(&A.mu); return did; }
-uint64_t *arena_alloc_zero(size_t words, size_t *got) {
+/* the zero block of arena_alloc_zero, with a reused DIRTY block handed over
+ * uncleared (*dirty): the caller clears it one word per transition */
+static uint64_t *alloc_zero_(size_t words, size_t *got, bool *dirty) {
     if (!A.live) arena_init();
+    *dirty = false;
     unsigned k = order_of(words); size_t w = (size_t)ARENA_PAGE << k;
-    bool caller_locked = kc_lock_depth > 0;   /* a requester holding a lock never clears here: it takes FRESH storage */
+    bool caller_locked = kf_locks_held() > 0;   /* a requester holding a lock never clears here: it takes FRESH storage */
     pthread_mutex_lock(&A.mu);
     uint64_t *b = A.ready[k];
     if (b) { LINK_UNPOISON(b); A.ready[k] = *(uint64_t **)b; BLOCK_UNPOISON(b, w); b[0] = 0; A.zero_reused++; }   /* ZERO_READY: the link word is zeroed again */
@@ -220,8 +223,8 @@ uint64_t *arena_alloc_zero(size_t words, size_t *got) {
             A.zero_sync_words += w; A.zero_reused++; A.st.allocs++; A.st.words_out += w;
             pthread_mutex_unlock(&A.mu);
             BLOCK_UNPOISON(d, w);
-            for (size_t x = 0; x < w; x++) { d[x] = 0; fine_bump(FC_ALLOC_WORDS); }
             if (got) *got = w;
+            *dirty = true;
             return d;
         }
         b = fresh_locked(w); require(b, "arena: the host could not supply storage"); BLOCK_UNPOISON(b, w); A.zero_fresh++;   /* FRESH (EXTEND when the extent is consumed) */
@@ -231,6 +234,22 @@ uint64_t *arena_alloc_zero(size_t words, size_t *got) {
     pthread_mutex_unlock(&A.mu);
     if (got) *got = w;
     return b;
+}
+uint64_t *arena_alloc_zero(size_t words, size_t *got) {
+    bool dirty; size_t g; uint64_t *d = alloc_zero_(words, &g, &dirty);
+    if (dirty) for (size_t x = 0; x < g; x++) { d[x] = 0; fine_bump(FC_ALLOC_WORDS); }
+    if (got) *got = g;
+    return d;
+}
+/* the same as a frame family: the clearing of a reused block is one word per transition */
+KF_DECL_EXT_DROP(arena_zero, uint64_t *, arena_zero_PARAMS, arena_zero_drop, uint64_t *d; size_t g, x; bool dirty;)
+static void arena_zero_drop(arena_zero_F *F) { if (F->d) arena_release(F->d, F->g); F->d = NULL; }
+KF_STEP(arena_zero) {
+    KF_BEGIN(arena_zero);
+    F->d = alloc_zero_(F->words, &F->g, &F->dirty);
+    if (F->dirty) for (F->x = 0; F->x < F->g; F->x++) { F->d[F->x] = 0; fine_bump(FC_ALLOC_WORDS); KF_SAFE(); }
+    { uint64_t *r = F->d; F->d = NULL; KF_RET(r); }
+    KF_END;
 }
 void arena_release(uint64_t *p, size_t words) {
     if (!p || !A.live) return;

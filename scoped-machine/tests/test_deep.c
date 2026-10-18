@@ -1,12 +1,12 @@
 /* BOUNDS-COMPLETION §6/§7: nesting independent of the native stack. Deep
  * structural terms are shaped, validated, evaluated and checked on a thread
  * whose native stack is deliberately small (256 KiB); the kernel's recursive
- * procedures continue on added stack segments (kstack.h).
+ * procedures are frame families (kframe.h): their nesting is heap frames,
+ * and the deepest frame stack reached is reported.
  * Run: test_deep N */
 #include "check.h"
 #include "lib.h"
 #include "shape.h"
-#include "kstack.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,8 +24,9 @@ static void *body(void *unused) {
     bool valid = ref_validate(t, &why);
     WhnfStatus ws; EvalResult *r = whnf(t, fc_true(), &ws);
     CheckStatus cs = check(G, fc_true(), t, A, &why);
-    printf("depth %zu on a 256 KiB thread: shape=%d validate=%d whnf=%d check=%s segments=%zu\n", N, s != 0, valid, ws == W_OK && r != NULL, cs == CK_VALID ? "VALID" : "not valid", kstack_segments());
-    ok = s && valid && ws == W_OK && r && cs == CK_VALID && kstack_segments() > 0;
+    size_t depth = kf_stats().max_depth;
+    printf("depth %zu on a 256 KiB thread: shape=%d validate=%d whnf=%d check=%s deepest frame stack=%zu frames\n", N, s != 0, valid, ws == W_OK && r != NULL, cs == CK_VALID ? "VALID" : "not valid", depth);
+    ok = s && valid && ws == W_OK && r && cs == CK_VALID && depth > N;   /* the nesting was carried by heap frames, deeper than the term */
     return NULL;
 }
 int main(int argc, char **argv) {

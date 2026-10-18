@@ -42,6 +42,9 @@ void arena_set_extent_policy(size_t words);      /* growth policy: the minimum w
 typedef struct { uint64_t fresh, reused, sync_words; } ArenaZeroStats;
 ArenaZeroStats arena_zero_stats(void);
 uint64_t *arena_alloc(size_t words, size_t *got);   /* a block of at least `words` words (rounded to the order); not cleared */
+#include "kframe.h"
+#define arena_zero_PARAMS(X) X(size_t, words)
+KF_PROTO(arena_zero, uint64_t *, arena_zero_PARAMS);   /* arena_alloc_zero as a frame family: a reused block is cleared one word per transition */
 uint64_t *arena_alloc_zero(size_t words, size_t *got);   /* a zero block: from the cleared pool, else a never-used block of the fresh region; released ones are cleared in maintenance steps and reused */
 bool arena_tend_zero(void);                              /* one clearing step (32 words) of a retired zero block; false when none is pending */
 void arena_release(uint64_t *p, size_t words);      /* `words` as returned in *got */

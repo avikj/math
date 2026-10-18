@@ -3,7 +3,6 @@
 #include "canon.h"
 #include "runtime.h"
 #include "fine.h"
-#include "kstack.h"
 #include <assert.h>
 #include <unistd.h>
 #include <sys/wait.h>
@@ -59,11 +58,13 @@ static int long_name(void){
 }
 
 static _Atomic bool slow_done;
-static void finite_slow(KCont*k){for(size_t i=0;i<((size_t)1<<20)+17;i++)fine_bump(FC_NAT_LIMBS);slow_done=true;k->ok=true;k->out[0]=0;}
+/* a finite call: 2^20+17 transitions, a suspension point after each */
+KF_DECL(finite_slow,void,KF_NOPARAMS,size_t i;)
+KF_STEP(finite_slow){KF_BEGIN(finite_slow);for(F->i=0;F->i<((size_t)1<<20)+17;F->i++){fine_bump(FC_NAT_LIMBS);KF_SAFE();}slow_done=true;ks->ok=true;ks->out[0]=0;KF_RETV();KF_END;}
 static int cleanup_long(void){
     init();pthread_mutex_lock(&W.mu);OpId h=op_new(OF_KERNEL,PH_CHECK,kfr(KK_SHAPE_OF,mk_universe(0),0,0,0));Op*o=JOB(HND(h)->job);Frame*f=top(o);
-    KCont*k=kc_new(finite_slow,NULL,0);k->job=o->id;f->ph=1;f->acc=(uint64_t)(uintptr_t)k;pthread_mutex_unlock(&W.mu);
-    op_step(h,1);assert(!kc_done(k));op_release(h);work_free();
+    KStack*k=kf_new();finite_slow_push(k,NULL);k->job=o->id;f->ph=1;f->acc=(uint64_t)(uintptr_t)k;pthread_mutex_unlock(&W.mu);
+    op_step(h,1);assert(!kf_done(k));op_release(h);work_free();
     check_free();compiler_free();eval_free();machine_free();
     size_t live=atomic_load(&live_threads);
     printf("cleanup-long: finite call completed=%d; native workers retained after closed teardown=%zu expected=0\n",atomic_load(&slow_done),live);
@@ -84,7 +85,7 @@ static void *validate_small(void *unused){
     (void)unused; const char *why=NULL;
     bool r=ref_validate(malformed_ref,&why),s=scope_validate(malformed_scope,&why);
     CheckStatus ck=check(malformed_context,fc_false(),malformed_ref,malformed_type,&why);
-    printf("small-stack-validation: malformed ref valid=%d scope valid=%d check-under-false=%s segments=%zu\n",r,s,check_status_name(ck),kstack_segments());
+    printf("small-stack-validation: malformed ref valid=%d scope valid=%d check-under-false=%s deepest frame stack=%zu\n",r,s,check_status_name(ck),kf_stats().max_depth);
     small_stack_ok=!r&&!s&&ck==CK_INVALID;return NULL;
 }
 static int small_stack_validation(void){
@@ -102,7 +103,7 @@ static void *capture_small(void *unused){
     ScopeId s=capture_scope(1,&d,(Val){VS_REF,deep_term},deep_type,0,fc_true());
     Val arg={VS_REF,ref_var(deep_x)};TypedPartial p=apply_scope(s,1,&arg);
     deep_ok=p.body.sort==VS_REF&&p.body.id==deep_term;
-    printf("deep-capture: capture/apply restored the same reference=%d segments=%zu\n",deep_ok,kstack_segments());return NULL;
+    printf("deep-capture: capture/apply restored the same reference=%d deepest frame stack=%zu\n",deep_ok,kf_stats().max_depth);return NULL;
 }
 static int deep_capture(void){
     init();deep_type=ref_var(declare_term(mk_universe(0),fc_true()));deep_x=declare_term(deep_type,fc_true());

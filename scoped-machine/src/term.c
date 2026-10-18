@@ -1,5 +1,6 @@
 #include <sched.h>
 #include "term.h"
+#include "template.h"   /* the TVIEW families (tview_open, tview_reindex, tview_*_binder) */
 #include "nat.h"
 #include "fine.h"
 
@@ -61,64 +62,78 @@ void mapb_dim(MapBuilder *b, DimVarId i, IntervalId image) { words_push(&b->d, i
 static void pair_sift(uint64_t *p, size_t n, size_t i) {
     for (;;) {
         size_t l = 2 * i + 1, r = l + 1, m = i;
-        if (l < n && p[2 * l] > p[2 * m]) m = l;
-        if (r < n && p[2 * r] > p[2 * m]) m = r;
+        if (l < n && (p[2 * l] > p[2 * m] || (p[2 * l] == p[2 * m] && p[2 * l + 1] > p[2 * m + 1]))) m = l;   /* lexicographic on (key, image) */
+        if (r < n && (p[2 * r] > p[2 * m] || (p[2 * r] == p[2 * m] && p[2 * r + 1] > p[2 * m + 1]))) m = r;
         if (m == i) return;
         uint64_t key = p[2 * i], image = p[2 * i + 1];
         p[2 * i] = p[2 * m]; p[2 * i + 1] = p[2 * m + 1];
         p[2 * m] = key; p[2 * m + 1] = image; i = m;
     }
 }
-static void pair_sort(uint64_t *p, size_t n) {
-    if (n < 2) return;
-    for (size_t i = n / 2; i > 0; i--) {
-        pair_sift(p, n, i - 1); fine_bump(FC_SORT_STEPS);
+KF_DECL_EXT(pair_sort, void, pair_sort_PARAMS, size_t i, e;)
+KF_STEP(pair_sort) {
+    KF_BEGIN(pair_sort);
+    if (F->n < 2) KF_RETV();
+    for (F->i = F->n / 2; F->i > 0; F->i--) {
+        pair_sift(F->p, F->n, F->i - 1); fine_bump(FC_SORT_STEPS); KF_SAFE();
     }
-    for (size_t e = n - 1; e > 0; e--) {
-        uint64_t key = p[0], image = p[1];
-        p[0] = p[2 * e]; p[1] = p[2 * e + 1];
-        p[2 * e] = key; p[2 * e + 1] = image;
-        pair_sift(p, e, 0); fine_bump(FC_SORT_STEPS);
+    for (F->e = F->n - 1; F->e > 0; F->e--) {
+        uint64_t *p = F->p, key = p[0], image = p[1];
+        p[0] = p[2 * F->e]; p[1] = p[2 * F->e + 1];
+        p[2 * F->e] = key; p[2 * F->e + 1] = image;
+        pair_sift(p, F->e, 0); fine_bump(FC_SORT_STEPS); KF_SAFE();
     }
+    KF_RETV();
+    KF_END;
 }
 
-MapId mapb_finish(MapBuilder *b) {
-    size_t nt = b->t.n / 2, nd = b->d.n / 2;
-    pair_sort(b->t.w, nt);
-    pair_sort(b->d.w, nd);
-    Words w; words_init(&w);
-    words_push(&w, 0);
-    size_t kept = 0;
-    for (size_t k = 0; k < nt; k++) {
-        uint64_t x = b->t.w[2 * k], img = b->t.w[2 * k + 1];
-        if (k > 0 && b->t.w[2 * (k - 1)] == x) {
-            require(b->t.w[2 * (k - 1) + 1] == img, "duplicate term key in map");
+KF_DECL_EXT_DROP(mapb_finish, MapId, mapb_finish_PARAMS, mapb_finish_drop, size_t nt, nd, kept, k, ndpos; Words w; uint64_t x, img, rv; MapId id;)
+static void mapb_finish_drop(mapb_finish_F *F) { words_free(&F->w); words_free(&F->b->t); words_free(&F->b->d); }
+KF_STEP(mapb_finish) {
+    KF_BEGIN(mapb_finish);
+    F->nt = F->b->t.n / 2; F->nd = F->b->d.n / 2;
+    KF_CALL(pair_sort, NULL, F->b->t.w, F->nt);
+    KF_CALL(pair_sort, NULL, F->b->d.w, F->nd);
+    words_init(&F->w); KF_CALL(words_reserve, NULL, &F->w, 2 + 2 * (F->nt + F->nd));   /* at most every entry kept */
+    words_push(&F->w, 0);
+    F->kept = 0;
+    for (F->k = 0; F->k < F->nt; F->k++) {
+        F->x = F->b->t.w[2 * F->k]; F->img = F->b->t.w[2 * F->k + 1];
+        if (F->k > 0 && F->b->t.w[2 * (F->k - 1)] == F->x) {
+            require(F->b->t.w[2 * (F->k - 1) + 1] == F->img, "duplicate term key in map");
             continue;
         }
-        if (img == ref_var(x)) continue;   /* identity entry */
-        words_push(&w, x); words_push(&w, img); kept++;
+        KF_CALL(ref_var, &F->rv, F->x);
+        if (F->img == F->rv) continue;   /* identity entry */
+        words_push(&F->w, F->x); words_push(&F->w, F->img); F->kept++;
     }
-    w.w[0] = kept;
-    size_t ndpos = w.n;
-    words_push(&w, 0);
-    kept = 0;
-    for (size_t k = 0; k < nd; k++) {
-        uint64_t i = b->d.w[2 * k], img = b->d.w[2 * k + 1];
-        if (k > 0 && b->d.w[2 * (k - 1)] == i) {
-            require(b->d.w[2 * (k - 1) + 1] == img, "duplicate dimension key in map");
+    F->w.w[0] = F->kept;
+    F->ndpos = F->w.n;
+    words_push(&F->w, 0);
+    F->kept = 0;
+    for (F->k = 0; F->k < F->nd; F->k++) {
+        F->x = F->b->d.w[2 * F->k]; F->img = F->b->d.w[2 * F->k + 1];
+        if (F->k > 0 && F->b->d.w[2 * (F->k - 1)] == F->x) {
+            require(F->b->d.w[2 * (F->k - 1) + 1] == F->img, "duplicate dimension key in map");
             continue;
         }
-        if (img == iv_var(i)) continue;
-        words_push(&w, i); words_push(&w, img); kept++;
+        KF_CALL(iv_var, &F->rv, F->x);
+        if (F->img == F->rv) continue;
+        words_push(&F->w, F->x); words_push(&F->w, F->img); F->kept++;
     }
-    w.w[ndpos] = kept;
-    MapId id = interner_intern(&M.maps, w.w, w.n, NULL);
-    words_free(&w);
-    words_free(&b->t); words_free(&b->d);
-    return id;
+    F->w.w[F->ndpos] = F->kept;
+    KF_CALL(interner_intern, &F->id, &M.maps, F->w.w, F->w.n, NULL);
+    words_free(&F->w);
+    words_free(&F->b->t); words_free(&F->b->d);
+    KF_RET(F->id);
+    KF_END;
 }
+KF_SYNC_DEF(mapb_finish, MapId, mapb_finish_PARAMS, mapb_finish(MapBuilder *b))
 
-MapId map_identity(void) { MapBuilder b; mapb_init(&b); return mapb_finish(&b); }
+KF_DECL_EXT_DROP(map_identity, MapId, KF_NOPARAMS, map_identity_drop, MapBuilder b; MapId r;)
+static void map_identity_drop(map_identity_F *F) { words_free(&F->b.t); words_free(&F->b.d); }
+KF_STEP(map_identity) { KF_BEGIN(map_identity); mapb_init(&F->b); KF_CALL(mapb_finish, &F->r, &F->b); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(map_identity, MapId, KF_NOPARAMS, map_identity(void))
 bool map_is_identity(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return w[0] == 0 && w[1] == 0; }
 size_t map_n_terms(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (size_t)w[0]; }
 size_t map_n_dims(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (size_t)w[1 + 2 * w[0]]; }
@@ -144,50 +159,120 @@ static const uint64_t *pairs_find(const uint64_t *p, size_t n, uint64_t key) {
     return NULL;
 }
 
-RefId map_term_image(MapId m, TermVarId x) {
-    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
-    const uint64_t *e = pairs_find(w + 1, (size_t)w[0], x);
-    return e ? e[1] : ref_var(x);
+KF_DECL_EXT(map_term_image, RefId, map_term_image_PARAMS, RefId r;)
+KF_STEP(map_term_image) {
+    KF_BEGIN(map_term_image);
+    {
+        size_t n; const uint64_t *w = interner_get(&M.maps, F->m, &n);
+        const uint64_t *e = pairs_find(w + 1, (size_t)w[0], F->x);
+        if (e) KF_RET(e[1]);
+    }
+    KF_CALL(ref_var, &F->r, F->x);
+    KF_RET(F->r);
+    KF_END;
 }
-IntervalId map_dim_image(MapId m, DimVarId i) {
-    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
-    const uint64_t *d = w + 1 + 2 * w[0];
-    const uint64_t *e = pairs_find(d + 1, (size_t)d[0], i);
-    return e ? e[1] : iv_var(i);
+KF_SYNC_DEF(map_term_image, RefId, map_term_image_PARAMS, map_term_image(MapId m, TermVarId x))
+KF_DECL_EXT(map_dim_image, IntervalId, map_dim_image_PARAMS, IntervalId r;)
+KF_STEP(map_dim_image) {
+    KF_BEGIN(map_dim_image);
+    {
+        size_t n; const uint64_t *w = interner_get(&M.maps, F->m, &n);
+        const uint64_t *d = w + 1 + 2 * w[0];
+        const uint64_t *e = pairs_find(d + 1, (size_t)d[0], F->i);
+        if (e) KF_RET(e[1]);
+    }
+    KF_CALL(iv_var, &F->r, F->i);
+    KF_RET(F->r);
+    KF_END;
 }
-MapId map_single_term(TermVarId x, RefId a) { MapBuilder b; mapb_init(&b); mapb_term(&b, x, a); return mapb_finish(&b); }
-MapId map_single_dim(DimVarId i, IntervalId r) { MapBuilder b; mapb_init(&b); mapb_dim(&b, i, r); return mapb_finish(&b); }
+KF_SYNC_DEF(map_dim_image, IntervalId, map_dim_image_PARAMS, map_dim_image(MapId m, DimVarId i))
+KF_DECL_EXT_DROP(map_single_term, MapId, map_single_term_PARAMS, map_single_term_drop, MapBuilder b; MapId r;)
+static void map_single_term_drop(map_single_term_F *F) { words_free(&F->b.t); words_free(&F->b.d); }
+KF_STEP(map_single_term) { KF_BEGIN(map_single_term); mapb_init(&F->b); mapb_term(&F->b, F->x, F->a); KF_CALL(mapb_finish, &F->r, &F->b); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(map_single_term, MapId, map_single_term_PARAMS, map_single_term(TermVarId x, RefId a))
+KF_DECL_EXT_DROP(map_single_dim, MapId, map_single_dim_PARAMS, map_single_dim_drop, MapBuilder b; MapId r;)
+static void map_single_dim_drop(map_single_dim_F *F) { words_free(&F->b.t); words_free(&F->b.d); }
+KF_STEP(map_single_dim) { KF_BEGIN(map_single_dim); mapb_init(&F->b); mapb_dim(&F->b, F->i, F->r0); KF_CALL(mapb_finish, &F->r, &F->b); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(map_single_dim, MapId, map_single_dim_PARAMS, map_single_dim(DimVarId i, IntervalId r0))
 
-static IntervalId map_img_cb(DimVarId i, void *ctx) { return map_dim_image(*(MapId *)ctx, i); }
-IntervalId iv_reindex(IntervalId r, MapId m) { return map_is_identity(m) ? r : iv_substitute(r, map_img_cb, &m); }
-FaceId fc_reindex(FaceId phi, MapId m) { fine_bump(FC_FACE_OPS); return map_is_identity(m) ? phi : fc_substitute(phi, map_img_cb, &m); }
+/* the image of a dimension under a map (a DimImagePush) */
+#define map_img_PARAMS(X) X(DimVarId, i) X(void *, ctx)
+KF_DECL(map_img, IntervalId, map_img_PARAMS, IntervalId r;)
+KF_STEP(map_img) {
+    KF_BEGIN(map_img);
+    {
+        size_t n; const uint64_t *w = interner_get(&M.maps, *(MapId *)F->ctx, &n);
+        const uint64_t *d = w + 1 + 2 * w[0];
+        const uint64_t *e = pairs_find(d + 1, (size_t)d[0], F->i);
+        if (e) KF_RET(e[1]);
+    }
+    KF_CALL(iv_var, &F->r, F->i);
+    KF_RET(F->r);
+    KF_END;
+}
+KF_DECL_EXT(iv_reindex, IntervalId, iv_reindex_PARAMS, IntervalId o;)
+KF_STEP(iv_reindex) {
+    KF_BEGIN(iv_reindex);
+    if (map_is_identity(F->m)) KF_RET(F->r);
+    KF_CALL(iv_substitute, &F->o, F->r, map_img_push, &F->m);
+    KF_RET(F->o);
+    KF_END;
+}
+KF_SYNC_DEF(iv_reindex, IntervalId, iv_reindex_PARAMS, iv_reindex(IntervalId r, MapId m))
+KF_DECL_EXT(fc_reindex, FaceId, fc_reindex_PARAMS, FaceId o;)
+KF_STEP(fc_reindex) {
+    KF_BEGIN(fc_reindex);
+    fine_bump(FC_FACE_OPS);
+    if (map_is_identity(F->m)) KF_RET(F->phi);
+    KF_CALL(fc_substitute, &F->o, F->phi, map_img_push, &F->m);
+    KF_RET(F->o);
+    KF_END;
+}
+KF_SYNC_DEF(fc_reindex, FaceId, fc_reindex_PARAMS, fc_reindex(FaceId phi, MapId m))
 
-MapId compose(MapId sigma, MapId tau) {
-    if (map_is_identity(sigma)) return tau;
-    if (map_is_identity(tau)) return sigma;
-    uint64_t key[2] = { sigma, tau }, out;
-    if (wordmap_get(&M.compose_memo, key, 2, &out)) return out;
-    MapBuilder b; mapb_init(&b);
+KF_DECL_EXT_DROP(compose, MapId, compose_PARAMS, compose_drop, uint64_t key[2]; MapId out; bool have; MapBuilder b; Words keys; size_t ns, nt, k; RefId im; IntervalId iv;)
+static void compose_drop(compose_F *F) { words_free(&F->b.t); words_free(&F->b.d); words_free(&F->keys); }
+KF_STEP(compose) {
+    KF_BEGIN(compose);
+    if (map_is_identity(F->sigma)) KF_RET(F->tau);
+    if (map_is_identity(F->tau)) KF_RET(F->sigma);
+    F->key[0] = F->sigma; F->key[1] = F->tau;
+    KF_CALL(wordmap_get, &F->have, &M.compose_memo, F->key, 2, &F->out);
+    if (F->have) KF_RET(F->out);
+    mapb_init(&F->b);
     /* keys of both maps; tau acts on sigma's images, sigma is identity on
      * keys present only in tau */
-    Words keys; words_init(&keys);
-    size_t ns = map_n_terms(sigma), nt = map_n_terms(tau);
-    fine_bump(FC_REINDEX_CALLS);   /* §94: one fine step per entry visited (the transition points of a kernel continuation) */
-    for (size_t k = 0; k < ns; k++) { TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); words_push(&keys, x); fine_bump(FC_MAP_ENTRIES); }
-    for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(tau, k, &x, &im); words_push(&keys, x); fine_bump(FC_MAP_ENTRIES); }
-    keys.n = sort_unique_u64(keys.w, keys.n);
-    for (size_t k = 0; k < keys.n; k++) { mapb_term(&b, keys.w[k], reindex(map_term_image(sigma, keys.w[k]), tau)); fine_bump(FC_MAP_ENTRIES); }
-    keys.n = 0;
-    ns = map_n_dims(sigma); nt = map_n_dims(tau);
-    for (size_t k = 0; k < ns; k++) { DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im); words_push(&keys, i); fine_bump(FC_MAP_ENTRIES); }
-    for (size_t k = 0; k < nt; k++) { DimVarId i; IntervalId im; map_dim_entry(tau, k, &i, &im); words_push(&keys, i); fine_bump(FC_MAP_ENTRIES); }
-    keys.n = sort_unique_u64(keys.w, keys.n);
-    for (size_t k = 0; k < keys.n; k++) { mapb_dim(&b, keys.w[k], iv_reindex(map_dim_image(sigma, keys.w[k]), tau)); fine_bump(FC_MAP_ENTRIES); }
-    words_free(&keys);
-    out = mapb_finish(&b);
-    wordmap_put(&M.compose_memo, key, 2, out);
-    return out;
+    words_init(&F->keys);
+    F->ns = map_n_terms(F->sigma); F->nt = map_n_terms(F->tau);
+    { size_t a = map_n_dims(F->sigma) + map_n_dims(F->tau); KF_CALL(words_reserve, NULL, &F->keys, F->ns + F->nt > a ? F->ns + F->nt : a); }
+    fine_bump(FC_REINDEX_CALLS);   /* §94: one fine step per entry visited (the suspension points of the computation) */
+    for (F->k = 0; F->k < F->ns; F->k++) { TermVarId x; RefId im; map_term_entry(F->sigma, F->k, &x, &im); words_push(&F->keys, x); fine_bump(FC_MAP_ENTRIES); KF_SAFE(); }
+    for (F->k = 0; F->k < F->nt; F->k++) { TermVarId x; RefId im; map_term_entry(F->tau, F->k, &x, &im); words_push(&F->keys, x); fine_bump(FC_MAP_ENTRIES); KF_SAFE(); }
+    KF_CALL(sort_unique_u64, &F->keys.n, F->keys.w, F->keys.n);
+    KF_CALL(words_reserve, NULL, &F->b.t, 2 * F->keys.n);
+    for (F->k = 0; F->k < F->keys.n; F->k++) {
+        KF_CALL(map_term_image, &F->im, F->sigma, F->keys.w[F->k]);
+        KF_CALL(reindex, &F->im, F->im, F->tau);
+        mapb_term(&F->b, F->keys.w[F->k], F->im); fine_bump(FC_MAP_ENTRIES);
+    }
+    F->keys.n = 0;
+    F->ns = map_n_dims(F->sigma); F->nt = map_n_dims(F->tau);
+    for (F->k = 0; F->k < F->ns; F->k++) { DimVarId i; IntervalId im; map_dim_entry(F->sigma, F->k, &i, &im); words_push(&F->keys, i); fine_bump(FC_MAP_ENTRIES); KF_SAFE(); }
+    for (F->k = 0; F->k < F->nt; F->k++) { DimVarId i; IntervalId im; map_dim_entry(F->tau, F->k, &i, &im); words_push(&F->keys, i); fine_bump(FC_MAP_ENTRIES); KF_SAFE(); }
+    KF_CALL(sort_unique_u64, &F->keys.n, F->keys.w, F->keys.n);
+    KF_CALL(words_reserve, NULL, &F->b.d, 2 * F->keys.n);
+    for (F->k = 0; F->k < F->keys.n; F->k++) {
+        KF_CALL(map_dim_image, &F->iv, F->sigma, F->keys.w[F->k]);
+        KF_CALL(iv_reindex, &F->iv, F->iv, F->tau);
+        mapb_dim(&F->b, F->keys.w[F->k], F->iv); fine_bump(FC_MAP_ENTRIES);
+    }
+    words_free(&F->keys);
+    KF_CALL(mapb_finish, &F->out, &F->b);
+    KF_CALL(wordmap_put, NULL, &M.compose_memo, F->key, 2, F->out);
+    KF_RET(F->out);
+    KF_END;
 }
+KF_SYNC_DEF(compose, MapId, compose_PARAMS, compose(MapId sigma, MapId tau))
 
 /* ================= origins ================= */
 /* record: [tag, payload, nfields, (kind,slot,id)*, nbinders, (sort,formal,domain_field)*] */
@@ -215,8 +300,23 @@ DimSetId origin_fd(OriginId c) { return OSIDE(c)->fd; }
 FaceId origin_required(OriginId c) { return OSIDE(c)->required; }
 
 typedef struct RequiredScope { FaceId face; struct RequiredScope *prev; } RequiredScope;
-static __thread RequiredScope *tl_req_scope;
-static __thread uint64_t tl_req_generation;
+/* the dynamic construction state (the declared-required scope stack and the
+ * formation levels of the origin being built) belongs to the computation:
+ * it is registered as computation-local (kframe.h), so a suspended stack
+ * carries it to the thread that resumes it */
+typedef struct { RequiredScope *scope; uint64_t gen; uint64_t levels; } TermDyn;
+static __thread TermDyn tl_term = { NULL, 0, LEVELS_NONE };
+#define tl_req_scope (tl_term.scope)
+#define tl_req_generation (tl_term.gen)
+#define tl_levels (tl_term.levels)   /* formation levels of the origin being built (§59.1) */
+static void *term_dyn_addr(void) { return &tl_term; }
+static const TermDyn term_dyn_init = { NULL, 0, LEVELS_NONE };
+static void term_dyn_release(void *p) {   /* a discarded computation's scope list (only while its machine lives) */
+    TermDyn *d = p;
+    if (d->gen != machine_generation()) return;
+    while (d->scope) { RequiredScope *q = d->scope; d->scope = q->prev; free(q); }
+}
+__attribute__((constructor)) static void term_dyn_register(void) { kf_ctx_register(term_dyn_addr, sizeof(TermDyn), &term_dyn_init, term_dyn_release); }
 static void required_scope_current(void) {
     uint64_t g = machine_generation();
     if (tl_req_generation != g) {
@@ -224,13 +324,21 @@ static void required_scope_current(void) {
         tl_req_generation = g;
     }
 }
-static __thread uint64_t tl_levels = LEVELS_NONE;   /* formation levels of the origin being built (§59.1) */
-void term_require_push(FaceId phi) {
+KF_DECL_EXT(term_require_push, void, term_require_push_PARAMS, FaceId f;)
+KF_STEP(term_require_push) {
+    KF_BEGIN(term_require_push);
     required_scope_current();
-    FaceId f = tl_req_scope ? fc_meet(tl_req_scope->face, phi) : phi;
-    RequiredScope *p = malloc(sizeof *p); require(p, "out of memory");
-    p->face = f; p->prev = tl_req_scope; tl_req_scope = p;
+    F->f = F->phi;
+    if (tl_req_scope) KF_CALL(fc_meet, &F->f, tl_req_scope->face, F->phi);
+    {
+        required_scope_current();
+        RequiredScope *p = malloc(sizeof *p); require(p, "out of memory");
+        p->face = F->f; p->prev = tl_req_scope; tl_req_scope = p;
+    }
+    KF_RETV();
+    KF_END;
 }
+KF_SYNC_VOID_DEF(term_require_push, term_require_push_PARAMS, term_require_push(FaceId phi))
 void term_require_pop(void) {
     required_scope_current(); require(tl_req_scope, "required-face scope underflow");
     RequiredScope *p = tl_req_scope; tl_req_scope = p->prev; free(p);
@@ -249,107 +357,128 @@ uint64_t origin_levels(OriginId c) {
  * tuple of two optional levels (LEVELS_NONE when both are absent), read
  * through the accessors — no packing, no width limit */
 static void level_check(uint64_t l) { require(l == LEVEL_NONE || nat_valid(l), "not an exact level (use nat_from_word for an external word)"); }
-uint64_t levels_pack(uint64_t m, uint64_t n) {
-    level_check(m); level_check(n);
-    if (m == LEVEL_NONE && n == LEVEL_NONE) return LEVELS_NONE;
-    uint64_t w[3] = { 0x1E7E15, m, n };
-    uint64_t id = interner_intern(&M.keys, w, 3, NULL);
-    return id;   /* a handle (never LEVELS_NONE) */
+KF_DECL_EXT(levels_pack, uint64_t, levels_pack_PARAMS, uint64_t w[3]; uint64_t id;)
+KF_STEP(levels_pack) {
+    KF_BEGIN(levels_pack);
+    level_check(F->m); level_check(F->n);
+    if (F->m == LEVEL_NONE && F->n == LEVEL_NONE) KF_RET(LEVELS_NONE);
+    F->w[0] = 0x1E7E15; F->w[1] = F->m; F->w[2] = F->n;
+    KF_CALL(interner_intern, &F->id, &M.keys, F->w, 3, NULL);
+    KF_RET(F->id);   /* a handle (never LEVELS_NONE) */
+    KF_END;
 }
+KF_SYNC_DEF(levels_pack, uint64_t, levels_pack_PARAMS, levels_pack(uint64_t m, uint64_t n))
 uint64_t levels_first(uint64_t lv) { if (lv == LEVELS_NONE) return LEVEL_NONE; size_t n; const uint64_t *w = interner_get(&M.keys, lv, &n); require(n == 3 && w[0] == 0x1E7E15, "not a level pair"); return w[1]; }
 uint64_t levels_second(uint64_t lv) { if (lv == LEVELS_NONE) return LEVEL_NONE; size_t n; const uint64_t *w = interner_get(&M.keys, lv, &n); require(n == 3 && w[0] == 0x1E7E15, "not a level pair"); return w[2]; }
-uint64_t level_max(uint64_t a, uint64_t b) { if (a == LEVEL_NONE || b == LEVEL_NONE) return LEVEL_NONE; return nat_max(a, b); }
-uint64_t level_succ(uint64_t a) { if (a == LEVEL_NONE) return LEVEL_NONE; return nat_successor(a); }
+KF_DECL_EXT(level_max, uint64_t, level_max_PARAMS, uint64_t r;)
+KF_STEP(level_max) { KF_BEGIN(level_max); if (F->a == LEVEL_NONE || F->b == LEVEL_NONE) KF_RET(LEVEL_NONE); KF_CALL(nat_max, &F->r, F->a, F->b); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(level_max, uint64_t, level_max_PARAMS, level_max(uint64_t a, uint64_t b))
+KF_DECL_EXT(level_succ, uint64_t, level_succ_PARAMS, uint64_t r;)
+KF_STEP(level_succ) { KF_BEGIN(level_succ); if (F->a == LEVEL_NONE) KF_RET(LEVEL_NONE); KF_CALL(nat_successor, &F->r, F->a); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(level_succ, uint64_t, level_succ_PARAMS, level_succ(uint64_t a))
 
-static OriginId origin_intern(Tag tag, uint64_t payload, const Field *fields, size_t nf,
-                              const Binder *binders, size_t nb, VarSetId ft, DimSetId fd, FaceId req) {
-    FaceId declared = current_declared_required();
-    if (declared) {
-        req = fc_meet(req, declared);
-        Words dd; words_init(&dd); fc_dims(declared, &dd);
-        fd = dimset_union(fd, dimset_make(dd.w, dd.n));
-        words_free(&dd);
+#define origin_intern_PARAMS(X) X(Tag, tag) X(uint64_t, payload) X(const Field *, fields) X(size_t, nf) X(const Binder *, binders) X(size_t, nb) X(VarSetId, ft) X(DimSetId, fd) X(FaceId, req)
+KF_DECL_DROP(origin_intern, OriginId, origin_intern_PARAMS, origin_intern_drop, FaceId declared; Words dd, w; DimSetId t; bool created; OriginId id; size_t k;)
+static void origin_side_pub(uint64_t id, void *ctx) {   /* inside the insertion section: the side before the id is reachable */
+    origin_intern_F *F = ctx; OriginSide *o = OSIDE(id);
+    o->ft = F->ft; o->fd = F->fd; o->required = F->req; __atomic_store_n(&o->ready, 1, __ATOMIC_RELEASE);
+}
+static void origin_intern_drop(origin_intern_F *F) { words_free(&F->dd); words_free(&F->w); }
+KF_STEP(origin_intern) {
+    KF_BEGIN(origin_intern);
+    F->declared = current_declared_required();
+    if (F->declared) {
+        KF_CALL(fc_meet, &F->req, F->req, F->declared);
+        words_init(&F->dd); fc_dims(F->declared, &F->dd);
+        KF_CALL(dimset_make, &F->t, F->dd.w, F->dd.n);
+        KF_CALL(dimset_union, &F->fd, F->fd, F->t);
+        words_free(&F->dd);
     }
-    Words w; words_init(&w);
-    words_push(&w, tag); words_push(&w, payload); words_push(&w, nf);
-    for (size_t k = 0; k < nf; k++) { words_push(&w, fields[k].kind); words_push(&w, fields[k].slot); words_push(&w, fields[k].id); }
-    words_push(&w, nb);
-    for (size_t k = 0; k < nb; k++) { words_push(&w, binders[k].sort); words_push(&w, binders[k].formal); words_push(&w, binders[k].domain_field); }
-    words_push(&w, declared);                 /* annotation is part of the record */
-    words_push(&w, tl_levels);                /* formation levels (§59.1), part of the record */
+    words_init(&F->w); KF_CALL(words_reserve, NULL, &F->w, 6 + 3 * F->nf + 3 * F->nb);   /* the record's exact length */
+    words_push(&F->w, F->tag); words_push(&F->w, F->payload); words_push(&F->w, F->nf);
+    for (F->k = 0; F->k < F->nf; F->k++) { words_push(&F->w, F->fields[F->k].kind); words_push(&F->w, F->fields[F->k].slot); words_push(&F->w, F->fields[F->k].id); fine_bump(FC_COPY_WORDS); KF_SAFE(); }
+    words_push(&F->w, F->nb);
+    for (F->k = 0; F->k < F->nb; F->k++) { words_push(&F->w, F->binders[F->k].sort); words_push(&F->w, F->binders[F->k].formal); words_push(&F->w, F->binders[F->k].domain_field); fine_bump(FC_COPY_WORDS); KF_SAFE(); }
+    words_push(&F->w, F->declared);                 /* annotation is part of the record */
+    words_push(&F->w, tl_levels);                   /* formation levels (§59.1), part of the record */
     /* the interner is internally synchronized (hashing, comparison and the
-     * copy outside its lock); the side is published by the creator right
-     * after the interning returns — no transition in between — and a thread
-     * that found the record waits for the publication (lock-section audit:
-     * the interning used to run under the term lock) */
-    bool created;
-    OriginId id = interner_intern(&M.origins, w.w, w.n, &created);
-    OriginSide *o = OSIDE(id);
-    if (created) { o->ft = ft; o->fd = fd; o->required = req; __atomic_store_n(&o->ready, 1, __ATOMIC_RELEASE); }
-    else while (!__atomic_load_n(&o->ready, __ATOMIC_ACQUIRE)) sched_yield();
-    words_free(&w);
-    return id;
+     * copy outside its lock); the side is written inside the insertion
+     * section, before the id is reachable (no term lock, no wait) */
+    KF_CALL(interner_intern_pub, &F->id, &M.origins, F->w.w, F->w.n, &F->created, origin_side_pub, F);
+    words_free(&F->w);
+    KF_RET(F->id);
+    KF_END;
 }
 
-OriginId origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nf,
-                     const Binder *binders, size_t nb) {
-    /* dependency-closed free boundary: union of field boundaries (which are
-     * already closed through declaration types), minus formals bound at the
-     * field's binder. */
-    VarSetId ft = varset_make(NULL, 0);
-    DimSetId fd = dimset_make(NULL, 0);
-    FaceId req = fc_true();
-    Words dims; words_init(&dims);
-    for (size_t k = 0; k < nf; k++) {
-        VarSetId fv = varset_make(NULL, 0);
-        DimSetId fdk;
-        dims.n = 0;
-        switch (fields[k].kind) {
-        case F_REF: fv = ref_freevars(fields[k].id); fdk = ref_support(fields[k].id); break;
-        case F_INTERVAL: iv_dims(fields[k].id, &dims); fdk = dimset_make(dims.w, dims.n); break;
-        case F_FACE: fc_dims(fields[k].id, &dims); fdk = dimset_make(dims.w, dims.n); break;
+/* dependency-closed free boundary: union of field boundaries (which are
+ * already closed through declaration types), minus formals bound at the
+ * field's binder. */
+KF_DECL_EXT_DROP(origin_make, OriginId, origin_make_PARAMS, origin_make_drop, VarSetId ft, fv; DimSetId fd, fdk; FaceId req, rk; Words dims; size_t k; OriginId id;)
+static void origin_make_drop(origin_make_F *F) { words_free(&F->dims); }
+KF_STEP(origin_make) {
+    KF_BEGIN(origin_make);
+    KF_CALL(varset_make, &F->ft, NULL, 0);
+    KF_CALL(dimset_make, &F->fd, NULL, 0);
+    KF_CALL0(fc_true, &F->req);
+    words_init(&F->dims);
+    for (F->k = 0; F->k < F->nf; F->k++) {
+        KF_CALL(varset_make, &F->fv, NULL, 0);
+        F->dims.n = 0;
+        switch (F->fields[F->k].kind) {
+        case F_REF: F->fv = ref_freevars(F->fields[F->k].id); F->fdk = ref_support(F->fields[F->k].id); break;
+        case F_INTERVAL: iv_dims(F->fields[F->k].id, &F->dims); KF_CALL(dimset_make, &F->fdk, F->dims.w, F->dims.n); break;
+        case F_FACE: fc_dims(F->fields[F->k].id, &F->dims); KF_CALL(dimset_make, &F->fdk, F->dims.w, F->dims.n); break;
         default: die("bad field kind");
         }
-        if (fields[k].slot != NO_SLOT) {
-            require(fields[k].slot < nb, "field refers to a missing binder");
-            const Binder *b = &binders[fields[k].slot];
-            if (b->sort == S_TERM) fv = varset_remove(fv, b->formal);
-            else fdk = dimset_remove(fdk, b->formal);
+        if (F->fields[F->k].slot != NO_SLOT) {
+            require(F->fields[F->k].slot < F->nb, "field refers to a missing binder");
+            if (F->binders[F->fields[F->k].slot].sort == S_TERM) KF_CALL(varset_remove, &F->fv, F->fv, F->binders[F->fields[F->k].slot].formal);
+            else KF_CALL(dimset_remove, &F->fdk, F->fdk, F->binders[F->fields[F->k].slot].formal);
         }
-        ft = varset_union(ft, fv);
-        fd = dimset_union(fd, fdk);
+        KF_CALL(varset_union, &F->ft, F->ft, F->fv);
+        KF_CALL(dimset_union, &F->fd, F->fd, F->fdk);
     }
-    words_free(&dims);
-    for (size_t k = 0; k < nb; k++)
-        if (binders[k].sort == S_TERM) require(binders[k].domain_field < nf, "term binder without domain field");
-    if (tag == T_SYSTEM) {
-        req = fc_false();
-        for (size_t k = 0; k < nf; k += 2) req = fc_join(req, fields[k].id);
+    words_free(&F->dims);
+    for (size_t k = 0; k < F->nb; k++)
+        if (F->binders[k].sort == S_TERM) require(F->binders[k].domain_field < F->nf, "term binder without domain field");
+    if (F->tag == T_SYSTEM) {
+        KF_CALL0(fc_false, &F->req);
+        for (F->k = 0; F->k < F->nf; F->k += 2) KF_CALL(fc_join, &F->req, F->req, F->fields[F->k].id);
     } else {
         /* a total construction requires what its total reference fields
          * require; partial positions (tube, Glue fibre data, glue fibre term)
          * are only used under their guards and do not propagate. A field under
          * a dimension binder must be available along the whole line. */
-        for (size_t k = 0; k < nf; k++) {
-            if (fields[k].kind != F_REF) continue;
-            bool partial = (tag == T_COMP && k == 2) || (tag == T_GLUE_TYPE && (k == 2 || k == 3)) ||
-                           (tag == T_GLUE_INTRO && (k == 2 || k == 3 || k == 4)) || (tag == T_UNGLUE && (k == 2 || k == 3));
-            if (partial) continue;
-            FaceId rk = ref_required(fields[k].id);
-            if (fields[k].slot != NO_SLOT && binders[fields[k].slot].sort == S_DIM) rk = fc_forall(binders[fields[k].slot].formal, rk);
-            req = fc_meet(req, rk);
+        for (F->k = 0; F->k < F->nf; F->k++) {
+            if (F->fields[F->k].kind != F_REF) continue;
+            {
+                size_t k = F->k; Tag tag = F->tag;
+                bool partial = (tag == T_COMP && k == 2) || (tag == T_GLUE_TYPE && (k == 2 || k == 3)) ||
+                               (tag == T_GLUE_INTRO && (k == 2 || k == 3 || k == 4)) || (tag == T_UNGLUE && (k == 2 || k == 3));
+                if (partial) continue;
+            }
+            F->rk = ref_required(F->fields[F->k].id);
+            if (F->fields[F->k].slot != NO_SLOT && F->binders[F->fields[F->k].slot].sort == S_DIM) KF_CALL(fc_forall, &F->rk, F->binders[F->fields[F->k].slot].formal, F->rk);
+            KF_CALL(fc_meet, &F->req, F->req, F->rk);
         }
     }
-    return origin_intern(tag, payload, fields, nf, binders, nb, ft, fd, req);
+    KF_CALL(origin_intern, &F->id, F->tag, F->payload, F->fields, F->nf, F->binders, F->nb, F->ft, F->fd, F->req);
+    KF_RET(F->id);
+    KF_END;
 }
+KF_SYNC_DEF(origin_make, OriginId, origin_make_PARAMS, origin_make(Tag tag, uint64_t payload, const Field *fields, size_t nf, const Binder *binders, size_t nb))
 
 /* Bound atoms retain both coordinates; the tag marks a table identity. */
-uint64_t bound_id(size_t depth, size_t slot) {
-    uint64_t w[2] = { depth, slot };
-    uint64_t id = interner_intern(&M.bound_atoms, w, 2, NULL);
-    require(id < BOUND_BIT, "bound atom address space exhausted");
-    return BOUND_BIT | id;
+KF_DECL_EXT(bound_id, uint64_t, bound_id_PARAMS, uint64_t w[2]; uint64_t id;)
+KF_STEP(bound_id) {
+    KF_BEGIN(bound_id);
+    F->w[0] = F->depth; F->w[1] = F->slot;
+    KF_CALL(interner_intern, &F->id, &M.bound_atoms, F->w, 2, NULL);
+    require(F->id < BOUND_BIT, "bound atom address space exhausted");
+    KF_RET(BOUND_BIT | F->id);
+    KF_END;
 }
+KF_SYNC_DEF(bound_id, uint64_t, bound_id_PARAMS, bound_id(size_t depth, size_t slot))
 size_t bound_depth(uint64_t id) { size_t n; require(is_bound_id(id), "not a bound atom"); return (size_t)interner_get(&M.bound_atoms, id & ~BOUND_BIT, &n)[0]; }
 size_t bound_slot(uint64_t id) { size_t n; require(is_bound_id(id), "not a bound atom"); return (size_t)interner_get(&M.bound_atoms, id & ~BOUND_BIT, &n)[1]; }
 
@@ -359,66 +488,64 @@ size_t bound_slot(uint64_t id) { size_t n; require(is_bound_id(id), "not a bound
 static void ref_side_set(RefId id, DimSetId support, VarSetId fv, FaceId req) {
     RefSide *r = RSIDE(id); r->support = support; r->freevars = fv; r->required = req;
 }
+/* a reference's side data, written inside the interner's insertion section (before the id is reachable) */
+typedef struct { DimSetId sup; VarSetId fv; FaceId req; } RefSidePub;
+static void ref_side_pub(uint64_t id, void *ctx) { RefSidePub *p = ctx; ref_side_set(id, p->sup, p->fv, p->req); }
 
-RefId ref_var(TermVarId x) {
-    uint64_t w[2] = { 1, x };
-    if (is_bound_id(x)) {
+KF_DECL_EXT_DROP(ref_var, RefId, ref_var_PARAMS, ref_var_drop, uint64_t w[2]; uint64_t xs[1]; RefId id, type; FaceId req; VarSetId fv, t; DimSetId sup, ts; Words d; RefSidePub pub;)
+static void ref_var_drop(ref_var_F *F) { words_free(&F->d); }
+KF_STEP(ref_var) {
+    KF_BEGIN(ref_var);
+    F->w[0] = 1; F->w[1] = F->x;
+    if (is_bound_id(F->x)) {
         /* a bound local occurrence (§50): no declaration record; its type and
-         * guard live in the enclosing scope's telescope */
-        term_lock();
-        RefId id = interner_find(&M.refs, w, 2);
-        if (!id) {
-            bool created;
-            id = interner_intern(&M.refs, w, 2, &created);
-            uint64_t xs[1] = { x };
-            ref_side_set(id, dimset_make(NULL, 0), varset_make(xs, 1), fc_true());
-        }
-        term_unlock();
-        return id;
+         * guard live in the enclosing scope's telescope (one locked section) */
+        KF_CALL(interner_find, &F->id, &M.refs, F->w, 2);
+        if (F->id) KF_RET(F->id);
+        F->xs[0] = F->x;
+        KF_CALL(dimset_make, &F->pub.sup, NULL, 0); KF_CALL(varset_make, &F->pub.fv, F->xs, 1); F->pub.req = fc_true();
+        KF_CALL(interner_intern_pub, &F->id, &M.refs, F->w, 2, NULL, ref_side_pub, &F->pub);
+        KF_RET(F->id);
     }
-    require(x >= 1 && x <= n_terms_now(), "VAR of undeclared variable %llu", (unsigned long long)x);
-    term_lock();
-    RefId id = interner_find(&M.refs, w, 2);
-    term_unlock();
-    if (id) return id;
+    require(F->x >= 1 && F->x <= n_terms_now(), "VAR of undeclared variable %llu", (unsigned long long)F->x);
+    KF_CALL(interner_find, &F->id, &M.refs, F->w, 2);
+    if (F->id) KF_RET(F->id);
     /* the side data is computed outside the term lock (it is the closed
      * boundary of the declaration type: input-sized); the record is created
      * and its side published under the lock, after a second find */
-    RefId type = TDECL(x)->type;
-    FaceId req = fc_meet(TDECL(x)->required, ref_required(type));
+    F->type = TDECL(F->x)->type;
+    KF_CALL(fc_meet, &F->req, TDECL(F->x)->required, ref_required(F->type));
     /* typed boundary: x itself plus the closed boundary of its declaration
      * type and the dimensions of its required face */
-    uint64_t xs[1] = { x };
-    VarSetId fv = varset_union(varset_make(xs, 1), ref_freevars(type));
-    Words d; words_init(&d); fc_dims(req, &d);
-    DimSetId sup = dimset_union(ref_support(type), dimset_make(d.w, d.n));
-    words_free(&d);
-    term_lock();                                /* side data is published before the lock is released */
-    id = interner_find(&M.refs, w, 2);
-    if (!id) {
-        bool created;
-        id = interner_intern(&M.refs, w, 2, &created);
-        require(created, "ref_var race");
-        ref_side_set(id, sup, fv, req);
-    }
-    term_unlock();
-    return id;
+    F->xs[0] = F->x;
+    KF_CALL(varset_make, &F->t, F->xs, 1);
+    KF_CALL(varset_union, &F->fv, F->t, ref_freevars(F->type));
+    words_init(&F->d); fc_dims(F->req, &F->d);
+    KF_CALL(dimset_make, &F->ts, F->d.w, F->d.n);
+    KF_CALL(dimset_union, &F->sup, ref_support(F->type), F->ts);
+    words_free(&F->d);
+    F->pub.sup = F->sup; F->pub.fv = F->fv; F->pub.req = F->req;   /* another creator of the same variable computes the same side */
+    KF_CALL(interner_intern_pub, &F->id, &M.refs, F->w, 2, NULL, ref_side_pub, &F->pub);
+    KF_RET(F->id);
+    KF_END;
 }
+KF_SYNC_DEF(ref_var, RefId, ref_var_PARAMS, ref_var(TermVarId x))
 
 bool ref_is_var(RefId t) { size_t n; return interner_get(&M.refs, t, &n)[0] == 1; }
 bool ref_is_tview(RefId t) { size_t n; return interner_get(&M.refs, t, &n)[0] == 3; }
 uint64_t ref_tnode(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 3, "not a TVIEW"); return w[1]; }
 uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 3, "not a TVIEW"); return w[2]; }
 /* intern a TVIEW record with its computed side data (template layer) */
-RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required) {
-    uint64_t w[3] = { 3, node, env };
-    bool created;
-    term_lock();
-    RefId id = interner_intern(&M.refs, w, 3, &created);
-    if (created) ref_side_set(id, support, fv, required);
-    term_unlock();
-    return id;
+KF_DECL_EXT(ref_intern_tview, RefId, ref_intern_tview_PARAMS, uint64_t w[3]; RefSidePub pub; RefId id;)
+KF_STEP(ref_intern_tview) {
+    KF_BEGIN(ref_intern_tview);
+    F->w[0] = 3; F->w[1] = F->node; F->w[2] = F->env;
+    F->pub.sup = F->support; F->pub.fv = F->fv; F->pub.req = F->required;
+    KF_CALL(interner_intern_pub, &F->id, &M.refs, F->w, 3, NULL, ref_side_pub, &F->pub);
+    KF_RET(F->id);
+    KF_END;
 }
+KF_SYNC_DEF(ref_intern_tview, RefId, ref_intern_tview_PARAMS, ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required))
 TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
 Tag ref_tag(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] != 1, "ref_tag of a variable"); return w[0] == 3 ? tnode_tag(w[1]) : origin_tag(w[1]); }
 OriginId ref_origin(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 2, "not a VIEW"); return w[1]; }
@@ -427,311 +554,404 @@ DimSetId ref_support(RefId t) { return RSIDE(t)->support; }
 VarSetId ref_freevars(RefId t) { return RSIDE(t)->freevars; }
 FaceId ref_required(RefId t) { return RSIDE(t)->required; }
 
-RefId make_view(OriginId c, MapId sigma) {
-    /* restrict keys to the complete typed free boundary of c, drop identity
-     * entries (mapb_finish), intern */
-    VarSetId ft = origin_ft(c);
-    DimSetId fd = origin_fd(c);
-    MapBuilder b; mapb_init(&b);
-    size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
+/* restrict keys to the complete typed free boundary of c, drop identity
+ * entries (mapb_finish), intern */
+KF_DECL_EXT_DROP(make_view, RefId, make_view_PARAMS, make_view_drop, VarSetId ft, fv; DimSetId fd, sup, t; MapBuilder b; size_t nt, nd, n, k; MapId m; uint64_t w[3]; RefId have, im, id; FaceId req, guard; bool ent; const uint64_t *xs; IntervalId iv; Words d; RefSidePub pub;)
+static void make_view_drop(make_view_F *F) { words_free(&F->b.t); words_free(&F->b.d); words_free(&F->d); }
+KF_STEP(make_view) {
+    KF_BEGIN(make_view);
+    F->ft = origin_ft(F->c);
+    F->fd = origin_fd(F->c);
+    mapb_init(&F->b);
+    F->nt = map_n_terms(F->sigma); F->nd = map_n_dims(F->sigma);
+    KF_MAPB_RESERVE(&F->b, F->nt, F->nd);
     fine_bump(FC_REINDEX_CALLS);
-    for (size_t k = 0; k < nt; k++) {
-        TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im); fine_bump(FC_MAP_ENTRIES);
-        if (varset_contains(ft, x)) mapb_term(&b, x, im);
+    for (F->k = 0; F->k < F->nt; F->k++) {
+        TermVarId x; RefId im; map_term_entry(F->sigma, F->k, &x, &im); fine_bump(FC_MAP_ENTRIES);
+        if (varset_contains(F->ft, x)) mapb_term(&F->b, x, im);
+        KF_SAFE();
     }
-    for (size_t k = 0; k < nd; k++) {
-        DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im); fine_bump(FC_MAP_ENTRIES);
-        if (dimset_contains(fd, i)) mapb_dim(&b, i, im);
+    for (F->k = 0; F->k < F->nd; F->k++) {
+        DimVarId i; IntervalId im; map_dim_entry(F->sigma, F->k, &i, &im); fine_bump(FC_MAP_ENTRIES);
+        if (dimset_contains(F->fd, i)) mapb_dim(&F->b, i, im);
+        KF_SAFE();
     }
-    MapId m = mapb_finish(&b);
-    uint64_t w[3] = { 2, c, m };
-    /* an existing view: one find under the lock */
-    term_lock(); RefId have = interner_find(&M.refs, w, 3); term_unlock();
-    if (have) return have;
+    KF_CALL(mapb_finish, &F->m, &F->b);
+    F->w[0] = 2; F->w[1] = F->c; F->w[2] = F->m;
+    /* an existing view (its side was written before it was reachable) */
+    KF_CALL(interner_find, &F->have, &M.refs, F->w, 3);
+    if (F->have) KF_RET(F->have);
     /* instantiated support and free variables (§7), computed outside the
-     * lock on immutable data (§94: the loop's transitions are suspension
-     * points of a kernel continuation; the lock is held only to intern and
-     * publish the side data, which another creator of the same view would
-     * compute identically) */
-    VarSetId fv = varset_make(NULL, 0);
-    DimSetId sup = dimset_make(NULL, 0);
-    FaceId req = fc_reindex(origin_required(c), m);
-    size_t n; const uint64_t *xs = varset_get(ft, &n);
-    for (size_t k = 0; k < n; k++) {
+     * lock on immutable data (the loop's transitions are suspension points;
+     * the lock is held only to intern and publish the side data, which
+     * another creator of the same view would compute identically) */
+    KF_CALL(varset_make, &F->fv, NULL, 0);
+    KF_CALL(dimset_make, &F->sup, NULL, 0);
+    KF_CALL(fc_reindex, &F->req, origin_required(F->c), F->m);
+    F->xs = varset_get(F->ft, &F->n);
+    for (F->k = 0; F->k < F->n; F->k++) {
         fine_bump(FC_MAP_ENTRIES);
-        RefId im = map_term_image(m, xs[k]);
-        fv = varset_union(fv, ref_freevars(im));
-        sup = dimset_union(sup, ref_support(im));
+        KF_CALL(map_term_image, &F->im, F->m, F->xs[F->k]);
+        KF_CALL(varset_union, &F->fv, F->fv, ref_freevars(F->im));
+        KF_CALL(dimset_union, &F->sup, F->sup, ref_support(F->im));
         /* a formal declared partial on phi_x is only used under phi_x
          * inside the origin, so its image need only be available there:
          * an image available on all of phi_x[m] adds no requirement */
-        FaceId guard = fc_reindex(TDECL(xs[k])->required, m);
-        if (!fc_entails(guard, ref_required(im))) req = fc_meet(req, ref_required(im));
+        KF_CALL(fc_reindex, &F->guard, TDECL(F->xs[F->k])->required, F->m);
+        KF_CALL(fc_entails, &F->ent, F->guard, ref_required(F->im));
+        if (!F->ent) KF_CALL(fc_meet, &F->req, F->req, ref_required(F->im));
     }
-    const uint64_t *ds = dimset_get(fd, &n);
-    Words d; words_init(&d);
-    for (size_t k = 0; k < n; k++) iv_dims(map_dim_image(m, ds[k]), &d);
-    sup = dimset_union(sup, dimset_make(d.w, d.n));
-    words_free(&d);
-    bool created;
-    term_lock();
-    RefId id = interner_intern(&M.refs, w, 3, &created);
-    if (created) ref_side_set(id, sup, fv, req);   /* side data published before the lock is released */
-    term_unlock();
-    return id;
+    F->xs = dimset_get(F->fd, &F->n);
+    words_init(&F->d);
+    for (F->k = 0; F->k < F->n; F->k++) { KF_CALL(map_dim_image, &F->iv, F->m, F->xs[F->k]); iv_dims(F->iv, &F->d); }
+    KF_CALL(dimset_make, &F->t, F->d.w, F->d.n);
+    KF_CALL(dimset_union, &F->sup, F->sup, F->t);
+    words_free(&F->d);
+    F->pub.sup = F->sup; F->pub.fv = F->fv; F->pub.req = F->req;
+    KF_CALL(interner_intern_pub, &F->id, &M.refs, F->w, 3, NULL, ref_side_pub, &F->pub);   /* the side, inside the insertion section */
+    KF_RET(F->id);
+    KF_END;
 }
+KF_SYNC_DEF(make_view, RefId, make_view_PARAMS, make_view(OriginId c, MapId sigma))
 
 void (*term_edge_hook)(RefId dest, RefId src, MapId sigma);
-static void record_edge(RefId dest, RefId src, MapId sigma);
-RefId reindex(RefId t, MapId sigma) {
-    if (map_is_identity(sigma)) return t;
-    if (ref_is_var(t)) return map_term_image(sigma, ref_var_id(t));
-    uint64_t key[2] = { t, sigma }, out;
-    if (wordmap_get(&M.reindex_memo, key, 2, &out)) return out;
-    if (ref_is_tview(t)) { out = tview_reindex(t, sigma); wordmap_put(&M.reindex_memo, key, 2, out); if (out != t) record_edge(out, t, sigma); return out; }
-    OriginId c = ref_origin(t);
-    MapId tau = ref_map(t);
-    MapBuilder b; mapb_init(&b);
-    size_t n; const uint64_t *xs = varset_get(origin_ft(c), &n);
-    fine_bump(FC_REINDEX_CALLS);
-    for (size_t k = 0; k < n; k++) { fine_bump(FC_MAP_ENTRIES); mapb_term(&b, xs[k], reindex(map_term_image(tau, xs[k]), sigma)); }
-    const uint64_t *ds = dimset_get(origin_fd(c), &n);
-    for (size_t k = 0; k < n; k++) { fine_bump(FC_MAP_ENTRIES); mapb_dim(&b, ds[k], iv_reindex(map_dim_image(tau, ds[k]), sigma)); }
-    out = make_view(c, mapb_finish(&b));
-    wordmap_put(&M.reindex_memo, key, 2, out);
-    if (out != t) record_edge(out, t, sigma);
-    return out;
-}
 /* §78.4: edge lists are interned word lists [src0, map0, src1, map1, ...];
  * duplicates are interned away by the list identity */
-static void record_edge(RefId dest, RefId src, MapId sigma) {
-    uint64_t key[1] = { dest };
-    for (;;) {   /* §94: read, build and intern the new list outside the lock (one transition per entry), publish under it if the list is still the one read; else retry */
-        uint64_t old = 0;
-        term_lock(); wordmap_get(&M.edges, key, 1, &old); term_unlock();
-        Words w; words_init(&w);
-        if (old) { size_t n; const uint64_t *l = interner_get(&M.edge_lists, old, &n); for (size_t k = 0; k + 1 < n; k += 2) { fine_bump(FC_MAP_ENTRIES); if (l[k] == src && l[k + 1] == sigma) { words_free(&w); return; } } for (size_t k = 0; k < n; k++) { words_push(&w, l[k]); fine_bump(FC_MAP_ENTRIES); } }
-        words_push(&w, src); words_push(&w, sigma);
-        uint64_t id = interner_intern(&M.edge_lists, w.w, w.n, NULL);
-        words_free(&w);
-        uint64_t now = 0;
-        term_lock(); wordmap_get(&M.edges, key, 1, &now); bool same = now == old; if (same) wordmap_put(&M.edges, key, 1, id); term_unlock();
-        if (same) { void (*h)(RefId, RefId, MapId) = __atomic_load_n(&term_edge_hook, __ATOMIC_ACQUIRE); if (h) h(dest, src, sigma); return; }
+#define record_edge_PARAMS(X) X(RefId, dest) X(RefId, src) X(MapId, sigma)
+KF_DECL_DROP(record_edge, void, record_edge_PARAMS, record_edge_drop, uint64_t key[1]; uint64_t old, now, id, kid; uint64_t *slot; Words w; const uint64_t *l; size_t n, k;)
+static void record_edge_drop(record_edge_F *F) { words_free(&F->w); }
+KF_STEP(record_edge) {
+    KF_BEGIN(record_edge);
+    F->key[0] = F->dest;
+    /* the destination's list slot: the key interned once, the value word then
+     * replaced by compare-and-swap (no lock is held while a list is read or built) */
+    KF_CALL(interner_intern, &F->kid, &M.edges.keys, F->key, 1, NULL);
+    KF_CALL(chunked_prepare, NULL, &M.edges.vals, F->kid - 1);
+    F->slot = (uint64_t *)chunked_at(&M.edges.vals, F->kid - 1);
+    for (;;) {   /* §94: read, build and intern the new list (one transition per entry), publish it if the list is still the one read; else retry */
+        F->old = __atomic_load_n(F->slot, __ATOMIC_ACQUIRE);
+        words_init(&F->w);
+        if (F->old) {
+            F->l = interner_get(&M.edge_lists, F->old, &F->n);
+            KF_CALL(words_reserve, NULL, &F->w, F->n + 2);
+            for (F->k = 0; F->k + 1 < F->n; F->k += 2) { fine_bump(FC_MAP_ENTRIES); if (F->l[F->k] == F->src && F->l[F->k + 1] == F->sigma) { words_free(&F->w); KF_RETV(); } KF_SAFE(); }
+            for (F->k = 0; F->k < F->n; F->k++) { words_push(&F->w, F->l[F->k]); fine_bump(FC_MAP_ENTRIES); KF_SAFE(); }
+        }
+        words_push(&F->w, F->src); words_push(&F->w, F->sigma);
+        KF_CALL(interner_intern, &F->id, &M.edge_lists, F->w.w, F->w.n, NULL);
+        words_free(&F->w);
+        {
+            uint64_t expect = F->old; bool same = __atomic_compare_exchange_n(F->slot, &expect, F->id, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+            if (same) { void (*h)(RefId, RefId, MapId) = __atomic_load_n(&term_edge_hook, __ATOMIC_ACQUIRE); if (h) h(F->dest, F->src, F->sigma); KF_RETV(); }
+        }
     }
-}
-size_t instantiation_edges(RefId dest, const uint64_t **pairs) {
-    uint64_t key[1] = { dest }, id = 0;
-    term_lock(); bool have = wordmap_get(&M.edges, key, 1, &id); term_unlock();
-    if (!have) { *pairs = NULL; return 0; }
-    size_t n; *pairs = interner_get(&M.edge_lists, id, &n); return n / 2;
+    KF_END;
 }
 
-RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_term(x, a)); }
-RefId reindex_dim(RefId t, DimVarId i, IntervalId r) { return reindex(t, map_single_dim(i, r)); }
+KF_DECL_EXT_DROP(reindex, RefId, reindex_PARAMS, reindex_drop, uint64_t key[2]; RefId out, im; bool have; OriginId c; MapId tau, m; MapBuilder b; const uint64_t *xs; size_t n, k; IntervalId iv;)
+static void reindex_drop(reindex_F *F) { words_free(&F->b.t); words_free(&F->b.d); }
+KF_STEP(reindex) {
+    KF_BEGIN(reindex);
+    if (map_is_identity(F->sigma)) KF_RET(F->t);
+    if (ref_is_var(F->t)) { KF_CALL(map_term_image, &F->out, F->sigma, ref_var_id(F->t)); KF_RET(F->out); }
+    F->key[0] = F->t; F->key[1] = F->sigma;
+    KF_CALL(wordmap_get, &F->have, &M.reindex_memo, F->key, 2, &F->out);
+    if (F->have) KF_RET(F->out);
+    if (ref_is_tview(F->t)) {
+        KF_CALL(tview_reindex, &F->out, F->t, F->sigma);
+        KF_CALL(wordmap_put, NULL, &M.reindex_memo, F->key, 2, F->out);
+        if (F->out != F->t) KF_CALL(record_edge, NULL, F->out, F->t, F->sigma);
+        KF_RET(F->out);
+    }
+    F->c = ref_origin(F->t);
+    F->tau = ref_map(F->t);
+    mapb_init(&F->b);
+    KF_MAPB_RESERVE(&F->b, varset_n(origin_ft(F->c)), dimset_n(origin_fd(F->c)));
+    F->xs = varset_get(origin_ft(F->c), &F->n);
+    fine_bump(FC_REINDEX_CALLS);
+    for (F->k = 0; F->k < F->n; F->k++) {
+        fine_bump(FC_MAP_ENTRIES);
+        KF_CALL(map_term_image, &F->im, F->tau, F->xs[F->k]);
+        KF_CALL(reindex, &F->im, F->im, F->sigma);
+        mapb_term(&F->b, F->xs[F->k], F->im);
+    }
+    F->xs = dimset_get(origin_fd(F->c), &F->n);
+    for (F->k = 0; F->k < F->n; F->k++) {
+        fine_bump(FC_MAP_ENTRIES);
+        KF_CALL(map_dim_image, &F->iv, F->tau, F->xs[F->k]);
+        KF_CALL(iv_reindex, &F->iv, F->iv, F->sigma);
+        mapb_dim(&F->b, F->xs[F->k], F->iv);
+    }
+    KF_CALL(mapb_finish, &F->m, &F->b);
+    KF_CALL(make_view, &F->out, F->c, F->m);
+    KF_CALL(wordmap_put, NULL, &M.reindex_memo, F->key, 2, F->out);
+    if (F->out != F->t) KF_CALL(record_edge, NULL, F->out, F->t, F->sigma);
+    KF_RET(F->out);
+    KF_END;
+}
+KF_SYNC_DEF(reindex, RefId, reindex_PARAMS, reindex(RefId t, MapId sigma))
+/* the published list of a destination (a list is immutable; the slot is replaced whole) */
+KF_DECL_EXT(instantiation_edges, size_t, instantiation_edges_PARAMS, uint64_t key[1]; uint64_t id; bool have;)
+KF_STEP(instantiation_edges) {
+    KF_BEGIN(instantiation_edges);
+    F->key[0] = F->dest; F->id = 0;
+    KF_CALL(wordmap_get, &F->have, &M.edges, F->key, 1, &F->id);
+    if (!F->have) { *F->pairs = NULL; KF_RET(0); }
+    { size_t n; *F->pairs = interner_get(&M.edge_lists, F->id, &n); KF_RET(n / 2); }
+    KF_END;
+}
+KF_SYNC_DEF(instantiation_edges, size_t, instantiation_edges_PARAMS, instantiation_edges(RefId dest, const uint64_t **pairs))
+
+KF_DECL_EXT(reindex1, RefId, reindex1_PARAMS, MapId m; RefId r;)
+KF_STEP(reindex1) { KF_BEGIN(reindex1); KF_CALL(map_single_term, &F->m, F->x, F->a); KF_CALL(reindex, &F->r, F->t, F->m); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(reindex1, RefId, reindex1_PARAMS, reindex1(RefId t, TermVarId x, RefId a))
+KF_DECL_EXT(reindex_dim, RefId, reindex_dim_PARAMS, MapId m; RefId o;)
+KF_STEP(reindex_dim) { KF_BEGIN(reindex_dim); KF_CALL(map_single_dim, &F->m, F->i, F->r); KF_CALL(reindex, &F->o, F->t, F->m); KF_RET(F->o); KF_END; }
+KF_SYNC_DEF(reindex_dim, RefId, reindex_dim_PARAMS, reindex_dim(RefId t, DimVarId i, IntervalId r))
 
 /* ================= binders ================= */
 
-static uint64_t nominal_lookup(const KeyWord *key, size_t n, bool *created) {
-    Words w; words_init(&w);
-    for (size_t k = 0; k < n; k++) { words_push(&w, key[k].kind); words_push(&w, key[k].v); }
-    uint64_t id = interner_intern(&M.nominal, w.w, w.n, created);
-    words_free(&w);
-    return id;
+/* a nominal variable: its key interned outside every lock; the variable is
+ * declared inside the insertion section (interner_intern_pub), so a lookup
+ * that finds the key finds its variable. Keys have a constant length. */
+KF_DECL_EXT_DROP(nominal_var, uint64_t, nominal_var_PARAMS, nominal_var_drop, Words w; uint64_t id; bool created;)
+static void nominal_var_drop(nominal_var_F *F) { words_free(&F->w); }
+static void nominal_pub(uint64_t id, void *ctx) {
+    nominal_var_F *F = ctx;
+    if (F->sort == S_TERM) { TermVarId x = declare_term(F->type, F->req); *NVAL(id) = x; TDECL(x)->prov = id; }
+    else { DimVarId i = declare_dim(); *NVAL(id) = i; *DPROV(i) = id; }
 }
+KF_STEP(nominal_var) {
+    KF_BEGIN(nominal_var);
+    words_init(&F->w); KF_CALL(words_reserve, NULL, &F->w, 2 * (F->n + 1));
+    if (F->prefix) { words_push(&F->w, KW_CONST); words_push(&F->w, F->prefix); }
+    for (size_t k = 0; k < F->n; k++) { words_push(&F->w, F->key[k].kind); words_push(&F->w, F->key[k].v); }
+    KF_CALL(interner_intern_pub, &F->id, &M.nominal, F->w.w, F->w.n, &F->created, nominal_pub, F);
+    words_free(&F->w);
+    if (!F->created && F->check)
+        require(term_var_type((TermVarId)*NVAL(F->id)) == F->type && term_var_required((TermVarId)*NVAL(F->id)) == F->req,
+                "keyed fresh variable reused at a different type or required face");
+    KF_RET(*NVAL(F->id));
+    KF_END;
+}
+KF_SYNC_DEF(nominal_var, uint64_t, nominal_var_PARAMS, nominal_var(const KeyWord *key, size_t n, uint64_t prefix, Sort sort, RefId type, FaceId req, bool check))
 const uint64_t *nominal_key(uint64_t nid, size_t *npairs) {
     size_t n; const uint64_t *w = interner_get(&M.nominal, nid, &n);
     *npairs = n / 2;
     return w;
 }
-static void set_term_prov(TermVarId x, uint64_t nid) { TDECL(x)->prov = nid; }
-static void set_dim_prov(DimVarId i, uint64_t nid) { *DPROV(i) = nid; }
 uint64_t term_var_provenance(TermVarId x) { return TDECL(x)->prov; }
 uint64_t dim_var_provenance(DimVarId i) { return *DPROV(i); }
 
-TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type) {
-    KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_TERM } };
-    bool created;
-    term_lock();
-    uint64_t id = nominal_lookup(key, 4, &created);
-    if (created) { *NVAL(id) = declare_term(type, fc_true()); set_term_prov(*NVAL(id), id); }
-    TermVarId r = (TermVarId)*NVAL(id);
-    term_unlock();
-    return r;
+/* the variable of a binder occurrence (owner, slot) */
+KF_DECL_EXT(binder_var, uint64_t, binder_var_PARAMS, KeyWord key[4]; uint64_t v; FaceId req;)
+KF_STEP(binder_var) {
+    KF_BEGIN(binder_var);
+    F->key[0] = (KeyWord){ KW_CONST, 1 }; F->key[1] = (KeyWord){ KW_REF, F->owner }; F->key[2] = (KeyWord){ KW_CONST, F->slot }; F->key[3] = (KeyWord){ KW_CONST, F->sort };
+    F->req = 0; if (F->sort == S_TERM) KF_CALL0(fc_true, &F->req);
+    KF_CALL(nominal_var, &F->v, F->key, 4, 0, F->sort, F->type, F->req, false);
+    KF_RET(F->v);
+    KF_END;
 }
-DimVarId binder_dim_var(RefId owner, BinderSlot slot) {
-    KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_DIM } };
-    bool created;
-    term_lock();
-    uint64_t id = nominal_lookup(key, 4, &created);
-    if (created) { *NVAL(id) = declare_dim(); set_dim_prov(*NVAL(id), id); }
-    DimVarId r = (DimVarId)*NVAL(id);
-    term_unlock();
-    return r;
-}
-TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required) {
-    KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
-    w[0].kind = KW_CONST; w[0].v = 2; memcpy(w + 1, key, n * sizeof(KeyWord));
-    bool created;
-    term_lock();
-    uint64_t id = nominal_lookup(w, n + 1, &created);
-    free(w);
-    if (created) { *NVAL(id) = declare_term(type, required); set_term_prov(*NVAL(id), id); }
-    else require(term_var_type((TermVarId)*NVAL(id)) == type && term_var_required((TermVarId)*NVAL(id)) == required,
-                 "keyed fresh variable reused at a different type or required face");
-    TermVarId r = (TermVarId)*NVAL(id);
-    term_unlock();
-    return r;
-}
-TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type) { return fresh_term_keyed_req(key, n, type, fc_true()); }
-DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
-    KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
-    w[0].kind = KW_CONST; w[0].v = 3; memcpy(w + 1, key, n * sizeof(KeyWord));
-    bool created;
-    term_lock();
-    uint64_t id = nominal_lookup(w, n + 1, &created);
-    free(w);
-    if (created) { *NVAL(id) = declare_dim(); set_dim_prov(*NVAL(id), id); }
-    DimVarId r = (DimVarId)*NVAL(id);
-    term_unlock();
-    return r;
-}
+TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type) { KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_TERM } }; return (TermVarId)nominal_var(key, 4, 0, S_TERM, type, fc_true(), false); }
+DimVarId binder_dim_var(RefId owner, BinderSlot slot) { KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_DIM } }; return (DimVarId)nominal_var(key, 4, 0, S_DIM, 0, 0, false); }
+TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required) { return (TermVarId)nominal_var(key, n, 2, S_TERM, type, required, true); }
+KF_DECL_EXT(fresh_term_keyed, TermVarId, fresh_term_keyed_PARAMS, FaceId req; uint64_t v;)
+KF_STEP(fresh_term_keyed) { KF_BEGIN(fresh_term_keyed); KF_CALL0(fc_true, &F->req); KF_CALL(nominal_var, &F->v, F->key, F->n, 2, S_TERM, F->type, F->req, true); KF_RET(F->v); KF_END; }
+KF_SYNC_DEF(fresh_term_keyed, TermVarId, fresh_term_keyed_PARAMS, fresh_term_keyed(const KeyWord *key, size_t n, RefId type))
+DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) { return (DimVarId)nominal_var(key, n, 3, S_DIM, 0, 0, false); }
 
 /* lifted = sigma with the formal's entry removed, then formal ↦ fresh */
-static MapId lift_map(MapId sigma, Sort sort, uint64_t formal, uint64_t fresh_image) {
-    MapBuilder b; mapb_init(&b);
-    size_t nt = map_n_terms(sigma), nd = map_n_dims(sigma);
-    for (size_t k = 0; k < nt; k++) {
-        TermVarId x; RefId im; map_term_entry(sigma, k, &x, &im);
-        if (sort == S_TERM && x == formal) continue;
-        mapb_term(&b, x, im);
+#define lift_map_PARAMS(X) X(MapId, sigma) X(Sort, sort) X(uint64_t, formal) X(uint64_t, fresh_image)
+KF_DECL_DROP(lift_map, MapId, lift_map_PARAMS, lift_map_drop, MapBuilder b; MapId r; size_t nt, nd, k;)
+static void lift_map_drop(lift_map_F *F) { words_free(&F->b.t); words_free(&F->b.d); }
+KF_STEP(lift_map) {
+    KF_BEGIN(lift_map);
+    mapb_init(&F->b);
+    F->nt = map_n_terms(F->sigma); F->nd = map_n_dims(F->sigma);
+    KF_MAPB_RESERVE(&F->b, F->nt + 1, F->nd + 1);
+    for (F->k = 0; F->k < F->nt; F->k++) {
+        TermVarId x; RefId im; map_term_entry(F->sigma, F->k, &x, &im);
+        if (!(F->sort == S_TERM && x == F->formal)) mapb_term(&F->b, x, im);
+        fine_bump(FC_MAP_ENTRIES); KF_SAFE();
     }
-    for (size_t k = 0; k < nd; k++) {
-        DimVarId i; IntervalId im; map_dim_entry(sigma, k, &i, &im);
-        if (sort == S_DIM && i == formal) continue;
-        mapb_dim(&b, i, im);
+    for (F->k = 0; F->k < F->nd; F->k++) {
+        DimVarId i; IntervalId im; map_dim_entry(F->sigma, F->k, &i, &im);
+        if (!(F->sort == S_DIM && i == F->formal)) mapb_dim(&F->b, i, im);
+        fine_bump(FC_MAP_ENTRIES); KF_SAFE();
     }
-    if (sort == S_TERM) mapb_term(&b, formal, fresh_image); else mapb_dim(&b, formal, fresh_image);
-    return mapb_finish(&b);
+    if (F->sort == S_TERM) mapb_term(&F->b, F->formal, F->fresh_image); else mapb_dim(&F->b, F->formal, F->fresh_image);
+    KF_CALL(mapb_finish, &F->r, &F->b);
+    KF_RET(F->r);
+    KF_END;
 }
 
-MapId lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh) {
-    require(!ref_is_var(owner) && !ref_is_tview(owner), "lifted map of a variable or template view");
-    OriginId c = ref_origin(owner);
-    MapId sigma = ref_map(owner);
-    Binder b = origin_binder(c, slot);
-    if (b.sort == S_TERM) {
-        TermVarId x = binder_term_var(owner, slot, reindex(origin_field(c, b.domain_field).id, sigma));
-        if (fresh) *fresh = x;
-        return lift_map(sigma, S_TERM, b.formal, ref_var(x));
+KF_DECL_EXT(lifted_map, MapId, lifted_map_PARAMS, OriginId c; MapId sigma, r; Binder b; RefId dt, rv; TermVarId x; DimVarId j; IntervalId iv;)
+KF_STEP(lifted_map) {
+    KF_BEGIN(lifted_map);
+    require(!ref_is_var(F->owner) && !ref_is_tview(F->owner), "lifted map of a variable or template view");
+    F->c = ref_origin(F->owner);
+    F->sigma = ref_map(F->owner);
+    F->b = origin_binder(F->c, F->slot);
+    if (F->b.sort == S_TERM) {
+        KF_CALL(reindex, &F->dt, origin_field(F->c, F->b.domain_field).id, F->sigma);
+        KF_CALL(binder_var, &F->x, F->owner, F->slot, S_TERM, F->dt);
+        if (F->fresh) *F->fresh = F->x;
+        KF_CALL(ref_var, &F->rv, F->x);
+        KF_CALL(lift_map, &F->r, F->sigma, S_TERM, F->b.formal, F->rv);
+        KF_RET(F->r);
     }
-    DimVarId j = binder_dim_var(owner, slot);
-    if (fresh) *fresh = j;
-    return lift_map(sigma, S_DIM, b.formal, iv_var(j));
+    KF_CALL(binder_var, &F->j, F->owner, F->slot, S_DIM, 0);
+    if (F->fresh) *F->fresh = F->j;
+    KF_CALL(iv_var, &F->iv, F->j);
+    KF_CALL(lift_map, &F->r, F->sigma, S_DIM, F->b.formal, F->iv);
+    KF_RET(F->r);
+    KF_END;
 }
+KF_SYNC_DEF(lifted_map, MapId, lifted_map_PARAMS, lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh))
 
-TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
-    require(!ref_is_var(owner), "binder of a variable");
-    if (ref_is_tview(owner)) return tview_term_binder(owner, slot, body_field);
-    OriginId c = ref_origin(owner);
-    MapId sigma = ref_map(owner);
-    Binder b = origin_binder(c, slot);
-    require(b.sort == S_TERM, "sort mismatch: expected term binder");
-    Field dom = origin_field(c, b.domain_field);
-    Field body = origin_field(c, body_field);
-    require(body.slot == slot && body.kind == F_REF, "field is not under this binder");
-    TermOpen o;
-    o.type = reindex(dom.id, sigma);
-    o.x = binder_term_var(owner, slot, o.type);
-    o.body = reindex(body.id, lift_map(sigma, S_TERM, b.formal, ref_var(o.x)));
-    return o;
+KF_DECL_EXT(resolve_term_binder, TermOpen, resolve_term_binder_PARAMS, OriginId c; MapId sigma, m; Binder b; Field dom, body; TermOpen o; RefId rv;)
+KF_STEP(resolve_term_binder) {
+    KF_BEGIN(resolve_term_binder);
+    require(!ref_is_var(F->owner), "binder of a variable");
+    if (ref_is_tview(F->owner)) { KF_CALL(tview_term_binder, &F->o, F->owner, F->slot, F->body_field); KF_RET(F->o); }
+    F->c = ref_origin(F->owner);
+    F->sigma = ref_map(F->owner);
+    F->b = origin_binder(F->c, F->slot);
+    require(F->b.sort == S_TERM, "sort mismatch: expected term binder");
+    F->dom = origin_field(F->c, F->b.domain_field);
+    F->body = origin_field(F->c, F->body_field);
+    require(F->body.slot == F->slot && F->body.kind == F_REF, "field is not under this binder");
+    KF_CALL(reindex, &F->o.type, F->dom.id, F->sigma);
+    KF_CALL(binder_var, &F->o.x, F->owner, F->slot, S_TERM, F->o.type);
+    KF_CALL(ref_var, &F->rv, F->o.x);
+    KF_CALL(lift_map, &F->m, F->sigma, S_TERM, F->b.formal, F->rv);
+    KF_CALL(reindex, &F->o.body, F->body.id, F->m);
+    KF_RET(F->o);
+    KF_END;
 }
+KF_SYNC_DEF(resolve_term_binder, TermOpen, resolve_term_binder_PARAMS, resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field))
 
-DimOpen resolve_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
-    require(!ref_is_var(owner), "binder of a variable");
-    if (ref_is_tview(owner)) return tview_dim_binder(owner, slot, body_field);
-    OriginId c = ref_origin(owner);
-    MapId sigma = ref_map(owner);
-    Binder b = origin_binder(c, slot);
-    require(b.sort == S_DIM, "sort mismatch: expected dimension binder");
-    Field body = origin_field(c, body_field);
-    require(body.slot == slot && body.kind == F_REF, "field is not under this binder");
-    DimOpen o;
-    o.j = binder_dim_var(owner, slot);
-    o.body = reindex(body.id, lift_map(sigma, S_DIM, b.formal, iv_var(o.j)));
-    return o;
+KF_DECL_EXT(resolve_dim_binder, DimOpen, resolve_dim_binder_PARAMS, OriginId c; MapId sigma, m; Binder b; Field body; DimOpen o; IntervalId iv;)
+KF_STEP(resolve_dim_binder) {
+    KF_BEGIN(resolve_dim_binder);
+    require(!ref_is_var(F->owner), "binder of a variable");
+    if (ref_is_tview(F->owner)) { KF_CALL(tview_dim_binder, &F->o, F->owner, F->slot, F->body_field); KF_RET(F->o); }
+    F->c = ref_origin(F->owner);
+    F->sigma = ref_map(F->owner);
+    F->b = origin_binder(F->c, F->slot);
+    require(F->b.sort == S_DIM, "sort mismatch: expected dimension binder");
+    F->body = origin_field(F->c, F->body_field);
+    require(F->body.slot == F->slot && F->body.kind == F_REF, "field is not under this binder");
+    KF_CALL(binder_var, &F->o.j, F->owner, F->slot, S_DIM, 0);
+    KF_CALL(iv_var, &F->iv, F->o.j);
+    KF_CALL(lift_map, &F->m, F->sigma, S_DIM, F->b.formal, F->iv);
+    KF_CALL(reindex, &F->o.body, F->body.id, F->m);
+    KF_RET(F->o);
+    KF_END;
 }
+KF_SYNC_DEF(resolve_dim_binder, DimOpen, resolve_dim_binder_PARAMS, resolve_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field))
 
-RefId apply_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field, RefId a) {
-    TermOpen o = resolve_term_binder(owner, slot, body_field);
-    return reindex1(o.body, o.x, a);
+KF_DECL_EXT(apply_term_binder, RefId, apply_term_binder_PARAMS, TermOpen o; RefId r;)
+KF_STEP(apply_term_binder) {
+    KF_BEGIN(apply_term_binder);
+    KF_CALL(resolve_term_binder, &F->o, F->owner, F->slot, F->body_field);
+    KF_CALL(reindex1, &F->r, F->o.body, F->o.x, F->a);
+    KF_RET(F->r);
+    KF_END;
 }
-RefId apply_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field, IntervalId r) {
-    DimOpen o = resolve_dim_binder(owner, slot, body_field);
-    return reindex_dim(o.body, o.j, r);
+KF_SYNC_DEF(apply_term_binder, RefId, apply_term_binder_PARAMS, apply_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field, RefId a))
+KF_DECL_EXT(apply_dim_binder, RefId, apply_dim_binder_PARAMS, DimOpen o; RefId r;)
+KF_STEP(apply_dim_binder) {
+    KF_BEGIN(apply_dim_binder);
+    KF_CALL(resolve_dim_binder, &F->o, F->owner, F->slot, F->body_field);
+    KF_CALL(reindex_dim, &F->r, F->o.body, F->o.j, F->iv);
+    KF_RET(F->r);
+    KF_END;
 }
+KF_SYNC_DEF(apply_dim_binder, RefId, apply_dim_binder_PARAMS, apply_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field, IntervalId iv))
 
 /* ================= opening ================= */
 
-void open_ref(RefId t, Head *h) {
-    memset(h, 0, sizeof *h);
-    h->owner = t;
-    if (ref_is_var(t)) { h->is_var = true; h->var = ref_var_id(t); return; }
-    if (ref_is_tview(t)) { tview_open(t, h); return; }
-    OriginId c = ref_origin(t);
-    MapId sigma = ref_map(t);
-    h->origin = c; h->map = sigma;
-    h->tag = origin_tag(c);
-    h->payload = origin_payload(c);
-    h->levels = origin_levels(c);
-    h->n = origin_nfields(c);
-    h->f = calloc(h->n ? h->n : 1, sizeof(HField));
-    require(h->f, "out of memory");
-    fine_bump(FC_HEAD_CELLS);
-    for (size_t k = 0; k < h->n; k++) {
+KF_DECL_EXT(open_ref, void, open_ref_PARAMS, OriginId c; MapId sigma; size_t k; Field fl;)
+KF_STEP(open_ref) {
+    KF_BEGIN(open_ref);
+    {
+        Head *h = F->h;
+        memset(h, 0, sizeof *h);
+        h->owner = F->t;
+        if (ref_is_var(F->t)) { h->is_var = true; h->var = ref_var_id(F->t); KF_RETV(); }
+        if (ref_is_tview(F->t)) { KF_CALL(tview_open, NULL, F->t, F->h); KF_RETV(); }
+        F->c = ref_origin(F->t);
+        F->sigma = ref_map(F->t);
+        h->origin = F->c; h->map = F->sigma;
+        h->tag = origin_tag(F->c);
+        h->payload = origin_payload(F->c);
+        h->levels = origin_levels(F->c);
+        h->n = origin_nfields(F->c);
+        fine_bump(FC_HEAD_CELLS);
+    }
+    KF_CALL(k_zalloc, (void **)&F->h->f, F->h->n ? F->h->n : 1, sizeof(HField));   /* the field cells, cleared one word per transition */
+    for (F->k = 0; F->k < F->h->n; F->k++) {
         fine_bump(FC_FIELDS_OPENED);
-        Field f = origin_field(c, (FieldIndex)k);
-        h->f[k].kind = f.kind;
-        h->f[k].index = (FieldIndex)k;
-        if (f.slot != NO_SLOT) {
-            h->f[k].is_binder = true;
-            h->f[k].slot = f.slot;
-            h->f[k].sort = origin_binder(c, f.slot).sort;
-            h->f[k].id = f.id;
+        KF_SAFE();
+        F->fl = origin_field(F->c, (FieldIndex)F->k);
+        F->h->f[F->k].kind = F->fl.kind;
+        F->h->f[F->k].index = (FieldIndex)F->k;
+        if (F->fl.slot != NO_SLOT) {
+            F->h->f[F->k].is_binder = true;
+            F->h->f[F->k].slot = F->fl.slot;
+            F->h->f[F->k].sort = origin_binder(F->c, F->fl.slot).sort;
+            F->h->f[F->k].id = F->fl.id;
         } else {
-            h->f[k].slot = NO_SLOT;
-            switch (f.kind) {
-            case F_REF: h->f[k].id = reindex(f.id, sigma); break;
-            case F_INTERVAL: h->f[k].id = iv_reindex(f.id, sigma); break;
-            case F_FACE: h->f[k].id = fc_reindex(f.id, sigma); break;
+            F->h->f[F->k].slot = NO_SLOT;
+            switch (F->fl.kind) {
+            case F_REF: KF_CALL(reindex, &F->h->f[F->k].id, F->fl.id, F->sigma); break;
+            case F_INTERVAL: KF_CALL(iv_reindex, &F->h->f[F->k].id, F->fl.id, F->sigma); break;
+            case F_FACE: KF_CALL(fc_reindex, &F->h->f[F->k].id, F->fl.id, F->sigma); break;
             }
         }
     }
+    KF_RETV();
+    KF_END;
 }
+KF_SYNC_VOID_DEF(open_ref, open_ref_PARAMS, open_ref(RefId t, Head *h))
 
 void head_free(Head *h) { free(h->f); h->f = NULL; h->n = 0; }
 
 /* ================= occurrence contexts ================= */
 /* record: [n, (sort, id, type)*, assumption] */
 
-static ContextId context_intern(Words *w) { ContextId id = interner_intern(&M.contexts, w->w, w->n, NULL); words_free(w); return id; }
+#define context_intern_PARAMS(X) X(Words *, w)
+KF_DECL(context_intern, ContextId, context_intern_PARAMS, ContextId id;)
+KF_STEP(context_intern) { KF_BEGIN(context_intern); KF_CALL(interner_intern, &F->id, &M.contexts, F->w->w, F->w->n, NULL); words_free(F->w); KF_RET(F->id); KF_END; }
 
-ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption) {
-    /* well-formed: no duplicate declaration; a term declaration's type
-     * depends only on earlier declarations */
-    for (size_t k = 0; k < n; k++) {
-        for (size_t j = 0; j < k; j++) require(!(decls[j].sort == decls[k].sort && decls[j].id == decls[k].id), "duplicate declaration in context");
-        if (decls[k].sort != S_TERM) continue;
-        size_t m; const uint64_t *xs = varset_get(ref_freevars(decls[k].type), &m);
-        for (size_t q = 0; q < m; q++) { bool found = false; for (size_t j = 0; j < k; j++) if (decls[j].sort == S_TERM && decls[j].id == xs[q]) found = true; require(found, "context declaration type mentions a variable not declared earlier"); }
-        const uint64_t *ds = dimset_get(ref_support(decls[k].type), &m);
-        for (size_t q = 0; q < m; q++) { bool found = false; for (size_t j = 0; j < k; j++) if (decls[j].sort == S_DIM && decls[j].id == ds[q]) found = true; require(found, "context declaration type mentions a dimension not declared earlier"); }
+KF_DECL_EXT_DROP(context_make, ContextId, context_make_PARAMS, context_make_drop, Words w; ContextId id;)
+static void context_make_drop(context_make_F *F) { words_free(&F->w); }
+KF_STEP(context_make) {
+    KF_BEGIN(context_make);
+    words_init(&F->w); KF_CALL(words_reserve, NULL, &F->w, 2 + 3 * F->n);
+    {
+        size_t n = F->n; const CtxDecl *decls = F->decls;
+        /* well-formed: no duplicate declaration; a term declaration's type
+         * depends only on earlier declarations */
+        for (size_t k = 0; k < n; k++) {
+            for (size_t j = 0; j < k; j++) require(!(decls[j].sort == decls[k].sort && decls[j].id == decls[k].id), "duplicate declaration in context");
+            if (decls[k].sort != S_TERM) continue;
+            size_t m; const uint64_t *xs = varset_get(ref_freevars(decls[k].type), &m);
+            for (size_t q = 0; q < m; q++) { bool found = false; for (size_t j = 0; j < k; j++) if (decls[j].sort == S_TERM && decls[j].id == xs[q]) found = true; require(found, "context declaration type mentions a variable not declared earlier"); }
+            const uint64_t *ds = dimset_get(ref_support(decls[k].type), &m);
+            for (size_t q = 0; q < m; q++) { bool found = false; for (size_t j = 0; j < k; j++) if (decls[j].sort == S_DIM && decls[j].id == ds[q]) found = true; require(found, "context declaration type mentions a dimension not declared earlier"); }
+        }
+        words_push(&F->w, n);
+        for (size_t k = 0; k < n; k++) { words_push(&F->w, decls[k].sort); words_push(&F->w, decls[k].id); words_push(&F->w, decls[k].sort == S_TERM ? decls[k].type : 0); }
+        words_push(&F->w, F->assumption);
     }
-    Words w; words_init(&w);
-    words_push(&w, n);
-    for (size_t k = 0; k < n; k++) { words_push(&w, decls[k].sort); words_push(&w, decls[k].id); words_push(&w, decls[k].sort == S_TERM ? decls[k].type : 0); }
-    words_push(&w, assumption);
-    return context_intern(&w);
+    KF_CALL(context_intern, &F->id, &F->w);
+    KF_RET(F->id);
+    KF_END;
 }
+KF_SYNC_DEF(context_make, ContextId, context_make_PARAMS, context_make(size_t n, const CtxDecl *decls, FaceId assumption))
 static const uint64_t *ctx_words(ContextId c, size_t *n) { return interner_get(&M.contexts, c, n); }
 size_t context_size(ContextId c) { size_t n; return (size_t)ctx_words(c, &n)[0]; }
 FaceId context_assumption(ContextId c) { size_t n; const uint64_t *w = ctx_words(c, &n); return w[1 + 3 * w[0]]; }
@@ -741,19 +961,30 @@ CtxDecl context_decl(ContextId c, size_t k) {
     CtxDecl d = { (Sort)w[1 + 3 * k], w[2 + 3 * k], w[3 + 3 * k] };
     return d;
 }
-static ContextId context_with(ContextId c, const CtxDecl *extra, FaceId assumption) {
-    size_t n = context_size(c);
-    CtxDecl *ds = malloc((n + 1) * sizeof(CtxDecl));
-    require(ds, "out of memory");
-    for (size_t k = 0; k < n; k++) ds[k] = context_decl(c, k);
-    if (extra) ds[n] = *extra;
-    ContextId out = context_make(extra ? n + 1 : n, ds, assumption);
-    free(ds);
-    return out;
+#define context_with_PARAMS(X) X(ContextId, c) X(const CtxDecl *, extra) X(FaceId, assumption)
+KF_DECL_DROP(context_with, ContextId, context_with_PARAMS, context_with_drop, CtxDecl *ds; size_t n; ContextId out;)
+static void context_with_drop(context_with_F *F) { free(F->ds); F->ds = NULL; }
+KF_STEP(context_with) {
+    KF_BEGIN(context_with);
+    F->n = context_size(F->c);
+    F->ds = malloc((F->n + 1) * sizeof(CtxDecl));
+    require(F->ds, "out of memory");
+    for (size_t k = 0; k < F->n; k++) F->ds[k] = context_decl(F->c, k);
+    if (F->extra) F->ds[F->n] = *F->extra;
+    KF_CALL(context_make, &F->out, F->extra ? F->n + 1 : F->n, F->ds, F->assumption);
+    free(F->ds); F->ds = NULL;
+    KF_RET(F->out);
+    KF_END;
 }
-ContextId context_extend_term(ContextId c, TermVarId x, RefId type) { CtxDecl d = { S_TERM, x, type }; return context_with(c, &d, context_assumption(c)); }
-ContextId context_extend_dim(ContextId c, DimVarId i) { CtxDecl d = { S_DIM, i, 0 }; return context_with(c, &d, context_assumption(c)); }
-ContextId context_restrict(ContextId c, FaceId phi) { return context_with(c, NULL, fc_meet(context_assumption(c), phi)); }
+KF_DECL_EXT(context_extend_term, ContextId, context_extend_term_PARAMS, CtxDecl d; ContextId r;)
+KF_STEP(context_extend_term) { KF_BEGIN(context_extend_term); F->d.sort = S_TERM; F->d.id = F->x; F->d.type = F->type; KF_CALL(context_with, &F->r, F->c, &F->d, context_assumption(F->c)); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(context_extend_term, ContextId, context_extend_term_PARAMS, context_extend_term(ContextId c, TermVarId x, RefId type))
+KF_DECL_EXT(context_extend_dim, ContextId, context_extend_dim_PARAMS, CtxDecl d; ContextId r;)
+KF_STEP(context_extend_dim) { KF_BEGIN(context_extend_dim); F->d.sort = S_DIM; F->d.id = F->i; F->d.type = 0; KF_CALL(context_with, &F->r, F->c, &F->d, context_assumption(F->c)); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(context_extend_dim, ContextId, context_extend_dim_PARAMS, context_extend_dim(ContextId c, DimVarId i))
+KF_DECL_EXT(context_restrict, ContextId, context_restrict_PARAMS, FaceId a; ContextId r;)
+KF_STEP(context_restrict) { KF_BEGIN(context_restrict); KF_CALL(fc_meet, &F->a, context_assumption(F->c), F->phi); KF_CALL(context_with, &F->r, F->c, NULL, F->a); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(context_restrict, ContextId, context_restrict_PARAMS, context_restrict(ContextId c, FaceId phi))
 bool context_declares_term(ContextId c, TermVarId x, RefId *type_out) {
     size_t n = context_size(c);
     for (size_t k = 0; k < n; k++) { CtxDecl d = context_decl(c, k); if (d.sort == S_TERM && d.id == x) { if (type_out) *type_out = d.type; return true; } }
@@ -832,129 +1063,244 @@ DimSetId global_dims(SymbolId s) { return DEF(s)->dims; }
 const char *global_name(SymbolId s) { return DEF(s)->name; }
 size_t global_count(void) { return M.n_defs; }
 
-RefId global_ref(SymbolId s) {
-    require(s >= 1 && s <= M.n_defs, "unknown symbol");
-    OriginId c = origin_intern(T_GLOBAL, s, NULL, 0, NULL, 0, DEF(s)->params, DEF(s)->dims, fc_true());
-    return make_view(c, map_identity());
+KF_DECL_EXT(global_ref, RefId, global_ref_PARAMS, OriginId c; FaceId t; MapId m; RefId r;)
+KF_STEP(global_ref) {
+    KF_BEGIN(global_ref);
+    require(F->s >= 1 && F->s <= M.n_defs, "unknown symbol");
+    KF_CALL0(fc_true, &F->t);
+    KF_CALL(origin_intern, &F->c, T_GLOBAL, F->s, NULL, 0, NULL, 0, DEF(F->s)->params, DEF(F->s)->dims, F->t);
+    KF_CALL0(map_identity, &F->m);
+    KF_CALL(make_view, &F->r, F->c, F->m);
+    KF_RET(F->r);
+    KF_END;
 }
+KF_SYNC_DEF(global_ref, RefId, global_ref_PARAMS, global_ref(SymbolId s))
 
-RefId unfold_global(RefId t) {
-    require(!ref_is_var(t) && !ref_is_tview(t), "unfold of a variable");
-    OriginId c = ref_origin(t);
-    require(origin_tag(c) == T_GLOBAL, "unfold of a non-global");
-    SymbolId s = origin_payload(c);
-    RefId body = __atomic_load_n(&DEF(s)->body, __ATOMIC_ACQUIRE);
-    require(body != 0, "global %s has no body", DEF(s)->name);
-    return reindex(body, ref_map(t));
+KF_DECL_EXT(unfold_global, RefId, unfold_global_PARAMS, RefId r;)
+KF_STEP(unfold_global) {
+    KF_BEGIN(unfold_global);
+    {
+        require(!ref_is_var(F->t) && !ref_is_tview(F->t), "unfold of a variable");
+        OriginId c = ref_origin(F->t);
+        require(origin_tag(c) == T_GLOBAL, "unfold of a non-global");
+        SymbolId s = origin_payload(c);
+        RefId body = __atomic_load_n(&DEF(s)->body, __ATOMIC_ACQUIRE);
+        require(body != 0, "global %s has no body", DEF(s)->name);
+        KF_CALL(reindex, &F->r, body, ref_map(F->t));
+    }
+    KF_RET(F->r);
+    KF_END;
 }
+KF_SYNC_DEF(unfold_global, RefId, unfold_global_PARAMS, unfold_global(RefId t))
 
 /* ================= constructors ================= */
 
-static RefId view0(Tag tag, uint64_t payload, const Field *f, size_t nf, const Binder *b, size_t nb) {
-    return make_view(origin_make(tag, payload, f, nf, b, nb), map_identity());
+#define view0_PARAMS(X) X(Tag, tag) X(uint64_t, payload) X(const Field *, f) X(size_t, nf) X(const Binder *, b) X(size_t, nb)
+KF_DECL(view0, RefId, view0_PARAMS, OriginId c; MapId m; RefId r;)
+KF_STEP(view0) {
+    KF_BEGIN(view0);
+    KF_CALL(origin_make, &F->c, F->tag, F->payload, F->f, F->nf, F->b, F->nb);
+    KF_CALL0(map_identity, &F->m);
+    KF_CALL(make_view, &F->r, F->c, F->m);
+    KF_RET(F->r);
+    KF_END;
 }
+/* a constructor frame: its fields and binders live in the frame */
+#define MK_DECL(name, PARAMS, ...) KF_DECL_EXT(name, RefId, PARAMS, Field f[6]; Binder b[1]; RefId r; __VA_ARGS__)
 
-RefId mk_universe(uint64_t level) { require(level != LEVEL_NONE && nat_valid(level), "a universe level is an exact natural (use nat_from_word for an external word)"); return view0(T_UNIVERSE, level, NULL, 0, NULL, 0); }
+MK_DECL(mk_universe, mk_universe_PARAMS)
+KF_STEP(mk_universe) {
+    KF_BEGIN(mk_universe);
+    require(F->level != LEVEL_NONE && nat_valid(F->level), "a universe level is an exact natural (use nat_from_word for an external word)");
+    KF_CALL(view0, &F->r, T_UNIVERSE, F->level, NULL, 0, NULL, 0);
+    KF_RET(F->r);
+    KF_END;
+}
+KF_SYNC_DEF(mk_universe, RefId, mk_universe_PARAMS, mk_universe(uint64_t level))
 
+#define mk_term_binder_form_PARAMS(X) X(Tag, tag) X(TermVarId, x) X(RefId, A) X(RefId, body)
+KF_DECL(mk_term_binder_form, RefId, mk_term_binder_form_PARAMS, Field f[2]; Binder b[1]; RefId r;)
+KF_STEP(mk_term_binder_form) {
+    KF_BEGIN(mk_term_binder_form);
+    require(term_var_type(F->x) == F->A, "binder formal declared at a different type");
+    F->f[0] = (Field){ F_REF, NO_SLOT, F->A }; F->f[1] = (Field){ F_REF, 0, F->body };
+    F->b[0] = (Binder){ S_TERM, F->x, 0 };
+    KF_CALL(view0, &F->r, F->tag, 0, F->f, 2, F->b, 1);
+    KF_RET(F->r);
+    KF_END;
+}
+#define MK_BINDER(name, TAG) \
+    MK_DECL(name, name##_PARAMS) \
+    KF_STEP(name) { KF_BEGIN(name); KF_CALL(mk_term_binder_form, &F->r, TAG, F->x, F->A, F->B); KF_RET(F->r); KF_END; } \
+    KF_SYNC_DEF(name, RefId, name##_PARAMS, name(TermVarId x, RefId A, RefId B))
+MK_BINDER(mk_pi, T_PI)
+MK_BINDER(mk_sigma, T_SIGMA)
+MK_BINDER(mk_lam, T_LAM)
 /* annotated forms (§59.1): the formation levels are set for the origin
- * being built and recorded in its record */
-static RefId with_levels(uint64_t lv, RefId (*build)(void *), void *ctx) {
-    uint64_t saved = tl_levels; tl_levels = lv;
-    RefId r = build(ctx);
-    tl_levels = saved;
-    return r;
-}
-static RefId mk_term_binder_form(Tag tag, TermVarId x, RefId A, RefId body) {
-    require(term_var_type(x) == A, "binder formal declared at a different type");
-    Field f[2] = { { F_REF, NO_SLOT, A }, { F_REF, 0, body } };
-    Binder b[1] = { { S_TERM, x, 0 } };
-    return view0(tag, 0, f, 2, b, 1);
-}
-RefId mk_pi(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, x, A, B); }
-RefId mk_sigma(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_SIGMA, x, A, B); }
-RefId mk_lam(TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, x, A, body); }
-typedef struct { Tag tag; TermVarId x; RefId A, B; } BinderArgs;
-static RefId build_binder(void *c) { BinderArgs *a = c; return mk_term_binder_form(a->tag, a->x, a->A, a->B); }
-RefId mk_pi_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { BinderArgs a = { T_PI, x, A, B }; return with_levels(levels_pack(m, n), build_binder, &a); }
-RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { BinderArgs a = { T_SIGMA, x, A, B }; return with_levels(levels_pack(m, n), build_binder, &a); }
-RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body) { BinderArgs a = { T_LAM, x, A, body }; return with_levels(levels_pack(m, LEVEL_NONE), build_binder, &a); }
-void term_levels_push(uint64_t m, uint64_t n) { tl_levels = levels_pack(m, n); }
+ * being built and recorded in its record (the previous levels are restored) */
+#define MK_BINDER_LV(name, TAG, NSECOND, SIG) \
+    MK_DECL(name, name##_PARAMS, uint64_t lv, saved;) \
+    KF_STEP(name) { \
+        KF_BEGIN(name); \
+        KF_CALL(levels_pack, &F->lv, F->m, NSECOND); \
+        F->saved = tl_levels; tl_levels = F->lv; \
+        KF_CALL(mk_term_binder_form, &F->r, TAG, F->x, F->A, F->B); \
+        tl_levels = F->saved; \
+        KF_RET(F->r); \
+        KF_END; \
+    } \
+    KF_SYNC_DEF(name, RefId, name##_PARAMS, SIG)
+MK_BINDER_LV(mk_pi_lv, T_PI, F->n, mk_pi_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B))
+MK_BINDER_LV(mk_sigma_lv, T_SIGMA, F->n, mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B))
+MK_BINDER_LV(mk_lam_lv, T_LAM, LEVEL_NONE, mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId B))
+
+KF_DECL_EXT(term_levels_push, void, term_levels_push_PARAMS, uint64_t lv;)
+KF_STEP(term_levels_push) { KF_BEGIN(term_levels_push); KF_CALL(levels_pack, &F->lv, F->m, F->n); tl_levels = F->lv; KF_RETV(); KF_END; }
+KF_SYNC_VOID_DEF(term_levels_push, term_levels_push_PARAMS, term_levels_push(uint64_t m, uint64_t n))
 void term_levels_pop(void) { tl_levels = LEVELS_NONE; }
-RefId mk_app(RefId fn, RefId a) { Field f[2] = { { F_REF, NO_SLOT, fn }, { F_REF, NO_SLOT, a } }; return view0(T_APP, 0, f, 2, NULL, 0); }
-RefId mk_pair(RefId a, RefId b) { Field f[2] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b } }; return view0(T_PAIR, 0, f, 2, NULL, 0); }
+
+MK_DECL(mk_app, mk_app_PARAMS)
+KF_STEP(mk_app) { KF_BEGIN(mk_app); F->f[0] = (Field){ F_REF, NO_SLOT, F->fn }; F->f[1] = (Field){ F_REF, NO_SLOT, F->a }; KF_CALL(view0, &F->r, T_APP, 0, F->f, 2, NULL, 0); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(mk_app, RefId, mk_app_PARAMS, mk_app(RefId fn, RefId a))
+MK_DECL(mk_pair, mk_pair_PARAMS)
+KF_STEP(mk_pair) { KF_BEGIN(mk_pair); F->f[0] = (Field){ F_REF, NO_SLOT, F->a }; F->f[1] = (Field){ F_REF, NO_SLOT, F->b0 }; KF_CALL(view0, &F->r, T_PAIR, 0, F->f, 2, NULL, 0); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(mk_pair, RefId, mk_pair_PARAMS, mk_pair(RefId a, RefId b0))
 /* a pair annotated with its Σ type (§33: a checking-only form synthesizes
  * from its stored annotation); the annotation is the third field */
-RefId mk_pair_at(RefId S, RefId a, RefId b) { Field f[3] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b }, { F_REF, NO_SLOT, S } }; return view0(T_PAIR, 0, f, 3, NULL, 0); }
-RefId mk_fst(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_FST, 0, f, 1, NULL, 0); }
-RefId mk_snd(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_SND, 0, f, 1, NULL, 0); }
-RefId mk_path(DimVarId j, RefId B_j, RefId l, RefId r) {
-    Field f[3] = { { F_REF, 0, B_j }, { F_REF, NO_SLOT, l }, { F_REF, NO_SLOT, r } };
-    Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view0(T_PATH, 0, f, 3, b, 1);
+MK_DECL(mk_pair_at, mk_pair_at_PARAMS)
+KF_STEP(mk_pair_at) { KF_BEGIN(mk_pair_at); F->f[0] = (Field){ F_REF, NO_SLOT, F->a }; F->f[1] = (Field){ F_REF, NO_SLOT, F->b0 }; F->f[2] = (Field){ F_REF, NO_SLOT, F->S }; KF_CALL(view0, &F->r, T_PAIR, 0, F->f, 3, NULL, 0); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(mk_pair_at, RefId, mk_pair_at_PARAMS, mk_pair_at(RefId S, RefId a, RefId b0))
+MK_DECL(mk_fst, mk_fst_PARAMS)
+KF_STEP(mk_fst) { KF_BEGIN(mk_fst); F->f[0] = (Field){ F_REF, NO_SLOT, F->p }; KF_CALL(view0, &F->r, T_FST, 0, F->f, 1, NULL, 0); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(mk_fst, RefId, mk_fst_PARAMS, mk_fst(RefId p))
+MK_DECL(mk_snd, mk_snd_PARAMS)
+KF_STEP(mk_snd) { KF_BEGIN(mk_snd); F->f[0] = (Field){ F_REF, NO_SLOT, F->p }; KF_CALL(view0, &F->r, T_SND, 0, F->f, 1, NULL, 0); KF_RET(F->r); KF_END; }
+KF_SYNC_DEF(mk_snd, RefId, mk_snd_PARAMS, mk_snd(RefId p))
+MK_DECL(mk_path, mk_path_PARAMS)
+KF_STEP(mk_path) {
+    KF_BEGIN(mk_path);
+    F->f[0] = (Field){ F_REF, 0, F->B_j }; F->f[1] = (Field){ F_REF, NO_SLOT, F->l }; F->f[2] = (Field){ F_REF, NO_SLOT, F->r0 };
+    F->b[0] = (Binder){ S_DIM, F->j, NO_FIELD };
+    KF_CALL(view0, &F->r, T_PATH, 0, F->f, 3, F->b, 1);
+    KF_RET(F->r);
+    KF_END;
 }
-RefId mk_plam(DimVarId j, RefId body) {
-    Field f[1] = { { F_REF, 0, body } };
-    Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view0(T_PLAM, 0, f, 1, b, 1);
+KF_SYNC_DEF(mk_path, RefId, mk_path_PARAMS, mk_path(DimVarId j, RefId B_j, RefId l, RefId r0))
+MK_DECL(mk_plam, mk_plam_PARAMS)
+KF_STEP(mk_plam) {
+    KF_BEGIN(mk_plam);
+    F->f[0] = (Field){ F_REF, 0, F->body };
+    F->b[0] = (Binder){ S_DIM, F->j, NO_FIELD };
+    KF_CALL(view0, &F->r, T_PLAM, 0, F->f, 1, F->b, 1);
+    KF_RET(F->r);
+    KF_END;
 }
-RefId mk_papp(DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) {
-    Field f[5] = { { F_REF, 0, B_j }, { F_REF, NO_SLOT, l }, { F_REF, NO_SLOT, r }, { F_REF, NO_SLOT, p }, { F_INTERVAL, NO_SLOT, s } };
-    Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view0(T_PAPP, 0, f, 5, b, 1);
+KF_SYNC_DEF(mk_plam, RefId, mk_plam_PARAMS, mk_plam(DimVarId j, RefId body))
+MK_DECL(mk_papp, mk_papp_PARAMS)
+KF_STEP(mk_papp) {
+    KF_BEGIN(mk_papp);
+    F->f[0] = (Field){ F_REF, 0, F->B_j }; F->f[1] = (Field){ F_REF, NO_SLOT, F->l }; F->f[2] = (Field){ F_REF, NO_SLOT, F->r0 };
+    F->f[3] = (Field){ F_REF, NO_SLOT, F->p }; F->f[4] = (Field){ F_INTERVAL, NO_SLOT, F->s };
+    F->b[0] = (Binder){ S_DIM, F->j, NO_FIELD };
+    KF_CALL(view0, &F->r, T_PAPP, 0, F->f, 5, F->b, 1);
+    KF_RET(F->r);
+    KF_END;
 }
-RefId mk_glue_type(RefId A, FaceId alpha, RefId T, RefId e) {
-    Field f[4] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e } };
-    return view0(T_GLUE_TYPE, 0, f, 4, NULL, 0);
+KF_SYNC_DEF(mk_papp, RefId, mk_papp_PARAMS, mk_papp(DimVarId j, RefId B_j, RefId l, RefId r0, RefId p, IntervalId s))
+MK_DECL(mk_glue_type, mk_glue_type_PARAMS)
+KF_STEP(mk_glue_type) {
+    KF_BEGIN(mk_glue_type);
+    F->f[0] = (Field){ F_REF, NO_SLOT, F->A }; F->f[1] = (Field){ F_FACE, NO_SLOT, F->alpha }; F->f[2] = (Field){ F_REF, NO_SLOT, F->T }; F->f[3] = (Field){ F_REF, NO_SLOT, F->e };
+    KF_CALL(view0, &F->r, T_GLUE_TYPE, 0, F->f, 4, NULL, 0);
+    KF_RET(F->r);
+    KF_END;
 }
-RefId mk_glue_intro(RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) {
-    Field f[6] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, t }, { F_REF, NO_SLOT, a } };
-    return view0(T_GLUE_INTRO, 0, f, 6, NULL, 0);
+KF_SYNC_DEF(mk_glue_type, RefId, mk_glue_type_PARAMS, mk_glue_type(RefId A, FaceId alpha, RefId T, RefId e))
+MK_DECL(mk_glue_intro, mk_glue_intro_PARAMS)
+KF_STEP(mk_glue_intro) {
+    KF_BEGIN(mk_glue_intro);
+    F->f[0] = (Field){ F_REF, NO_SLOT, F->A }; F->f[1] = (Field){ F_FACE, NO_SLOT, F->alpha }; F->f[2] = (Field){ F_REF, NO_SLOT, F->T };
+    F->f[3] = (Field){ F_REF, NO_SLOT, F->e }; F->f[4] = (Field){ F_REF, NO_SLOT, F->t }; F->f[5] = (Field){ F_REF, NO_SLOT, F->a };
+    KF_CALL(view0, &F->r, T_GLUE_INTRO, 0, F->f, 6, NULL, 0);
+    KF_RET(F->r);
+    KF_END;
 }
-RefId mk_unglue(RefId A, FaceId alpha, RefId T, RefId e, RefId v) {
-    Field f[5] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, v } };
-    return view0(T_UNGLUE, 0, f, 5, NULL, 0);
+KF_SYNC_DEF(mk_glue_intro, RefId, mk_glue_intro_PARAMS, mk_glue_intro(RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a))
+MK_DECL(mk_unglue, mk_unglue_PARAMS)
+KF_STEP(mk_unglue) {
+    KF_BEGIN(mk_unglue);
+    F->f[0] = (Field){ F_REF, NO_SLOT, F->A }; F->f[1] = (Field){ F_FACE, NO_SLOT, F->alpha }; F->f[2] = (Field){ F_REF, NO_SLOT, F->T };
+    F->f[3] = (Field){ F_REF, NO_SLOT, F->e }; F->f[4] = (Field){ F_REF, NO_SLOT, F->v };
+    KF_CALL(view0, &F->r, T_UNGLUE, 0, F->f, 5, NULL, 0);
+    KF_RET(F->r);
+    KF_END;
 }
-RefId mk_comp(DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) {
-    Field f[4] = { { F_REF, 0, A_j }, { F_FACE, NO_SLOT, phi }, { F_REF, 0, u_j }, { F_REF, NO_SLOT, cap } };
-    Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view0(T_COMP, 0, f, 4, b, 1);
+KF_SYNC_DEF(mk_unglue, RefId, mk_unglue_PARAMS, mk_unglue(RefId A, FaceId alpha, RefId T, RefId e, RefId v))
+MK_DECL(mk_comp, mk_comp_PARAMS)
+KF_STEP(mk_comp) {
+    KF_BEGIN(mk_comp);
+    F->f[0] = (Field){ F_REF, 0, F->A_j }; F->f[1] = (Field){ F_FACE, NO_SLOT, F->phi }; F->f[2] = (Field){ F_REF, 0, F->u_j }; F->f[3] = (Field){ F_REF, NO_SLOT, F->cap };
+    F->b[0] = (Binder){ S_DIM, F->j, NO_FIELD };
+    KF_CALL(view0, &F->r, T_COMP, 0, F->f, 4, F->b, 1);
+    KF_RET(F->r);
+    KF_END;
 }
-RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) {
-    term_levels_push(n, LEVEL_NONE);
-    RefId r = mk_comp(j, A_j, phi, u_j, cap);
-    term_levels_pop();
-    return r;
-}
-RefId mk_path_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r) { term_levels_push(n, LEVEL_NONE); RefId o = mk_path(j, B_j, l, r); term_levels_pop(); return o; }
-RefId mk_papp_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) { term_levels_push(n, LEVEL_NONE); RefId o = mk_papp(j, B_j, l, r, p, s); term_levels_pop(); return o; }
-RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e) { term_levels_push(n, LEVEL_NONE); RefId o = mk_glue_type(A, alpha, T, e); term_levels_pop(); return o; }
-RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { term_levels_push(n, LEVEL_NONE); RefId o = mk_glue_intro(A, alpha, T, e, t, a); term_levels_pop(); return o; }
-RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v) { term_levels_push(n, LEVEL_NONE); RefId o = mk_unglue(A, alpha, T, e, v); term_levels_pop(); return o; }
-RefId mk_pair_at_lv(uint64_t l, RefId S, RefId a, RefId b) { term_levels_push(l, LEVEL_NONE); RefId o = mk_pair_at(S, a, b); term_levels_pop(); return o; }
-RefId mk_tcall(uint64_t id, int dir, size_t nparams, const Field *params, RefId a, RefId in_type, RefId out_type, FaceId required) {
-    Field *f = malloc((nparams + 3) * sizeof(Field)); require(f, "out of memory");
-    for (size_t k = 0; k < nparams; k++) { f[k] = params[k]; f[k].slot = NO_SLOT; }
-    f[nparams] = (Field){ F_REF, NO_SLOT, a };
-    f[nparams + 1] = (Field){ F_REF, NO_SLOT, in_type };
-    f[nparams + 2] = (Field){ F_REF, NO_SLOT, out_type };
-    term_require_push(required);
-    RefId out = view0(T_TCALL, 2 * id + (dir ? 1 : 0), f, nparams + 3, NULL, 0);
-    term_require_pop();
-    free(f);
-    return out;
-}
+KF_SYNC_DEF(mk_comp, RefId, mk_comp_PARAMS, mk_comp(DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap))
+/* annotated forms (§59.1): n is the family's / type's universe level; the
+ * levels are set for the construction and cleared after it */
+#define MK_LV(name, base, ...) \
+    MK_DECL(name, name##_PARAMS) \
+    KF_STEP(name) { KF_BEGIN(name); KF_CALL(term_levels_push, NULL, F->n, LEVEL_NONE); KF_CALL(base, &F->r, __VA_ARGS__); term_levels_pop(); KF_RET(F->r); KF_END; }
+MK_LV(mk_comp_lv, mk_comp, F->j, F->A_j, F->phi, F->u_j, F->cap)
+KF_SYNC_DEF(mk_comp_lv, RefId, mk_comp_lv_PARAMS, mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap))
+MK_LV(mk_path_lv, mk_path, F->j, F->B_j, F->l, F->r0)
+KF_SYNC_DEF(mk_path_lv, RefId, mk_path_lv_PARAMS, mk_path_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r0))
+MK_LV(mk_papp_lv, mk_papp, F->j, F->B_j, F->l, F->r0, F->p, F->s)
+KF_SYNC_DEF(mk_papp_lv, RefId, mk_papp_lv_PARAMS, mk_papp_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r0, RefId p, IntervalId s))
+MK_LV(mk_glue_type_lv, mk_glue_type, F->A, F->alpha, F->T, F->e)
+KF_SYNC_DEF(mk_glue_type_lv, RefId, mk_glue_type_lv_PARAMS, mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e))
+MK_LV(mk_glue_intro_lv, mk_glue_intro, F->A, F->alpha, F->T, F->e, F->t, F->a)
+KF_SYNC_DEF(mk_glue_intro_lv, RefId, mk_glue_intro_lv_PARAMS, mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a))
+MK_LV(mk_unglue_lv, mk_unglue, F->A, F->alpha, F->T, F->e, F->v)
+KF_SYNC_DEF(mk_unglue_lv, RefId, mk_unglue_lv_PARAMS, mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v))
+MK_LV(mk_pair_at_lv, mk_pair_at, F->S, F->a, F->b0)
+KF_SYNC_DEF(mk_pair_at_lv, RefId, mk_pair_at_lv_PARAMS, mk_pair_at_lv(uint64_t n, RefId S, RefId a, RefId b0))
 
-RefId mk_system(size_t n, const FaceId *faces, const RefId *terms) {
-    Field *f = malloc((n ? 2 * n : 1) * sizeof(Field));
-    require(f, "out of memory");
-    for (size_t k = 0; k < n; k++) {
-        f[2 * k].kind = F_FACE; f[2 * k].slot = NO_SLOT; f[2 * k].id = faces[k];
-        f[2 * k + 1].kind = F_REF; f[2 * k + 1].slot = NO_SLOT; f[2 * k + 1].id = terms[k];
-    }
-    RefId r = view0(T_SYSTEM, n, f, 2 * n, NULL, 0);
-    free(f);
-    return r;
+KF_DECL_EXT_DROP(mk_tcall, RefId, mk_tcall_PARAMS, mk_tcall_drop, Field *f; RefId out; bool pushed;)
+static void mk_tcall_drop(mk_tcall_F *F) { free(F->f); F->f = NULL; if (F->pushed) term_require_pop(); }
+KF_STEP(mk_tcall) {
+    KF_BEGIN(mk_tcall);
+    F->f = malloc((F->nparams + 3) * sizeof(Field)); require(F->f, "out of memory");
+    for (size_t k = 0; k < F->nparams; k++) { F->f[k] = F->params[k]; F->f[k].slot = NO_SLOT; }
+    F->f[F->nparams] = (Field){ F_REF, NO_SLOT, F->a };
+    F->f[F->nparams + 1] = (Field){ F_REF, NO_SLOT, F->in_type };
+    F->f[F->nparams + 2] = (Field){ F_REF, NO_SLOT, F->out_type };
+    KF_CALL(term_require_push, NULL, F->required);
+    F->pushed = true;
+    KF_CALL(view0, &F->out, T_TCALL, 2 * F->id + (F->dir ? 1 : 0), F->f, F->nparams + 3, NULL, 0);
+    term_require_pop(); F->pushed = false;
+    free(F->f); F->f = NULL;
+    KF_RET(F->out);
+    KF_END;
 }
+KF_SYNC_DEF(mk_tcall, RefId, mk_tcall_PARAMS, mk_tcall(uint64_t id, int dir, size_t nparams, const Field *params, RefId a, RefId in_type, RefId out_type, FaceId required))
+
+KF_DECL_EXT_DROP(mk_system, RefId, mk_system_PARAMS, mk_system_drop, Field *f; RefId r;)
+static void mk_system_drop(mk_system_F *F) { free(F->f); F->f = NULL; }
+KF_STEP(mk_system) {
+    KF_BEGIN(mk_system);
+    F->f = malloc((F->n ? 2 * F->n : 1) * sizeof(Field));
+    require(F->f, "out of memory");
+    for (size_t k = 0; k < F->n; k++) {
+        F->f[2 * k].kind = F_FACE; F->f[2 * k].slot = NO_SLOT; F->f[2 * k].id = F->faces[k];
+        F->f[2 * k + 1].kind = F_REF; F->f[2 * k + 1].slot = NO_SLOT; F->f[2 * k + 1].id = F->terms[k];
+    }
+    KF_CALL(view0, &F->r, T_SYSTEM, F->n, F->f, 2 * F->n, NULL, 0);
+    free(F->f); F->f = NULL;
+    KF_RET(F->r);
+    KF_END;
+}
+KF_SYNC_DEF(mk_system, RefId, mk_system_PARAMS, mk_system(size_t n, const FaceId *faces, const RefId *terms))
 
 /* ================= printing ================= */
 

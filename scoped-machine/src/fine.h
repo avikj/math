@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include "xcount.h"
 #include "event.h"
+#include "kframe.h"
 
 typedef enum {
     FC_FIELDS_OPENED = 0,     /* open_ref / tview_open: one per stored field */
@@ -58,11 +59,10 @@ typedef enum {
  * FineVector are checked word projections (fatal when a count no longer fits
  * a word), fine_snap / fine_exact the authoritative exact readings */
 extern XCount fine_counters[FC_COUNT];
-/* §94: a fine step is the transition point of a kernel continuation (kcont.h) */
-struct KCont; extern __thread struct KCont *kc_tl; extern __thread int kc_last_counter; void kc_tick(void);
+/* §94: a fine step is a transition of the running frame stack (kframe.h) */
 extern __thread uint64_t fine_tl_steps;   /* this thread's fine steps (the lock-section audit) */
-static inline void fine_bump(FineCounter c) { xc_add(&fine_counters[c], 1); ev_add((unsigned)c, 1); fine_tl_steps++; if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
-static inline void fine_add(FineCounter c, uint64_t n) { xc_add(&fine_counters[c], n); ev_add((unsigned)c, n); fine_tl_steps += n; if (kc_tl) { kc_last_counter = (int)c; kc_tick(); } }
+static inline void fine_bump(FineCounter c) { xc_add(&fine_counters[c], 1); ev_add((unsigned)c, 1); fine_tl_steps++; kf_tick((int)c); }
+static inline void fine_add(FineCounter c, uint64_t n) { xc_add(&fine_counters[c], n); ev_add((unsigned)c, n); fine_tl_steps += n; kf_tickn((int)c, n); }
 uint64_t fine_count(FineCounter c);            /* checked word projection */
 XSnap fine_snap(FineCounter c);                /* exact snapshot */
 uint64_t xs_nat(XSnap s);                      /* an exact snapshot as a Nat (nat.h) */

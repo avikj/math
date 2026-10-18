@@ -167,6 +167,21 @@ void ev_owner_switch(void) {
     if (!cur_empty()) { publish(u->kind, u->owner, u->occ, u->cause); __atomic_add_fetch(&G.st_segments, 1, __ATOMIC_RELAXED); }
 }
 size_t ev_depth(void) { return tl_depth; }
+void ev_detach(size_t base, EvSaved *out) {
+    size_t k = tl_depth > base ? tl_depth - base : 0;
+    if (out->cap < out->n + k) { size_t nc = out->n + k + 4; struct EvOpen *u = (realloc)(out->u, nc * sizeof *u); if (!u) abort(); out->u = u; out->cap = nc; }
+    /* innermost first; stored outermost first */
+    for (size_t i = k; i-- > 0; ) {
+        Unit *u = &tl_units[--tl_depth];
+        if (!cur_empty()) { publish(u->kind, u->owner, u->occ, u->cause); __atomic_add_fetch(&G.st_segments, 1, __ATOMIC_RELAXED); }
+        for (uint32_t j = 0; j < u->nsaved; j++) ev_add(u->sdim[j], u->sval[j]);   /* the enclosing unit's label resumes */
+        u->nsaved = 0;
+        out->u[out->n + i].kind = u->kind; out->u[out->n + i].occ = u->occ; out->u[out->n + i].cause = u->cause;
+    }
+    out->n += k;
+}
+void ev_attach(EvSaved *in) { for (size_t i = 0; i < in->n; i++) ev_begin((EvKind)in->u[i].kind, in->u[i].occ, in->u[i].cause); in->n = 0; }
+void ev_saved_free(EvSaved *s) { (free)(s->u); s->u = NULL; s->n = s->cap = 0; }
 void ev_unwind_to(size_t depth) { while (tl_depth > depth) ev_end(); }
 void ev_owner_refresh(void) { if (tl_depth) tl_units[tl_depth - 1].owner = ev_owner_current((EvKind)tl_units[tl_depth - 1].kind); }
 

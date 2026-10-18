@@ -15,35 +15,34 @@
 #include <stdbool.h>
 #include <pthread.h>
 
-/* §94 (kernel continuations, kcont.h): every mutex acquisition is counted per
- * thread so a continuation yields only where it holds no lock */
-extern __thread int kc_lock_depth;
-#ifdef KC_LOCK_AUDIT
+/* §94 (frames, kframe.h): every mutex acquisition is counted per thread so a
+ * frame stack suspends only at the lock depth it was granted at */
+extern __thread int kf_lock_depth;
+#ifdef KF_LOCK_AUDIT
 /* the lock-section audit (tests/lock_audit): the fine steps taken between the
  * outermost acquisition and the matching release, per acquisition site */
-void kc_audit_enter(const char *site); void kc_audit_leave(void);
-static inline int kc_mutex_lock_at(pthread_mutex_t *m, const char *site) { int r = (pthread_mutex_lock)(m); if (kc_lock_depth++ == 0) kc_audit_enter(site); return r; }
-static inline int kc_mutex_unlock(pthread_mutex_t *m) { if (--kc_lock_depth == 0) kc_audit_leave(); return (pthread_mutex_unlock)(m); }
-static inline int kc_mutex_trylock_at(pthread_mutex_t *m, const char *site) { int r = (pthread_mutex_trylock)(m); if (r == 0 && kc_lock_depth++ == 0) kc_audit_enter(site); return r; }
-#define KC_STR2(x) #x
-#define KC_STR(x) KC_STR2(x)
-#define pthread_mutex_lock(m) kc_mutex_lock_at((m), __FILE__ ":" KC_STR(__LINE__))
-#define pthread_mutex_trylock(m) kc_mutex_trylock_at((m), __FILE__ ":" KC_STR(__LINE__))
+void kf_audit_enter(const char *site); void kf_audit_leave(void);
+static inline int kf_mutex_lock_at(pthread_mutex_t *m, const char *site) { int r = (pthread_mutex_lock)(m); if (kf_lock_depth++ == 0) kf_audit_enter(site); return r; }
+static inline int kf_mutex_unlock(pthread_mutex_t *m) { if (--kf_lock_depth == 0) kf_audit_leave(); return (pthread_mutex_unlock)(m); }
+static inline int kf_mutex_trylock_at(pthread_mutex_t *m, const char *site) { int r = (pthread_mutex_trylock)(m); if (r == 0 && kf_lock_depth++ == 0) kf_audit_enter(site); return r; }
+#define KF_STR2(x) #x
+#define KF_STR(x) KF_STR2(x)
+#define pthread_mutex_lock(m) kf_mutex_lock_at((m), __FILE__ ":" KF_STR(__LINE__))
+#define pthread_mutex_trylock(m) kf_mutex_trylock_at((m), __FILE__ ":" KF_STR(__LINE__))
 #else
-static inline int kc_mutex_lock(pthread_mutex_t *m) { int r = (pthread_mutex_lock)(m); kc_lock_depth++; return r; }
-static inline int kc_mutex_unlock(pthread_mutex_t *m) { kc_lock_depth--; return (pthread_mutex_unlock)(m); }
-static inline int kc_mutex_trylock(pthread_mutex_t *m) { int r = (pthread_mutex_trylock)(m); if (r == 0) kc_lock_depth++; return r; }
-#define pthread_mutex_lock(m) kc_mutex_lock(m)
-#define pthread_mutex_trylock(m) kc_mutex_trylock(m)
+static inline int kf_mutex_lock(pthread_mutex_t *m) { int r = (pthread_mutex_lock)(m); kf_lock_depth++; return r; }
+static inline int kf_mutex_unlock(pthread_mutex_t *m) { kf_lock_depth--; return (pthread_mutex_unlock)(m); }
+static inline int kf_mutex_trylock(pthread_mutex_t *m) { int r = (pthread_mutex_trylock)(m); if (r == 0) kf_lock_depth++; return r; }
+#define pthread_mutex_lock(m) kf_mutex_lock(m)
+#define pthread_mutex_trylock(m) kf_mutex_trylock(m)
 #endif
-#define pthread_mutex_unlock(m) kc_mutex_unlock(m)
+#define pthread_mutex_unlock(m) kf_mutex_unlock(m)
 
 /* §§89/94: the kernel's and the engine's allocations are served by kalloc.c
  * over the arena (size-class free lists, clearing and copying one word per
  * fine step); a block from the host (strdup, pre-arena) is recognized and
  * returned to the host */
 #ifndef KALLOC_IMPL
-extern __thread int kalloc_unowned_depth;   /* V23 R3: allocations made while > 0 belong to a process-lifetime structure, not to the running continuation */
 void *k_malloc(size_t n); void *k_calloc(size_t a, size_t b); void *k_realloc(void *p, size_t n); void k_free(void *p);
 #define malloc(n) k_malloc(n)
 #define calloc(a, b) k_calloc((a), (b))
@@ -126,13 +125,27 @@ void kernel_sort_step(void);   /* fine.c: one FC_SORT_STEPS transition */
 static inline void sift_down_u64(uint64_t *h, size_t n, size_t i) {
     for (;;) { size_t l = 2 * i + 1, r = l + 1, m = i; if (l < n && h[l] > h[m]) m = l; if (r < n && h[r] > h[m]) m = r; if (m == i) return; uint64_t t = h[i]; h[i] = h[m]; h[m] = t; i = m; }
 }
-static inline size_t sort_unique_u64(uint64_t *a, size_t n) {
-    if (n < 2) return n;
-    for (size_t i = n / 2; i > 0; i--) { sift_down_u64(a, n, i - 1); kernel_sort_step(); }
-    for (size_t e = n - 1; e > 0; e--) { uint64_t t = a[0]; a[0] = a[e]; a[e] = t; sift_down_u64(a, e, 0); kernel_sort_step(); }
-    size_t j = 1;
-    for (size_t i = 1; i < n; i++) { if (a[i] != a[j - 1]) a[j++] = a[i]; kernel_sort_step(); }
-    return j;
-}
+size_t sort_unique_u64(uint64_t *a, size_t n);
+
+/* frame families of the kernel primitives (kframe.h, kprim.c): the same loops as resumable frames */
+#include "kframe.h"
+#define sort_unique_u64_PARAMS(X) X(uint64_t *, a) X(size_t, n)
+#define k_copy_words_PARAMS(X) X(uint64_t *, dst) X(const uint64_t *, src) X(size_t, n)
+#define words_append_PARAMS(X) X(Words *, b) X(const uint64_t *, x) X(size_t, n)
+KF_PROTO(sort_unique_u64, size_t, sort_unique_u64_PARAMS);
+KF_PROTO(k_copy_words, void, k_copy_words_PARAMS);
+KF_PROTO(words_append, void, words_append_PARAMS);
+#define pair_sort_PARAMS(X) X(uint64_t *, p) X(size_t, n)
+KF_PROTO(pair_sort, void, pair_sort_PARAMS);   /* term.c: n (key, image) pairs, lexicographic, one sift per transition */
+/* the clearing allocation and the reallocation as families (kalloc.c): one word per transition */
+#define k_zalloc_PARAMS(X) X(size_t, a) X(size_t, b)
+#define k_regrow_PARAMS(X) X(void *, p) X(size_t, n)
+KF_PROTO(k_zalloc, void *, k_zalloc_PARAMS);
+KF_PROTO(k_regrow, void *, k_regrow_PARAMS);
+#define words_reserve_PARAMS(X) X(Words *, b) X(size_t, extra)
+KF_PROTO(words_reserve, void, words_reserve_PARAMS);
+/* growth inside a frame step: the reallocation is a child frame */
+#define KF_WORDS_PUSH(b, x) do { if ((b)->n == (b)->cap) KF_CALL(words_reserve, NULL, (b), 1); (b)->w[(b)->n++] = (x); } while (0)
+#define KF_VEC_PUSH(v, x) do { if ((v)->len == (v)->cap) { (v)->cap = (v)->cap ? (v)->cap * 2 : 8; KF_CALL(k_regrow, (void **)&(v)->data, (v)->data, (v)->cap * sizeof(*(v)->data)); } (v)->data[(v)->len++] = (x); } while (0)
 
 #endif
