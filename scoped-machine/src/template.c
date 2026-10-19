@@ -129,13 +129,15 @@ static void node_free(TNodeId Q, SlotSet *out) {
 }
 static size_t node_param_count(TNodeId Q);
 static bool node_construction(TNodeId Q);
-/* the free slots of a node: a construction's are its parameters; a template
- * node's were closed at registration */
-static void node_free_list(TNodeId Q, size_t *n, const uint64_t **w) {
-    if (!node_construction(Q)) { *w = interner_get(&M.keys, TNSIDE(Q)->free_slots, n); return; }
-    Words s; words_init(&s); size_t np = node_param_count(Q);
-    for (size_t k = 0; k < np; k++) words_push(&s, k);
-    *w = interner_get(&M.keys, interner_intern(&M.keys, s.w, s.n, NULL), n); words_free(&s);
+/* the free slots of a node: a construction's are its parameters 0..np-1; a
+ * template node's were closed at registration */
+static size_t node_free_count(TNodeId Q) {
+    if (node_construction(Q)) return node_param_count(Q);
+    size_t n; (void)interner_get(&M.keys, TNSIDE(Q)->free_slots, &n); return n;
+}
+static size_t node_free_slot(TNodeId Q, size_t q) {
+    if (node_construction(Q)) return q;
+    size_t n; return (size_t)interner_get(&M.keys, TNSIDE(Q)->free_slots, &n)[q];
 }
 
 /* ------------------------------------------------------------------ */
@@ -226,9 +228,6 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
  * A view's environment is an interpretation record. Each step does a
  * constant amount of work. */
 
-static Family F_INTERP, F_TVMAKE, F_ISCOPE, F_ENVLOOK, F_ENVSET;
-static Family F_TREF, F_TIV, F_TFC, F_TSCOPE, F_CAPTURE, F_REFVAR, F_SETFREE, F_DSUNION, F_VSUNION, F_IVDIMS, F_FCDIMS;
-static Family F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_FCFORALL, F_REINDEX, F_IVRE, F_FCRE, F_FCENT;
 
 /* position of slot w[1] in environment w[0], plus one (0: absent); one probe per step */
 typedef struct { const uint64_t *w; size_t n, lo, hi; } LookLoc;
@@ -274,7 +273,6 @@ static uint64_t env_entry(uint64_t er, uint64_t slot, PSort sort, uint64_t id) {
  * slot k is atom k; terms first, then dimensions (a map record). The
  * interpretation of a construction's closed constant is its substitution by
  * this map: a constant field is one case of the common interpretation. */
-static Family F_ENVMAP;
 typedef struct { const uint64_t *w; size_t n, q, kept; bool dims; WordBuf out; bool created; } EmLoc;
 static void envmap_step(Cont *k, uint64_t v) {
     EmLoc *L = FR_LOC(k, EmLoc);
@@ -399,7 +397,7 @@ static void interp_step(Cont *k, uint64_t v) {
 }
 
 /* the template view of node w[0] in environment w[1] */
-typedef struct { const uint64_t *fl; size_t nf, q; uint64_t sup, fv, ds, E, req, slot, g; TVal t; WordBuf out; bool created; } MkLoc;
+typedef struct { size_t nf, q; uint64_t sup, fv, ds, E, req, slot, g; TVal t; WordBuf out; bool created; } MkLoc;
 /* the declared guard of a node's slot: a construction parameter's closed
  * guard; a template parameter's or term local's declared availability */
 static const uint64_t *node_ptab(TNodeId Q);
@@ -413,15 +411,15 @@ static void tvmake_step(Cont *k, uint64_t v) {
     TNodeId Q = k->w[0]; uint64_t er = k->w[1];
     uint64_t r = 0;
     FR_BEGIN(k);
-    node_free_list(Q, &L->nf, &L->fl);
+    L->nf = node_free_count(Q);
     L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
     wordbuf_init(&L->out); wordbuf_push(&L->out, tnode_def(Q));
     for (L->q = 0; L->q < L->nf; L->q++) {
-        FR_AWAIT(k, r, F_ENVLOOK, er, L->fl[L->q]);
-        require(r, "template view: a required slot has no value (%s slot %zu)", TPL.defs[tnode_def(Q)].name, (size_t)L->fl[L->q]);
+        FR_AWAIT(k, r, F_ENVLOOK, er, node_free_slot(Q, L->q));
+        require(r, "template view: a required slot has no value (%s slot %zu)", TPL.defs[tnode_def(Q)].name, node_free_slot(Q, L->q));
         {   size_t m; const uint64_t *ew = interner_get(&M.keys, er, &m);
             L->t.sort = (PSort)ew[1 + 3 * (r - 1) + 1]; L->t.id = ew[1 + 3 * (r - 1) + 2]; }
-        wordbuf_push(&L->out, L->fl[L->q]); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
+        wordbuf_push(&L->out, node_free_slot(Q, L->q)); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
         if (L->t.sort == PS_REF) {
             FR_AWAIT(k, L->sup, F_DSUNION, L->sup, ref_support(L->t.id));
             FR_AWAIT(k, L->fv, F_VSUNION, L->fv, ref_freevars(L->t.id));
@@ -503,20 +501,18 @@ static void iscope_step(Cont *k, uint64_t v) {
 }
 
 void template_families_init(void) {
-    F_TREF = family_lookup("trav.ref"); F_TIV = family_lookup("trav.interval"); F_TFC = family_lookup("trav.face"); F_TSCOPE = family_lookup("trav.scope");
-    F_CAPTURE = family_lookup("scope.capture"); F_REFVAR = family_lookup("ref.var"); F_SETFREE = family_lookup("set.free");
-    F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union"); F_IVDIMS = family_lookup("iv.dims"); F_FCDIMS = family_lookup("fc.dims");
-    F_IVNEG = family_lookup("iv.negate"); F_IVMEET = family_lookup("iv.meet"); F_IVJOIN = family_lookup("iv.join");
-    F_FCEND = family_lookup("fc.endpoint"); F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join"); F_FCFORALL = family_lookup("fc.forall"); F_FCENT = family_lookup("fc.entails");
-    F_REINDEX = family_lookup("reindex"); F_IVRE = family_lookup("iv.reindex"); F_FCRE = family_lookup("fc.reindex");
-    require(F_TREF && F_CAPTURE && F_REFVAR && F_FCRE, "the scope, construction and substitution families are registered first");
-    F_ENVLOOK = family_define("template.envlook", envlook_step, sizeof(LookLoc));
-    F_ENVSET = family_define("template.envset", envset_step, sizeof(SetLoc));
-    F_INTERP = family_define("template.interp", interp_step, sizeof(InLoc));
-    F_ENVMAP = family_define("env.map", envmap_step, sizeof(EmLoc));
-    F_TVMAKE = family_define("template.view", tvmake_step, sizeof(MkLoc));
-    F_ISCOPE = family_define("template.scope", iscope_step, sizeof(ScLoc));
-    construct_bind_template_families();
+    
+    
+    
+    
+    
+    
+    family_define(F_ENVLOOK, "template.envlook", envlook_step, sizeof(LookLoc));
+    family_define(F_ENVSET, "template.envset", envset_step, sizeof(SetLoc));
+    family_define(F_INTERP, "template.interp", interp_step, sizeof(InLoc));
+    family_define(F_ENVMAP, "env.map", envmap_step, sizeof(EmLoc));
+    family_define(F_TVMAKE, "template.view", tvmake_step, sizeof(MkLoc));
+    family_define(F_ISCOPE, "template.scope", iscope_step, sizeof(ScLoc));
 }
 
 /* ------------------------------------------------------------------ */
@@ -525,15 +521,13 @@ void template_families_init(void) {
 static TVal interp_at(ExprId e, uint64_t er) { return tvget(family_call(F_INTERP, e, er)); }
 RefId tview_make(TNodeId Q, uint64_t er) { return family_call(F_TVMAKE, Q, er); }
 
-static Family F_HEADANN;
 void tview_open(RefId t, Head *h) {
     TNodeId Q = ref_tnode(t);
     h->tnode = Q; h->tenv = ref_tenv(t);
     h->tag = tnode_tag(Q);
     h->n = tnode_nfields(Q);
-    if (!F_HEADANN) F_HEADANN = family_lookup("head.annotation");
-    h->payload = family_call(F_HEADANN, t, 0);
-    h->levels = family_call(F_HEADANN, t, 1);
+    h->payload = family_call(F_HEAD, t, 0);
+    h->levels = family_call(F_HEAD, t, 1);
 }
 
 
@@ -541,10 +535,9 @@ void tview_open(RefId t, Head *h) {
  * the caller in the view's environment, one awaited interpretation each):
  * entry k of the node's free slots; false when the slot carries no checked
  * declaration */
-size_t tnode_sig_count(TNodeId Q) { size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl); return nf; }
+size_t tnode_sig_count(TNodeId Q) { return node_free_count(Q); }
 bool tnode_sig_exprs(TNodeId Q, size_t k, size_t *slot, PSort *sort, ExprId *type_e, ExprId *level_e, ExprId *sig_e, ExprId *guard_e) {
-    size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
-    size_t s = (size_t)fl[k];
+    size_t s = node_free_slot(Q, k);
     *slot = s;
     if (node_construction(Q)) {
         /* a construction parameter: its closed type and guard over the earlier atoms */

@@ -18,7 +18,6 @@ typedef struct {
     uint64_t V, opq, rec, next, nopq, nrec, cnt, root, s, b, x, cur, d, acc, m;
     size_t ri, np, si; const uint64_t *ps; uint64_t dfs, stk, comp; bool cyc;
 } SccLoc;
-static Family F_SCC, Fp_GLOBALS, Fp_VSUNION;
 static const uint64_t *vrec(uint64_t V, SymbolId s) { RefId r; size_t n; return pins_lookup(V, s, &r) ? interner_get(&M.keys, r, &n) : NULL; }
 static uint64_t vset(uint64_t V, SymbolId s, uint64_t i, uint64_t lo, uint64_t on, uint64_t self, uint64_t e) { return pins_insert(V, s, RQ(i, lo, on, self, e)); }
 static void scc_step(Cont *k, uint64_t v) {
@@ -37,8 +36,8 @@ static void scc_step(Cont *k, uint64_t v) {
         for (L->si = 0; L->si < L->np + 2; L->si++) {
             {   RefId src = L->si == 0 ? global_type(L->d) : L->si <= L->np ? term_var_type(L->ps[L->si - 1]) : L->b; L->s = src; }
             if (!L->s) continue;
-            FR_AWAIT(k, r, Fp_GLOBALS, L->s, 0);
-            FR_AWAIT(k, L->acc, Fp_VSUNION, L->acc, r);
+            FR_AWAIT(k, r, F_GLOBALS, L->s, 0);
+            FR_AWAIT(k, L->acc, F_VSUNION, L->acc, r);
         }
         L->next++;
         L->V = vset(L->V, L->d, L->next, L->next, 1, 0, L->acc);
@@ -83,9 +82,8 @@ static void scc_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 void proof_families_init(void) {
-    Fp_GLOBALS = family_lookup("globals.of"); Fp_VSUNION = family_lookup("varset.union");
-    require(Fp_GLOBALS && Fp_VSUNION, "globals.of and varset.union are registered first");
-    F_SCC = family_define("proof.scc", scc_step, sizeof(SccLoc));
+    
+    family_define(F_SCC, "proof.scc", scc_step, sizeof(SccLoc));
 }
 
 const char *proof_status_name(ProofStatus s) {

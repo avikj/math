@@ -26,8 +26,7 @@ typedef struct { pthread_mutex_t mu; QChunk *front, *back; size_t len; } Queue;
 
 typedef struct { const char *name; FamResume resume; size_t loc_size; } FamilyDef;
 static FamilyDef FAM[F_MAX];
-static size_t n_fam = F_WHNF + 1;  /* F_WHNF is built in; defined families follow */
-static Family F_INTERN, F_HOST;
+static size_t n_fam = F_FIXED;     /* families defined at run time (tests) follow the fixed ids */
 static uint64_t obs_key(FaceId eta, PinSet P) { uint64_t w[2] = { eta, P }; return interner_intern(&M.keys, w, 2, NULL); }
 static FaceId key_face(uint64_t b) { size_t n; return interner_get(&M.keys, b, &n)[0]; }
 static PinSet key_pins(uint64_t b) { size_t n; return interner_get(&M.keys, b, &n)[1]; }
@@ -89,26 +88,27 @@ void eval_reading(Reading r, Family f, Exact *out) {
 }
 
 /* ---------------- families ----------------
- * Defined once per process (their code is static); the evaluator of each
- * machine makes their locals pools. */
-Family family_define(const char *name, FamResume step, size_t loc_size) {
-    for (size_t f = F_WHNF + 1; f < n_fam; f++) require(strcmp(FAM[f].name, name) != 0, "family %s defined twice", name);
-    require(n_fam < F_MAX, "too many operation families");
-    Family f = (Family)n_fam++;
+ * Defined once per process at their ids (families.h): their code is static;
+ * the evaluator of each machine makes their locals pools. */
+static void family_set(Family f, const char *name, FamResume step, size_t loc_size) {
+    require(f >= 1 && f < F_MAX && !FAM[f].resume, "family %s defined twice or out of range", name);
     FAM[f].name = name; FAM[f].resume = step; FAM[f].loc_size = loc_size;
     if (E.epoch && loc_size) pool_init(&E.loc_pool[f], loc_size);       /* defined while an evaluator lives */
-    return f;
 }
-Family family_lookup(const char *name) {
-    for (size_t f = F_WHNF + 1; f < n_fam; f++) if (strcmp(FAM[f].name, name) == 0) return (Family)f;
-    return 0;
+void family_define(Family f, const char *name, FamResume step, size_t loc_size) {
+    require(f < F_FIXED, "a fixed family id");
+    family_set(f, name, step, loc_size);
+}
+Family family_new(const char *name, FamResume step, size_t loc_size) {
+    Family f = (Family)__atomic_fetch_add(&n_fam, 1, __ATOMIC_RELAXED);
+    family_set(f, name, step, loc_size);
+    return f;
 }
 
 static void *worker_main(void *arg);
 static void q_init(Queue *q); static size_t q_push(Queue *q, Task t); static bool q_take(Queue *q, bool back, Task *out); static void q_free(Queue *q);
 static size_t outstanding(void);
 static void evaluator_init(void);
-static void evaluator_bind(void);
 static void intern_families_init(void);
 
 static pthread_once_t families_once = PTHREAD_ONCE_INIT;
@@ -121,7 +121,6 @@ static void families_define(void) {
     template_families_init();
     evaluator_init();
     lib_families_init();
-    evaluator_bind();
     pins_families_init();
     judge_families_init();
     proof_families_init();
@@ -141,7 +140,7 @@ void eval_init(void) {
     pool_init(&E.chunk_pool, sizeof(QChunk));
     pool_init(&E.dep_pool, sizeof(DepNode));
     pthread_once(&families_once, families_define);
-    for (size_t f = 1; f < n_fam; f++) if (FAM[f].loc_size) pool_init(&E.loc_pool[f], FAM[f].loc_size);
+    for (size_t f = 1; f < F_MAX; f++) if (FAM[f].loc_size) pool_init(&E.loc_pool[f], FAM[f].loc_size);
     E.epoch = __atomic_add_fetch(&eval_epochs, 1, __ATOMIC_RELAXED);
     effect_state_init();
 }
@@ -213,7 +212,7 @@ static void cont_release(Cont *k) {
     pool_free(&E.cont_pool, k);
 }
 Cont *frame_sub(Family f, const Cont *caller) {
-    require(f > F_WHNF && f < n_fam, "a subroutine is a frame family");
+    require(f > F_WHNF && f < F_MAX && FAM[f].resume, "a subroutine is a frame family");
     Cont *k = frame_new(f, 0); k->owner = caller ? caller->owner : 0;
     return k;
 }
@@ -386,13 +385,13 @@ static void enqueue_resume(Cont *k, uint64_t v) {
     enqueue(t);
 }
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b) {
-    require(f >= F_WHNF && f < n_fam && FAM[f].resume, "unregistered family");
+    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
     keep_frame(k);
     request_entry(entry_intern(f, a, b), k, k->owner);
 }
 void family_launch(Family f, uint64_t a, uint64_t b) {
     require(tl_step_frame, "a launch is made by a frame's step");
-    require(f >= F_WHNF && f < n_fam && FAM[f].resume, "unregistered family");
+    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
     request_entry(entry_intern(f, a, b), NULL, tl_step_frame->owner);
 }
 void frame_call(Cont *k, Cont *child) {
@@ -415,7 +414,6 @@ static void host_step(Cont *k, uint64_t v) { (void)k; (void)v; notify_hosts(); }
 
 /* the interning subroutine: a bounded advance of the insertion per step */
 #define INTERN_BUDGET 8
-static Family F_FLATTEN;
 static void intern_step(Cont *k, uint64_t v) {
     InternState *s = k->loc;
     uint64_t r = 0; int st;
@@ -462,9 +460,9 @@ static void flatten_step(Cont *k, uint64_t v) {
 }
 static uint64_t flatten_root(Interner *t, uint64_t root) { return family_call(F_FLATTEN, t->index, root); }
 static void intern_families_init(void) {
-    F_INTERN = family_define("intern", intern_step, sizeof(InternState));
-    F_FLATTEN = family_define("intern.flatten", flatten_step, sizeof(FlatLoc));
-    F_HOST = family_define("host", host_step, 0);
+    family_define(F_INTERN, "intern", intern_step, sizeof(InternState));
+    family_define(F_FLATTEN, "intern.flatten", flatten_step, sizeof(FlatLoc));
+    family_define(F_HOST, "host", host_step, 0);
     interner_set_flatten_hook(flatten_root);
 }
 
@@ -582,15 +580,15 @@ static uint64_t drive(EntryId e, size_t budget, WhnfStatus *status) {
     return done ? __atomic_load_n(&ENT(e)->value, __ATOMIC_ACQUIRE) : 0;
 }
 uint64_t family_run(Family f, uint64_t a, uint64_t b, WhnfStatus *status) {
-    require(f >= F_WHNF && f < n_fam && FAM[f].resume, "unregistered family");
+    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
     return drive(entry_intern(f, a, b), 0, status);
 }
 uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, WhnfStatus *status) {
-    require(f >= F_WHNF && f < n_fam && FAM[f].resume, "unregistered family");
+    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
     return drive(entry_intern(f, a, b), budget, status);
 }
 uint64_t family_call(Family f, uint64_t a, uint64_t b) {
-    require(!tl_in_job, "synchronous request of %s inside a counted step: the frame must await it", f < n_fam ? FAM[f].name : "?");
+    require(!tl_in_job, "synchronous request of %s inside a counted step: the frame must await it", f < F_MAX ? FAM[f].name : "?");
     WhnfStatus st;
     uint64_t v = family_run(f, a, b, &st);
     require(st == W_OK, "synchronous request of %s did not complete (an unresolved dependency)", FAM[f].name);
@@ -613,17 +611,13 @@ EvalResult res_get(uint64_t v) {
  * constructions) and its sub-observations from the observation family. A
  * branchwise result launches its independent children (one per step) and
  * then awaits each in branch order (§12, §26). */
-static Family F_UNFOLDF, F_COMPCLAUSEF, F_CBRANCH, F_DIST, F_OBS;
-static Family F_FIELDF, F_BINDERF, F_CONSTRUCTF, F_HEADF, F_FCENTF, F_FCPROJF, F_FCMEETF, F_FCJOINF, F_FCFORALLF, F_FCENDF;
 static uint64_t binder_rec(Sort sort, BinderSlot slot, FieldIndex field, uint64_t image) { uint64_t e[4] = { sort, slot, field, image }; return interner_intern(&M.keys, e, 4, NULL); }
 static uint64_t rq3(uint64_t a, uint64_t b, uint64_t c) { uint64_t w[3] = { a, b, c }; return interner_intern(&M.keys, w, 3, NULL); }
-Family observe_family(void) { return F_OBS; }
 uint64_t observe_key(FaceId chi, FaceId phi, uint64_t pins) { require(pins, "an observation is bound to a pin set"); return rq3(chi, phi, pins); }
 
 /* a construction request (construct.c) made by the evaluator: no declared
  * face. The request record is built into a word buffer and interned by the
  * stepped subroutine; the subroutine then awaits the construction. */
-static Family F_CREQ;
 typedef struct { WordBuf w; uint64_t id; bool created; } CrLoc;
 static void creq_head(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, size_t nf) {
     wordbuf_init(w);
@@ -635,7 +629,7 @@ static void creq_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     FR_CALL(k, L->id, intern_sub(k, &M.keys, &L->w, &L->created));
-    FR_AWAIT(k, r, F_CONSTRUCTF, L->id, 0);
+    FR_AWAIT(k, r, F_CONSTRUCT, L->id, 0);
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -658,11 +652,11 @@ static void obs_step(Cont *k, uint64_t v) {
     RefId x = k->w[0];
     FR_BEGIN(k);
     {   size_t n; const uint64_t *q = interner_get(&M.keys, k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; k->w[4] = q[2]; }
-    if (k->w[3]) { FR_AWAIT(k, r, F_FCMEETF, k->w[2], k->w[3]); k->w[2] = r; }
+    if (k->w[3]) { FR_AWAIT(k, r, F_FCMEET, k->w[2], k->w[3]); k->w[2] = r; }
     if (fc_is_false(k->w[2])) FR_FINISH(k, res_rec(R_NO_OBSERVATION, x, NULL));
-    FR_AWAIT(k, r, F_FCENTF, k->w[2], ref_required(x));
+    FR_AWAIT(k, r, F_FCENT, k->w[2], ref_required(x));
     if (r != 2) FR_FINISH(k, res_rec(R_INVALID, 0, "occurrence outside its required face"));
-    FR_AWAIT(k, r, F_FCPROJF, k->w[2], ref_support(x));
+    FR_AWAIT(k, r, F_FCPROJ, k->w[2], ref_support(x));
     FR_AWAIT(k, r, F_WHNF, x, obs_key(r, k->w[4]));
     FR_FINISH(k, r);
     FR_END(k);
@@ -682,7 +676,7 @@ static void dist_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     if (tag == T_APP) {
-        FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
+        FR_AWAIT(k, L->a1, F_FIELD, t, 1);
         { Field f[2] = { { F_REF, NO_SLOT, bt }, { F_REF, NO_SLOT, L->a1 } }; FR_CALL(k, r, creq(k, T_APP, 0, LEVELS_NONE, 2, f, 0, NULL)); }
         FR_FINISH(k, r);
     }
@@ -690,23 +684,23 @@ static void dist_step(Cont *k, uint64_t v) {
         { Field f[1] = { { F_REF, NO_SLOT, bt } }; FR_CALL(k, r, creq(k, tag, 0, LEVELS_NONE, 1, f, 0, NULL)); }
         FR_FINISH(k, r);
     }
-    FR_AWAIT(k, L->levels, F_HEADF, t, 1);
+    FR_AWAIT(k, L->levels, F_HEAD, t, 1);
     if (tag == T_PAPP) {
         L->j = binder_dim_var(t, 0);
-        FR_AWAIT(k, L->fam, F_BINDERF, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
-        FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
-        FR_AWAIT(k, L->a3, F_FIELDF, t, 2);
-        FR_AWAIT(k, L->a4, F_FIELDF, t, 4);
+        FR_AWAIT(k, L->fam, F_BINDER, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
+        FR_AWAIT(k, L->a1, F_FIELD, t, 1);
+        FR_AWAIT(k, L->a3, F_FIELD, t, 2);
+        FR_AWAIT(k, L->a4, F_FIELD, t, 4);
         {   Field f[5] = { { F_REF, 0, L->fam }, { F_REF, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, bt }, { F_INTERVAL, NO_SLOT, L->a4 } };
             Binder b[1] = { { S_DIM, L->j, NO_FIELD } };
             FR_CALL(k, r, creq(k, T_PAPP, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 1, b)); }
         FR_FINISH(k, r);
     }
     require(tag == T_UNGLUE, "whnf.distribute of a non-eliminator");
-    FR_AWAIT(k, L->fam, F_FIELDF, t, 0);
-    FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
-    FR_AWAIT(k, L->a3, F_FIELDF, t, 2);
-    FR_AWAIT(k, L->tube, F_FIELDF, t, 3);
+    FR_AWAIT(k, L->fam, F_FIELD, t, 0);
+    FR_AWAIT(k, L->a1, F_FIELD, t, 1);
+    FR_AWAIT(k, L->a3, F_FIELD, t, 2);
+    FR_AWAIT(k, L->tube, F_FIELD, t, 3);
     {   Field f[5] = { { F_REF, NO_SLOT, L->fam }, { F_FACE, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, L->tube }, { F_REF, NO_SLOT, bt } };
         FR_CALL(k, r, creq(k, T_UNGLUE, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 0, NULL)); }
     FR_FINISH(k, r);
@@ -724,13 +718,13 @@ static void cbranch_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     {   size_t n; const uint64_t *q = interner_get(&M.keys, k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; k->w[4] = q[2]; }
     L->j = binder_dim_var(t, 0);
-    FR_AWAIT(k, L->g, F_FCFORALLF, k->w[2], L->j);
-    FR_AWAIT(k, r, F_FCMEETF, k->w[4], L->g);
+    FR_AWAIT(k, L->g, F_FCFORALL, k->w[2], L->j);
+    FR_AWAIT(k, r, F_FCMEET, k->w[4], L->g);
     if (fc_is_false(r)) FR_FINISH(k, 0);
-    FR_AWAIT(k, L->phi, F_FIELDF, t, 1);
-    FR_AWAIT(k, L->tube, F_BINDERF, t, binder_rec(S_DIM, 0, 2, iv_var(L->j)));
-    FR_AWAIT(k, L->cap, F_FIELDF, t, 3);
-    FR_AWAIT(k, L->levels, F_HEADF, t, 1);
+    FR_AWAIT(k, L->phi, F_FIELD, t, 1);
+    FR_AWAIT(k, L->tube, F_BINDER, t, binder_rec(S_DIM, 0, 2, iv_var(L->j)));
+    FR_AWAIT(k, L->cap, F_FIELD, t, 3);
+    FR_AWAIT(k, L->levels, F_HEAD, t, 1);
     {   uint64_t lv = L->levels == LEVELS_NONE ? LEVEL_NONE : levels_first(L->levels);
         Field f[4] = { { F_REF, 0, k->w[3] }, { F_FACE, NO_SLOT, L->phi }, { F_REF, 0, L->tube }, { F_REF, NO_SLOT, L->cap } };
         Binder b[1] = { { S_DIM, (DimVarId)L->j, NO_FIELD } };
@@ -759,46 +753,46 @@ static void whnf_step(Cont *k, uint64_t v) {
     if (L->tag == T_GLOBAL) {
         /* a declared symbol without a body is an opaque constant: neutral;
          * the revision this observation is bound to */
-        FR_AWAIT(k, L->payload, F_HEADF, t, 0);
+        FR_AWAIT(k, L->payload, F_HEAD, t, 0);
         {   RefId b = 0;
             if (!pins_lookup(P, (SymbolId)L->payload, &b)) FR_FINISH(k, res_rec(R_INVALID, 0, "a symbol outside the observation's premises"));
             if (!b) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
             L->a1 = b; }
-        FR_AWAIT(k, L->x, F_UNFOLDF, t, L->a1);
+        FR_AWAIT(k, L->x, F_UNFOLD, t, L->a1);
         goto forward_x;
     }
 
     if (L->tag == T_GLUE_TYPE || L->tag == T_GLUE_INTRO) {
-        FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
-        FR_AWAIT(k, r, F_FCENTF, chi, L->a1);
+        FR_AWAIT(k, L->a1, F_FIELD, t, 1);
+        FR_AWAIT(k, r, F_FCENT, chi, L->a1);
         if (r != 2) FR_FINISH(k, res_rec(R_INTRODUCTION, t, NULL));
-        FR_AWAIT(k, L->x, F_FIELDF, t, L->tag == T_GLUE_TYPE ? 2 : 4);
+        FR_AWAIT(k, L->x, F_FIELD, t, L->tag == T_GLUE_TYPE ? 2 : 4);
         goto forward_x;
     }
 
     if (elim_tag(L->tag)) {
         if (L->tag == T_PAPP) {
-            FR_AWAIT(k, L->a4, F_FIELDF, t, 4);
-            FR_AWAIT(k, r, F_FCENDF, L->a4, 0);
-            FR_AWAIT(k, r, F_FCENTF, chi, r);
-            if (r == 2) { FR_AWAIT(k, L->x, F_FIELDF, t, 1); goto forward_x; }
-            FR_AWAIT(k, r, F_FCENDF, L->a4, 1);
-            FR_AWAIT(k, r, F_FCENTF, chi, r);
-            if (r == 2) { FR_AWAIT(k, L->x, F_FIELDF, t, 2); goto forward_x; }
-            FR_AWAIT(k, L->x, F_FIELDF, t, 3);
+            FR_AWAIT(k, L->a4, F_FIELD, t, 4);
+            FR_AWAIT(k, r, F_FCEND, L->a4, 0);
+            FR_AWAIT(k, r, F_FCENT, chi, r);
+            if (r == 2) { FR_AWAIT(k, L->x, F_FIELD, t, 1); goto forward_x; }
+            FR_AWAIT(k, r, F_FCEND, L->a4, 1);
+            FR_AWAIT(k, r, F_FCENT, chi, r);
+            if (r == 2) { FR_AWAIT(k, L->x, F_FIELD, t, 2); goto forward_x; }
+            FR_AWAIT(k, L->x, F_FIELD, t, 3);
         } else if (L->tag == T_UNGLUE) {
-            FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
-            FR_AWAIT(k, r, F_FCENTF, chi, L->a1);
+            FR_AWAIT(k, L->a1, F_FIELD, t, 1);
+            FR_AWAIT(k, r, F_FCENT, chi, L->a1);
             if (r == 2) {
                 /* on the Glue face: (fst e) v */
-                FR_AWAIT(k, L->x, F_FIELDF, t, 3);
-                FR_AWAIT(k, L->a4, F_FIELDF, t, 4);
+                FR_AWAIT(k, L->x, F_FIELD, t, 3);
+                FR_AWAIT(k, L->a4, F_FIELD, t, 4);
                 { Field f[1] = { { F_REF, NO_SLOT, L->x } }; FR_CALL(k, L->x, creq(k, T_FST, 0, LEVELS_NONE, 1, f, 0, NULL)); }
                 { Field f[2] = { { F_REF, NO_SLOT, L->x }, { F_REF, NO_SLOT, L->a4 } }; FR_CALL(k, L->x, creq(k, T_APP, 0, LEVELS_NONE, 2, f, 0, NULL)); }
                 goto forward_x;
             }
-            FR_AWAIT(k, L->x, F_FIELDF, t, 4);
-        } else FR_AWAIT(k, L->x, F_FIELDF, t, 0);
+            FR_AWAIT(k, L->x, F_FIELD, t, 4);
+        } else FR_AWAIT(k, L->x, F_FIELD, t, 0);
         /* the scrutinee */
         FR_AWAIT(k, L->res, F_OBS, L->x, observe_key(chi, 0, P));
         if (RES(L->res).cls == R_NO_OBSERVATION || RES(L->res).cls == R_INVALID) FR_FINISH(k, L->res);
@@ -825,10 +819,10 @@ static void whnf_step(Cont *k, uint64_t v) {
             if (L->tag == T_PAPP && ht != T_PLAM) FR_FINISH(k, res_rec(R_INVALID, 0, "path application of a non-path introduction"));
             if (L->tag == T_UNGLUE && ht != T_GLUE_INTRO) FR_FINISH(k, res_rec(R_INVALID, 0, "unglue of a non-glue introduction")); }
         if (L->tag == T_APP) {
-            FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
-            FR_AWAIT(k, L->x, F_BINDERF, RES(L->res).ref, binder_rec(S_TERM, 0, 1, L->a1));
-        } else if (L->tag == T_PAPP) FR_AWAIT(k, L->x, F_BINDERF, RES(L->res).ref, binder_rec(S_DIM, 0, 0, L->a4));
-        else FR_AWAIT(k, L->x, F_FIELDF, RES(L->res).ref, L->tag == T_FST ? 0 : L->tag == T_SND ? 1 : 5);
+            FR_AWAIT(k, L->a1, F_FIELD, t, 1);
+            FR_AWAIT(k, L->x, F_BINDER, RES(L->res).ref, binder_rec(S_TERM, 0, 1, L->a1));
+        } else if (L->tag == T_PAPP) FR_AWAIT(k, L->x, F_BINDER, RES(L->res).ref, binder_rec(S_DIM, 0, 0, L->a4));
+        else FR_AWAIT(k, L->x, F_FIELD, RES(L->res).ref, L->tag == T_FST ? 0 : L->tag == T_SND ? 1 : 5);
         goto forward_x;
     }
 
@@ -838,16 +832,16 @@ static void whnf_step(Cont *k, uint64_t v) {
         wordbuf_init(&L->wb); wordbuf_push(&L->wb, R_SYSTEM);
         L->uni = fc_false();
         for (L->q = 0; L->q < L->n; L->q++) {
-            FR_AWAIT(k, L->phi, F_FIELDF, t, 2 * L->q);
-            FR_AWAIT(k, r, F_FCMEETF, chi, L->phi);
+            FR_AWAIT(k, L->phi, F_FIELD, t, 2 * L->q);
+            FR_AWAIT(k, r, F_FCMEET, chi, L->phi);
             if (fc_is_false(r)) continue;                       /* inconsistent branch dropped */
-            FR_AWAIT(k, L->x, F_FIELDF, t, 2 * L->q + 1);
-            FR_AWAIT(k, r, F_FCENTF, chi, L->phi);
+            FR_AWAIT(k, L->x, F_FIELD, t, 2 * L->q + 1);
+            FR_AWAIT(k, r, F_FCENT, chi, L->phi);
             if (r == 2) { wordbuf_clear(&L->wb); goto forward_x; }
             wordbuf_push(&L->wb, L->phi); wordbuf_push(&L->wb, L->x);
-            FR_AWAIT(k, L->uni, F_FCJOINF, L->uni, L->phi);
+            FR_AWAIT(k, L->uni, F_FCJOIN, L->uni, L->phi);
         }
-        FR_AWAIT(k, r, F_FCENTF, chi, L->uni);
+        FR_AWAIT(k, r, F_FCENT, chi, L->uni);
         if (r != 2) { wordbuf_clear(&L->wb); FR_FINISH(k, res_rec(R_INVALID, 0, "system does not cover the ambient face")); }
         wordbuf_push(&L->wb, t); wordbuf_push(&L->wb, 0);
         FR_CALL(k, r, intern_sub(k, &M.keys, &L->wb, &L->created));
@@ -855,11 +849,11 @@ static void whnf_step(Cont *k, uint64_t v) {
     }
 
     if (L->tag == T_COMP) {
-        FR_AWAIT(k, L->phi, F_FIELDF, t, 1);
-        FR_AWAIT(k, r, F_FCENTF, chi, L->phi);
-        if (r == 2) { FR_AWAIT(k, L->x, F_BINDERF, t, binder_rec(S_DIM, 0, 2, iv_one())); goto forward_x; }   /* tube coverage first */
+        FR_AWAIT(k, L->phi, F_FIELD, t, 1);
+        FR_AWAIT(k, r, F_FCENT, chi, L->phi);
+        if (r == 2) { FR_AWAIT(k, L->x, F_BINDER, t, binder_rec(S_DIM, 0, 2, iv_one())); goto forward_x; }   /* tube coverage first */
         L->j = binder_dim_var(t, 0);
-        FR_AWAIT(k, L->fam, F_BINDERF, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
+        FR_AWAIT(k, L->fam, F_BINDER, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
         FR_AWAIT(k, L->res, F_OBS, L->fam, observe_key(chi, 0, P));
         if (RES(L->res).cls == R_NO_OBSERVATION || RES(L->res).cls == R_INVALID) FR_FINISH(k, L->res);
         if (RES(L->res).cls == R_NEUTRAL) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
@@ -874,21 +868,21 @@ static void whnf_step(Cont *k, uint64_t v) {
                 if (!r) continue;                                   /* inconsistent along the line: dropped */
                 {   size_t m; const uint64_t *gw = interner_get(&M.keys, r, &m);
                     wordbuf_push(&L->wb, gw[0]); wordbuf_push(&L->wb, gw[1]); L->g = gw[0]; L->kept++; }
-                FR_AWAIT(k, L->uni, F_FCJOINF, L->uni, L->g);
+                FR_AWAIT(k, L->uni, F_FCJOIN, L->uni, L->g);
             }
             FR_CALL(k, L->sys, intern_sub(k, &M.keys, &L->wb, &L->created));
-            FR_AWAIT(k, r, F_FCENTF, chi, L->uni);
+            FR_AWAIT(k, r, F_FCENT, chi, L->uni);
             if (r != 2) FR_FINISH(k, res_rec(R_INVALID, 0, "type-family system has no branch along the whole composition line"));
             for (L->q = 0; L->q < L->kept; L->q++) {
-                FR_AWAIT(k, r, F_FCENTF, chi, sys_face(L->sys, L->q));
+                FR_AWAIT(k, r, F_FCENT, chi, sys_face(L->sys, L->q));
                 if (r == 2) { L->x = sys_term(L->sys, L->q); goto forward_x; }
             }
             goto branchwise;
         }
         /* an introduction: the one fixed clause (§53–§54) */
-        FR_AWAIT(k, L->tube, F_BINDERF, t, binder_rec(S_DIM, 0, 2, iv_var(L->j)));
-        FR_AWAIT(k, L->cap, F_FIELDF, t, 3);
-        { uint64_t w[5] = { L->j, RES(L->res).ref, L->phi, L->tube, L->cap }; FR_AWAIT(k, L->x, F_COMPCLAUSEF, interner_intern(&M.keys, w, 5, NULL), 0); }
+        FR_AWAIT(k, L->tube, F_BINDER, t, binder_rec(S_DIM, 0, 2, iv_var(L->j)));
+        FR_AWAIT(k, L->cap, F_FIELD, t, 3);
+        { uint64_t w[5] = { L->j, RES(L->res).ref, L->phi, L->tube, L->cap }; FR_AWAIT(k, L->x, F_COMPCLAUSE, interner_intern(&M.keys, w, 5, NULL), 0); }
         if (!L->x) FR_FINISH(k, res_rec(R_INVALID, 0, "composition in a family whose head is not a type former or lacks its universe annotation"));
         goto forward_x;
     }
@@ -920,7 +914,7 @@ branchwise:
     for (L->q = 0; L->q < L->kept; L->q++) {
         FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q), P));
         if (RES(L->res).cls != R_SYSTEM) continue;
-        for (L->a = 0; L->a < RES(L->res).nbr; L->a++) { family_launch(F_FCMEETF, sys_face(L->sys, L->q), RES(L->res).br[2 * L->a]); FR_YIELD(k); }
+        for (L->a = 0; L->a < RES(L->res).nbr; L->a++) { family_launch(F_FCMEET, sys_face(L->sys, L->q), RES(L->res).br[2 * L->a]); FR_YIELD(k); }
     }
     creq_head(&L->wb, T_SYSTEM, L->nfs, LEVELS_NONE, 2 * L->nfs);
     wordbuf_init(&L->wc); wordbuf_push(&L->wc, R_SYSTEM);
@@ -932,7 +926,7 @@ branchwise:
             continue;
         }
         for (L->a = 0; L->a < RES(L->res).nbr; L->a++) {
-            FR_AWAIT(k, L->mf, F_FCMEETF, sys_face(L->sys, L->q), RES(L->res).br[2 * L->a]);
+            FR_AWAIT(k, L->mf, F_FCMEET, sys_face(L->sys, L->q), RES(L->res).br[2 * L->a]);
             creq_field(&L->wb, (Field){ F_FACE, NO_SLOT, L->mf }); creq_field(&L->wb, (Field){ F_REF, NO_SLOT, RES(L->res).br[2 * L->a + 1] });
             wordbuf_push(&L->wc, L->mf); wordbuf_push(&L->wc, RES(L->res).br[2 * L->a + 1]);
         }
@@ -948,18 +942,16 @@ branchwise:
 /* the evaluator family and its operand families */
 static void evaluator_init(void) {
     FAM[F_WHNF].name = "whnf"; FAM[F_WHNF].resume = whnf_step; FAM[F_WHNF].loc_size = sizeof(WhLoc);
-    F_OBS = family_define("whnf.observe", obs_step, 0);
-    F_CREQ = family_define("construct.request", creq_step, sizeof(CrLoc));
-    F_CBRANCH = family_define("whnf.comp_branch", cbranch_step, sizeof(CbLoc));
-    F_DIST = family_define("whnf.distribute", dist_step, sizeof(DiLoc));
-    F_FIELDF = family_lookup("field"); F_BINDERF = family_lookup("binder"); F_CONSTRUCTF = family_lookup("construct"); F_HEADF = family_lookup("head.annotation");
-    F_FCENTF = family_lookup("fc.entails"); F_FCPROJF = family_lookup("fc.project"); F_FCMEETF = family_lookup("fc.meet");
-    F_FCJOINF = family_lookup("fc.join"); F_FCFORALLF = family_lookup("fc.forall"); F_FCENDF = family_lookup("fc.endpoint");
-    F_UNFOLDF = family_lookup("global.unfold");
-    require(F_FIELDF && F_HEADF && F_FCENDF && F_UNFOLDF, "the evaluator's operand families are defined first");
+    family_define(F_OBS, "whnf.observe", obs_step, 0);
+    family_define(F_CREQ, "construct.request", creq_step, sizeof(CrLoc));
+    family_define(F_CBRANCH, "whnf.comp_branch", cbranch_step, sizeof(CbLoc));
+    family_define(F_DIST, "whnf.distribute", dist_step, sizeof(DiLoc));
+    
+    
+    
+    
 }
 /* comp.clause is defined by the library after the evaluator */
-static void evaluator_bind(void) { F_COMPCLAUSEF = family_lookup("comp.clause"); require(F_COMPCLAUSEF, "comp.clause is defined"); }
 
 EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status) { return whnf_pinned(t, chi, 0, status); }
 EvalResult whnf_pinned(RefId t, FaceId chi, PinSet P, WhnfStatus *status) {

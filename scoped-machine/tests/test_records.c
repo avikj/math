@@ -55,12 +55,12 @@ static void *racer(void *p) {
 
 int main(void) {
     machine_init();
-    F_BUILD = family_define("test.build", build_step, sizeof(BuildLoc));
+    F_BUILD = family_new("test.build", build_step, sizeof(BuildLoc));
     interner_init(&T);
     /* agreement with the synchronous interner */
     uint64_t w[10000];
     for (size_t i = 0; i < 10000; i++) w[i] = word_of(5, i);
-    size_t s0 = rd(RD_STEPS, F_BUILD), is0 = rd(RD_STEPS, family_lookup("intern")), fs0 = rd(RD_STEPS, family_lookup("intern.flatten"));
+    size_t s0 = rd(RD_STEPS, F_BUILD), is0 = rd(RD_STEPS, F_INTERN), fs0 = rd(RD_STEPS, F_FLATTEN);
     WhnfStatus st;
     uint64_t r = family_run(F_BUILD, 5, 10000, &st);
     CHECK(st == W_OK && (r & 1) && interner_intern(&T, w, 10000, NULL) == r / 2, "a 10000-word record built and inserted in steps is the synchronous record");
@@ -71,7 +71,7 @@ int main(void) {
         size_t units = 0; InternState q; Interner X; interner_init(&X);
         intern_begin(&q, &X, w, NULL, 10000); while (intern_advance(&q, 1) == INTERN_RUNNING) units++;
         interner_free(&X);
-        size_t is = rd(RD_STEPS, family_lookup("intern")) - is0, fs = rd(RD_STEPS, family_lookup("intern.flatten")) - fs0;
+        size_t is = rd(RD_STEPS, F_INTERN) - is0, fs = rd(RD_STEPS, F_FLATTEN) - fs0;
         CHECK(units == 716 && is == (units + 1 + 7) / 8 + 1, "the insertion: ⌈units/8⌉ steps, then the flatten request's resumption");
         CHECK(fs == 667 + 2, "the flatten owner: one leaf per step, a start and the publication"); }
     uint64_t again = family_call(F_BUILD, 5, 10000);

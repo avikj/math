@@ -107,7 +107,7 @@ int main(void) {
         count_bump(&c); exact_free(&x); exact_add_count(&x, &c);
         CHECK(x.n == 2 && x.w[0] == 1 && x.w[1] == 1, "the next event adds one to the low digit");
         exact_free(&x); count_free(&c); }
-    F_SUM = family_define("test.sum", sum_step, 0);
+    F_SUM = family_new("test.sum", sum_step, 0);
     WhnfStatus st;
     uint64_t v = family_run(F_SUM, 1000, 0, &st) - 1;
     CHECK(st == W_OK && v == 500500, "sum(1000) = 500500 through 1001 producers");
@@ -148,12 +148,12 @@ int main(void) {
     eval_set_workers(0);
 
     /* frame programs, scheduled */
-    F_TRI = family_define("test.tri", tri_step, 0);
-    F_COUNT = family_define("test.count", count_step, sizeof(CountLoc));
-    F_USE = family_define("test.use", use_step, 0);
-    F_SYNC = family_define("test.sync", sync_step, 0);
-    F_PRIV = family_define("test.self", self_step, 0);
-    F_FAN = family_define("test.fan", fan_step, sizeof(FanLoc));
+    F_TRI = family_new("test.tri", tri_step, 0);
+    F_COUNT = family_new("test.count", count_step, sizeof(CountLoc));
+    F_USE = family_new("test.use", use_step, 0);
+    F_SYNC = family_new("test.sync", sync_step, 0);
+    F_PRIV = family_new("test.self", self_step, 0);
+    F_FAN = family_new("test.fan", fan_step, sizeof(FanLoc));
     fresh_machine(0);
     size_t t0 = rd(RD_STEPS, F_TRI), c0 = rd(RD_STEPS, F_COUNT), u0 = rd(RD_STEPS, F_USE);
     v = family_run(F_USE, 300, 0, &st);

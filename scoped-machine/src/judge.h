@@ -18,7 +18,6 @@ uint64_t judge_request(size_t n, const uint64_t *w);
 uint64_t judge_res(uint64_t code, const char *why, uint64_t a, uint64_t b, uint64_t c);
 uint64_t jr_code(uint64_t v); const char *jr_why(uint64_t v);
 uint64_t jr_a(uint64_t v); uint64_t jr_b(uint64_t v); uint64_t jr_c(uint64_t v);
-const char *judge_diag(const char *text);
 /* judgment contexts */
 uint64_t jc_empty(void);
 uint64_t jc_ext(uint64_t G, Sort sort, uint64_t id);

@@ -84,6 +84,5 @@ ExprId tnode_head_expr(TNodeId Q, int levels);
 ExprId tnode_field_expr(TNodeId Q, size_t k);
 bool expr_is_level(ExprId e); uint64_t expr_level_value(ExprId e);   /* a closed level/payload expression */
 void tnode_template_binder(TNodeId Q, BinderSlot slot, FieldIndex field, uint64_t *env_slot, ExprId *body_e);                     /* a template node's payload / levels recipe (0 = none) */
-void construct_bind_template_families(void);                                   /* interpretation families (registered by eval_init) */
 
 #endif

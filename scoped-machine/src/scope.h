@@ -32,7 +32,7 @@ typedef struct { Val body; RefId type; uint64_t level; FaceId guard; } TypedPart
 enum { TR_CLOSE = 1, TR_APPLY, TR_RE, TR_LOWER };
 uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx);
 ScopeId scope_records_traverse(ScopeId S, uint64_t tk);   /* records at tk's depth */
-ScopeId scope_with_side(ScopeId S);                  /* writes S's side data (once) and returns S */
+ScopeId scope_with_side(uint64_t pre);               /* the scope whose words (without side data) are the record pre */
 ScopeId capture_request(const uint64_t *req, size_t n);
 void scope_families_init(void);
 

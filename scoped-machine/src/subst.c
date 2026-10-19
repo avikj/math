@@ -10,13 +10,10 @@
 #include "eval.h"
 #include "template.h"
 
-static Family F_MAPT, F_MAPD, F_OVERRIDE, F_COMPOSE, F_REINDEX, F_IVRE, F_FCRE, F_IVDIMS;
-static Family F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_FCENT, F_DSUNION, F_VSUNION;
 
 static const uint64_t *mrec(MapId m, size_t *n) { return interner_get(&M.maps, m, n); }
 /* an identity entry key ↦ VAR(key) / key, recognized without forming VAR(key) */
 static bool identity_image(bool dims, uint64_t key, uint64_t img) { return dims ? img == iv_var(key) : (ref_is_var(img) && ref_var_id(img) == key); }
-static Family refvar_family(void) { static Family f; if (!f) f = family_lookup("ref.var"); return f; }
 
 /* ---------------- image lookup ---------------- */
 typedef struct { const uint64_t *w; size_t n, base, lo, hi; } LookLoc;
@@ -34,7 +31,7 @@ static void look_step(Cont *k, uint64_t v, bool dims) {
         FR_YIELD(k);
     }
     if (dims) FR_FINISH(k, iv_var(k->w[1]));
-    { uint64_t r = 0; FR_AWAIT(k, r, refvar_family(), k->w[1], 0); FR_FINISH(k, r); }
+    { uint64_t r = 0; FR_AWAIT(k, r, F_REFVAR, k->w[1], 0); FR_FINISH(k, r); }
     FR_END(k);
 }
 static void mapt_step(Cont *k, uint64_t v) { look_step(k, v, false); }
@@ -187,8 +184,6 @@ static void ivdims_step(Cont *k, uint64_t v) {
  * one independent demand per entry (a join), then the instance of the same
  * node (a construction's instance, or a template view). Nothing in a node is
  * visited. */
-static Family lazy_family(Family *slot, const char *name) { if (!*slot) { *slot = family_lookup(name); require(*slot, "family %s", name); } return *slot; }
-static Family F_TREF_, F_TIV_, F_TFC_, F_TSCOPE_, F_TVMAKE_, F_ENVREBUILD;
 static uint64_t deeper_key(uint64_t tk) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); return trav_key((unsigned)w[0], (unsigned)w[1] + 1, w[2]); }
 
 static void reindex_step(Cont *k, uint64_t v) {
@@ -213,12 +208,12 @@ static void re_item(uint64_t mode, uint64_t arg, TVal val, uint64_t *f, uint64_t
         if (val.sort == PS_REF) *f = F_REINDEX;
         else if (val.sort == PS_INTERVAL) *f = F_IVRE;
         else if (val.sort == PS_FACE) *f = F_FCRE;
-        else { *f = lazy_family(&F_TSCOPE_, "trav.scope"); *b = trav_key(TR_RE, 0, arg); }
+        else { *f = F_TSCOPE; *b = trav_key(TR_RE, 0, arg); }
     } else {
-        if (val.sort == PS_REF) *f = lazy_family(&F_TREF_, "trav.ref");
-        else if (val.sort == PS_INTERVAL) *f = lazy_family(&F_TIV_, "trav.interval");
-        else if (val.sort == PS_FACE) *f = lazy_family(&F_TFC_, "trav.face");
-        else { *f = lazy_family(&F_TSCOPE_, "trav.scope"); *b = deeper_key(arg); }
+        if (val.sort == PS_REF) *f = F_TREF;
+        else if (val.sort == PS_INTERVAL) *f = F_TIV;
+        else if (val.sort == PS_FACE) *f = F_TFC;
+        else { *f = F_TSCOPE; *b = deeper_key(arg); }
     }
 }
 static void envrebuild_step(Cont *k, uint64_t v) {
@@ -250,25 +245,24 @@ static void envrebuild_step(Cont *k, uint64_t v) {
     }
     if (!L->changed) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, t); }
     FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
-    FR_AWAIT(k, r, lazy_family(&F_TVMAKE_, "template.view"), ref_tnode(t), id);
+    FR_AWAIT(k, r, F_TVMAKE, ref_tnode(t), id);
     FR_FINISH(k, r);
     FR_END(k);
 }
 
 void subst_families_init(void) {
-    F_IVNEG = family_lookup("iv.negate"); F_IVMEET = family_lookup("iv.meet"); F_IVJOIN = family_lookup("iv.join");
-    F_FCEND = family_lookup("fc.endpoint"); F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join");
-    F_FCENT = family_lookup("fc.entails"); F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union");
-    require(F_IVNEG && F_FCJOIN && F_DSUNION, "the set and DNF families are registered first");
-    F_MAPT = family_define("map.term_image", mapt_step, sizeof(LookLoc));
-    F_MAPD = family_define("map.dim_image", mapd_step, sizeof(LookLoc));
-    F_OVERRIDE = family_define("map.override", override_step, sizeof(OverLoc));
-    F_COMPOSE = family_define("map.compose", compose_step, sizeof(MergeLoc));
-    F_REINDEX = family_define("reindex", reindex_step, 0);
-    F_ENVREBUILD = family_define("env.rebuild", envrebuild_step, sizeof(ReLoc));
-    F_IVRE = family_define("iv.reindex", ivre_step, sizeof(SubLoc));
-    F_FCRE = family_define("fc.reindex", fcre_step, sizeof(SubLoc));
-    F_IVDIMS = family_define("iv.dims", ivdims_step, sizeof(SubLoc));
+    
+    
+    
+    family_define(F_MAPT, "map.term_image", mapt_step, sizeof(LookLoc));
+    family_define(F_MAPD, "map.dim_image", mapd_step, sizeof(LookLoc));
+    family_define(F_OVERRIDE, "map.override", override_step, sizeof(OverLoc));
+    family_define(F_COMPOSE, "map.compose", compose_step, sizeof(MergeLoc));
+    family_define(F_REINDEX, "reindex", reindex_step, 0);
+    family_define(F_ENVREBUILD, "env.rebuild", envrebuild_step, sizeof(ReLoc));
+    family_define(F_IVRE, "iv.reindex", ivre_step, sizeof(SubLoc));
+    family_define(F_FCRE, "fc.reindex", fcre_step, sizeof(SubLoc));
+    family_define(F_IVDIMS, "iv.dims", ivdims_step, sizeof(SubLoc));
 }
 
 /* ---------------- the operations (synchronous driver) ---------------- */

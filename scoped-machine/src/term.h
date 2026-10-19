@@ -130,7 +130,6 @@ RefId reindex1(RefId t, TermVarId x, RefId a);
 RefId reindex_dim(RefId t, DimVarId i, IntervalId r);
 
 /* ---- binders ---- */
-RefId ref_lookup(const uint64_t *w, size_t n);   /* a complete reference by content, or 0 */
 TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type);
 DimVarId binder_dim_var(RefId owner, BinderSlot slot);
 /* Keyed fresh names for library definitions: deterministic per key. A key is

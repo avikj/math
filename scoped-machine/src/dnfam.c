@@ -21,8 +21,6 @@ static bool rec_one(const uint64_t *w, size_t n) { return n == 1 && w[0] == DNF_
 static uint64_t dzero(DKind k) { return interner_intern(dtab(k), NULL, 0, NULL); }
 static uint64_t done_one(DKind k) { uint64_t s = DNF_SEP; return interner_intern(dtab(k), &s, 1, NULL); }
 
-static Family F_IVJOIN, F_IVMEET, F_IVNEG, F_FCJOIN, F_FCMEET, F_FCEND, F_FCENT, F_FCFORALL, F_FCPROJ;
-static Family F_DSUNION, F_DSREMOVE, F_DSCONTAINS, F_VSUNION, F_VSREMOVE, F_VSCONTAINS;
 static Family fjoin(DKind k) { return k == DK_IV ? F_IVJOIN : F_FCJOIN; }
 
 /* ---------------- join ---------------- */
@@ -355,21 +353,21 @@ static void dscontains_step(Cont *k, uint64_t v) { member_step(k, v, true, false
 static void vscontains_step(Cont *k, uint64_t v) { member_step(k, v, false, false); }
 
 void dnf_families_init(void) {
-    F_IVJOIN = family_define("iv.join", ivjoin_step, sizeof(JoinLoc));
-    F_FCJOIN = family_define("fc.join", fcjoin_step, sizeof(JoinLoc));
-    F_IVMEET = family_define("iv.meet", ivmeet_step, sizeof(MeetLoc));
-    F_FCMEET = family_define("fc.meet", fcmeet_step, sizeof(MeetLoc));
-    F_IVNEG = family_define("iv.negate", ivneg_step, sizeof(NegLoc));
-    F_FCEND = family_define("fc.endpoint", fcend_step, sizeof(NegLoc));
-    F_FCENT = family_define("fc.entails", fcent_step, sizeof(EntLoc));
-    F_FCFORALL = family_define("fc.forall", fcforall_step, sizeof(AllLoc));
-    F_FCPROJ = family_define("fc.project", fcproj_step, sizeof(ProjLoc));
-    F_DSUNION = family_define("dimset.union", dsunion_step, sizeof(SetLoc));
-    F_VSUNION = family_define("varset.union", vsunion_step, sizeof(SetLoc));
-    F_DSREMOVE = family_define("dimset.remove", dsremove_step, sizeof(SetLoc));
-    F_VSREMOVE = family_define("varset.remove", vsremove_step, sizeof(SetLoc));
-    F_DSCONTAINS = family_define("dimset.contains", dscontains_step, sizeof(SetLoc));
-    F_VSCONTAINS = family_define("varset.contains", vscontains_step, sizeof(SetLoc));
+    family_define(F_IVJOIN, "iv.join", ivjoin_step, sizeof(JoinLoc));
+    family_define(F_FCJOIN, "fc.join", fcjoin_step, sizeof(JoinLoc));
+    family_define(F_IVMEET, "iv.meet", ivmeet_step, sizeof(MeetLoc));
+    family_define(F_FCMEET, "fc.meet", fcmeet_step, sizeof(MeetLoc));
+    family_define(F_IVNEG, "iv.negate", ivneg_step, sizeof(NegLoc));
+    family_define(F_FCEND, "fc.endpoint", fcend_step, sizeof(NegLoc));
+    family_define(F_FCENT, "fc.entails", fcent_step, sizeof(EntLoc));
+    family_define(F_FCFORALL, "fc.forall", fcforall_step, sizeof(AllLoc));
+    family_define(F_FCPROJ, "fc.project", fcproj_step, sizeof(ProjLoc));
+    family_define(F_DSUNION, "dimset.union", dsunion_step, sizeof(SetLoc));
+    family_define(F_VSUNION, "varset.union", vsunion_step, sizeof(SetLoc));
+    family_define(F_DSREMOVE, "dimset.remove", dsremove_step, sizeof(SetLoc));
+    family_define(F_VSREMOVE, "varset.remove", vsremove_step, sizeof(SetLoc));
+    family_define(F_DSCONTAINS, "dimset.contains", dscontains_step, sizeof(SetLoc));
+    family_define(F_VSCONTAINS, "varset.contains", vscontains_step, sizeof(SetLoc));
 }
 
 /* ---------------- the operations (synchronous driver for callers that are

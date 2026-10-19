@@ -15,10 +15,6 @@
 #include "eval.h"
 #include "template.h"
 
-static Family F_REFVAR, F_FCDIMS, F_FIELD, F_BINDER, F_CONSTRUCT;
-static Family F_INTERP, F_ENVSET;   /* template families (bound after their registration) */
-static Family F_REINDEX, F_IVRE, F_FCRE, F_TVMAKE, F_IVDIMS, F_OVERRIDE;
-static Family F_DSUNION, F_VSUNION, F_DSREMOVE, F_VSREMOVE, F_FCMEET, F_FCJOIN, F_FCFORALL;
 
 /* ---------------- VAR(x) ---------------- */
 typedef struct { uint64_t fv, sup, req, ds; } VarLoc;
@@ -26,7 +22,6 @@ static void refvar_step(Cont *k, uint64_t v) {
     VarLoc *L = FR_LOC(k, VarLoc);
     TermVarId x = k->w[0];
     FR_BEGIN(k);
-    { uint64_t w[2] = { 1, x }; RefId id = ref_lookup(w, 2); if (id) FR_FINISH(k, id); }
     if (is_local_atom(x)) FR_FINISH(k, ref_var(x));          /* an atom: constant side data */
     {   RefId type = term_var_type(x);
         uint64_t xs[1] = { x }; L->fv = varset_make(xs, 1); L->sup = ref_support(type); L->req = term_var_required(x); }
@@ -231,7 +226,6 @@ static void construct_step(Cont *k, uint64_t v) {
 
 /* a head's payload (w[1] = 0) or formation levels (w[1] = 1): constants of a
  * construction node, interpreted for a template node */
-static Family F_HEAD;
 static void head_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
@@ -249,11 +243,9 @@ static void head_step(Cont *k, uint64_t v) {
  * the definition's parameters by the reference's environment (the map record
  * is written directly: parameters are sorted, images are the entries) */
 typedef struct { const uint64_t *xs, *ds; size_t nt, nd, q, kept; uint64_t s, m; WordBuf w; bool created; } UnfLoc;
-static Family F_UNFOLD;
 static bool unf_identity(bool dim, uint64_t key, uint64_t img) { return dim ? img == iv_var(key) : (ref_is_var(img) && ref_var_id(img) == key); }
 /* global.args(t): the substitution of a global's parameters by the
  * reference's environment (identity entries dropped), written directly */
-static Family F_GARGS;
 static void gargs_step(Cont *k, uint64_t v) {
     UnfLoc *L = FR_LOC(k, UnfLoc);
     RefId t = k->w[0];
@@ -294,7 +286,6 @@ static void unfold_step(Cont *k, uint64_t v) {
  * values and, for a global reference, its own symbol. Bodies are not entered (that is the closure of an
  * observation's premises, pins.c). A set of symbol ids (a varset). */
 typedef struct { size_t n, q, nf; uint64_t acc, f, a, b, r; } GlLoc;
-static Family F_GLOBALS;
 /* the demand for item q of x (kind w[1]): a family key, or none (f = 0) */
 static void gl_item(const Cont *k, size_t q, size_t nf, uint64_t *f, uint64_t *a, uint64_t *b) {
     uint64_t x = k->w[0]; *f = 0; *a = *b = 0;
@@ -343,25 +334,23 @@ static void globals_step(Cont *k, uint64_t v) {
 }
 
 void construct_families_init(void) {
-    F_REINDEX = family_lookup("reindex"); F_IVRE = family_lookup("iv.reindex"); F_FCRE = family_lookup("fc.reindex");
-    F_IVDIMS = family_lookup("iv.dims");
-    F_OVERRIDE = family_lookup("map.override");
-    F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union");
-    F_DSREMOVE = family_lookup("dimset.remove"); F_VSREMOVE = family_lookup("varset.remove");
-    F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join"); F_FCFORALL = family_lookup("fc.forall");
-    require(F_REINDEX && F_FCFORALL, "the substitution families are registered first");
-    F_REFVAR = family_define("ref.var", refvar_step, sizeof(VarLoc));
-    F_FCDIMS = family_define("fc.dims", fcdims_step, sizeof(DimsLoc));
-    F_FIELD = family_define("field", field_step, sizeof(FieldLoc));
-    F_BINDER = family_define("binder", binder_step, sizeof(BindLoc));
-    F_CONSTRUCT = family_define("construct", construct_step, sizeof(ConLoc));
-    F_HEAD = family_define("head.annotation", head_step, 0);
-    F_GARGS = family_define("global.args", gargs_step, sizeof(UnfLoc));
-    F_UNFOLD = family_define("global.unfold", unfold_step, 0);    /* keyed by (reference, body revision) */
-    F_GLOBALS = family_define("globals.of", globals_step, sizeof(GlLoc));
+    
+    
+    
+    
+    
+    
+    family_define(F_REFVAR, "ref.var", refvar_step, sizeof(VarLoc));
+    family_define(F_FCDIMS, "fc.dims", fcdims_step, sizeof(DimsLoc));
+    family_define(F_FIELD, "field", field_step, sizeof(FieldLoc));
+    family_define(F_BINDER, "binder", binder_step, sizeof(BindLoc));
+    family_define(F_CONSTRUCT, "construct", construct_step, sizeof(ConLoc));
+    family_define(F_HEAD, "head.annotation", head_step, 0);
+    family_define(F_GARGS, "global.args", gargs_step, sizeof(UnfLoc));
+    family_define(F_UNFOLD, "global.unfold", unfold_step, 0);    /* keyed by (reference, body revision) */
+    family_define(F_GLOBALS, "globals.of", globals_step, sizeof(GlLoc));
 }
 /* the template families register after the construction families; their ids are read lazily */
-void construct_bind_template_families(void) { F_TVMAKE = family_lookup("template.view"); F_INTERP = family_lookup("template.interp"); F_ENVSET = family_lookup("template.envset"); require(F_INTERP && F_ENVSET, "template families"); }
 
 /* ---------------- the operations (synchronous driver) ---------------- */
 RefId construct_request(const uint64_t *req, size_t n) { return family_call(F_CONSTRUCT, interner_intern(&M.keys, req, n, NULL), 0); }

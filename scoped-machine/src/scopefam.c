@@ -10,16 +10,13 @@
  *   LOWER — the single binder level after ∀ is removed.
  * TREF/TIV/TFC traverse a reference, interval or face at the key's depth; a
  * scope's records sit one level deeper (TSCOPE with depth+1). A scope record
- * and its side data (free support and variables, bound atoms excluded) are
- * produced together by SCOPESIDE, so a scope id is never returned before its
- * side data is written. Each step does a constant amount of work. */
+ * ends with its side data (free support and variables, bound atoms excluded):
+ * SCOPESIDE forms it from the words without it. Each step does a constant
+ * amount of work. */
 #include "eval.h"
 #include "template.h"
 
-#define SSIDE(id) ((ScopeSide *)chunked_at(&M.scope_side, (id) - 1))
 
-static Family F_TIMGT, F_TIMGD, F_TREF, F_TIV, F_TFC, F_TSCOPE, F_SCOPESIDE, F_SETFREE, F_CAPTURE;
-static Family F_MAPT, F_MAPD, F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_DSUNION, F_VSUNION, F_IVDIMS, F_FCDIMS;
 
 uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx) { uint64_t w[3] = { kind, depth, ctx }; return interner_intern(&M.keys, w, 3, NULL); }
 static void tk_get(uint64_t tk, unsigned *kind, unsigned *depth, uint64_t *ctx) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); *kind = (unsigned)w[0]; *depth = (unsigned)w[1]; *ctx = w[2]; }
@@ -112,7 +109,6 @@ static void tfc_step(Cont *k, uint64_t v) {
 }
 
 /* ---------------- references: a variable's image, or the environment rebuilt ---------------- */
-static Family F_ENVREBUILD;
 static void tref_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
@@ -161,7 +157,7 @@ static void tscope_step(Cont *k, uint64_t v) {
         if (r != t[4]) L->changed = true;
         wordbuf_push(&L->out, r); }
     if (!L->changed) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, k->w[0]); }
-    FR_CALL(k, id, intern_sub(k, &M.scopes, &L->out, &L->created));
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_AWAIT(k, r, F_SCOPESIDE, id, 0);
     FR_FINISH(k, r);
     FR_END(k);
@@ -172,8 +168,7 @@ static void tscope_step(Cont *k, uint64_t v) {
 static void scopeside_step(Cont *k, uint64_t v) {
     ScLoc *L = FR_LOC(k, ScLoc);
     FR_BEGIN(k);
-    if (__atomic_load_n(&SSIDE(k->w[0])->support, __ATOMIC_ACQUIRE)) FR_FINISH(k, k->w[0]);
-    L->s = interner_get(&M.scopes, k->w[0], &L->ns); L->n = (size_t)L->s[0];
+    L->s = interner_get(&M.keys, k->w[0], &L->ns); L->n = (size_t)L->s[0];
     L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
     /* the reference records: local types, result type, body (when a reference) */
     for (L->q = 0; L->q < L->n + 2; L->q++) {
@@ -195,10 +190,12 @@ static void scopeside_step(Cont *k, uint64_t v) {
     }
     FR_AWAIT(k, L->sup, F_SETFREE, L->sup, 0);
     FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 1);
-    /* this key's one owner writes the side data; every other holder of the id
-     * obtained it from this key's value (published after this store) */
-    { ScopeSide *sd = SSIDE(k->w[0]); sd->freevars = L->fv; __atomic_store_n(&sd->support, L->sup, __ATOMIC_RELEASE); }
-    FR_FINISH(k, k->w[0]);
+    /* the record: the words, then the side data */
+    wordbuf_init(&L->out);
+    for (L->q = 0; L->q < L->ns; L->q++) { wordbuf_push(&L->out, L->s[L->q]); FR_YIELD(k); }
+    wordbuf_push(&L->out, L->sup); wordbuf_push(&L->out, L->fv);
+    FR_CALL(k, L->r, intern_sub(k, &M.scopes, &L->out, &L->created));
+    FR_FINISH(k, L->r);
     FR_END(k);
 }
 
@@ -248,32 +245,31 @@ static void capture_step(Cont *k, uint64_t v) {
         wordbuf_push(&L->out, r);
         FR_AWAIT(k, r, val_family(t[0]), t[1], L->tk); }
     wordbuf_push(&L->out, r);
-    FR_CALL(k, id, intern_sub(k, &M.scopes, &L->out, &L->created));
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_AWAIT(k, r, F_SCOPESIDE, id, 0);
     FR_FINISH(k, r);
     FR_END(k);
 }
 
 void scope_families_init(void) {
-    F_MAPT = family_lookup("map.term_image"); F_MAPD = family_lookup("map.dim_image");
-    F_IVNEG = family_lookup("iv.negate"); F_IVMEET = family_lookup("iv.meet"); F_IVJOIN = family_lookup("iv.join");
-    F_FCEND = family_lookup("fc.endpoint"); F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join");
-    F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union");
-    F_IVDIMS = family_lookup("iv.dims"); F_FCDIMS = family_lookup("fc.dims");
-    require(F_MAPT && F_FCDIMS, "the substitution and construction families are registered first");
-    F_TIMGT = family_define("trav.term_image", timgt_step, sizeof(ImgLoc));
-    F_TIMGD = family_define("trav.dim_image", timgd_step, sizeof(ImgLoc));
-    F_TREF = family_define("trav.ref", tref_step, 0);
-    F_ENVREBUILD = family_lookup("env.rebuild");
-    F_TIV = family_define("trav.interval", tiv_step, sizeof(SubLoc));
-    F_TFC = family_define("trav.face", tfc_step, sizeof(SubLoc));
-    F_TSCOPE = family_define("trav.scope", tscope_step, sizeof(ScLoc));
-    F_SCOPESIDE = family_define("scope.side", scopeside_step, sizeof(ScLoc));
-    F_SETFREE = family_define("set.free", setfree_step, sizeof(FreeLoc));
-    F_CAPTURE = family_define("scope.capture", capture_step, sizeof(CapLoc));
+    
+    
+    
+    
+    
+    family_define(F_TIMGT, "trav.term_image", timgt_step, sizeof(ImgLoc));
+    family_define(F_TIMGD, "trav.dim_image", timgd_step, sizeof(ImgLoc));
+    family_define(F_TREF, "trav.ref", tref_step, 0);
+    
+    family_define(F_TIV, "trav.interval", tiv_step, sizeof(SubLoc));
+    family_define(F_TFC, "trav.face", tfc_step, sizeof(SubLoc));
+    family_define(F_TSCOPE, "trav.scope", tscope_step, sizeof(ScLoc));
+    family_define(F_SCOPESIDE, "scope.side", scopeside_step, sizeof(ScLoc));
+    family_define(F_SETFREE, "set.free", setfree_step, sizeof(FreeLoc));
+    family_define(F_CAPTURE, "scope.capture", capture_step, sizeof(CapLoc));
 }
 
 /* ---------------- the operations (synchronous driver) ---------------- */
-ScopeId scope_with_side(ScopeId S) { return family_call(F_SCOPESIDE, S, 0); }
+ScopeId scope_with_side(uint64_t pre) { return family_call(F_SCOPESIDE, pre, 0); }
 ScopeId capture_request(const uint64_t *req, size_t n) { return family_call(F_CAPTURE, interner_intern(&M.keys, req, n, NULL), 0); }
 ScopeId scope_records_traverse(ScopeId S, uint64_t tk) { return family_call(F_TSCOPE, S, tk); }

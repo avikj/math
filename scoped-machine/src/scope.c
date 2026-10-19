@@ -1,11 +1,12 @@
 #include "scope.h"
 #include "template.h"   /* the validator walks template environments */
 
-#define SSIDE(id) ((ScopeSide *)chunked_at(&M.scope_side, (id) - 1))
 
 
 /* ------------------------------------------------------------------ */
-/* scope records: [n, (sort, type, level, required)*, result_sort, type, level, guard, body] */
+/* scope records: [n, (sort, type, level, required)*, result_sort, type, level, guard, body, support, freevars]
+ * (support and free variables, bound atoms excluded, are a function of the
+ * rest: scope.side forms the record from its words) */
 
 static const uint64_t *scope_words(ScopeId S, size_t *n) { return interner_get(&M.scopes, S, n); }
 size_t scope_arity(ScopeId S) { size_t n; return (size_t)scope_words(S, &n)[0]; }
@@ -20,17 +21,17 @@ Val scope_body(ScopeId S) { const uint64_t *t = scope_tail(S); Val v = { (ValSor
 RefId scope_type(ScopeId S) { return scope_tail(S)[1]; }
 uint64_t scope_level(ScopeId S) { return scope_tail(S)[2]; }
 FaceId scope_guard(ScopeId S) { return scope_tail(S)[3]; }
-DimSetId scope_support(ScopeId S) { return SSIDE(S)->support; }
-VarSetId scope_freevars(ScopeId S) { return SSIDE(S)->freevars; }
+DimSetId scope_support(ScopeId S) { size_t n; const uint64_t *w = scope_words(S, &n); return w[n - 2]; }
+VarSetId scope_freevars(ScopeId S) { size_t n; const uint64_t *w = scope_words(S, &n); return w[n - 1]; }
 
 ScopeId scope_intern(size_t n, const LocalDecl *locals, Val body, RefId result_type, uint64_t result_level, FaceId guard) {
     Words w; words_init(&w);
     words_push(&w, n);
     for (size_t k = 0; k < n; k++) { words_push(&w, locals[k].sort); words_push(&w, locals[k].type); words_push(&w, locals[k].level); words_push(&w, locals[k].required); }
     words_push(&w, body.sort); words_push(&w, result_type); words_push(&w, result_level); words_push(&w, guard); words_push(&w, body.id);
-    ScopeId id = interner_intern(&M.scopes, w.w, w.n, NULL);
+    uint64_t pre = interner_intern(&M.keys, w.w, w.n, NULL);
     words_free(&w);
-    return scope_with_side(id);            /* the side data is written before the id is returned */
+    return scope_with_side(pre);
 }
 
 /* ------------------------------------------------------------------ */

@@ -72,7 +72,7 @@ static CheckStatus premises(PinSet P, const char **reason) {
 
 /* a flat context as a judgment context */
 static CheckStatus jctx(ContextId F, uint64_t *G, const char **reason) {
-    WhnfStatus ws; *G = family_run(family_lookup("judge.ctx_of"), F, 0, &ws);
+    WhnfStatus ws; *G = family_run(J_JCOF, F, 0, &ws);
     if (ws != W_OK) { *reason = "unresolved: context"; return CK_UNRESOLVED; }
     return CK_VALID;
 }

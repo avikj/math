@@ -16,6 +16,7 @@
 
 #include "term.h"
 #include "count.h"
+#include "families.h"
 
 typedef enum {
     R_INTRODUCTION = 1,
@@ -44,7 +45,7 @@ typedef uint64_t EntryId;
 typedef enum { E_UNEVALUATED = 0, E_RUNNING, E_READY } EntryState;
 
 typedef uint32_t Family;
-enum { F_WHNF = 1, F_MAX = 128 };
+enum { F_MAX = 128 };
 
 /* A frame is the retained state of one producer of a family between two of
  * its steps: program counter and bounded locals (w, and a fixed-size locals
@@ -88,8 +89,8 @@ typedef void (*FamResume)(Cont *k, uint64_t v);
  * key before the frame finishes (a parent publishes only after every child
  * it launched has delivered). The producer key of a frame family is
  * (f, a, b) and its frame starts with w[0] = a, w[1] = b. */
-Family family_define(const char *name, FamResume step, size_t loc_size);
-Family family_lookup(const char *name);           /* 0 when not registered */
+void family_define(Family f, const char *name, FamResume step, size_t loc_size);   /* a fixed family (families.h) */
+Family family_new(const char *name, FamResume step, size_t loc_size);         /* a family defined at run time */
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b);
 void frame_call(Cont *k, Cont *child);
 void frame_yield(Cont *k);
@@ -132,7 +133,6 @@ void construct_families_init(void);
 /* the observation family: key (t, observe_key(χ, φ, P)) observes t under
  * χ ∧ φ (φ = 0: none) bound to the pin set P (pins.h); its value is a
  * result record */
-Family observe_family(void);
 uint64_t observe_key(FaceId chi, FaceId phi, uint64_t pins);
 /* a construction request as a subroutine (value: RefId) */
 Cont *construct_sub(const Cont *caller, Tag tag, uint64_t payload, uint64_t levels, size_t nf, const Field *f, size_t nb, const Binder *b);

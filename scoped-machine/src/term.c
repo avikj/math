@@ -13,30 +13,40 @@ const char *tag_name(Tag t) {
     return "?";
 }
 
-#define RSIDE(id) ((RefSide *)chunked_at(&M.ref_side, (id) - 1))
-#define TDECL(x) ((TermDecl *)chunked_at(&M.term_decl, (x) - 1))
-#define NVAL(id) ((uint64_t *)chunked_at(&M.nominal_val, (id) - 1))
 #define DEF(s) ((Def *)chunked_at(&M.defs, (s) - 1))
 
-/* ================= declarations ================= */
-
+/* ================= declarations =================
+ * A variable is its nominal record: the words of its key, then its sort and,
+ * for a term variable, its type and required face —
+ *   [tag, (kind, v)*, S_TERM, type, required]   |   [tag, (kind, v)*, S_DIM]
+ * tag 1 a binder's name (owner, slot), 2 a keyed fresh term name, 3 a keyed
+ * fresh dimension, 4 a host declaration (a serial number: each is fresh).
+ * Its identity is the record id; ids grow with creation, so a variable's id
+ * exceeds those of the variables its type mentions. */
+static uint64_t var_record(const uint64_t *key, size_t nk, Sort sort, RefId type, FaceId required) {
+    uint64_t w[INTERN_SMALL + 4]; size_t n = 0;
+    require(nk + 3 <= sizeof w / sizeof w[0], "a nominal key of %zu words", nk);
+    for (size_t q = 0; q < nk; q++) w[n++] = key[q];
+    w[n++] = sort;
+    if (sort == S_TERM) { require(type, "a term declaration has a type"); w[n++] = type; w[n++] = required; }
+    return interner_intern(&M.nominal, w, n, NULL);
+}
 TermVarId declare_term(RefId type, FaceId required) {
-    require(type, "a declaration has a type");
-    TermVarId x = (TermVarId)__atomic_add_fetch(&M.n_term_vars, 1, __ATOMIC_RELAXED);
-    TermDecl *d = TDECL(x);
-    d->required = required;
-    __atomic_store_n(&d->type, type, __ATOMIC_RELEASE);
-    return x;
+    uint64_t key[2] = { 4, __atomic_add_fetch(&M.n_fresh, 1, __ATOMIC_RELAXED) };
+    return var_record(key, 2, S_TERM, type, required);
 }
-DimVarId declare_dim(void) { return (DimVarId)__atomic_add_fetch(&M.n_dim_vars, 1, __ATOMIC_RELAXED); }
-static const TermDecl *decl_of(TermVarId x) {
-    require(x >= 1 && x <= __atomic_load_n(&M.n_term_vars, __ATOMIC_RELAXED), "undeclared term variable");
-    const TermDecl *d = TDECL(x);
-    require(__atomic_load_n(&d->type, __ATOMIC_ACQUIRE), "undeclared term variable");
-    return d;
+DimVarId declare_dim(void) {
+    uint64_t key[2] = { 4, __atomic_add_fetch(&M.n_fresh, 1, __ATOMIC_RELAXED) };
+    return var_record(key, 2, S_DIM, 0, 0);
 }
-RefId term_var_type(TermVarId x) { return decl_of(x)->type; }
-FaceId term_var_required(TermVarId x) { return decl_of(x)->required; }
+static const uint64_t *term_decl(TermVarId x) {
+    require(x >= 1 && !is_local_atom(x) && x <= interner_count(&M.nominal), "undeclared term variable");
+    size_t n; const uint64_t *w = interner_get(&M.nominal, x, &n);
+    require(n >= 4 && w[n - 3] == S_TERM, "not a term variable");
+    return w + n - 2;
+}
+RefId term_var_type(TermVarId x) { return term_decl(x)[0]; }
+FaceId term_var_required(TermVarId x) { return term_decl(x)[1]; }
 
 /* ================= raw maps ================= */
 /* record: [(x,ref)*, (i,intv)*, nt] — keys sorted within each section, no
@@ -146,120 +156,69 @@ RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nf, const
 /* ================= references ================= */
 /* record: [1, x] for VAR ; [3, node, environment] for TVIEW */
 
-/* side data is a function of the record: every interning caller writes the
- * same values, so none waits for another */
-static void ref_side_set(RefId id, DimSetId support, VarSetId fv, FaceId req) {
-    RefSide *r = RSIDE(id);
-    __atomic_store_n(&r->support, support, __ATOMIC_RELAXED);
-    __atomic_store_n(&r->freevars, fv, __ATOMIC_RELAXED);
-    __atomic_store_n(&r->required, req, __ATOMIC_RELAXED);
-    __atomic_store_n(&r->published, 1, __ATOMIC_RELEASE);
-}
-/* a reference found by its content: complete (record and side data) or 0.
- * Interner membership alone is not completion: the record becomes
- * discoverable before its producer has written the side data. */
-RefId ref_lookup(const uint64_t *w, size_t n) {
-    RefId id = interner_find(&M.refs, w, n);
-    if (!id || !__atomic_load_n(&RSIDE(id)->published, __ATOMIC_ACQUIRE)) return 0;
-    return id;
-}
-
+/* records: [1, x, support, freevars, required] for VAR; [3, node,
+ * environment, support, freevars, required] for TVIEW. The side data is a
+ * function of (x) or (node, environment), so the record with it is still
+ * one record per reference, and interning publishes it whole. */
 RefId ref_var(TermVarId x) {
-    uint64_t w[2] = { 1, x };
     if (is_local_atom(x)) {
         /* a bound local occurrence (§50): no declaration record; its type and
          * guard live in the enclosing scope's or node's records */
-        RefId id = ref_lookup(w, 2);
-        if (id) return id;
-        bool created;
-        id = interner_intern(&M.refs, w, 2, &created);
         uint64_t xs[1] = { x };
-        ref_side_set(id, dimset_make(NULL, 0), varset_make(xs, 1), fc_true());
-        return id;
+        uint64_t w[5] = { 1, x, dimset_make(NULL, 0), varset_make(xs, 1), fc_true() };
+        return interner_intern(&M.refs, w, 5, NULL);
     }
-    (void)decl_of(x);
-    RefId id = ref_lookup(w, 2);
-    if (id) return id;
-    return ref_var_family(x);              /* its one owner publishes record and side data; an unfinished one is awaited */
+    (void)term_decl(x);
+    return ref_var_family(x);              /* the ref.var producer computes its typed boundary */
 }
-/* VAR(x) with its typed boundary (computed by the ref.var family): x, the
- * closed boundary of its declaration type, the dimensions of its required
- * face; the record and its side data are published together */
+/* VAR(x) with its typed boundary (computed by the ref.var family) */
 RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv, FaceId req) {
-    uint64_t w[2] = { 1, x };
-    bool created;
-    RefId id = interner_intern(&M.refs, w, 2, &created);
-    ref_side_set(id, support, fv, req);
-    return id;
+    uint64_t w[5] = { 1, x, support, fv, req };
+    return interner_intern(&M.refs, w, 5, NULL);
 }
-
-bool ref_is_var(RefId t) { size_t n; return interner_get(&M.refs, t, &n)[0] == 1; }
-uint64_t ref_tnode(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 3, "not a TVIEW"); return w[1]; }
-uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 3, "not a TVIEW"); return w[2]; }
-/* intern a TVIEW record with its computed side data (template layer) */
+static const uint64_t *rrec(RefId t, size_t *n) { return interner_get(&M.refs, t, n); }
+bool ref_is_var(RefId t) { size_t n; return rrec(t, &n)[0] == 1; }
+uint64_t ref_tnode(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] == 3, "not a TVIEW"); return w[1]; }
+uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] == 3, "not a TVIEW"); return w[2]; }
 RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required) {
-    uint64_t w[3] = { 3, node, env };
-    bool created;
-    RefId id = interner_intern(&M.refs, w, 3, &created);
-    ref_side_set(id, support, fv, required);
-    return id;
+    uint64_t w[6] = { 3, node, env, support, fv, required };
+    return interner_intern(&M.refs, w, 6, NULL);
 }
-TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
-Tag ref_tag(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] != 1, "ref_tag of a variable"); return tnode_tag(w[1]); }
-DimSetId ref_support(RefId t) { return __atomic_load_n(&RSIDE(t)->support, __ATOMIC_RELAXED); }
-VarSetId ref_freevars(RefId t) { return __atomic_load_n(&RSIDE(t)->freevars, __ATOMIC_RELAXED); }
-FaceId ref_required(RefId t) { return __atomic_load_n(&RSIDE(t)->required, __ATOMIC_RELAXED); }
+TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
+Tag ref_tag(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] != 1, "ref_tag of a variable"); return tnode_tag(w[1]); }
+DimSetId ref_support(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); return w[n - 3]; }
+VarSetId ref_freevars(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); return w[n - 2]; }
+FaceId ref_required(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); return w[n - 1]; }
 
 RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_term(x, a)); }
 RefId reindex_dim(RefId t, DimVarId i, IntervalId r) { return reindex(t, map_single_dim(i, r)); }
 
 /* ================= binders ================= */
 
-static uint64_t nominal_lookup(const KeyWord *key, size_t n) {
-    Words w; words_init(&w);
-    for (size_t k = 0; k < n; k++) { words_push(&w, key[k].kind); words_push(&w, key[k].v); }
-    bool created;
-    uint64_t id = interner_intern(&M.nominal, w.w, w.n, &created);
-    words_free(&w);
-    return id;
+/* a nominal key as words: [tag, (kind, v)*] */
+static size_t key_words(uint64_t tag, const KeyWord *key, size_t n, uint64_t *out) {
+    require(1 + 2 * n <= INTERN_SMALL + 1, "a nominal key of %zu words", n);
+    size_t m = 0; out[m++] = tag;
+    for (size_t k = 0; k < n; k++) { out[m++] = key[k].kind; out[m++] = key[k].v; }
+    return m;
 }
-/* the name minted for a nominal key: the first installed declaration (a
- * caller that loses the installation leaves its own declaration unused) */
-static uint64_t nominal_value(uint64_t id, RefId type, FaceId required, bool dim) {
-    uint64_t *slot = NVAL(id);
-    uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
-    if (v) return v;
-    uint64_t mine = dim ? declare_dim() : declare_term(type, required), expected = 0;
-    return __atomic_compare_exchange_n(slot, &expected, mine, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE) ? mine : expected;
-}
-
 TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type) {
-    KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_TERM } };
-    return (TermVarId)nominal_value(nominal_lookup(key, 4), type, fc_true(), false);
+    uint64_t w[5] = { 1, KW_REF, owner, KW_CONST, slot };
+    return var_record(w, 5, S_TERM, type, fc_true());
 }
 DimVarId binder_dim_var(RefId owner, BinderSlot slot) {
-    KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_DIM } };
-    return (DimVarId)nominal_value(nominal_lookup(key, 4), 0, 0, true);
+    uint64_t w[5] = { 1, KW_REF, owner, KW_CONST, slot };
+    return var_record(w, 5, S_DIM, 0, 0);
 }
 TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required) {
-    KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
-    w[0].kind = KW_CONST; w[0].v = 2; memcpy(w + 1, key, n * sizeof(KeyWord));
-    uint64_t id = nominal_lookup(w, n + 1);
-    free(w);
-    TermVarId r = (TermVarId)nominal_value(id, type, required, false);
-    require(term_var_type(r) == type && term_var_required(r) == required,
-            "keyed fresh variable reused at a different type or required face");
-    return r;
+    uint64_t w[INTERN_SMALL + 1]; size_t m = key_words(2, key, n, w);
+    return var_record(w, m, S_TERM, type, required);
 }
 TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type) { return fresh_term_keyed_req(key, n, type, fc_true()); }
 DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
-    KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
-    w[0].kind = KW_CONST; w[0].v = 3; memcpy(w + 1, key, n * sizeof(KeyWord));
-    uint64_t id = nominal_lookup(w, n + 1);
-    free(w);
-    return (DimVarId)nominal_value(id, 0, 0, true);
+    uint64_t w[INTERN_SMALL + 1]; size_t m = key_words(3, key, n, w);
+    return var_record(w, m, S_DIM, 0, 0);
 }
-
 
 TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     require(!ref_is_var(owner), "binder of a variable");

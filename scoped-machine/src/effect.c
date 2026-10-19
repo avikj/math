@@ -108,7 +108,6 @@ Outcome outcome_kind(uint64_t out) { size_t n; return (Outcome)rget(out, &n)[1];
 uint64_t outcome_occurrence(uint64_t out) { size_t n; const uint64_t *w = rget(out, &n); return w[1] == OUT_ACCEPTED ? w[2] : 0; }
 const char *outcome_reason(uint64_t out) { size_t n; const uint64_t *w = rget(out, &n); return w[1] == OUT_INVALID ? (const char *)(uintptr_t)w[2] : ""; }
 
-static Family F_PREP, F_EFFECT, F_OCCB, Fe_JCHECK, Fe_JLEVEL, Fe_CONSTRUCT, Fe_SCC, Fe_CLOSURE;
 
 /* ---------------- PREPARE(P) ---------------- */
 typedef struct { size_t i, j; uint64_t P, t, r; Prop p; const char *bad; WordBuf wb; bool created; } PrLoc;
@@ -127,33 +126,33 @@ static void prep_step(Cont *k, uint64_t v) {
     for (L->i = 0; L->i < L->p.nin + L->p.nout; L->i++) { wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, state_at(&L->p, L->i)); FR_YIELD(k); }
     wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, L->p.witness); wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, L->p.wtype);
     FR_CALL(k, L->r, intern_sub(k, &M.keys, &L->wb, &L->created));
-    FR_AWAIT(k, L->P, Fe_CLOSURE, L->r, k->w[1]);
+    FR_AWAIT(k, L->P, F_CLOSURE, L->r, k->w[1]);
     /* the state type at its declared level, exactly */
     {   size_t n; const uint64_t *sc = rget(L->p.schema, &n); L->t = sc[1]; L->r = sc[2]; }
-    FR_AWAIT(k, r, Fe_JLEVEL, RQ(fc_true(), L->t, L->P), 0);
+    FR_AWAIT(k, r, J_LEVEL, RQ(fc_true(), L->t, L->P), 0);
     if (jr_code(r) != 1) FR_FINISH(k, prep_res(jr_code(r) == 3 ? 3 : 2, "the state type is not a type"));
     if (jr_a(r) != L->r) FR_FINISH(k, prep_res(2, "the state type is not at its declared level"));
     /* every input and output state at the state type */
     for (L->i = 0; L->i < L->p.nin + L->p.nout; L->i++) {
-        FR_AWAIT(k, r, Fe_JCHECK, RQ(fc_true(), state_at(&L->p, L->i), L->t, L->P), 0);
+        FR_AWAIT(k, r, J_CHECK, RQ(fc_true(), state_at(&L->p, L->i), L->t, L->P), 0);
         if (jr_code(r) != 1) FR_FINISH(k, prep_res(jr_code(r) == 3 ? 3 : 2, "a state is not of the state type"));
     }
     /* the witness type is R at the states, built here through the construction family */
     {   size_t n; L->t = rget(L->p.schema, &n)[3]; }
     for (L->i = 0; L->i < L->p.nin + L->p.nout; L->i++) {
-        FR_AWAIT(k, L->t, Fe_CONSTRUCT, RQ(T_APP, 0, LEVELS_NONE, 0, 0, 0, 2, F_REF, NO_SLOT, L->t, F_REF, NO_SLOT, state_at(&L->p, L->i), 0), 0);
+        FR_AWAIT(k, L->t, F_CONSTRUCT, RQ(T_APP, 0, LEVELS_NONE, 0, 0, 0, 2, F_REF, NO_SLOT, L->t, F_REF, NO_SLOT, state_at(&L->p, L->i), 0), 0);
     }
     if (L->t != L->p.wtype) FR_FINISH(k, prep_res(2, "the witness type is not the schema's edge type at these states"));
-    FR_AWAIT(k, r, Fe_JLEVEL, RQ(fc_true(), L->t, L->P), 0);
+    FR_AWAIT(k, r, J_LEVEL, RQ(fc_true(), L->t, L->P), 0);
     if (jr_code(r) != 1) FR_FINISH(k, prep_res(jr_code(r) == 3 ? 3 : 2, "the edge type is not a type"));
-    FR_AWAIT(k, r, Fe_JCHECK, RQ(fc_true(), L->p.witness, L->t, L->P), 0);
+    FR_AWAIT(k, r, J_CHECK, RQ(fc_true(), L->p.witness, L->t, L->P), 0);
     if (jr_code(r) == 3) FR_FINISH(k, prep_res(3, "unresolved: the edge witness"));
     if (jr_code(r) != 1) FR_FINISH(k, prep_res(2, jr_why(r) ? jr_why(r) : "the edge witness does not check"));
     /* proof use: a recursively pending witness is not admitted */
     if (pins_symbols(L->P, NULL, 0)) {
         {   size_t ns = pins_symbols(L->P, NULL, 0); SymbolId *ss = malloc(ns * sizeof *ss); require(ss, "out of memory");
             pins_symbols(L->P, ss, ns); L->r = varset_make(ss, ns); free(ss); }
-        FR_AWAIT(k, r, Fe_SCC, L->P, L->r);
+        FR_AWAIT(k, r, F_SCC, L->P, L->r);
         {   size_t n; if (rget(r, &n)[0] == PU_PENDING) FR_FINISH(k, prep_res(3, "the witness depends on a recursively pending proof")); }
     }
     /* authorization: each consumed cell's authority issued a capability the proposal supplies */
@@ -391,13 +390,11 @@ void effect_state_init(void) {
     interner_init(&EF.occs); chunked_init(&EF.occd, sizeof(Desc *));
 }
 void effect_families_init(void) {
-    Fe_CLOSURE = pins_closure_family();
-    Fe_JCHECK = family_lookup("judge.check"); Fe_JLEVEL = family_lookup("judge.level");
-    Fe_CONSTRUCT = family_lookup("construct"); Fe_SCC = family_lookup("proof.scc");
-    require(Fe_JCHECK && Fe_JLEVEL && Fe_CONSTRUCT && Fe_SCC, "the judgment, construction and proof-use families are registered first");
-    F_PREP = family_define("effect.prepare", prep_step, sizeof(PrLoc));
-    F_EFFECT = family_define("effect.request", effect_step, sizeof(EfLoc));
-    F_OCCB = family_define("occurrence.boundary", occb_step, 0);
+    
+    
+    family_define(F_PREP, "effect.prepare", prep_step, sizeof(PrLoc));
+    family_define(F_EFFECT, "effect.request", effect_step, sizeof(EfLoc));
+    family_define(F_OCCB, "occurrence.boundary", occb_step, 0);
 }
 void effect_state_free(void) {
     for (size_t c = 0, n = interner_count(&EF.occs); c < n; c++) {     /* every descriptor is indexed by its occurrence */

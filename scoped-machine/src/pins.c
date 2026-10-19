@@ -86,7 +86,6 @@ size_t pins_symbols(PinSet P, SymbolId *out, size_t max) { return list(P, out, m
  * immutable snapshot). One work queue of items (0 | 1, x) to walk and
  * (2, s) to pin. ---- */
 typedef struct { WordBuf roots; size_t rpos, rbase, n, q; const uint64_t *g, *w; size_t ng; uint64_t P, x, kind; } ClLoc;
-static Family F_CLOSURE, F_GLOBALSP;
 /* pop the next word of a buffer consumed from its head (pages released) */
 static bool buf_pop(WordBuf *b, size_t *pos, size_t *base, uint64_t *out) {
     if (*pos >= b->n) return false;
@@ -118,7 +117,7 @@ static void closure_step(Cont *k, uint64_t v) {
             continue;
         }
         if (!L->x) { FR_YIELD(k); continue; }
-        FR_AWAIT(k, r, F_GLOBALSP, L->x, L->kind);
+        FR_AWAIT(k, r, F_GLOBALS, L->x, L->kind);
         L->g = varset_get(r, &L->ng);
         for (L->q = 0; L->q < L->ng; L->q++) { push2(&L->roots, 2, L->g[L->q]); FR_YIELD(k); }
     }
@@ -126,7 +125,6 @@ static void closure_step(Cont *k, uint64_t v) {
     FR_FINISH(k, L->P);
     FR_END(k);
 }
-Family pins_closure_family(void) { return F_CLOSURE; }
 uint64_t env_snapshot(void) { return __atomic_load_n(&M.env_gen, __ATOMIC_ACQUIRE); }
 PinSet pins_current(size_t n, const RefId *refs) {
     uint64_t *w = malloc((2 * n + 1) * sizeof *w); require(w, "out of memory");
@@ -137,7 +135,6 @@ PinSet pins_current(size_t n, const RefId *refs) {
     return family_call(F_CLOSURE, roots, env_snapshot());
 }
 void pins_families_init(void) {
-    F_GLOBALSP = family_lookup("globals.of");
-    require(F_GLOBALSP, "globals.of is registered first");
-    F_CLOSURE = family_define("pins.closure", closure_step, sizeof(ClLoc));
+    
+    family_define(F_CLOSURE, "pins.closure", closure_step, sizeof(ClLoc));
 }

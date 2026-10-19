@@ -124,7 +124,6 @@ size_t gen_degree(GenKind kind, uint64_t id) {
 }
 static uint64_t genrec(GenKind k, uint64_t id) { uint64_t w[2] = { k, id }; return rq(2, w); }
 
-static Family Fc_REIDX, Fc_FACE, Fc_ADD, Fc_SCALE, Fc_BOUNDARY, Fc_VALUE, Fc_PAIR, Fc_MAP, Fc_IVRE, Fc_OCCB, Fc_TBOUNDARY;
 
 /* cube.reindex(view, [m2, image_1..image_m]): the map c_k ↦ image_k
  * (one entry per step, keys ascending), then each root image reindexed */
@@ -146,7 +145,7 @@ static void reindex_step(Cont *k, uint64_t v) {
     wordbuf_init(&L->out);
     wordbuf_push(&L->out, L->v[0]); wordbuf_push(&L->out, L->s[0]); wordbuf_push(&L->out, L->v[2]); wordbuf_push(&L->out, L->v[3]);
     for (L->k = 0; L->k < L->v[3]; L->k++) {
-        FR_AWAIT(k, r, Fc_IVRE, L->v[4 + L->k], L->map);
+        FR_AWAIT(k, r, F_IVRE, L->v[4 + L->k], L->map);
         wordbuf_push(&L->out, r);
     }
     FR_CALL(k, r, intern_sub(k, &M.keys, &L->out, &L->created));
@@ -237,9 +236,7 @@ static void boundary_step(Cont *k, uint64_t v) {
     for (L->t = 1; L->t < L->nc; L->t += 3) {
         L->n = gen_degree((GenKind)L->c[L->t], L->c[L->t + 1]);
         if ((GenKind)L->c[L->t] == G_OCC) {
-            if (!Fc_OCCB) Fc_OCCB = family_lookup("occurrence.boundary");
-            require(Fc_OCCB, "an occurrence generator without the effect layer");
-            FR_AWAIT(k, r, Fc_OCCB, L->c[L->t + 1], 0);
+            FR_AWAIT(k, r, F_OCCB, L->c[L->t + 1], 0);
             FR_AWAIT(k, r, Fc_SCALE, r, L->c[L->t + 2]);
             FR_AWAIT(k, L->acc, Fc_ADD, L->acc, r);
             continue;
@@ -384,18 +381,16 @@ static void tboundary_step(Cont *k, uint64_t v) {
 }
 
 void chain_families_init(void) {
-    Fc_IVRE = family_lookup("iv.reindex");
-    require(Fc_IVRE, "the substitution families are registered first");
-    Fc_REIDX = family_define("cube.reindex", reindex_step, sizeof(RxLoc));
-    Fc_FACE = family_define("cell.face", face_step, sizeof(FcLoc));
-    Fc_ADD = family_define("chain.add", add_step, sizeof(AddLoc));
-    Fc_SCALE = family_define("chain.scale", scale_step, sizeof(AddLoc));
-    Fc_BOUNDARY = family_define("chain.boundary", boundary_step, sizeof(BdLoc));
-    Fc_VALUE = family_define("cochain.value", value_step, sizeof(ValLoc));
-    Fc_PAIR = family_define("chain.pair", pair_step, sizeof(PairLoc));
-    Fc_MAP = family_define("chain.map", map_step, sizeof(MapLoc));
-    Fc_TBOUNDARY = family_define("chain.twisted_boundary", tboundary_step, sizeof(TbLoc));
-    Fc_OCCB = 0;                                         /* the effect layer's, looked up at first use */
+    
+    family_define(Fc_REIDX, "cube.reindex", reindex_step, sizeof(RxLoc));
+    family_define(Fc_FACE, "cell.face", face_step, sizeof(FcLoc));
+    family_define(Fc_ADD, "chain.add", add_step, sizeof(AddLoc));
+    family_define(Fc_SCALE, "chain.scale", scale_step, sizeof(AddLoc));
+    family_define(Fc_BOUNDARY, "chain.boundary", boundary_step, sizeof(BdLoc));
+    family_define(Fc_VALUE, "cochain.value", value_step, sizeof(ValLoc));
+    family_define(Fc_PAIR, "chain.pair", pair_step, sizeof(PairLoc));
+    family_define(Fc_MAP, "chain.map", map_step, sizeof(MapLoc));
+    family_define(Fc_TBOUNDARY, "chain.twisted_boundary", tboundary_step, sizeof(TbLoc));
 }
 
 /* ---------------- synchronous drivers ---------------- */

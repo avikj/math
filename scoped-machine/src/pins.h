@@ -26,7 +26,6 @@ size_t pins_symbols(PinSet P, SymbolId *out, size_t max);   /* in-order listing 
 
 /* the closure family: key (roots, snapshot), roots the record [kind, id]*
  * (kind 0 a reference, 1 a scope), snapshot the current env_snapshot() */
-Family pins_closure_family(void);
 uint64_t env_snapshot(void);
 /* outside jobs: the closure of refs at the current revisions */
 PinSet pins_current(size_t n, const RefId *refs);
