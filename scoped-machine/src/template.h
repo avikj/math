@@ -5,9 +5,9 @@
  * constructor occurrences are fixed nodes. TVIEW(node, environment) is the
  * third reference form: opening it interprets the node's finite field
  * recipes with the environment; reindexing it reindexes the environment and
- * executes no field program. Parameter slot 0 of every definition is the
- * source typing face κ (§51.4); every constructor node's declared required
- * face is κ strengthened by the `under` faces in force at the node. */
+ * executes no field program. Every constructor node's declared required face
+ * is the `under` faces in force at the node; an instance's required face is
+ * that strengthened by its images' requirements. */
 #ifndef CUBICAL_TEMPLATE_H
 #define CUBICAL_TEMPLATE_H
 
@@ -79,7 +79,7 @@ bool tview_is_construction(RefId t);
  * by (node, slot), declared at the instantiated closed types; decls has
  * tnode_nparams(Q) entries. *req receives the node's required face there. */
 void template_families_init(void);
-void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kappa, WordBuf *er, ExprId *root);   /* the environment record into er (to be interned by intern_sub) */
+void template_call_env(TDefKind def, size_t nargs, const TVal *args, WordBuf *er, ExprId *root);   /* the environment record into er (to be interned by intern_sub) */
 ExprId tnode_head_expr(TNodeId Q, int levels);
 ExprId tnode_field_expr(TNodeId Q, size_t k);
 bool expr_is_level(ExprId e); uint64_t expr_level_value(ExprId e);   /* a closed level/payload expression */

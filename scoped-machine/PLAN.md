@@ -213,6 +213,8 @@ no subagents; work only from the shared specifications; no second engine/store/c
    O(1) under their locks, a fixed-size host block per refill.
 8. One interpretation. A node in an environment is interpreted the same way for both node kinds:
    a construction's closed constant (X_CONST) is substituted by the environment's atoms; fields,
-   binders and heads go through ENVOF/ENVSET/INTERP. Instance building differs by content only
-   (a construction transports its closed required face and partial formals' guards; a template
-   interprets its program's required expression), both reached through env.rebuild.
+   binders and heads go through ENVSET/INTERP over the reference's environment, which is its
+   interpretation record. One instance family (template.view) forms every reference: its
+   required face is the node's interpreted required face strengthened by each reference image's
+   requirement unless the slot's declared guard entails it. No ambient face (κ) enters a
+   definition, a clause or a key; a scope is guarded by the face its body is defined on.

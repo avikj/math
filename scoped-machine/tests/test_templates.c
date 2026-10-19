@@ -126,26 +126,26 @@ int main(void) {
     /* composition clauses: the opened dimension is the evaluator's */
     { RefId AB = mk_fun(0, 0, A, B);
       TermVarId vu = declare_term(AB, fc_lit(k, 1)), vu2 = declare_term(AB, fc_lit(k, 1));
-      RefId ucl = comp_clause(i, AB, fc_lit(k, 1), ref_var(vu), f, fc_true());
-      same_and_shared(reindex1(ucl, vu, ref_var(vu2)), comp_clause(i, AB, fc_lit(k, 1), ref_var(vu2), f, fc_true()), "Π clause (tube formal)");
-      same_and_shared(reindex1(ucl, vf, g), comp_clause(i, AB, fc_lit(k, 1), ref_var(vu), g, fc_true()), "Π clause (cap formal)");
-      same_and_shared(reindex_dim(ucl, k, iv_var(m)), comp_clause(i, AB, fc_lit(m, 1), reindex_dim(ref_var(vu), k, iv_var(m)), f, fc_true()), "Π clause (face renamed)");
+      RefId ucl = comp_clause(i, AB, fc_lit(k, 1), ref_var(vu), f);
+      same_and_shared(reindex1(ucl, vu, ref_var(vu2)), comp_clause(i, AB, fc_lit(k, 1), ref_var(vu2), f), "Π clause (tube formal)");
+      same_and_shared(reindex1(ucl, vf, g), comp_clause(i, AB, fc_lit(k, 1), ref_var(vu), g), "Π clause (cap formal)");
+      same_and_shared(reindex_dim(ucl, k, iv_var(m)), comp_clause(i, AB, fc_lit(m, 1), reindex_dim(ref_var(vu), k, iv_var(m)), f), "Π clause (face renamed)");
       TermVarId xs = tv(A); RefId Sg = mk_sigma_lv(0, 0, xs, A, B);
       TermVarId vs = tv(Sg), vs2 = tv(Sg);
-      RefId scl = comp_clause(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs), fc_true());
-      same_and_shared(reindex1(scl, vs, ref_var(vs2)), comp_clause(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs2), fc_true()), "Σ clause (cap formal)");
+      RefId scl = comp_clause(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs));
+      same_and_shared(reindex1(scl, vs, ref_var(vs2)), comp_clause(i, Sg, fc_false(), mk_system(0, NULL, NULL), ref_var(vs2)), "Σ clause (cap formal)");
       RefId PT = mk_path_const(0, A, a, b);
       TermVarId vpt = tv(PT), vpt2 = tv(PT), vput = declare_term(PT, fc_lit(k, 1));
-      RefId pcl = comp_clause(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt), fc_true());
-      same_and_shared(reindex1(pcl, vpt, ref_var(vpt2)), comp_clause(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt2), fc_true()), "Path clause (cap formal)");
-      RefId ucl2 = comp_clause(i, U0, fc_false(), mk_system(0, NULL, NULL), A, fc_true());
-      same_and_shared(reindex1(ucl2, vA, B), comp_clause(i, U0, fc_false(), mk_system(0, NULL, NULL), B, fc_true()), "universe clause (cap formal)");
+      RefId pcl = comp_clause(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt));
+      same_and_shared(reindex1(pcl, vpt, ref_var(vpt2)), comp_clause(i, PT, fc_lit(k, 1), ref_var(vput), ref_var(vpt2)), "Path clause (cap formal)");
+      RefId ucl2 = comp_clause(i, U0, fc_false(), mk_system(0, NULL, NULL), A);
+      same_and_shared(reindex1(ucl2, vA, B), comp_clause(i, U0, fc_false(), mk_system(0, NULL, NULL), B), "universe clause (cap formal)");
       TermVarId vT = tv(U0); RefId T = ref_var(vT);
       TermVarId veq = tv(mk_equiv(0, 0, T, A));
       RefId Gl = mk_glue_type_lv(0, A, fc_lit(m, 1), T, ref_var(veq));
       TermVarId vgl = tv(Gl), vgl2 = tv(Gl);
-      RefId gcl = comp_clause(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl), fc_true());
-      same_and_shared(reindex1(gcl, vgl, ref_var(vgl2)), comp_clause(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl2), fc_true()), "Glue clause (cap formal)"); }
+      RefId gcl = comp_clause(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl));
+      same_and_shared(reindex1(gcl, vgl, ref_var(vgl2)), comp_clause(i, Gl, fc_false(), mk_system(0, NULL, NULL), ref_var(vgl2)), "Glue clause (cap formal)"); }
 
     /* the templates are typed: a clause output checks at the expected type
      * (the formals' declared types are the clause's typing) */

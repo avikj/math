@@ -48,10 +48,9 @@ RefId mk_fill_at(uint64_t l, DimVarId i, RefId A_i, FaceId phi, RefId u_i, RefId
 /* ---- §53/§54: the structural composition clause for an exposed head ----
  * fam is the family head opened at the evaluator's dimension j (an
  * introduction of tag Π/Σ/PathP/Glue/U), tube_j the tube at j, phi its
- * face, cap the cap; eta is the producer entry's face (the clause's source
- * annotation κ). Returns the clause instance, or 0 for a tag without a
+ * face, cap the cap. Returns the clause instance, or 0 for a tag without a
  * clause. */
-RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap, FaceId eta);
+RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap);
 void lib_families_init(void);       /* comp.clause (registered by eval_init) */
 
 #endif

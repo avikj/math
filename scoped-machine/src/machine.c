@@ -2,14 +2,9 @@
 #include "lib.h"
 
 Machine M;
-/* the machine lifetime generation: thread-local construction state that
- * caches machine handles (the template source face κ) is qualified by it */
-static uint64_t machine_gen_ctr;
-uint64_t machine_generation(void) { return __atomic_load_n(&machine_gen_ctr, __ATOMIC_ACQUIRE); }
 
 void machine_init(void) {
     memset(&M, 0, sizeof M);
-    __atomic_add_fetch(&machine_gen_ctr, 1, __ATOMIC_ACQ_REL);
     interner_init(&M.intervals);
     interner_init(&M.faces);
     interner_init(&M.dimsets);

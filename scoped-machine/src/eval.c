@@ -357,11 +357,10 @@ static bool pop_locked(Task *out) {
 static EntryId entry_intern(Family f, uint64_t a, uint64_t b) {
     /* every key names its dependencies in its operands (an observation its
      * pin set, an unfolding its body revision): no environment version. The
-     * machine generation separates destroyed machines. The entry's operands
-     * are read from its key record, so a zero entry is a complete U state the
-     * moment its key is discoverable. */
-    uint64_t w[4] = { f, a, b, machine_generation() | (1ULL << 63) };
-    EntryId id = interner_intern(&E.keys, w, 4, NULL);
+     * entry's operands are read from its key record, so a zero entry is a
+     * complete U state the moment its key is discoverable. */
+    uint64_t w[3] = { f, a, b };
+    EntryId id = interner_intern(&E.keys, w, 3, NULL);
     chunked_at(&E.entries, id - 1);
     return id;
 }
@@ -879,8 +878,8 @@ static void whnf_step(Cont *k, uint64_t v) {
             }
             goto branchwise;
         }
-        /* an introduction: the one fixed clause, at the producer's face κ = χ (§53–§54) */
-        { uint64_t w[6] = { L->j, L->res->ref, L->phi, L->tube, L->cap, chi }; FR_AWAIT(k, L->x, F_COMPCLAUSEF, interner_intern(&M.keys, w, 6, NULL), 0); }
+        /* an introduction: the one fixed clause (§53–§54) */
+        { uint64_t w[5] = { L->j, L->res->ref, L->phi, L->tube, L->cap }; FR_AWAIT(k, L->x, F_COMPCLAUSEF, interner_intern(&M.keys, w, 5, NULL), 0); }
         if (!L->x) FR_FINISH(k, RV(result_invalid("composition in a family whose head is not a type former or lacks its universe annotation")));
         goto forward_x;
     }

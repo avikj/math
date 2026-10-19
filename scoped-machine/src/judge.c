@@ -311,7 +311,7 @@ static void equiv_step(Cont *k, uint64_t v) {
     JLOC;   /* q: l, m, X, Y */
     FR_BEGIN(k);
     {   TVal a[4] = { { PS_LEVEL, q[0] }, { PS_LEVEL, q[1] }, { PS_REF, q[2] }, { PS_REF, q[3] } };
-        ExprId root; template_call_env(TD_EQUIV, 4, a, fc_true(), &L->wb, &root); L->x = root; }
+        ExprId root; template_call_env(TD_EQUIV, 4, a, &L->wb, &root); L->x = root; }
     FR_CALL(k, L->y, intern_sub(k, &M.keys, &L->wb, &L->created));
     FR_AWAIT(k, r, Jf_INTERP, L->x, L->y);
     { size_t n; FR_FINISH(k, rget(r, &n)[1]); }

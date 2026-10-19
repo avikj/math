@@ -49,7 +49,6 @@ typedef struct {
 extern Machine M;
 
 void machine_init(void);
-uint64_t machine_generation(void);     /* changes with each machine_init; never reused */
 void machine_free(void);
 
 #endif
