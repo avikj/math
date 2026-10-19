@@ -337,12 +337,14 @@ static void infer_step(Cont *k, uint64_t v) {
     if (r != 2) BAD("occurrence outside its required face");
     if (!tview_is_construction(t)) { JAW(r, J_TVIEW, RQ(q[0], t, q[2])); FR_FINISH(k, r); }
     if (ref_tag(t) == T_GLOBAL) { JAW(r, J_HEAD, RQ(q[0], t, q[2])); FR_FINISH(k, r); }
+    /* the node typed once at its generic instance; this instance's images
+     * at their slots' types; the type by the substitution lemma */
     JAW(L->res, J_NODE, RQ(ref_tnode(t), q[2]));
     PASS(L->res);
     L->D = L->res;
-    FR_AWAIT(k, L->m, J_GMAP, t, 0);
-    JAW(L->res, J_MAP, RQ(0, q[0], L->m, jr_a(L->D), jr_b(L->D), q[2]));
+    JAW(L->res, J_TBOUND, RQ(q[0], t, q[2]));
     PASS(L->res);
+    FR_AWAIT(k, L->m, J_GMAP, t, 0);
     FR_AWAIT(k, r, Jf_REINDEX, jr_c(L->D), L->m);
     DONE(J_OK, NULL, r, 0, 0);
     FR_END(k);
@@ -613,10 +615,9 @@ static void head_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->x, Jf_HEAD, t, 0);
         JAW(L->res, J_DECL, RQ(L->x, P));
         PASS(L->res);
-        FR_AWAIT(k, L->y, J_JCOF, global_context_flat((SymbolId)L->x), 0);
-        FR_AWAIT(k, L->m, Jf_GARGS, t, 0);
-        JAW(L->res, J_MAP, RQ(0, C, L->m, L->y, fc_true(), P));
+        JAW(L->res, J_TBOUND, RQ(C, t, P));        /* the arguments at the declared parameter types */
         PASS(L->res);
+        FR_AWAIT(k, L->m, Jf_GARGS, t, 0);
         FR_AWAIT(k, r, Jf_REINDEX, global_type((SymbolId)L->x), L->m);
         DONE(J_OK, NULL, r, 0, 0);
     }
@@ -1131,14 +1132,13 @@ static void tview_step(Cont *k, uint64_t v) {
     DONE(J_OK, NULL, L->T, 0, 0);
     FR_END(k);
 }
-/* the template boundary of an instance (§51.4, §59.1) */
+/* the boundary of an instance (§51.4, §59.1): each retained image well
+ * formed and of its slot's declared type under the slot's guard */
 static void tbound_step(Cont *k, uint64_t v) {
     JLOC;   /* q: C, t, P */
     uint64_t C = q[0], P = q[2]; RefId t = q[1];
     FR_BEGIN(k);
-    if (ref_is_var(t) || tview_is_construction(t)) OK0();
-    FR_AWAIT(k, r, Jf_FCENT, C, ref_required(t));
-    if (r != 2) BAD("template instance used outside its declared required face");
+    if (ref_is_var(t)) OK0();
     /* finite structure of every retained image first (§50.1–2) */
     L->n = tenv_size(ref_tenv(t));
     for (L->i = 0; L->i < L->n; L->i++) {
@@ -1333,11 +1333,11 @@ static void map_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     JAW(L->res, J_CTX, RQ(q[3], q[4], P));
     PASS(L->res);
-    if (D) { JAW(L->res, J_CTX, RQ(D, psi, P)); PASS(L->res); }   /* a root map's source context is its subject */
+    JAW(L->res, J_CTX, RQ(D, psi, P));
+    PASS(L->res);
     for (L->G2 = q[3]; !jc_is_empty(L->G2); L->G2 = jc_parent(L->G2)) {
         {   Sort so; uint64_t id; jc_decl(L->G2, &so, &id); L->tag = so; L->x = id; L->T = so == S_TERM ? term_var_type(id) : 0; }
         if (L->tag == S_DIM) {
-            if (!D) continue;
             FR_AWAIT(k, L->y, Jf_MAPD, sigma, L->x);
             FR_AWAIT(k, L->y, Jf_IVDIMS, L->y, 0);
             JAW(r, J_DIMSIN, RQ(D, L->y));
@@ -1345,8 +1345,7 @@ static void map_step(Cont *k, uint64_t v) {
             continue;
         }
         FR_AWAIT(k, L->y, Jf_MAPT, sigma, L->x);
-        if (D) JAW(L->res, J_SCOPE, RQ(D, fc_true(), L->y));
-        else JAW(L->res, J_RV, RQ(0, L->y, 0));
+        JAW(L->res, J_SCOPE, RQ(D, fc_true(), L->y));
         if (jr_code(L->res) != J_OK) BAD("term image is not in scope of the source context");
         FR_AWAIT(k, L->T, Jf_REINDEX, L->T, sigma);
         FR_AWAIT(k, L->z, Jf_FCRE, term_var_required(L->x), sigma);

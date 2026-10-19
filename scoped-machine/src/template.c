@@ -566,12 +566,19 @@ void tview_open(RefId t, Head *h) {
  * the caller in the view's environment, one awaited interpretation each):
  * entry k of the node's free slots; false when the slot carries no checked
  * declaration */
-size_t tnode_sig_count(TNodeId Q) { if (node_construction(Q)) return 0; size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl); return nf; }
+size_t tnode_sig_count(TNodeId Q) { size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl); return nf; }
 bool tnode_sig_exprs(TNodeId Q, size_t k, size_t *slot, PSort *sort, ExprId *type_e, ExprId *level_e, ExprId *sig_e, ExprId *guard_e) {
-    const TDef *def = &TPL.defs[tnode_def(Q)];
     size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
-    size_t s = (size_t)fl[k], np = def->nparams;
+    size_t s = (size_t)fl[k];
     *slot = s;
+    if (node_construction(Q)) {
+        /* a construction parameter: its closed type and guard over the earlier atoms */
+        const uint64_t *p = node_ptab(Q) + 3 * s;
+        *sort = (PSort)p[0]; *type_e = p[1]; *level_e = 0; *sig_e = 0; *guard_e = p[2];
+        return *sort == PS_REF;
+    }
+    const TDef *def = &TPL.defs[tnode_def(Q)];
+    size_t np = def->nparams;
     if (s < np) { *sort = def->sorts[s]; *type_e = def->ptype[s]; *level_e = def->plevel[s]; *sig_e = def->psig[s]; *guard_e = def->pguard[s]; return true; }
     size_t l = s - np;
     if (def->lsort[l] != PS_REF || !def->ltype[l]) return false;
