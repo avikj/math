@@ -29,7 +29,7 @@ static void verify(ContextId G,RefId t,RefId T,const char *name) {
 int main(void) {
     machine_init(); eval_init(); check_init();
     RefId U=mk_universe(0); TermVarId vB=declare_term(U,fc_true()); RefId B=ref_var(vB);
-    CtxDecl decl={S_TERM,vB,U}; ContextId G=context_make(1,&decl,fc_true());
+    CtxDecl decl={S_TERM,vB}; ContextId G=context_make(1,&decl,fc_true());
     RefId DT=w_diagram_type(B); uint64_t level=99; const char *why="";
     assert(check_is_type(G,fc_true(),DT,&level,&why)==CK_VALID && level==1);
     TermVarId l=declare_term(DT,fc_true()), r=declare_term(DT,fc_true()); RefId L=ref_var(l),R=ref_var(r);

@@ -86,14 +86,14 @@ int main(void) {
 
     /* ---- the empty diagram; a tail depending on its witness ---- */
     { TermVarId vB = tv(U0); RefId B = ref_var(vB); TermVarId vo = tv(B); RefId o = ref_var(vo);
-      CtxDecl d[2] = { { S_TERM, vB, U0 }, { S_TERM, vo, B } }; ContextId G = context_make(2, d, fc_true());
+      CtxDecl d[2] = { { S_TERM, vB}, { S_TERM, vo} }; ContextId G = context_make(2, d, fc_true());
       uint64_t lr; RefId E = diagram_fold(0, NULL, B, 0, o, &lr);
       CHECK(lr == 0 && check(G, fc_true(), E, diagram_type(0, 0, B), &why) == CK_VALID, "the empty diagram is zero (%s)", why);
       CHECK(convert_term(G, fc_true(), dg_C(E), o, B) == CV_EQUAL, "C = o"); }
     { TermVarId vX = tv(U0); RefId X = ref_var(vX);
       TermVarId vf = tv(mk_fun(0, 0, X, X)), vg = tv(mk_fun(0, 0, X, mk_fun(0, 0, X, X))), vx = tv(X);
       RefId f = ref_var(vf), g = ref_var(vg), x = ref_var(vx), fx = mk_app(f, x);
-      CtxDecl d[4] = { { S_TERM, vX, U0 }, { S_TERM, vf, term_var_type(vf) }, { S_TERM, vg, term_var_type(vg) }, { S_TERM, vx, X } };
+      CtxDecl d[4] = { { S_TERM, vX}, { S_TERM, vf}, { S_TERM, vg}, { S_TERM, vx} };
       ContextId G = context_make(4, d, fc_true());
       TermVarId vu = tv(X); RefId Ps = mk_path_const(0, X, fx, ref_var(vu)); TermVarId vs = tv(Ps);
       RefId A1 = mk_path_const(0, Ps, ref_var(vs), ref_var(vs));
@@ -108,7 +108,7 @@ int main(void) {
     { TermVarId vX = tv(U0); RefId X = ref_var(vX);
       TermVarId vm = tv(mk_fun(0, 0, X, mk_fun(0, 0, X, X))), va = tv(X), vb = tv(X);
       RefId m = ref_var(vm), a = ref_var(va), b = ref_var(vb), mab = m2(m, a, b);
-      CtxDecl d[4] = { { S_TERM, vX, U0 }, { S_TERM, vm, term_var_type(vm) }, { S_TERM, va, X }, { S_TERM, vb, X } };
+      CtxDecl d[4] = { { S_TERM, vX}, { S_TERM, vm}, { S_TERM, va}, { S_TERM, vb} };
       ContextId G = context_make(4, d, fc_true());
       TermVarId vu = tv(U0), vs = tv(mk_path_const(1, U0, a, ref_var(vu)));
       DiagNode bad = { vu, vs, U0, 1, a };
@@ -116,7 +116,7 @@ int main(void) {
       CHECK(check(G, fc_true(), Lb, diagram_type(0, lr, X), &why) == CK_INVALID, "a node whose term is not of its type is rejected (%s)", why);
       TermVarId vw = tv(mk_path_const(0, X, mab, mab));
       TermVarId vy2 = tv(X);
-      ContextId Gw = context_extend_term(context_extend_term(G, vw, term_var_type(vw)), vy2, X);
+      ContextId Gw = context_extend_term(context_extend_term(G, vw), vy2);
       RefId Ld = diagram_fold(0, NULL, X, 0, a, &lr), Rd = diagram_fold(0, NULL, X, 0, b, &lr);
       RefId Tw = mk_app(mk_app(mk_app(mk_app(mk_app(id_action(0, 0, 0), X), Ld), Rd), ref_var(vw)), ref_var(vy2));
       CHECK(check(Gw, fc_true(), Tw, maps_type(0, 0, mk_path_const(0, X, a, ref_var(vy2)), mk_path_const(0, X, b, ref_var(vy2))), &why) == CK_INVALID, "evidence with the wrong endpoints is rejected (%s)", why); }
@@ -125,7 +125,7 @@ int main(void) {
     { TermVarId vB = tv(U0); RefId B = ref_var(vB); TermVarId vC = tv(B), vD = tv(B); RefId C = ref_var(vC), D = ref_var(vD);
       TermVarId vz = tv(B); RefId z = ref_var(vz);
       TermVarId vu = tv(mk_path_const(0, B, C, z)), vv = tv(mk_path_const(0, B, D, z));
-      CtxDecl d[6] = { { S_TERM, vB, U0 }, { S_TERM, vC, B }, { S_TERM, vD, B }, { S_TERM, vz, B }, { S_TERM, vu, term_var_type(vu) }, { S_TERM, vv, term_var_type(vv) } };
+      CtxDecl d[6] = { { S_TERM, vB}, { S_TERM, vC}, { S_TERM, vD}, { S_TERM, vz}, { S_TERM, vu}, { S_TERM, vv} };
       ContextId G = context_make(6, d, fc_true());
       RefId M = app3(cut_maps(0), B, C, D);
       Inference I = infer(G, fc_true(), M);
@@ -137,7 +137,7 @@ int main(void) {
       res = whnf(cc, fc_true(), &st);
       CHECK(st == W_OK && head_tag(res) == T_PLAM, "u·v⁻¹ is a path");
       TermVarId vp = tv(mk_path_const(0, B, C, D)); RefId p = ref_var(vp);
-      ContextId Gp = context_extend_term(G, vp, term_var_type(vp));
+      ContextId Gp = context_extend_term(G, vp);
       RefId loop = mk_path_concat(0, B, D, C, D, mk_path_rev(0, B, C, D, p), cc);
       CHECK(convert_term(Gp, fc_true(), loop, mk_refl(0, B, D), mk_path_const(0, B, D, D)) != CV_EQUAL, "the residual loop is not definitionally refl");
       res = whnf(mk_fst(maps_apply(M, DIR_REVERSE, p)), fc_true(), &st);
@@ -149,17 +149,17 @@ int main(void) {
       TermVarId xb = tv(B);
       RefId Kt = mk_pi_lv(0, 0, xb, B, mk_contr(0, mk_app(R, ref_var(xb))));
       TermVarId vk = tv(Kt), vb = tv(B);
-      CtxDecl d[4] = { { S_TERM, vB, U0 }, { S_TERM, vR, term_var_type(vR) }, { S_TERM, vk, Kt }, { S_TERM, vb, B } };
+      CtxDecl d[4] = { { S_TERM, vB}, { S_TERM, vR}, { S_TERM, vk}, { S_TERM, vb} };
       ContextId G = context_make(4, d, fc_true());
       RefId M = app3(fibre_maps(0, 0), B, R, ref_var(vk));
       CHECK(infer(G, fc_true(), M).st == CK_VALID, "fibre_maps(B, R, k) is typed");
       res = whnf(maps_apply(M, DIR_FORWARD, maps_apply(M, DIR_REVERSE, ref_var(vb))), fc_true(), &st);
       CHECK(st == W_OK && res->ref == ref_var(vb), "projection ∘ section ⇝ b");
       TermVarId vk2 = tv(mk_fun(0, 0, B, B));
-      CHECK(infer(context_extend_term(G, vk2, term_var_type(vk2)), fc_true(), app3(fibre_maps(0, 0), B, R, ref_var(vk2))).st == CK_INVALID, "a non-contraction is rejected"); }
+      CHECK(infer(context_extend_term(G, vk2), fc_true(), app3(fibre_maps(0, 0), B, R, ref_var(vk2))).st == CK_INVALID, "a non-contraction is rejected"); }
     { TermVarId vX = tv(U0), vY = tv(U0); RefId X = ref_var(vX), Y = ref_var(vY);
       TermVarId ve = tv(mk_equiv(0, 0, X, Y)), vx = tv(X);
-      CtxDecl d[4] = { { S_TERM, vX, U0 }, { S_TERM, vY, U0 }, { S_TERM, ve, term_var_type(ve) }, { S_TERM, vx, X } };
+      CtxDecl d[4] = { { S_TERM, vX}, { S_TERM, vY}, { S_TERM, ve}, { S_TERM, vx} };
       ContextId G = context_make(4, d, fc_true());
       RefId M = app3(equiv_maps(0, 0), X, Y, ref_var(ve));
       RefId fw = maps_apply(M, DIR_FORWARD, ref_var(vx));
@@ -170,7 +170,7 @@ int main(void) {
       CHECK(st == W_OK && res->ref == ref_var(vx), "reverse of IdEquiv at x ⇝ x");
       /* residual: two one-node descriptions ending in X and Y, acted on by e */
       TermVarId vf = tv(mk_fun(0, 0, X, X)), vg = tv(mk_fun(0, 0, Y, Y)), vy0 = tv(Y);
-      ContextId G2 = context_extend_term(context_extend_term(context_extend_term(G, vf, term_var_type(vf)), vg, term_var_type(vg)), vy0, Y);
+      ContextId G2 = context_extend_term(context_extend_term(context_extend_term(G, vf), vg), vy0);
       RefId fx = mk_app(ref_var(vf), ref_var(vx)), gy = mk_app(ref_var(vg), ref_var(vy0));
       TermVarId vu = tv(X), vs = tv(mk_path_const(0, X, fx, ref_var(vu))), vv = tv(Y), vt = tv(mk_path_const(0, Y, gy, ref_var(vv)));
       DiagNode ln = { vu, vs, X, 0, fx }, rn = { vv, vt, Y, 0, gy };
@@ -181,7 +181,7 @@ int main(void) {
 
     /* ---- a cyclic argument stays unresolved; its proof use is PENDING ---- */
     { TermVarId vX = tv(U0); RefId X = ref_var(vX);
-      CtxDecl d[1] = { { S_TERM, vX, U0 } }; ContextId G = context_make(1, d, fc_true());
+      CtxDecl d[1] = { { S_TERM, vX} }; ContextId G = context_make(1, d, fc_true());
       uint64_t px[1] = { vX };
       SymbolId loopx = define_global("loop_x", varset_make(px, 1), dimset_make(NULL, 0), X);
       set_global_body(loopx, global_ref(loopx));

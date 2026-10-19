@@ -20,7 +20,7 @@ int main(void) {
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     RefId U = mk_universe(0); TermVarId ta = declare_term(U, fc_true()); RefId A = ref_var(ta);
     TermVarId a = declare_term(A, fc_true()); RefId av = ref_var(a);
-    CtxDecl ds[] = { { S_TERM, ta, U }, { S_TERM, a, A } }; ContextId G = context_make(2, ds, fc_true());
+    CtxDecl ds[] = { { S_TERM, ta}, { S_TERM, a} }; ContextId G = context_make(2, ds, fc_true());
     RefId P = mk_path_const(0, A, av, av), p = mk_refl(0, A, av);
     TermVarId params[] = { ta, a }; VarSetId ps = varset_make(params, 2); DimSetId no_dims = dimset_make(NULL, 0);
     SymbolId loop = define_global("loop_proof", ps, no_dims, P);
@@ -58,7 +58,7 @@ int main(void) {
 
     /* §88.1: a checked program is not established evidence */
     {   TermVarId b = declare_term(A, fc_true()); RefId bv = ref_var(b);
-        CtxDecl d3[] = { { S_TERM, ta, U }, { S_TERM, a, A }, { S_TERM, b, A } };
+        CtxDecl d3[] = { { S_TERM, ta}, { S_TERM, a}, { S_TERM, b} };
         ContextId G3 = context_make(3, d3, fc_true());
         TermVarId x = declare_term(A, fc_true());
         RefId f = mk_lam_lv(0, x, A, av);

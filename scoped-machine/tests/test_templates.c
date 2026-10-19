@@ -152,8 +152,8 @@ int main(void) {
     { TermVarId vs = tv(mk_sigma_lv(0, 0, tv(A), A, B));
       TermVarId ctxv[] = { vA, vB, va, vb, vc, vf, vs };
       CtxDecl d[16]; size_t n = 0;
-      d[n++] = (CtxDecl){ S_DIM, i, 0 }; d[n++] = (CtxDecl){ S_DIM, k, 0 };
-      for (size_t q2 = 0; q2 < 7; q2++) d[n++] = (CtxDecl){ S_TERM, ctxv[q2], term_var_type(ctxv[q2]) };
+      d[n++] = (CtxDecl){ S_DIM, i}; d[n++] = (CtxDecl){ S_DIM, k};
+      for (size_t q2 = 0; q2 < 7; q2++) d[n++] = (CtxDecl){ S_TERM, ctxv[q2]};
       ContextId G = context_make(n, d, fc_true());
       WhnfStatus st; EvalResult *r = whnf(mk_coe_at(0, i, term_var_type(vs), ref_var(vs)), fc_true(), &st);
       CHECK(st == W_OK && check(G, fc_true(), r->ref, term_var_type(vs), &why) == CK_VALID, "Σ clause output checks (%s)", why);
@@ -168,8 +168,8 @@ int main(void) {
       { TermVarId xk = tv(A), vcen = tv(A);
         RefId Kt = mk_pi_lv(0, 0, xk, A, mk_path_const(0, A, ref_var(vcen), ref_var(xk)));
         TermVarId vkk = tv(Kt), vvp = declare_term(A, fc_lit(k, 1)), vbad = declare_term(B, fc_lit(k, 1));
-        ContextId Ge = context_extend_term(context_extend_term(context_extend_term(G, vcen, A), vkk, Kt), vvp, A);
-        ContextId Gb = context_extend_term(context_extend_term(context_extend_term(G, vcen, A), vkk, Kt), vbad, B);
+        ContextId Ge = context_extend_term(context_extend_term(context_extend_term(G, vcen), vkk), vvp);
+        ContextId Gb = context_extend_term(context_extend_term(context_extend_term(G, vcen), vkk), vbad);
         RefId ext = mk_extend_contr(0, A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vvp));
         CHECK(tnode_def(tnode_of(ext)) == TD_EXTENDCONTR, "ExtendContr's root is its own node");
         CHECK(check(Ge, fc_true(), ext, A, &why) == CK_VALID, "ExtendContr with a partial v (available on its guard) checks (%s)", why);
@@ -182,7 +182,7 @@ int main(void) {
         ScopeId Dw = capture_term2(vxk, A, 0, vek, Pk, 0, mk_path_const(0, A, ref_var(vxk), b), mk_universe(1), 2, fc_true());
         ScopeId Du = capture_term2(vxk, A, 0, vek, Pk, 0, mk_path_const(0, A, ref_var(vxk), b), U0, 1, fc_false());
         TermVarId vz = tv(mk_path_const(0, A, a, b));
-        ContextId Gd = context_extend_term(G, vz, term_var_type(vz));
+        ContextId Gd = context_extend_term(G, vz);
         RefId dg = mk_down(0, 0, A, a, Dg, a, mk_refl(0, A, a), ref_var(vz));
         RefId dw = mk_down(0, 0, A, a, Dw, a, mk_refl(0, A, a), ref_var(vz));
         RefId du = mk_down(0, 0, A, a, Du, a, mk_refl(0, A, a), ref_var(vz));
@@ -231,9 +231,9 @@ int main(void) {
         DimOpen oi = resolve_dim_binder(ow.body, 0, 0);
         Head h2; open_ref(oi.body, &h2); Head h3; open_ref(HF(&h2, 0).id, &h3); RefId snd_w = HF(&h3, 3).id; head_free(&h3); head_free(&h2);
         CHECK(ref_tag(snd_w) == T_SND, "located the projection from w");
-        ContextId H = context_extend_term(G, oy.x, oy.type);
+        ContextId H = context_extend_term(G, oy.x);
         TermVarId vq = tv(ow.type);                         /* a valid substitute: q : Fib(A, A, id, y) */
-        ContextId Hq = context_extend_term(H, vq, ow.type);
+        ContextId Hq = context_extend_term(H, vq);
         RefId good = reindex(snd_w, map_single_term(ow.x, ref_var(vq)));
         CHECK(check(Hq, fc_true(), good, mk_path_const(0, A, mk_app(mk_id_fun(0, A), mk_fst(ref_var(vq))), ref_var(oy.x)), &why) == CK_VALID, "the escaped child checks after a valid substitution (%s)", why);
         /* canonical reindexing of the complete boundary: two steps compose */
@@ -245,7 +245,7 @@ int main(void) {
 
     /* ---- recursive components (§9.2): accepted when well typed, rejected from either end ---- */
     { uint64_t ps[] = { vA }; VarSetId params = varset_make(ps, 1); DimSetId nod = dimset_make(NULL, 0);
-      CtxDecl d[1] = { { S_TERM, vA, U0 } }; ContextId GA = context_make(1, d, fc_true());
+      CtxDecl d[1] = { { S_TERM, vA} }; ContextId GA = context_make(1, d, fc_true());
       /* well-typed mutual recursion: f := g, g := f (no termination claim) */
       SymbolId sf = define_global("mf", params, nod, A), sg = define_global("mg", params, nod, A);
       set_global_body(sf, global_ref(sg)); set_global_body(sg, global_ref(sf));

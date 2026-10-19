@@ -193,9 +193,9 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
  * a face assumption, interned by structure; it is not part of RefId. Its
  * validity and the scope of an occurrence in it are judgments (judge.ctx,
  * judge.scope). */
-typedef struct { Sort sort; uint64_t id; RefId type; } CtxDecl;
+typedef struct { Sort sort; uint64_t id; } CtxDecl;
 ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption);
-ContextId context_extend_term(ContextId ctx, TermVarId x, RefId type);
+ContextId context_extend_term(ContextId ctx, TermVarId x);
 ContextId context_extend_dim(ContextId ctx, DimVarId i);
 ContextId context_restrict(ContextId ctx, FaceId phi);     /* strengthen the assumption */
 FaceId context_assumption(ContextId ctx);

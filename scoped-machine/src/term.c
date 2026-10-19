@@ -321,24 +321,24 @@ HField head_field(const Head *h, size_t k) {
 void head_free(Head *h) { h->n = 0; }
 
 /* ================= occurrence contexts ================= */
-/* record: [n, (sort, id, type)*, assumption] */
+/* record: [n, (sort, id)*, assumption]; a term variable's type is its own */
 
 static ContextId context_intern(Words *w) { ContextId id = interner_intern(&M.contexts, w->w, w->n, NULL); words_free(w); return id; }
 
 ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption) {
     Words w; words_init(&w);
     words_push(&w, n);
-    for (size_t k = 0; k < n; k++) { words_push(&w, decls[k].sort); words_push(&w, decls[k].id); words_push(&w, decls[k].sort == S_TERM ? decls[k].type : 0); }
+    for (size_t k = 0; k < n; k++) { words_push(&w, decls[k].sort); words_push(&w, decls[k].id); }
     words_push(&w, assumption);
     return context_intern(&w);
 }
 static const uint64_t *ctx_words(ContextId c, size_t *n) { return interner_get(&M.contexts, c, n); }
 size_t context_size(ContextId c) { size_t n; return (size_t)ctx_words(c, &n)[0]; }
-FaceId context_assumption(ContextId c) { size_t n; const uint64_t *w = ctx_words(c, &n); return w[1 + 3 * w[0]]; }
+FaceId context_assumption(ContextId c) { size_t n; const uint64_t *w = ctx_words(c, &n); return w[1 + 2 * w[0]]; }
 CtxDecl context_decl(ContextId c, size_t k) {
     size_t n; const uint64_t *w = ctx_words(c, &n);
     require(k < w[0], "context declaration out of range");
-    CtxDecl d = { (Sort)w[1 + 3 * k], w[2 + 3 * k], w[3 + 3 * k] };
+    CtxDecl d = { (Sort)w[1 + 2 * k], w[2 + 2 * k] };
     return d;
 }
 static ContextId context_with(ContextId c, const CtxDecl *extra, FaceId assumption) {
@@ -351,8 +351,8 @@ static ContextId context_with(ContextId c, const CtxDecl *extra, FaceId assumpti
     free(ds);
     return out;
 }
-ContextId context_extend_term(ContextId c, TermVarId x, RefId type) { CtxDecl d = { S_TERM, x, type }; return context_with(c, &d, context_assumption(c)); }
-ContextId context_extend_dim(ContextId c, DimVarId i) { CtxDecl d = { S_DIM, i, 0 }; return context_with(c, &d, context_assumption(c)); }
+ContextId context_extend_term(ContextId c, TermVarId x) { CtxDecl d = { S_TERM, x }; return context_with(c, &d, context_assumption(c)); }
+ContextId context_extend_dim(ContextId c, DimVarId i) { CtxDecl d = { S_DIM, i }; return context_with(c, &d, context_assumption(c)); }
 ContextId context_restrict(ContextId c, FaceId phi) { return context_with(c, NULL, fc_meet(context_assumption(c), phi)); }
 
 
@@ -365,7 +365,7 @@ ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req) {
     const uint64_t *xs = varset_get(ft, &nt);
     CtxDecl *decls = malloc((nd + nt + 1) * sizeof(CtxDecl));
     size_t n = 0;
-    for (size_t k = 0; k < nd; k++) { decls[n].sort = S_DIM; decls[n].id = ds[k]; decls[n].type = 0; n++; }
+    for (size_t k = 0; k < nd; k++) { decls[n].sort = S_DIM; decls[n].id = ds[k]; n++; }
     /* term variables in dependency order: a variable follows the free
      * variables of its declared type */
     bool *placed = calloc(nt ? nt : 1, sizeof(bool));
@@ -378,7 +378,7 @@ ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req) {
             bool ready = true;
             for (size_t q = 0; q < m && ready; q++) { bool found = false; for (size_t j = 0; j < nt; j++) if (xs[j] == fv[q] && placed[j]) found = true; if (!found) ready = false; }
             if (!ready) continue;
-            decls[n].sort = S_TERM; decls[n].id = xs[k]; decls[n].type = term_var_type(xs[k]); n++;
+            decls[n].sort = S_TERM; decls[n].id = xs[k]; n++;
             placed[k] = true; done++; progress = true;
         }
         require(progress, "cyclic declaration dependency in a boundary");

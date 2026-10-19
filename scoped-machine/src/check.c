@@ -56,7 +56,7 @@ static size_t clauses(FaceId chi, const uint64_t **out) {
 /* the request's pins: the closure of the symbols its inputs name */
 typedef struct { RefId *r; size_t n, cap; } Roots;
 static void pr_ref(Roots *R, RefId t) { if (!t) return; if (R->n == R->cap) { R->cap = R->cap ? 2 * R->cap : 16; R->r = realloc(R->r, R->cap * sizeof(RefId)); require(R->r, "out of memory"); } R->r[R->n++] = t; }
-static void pr_ctx(Roots *R, ContextId c) { size_t n = context_size(c); for (size_t k = 0; k < n; k++) pr_ref(R, context_decl(c, k).type); }
+static void pr_ctx(Roots *R, ContextId c) { size_t n = context_size(c); for (size_t k = 0; k < n; k++) { CtxDecl d = context_decl(c, k); if (d.sort == S_TERM) pr_ref(R, term_var_type(d.id)); } }
 static PinSet pins_of(Roots *R) { PinSet P = pins_current(R->n, R->r); free(R->r); R->r = NULL; return P; }
 
 /* the request's dependency closure: every symbol in P declares and checks */
@@ -72,7 +72,8 @@ static CheckStatus premises(PinSet P, const char **reason) {
 
 /* a flat context as a judgment context */
 static CheckStatus jctx(ContextId F, uint64_t *G, const char **reason) {
-    if (!jc_of_flat(F, G)) { *reason = "duplicate declaration"; return CK_INVALID; }
+    WhnfStatus ws; *G = family_run(family_lookup("judge.ctx_of"), F, 0, &ws);
+    if (ws != W_OK) { *reason = "unresolved: context"; return CK_UNRESOLVED; }
     return CK_VALID;
 }
 /* scope: the face's dimensions, the reference's finite structure, its free

@@ -16,7 +16,7 @@ int main(void) {
     TermVarId ve=declare_term(Ex,fc_true()); RefId e=ref_var(ve);
     RefId DT=mk_pi_lv(0,1,vx,A,mk_pi_lv(0,1,ve,Ex,U));
     TermVarId vD=declare_term(DT,fc_true()); RefId D=ref_var(vD), Dx=app2(D,x,e), refl=mk_refl(0,A,t);
-    CtxDecl ds[]={{S_TERM,vA,U},{S_TERM,vt,A},{S_TERM,vD,DT}};
+    CtxDecl ds[]={{S_TERM,vA},{S_TERM,vt},{S_TERM,vD}};
     ContextId G=context_make(3,ds,fc_true());
     RefId S=mk_sigma_lv(0,0,vx,A,mk_sigma_lv(0,0,ve,Ex,Dx)), Z=app2(D,t,refl);
     ScopeId DS=capture_term2(vx,A,0,ve,Ex,0,Dx,U,1,fc_true());

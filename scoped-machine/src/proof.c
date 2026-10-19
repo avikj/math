@@ -112,7 +112,7 @@ ProofUse proof_use(ContextId G, FaceId chi, RefId e, RefId E) {
     if (fc_is_false(chi)) { out.status = PU_CORE; out.reason = "a judgment local to the false face"; return out; }
     size_t nd = context_size(G), nr = 0;
     RefId *roots = malloc((nd + 2) * sizeof(RefId)); require(roots, "out of memory");
-    for (size_t q = 0; q < nd; q++) { CtxDecl d = context_decl(G, q); if (d.sort == S_TERM) roots[nr++] = d.type; }
+    for (size_t q = 0; q < nd; q++) { CtxDecl d = context_decl(G, q); if (d.sort == S_TERM) roots[nr++] = term_var_type(d.id); }
     roots[nr++] = E; roots[nr++] = e;
     out.revisions = pins_current(nr, roots);
     free(roots);

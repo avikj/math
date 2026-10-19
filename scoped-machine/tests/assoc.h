@@ -28,10 +28,10 @@ static inline void assoc_build(Assoc *A) {
     A->mab = m2(A->m, A->a, A->b); A->mbc = m2(A->m, A->b, A->c);
     A->lhs = m2(A->m, A->mab, A->c); A->rhs = m2(A->m, A->a, A->mbc);
     A->valpha = declare_term(mk_path_const(0, A->X, A->lhs, A->rhs), fc_true()); A->alpha = ref_var(A->valpha);
-    CtxDecl d[6] = { { S_TERM, A->vX, U0 }, { S_TERM, A->vm, XXX }, { S_TERM, A->va, A->X }, { S_TERM, A->vb, A->X }, { S_TERM, A->vc, A->X }, { S_TERM, A->valpha, term_var_type(A->valpha) } };
+    CtxDecl d[6] = { { S_TERM, A->vX}, { S_TERM, A->vm}, { S_TERM, A->va}, { S_TERM, A->vb}, { S_TERM, A->vc}, { S_TERM, A->valpha} };
     A->G = context_make(6, d, fc_true());
     A->vy = declare_term(A->X, fc_true()); RefId y = ref_var(A->vy);
-    A->Gy = context_extend_term(A->G, A->vy, A->X);
+    A->Gy = context_extend_term(A->G, A->vy);
     A->vu = declare_term(A->X, fc_true());
     RefId Ps = mk_path_const(0, A->X, A->mab, ref_var(A->vu));
     A->vs = declare_term(Ps, fc_true());

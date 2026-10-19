@@ -501,10 +501,10 @@ static void test_contexts(void) {
     DimVarId i = declare_dim();
     RefId p = var(mk_path_const(0, A, a, a));
     RefId t = mk_papp_const(0, A, a, a, p, iv_var(i));
-    CtxDecl ds[4] = { { S_TERM, ref_var_id(A), U0 }, { S_TERM, ref_var_id(a), A }, { S_TERM, ref_var_id(p), mk_path_const(0, A, a, a) }, { S_DIM, i, 0 } };
+    CtxDecl ds[4] = { { S_TERM, ref_var_id(A)}, { S_TERM, ref_var_id(a)}, { S_TERM, ref_var_id(p)}, { S_DIM, i} };
     ContextId full = context_make(4, ds, fc_true());
     /* weakening changes only the context */
-    ContextId weak = context_extend_term(full, x, A);
+    ContextId weak = context_extend_term(full, x);
     CHECK(context_size(weak) == 5, "weakening");
     FaceId fs[2] = { fc_lit(i, 0), fc_lit(i, 1) }; RefId ts[2] = { a, a };
     RefId sys = mk_system(2, fs, ts);

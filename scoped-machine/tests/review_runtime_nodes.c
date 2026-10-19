@@ -175,7 +175,7 @@ int main(int argc,char **argv) {
     RefId U=mk_universe(0);TermVarId vA=var(U);RefId A=ref_var(vA);
     TermVarId vt=var(A),vy=var(A);RefId t=ref_var(vt),y=ref_var(vy),P=mk_path_const(0,A,t,y);
     TermVarId vp=var(P);RefId p=ref_var(vp);
-    CtxDecl ds[]={{S_TERM,vA,U},{S_TERM,vt,A},{S_TERM,vy,A},{S_TERM,vp,P}};
+    CtxDecl ds[]={{S_TERM,vA},{S_TERM,vt},{S_TERM,vy},{S_TERM,vp}};
     ContextId G=context_make(4,ds,fc_true());
     TermVarId x=var(A);RefId Ex=mk_path_const(0,A,t,ref_var(x));TermVarId e=var(Ex);
     RefId QT=mk_pi_lv(0,1,x,A,mk_pi_lv(0,1,e,Ex,w_diagram_type(0,0,A)));

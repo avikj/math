@@ -55,28 +55,19 @@ const char *judge_diag(const char *text) {
 
 /* ---------------- contexts ---------------- */
 #define JC_TAG 0x7C7CULL
-uint64_t jc_empty(void) { return RQ(JC_TAG, 0, 0, 0, 0, pins_empty()); }
-static const uint64_t *jcw(uint64_t G) { size_t n; const uint64_t *w = rget(G, &n); require(n == 6 && w[0] == JC_TAG, "not a judgment context"); return w; }
+/* [tag, parent, sort, id, index]: a variable's type is its own */
+uint64_t jc_empty(void) { return RQ(JC_TAG, 0, 0, 0, pins_empty()); }
+static const uint64_t *jcw(uint64_t G) { size_t n; const uint64_t *w = rget(G, &n); require(n == 5 && w[0] == JC_TAG, "not a judgment context"); return w; }
 uint64_t jc_parent(uint64_t G) { return jcw(G)[1]; }
 bool jc_is_empty(uint64_t G) { return jcw(G)[1] == 0 && jcw(G)[2] == 0; }
-void jc_decl(uint64_t G, Sort *sort, uint64_t *id, RefId *type) { const uint64_t *w = jcw(G); *sort = (Sort)w[2]; *id = w[3]; *type = w[4]; }
-uint64_t jc_ext(uint64_t G, Sort sort, uint64_t id, RefId type) {
+void jc_decl(uint64_t G, Sort *sort, uint64_t *id) { const uint64_t *w = jcw(G); *sort = (Sort)w[2]; *id = w[3]; }
+uint64_t jc_ext(uint64_t G, Sort sort, uint64_t id) {
     const uint64_t *w = jcw(G);
-    uint64_t idx = pins_insert(w[5], sort == S_TERM ? 2 * id : 2 * id + 1, sort == S_TERM ? type : 1);
-    return RQ(JC_TAG, G, sort, id, type, idx);
+    uint64_t idx = pins_insert(w[4], sort == S_TERM ? 2 * id : 2 * id + 1, 1);
+    return RQ(JC_TAG, G, sort, id, idx);
 }
-bool jc_term(uint64_t G, TermVarId x, RefId *type) { RefId v = 0; bool f = pins_lookup(jcw(G)[5], 2 * x, &v); if (f && type) *type = v; return f; }
-bool jc_dim(uint64_t G, DimVarId j) { return pins_lookup(jcw(G)[5], 2 * j + 1, NULL); }
-/* outside jobs: a flat context as a judgment context; false on a duplicate declaration */
-bool jc_of_flat(ContextId F, uint64_t *out) {
-    uint64_t G = jc_empty(); size_t n = context_size(F);
-    for (size_t k = 0; k < n; k++) {
-        CtxDecl d = context_decl(F, k);
-        if (d.sort == S_TERM ? jc_term(G, d.id, NULL) : jc_dim(G, d.id)) return false;
-        G = jc_ext(G, d.sort, d.id, d.type);
-    }
-    *out = G; return true;
-}
+bool jc_term(uint64_t G, TermVarId x) { return pins_lookup(jcw(G)[4], 2 * x, NULL); }
+bool jc_dim(uint64_t G, DimVarId j) { return pins_lookup(jcw(G)[4], 2 * j + 1, NULL); }
 
 /* ---------------- families used ---------------- */
 static Family Jf_FCMEET, Jf_FCJOIN, Jf_FCENT, Jf_FCPROJ, Jf_FCDIMS, Jf_IVDIMS, Jf_DSUNION, Jf_REINDEX, Jf_IVRE, Jf_FCRE,
@@ -203,7 +194,7 @@ static void jdims_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     if (jc_is_empty(k->w[0])) FR_FINISH(k, dimset_make(NULL, 0));
     FR_AWAIT(k, r, J_JDIMS, jc_parent(k->w[0]), 0);
-    {   Sort so; uint64_t id; RefId ty; jc_decl(k->w[0], &so, &id, &ty);
+    {   Sort so; uint64_t id; jc_decl(k->w[0], &so, &id);
         if (so != S_DIM) FR_FINISH(k, r);
         k->w[2] = dimset_make(&id, 1); }
     FR_AWAIT(k, r, Jf_DSUNION, r, k->w[2]);
@@ -221,7 +212,7 @@ static void scope_step(Cont *k, uint64_t v) {
     JAW(L->res, J_RV, RQ(0, q[2], 0));
     PASS(L->res);
     L->lw = varset_get(ref_freevars(q[2]), &L->n);
-    for (L->i = 0; L->i < L->n; L->i++) { if (!jc_term(q[0], L->lw[L->i], NULL)) BAD("unbound variable"); FR_YIELD(k); }
+    for (L->i = 0; L->i < L->n; L->i++) { if (!jc_term(q[0], L->lw[L->i])) BAD("unbound variable"); FR_YIELD(k); }
     JAW(r, J_DIMSIN, RQ(q[0], ref_support(q[2])));
     if (r != J_OK) BAD("unbound dimension");
     OK0();
@@ -232,7 +223,7 @@ static void jcof_step(Cont *k, uint64_t v) {
     JL *L = FR_LOC(k, JL);
     FR_BEGIN(k);
     L->x = jc_empty(); L->n = context_size(k->w[0]);
-    for (L->i = 0; L->i < L->n; L->i++) { CtxDecl d = context_decl(k->w[0], L->i); L->x = jc_ext(L->x, d.sort, d.id, d.type); FR_YIELD(k); }
+    for (L->i = 0; L->i < L->n; L->i++) { CtxDecl d = context_decl(k->w[0], L->i); L->x = jc_ext(L->x, d.sort, d.id); FR_YIELD(k); }
     FR_FINISH(k, L->x);
     FR_END(k);
 }
@@ -250,7 +241,7 @@ static void generic_step(Cont *k, uint64_t v) {
         if (L->tag == PS_INTERVAL) {
             {   KeyWord key[3] = { { KW_CONST, 9300 }, { KW_CONST, Q }, { KW_CONST, L->i } };
                 DimVarId j = fresh_dim_keyed(key, 3);
-                L->x = j; L->y = iv_var(j); L->G2 = jc_ext(L->G2, S_DIM, j, 0); }
+                L->x = j; L->y = iv_var(j); L->G2 = jc_ext(L->G2, S_DIM, j); }
         } else {
             FR_AWAIT(k, L->T, Jf_REINDEX, L->T, L->m);
             if (L->a0) FR_AWAIT(k, L->a0, Jf_FCRE, L->a0, L->m);
@@ -258,7 +249,7 @@ static void generic_step(Cont *k, uint64_t v) {
             {   KeyWord key[3] = { { KW_CONST, 9300 }, { KW_CONST, Q }, { KW_CONST, L->i } };
                 L->x = fresh_term_keyed_req(key, 3, L->T, L->a0); }
             FR_AWAIT(k, L->y, Jf_REFVAR, L->x, 0);
-            L->G2 = jc_ext(L->G2, S_TERM, L->x, L->T);
+            L->G2 = jc_ext(L->G2, S_TERM, L->x);
         }
         wordbuf_push(&L->wb, L->i); wordbuf_push(&L->wb, L->tag); wordbuf_push(&L->wb, L->y);
         wordbuf_push(&L->wc, L->x);
@@ -1079,7 +1070,7 @@ static void spine_step(Cont *k, uint64_t v) {
         L->D = global_context_flat((SymbolId)L->x);
         L->n = context_size(L->D);
         for (L->i = 0; L->i < L->n; L->i++) {
-            {   CtxDecl d = context_decl(L->D, L->i); L->tag = d.sort; L->u = d.id; L->T = d.type; }
+            {   CtxDecl d = context_decl(L->D, L->i); L->tag = d.sort; L->u = d.id; L->T = d.sort == S_TERM ? term_var_type(d.id) : 0; }
             if (L->tag == S_DIM) {
                 FR_AWAIT(k, L->a2, Jf_MAPD, L->a0, L->u);
                 FR_AWAIT(k, L->a3, Jf_MAPD, L->a1, L->u);
@@ -1344,7 +1335,7 @@ static void map_step(Cont *k, uint64_t v) {
     PASS(L->res);
     if (D) { JAW(L->res, J_CTX, RQ(D, psi, P)); PASS(L->res); }   /* a root map's source context is its subject */
     for (L->G2 = q[3]; !jc_is_empty(L->G2); L->G2 = jc_parent(L->G2)) {
-        {   Sort so; uint64_t id; RefId ty; jc_decl(L->G2, &so, &id, &ty); L->tag = so; L->x = id; L->T = ty; }
+        {   Sort so; uint64_t id; jc_decl(L->G2, &so, &id); L->tag = so; L->x = id; L->T = so == S_TERM ? term_var_type(id) : 0; }
         if (L->tag == S_DIM) {
             if (!D) continue;
             FR_AWAIT(k, L->y, Jf_MAPD, sigma, L->x);
@@ -1397,33 +1388,27 @@ static void ctxd_step(Cont *k, uint64_t v) {
     FR_FINISH(k, jr_code(L->x) != J_OK ? L->x : L->y);
     FR_END(k);
 }
-/* the top declaration of G over its prefix (§2, §33 item 3, §59.2) */
+/* the top declaration of G over its prefix (§2, §33 item 3, §59.2): not
+ * declared earlier; a term variable's own type is a type in scope of the
+ * earlier declarations */
 static void declok_step(Cont *k, uint64_t v) {
     JLOC;   /* q: G, a, P */
     uint64_t P = q[2];
     FR_BEGIN(k);
-    {   Sort so; uint64_t id; RefId ty; jc_decl(q[0], &so, &id, &ty); L->tag = so; L->x = id; L->T = ty; }
+    {   Sort so; uint64_t id; jc_decl(q[0], &so, &id); L->tag = so; L->x = id; }
+    L->G2 = jc_parent(q[0]);
+    if (L->tag == S_TERM ? jc_term(L->G2, L->x) : jc_dim(L->G2, L->x)) BAD("duplicate declaration");
     if (L->tag != S_TERM) OK0();
-    L->G2 = jc_parent(q[0]); L->D = term_var_type(L->x);
-    for (L->j2 = 0; L->j2 < 2; L->j2++) {
-        JAW(L->res, J_SCOPE, RQ(L->G2, term_var_required(L->x), L->j2 ? L->D : L->T));
-        if (jr_code(L->res) != J_OK) BAD("declaration type is not in scope of the earlier declarations");
-    }
+    L->T = term_var_type(L->x);
+    JAW(L->res, J_SCOPE, RQ(L->G2, term_var_required(L->x), L->T));
+    if (jr_code(L->res) != J_OK) BAD("declaration type is not in scope of the earlier declarations");
     FR_AWAIT(k, L->y, J_JDIMS, L->G2, 0);
     FR_AWAIT(k, L->y, Jf_FCPROJ, q[1], L->y);
     FR_AWAIT(k, L->y, Jf_FCMEET, L->y, term_var_required(L->x));
     FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
     for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-        L->u = rget(L->cl, &L->nc)[L->c];
-        JRQ(L->res, J_LEVEL, RQ(L->u, L->T, P));
+        JRQ(L->res, J_LEVEL, RQ(rget(L->cl, &L->nc)[L->c], L->T, P));
         PASS(L->res);
-        if (L->D != L->T) {
-            JRQ(L->res, J_LEVEL, RQ(L->u, L->D, P));
-            PASS(L->res);
-            JRQ(L->res, J_CONVT, RQ(L->u, L->T, L->D, P));
-            if (jr_code(L->res) == J_BAD) BAD("declared type is not convertible to the variable's declaration");
-            if (jr_code(L->res) == J_UNR) UNR("unresolved: declaration type compatibility");
-        }
     }
     OK0();
     FR_END(k);

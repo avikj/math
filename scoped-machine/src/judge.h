@@ -20,13 +20,12 @@ uint64_t jr_a(uint64_t v); uint64_t jr_b(uint64_t v); uint64_t jr_c(uint64_t v);
 const char *judge_diag(const char *text);
 /* judgment contexts */
 uint64_t jc_empty(void);
-uint64_t jc_ext(uint64_t G, Sort sort, uint64_t id, RefId type);
+uint64_t jc_ext(uint64_t G, Sort sort, uint64_t id);
 uint64_t jc_parent(uint64_t G);
 bool jc_is_empty(uint64_t G);
-void jc_decl(uint64_t G, Sort *sort, uint64_t *id, RefId *type);
-bool jc_term(uint64_t G, TermVarId x, RefId *type);
+void jc_decl(uint64_t G, Sort *sort, uint64_t *id);
+bool jc_term(uint64_t G, TermVarId x);
 bool jc_dim(uint64_t G, DimVarId j);
-bool jc_of_flat(ContextId F, uint64_t *out);     /* outside jobs; false on a duplicate declaration */
 void judge_families_init(void);
 
 #endif

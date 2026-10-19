@@ -16,8 +16,8 @@ static TermVarId tv(RefId type) { return declare_term(type, fc_true()); }
 /* context from a list of term variables (declared types) and dimensions */
 static ContextId ctx_of(size_t nd, const DimVarId *ds, size_t nt, const TermVarId *xs, FaceId chi) {
     CtxDecl d[32]; size_t n = 0;
-    for (size_t k = 0; k < nd; k++) { d[n].sort = S_DIM; d[n].id = ds[k]; d[n].type = 0; n++; }
-    for (size_t k = 0; k < nt; k++) { d[n].sort = S_TERM; d[n].id = xs[k]; d[n].type = term_var_type(xs[k]); n++; }
+    for (size_t k = 0; k < nd; k++) { d[n].sort = S_DIM; d[n].id = ds[k]; n++; }
+    for (size_t k = 0; k < nt; k++) { d[n].sort = S_TERM; d[n].id = xs[k]; n++; }
     return context_make(n, d, chi);
 }
 
@@ -42,7 +42,7 @@ int main(void) {
 
     /* contexts */
     CHECK(check_context(G, &why) == CK_VALID, "well-formed context: %s", why);
-    { CtxDecl bad[2] = { { S_TERM, va, A }, { S_TERM, vA, U0 } };      /* a:A before A:U0 */
+    { CtxDecl bad[2] = { { S_TERM, va}, { S_TERM, vA} };      /* a:A before A:U0 */
       ContextId Gb = 0; bool threw = false; (void)threw;
       /* context_make itself refuses forward references; check the checker on a legal-shaped but ill-typed one */
       (void)bad; (void)Gb; }
