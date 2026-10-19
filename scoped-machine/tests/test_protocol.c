@@ -117,6 +117,15 @@ int main(void) {
     v = family_run(F_SUM, 1500, 0, &st) - 1;
     CHECK(v == 1125750 && rd(RD_STEPS, F_SUM) == before + 2 * 500, "a larger request runs only its new keys");
     for (EntryId e = 1; e <= eval_entry_count(); e++) if (eval_entry_live(e) && eval_entry_runs(e) > 1) { CHECK(0, "a key ran twice"); break; }
+    /* the work reading: a producer's support is its dependency closure, each
+     * producer counted once in a union */
+    {   EntryId r1 = eval_entry_find(F_SUM, 1500, 0), r2 = eval_entry_find(F_SUM, 700, 0);
+        Exact w1 = { 0, NULL }, w12 = { 0, NULL }; size_t n1, n12; uint64_t a1, a12;
+        eval_work(1, &r1, &w1, &n1);
+        EntryId both[2] = { r1, r2 }; eval_work(2, both, &w12, &n12);
+        CHECK(exact_to_u64(&w1, &a1) && a1 == rd(RD_STEPS, F_SUM) && n1 == 1501, "W(sum(1500)) is the steps of its 1501 producers");
+        CHECK(exact_to_u64(&w12, &a12) && a12 == a1 && n12 == n1, "a producer inside the support is counted once in the union");
+        exact_free(&w1); exact_free(&w12); }
 
     /* eight concurrent clients of one fresh key, sequential and with workers */
     for (int w = 0; w <= 4; w += 4) {

@@ -106,6 +106,22 @@ static uint64_t steps_now(void) {
     if (!exact_to_u64(&x, &v)) v = UINT64_MAX;
     exact_free(&x); return v;
 }
+static Entry *ENT(EntryId e);
+EntryId eval_entry_find(Family f, uint64_t a, uint64_t b) { uint64_t w[3] = { f, a, b }; return interner_find(&E.keys, w, 3); }
+void eval_work(size_t n, const EntryId *roots, Exact *out, size_t *support) {
+    size_t ne = interner_count(&E.keys), cnt = 0;
+    bool *seen = calloc(ne + 1, sizeof *seen);
+    EntryId *stk = malloc((ne + 1) * sizeof *stk); size_t sp = 0;
+    require(seen && stk, "out of memory: a work reading");
+    for (size_t q = 0; q < n; q++) if (roots[q] && !seen[roots[q]]) { seen[roots[q]] = true; stk[sp++] = roots[q]; }
+    while (sp) {
+        Entry *e = ENT(stk[--sp]); cnt++;
+        exact_add_count(out, &e->work);
+        for (size_t d = 0; d < e->ndeps; d++) if (!seen[e->deps[d]]) { seen[e->deps[d]] = true; stk[sp++] = e->deps[d]; }
+    }
+    free(seen); free(stk);
+    if (support) *support = cnt;
+}
 void eval_reading(Reading r, Family f, Exact *out) {
     require(r <= RD_STEPS && (r != RD_STEPS || (f >= 1 && f < F_MAX)), "bad reading");
     pthread_mutex_lock(&E.shard_mu); Shard *s = E.shards; pthread_mutex_unlock(&E.shard_mu);
@@ -240,6 +256,7 @@ void eval_free(void) {
     for (size_t i = 0; i < ne; i++) {
         Entry *e = chunked_peek(&E.entries, i);
         if (!e) continue;
+        count_free(&e->work); free(e->deps);
         Cont *h = e->head;
         if (h == ENTRY_READY) continue;
         for (Cont *k = h; k; k = k->next) cont_dispose(k);     /* suspended forever: stuck demands */
@@ -265,7 +282,7 @@ void eval_free(void) {
 
 static Cont *cont_new(ContKind kind, EntryId dest, FaceId chi) {
     Cont *k = pool_alloc(&E.cont_pool);
-    k->kind = kind; k->dest = dest; k->chi = chi; k->disposed = false;
+    k->kind = kind; k->dest = dest; k->chi = chi; k->disposed = false; k->owner = 0;
     return k;
 }
 static Pool *loc_pool(Family f) {
@@ -281,14 +298,21 @@ static void cont_release(Cont *k) {
     pool_free(&E.cont_pool, k);
 }
 Cont *frame_new(Family f, EntryId dest) {
-    Cont *k = cont_new(K_FRAME, dest, 0); k->fam = f;
+    Cont *k = cont_new(K_FRAME, dest, 0); k->fam = f; k->owner = dest;
     if (FAM[f].loc_size) k->loc = pool_alloc(loc_pool(f));
     return k;
 }
+Cont *frame_new(Family f, EntryId dest);
+static EntryId cont_owner(const Cont *k) {
+    if (!k) return 0;
+    if (k->kind == K_FRAME) return k->owner;
+    if (k->kind == K_JOIN) return k->join->frame ? k->join->frame->owner : 0;
+    return 0;
+}
 Cont *frame_sub(Family f, const Cont *caller) {
-    (void)caller;
     require(f > F_WHNF && f < n_fam && FAM[f].start == NULL, "a subroutine is a frame family");
-    return frame_new(f, 0);
+    Cont *k = frame_new(f, 0); k->owner = cont_owner(caller);
+    return k;
 }
 
 Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *)) {
@@ -447,9 +471,24 @@ void family_publish(EntryId eid, uint64_t v) {
  * one per concurrent worker per success), so the retries of all requests are
  * within a constant factor of their number. Strong CAS only: a spurious
  * failure would be charged to nothing. */
+static void ledger_lock(Entry *o) { while (__atomic_exchange_n(&o->ledger_lk, 1, __ATOMIC_ACQUIRE)) sched_yield(); }
+static void ledger_unlock(Entry *o) { __atomic_store_n(&o->ledger_lk, 0, __ATOMIC_RELEASE); }
+static void record_dep(EntryId owner, EntryId eid) {
+    Entry *o = ENT(owner);
+    ledger_lock(o);
+    if (o->ndeps == o->capdeps) {
+        size_t c = o->capdeps ? 2 * o->capdeps : 4;
+        EntryId *d = realloc(o->deps, c * sizeof *d); require(d, "out of memory: a dependency record");
+        o->deps = d; o->capdeps = c;
+    }
+    o->deps[o->ndeps++] = eid;
+    ledger_unlock(o);
+}
+static void record_work(EntryId owner) { Entry *o = ENT(owner); ledger_lock(o); count_bump(&o->work); ledger_unlock(o); }
 static void request_entry(EntryId eid, Cont *k) {
     Entry *e = ENT(eid);
     event(RD_REQUEST);
+    {   EntryId o = cont_owner(k); if (o) record_dep(o, eid); }
     for (;;) {
         Cont *h = __atomic_load_n(&e->head, __ATOMIC_ACQUIRE);
         if (h == ENTRY_READY) {
@@ -1034,6 +1073,7 @@ static void evaluate(EntryId eid) {
     require(__atomic_fetch_add(&e->runs, 1, __ATOMIC_ACQ_REL) == 0, "a key is evaluated by exactly one task");
     Family f = eval_entry_family(eid);
     count_bump(&shard()->steps[f]);
+    record_work(eid);
     if (FAM[f].start) FAM[f].start(eid, eval_entry_a(eid), eval_entry_b(eid));
     else {
         /* a frame family: its first step */
@@ -1070,7 +1110,7 @@ static void execute_job(Task t) {
     if (t.kind == TK_EVAL) { evaluate(t.entry); return; }
     Cont *k = t.k;
     if (k->next) { Cont *rest = k->next; k->next = NULL; deliver(rest, t.v); }   /* hand the chain on: one delivery per job */
-    if (k->kind == K_FRAME) count_bump(&shard()->steps[k->fam]);   /* a delivery to a root, join or external continuation belongs to no family (it is still a step of W) */
+    if (k->kind == K_FRAME) { count_bump(&shard()->steps[k->fam]); if (k->owner) record_work(k->owner); }   /* a delivery to a root, join or external continuation belongs to no family (it is still a step of W) */
     Cont *sf = tl_step_frame; bool sk = tl_kept;
     tl_step_frame = k; tl_kept = false;
     resume(k, t.v);

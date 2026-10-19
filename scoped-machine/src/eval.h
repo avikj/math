@@ -67,6 +67,7 @@ typedef enum {
 struct Cont {
     ContKind kind;
     EntryId dest;       /* entry to publish into (not for ROOT/EXTERNAL) */
+    EntryId owner;      /* FRAME: the entry whose producer this frame serves (0: a host-driven frame) */
     FaceId chi;         /* ambient face of the demanding evaluation */
     Join *join; size_t box;          /* JOIN: the join and the box */
     RootBox *root;                   /* ROOT */
@@ -84,6 +85,9 @@ typedef struct {
     Cont *head;         /* NULL: U; ENTRY_READY: D; otherwise R with this waiter stack */
     uint64_t value;     /* published result (an EvalResult* for F_WHNF) */
     size_t runs;        /* evaluator tasks executed for this key (must be ≤ 1) */
+    Count work;         /* steps of its producer's frame and subroutines (exact) */
+    EntryId *deps; size_t ndeps, capdeps;   /* the entries its producer requested */
+    int ledger_lk;      /* work and deps: written by the producer's frames, which may run concurrently (branches) */
 } Entry;
 
 typedef void (*FamStart)(EntryId e, uint64_t a, uint64_t b);
@@ -199,6 +203,11 @@ size_t eval_workers(void);
  * in one shard per executing thread and summed on demand (count.h). */
 typedef enum { RD_REQUEST, RD_DELIVER, RD_PUBLISH, RD_LAUNCH, RD_STEP, RD_STEPS } Reading;   /* RD_STEPS: of family f */
 void eval_reading(Reading r, Family f, Exact *out);   /* out += the reading */
+/* work of a set of producers (§60, EFFECT-AUTHORITY §8): the union of their
+ * dependency supports, each producer's work counted once; *support is the
+ * number of producers in the union. Outside jobs, over completed producers. */
+void eval_work(size_t n, const EntryId *roots, Exact *out, size_t *support);
+EntryId eval_entry_find(Family f, uint64_t a, uint64_t b);   /* the entry of a key, 0 if never requested */
 
 
 /* cache introspection (tests) */
