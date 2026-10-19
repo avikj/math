@@ -163,7 +163,13 @@ void *frame_mem_grow(void *p, size_t bytes);
 void frame_mem_free(void *p);
 void frame_await_join(Cont *k, Join *j);
 void frame_launch(Cont *f, Cont *parent);      /* run frame f; its value resumes parent (any continuation) */
-uint64_t frame_run(Cont *f, WhnfStatus *status);   /* outside jobs: a detached frame driven to its value */
+uint64_t frame_run(Cont *f, WhnfStatus *status);
+uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, WhnfStatus *status);   /* at most budget jobs (0: unlimited) */
+/* subroutines for frames: an observation under pins (value: EvalResult*),
+ * a construction request (value: RefId), a request record already built */
+Cont *observe_sub(const Cont *caller, RefId x, FaceId chi, uint64_t pins);
+Cont *construct_sub(const Cont *caller, Tag tag, uint64_t payload, uint64_t levels, size_t nf, const Field *f, size_t nb, const Binder *b);
+Cont *construct_buf_sub(const Cont *caller, WordBuf *w);   /* outside jobs: a detached frame driven to its value */
 #define FR_JOIN(k, j) do { (k)->pc = __LINE__; frame_await_join((k), (j)); return; case __LINE__:; } while (0)
 
 

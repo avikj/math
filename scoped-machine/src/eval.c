@@ -4,6 +4,8 @@
 #include "compiler.h"
 #include "pool.h"
 #include "pins.h"
+#include "judge.h"
+#include <sched.h>
 
 /* ---------------- continuations, joins, results ----------------
  *
@@ -161,6 +163,7 @@ void eval_init(void) {
     compiler_families_init();
     net_families_init();
     pins_families_init();
+    judge_families_init();
     evaluator_bind();
     net_init(&E.net);
     net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
@@ -655,6 +658,7 @@ static void creq_step(Cont *k, uint64_t v) {
 }
 /* the request record already in a buffer (moved into the subroutine) */
 static Cont *creq_buf(const Cont *k, WordBuf *w) { Cont *c = frame_sub(F_CREQ, k); FR_LOC(c, CrLoc)->w = *w; wordbuf_init(w); return c; }
+Cont *construct_buf_sub(const Cont *caller, WordBuf *w) { return creq_buf(caller, w); }
 static Cont *creq(const Cont *k, Tag tag, uint64_t payload, uint64_t levels, size_t nf, const Field *f, size_t nb, const Binder *b) {
     require(nf <= 6 && nb <= 1, "a fixed-shape construction request");
     WordBuf w; creq_head(&w, tag, payload, levels, nf);
@@ -665,6 +669,9 @@ static Cont *creq(const Cont *k, Tag tag, uint64_t payload, uint64_t levels, siz
 }
 /* a sub-observation of an evaluation frame (whnf or forward: w[1] is its key's [η, P]) under the same pins */
 static Cont *obs_sub(const Cont *k, RefId x, FaceId chi) { Cont *c = frame_sub(F_OBS, k); c->w[0] = x; c->w[1] = chi; c->w[2] = 0; c->w[3] = key_pins(k->w[1]); return c; }
+/* an observation subroutine for any frame: x under χ and pins P */
+Cont *observe_sub(const Cont *caller, RefId x, FaceId chi, uint64_t P) { Cont *c = frame_sub(F_OBS, caller); c->w[0] = x; c->w[1] = chi; c->w[2] = 0; c->w[3] = P; return c; }
+Cont *construct_sub(const Cont *caller, Tag tag, uint64_t payload, uint64_t levels, size_t nf, const Field *f, size_t nb, const Binder *b) { return creq(caller, tag, payload, levels, nf, f, nb, b); }
 /* the observation of x under χ ∧ φ (a branch) */
 static Cont *obs_under(const Cont *k, RefId x, FaceId chi, FaceId phi) { Cont *c = obs_sub(k, x, chi); c->w[2] = phi; return c; }
 
@@ -1232,6 +1239,37 @@ uint64_t frame_run(Cont *f, WhnfStatus *status) {
     frame_launch(f, root);
     uint64_t v = 0;
     bool done = drive_root(box, &v);
+    if (status) *status = done ? W_OK : W_STUCK;
+    return done ? v : 0;
+}
+
+/* a root driven for at most `budget` jobs (0: unlimited): an unfinished root
+ * is reported stuck; its work stays queued (or running) and completes when a
+ * later root drives the machine — nothing executed is discarded */
+uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, WhnfStatus *status) {
+    if (!budget) return family_run(f, a, b, status);
+    Cont *root; RootBox *box = root_new(&root, 0);
+    family_request(f, a, b, root);
+    size_t start = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
+    if (E.nworkers) {
+        for (;;) {
+            pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
+            pthread_mutex_lock(&E.q_mu); size_t out = E.outstanding; pthread_mutex_unlock(&E.q_mu);
+            if (d || out == 0 || __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST) - start >= budget) break;
+            sched_yield();
+        }
+    } else {
+        for (;;) {
+            pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
+            if (d || __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST) - start >= budget) break;
+            Task t;
+            pthread_mutex_lock(&E.q_mu); bool got = pop_locked(&t); pthread_mutex_unlock(&E.q_mu);
+            if (!got) break;
+            execute(t); finish_job();
+        }
+    }
+    pthread_mutex_lock(&box->mu); bool done = box->done; uint64_t v = box->result; pthread_mutex_unlock(&box->mu);
+    rootbox_release(box);
     if (status) *status = done ? W_OK : W_STUCK;
     return done ? v : 0;
 }

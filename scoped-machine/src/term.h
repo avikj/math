@@ -243,8 +243,10 @@ bool set_global_body(SymbolId s, RefId body);   /* false: the environment is fro
 RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the definition's own parameters */
 MapId global_args(RefId t);            /* a global reference's images of the definition's parameters */
 uint64_t global_env_version(void);     /* changes with every declaration / body registration */
-void env_control_init(void); void env_freeze(void); void env_unfreeze(void); bool env_is_frozen(void);   /* §57 R1: define_global returns 0 and set_global_body false while frozen */
-RefId unfold_global(RefId t);          /* reindex(definition body, global_args) */
+void env_control_init(void);
+RefId unfold_global(RefId t);
+ContextId global_context_flat(SymbolId s);   /* the parameter context of a global (fixed at declaration) */
+ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req);          /* reindex(definition body, global_args) */
 
 /* ---- constructors (constructions at their own boundary) ---- */
 RefId mk_universe(uint64_t level);

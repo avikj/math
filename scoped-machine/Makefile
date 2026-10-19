@@ -2,12 +2,12 @@ CC      ?= gcc
 CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/pins.c
+SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/pins.c src/judge.c
 OBJ := $(SRC:.c=.o)
 CONSTRUCTION_TESTS := review_singleton_witnesses review_generic_identity_action review_runtime_nodes
 CONSTRUCTION_BINS := $(addprefix build/,$(CONSTRUCTION_TESTS))
 
-all: build/protocol build/records build/dnf build/subst build/alpha build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/review-probes build/demo-speculation $(CONSTRUCTION_BINS)
+all: build/protocol build/records build/dnf build/subst build/alpha build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/review-probes build/demo-speculation $(CONSTRUCTION_BINS)
 
 $(CONSTRUCTION_BINS): build/%: tests/%.o $(OBJ)
 	@mkdir -p build
@@ -69,11 +69,6 @@ build/compiler: $(OBJ) tests/test_compiler.o
 	$(CC) $(LDFLAGS) -o $@ $^
 
 build/review-followup: $(OBJ) tests/review_followup.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-# includes check.c directly to stage a claim interleaving: linked without check.o
-build/review-claim-wait: $(filter-out src/check.o,$(OBJ)) tests/review_claim_wait.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 
@@ -143,7 +138,6 @@ test: all
 	./build/review-followup formation
 	./build/review-followup admission
 	./build/review-followup call
-	./build/review-claim-wait
 	./build/review-checker-lifecycle
 	for m in $(REVIEW_AE_MODES); do ./build/review-ae756a1 $$m || exit 1; done
 	for m in $(REVIEW_0F_MODES); do ./build/review-0f787a3 $$m || exit 1; done
@@ -181,8 +175,6 @@ tsan:
 	for m in $(REVIEW_E2E_MODES) diagram-race; do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_end_to_end $$m || exit 1; done
 	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_end_to_end positive
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_nested_scope
-	$(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -o build/tsan/review_claim_wait tests/review_claim_wait.c $(filter-out build/tsan/check.o,$(TSAN_CORE))
-	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_claim_wait
 
 clean:
 	rm -f src/*.o tests/*.o

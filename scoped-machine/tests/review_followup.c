@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
             r = observe_checked(GA, mk_transform_call(id, DIR_FORWARD, map_identity(), x), &st, &why);
             EXPECT(st == W_OK && r && r->ref == x, "the transform remains executable in the same environment");
         }
-        EXPECT(!env_is_frozen(), "local judgment and transform publication must not freeze the registry");
+        EXPECT(define_global("after-publication", varset_make(NULL, 0), dimset_make(NULL, 0), mk_universe(0)) != 0, "local judgment and transform publication leave the registry open");
         r = observe_checked(GA, global_ref(bad), &st, &why);
         EXPECT(st == W_INVALID && r == NULL, "an invalid definition must reject when actually used");
         r = observe_checked(GA, global_ref(dependent), &st, &why);

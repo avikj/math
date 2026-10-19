@@ -741,6 +741,29 @@ size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
     }
     return n;
 }
+/* the boundary signature of a template node as expressions (interpreted by
+ * the caller in the view's environment, one awaited interpretation each):
+ * entry k of the node's free slots; false when the slot carries no checked
+ * declaration */
+size_t tnode_sig_count(TNodeId Q) { if (node_construction(Q)) return 0; size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl); return nf; }
+bool tnode_sig_exprs(TNodeId Q, size_t k, size_t *slot, PSort *sort, ExprId *type_e, ExprId *level_e, ExprId *sig_e, ExprId *guard_e) {
+    const TDef *def = &TPL.defs[tnode_def(Q)];
+    size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
+    size_t s = (size_t)fl[k], np = def->nparams;
+    *slot = s;
+    if (s < np) { *sort = def->sorts[s]; *type_e = def->ptype[s]; *level_e = def->plevel[s]; *sig_e = def->psig[s]; *guard_e = def->pguard[s]; return true; }
+    size_t l = s - np;
+    if (def->lsort[l] != PS_REF || !def->ltype[l]) return false;
+    *sort = PS_REF; *type_e = def->ltype[l]; *level_e = def->llevel[l]; *sig_e = 0; *guard_e = def->lreq[l];
+    return true;
+}
+bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e) {
+    if (node_construction(Q)) return false;
+    const TDef *def = &TPL.defs[tnode_def(Q)];
+    if (!def->rtype || def->root_node != Q) return false;
+    *type_e = def->rtype; *level_e = def->rlevel;
+    return true;
+}
 bool tnode_result(RefId t, RefId *type, uint64_t *level) {
     if (tview_is_construction(t)) return false;
     TNodeId Q = ref_tnode(t); const TDef *def = &TPL.defs[tnode_def(Q)];

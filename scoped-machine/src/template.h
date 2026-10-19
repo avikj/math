@@ -59,6 +59,9 @@ typedef struct { PSort sort; size_t slot; uint64_t level; RefId type; FaceId gua
  * a scope whose locals are the expected telescope, whose body is the
  * expected result type, whose level and guard are the expected ones) */
 size_t tnode_signature(RefId t, ParamSig *out, size_t max);
+size_t tnode_sig_count(TNodeId Q);
+bool tnode_sig_exprs(TNodeId Q, size_t k, size_t *slot, PSort *sort, ExprId *type_e, ExprId *level_e, ExprId *sig_e, ExprId *guard_e);
+bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e);
 /* the program's declared result type instantiated by t's environment, when
  * t is the root node of its definition */
 bool tnode_result(RefId t, RefId *type, uint64_t *level);

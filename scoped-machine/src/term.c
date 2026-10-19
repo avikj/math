@@ -421,23 +421,46 @@ OccStatus occurrence_validate(RefId t, ContextId ctx, uint64_t *culprit) {
 static uint64_t env_version_ctr;
 uint64_t global_env_version(void) { return __atomic_load_n(&env_version_ctr, __ATOMIC_ACQUIRE); }
 static void env_bump(void) { __atomic_add_fetch(&env_version_ctr, 1, __ATOMIC_ACQ_REL); }
-/* §57 R1 / §59.4: the admitted environment is frozen; registration into a
- * frozen environment fails closed (a new candidate environment is opened by
- * the checker, which retires its caches) */
-static bool env_frozen_flag;
-/* a new machine starts with an open environment; the version counter is
- * never reused, so stale keys of a destroyed machine cannot alias */
-void env_control_init(void) { __atomic_store_n(&env_frozen_flag, false, __ATOMIC_RELEASE); env_bump(); }
-void env_freeze(void) { __atomic_store_n(&env_frozen_flag, true, __ATOMIC_RELEASE); }
-void env_unfreeze(void) { __atomic_store_n(&env_frozen_flag, false, __ATOMIC_RELEASE); env_bump(); }
-bool env_is_frozen(void) { return __atomic_load_n(&env_frozen_flag, __ATOMIC_ACQUIRE); }
+void env_control_init(void) { env_bump(); }
+
+ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req) {
+    size_t nd, nt;
+    const uint64_t *ds = dimset_get(fd, &nd);
+    const uint64_t *xs = varset_get(ft, &nt);
+    CtxDecl *decls = malloc((nd + nt + 1) * sizeof(CtxDecl));
+    size_t n = 0;
+    for (size_t k = 0; k < nd; k++) { decls[n].sort = S_DIM; decls[n].id = ds[k]; decls[n].type = 0; n++; }
+    /* term variables in dependency order: a variable follows the free
+     * variables of its declared type */
+    bool *placed = calloc(nt ? nt : 1, sizeof(bool));
+    size_t done = 0;
+    while (done < nt) {
+        bool progress = false;
+        for (size_t k = 0; k < nt; k++) {
+            if (placed[k]) continue;
+            size_t m; const uint64_t *fv = varset_get(ref_freevars(term_var_type(xs[k])), &m);
+            bool ready = true;
+            for (size_t q = 0; q < m && ready; q++) { bool found = false; for (size_t j = 0; j < nt; j++) if (xs[j] == fv[q] && placed[j]) found = true; if (!found) ready = false; }
+            if (!ready) continue;
+            decls[n].sort = S_TERM; decls[n].id = xs[k]; decls[n].type = term_var_type(xs[k]); n++;
+            placed[k] = true; done++; progress = true;
+        }
+        require(progress, "cyclic declaration dependency in a boundary");
+    }
+    free(placed);
+    ContextId ctx = context_make(n, decls, req);
+    free(decls);
+    return ctx;
+}
+/* a global's parameter context: computed once, when it is declared */
+ContextId global_context_flat(SymbolId s) { return __atomic_load_n(&DEF(s)->ctx, __ATOMIC_ACQUIRE); }
 
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type) {
+    ContextId ctx = boundary_context(params, dims, fc_true());
     term_lock();
-    if (env_is_frozen()) { term_unlock(); return 0; }
     SymbolId s = (SymbolId)(M.n_defs + 1);
     Def *d = DEF(s);
-    d->body = 0; d->params = params; d->dims = dims; d->name = name; d->type = type;
+    d->body = 0; d->params = params; d->dims = dims; d->name = name; d->type = type; d->ctx = ctx;
     M.n_defs++;
     env_bump();
     term_unlock();
@@ -448,7 +471,6 @@ bool set_global_body(SymbolId s, RefId body) {
     require(s >= 1 && s <= M.n_defs, "unknown symbol");
     Def *d = DEF(s);
     require(d->body == 0, "definition environment is immutable: %s already defined", d->name);
-    if (env_is_frozen()) return false;
     size_t n; const uint64_t *xs = varset_get(ref_freevars(body), &n);
     for (size_t k = 0; k < n; k++) require(varset_contains(d->params, xs[k]), "global body has an undeclared free variable");
     const uint64_t *ds = dimset_get(ref_support(body), &n);

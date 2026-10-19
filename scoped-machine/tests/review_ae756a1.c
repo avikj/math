@@ -77,29 +77,20 @@ int main(int argc, char **argv) {
         if(r) { Head h;open_ref(r->ref,&h);printf("result levels=%llu\n",(unsigned long long)levels_first(h.levels)); EXPECT(levels_first(h.levels)!=LEVEL_NONE,"admitted clause output must carry its explicit formation level");head_free(&h); }
         EXPECT(r && ws==W_OK,"the annotated composition executes");
     } else if (!strcmp(mode,"environment")) {
+        /* PLAN §10: no admission freeze. A body registered later is a new
+         * revision: an explicit signature request and every later checked
+         * observation validate it; nothing is frozen or reopened. */
         uint64_t pars[]={vA};
         SymbolId s=define_global("late",varset_make(pars,1),dimset_make(NULL,0),A);
         CheckStatus first=check_admission(&why);verdict("opaque environment",first,why);
-        EXPECT(first==CK_VALID,"positive control: the opaque environment is admitted");
+        EXPECT(first==CK_VALID,"positive control: the opaque environment is valid");
         bool accepted=set_global_body(s,U0);
-        printf("registration into the admitted environment accepted: %d\n",(int)accepted);
-        EXPECT(!accepted,"registration into a frozen (admitted) environment must be rejected");
-        EXPECT(define_global("late2",varset_make(pars,1),dimset_make(NULL,0),A)==0,"declaration into a frozen environment must be rejected");
-        CheckStatus still=check_admission(&why);verdict("admission after the rejected registration",still,why);
-        EXPECT(still==CK_VALID,"the admitted environment is unchanged by a rejected registration");
-        /* a fresh candidate environment: the previous verdicts and observations are retired */
-        check_open_environment();
-        accepted=set_global_body(s,U0);
-        EXPECT(accepted,"the candidate environment accepts the registration");
-        CheckStatus second=check_admission(&why);verdict("candidate environment with ill-typed body U0:A",second,why);
-        EXPECT(second==CK_INVALID,"a new environment cannot reuse the previous symbol acceptance");
+        EXPECT(accepted,"registration needs no reopening (no freeze)");
+        CheckStatus second=check_admission(&why);verdict("signature with ill-typed body U0:A",second,why);
+        EXPECT(second==CK_INVALID,"the new revision is validated, not the earlier acceptance reused");
         WhnfStatus ws;EvalResult *r=observe_checked(G,global_ref(s),&ws,&why);
         printf("bad body checked execution: status=%d result=%d\n",(int)ws,r!=NULL);
-        if(r) printf("bad execution result tag: %s\n",tag_name(ref_tag(r->ref)));
-        EXPECT(ws==W_INVALID && r==NULL,"ill-typed late body cannot execute through checked admission");
-        check_free();check_init();
-        CheckStatus fresh=check_signature(&why);verdict("fresh checker sees actual signature",fresh,why);
-        EXPECT(fresh==CK_INVALID,"positive control: fresh signature check rejects the body");
+        EXPECT(ws==W_INVALID && r==NULL,"ill-typed late body cannot execute through a checked observation");
     } else if (!strcmp(mode,"retry")) {
         uint64_t pars[]={vA};
         SymbolId s=define_global("valid",varset_make(pars,1),dimset_make(NULL,0),U0);

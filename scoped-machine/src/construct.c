@@ -252,14 +252,15 @@ static void head_step(Cont *k, uint64_t v) {
 typedef struct { const uint64_t *xs, *ds; size_t nt, nd, q, kept; uint64_t s, m; WordBuf w; bool created; } UnfLoc;
 static Family F_UNFOLD;
 static bool unf_identity(bool dim, uint64_t key, uint64_t img) { return dim ? img == iv_var(key) : (ref_is_var(img) && ref_var_id(img) == key); }
-static void unfold_step(Cont *k, uint64_t v) {
+/* global.args(t): the substitution of a global's parameters by the
+ * reference's environment (identity entries dropped), written directly */
+static Family F_GARGS;
+static void gargs_step(Cont *k, uint64_t v) {
     UnfLoc *L = FR_LOC(k, UnfLoc);
     RefId t = k->w[0];
-    uint64_t r = 0;
     FR_BEGIN(k);
-    require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL && tview_is_construction(t), "unfold of a non-global");
+    require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL && tview_is_construction(t), "arguments of a non-global");
     L->s = tnode_const_payload(ref_tnode(t));
-    require(k->w[1] != 0, "unfold of a global at its opaque revision");   /* w[1]: the pinned body */
     L->xs = varset_get(global_params((SymbolId)L->s), &L->nt);
     L->ds = dimset_get(global_dims((SymbolId)L->s), &L->nd);
     require(tenv_size(ref_tenv(t)) == L->nd + L->nt, "global reference with a strengthened boundary");
@@ -276,7 +277,15 @@ static void unfold_step(Cont *k, uint64_t v) {
     }
     wordbuf_push(&L->w, L->kept);
     FR_CALL(k, L->m, intern_sub(k, &M.maps, &L->w, &L->created));
-    FR_AWAIT(k, r, F_REINDEX, k->w[1], L->m);
+    FR_FINISH(k, L->m);
+    FR_END(k);
+}
+static void unfold_step(Cont *k, uint64_t v) {
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    require(k->w[1] != 0, "unfold of a global at its opaque revision");   /* w[1]: the pinned body */
+    FR_AWAIT(k, r, F_GARGS, k->w[0], 0);
+    FR_AWAIT(k, r, F_REINDEX, k->w[1], r);
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -355,7 +364,8 @@ void construct_families_init(void) {
     F_BINDER = family_define("binder", binder_step, sizeof(BindLoc), true);
     F_CONSTRUCT = family_define("construct", construct_step, sizeof(ConLoc), true);
     F_HEAD = family_define("head.annotation", head_step, 0, true);
-    F_UNFOLD = family_define("global.unfold", unfold_step, sizeof(UnfLoc), true);    /* keyed by (reference, body revision) */
+    F_GARGS = family_define("global.args", gargs_step, sizeof(UnfLoc), true);
+    F_UNFOLD = family_define("global.unfold", unfold_step, 0, true);    /* keyed by (reference, body revision) */
     F_GLOBALS = family_define("globals.of", globals_step, sizeof(GlLoc), true);      /* a registered transform's bodies are immutable */
 }
 /* the template families register after the construction families; their ids are read lazily */
