@@ -127,7 +127,16 @@ static void node_free(TNodeId Q, SlotSet *out) {
     size_t n; const uint64_t *w = interner_get(&M.keys, list, &n);
     for (size_t k = 0; k < n; k++) ss_set(out, w[k]);
 }
-static void node_free_list(TNodeId Q, size_t *n, const uint64_t **w) { *w = interner_get(&M.keys, TNSIDE(Q)->free_slots, n); }
+static size_t node_param_count(TNodeId Q);
+static bool node_construction(TNodeId Q);
+/* the free slots of a node: a construction's are its parameters; a template
+ * node's were closed at registration */
+static void node_free_list(TNodeId Q, size_t *n, const uint64_t **w) {
+    if (!node_construction(Q)) { *w = interner_get(&M.keys, TNSIDE(Q)->free_slots, n); return; }
+    Words s; words_init(&s); size_t np = node_param_count(Q);
+    for (size_t k = 0; k < np; k++) words_push(&s, k);
+    *w = interner_get(&M.keys, interner_intern(&M.keys, s.w, s.n, NULL), n); words_free(&s);
+}
 
 /* ------------------------------------------------------------------ */
 /* environments and interpretation (as families, below)                 */
@@ -182,12 +191,12 @@ FaceId tnode_const_declared(TNodeId Q) { ExprId e = node_declared_e(Q); return e
 uint64_t tnode_const_payload(TNodeId Q) { ExprId e = node_payload_e(Q); return e ? xlevel(e) : 0; }
 uint64_t tnode_const_levels(TNodeId Q) { ExprId e = node_levels_e(Q); return e ? xlevel(e) : LEVELS_NONE; }
 
-MapId tview_env_map(RefId t) { require(tview_is_construction(t), "environment map of a template instance"); return cons_envmap(ref_tenv(t)); }
 
 
-/* a construction's binder opened at its keyed fresh name: the domain field,
- * then the body constant with the binder's atom ↦ that name */
-static TermOpen cons_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
+/* a binder opened at its keyed fresh name: the domain field, then the body
+ * with the binder's local ↦ that name (the field and binder families, one
+ * interpretation for both node kinds) */
+TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     TNodeId Q = ref_tnode(owner);
     Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
     require(sort == S_TERM, "sort mismatch: expected term binder");
@@ -197,7 +206,7 @@ static TermOpen cons_term_binder(RefId owner, BinderSlot slot, FieldIndex body_f
     o.body = construction_binder(owner, S_TERM, slot, body_field, ref_var(o.x));
     return o;
 }
-static DimOpen cons_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
+DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     TNodeId Q = ref_tnode(owner);
     require(tnode_binder_sort(Q, slot) == S_DIM, "sort mismatch: expected dimension binder");
     DimOpen o;
@@ -221,7 +230,7 @@ static DimOpen cons_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_fie
 
 static Family F_INTERP, F_TVMAKE, F_ISCOPE, F_ENVLOOK, F_ENVSET, F_ENVOF;
 static Family F_TREF, F_TIV, F_TFC, F_TSCOPE, F_CAPTURE, F_REFVAR, F_SETFREE, F_DSUNION, F_VSUNION, F_IVDIMS, F_FCDIMS;
-static Family F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_FCFORALL, F_REINDEX, F_IVRE, F_FCRE;
+static Family F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_FCFORALL, F_REINDEX, F_IVRE, F_FCRE, F_FCENT;
 
 /* position of slot w[1] in environment w[0], plus one (0: absent); one probe per step */
 typedef struct { const uint64_t *w; size_t n, lo, hi; } LookLoc;
@@ -414,13 +423,21 @@ static void interp_step(Cont *k, uint64_t v) {
 }
 
 /* the template view of node w[0] in environment w[1] */
-typedef struct { const uint64_t *fl; size_t nf, q; uint64_t sup, fv, ds, E, req; TVal t; WordBuf out; bool created; } MkLoc;
+typedef struct { const uint64_t *fl; size_t nf, q; uint64_t sup, fv, ds, E, req, slot, g; TVal t; WordBuf out; bool created; } MkLoc;
+/* the declared guard of a node's slot: a construction parameter's closed
+ * guard; a template parameter's or term local's declared availability */
+static const uint64_t *node_ptab(TNodeId Q);
+static ExprId slot_guard_e(TNodeId Q, size_t s) {
+    if (node_construction(Q)) return node_ptab(Q)[3 * s + 2];
+    const TDef *d = &TPL.defs[tnode_def(Q)];
+    return s < d->nparams ? d->pguard[s] : d->lreq[s - d->nparams];
+}
 static void tvmake_step(Cont *k, uint64_t v) {
     MkLoc *L = FR_LOC(k, MkLoc);
     TNodeId Q = k->w[0]; uint64_t er = k->w[1];
     uint64_t r = 0;
     FR_BEGIN(k);
-    L->fl = interner_get(&M.keys, TNSIDE(Q)->free_slots, &L->nf);
+    node_free_list(Q, &L->nf, &L->fl);
     L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
     wordbuf_init(&L->out);
     for (L->q = 0; L->q < L->nf; L->q++) {
@@ -443,6 +460,16 @@ static void tvmake_step(Cont *k, uint64_t v) {
     FR_CALL(k, L->E, intern_sub(k, &M.tenvs, &L->out, &L->created));
     FR_AWAIT(k, r, F_INTERP, node_required_e(Q), er);
     L->req = tvget(r).id;
+    /* each reference image's requirement, except where the slot's declared
+     * guard entails it (a partial formal is used under its guard only) */
+    for (L->q = 0; L->q < L->nf; L->q++) {
+        tenv_entry(L->E, L->q, &L->slot, &L->t);
+        if (L->t.sort != PS_REF) { FR_YIELD(k); continue; }
+        L->g = slot_guard_e(Q, L->slot);
+        if (L->g) { FR_AWAIT(k, r, F_INTERP, L->g, er); L->g = tvget(r).id; } else L->g = fc_true();
+        FR_AWAIT(k, r, F_FCENT, L->g, ref_required(L->t.id));
+        if (r != 2) FR_AWAIT(k, L->req, F_FCMEET, L->req, ref_required(L->t.id));
+    }
     FR_AWAIT(k, L->sup, F_SETFREE, L->sup, 0);
     FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 1);
     FR_FINISH(k, ref_intern_tview(Q, L->E, L->sup, L->fv, L->req));
@@ -504,7 +531,7 @@ void template_families_init(void) {
     F_CAPTURE = family_lookup("scope.capture"); F_REFVAR = family_lookup("ref.var"); F_SETFREE = family_lookup("set.free");
     F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union"); F_IVDIMS = family_lookup("iv.dims"); F_FCDIMS = family_lookup("fc.dims");
     F_IVNEG = family_lookup("iv.negate"); F_IVMEET = family_lookup("iv.meet"); F_IVJOIN = family_lookup("iv.join");
-    F_FCEND = family_lookup("fc.endpoint"); F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join"); F_FCFORALL = family_lookup("fc.forall");
+    F_FCEND = family_lookup("fc.endpoint"); F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join"); F_FCFORALL = family_lookup("fc.forall"); F_FCENT = family_lookup("fc.entails");
     F_REINDEX = family_lookup("reindex"); F_IVRE = family_lookup("iv.reindex"); F_FCRE = family_lookup("fc.reindex");
     require(F_TREF && F_CAPTURE && F_REFVAR && F_FCRE, "the scope, construction and substitution families are registered first");
     F_ENVLOOK = family_define("template.envlook", envlook_step, sizeof(LookLoc), true);
@@ -520,53 +547,20 @@ void template_families_init(void) {
 /* ------------------------------------------------------------------ */
 /* TVIEW operations (synchronous driver over the families)               */
 
-static uint64_t env_of(RefId t) { return family_call(F_ENVOF, ref_tnode(t), ref_tenv(t)); }
 static TVal interp_at(ExprId e, uint64_t er) { return tvget(family_call(F_INTERP, e, er)); }
 RefId tview_make(TNodeId Q, uint64_t er) { return family_call(F_TVMAKE, Q, er); }
 
+static Family F_HEADANN;
 void tview_open(RefId t, Head *h) {
-    TNodeId Q = ref_tnode(t); TEnvId E = ref_tenv(t);
-    h->tnode = Q; h->tenv = E;
+    TNodeId Q = ref_tnode(t);
+    h->tnode = Q; h->tenv = ref_tenv(t);
     h->tag = tnode_tag(Q);
     h->n = tnode_nfields(Q);
-    if (node_construction(Q)) { h->payload = tnode_const_payload(Q); h->levels = tnode_const_levels(Q); return; }
-    if (!node_payload_e(Q) && !node_levels_e(Q)) { h->payload = 0; h->levels = LEVELS_NONE; return; }
-    uint64_t er = env_of(t);
-    h->payload = node_payload_e(Q) ? interp_at(node_payload_e(Q), er).id : 0;
-    h->levels = node_levels_e(Q) ? interp_at(node_levels_e(Q), er).id : LEVELS_NONE;
+    if (!F_HEADANN) F_HEADANN = family_lookup("head.annotation");
+    h->payload = family_call(F_HEADANN, t, 0);
+    h->levels = family_call(F_HEADANN, t, 1);
 }
 
-
-/* a template binder field with its local ↦ image */
-static uint64_t tview_binder_body(RefId owner, BinderSlot slot, FieldIndex body_field, PSort sort, uint64_t image) {
-    TNodeId Q = ref_tnode(owner);
-    Sort so; FieldIndex domf; size_t lslot; node_binder(Q, slot, &so, &domf, &lslot);
-    FieldKind kd; BinderSlot bs; ExprId be; node_field(Q, body_field, &kd, &bs, &be);
-    require(bs == slot, "template field is not under this binder");
-    uint64_t er = env_of(owner);
-    uint64_t er2 = family_call(F_ENVSET, er, env_entry(er, TPL.defs[tnode_def(Q)].nparams + lslot, sort, image));
-    return interp_at(be, er2).id;
-}
-TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
-    if (tview_is_construction(owner)) return cons_term_binder(owner, slot, body_field);
-    TNodeId Q = ref_tnode(owner);
-    Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
-    require(sort == S_TERM, "sort mismatch: expected term binder");
-    FieldKind kd; BinderSlot bs; ExprId de; node_field(Q, domf, &kd, &bs, &de);
-    TermOpen o;
-    o.type = interp_at(de, env_of(owner)).id;
-    o.x = binder_term_var(owner, slot, o.type);
-    o.body = tview_binder_body(owner, slot, body_field, PS_REF, ref_var(o.x));
-    return o;
-}
-DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
-    if (tview_is_construction(owner)) return cons_dim_binder(owner, slot, body_field);
-    require(tnode_binder_sort(ref_tnode(owner), slot) == S_DIM, "sort mismatch: expected dimension binder");
-    DimOpen o;
-    o.j = binder_dim_var(owner, slot);
-    o.body = tview_binder_body(owner, slot, body_field, PS_INTERVAL, iv_var(o.j));
-    return o;
-}
 
 /* the boundary signature of a template node as expressions (interpreted by
  * the caller in the view's environment, one awaited interpretation each):

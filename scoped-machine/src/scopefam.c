@@ -19,7 +19,7 @@
 #define SSIDE(id) ((ScopeSide *)chunked_at(&M.scope_side, (id) - 1))
 
 static Family F_TIMGT, F_TIMGD, F_TREF, F_TIV, F_TFC, F_TSCOPE, F_SCOPESIDE, F_SETFREE, F_CAPTURE;
-static Family F_MAPT, F_MAPD, F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_CINST, F_DSUNION, F_VSUNION, F_IVDIMS, F_FCDIMS;
+static Family F_MAPT, F_MAPD, F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_DSUNION, F_VSUNION, F_IVDIMS, F_FCDIMS;
 
 uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx) { uint64_t w[3] = { kind, depth, ctx }; return interner_intern(&M.keys, w, 3, NULL); }
 static void tk_get(uint64_t tk, unsigned *kind, unsigned *depth, uint64_t *ctx) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); *kind = (unsigned)w[0]; *depth = (unsigned)w[1]; *ctx = w[2]; }
@@ -258,9 +258,9 @@ void scope_families_init(void) {
     F_MAPT = family_lookup("map.term_image"); F_MAPD = family_lookup("map.dim_image");
     F_IVNEG = family_lookup("iv.negate"); F_IVMEET = family_lookup("iv.meet"); F_IVJOIN = family_lookup("iv.join");
     F_FCEND = family_lookup("fc.endpoint"); F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join");
-    F_CINST = family_lookup("construction.instance"); F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union");
+    F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union");
     F_IVDIMS = family_lookup("iv.dims"); F_FCDIMS = family_lookup("fc.dims");
-    require(F_MAPT && F_CINST && F_FCDIMS, "the substitution and construction families are registered first");
+    require(F_MAPT && F_FCDIMS, "the substitution and construction families are registered first");
     F_TIMGT = family_define("trav.term_image", timgt_step, sizeof(ImgLoc), true);
     F_TIMGD = family_define("trav.dim_image", timgd_step, sizeof(ImgLoc), true);
     F_TREF = family_define("trav.ref", tref_step, 0, true);

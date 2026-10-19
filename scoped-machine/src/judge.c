@@ -71,7 +71,7 @@ bool jc_dim(uint64_t G, DimVarId j) { return pins_lookup(jcw(G)[4], 2 * j + 1, N
 
 /* ---------------- families used ---------------- */
 static Family Jf_FCMEET, Jf_FCJOIN, Jf_FCENT, Jf_FCPROJ, Jf_FCDIMS, Jf_IVDIMS, Jf_DSUNION, Jf_REINDEX, Jf_IVRE, Jf_FCRE,
-              Jf_FIELD, Jf_BINDER, Jf_HEAD, Jf_REFVAR, Jf_CINST, Jf_OVERRIDE, Jf_ENVOF, Jf_INTERP, Jf_ENVLOOK, Jf_SCOPESIDE,
+              Jf_FIELD, Jf_BINDER, Jf_HEAD, Jf_REFVAR, Jf_TVMAKE, Jf_OVERRIDE, Jf_ENVOF, Jf_INTERP, Jf_ENVLOOK, Jf_SCOPESIDE,
               Jf_TREF, Jf_TIV, Jf_TFC, Jf_GARGS, Jf_MAPT, Jf_MAPD;
 static Family J_CLAUSES, J_JDIMS, J_JCOF, J_GENERIC, J_GMAP, J_OBSHEAD, J_LEVEL, J_INFER, J_HEAD, J_CHECK, J_CONVT, J_CONVt, J_SPINE,
               J_GLUEOK, J_TVIEW, J_TBOUND, J_SCOPEN, J_SCOWN, J_SCARG, J_MAP, J_CTX, J_CTXD, J_DECLOK, J_NODE, J_DECL, J_BODY,
@@ -235,7 +235,7 @@ static void generic_step(Cont *k, uint64_t v) {
     TNodeId Q = k->w[0];
     FR_BEGIN(k);
     L->n = tnode_nparams(Q); L->G2 = jc_empty(); L->m = map_identity();
-    wordbuf_init(&L->wb); wordbuf_init(&L->wc);
+    wordbuf_init(&L->wb); wordbuf_init(&L->wc); wordbuf_push(&L->wb, 0);   /* the environment record of a construction node */
     for (L->i = 0; L->i < L->n; L->i++) {
         {   PSort so; RefId ty; FaceId g; tnode_param(Q, L->i, &so, &ty, &g); L->tag = so; L->T = ty; L->a0 = g; }
         if (L->tag == PS_INTERVAL) {
@@ -256,8 +256,8 @@ static void generic_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->m, Jf_OVERRIDE, L->m, RQ(L->tag == PS_INTERVAL ? S_DIM : S_TERM, obound_id((uint32_t)L->i), L->y));
     }
     FR_AWAIT(k, L->a1, Jf_FCRE, tnode_const_required(Q), L->m);
-    FR_CALL(k, L->a2, intern_sub(k, &M.tenvs, &L->wb, &L->created));
-    FR_AWAIT(k, L->a2, Jf_CINST, Q, L->a2);
+    FR_CALL(k, L->a2, intern_sub(k, &M.keys, &L->wb, &L->created));
+    FR_AWAIT(k, L->a2, Jf_TVMAKE, Q, L->a2);
     FR_CALL(k, L->a3, intern_sub(k, &M.keys, &L->wc, &L->created));
     FR_FINISH(k, RQ(L->G2, L->a1, L->a2, L->a3));
     FR_END(k);
@@ -1577,7 +1577,7 @@ void judge_families_init(void) {
     Jf_FCDIMS = family_lookup("fc.dims"); Jf_IVDIMS = family_lookup("iv.dims"); Jf_DSUNION = family_lookup("dimset.union");
     Jf_REINDEX = family_lookup("reindex"); Jf_IVRE = family_lookup("iv.reindex"); Jf_FCRE = family_lookup("fc.reindex");
     Jf_FIELD = family_lookup("field"); Jf_BINDER = family_lookup("binder"); Jf_HEAD = family_lookup("head.annotation"); Jf_REFVAR = family_lookup("ref.var");
-    Jf_CINST = family_lookup("construction.instance"); Jf_OVERRIDE = family_lookup("map.override");
+    Jf_TVMAKE = family_lookup("template.view"); Jf_OVERRIDE = family_lookup("map.override");
     Jf_ENVOF = family_lookup("template.envof"); Jf_INTERP = family_lookup("template.interp"); Jf_ENVLOOK = family_lookup("template.envlook");
     Jf_SCOPESIDE = family_lookup("scope.side"); Jf_TREF = family_lookup("trav.ref"); Jf_TIV = family_lookup("trav.interval"); Jf_TFC = family_lookup("trav.face");
     Jf_GARGS = family_lookup("global.args"); Jf_MAPT = family_lookup("map.term_image"); Jf_MAPD = family_lookup("map.dim_image");

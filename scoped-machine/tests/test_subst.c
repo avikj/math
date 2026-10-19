@@ -37,11 +37,6 @@ int main(void) {
     WhnfStatus st;
     RefId sched = family_run(family_lookup("reindex"), t, rs, &st);
     CHECK(st == W_OK && sched == reindex(t, rs), "scheduled substitution = inline substitution");
-    /* the construction's environment map: its atoms ↦ its images */
-    MapId em = tview_env_map(reindex(t, rho));
-    bool found = false; size_t nt = map_n_terms(em);
-    for (size_t k = 0; k < nt; k++) { TermVarId a; RefId im; map_term_entry(em, k, &a, &im); if (im == mk_app(F, Y)) found = true; }
-    CHECK(found && is_obound_id((map_term_entry(em, 0, &x, &Y), x)), "a construction's environment map sends its atoms to its images");
     eval_free(); machine_free();
     printf("%d failures\n", failures);
     return failures != 0;

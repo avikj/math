@@ -10,7 +10,7 @@
 #include "eval.h"
 #include "template.h"
 
-static Family F_MAPT, F_MAPD, F_OVERRIDE, F_COMPOSE, F_REINDEX, F_IVRE, F_FCRE, F_CENV, F_CINST, F_IVDIMS;
+static Family F_MAPT, F_MAPD, F_OVERRIDE, F_COMPOSE, F_REINDEX, F_IVRE, F_FCRE, F_IVDIMS;
 static Family F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_FCENT, F_DSUNION, F_VSUNION;
 
 static const uint64_t *mrec(MapId m, size_t *n) { return interner_get(&M.maps, m, n); }
@@ -232,7 +232,7 @@ static void envrebuild_step(Cont *k, uint64_t v) {
     FR_JOIN(k, L->j);
     L->changed = false;
     wordbuf_init(&L->out);
-    if (!tview_is_construction(t)) wordbuf_push(&L->out, tnode_def(ref_tnode(t)));
+    wordbuf_push(&L->out, tnode_def(ref_tnode(t)));
     for (L->q = 0; L->q < L->n; L->q++) {
         tenv_entry(ref_tenv(t), L->q, &L->slot, &L->val);
         r = join_value(L->j, L->q);
@@ -242,83 +242,9 @@ static void envrebuild_step(Cont *k, uint64_t v) {
     }
     join_free(L->j); L->j = NULL;
     if (!L->changed) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, t); }
-    if (tview_is_construction(t)) {
-        FR_CALL(k, id, intern_sub(k, &M.tenvs, &L->out, &L->created));
-        FR_AWAIT(k, r, F_CINST, ref_tnode(t), id);
-        FR_FINISH(k, r);
-    }
     FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_AWAIT(k, r, lazy_family(&F_TVMAKE_, "template.view"), ref_tnode(t), id);
     FR_FINISH(k, r);
-    FR_END(k);
-}
-
-/* a construction environment as the substitution of its atoms: slot order is
- * atom order, terms first, then dimensions */
-typedef struct { size_t n, q, kept; bool dims; WordBuf out; bool created; } EnvLoc;
-static void cenv_step(Cont *k, uint64_t v) {
-    EnvLoc *L = FR_LOC(k, EnvLoc);
-    uint64_t id = 0;
-    FR_BEGIN(k);
-    L->n = tenv_size(k->w[0]); L->kept = 0;
-    wordbuf_init(&L->out);
-    for (L->dims = false;; L->dims = true) {
-        for (L->q = 0; L->q < L->n; L->q++) {
-            uint64_t slot; TVal val; tenv_entry(k->w[0], L->q, &slot, &val);
-            require(val.sort == PS_REF || val.sort == PS_INTERVAL, "construction parameter of a non-substitutable sort");
-            if ((val.sort == PS_INTERVAL) == L->dims) {
-                uint64_t atom = obound_id((uint32_t)slot);
-                if (!identity_image(L->dims, atom, val.id)) {
-                    wordbuf_push(&L->out, atom); wordbuf_push(&L->out, val.id);
-                    if (!L->dims) L->kept++;
-                }
-            }
-            FR_YIELD(k);
-        }
-        if (L->dims) break;
-    }
-    wordbuf_push(&L->out, L->kept);
-    FR_CALL(k, id, intern_sub(k, &M.maps, &L->out, &L->created));
-    FR_FINISH(k, id);
-    FR_END(k);
-}
-
-/* a construction instance: the support and free variables of its images; its
- * required face is the node's instantiated one strengthened by each image's
- * requirement, except where the parameter's declared guard entails it (a
- * partial formal is only used under its guard) */
-typedef struct { size_t np, q; uint64_t slot; TVal val; uint64_t sup, fv, m, req, guard, ds; } InstLoc;
-static void cinst_step(Cont *k, uint64_t v) {
-    InstLoc *L = FR_LOC(k, InstLoc);
-    TNodeId Q = k->w[0]; TEnvId E = k->w[1];
-    uint64_t r = 0;
-    FR_BEGIN(k);
-    L->np = tnode_nparams(Q);
-    require(tenv_size(E) == L->np, "construction environment arity");
-    L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
-    for (L->q = 0; L->q < L->np; L->q++) {
-        tenv_entry(E, L->q, &L->slot, &L->val);
-        require(L->slot == L->q, "construction environment order");
-        if (L->val.sort == PS_REF) {
-            FR_AWAIT(k, L->sup, F_DSUNION, L->sup, ref_support(L->val.id));
-            FR_AWAIT(k, L->fv, F_VSUNION, L->fv, ref_freevars(L->val.id));
-        } else {
-            FR_AWAIT(k, L->ds, F_IVDIMS, L->val.id, 0);
-            FR_AWAIT(k, L->sup, F_DSUNION, L->sup, L->ds);
-        }
-    }
-    FR_AWAIT(k, L->m, F_CENV, E, 0);
-    FR_AWAIT(k, L->req, F_FCRE, tnode_const_required(Q), L->m);
-    for (L->q = 0; L->q < L->np; L->q++) {
-        tenv_entry(E, L->q, &L->slot, &L->val);
-        if (L->val.sort != PS_REF) { FR_YIELD(k); continue; }   /* a skipped entry is still one step */
-        { PSort so; RefId ty; FaceId g; tnode_param(Q, L->q, &so, &ty, &g); L->guard = g; }
-        if (L->guard) FR_AWAIT(k, L->guard, F_FCRE, L->guard, L->m);
-        else L->guard = fc_true();
-        FR_AWAIT(k, r, F_FCENT, L->guard, ref_required(L->val.id));
-        if (r != 2) FR_AWAIT(k, L->req, F_FCMEET, L->req, ref_required(L->val.id));
-    }
-    FR_FINISH(k, ref_intern_tview(Q, E, L->sup, L->fv, L->req));
     FR_END(k);
 }
 
@@ -336,8 +262,6 @@ void subst_families_init(void) {
     F_IVRE = family_define("iv.reindex", ivre_step, sizeof(SubLoc), true);
     F_FCRE = family_define("fc.reindex", fcre_step, sizeof(SubLoc), true);
     F_IVDIMS = family_define("iv.dims", ivdims_step, sizeof(SubLoc), true);
-    F_CENV = family_define("construction.envmap", cenv_step, sizeof(EnvLoc), true);
-    F_CINST = family_define("construction.instance", cinst_step, sizeof(InstLoc), true);
 }
 
 /* ---------------- the operations (synchronous driver) ---------------- */
@@ -351,4 +275,3 @@ MapId map_override(MapId sigma, Sort sort, uint64_t key, uint64_t image) {
 RefId reindex(RefId t, MapId sigma) { return family_call(F_REINDEX, t, sigma); }
 IntervalId iv_reindex(IntervalId r, MapId m) { return family_call(F_IVRE, r, m); }
 FaceId fc_reindex(FaceId phi, MapId m) { return family_call(F_FCRE, phi, m); }
-MapId cons_envmap(TEnvId E) { return family_call(F_CENV, E, 0); }

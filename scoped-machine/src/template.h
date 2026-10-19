@@ -78,8 +78,6 @@ FaceId tnode_const_declared(TNodeId Q);                              /* 0 = no a
 uint64_t tnode_const_payload(TNodeId Q);
 uint64_t tnode_const_levels(TNodeId Q);
 bool tview_is_construction(RefId t);
-MapId cons_envmap(TEnvId E);                                         /* a construction environment as a substitution of its atoms (subst.c) */
-MapId tview_env_map(RefId t);                                        /* atoms ↦ images */
 /* generic instance of a construction node: parameters at fresh names keyed
  * by (node, slot), declared at the instantiated closed types; decls has
  * tnode_nparams(Q) entries. *req receives the node's required face there. */
