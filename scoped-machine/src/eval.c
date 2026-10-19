@@ -49,6 +49,7 @@ typedef struct { TaskKind kind; EntryId entry; Cont *k; uint64_t v; } Task;
  * either end and a policy-chosen pop are each O(1) */
 #define QCHUNK 254
 typedef struct QChunk { struct QChunk *prev, *next; uint32_t lo, hi; Task t[QCHUNK]; } QChunk;
+typedef struct { pthread_mutex_t mu; QChunk *front, *back; size_t len; } Queue;
 
 typedef struct { const char *name; FamStart start; FamResume resume; size_t loc_size; bool pure; } FamilyDef;
 static FamilyDef FAM[F_MAX];
@@ -64,10 +65,11 @@ static struct {
     Interner keys;                 /* (family, a, b, env version) → EntryId */
     Chunked entries;               /* Entry per EntryId-1, non-moving, zero = U */
     /* ready jobs */
-    QChunk *qfront, *qback; size_t qlen;
-    pthread_mutex_t q_mu; pthread_cond_t q_cv, idle_cv;
-    size_t outstanding;            /* §35: queued jobs + executing jobs (+ reserved launches) */
-    bool stop;
+    Queue shared;                  /* jobs pushed by threads outside the pool */
+    Queue *wq;                     /* one per worker: its own pushes, taken back first */
+    size_t outstanding;            /* §35: queued + executing jobs (+ reserved launches); atomic */
+    pthread_mutex_t idle_mu; pthread_cond_t work_cv, idle_cv;
+    size_t idle; bool stop;        /* parked workers; pool shutdown (under idle_mu) */
     pthread_t *workers; size_t nworkers;
     Pool cont_pool, chunk_pool;
     Pool loc_pool[F_MAX]; bool loc_ready[F_MAX]; pthread_mutex_t loc_mu;   /* frame locals records, per family */
@@ -129,6 +131,8 @@ Family family_define(const char *name, FamResume step, size_t loc_size, bool pur
 }
 
 static void *worker_main(void *arg);
+static void q_init(Queue *q); static size_t q_push(Queue *q, Task t); static bool q_take(Queue *q, bool back, Task *out); static void q_free(Queue *q);
+static size_t outstanding(void);
 static void evaluator_init(void);
 static void evaluator_bind(void);
 
@@ -136,8 +140,9 @@ void eval_init(void) {
     memset(&E, 0, sizeof E);
     interner_init(&E.keys);
     chunked_init(&E.entries, sizeof(Entry));
-    pthread_mutex_init(&E.q_mu, NULL);
-    pthread_cond_init(&E.q_cv, NULL);
+    q_init(&E.shared);
+    pthread_mutex_init(&E.idle_mu, NULL);
+    pthread_cond_init(&E.work_cv, NULL);
     pthread_cond_init(&E.idle_cv, NULL);
     pthread_mutex_init(&E.join_mu, NULL);
     pool_init(&E.cont_pool, sizeof(Cont));
@@ -162,7 +167,7 @@ void eval_init(void) {
 /* a new definition environment retires every observation: the memo, the
  * results and the pending pairs; the scheduler configuration survives */
 void eval_reset(void) {
-    pthread_mutex_lock(&E.q_mu); size_t pending = E.outstanding; pthread_mutex_unlock(&E.q_mu);
+    size_t pending = outstanding();
     require(pending == 0, "eval_reset with outstanding evaluator work (the session boundary requires quiescence)");
     size_t w = E.nworkers;
     eval_free(); eval_init();
@@ -177,21 +182,25 @@ void join_free(Join *j) {
 
 static void stop_workers(void) {
     if (!E.nworkers) return;
-    pthread_mutex_lock(&E.q_mu);
+    pthread_mutex_lock(&E.idle_mu);
     E.stop = true;
-    pthread_cond_broadcast(&E.q_cv);
-    pthread_mutex_unlock(&E.q_mu);
+    pthread_cond_broadcast(&E.work_cv);
+    pthread_mutex_unlock(&E.idle_mu);
     for (size_t i = 0; i < E.nworkers; i++) pthread_join(E.workers[i], NULL);
+    /* jobs still queued at a worker move to the shared queue */
+    for (size_t i = 0; i < E.nworkers; i++) { Task t; while (q_take(&E.wq[i], false, &t)) q_push(&E.shared, t); q_free(&E.wq[i]); }
+    free(E.wq); E.wq = NULL;
     free(E.workers); E.workers = NULL; E.nworkers = 0; E.stop = false;
 }
 
 void eval_set_workers(size_t n) {
     stop_workers();
     if (!n) return;
-    E.workers = calloc(n, sizeof(pthread_t));
-    require(E.workers, "out of memory");
+    E.workers = calloc(n, sizeof(pthread_t)); E.wq = calloc(n, sizeof(Queue));
+    require(E.workers && E.wq, "out of memory");
+    for (size_t i = 0; i < n; i++) q_init(&E.wq[i]);
     E.nworkers = n;
-    for (size_t i = 0; i < n; i++) require(pthread_create(&E.workers[i], NULL, worker_main, NULL) == 0, "cannot start worker");
+    for (size_t i = 0; i < n; i++) require(pthread_create(&E.workers[i], NULL, worker_main, (void *)(uintptr_t)(i + 1)) == 0, "cannot start worker");
 }
 size_t eval_workers(void) { return E.nworkers; }
 
@@ -248,8 +257,9 @@ void eval_free(void) {
     pool_destroy(&E.chunk_pool);
     for (size_t f = 0; f < F_MAX; f++) if (E.loc_ready[f]) pool_destroy(&E.loc_pool[f]);
     pthread_mutex_destroy(&E.loc_mu);
-    pthread_mutex_destroy(&E.q_mu);
-    pthread_cond_destroy(&E.q_cv); pthread_cond_destroy(&E.idle_cv);
+    q_free(&E.shared);
+    pthread_mutex_destroy(&E.idle_mu);
+    pthread_cond_destroy(&E.work_cv); pthread_cond_destroy(&E.idle_cv);
     memset(&E, 0, sizeof E);
 }
 
@@ -312,49 +322,76 @@ static EvalResult *result_system(RefId owner, size_t n, const FaceId *faces, con
     return r;
 }
 
-/* ---------------- job queue ---------------- */
-
-static void q_push_locked(Task t) {
-    if (!E.qback || E.qback->hi == QCHUNK) {
-        QChunk *c = pool_alloc(&E.chunk_pool);
-        c->prev = E.qback;
-        if (E.qback) E.qback->next = c; else E.qfront = c;
-        E.qback = c;
-    }
-    E.qback->t[E.qback->hi++] = t;
-    E.qlen++;
-}
-static void q_unlink_if_empty(QChunk *c) {
+/* ---------------- job queues ----------------
+ * A worker pushes to its own queue and takes from its back, so a chain of
+ * steps continues on the thread that holds its frame; an idle worker takes
+ * from the front of the shared queue, then of another worker's queue. A
+ * worker wakes a parked one only when its queue holds surplus work; a push
+ * from outside the pool always offers its job to a parked worker. */
+static __thread size_t tl_worker;              /* 0 outside the pool; worker i is i + 1 */
+static void q_init(Queue *q) { pthread_mutex_init(&q->mu, NULL); q->front = q->back = NULL; q->len = 0; }
+static void q_unlink_if_empty(Queue *q, QChunk *c) {
     if (c->lo < c->hi) return;
-    if (c->prev) c->prev->next = c->next; else E.qfront = c->next;
-    if (c->next) c->next->prev = c->prev; else E.qback = c->prev;
+    if (c->prev) c->prev->next = c->next; else q->front = c->next;
+    if (c->next) c->next->prev = c->prev; else q->back = c->prev;
     pool_free(&E.chunk_pool, c);
 }
-static Task q_pop_front_locked(void) { QChunk *c = E.qfront; Task t = c->t[c->lo++]; E.qlen--; q_unlink_if_empty(c); return t; }
+static size_t q_push(Queue *q, Task t) {
+    pthread_mutex_lock(&q->mu);
+    if (!q->back || q->back->hi == QCHUNK) {
+        QChunk *c = pool_alloc(&E.chunk_pool);
+        c->lo = c->hi = 0; c->next = NULL; c->prev = q->back;
+        if (q->back) q->back->next = c; else q->front = c;
+        q->back = c;
+    }
+    q->back->t[q->back->hi++] = t;
+    size_t n = ++q->len;
+    pthread_mutex_unlock(&q->mu);
+    return n;
+}
+static bool q_take(Queue *q, bool back, Task *out) {
+    pthread_mutex_lock(&q->mu);
+    bool got = q->len > 0;
+    if (got) {
+        QChunk *c = back ? q->back : q->front;
+        *out = back ? c->t[--c->hi] : c->t[c->lo++];
+        q->len--; q_unlink_if_empty(q, c);
+    }
+    pthread_mutex_unlock(&q->mu);
+    return got;
+}
+static void q_free(Queue *q) { pthread_mutex_destroy(&q->mu); }
+/* the next job for this thread: its own queue's back, then the shared
+ * queue, then another worker's queue */
+static bool take_job(Task *out) {
+    size_t w = tl_worker;
+    if (w && q_take(&E.wq[w - 1], true, out)) return true;
+    if (q_take(&E.shared, false, out)) return true;
+    for (size_t i = 0; w && i < E.nworkers; i++) if (i != w - 1 && q_take(&E.wq[i], false, out)) return true;
+    return false;
+}
+static void wake_one(void) {
+    if (!__atomic_load_n(&E.idle, __ATOMIC_SEQ_CST)) return;
+    pthread_mutex_lock(&E.idle_mu); pthread_cond_signal(&E.work_cv); pthread_mutex_unlock(&E.idle_mu);
+}
+static void push_job(Task t) {
+    size_t w = tl_worker;
+    size_t n = q_push(w ? &E.wq[w - 1] : &E.shared, t);
+    if (!w || n > 1) wake_one();
+}
 
 /* §35 quiescence protocol: outstanding = queued + executing. A launch
  * reserves its job (outstanding += 1) before the key can be observed
  * RUNNING, so no observer can see a running key with outstanding == 0. */
-static void reserve_job(void) { pthread_mutex_lock(&E.q_mu); E.outstanding++; pthread_mutex_unlock(&E.q_mu); }
+static void reserve_job(void) { __atomic_add_fetch(&E.outstanding, 1, __ATOMIC_SEQ_CST); }
+static size_t outstanding(void) { return __atomic_load_n(&E.outstanding, __ATOMIC_SEQ_CST); }
 static void finish_job(void) {
-    pthread_mutex_lock(&E.q_mu);
-    require(E.outstanding > 0, "finish without outstanding job");
-    if (--E.outstanding == 0) pthread_cond_broadcast(&E.idle_cv);
-    pthread_mutex_unlock(&E.q_mu);
+    size_t was = __atomic_fetch_sub(&E.outstanding, 1, __ATOMIC_SEQ_CST);
+    require(was > 0, "finish without outstanding job");
+    if (was == 1) { pthread_mutex_lock(&E.idle_mu); pthread_cond_broadcast(&E.idle_cv); pthread_mutex_unlock(&E.idle_mu); }
 }
-static void enqueue_reserved(Task t) {
-    pthread_mutex_lock(&E.q_mu);
-    q_push_locked(t);
-    pthread_cond_signal(&E.q_cv);
-    pthread_mutex_unlock(&E.q_mu);
-}
-static void enqueue(Task t) {
-    pthread_mutex_lock(&E.q_mu);
-    E.outstanding++;
-    q_push_locked(t);
-    pthread_cond_signal(&E.q_cv);
-    pthread_mutex_unlock(&E.q_mu);
-}
+static void enqueue_reserved(Task t) { push_job(t); }
+static void enqueue(Task t) { reserve_job(); push_job(t); }
 
 /* one delivery: the RESUME job of k. DELIVER is counted here, for ready hits
  * and for publication alike; the resumed frame step is counted when the
@@ -367,12 +404,7 @@ static void deliver(Cont *k, uint64_t v) {
     enqueue(t);
 }
 
-/* the next job under q_mu */
-static bool pop_locked(Task *out) {
-    if (!E.qlen) return false;
-    *out = q_pop_front_locked();
-    return true;
-}
+
 
 /* ---------------- entries ---------------- */
 
@@ -1023,7 +1055,7 @@ static void resume(Cont *k, uint64_t v) {
         RootBox *b = k->root;
         pthread_mutex_lock(&b->mu); b->result = v; b->done = true; pthread_cond_broadcast(&b->cv); pthread_mutex_unlock(&b->mu);
         /* wake clients waiting for either their root or quiescence */
-        pthread_mutex_lock(&E.q_mu); pthread_cond_broadcast(&E.idle_cv); pthread_mutex_unlock(&E.q_mu);
+        pthread_mutex_lock(&E.idle_mu); pthread_cond_broadcast(&E.idle_cv); pthread_mutex_unlock(&E.idle_mu);
         rootbox_release(b);
         return;
     }
@@ -1054,35 +1086,36 @@ static void execute(Task t) {
 
 
 static void *worker_main(void *arg) {
-    (void)arg;
-    pthread_mutex_lock(&E.q_mu);
+    tl_worker = (size_t)(uintptr_t)arg;
     for (;;) {
         Task t;
-        while (!E.stop && !pop_locked(&t)) pthread_cond_wait(&E.q_cv, &E.q_mu);   /* take_job */
-        if (E.stop) break;
-        pthread_mutex_unlock(&E.q_mu);
-        execute(t);                      /* all child jobs are enqueued before the job finishes */
-        finish_job();
-        pthread_mutex_lock(&E.q_mu);
+        if (take_job(&t)) { execute(t); finish_job(); continue; }   /* all child jobs are enqueued before the job finishes */
+        /* park: counted idle, every queue rechecked under idle_mu, so a push
+         * that saw no idle worker is seen here */
+        pthread_mutex_lock(&E.idle_mu);
+        __atomic_add_fetch(&E.idle, 1, __ATOMIC_SEQ_CST);
+        bool got = false;
+        while (!E.stop && !(got = take_job(&t))) pthread_cond_wait(&E.work_cv, &E.idle_mu);
+        __atomic_sub_fetch(&E.idle, 1, __ATOMIC_SEQ_CST);
+        bool stop = E.stop && !got;
+        pthread_mutex_unlock(&E.idle_mu);
+        if (stop) break;
+        execute(t); finish_job();
     }
-    pthread_mutex_unlock(&E.q_mu);
     return NULL;
 }
 
 void eval_run(void) {
     if (E.nworkers) {
         /* wait until outstanding == 0 (no queued, reserved or executing job) */
-        pthread_mutex_lock(&E.q_mu);
-        while (E.outstanding > 0) pthread_cond_wait(&E.idle_cv, &E.q_mu);
-        pthread_mutex_unlock(&E.q_mu);
+        pthread_mutex_lock(&E.idle_mu);
+        while (outstanding() > 0) pthread_cond_wait(&E.idle_cv, &E.idle_mu);
+        pthread_mutex_unlock(&E.idle_mu);
         return;
     }
     for (;;) {
         Task t;
-        pthread_mutex_lock(&E.q_mu);
-        bool got = pop_locked(&t);
-        pthread_mutex_unlock(&E.q_mu);
-        if (!got) break;
+        if (!take_job(&t)) break;
         execute(t);
         finish_job();
     }
@@ -1093,13 +1126,13 @@ void eval_run(void) {
 static bool drive_root(RootBox *box, uint64_t *out) {
     if (E.nworkers) {
         /* wait for this root, or for quiescence of the whole machine (stuck) */
-        pthread_mutex_lock(&E.q_mu);
+        pthread_mutex_lock(&E.idle_mu);
         for (;;) {
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
-            if (d || E.outstanding == 0) break;
-            pthread_cond_wait(&E.idle_cv, &E.q_mu);
+            if (d || outstanding() == 0) break;
+            pthread_cond_wait(&E.idle_cv, &E.idle_mu);
         }
-        pthread_mutex_unlock(&E.q_mu);
+        pthread_mutex_unlock(&E.idle_mu);
     } else {
         /* no pool: this client runs the queue; while another client thread
          * is still executing a job (its publication may resume this root, or
@@ -1107,12 +1140,12 @@ static bool drive_root(RootBox *box, uint64_t *out) {
          * than reporting a stuck demand */
         for (;;) {
             eval_run();
-            pthread_mutex_lock(&E.q_mu);
+            pthread_mutex_lock(&E.idle_mu);
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
-            bool queued = E.qlen > 0;
-            if (d || E.outstanding == 0) { pthread_mutex_unlock(&E.q_mu); break; }
-            if (!queued) pthread_cond_wait(&E.idle_cv, &E.q_mu);
-            pthread_mutex_unlock(&E.q_mu);
+            pthread_mutex_lock(&E.shared.mu); bool queued = E.shared.len > 0; pthread_mutex_unlock(&E.shared.mu);
+            if (d || outstanding() == 0) { pthread_mutex_unlock(&E.idle_mu); break; }
+            if (!queued) pthread_cond_wait(&E.idle_cv, &E.idle_mu);
+            pthread_mutex_unlock(&E.idle_mu);
         }
     }
     pthread_mutex_lock(&box->mu);
@@ -1154,7 +1187,7 @@ uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, Whnf
     if (E.nworkers) {
         for (;;) {
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
-            pthread_mutex_lock(&E.q_mu); size_t out = E.outstanding; pthread_mutex_unlock(&E.q_mu);
+            size_t out = outstanding();
             if (d || out == 0 || steps_now() - start >= budget) break;
             sched_yield();
         }
@@ -1163,7 +1196,7 @@ uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, Whnf
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
             if (d || steps_now() - start >= budget) break;
             Task t;
-            pthread_mutex_lock(&E.q_mu); bool got = pop_locked(&t); pthread_mutex_unlock(&E.q_mu);
+            bool got = take_job(&t);
             if (!got) break;
             execute(t); finish_job();
         }
