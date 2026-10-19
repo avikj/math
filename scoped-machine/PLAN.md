@@ -207,8 +207,12 @@ no subagents; work only from the shared specifications; no second engine/store/c
    closure of its inputs once, validates those revisions, keys its claims by them, and observes
    under them. No key carries an environment version; no environment-wide snapshot.
 7. Bounded steps. Every callback, including its synchronous helpers, does work bounded by a
-   constant (a CAS retry is charged to the success that caused it). Open items: mapb_finish's sort,
-   the construction binder loop and skipped fields, request_entry retries, oversized storage,
-   pool refill, fixed buffers in net materialization; joins for the remaining sequential
-   independent awaits; the construction/template interpretation unification (a constant field is a
-   case of the common node/environment interpretation).
+   constant: every loop iteration inside a step ends in a suspension; host builders (mapb_finish,
+   synchronous interning) are refused inside a step beyond a fixed handful; a CAS retry is charged
+   to the concurrent success that caused it (strong CAS only); pool and storage allocation are
+   O(1) under their locks, a fixed-size host block per refill.
+8. One interpretation. A node in an environment is interpreted the same way for both node kinds:
+   a construction's closed constant (X_CONST) is substituted by the environment's atoms; fields,
+   binders and heads go through ENVOF/ENVSET/INTERP. Instance building differs by content only
+   (a construction transports its closed required face and partial formals' guards; a template
+   interprets its program's required expression), both reached through env.rebuild.
