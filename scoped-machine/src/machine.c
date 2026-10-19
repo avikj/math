@@ -1,5 +1,6 @@
 #include "state.h"
 #include "lib.h"
+#include "eval.h"
 
 Machine M;
 
@@ -19,9 +20,12 @@ void machine_init(void) {
     chunked_init(&M.term_decl, sizeof(TermDecl));
     chunked_init(&M.nominal_val, sizeof(uint64_t));
     chunked_init(&M.defs, sizeof(Def));
+    eval_init();                       /* one lifetime: the evaluator's memo is over these tables */
+    templates_init();                  /* the fixed library programs, as records of these tables */
 }
 
 void machine_free(void) {
+    eval_free();
     lib_free();
     interner_free(&M.intervals);
     interner_free(&M.faces);

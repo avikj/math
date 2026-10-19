@@ -10,14 +10,14 @@ static int np = 0, nf = 0;
 #define CHECK(c, ...) do { if (c) np++; else { nf++; printf("  FAIL (%d): ", __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
 static TermVarId tv(RefId type) { return declare_term(type, fc_true()); }
-static Tag head_tag(const EvalResult *r) { if (!r || ref_is_var(r->ref)) return 0; return ref_tag(r->ref); }
+static Tag head_tag(EvalResult r) { if (!r.cls || ref_is_var(r.ref)) return 0; return ref_tag(r.ref); }
 static RefId app3(RefId f, RefId a, RefId b, RefId c) { return mk_app(mk_app(mk_app(f, a), b), c); }
 
 /* the number of whnf keys formed so far */
 static size_t whnf_keys(void) { size_t c = 0, n = eval_entry_count(); for (EntryId e = 1; e <= n; e++) if (eval_entry_live(e) && eval_entry_family(e) == F_WHNF) c++; return c; }
 int main(void) {
     printf("== §39–48 identities as ordinary values\n");
-    machine_init(); eval_init(); check_init();
+    machine_init(); check_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     const char *why = "";
     RefId U0 = mk_universe(0);
@@ -34,11 +34,11 @@ int main(void) {
     RefId call = assoc_call(&A, DIR_FORWARD, sigma, r);
     CHECK(check(A.G, fc_true(), call, reindex(A.codomain, sigma), &why) == CK_VALID, "F[σ](r) : R_R[σ] (%s)", why);
     WhnfStatus st; uint64_t p0 = rd(RD_PUBLISH, 0);
-    EvalResult *res = whnf(call, fc_true(), &st);
-    CHECK(st == W_OK && res->cls == R_INTRODUCTION && head_tag(res) == T_PAIR, "forward call ⇝ a pair");
+    EvalResult res = whnf(call, fc_true(), &st);
+    CHECK(st == W_OK && res.cls == R_INTRODUCTION && head_tag(res) == T_PAIR, "forward call ⇝ a pair");
     CHECK(rd(RD_PUBLISH, 0) - p0 >= 1, "publication through the ordinary protocol");
     res = whnf(mk_fst(call), fc_true(), &st);
-    CHECK(st == W_OK && res->cls == R_NEUTRAL, "its first component m(b,c) is neutral");
+    CHECK(st == W_OK && res.cls == R_NEUTRAL, "its first component m(b,c) is neutral");
     RefId path = mk_snd(mk_snd(call));
     res = whnf(path, fc_true(), &st);
     CHECK(st == W_OK && head_tag(res) == T_PLAM, "the output path is a path lambda");
@@ -50,7 +50,7 @@ int main(void) {
     RefId rcall = assoc_call(&A, DIR_REVERSE, sigma, assoc_right_arg(&A, sigma));
     CHECK(check(A.G, fc_true(), rcall, reindex(A.domain, sigma), &why) == CK_VALID, "G[σ](r_R) : R_L[σ] (%s)", why);
     res = whnf(mk_fst(rcall), fc_true(), &st);
-    CHECK(st == W_OK && res->cls == R_NEUTRAL, "the reverse call's first component m(a,b) is neutral");
+    CHECK(st == W_OK && res.cls == R_NEUTRAL, "the reverse call's first component m(a,b) is neutral");
     /* the inverse proofs at the call's data */
     RefId Ms = reindex(A.T, sigma), RLs = reindex(A.domain, sigma);
     RefId gfr = maps_apply(Ms, DIR_REVERSE, maps_apply(Ms, DIR_FORWARD, r));
@@ -142,7 +142,7 @@ int main(void) {
       RefId loop = mk_path_concat(0, B, D, C, D, mk_path_rev(0, B, C, D, p), cc);
       CHECK(convert_term(Gp, fc_true(), loop, mk_refl(0, B, D), mk_path_const(0, B, D, D)) != CV_EQUAL, "the residual loop is not definitionally refl");
       res = whnf(mk_fst(maps_apply(M, DIR_REVERSE, p)), fc_true(), &st);
-      CHECK(st == W_OK && res->ref == D, "h ↦ (D, h, refl D) has first component D"); }
+      CHECK(st == W_OK && res.ref == D, "h ↦ (D, h, refl D) has first component D"); }
 
     /* ---- COLLAPSE_FIBRE; equivalences ---- */
     { TermVarId vB = tv(U0); RefId B = ref_var(vB);
@@ -155,7 +155,7 @@ int main(void) {
       RefId M = app3(fibre_maps(0, 0), B, R, ref_var(vk));
       CHECK(infer(G, fc_true(), M).st == CK_VALID, "fibre_maps(B, R, k) is typed");
       res = whnf(maps_apply(M, DIR_FORWARD, maps_apply(M, DIR_REVERSE, ref_var(vb))), fc_true(), &st);
-      CHECK(st == W_OK && res->ref == ref_var(vb), "projection ∘ section ⇝ b");
+      CHECK(st == W_OK && res.ref == ref_var(vb), "projection ∘ section ⇝ b");
       TermVarId vk2 = tv(mk_fun(0, 0, B, B));
       CHECK(infer(context_extend_term(G, vk2), fc_true(), app3(fibre_maps(0, 0), B, R, ref_var(vk2))).st == CK_INVALID, "a non-contraction is rejected"); }
     { TermVarId vX = tv(U0), vY = tv(U0); RefId X = ref_var(vX), Y = ref_var(vY);
@@ -168,7 +168,7 @@ int main(void) {
       CHECK(check(G, fc_true(), M, maps_type(0, 0, X, Y), &why) == CK_VALID, "equiv_maps(X, Y, e) : Maps(X, Y) (%s)", why);
       RefId I = app3(equiv_maps(0, 0), X, X, mk_id_equiv(0, X));
       res = whnf(maps_apply(I, DIR_REVERSE, ref_var(vx)), fc_true(), &st);
-      CHECK(st == W_OK && res->ref == ref_var(vx), "reverse of IdEquiv at x ⇝ x");
+      CHECK(st == W_OK && res.ref == ref_var(vx), "reverse of IdEquiv at x ⇝ x");
       /* residual: two one-node descriptions ending in X and Y, acted on by e */
       TermVarId vf = tv(mk_fun(0, 0, X, X)), vg = tv(mk_fun(0, 0, Y, Y)), vy0 = tv(Y);
       ContextId G2 = context_extend_term(context_extend_term(context_extend_term(G, vf), vg), vy0);
@@ -189,7 +189,7 @@ int main(void) {
       RefId c2 = maps_apply(app3(equiv_maps(0, 0), X, X, mk_id_equiv(0, X)), DIR_FORWARD, global_ref(loopx));
       CHECK(check(G, fc_true(), c2, X, &why) == CK_VALID, "the call at the cyclic argument is well typed (%s)", why);
       res = whnf(c2, fc_true(), &st);
-      CHECK(st == W_STUCK && res == NULL, "a demand unfolding the cyclic argument stays unresolved (status %d)", (int)st);
+      CHECK(st == W_STUCK && res.cls == 0, "a demand unfolding the cyclic argument stays unresolved (status %d)", (int)st);
       ProofUse u = proof_use(G, fc_true(), c2, X); CHECK(u.status == PU_PENDING, "its proof use is PENDING (%s)", proof_status_name(u.status)); proof_use_free(&u);
       RefId cl = assoc_call(&A, DIR_FORWARD, sigma, r);
       res = whnf(cl, fc_true(), &st);
@@ -197,6 +197,6 @@ int main(void) {
       eval_run(); }
 
     printf("  %d passed, %d failed\n", np, nf);
-    check_free(); eval_free(); machine_free();
+    check_free(); machine_free();
     return nf ? 1 : 0;
 }

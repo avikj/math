@@ -55,7 +55,7 @@ static FaceId host_endpoint(IntervalId r, int eps) {
 }
 
 int main(void) {
-    machine_init(); eval_init();
+    machine_init();
     for (int k = 0; k < 4; k++) D[k] = declare_dim();
     FaceId F[60]; IntervalId I[60];
     for (int k = 0; k < 60; k++) { F[k] = rand_face(); I[k] = rand_iv(); }
@@ -87,22 +87,13 @@ int main(void) {
     CHECK(all && proj, "∀i and π_S = host normal forms");
     CHECK(end, "endpoint faces = host normal forms");
     CHECK(neg, "negation is an involution and (¬r=1) = (r=0)");
-    /* scheduled and inline runs agree */
-    eval_reset();
-    Family fm = family_lookup("fc.meet");
-    bool agree = true; WhnfStatus st;
-    for (int a = 0; a < 20; a++) for (int b = 0; b < 20; b++) {
-        uint64_t s = family_run(fm, F[a], F[b], &st);
-        if (st != W_OK || s != host_meet(F[a], F[b])) agree = false;
-    }
-    CHECK(agree, "scheduled face meets (awaiting scheduled joins) agree with the host normal form");
     /* sets */
     uint64_t e1[3] = { 5, 9, 2 }, e2[3] = { 9, 1, 7 };
     DimSetId s1 = dimset_make(e1, 3), s2 = dimset_make(e2, 3);
     uint64_t eu[5] = { 1, 2, 5, 7, 9 }, er[2] = { 2, 9 };
     CHECK(dimset_union(s1, s2) == dimset_make(eu, 5) && dimset_remove(s1, 5) == dimset_make(er, 2) && dimset_remove(s1, 4) == s1, "set union and removal");
     CHECK(dimset_contains(s1, 9) && !dimset_contains(s1, 7) && !dimset_contains(dimset_make(NULL, 0), 1), "set membership");
-    eval_free(); machine_free();
+    machine_free();
     printf("%d failures\n", failures);
     return failures != 0;
 }

@@ -9,7 +9,7 @@ static void valid(ContextId G, RefId t, RefId T, const char *label) {
     printf("PASS %s\n",label);
 }
 int main(void) {
-    machine_init(); eval_init(); check_init();
+    machine_init(); check_init();
     RefId U=mk_universe(0); TermVarId vA=declare_term(U,fc_true()); RefId A=ref_var(vA);
     TermVarId vt=declare_term(A,fc_true()); RefId t=ref_var(vt);
     TermVarId vx=declare_term(A,fc_true()); RefId x=ref_var(vx), Ex=mk_path_const(0,A,t,x);
@@ -44,6 +44,6 @@ int main(void) {
     RefId eps=mk_lam_lv(0,vz,Z,mk_plam(i,constantFill));
     RefId ET=mk_pi_lv(0,0,vz,Z,mk_path_const(0,Z,mk_app(down,mk_app(up,z)),z));
     valid(G,eps,ET,"generic dependent singleton down-up homotopy");
-    check_free(); eval_free(); machine_free();
+    check_free(); machine_free();
     return 0;
 }

@@ -11,8 +11,8 @@ static RefId U0;
 static TermVarId tv(RefId type) { return declare_term(type, fc_true()); }
 static RefId var(RefId type) { return ref_var(tv(type)); }
 
-static Tag head_tag(const EvalResult *r) {
-    Head h; open_ref(r->ref, &h); Tag t = h.is_var ? 0 : h.tag; head_free(&h); return t;
+static Tag head_tag(EvalResult r) {
+    Head h; open_ref(r.ref, &h); Tag t = h.is_var ? 0 : h.tag; head_free(&h); return t;
 }
 
 /* ---------------------------------------------------------------- */
@@ -230,9 +230,8 @@ static void test_binders(void) {
 }
 
 /* ---------------------------------------------------------------- */
-static size_t ext_calls; static EvalResult *ext_last[2];
-/* written from worker threads: accessed atomically */
-static void ext_deliver(void *ctx, EvalResult *r) { __atomic_store_n(&ext_last[(size_t)ctx], r, __ATOMIC_SEQ_CST); __atomic_add_fetch(&ext_calls, 1, __ATOMIC_SEQ_CST); }
+static RefId two_t; static RefId two_got[2];
+static void *two_client(void *p) { WhnfStatus st; two_got[(size_t)p] = whnf(two_t, fc_true(), &st).ref; return NULL; }
 
 static void test_eval_basic(void) {
     SECTION("§10–12 evaluation and face-sensitive cache");
@@ -241,14 +240,14 @@ static void test_eval_basic(void) {
     TermVarId x = tv(A);
     RefId a = var(A), bb = var(A);
     RefId id = mk_lam_lv(0, x, A, ref_var(x));
-    EvalResult *r = whnf(mk_app(id, a), fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && r->ref == a, "(λx.x) a ⇝ a (neutral variable)");
+    EvalResult r = whnf(mk_app(id, a), fc_true(), &st);
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && r.ref == a, "(λx.x) a ⇝ a (neutral variable)");
     r = whnf(mk_fst(mk_pair(a, bb)), fc_true(), &st);
-    CHECK(st == W_OK && r->ref == a, "fst (a,b) ⇝ a");
+    CHECK(st == W_OK && r.ref == a, "fst (a,b) ⇝ a");
     r = whnf(mk_snd(mk_pair(a, bb)), fc_true(), &st);
-    CHECK(st == W_OK && r->ref == bb, "snd (a,b) ⇝ b");
+    CHECK(st == W_OK && r.ref == bb, "snd (a,b) ⇝ b");
     r = whnf(mk_app(a, bb), fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_APP, "neutral application retains operands");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_APP, "neutral application retains operands");
     /* NO_OBSERVATION on the false face */
     r = whnf(a, fc_false(), &st);
     CHECK(st == W_NO_OBSERVATION, "no observation on the empty face");
@@ -258,12 +257,12 @@ static void test_eval_basic(void) {
     RefId p = var(mk_path_const(0, A, a, bb));
     RefId pi = mk_papp_const(0, A, a, bb, p, iv_var(i));
     r = whnf(pi, fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_PAPP, "p@i neutral under true");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_PAPP, "p@i neutral under true");
     size_t n0 = whnf_keys();
     r = whnf(pi, fc_lit(i, 0), &st);
-    CHECK(st == W_OK && r->ref == a && whnf_keys() > n0, "p@i ⇝ a under i=0, a key of its own");
+    CHECK(st == W_OK && r.ref == a && whnf_keys() > n0, "p@i ⇝ a under i=0, a key of its own");
     r = whnf(pi, fc_lit(i, 1), &st);
-    CHECK(st == W_OK && r->ref == bb, "p@i ⇝ b under i=1");
+    CHECK(st == W_OK && r.ref == bb, "p@i ⇝ b under i=1");
     /* projection: an unrelated literal does not create a new entry */
     n0 = whnf_keys();
     r = whnf(pi, fc_lit(k, 1), &st);
@@ -278,25 +277,24 @@ static void test_eval_basic(void) {
     /* §11 reindex p@i to p@k under k=0: key rebuilt from the new reference */
     RefId pk = reindex_dim(pi, i, iv_var(k));
     r = whnf(pk, fc_lit(k, 0), &st);
-    CHECK(st == W_OK && r->ref == a, "p@k under k=0 observes the left endpoint");
+    CHECK(st == W_OK && r.ref == a, "p@k under k=0 observes the left endpoint");
 
     /* plam β and endpoint priority on a neutral path */
     RefId pl = mk_plam(i, mk_papp_const(0, A, a, bb, p, iv_negate(iv_var(i))));
     r = whnf(mk_papp_const(0, A, bb, a, pl, iv_var(k)), fc_lit(k, 0), &st);
-    CHECK(st == W_OK && r->ref == bb, "(⟨i⟩ p(¬i)) @ k under k=0 ⇝ b by the endpoint test");
+    CHECK(st == W_OK && r.ref == bb, "(⟨i⟩ p(¬i)) @ k under k=0 ⇝ b by the endpoint test");
     r = whnf(mk_papp_const(0, A, bb, a, pl, iv_var(k)), fc_true(), &st);
-    { Head hh; open_ref(r->ref, &hh);
-      CHECK(st == W_OK && r->cls == R_NEUTRAL && hh.tag == T_PAPP && HF(&hh, 3).id == p && HF(&hh, 4).id == iv_negate(iv_var(k)), "(⟨i⟩ p(¬i)) @ k ⇝ p(¬k) neutral");
+    { Head hh; open_ref(r.ref, &hh);
+      CHECK(st == W_OK && r.cls == R_NEUTRAL && hh.tag == T_PAPP && HF(&hh, 3).id == p && HF(&hh, 4).id == iv_negate(iv_var(k)), "(⟨i⟩ p(¬i)) @ k ⇝ p(¬k) neutral");
       head_free(&hh); }
 
     /* two concurrent requests for one key: one task, both waiters served */
     RefId fresh = mk_app(id, mk_pair(a, bb));
-    ext_calls = 0;
-    eval_request(fresh, fc_true(), cont_external(ext_deliver, (void *)0, NULL));
-    eval_request(fresh, fc_true(), cont_external(ext_deliver, (void *)1, NULL));
+    two_t = fresh;
+    {   pthread_t th[2]; for (size_t c = 0; c < 2; c++) pthread_create(&th[c], NULL, two_client, (void *)c);
+        for (size_t c = 0; c < 2; c++) pthread_join(th[c], NULL); }
     r = whnf(fresh, fc_true(), &st);
-    eval_run();                                   /* the other two deliveries are ordinary queued jobs */
-    CHECK(__atomic_load_n(&ext_calls, __ATOMIC_SEQ_CST) == 2 && __atomic_load_n(&ext_last[0], __ATOMIC_SEQ_CST) == __atomic_load_n(&ext_last[1], __ATOMIC_SEQ_CST) && __atomic_load_n(&ext_last[0], __ATOMIC_SEQ_CST) == r, "both waiters receive the same result");
+    CHECK(two_got[0] == two_got[1] && two_got[0] == r.ref, "two concurrent roots of one key receive the same result");
 
     /* globals: unfold through a fixed body */
     uint64_t Aparam[1] = { ref_var_id(A) };
@@ -304,13 +302,13 @@ static void test_eval_basic(void) {
     TermVarId y = tv(A);
     set_global_body(K, mk_lam_lv(0, x, A, mk_lam_lv(0, y, A, ref_var(x))));
     r = whnf(mk_app(mk_app(global_ref(K), a), bb), fc_true(), &st);
-    CHECK(st == W_OK && r->ref == a, "K a b ⇝ a through global unfolding");
+    CHECK(st == W_OK && r.ref == a, "K a b ⇝ a through global unfolding");
 
     /* running self-demand: loop := loop */
     SymbolId L = define_global("loop", varset_make(NULL, 0), dimset_make(NULL, 0), U0);
     set_global_body(L, global_ref(L));
     r = whnf(global_ref(L), fc_true(), &st);
-    CHECK(st == W_STUCK && r == NULL, "loop is reported stuck, never neutral or ready");
+    CHECK(st == W_STUCK && r.cls == 0, "loop is reported stuck, never neutral or ready");
 }
 
 static void test_eval_glue_system(void) {
@@ -321,30 +319,30 @@ static void test_eval_glue_system(void) {
     DimVarId i = declare_dim();
     FaceId i1 = fc_lit(i, 1);
     RefId G = mk_glue_type_lv(0, A, i1, T, e);
-    EvalResult *r = whnf(G, fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_INTRODUCTION && head_tag(r) == T_GLUE_TYPE, "Glue head exposed off its face");
+    EvalResult r = whnf(G, fc_true(), &st);
+    CHECK(st == W_OK && r.cls == R_INTRODUCTION && head_tag(r) == T_GLUE_TYPE, "Glue head exposed off its face");
     r = whnf(G, i1, &st);
-    CHECK(st == W_OK && r->ref == T, "Glue ⇝ T on its face");
+    CHECK(st == W_OK && r.ref == T, "Glue ⇝ T on its face");
     /* retained component survives specialization even though the whole type collapses */
     Head h; open_ref(G, &h);
     RefId base = HF(&h, 0).id; head_free(&h);
     RefId base1 = reindex_dim(base, i, iv_one());
     RefId G1 = reindex_dim(G, i, iv_one());
     r = whnf(G1, fc_true(), &st);
-    CHECK(st == W_OK && r->ref == T, "the whole Glue at i=1 collapses to T");
-    CHECK(base1 == A && whnf(base1, fc_true(), &st)->ref == A, "the retained base specialized at i=1 is still A");
+    CHECK(st == W_OK && r.ref == T, "the whole Glue at i=1 collapses to T");
+    CHECK(base1 == A && whnf(base1, fc_true(), &st).ref == A, "the retained base specialized at i=1 is still A");
 
     RefId t = var(T), a = var(A);
     RefId gl = mk_glue_intro_lv(0, A, i1, T, e, t, a);
     r = whnf(mk_unglue_lv(0, A, i1, T, e, gl), fc_true(), &st);
-    CHECK(st == W_OK && r->ref == a, "unglue (glue t a) ⇝ a");
+    CHECK(st == W_OK && r.ref == a, "unglue (glue t a) ⇝ a");
     r = whnf(gl, i1, &st);
-    CHECK(st == W_OK && r->ref == t, "glue t a ⇝ t on the face");
+    CHECK(st == W_OK && r.ref == t, "glue t a ⇝ t on the face");
     RefId v = var(G);
     r = whnf(mk_unglue_lv(0, A, i1, T, e, v), i1, &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_APP, "unglue v ⇝ e.map v on the face (neutral application)");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_APP, "unglue v ⇝ e.map v on the face (neutral application)");
     r = whnf(mk_unglue_lv(0, A, i1, T, e, v), fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_UNGLUE, "unglue v neutral off the face");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_UNGLUE, "unglue v neutral off the face");
 
     /* systems */
     DimVarId j = declare_dim();
@@ -353,9 +351,9 @@ static void test_eval_glue_system(void) {
     RefId ts[2] = { a, b };
     RefId sys = mk_system(2, fs, ts);
     r = whnf(sys, fc_lit(j, 0), &st);
-    CHECK(st == W_OK && r->ref == a, "system selects the covering branch");
+    CHECK(st == W_OK && r.ref == a, "system selects the covering branch");
     r = whnf(sys, fc_join(fs[0], fs[1]), &st);
-    CHECK(st == W_OK && r->cls == R_SYSTEM && r->nbr == 2, "covered but unselected system stays a system");
+    CHECK(st == W_OK && r.cls == R_SYSTEM && r.nbr == 2, "covered but unselected system stays a system");
     r = whnf(sys, fc_true(), &st);
     CHECK(st == W_INVALID, "a system outside its required face is an invalid occurrence, not a value");
     /* eliminator distributes branchwise */
@@ -363,8 +361,8 @@ static void test_eval_glue_system(void) {
     FaceId fs2[2] = { fc_lit(j, 0), fc_lit(j, 1) };
     RefId ts2[2] = { mk_lam_lv(0, tv(A), A, a), f };
     r = whnf(mk_app(mk_system(2, fs2, ts2), b), fc_join(fs2[0], fs2[1]), &st);
-    CHECK(st == W_OK && r->cls == R_SYSTEM && r->nbr == 2, "application distributes over a system");
-    CHECK(r->terms[0] == a && r->terms[1] == mk_app(f, b), "branches were evaluated under chi ∧ φ_k: (λ_.a) b ⇝ a, f b neutral");
+    CHECK(st == W_OK && r.cls == R_SYSTEM && r.nbr == 2, "application distributes over a system");
+    CHECK(r.br[2 * (0) + 1] == a && r.br[2 * (1) + 1] == mk_app(f, b), "branches were evaluated under chi ∧ φ_k: (λ_.a) b ⇝ a, f b neutral");
     CHECK(fc_is_false(fc_meet(fc_true(), ref_required(mk_app(mk_system(2, fs2, ts2), b)))) == false && ref_required(mk_app(mk_system(2, fs2, ts2), b)) == fc_join(fs2[0], fs2[1]), "an eliminator of a system requires the system's face");
     r = whnf(mk_app(mk_system(2, fs2, ts2), b), fc_true(), &st);
     CHECK(st == W_INVALID, "…so its occurrence under true is invalid at the request");
@@ -375,13 +373,13 @@ static void test_eval_glue_system(void) {
     RefId u = var(A);
     RefId cmp = mk_comp_lv(0, m, X, fc_true(), u, u);
     r = whnf(cmp, fc_true(), &st);
-    CHECK(st == W_OK && r->ref == u, "covered composition returns its tube at 1");
+    CHECK(st == W_OK && r.ref == u, "covered composition returns its tube at 1");
     DimOpen fam = resolve_dim_binder(cmp, 0, 0);
     (void)fam;
     /* neutral composition */
     RefId cmp2 = mk_comp_lv(0, m, X, fc_false(), mk_system(0, NULL, NULL), u);
     r = whnf(cmp2, fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "composition in an unknown family is neutral and retains its data");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_COMP, "composition in an unknown family is neutral and retains its data");
     /* type-family system: outer guards are ∀j and endpoint-only branches do not cover */
     FaceId gs[2] = { fc_lit(m, 0), fc_lit(m, 1) };
     RefId Ys[2] = { X, A };
@@ -393,9 +391,9 @@ static void test_eval_glue_system(void) {
     RefId Ys2[2] = { X, mk_fun(0, 0, A, A) };
     RefId cmp4 = mk_comp_lv(0, m, mk_system(2, gs2, Ys2), fc_false(), mk_system(0, NULL, NULL), u);
     r = whnf(cmp4, fc_join(gs2[0], gs2[1]), &st);
-    CHECK(st == W_OK && r->cls == R_SYSTEM && r->nbr == 2 && r->faces[0] == gs2[0], "system of compositions with ∀m guards");
+    CHECK(st == W_OK && r.cls == R_SYSTEM && r.nbr == 2 && r.br[2 * (0)] == gs2[0], "system of compositions with ∀m guards");
     r = whnf(cmp4, gs2[1], &st);
-    CHECK(st == W_OK && r->cls == R_INTRODUCTION && head_tag(r) == T_LAM, "under (n=1) the Π branch is selected and the Π clause fires");
+    CHECK(st == W_OK && r.cls == R_INTRODUCTION && head_tag(r) == T_LAM, "under (n=1) the Π branch is selected and the Π clause fires");
 }
 
 static void test_comp_clauses(void) {
@@ -403,23 +401,23 @@ static void test_comp_clauses(void) {
     WhnfStatus st;
     RefId A = var(U0), B = var(U0);
     DimVarId i = declare_dim();
-    EvalResult *r;
+    EvalResult r;
 
     /* Π: coe in a constant Π family yields a λ; applying it yields a comp in B */
     RefId f = var(mk_fun(0, 0, A, B));
     RefId cpi = mk_coe_at(0, i, mk_fun(0, 0, A, B), f);
     r = whnf(cpi, fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_INTRODUCTION && head_tag(r) == T_LAM, "coe in Π ⇝ λ");
+    CHECK(st == W_OK && r.cls == R_INTRODUCTION && head_tag(r) == T_LAM, "coe in Π ⇝ λ");
     RefId a = var(A);
     r = whnf(mk_app(cpi, a), fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "applying it gives a neutral composition in the (variable) codomain");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_COMP, "applying it gives a neutral composition in the (variable) codomain");
     /* v(1) = x1: the forward transport in the domain filler at 1 is the argument */
-    Head h; open_ref(r->ref, &h);          /* comp^i B [] (f v(0)) */
+    Head h; open_ref(r.ref, &h);          /* comp^i B [] (f v(0)) */
     RefId capapp = HF(&h, 3).id; head_free(&h);
     open_ref(capapp, &h);
     RefId v0 = HF(&h, 1).id; head_free(&h);
     r = whnf(v0, fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "v(0) is a backward transport of the argument in A (neutral)");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_COMP, "v(0) is a backward transport of the argument in A (neutral)");
     RefId V = reindex_dim(v0, 0, iv_zero()); (void)V;
 
     /* Σ: fst of a coe in Σ(x:A).B is a comp in A; whole thing is a pair */
@@ -430,10 +428,10 @@ static void test_comp_clauses(void) {
     r = whnf(csg, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_PAIR, "coe in Σ ⇝ pair");
     r = whnf(mk_fst(csg), fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "its first component is a composition in A");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_COMP, "its first component is a composition in A");
     /* shared intermediate: the second component mentions the same filler reference */
     r = whnf(csg, fc_true(), &st);
-    open_ref(r->ref, &h);
+    open_ref(r.ref, &h);
     RefId a1 = HF(&h, 0).id, b1 = HF(&h, 1).id; head_free(&h);
     open_ref(b1, &h); RefId famE = HF(&h, 0).id; head_free(&h);     /* field under binder: raw origin field id */
     (void)famE; (void)a1;
@@ -447,15 +445,15 @@ static void test_comp_clauses(void) {
     CHECK(st == W_OK && head_tag(r) == T_PLAM, "coe in Path ⇝ ⟨j⟩ …");
     DimVarId k = declare_dim();
     r = whnf(mk_papp_const(0, A, a, a, cpa, iv_var(k)), fc_lit(k, 0), &st);
-    CHECK(st == W_OK && r->ref == a, "its application at 0 is the endpoint a (tube coverage)");
+    CHECK(st == W_OK && r.ref == a, "its application at 0 is the endpoint a (tube coverage)");
     r = whnf(mk_papp_const(0, A, a, a, cpa, iv_var(k)), fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "in the interior it is a composition in A");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_COMP, "in the interior it is a composition in A");
 
     /* universe: comp in U ⇝ Glue */
     RefId cu = mk_coe_at(1, i, U0, A);
     r = whnf(cu, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_GLUE_TYPE, "comp in U ⇝ Glue");
-    open_ref(r->ref, &h);
+    open_ref(r.ref, &h);
     CHECK(HF(&h, 0).id == A && fc_is_false(HF(&h, 1).id), "with base A and the (empty) tube face");
     head_free(&h);
     /* with a tube: Glue [phi ↦ (U_1, LineEquiv)] A_0, and the equivalence is a coe in Equiv */
@@ -464,7 +462,7 @@ static void test_comp_clauses(void) {
     r = whnf(cu2, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_GLUE_TYPE, "comp in U with a tube ⇝ Glue");
     r = whnf(cu2, fc_lit(n, 0), &st);
-    CHECK(st == W_OK && r->ref == B, "on the tube face it is the tube at 1");
+    CHECK(st == W_OK && r.ref == B, "on the tube face it is the tube at 1");
 
     /* transport along ua(idEquiv U) of a type: Glue composition fires and
      * the result collapses on alpha_1 = true to the extended fibre point */
@@ -474,8 +472,8 @@ static void test_comp_clauses(void) {
     r = whnf(tr, fc_true(), &st);
     CHECK(st == W_OK, "transport along ua evaluates (status %d)", (int)st);
     if (st == W_OK) {
-        printf("  transport along ua(id) of A ⇝ INTRO "); print_ref_depth(r->ref, stdout, 2); printf("\n");
-        CHECK(r->cls == R_INTRODUCTION && head_tag(r) == T_GLUE_TYPE, "…to a Glue type (an hcomp in U over the fibre data), not a stuck term");
+        printf("  transport along ua(id) of A ⇝ INTRO "); print_ref_depth(r.ref, stdout, 2); printf("\n");
+        CHECK(r.cls == R_INTRODUCTION && head_tag(r) == T_GLUE_TYPE, "…to a Glue type (an hcomp in U over the fibre data), not a stuck term");
     }
     /* Glue composition where the Glue face is off: base family must be used generally */
     RefId T = var(U0), e = var(mk_equiv(0, 0, T, A));
@@ -486,9 +484,9 @@ static void test_comp_clauses(void) {
     r = whnf(cg, fc_true(), &st);
     CHECK(st == W_OK && head_tag(r) == T_GLUE_INTRO, "comp in Glue ⇝ glue intro off the Glue face");
     r = whnf(mk_unglue_lv(0, A, fc_lit(m, 1), T, e, cg), fc_true(), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL && head_tag(r) == T_COMP, "unglue of it is the (neutral) repaired base composition");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_COMP, "unglue of it is the (neutral) repaired base composition");
     r = whnf(cg, fc_lit(m, 1), &st);
-    CHECK(st == W_OK && r->cls == R_NEUTRAL, "on the Glue face the fibre component is demanded (neutral in T)");
+    CHECK(st == W_OK && r.cls == R_NEUTRAL, "on the Glue face the fibre component is demanded (neutral in T)");
     if (st == W_OK) { printf("  comp in Glue on α ⇝ "); print_result(r, stdout); printf("\n"); }
     (void)b; (void)k;
 }
@@ -510,17 +508,17 @@ static void test_contexts(void) {
     RefId sys = mk_system(2, fs, ts);
     ContextId restricted = context_restrict(full, fc_lit(i, 0));
     CHECK(context_assumption(restricted) == fc_lit(i, 0), "restriction strengthens the assumption");
-    EvalResult *r = whnf(sys, context_assumption(restricted), &st);
-    CHECK(st == W_OK && r->ref == a, "a system observes under the assumption");
+    EvalResult r = whnf(sys, context_assumption(restricted), &st);
+    CHECK(st == W_OK && r.ref == a, "a system observes under the assumption");
     r = whnf(t, fc_lit(i, 1), &st);
-    CHECK(st == W_OK && r->ref == a, "endpoint under the context assumption");
+    CHECK(st == W_OK && r.ref == a, "endpoint under the context assumption");
     CHECK(context_make(4, ds, fc_true()) == full, "contexts are interned by structure");
 }
 
 /* ---------------------------------------------------------------- */
 int main(void) {
     machine_init();
-    eval_init();
+   
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     U0 = mk_universe(0);
     test_intervals_faces();
@@ -535,7 +533,7 @@ int main(void) {
     printf("tables: %zu intervals, %zu faces, %zu maps, %zu nodes, %zu refs, %zu eval entries\n",
            interner_count(&M.intervals), interner_count(&M.faces), interner_count(&M.maps),
            interner_count(&M.tnodes), interner_count(&M.refs), eval_entry_count());
-    eval_free();
+   
     machine_free();
     return n_fail ? 1 : 0;
 }

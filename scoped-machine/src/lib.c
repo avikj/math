@@ -81,8 +81,11 @@ static uint64_t cap2(uint64_t s1, uint64_t id1, RefId t1, uint64_t l1, FaceId r1
 }
 typedef struct {
     uint64_t j, fam, phi, tube, cap, tag, levels, m, n, tg, a0, a1, a2, a3, x, xr, Um, Un, eq, er; ExprId root;
-    Join *J; WordBuf wb; bool created;
+    Family kf[5]; uint64_t ka[5], kb[5], kv[5]; size_t nk, ki;   /* independent demands: launched, then awaited in order */
+    WordBuf wb; bool created;
 } CcLoc;
+#define DEMAND(f, a, b) do { L->kf[L->nk] = (f); L->ka[L->nk] = (a); L->kb[L->nk] = (b); L->nk++; } while (0)
+#define LAUNCH_ALL() do { for (L->ki = 0; L->ki < L->nk; L->ki++) family_launch(L->kf[L->ki], L->ka[L->ki], L->kb[L->ki]); } while (0)
 static void compclause_step(Cont *k, uint64_t v) {
     CcLoc *L = FR_LOC(k, CcLoc);
     uint64_t r = 0;
@@ -102,67 +105,67 @@ static void compclause_step(Cont *k, uint64_t v) {
         { uint64_t e[4] = { S_TERM, 0, 1, L->xr }; FR_AWAIT(k, L->a1, Fl_BINDER, L->fam, interner_intern(&M.keys, e, 4, NULL)); }
         FR_AWAIT(k, L->Um, Fl_CONSTRUCT, universe_request(L->m), 0);
         FR_AWAIT(k, L->Un, Fl_CONSTRUCT, universe_request(L->n), 0);
-        L->J = join_new(k, 3);
-        join_request(L->J, 0, Fl_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Um, level_succ(L->m), fc_true()), 0);
-        join_request(L->J, 1, Fl_CAPTURE, cap2(S_DIM, L->j, 0, LEVEL_NONE, fc_true(), S_TERM, L->x, L->a0, L->m, term_var_required(L->x), L->a1, L->Un, level_succ(L->n), fc_true()), 0);
-        join_request(L->J, 2, Fl_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, level_max(L->m, L->n), L->tg), 0);
-        FR_JOIN(k, L->J);
-        {   TVal a[7] = { { PS_LEVEL, L->m }, { PS_LEVEL, L->n }, { PS_SCOPE, join_value(L->J, 0) }, { PS_SCOPE, join_value(L->J, 1) }, { PS_FACE, L->phi }, { PS_SCOPE, join_value(L->J, 2) }, { PS_REF, L->cap } };
+        L->nk = 0;
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Um, level_succ(L->m), fc_true()), 0);
+        DEMAND(Fl_CAPTURE, cap2(S_DIM, L->j, 0, LEVEL_NONE, fc_true(), S_TERM, L->x, L->a0, L->m, term_var_required(L->x), L->a1, L->Un, level_succ(L->n), fc_true()), 0);
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, level_max(L->m, L->n), L->tg), 0);
+        LAUNCH_ALL();
+        for (L->ki = 0; L->ki < L->nk; L->ki++) FR_AWAIT(k, L->kv[L->ki], L->kf[L->ki], L->ka[L->ki], L->kb[L->ki]);
+        {   TVal a[7] = { { PS_LEVEL, L->m }, { PS_LEVEL, L->n }, { PS_SCOPE, L->kv[0] }, { PS_SCOPE, L->kv[1] }, { PS_FACE, L->phi }, { PS_SCOPE, L->kv[2] }, { PS_REF, L->cap } };
             template_call_env(L->tag == T_PI ? TD_PICOMP : TD_SIGMACOMP, 7, a, &L->wb, &L->root); }
-        join_free(L->J); L->J = NULL;
         goto interpret;
     }
     if (L->tag == T_PATH) {
         L->n = levels_first(L->levels);
         L->x = binder_dim_var(L->fam, 0);                                /* (k, B(j,k)) */
         { uint64_t e[4] = { S_DIM, 0, 0, iv_var(L->x) }; FR_AWAIT(k, L->a0, Fl_BINDER, L->fam, interner_intern(&M.keys, e, 4, NULL)); }
-        L->J = join_new(k, 5);
-        join_request(L->J, 0, Fl_FIELD, L->fam, 1);
-        join_request(L->J, 1, Fl_FIELD, L->fam, 2);
-        join_request(L->J, 2, Fl_REINDEX, L->a0, map_single_dim(L->x, iv_zero()));
-        join_request(L->J, 3, Fl_REINDEX, L->a0, map_single_dim(L->x, iv_one()));
-        join_request(L->J, 4, Fl_CONSTRUCT, universe_request(L->n), 0);
-        FR_JOIN(k, L->J);
-        L->a1 = join_value(L->J, 0); L->a2 = join_value(L->J, 1); L->a3 = join_value(L->J, 2); L->eq = join_value(L->J, 3); L->Un = join_value(L->J, 4);
-        join_free(L->J);
-        L->J = join_new(k, 4);
-        join_request(L->J, 0, Fl_CAPTURE, cap2(S_DIM, L->j, 0, LEVEL_NONE, fc_true(), S_DIM, L->x, 0, LEVEL_NONE, fc_true(), L->a0, L->Un, level_succ(L->n), fc_true()), 0);
-        join_request(L->J, 1, Fl_CAPTURE, cap1(L->j, VS_REF, L->a1, L->a3, L->n, fc_true()), 0);
-        join_request(L->J, 2, Fl_CAPTURE, cap1(L->j, VS_REF, L->a2, L->eq, L->n, fc_true()), 0);
-        join_request(L->J, 3, Fl_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, L->n, L->tg), 0);
-        FR_JOIN(k, L->J);
-        {   TVal a[7] = { { PS_LEVEL, L->n }, { PS_SCOPE, join_value(L->J, 0) }, { PS_SCOPE, join_value(L->J, 1) }, { PS_SCOPE, join_value(L->J, 2) }, { PS_FACE, L->phi }, { PS_SCOPE, join_value(L->J, 3) }, { PS_REF, L->cap } };
+        L->nk = 0;
+        DEMAND(Fl_FIELD, L->fam, 1);
+        DEMAND(Fl_FIELD, L->fam, 2);
+        DEMAND(Fl_REINDEX, L->a0, map_single_dim(L->x, iv_zero()));
+        DEMAND(Fl_REINDEX, L->a0, map_single_dim(L->x, iv_one()));
+        DEMAND(Fl_CONSTRUCT, universe_request(L->n), 0);
+        LAUNCH_ALL();
+        for (L->ki = 0; L->ki < L->nk; L->ki++) FR_AWAIT(k, L->kv[L->ki], L->kf[L->ki], L->ka[L->ki], L->kb[L->ki]);
+        L->a1 = L->kv[0]; L->a2 = L->kv[1]; L->a3 = L->kv[2]; L->eq = L->kv[3]; L->Un = L->kv[4];
+        L->nk = 0;
+        DEMAND(Fl_CAPTURE, cap2(S_DIM, L->j, 0, LEVEL_NONE, fc_true(), S_DIM, L->x, 0, LEVEL_NONE, fc_true(), L->a0, L->Un, level_succ(L->n), fc_true()), 0);
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_REF, L->a1, L->a3, L->n, fc_true()), 0);
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_REF, L->a2, L->eq, L->n, fc_true()), 0);
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, L->n, L->tg), 0);
+        LAUNCH_ALL();
+        for (L->ki = 0; L->ki < L->nk; L->ki++) FR_AWAIT(k, L->kv[L->ki], L->kf[L->ki], L->ka[L->ki], L->kb[L->ki]);
+        {   TVal a[7] = { { PS_LEVEL, L->n }, { PS_SCOPE, L->kv[0] }, { PS_SCOPE, L->kv[1] }, { PS_SCOPE, L->kv[2] }, { PS_FACE, L->phi }, { PS_SCOPE, L->kv[3] }, { PS_REF, L->cap } };
             template_call_env(TD_PATHCOMP, 7, a, &L->wb, &L->root); }
-        join_free(L->J); L->J = NULL;
         goto interpret;
     }
     if (L->tag == T_GLUE_TYPE) {
         L->n = levels_first(L->levels);
-        L->J = join_new(k, 5);
-        join_request(L->J, 0, Fl_FIELD, L->fam, 0);
-        join_request(L->J, 1, Fl_FIELD, L->fam, 1);
-        join_request(L->J, 2, Fl_FIELD, L->fam, 2);
-        join_request(L->J, 3, Fl_FIELD, L->fam, 3);
-        join_request(L->J, 4, Fl_CONSTRUCT, universe_request(L->n), 0);
-        FR_JOIN(k, L->J);
-        L->a0 = join_value(L->J, 0); L->a1 = join_value(L->J, 1); L->a2 = join_value(L->J, 2); L->a3 = join_value(L->J, 3); L->Un = join_value(L->J, 4);
-        join_free(L->J); L->J = NULL;
+        L->nk = 0;
+        DEMAND(Fl_FIELD, L->fam, 0);
+        DEMAND(Fl_FIELD, L->fam, 1);
+        DEMAND(Fl_FIELD, L->fam, 2);
+        DEMAND(Fl_FIELD, L->fam, 3);
+        DEMAND(Fl_CONSTRUCT, universe_request(L->n), 0);
+        LAUNCH_ALL();
+        for (L->ki = 0; L->ki < L->nk; L->ki++) FR_AWAIT(k, L->kv[L->ki], L->kf[L->ki], L->ka[L->ki], L->kb[L->ki]);
+        L->a0 = L->kv[0]; L->a1 = L->kv[1]; L->a2 = L->kv[2]; L->a3 = L->kv[3]; L->Un = L->kv[4];
         L->x = L->a1;                                                    /* T_j and e_j are defined on α_j */
         {   TVal a[4] = { { PS_LEVEL, L->n }, { PS_LEVEL, L->n }, { PS_REF, L->a2 }, { PS_REF, L->a0 } };
             template_call_env(TD_EQUIV, 4, a, &L->wb, &L->root); }
         FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->wb, &L->created));
         FR_AWAIT(k, r, Fl_INTERP, L->root, L->er);
         { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); L->eq = w[1]; }   /* Equiv(T_j, A_j) */
-        L->J = join_new(k, 5);
-        join_request(L->J, 0, Fl_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Un, level_succ(L->n), fc_true()), 0);
-        join_request(L->J, 1, Fl_CAPTURE, cap1(L->j, VS_FACE, L->a1, 0, LEVEL_NONE, fc_true()), 0);
-        join_request(L->J, 2, Fl_CAPTURE, cap1(L->j, VS_REF, L->a2, L->Un, level_succ(L->n), L->x), 0);
-        join_request(L->J, 3, Fl_CAPTURE, cap1(L->j, VS_REF, L->a3, L->eq, L->n, L->x), 0);
-        join_request(L->J, 4, Fl_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, L->n, L->tg), 0);
-        FR_JOIN(k, L->J);
-        {   TVal a[8] = { { PS_LEVEL, L->n }, { PS_SCOPE, join_value(L->J, 0) }, { PS_SCOPE, join_value(L->J, 1) }, { PS_SCOPE, join_value(L->J, 2) }, { PS_SCOPE, join_value(L->J, 3) }, { PS_FACE, L->phi }, { PS_SCOPE, join_value(L->J, 4) }, { PS_REF, L->cap } };
+        L->nk = 0;
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Un, level_succ(L->n), fc_true()), 0);
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_FACE, L->a1, 0, LEVEL_NONE, fc_true()), 0);
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_REF, L->a2, L->Un, level_succ(L->n), L->x), 0);
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_REF, L->a3, L->eq, L->n, L->x), 0);
+        DEMAND(Fl_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, L->n, L->tg), 0);
+        LAUNCH_ALL();
+        for (L->ki = 0; L->ki < L->nk; L->ki++) FR_AWAIT(k, L->kv[L->ki], L->kf[L->ki], L->ka[L->ki], L->kb[L->ki]);
+        {   TVal a[8] = { { PS_LEVEL, L->n }, { PS_SCOPE, L->kv[0] }, { PS_SCOPE, L->kv[1] }, { PS_SCOPE, L->kv[2] }, { PS_SCOPE, L->kv[3] }, { PS_FACE, L->phi }, { PS_SCOPE, L->kv[4] }, { PS_REF, L->cap } };
             template_call_env(TD_GLUECOMP, 8, a, &L->wb, &L->root); }
-        join_free(L->J); L->J = NULL;
         goto interpret;
     }
     if (L->tag == T_UNIVERSE) {
@@ -184,7 +187,7 @@ void lib_families_init(void) {
     Fl_REFVAR = family_lookup("ref.var"); Fl_CONSTRUCT = family_lookup("construct"); Fl_CAPTURE = family_lookup("scope.capture");
     Fl_INTERP = family_lookup("template.interp"); Fl_FCMEET = family_lookup("fc.meet"); Fl_REINDEX = family_lookup("reindex");
     require(Fl_HEAD && Fl_CAPTURE && Fl_INTERP && Fl_REINDEX, "the construction, scope and template families are registered first");
-    F_COMPCLAUSE = family_define("comp.clause", compclause_step, sizeof(CcLoc), true);
+    F_COMPCLAUSE = family_define("comp.clause", compclause_step, sizeof(CcLoc));
 }
 RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap) {
     uint64_t w[5] = { j, fam, phi, tube_j, cap };

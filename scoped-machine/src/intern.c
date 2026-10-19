@@ -313,14 +313,6 @@ int intern_advance(InternState *s, size_t budget) {
     return s->phase == P_FLAT ? INTERN_FLATTEN : s->phase == P_DONE ? INTERN_DONE : INTERN_RUNNING;
 }
 
-/* copy a tree's words in order into dst (the inline owner) */
-static size_t tree_copy(Interner *t, uint64_t id, uint64_t *dst) {
-    size_t m; const uint64_t *w = interner_get(__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE), id, &m);
-    if (w[0] == TREE_LEAF) { memcpy(dst, w + 1, (m - 1) * sizeof(uint64_t)); return m - 1; }
-    size_t at = 0;
-    for (size_t q = 1; q < m; q++) at += tree_copy(t, w[q], dst + at);
-    return at;
-}
 uint64_t intern_complete(InternState *s) {
     require(s->phase == P_FLAT, "intern_complete before the tree is built");
     require(!intern_in_step, "a large record completed synchronously inside a counted step");
@@ -328,18 +320,8 @@ uint64_t intern_complete(InternState *s) {
     uint64_t id = interner_flat_of(t, root);
     if (!id) {
         FlattenHook h = __atomic_load_n(&flatten_hook, __ATOMIC_ACQUIRE);
-        if (h) id = h(t, root);
-        else {
-            /* no evaluator: one inline owner claims the root's flat cell; others
-             * wait for an owner that never suspends */
-            uint64_t *cell = &rec_of(__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE), root)->flat, expect = 0;
-            if (__atomic_compare_exchange_n(cell, &expect, UINT64_MAX, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                size_t m; const uint64_t *rw = interner_get(__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE), root, &m);
-                uint64_t *dst = storage_reserve(t, s->n);
-                require(tree_copy(t, rw[2], dst) == s->n, "tree length");
-                id = interner_flat_publish(t, root, dst, s->n);
-            } else while (!(id = interner_flat_of(t, root))) sched_yield();
-        }
+        require(h, "a large record completed without the evaluator");
+        id = h(t, root);                       /* the one owner: the intern.flatten producer keyed by (table, root) */
     }
     s->result = id; s->phase = P_DONE;
     return id;

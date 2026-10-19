@@ -187,15 +187,17 @@ no subagents; work only from the shared specifications; no second engine/store/c
    R — attach the requester to that producer, never run a second body; D — deliver the published
    value through the same delivery rule. A producer requesting its own key is an unresolved
    dependency (the request stays a waiter), never a private recomputation.
-2. Synchronous API. `family_call`, `family_run`, `frame_run`, `whnf` are root-driving only: an
-   external caller submits a root and drives the ordinary scheduler until it is delivered. Inside a
-   counted step every request suspends the frame (FR_AWAIT, FR_CALL, joins); `family_call` refuses
-   to run there. Root driving creates no barrier: it is only how an outside caller receives a value.
-3. Frames. A step ends in exactly one of request / call / yield / join / finish; after the frame is
+2. Synchronous API. `family_call`, `family_run`, `whnf` are root-driving only: an external caller
+   requests the root key with a host frame as its waiter and drives the ordinary scheduler until the
+   key is published. Inside a counted step every request suspends the frame (FR_AWAIT, FR_CALL);
+   `family_call` refuses to run there. Root driving creates no barrier. The frame is the only
+   continuation form; the entry is the only box a value is returned to.
+3. Frames. A step ends in exactly one of request / call / yield / finish; after the frame is
    handed to the queue or a waiter stack its former owner does not touch it (the kept flag belongs
    to the executing job). One FR_* macro per line, never inside a nested switch.
-4. Independent demands are one join: the frame issues them one per step and is resumed once by the
-   last arrival. Sequential awaits are only for demands that depend on earlier values.
+4. Independent demands are launched (U → R(∅), one launch per step) and then awaited in launch
+   order; a frame awaits every key it launched before it finishes, so a parent publishes only after
+   every child it launched has delivered, and a failure is selected in branch order.
 5. Canonical record construction obeys the same law (INTERNING.md): a small record is one bounded
    unit; a large record is its canonical tree of small records (units fixed by its length), and its
    contiguous record is the value of the one owner keyed by (table, tree root). Inside a step only
@@ -203,9 +205,10 @@ no subagents; work only from the shared specifications; no second engine/store/c
    content counts only when its side data is published.
 6. Revisions. A definition revision is (symbol, body), body 0 opaque. An observation is bound to a
    pin set — the closure of the symbols its roots name through the bodies of the revisions read —
-   and its key is (t, [η, P]); unfolding is keyed by (reference, body). A checker request pins the
-   closure of its inputs once, validates those revisions, keys its claims by them, and observes
-   under them. No key carries an environment version; no environment-wide snapshot.
+   and its key is (t, [η, P]); unfolding is keyed by (reference, body). The closure itself is the
+   producer keyed by (roots, snapshot) (§79.2: dependency validation keyed by the immutable
+   snapshot); no other key carries the snapshot. A checker request pins the closure of its inputs
+   once, validates those revisions, keys its claims by them, and observes under them.
 7. Bounded steps. Every callback, including its synchronous helpers, does work bounded by a
    constant: every loop iteration inside a step ends in a suspension; host builders (mapb_finish,
    synchronous interning) are refused inside a step beyond a fixed handful; a CAS retry is charged
@@ -226,8 +229,9 @@ existing producer protocol; the one new mutable state is the authority cell, whi
 rules require (operational acceptance is a transition of the actual source, not a function of a key).
 
 8a. Per-producer readings. Entry.work: exact count (count.h) of the steps of the entry's frame and
-    its subroutines (each frame carries its owner entry; single writer: the entry's one producer).
-    Entry.deps: the entries its producer requested (appended by that producer). support(H) is the
+    its subroutines (each frame carries its owner entry; single writer: the entry's one producer,
+    whose frames never run concurrently). Entry.deps: the entries its producer requested or
+    launched (pushed by that producer, readable while it runs). support(H) is the
     dependency closure of H's entries; W(H) = Σ work over support(H) — a union, so a producer shared
     by two consumers is counted once while their two deliveries remain two RD_DELIVER events.
 8b. Exact signed coefficients (interned limb records, sign) and chains: an interned sorted list of

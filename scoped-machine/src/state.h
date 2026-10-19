@@ -39,6 +39,7 @@ typedef struct {
     Chunked nominal_val;  /* uint64_t minted name per nominal id-1 */
     Chunked defs;         /* Def per SymbolId-1 */
     size_t n_term_vars, n_dim_vars, n_defs;   /* allocation counters (atomic) */
+    uint64_t env_gen;     /* the definition environment's snapshot: bumped by each declaration and body (host only, never during a computation) */
 } Machine;
 
 extern Machine M;

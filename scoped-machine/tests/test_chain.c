@@ -19,7 +19,7 @@ static bool empty(uint64_t c) { size_t n; interner_get(&M.keys, c, &n); return n
 
 int main(void) {
     printf("== cubical chains, cochains and Stokes (ADDENDUM §11)\n");
-    machine_init(); eval_init(); check_init();
+    machine_init(); check_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     RefId U = mk_universe(0);
     TermVarId vA = declare_term(U, fc_true()); RefId A = ref_var(vA);
@@ -139,6 +139,6 @@ int main(void) {
         CHECK(local_system(R2, 2, (uint64_t[]){ s0, s1 }, 0, NULL) == 0, "an absent square witness is rejected"); }
 
     printf("  %d passed, %d failed\n", np, nf);
-    check_free(); eval_free(); machine_free();
+    check_free(); machine_free();
     return nf ? 1 : 0;
 }

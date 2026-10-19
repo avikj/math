@@ -108,10 +108,10 @@ Outcome outcome_kind(uint64_t out) { size_t n; return (Outcome)rget(out, &n)[1];
 uint64_t outcome_occurrence(uint64_t out) { size_t n; const uint64_t *w = rget(out, &n); return w[1] == OUT_ACCEPTED ? w[2] : 0; }
 const char *outcome_reason(uint64_t out) { size_t n; const uint64_t *w = rget(out, &n); return w[1] == OUT_INVALID ? (const char *)(uintptr_t)w[2] : ""; }
 
-static Family F_PREP, F_EFFECT, F_OCCB, Fe_JCHECK, Fe_JLEVEL, Fe_CONSTRUCT, Fe_SCC;
+static Family F_PREP, F_EFFECT, F_OCCB, Fe_JCHECK, Fe_JLEVEL, Fe_CONSTRUCT, Fe_SCC, Fe_CLOSURE;
 
 /* ---------------- PREPARE(P) ---------------- */
-typedef struct { size_t i, j; uint64_t P, t, r; Prop p; const char *bad; } PrLoc;
+typedef struct { size_t i, j; uint64_t P, t, r; Prop p; const char *bad; WordBuf wb; bool created; } PrLoc;
 static uint64_t prep_res(int ok, const char *why) { return RQ(T_PREP, (uint64_t)ok, (uint64_t)(uintptr_t)why); }
 static uint64_t state_at(const Prop *p, size_t i) { return i < p->nin ? value_of(p->in[i]) : p->out[3 * (i - p->nin) + 2]; }
 static void prep_step(Cont *k, uint64_t v) {
@@ -119,13 +119,15 @@ static void prep_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     L->p = prop_of(k->w[0]);
+    /* the premises: the closure of the schema, the states and the witness at
+     * the snapshot this key names (w[1]) */
     {   size_t n; const uint64_t *sc = rget(L->p.schema, &n); require(sc[0] == T_SCHEMA, "a proposal without a schema");
-        WordBuf roots; wordbuf_init(&roots);
-        wordbuf_push(&roots, 0); wordbuf_push(&roots, sc[1]); wordbuf_push(&roots, 0); wordbuf_push(&roots, sc[3]);
-        for (size_t i = 0; i < L->p.nin + L->p.nout; i++) { wordbuf_push(&roots, 0); wordbuf_push(&roots, state_at(&L->p, i)); }
-        wordbuf_push(&roots, 0); wordbuf_push(&roots, L->p.witness); wordbuf_push(&roots, 0); wordbuf_push(&roots, L->p.wtype);
-        k->w[2] = (uint64_t)(uintptr_t)pins_closure_sub(k, &roots); }
-    FR_CALL(k, L->P, (Cont *)(uintptr_t)k->w[2]);
+        wordbuf_init(&L->wb);
+        wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, sc[1]); wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, sc[3]); }
+    for (L->i = 0; L->i < L->p.nin + L->p.nout; L->i++) { wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, state_at(&L->p, L->i)); FR_YIELD(k); }
+    wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, L->p.witness); wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, L->p.wtype);
+    FR_CALL(k, L->r, intern_sub(k, &M.keys, &L->wb, &L->created));
+    FR_AWAIT(k, L->P, Fe_CLOSURE, L->r, k->w[1]);
     /* the state type at its declared level, exactly */
     {   size_t n; const uint64_t *sc = rget(L->p.schema, &n); L->t = sc[1]; L->r = sc[2]; }
     FR_AWAIT(k, r, Fe_JLEVEL, RQ(fc_true(), L->t, L->P), 0);
@@ -233,7 +235,7 @@ static void effect_step(Cont *k, uint64_t v) {
             FR_FINISH(k, out_rec(OUT_REQUEST_CONFLICT, 0));
         uint64_t settled = __atomic_load_n(&s[1], __ATOMIC_ACQUIRE);
         if (settled) FR_FINISH(k, settled); }
-    FR_AWAIT(k, r, F_PREP, k->w[1], 0);
+    FR_AWAIT(k, r, F_PREP, k->w[1], env_snapshot());
     {   size_t n; const uint64_t *w = rget(r, &n);
         if (w[1] == 3) FR_FINISH(k, out_rec(OUT_UNRESOLVED, 0));            /* pending, not settled */
         if (w[1] != 1) { uint64_t o = out_rec(OUT_INVALID, w[2]); settle(k->w[0], o); FR_FINISH(k, o); } }
@@ -362,17 +364,17 @@ bool church_value(RefId n, uint64_t *out) {
     TermVarId vx = declare_term(X, fc_true()); RefId x = ref_var(vx);
     RefId args[3] = { X, f, x }; RefId t = n;
     for (int q = 0; q < 3; q++) {
-        EvalResult *r = whnf(t, fc_true(), &st);
-        if (st != W_OK || r->cls != R_INTRODUCTION || ref_tag(r->ref) != T_LAM) return false;
-        t = apply_term_binder(r->ref, 0, 1, args[q]);
+        EvalResult r = whnf(t, fc_true(), &st);
+        if (st != W_OK || r.cls != R_INTRODUCTION || ref_tag(r.ref) != T_LAM) return false;
+        t = apply_term_binder(r.ref, 0, 1, args[q]);
     }
     uint64_t c = 0;
     for (;;) {
-        EvalResult *r = whnf(t, fc_true(), &st);
+        EvalResult r = whnf(t, fc_true(), &st);
         if (st != W_OK) return false;
-        if (r->ref == x) { *out = c; return true; }
-        if (ref_is_var(r->ref) || ref_tag(r->ref) != T_APP) return false;
-        Head h; open_ref(r->ref, &h);
+        if (r.ref == x) { *out = c; return true; }
+        if (ref_is_var(r.ref) || ref_tag(r.ref) != T_APP) return false;
+        Head h; open_ref(r.ref, &h);
         if (HF(&h, 0).id != f) { head_free(&h); return false; }
         t = HF(&h, 1).id; head_free(&h);
         c++;
@@ -382,19 +384,22 @@ bool church_value(RefId n, uint64_t *out) {
 uint64_t effect_request(uint64_t rid, uint64_t proposal, WhnfStatus *status) { return family_run(F_EFFECT, rid, proposal, status); }
 Family effect_family(void) { return F_EFFECT; }
 
-void effect_families_init(void) {
+void effect_state_init(void) {
     interner_init(&EF.cells); chunked_init(&EF.cellw, sizeof(uint64_t));
     interner_init(&EF.rids); chunked_init(&EF.ridw, 2 * sizeof(uint64_t));
     interner_init(&EF.issued);
     interner_init(&EF.occs); chunked_init(&EF.occd, sizeof(Desc *));
+}
+void effect_families_init(void) {
+    Fe_CLOSURE = pins_closure_family();
     Fe_JCHECK = family_lookup("judge.check"); Fe_JLEVEL = family_lookup("judge.level");
     Fe_CONSTRUCT = family_lookup("construct"); Fe_SCC = family_lookup("proof.scc");
     require(Fe_JCHECK && Fe_JLEVEL && Fe_CONSTRUCT && Fe_SCC, "the judgment, construction and proof-use families are registered first");
-    F_PREP = family_define("effect.prepare", prep_step, sizeof(PrLoc), true);
-    F_EFFECT = family_define("effect.request", effect_step, sizeof(EfLoc), false);
-    F_OCCB = family_define("occurrence.boundary", occb_step, 0, true);
+    F_PREP = family_define("effect.prepare", prep_step, sizeof(PrLoc));
+    F_EFFECT = family_define("effect.request", effect_step, sizeof(EfLoc));
+    F_OCCB = family_define("occurrence.boundary", occb_step, 0);
 }
-void effect_free(void) {
+void effect_state_free(void) {
     for (size_t c = 0, n = interner_count(&EF.occs); c < n; c++) {     /* every descriptor is indexed by its occurrence */
         Desc **p = chunked_peek(&EF.occd, c), *D = p ? *p : NULL;
         if (D) { free(D->cell); free(D->ckey); free(D->expect); free(D->after); free(D->nodes); free(D); }

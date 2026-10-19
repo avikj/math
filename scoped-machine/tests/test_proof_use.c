@@ -16,7 +16,7 @@ static void expect(ContextId G, RefId e, RefId T, ProofStatus want, size_t opaqu
 }
 static RefId equiv_action(RefId X, RefId e) { return mk_app(mk_app(mk_app(equiv_maps(0, 0), X), X), e); }
 int main(void) {
-    machine_init(); eval_init(); check_init();
+    machine_init(); check_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     RefId U = mk_universe(0); TermVarId ta = declare_term(U, fc_true()); RefId A = ref_var(ta);
     TermVarId a = declare_term(A, fc_true()); RefId av = ref_var(a);
@@ -43,17 +43,17 @@ int main(void) {
     TermVarId ignored = declare_term(P, fc_true());
     RefId program = mk_app(mk_lam_lv(0, ignored, P, p), global_ref(loop));
     expect(G, program, P, PU_PENDING, 0, 1, "producer with a dead recursive argument");
-    WhnfStatus st; EvalResult *r = whnf(program, fc_true(), &st);
-    assert(st == W_OK && r);
-    expect(G, r->ref, P, PU_CORE, 0, 0, "computed residual");
+    WhnfStatus st; EvalResult r = whnf(program, fc_true(), &st);
+    assert(st == W_OK && r.cls);
+    expect(G, r.ref, P, PU_CORE, 0, 0, "computed residual");
     RefId E = mk_equiv(0, 0, A, A), good = mk_id_equiv(0, A);
     expect(G, good, E, PU_CORE, 0, 0, "identity equivalence");
     expect(G, maps_apply(equiv_action(A, good), DIR_FORWARD, av), A, PU_CORE, 0, 0, "forward call of the equivalence action");
     DimVarId i = declare_dim();
     RefId generic = mk_papp_const(0, A, av, av, global_ref(loop), iv_var(i));
-    assert(!whnf(generic, fc_true(), &st) && st == W_STUCK);
+    assert(!whnf(generic, fc_true(), &st).cls && st == W_STUCK);
     r = whnf(reindex(generic, map_single_dim(i, iv_zero())), fc_true(), &st);
-    assert(st == W_OK && r && r->ref == av); checks++;
+    assert(st == W_OK && r.cls && r.ref == av); checks++;
     puts("PASS demand preservation: generic path application STUCK, specialized endpoint returns a");
 
     /* §88.1: a checked program is not established evidence */
@@ -71,18 +71,18 @@ int main(void) {
         RefId M = equiv_action(A, e);
         RefId forward = maps_apply(M, DIR_FORWARD, bv), reverse = maps_apply(M, DIR_REVERSE, av);
         WhnfStatus fs, rs;
-        EvalResult *fr = observe_checked(G3, forward, &fs, &why), *rr = observe_checked(G3, reverse, &rs, &why);
-        assert(fs == W_OK && fr && fr->ref == av);
-        assert(rs == W_STUCK && !rr);
+        EvalResult fr = observe_checked(G3, forward, &fs, &why), rr = observe_checked(G3, reverse, &rs, &why);
+        assert(fs == W_OK && fr.cls && fr.ref == av);
+        assert(rs == W_STUCK && !rr.cls);
         ProofUse eb = proof_use(G3, fc_true(), e, E), fb = proof_use(G3, fc_true(), forward, A);
         assert(eb.status == PU_PENDING && eb.n_recursive == 1);
         assert(fb.status == PU_PENDING && fb.n_recursive == 1);
-        assert(whnf(e, fc_true(), &fs) && fs == W_OK);
+        assert(whnf(e, fc_true(), &fs).cls && fs == W_OK);
         puts("PASS certificate boundary: typing VALID, forward = constant(a), reverse STUCK, proof use of evidence and of the call PENDING");
         proof_use_free(&eb); proof_use_free(&fb); checks++; }
     {   ProofUse b = proof_use(G, fc_false(), global_ref(loop), P); assert(b.status == PU_CORE); proof_use_free(&b); checks++;
         puts("PASS a judgment under the false face is face-local"); }
     printf("PASS proof/demand boundary: %zu cases\n", checks);
-    check_free(); eval_free(); machine_free();
+    check_free(); machine_free();
     return 0;
 }

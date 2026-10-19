@@ -261,16 +261,16 @@ void scope_families_init(void) {
     F_DSUNION = family_lookup("dimset.union"); F_VSUNION = family_lookup("varset.union");
     F_IVDIMS = family_lookup("iv.dims"); F_FCDIMS = family_lookup("fc.dims");
     require(F_MAPT && F_FCDIMS, "the substitution and construction families are registered first");
-    F_TIMGT = family_define("trav.term_image", timgt_step, sizeof(ImgLoc), true);
-    F_TIMGD = family_define("trav.dim_image", timgd_step, sizeof(ImgLoc), true);
-    F_TREF = family_define("trav.ref", tref_step, 0, true);
+    F_TIMGT = family_define("trav.term_image", timgt_step, sizeof(ImgLoc));
+    F_TIMGD = family_define("trav.dim_image", timgd_step, sizeof(ImgLoc));
+    F_TREF = family_define("trav.ref", tref_step, 0);
     F_ENVREBUILD = family_lookup("env.rebuild");
-    F_TIV = family_define("trav.interval", tiv_step, sizeof(SubLoc), true);
-    F_TFC = family_define("trav.face", tfc_step, sizeof(SubLoc), true);
-    F_TSCOPE = family_define("trav.scope", tscope_step, sizeof(ScLoc), true);
-    F_SCOPESIDE = family_define("scope.side", scopeside_step, sizeof(ScLoc), true);
-    F_SETFREE = family_define("set.free", setfree_step, sizeof(FreeLoc), true);
-    F_CAPTURE = family_define("scope.capture", capture_step, sizeof(CapLoc), true);
+    F_TIV = family_define("trav.interval", tiv_step, sizeof(SubLoc));
+    F_TFC = family_define("trav.face", tfc_step, sizeof(SubLoc));
+    F_TSCOPE = family_define("trav.scope", tscope_step, sizeof(ScLoc));
+    F_SCOPESIDE = family_define("scope.side", scopeside_step, sizeof(ScLoc));
+    F_SETFREE = family_define("set.free", setfree_step, sizeof(FreeLoc));
+    F_CAPTURE = family_define("scope.capture", capture_step, sizeof(CapLoc));
 }
 
 /* ---------------- the operations (synchronous driver) ---------------- */

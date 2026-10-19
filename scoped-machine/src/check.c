@@ -14,7 +14,7 @@
 #include "scope.h"
 #include "template.h"
 
-static size_t budget;                    /* jobs per root (0 = unlimited) */
+static size_t budget;                    /* work of a root's dependency support (0 = unlimited) */
 
 void check_init(void) { __atomic_store_n(&budget, 0, __ATOMIC_RELEASE); }
 void check_free(void) {}
@@ -185,14 +185,15 @@ ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A) { re
 /* checked observation: the context, the occurrence's inference and the
  * dependency closure validate the pinned revisions, and the observation
  * reads exactly those */
-EvalResult *observe_checked(ContextId F, RefId t, WhnfStatus *status, const char **reason) {
+EvalResult observe_checked(ContextId F, RefId t, WhnfStatus *status, const char **reason) {
     Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); PinSet P = pins_of(&R);
     uint64_t G; CheckStatus st = jctx(F, &G, reason);
     if (st == CK_VALID) { uint64_t w[3] = { G, context_assumption(F), P }; st = ck(run(JK_CTX, 3, w), reason); }
     if (st == CK_VALID) { Inference I = infer_pinned(F, context_assumption(F), t, P); st = I.st; if (st != CK_VALID) *reason = I.reason; }
     if (st == CK_VALID) st = premises(P, reason);
-    if (st == CK_INVALID) { if (status) *status = W_INVALID; return NULL; }
-    if (st == CK_UNRESOLVED) { if (status) *status = W_STUCK; return NULL; }
+    EvalResult none; memset(&none, 0, sizeof none);
+    if (st == CK_INVALID) { if (status) *status = W_INVALID; return none; }
+    if (st == CK_UNRESOLVED) { if (status) *status = W_STUCK; return none; }
     return whnf_pinned(t, context_assumption(F), P, status);
 }
 

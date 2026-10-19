@@ -56,7 +56,7 @@ ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A);
  * type of t under the context's assumption (compatible types by conversion,
  * §33 item 3), then observes. An INVALID or UNRESOLVED check yields
  * W_INVALID / W_STUCK respectively with no observation. */
-EvalResult *observe_checked(ContextId G, RefId t, WhnfStatus *status, const char **reason);
+EvalResult observe_checked(ContextId G, RefId t, WhnfStatus *status, const char **reason);
 /* validate every declared symbol with a body against its declared type
  * (the private driver of the admission transaction) */
 CheckStatus check_signature(const char **reason);

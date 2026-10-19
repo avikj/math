@@ -5,14 +5,9 @@
 static uint64_t rq(size_t n, const uint64_t *w) { return interner_intern(&M.keys, w, n, NULL); }
 #define RQ(...) rq(sizeof((uint64_t[]){ __VA_ARGS__ }) / sizeof(uint64_t), (uint64_t[]){ __VA_ARGS__ })
 
-/* a word stack in fixed-size frame-owned chunks */
-#define STK_CHUNK 500
-typedef struct StkC { struct StkC *prev; size_t n; uint64_t w[STK_CHUNK]; } StkC;
-static void push(StkC **s, uint64_t x) {
-    if (!*s || (*s)->n == STK_CHUNK) { StkC *c = frame_mem(sizeof *c); c->prev = *s; c->n = 0; *s = c; }
-    (*s)->w[(*s)->n++] = x;
-}
-static uint64_t pop(StkC **s) { uint64_t x = (*s)->w[--(*s)->n]; if (!(*s)->n) { StkC *c = *s; *s = c->prev; frame_mem_free(c); } return x; }
+/* a word stack as interned cons records [x, rest] (0 is empty) */
+static void push(uint64_t *s, uint64_t x) { *s = RQ(x, *s); }
+static uint64_t pop(uint64_t *s) { size_t n; const uint64_t *w = interner_get(&M.keys, *s, &n); *s = w[1]; return w[0]; }
 
 /* proof.scc(P, S): S the symbols of P. Vertex table: a pin trie
  * s ↦ [index, low, on-stack, self-edge, edges]; the edges of s are the
@@ -21,7 +16,7 @@ static uint64_t pop(StkC **s) { uint64_t x = (*s)->w[--(*s)->n]; if (!(*s)->n) {
  * Result [status, opaque trie, recursive trie, #opaque, #recursive]. */
 typedef struct {
     uint64_t V, opq, rec, next, nopq, nrec, cnt, root, s, b, x, cur, d, acc, m;
-    size_t ri, np, si; const uint64_t *ps; StkC *dfs, *stk, *comp; bool cyc;
+    size_t ri, np, si; const uint64_t *ps; uint64_t dfs, stk, comp; bool cyc;
 } SccLoc;
 static Family F_SCC, Fp_GLOBALS, Fp_VSUNION;
 static const uint64_t *vrec(uint64_t V, SymbolId s) { RefId r; size_t n; return pins_lookup(V, s, &r) ? interner_get(&M.keys, r, &n) : NULL; }
@@ -90,7 +85,7 @@ static void scc_step(Cont *k, uint64_t v) {
 void proof_families_init(void) {
     Fp_GLOBALS = family_lookup("globals.of"); Fp_VSUNION = family_lookup("varset.union");
     require(Fp_GLOBALS && Fp_VSUNION, "globals.of and varset.union are registered first");
-    F_SCC = family_define("proof.scc", scc_step, sizeof(SccLoc), true);
+    F_SCC = family_define("proof.scc", scc_step, sizeof(SccLoc));
 }
 
 const char *proof_status_name(ProofStatus s) {

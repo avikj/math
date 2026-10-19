@@ -23,7 +23,7 @@ static ContextId ctx_of(size_t nd, const DimVarId *ds, size_t nt, const TermVarI
 
 int main(void) {
     printf("== §33–34 checking and conversion\n");
-    machine_init(); eval_init(); check_init();
+    machine_init(); check_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     const char *why = "";
     RefId U0 = mk_universe(0), U1 = mk_universe(1);
@@ -174,19 +174,19 @@ int main(void) {
       Inference I0 = infer(G, fc_true(), global_ref(cand));
       CHECK(I0.st == CK_VALID && I0.type == A, "an opaque candidate checks at its declaration (%s)", I0.reason);
       CHECK(convert_term(G, fc_true(), global_ref(cand), a, A) == CV_UNEQUAL, "opaque candidate vs a: UNEQUAL before the body exists");
-      WhnfStatus st0; EvalResult *r0 = whnf(global_ref(cand), fc_true(), &st0);
-      CHECK(st0 == W_OK && r0->cls == R_NEUTRAL, "the opaque candidate observes as a neutral");
+      WhnfStatus st0; EvalResult r0 = whnf(global_ref(cand), fc_true(), &st0);
+      CHECK(st0 == W_OK && r0.cls == R_NEUTRAL, "the opaque candidate observes as a neutral");
       CHECK(set_global_body(cand, a), "the candidate environment accepts the body");
       CHECK(convert_term(G, fc_true(), global_ref(cand), a, A) == CV_EQUAL, "after the body cand := a the conversion is recomputed: EQUAL");
-      WhnfStatus st1; EvalResult *r1 = whnf(global_ref(cand), fc_true(), &st1);
-      CHECK(st1 == W_OK && r1->ref == a, "the observation is recomputed in the new environment");
+      WhnfStatus st1; EvalResult r1 = whnf(global_ref(cand), fc_true(), &st1);
+      CHECK(st1 == W_OK && r1.ref == a, "the observation is recomputed in the new environment");
       CHECK(check(G, fc_true(), global_ref(cand), A, &why) == CK_VALID, "the defined candidate checks (%s)", why); }
 
     /* checked observation validates its own judgment */
-    { WhnfStatus st; EvalResult *r = observe_checked(G, mk_app(id, a), &st, &why);
-      CHECK(st == W_OK && r && r->ref == a, "observe_checked: (λx.x) a ⇝ a (%s)", why);
+    { WhnfStatus st; EvalResult r = observe_checked(G, mk_app(id, a), &st, &why);
+      CHECK(st == W_OK && r.cls && r.ref == a, "observe_checked: (λx.x) a ⇝ a (%s)", why);
       r = observe_checked(G, mk_app(f, bB), &st, &why);
-      CHECK(st == W_INVALID && r == NULL, "observe_checked refuses an ill-typed occurrence: %s", why); }
+      CHECK(st == W_INVALID && r.cls == 0, "observe_checked refuses an ill-typed occurrence: %s", why); }
 
     /* a local observation imposes no registry-wide phase boundary */
     { uint64_t params[1] = { vA };
@@ -233,22 +233,22 @@ int main(void) {
       TermVarId vpa = tv(mk_path_const(0, A, a, a));
       TermVarId more[] = { vA, vB, va, vb, vbB, vf, vg, vp, vq, vz, vT, ve, vv, vpa };
       ContextId Gc = ctx_of(2, dims, 14, more, fc_true());
-      EvalResult *r;
+      EvalResult r;
       r = whnf(mk_coe_at(0, i, Sg, ref_var(vz)), fc_true(), &st);
-      CHECK(st == W_OK && check(Gc, fc_true(), r->ref, Sg, &why) == CK_VALID, "Σ clause output : Σ(x:A).B (%s)", why);
+      CHECK(st == W_OK && check(Gc, fc_true(), r.ref, Sg, &why) == CK_VALID, "Σ clause output : Σ(x:A).B (%s)", why);
       r = whnf(mk_coe_at(0, i, mk_fun(0, 0, A, B), g), fc_true(), &st);
-      CHECK(st == W_OK && check(Gc, fc_true(), r->ref, mk_fun(0, 0, A, B), &why) == CK_VALID, "Π clause output : A → B (%s)", why);
+      CHECK(st == W_OK && check(Gc, fc_true(), r.ref, mk_fun(0, 0, A, B), &why) == CK_VALID, "Π clause output : A → B (%s)", why);
       r = whnf(mk_coe_at(0, i, mk_path_const(0, A, a, a), ref_var(vpa)), fc_true(), &st);
-      CHECK(st == W_OK && check(Gc, fc_true(), r->ref, mk_path_const(0, A, a, a), &why) == CK_VALID, "PathP clause output : Path A a a (%s)", why);
+      CHECK(st == W_OK && check(Gc, fc_true(), r.ref, mk_path_const(0, A, a, a), &why) == CK_VALID, "PathP clause output : Path A a a (%s)", why);
       r = whnf(mk_coe_at(1, i, U0, A), fc_true(), &st);
-      CHECK(st == W_OK && check(Gc, fc_true(), r->ref, U0, &why) == CK_VALID, "universe clause output : U0 (%s)", why);
+      CHECK(st == W_OK && check(Gc, fc_true(), r.ref, U0, &why) == CK_VALID, "universe clause output : U0 (%s)", why);
       r = whnf(mk_coe_at(0, i, Gl, v), fc_true(), &st);
-      CheckStatus gs = check(Gc, fc_true(), r->ref, Gl, &why);
+      CheckStatus gs = check(Gc, fc_true(), r.ref, Gl, &why);
       CHECK(st == W_OK && gs == CK_VALID, "Glue clause output : Glue[(m=1) ↦ (T,e)] A — %s (%s)", check_status_name(gs), why);
       /* transport along ua(id) of a type is a type */
       RefId tr = mk_coe_at(1, i, mk_papp_const(2, U1, U0, U0, mk_ua(1, U0, U0, mk_id_equiv(1, U0)), iv_var(i)), A);
       r = whnf(tr, fc_true(), &st);
-      CHECK(st == W_OK && check(Gc, fc_true(), r->ref, U0, &why) == CK_VALID, "transport along ua(id) : U0 (%s)", why);
+      CHECK(st == W_OK && check(Gc, fc_true(), r.ref, U0, &why) == CK_VALID, "transport along ua(id) : U0 (%s)", why);
       CHECK(check(Gc, fc_true(), tr, U0, &why) == CK_VALID, "the transport itself checks by the composition rule (%s)", why);
     }
 
@@ -259,8 +259,8 @@ int main(void) {
       CHECK(check(G, fc_true(), global_ref(c1), A, &why) == CK_VALID, "an opaque constant checks at its declared type (%s)", why);
       CHECK(convert_term(G, fc_true(), global_ref(c1), a, A) == CV_UNEQUAL, "opaque constant vs a variable: UNEQUAL, no abort");
       CHECK(convert_term(G, fc_true(), global_ref(c1), global_ref(c1), A) == CV_EQUAL, "opaque constant vs itself");
-      WhnfStatus st; EvalResult *r = whnf(mk_app(f, global_ref(c1)), fc_true(), &st);
-      CHECK(st == W_OK && r->cls == R_NEUTRAL, "an opaque constant observes as a neutral");
+      WhnfStatus st; EvalResult r = whnf(mk_app(f, global_ref(c1)), fc_true(), &st);
+      CHECK(st == W_OK && r.cls == R_NEUTRAL, "an opaque constant observes as a neutral");
       /* a symbol whose body does not match its declaration is rejected on first use */
       SymbolId bad = define_global("badsym", varset_make(params, 1), dimset_make(NULL, 0), A);
       set_global_body(bad, U0);
@@ -281,11 +281,11 @@ int main(void) {
       CHECK(check(G, fc_lit(zz, 0), a, A, &why) == CK_INVALID, "a face over an undeclared dimension is rejected (%s)", why); }
 
     /* unrelated rejected definitions do not become premises of this term */
-    { WhnfStatus st; EvalResult *r = observe_checked(G, mk_app(id, a), &st, &why);
-      CHECK(st == W_OK && r && r->ref == a, "observe_checked remains local despite unrelated rejected declarations: %s", why);
+    { WhnfStatus st; EvalResult r = observe_checked(G, mk_app(id, a), &st, &why);
+      CHECK(st == W_OK && r.cls && r.ref == a, "observe_checked remains local despite unrelated rejected declarations: %s", why);
       CHECK(check_signature(&why) == CK_INVALID, "explicit whole-signature checking reports the invalid definitions (%s)", why); }
 
     printf("  %d passed, %d failed\n", np, nf);
-    check_free(); eval_free(); machine_free();
+    check_free(); machine_free();
     return nf ? 1 : 0;
 }

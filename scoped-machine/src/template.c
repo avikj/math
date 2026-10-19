@@ -302,7 +302,7 @@ static void envmap_step(Cont *k, uint64_t v) {
 static Family trav_of(PSort s) { return s == PS_REF ? F_TREF : s == PS_INTERVAL ? F_TIV : F_TFC; }
 static PSort psort_of_val(ValSort s) { return s == VS_REF ? PS_REF : s == VS_INTERVAL ? PS_INTERVAL : PS_FACE; }
 
-typedef struct { const uint64_t *w; size_t n, q; uint64_t a, b, er, S, tk; TVal t; WordBuf out; bool created; Join *J; } InLoc;
+typedef struct { const uint64_t *w; size_t n, q; uint64_t a, b, er, S, tk, r; TVal t; WordBuf out; bool created; } InLoc;
 static void interp_step(Cont *k, uint64_t v) {
     InLoc *L = FR_LOC(k, InLoc);
     ExprId e = k->w[0]; uint64_t er = k->w[1];
@@ -337,37 +337,32 @@ static void interp_step(Cont *k, uint64_t v) {
     if (L->w[0] == X_CALL) {
         /* the callee's environment: the arguments, independent demands in one join */
         require(L->w[2] == TPL.defs[L->w[1]].nparams, "template call arity (%s)", TPL.defs[L->w[1]].name);
-        L->J = join_new(k, L->w[2]);
-        for (L->q = 0; L->q < L->w[2]; L->q++) { if (L->q) FR_YIELD(k); join_request(L->J, L->q, F_INTERP, L->w[3 + L->q], er); }
-        FR_JOIN(k, L->J);
+        for (L->q = 0; L->q < L->w[2]; L->q++) { family_launch(F_INTERP, L->w[3 + L->q], er); FR_YIELD(k); }
         wordbuf_init(&L->out); wordbuf_push(&L->out, L->w[1]);
         for (L->q = 0; L->q < L->w[2]; L->q++) {
-            L->t = tvget(join_value(L->J, L->q));
+            FR_AWAIT(k, L->r, F_INTERP, L->w[3 + L->q], er);
+            L->t = tvget(L->r);
             require(L->t.sort == TPL.defs[L->w[1]].sorts[L->q], "template call sort (%s, %zu)", TPL.defs[L->w[1]].name, L->q);
             wordbuf_push(&L->out, L->q); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
-            FR_YIELD(k);
         }
-        join_free(L->J); L->J = NULL;
         FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->out, &L->created));
         FR_AWAIT(k, r, F_INTERP, TPL.defs[L->w[1]].root, L->er);
         FR_FINISH(k, r);
     }
     if (L->w[0] == X_APPLY || L->w[0] == X_APPLY_TYPE || L->w[0] == X_APPLY_GUARD) {
         /* the scope and its arguments are independent demands: one join */
-        L->J = join_new(k, 1 + L->w[2]);
-        join_request(L->J, 0, F_INTERP, L->w[1], er);
-        for (L->q = 0; L->q < L->w[2]; L->q++) { FR_YIELD(k); join_request(L->J, 1 + L->q, F_INTERP, L->w[3 + L->q], er); }
-        FR_JOIN(k, L->J);
-        L->t = tvget(join_value(L->J, 0)); require(L->t.sort == PS_SCOPE, "scope application of a non-scope");
+        family_launch(F_INTERP, L->w[1], er);
+        for (L->q = 0; L->q < L->w[2]; L->q++) { FR_YIELD(k); family_launch(F_INTERP, L->w[3 + L->q], er); }
+        FR_AWAIT(k, L->r, F_INTERP, L->w[1], er);
+        L->t = tvget(L->r); require(L->t.sort == PS_SCOPE, "scope application of a non-scope");
         L->S = L->t.id;
         require(L->w[2] == scope_arity(L->S), "scope application arity");
         wordbuf_init(&L->out);
         for (L->q = 0; L->q < L->w[2]; L->q++) {
-            L->t = tvget(join_value(L->J, 1 + L->q));
+            FR_AWAIT(k, L->r, F_INTERP, L->w[3 + L->q], er);
+            L->t = tvget(L->r);
             wordbuf_push(&L->out, L->t.sort == PS_REF ? VS_REF : L->t.sort == PS_INTERVAL ? VS_INTERVAL : VS_FACE); wordbuf_push(&L->out, L->t.id);
-            FR_YIELD(k);
         }
-        join_free(L->J); L->J = NULL;
         FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
         L->tk = trav_key(TR_APPLY, 0, id);
         if (L->w[0] == X_APPLY_TYPE) { FR_AWAIT(k, r, F_TREF, scope_type(L->S), L->tk); FR_FINISH(k, tvrec(PS_REF, r)); }
@@ -515,12 +510,12 @@ void template_families_init(void) {
     F_FCEND = family_lookup("fc.endpoint"); F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join"); F_FCFORALL = family_lookup("fc.forall"); F_FCENT = family_lookup("fc.entails");
     F_REINDEX = family_lookup("reindex"); F_IVRE = family_lookup("iv.reindex"); F_FCRE = family_lookup("fc.reindex");
     require(F_TREF && F_CAPTURE && F_REFVAR && F_FCRE, "the scope, construction and substitution families are registered first");
-    F_ENVLOOK = family_define("template.envlook", envlook_step, sizeof(LookLoc), true);
-    F_ENVSET = family_define("template.envset", envset_step, sizeof(SetLoc), true);
-    F_INTERP = family_define("template.interp", interp_step, sizeof(InLoc), true);
-    F_ENVMAP = family_define("env.map", envmap_step, sizeof(EmLoc), true);
-    F_TVMAKE = family_define("template.view", tvmake_step, sizeof(MkLoc), true);
-    F_ISCOPE = family_define("template.scope", iscope_step, sizeof(ScLoc), true);
+    F_ENVLOOK = family_define("template.envlook", envlook_step, sizeof(LookLoc));
+    F_ENVSET = family_define("template.envset", envset_step, sizeof(SetLoc));
+    F_INTERP = family_define("template.interp", interp_step, sizeof(InLoc));
+    F_ENVMAP = family_define("env.map", envmap_step, sizeof(EmLoc));
+    F_TVMAKE = family_define("template.view", tvmake_step, sizeof(MkLoc));
+    F_ISCOPE = family_define("template.scope", iscope_step, sizeof(ScLoc));
     construct_bind_template_families();
 }
 

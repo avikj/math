@@ -43,7 +43,7 @@ static void *sym_client(void *arg) {
 
 int main(void) {
     printf("== fixed templates and recursive components\n");
-    machine_init(); eval_init(); check_init();
+    machine_init(); check_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     const char *why = "";
     RefId U0 = mk_universe(0);
@@ -156,10 +156,10 @@ int main(void) {
       d[n++] = (CtxDecl){ S_DIM, i}; d[n++] = (CtxDecl){ S_DIM, k};
       for (size_t q2 = 0; q2 < 7; q2++) d[n++] = (CtxDecl){ S_TERM, ctxv[q2]};
       ContextId G = context_make(n, d, fc_true());
-      WhnfStatus st; EvalResult *r = whnf(mk_coe_at(0, i, term_var_type(vs), ref_var(vs)), fc_true(), &st);
-      CHECK(st == W_OK && check(G, fc_true(), r->ref, term_var_type(vs), &why) == CK_VALID, "Σ clause output checks (%s)", why);
+      WhnfStatus st; EvalResult r = whnf(mk_coe_at(0, i, term_var_type(vs), ref_var(vs)), fc_true(), &st);
+      CHECK(st == W_OK && check(G, fc_true(), r.ref, term_var_type(vs), &why) == CK_VALID, "Σ clause output checks (%s)", why);
       r = whnf(mk_coe_at(0, i, mk_fun(0, 0, A, B), f), fc_true(), &st);
-      CHECK(st == W_OK && check(G, fc_true(), r->ref, mk_fun(0, 0, A, B), &why) == CK_VALID, "Π clause output checks (%s)", why);
+      CHECK(st == W_OK && check(G, fc_true(), r.ref, mk_fun(0, 0, A, B), &why) == CK_VALID, "Π clause output checks (%s)", why);
       CHECK(check(G, fc_true(), mk_path_concat(0, A, a, b, c, mk_refl(0, A, a), mk_refl(0, A, b)), mk_path_const(0, A, a, c), &why) == CK_INVALID, "ill-typed concatenation is rejected");
       CHECK(check(G, fc_true(), mk_path_concat(0, A, a, a, a, mk_refl(0, A, a), mk_refl(0, A, a)), mk_path_const(0, A, a, a), &why) == CK_VALID, "refl·refl : Path A a a (%s)", why);
 
@@ -258,7 +258,7 @@ int main(void) {
       CHECK(check(GA, fc_true(), global_ref(sk), A, &why) == CK_INVALID, "a dependent of a rejected body is rejected when asked first");
       CHECK(check(GA, fc_true(), global_ref(sh), A, &why) == CK_INVALID, "the rejected body itself");
       WhnfStatus ws; const char *r2 = "";
-      CHECK(observe_checked(GA, global_ref(sk), &ws, &r2) == NULL && ws == W_INVALID, "no checked observation through a rejected component");
+      CHECK(observe_checked(GA, global_ref(sk), &ws, &r2).cls == 0 && ws == W_INVALID, "no checked observation through a rejected component");
       /* concurrent clients validating a recursive component from both ends */
       sym_ctx = GA; sym_type = A;
       SymbolId s1 = define_global("mc1", params, nod, A), s2 = define_global("mc2", params, nod, A);
@@ -283,6 +283,6 @@ int main(void) {
       pthread_barrier_destroy(&gate); }
 
     printf("  %d passed, %d failed\n", np, nf);
-    check_free(); eval_free(); machine_free();
+    check_free(); machine_free();
     return nf ? 1 : 0;
 }

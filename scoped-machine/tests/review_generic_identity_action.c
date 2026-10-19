@@ -27,7 +27,7 @@ static void verify(ContextId G,RefId t,RefId T,const char *name) {
     printf("PASS %s\n",name);
 }
 int main(void) {
-    machine_init(); eval_init(); check_init();
+    machine_init(); check_init();
     RefId U=mk_universe(0); TermVarId vB=declare_term(U,fc_true()); RefId B=ref_var(vB);
     CtxDecl decl={S_TERM,vB}; ContextId G=context_make(1,&decl,fc_true());
     RefId DT=w_diagram_type(B); uint64_t level=99; const char *why="";
@@ -52,5 +52,5 @@ int main(void) {
     { Inference I=infer(context_make(0,NULL,fc_true()),fc_true(),id_action(0,0,0));
       if(I.st!=CK_VALID) { fprintf(stderr,"production id_action: %s %s\n",check_status_name(I.st),I.reason?I.reason:""); abort(); }
       printf("PASS production id_action(0,0,0) with both inverse proofs is a closed typed term\n"); }
-    check_free(); eval_free(); machine_free(); return 0;
+    check_free(); machine_free(); return 0;
 }

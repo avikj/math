@@ -386,15 +386,15 @@ static void tboundary_step(Cont *k, uint64_t v) {
 void chain_families_init(void) {
     Fc_IVRE = family_lookup("iv.reindex");
     require(Fc_IVRE, "the substitution families are registered first");
-    Fc_REIDX = family_define("cube.reindex", reindex_step, sizeof(RxLoc), true);
-    Fc_FACE = family_define("cell.face", face_step, sizeof(FcLoc), true);
-    Fc_ADD = family_define("chain.add", add_step, sizeof(AddLoc), true);
-    Fc_SCALE = family_define("chain.scale", scale_step, sizeof(AddLoc), true);
-    Fc_BOUNDARY = family_define("chain.boundary", boundary_step, sizeof(BdLoc), true);
-    Fc_VALUE = family_define("cochain.value", value_step, sizeof(ValLoc), true);
-    Fc_PAIR = family_define("chain.pair", pair_step, sizeof(PairLoc), true);
-    Fc_MAP = family_define("chain.map", map_step, sizeof(MapLoc), true);
-    Fc_TBOUNDARY = family_define("chain.twisted_boundary", tboundary_step, sizeof(TbLoc), true);
+    Fc_REIDX = family_define("cube.reindex", reindex_step, sizeof(RxLoc));
+    Fc_FACE = family_define("cell.face", face_step, sizeof(FcLoc));
+    Fc_ADD = family_define("chain.add", add_step, sizeof(AddLoc));
+    Fc_SCALE = family_define("chain.scale", scale_step, sizeof(AddLoc));
+    Fc_BOUNDARY = family_define("chain.boundary", boundary_step, sizeof(BdLoc));
+    Fc_VALUE = family_define("cochain.value", value_step, sizeof(ValLoc));
+    Fc_PAIR = family_define("chain.pair", pair_step, sizeof(PairLoc));
+    Fc_MAP = family_define("chain.map", map_step, sizeof(MapLoc));
+    Fc_TBOUNDARY = family_define("chain.twisted_boundary", tboundary_step, sizeof(TbLoc));
     Fc_OCCB = 0;                                         /* the effect layer's, looked up at first use */
 }
 

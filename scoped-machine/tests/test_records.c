@@ -54,8 +54,8 @@ static void *racer(void *p) {
 }
 
 int main(void) {
-    machine_init(); eval_init();
-    F_BUILD = family_define("test.build", build_step, sizeof(BuildLoc), true);
+    machine_init();
+    F_BUILD = family_define("test.build", build_step, sizeof(BuildLoc));
     interner_init(&T);
     /* agreement with the synchronous interner */
     uint64_t w[10000];
@@ -142,7 +142,7 @@ int main(void) {
     }
     CHECK(ok, "every published record holds its words");
     interner_free(&T);
-    eval_free(); machine_free();
+    machine_free();
     printf("%d failures\n", failures);
     return failures != 0;
 }

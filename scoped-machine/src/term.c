@@ -380,6 +380,7 @@ SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId t
     Def *d = DEF(s);
     d->params = params; d->dims = dims; d->name = name; d->type = type;
     __atomic_store_n(&d->ctx, ctx, __ATOMIC_RELEASE);
+    __atomic_add_fetch(&M.env_gen, 1, __ATOMIC_RELEASE);
     return s;
 }
 
@@ -388,6 +389,7 @@ bool set_global_body(SymbolId s, RefId body) {
     Def *d = DEF(s);
     require(d->body == 0, "definition environment is immutable: %s already defined", d->name);
     __atomic_store_n(&d->body, body, __ATOMIC_RELEASE);
+    __atomic_add_fetch(&M.env_gen, 1, __ATOMIC_RELEASE);
     return true;
 }
 

@@ -8,7 +8,7 @@ static int failures;
 #define CHECK(c, m) do { if (!(c)) { failures++; printf("FAIL: %s\n", m); } else printf("ok: %s\n", m); } while (0)
 
 int main(void) {
-    machine_init(); eval_init();
+    machine_init();
     RefId U0 = mk_universe(0);
     TermVarId vA = declare_term(U0, fc_true()); RefId A = ref_var(vA);
     TermVarId x = declare_term(A, fc_true()), y = declare_term(A, fc_true()), z = declare_term(A, fc_true());
@@ -32,12 +32,7 @@ int main(void) {
     MapId o = map_override(rho, S_TERM, x, Z);
     CHECK(map_term_image(o, x) == Z && map_dim_image(o, i) == map_dim_image(rho, i), "override replaces one entry");
     CHECK(map_override(rho, S_TERM, x, X) == map_override(map_identity(), S_DIM, i, map_dim_image(rho, i)), "an identity entry is dropped");
-    /* scheduled substitution agrees with the inline driver */
-    eval_reset();
-    WhnfStatus st;
-    RefId sched = family_run(family_lookup("reindex"), t, rs, &st);
-    CHECK(st == W_OK && sched == reindex(t, rs), "scheduled substitution = inline substitution");
-    eval_free(); machine_free();
+    machine_free();
     printf("%d failures\n", failures);
     return failures != 0;
 }

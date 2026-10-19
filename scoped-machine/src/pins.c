@@ -80,9 +80,12 @@ size_t pins_symbols(PinSet P, SymbolId *out, size_t max) { return list(P, out, m
 
 /* ---- the closure: the symbols named by the roots, then by the declaration
  * (type, parameter types) and the body revision of each symbol reached, each
- * symbol pinned once at the revision read then. One work queue of items
- * (0 reference | 1 scope, x) to walk and (2, s) to pin. ---- */
-typedef struct { WordBuf roots; size_t rpos, rbase; const uint64_t *g; size_t ng, q; uint64_t P, x, kind; } ClLoc;
+ * symbol pinned once at the revision read then. Keyed by (roots, snapshot):
+ * the roots record [kind, id]* (0 a reference, 1 a scope) and the definition
+ * environment snapshot it reads (§79.2: dependency validation keyed by the
+ * immutable snapshot). One work queue of items (0 | 1, x) to walk and
+ * (2, s) to pin. ---- */
+typedef struct { WordBuf roots; size_t rpos, rbase, n, q; const uint64_t *g, *w; size_t ng; uint64_t P, x, kind; } ClLoc;
 static Family F_CLOSURE, F_GLOBALSP;
 /* pop the next word of a buffer consumed from its head (pages released) */
 static bool buf_pop(WordBuf *b, size_t *pos, size_t *base, uint64_t *out) {
@@ -96,6 +99,10 @@ static void closure_step(Cont *k, uint64_t v) {
     ClLoc *L = FR_LOC(k, ClLoc);
     uint64_t r = 0;
     FR_BEGIN(k);
+    require(k->w[1] == __atomic_load_n(&M.env_gen, __ATOMIC_ACQUIRE), "a closure of a snapshot that is no longer current");
+    L->w = interner_get(&M.keys, k->w[0], &L->n);
+    wordbuf_init(&L->roots);
+    for (L->q = 0; L->q < L->n; L->q++) { wordbuf_push(&L->roots, L->w[L->q]); FR_YIELD(k); }
     L->P = pins_empty();
     while (buf_pop(&L->roots, &L->rpos, &L->rbase, &L->kind)) {
         buf_pop(&L->roots, &L->rpos, &L->rbase, &L->x);
@@ -110,6 +117,7 @@ static void closure_step(Cont *k, uint64_t v) {
             FR_YIELD(k);
             continue;
         }
+        if (!L->x) { FR_YIELD(k); continue; }
         FR_AWAIT(k, r, F_GLOBALSP, L->x, L->kind);
         L->g = varset_get(r, &L->ng);
         for (L->q = 0; L->q < L->ng; L->q++) { push2(&L->roots, 2, L->g[L->q]); FR_YIELD(k); }
@@ -118,21 +126,18 @@ static void closure_step(Cont *k, uint64_t v) {
     FR_FINISH(k, L->P);
     FR_END(k);
 }
-Cont *pins_closure_sub(const Cont *caller, WordBuf *roots) {
-    Cont *c = frame_sub(F_CLOSURE, caller);
-    ClLoc *L = FR_LOC(c, ClLoc); L->roots = *roots; wordbuf_init(roots);
-    return c;
-}
+Family pins_closure_family(void) { return F_CLOSURE; }
+uint64_t env_snapshot(void) { return __atomic_load_n(&M.env_gen, __ATOMIC_ACQUIRE); }
 PinSet pins_current(size_t n, const RefId *refs) {
-    Cont *f = frame_new(F_CLOSURE, 0);
-    ClLoc *L = FR_LOC(f, ClLoc); wordbuf_init(&L->roots);
-    for (size_t q = 0; q < n; q++) if (refs[q]) { wordbuf_push(&L->roots, 0); wordbuf_push(&L->roots, refs[q]); }
-    WhnfStatus st; PinSet P = frame_run(f, &st);
-    require(st == W_OK, "the closure of an observation's premises did not complete");
-    return P;
+    uint64_t *w = malloc((2 * n + 1) * sizeof *w); require(w, "out of memory");
+    size_t m = 0;
+    for (size_t q = 0; q < n; q++) if (refs[q]) { w[m++] = 0; w[m++] = refs[q]; }
+    uint64_t roots = interner_intern(&M.keys, w, m, NULL);
+    free(w);
+    return family_call(F_CLOSURE, roots, env_snapshot());
 }
 void pins_families_init(void) {
     F_GLOBALSP = family_lookup("globals.of");
     require(F_GLOBALSP, "globals.of is registered first");
-    F_CLOSURE = family_define("pins.closure", closure_step, sizeof(ClLoc), false);
+    F_CLOSURE = family_define("pins.closure", closure_step, sizeof(ClLoc));
 }

@@ -109,13 +109,12 @@ static uint64_t refund_proposal(uint64_t port, uint64_t from, uint64_t cap, uint
 
 /* agents: concurrent clients of effect requests */
 typedef struct { uint64_t rid, P, out; pthread_barrier_t *gate; } Client;
-static void ignore(void *ctx, EvalResult *r) { (void)ctx; (void)r; }
 static void *client(void *p) { Client *c = p; WhnfStatus st; pthread_barrier_wait(c->gate); c->out = effect_request(c->rid, c->P, &st); return NULL; }
 
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("== witnessed effects: the EFFECT-AUTHORITY §10 witness\n");
-    machine_init(); eval_init(); check_init();
+    machine_init(); check_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     cash_types(); cash_edges();
     for (uint64_t k = 0; k < 16; k++) NUMS[k] = num(k);
@@ -130,9 +129,9 @@ int main(void) {
     /* 1. identity evidence computed at runtime: p = (λn. refl n)(add 3 2), evaluated */
     TermVarId vn = declare_term(N, fc_true());
     RefId lemma = mk_lam_lv(1, vn, N, mk_refl(1, N, ref_var(vn)));
-    EvalResult *ev = whnf(mk_app(lemma, add(num(3), num(2))), fc_true(), &st);
-    CHECK(st == W_OK && ev->cls == R_INTRODUCTION, "the runtime computation yields identity evidence");
-    RefId p_add = ev->ref;
+    EvalResult ev = whnf(mk_app(lemma, add(num(3), num(2))), fc_true(), &st);
+    CHECK(st == W_OK && ev.cls == R_INTRODUCTION, "the runtime computation yields identity evidence");
+    RefId p_add = ev.ref;
 
     /* 3. send 2 from A to B, stopped right after acceptance */
     uint64_t cut0 = cut_chain();
@@ -168,7 +167,7 @@ int main(void) {
     CHECK(outcome_kind(o3) == OUT_ACCEPTED && outcome_kind(o4) == OUT_ACCEPTED, "the return send and receive are accepted");
     CHECK(bal(A_) == 5 && bal(B_) == 3, "the external balances are the initial ones");
     CHECK(effect_head(A_) != A0 && effect_head(B_) != B0 && head_occurrence(effect_head(A_)) == outcome_occurrence(o4), "the heads are new occurrences: the accepted history changed");
-    CHECK(receipt_accepted(E1) && whnf(mk_app(lemma, add(num(3), num(2))), fc_true(), &st) == ev, "the first receipt stays accepted and the computed identity is the same retained fact");
+    CHECK(receipt_accepted(E1) && whnf(mk_app(lemma, add(num(3), num(2))), fc_true(), &st).ref == ev.ref, "the first receipt stays accepted and the computed identity is the same retained fact");
 
     /* 8. a second incompatible acceptance from a consumed port, and equal payloads */
     uint64_t again = effect_request(2003, recv_proposal(m, B_, capB, 3, 2), &st);
@@ -270,11 +269,10 @@ int main(void) {
         RefId prod = mk_pair_at_lv(1, S, num(2), global_ref(loop));
         RefId pre = mk_fst(prod);
         uint64_t d0 = rd(RD_DELIVER, 0);
-        eval_request(pre, fc_true(), cont_external(ignore, NULL, NULL));          /* waiting before publication */
-        EvalResult *r1 = whnf(pre, fc_true(), &st);                               /* drives; a second consumer */
-        EvalResult *r2 = whnf(pre, fc_true(), &st);                               /* after publication */
-        uint64_t q; CHECK(r1 && r1 == r2 && church_value(r1->ref, &q) && q == 2, "both consumers read the prefix 2");
-        CHECK(rd(RD_DELIVER, 0) - d0 >= 3, "three counted deliveries");
+        EvalResult r1 = whnf(pre, fc_true(), &st);                               /* drives the producer */
+        EvalResult r2 = whnf(pre, fc_true(), &st);                               /* a consumer after publication */
+        uint64_t q; CHECK(r1.cls && r1.ref == r2.ref && church_value(r1.ref, &q) && q == 2, "both consumers read the prefix 2");
+        CHECK(rd(RD_DELIVER, 0) - d0 >= 2, "two counted deliveries");
         WhnfStatus ts; whnf(mk_snd(prod), fc_true(), &ts);
         CHECK(ts == W_STUCK, "the tail stays pending"); }
 
@@ -312,6 +310,6 @@ int main(void) {
         exact_free(&W); exact_free(&W1); exact_free(&W2); }
 
     printf("  %d passed, %d failed\n", np, nf);
-    check_free(); eval_free(); machine_free();
+    check_free(); machine_free();
     return nf ? 1 : 0;
 }

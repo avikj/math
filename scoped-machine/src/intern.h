@@ -12,8 +12,8 @@
  * publication by CAS. A large record is identified by a canonical tree of
  * small records (its content identity, built by a number of units fixed by
  * its length); its contiguous record is the value of one owner keyed by the
- * tree root (`intern.flatten` under the evaluator, an inline claim without
- * one), which every other requester awaits.
+ * tree root (the `intern.flatten` producer), which every other requester
+ * awaits.
  */
 #ifndef CUBICAL_INTERN_H
 #define CUBICAL_INTERN_H
@@ -70,7 +70,7 @@ enum { TREE_LEAF = 1, TREE_NODE = 2, TREE_ROOT = 3 };
 extern __thread int intern_in_step;   /* set by the evaluator around a counted step */
 Interner *interner_by_index(size_t index);
 /* the evaluator's route to a large record's flat record: request the
- * flatten key from a root (NULL: no evaluator, an inline claim) */
+ * flatten key from a root (the interner sits below the evaluator) */
 typedef uint64_t (*FlattenHook)(Interner *t, uint64_t root);
 void interner_set_flatten_hook(FlattenHook h);
 /* the flatten owner's operations (one owner per (table, root)) */

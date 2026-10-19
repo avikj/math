@@ -148,7 +148,7 @@ static void equal(ContextId G,RefId a,RefId b,RefId T,const char *label) {
 }
 int main(int argc,char **argv) {
     int workers=argc>1?atoi(argv[1]):0;
-    machine_init();eval_init();check_init();eval_set_workers(workers);
+    machine_init();check_init();eval_set_workers(workers);
     check_set_budget(0);assert(eval_workers()==(size_t)workers);
     printf("actual_workers=%zu\n",eval_workers());fflush(stdout);
     ContextId empty=context_make(0,NULL,fc_true());
@@ -164,13 +164,13 @@ int main(int argc,char **argv) {
             Typed n=node_program(levels[j][0],levels[j][1],levels[j][2]);
             valid(empty,dg_node(levels[j][0],levels[j][1],levels[j][2]),n.type,"production node at the witnessed type");
         }
-        check_free();eval_free();machine_free();return 0;
+        check_free();machine_free();return 0;
     }
     Typed N=node_program(0,0,0);
     valid(empty,N.value,N.type,"closed nonempty node, arbitrary dependent runtime tail, all four fields");
     valid(empty,dg_node(0,0,0),N.type,"production node at the witnessed type");
     if(argc>2 && !strcmp(argv[2],"generic")) {
-        check_free();eval_free();machine_free();return 0;
+        check_free();machine_free();return 0;
     }
     RefId U=mk_universe(0);TermVarId vA=var(U);RefId A=ref_var(vA);
     TermVarId vt=var(A),vy=var(A);RefId t=ref_var(vt),y=ref_var(vy),P=mk_path_const(0,A,t,y);
@@ -196,5 +196,5 @@ int main(int argc,char **argv) {
     equal(G,mk_papp_const(0,P,fw,p,kp,iv_one()),p,P,"first proof target endpoint");
     equal(G,mk_papp_const(0,S,gw,w,hw,iv_zero()),gw,S,"second proof source endpoint");
     equal(G,mk_papp_const(0,S,gw,w,hw,iv_one()),w,S,"second proof target endpoint");
-    check_free();eval_free();machine_free();return 0;
+    check_free();machine_free();return 0;
 }

@@ -293,53 +293,51 @@ static void unfold_step(Cont *k, uint64_t v) {
  * (kind 1) names directly — through its field constants, its environment
  * values and, for a global reference, its own symbol. Bodies are not entered (that is the closure of an
  * observation's premises, pins.c). A set of symbol ids (a varset). */
-typedef struct { size_t n, q, nf, m; Join *J; uint64_t acc; } GlLoc;
+typedef struct { size_t n, q, nf; uint64_t acc, f, a, b, r; } GlLoc;
 static Family F_GLOBALS;
+/* the demand for item q of x (kind w[1]): a family key, or none (f = 0) */
+static void gl_item(const Cont *k, size_t q, size_t nf, uint64_t *f, uint64_t *a, uint64_t *b) {
+    uint64_t x = k->w[0]; *f = 0; *a = *b = 0;
+    if (k->w[1] == 1) {
+        size_t n = scope_arity(x);
+        RefId r = q < n ? scope_local(x, q).type : q == n ? scope_type(x) : (scope_body(x).sort == VS_REF ? scope_body(x).id : 0);
+        if (r) { *f = F_GLOBALS; *a = r; }
+        return;
+    }
+    TNodeId Q = ref_tnode(x); uint64_t sort = PS_LEVEL, id = 0;
+    if (q < nf) { if (tnode_field_kind(Q, q) == F_REF) { sort = PS_REF; id = tnode_const_field(Q, q); } }
+    else { uint64_t slot; TVal val; tenv_entry(ref_tenv(x), q - nf, &slot, &val); sort = val.sort; id = val.id; }
+    if (sort == PS_REF && id) { *f = F_GLOBALS; *a = id; }
+    else if (sort == PS_SCOPE) { *f = F_GLOBALS; *a = id; *b = 1; }
+}
 static void globals_step(Cont *k, uint64_t v) {
     GlLoc *L = FR_LOC(k, GlLoc);
     uint64_t x = k->w[0];
     FR_BEGIN(k);
     L->acc = varset_make(NULL, 0);
-    if (k->w[1] == 1) {
-        /* a scope: the local types, the result type, a reference body */
-        L->n = scope_arity(x); L->m = L->n + 2;
-        L->J = join_new(k, L->m);
-        for (L->q = 0; L->q < L->n + 2; L->q++) {
-            {   RefId r = L->q < L->n ? scope_local(x, L->q).type : L->q == L->n ? scope_type(x) : (scope_body(x).sort == VS_REF ? scope_body(x).id : 0);
-                if (r) join_request(L->J, L->q, F_GLOBALS, r, 0); else join_fill(L->J, L->q, L->acc); }
-            FR_YIELD(k);
-        }
-    } else {
+    if (k->w[1] == 1) { L->nf = 0; L->n = scope_arity(x) + 2; }
+    else {
         if (ref_is_var(x)) FR_FINISH(k, L->acc);
         {   TNodeId Q = ref_tnode(x);
             if (tnode_is_construction(Q)) {
-                Tag tag = tnode_tag(Q);
-                if (tag == T_GLOBAL) { uint64_t s = tnode_const_payload(Q); L->acc = varset_make(&s, 1); }
-                L->nf = tnode_nfields(Q); L->n = L->nf + tenv_size(ref_tenv(x));
-            } else { L->nf = 0; L->n = tenv_size(ref_tenv(x)); }   /* a template program names no symbol: its environment's values */
-        }
-        L->m = L->n;
-        L->J = join_new(k, L->m);
-        for (L->q = 0; L->q < L->n; L->q++) {
-            {   TNodeId Q = ref_tnode(x); uint64_t sort = PS_LEVEL, id = 0;
-                if (L->q < L->nf) {
-                    if (tnode_field_kind(Q, L->q) == F_REF) { sort = PS_REF; id = tnode_const_field(Q, L->q); }
-                } else {
-                    uint64_t slot; TVal val; tenv_entry(ref_tenv(x), L->q - L->nf, &slot, &val); sort = val.sort; id = val.id;
-                }
-                if (sort == PS_REF && id) join_request(L->J, L->q, F_GLOBALS, id, 0);
-                else if (sort == PS_SCOPE) join_request(L->J, L->q, F_GLOBALS, id, 1);
-                else join_fill(L->J, L->q, varset_make(NULL, 0)); }
-            if (L->q + 1 < L->n) FR_YIELD(k);
-        }
+                if (tnode_tag(Q) == T_GLOBAL) { uint64_t s = tnode_const_payload(Q); L->acc = varset_make(&s, 1); }
+                L->nf = tnode_nfields(Q);
+            } else L->nf = 0;                                  /* a template program names no symbol: its environment's values */
+            L->n = L->nf + tenv_size(ref_tenv(x)); }
     }
-    FR_JOIN(k, L->J);
-    for (L->q = 0; L->q < L->m; L->q++) {
-        {   size_t m; (void)varset_get(join_value(L->J, L->q), &m); L->n = m; }
-        if (!L->n) { FR_YIELD(k); continue; }               /* an empty set is still one step */
-        FR_AWAIT(k, L->acc, F_VSUNION, L->acc, join_value(L->J, L->q));
+    /* the items' symbol sets are independent demands: launched, then awaited in order */
+    for (L->q = 0; L->q < L->n; L->q++) {
+        gl_item(k, L->q, L->nf, &L->f, &L->a, &L->b);
+        if (L->f) family_launch((Family)L->f, L->a, L->b);
+        FR_YIELD(k);
     }
-    join_free(L->J); L->J = NULL;
+    for (L->q = 0; L->q < L->n; L->q++) {
+        gl_item(k, L->q, L->nf, &L->f, &L->a, &L->b);
+        if (!L->f) { FR_YIELD(k); continue; }
+        FR_AWAIT(k, L->r, (Family)L->f, L->a, L->b);
+        {   size_t m; (void)varset_get(L->r, &m); if (!m) { FR_YIELD(k); continue; } }
+        FR_AWAIT(k, L->acc, F_VSUNION, L->acc, L->r);
+    }
     FR_FINISH(k, L->acc);
     FR_END(k);
 }
@@ -352,15 +350,15 @@ void construct_families_init(void) {
     F_DSREMOVE = family_lookup("dimset.remove"); F_VSREMOVE = family_lookup("varset.remove");
     F_FCMEET = family_lookup("fc.meet"); F_FCJOIN = family_lookup("fc.join"); F_FCFORALL = family_lookup("fc.forall");
     require(F_REINDEX && F_FCFORALL, "the substitution families are registered first");
-    F_REFVAR = family_define("ref.var", refvar_step, sizeof(VarLoc), true);
-    F_FCDIMS = family_define("fc.dims", fcdims_step, sizeof(DimsLoc), true);
-    F_FIELD = family_define("field", field_step, sizeof(FieldLoc), true);
-    F_BINDER = family_define("binder", binder_step, sizeof(BindLoc), true);
-    F_CONSTRUCT = family_define("construct", construct_step, sizeof(ConLoc), true);
-    F_HEAD = family_define("head.annotation", head_step, 0, true);
-    F_GARGS = family_define("global.args", gargs_step, sizeof(UnfLoc), true);
-    F_UNFOLD = family_define("global.unfold", unfold_step, 0, true);    /* keyed by (reference, body revision) */
-    F_GLOBALS = family_define("globals.of", globals_step, sizeof(GlLoc), true);
+    F_REFVAR = family_define("ref.var", refvar_step, sizeof(VarLoc));
+    F_FCDIMS = family_define("fc.dims", fcdims_step, sizeof(DimsLoc));
+    F_FIELD = family_define("field", field_step, sizeof(FieldLoc));
+    F_BINDER = family_define("binder", binder_step, sizeof(BindLoc));
+    F_CONSTRUCT = family_define("construct", construct_step, sizeof(ConLoc));
+    F_HEAD = family_define("head.annotation", head_step, 0);
+    F_GARGS = family_define("global.args", gargs_step, sizeof(UnfLoc));
+    F_UNFOLD = family_define("global.unfold", unfold_step, 0);    /* keyed by (reference, body revision) */
+    F_GLOBALS = family_define("globals.of", globals_step, sizeof(GlLoc));
 }
 /* the template families register after the construction families; their ids are read lazily */
 void construct_bind_template_families(void) { F_TVMAKE = family_lookup("template.view"); F_INTERP = family_lookup("template.interp"); F_ENVSET = family_lookup("template.envset"); require(F_INTERP && F_ENVSET, "template families"); }

@@ -66,6 +66,7 @@ uint64_t receipt_view_occurrence(uint64_t view);
 bool church_value(RefId n, uint64_t *out);
 
 void effect_families_init(void);
-void effect_free(void);
+void effect_state_init(void);   /* the authority cells, request index and descriptors of one machine */
+void effect_state_free(void);
 
 #endif

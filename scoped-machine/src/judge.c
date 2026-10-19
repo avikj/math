@@ -76,7 +76,7 @@ bool jc_dim(uint64_t G, DimVarId j) { return pins_lookup(jcw(G)[4], 2 * j + 1, N
 /* ---------------- families used ---------------- */
 static Family Jf_FCMEET, Jf_FCJOIN, Jf_FCENT, Jf_FCPROJ, Jf_FCDIMS, Jf_IVDIMS, Jf_DSUNION, Jf_REINDEX, Jf_IVRE, Jf_FCRE,
               Jf_FIELD, Jf_BINDER, Jf_HEAD, Jf_REFVAR, Jf_TVMAKE, Jf_OVERRIDE, Jf_INTERP, Jf_ENVLOOK, Jf_SCOPESIDE,
-              Jf_TREF, Jf_TIV, Jf_TFC, Jf_GARGS, Jf_MAPT, Jf_MAPD;
+              Jf_TREF, Jf_TIV, Jf_TFC, Jf_GARGS, Jf_MAPT, Jf_MAPD, Jf_OBS;
 static Family J_CLAUSES, J_JDIMS, J_JCOF, J_GENERIC, J_GMAP, J_OBSHEAD, J_LEVEL, J_INFER, J_HEAD, J_CHECK, J_CONVT, J_CONVt, J_SPINE,
               J_GLUEOK, J_TVIEW, J_TBOUND, J_SCOPEN, J_SCOWN, J_SCARG, J_MAP, J_CTX, J_CTXD, J_DECLOK, J_NODE, J_DECL, J_BODY,
               J_RV, J_RVD, J_EQUIV, J_DIMSIN, J_CMAP, J_APREFIX, J_SCOPE;
@@ -86,13 +86,13 @@ typedef struct {
     uint64_t x, y, z, u, a0, a1, a2, a3, a4, a5, T, D, PP, G2, l1, l2, res, cl, tag, lv, m, w0;
     size_t q, n, nc, c, i, j2, d, dn;
     const uint64_t *lw;
-    EvalResult *r1, *r2;
-    Join *J;
-    uint64_t *arr;
+    uint64_t r1, r2;
     WordBuf wb, wc; bool created;
 } JL;
 #define JLOC JL *L = FR_LOC(k, JL); uint64_t r = 0; size_t nq_; const uint64_t *q = rget(k->w[0], &nq_); (void)q; (void)r
 #define JAW(var, fam, req) FR_AWAIT(k, var, fam, req, 0)
+#define R1 res_get(L->r1)
+#define R2 res_get(L->r2)
 /* a local judgment [χ, subjects…, P] is keyed at (π_S χ, subjects, P), S the
  * support of its subjects (§5 projection theorem), as whnf.observe keys whnf */
 static Family J_REQ;
@@ -289,12 +289,11 @@ static void gmap_step(Cont *k, uint64_t v) {
 static void obshead_step(Cont *k, uint64_t v) {
     JLOC;
     FR_BEGIN(k);
-    FR_CALL(k, r, observe_sub(k, q[1], q[0], q[3]));
-    L->r1 = (EvalResult *)(uintptr_t)r;
-    if (L->r1->cls == R_INVALID || L->r1->cls == R_NO_OBSERVATION) BAD(L->r1->message ? L->r1->message : "invalid observation");
-    if (L->r1->cls != R_INTRODUCTION) BAD("expected a type former, found a neutral or system");
-    if (ref_tag(L->r1->ref) != (Tag)q[2]) BAD("type former mismatch");
-    DONE(J_OK, NULL, L->r1->ref, 0, 0);
+    FR_AWAIT(k, L->r1, Jf_OBS, q[1], observe_key(q[0], 0, q[3]));
+    if (R1.cls == R_INVALID || R1.cls == R_NO_OBSERVATION) BAD(R1.message ? R1.message : "invalid observation");
+    if (R1.cls != R_INTRODUCTION) BAD("expected a type former, found a neutral or system");
+    if (ref_tag(R1.ref) != (Tag)q[2]) BAD("type former mismatch");
+    DONE(J_OK, NULL, R1.ref, 0, 0);
     FR_END(k);
 }
 /* the universe level of a type under a clause: [code, reason, level] */
@@ -565,55 +564,63 @@ static void head_step(Cont *k, uint64_t v) {
         DONE(J_OK, NULL, r, 0, 0);
     }
     if (L->tag == T_SYSTEM) {
+        /* guards and branch types are keyed values (fields, the inference of
+         * a branch under its consistent guard): read again where needed */
         L->n = tnode_nfields(ref_tnode(t)) / 2;
-        L->arr = frame_mem((2 * L->n + 1) * sizeof(uint64_t));       /* guards, then types */
         L->x = fc_false();
         for (L->i = 0; L->i < L->n; L->i++) {
-            FR_AWAIT(k, L->arr[L->i], Jf_FIELD, t, 2 * L->i);
-            FR_AWAIT(k, L->x, Jf_FCJOIN, L->x, L->arr[L->i]);
+            FR_AWAIT(k, L->y, Jf_FIELD, t, 2 * L->i);
+            FR_AWAIT(k, L->x, Jf_FCJOIN, L->x, L->y);
         }
         FR_AWAIT(k, r, Jf_FCENT, C, L->x);
-        if (r != 2) { frame_mem_free(L->arr); L->arr = NULL; BAD("system does not cover the face"); }
+        if (r != 2) BAD("system does not cover the face");
         L->j2 = L->n;                                                   /* the selected branch */
         for (L->i = 0; L->i < L->n; L->i++) {
-            FR_AWAIT(k, L->y, Jf_FCDIMS, L->arr[L->i], 0);
-            for (L->lw = dimset_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) { frame_mem_free(L->arr); L->arr = NULL; BAD("system guard mentions an undeclared dimension"); } FR_YIELD(k); }
-            FR_AWAIT(k, L->y, Jf_FCMEET, C, L->arr[L->i]);
-            L->arr[L->n + L->i] = 0;
+            FR_AWAIT(k, L->u, Jf_FIELD, t, 2 * L->i);
+            FR_AWAIT(k, L->y, Jf_FCDIMS, L->u, 0);
+            for (L->lw = dimset_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("system guard mentions an undeclared dimension"); FR_YIELD(k); }
+            FR_AWAIT(k, L->y, Jf_FCMEET, C, L->u);
             if (fc_is_false(L->y)) continue;
             FR_AWAIT(k, L->z, Jf_FIELD, t, 2 * L->i + 1);
             JRQ(L->res, J_INFER, RQ(L->y, L->z, P));
-            if (jr_code(L->res) != J_OK) { frame_mem_free(L->arr); L->arr = NULL; DONE(jr_code(L->res), jr_why(L->res), 0, 0, 0); }
-            L->arr[L->n + L->i] = jr_a(L->res);
+            if (jr_code(L->res) != J_OK) DONE(jr_code(L->res), jr_why(L->res), 0, 0, 0);
             if (L->j2 == L->n) {
-                FR_AWAIT(k, r, Jf_FCENT, C, L->arr[L->i]);
+                FR_AWAIT(k, r, Jf_FCENT, C, L->u);
                 if (r == 2) L->j2 = L->i;
             }
         }
         /* overlaps: branches agree in their (convertible) types and values */
         for (L->i = 0; L->i < L->n; L->i++) {
             for (L->q = L->i + 1; L->q < L->n; L->q++) {
-                FR_AWAIT(k, L->y, Jf_FCMEET, L->arr[L->i], L->arr[L->q]);
+                FR_AWAIT(k, L->a2, Jf_FIELD, t, 2 * L->i);
+                FR_AWAIT(k, L->a3, Jf_FIELD, t, 2 * L->q);
+                FR_AWAIT(k, L->y, Jf_FCMEET, L->a2, L->a3);
                 FR_AWAIT(k, L->y, Jf_FCMEET, C, L->y);
                 if (fc_is_false(L->y)) continue;
+                FR_AWAIT(k, L->a0, Jf_FIELD, t, 2 * L->i + 1);
+                FR_AWAIT(k, L->a1, Jf_FIELD, t, 2 * L->q + 1);
+                FR_AWAIT(k, L->u, Jf_FCMEET, C, L->a2);
+                JRQ(L->res, J_INFER, RQ(L->u, L->a0, P));
+                L->l1 = jr_a(L->res);
+                FR_AWAIT(k, L->u, Jf_FCMEET, C, L->a3);
+                JRQ(L->res, J_INFER, RQ(L->u, L->a1, P));
+                L->l2 = jr_a(L->res);
                 FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
                 for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-                    L->z = rget(L->cl, &L->nc)[L->c];
-                    JRQ(L->res, J_CONVT, RQ(L->z, L->arr[L->n + L->i], L->arr[L->n + L->q], P));
-                    if (jr_code(L->res) == J_OK) {
-                        FR_AWAIT(k, L->a0, Jf_FIELD, t, 2 * L->i + 1);
-                        FR_AWAIT(k, L->a1, Jf_FIELD, t, 2 * L->q + 1);
-                        JRQ(L->res, J_CONVt, RQ(L->z, L->a0, L->a1, L->arr[L->n + L->i], P));
-                    }
-                    if (jr_code(L->res) == J_BAD) { frame_mem_free(L->arr); L->arr = NULL; BAD("system branches disagree on an overlap"); }
-                    if (jr_code(L->res) == J_UNR) { frame_mem_free(L->arr); L->arr = NULL; UNR("unresolved: system overlap"); }
+                    L->w0 = rget(L->cl, &L->nc)[L->c];
+                    JRQ(L->res, J_CONVT, RQ(L->w0, L->l1, L->l2, P));
+                    if (jr_code(L->res) == J_OK) JRQ(L->res, J_CONVt, RQ(L->w0, L->a0, L->a1, L->l1, P));
+                    if (jr_code(L->res) == J_BAD) BAD("system branches disagree on an overlap");
+                    if (jr_code(L->res) == J_UNR) UNR("unresolved: system overlap");
                 }
             }
         }
         require(L->j2 < L->n, "a covered system has an entailed branch under a single clause");
-        L->T = L->arr[L->n + L->j2];
-        frame_mem_free(L->arr); L->arr = NULL;
-        DONE(J_OK, NULL, L->T, 0, 0);
+        FR_AWAIT(k, L->u, Jf_FIELD, t, 2 * L->j2);
+        FR_AWAIT(k, L->y, Jf_FCMEET, C, L->u);
+        FR_AWAIT(k, L->z, Jf_FIELD, t, 2 * L->j2 + 1);
+        JRQ(L->res, J_INFER, RQ(L->y, L->z, P));
+        DONE(J_OK, NULL, jr_a(L->res), 0, 0);
     }
     if (L->tag == T_GLOBAL) {
         FR_AWAIT(k, L->x, Jf_HEAD, t, 0);
@@ -742,29 +749,31 @@ static void check_step(Cont *k, uint64_t v) {
     }
     if (L->tag == T_SYSTEM) {
         L->n = tnode_nfields(ref_tnode(t)) / 2;
-        L->arr = frame_mem((L->n + 1) * sizeof(uint64_t));
         L->x = fc_false();
         for (L->i = 0; L->i < L->n; L->i++) {
-            FR_AWAIT(k, L->arr[L->i], Jf_FIELD, t, 2 * L->i);
-            FR_AWAIT(k, L->x, Jf_FCJOIN, L->x, L->arr[L->i]);
+            FR_AWAIT(k, L->y, Jf_FIELD, t, 2 * L->i);
+            FR_AWAIT(k, L->x, Jf_FCJOIN, L->x, L->y);
         }
         FR_AWAIT(k, r, Jf_FCENT, C, L->x);
-        if (r != 2) { frame_mem_free(L->arr); L->arr = NULL; BAD("system does not cover the face"); }
+        if (r != 2) BAD("system does not cover the face");
         for (L->i = 0; L->i < L->n; L->i++) {
-            FR_AWAIT(k, L->y, Jf_FCDIMS, L->arr[L->i], 0);
-            for (L->lw = dimset_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) { frame_mem_free(L->arr); L->arr = NULL; BAD("system guard mentions an undeclared dimension"); } FR_YIELD(k); }
-            FR_AWAIT(k, L->y, Jf_FCMEET, C, L->arr[L->i]);
+            FR_AWAIT(k, L->u, Jf_FIELD, t, 2 * L->i);
+            FR_AWAIT(k, L->y, Jf_FCDIMS, L->u, 0);
+            for (L->lw = dimset_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("system guard mentions an undeclared dimension"); FR_YIELD(k); }
+            FR_AWAIT(k, L->y, Jf_FCMEET, C, L->u);
             if (fc_is_false(L->y)) continue;
             FR_AWAIT(k, L->z, Jf_FIELD, t, 2 * L->i + 1);
             FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
             for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
                 JRQ(L->res, J_CHECK, RQ(rget(L->cl, &L->nc)[L->c], L->z, L->T, P));
-                if (jr_code(L->res) != J_OK) { frame_mem_free(L->arr); L->arr = NULL; DONE(jr_code(L->res), jr_why(L->res), 0, 0, 0); }
+                if (jr_code(L->res) != J_OK) DONE(jr_code(L->res), jr_why(L->res), 0, 0, 0);
             }
         }
         for (L->i = 0; L->i < L->n; L->i++) {
             for (L->q = L->i + 1; L->q < L->n; L->q++) {
-                FR_AWAIT(k, L->y, Jf_FCMEET, L->arr[L->i], L->arr[L->q]);
+                FR_AWAIT(k, L->a2, Jf_FIELD, t, 2 * L->i);
+                FR_AWAIT(k, L->a3, Jf_FIELD, t, 2 * L->q);
+                FR_AWAIT(k, L->y, Jf_FCMEET, L->a2, L->a3);
                 FR_AWAIT(k, L->y, Jf_FCMEET, C, L->y);
                 if (fc_is_false(L->y)) continue;
                 FR_AWAIT(k, L->a0, Jf_FIELD, t, 2 * L->i + 1);
@@ -772,12 +781,11 @@ static void check_step(Cont *k, uint64_t v) {
                 FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
                 for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
                     JRQ(L->res, J_CONVt, RQ(rget(L->cl, &L->nc)[L->c], L->a0, L->a1, L->T, P));
-                    if (jr_code(L->res) == J_BAD) { frame_mem_free(L->arr); L->arr = NULL; BAD("system branches disagree on an overlap"); }
-                    if (jr_code(L->res) == J_UNR) { frame_mem_free(L->arr); L->arr = NULL; UNR("unresolved: system overlap"); }
+                    if (jr_code(L->res) == J_BAD) BAD("system branches disagree on an overlap");
+                    if (jr_code(L->res) == J_UNR) UNR("unresolved: system overlap");
                 }
             }
         }
-        frame_mem_free(L->arr); L->arr = NULL;
         OK0();
     }
     JRQ(L->res, J_INFER, RQ(C, t, P));
@@ -791,13 +799,11 @@ static void check_step(Cont *k, uint64_t v) {
 
 /* ---------------- conversion ---------------- */
 /* two observations under C as one join: 0 unless both completed normally */
-static Join *obs_two(Cont *k, uint64_t C, RefId a, RefId b, uint64_t P) {
-    Join *J = join_new(k, 2);
-    join_call(J, 0, observe_sub(k, a, C, P));
-    join_call(J, 1, observe_sub(k, b, C, P));
-    return J;
-}
-static bool obs_ok(const EvalResult *r) { return r->cls != R_INVALID && r->cls != R_NO_OBSERVATION; }
+/* two independent observations under C: launched, then awaited in order */
+#define OBS_TWO(Cx, a, b) do { \
+        family_launch(Jf_OBS, (a), observe_key((Cx), 0, P)); family_launch(Jf_OBS, (b), observe_key((Cx), 0, P)); \
+    } while (0)
+static bool obs_ok(EvalResult r) { return r.cls != R_INVALID && r.cls != R_NO_OBSERVATION; }
 /* the common level of a Glue's base and fibre: the annotation, else inferred */
 #define GLUE_LEVEL(dst, levels, Cx, A) do { \
         if (levels_first(levels) != LEVEL_NONE) dst = levels_first(levels); \
@@ -809,16 +815,15 @@ static void convT_step(Cont *k, uint64_t v) {
     uint64_t C = q[0], P = q[3];
     FR_BEGIN(k);
     if (q[1] == q[2]) FR_FINISH(k, judge_res(J_OK, NULL, 0, 0, 0));
-    L->J = obs_two(k, C, q[1], q[2], P);
-    FR_JOIN(k, L->J);
-    L->r1 = (EvalResult *)(uintptr_t)join_value(L->J, 0); L->r2 = (EvalResult *)(uintptr_t)join_value(L->J, 1);
-    join_free(L->J); L->J = NULL;
-    if (!obs_ok(L->r1) || !obs_ok(L->r2)) UNR(NULL);
-    if (L->r1->ref == L->r2->ref) OK0();
-    if (L->r1->cls == R_SYSTEM || L->r2->cls == R_SYSTEM) UNR(NULL);
-    if (L->r1->cls != L->r2->cls) BAD(NULL);
-    if (L->r1->cls == R_NEUTRAL) { JAW(r, J_SPINE, RQ(C, L->r1->ref, L->r2->ref, P)); FR_FINISH(k, r); }
-    L->a0 = L->r1->ref; L->a1 = L->r2->ref;
+    OBS_TWO(C, q[1], q[2]);
+    FR_AWAIT(k, L->r1, Jf_OBS, q[1], observe_key(C, 0, P));
+    FR_AWAIT(k, L->r2, Jf_OBS, q[2], observe_key(C, 0, P));
+    if (!obs_ok(R1) || !obs_ok(R2)) UNR(NULL);
+    if (R1.ref == R2.ref) OK0();
+    if (R1.cls == R_SYSTEM || R2.cls == R_SYSTEM) UNR(NULL);
+    if (R1.cls != R2.cls) BAD(NULL);
+    if (R1.cls == R_NEUTRAL) { JAW(r, J_SPINE, RQ(C, R1.ref, R2.ref, P)); FR_FINISH(k, r); }
+    L->a0 = R1.ref; L->a1 = R2.ref;
     L->tag = ref_tag(L->a0);
     if (L->tag != ref_tag(L->a1)) BAD(NULL);
     if (L->tag == T_UNIVERSE) {
@@ -893,11 +898,10 @@ static void convt_step(Cont *k, uint64_t v) {
     uint64_t C = q[0], P = q[4]; RefId t = q[1], u = q[2];
     FR_BEGIN(k);
     if (t == u) OK0();
-    FR_CALL(k, r, observe_sub(k, q[3], C, P));
-    L->r1 = (EvalResult *)(uintptr_t)r;
-    if (!obs_ok(L->r1)) UNR(NULL);
-    if (L->r1->cls == R_INTRODUCTION) {
-        L->a0 = L->r1->ref; L->tag = ref_tag(L->a0);
+    FR_AWAIT(k, L->r1, Jf_OBS, q[3], observe_key(C, 0, P));
+    if (!obs_ok(R1)) UNR(NULL);
+    if (R1.cls == R_INTRODUCTION) {
+        L->a0 = R1.ref; L->tag = ref_tag(L->a0);
         if (L->tag == T_PI) {
             FR_AWAIT(k, L->D, Jf_FIELD, L->a0, 0);
             L->x = conv_var(t, u, L->a0, 0, L->D);
@@ -956,16 +960,15 @@ static void convt_step(Cont *k, uint64_t v) {
         if (L->tag == T_UNIVERSE) { JRQ(r, J_CONVT, RQ(C, t, u, P)); FR_FINISH(k, r); }
         BAD(NULL);
     }
-    if (L->r1->cls == R_NEUTRAL) {
+    if (R1.cls == R_NEUTRAL) {
         /* neutral expected type: observe the terms and compare their neutral structures */
-        L->J = obs_two(k, C, t, u, P);
-        FR_JOIN(k, L->J);
-        L->r1 = (EvalResult *)(uintptr_t)join_value(L->J, 0); L->r2 = (EvalResult *)(uintptr_t)join_value(L->J, 1);
-        join_free(L->J); L->J = NULL;
-        if (!obs_ok(L->r1) || !obs_ok(L->r2)) UNR(NULL);
-        if (L->r1->ref == L->r2->ref) OK0();
-        if (L->r1->cls == R_NEUTRAL && L->r2->cls == R_NEUTRAL) { JAW(r, J_SPINE, RQ(C, L->r1->ref, L->r2->ref, P)); FR_FINISH(k, r); }
-        if (L->r1->cls == R_SYSTEM || L->r2->cls == R_SYSTEM) UNR(NULL);
+        OBS_TWO(C, t, u);
+        FR_AWAIT(k, L->r1, Jf_OBS, t, observe_key(C, 0, P));
+        FR_AWAIT(k, L->r2, Jf_OBS, u, observe_key(C, 0, P));
+        if (!obs_ok(R1) || !obs_ok(R2)) UNR(NULL);
+        if (R1.ref == R2.ref) OK0();
+        if (R1.cls == R_NEUTRAL && R2.cls == R_NEUTRAL) { JAW(r, J_SPINE, RQ(C, R1.ref, R2.ref, P)); FR_FINISH(k, r); }
+        if (R1.cls == R_SYSTEM || R2.cls == R_SYSTEM) UNR(NULL);
         BAD(NULL);
     }
     UNR(NULL);                                     /* a system type under a single clause is not a covered type */
@@ -1023,12 +1026,11 @@ static void spine_step(Cont *k, uint64_t v) {
         {   size_t f = L->tag == T_PAPP ? 3 : L->tag == T_UNGLUE ? 4 : 0; L->i = f; }
         FR_AWAIT(k, L->a0, Jf_FIELD, n1, L->i);
         FR_AWAIT(k, L->a1, Jf_FIELD, n2, L->i);
-        L->J = obs_two(k, C, L->a0, L->a1, P);
-        FR_JOIN(k, L->J);
-        L->r1 = (EvalResult *)(uintptr_t)join_value(L->J, 0); L->r2 = (EvalResult *)(uintptr_t)join_value(L->J, 1);
-        join_free(L->J); L->J = NULL;
-        if (!obs_ok(L->r1) || !obs_ok(L->r2) || L->r1->cls != R_NEUTRAL || L->r2->cls != R_NEUTRAL) UNR(NULL);
-        JAW(L->res, J_SPINE, RQ(C, L->r1->ref, L->r2->ref, P));
+        OBS_TWO(C, L->a0, L->a1);
+        FR_AWAIT(k, L->r1, Jf_OBS, L->a0, observe_key(C, 0, P));
+        FR_AWAIT(k, L->r2, Jf_OBS, L->a1, observe_key(C, 0, P));
+        if (!obs_ok(R1) || !obs_ok(R2) || R1.cls != R_NEUTRAL || R2.cls != R_NEUTRAL) UNR(NULL);
+        JAW(L->res, J_SPINE, RQ(C, R1.ref, R2.ref, P));
         if (jr_code(L->res) != J_OK || L->tag != T_APP) FR_FINISH(k, L->res);
         /* an application: the arguments at the function's domain */
         JRQ(L->res, J_INFER, RQ(C, L->a0, P));
@@ -1198,33 +1200,29 @@ static void scopen_step(Cont *k, uint64_t v) {
     ScopeId S = q[0];
     FR_BEGIN(k);
     L->n = scope_arity(S);
-    L->arr = frame_mem((2 * L->n + 1) * sizeof(uint64_t));
     wordbuf_init(&L->wc);
+    L->a2 = interner_intern(&M.keys, NULL, 0, NULL);               /* the arguments so far: a record extended per local */
     for (L->i = 0; L->i < L->n; L->i++) {
         {   LocalDecl d = scope_local(S, L->i); L->tag = d.sort; L->T = d.type; L->a0 = d.required; }
         if (L->tag == S_DIM) {
             {   KeyWord kw[4] = { { KW_CONST, 9000 }, { KW_CONST, q[1] }, { KW_CONST, S }, { KW_CONST, L->i } };
-                DimVarId j = fresh_dim_keyed(kw, 4); L->x = j; L->arr[2 * L->i] = VS_INTERVAL; L->arr[2 * L->i + 1] = iv_var(j); }
+                DimVarId j = fresh_dim_keyed(kw, 4); L->x = j; L->u = VS_INTERVAL; L->z = iv_var(j); }
         } else {
-            /* the arguments so far as a record (one word per step) */
-            wordbuf_init(&L->wb);
-            for (L->q = 0; L->q < 2 * L->i; L->q++) { wordbuf_push(&L->wb, L->arr[L->q]); FR_YIELD(k); }
-            FR_CALL(k, L->y, intern_sub(k, &M.keys, &L->wb, &L->created));
-            L->y = trav_key(TR_APPLY, 0, L->y);
+            L->y = trav_key(TR_APPLY, 0, L->a2);
             FR_AWAIT(k, L->T, Jf_TREF, L->T, L->y);
             FR_AWAIT(k, L->a0, Jf_TFC, L->a0, L->y);
             {   KeyWord kw[4] = { { KW_CONST, 9000 }, { KW_CONST, q[1] }, { KW_CONST, S }, { KW_CONST, L->i } };
                 L->x = fresh_term_keyed_req(kw, 4, L->T, L->a0); }
             FR_AWAIT(k, L->z, Jf_REFVAR, L->x, 0);
-            L->arr[2 * L->i] = VS_REF; L->arr[2 * L->i + 1] = L->z;
+            L->u = VS_REF;
         }
         wordbuf_push(&L->wc, L->x);
+        wordbuf_init(&L->wb);
+        for (L->q = 0; L->q < 2 * L->i; L->q++) { { size_t n_; wordbuf_push(&L->wb, rget(L->a2, &n_)[L->q]); } FR_YIELD(k); }
+        wordbuf_push(&L->wb, L->u); wordbuf_push(&L->wb, L->z);
+        FR_CALL(k, L->a2, intern_sub(k, &M.keys, &L->wb, &L->created));
     }
     FR_CALL(k, L->a1, intern_sub(k, &M.keys, &L->wc, &L->created));
-    wordbuf_init(&L->wb);
-    for (L->q = 0; L->q < 2 * L->n; L->q++) { wordbuf_push(&L->wb, L->arr[L->q]); FR_YIELD(k); }
-    frame_mem_free(L->arr); L->arr = NULL;
-    FR_CALL(k, L->a2, intern_sub(k, &M.keys, &L->wb, &L->created));
     FR_FINISH(k, RQ(L->a1, L->a2));
     FR_END(k);
 }
@@ -1382,12 +1380,10 @@ static void ctxd_step(Cont *k, uint64_t v) {
     JLOC;   /* q: G, a, P */
     FR_BEGIN(k);
     if (jc_is_empty(q[0])) OK0();
-    L->J = join_new(k, 2);
-    join_request(L->J, 0, J_CTXD, RQ(jc_parent(q[0]), q[1], q[2]), 0);
-    join_request(L->J, 1, J_DECLOK, RQ(q[0], q[1], q[2]), 0);
-    FR_JOIN(k, L->J);
-    L->x = join_value(L->J, 0); L->y = join_value(L->J, 1);
-    join_free(L->J); L->J = NULL;
+    family_launch(J_CTXD, RQ(jc_parent(q[0]), q[1], q[2]), 0);
+    family_launch(J_DECLOK, RQ(q[0], q[1], q[2]), 0);
+    JAW(L->x, J_CTXD, RQ(jc_parent(q[0]), q[1], q[2]));
+    JAW(L->y, J_DECLOK, RQ(q[0], q[1], q[2]));
     FR_FINISH(k, jr_code(L->x) != J_OK ? L->x : L->y);
     FR_END(k);
 }
@@ -1428,20 +1424,21 @@ static void node_step(Cont *k, uint64_t v) {
     PASS(L->res);
     FR_AWAIT(k, L->cl, J_CLAUSES, L->a0, 0);
     rget(L->cl, &L->nc);
-    L->arr = frame_mem((L->nc + 1) * sizeof(uint64_t));
+    L->y = 1; L->T = 0;
     for (L->c = 0; L->c < L->nc; L->c++) {
         JAW(L->res, J_HEAD, RQ(rget(L->cl, &L->n)[L->c], L->a1, P));
-        if (jr_code(L->res) != J_OK) { frame_mem_free(L->arr); L->arr = NULL; DONE(jr_code(L->res), jr_why(L->res), 0, 0, 0); }
-        L->arr[L->c] = jr_a(L->res);
+        if (jr_code(L->res) != J_OK) DONE(jr_code(L->res), jr_why(L->res), 0, 0, 0);
+        if (L->c == 0) L->T = jr_a(L->res); else if (jr_a(L->res) != L->T) L->y = 0;
     }
-    L->y = 1;
-    for (L->c = 1; L->c < L->nc; L->c++) if (L->arr[L->c] != L->arr[0]) L->y = 0;
-    if (L->nc && L->y) { L->T = L->arr[0]; frame_mem_free(L->arr); L->arr = NULL; DONE(J_OK, NULL, L->G2, L->a0, L->T); }
-    /* differing types per clause (or the false face): a system of them */
+    if (L->nc && L->y) DONE(J_OK, NULL, L->G2, L->a0, L->T);
+    /* differing types per clause (or the false face): a system of them (each
+     * clause's head type is its keyed judgment, read again) */
     creq_system_begin(&L->wb, L->nc);
-    for (L->c = 0; L->c < L->nc; L->c++) { creq_system_branch(&L->wb, rget(L->cl, &L->n)[L->c], L->arr[L->c]); FR_YIELD(k); }
+    for (L->c = 0; L->c < L->nc; L->c++) {
+        JAW(L->res, J_HEAD, RQ(rget(L->cl, &L->n)[L->c], L->a1, P));
+        creq_system_branch(&L->wb, rget(L->cl, &L->n)[L->c], jr_a(L->res));
+    }
     wordbuf_push(&L->wb, 0);
-    frame_mem_free(L->arr); L->arr = NULL;
     FR_CALL(k, L->T, construct_buf_sub(k, &L->wb));
     DONE(J_OK, NULL, L->G2, L->a0, L->T);
     FR_END(k);
@@ -1576,6 +1573,7 @@ static void rv_step(Cont *k, uint64_t v) {
 
 /* ---------------- registration ---------------- */
 void judge_families_init(void) {
+    Jf_OBS = observe_family();
     Jf_FCMEET = family_lookup("fc.meet"); Jf_FCJOIN = family_lookup("fc.join"); Jf_FCENT = family_lookup("fc.entails"); Jf_FCPROJ = family_lookup("fc.project");
     Jf_FCDIMS = family_lookup("fc.dims"); Jf_IVDIMS = family_lookup("iv.dims"); Jf_DSUNION = family_lookup("dimset.union");
     Jf_REINDEX = family_lookup("reindex"); Jf_IVRE = family_lookup("iv.reindex"); Jf_FCRE = family_lookup("fc.reindex");
@@ -1585,40 +1583,40 @@ void judge_families_init(void) {
     Jf_SCOPESIDE = family_lookup("scope.side"); Jf_TREF = family_lookup("trav.ref"); Jf_TIV = family_lookup("trav.interval"); Jf_TFC = family_lookup("trav.face");
     Jf_GARGS = family_lookup("global.args"); Jf_MAPT = family_lookup("map.term_image"); Jf_MAPD = family_lookup("map.dim_image");
     require(Jf_FCMEET && Jf_SCOPESIDE && Jf_GARGS && Jf_MAPD && Jf_ENVLOOK, "the judgment families' operand families are registered first");
-    J_CLAUSES = family_define("judge.clauses", clauses_step, sizeof(JL), true);
-    J_CMAP = family_define("judge.clause_map", cmap_step, sizeof(JL), true);
-    J_DIMSIN = family_define("judge.dims_in", dimsin_step, sizeof(JL), true);
-    J_JDIMS = family_define("judge.ctx_dims", jdims_step, 0, true);
-    J_JCOF = family_define("judge.ctx_of", jcof_step, sizeof(JL), true);
-    J_GENERIC = family_define("judge.generic", generic_step, sizeof(JL), true);
-    J_GMAP = family_define("judge.generic_map", gmap_step, sizeof(JL), true);
-    J_OBSHEAD = family_define("judge.observe_head", obshead_step, sizeof(JL), true);
-    J_LEVEL = family_define("judge.level", level_step, sizeof(JL), true);
-    J_EQUIV = family_define("judge.equiv", equiv_step, sizeof(JL), true);
-    J_INFER = family_define("judge.infer", infer_step, sizeof(JL), true);
-    J_HEAD = family_define("judge.head", head_step, sizeof(JL), true);
-    J_GLUEOK = family_define("judge.glue", glueok_step, sizeof(JL), true);
-    J_CHECK = family_define("judge.check", check_step, sizeof(JL), true);
-    J_CONVT = family_define("judge.conv_type", convT_step, sizeof(JL), true);
-    J_CONVt = family_define("judge.conv_term", convt_step, sizeof(JL), true);
-    J_SPINE = family_define("judge.spine", spine_step, sizeof(JL), true);
-    J_TVIEW = family_define("judge.instance", tview_step, sizeof(JL), true);
-    J_TBOUND = family_define("judge.boundary", tbound_step, sizeof(JL), true);
-    J_SCOPEN = family_define("judge.scope_open", scopen_step, sizeof(JL), true);
-    J_APREFIX = family_define("judge.args_prefix", aprefix_step, sizeof(JL), true);
-    J_REQ = family_define("judge.request", jreq_step, sizeof(ReqLoc), true);
-    J_SCOWN = family_define("judge.scope_own", scown_step, sizeof(JL), true);
-    J_SCARG = family_define("judge.scope_arg", scarg_step, sizeof(JL), true);
-    J_MAP = family_define("judge.map", map_step, sizeof(JL), true);
-    J_CTX = family_define("judge.ctx", ctx_step, sizeof(JL), true);
-    J_CTXD = family_define("judge.ctx_decls", ctxd_step, sizeof(JL), true);
-    J_DECLOK = family_define("judge.ctx_decl", declok_step, sizeof(JL), true);
-    J_NODE = family_define("judge.node", node_step, sizeof(JL), true);
-    J_DECL = family_define("judge.decl", decl_step, sizeof(JL), true);
-    J_BODY = family_define("judge.body", body_step, sizeof(JL), true);
-    J_RV = family_define("judge.structure", rv_step, sizeof(JL), true);
-    J_RVD = family_define("judge.structure_dims", rvd_step, sizeof(JL), true);
-    J_SCOPE = family_define("judge.scope", scope_step, sizeof(JL), true);
+    J_CLAUSES = family_define("judge.clauses", clauses_step, sizeof(JL));
+    J_CMAP = family_define("judge.clause_map", cmap_step, sizeof(JL));
+    J_DIMSIN = family_define("judge.dims_in", dimsin_step, sizeof(JL));
+    J_JDIMS = family_define("judge.ctx_dims", jdims_step, 0);
+    J_JCOF = family_define("judge.ctx_of", jcof_step, sizeof(JL));
+    J_GENERIC = family_define("judge.generic", generic_step, sizeof(JL));
+    J_GMAP = family_define("judge.generic_map", gmap_step, sizeof(JL));
+    J_OBSHEAD = family_define("judge.observe_head", obshead_step, sizeof(JL));
+    J_LEVEL = family_define("judge.level", level_step, sizeof(JL));
+    J_EQUIV = family_define("judge.equiv", equiv_step, sizeof(JL));
+    J_INFER = family_define("judge.infer", infer_step, sizeof(JL));
+    J_HEAD = family_define("judge.head", head_step, sizeof(JL));
+    J_GLUEOK = family_define("judge.glue", glueok_step, sizeof(JL));
+    J_CHECK = family_define("judge.check", check_step, sizeof(JL));
+    J_CONVT = family_define("judge.conv_type", convT_step, sizeof(JL));
+    J_CONVt = family_define("judge.conv_term", convt_step, sizeof(JL));
+    J_SPINE = family_define("judge.spine", spine_step, sizeof(JL));
+    J_TVIEW = family_define("judge.instance", tview_step, sizeof(JL));
+    J_TBOUND = family_define("judge.boundary", tbound_step, sizeof(JL));
+    J_SCOPEN = family_define("judge.scope_open", scopen_step, sizeof(JL));
+    J_APREFIX = family_define("judge.args_prefix", aprefix_step, sizeof(JL));
+    J_REQ = family_define("judge.request", jreq_step, sizeof(ReqLoc));
+    J_SCOWN = family_define("judge.scope_own", scown_step, sizeof(JL));
+    J_SCARG = family_define("judge.scope_arg", scarg_step, sizeof(JL));
+    J_MAP = family_define("judge.map", map_step, sizeof(JL));
+    J_CTX = family_define("judge.ctx", ctx_step, sizeof(JL));
+    J_CTXD = family_define("judge.ctx_decls", ctxd_step, sizeof(JL));
+    J_DECLOK = family_define("judge.ctx_decl", declok_step, sizeof(JL));
+    J_NODE = family_define("judge.node", node_step, sizeof(JL));
+    J_DECL = family_define("judge.decl", decl_step, sizeof(JL));
+    J_BODY = family_define("judge.body", body_step, sizeof(JL));
+    J_RV = family_define("judge.structure", rv_step, sizeof(JL));
+    J_RVD = family_define("judge.structure_dims", rvd_step, sizeof(JL));
+    J_SCOPE = family_define("judge.scope", scope_step, sizeof(JL));
 }
 Family judge_family(JudgeKind kind) {
     switch (kind) {
