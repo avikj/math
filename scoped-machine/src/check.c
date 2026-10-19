@@ -209,5 +209,4 @@ CheckStatus check_signature(const char **reason) {
     for (SymbolId s = 1; s <= n && st == CK_VALID; s++) { uint64_t w[2] = { s, P }; st = ck(run(JK_BODY, 2, w), reason); }
     return st;
 }
-CheckStatus check_admission(const char **reason) { return check_signature(reason); }
 void check_open_environment(void) {}

@@ -21,19 +21,21 @@ int main(int argc, char **argv) {
     const char *why = "";
     int failed = 0;
     if (!strcmp(mode, "guard")) {
+        /* w is available on i=0 only, so the lambda mentioning it is too */
+        TermVarId vw = declare_term(A, fc_lit(i,0));
+        CtxDecl gs[] = {{S_DIM,i,0},{S_TERM,va,U},{S_TERM,vx,A},{S_TERM,vw,A}};
+        G = context_make(4, gs, fc_true());
         TermVarId z = declare_term(A, fc_true());
         RefId P = mk_pi_lv(0,0,z,A,A);
-        term_require_push(fc_lit(i,0));
-        RefId body = mk_lam_lv(0,z,A,ref_var(z));
-        term_require_pop();
+        RefId body = mk_lam_lv(0,z,A,ref_var(vw));
         CheckStatus local = check(G,fc_true(),body,P,&why);
         printf("partial lambda checked at true: %s (%s)\n",check_status_name(local),why?why:"");
         CheckStatus guarded = check(G,fc_lit(i,0),body,P,&why);
         printf("partial lambda checked at its required face: %s\n",check_status_name(guarded));
-        uint64_t ts[]={va}, dim[]={i};
-        SymbolId f=define_global("partial_function",varset_make(ts,1),dimset_make(dim,1),P);
+        uint64_t ts[]={va,vw}, dim[]={i};
+        SymbolId f=define_global("partial_function",varset_make(ts,2),dimset_make(dim,1),P);
         require(set_global_body(f,body),"register body");
-        CheckStatus admitted=check_admission(&why);
+        CheckStatus admitted=check_signature(&why);
         printf("whole environment admission: %s (%s)\n",check_status_name(admitted),why?why:"");
         WhnfStatus st; EvalResult *r=observe_checked(G,global_ref(f),&st,&why);
         printf("checked observation: %d; result: ",st); print_result(r,stdout); printf("\n");
@@ -58,7 +60,7 @@ int main(int argc, char **argv) {
         Inference before=infer(G,fc_true(),global_ref(f));
         printf("opaque candidate before definition: %s\n",check_status_name(before.st));
         require(set_global_body(f,mk_universe(0)),"register invalid body while environment open");
-        CheckStatus admitted=check_admission(&why);
+        CheckStatus admitted=check_signature(&why);
         printf("admission after adding ill-typed body: %s (%s)\n",check_status_name(admitted),why?why:"");
         WhnfStatus st; EvalResult *r=observe_checked(G,global_ref(f),&st,&why);
         printf("checked observation: %d; result: ",st); print_result(r,stdout); printf("\n");

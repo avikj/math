@@ -82,11 +82,11 @@ int main(int argc, char **argv) {
          * observation validate it; nothing is frozen or reopened. */
         uint64_t pars[]={vA};
         SymbolId s=define_global("late",varset_make(pars,1),dimset_make(NULL,0),A);
-        CheckStatus first=check_admission(&why);verdict("opaque environment",first,why);
+        CheckStatus first=check_signature(&why);verdict("opaque environment",first,why);
         EXPECT(first==CK_VALID,"positive control: the opaque environment is valid");
         bool accepted=set_global_body(s,U0);
         EXPECT(accepted,"registration needs no reopening (no freeze)");
-        CheckStatus second=check_admission(&why);verdict("signature with ill-typed body U0:A",second,why);
+        CheckStatus second=check_signature(&why);verdict("signature with ill-typed body U0:A",second,why);
         EXPECT(second==CK_INVALID,"the new revision is validated, not the earlier acceptance reused");
         WhnfStatus ws;EvalResult *r=observe_checked(G,global_ref(s),&ws,&why);
         printf("bad body checked execution: status=%d result=%d\n",(int)ws,r!=NULL);
@@ -96,9 +96,9 @@ int main(int argc, char **argv) {
         SymbolId s=define_global("valid",varset_make(pars,1),dimset_make(NULL,0),U0);
         set_global_body(s,A);
         check_set_budget(1);
-        CheckStatus first=check_admission(&why);verdict("budget1 admission",first,why);
+        CheckStatus first=check_signature(&why);verdict("budget1 admission",first,why);
         check_set_budget(0);check_new_attempt();
-        CheckStatus next=check_admission(&why);verdict("unlimited fresh attempt admission",next,why);
+        CheckStatus next=check_signature(&why);verdict("unlimited fresh attempt admission",next,why);
         CheckStatus raw=check_signature(&why);verdict("direct signature after retry",raw,why);
         EXPECT(next==CK_VALID,"a new attempt must invalidate unresolved admission cache");
         EXPECT(raw==CK_VALID,"positive control signature is valid");

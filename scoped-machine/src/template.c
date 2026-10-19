@@ -26,17 +26,6 @@ typedef struct {
 } TDef;
 
 static struct { TDef defs[TD_COUNT]; uint64_t index_counter[TD_COUNT]; bool init; pthread_mutex_t mu; } TPL;
-/* the thread's source face κ is a handle of one machine: it is qualified by
- * the machine generation, and a thread entering a later machine lifetime
- * observes that machine's default true face (review R2 of 9eadaf2) */
-static __thread FaceId tl_kappa;
-static __thread uint64_t tl_kappa_gen;
-
-void template_set_kappa(FaceId kappa) { tl_kappa = kappa; tl_kappa_gen = machine_generation(); }
-FaceId template_kappa(void) {
-    if (tl_kappa_gen != machine_generation()) { tl_kappa = 0; tl_kappa_gen = machine_generation(); }
-    return tl_kappa ? tl_kappa : fc_true();
-}
 
 /* ------------------------------------------------------------------ */
 /* expressions: interned records [kind, words...]                        */
@@ -1335,7 +1324,7 @@ TVal template_call(TDefKind def, size_t nargs, const TVal *args) {
     require(nargs + 1 == d->nparams, "template_call arity (%s)", d->name);
     uint64_t *sl = malloc((nargs + 1) * sizeof(uint64_t)); TVal *vl = malloc((nargs + 1) * sizeof(TVal));
     require(sl && vl, "out of memory");
-    sl[0] = 0; vl[0].sort = PS_FACE; vl[0].id = template_kappa();
+    sl[0] = 0; vl[0].sort = PS_FACE; vl[0].id = fc_true();
     for (size_t k = 0; k < nargs; k++) { require(args[k].sort == d->sorts[k + 1], "template_call sort (%s, %zu)", d->name, k); sl[k + 1] = k + 1; vl[k + 1] = args[k]; }
     uint64_t er = envrec_host(def, nargs + 1, sl, vl);
     free(sl); free(vl);

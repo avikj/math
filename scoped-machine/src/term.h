@@ -48,10 +48,6 @@ uint64_t levels_first(uint64_t lv);
 uint64_t levels_second(uint64_t lv);
 uint64_t level_max(uint64_t a, uint64_t b);      /* LEVEL_NONE absorbs */
 uint64_t level_succ(uint64_t a);
-/* set the levels for the next annotated construction on this thread (the
- * template layer uses it around its constructor nodes) */
-void term_levels_push(uint64_t m, uint64_t n);
-void term_levels_pop(void);
 
 /* ---- bound local occurrences (§50) ----
  * A local of a scope telescope is a (depth, slot) atom encoded in the
@@ -104,12 +100,6 @@ MapId compose(MapId sigma, MapId tau);   /* apply sigma then tau */
 MapId map_override(MapId sigma, Sort sort, uint64_t key, uint64_t image);   /* sigma without key's entry, then key ↦ image */
 
 /* ---- constructions ---- */
-/* Declared required face (§2 `required_face` annotation): constructions made
- * while a scope is pushed carry the scope's face as part of their record;
- * their required face is the structural one strengthened by it. Library
- * clauses use it for constructions that are only typed on a guard. */
-void term_require_push(FaceId phi);
-void term_require_pop(void);
 /* the construction (tag, payload, fields, binders) over its typed free
  * boundary, instantiated at the boundary itself */
 RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nfields,

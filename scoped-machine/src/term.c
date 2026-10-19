@@ -120,15 +120,6 @@ MapId map_single_dim(DimVarId i, IntervalId r) { MapBuilder b; mapb_init(&b); ma
  * Alpha-equivalent constructions are one node; a construction and a
  * template view are one reference form. */
 
-static __thread FaceId tl_req_scope[16]; static __thread size_t tl_req_depth;
-static __thread uint64_t tl_levels = LEVELS_NONE;   /* formation levels of the origin being built (§59.1) */
-void term_require_push(FaceId phi) {
-    require(tl_req_depth < 16, "required-face scope too deep");
-    FaceId f = tl_req_depth ? fc_meet(tl_req_scope[tl_req_depth - 1], phi) : phi;
-    tl_req_scope[tl_req_depth++] = f;
-}
-void term_require_pop(void) { require(tl_req_depth > 0, "required-face scope underflow"); tl_req_depth--; }
-static FaceId current_declared_required(void) { return tl_req_depth ? tl_req_scope[tl_req_depth - 1] : 0; }
 /* §51.2 / §59.1: a level is a number below LEVEL_NONE or the sentinel itself;
  * anything else is a host failure, never a wrapped level */
 static void level_check(uint64_t l) { require(l <= LEVEL_NONE, "universe level out of the representable range"); }
@@ -142,10 +133,10 @@ uint64_t level_succ(uint64_t a) { if (a == LEVEL_NONE) return LEVEL_NONE; requir
 /* the request record of a construction (construct.c):
  * [tag, payload, levels, declared, ft, fd, nf, (kind, slot, id)*, nb, (sort, formal, domain)*];
  * ft = fd = 0: the boundary is the fields' */
-static RefId construction_request(Tag tag, uint64_t payload, const Field *fields, size_t nf,
+static RefId construction_request(Tag tag, uint64_t payload, uint64_t levels, const Field *fields, size_t nf,
                                   const Binder *binders, size_t nb, VarSetId ft, DimSetId fd) {
     Words w; words_init(&w);
-    words_push(&w, tag); words_push(&w, payload); words_push(&w, tl_levels); words_push(&w, current_declared_required());
+    words_push(&w, tag); words_push(&w, payload); words_push(&w, levels); words_push(&w, 0);
     words_push(&w, ft); words_push(&w, fd); words_push(&w, nf);
     for (size_t q = 0; q < nf; q++) { words_push(&w, fields[q].kind); words_push(&w, fields[q].slot); words_push(&w, fields[q].id); }
     words_push(&w, nb);
@@ -155,7 +146,7 @@ static RefId construction_request(Tag tag, uint64_t payload, const Field *fields
     return t;
 }
 RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nf, const Binder *binders, size_t nb) {
-    return construction_request(tag, payload, fields, nf, binders, nb, 0, 0);
+    return construction_request(tag, payload, LEVELS_NONE, fields, nf, binders, nb, 0, 0);
 }
 
 /* ================= references ================= */
@@ -485,7 +476,7 @@ size_t global_count(void) { return M.n_defs; }
 
 RefId global_ref(SymbolId s) {
     require(s >= 1 && s <= M.n_defs, "unknown symbol");
-    return construction_request(T_GLOBAL, s, NULL, 0, NULL, 0, DEF(s)->params, DEF(s)->dims);
+    return construction_request(T_GLOBAL, s, LEVELS_NONE, NULL, 0, NULL, 0, DEF(s)->params, DEF(s)->dims);
 }
 
 /* a global reference's environment as a substitution of the definition's
@@ -510,40 +501,32 @@ MapId global_args(RefId t) {
 
 /* ================= constructors ================= */
 
+/* a construction annotated with its formation levels (§59.1) */
+static RefId view_lv(Tag tag, uint64_t payload, uint64_t lv, const Field *f, size_t nf, const Binder *b, size_t nb) {
+    return construction_request(tag, payload, lv, f, nf, b, nb, 0, 0);
+}
 static RefId view0(Tag tag, uint64_t payload, const Field *f, size_t nf, const Binder *b, size_t nb) {
-    return construct(tag, payload, f, nf, b, nb);
+    return view_lv(tag, payload, LEVELS_NONE, f, nf, b, nb);
 }
 
 RefId mk_universe(uint64_t level) { require(level < LEVEL_NONE, "universe level out of the representable range"); return view0(T_UNIVERSE, level, NULL, 0, NULL, 0); }
 
-/* annotated forms (§59.1): the formation levels are set for the origin
- * being built and recorded in its record */
-static RefId with_levels(uint64_t lv, RefId (*build)(void *), void *ctx) {
-    uint64_t saved = tl_levels; tl_levels = lv;
-    RefId r = build(ctx);
-    tl_levels = saved;
-    return r;
-}
-static RefId mk_term_binder_form(Tag tag, TermVarId x, RefId A, RefId body) {
+static RefId mk_term_binder_form(Tag tag, uint64_t lv, TermVarId x, RefId A, RefId body) {
     require(term_var_type(x) == A, "binder formal declared at a different type");
     Field f[2] = { { F_REF, NO_SLOT, A }, { F_REF, 0, body } };
     Binder b[1] = { { S_TERM, x, 0 } };
-    return view0(tag, 0, f, 2, b, 1);
+    return view_lv(tag, 0, lv, f, 2, b, 1);
 }
-RefId mk_pi(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, x, A, B); }
-RefId mk_lam(TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, x, A, body); }
-typedef struct { Tag tag; TermVarId x; RefId A, B; } BinderArgs;
-static RefId build_binder(void *c) { BinderArgs *a = c; return mk_term_binder_form(a->tag, a->x, a->A, a->B); }
-RefId mk_pi_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { BinderArgs a = { T_PI, x, A, B }; return with_levels(levels_pack(m, n), build_binder, &a); }
-RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { BinderArgs a = { T_SIGMA, x, A, B }; return with_levels(levels_pack(m, n), build_binder, &a); }
-RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body) { BinderArgs a = { T_LAM, x, A, body }; return with_levels(levels_pack(m, LEVEL_NONE), build_binder, &a); }
-void term_levels_push(uint64_t m, uint64_t n) { tl_levels = levels_pack(m, n); }
-void term_levels_pop(void) { tl_levels = LEVELS_NONE; }
+RefId mk_pi(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, LEVELS_NONE, x, A, B); }
+RefId mk_lam(TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, LEVELS_NONE, x, A, body); }
+RefId mk_pi_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, levels_pack(m, n), x, A, B); }
+RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_SIGMA, levels_pack(m, n), x, A, B); }
+RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, levels_pack(m, LEVEL_NONE), x, A, body); }
 RefId mk_app(RefId fn, RefId a) { Field f[2] = { { F_REF, NO_SLOT, fn }, { F_REF, NO_SLOT, a } }; return view0(T_APP, 0, f, 2, NULL, 0); }
 RefId mk_pair(RefId a, RefId b) { Field f[2] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b } }; return view0(T_PAIR, 0, f, 2, NULL, 0); }
 /* a pair annotated with its Σ type (§33: a checking-only form synthesizes
  * from its stored annotation); the annotation is the third field */
-RefId mk_pair_at(RefId S, RefId a, RefId b) { Field f[3] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b }, { F_REF, NO_SLOT, S } }; return view0(T_PAIR, 0, f, 3, NULL, 0); }
+static RefId mk_pair_at_at_levels(uint64_t lv, RefId S, RefId a, RefId b) { Field f[3] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b }, { F_REF, NO_SLOT, S } }; return view_lv(T_PAIR, 0, lv, f, 3, NULL, 0); }
 RefId mk_fst(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_FST, 0, f, 1, NULL, 0); }
 RefId mk_snd(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_SND, 0, f, 1, NULL, 0); }
 RefId mk_path(DimVarId j, RefId B_j, RefId l, RefId r) {
@@ -556,39 +539,40 @@ RefId mk_plam(DimVarId j, RefId body) {
     Binder b[1] = { { S_DIM, j, NO_FIELD } };
     return view0(T_PLAM, 0, f, 1, b, 1);
 }
-RefId mk_papp(DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) {
+static RefId mk_papp_at_levels(uint64_t lv, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) {
     Field f[5] = { { F_REF, 0, B_j }, { F_REF, NO_SLOT, l }, { F_REF, NO_SLOT, r }, { F_REF, NO_SLOT, p }, { F_INTERVAL, NO_SLOT, s } };
     Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view0(T_PAPP, 0, f, 5, b, 1);
+    return view_lv(T_PAPP, 0, lv, f, 5, b, 1);
 }
-RefId mk_glue_type(RefId A, FaceId alpha, RefId T, RefId e) {
+static RefId mk_glue_type_at_levels(uint64_t lv, RefId A, FaceId alpha, RefId T, RefId e) {
     Field f[4] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e } };
-    return view0(T_GLUE_TYPE, 0, f, 4, NULL, 0);
+    return view_lv(T_GLUE_TYPE, 0, lv, f, 4, NULL, 0);
 }
-RefId mk_glue_intro(RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) {
+static RefId mk_glue_intro_at_levels(uint64_t lv, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) {
     Field f[6] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, t }, { F_REF, NO_SLOT, a } };
-    return view0(T_GLUE_INTRO, 0, f, 6, NULL, 0);
+    return view_lv(T_GLUE_INTRO, 0, lv, f, 6, NULL, 0);
 }
-RefId mk_unglue(RefId A, FaceId alpha, RefId T, RefId e, RefId v) {
+static RefId mk_unglue_at_levels(uint64_t lv, RefId A, FaceId alpha, RefId T, RefId e, RefId v) {
     Field f[5] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, v } };
-    return view0(T_UNGLUE, 0, f, 5, NULL, 0);
+    return view_lv(T_UNGLUE, 0, lv, f, 5, NULL, 0);
 }
-RefId mk_comp(DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) {
+static RefId mk_comp_at_levels(uint64_t lv, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) {
     Field f[4] = { { F_REF, 0, A_j }, { F_FACE, NO_SLOT, phi }, { F_REF, 0, u_j }, { F_REF, NO_SLOT, cap } };
     Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view0(T_COMP, 0, f, 4, b, 1);
+    return view_lv(T_COMP, 0, lv, f, 4, b, 1);
 }
-RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) {
-    term_levels_push(n, LEVEL_NONE);
-    RefId r = mk_comp(j, A_j, phi, u_j, cap);
-    term_levels_pop();
-    return r;
-}
-RefId mk_papp_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) { term_levels_push(n, LEVEL_NONE); RefId o = mk_papp(j, B_j, l, r, p, s); term_levels_pop(); return o; }
-RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e) { term_levels_push(n, LEVEL_NONE); RefId o = mk_glue_type(A, alpha, T, e); term_levels_pop(); return o; }
-RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { term_levels_push(n, LEVEL_NONE); RefId o = mk_glue_intro(A, alpha, T, e, t, a); term_levels_pop(); return o; }
-RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v) { term_levels_push(n, LEVEL_NONE); RefId o = mk_unglue(A, alpha, T, e, v); term_levels_pop(); return o; }
-RefId mk_pair_at_lv(uint64_t l, RefId S, RefId a, RefId b) { term_levels_push(l, LEVEL_NONE); RefId o = mk_pair_at(S, a, b); term_levels_pop(); return o; }
+RefId mk_pair_at(RefId S, RefId a, RefId b) { return mk_pair_at_at_levels(LEVELS_NONE, S, a, b); }
+RefId mk_pair_at_lv(uint64_t n, RefId S, RefId a, RefId b) { return mk_pair_at_at_levels(levels_pack(n, LEVEL_NONE), S, a, b); }
+RefId mk_papp(DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) { return mk_papp_at_levels(LEVELS_NONE, j, B_j, l, r, p, s); }
+RefId mk_papp_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) { return mk_papp_at_levels(levels_pack(n, LEVEL_NONE), j, B_j, l, r, p, s); }
+RefId mk_glue_type(RefId A, FaceId alpha, RefId T, RefId e) { return mk_glue_type_at_levels(LEVELS_NONE, A, alpha, T, e); }
+RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e) { return mk_glue_type_at_levels(levels_pack(n, LEVEL_NONE), A, alpha, T, e); }
+RefId mk_glue_intro(RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { return mk_glue_intro_at_levels(LEVELS_NONE, A, alpha, T, e, t, a); }
+RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { return mk_glue_intro_at_levels(levels_pack(n, LEVEL_NONE), A, alpha, T, e, t, a); }
+RefId mk_unglue(RefId A, FaceId alpha, RefId T, RefId e, RefId v) { return mk_unglue_at_levels(LEVELS_NONE, A, alpha, T, e, v); }
+RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v) { return mk_unglue_at_levels(levels_pack(n, LEVEL_NONE), A, alpha, T, e, v); }
+RefId mk_comp(DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) { return mk_comp_at_levels(LEVELS_NONE, j, A_j, phi, u_j, cap); }
+RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) { return mk_comp_at_levels(levels_pack(n, LEVEL_NONE), j, A_j, phi, u_j, cap); }
 RefId mk_system(size_t n, const FaceId *faces, const RefId *terms) {
     Field *f = malloc((n ? 2 * n : 1) * sizeof(Field));
     require(f, "out of memory");

@@ -91,7 +91,7 @@ build/review-9eadaf2: $(OBJ) tests/review_9eadaf2.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 
-REVIEW_9E_MODES := scope-depth scope-sort nested-control kappa-restart kappa-alias kappa-thread
+REVIEW_9E_MODES := scope-depth scope-sort nested-control
 
 build/review-end-to-end: $(OBJ) tests/review_end_to_end.o
 	@mkdir -p build

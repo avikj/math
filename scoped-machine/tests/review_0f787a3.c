@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
         EXPECT(ib.st==CK_INVALID,"a retained constructor-local image is checked against its binder declaration after the child escapes the binder");
     } else if (!strcmp(mode,"machine-restart")) {
         const char *why="";
-        EXPECT(check_admission(&why)==CK_VALID,"first empty environment admitted");
+        EXPECT(check_signature(&why)==CK_VALID,"first empty environment admitted");
         check_free(); eval_free(); machine_free();
         machine_init(); eval_init(); check_init();
         SymbolId s=define_global("fresh",varset_make(NULL,0),dimset_make(NULL,0),mk_universe(0));

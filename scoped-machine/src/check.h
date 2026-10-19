@@ -65,7 +65,6 @@ CheckStatus check_signature(const char **reason);
  * declarations and bodies (the environment version), validates all of them
  * once per version, and returns the environment's verdict. Checked observation
  * and compiler publication validate their own premises and do not call it. */
-CheckStatus check_admission(const char **reason);
 /* open a new candidate environment after an admission: retires the checker
  * session (claims, verdicts, diagnostic text) and every evaluator observation
  * (EvalResult pointers and diagnostic pointers obtained before are dead);

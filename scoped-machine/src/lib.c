@@ -50,15 +50,15 @@ RefId mk_ua(uint64_t l, RefId X, RefId Y, RefId e) { return CALLT(TD_UA, VL(l), 
 RefId mk_down(uint64_t l, uint64_t lA, RefId A, RefId t, ScopeId D, RefId x, RefId e, RefId z) { return CALLT(TD_DOWN, VL(l), VL(lA), VR(A), VR(t), VS(D), VR(x), VR(e), VR(z)); }
 
 RefId mk_coe_at(uint64_t l, DimVarId i, RefId A_i, RefId cap) {
-    return mk_coe(l, capture_dim1(i, A_i, mk_universe(l), level_succ(l), template_kappa()), cap);
+    return mk_coe(l, capture_dim1(i, A_i, mk_universe(l), level_succ(l), fc_true()), cap);
 }
 RefId mk_fill_at(uint64_t l, DimVarId i, RefId A_i, FaceId phi, RefId u_i, RefId cap, IntervalId r) {
-    ScopeId A = capture_dim1(i, A_i, mk_universe(l), level_succ(l), template_kappa());
-    ScopeId u = capture_dim1(i, u_i, A_i, l, fc_meet(template_kappa(), phi));
+    ScopeId A = capture_dim1(i, A_i, mk_universe(l), level_succ(l), fc_true());
+    ScopeId u = capture_dim1(i, u_i, A_i, l, fc_meet(fc_true(), phi));
     return mk_fill(l, A, phi, u, cap, r);
 }
 RefId mk_hcomp_at(uint64_t l, DimVarId j, RefId X, FaceId phi, RefId u_j, RefId cap) {
-    ScopeId u = capture_dim1(j, u_j, X, l, fc_meet(template_kappa(), phi));
+    ScopeId u = capture_dim1(j, u_j, X, l, fc_meet(fc_true(), phi));
     return mk_hcomp(l, X, phi, u, cap);
 }
 

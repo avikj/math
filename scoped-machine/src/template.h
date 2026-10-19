@@ -27,11 +27,8 @@ void templates_init(void);                      /* registers the library (idempo
 void templates_free(void);
 
 /* invoke a definition's root program: args in the definition's parameter
- * order (without κ; the current κ is taken from template_kappa) */
+ * order (without κ, which is ⊤) */
 TVal template_call(TDefKind def, size_t nargs, const TVal *args);
-/* the source typing face κ for constructions made on this thread (default ⊤) */
-void template_set_kappa(FaceId kappa);
-FaceId template_kappa(void);
 
 /* ---- TVIEW references ---- */
 TNodeId tnode_of(RefId t);
