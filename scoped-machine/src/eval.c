@@ -19,7 +19,12 @@
 /* a join: a frame awaiting n independent demands; each box receives one
  * value, and the last arrival (or the frame, if every box filled while it was
  * still issuing) resumes the frame */
+/* a heap resource owned by the frame whose step created it: freed by its
+ * family code, or with the frame when the frame is released, or at teardown
+ * when the frame is a stuck waiter */
+typedef struct Owned { struct Owned *next, *prev; Cont *owner; int is_join; } Owned;
 struct Join {
+    Owned own;                /* first: a Join is its ownership record */
     Cont *frame;
     size_t n, pending;        /* boxes outstanding, plus one until the frame has issued them all */
     uint64_t *vals;
@@ -78,8 +83,7 @@ static struct {
     /* rooted results (immutable payloads), an intrusive list */
     EvalResult *results;
     /* live joins: a join that never fills (stuck children) is dismantled at teardown */
-    VEC(Join *) joins; pthread_mutex_t join_mu;
-    VEC(void *) mems;                  /* frame-owned heap blocks (under join_mu); a stuck frame's are released at teardown */
+    VEC(Cont *) stuck;                /* teardown: frames reached as stuck waiters or queued jobs */
     /* readings: one shard per thread that has executed protocol events */
     struct Shard *shards; pthread_mutex_t shard_mu;
     uint64_t epoch;
@@ -162,7 +166,6 @@ void eval_init(void) {
     pthread_mutex_init(&E.idle_mu, NULL);
     pthread_cond_init(&E.work_cv, NULL);
     pthread_cond_init(&E.idle_cv, NULL);
-    pthread_mutex_init(&E.join_mu, NULL);
     pool_init(&E.cont_pool, sizeof(Cont));
     pool_init(&E.chunk_pool, sizeof(QChunk));
     pthread_mutex_init(&E.loc_mu, NULL);
@@ -193,11 +196,24 @@ void eval_reset(void) {
     eval_free(); eval_init();
     if (w) eval_set_workers(w);
 }
+static void owned_link(Cont *owner, Owned *o, int is_join) {
+    require(owner && owner->kind == K_FRAME, "a frame-owned resource is created by a frame's step");
+    o->owner = owner; o->is_join = is_join; o->prev = NULL; o->next = owner->owned;
+    if (owner->owned) owner->owned->prev = o;
+    owner->owned = o;
+}
+static void owned_unlink(Owned *o) {
+    if (o->prev) o->prev->next = o->next; else o->owner->owned = o->next;
+    if (o->next) o->next->prev = o->prev;
+}
+static void join_release(Join *j) { pthread_mutex_destroy(&j->mu); free(j->vals); free(j); }
+static void owned_free_all(Cont *k) {
+    for (Owned *o = k->owned, *n; o; o = n) { n = o->next; if (o->is_join) join_release((Join *)o); else free(o); }
+    k->owned = NULL;
+}
 void join_free(Join *j) {
-    pthread_mutex_lock(&E.join_mu);
-    E.joins.data[j->slot] = NULL;
-    pthread_mutex_unlock(&E.join_mu);
-    pthread_mutex_destroy(&j->mu); free(j->vals); free(j);
+    owned_unlink(&j->own);
+    join_release(j);
 }
 
 static void stop_workers(void) {
@@ -238,6 +254,7 @@ static void cont_dispose(Cont *k) {
      * waiters are disposed with that entry) */
     while (k && !k->disposed) {
         k->disposed = true;
+        if (k->kind == K_FRAME) vec_push(&E.stuck, k);
         if (k->kind == K_EXTERNAL) { if (k->ext_free) k->ext_free(k->ext_ctx); return; }
         if (k->kind == K_ROOT) { rootbox_release(k->root); return; }
         if (k->kind == K_JOIN) { k = k->join->frame; continue; }
@@ -266,15 +283,13 @@ void eval_free(void) {
         if (h == ENTRY_READY) continue;
         for (Cont *k = h; k; k = k->next) cont_dispose(k);     /* suspended forever: stuck demands */
     }
+    {   Task t; while (q_take(&E.shared, false, &t)) if (t.kind == TK_RESUME) cont_dispose(t.k); }   /* jobs never run */
     interner_free(&E.keys);
     chunked_free(&E.entries);
     for (EvalResult *r = E.results; r; ) { EvalResult *nx = r->next_alloc; free(r->faces); free(r->terms); free(r); r = nx; }
-    /* dismantle suspended joins (their branch continuations were waiters of stuck entries) */
-    for (size_t i = 0; i < E.joins.len; i++) if (E.joins.data[i]) { Join *j = E.joins.data[i]; pthread_mutex_destroy(&j->mu); free(j->vals); free(j); }
-    vec_free(&E.joins);
-    for (size_t i = 0; i < E.mems.len; i++) free(E.mems.data[i]);
-    vec_free(&E.mems);
-    pthread_mutex_destroy(&E.join_mu);
+    /* the stuck frames reached above own their remaining blocks and joins */
+    for (size_t i = 0; i < E.stuck.len; i++) owned_free_all(E.stuck.data[i]);
+    vec_free(&E.stuck);
     pool_destroy(&E.cont_pool);
     pool_destroy(&E.chunk_pool);
     for (size_t f = 0; f < F_MAX; f++) if (E.loc_ready[f]) pool_destroy(&E.loc_pool[f]);
@@ -287,7 +302,7 @@ void eval_free(void) {
 
 static Cont *cont_new(ContKind kind, EntryId dest, FaceId chi) {
     Cont *k = pool_alloc(&E.cont_pool);
-    k->kind = kind; k->dest = dest; k->chi = chi; k->disposed = false; k->owner = 0;
+    k->kind = kind; k->dest = dest; k->chi = chi; k->disposed = false; k->owner = 0; k->owned = NULL;
     return k;
 }
 static Pool *loc_pool(Family f) {
@@ -299,6 +314,7 @@ static Pool *loc_pool(Family f) {
     return &E.loc_pool[f];
 }
 static void cont_release(Cont *k) {
+    if (k->kind == K_FRAME && k->owned) owned_free_all(k);
     if (k->kind == K_FRAME && k->loc) pool_free(loc_pool(k->fam), k->loc);
     pool_free(&E.cont_pool, k);
 }
@@ -721,18 +737,18 @@ static void obs_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
-/* frame-owned memory: a block a frame's locals point to, registered so that
- * a frame suspended forever (a stuck demand) does not leak it */
-typedef struct { size_t slot; uint64_t pad; } MemHdr;
+/* frame-owned memory: a block a frame's locals point to, owned by that
+ * frame (a frame suspended forever does not leak it) */
+typedef struct { Owned own; uint64_t pad; } MemHdr;
 void *frame_mem(size_t bytes) {
     MemHdr *h = malloc(sizeof(MemHdr) + (bytes ? bytes : 1)); require(h, "out of memory");
-    pthread_mutex_lock(&E.join_mu); h->slot = E.mems.len; vec_push(&E.mems, (void *)h); pthread_mutex_unlock(&E.join_mu);
+    owned_link(tl_step_frame, &h->own, 0);
     return h + 1;
 }
 void frame_mem_free(void *p) {
     if (!p) return;
     MemHdr *h = (MemHdr *)p - 1;
-    pthread_mutex_lock(&E.join_mu); E.mems.data[h->slot] = NULL; pthread_mutex_unlock(&E.join_mu);
+    owned_unlink(&h->own);
     free(h);
 }
 
@@ -743,7 +759,7 @@ Join *join_new(Cont *frame, size_t n) {
     j->vals = calloc(n ? n : 1, sizeof(uint64_t));
     require(j->vals, "out of memory");
     pthread_mutex_init(&j->mu, NULL);
-    pthread_mutex_lock(&E.join_mu); j->slot = E.joins.len; vec_push(&E.joins, j); pthread_mutex_unlock(&E.join_mu);
+    owned_link(frame, &j->own, 1);
     return j;
 }
 static bool join_arrive(Join *j) {

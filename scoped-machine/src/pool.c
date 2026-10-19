@@ -1,7 +1,19 @@
 #include "pool.h"
 
+static uint64_t pool_gens;
+/* a thread's cached free lists: direct-mapped by pool, a bounded count each */
+#define MAGS 32
+#define MAG_CAP 64
+typedef struct { const Pool *p; uint64_t gen; void *free; size_t n; } Mag;
+static __thread Mag tl_mag[MAGS];
+static Mag *mag(const Pool *p) {
+    Mag *m = &tl_mag[((uintptr_t)p >> 4) % MAGS];
+    if (m->p != p || m->gen != p->gen) { m->p = p; m->gen = p->gen; m->free = NULL; m->n = 0; }   /* another pool's, or a destroyed one's: forgotten */
+    return m;
+}
 void pool_init(Pool *p, size_t size) {
     memset(p, 0, sizeof *p);
+    p->gen = __atomic_add_fetch(&pool_gens, 1, __ATOMIC_RELAXED);
     p->size = size < sizeof(void *) ? sizeof(void *) : (size + 15) & ~(size_t)15;
     pthread_mutex_init(&p->mu, NULL);
 }
@@ -22,6 +34,8 @@ void *pool_alloc(Pool *p) {
     { void *x = calloc(1, p->size); require(x, "oom"); return x; }
 #endif
     void *x = NULL;
+    Mag *m = mag(p);
+    if (m->free) { x = m->free; m->free = *(void **)x; m->n--; memset(x, 0, p->size); return x; }
     for (;;) {
         pthread_mutex_lock(&p->mu);
         if (p->free) { x = p->free; p->free = *(void **)x; }
@@ -43,6 +57,8 @@ void pool_free(Pool *p, void *x) {
 #ifdef POOL_DEBUG
     { free(x); return; }
 #endif
+    Mag *m = mag(p);
+    if (m->n < MAG_CAP) { *(void **)x = m->free; m->free = x; m->n++; return; }
     pthread_mutex_lock(&p->mu);
     *(void **)x = p->free;
     p->free = x;

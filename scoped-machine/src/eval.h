@@ -79,6 +79,7 @@ struct Cont {
     Cont *parent;       /* subroutine frame: the frame its value returns to */
     Cont *next;         /* link in an entry's waiter stack / a delivery chain */
     bool disposed;      /* teardown: its owned resources were released (a join frame is reached once per box) */
+    struct Owned *owned;  /* FRAME: heap blocks and joins it created and has not freed */
 };
 
 typedef struct {

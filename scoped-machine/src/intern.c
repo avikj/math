@@ -182,9 +182,9 @@ static Interner *tree_of(Interner *t) {
     interner_free(fresh); free(fresh);
     return expect;
 }
-const uint64_t *interner_tree_get(Interner *t, uint64_t id, size_t *n) { return interner_get(t->tree, id, n); }
+const uint64_t *interner_tree_get(Interner *t, uint64_t id, size_t *n) { return interner_get(__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE), id, n); }
 uint64_t interner_flat_of(Interner *t, uint64_t root) {
-    uint64_t f = __atomic_load_n(&rec_of(t->tree, root)->flat, __ATOMIC_ACQUIRE);
+    uint64_t f = __atomic_load_n(&rec_of(__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE), root)->flat, __ATOMIC_ACQUIRE);
     return f == UINT64_MAX ? 0 : f;
 }
 uint64_t *interner_flat_reserve(Interner *t, size_t n) { return storage_reserve(t, n); }
@@ -192,7 +192,7 @@ uint64_t interner_flat_publish(Interner *t, uint64_t root, uint64_t *dst, size_t
     uint64_t id = __atomic_add_fetch(&t->n, 1, __ATOMIC_ACQ_REL);
     Rec *r = chunked_at(&t->recs, id - 1); r->w = dst; r->n = n; r->hash = 0;
     __atomic_store_n(&r->live, 1, __ATOMIC_RELEASE);
-    __atomic_store_n(&rec_of(t->tree, root)->flat, id, __ATOMIC_RELEASE);
+    __atomic_store_n(&rec_of(__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE), root)->flat, id, __ATOMIC_RELEASE);
     return id;
 }
 
@@ -318,7 +318,7 @@ int intern_advance(InternState *s, size_t budget) {
 
 /* copy a tree's words in order into dst (the inline owner) */
 static size_t tree_copy(Interner *t, uint64_t id, uint64_t *dst) {
-    size_t m; const uint64_t *w = interner_get(t->tree, id, &m);
+    size_t m; const uint64_t *w = interner_get(__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE), id, &m);
     if (w[0] == TREE_LEAF) { memcpy(dst, w + 1, (m - 1) * sizeof(uint64_t)); return m - 1; }
     size_t at = 0;
     for (size_t q = 1; q < m; q++) at += tree_copy(t, w[q], dst + at);
@@ -335,9 +335,9 @@ uint64_t intern_complete(InternState *s) {
         else {
             /* no evaluator: one inline owner claims the root's flat cell; others
              * wait for an owner that never suspends */
-            uint64_t *cell = &rec_of(t->tree, root)->flat, expect = 0;
+            uint64_t *cell = &rec_of(__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE), root)->flat, expect = 0;
             if (__atomic_compare_exchange_n(cell, &expect, UINT64_MAX, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                size_t m; const uint64_t *rw = interner_get(t->tree, root, &m);
+                size_t m; const uint64_t *rw = interner_get(__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE), root, &m);
                 uint64_t *dst = storage_reserve(t, s->n);
                 require(tree_copy(t, rw[2], dst) == s->n, "tree length");
                 id = interner_flat_publish(t, root, dst, s->n);
