@@ -27,7 +27,6 @@ typedef struct {
     Interner scopes;      /* ScopeId     → scope record (§50) */
     Interner exprs;       /* template expression DAG nodes (§51) */
     Interner tnodes;      /* template constructor nodes */
-    Interner tenvs;       /* template environments */
     Interner tdefs;       /* template definitions (signature + root) */
     Interner keys;        /* interned word tuples used as memo keys */
     Chunked scope_side;   /* ScopeSide per ScopeId-1 */

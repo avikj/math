@@ -18,7 +18,7 @@ void machine_init(void) {
     interner_init(&M.refs);
     interner_init(&M.nominal);
     interner_init(&M.contexts);
-    interner_init(&M.scopes); interner_init(&M.exprs); interner_init(&M.tnodes); interner_init(&M.tenvs); interner_init(&M.tdefs); interner_init(&M.keys);
+    interner_init(&M.scopes); interner_init(&M.exprs); interner_init(&M.tnodes); interner_init(&M.tdefs); interner_init(&M.keys);
     chunked_init(&M.scope_side, sizeof(ScopeSide)); chunked_init(&M.tnode_side, sizeof(TNodeSide));
     chunked_init(&M.ref_side, sizeof(RefSide));
     chunked_init(&M.term_decl, sizeof(TermDecl));
@@ -40,7 +40,7 @@ void machine_free(void) {
     interner_free(&M.refs);
     interner_free(&M.nominal);
     interner_free(&M.contexts);
-    interner_free(&M.scopes); interner_free(&M.exprs); interner_free(&M.tnodes); interner_free(&M.tenvs); interner_free(&M.tdefs); interner_free(&M.keys);
+    interner_free(&M.scopes); interner_free(&M.exprs); interner_free(&M.tnodes); interner_free(&M.tdefs); interner_free(&M.keys);
     chunked_free(&M.scope_side); chunked_free(&M.tnode_side);
     chunked_free(&M.ref_side);
     chunked_free(&M.term_decl);

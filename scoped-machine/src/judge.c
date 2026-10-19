@@ -71,7 +71,7 @@ bool jc_dim(uint64_t G, DimVarId j) { return pins_lookup(jcw(G)[4], 2 * j + 1, N
 
 /* ---------------- families used ---------------- */
 static Family Jf_FCMEET, Jf_FCJOIN, Jf_FCENT, Jf_FCPROJ, Jf_FCDIMS, Jf_IVDIMS, Jf_DSUNION, Jf_REINDEX, Jf_IVRE, Jf_FCRE,
-              Jf_FIELD, Jf_BINDER, Jf_HEAD, Jf_REFVAR, Jf_TVMAKE, Jf_OVERRIDE, Jf_ENVOF, Jf_INTERP, Jf_ENVLOOK, Jf_SCOPESIDE,
+              Jf_FIELD, Jf_BINDER, Jf_HEAD, Jf_REFVAR, Jf_TVMAKE, Jf_OVERRIDE, Jf_INTERP, Jf_ENVLOOK, Jf_SCOPESIDE,
               Jf_TREF, Jf_TIV, Jf_TFC, Jf_GARGS, Jf_MAPT, Jf_MAPD;
 static Family J_CLAUSES, J_JDIMS, J_JCOF, J_GENERIC, J_GMAP, J_OBSHEAD, J_LEVEL, J_INFER, J_HEAD, J_CHECK, J_CONVT, J_CONVt, J_SPINE,
               J_GLUEOK, J_TVIEW, J_TBOUND, J_SCOPEN, J_SCOWN, J_SCARG, J_MAP, J_CTX, J_CTXD, J_DECLOK, J_NODE, J_DECL, J_BODY,
@@ -1120,7 +1120,7 @@ static void tview_step(Cont *k, uint64_t v) {
     PASS(L->res);
     L->T = jr_a(L->res);
     {   ExprId te, le; if (!tnode_result_exprs(ref_tnode(t), &te, &le)) DONE(J_OK, NULL, L->T, 0, 0); L->x = te; }
-    FR_AWAIT(k, L->y, Jf_ENVOF, ref_tnode(t), ref_tenv(t));
+    L->y = ref_tenv(t);
     FR_AWAIT(k, r, Jf_INTERP, L->x, L->y);
     { size_t n; L->D = rget(r, &n)[1]; }
     JRQ(L->res, J_CONVT, RQ(q[0], L->T, L->D, q[2]));
@@ -1148,7 +1148,7 @@ static void tbound_step(Cont *k, uint64_t v) {
             PASS(L->res);
         } else FR_YIELD(k);
     }
-    FR_AWAIT(k, L->D, Jf_ENVOF, ref_tnode(t), ref_tenv(t));
+    L->D = ref_tenv(t);
     L->n = tnode_sig_count(ref_tnode(t));
     for (L->i = 0; L->i < L->n; L->i++) {
         {   size_t slot; PSort so; ExprId te, le, se, ge;
@@ -1577,7 +1577,7 @@ void judge_families_init(void) {
     Jf_REINDEX = family_lookup("reindex"); Jf_IVRE = family_lookup("iv.reindex"); Jf_FCRE = family_lookup("fc.reindex");
     Jf_FIELD = family_lookup("field"); Jf_BINDER = family_lookup("binder"); Jf_HEAD = family_lookup("head.annotation"); Jf_REFVAR = family_lookup("ref.var");
     Jf_TVMAKE = family_lookup("template.view"); Jf_OVERRIDE = family_lookup("map.override");
-    Jf_ENVOF = family_lookup("template.envof"); Jf_INTERP = family_lookup("template.interp"); Jf_ENVLOOK = family_lookup("template.envlook");
+    Jf_INTERP = family_lookup("template.interp"); Jf_ENVLOOK = family_lookup("template.envlook");
     Jf_SCOPESIDE = family_lookup("scope.side"); Jf_TREF = family_lookup("trav.ref"); Jf_TIV = family_lookup("trav.interval"); Jf_TFC = family_lookup("trav.face");
     Jf_GARGS = family_lookup("global.args"); Jf_MAPT = family_lookup("map.term_image"); Jf_MAPD = family_lookup("map.dim_image");
     require(Jf_FCMEET && Jf_SCOPESIDE && Jf_GARGS && Jf_MAPD && Jf_ENVLOOK, "the judgment families' operand families are registered first");

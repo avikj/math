@@ -142,8 +142,9 @@ static void node_free_list(TNodeId Q, size_t *n, const uint64_t **w) {
 /* environments and interpretation (as families, below)                 */
 
 
-/* TEnv record: [(slot, sort, id)*] in slot order */
-static const uint64_t *tenv_words(TEnvId E, size_t *n) { return interner_get(&M.tenvs, E, n); }
+/* a reference's environment is its interpretation record [def, (slot, sort,
+ * id)*] restricted to the node's free slots */
+static const uint64_t *tenv_words(TEnvId E, size_t *n) { const uint64_t *w = interner_get(&M.keys, E, n); (*n)--; return w + 1; }
 size_t tenv_size(TEnvId E) { size_t n; (void)tenv_words(E, &n); return n / 3; }
 void tenv_entry(TEnvId E, size_t k, uint64_t *slot, TVal *v) { size_t n; const uint64_t *w = tenv_words(E, &n); *slot = w[3 * k]; v->sort = (PSort)w[3 * k + 1]; v->id = w[3 * k + 2]; }
 TNodeId tnode_of(RefId t) { return ref_tnode(t); }
@@ -220,15 +221,15 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
 
 /* ------------------------------------------------------------------ */
 /* interpretation families                                               */
-/* INTERP(e, env) interprets one expression; TVMAKE(Q, env) is the template
- * view of a node (§51.1: restricted to the node's complete typed free slots,
- * its required face the instantiated recipe); ISCOPE(e, env) a scope literal
- * (fresh keyed locals, then capture); ENVLOOK(env, slot) the position of a
- * slot; ENVSET(env, [slot, sort, id]) an environment with one slot set;
- * ENVOF(Q, E) the environment of a template view. Each step does a constant
- * amount of work. */
+/* INTERP(e, env) interprets one expression; TVMAKE(Q, env) is the view of a
+ * node (§51.1: restricted to the node's free slots, its required face the
+ * instantiated recipe strengthened by its images'); ISCOPE(e, env) a scope
+ * literal (fresh keyed locals, then capture); ENVLOOK(env, slot) the position
+ * of a slot; ENVSET(env, [slot, sort, id]) an environment with one slot set.
+ * A view's environment is an interpretation record. Each step does a
+ * constant amount of work. */
 
-static Family F_INTERP, F_TVMAKE, F_ISCOPE, F_ENVLOOK, F_ENVSET, F_ENVOF;
+static Family F_INTERP, F_TVMAKE, F_ISCOPE, F_ENVLOOK, F_ENVSET;
 static Family F_TREF, F_TIV, F_TFC, F_TSCOPE, F_CAPTURE, F_REFVAR, F_SETFREE, F_DSUNION, F_VSUNION, F_IVDIMS, F_FCDIMS;
 static Family F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_FCFORALL, F_REINDEX, F_IVRE, F_FCRE, F_FCENT;
 
@@ -272,19 +273,6 @@ static void envset_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 static uint64_t env_entry(uint64_t er, uint64_t slot, PSort sort, uint64_t id) { (void)er; uint64_t w[3] = { slot, sort, id }; return interner_intern(&M.keys, w, 3, NULL); }
-/* the environment of template view (Q, E): [def(Q), E's entries] */
-static void envof_step(Cont *k, uint64_t v) {
-    SetLoc *L = FR_LOC(k, SetLoc);
-    uint64_t id = 0;
-    FR_BEGIN(k);
-    L->w = tenv_words(k->w[1], &L->n);
-    wordbuf_init(&L->out); wordbuf_push(&L->out, tnode_def(k->w[0]));
-    for (L->q = 0; L->q < L->n; L->q++) { wordbuf_push(&L->out, L->w[L->q]); FR_YIELD(k); }
-    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
-    FR_FINISH(k, id);
-    FR_END(k);
-}
-
 /* env.map(er): an environment record as the substitution of its atoms —
  * slot k is atom k; terms first, then dimensions (a map record). The
  * interpretation of a construction's closed constant is its substitution by
@@ -439,7 +427,7 @@ static void tvmake_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     node_free_list(Q, &L->nf, &L->fl);
     L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
-    wordbuf_init(&L->out);
+    wordbuf_init(&L->out); wordbuf_push(&L->out, tnode_def(Q));
     for (L->q = 0; L->q < L->nf; L->q++) {
         FR_AWAIT(k, r, F_ENVLOOK, er, L->fl[L->q]);
         require(r, "template view: a required slot has no value (%s slot %zu)", TPL.defs[tnode_def(Q)].name, (size_t)L->fl[L->q]);
@@ -457,7 +445,7 @@ static void tvmake_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->sup, F_DSUNION, L->sup, L->ds);
         }
     }
-    FR_CALL(k, L->E, intern_sub(k, &M.tenvs, &L->out, &L->created));
+    FR_CALL(k, L->E, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_AWAIT(k, r, F_INTERP, node_required_e(Q), er);
     L->req = tvget(r).id;
     /* each reference image's requirement, except where the slot's declared
@@ -536,7 +524,6 @@ void template_families_init(void) {
     require(F_TREF && F_CAPTURE && F_REFVAR && F_FCRE, "the scope, construction and substitution families are registered first");
     F_ENVLOOK = family_define("template.envlook", envlook_step, sizeof(LookLoc), true);
     F_ENVSET = family_define("template.envset", envset_step, sizeof(SetLoc), true);
-    F_ENVOF = family_define("template.envof", envof_step, sizeof(SetLoc), true);
     F_INTERP = family_define("template.interp", interp_step, sizeof(InLoc), true);
     F_ENVMAP = family_define("env.map", envmap_step, sizeof(EmLoc), true);
     F_TVMAKE = family_define("template.view", tvmake_step, sizeof(MkLoc), true);
