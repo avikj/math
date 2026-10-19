@@ -121,8 +121,8 @@ static void compclause_step(Cont *k, uint64_t v) {
         L->nk = 0;
         DEMAND(F_FIELD, L->fam, 1);
         DEMAND(F_FIELD, L->fam, 2);
-        DEMAND(F_REINDEX, L->a0, map_single_dim(L->x, iv_zero()));
-        DEMAND(F_REINDEX, L->a0, map_single_dim(L->x, iv_one()));
+        DEMAND(F_TREF, L->a0, re_key(map_single_dim(L->x, iv_zero())));
+        DEMAND(F_TREF, L->a0, re_key(map_single_dim(L->x, iv_one())));
         DEMAND(F_CONSTRUCT, universe_request(L->n), 0);
         LAUNCH_ALL();
         for (L->ki = 0; L->ki < L->nk; L->ki++) FR_AWAIT(k, L->kv[L->ki], L->kf[L->ki], L->ka[L->ki], L->kb[L->ki]);
@@ -152,7 +152,7 @@ static void compclause_step(Cont *k, uint64_t v) {
         L->x = L->a1;                                                    /* T_j and e_j are defined on α_j */
         {   TVal a[4] = { { PS_LEVEL, L->n }, { PS_LEVEL, L->n }, { PS_REF, L->a2 }, { PS_REF, L->a0 } };
             template_call_env(TD_EQUIV, 4, a, &L->wb, &L->root); }
-        FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->wb, &L->created));
+        FR_CALL(k, L->er, intern_sub(k, &M.maps, &L->wb, &L->created));
         FR_AWAIT(k, r, F_INTERP, L->root, L->er);
         { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); L->eq = w[1]; }   /* Equiv(T_j, A_j) */
         L->nk = 0;
@@ -176,7 +176,7 @@ static void compclause_step(Cont *k, uint64_t v) {
     }
     FR_FINISH(k, 0);
 interpret:
-    FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->wb, &L->created));
+    FR_CALL(k, L->er, intern_sub(k, &M.maps, &L->wb, &L->created));
     FR_AWAIT(k, r, F_INTERP, L->root, L->er);
     { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
     FR_END(k);

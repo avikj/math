@@ -1,45 +1,21 @@
 #include "interval.h"
 
-IntervalId iv_from_dnf(Dnf *d) {
-    dnf_normalize(d, NULL);
-    Words w; words_init(&w);
-    dnf_encode(d, &w);
-    IntervalId id = interner_intern(&M.intervals, w.w, w.n, NULL);
-    words_free(&w);
-    dnf_free(d);
-    return id;
-}
-
-void iv_to_dnf(IntervalId r, Dnf *d) {
-    size_t n;
-    const uint64_t *w = interner_get(&M.intervals, r, &n);
-    dnf_decode(d, w, n);
-}
-
-IntervalId iv_zero(void) { Dnf d; dnf_init(&d); return iv_from_dnf(&d); }
-IntervalId iv_one(void) { Dnf d; dnf_init(&d); dnf_add_clause(&d, NULL, 0); return iv_from_dnf(&d); }
-IntervalId iv_var(DimVarId i) {
-    Dnf d; dnf_init(&d);
-    uint64_t a = IV_ATOM(i, 0);
-    dnf_add_clause(&d, &a, 1);
-    return iv_from_dnf(&d);
-}
+/* the constants: canonical by construction */
+IntervalId iv_zero(void) { return interner_intern(&M.intervals, NULL, 0, NULL); }
+IntervalId iv_one(void) { uint64_t w[1] = { DNF_SEP }; return interner_intern(&M.intervals, w, 1, NULL); }
+IntervalId iv_var(DimVarId i) { uint64_t w[2] = { IV_ATOM(i, 0), DNF_SEP }; return interner_intern(&M.intervals, w, 2, NULL); }
 bool iv_is_zero(IntervalId r) { size_t n; (void)interner_get(&M.intervals, r, &n); return n == 0; }
 bool iv_is_one(IntervalId r) { size_t n; const uint64_t *w = interner_get(&M.intervals, r, &n); return n == 1 && w[0] == DNF_SEP; }
 
-
-
-void iv_print(IntervalId r, FILE *f) {
-    Dnf a; iv_to_dnf(r, &a);
-    if (a.n == 0) { fprintf(f, "0"); dnf_free(&a); return; }
-    for (size_t i = 0; i < a.n; i++) {
-        if (i) fprintf(f, " ∨ ");
-        if (a.c[i].n == 0) { fprintf(f, "1"); continue; }
-        for (size_t k = 0; k < a.c[i].n; k++) {
-            if (k) fprintf(f, "∧");
-            uint64_t at = a.c[i].a[k];
-            fprintf(f, "%sd%llu", IV_ATOM_NEG(at) ? "¬" : "", (unsigned long long)IV_ATOM_DIM(at));
-        }
+void dnf_print(const uint64_t *w, size_t n, FILE *f, const char *zero, const char *one, void (*atom)(uint64_t a, FILE *f)) {
+    if (n == 0) { fprintf(f, "%s", zero); return; }
+    bool first_clause = true, first_atom = true;
+    for (size_t p = 0; p < n; p++) {
+        if (first_atom) { if (!first_clause) fprintf(f, " ∨ "); if (w[p] == DNF_SEP) fprintf(f, "%s", one); }
+        if (w[p] == DNF_SEP) { first_clause = false; first_atom = true; continue; }
+        if (!first_atom) fprintf(f, "∧");
+        atom(w[p], f); first_atom = false;
     }
-    dnf_free(&a);
 }
+static void iv_atom_print(uint64_t a, FILE *f) { fprintf(f, "%sd%llu", IV_ATOM_NEG(a) ? "¬" : "", (unsigned long long)IV_ATOM_DIM(a)); }
+void iv_print(IntervalId r, FILE *f) { size_t n; const uint64_t *w = interner_get(&M.intervals, r, &n); dnf_print(w, n, f, "0", "1", iv_atom_print); }

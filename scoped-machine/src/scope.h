@@ -28,9 +28,13 @@ typedef struct { Val body; RefId type; uint64_t level; FaceId guard; } TypedPart
 /* ---- scoped traversal (scopefam.c) ----
  * A traversal key [kind, depth, context]: CLOSE (context [sort, id]* of the
  * captured locals), APPLY (context [sort, value]* arguments), RE (context a
- * map), LOWER. A scope's own records sit one level deeper than its occurrence. */
-enum { TR_CLOSE = 1, TR_APPLY, TR_RE, TR_LOWER };
+ * map), ENV (context an environment: a node's atom k reads its slot k), LOWER.
+ * A scope's own records sit one level deeper than its occurrence; RE and ENV
+ * touch free identities only and carry no depth. */
+enum { TR_CLOSE = 1, TR_APPLY, TR_RE, TR_ENV, TR_LOWER };
 uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx);
+uint64_t re_key(uint64_t map);    /* the traversal substituting a map */
+uint64_t env_key(uint64_t env);   /* the traversal reading a node's atoms from an environment */
 ScopeId scope_records_traverse(ScopeId S, uint64_t tk);   /* records at tk's depth */
 ScopeId scope_with_side(uint64_t pre);               /* the scope whose words (without side data) are the record pre */
 ScopeId capture_request(const uint64_t *req, size_t n);

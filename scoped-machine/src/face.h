@@ -30,9 +30,6 @@ bool fc_entails(FaceId chi, FaceId phi);
 FaceId fc_forall(DimVarId i, FaceId phi);
 /* π_S(chi): delete literals whose dimension is not in the dimension set S */
 FaceId fc_project(FaceId chi, DimSetId S);
-void fc_dims(FaceId phi, Words *out);
-FaceId fc_from_dnf(Dnf *d);
-void fc_to_dnf(FaceId a, Dnf *d);
 void fc_print(FaceId a, FILE *f);
 
 /* ---- interned sorted sets (dimension sets and term-variable sets) ---- */

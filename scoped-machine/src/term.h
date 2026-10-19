@@ -78,26 +78,33 @@ DimVarId declare_dim(void);
 RefId term_var_type(TermVarId x);
 FaceId term_var_required(TermVarId x);
 
-/* ---- raw maps ---- */
-typedef struct { Words t; Words d; } MapBuilder;   /* (key,image) pairs */
+/* ---- substitution records (subst.c) ----
+ * [(key, sort, value)*] sorted by key, an environment followed by its
+ * definition word. A map's keys are variables, dimensions and atoms, its
+ * absent keys their own images (identity entries are never stored); an
+ * environment's keys are a node's slots. */
+typedef enum { PS_REF = 1, PS_INTERVAL, PS_FACE, PS_SCOPE, PS_LEVEL } PSort;
+typedef struct { PSort sort; uint64_t id; } TVal;   /* RefId / IntervalId / FaceId / ScopeId / level */
+size_t subst_size(uint64_t rec);
+void subst_get(uint64_t rec, size_t k, uint64_t *key, TVal *v);
+uint64_t subst_entry(uint64_t key, uint64_t sort, uint64_t value);   /* the set family's entry operand */
+bool subst_identity(uint64_t sort, uint64_t key, uint64_t value);
+uint64_t env_empty(uint64_t def);
+typedef struct { Words w; } MapBuilder;            /* (key, sort, image) triples */
 void mapb_init(MapBuilder *b);
 void mapb_term(MapBuilder *b, TermVarId x, RefId image);
 void mapb_dim(MapBuilder *b, DimVarId i, IntervalId image);
-MapId mapb_finish(MapBuilder *b);  /* sorts, rejects duplicate keys, drops identity entries, interns */
+MapId mapb_finish(MapBuilder *b);  /* sorts, rejects conflicting keys, drops identity entries, interns */
 MapId map_identity(void);
 bool map_is_identity(MapId m);
-RefId map_term_image(MapId m, TermVarId x);          /* VAR(x) when absent */
-IntervalId map_dim_image(MapId m, DimVarId i);       /* i when absent */
-/* iterate entries */
-size_t map_n_terms(MapId m); size_t map_n_dims(MapId m);
-void map_term_entry(MapId m, size_t k, TermVarId *x, RefId *img);
-void map_dim_entry(MapId m, size_t k, DimVarId *i, IntervalId *img);
 MapId map_single_term(TermVarId x, RefId a);
 MapId map_single_dim(DimVarId i, IntervalId r);
+RefId map_term_image(MapId m, TermVarId x);          /* VAR(x) when absent */
+IntervalId map_dim_image(MapId m, DimVarId i);       /* i when absent */
 IntervalId iv_reindex(IntervalId r, MapId m);
 FaceId fc_reindex(FaceId phi, MapId m);
 MapId compose(MapId sigma, MapId tau);   /* apply sigma then tau */
-MapId map_override(MapId sigma, Sort sort, uint64_t key, uint64_t image);   /* sigma without key's entry, then key ↦ image */
+MapId map_override(MapId sigma, Sort sort, uint64_t key, uint64_t image);   /* sigma with key ↦ image */
 
 /* ---- constructions ---- */
 /* the construction (tag, payload, fields, binders) over its typed free
@@ -213,9 +220,8 @@ DimSetId global_dims(SymbolId s);
 size_t global_count(void);
 bool set_global_body(SymbolId s, RefId body);   /* false: the environment is frozen (admitted); open a new one first */
 RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the definition's own parameters */
-MapId global_args(RefId t);            /* a global reference's images of the definition's parameters */
 ContextId global_context_flat(SymbolId s);   /* the parameter context of a global (fixed at declaration) */
-ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req);          /* reindex(definition body, global_args) */
+ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req);   /* dimensions, then term variables in id (dependency) order */
 
 /* ---- constructors (constructions at their own boundary) ---- */
 RefId mk_universe(uint64_t level);

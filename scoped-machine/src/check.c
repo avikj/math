@@ -93,7 +93,7 @@ CheckStatus check_context(ContextId F, const char **reason) {
 
 CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma, FaceId chi, const char **reason) {
     Roots R = { 0 }; pr_ctx(&R, Delta); pr_ctx(&R, Gamma);
-    for (size_t q = 0; q < map_n_terms(sigma); q++) { TermVarId x; RefId im; map_term_entry(sigma, q, &x, &im); pr_ref(&R, im); }
+    for (size_t q = 0; q < subst_size(sigma); q++) { uint64_t x; TVal im; subst_get(sigma, q, &x, &im); if (im.sort == PS_REF) pr_ref(&R, im.id); }
     PinSet P = pins_of(&R);
     uint64_t D, G; CheckStatus st = jctx(Delta, &D, reason);
     if (st == CK_VALID) st = jctx(Gamma, &G, reason);

@@ -27,7 +27,7 @@ static void test_intervals_faces(void) {
     IntervalId ini = iv_meet(vi, iv_negate(vi));
     CHECK(!iv_is_zero(ini), "i ∧ ¬i is retained (not Boolean)");
     CHECK(!iv_is_one(iv_join(vi, iv_negate(vi))), "i ∨ ¬i ≠ 1");
-    { Dnf d; iv_to_dnf(ini, &d); CHECK(d.n == 1 && d.c[0].n == 2, "i ∧ ¬i is one clause of two atoms"); dnf_free(&d); }
+    { size_t n; const uint64_t *w = interner_get(&M.intervals, ini, &n); CHECK(n == 3 && w[2] == DNF_SEP, "i ∧ ¬i is one clause of two atoms"); }
     CHECK(iv_negate(iv_zero()) == iv_one() && iv_negate(iv_one()) == iv_zero(), "¬0 = 1, ¬1 = 0");
     CHECK(iv_negate(iv_negate(iv_meet(vi, vj))) == iv_meet(vi, vj), "double negation (De Morgan) is identity");
     CHECK(iv_negate(iv_meet(vi, vj)) == iv_join(iv_negate(vi), iv_negate(vj)), "¬(i∧j) = ¬i ∨ ¬j");
@@ -78,13 +78,12 @@ static void test_face_laws(void) {
     CHECK(nc == 9, "9 consistent clauses");
     FaceId *faces = malloc(1024 * sizeof(FaceId)); size_t nf = 0;
     for (unsigned sub = 0; sub < (1u << nc); sub++) {
-        Dnf d; dnf_init(&d);
+        FaceId f = fc_false();
         for (size_t c = 0; c < nc; c++) if (sub & (1u << c)) {
-            uint64_t buf[4]; size_t n = 0;
-            for (int l = 0; l < 4; l++) if (clauses[c] & (1u << l)) buf[n++] = lits[l];
-            dnf_add_clause(&d, buf, n);
+            FaceId cl = fc_true();
+            for (int l = 0; l < 4; l++) if (clauses[c] & (1u << l)) cl = fc_meet(cl, fc_lit(FC_LIT_DIM(lits[l]), FC_LIT_EPS(lits[l])));
+            f = fc_join(f, cl);
         }
-        FaceId f = fc_from_dnf(&d);
         bool seen = false;
         for (size_t k = 0; k < nf; k++) if (faces[k] == f) { seen = true; break; }
         if (!seen) faces[nf++] = f;
@@ -102,14 +101,13 @@ static void test_face_laws(void) {
             if (fc_project(pr, dimset_make(Ss[s], Sn[s])) != pr) ok = false;
             for (size_t bb = 0; bb < nf; bb++) {
                 FaceId phi = faces[bb];
-                Words d; words_init(&d); fc_dims(phi, &d);
+                size_t dn; const uint64_t *dw = dimset_get(family_call(F_DIMS, phi, 1), &dn);
                 bool inS = true;
-                for (size_t k = 0; k < d.n; k++) {
+                for (size_t k = 0; k < dn; k++) {
                     bool found = false;
-                    for (size_t q = 0; q < Sn[s]; q++) if (Ss[s][q] == d.w[k]) found = true;
+                    for (size_t q = 0; q < Sn[s]; q++) if (Ss[s][q] == dw[k]) found = true;
                     if (!found) inS = false;
                 }
-                words_free(&d);
                 if (!inS) continue;
                 comparisons++;
                 if (fc_entails(chi, phi) != fc_entails(pr, phi)) ok = false;
@@ -122,14 +120,10 @@ static void test_face_laws(void) {
     for (size_t a = 0; a < nf; a++) {
         FaceId phi = faces[a], all = fc_forall(i, phi);
         if (!fc_entails(all, phi)) okq = false;
-        Words d; words_init(&d); fc_dims(all, &d);
-        for (size_t k = 0; k < d.n; k++) if (d.w[k] == i) okq = false;
-        words_free(&d);
+        if (dimset_contains(family_call(F_DIMS, all, 1), i)) okq = false;
         for (size_t bb = 0; bb < nf; bb++) {
             FaceId psi = faces[bb];
-            Words e; words_init(&e); fc_dims(psi, &e);
-            bool indep = true; for (size_t k = 0; k < e.n; k++) if (e.w[k] == i) indep = false;
-            words_free(&e);
+            bool indep = !dimset_contains(family_call(F_DIMS, psi, 1), i);
             if (!indep) continue;
             qcomp++;
             if (fc_entails(psi, phi) && !fc_entails(psi, all)) okq = false;
@@ -167,7 +161,7 @@ static void test_substitution(void) {
     RefId W = ref_var(w);
     CHECK(varset_contains(ref_freevars(W), x), "boundary of VAR(w) includes x through w's declaration type");
     RefId Wsub = reindex1(mk_fst(mk_pair(W, W)), x, a);
-    { bool has_a = false; TEnvId E = ref_tenv(Wsub); for (size_t q = 0; q < tenv_size(E); q++) { uint64_t sl; TVal v; tenv_entry(E, q, &sl, &v); if (v.sort == PS_REF && v.id == a) has_a = true; }
+    { bool has_a = false; TEnvId E = ref_tenv(Wsub); for (size_t q = 0; q < subst_size(E); q++) { uint64_t sl; TVal v; subst_get(E, q, &sl, &v); if (v.sort == PS_REF && v.id == a) has_a = true; }
       CHECK(Wsub != mk_fst(mk_pair(W, W)) && has_a, "x is in the complete typed boundary through w's declaration type, so its image is retained"); }
     RefId Wsub2 = reindex1(mk_fst(mk_pair(ref_var(y), ref_var(y))), x, a);
     CHECK(Wsub2 == mk_fst(mk_pair(ref_var(y), ref_var(y))), "a variable whose type is independent of x drops the x entry");

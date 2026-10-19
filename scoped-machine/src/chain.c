@@ -127,25 +127,24 @@ static uint64_t genrec(GenKind k, uint64_t id) { uint64_t w[2] = { k, id }; retu
 
 /* cube.reindex(view, [m2, image_1..image_m]): the map c_k ↦ image_k
  * (one entry per step, keys ascending), then each root image reindexed */
-typedef struct { const uint64_t *v, *s; size_t nv, ns, k, kept; uint64_t map; WordBuf out; bool created; } RxLoc;
+typedef struct { const uint64_t *v, *s; size_t nv, ns, k; uint64_t map; WordBuf out; bool created; } RxLoc;
 static void reindex_step(Cont *k, uint64_t v) {
     RxLoc *L = FR_LOC(k, RxLoc);
     uint64_t r = 0;
     FR_BEGIN(k);
     L->v = rget(k->w[0], &L->nv); L->s = rget(k->w[1], &L->ns);
     require(L->ns == 1 + L->v[1], "cube reindex: one image per coordinate");
-    wordbuf_init(&L->out); L->kept = 0;
+    wordbuf_init(&L->out);
     for (L->k = 1; L->k <= L->v[1]; L->k++) {
         {   DimVarId c = cube_coord(L->k);
-            if (L->s[L->k] != iv_var(c)) { wordbuf_push(&L->out, c); wordbuf_push(&L->out, L->s[L->k]); L->kept++; } }
+            if (L->s[L->k] != iv_var(c)) { wordbuf_push(&L->out, c); wordbuf_push(&L->out, PS_INTERVAL); wordbuf_push(&L->out, L->s[L->k]); } }
         FR_YIELD(k);
     }
-    wordbuf_push(&L->out, 0);                                   /* no term entries */
     FR_CALL(k, L->map, intern_sub(k, &M.maps, &L->out, &L->created));
     wordbuf_init(&L->out);
     wordbuf_push(&L->out, L->v[0]); wordbuf_push(&L->out, L->s[0]); wordbuf_push(&L->out, L->v[2]); wordbuf_push(&L->out, L->v[3]);
     for (L->k = 0; L->k < L->v[3]; L->k++) {
-        FR_AWAIT(k, r, F_IVRE, L->v[4 + L->k], L->map);
+        FR_AWAIT(k, r, F_TIV, L->v[4 + L->k], re_key(L->map));
         wordbuf_push(&L->out, r);
     }
     FR_CALL(k, r, intern_sub(k, &M.keys, &L->out, &L->created));

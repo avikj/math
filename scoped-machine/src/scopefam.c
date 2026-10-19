@@ -7,6 +7,7 @@
  *   APPLY (context: [sort, value]* arguments) — a depth atom becomes its
  *         argument, a deeper atom is lowered;
  *   RE    (context: a map) — free identities are substituted;
+ *   ENV   (context: an environment) — a node's atom k becomes its slot k;
  *   LOWER — the single binder level after ∀ is removed.
  * TREF/TIV/TFC traverse a reference, interval or face at the key's depth; a
  * scope's records sit one level deeper (TSCOPE with depth+1). A scope record
@@ -19,7 +20,15 @@
 
 
 uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx) { uint64_t w[3] = { kind, depth, ctx }; return interner_intern(&M.keys, w, 3, NULL); }
+uint64_t re_key(uint64_t map) { return trav_key(TR_RE, 0, map); }
+uint64_t env_key(uint64_t env) { return trav_key(TR_ENV, 0, env); }
 static void tk_get(uint64_t tk, unsigned *kind, unsigned *depth, uint64_t *ctx) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); *kind = (unsigned)w[0]; *depth = (unsigned)w[1]; *ctx = w[2]; }
+
+/* the substitution by the empty map moves nothing */
+static bool trav_identity(uint64_t tk) {
+    unsigned kind, depth; uint64_t ctx; tk_get(tk, &kind, &depth, &ctx);
+    size_t n; return kind == TR_RE && (interner_get(&M.maps, ctx, &n), n == 0);
+}
 
 /* APPLY / LOWER images of a bound atom (constant work); false = keep */
 static bool bound_image(unsigned kind, unsigned depth, uint64_t ctx, uint64_t x, bool dim, uint64_t *out) {
@@ -51,10 +60,12 @@ static void image_step(Cont *k, uint64_t v, bool dim) {
     FR_BEGIN(k);
     if (kind == TR_APPLY || kind == TR_LOWER) { uint64_t o = 0; FR_FINISH(k, bound_image(kind, depth, ctx, x, dim, &o) ? o : keep); }
     if (is_bound_id(x)) FR_FINISH(k, keep);
-    if (kind == TR_RE) {
-        if (dim) FR_AWAIT(k, r, F_MAPD, ctx, x);
-        else FR_AWAIT(k, r, F_MAPT, ctx, x);
-        FR_FINISH(k, r);
+    if (kind == TR_RE || kind == TR_ENV) {
+        /* the substitution record's entry for the identity (an environment's for an atom's slot) */
+        if (kind == TR_ENV && !is_obound_id(x)) FR_FINISH(k, keep);
+        FR_AWAIT(k, r, F_LOOKUP, ctx, kind == TR_ENV ? x & ~OBOUND_BIT : x);
+        if (!r) FR_FINISH(k, keep);
+        { uint64_t key; TVal e; subst_get(ctx, r - 1, &key, &e); FR_FINISH(k, e.id); }
     }
     /* CLOSE: the captured locals, one per step */
     L->c = interner_get(&M.keys, ctx, &L->nc);
@@ -75,6 +86,7 @@ static void tiv_step(Cont *k, uint64_t v) {
     SubLoc *L = FR_LOC(k, SubLoc);
     uint64_t im = 0;
     FR_BEGIN(k);
+    if (trav_identity(k->w[1])) FR_FINISH(k, k->w[0]);
     L->x = interner_get(&M.intervals, k->w[0], &L->nx);
     L->acc = iv_zero();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
@@ -93,6 +105,7 @@ static void tfc_step(Cont *k, uint64_t v) {
     SubLoc *L = FR_LOC(k, SubLoc);
     uint64_t im = 0;
     FR_BEGIN(k);
+    if (trav_identity(k->w[1])) FR_FINISH(k, k->w[0]);
     L->x = interner_get(&M.faces, k->w[0], &L->nx);
     L->acc = fc_false();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
@@ -113,8 +126,9 @@ static void tref_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
     FR_BEGIN(k);
+    if (trav_identity(k->w[1])) FR_FINISH(k, t);
     if (ref_is_var(t)) { FR_AWAIT(k, r, F_TIMGT, t, k->w[1]); FR_FINISH(k, r); }
-    { uint64_t op[2] = { 1, k->w[1] }; FR_AWAIT(k, r, F_ENVREBUILD, t, interner_intern(&M.keys, op, 2, NULL)); }
+    FR_AWAIT(k, r, F_ENVREBUILD, t, k->w[1]);
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -131,6 +145,7 @@ static void tscope_step(Cont *k, uint64_t v) {
     ScLoc *L = FR_LOC(k, ScLoc);
     uint64_t r = 0, id = 0;
     FR_BEGIN(k);
+    if (trav_identity(k->w[1])) FR_FINISH(k, k->w[0]);
     L->s = interner_get(&M.scopes, k->w[0], &L->ns); L->n = (size_t)L->s[0]; L->changed = false;
     wordbuf_init(&L->out); wordbuf_push(&L->out, L->n);
     for (L->q = 0; L->q < L->n; L->q++) {
@@ -181,11 +196,11 @@ static void scopeside_step(Cont *k, uint64_t v) {
     /* the face and interval records: required faces, guard, body (when not a reference) */
     for (L->q = 0; L->q < L->n + 2; L->q++) {
         {   const uint64_t *t = L->s + 1 + 4 * L->n;
-            if (L->q < L->n) { L->r = L->s[4 + 4 * L->q]; L->tk = F_FCDIMS; }
-            else if (L->q == L->n) { L->r = t[3]; L->tk = F_FCDIMS; }
-            else { L->r = t[0] == VS_REF ? 0 : t[4]; L->tk = t[0] == VS_INTERVAL ? F_IVDIMS : F_FCDIMS; } }
+            if (L->q < L->n) { L->r = L->s[4 + 4 * L->q]; L->tk = 1; }
+            else if (L->q == L->n) { L->r = t[3]; L->tk = 1; }
+            else { L->r = t[0] == VS_REF ? 0 : t[4]; L->tk = t[0] == VS_FACE; } }
         if (!L->r) continue;
-        FR_AWAIT(k, L->ds, (Family)L->tk, L->r, 0);
+        FR_AWAIT(k, L->ds, F_DIMS, L->r, L->tk);
         FR_AWAIT(k, L->sup, F_DSUNION, L->sup, L->ds);
     }
     FR_AWAIT(k, L->sup, F_SETFREE, L->sup, 0);

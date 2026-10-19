@@ -14,8 +14,6 @@
 #include "scope.h"
 
 typedef uint64_t ExprId, TDefId, TNodeId, TEnvId;
-typedef enum { PS_REF = 1, PS_INTERVAL, PS_FACE, PS_SCOPE, PS_LEVEL } PSort;
-typedef struct { PSort sort; uint64_t id; } TVal;   /* RefId / IntervalId / FaceId / ScopeId / level */
 
 /* ---- definitions (registered once; the library of §52–§54 and Down) ---- */
 typedef enum {
@@ -31,8 +29,6 @@ void templates_free(void);
 TVal template_call(TDefKind def, size_t nargs, const TVal *args);
 
 /* ---- TVIEW references ---- */
-size_t tenv_size(TEnvId E);
-void tenv_entry(TEnvId E, size_t k, uint64_t *slot, TVal *v);
 Tag tnode_tag(TNodeId Q);
 TDefId tnode_def(TNodeId Q); uint64_t tnode_index(TNodeId Q);
 const char *tdef_name(TDefId d);

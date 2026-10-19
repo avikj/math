@@ -128,7 +128,7 @@ static Cont *mk_unglue_sub(const Cont *k, uint64_t l, RefId A, FaceId alpha, Ref
     return mk_sub(k, T_UNGLUE, levels_pack(l, LEVEL_NONE), 5, f, 0, NULL);
 }
 static uint64_t brec(Sort sort, uint64_t slot, uint64_t field, uint64_t image) { return RQ(sort, slot, field, image); }
-static MapId dim_at(DimVarId j, IntervalId r) { return map_single_dim(j, r); }
+static uint64_t dim_at(DimVarId j, IntervalId r) { return re_key(map_single_dim(j, r)); }   /* the traversal j ↦ r */
 static TermVarId conv_var(RefId l, RefId rr, RefId head, uint64_t slot, RefId type) {
     KeyWord kw[5] = { { KW_CONST, 5000 }, { KW_REF, l }, { KW_REF, rr }, { KW_REF, head }, { KW_CONST, slot } };
     return fresh_term_keyed(kw, 5, type);
@@ -201,7 +201,7 @@ static void jdims_step(Cont *k, uint64_t v) {
 static void scope_step(Cont *k, uint64_t v) {
     JLOC;   /* q: G, χ, t */
     FR_BEGIN(k);
-    FR_AWAIT(k, L->y, F_FCDIMS, q[1], 0);
+    FR_AWAIT(k, L->y, F_DIMS, q[1], 1);
     JAW(r, J_DIMSIN, RQ(q[0], L->y));
     if (r != J_OK) BAD("face mentions an undeclared dimension");
     JAW(L->res, J_RV, RQ(0, q[2], 0));
@@ -223,14 +223,14 @@ static void jcof_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 /* generic(Q): a construction node at fresh parameters keyed by (node, slot),
- * declared at the instantiated closed types: [context, required face,
- * instance, list of the fresh identities] */
+ * declared at the closed types read from the environment of the earlier
+ * ones: [context, required face, instance, list of the fresh identities] */
 static void generic_step(Cont *k, uint64_t v) {
     JL *L = FR_LOC(k, JL);
     TNodeId Q = k->w[0];
     FR_BEGIN(k);
-    L->n = tnode_nparams(Q); L->G2 = jc_empty(); L->m = map_identity();
-    wordbuf_init(&L->wb); wordbuf_init(&L->wc); wordbuf_push(&L->wb, 0);   /* the environment record of a construction node */
+    L->n = tnode_nparams(Q); L->G2 = jc_empty(); L->m = env_empty(0);
+    wordbuf_init(&L->wc);
     for (L->i = 0; L->i < L->n; L->i++) {
         {   PSort so; RefId ty; FaceId g; tnode_param(Q, L->i, &so, &ty, &g); L->tag = so; L->T = ty; L->a0 = g; }
         if (L->tag == PS_INTERVAL) {
@@ -238,21 +238,19 @@ static void generic_step(Cont *k, uint64_t v) {
                 DimVarId j = fresh_dim_keyed(key, 3);
                 L->x = j; L->y = iv_var(j); L->G2 = jc_ext(L->G2, S_DIM, j); }
         } else {
-            FR_AWAIT(k, L->T, F_REINDEX, L->T, L->m);
-            if (L->a0) FR_AWAIT(k, L->a0, F_FCRE, L->a0, L->m);
+            FR_AWAIT(k, L->T, F_TREF, L->T, env_key(L->m));
+            if (L->a0) FR_AWAIT(k, L->a0, F_TFC, L->a0, env_key(L->m));
             else L->a0 = fc_true();
             {   KeyWord key[3] = { { KW_CONST, 9300 }, { KW_CONST, Q }, { KW_CONST, L->i } };
                 L->x = fresh_term_keyed_req(key, 3, L->T, L->a0); }
             FR_AWAIT(k, L->y, F_REFVAR, L->x, 0);
             L->G2 = jc_ext(L->G2, S_TERM, L->x);
         }
-        wordbuf_push(&L->wb, L->i); wordbuf_push(&L->wb, L->tag); wordbuf_push(&L->wb, L->y);
         wordbuf_push(&L->wc, L->x);
-        FR_AWAIT(k, L->m, F_OVERRIDE, L->m, RQ(L->tag == PS_INTERVAL ? S_DIM : S_TERM, obound_id((uint32_t)L->i), L->y));
+        FR_AWAIT(k, L->m, F_SET, L->m, subst_entry(L->i, L->tag, L->y));
     }
-    FR_AWAIT(k, L->a1, F_FCRE, tnode_const_required(Q), L->m);
-    FR_CALL(k, L->a2, intern_sub(k, &M.keys, &L->wb, &L->created));
-    FR_AWAIT(k, L->a2, F_TVMAKE, Q, L->a2);
+    FR_AWAIT(k, L->a1, F_TFC, tnode_const_required(Q), env_key(L->m));
+    FR_AWAIT(k, L->a2, F_TVMAKE, Q, L->m);
     FR_CALL(k, L->a3, intern_sub(k, &M.keys, &L->wc, &L->created));
     FR_FINISH(k, RQ(L->G2, L->a1, L->a2, L->a3));
     FR_END(k);
@@ -268,9 +266,9 @@ static void gmap_step(Cont *k, uint64_t v) {
     L->m = map_identity(); L->n = tnode_nparams(ref_tnode(t));
     for (L->i = 0; L->i < L->n; L->i++) {
         {   size_t n; const uint64_t *ids = rget(L->a3, &n);
-            uint64_t slot; TVal val; tenv_entry(ref_tenv(t), L->i, &slot, &val);
-            L->y = RQ(val.sort == PS_INTERVAL ? S_DIM : S_TERM, ids[L->i], val.id); }
-        FR_AWAIT(k, L->m, F_OVERRIDE, L->m, L->y);
+            uint64_t slot; TVal val; subst_get(ref_tenv(t), L->i, &slot, &val);
+            L->y = subst_entry(ids[L->i], val.sort, val.id); }
+        FR_AWAIT(k, L->m, F_SET, L->m, L->y);
     }
     FR_FINISH(k, L->m);
     FR_END(k);
@@ -306,7 +304,7 @@ static void equiv_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     {   TVal a[4] = { { PS_LEVEL, q[0] }, { PS_LEVEL, q[1] }, { PS_REF, q[2] }, { PS_REF, q[3] } };
         ExprId root; template_call_env(TD_EQUIV, 4, a, &L->wb, &root); L->x = root; }
-    FR_CALL(k, L->y, intern_sub(k, &M.keys, &L->wb, &L->created));
+    FR_CALL(k, L->y, intern_sub(k, &M.maps, &L->wb, &L->created));
     FR_AWAIT(k, r, F_INTERP, L->x, L->y);
     { size_t n; FR_FINISH(k, rget(r, &n)[1]); }
     FR_END(k);
@@ -339,7 +337,7 @@ static void infer_step(Cont *k, uint64_t v) {
     JAW(L->res, J_TBOUND, RQ(q[0], t, q[2]));
     PASS(L->res);
     FR_AWAIT(k, L->m, J_GMAP, t, 0);
-    FR_AWAIT(k, r, F_REINDEX, jr_c(L->D), L->m);
+    FR_AWAIT(k, r, F_TREF, jr_c(L->D), re_key(L->m));
     DONE(J_OK, NULL, r, 0, 0);
     FR_END(k);
 }
@@ -454,21 +452,21 @@ static void head_step(Cont *k, uint64_t v) {
         if (!level_ok1(L->lv, L->l1)) BAD(level_why(L->lv, L->tag == T_PATH ? "path family level annotation differs" : "path application family level annotation differs"));
         FR_AWAIT(k, L->a1, F_FIELD, t, 1);
         FR_AWAIT(k, L->a2, F_FIELD, t, 2);
-        FR_AWAIT(k, L->a3, F_REINDEX, L->a0, dim_at(L->x, iv_zero()));
+        FR_AWAIT(k, L->a3, F_TREF, L->a0, dim_at(L->x, iv_zero()));
         JRQ(L->res, J_CHECK, RQ(C, L->a1, L->a3, P));
         PASS(L->res);
-        FR_AWAIT(k, L->a3, F_REINDEX, L->a0, dim_at(L->x, iv_one()));
+        FR_AWAIT(k, L->a3, F_TREF, L->a0, dim_at(L->x, iv_one()));
         JRQ(L->res, J_CHECK, RQ(C, L->a2, L->a3, P));
         PASS(L->res);
         if (L->tag == T_PATH) { FR_CALL(k, r, mk_universe_sub(k, L->l1)); DONE(J_OK, NULL, r, 0, 0); }
         FR_AWAIT(k, L->a4, F_FIELD, t, 4);
-        FR_AWAIT(k, L->y, F_IVDIMS, L->a4, 0);
+        FR_AWAIT(k, L->y, F_DIMS, L->a4, 0);
         for (L->lw = dimset_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("path applied to an out-of-scope interval"); FR_YIELD(k); }
         FR_AWAIT(k, L->a3, F_FIELD, t, 3);
         FR_CALL(k, L->T, mk_path_sub(k, L->l1, (DimVarId)L->x, L->a0, L->a1, L->a2));
         JRQ(L->res, J_CHECK, RQ(C, L->a3, L->T, P));
         PASS(L->res);
-        FR_AWAIT(k, r, F_REINDEX, L->a0, dim_at(L->x, L->a4));
+        FR_AWAIT(k, r, F_TREF, L->a0, dim_at(L->x, L->a4));
         DONE(J_OK, NULL, r, 0, 0);
     }
     if (L->tag == T_PLAM) {
@@ -480,8 +478,8 @@ static void head_step(Cont *k, uint64_t v) {
         JRQ(L->res, J_LEVEL, RQ(C, L->T, P));
         PASS(L->res);
         L->l1 = jr_a(L->res);
-        FR_AWAIT(k, L->a1, F_REINDEX, L->a0, dim_at(L->x, iv_zero()));
-        FR_AWAIT(k, L->a2, F_REINDEX, L->a0, dim_at(L->x, iv_one()));
+        FR_AWAIT(k, L->a1, F_TREF, L->a0, dim_at(L->x, iv_zero()));
+        FR_AWAIT(k, L->a2, F_TREF, L->a0, dim_at(L->x, iv_one()));
         FR_CALL(k, r, mk_path_sub(k, L->l1, (DimVarId)L->x, L->T, L->a1, L->a2));
         DONE(J_OK, NULL, r, 0, 0);
     }
@@ -531,16 +529,16 @@ static void head_step(Cont *k, uint64_t v) {
         JRQ(L->res, J_LEVEL, RQ(C, L->a0, P));
         PASS(L->res);
         if (!level_ok1(L->lv, jr_a(L->res))) BAD(level_why(L->lv, "composition family level annotation differs"));
-        FR_AWAIT(k, L->y, F_FCDIMS, L->a1, 0);
+        FR_AWAIT(k, L->y, F_DIMS, L->a1, 1);
         for (L->lw = dimset_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("composition face must be in scope and independent of the bound dimension"); FR_YIELD(k); }
         L->lw = dimset_get(L->y, &L->n);
         for (L->i = 0; L->i < L->n; L->i++) { if (L->lw[L->i] == L->x) BAD("composition face must be in scope and independent of the bound dimension"); FR_YIELD(k); }
-        FR_AWAIT(k, L->a4, F_REINDEX, L->a0, dim_at(L->x, iv_zero()));          /* A(0) */
+        FR_AWAIT(k, L->a4, F_TREF, L->a0, dim_at(L->x, iv_zero()));          /* A(0) */
         JRQ(L->res, J_CHECK, RQ(C, L->a3, L->a4, P));
         PASS(L->res);
         FR_AWAIT(k, L->z, F_FCMEET, C, L->a1);
         if (!fc_is_false(L->z)) {
-            FR_AWAIT(k, L->a5, F_REINDEX, L->a2, dim_at(L->x, iv_zero()));      /* u(0) */
+            FR_AWAIT(k, L->a5, F_TREF, L->a2, dim_at(L->x, iv_zero()));      /* u(0) */
             FR_AWAIT(k, L->cl, J_CLAUSES, L->z, 0);
             for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
                 L->y = rget(L->cl, &L->nc)[L->c];
@@ -551,7 +549,7 @@ static void head_step(Cont *k, uint64_t v) {
                 if (jr_code(L->res) == J_UNR) UNR("unresolved: cap/tube agreement");
             }
         }
-        FR_AWAIT(k, r, F_REINDEX, L->a0, dim_at(L->x, iv_one()));
+        FR_AWAIT(k, r, F_TREF, L->a0, dim_at(L->x, iv_one()));
         DONE(J_OK, NULL, r, 0, 0);
     }
     if (L->tag == T_SYSTEM) {
@@ -568,7 +566,7 @@ static void head_step(Cont *k, uint64_t v) {
         L->j2 = L->n;                                                   /* the selected branch */
         for (L->i = 0; L->i < L->n; L->i++) {
             FR_AWAIT(k, L->u, F_FIELD, t, 2 * L->i);
-            FR_AWAIT(k, L->y, F_FCDIMS, L->u, 0);
+            FR_AWAIT(k, L->y, F_DIMS, L->u, 1);
             for (L->lw = dimset_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("system guard mentions an undeclared dimension"); FR_YIELD(k); }
             FR_AWAIT(k, L->y, F_FCMEET, C, L->u);
             if (fc_is_false(L->y)) continue;
@@ -619,8 +617,7 @@ static void head_step(Cont *k, uint64_t v) {
         PASS(L->res);
         JAW(L->res, J_TBOUND, RQ(C, t, P));        /* the arguments at the declared parameter types */
         PASS(L->res);
-        FR_AWAIT(k, L->m, F_GARGS, t, 0);
-        FR_AWAIT(k, r, F_REINDEX, global_type((SymbolId)L->x), L->m);
+        FR_AWAIT(k, r, F_UNFOLD, t, global_type((SymbolId)L->x));
         DONE(J_OK, NULL, r, 0, 0);
     }
     BAD("no inference rule for this head");
@@ -749,7 +746,7 @@ static void check_step(Cont *k, uint64_t v) {
         if (r != 2) BAD("system does not cover the face");
         for (L->i = 0; L->i < L->n; L->i++) {
             FR_AWAIT(k, L->u, F_FIELD, t, 2 * L->i);
-            FR_AWAIT(k, L->y, F_FCDIMS, L->u, 0);
+            FR_AWAIT(k, L->y, F_DIMS, L->u, 1);
             for (L->lw = dimset_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("system guard mentions an undeclared dimension"); FR_YIELD(k); }
             FR_AWAIT(k, L->y, F_FCMEET, C, L->u);
             if (fc_is_false(L->y)) continue;
@@ -843,12 +840,12 @@ static void convT_step(Cont *k, uint64_t v) {
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->y, F_FIELD, L->a0, 1);
         FR_AWAIT(k, L->z, F_FIELD, L->a1, 1);
-        FR_AWAIT(k, L->a4, F_REINDEX, L->a2, dim_at(L->x, iv_zero()));
+        FR_AWAIT(k, L->a4, F_TREF, L->a2, dim_at(L->x, iv_zero()));
         JRQ(L->res, J_CONVt, RQ(C, L->y, L->z, L->a4, P));
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->y, F_FIELD, L->a0, 2);
         FR_AWAIT(k, L->z, F_FIELD, L->a1, 2);
-        FR_AWAIT(k, L->a4, F_REINDEX, L->a2, dim_at(L->x, iv_one()));
+        FR_AWAIT(k, L->a4, F_TREF, L->a2, dim_at(L->x, iv_one()));
         JRQ(r, J_CONVt, RQ(C, L->y, L->z, L->a4, P));
         FR_FINISH(k, r);
     }
@@ -919,7 +916,7 @@ static void convt_step(Cont *k, uint64_t v) {
             L->x = conv_dim(t, u, 0);
             L->y = binder_dim_var(L->a0, 0);
             FR_AWAIT(k, L->a1, F_BINDER, L->a0, brec(S_DIM, 0, 0, iv_var(L->y)));     /* B(j') at the binder's own name */
-            FR_AWAIT(k, L->a2, F_REINDEX, L->a1, dim_at(L->y, iv_var(L->x)));          /* B(j) */
+            FR_AWAIT(k, L->a2, F_TREF, L->a1, dim_at(L->y, iv_var(L->x)));          /* B(j) */
             FR_AWAIT(k, L->a3, F_FIELD, L->a0, 1);
             FR_AWAIT(k, L->a4, F_FIELD, L->a0, 2);
             FR_AWAIT(k, L->lv, F_HEAD, L->a0, 1);
@@ -980,8 +977,8 @@ static void spine_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->a0, F_FIELD, n1, 4);
             FR_AWAIT(k, L->a1, F_FIELD, n2, 4);
             FR_AWAIT(k, L->m, J_CMAP, C, 0);                 /* the endpoints the clause fixes */
-            FR_AWAIT(k, L->a0, F_IVRE, L->a0, L->m);
-            FR_AWAIT(k, L->a1, F_IVRE, L->a1, L->m);
+            FR_AWAIT(k, L->a0, F_TIV, L->a0, re_key(L->m));
+            FR_AWAIT(k, L->a1, F_TIV, L->a1, re_key(L->m));
             if (L->a0 != L->a1) BAD(NULL);
         }
         if (L->tag == T_UNGLUE) {
@@ -1047,7 +1044,7 @@ static void spine_step(Cont *k, uint64_t v) {
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->a4, F_FIELD, n1, 3);
         FR_AWAIT(k, L->a5, F_FIELD, n2, 3);
-        FR_AWAIT(k, L->T, F_REINDEX, L->a0, dim_at(L->x, iv_zero()));
+        FR_AWAIT(k, L->T, F_TREF, L->a0, dim_at(L->x, iv_zero()));
         JRQ(L->res, J_CONVt, RQ(C, L->a4, L->a5, L->T, P));
         if (jr_code(L->res) != J_OK || fc_is_false(L->y)) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->a4, F_BINDER, n1, brec(S_DIM, 0, 2, iv_var(L->x)));
@@ -1063,23 +1060,21 @@ static void spine_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->x, F_HEAD, n1, 0);
         FR_AWAIT(k, L->y, F_HEAD, n2, 0);
         if (L->x != L->y) BAD(NULL);
-        FR_AWAIT(k, L->a0, F_GARGS, n1, 0);
-        FR_AWAIT(k, L->a1, F_GARGS, n2, 0);
-        L->D = global_context_flat((SymbolId)L->x);
-        L->n = context_size(L->D);
+        /* the arguments slot by slot (both nodes are the definition's): an
+         * interval up to the endpoints the clause fixes, a term at its
+         * parameter's type read from the first environment */
+        L->n = subst_size(ref_tenv(n1));
         for (L->i = 0; L->i < L->n; L->i++) {
-            {   CtxDecl d = context_decl(L->D, L->i); L->tag = d.sort; L->u = d.id; L->T = d.sort == S_TERM ? term_var_type(d.id) : 0; }
-            if (L->tag == S_DIM) {
-                FR_AWAIT(k, L->a2, F_MAPD, L->a0, L->u);
-                FR_AWAIT(k, L->a3, F_MAPD, L->a1, L->u);
+            {   uint64_t slot; TVal a, b; subst_get(ref_tenv(n1), L->i, &slot, &a); subst_get(ref_tenv(n2), L->i, &slot, &b);
+                L->tag = a.sort; L->a2 = a.id; L->a3 = b.id; }
+            if (L->tag == PS_INTERVAL) {
                 FR_AWAIT(k, L->m, J_CMAP, C, 0);
-                FR_AWAIT(k, L->a2, F_IVRE, L->a2, L->m);
-                FR_AWAIT(k, L->a3, F_IVRE, L->a3, L->m);
+                FR_AWAIT(k, L->a2, F_TIV, L->a2, re_key(L->m));
+                FR_AWAIT(k, L->a3, F_TIV, L->a3, re_key(L->m));
                 if (L->a2 != L->a3) BAD(NULL);
             } else {
-                FR_AWAIT(k, L->a2, F_MAPT, L->a0, L->u);
-                FR_AWAIT(k, L->a3, F_MAPT, L->a1, L->u);
-                FR_AWAIT(k, L->a4, F_REINDEX, L->T, L->a0);
+                {   PSort so; RefId ty; FaceId g; tnode_param(ref_tnode(n1), L->i, &so, &ty, &g); L->T = ty; }
+                FR_AWAIT(k, L->a4, F_TREF, L->T, env_key(ref_tenv(n1)));
                 JRQ(L->res, J_CONVt, RQ(C, L->a2, L->a3, L->a4, P));
                 if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
             }
@@ -1097,10 +1092,9 @@ static void cmap_step(Cont *k, uint64_t v) {
     L->lw = interner_get(&M.faces, k->w[0], &L->n);
     wordbuf_init(&L->wb);
     for (L->i = 0; L->i < L->n && L->lw[L->i] != DNF_SEP; L->i++) {
-        wordbuf_push(&L->wb, FC_LIT_DIM(L->lw[L->i])); wordbuf_push(&L->wb, FC_LIT_EPS(L->lw[L->i]) ? iv_one() : iv_zero());
+        wordbuf_push(&L->wb, FC_LIT_DIM(L->lw[L->i])); wordbuf_push(&L->wb, PS_INTERVAL); wordbuf_push(&L->wb, FC_LIT_EPS(L->lw[L->i]) ? iv_one() : iv_zero());
         FR_YIELD(k);
     }
-    wordbuf_push(&L->wb, 0);
     FR_CALL(k, r, intern_sub(k, &M.maps, &L->wb, &L->created));
     FR_FINISH(k, r);
     FR_END(k);
@@ -1138,9 +1132,9 @@ static void tbound_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     if (ref_is_var(t)) OK0();
     /* finite structure of every retained image first (§50.1–2) */
-    L->n = tenv_size(ref_tenv(t));
+    L->n = subst_size(ref_tenv(t));
     for (L->i = 0; L->i < L->n; L->i++) {
-        {   uint64_t slot; TVal val; tenv_entry(ref_tenv(t), L->i, &slot, &val); L->tag = val.sort; L->x = val.id; }
+        {   uint64_t slot; TVal val; subst_get(ref_tenv(t), L->i, &slot, &val); L->tag = val.sort; L->x = val.id; }
         if (L->tag == PS_SCOPE || L->tag == PS_REF) {
             JAW(L->res, J_RV, RQ(L->tag == PS_SCOPE ? 1 : 0, L->x, 0));
             PASS(L->res);
@@ -1153,9 +1147,9 @@ static void tbound_step(Cont *k, uint64_t v) {
             if (!tnode_sig_exprs(ref_tnode(t), L->i, &slot, &so, &te, &le, &se, &ge) || (so == PS_REF && !te) || (so == PS_SCOPE && !se) || (so != PS_REF && so != PS_SCOPE)) { L->tag = 0; }
             else { L->tag = so; L->j2 = slot; L->a0 = so == PS_REF ? te : se; L->a1 = ge; } }
         if (!L->tag) { FR_YIELD(k); continue; }
-        FR_AWAIT(k, r, F_ENVLOOK, L->D, L->j2);
+        FR_AWAIT(k, r, F_LOOKUP, L->D, L->j2);
         require(r, "template boundary: a retained slot has no image");
-        { size_t n; const uint64_t *ew = rget(L->D, &n); L->x = ew[1 + 3 * (r - 1) + 2]; }
+        { uint64_t key; TVal e; subst_get(L->D, r - 1, &key, &e); L->x = e.id; }
         FR_AWAIT(k, r, F_INTERP, L->a0, L->D);
         { size_t n; L->T = rget(r, &n)[1]; }
         if (L->tag == PS_REF) {
@@ -1334,17 +1328,18 @@ static void map_step(Cont *k, uint64_t v) {
     for (L->G2 = q[3]; !jc_is_empty(L->G2); L->G2 = jc_parent(L->G2)) {
         {   Sort so; uint64_t id; jc_decl(L->G2, &so, &id); L->tag = so; L->x = id; L->T = so == S_TERM ? term_var_type(id) : 0; }
         if (L->tag == S_DIM) {
-            FR_AWAIT(k, L->y, F_MAPD, sigma, L->x);
-            FR_AWAIT(k, L->y, F_IVDIMS, L->y, 0);
+            FR_AWAIT(k, L->y, F_TIMGD, L->x, re_key(sigma));
+            FR_AWAIT(k, L->y, F_DIMS, L->y, 0);
             JAW(r, J_DIMSIN, RQ(D, L->y));
             if (r != J_OK) BAD("dimension image mentions an undeclared source dimension");
             continue;
         }
-        FR_AWAIT(k, L->y, F_MAPT, sigma, L->x);
+        FR_AWAIT(k, L->y, F_REFVAR, L->x, 0);
+        FR_AWAIT(k, L->y, F_TREF, L->y, re_key(sigma));
         JAW(L->res, J_SCOPE, RQ(D, fc_true(), L->y));
         if (jr_code(L->res) != J_OK) BAD("term image is not in scope of the source context");
-        FR_AWAIT(k, L->T, F_REINDEX, L->T, sigma);
-        FR_AWAIT(k, L->z, F_FCRE, term_var_required(L->x), sigma);
+        FR_AWAIT(k, L->T, F_TREF, L->T, re_key(sigma));
+        FR_AWAIT(k, L->z, F_TFC, term_var_required(L->x), re_key(sigma));
         FR_AWAIT(k, L->z, F_FCMEET, psi, L->z);
         FR_AWAIT(k, L->cl, J_CLAUSES, L->z, 0);
         for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
@@ -1352,7 +1347,7 @@ static void map_step(Cont *k, uint64_t v) {
             PASS(L->res);
         }
     }
-    FR_AWAIT(k, L->z, F_FCRE, q[4], sigma);
+    FR_AWAIT(k, L->z, F_TFC, q[4], re_key(sigma));
     FR_AWAIT(k, r, F_FCENT, psi, L->z);
     if (r != 2) BAD("source face does not entail the substituted target assumption");
     OK0();
@@ -1363,7 +1358,7 @@ static void map_step(Cont *k, uint64_t v) {
 static void ctx_step(Cont *k, uint64_t v) {
     JLOC;   /* q: G, a, P */
     FR_BEGIN(k);
-    FR_AWAIT(k, L->y, F_FCDIMS, q[1], 0);
+    FR_AWAIT(k, L->y, F_DIMS, q[1], 1);
     JAW(r, J_DIMSIN, RQ(q[0], L->y));
     if (r != J_OK) BAD("assumption mentions an undeclared dimension");
     JAW(r, J_CTXD, RQ(q[0], q[1], q[2]));
@@ -1488,7 +1483,7 @@ static void rvd_step(Cont *k, uint64_t v) {
     JLOC;   /* q: kind, x, stack */
     uint64_t stk = q[2];
     FR_BEGIN(k);
-    FR_AWAIT(k, L->y, q[0] ? F_FCDIMS : F_IVDIMS, q[1], 0);
+    FR_AWAIT(k, L->y, F_DIMS, q[1], q[0]);
     L->lw = dimset_get(L->y, &L->n);
     for (L->i = 0; L->i < L->n; L->i++) {
         if (is_bound_id(L->lw[L->i])) ATOM_CHECK(L->lw[L->i], S_DIM);
@@ -1506,9 +1501,9 @@ static void rv_step(Cont *k, uint64_t v) {
         /* the environment's images, then a construction's stored field
          * constants and declared face (a scope stored in one is validated at
          * the actual stack) */
-        L->n = tenv_size(ref_tenv(x));
+        L->n = subst_size(ref_tenv(x));
         for (L->i = 0; L->i < L->n; L->i++) {
-            {   uint64_t slot; TVal val; tenv_entry(ref_tenv(x), L->i, &slot, &val); L->tag = val.sort; L->y = val.id; }
+            {   uint64_t slot; TVal val; subst_get(ref_tenv(x), L->i, &slot, &val); L->tag = val.sort; L->y = val.id; }
             if (L->tag == PS_LEVEL) { FR_YIELD(k); continue; }
             if (L->tag == PS_REF || L->tag == PS_SCOPE) JAW(L->res, J_RV, RQ(L->tag == PS_SCOPE ? 1 : 0, L->y, stk));
             else JAW(L->res, J_RVD, RQ(L->tag == PS_FACE ? 1 : 0, L->y, stk));

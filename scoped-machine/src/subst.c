@@ -1,278 +1,215 @@
-/* subst.c — maps and substitution as pure producer families.
+/* subst.c — substitution records and their operations as pure producer
+ * families.
  *
- * Image lookup (binary search, one probe per step), override, composition,
- * the substitution of intervals, faces and references, the environment map
- * of a construction and the construction instance (its support, free
- * variables and required face) are producers keyed by their interned
- * operands. Records are written one word per step and inserted by the
- * interning subroutine. A template instance (a node with program fields) is
- * still reindexed by the template layer (its interpretation is step 3). */
+ * A substitution record is [(key, sort, value)*] sorted by key, followed for
+ * an environment by its definition word:
+ *   a map         keys are variables and dimensions (and construction atoms);
+ *                 an absent key is its own image, so identity entries are
+ *                 never stored (the record is canonical);
+ *   an environment keys are the parameter and local slots of a node; it is
+ *                 total over the slots it assigns (its values live in the
+ *                 enclosing space, so no entry is an identity).
+ * One lookup (binary search, one probe per step) and one set serve both;
+ * composition is of maps. Applying a record is the one traversal
+ * (scopefam.c) with the map (RE) or environment (ENV) as its image source;
+ * a reference's environment is rebuilt here under any traversal. */
 #include "eval.h"
 #include "template.h"
 
-
-static const uint64_t *mrec(MapId m, size_t *n) { return interner_get(&M.maps, m, n); }
 /* an identity entry key ↦ VAR(key) / key, recognized without forming VAR(key) */
-static bool identity_image(bool dims, uint64_t key, uint64_t img) { return dims ? img == iv_var(key) : (ref_is_var(img) && ref_var_id(img) == key); }
+bool subst_identity(uint64_t sort, uint64_t key, uint64_t img) {
+    return sort == PS_INTERVAL ? img == iv_var(key) : sort == PS_REF && ref_is_var(img) && ref_var_id(img) == key;
+}
+static const uint64_t *srec(uint64_t m, size_t *n) { return interner_get(&M.maps, m, n); }
 
-/* ---------------- image lookup ---------------- */
-typedef struct { const uint64_t *w; size_t n, base, lo, hi; } LookLoc;
-static void look_step(Cont *k, uint64_t v, bool dims) {
+/* ---------------- lookup: the position of key w[1] in record w[0], plus one (0: absent) ---------------- */
+typedef struct { const uint64_t *w; size_t n, lo, hi; } LookLoc;
+static void look_step(Cont *k, uint64_t v) {
     LookLoc *L = FR_LOC(k, LookLoc);
     FR_BEGIN(k);
-    L->w = mrec(k->w[0], &L->n);
-    { size_t nt = (size_t)L->w[L->n - 1];
-      if (dims) { L->base = 2 * nt; L->lo = 0; L->hi = (L->n - 1 - 2 * nt) / 2; }
-      else { L->base = 0; L->lo = 0; L->hi = nt; } }
+    L->w = srec(k->w[0], &L->n);
+    L->lo = 0; L->hi = L->n / 3;
     while (L->lo < L->hi) {
-        size_t mid = (L->lo + L->hi) / 2; uint64_t key = L->w[L->base + 2 * mid];
-        if (key == k->w[1]) FR_FINISH(k, L->w[L->base + 2 * mid + 1]);
+        size_t mid = (L->lo + L->hi) / 2; uint64_t key = L->w[3 * mid];
+        if (key == k->w[1]) FR_FINISH(k, mid + 1);
         if (key < k->w[1]) L->lo = mid + 1; else L->hi = mid;
         FR_YIELD(k);
     }
-    if (dims) FR_FINISH(k, iv_var(k->w[1]));
-    { uint64_t r = 0; FR_AWAIT(k, r, F_REFVAR, k->w[1], 0); FR_FINISH(k, r); }
+    FR_FINISH(k, 0);
     FR_END(k);
 }
-static void mapt_step(Cont *k, uint64_t v) { look_step(k, v, false); }
-static void mapd_step(Cont *k, uint64_t v) { look_step(k, v, true); }
 
-/* ---------------- override and composition ----------------
- * Both merge the sorted key sections of their operands. Override: the second
- * operand's entries replace the first's. Composition σ;τ (σ then τ): a key of
- * σ maps to σ(x)[τ], a key only of τ to τ(x). Identity entries are dropped. */
-typedef struct {
-    const uint64_t *x, *y; size_t nx, ny, tx, ty, i, j, kept; bool dims;
-    uint64_t key, img; WordBuf out; bool created;
-} MergeLoc;
-static void merge_step(Cont *k, uint64_t v, bool compose) {
-    MergeLoc *L = FR_LOC(k, MergeLoc);
-    uint64_t id = 0, r = 0;
-    FR_BEGIN(k);
-    L->x = mrec(k->w[0], &L->nx); L->y = mrec(k->w[1], &L->ny);
-    if (L->ny == 1) FR_FINISH(k, k->w[0]);                        /* the second operand is the identity */
-    if (L->nx == 1 && compose) FR_FINISH(k, k->w[1]);
-    L->tx = (size_t)L->x[L->nx - 1]; L->ty = (size_t)L->y[L->ny - 1];
-    wordbuf_init(&L->out); L->kept = 0;
-    for (L->dims = false;; L->dims = true) {
-        L->i = L->dims ? 2 * L->tx : 0; L->j = L->dims ? 2 * L->ty : 0;
-        for (;;) {
-            size_t ex = L->dims ? L->nx - 1 : 2 * L->tx, ey = L->dims ? L->ny - 1 : 2 * L->ty;
-            if (L->i == ex && L->j == ey) break;
-            bool from_x = L->j == ey || (L->i < ex && L->x[L->i] <= L->y[L->j]);
-            bool from_y = L->i == ex || (L->j < ey && L->y[L->j] <= L->x[L->i]);
-            if (from_x && from_y) {                                   /* a key of both */
-                L->key = L->x[L->i];
-                if (compose) L->img = L->x[L->i + 1]; else L->img = L->y[L->j + 1];
-                L->i += 2; L->j += 2;
-                if (compose) {
-                    if (L->dims) FR_AWAIT(k, r, F_IVRE, L->img, k->w[1]);
-                    else FR_AWAIT(k, r, F_REINDEX, L->img, k->w[1]);
-                    L->img = r;
-                }
-            } else if (from_x) {
-                L->key = L->x[L->i]; L->img = L->x[L->i + 1]; L->i += 2;
-                if (compose) {
-                    if (L->dims) FR_AWAIT(k, r, F_IVRE, L->img, k->w[1]);
-                    else FR_AWAIT(k, r, F_REINDEX, L->img, k->w[1]);
-                    L->img = r;
-                }
-            } else { L->key = L->y[L->j]; L->img = L->y[L->j + 1]; L->j += 2; }
-            if (!identity_image(L->dims, L->key, L->img)) {
-                wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->img);
-                if (!L->dims) L->kept++;
-            }
-            FR_YIELD(k);
-        }
-        if (L->dims) break;
-    }
-    wordbuf_push(&L->out, L->kept);
-    FR_CALL(k, id, intern_sub(k, &M.maps, &L->out, &L->created));
-    FR_FINISH(k, id);
-    FR_END(k);
+/* ---------------- set: record w[0] with the entry w[1] = [key, sort, value] ----------------
+ * placed or replaced; in a map an identity entry removes the key */
+typedef struct { const uint64_t *x, *e; size_t nx, q, ne; bool placed, map; WordBuf out; bool created; } SetLoc;
+static void set_push(SetLoc *L, const uint64_t *t) {
+    if (L->map && subst_identity(t[1], t[0], t[2])) return;
+    wordbuf_push(&L->out, t[0]); wordbuf_push(&L->out, t[1]); wordbuf_push(&L->out, t[2]);
 }
-/* σ with key's entry replaced by key ↦ image (operand b: the interned
- * triple [sort, key, image]); an identity image removes the entry */
-typedef struct { const uint64_t *x; size_t nx, tx, i, kept; uint64_t sort, key, img; bool placed, dims; WordBuf out; bool created; } OverLoc;
-static void override_step(Cont *k, uint64_t v) {
-    OverLoc *L = FR_LOC(k, OverLoc);
+static void set_step(Cont *k, uint64_t v) {
+    SetLoc *L = FR_LOC(k, SetLoc);
     uint64_t id = 0;
     FR_BEGIN(k);
-    { size_t n; const uint64_t *e = interner_get(&M.keys, k->w[1], &n); L->sort = e[0]; L->key = e[1]; L->img = e[2]; }
-    L->x = mrec(k->w[0], &L->nx); L->tx = (size_t)L->x[L->nx - 1];
-    wordbuf_init(&L->out); L->kept = 0;
-    for (L->dims = false;; L->dims = true) {
-        L->placed = (L->sort == S_DIM) != L->dims;           /* the key belongs to the other section */
-        for (L->i = L->dims ? 2 * L->tx : 0; L->i < (L->dims ? L->nx - 1 : 2 * L->tx); L->i += 2) {
-            if (!L->placed && L->x[L->i] >= L->key) {
-                L->placed = true;
-                if (!identity_image(L->dims, L->key, L->img)) { wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->img); if (!L->dims) L->kept++; }
-                if (L->x[L->i] == L->key) { FR_YIELD(k); continue; }
-            }
-            wordbuf_push(&L->out, L->x[L->i]); wordbuf_push(&L->out, L->x[L->i + 1]); if (!L->dims) L->kept++;
-            FR_YIELD(k);
+    L->x = srec(k->w[0], &L->nx); L->e = interner_get(&M.keys, k->w[1], &L->ne);
+    L->map = L->nx % 3 == 0; L->placed = false;
+    wordbuf_init(&L->out);
+    for (L->q = 0; L->q + 3 <= L->nx; L->q += 3) {
+        if (!L->placed && L->x[L->q] >= L->e[0]) {
+            set_push(L, L->e); L->placed = true;
+            if (L->x[L->q] == L->e[0]) { FR_YIELD(k); continue; }
         }
-        if (!L->placed && !identity_image(L->dims, L->key, L->img)) { wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->img); if (!L->dims) L->kept++; }
-        if (L->dims) break;
+        set_push(L, L->x + L->q);
+        FR_YIELD(k);
     }
-    wordbuf_push(&L->out, L->kept);
+    if (!L->placed) set_push(L, L->e);
+    if (!L->map) wordbuf_push(&L->out, L->x[L->nx - 1]);              /* an environment's definition word */
     FR_CALL(k, id, intern_sub(k, &M.maps, &L->out, &L->created));
     FR_FINISH(k, id);
     FR_END(k);
 }
-static void compose_step(Cont *k, uint64_t v) { merge_step(k, v, true); }
 
-/* ---------------- substitution of intervals and faces ----------------
- * r[σ] = ∨_c ∧_a a[σ] with (¬i)[σ] = ¬(σ i); φ[σ] = ∨_c ∧_(i=ε) (σ i = ε).
- * Each image is inserted once, combined by the original meets and joins. */
-typedef struct { const uint64_t *x; size_t nx, px, i; uint64_t acc, cl; } SubLoc;
-static void ivre_step(Cont *k, uint64_t v) {
-    SubLoc *L = FR_LOC(k, SubLoc);
-    uint64_t im = 0;
+/* ---------------- composition σ;τ of maps (σ then τ) ----------------
+ * a key of σ maps to σ(x)[τ], a key only of τ to τ(x); identities dropped */
+typedef struct { const uint64_t *x, *y; size_t nx, ny, i, j; uint64_t key, sort, img; WordBuf out; bool created; } CompLoc;
+static void compose_step(Cont *k, uint64_t v) {
+    CompLoc *L = FR_LOC(k, CompLoc);
+    uint64_t id = 0, r = 0;
     FR_BEGIN(k);
-    if (map_n_dims(k->w[1]) == 0) FR_FINISH(k, k->w[0]);
-    L->x = interner_get(&M.intervals, k->w[0], &L->nx);
-    L->acc = iv_zero();
-    for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
-        L->cl = iv_one();
-        for (L->i = L->px; L->x[L->i] != DNF_SEP; L->i++) {
-            FR_AWAIT(k, im, F_MAPD, k->w[1], IV_ATOM_DIM(L->x[L->i]));
-            if (IV_ATOM_NEG(L->x[L->i])) FR_AWAIT(k, im, F_IVNEG, im, 0);
-            FR_AWAIT(k, L->cl, F_IVMEET, L->cl, im);
-        }
-        FR_AWAIT(k, L->acc, F_IVJOIN, L->acc, L->cl);
+    L->x = srec(k->w[0], &L->nx); L->y = srec(k->w[1], &L->ny);
+    if (L->ny == 0) FR_FINISH(k, k->w[0]);
+    if (L->nx == 0) FR_FINISH(k, k->w[1]);
+    wordbuf_init(&L->out);
+    for (L->i = 0, L->j = 0; L->i < L->nx || L->j < L->ny; ) {
+        if (L->j == L->ny || (L->i < L->nx && L->x[L->i] <= L->y[L->j])) {
+            L->key = L->x[L->i]; L->sort = L->x[L->i + 1]; L->img = L->x[L->i + 2];
+            if (L->j < L->ny && L->y[L->j] == L->key) L->j += 3;          /* σ's entry governs the key */
+            L->i += 3;
+            if (L->sort == PS_REF) { FR_AWAIT(k, r, F_TREF, L->img, re_key(k->w[1])); L->img = r; }
+            else if (L->sort == PS_INTERVAL) { FR_AWAIT(k, r, F_TIV, L->img, re_key(k->w[1])); L->img = r; }
+        } else { L->key = L->y[L->j]; L->sort = L->y[L->j + 1]; L->img = L->y[L->j + 2]; L->j += 3; }
+        if (!subst_identity(L->sort, L->key, L->img)) { wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->sort); wordbuf_push(&L->out, L->img); }
+        FR_YIELD(k);
     }
-    FR_FINISH(k, L->acc);
+    FR_CALL(k, id, intern_sub(k, &M.maps, &L->out, &L->created));
+    FR_FINISH(k, id);
     FR_END(k);
 }
-static void fcre_step(Cont *k, uint64_t v) {
-    SubLoc *L = FR_LOC(k, SubLoc);
-    uint64_t im = 0;
+
+/* ---------------- the dimensions of an interval (w[1] = 0) or face (w[1] = 1) as a set ----------------
+ * atoms and literals both carry the dimension in their high bits */
+typedef struct { const uint64_t *x; size_t nx, i; uint64_t acc, d; } DimsLoc;
+static void dims_step(Cont *k, uint64_t v) {
+    DimsLoc *L = FR_LOC(k, DimsLoc);
     FR_BEGIN(k);
-    if (map_n_dims(k->w[1]) == 0) FR_FINISH(k, k->w[0]);
-    L->x = interner_get(&M.faces, k->w[0], &L->nx);
-    L->acc = fc_false();
-    for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
-        L->cl = fc_true();
-        for (L->i = L->px; L->x[L->i] != DNF_SEP; L->i++) {
-            FR_AWAIT(k, im, F_MAPD, k->w[1], FC_LIT_DIM(L->x[L->i]));
-            FR_AWAIT(k, im, F_FCEND, im, (uint64_t)FC_LIT_EPS(L->x[L->i]));
-            FR_AWAIT(k, L->cl, F_FCMEET, L->cl, im);
-        }
-        FR_AWAIT(k, L->acc, F_FCJOIN, L->acc, L->cl);
-    }
-    FR_FINISH(k, L->acc);
-    FR_END(k);
-}
-/* the dimensions of an interval as a set */
-static void ivdims_step(Cont *k, uint64_t v) {
-    SubLoc *L = FR_LOC(k, SubLoc);
-    FR_BEGIN(k);
-    L->x = interner_get(&M.intervals, k->w[0], &L->nx);
+    L->x = interner_get(k->w[1] ? &M.faces : &M.intervals, k->w[0], &L->nx);
     L->acc = dimset_make(NULL, 0);
     for (L->i = 0; L->i < L->nx; L->i++) {
         if (L->x[L->i] == DNF_SEP) continue;
-        { uint64_t d = IV_ATOM_DIM(L->x[L->i]); L->cl = dimset_make(&d, 1); }
-        FR_AWAIT(k, L->acc, F_DSUNION, L->acc, L->cl);
+        L->d = L->x[L->i] >> 1;
+        FR_AWAIT(k, L->acc, F_DSUNION, L->acc, dimset_make(&L->d, 1));
     }
     FR_FINISH(k, L->acc);
     FR_END(k);
 }
 
-/* ---------------- references ----------------
- * A variable is looked up; any other reference has its environment rebuilt:
- * one independent demand per entry (a join), then the instance of the same
- * node (a construction's instance, or a template view). Nothing in a node is
- * visited. */
-static uint64_t deeper_key(uint64_t tk) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); return trav_key((unsigned)w[0], (unsigned)w[1] + 1, w[2]); }
-
-static void reindex_step(Cont *k, uint64_t v) {
-    RefId t = k->w[0]; MapId sigma = k->w[1];
-    uint64_t r = 0;
-    FR_BEGIN(k);
-    if (map_is_identity(sigma)) FR_FINISH(k, t);
-    if (ref_is_var(t)) { FR_AWAIT(k, r, F_MAPT, sigma, ref_var_id(t)); FR_FINISH(k, r); }
-    { uint64_t op[2] = { 0, sigma }; FR_AWAIT(k, r, F_ENVREBUILD, t, interner_intern(&M.keys, op, 2, NULL)); }
-    FR_FINISH(k, r);
-    FR_END(k);
+/* ---------------- a reference's environment rebuilt under traversal w[1] ----------------
+ * the entries are independent demands: launched, then awaited in order; a
+ * scope value's records sit one level deeper */
+static uint64_t deeper_key(uint64_t tk) {
+    size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n);
+    return w[0] == TR_RE || w[0] == TR_ENV ? tk : trav_key((unsigned)w[0], (unsigned)w[1] + 1, w[2]);
 }
-
-/* the environment of reference w[0] rebuilt by operation w[1] = [mode, arg]:
- * mode 0 substitutes the map arg, mode 1 traverses with the traversal key arg */
-typedef struct { size_t n, q; uint64_t mode, arg, slot, f, a, b; TVal val; bool changed; WordBuf out; bool created; } ReLoc;
-/* the demand rebuilding entry val under [mode, arg] (f = 0: kept as is) */
-static void re_item(uint64_t mode, uint64_t arg, TVal val, uint64_t *f, uint64_t *a, uint64_t *b) {
-    *f = 0; *a = val.id; *b = arg;
-    if (val.sort == PS_LEVEL) return;
-    if (mode == 0) {
-        if (val.sort == PS_REF) *f = F_REINDEX;
-        else if (val.sort == PS_INTERVAL) *f = F_IVRE;
-        else if (val.sort == PS_FACE) *f = F_FCRE;
-        else { *f = F_TSCOPE; *b = trav_key(TR_RE, 0, arg); }
-    } else {
-        if (val.sort == PS_REF) *f = F_TREF;
-        else if (val.sort == PS_INTERVAL) *f = F_TIV;
-        else if (val.sort == PS_FACE) *f = F_TFC;
-        else { *f = F_TSCOPE; *b = deeper_key(arg); }
-    }
+typedef struct { size_t n, q; uint64_t slot, f, b; TVal val; bool changed; WordBuf out; bool created; } ReLoc;
+static void re_item(uint64_t tk, TVal val, uint64_t *f, uint64_t *b) {
+    *b = tk;
+    *f = val.sort == PS_LEVEL ? 0 : val.sort == PS_REF ? F_TREF : val.sort == PS_INTERVAL ? F_TIV : val.sort == PS_FACE ? F_TFC : F_TSCOPE;
+    if (val.sort == PS_SCOPE) *b = deeper_key(tk);
 }
 static void envrebuild_step(Cont *k, uint64_t v) {
     ReLoc *L = FR_LOC(k, ReLoc);
     RefId t = k->w[0];
     uint64_t r = 0, id = 0;
     FR_BEGIN(k);
-    { size_t m; const uint64_t *op = interner_get(&M.keys, k->w[1], &m); L->mode = op[0]; L->arg = op[1]; }
-    L->n = tenv_size(ref_tenv(t));
-    /* the entries are independent demands: launched, then awaited in order */
+    L->n = subst_size(ref_tenv(t));
     for (L->q = 0; L->q < L->n; L->q++) {
-        tenv_entry(ref_tenv(t), L->q, &L->slot, &L->val);
-        re_item(L->mode, L->arg, L->val, &L->f, &L->a, &L->b);
-        if (L->f) family_launch((Family)L->f, L->a, L->b);
+        subst_get(ref_tenv(t), L->q, &L->slot, &L->val);
+        re_item(k->w[1], L->val, &L->f, &L->b);
+        if (L->f) family_launch((Family)L->f, L->val.id, L->b);
         FR_YIELD(k);
     }
     L->changed = false;
     wordbuf_init(&L->out);
-    wordbuf_push(&L->out, tnode_def(ref_tnode(t)));
     for (L->q = 0; L->q < L->n; L->q++) {
-        tenv_entry(ref_tenv(t), L->q, &L->slot, &L->val);
-        re_item(L->mode, L->arg, L->val, &L->f, &L->a, &L->b);
+        subst_get(ref_tenv(t), L->q, &L->slot, &L->val);
+        re_item(k->w[1], L->val, &L->f, &L->b);
         r = L->val.id;
-        if (L->f) FR_AWAIT(k, r, (Family)L->f, L->a, L->b);
-        tenv_entry(ref_tenv(t), L->q, &L->slot, &L->val);
+        if (L->f) FR_AWAIT(k, r, (Family)L->f, L->val.id, L->b);
         if (r != L->val.id) L->changed = true;
         wordbuf_push(&L->out, L->slot); wordbuf_push(&L->out, L->val.sort); wordbuf_push(&L->out, r);
-        FR_YIELD(k);
     }
     if (!L->changed) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, t); }
-    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
+    wordbuf_push(&L->out, tnode_def(ref_tnode(t)));
+    FR_CALL(k, id, intern_sub(k, &M.maps, &L->out, &L->created));
     FR_AWAIT(k, r, F_TVMAKE, ref_tnode(t), id);
     FR_FINISH(k, r);
     FR_END(k);
 }
 
 void subst_families_init(void) {
-    
-    
-    
-    family_define(F_MAPT, "map.term_image", mapt_step, sizeof(LookLoc));
-    family_define(F_MAPD, "map.dim_image", mapd_step, sizeof(LookLoc));
-    family_define(F_OVERRIDE, "map.override", override_step, sizeof(OverLoc));
-    family_define(F_COMPOSE, "map.compose", compose_step, sizeof(MergeLoc));
-    family_define(F_REINDEX, "reindex", reindex_step, 0);
+    family_define(F_LOOKUP, "subst.lookup", look_step, sizeof(LookLoc));
+    family_define(F_SET, "subst.set", set_step, sizeof(SetLoc));
+    family_define(F_COMPOSE, "map.compose", compose_step, sizeof(CompLoc));
     family_define(F_ENVREBUILD, "env.rebuild", envrebuild_step, sizeof(ReLoc));
-    family_define(F_IVRE, "iv.reindex", ivre_step, sizeof(SubLoc));
-    family_define(F_FCRE, "fc.reindex", fcre_step, sizeof(SubLoc));
-    family_define(F_IVDIMS, "iv.dims", ivdims_step, sizeof(SubLoc));
+    family_define(F_DIMS, "dnf.dims", dims_step, sizeof(DimsLoc));
 }
 
-/* ---------------- the operations (synchronous driver) ---------------- */
-RefId map_term_image(MapId m, TermVarId x) { return family_call(F_MAPT, m, x); }
-IntervalId map_dim_image(MapId m, DimVarId i) { return family_call(F_MAPD, m, i); }
+/* ---------------- records and the operations (synchronous driver) ---------------- */
+size_t subst_size(uint64_t rec) { size_t n; (void)srec(rec, &n); return n / 3; }
+void subst_get(uint64_t rec, size_t k, uint64_t *key, TVal *v) {
+    size_t n; const uint64_t *w = srec(rec, &n);
+    require(k < n / 3, "substitution entry out of range");
+    *key = w[3 * k]; v->sort = (PSort)w[3 * k + 1]; v->id = w[3 * k + 2];
+}
+uint64_t subst_entry(uint64_t key, uint64_t sort, uint64_t value) { uint64_t e[3] = { key, sort, value }; return interner_intern(&M.keys, e, 3, NULL); }
+uint64_t env_empty(uint64_t def) { return interner_intern(&M.maps, &def, 1, NULL); }
+
+/* a host map: its triples sorted (insertion; inside a counted step only a
+ * fixed handful), conflicting keys rejected, identities dropped */
+void mapb_init(MapBuilder *b) { words_init(&b->w); }
+void mapb_term(MapBuilder *b, TermVarId x, RefId image) { words_push(&b->w, x); words_push(&b->w, PS_REF); words_push(&b->w, image); }
+void mapb_dim(MapBuilder *b, DimVarId i, IntervalId image) { words_push(&b->w, i); words_push(&b->w, PS_INTERVAL); words_push(&b->w, image); }
+MapId mapb_finish(MapBuilder *b) {
+    size_t n = b->w.n / 3; uint64_t *w = b->w.w;
+    require(!intern_in_step || n <= 4, "a map of %zu entries finished synchronously inside a counted step", n);
+    for (size_t i = 1; i < n; i++)
+        for (size_t j = i; j > 0 && w[3 * (j - 1)] > w[3 * j]; j--)
+            for (size_t c = 0; c < 3; c++) { uint64_t t = w[3 * j + c]; w[3 * j + c] = w[3 * (j - 1) + c]; w[3 * (j - 1) + c] = t; }
+    Words out; words_init(&out);
+    for (size_t k = 0; k < n; k++) {
+        if (k > 0 && w[3 * (k - 1)] == w[3 * k]) { require(w[3 * (k - 1) + 2] == w[3 * k + 2], "conflicting key in map"); continue; }
+        if (subst_identity(w[3 * k + 1], w[3 * k], w[3 * k + 2])) continue;
+        for (size_t c = 0; c < 3; c++) words_push(&out, w[3 * k + c]);
+    }
+    MapId id = interner_intern(&M.maps, out.w, out.n, NULL);
+    words_free(&out); words_free(&b->w);
+    return id;
+}
+MapId map_identity(void) { return interner_intern(&M.maps, NULL, 0, NULL); }
+bool map_is_identity(MapId m) { size_t n; (void)srec(m, &n); return n == 0; }
+MapId map_single_term(TermVarId x, RefId a) { MapBuilder b; mapb_init(&b); mapb_term(&b, x, a); return mapb_finish(&b); }
+MapId map_single_dim(DimVarId i, IntervalId r) { MapBuilder b; mapb_init(&b); mapb_dim(&b, i, r); return mapb_finish(&b); }
+
+static uint64_t lookup_value(uint64_t rec, uint64_t key, uint64_t absent) {
+    uint64_t r = family_call(F_LOOKUP, rec, key);
+    if (!r) return absent;
+    uint64_t k; TVal e; subst_get(rec, r - 1, &k, &e); return e.id;
+}
+RefId map_term_image(MapId m, TermVarId x) { uint64_t v = lookup_value(m, x, 0); return v ? v : ref_var(x); }
+IntervalId map_dim_image(MapId m, DimVarId i) { return lookup_value(m, i, iv_var(i)); }
 MapId compose(MapId sigma, MapId tau) { return family_call(F_COMPOSE, sigma, tau); }
 MapId map_override(MapId sigma, Sort sort, uint64_t key, uint64_t image) {
-    uint64_t e[3] = { sort, key, image };
-    return family_call(F_OVERRIDE, sigma, interner_intern(&M.keys, e, 3, NULL));
+    return family_call(F_SET, sigma, subst_entry(key, sort == S_DIM ? PS_INTERVAL : PS_REF, image));
 }
-RefId reindex(RefId t, MapId sigma) { return family_call(F_REINDEX, t, sigma); }
-IntervalId iv_reindex(IntervalId r, MapId m) { return family_call(F_IVRE, r, m); }
-FaceId fc_reindex(FaceId phi, MapId m) { return family_call(F_FCRE, phi, m); }
+RefId reindex(RefId t, MapId sigma) { return family_call(F_TREF, t, re_key(sigma)); }
+IntervalId iv_reindex(IntervalId r, MapId m) { return family_call(F_TIV, r, re_key(m)); }
+FaceId fc_reindex(FaceId phi, MapId m) { return family_call(F_TFC, phi, re_key(m)); }

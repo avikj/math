@@ -48,74 +48,6 @@ static const uint64_t *term_decl(TermVarId x) {
 RefId term_var_type(TermVarId x) { return term_decl(x)[0]; }
 FaceId term_var_required(TermVarId x) { return term_decl(x)[1]; }
 
-/* ================= raw maps ================= */
-/* record: [(x,ref)*, (i,intv)*, nt] — keys sorted within each section, no
- * identity entries; the count is the last word, so a map is written in one
- * pass and both sections are reached in constant time. The operations on
- * maps (image lookup, override, composition) are families (subst.c). */
-
-void mapb_init(MapBuilder *b) { words_init(&b->t); words_init(&b->d); }
-void mapb_term(MapBuilder *b, TermVarId x, RefId image) { words_push(&b->t, x); words_push(&b->t, image); }
-void mapb_dim(MapBuilder *b, DimVarId i, IntervalId image) { words_push(&b->d, i); words_push(&b->d, image); }
-
-static int cmp_pair(const void *a, const void *b) {
-    const uint64_t *x = a, *y = b;
-    return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0;
-}
-
-MapId mapb_finish(MapBuilder *b) {
-    size_t nt = b->t.n / 2, nd = b->d.n / 2;
-    /* a host builder: inside a counted step only a map of a fixed handful of
-     * entries (bounded sort and record); a variable map is built by the map
-     * families (override, compose) or as a stepped record */
-    require(!intern_in_step || nt + nd <= 4, "a map of %zu entries finished synchronously inside a counted step", nt + nd);
-    if (nt > 1) qsort(b->t.w, nt, 2 * sizeof(uint64_t), cmp_pair);
-    if (nd > 1) qsort(b->d.w, nd, 2 * sizeof(uint64_t), cmp_pair);
-    Words w; words_init(&w);
-    size_t kept = 0;
-    for (size_t k = 0; k < nt; k++) {
-        uint64_t x = b->t.w[2 * k], img = b->t.w[2 * k + 1];
-        if (k > 0 && b->t.w[2 * (k - 1)] == x) {
-            require(b->t.w[2 * (k - 1) + 1] == img, "duplicate term key in map");
-            continue;
-        }
-        if (img == ref_var(x)) continue;   /* identity entry */
-        words_push(&w, x); words_push(&w, img); kept++;
-    }
-    for (size_t k = 0; k < nd; k++) {
-        uint64_t i = b->d.w[2 * k], img = b->d.w[2 * k + 1];
-        if (k > 0 && b->d.w[2 * (k - 1)] == i) {
-            require(b->d.w[2 * (k - 1) + 1] == img, "duplicate dimension key in map");
-            continue;
-        }
-        if (img == iv_var(i)) continue;
-        words_push(&w, i); words_push(&w, img);
-    }
-    words_push(&w, kept);
-    MapId id = interner_intern(&M.maps, w.w, w.n, NULL);
-    words_free(&w);
-    words_free(&b->t); words_free(&b->d);
-    return id;
-}
-
-MapId map_identity(void) { MapBuilder b; mapb_init(&b); return mapb_finish(&b); }
-bool map_is_identity(MapId m) { size_t n; (void)interner_get(&M.maps, m, &n); return n == 1; }
-size_t map_n_terms(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (size_t)w[n - 1]; }
-size_t map_n_dims(MapId m) { size_t n; const uint64_t *w = interner_get(&M.maps, m, &n); return (n - 1 - 2 * (size_t)w[n - 1]) / 2; }
-void map_term_entry(MapId m, size_t k, TermVarId *x, RefId *img) {
-    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
-    require(k < w[n - 1], "map entry out of range");
-    *x = w[2 * k]; *img = w[2 * k + 1];
-}
-void map_dim_entry(MapId m, size_t k, DimVarId *i, IntervalId *img) {
-    size_t n; const uint64_t *w = interner_get(&M.maps, m, &n);
-    size_t nt = (size_t)w[n - 1];
-    require(k < (n - 1 - 2 * nt) / 2, "map entry out of range");
-    *i = w[2 * nt + 2 * k]; *img = w[2 * nt + 2 * k + 1];
-}
-MapId map_single_term(TermVarId x, RefId a) { MapBuilder b; mapb_init(&b); mapb_term(&b, x, a); return mapb_finish(&b); }
-MapId map_single_dim(DimVarId i, IntervalId r) { MapBuilder b; mapb_init(&b); mapb_dim(&b, i, r); return mapb_finish(&b); }
-
 /* ================= constructions ================= */
 /* A construction is a node of the one constructor-program representation
  * (template.h): its fields are constants closed over positional atoms —
@@ -301,32 +233,18 @@ ContextId context_restrict(ContextId c, FaceId phi) { return context_with(c, NUL
 /* ================= globals ================= */
 
 
+/* the context of a boundary: its dimensions, then its term variables in
+ * id order — which is dependency order, a variable's id exceeding those of
+ * the variables its type mentions */
 ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req) {
     size_t nd, nt;
     const uint64_t *ds = dimset_get(fd, &nd);
     const uint64_t *xs = varset_get(ft, &nt);
     CtxDecl *decls = malloc((nd + nt + 1) * sizeof(CtxDecl));
-    size_t n = 0;
-    for (size_t k = 0; k < nd; k++) { decls[n].sort = S_DIM; decls[n].id = ds[k]; n++; }
-    /* term variables in dependency order: a variable follows the free
-     * variables of its declared type */
-    bool *placed = calloc(nt ? nt : 1, sizeof(bool));
-    size_t done = 0;
-    while (done < nt) {
-        bool progress = false;
-        for (size_t k = 0; k < nt; k++) {
-            if (placed[k]) continue;
-            size_t m; const uint64_t *fv = varset_get(ref_freevars(term_var_type(xs[k])), &m);
-            bool ready = true;
-            for (size_t q = 0; q < m && ready; q++) { bool found = false; for (size_t j = 0; j < nt; j++) if (xs[j] == fv[q] && placed[j]) found = true; if (!found) ready = false; }
-            if (!ready) continue;
-            decls[n].sort = S_TERM; decls[n].id = xs[k]; n++;
-            placed[k] = true; done++; progress = true;
-        }
-        require(progress, "cyclic declaration dependency in a boundary");
-    }
-    free(placed);
-    ContextId ctx = context_make(n, decls, req);
+    require(decls, "out of memory");
+    for (size_t k = 0; k < nd; k++) { decls[k].sort = S_DIM; decls[k].id = ds[k]; }
+    for (size_t k = 0; k < nt; k++) { decls[nd + k].sort = S_TERM; decls[nd + k].id = xs[k]; }
+    ContextId ctx = context_make(nd + nt, decls, req);
     free(decls);
     return ctx;
 }
@@ -362,26 +280,6 @@ RefId global_ref(SymbolId s) {
     require(s >= 1 && s <= __atomic_load_n(&M.n_defs, __ATOMIC_RELAXED), "unknown symbol");
     return construction_request(T_GLOBAL, s, LEVELS_NONE, NULL, 0, NULL, 0, DEF(s)->params, DEF(s)->dims);
 }
-
-/* a global reference's environment as a substitution of the definition's
- * parameters (its node's parameters are the definition's dimensions, then
- * its parameters, in the construction order) */
-MapId global_args(RefId t) {
-    require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL, "global arguments of a non-global");
-    Head h; open_ref(t, &h);
-    SymbolId s = (SymbolId)h.payload;
-    size_t nd, nt;
-    const uint64_t *ds = dimset_get(DEF(s)->dims, &nd), *xs = varset_get(DEF(s)->params, &nt);
-    TEnvId E = ref_tenv(t);
-    require(tenv_size(E) == nd + nt, "global reference with a strengthened boundary");
-    MapBuilder b; mapb_init(&b);
-    for (size_t k = 0; k < nd + nt; k++) {
-        uint64_t slot; TVal v; tenv_entry(E, k, &slot, &v);
-        if (k < nd) mapb_dim(&b, ds[k], v.id); else mapb_term(&b, xs[k - nd], v.id);
-    }
-    return mapb_finish(&b);
-}
-
 
 /* ================= constructors ================= */
 
@@ -495,12 +393,15 @@ static void pr(RefId t, FILE *f, int depth) {
     if (h.tag == T_UNIVERSE) { fprintf(f, "U%llu", (unsigned long long)h.payload); head_free(&h); return; }
     if (h.tag == T_GLOBAL) {
         fprintf(f, "%s", DEF(h.payload)->name);
-        MapId args = global_args(t);
-        if (!map_is_identity(args)) {
+        /* the arguments: the environment's values, dimensions then terms */
+        uint64_t E = ref_tenv(t); size_t n = subst_size(E);
+        if (n) {
             fprintf(f, "[");
-            size_t nt = map_n_terms(args), nd = map_n_dims(args);
-            for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(args, k, &x, &im); fprintf(f, "%sx%llu:=", k ? "," : "", (unsigned long long)x); pr(im, f, depth - 1); }
-            for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(args, k, &i, &im); fprintf(f, "%sd%llu:=", (k || nt) ? "," : "", (unsigned long long)i); iv_print(im, f); }
+            for (size_t k = 0; k < n; k++) {
+                uint64_t slot; TVal v; subst_get(E, k, &slot, &v);
+                if (k) fprintf(f, ",");
+                if (v.sort == PS_INTERVAL) iv_print(v.id, f); else pr(v.id, f, depth - 1);
+            }
             fprintf(f, "]");
         }
         head_free(&h); return;

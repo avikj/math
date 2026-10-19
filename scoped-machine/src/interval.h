@@ -22,12 +22,6 @@ IntervalId iv_meet(IntervalId r, IntervalId s);
 IntervalId iv_negate(IntervalId r);
 bool iv_is_zero(IntervalId r);
 bool iv_is_one(IntervalId r);
-/* image function used by substitution: dimension → interval */
-typedef IntervalId (*DimImageFn)(DimVarId i, void *ctx);
-/* append the dimensions occurring in r to out (unsorted, may repeat) */
-/* intern from a working DNF (normalizes) */
-IntervalId iv_from_dnf(Dnf *d);
-void iv_to_dnf(IntervalId r, Dnf *d);
 void iv_print(IntervalId r, FILE *f);
 
 #endif
