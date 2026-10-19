@@ -266,7 +266,6 @@ static void one_result(Net *n, NodeId op, NodeId data, NodeId result) {
 static NodeId desc_ref(Net *n, RefId t) { Payload p = {0}; p.ref = t; return net_descriptor(n, D_REF, p); }
 static NodeId desc_face(Net *n, FaceId f) { Payload p = {0}; p.face = f; return net_descriptor(n, D_FACE, p); }
 static NodeId desc_interval(Net *n, IntervalId r) { Payload p = {0}; p.a = r; return net_descriptor(n, D_INTERVAL, p); }
-static NodeId desc_map(Net *n, MapId m, FaceId src, FaceId tgt) { Payload p = {0}; p.a = m; p.b = src; p.c = tgt; return net_descriptor(n, D_MAP, p); }
 static NodeId desc_binder(Net *n, NodeKind kind, RefId owner, BinderSlot slot, FieldIndex field, FieldIndex guard) {
     Payload p = {0}; p.a = owner; p.b = slot; p.c = field; p.d = guard; return net_descriptor(n, kind, p);
 }
@@ -281,62 +280,6 @@ static NodeId desc_recipe(Net *n, RefId t) {
     return d;
 }
 
-/* ------------------------------------------------------------------ */
-/* materializing a head (§19)                                            */
-
-static NodeId materialize(Net *n, const Head *h) {
-    Payload p = {0}; p.ref = h->owner;
-    if (h->is_var) {
-        int8_t pol[1] = { +1 };
-        p.a = h->var;
-        NodeId hd = net_node(n, A_HEAD, 1, pol, p);
-        N(n, hd)->tag = 0;
-        return hd;
-    }
-    if (h->tag == T_SYSTEM) {
-        /* HEAD_SYSTEM with one negative aux attached to a BRANCH list */
-        int8_t pol[2] = { +1, -1 };
-        NodeId hd = net_node(n, A_HEAD, 2, pol, p);
-        N(n, hd)->tag = T_SYSTEM;
-        size_t nb = h->n / 2;
-        int8_t polnil[1] = { +1 }, polcons[3] = { +1, -1, -1 }, polbr[3] = { +1, -1, -1 };
-        Payload e = {0};
-        NodeId tail = net_node(n, A_BRANCH_NIL, 1, polnil, e);
-        for (size_t k = nb; k-- > 0;) {
-            NodeId br = net_node(n, A_BRANCH, 3, polbr, e);
-            net_connect(n, br, 1, desc_face(n, HF(h, 2 * k).id), 0);
-            net_connect(n, br, 2, desc_ref(n, HF(h, 2 * k + 1).id), 0);
-            NodeId cons = net_node(n, A_BRANCH_CONS, 3, polcons, e);
-            net_connect(n, cons, 1, br, 0);
-            net_connect(n, cons, 2, tail, 0);
-            tail = cons;
-        }
-        net_connect(n, hd, 1, tail, 0);
-        return hd;
-    }
-    int8_t *pol = malloc(h->n + 1); require(pol, "out of memory");
-    pol[0] = +1; for (size_t k = 0; k < h->n; k++) pol[k + 1] = -1;
-    NodeId hd = net_node(n, A_HEAD, (uint8_t)(h->n + 1), pol, p);
-    free(pol);
-    N(n, hd)->tag = h->tag;
-    for (size_t k = 0; k < h->n; k++) {
-        HField fv = HF(h, k); const HField *f = &fv;
-        NodeId d;
-        if (f->is_binder) {
-            if (h->tag == T_COMP && k == 2) d = desc_binder(n, D_PARTIAL_DIM_BINDER, h->owner, f->slot, f->index, 1);
-            else d = desc_binder(n, f->sort == S_TERM ? D_TERM_BINDER : D_DIM_BINDER, h->owner, f->slot, f->index, NO_FIELD);
-        } else if (f->kind == F_REF) {
-            /* partial fields: Glue fibre/equivalence under alpha, glue intro fibre term */
-            bool partial = (h->tag == T_GLUE_TYPE && (k == 2 || k == 3)) ||
-                           (h->tag == T_GLUE_INTRO && (k == 2 || k == 3 || k == 4)) ||
-                           (h->tag == T_UNGLUE && (k == 2 || k == 3));
-            d = partial ? desc_partial(n, HF(h, 1).id, f->id) : desc_ref(n, f->id);
-        } else if (f->kind == F_INTERVAL) d = desc_interval(n, f->id);
-        else d = desc_face(n, f->id);
-        net_connect(n, hd, (uint16_t)(k + 1), d, 0);
-    }
-    return hd;
-}
 
 /* ------------------------------------------------------------------ */
 /* evaluation agents                                                     */
@@ -410,7 +353,7 @@ static NodeId copy_descriptor(Net *n, const Node *x) {
     if (x->head) {
         Node *y = N(n, d);
         y->head = malloc(sizeof(Head)); require(y->head, "out of memory");
-        open_ref(x->head->owner, y->head);   /* same owner handle; the recipe is recomputed, not the construction */
+        *y->head = *x->head;                 /* the same recipe (an immutable record) */
         y->tag = x->tag;
     }
     return d;
@@ -476,168 +419,363 @@ uint64_t net_scope_args(size_t n, const Val *a) {
     for (size_t k = 0; k < n; k++) { words_push(&w, a[k].sort); words_push(&w, a[k].id); }
     uint64_t id = interner_intern(&M.keys, w.w, w.n, NULL); words_free(&w); return id;
 }
-static size_t capture_decls_get(uint64_t h, CaptureDecl *out, size_t max) {
-    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(w[0] == 0xCA9, "not a capture telescope");
-    size_t m = (size_t)w[1]; require(m <= max, "capture telescope too long");
-    for (size_t k = 0; k < m; k++) { out[k].sort = (Sort)w[2 + 5 * k]; out[k].id = w[3 + 5 * k]; out[k].type = w[4 + 5 * k]; out[k].level = w[5 + 5 * k]; out[k].required = w[6 + 5 * k]; }
-    return m;
+
+/* ---- operations: each one a frame of the one protocol ----
+ * An operation meeting its descriptor is replaced at once by a pending
+ * endpoint; a net.op frame computes the result by awaiting the operation
+ * families (no host computation inside the rule), and its value — the result
+ * descriptor, or a privately built materialized subnet — is connected at the
+ * pending endpoint by the same delivery as an evaluation result. */
+typedef struct { NodeKind kind; Payload p; bool has_head; Head head; NodeId node; } NetRes;
+typedef struct { Net *net; NodeId pending; } OpCtx;
+
+/* connect d at the pending endpoint's consumer (locked with it, in id order,
+ * revalidated after locking) */
+static void deliver_node(Net *n, NodeId pend, NodeId d, bool eval_result) {
+    for (;;) {
+        Node *x = N(n, pend);
+        pthread_mutex_lock(&x->mu);
+        if (!x->live) { pthread_mutex_unlock(&x->mu); return; }   /* consumer released the endpoint */
+        Endpoint q = x->peer[0];
+        pthread_mutex_unlock(&x->mu);
+        if (q.node) lock_two(n, pend, q.node); else pthread_mutex_lock(&x->mu);
+        if (!x->live) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); return; }
+        if (x->peer[0].node != q.node || x->peer[0].port != q.port) { if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu); count(&n->retries); continue; }
+        ActiveVec pending = {0}; tls_pending = &pending;
+        retire(n, pend);
+        if (q.node) net_connect(n, d, 0, q.node, q.port);
+        count(&n->rewrites); if (eval_result) count(&n->n_eval_deliver);
+        tls_pending = NULL;
+        if (q.node) unlock_two(n, pend, q.node); else pthread_mutex_unlock(&x->mu);
+        flush_pending(n, &pending);
+        return;
+    }
 }
-static size_t scope_args_get(uint64_t h, Val *out, size_t max) {
-    size_t n; const uint64_t *w = interner_get(&M.keys, h, &n); require(w[0] == 0xA96, "not a scope argument list");
-    size_t m = (size_t)w[1]; require(m <= max, "scope argument list too long");
-    for (size_t k = 0; k < m; k++) { out[k].sort = (ValSort)w[2 + 2 * k]; out[k].id = w[3 + 2 * k]; }
-    return m;
+static void net_op_deliver(void *ctx, EvalResult *r) {
+    OpCtx *c = ctx; Net *n = c->net; NodeId pend = c->pending; free(c);
+    NetRes *res = (NetRes *)(void *)r;
+    NodeId d = res->node;
+    if (!d) {
+        d = net_descriptor(n, res->kind, res->p);
+        if (res->has_head) {
+            Node *y = N(n, d);
+            y->head = malloc(sizeof(Head)); require(y->head, "out of memory");
+            *y->head = res->head; y->tag = res->head.is_var ? 0 : res->head.tag;
+        }
+    }
+    free(res);
+    deliver_node(n, pend, d, false);
 }
-static NodeId desc_scope(Net *n, ScopeId S) { Payload p = {0}; p.a = S; return net_descriptor(n, D_SCOPE, p); }
-static NodeId desc_typed_partial(Net *n, RefId body, RefId type, uint64_t level, FaceId guard) { Payload p = {0}; p.ref = body; p.b = type; p.c = level; p.face = guard; return net_descriptor(n, D_TYPED_PARTIAL, p); }
+
+static Family F_NETOP, Fn_REINDEX, Fn_IVRE, Fn_FCRE, Fn_COMPOSE, Fn_FCMEET, Fn_FCENT, Fn_FCFORALL, Fn_FCPROJ, Fn_CENV, Fn_FIELD, Fn_BINDER,
+              Fn_REFVAR, Fn_OVERRIDE, Fn_HEAD, Fn_UNFOLD, Fn_CAPTURE, Fn_TREF, Fn_TIV, Fn_TFC, Fn_TSCOPE, Fn_CINST, Fn_ENVOF, Fn_TVMAKE;
+typedef struct {
+    Net *net; NodeKind k; Payload P, Q; Head h;
+    uint64_t a, b, c; size_t q, nf; Join *J; WordBuf w; bool created;
+    NodeId hd, tail;
+} OpLoc;
+static uint64_t RV_(NetRes *r) { return (uint64_t)(uintptr_t)r; }
+static NetRes *nres(NodeKind kind, Payload p) { NetRes *r = calloc(1, sizeof *r); require(r, "out of memory"); r->kind = kind; r->p = p; return r; }
+static NetRes *nstat(uint64_t code, FaceId face, RefId ref) { Payload p = {0}; p.a = code; p.face = face; p.ref = ref; return nres(D_STATUS, p); }
+static NetRes *nref(RefId t) { Payload p = {0}; p.ref = t; return nres(D_REF, p); }
+static NetRes *nface(FaceId f) { Payload p = {0}; p.face = f; return nres(D_FACE, p); }
+static NetRes *niv(IntervalId r) { Payload p = {0}; p.a = r; return nres(D_INTERVAL, p); }
+static NetRes *nmap(MapId m, FaceId src, FaceId tgt) { Payload p = {0}; p.a = m; p.b = src; p.c = tgt; return nres(D_MAP, p); }
+static NetRes *nscope(ScopeId S) { Payload p = {0}; p.a = S; return nres(D_SCOPE, p); }
+static NetRes *ntyped(RefId body, RefId type, uint64_t level, FaceId guard) { Payload p = {0}; p.ref = body; p.b = type; p.c = level; p.face = guard; return nres(D_TYPED_PARTIAL, p); }
+static uint64_t key3(uint64_t a, uint64_t b, uint64_t c) { uint64_t w[3] = { a, b, c }; return interner_intern(&M.keys, w, 3, NULL); }
+static uint64_t key4(uint64_t a, uint64_t b, uint64_t c, uint64_t d) { uint64_t w[4] = { a, b, c, d }; return interner_intern(&M.keys, w, 4, NULL); }
+
+static void netop_step(Cont *k, uint64_t v) {
+    OpLoc *L = FR_LOC(k, OpLoc);
+    Net *n = L->net;
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    if (L->k == OP_REINDEX_TERM) { FR_AWAIT(k, r, Fn_REINDEX, L->Q.ref, L->P.a); FR_FINISH(k, RV_(nref(r))); }
+    if (L->k == OP_REINDEX_INTERVAL) { FR_AWAIT(k, r, Fn_IVRE, L->Q.a, L->P.a); FR_FINISH(k, RV_(niv(r))); }
+    if (L->k == OP_REINDEX_FACE) { FR_AWAIT(k, r, Fn_FCRE, L->Q.face, L->P.a); FR_FINISH(k, RV_(nface(r))); }
+    if (L->k == OP_COMPOSE_MAP) { FR_AWAIT(k, r, Fn_COMPOSE, L->P.a, L->Q.a); FR_FINISH(k, RV_(nmap(r, 0, 0))); }
+    if (L->k == OP_RESTRICT_MAP) {
+        FR_AWAIT(k, L->a, Fn_FCRE, L->P.face, L->Q.a);
+        FR_AWAIT(k, L->a, Fn_FCMEET, L->Q.b ? L->Q.b : fc_true(), L->a);
+        FR_AWAIT(k, L->b, Fn_FCMEET, L->Q.c ? L->Q.c : fc_true(), L->P.face);
+        FR_FINISH(k, RV_(nmap(L->Q.a, L->a, L->b)));
+    }
+    if (L->k == OP_LIFT_TERM || L->k == OP_LIFT_DIMENSION) {
+        /* lifting is defined for a construction's own environment map; a
+         * template instance interprets programs, it has no map: a status */
+        {   RefId owner = L->P.a; BinderSlot slot = (BinderSlot)L->P.b;
+            if (ref_is_var(owner) || !tview_is_construction(owner) || slot >= tnode_nbinders(ref_tnode(owner))) FR_FINISH(k, RV_(nstat(ST_INVALID_MAP, 0, 0)));
+            if ((L->k == OP_LIFT_TERM) != (tnode_binder_sort(ref_tnode(owner), slot) == S_TERM)) FR_FINISH(k, RV_(nstat(ST_SORT_MISMATCH, 0, 0))); }
+        FR_AWAIT(k, L->a, Fn_CENV, ref_tenv(L->P.a), 0);
+        if (L->Q.a != L->a) FR_FINISH(k, RV_(nstat(ST_INVALID_MAP, 0, 0)));
+        if (L->k == OP_LIFT_TERM) {
+            FR_AWAIT(k, L->b, Fn_FIELD, L->P.a, tnode_binder_domain(ref_tnode(L->P.a), (BinderSlot)L->P.b));
+            L->c = binder_term_var(L->P.a, (BinderSlot)L->P.b, L->b);
+            FR_AWAIT(k, L->c, Fn_REFVAR, L->c, 0);
+        } else L->c = iv_var(binder_dim_var(L->P.a, (BinderSlot)L->P.b));
+        {   uint64_t atom = obound_id((uint32_t)(tnode_nparams(ref_tnode(L->P.a)) + tnode_binder_local(ref_tnode(L->P.a), (BinderSlot)L->P.b)));
+            FR_AWAIT(k, r, Fn_OVERRIDE, L->a, key3(L->k == OP_LIFT_TERM ? S_TERM : S_DIM, atom, L->c)); }
+        FR_FINISH(k, RV_(nmap(r, L->Q.b, L->Q.c)));
+    }
+    if (L->k == OP_OPEN || L->k == OP_REINDEX_HEAD) {
+        if (L->k == OP_REINDEX_HEAD) { FR_AWAIT(k, L->a, Fn_REINDEX, L->h.owner, L->P.a); }
+        else L->a = L->Q.ref;
+        memset(&L->h, 0, sizeof L->h); L->h.owner = L->a;
+        if (ref_is_var(L->a)) { L->h.is_var = true; L->h.var = ref_var_id(L->a); }
+        else {
+            L->h.tag = ref_tag(L->a); L->h.tnode = ref_tnode(L->a); L->h.tenv = ref_tenv(L->a); L->h.n = tnode_nfields(ref_tnode(L->a));
+            FR_AWAIT(k, L->h.payload, Fn_HEAD, L->a, 0);
+            FR_AWAIT(k, L->h.levels, Fn_HEAD, L->a, 1);
+        }
+        {   Payload p = {0}; p.ref = L->a; NetRes *res = nres(D_HEAD_RECIPE, p); res->has_head = true; res->head = L->h; FR_FINISH(k, RV_(res)); }
+    }
+    if (L->k == OP_UNFOLD_GLOBAL) {
+        if (ref_is_var(L->Q.ref) || ref_tag(L->Q.ref) != T_GLOBAL) FR_FINISH(k, RV_(nstat(ST_SORT_MISMATCH, 0, 0)));
+        FR_AWAIT(k, r, Fn_UNFOLD, L->Q.ref, 0);
+        FR_FINISH(k, RV_(nref(r)));
+    }
+    if (L->k == OP_REINDEX_TERM_BINDER || L->k == OP_REINDEX_DIM_BINDER || L->k == OP_REINDEX_PARTIAL_DIM_BINDER) {
+        FR_AWAIT(k, r, Fn_REINDEX, L->Q.a, L->P.a);
+        {   Payload p = L->Q; p.a = r;
+            FR_FINISH(k, RV_(nres(L->k == OP_REINDEX_TERM_BINDER ? D_TERM_BINDER : L->k == OP_REINDEX_DIM_BINDER ? D_DIM_BINDER : D_PARTIAL_DIM_BINDER, p))); }
+    }
+    if (L->k == OP_REINDEX_PARTIAL) {
+        FR_AWAIT(k, L->a, Fn_FCRE, L->Q.face, L->P.a);
+        FR_AWAIT(k, L->b, Fn_REINDEX, L->Q.ref, L->P.a);
+        { Payload p = {0}; p.face = L->a; p.ref = L->b; FR_FINISH(k, RV_(nres(D_PARTIAL, p))); }
+    }
+    if (L->k == OP_APPLY_TERM_BINDER) { FR_AWAIT(k, r, Fn_BINDER, L->Q.a, key4(S_TERM, L->Q.b, L->Q.c, L->P.ref)); FR_FINISH(k, RV_(nref(r))); }
+    if (L->k == OP_APPLY_DIM_BINDER) { FR_AWAIT(k, r, Fn_BINDER, L->Q.a, key4(S_DIM, L->Q.b, L->Q.c, L->P.a)); FR_FINISH(k, RV_(nref(r))); }
+    if (L->k == OP_APPLY_PARTIAL_DIM_BINDER) {
+        /* the body at r; the guard is an ordinary field (the binder's fresh
+         * dimension cannot occur in it, so its specialization at r is itself) */
+        require((size_t)L->Q.d < tnode_nfields(ref_tnode(L->Q.a)) && tnode_field_kind(ref_tnode(L->Q.a), L->Q.d) == F_FACE, "APPLY_PARTIAL_DIM_BINDER: guard field");
+        FR_AWAIT(k, L->a, Fn_BINDER, L->Q.a, key4(S_DIM, L->Q.b, L->Q.c, L->P.a));
+        FR_AWAIT(k, L->b, Fn_FIELD, L->Q.a, L->Q.d);
+        { Payload p = {0}; p.face = L->b; p.ref = L->a; FR_FINISH(k, RV_(nres(D_PARTIAL, p))); }
+    }
+    if (L->k == OP_FORALL_DIMENSION) { FR_AWAIT(k, r, Fn_FCFORALL, L->Q.face, L->P.a); FR_FINISH(k, RV_(nface(r))); }
+    if (L->k == OP_PROJECT_FACE) { FR_AWAIT(k, r, Fn_FCPROJ, L->Q.face, L->P.a); FR_FINISH(k, RV_(nface(r))); }
+    if (L->k == OP_FACE_COVERAGE) { FR_AWAIT(k, r, Fn_FCENT, L->P.face, L->Q.face); FR_FINISH(k, RV_(nstat(r == 2 ? ST_COVERED : ST_NOT_COVERED, 0, 0))); }
+    if (L->k == OP_USE_PARTIAL) {
+        FR_AWAIT(k, r, Fn_FCENT, L->P.face, L->Q.face);
+        FR_FINISH(k, RV_(r == 2 ? nref(L->Q.ref) : nstat(ST_NOT_COVERED, L->Q.face, L->Q.ref)));   /* retains the partial payload */
+    }
+    if (L->k == OP_MATERIALIZE) {
+        /* the fields' values as one join; the shell built privately, one node
+         * per step, and connected once at the pending endpoint */
+        {   Payload p = {0}; p.ref = L->h.owner;
+            if (L->h.is_var) {
+                int8_t pol[1] = { +1 }; p.a = L->h.var;
+                L->hd = net_node(n, A_HEAD, 1, pol, p); N(n, L->hd)->tag = 0;
+                NetRes *res = nres(0, p); res->node = L->hd; FR_FINISH(k, RV_(res));
+            } }
+        L->nf = L->h.n;
+        L->J = join_new(k, L->nf);
+        for (L->q = 0; L->q < L->nf; L->q++) {
+            if (tnode_field_slot(L->h.tnode, L->q) != NO_SLOT) join_fill(L->J, L->q, 0);
+            else join_request(L->J, L->q, Fn_FIELD, L->h.owner, L->q);
+            if (L->q + 1 < L->nf) FR_YIELD(k);
+        }
+        FR_JOIN(k, L->J);
+        if (L->h.tag == T_SYSTEM) {
+            /* HEAD_SYSTEM with one negative aux attached to a BRANCH list */
+            {   Payload e = {0}; int8_t polnil[1] = { +1 };
+                L->tail = net_node(n, A_BRANCH_NIL, 1, polnil, e); }
+            for (L->q = L->nf / 2; L->q-- > 0;) {
+                {   Payload e = {0}; int8_t polcons[3] = { +1, -1, -1 }, polbr[3] = { +1, -1, -1 };
+                    NodeId br = net_node(n, A_BRANCH, 3, polbr, e);
+                    net_connect(n, br, 1, desc_face(n, join_value(L->J, 2 * L->q)), 0);
+                    net_connect(n, br, 2, desc_ref(n, join_value(L->J, 2 * L->q + 1)), 0);
+                    NodeId cons = net_node(n, A_BRANCH_CONS, 3, polcons, e);
+                    net_connect(n, cons, 1, br, 0);
+                    net_connect(n, cons, 2, L->tail, 0);
+                    L->tail = cons; }
+                FR_YIELD(k);
+            }
+            {   Payload p = {0}; p.ref = L->h.owner; int8_t pol[2] = { +1, -1 };
+                L->hd = net_node(n, A_HEAD, 2, pol, p); N(n, L->hd)->tag = T_SYSTEM;
+                net_connect(n, L->hd, 1, L->tail, 0); }
+        } else {
+            require(L->nf + 1 <= 255, "materialized head arity");
+            {   int8_t pol[256]; pol[0] = +1; for (size_t q = 0; q < L->nf; q++) pol[q + 1] = -1;
+                Payload p = {0}; p.ref = L->h.owner;
+                L->hd = net_node(n, A_HEAD, (uint8_t)(L->nf + 1), pol, p); N(n, L->hd)->tag = L->h.tag; }
+            for (L->q = 0; L->q < L->nf; L->q++) {
+                {   TNodeId Q = L->h.tnode; Tag tag = L->h.tag; size_t q = L->q;
+                    BinderSlot bs = tnode_field_slot(Q, q); FieldKind kd = tnode_field_kind(Q, q);
+                    uint64_t val = join_value(L->J, q);
+                    NodeId d;
+                    if (bs != NO_SLOT) {
+                        if (tag == T_COMP && q == 2) d = desc_binder(n, D_PARTIAL_DIM_BINDER, L->h.owner, bs, (FieldIndex)q, 1);
+                        else d = desc_binder(n, tnode_binder_sort(Q, bs) == S_TERM ? D_TERM_BINDER : D_DIM_BINDER, L->h.owner, bs, (FieldIndex)q, NO_FIELD);
+                    } else if (kd == F_REF) {
+                        /* partial fields: Glue fibre/equivalence under alpha, glue intro fibre term */
+                        bool partial = (tag == T_GLUE_TYPE && (q == 2 || q == 3)) || (tag == T_GLUE_INTRO && (q == 2 || q == 3 || q == 4)) || (tag == T_UNGLUE && (q == 2 || q == 3));
+                        d = partial ? desc_partial(n, join_value(L->J, 1), val) : desc_ref(n, val);
+                    } else if (kd == F_INTERVAL) d = desc_interval(n, val);
+                    else d = desc_face(n, val);
+                    net_connect(n, L->hd, (uint16_t)(q + 1), d, 0); }
+                FR_YIELD(k);
+            }
+        }
+        join_free(L->J); L->J = NULL;
+        { Payload e = {0}; NetRes *res = nres(0, e); res->node = L->hd; FR_FINISH(k, RV_(res)); }
+    }
+    if (L->k == OP_APPLY_TRANSFORM) {
+        /* §43: v := reindex(template, σ + slot ↦ a); no evaluation of a, the proof, or v */
+        {   RefId body; TermVarId slot;
+            require(compiler_template(L->P.a, (int)L->P.b, &body, &slot), "APPLY_TRANSFORM of an unknown compiled transform");
+            L->b = body; L->c = slot; }
+        FR_AWAIT(k, L->a, Fn_OVERRIDE, L->P.c, key3(S_TERM, L->c, L->Q.ref));
+        FR_AWAIT(k, r, Fn_REINDEX, L->b, L->a);
+        count(&n->n_apply);
+        FR_FINISH(k, RV_(nref(r)));
+    }
+    if (L->k == OP_CAPTURE_REF_SCOPE || L->k == OP_CAPTURE_FACE_SCOPE || L->k == OP_CAPTURE_INTERVAL_SCOPE) {
+        /* the capture request: the telescope Δ (payload a), then the body and
+         * (for a reference) the result type, level and guard */
+        {   size_t m; const uint64_t *dw = interner_get(&M.keys, L->P.a, &m); require(dw[0] == 0xCA9, "not a capture telescope");
+            wordbuf_init(&L->w);
+            for (size_t q = 1; q < m; q++) wordbuf_push(&L->w, dw[q]);
+            if (L->k == OP_CAPTURE_REF_SCOPE) { wordbuf_push(&L->w, VS_REF); wordbuf_push(&L->w, L->Q.ref); wordbuf_push(&L->w, L->P.ref); wordbuf_push(&L->w, L->P.c); wordbuf_push(&L->w, L->P.face); }
+            else if (L->k == OP_CAPTURE_FACE_SCOPE) { wordbuf_push(&L->w, VS_FACE); wordbuf_push(&L->w, L->Q.face); wordbuf_push(&L->w, 0); wordbuf_push(&L->w, LEVEL_NONE); wordbuf_push(&L->w, fc_true()); }
+            else { wordbuf_push(&L->w, VS_INTERVAL); wordbuf_push(&L->w, L->Q.a); wordbuf_push(&L->w, 0); wordbuf_push(&L->w, LEVEL_NONE); wordbuf_push(&L->w, fc_true()); } }
+        FR_CALL(k, L->a, intern_sub(k, &M.keys, &L->w, &L->created));
+        FR_AWAIT(k, r, Fn_CAPTURE, L->a, 0);
+        FR_FINISH(k, RV_(nscope(r)));
+    }
+    if (L->k == OP_REINDEX_SCOPE) {
+        if (map_is_identity(L->P.a)) FR_FINISH(k, RV_(nscope(L->Q.a)));
+        FR_AWAIT(k, r, Fn_TSCOPE, L->Q.a, trav_key(TR_RE, 0, L->P.a));
+        FR_FINISH(k, RV_(nscope(r)));
+    }
+    if (L->k == OP_APPLY_SCOPE) {
+        {   size_t m; const uint64_t *aw = interner_get(&M.keys, L->P.a, &m); require(aw[0] == 0xA96, "not a scope argument list");
+            require(aw[1] == scope_arity(L->Q.a), "scope application arity");
+            wordbuf_init(&L->w);
+            for (size_t q = 2; q < m; q++) wordbuf_push(&L->w, aw[q]); }
+        FR_CALL(k, L->a, intern_sub(k, &M.keys, &L->w, &L->created));
+        L->a = trav_key(TR_APPLY, 0, L->a);
+        {   Val b = scope_body(L->Q.a);
+            L->J = join_new(k, 3);
+            join_request(L->J, 0, b.sort == VS_REF ? Fn_TREF : b.sort == VS_INTERVAL ? Fn_TIV : Fn_TFC, b.id, L->a);
+            if (scope_type(L->Q.a)) join_request(L->J, 1, Fn_TREF, scope_type(L->Q.a), L->a); else join_fill(L->J, 1, 0);
+            join_request(L->J, 2, Fn_TFC, scope_guard(L->Q.a), L->a); }
+        FR_JOIN(k, L->J);
+        {   Val b = scope_body(L->Q.a); NetRes *res;
+            if (b.sort == VS_REF) res = ntyped(join_value(L->J, 0), join_value(L->J, 1), scope_level(L->Q.a), join_value(L->J, 2));
+            else if (b.sort == VS_FACE) res = nface(join_value(L->J, 0));
+            else res = niv(join_value(L->J, 0));
+            join_free(L->J); L->J = NULL;
+            FR_FINISH(k, RV_(res)); }
+    }
+    if (L->k == OP_FORALL_SCOPE) {
+        if (scope_arity(L->Q.a) != 1 || scope_local(L->Q.a, 0).sort != S_DIM || scope_body(L->Q.a).sort != VS_FACE) FR_FINISH(k, RV_(nstat(ST_SORT_MISMATCH, 0, 0)));
+        FR_AWAIT(k, r, Fn_FCFORALL, scope_body(L->Q.a).id, bound_id(0, 0));
+        FR_AWAIT(k, r, Fn_TFC, r, trav_key(TR_LOWER, 0, 0));
+        FR_FINISH(k, RV_(nface(r)));
+    }
+    if (L->k == OP_REINDEX_TEMPLATE_ENV) {
+        L->nf = tenv_size(L->Q.a);
+        L->J = join_new(k, L->nf);
+        for (L->q = 0; L->q < L->nf; L->q++) {
+            {   uint64_t slot; TVal val; tenv_entry(L->Q.a, L->q, &slot, &val);
+                if (val.sort == PS_LEVEL) join_fill(L->J, L->q, val.id);
+                else if (val.sort == PS_REF) join_request(L->J, L->q, Fn_REINDEX, val.id, L->P.a);
+                else if (val.sort == PS_INTERVAL) join_request(L->J, L->q, Fn_IVRE, val.id, L->P.a);
+                else if (val.sort == PS_FACE) join_request(L->J, L->q, Fn_FCRE, val.id, L->P.a);
+                else join_request(L->J, L->q, Fn_TSCOPE, val.id, trav_key(TR_RE, 0, L->P.a)); }
+            if (L->q + 1 < L->nf) FR_YIELD(k);
+        }
+        FR_JOIN(k, L->J);
+        wordbuf_init(&L->w);
+        for (L->q = 0; L->q < L->nf; L->q++) {
+            { uint64_t slot; TVal val; tenv_entry(L->Q.a, L->q, &slot, &val); wordbuf_push(&L->w, slot); wordbuf_push(&L->w, val.sort); wordbuf_push(&L->w, join_value(L->J, L->q)); }
+            FR_YIELD(k);
+        }
+        join_free(L->J); L->J = NULL;
+        FR_CALL(k, r, intern_sub(k, &M.tenvs, &L->w, &L->created));
+        { Payload p = {0}; p.a = r; FR_FINISH(k, RV_(nres(D_TEMPLATE_ENV, p))); }
+    }
+    if (L->k == OP_INSTANTIATE_TEMPLATE) {
+        if (tnode_is_construction(L->P.a)) { FR_AWAIT(k, r, Fn_CINST, L->P.a, L->Q.a); FR_FINISH(k, RV_(nref(r))); }
+        FR_AWAIT(k, L->a, Fn_ENVOF, L->P.a, L->Q.a);
+        FR_AWAIT(k, r, Fn_TVMAKE, L->P.a, L->a);
+        FR_FINISH(k, RV_(nref(r)));
+    }
+    if (L->k == OP_REINDEX_TYPED_PARTIAL) {
+        L->J = join_new(k, 3);
+        join_request(L->J, 0, Fn_REINDEX, L->Q.ref, L->P.a);
+        if (L->Q.b) join_request(L->J, 1, Fn_REINDEX, L->Q.b, L->P.a); else join_fill(L->J, 1, 0);
+        join_request(L->J, 2, Fn_FCRE, L->Q.face, L->P.a);
+        FR_JOIN(k, L->J);
+        {   NetRes *res = ntyped(join_value(L->J, 0), join_value(L->J, 1), L->Q.c, join_value(L->J, 2));
+            join_free(L->J); L->J = NULL; FR_FINISH(k, RV_(res)); }
+    }
+    if (L->k == OP_USE_TYPED_PARTIAL) {
+        FR_AWAIT(k, r, Fn_FCENT, L->P.face, L->Q.face);
+        if (r == 2) FR_FINISH(k, RV_(nref(L->Q.ref)));
+        { NetRes *res = nstat(ST_NOT_COVERED, L->Q.face, L->Q.ref); res->p.b = L->Q.b; res->p.c = L->Q.c; FR_FINISH(k, RV_(res)); }   /* retains the typed partial */
+    }
+    die("net.op: unknown operation");
+    FR_END(k);
+}
+
+void net_families_init(void) {
+    Fn_REINDEX = family_lookup("reindex"); Fn_IVRE = family_lookup("iv.reindex"); Fn_FCRE = family_lookup("fc.reindex"); Fn_COMPOSE = family_lookup("map.compose");
+    Fn_FCMEET = family_lookup("fc.meet"); Fn_FCENT = family_lookup("fc.entails"); Fn_FCFORALL = family_lookup("fc.forall"); Fn_FCPROJ = family_lookup("fc.project");
+    Fn_CENV = family_lookup("construction.envmap"); Fn_FIELD = family_lookup("field"); Fn_BINDER = family_lookup("binder"); Fn_REFVAR = family_lookup("ref.var");
+    Fn_OVERRIDE = family_lookup("map.override"); Fn_HEAD = family_lookup("head.annotation"); Fn_UNFOLD = family_lookup("global.unfold");
+    Fn_CAPTURE = family_lookup("scope.capture"); Fn_TREF = family_lookup("trav.ref"); Fn_TIV = family_lookup("trav.interval"); Fn_TFC = family_lookup("trav.face");
+    Fn_TSCOPE = family_lookup("trav.scope"); Fn_CINST = family_lookup("construction.instance"); Fn_ENVOF = family_lookup("template.envof"); Fn_TVMAKE = family_lookup("template.view");
+    require(Fn_TVMAKE && Fn_UNFOLD && Fn_CAPTURE, "the operation families are registered first");
+    F_NETOP = family_define("net.op", netop_step, sizeof(OpLoc), false);
+}
 
 static void rule_op(Net *n, NodeId op, NodeId data) {
     Node os = *N(n, op), ds = *N(n, data);
     const Node *o = &os, *d = &ds;
     NodeKind k = o->kind, dk = d->kind;
     Payload P = o->p, Q = d->p;
-    NodeId res = 0;
-#define WANT(kind) do { if (dk != (kind)) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); goto out; } } while (0)
-    switch (k) {
-    case OP_REINDEX_TERM: WANT(D_REF); res = desc_ref(n, reindex(Q.ref, P.a)); break;
-    case OP_REINDEX_INTERVAL: WANT(D_INTERVAL); res = desc_interval(n, iv_reindex(Q.a, P.a)); break;
-    case OP_REINDEX_FACE: WANT(D_FACE); res = desc_face(n, fc_reindex(Q.face, P.a)); break;
-    case OP_COMPOSE_MAP: WANT(D_MAP); res = desc_map(n, compose(P.a, Q.a), 0, 0); break;
-    case OP_RESTRICT_MAP: {
-        WANT(D_MAP);
-        FaceId src = Q.b ? Q.b : fc_true(), tgt = Q.c ? Q.c : fc_true();
-        res = desc_map(n, Q.a, fc_meet(src, fc_reindex(P.face, Q.a)), fc_meet(tgt, P.face));
-        break;
-    }
-    case OP_LIFT_TERM: case OP_LIFT_DIMENSION: {
-        WANT(D_MAP);
-        RefId owner = P.a; BinderSlot slot = (BinderSlot)P.b;
-        /* lifting is defined for a construction's own environment map; a
-         * template instance interprets programs, it has no map: a status */
-        if (ref_is_var(owner) || !tview_is_construction(owner) || Q.a != tview_env_map(owner)) { res = status_node(n, ST_INVALID_MAP, 0, 0); break; }
-        if (slot >= tnode_nbinders(ref_tnode(owner))) { res = status_node(n, ST_INVALID_MAP, 0, 0); break; }
-        if ((k == OP_LIFT_TERM) != (tnode_binder_sort(ref_tnode(owner), slot) == S_TERM)) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
-        res = desc_map(n, lifted_map(owner, slot, NULL), Q.b, Q.c);
-        break;
-    }
-    case OP_OPEN: WANT(D_REF); res = desc_recipe(n, Q.ref); break;
-    case OP_UNFOLD_GLOBAL:
-        WANT(D_REF);
-        if (ref_is_var(Q.ref) || ref_tag(Q.ref) != T_GLOBAL) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
-        res = desc_ref(n, unfold_global(Q.ref));
-        break;
-    case OP_REINDEX_TERM_BINDER: WANT(D_TERM_BINDER); res = desc_binder(n, D_TERM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
-    case OP_REINDEX_DIM_BINDER: WANT(D_DIM_BINDER); res = desc_binder(n, D_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, NO_FIELD); break;
-    case OP_REINDEX_PARTIAL_DIM_BINDER: WANT(D_PARTIAL_DIM_BINDER); res = desc_binder(n, D_PARTIAL_DIM_BINDER, reindex(Q.a, P.a), (BinderSlot)Q.b, (FieldIndex)Q.c, (FieldIndex)Q.d); break;
-    case OP_REINDEX_PARTIAL: WANT(D_PARTIAL); res = desc_partial(n, fc_reindex(Q.face, P.a), reindex(Q.ref, P.a)); break;
-    case OP_APPLY_TERM_BINDER: WANT(D_TERM_BINDER); res = desc_ref(n, apply_term_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.ref)); break;
-    case OP_APPLY_DIM_BINDER: WANT(D_DIM_BINDER); res = desc_ref(n, apply_dim_binder(Q.a, (BinderSlot)Q.b, (FieldIndex)Q.c, P.a)); break;
-    case OP_APPLY_PARTIAL_DIM_BINDER: {
-        WANT(D_PARTIAL_DIM_BINDER);
-        RefId owner = Q.a;
-        DimOpen o = resolve_dim_binder(owner, (BinderSlot)Q.b, (FieldIndex)Q.c);
-        MapId at_r = map_single_dim(o.j, P.a);
-        /* both body and guard are specialized at r (the guard of a valid tube
-         * is independent of the bound dimension, so this leaves it unchanged);
-         * the guard is read through the uniform opened head, where the
-         * owner's map or template environment is already applied (§55) */
-        Head oh; open_ref(owner, &oh);
-        require((size_t)Q.d < oh.n && HF(&oh, Q.d).kind == F_FACE, "APPLY_PARTIAL_DIM_BINDER: guard field");
-        FaceId guard = fc_reindex(HF(&oh, Q.d).id, at_r);
-        head_free(&oh);
-        res = desc_partial(n, guard, reindex(o.body, at_r));
-        break;
-    }
-    case OP_FORALL_DIMENSION: WANT(D_FACE); res = desc_face(n, fc_forall(P.a, Q.face)); break;
-    case OP_PROJECT_FACE: { WANT(D_FACE); res = desc_face(n, fc_project(Q.face, (DimSetId)P.a)); break; }
-    case OP_FACE_COVERAGE: WANT(D_FACE); res = status_node(n, fc_entails(P.face, Q.face) ? ST_COVERED : ST_NOT_COVERED, 0, 0); break;
-    case OP_USE_PARTIAL:
-        WANT(D_PARTIAL);
-        if (fc_entails(P.face, Q.face)) res = desc_ref(n, Q.ref);
-        else res = status_node(n, ST_NOT_COVERED, Q.face, Q.ref);      /* retains the partial payload */
-        break;
-    case OP_GET_SUPPORT: { WANT(D_REF); Payload p = {0}; p.a = ref_support(Q.ref); res = net_descriptor(n, D_DIMSET, p); break; }
-    case OP_REINDEX_HEAD: WANT(D_HEAD_RECIPE); res = desc_recipe(n, reindex(d->head->owner, P.a)); break;
-    case OP_MATERIALIZE: WANT(D_HEAD_RECIPE); res = materialize(n, d->head); break;
-    case OP_APPLY_TRANSFORM: {
-        /* §43: the one replacement — v := reindex(template, σ + slot ↦ a);
-         * no evaluation of a, the proof, or v */
-        WANT(D_REF);
-        RefId body; TermVarId slot;
-        require(compiler_template(P.a, (int)P.b, &body, &slot), "APPLY_TRANSFORM of an unknown compiled transform");
-        MapBuilder b; mapb_init(&b);
-        size_t nt = map_n_terms(P.c), nd = map_n_dims(P.c);
-        for (size_t k = 0; k < nt; k++) { TermVarId x; RefId im; map_term_entry(P.c, k, &x, &im); mapb_term(&b, x, im); }
-        for (size_t k = 0; k < nd; k++) { DimVarId i; IntervalId im; map_dim_entry(P.c, k, &i, &im); mapb_dim(&b, i, im); }
-        mapb_term(&b, slot, Q.ref);
-        res = desc_ref(n, reindex(body, mapb_finish(&b)));
-        count(&n->n_apply);
-        break;
-    }
-    /* ---- §55: scope and template agents; each is one finite pure operation ---- */
-    case OP_CAPTURE_REF_SCOPE: {
-        WANT(D_REF);
-        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
-        Val body = { VS_REF, Q.ref };
-        res = desc_scope(n, capture_scope(m, d, body, P.ref, P.c, P.face));     /* P: a = Δ, ref = type, c = level, face = guard */
-        break;
-    }
-    case OP_CAPTURE_FACE_SCOPE: {
-        WANT(D_FACE);
-        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
-        Val body = { VS_FACE, Q.face };
-        res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
-        break;
-    }
-    case OP_CAPTURE_INTERVAL_SCOPE: {
-        WANT(D_INTERVAL);
-        CaptureDecl d[16]; size_t m = capture_decls_get(P.a, d, 16);
-        Val body = { VS_INTERVAL, Q.a };
-        res = desc_scope(n, capture_scope(m, d, body, 0, LEVEL_NONE, fc_true()));
-        break;
-    }
-    case OP_REINDEX_SCOPE: WANT(D_SCOPE); res = desc_scope(n, reindex_scope(Q.a, P.a)); break;
-    case OP_APPLY_SCOPE: {
-        WANT(D_SCOPE);
-        Val args[16]; size_t m = scope_args_get(P.a, args, 16);
-        TypedPartial tp = apply_scope(Q.a, m, args);
-        if (tp.body.sort == VS_REF) res = desc_typed_partial(n, tp.body.id, tp.type, tp.level, tp.guard);
-        else if (tp.body.sort == VS_FACE) res = desc_face(n, tp.body.id);
-        else res = desc_interval(n, tp.body.id);
-        break;
-    }
-    case OP_FORALL_SCOPE: {
-        WANT(D_SCOPE);
-        if (scope_arity(Q.a) != 1 || scope_local(Q.a, 0).sort != S_DIM || scope_body(Q.a).sort != VS_FACE) { res = status_node(n, ST_SORT_MISMATCH, 0, 0); break; }
-        res = desc_face(n, forall_scope(Q.a));
-        break;
-    }
-    case OP_REINDEX_TEMPLATE_ENV: { WANT(D_TEMPLATE_ENV); Payload p = {0}; p.a = tenv_reindex(Q.a, P.a); res = net_descriptor(n, D_TEMPLATE_ENV, p); break; }
-    case OP_INSTANTIATE_TEMPLATE: WANT(D_TEMPLATE_ENV); res = desc_ref(n, tenv_instantiate(P.a, Q.a)); break;
-    case OP_REINDEX_TYPED_PARTIAL: WANT(D_TYPED_PARTIAL); res = desc_typed_partial(n, reindex(Q.ref, P.a), Q.b ? reindex(Q.b, P.a) : 0, Q.c, fc_reindex(Q.face, P.a)); break;
-    case OP_USE_TYPED_PARTIAL:
-        WANT(D_TYPED_PARTIAL);
-        if (fc_entails(P.face, Q.face)) res = desc_ref(n, Q.ref);
-        else { res = status_node(n, ST_NOT_COVERED, Q.face, Q.ref); N(n, res)->p.b = Q.b; N(n, res)->p.c = Q.c; }   /* retains the typed partial */
-        break;
-    case OP_TYPED_PARTIAL_TYPE: WANT(D_TYPED_PARTIAL); res = desc_ref(n, Q.b); break;      /* retained as type data, not observed */
-    case OP_TYPED_PARTIAL_GUARD: WANT(D_TYPED_PARTIAL); res = desc_face(n, Q.face); break;
-    case OP_EVAL: {
-        WANT(D_REF);
+    /* the operand sort each operation consumes; a mismatch is a status */
+    NodeKind want = 0;
+    if (k == OP_REINDEX_TERM || k == OP_OPEN || k == OP_UNFOLD_GLOBAL || k == OP_GET_SUPPORT || k == OP_APPLY_TRANSFORM || k == OP_CAPTURE_REF_SCOPE || k == OP_EVAL) want = D_REF;
+    else if (k == OP_REINDEX_INTERVAL || k == OP_CAPTURE_INTERVAL_SCOPE) want = D_INTERVAL;
+    else if (k == OP_REINDEX_FACE || k == OP_FORALL_DIMENSION || k == OP_PROJECT_FACE || k == OP_FACE_COVERAGE || k == OP_CAPTURE_FACE_SCOPE) want = D_FACE;
+    else if (k == OP_COMPOSE_MAP || k == OP_RESTRICT_MAP || k == OP_LIFT_TERM || k == OP_LIFT_DIMENSION) want = D_MAP;
+    else if (k == OP_REINDEX_TERM_BINDER || k == OP_APPLY_TERM_BINDER) want = D_TERM_BINDER;
+    else if (k == OP_REINDEX_DIM_BINDER || k == OP_APPLY_DIM_BINDER) want = D_DIM_BINDER;
+    else if (k == OP_REINDEX_PARTIAL_DIM_BINDER || k == OP_APPLY_PARTIAL_DIM_BINDER) want = D_PARTIAL_DIM_BINDER;
+    else if (k == OP_REINDEX_PARTIAL || k == OP_USE_PARTIAL) want = D_PARTIAL;
+    else if (k == OP_REINDEX_HEAD || k == OP_MATERIALIZE) want = D_HEAD_RECIPE;
+    else if (k == OP_REINDEX_SCOPE || k == OP_APPLY_SCOPE || k == OP_FORALL_SCOPE) want = D_SCOPE;
+    else if (k == OP_REINDEX_TEMPLATE_ENV || k == OP_INSTANTIATE_TEMPLATE) want = D_TEMPLATE_ENV;
+    else if (k == OP_REINDEX_TYPED_PARTIAL || k == OP_USE_TYPED_PARTIAL || k == OP_TYPED_PARTIAL_TYPE || k == OP_TYPED_PARTIAL_GUARD) want = D_TYPED_PARTIAL;
+    else die("unknown operation");
+    if (dk != want) { one_result(n, op, data, status_node(n, ST_SORT_MISMATCH, 0, 0)); return; }
+    /* operations that read their payload only */
+    if (k == OP_GET_SUPPORT) { Payload p = {0}; p.a = ref_support(Q.ref); one_result(n, op, data, net_descriptor(n, D_DIMSET, p)); return; }
+    if (k == OP_TYPED_PARTIAL_TYPE) { one_result(n, op, data, desc_ref(n, Q.b)); return; }      /* retained as type data, not observed */
+    if (k == OP_TYPED_PARTIAL_GUARD) { one_result(n, op, data, desc_face(n, Q.face)); return; }
+    NodeId pend = net_pending(n);
+    one_result(n, op, data, pend);
+    if (k == OP_EVAL) {
         /* the result endpoint transfers into the continuation; the request
-         * descriptors retire. */
-        NodeId pend = net_pending(n);
+         * descriptors retire */
         EvalCtx *ctx = malloc(sizeof *ctx); require(ctx, "out of memory");
         ctx->net = n; ctx->pending = pend;
-        one_result(n, op, data, pend);
         eval_request(Q.ref, P.face, cont_external(net_eval_deliver, ctx, free));
         return;
     }
-    default: die("unknown operation");
-    }
-out:
-#undef WANT
-    one_result(n, op, data, res);
+    Cont *f = frame_new(F_NETOP, 0);
+    OpLoc *L = f->loc;
+    L->net = n; L->k = k; L->P = P; L->Q = Q;
+    if (d->head) L->h = *d->head;
+    OpCtx *ctx = malloc(sizeof *ctx); require(ctx, "out of memory");
+    ctx->net = n; ctx->pending = pend;
+    frame_launch(f, cont_external(net_op_deliver, ctx, free));
 }
 
 static bool is_shell(NodeKind k) { return k == A_HEAD || k == A_BRANCH_NIL || k == A_BRANCH_CONS || k == A_BRANCH; }
@@ -802,7 +940,7 @@ static void *net_worker_main(void *arg) {
     return NULL;
 }
 
-size_t net_run(Net *n) {
+static size_t net_run_pairs(Net *n) {
     if (n->nworkers) {
         pthread_mutex_lock(&n->act_mu);
         size_t before = __atomic_load_n(&n->rewrites, __ATOMIC_SEQ_CST);
@@ -826,12 +964,14 @@ size_t net_run(Net *n) {
 
 /* Drive both schedulers to joint quiescence: a round in which neither the
  * net nor the evaluator performed any work, each having drained its own
- * ready multiset with all its workers idle. */
-size_t net_run_with_eval(Net *n) {
+ * ready multiset with all its workers idle.  Every operation is a request of
+ * the one protocol (net.op frames, evaluation), so running the net is running
+ * both: there is no net-only quiescence that leaves operations pending. */
+size_t net_run(Net *n) {
     size_t total = 0;
     for (;;) {
         size_t before = __atomic_load_n(&n->rewrites, __ATOMIC_SEQ_CST);
-        size_t c = net_run(n);
+        size_t c = net_run_pairs(n);
         size_t e = eval_run();
         size_t after = __atomic_load_n(&n->rewrites, __ATOMIC_SEQ_CST);
         total += c;
@@ -839,6 +979,8 @@ size_t net_run_with_eval(Net *n) {
     }
     return total;
 }
+
+size_t net_run_with_eval(Net *n) { return net_run(n); }
 
 bool net_root_read(const Net *n, NodeId root, NodeKind *kind, Payload *p) {
     const Node *x = N(n, root);

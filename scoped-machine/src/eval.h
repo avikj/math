@@ -49,42 +49,35 @@ typedef uint32_t Family;
 enum { F_WHNF = 1, F_MAX = 64 };
 
 typedef struct Cont Cont;
-typedef struct Gather Gather;
+typedef struct Join Join;
 typedef struct RootBox RootBox;
 typedef void (*ExternalDeliver)(void *ctx, EvalResult *r);
 
 typedef enum {
-    K_ROOT = 1, K_FORWARD, K_APP, K_FST, K_SND, K_PAPP, K_UNGLUE, K_COMP_FAMILY, K_BRANCH, K_EXTERNAL,
-    K_FRAME            /* a family frame: resumed by its family's resume function */
+    K_ROOT = 1, K_JOIN, K_EXTERNAL,
+    K_FRAME            /* a family frame: resumed by its family's step function */
 } ContKind;
 
 /* A continuation is single-consumer. A frame (K_FRAME) is the retained state
  * of one producer of a family between two of its steps: program counter and
  * bounded locals (w, and a fixed-size locals record of its family). A frame
- * that requests its next child sets `keep` in its resume function and is
- * reused as that child's continuation. A subroutine frame has no entry: it
- * returns its value to its parent frame. */
+ * that requests its next child marks itself kept (the executing job's flag)
+ * and is reused as that child's continuation. A subroutine or launched frame
+ * has no entry: it returns its value to its parent continuation. */
 struct Cont {
     ContKind kind;
     EntryId dest;       /* entry to publish into (not for ROOT/EXTERNAL) */
     FaceId chi;         /* ambient face of the demanding evaluation */
-    RefId orig;         /* the eliminator / composition reference, retained */
-    RefId a;            /* APP argument */
-    IntervalId s;       /* PAPP interval */
-    DimVarId j;         /* COMP: the symbolic dimension */
-    RefId tube;         /* COMP: tube body at j */
-    FaceId phi;         /* COMP: tube face */
-    RefId cap;          /* COMP: cap */
-    Gather *gather; size_t branch;   /* BRANCH */
+    Join *join; size_t box;          /* JOIN: the join and the box */
     RootBox *root;                   /* ROOT */
     ExternalDeliver ext_fn; void *ext_ctx; void (*ext_free)(void *);   /* EXTERNAL */
     /* K_FRAME */
-    Family fam; uint32_t pc; bool keep;
-    bool inl;           /* driven by the synchronous inline driver (family_call) */
+    Family fam; uint32_t pc;
     uint64_t w[8];
     void *loc;          /* the family's locals record (loc_size bytes, zeroed), or NULL */
     Cont *parent;       /* subroutine frame: the frame its value returns to */
     Cont *next;         /* link in an entry's waiter stack / a delivery chain */
+    bool disposed;      /* teardown: its owned resources were released (a join frame is reached once per box) */
 };
 
 typedef struct {
@@ -131,12 +124,9 @@ void frame_call(Cont *k, Cont *child);
 void frame_yield(Cont *k);
 void frame_finish(Cont *k, uint64_t v);
 Cont *frame_sub(Family f, const Cont *caller);    /* a subroutine frame of family f for caller */
-/* The synchronous driver (PLAN §5) for code that is not yet a frame program,
- * valid inside and outside jobs, never blocking: a ready key returns its
- * value; an unevaluated key is claimed and its producer is driven to
- * publication on this thread (waiters that arrive meanwhile are delivered by
- * that publication); a key running elsewhere is computed on this thread
- * without publication. It drives the same step functions. */
+/* The synchronous embedding for an external caller (never inside a counted
+ * step, where a request suspends the frame): submit the root (f, a, b) and
+ * drive the ordinary scheduler until it is delivered. */
 uint64_t family_call(Family f, uint64_t a, uint64_t b);
 
 /* the interning subroutine: inserts the record held by *buf into t (the
@@ -158,6 +148,22 @@ void construct_families_init(void);   /* constructions, fields, binders, variabl
 #define FR_FINISH(k, val) do { frame_finish((k), (val)); return; } while (0)
 #define FR_END(k) } die("frame program ended without finishing (pc %u)", (unsigned)(k)->pc)
 #define FR_LOC(k, T) ((T *)(k)->loc)
+
+/* joins: a frame issues independent demands (one per step) into the boxes of
+ * a join, then awaits all of them with FR_JOIN; box i holds the value of
+ * demand i. A demand is a producer request or a subroutine call. */
+Join *join_new(Cont *frame, size_t n);
+void join_request(Join *j, size_t i, Family f, uint64_t a, uint64_t b);
+void join_call(Join *j, size_t i, Cont *child);
+uint64_t join_value(const Join *j, size_t i);
+void join_fill(Join *j, size_t i, uint64_t v);   /* a box whose value needs no demand */
+void join_free(Join *j);
+void *frame_mem(size_t bytes);               /* frame-owned block: released by frame_mem_free, or at teardown if the frame is stuck */
+void *frame_mem_grow(void *p, size_t bytes);
+void frame_mem_free(void *p);
+void frame_await_join(Cont *k, Join *j);
+void frame_launch(Cont *f, Cont *parent);      /* run frame f; its value resumes parent (any continuation) */
+#define FR_JOIN(k, j) do { (k)->pc = __LINE__; frame_await_join((k), (j)); return; case __LINE__:; } while (0)
 
 
 void eval_init(void);

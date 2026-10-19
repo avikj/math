@@ -183,29 +183,72 @@ static void ivdims_step(Cont *k, uint64_t v) {
 }
 
 /* ---------------- references ----------------
- * A variable is looked up; a construction's environment is reindexed entry
- * by entry and the instance is built; nothing in a node is visited. */
-typedef struct { size_t n, q; uint64_t slot; TVal val; bool changed; WordBuf out; bool created; } ReLoc;
+ * A variable is looked up; any other reference has its environment rebuilt:
+ * one independent demand per entry (a join), then the instance of the same
+ * node (a construction's instance, or a template view). Nothing in a node is
+ * visited. */
+static Family lazy_family(Family *slot, const char *name) { if (!*slot) { *slot = family_lookup(name); require(*slot, "family %s", name); } return *slot; }
+static Family F_TREF_, F_TIV_, F_TFC_, F_TSCOPE_, F_TVMAKE_, F_ENVREBUILD;
+static uint64_t deeper_key(uint64_t tk) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); return trav_key((unsigned)w[0], (unsigned)w[1] + 1, w[2]); }
+
 static void reindex_step(Cont *k, uint64_t v) {
-    ReLoc *L = FR_LOC(k, ReLoc);
     RefId t = k->w[0]; MapId sigma = k->w[1];
-    uint64_t r = 0, id = 0;
+    uint64_t r = 0;
     FR_BEGIN(k);
     if (map_is_identity(sigma)) FR_FINISH(k, t);
     if (ref_is_var(t)) { FR_AWAIT(k, r, F_MAPT, sigma, ref_var_id(t)); FR_FINISH(k, r); }
-    if (!tview_is_construction(t)) FR_FINISH(k, tview_reindex(t, sigma));   /* template instance (step 3) */
-    L->n = tenv_size(ref_tenv(t)); L->changed = false;
-    wordbuf_init(&L->out);
+    { uint64_t op[2] = { 0, sigma }; FR_AWAIT(k, r, F_ENVREBUILD, t, interner_intern(&M.keys, op, 2, NULL)); }
+    FR_FINISH(k, r);
+    FR_END(k);
+}
+
+/* the environment of reference w[0] rebuilt by operation w[1] = [mode, arg]:
+ * mode 0 substitutes the map arg, mode 1 traverses with the traversal key arg */
+typedef struct { size_t n, q; uint64_t mode, arg, slot; TVal val; bool changed; Join *j; WordBuf out; bool created; } ReLoc;
+static void envrebuild_step(Cont *k, uint64_t v) {
+    ReLoc *L = FR_LOC(k, ReLoc);
+    RefId t = k->w[0];
+    uint64_t r = 0, id = 0;
+    FR_BEGIN(k);
+    { size_t m; const uint64_t *op = interner_get(&M.keys, k->w[1], &m); L->mode = op[0]; L->arg = op[1]; }
+    L->n = tenv_size(ref_tenv(t));
+    L->j = join_new(k, L->n);
     for (L->q = 0; L->q < L->n; L->q++) {
         tenv_entry(ref_tenv(t), L->q, &L->slot, &L->val);
-        if (L->val.sort == PS_REF) FR_AWAIT(k, r, F_REINDEX, L->val.id, sigma);
-        else FR_AWAIT(k, r, F_IVRE, L->val.id, sigma);
+        if (L->val.sort == PS_LEVEL) join_fill(L->j, L->q, L->val.id);
+        else if (L->mode == 0) {
+            if (L->val.sort == PS_REF) join_request(L->j, L->q, F_REINDEX, L->val.id, L->arg);
+            else if (L->val.sort == PS_INTERVAL) join_request(L->j, L->q, F_IVRE, L->val.id, L->arg);
+            else if (L->val.sort == PS_FACE) join_request(L->j, L->q, F_FCRE, L->val.id, L->arg);
+            else join_request(L->j, L->q, lazy_family(&F_TSCOPE_, "trav.scope"), L->val.id, trav_key(TR_RE, 0, L->arg));
+        } else {
+            if (L->val.sort == PS_REF) join_request(L->j, L->q, lazy_family(&F_TREF_, "trav.ref"), L->val.id, L->arg);
+            else if (L->val.sort == PS_INTERVAL) join_request(L->j, L->q, lazy_family(&F_TIV_, "trav.interval"), L->val.id, L->arg);
+            else if (L->val.sort == PS_FACE) join_request(L->j, L->q, lazy_family(&F_TFC_, "trav.face"), L->val.id, L->arg);
+            else join_request(L->j, L->q, lazy_family(&F_TSCOPE_, "trav.scope"), L->val.id, deeper_key(L->arg));
+        }
+        if (L->q + 1 < L->n) FR_YIELD(k);
+    }
+    FR_JOIN(k, L->j);
+    L->changed = false;
+    wordbuf_init(&L->out);
+    if (!tview_is_construction(t)) wordbuf_push(&L->out, tnode_def(ref_tnode(t)));
+    for (L->q = 0; L->q < L->n; L->q++) {
+        tenv_entry(ref_tenv(t), L->q, &L->slot, &L->val);
+        r = join_value(L->j, L->q);
         if (r != L->val.id) L->changed = true;
         wordbuf_push(&L->out, L->slot); wordbuf_push(&L->out, L->val.sort); wordbuf_push(&L->out, r);
+        FR_YIELD(k);
     }
+    join_free(L->j); L->j = NULL;
     if (!L->changed) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, t); }
-    FR_CALL(k, id, intern_sub(k, &M.tenvs, &L->out, &L->created));
-    FR_AWAIT(k, r, F_CINST, ref_tnode(t), id);
+    if (tview_is_construction(t)) {
+        FR_CALL(k, id, intern_sub(k, &M.tenvs, &L->out, &L->created));
+        FR_AWAIT(k, r, F_CINST, ref_tnode(t), id);
+        FR_FINISH(k, r);
+    }
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
+    FR_AWAIT(k, r, lazy_family(&F_TVMAKE_, "template.view"), ref_tnode(t), id);
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -288,7 +331,8 @@ void subst_families_init(void) {
     F_MAPD = family_define("map.dim_image", mapd_step, sizeof(LookLoc), true);
     F_OVERRIDE = family_define("map.override", override_step, sizeof(OverLoc), true);
     F_COMPOSE = family_define("map.compose", compose_step, sizeof(MergeLoc), true);
-    F_REINDEX = family_define("reindex", reindex_step, sizeof(ReLoc), true);
+    F_REINDEX = family_define("reindex", reindex_step, 0, true);
+    F_ENVREBUILD = family_define("env.rebuild", envrebuild_step, sizeof(ReLoc), true);
     F_IVRE = family_define("iv.reindex", ivre_step, sizeof(SubLoc), true);
     F_FCRE = family_define("fc.reindex", fcre_step, sizeof(SubLoc), true);
     F_IVDIMS = family_define("iv.dims", ivdims_step, sizeof(SubLoc), true);

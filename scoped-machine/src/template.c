@@ -80,6 +80,19 @@ static void node_binder(TNodeId Q, BinderSlot s, Sort *sort, FieldIndex *domfiel
 Sort tnode_binder_sort(TNodeId Q, BinderSlot s) { Sort so; FieldIndex f; size_t l; node_binder(Q, s, &so, &f, &l); return so; }
 static ExprId node_required_e(TNodeId Q) { const uint64_t *b = node_btab(Q); return b[1 + 3 * b[0]]; }
 ExprId tnode_head_expr(TNodeId Q, int levels) { return levels ? node_levels_e(Q) : node_payload_e(Q); }
+static void node_field(TNodeId Q, size_t k, FieldKind *kind, BinderSlot *bslot, ExprId *e);
+ExprId tnode_field_expr(TNodeId Q, size_t k) { FieldKind kd; BinderSlot bs; ExprId e; node_field(Q, k, &kd, &bs, &e); return e; }
+static void node_binder(TNodeId Q, BinderSlot s, Sort *sort, FieldIndex *domfield, size_t *lslot);
+FieldIndex tnode_binder_domain(TNodeId Q, BinderSlot s) { Sort so; FieldIndex df; size_t ls; node_binder(Q, s, &so, &df, &ls); return df; }
+size_t tnode_binder_local(TNodeId Q, BinderSlot s) { Sort so; FieldIndex df; size_t ls; node_binder(Q, s, &so, &df, &ls); return ls; }
+/* a template node's binder field: the environment slot of the binder's local
+ * and the field's recipe */
+void tnode_template_binder(TNodeId Q, BinderSlot slot, FieldIndex field, uint64_t *env_slot, ExprId *body_e) {
+    Sort so; FieldIndex df; size_t lslot; node_binder(Q, slot, &so, &df, &lslot);
+    FieldKind kd; BinderSlot bs; node_field(Q, field, &kd, &bs, body_e);
+    require(bs == slot, "template field is not under this binder");
+    *env_slot = TPL.defs[tnode_def(Q)].nparams + lslot;
+}
 const char *tdef_name(TDefId d) { return d >= 1 && d < TD_COUNT ? TPL.defs[d].name : "?"; }
 
 /* ------------------------------------------------------------------ */
@@ -349,7 +362,7 @@ static void envof_step(Cont *k, uint64_t v) {
 static Family trav_of(PSort s) { return s == PS_REF ? F_TREF : s == PS_INTERVAL ? F_TIV : F_TFC; }
 static PSort psort_of_val(ValSort s) { return s == VS_REF ? PS_REF : s == VS_INTERVAL ? PS_INTERVAL : PS_FACE; }
 
-typedef struct { const uint64_t *w; size_t n, q; uint64_t a, b, er, S, tk; TVal t; WordBuf out; bool created; } InLoc;
+typedef struct { const uint64_t *w; size_t n, q; uint64_t a, b, er, S, tk; TVal t; WordBuf out; bool created; Join *J; } InLoc;
 static void interp_step(Cont *k, uint64_t v) {
     InLoc *L = FR_LOC(k, InLoc);
     ExprId e = k->w[0]; uint64_t er = k->w[1];
@@ -375,31 +388,41 @@ static void interp_step(Cont *k, uint64_t v) {
     if (L->w[0] == X_CALL) {
         /* the callee's environment: κ inherited, then the arguments */
         require(L->w[2] + 1 == TPL.defs[L->w[1]].nparams, "template call arity (%s)", TPL.defs[L->w[1]].name);
-        FR_AWAIT(k, r, F_ENVLOOK, er, 0);
-        {   size_t m; const uint64_t *ew = interner_get(&M.keys, er, &m);
+        /* κ and the arguments are independent demands: one join */
+        L->J = join_new(k, 1 + L->w[2]);
+        join_request(L->J, 0, F_ENVLOOK, er, 0);
+        for (L->q = 0; L->q < L->w[2]; L->q++) { FR_YIELD(k); join_request(L->J, 1 + L->q, F_INTERP, L->w[3 + L->q], er); }
+        FR_JOIN(k, L->J);
+        {   size_t m; const uint64_t *ew = interner_get(&M.keys, er, &m); r = join_value(L->J, 0);
             wordbuf_init(&L->out); wordbuf_push(&L->out, L->w[1]);
             wordbuf_push(&L->out, 0); wordbuf_push(&L->out, PS_FACE); wordbuf_push(&L->out, ew[1 + 3 * (r - 1) + 2]); }
         for (L->q = 0; L->q < L->w[2]; L->q++) {
-            FR_AWAIT(k, r, F_INTERP, L->w[3 + L->q], er);
-            L->t = tvget(r);
+            L->t = tvget(join_value(L->J, 1 + L->q));
             require(L->t.sort == TPL.defs[L->w[1]].sorts[L->q + 1], "template call sort (%s, %zu)", TPL.defs[L->w[1]].name, L->q);
             wordbuf_push(&L->out, L->q + 1); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
+            FR_YIELD(k);
         }
+        join_free(L->J); L->J = NULL;
         FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->out, &L->created));
         FR_AWAIT(k, r, F_INTERP, TPL.defs[L->w[1]].root, L->er);
         FR_FINISH(k, r);
     }
     if (L->w[0] == X_APPLY || L->w[0] == X_APPLY_TYPE || L->w[0] == X_APPLY_GUARD) {
-        FR_AWAIT(k, r, F_INTERP, L->w[1], er);
-        L->t = tvget(r); require(L->t.sort == PS_SCOPE, "scope application of a non-scope");
+        /* the scope and its arguments are independent demands: one join */
+        L->J = join_new(k, 1 + L->w[2]);
+        join_request(L->J, 0, F_INTERP, L->w[1], er);
+        for (L->q = 0; L->q < L->w[2]; L->q++) { FR_YIELD(k); join_request(L->J, 1 + L->q, F_INTERP, L->w[3 + L->q], er); }
+        FR_JOIN(k, L->J);
+        L->t = tvget(join_value(L->J, 0)); require(L->t.sort == PS_SCOPE, "scope application of a non-scope");
         L->S = L->t.id;
         require(L->w[2] == scope_arity(L->S), "scope application arity");
         wordbuf_init(&L->out);
         for (L->q = 0; L->q < L->w[2]; L->q++) {
-            FR_AWAIT(k, r, F_INTERP, L->w[3 + L->q], er);
-            L->t = tvget(r);
+            L->t = tvget(join_value(L->J, 1 + L->q));
             wordbuf_push(&L->out, L->t.sort == PS_REF ? VS_REF : L->t.sort == PS_INTERVAL ? VS_INTERVAL : VS_FACE); wordbuf_push(&L->out, L->t.id);
+            FR_YIELD(k);
         }
+        join_free(L->J); L->J = NULL;
         FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
         L->tk = trav_key(TR_APPLY, 0, id);
         if (L->w[0] == X_APPLY_TYPE) { FR_AWAIT(k, r, F_TREF, scope_type(L->S), L->tk); FR_FINISH(k, tvrec(PS_REF, r)); }
@@ -1308,6 +1331,19 @@ void templates_free(void) {
     for (size_t k = 0; k < TD_COUNT; k++) words_free(&TPL.defs[k].nodes);
     pthread_mutex_destroy(&TPL.mu);
     memset(&TPL, 0, sizeof TPL);
+}
+
+/* the environment and root of a definition's program at arguments args and
+ * source face κ (for a frame that awaits its interpretation) */
+void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kappa, uint64_t *er, ExprId *root) {
+    templates_init();
+    const TDef *d = &TPL.defs[def];
+    require(nargs + 1 == d->nparams && nargs < 15, "template call arity (%s)", d->name);
+    uint64_t sl[16]; TVal vl[16];
+    sl[0] = 0; vl[0].sort = PS_FACE; vl[0].id = kappa;
+    for (size_t k = 0; k < nargs; k++) { require(args[k].sort == d->sorts[k + 1], "template call sort (%s, %zu)", d->name, k); sl[k + 1] = k + 1; vl[k + 1] = args[k]; }
+    *er = envrec_host(def, nargs + 1, sl, vl);
+    *root = d->root;
 }
 
 TVal template_call(TDefKind def, size_t nargs, const TVal *args) {

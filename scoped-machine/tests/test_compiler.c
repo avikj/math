@@ -164,11 +164,12 @@ int main(void) {
           NodeId ap2 = net_operation(&net, OP_APPLY_TRANSFORM, Pa);
           net_connect(&net, ap2, 1, root2, 0);
           net_connect(&net, ap2, 0, net_descriptor(&net, D_REF, Pr), 0);
-          EvalEvents b0 = eval_events();
+          Family fw = F_WHNF;
+          size_t b0 = family_steps(fw);
           net_run_with_eval(&net);
-          EvalEvents b1 = eval_events();
+          size_t b1 = family_steps(fw);
           ok = net_root_read(&net, root2, &kk, &out);
-          CHECK(ok && kk == D_REF && b1.request == b0.request, "a storing consumer receives REF(v) and no evaluation is demanded");
+          CHECK(ok && fw && kk == D_REF && b1 == b0, "a storing consumer receives REF(v) and no evaluation is demanded");
           net_free(&net); }
         /* ---- 10. duplicate demands under mixed schedulers are covered by test_schedule ---- */
     }

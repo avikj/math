@@ -124,7 +124,7 @@ int main(int argc, char **argv) {
             failed+=value->kind!=D_REF || value->p.ref!=x;
         }
         printf("adjacent net pairs: rewrites=%zu, retries=%zu\n",n.rewrites,n.retries);
-        failed+=n.rewrites!=3*COUNT;
+        failed+=n.rewrites!=4*COUNT;     /* DUP·HEAD, DUP·DUP-copy of the field, OP·REF to a pending endpoint, and the delivery of its result */
         free(roots); net_free(&n);
     } else if (!strcmp(mode,"diagram-race")) {
         Race r={.G=G,.A=A,.x=x};

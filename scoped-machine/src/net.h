@@ -94,6 +94,7 @@ typedef struct Net {
     uint64_t rng;
 } Net;
 
+void net_families_init(void);                           /* the net.op frame family (eval_init) */
 void net_init(Net *n);
 void net_free(Net *n);
 NodeId net_descriptor(Net *n, NodeKind kind, Payload p);
@@ -110,11 +111,10 @@ void net_share_scheduler(Net *n, pthread_mutex_t *mu, pthread_cond_t *cv, size_t
 bool net_pop_pair_locked(Net *n, Active *out);         /* caller holds shared.mu */
 size_t net_pending_pairs_locked(const Net *n);
 bool net_step_pair(Net *n, Active a);                  /* one candidate pair; true when a replacement was committed */
-/* run local rules until no active pair remains; returns rewrite count */
+/* run local rules and the protocol jobs the operations requested until both
+ * are quiescent (operations are protocol requests); returns rewrite count */
 size_t net_run(Net *n);
-/* evaluation requests suspended in the cache are resumed by the eval
- * scheduler; this drives both until quiescent */
-size_t net_run_with_eval(Net *n);
+size_t net_run_with_eval(Net *n);                      /* the same (historical name) */
 /* read a result descriptor's payload through a root's negative port */
 bool net_root_read(const Net *n, NodeId root, NodeKind *kind, Payload *p);
 

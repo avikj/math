@@ -17,7 +17,6 @@
 #include "template.h"
 
 #define SSIDE(id) ((ScopeSide *)chunked_at(&M.scope_side, (id) - 1))
-#define TMAXSLOT 64     /* template environments: at most this many slots (template.c MAXSLOT) */
 
 static Family F_TIMGT, F_TIMGD, F_TREF, F_TIV, F_TFC, F_TSCOPE, F_SCOPESIDE, F_SETFREE, F_CAPTURE;
 static Family F_MAPT, F_MAPD, F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_FCJOIN, F_CINST, F_DSUNION, F_VSUNION, F_IVDIMS, F_FCDIMS;
@@ -113,45 +112,15 @@ static void tfc_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
-/* ---------------- references: the environment, entry by entry ---------------- */
-typedef struct { size_t n, q; uint64_t slot; TVal val; bool changed; WordBuf out; bool created; TVal vals[TMAXSLOT]; uint64_t slots[TMAXSLOT]; } TrLoc;
+/* ---------------- references: a variable's image, or the environment rebuilt ---------------- */
+static Family F_ENVREBUILD;
 static void tref_step(Cont *k, uint64_t v) {
-    TrLoc *L = FR_LOC(k, TrLoc);
     RefId t = k->w[0];
-    uint64_t r = 0, id = 0;
+    uint64_t r = 0;
     FR_BEGIN(k);
     if (ref_is_var(t)) { FR_AWAIT(k, r, F_TIMGT, t, k->w[1]); FR_FINISH(k, r); }
-    L->n = tenv_size(ref_tenv(t)); L->changed = false;
-    if (tview_is_construction(t)) {
-        wordbuf_init(&L->out);
-        for (L->q = 0; L->q < L->n; L->q++) {
-            tenv_entry(ref_tenv(t), L->q, &L->slot, &L->val);
-            if (L->val.sort == PS_REF) FR_AWAIT(k, r, F_TREF, L->val.id, k->w[1]);
-            else FR_AWAIT(k, r, F_TIV, L->val.id, k->w[1]);
-            if (r != L->val.id) L->changed = true;
-            wordbuf_push(&L->out, L->slot); wordbuf_push(&L->out, L->val.sort); wordbuf_push(&L->out, r);
-        }
-        if (!L->changed) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, t); }
-        FR_CALL(k, id, intern_sub(k, &M.tenvs, &L->out, &L->created));
-        FR_AWAIT(k, r, F_CINST, ref_tnode(t), id);
-        FR_FINISH(k, r);
-    }
-    /* a template instance: every environment value; a scope one level deeper */
-    require(L->n <= TMAXSLOT, "template environment width");
-    for (L->q = 0; L->q < L->n; L->q++) {
-        tenv_entry(ref_tenv(t), L->q, &L->slots[L->q], &L->val);
-        /* (no switch statement here: the program-counter labels must belong
-         * to the step's own switch) */
-        if (L->val.sort == PS_REF) FR_AWAIT(k, r, F_TREF, L->val.id, k->w[1]);
-        else if (L->val.sort == PS_INTERVAL) FR_AWAIT(k, r, F_TIV, L->val.id, k->w[1]);
-        else if (L->val.sort == PS_FACE) FR_AWAIT(k, r, F_TFC, L->val.id, k->w[1]);
-        else if (L->val.sort == PS_SCOPE) FR_AWAIT(k, r, F_TSCOPE, L->val.id, tk_deeper(k->w[1]));
-        else r = L->val.id;
-        if (r != L->val.id) L->changed = true;
-        L->vals[L->q].sort = L->val.sort; L->vals[L->q].id = r;
-    }
-    if (!L->changed) FR_FINISH(k, t);
-    FR_FINISH(k, make_template_view(ref_tnode(t), L->n, L->vals, L->slots));    /* template layer (3b) */
+    { uint64_t op[2] = { 1, k->w[1] }; FR_AWAIT(k, r, F_ENVREBUILD, t, interner_intern(&M.keys, op, 2, NULL)); }
+    FR_FINISH(k, r);
     FR_END(k);
 }
 
@@ -296,7 +265,8 @@ void scope_families_init(void) {
     require(F_MAPT && F_CINST && F_FCDIMS, "the substitution and construction families are registered first");
     F_TIMGT = family_define("trav.term_image", timgt_step, sizeof(ImgLoc), true);
     F_TIMGD = family_define("trav.dim_image", timgd_step, sizeof(ImgLoc), true);
-    F_TREF = family_define("trav.ref", tref_step, sizeof(TrLoc), true);
+    F_TREF = family_define("trav.ref", tref_step, 0, true);
+    F_ENVREBUILD = family_lookup("env.rebuild");
     F_TIV = family_define("trav.interval", tiv_step, sizeof(SubLoc), true);
     F_TFC = family_define("trav.face", tfc_step, sizeof(SubLoc), true);
     F_TSCOPE = family_define("trav.scope", tscope_step, sizeof(ScLoc), true);

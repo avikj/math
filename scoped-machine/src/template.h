@@ -96,7 +96,12 @@ MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);
 RefId tnode_generic(TNodeId Q, CtxDecl *decls, FaceId *req);
 MapId tview_generic_map(RefId t);                                    /* generic names ↦ t's images */
 void template_families_init(void);
-ExprId tnode_head_expr(TNodeId Q, int levels);                     /* a template node's payload / levels recipe (0 = none) */
+void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kappa, uint64_t *er, ExprId *root);
+ExprId tnode_head_expr(TNodeId Q, int levels);
+ExprId tnode_field_expr(TNodeId Q, size_t k);
+FieldIndex tnode_binder_domain(TNodeId Q, BinderSlot s);
+size_t tnode_binder_local(TNodeId Q, BinderSlot s);        /* the binder's local position (atom np+local) */
+void tnode_template_binder(TNodeId Q, BinderSlot slot, FieldIndex field, uint64_t *env_slot, ExprId *body_e);                     /* a template node's payload / levels recipe (0 = none) */
 void construct_bind_template_families(void);                                   /* interpretation families (registered by eval_init) */
 
 #endif

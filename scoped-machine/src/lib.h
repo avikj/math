@@ -60,5 +60,6 @@ RefId mk_hcomp_at(uint64_t l, DimVarId j, RefId X, FaceId phi, RefId u_j, RefId 
  * annotation κ). Returns the clause instance, or 0 for a tag without a
  * clause. */
 RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap, FaceId eta);
+void lib_families_init(void);       /* comp.clause (registered by eval_init) */
 
 #endif

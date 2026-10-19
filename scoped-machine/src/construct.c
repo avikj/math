@@ -16,6 +16,7 @@
 #include "template.h"
 
 static Family F_REFVAR, F_FCDIMS, F_FIELD, F_BINDER, F_CONSTRUCT;
+static Family F_ENVOF, F_INTERP, F_ENVSET;   /* template families (bound after their registration) */
 static Family F_REINDEX, F_IVRE, F_FCRE, F_CENV, F_CINST, F_IVDIMS, F_OVERRIDE;
 static Family F_DSUNION, F_VSUNION, F_DSREMOVE, F_VSREMOVE, F_FCMEET, F_FCJOIN, F_FCFORALL;
 
@@ -60,7 +61,12 @@ static void field_step(Cont *k, uint64_t v) {
     RefId t = k->w[0]; size_t q = (size_t)k->w[1];
     uint64_t r = 0;
     FR_BEGIN(k);
-    if (!tview_is_construction(t)) { Head h; open_ref(t, &h); FR_FINISH(k, tview_field(&h, q).id); }   /* template program (step 3b) */
+    if (!tview_is_construction(t)) {
+        /* a template program: the field's recipe in the view's environment */
+        FR_AWAIT(k, L->m, F_ENVOF, ref_tnode(t), ref_tenv(t));
+        FR_AWAIT(k, r, F_INTERP, tnode_field_expr(ref_tnode(t), q), L->m);
+        { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
+    }
     FR_AWAIT(k, L->m, F_CENV, ref_tenv(t), 0);
     {   TNodeId Q = ref_tnode(t); FieldKind kd = tnode_field_kind(Q, q);
         require(tnode_field_slot(Q, q) == NO_SLOT, "a binder field is opened through its binder");
@@ -79,7 +85,16 @@ static void binder_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     { size_t n; const uint64_t *e = interner_get(&M.keys, k->w[1], &n); L->sort = e[0]; L->slot = e[1]; L->field = e[2]; L->image = e[3]; }
-    require(tview_is_construction(t), "binder application of a template instance through the construction family");
+    if (!tview_is_construction(t)) {
+        /* a template binder: the local's slot set to the image, the body recipe interpreted */
+        FR_AWAIT(k, L->m, F_ENVOF, ref_tnode(t), ref_tenv(t));
+        {   uint64_t es; ExprId be; tnode_template_binder(ref_tnode(t), (BinderSlot)L->slot, (FieldIndex)L->field, &es, &be);
+            uint64_t e[3] = { es, L->sort == S_TERM ? PS_REF : PS_INTERVAL, L->image };
+            FR_AWAIT(k, L->m, F_ENVSET, L->m, interner_intern(&M.keys, e, 3, NULL)); }
+        {   uint64_t es; ExprId be; tnode_template_binder(ref_tnode(t), (BinderSlot)L->slot, (FieldIndex)L->field, &es, &be);
+            FR_AWAIT(k, r, F_INTERP, be, L->m); }
+        { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
+    }
     {   TNodeId Q = ref_tnode(t);
         require(tnode_field_slot(Q, L->field) == (BinderSlot)L->slot && tnode_binder_sort(Q, (BinderSlot)L->slot) == (Sort)L->sort, "field is not under this binder"); }
     FR_AWAIT(k, L->m, F_CENV, ref_tenv(t), 0);
@@ -226,7 +241,7 @@ static void construct_step(Cont *k, uint64_t v) {
 
 /* a head's payload (w[1] = 0) or formation levels (w[1] = 1): constants of a
  * construction node, interpreted for a template node */
-static Family F_HEAD, F_ENVOF, F_INTERP;
+static Family F_HEAD;
 static void head_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
@@ -237,6 +252,41 @@ static void head_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, r, F_ENVOF, ref_tnode(t), ref_tenv(t));
     FR_AWAIT(k, r, F_INTERP, tnode_head_expr(ref_tnode(t), (int)k->w[1]), r);
     { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
+    FR_END(k);
+}
+
+/* a global reference unfolded: the definition body under the substitution of
+ * the definition's parameters by the reference's environment (the map record
+ * is written directly: parameters are sorted, images are the entries) */
+typedef struct { const uint64_t *xs, *ds; size_t nt, nd, q, kept; uint64_t s, m; WordBuf w; bool created; } UnfLoc;
+static Family F_UNFOLD;
+static bool unf_identity(bool dim, uint64_t key, uint64_t img) { return dim ? img == iv_var(key) : (ref_is_var(img) && ref_var_id(img) == key); }
+static void unfold_step(Cont *k, uint64_t v) {
+    UnfLoc *L = FR_LOC(k, UnfLoc);
+    RefId t = k->w[0];
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL && tview_is_construction(t), "unfold of a non-global");
+    L->s = tnode_const_payload(ref_tnode(t));
+    require(global_body((SymbolId)L->s) != 0, "unfold of a global without a body");
+    L->xs = varset_get(global_params((SymbolId)L->s), &L->nt);
+    L->ds = dimset_get(global_dims((SymbolId)L->s), &L->nd);
+    require(tenv_size(ref_tenv(t)) == L->nd + L->nt, "global reference with a strengthened boundary");
+    wordbuf_init(&L->w); L->kept = 0;
+    for (L->q = 0; L->q < L->nt; L->q++) {
+        {   uint64_t slot; TVal val; tenv_entry(ref_tenv(t), L->nd + L->q, &slot, &val);
+            if (!unf_identity(false, L->xs[L->q], val.id)) { wordbuf_push(&L->w, L->xs[L->q]); wordbuf_push(&L->w, val.id); L->kept++; } }
+        FR_YIELD(k);
+    }
+    for (L->q = 0; L->q < L->nd; L->q++) {
+        {   uint64_t slot; TVal val; tenv_entry(ref_tenv(t), L->q, &slot, &val);
+            if (!unf_identity(true, L->ds[L->q], val.id)) { wordbuf_push(&L->w, L->ds[L->q]); wordbuf_push(&L->w, val.id); } }
+        FR_YIELD(k);
+    }
+    wordbuf_push(&L->w, L->kept);
+    FR_CALL(k, L->m, intern_sub(k, &M.maps, &L->w, &L->created));
+    FR_AWAIT(k, r, F_REINDEX, global_body((SymbolId)L->s), L->m);
+    FR_FINISH(k, r);
     FR_END(k);
 }
 
@@ -254,9 +304,10 @@ void construct_families_init(void) {
     F_BINDER = family_define("binder", binder_step, sizeof(BindLoc), true);
     F_CONSTRUCT = family_define("construct", construct_step, sizeof(ConLoc), true);
     F_HEAD = family_define("head.annotation", head_step, 0, true);
+    F_UNFOLD = family_define("global.unfold", unfold_step, sizeof(UnfLoc), false);   /* reads the definition body: not a pure key */
 }
 /* the template families register after the construction families; their ids are read lazily */
-void construct_bind_template_families(void) { F_ENVOF = family_lookup("template.envof"); F_INTERP = family_lookup("template.interp"); require(F_ENVOF && F_INTERP, "template families"); }
+void construct_bind_template_families(void) { F_ENVOF = family_lookup("template.envof"); F_INTERP = family_lookup("template.interp"); F_ENVSET = family_lookup("template.envset"); require(F_ENVOF && F_INTERP && F_ENVSET, "template families"); }
 
 /* ---------------- the operations (synchronous driver) ---------------- */
 RefId construct_request(const uint64_t *req, size_t n) { return family_call(F_CONSTRUCT, interner_intern(&M.keys, req, n, NULL), 0); }

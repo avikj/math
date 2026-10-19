@@ -1,10 +1,15 @@
 /* test_protocol.c — the one execution protocol for registered families:
  * one producer per key, frames reused across children, delivery chains of
- * one delivery per job, the synchronous driver, workers and concurrent
- * clients. */
+ * one delivery per job, joins of independent demands, the root-driving
+ * synchronous API (refused inside a counted step), a self-request as an
+ * unresolved dependency, workers and concurrent clients. */
 #include "../src/eval.h"
 #include "../src/lib.h"
 #include <pthread.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#include <fcntl.h>
+#undef W_OK   /* <unistd.h> access mode; the evaluator status is meant */
 
 static int failures;
 #define CHECK(c, m) do { if (!(c)) { failures++; printf("FAIL: %s\n", m); } else printf("ok: %s\n", m); } while (0)
@@ -50,15 +55,28 @@ static void use_step(Cont *k, uint64_t v) {             /* count(n) + tri(n) */
     FR_FINISH(k, k->w[2] + x);
     FR_END(k);
 }
-static void sync_step(Cont *k, uint64_t v) {            /* a not-yet-converted caller inside a job */
+static void sync_step(Cont *k, uint64_t v) {            /* a synchronous request inside a counted step */
     (void)v;
     frame_finish(k, family_call(F_TRI, k->w[0], 0) + 1000000);
 }
-static __thread int priv_depth; static int priv_seen;
-static void priv_step(Cont *k, uint64_t v) {            /* re-enters its own running key once */
-    (void)v;
-    if (priv_depth == 0) { priv_depth++; uint64_t x = family_call(F_PRIV, k->w[0], 0); priv_depth--; frame_finish(k, x + 1); }
-    else { priv_seen++; frame_finish(k, 41); }
+static void self_step(Cont *k, uint64_t v) {            /* awaits its own key: an unresolved dependency */
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    FR_AWAIT(k, r, F_PRIV, k->w[0], 0);
+    FR_FINISH(k, r + 1);
+    FR_END(k);
+}
+static Family F_JOIN;
+typedef struct { Join *J; uint64_t i, n; } JoinLoc;
+static void join_step(Cont *k, uint64_t v) {            /* Σ_{i<n} tri(i): n independent demands, one join */
+    JoinLoc *L = FR_LOC(k, JoinLoc);
+    FR_BEGIN(k);
+    L->n = k->w[0];
+    L->J = join_new(k, L->n);
+    for (L->i = 0; L->i < L->n; L->i++) { join_request(L->J, L->i, F_TRI, L->i, 0); FR_YIELD(k); }
+    FR_JOIN(k, L->J);
+    { uint64_t acc = 0; for (size_t i = 0; i < L->n; i++) acc += join_value(L->J, i); join_free(L->J); L->J = NULL; FR_FINISH(k, acc); }
+    FR_END(k);
 }
 static uint64_t use_expected(uint64_t n) { return (1 + n * (n - 1) / 2) + (1 + n * (n + 1) / 2); }
 static uint64_t inl_got[8];
@@ -114,35 +132,45 @@ int main(void) {
     F_COUNT = family_define("test.count", count_step, sizeof(CountLoc), true);
     F_USE = family_define("test.use", use_step, 0, true);
     F_SYNC = family_define("test.sync", sync_step, 0, true);
-    F_PRIV = family_define("test.priv", priv_step, 0, true);
+    F_PRIV = family_define("test.self", self_step, 0, true);
+    F_JOIN = family_define("test.join", join_step, sizeof(JoinLoc), true);
     eval_reset();
     size_t t0 = family_steps(F_TRI), c0 = family_steps(F_COUNT), u0 = family_steps(F_USE);
     v = family_run(F_USE, 300, 0, &st);
     CHECK(st == W_OK && v == use_expected(300), "scheduled: a producer calls a stepping subroutine and awaits a producer");
     CHECK(family_steps(F_COUNT) - c0 == 301, "the subroutine: one step per element, one to finish");
     CHECK(family_steps(F_TRI) - t0 == 301 + 300 && family_steps(F_USE) - u0 == 3, "producers: one step per key plus one per delivered child");
-    /* the same program inline: same value, same steps, every key published once */
+    /* the root-driving synchronous API: the same jobs as a scheduled request */
     eval_reset();
     t0 = family_steps(F_TRI); c0 = family_steps(F_COUNT); u0 = family_steps(F_USE);
     v = family_call(F_USE, 300, 0);
-    CHECK(v == use_expected(300), "inline: the same value from the same step functions");
-    CHECK(family_steps(F_COUNT) - c0 == 301 && family_steps(F_TRI) - t0 == 301 + 300 && family_steps(F_USE) - u0 == 3, "inline: the same steps");
+    CHECK(v == use_expected(300), "root-driving: the same value");
+    CHECK(family_steps(F_COUNT) - c0 == 301 && family_steps(F_TRI) - t0 == 301 + 300 && family_steps(F_USE) - u0 == 3, "root-driving: the same steps");
     { bool once = true; for (EntryId e = 1; e <= eval_entry_count(); e++) if (eval_entry_live(e) && (eval_entry_state(e) != E_READY || eval_entry_runs(e) != 1)) once = false;
-      CHECK(once && eval_entry_count() == 302, "inline: every key claimed, run once and published"); }
-    size_t before_inline = family_steps(F_TRI);
-    CHECK(family_call(F_TRI, 300, 0) == 1 + 300 * 301 / 2 && family_steps(F_TRI) == before_inline, "inline: a ready key returns its value without steps");
-    v = family_run(F_TRI, 301, 0, &st);
-    CHECK(v == 1 + 301 * 302 / 2 && family_steps(F_TRI) == before_inline + 2, "a scheduled request uses the keys published inline");
-    /* inline inside a job */
-    v = family_run(F_SYNC, 350, 0, &st);
-    CHECK(st == W_OK && v == 1000000 + 1 + 350 * 351 / 2, "a synchronous call inside a job drives its keys inline");
-    /* a key running elsewhere is computed without publication */
-    priv_seen = 0;
-    v = family_call(F_PRIV, 7, 0);
-    CHECK(v == 42 && priv_seen == 1, "a re-entered running key is computed on the calling thread");
+      CHECK(once && eval_entry_count() == 302, "root-driving: every key claimed, run once and published"); }
+    size_t before_root = family_steps(F_TRI);
+    CHECK(family_call(F_TRI, 300, 0) == 1 + 300 * 301 / 2 && family_steps(F_TRI) == before_root, "a ready key returns its value without steps");
+    /* joins: n independent demands, then one resumption */
+    eval_reset();
+    { size_t j0 = family_steps(F_JOIN); t0 = family_steps(F_TRI);
+      v = family_run(F_JOIN, 50, 0, &st);
+      uint64_t want = 0; for (uint64_t i = 0; i < 50; i++) want += 1 + i * (i + 1) / 2;
+      CHECK(st == W_OK && v == want, "a join of fifty independent demands");
+      CHECK(family_steps(F_JOIN) - j0 == 50 + 1 + 1, "the joining frame: one step per demand issued, one for the join, one resumption");
+      CHECK(family_steps(F_TRI) - t0 == 50 + 49, "the demanded keys: each produced once"); }
+    /* a synchronous request inside a counted step is refused (it would be a
+     * private recomputation outside the protocol) */
+    {   fflush(stdout);
+        pid_t pid = fork();
+        if (pid == 0) { int fd = open("/dev/null", 1); if (fd >= 0) { dup2(fd, 2); } family_run(F_SYNC, 350, 0, &st); _exit(0); }
+        int ws = 0; waitpid(pid, &ws, 0);
+        CHECK(!(WIFEXITED(ws) && WEXITSTATUS(ws) == 0), "a synchronous request inside a counted step dies"); }
+    /* a self-request is an unresolved dependency: no private recomputation */
+    eval_reset();
+    v = family_run(F_PRIV, 7, 0, &st);
+    CHECK(st == W_STUCK && v == 0, "a key awaiting itself is an unresolved dependency");
     { EntryId e = 0; for (EntryId q = 1; q <= eval_entry_count(); q++) if (eval_entry_live(q) && eval_entry_family(q) == F_PRIV) e = q;
-      size_t rq, dl, pb; eval_entry_events(e, &rq, &dl, &pb);
-      CHECK(e && eval_entry_runs(e) == 1 && pb == 1 && family_call(F_PRIV, 7, 0) == 42, "it published once, from its claimer"); }
+      CHECK(e && eval_entry_runs(e) == 1 && eval_entry_state(e) != E_READY, "it ran once and published nothing"); }
     /* concurrent inline clients and workers */
     for (int w = 0; w <= 4; w += 4) {
         eval_reset(); eval_set_workers(w);
@@ -152,7 +180,7 @@ int main(void) {
         for (size_t i = 0; i < 8; i++) pthread_join(th[i], NULL);
         pthread_barrier_destroy(&gate);
         bool same = true; for (size_t i = 0; i < 8; i++) same = same && inl_got[i] == use_expected(2000);
-        CHECK(same, w ? "eight inline clients, four workers: one value" : "eight inline clients: one value");
+        CHECK(same, w ? "eight root-driving clients, four workers: one value" : "eight root-driving clients: one value");
         bool once = true; size_t ne = eval_entry_count();
         for (EntryId e = 1; e <= ne; e++) if (eval_entry_live(e) && (eval_entry_runs(e) != 1 || eval_entry_state(e) != E_READY)) once = false;
         CHECK(once, "every key claimed once and published");

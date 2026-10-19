@@ -201,7 +201,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
 static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed) {
     bool ok = true;
     if (a->ev.request != b->ev.request || a->ev.eval_step != b->ev.eval_step || a->ev.publish != b->ev.publish || a->ev.deliver != b->ev.deliver) {
-        printf("  FAIL [%s seed %llu]: event vector differs\n", name, (unsigned long long)seed); ok = false;
+        printf("  FAIL [%s seed %llu]: event vector differs (req %zu/%zu step %zu/%zu pub %zu/%zu del %zu/%zu)\n", name, (unsigned long long)seed, a->ev.request, b->ev.request, a->ev.eval_step, b->ev.eval_step, a->ev.publish, b->ev.publish, a->ev.deliver, b->ev.deliver); ok = false;
     }
     if (a->net_op != b->net_op || a->net_dup != b->net_dup || a->net_erase != b->net_erase || a->net_deliver != b->net_deliver) {
         printf("  FAIL [%s seed %llu]: net rule counts differ\n", name, (unsigned long long)seed); ok = false;

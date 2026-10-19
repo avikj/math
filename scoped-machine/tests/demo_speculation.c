@@ -83,15 +83,23 @@ static Run run(SchedPolicy pol, uint64_t seed, size_t workers) {
     out.tick_steps = after_tick.eval_step - after_spec.eval_step;
     out.tick_launch = after_tick.launch - after_spec.launch;
     out.tick_ready = after_tick.ready_hit - after_spec.ready_hit;
-    require(out.tick_launch == 0 && out.tick_steps <= 1 && out.tick_ready == 1, "the tick computes nothing: one ready hit, one delivery frame, no producer");
+    /* the observation frame: its start, three ready operands (entailment of
+     * the required face, the projection, the observation itself) each
+     * resuming it once, and the delivery to the root — a constant, whatever
+     * the prefix cost */
+    require(out.tick_launch == 0 && out.tick_steps == 5 && out.tick_ready == 3, "the tick computes nothing: three ready hits, five constant steps, no producer");
     out.forwarded_up = now->ref;
     /* 3. restriction: the system under [i ↦ 1] is dispatched to its true
      * branch at the first demand (one frame step) and from then on shares
      * the branch's memo entry — the same result object, no producer */
     out.spec = decision; out.up = ts[1];
     { RefId restricted = reindex(decision, map_single_dim(i, iv_one()));
-      EvalEvents b0 = eval_events(); EvalResult *rr = whnf(restricted, fc_true(), &st); EvalEvents b1 = eval_events();
-      require(st == W_OK && rr == spec_up && b1.launch - b0.launch == 1, "the restricted decision resolves to the speculative up result (one dispatch launch, no branch work)"); }
+      size_t e0 = eval_entry_count();
+      EvalResult *rr = whnf(restricted, fc_true(), &st);
+      /* the new keys are the restricted system's own operands (its fields and
+       * face tests) and exactly one observation: the dispatch */
+      size_t obs = 0; for (EntryId q = (EntryId)e0 + 1; q <= eval_entry_count(); q++) if (eval_entry_is_observation(q)) obs++;
+      require(st == W_OK && rr == spec_up && obs == 1, "the restricted decision resolves to the speculative up result (one dispatch observation, no branch work)"); }
     /* 4. specialization shares: the decision at m2 shares nothing of pre (which mentions m) but shares up/down */
     RefId decision2 = reindex(decision, map_single_term(vm, m2));
     require(decision2 != decision, "a different model input is a different decision");
@@ -119,7 +127,7 @@ int main(void) {
     printf("speculation: first branch launches %zu producers (its own keys and the whole prefix subtree); second launches %zu — the prefix is a ready hit (%zu)\n",
            base.spec_launch_down, base.spec_launch_up, base.spec_ready_up);
     printf("speculation W = (eval_step %zu, publish %zu, deliver %zu, launch %zu)\n", base.ev.ready_hit, base.ev.running_hit, base.ev.deliver, base.ev.launch);
-    printf("tick under i=1: %zu delivery frame, %zu producers launched, %zu ready hit — the same result object as the speculation\n", base.tick_steps, base.tick_launch, base.tick_ready);
+    printf("tick under i=1: %zu constant steps, %zu producers launched, %zu ready hits — the same result object as the speculation\n", base.tick_steps, base.tick_launch, base.tick_ready);
     printf("specialization to another model input: extra W = (request %zu, eval_step %zu, publish %zu)\n", base.ev.request, base.ev.eval_step, base.ev.publish);
     bool same = true;
     for (size_t k = 1; k < sizeof cfg / sizeof cfg[0]; k++) {

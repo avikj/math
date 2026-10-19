@@ -95,6 +95,7 @@ CheckStatus certificate_verify(TransformId id, const char **reason);
 /* TRANSFORM_CALL(id, dir, σ, a) = reindex(generic_call[id,dir], σ + slot ↦ a):
  * one fixed call origin per transform and orientation */
 RefId mk_transform_call(TransformId id, int dir, MapId sigma, RefId a);
+void compiler_families_init(void);   /* tcall.decode (registered by eval_init) */
 bool compiler_decode_call(const Head *h, uint64_t *id, int *dir, MapId *sigma, RefId *a);
 /* the fixed template body and its argument slot for an orientation */
 bool compiler_template(uint64_t id, int dir, RefId *body, TermVarId *slot);

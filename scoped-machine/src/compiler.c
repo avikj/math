@@ -1,4 +1,5 @@
 #include "compiler.h"
+#include "eval.h"
 
 /* ------------------------------------------------------------------ */
 /* registries                                                            */
@@ -661,6 +662,39 @@ RefId mk_transform_call(TransformId id, int dir, MapId sigma, RefId a) {
     }
     mapb_term(&b, dir ? t->reverse_argument_slot : t->forward_argument_slot, a);
     return reindex(t->generic_call[dir ? 1 : 0], mapb_finish(&b));
+}
+
+/* tcall.decode(t): [id, dir, σ, a] of a TRANSFORM_CALL reference — its
+ * parameter images and argument as one join, then σ by single-key overrides */
+typedef struct { uint64_t id, dir, sigma; size_t n, q; Join *J; } DecLoc;
+static Family F_DECODE, Fc_FIELD, Fc_OVERRIDE;
+static void decode_step(Cont *k, uint64_t v) {
+    DecLoc *L = FR_LOC(k, DecLoc);
+    RefId t = k->w[0];
+    FR_BEGIN(k);
+    require(!ref_is_var(t) && ref_tag(t) == T_TCALL && tview_is_construction(t), "malformed TRANSFORM_CALL");
+    {   uint64_t p = tnode_const_payload(ref_tnode(t)); L->id = p / 2; L->dir = p & 1;
+        const CompiledTransform *tr = transform_get(L->id); require(tr, "unknown transform");
+        L->n = context_size(tr->parameters);
+        require(tnode_nfields(ref_tnode(t)) == L->n + 3, "malformed TRANSFORM_CALL"); }
+    L->J = join_new(k, L->n + 1);
+    for (L->q = 0; L->q <= L->n; L->q++) { join_request(L->J, L->q, Fc_FIELD, t, L->q); if (L->q < L->n) FR_YIELD(k); }
+    FR_JOIN(k, L->J);
+    L->sigma = map_identity();
+    for (L->q = 0; L->q < L->n; L->q++) {
+        {   CtxDecl d = context_decl(transform_get(L->id)->parameters, L->q);
+            uint64_t e[3] = { d.sort, d.id, join_value(L->J, L->q) };
+            FR_AWAIT(k, L->sigma, Fc_OVERRIDE, L->sigma, interner_intern(&M.keys, e, 3, NULL)); }
+    }
+    {   uint64_t w[4] = { L->id, L->dir, L->sigma, join_value(L->J, L->n) };
+        join_free(L->J); L->J = NULL;
+        FR_FINISH(k, interner_intern(&M.keys, w, 4, NULL)); }
+    FR_END(k);
+}
+void compiler_families_init(void) {
+    Fc_FIELD = family_lookup("field"); Fc_OVERRIDE = family_lookup("map.override");
+    require(Fc_FIELD && Fc_OVERRIDE, "the construction and map families are registered first");
+    F_DECODE = family_define("tcall.decode", decode_step, sizeof(DecLoc), false);   /* reads the transform registry */
 }
 
 bool compiler_decode_call(const Head *h, uint64_t *id, int *dir, MapId *sigma, RefId *a) {
