@@ -118,12 +118,13 @@ size_t gen_degree(GenKind kind, uint64_t id) {
     case G_CUBE: return (size_t)w[1];
     case G_PROD: return gen_degree((GenKind)w[0], w[1]) + gen_degree((GenKind)w[2], w[3]);
     case G_OCC: return 1;
+    case G_TWIST: return gen_degree(G_CUBE, w[0]);
     default: return 0;
     }
 }
 static uint64_t genrec(GenKind k, uint64_t id) { uint64_t w[2] = { k, id }; return rq(2, w); }
 
-static Family Fc_REIDX, Fc_FACE, Fc_ADD, Fc_SCALE, Fc_BOUNDARY, Fc_VALUE, Fc_PAIR, Fc_MAP, Fc_IVRE, Fc_OCCB;
+static Family Fc_REIDX, Fc_FACE, Fc_ADD, Fc_SCALE, Fc_BOUNDARY, Fc_VALUE, Fc_PAIR, Fc_MAP, Fc_IVRE, Fc_OCCB, Fc_TBOUNDARY;
 
 /* cube.reindex(view, [m2, image_1..image_m]): the map c_k ↦ image_k
  * (one entry per step, keys ascending), then each root image reindexed */
@@ -269,7 +270,8 @@ static void value_step(Cont *k, uint64_t v) {
     {   size_t n; const uint64_t *g = rget(k->w[1], &n); L->g = g[0]; L->c = g[1]; }
     if (L->a[0] == CO_COB) {
         {   uint64_t w[4] = { gen_degree((GenKind)L->g, L->c), L->g, L->c, z_from_i64(1) }; L->c = rq(4, w); }
-        FR_AWAIT(k, r, Fc_BOUNDARY, L->c, 0);
+        if (L->na == 3) FR_AWAIT(k, r, Fc_TBOUNDARY, L->c, L->a[2]);
+        else FR_AWAIT(k, r, Fc_BOUNDARY, L->c, 0);
         FR_AWAIT(k, r, Fc_PAIR, L->a[1], r);
         FR_FINISH(k, r);
     }
@@ -316,6 +318,71 @@ static void map_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
+/* ---------------- local coefficients ---------------- */
+uint64_t perm_of(size_t n, const uint64_t *from, const uint64_t *to) {
+    uint64_t *w = malloc((2 * n + 1) * sizeof *w); require(w, "out of memory");
+    for (size_t i = 0; i < n; i++) { w[2 * i] = from[i]; w[2 * i + 1] = to[i]; }
+    for (size_t i = 1; i < n; i++) for (size_t j = i; j > 0 && w[2 * j - 2] > w[2 * j]; j--) {
+        uint64_t a = w[2 * j - 2], b = w[2 * j - 1]; w[2 * j - 2] = w[2 * j]; w[2 * j - 1] = w[2 * j + 1]; w[2 * j] = a; w[2 * j + 1] = b;
+    }
+    uint64_t r = rq(2 * n, w); free(w); return r;
+}
+static uint64_t perm_apply(uint64_t perm, uint64_t u) {
+    size_t n; const uint64_t *w = rget(perm, &n);
+    for (size_t i = 0; i < n; i += 2) if (w[i] == u) return w[i + 1];
+    return u;
+}
+uint64_t local_system(ScopeId root, size_t nperm, const uint64_t *perms, size_t npairs, const uint64_t *pairs) {
+    require(nperm == scope_arity(root), "one transport per dimension local");
+    /* the square witness: every pair r < s named, and commuting on every unit either moves */
+    for (size_t r = 0; r < nperm; r++) for (size_t s = r + 1; s < nperm; s++) {
+        bool named = false;
+        for (size_t q = 0; q < npairs; q++) if (pairs[2 * q] == r && pairs[2 * q + 1] == s) named = true;
+        if (!named) return 0;
+        size_t n1, n2; const uint64_t *a = rget(perms[r], &n1), *b = rget(perms[s], &n2);
+        for (size_t i = 0; i < n1 + n2; i += 2) {
+            uint64_t u = i < n1 ? a[i] : b[i - n1];
+            if (perm_apply(perms[r], perm_apply(perms[s], u)) != perm_apply(perms[s], perm_apply(perms[r], u))) return 0;
+        }
+    }
+    uint64_t *w = malloc((nperm + 2) * sizeof *w); require(w, "out of memory");
+    w[0] = root; w[1] = nperm; for (size_t r = 0; r < nperm; r++) w[2 + r] = perms[r];
+    uint64_t sys = rq(nperm + 2, w); free(w); return sys;
+}
+uint64_t twist_gen(uint64_t view, uint64_t unit) { uint64_t w[2] = { view, unit }; return rq(2, w); }
+/* chain.tboundary(c, sys): for [x, u] and each coordinate i, the upper face
+ * carries T_i(u), the lower face u, with signs (−1)^(i−1) and −(−1)^(i−1) */
+typedef struct { const uint64_t *c; size_t nc, t, i; int eps; uint64_t acc, g, z, u, x; } TbLoc;
+static void tboundary_step(Cont *k, uint64_t v) {
+    TbLoc *L = FR_LOC(k, TbLoc);
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    L->c = rget(k->w[0], &L->nc);
+    {   uint64_t w[1] = { L->c[0] ? L->c[0] - 1 : 0 }; L->acc = rq(1, w); }
+    for (L->t = 1; L->t < L->nc; L->t += 3) {
+        require((GenKind)L->c[L->t] == G_TWIST, "a twisted boundary of an untwisted generator");
+        {   size_t n; const uint64_t *tw = rget(L->c[L->t + 1], &n); L->x = tw[0]; L->u = tw[1]; L->g = genrec(G_CUBE, L->x); }
+        for (L->i = 1; L->i <= gen_degree(G_CUBE, L->x); L->i++)
+            for (L->eps = 1; L->eps >= 0; L->eps--) {
+                {   uint64_t e[2] = { L->i, (uint64_t)L->eps }; L->z = rq(2, e); }
+                FR_AWAIT(k, r, Fc_FACE, L->g, L->z);
+                {   size_t n; const uint64_t *f = rget(r, &n), *vw = rget(L->x, &n), *sys = rget(k->w[1], &n);
+                    uint64_t unit = L->u;
+                    if (L->eps) {                                   /* the transport of the root local whose image is c_i */
+                        size_t root_r = SIZE_MAX;
+                        for (size_t q = 0; q < vw[3]; q++) if (vw[4 + q] == iv_var(cube_coord(L->i))) root_r = q;
+                        require(root_r != SIZE_MAX && sys[0] == vw[0], "a coordinate without its transport in this local system");
+                        unit = perm_apply(sys[2 + root_r], L->u);
+                    }
+                    uint64_t z = L->c[L->t + 2]; if ((L->i - 1) % 2) z = z_neg(z); if (!L->eps) z = z_neg(z);
+                    uint64_t w[4] = { L->c[0] - 1, G_TWIST, twist_gen(f[1], unit), z }; L->z = rq(4, w); }
+                FR_AWAIT(k, L->acc, Fc_ADD, L->acc, L->z);
+            }
+    }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
+}
+
 void chain_families_init(void) {
     Fc_IVRE = family_lookup("iv.reindex");
     require(Fc_IVRE, "the substitution families are registered first");
@@ -327,6 +394,7 @@ void chain_families_init(void) {
     Fc_VALUE = family_define("cochain.value", value_step, sizeof(ValLoc), true);
     Fc_PAIR = family_define("chain.pair", pair_step, sizeof(PairLoc), true);
     Fc_MAP = family_define("chain.map", map_step, sizeof(MapLoc), true);
+    Fc_TBOUNDARY = family_define("chain.twisted_boundary", tboundary_step, sizeof(TbLoc), true);
     Fc_OCCB = 0;                                         /* the effect layer's, looked up at first use */
 }
 
@@ -368,3 +436,15 @@ uint64_t chain_scale(uint64_t c, uint64_t z) { return family_call(Fc_SCALE, c, z
 uint64_t chain_boundary(uint64_t c) { return family_call(Fc_BOUNDARY, c, 0); }
 uint64_t chain_pair(uint64_t a, uint64_t c) { return family_call(Fc_PAIR, a, c); }
 uint64_t chain_map(uint64_t F, uint64_t c) { return family_call(Fc_MAP, F, c); }
+uint64_t chain_tboundary(uint64_t c, uint64_t sys) { require(sys, "a twisted boundary needs an admitted local system"); return family_call(Fc_TBOUNDARY, c, sys); }
+uint64_t cochain_cob_local(uint64_t a, uint64_t sys) { require(sys, "a twisted differential needs an admitted local system"); uint64_t w[3] = { CO_COB, a, sys }; return rq(3, w); }
+uint64_t chain_relative(uint64_t c, uint64_t I) {
+    size_t nc, ni; const uint64_t *w = rget(c, &nc), *iw = rget(I, &ni);
+    uint64_t *o = malloc(nc * sizeof *o); require(o, "out of memory"); size_t n = 0;
+    o[n++] = w[0];
+    for (size_t t = 1; t < nc; t += 3) {
+        bool in = false; for (size_t q = 1; q < ni && !in; q += 3) in = iw[q] == w[t] && iw[q + 1] == w[t + 1];
+        if (!in) { o[n++] = w[t]; o[n++] = w[t + 1]; o[n++] = w[t + 2]; }
+    }
+    uint64_t r = rq(n, o); free(o); return r;
+}

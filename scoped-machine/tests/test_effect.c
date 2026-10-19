@@ -80,6 +80,15 @@ static uint64_t cut_value(void) {             /* V(F): balances on the cut plus 
 uint64_t A_, B_;
 static uint64_t capA, capB, C_, C0;
 
+/* B_0 of the current cut of A and B: their heads and the open ports */
+static uint64_t cut_chain(void) {
+    GenKind ks[66]; uint64_t ids[66], zs[66], open[64]; size_t n = 0;
+    ks[n] = G_HEAD; ids[n] = effect_head(A_); zs[n++] = z_from_i64(1);
+    ks[n] = G_HEAD; ids[n] = effect_head(B_); zs[n++] = z_from_i64(1);
+    size_t no = effect_open_ports(open, 64);
+    for (size_t i = 0; i < no; i++) { ks[n] = G_PORT; ids[n] = open[i]; zs[n++] = z_from_i64(1); }
+    return chain_of(0, n, ks, ids, zs);
+}
 static uint64_t send(uint64_t rid, uint64_t from, uint64_t to, uint64_t cap, uint64_t a, uint64_t q, RefId p_add, WhnfStatus *st) {
     uint64_t h = effect_head(from);
     EffOut outs[2] = { { 0, from, num(a - q) }, { 1, to, num(q) } };
@@ -126,6 +135,7 @@ int main(void) {
     RefId p_add = ev->ref;
 
     /* 3. send 2 from A to B, stopped right after acceptance */
+    uint64_t cut0 = cut_chain();
     uint64_t o1 = send(1001, A_, B_, capA, 5, 2, p_add, &st);
     CHECK(outcome_kind(o1) == OUT_ACCEPTED, "the send is accepted with the runtime evidence (%s)", outcome_reason(o1));
     uint64_t E1 = outcome_occurrence(o1), m = effect_port(E1, 1);
@@ -134,6 +144,9 @@ int main(void) {
     CHECK(nport == 1 && ports[0] == m && port_status(m, NULL) == 1, "one open transfer port");
     { uint64_t q; CHECK(church_value(port_payload(m), &q) && q == 2, "of quantity q = 2"); }
     CHECK(cut_value() == 8, "the cut still holds a + b = 8 with the port pending");
+    {   GenKind ko = G_OCC; uint64_t z1 = z_from_i64(1);
+        CHECK(chain_boundary(chain_of(1, 1, &ko, &E1, &z1)) == chain_add(cut_chain(), chain_scale(cut0, z_from_i64(-1))),
+              "the map equation for a primitive event: ∂_res B_1(e) = B_0(after) − B_0(before)"); }
 
     /* 4. the same port delivered to two concurrent clients plus a duplicate packet */
     uint64_t Pr = recv_proposal(m, B_, capB, 3, 2);
@@ -286,6 +299,10 @@ int main(void) {
         size_t nopen = effect_open_ports(open, 64);
         for (size_t i = 0; i < nopen; i++) { kb[nb] = G_PORT; ib[nb] = open[i]; zb[nb++] = z_from_i64(1); }
         CHECK(dH == chain_of(0, nb, kb, ib, zb), "∂_res Σ accepted events = B_0(final cut) − B_0(initial cut), the pending port included (%zu events)", no);
+        /* the relative cut: modulo the pending ports as interface, the absolute boundary retained */
+        GenKind kp[64]; uint64_t zp[64]; for (size_t i = 0; i < nopen; i++) { kp[i] = G_PORT; zp[i] = z_from_i64(1); }
+        uint64_t I = chain_of(0, nopen, kp, open, zp), rel = chain_relative(dH, I);
+        CHECK(nopen >= 1 && rel != dH && chain_add(rel, I) == dH, "relative to its pending ports the history's boundary is the heads' flux; the absolute boundary adds them back");
         Exact W = { 0, NULL }, W1 = { 0, NULL }, W2 = { 0, NULL }; size_t sup, sup1, sup2; uint64_t w, w1, w2;
         eval_work(no, ents, &W, &sup);
         CHECK(exact_to_u64(&W, &w) && w > 0 && sup >= no, "exact work of the accepted events over their shared support: %llu steps, %zu producers", (unsigned long long)w, sup);

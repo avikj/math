@@ -116,6 +116,28 @@ int main(void) {
         CHECK(chain_pair(W1, bd) != m_zero() && chain_pair(W1, bd) == chain_pair(cochain_cob(W1), one(G_CUBE, H, 1)), "a replacement keeps its exact signed defect <ω, ∂α> = <dω, α>");
         free(k2); free(i2); free(flat); free(shift); }
 
+    /* 5. local coefficients: the upper-face transport and its square witness */
+    {   ScopeId R2 = cell_root(2, x, A); uint64_t X = cube_view(R2, map_identity());
+        uint64_t s0 = perm_of(2, (uint64_t[]){ 10, 11 }, (uint64_t[]){ 11, 10 }), s1 = perm_of(2, (uint64_t[]){ 20, 21 }, (uint64_t[]){ 21, 20 });
+        uint64_t sys = local_system(R2, 2, (uint64_t[]){ s0, s1 }, 1, (uint64_t[]){ 0, 1 });
+        CHECK(sys != 0, "commuting transports with their square witness form a flat system");
+        GenKind kt = G_TWIST; uint64_t g = twist_gen(X, 10), z1 = z_from_i64(1);
+        uint64_t c = chain_of(2, 1, &kt, &g, &z1), d = chain_tboundary(c, sys);
+        GenKind kf; uint64_t up = cube_face(G_CUBE, X, 1, 1, &kf);
+        size_t nt; const uint64_t *w = interner_get(&M.keys, d, &nt); bool moved = false;
+        for (size_t t = 1; t < nt; t += 3) { size_t n2; const uint64_t *tw = interner_get(&M.keys, w[t + 1], &n2); if (tw[0] == up && tw[1] == 11) moved = true; }
+        CHECK(moved, "the upper 1-face carries the transported coefficient");
+        CHECK(empty(chain_tboundary(d, sys)), "the twisted ∂² = 0 with the square witness");
+        GenKind *ks = malloc((nt / 3) * sizeof *ks); uint64_t *ids = malloc((nt / 3) * sizeof *ids), *ms = malloc((nt / 3) * sizeof *ms); size_t n = 0;
+        for (size_t t = 1; t < nt; t += 3, n++) { ks[n] = (GenKind)w[t]; ids[n] = w[t + 1]; ms[n] = m_unit(0, z_from_i64((int64_t)(n * n) + 3)); }
+        uint64_t a = cochain_table(1, n, ks, ids, ms);
+        CHECK(chain_pair(a, d) == chain_pair(cochain_cob_local(a, sys), c), "<a, ∂_T c> = <d_T a, c>");
+        free(ks); free(ids); free(ms);
+        ScopeId R3 = cell_root(2, ref_var(vA), U);
+        uint64_t cyc = perm_of(3, (uint64_t[]){ 1, 2, 3 }, (uint64_t[]){ 2, 3, 1 }), sw = perm_of(2, (uint64_t[]){ 1, 2 }, (uint64_t[]){ 2, 1 });
+        CHECK(local_system(R3, 2, (uint64_t[]){ cyc, sw }, 1, (uint64_t[]){ 0, 1 }) == 0, "a square witness for non-commuting transports is rejected");
+        CHECK(local_system(R2, 2, (uint64_t[]){ s0, s1 }, 0, NULL) == 0, "an absent square witness is rejected"); }
+
     printf("  %d passed, %d failed\n", np, nf);
     check_free(); eval_free(); machine_free();
     return nf ? 1 : 0;

@@ -27,7 +27,7 @@
 #include "eval.h"
 #include "scope.h"
 
-typedef enum { G_CUBE = 1, G_PROD, G_PORT, G_HEAD, G_OCC } GenKind;
+typedef enum { G_CUBE = 1, G_PROD, G_PORT, G_HEAD, G_OCC, G_TWIST } GenKind;   /* G_TWIST [view, unit]: a cell carrying a unit coefficient */
 enum { CO_TABLE = 1, CO_COB };
 
 /* exact signed integers and module elements (small records, host helpers) */
@@ -62,6 +62,20 @@ uint64_t cochain_cob(uint64_t a);
 uint64_t chain_pair(uint64_t a, uint64_t c);       /* <a, c> ∈ the coefficient module */
 uint64_t chain_map(uint64_t F, uint64_t c);        /* Σ m_x F(x) */
 uint64_t chain_map_table(size_t degree, size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *images);
+
+/* local coefficients (ADDENDUM §6): a transport for each dimension local of
+ * a root — a permutation of units, [(unit, image)*] — admitted as flat only
+ * with a square witness naming every pair r < s, each pair commuting; 0 when
+ * the witness is absent or invalid. The twisted boundary of [x, u] carries
+ * the upper i-face's coefficient through the transport of the root local
+ * that coordinate c_i is the image of. */
+uint64_t perm_of(size_t n, const uint64_t *from, const uint64_t *to);
+uint64_t local_system(ScopeId root, size_t nperm, const uint64_t *perms, size_t npairs, const uint64_t *pairs);
+uint64_t twist_gen(uint64_t view, uint64_t unit);
+uint64_t chain_tboundary(uint64_t c, uint64_t sys);
+uint64_t cochain_cob_local(uint64_t a, uint64_t sys);   /* c ↦ <a, ∂_sys c> */
+/* relative chains (ADDENDUM §8): c modulo the interface generators listed in I (a chain) */
+uint64_t chain_relative(uint64_t c, uint64_t I);
 void chain_families_init(void);
 
 #endif
