@@ -33,13 +33,10 @@ FaceId fc_project(FaceId chi, DimSetId S);
 void fc_print(FaceId a, FILE *f);
 
 /* ---- interned sorted sets (dimension sets and term-variable sets) ---- */
-DimSetId dimset_make(uint64_t *elems, size_t n);      /* sorts/dedups in place */
-const uint64_t *dimset_get(DimSetId s, size_t *n);
-DimSetId dimset_union(DimSetId a, DimSetId b);
-DimSetId dimset_remove(DimSetId a, uint64_t x);
-bool dimset_contains(DimSetId a, uint64_t x);
-VarSetId varset_make(uint64_t *elems, size_t n);
-const uint64_t *varset_get(VarSetId s, size_t *n);
-bool varset_contains(VarSetId a, uint64_t x);
+uint64_t set_make(uint64_t *elems, size_t n);      /* sorts/dedups in place */
+const uint64_t *set_get(uint64_t s, size_t *n);
+uint64_t set_union(uint64_t a, uint64_t b);
+uint64_t set_remove(uint64_t a, uint64_t x);
+bool set_contains(uint64_t a, uint64_t x);
 
 #endif

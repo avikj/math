@@ -38,8 +38,8 @@ enum {
     X_CONST            /* [X_CONST, sort, id]: a construction's closed field constant */
 };
 
-static ExprId xi(size_t n, const uint64_t *w) { return interner_intern(&M.exprs, w, n, NULL); }
-static const uint64_t *xw(ExprId e, size_t *n) { return interner_get(&M.exprs, e, n); }
+static ExprId xi(size_t n, const uint64_t *w) { return interner_intern(&M.keys, w, n, NULL); }
+static const uint64_t *xw(ExprId e, size_t *n) { return interner_get(&M.keys, e, n); }
 static ExprId x1(uint64_t k, uint64_t a) { uint64_t w[2] = { k, a }; return xi(2, w); }
 static ExprId x2(uint64_t k, uint64_t a, uint64_t b) { uint64_t w[3] = { k, a, b }; return xi(3, w); }
 static ExprId x0(uint64_t k) { uint64_t w[1] = { k }; return xi(1, w); }
@@ -47,7 +47,7 @@ static ExprId x0(uint64_t k) { uint64_t w[1] = { k }; return xi(1, w); }
 /* ------------------------------------------------------------------ */
 /* nodes: [def, index, tag, payload_e, levels_e, nf, (kind, bslot, e)*, nb, (sort, domfield, lslot)*, required_e] */
 
-static const uint64_t *nw(TNodeId Q, size_t *n) { return interner_get(&M.tnodes, Q, n); }
+static const uint64_t *nw(TNodeId Q, size_t *n) { return interner_get(&M.keys, Q, n); }
 TDefId tnode_def(TNodeId Q) { size_t n; return nw(Q, &n)[0]; }
 uint64_t tnode_index(TNodeId Q) { size_t n; return nw(Q, &n)[1]; }
 Tag tnode_tag(TNodeId Q) { size_t n; return (Tag)nw(Q, &n)[2]; }
@@ -153,7 +153,7 @@ static size_t node_free_slot(TNodeId Q, size_t q) {
 
 /* a reference's environment is its interpretation record [(slot, sort, id)*,
  * def] (a substitution record, subst.c) restricted to the node's free slots */
-static uint64_t env_def(uint64_t er) { size_t n; const uint64_t *w = interner_get(&M.maps, er, &n); return w[n - 1]; }
+static uint64_t env_def(uint64_t er) { size_t n; const uint64_t *w = interner_get(&M.keys, er, &n); return w[n - 1]; }
 
 /* An interpreted value is the interned pair [sort, id]. */
 static uint64_t tvrec(PSort sort, uint64_t id) { return RQ(sort, id); }
@@ -266,7 +266,7 @@ static void interp_step(Cont *k, uint64_t v) {
             wordbuf_push(&L->out, L->q); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
         }
         wordbuf_push(&L->out, L->w[1]);
-        FR_CALL(k, L->er, intern_sub(k, &M.maps, &L->out, &L->created));
+        FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->out, &L->created));
         FR_AWAIT(k, r, F_INTERP, TPL.defs[L->w[1]].root, L->er);
         FR_FINISH(k, r);
     }
@@ -312,9 +312,9 @@ static void interp_step(Cont *k, uint64_t v) {
     if (L->w[0] == X_LMAX) FR_FINISH(k, tvrec(PS_LEVEL, level_max(L->a, L->b)));
     if (L->w[0] == X_LEVELS) FR_FINISH(k, tvrec(PS_LEVEL, levels_pack(L->a, L->b)));
     if (L->w[0] == X_IVAND) { FR_AWAIT(k, r, F_IVMEET, L->a, L->b); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
-    if (L->w[0] == X_IVOR) { FR_AWAIT(k, r, F_IVJOIN, L->a, L->b); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
+    if (L->w[0] == X_IVOR) { FR_AWAIT(k, r, F_JOIN, L->a, L->b); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
     if (L->w[0] == X_FCAND) { FR_AWAIT(k, r, F_FCMEET, L->a, L->b); FR_FINISH(k, tvrec(PS_FACE, r)); }
-    if (L->w[0] == X_FCOR) { FR_AWAIT(k, r, F_FCJOIN, L->a, L->b); FR_FINISH(k, tvrec(PS_FACE, r)); }
+    if (L->w[0] == X_FCOR) { FR_AWAIT(k, r, F_JOIN, L->a, L->b); FR_FINISH(k, tvrec(PS_FACE, r)); }
     die("bad expression kind %llu", (unsigned long long)L->w[0]);
     FR_END(k);
 }
@@ -335,7 +335,7 @@ static void tvmake_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     L->nf = node_free_count(Q);
-    L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
+    L->sup = set_make(NULL, 0); L->fv = set_make(NULL, 0);
     wordbuf_init(&L->out);
     for (L->q = 0; L->q < L->nf; L->q++) {
         FR_AWAIT(k, r, F_LOOKUP, er, node_free_slot(Q, L->q));
@@ -343,18 +343,18 @@ static void tvmake_step(Cont *k, uint64_t v) {
         { uint64_t sl; subst_get(er, r - 1, &sl, &L->t); }
         wordbuf_push(&L->out, node_free_slot(Q, L->q)); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
         if (L->t.sort == PS_REF) {
-            FR_AWAIT(k, L->sup, F_DSUNION, L->sup, ref_support(L->t.id));
-            FR_AWAIT(k, L->fv, F_VSUNION, L->fv, ref_freevars(L->t.id));
+            FR_AWAIT(k, L->sup, F_SUNION, L->sup, ref_support(L->t.id));
+            FR_AWAIT(k, L->fv, F_SUNION, L->fv, ref_freevars(L->t.id));
         } else if (L->t.sort == PS_SCOPE) {
-            FR_AWAIT(k, L->sup, F_DSUNION, L->sup, scope_support(L->t.id));
-            FR_AWAIT(k, L->fv, F_VSUNION, L->fv, scope_freevars(L->t.id));
+            FR_AWAIT(k, L->sup, F_SUNION, L->sup, scope_support(L->t.id));
+            FR_AWAIT(k, L->fv, F_SUNION, L->fv, scope_freevars(L->t.id));
         } else if (L->t.sort == PS_INTERVAL || L->t.sort == PS_FACE) {
-            FR_AWAIT(k, L->ds, F_DIMS, L->t.id, L->t.sort == PS_FACE);
-            FR_AWAIT(k, L->sup, F_DSUNION, L->sup, L->ds);
+            FR_AWAIT(k, L->ds, F_DIMS, L->t.id, 0);
+            FR_AWAIT(k, L->sup, F_SUNION, L->sup, L->ds);
         }
     }
     wordbuf_push(&L->out, tnode_def(Q));
-    FR_CALL(k, L->E, intern_sub(k, &M.maps, &L->out, &L->created));
+    FR_CALL(k, L->E, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_AWAIT(k, r, F_INTERP, node_required_e(Q), er);
     L->req = tvget(r).id;
     /* each reference image's requirement, except where the slot's declared
@@ -368,7 +368,7 @@ static void tvmake_step(Cont *k, uint64_t v) {
         if (r != 2) FR_AWAIT(k, L->req, F_FCMEET, L->req, ref_required(L->t.id));
     }
     FR_AWAIT(k, L->sup, F_SETFREE, L->sup, 0);
-    FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 1);
+    FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 0);
     FR_FINISH(k, ref_intern_tview(Q, L->E, L->sup, L->fv, L->req));
     FR_END(k);
 }
@@ -571,7 +571,7 @@ static ExprId NODE_req(Tag tag, ExprId payload, ExprId levels, size_t nf, const 
         cd->lreq[bs[k].lslot] = req;
     }
     bool created;
-    TNodeId Q = interner_intern(&M.tnodes, w.w, w.n, &created);
+    TNodeId Q = interner_intern(&M.keys, w.w, w.n, &created);
     words_free(&w);
     require(created, "duplicate template node");
     /* free slots: fields, payload, levels, required, minus own binder
@@ -1113,7 +1113,7 @@ void templates_free(void) {
  * a frame that awaits its interpretation) */
 void template_call_env(TDefKind def, size_t nargs, const TVal *args, WordBuf *er, ExprId *root) {
     /* the environment record [(k, sort, arg)*, def] into a buffer (a fixed
-     * library arity: bounded), interned into M.maps by the caller's stepped
+     * library arity: bounded), interned by the caller's stepped
      * subroutine */
     const TDef *d = &TPL.defs[def];
     require(nargs == d->nparams && nargs < 16, "template call arity (%s)", d->name);
@@ -1129,5 +1129,5 @@ void template_call_env(TDefKind def, size_t nargs, const TVal *args, WordBuf *er
 TVal template_call(TDefKind def, size_t nargs, const TVal *args) {
     WordBuf er; ExprId root;
     template_call_env(def, nargs, args, &er, &root);
-    return interp_at(root, wordbuf_intern(&M.maps, &er));
+    return interp_at(root, wordbuf_intern(&M.keys, &er));
 }

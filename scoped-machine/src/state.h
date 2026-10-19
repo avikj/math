@@ -1,7 +1,7 @@
 /* state.h — the machine's immutable record tables.
  *
- * Everything the evaluator observes is an interned immutable record held in
- * one of these tables. There is one definition environment per machine.
+ * Everything the evaluator observes is an interned immutable record of the
+ * one record table. There is one definition environment per machine.
  */
 #ifndef CUBICAL_STATE_H
 #define CUBICAL_STATE_H
@@ -12,19 +12,8 @@
 typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
 
 typedef struct {
-    Interner intervals;   /* IntervalId  → canonical interval DNF words */
-    Interner faces;       /* FaceId      → canonical face DNF words */
-    Interner dimsets;     /* DimSetId    → sorted DimVarId list */
-    Interner varsets;     /* VarSetId    → sorted TermVarId list */
-    Interner maps;        /* MapId       → raw map record */
-    Interner refs;        /* RefId       → reference record */
-    Interner nominal;     /* variables: their nominal records (key, sort, type, required) */
-    Interner contexts;    /* ContextId   → occurrence context record */
-    Interner scopes;      /* ScopeId     → scope record (§50) */
-    Interner exprs;       /* template expression DAG nodes (§51) */
-    Interner tnodes;      /* template constructor nodes */
-    Interner tdefs;       /* template definitions (signature + root) */
-    Interner keys;        /* interned word tuples used as memo keys */
+    Interner keys;        /* every record: intervals, faces, sets, substitutions, references,
+                           * variables, contexts, scopes, template expressions and nodes, keys */
 
     /* side data, non-moving; an element is written before its id is
      * published and never changes afterwards */

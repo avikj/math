@@ -42,14 +42,14 @@ static void closure_step(Cont *k, uint64_t v) {
             push2(&L->roots, 0, global_type((SymbolId)L->x));
             if (r) push2(&L->roots, 0, r);
             FR_AWAIT(k, L->P, F_SET, L->P, subst_entry(L->x, PS_REF, r));
-            L->g = varset_get(global_params((SymbolId)L->x), &L->ng);
+            L->g = set_get(global_params((SymbolId)L->x), &L->ng);
             for (L->q = 0; L->q < L->ng; L->q++) { push2(&L->roots, 0, term_var_type(L->g[L->q])); FR_YIELD(k); }
             FR_YIELD(k);
             continue;
         }
         if (!L->x) { FR_YIELD(k); continue; }
         FR_AWAIT(k, r, F_GLOBALS, L->x, L->kind);
-        L->g = varset_get(r, &L->ng);
+        L->g = set_get(r, &L->ng);
         for (L->q = 0; L->q < L->ng; L->q++) { push2(&L->roots, 2, L->g[L->q]); FR_YIELD(k); }
     }
     wordbuf_clear(&L->roots);

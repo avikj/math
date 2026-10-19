@@ -89,6 +89,17 @@ const uint64_t *interner_get(const Interner *t, uint64_t id, size_t *n);
 size_t interner_count(Interner *t);   /* ids reserved: records, plus ids of lost insertion races */
 bool interner_live(const Interner *t, uint64_t id);   /* id names a published record */
 
+/* one probe of a binary search for key over the n entries of stride s at w
+ * (an entry's key is its first word): true when settled, *at the entry's
+ * position plus one, or 0 when absent; [*lo, *hi) the remaining range */
+static inline bool sorted_probe(const uint64_t *w, size_t s, uint64_t key, size_t *lo, size_t *hi, size_t *at) {
+    if (*lo >= *hi) { *at = 0; return true; }
+    size_t mid = (*lo + *hi) / 2; uint64_t k = w[s * mid];
+    if (k == key) { *at = mid + 1; return true; }
+    if (k < key) *lo = mid + 1; else *hi = mid;
+    return false;
+}
+
 /* ---- keyed slots: one zeroed mutable slot per interned key (the key's id
  * selects it) ---- */
 typedef struct { Interner keys; Chunked slots; } KeyedSlots;

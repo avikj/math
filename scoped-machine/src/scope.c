@@ -8,7 +8,7 @@
  * (support and free variables, bound atoms excluded, are a function of the
  * rest: scope.side forms the record from its words) */
 
-static const uint64_t *scope_words(ScopeId S, size_t *n) { return interner_get(&M.scopes, S, n); }
+static const uint64_t *scope_words(ScopeId S, size_t *n) { return interner_get(&M.keys, S, n); }
 size_t scope_arity(ScopeId S) { size_t n; return (size_t)scope_words(S, &n)[0]; }
 LocalDecl scope_local(ScopeId S, size_t k) {
     size_t n; const uint64_t *w = scope_words(S, &n);

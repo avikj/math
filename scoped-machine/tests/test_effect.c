@@ -262,7 +262,7 @@ int main(void) {
 
     /* 2. a pure producer exposing a finite prefix while its tail stays pending;
      *    a consumer waiting before publication and one after */
-    {   SymbolId loop = define_global("tail", varset_make(NULL, 0), dimset_make(NULL, 0), N);
+    {   SymbolId loop = define_global("tail", set_make(NULL, 0), set_make(NULL, 0), N);
         set_global_body(loop, global_ref(loop));
         TermVarId vs = declare_term(N, fc_true()); (void)vs;
         RefId S = mk_sigma_lv(1, 1, declare_term(N, fc_true()), N, N);

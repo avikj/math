@@ -29,7 +29,7 @@ static uint64_t var_record(const uint64_t *key, size_t nk, Sort sort, RefId type
     for (size_t q = 0; q < nk; q++) w[n++] = key[q];
     w[n++] = sort;
     if (sort == S_TERM) { require(type, "a term declaration has a type"); w[n++] = type; w[n++] = required; }
-    return interner_intern(&M.nominal, w, n, NULL);
+    return interner_intern(&M.keys, w, n, NULL);
 }
 TermVarId declare_term(RefId type, FaceId required) {
     uint64_t key[2] = { 4, __atomic_add_fetch(&M.n_fresh, 1, __ATOMIC_RELAXED) };
@@ -40,8 +40,8 @@ DimVarId declare_dim(void) {
     return var_record(key, 2, S_DIM, 0, 0);
 }
 static const uint64_t *term_decl(TermVarId x) {
-    require(x >= 1 && !is_local_atom(x) && x <= interner_count(&M.nominal), "undeclared term variable");
-    size_t n; const uint64_t *w = interner_get(&M.nominal, x, &n);
+    require(x >= 1 && !is_local_atom(x) && x <= interner_count(&M.keys), "undeclared term variable");
+    size_t n; const uint64_t *w = interner_get(&M.keys, x, &n);
     require(n >= 4 && w[n - 3] == S_TERM, "not a term variable");
     return w + n - 2;
 }
@@ -78,8 +78,8 @@ RefId ref_var(TermVarId x) {
         /* a bound local occurrence (§50): no declaration record; its type and
          * guard live in the enclosing scope's or node's records */
         uint64_t xs[1] = { x };
-        uint64_t w[5] = { 1, x, dimset_make(NULL, 0), varset_make(xs, 1), fc_true() };
-        return interner_intern(&M.refs, w, 5, NULL);
+        uint64_t w[5] = { 1, x, set_make(NULL, 0), set_make(xs, 1), fc_true() };
+        return interner_intern(&M.keys, w, 5, NULL);
     }
     (void)term_decl(x);
     return ref_var_family(x);              /* the ref.var producer computes its typed boundary */
@@ -87,15 +87,15 @@ RefId ref_var(TermVarId x) {
 /* VAR(x) with its typed boundary (computed by the ref.var family) */
 RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv, FaceId req) {
     uint64_t w[5] = { 1, x, support, fv, req };
-    return interner_intern(&M.refs, w, 5, NULL);
+    return interner_intern(&M.keys, w, 5, NULL);
 }
-static const uint64_t *rrec(RefId t, size_t *n) { return interner_get(&M.refs, t, n); }
+static const uint64_t *rrec(RefId t, size_t *n) { return interner_get(&M.keys, t, n); }
 bool ref_is_var(RefId t) { size_t n; return rrec(t, &n)[0] == 1; }
 uint64_t ref_tnode(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] == 3, "not a TVIEW"); return w[1]; }
 uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] == 3, "not a TVIEW"); return w[2]; }
 RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required) {
     uint64_t w[6] = { 3, node, env, support, fv, required };
-    return interner_intern(&M.refs, w, 6, NULL);
+    return interner_intern(&M.keys, w, 6, NULL);
 }
 TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
 Tag ref_tag(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] != 1, "ref_tag of a variable"); return tnode_tag(w[1]); }

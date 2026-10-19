@@ -74,10 +74,10 @@ int main(void) {
     CHECK(neg, "negation is a De Morgan involution and (¬r = 1) = (r = 0)");
     /* sets */
     uint64_t e1[3] = { 5, 9, 2 }, e2[3] = { 9, 1, 7 };
-    DimSetId s1 = dimset_make(e1, 3), s2 = dimset_make(e2, 3);
+    DimSetId s1 = set_make(e1, 3), s2 = set_make(e2, 3);
     uint64_t eu[5] = { 1, 2, 5, 7, 9 }, er[2] = { 2, 9 };
-    CHECK(dimset_union(s1, s2) == dimset_make(eu, 5) && dimset_remove(s1, 5) == dimset_make(er, 2) && dimset_remove(s1, 4) == s1, "set union and removal");
-    CHECK(dimset_contains(s1, 9) && !dimset_contains(s1, 7) && !dimset_contains(dimset_make(NULL, 0), 1), "set membership");
+    CHECK(set_union(s1, s2) == set_make(eu, 5) && set_remove(s1, 5) == set_make(er, 2) && set_remove(s1, 4) == s1, "set union and removal");
+    CHECK(set_contains(s1, 9) && !set_contains(s1, 7) && !set_contains(set_make(NULL, 0), 1), "set membership");
     machine_free();
     printf("%d failures\n", failures);
     return failures != 0;

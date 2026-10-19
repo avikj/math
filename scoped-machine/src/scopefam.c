@@ -27,7 +27,7 @@ static void tk_get(uint64_t tk, unsigned *kind, unsigned *depth, uint64_t *ctx) 
 /* the substitution by the empty map moves nothing */
 static bool trav_identity(uint64_t tk) {
     unsigned kind, depth; uint64_t ctx; tk_get(tk, &kind, &depth, &ctx);
-    size_t n; return kind == TR_RE && (interner_get(&M.maps, ctx, &n), n == 0);
+    size_t n; return kind == TR_RE && (interner_get(&M.keys, ctx, &n), n == 0);
 }
 
 /* APPLY / LOWER images of a bound atom (constant work); false = keep */
@@ -87,7 +87,7 @@ static void tiv_step(Cont *k, uint64_t v) {
     uint64_t im = 0;
     FR_BEGIN(k);
     if (trav_identity(k->w[1])) FR_FINISH(k, k->w[0]);
-    L->x = interner_get(&M.intervals, k->w[0], &L->nx);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx);
     L->acc = iv_zero();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         L->cl = iv_one();
@@ -96,7 +96,7 @@ static void tiv_step(Cont *k, uint64_t v) {
             if (IV_ATOM_NEG(L->x[L->i])) FR_AWAIT(k, im, F_IVNEG, im, 0);
             FR_AWAIT(k, L->cl, F_IVMEET, L->cl, im);
         }
-        FR_AWAIT(k, L->acc, F_IVJOIN, L->acc, L->cl);
+        FR_AWAIT(k, L->acc, F_JOIN, L->acc, L->cl);
     }
     FR_FINISH(k, L->acc);
     FR_END(k);
@@ -106,7 +106,7 @@ static void tfc_step(Cont *k, uint64_t v) {
     uint64_t im = 0;
     FR_BEGIN(k);
     if (trav_identity(k->w[1])) FR_FINISH(k, k->w[0]);
-    L->x = interner_get(&M.faces, k->w[0], &L->nx);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx);
     L->acc = fc_false();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         L->cl = fc_true();
@@ -115,7 +115,7 @@ static void tfc_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, im, F_FCEND, im, (uint64_t)FC_LIT_EPS(L->x[L->i]));
             FR_AWAIT(k, L->cl, F_FCMEET, L->cl, im);
         }
-        FR_AWAIT(k, L->acc, F_FCJOIN, L->acc, L->cl);
+        FR_AWAIT(k, L->acc, F_JOIN, L->acc, L->cl);
     }
     FR_FINISH(k, L->acc);
     FR_END(k);
@@ -146,7 +146,7 @@ static void tscope_step(Cont *k, uint64_t v) {
     uint64_t r = 0, id = 0;
     FR_BEGIN(k);
     if (trav_identity(k->w[1])) FR_FINISH(k, k->w[0]);
-    L->s = interner_get(&M.scopes, k->w[0], &L->ns); L->n = (size_t)L->s[0]; L->changed = false;
+    L->s = interner_get(&M.keys, k->w[0], &L->ns); L->n = (size_t)L->s[0]; L->changed = false;
     wordbuf_init(&L->out); wordbuf_push(&L->out, L->n);
     for (L->q = 0; L->q < L->n; L->q++) {
         r = 0;
@@ -184,41 +184,39 @@ static void scopeside_step(Cont *k, uint64_t v) {
     ScLoc *L = FR_LOC(k, ScLoc);
     FR_BEGIN(k);
     L->s = interner_get(&M.keys, k->w[0], &L->ns); L->n = (size_t)L->s[0];
-    L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
+    L->sup = set_make(NULL, 0); L->fv = set_make(NULL, 0);
     /* the reference records: local types, result type, body (when a reference) */
     for (L->q = 0; L->q < L->n + 2; L->q++) {
         {   const uint64_t *t = L->s + 1 + 4 * L->n;
             L->r = L->q < L->n ? L->s[2 + 4 * L->q] : L->q == L->n ? t[1] : (t[0] == VS_REF ? t[4] : 0); }
         if (!L->r) continue;
-        FR_AWAIT(k, L->sup, F_DSUNION, L->sup, ref_support(L->r));
-        FR_AWAIT(k, L->fv, F_VSUNION, L->fv, ref_freevars(L->r));
+        FR_AWAIT(k, L->sup, F_SUNION, L->sup, ref_support(L->r));
+        FR_AWAIT(k, L->fv, F_SUNION, L->fv, ref_freevars(L->r));
     }
     /* the face and interval records: required faces, guard, body (when not a reference) */
     for (L->q = 0; L->q < L->n + 2; L->q++) {
         {   const uint64_t *t = L->s + 1 + 4 * L->n;
-            if (L->q < L->n) { L->r = L->s[4 + 4 * L->q]; L->tk = 1; }
-            else if (L->q == L->n) { L->r = t[3]; L->tk = 1; }
-            else { L->r = t[0] == VS_REF ? 0 : t[4]; L->tk = t[0] == VS_FACE; } }
+            L->r = L->q < L->n ? L->s[4 + 4 * L->q] : L->q == L->n ? t[3] : t[0] == VS_REF ? 0 : t[4]; }
         if (!L->r) continue;
-        FR_AWAIT(k, L->ds, F_DIMS, L->r, L->tk);
-        FR_AWAIT(k, L->sup, F_DSUNION, L->sup, L->ds);
+        FR_AWAIT(k, L->ds, F_DIMS, L->r, 0);
+        FR_AWAIT(k, L->sup, F_SUNION, L->sup, L->ds);
     }
     FR_AWAIT(k, L->sup, F_SETFREE, L->sup, 0);
-    FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 1);
+    FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 0);
     /* the record: the words, then the side data */
     wordbuf_init(&L->out);
     for (L->q = 0; L->q < L->ns; L->q++) { wordbuf_push(&L->out, L->s[L->q]); FR_YIELD(k); }
     wordbuf_push(&L->out, L->sup); wordbuf_push(&L->out, L->fv);
-    FR_CALL(k, L->r, intern_sub(k, &M.scopes, &L->out, &L->created));
+    FR_CALL(k, L->r, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_FINISH(k, L->r);
     FR_END(k);
 }
 
-/* the free (unbound) part of a dimension set (w[1] = 0) or variable set */
+/* the free (unbound) part of a set of dimensions or variables */
 typedef struct { const uint64_t *x; size_t n, q; WordBuf out; bool created; } FreeLoc;
 static void setfree_step(Cont *k, uint64_t v) {
     FreeLoc *L = FR_LOC(k, FreeLoc);
-    Interner *t = k->w[1] ? &M.varsets : &M.dimsets;
+    Interner *t = &M.keys;
     uint64_t id = 0;
     FR_BEGIN(k);
     L->x = interner_get(t, k->w[0], &L->n);

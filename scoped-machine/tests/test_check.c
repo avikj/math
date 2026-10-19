@@ -170,7 +170,7 @@ int main(void) {
      * observations made before a body is registered are not reused after;
      * the correctly typed body is accepted and its value observed */
     { uint64_t params[2] = { vA, va };
-      SymbolId cand = define_global("cand", varset_make(params, 2), dimset_make(NULL, 0), A);
+      SymbolId cand = define_global("cand", set_make(params, 2), set_make(NULL, 0), A);
       Inference I0 = infer(G, fc_true(), global_ref(cand));
       CHECK(I0.st == CK_VALID && I0.type == A, "an opaque candidate checks at its declaration (%s)", I0.reason);
       CHECK(convert_term(G, fc_true(), global_ref(cand), a, A) == CV_UNEQUAL, "opaque candidate vs a: UNEQUAL before the body exists");
@@ -190,16 +190,16 @@ int main(void) {
 
     /* a local observation imposes no registry-wide phase boundary */
     { uint64_t params[1] = { vA };
-      CHECK(define_global("after-observation", varset_make(params, 1), dimset_make(NULL, 0), A) != 0, "a checked observation leaves unrelated declarations possible");
-      SymbolId ok = define_global("afteropen", varset_make(params, 1), dimset_make(NULL, 0), A);
+      CHECK(define_global("after-observation", set_make(params, 1), set_make(NULL, 0), A) != 0, "a checked observation leaves unrelated declarations possible");
+      SymbolId ok = define_global("afteropen", set_make(params, 1), set_make(NULL, 0), A);
       CHECK(ok != 0, "further declarations require no environment reopening"); }
 
     /* unresolved: cyclic computation */
-    { SymbolId L = define_global("loopA", varset_make(NULL, 0), dimset_make(NULL, 0), A);
+    { SymbolId L = define_global("loopA", set_make(NULL, 0), set_make(NULL, 0), A);
       /* loopA : A is declared over the empty parameter list; A is a free variable of the type, so declare it as a parameter */
       (void)L;
       uint64_t params[1] = { vA };
-      SymbolId L2 = define_global("loopB", varset_make(params, 1), dimset_make(NULL, 0), A);
+      SymbolId L2 = define_global("loopB", set_make(params, 1), set_make(NULL, 0), A);
       set_global_body(L2, global_ref(L2));
       ConvStatus cv = convert_term(G, fc_true(), global_ref(L2), a, A);
       CHECK(cv == CV_UNRESOLVED, "comparing a cyclic computation is UNRESOLVED (got %s), neither EQUAL nor UNEQUAL", conv_status_name(cv));
@@ -215,7 +215,7 @@ int main(void) {
 
     /* signature: a declared symbol with a well-typed body, and one without */
     { uint64_t params[1] = { vA };
-      SymbolId Kc = define_global("Kc", varset_make(params, 1), dimset_make(NULL, 0), mk_fun(0, 0, A, mk_fun(0, 0, A, A)));
+      SymbolId Kc = define_global("Kc", set_make(params, 1), set_make(NULL, 0), mk_fun(0, 0, A, mk_fun(0, 0, A, A)));
       set_global_body(Kc, mk_lam_lv(0, x, A, mk_lam_lv(0, y, A, ref_var(x))));
       CheckStatus cs = check_signature(&why);
       CHECK(cs == CK_INVALID && strstr(why, "declared type") == NULL, "signature with loopA (type A over no parameters) is rejected: %s", why);
@@ -255,14 +255,14 @@ int main(void) {
     /* audit cases */
     { /* opaque constant: neutral, compared by symbol and parameters */
       uint64_t params[1] = { vA };
-      SymbolId c1 = define_global("c1", varset_make(params, 1), dimset_make(NULL, 0), A);
+      SymbolId c1 = define_global("c1", set_make(params, 1), set_make(NULL, 0), A);
       CHECK(check(G, fc_true(), global_ref(c1), A, &why) == CK_VALID, "an opaque constant checks at its declared type (%s)", why);
       CHECK(convert_term(G, fc_true(), global_ref(c1), a, A) == CV_UNEQUAL, "opaque constant vs a variable: UNEQUAL, no abort");
       CHECK(convert_term(G, fc_true(), global_ref(c1), global_ref(c1), A) == CV_EQUAL, "opaque constant vs itself");
       WhnfStatus st; EvalResult r = whnf(mk_app(f, global_ref(c1)), fc_true(), &st);
       CHECK(st == W_OK && r.cls == R_NEUTRAL, "an opaque constant observes as a neutral");
       /* a symbol whose body does not match its declaration is rejected on first use */
-      SymbolId bad = define_global("badsym", varset_make(params, 1), dimset_make(NULL, 0), A);
+      SymbolId bad = define_global("badsym", set_make(params, 1), set_make(NULL, 0), A);
       set_global_body(bad, U0);
       I = infer(G, fc_true(), global_ref(bad));
       CHECK(I.st == CK_INVALID, "a symbol with an ill-typed body is rejected on use (%s)", I.reason);

@@ -35,13 +35,13 @@ static void scc_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, r, F_LOOKUP, P, L->d);
         require(r, "an audited symbol outside the pin set");
         L->b = subst_value(P, r - 1);
-        L->acc = varset_make(NULL, 0);
-        L->ps = varset_get(global_params(L->d), &L->np);
+        L->acc = set_make(NULL, 0);
+        L->ps = set_get(global_params(L->d), &L->np);
         for (L->si = 0; L->si < L->np + 2; L->si++) {
             {   RefId src = L->si == 0 ? global_type(L->d) : L->si <= L->np ? term_var_type(L->ps[L->si - 1]) : L->b; L->s = src; }
             if (!L->s) continue;
             FR_AWAIT(k, r, F_GLOBALS, L->s, 0);
-            FR_AWAIT(k, L->acc, F_VSUNION, L->acc, r);
+            FR_AWAIT(k, L->acc, F_SUNION, L->acc, r);
         }
         L->next++;
         FR_AWAIT(k, L->V, F_SET, L->V, vent(L->d, L->next, L->next, 1, 0, L->acc));
@@ -51,7 +51,7 @@ static void scc_step(Cont *k, uint64_t v) {
             L->cur = pop(&L->dfs); L->x = pop(&L->dfs);
             FR_AWAIT(k, r, F_LOOKUP, L->V, L->x);
             vget(L->V, r, L->xr);
-            {   size_t ne; const uint64_t *es = varset_get(L->xr[4], &ne);
+            {   size_t ne; const uint64_t *es = set_get(L->xr[4], &ne);
                 if (L->cur < ne) { L->d = es[L->cur]; push(&L->dfs, L->x); push(&L->dfs, L->cur + 1); }
                 else L->d = 0; }
             if (L->d) {

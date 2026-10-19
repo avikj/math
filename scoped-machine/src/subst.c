@@ -20,22 +20,17 @@
 bool subst_identity(uint64_t sort, uint64_t key, uint64_t img) {
     return sort == PS_INTERVAL ? img == iv_var(key) : sort == PS_REF && ref_is_var(img) && ref_var_id(img) == key;
 }
-static const uint64_t *srec(uint64_t m, size_t *n) { return interner_get(&M.maps, m, n); }
+static const uint64_t *srec(uint64_t m, size_t *n) { return interner_get(&M.keys, m, n); }
 
 /* ---------------- lookup: the position of key w[1] in record w[0], plus one (0: absent) ---------------- */
-typedef struct { const uint64_t *w; size_t n, lo, hi; } LookLoc;
+typedef struct { const uint64_t *w; size_t n, lo, hi, at; } LookLoc;
 static void look_step(Cont *k, uint64_t v) {
     LookLoc *L = FR_LOC(k, LookLoc);
     FR_BEGIN(k);
     L->w = srec(k->w[0], &L->n);
     L->lo = 0; L->hi = L->n / 3;
-    while (L->lo < L->hi) {
-        size_t mid = (L->lo + L->hi) / 2; uint64_t key = L->w[3 * mid];
-        if (key == k->w[1]) FR_FINISH(k, mid + 1);
-        if (key < k->w[1]) L->lo = mid + 1; else L->hi = mid;
-        FR_YIELD(k);
-    }
-    FR_FINISH(k, 0);
+    while (!sorted_probe(L->w, 3, k->w[1], &L->lo, &L->hi, &L->at)) FR_YIELD(k);
+    FR_FINISH(k, L->at);
     FR_END(k);
 }
 
@@ -63,7 +58,7 @@ static void set_step(Cont *k, uint64_t v) {
     }
     if (!L->placed) set_push(L, L->e);
     if (!L->map) wordbuf_push(&L->out, L->x[L->nx - 1]);              /* an environment's definition word */
-    FR_CALL(k, id, intern_sub(k, &M.maps, &L->out, &L->created));
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_FINISH(k, id);
     FR_END(k);
 }
@@ -90,23 +85,23 @@ static void compose_step(Cont *k, uint64_t v) {
         if (!subst_identity(L->sort, L->key, L->img)) { wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->sort); wordbuf_push(&L->out, L->img); }
         FR_YIELD(k);
     }
-    FR_CALL(k, id, intern_sub(k, &M.maps, &L->out, &L->created));
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_FINISH(k, id);
     FR_END(k);
 }
 
-/* ---------------- the dimensions of an interval (w[1] = 0) or face (w[1] = 1) as a set ----------------
+/* ---------------- the dimensions of an interval or face as a set ----------------
  * atoms and literals both carry the dimension in their high bits */
 typedef struct { const uint64_t *x; size_t nx, i; uint64_t acc, d; } DimsLoc;
 static void dims_step(Cont *k, uint64_t v) {
     DimsLoc *L = FR_LOC(k, DimsLoc);
     FR_BEGIN(k);
-    L->x = interner_get(k->w[1] ? &M.faces : &M.intervals, k->w[0], &L->nx);
-    L->acc = dimset_make(NULL, 0);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    L->acc = set_make(NULL, 0);
     for (L->i = 0; L->i < L->nx; L->i++) {
         if (L->x[L->i] == DNF_SEP) continue;
         L->d = L->x[L->i] >> 1;
-        FR_AWAIT(k, L->acc, F_DSUNION, L->acc, dimset_make(&L->d, 1));
+        FR_AWAIT(k, L->acc, F_SUNION, L->acc, set_make(&L->d, 1));
     }
     FR_FINISH(k, L->acc);
     FR_END(k);
@@ -149,7 +144,7 @@ static void envrebuild_step(Cont *k, uint64_t v) {
     }
     if (!L->changed) { while (wordbuf_drain_one(&L->out)) FR_YIELD(k); FR_FINISH(k, t); }
     wordbuf_push(&L->out, tnode_def(ref_tnode(t)));
-    FR_CALL(k, id, intern_sub(k, &M.maps, &L->out, &L->created));
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_AWAIT(k, r, F_TVMAKE, ref_tnode(t), id);
     FR_FINISH(k, r);
     FR_END(k);
@@ -172,7 +167,7 @@ void subst_get(uint64_t rec, size_t k, uint64_t *key, TVal *v) {
 }
 uint64_t subst_value(uint64_t rec, size_t k) { uint64_t key; TVal v; subst_get(rec, k, &key, &v); return v.id; }
 uint64_t subst_entry(uint64_t key, uint64_t sort, uint64_t value) { return RQ(key, sort, value); }
-uint64_t env_empty(uint64_t def) { return interner_intern(&M.maps, &def, 1, NULL); }
+uint64_t env_empty(uint64_t def) { return interner_intern(&M.keys, &def, 1, NULL); }
 
 /* a host map: its triples sorted (insertion; inside a counted step only a
  * fixed handful), conflicting keys rejected, identities dropped */
@@ -191,11 +186,11 @@ MapId mapb_finish(MapBuilder *b) {
         if (subst_identity(w[3 * k + 1], w[3 * k], w[3 * k + 2])) continue;
         for (size_t c = 0; c < 3; c++) words_push(&out, w[3 * k + c]);
     }
-    MapId id = interner_intern(&M.maps, out.w, out.n, NULL);
+    MapId id = interner_intern(&M.keys, out.w, out.n, NULL);
     words_free(&out); words_free(&b->w);
     return id;
 }
-MapId map_identity(void) { return interner_intern(&M.maps, NULL, 0, NULL); }
+MapId map_identity(void) { return interner_intern(&M.keys, NULL, 0, NULL); }
 bool map_is_identity(MapId m) { size_t n; (void)srec(m, &n); return n == 0; }
 MapId map_single_term(TermVarId x, RefId a) { MapBuilder b; mapb_init(&b); mapb_term(&b, x, a); return mapb_finish(&b); }
 MapId map_single_dim(DimVarId i, IntervalId r) { MapBuilder b; mapb_init(&b); mapb_dim(&b, i, r); return mapb_finish(&b); }

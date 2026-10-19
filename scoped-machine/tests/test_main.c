@@ -27,7 +27,7 @@ static void test_intervals_faces(void) {
     IntervalId ini = iv_meet(vi, iv_negate(vi));
     CHECK(!iv_is_zero(ini), "i ∧ ¬i is retained (not Boolean)");
     CHECK(!iv_is_one(iv_join(vi, iv_negate(vi))), "i ∨ ¬i ≠ 1");
-    { size_t n; const uint64_t *w = interner_get(&M.intervals, ini, &n); CHECK(n == 3 && w[2] == DNF_SEP, "i ∧ ¬i is one clause of two atoms"); }
+    { size_t n; const uint64_t *w = interner_get(&M.keys, ini, &n); CHECK(n == 3 && w[2] == DNF_SEP, "i ∧ ¬i is one clause of two atoms"); }
     CHECK(iv_negate(iv_zero()) == iv_one() && iv_negate(iv_one()) == iv_zero(), "¬0 = 1, ¬1 = 0");
     CHECK(iv_negate(iv_negate(iv_meet(vi, vj))) == iv_meet(vi, vj), "double negation (De Morgan) is identity");
     CHECK(iv_negate(iv_meet(vi, vj)) == iv_join(iv_negate(vi), iv_negate(vj)), "¬(i∧j) = ¬i ∨ ¬j");
@@ -46,11 +46,11 @@ static void test_intervals_faces(void) {
 
     FaceId both = fc_meet(fc_lit(i, 0), fc_lit(j, 0));
     uint64_t Sj[1] = { j };
-    CHECK(fc_project(both, dimset_make(Sj, 1)) == fc_lit(j, 0), "π_{j}((i=0)∧(j=0)) = (j=0)");
+    CHECK(fc_project(both, set_make(Sj, 1)) == fc_lit(j, 0), "π_{j}((i=0)∧(j=0)) = (j=0)");
     CHECK(fc_forall(i, both) == fc_false(), "∀i((i=0)∧(j=0)) = false");
     CHECK(fc_forall(i, fc_join(fc_lit(i, 0), fc_lit(j, 0))) == fc_lit(j, 0), "∀i((i=0)∨(j=0)) = (j=0)");
-    CHECK(fc_project(fc_false(), dimset_make(NULL, 0)) == fc_false(), "π_∅(false) = false");
-    CHECK(fc_project(both, dimset_make(NULL, 0)) == fc_true(), "π_∅ of a consistent face = true");
+    CHECK(fc_project(fc_false(), set_make(NULL, 0)) == fc_false(), "π_∅(false) = false");
+    CHECK(fc_project(both, set_make(NULL, 0)) == fc_true(), "π_∅ of a consistent face = true");
     CHECK(fc_entails(fc_false(), fc_lit(i, 0)) && fc_entails(fc_lit(i, 0), fc_true()), "false ⇒ φ, φ ⇒ true");
     CHECK(fc_entails(both, fc_lit(i, 0)) && !fc_entails(fc_lit(i, 0), both), "clause containment entailment");
 
@@ -95,13 +95,13 @@ static void test_face_laws(void) {
     for (int s = 0; s < 4; s++) {
         for (size_t a = 0; a < nf; a++) {
             FaceId chi = faces[a];
-            FaceId pr = fc_project(chi, dimset_make(Ss[s], Sn[s]));
+            FaceId pr = fc_project(chi, set_make(Ss[s], Sn[s]));
             /* chi ⇒ π_S chi ; idempotence */
             if (!fc_entails(chi, pr)) ok = false;
-            if (fc_project(pr, dimset_make(Ss[s], Sn[s])) != pr) ok = false;
+            if (fc_project(pr, set_make(Ss[s], Sn[s])) != pr) ok = false;
             for (size_t bb = 0; bb < nf; bb++) {
                 FaceId phi = faces[bb];
-                size_t dn; const uint64_t *dw = dimset_get(family_call(F_DIMS, phi, 1), &dn);
+                size_t dn; const uint64_t *dw = set_get(family_call(F_DIMS, phi, 0), &dn);
                 bool inS = true;
                 for (size_t k = 0; k < dn; k++) {
                     bool found = false;
@@ -120,10 +120,10 @@ static void test_face_laws(void) {
     for (size_t a = 0; a < nf; a++) {
         FaceId phi = faces[a], all = fc_forall(i, phi);
         if (!fc_entails(all, phi)) okq = false;
-        if (dimset_contains(family_call(F_DIMS, all, 1), i)) okq = false;
+        if (set_contains(family_call(F_DIMS, all, 0), i)) okq = false;
         for (size_t bb = 0; bb < nf; bb++) {
             FaceId psi = faces[bb];
-            bool indep = !dimset_contains(family_call(F_DIMS, psi, 1), i);
+            bool indep = !set_contains(family_call(F_DIMS, psi, 0), i);
             if (!indep) continue;
             qcomp++;
             if (fc_entails(psi, phi) && !fc_entails(psi, all)) okq = false;
@@ -159,7 +159,7 @@ static void test_substitution(void) {
     RefId Pfam = var(mk_fun(0, 1, A, U0));
     TermVarId w = tv(mk_app(Pfam, ref_var(x)));
     RefId W = ref_var(w);
-    CHECK(varset_contains(ref_freevars(W), x), "boundary of VAR(w) includes x through w's declaration type");
+    CHECK(set_contains(ref_freevars(W), x), "boundary of VAR(w) includes x through w's declaration type");
     RefId Wsub = reindex1(mk_fst(mk_pair(W, W)), x, a);
     { bool has_a = false; TEnvId E = ref_tenv(Wsub); for (size_t q = 0; q < subst_size(E); q++) { uint64_t sl; TVal v; subst_get(E, q, &sl, &v); if (v.sort == PS_REF && v.id == a) has_a = true; }
       CHECK(Wsub != mk_fst(mk_pair(W, W)) && has_a, "x is in the complete typed boundary through w's declaration type, so its image is retained"); }
@@ -171,12 +171,12 @@ static void test_substitution(void) {
     RefId pth = var(mk_path_const(0, A, a, bb));
     RefId at_j = mk_papp_const(0, A, a, bb, pth, iv_var(j));   /* depends on j */
     RefId T = mk_pair(ref_var(x), ref_var(y));
-    CHECK(!dimset_contains(ref_support(T), j), "origin has no j");
+    CHECK(!set_contains(ref_support(T), j), "origin has no j");
     RefId Tj = reindex1(T, x, at_j);
-    CHECK(dimset_contains(ref_support(Tj), j), "instantiated support includes j introduced by the image of x");
+    CHECK(set_contains(ref_support(Tj), j), "instantiated support includes j introduced by the image of x");
     /* support through a declaration type depending on a dimension */
     TermVarId v = tv(mk_app(Pfam, at_j));
-    CHECK(dimset_contains(ref_support(ref_var(v)), j), "support of VAR(v) includes dimensions of v's declaration type");
+    CHECK(set_contains(ref_support(ref_var(v)), j), "support of VAR(v) includes dimensions of v's declaration type");
 }
 
 /* ---------------------------------------------------------------- */
@@ -292,14 +292,14 @@ static void test_eval_basic(void) {
 
     /* globals: unfold through a fixed body */
     uint64_t Aparam[1] = { ref_var_id(A) };
-    SymbolId K = define_global("K", varset_make(Aparam, 1), dimset_make(NULL, 0), mk_fun(0, 0, A, mk_fun(0, 0, A, A)));
+    SymbolId K = define_global("K", set_make(Aparam, 1), set_make(NULL, 0), mk_fun(0, 0, A, mk_fun(0, 0, A, A)));
     TermVarId y = tv(A);
     set_global_body(K, mk_lam_lv(0, x, A, mk_lam_lv(0, y, A, ref_var(x))));
     r = whnf(mk_app(mk_app(global_ref(K), a), bb), fc_true(), &st);
     CHECK(st == W_OK && r.ref == a, "K a b ⇝ a through global unfolding");
 
     /* running self-demand: loop := loop */
-    SymbolId L = define_global("loop", varset_make(NULL, 0), dimset_make(NULL, 0), U0);
+    SymbolId L = define_global("loop", set_make(NULL, 0), set_make(NULL, 0), U0);
     set_global_body(L, global_ref(L));
     r = whnf(global_ref(L), fc_true(), &st);
     CHECK(st == W_STUCK && r.cls == 0, "loop is reported stuck, never neutral or ready");
@@ -525,8 +525,8 @@ int main(void) {
     test_comp_clauses();
     printf("\n%d passed, %d failed\n", n_pass, n_fail);
     printf("tables: %zu intervals, %zu faces, %zu maps, %zu nodes, %zu refs, %zu eval entries\n",
-           interner_count(&M.intervals), interner_count(&M.faces), interner_count(&M.maps),
-           interner_count(&M.tnodes), interner_count(&M.refs), eval_entry_count());
+           interner_count(&M.keys), interner_count(&M.keys), interner_count(&M.keys),
+           interner_count(&M.keys), interner_count(&M.keys), eval_entry_count());
    
     machine_free();
     return n_fail ? 1 : 0;

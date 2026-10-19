@@ -15,13 +15,7 @@
 #include "eval.h"
 
 typedef enum { DK_IV = 0, DK_FC = 1 } DKind;
-static Interner *dtab(DKind k) { return k == DK_IV ? &M.intervals : &M.faces; }
-static const uint64_t *drec(DKind k, uint64_t id, size_t *n) { return interner_get(dtab(k), id, n); }
 static bool rec_one(const uint64_t *w, size_t n) { return n == 1 && w[0] == DNF_SEP; }
-static uint64_t dzero(DKind k) { return interner_intern(dtab(k), NULL, 0, NULL); }
-static uint64_t done_one(DKind k) { uint64_t s = DNF_SEP; return interner_intern(dtab(k), &s, 1, NULL); }
-
-static Family fjoin(DKind k) { return k == DK_IV ? F_IVJOIN : F_FCJOIN; }
 
 /* ---------------- join ---------------- */
 typedef struct {
@@ -33,12 +27,12 @@ typedef struct {
     WordBuf out; bool created;
 } JoinLoc;
 
-static void join_step(Cont *k, uint64_t v, DKind kind) {
+static void join_step(Cont *k, uint64_t v) {
     JoinLoc *L = FR_LOC(k, JoinLoc);
     uint64_t id = 0;
     FR_BEGIN(k);
     if (k->w[0] == k->w[1]) FR_FINISH(k, k->w[0]);
-    L->x = drec(kind, k->w[0], &L->nx); L->y = drec(kind, k->w[1], &L->ny);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx); L->y = interner_get(&M.keys, k->w[1], &L->ny);
     if (L->nx == 0 || rec_one(L->y, L->ny)) FR_FINISH(k, k->w[1]);
     if (L->ny == 0 || rec_one(L->x, L->nx)) FR_FINISH(k, k->w[0]);
     wordbuf_init(&L->out); L->px = L->py = 0;
@@ -99,12 +93,10 @@ static void join_step(Cont *k, uint64_t v, DKind kind) {
         }
         if (L->from_x) L->px += L->lc + 1; else L->py += L->lc + 1;
     }
-    FR_CALL(k, id, intern_sub(k, dtab(kind), &L->out, &L->created));
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_FINISH(k, id);
     FR_END(k);
 }
-static void ivjoin_step(Cont *k, uint64_t v) { join_step(k, v, DK_IV); }
-static void fcjoin_step(Cont *k, uint64_t v) { join_step(k, v, DK_FC); }
 
 /* ---------------- meet ---------------- */
 typedef struct {
@@ -119,10 +111,10 @@ static void meet_step(Cont *k, uint64_t v, DKind kind) {
     uint64_t id = 0;
     FR_BEGIN(k);
     if (k->w[0] == k->w[1]) FR_FINISH(k, k->w[0]);
-    L->x = drec(kind, k->w[0], &L->nx); L->y = drec(kind, k->w[1], &L->ny);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx); L->y = interner_get(&M.keys, k->w[1], &L->ny);
     if (L->nx == 0 || rec_one(L->y, L->ny)) FR_FINISH(k, k->w[0]);
     if (L->ny == 0 || rec_one(L->x, L->nx)) FR_FINISH(k, k->w[1]);
-    L->acc = dzero(kind);
+    L->acc = iv_zero();
     for (L->px = 0; L->px < L->nx; L->px = L->ex + 1) {
         for (L->py = 0; L->py < L->ny; L->py = L->ey + 1) {
             /* the union of the two clauses, one atom per step; a face clause
@@ -143,8 +135,8 @@ static void meet_step(Cont *k, uint64_t v, DKind kind) {
             wordbuf_push(&L->u, DNF_SEP);
             if (L->contra) { while (wordbuf_drain_one(&L->u)) FR_YIELD(k); }
             else {
-                FR_CALL(k, id, intern_sub(k, dtab(kind), &L->u, &L->created));
-                FR_AWAIT(k, L->acc, fjoin(kind), L->acc, id);
+                FR_CALL(k, id, intern_sub(k, &M.keys, &L->u, &L->created));
+                FR_AWAIT(k, L->acc, F_JOIN, L->acc, id);
             }
         }
     }
@@ -166,9 +158,9 @@ static void ivneg_step(Cont *k, uint64_t v) {
     NegLoc *L = FR_LOC(k, NegLoc);
     uint64_t id = 0;
     FR_BEGIN(k);
-    L->x = drec(DK_IV, k->w[0], &L->nx);
-    if (L->nx == 0) FR_FINISH(k, done_one(DK_IV));
-    L->acc = done_one(DK_IV);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    if (L->nx == 0) FR_FINISH(k, iv_one());
+    L->acc = iv_one();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         wordbuf_init(&L->u);
         for (L->i = L->px; L->x[L->i] != DNF_SEP; ) {
@@ -177,8 +169,8 @@ static void ivneg_step(Cont *k, uint64_t v) {
             else { wordbuf_push(&L->u, a ^ 1); wordbuf_push(&L->u, DNF_SEP); L->i++; }
             FR_YIELD(k);
         }
-        if (L->u.n == 0) FR_FINISH(k, dzero(DK_IV));          /* the clause 1: its complement is 0 */
-        FR_CALL(k, id, intern_sub(k, &M.intervals, &L->u, &L->created));
+        if (L->u.n == 0) FR_FINISH(k, iv_zero());          /* the clause 1: its complement is 0 */
+        FR_CALL(k, id, intern_sub(k, &M.keys, &L->u, &L->created));
         FR_AWAIT(k, L->acc, F_IVMEET, L->acc, id);
     }
     FR_FINISH(k, L->acc);
@@ -190,8 +182,8 @@ static void fcend_step(Cont *k, uint64_t v) {
     uint64_t id = 0;
     int eps = (int)k->w[1];
     FR_BEGIN(k);
-    L->x = drec(DK_IV, k->w[0], &L->nx);
-    L->acc = eps ? dzero(DK_FC) : done_one(DK_FC);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    L->acc = eps ? iv_zero() : iv_one();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         wordbuf_init(&L->u); L->contra = false;
         for (L->i = L->px; L->x[L->i] != DNF_SEP; L->i++) {
@@ -205,11 +197,11 @@ static void fcend_step(Cont *k, uint64_t v) {
         if (eps) {
             wordbuf_push(&L->u, DNF_SEP);
             if (L->contra) { while (wordbuf_drain_one(&L->u)) FR_YIELD(k); continue; }
-            FR_CALL(k, id, intern_sub(k, &M.faces, &L->u, &L->created));
-            FR_AWAIT(k, L->acc, F_FCJOIN, L->acc, id);
+            FR_CALL(k, id, intern_sub(k, &M.keys, &L->u, &L->created));
+            FR_AWAIT(k, L->acc, F_JOIN, L->acc, id);
         } else {
-            if (L->u.n == 0) FR_FINISH(k, dzero(DK_FC));     /* (1 = 0) is false */
-            FR_CALL(k, id, intern_sub(k, &M.faces, &L->u, &L->created));
+            if (L->u.n == 0) FR_FINISH(k, iv_zero());     /* (1 = 0) is false */
+            FR_CALL(k, id, intern_sub(k, &M.keys, &L->u, &L->created));
             FR_AWAIT(k, L->acc, F_FCMEET, L->acc, id);
         }
     }
@@ -223,7 +215,7 @@ static void fcent_step(Cont *k, uint64_t v) {
     EntLoc *L = FR_LOC(k, EntLoc);
     FR_BEGIN(k);
     if (k->w[0] == k->w[1]) FR_FINISH(k, 2);
-    L->x = drec(DK_FC, k->w[0], &L->nx); L->y = drec(DK_FC, k->w[1], &L->ny);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx); L->y = interner_get(&M.keys, k->w[1], &L->ny);
     if (L->nx == 0 || rec_one(L->y, L->ny)) FR_FINISH(k, 2);
     if (L->ny == 0) FR_FINISH(k, 1);
     for (L->px = 0; L->px < L->nx; ) {
@@ -254,7 +246,7 @@ static void fcforall_step(Cont *k, uint64_t v) {
     uint64_t id = 0;
     DimVarId dim = (DimVarId)k->w[1];
     FR_BEGIN(k);
-    L->x = drec(DK_FC, k->w[0], &L->nx);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx);
     wordbuf_init(&L->out);
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         L->mentions = false;
@@ -264,7 +256,7 @@ static void fcforall_step(Cont *k, uint64_t v) {
             wordbuf_push(&L->out, DNF_SEP);
         }
     }
-    FR_CALL(k, id, intern_sub(k, &M.faces, &L->out, &L->created));
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_FINISH(k, id);
     FR_END(k);
 }
@@ -275,10 +267,10 @@ static void fcproj_step(Cont *k, uint64_t v) {
     ProjLoc *L = FR_LOC(k, ProjLoc);
     uint64_t id = 0;
     FR_BEGIN(k);
-    L->x = drec(DK_FC, k->w[0], &L->nx);
+    L->x = interner_get(&M.keys, k->w[0], &L->nx);
     if (L->nx == 0 || rec_one(L->x, L->nx)) FR_FINISH(k, k->w[0]);
-    L->s = interner_get(&M.dimsets, k->w[1], &L->ns);
-    L->acc = dzero(DK_FC);
+    L->s = interner_get(&M.keys, k->w[1], &L->ns);
+    L->acc = iv_zero();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         wordbuf_init(&L->u);
         for (L->i = L->px; L->x[L->i] != DNF_SEP; L->i++) {
@@ -293,24 +285,23 @@ static void fcproj_step(Cont *k, uint64_t v) {
             if (L->in) wordbuf_push(&L->u, L->x[L->i]);
             FR_YIELD(k);
         }
-        if (L->u.n == 0) FR_FINISH(k, done_one(DK_FC));     /* a clause projects to ⊤ */
+        if (L->u.n == 0) FR_FINISH(k, iv_one());     /* a clause projects to ⊤ */
         wordbuf_push(&L->u, DNF_SEP);
-        FR_CALL(k, id, intern_sub(k, &M.faces, &L->u, &L->created));
-        FR_AWAIT(k, L->acc, F_FCJOIN, L->acc, id);
+        FR_CALL(k, id, intern_sub(k, &M.keys, &L->u, &L->created));
+        FR_AWAIT(k, L->acc, F_JOIN, L->acc, id);
     }
     FR_FINISH(k, L->acc);
     FR_END(k);
 }
 
 /* ---------------- sorted sets ---------------- */
-typedef struct { const uint64_t *x, *y; size_t nx, ny, i, j, lo, hi; WordBuf out; bool created, in; } SetLoc;
-static Interner *stab(bool dims) { return dims ? &M.dimsets : &M.varsets; }
-static void union_step(Cont *k, uint64_t v, bool dims) {
+typedef struct { const uint64_t *x, *y; size_t nx, ny, i, j, lo, hi, at; WordBuf out; bool created; } SetLoc;
+static void union_step(Cont *k, uint64_t v) {
     SetLoc *L = FR_LOC(k, SetLoc);
     uint64_t id = 0;
     FR_BEGIN(k);
     if (k->w[0] == k->w[1]) FR_FINISH(k, k->w[0]);
-    L->x = interner_get(stab(dims), k->w[0], &L->nx); L->y = interner_get(stab(dims), k->w[1], &L->ny);
+    L->x = set_get(k->w[0], &L->nx); L->y = set_get(k->w[1], &L->ny);
     if (L->nx == 0) FR_FINISH(k, k->w[1]);
     if (L->ny == 0) FR_FINISH(k, k->w[0]);
     wordbuf_init(&L->out);
@@ -320,41 +311,31 @@ static void union_step(Cont *k, uint64_t v, bool dims) {
         else { wordbuf_push(&L->out, L->x[L->i]); L->i++; L->j++; }
         FR_YIELD(k);
     }
-    FR_CALL(k, id, intern_sub(k, stab(dims), &L->out, &L->created));
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_FINISH(k, id);
     FR_END(k);
 }
 /* binary search of w[1] in w[0], one probe per step; then (remove) the copy */
-static void member_step(Cont *k, uint64_t v, bool dims, bool remove) {
+static void member_step(Cont *k, uint64_t v, bool remove) {
     SetLoc *L = FR_LOC(k, SetLoc);
     uint64_t id = 0;
     FR_BEGIN(k);
-    L->x = interner_get(stab(dims), k->w[0], &L->nx);
-    L->lo = 0; L->hi = L->nx; L->in = false;
-    while (L->lo < L->hi) {
-        size_t mid = (L->lo + L->hi) / 2;
-        if (L->x[mid] == k->w[1]) { L->in = true; break; }
-        if (L->x[mid] < k->w[1]) L->lo = mid + 1; else L->hi = mid;
-        FR_YIELD(k);
-    }
-    if (!remove) FR_FINISH(k, L->in ? 2 : 1);
-    if (!L->in) FR_FINISH(k, k->w[0]);
+    L->x = set_get(k->w[0], &L->nx);
+    L->lo = 0; L->hi = L->nx;
+    while (!sorted_probe(L->x, 1, k->w[1], &L->lo, &L->hi, &L->at)) FR_YIELD(k);
+    if (!remove) FR_FINISH(k, L->at ? 2 : 1);
+    if (!L->at) FR_FINISH(k, k->w[0]);
     wordbuf_init(&L->out);
     for (L->i = 0; L->i < L->nx; L->i++) { if (L->x[L->i] != k->w[1]) wordbuf_push(&L->out, L->x[L->i]); FR_YIELD(k); }
-    FR_CALL(k, id, intern_sub(k, stab(dims), &L->out, &L->created));
+    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_FINISH(k, id);
     FR_END(k);
 }
-static void dsunion_step(Cont *k, uint64_t v) { union_step(k, v, true); }
-static void vsunion_step(Cont *k, uint64_t v) { union_step(k, v, false); }
-static void dsremove_step(Cont *k, uint64_t v) { member_step(k, v, true, true); }
-static void vsremove_step(Cont *k, uint64_t v) { member_step(k, v, false, true); }
-static void dscontains_step(Cont *k, uint64_t v) { member_step(k, v, true, false); }
-static void vscontains_step(Cont *k, uint64_t v) { member_step(k, v, false, false); }
+static void remove_step(Cont *k, uint64_t v) { member_step(k, v, true); }
+static void contains_step(Cont *k, uint64_t v) { member_step(k, v, false); }
 
 void dnf_families_init(void) {
-    family_define(F_IVJOIN, "iv.join", ivjoin_step, sizeof(JoinLoc));
-    family_define(F_FCJOIN, "fc.join", fcjoin_step, sizeof(JoinLoc));
+    family_define(F_JOIN, "dnf.join", join_step, sizeof(JoinLoc));
     family_define(F_IVMEET, "iv.meet", ivmeet_step, sizeof(MeetLoc));
     family_define(F_FCMEET, "fc.meet", fcmeet_step, sizeof(MeetLoc));
     family_define(F_IVNEG, "iv.negate", ivneg_step, sizeof(NegLoc));
@@ -362,26 +343,22 @@ void dnf_families_init(void) {
     family_define(F_FCENT, "fc.entails", fcent_step, sizeof(EntLoc));
     family_define(F_FCFORALL, "fc.forall", fcforall_step, sizeof(AllLoc));
     family_define(F_FCPROJ, "fc.project", fcproj_step, sizeof(ProjLoc));
-    family_define(F_DSUNION, "dimset.union", dsunion_step, sizeof(SetLoc));
-    family_define(F_VSUNION, "varset.union", vsunion_step, sizeof(SetLoc));
-    family_define(F_DSREMOVE, "dimset.remove", dsremove_step, sizeof(SetLoc));
-    family_define(F_VSREMOVE, "varset.remove", vsremove_step, sizeof(SetLoc));
-    family_define(F_DSCONTAINS, "dimset.contains", dscontains_step, sizeof(SetLoc));
-    family_define(F_VSCONTAINS, "varset.contains", vscontains_step, sizeof(SetLoc));
+    family_define(F_SUNION, "set.union", union_step, sizeof(SetLoc));
+    family_define(F_SREMOVE, "set.remove", remove_step, sizeof(SetLoc));
+    family_define(F_SCONTAINS, "set.contains", contains_step, sizeof(SetLoc));
 }
 
 /* ---------------- the operations (synchronous driver for callers that are
  * not yet frame programs; frame programs request the families) ---------------- */
-IntervalId iv_join(IntervalId r, IntervalId s) { return family_call(F_IVJOIN, r, s); }
+IntervalId iv_join(IntervalId r, IntervalId s) { return family_call(F_JOIN, r, s); }
 IntervalId iv_meet(IntervalId r, IntervalId s) { return family_call(F_IVMEET, r, s); }
 IntervalId iv_negate(IntervalId r) { return family_call(F_IVNEG, r, 0); }
-FaceId fc_join(FaceId a, FaceId b) { return family_call(F_FCJOIN, a, b); }
+FaceId fc_join(FaceId a, FaceId b) { return family_call(F_JOIN, a, b); }
 FaceId fc_meet(FaceId a, FaceId b) { return family_call(F_FCMEET, a, b); }
 FaceId fc_endpoint(IntervalId r, int eps) { return family_call(F_FCEND, r, eps ? 1 : 0); }
 bool fc_entails(FaceId chi, FaceId phi) { return family_call(F_FCENT, chi, phi) == 2; }
 FaceId fc_forall(DimVarId i, FaceId phi) { return family_call(F_FCFORALL, phi, i); }
 FaceId fc_project(FaceId chi, DimSetId S) { return family_call(F_FCPROJ, chi, S); }
-DimSetId dimset_union(DimSetId a, DimSetId b) { return family_call(F_DSUNION, a, b); }
-DimSetId dimset_remove(DimSetId a, uint64_t x) { return family_call(F_DSREMOVE, a, x); }
-bool dimset_contains(DimSetId a, uint64_t x) { return family_call(F_DSCONTAINS, a, x) == 2; }
-bool varset_contains(VarSetId a, uint64_t x) { return family_call(F_VSCONTAINS, a, x) == 2; }
+uint64_t set_union(uint64_t a, uint64_t b) { return family_call(F_SUNION, a, b); }
+uint64_t set_remove(uint64_t a, uint64_t x) { return family_call(F_SREMOVE, a, x); }
+bool set_contains(uint64_t a, uint64_t x) { return family_call(F_SCONTAINS, a, x) == 2; }

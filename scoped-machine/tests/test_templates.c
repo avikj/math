@@ -245,7 +245,7 @@ int main(void) {
         CHECK(reindex(good, map_identity()) == good, "identity reindexing is the identity"); } }
 
     /* ---- recursive components (§9.2): accepted when well typed, rejected from either end ---- */
-    { uint64_t ps[] = { vA }; VarSetId params = varset_make(ps, 1); DimSetId nod = dimset_make(NULL, 0);
+    { uint64_t ps[] = { vA }; VarSetId params = set_make(ps, 1); DimSetId nod = set_make(NULL, 0);
       CtxDecl d[1] = { { S_TERM, vA} }; ContextId GA = context_make(1, d, fc_true());
       /* well-typed mutual recursion: f := g, g := f (no termination claim) */
       SymbolId sf = define_global("mf", params, nod, A), sg = define_global("mg", params, nod, A);

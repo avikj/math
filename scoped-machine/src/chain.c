@@ -146,7 +146,7 @@ static void reindex_step(Cont *k, uint64_t v) {
             if (L->s[L->k] != iv_var(c)) { wordbuf_push(&L->out, c); wordbuf_push(&L->out, PS_INTERVAL); wordbuf_push(&L->out, L->s[L->k]); } }
         FR_YIELD(k);
     }
-    FR_CALL(k, L->map, intern_sub(k, &M.maps, &L->out, &L->created));
+    FR_CALL(k, L->map, intern_sub(k, &M.keys, &L->out, &L->created));
     wordbuf_init(&L->out);
     wordbuf_push(&L->out, L->v[0]); wordbuf_push(&L->out, L->s[0]); wordbuf_push(&L->out, L->v[2]); wordbuf_push(&L->out, L->v[3]);
     for (L->k = 0; L->k < L->v[3]; L->k++) {

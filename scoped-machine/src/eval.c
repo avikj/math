@@ -803,7 +803,7 @@ static void whnf_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, r, F_FCENT, chi, L->phi);
             if (r == 2) { wordbuf_clear(&L->wb); goto forward_x; }
             wordbuf_push(&L->wb, L->phi); wordbuf_push(&L->wb, L->x);
-            FR_AWAIT(k, L->uni, F_FCJOIN, L->uni, L->phi);
+            FR_AWAIT(k, L->uni, F_JOIN, L->uni, L->phi);
         }
         FR_AWAIT(k, r, F_FCENT, chi, L->uni);
         if (r != 2) { wordbuf_clear(&L->wb); FR_FINISH(k, res_rec(R_INVALID, 0, "system does not cover the ambient face")); }
@@ -832,7 +832,7 @@ static void whnf_step(Cont *k, uint64_t v) {
                 if (!r) continue;                                   /* inconsistent along the line: dropped */
                 {   size_t m; const uint64_t *gw = interner_get(&M.keys, r, &m);
                     wordbuf_push(&L->wb, gw[0]); wordbuf_push(&L->wb, gw[1]); L->g = gw[0]; L->kept++; }
-                FR_AWAIT(k, L->uni, F_FCJOIN, L->uni, L->g);
+                FR_AWAIT(k, L->uni, F_JOIN, L->uni, L->g);
             }
             FR_CALL(k, L->sys, intern_sub(k, &M.keys, &L->wb, &L->created));
             FR_AWAIT(k, r, F_FCENT, chi, L->uni);

@@ -172,7 +172,7 @@ static void compclause_step(Cont *k, uint64_t v) {
     }
     FR_FINISH(k, 0);
 interpret:
-    FR_CALL(k, L->er, intern_sub(k, &M.maps, &L->wb, &L->created));
+    FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->wb, &L->created));
     FR_AWAIT(k, r, F_INTERP, L->root, L->er);
     { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
     FR_END(k);

@@ -67,7 +67,7 @@ int main(void) {
       RefId callk = assoc_call(&A, DIR_FORWARD, sk, rk);
       CHECK(check(context_extend_dim(A.G, k), fc_true(), callk, reindex(A.codomain, sk), &why) == CK_VALID, "a call whose boundary depends on k checks (%s)", why);
       RefId at0 = reindex_dim(callk, k, iv_zero());
-      CHECK(dimset_contains(ref_support(callk), k) && !dimset_contains(ref_support(at0), k), "the call's support follows its boundary");
+      CHECK(set_contains(ref_support(callk), k) && !set_contains(ref_support(at0), k), "the call's support follows its boundary");
       DimVarId z = declare_dim();
       (void)whnf(callk, fc_true(), &st);
       size_t n0 = whnf_keys(); (void)whnf(callk, fc_lit(z, 1), &st);
@@ -103,7 +103,7 @@ int main(void) {
       uint64_t lr; RefId D2 = diagram_fold(2, nodes, X, 0, m2(g, ref_var(vu), ref_var(vu)), &lr);
       CHECK(check(G, fc_true(), D2, diagram_type(0, lr, X), &why) == CK_VALID, "a second node depending on the first witness (%s)", why);
       CHECK(convert_term(G, fc_true(), dg_C(D2), m2(g, fx, fx), X) == CV_EQUAL, "C ≡ g(f x)(f x)");
-      CHECK(!varset_contains(ref_freevars(D2), vs) && !varset_contains(ref_freevars(D2), vu), "node variables are bound in the fold"); }
+      CHECK(!set_contains(ref_freevars(D2), vs) && !set_contains(ref_freevars(D2), vu), "node variables are bound in the fold"); }
 
     /* ---- rejections ---- */
     { TermVarId vX = tv(U0); RefId X = ref_var(vX);
@@ -184,7 +184,7 @@ int main(void) {
     { TermVarId vX = tv(U0); RefId X = ref_var(vX);
       CtxDecl d[1] = { { S_TERM, vX} }; ContextId G = context_make(1, d, fc_true());
       uint64_t px[1] = { vX };
-      SymbolId loopx = define_global("loop_x", varset_make(px, 1), dimset_make(NULL, 0), X);
+      SymbolId loopx = define_global("loop_x", set_make(px, 1), set_make(NULL, 0), X);
       set_global_body(loopx, global_ref(loopx));
       RefId c2 = maps_apply(app3(equiv_maps(0, 0), X, X, mk_id_equiv(0, X)), DIR_FORWARD, global_ref(loopx));
       CHECK(check(G, fc_true(), c2, X, &why) == CK_VALID, "the call at the cyclic argument is well typed (%s)", why);

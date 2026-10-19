@@ -22,7 +22,7 @@ int main(void) {
     TermVarId a = declare_term(A, fc_true()); RefId av = ref_var(a);
     CtxDecl ds[] = { { S_TERM, ta}, { S_TERM, a} }; ContextId G = context_make(2, ds, fc_true());
     RefId P = mk_path_const(0, A, av, av), p = mk_refl(0, A, av);
-    TermVarId params[] = { ta, a }; VarSetId ps = varset_make(params, 2); DimSetId no_dims = dimset_make(NULL, 0);
+    TermVarId params[] = { ta, a }; VarSetId ps = set_make(params, 2); DimSetId no_dims = set_make(NULL, 0);
     SymbolId loop = define_global("loop_proof", ps, no_dims, P);
     assert(set_global_body(loop, global_ref(loop)));
     SymbolId opaque = define_global("assumed_path", ps, no_dims, P);
