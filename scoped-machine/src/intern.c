@@ -1,5 +1,6 @@
 #include "intern.h"
 #include "pool.h"
+#include <sched.h>
 
 /* ---- chunked arrays ---- */
 void chunked_init(Chunked *c, size_t elem) { memset(c->dir, 0, sizeof c->dir); c->elem = elem; }
@@ -42,6 +43,15 @@ static uint64_t hash_words(const uint64_t *w, size_t n) {
     return h;
 }
 
+__thread int intern_in_step;
+static FlattenHook flatten_hook;
+void interner_set_flatten_hook(FlattenHook h) { __atomic_store_n(&flatten_hook, h, __ATOMIC_RELEASE); }
+
+/* registry: index → table (indices are never reused) */
+static Chunked registry; static size_t registry_n; static pthread_once_t registry_once = PTHREAD_ONCE_INIT;
+static void registry_init(void) { chunked_init(&registry, sizeof(Interner *)); }
+Interner *interner_by_index(size_t index) { Interner **p = chunked_peek(&registry, index - 1); return p ? __atomic_load_n(p, __ATOMIC_ACQUIRE) : NULL; }
+
 void interner_init(Interner *t) {
     memset(t, 0, sizeof *t);
     chunked_init(&t->recs, sizeof(Rec));
@@ -49,9 +59,14 @@ void interner_init(Interner *t) {
     chunked_at(&t->nodes, 0);            /* the root, index 1, all slots empty */
     t->nnodes = 1;
     pthread_mutex_init(&t->mu, NULL);
+    pthread_once(&registry_once, registry_init);
+    t->index = __atomic_add_fetch(&registry_n, 1, __ATOMIC_RELAXED);
+    __atomic_store_n((Interner **)chunked_at(&registry, t->index - 1), t, __ATOMIC_RELEASE);
 }
 
 void interner_free(Interner *t) {
+    if (t->index) __atomic_store_n((Interner **)chunked_at(&registry, t->index - 1), NULL, __ATOMIC_RELEASE);
+    if (t->tree) { interner_free(t->tree); free(t->tree); }
     for (uint64_t *p = t->pages; p; ) { uint64_t *prev = (uint64_t *)(uintptr_t)p[0]; free(p); p = prev; }
     chunked_free(&t->recs);
     chunked_free(&t->nodes);
@@ -73,32 +88,9 @@ static bool rec_equal(const Rec *r, uint64_t h, const uint64_t *w, size_t n) {
     return r->hash == h && r->n == n && (n == 0 || memcmp(r->w, w, n * sizeof(uint64_t)) == 0);
 }
 
-/* Lock-free descent. Returns the id when present. Otherwise *slot is the
- * empty slot or the slot holding the separating leaf, *depth its depth. */
-static uint64_t descend(const Interner *t, uint64_t h, const uint64_t *w, size_t n, uint64_t **slot, size_t *depth) {
-    uint64_t idx = 1;
-    for (size_t d = 0;; d++) {
-        uint64_t *s = &node_of(t, idx)->c[nib(h, n, w, d)];
-        uint64_t x = __atomic_load_n(s, __ATOMIC_ACQUIRE);
-        if (x == 0) { *slot = s; *depth = d; return 0; }
-        if (x & 1) {
-            uint64_t id = x >> 1;
-            if (rec_equal(rec_of(t, id), h, w, n)) return id;
-            *slot = s; *depth = d; return 0;
-        }
-        idx = x >> 1;
-    }
-}
-
-uint64_t interner_find(Interner *t, const uint64_t *w, size_t n) {
-    uint64_t *s; size_t d;
-    return descend(t, hash_words(w, n), w, n, &s, &d);
-}
-
-/* word storage for one record, reserved before its copy: a bump in the
- * current page (constant work under the storage mutex; a full page is
- * replaced by one fixed-size host allocation, an oversized record gets its
- * own block) */
+/* word storage for one record (constant work under the storage mutex; a
+ * full page is replaced by one fixed-size host allocation, an oversized
+ * record gets its own block) */
 static uint64_t *storage_reserve(Interner *t, size_t n) {
     pthread_mutex_lock(&t->mu);
     uint64_t *dst;
@@ -129,6 +121,80 @@ static uint64_t new_node(Interner *t) {
     return idx;
 }
 
+/* ---- one unit: a small record ----
+ * Descent of the compressed trie over (h, n, w); at an empty slot or a
+ * separating leaf the record is reserved and copied privately (once), and
+ * published by one CAS of a leaf or of a privately built split chain. A
+ * failed CAS re-reads the same slot: a slot changes only empty → leaf →
+ * inner node, so the work is bounded by the stream length (≤ 18 words). */
+static uint64_t small_unit(Interner *t, const uint64_t *w, size_t n, bool *created, bool find_only) {
+    require(n <= INTERN_SMALL, "a small record");
+    uint64_t h = hash_words(w, n);
+    uint64_t idx = 1, id = 0;
+    for (size_t d = 0;;) {
+        uint64_t *slot = &node_of(t, idx)->c[nib(h, n, w, d)];
+        uint64_t x = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+        if (x && !(x & 1)) { idx = x >> 1; d++; continue; }
+        if (x & 1) {
+            uint64_t lid = x >> 1;
+            if (rec_equal(rec_of(t, lid), h, w, n)) { if (created) *created = false; return lid; }
+        }
+        if (find_only) return 0;
+        if (!id) {
+            id = __atomic_add_fetch(&t->n, 1, __ATOMIC_ACQ_REL);
+            uint64_t *dst = storage_reserve(t, n);
+            if (n) memcpy(dst, w, n * sizeof(uint64_t));
+            Rec *r = chunked_at(&t->recs, id - 1); r->w = dst; r->n = n; r->hash = h;
+        }
+        uint64_t put = (id << 1) | 1;
+        if (x & 1) {
+            /* split: a private chain from depth d+1 to the first nibble separating the two */
+            const Rec *o = rec_of(t, x >> 1);
+            uint64_t top = new_node(t), cur = top;
+            size_t e = d + 1;
+            for (;;) {
+                unsigned a = nib(h, n, w, e), b = nib(o->hash, o->n, o->w, e);
+                if (a != b) { node_of(t, cur)->c[a] = put; node_of(t, cur)->c[b] = x; break; }
+                uint64_t nx = new_node(t); node_of(t, cur)->c[a] = nx << 1; cur = nx; e++;
+            }
+            put = top << 1;
+        }
+        uint64_t expect = x;
+        if (__atomic_compare_exchange_n(slot, &expect, put, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            __atomic_store_n(&rec_of(t, id)->live, 1, __ATOMIC_RELEASE);
+            if (created) *created = true;
+            return id;
+        }
+        /* the slot changed: re-read it at the same depth (the reserved id
+         * and copy are kept for the next attempt, or stay unused) */
+    }
+}
+
+/* ---- the canonical tree of a large record ---- */
+static Interner *tree_of(Interner *t) {
+    Interner *x = __atomic_load_n(&t->tree, __ATOMIC_ACQUIRE);
+    if (x) return x;
+    Interner *fresh = malloc(sizeof *fresh); require(fresh, "out of memory");
+    interner_init(fresh);
+    Interner *expect = NULL;
+    if (__atomic_compare_exchange_n(&t->tree, &expect, fresh, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return fresh;
+    interner_free(fresh); free(fresh);
+    return expect;
+}
+const uint64_t *interner_tree_get(Interner *t, uint64_t id, size_t *n) { return interner_get(t->tree, id, n); }
+uint64_t interner_flat_of(Interner *t, uint64_t root) {
+    uint64_t f = __atomic_load_n(&rec_of(t->tree, root)->flat, __ATOMIC_ACQUIRE);
+    return f == UINT64_MAX ? 0 : f;
+}
+uint64_t *interner_flat_reserve(Interner *t, size_t n) { return storage_reserve(t, n); }
+uint64_t interner_flat_publish(Interner *t, uint64_t root, uint64_t *dst, size_t n) {
+    uint64_t id = __atomic_add_fetch(&t->n, 1, __ATOMIC_ACQ_REL);
+    Rec *r = chunked_at(&t->recs, id - 1); r->w = dst; r->n = n; r->hash = 0;
+    __atomic_store_n(&r->live, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&rec_of(t->tree, root)->flat, id, __ATOMIC_RELEASE);
+    return id;
+}
+
 /* ---- word buffers ---- */
 static Pool wpage_pool; static pthread_once_t wpage_once = PTHREAD_ONCE_INIT;
 static void wpage_init(void) { pool_init(&wpage_pool, sizeof(WPage)); }
@@ -156,129 +222,148 @@ void wordbuf_clear(WordBuf *b) {
     wordbuf_init(b);
 }
 
-/* ---- the insertion state machine ---- */
-enum { P_DESCEND = 0, P_COMPARE, P_INSERT, P_COPY, P_PUBLISH, P_SPLIT, P_DRAIN, P_DONE };
+/* ---- the stepped construction ---- */
+enum { P_SMALL = 0, P_LEAF, P_CARRY, P_FOLD, P_ROOT, P_FLAT, P_DONE };
 
 void intern_begin(InternState *s, Interner *t, const uint64_t *arr, WordBuf *buf, size_t n) {
     memset(s, 0, sizeof *s);
     s->t = t; s->arr = arr; s->buf = buf; s->n = n;
-    if (buf) { require(buf->n == n, "word buffer length"); s->h = (buf->h ^ (uint64_t)n) * 1099511628211ULL; s->dpg = buf->head; }
-    else s->h = hash_words(arr, n);
-    s->idx = 1; s->phase = P_DESCEND;
+    if (buf) { require(buf->n == n, "word buffer length"); s->pg = buf->head; }
+    s->phase = n <= INTERN_SMALL ? P_SMALL : P_LEAF;
 }
-/* word j of the source through a forward cursor */
-static uint64_t src_word(const InternState *s, const WPage **pg, size_t *base, size_t j) {
-    if (s->arr) return s->arr[j];
-    while (j >= *base + WB_PAGE) { *pg = (*pg)->next; *base += WB_PAGE; }
-    return (*pg)->w[j - *base];
+/* read the next m words of the source into out; a buffer page left behind is
+ * released (at most one per read: m ≤ 16 < WB_PAGE) */
+static void src_read(InternState *s, uint64_t *out, size_t m) {
+    if (s->arr) { memcpy(out, s->arr + s->pos, m * sizeof(uint64_t)); s->pos += m; return; }
+    for (size_t q = 0; q < m; q++, s->pos++) {
+        if (s->pos >= s->pbase + WB_PAGE) { const WPage *nx = s->pg->next; wpage_release((WPage *)s->pg); s->pg = nx; s->pbase += WB_PAGE; }
+        out[q] = s->pg->w[s->pos - s->pbase];
+    }
+    if (s->pos == s->n) {
+        if (s->pg) wpage_release((WPage *)s->pg);
+        s->pg = NULL; s->buf->head = s->buf->tail = NULL; s->buf->n = 0;
+    }
 }
-static unsigned key_nib(InternState *s, size_t d) {
-    size_t i = d >> 4;
-    uint64_t x = i == 0 ? s->h : i == 1 ? (uint64_t)s->n : src_word(s, &s->dpg, &s->dbase, i - 2);
-    return (unsigned)(x >> (4 * (d & 15))) & 15;
+static uint64_t tree_unit(InternState *s, const uint64_t *w, size_t n, bool *created) {
+    return small_unit(tree_of(s->t), w, n, created, s->find);
 }
-static unsigned rec_nib(const Rec *r, size_t d) { return nib(r->hash, r->n, r->w, d); }
-/* a leaf was reached: compare its record, or record the separating slot */
-static void at_leaf(InternState *s, uint64_t *slot, uint64_t leaf) {
-    s->slot = slot; s->seen = leaf; s->cand = leaf >> 1;
-    const Rec *r = rec_of(s->t, s->cand);
-    if (r->hash == s->h && r->n == s->n) { s->ci = 0; s->cpg = s->buf ? s->buf->head : NULL; s->cbase = 0; s->phase = P_COMPARE; }
-    else s->phase = s->id ? P_SPLIT : P_INSERT;
-}
-static void found(InternState *s, uint64_t id) {
-    s->result = id; s->created = false;
-    s->phase = s->buf && s->buf->head ? P_DRAIN : P_DONE;
-}
-static void begin_split(InternState *s) { s->top = new_node(s->t); s->cur = s->top; s->e = s->d + 1; }
+static bool higher_levels(const InternState *s, unsigned i) { for (unsigned j = i + 1; j < TREE_LEVELS; j++) if (s->cnt[j]) return true; return false; }
 
-bool intern_advance(InternState *s, size_t budget) {
-    Interner *t = s->t;
+int intern_advance(InternState *s, size_t budget) {
     for (size_t u = 0; u < budget; u++) {
         switch (s->phase) {
-        case P_DESCEND: {
-            uint64_t *slot = &node_of(t, s->idx)->c[key_nib(s, s->d)];
-            uint64_t x = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
-            if (x == 0) { s->slot = slot; s->seen = 0; s->phase = s->id ? P_PUBLISH : P_INSERT; break; }
-            if (x & 1) { at_leaf(s, slot, x); if (s->phase == P_SPLIT) begin_split(s); break; }
-            s->idx = x >> 1; s->d++;
+        case P_SMALL: {
+            uint64_t w[INTERN_SMALL];
+            if (s->n) src_read(s, w, s->n);
+            else if (s->buf) { if (s->pg) wpage_release((WPage *)s->pg); s->pg = NULL; s->buf->head = s->buf->tail = NULL; s->buf->n = 0; }
+            s->result = small_unit(s->t, w, s->n, &s->created, s->find);
+            s->phase = P_DONE;
+            return INTERN_DONE;
+        }
+        case P_LEAF: {
+            uint64_t w[1 + TREE_FAN]; size_t m = s->n - s->pos < TREE_FAN ? s->n - s->pos : TREE_FAN;
+            w[0] = TREE_LEAF; src_read(s, w + 1, m);
+            uint64_t id = tree_unit(s, w, 1 + m, NULL);
+            if (!id) { s->result = 0; s->phase = P_DONE; return INTERN_DONE; }      /* find: absent */
+            s->lvl[0][s->cnt[0]++] = id;
+            if (s->cnt[0] == TREE_FAN) { s->fi = 0; s->phase = P_CARRY; }
+            else if (s->pos == s->n) { s->fi = 0; s->phase = P_FOLD; }
             break;
         }
-        case P_COMPARE: {
-            const Rec *r = rec_of(t, s->cand);
-            if (s->ci == s->n) { found(s, s->cand); break; }
-            if (src_word(s, &s->cpg, &s->cbase, s->ci) != r->w[s->ci]) {
-                s->phase = s->id ? P_SPLIT : P_INSERT;
-                if (s->phase == P_SPLIT) begin_split(s);
-                break;
+        case P_CARRY: {
+            /* level fi is full: one node one level up */
+            unsigned i = s->fi; require(i + 1 < TREE_LEVELS, "record too long");
+            uint64_t w[1 + TREE_FAN]; w[0] = TREE_NODE; memcpy(w + 1, s->lvl[i], TREE_FAN * sizeof(uint64_t));
+            uint64_t id = tree_unit(s, w, 1 + TREE_FAN, NULL);
+            if (!id) { s->result = 0; s->phase = P_DONE; return INTERN_DONE; }
+            s->cnt[i] = 0; s->lvl[i + 1][s->cnt[i + 1]++] = id;
+            if (s->cnt[i + 1] == TREE_FAN) s->fi = i + 1;
+            else if (s->pos == s->n) { s->fi = 0; s->phase = P_FOLD; }
+            else s->phase = P_LEAF;
+            break;
+        }
+        case P_FOLD: {
+            /* the partial levels bottom-up: each folds into one node carried
+             * to the next level, until a level holds the only id left */
+            for (;;) {
+                unsigned i = s->fi;
+                if (s->carry) { s->lvl[i][s->cnt[i]++] = s->carry; s->carry = 0; }
+                if (!higher_levels(s, i) && s->cnt[i] == 1) { s->root = s->lvl[i][0]; s->phase = P_ROOT; break; }
+                if (s->cnt[i]) break;
+                s->fi++;
             }
-            s->ci++;
+            if (s->phase == P_ROOT) { u--; break; }          /* no unit was spent */
+            {   unsigned i = s->fi;
+                uint64_t w[1 + TREE_FAN]; w[0] = TREE_NODE; memcpy(w + 1, s->lvl[i], s->cnt[i] * sizeof(uint64_t));
+                uint64_t id = tree_unit(s, w, 1 + s->cnt[i], NULL);
+                if (!id) { s->result = 0; s->phase = P_DONE; return INTERN_DONE; }
+                s->cnt[i] = 0; s->carry = id; s->fi = i + 1; }
             break;
         }
-        case P_INSERT:
-            s->id = __atomic_add_fetch(&t->n, 1, __ATOMIC_ACQ_REL);
-            s->dst = storage_reserve(t, s->n);
-            s->copied = 0; s->ppg = s->buf ? s->buf->head : NULL; s->pbase = 0;
-            s->phase = P_COPY;
-            break;
-        case P_COPY:
-            if (s->copied < s->n) {
-                if (s->buf) {
-                    if (s->copied >= s->pbase + WB_PAGE) { WPage *nx = s->ppg->next; wpage_release(s->ppg); s->ppg = nx; s->pbase += WB_PAGE; }
-                    s->dst[s->copied] = s->ppg->w[s->copied - s->pbase];
-                } else s->dst[s->copied] = s->arr[s->copied];
-                s->copied++;
-                break;
-            }
-            if (s->buf) { if (s->ppg) wpage_release(s->ppg); s->buf->head = s->buf->tail = NULL; s->buf->n = 0; s->buf = NULL; }
-            s->arr = s->dst;                 /* every later read is of the stored copy */
-            { Rec *r = chunked_at(&t->recs, s->id - 1); r->w = s->dst; r->n = s->n; r->hash = s->h; }
-            if (s->seen == 0) s->phase = P_PUBLISH;
-            else { s->phase = P_SPLIT; begin_split(s); }
-            break;
-        case P_PUBLISH: {
-            uint64_t expect = 0, leaf = (s->id << 1) | 1;
-            if (__atomic_compare_exchange_n(s->slot, &expect, leaf, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                __atomic_store_n(&rec_of(t, s->id)->live, 1, __ATOMIC_RELEASE);
-                s->result = s->id; s->created = true; s->phase = P_DONE; break;
-            }
-            if (expect & 1) { at_leaf(s, s->slot, expect); if (s->phase == P_SPLIT) begin_split(s); }
-            else { s->idx = expect >> 1; s->d++; s->phase = P_DESCEND; }
-            break;
+        case P_ROOT: {
+            uint64_t w[3] = { TREE_ROOT, s->n, s->root };
+            s->root = tree_unit(s, w, 3, &s->created);
+            if (!s->root) { s->result = 0; s->phase = P_DONE; return INTERN_DONE; }
+            if (s->find) { s->result = interner_flat_of(s->t, s->root); s->phase = P_DONE; return INTERN_DONE; }
+            s->phase = P_FLAT;
+            return INTERN_FLATTEN;
         }
-        case P_SPLIT: {
-            const Rec *o = rec_of(t, s->seen >> 1);
-            unsigned a = key_nib(s, s->e), b = rec_nib(o, s->e);
-            if (a == b) { uint64_t nx = new_node(t); node_of(t, s->cur)->c[a] = nx << 1; s->cur = nx; s->e++; break; }
-            node_of(t, s->cur)->c[a] = (s->id << 1) | 1;
-            node_of(t, s->cur)->c[b] = s->seen;
-            uint64_t expect = s->seen;
-            if (__atomic_compare_exchange_n(s->slot, &expect, s->top << 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                __atomic_store_n(&rec_of(t, s->id)->live, 1, __ATOMIC_RELEASE);
-                s->result = s->id; s->created = true; s->phase = P_DONE; break;
-            }
-            /* the leaf was split by another insertion: the private chain is
-             * abandoned and the descent continues below the slot */
-            require((expect & 1) == 0, "a leaf slot changes only into an inner node");
-            s->idx = expect >> 1; s->d++; s->phase = P_DESCEND;
-            break;
-        }
-        case P_DRAIN: {
-            WPage *p = s->buf->head;
-            if (!p) { s->buf->tail = NULL; s->buf->n = 0; s->phase = P_DONE; break; }
-            s->buf->head = p->next; wpage_release(p);
-            break;
-        }
-        case P_DONE: return true;
+        case P_FLAT: return INTERN_FLATTEN;
+        case P_DONE: return INTERN_DONE;
         }
     }
-    return s->phase == P_DONE;
+    return s->phase == P_FLAT ? INTERN_FLATTEN : s->phase == P_DONE ? INTERN_DONE : INTERN_RUNNING;
+}
+
+/* copy a tree's words in order into dst (the inline owner) */
+static size_t tree_copy(Interner *t, uint64_t id, uint64_t *dst) {
+    size_t m; const uint64_t *w = interner_get(t->tree, id, &m);
+    if (w[0] == TREE_LEAF) { memcpy(dst, w + 1, (m - 1) * sizeof(uint64_t)); return m - 1; }
+    size_t at = 0;
+    for (size_t q = 1; q < m; q++) at += tree_copy(t, w[q], dst + at);
+    return at;
+}
+uint64_t intern_complete(InternState *s) {
+    require(s->phase == P_FLAT, "intern_complete before the tree is built");
+    require(!intern_in_step, "a large record completed synchronously inside a counted step");
+    Interner *t = s->t; uint64_t root = s->root;
+    uint64_t id = interner_flat_of(t, root);
+    if (!id) {
+        FlattenHook h = __atomic_load_n(&flatten_hook, __ATOMIC_ACQUIRE);
+        if (h) id = h(t, root);
+        else {
+            /* no evaluator: one inline owner claims the root's flat cell; others
+             * wait for an owner that never suspends */
+            uint64_t *cell = &rec_of(t->tree, root)->flat, expect = 0;
+            if (__atomic_compare_exchange_n(cell, &expect, UINT64_MAX, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+                size_t m; const uint64_t *rw = interner_get(t->tree, root, &m);
+                uint64_t *dst = storage_reserve(t, s->n);
+                require(tree_copy(t, rw[2], dst) == s->n, "tree length");
+                id = interner_flat_publish(t, root, dst, s->n);
+            } else while (!(id = interner_flat_of(t, root))) sched_yield();
+        }
+    }
+    s->result = id; s->phase = P_DONE;
+    return id;
 }
 
 uint64_t interner_intern(Interner *t, const uint64_t *w, size_t n, bool *created) {
+    if (n <= INTERN_SMALL) return small_unit(t, w, n, created, false);
+    require(!intern_in_step, "a record of %zu words interned synchronously inside a counted step (a stepped subroutine is required)", n);
     InternState s;
     intern_begin(&s, t, w, NULL, n);
-    while (!intern_advance(&s, SIZE_MAX)) {}
+    while (intern_advance(&s, SIZE_MAX) == INTERN_RUNNING) {}
     if (created) *created = s.created;
+    return intern_complete(&s);
+}
+
+uint64_t interner_find(Interner *t, const uint64_t *w, size_t n) {
+    if (n <= INTERN_SMALL) return small_unit(t, w, n, NULL, true);
+    require(!intern_in_step, "a record of %zu words looked up synchronously inside a counted step", n);
+    if (!__atomic_load_n(&t->tree, __ATOMIC_ACQUIRE)) return 0;
+    InternState s;
+    intern_begin(&s, t, w, NULL, n); s.find = true;
+    while (intern_advance(&s, SIZE_MAX) == INTERN_RUNNING) {}
     return s.result;
 }
 

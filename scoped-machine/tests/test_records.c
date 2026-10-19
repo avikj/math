@@ -45,8 +45,8 @@ static void *racer(void *p) {
             WordBuf b; wordbuf_init(&b);
             for (size_t i = 0; i < n; i++) wordbuf_push(&b, word_of(r, i));
             InternState s; intern_begin(&s, &T, NULL, &b, n);
-            while (!intern_advance(&s, 1)) {}
-            ids[me][r] = s.result;
+            int st; while ((st = intern_advance(&s, 1)) == INTERN_RUNNING) {}
+            ids[me][r] = st == INTERN_DONE ? s.result : intern_complete(&s);
         }
     }
     return NULL;
@@ -59,12 +59,20 @@ int main(void) {
     /* agreement with the synchronous interner */
     uint64_t w[10000];
     for (size_t i = 0; i < 10000; i++) w[i] = word_of(5, i);
-    size_t s0 = family_steps(F_BUILD);
+    size_t s0 = family_steps(F_BUILD), is0 = family_steps(family_lookup("intern")), fs0 = family_steps(family_lookup("intern.flatten"));
     WhnfStatus st;
     uint64_t r = family_run(F_BUILD, 5, 10000, &st);
     CHECK(st == W_OK && (r & 1) && interner_intern(&T, w, 10000, NULL) == r / 2, "a 10000-word record built and inserted in steps is the synchronous record");
     CHECK(family_steps(F_BUILD) - s0 == 10002, "the builder: one step per word, one call, one finish");
-    CHECK(family_steps(family_lookup("intern")) >= 10000 / 8, "the insertion advances a bounded number of units per step");
+    {   /* units before the root: 667 leaves (⌈10000/15⌉), 44 nodes carried from level 0
+         * (667 = 44·15 + 7), 2 from level 1 (44 = 2·15 + 14), and the fold: level 0's 7 → a node
+         * carried into level 1 (now 15 → a node), level 2's 2+1 → the top: 667 + 44 + 2 + 3 = 716 */
+        size_t units = 0; InternState q; Interner X; interner_init(&X);
+        intern_begin(&q, &X, w, NULL, 10000); while (intern_advance(&q, 1) == INTERN_RUNNING) units++;
+        interner_free(&X);
+        size_t is = family_steps(family_lookup("intern")) - is0, fs = family_steps(family_lookup("intern.flatten")) - fs0;
+        CHECK(units == 716 && is == (units + 1 + 7) / 8 + 1, "the insertion: ⌈units/8⌉ steps, then the flatten request's resumption");
+        CHECK(fs == 667 + 2, "the flatten owner: one leaf per step, a start and the publication"); }
     uint64_t again = family_call(F_BUILD, 5, 10000);
     CHECK(again / 2 == r / 2, "the same record from the inline driver");
     uint64_t id7 = interner_intern(&T, w, 7, NULL);
@@ -73,6 +81,26 @@ int main(void) {
     uint64_t e0 = interner_intern(&T, w, 0, NULL);
     r = family_run(F_BUILD, 999, 0, &st);
     CHECK(r / 2 == e0, "the empty record");
+    /* review 5886af7 finding 3: two equal records, serial versus alternating */
+    {   size_t tot[2];
+        for (int alt = 0; alt < 2; alt++) {
+            Interner X; interner_init(&X);
+            WordBuf a, b; wordbuf_init(&a); wordbuf_init(&b);
+            for (uint64_t i = 0; i < 1000; i++) { wordbuf_push(&a, i); wordbuf_push(&b, i); }
+            InternState x, y; intern_begin(&x, &X, NULL, &a, a.n); intern_begin(&y, &X, NULL, &b, b.n);
+            int sx = INTERN_RUNNING, sy = INTERN_RUNNING; size_t nx = 0, ny = 0;
+            while (sx == INTERN_RUNNING || sy == INTERN_RUNNING) {
+                if (sx == INTERN_RUNNING) { sx = intern_advance(&x, 1); nx++; }
+                if (sy == INTERN_RUNNING && (alt || sx != INTERN_RUNNING)) { sy = intern_advance(&y, 1); ny++; }
+            }
+            EvalEvents e0 = eval_events();
+            uint64_t ix = intern_complete(&x), iy = intern_complete(&y);
+            EvalEvents e1 = eval_events();
+            tot[alt] = nx + ny + (e1.eval_step - e0.eval_step);
+            CHECK(ix == iy && x.created != y.created, alt ? "alternating: one record, one creator of its tree" : "serial: one record, one creator of its tree");
+            interner_free(&X);
+        }
+        CHECK(tot[0] == tot[1], "equal records: the same counted work serially and alternated"); }
     /* long shared prefixes: records differing only in their last word */
     bool distinct = true, found = true;
     uint64_t pid[40];
@@ -83,8 +111,8 @@ int main(void) {
             WordBuf b; wordbuf_init(&b);
             for (size_t i = 0; i < 3000; i++) wordbuf_push(&b, w[i]);
             InternState s; intern_begin(&s, &T, NULL, &b, 3000);
-            while (!intern_advance(&s, 3)) {}
-            pid[q] = s.result;
+            int st; while ((st = intern_advance(&s, 3)) == INTERN_RUNNING) {}
+            pid[q] = st == INTERN_DONE ? s.result : intern_complete(&s);
         }
         for (size_t p = 0; p < q; p++) if (pid[p] == pid[q]) distinct = false;
     }

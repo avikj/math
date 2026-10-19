@@ -9,7 +9,7 @@
 #include "common.h"
 #include "intern.h"
 
-typedef struct { DimSetId support; VarSetId freevars; FaceId required; } RefSide;
+typedef struct { DimSetId support; VarSetId freevars; FaceId required; uint32_t published; } RefSide;   /* published: release-stored after the side data; a reference found by content is complete only when set */
 typedef struct { RefId type; FaceId required; uint64_t prov; } TermDecl;
 typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
 typedef struct { DimSetId support; VarSetId freevars; } ScopeSide;

@@ -173,7 +173,7 @@ static void tscope_step(Cont *k, uint64_t v) {
 static void scopeside_step(Cont *k, uint64_t v) {
     ScLoc *L = FR_LOC(k, ScLoc);
     FR_BEGIN(k);
-    if (SSIDE(k->w[0])->support) FR_FINISH(k, k->w[0]);
+    if (__atomic_load_n(&SSIDE(k->w[0])->support, __ATOMIC_ACQUIRE)) FR_FINISH(k, k->w[0]);
     L->s = interner_get(&M.scopes, k->w[0], &L->ns); L->n = (size_t)L->s[0];
     L->sup = dimset_make(NULL, 0); L->fv = varset_make(NULL, 0);
     /* the reference records: local types, result type, body (when a reference) */
@@ -196,10 +196,9 @@ static void scopeside_step(Cont *k, uint64_t v) {
     }
     FR_AWAIT(k, L->sup, F_SETFREE, L->sup, 0);
     FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 1);
-    pthread_mutex_lock(&M.term_mu);
-    { ScopeSide *sd = SSIDE(k->w[0]);
-      if (!sd->support) { sd->freevars = L->fv; __atomic_store_n(&sd->support, L->sup, __ATOMIC_RELEASE); } }
-    pthread_mutex_unlock(&M.term_mu);
+    /* this key's one owner writes the side data; every other holder of the id
+     * obtained it from this key's value (published after this store) */
+    { ScopeSide *sd = SSIDE(k->w[0]); sd->freevars = L->fv; __atomic_store_n(&sd->support, L->sup, __ATOMIC_RELEASE); }
     FR_FINISH(k, k->w[0]);
     FR_END(k);
 }

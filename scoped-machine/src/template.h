@@ -96,7 +96,7 @@ MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);
 RefId tnode_generic(TNodeId Q, CtxDecl *decls, FaceId *req);
 MapId tview_generic_map(RefId t);                                    /* generic names ↦ t's images */
 void template_families_init(void);
-void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kappa, uint64_t *er, ExprId *root);
+void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kappa, WordBuf *er, ExprId *root);   /* the environment record into er (to be interned by intern_sub) */
 ExprId tnode_head_expr(TNodeId Q, int levels);
 ExprId tnode_field_expr(TNodeId Q, size_t k);
 FieldIndex tnode_binder_domain(TNodeId Q, BinderSlot s);

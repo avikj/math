@@ -26,7 +26,7 @@ static void refvar_step(Cont *k, uint64_t v) {
     VarLoc *L = FR_LOC(k, VarLoc);
     TermVarId x = k->w[0];
     FR_BEGIN(k);
-    { uint64_t w[2] = { 1, x }; RefId id = interner_find(&M.refs, w, 2); if (id) FR_FINISH(k, id); }
+    { uint64_t w[2] = { 1, x }; RefId id = ref_lookup(w, 2); if (id) FR_FINISH(k, id); }
     if (is_local_atom(x)) FR_FINISH(k, ref_var(x));          /* an atom: constant side data */
     {   RefId type = term_var_type(x);
         uint64_t xs[1] = { x }; L->fv = varset_make(xs, 1); L->sup = ref_support(type); L->req = term_var_required(x); }

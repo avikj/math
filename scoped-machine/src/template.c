@@ -1335,14 +1335,19 @@ void templates_free(void) {
 
 /* the environment and root of a definition's program at arguments args and
  * source face κ (for a frame that awaits its interpretation) */
-void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kappa, uint64_t *er, ExprId *root) {
+void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kappa, WordBuf *er, ExprId *root) {
+    /* the environment record [def, (0, face, κ), (k+1, sort, arg)*] into a
+     * buffer (a fixed library arity: bounded), interned by the caller's
+     * stepped subroutine */
     templates_init();
     const TDef *d = &TPL.defs[def];
     require(nargs + 1 == d->nparams && nargs < 15, "template call arity (%s)", d->name);
-    uint64_t sl[16]; TVal vl[16];
-    sl[0] = 0; vl[0].sort = PS_FACE; vl[0].id = kappa;
-    for (size_t k = 0; k < nargs; k++) { require(args[k].sort == d->sorts[k + 1], "template call sort (%s, %zu)", d->name, k); sl[k + 1] = k + 1; vl[k + 1] = args[k]; }
-    *er = envrec_host(def, nargs + 1, sl, vl);
+    wordbuf_init(er); wordbuf_push(er, def);
+    wordbuf_push(er, 0); wordbuf_push(er, PS_FACE); wordbuf_push(er, kappa);
+    for (size_t k = 0; k < nargs; k++) {
+        require(args[k].sort == d->sorts[k + 1], "template call sort (%s, %zu)", d->name, k);
+        wordbuf_push(er, k + 1); wordbuf_push(er, args[k].sort); wordbuf_push(er, args[k].id);
+    }
     *root = d->root;
 }
 

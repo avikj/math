@@ -46,7 +46,7 @@ typedef enum { E_UNEVALUATED = 0, E_RUNNING, E_READY } EntryState;
  * exchanges the stack for ENTRY_READY. Each delivery is its own job. Every
  * transition is a bounded number of word operations. */
 typedef uint32_t Family;
-enum { F_WHNF = 1, F_MAX = 64 };
+enum { F_WHNF = 1, F_MAX = 128 };
 
 typedef struct Cont Cont;
 typedef struct Join Join;

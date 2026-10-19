@@ -159,6 +159,15 @@ RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nf, const
 
 static void ref_side_set(RefId id, DimSetId support, VarSetId fv, FaceId req) {
     RefSide *r = RSIDE(id); r->support = support; r->freevars = fv; r->required = req;
+    __atomic_store_n(&r->published, 1, __ATOMIC_RELEASE);
+}
+/* a reference found by its content: complete (record and side data) or 0.
+ * Interner membership alone is not completion: the record becomes
+ * discoverable before its producer has written the side data. */
+RefId ref_lookup(const uint64_t *w, size_t n) {
+    RefId id = interner_find(&M.refs, w, n);
+    if (!id || !__atomic_load_n(&RSIDE(id)->published, __ATOMIC_ACQUIRE)) return 0;
+    return id;
 }
 
 RefId ref_var(TermVarId x) {
@@ -178,9 +187,9 @@ RefId ref_var(TermVarId x) {
         return id;
     }
     require(x >= 1 && x <= n_terms_now(), "VAR of undeclared variable %llu", (unsigned long long)x);
-    RefId id = interner_find(&M.refs, w, 2);
+    RefId id = ref_lookup(w, 2);
     if (id) return id;
-    return ref_var_family(x);
+    return ref_var_family(x);              /* its one owner publishes record and side data; an unfinished one is awaited */
 }
 /* VAR(x) with its typed boundary (computed by the ref.var family): x, the
  * closed boundary of its declaration type, the dimensions of its required
