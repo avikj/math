@@ -26,7 +26,7 @@ void count_free(Count *c) {
 }
 
 /* x += v · 2^(64·at) */
-static void exact_add_at(Exact *x, size_t at, uint64_t v) {
+void exact_add_word(Exact *x, size_t at, uint64_t v) {
     for (size_t i = at; v; i++) {
         if (i >= x->n) {
             uint64_t *w = realloc(x->w, (i + 1) * sizeof *w);
@@ -34,9 +34,7 @@ static void exact_add_at(Exact *x, size_t at, uint64_t v) {
             for (size_t j = x->n; j <= i; j++) w[j] = 0;
             x->w = w; x->n = i + 1;
         }
-        uint64_t s = x->w[i] + v;
-        v = s < v ? 1 : 0;
-        x->w[i] = s;
+        uint64_t c = 0; x->w[i] = add_limb(x->w[i], v, &c); v = c;
     }
 }
 void exact_add_count(Exact *x, const Count *c) {
@@ -48,8 +46,8 @@ void exact_add_count(Exact *x, const Count *c) {
         __atomic_thread_fence(__ATOMIC_ACQUIRE);
         s2 = __atomic_load_n(&c->seq, __ATOMIC_RELAXED);
     } while ((s1 & 1) || s1 != s2);
-    exact_add_at(x, 0, l);
-    for (; b; b = b->next) exact_add_at(x, 1, 1);      /* each carry block is 2^64 */
+    exact_add_word(x, 0, l);
+    for (; b; b = b->next) exact_add_word(x, 1, 1);    /* each carry block is 2^64 */
 }
 bool exact_to_u64(const Exact *x, uint64_t *out) {
     for (size_t i = 1; i < x->n; i++) if (x->w[i]) return false;

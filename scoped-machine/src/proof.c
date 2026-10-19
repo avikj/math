@@ -2,8 +2,6 @@
 #include "proof.h"
 #include "face.h"
 
-static uint64_t rq(size_t n, const uint64_t *w) { return interner_intern(&M.keys, w, n, NULL); }
-#define RQ(...) rq(sizeof((uint64_t[]){ __VA_ARGS__ }) / sizeof(uint64_t), (uint64_t[]){ __VA_ARGS__ })
 
 /* a word stack as interned cons records [x, rest] (0 is empty) */
 static void push(uint64_t *s, uint64_t x) { *s = RQ(x, *s); }

@@ -27,7 +27,7 @@ typedef struct { pthread_mutex_t mu; QChunk *front, *back; size_t len; } Queue;
 typedef struct { const char *name; FamResume resume; size_t loc_size; } FamilyDef;
 static FamilyDef FAM[F_MAX];
 static size_t n_fam = F_FIXED;     /* families defined at run time (tests) follow the fixed ids */
-static uint64_t obs_key(FaceId eta, PinSet P) { uint64_t w[2] = { eta, P }; return interner_intern(&M.keys, w, 2, NULL); }
+static uint64_t obs_key(FaceId eta, PinSet P) { return RQ(eta, P); }
 static FaceId key_face(uint64_t b) { size_t n; return interner_get(&M.keys, b, &n)[0]; }
 static PinSet key_pins(uint64_t b) { size_t n; return interner_get(&M.keys, b, &n)[1]; }
 
@@ -596,7 +596,7 @@ uint64_t family_call(Family f, uint64_t a, uint64_t b) {
 }
 
 /* ---------------- results ---------------- */
-static uint64_t res_rec(ResultClass c, RefId ref, const char *msg) { uint64_t w[3] = { c, ref, (uint64_t)(uintptr_t)msg }; return interner_intern(&M.keys, w, 3, NULL); }
+static uint64_t res_rec(ResultClass c, RefId ref, const char *msg) { return RQ(c, ref, (uint64_t)(uintptr_t)msg); }
 EvalResult res_get(uint64_t v) {
     size_t n; const uint64_t *w = interner_get(&M.keys, v, &n);
     require(n >= 3 && (n - 3) % 2 == 0 && w[0] >= R_INTRODUCTION && w[0] <= R_INVALID, "not a result record");
@@ -611,9 +611,7 @@ EvalResult res_get(uint64_t v) {
  * constructions) and its sub-observations from the observation family. A
  * branchwise result launches its independent children (one per step) and
  * then awaits each in branch order (§12, §26). */
-static uint64_t binder_rec(Sort sort, BinderSlot slot, FieldIndex field, uint64_t image) { uint64_t e[4] = { sort, slot, field, image }; return interner_intern(&M.keys, e, 4, NULL); }
-static uint64_t rq3(uint64_t a, uint64_t b, uint64_t c) { uint64_t w[3] = { a, b, c }; return interner_intern(&M.keys, w, 3, NULL); }
-uint64_t observe_key(FaceId chi, FaceId phi, uint64_t pins) { require(pins, "an observation is bound to a pin set"); return rq3(chi, phi, pins); }
+uint64_t observe_key(FaceId chi, FaceId phi, uint64_t pins) { require(pins, "an observation is bound to a pin set"); return RQ(chi, phi, pins); }
 
 /* a construction request (construct.c) made by the evaluator: no declared
  * face. The request record is built into a word buffer and interned by the
@@ -667,7 +665,7 @@ static void dist_step(Cont *k, uint64_t v) {
     L->j = tag_schema(tag)->bsort ? binder_dim_var(t, 0) : 0;
     for (L->q = 0; L->q < L->nf; L->q++) {
         if (L->q == tag_schema(tag)->scrut) L->ids[L->q] = k->w[1];
-        else if (schema_slot(tag, L->q) != NO_SLOT) FR_AWAIT(k, L->ids[L->q], F_BINDER, t, binder_rec(S_DIM, 0, L->q, iv_var(L->j)));
+        else if (schema_slot(tag, L->q) != NO_SLOT) FR_AWAIT(k, L->ids[L->q], F_BINDER, t, binder_req(S_DIM, 0, L->q, iv_var(L->j)));
         else FR_AWAIT(k, L->ids[L->q], F_FIELD, t, L->q);
     }
     FR_AWAIT(k, L->levels, F_HEAD, t, 1);
@@ -691,12 +689,12 @@ static void cbranch_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, r, F_FCMEET, k->w[4], L->g);
     if (fc_is_false(r)) FR_FINISH(k, 0);
     FR_AWAIT(k, L->phi, F_FIELD, t, 1);
-    FR_AWAIT(k, L->tube, F_BINDER, t, binder_rec(S_DIM, 0, 2, iv_var(L->j)));
+    FR_AWAIT(k, L->tube, F_BINDER, t, binder_req(S_DIM, 0, 2, iv_var(L->j)));
     FR_AWAIT(k, L->cap, F_FIELD, t, 3);
     FR_AWAIT(k, L->levels, F_HEAD, t, 1);
     L->levels = levels_pack(L->levels == LEVELS_NONE ? LEVEL_NONE : levels_first(L->levels), LEVEL_NONE);
     FR_CALL(k, r, MK_SUB(k, T_COMP, 0, L->levels, L->j, k->w[3], L->phi, L->tube, L->cap));
-    {   uint64_t w[2] = { L->g, r }; FR_FINISH(k, interner_intern(&M.keys, w, 2, NULL)); }
+    FR_FINISH(k, RQ(L->g, r));
     FR_END(k);
 }
 
@@ -786,8 +784,8 @@ static void whnf_step(Cont *k, uint64_t v) {
             if (L->tag == T_UNGLUE && ht != T_GLUE_INTRO) FR_FINISH(k, res_rec(R_INVALID, 0, "unglue of a non-glue introduction")); }
         if (L->tag == T_APP) {
             FR_AWAIT(k, L->a1, F_FIELD, t, 1);
-            FR_AWAIT(k, L->x, F_BINDER, RES(L->res).ref, binder_rec(S_TERM, 0, 1, L->a1));
-        } else if (L->tag == T_PAPP) FR_AWAIT(k, L->x, F_BINDER, RES(L->res).ref, binder_rec(S_DIM, 0, 0, L->a4));
+            FR_AWAIT(k, L->x, F_BINDER, RES(L->res).ref, binder_req(S_TERM, 0, 1, L->a1));
+        } else if (L->tag == T_PAPP) FR_AWAIT(k, L->x, F_BINDER, RES(L->res).ref, binder_req(S_DIM, 0, 0, L->a4));
         else FR_AWAIT(k, L->x, F_FIELD, RES(L->res).ref, L->tag == T_FST ? 0 : L->tag == T_SND ? 1 : 5);
         goto forward_x;
     }
@@ -817,9 +815,9 @@ static void whnf_step(Cont *k, uint64_t v) {
     if (L->tag == T_COMP) {
         FR_AWAIT(k, L->phi, F_FIELD, t, 1);
         FR_AWAIT(k, r, F_FCENT, chi, L->phi);
-        if (r == 2) { FR_AWAIT(k, L->x, F_BINDER, t, binder_rec(S_DIM, 0, 2, iv_one())); goto forward_x; }   /* tube coverage first */
+        if (r == 2) { FR_AWAIT(k, L->x, F_BINDER, t, binder_req(S_DIM, 0, 2, iv_one())); goto forward_x; }   /* tube coverage first */
         L->j = binder_dim_var(t, 0);
-        FR_AWAIT(k, L->fam, F_BINDER, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
+        FR_AWAIT(k, L->fam, F_BINDER, t, binder_req(S_DIM, 0, 0, iv_var(L->j)));
         FR_AWAIT(k, L->res, F_OBS, L->fam, observe_key(chi, 0, P));
         if (RES(L->res).cls == R_NO_OBSERVATION || RES(L->res).cls == R_INVALID) FR_FINISH(k, L->res);
         if (RES(L->res).cls == R_NEUTRAL) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
@@ -827,10 +825,10 @@ static void whnf_step(Cont *k, uint64_t v) {
             /* a branch available along the whole j line: outer guard ∀j.g;
              * the branches are independent: launched, then awaited in order */
             L->n = RES(L->res).nbr;
-            for (L->q = 0; L->q < L->n; L->q++) { family_launch(F_CBRANCH, t, rq3(RES(L->res).br[2 * L->q], RES(L->res).br[2 * L->q + 1], chi)); FR_YIELD(k); }
+            for (L->q = 0; L->q < L->n; L->q++) { family_launch(F_CBRANCH, t, RQ(RES(L->res).br[2 * L->q], RES(L->res).br[2 * L->q + 1], chi)); FR_YIELD(k); }
             wordbuf_init(&L->wb); L->kept = 0; L->uni = fc_false();
             for (L->q = 0; L->q < L->n; L->q++) {
-                FR_AWAIT(k, r, F_CBRANCH, t, rq3(RES(L->res).br[2 * L->q], RES(L->res).br[2 * L->q + 1], chi));
+                FR_AWAIT(k, r, F_CBRANCH, t, RQ(RES(L->res).br[2 * L->q], RES(L->res).br[2 * L->q + 1], chi));
                 if (!r) continue;                                   /* inconsistent along the line: dropped */
                 {   size_t m; const uint64_t *gw = interner_get(&M.keys, r, &m);
                     wordbuf_push(&L->wb, gw[0]); wordbuf_push(&L->wb, gw[1]); L->g = gw[0]; L->kept++; }
@@ -846,9 +844,9 @@ static void whnf_step(Cont *k, uint64_t v) {
             goto branchwise;
         }
         /* an introduction: the one fixed clause (§53–§54) */
-        FR_AWAIT(k, L->tube, F_BINDER, t, binder_rec(S_DIM, 0, 2, iv_var(L->j)));
+        FR_AWAIT(k, L->tube, F_BINDER, t, binder_req(S_DIM, 0, 2, iv_var(L->j)));
         FR_AWAIT(k, L->cap, F_FIELD, t, 3);
-        { uint64_t w[5] = { L->j, RES(L->res).ref, L->phi, L->tube, L->cap }; FR_AWAIT(k, L->x, F_COMPCLAUSE, interner_intern(&M.keys, w, 5, NULL), 0); }
+        FR_AWAIT(k, L->x, F_COMPCLAUSE, RQ(L->j, RES(L->res).ref, L->phi, L->tube, L->cap), 0);
         if (!L->x) FR_FINISH(k, res_rec(R_INVALID, 0, "composition in a family whose head is not a type former or lacks its universe annotation"));
         goto forward_x;
     }

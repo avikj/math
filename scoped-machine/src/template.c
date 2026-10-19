@@ -156,7 +156,7 @@ static size_t node_free_slot(TNodeId Q, size_t q) {
 static uint64_t env_def(uint64_t er) { size_t n; const uint64_t *w = interner_get(&M.maps, er, &n); return w[n - 1]; }
 
 /* An interpreted value is the interned pair [sort, id]. */
-static uint64_t tvrec(PSort sort, uint64_t id) { uint64_t w[2] = { sort, id }; return interner_intern(&M.keys, w, 2, NULL); }
+static uint64_t tvrec(PSort sort, uint64_t id) { return RQ(sort, id); }
 static TVal tvget(uint64_t rec) { size_t n; const uint64_t *w = interner_get(&M.keys, rec, &n); TVal v = { (PSort)w[0], w[1] }; return v; }
 
 /* ------------------------------------------------------------------ */

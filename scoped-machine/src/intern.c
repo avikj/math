@@ -215,6 +215,13 @@ bool wordbuf_drain_one(WordBuf *b) {
     if (!b->head) wordbuf_init(b);
     return true;
 }
+void keyed_init(KeyedSlots *k, size_t slot_size) { interner_init(&k->keys); chunked_init(&k->slots, slot_size); }
+void keyed_free(KeyedSlots *k) { interner_free(&k->keys); chunked_free(&k->slots); }
+void *keyed_slot(KeyedSlots *k, const uint64_t *key, size_t n, bool *fresh) { return chunked_at(&k->slots, interner_intern(&k->keys, key, n, fresh) - 1); }
+void *keyed_find(const KeyedSlots *k, const uint64_t *key, size_t n) {
+    uint64_t c = interner_find((Interner *)&k->keys, key, n);
+    return c ? chunked_peek(&k->slots, c - 1) : NULL;
+}
 uint64_t wordbuf_intern(Interner *t, WordBuf *b) {
     uint64_t *w = malloc((b->n ? b->n : 1) * sizeof *w); require(w, "out of memory");
     size_t i = 0;

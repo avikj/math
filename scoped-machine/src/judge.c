@@ -26,9 +26,6 @@
 #include "lib.h"
 
 /* ---------------- records ---------------- */
-static uint64_t rq(size_t n, const uint64_t *w) { return interner_intern(&M.keys, w, n, NULL); }
-#define RQ(...) rq(sizeof((uint64_t[]){ __VA_ARGS__ }) / sizeof(uint64_t), (uint64_t[]){ __VA_ARGS__ })
-static const uint64_t *rget(uint64_t id, size_t *n) { return interner_get(&M.keys, id, n); }
 uint64_t judge_res(uint64_t code, const char *why, uint64_t a, uint64_t b, uint64_t c) { return RQ(code, (uint64_t)(uintptr_t)why, a, b, c); }
 uint64_t jr_code(uint64_t v) { size_t n; return rget(v, &n)[0]; }
 const char *jr_why(uint64_t v) { size_t n; return (const char *)(uintptr_t)rget(v, &n)[1]; }
@@ -133,7 +130,6 @@ static void jreq_step(Cont *k, uint64_t v) {
 static Cont *jreq_sub(const Cont *k, Family f, uint64_t req) { Cont *c = frame_sub(J_REQ, k); c->w[0] = req; c->w[1] = f; return c; }
 #define JRQ(var, fam, req) FR_CALL(k, var, jreq_sub(k, fam, req))
 
-static uint64_t brec(Sort sort, uint64_t slot, uint64_t field, uint64_t image) { return RQ(sort, slot, field, image); }
 static uint64_t dim_at(DimVarId j, IntervalId r) { return re_key(map_single_dim(j, r)); }   /* the traversal j ↦ r */
 static TermVarId conv_var(RefId l, RefId rr, RefId head, uint64_t slot, RefId type) {
     KeyWord kw[5] = { { KW_CONST, 5000 }, { KW_REF, l }, { KW_REF, rr }, { KW_REF, head }, { KW_CONST, slot } };
@@ -409,7 +405,7 @@ static void head_step(Cont *k, uint64_t v) {
         L->l1 = jr_a(L->res);
         L->x = binder_term_var(t, 0, L->a0);
         FR_AWAIT(k, L->y, F_REFVAR, L->x, 0);
-        FR_AWAIT(k, L->a1, F_BINDER, t, brec(S_TERM, 0, 1, L->y));
+        FR_AWAIT(k, L->a1, F_BINDER, t, binder_req(S_TERM, 0, 1, L->y));
         JRQ(L->res, J_LEVEL, RQ(C, L->a1, P));
         PASS(L->res);
         L->l2 = jr_a(L->res);
@@ -425,7 +421,7 @@ static void head_step(Cont *k, uint64_t v) {
         if (!level_ok1(L->lv, L->l1)) BAD(level_why(L->lv, "lambda domain level annotation differs"));
         L->x = binder_term_var(t, 0, L->a0);
         FR_AWAIT(k, L->y, F_REFVAR, L->x, 0);
-        FR_AWAIT(k, L->a1, F_BINDER, t, brec(S_TERM, 0, 1, L->y));
+        FR_AWAIT(k, L->a1, F_BINDER, t, binder_req(S_TERM, 0, 1, L->y));
         JRQ(L->res, J_INFER, RQ(C, L->a1, P));
         PASS(L->res);
         L->T = jr_a(L->res);
@@ -446,7 +442,7 @@ static void head_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->D, F_FIELD, L->PP, 0);
         JRQ(L->res, J_CHECK, RQ(C, L->a1, L->D, P));
         PASS(L->res);
-        FR_AWAIT(k, r, F_BINDER, L->PP, brec(S_TERM, 0, 1, L->a1));
+        FR_AWAIT(k, r, F_BINDER, L->PP, binder_req(S_TERM, 0, 1, L->a1));
         DONE(J_OK, NULL, r, 0, 0);
     }
     if (L->tag == T_PAIR) {
@@ -488,12 +484,12 @@ static void head_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->D, F_FIELD, L->PP, 0);
         if (L->tag == T_FST) DONE(J_OK, NULL, L->D, 0, 0);
         FR_CALL(k, L->x, MK_SUB(k, T_FST, 0, LEVELS_NONE, 0, L->a0));
-        FR_AWAIT(k, r, F_BINDER, L->PP, brec(S_TERM, 0, 1, L->x));
+        FR_AWAIT(k, r, F_BINDER, L->PP, binder_req(S_TERM, 0, 1, L->x));
         DONE(J_OK, NULL, r, 0, 0);
     }
     if (L->tag == T_PATH || L->tag == T_PAPP) {
         L->x = binder_dim_var(t, 0);
-        FR_AWAIT(k, L->a0, F_BINDER, t, brec(S_DIM, 0, 0, iv_var(L->x)));
+        FR_AWAIT(k, L->a0, F_BINDER, t, binder_req(S_DIM, 0, 0, iv_var(L->x)));
         JRQ(L->res, J_LEVEL, RQ(C, L->a0, P));
         PASS(L->res);
         L->l1 = jr_a(L->res);
@@ -519,7 +515,7 @@ static void head_step(Cont *k, uint64_t v) {
     }
     if (L->tag == T_PLAM) {
         L->x = binder_dim_var(t, 0);
-        FR_AWAIT(k, L->a0, F_BINDER, t, brec(S_DIM, 0, 0, iv_var(L->x)));
+        FR_AWAIT(k, L->a0, F_BINDER, t, binder_req(S_DIM, 0, 0, iv_var(L->x)));
         JRQ(L->res, J_INFER, RQ(C, L->a0, P));
         PASS(L->res);
         L->T = jr_a(L->res);
@@ -563,8 +559,8 @@ static void head_step(Cont *k, uint64_t v) {
     }
     if (L->tag == T_COMP) {
         L->x = binder_dim_var(t, 0);
-        FR_AWAIT(k, L->a0, F_BINDER, t, brec(S_DIM, 0, 0, iv_var(L->x)));      /* the family A(j) */
-        FR_AWAIT(k, L->a2, F_BINDER, t, brec(S_DIM, 0, 2, iv_var(L->x)));      /* the tube u(j) */
+        FR_AWAIT(k, L->a0, F_BINDER, t, binder_req(S_DIM, 0, 0, iv_var(L->x)));      /* the family A(j) */
+        FR_AWAIT(k, L->a2, F_BINDER, t, binder_req(S_DIM, 0, 2, iv_var(L->x)));      /* the tube u(j) */
         FR_AWAIT(k, L->a1, F_FIELD, t, 1);                                      /* φ */
         FR_AWAIT(k, L->a3, F_FIELD, t, 3);                                      /* the cap */
         JRQ(L->res, J_LEVEL, RQ(C, L->a0, P));
@@ -717,8 +713,8 @@ static void check_step(Cont *k, uint64_t v) {
         if (!level_ok1(L->lv, jr_a(L->res))) BAD(level_why(L->lv, "lambda domain level annotation differs"));
         L->x = conv_var(t, L->PP, L->PP, 0, L->D);
         FR_AWAIT(k, L->y, F_REFVAR, L->x, 0);
-        FR_AWAIT(k, L->a1, F_BINDER, t, brec(S_TERM, 0, 1, L->y));
-        FR_AWAIT(k, L->a2, F_BINDER, L->PP, brec(S_TERM, 0, 1, L->y));
+        FR_AWAIT(k, L->a1, F_BINDER, t, binder_req(S_TERM, 0, 1, L->y));
+        FR_AWAIT(k, L->a2, F_BINDER, L->PP, binder_req(S_TERM, 0, 1, L->y));
         JRQ(r, J_CHECK, RQ(C, L->a1, L->a2, P));
         FR_FINISH(k, r);
     }
@@ -744,7 +740,7 @@ static void check_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->a1, F_FIELD, t, 1);
         JRQ(L->res, J_CHECK, RQ(C, L->a0, L->D, P));
         PASS(L->res);
-        FR_AWAIT(k, L->a3, F_BINDER, L->PP, brec(S_TERM, 0, 1, L->a0));
+        FR_AWAIT(k, L->a3, F_BINDER, L->PP, binder_req(S_TERM, 0, 1, L->a0));
         JRQ(r, J_CHECK, RQ(C, L->a1, L->a3, P));
         FR_FINISH(k, r);
     }
@@ -756,16 +752,16 @@ static void check_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->a1, F_FIELD, L->PP, 1);
         FR_AWAIT(k, L->a2, F_FIELD, L->PP, 2);
         L->x = conv_dim(t, L->PP, 0);
-        FR_AWAIT(k, L->a3, F_BINDER, t, brec(S_DIM, 0, 0, iv_var(L->x)));
-        FR_AWAIT(k, L->a4, F_BINDER, L->PP, brec(S_DIM, 0, 0, iv_var(L->x)));
+        FR_AWAIT(k, L->a3, F_BINDER, t, binder_req(S_DIM, 0, 0, iv_var(L->x)));
+        FR_AWAIT(k, L->a4, F_BINDER, L->PP, binder_req(S_DIM, 0, 0, iv_var(L->x)));
         JRQ(L->res, J_CHECK, RQ(C, L->a3, L->a4, P));
         PASS(L->res);
-        FR_AWAIT(k, L->a3, F_BINDER, t, brec(S_DIM, 0, 0, iv_zero()));
-        FR_AWAIT(k, L->a4, F_BINDER, L->PP, brec(S_DIM, 0, 0, iv_zero()));
+        FR_AWAIT(k, L->a3, F_BINDER, t, binder_req(S_DIM, 0, 0, iv_zero()));
+        FR_AWAIT(k, L->a4, F_BINDER, L->PP, binder_req(S_DIM, 0, 0, iv_zero()));
         JRQ(L->res, J_CONVt, RQ(C, L->a3, L->a1, L->a4, P));
         if (jr_code(L->res) == J_OK) {
-            FR_AWAIT(k, L->a3, F_BINDER, t, brec(S_DIM, 0, 0, iv_one()));
-            FR_AWAIT(k, L->a4, F_BINDER, L->PP, brec(S_DIM, 0, 0, iv_one()));
+            FR_AWAIT(k, L->a3, F_BINDER, t, binder_req(S_DIM, 0, 0, iv_one()));
+            FR_AWAIT(k, L->a4, F_BINDER, L->PP, binder_req(S_DIM, 0, 0, iv_one()));
             JRQ(L->res, J_CONVt, RQ(C, L->a3, L->a2, L->a4, P));
         }
         if (jr_code(L->res) == J_BAD) BAD("path lambda endpoints differ from the path type's endpoints");
@@ -856,15 +852,15 @@ static void convT_step(Cont *k, uint64_t v) {
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         L->x = conv_var(L->a0, L->a1, L->a0, 0, L->a2);
         FR_AWAIT(k, L->y, F_REFVAR, L->x, 0);
-        FR_AWAIT(k, L->a4, F_BINDER, L->a0, brec(S_TERM, 0, 1, L->y));
-        FR_AWAIT(k, L->a5, F_BINDER, L->a1, brec(S_TERM, 0, 1, L->y));
+        FR_AWAIT(k, L->a4, F_BINDER, L->a0, binder_req(S_TERM, 0, 1, L->y));
+        FR_AWAIT(k, L->a5, F_BINDER, L->a1, binder_req(S_TERM, 0, 1, L->y));
         JRQ(r, J_CONVT, RQ(C, L->a4, L->a5, P));
         FR_FINISH(k, r);
     }
     if (L->tag == T_PATH) {
         L->x = conv_dim(L->a0, L->a1, 0);
-        FR_AWAIT(k, L->a2, F_BINDER, L->a0, brec(S_DIM, 0, 0, iv_var(L->x)));
-        FR_AWAIT(k, L->a3, F_BINDER, L->a1, brec(S_DIM, 0, 0, iv_var(L->x)));
+        FR_AWAIT(k, L->a2, F_BINDER, L->a0, binder_req(S_DIM, 0, 0, iv_var(L->x)));
+        FR_AWAIT(k, L->a3, F_BINDER, L->a1, binder_req(S_DIM, 0, 0, iv_var(L->x)));
         JRQ(L->res, J_CONVT, RQ(C, L->a2, L->a3, P));
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->y, F_FIELD, L->a0, 1);
@@ -896,7 +892,7 @@ static void convt_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->D, F_FIELD, L->a0, 0);
             L->x = conv_var(t, u, L->a0, 0, L->D);
             FR_AWAIT(k, L->y, F_REFVAR, L->x, 0);
-            FR_AWAIT(k, L->a1, F_BINDER, L->a0, brec(S_TERM, 0, 1, L->y));
+            FR_AWAIT(k, L->a1, F_BINDER, L->a0, binder_req(S_TERM, 0, 1, L->y));
             FR_CALL(k, L->a2, MK_SUB(k, T_APP, 0, LEVELS_NONE, 0, t, L->y));
             FR_CALL(k, L->a3, MK_SUB(k, T_APP, 0, LEVELS_NONE, 0, u, L->y));
             JRQ(r, J_CONVt, RQ(C, L->a2, L->a3, L->a1, P));
@@ -908,7 +904,7 @@ static void convt_step(Cont *k, uint64_t v) {
             FR_CALL(k, L->a3, MK_SUB(k, T_FST, 0, LEVELS_NONE, 0, u));
             JRQ(L->res, J_CONVt, RQ(C, L->a2, L->a3, L->D, P));
             if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
-            FR_AWAIT(k, L->a1, F_BINDER, L->a0, brec(S_TERM, 0, 1, L->a2));
+            FR_AWAIT(k, L->a1, F_BINDER, L->a0, binder_req(S_TERM, 0, 1, L->a2));
             FR_CALL(k, L->a2, MK_SUB(k, T_SND, 0, LEVELS_NONE, 0, t));
             FR_CALL(k, L->a3, MK_SUB(k, T_SND, 0, LEVELS_NONE, 0, u));
             JRQ(r, J_CONVt, RQ(C, L->a2, L->a3, L->a1, P));
@@ -917,7 +913,7 @@ static void convt_step(Cont *k, uint64_t v) {
         if (L->tag == T_PATH) {
             L->x = conv_dim(t, u, 0);
             L->y = binder_dim_var(L->a0, 0);
-            FR_AWAIT(k, L->a1, F_BINDER, L->a0, brec(S_DIM, 0, 0, iv_var(L->y)));     /* B(j') at the binder's own name */
+            FR_AWAIT(k, L->a1, F_BINDER, L->a0, binder_req(S_DIM, 0, 0, iv_var(L->y)));     /* B(j') at the binder's own name */
             FR_AWAIT(k, L->a2, F_TREF, L->a1, dim_at(L->y, iv_var(L->x)));          /* B(j) */
             FR_AWAIT(k, L->a3, F_FIELD, L->a0, 1);
             FR_AWAIT(k, L->a4, F_FIELD, L->a0, 2);
@@ -1010,8 +1006,8 @@ static void spine_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->z, F_FCMEET, C, L->a3);
         if (L->y != L->z) BAD(NULL);
         L->x = conv_dim(n1, n2, 0);
-        FR_AWAIT(k, L->a0, F_BINDER, n1, brec(S_DIM, 0, 0, iv_var(L->x)));
-        FR_AWAIT(k, L->a1, F_BINDER, n2, brec(S_DIM, 0, 0, iv_var(L->x)));
+        FR_AWAIT(k, L->a0, F_BINDER, n1, binder_req(S_DIM, 0, 0, iv_var(L->x)));
+        FR_AWAIT(k, L->a1, F_BINDER, n2, binder_req(S_DIM, 0, 0, iv_var(L->x)));
         JRQ(L->res, J_CONVT, RQ(C, L->a0, L->a1, P));
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->a4, F_FIELD, n1, 3);
@@ -1019,8 +1015,8 @@ static void spine_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->T, F_TREF, L->a0, dim_at(L->x, iv_zero()));
         JRQ(L->res, J_CONVt, RQ(C, L->a4, L->a5, L->T, P));
         if (jr_code(L->res) != J_OK || fc_is_false(L->y)) FR_FINISH(k, L->res);
-        FR_AWAIT(k, L->a4, F_BINDER, n1, brec(S_DIM, 0, 2, iv_var(L->x)));
-        FR_AWAIT(k, L->a5, F_BINDER, n2, brec(S_DIM, 0, 2, iv_var(L->x)));
+        FR_AWAIT(k, L->a4, F_BINDER, n1, binder_req(S_DIM, 0, 2, iv_var(L->x)));
+        FR_AWAIT(k, L->a5, F_BINDER, n2, binder_req(S_DIM, 0, 2, iv_var(L->x)));
         EVERY(r, L->y, J_CONVt, L->a4, L->a5, L->a0, P);
         FR_FINISH(k, r);
     }

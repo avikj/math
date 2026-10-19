@@ -68,7 +68,7 @@ RefId mk_fill_at(uint64_t l, DimVarId i, RefId A_i, FaceId phi, RefId u_i, RefId
  * one join), each scope guarded by the face its body is defined on, then the
  * one fixed clause is interpreted.
  * Its value is the clause instance, or 0 when no clause applies. */
-static uint64_t universe_request(uint64_t l) { uint64_t w[9] = { T_UNIVERSE, l, LEVELS_NONE, 0, 0, 0, 0, 0 }; return interner_intern(&M.keys, w, 8, NULL); }
+static uint64_t universe_request(uint64_t l) { uint64_t w[CREQ_MAX]; return rq(creq_fixed(w, T_UNIVERSE, l, LEVELS_NONE, 0, NULL, 0), w); }
 /* capture requests [n, (sort, id, type, level, required)*, body_sort, body, type, level, guard] */
 static uint64_t cap1(DimVarId j, ValSort bs, uint64_t body, RefId type, uint64_t level, FaceId guard) {
     uint64_t w[11] = { 1, S_DIM, j, 0, LEVEL_NONE, fc_true(), bs, body, type, level, guard };
@@ -101,7 +101,7 @@ static void compclause_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->a0, F_FIELD, L->fam, 0);
         L->x = binder_term_var(L->fam, 0, L->a0);                       /* (x, D_j, codomain) */
         FR_AWAIT(k, L->xr, F_REFVAR, L->x, 0);
-        { uint64_t e[4] = { S_TERM, 0, 1, L->xr }; FR_AWAIT(k, L->a1, F_BINDER, L->fam, interner_intern(&M.keys, e, 4, NULL)); }
+        FR_AWAIT(k, L->a1, F_BINDER, L->fam, binder_req(S_TERM, 0, 1, L->xr));
         FR_AWAIT(k, L->Um, F_CONSTRUCT, universe_request(L->m), 0);
         FR_AWAIT(k, L->Un, F_CONSTRUCT, universe_request(L->n), 0);
         L->nk = 0;
@@ -117,7 +117,7 @@ static void compclause_step(Cont *k, uint64_t v) {
     if (L->tag == T_PATH) {
         L->n = levels_first(L->levels);
         L->x = binder_dim_var(L->fam, 0);                                /* (k, B(j,k)) */
-        { uint64_t e[4] = { S_DIM, 0, 0, iv_var(L->x) }; FR_AWAIT(k, L->a0, F_BINDER, L->fam, interner_intern(&M.keys, e, 4, NULL)); }
+        FR_AWAIT(k, L->a0, F_BINDER, L->fam, binder_req(S_DIM, 0, 0, iv_var(L->x)));
         L->nk = 0;
         DEMAND(F_FIELD, L->fam, 1);
         DEMAND(F_FIELD, L->fam, 2);
@@ -150,7 +150,7 @@ static void compclause_step(Cont *k, uint64_t v) {
         for (L->ki = 0; L->ki < L->nk; L->ki++) FR_AWAIT(k, L->kv[L->ki], L->kf[L->ki], L->ka[L->ki], L->kb[L->ki]);
         L->a0 = L->kv[0]; L->a1 = L->kv[1]; L->a2 = L->kv[2]; L->a3 = L->kv[3]; L->Un = L->kv[4];
         L->x = L->a1;                                                    /* T_j and e_j are defined on α_j */
-        { uint64_t q[4] = { L->n, L->n, L->a2, L->a0 }; FR_AWAIT(k, L->eq, J_EQUIV, interner_intern(&M.keys, q, 4, NULL), 0); }   /* Equiv(T_j, A_j) */
+        FR_AWAIT(k, L->eq, J_EQUIV, RQ(L->n, L->n, L->a2, L->a0), 0);   /* Equiv(T_j, A_j) */
         L->nk = 0;
         DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Un, level_succ(L->n), fc_true()), 0);
         DEMAND(F_CAPTURE, cap1(L->j, VS_FACE, L->a1, 0, LEVEL_NONE, fc_true()), 0);
@@ -181,6 +181,5 @@ void lib_families_init(void) {
     family_define(F_COMPCLAUSE, "comp.clause", compclause_step, sizeof(CcLoc));
 }
 RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap) {
-    uint64_t w[5] = { j, fam, phi, tube_j, cap };
-    return family_call(F_COMPCLAUSE, interner_intern(&M.keys, w, 5, NULL), 0);
+    return family_call(F_COMPCLAUSE, RQ(j, fam, phi, tube_j, cap), 0);
 }

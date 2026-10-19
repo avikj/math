@@ -87,9 +87,9 @@ int main(void) {
         uint64_t lhs = chain_pair(a, chain_boundary(c)), rhs = chain_pair(cochain_cob(a), c);
         CHECK(lhs == rhs, "<a, ∂c> = <da, c>");
         size_t nl, zn = 0; const uint64_t *lw = interner_get(&M.keys, lhs, &nl);
-        const uint64_t *zw = nl == 4 ? interner_get(&M.keys, lw[1], &zn) : NULL;
+        const uint64_t *zw = nl == 7 ? interner_get(&M.keys, lw[3], &zn) : NULL;   /* [0, (G_UNIT, unit, z) × 2] */
         (void)zw;
-        CHECK(nl == 4 && zn == 3, "the pairing is a two-unit value with an exact coefficient above 2^64");
+        CHECK(nl == 7 && zn == 3, "the pairing is a two-unit value with an exact coefficient above 2^64");
         CHECK(chain_pair(cochain_cob(cochain_cob(a)), one(G_CUBE, cube_view(cell_root(3, x, A), map_identity()), 1)) == m_zero(), "d²a = 0 on a 3-cell");
         free(ks); free(ids); free(ms); }
 

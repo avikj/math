@@ -23,6 +23,7 @@ void count_free(Count *c);                       /* no writer or reader remains 
 
 typedef struct { size_t n; uint64_t *w; } Exact; /* little-endian limbs; n = 0 is zero */
 void exact_add_count(Exact *x, const Count *c);  /* x += a snapshot of c */
+void exact_add_word(Exact *x, size_t at, uint64_t v);   /* x += v · 2^(64·at) */
 bool exact_to_u64(const Exact *x, uint64_t *out);
 void exact_free(Exact *x);
 

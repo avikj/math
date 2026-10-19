@@ -171,7 +171,7 @@ void subst_get(uint64_t rec, size_t k, uint64_t *key, TVal *v) {
     *key = w[3 * k]; v->sort = (PSort)w[3 * k + 1]; v->id = w[3 * k + 2];
 }
 uint64_t subst_value(uint64_t rec, size_t k) { uint64_t key; TVal v; subst_get(rec, k, &key, &v); return v.id; }
-uint64_t subst_entry(uint64_t key, uint64_t sort, uint64_t value) { uint64_t e[3] = { key, sort, value }; return interner_intern(&M.keys, e, 3, NULL); }
+uint64_t subst_entry(uint64_t key, uint64_t sort, uint64_t value) { return RQ(key, sort, value); }
 uint64_t env_empty(uint64_t def) { return interner_intern(&M.maps, &def, 1, NULL); }
 
 /* a host map: its triples sorted (insertion; inside a counted step only a

@@ -89,6 +89,14 @@ const uint64_t *interner_get(const Interner *t, uint64_t id, size_t *n);
 size_t interner_count(Interner *t);   /* ids reserved: records, plus ids of lost insertion races */
 bool interner_live(const Interner *t, uint64_t id);   /* id names a published record */
 
+/* ---- keyed slots: one zeroed mutable slot per interned key (the key's id
+ * selects it) ---- */
+typedef struct { Interner keys; Chunked slots; } KeyedSlots;
+void keyed_init(KeyedSlots *k, size_t slot_size);
+void keyed_free(KeyedSlots *k);
+void *keyed_slot(KeyedSlots *k, const uint64_t *key, size_t n, bool *fresh);   /* created when absent */
+void *keyed_find(const KeyedSlots *k, const uint64_t *key, size_t n);        /* NULL when absent */
+
 /* ---- records under construction ----
  * A word buffer is appended one word per operation into fixed-size pooled
  * pages, with the record hash maintained incrementally. */

@@ -7,7 +7,7 @@
  * step.
  *
  *   z     [sign, limb_0 .. limb_{k-1}]        top limb nonzero; zero is [0]
- *   m     [(unit, z)*]                         sorted by unit, z ≠ 0
+ *   m     a 0-chain over unit generators: [0, (G_UNIT, unit, z)*]
  *   gen   (kind, id)                           G_CUBE view, G_PROD product,
  *                                              G_PORT, G_HEAD, G_OCC
  *   view  [root scope, m, parameter map, n, image_1 .. image_n]
@@ -27,10 +27,11 @@
 #include "eval.h"
 #include "scope.h"
 
-typedef enum { G_CUBE = 1, G_PROD, G_PORT, G_HEAD, G_OCC, G_TWIST } GenKind;   /* G_TWIST [view, unit]: a cell carrying a unit coefficient */
+typedef enum { G_CUBE = 1, G_PROD, G_PORT, G_HEAD, G_OCC, G_TWIST, G_UNIT } GenKind;   /* G_TWIST [view, unit]: a cell carrying a unit coefficient */
 enum { CO_TABLE = 1, CO_COB };
 
-/* exact signed integers and module elements (small records, host helpers) */
+/* exact signed integers (small records, host helpers) and module elements
+ * (chains: their sum and scaling are chain.add / chain.scale) */
 uint64_t z_from_i64(int64_t v);
 uint64_t z_from_limbs(int negative, size_t n, const uint64_t *limbs);
 uint64_t z_add(uint64_t a, uint64_t b);

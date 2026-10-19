@@ -113,6 +113,8 @@ BinderSlot schema_slot(Tag tag, size_t k);
  * field or binder triple) per write; the whole record of a fixed-shape tag
  * at operands ids[0..n) with binder formal `formal`; a system's header and
  * branches. construct_buf constructs a written record (host). */
+enum { CREQ_MAX = 7 + 3 * 6 + 1 + 3 };
+size_t creq_fixed(uint64_t *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);   /* into w[CREQ_MAX] */
 void creq_begin(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, VarSetId ft, DimSetId fd, size_t nf);
 void creq_entry(WordBuf *w, uint64_t a, uint64_t b, uint64_t c);
 void creq_tag(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);
@@ -123,6 +125,7 @@ RefId mk_tag(Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_
 #define MK(tag, payload, levels, formal, ...) mk_tag((tag), (payload), (levels), sizeof((uint64_t[]){ __VA_ARGS__ }) / sizeof(uint64_t), (uint64_t[]){ __VA_ARGS__ }, (formal))
 uint64_t construction_field(RefId t, size_t k);
 RefId construction_binder(RefId t, Sort sort, BinderSlot slot, FieldIndex field, uint64_t image);
+uint64_t binder_req(Sort sort, BinderSlot slot, FieldIndex field, uint64_t image);   /* the binder family's operand */
 RefId ref_var_family(TermVarId x);
 RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv, FaceId req);
 

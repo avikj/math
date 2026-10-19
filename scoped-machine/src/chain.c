@@ -2,10 +2,11 @@
 #include "chain.h"
 #include "scope.h"
 
-static uint64_t rq(size_t n, const uint64_t *w) { return interner_intern(&M.keys, w, n, NULL); }
-static const uint64_t *rget(uint64_t id, size_t *n) { return interner_get(&M.keys, id, n); }
 
-/* ---------------- exact signed integers ---------------- */
+/* ---------------- exact signed integers ----------------
+ * [sign, limb_0 .. limb_{k-1}], top limb nonzero, zero [0]. Constructors and
+ * readers are host helpers; sum, product and negation are families, one limb
+ * per step (limb arithmetic: common.h). */
 static uint64_t z_make(int neg, size_t k, const uint64_t *mag) {
     while (k && !mag[k - 1]) k--;
     uint64_t *w = malloc((k + 1) * sizeof *w); require(w, "out of memory: an exact integer");
@@ -16,54 +17,6 @@ static uint64_t z_make(int neg, size_t k, const uint64_t *mag) {
 uint64_t z_from_limbs(int negative, size_t n, const uint64_t *limbs) { return z_make(negative, n, limbs); }
 uint64_t z_from_i64(int64_t v) { uint64_t m = v < 0 ? (uint64_t)0 - (uint64_t)v : (uint64_t)v; return z_make(v < 0, 1, &m); }
 bool z_is_zero(uint64_t a) { size_t n; rget(a, &n); return n == 1; }
-static int mag_cmp(const uint64_t *a, size_t na, const uint64_t *b, size_t nb) {
-    if (na != nb) return na < nb ? -1 : 1;
-    for (size_t i = na; i-- > 0; ) if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
-    return 0;
-}
-uint64_t z_add(uint64_t a, uint64_t b) {
-    size_t na, nb; const uint64_t *wa = rget(a, &na), *wb = rget(b, &nb);
-    na--; nb--;
-    int sa = (int)wa[0], sb = (int)wb[0];
-    size_t n = (na > nb ? na : nb) + 1;
-    uint64_t *r = calloc(n, sizeof *r); require(r, "out of memory: an exact sum");
-    int neg;
-    if (sa == sb || !na || !nb) {
-        uint64_t c = 0;
-        for (size_t i = 0; i < n; i++) {
-            uint64_t x = i < na ? wa[1 + i] : 0, y = i < nb ? wb[1 + i] : 0;
-            uint64_t s = x + y; uint64_t c1 = s < x; uint64_t s2 = s + c; uint64_t c2 = s2 < s;
-            r[i] = s2; c = c1 | c2;
-        }
-        neg = na ? sa : sb;
-    } else {
-        const uint64_t *big = wa + 1, *small = wb + 1; size_t nbig = na, nsmall = nb; neg = sa;
-        if (mag_cmp(wa + 1, na, wb + 1, nb) < 0) { big = wb + 1; small = wa + 1; nbig = nb; nsmall = na; neg = sb; }
-        uint64_t br = 0;
-        for (size_t i = 0; i < nbig; i++) {
-            uint64_t x = big[i], y = i < nsmall ? small[i] : 0;
-            uint64_t d = x - y; uint64_t b1 = x < y; uint64_t d2 = d - br; uint64_t b2 = d < br;
-            r[i] = d2; br = b1 | b2;
-        }
-    }
-    uint64_t z = z_make(neg, n, r); free(r); return z;
-}
-uint64_t z_neg(uint64_t a) { size_t n; const uint64_t *w = rget(a, &n); return z_make(!w[0], n - 1, w + 1); }
-uint64_t z_mul(uint64_t a, uint64_t b) {
-    size_t na, nb; const uint64_t *wa = rget(a, &na), *wb = rget(b, &nb);
-    na--; nb--;
-    if (!na || !nb) return z_make(0, 0, NULL);
-    uint64_t *r = calloc(na + nb, sizeof *r); require(r, "out of memory: an exact product");
-    for (size_t i = 0; i < na; i++) {
-        unsigned __int128 c = 0;
-        for (size_t j = 0; j < nb; j++) {
-            unsigned __int128 t = (unsigned __int128)wa[1 + i] * wb[1 + j] + r[i + j] + c;
-            r[i + j] = (uint64_t)t; c = t >> 64;
-        }
-        r[i + nb] = (uint64_t)c;
-    }
-    uint64_t z = z_make(wa[0] != wb[0], na + nb, r); free(r); return z;
-}
 bool z_to_i64(uint64_t a, int64_t *out) {
     size_t n; const uint64_t *w = rget(a, &n);
     if (n == 1) { *out = 0; return true; }
@@ -72,28 +25,81 @@ bool z_to_i64(uint64_t a, int64_t *out) {
     else { if (w[1] > (uint64_t)INT64_MAX) return false; *out = (int64_t)w[1]; }
     return true;
 }
-
-/* ---------------- module elements ---------------- */
-uint64_t m_zero(void) { return rq(0, NULL); }
-uint64_t m_unit(uint64_t unit, uint64_t z) { if (z_is_zero(z)) return m_zero(); uint64_t w[2] = { unit, z }; return rq(2, w); }
-uint64_t m_add(uint64_t a, uint64_t b) {
-    size_t na, nb; const uint64_t *wa = rget(a, &na), *wb = rget(b, &nb);
-    uint64_t *o = malloc((na + nb + 1) * sizeof *o); require(o, "out of memory: a module sum");
-    size_t i = 0, j = 0, n = 0;
-    while (i < na || j < nb) {
-        if (j >= nb || (i < na && wa[i] < wb[j])) { o[n++] = wa[i]; o[n++] = wa[i + 1]; i += 2; }
-        else if (i >= na || wb[j] < wa[i]) { o[n++] = wb[j]; o[n++] = wb[j + 1]; j += 2; }
-        else { uint64_t s = z_add(wa[i + 1], wb[j + 1]); if (!z_is_zero(s)) { o[n++] = wa[i]; o[n++] = s; } i += 2; j += 2; }
+typedef struct { const uint64_t *a, *b; size_t na, nb, i, j, top; uint64_t c, neg, raw, acc; int cmp; WordBuf out; bool created; } ZLoc;
+static uint64_t limb(const uint64_t *m, size_t n, size_t i) { return i < n ? m[i] : 0; }
+/* z.add(a, b) */
+static void zadd_step(Cont *k, uint64_t v) {
+    ZLoc *L = FR_LOC(k, ZLoc);
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    L->a = rget(k->w[0], &L->na); L->b = rget(k->w[1], &L->nb); L->na--; L->nb--;
+    if (!L->na) FR_FINISH(k, k->w[1]);
+    if (!L->nb) FR_FINISH(k, k->w[0]);
+    if (L->a[0] == L->b[0]) {                                         /* one sign: the magnitudes add */
+        wordbuf_init(&L->out); wordbuf_push(&L->out, L->a[0]); L->c = 0;
+        for (L->i = 0; L->i < L->na || L->i < L->nb; L->i++) { wordbuf_push(&L->out, add_limb(limb(L->a + 1, L->na, L->i), limb(L->b + 1, L->nb, L->i), &L->c)); FR_YIELD(k); }
+        if (L->c) wordbuf_push(&L->out, L->c);
+        FR_CALL(k, r, intern_sub(k, &M.keys, &L->out, &L->created));
+        FR_FINISH(k, r);
     }
-    uint64_t m = rq(n, o); free(o); return m;
+    /* opposite signs: compare the magnitudes from the top, then subtract the smaller */
+    L->cmp = L->na < L->nb ? -1 : L->na > L->nb;
+    for (L->i = L->na; !L->cmp && L->i-- > 0; ) { if (L->a[1 + L->i] != L->b[1 + L->i]) L->cmp = L->a[1 + L->i] < L->b[1 + L->i] ? -1 : 1; FR_YIELD(k); }
+    if (!L->cmp) FR_FINISH(k, RQ(0));
+    if (L->cmp < 0) { const uint64_t *t = L->a; L->a = L->b; L->b = t; size_t n = L->na; L->na = L->nb; L->nb = n; }
+    wordbuf_init(&L->out); wordbuf_push(&L->out, L->a[0]); L->c = 0; L->top = 0;
+    for (L->i = 0; L->i < L->na; L->i++) { r = sub_limb(L->a[1 + L->i], limb(L->b + 1, L->nb, L->i), &L->c); wordbuf_push(&L->out, r); if (r) L->top = L->i + 1; FR_YIELD(k); }
+    FR_CALL(k, L->raw, intern_sub(k, &M.keys, &L->out, &L->created));
+    if (L->top == L->na) FR_FINISH(k, L->raw);
+    wordbuf_init(&L->out);                                            /* the leading zero limbs dropped */
+    for (L->i = 0; L->i <= L->top; L->i++) { size_t n; wordbuf_push(&L->out, rget(L->raw, &n)[L->i]); FR_YIELD(k); }
+    FR_CALL(k, r, intern_sub(k, &M.keys, &L->out, &L->created));
+    FR_FINISH(k, r);
+    FR_END(k);
 }
-uint64_t m_scale(uint64_t z, uint64_t m) {
-    size_t n; const uint64_t *w = rget(m, &n);
-    if (z_is_zero(z)) return m_zero();
-    uint64_t *o = malloc((n + 1) * sizeof *o); require(o, "out of memory: a module scaling");
-    for (size_t i = 0; i < n; i += 2) { o[i] = w[i]; o[i + 1] = z_mul(z, w[i + 1]); }
-    uint64_t r = rq(n, o); free(o); return r;
+/* z.mul(a, b): a sum of shifted rows b · a_i, each a limb per step */
+static void zmul_step(Cont *k, uint64_t v) {
+    ZLoc *L = FR_LOC(k, ZLoc);
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    L->a = rget(k->w[0], &L->na); L->b = rget(k->w[1], &L->nb); L->na--; L->nb--;
+    L->acc = RQ(0);
+    if (!L->na || !L->nb) FR_FINISH(k, L->acc);
+    L->neg = L->a[0] != L->b[0];
+    for (L->i = 0; L->i < L->na; L->i++) {
+        if (!L->a[1 + L->i]) { FR_YIELD(k); continue; }
+        wordbuf_init(&L->out); wordbuf_push(&L->out, L->neg);
+        for (L->j = 0; L->j < L->i; L->j++) { wordbuf_push(&L->out, 0); FR_YIELD(k); }
+        for (L->c = 0, L->j = 0; L->j < L->nb; L->j++) { wordbuf_push(&L->out, mul_limb(L->a[1 + L->i], L->b[1 + L->j], &L->c)); FR_YIELD(k); }
+        if (L->c) wordbuf_push(&L->out, L->c);
+        FR_CALL(k, r, intern_sub(k, &M.keys, &L->out, &L->created));
+        FR_AWAIT(k, L->acc, Fz_ADD, L->acc, r);
+    }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
 }
+/* z.neg(a) */
+static void zneg_step(Cont *k, uint64_t v) {
+    ZLoc *L = FR_LOC(k, ZLoc);
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    L->a = rget(k->w[0], &L->na);
+    if (L->na == 1) FR_FINISH(k, k->w[0]);
+    wordbuf_init(&L->out); wordbuf_push(&L->out, !L->a[0]);
+    for (L->i = 1; L->i < L->na; L->i++) { wordbuf_push(&L->out, L->a[L->i]); FR_YIELD(k); }
+    FR_CALL(k, r, intern_sub(k, &M.keys, &L->out, &L->created));
+    FR_FINISH(k, r);
+    FR_END(k);
+}
+uint64_t z_add(uint64_t a, uint64_t b) { return family_call(Fz_ADD, a, b); }
+uint64_t z_neg(uint64_t a) { return family_call(Fz_NEG, a, 0); }
+uint64_t z_mul(uint64_t a, uint64_t b) { return family_call(Fz_MUL, a, b); }
+
+/* ---------------- module elements: 0-chains over unit generators ---------------- */
+uint64_t m_zero(void) { return RQ(0); }
+uint64_t m_unit(uint64_t unit, uint64_t z) { return z_is_zero(z) ? m_zero() : RQ(0, G_UNIT, unit, z); }
+uint64_t m_add(uint64_t a, uint64_t b) { return chain_add(a, b); }
+uint64_t m_scale(uint64_t z, uint64_t m) { return chain_scale(m, z); }
 
 /* ---------------- cells ---------------- */
 DimVarId cube_coord(size_t k) { KeyWord key[2] = { { KW_CONST, 9500 }, { KW_CONST, k } }; return fresh_dim_keyed(key, 2); }
@@ -111,7 +117,7 @@ uint64_t cube_subst(uint64_t view, MapId sigma) {
     memcpy(w, v, n * sizeof *w); w[2] = compose((MapId)v[2], sigma);
     uint64_t r = rq(n, w); free(w); return r;
 }
-uint64_t cube_product(GenKind kx, uint64_t x, GenKind ky, uint64_t y) { uint64_t w[4] = { kx, x, ky, y }; return rq(4, w); }
+uint64_t cube_product(GenKind kx, uint64_t x, GenKind ky, uint64_t y) { return RQ(kx, x, ky, y); }
 size_t gen_degree(GenKind kind, uint64_t id) {
     size_t n; const uint64_t *w = rget(id, &n);
     switch (kind) {
@@ -122,7 +128,7 @@ size_t gen_degree(GenKind kind, uint64_t id) {
     default: return 0;
     }
 }
-static uint64_t genrec(GenKind k, uint64_t id) { uint64_t w[2] = { k, id }; return rq(2, w); }
+static uint64_t genrec(GenKind k, uint64_t id) { return RQ(k, id); }
 
 
 /* cube.reindex(view, [m2, image_1..image_m]): the map c_k ↦ image_k
@@ -197,9 +203,11 @@ static void add_step(Cont *k, uint64_t v) {
         {   int c = L->i >= L->na ? 1 : L->j >= L->nb ? -1 : gen_cmp(L->a + L->i, L->b + L->j);
             if (c < 0) { wordbuf_push(&L->out, L->a[L->i]); wordbuf_push(&L->out, L->a[L->i + 1]); wordbuf_push(&L->out, L->a[L->i + 2]); L->i += 3; }
             else if (c > 0) { wordbuf_push(&L->out, L->b[L->j]); wordbuf_push(&L->out, L->b[L->j + 1]); wordbuf_push(&L->out, L->b[L->j + 2]); L->j += 3; }
-            else { uint64_t s = z_add(L->a[L->i + 2], L->b[L->j + 2]);
-                   if (!z_is_zero(s)) { wordbuf_push(&L->out, L->a[L->i]); wordbuf_push(&L->out, L->a[L->i + 1]); wordbuf_push(&L->out, s); }
-                   L->i += 3; L->j += 3; } }
+            else {
+                FR_AWAIT(k, r, Fz_ADD, L->a[L->i + 2], L->b[L->j + 2]);
+                if (!z_is_zero(r)) { wordbuf_push(&L->out, L->a[L->i]); wordbuf_push(&L->out, L->a[L->i + 1]); wordbuf_push(&L->out, r); }
+                L->i += 3; L->j += 3; continue;
+            } }
         FR_YIELD(k);
     }
     FR_CALL(k, r, intern_sub(k, &M.keys, &L->out, &L->created));
@@ -215,8 +223,8 @@ static void scale_step(Cont *k, uint64_t v) {
     wordbuf_init(&L->out); wordbuf_push(&L->out, L->a[0]);
     if (!z_is_zero(k->w[1]))
         for (L->i = 1; L->i < L->na; L->i += 3) {
-            wordbuf_push(&L->out, L->a[L->i]); wordbuf_push(&L->out, L->a[L->i + 1]); wordbuf_push(&L->out, z_mul(k->w[1], L->a[L->i + 2]));
-            FR_YIELD(k);
+            FR_AWAIT(k, r, Fz_MUL, k->w[1], L->a[L->i + 2]);
+            wordbuf_push(&L->out, L->a[L->i]); wordbuf_push(&L->out, L->a[L->i + 1]); wordbuf_push(&L->out, r);
         }
     FR_CALL(k, r, intern_sub(k, &M.keys, &L->out, &L->created));
     FR_FINISH(k, r);
@@ -225,13 +233,13 @@ static void scale_step(Cont *k, uint64_t v) {
 /* chain.boundary(c): for each term and coordinate, the upper and lower faces
  * with signs (−1)^(i−1) and −(−1)^(i−1); an occurrence's resource boundary;
  * nothing in degree 0 */
-typedef struct { const uint64_t *c; size_t nc, t, i, n; int eps; uint64_t acc, g, z; } BdLoc;
+typedef struct { const uint64_t *c; size_t nc, t, i, n; int eps; uint64_t acc, g, z, f; } BdLoc;
 static void boundary_step(Cont *k, uint64_t v) {
     BdLoc *L = FR_LOC(k, BdLoc);
     uint64_t r = 0;
     FR_BEGIN(k);
     L->c = rget(k->w[0], &L->nc);
-    {   uint64_t w[1] = { L->c[0] ? L->c[0] - 1 : 0 }; L->acc = rq(1, w); }
+    L->acc = RQ(L->c[0] ? L->c[0] - 1 : 0);
     for (L->t = 1; L->t < L->nc; L->t += 3) {
         L->n = gen_degree((GenKind)L->c[L->t], L->c[L->t + 1]);
         if ((GenKind)L->c[L->t] == G_OCC) {
@@ -244,11 +252,11 @@ static void boundary_step(Cont *k, uint64_t v) {
         L->g = genrec((GenKind)L->c[L->t], L->c[L->t + 1]);
         for (L->i = 1; L->i <= L->n; L->i++)
             for (L->eps = 1; L->eps >= 0; L->eps--) {
-                {   uint64_t e[2] = { L->i, (uint64_t)L->eps }; L->z = rq(2, e); }
-                FR_AWAIT(k, r, Fc_FACE, L->g, L->z);
-                {   size_t n; const uint64_t *f = rget(r, &n);
-                    uint64_t z = L->c[L->t + 2]; if ((L->i - 1) % 2) z = z_neg(z); if (!L->eps) z = z_neg(z);
-                    uint64_t w[4] = { L->c[0] - 1, f[0], f[1], z }; L->z = rq(4, w); }
+                L->z = RQ(L->i, (uint64_t)L->eps);
+                FR_AWAIT(k, L->f, Fc_FACE, L->g, L->z);
+                L->z = L->c[L->t + 2];                              /* sign (−1)^(i−1), negated on the lower face */
+                if (((L->i - 1) % 2) ^ !L->eps) FR_AWAIT(k, L->z, Fz_NEG, L->z, 0);
+                {   size_t n; const uint64_t *f = rget(L->f, &n); L->z = RQ(L->c[0] - 1, f[0], f[1], L->z); }
                 FR_AWAIT(k, L->acc, Fc_ADD, L->acc, L->z);
             }
     }
@@ -265,7 +273,7 @@ static void value_step(Cont *k, uint64_t v) {
     L->a = rget(k->w[0], &L->na);
     {   size_t n; const uint64_t *g = rget(k->w[1], &n); L->g = g[0]; L->c = g[1]; }
     if (L->a[0] == CO_COB) {
-        {   uint64_t w[4] = { gen_degree((GenKind)L->g, L->c), L->g, L->c, z_from_i64(1) }; L->c = rq(4, w); }
+        L->c = RQ(gen_degree((GenKind)L->g, L->c), L->g, L->c, z_from_i64(1));
         if (L->na == 3) FR_AWAIT(k, r, Fc_TBOUNDARY, L->c, L->a[2]);
         else FR_AWAIT(k, r, Fc_BOUNDARY, L->c, 0);
         FR_AWAIT(k, r, Fc_PAIR, L->a[1], r);
@@ -287,7 +295,8 @@ static void pair_step(Cont *k, uint64_t v) {
     L->c = rget(k->w[1], &L->nc); L->acc = m_zero();
     for (L->t = 1; L->t < L->nc; L->t += 3) {
         FR_AWAIT(k, r, Fc_VALUE, k->w[0], genrec((GenKind)L->c[L->t], L->c[L->t + 1]));
-        L->acc = m_add(L->acc, m_scale(L->c[L->t + 2], r));
+        FR_AWAIT(k, r, Fc_SCALE, r, L->c[L->t + 2]);
+        FR_AWAIT(k, L->acc, Fc_ADD, L->acc, r);
     }
     FR_FINISH(k, L->acc);
     FR_END(k);
@@ -300,7 +309,7 @@ static void map_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     L->f = rget(k->w[0], &L->nf); L->c = rget(k->w[1], &L->nc);
     require(L->c[0] == L->f[0] || L->nc == 1, "a chain map applied at another degree");
-    {   uint64_t w[1] = { L->f[0] }; L->acc = rq(1, w); }
+    L->acc = RQ(L->f[0]);
     for (L->t = 1; L->t < L->nc; L->t += 3) {
         for (L->img = 0, L->i = 1; L->i < L->nf && !L->img; L->i += 3) {
             if (L->f[L->i] == L->c[L->t] && L->f[L->i + 1] == L->c[L->t + 1]) L->img = L->f[L->i + 2];
@@ -345,33 +354,33 @@ uint64_t local_system(ScopeId root, size_t nperm, const uint64_t *perms, size_t 
     w[0] = root; w[1] = nperm; for (size_t r = 0; r < nperm; r++) w[2 + r] = perms[r];
     uint64_t sys = rq(nperm + 2, w); free(w); return sys;
 }
-uint64_t twist_gen(uint64_t view, uint64_t unit) { uint64_t w[2] = { view, unit }; return rq(2, w); }
+uint64_t twist_gen(uint64_t view, uint64_t unit) { return RQ(view, unit); }
 /* chain.tboundary(c, sys): for [x, u] and each coordinate i, the upper face
  * carries T_i(u), the lower face u, with signs (−1)^(i−1) and −(−1)^(i−1) */
-typedef struct { const uint64_t *c; size_t nc, t, i; int eps; uint64_t acc, g, z, u, x; } TbLoc;
+typedef struct { const uint64_t *c; size_t nc, t, i, q, nr, np; int eps; uint64_t acc, g, z, u, x, f, unit, perm; } TbLoc;
 static void tboundary_step(Cont *k, uint64_t v) {
     TbLoc *L = FR_LOC(k, TbLoc);
-    uint64_t r = 0;
     FR_BEGIN(k);
     L->c = rget(k->w[0], &L->nc);
-    {   uint64_t w[1] = { L->c[0] ? L->c[0] - 1 : 0 }; L->acc = rq(1, w); }
+    L->acc = RQ(L->c[0] ? L->c[0] - 1 : 0);
     for (L->t = 1; L->t < L->nc; L->t += 3) {
         require((GenKind)L->c[L->t] == G_TWIST, "a twisted boundary of an untwisted generator");
         {   size_t n; const uint64_t *tw = rget(L->c[L->t + 1], &n); L->x = tw[0]; L->u = tw[1]; L->g = genrec(G_CUBE, L->x); }
         for (L->i = 1; L->i <= gen_degree(G_CUBE, L->x); L->i++)
             for (L->eps = 1; L->eps >= 0; L->eps--) {
-                {   uint64_t e[2] = { L->i, (uint64_t)L->eps }; L->z = rq(2, e); }
-                FR_AWAIT(k, r, Fc_FACE, L->g, L->z);
-                {   size_t n; const uint64_t *f = rget(r, &n), *vw = rget(L->x, &n), *sys = rget(k->w[1], &n);
-                    uint64_t unit = L->u;
-                    if (L->eps) {                                   /* the transport of the root local whose image is c_i */
-                        size_t root_r = SIZE_MAX;
-                        for (size_t q = 0; q < vw[3]; q++) if (vw[4 + q] == iv_var(cube_coord(L->i))) root_r = q;
-                        require(root_r != SIZE_MAX && sys[0] == vw[0], "a coordinate without its transport in this local system");
-                        unit = perm_apply(sys[2 + root_r], L->u);
-                    }
-                    uint64_t z = L->c[L->t + 2]; if ((L->i - 1) % 2) z = z_neg(z); if (!L->eps) z = z_neg(z);
-                    uint64_t w[4] = { L->c[0] - 1, G_TWIST, twist_gen(f[1], unit), z }; L->z = rq(4, w); }
+                L->z = RQ(L->i, (uint64_t)L->eps);
+                FR_AWAIT(k, L->f, Fc_FACE, L->g, L->z);
+                L->unit = L->u;
+                if (L->eps) {                                       /* the transport of the root local whose image is c_i: one local, one transport entry per step */
+                    {   size_t n; const uint64_t *vw = rget(L->x, &n), *sys = rget(k->w[1], &n); require(sys[0] == vw[0], "a coordinate without its transport in this local system"); L->nr = vw[3]; }
+                    for (L->q = 0; L->q < L->nr; L->q++) { size_t n; if (rget(L->x, &n)[4 + L->q] == iv_var(cube_coord(L->i))) break; FR_YIELD(k); }
+                    require(L->q < L->nr, "a coordinate without its transport in this local system");
+                    {   size_t n; L->perm = rget(k->w[1], &n)[2 + L->q]; }
+                    for (L->q = 0; L->q < (rget(L->perm, &L->np), L->np); L->q += 2) { size_t n; const uint64_t *pw = rget(L->perm, &n); if (pw[L->q] == L->u) { L->unit = pw[L->q + 1]; break; } FR_YIELD(k); }
+                }
+                L->z = L->c[L->t + 2];
+                if (((L->i - 1) % 2) ^ !L->eps) FR_AWAIT(k, L->z, Fz_NEG, L->z, 0);
+                {   size_t n; const uint64_t *f = rget(L->f, &n); L->z = RQ(L->c[0] - 1, G_TWIST, twist_gen(f[1], L->unit), L->z); }
                 FR_AWAIT(k, L->acc, Fc_ADD, L->acc, L->z);
             }
     }
@@ -389,6 +398,9 @@ void chain_families_init(void) {
     family_define(Fc_PAIR, "chain.pair", pair_step, sizeof(PairLoc));
     family_define(Fc_MAP, "chain.map", map_step, sizeof(MapLoc));
     family_define(Fc_TBOUNDARY, "chain.twisted_boundary", tboundary_step, sizeof(TbLoc));
+    family_define(Fz_ADD, "z.add", zadd_step, sizeof(ZLoc));
+    family_define(Fz_MUL, "z.mul", zmul_step, sizeof(ZLoc));
+    family_define(Fz_NEG, "z.neg", zneg_step, sizeof(ZLoc));
 }
 
 /* ---------------- synchronous drivers ---------------- */
@@ -410,7 +422,7 @@ uint64_t chain_of(size_t degree, size_t n, const GenKind *kinds, const uint64_t 
     uint64_t h[1] = { degree }; return terms(1, h, n, kinds, ids, zs);
 }
 uint64_t cochain_table(size_t degree, size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *ms) { uint64_t h[2] = { CO_TABLE, degree }; return terms(2, h, n, kinds, ids, ms); }
-uint64_t cochain_cob(uint64_t a) { uint64_t w[2] = { CO_COB, a }; return rq(2, w); }
+uint64_t cochain_cob(uint64_t a) { return RQ(CO_COB, a); }
 uint64_t chain_map_table(size_t degree, size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *images) { uint64_t h[1] = { degree }; return terms(1, h, n, kinds, ids, images); }
 uint64_t cube_face(GenKind kind, uint64_t id, size_t i, int eps, GenKind *out_kind) {
     uint64_t e[2] = { i, (uint64_t)eps };

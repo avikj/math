@@ -44,18 +44,25 @@ static const TagSchema SCHEMA[] = {
 const TagSchema *tag_schema(Tag tag) { require(tag >= T_UNIVERSE && tag <= T_GLOBAL, "unknown tag %u", (unsigned)tag); return &SCHEMA[tag]; }
 FieldKind schema_kind(Tag tag, size_t k) { return tag == T_SYSTEM ? (k % 2 ? F_REF : F_FACE) : (FieldKind)tag_schema(tag)->kind[k]; }
 BinderSlot schema_slot(Tag tag, size_t k) { return tag != T_SYSTEM && tag_schema(tag)->under[k] ? 0 : NO_SLOT; }
+static size_t creq_head(uint64_t *w, Tag tag, uint64_t payload, uint64_t levels, VarSetId ft, DimSetId fd, size_t nf) {
+    w[0] = tag; w[1] = payload; w[2] = levels; w[3] = 0; w[4] = ft; w[5] = fd; w[6] = nf; return 7;
+}
+static void wb_words(WordBuf *b, const uint64_t *w, size_t n) { for (size_t q = 0; q < n; q++) wordbuf_push(b, w[q]); }
+size_t creq_fixed(uint64_t *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
+    const TagSchema *s = tag_schema(tag);
+    require(tag != T_SYSTEM && n <= s->nf, "a fixed-shape construction of %zu operands", n);
+    size_t m = creq_head(w, tag, payload, levels, 0, 0, n);
+    for (size_t k = 0; k < n; k++) { w[m++] = schema_kind(tag, k); w[m++] = schema_slot(tag, k); w[m++] = ids[k]; }
+    w[m++] = s->bsort ? 1 : 0;
+    if (s->bsort) { w[m++] = s->bsort; w[m++] = formal; w[m++] = s->bsort == S_TERM ? 0 : NO_FIELD; }
+    return m;
+}
 void creq_begin(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, VarSetId ft, DimSetId fd, size_t nf) {
-    wordbuf_init(w);
-    wordbuf_push(w, tag); wordbuf_push(w, payload); wordbuf_push(w, levels); wordbuf_push(w, 0); wordbuf_push(w, ft); wordbuf_push(w, fd); wordbuf_push(w, nf);
+    uint64_t h[7]; wordbuf_init(w); wb_words(w, h, creq_head(h, tag, payload, levels, ft, fd, nf));
 }
 void creq_entry(WordBuf *w, uint64_t a, uint64_t b, uint64_t c) { wordbuf_push(w, a); wordbuf_push(w, b); wordbuf_push(w, c); }
 void creq_tag(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
-    const TagSchema *s = tag_schema(tag);
-    require(tag != T_SYSTEM && n <= s->nf, "a fixed-shape construction of %zu operands", n);
-    creq_begin(w, tag, payload, levels, 0, 0, n);
-    for (size_t k = 0; k < n; k++) creq_entry(w, schema_kind(tag, k), schema_slot(tag, k), ids[k]);
-    wordbuf_push(w, s->bsort ? 1 : 0);
-    if (s->bsort) creq_entry(w, s->bsort, formal, s->bsort == S_TERM ? 0 : NO_FIELD);
+    uint64_t r[CREQ_MAX]; wordbuf_init(w); wb_words(w, r, creq_fixed(r, tag, payload, levels, n, ids, formal));
 }
 void creq_system_begin(WordBuf *w, size_t n) { creq_begin(w, T_SYSTEM, n, LEVELS_NONE, 0, 0, 2 * n); }
 void creq_system_branch(WordBuf *w, FaceId f, RefId t) { creq_entry(w, F_FACE, NO_SLOT, f); creq_entry(w, F_REF, NO_SLOT, t); }
@@ -359,8 +366,6 @@ void construct_families_init(void) {
 
 /* ---------------- the operations (synchronous driver) ---------------- */
 uint64_t construction_field(RefId t, size_t k) { return family_call(F_FIELD, t, k); }
-RefId construction_binder(RefId t, Sort sort, BinderSlot slot, FieldIndex field, uint64_t image) {
-    uint64_t e[4] = { sort, slot, field, image };
-    return family_call(F_BINDER, t, interner_intern(&M.keys, e, 4, NULL));
-}
+uint64_t binder_req(Sort sort, BinderSlot slot, FieldIndex field, uint64_t image) { return RQ(sort, slot, field, image); }
+RefId construction_binder(RefId t, Sort sort, BinderSlot slot, FieldIndex field, uint64_t image) { return family_call(F_BINDER, t, binder_req(sort, slot, field, image)); }
 RefId ref_var_family(TermVarId x) { return family_call(F_REFVAR, x, 0); }

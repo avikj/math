@@ -19,7 +19,7 @@
 
 
 
-uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx) { uint64_t w[3] = { kind, depth, ctx }; return interner_intern(&M.keys, w, 3, NULL); }
+uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx) { return RQ(kind, depth, ctx); }
 uint64_t re_key(uint64_t map) { return trav_key(TR_RE, 0, map); }
 uint64_t env_key(uint64_t env) { return trav_key(TR_ENV, 0, env); }
 static void tk_get(uint64_t tk, unsigned *kind, unsigned *depth, uint64_t *ctx) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); *kind = (unsigned)w[0]; *depth = (unsigned)w[1]; *ctx = w[2]; }
