@@ -123,7 +123,7 @@ item 2 realized by keyed sharing (two deliveries of one producer).
 | Proof use | 250 |
 | Runtime constructions as templates + compiler export | 500 |
 | Keys: content, projected contexts, revisions | 250 |
-| Receipts + frozen index + specialization | 500 |
+| Receipts as keyed specialization/restriction dependencies | 500 |
 | Readings: exact counts, support, folds | 350 |
 | Effects | 650 |
 | Stokes interface | 550 |
@@ -181,30 +181,34 @@ no subagents; work only from the shared specifications; no second engine/store/c
    (no frozen index); step 4 removes the global admission gate and shares judgment keys with
    evaluation.
 
-## 11. Step-2 machinery (as built) and the remaining step-2 design
+## 11. The protocol as corrected (review 5886af7) — binding
 
-Built (2c): frame families `family_define(name, step, loc_size, pure)`; a step ends in exactly one
-of frame_request / frame_call (subroutine frame with a parent, no entry) / frame_yield /
-frame_finish; FR_* program-counter macros; per-family locals records from pools; pure keys omit
-the environment version. The §5 synchronous driver is `family_call`: never blocks, valid inside
-and outside jobs — READY returns the value; U is claimed (INLINE_CLAIM at the bottom of the waiter
-stack) and the producer is driven on the calling thread, then published to everyone who arrived;
-R elsewhere is computed on the calling thread without publication. It drives the same step
-functions (no second engine); its use disappears as callers become frame programs. Order is
-bottom-up through it: a converted family is awaited by converted callers and called through
-family_call by unconverted ones.
-
-Remaining step-2 sub-steps, each a commit with tests green:
-- 2d stepped interning: a record under construction is appended one word per step into pooled
-  pages with an incremental hash; trie descent, full-key comparison and record copy advance a
-  bounded number of words per step; the id is reserved before the copy, the leaf is published
-  by CAS, a lost race re-descends and compares (the reserved id stays unused). No mutex held
-  across steps.
-- 2e sets and DNF: dim/var sets (make, union, remove, contains), interval and face operations
-  (join, meet, negate, normalize with absorption, entails, forall, project, endpoint, substitute)
-  as pure producers keyed by interned operands; each step reads/compares/appends O(1) words;
-  clause positions are cursors in frame locals (no traversal to reach a field).
-- 2f maps: mapb_finish (sort = stepped merge, duplicate/identity removal), lookup (binary search,
-  one probe per step), compose, override, restriction.
-- 2g substitution: reindex, construction instance building (environment, support, free
-  variables, required face), environment maps, construction closure — producers over the above.
+1. Producer rule. A request of key K: U — install exactly one producer and attach the requester;
+   R — attach the requester to that producer, never run a second body; D — deliver the published
+   value through the same delivery rule. A producer requesting its own key is an unresolved
+   dependency (the request stays a waiter), never a private recomputation.
+2. Synchronous API. `family_call`, `family_run`, `frame_run`, `whnf` are root-driving only: an
+   external caller submits a root and drives the ordinary scheduler until it is delivered. Inside a
+   counted step every request suspends the frame (FR_AWAIT, FR_CALL, joins); `family_call` refuses
+   to run there. Root driving creates no barrier: it is only how an outside caller receives a value.
+3. Frames. A step ends in exactly one of request / call / yield / join / finish; after the frame is
+   handed to the queue or a waiter stack its former owner does not touch it (the kept flag belongs
+   to the executing job). One FR_* macro per line, never inside a nested switch.
+4. Independent demands are one join: the frame issues them one per step and is resumed once by the
+   last arrival. Sequential awaits are only for demands that depend on earlier values.
+5. Canonical record construction obeys the same law (INTERNING.md): a small record is one bounded
+   unit; a large record is its canonical tree of small records (units fixed by its length), and its
+   contiguous record is the value of the one owner keyed by (table, tree root). Inside a step only
+   small records are interned synchronously. Published values are complete: a record found by
+   content counts only when its side data is published.
+6. Revisions. A definition revision is (symbol, body), body 0 opaque. An observation is bound to a
+   pin set — the closure of the symbols its roots name through the bodies of the revisions read —
+   and its key is (t, [η, P]); unfolding is keyed by (reference, body). A checker request pins the
+   closure of its inputs once, validates those revisions, keys its claims by them, and observes
+   under them. No key carries an environment version; no environment-wide snapshot.
+7. Bounded steps. Every callback, including its synchronous helpers, does work bounded by a
+   constant (a CAS retry is charged to the success that caused it). Open items: mapb_finish's sort,
+   the construction binder loop and skipped fields, request_entry retries, oversized storage,
+   pool refill, fixed buffers in net materialization; joins for the remaining sequential
+   independent awaits; the construction/template interpretation unification (a constant field is a
+   case of the common node/environment interpretation).
