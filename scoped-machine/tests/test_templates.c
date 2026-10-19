@@ -8,6 +8,7 @@
  * preserving renaming) on the dimensions of the shape; and two such
  * invocations observed from a cold cache launch one producer. */
 #define _POSIX_C_SOURCE 200809L
+#include "reading.h"
 #include "../src/check.h"
 #include "../src/lib.h"
 #include <pthread.h>
@@ -22,10 +23,10 @@ static void same_and_shared(RefId p, RefId q, const char *what) {
     CHECK(p == q, "%s: specialize/instantiate commute (identical references)", what);
     WhnfStatus s1, s2;
     (void)whnf(p, fc_true(), &s1); eval_run();
-    EvalEvents e0 = eval_events();
+    uint64_t l0 = rd(RD_LAUNCH, 0);
     (void)whnf(q, fc_true(), &s2); eval_run();
-    EvalEvents e1 = eval_events();
-    CHECK(e1.launch == e0.launch, "%s: the second observation launches no producer (%zu launched)", what, e1.launch - e0.launch);
+    uint64_t l1 = rd(RD_LAUNCH, 0);
+    CHECK(l1 == l0, "%s: the second observation launches no producer (%llu launched)", what, (unsigned long long)(l1 - l0));
 }
 
 /* ---- concurrent symbol validation ---- */

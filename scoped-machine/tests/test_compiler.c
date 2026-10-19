@@ -2,6 +2,7 @@
  * ending in zero; the identity action is id_action applied; invocation is
  * application. Every check below is an ordinary judgment of the core. */
 #define _POSIX_C_SOURCE 200809L
+#include "reading.h"
 #include "assoc.h"
 #include "../src/proof.h"
 
@@ -32,10 +33,10 @@ int main(void) {
     CHECK(check(A.G, fc_true(), r, reindex(A.domain, sigma), &why) == CK_VALID, "r_L : R_L[σ] (%s)", why);
     RefId call = assoc_call(&A, DIR_FORWARD, sigma, r);
     CHECK(check(A.G, fc_true(), call, reindex(A.codomain, sigma), &why) == CK_VALID, "F[σ](r) : R_R[σ] (%s)", why);
-    WhnfStatus st; EvalEvents e0 = eval_events();
+    WhnfStatus st; uint64_t p0 = rd(RD_PUBLISH, 0);
     EvalResult *res = whnf(call, fc_true(), &st);
     CHECK(st == W_OK && res->cls == R_INTRODUCTION && head_tag(res) == T_PAIR, "forward call ⇝ a pair");
-    CHECK(eval_events().publish - e0.publish >= 1, "publication through the ordinary protocol");
+    CHECK(rd(RD_PUBLISH, 0) - p0 >= 1, "publication through the ordinary protocol");
     res = whnf(mk_fst(call), fc_true(), &st);
     CHECK(st == W_OK && res->cls == R_NEUTRAL, "its first component m(b,c) is neutral");
     RefId path = mk_snd(mk_snd(call));
@@ -44,8 +45,8 @@ int main(void) {
     DimVarId j = declare_dim();
     res = whnf(mk_papp_const(0, A.X, A.rhs, A.rhs, path, iv_var(j)), fc_lit(j, 1), &st);
     CHECK(st == W_OK, "the path at j=1 observes (status %d)", (int)st);
-    EvalEvents e4 = eval_events(); (void)whnf(call, fc_true(), &st);
-    CHECK(eval_events().launch == e4.launch, "a repeated identical call launches no producer");
+    uint64_t l4 = rd(RD_LAUNCH, 0); (void)whnf(call, fc_true(), &st);
+    CHECK(rd(RD_LAUNCH, 0) == l4, "a repeated identical call launches no producer");
     RefId rcall = assoc_call(&A, DIR_REVERSE, sigma, assoc_right_arg(&A, sigma));
     CHECK(check(A.G, fc_true(), rcall, reindex(A.domain, sigma), &why) == CK_VALID, "G[σ](r_R) : R_L[σ] (%s)", why);
     res = whnf(mk_fst(rcall), fc_true(), &st);

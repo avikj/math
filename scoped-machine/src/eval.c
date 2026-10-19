@@ -50,7 +50,7 @@ typedef struct { TaskKind kind; EntryId entry; Cont *k; uint64_t v; } Task;
 #define QCHUNK 254
 typedef struct QChunk { struct QChunk *prev, *next; uint32_t lo, hi; Task t[QCHUNK]; } QChunk;
 
-typedef struct { const char *name; FamStart start; FamResume resume; size_t steps; size_t loc_size; bool pure; } FamilyDef;
+typedef struct { const char *name; FamStart start; FamResume resume; size_t loc_size; bool pure; } FamilyDef;
 static FamilyDef FAM[F_MAX];
 static size_t n_fam = F_WHNF + 1;  /* F_WHNF is built in; registered families follow */
 static Family F_INTERN;
@@ -76,23 +76,39 @@ static struct {
     /* live joins: a join that never fills (stuck children) is dismantled at teardown */
     VEC(Join *) joins; pthread_mutex_t join_mu;
     VEC(void *) mems;                  /* frame-owned heap blocks (under join_mu); a stuck frame's are released at teardown */
-    /* counters */
-    EvalEvents ev;
+    /* readings: one shard per thread that has executed protocol events */
+    struct Shard *shards; pthread_mutex_t shard_mu;
+    uint64_t epoch;
 } E;
 
-static size_t add_count(size_t *p) { return __atomic_add_fetch(p, 1, __ATOMIC_RELAXED); }
-EvalEvents eval_events(void) {
-    EvalEvents v;
-    v.request = __atomic_load_n(&E.ev.request, __ATOMIC_SEQ_CST);
-    v.eval_step = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
-    v.publish = __atomic_load_n(&E.ev.publish, __ATOMIC_SEQ_CST);
-    v.deliver = __atomic_load_n(&E.ev.deliver, __ATOMIC_SEQ_CST);
-    v.ready_hit = __atomic_load_n(&E.ev.ready_hit, __ATOMIC_SEQ_CST);
-    v.running_hit = __atomic_load_n(&E.ev.running_hit, __ATOMIC_SEQ_CST);
-    v.launch = __atomic_load_n(&E.ev.launch, __ATOMIC_SEQ_CST);
-    return v;
+/* A shard is written by its one thread only: the protocol events and the
+ * steps per family that thread executed (exact counts). A reading sums the
+ * shards' snapshots; no counter is shared between writers. */
+typedef struct Shard { struct Shard *next; Count ev[RD_STEPS]; Count steps[F_MAX]; } Shard;
+static uint64_t eval_epochs;                               /* one per evaluator lifetime, never reused */
+static __thread Shard *tl_shard; static __thread uint64_t tl_epoch;
+static Shard *shard(void) {
+    if (tl_epoch != E.epoch) {
+        Shard *s = calloc(1, sizeof *s); require(s, "out of memory: a reading shard");
+        pthread_mutex_lock(&E.shard_mu); s->next = E.shards; E.shards = s; pthread_mutex_unlock(&E.shard_mu);
+        tl_shard = s; tl_epoch = E.epoch;
+    }
+    return tl_shard;
 }
-size_t family_steps(Family f) { require(f >= 1 && f < F_MAX, "bad family"); return __atomic_load_n(&FAM[f].steps, __ATOMIC_SEQ_CST); }
+static void event(Reading r) { count_bump(&shard()->ev[r]); }
+/* the steps executed so far, as a word for a caller's budget (saturating) */
+static uint64_t steps_now(void) {
+    Exact x = { 0, NULL }; uint64_t v;
+    pthread_mutex_lock(&E.shard_mu); Shard *s = E.shards; pthread_mutex_unlock(&E.shard_mu);
+    for (; s; s = s->next) exact_add_count(&x, &s->ev[RD_STEP]);
+    if (!exact_to_u64(&x, &v)) v = UINT64_MAX;
+    exact_free(&x); return v;
+}
+void eval_reading(Reading r, Family f, Exact *out) {
+    require(r <= RD_STEPS && (r != RD_STEPS || (f >= 1 && f < F_MAX)), "bad reading");
+    pthread_mutex_lock(&E.shard_mu); Shard *s = E.shards; pthread_mutex_unlock(&E.shard_mu);
+    for (; s; s = s->next) exact_add_count(out, r == RD_STEPS ? &s->steps[f] : &s->ev[r]);
+}
 
 Family family_register(const char *name, FamStart start, FamResume resume) {
     /* idempotent per name: machines are re-initialized many times in one process */
@@ -127,7 +143,7 @@ void eval_init(void) {
     pool_init(&E.cont_pool, sizeof(Cont));
     pool_init(&E.chunk_pool, sizeof(QChunk));
     pthread_mutex_init(&E.loc_mu, NULL);
-    for (size_t f = 0; f < F_MAX; f++) FAM[f].steps = 0;
+    pthread_mutex_init(&E.shard_mu, NULL); E.epoch = __atomic_add_fetch(&eval_epochs, 1, __ATOMIC_RELAXED);
     intern_families_init();
     dnf_families_init();
     subst_families_init();
@@ -203,6 +219,13 @@ static void cont_dispose(Cont *k) {
 
 void eval_free(void) {
     stop_workers();
+    for (Shard *s = E.shards, *n; s; s = n) {
+        n = s->next;
+        for (size_t r = 0; r < RD_STEPS; r++) count_free(&s->ev[r]);
+        for (size_t f = 0; f < F_MAX; f++) count_free(&s->steps[f]);
+        free(s);
+    }
+    E.shards = NULL;
     interner_set_flatten_hook(NULL);
     size_t ne = interner_count(&E.keys);
     for (size_t i = 0; i < ne; i++) {
@@ -339,7 +362,7 @@ static void enqueue(Task t) {
 static void deliver(Cont *k, uint64_t v) {
     /* k heads a delivery chain only when it comes from a published waiter
      * stack; every other caller passes a continuation whose link is clear */
-    add_count(&E.ev.deliver);
+    event(RD_DELIVER);
     Task t; memset(&t, 0, sizeof t); t.kind = TK_RESUME; t.k = k; t.v = v;
     enqueue(t);
 }
@@ -381,7 +404,7 @@ void family_publish(EntryId eid, uint64_t v) {
     __atomic_store_n(&e->value, v, __ATOMIC_RELEASE);
     Cont *w = __atomic_exchange_n(&e->head, ENTRY_READY, __ATOMIC_ACQ_REL);
     require(w != NULL && w != ENTRY_READY, "publish into an entry that is not running");
-    add_count(&E.ev.publish);
+    event(RD_PUBLISH);
     deliver(w, v);
 }
 
@@ -394,12 +417,11 @@ void family_publish(EntryId eid, uint64_t v) {
  * failure would be charged to nothing. */
 static void request_entry(EntryId eid, Cont *k) {
     Entry *e = ENT(eid);
-    add_count(&E.ev.request);
+    event(RD_REQUEST);
     for (;;) {
         Cont *h = __atomic_load_n(&e->head, __ATOMIC_ACQUIRE);
         if (h == ENTRY_READY) {
             uint64_t v = __atomic_load_n(&e->value, __ATOMIC_ACQUIRE);
-            add_count(&E.ev.ready_hit);
             k->next = NULL;             /* a failed push left a stale link: k is delivered alone */
             deliver(k, v);
             return;
@@ -409,7 +431,7 @@ static void request_entry(EntryId eid, Cont *k) {
             reserve_job();
             k->next = NULL;
             if (__atomic_compare_exchange_n(&e->head, &h, k, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                add_count(&E.ev.launch);
+                event(RD_LAUNCH);
                 Task job; memset(&job, 0, sizeof job); job.kind = TK_EVAL; job.entry = eid;
                 enqueue_reserved(job);
                 return;
@@ -419,7 +441,6 @@ static void request_entry(EntryId eid, Cont *k) {
         }
         k->next = h;
         if (__atomic_compare_exchange_n(&e->head, &h, k, false, __ATOMIC_RELEASE, __ATOMIC_ACQUIRE)) {
-            add_count(&E.ev.running_hit);
             return;
         }
     }
@@ -980,7 +1001,7 @@ static void evaluate(EntryId eid) {
     Entry *e = ENT(eid);
     require(__atomic_fetch_add(&e->runs, 1, __ATOMIC_ACQ_REL) == 0, "a key is evaluated by exactly one task");
     Family f = eval_entry_family(eid);
-    __atomic_add_fetch(&FAM[f].steps, 1, __ATOMIC_RELAXED);
+    count_bump(&shard()->steps[f]);
     if (FAM[f].start) FAM[f].start(eid, eval_entry_a(eid), eval_entry_b(eid));
     else {
         /* a frame family: its first step */
@@ -1013,11 +1034,11 @@ static void resume(Cont *k, uint64_t v) {
 
 /* one elementary frame step */
 static void execute_job(Task t) {
-    add_count(&E.ev.eval_step);
+    event(RD_STEP);
     if (t.kind == TK_EVAL) { evaluate(t.entry); return; }
     Cont *k = t.k;
     if (k->next) { Cont *rest = k->next; k->next = NULL; deliver(rest, t.v); }   /* hand the chain on: one delivery per job */
-    if (k->kind == K_FRAME) __atomic_add_fetch(&FAM[k->fam].steps, 1, __ATOMIC_RELAXED);   /* a delivery to a root, join or external continuation belongs to no family (it is still a step of W) */
+    if (k->kind == K_FRAME) count_bump(&shard()->steps[k->fam]);   /* a delivery to a root, join or external continuation belongs to no family (it is still a step of W) */
     Cont *sf = tl_step_frame; bool sk = tl_kept;
     tl_step_frame = k; tl_kept = false;
     resume(k, t.v);
@@ -1048,17 +1069,14 @@ static void *worker_main(void *arg) {
     return NULL;
 }
 
-size_t eval_run(void) {
+void eval_run(void) {
     if (E.nworkers) {
         /* wait until outstanding == 0 (no queued, reserved or executing job) */
         pthread_mutex_lock(&E.q_mu);
-        size_t before = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
         while (E.outstanding > 0) pthread_cond_wait(&E.idle_cv, &E.q_mu);
-        size_t n = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST) - before;
         pthread_mutex_unlock(&E.q_mu);
-        return n;
+        return;
     }
-    size_t n = 0;
     for (;;) {
         Task t;
         pthread_mutex_lock(&E.q_mu);
@@ -1067,9 +1085,7 @@ size_t eval_run(void) {
         if (!got) break;
         execute(t);
         finish_job();
-        n++;
     }
-    return n;
 }
 
 /* drive the queue until the root continuation of `box` is resumed, or the
@@ -1134,18 +1150,18 @@ uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, Whnf
     if (!budget) return family_run(f, a, b, status);
     Cont *root; RootBox *box = root_new(&root, 0);
     family_request(f, a, b, root);
-    size_t start = __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST);
+    uint64_t start = steps_now();
     if (E.nworkers) {
         for (;;) {
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
             pthread_mutex_lock(&E.q_mu); size_t out = E.outstanding; pthread_mutex_unlock(&E.q_mu);
-            if (d || out == 0 || __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST) - start >= budget) break;
+            if (d || out == 0 || steps_now() - start >= budget) break;
             sched_yield();
         }
     } else {
         for (;;) {
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
-            if (d || __atomic_load_n(&E.ev.eval_step, __ATOMIC_SEQ_CST) - start >= budget) break;
+            if (d || steps_now() - start >= budget) break;
             Task t;
             pthread_mutex_lock(&E.q_mu); bool got = pop_locked(&t); pthread_mutex_unlock(&E.q_mu);
             if (!got) break;

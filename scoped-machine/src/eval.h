@@ -12,6 +12,7 @@
 #define CUBICAL_EVAL_H
 
 #include "term.h"
+#include "count.h"
 
 typedef enum {
     R_INTRODUCTION = 1,
@@ -100,7 +101,6 @@ uint64_t family_run(Family f, uint64_t a, uint64_t b, WhnfStatus *status);
 Family eval_entry_family(EntryId e);
 uint64_t eval_entry_a(EntryId e);
 uint64_t eval_entry_b(EntryId e);
-size_t family_steps(Family f);       /* evaluator and resume steps executed for family f */
 
 /* ---- frame programs ----
  * A frame family is defined by one step function `step(k, v)`: the frame's
@@ -190,21 +190,15 @@ EvalResult *whnf_pinned(RefId t, FaceId chi, uint64_t pins, WhnfStatus *status);
 /* run queued evaluation tasks until the queue is empty; returns tasks run.
  * With a worker pool, waits until the ready multiset is empty and every
  * worker is idle. */
-size_t eval_run(void);
+void eval_run(void);
 /* start n worker threads (0 = sequential, the default); replaces any pool */
 void eval_set_workers(size_t n);
 size_t eval_workers(void);
 
-/* Interaction-work vector (§26–§29). REQUEST is one event class whatever the
- * entry state; the hit counters are diagnostics only (not diamond-balanced). */
-typedef struct {
-    size_t request;      /* REQ events (entry formed; false-face and invalid requests excluded) */
-    size_t eval_step;    /* evaluator frame steps: EVALUATE and RESUME jobs executed */
-    size_t publish;      /* PUB events */
-    size_t deliver;      /* DELIVER events (ready hit or publication) */
-    size_t ready_hit, running_hit, launch;   /* diagnostics */
-} EvalEvents;
-EvalEvents eval_events(void);
+/* Readings (§60): protocol events and steps per family, exact counts kept
+ * in one shard per executing thread and summed on demand (count.h). */
+typedef enum { RD_REQUEST, RD_DELIVER, RD_PUBLISH, RD_LAUNCH, RD_STEP, RD_STEPS } Reading;   /* RD_STEPS: of family f */
+void eval_reading(Reading r, Family f, Exact *out);   /* out += the reading */
 
 
 /* cache introspection (tests) */

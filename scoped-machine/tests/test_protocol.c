@@ -3,6 +3,7 @@
  * one delivery per job, joins of independent demands, the root-driving
  * synchronous API (refused inside a counted step), a self-request as an
  * unresolved dependency, workers and concurrent clients. */
+#include "reading.h"
 #include "../src/eval.h"
 #include "../src/lib.h"
 #include <pthread.h>
@@ -97,16 +98,24 @@ static void *client(void *p) {
 
 int main(void) {
     machine_init(); eval_init();
+    /* exact counts (CONTINUATION-AND-COUNT-CLOSURE §C): one event past 2^64 - 1 */
+    {   Count c = { UINT64_MAX, NULL, 0 }; count_bump(&c);
+        Exact x = { 0, NULL }; exact_add_count(&x, &c); uint64_t w;
+        CHECK(x.n == 2 && x.w[0] == 0 && x.w[1] == 1, "2^64 - 1 plus one event reads exactly 2^64");
+        CHECK(!exact_to_u64(&x, &w), "its word conversion reports out of range");
+        count_bump(&c); exact_free(&x); exact_add_count(&x, &c);
+        CHECK(x.n == 2 && x.w[0] == 1 && x.w[1] == 1, "the next event adds one to the low digit");
+        exact_free(&x); count_free(&c); }
     F_SUM = family_register("test.sum", sum_start, sum_resume);
     WhnfStatus st;
     uint64_t v = family_run(F_SUM, 1000, 0, &st) - 1;
     CHECK(st == W_OK && v == 500500, "sum(1000) = 500500 through 1001 producers");
-    CHECK(family_steps(F_SUM) == 2001, "each key: one evaluator step, plus one resume per frame");
-    size_t before = family_steps(F_SUM);
+    CHECK(rd(RD_STEPS, F_SUM) == 2001, "each key: one evaluator step, plus one resume per frame");
+    size_t before = rd(RD_STEPS, F_SUM);
     v = family_run(F_SUM, 1000, 0, &st) - 1;
-    CHECK(v == 500500 && family_steps(F_SUM) == before, "a ready key is delivered without producer work");
+    CHECK(v == 500500 && rd(RD_STEPS, F_SUM) == before, "a ready key is delivered without producer work");
     v = family_run(F_SUM, 1500, 0, &st) - 1;
-    CHECK(v == 1125750 && family_steps(F_SUM) == before + 2 * 500, "a larger request runs only its new keys");
+    CHECK(v == 1125750 && rd(RD_STEPS, F_SUM) == before + 2 * 500, "a larger request runs only its new keys");
     for (EntryId e = 1; e <= eval_entry_count(); e++) if (eval_entry_live(e) && eval_entry_runs(e) > 1) { CHECK(0, "a key ran twice"); break; }
 
     /* eight concurrent clients of one fresh key, sequential and with workers */
@@ -122,8 +131,7 @@ int main(void) {
         bool once = true; size_t ne = eval_entry_count(), live = 0;
         for (EntryId e = 1; e <= ne; e++) { if (!eval_entry_live(e)) continue; live++; if (eval_entry_runs(e) != 1) once = false; }
         CHECK(once && live == 3001, "every key produced exactly once");
-        EvalEvents ev = eval_events();
-        CHECK(ev.deliver == ev.request, "one delivery per request (chains deliver one per job)");
+        CHECK(rd(RD_DELIVER, 0) == rd(RD_REQUEST, 0), "one delivery per request (chains deliver one per job)");
     }
     eval_set_workers(0);
 
@@ -135,29 +143,29 @@ int main(void) {
     F_PRIV = family_define("test.self", self_step, 0, true);
     F_JOIN = family_define("test.join", join_step, sizeof(JoinLoc), true);
     eval_reset();
-    size_t t0 = family_steps(F_TRI), c0 = family_steps(F_COUNT), u0 = family_steps(F_USE);
+    size_t t0 = rd(RD_STEPS, F_TRI), c0 = rd(RD_STEPS, F_COUNT), u0 = rd(RD_STEPS, F_USE);
     v = family_run(F_USE, 300, 0, &st);
     CHECK(st == W_OK && v == use_expected(300), "scheduled: a producer calls a stepping subroutine and awaits a producer");
-    CHECK(family_steps(F_COUNT) - c0 == 301, "the subroutine: one step per element, one to finish");
-    CHECK(family_steps(F_TRI) - t0 == 301 + 300 && family_steps(F_USE) - u0 == 3, "producers: one step per key plus one per delivered child");
+    CHECK(rd(RD_STEPS, F_COUNT) - c0 == 301, "the subroutine: one step per element, one to finish");
+    CHECK(rd(RD_STEPS, F_TRI) - t0 == 301 + 300 && rd(RD_STEPS, F_USE) - u0 == 3, "producers: one step per key plus one per delivered child");
     /* the root-driving synchronous API: the same jobs as a scheduled request */
     eval_reset();
-    t0 = family_steps(F_TRI); c0 = family_steps(F_COUNT); u0 = family_steps(F_USE);
+    t0 = rd(RD_STEPS, F_TRI); c0 = rd(RD_STEPS, F_COUNT); u0 = rd(RD_STEPS, F_USE);
     v = family_call(F_USE, 300, 0);
     CHECK(v == use_expected(300), "root-driving: the same value");
-    CHECK(family_steps(F_COUNT) - c0 == 301 && family_steps(F_TRI) - t0 == 301 + 300 && family_steps(F_USE) - u0 == 3, "root-driving: the same steps");
+    CHECK(rd(RD_STEPS, F_COUNT) - c0 == 301 && rd(RD_STEPS, F_TRI) - t0 == 301 + 300 && rd(RD_STEPS, F_USE) - u0 == 3, "root-driving: the same steps");
     { bool once = true; for (EntryId e = 1; e <= eval_entry_count(); e++) if (eval_entry_live(e) && (eval_entry_state(e) != E_READY || eval_entry_runs(e) != 1)) once = false;
       CHECK(once && eval_entry_count() == 302, "root-driving: every key claimed, run once and published"); }
-    size_t before_root = family_steps(F_TRI);
-    CHECK(family_call(F_TRI, 300, 0) == 1 + 300 * 301 / 2 && family_steps(F_TRI) == before_root, "a ready key returns its value without steps");
+    size_t before_root = rd(RD_STEPS, F_TRI);
+    CHECK(family_call(F_TRI, 300, 0) == 1 + 300 * 301 / 2 && rd(RD_STEPS, F_TRI) == before_root, "a ready key returns its value without steps");
     /* joins: n independent demands, then one resumption */
     eval_reset();
-    { size_t j0 = family_steps(F_JOIN); t0 = family_steps(F_TRI);
+    { size_t j0 = rd(RD_STEPS, F_JOIN); t0 = rd(RD_STEPS, F_TRI);
       v = family_run(F_JOIN, 50, 0, &st);
       uint64_t want = 0; for (uint64_t i = 0; i < 50; i++) want += 1 + i * (i + 1) / 2;
       CHECK(st == W_OK && v == want, "a join of fifty independent demands");
-      CHECK(family_steps(F_JOIN) - j0 == 50 + 1 + 1, "the joining frame: one step per demand issued, one for the join, one resumption");
-      CHECK(family_steps(F_TRI) - t0 == 50 + 49, "the demanded keys: each produced once"); }
+      CHECK(rd(RD_STEPS, F_JOIN) - j0 == 50 + 1 + 1, "the joining frame: one step per demand issued, one for the join, one resumption");
+      CHECK(rd(RD_STEPS, F_TRI) - t0 == 50 + 49, "the demanded keys: each produced once"); }
     /* a synchronous request inside a counted step is refused (it would be a
      * private recomputation outside the protocol) */
     {   fflush(stdout);

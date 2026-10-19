@@ -2,7 +2,7 @@ CC      ?= gcc
 CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/check.c src/compiler.c src/pins.c src/judge.c src/proof.c
+SRC := src/intern.c src/count.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/check.c src/compiler.c src/pins.c src/judge.c src/proof.c
 OBJ := $(SRC:.c=.o)
 TESTS := test_protocol test_records test_dnf test_subst test_alpha test_check test_templates test_compiler test_proof_use test_main review_singleton_witnesses review_generic_identity_action review_runtime_nodes
 BINS := $(addprefix build/,$(TESTS))
