@@ -3,6 +3,7 @@
 #include "net.h"
 #include "compiler.h"
 #include "pool.h"
+#include "pins.h"
 
 /* ---------------- continuations, joins, results ----------------
  *
@@ -53,6 +54,9 @@ static FamilyDef FAM[F_MAX];
 static size_t n_fam = F_WHNF + 1;  /* F_WHNF is built in; registered families follow */
 static Family F_INTERN;
 static void intern_families_init(void);
+static uint64_t obs_key(FaceId eta, PinSet P) { uint64_t w[2] = { eta, P }; return interner_intern(&M.keys, w, 2, NULL); }
+static FaceId key_face(uint64_t b) { size_t n; return interner_get(&M.keys, b, &n)[0]; }
+static PinSet key_pins(uint64_t b) { size_t n; return interner_get(&M.keys, b, &n)[1]; }
 
 static struct {
     /* cache */
@@ -156,6 +160,7 @@ void eval_init(void) {
     lib_families_init();
     compiler_families_init();
     net_families_init();
+    pins_families_init();
     evaluator_bind();
     net_init(&E.net);
     net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
@@ -393,25 +398,29 @@ static bool pop_locked(Task *out) {
 /* ---------------- entries ---------------- */
 
 static EntryId entry_intern(Family f, uint64_t a, uint64_t b) {
-    /* an observation belongs to one definition environment: a candidate
-     * mutation makes earlier observations unreachable (§57 R1). The entry's
-     * operands are read from its key record, so a zero entry is a complete U
-     * state the moment its key is discoverable. */
-    uint64_t w[4] = { f, a, b, FAM[f].pure ? (machine_generation() | (1ULL << 63)) : global_env_version() };
+    /* every key names its dependencies in its operands (an observation its
+     * pin set, an unfolding its body revision): no environment version. The
+     * machine generation separates destroyed machines. The entry's operands
+     * are read from its key record, so a zero entry is a complete U state the
+     * moment its key is discoverable. */
+    uint64_t w[4] = { f, a, b, machine_generation() | (1ULL << 63) };
     EntryId id = interner_intern(&E.keys, w, 4, NULL);
     chunked_at(&E.entries, id - 1);
     return id;
 }
 
 EntryId eval_entry_lookup(RefId t, FaceId chi) {
-    uint64_t w[4] = { F_WHNF, t, fc_project(chi, ref_support(t)), global_env_version() };
+    /* the observation of t under the current revisions of its premises */
+    PinSet P = pins_current(1, &t);
+    uint64_t w[4] = { F_WHNF, t, obs_key(fc_project(chi, ref_support(t)), P), machine_generation() | (1ULL << 63) };
     return interner_find(&E.keys, w, 4);
 }
 EntryState eval_entry_state(EntryId e) {
     Cont *h = __atomic_load_n(&ENT(e)->head, __ATOMIC_ACQUIRE);
     return h == NULL ? E_UNEVALUATED : h == ENTRY_READY ? E_READY : E_RUNNING;
 }
-FaceId eval_entry_face(EntryId e) { return eval_entry_b(e); }
+FaceId eval_entry_face(EntryId e) { return key_face(eval_entry_b(e)); }
+PinSet eval_entry_pins(EntryId e) { return key_pins(eval_entry_b(e)); }
 size_t eval_entry_count(void) { return interner_count(&E.keys); }
 bool eval_entry_live(EntryId e) { return interner_live(&E.keys, e); }
 bool eval_entry_is_observation(EntryId e) { return eval_entry_live(e) && eval_entry_family(e) == F_WHNF; }
@@ -593,13 +602,18 @@ uint64_t family_call(Family f, uint64_t a, uint64_t b) {
  * WHNF(t, η) — every operand awaited, never computed synchronously, so the
  * request is the same inside a counted step and from a root. */
 static Family F_OBS_;
-void eval_request(RefId t, FaceId chi, Cont *k) {
+/* An observation is bound to a pin set P (pins.h): the revisions of the
+ * symbols it may unfold. The key of WHNF(t, η) under P is (t, [η, P]).
+ * P = 0 asks for the closure of t's symbols at their current revisions,
+ * read once at the start of the request. */
+void eval_request_pinned(RefId t, FaceId chi, PinSet P, Cont *k) {
     k->next = NULL;
     if (fc_is_false(chi)) { deliver(k, (uint64_t)(uintptr_t)result_new(R_NO_OBSERVATION, t), 0); return; }
     Cont *f = frame_new(F_OBS_, 0);
-    f->w[0] = t; f->w[1] = chi; f->w[2] = 0;
+    f->w[0] = t; f->w[1] = chi; f->w[2] = 0; f->w[3] = P;
     frame_launch(f, k);
 }
+void eval_request(RefId t, FaceId chi, Cont *k) { eval_request_pinned(t, chi, 0, k); }
 
 
 /* ---------------- the evaluator: a frame program ----------------
@@ -644,7 +658,8 @@ static Cont *creq(const Cont *k, Tag tag, uint64_t payload, uint64_t levels, siz
     for (size_t q = 0; q < nb; q++) { wordbuf_push(&w, b[q].sort); wordbuf_push(&w, b[q].formal); wordbuf_push(&w, b[q].domain_field); }
     return creq_buf(k, &w);
 }
-static Cont *obs_sub(const Cont *k, RefId x, FaceId chi) { Cont *c = frame_sub(F_OBS, k); c->w[0] = x; c->w[1] = chi; c->w[2] = 0; return c; }
+/* a sub-observation of an evaluation frame (whnf or forward: w[1] is its key's [η, P]) under the same pins */
+static Cont *obs_sub(const Cont *k, RefId x, FaceId chi) { Cont *c = frame_sub(F_OBS, k); c->w[0] = x; c->w[1] = chi; c->w[2] = 0; c->w[3] = key_pins(k->w[1]); return c; }
 /* the observation of x under χ ∧ φ (a branch) */
 static Cont *obs_under(const Cont *k, RefId x, FaceId chi, FaceId phi) { Cont *c = obs_sub(k, x, chi); c->w[2] = phi; return c; }
 
@@ -654,12 +669,17 @@ static void obs_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     RefId x = k->w[0];
     FR_BEGIN(k);
+    if (!k->w[3]) {
+        /* the premises: the closure of x's symbols at the revisions read now */
+        { WordBuf roots; wordbuf_init(&roots); wordbuf_push(&roots, 0); wordbuf_push(&roots, x); k->w[4] = (uint64_t)(uintptr_t)pins_closure_sub(k, &roots); }
+        FR_CALL(k, k->w[3], (Cont *)(uintptr_t)k->w[4]);
+    }
     if (k->w[2]) { FR_AWAIT(k, r, F_FCMEETF, k->w[1], k->w[2]); k->w[1] = r; k->w[2] = 0; }
     if (fc_is_false(k->w[1])) FR_FINISH(k, RV(result_new(R_NO_OBSERVATION, x)));
     FR_AWAIT(k, r, F_FCENTF, k->w[1], ref_required(x));
     if (r != 2) FR_FINISH(k, RV(result_invalid("occurrence outside its required face")));
     FR_AWAIT(k, r, F_FCPROJF, k->w[1], ref_support(x));
-    FR_AWAIT(k, r, F_WHNF, x, r);
+    FR_AWAIT(k, r, F_WHNF, x, obs_key(r, k->w[3]));
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -667,7 +687,7 @@ static void obs_step(Cont *k, uint64_t v) {
 static void fwd_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
-    FR_CALL(k, r, obs_sub(k, k->w[0], k->w[1]));
+    FR_CALL(k, r, obs_sub(k, k->w[0], key_face(k->w[1])));
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -757,7 +777,7 @@ static bool elim_tag(Tag t) { return t == T_APP || t == T_FST || t == T_SND || t
 
 static void whnf_step(Cont *k, uint64_t v) {
     WhLoc *L = FR_LOC(k, WhLoc);
-    RefId t = k->w[0]; FaceId chi = k->w[1];
+    RefId t = k->w[0]; FaceId chi = key_face(k->w[1]); PinSet P = key_pins(k->w[1]);
     uint64_t r = 0;
     FR_BEGIN(k);
     if (ref_is_var(t)) FR_FINISH(k, RV(result_new(R_NEUTRAL, t)));
@@ -766,9 +786,13 @@ static void whnf_step(Cont *k, uint64_t v) {
 
     if (L->tag == T_GLOBAL) {
         /* a declared symbol without a body is an opaque constant: neutral */
+        /* the revision this observation is bound to */
         FR_AWAIT(k, L->payload, F_HEADF, t, 0);
-        if (!global_body((SymbolId)L->payload)) FR_FINISH(k, RV(result_new(R_NEUTRAL, t)));
-        FR_AWAIT(k, L->x, F_UNFOLDF, t, 0);
+        {   RefId b = 0;
+            if (!pins_lookup(P, (SymbolId)L->payload, &b)) FR_FINISH(k, RV(result_invalid("a symbol outside the observation's premises")));
+            if (!b) FR_FINISH(k, RV(result_new(R_NEUTRAL, t)));
+            L->a1 = b; }
+        FR_AWAIT(k, L->x, F_UNFOLDF, t, L->a1);
         FR_CALL(k, r, obs_sub(k, L->x, chi));
         FR_FINISH(k, r);
     }
@@ -1161,6 +1185,17 @@ static RootBox *root_new(Cont **k, FaceId chi) {
     return box;
 }
 
+/* outside jobs: run a detached frame (frame_new(f, 0)) to its value */
+uint64_t frame_run(Cont *f, WhnfStatus *status) {
+    require(!tl_in_job, "frame_run inside a counted step: the frame must be called");
+    Cont *root; RootBox *box = root_new(&root, 0);
+    frame_launch(f, root);
+    uint64_t v = 0;
+    bool done = drive_root(box, &v);
+    if (status) *status = done ? W_OK : W_STUCK;
+    return done ? v : 0;
+}
+
 uint64_t family_run(Family f, uint64_t a, uint64_t b, WhnfStatus *status) {
     Cont *root; RootBox *box = root_new(&root, 0);
     family_request(f, a, b, root);
@@ -1170,9 +1205,10 @@ uint64_t family_run(Family f, uint64_t a, uint64_t b, WhnfStatus *status) {
     return done ? v : 0;
 }
 
-EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) {
+EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status) { return whnf_pinned(t, chi, 0, status); }
+EvalResult *whnf_pinned(RefId t, FaceId chi, PinSet P, WhnfStatus *status) {
     Cont *root; RootBox *box = root_new(&root, chi);
-    eval_request(t, chi, root);
+    eval_request_pinned(t, chi, P, root);
     uint64_t v = 0;
     bool done = drive_root(box, &v);
     EvalResult *out = (EvalResult *)(uintptr_t)v;

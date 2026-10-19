@@ -532,7 +532,9 @@ static void netop_step(Cont *k, uint64_t v) {
     }
     if (L->k == OP_UNFOLD_GLOBAL) {
         if (ref_is_var(L->Q.ref) || ref_tag(L->Q.ref) != T_GLOBAL) FR_FINISH(k, RV_(nstat(ST_SORT_MISMATCH, 0, 0)));
-        FR_AWAIT(k, r, Fn_UNFOLD, L->Q.ref, 0);
+        L->b = global_body((SymbolId)tnode_const_payload(ref_tnode(L->Q.ref)));   /* the revision read by this operation */
+        if (!L->b) FR_FINISH(k, RV_(nstat(ST_NO_OBSERVATION, 0, 0)));
+        FR_AWAIT(k, r, Fn_UNFOLD, L->Q.ref, L->b);
         FR_FINISH(k, RV_(nref(r)));
     }
     if (L->k == OP_REINDEX_TERM_BINDER || L->k == OP_REINDEX_DIM_BINDER || L->k == OP_REINDEX_PARTIAL_DIM_BINDER) {

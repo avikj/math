@@ -163,6 +163,7 @@ void *frame_mem_grow(void *p, size_t bytes);
 void frame_mem_free(void *p);
 void frame_await_join(Cont *k, Join *j);
 void frame_launch(Cont *f, Cont *parent);      /* run frame f; its value resumes parent (any continuation) */
+uint64_t frame_run(Cont *f, WhnfStatus *status);   /* outside jobs: a detached frame driven to its value */
 #define FR_JOIN(k, j) do { (k)->pc = __LINE__; frame_await_join((k), (j)); return; case __LINE__:; } while (0)
 
 
@@ -171,11 +172,13 @@ void eval_free(void);
 void eval_reset(void);           /* retire all observations; keep workers and policies (new environment session) */
 
 /* Request the observation of t under chi; k receives the result. */
-void eval_request(RefId t, FaceId chi, Cont *k);
+void eval_request(RefId t, FaceId chi, Cont *k);                       /* under the current revisions of t's premises */
+void eval_request_pinned(RefId t, FaceId chi, uint64_t pins, Cont *k);  /* under a pin set (pins.h) */
 /* Synchronous driver: request, run the scheduler, return the root result.
  * W_STUCK: the runnable queue emptied with the root still pending (cyclic
  * or otherwise suspended demand); nothing was published for it. */
 EvalResult *whnf(RefId t, FaceId chi, WhnfStatus *status);
+EvalResult *whnf_pinned(RefId t, FaceId chi, uint64_t pins, WhnfStatus *status);
 
 /* Observation of an occurrence (§2): validates the occurrence against its
  * context (declared variables and dimensions, declared types by identity,
@@ -220,6 +223,7 @@ void eval_forward_result(EntryId K, RefId v);        /* the receiver's request (
 EntryId eval_entry_lookup(RefId t, FaceId chi);     /* 0 when absent */
 EntryState eval_entry_state(EntryId e);
 FaceId eval_entry_face(EntryId e);
+uint64_t eval_entry_pins(EntryId e);
 size_t eval_entry_count(void);                       /* entry ids reserved (some may be unused after a lost insertion race) */
 bool eval_entry_live(EntryId e);                    /* e names a key */
 bool eval_entry_is_observation(EntryId e);          /* a live F_WHNF key */

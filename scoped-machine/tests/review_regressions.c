@@ -125,13 +125,13 @@ int main(int argc, char **argv) {
         failures += before_substitution != after_substitution;
         printf("fixed-template refl: reindex(mk_refl(0, A,x),x->a) == mk_refl(0, A,a): %s (expected identical references)\n",
                before_substitution == after_substitution ? "identical" : "distinct");
-        EvalEvents ev0 = eval_events(); WhnfStatus ws;
+        size_t e0 = eval_entry_count(); WhnfStatus ws;
         (void)whnf(before_substitution, fc_true(), &ws);
         (void)whnf(after_substitution, fc_true(), &ws);
         eval_run();
-        EvalEvents ev1 = eval_events();
-        failures += ev1.launch - ev0.launch != 1;
-        printf("fixed-template refl observations: %zu new producer launches (expected 1)\n", ev1.launch - ev0.launch);
+        size_t nobs = 0; for (EntryId q = (EntryId)e0 + 1; q <= eval_entry_count(); q++) if (eval_entry_is_observation(q) && eval_entry_runs(q)) nobs++;
+        failures += nobs != 1;
+        printf("fixed-template refl observations: %zu new observation producers (expected 1)\n", nobs);
         printf("same refl terms remain mathematically convertible: %s\n",
                conv_status_name(convert_term(g, fc_true(), before_substitution, after_substitution, mk_path_const(0, A, a, a))));
     }

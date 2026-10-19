@@ -2,12 +2,12 @@ CC      ?= gcc
 CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c
+SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/pins.c
 OBJ := $(SRC:.c=.o)
 CONSTRUCTION_TESTS := review_singleton_witnesses review_generic_identity_action review_runtime_nodes
 CONSTRUCTION_BINS := $(addprefix build/,$(CONSTRUCTION_TESTS))
 
-all: build/protocol build/records build/dnf build/subst build/alpha build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/demo-speculation $(CONSTRUCTION_BINS)
+all: build/protocol build/records build/dnf build/subst build/alpha build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-claim-wait build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/review-probes build/demo-speculation $(CONSTRUCTION_BINS)
 
 $(CONSTRUCTION_BINS): build/%: tests/%.o $(OBJ)
 	@mkdir -p build
@@ -106,6 +106,10 @@ build/review-nested-scope: $(OBJ) tests/review_nested_scope.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 
+build/review-probes: $(OBJ) tests/review_probes.o
+	@mkdir -p build
+	$(CC) $(LDFLAGS) -Wl,--wrap=interner_intern -Wl,--wrap=whnf_pinned -o $@ $^
+
 build/demo-speculation: $(OBJ) tests/demo_speculation.o
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
@@ -147,6 +151,7 @@ test: all
 	for m in $(REVIEW_E2E_MODES) universe packed-level; do ./build/review-end-to-end $$m || exit 1; done
 	CUBICAL_WORKERS=4 ./build/review-end-to-end positive
 	./build/review-nested-scope
+	for m in duplicate handoff refpub revision; do ./build/review-probes $$m || exit 1; done
 	./build/demo-speculation
 
 TSAN_TESTS := test_protocol test_records test_dnf test_subst test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope $(CONSTRUCTION_TESTS)

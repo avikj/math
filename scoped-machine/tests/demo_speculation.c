@@ -83,11 +83,12 @@ static Run run(SchedPolicy pol, uint64_t seed, size_t workers) {
     out.tick_steps = after_tick.eval_step - after_spec.eval_step;
     out.tick_launch = after_tick.launch - after_spec.launch;
     out.tick_ready = after_tick.ready_hit - after_spec.ready_hit;
-    /* the observation frame: its start, three ready operands (entailment of
-     * the required face, the projection, the observation itself) each
-     * resuming it once, and the delivery to the root — a constant, whatever
-     * the prefix cost */
-    require(out.tick_launch == 0 && out.tick_steps == 5 && out.tick_ready == 3, "the tick computes nothing: three ready hits, five constant steps, no producer");
+    /* the observation frame and its premises' closure: the frame's start, the
+     * closure's start, four ready operands (the decision's symbols, the
+     * entailment of its required face, the projection, the observation
+     * itself) each resuming once, the closure's return and the delivery to
+     * the root — a constant, whatever the prefix cost */
+    require(out.tick_launch == 0 && out.tick_steps == 8 && out.tick_ready == 4, "the tick computes nothing: four ready hits, eight constant steps, no producer");
     out.forwarded_up = now->ref;
     /* 3. restriction: the system under [i ↦ 1] is dispatched to its true
      * branch at the first demand (one frame step) and from then on shares

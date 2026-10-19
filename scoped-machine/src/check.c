@@ -1,4 +1,5 @@
 #include "check.h"
+#include "pins.h"
 #include "lib.h"
 #include "compiler.h"
 
@@ -65,7 +66,8 @@ static const char *diag_intern(const char *text) {
 }
 static __thread VEC(Frame) tl_frames;
 static __thread Words tl_pending;        /* symbols a finished top-level verdict still rests on */
-static __thread size_t tl_steps, tl_depth, tl_budget;   /* the budget is fixed for a top-level request when it enters */
+static __thread size_t tl_steps, tl_depth, tl_budget;
+static __thread PinSet tl_pins;      /* the revisions of the current top-level request */   /* the budget is fixed for a top-level request when it enters */
 static const char *R_BUDGET = "budget exhausted";
 
 enum { CL_CTX = 1, CL_MAP, CL_ORIGIN, CL_SYMBOL, CL_CONV, CL_TVIEW, CL_TBOUND };
@@ -108,11 +110,10 @@ static uint64_t tid_locked(void) {
     return tl_tid;
 }
 
-/* every claim belongs to one definition environment (§57 R1 / §59.4): the
- * key carries the environment version, so a successful candidate mutation
- * makes every earlier environment-dependent verdict unreachable */
+/* every claim is keyed by the revisions its request is bound to (tl_pins):
+ * a verdict is reused exactly where the same revisions are read */
 static size_t claim_index_locked(uint64_t kind, const uint64_t *w, size_t n) {
-    uint64_t key[10] = { kind, global_env_version() }; memcpy(key + 2, w, n * sizeof(uint64_t));
+    uint64_t key[10] = { kind, tl_pins }; memcpy(key + 2, w, n * sizeof(uint64_t));
     uint64_t v;
     if (wordmap_get(&K.idx, key, n + 2, &v)) return (size_t)v - 1;
     Claim c; memset(&c, 0, sizeof c); words_init(&c.deps); c.is_symbol = kind == CL_SYMBOL;
@@ -383,7 +384,7 @@ static DimVarId conv_dim(RefId l, RefId r, uint64_t slot) {
 
 static CheckStatus observe(FaceId C, RefId t, EvalResult **out, const char **reason) {
     WhnfStatus st;
-    EvalResult *r = whnf(t, C, &st);
+    EvalResult *r = whnf_pinned(t, C, tl_pins, &st);
     if (st == W_OK) { *out = r; return CK_VALID; }
     *out = NULL;
     if (st == W_STUCK) { *reason = "unresolved: weak-head observation did not complete (cyclic or suspended demand)"; return CK_UNRESOLVED; }
@@ -453,7 +454,7 @@ ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req) {
 }
 ContextId global_context(SymbolId s) { return boundary_context(global_params(s), global_dims(s), fc_true()); }
 
-CheckStatus check_context(ContextId G, const char **reason) {
+static CheckStatus check_context_in(ContextId G, const char **reason) {
   for (;;) {
     uint64_t key[1] = { G }, v; const char *why = NULL;
     pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_CTX, key, 1); pthread_mutex_unlock(&K.mu);
@@ -540,7 +541,7 @@ static ContextId extend_dim(ContextId G, DimVarId j) { return context_extend_dim
 /* ------------------------------------------------------------------ */
 /* typed maps and origins (substitution lemma)                          */
 
-CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma, FaceId chi, const char **reason) {
+static CheckStatus check_map_in(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma, FaceId chi, const char **reason) {
   Delta = under(Delta, psi); Gamma = under(Gamma, chi);
   for (;;) {
     uint64_t key[5] = { Delta, psi, sigma, Gamma, chi }, v; const char *why = NULL;
@@ -590,7 +591,7 @@ static CheckStatus validate_symbol(SymbolId s, const char **reason);
 /* a construction node, validated once at its generic instance (parameters at
  * fresh names keyed by (node, slot), declared at the instantiated closed
  * types); every instance is then typed by the substitution lemma */
-CheckStatus check_node(TNodeId C, ContextId *ctx_out, FaceId *req_out, RefId *type_out, const char **reason) {
+static CheckStatus check_node_in(TNodeId C, ContextId *ctx_out, FaceId *req_out, RefId *type_out, const char **reason) {
   for (;;) {
     uint64_t key[1] = { C }, v, aux[3] = { 0, 0, 0 }; const char *why = NULL;
     pthread_mutex_lock(&K.mu); size_t cl = claim_index_locked(CL_ORIGIN, key, 1); pthread_mutex_unlock(&K.mu);
@@ -1108,7 +1109,7 @@ static CheckStatus scope_ok(ContextId G, FaceId chi, RefId t, const char **reaso
     return CK_VALID;
 }
 
-Inference infer(ContextId G, FaceId chi, RefId t) {
+static Inference infer_in(ContextId G, FaceId chi, RefId t) {
   for (;;) {
     Inference out = { CK_VALID, 0, NULL };
     ENTER();
@@ -1236,7 +1237,7 @@ static CheckStatus check_clause(ContextId G, FaceId C, RefId t, RefId A, const c
     return CK_UNRESOLVED;
 }
 
-CheckStatus check(ContextId G, FaceId chi, RefId t, RefId A, const char **reason) {
+static CheckStatus check_in(ContextId G, FaceId chi, RefId t, RefId A, const char **reason) {
   for (;;) {
     ENTER();
     CheckStatus st = scope_ok(G, chi, t, reason);
@@ -1497,7 +1498,7 @@ done:
     return out;
 }
 
-ConvStatus convert_type(ContextId G, FaceId chi, RefId A, RefId B) {
+static ConvStatus convert_type_in(ContextId G, FaceId chi, RefId A, RefId B) {
     const char *why;
     if (scope_ok(G, chi, A, &why) != CK_VALID || scope_ok(G, chi, B, &why) != CK_VALID) return CV_UNRESOLVED;
     for (;;) {
@@ -1510,7 +1511,7 @@ ConvStatus convert_type(ContextId G, FaceId chi, RefId A, RefId B) {
         if (top_settled()) return out;
     }
 }
-ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A) {
+static ConvStatus convert_term_in(ContextId G, FaceId chi, RefId t, RefId u, RefId A) {
     const char *why;
     if (scope_ok(G, chi, t, &why) != CK_VALID || scope_ok(G, chi, u, &why) != CK_VALID || scope_ok(G, chi, A, &why) != CK_VALID) return CV_UNRESOLVED;
     for (;;) {
@@ -1545,8 +1546,9 @@ static CheckStatus validate_symbol(SymbolId s, const char **reason) {
     ContextId Gs = global_context(s);
     if (st == CK_VALID) st = check_context(Gs, reason);
     if (st == CK_VALID) { uint64_t l; st = level_of(Gs, fc_true(), type, &l, reason); }
-    RefId body = global_body(s);
-    if (st == CK_VALID && body) st = check(Gs, fc_true(), body, type, reason);
+    RefId body = 0;
+    if (st == CK_VALID && !pins_lookup(tl_pins, s, &body)) { *reason = "unresolved: a symbol outside the request's premises"; st = CK_UNRESOLVED; }
+    if (st == CK_VALID && body) st = check(Gs, fc_true(), body, type, reason);   /* the pinned revision */
     claim_release(cl, ck_code(st), *reason, NULL);
     LEAVE();
     if (top_settled()) return st;
@@ -1596,20 +1598,20 @@ void check_open_environment(void) {
     env_unfreeze();
 }
 
-EvalResult *observe_checked(ContextId G, RefId t, WhnfStatus *status, const char **reason) {
+static EvalResult *observe_checked_in(ContextId G, RefId t, WhnfStatus *status, const char **reason) {
     /* The premises are this context and term. T_GLOBAL inference validates
      * each reached declaration/body, including its transitive dependencies. */
     CheckStatus st = check_context(G, reason);
     if (st == CK_VALID) { Inference I = infer(G, context_assumption(G), t); st = I.st; if (st != CK_VALID) *reason = I.reason; }
     if (st == CK_INVALID) { if (status) *status = W_INVALID; return NULL; }
     if (st == CK_UNRESOLVED) { if (status) *status = W_STUCK; return NULL; }
-    return whnf(t, context_assumption(G), status);
+    return whnf_pinned(t, context_assumption(G), tl_pins, status);   /* the revisions its premises validated */
 }
 
 /* formation: A is a type under chi; its universe level (equal under every
  * clause) is returned. Successful inference of some type for A is not enough
  * (§59.5): the inferred type is observed and must be a universe. */
-CheckStatus check_is_type(ContextId G, FaceId chi, RefId A, uint64_t *level, const char **reason) {
+static CheckStatus check_is_type_in(ContextId G, FaceId chi, RefId A, uint64_t *level, const char **reason) {
     for (;;) {
         ENTER();
         CheckStatus st = scope_ok(G, chi, A, reason);
@@ -1628,8 +1630,100 @@ CheckStatus check_is_type(ContextId G, FaceId chi, RefId A, uint64_t *level, con
     }
 }
 
-CheckStatus check_signature(const char **reason) {
+static CheckStatus check_signature_in(const char **reason) {
     size_t n = global_count();
     for (SymbolId s = 1; s <= n; s++) { CheckStatus st = validate_symbol(s, reason); if (st != CK_VALID) return st; }
     return CK_VALID;
+}
+
+/* ------------------------------------------------------------------ */
+/* the revisions a request is bound to (pins.h)                          */
+/* A top-level request pins the closure of the symbols its inputs name at
+ * the revisions current when it starts; its validations, inferences,
+ * conversions and observations all read those revisions, and its claims are
+ * keyed by them. A body published during the request is not seen by it. */
+typedef struct { RefId *r; size_t n, cap; } Roots;
+static void pr_ref(Roots *R, RefId t) { if (!t) return; if (R->n == R->cap) { R->cap = R->cap ? 2 * R->cap : 16; R->r = realloc(R->r, R->cap * sizeof(RefId)); require(R->r, "out of memory"); } R->r[R->n++] = t; }
+static void pr_ctx(Roots *R, const ContextId *c, size_t nc) { for (size_t q = 0; q < nc; q++) { size_t n = context_size(c[q]); for (size_t k = 0; k < n; k++) pr_ref(R, context_decl(c[q], k).type); } }
+static void pr_node(Roots *R, TNodeId C) { if (!tnode_is_construction(C)) return; size_t nf = tnode_nfields(C); for (size_t k = 0; k < nf; k++) if (tnode_field_kind(C, k) == F_REF) pr_ref(R, tnode_const_field(C, k)); }
+static PinSet roots_pins(Roots *R) { PinSet P = pins_current(R->n, R->r); free(R->r); R->r = NULL; return P; }
+
+CheckStatus check_context(ContextId G, const char **reason) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { { ContextId c[1] = { G }; pr_ctx(&R, c, 1); } tl_pins = roots_pins(&R); }
+    CheckStatus v = check_context_in(G, reason);
+    if (own) tl_pins = 0;
+    return v;
+}
+
+CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma, FaceId chi, const char **reason) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { { ContextId c[2] = { Delta, Gamma }; pr_ctx(&R, c, 2); for (size_t q = 0; q < map_n_terms(sigma); q++) { TermVarId x; RefId im; map_term_entry(sigma, q, &x, &im); pr_ref(&R, im); } } tl_pins = roots_pins(&R); }
+    CheckStatus v = check_map_in(Delta, psi, sigma, Gamma, chi, reason);
+    if (own) tl_pins = 0;
+    return v;
+}
+
+CheckStatus check_node(TNodeId C, ContextId *ctx_out, FaceId *req_out, RefId *type_out, const char **reason) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { pr_node(&R, C); tl_pins = roots_pins(&R); }
+    CheckStatus v = check_node_in(C, ctx_out, req_out, type_out, reason);
+    if (own) tl_pins = 0;
+    return v;
+}
+
+Inference infer(ContextId G, FaceId chi, RefId t) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { { pr_ctx(&R, &G, 1); pr_ref(&R, t); } tl_pins = roots_pins(&R); }
+    Inference v = infer_in(G, chi, t);
+    if (own) tl_pins = 0;
+    return v;
+}
+
+CheckStatus check_is_type(ContextId G, FaceId chi, RefId A, uint64_t *level, const char **reason) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { { pr_ctx(&R, &G, 1); pr_ref(&R, A); } tl_pins = roots_pins(&R); }
+    CheckStatus v = check_is_type_in(G, chi, A, level, reason);
+    if (own) tl_pins = 0;
+    return v;
+}
+
+CheckStatus check(ContextId G, FaceId chi, RefId t, RefId A, const char **reason) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { { pr_ctx(&R, &G, 1); pr_ref(&R, t); pr_ref(&R, A); } tl_pins = roots_pins(&R); }
+    CheckStatus v = check_in(G, chi, t, A, reason);
+    if (own) tl_pins = 0;
+    return v;
+}
+
+ConvStatus convert_type(ContextId G, FaceId chi, RefId A, RefId B) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { { pr_ctx(&R, &G, 1); pr_ref(&R, A); pr_ref(&R, B); } tl_pins = roots_pins(&R); }
+    ConvStatus v = convert_type_in(G, chi, A, B);
+    if (own) tl_pins = 0;
+    return v;
+}
+
+ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { { pr_ctx(&R, &G, 1); pr_ref(&R, t); pr_ref(&R, u); pr_ref(&R, A); } tl_pins = roots_pins(&R); }
+    ConvStatus v = convert_term_in(G, chi, t, u, A);
+    if (own) tl_pins = 0;
+    return v;
+}
+
+EvalResult *observe_checked(ContextId G, RefId t, WhnfStatus *status, const char **reason) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { { pr_ctx(&R, &G, 1); pr_ref(&R, t); } tl_pins = roots_pins(&R); }
+    EvalResult *v = observe_checked_in(G, t, status, reason);
+    if (own) tl_pins = 0;
+    return v;
+}
+
+CheckStatus check_signature(const char **reason) {
+    Roots R = { 0 }; bool own = tl_depth == 0 && !tl_pins;
+    if (own) { { size_t n = global_count(); for (SymbolId q = 1; q <= n; q++) pr_ref(&R, global_ref(q)); } tl_pins = roots_pins(&R); }
+    CheckStatus v = check_signature_in(reason);
+    if (own) tl_pins = 0;
+    return v;
 }
