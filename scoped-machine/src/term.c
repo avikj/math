@@ -313,19 +313,16 @@ DimOpen resolve_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) 
     return tview_dim_binder(owner, slot, body_field);
 }
 
-/* a construction's binder applied: its body constant with the binder's atom
- * ↦ the argument (no fresh name); a template instance opens and reindexes */
+/* a binder applied: the binder's local set to the argument in the node's
+ * environment and the body interpreted (one family for both node kinds; no
+ * fresh name) */
 RefId apply_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field, RefId a) {
     require(!ref_is_var(owner), "binder of a variable");
-    if (tview_is_construction(owner)) return construction_binder(owner, S_TERM, slot, body_field, a);
-    TermOpen o = resolve_term_binder(owner, slot, body_field);
-    return reindex1(o.body, o.x, a);
+    return construction_binder(owner, S_TERM, slot, body_field, a);
 }
 RefId apply_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field, IntervalId r) {
     require(!ref_is_var(owner), "binder of a variable");
-    if (tview_is_construction(owner)) return construction_binder(owner, S_DIM, slot, body_field, r);
-    DimOpen o = resolve_dim_binder(owner, slot, body_field);
-    return reindex_dim(o.body, o.j, r);
+    return construction_binder(owner, S_DIM, slot, body_field, r);
 }
 
 /* ================= opening ================= */
@@ -339,11 +336,10 @@ void open_ref(RefId t, Head *h) {
 
 HField head_field(const Head *h, size_t k) {
     require(!h->is_var && k < h->n, "head field out of range");
-    if (!tnode_is_construction(h->tnode)) return tview_field(h, k);
     HField x; memset(&x, 0, sizeof x);
     x.kind = tnode_field_kind(h->tnode, k); x.index = (FieldIndex)k; x.slot = tnode_field_slot(h->tnode, k);
     if (x.slot != NO_SLOT) { x.is_binder = true; x.sort = tnode_binder_sort(h->tnode, x.slot); return x; }
-    x.id = construction_field(h->owner, k);
+    x.id = construction_field(h->owner, k);       /* the field family: one interpretation for both node kinds */
     return x;
 }
 

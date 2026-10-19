@@ -87,11 +87,15 @@ FieldIndex tnode_binder_domain(TNodeId Q, BinderSlot s) { Sort so; FieldIndex df
 size_t tnode_binder_local(TNodeId Q, BinderSlot s) { Sort so; FieldIndex df; size_t ls; node_binder(Q, s, &so, &df, &ls); return ls; }
 /* a template node's binder field: the environment slot of the binder's local
  * and the field's recipe */
+/* a node's binder field (a construction or a template program alike): the
+ * environment slot of the binder's local — after the node's parameters — and
+ * the field's expression */
+static size_t node_param_count(TNodeId Q);
 void tnode_template_binder(TNodeId Q, BinderSlot slot, FieldIndex field, uint64_t *env_slot, ExprId *body_e) {
     Sort so; FieldIndex df; size_t lslot; node_binder(Q, slot, &so, &df, &lslot);
     FieldKind kd; BinderSlot bs; node_field(Q, field, &kd, &bs, body_e);
-    require(bs == slot, "template field is not under this binder");
-    *env_slot = TPL.defs[tnode_def(Q)].nparams + lslot;
+    require(bs == slot, "field is not under this binder");
+    *env_slot = node_param_count(Q) + lslot;
 }
 const char *tdef_name(TDefId d) { return d >= 1 && d < TD_COUNT ? TPL.defs[d].name : "?"; }
 
@@ -175,12 +179,15 @@ TNodeId tnode_construction_intern(const uint64_t *words, size_t n) {
 }
 static bool node_construction(TNodeId Q) { return tnode_def(Q) == 0; }
 bool tnode_is_construction(TNodeId Q) { return node_construction(Q); }
+static size_t node_param_count(TNodeId Q) { size_t n; return node_construction(Q) ? (size_t)nw(Q, &n)[1] : TPL.defs[tnode_def(Q)].nparams; }
 bool tview_is_construction(RefId t) { return node_construction(ref_tnode(t)); }
 size_t tnode_nparams(TNodeId Q) { require(node_construction(Q), "not a construction node"); size_t n; return (size_t)nw(Q, &n)[1]; }
 static const uint64_t *node_ptab(TNodeId Q) { const uint64_t *b = node_btab(Q); return b + 1 + 3 * b[0] + 2; }
 static ExprId node_declared_e(TNodeId Q) { const uint64_t *b = node_btab(Q); return b[2 + 3 * b[0]]; }
 static uint64_t xconst(ExprId e) { size_t n; const uint64_t *w = xw(e, &n); require(w[0] == X_CONST, "construction field is not a constant"); return w[2]; }
 static uint64_t xlevel(ExprId e) { size_t n; const uint64_t *w = xw(e, &n); require(w[0] == X_LEVEL, "construction annotation is not a constant"); return w[1]; }
+bool expr_is_level(ExprId e) { size_t n; return xw(e, &n)[0] == X_LEVEL; }
+uint64_t expr_level_value(ExprId e) { return xlevel(e); }
 void tnode_param(TNodeId Q, size_t k, PSort *sort, RefId *closed_type, FaceId *closed_guard) {
     require(k < tnode_nparams(Q), "construction parameter out of range");
     const uint64_t *p = node_ptab(Q) + 3 * k;
@@ -359,6 +366,35 @@ static void envof_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
+/* env.map(er): an environment record as the substitution of its atoms —
+ * slot k is atom k; terms first, then dimensions (a map record). The
+ * interpretation of a construction's closed constant is its substitution by
+ * this map: a constant field is one case of the common interpretation. */
+static Family F_ENVMAP;
+typedef struct { const uint64_t *w; size_t n, q, kept; bool dims; WordBuf out; bool created; } EmLoc;
+static void envmap_step(Cont *k, uint64_t v) {
+    EmLoc *L = FR_LOC(k, EmLoc);
+    uint64_t id = 0;
+    FR_BEGIN(k);
+    L->w = interner_get(&M.keys, k->w[0], &L->n); L->kept = 0;
+    wordbuf_init(&L->out);
+    for (L->dims = false;; L->dims = true) {
+        for (L->q = 1; L->q < L->n; L->q += 3) {
+            {   uint64_t slot = L->w[L->q], sort = L->w[L->q + 1], val = L->w[L->q + 2], atom = obound_id((uint32_t)slot);
+                if ((sort == PS_INTERVAL && L->dims) || (sort == PS_REF && !L->dims)) {
+                    bool ident = L->dims ? val == iv_var(atom) : (ref_is_var(val) && ref_var_id(val) == atom);
+                    if (!ident) { wordbuf_push(&L->out, atom); wordbuf_push(&L->out, val); if (!L->dims) L->kept++; }
+                } }
+            FR_YIELD(k);
+        }
+        if (L->dims) break;
+    }
+    wordbuf_push(&L->out, L->kept);
+    FR_CALL(k, id, intern_sub(k, &M.maps, &L->out, &L->created));
+    FR_FINISH(k, id);
+    FR_END(k);
+}
+
 static Family trav_of(PSort s) { return s == PS_REF ? F_TREF : s == PS_INTERVAL ? F_TIV : F_TFC; }
 static PSort psort_of_val(ValSort s) { return s == VS_REF ? PS_REF : s == VS_INTERVAL ? PS_INTERVAL : PS_FACE; }
 
@@ -382,7 +418,16 @@ static void interp_step(Cont *k, uint64_t v) {
     if (L->w[0] == X_IV1) FR_FINISH(k, tvrec(PS_INTERVAL, iv_one()));
     if (L->w[0] == X_FCF) FR_FINISH(k, tvrec(PS_FACE, fc_false()));
     if (L->w[0] == X_FCT) FR_FINISH(k, tvrec(PS_FACE, fc_true()));
-    if (L->w[0] == X_CONST) die("a construction constant interpreted outside its construction");
+    if (L->w[0] == X_CONST) {
+        /* a closed constant: substituted by the environment's atoms */
+        FR_AWAIT(k, L->a, F_ENVMAP, er, 0);
+        L->t.sort = (PSort)L->w[1];
+        if (L->t.sort == PS_REF) FR_AWAIT(k, r, F_REINDEX, L->w[2], L->a);
+        else if (L->t.sort == PS_INTERVAL) FR_AWAIT(k, r, F_IVRE, L->w[2], L->a);
+        else if (L->t.sort == PS_FACE) FR_AWAIT(k, r, F_FCRE, L->w[2], L->a);
+        else r = L->w[2];
+        FR_FINISH(k, tvrec(L->t.sort, r));
+    }
     if (L->w[0] == X_NODE) { FR_AWAIT(k, r, F_TVMAKE, L->w[1], er); FR_FINISH(k, tvrec(PS_REF, r)); }
     if (L->w[0] == X_SCOPE) { FR_AWAIT(k, r, F_ISCOPE, e, er); FR_FINISH(k, tvrec(PS_SCOPE, r)); }
     if (L->w[0] == X_CALL) {
@@ -556,6 +601,7 @@ void template_families_init(void) {
     F_ENVSET = family_define("template.envset", envset_step, sizeof(SetLoc), true);
     F_ENVOF = family_define("template.envof", envof_step, sizeof(SetLoc), true);
     F_INTERP = family_define("template.interp", interp_step, sizeof(InLoc), true);
+    F_ENVMAP = family_define("env.map", envmap_step, sizeof(EmLoc), true);
     F_TVMAKE = family_define("template.view", tvmake_step, sizeof(MkLoc), true);
     F_ISCOPE = family_define("template.scope", iscope_step, sizeof(ScLoc), true);
     construct_bind_template_families();
@@ -587,8 +633,7 @@ HField tview_field(const Head *h, size_t k) {
     FieldKind kind; BinderSlot bs; ExprId fe; node_field(Q, k, &kind, &bs, &fe);
     x.kind = kind; x.index = (FieldIndex)k; x.slot = bs;
     if (bs != NO_SLOT) { x.is_binder = true; x.sort = tnode_binder_sort(Q, bs); x.id = 0; return x; }
-    if (node_construction(Q)) { x.id = construction_field(h->owner, k); return x; }
-    x.id = interp_at(fe, env_of(h->owner)).id;
+    x.id = construction_field(h->owner, k);
     return x;
 }
 

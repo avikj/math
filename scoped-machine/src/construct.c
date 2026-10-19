@@ -62,19 +62,13 @@ static void field_step(Cont *k, uint64_t v) {
     RefId t = k->w[0]; size_t q = (size_t)k->w[1];
     uint64_t r = 0;
     FR_BEGIN(k);
-    if (!tview_is_construction(t)) {
-        /* a template program: the field's recipe in the view's environment */
-        FR_AWAIT(k, L->m, F_ENVOF, ref_tnode(t), ref_tenv(t));
-        FR_AWAIT(k, r, F_INTERP, tnode_field_expr(ref_tnode(t), q), L->m);
-        { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
-    }
-    FR_AWAIT(k, L->m, F_CENV, ref_tenv(t), 0);
-    {   TNodeId Q = ref_tnode(t); FieldKind kd = tnode_field_kind(Q, q);
-        require(tnode_field_slot(Q, q) == NO_SLOT, "a binder field is opened through its binder");
-        if (kd == F_REF) FR_AWAIT(k, r, F_REINDEX, tnode_const_field(Q, q), L->m);
-        else if (kd == F_INTERVAL) FR_AWAIT(k, r, F_IVRE, tnode_const_field(Q, q), L->m);
-        else FR_AWAIT(k, r, F_FCRE, tnode_const_field(Q, q), L->m); }
-    FR_FINISH(k, r);
+    /* field q's own expression in the node's environment (a construction's
+     * closed constant and a template program's recipe alike); fields 0..q-1
+     * are not opened */
+    require(tnode_field_slot(ref_tnode(t), q) == NO_SLOT, "a binder field is opened through its binder");
+    FR_AWAIT(k, L->m, F_ENVOF, ref_tnode(t), ref_tenv(t));
+    FR_AWAIT(k, r, F_INTERP, tnode_field_expr(ref_tnode(t), q), L->m);
+    { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
     FR_END(k);
 }
 
@@ -86,25 +80,16 @@ static void binder_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     { size_t n; const uint64_t *e = interner_get(&M.keys, k->w[1], &n); L->sort = e[0]; L->slot = e[1]; L->field = e[2]; L->image = e[3]; }
-    if (!tview_is_construction(t)) {
-        /* a template binder: the local's slot set to the image, the body recipe interpreted */
-        FR_AWAIT(k, L->m, F_ENVOF, ref_tnode(t), ref_tenv(t));
-        {   uint64_t es; ExprId be; tnode_template_binder(ref_tnode(t), (BinderSlot)L->slot, (FieldIndex)L->field, &es, &be);
-            uint64_t e[3] = { es, L->sort == S_TERM ? PS_REF : PS_INTERVAL, L->image };
-            FR_AWAIT(k, L->m, F_ENVSET, L->m, interner_intern(&M.keys, e, 3, NULL)); }
-        {   uint64_t es; ExprId be; tnode_template_binder(ref_tnode(t), (BinderSlot)L->slot, (FieldIndex)L->field, &es, &be);
-            FR_AWAIT(k, r, F_INTERP, be, L->m); }
-        { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
-    }
-    {   TNodeId Q = ref_tnode(t);
-        require(tnode_field_slot(Q, L->field) == (BinderSlot)L->slot && tnode_binder_sort(Q, (BinderSlot)L->slot) == (Sort)L->sort, "field is not under this binder"); }
-    FR_AWAIT(k, L->m, F_CENV, ref_tenv(t), 0);
-    {   TNodeId Q = ref_tnode(t);
-        uint64_t atom = obound_id((uint32_t)(tnode_nparams(Q) + L->slot));
-        uint64_t e[3] = { L->sort, atom, L->image };
-        FR_AWAIT(k, L->m, F_OVERRIDE, L->m, interner_intern(&M.keys, e, 3, NULL)); }
-    FR_AWAIT(k, r, F_REINDEX, tnode_const_field(ref_tnode(t), L->field), L->m);
-    FR_FINISH(k, r);
+    /* the binder's local set to the image in the node's environment, the
+     * body's expression interpreted (both node kinds) */
+    require(tnode_binder_sort(ref_tnode(t), (BinderSlot)L->slot) == (Sort)L->sort, "binder sort");
+    FR_AWAIT(k, L->m, F_ENVOF, ref_tnode(t), ref_tenv(t));
+    {   uint64_t es; ExprId be; tnode_template_binder(ref_tnode(t), (BinderSlot)L->slot, (FieldIndex)L->field, &es, &be);
+        uint64_t e[3] = { es, L->sort == S_TERM ? PS_REF : PS_INTERVAL, L->image };
+        FR_AWAIT(k, L->m, F_ENVSET, L->m, interner_intern(&M.keys, e, 3, NULL)); }
+    {   uint64_t es; ExprId be; tnode_template_binder(ref_tnode(t), (BinderSlot)L->slot, (FieldIndex)L->field, &es, &be);
+        FR_AWAIT(k, r, F_INTERP, be, L->m); }
+    { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
     FR_END(k);
 }
 
@@ -252,9 +237,9 @@ static void head_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
     FR_BEGIN(k);
-    {   TNodeId Q = ref_tnode(t);
-        if (tnode_is_construction(Q)) FR_FINISH(k, k->w[1] ? tnode_const_levels(Q) : tnode_const_payload(Q));
-        if (!tnode_head_expr(Q, (int)k->w[1])) FR_FINISH(k, k->w[1] ? LEVELS_NONE : 0); }
+    {   TNodeId Q = ref_tnode(t); ExprId e = tnode_head_expr(Q, (int)k->w[1]);
+        if (!e) FR_FINISH(k, k->w[1] ? LEVELS_NONE : 0);
+        if (expr_is_level(e)) FR_FINISH(k, expr_level_value(e)); }     /* a closed expression needs no environment */
     FR_AWAIT(k, r, F_ENVOF, ref_tnode(t), ref_tenv(t));
     FR_AWAIT(k, r, F_INTERP, tnode_head_expr(ref_tnode(t), (int)k->w[1]), r);
     { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }

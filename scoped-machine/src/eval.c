@@ -628,7 +628,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) { eval_request_pinned(t, chi, 0,
  * constructions) and its sub-observations through the observation
  * subroutine. A branchwise result is a join: the frame issues one branch per
  * step and is resumed by the last arrival (§12, §26). */
-static Family F_UNFOLDF, F_COMPCLAUSEF, F_DECODEF;
+static Family F_UNFOLDF, F_COMPCLAUSEF, F_DECODEF, F_CBRANCH;
 static Family F_OBS, F_FWD, F_FIELDF, F_BINDERF, F_CONSTRUCTF, F_HEADF, F_FCENTF, F_FCPROJF, F_FCMEETF, F_FCJOINF, F_FCFORALLF, F_FCENDF;
 #define RES(x) ((EvalResult *)(uintptr_t)(x))
 #define RV(r) ((uint64_t)(uintptr_t)(r))
@@ -843,30 +843,40 @@ static void whnf_step(Cont *k, uint64_t v) {
         if (L->res->cls == R_NO_OBSERVATION || L->res->cls == R_INVALID) FR_FINISH(k, r);
         if (L->res->cls == R_NEUTRAL) FR_FINISH(k, RV(result_new(R_NEUTRAL, t)));
         if (L->res->cls == R_SYSTEM) {
-            /* distribute: the eliminator rebuilt around each branch */
+            /* distribute: the eliminator rebuilt around each branch — the
+             * shared operands once, then the branch constructions as one join */
             L->n = L->res->nbr; wh_alloc(L, L->n);
             FR_AWAIT(k, L->levels, F_HEADF, t, 1);
+            if (L->tag == T_PAPP) {
+                L->j = binder_dim_var(t, 0);
+                FR_AWAIT(k, L->fam, F_BINDERF, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
+                FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
+                FR_AWAIT(k, L->a3, F_FIELDF, t, 2);
+            } else if (L->tag == T_UNGLUE) {
+                FR_AWAIT(k, L->fam, F_FIELDF, t, 0);
+                FR_AWAIT(k, L->a3, F_FIELDF, t, 2);
+                FR_AWAIT(k, L->tube, F_FIELDF, t, 3);
+            }
+            L->flat = join_new(k, L->n);
             for (L->q = 0; L->q < L->n; L->q++) {
                 L->faces[L->q] = L->res->faces[L->q];
-                if (L->tag == T_APP) { Field f[2] = { { F_REF, NO_SLOT, L->res->terms[L->q] }, { F_REF, NO_SLOT, L->a1 } }; FR_CALL(k, r, creq(k, T_APP, 0, LEVELS_NONE, 2, f, 0, NULL)); }
-                else if (L->tag == T_FST || L->tag == T_SND) { Field f[1] = { { F_REF, NO_SLOT, L->res->terms[L->q] } }; FR_CALL(k, r, creq(k, L->tag, 0, LEVELS_NONE, 1, f, 0, NULL)); }
-                else if (L->tag == T_PAPP) {
-                    L->j = binder_dim_var(t, 0);
-                    FR_AWAIT(k, L->fam, F_BINDERF, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
-                    FR_AWAIT(k, L->a1, F_FIELDF, t, 1);
-                    FR_AWAIT(k, L->a3, F_FIELDF, t, 2);
-                    { Field f[5] = { { F_REF, 0, L->fam }, { F_REF, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, L->res->terms[L->q] }, { F_INTERVAL, NO_SLOT, L->a4 } };
-                      Binder b[1] = { { S_DIM, L->j, NO_FIELD } };
-                      FR_CALL(k, r, creq(k, T_PAPP, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 1, b)); }
-                } else {
-                    FR_AWAIT(k, L->fam, F_FIELDF, t, 0);
-                    FR_AWAIT(k, L->a3, F_FIELDF, t, 2);
-                    FR_AWAIT(k, L->tube, F_FIELDF, t, 3);
-                    { Field f[5] = { { F_REF, NO_SLOT, L->fam }, { F_FACE, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, L->tube }, { F_REF, NO_SLOT, L->res->terms[L->q] } };
-                      FR_CALL(k, r, creq(k, T_UNGLUE, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 0, NULL)); }
-                }
-                L->terms[L->q] = r;
+                {   RefId bt = L->res->terms[L->q]; Cont *c;
+                    if (L->tag == T_APP) { Field f[2] = { { F_REF, NO_SLOT, bt }, { F_REF, NO_SLOT, L->a1 } }; c = creq(k, T_APP, 0, LEVELS_NONE, 2, f, 0, NULL); }
+                    else if (L->tag == T_FST || L->tag == T_SND) { Field f[1] = { { F_REF, NO_SLOT, bt } }; c = creq(k, L->tag, 0, LEVELS_NONE, 1, f, 0, NULL); }
+                    else if (L->tag == T_PAPP) {
+                        Field f[5] = { { F_REF, 0, L->fam }, { F_REF, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, bt }, { F_INTERVAL, NO_SLOT, L->a4 } };
+                        Binder b[1] = { { S_DIM, L->j, NO_FIELD } };
+                        c = creq(k, T_PAPP, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 1, b);
+                    } else {
+                        Field f[5] = { { F_REF, NO_SLOT, L->fam }, { F_FACE, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, L->tube }, { F_REF, NO_SLOT, bt } };
+                        c = creq(k, T_UNGLUE, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 0, NULL);
+                    }
+                    join_call(L->flat, L->q, c); }
+                if (L->q + 1 < L->n) FR_YIELD(k);
             }
+            FR_JOIN(k, L->flat);
+            for (L->q = 0; L->q < L->n; L->q++) { L->terms[L->q] = join_value(L->flat, L->q); FR_YIELD(k); }
+            join_free(L->flat); L->flat = NULL;
             L->kept = L->n;
             goto branchwise;
         }
@@ -936,20 +946,26 @@ static void whnf_step(Cont *k, uint64_t v) {
         if (L->res->cls == R_NO_OBSERVATION || L->res->cls == R_INVALID) FR_FINISH(k, r);
         if (L->res->cls == R_NEUTRAL) FR_FINISH(k, RV(result_new(R_NEUTRAL, t)));
         if (L->res->cls == R_SYSTEM) {
-            /* a branch available along the whole j line: outer guard ∀j.φ_k */
+            /* a branch available along the whole j line: outer guard ∀j.φ_k;
+             * the branches are independent: one join of comp.branch */
             L->n = L->res->nbr; wh_alloc(L, L->n);
             L->kept = 0; L->uni = fc_false();
+            L->flat = join_new(k, L->n);
             for (L->q = 0; L->q < L->n; L->q++) {
-                FR_AWAIT(k, L->g, F_FCFORALLF, L->res->faces[L->q], L->j);
-                FR_AWAIT(k, r, F_FCMEETF, chi, L->g);
-                if (fc_is_false(r)) continue;
-                {   uint64_t lv = L->levels == LEVELS_NONE ? LEVEL_NONE : levels_first(L->levels);
-                    Field f[4] = { { F_REF, 0, L->res->terms[L->q] }, { F_FACE, NO_SLOT, L->phi }, { F_REF, 0, L->tube }, { F_REF, NO_SLOT, L->cap } };
-                    Binder b[1] = { { S_DIM, L->j, NO_FIELD } };
-                    FR_CALL(k, r, creq(k, T_COMP, 0, levels_pack(lv, LEVEL_NONE), 4, f, 1, b)); }
-                L->faces[L->kept] = L->g; L->terms[L->kept] = r; L->kept++;
+                {   Cont *c = frame_sub(F_CBRANCH, k);
+                    c->w[0] = L->res->faces[L->q]; c->w[1] = L->res->terms[L->q]; c->w[2] = L->j; c->w[3] = chi;
+                    c->w[4] = L->phi; c->w[5] = L->tube; c->w[6] = L->cap; c->w[7] = L->levels;
+                    join_call(L->flat, L->q, c); }
+                if (L->q + 1 < L->n) FR_YIELD(k);
+            }
+            FR_JOIN(k, L->flat);
+            for (L->q = 0; L->q < L->n; L->q++) {
+                if (!join_value(L->flat, L->q)) { FR_YIELD(k); continue; }          /* inconsistent along the line: dropped */
+                {   size_t m; const uint64_t *gw = interner_get(&M.keys, join_value(L->flat, L->q), &m);
+                    L->faces[L->kept] = gw[0]; L->terms[L->kept] = gw[1]; L->g = gw[0]; L->kept++; }
                 FR_AWAIT(k, L->uni, F_FCJOINF, L->uni, L->g);
             }
+            join_free(L->flat); L->flat = NULL;
             FR_AWAIT(k, r, F_FCENTF, chi, L->uni);
             if (r != 2) { wh_free(L); FR_FINISH(k, RV(result_invalid("type-family system has no branch along the whole composition line"))); }
             for (L->q = 0; L->q < L->kept; L->q++) {
@@ -1025,12 +1041,31 @@ branchwise:
     FR_END(k);
 }
 
+/* comp.branch: one branch of a type-family system under a composition —
+ * its guard along the whole line ∀j.φ_k, dropped (0) when inconsistent with
+ * χ, otherwise [∀j.φ_k, comp^j over the branch] */
+static void cbranch_step(Cont *k, uint64_t v) {
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    FR_AWAIT(k, k->w[0], F_FCFORALLF, k->w[0], k->w[2]);
+    FR_AWAIT(k, r, F_FCMEETF, k->w[3], k->w[0]);
+    if (fc_is_false(r)) FR_FINISH(k, 0);
+    {   uint64_t lv = k->w[7] == LEVELS_NONE ? LEVEL_NONE : levels_first(k->w[7]);
+        Field f[4] = { { F_REF, 0, k->w[1] }, { F_FACE, NO_SLOT, k->w[4] }, { F_REF, 0, k->w[5] }, { F_REF, NO_SLOT, k->w[6] } };
+        Binder b[1] = { { S_DIM, (DimVarId)k->w[2], NO_FIELD } };
+        k->w[1] = (uint64_t)(uintptr_t)creq(k, T_COMP, 0, levels_pack(lv, LEVEL_NONE), 4, f, 1, b); }
+    FR_CALL(k, r, (Cont *)(uintptr_t)k->w[1]);
+    { uint64_t w[2] = { k->w[0], r }; FR_FINISH(k, interner_intern(&M.keys, w, 2, NULL)); }
+    FR_END(k);
+}
+
 /* the evaluator family and its operand families (registered by eval_init) */
 static void evaluator_init(void) {
     FAM[F_WHNF].name = "whnf"; FAM[F_WHNF].start = NULL; FAM[F_WHNF].resume = whnf_step;
     FAM[F_WHNF].loc_size = sizeof(WhLoc); FAM[F_WHNF].pure = false;
     F_OBS = family_define("whnf.observe", obs_step, 0, false); F_OBS_ = F_OBS;
     F_CREQ = family_define("construct.request", creq_step, sizeof(CrLoc), false);
+    F_CBRANCH = family_define("whnf.comp_branch", cbranch_step, 0, false);
     F_FWD = family_define("whnf.forward", fwd_step, 0, false);
     F_FIELDF = family_lookup("field"); F_BINDERF = family_lookup("binder"); F_CONSTRUCTF = family_lookup("construct"); F_HEADF = family_lookup("head.annotation");
     F_FCENTF = family_lookup("fc.entails"); F_FCPROJF = family_lookup("fc.project"); F_FCMEETF = family_lookup("fc.meet");

@@ -32,7 +32,11 @@ int main(void) {
     RefId pli = mk_plam(i, mk_papp(j, A, ref_var(a), ref_var(a), ref_var(p), iv_var(i)));
     RefId plj = mk_plam(j, mk_papp(i, A, ref_var(a), ref_var(a), ref_var(p), iv_var(j)));
     CHECK(pli == plj, "<i> p @ i and <j> p @ j are the same reference");
-    CHECK(ref_is_tview(idx) && ref_is_tview(pli), "a construction is a template view");
+    /* constructions and template programs share one interpretation of a node
+     * in an environment (field, binder and head families); this is not an
+     * identity claim between a raw construction and a template program that
+     * denote different syntax — identity is reference equality, as above */
+    CHECK(construction_field(idx, 0) == A, "a construction's field is its constant interpreted in its environment");
     RefId inner_x = mk_lam(y, A, ref_var(x)), inner_x2 = mk_lam(y2, A, ref_var(x2));
     CHECK(inner_x != inner_x2 && tnode_of(inner_x) == tnode_of(inner_x2), "λy.x and λy'.x' share their node and differ in their environment");
     CHECK(reindex1(inner_x, x, ref_var(x2)) == inner_x2, "renaming the free variable is reindexing the environment");

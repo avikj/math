@@ -100,6 +100,7 @@ void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kapp
 ExprId tnode_head_expr(TNodeId Q, int levels);
 ExprId tnode_field_expr(TNodeId Q, size_t k);
 FieldIndex tnode_binder_domain(TNodeId Q, BinderSlot s);
+bool expr_is_level(ExprId e); uint64_t expr_level_value(ExprId e);   /* a closed level/payload expression */
 size_t tnode_binder_local(TNodeId Q, BinderSlot s);        /* the binder's local position (atom np+local) */
 void tnode_template_binder(TNodeId Q, BinderSlot slot, FieldIndex field, uint64_t *env_slot, ExprId *body_e);                     /* a template node's payload / levels recipe (0 = none) */
 void construct_bind_template_families(void);                                   /* interpretation families (registered by eval_init) */
