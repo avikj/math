@@ -46,11 +46,15 @@ uint64_t jr_c(uint64_t v) { size_t n; return rget(v, &n)[4]; }
 #define PASS(res) do { if (jr_code(res) != J_OK) DONE(jr_code(res), jr_why(res), 0, 0, 0); } while (0)
 
 /* session diagnostics: immutable strings reachable for the process lifetime */
-static struct { VEC(char *) items; pthread_mutex_t mu; } DIAG = { .mu = PTHREAD_MUTEX_INITIALIZER };
+typedef struct Diag { struct Diag *next; char text[]; } Diag;
+static Diag *diags;                    /* pushed by CAS; never freed */
 const char *judge_diag(const char *text) {
-    char *copy = strdup(text); require(copy, "out of memory");
-    pthread_mutex_lock(&DIAG.mu); vec_push(&DIAG.items, copy); pthread_mutex_unlock(&DIAG.mu);
-    return copy;
+    size_t n = strlen(text) + 1;
+    Diag *d = malloc(sizeof *d + n); require(d, "out of memory");
+    memcpy(d->text, text, n);
+    d->next = __atomic_load_n(&diags, __ATOMIC_RELAXED);
+    while (!__atomic_compare_exchange_n(&diags, &d->next, d, true, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) ;
+    return d->text;
 }
 
 /* ---------------- contexts ---------------- */

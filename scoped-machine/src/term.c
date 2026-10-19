@@ -17,30 +17,26 @@ const char *tag_name(Tag t) {
 #define TDECL(x) ((TermDecl *)chunked_at(&M.term_decl, (x) - 1))
 #define NVAL(id) ((uint64_t *)chunked_at(&M.nominal_val, (id) - 1))
 #define DEF(s) ((Def *)chunked_at(&M.defs, (s) - 1))
-static void term_lock(void) { pthread_mutex_lock(&M.term_mu); }
-static void term_unlock(void) { pthread_mutex_unlock(&M.term_mu); }
 
 /* ================= declarations ================= */
 
 TermVarId declare_term(RefId type, FaceId required) {
-    term_lock();
-    TermVarId x = (TermVarId)(M.n_term_vars + 1);
+    require(type, "a declaration has a type");
+    TermVarId x = (TermVarId)__atomic_add_fetch(&M.n_term_vars, 1, __ATOMIC_RELAXED);
     TermDecl *d = TDECL(x);
-    d->type = type; d->required = required;
-    __atomic_store_n(&M.n_term_vars, M.n_term_vars + 1, __ATOMIC_RELEASE);
-    term_unlock();
+    d->required = required;
+    __atomic_store_n(&d->type, type, __ATOMIC_RELEASE);
     return x;
 }
-DimVarId declare_dim(void) {
-    term_lock();
-    DimVarId i = (DimVarId)(M.n_dim_vars + 1);
-    __atomic_store_n(&M.n_dim_vars, M.n_dim_vars + 1, __ATOMIC_RELEASE);
-    term_unlock();
-    return i;
+DimVarId declare_dim(void) { return (DimVarId)__atomic_add_fetch(&M.n_dim_vars, 1, __ATOMIC_RELAXED); }
+static const TermDecl *decl_of(TermVarId x) {
+    require(x >= 1 && x <= __atomic_load_n(&M.n_term_vars, __ATOMIC_RELAXED), "undeclared term variable");
+    const TermDecl *d = TDECL(x);
+    require(__atomic_load_n(&d->type, __ATOMIC_ACQUIRE), "undeclared term variable");
+    return d;
 }
-static size_t n_terms_now(void) { return __atomic_load_n(&M.n_term_vars, __ATOMIC_ACQUIRE); }
-RefId term_var_type(TermVarId x) { require(x >= 1 && x <= n_terms_now(), "undeclared term variable"); return TDECL(x)->type; }
-FaceId term_var_required(TermVarId x) { require(x >= 1 && x <= n_terms_now(), "undeclared term variable"); return TDECL(x)->required; }
+RefId term_var_type(TermVarId x) { return decl_of(x)->type; }
+FaceId term_var_required(TermVarId x) { return decl_of(x)->required; }
 
 /* ================= raw maps ================= */
 /* record: [(x,ref)*, (i,intv)*, nt] — keys sorted within each section, no
@@ -150,8 +146,13 @@ RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nf, const
 /* ================= references ================= */
 /* record: [1, x] for VAR ; [3, node, environment] for TVIEW */
 
+/* side data is a function of the record: every interning caller writes the
+ * same values, so none waits for another */
 static void ref_side_set(RefId id, DimSetId support, VarSetId fv, FaceId req) {
-    RefSide *r = RSIDE(id); r->support = support; r->freevars = fv; r->required = req;
+    RefSide *r = RSIDE(id);
+    __atomic_store_n(&r->support, support, __ATOMIC_RELAXED);
+    __atomic_store_n(&r->freevars, fv, __ATOMIC_RELAXED);
+    __atomic_store_n(&r->required, req, __ATOMIC_RELAXED);
     __atomic_store_n(&r->published, 1, __ATOMIC_RELEASE);
 }
 /* a reference found by its content: complete (record and side data) or 0.
@@ -168,18 +169,15 @@ RefId ref_var(TermVarId x) {
     if (is_local_atom(x)) {
         /* a bound local occurrence (§50): no declaration record; its type and
          * guard live in the enclosing scope's or node's records */
-        term_lock();
-        RefId id = interner_find(&M.refs, w, 2);
-        if (!id) {
-            bool created;
-            id = interner_intern(&M.refs, w, 2, &created);
-            uint64_t xs[1] = { x };
-            ref_side_set(id, dimset_make(NULL, 0), varset_make(xs, 1), fc_true());
-        }
-        term_unlock();
+        RefId id = ref_lookup(w, 2);
+        if (id) return id;
+        bool created;
+        id = interner_intern(&M.refs, w, 2, &created);
+        uint64_t xs[1] = { x };
+        ref_side_set(id, dimset_make(NULL, 0), varset_make(xs, 1), fc_true());
         return id;
     }
-    require(x >= 1 && x <= n_terms_now(), "VAR of undeclared variable %llu", (unsigned long long)x);
+    (void)decl_of(x);
     RefId id = ref_lookup(w, 2);
     if (id) return id;
     return ref_var_family(x);              /* its one owner publishes record and side data; an unfinished one is awaited */
@@ -190,10 +188,8 @@ RefId ref_var(TermVarId x) {
 RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv, FaceId req) {
     uint64_t w[2] = { 1, x };
     bool created;
-    term_lock();
     RefId id = interner_intern(&M.refs, w, 2, &created);
-    if (created) ref_side_set(id, support, fv, req);
-    term_unlock();
+    ref_side_set(id, support, fv, req);
     return id;
 }
 
@@ -204,77 +200,64 @@ uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs,
 RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required) {
     uint64_t w[3] = { 3, node, env };
     bool created;
-    term_lock();
     RefId id = interner_intern(&M.refs, w, 3, &created);
-    if (created) ref_side_set(id, support, fv, required);
-    term_unlock();
+    ref_side_set(id, support, fv, required);
     return id;
 }
 TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
 Tag ref_tag(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] != 1, "ref_tag of a variable"); return tnode_tag(w[1]); }
-DimSetId ref_support(RefId t) { return RSIDE(t)->support; }
-VarSetId ref_freevars(RefId t) { return RSIDE(t)->freevars; }
-FaceId ref_required(RefId t) { return RSIDE(t)->required; }
+DimSetId ref_support(RefId t) { return __atomic_load_n(&RSIDE(t)->support, __ATOMIC_RELAXED); }
+VarSetId ref_freevars(RefId t) { return __atomic_load_n(&RSIDE(t)->freevars, __ATOMIC_RELAXED); }
+FaceId ref_required(RefId t) { return __atomic_load_n(&RSIDE(t)->required, __ATOMIC_RELAXED); }
 
 RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_term(x, a)); }
 RefId reindex_dim(RefId t, DimVarId i, IntervalId r) { return reindex(t, map_single_dim(i, r)); }
 
 /* ================= binders ================= */
 
-static uint64_t nominal_lookup(const KeyWord *key, size_t n, bool *created) {
+static uint64_t nominal_lookup(const KeyWord *key, size_t n) {
     Words w; words_init(&w);
     for (size_t k = 0; k < n; k++) { words_push(&w, key[k].kind); words_push(&w, key[k].v); }
-    uint64_t id = interner_intern(&M.nominal, w.w, w.n, created);
+    bool created;
+    uint64_t id = interner_intern(&M.nominal, w.w, w.n, &created);
     words_free(&w);
     return id;
+}
+/* the name minted for a nominal key: the first installed declaration (a
+ * caller that loses the installation leaves its own declaration unused) */
+static uint64_t nominal_value(uint64_t id, RefId type, FaceId required, bool dim) {
+    uint64_t *slot = NVAL(id);
+    uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+    if (v) return v;
+    uint64_t mine = dim ? declare_dim() : declare_term(type, required), expected = 0;
+    return __atomic_compare_exchange_n(slot, &expected, mine, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE) ? mine : expected;
 }
 
 TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type) {
     KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_TERM } };
-    bool created;
-    term_lock();
-    uint64_t id = nominal_lookup(key, 4, &created);
-    if (created) { *NVAL(id) = declare_term(type, fc_true()); }
-    TermVarId r = (TermVarId)*NVAL(id);
-    term_unlock();
-    return r;
+    return (TermVarId)nominal_value(nominal_lookup(key, 4), type, fc_true(), false);
 }
 DimVarId binder_dim_var(RefId owner, BinderSlot slot) {
     KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_DIM } };
-    bool created;
-    term_lock();
-    uint64_t id = nominal_lookup(key, 4, &created);
-    if (created) { *NVAL(id) = declare_dim(); }
-    DimVarId r = (DimVarId)*NVAL(id);
-    term_unlock();
-    return r;
+    return (DimVarId)nominal_value(nominal_lookup(key, 4), 0, 0, true);
 }
 TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required) {
     KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
     w[0].kind = KW_CONST; w[0].v = 2; memcpy(w + 1, key, n * sizeof(KeyWord));
-    bool created;
-    term_lock();
-    uint64_t id = nominal_lookup(w, n + 1, &created);
+    uint64_t id = nominal_lookup(w, n + 1);
     free(w);
-    if (created) { *NVAL(id) = declare_term(type, required); }
-    else require(term_var_type((TermVarId)*NVAL(id)) == type && term_var_required((TermVarId)*NVAL(id)) == required,
-                 "keyed fresh variable reused at a different type or required face");
-    TermVarId r = (TermVarId)*NVAL(id);
-    term_unlock();
+    TermVarId r = (TermVarId)nominal_value(id, type, required, false);
+    require(term_var_type(r) == type && term_var_required(r) == required,
+            "keyed fresh variable reused at a different type or required face");
     return r;
 }
 TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type) { return fresh_term_keyed_req(key, n, type, fc_true()); }
 DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
     KeyWord *w = malloc((n + 1) * sizeof(KeyWord)); require(w, "out of memory");
     w[0].kind = KW_CONST; w[0].v = 3; memcpy(w + 1, key, n * sizeof(KeyWord));
-    bool created;
-    term_lock();
-    uint64_t id = nominal_lookup(w, n + 1, &created);
+    uint64_t id = nominal_lookup(w, n + 1);
     free(w);
-    if (created) { *NVAL(id) = declare_dim(); }
-    DimVarId r = (DimVarId)*NVAL(id);
-    term_unlock();
-    return r;
+    return (DimVarId)nominal_value(id, 0, 0, true);
 }
 
 
@@ -393,17 +376,15 @@ ContextId global_context_flat(SymbolId s) { return __atomic_load_n(&DEF(s)->ctx,
 
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type) {
     ContextId ctx = boundary_context(params, dims, fc_true());
-    term_lock();
-    SymbolId s = (SymbolId)(M.n_defs + 1);
+    SymbolId s = (SymbolId)__atomic_add_fetch(&M.n_defs, 1, __ATOMIC_RELAXED);
     Def *d = DEF(s);
-    d->body = 0; d->params = params; d->dims = dims; d->name = name; d->type = type; d->ctx = ctx;
-    M.n_defs++;
-    term_unlock();
+    d->params = params; d->dims = dims; d->name = name; d->type = type;
+    __atomic_store_n(&d->ctx, ctx, __ATOMIC_RELEASE);
     return s;
 }
 
 bool set_global_body(SymbolId s, RefId body) {
-    require(s >= 1 && s <= M.n_defs, "unknown symbol");
+    require(s >= 1 && s <= __atomic_load_n(&M.n_defs, __ATOMIC_RELAXED), "unknown symbol");
     Def *d = DEF(s);
     require(d->body == 0, "definition environment is immutable: %s already defined", d->name);
     __atomic_store_n(&d->body, body, __ATOMIC_RELEASE);
@@ -414,10 +395,10 @@ RefId global_type(SymbolId s) { return DEF(s)->type; }
 RefId global_body(SymbolId s) { return __atomic_load_n(&DEF(s)->body, __ATOMIC_ACQUIRE); }
 VarSetId global_params(SymbolId s) { return DEF(s)->params; }
 DimSetId global_dims(SymbolId s) { return DEF(s)->dims; }
-size_t global_count(void) { return M.n_defs; }
+size_t global_count(void) { return __atomic_load_n(&M.n_defs, __ATOMIC_ACQUIRE); }
 
 RefId global_ref(SymbolId s) {
-    require(s >= 1 && s <= M.n_defs, "unknown symbol");
+    require(s >= 1 && s <= __atomic_load_n(&M.n_defs, __ATOMIC_RELAXED), "unknown symbol");
     return construction_request(T_GLOBAL, s, LEVELS_NONE, NULL, 0, NULL, 0, DEF(s)->params, DEF(s)->dims);
 }
 

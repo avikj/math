@@ -23,7 +23,6 @@ struct Desc {
     size_t nt;                          /* inputs, then output port cells (expect absent, after the port) */
     uint64_t *cell, *ckey, *expect, *after;
     Node *nodes;
-    Desc *next;
 };
 /* a cell word: 0 absent | AVAILABLE(x) | RESERVED(node) | CONSUMED(occurrence) */
 #define W_AVAIL(x) (((uint64_t)(x) << 2) | 1)
@@ -38,7 +37,6 @@ static struct {
     Interner rids; Chunked ridw;        /* request id → [proposal, settled outcome] */
     Interner issued;                    /* capabilities an authority issued */
     Interner occs; Chunked occd;        /* occurrence → its descriptor */
-    pthread_mutex_t mu; Desc *descs;
 } EF;
 
 static uint64_t *cell_word(uint64_t kind, uint64_t id) {
@@ -220,8 +218,8 @@ static Desc *desc_new(uint64_t rid, uint64_t prop, const Prop *p) {
         D->cell[k] = CK_PORT; D->ckey[k] = port; D->expect[k] = 0; D->after[k] = W_AVAIL(port);
         D->nodes[k].D = D; D->nodes[k].k = k; k++;
     }
-    pthread_mutex_lock(&EF.mu); D->next = EF.descs; EF.descs = D; pthread_mutex_unlock(&EF.mu);
-    uint64_t c = interner_intern(&EF.occs, &D->occ, 1, NULL);
+    bool fresh; uint64_t c = interner_intern(&EF.occs, &D->occ, 1, &fresh);
+    require(fresh, "one descriptor per occurrence");
     __atomic_store_n((Desc **)chunked_at(&EF.occd, c - 1), D, __ATOMIC_RELEASE);
     return D;
 }
@@ -389,7 +387,6 @@ void effect_families_init(void) {
     interner_init(&EF.rids); chunked_init(&EF.ridw, 2 * sizeof(uint64_t));
     interner_init(&EF.issued);
     interner_init(&EF.occs); chunked_init(&EF.occd, sizeof(Desc *));
-    pthread_mutex_init(&EF.mu, NULL); EF.descs = NULL;
     Fe_JCHECK = family_lookup("judge.check"); Fe_JLEVEL = family_lookup("judge.level");
     Fe_CONSTRUCT = family_lookup("construct"); Fe_SCC = family_lookup("proof.scc");
     require(Fe_JCHECK && Fe_JLEVEL && Fe_CONSTRUCT && Fe_SCC, "the judgment, construction and proof-use families are registered first");
@@ -398,11 +395,12 @@ void effect_families_init(void) {
     F_OCCB = family_define("occurrence.boundary", occb_step, 0, true);
 }
 void effect_free(void) {
-    for (Desc *D = EF.descs, *n; D; D = n) { n = D->next; free(D->cell); free(D->ckey); free(D->expect); free(D->after); free(D->nodes); free(D); }
-    EF.descs = NULL;
+    for (size_t c = 0, n = interner_count(&EF.occs); c < n; c++) {     /* every descriptor is indexed by its occurrence */
+        Desc **p = chunked_peek(&EF.occd, c), *D = p ? *p : NULL;
+        if (D) { free(D->cell); free(D->ckey); free(D->expect); free(D->after); free(D->nodes); free(D); }
+    }
     interner_free(&EF.cells); chunked_free(&EF.cellw);
     interner_free(&EF.rids); chunked_free(&EF.ridw);
     interner_free(&EF.issued);
     interner_free(&EF.occs); chunked_free(&EF.occd);
-    pthread_mutex_destroy(&EF.mu);
 }

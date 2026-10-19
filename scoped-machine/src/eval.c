@@ -79,13 +79,13 @@ static struct {
     size_t idle; bool stop;        /* parked workers; pool shutdown (under idle_mu) */
     pthread_t *workers; size_t nworkers;
     Pool cont_pool, chunk_pool;
-    Pool loc_pool[F_MAX]; bool loc_ready[F_MAX]; pthread_mutex_t loc_mu;   /* frame locals records, per family */
+    Pool loc_pool[F_MAX];             /* frame locals records, per family (made when the families are defined) */
     /* rooted results (immutable payloads), an intrusive list */
     EvalResult *results;
     /* live joins: a join that never fills (stuck children) is dismantled at teardown */
     VEC(Cont *) stuck;                /* teardown: frames reached as stuck waiters or queued jobs */
     /* readings: one shard per thread that has executed protocol events */
-    struct Shard *shards; pthread_mutex_t shard_mu;
+    struct Shard *shards;             /* pushed by CAS, one per thread */
     uint64_t epoch;
 } E;
 
@@ -98,7 +98,8 @@ static __thread Shard *tl_shard; static __thread uint64_t tl_epoch;
 static Shard *shard(void) {
     if (tl_epoch != E.epoch) {
         Shard *s = calloc(1, sizeof *s); require(s, "out of memory: a reading shard");
-        pthread_mutex_lock(&E.shard_mu); s->next = E.shards; E.shards = s; pthread_mutex_unlock(&E.shard_mu);
+        s->next = __atomic_load_n(&E.shards, __ATOMIC_RELAXED);
+        while (!__atomic_compare_exchange_n(&E.shards, &s->next, s, true, __ATOMIC_RELEASE, __ATOMIC_RELAXED)) ;
         tl_shard = s; tl_epoch = E.epoch;
     }
     return tl_shard;
@@ -107,7 +108,7 @@ static void event(Reading r) { count_bump(&shard()->ev[r]); }
 /* the steps executed so far, as a word for a caller's budget (saturating) */
 static uint64_t steps_now(void) {
     Exact x = { 0, NULL }; uint64_t v;
-    pthread_mutex_lock(&E.shard_mu); Shard *s = E.shards; pthread_mutex_unlock(&E.shard_mu);
+    Shard *s = __atomic_load_n(&E.shards, __ATOMIC_ACQUIRE);
     for (; s; s = s->next) exact_add_count(&x, &s->ev[RD_STEP]);
     if (!exact_to_u64(&x, &v)) v = UINT64_MAX;
     exact_free(&x); return v;
@@ -130,7 +131,7 @@ void eval_work(size_t n, const EntryId *roots, Exact *out, size_t *support) {
 }
 void eval_reading(Reading r, Family f, Exact *out) {
     require(r <= RD_STEPS && (r != RD_STEPS || (f >= 1 && f < F_MAX)), "bad reading");
-    pthread_mutex_lock(&E.shard_mu); Shard *s = E.shards; pthread_mutex_unlock(&E.shard_mu);
+    Shard *s = __atomic_load_n(&E.shards, __ATOMIC_ACQUIRE);
     for (; s; s = s->next) exact_add_count(out, r == RD_STEPS ? &s->steps[f] : &s->ev[r]);
 }
 
@@ -149,6 +150,7 @@ Family family_lookup(const char *name) {
 Family family_define(const char *name, FamResume step, size_t loc_size, bool pure) {
     Family f = family_register(name, NULL, step);
     FAM[f].loc_size = loc_size; FAM[f].pure = pure;
+    if (E.epoch && loc_size && !E.loc_pool[f].size) pool_init(&E.loc_pool[f], loc_size);   /* defined while an evaluator is live */
     return f;
 }
 
@@ -168,8 +170,7 @@ void eval_init(void) {
     pthread_cond_init(&E.idle_cv, NULL);
     pool_init(&E.cont_pool, sizeof(Cont));
     pool_init(&E.chunk_pool, sizeof(QChunk));
-    pthread_mutex_init(&E.loc_mu, NULL);
-    pthread_mutex_init(&E.shard_mu, NULL); E.epoch = __atomic_add_fetch(&eval_epochs, 1, __ATOMIC_RELAXED);
+    E.epoch = __atomic_add_fetch(&eval_epochs, 1, __ATOMIC_RELAXED);
     intern_families_init();
     dnf_families_init();
     subst_families_init();
@@ -184,6 +185,7 @@ void eval_init(void) {
     proof_families_init();
     chain_families_init();
     effect_families_init();
+    for (size_t f = 1; f < n_fam; f++) if (FAM[f].loc_size && !E.loc_pool[f].size) pool_init(&E.loc_pool[f], FAM[f].loc_size);   /* families defined in an earlier lifetime */
     evaluator_bind();
 }
 
@@ -292,8 +294,7 @@ void eval_free(void) {
     vec_free(&E.stuck);
     pool_destroy(&E.cont_pool);
     pool_destroy(&E.chunk_pool);
-    for (size_t f = 0; f < F_MAX; f++) if (E.loc_ready[f]) pool_destroy(&E.loc_pool[f]);
-    pthread_mutex_destroy(&E.loc_mu);
+    for (size_t f = 0; f < F_MAX; f++) if (E.loc_pool[f].size) pool_destroy(&E.loc_pool[f]);
     q_free(&E.shared);
     pthread_mutex_destroy(&E.idle_mu);
     pthread_cond_destroy(&E.work_cv); pthread_cond_destroy(&E.idle_cv);
@@ -305,14 +306,7 @@ static Cont *cont_new(ContKind kind, EntryId dest, FaceId chi) {
     k->kind = kind; k->dest = dest; k->chi = chi; k->disposed = false; k->owner = 0; k->owned = NULL;
     return k;
 }
-static Pool *loc_pool(Family f) {
-    if (!__atomic_load_n(&E.loc_ready[f], __ATOMIC_ACQUIRE)) {
-        pthread_mutex_lock(&E.loc_mu);
-        if (!E.loc_ready[f]) { pool_init(&E.loc_pool[f], FAM[f].loc_size); __atomic_store_n(&E.loc_ready[f], true, __ATOMIC_RELEASE); }
-        pthread_mutex_unlock(&E.loc_mu);
-    }
-    return &E.loc_pool[f];
-}
+static Pool *loc_pool(Family f) { return &E.loc_pool[f]; }
 static void cont_release(Cont *k) {
     if (k->kind == K_FRAME && k->owned) owned_free_all(k);
     if (k->kind == K_FRAME && k->loc) pool_free(loc_pool(k->fam), k->loc);

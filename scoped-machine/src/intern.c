@@ -58,7 +58,6 @@ void interner_init(Interner *t) {
     chunked_init(&t->nodes, sizeof(TrieNode));
     chunked_at(&t->nodes, 0);            /* the root, index 1, all slots empty */
     t->nnodes = 1;
-    pthread_mutex_init(&t->mu, NULL);
     pthread_once(&registry_once, registry_init);
     t->index = __atomic_add_fetch(&registry_n, 1, __ATOMIC_RELAXED);
     __atomic_store_n((Interner **)chunked_at(&registry, t->index - 1), t, __ATOMIC_RELEASE);
@@ -70,7 +69,6 @@ void interner_free(Interner *t) {
     for (uint64_t *p = t->pages; p; ) { uint64_t *prev = (uint64_t *)(uintptr_t)p[0]; free(p); p = prev; }
     chunked_free(&t->recs);
     chunked_free(&t->nodes);
-    pthread_mutex_destroy(&t->mu);
     memset(t, 0, sizeof *t);
 }
 
@@ -88,29 +86,28 @@ static bool rec_equal(const Rec *r, uint64_t h, const uint64_t *w, size_t n) {
     return r->hash == h && r->n == n && (n == 0 || memcmp(r->w, w, n * sizeof(uint64_t)) == 0);
 }
 
-/* word storage for one record (constant work under the storage mutex: a
- * full page is replaced by one fixed-size host allocation; an oversized
- * record — only the flatten owner's — gets one host block, whose words are
- * then written one leaf per step) */
+/* word storage for one record, constant work: each thread carves its own
+ * current page of each table (cached by the table's never-reused index); a
+ * full page is replaced by one fixed-size host allocation, linked into the
+ * table's teardown list by one CAS; an oversized record — only the flatten
+ * owner's — gets one host block, whose words are then written one leaf per
+ * step */
+#define TL_PAGES 16
+static __thread struct { size_t index; uint64_t *page; size_t used; } tl_page[TL_PAGES];
+static uint64_t *storage_block(Interner *t, size_t words) {
+    uint64_t *b = malloc(words * sizeof(uint64_t));
+    require(b, "out of memory");
+    uint64_t *head = __atomic_load_n(&t->pages, __ATOMIC_RELAXED);
+    do b[0] = (uint64_t)(uintptr_t)head;
+    while (!__atomic_compare_exchange_n(&t->pages, &head, b, true, __ATOMIC_RELEASE, __ATOMIC_RELAXED));
+    return b;
+}
 static uint64_t *storage_reserve(Interner *t, size_t n) {
-    pthread_mutex_lock(&t->mu);
-    uint64_t *dst;
-    if (n + 1 > WPAGE_WORDS) {
-        uint64_t *b = malloc((n + 1) * sizeof(uint64_t));
-        require(b, "out of memory");
-        b[0] = (uint64_t)(uintptr_t)t->pages; t->pages = b;
-        dst = b + 1;
-    } else {
-        if (!t->page || t->page_used + n > WPAGE_WORDS) {
-            uint64_t *p = malloc(WPAGE_WORDS * sizeof(uint64_t));
-            require(p, "out of memory");
-            p[0] = (uint64_t)(uintptr_t)t->pages; t->pages = p;
-            t->page = p; t->page_used = 1;
-        }
-        dst = t->page + t->page_used;
-        t->page_used += n;
-    }
-    pthread_mutex_unlock(&t->mu);
+    if (n + 1 > WPAGE_WORDS) return storage_block(t, n + 1) + 1;
+    __typeof__(tl_page[0]) *c = &tl_page[t->index % TL_PAGES];
+    if (c->index != t->index || c->used + n > WPAGE_WORDS) { c->index = t->index; c->page = storage_block(t, WPAGE_WORDS); c->used = 1; }
+    uint64_t *dst = c->page + c->used;
+    c->used += n;
     return dst;
 }
 

@@ -59,9 +59,7 @@ struct Interner {
     Chunked nodes;            /* TrieNode per index-1; index 1 is the root */
     size_t n;                 /* ids reserved so far (atomic) */
     size_t nnodes;            /* nodes allocated so far (atomic) */
-    uint64_t *page; size_t page_used;   /* current word page (under mu) */
-    uint64_t *pages;          /* linked list (word 0 = previous) of every page and oversized record */
-    pthread_mutex_t mu;       /* word-storage reservation only (constant work) */
+    uint64_t *pages;          /* every page and oversized record, linked through word 0 (pushed by CAS); each thread carves its own current page */
     Interner *tree;           /* the canonical trees of large records (small records only), created on first use */
     size_t index;             /* registry index (never reused) */
 };

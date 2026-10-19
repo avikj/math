@@ -19,10 +19,6 @@ void machine_init(void) {
     chunked_init(&M.term_decl, sizeof(TermDecl));
     chunked_init(&M.nominal_val, sizeof(uint64_t));
     chunked_init(&M.defs, sizeof(Def));
-    pthread_mutexattr_t a; pthread_mutexattr_init(&a);
-    pthread_mutexattr_settype(&a, PTHREAD_MUTEX_RECURSIVE);
-    pthread_mutex_init(&M.term_mu, &a);
-    pthread_mutexattr_destroy(&a);
 }
 
 void machine_free(void) {
@@ -41,6 +37,5 @@ void machine_free(void) {
     chunked_free(&M.term_decl);
     chunked_free(&M.nominal_val);
     chunked_free(&M.defs);
-    pthread_mutex_destroy(&M.term_mu);
     memset(&M, 0, sizeof M);
 }
