@@ -122,15 +122,6 @@ void intern_begin(InternState *s, Interner *t, const uint64_t *arr, WordBuf *buf
 int intern_advance(InternState *s, size_t budget);   /* DONE: s->result; FLATTEN: the tree root s->root is built */
 uint64_t intern_complete(InternState *s);            /* outside jobs: the flat record of s->root */
 
-/* Small key→value hash map on word tuples (memo tables); thread-safe. */
-typedef struct {
-    Interner keys;
-    Chunked vals;             /* uint64_t per key id */
-} WordMap;
 
-void wordmap_init(WordMap *m);
-void wordmap_free(WordMap *m);
-bool wordmap_get(WordMap *m, const uint64_t *k, size_t n, uint64_t *out);
-void wordmap_put(WordMap *m, const uint64_t *k, size_t n, uint64_t v);
 
 #endif

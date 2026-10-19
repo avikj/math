@@ -2,188 +2,33 @@ CC      ?= gcc
 CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/pins.c src/judge.c src/proof.c
+SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/check.c src/compiler.c src/pins.c src/judge.c src/proof.c
 OBJ := $(SRC:.c=.o)
-CONSTRUCTION_TESTS := review_singleton_witnesses review_generic_identity_action review_runtime_nodes
-CONSTRUCTION_BINS := $(addprefix build/,$(CONSTRUCTION_TESTS))
+TESTS := test_protocol test_records test_dnf test_subst test_alpha test_check test_templates test_compiler test_proof_use test_main review_singleton_witnesses review_generic_identity_action review_runtime_nodes
+BINS := $(addprefix build/,$(TESTS))
 
-all: build/protocol build/records build/dnf build/subst build/alpha build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/review-probes build/demo-speculation build/proof-use $(CONSTRUCTION_BINS)
+all: $(BINS)
 
-$(CONSTRUCTION_BINS): build/%: tests/%.o $(OBJ)
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/tests: $(OBJ) tests/test_main.o
+$(BINS): build/%: tests/%.o $(OBJ)
 	@mkdir -p build
 	$(CC) $(LDFLAGS) -o $@ $^
 
 %.o: %.c src/*.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-build/alpha: $(OBJ) tests/test_alpha.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/subst: $(OBJ) tests/test_subst.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/dnf: $(OBJ) tests/test_dnf.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/records: $(OBJ) tests/test_records.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/protocol: $(OBJ) tests/test_protocol.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/schedule: $(OBJ) tests/test_schedule.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/concurrent: $(OBJ) tests/test_concurrent.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/match: $(OBJ) tests/test_match.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/check: $(OBJ) tests/test_check.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/templates: $(OBJ) tests/test_templates.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/review-regressions: $(OBJ) tests/review_regressions.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/compiler: $(OBJ) tests/test_compiler.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/review-followup: $(OBJ) tests/review_followup.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/review-checker-lifecycle: $(OBJ) tests/review_checker_lifecycle.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/review-ae756a1: $(OBJ) tests/review_ae756a1.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/review-0f787a3: $(OBJ) tests/review_0f787a3.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-REVIEW_AE_MODES := signature scope annotations missing-level environment retry partial-context publication canon publication-concurrent diagnostics-concurrent
-REVIEW_0F_MODES := scope-level scope-locals call-boundary binder-boundary machine-restart missing-level
-
-build/review-9eadaf2: $(OBJ) tests/review_9eadaf2.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-REVIEW_9E_MODES := scope-depth scope-sort nested-control
-
-build/review-end-to-end: $(OBJ) tests/review_end_to_end.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/review-nested-scope: $(OBJ) tests/review_nested_scope.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/review-probes: $(OBJ) tests/review_probes.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -Wl,--wrap=interner_intern -Wl,--wrap=whnf_pinned -o $@ $^
-
-build/demo-speculation: $(OBJ) tests/demo_speculation.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-REVIEW_E2E_MODES := candidate guard false-scope coe-scope net-tview net-race positive
-
 test: all
-	./build/protocol
-	./build/records
-	./build/dnf
-	./build/subst
-	./build/alpha
-	./build/check
-	for t in $(CONSTRUCTION_BINS); do ./$$t || exit 1; done
-	./build/match
-	./build/templates
-	./build/compiler
-	./build/proof-use
-	./build/review-regressions
-	./build/review-regressions recursive
-	./build/review-regressions concurrent
-	./build/review-regressions wordmap-window
-	./build/tests
-	./build/schedule
-	./build/concurrent
-	CUBICAL_WORKERS=4 ./build/tests
-	CUBICAL_WORKERS=4 ./build/schedule
-	CUBICAL_WORKERS=4 ./build/check
-	CUBICAL_WORKERS=4 ./build/templates
-	CUBICAL_WORKERS=4 ./build/compiler
-	./build/review-followup
-	./build/review-followup formation
-	./build/review-followup admission
-	./build/review-followup call
-	./build/review-checker-lifecycle
-	for m in $(REVIEW_AE_MODES); do ./build/review-ae756a1 $$m || exit 1; done
-	for m in $(REVIEW_0F_MODES); do ./build/review-0f787a3 $$m || exit 1; done
-	for m in $(REVIEW_9E_MODES); do ./build/review-9eadaf2 $$m || exit 1; done
-	for m in $(REVIEW_E2E_MODES) universe packed-level; do ./build/review-end-to-end $$m || exit 1; done
-	CUBICAL_WORKERS=4 ./build/review-end-to-end positive
-	./build/review-nested-scope
-	for m in duplicate handoff refpub revision; do ./build/review-probes $$m || exit 1; done
-	./build/demo-speculation
+	for t in $(BINS); do ./$$t || exit 1; done
+	CUBICAL_WORKERS=4 ./build/test_compiler
 
-TSAN_TESTS := test_protocol test_records test_dnf test_subst test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_proof_use $(CONSTRUCTION_TESTS)
-TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
+TSAN_CORE := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
-	for f in $(SRC) $(patsubst %,tests/%.c,$(TSAN_TESTS)); do $(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -c -o build/tsan/$$(basename $$f .c).o $$f || exit 1; done
-	for t in $(TSAN_TESTS); do $(CC) -pthread -fsanitize=thread -o build/tsan/$$t $(TSAN_CORE) build/tsan/$$t.o || exit 1; done
-	./build/tsan/test_protocol
-	for t in $(CONSTRUCTION_TESTS); do ./build/tsan/$$t || exit 1; done
-	CUBICAL_WORKERS=4 ./build/tsan/test_main
-	CUBICAL_WORKERS=4 ./build/tsan/test_schedule
-	./build/tsan/test_concurrent
-	CUBICAL_WORKERS=4 ./build/tsan/test_check
-	./build/tsan/test_match
-	CUBICAL_WORKERS=4 ./build/tsan/test_templates
-	CUBICAL_WORKERS=4 ./build/tsan/test_compiler
-	CUBICAL_WORKERS=4 ./build/tsan/test_proof_use
-	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions
-	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions recursive
-	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions concurrent
-	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions wordmap-window
-	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_followup call
-	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_checker_lifecycle
-	for m in $(REVIEW_AE_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_ae756a1 $$m || exit 1; done
-	for m in $(REVIEW_0F_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_0f787a3 $$m || exit 1; done
-	for m in $(REVIEW_9E_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_9eadaf2 $$m || exit 1; done
-	for m in $(REVIEW_E2E_MODES); do TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_end_to_end $$m || exit 1; done
-	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_end_to_end positive
-	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_nested_scope
+	for f in $(SRC) $(patsubst %,tests/%.c,$(TESTS)); do $(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -c -o build/tsan/$$(basename $$f .c).o $$f || exit 1; done
+	for t in $(TESTS); do $(CC) -pthread -fsanitize=thread -o build/tsan/$$t $(TSAN_CORE) build/tsan/$$t.o || exit 1; done
+	for t in $(TESTS); do CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/$$t || exit 1; done
 
 clean:
 	rm -f src/*.o tests/*.o
 	rm -rf build
 
 .PHONY: all test tsan clean
-
-build/proof-use: $(OBJ) tests/test_proof_use.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^

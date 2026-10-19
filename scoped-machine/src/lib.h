@@ -35,10 +35,8 @@ RefId mk_id_equiv(uint64_t l, RefId X);
 RefId equiv_map(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e);          /* fst e : X → Y */
 RefId equiv_contr(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e, RefId y);/* (snd e) y : Contr(fib) */
 RefId mk_fill(uint64_t l, ScopeId A, FaceId phi, ScopeId u, RefId cap, IntervalId r);   /* A : [i]U_l, u : [i]A<i> on phi */
-RefId mk_hcomp(uint64_t l, RefId X, FaceId phi, ScopeId u, RefId cap);                  /* u : [j]X on phi */
 RefId mk_coe(uint64_t l, ScopeId A, RefId cap);
 RefId mk_extend_contr(uint64_t l, RefId X, RefId c, RefId k, FaceId theta, RefId v);
-RefId mk_line_equiv(uint64_t l, ScopeId X);
 RefId mk_ua(uint64_t l, RefId X, RefId Y, RefId e);
 /* Down(l, lA, A, t, D, x, e, z) with D : [x:A, e:Path_A(t,x)] U_l (§54) */
 RefId mk_down(uint64_t l, uint64_t lA, RefId A, RefId t, ScopeId D, RefId x, RefId e, RefId z);
@@ -46,7 +44,6 @@ RefId mk_down(uint64_t l, uint64_t lA, RefId A, RefId t, ScopeId D, RefId x, Ref
 /* conveniences over a concrete dimension (capture then invoke) */
 RefId mk_coe_at(uint64_t l, DimVarId i, RefId A_i, RefId cap);
 RefId mk_fill_at(uint64_t l, DimVarId i, RefId A_i, FaceId phi, RefId u_i, RefId cap, IntervalId r);
-RefId mk_hcomp_at(uint64_t l, DimVarId j, RefId X, FaceId phi, RefId u_j, RefId cap);
 
 /* ---- §53/§54: the structural composition clause for an exposed head ----
  * fam is the family head opened at the evaluator's dimension j (an

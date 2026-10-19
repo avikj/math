@@ -12,7 +12,6 @@
 #define CUBICAL_EVAL_H
 
 #include "term.h"
-struct Net;
 
 typedef enum {
     R_INTRODUCTION = 1,
@@ -189,7 +188,6 @@ EvalResult *whnf_pinned(RefId t, FaceId chi, uint64_t pins, WhnfStatus *status);
  * context (declared variables and dimensions, declared types by identity,
  * assumption entails the required face) and then observes under the
  * context's assumption. An invalid occurrence yields W_INVALID. */
-EvalResult *whnf_in(RefId t, ContextId ctx, WhnfStatus *status);
 
 /* run queued evaluation tasks until the queue is empty; returns tasks run.
  * With a worker pool, waits until the ready multiset is empty and every
@@ -210,33 +208,16 @@ typedef struct {
 } EvalEvents;
 EvalEvents eval_events(void);
 
-/* Job selection policy of the sequential scheduler. The abstract machine's
- * reductions commute (§25–§27), so the event vector and the observed normal
- * form (up to renaming of allocated identities) must not depend on it. */
-typedef enum { POL_FIFO = 0, POL_LIFO, POL_RANDOM } SchedPolicy;
-void eval_set_policy(SchedPolicy p, uint64_t seed);
-/* §43: the evaluator's net holds the APPLY_TRANSFORM / CONTINUE_REFERENCE
- * pairs as jobs of the same scheduler (one outstanding count); the pair queue
- * has its own selection policy */
-void eval_set_pair_policy(SchedPolicy p, uint64_t seed);
-typedef struct { size_t continue_ref, op, eval_deliver, retries; } EvalNetEvents;
-EvalNetEvents eval_net_events(void);
-void eval_forward_result(EntryId K, RefId v);        /* the receiver's request (net rule) */
 
 /* cache introspection (tests) */
 EntryId eval_entry_lookup(RefId t, FaceId chi);     /* 0 when absent */
 EntryState eval_entry_state(EntryId e);
-FaceId eval_entry_face(EntryId e);
 size_t eval_entry_count(void);                       /* entry ids reserved (some may be unused after a lost insertion race) */
 bool eval_entry_live(EntryId e);                    /* e names a key */
-bool eval_entry_is_observation(EntryId e);          /* a live F_WHNF key */
 size_t eval_entry_runs(EntryId e);
-size_t eval_running_count(void);
-RefId eval_entry_ref(EntryId e);
-void eval_entry_events(EntryId e, size_t *req, size_t *deliver, size_t *pub);                    /* entries currently RUNNING */
 size_t eval_task_count(void);                       /* EVALUATE tasks created so far */
 
-/* continuation constructors used by the net layer */
+/* an external receiver of a root request */
 Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *));   /* free_ctx releases ctx if never delivered */
 
 void print_result(const EvalResult *r, FILE *f);

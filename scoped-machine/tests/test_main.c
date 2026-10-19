@@ -2,7 +2,6 @@
  * layers. Run under ASan+UBSan via `make test`. */
 #include "../src/eval.h"
 #include "../src/lib.h"
-#include "../src/net.h"
 
 static int n_pass = 0, n_fail = 0;
 #define CHECK(cond, ...) do { if (cond) { n_pass++; } else { n_fail++; printf("  FAIL (%s:%d): ", __FILE__, __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
@@ -506,27 +505,16 @@ static void test_contexts(void) {
     RefId t = mk_papp_const(0, A, a, a, p, iv_var(i));
     CtxDecl ds[4] = { { S_TERM, ref_var_id(A), U0 }, { S_TERM, ref_var_id(a), A }, { S_TERM, ref_var_id(p), mk_path_const(0, A, a, a) }, { S_DIM, i, 0 } };
     ContextId full = context_make(4, ds, fc_true());
-    CHECK(occurrence_validate(t, full, NULL) == OCC_VALID, "fully declared occurrence is valid");
-    ContextId no_dim = context_make(3, ds, fc_true());
-    uint64_t culprit = 0;
-    CHECK(occurrence_validate(t, no_dim, &culprit) == OCC_UNDECLARED_DIM && culprit == i, "missing dimension declaration is reported");
-    CtxDecl bad[4] = { ds[0], { S_TERM, ref_var_id(a), U0 }, ds[2], ds[3] };
-    CHECK(occurrence_validate(t, context_make(4, bad, fc_true()), &culprit) == OCC_TYPE_MISMATCH && culprit == ref_var_id(a), "declared type must be the variable's declaration type");
-    CHECK(occurrence_validate(t, context_make(2, ds, fc_true()), &culprit) == OCC_UNDECLARED_TERM && culprit == ref_var_id(p), "missing term declaration is reported (first in free-variable order)");
-    /* weakening keeps the reference and changes only the context */
+    /* weakening changes only the context */
     ContextId weak = context_extend_term(full, x, A);
-    CHECK(occurrence_validate(t, weak, NULL) == OCC_VALID && context_size(weak) == 5, "weakening");
-    /* required faces: a system occurrence needs the assumption */
+    CHECK(context_size(weak) == 5, "weakening");
     FaceId fs[2] = { fc_lit(i, 0), fc_lit(i, 1) }; RefId ts[2] = { a, a };
     RefId sys = mk_system(2, fs, ts);
-    CHECK(occurrence_validate(sys, full, NULL) == OCC_FACE_NOT_ENTAILED, "system under the true assumption is not a valid occurrence");
     ContextId restricted = context_restrict(full, fc_lit(i, 0));
-    CHECK(occurrence_validate(sys, restricted, NULL) == OCC_VALID && context_assumption(restricted) == fc_lit(i, 0), "restriction strengthens the assumption");
-    EvalResult *r = whnf_in(sys, restricted, &st);
-    CHECK(st == W_OK && r->ref == a, "whnf_in observes under the context assumption");
-    r = whnf_in(t, no_dim, &st);
-    CHECK(st == W_INVALID, "whnf_in refuses an invalid occurrence");
-    r = whnf_in(t, context_restrict(full, fc_lit(i, 1)), &st);
+    CHECK(context_assumption(restricted) == fc_lit(i, 0), "restriction strengthens the assumption");
+    EvalResult *r = whnf(sys, context_assumption(restricted), &st);
+    CHECK(st == W_OK && r->ref == a, "a system observes under the assumption");
+    r = whnf(t, fc_lit(i, 1), &st);
     CHECK(st == W_OK && r->ref == a, "endpoint under the context assumption");
     CHECK(context_make(4, ds, fc_true()) == full, "contexts are interned by structure");
 }
@@ -545,7 +533,6 @@ int main(void) {
     test_eval_basic();
     test_eval_glue_system();
     test_comp_clauses();
-    test_net();
     printf("\n%d passed, %d failed\n", n_pass, n_fail);
     printf("tables: %zu intervals, %zu faces, %zu maps, %zu nodes, %zu refs, %zu eval entries\n",
            interner_count(&M.intervals), interner_count(&M.faces), interner_count(&M.maps),

@@ -22,14 +22,12 @@ void machine_init(void) {
     chunked_init(&M.scope_side, sizeof(ScopeSide)); chunked_init(&M.tnode_side, sizeof(TNodeSide));
     chunked_init(&M.ref_side, sizeof(RefSide));
     chunked_init(&M.term_decl, sizeof(TermDecl));
-    chunked_init(&M.dim_prov, sizeof(uint64_t));
     chunked_init(&M.nominal_val, sizeof(uint64_t));
     chunked_init(&M.defs, sizeof(Def));
     pthread_mutexattr_t a; pthread_mutexattr_init(&a);
     pthread_mutexattr_settype(&a, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&M.term_mu, &a);
     pthread_mutexattr_destroy(&a);
-    env_control_init();                /* the fresh machine's environment is open */
 }
 
 void machine_free(void) {
@@ -46,7 +44,6 @@ void machine_free(void) {
     chunked_free(&M.scope_side); chunked_free(&M.tnode_side);
     chunked_free(&M.ref_side);
     chunked_free(&M.term_decl);
-    chunked_free(&M.dim_prov);
     chunked_free(&M.nominal_val);
     chunked_free(&M.defs);
     pthread_mutex_destroy(&M.term_mu);

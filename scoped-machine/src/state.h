@@ -10,7 +10,7 @@
 #include "intern.h"
 
 typedef struct { DimSetId support; VarSetId freevars; FaceId required; uint32_t published; } RefSide;   /* published: release-stored after the side data; a reference found by content is complete only when set */
-typedef struct { RefId type; FaceId required; uint64_t prov; } TermDecl;
+typedef struct { RefId type; FaceId required; } TermDecl;
 typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ uint64_t ctx; /* the parameter context */ } Def;
 typedef struct { DimSetId support; VarSetId freevars; } ScopeSide;
 typedef struct { uint64_t free_slots; /* interned word list */ } TNodeSide;
@@ -37,7 +37,6 @@ typedef struct {
      * published and never changes afterwards */
     Chunked ref_side;     /* RefSide per RefId-1 */
     Chunked term_decl;    /* TermDecl per TermVarId-1 (frozen once made) */
-    Chunked dim_prov;     /* uint64_t provenance per DimVarId-1 */
     Chunked nominal_val;  /* uint64_t minted name per nominal id-1 */
     Chunked defs;         /* Def per SymbolId-1 */
     size_t n_term_vars, n_dim_vars, n_defs;   /* under term_mu */

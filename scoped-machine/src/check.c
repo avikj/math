@@ -15,14 +15,11 @@
 #include "template.h"
 
 static size_t budget;                    /* jobs per root (0 = unlimited) */
-static uint64_t session_gen;
 
-void check_init(void) { session_gen++; __atomic_store_n(&budget, 0, __ATOMIC_RELEASE); }
+void check_init(void) { __atomic_store_n(&budget, 0, __ATOMIC_RELEASE); }
 void check_free(void) {}
 void check_set_budget(size_t steps) { __atomic_store_n(&budget, steps, __ATOMIC_RELEASE); }
 size_t check_budget(void) { return __atomic_load_n(&budget, __ATOMIC_ACQUIRE); }
-void check_new_attempt(void) {}
-uint64_t check_session_id(void) { return session_gen; }
 const char *check_status_name(CheckStatus s) { return s == CK_VALID ? "VALID" : s == CK_INVALID ? "INVALID" : "UNRESOLVED"; }
 const char *conv_status_name(ConvStatus s) { return s == CV_EQUAL ? "EQUAL" : s == CV_UNEQUAL ? "UNEQUAL" : "UNRESOLVED"; }
 
@@ -83,7 +80,6 @@ static CheckStatus jctx(ContextId F, uint64_t *G, const char **reason) {
 static CheckStatus scope_ok(uint64_t G, FaceId chi, RefId t, const char **reason) { uint64_t q[3] = { G, chi, t }; return ck(run(JK_SCOPE, 3, q), reason); }
 
 /* structural validity is the judgment family judge.structure */
-bool ref_validate(RefId t, const char **reason) { uint64_t q[3] = { 0, t, 0 }; return ck(run(JK_STRUCT, 3, q), reason) == CK_VALID; }
 bool scope_validate(ScopeId S, const char **reason) { uint64_t q[3] = { 1, S, 0 }; return ck(run(JK_STRUCT, 3, q), reason) == CK_VALID; }
 
 CheckStatus check_context(ContextId F, const char **reason) {
@@ -209,4 +205,3 @@ CheckStatus check_signature(const char **reason) {
     for (SymbolId s = 1; s <= n && st == CK_VALID; s++) { uint64_t w[2] = { s, P }; st = ck(run(JK_BODY, 2, w), reason); }
     return st;
 }
-void check_open_environment(void) {}

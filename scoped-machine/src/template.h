@@ -34,8 +34,6 @@ TVal template_call(TDefKind def, size_t nargs, const TVal *args);
 TNodeId tnode_of(RefId t);
 TEnvId tenv_of(RefId t);
 size_t tenv_size(TEnvId E);
-TEnvId tenv_make(size_t n, const uint64_t *slots, const TVal *vals);   /* intern an environment (slot order as given) */
-TEnvId tenv_reindex(TEnvId E, MapId sigma);                            /* componentwise (§55) */
 void tenv_entry(TEnvId E, size_t k, uint64_t *slot, TVal *v);
 Tag tnode_tag(TNodeId Q);
 TDefId tnode_def(TNodeId Q); uint64_t tnode_index(TNodeId Q);
@@ -71,7 +69,6 @@ bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e);
  *          (sort, domain_field, s)*, required_e, declared_e, (sort, type_e, guard_e)*np] */
 ExprId expr_const(PSort sort, uint64_t id);
 ExprId expr_level(uint64_t n);
-RefId tnode_construction_view(TNodeId Q, const TVal *vals);        /* vals: the np parameter images */
 bool tnode_is_construction(TNodeId Q);
 size_t tnode_nparams(TNodeId Q);
 void tnode_param(TNodeId Q, size_t k, PSort *sort, RefId *closed_type, FaceId *closed_guard);
@@ -83,18 +80,14 @@ uint64_t tnode_const_levels(TNodeId Q);
 bool tview_is_construction(RefId t);
 MapId cons_envmap(TEnvId E);                                         /* a construction environment as a substitution of its atoms (subst.c) */
 MapId tview_env_map(RefId t);                                        /* atoms ↦ images */
-MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);
 /* generic instance of a construction node: parameters at fresh names keyed
  * by (node, slot), declared at the instantiated closed types; decls has
  * tnode_nparams(Q) entries. *req receives the node's required face there. */
-RefId tnode_generic(TNodeId Q, CtxDecl *decls, FaceId *req);
 void template_families_init(void);
 void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kappa, WordBuf *er, ExprId *root);   /* the environment record into er (to be interned by intern_sub) */
 ExprId tnode_head_expr(TNodeId Q, int levels);
 ExprId tnode_field_expr(TNodeId Q, size_t k);
-FieldIndex tnode_binder_domain(TNodeId Q, BinderSlot s);
 bool expr_is_level(ExprId e); uint64_t expr_level_value(ExprId e);   /* a closed level/payload expression */
-size_t tnode_binder_local(TNodeId Q, BinderSlot s);        /* the binder's local position (atom np+local) */
 void tnode_template_binder(TNodeId Q, BinderSlot slot, FieldIndex field, uint64_t *env_slot, ExprId *body_e);                     /* a template node's payload / levels recipe (0 = none) */
 void construct_bind_template_families(void);                                   /* interpretation families (registered by eval_init) */
 

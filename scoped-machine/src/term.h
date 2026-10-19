@@ -116,7 +116,6 @@ RefId ref_var(TermVarId x);
 bool ref_is_var(RefId t);
 /* TVIEW(node, environment) references (§49): every non-variable reference;
  * their operations live in the template layer */
-bool ref_is_tview(RefId t);
 Tag ref_tag(RefId t);                 /* the head tag of a non-variable reference */
 uint64_t ref_tnode(RefId t);
 uint64_t ref_tenv(RefId t);
@@ -142,10 +141,7 @@ TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type);
 TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required);   /* a partial formal */
 DimVarId fresh_dim_keyed(const KeyWord *key, size_t n);
 /* provenance of a generated name: nominal id (0 for an input name) */
-uint64_t term_var_provenance(TermVarId x);
-uint64_t dim_var_provenance(DimVarId i);
 /* a nominal record: typed key words (kind,value pairs) */
-const uint64_t *nominal_key(uint64_t nid, size_t *npairs);
 
 /* the lifted map of section 8 for a binder of a construction `owner`: its
  * environment map, then the binder's atom ↦ fresh. *fresh receives the
@@ -189,19 +185,14 @@ void head_free(Head *h);
 /* TVIEW operations (template.c) */
 Tag tnode_tag(uint64_t Q);           /* template.c */
 void tview_open(RefId t, Head *h);
-HField tview_field(const Head *h, size_t k);
 TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 
 /* ---- occurrence contexts (§2) ----
  * A context is an ordered list of declarations DIM(i) or TERM(x, type) with
- * a face assumption. It is interned by structure and is not part of RefId.
- * An occurrence (reference, context) is valid when the context declares
- * every free dimension and every free term variable of the reference with
- * its declared type, and its assumption entails the reference's required
- * face. This is the structural check; `occurrence_validate` compares declared
- * types by identity, and the typed check with conversion is `src/check.c`
- * (§33 item 3, `observe_checked`). */
+ * a face assumption, interned by structure; it is not part of RefId. Its
+ * validity and the scope of an occurrence in it are judgments (judge.ctx,
+ * judge.scope). */
 typedef struct { Sort sort; uint64_t id; RefId type; } CtxDecl;
 ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption);
 ContextId context_extend_term(ContextId ctx, TermVarId x, RefId type);
@@ -210,10 +201,6 @@ ContextId context_restrict(ContextId ctx, FaceId phi);     /* strengthen the ass
 FaceId context_assumption(ContextId ctx);
 size_t context_size(ContextId ctx);
 CtxDecl context_decl(ContextId ctx, size_t k);
-bool context_declares_term(ContextId ctx, TermVarId x, RefId *type_out);
-bool context_declares_dim(ContextId ctx, DimVarId i);
-typedef enum { OCC_VALID = 0, OCC_UNDECLARED_TERM, OCC_UNDECLARED_DIM, OCC_TYPE_MISMATCH, OCC_FACE_NOT_ENTAILED } OccStatus;
-OccStatus occurrence_validate(RefId t, ContextId ctx, uint64_t *culprit);
 
 /* ---- globals ---- */
 /* a declared symbol: parameters (term variables with their declared types),
@@ -224,13 +211,10 @@ RefId global_type(SymbolId s);
 RefId global_body(SymbolId s);          /* 0 when opaque */
 VarSetId global_params(SymbolId s);
 DimSetId global_dims(SymbolId s);
-const char *global_name(SymbolId s);
 size_t global_count(void);
 bool set_global_body(SymbolId s, RefId body);   /* false: the environment is frozen (admitted); open a new one first */
 RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the definition's own parameters */
 MapId global_args(RefId t);            /* a global reference's images of the definition's parameters */
-uint64_t global_env_version(void);     /* changes with every declaration / body registration */
-void env_control_init(void);
 ContextId global_context_flat(SymbolId s);   /* the parameter context of a global (fixed at declaration) */
 ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req);          /* reindex(definition body, global_args) */
 
@@ -243,19 +227,13 @@ RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B);
 RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body);
 RefId mk_app(RefId f, RefId a);
 RefId mk_pair(RefId a, RefId b);
-RefId mk_pair_at(RefId S, RefId a, RefId b);        /* PAIR with its Σ type annotation (field 2) */
 RefId mk_fst(RefId p);
 RefId mk_snd(RefId p);
 RefId mk_path(DimVarId j, RefId B_j, RefId l, RefId r);
 RefId mk_plam(DimVarId j, RefId body);
 RefId mk_papp(DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s);
-RefId mk_glue_type(RefId A, FaceId alpha, RefId T, RefId e);
-RefId mk_glue_intro(RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a);
-RefId mk_unglue(RefId A, FaceId alpha, RefId T, RefId e, RefId v);
-RefId mk_comp(DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap);
 /* annotated forms (§59.1): n is the family's / type's universe level */
 RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap);
-RefId mk_papp_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s);
 RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e);
 RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a);
 RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v);

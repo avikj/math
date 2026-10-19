@@ -72,8 +72,6 @@ ExprId tnode_head_expr(TNodeId Q, int levels) { return levels ? node_levels_e(Q)
 static void node_field(TNodeId Q, size_t k, FieldKind *kind, BinderSlot *bslot, ExprId *e);
 ExprId tnode_field_expr(TNodeId Q, size_t k) { FieldKind kd; BinderSlot bs; ExprId e; node_field(Q, k, &kd, &bs, &e); return e; }
 static void node_binder(TNodeId Q, BinderSlot s, Sort *sort, FieldIndex *domfield, size_t *lslot);
-FieldIndex tnode_binder_domain(TNodeId Q, BinderSlot s) { Sort so; FieldIndex df; size_t ls; node_binder(Q, s, &so, &df, &ls); return df; }
-size_t tnode_binder_local(TNodeId Q, BinderSlot s) { Sort so; FieldIndex df; size_t ls; node_binder(Q, s, &so, &df, &ls); return ls; }
 /* a template node's binder field: the environment slot of the binder's local
  * and the field's recipe */
 /* a node's binder field (a construction or a template program alike): the
@@ -134,8 +132,6 @@ static void node_free_list(TNodeId Q, size_t *n, const uint64_t **w) { *w = inte
 /* ------------------------------------------------------------------ */
 /* environments and interpretation (as families, below)                 */
 
-static TVal tv_ref(RefId r) { TVal v = { PS_REF, r }; return v; }
-static TVal tv_iv(IntervalId r) { TVal v = { PS_INTERVAL, r }; return v; }
 
 /* TEnv record: [(slot, sort, id)*] in slot order */
 static const uint64_t *tenv_words(TEnvId E, size_t *n) { return interner_get(&M.tenvs, E, n); }
@@ -209,58 +205,9 @@ static DimOpen cons_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_fie
     o.body = construction_binder(owner, S_DIM, slot, body_field, iv_var(o.j));
     return o;
 }
-MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh) {
-    TNodeId Q = ref_tnode(owner);
-    require(node_construction(Q), "lifted map of a template instance");
-    Sort sort; FieldIndex domf; size_t lslot; node_binder(Q, slot, &sort, &domf, &lslot);
-    MapId m = cons_envmap(ref_tenv(owner));
-    uint64_t atom = obound_id((uint32_t)(tnode_nparams(Q) + lslot));
-    if (sort == S_TERM) {
-        FieldKind kd; BinderSlot bs; ExprId de; node_field(Q, domf, &kd, &bs, &de);
-        TermVarId x = binder_term_var(owner, slot, reindex(xconst(de), m));
-        if (fresh) *fresh = x;
-        return map_override(m, S_TERM, atom, ref_var(x));
-    }
-    DimVarId j = binder_dim_var(owner, slot);
-    if (fresh) *fresh = j;
-    return map_override(m, S_DIM, atom, iv_var(j));
-}
 
 /* generic instance: parameter k at a fresh name keyed by (node, k), its type
  * the closed type instantiated by the earlier fresh names */
-RefId tnode_generic(TNodeId Q, CtxDecl *decls, FaceId *req) {
-    size_t np = tnode_nparams(Q);
-    TVal *vals = malloc((np ? np : 1) * sizeof(TVal)); require(vals, "out of memory");
-    MapBuilder b; mapb_init(&b);
-    MapId m = map_identity();
-    for (size_t k = 0; k < np; k++) {
-        PSort so; RefId ty; FaceId g; tnode_param(Q, k, &so, &ty, &g);
-        KeyWord key[3] = { { KW_CONST, 9300 }, { KW_CONST, Q }, { KW_CONST, k } };
-        if (so == PS_INTERVAL) {
-            DimVarId j = fresh_dim_keyed(key, 3);
-            vals[k] = tv_iv(iv_var(j));
-            decls[k].sort = S_DIM; decls[k].id = j; decls[k].type = 0;
-            mapb_dim(&b, obound_id((uint32_t)k), iv_var(j));
-        } else {
-            RefId type = reindex(ty, m);
-            FaceId guard = g ? fc_reindex(g, m) : fc_true();
-            TermVarId x = fresh_term_keyed_req(key, 3, type, guard);
-            vals[k] = tv_ref(ref_var(x));
-            decls[k].sort = S_TERM; decls[k].id = x; decls[k].type = type;
-            mapb_term(&b, obound_id((uint32_t)k), ref_var(x));
-        }
-        /* the map of the names so far (a builder is consumed by finishing) */
-        MapBuilder c; mapb_init(&c);
-        for (size_t q = 0; q < b.t.n; q += 2) mapb_term(&c, b.t.w[q], b.t.w[q + 1]);
-        for (size_t q = 0; q < b.d.n; q += 2) mapb_dim(&c, b.d.w[q], b.d.w[q + 1]);
-        m = mapb_finish(&c);
-    }
-    words_free(&b.t); words_free(&b.d);
-    if (req) *req = fc_reindex(tnode_const_required(Q), m);
-    RefId t = tnode_construction_view(Q, vals);
-    free(vals);
-    return t;
-}
 
 /* ------------------------------------------------------------------ */
 /* interpretation families                                               */
@@ -589,15 +536,6 @@ void tview_open(RefId t, Head *h) {
     h->levels = node_levels_e(Q) ? interp_at(node_levels_e(Q), er).id : LEVELS_NONE;
 }
 
-HField tview_field(const Head *h, size_t k) {
-    TNodeId Q = h->tnode;
-    HField x; memset(&x, 0, sizeof x);
-    FieldKind kind; BinderSlot bs; ExprId fe; node_field(Q, k, &kind, &bs, &fe);
-    x.kind = kind; x.index = (FieldIndex)k; x.slot = bs;
-    if (bs != NO_SLOT) { x.is_binder = true; x.sort = tnode_binder_sort(Q, bs); x.id = 0; return x; }
-    x.id = construction_field(h->owner, k);
-    return x;
-}
 
 /* a template binder field with its local ↦ image */
 static uint64_t tview_binder_body(RefId owner, BinderSlot slot, FieldIndex body_field, PSort sort, uint64_t image) {
@@ -630,25 +568,6 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     return o;
 }
 
-static TVal reindex_tval(TVal v, MapId sigma) {
-    if (v.sort == PS_REF) v.id = reindex(v.id, sigma);
-    else if (v.sort == PS_INTERVAL) v.id = iv_reindex(v.id, sigma);
-    else if (v.sort == PS_FACE) v.id = fc_reindex(v.id, sigma);
-    else if (v.sort == PS_SCOPE) v.id = reindex_scope(v.id, sigma);
-    return v;
-}
-TEnvId tenv_make(size_t n, const uint64_t *slots, const TVal *vals) {
-    Words w; words_init(&w);
-    for (size_t k = 0; k < n; k++) { words_push(&w, slots[k]); words_push(&w, vals[k].sort); words_push(&w, vals[k].id); }
-    TEnvId E = interner_intern(&M.tenvs, w.w, w.n, NULL); words_free(&w); return E;
-}
-TEnvId tenv_reindex(TEnvId E, MapId sigma) {
-    size_t n = tenv_size(E);
-    uint64_t *slots = malloc((n ? n : 1) * sizeof(uint64_t)); TVal *vals = malloc((n ? n : 1) * sizeof(TVal));
-    require(slots && vals, "out of memory");
-    for (size_t k = 0; k < n; k++) { tenv_entry(E, k, &slots[k], &vals[k]); vals[k] = reindex_tval(vals[k], sigma); }
-    TEnvId out = tenv_make(n, slots, vals); free(slots); free(vals); return out;
-}
 /* the boundary signature of a template node as expressions (interpreted by
  * the caller in the view's environment, one awaited interpretation each):
  * entry k of the node's free slots; false when the slot carries no checked

@@ -274,14 +274,6 @@ void scope_families_init(void) {
 }
 
 /* ---------------- the operations (synchronous driver) ---------------- */
-RefId trav_ref(RefId t, uint64_t tk) { return family_call(F_TREF, t, tk); }
-IntervalId trav_iv(IntervalId r, uint64_t tk) { return family_call(F_TIV, r, tk); }
-FaceId trav_fc(FaceId f, uint64_t tk) { return family_call(F_TFC, f, tk); }
-Val trav_val(Val v, uint64_t tk) {
-    Val o = v;
-    o.id = v.sort == VS_REF ? trav_ref(v.id, tk) : v.sort == VS_INTERVAL ? trav_iv(v.id, tk) : trav_fc(v.id, tk);
-    return o;
-}
 ScopeId scope_with_side(ScopeId S) { return family_call(F_SCOPESIDE, S, 0); }
 ScopeId capture_request(const uint64_t *req, size_t n) { return family_call(F_CAPTURE, interner_intern(&M.keys, req, n, NULL), 0); }
 ScopeId scope_records_traverse(ScopeId S, uint64_t tk) { return family_call(F_TSCOPE, S, tk); }

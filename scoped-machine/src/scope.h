@@ -31,11 +31,7 @@ typedef struct { Val body; RefId type; uint64_t level; FaceId guard; } TypedPart
  * map), LOWER. A scope's own records sit one level deeper than its occurrence. */
 enum { TR_CLOSE = 1, TR_APPLY, TR_RE, TR_LOWER };
 uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx);
-RefId trav_ref(RefId t, uint64_t tk);
-IntervalId trav_iv(IntervalId r, uint64_t tk);
-FaceId trav_fc(FaceId f, uint64_t tk);
 ScopeId scope_records_traverse(ScopeId S, uint64_t tk);   /* records at tk's depth */
-Val trav_val(Val v, uint64_t tk);
 ScopeId scope_with_side(ScopeId S);                  /* writes S's side data (once) and returns S */
 ScopeId capture_request(const uint64_t *req, size_t n);
 void scope_families_init(void);
@@ -51,7 +47,6 @@ uint64_t scope_level(ScopeId S);
 FaceId scope_guard(ScopeId S);
 DimSetId scope_support(ScopeId S);        /* free dimensions (bound atoms excluded) */
 VarSetId scope_freevars(ScopeId S);
-TypedPartial apply_scope(ScopeId S, size_t n, const Val *args);
 ScopeId reindex_scope(ScopeId S, MapId sigma);
 /* open with fresh concrete locals minted from `key` (checking); ids receives
  * the minted identities in slot order */
@@ -65,7 +60,6 @@ bool scope_validate(ScopeId S, const char **reason);
 /* the same finite check for a whole reference used at the top level
  * (outside any telescope): every scope reachable through its template
  * environments is validated with its actual enclosing stack */
-bool ref_validate(RefId t, const char **reason);
 
 /* free (unbound) part of a dimension set / variable set */
 

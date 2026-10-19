@@ -3,7 +3,6 @@
  * application. Every check below is an ordinary judgment of the core. */
 #define _POSIX_C_SOURCE 200809L
 #include "assoc.h"
-#include "../src/net.h"
 #include "../src/proof.h"
 
 static int np = 0, nf = 0;
@@ -81,19 +80,6 @@ int main(void) {
       CheckStatus hs = check(A.G, fc_true(), out, mk_path_const(0, reindex(A.codomain, sigma), call, call), &why);
       CHECK(hs == CK_VALID, "⟨i⟩ F_{H@i}(r) : Path(F_α r, F_α r) (%s: %s)", check_status_name(hs), why); }
 
-    /* ---- the call in a net ---- */
-    { Net net; net_init(&net);
-      int8_t pneg[1] = { -1 }; Payload P = {0};
-      NodeId root = net_node(&net, A_ROOT, 1, pneg, P);
-      NodeId ev = net_operation(&net, OP_EVAL, (Payload){ .face = fc_true() });
-      Payload Pr = {0}; Pr.ref = call;
-      net_connect(&net, ev, 1, root, 0);
-      net_connect(&net, ev, 0, net_descriptor(&net, D_REF, Pr), 0);
-      net_run_with_eval(&net);
-      NodeKind kk = 0; Payload outp;
-      bool ok = net_root_read(&net, root, &kk, &outp);
-      CHECK(ok && kk == D_EVAL_RESULT && ((EvalResult *)(uintptr_t)outp.a)->cls == R_INTRODUCTION, "an EVAL consumer of the call yields the pair");
-      net_free(&net); }
 
     /* ---- the empty diagram; a tail depending on its witness ---- */
     { TermVarId vB = tv(U0); RefId B = ref_var(vB); TermVarId vo = tv(B); RefId o = ref_var(vo);

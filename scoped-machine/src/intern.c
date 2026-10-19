@@ -381,25 +381,5 @@ bool interner_live(const Interner *t, uint64_t id) {
     return r && __atomic_load_n(&r->live, __ATOMIC_ACQUIRE);
 }
 
-/* ---- WordMap ---- */
-void wordmap_init(WordMap *m) { interner_init(&m->keys); chunked_init(&m->vals, sizeof(uint64_t)); }
-void wordmap_free(WordMap *m) { interner_free(&m->keys); chunked_free(&m->vals); }
 
-bool wordmap_get(WordMap *m, const uint64_t *k, size_t n, uint64_t *out) {
-    uint64_t id = interner_find(&m->keys, k, n);
-    if (!id) return false;
-    /* The key becomes discoverable before the writer stores its value: an
-     * absent value chunk, like a zero value, means "not yet published". */
-    uint64_t *slot = chunked_peek(&m->vals, id - 1);
-    if (!slot) return false;
-    uint64_t v = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
-    if (!v) return false;            /* key created, value not yet published */
-    *out = v;
-    return true;
-}
 
-void wordmap_put(WordMap *m, const uint64_t *k, size_t n, uint64_t v) {
-    require(v != 0, "wordmap values are non-zero handles");
-    uint64_t id = interner_intern(&m->keys, k, n, NULL);
-    __atomic_store_n((uint64_t *)chunked_at(&m->vals, id - 1), v, __ATOMIC_RELEASE);
-}

@@ -52,24 +52,7 @@ ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result
 /* ------------------------------------------------------------------ */
 /* application and ambient reindexing                                    */
 
-static uint64_t args_record(size_t n, const Val *args) {
-    Words w; words_init(&w);
-    for (size_t k = 0; k < n; k++) { words_push(&w, args[k].sort); words_push(&w, args[k].id); }
-    uint64_t key = interner_intern(&M.keys, w.w, w.n, NULL);
-    words_free(&w);
-    return key;
-}
 
-TypedPartial apply_scope(ScopeId S, size_t n, const Val *args) {
-    require(n == scope_arity(S), "scope application arity");
-    uint64_t tk = trav_key(TR_APPLY, 0, args_record(n, args));
-    TypedPartial p;
-    p.body = trav_val(scope_body(S), tk);
-    p.type = scope_type(S) ? trav_ref(scope_type(S), tk) : 0;
-    p.level = scope_level(S);
-    p.guard = trav_fc(scope_guard(S), tk);
-    return p;
-}
 
 /* the k-th local's declaration instantiated at the argument prefix args[0..k) */
 

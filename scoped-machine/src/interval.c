@@ -28,10 +28,6 @@ bool iv_is_zero(IntervalId r) { size_t n; (void)interner_get(&M.intervals, r, &n
 bool iv_is_one(IntervalId r) { size_t n; const uint64_t *w = interner_get(&M.intervals, r, &n); return n == 1 && w[0] == DNF_SEP; }
 
 
-void iv_dims(IntervalId r, Words *out) {
-    size_t n; const uint64_t *w = interner_get(&M.intervals, r, &n);
-    for (size_t p = 0; p < n; p++) if (w[p] != DNF_SEP) words_push(out, IV_ATOM_DIM(w[p]));
-}
 
 void iv_print(IntervalId r, FILE *f) {
     Dnf a; iv_to_dnf(r, &a);

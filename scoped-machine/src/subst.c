@@ -352,11 +352,3 @@ RefId reindex(RefId t, MapId sigma) { return family_call(F_REINDEX, t, sigma); }
 IntervalId iv_reindex(IntervalId r, MapId m) { return family_call(F_IVRE, r, m); }
 FaceId fc_reindex(FaceId phi, MapId m) { return family_call(F_FCRE, phi, m); }
 MapId cons_envmap(TEnvId E) { return family_call(F_CENV, E, 0); }
-RefId tnode_construction_view(TNodeId Q, const TVal *vals) {
-    size_t np = tnode_nparams(Q);
-    uint64_t *slots = malloc((np ? np : 1) * sizeof(uint64_t)); require(slots, "out of memory");
-    for (size_t k = 0; k < np; k++) slots[k] = k;
-    TEnvId E = tenv_make(np, slots, vals);
-    free(slots);
-    return family_call(F_CINST, Q, E);
-}

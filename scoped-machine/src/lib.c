@@ -42,10 +42,8 @@ RefId mk_id_equiv(uint64_t l, RefId X) { return CALLT(TD_IDEQUIV, VL(l), VR(X));
 RefId equiv_map(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e) { return CALLT(TD_EQUIVMAP, VL(l), VL(m), VR(X), VR(Y), VR(e)); }
 RefId equiv_contr(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e, RefId y) { return CALLT(TD_EQUIVCONTR, VL(l), VL(m), VR(X), VR(Y), VR(e), VR(y)); }
 RefId mk_fill(uint64_t l, ScopeId A, FaceId phi, ScopeId u, RefId cap, IntervalId r) { return CALLT(TD_FILL, VL(l), VS(A), VF(phi), VS(u), VR(cap), VI(r)); }
-RefId mk_hcomp(uint64_t l, RefId X, FaceId phi, ScopeId u, RefId cap) { return CALLT(TD_HCOMP, VL(l), VR(X), VF(phi), VS(u), VR(cap)); }
 RefId mk_coe(uint64_t l, ScopeId A, RefId cap) { return CALLT(TD_COE, VL(l), VS(A), VR(cap)); }
 RefId mk_extend_contr(uint64_t l, RefId X, RefId c, RefId k, FaceId theta, RefId v) { return CALLT(TD_EXTENDCONTR, VL(l), VR(X), VR(c), VR(k), VF(theta), VR(v)); }
-RefId mk_line_equiv(uint64_t l, ScopeId X) { return CALLT(TD_LINEEQUIV, VL(l), VS(X)); }
 RefId mk_ua(uint64_t l, RefId X, RefId Y, RefId e) { return CALLT(TD_UA, VL(l), VR(X), VR(Y), VR(e)); }
 RefId mk_down(uint64_t l, uint64_t lA, RefId A, RefId t, ScopeId D, RefId x, RefId e, RefId z) { return CALLT(TD_DOWN, VL(l), VL(lA), VR(A), VR(t), VS(D), VR(x), VR(e), VR(z)); }
 
@@ -56,10 +54,6 @@ RefId mk_fill_at(uint64_t l, DimVarId i, RefId A_i, FaceId phi, RefId u_i, RefId
     ScopeId A = capture_dim1(i, A_i, mk_universe(l), level_succ(l), fc_true());
     ScopeId u = capture_dim1(i, u_i, A_i, l, fc_meet(fc_true(), phi));
     return mk_fill(l, A, phi, u, cap, r);
-}
-RefId mk_hcomp_at(uint64_t l, DimVarId j, RefId X, FaceId phi, RefId u_j, RefId cap) {
-    ScopeId u = capture_dim1(j, u_j, X, l, fc_meet(fc_true(), phi));
-    return mk_hcomp(l, X, phi, u, cap);
 }
 
 /* ------------------------------------------------------------------ */

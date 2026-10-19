@@ -1,5 +1,5 @@
-/* Fixed-template laws (§9, §14; review finding R4) and the admission
- * transaction under concurrent clients (§34–§35; review findings R1, R3).
+/* Fixed-template laws (§9, §14) and recursive components checked by
+ * concurrent clients (§9.2).
  *
  * For every derived definition T: instantiate-then-specialize equals
  * specialize-then-instantiate as references,
@@ -41,7 +41,7 @@ static void *sym_client(void *arg) {
 }
 
 int main(void) {
-    printf("== fixed templates and the admission transaction\n");
+    printf("== fixed templates and recursive components\n");
     machine_init(); eval_init(); check_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     const char *why = "";
@@ -243,7 +243,7 @@ int main(void) {
         CHECK(reindex(reindex(snd_w, mapb_finish(&m1)), map_single_term(ow.x, ref_var(vq))) == reindex(snd_w, mapb_finish(&m2)), "the child's boundary (w, y, A, l) reindexes canonically");
         CHECK(reindex(good, map_identity()) == good, "identity reindexing is the identity"); } }
 
-    /* ---- admission transaction (R1/Q2): mutual recursion ---- */
+    /* ---- recursive components (§9.2): accepted when well typed, rejected from either end ---- */
     { uint64_t ps[] = { vA }; VarSetId params = varset_make(ps, 1); DimSetId nod = dimset_make(NULL, 0);
       CtxDecl d[1] = { { S_TERM, vA, U0 } }; ContextId GA = context_make(1, d, fc_true());
       /* well-typed mutual recursion: f := g, g := f (no termination claim) */
@@ -258,7 +258,6 @@ int main(void) {
       CHECK(check(GA, fc_true(), global_ref(sh), A, &why) == CK_INVALID, "the rejected body itself");
       WhnfStatus ws; const char *r2 = "";
       CHECK(observe_checked(GA, global_ref(sk), &ws, &r2) == NULL && ws == W_INVALID, "no checked observation through a rejected component");
-      check_open_environment();          /* the checked observation admitted (froze) the environment */
       /* concurrent clients validating a recursive component from both ends */
       sym_ctx = GA; sym_type = A;
       SymbolId s1 = define_global("mc1", params, nod, A), s2 = define_global("mc2", params, nod, A);

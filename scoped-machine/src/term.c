@@ -15,7 +15,6 @@ const char *tag_name(Tag t) {
 
 #define RSIDE(id) ((RefSide *)chunked_at(&M.ref_side, (id) - 1))
 #define TDECL(x) ((TermDecl *)chunked_at(&M.term_decl, (x) - 1))
-#define DPROV(i) ((uint64_t *)chunked_at(&M.dim_prov, (i) - 1))
 #define NVAL(id) ((uint64_t *)chunked_at(&M.nominal_val, (id) - 1))
 #define DEF(s) ((Def *)chunked_at(&M.defs, (s) - 1))
 static void term_lock(void) { pthread_mutex_lock(&M.term_mu); }
@@ -27,7 +26,7 @@ TermVarId declare_term(RefId type, FaceId required) {
     term_lock();
     TermVarId x = (TermVarId)(M.n_term_vars + 1);
     TermDecl *d = TDECL(x);
-    d->type = type; d->required = required; d->prov = 0;
+    d->type = type; d->required = required;
     __atomic_store_n(&M.n_term_vars, M.n_term_vars + 1, __ATOMIC_RELEASE);
     term_unlock();
     return x;
@@ -35,7 +34,6 @@ TermVarId declare_term(RefId type, FaceId required) {
 DimVarId declare_dim(void) {
     term_lock();
     DimVarId i = (DimVarId)(M.n_dim_vars + 1);
-    *DPROV(i) = 0;
     __atomic_store_n(&M.n_dim_vars, M.n_dim_vars + 1, __ATOMIC_RELEASE);
     term_unlock();
     return i;
@@ -200,7 +198,6 @@ RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv, FaceId req) {
 }
 
 bool ref_is_var(RefId t) { size_t n; return interner_get(&M.refs, t, &n)[0] == 1; }
-bool ref_is_tview(RefId t) { return !ref_is_var(t); }
 uint64_t ref_tnode(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 3, "not a TVIEW"); return w[1]; }
 uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = interner_get(&M.refs, t, &n); require(w[0] == 3, "not a TVIEW"); return w[2]; }
 /* intern a TVIEW record with its computed side data (template layer) */
@@ -231,22 +228,13 @@ static uint64_t nominal_lookup(const KeyWord *key, size_t n, bool *created) {
     words_free(&w);
     return id;
 }
-const uint64_t *nominal_key(uint64_t nid, size_t *npairs) {
-    size_t n; const uint64_t *w = interner_get(&M.nominal, nid, &n);
-    *npairs = n / 2;
-    return w;
-}
-static void set_term_prov(TermVarId x, uint64_t nid) { TDECL(x)->prov = nid; }
-static void set_dim_prov(DimVarId i, uint64_t nid) { *DPROV(i) = nid; }
-uint64_t term_var_provenance(TermVarId x) { return TDECL(x)->prov; }
-uint64_t dim_var_provenance(DimVarId i) { return *DPROV(i); }
 
 TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type) {
     KeyWord key[4] = { { KW_CONST, 1 }, { KW_REF, owner }, { KW_CONST, slot }, { KW_CONST, S_TERM } };
     bool created;
     term_lock();
     uint64_t id = nominal_lookup(key, 4, &created);
-    if (created) { *NVAL(id) = declare_term(type, fc_true()); set_term_prov(*NVAL(id), id); }
+    if (created) { *NVAL(id) = declare_term(type, fc_true()); }
     TermVarId r = (TermVarId)*NVAL(id);
     term_unlock();
     return r;
@@ -256,7 +244,7 @@ DimVarId binder_dim_var(RefId owner, BinderSlot slot) {
     bool created;
     term_lock();
     uint64_t id = nominal_lookup(key, 4, &created);
-    if (created) { *NVAL(id) = declare_dim(); set_dim_prov(*NVAL(id), id); }
+    if (created) { *NVAL(id) = declare_dim(); }
     DimVarId r = (DimVarId)*NVAL(id);
     term_unlock();
     return r;
@@ -268,7 +256,7 @@ TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId 
     term_lock();
     uint64_t id = nominal_lookup(w, n + 1, &created);
     free(w);
-    if (created) { *NVAL(id) = declare_term(type, required); set_term_prov(*NVAL(id), id); }
+    if (created) { *NVAL(id) = declare_term(type, required); }
     else require(term_var_type((TermVarId)*NVAL(id)) == type && term_var_required((TermVarId)*NVAL(id)) == required,
                  "keyed fresh variable reused at a different type or required face");
     TermVarId r = (TermVarId)*NVAL(id);
@@ -283,7 +271,7 @@ DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
     term_lock();
     uint64_t id = nominal_lookup(w, n + 1, &created);
     free(w);
-    if (created) { *NVAL(id) = declare_dim(); set_dim_prov(*NVAL(id), id); }
+    if (created) { *NVAL(id) = declare_dim(); }
     DimVarId r = (DimVarId)*NVAL(id);
     term_unlock();
     return r;
@@ -338,16 +326,6 @@ void head_free(Head *h) { h->n = 0; }
 static ContextId context_intern(Words *w) { ContextId id = interner_intern(&M.contexts, w->w, w->n, NULL); words_free(w); return id; }
 
 ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption) {
-    /* well-formed: no duplicate declaration; a term declaration's type
-     * depends only on earlier declarations */
-    for (size_t k = 0; k < n; k++) {
-        for (size_t j = 0; j < k; j++) require(!(decls[j].sort == decls[k].sort && decls[j].id == decls[k].id), "duplicate declaration in context");
-        if (decls[k].sort != S_TERM) continue;
-        size_t m; const uint64_t *xs = varset_get(ref_freevars(decls[k].type), &m);
-        for (size_t q = 0; q < m; q++) { bool found = false; for (size_t j = 0; j < k; j++) if (decls[j].sort == S_TERM && decls[j].id == xs[q]) found = true; require(found, "context declaration type mentions a variable not declared earlier"); }
-        const uint64_t *ds = dimset_get(ref_support(decls[k].type), &m);
-        for (size_t q = 0; q < m; q++) { bool found = false; for (size_t j = 0; j < k; j++) if (decls[j].sort == S_DIM && decls[j].id == ds[q]) found = true; require(found, "context declaration type mentions a dimension not declared earlier"); }
-    }
     Words w; words_init(&w);
     words_push(&w, n);
     for (size_t k = 0; k < n; k++) { words_push(&w, decls[k].sort); words_push(&w, decls[k].id); words_push(&w, decls[k].sort == S_TERM ? decls[k].type : 0); }
@@ -376,39 +354,10 @@ static ContextId context_with(ContextId c, const CtxDecl *extra, FaceId assumpti
 ContextId context_extend_term(ContextId c, TermVarId x, RefId type) { CtxDecl d = { S_TERM, x, type }; return context_with(c, &d, context_assumption(c)); }
 ContextId context_extend_dim(ContextId c, DimVarId i) { CtxDecl d = { S_DIM, i, 0 }; return context_with(c, &d, context_assumption(c)); }
 ContextId context_restrict(ContextId c, FaceId phi) { return context_with(c, NULL, fc_meet(context_assumption(c), phi)); }
-bool context_declares_term(ContextId c, TermVarId x, RefId *type_out) {
-    size_t n = context_size(c);
-    for (size_t k = 0; k < n; k++) { CtxDecl d = context_decl(c, k); if (d.sort == S_TERM && d.id == x) { if (type_out) *type_out = d.type; return true; } }
-    return false;
-}
-bool context_declares_dim(ContextId c, DimVarId i) {
-    size_t n = context_size(c);
-    for (size_t k = 0; k < n; k++) { CtxDecl d = context_decl(c, k); if (d.sort == S_DIM && d.id == i) return true; }
-    return false;
-}
 
-OccStatus occurrence_validate(RefId t, ContextId ctx, uint64_t *culprit) {
-    size_t n;
-    const uint64_t *xs = varset_get(ref_freevars(t), &n);
-    for (size_t k = 0; k < n; k++) {
-        RefId ty;
-        if (!context_declares_term(ctx, xs[k], &ty)) { if (culprit) *culprit = xs[k]; return OCC_UNDECLARED_TERM; }
-        if (ty != term_var_type(xs[k])) { if (culprit) *culprit = xs[k]; return OCC_TYPE_MISMATCH; }
-    }
-    const uint64_t *ds = dimset_get(ref_support(t), &n);
-    for (size_t k = 0; k < n; k++) if (!context_declares_dim(ctx, ds[k])) { if (culprit) *culprit = ds[k]; return OCC_UNDECLARED_DIM; }
-    if (!fc_entails(context_assumption(ctx), ref_required(t))) return OCC_FACE_NOT_ENTAILED;
-    return OCC_VALID;
-}
 
 /* ================= globals ================= */
 
-/* the definition environment's version: every declaration or body
- * registration begins a new environment (§57 R1, §59.4) */
-static uint64_t env_version_ctr;
-uint64_t global_env_version(void) { return __atomic_load_n(&env_version_ctr, __ATOMIC_ACQUIRE); }
-static void env_bump(void) { __atomic_add_fetch(&env_version_ctr, 1, __ATOMIC_ACQ_REL); }
-void env_control_init(void) { env_bump(); }
 
 ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req) {
     size_t nd, nt;
@@ -449,7 +398,6 @@ SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId t
     Def *d = DEF(s);
     d->body = 0; d->params = params; d->dims = dims; d->name = name; d->type = type; d->ctx = ctx;
     M.n_defs++;
-    env_bump();
     term_unlock();
     return s;
 }
@@ -458,12 +406,7 @@ bool set_global_body(SymbolId s, RefId body) {
     require(s >= 1 && s <= M.n_defs, "unknown symbol");
     Def *d = DEF(s);
     require(d->body == 0, "definition environment is immutable: %s already defined", d->name);
-    size_t n; const uint64_t *xs = varset_get(ref_freevars(body), &n);
-    for (size_t k = 0; k < n; k++) require(varset_contains(d->params, xs[k]), "global body has an undeclared free variable");
-    const uint64_t *ds = dimset_get(ref_support(body), &n);
-    for (size_t k = 0; k < n; k++) require(dimset_contains(d->dims, ds[k]), "global body has an undeclared free dimension");
     __atomic_store_n(&d->body, body, __ATOMIC_RELEASE);
-    env_bump();
     return true;
 }
 
@@ -471,7 +414,6 @@ RefId global_type(SymbolId s) { return DEF(s)->type; }
 RefId global_body(SymbolId s) { return __atomic_load_n(&DEF(s)->body, __ATOMIC_ACQUIRE); }
 VarSetId global_params(SymbolId s) { return DEF(s)->params; }
 DimSetId global_dims(SymbolId s) { return DEF(s)->dims; }
-const char *global_name(SymbolId s) { return DEF(s)->name; }
 size_t global_count(void) { return M.n_defs; }
 
 RefId global_ref(SymbolId s) {
@@ -561,17 +503,11 @@ static RefId mk_comp_at_levels(uint64_t lv, DimVarId j, RefId A_j, FaceId phi, R
     Binder b[1] = { { S_DIM, j, NO_FIELD } };
     return view_lv(T_COMP, 0, lv, f, 4, b, 1);
 }
-RefId mk_pair_at(RefId S, RefId a, RefId b) { return mk_pair_at_at_levels(LEVELS_NONE, S, a, b); }
 RefId mk_pair_at_lv(uint64_t n, RefId S, RefId a, RefId b) { return mk_pair_at_at_levels(levels_pack(n, LEVEL_NONE), S, a, b); }
 RefId mk_papp(DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) { return mk_papp_at_levels(LEVELS_NONE, j, B_j, l, r, p, s); }
-RefId mk_papp_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) { return mk_papp_at_levels(levels_pack(n, LEVEL_NONE), j, B_j, l, r, p, s); }
-RefId mk_glue_type(RefId A, FaceId alpha, RefId T, RefId e) { return mk_glue_type_at_levels(LEVELS_NONE, A, alpha, T, e); }
 RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e) { return mk_glue_type_at_levels(levels_pack(n, LEVEL_NONE), A, alpha, T, e); }
-RefId mk_glue_intro(RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { return mk_glue_intro_at_levels(LEVELS_NONE, A, alpha, T, e, t, a); }
 RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { return mk_glue_intro_at_levels(levels_pack(n, LEVEL_NONE), A, alpha, T, e, t, a); }
-RefId mk_unglue(RefId A, FaceId alpha, RefId T, RefId e, RefId v) { return mk_unglue_at_levels(LEVELS_NONE, A, alpha, T, e, v); }
 RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v) { return mk_unglue_at_levels(levels_pack(n, LEVEL_NONE), A, alpha, T, e, v); }
-RefId mk_comp(DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) { return mk_comp_at_levels(LEVELS_NONE, j, A_j, phi, u_j, cap); }
 RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) { return mk_comp_at_levels(levels_pack(n, LEVEL_NONE), j, A_j, phi, u_j, cap); }
 RefId mk_system(size_t n, const FaceId *faces, const RefId *terms) {
     Field *f = malloc((n ? 2 * n : 1) * sizeof(Field));

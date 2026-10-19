@@ -40,7 +40,6 @@ void check_set_budget(size_t steps);
 size_t check_budget(void);
 /* §59.4: begin a new admission attempt (unresolved outcomes of the previous
  * attempt are recomputed on demand) */
-void check_new_attempt(void);
 
 CheckStatus check_context(ContextId G, const char **reason);
 /* sigma : (Delta;psi) -> (Gamma;chi) */
@@ -71,8 +70,6 @@ CheckStatus check_signature(const char **reason);
  * registration is open again. A closed session boundary: no checker,
  * compiler or observation client may be in progress and evaluator work must
  * have drained (both enforced); stop admitting new clients while crossing. */
-void check_open_environment(void);
-uint64_t check_session_id(void);   /* changes with every checker session; session-dependent caches are qualified by it */
 
 /* the context of a boundary: its dimensions, then its term variables in
  * dependency order with their declared types; assumption = req */

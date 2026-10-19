@@ -1,6 +1,5 @@
 #include "eval.h"
 #include "lib.h"
-#include "net.h"
 #include "pool.h"
 #include "pins.h"
 #include "judge.h"
@@ -42,9 +41,9 @@ static void rootbox_release(RootBox *b) {
 #define ENTRY_READY ((Cont *)(uintptr_t)1)
 
 /* a job: EVALUATE(entry); RESUME(k, v) — whose k may head a delivery chain of
- * entry `src`, of which each job delivers exactly one; or a NET_PAIR (§43) */
-typedef enum { TK_EVAL = 0, TK_RESUME, TK_PAIR } TaskKind;
-typedef struct { TaskKind kind; EntryId entry; Cont *k; uint64_t v; EntryId src; Active pair; } Task;
+ * entry `src`, of which each job delivers exactly one */
+typedef enum { TK_EVAL = 0, TK_RESUME } TaskKind;
+typedef struct { TaskKind kind; EntryId entry; Cont *k; uint64_t v; EntryId src; } Task;
 
 /* the ready-job multiset: a linked list of fixed-size chunks; push, pop at
  * either end and a policy-chosen pop are each O(1) */
@@ -77,13 +76,9 @@ static struct {
     /* live joins: a join that never fills (stuck children) is dismantled at teardown */
     VEC(Join *) joins; pthread_mutex_t join_mu;
     VEC(void *) mems;                  /* frame-owned heap blocks (under join_mu); a stuck frame's are released at teardown */
-    /* the evaluator's net (§43): APPLY_TRANSFORM / CONTINUE_REFERENCE pairs
-     * are jobs of this scheduler (one outstanding count) */
-    Net net; SchedPolicy pair_policy;
     /* counters */
     size_t tasks_created;
     EvalEvents ev;
-    SchedPolicy policy; uint64_t rng;
 } E;
 
 static size_t add_count(size_t *p) { return __atomic_add_fetch(p, 1, __ATOMIC_RELAXED); }
@@ -99,21 +94,6 @@ EvalEvents eval_events(void) {
     return v;
 }
 size_t family_steps(Family f) { require(f >= 1 && f < F_MAX, "bad family"); return __atomic_load_n(&FAM[f].steps, __ATOMIC_SEQ_CST); }
-void eval_set_policy(SchedPolicy p, uint64_t seed) { E.policy = p; E.rng = seed ? seed : 0x9E3779B97F4A7C15ULL; }
-void eval_set_pair_policy(SchedPolicy p, uint64_t seed) {
-    E.pair_policy = p;
-    E.net.policy = p == POL_LIFO ? 0 : p == POL_FIFO ? 1 : 2;
-    E.net.rng = seed ? seed : 0x9E3779B97F4A7C15ULL;
-}
-EvalNetEvents eval_net_events(void) {
-    EvalNetEvents v;
-    v.continue_ref = __atomic_load_n(&E.net.n_continue, __ATOMIC_SEQ_CST);
-    v.op = __atomic_load_n(&E.net.n_op, __ATOMIC_SEQ_CST);
-    v.eval_deliver = __atomic_load_n(&E.net.n_eval_deliver, __ATOMIC_SEQ_CST);
-    v.retries = __atomic_load_n(&E.net.retries, __ATOMIC_SEQ_CST);
-    return v;
-}
-static uint64_t rng_next(void) { E.rng ^= E.rng << 13; E.rng ^= E.rng >> 7; E.rng ^= E.rng << 17; return E.rng; }
 
 Family family_register(const char *name, FamStart start, FamResume resume) {
     /* idempotent per name: machines are re-initialized many times in one process */
@@ -158,14 +138,10 @@ void eval_init(void) {
     evaluator_init();
     templates_init();                  /* the library programs, registered once per machine */
     lib_families_init();
-    net_families_init();
     pins_families_init();
     judge_families_init();
     proof_families_init();
     evaluator_bind();
-    net_init(&E.net);
-    net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
-    E.net.policy = 1;   /* pairs FIFO by default */
 }
 
 /* a new definition environment retires every observation: the memo, the
@@ -173,9 +149,8 @@ void eval_init(void) {
 void eval_reset(void) {
     pthread_mutex_lock(&E.q_mu); size_t pending = E.outstanding; pthread_mutex_unlock(&E.q_mu);
     require(pending == 0, "eval_reset with outstanding evaluator work (the session boundary requires quiescence)");
-    size_t w = E.nworkers; SchedPolicy p = E.policy, pp = E.pair_policy; uint64_t rng = E.rng; int np = E.net.policy; uint64_t nrng = E.net.rng;
+    size_t w = E.nworkers;
     eval_free(); eval_init();
-    E.policy = p; E.pair_policy = pp; E.rng = rng; E.net.policy = np; E.net.rng = nrng;
     if (w) eval_set_workers(w);
 }
 void join_free(Join *j) {
@@ -230,7 +205,6 @@ static void cont_dispose(Cont *k) {
 void eval_free(void) {
     stop_workers();
     interner_set_flatten_hook(NULL);
-    net_free(&E.net);           /* after the workers: a pending pair is a job */
     size_t ne = interner_count(&E.keys);
     for (size_t i = 0; i < ne; i++) {
         Entry *e = chunked_peek(&E.entries, i);
@@ -335,14 +309,6 @@ static void q_unlink_if_empty(QChunk *c) {
     pool_free(&E.chunk_pool, c);
 }
 static Task q_pop_front_locked(void) { QChunk *c = E.qfront; Task t = c->t[c->lo++]; E.qlen--; q_unlink_if_empty(c); return t; }
-static Task q_pop_back_locked(void) { QChunk *c = E.qback; Task t = c->t[--c->hi]; E.qlen--; q_unlink_if_empty(c); return t; }
-static Task q_pop_random_locked(void) {
-    /* a uniformly chosen job of the front or the back chunk */
-    QChunk *c = (rng_next() & 1) ? E.qfront : E.qback;
-    uint32_t i = c->lo + (uint32_t)(rng_next() % (c->hi - c->lo));
-    if (c == E.qback) { Task x = c->t[i]; c->t[i] = c->t[c->hi - 1]; c->t[c->hi - 1] = x; return q_pop_back_locked(); }
-    Task x = c->t[i]; c->t[i] = c->t[c->lo]; c->t[c->lo] = x; return q_pop_front_locked();
-}
 
 /* §35 quiescence protocol: outstanding = queued + executing. A launch
  * reserves its job (outstanding += 1) before the key can be observed
@@ -380,19 +346,10 @@ static void deliver(Cont *k, uint64_t v, EntryId src) {
     enqueue(t);
 }
 
-/* pick the next job under q_mu according to the policy */
+/* the next job under q_mu */
 static bool pop_locked(Task *out) {
-    size_t npairs = net_pending_pairs_locked(&E.net);
-    bool have_jobs = E.qlen > 0;
-    if (npairs) {
-        /* two queues, each with its own policy; which queue goes first is
-         * itself a policy choice (FIFO: jobs first, LIFO: pairs first,
-         * RANDOM: a coin) */
-        bool pairs_first = !have_jobs || E.policy == POL_LIFO || (E.policy == POL_RANDOM && (rng_next() & 1));
-        if (pairs_first) { memset(out, 0, sizeof *out); out->kind = TK_PAIR; require(net_pop_pair_locked(&E.net, &out->pair), "pair queue"); return true; }
-    }
-    if (!have_jobs) return false;
-    *out = E.policy == POL_LIFO ? q_pop_back_locked() : E.policy == POL_RANDOM ? q_pop_random_locked() : q_pop_front_locked();
+    if (!E.qlen) return false;
+    *out = q_pop_front_locked();
     return true;
 }
 
@@ -420,17 +377,9 @@ EntryState eval_entry_state(EntryId e) {
     Cont *h = __atomic_load_n(&ENT(e)->head, __ATOMIC_ACQUIRE);
     return h == NULL ? E_UNEVALUATED : h == ENTRY_READY ? E_READY : E_RUNNING;
 }
-FaceId eval_entry_face(EntryId e) { return key_face(eval_entry_b(e)); }
 size_t eval_entry_count(void) { return interner_count(&E.keys); }
 bool eval_entry_live(EntryId e) { return interner_live(&E.keys, e); }
-bool eval_entry_is_observation(EntryId e) { return eval_entry_live(e) && eval_entry_family(e) == F_WHNF; }
 size_t eval_entry_runs(EntryId e) { return __atomic_load_n(&ENT(e)->runs, __ATOMIC_ACQUIRE); }
-RefId eval_entry_ref(EntryId e) { return eval_entry_a(e); }
-void eval_entry_events(EntryId e, size_t *req, size_t *dl, size_t *pub) {
-    Entry *x = ENT(e);
-    *req = __atomic_load_n(&x->n_req, __ATOMIC_ACQUIRE); *dl = __atomic_load_n(&x->n_deliver, __ATOMIC_ACQUIRE); *pub = __atomic_load_n(&x->n_pub, __ATOMIC_ACQUIRE);
-}
-size_t eval_running_count(void) { size_t c = 0, n = eval_entry_count(); for (size_t i = 1; i <= n; i++) if (eval_entry_live(i) && eval_entry_state(i) == E_RUNNING) c++; return c; }
 size_t eval_task_count(void) { return __atomic_load_n(&E.tasks_created, __ATOMIC_SEQ_CST); }
 
 /* PUB(K,v) + R(W) → D(v) + {DELIVER(c,v) : c ∈ W}: the value is stored, the
@@ -626,7 +575,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) { eval_request_pinned(t, chi, 0,
  * subroutine. A branchwise result is a join: the frame issues one branch per
  * step and is resumed by the last arrival (§12, §26). */
 static Family F_UNFOLDF, F_COMPCLAUSEF, F_CBRANCH;
-static Family F_OBS, F_FWD, F_FIELDF, F_BINDERF, F_CONSTRUCTF, F_HEADF, F_FCENTF, F_FCPROJF, F_FCMEETF, F_FCJOINF, F_FCFORALLF, F_FCENDF;
+static Family F_OBS, F_FIELDF, F_BINDERF, F_CONSTRUCTF, F_HEADF, F_FCENTF, F_FCPROJF, F_FCMEETF, F_FCJOINF, F_FCFORALLF, F_FCENDF;
 #define RES(x) ((EvalResult *)(uintptr_t)(x))
 #define RV(r) ((uint64_t)(uintptr_t)(r))
 static uint64_t binder_rec(Sort sort, BinderSlot slot, FieldIndex field, uint64_t image) { uint64_t e[4] = { sort, slot, field, image }; return interner_intern(&M.keys, e, 4, NULL); }
@@ -686,14 +635,6 @@ static void obs_step(Cont *k, uint64_t v) {
     if (r != 2) FR_FINISH(k, RV(result_invalid("occurrence outside its required face")));
     FR_AWAIT(k, r, F_FCPROJF, k->w[1], ref_support(x));
     FR_AWAIT(k, r, F_WHNF, x, obs_key(r, k->w[3]));
-    FR_FINISH(k, r);
-    FR_END(k);
-}
-/* the receiver of a transform call publishes the observation of v into K */
-static void fwd_step(Cont *k, uint64_t v) {
-    uint64_t r = 0;
-    FR_BEGIN(k);
-    FR_CALL(k, r, obs_sub(k, k->w[0], key_face(k->w[1])));
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -1039,7 +980,6 @@ static void evaluator_init(void) {
     F_OBS = family_define("whnf.observe", obs_step, 0, false); F_OBS_ = F_OBS;
     F_CREQ = family_define("construct.request", creq_step, sizeof(CrLoc), false);
     F_CBRANCH = family_define("whnf.comp_branch", cbranch_step, 0, false);
-    F_FWD = family_define("whnf.forward", fwd_step, 0, false);
     F_FIELDF = family_lookup("field"); F_BINDERF = family_lookup("binder"); F_CONSTRUCTF = family_lookup("construct"); F_HEADF = family_lookup("head.annotation");
     F_FCENTF = family_lookup("fc.entails"); F_FCPROJF = family_lookup("fc.project"); F_FCMEETF = family_lookup("fc.meet");
     F_FCJOINF = family_lookup("fc.join"); F_FCFORALLF = family_lookup("fc.forall"); F_FCENDF = family_lookup("fc.endpoint");
@@ -1086,10 +1026,8 @@ static void resume(Cont *k, uint64_t v) {
     die("unreachable continuation kind");
 }
 
-/* one elementary frame step, or one local rule of the evaluator's net
- * (counted in the net's rule classes, not as an evaluator step) */
+/* one elementary frame step */
 static void execute_job(Task t) {
-    if (t.kind == TK_PAIR) { net_step_pair(&E.net, t.pair); return; }
     add_count(&E.ev.eval_step);
     if (t.kind == TK_EVAL) { evaluate(t.entry); return; }
     Cont *k = t.k;
@@ -1108,11 +1046,6 @@ static void execute(Task t) {
     tl_in_job--; intern_in_step--;
 }
 
-/* §43 FORWARD_RESULT(K): the receiver's request; delivery publishes into K */
-void eval_forward_result(EntryId K, RefId v) {
-    Cont *fk = frame_new(F_FWD, K); fk->w[0] = v; fk->w[1] = eval_entry_b(K);
-    enqueue_resume(fk, 0);
-}
 
 static void *worker_main(void *arg) {
     (void)arg;
@@ -1175,7 +1108,7 @@ static bool drive_root(RootBox *box, uint64_t *out) {
             eval_run();
             pthread_mutex_lock(&E.q_mu);
             pthread_mutex_lock(&box->mu); bool d = box->done; pthread_mutex_unlock(&box->mu);
-            bool queued = E.qlen > 0 || net_pending_pairs_locked(&E.net) > 0;
+            bool queued = E.qlen > 0;
             if (d || E.outstanding == 0) { pthread_mutex_unlock(&E.q_mu); break; }
             if (!queued) pthread_cond_wait(&E.idle_cv, &E.q_mu);
             pthread_mutex_unlock(&E.q_mu);
@@ -1265,18 +1198,6 @@ EvalResult *whnf_pinned(RefId t, FaceId chi, PinSet P, WhnfStatus *status) {
     return out;
 }
 
-EvalResult *whnf_in(RefId t, ContextId ctx, WhnfStatus *status) {
-    uint64_t culprit;
-    OccStatus os = occurrence_validate(t, ctx, &culprit);
-    if (os != OCC_VALID) {
-        static const char *msgs[] = { "", "free term variable not declared in the occurrence context", "free dimension not declared in the occurrence context",
-                                      "declared type differs from the variable's declaration", "context assumption does not entail the required face" };
-        EvalResult *r = result_invalid(msgs[os]);
-        if (status) *status = W_INVALID;
-        return r;
-    }
-    return whnf(t, context_assumption(ctx), status);
-}
 
 void print_result(const EvalResult *r, FILE *f) {
     if (!r) { fprintf(f, "<pending>"); return; }
