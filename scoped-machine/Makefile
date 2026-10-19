@@ -2,12 +2,12 @@ CC      ?= gcc
 CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
 LDFLAGS ?= -fsanitize=address,undefined -pthread
 
-SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/pins.c src/judge.c src/runtime.c src/proof.c
+SRC := src/intern.c src/pool.c src/dnf.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/scope.c src/template.c src/eval.c src/lib.c src/net.c src/match.c src/canon.c src/check.c src/compiler.c src/pins.c src/judge.c
 OBJ := $(SRC:.c=.o)
 CONSTRUCTION_TESTS := review_singleton_witnesses review_generic_identity_action review_runtime_nodes
 CONSTRUCTION_BINS := $(addprefix build/,$(CONSTRUCTION_TESTS))
 
-all: build/protocol build/records build/dnf build/subst build/alpha build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/review-probes build/demo-speculation build/runtime build/proof-use $(CONSTRUCTION_BINS)
+all: build/protocol build/records build/dnf build/subst build/alpha build/tests build/schedule build/concurrent build/match build/check build/templates build/review-regressions build/compiler build/review-followup build/review-checker-lifecycle build/review-ae756a1 build/review-0f787a3 build/review-9eadaf2 build/review-end-to-end build/review-nested-scope build/review-probes build/demo-speculation $(CONSTRUCTION_BINS)
 
 $(CONSTRUCTION_BINS): build/%: tests/%.o $(OBJ)
 	@mkdir -p build
@@ -122,9 +122,6 @@ test: all
 	./build/match
 	./build/templates
 	./build/compiler
-	./build/runtime
-	./build/proof-use
-	CUBICAL_WORKERS=4 ./build/proof-use
 	./build/review-regressions
 	./build/review-regressions recursive
 	./build/review-regressions concurrent
@@ -151,7 +148,7 @@ test: all
 	for m in duplicate handoff refpub revision; do ./build/review-probes $$m || exit 1; done
 	./build/demo-speculation
 
-TSAN_TESTS := test_protocol test_records test_dnf test_subst test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope test_runtime test_proof_use $(CONSTRUCTION_TESTS)
+TSAN_TESTS := test_protocol test_records test_dnf test_subst test_main test_schedule test_concurrent test_check test_match test_templates test_compiler review_regressions review_followup review_checker_lifecycle review_ae756a1 review_0f787a3 review_9eadaf2 review_end_to_end review_nested_scope $(CONSTRUCTION_TESTS)
 TSAN_CORE  := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
 tsan:
 	@mkdir -p build/tsan
@@ -166,8 +163,6 @@ tsan:
 	./build/tsan/test_match
 	CUBICAL_WORKERS=4 ./build/tsan/test_templates
 	CUBICAL_WORKERS=4 ./build/tsan/test_compiler
-	CUBICAL_WORKERS=4 ./build/tsan/test_runtime action
-	CUBICAL_WORKERS=4 ./build/tsan/test_proof_use
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions recursive
 	TSAN_OPTIONS=halt_on_error=1 ./build/tsan/review_regressions concurrent
@@ -186,11 +181,3 @@ clean:
 	rm -rf build
 
 .PHONY: all test tsan clean
-
-build/runtime: $(OBJ) tests/test_runtime.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
-
-build/proof-use: $(OBJ) tests/test_proof_use.o
-	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^

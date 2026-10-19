@@ -160,22 +160,13 @@ int main(int argc,char **argv) {
                 (unsigned long long)levels[j][0],(unsigned long long)levels[j][1],(unsigned long long)levels[j][2]);
             valid(empty,n.value,n.type,label);
         }
-        for(size_t j=0;j<3;++j) {
-            Typed n=node_program(levels[j][0],levels[j][1],levels[j][2]);
-            const Recipe *pr=rt_recipe(RK_NODE,levels[j][0],levels[j][1],levels[j][2],0);
-            char label[120];snprintf(label,sizeof label,"production node recipe at a=%llu b=%llu r=%llu checks at the witnessed type",
-                (unsigned long long)levels[j][0],(unsigned long long)levels[j][1],(unsigned long long)levels[j][2]);
-            assert(convert_type(empty,fc_true(),pr->type,n.type)==CV_EQUAL);
-            valid(empty,pr->value,n.type,label);
-        }
+        assert(transform_count()==0);
         compiler_free();check_free();eval_free();machine_free();return 0;
     }
     Typed N=node_program(0,0,0);
     valid(empty,N.value,N.type,"closed nonempty node, arbitrary dependent runtime tail, all four fields");
-    const Recipe *PR=rt_recipe(RK_NODE,0,0,0,0);
-    assert(convert_type(empty,fc_true(),PR->type,N.type)==CV_EQUAL);
-    valid(empty,PR->value,N.type,"production node recipe checks at the witnessed type");
     if(argc>2 && !strcmp(argv[2],"generic")) {
+        assert(transform_count()==0);printf("registered_transforms=0\n");
         compiler_free();check_free();eval_free();machine_free();return 0;
     }
     RefId U=mk_universe(0);TermVarId vA=var(U);RefId A=ref_var(vA);
@@ -187,24 +178,21 @@ int main(int argc,char **argv) {
     RefId QT=mk_pi_lv(0,1,x,A,mk_pi_lv(0,1,e,Ex,diagram_type(0,0,A)));
     RefId Q=mk_lam_lv(0,x,A,mk_lam_lv(0,e,Ex,zero(0,A,ref_var(x))));
     RefId computedQ=mk_app(mk_id_fun(1,QT),Q);
-    RefId fns[2]={N.value,PR->value}; const char *who[2]={"witness","production"};
-    for(int which=0;which<2;which++) {
-    RefId fn=fns[which]; printf("-- node function: %s\n",who[which]);
-        RefId D=app4(fn,A,A,t,computedQ),DT=diagram_type(0,0,A);
-        valid(G,D,DT,"runtime nonempty node with tail centre depending on bound x");
-        equal(G,dc(D),t,A,"computed node centre");
-        RefId S=dr(D,y),E=dm(D,y),f=mf(E),g=mg(E),h=mh(E),k=mk(E);
-        valid(G,E,maps_type(0,0,S,P),"computed node collapse, expansion and both inverse proofs");
-        RefId w=mk_app(g,p),fw=mk_app(f,w),gw=mk_app(g,fw);
-        valid(G,w,S,"expansion of an arbitrary output path");
-        valid(G,fw,P,"collapse of the expanded realization");
-        RefId kp=mk_app(k,p),hw=mk_app(h,w);
-        valid(G,kp,mk_path_const(0,P,fw,p),"runtime collapse-after-expansion proof");
-        valid(G,hw,mk_path_const(0,S,gw,w),"runtime expansion-after-collapse proof");
-        equal(G,mk_papp_const(0,P,fw,p,kp,iv_zero()),fw,P,"first proof source endpoint");
-        equal(G,mk_papp_const(0,P,fw,p,kp,iv_one()),p,P,"first proof target endpoint");
-        equal(G,mk_papp_const(0,S,gw,w,hw,iv_zero()),gw,S,"second proof source endpoint");
-        equal(G,mk_papp_const(0,S,gw,w,hw,iv_one()),w,S,"second proof target endpoint");
-    }
+    RefId D=app4(N.value,A,A,t,computedQ),DT=diagram_type(0,0,A);
+    valid(G,D,DT,"runtime nonempty node with tail centre depending on bound x");
+    equal(G,dc(D),t,A,"computed node centre");
+    RefId S=dr(D,y),E=dm(D,y),f=mf(E),g=mg(E),h=mh(E),k=mk(E);
+    valid(G,E,maps_type(0,0,S,P),"computed node collapse, expansion and both inverse proofs");
+    RefId w=mk_app(g,p),fw=mk_app(f,w),gw=mk_app(g,fw);
+    valid(G,w,S,"expansion of an arbitrary output path");
+    valid(G,fw,P,"collapse of the expanded realization");
+    RefId kp=mk_app(k,p),hw=mk_app(h,w);
+    valid(G,kp,mk_path_const(0,P,fw,p),"runtime collapse-after-expansion proof");
+    valid(G,hw,mk_path_const(0,S,gw,w),"runtime expansion-after-collapse proof");
+    equal(G,mk_papp_const(0,P,fw,p,kp,iv_zero()),fw,P,"first proof source endpoint");
+    equal(G,mk_papp_const(0,P,fw,p,kp,iv_one()),p,P,"first proof target endpoint");
+    equal(G,mk_papp_const(0,S,gw,w,hw,iv_zero()),gw,S,"second proof source endpoint");
+    equal(G,mk_papp_const(0,S,gw,w,hw,iv_one()),w,S,"second proof target endpoint");
+    assert(transform_count()==0);printf("registered_transforms=0\n");
     compiler_free();check_free();eval_free();machine_free();return 0;
 }

@@ -49,5 +49,6 @@ int main(void) {
     }
     verify(G,F,FT,"fully parameterized forward identity action on diagram values");
     verify(G,H,HT,"fully parameterized reverse identity action on diagram values");
+    assert(transform_count()==0);
     compiler_free(); check_free(); eval_free(); machine_free(); return 0;
 }

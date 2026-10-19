@@ -220,7 +220,7 @@ void eval_set_policy(SchedPolicy p, uint64_t seed);
  * pairs as jobs of the same scheduler (one outstanding count); the pair queue
  * has its own selection policy */
 void eval_set_pair_policy(SchedPolicy p, uint64_t seed);
-typedef struct { size_t continue_ref, op, eval_deliver, retries; } EvalNetEvents;
+typedef struct { size_t apply, continue_ref, op, eval_deliver, retries; } EvalNetEvents;
 EvalNetEvents eval_net_events(void);
 struct Net *eval_net(void);
 void eval_forward_result(EntryId K, RefId v);        /* the receiver's request (net rule) */

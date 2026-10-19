@@ -8,7 +8,7 @@ const char *tag_name(Tag t) {
     case T_FST: return "fst"; case T_SND: return "snd"; case T_PATH: return "PathP";
     case T_PLAM: return "plam"; case T_PAPP: return "papp"; case T_GLUE_TYPE: return "Glue";
     case T_GLUE_INTRO: return "glue"; case T_UNGLUE: return "unglue"; case T_COMP: return "comp";
-    case T_SYSTEM: return "system"; case T_GLOBAL: return "global";
+    case T_SYSTEM: return "system"; case T_GLOBAL: return "global"; case T_TCALL: return "tcall";
     }
     return "?";
 }
@@ -604,6 +604,19 @@ RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e) { ter
 RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { term_levels_push(n, LEVEL_NONE); RefId o = mk_glue_intro(A, alpha, T, e, t, a); term_levels_pop(); return o; }
 RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v) { term_levels_push(n, LEVEL_NONE); RefId o = mk_unglue(A, alpha, T, e, v); term_levels_pop(); return o; }
 RefId mk_pair_at_lv(uint64_t l, RefId S, RefId a, RefId b) { term_levels_push(l, LEVEL_NONE); RefId o = mk_pair_at(S, a, b); term_levels_pop(); return o; }
+RefId mk_tcall(uint64_t id, int dir, size_t nparams, const Field *params, RefId a, RefId in_type, RefId out_type, FaceId required) {
+    Field *f = malloc((nparams + 3) * sizeof(Field)); require(f, "out of memory");
+    for (size_t k = 0; k < nparams; k++) { f[k] = params[k]; f[k].slot = NO_SLOT; }
+    f[nparams] = (Field){ F_REF, NO_SLOT, a };
+    f[nparams + 1] = (Field){ F_REF, NO_SLOT, in_type };
+    f[nparams + 2] = (Field){ F_REF, NO_SLOT, out_type };
+    term_require_push(required);
+    RefId out = view0(T_TCALL, 2 * id + (dir ? 1 : 0), f, nparams + 3, NULL, 0);
+    term_require_pop();
+    free(f);
+    return out;
+}
+
 RefId mk_system(size_t n, const FaceId *faces, const RefId *terms) {
     Field *f = malloc((n ? 2 * n : 1) * sizeof(Field));
     require(f, "out of memory");

@@ -1,10 +1,10 @@
 #include "eval.h"
-#include "net.h"
 #include "lib.h"
+#include "net.h"
+#include "compiler.h"
 #include "pool.h"
 #include "pins.h"
 #include "judge.h"
-#include "proof.h"
 #include <sched.h>
 
 /* ---------------- continuations, joins, results ----------------
@@ -108,6 +108,7 @@ void eval_set_pair_policy(SchedPolicy p, uint64_t seed) {
 Net *eval_net(void) { return &E.net; }
 EvalNetEvents eval_net_events(void) {
     EvalNetEvents v;
+    v.apply = __atomic_load_n(&E.net.n_apply, __ATOMIC_SEQ_CST);
     v.continue_ref = __atomic_load_n(&E.net.n_continue, __ATOMIC_SEQ_CST);
     v.op = __atomic_load_n(&E.net.n_op, __ATOMIC_SEQ_CST);
     v.eval_deliver = __atomic_load_n(&E.net.n_eval_deliver, __ATOMIC_SEQ_CST);
@@ -159,10 +160,10 @@ void eval_init(void) {
     evaluator_init();
     templates_init();                  /* the library programs, registered once per machine */
     lib_families_init();
+    compiler_families_init();
     net_families_init();
     pins_families_init();
     judge_families_init();
-    proof_families_init();
     evaluator_bind();
     net_init(&E.net);
     net_share_scheduler(&E.net, &E.q_mu, &E.q_cv, &E.outstanding);
@@ -531,6 +532,9 @@ void frame_finish(Cont *k, uint64_t v) {
     if (k->parent) { Cont *p = k->parent; k->parent = NULL; enqueue_resume(p, v); return; }
     family_publish(k->dest, v);
 }
+/* the step hands its entry to another owner (the evaluator's net, §43): the
+ * frame ends, the entry stays running, and the owner publishes it later */
+static void frame_end_unpublished(Cont *k) { (void)k; }
 
 /* the interning subroutine: a bounded advance of the insertion per step */
 #define INTERN_BUDGET 8
@@ -627,7 +631,7 @@ void eval_request(RefId t, FaceId chi, Cont *k) { eval_request_pinned(t, chi, 0,
  * constructions) and its sub-observations through the observation
  * subroutine. A branchwise result is a join: the frame issues one branch per
  * step and is resumed by the last arrival (§12, §26). */
-static Family F_UNFOLDF, F_COMPCLAUSEF, F_CBRANCH;
+static Family F_UNFOLDF, F_COMPCLAUSEF, F_DECODEF, F_CBRANCH;
 static Family F_OBS, F_FWD, F_FIELDF, F_BINDERF, F_CONSTRUCTF, F_HEADF, F_FCENTF, F_FCPROJF, F_FCMEETF, F_FCJOINF, F_FCFORALLF, F_FCENDF;
 #define RES(x) ((EvalResult *)(uintptr_t)(x))
 #define RV(r) ((uint64_t)(uintptr_t)(r))
@@ -916,6 +920,25 @@ static void whnf_step(Cont *k, uint64_t v) {
         FR_FINISH(k, RV(L->res));
     }
 
+    if (L->tag == T_TCALL) {
+        /* §43: allocate APPLY_TRANSFORM(id,dir,σ) with REF(a) on its principal
+         * port and CONTINUE_REFERENCE(K) on its result; K stays running and
+         * its evaluation is now owned by the receiver */
+        FR_AWAIT(k, r, F_DECODEF, t, 0);
+        { size_t n; const uint64_t *dw = interner_get(&M.keys, r, &n);
+        Payload P = {0}; P.a = dw[0]; P.b = dw[1]; P.c = dw[2];
+        NodeId op = net_operation(&E.net, OP_APPLY_TRANSFORM, P);
+        Payload Pr = {0}; Pr.ref = dw[3];
+        NodeId d = net_descriptor(&E.net, D_REF, Pr);
+        Payload Pk = {0}; Pk.a = k->dest; Pk.face = chi;
+        int8_t pol[1] = { -1 };
+        NodeId cr = net_node(&E.net, A_CONTINUE_REFERENCE, 1, pol, Pk);
+        net_connect(&E.net, op, 1, cr, 0);
+        net_connect(&E.net, op, 0, d, 0); }
+        frame_end_unpublished(k);
+        return;
+    }
+
     if (L->tag == T_COMP) {
         FR_AWAIT(k, L->phi, F_FIELDF, t, 1);
         FR_AWAIT(k, r, F_FCENTF, chi, L->phi);
@@ -1058,8 +1081,8 @@ static void evaluator_init(void) {
 }
 
 static void evaluator_bind(void) {
-    F_UNFOLDF = family_lookup("global.unfold"); F_COMPCLAUSEF = family_lookup("comp.clause");
-    require(F_UNFOLDF && F_COMPCLAUSEF, "the evaluator's clause families are registered");
+    F_UNFOLDF = family_lookup("global.unfold"); F_COMPCLAUSEF = family_lookup("comp.clause"); F_DECODEF = family_lookup("tcall.decode");
+    require(F_UNFOLDF && F_COMPCLAUSEF && F_DECODEF, "the evaluator's clause families are registered");
 }
 
 static void evaluate(EntryId eid) {

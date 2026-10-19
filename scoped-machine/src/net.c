@@ -1,5 +1,6 @@
 #include "net.h"
 #include "lib.h"
+#include "compiler.h"
 
 /* ------------------------------------------------------------------ */
 /* nodes and wiring                                                     */
@@ -624,6 +625,16 @@ static void netop_step(Cont *k, uint64_t v) {
         join_free(L->J); L->J = NULL;
         { Payload e = {0}; NetRes *res = nres(0, e); res->node = L->hd; FR_FINISH(k, RV_(res)); }
     }
+    if (L->k == OP_APPLY_TRANSFORM) {
+        /* §43: v := reindex(template, σ + slot ↦ a); no evaluation of a, the proof, or v */
+        {   RefId body; TermVarId slot;
+            require(compiler_template(L->P.a, (int)L->P.b, &body, &slot), "APPLY_TRANSFORM of an unknown compiled transform");
+            L->b = body; L->c = slot; }
+        FR_AWAIT(k, L->a, Fn_OVERRIDE, L->P.c, key3(S_TERM, L->c, L->Q.ref));
+        FR_AWAIT(k, r, Fn_REINDEX, L->b, L->a);
+        count(&n->n_apply);
+        FR_FINISH(k, RV_(nref(r)));
+    }
     if (L->k == OP_CAPTURE_REF_SCOPE || L->k == OP_CAPTURE_FACE_SCOPE || L->k == OP_CAPTURE_INTERVAL_SCOPE) {
         /* the capture request: the telescope Δ (payload a), then the body and
          * (for a reference) the result type, level and guard */
@@ -732,7 +743,7 @@ static void rule_op(Net *n, NodeId op, NodeId data) {
     Payload P = o->p, Q = d->p;
     /* the operand sort each operation consumes; a mismatch is a status */
     NodeKind want = 0;
-    if (k == OP_REINDEX_TERM || k == OP_OPEN || k == OP_UNFOLD_GLOBAL || k == OP_GET_SUPPORT || k == OP_CAPTURE_REF_SCOPE || k == OP_EVAL) want = D_REF;
+    if (k == OP_REINDEX_TERM || k == OP_OPEN || k == OP_UNFOLD_GLOBAL || k == OP_GET_SUPPORT || k == OP_APPLY_TRANSFORM || k == OP_CAPTURE_REF_SCOPE || k == OP_EVAL) want = D_REF;
     else if (k == OP_REINDEX_INTERVAL || k == OP_CAPTURE_INTERVAL_SCOPE) want = D_INTERVAL;
     else if (k == OP_REINDEX_FACE || k == OP_FORALL_DIMENSION || k == OP_PROJECT_FACE || k == OP_FACE_COVERAGE || k == OP_CAPTURE_FACE_SCOPE) want = D_FACE;
     else if (k == OP_COMPOSE_MAP || k == OP_RESTRICT_MAP || k == OP_LIFT_TERM || k == OP_LIFT_DIMENSION) want = D_MAP;

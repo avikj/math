@@ -37,11 +37,6 @@ void check_free(void);
 /* budget of checking/conversion steps per top-level request (0 = unlimited);
  * exceeding it yields UNRESOLVED("budget") */
 void check_set_budget(size_t steps);
-size_t check_budget(void);
-/* the root preparation shared by every top-level request: the judgment
- * context of F, the scope of each reference and the pins of the request
- * (the closure of the symbols its context and references name) */
-CheckStatus check_root_prepare(ContextId F, FaceId chi, size_t n, const RefId *refs, uint64_t *G, uint64_t *P, const char **reason);
 /* §59.4: begin a new admission attempt (unresolved outcomes of the previous
  * attempt are recomputed on demand) */
 void check_new_attempt(void);

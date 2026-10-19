@@ -27,7 +27,7 @@ typedef enum {
     OP_REINDEX_DIM_BINDER, OP_REINDEX_PARTIAL_DIM_BINDER, OP_REINDEX_PARTIAL,
     OP_APPLY_TERM_BINDER, OP_APPLY_DIM_BINDER, OP_APPLY_PARTIAL_DIM_BINDER,
     OP_FORALL_DIMENSION, OP_PROJECT_FACE, OP_FACE_COVERAGE, OP_USE_PARTIAL, OP_GET_SUPPORT,
-    OP_REINDEX_HEAD, OP_MATERIALIZE, OP_EVAL,
+    OP_REINDEX_HEAD, OP_MATERIALIZE, OP_APPLY_TRANSFORM, OP_EVAL,
     /* §55 scope / template operations (payload conventions in net.c) */
     OP_CAPTURE_REF_SCOPE, OP_CAPTURE_FACE_SCOPE, OP_CAPTURE_INTERVAL_SCOPE, OP_REINDEX_SCOPE, OP_APPLY_SCOPE, OP_FORALL_SCOPE,
     OP_REINDEX_TEMPLATE_ENV, OP_INSTANTIATE_TEMPLATE, OP_REINDEX_TYPED_PARTIAL, OP_USE_TYPED_PARTIAL, OP_TYPED_PARTIAL_TYPE, OP_TYPED_PARTIAL_GUARD,
@@ -83,7 +83,7 @@ typedef struct Net {
     size_t rewrites;
     /* local rule instances by class (diamond-balanced event classes), committed only */
     size_t n_op, n_dup, n_erase, n_eval_deliver;
-    size_t n_continue;            /* CONTINUE_REFERENCE rule events */
+    size_t n_apply, n_continue;   /* §43/§45: APPLY_TRANSFORM and CONTINUE_REFERENCE rule events */
     size_t retries;           /* diagnostics: replacements abandoned after revalidation */
     /* §43: when shared is set, pending active pairs are jobs of the shared
      * scheduler: pushes count in *shared.outstanding under *shared.mu and

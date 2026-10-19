@@ -18,7 +18,6 @@
 #include "eval.h"
 
 typedef uint64_t PinSet;
-#define PIN_LEVELS 32
 PinSet pins_empty(void);
 PinSet pins_insert(PinSet P, SymbolId s, RefId body);       /* bounded */
 bool pins_lookup(PinSet P, SymbolId s, RefId *body);        /* bounded */
@@ -27,18 +26,8 @@ size_t pins_symbols(PinSet P, SymbolId *out, size_t max);   /* in-order listing 
 /* the closure at the current revisions, as a stepped subroutine over the
  * roots in buf: pairs (kind, id), kind 0 a reference, 1 a scope */
 Cont *pins_closure_sub(const Cont *caller, WordBuf *roots);
-/* in-order iteration in bounded work per element (at most 2·PIN_LEVELS
- * node moves between two leaves); the iterator lives in a frame's locals */
-typedef struct { uint64_t node[PIN_LEVELS + 1]; uint8_t pos[PIN_LEVELS + 1]; int depth; } PinIter;
-void pins_iter_init(PinIter *it, PinSet P);
-bool pins_iter_next(PinIter *it, SymbolId *s, RefId *body);
 /* outside jobs */
 PinSet pins_current(size_t n, const RefId *refs);
-/* the audit closure (HANDOFF §88.3): the roots' symbols by the conservative
- * stored-syntax walk (globals.of audit modes), then through every reached
- * symbol's type, parameter types and the body of the revision read; each
- * symbol pinned once. Edges of a symbol at a revision: pins.edges(s, body). */
-PinSet pins_audit(size_t n, const RefId *refs);
 void pins_families_init(void);
 
 #endif
