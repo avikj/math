@@ -229,37 +229,28 @@ static void setfree_step(Cont *k, uint64_t v) {
 }
 
 /* capture: request [n, (sort, id, type, level, required)*, body_sort, body, type, level, guard];
- * the captured identities close into depth-0 atoms in every record */
-typedef struct { const uint64_t *c; size_t nc, n, q; uint64_t tk, r; WordBuf out; bool created; } CapLoc;
+ * the scope's records over the concrete identities, then the CLOSE traversal
+ * of them (the captured identities become depth-0 atoms) — the one scope
+ * traversal (tscope) */
+typedef struct { const uint64_t *c; size_t nc, n, q; uint64_t ids, pre; WordBuf out; bool created; } CapLoc;
 static void capture_step(Cont *k, uint64_t v) {
     CapLoc *L = FR_LOC(k, CapLoc);
-    uint64_t r = 0, id = 0;
+    uint64_t r = 0;
     FR_BEGIN(k);
     L->c = interner_get(&M.keys, k->w[0], &L->nc); L->n = (size_t)L->c[0];
     wordbuf_init(&L->out);
     for (L->q = 0; L->q < L->n; L->q++) { wordbuf_push(&L->out, L->c[1 + 5 * L->q]); wordbuf_push(&L->out, L->c[2 + 5 * L->q]); FR_YIELD(k); }
-    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
-    L->tk = trav_key(TR_CLOSE, 0, id);
+    FR_CALL(k, L->ids, intern_sub(k, &M.keys, &L->out, &L->created));
     wordbuf_init(&L->out); wordbuf_push(&L->out, L->n);
     for (L->q = 0; L->q < L->n; L->q++) {
-        r = 0;
-        if (L->c[3 + 5 * L->q]) FR_AWAIT(k, r, F_TREF, L->c[3 + 5 * L->q], L->tk);
-        wordbuf_push(&L->out, L->c[1 + 5 * L->q]); wordbuf_push(&L->out, r); wordbuf_push(&L->out, L->c[4 + 5 * L->q]);
-        FR_AWAIT(k, r, F_TFC, L->c[5 + 5 * L->q], L->tk);
-        wordbuf_push(&L->out, r);
+        wordbuf_push(&L->out, L->c[1 + 5 * L->q]); wordbuf_push(&L->out, L->c[3 + 5 * L->q]); wordbuf_push(&L->out, L->c[4 + 5 * L->q]); wordbuf_push(&L->out, L->c[5 + 5 * L->q]);
+        FR_YIELD(k);
     }
     {   const uint64_t *t = L->c + 1 + 5 * L->n;          /* body_sort, body, type, level, guard */
-        wordbuf_push(&L->out, t[0]); L->r = 0;
-        if (t[2]) FR_AWAIT(k, L->r, F_TREF, t[2], L->tk); }
-    {   const uint64_t *t = L->c + 1 + 5 * L->n;
-        wordbuf_push(&L->out, L->r); wordbuf_push(&L->out, t[3]);
-        FR_AWAIT(k, r, F_TFC, t[4], L->tk); }
-    {   const uint64_t *t = L->c + 1 + 5 * L->n;
-        wordbuf_push(&L->out, r);
-        FR_AWAIT(k, r, val_family(t[0]), t[1], L->tk); }
-    wordbuf_push(&L->out, r);
-    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
-    FR_AWAIT(k, r, F_SCOPESIDE, id, 0);
+        wordbuf_push(&L->out, t[0]); wordbuf_push(&L->out, t[2]); wordbuf_push(&L->out, t[3]); wordbuf_push(&L->out, t[4]); wordbuf_push(&L->out, t[1]); }
+    FR_CALL(k, L->pre, intern_sub(k, &M.keys, &L->out, &L->created));
+    FR_AWAIT(k, r, F_TSCOPE, L->pre, trav_key(TR_CLOSE, 0, L->ids));
+    if (r == L->pre) FR_AWAIT(k, r, F_SCOPESIDE, L->pre, 0);           /* nothing captured: the records as they are */
     FR_FINISH(k, r);
     FR_END(k);
 }
