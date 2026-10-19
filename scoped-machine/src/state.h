@@ -10,7 +10,6 @@
 #include "intern.h"
 
 typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
-typedef struct { uint64_t free_slots; /* interned word list */ } TNodeSide;
 
 typedef struct {
     Interner intervals;   /* IntervalId  → canonical interval DNF words */
@@ -26,7 +25,6 @@ typedef struct {
     Interner tnodes;      /* template constructor nodes */
     Interner tdefs;       /* template definitions (signature + root) */
     Interner keys;        /* interned word tuples used as memo keys */
-    Chunked tnode_side;   /* TNodeSide per node-1: computed free-slot sets */
 
     /* side data, non-moving; an element is written before its id is
      * published and never changes afterwards */

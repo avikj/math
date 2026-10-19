@@ -380,7 +380,6 @@ static void tboundary_step(Cont *k, uint64_t v) {
 }
 
 void chain_families_init(void) {
-    
     family_define(Fc_REIDX, "cube.reindex", reindex_step, sizeof(RxLoc));
     family_define(Fc_FACE, "cell.face", face_step, sizeof(FcLoc));
     family_define(Fc_ADD, "chain.add", add_step, sizeof(AddLoc));

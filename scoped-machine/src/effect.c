@@ -388,8 +388,6 @@ void effect_state_init(void) {
     interner_init(&EF.occs); chunked_init(&EF.occd, sizeof(Desc *));
 }
 void effect_families_init(void) {
-    
-    
     family_define(F_PREP, "effect.prepare", prep_step, sizeof(PrLoc));
     family_define(F_EFFECT, "effect.request", effect_step, sizeof(EfLoc));
     family_define(F_OCCB, "occurrence.boundary", occb_step, 0);

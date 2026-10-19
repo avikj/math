@@ -119,7 +119,6 @@ void creq_tag(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, 
 void creq_system_begin(WordBuf *w, size_t n);
 void creq_system_branch(WordBuf *w, FaceId f, RefId t);   /* after the last branch: wordbuf_push(w, 0) */
 RefId construct_buf(WordBuf *w);
-RefId construct_request(const uint64_t *req, size_t n);
 RefId mk_tag(Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);
 #define MK(tag, payload, levels, formal, ...) mk_tag((tag), (payload), (levels), sizeof((uint64_t[]){ __VA_ARGS__ }) / sizeof(uint64_t), (uint64_t[]){ __VA_ARGS__ }, (formal))
 uint64_t construction_field(RefId t, size_t k);

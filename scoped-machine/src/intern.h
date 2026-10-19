@@ -99,6 +99,7 @@ void wordbuf_init(WordBuf *b);
 void wordbuf_push(WordBuf *b, uint64_t x);
 void wordbuf_clear(WordBuf *b);       /* releases every page (one release per page) */
 bool wordbuf_drain_one(WordBuf *b);   /* releases one page; false when none is left (the buffer is then empty) */
+uint64_t wordbuf_intern(Interner *t, WordBuf *b);   /* host (outside counted steps): the buffer's record interned at once; the buffer is emptied */
 
 /* ---- stepped interning ----
  * One unit is one small intern (or find). A small record is one unit; a

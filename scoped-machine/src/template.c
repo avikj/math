@@ -19,13 +19,15 @@ typedef struct {
     size_t nlocals;
     PSort lsort[MAXL];
     ExprId ltype[MAXL], llevel[MAXL], lreq[MAXL];   /* declarations of term locals (constructor binders and scope locals) */
-    Words nodes;                   /* every constructor node of the definition, in construction order */
+    Words nodes;                   /* every constructor node of the definition, in construction order (its index) */
+    Words freel;                   /* while registering: each node's free-slot list, by node index */
+    uint64_t free;                 /* registered: the record of the nodes' free-slot lists, by node index */
     ExprId root;
     ExprId rtype, rlevel;          /* the declared result type of the program and its level */
     TNodeId root_node;             /* the root constructor node when the root is a node (0 when the root is a call) */
 } TDef;
 
-static struct { TDef defs[TD_COUNT]; uint64_t index_counter[TD_COUNT]; bool init; pthread_mutex_t mu; } TPL;
+static struct { TDef defs[TD_COUNT]; uint64_t index_counter[TD_COUNT]; bool init; } TPL;
 
 /* ------------------------------------------------------------------ */
 /* expressions: interned records [kind, words...]                        */
@@ -45,7 +47,6 @@ static ExprId x0(uint64_t k) { uint64_t w[1] = { k }; return xi(1, w); }
 /* ------------------------------------------------------------------ */
 /* nodes: [def, index, tag, payload_e, levels_e, nf, (kind, bslot, e)*, nb, (sort, domfield, lslot)*, required_e] */
 
-#define TNSIDE(id) ((TNodeSide *)chunked_at(&M.tnode_side, (id) - 1))
 static const uint64_t *nw(TNodeId Q, size_t *n) { return interner_get(&M.tnodes, Q, n); }
 TDefId tnode_def(TNodeId Q) { size_t n; return nw(Q, &n)[0]; }
 uint64_t tnode_index(TNodeId Q) { size_t n; return nw(Q, &n)[1]; }
@@ -122,8 +123,14 @@ static void expr_free(ExprId e, size_t np, SlotSet *out) {
     default: die("bad expression kind");
     }
 }
+/* a node's free-slot list: by its index in its definition's record (in the
+ * definition's table while it is registered) */
+static uint64_t node_free_list(TNodeId Q) {
+    const TDef *d = &TPL.defs[tnode_def(Q)]; size_t ix = (size_t)tnode_index(Q), n;
+    return d->free ? interner_get(&M.keys, d->free, &n)[ix] : d->freel.w[ix];
+}
 static void node_free(TNodeId Q, SlotSet *out) {
-    uint64_t list = TNSIDE(Q)->free_slots;
+    uint64_t list = node_free_list(Q);
     size_t n; const uint64_t *w = interner_get(&M.keys, list, &n);
     for (size_t k = 0; k < n; k++) ss_set(out, w[k]);
 }
@@ -133,11 +140,11 @@ static bool node_construction(TNodeId Q);
  * template node's were closed at registration */
 static size_t node_free_count(TNodeId Q) {
     if (node_construction(Q)) return node_param_count(Q);
-    size_t n; (void)interner_get(&M.keys, TNSIDE(Q)->free_slots, &n); return n;
+    size_t n; (void)interner_get(&M.keys, node_free_list(Q), &n); return n;
 }
 static size_t node_free_slot(TNodeId Q, size_t q) {
     if (node_construction(Q)) return q;
-    size_t n; return (size_t)interner_get(&M.keys, TNSIDE(Q)->free_slots, &n)[q];
+    size_t n; return (size_t)interner_get(&M.keys, node_free_list(Q), &n)[q];
 }
 
 /* ------------------------------------------------------------------ */
@@ -151,15 +158,6 @@ static uint64_t env_def(uint64_t er) { size_t n; const uint64_t *w = interner_ge
 /* An interpreted value is the interned pair [sort, id]. */
 static uint64_t tvrec(PSort sort, uint64_t id) { uint64_t w[2] = { sort, id }; return interner_intern(&M.keys, w, 2, NULL); }
 static TVal tvget(uint64_t rec) { size_t n; const uint64_t *w = interner_get(&M.keys, rec, &n); TVal v = { (PSort)w[0], w[1] }; return v; }
-static uint64_t envrec_host(TDefId def, size_t n, const uint64_t *slots, const TVal *vals) {
-    /* slots in increasing order */
-    Words w; words_init(&w);
-    for (size_t k = 0; k < n; k++) { words_push(&w, slots[k]); words_push(&w, vals[k].sort); words_push(&w, vals[k].id); }
-    words_push(&w, def);
-    uint64_t er = interner_intern(&M.maps, w.w, w.n, NULL);
-    words_free(&w);
-    return er;
-}
 
 /* ------------------------------------------------------------------ */
 /* constructions: nodes with closed constant fields (template.h)          */
@@ -540,11 +538,17 @@ static void node_syntactic_free(TNodeId Q, SlotSet *fsl) {
     size_t nb = tnode_nbinders(Q);
     for (size_t b = 0; b < nb; b++) { Sort so; FieldIndex df; size_t ls; node_binder(Q, (BinderSlot)b, &so, &df, &ls); ss_clear(fsl, np + ls); }
 }
-static void set_free_slots(TNodeId Q, const SlotSet *fsl) {
+/* the free-slot list of the current definition's node Q; whether it changed */
+static bool set_free_slots(TNodeId Q, const SlotSet *fsl) {
     Words fl; words_init(&fl);
     for (size_t k = 0; k < MAXSLOT; k++) if (ss_has(fsl, k)) words_push(&fl, k);
-    TNSIDE(Q)->free_slots = interner_intern(&M.keys, fl.w, fl.n, NULL);
+    uint64_t list = interner_intern(&M.keys, fl.w, fl.n, NULL);
     words_free(&fl);
+    size_t ix = (size_t)tnode_index(Q);
+    while (cd->freel.n <= ix) words_push(&cd->freel, 0);
+    bool changed = cd->freel.w[ix] != list;
+    cd->freel.w[ix] = list;
+    return changed;
 }
 
 typedef struct { FieldKind kind; BinderSlot bslot; ExprId e; } FS;
@@ -685,7 +689,7 @@ static ExprId SIG_DIM1_G(JFn result, JFn guard, void *ctx, ExprId level) {
 }
 
 static void begin(TDefKind k, const char *name, size_t n, const PSort *sorts) {
-    cur = k; cd = &TPL.defs[k]; memset(cd, 0, sizeof *cd); words_init(&cd->nodes);
+    cur = k; cd = &TPL.defs[k]; memset(cd, 0, sizeof *cd); words_init(&cd->nodes); words_init(&cd->freel);
     cd->name = name; cd->nparams = n;
     for (size_t i = 0; i < n; i++) cd->sorts[i] = sorts[i];
     under_face = 0;
@@ -779,11 +783,10 @@ static void finish(ExprId root) {
             node_syntactic_free(N, &fsl);
             if (N == Q) { if (cd->rtype) expr_free(cd->rtype, cd->nparams, &fsl); if (cd->rlevel) expr_free(cd->rlevel, cd->nparams, &fsl); }
             decl_closure(&fsl);
-            uint64_t before = TNSIDE(N)->free_slots;
-            set_free_slots(N, &fsl);
-            if (TNSIDE(N)->free_slots != before) changed = true;
+            if (set_free_slots(N, &fsl)) changed = true;
         }
     }
+    cd->free = interner_intern(&M.keys, cd->freel.w, cd->freel.n, NULL);
 }
 #define SORTS(...) ((const PSort[]){ __VA_ARGS__ })
 
@@ -1098,15 +1101,11 @@ static void register_library(void) {
 }
 
 void templates_init(void) {
-    static pthread_mutex_t once = PTHREAD_MUTEX_INITIALIZER;
-    pthread_mutex_lock(&once);
-    if (!TPL.init) { memset(&TPL, 0, sizeof TPL); pthread_mutex_init(&TPL.mu, NULL); register_library(); TPL.init = true; }
-    pthread_mutex_unlock(&once);
+    if (!TPL.init) { memset(&TPL, 0, sizeof TPL); register_library(); TPL.init = true; }
 }
 void templates_free(void) {
     if (!TPL.init) return;
-    for (size_t k = 0; k < TD_COUNT; k++) words_free(&TPL.defs[k].nodes);
-    pthread_mutex_destroy(&TPL.mu);
+    for (size_t k = 0; k < TD_COUNT; k++) { words_free(&TPL.defs[k].nodes); words_free(&TPL.defs[k].freel); }
     memset(&TPL, 0, sizeof TPL);
 }
 
@@ -1116,7 +1115,6 @@ void template_call_env(TDefKind def, size_t nargs, const TVal *args, WordBuf *er
     /* the environment record [(k, sort, arg)*, def] into a buffer (a fixed
      * library arity: bounded), interned into M.maps by the caller's stepped
      * subroutine */
-    templates_init();
     const TDef *d = &TPL.defs[def];
     require(nargs == d->nparams && nargs < 16, "template call arity (%s)", d->name);
     wordbuf_init(er);
@@ -1129,13 +1127,7 @@ void template_call_env(TDefKind def, size_t nargs, const TVal *args, WordBuf *er
 }
 
 TVal template_call(TDefKind def, size_t nargs, const TVal *args) {
-    templates_init();
-    const TDef *d = &TPL.defs[def];
-    require(nargs == d->nparams, "template_call arity (%s)", d->name);
-    uint64_t *sl = malloc((nargs ? nargs : 1) * sizeof(uint64_t)); TVal *vl = malloc((nargs ? nargs : 1) * sizeof(TVal));
-    require(sl && vl, "out of memory");
-    for (size_t k = 0; k < nargs; k++) { require(args[k].sort == d->sorts[k], "template_call sort (%s, %zu)", d->name, k); sl[k] = k; vl[k] = args[k]; }
-    uint64_t er = envrec_host(def, nargs, sl, vl);
-    free(sl); free(vl);
-    return interp_at(d->root, er);
+    WordBuf er; ExprId root;
+    template_call_env(def, nargs, args, &er, &root);
+    return interp_at(root, wordbuf_intern(&M.maps, &er));
 }

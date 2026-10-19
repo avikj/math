@@ -267,15 +267,9 @@ static void capture_step(Cont *k, uint64_t v) {
 }
 
 void scope_families_init(void) {
-    
-    
-    
-    
-    
     family_define(F_TIMGT, "trav.term_image", timgt_step, sizeof(ImgLoc));
     family_define(F_TIMGD, "trav.dim_image", timgd_step, sizeof(ImgLoc));
     family_define(F_TREF, "trav.ref", tref_step, 0);
-    
     family_define(F_TIV, "trav.interval", tiv_step, sizeof(SubLoc));
     family_define(F_TFC, "trav.face", tfc_step, sizeof(SubLoc));
     family_define(F_TSCOPE, "trav.scope", tscope_step, sizeof(ScLoc));

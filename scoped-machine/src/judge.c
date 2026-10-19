@@ -1497,14 +1497,6 @@ static void rv_step(Cont *k, uint64_t v) {
 
 /* ---------------- registration ---------------- */
 void judge_families_init(void) {
-    
-    
-    
-    
-    
-    
-    
-    
     family_define(J_CLAUSES, "judge.clauses", clauses_step, sizeof(JL));
     family_define(J_CMAP, "judge.clause_map", cmap_step, sizeof(JL));
     family_define(J_DIMSIN, "judge.dims_in", dimsin_step, sizeof(JL));

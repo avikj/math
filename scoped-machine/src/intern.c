@@ -215,6 +215,14 @@ bool wordbuf_drain_one(WordBuf *b) {
     if (!b->head) wordbuf_init(b);
     return true;
 }
+uint64_t wordbuf_intern(Interner *t, WordBuf *b) {
+    uint64_t *w = malloc((b->n ? b->n : 1) * sizeof *w); require(w, "out of memory");
+    size_t i = 0;
+    for (WPage *p = b->head; p; p = p->next) for (size_t j = 0; j < WB_PAGE && i < b->n; j++) w[i++] = p->w[j];
+    uint64_t id = interner_intern(t, w, i, NULL);
+    free(w); wordbuf_clear(b);
+    return id;
+}
 void wordbuf_clear(WordBuf *b) {
     for (WPage *p = b->head; p; ) { WPage *nx = p->next; wpage_release(p); p = nx; }
     wordbuf_init(b);

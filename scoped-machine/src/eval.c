@@ -913,10 +913,6 @@ static void evaluator_init(void) {
     family_define(F_CREQ, "construct.request", creq_step, sizeof(CrLoc));
     family_define(F_CBRANCH, "whnf.comp_branch", cbranch_step, sizeof(CbLoc));
     family_define(F_DIST, "whnf.distribute", dist_step, sizeof(DiLoc));
-    
-    
-    
-    
 }
 /* comp.clause is defined by the library after the evaluator */
 

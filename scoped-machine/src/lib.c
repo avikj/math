@@ -150,11 +150,7 @@ static void compclause_step(Cont *k, uint64_t v) {
         for (L->ki = 0; L->ki < L->nk; L->ki++) FR_AWAIT(k, L->kv[L->ki], L->kf[L->ki], L->ka[L->ki], L->kb[L->ki]);
         L->a0 = L->kv[0]; L->a1 = L->kv[1]; L->a2 = L->kv[2]; L->a3 = L->kv[3]; L->Un = L->kv[4];
         L->x = L->a1;                                                    /* T_j and e_j are defined on α_j */
-        {   TVal a[4] = { { PS_LEVEL, L->n }, { PS_LEVEL, L->n }, { PS_REF, L->a2 }, { PS_REF, L->a0 } };
-            template_call_env(TD_EQUIV, 4, a, &L->wb, &L->root); }
-        FR_CALL(k, L->er, intern_sub(k, &M.maps, &L->wb, &L->created));
-        FR_AWAIT(k, r, F_INTERP, L->root, L->er);
-        { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); L->eq = w[1]; }   /* Equiv(T_j, A_j) */
+        { uint64_t q[4] = { L->n, L->n, L->a2, L->a0 }; FR_AWAIT(k, L->eq, J_EQUIV, interner_intern(&M.keys, q, 4, NULL), 0); }   /* Equiv(T_j, A_j) */
         L->nk = 0;
         DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Un, level_succ(L->n), fc_true()), 0);
         DEMAND(F_CAPTURE, cap1(L->j, VS_FACE, L->a1, 0, LEVEL_NONE, fc_true()), 0);
@@ -182,9 +178,6 @@ interpret:
     FR_END(k);
 }
 void lib_families_init(void) {
-    
-    
-    
     family_define(F_COMPCLAUSE, "comp.clause", compclause_step, sizeof(CcLoc));
 }
 RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap) {

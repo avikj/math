@@ -59,14 +59,7 @@ void creq_tag(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, 
 }
 void creq_system_begin(WordBuf *w, size_t n) { creq_begin(w, T_SYSTEM, n, LEVELS_NONE, 0, 0, 2 * n); }
 void creq_system_branch(WordBuf *w, FaceId f, RefId t) { creq_entry(w, F_FACE, NO_SLOT, f); creq_entry(w, F_REF, NO_SLOT, t); }
-RefId construct_buf(WordBuf *b) {
-    uint64_t *w = malloc((b->n ? b->n : 1) * sizeof *w); require(w, "out of memory");
-    size_t i = 0;
-    for (WPage *p = b->head; p; p = p->next) for (size_t j = 0; j < WB_PAGE && i < b->n; j++) w[i++] = p->w[j];
-    RefId r = construct_request(w, i);
-    free(w); wordbuf_clear(b);
-    return r;
-}
+RefId construct_buf(WordBuf *b) { return family_call(F_CONSTRUCT, wordbuf_intern(&M.keys, b), 0); }
 RefId mk_tag(Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
     WordBuf w; creq_tag(&w, tag, payload, levels, n, ids, formal); return construct_buf(&w);
 }
@@ -353,12 +346,6 @@ static void globals_step(Cont *k, uint64_t v) {
 }
 
 void construct_families_init(void) {
-    
-    
-    
-    
-    
-    
     family_define(F_REFVAR, "ref.var", refvar_step, sizeof(VarLoc));
     family_define(F_FIELD, "field", field_step, sizeof(FieldLoc));
     family_define(F_BINDER, "binder", binder_step, sizeof(BindLoc));
@@ -371,7 +358,6 @@ void construct_families_init(void) {
 /* the template families register after the construction families; their ids are read lazily */
 
 /* ---------------- the operations (synchronous driver) ---------------- */
-RefId construct_request(const uint64_t *req, size_t n) { return family_call(F_CONSTRUCT, interner_intern(&M.keys, req, n, NULL), 0); }
 uint64_t construction_field(RefId t, size_t k) { return family_call(F_FIELD, t, k); }
 RefId construction_binder(RefId t, Sort sort, BinderSlot slot, FieldIndex field, uint64_t image) {
     uint64_t e[4] = { sort, slot, field, image };
