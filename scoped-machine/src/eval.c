@@ -3,6 +3,7 @@
 #include "pool.h"
 #include "pins.h"
 #include "judge.h"
+#include "chain.h"
 #include "proof.h"
 #include <sched.h>
 
@@ -177,6 +178,7 @@ void eval_init(void) {
     pins_families_init();
     judge_families_init();
     proof_families_init();
+    chain_families_init();
     evaluator_bind();
 }
 
