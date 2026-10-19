@@ -581,25 +581,35 @@ static ExprId NODE_req(Tag tag, ExprId payload, ExprId levels, size_t nf, const 
     return x1(X_NODE, Q);
 }
 
-/* constructor helpers; a binder takes the local slot it binds */
-static ExprId nPI(ExprId m, ExprId n, size_t xl, ExprId A, ExprId B) { FS f[2] = { { F_REF, NO_SLOT, A }, { F_REF, 0, B } }; BS b[1] = { { S_TERM, 0, xl } }; return NODE(T_PI, 0, LEVELS(m, n), 2, f, 1, b); }
-static ExprId nSIGMA(ExprId m, ExprId n, size_t xl, ExprId A, ExprId B) { FS f[2] = { { F_REF, NO_SLOT, A }, { F_REF, 0, B } }; BS b[1] = { { S_TERM, 0, xl } }; return NODE(T_SIGMA, 0, LEVELS(m, n), 2, f, 1, b); }
-static ExprId nLAM(ExprId m, size_t xl, ExprId A, ExprId body) { FS f[2] = { { F_REF, NO_SLOT, A }, { F_REF, 0, body } }; BS b[1] = { { S_TERM, 0, xl } }; return NODE(T_LAM, 0, LEVELS(m, LV(LEVEL_NONE)), 2, f, 1, b); }
-static ExprId nAPP(ExprId fn, ExprId a) { FS f[2] = { { F_REF, NO_SLOT, fn }, { F_REF, NO_SLOT, a } }; return NODE(T_APP, 0, 0, 2, f, 0, NULL); }
-static ExprId nPAIR_AT(ExprId l, ExprId S, ExprId a, ExprId b) { FS f[3] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b }, { F_REF, NO_SLOT, S } }; return NODE(T_PAIR, 0, LEVELS(l, LV(LEVEL_NONE)), 3, f, 0, NULL); }
-static ExprId nFST(ExprId p) { FS f[1] = { { F_REF, NO_SLOT, p } }; return NODE(T_FST, 0, 0, 1, f, 0, NULL); }
-static ExprId nSND(ExprId p) { FS f[1] = { { F_REF, NO_SLOT, p } }; return NODE(T_SND, 0, 0, 1, f, 0, NULL); }
-static ExprId nPATH(ExprId n, size_t jl, ExprId B, ExprId l, ExprId r) { FS f[3] = { { F_REF, 0, B }, { F_REF, NO_SLOT, l }, { F_REF, NO_SLOT, r } }; BS b[1] = { { S_DIM, NO_FIELD, jl } }; return NODE(T_PATH, 0, LEVELS(n, LV(LEVEL_NONE)), 3, f, 1, b); }
-static ExprId nPLAM(size_t jl, ExprId body) { FS f[1] = { { F_REF, 0, body } }; BS b[1] = { { S_DIM, NO_FIELD, jl } }; return NODE(T_PLAM, 0, 0, 1, f, 1, b); }
-static ExprId nPAPP(ExprId n, size_t jl, ExprId B, ExprId l, ExprId r, ExprId p, ExprId s) { FS f[5] = { { F_REF, 0, B }, { F_REF, NO_SLOT, l }, { F_REF, NO_SLOT, r }, { F_REF, NO_SLOT, p }, { F_INTERVAL, NO_SLOT, s } }; BS b[1] = { { S_DIM, NO_FIELD, jl } }; return NODE(T_PAPP, 0, LEVELS(n, LV(LEVEL_NONE)), 5, f, 1, b); }
-static ExprId nGLUE(ExprId n, ExprId A, ExprId alpha, ExprId T, ExprId e) { FS f[4] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e } }; return NODE(T_GLUE_TYPE, 0, LEVELS(n, LV(LEVEL_NONE)), 4, f, 0, NULL); }
-static ExprId nGLUEINTRO(ExprId n, ExprId A, ExprId alpha, ExprId T, ExprId e, ExprId t, ExprId a) { FS f[6] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, t }, { F_REF, NO_SLOT, a } }; return NODE(T_GLUE_INTRO, 0, LEVELS(n, LV(LEVEL_NONE)), 6, f, 0, NULL); }
-static ExprId nUNGLUE(ExprId n, ExprId A, ExprId alpha, ExprId T, ExprId e, ExprId v) { FS f[5] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, v } }; return NODE(T_UNGLUE, 0, LEVELS(n, LV(LEVEL_NONE)), 5, f, 0, NULL); }
-static ExprId nCOMP(ExprId n, size_t jl, ExprId A, ExprId phi, ExprId u, ExprId cap) { FS f[4] = { { F_REF, 0, A }, { F_FACE, NO_SLOT, phi }, { F_REF, 0, u }, { F_REF, NO_SLOT, cap } }; BS b[1] = { { S_DIM, NO_FIELD, jl } }; return NODE(T_COMP, 0, LEVELS(n, LV(LEVEL_NONE)), 4, f, 1, b); }
+/* constructor nodes by the schema (term.h): operand recipes es in field
+ * order; a binder takes the local slot it binds */
+static ExprId nT_(Tag tag, ExprId payload, ExprId levels, size_t lslot, size_t n, const ExprId *es) {
+    FS f[8]; BS b[1]; require(n <= 8, "node arity");
+    for (size_t k = 0; k < n; k++) f[k] = (FS){ schema_kind(tag, k), schema_slot(tag, k), es[k] };
+    Sort bs = tag == T_SYSTEM ? 0 : (Sort)tag_schema(tag)->bsort;
+    if (bs) b[0] = (BS){ bs, bs == S_TERM ? 0 : NO_FIELD, lslot };
+    return NODE(tag, payload, levels, n, f, bs ? 1 : 0, b);
+}
+#define nT(tag, payload, levels, lslot, ...) nT_((tag), (payload), (levels), (lslot), sizeof((ExprId[]){ __VA_ARGS__ }) / sizeof(ExprId), (ExprId[]){ __VA_ARGS__ })
+#define LV1(n) LEVELS((n), LV(LEVEL_NONE))
+#define nPI(m, n, xl, A, B) nT(T_PI, 0, LEVELS(m, n), xl, A, B)
+#define nSIGMA(m, n, xl, A, B) nT(T_SIGMA, 0, LEVELS(m, n), xl, A, B)
+#define nLAM(m, xl, A, body) nT(T_LAM, 0, LV1(m), xl, A, body)
+#define nAPP(fn, a) nT(T_APP, 0, 0, 0, fn, a)
+#define nPAIR_AT(l, S, a, b) nT(T_PAIR, 0, LV1(l), 0, a, b, S)
+#define nFST(p) nT(T_FST, 0, 0, 0, p)
+#define nSND(p) nT(T_SND, 0, 0, 0, p)
+#define nPATH(n, jl, B, l, r) nT(T_PATH, 0, LV1(n), jl, B, l, r)
+#define nPLAM(jl, body) nT(T_PLAM, 0, 0, jl, body)
+#define nPAPP(n, jl, B, l, r, p, s) nT(T_PAPP, 0, LV1(n), jl, B, l, r, p, s)
+#define nGLUE(n, A, alpha, T, e) nT(T_GLUE_TYPE, 0, LV1(n), 0, A, alpha, T, e)
+#define nGLUEINTRO(n, A, alpha, T, e, t, a) nT(T_GLUE_INTRO, 0, LV1(n), 0, A, alpha, T, e, t, a)
+#define nUNGLUE(n, A, alpha, T, e, v) nT(T_UNGLUE, 0, LV1(n), 0, A, alpha, T, e, v)
+#define nCOMP(n, jl, A, phi, u, cap) nT(T_COMP, 0, LV1(n), jl, A, phi, u, cap)
 static ExprId nSYSTEM(size_t nb, const ExprId *faces, const ExprId *terms) {
-    FS f[8]; require(nb <= 4, "system arity");
-    for (size_t k = 0; k < nb; k++) { f[2 * k] = (FS){ F_FACE, NO_SLOT, faces[k] }; f[2 * k + 1] = (FS){ F_REF, NO_SLOT, terms[k] }; }
-    return NODE(T_SYSTEM, LV(nb), 0, 2 * nb, f, 0, NULL);
+    ExprId e[8]; require(nb <= 4, "system arity");
+    for (size_t k = 0; k < nb; k++) { e[2 * k] = faces[k]; e[2 * k + 1] = terms[k]; }
+    return nT_(T_SYSTEM, LV(nb), 0, 0, 2 * nb, e);
 }
 static ExprId nUNIV(ExprId l) { return NODE(T_UNIVERSE, l, 0, 0, NULL, 0, NULL); }
 

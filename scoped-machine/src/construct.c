@@ -15,6 +15,62 @@
 #include "eval.h"
 #include "template.h"
 
+/* ---------------- the constructor schema ---------------- */
+#define R_ F_REF
+#define I_ F_INTERVAL
+#define F_ F_FACE
+static const TagSchema SCHEMA[] = {
+    [T_UNIVERSE]   = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 }, { 0 } },
+    [T_PI]         = { 2, S_TERM, ROLE_INTRO, 0, { R_, R_ }, { 0, 1 }, { 0 } },
+    [T_SIGMA]      = { 2, S_TERM, ROLE_INTRO, 0, { R_, R_ }, { 0, 1 }, { 0 } },
+    [T_LAM]        = { 2, S_TERM, ROLE_INTRO, 0, { R_, R_ }, { 0, 1 }, { 0 } },
+    [T_APP]        = { 2, 0, ROLE_ELIM, 0, { R_, R_ }, { 0 }, { 0 } },
+    [T_PAIR]       = { 3, 0, ROLE_INTRO, 0, { R_, R_, R_ }, { 0 }, { 0 } },
+    [T_FST]        = { 1, 0, ROLE_ELIM, 0, { R_ }, { 0 }, { 0 } },
+    [T_SND]        = { 1, 0, ROLE_ELIM, 0, { R_ }, { 0 }, { 0 } },
+    [T_PATH]       = { 3, S_DIM, ROLE_INTRO, 0, { R_, R_, R_ }, { 1, 0, 0 }, { 0 } },
+    [T_PLAM]       = { 1, S_DIM, ROLE_INTRO, 0, { R_ }, { 1 }, { 0 } },
+    [T_PAPP]       = { 5, S_DIM, ROLE_ELIM, 3, { R_, R_, R_, R_, I_ }, { 1, 0, 0, 0, 0 }, { 0 } },
+    [T_GLUE_TYPE]  = { 4, 0, ROLE_OTHER, 0, { R_, F_, R_, R_ }, { 0 }, { 0, 0, 1, 1 } },
+    [T_GLUE_INTRO] = { 6, 0, ROLE_OTHER, 0, { R_, F_, R_, R_, R_, R_ }, { 0 }, { 0, 0, 1, 1, 1 } },
+    [T_UNGLUE]     = { 5, 0, ROLE_ELIM, 4, { R_, F_, R_, R_, R_ }, { 0 }, { 0, 0, 1, 1 } },
+    [T_COMP]       = { 4, S_DIM, ROLE_OTHER, 0, { R_, F_, R_, R_ }, { 1, 0, 1, 0 }, { 0, 0, 1 } },
+    [T_SYSTEM]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 }, { 0 } },
+    [T_GLOBAL]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 }, { 0 } },
+};
+#undef R_
+#undef I_
+#undef F_
+const TagSchema *tag_schema(Tag tag) { require(tag >= T_UNIVERSE && tag <= T_GLOBAL, "unknown tag %u", (unsigned)tag); return &SCHEMA[tag]; }
+FieldKind schema_kind(Tag tag, size_t k) { return tag == T_SYSTEM ? (k % 2 ? F_REF : F_FACE) : (FieldKind)tag_schema(tag)->kind[k]; }
+BinderSlot schema_slot(Tag tag, size_t k) { return tag != T_SYSTEM && tag_schema(tag)->under[k] ? 0 : NO_SLOT; }
+void creq_begin(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, VarSetId ft, DimSetId fd, size_t nf) {
+    wordbuf_init(w);
+    wordbuf_push(w, tag); wordbuf_push(w, payload); wordbuf_push(w, levels); wordbuf_push(w, 0); wordbuf_push(w, ft); wordbuf_push(w, fd); wordbuf_push(w, nf);
+}
+void creq_entry(WordBuf *w, uint64_t a, uint64_t b, uint64_t c) { wordbuf_push(w, a); wordbuf_push(w, b); wordbuf_push(w, c); }
+void creq_tag(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
+    const TagSchema *s = tag_schema(tag);
+    require(tag != T_SYSTEM && n <= s->nf, "a fixed-shape construction of %zu operands", n);
+    creq_begin(w, tag, payload, levels, 0, 0, n);
+    for (size_t k = 0; k < n; k++) creq_entry(w, schema_kind(tag, k), schema_slot(tag, k), ids[k]);
+    wordbuf_push(w, s->bsort ? 1 : 0);
+    if (s->bsort) creq_entry(w, s->bsort, formal, s->bsort == S_TERM ? 0 : NO_FIELD);
+}
+void creq_system_begin(WordBuf *w, size_t n) { creq_begin(w, T_SYSTEM, n, LEVELS_NONE, 0, 0, 2 * n); }
+void creq_system_branch(WordBuf *w, FaceId f, RefId t) { creq_entry(w, F_FACE, NO_SLOT, f); creq_entry(w, F_REF, NO_SLOT, t); }
+RefId construct_buf(WordBuf *b) {
+    uint64_t *w = malloc((b->n ? b->n : 1) * sizeof *w); require(w, "out of memory");
+    size_t i = 0;
+    for (WPage *p = b->head; p; p = p->next) for (size_t j = 0; j < WB_PAGE && i < b->n; j++) w[i++] = p->w[j];
+    RefId r = construct_request(w, i);
+    free(w); wordbuf_clear(b);
+    return r;
+}
+RefId mk_tag(Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
+    WordBuf w; creq_tag(&w, tag, payload, levels, n, ids, formal); return construct_buf(&w);
+}
+
 
 /* ---------------- VAR(x) ---------------- */
 typedef struct { uint64_t fv, sup, req, ds; } VarLoc;
@@ -109,10 +165,6 @@ static uint64_t con_field_id(const ConLoc *L, size_t q) { return L->fields[3 * q
 static uint64_t con_binder_sort(const ConLoc *L, size_t s) { return L->binders[3 * s]; }
 static uint64_t con_binder_formal(const ConLoc *L, size_t s) { return L->binders[3 * s + 1]; }
 static uint64_t con_binder_domain(const ConLoc *L, size_t s) { return L->binders[3 * s + 2]; }
-static bool partial_position(uint64_t tag, size_t q) {
-    return (tag == T_COMP && q == 2) || (tag == T_GLUE_TYPE && (q == 2 || q == 3)) ||
-           (tag == T_GLUE_INTRO && (q == 2 || q == 3 || q == 4)) || (tag == T_UNGLUE && (q == 2 || q == 3));
-}
 static PSort psort_of(uint64_t kind) { return kind == F_REF ? PS_REF : kind == F_INTERVAL ? PS_INTERVAL : PS_FACE; }
 static Family trav_family(uint64_t kind) { return kind == F_REF ? F_TREF : kind == F_INTERVAL ? F_TIV : F_TFC; }
 
@@ -154,7 +206,7 @@ static void construct_step(Cont *k, uint64_t v) {
     } else {
         L->req = fc_true();
         for (L->q = 0; L->q < L->nf; L->q++) {
-            if (con_field_kind(L, L->q) != F_REF || partial_position(L->tag, L->q)) {
+            if (con_field_kind(L, L->q) != F_REF || tag_schema((Tag)L->tag)->partial[L->q]) {
                 FR_YIELD(k);                                /* a skipped field is still one step */
                 continue;
             }

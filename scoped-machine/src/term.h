@@ -25,17 +25,6 @@ typedef enum {
 typedef enum { F_REF = 1, F_INTERVAL, F_FACE } FieldKind;
 typedef enum { S_TERM = 1, S_DIM } Sort;
 
-typedef struct {
-    FieldKind kind;
-    BinderSlot slot;      /* NO_SLOT when not under a binder */
-    uint64_t id;          /* RefId / IntervalId / FaceId */
-} Field;
-
-typedef struct {
-    Sort sort;
-    uint64_t formal;      /* TermVarId or DimVarId bound by the construction (closed into its atom) */
-    FieldIndex domain_field; /* term binders: field holding the domain type */
-} Binder;
 
 /* ---- universe levels (§59.1): explicit formation annotations ----
  * A construction record carries a packed pair of levels; LEVEL_NONE marks an
@@ -107,13 +96,32 @@ FaceId fc_reindex(FaceId phi, MapId m);
 MapId compose(MapId sigma, MapId tau);   /* apply sigma then tau */
 MapId map_override(MapId sigma, Sort sort, uint64_t key, uint64_t image);   /* sigma with key ↦ image */
 
-/* ---- constructions ---- */
-/* the construction (tag, payload, fields, binders) over its typed free
- * boundary, instantiated at the boundary itself */
-RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nfields,
-                const Binder *binders, size_t nbinders);
-/* the construction families (construct.c) */
+/* ---- constructions (construct.c) ----
+ * The constructor schema: per tag, its fields' kinds, the binder each sits
+ * under, its binder's sort (a term binder's domain is field 0), its partial
+ * (guarded) positions, its role and, for an eliminator, its scrutinee field.
+ * A system's fields alternate face and reference. Every builder of a
+ * construction — host, stepped, template — reads it. */
+typedef enum { ROLE_OTHER = 0, ROLE_INTRO, ROLE_ELIM } TagRole;
+typedef struct { uint8_t nf, bsort, role, scrut; uint8_t kind[6], under[6], partial[6]; } TagSchema;
+const TagSchema *tag_schema(Tag tag);
+FieldKind schema_kind(Tag tag, size_t k);
+BinderSlot schema_slot(Tag tag, size_t k);
+/* the request record [tag, payload, levels, declared, ft, fd, nf, (kind,
+ * slot, id)*, nb, (sort, formal, domain)*] (ft = fd = 0: the boundary is
+ * the fields'), written into a word buffer: its header, then one entry (a
+ * field or binder triple) per write; the whole record of a fixed-shape tag
+ * at operands ids[0..n) with binder formal `formal`; a system's header and
+ * branches. construct_buf constructs a written record (host). */
+void creq_begin(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, VarSetId ft, DimSetId fd, size_t nf);
+void creq_entry(WordBuf *w, uint64_t a, uint64_t b, uint64_t c);
+void creq_tag(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);
+void creq_system_begin(WordBuf *w, size_t n);
+void creq_system_branch(WordBuf *w, FaceId f, RefId t);   /* after the last branch: wordbuf_push(w, 0) */
+RefId construct_buf(WordBuf *w);
 RefId construct_request(const uint64_t *req, size_t n);
+RefId mk_tag(Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);
+#define MK(tag, payload, levels, formal, ...) mk_tag((tag), (payload), (levels), sizeof((uint64_t[]){ __VA_ARGS__ }) / sizeof(uint64_t), (uint64_t[]){ __VA_ARGS__ }, (formal))
 uint64_t construction_field(RefId t, size_t k);
 RefId construction_binder(RefId t, Sort sort, BinderSlot slot, FieldIndex field, uint64_t image);
 RefId ref_var_family(TermVarId x);
@@ -195,10 +203,11 @@ void tview_open(RefId t, Head *h);
 TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 
-/* ---- occurrence contexts (§2) ----
- * A context is an ordered list of declarations DIM(i) or TERM(x, type) with
- * a face assumption, interned by structure; it is not part of RefId. Its
- * validity and the scope of an occurrence in it are judgments (judge.ctx,
+/* ---- occurrence contexts (§2, judge.c) ----
+ * A context is an ordered list of declarations DIM(i) or TERM(x, type) — a
+ * judgment context, each declaration over its prefix — with a face
+ * assumption, interned by structure; it is not part of RefId. Its validity
+ * and the scope of an occurrence in it are judgments (judge.ctx,
  * judge.scope). */
 typedef struct { Sort sort; uint64_t id; } CtxDecl;
 ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption);
@@ -206,6 +215,7 @@ ContextId context_extend_term(ContextId ctx, TermVarId x);
 ContextId context_extend_dim(ContextId ctx, DimVarId i);
 ContextId context_restrict(ContextId ctx, FaceId phi);     /* strengthen the assumption */
 FaceId context_assumption(ContextId ctx);
+uint64_t context_judgment(ContextId ctx);                  /* its judgment context */
 size_t context_size(ContextId ctx);
 CtxDecl context_decl(ContextId ctx, size_t k);
 
@@ -221,8 +231,6 @@ DimSetId global_dims(SymbolId s);
 size_t global_count(void);
 bool set_global_body(SymbolId s, RefId body);   /* false: the environment is frozen (admitted); open a new one first */
 RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the definition's own parameters */
-ContextId global_context_flat(SymbolId s);   /* the parameter context of a global (fixed at declaration) */
-ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req);   /* dimensions, then term variables in id (dependency) order */
 
 /* ---- constructors (constructions at their own boundary) ---- */
 RefId mk_universe(uint64_t level);

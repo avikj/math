@@ -53,12 +53,6 @@ static CheckStatus premises(PinSet P, const char **reason) {
     return st;
 }
 
-/* a flat context as a judgment context */
-static CheckStatus jctx(ContextId F, uint64_t *G, const char **reason) {
-    WhnfStatus ws; *G = family_run(J_JCOF, F, 0, &ws);
-    if (ws != W_OK) { *reason = "unresolved: context"; return CK_UNRESOLVED; }
-    return CK_VALID;
-}
 /* scope: the face's dimensions, the reference's finite structure, its free
  * identities in the context */
 static CheckStatus scope_ok(uint64_t G, FaceId chi, RefId t, const char **reason) { uint64_t q[3] = { G, chi, t }; return ck(run(J_SCOPE, 3, q), reason); }
@@ -68,7 +62,7 @@ bool scope_validate(ScopeId S, const char **reason) { uint64_t q[3] = { 1, S, 0 
 
 CheckStatus check_context(ContextId F, const char **reason) {
     Roots R = { 0 }; pr_ctx(&R, F); PinSet P = pins_of(&R);
-    uint64_t G; CheckStatus st = jctx(F, &G, reason);
+    uint64_t G = context_judgment(F); CheckStatus st = CK_VALID;
     if (st == CK_VALID) { uint64_t w[3] = { G, context_assumption(F), P }; st = ck(run(J_CTX, 3, w), reason); }
     if (st == CK_VALID) st = premises(P, reason);
     return st;
@@ -78,21 +72,16 @@ CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma,
     Roots R = { 0 }; pr_ctx(&R, Delta); pr_ctx(&R, Gamma);
     for (size_t q = 0; q < subst_size(sigma); q++) { uint64_t x; TVal im; subst_get(sigma, q, &x, &im); if (im.sort == PS_REF) pr_ref(&R, im.id); }
     PinSet P = pins_of(&R);
-    uint64_t D, G; CheckStatus st = jctx(Delta, &D, reason);
-    if (st == CK_VALID) st = jctx(Gamma, &G, reason);
+    uint64_t D = context_judgment(Delta), G = context_judgment(Gamma); CheckStatus st = CK_VALID;
     if (st == CK_VALID) { uint64_t w[6] = { D, psi, sigma, G, chi, P }; st = ck(run(J_MAP, 6, w), reason); }
     if (st == CK_VALID) st = premises(P, reason);
     return st;
 }
 
-/* a judgment context back as a flat context with assumption a */
-
-
 static Inference infer_pinned(ContextId F, FaceId chi, RefId t, PinSet P) {
     Inference out = { CK_VALID, 0, NULL };
-    uint64_t G;
-    out.st = jctx(F, &G, &out.reason);
-    if (out.st == CK_VALID) out.st = scope_ok(G, chi, t, &out.reason);
+    uint64_t G = context_judgment(F);
+    out.st = scope_ok(G, chi, t, &out.reason);
     if (out.st != CK_VALID) return out;
     uint64_t w[4] = { chi, J_INFER, t, P }; uint64_t res = run(J_JOINT, 4, w);
     out.st = ck(res, &out.reason);
@@ -108,7 +97,7 @@ Inference infer(ContextId F, FaceId chi, RefId t) {
 
 CheckStatus check_is_type(ContextId F, FaceId chi, RefId A, uint64_t *level, const char **reason) {
     Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, A); PinSet P = pins_of(&R);
-    uint64_t G; CheckStatus st = jctx(F, &G, reason);
+    uint64_t G = context_judgment(F); CheckStatus st = CK_VALID;
     if (st == CK_VALID) st = scope_ok(G, chi, A, reason);
     uint64_t lvl = 0;
     if (st == CK_VALID) {
@@ -124,7 +113,7 @@ CheckStatus check_is_type(ContextId F, FaceId chi, RefId A, uint64_t *level, con
 
 CheckStatus check(ContextId F, FaceId chi, RefId t, RefId A, const char **reason) {
     Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); pr_ref(&R, A); PinSet P = pins_of(&R);
-    uint64_t G; CheckStatus st = jctx(F, &G, reason);
+    uint64_t G = context_judgment(F); CheckStatus st = CK_VALID;
     if (st == CK_VALID) st = scope_ok(G, chi, t, reason);
     if (st == CK_VALID) st = scope_ok(G, chi, A, reason);
     if (st == CK_VALID) { uint64_t w[5] = { chi, J_CHECK, t, A, P }; st = ck(run(J_EVERY, 5, w), reason); }
@@ -134,8 +123,8 @@ CheckStatus check(ContextId F, FaceId chi, RefId t, RefId A, const char **reason
 
 static ConvStatus convert(ContextId F, FaceId chi, RefId t, RefId u, RefId A, bool types) {
     Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); pr_ref(&R, u); pr_ref(&R, A); PinSet P = pins_of(&R);
-    const char *why; uint64_t G;
-    if (jctx(F, &G, &why) != CK_VALID || scope_ok(G, chi, t, &why) != CK_VALID || scope_ok(G, chi, u, &why) != CK_VALID || (A && scope_ok(G, chi, A, &why) != CK_VALID)) return CV_UNRESOLVED;
+    const char *why; uint64_t G = context_judgment(F);
+    if (scope_ok(G, chi, t, &why) != CK_VALID || scope_ok(G, chi, u, &why) != CK_VALID || (A && scope_ok(G, chi, A, &why) != CK_VALID)) return CV_UNRESOLVED;
     uint64_t res;
     if (types) { uint64_t w[5] = { chi, J_CONVT, t, u, P }; res = run(J_EVERY, 5, w); }
     else { uint64_t w[6] = { chi, J_CONVt, t, u, A, P }; res = run(J_EVERY, 6, w); }
@@ -151,7 +140,7 @@ ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A) { re
  * reads exactly those */
 EvalResult observe_checked(ContextId F, RefId t, WhnfStatus *status, const char **reason) {
     Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); PinSet P = pins_of(&R);
-    uint64_t G; CheckStatus st = jctx(F, &G, reason);
+    uint64_t G = context_judgment(F); CheckStatus st = CK_VALID;
     if (st == CK_VALID) { uint64_t w[3] = { G, context_assumption(F), P }; st = ck(run(J_CTX, 3, w), reason); }
     if (st == CK_VALID) { Inference I = infer_pinned(F, context_assumption(F), t, P); st = I.st; if (st != CK_VALID) *reason = I.reason; }
     if (st == CK_VALID) st = premises(P, reason);

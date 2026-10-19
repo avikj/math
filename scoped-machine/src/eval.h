@@ -134,8 +134,10 @@ void construct_families_init(void);
  * χ ∧ φ (φ = 0: none) bound to the pin set P (pins.h); its value is a
  * result record */
 uint64_t observe_key(FaceId chi, FaceId phi, uint64_t pins);
-/* a construction request as a subroutine (value: RefId) */
-Cont *construct_sub(const Cont *caller, Tag tag, uint64_t payload, uint64_t levels, size_t nf, const Field *f, size_t nb, const Binder *b);
+/* a construction request as a subroutine (value: RefId): a fixed-shape tag
+ * at operands ids by the schema (term.h), or a written request record */
+Cont *mk_tag_sub(const Cont *caller, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);
+#define MK_SUB(k, tag, payload, levels, formal, ...) mk_tag_sub((k), (tag), (payload), (levels), sizeof((uint64_t[]){ __VA_ARGS__ }) / sizeof(uint64_t), (uint64_t[]){ __VA_ARGS__ }, (formal))
 Cont *construct_buf_sub(const Cont *caller, WordBuf *w);
 
 /* one lifetime: the evaluator lives and dies with the machine */

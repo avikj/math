@@ -9,7 +9,7 @@
 #include "common.h"
 #include "intern.h"
 
-typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ uint64_t ctx; /* the parameter context */ } Def;
+typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
 typedef struct { uint64_t free_slots; /* interned word list */ } TNodeSide;
 
 typedef struct {

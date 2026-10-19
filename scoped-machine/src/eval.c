@@ -619,11 +619,6 @@ uint64_t observe_key(FaceId chi, FaceId phi, uint64_t pins) { require(pins, "an 
  * face. The request record is built into a word buffer and interned by the
  * stepped subroutine; the subroutine then awaits the construction. */
 typedef struct { WordBuf w; uint64_t id; bool created; } CrLoc;
-static void creq_head(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, size_t nf) {
-    wordbuf_init(w);
-    wordbuf_push(w, tag); wordbuf_push(w, payload); wordbuf_push(w, levels); wordbuf_push(w, 0); wordbuf_push(w, 0); wordbuf_push(w, 0); wordbuf_push(w, nf);
-}
-static void creq_field(WordBuf *w, Field f) { wordbuf_push(w, f.kind); wordbuf_push(w, f.slot); wordbuf_push(w, f.id); }
 static void creq_step(Cont *k, uint64_t v) {
     CrLoc *L = FR_LOC(k, CrLoc);
     uint64_t r = 0;
@@ -635,15 +630,9 @@ static void creq_step(Cont *k, uint64_t v) {
 }
 static Cont *creq_buf(const Cont *k, WordBuf *w) { Cont *c = frame_sub(F_CREQ, k); FR_LOC(c, CrLoc)->w = *w; wordbuf_init(w); return c; }
 Cont *construct_buf_sub(const Cont *caller, WordBuf *w) { return creq_buf(caller, w); }
-static Cont *creq(const Cont *k, Tag tag, uint64_t payload, uint64_t levels, size_t nf, const Field *f, size_t nb, const Binder *b) {
-    require(nf <= 6 && nb <= 1, "a fixed-shape construction request");
-    WordBuf w; creq_head(&w, tag, payload, levels, nf);
-    for (size_t q = 0; q < nf; q++) creq_field(&w, f[q]);
-    wordbuf_push(&w, nb);
-    for (size_t q = 0; q < nb; q++) { wordbuf_push(&w, b[q].sort); wordbuf_push(&w, b[q].formal); wordbuf_push(&w, b[q].domain_field); }
-    return creq_buf(k, &w);
+Cont *mk_tag_sub(const Cont *k, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
+    WordBuf w; creq_tag(&w, tag, payload, levels, n, ids, formal); return creq_buf(k, &w);
 }
-Cont *construct_sub(const Cont *caller, Tag tag, uint64_t payload, uint64_t levels, size_t nf, const Field *f, size_t nb, const Binder *b) { return creq(caller, tag, payload, levels, nf, f, nb, b); }
 
 /* observe(x, [χ, φ, P]): no observation on the false face; an invalid
  * occurrence outside x's required face; otherwise WHNF(x, [π_S(x) χ, P]) */
@@ -662,47 +651,27 @@ static void obs_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
-static bool intro_tag(Tag t) { return t == T_UNIVERSE || t == T_PI || t == T_SIGMA || t == T_LAM || t == T_PAIR || t == T_PATH || t == T_PLAM; }
-static bool elim_tag(Tag t) { return t == T_APP || t == T_FST || t == T_SND || t == T_PAPP || t == T_UNGLUE; }
 
-/* whnf.distribute(t, b): the eliminator t rebuilt around b, a branch of its
- * scrutinee's system (its shared operands are t's fields, awaited from their
- * keyed families) */
-typedef struct { uint64_t levels, j, fam, a1, a3, a4, tube; } DiLoc;
+/* whnf.distribute(t, b): the eliminator t with its scrutinee replaced by b,
+ * a branch of the scrutinee's system — its other operands t's fields (keyed
+ * values), a field under the binder opened at the binder's own name */
+typedef struct { uint64_t ids[6], levels, j; size_t q, nf; } DiLoc;
 static void dist_step(Cont *k, uint64_t v) {
     DiLoc *L = FR_LOC(k, DiLoc);
-    RefId t = k->w[0], bt = k->w[1];
+    RefId t = k->w[0];
     Tag tag = ref_tag(t);
     uint64_t r = 0;
     FR_BEGIN(k);
-    if (tag == T_APP) {
-        FR_AWAIT(k, L->a1, F_FIELD, t, 1);
-        { Field f[2] = { { F_REF, NO_SLOT, bt }, { F_REF, NO_SLOT, L->a1 } }; FR_CALL(k, r, creq(k, T_APP, 0, LEVELS_NONE, 2, f, 0, NULL)); }
-        FR_FINISH(k, r);
-    }
-    if (tag == T_FST || tag == T_SND) {
-        { Field f[1] = { { F_REF, NO_SLOT, bt } }; FR_CALL(k, r, creq(k, tag, 0, LEVELS_NONE, 1, f, 0, NULL)); }
-        FR_FINISH(k, r);
+    require(tag_schema(tag)->role == ROLE_ELIM && tag_schema(tag)->bsort != S_TERM, "whnf.distribute of a non-eliminator");
+    L->nf = tnode_nfields(ref_tnode(t));
+    L->j = tag_schema(tag)->bsort ? binder_dim_var(t, 0) : 0;
+    for (L->q = 0; L->q < L->nf; L->q++) {
+        if (L->q == tag_schema(tag)->scrut) L->ids[L->q] = k->w[1];
+        else if (schema_slot(tag, L->q) != NO_SLOT) FR_AWAIT(k, L->ids[L->q], F_BINDER, t, binder_rec(S_DIM, 0, L->q, iv_var(L->j)));
+        else FR_AWAIT(k, L->ids[L->q], F_FIELD, t, L->q);
     }
     FR_AWAIT(k, L->levels, F_HEAD, t, 1);
-    if (tag == T_PAPP) {
-        L->j = binder_dim_var(t, 0);
-        FR_AWAIT(k, L->fam, F_BINDER, t, binder_rec(S_DIM, 0, 0, iv_var(L->j)));
-        FR_AWAIT(k, L->a1, F_FIELD, t, 1);
-        FR_AWAIT(k, L->a3, F_FIELD, t, 2);
-        FR_AWAIT(k, L->a4, F_FIELD, t, 4);
-        {   Field f[5] = { { F_REF, 0, L->fam }, { F_REF, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, bt }, { F_INTERVAL, NO_SLOT, L->a4 } };
-            Binder b[1] = { { S_DIM, L->j, NO_FIELD } };
-            FR_CALL(k, r, creq(k, T_PAPP, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 1, b)); }
-        FR_FINISH(k, r);
-    }
-    require(tag == T_UNGLUE, "whnf.distribute of a non-eliminator");
-    FR_AWAIT(k, L->fam, F_FIELD, t, 0);
-    FR_AWAIT(k, L->a1, F_FIELD, t, 1);
-    FR_AWAIT(k, L->a3, F_FIELD, t, 2);
-    FR_AWAIT(k, L->tube, F_FIELD, t, 3);
-    {   Field f[5] = { { F_REF, NO_SLOT, L->fam }, { F_FACE, NO_SLOT, L->a1 }, { F_REF, NO_SLOT, L->a3 }, { F_REF, NO_SLOT, L->tube }, { F_REF, NO_SLOT, bt } };
-        FR_CALL(k, r, creq(k, T_UNGLUE, 0, levels_pack(levels_first(L->levels), LEVEL_NONE), 5, f, 0, NULL)); }
+    FR_CALL(k, r, mk_tag_sub(k, tag, 0, L->levels, L->nf, L->ids, L->j));
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -725,10 +694,8 @@ static void cbranch_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, L->tube, F_BINDER, t, binder_rec(S_DIM, 0, 2, iv_var(L->j)));
     FR_AWAIT(k, L->cap, F_FIELD, t, 3);
     FR_AWAIT(k, L->levels, F_HEAD, t, 1);
-    {   uint64_t lv = L->levels == LEVELS_NONE ? LEVEL_NONE : levels_first(L->levels);
-        Field f[4] = { { F_REF, 0, k->w[3] }, { F_FACE, NO_SLOT, L->phi }, { F_REF, 0, L->tube }, { F_REF, NO_SLOT, L->cap } };
-        Binder b[1] = { { S_DIM, (DimVarId)L->j, NO_FIELD } };
-        FR_CALL(k, r, creq(k, T_COMP, 0, levels_pack(lv, LEVEL_NONE), 4, f, 1, b)); }
+    L->levels = levels_pack(L->levels == LEVELS_NONE ? LEVEL_NONE : levels_first(L->levels), LEVEL_NONE);
+    FR_CALL(k, r, MK_SUB(k, T_COMP, 0, L->levels, L->j, k->w[3], L->phi, L->tube, L->cap));
     {   uint64_t w[2] = { L->g, r }; FR_FINISH(k, interner_intern(&M.keys, w, 2, NULL)); }
     FR_END(k);
 }
@@ -748,7 +715,7 @@ static void whnf_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     if (ref_is_var(t)) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
     L->tag = ref_tag(t);
-    if (intro_tag(L->tag)) FR_FINISH(k, res_rec(R_INTRODUCTION, t, NULL));
+    if (tag_schema(L->tag)->role == ROLE_INTRO) FR_FINISH(k, res_rec(R_INTRODUCTION, t, NULL));
 
     if (L->tag == T_GLOBAL) {
         /* a declared symbol without a body is an opaque constant: neutral;
@@ -770,7 +737,7 @@ static void whnf_step(Cont *k, uint64_t v) {
         goto forward_x;
     }
 
-    if (elim_tag(L->tag)) {
+    if (tag_schema(L->tag)->role == ROLE_ELIM) {
         if (L->tag == T_PAPP) {
             FR_AWAIT(k, L->a4, F_FIELD, t, 4);
             FR_AWAIT(k, r, F_FCEND, L->a4, 0);
@@ -779,7 +746,6 @@ static void whnf_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, r, F_FCEND, L->a4, 1);
             FR_AWAIT(k, r, F_FCENT, chi, r);
             if (r == 2) { FR_AWAIT(k, L->x, F_FIELD, t, 2); goto forward_x; }
-            FR_AWAIT(k, L->x, F_FIELD, t, 3);
         } else if (L->tag == T_UNGLUE) {
             FR_AWAIT(k, L->a1, F_FIELD, t, 1);
             FR_AWAIT(k, r, F_FCENT, chi, L->a1);
@@ -787,13 +753,13 @@ static void whnf_step(Cont *k, uint64_t v) {
                 /* on the Glue face: (fst e) v */
                 FR_AWAIT(k, L->x, F_FIELD, t, 3);
                 FR_AWAIT(k, L->a4, F_FIELD, t, 4);
-                { Field f[1] = { { F_REF, NO_SLOT, L->x } }; FR_CALL(k, L->x, creq(k, T_FST, 0, LEVELS_NONE, 1, f, 0, NULL)); }
-                { Field f[2] = { { F_REF, NO_SLOT, L->x }, { F_REF, NO_SLOT, L->a4 } }; FR_CALL(k, L->x, creq(k, T_APP, 0, LEVELS_NONE, 2, f, 0, NULL)); }
+                FR_CALL(k, L->x, MK_SUB(k, T_FST, 0, LEVELS_NONE, 0, L->x));
+                FR_CALL(k, L->x, MK_SUB(k, T_APP, 0, LEVELS_NONE, 0, L->x, L->a4));
                 goto forward_x;
             }
-            FR_AWAIT(k, L->x, F_FIELD, t, 4);
-        } else FR_AWAIT(k, L->x, F_FIELD, t, 0);
+        }
         /* the scrutinee */
+        FR_AWAIT(k, L->x, F_FIELD, t, tag_schema(L->tag)->scrut);
         FR_AWAIT(k, L->res, F_OBS, L->x, observe_key(chi, 0, P));
         if (RES(L->res).cls == R_NO_OBSERVATION || RES(L->res).cls == R_INVALID) FR_FINISH(k, L->res);
         if (RES(L->res).cls == R_NEUTRAL) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
@@ -898,7 +864,8 @@ branchwise:
      * result is reconstructed in the original branch order, nested systems
      * flattened under conjoined guards */
     if (L->kept == 0) {
-        FR_CALL(k, r, creq(k, T_SYSTEM, 0, LEVELS_NONE, 0, NULL, 0, NULL));
+        creq_system_begin(&L->wb, 0); wordbuf_push(&L->wb, 0);
+        FR_CALL(k, r, creq_buf(k, &L->wb));
         FR_FINISH(k, res_rec(R_SYSTEM, r, NULL));
     }
     for (L->q = 0; L->q < L->kept; L->q++) { family_launch(F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q), P)); FR_YIELD(k); }
@@ -916,18 +883,18 @@ branchwise:
         if (RES(L->res).cls != R_SYSTEM) continue;
         for (L->a = 0; L->a < RES(L->res).nbr; L->a++) { family_launch(F_FCMEET, sys_face(L->sys, L->q), RES(L->res).br[2 * L->a]); FR_YIELD(k); }
     }
-    creq_head(&L->wb, T_SYSTEM, L->nfs, LEVELS_NONE, 2 * L->nfs);
+    creq_system_begin(&L->wb, L->nfs);
     wordbuf_init(&L->wc); wordbuf_push(&L->wc, R_SYSTEM);
     for (L->q = 0; L->q < L->kept; L->q++) {
         FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q), P));
         if (RES(L->res).cls != R_SYSTEM) {
-            creq_field(&L->wb, (Field){ F_FACE, NO_SLOT, sys_face(L->sys, L->q) }); creq_field(&L->wb, (Field){ F_REF, NO_SLOT, RES(L->res).ref });
+            creq_system_branch(&L->wb, sys_face(L->sys, L->q), RES(L->res).ref);
             wordbuf_push(&L->wc, sys_face(L->sys, L->q)); wordbuf_push(&L->wc, RES(L->res).ref);
             continue;
         }
         for (L->a = 0; L->a < RES(L->res).nbr; L->a++) {
             FR_AWAIT(k, L->mf, F_FCMEET, sys_face(L->sys, L->q), RES(L->res).br[2 * L->a]);
-            creq_field(&L->wb, (Field){ F_FACE, NO_SLOT, L->mf }); creq_field(&L->wb, (Field){ F_REF, NO_SLOT, RES(L->res).br[2 * L->a + 1] });
+            creq_system_branch(&L->wb, L->mf, RES(L->res).br[2 * L->a + 1]);
             wordbuf_push(&L->wc, L->mf); wordbuf_push(&L->wc, RES(L->res).br[2 * L->a + 1]);
         }
     }

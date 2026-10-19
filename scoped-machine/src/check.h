@@ -71,10 +71,6 @@ CheckStatus check_signature(const char **reason);
  * compiler or observation client may be in progress and evaluator work must
  * have drained (both enforced); stop admitting new clients while crossing. */
 
-/* the context of a boundary: its dimensions, then its term variables in
- * dependency order with their declared types; assumption = req */
-ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req);
-
 const char *check_status_name(CheckStatus s);
 const char *conv_status_name(ConvStatus s);
 

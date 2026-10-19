@@ -66,25 +66,6 @@ uint64_t level_max(uint64_t a, uint64_t b) { if (a == LEVEL_NONE || b == LEVEL_N
 uint64_t level_succ(uint64_t a) { if (a == LEVEL_NONE) return LEVEL_NONE; require(a < LEVEL_NONE - 1, "universe level overflow"); return a + 1; }
 
 
-/* the request record of a construction (construct.c):
- * [tag, payload, levels, declared, ft, fd, nf, (kind, slot, id)*, nb, (sort, formal, domain)*];
- * ft = fd = 0: the boundary is the fields' */
-static RefId construction_request(Tag tag, uint64_t payload, uint64_t levels, const Field *fields, size_t nf,
-                                  const Binder *binders, size_t nb, VarSetId ft, DimSetId fd) {
-    Words w; words_init(&w);
-    words_push(&w, tag); words_push(&w, payload); words_push(&w, levels); words_push(&w, 0);
-    words_push(&w, ft); words_push(&w, fd); words_push(&w, nf);
-    for (size_t q = 0; q < nf; q++) { words_push(&w, fields[q].kind); words_push(&w, fields[q].slot); words_push(&w, fields[q].id); }
-    words_push(&w, nb);
-    for (size_t s = 0; s < nb; s++) { words_push(&w, binders[s].sort); words_push(&w, binders[s].formal); words_push(&w, binders[s].domain_field); }
-    RefId t = construct_request(w.w, w.n);
-    words_free(&w);
-    return t;
-}
-RefId construct(Tag tag, uint64_t payload, const Field *fields, size_t nf, const Binder *binders, size_t nb) {
-    return construction_request(tag, payload, LEVELS_NONE, fields, nf, binders, nb, 0, 0);
-}
-
 /* ================= references ================= */
 /* record: [1, x] for VAR ; [3, node, environment] for TVIEW */
 
@@ -194,69 +175,13 @@ HField head_field(const Head *h, size_t k) {
 
 void head_free(Head *h) { h->n = 0; }
 
-/* ================= occurrence contexts ================= */
-/* record: [n, (sort, id)*, assumption]; a term variable's type is its own */
-
-static ContextId context_intern(Words *w) { ContextId id = interner_intern(&M.contexts, w->w, w->n, NULL); words_free(w); return id; }
-
-ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption) {
-    Words w; words_init(&w);
-    words_push(&w, n);
-    for (size_t k = 0; k < n; k++) { words_push(&w, decls[k].sort); words_push(&w, decls[k].id); }
-    words_push(&w, assumption);
-    return context_intern(&w);
-}
-static const uint64_t *ctx_words(ContextId c, size_t *n) { return interner_get(&M.contexts, c, n); }
-size_t context_size(ContextId c) { size_t n; return (size_t)ctx_words(c, &n)[0]; }
-FaceId context_assumption(ContextId c) { size_t n; const uint64_t *w = ctx_words(c, &n); return w[1 + 2 * w[0]]; }
-CtxDecl context_decl(ContextId c, size_t k) {
-    size_t n; const uint64_t *w = ctx_words(c, &n);
-    require(k < w[0], "context declaration out of range");
-    CtxDecl d = { (Sort)w[1 + 2 * k], w[2 + 2 * k] };
-    return d;
-}
-static ContextId context_with(ContextId c, const CtxDecl *extra, FaceId assumption) {
-    size_t n = context_size(c);
-    CtxDecl *ds = malloc((n + 1) * sizeof(CtxDecl));
-    require(ds, "out of memory");
-    for (size_t k = 0; k < n; k++) ds[k] = context_decl(c, k);
-    if (extra) ds[n] = *extra;
-    ContextId out = context_make(extra ? n + 1 : n, ds, assumption);
-    free(ds);
-    return out;
-}
-ContextId context_extend_term(ContextId c, TermVarId x) { CtxDecl d = { S_TERM, x }; return context_with(c, &d, context_assumption(c)); }
-ContextId context_extend_dim(ContextId c, DimVarId i) { CtxDecl d = { S_DIM, i }; return context_with(c, &d, context_assumption(c)); }
-ContextId context_restrict(ContextId c, FaceId phi) { return context_with(c, NULL, fc_meet(context_assumption(c), phi)); }
-
-
 /* ================= globals ================= */
 
 
-/* the context of a boundary: its dimensions, then its term variables in
- * id order — which is dependency order, a variable's id exceeding those of
- * the variables its type mentions */
-ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req) {
-    size_t nd, nt;
-    const uint64_t *ds = dimset_get(fd, &nd);
-    const uint64_t *xs = varset_get(ft, &nt);
-    CtxDecl *decls = malloc((nd + nt + 1) * sizeof(CtxDecl));
-    require(decls, "out of memory");
-    for (size_t k = 0; k < nd; k++) { decls[k].sort = S_DIM; decls[k].id = ds[k]; }
-    for (size_t k = 0; k < nt; k++) { decls[nd + k].sort = S_TERM; decls[nd + k].id = xs[k]; }
-    ContextId ctx = context_make(nd + nt, decls, req);
-    free(decls);
-    return ctx;
-}
-/* a global's parameter context: computed once, when it is declared */
-ContextId global_context_flat(SymbolId s) { return __atomic_load_n(&DEF(s)->ctx, __ATOMIC_ACQUIRE); }
-
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type) {
-    ContextId ctx = boundary_context(params, dims, fc_true());
     SymbolId s = (SymbolId)__atomic_add_fetch(&M.n_defs, 1, __ATOMIC_RELAXED);
     Def *d = DEF(s);
     d->params = params; d->dims = dims; d->name = name; d->type = type;
-    __atomic_store_n(&d->ctx, ctx, __ATOMIC_RELEASE);
     __atomic_add_fetch(&M.env_gen, 1, __ATOMIC_RELEASE);
     return s;
 }
@@ -278,87 +203,42 @@ size_t global_count(void) { return __atomic_load_n(&M.n_defs, __ATOMIC_ACQUIRE);
 
 RefId global_ref(SymbolId s) {
     require(s >= 1 && s <= __atomic_load_n(&M.n_defs, __ATOMIC_RELAXED), "unknown symbol");
-    return construction_request(T_GLOBAL, s, LEVELS_NONE, NULL, 0, NULL, 0, DEF(s)->params, DEF(s)->dims);
+    WordBuf w; creq_begin(&w, T_GLOBAL, s, LEVELS_NONE, DEF(s)->params, DEF(s)->dims, 0);
+    wordbuf_push(&w, 0);
+    return construct_buf(&w);
 }
 
-/* ================= constructors ================= */
+/* ================= constructors (by the schema, construct.c) ================= */
 
-/* a construction annotated with its formation levels (§59.1) */
-static RefId view_lv(Tag tag, uint64_t payload, uint64_t lv, const Field *f, size_t nf, const Binder *b, size_t nb) {
-    return construction_request(tag, payload, lv, f, nf, b, nb, 0, 0);
-}
-static RefId view0(Tag tag, uint64_t payload, const Field *f, size_t nf, const Binder *b, size_t nb) {
-    return view_lv(tag, payload, LEVELS_NONE, f, nf, b, nb);
-}
-
-RefId mk_universe(uint64_t level) { require(level < LEVEL_NONE, "universe level out of the representable range"); return view0(T_UNIVERSE, level, NULL, 0, NULL, 0); }
-
+RefId mk_universe(uint64_t level) { require(level < LEVEL_NONE, "universe level out of the representable range"); return mk_tag(T_UNIVERSE, level, LEVELS_NONE, 0, NULL, 0); }
 static RefId mk_term_binder_form(Tag tag, uint64_t lv, TermVarId x, RefId A, RefId body) {
     require(term_var_type(x) == A, "binder formal declared at a different type");
-    Field f[2] = { { F_REF, NO_SLOT, A }, { F_REF, 0, body } };
-    Binder b[1] = { { S_TERM, x, 0 } };
-    return view_lv(tag, 0, lv, f, 2, b, 1);
+    return MK(tag, 0, lv, x, A, body);
 }
 RefId mk_pi(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, LEVELS_NONE, x, A, B); }
 RefId mk_lam(TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, LEVELS_NONE, x, A, body); }
 RefId mk_pi_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, levels_pack(m, n), x, A, B); }
 RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_SIGMA, levels_pack(m, n), x, A, B); }
 RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, levels_pack(m, LEVEL_NONE), x, A, body); }
-RefId mk_app(RefId fn, RefId a) { Field f[2] = { { F_REF, NO_SLOT, fn }, { F_REF, NO_SLOT, a } }; return view0(T_APP, 0, f, 2, NULL, 0); }
-RefId mk_pair(RefId a, RefId b) { Field f[2] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b } }; return view0(T_PAIR, 0, f, 2, NULL, 0); }
+RefId mk_app(RefId fn, RefId a) { return MK(T_APP, 0, LEVELS_NONE, 0, fn, a); }
+RefId mk_pair(RefId a, RefId b) { return MK(T_PAIR, 0, LEVELS_NONE, 0, a, b); }
 /* a pair annotated with its Σ type (§33: a checking-only form synthesizes
  * from its stored annotation); the annotation is the third field */
-static RefId mk_pair_at_at_levels(uint64_t lv, RefId S, RefId a, RefId b) { Field f[3] = { { F_REF, NO_SLOT, a }, { F_REF, NO_SLOT, b }, { F_REF, NO_SLOT, S } }; return view_lv(T_PAIR, 0, lv, f, 3, NULL, 0); }
-RefId mk_fst(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_FST, 0, f, 1, NULL, 0); }
-RefId mk_snd(RefId p) { Field f[1] = { { F_REF, NO_SLOT, p } }; return view0(T_SND, 0, f, 1, NULL, 0); }
-RefId mk_path(DimVarId j, RefId B_j, RefId l, RefId r) {
-    Field f[3] = { { F_REF, 0, B_j }, { F_REF, NO_SLOT, l }, { F_REF, NO_SLOT, r } };
-    Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view0(T_PATH, 0, f, 3, b, 1);
-}
-RefId mk_plam(DimVarId j, RefId body) {
-    Field f[1] = { { F_REF, 0, body } };
-    Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view0(T_PLAM, 0, f, 1, b, 1);
-}
-static RefId mk_papp_at_levels(uint64_t lv, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) {
-    Field f[5] = { { F_REF, 0, B_j }, { F_REF, NO_SLOT, l }, { F_REF, NO_SLOT, r }, { F_REF, NO_SLOT, p }, { F_INTERVAL, NO_SLOT, s } };
-    Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view_lv(T_PAPP, 0, lv, f, 5, b, 1);
-}
-static RefId mk_glue_type_at_levels(uint64_t lv, RefId A, FaceId alpha, RefId T, RefId e) {
-    Field f[4] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e } };
-    return view_lv(T_GLUE_TYPE, 0, lv, f, 4, NULL, 0);
-}
-static RefId mk_glue_intro_at_levels(uint64_t lv, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) {
-    Field f[6] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, t }, { F_REF, NO_SLOT, a } };
-    return view_lv(T_GLUE_INTRO, 0, lv, f, 6, NULL, 0);
-}
-static RefId mk_unglue_at_levels(uint64_t lv, RefId A, FaceId alpha, RefId T, RefId e, RefId v) {
-    Field f[5] = { { F_REF, NO_SLOT, A }, { F_FACE, NO_SLOT, alpha }, { F_REF, NO_SLOT, T }, { F_REF, NO_SLOT, e }, { F_REF, NO_SLOT, v } };
-    return view_lv(T_UNGLUE, 0, lv, f, 5, NULL, 0);
-}
-static RefId mk_comp_at_levels(uint64_t lv, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) {
-    Field f[4] = { { F_REF, 0, A_j }, { F_FACE, NO_SLOT, phi }, { F_REF, 0, u_j }, { F_REF, NO_SLOT, cap } };
-    Binder b[1] = { { S_DIM, j, NO_FIELD } };
-    return view_lv(T_COMP, 0, lv, f, 4, b, 1);
-}
-RefId mk_pair_at_lv(uint64_t n, RefId S, RefId a, RefId b) { return mk_pair_at_at_levels(levels_pack(n, LEVEL_NONE), S, a, b); }
-RefId mk_papp(DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) { return mk_papp_at_levels(LEVELS_NONE, j, B_j, l, r, p, s); }
-RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e) { return mk_glue_type_at_levels(levels_pack(n, LEVEL_NONE), A, alpha, T, e); }
-RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { return mk_glue_intro_at_levels(levels_pack(n, LEVEL_NONE), A, alpha, T, e, t, a); }
-RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v) { return mk_unglue_at_levels(levels_pack(n, LEVEL_NONE), A, alpha, T, e, v); }
-RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) { return mk_comp_at_levels(levels_pack(n, LEVEL_NONE), j, A_j, phi, u_j, cap); }
+RefId mk_pair_at_lv(uint64_t n, RefId S, RefId a, RefId b) { return MK(T_PAIR, 0, levels_pack(n, LEVEL_NONE), 0, a, b, S); }
+RefId mk_fst(RefId p) { return MK(T_FST, 0, LEVELS_NONE, 0, p); }
+RefId mk_snd(RefId p) { return MK(T_SND, 0, LEVELS_NONE, 0, p); }
+RefId mk_path(DimVarId j, RefId B_j, RefId l, RefId r) { return MK(T_PATH, 0, LEVELS_NONE, j, B_j, l, r); }
+RefId mk_plam(DimVarId j, RefId body) { return MK(T_PLAM, 0, LEVELS_NONE, j, body); }
+RefId mk_papp(DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) { return MK(T_PAPP, 0, LEVELS_NONE, j, B_j, l, r, p, s); }
+RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e) { return MK(T_GLUE_TYPE, 0, levels_pack(n, LEVEL_NONE), 0, A, alpha, T, e); }
+RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { return MK(T_GLUE_INTRO, 0, levels_pack(n, LEVEL_NONE), 0, A, alpha, T, e, t, a); }
+RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v) { return MK(T_UNGLUE, 0, levels_pack(n, LEVEL_NONE), 0, A, alpha, T, e, v); }
+RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap) { return MK(T_COMP, 0, levels_pack(n, LEVEL_NONE), j, A_j, phi, u_j, cap); }
 RefId mk_system(size_t n, const FaceId *faces, const RefId *terms) {
-    Field *f = malloc((n ? 2 * n : 1) * sizeof(Field));
-    require(f, "out of memory");
-    for (size_t k = 0; k < n; k++) {
-        f[2 * k].kind = F_FACE; f[2 * k].slot = NO_SLOT; f[2 * k].id = faces[k];
-        f[2 * k + 1].kind = F_REF; f[2 * k + 1].slot = NO_SLOT; f[2 * k + 1].id = terms[k];
-    }
-    RefId r = view0(T_SYSTEM, n, f, 2 * n, NULL, 0);
-    free(f);
-    return r;
+    WordBuf w; creq_system_begin(&w, n);
+    for (size_t k = 0; k < n; k++) creq_system_branch(&w, faces[k], terms[k]);
+    wordbuf_push(&w, 0);
+    return construct_buf(&w);
 }
 
 /* ================= printing ================= */
