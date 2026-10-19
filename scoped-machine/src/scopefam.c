@@ -65,7 +65,7 @@ static void image_step(Cont *k, uint64_t v, bool dim) {
         if (kind == TR_ENV && !is_obound_id(x)) FR_FINISH(k, keep);
         FR_AWAIT(k, r, F_LOOKUP, ctx, kind == TR_ENV ? x & ~OBOUND_BIT : x);
         if (!r) FR_FINISH(k, keep);
-        { uint64_t key; TVal e; subst_get(ctx, r - 1, &key, &e); FR_FINISH(k, e.id); }
+        FR_FINISH(k, subst_value(ctx, r - 1));
     }
     /* CLOSE: the captured locals, one per step */
     L->c = interner_get(&M.keys, ctx, &L->nc);

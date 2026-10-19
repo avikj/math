@@ -87,6 +87,7 @@ typedef enum { PS_REF = 1, PS_INTERVAL, PS_FACE, PS_SCOPE, PS_LEVEL } PSort;
 typedef struct { PSort sort; uint64_t id; } TVal;   /* RefId / IntervalId / FaceId / ScopeId / level */
 size_t subst_size(uint64_t rec);
 void subst_get(uint64_t rec, size_t k, uint64_t *key, TVal *v);
+uint64_t subst_value(uint64_t rec, size_t k);   /* the value of entry k */
 uint64_t subst_entry(uint64_t key, uint64_t sort, uint64_t value);   /* the set family's entry operand */
 bool subst_identity(uint64_t sort, uint64_t key, uint64_t value);
 uint64_t env_empty(uint64_t def);

@@ -57,19 +57,24 @@ static const char *diag_text(uint64_t rec) { size_t n; return (const char *)inte
 
 /* ---------------- contexts ---------------- */
 #define JC_TAG 0x7C7CULL
-/* [tag, parent, sort, id, index]: a variable's type is its own */
-uint64_t jc_empty(void) { return RQ(JC_TAG, 0, 0, 0, pins_empty()); }
+/* [tag, parent, sort, id, index]: a variable's type is its own; the index
+ * is the total substitution record of the declared identities (id, sort, 0) */
+uint64_t jc_empty(void) { return RQ(JC_TAG, 0, 0, 0, env_empty(0)); }
 static const uint64_t *jcw(uint64_t G) { size_t n; const uint64_t *w = rget(G, &n); require(n == 5 && w[0] == JC_TAG, "not a judgment context"); return w; }
 uint64_t jc_parent(uint64_t G) { return jcw(G)[1]; }
 bool jc_is_empty(uint64_t G) { return jcw(G)[1] == 0 && jcw(G)[2] == 0; }
 void jc_decl(uint64_t G, Sort *sort, uint64_t *id) { const uint64_t *w = jcw(G); *sort = (Sort)w[2]; *id = w[3]; }
-uint64_t jc_ext(uint64_t G, Sort sort, uint64_t id) {
-    const uint64_t *w = jcw(G);
-    uint64_t idx = pins_insert(w[4], sort == S_TERM ? 2 * id : 2 * id + 1, 1);
-    return RQ(JC_TAG, G, sort, id, idx);
+static uint64_t jc_index(uint64_t G) { return jcw(G)[4]; }
+/* whether lookup position r of G's index is a declaration of sort */
+static bool jc_found(uint64_t G, uint64_t r, Sort sort) { if (!r) return false; uint64_t id; TVal e; subst_get(jc_index(G), r - 1, &id, &e); return (Sort)e.sort == sort; }
+/* jc.ext(G, [id, sort, 0]): G extended by one declaration */
+static void jcext_step(Cont *k, uint64_t v) {
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    FR_AWAIT(k, r, F_SET, jc_index(k->w[0]), k->w[1]);
+    { size_t n; const uint64_t *e = interner_get(&M.keys, k->w[1], &n); FR_FINISH(k, RQ(JC_TAG, k->w[0], e[1], e[0], r)); }
+    FR_END(k);
 }
-bool jc_term(uint64_t G, TermVarId x) { return pins_lookup(jcw(G)[4], 2 * x, NULL); }
-bool jc_dim(uint64_t G, DimVarId j) { return pins_lookup(jcw(G)[4], 2 * j + 1, NULL); }
 
 /* ---------------- families used ---------------- */
 
@@ -177,8 +182,8 @@ static void dimsin_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     L->lw = dimset_get(q[1], &L->n);
     for (L->i = 0; L->i < L->n; L->i++) {
-        if (!jc_dim(q[0], L->lw[L->i])) FR_FINISH(k, J_BAD);
-        FR_YIELD(k);
+        FR_AWAIT(k, r, F_LOOKUP, jc_index(q[0]), L->lw[L->i]);
+        if (!jc_found(q[0], r, S_DIM)) FR_FINISH(k, J_BAD);
     }
     FR_FINISH(k, J_OK);
     FR_END(k);
@@ -207,7 +212,10 @@ static void scope_step(Cont *k, uint64_t v) {
     JAW(L->res, J_RV, RQ(0, q[2], 0));
     PASS(L->res);
     L->lw = varset_get(ref_freevars(q[2]), &L->n);
-    for (L->i = 0; L->i < L->n; L->i++) { if (!jc_term(q[0], L->lw[L->i])) BAD("unbound variable"); FR_YIELD(k); }
+    for (L->i = 0; L->i < L->n; L->i++) {
+        FR_AWAIT(k, r, F_LOOKUP, jc_index(q[0]), L->lw[L->i]);
+        if (!jc_found(q[0], r, S_TERM)) BAD("unbound variable");
+    }
     JAW(r, J_DIMSIN, RQ(q[0], ref_support(q[2])));
     if (r != J_OK) BAD("unbound dimension");
     OK0();
@@ -218,7 +226,10 @@ static void jcof_step(Cont *k, uint64_t v) {
     JL *L = FR_LOC(k, JL);
     FR_BEGIN(k);
     L->x = jc_empty(); L->n = context_size(k->w[0]);
-    for (L->i = 0; L->i < L->n; L->i++) { CtxDecl d = context_decl(k->w[0], L->i); L->x = jc_ext(L->x, d.sort, d.id); FR_YIELD(k); }
+    for (L->i = 0; L->i < L->n; L->i++) {
+        { CtxDecl d = context_decl(k->w[0], L->i); L->y = subst_entry(d.id, d.sort, 0); }
+        FR_AWAIT(k, L->x, J_EXT, L->x, L->y);
+    }
     FR_FINISH(k, L->x);
     FR_END(k);
 }
@@ -236,7 +247,8 @@ static void generic_step(Cont *k, uint64_t v) {
         if (L->tag == PS_INTERVAL) {
             {   KeyWord key[3] = { { KW_CONST, 9300 }, { KW_CONST, Q }, { KW_CONST, L->i } };
                 DimVarId j = fresh_dim_keyed(key, 3);
-                L->x = j; L->y = iv_var(j); L->G2 = jc_ext(L->G2, S_DIM, j); }
+                L->x = j; L->y = iv_var(j); }
+            FR_AWAIT(k, L->G2, J_EXT, L->G2, subst_entry(L->x, S_DIM, 0));
         } else {
             FR_AWAIT(k, L->T, F_TREF, L->T, env_key(L->m));
             if (L->a0) FR_AWAIT(k, L->a0, F_TFC, L->a0, env_key(L->m));
@@ -244,7 +256,7 @@ static void generic_step(Cont *k, uint64_t v) {
             {   KeyWord key[3] = { { KW_CONST, 9300 }, { KW_CONST, Q }, { KW_CONST, L->i } };
                 L->x = fresh_term_keyed_req(key, 3, L->T, L->a0); }
             FR_AWAIT(k, L->y, F_REFVAR, L->x, 0);
-            L->G2 = jc_ext(L->G2, S_TERM, L->x);
+            FR_AWAIT(k, L->G2, J_EXT, L->G2, subst_entry(L->x, S_TERM, 0));
         }
         wordbuf_push(&L->wc, L->x);
         FR_AWAIT(k, L->m, F_SET, L->m, subst_entry(L->i, L->tag, L->y));
@@ -1149,7 +1161,7 @@ static void tbound_step(Cont *k, uint64_t v) {
         if (!L->tag) { FR_YIELD(k); continue; }
         FR_AWAIT(k, r, F_LOOKUP, L->D, L->j2);
         require(r, "template boundary: a retained slot has no image");
-        { uint64_t key; TVal e; subst_get(L->D, r - 1, &key, &e); L->x = e.id; }
+        L->x = subst_value(L->D, r - 1);
         FR_AWAIT(k, r, F_INTERP, L->a0, L->D);
         { size_t n; L->T = rget(r, &n)[1]; }
         if (L->tag == PS_REF) {
@@ -1385,7 +1397,8 @@ static void declok_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     {   Sort so; uint64_t id; jc_decl(q[0], &so, &id); L->tag = so; L->x = id; }
     L->G2 = jc_parent(q[0]);
-    if (L->tag == S_TERM ? jc_term(L->G2, L->x) : jc_dim(L->G2, L->x)) BAD("duplicate declaration");
+    FR_AWAIT(k, r, F_LOOKUP, jc_index(L->G2), L->x);
+    if (jc_found(L->G2, r, (Sort)L->tag)) BAD("duplicate declaration");
     if (L->tag != S_TERM) OK0();
     L->T = term_var_type(L->x);
     JAW(L->res, J_SCOPE, RQ(L->G2, term_var_required(L->x), L->T));
@@ -1455,7 +1468,10 @@ static void body_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     JAW(L->res, J_DECL, RQ(q[0], q[1]));
     PASS(L->res);
-    {   RefId b = 0; if (!pins_lookup(q[1], (SymbolId)q[0], &b)) UNR("unresolved: a symbol outside the request's premises"); if (!b) OK0(); L->x = b; }
+    FR_AWAIT(k, r, F_LOOKUP, q[1], q[0]);
+    if (!r) UNR("unresolved: a symbol outside the request's premises");
+    L->x = subst_value(q[1], r - 1);
+    if (!L->x) OK0();
     FR_AWAIT(k, L->G2, J_JCOF, global_context_flat((SymbolId)q[0]), 0);
     JAW(L->res, J_SCOPE, RQ(L->G2, fc_true(), L->x));
     PASS(L->res);
@@ -1604,6 +1620,7 @@ void judge_families_init(void) {
     family_define(J_RV, "judge.structure", rv_step, sizeof(JL));
     family_define(J_RVD, "judge.structure_dims", rvd_step, sizeof(JL));
     family_define(J_SCOPE, "judge.scope", scope_step, sizeof(JL));
+    family_define(J_EXT, "judge.context_ext", jcext_step, 0);
 }
 Family judge_family(JudgeKind kind) {
     switch (kind) {

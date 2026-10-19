@@ -149,10 +149,8 @@ static void prep_step(Cont *k, uint64_t v) {
     if (jr_code(r) == 3) FR_FINISH(k, prep_res(3, "unresolved: the edge witness"));
     if (jr_code(r) != 1) FR_FINISH(k, prep_res(2, jr_why(r) ? jr_why(r) : "the edge witness does not check"));
     /* proof use: a recursively pending witness is not admitted */
-    if (pins_symbols(L->P, NULL, 0)) {
-        {   size_t ns = pins_symbols(L->P, NULL, 0); SymbolId *ss = malloc(ns * sizeof *ss); require(ss, "out of memory");
-            pins_symbols(L->P, ss, ns); L->r = varset_make(ss, ns); free(ss); }
-        FR_AWAIT(k, r, F_SCC, L->P, L->r);
+    if (subst_size(L->P)) {
+        FR_AWAIT(k, r, F_SCC, L->P, 0);
         {   size_t n; if (rget(r, &n)[0] == PU_PENDING) FR_FINISH(k, prep_res(3, "the witness depends on a recursively pending proof")); }
     }
     /* authorization: each consumed cell's authority issued a capability the proposal supplies */

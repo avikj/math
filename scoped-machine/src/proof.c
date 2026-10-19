@@ -9,28 +9,34 @@ static uint64_t rq(size_t n, const uint64_t *w) { return interner_intern(&M.keys
 static void push(uint64_t *s, uint64_t x) { *s = RQ(x, *s); }
 static uint64_t pop(uint64_t *s) { size_t n; const uint64_t *w = interner_get(&M.keys, *s, &n); *s = w[1]; return w[0]; }
 
-/* proof.scc(P, S): S the symbols of P. Vertex table: a pin trie
- * s ↦ [index, low, on-stack, self-edge, edges]; the edges of s are the
- * symbols its type, parameter types and pinned body name. One edge, one
- * discovery source, one pop or one member per step.
- * Result [status, opaque trie, recursive trie, #opaque, #recursive]. */
+/* proof.scc(P): Tarjan over the symbols of the pin set P. Vertex table: a
+ * total substitution record s ↦ [index, low, on-stack, self-edge, edges];
+ * the edges of s are the symbols its type, parameter types and pinned body
+ * name. One edge, one discovery source, one pop or one member per step,
+ * each table read or write one lookup or set.
+ * Result [status, opaque set, recursive set, #opaque, #recursive]. */
 typedef struct {
-    uint64_t V, opq, rec, next, nopq, nrec, cnt, root, s, b, x, cur, d, acc, m;
+    uint64_t V, opq, rec, next, nopq, nrec, cnt, root, s, b, x, cur, d, acc, m, p, pc;
+    uint64_t xr[5], dr[5];
     size_t ri, np, si; const uint64_t *ps; uint64_t dfs, stk, comp; bool cyc;
 } SccLoc;
-static const uint64_t *vrec(uint64_t V, SymbolId s) { RefId r; size_t n; return pins_lookup(V, s, &r) ? interner_get(&M.keys, r, &n) : NULL; }
-static uint64_t vset(uint64_t V, SymbolId s, uint64_t i, uint64_t lo, uint64_t on, uint64_t self, uint64_t e) { return pins_insert(V, s, RQ(i, lo, on, self, e)); }
+/* the vertex record at lookup position r of V */
+static void vget(uint64_t V, uint64_t r, uint64_t *out) { size_t n; memcpy(out, interner_get(&M.keys, subst_value(V, r - 1), &n), 5 * sizeof *out); }
+static uint64_t vent(SymbolId s, uint64_t i, uint64_t lo, uint64_t on, uint64_t self, uint64_t e) { return subst_entry(s, PS_REF, RQ(i, lo, on, self, e)); }
 static void scc_step(Cont *k, uint64_t v) {
     SccLoc *L = FR_LOC(k, SccLoc);
-    uint64_t P = k->w[0], r = 0; size_t nS; const uint64_t *S = varset_get(k->w[1], &nS);
+    uint64_t P = k->w[0], r = 0;
     FR_BEGIN(k);
-    L->V = L->opq = L->rec = pins_empty();
-    for (L->ri = 0; L->ri < nS; L->ri++) {
-        if (vrec(L->V, S[L->ri])) { FR_YIELD(k); continue; }
-        L->d = S[L->ri];
+    L->V = L->opq = L->rec = env_empty(0);
+    for (L->ri = 0; L->ri < subst_size(P); L->ri++) {
+        { uint64_t s; TVal b; subst_get(P, L->ri, &s, &b); L->d = s; }
+        FR_AWAIT(k, r, F_LOOKUP, L->V, L->d);
+        if (r) continue;
     discover:
         /* the edges of d: its type, parameter types and pinned body */
-        {   RefId b = 0; require(pins_lookup(P, L->d, &b), "an audited symbol outside the pin set"); L->b = b; }
+        FR_AWAIT(k, r, F_LOOKUP, P, L->d);
+        require(r, "an audited symbol outside the pin set");
+        L->b = subst_value(P, r - 1);
         L->acc = varset_make(NULL, 0);
         L->ps = varset_get(global_params(L->d), &L->np);
         for (L->si = 0; L->si < L->np + 2; L->si++) {
@@ -40,49 +46,57 @@ static void scc_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->acc, F_VSUNION, L->acc, r);
         }
         L->next++;
-        L->V = vset(L->V, L->d, L->next, L->next, 1, 0, L->acc);
-        if (!L->b) { L->opq = pins_insert(L->opq, L->d, 1); L->nopq++; }
+        FR_AWAIT(k, L->V, F_SET, L->V, vent(L->d, L->next, L->next, 1, 0, L->acc));
+        if (!L->b) { L->nopq++; FR_AWAIT(k, L->opq, F_SET, L->opq, subst_entry(L->d, PS_REF, 1)); }
         push(&L->stk, L->d); push(&L->dfs, L->d); push(&L->dfs, 0);
         while (L->dfs) {
             L->cur = pop(&L->dfs); L->x = pop(&L->dfs);
-            {   const uint64_t *xr = vrec(L->V, L->x); size_t ne; const uint64_t *es = varset_get(xr[4], &ne);
-                if (L->cur < ne) {
-                    L->d = es[L->cur]; push(&L->dfs, L->x); push(&L->dfs, L->cur + 1);
-                    if (L->d == L->x) L->V = vset(L->V, L->x, xr[0], xr[1], xr[2], 1, xr[4]);
-                    else {
-                        const uint64_t *dr = vrec(L->V, L->d);
-                        if (!dr) goto discover;
-                        if (dr[2] && dr[0] < xr[1]) L->V = vset(L->V, L->x, xr[0], dr[0], xr[2], xr[3], xr[4]);
-                    }
-                    FR_YIELD(k);
-                    continue;
-                } }
+            FR_AWAIT(k, r, F_LOOKUP, L->V, L->x);
+            vget(L->V, r, L->xr);
+            {   size_t ne; const uint64_t *es = varset_get(L->xr[4], &ne);
+                if (L->cur < ne) { L->d = es[L->cur]; push(&L->dfs, L->x); push(&L->dfs, L->cur + 1); }
+                else L->d = 0; }
+            if (L->d) {
+                if (L->d == L->x) { FR_AWAIT(k, L->V, F_SET, L->V, vent(L->x, L->xr[0], L->xr[1], L->xr[2], 1, L->xr[4])); continue; }
+                FR_AWAIT(k, r, F_LOOKUP, L->V, L->d);
+                if (!r) goto discover;
+                vget(L->V, r, L->dr);
+                if (L->dr[2] && L->dr[0] < L->xr[1]) FR_AWAIT(k, L->V, F_SET, L->V, vent(L->x, L->xr[0], L->dr[0], L->xr[2], L->xr[3], L->xr[4]));
+                continue;
+            }
             /* x finished; a root pops its component, one member per step */
-            {   const uint64_t *xr = vrec(L->V, L->x); L->cyc = xr[3] != 0; L->cnt = 0; L->root = xr[1] == xr[0]; }
+            L->cyc = L->xr[3] != 0; L->cnt = 0; L->root = L->xr[1] == L->xr[0];
             if (L->root) {
                 do {
                     L->m = pop(&L->stk);
-                    {   const uint64_t *mr = vrec(L->V, L->m); L->V = vset(L->V, L->m, mr[0], mr[1], 0, mr[3], mr[4]); }
+                    FR_AWAIT(k, r, F_LOOKUP, L->V, L->m);
+                    vget(L->V, r, L->dr);
+                    FR_AWAIT(k, L->V, F_SET, L->V, vent(L->m, L->dr[0], L->dr[1], 0, L->dr[3], L->dr[4]));
                     push(&L->comp, L->m); L->cnt++;
-                    FR_YIELD(k);
                 } while (L->m != L->x);
                 if (L->cnt > 1) L->cyc = true;
-                while (L->comp) { L->m = pop(&L->comp); if (L->cyc) { L->rec = pins_insert(L->rec, L->m, 1); L->nrec++; } FR_YIELD(k); }
+                while (L->comp) {
+                    L->m = pop(&L->comp);
+                    if (L->cyc) { L->nrec++; FR_AWAIT(k, L->rec, F_SET, L->rec, subst_entry(L->m, PS_REF, 1)); }
+                    else FR_YIELD(k);
+                }
             }
             if (L->dfs) {
-                uint64_t pc = pop(&L->dfs), p = pop(&L->dfs);
-                const uint64_t *pr = vrec(L->V, p), *xr = vrec(L->V, L->x);
-                if (xr[1] < pr[1]) L->V = vset(L->V, p, pr[0], xr[1], pr[2], pr[3], pr[4]);
-                push(&L->dfs, p); push(&L->dfs, pc);
+                /* the parent's low link takes the finished vertex's */
+                L->pc = pop(&L->dfs); L->p = pop(&L->dfs);
+                push(&L->dfs, L->p); push(&L->dfs, L->pc);
+                FR_AWAIT(k, r, F_LOOKUP, L->V, L->x);
+                vget(L->V, r, L->xr);
+                FR_AWAIT(k, r, F_LOOKUP, L->V, L->p);
+                vget(L->V, r, L->dr);
+                if (L->xr[1] < L->dr[1]) FR_AWAIT(k, L->V, F_SET, L->V, vent(L->p, L->dr[0], L->xr[1], L->dr[2], L->dr[3], L->dr[4]));
             }
-            FR_YIELD(k);
         }
     }
     FR_FINISH(k, RQ(L->nrec ? PU_PENDING : L->nopq ? PU_ASSUMED : PU_CORE, L->opq, L->rec, L->nopq, L->nrec));
     FR_END(k);
 }
 void proof_families_init(void) {
-    
     family_define(F_SCC, "proof.scc", scc_step, sizeof(SccLoc));
 }
 
@@ -90,9 +104,10 @@ const char *proof_status_name(ProofStatus s) {
     switch (s) { case PU_CORE: return "CORE"; case PU_ASSUMED: return "ASSUMED"; case PU_PENDING: return "PENDING"; case PU_INVALID: return "INVALID"; case PU_UNRESOLVED: return "UNRESOLVED"; }
     return "?";
 }
-static SymbolId *listing(PinSet T, size_t n) {
+static SymbolId *listing(uint64_t T, size_t n) {
     SymbolId *out = malloc((n ? n : 1) * sizeof(SymbolId)); require(out, "out of memory");
-    require(pins_symbols(T, out, n) == n, "proof-use listing");
+    require(subst_size(T) == n, "proof-use listing");
+    for (size_t q = 0; q < n; q++) { uint64_t s; TVal b; subst_get(T, q, &s, &b); out[q] = (SymbolId)s; }
     return out;
 }
 ProofUse proof_use(ContextId G, FaceId chi, RefId e, RefId E) {
@@ -109,10 +124,7 @@ ProofUse proof_use(ContextId G, FaceId chi, RefId e, RefId E) {
     roots[nr++] = E; roots[nr++] = e;
     out.revisions = pins_current(nr, roots);
     free(roots);
-    size_t ns = pins_symbols(out.revisions, NULL, 0);
-    SymbolId *ss = listing(out.revisions, ns);
-    VarSetId S = varset_make(ss, ns); free(ss);
-    WhnfStatus ws; uint64_t res = family_run_budget(F_SCC, out.revisions, S, check_budget(), &ws);
+    WhnfStatus ws; uint64_t res = family_run_budget(F_SCC, out.revisions, 0, check_budget(), &ws);
     if (ws != W_OK) { out.status = PU_UNRESOLVED; out.reason = "unresolved: the audit did not complete"; return out; }
     size_t n; const uint64_t *w = interner_get(&M.keys, res, &n);
     out.status = (ProofStatus)w[0];

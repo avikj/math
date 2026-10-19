@@ -754,10 +754,10 @@ static void whnf_step(Cont *k, uint64_t v) {
         /* a declared symbol without a body is an opaque constant: neutral;
          * the revision this observation is bound to */
         FR_AWAIT(k, L->payload, F_HEAD, t, 0);
-        {   RefId b = 0;
-            if (!pins_lookup(P, (SymbolId)L->payload, &b)) FR_FINISH(k, res_rec(R_INVALID, 0, "a symbol outside the observation's premises"));
-            if (!b) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
-            L->a1 = b; }
+        FR_AWAIT(k, r, F_LOOKUP, P, L->payload);
+        if (!r) FR_FINISH(k, res_rec(R_INVALID, 0, "a symbol outside the observation's premises"));
+        L->a1 = subst_value(P, r - 1);
+        if (!L->a1) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
         FR_AWAIT(k, L->x, F_UNFOLD, t, L->a1);
         goto forward_x;
     }

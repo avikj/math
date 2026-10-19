@@ -170,6 +170,7 @@ void subst_get(uint64_t rec, size_t k, uint64_t *key, TVal *v) {
     require(k < n / 3, "substitution entry out of range");
     *key = w[3 * k]; v->sort = (PSort)w[3 * k + 1]; v->id = w[3 * k + 2];
 }
+uint64_t subst_value(uint64_t rec, size_t k) { uint64_t key; TVal v; subst_get(rec, k, &key, &v); return v.id; }
 uint64_t subst_entry(uint64_t key, uint64_t sort, uint64_t value) { uint64_t e[3] = { key, sort, value }; return interner_intern(&M.keys, e, 3, NULL); }
 uint64_t env_empty(uint64_t def) { return interner_intern(&M.maps, &def, 1, NULL); }
 
@@ -201,8 +202,7 @@ MapId map_single_dim(DimVarId i, IntervalId r) { MapBuilder b; mapb_init(&b); ma
 
 static uint64_t lookup_value(uint64_t rec, uint64_t key, uint64_t absent) {
     uint64_t r = family_call(F_LOOKUP, rec, key);
-    if (!r) return absent;
-    uint64_t k; TVal e; subst_get(rec, r - 1, &k, &e); return e.id;
+    return r ? subst_value(rec, r - 1) : absent;
 }
 RefId map_term_image(MapId m, TermVarId x) { uint64_t v = lookup_value(m, x, 0); return v ? v : ref_var(x); }
 IntervalId map_dim_image(MapId m, DimVarId i) { return lookup_value(m, i, iv_var(i)); }

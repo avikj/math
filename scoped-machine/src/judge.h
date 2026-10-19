@@ -20,12 +20,9 @@ uint64_t jr_code(uint64_t v); const char *jr_why(uint64_t v);
 uint64_t jr_a(uint64_t v); uint64_t jr_b(uint64_t v); uint64_t jr_c(uint64_t v);
 /* judgment contexts */
 uint64_t jc_empty(void);
-uint64_t jc_ext(uint64_t G, Sort sort, uint64_t id);
 uint64_t jc_parent(uint64_t G);
 bool jc_is_empty(uint64_t G);
 void jc_decl(uint64_t G, Sort *sort, uint64_t *id);
-bool jc_term(uint64_t G, TermVarId x);
-bool jc_dim(uint64_t G, DimVarId j);
 void judge_families_init(void);
 
 #endif

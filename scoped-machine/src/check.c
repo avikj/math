@@ -61,12 +61,8 @@ static PinSet pins_of(Roots *R) { PinSet P = pins_current(R->n, R->r); free(R->r
 
 /* the request's dependency closure: every symbol in P declares and checks */
 static CheckStatus premises(PinSet P, const char **reason) {
-    size_t n = pins_symbols(P, NULL, 0);
-    SymbolId *ss = malloc((n ? n : 1) * sizeof(SymbolId)); require(ss, "out of memory");
-    pins_symbols(P, ss, n);
     CheckStatus st = CK_VALID;
-    for (size_t q = 0; q < n && st == CK_VALID; q++) { uint64_t w[2] = { ss[q], P }; st = ck(run(JK_BODY, 2, w), reason); }
-    free(ss);
+    for (size_t q = 0; q < subst_size(P) && st == CK_VALID; q++) { uint64_t s; TVal b; subst_get(P, q, &s, &b); uint64_t w[2] = { s, P }; st = ck(run(JK_BODY, 2, w), reason); }
     return st;
 }
 
