@@ -29,5 +29,6 @@ void pool_init(Pool *p, size_t size);
 void pool_destroy(Pool *p);
 void *pool_alloc(Pool *p);    /* zeroed object */
 void pool_free(Pool *p, void *x);
+void pool_thread_flush(void);  /* an exiting thread returns its cached objects to their pools */
 
 #endif

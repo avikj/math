@@ -516,6 +516,7 @@ static void *worker_main(void *arg) {
         if (stop) break;
         execute(t); finish_job();
     }
+    pool_thread_flush();
     return NULL;
 }
 
