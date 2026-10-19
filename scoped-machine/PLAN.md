@@ -218,3 +218,49 @@ no subagents; work only from the shared specifications; no second engine/store/c
    required face is the node's interpreted required face strengthened by each reference image's
    requirement unless the slot's declared guard entails it. No ambient face (κ) enters a
    definition, a clause or a key; a scope is guarded by the face its body is defined on.
+
+## 12. Step 8 design (EFFECT-AUTHORITY §§1–10, CUBICAL-STOKES-ADDENDUM §§1–11)
+
+Every record is an interned immutable record of the existing tables or a published value of the
+existing producer protocol; the one new mutable state is the authority cell, which the effect
+rules require (operational acceptance is a transition of the actual source, not a function of a key).
+
+8a. Per-producer readings. Entry.work: exact count (count.h) of the steps of the entry's frame and
+    its subroutines (each frame carries its owner entry; single writer: the entry's one producer).
+    Entry.deps: the entries its producer requested (appended by that producer). support(H) is the
+    dependency closure of H's entries; W(H) = Σ work over support(H) — a union, so a producer shared
+    by two consumers is counted once while their two deliveries remain two RD_DELIVER events.
+8b. Exact signed coefficients (interned limb records, sign) and chains: an interned sorted list of
+    (generator, coefficient), generator = (kind, id) for cube cells, product cells, ports, heads,
+    occurrences. Families: chain.add (merge), chain.scale, BOUNDARY (cursor over terms and
+    coordinates, one face per step), PAIR(a, c) (one generator value per step), COB(a) = c ↦
+    PAIR(a, BOUNDARY(c)), MAP_CHAIN(F, c). A cochain is a finitely supported table or COB of one.
+8c. Cube cells. CubeView(root scope with n dimension locals, dimension map: root local ↦ D(J)
+    element over canonical coordinates c_1..c_m, parameter map). FACE(C, i, ε) substitutes c_i ↦ ε
+    and renumbers c_{k>i} ↦ c_{k−1} in the images: both deletion orders of a codimension-two face
+    give the same interned map, hence the same generator, hence ∂² = 0 by cancellation of identical
+    generators. CUBE_REINDEX composes maps; PRODUCT(x, y) is a cell whose faces i ≤ p are x's and
+    i > p are y's, so the generic BOUNDARY gives Leibniz with sign (−1)^p.
+8d. Effects. Cell table (non-moving, one atomic word per cell): AVAILABLE(head|port) |
+    RESERVED(D, k) | CONSUMED(occurrence). Authority and capability records are interned; a
+    capability is valid when its owning authority's registry issued it (genesis or an admitted
+    delegation). PREPARE(P) is a pure keyed family (schema, states and witness checked by check()
+    and proof_use(); capabilities against the registry). EFFECT(rid, P) is a non-pure keyed
+    producer: same (rid, P) joins by the R/D rules (one receipt, distinct deliveries); its first
+    step claims rid in the request index (rid ↦ P, one CAS) and publishes REQUEST_CONFLICT when rid
+    is claimed by another P. Then PREPARE; then one reservation per step in the fixed total cell
+    order (a cell RESERVED by another descriptor D' is awaited by requesting D''s own key, then
+    rechecked; a stale head aborts with rollback one cell per step); then the one acceptance CAS
+    RESERVING → COMMITTED; then finalization one cell per step (successor heads, CONSUMED ports,
+    fresh output port cells); its value is the Occurrence record (the accepted receipt). Readers
+    of a RESERVED cell resolve it through D's state word.
+    Cash instance: Church naturals N in the core; send/receive/refund edge types are Σ/Path types
+    over add; witnesses are checked by the kernel; V(F) reads balances and pending port
+    quantities from the cut exactly (host exact natural of the normal form).
+8e. Realization: the resource map (occurrence ↦ degree-1 generator, ports/heads ↦ degree-0)
+    with ∂_res[e] = produced − consumed, B_0 of a cut; the work cochain from 8a; READ_DEFECT.
+    Witness: one execution run for EFFECT-AUTHORITY §10 items 1–10 and ADDENDUM §11 checks 1–10;
+    suspension points are taken by driving the effect root one budgeted step at a time and
+    checking every cut valuation and ownership invariant between steps.
+
+Order: 8a, 8b, 8c, 8d, 8e, each a commit with its checks.
