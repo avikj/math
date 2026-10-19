@@ -147,8 +147,6 @@ static void node_free_list(TNodeId Q, size_t *n, const uint64_t **w) {
 static const uint64_t *tenv_words(TEnvId E, size_t *n) { const uint64_t *w = interner_get(&M.keys, E, n); (*n)--; return w + 1; }
 size_t tenv_size(TEnvId E) { size_t n; (void)tenv_words(E, &n); return n / 3; }
 void tenv_entry(TEnvId E, size_t k, uint64_t *slot, TVal *v) { size_t n; const uint64_t *w = tenv_words(E, &n); *slot = w[3 * k]; v->sort = (PSort)w[3 * k + 1]; v->id = w[3 * k + 2]; }
-TNodeId tnode_of(RefId t) { return ref_tnode(t); }
-TEnvId tenv_of(RefId t) { return ref_tenv(t); }
 
 /* An interpretation environment: the interned record [def, (slot, sort, id)*]
  * in slot order. An interpreted value is the interned pair [sort, id]. */
@@ -190,7 +188,6 @@ uint64_t tnode_const_field(TNodeId Q, size_t k) { FieldKind kd; BinderSlot bs; E
 FaceId tnode_const_required(TNodeId Q) { return xconst(node_required_e(Q)); }
 FaceId tnode_const_declared(TNodeId Q) { ExprId e = node_declared_e(Q); return e ? xconst(e) : 0; }
 uint64_t tnode_const_payload(TNodeId Q) { ExprId e = node_payload_e(Q); return e ? xlevel(e) : 0; }
-uint64_t tnode_const_levels(TNodeId Q) { ExprId e = node_levels_e(Q); return e ? xlevel(e) : LEVELS_NONE; }
 
 
 

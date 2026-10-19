@@ -38,7 +38,7 @@ int main(void) {
      * denote different syntax — identity is reference equality, as above */
     CHECK(construction_field(idx, 0) == A, "a construction's field is its constant interpreted in its environment");
     RefId inner_x = mk_lam(y, A, ref_var(x)), inner_x2 = mk_lam(y2, A, ref_var(x2));
-    CHECK(inner_x != inner_x2 && tnode_of(inner_x) == tnode_of(inner_x2), "λy.x and λy'.x' share their node and differ in their environment");
+    CHECK(inner_x != inner_x2 && ref_tnode(inner_x) == ref_tnode(inner_x2), "λy.x and λy'.x' share their node and differ in their environment");
     CHECK(reindex1(inner_x, x, ref_var(x2)) == inner_x2, "renaming the free variable is reindexing the environment");
     eval_free(); machine_free();
     printf("%d failures\n", failures);

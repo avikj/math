@@ -31,8 +31,6 @@ void templates_free(void);
 TVal template_call(TDefKind def, size_t nargs, const TVal *args);
 
 /* ---- TVIEW references ---- */
-TNodeId tnode_of(RefId t);
-TEnvId tenv_of(RefId t);
 size_t tenv_size(TEnvId E);
 void tenv_entry(TEnvId E, size_t k, uint64_t *slot, TVal *v);
 Tag tnode_tag(TNodeId Q);
@@ -76,7 +74,6 @@ uint64_t tnode_const_field(TNodeId Q, size_t k);                    /* closed co
 FaceId tnode_const_required(TNodeId Q);
 FaceId tnode_const_declared(TNodeId Q);                              /* 0 = no annotation */
 uint64_t tnode_const_payload(TNodeId Q);
-uint64_t tnode_const_levels(TNodeId Q);
 bool tview_is_construction(RefId t);
 /* generic instance of a construction node: parameters at fresh names keyed
  * by (node, slot), declared at the instantiated closed types; decls has
