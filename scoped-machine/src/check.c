@@ -114,7 +114,7 @@ static Inference infer_pinned(ContextId F, FaceId chi, RefId t, PinSet P) {
     RefId *types = malloc((nc ? nc : 1) * sizeof(RefId)); FaceId *faces = malloc((nc ? nc : 1) * sizeof(FaceId));
     for (size_t c = 0; c < nc && out.st == CK_VALID; c++) {
         faces[c] = cs[c];
-        uint64_t w[4] = { 0, cs[c], t, P }; uint64_t res = run(JK_INFER, 4, w);
+        uint64_t w[3] = { cs[c], t, P }; uint64_t res = run(JK_INFER, 3, w);
         out.st = ck(res, &out.reason);
         if (out.st == CK_VALID) types[c] = jr_a(res);
     }
@@ -140,7 +140,7 @@ CheckStatus check_is_type(ContextId F, FaceId chi, RefId A, uint64_t *level, con
     if (st == CK_VALID) {
         const uint64_t *cs; size_t nc = clauses(chi, &cs);
         for (size_t c = 0; c < nc && st == CK_VALID; c++) {
-            uint64_t w[4] = { 0, cs[c], A, P }; uint64_t res = run(JK_LEVEL, 4, w);
+            uint64_t w[3] = { cs[c], A, P }; uint64_t res = run(JK_LEVEL, 3, w);
             st = ck(res, reason);
             if (st == CK_VALID) { if (have && jr_a(res) != lvl) { *reason = "type lives in different universes under different clauses"; st = CK_INVALID; } lvl = jr_a(res); have = true; }
         }
@@ -157,7 +157,7 @@ CheckStatus check(ContextId F, FaceId chi, RefId t, RefId A, const char **reason
     if (st == CK_VALID) st = scope_ok(G, chi, A, reason);
     if (st == CK_VALID) {
         const uint64_t *cs; size_t nc = clauses(chi, &cs);
-        for (size_t c = 0; c < nc && st == CK_VALID; c++) { uint64_t w[5] = { 0, cs[c], t, A, P }; st = ck(run(JK_CHECK, 5, w), reason); }
+        for (size_t c = 0; c < nc && st == CK_VALID; c++) { uint64_t w[4] = { cs[c], t, A, P }; st = ck(run(JK_CHECK, 4, w), reason); }
     }
     if (st == CK_VALID) st = premises(P, reason);
     return st;
@@ -171,8 +171,8 @@ static ConvStatus convert(ContextId F, FaceId chi, RefId t, RefId u, RefId A, bo
     ConvStatus out = CV_EQUAL;
     for (size_t c = 0; c < nc && out != CV_UNEQUAL; c++) {
         uint64_t res;
-        if (types) { uint64_t w[5] = { 0, cs[c], t, u, P }; res = run(JK_CONVT, 5, w); }
-        else { uint64_t w[6] = { 0, cs[c], t, u, A, P }; res = run(JK_CONVt, 6, w); }
+        if (types) { uint64_t w[4] = { cs[c], t, u, P }; res = run(JK_CONVT, 4, w); }
+        else { uint64_t w[5] = { cs[c], t, u, A, P }; res = run(JK_CONVt, 5, w); }
         out = and3(out, cv(res));
     }
     if (out == CV_EQUAL && premises(P, &why) != CK_VALID) out = CV_UNRESOLVED;

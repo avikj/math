@@ -98,17 +98,17 @@ typedef struct {
 } JL;
 #define JLOC JL *L = FR_LOC(k, JL); uint64_t r = 0; size_t nq_; const uint64_t *q = rget(k->w[0], &nq_); (void)q; (void)r
 #define JAW(var, fam, req) FR_AWAIT(k, var, fam, req, 0)
-/* a local judgment [G, χ, subjects…, P] is keyed at (subjects, π_S χ), S the
+/* a local judgment [χ, subjects…, P] is keyed at (π_S χ, subjects, P), S the
  * support of its subjects (§5 projection theorem), as whnf.observe keys whnf */
 static Family J_REQ;
 typedef struct { uint64_t s, c; size_t i; } ReqLoc;
 static void jreq_step(Cont *k, uint64_t v) {
     ReqLoc *L = FR_LOC(k, ReqLoc); uint64_t r = 0; size_t n; const uint64_t *q = rget(k->w[0], &n);
     FR_BEGIN(k);
-    L->s = ref_support(q[2]);
-    for (L->i = 3; L->i + 1 < n; L->i++) FR_AWAIT(k, L->s, Jf_DSUNION, L->s, ref_support(q[L->i]));
-    FR_AWAIT(k, L->c, Jf_FCPROJ, q[1], L->s);
-    if (L->c != q[1]) { uint64_t w[8]; memcpy(w, q, n * sizeof *w); w[1] = L->c; k->w[0] = rq(n, w); }
+    L->s = ref_support(q[1]);
+    for (L->i = 2; L->i + 1 < n; L->i++) FR_AWAIT(k, L->s, Jf_DSUNION, L->s, ref_support(q[L->i]));
+    FR_AWAIT(k, L->c, Jf_FCPROJ, q[0], L->s);
+    if (L->c != q[0]) { uint64_t w[8]; memcpy(w, q, n * sizeof *w); w[0] = L->c; k->w[0] = rq(n, w); }
     FR_AWAIT(k, r, (Family)k->w[1], k->w[0], 0);
     FR_FINISH(k, r);
     FR_END(k);
@@ -304,11 +304,11 @@ static void obshead_step(Cont *k, uint64_t v) {
 }
 /* the universe level of a type under a clause: [code, reason, level] */
 static void level_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, A, P */
+    JLOC;   /* q: C, A, P */
     FR_BEGIN(k);
-    JRQ(L->res, J_INFER, RQ(q[0], q[1], q[2], q[3]));
+    JRQ(L->res, J_INFER, RQ(q[0], q[1], q[2]));
     PASS(L->res);
-    JAW(L->res, J_OBSHEAD, RQ(q[1], jr_a(L->res), T_UNIVERSE, q[3]));
+    JAW(L->res, J_OBSHEAD, RQ(q[0], jr_a(L->res), T_UNIVERSE, q[2]));
     if (jr_code(L->res) == J_BAD) BAD("not a type: its type is not a universe");
     PASS(L->res);
     FR_AWAIT(k, r, Jf_HEAD, jr_a(L->res), 0);
@@ -333,24 +333,24 @@ static void equiv_step(Cont *k, uint64_t v) {
  * map into that context checked); a template instance by its own rule; a
  * global occurrence by its head rule. [code, reason, type] */
 static void infer_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, t, P */
-    RefId t = q[2];
+    JLOC;   /* q: C, t, P */
+    RefId t = q[1];
     FR_BEGIN(k);
     if (ref_is_var(t)) {
         L->T = term_var_type(ref_var_id(t));                 /* a variable carries its type */
-        FR_AWAIT(k, r, Jf_FCENT, q[1], term_var_required(ref_var_id(t)));
+        FR_AWAIT(k, r, Jf_FCENT, q[0], term_var_required(ref_var_id(t)));
         if (r != 2) BAD("variable used outside its required face");
         DONE(J_OK, NULL, L->T, 0, 0);
     }
-    FR_AWAIT(k, r, Jf_FCENT, q[1], ref_required(t));
+    FR_AWAIT(k, r, Jf_FCENT, q[0], ref_required(t));
     if (r != 2) BAD("occurrence outside its required face");
-    if (!tview_is_construction(t)) { JAW(r, J_TVIEW, RQ(q[0], q[1], t, q[3])); FR_FINISH(k, r); }
-    if (ref_tag(t) == T_GLOBAL) { JAW(r, J_HEAD, RQ(q[0], q[1], t, q[3])); FR_FINISH(k, r); }
-    JAW(L->res, J_NODE, RQ(ref_tnode(t), q[3]));
+    if (!tview_is_construction(t)) { JAW(r, J_TVIEW, RQ(q[0], t, q[2])); FR_FINISH(k, r); }
+    if (ref_tag(t) == T_GLOBAL) { JAW(r, J_HEAD, RQ(q[0], t, q[2])); FR_FINISH(k, r); }
+    JAW(L->res, J_NODE, RQ(ref_tnode(t), q[2]));
     PASS(L->res);
     L->D = L->res;
     FR_AWAIT(k, L->m, J_GMAP, t, 0);
-    JAW(L->res, J_MAP, RQ(q[0], q[1], L->m, jr_a(L->D), jr_b(L->D), q[3]));
+    JAW(L->res, J_MAP, RQ(0, q[0], L->m, jr_a(L->D), jr_b(L->D), q[2]));
     PASS(L->res);
     FR_AWAIT(k, r, Jf_REINDEX, jr_c(L->D), L->m);
     DONE(J_OK, NULL, r, 0, 0);
@@ -359,8 +359,8 @@ static void infer_step(Cont *k, uint64_t v) {
 
 /* the head rules (infer_head of §33): the inferred type of an opened head */
 static void head_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, t, P */
-    uint64_t G = q[0], C = q[1], P = q[3]; RefId t = q[2];
+    JLOC;   /* q: C, t, P */
+    uint64_t C = q[0], P = q[2]; RefId t = q[1];
     FR_BEGIN(k);
     L->tag = ref_tag(t);
     FR_AWAIT(k, L->lv, Jf_HEAD, t, 1);
@@ -371,13 +371,13 @@ static void head_step(Cont *k, uint64_t v) {
     }
     if (L->tag == T_PI || L->tag == T_SIGMA) {
         FR_AWAIT(k, L->a0, Jf_FIELD, t, 0);
-        JRQ(L->res, J_LEVEL, RQ(G, C, L->a0, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->a0, P));
         PASS(L->res);
         L->l1 = jr_a(L->res);
         L->x = binder_term_var(t, 0, L->a0);
         FR_AWAIT(k, L->y, Jf_REFVAR, L->x, 0);
         FR_AWAIT(k, L->a1, Jf_BINDER, t, brec(S_TERM, 0, 1, L->y));
-        JRQ(L->res, J_LEVEL, RQ(G, C, L->a1, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->a1, P));
         PASS(L->res);
         L->l2 = jr_a(L->res);
         if (!level_ok2(L->lv, L->l1, L->l2)) BAD(level_why(L->lv, "universe annotation differs from the formation levels"));
@@ -386,18 +386,17 @@ static void head_step(Cont *k, uint64_t v) {
     }
     if (L->tag == T_LAM) {
         FR_AWAIT(k, L->a0, Jf_FIELD, t, 0);
-        JRQ(L->res, J_LEVEL, RQ(G, C, L->a0, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->a0, P));
         PASS(L->res);
         L->l1 = jr_a(L->res);
         if (!level_ok1(L->lv, L->l1)) BAD(level_why(L->lv, "lambda domain level annotation differs"));
         L->x = binder_term_var(t, 0, L->a0);
         FR_AWAIT(k, L->y, Jf_REFVAR, L->x, 0);
         FR_AWAIT(k, L->a1, Jf_BINDER, t, brec(S_TERM, 0, 1, L->y));
-        L->G2 = G;
-        JRQ(L->res, J_INFER, RQ(L->G2, C, L->a1, P));
+        JRQ(L->res, J_INFER, RQ(C, L->a1, P));
         PASS(L->res);
         L->T = jr_a(L->res);
-        JRQ(L->res, J_LEVEL, RQ(L->G2, C, L->T, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->T, P));
         PASS(L->res);
         FR_CALL(k, r, mk_binder_form_sub(k, T_PI, L->l1, jr_a(L->res), L->x, L->a0, L->T));
         DONE(J_OK, NULL, r, 0, 0);
@@ -405,14 +404,14 @@ static void head_step(Cont *k, uint64_t v) {
     if (L->tag == T_APP) {
         FR_AWAIT(k, L->a0, Jf_FIELD, t, 0);
         FR_AWAIT(k, L->a1, Jf_FIELD, t, 1);
-        JRQ(L->res, J_INFER, RQ(G, C, L->a0, P));
+        JRQ(L->res, J_INFER, RQ(C, L->a0, P));
         PASS(L->res);
         JAW(L->res, J_OBSHEAD, RQ(C, jr_a(L->res), T_PI, P));
         if (jr_code(L->res) == J_BAD) BAD("application of a non-function");
         PASS(L->res);
         L->PP = jr_a(L->res);
         FR_AWAIT(k, L->D, Jf_FIELD, L->PP, 0);
-        JRQ(L->res, J_CHECK, RQ(G, C, L->a1, L->D, P));
+        JRQ(L->res, J_CHECK, RQ(C, L->a1, L->D, P));
         PASS(L->res);
         FR_AWAIT(k, r, Jf_BINDER, L->PP, brec(S_TERM, 0, 1, L->a1));
         DONE(J_OK, NULL, r, 0, 0);
@@ -423,23 +422,23 @@ static void head_step(Cont *k, uint64_t v) {
         if (tnode_nfields(ref_tnode(t)) == 3) {
             /* annotated: the stored Σ forms and the form checks against it (§33) */
             FR_AWAIT(k, L->a2, Jf_FIELD, t, 2);
-            JRQ(L->res, J_LEVEL, RQ(G, C, L->a2, P));
+            JRQ(L->res, J_LEVEL, RQ(C, L->a2, P));
             PASS(L->res);
             if (!level_ok1(L->lv, jr_a(L->res))) BAD(level_why(L->lv, "pair annotation level differs"));
-            JRQ(L->res, J_CHECK, RQ(G, C, t, L->a2, P));
+            JRQ(L->res, J_CHECK, RQ(C, t, L->a2, P));
             PASS(L->res);
             DONE(J_OK, NULL, L->a2, 0, 0);
         }
-        JRQ(L->res, J_INFER, RQ(G, C, L->a0, P));
+        JRQ(L->res, J_INFER, RQ(C, L->a0, P));
         PASS(L->res);
         L->a2 = jr_a(L->res);
-        JRQ(L->res, J_INFER, RQ(G, C, L->a1, P));
+        JRQ(L->res, J_INFER, RQ(C, L->a1, P));
         PASS(L->res);
         L->a3 = jr_a(L->res);
-        JRQ(L->res, J_LEVEL, RQ(G, C, L->a2, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->a2, P));
         PASS(L->res);
         L->l1 = jr_a(L->res);
-        JRQ(L->res, J_LEVEL, RQ(G, C, L->a3, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->a3, P));
         PASS(L->res);
         L->x = conv_var(t, t, L->a2, 0, L->a2);
         FR_CALL(k, r, mk_binder_form_sub(k, T_SIGMA, L->l1, jr_a(L->res), L->x, L->a2, L->a3));
@@ -447,7 +446,7 @@ static void head_step(Cont *k, uint64_t v) {
     }
     if (L->tag == T_FST || L->tag == T_SND) {
         FR_AWAIT(k, L->a0, Jf_FIELD, t, 0);
-        JRQ(L->res, J_INFER, RQ(G, C, L->a0, P));
+        JRQ(L->res, J_INFER, RQ(C, L->a0, P));
         PASS(L->res);
         JAW(L->res, J_OBSHEAD, RQ(C, jr_a(L->res), T_SIGMA, P));
         if (jr_code(L->res) == J_BAD) BAD("projection of a non-pair");
@@ -462,18 +461,17 @@ static void head_step(Cont *k, uint64_t v) {
     if (L->tag == T_PATH || L->tag == T_PAPP) {
         L->x = binder_dim_var(t, 0);
         FR_AWAIT(k, L->a0, Jf_BINDER, t, brec(S_DIM, 0, 0, iv_var(L->x)));
-        L->G2 = G;
-        JRQ(L->res, J_LEVEL, RQ(L->G2, C, L->a0, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->a0, P));
         PASS(L->res);
         L->l1 = jr_a(L->res);
         if (!level_ok1(L->lv, L->l1)) BAD(level_why(L->lv, L->tag == T_PATH ? "path family level annotation differs" : "path application family level annotation differs"));
         FR_AWAIT(k, L->a1, Jf_FIELD, t, 1);
         FR_AWAIT(k, L->a2, Jf_FIELD, t, 2);
         FR_AWAIT(k, L->a3, Jf_REINDEX, L->a0, dim_at(L->x, iv_zero()));
-        JRQ(L->res, J_CHECK, RQ(G, C, L->a1, L->a3, P));
+        JRQ(L->res, J_CHECK, RQ(C, L->a1, L->a3, P));
         PASS(L->res);
         FR_AWAIT(k, L->a3, Jf_REINDEX, L->a0, dim_at(L->x, iv_one()));
-        JRQ(L->res, J_CHECK, RQ(G, C, L->a2, L->a3, P));
+        JRQ(L->res, J_CHECK, RQ(C, L->a2, L->a3, P));
         PASS(L->res);
         if (L->tag == T_PATH) { FR_CALL(k, r, mk_universe_sub(k, L->l1)); DONE(J_OK, NULL, r, 0, 0); }
         FR_AWAIT(k, L->a4, Jf_FIELD, t, 4);
@@ -481,7 +479,7 @@ static void head_step(Cont *k, uint64_t v) {
         for (L->lw = dimset_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("path applied to an out-of-scope interval"); FR_YIELD(k); }
         FR_AWAIT(k, L->a3, Jf_FIELD, t, 3);
         FR_CALL(k, L->T, mk_path_sub(k, L->l1, (DimVarId)L->x, L->a0, L->a1, L->a2));
-        JRQ(L->res, J_CHECK, RQ(G, C, L->a3, L->T, P));
+        JRQ(L->res, J_CHECK, RQ(C, L->a3, L->T, P));
         PASS(L->res);
         FR_AWAIT(k, r, Jf_REINDEX, L->a0, dim_at(L->x, L->a4));
         DONE(J_OK, NULL, r, 0, 0);
@@ -489,11 +487,10 @@ static void head_step(Cont *k, uint64_t v) {
     if (L->tag == T_PLAM) {
         L->x = binder_dim_var(t, 0);
         FR_AWAIT(k, L->a0, Jf_BINDER, t, brec(S_DIM, 0, 0, iv_var(L->x)));
-        L->G2 = G;
-        JRQ(L->res, J_INFER, RQ(L->G2, C, L->a0, P));
+        JRQ(L->res, J_INFER, RQ(C, L->a0, P));
         PASS(L->res);
         L->T = jr_a(L->res);
-        JRQ(L->res, J_LEVEL, RQ(L->G2, C, L->T, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->T, P));
         PASS(L->res);
         L->l1 = jr_a(L->res);
         FR_AWAIT(k, L->a1, Jf_REINDEX, L->a0, dim_at(L->x, iv_zero()));
@@ -506,7 +503,7 @@ static void head_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->a1, Jf_FIELD, t, 1);
         FR_AWAIT(k, L->a2, Jf_FIELD, t, 2);
         FR_AWAIT(k, L->a3, Jf_FIELD, t, 3);
-        JAW(L->res, J_GLUEOK, RQ(G, C, L->a0, L->a1, L->a2, L->a3, P));
+        JAW(L->res, J_GLUEOK, RQ(C, L->a0, L->a1, L->a2, L->a3, P));
         PASS(L->res);
         L->l1 = jr_a(L->res);
         if (!level_ok1(L->lv, L->l1)) BAD(level_why(L->lv, L->tag == T_GLUE_TYPE ? "Glue level annotation differs" : L->tag == T_GLUE_INTRO ? "glue level annotation differs" : "unglue level annotation differs"));
@@ -514,24 +511,24 @@ static void head_step(Cont *k, uint64_t v) {
         FR_CALL(k, L->T, mk_glue_sub(k, L->l1, L->a0, L->a1, L->a2, L->a3));
         if (L->tag == T_UNGLUE) {
             FR_AWAIT(k, L->a4, Jf_FIELD, t, 4);
-            JRQ(L->res, J_CHECK, RQ(G, C, L->a4, L->T, P));
+            JRQ(L->res, J_CHECK, RQ(C, L->a4, L->T, P));
             PASS(L->res);
             DONE(J_OK, NULL, L->a0, 0, 0);
         }
         FR_AWAIT(k, L->a4, Jf_FIELD, t, 4);
         FR_AWAIT(k, L->a5, Jf_FIELD, t, 5);
-        JRQ(L->res, J_CHECK, RQ(G, C, L->a5, L->a0, P));
+        JRQ(L->res, J_CHECK, RQ(C, L->a5, L->a0, P));
         PASS(L->res);
         FR_AWAIT(k, L->x, Jf_FCMEET, C, L->a1);
         if (!fc_is_false(L->x)) {
             FR_AWAIT(k, L->cl, J_CLAUSES, L->x, 0);
             for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
                 L->y = rget(L->cl, &L->nc)[L->c];
-                JRQ(L->res, J_CHECK, RQ(G, L->y, L->a4, L->a2, P));
+                JRQ(L->res, J_CHECK, RQ(L->y, L->a4, L->a2, P));
                 PASS(L->res);
                 FR_CALL(k, L->z, mk_proj_sub(k, T_FST, L->a3));
                 FR_CALL(k, L->z, mk_app_sub(k, L->z, L->a4));
-                JRQ(L->res, J_CONVt, RQ(G, L->y, L->z, L->a5, L->a0, P));
+                JRQ(L->res, J_CONVt, RQ(L->y, L->z, L->a5, L->a0, P));
                 if (jr_code(L->res) == J_BAD) BAD("glue: e.map(t) is not the base term on the Glue face");
                 if (jr_code(L->res) == J_UNR) UNR("unresolved: glue map agreement");
             }
@@ -544,8 +541,7 @@ static void head_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->a2, Jf_BINDER, t, brec(S_DIM, 0, 2, iv_var(L->x)));      /* the tube u(j) */
         FR_AWAIT(k, L->a1, Jf_FIELD, t, 1);                                      /* φ */
         FR_AWAIT(k, L->a3, Jf_FIELD, t, 3);                                      /* the cap */
-        L->G2 = G;
-        JRQ(L->res, J_LEVEL, RQ(L->G2, C, L->a0, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->a0, P));
         PASS(L->res);
         if (!level_ok1(L->lv, jr_a(L->res))) BAD(level_why(L->lv, "composition family level annotation differs"));
         FR_AWAIT(k, L->y, Jf_FCDIMS, L->a1, 0);
@@ -553,7 +549,7 @@ static void head_step(Cont *k, uint64_t v) {
         L->lw = dimset_get(L->y, &L->n);
         for (L->i = 0; L->i < L->n; L->i++) { if (L->lw[L->i] == L->x) BAD("composition face must be in scope and independent of the bound dimension"); FR_YIELD(k); }
         FR_AWAIT(k, L->a4, Jf_REINDEX, L->a0, dim_at(L->x, iv_zero()));          /* A(0) */
-        JRQ(L->res, J_CHECK, RQ(G, C, L->a3, L->a4, P));
+        JRQ(L->res, J_CHECK, RQ(C, L->a3, L->a4, P));
         PASS(L->res);
         FR_AWAIT(k, L->z, Jf_FCMEET, C, L->a1);
         if (!fc_is_false(L->z)) {
@@ -561,9 +557,9 @@ static void head_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->cl, J_CLAUSES, L->z, 0);
             for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
                 L->y = rget(L->cl, &L->nc)[L->c];
-                JRQ(L->res, J_CHECK, RQ(L->G2, L->y, L->a2, L->a0, P));
+                JRQ(L->res, J_CHECK, RQ(L->y, L->a2, L->a0, P));
                 PASS(L->res);
-                JRQ(L->res, J_CONVt, RQ(G, L->y, L->a5, L->a3, L->a4, P));
+                JRQ(L->res, J_CONVt, RQ(L->y, L->a5, L->a3, L->a4, P));
                 if (jr_code(L->res) == J_BAD) BAD("composition: tube at 0 disagrees with the cap");
                 if (jr_code(L->res) == J_UNR) UNR("unresolved: cap/tube agreement");
             }
@@ -589,7 +585,7 @@ static void head_step(Cont *k, uint64_t v) {
             L->arr[L->n + L->i] = 0;
             if (fc_is_false(L->y)) continue;
             FR_AWAIT(k, L->z, Jf_FIELD, t, 2 * L->i + 1);
-            JRQ(L->res, J_INFER, RQ(G, L->y, L->z, P));
+            JRQ(L->res, J_INFER, RQ(L->y, L->z, P));
             if (jr_code(L->res) != J_OK) { frame_mem_free(L->arr); L->arr = NULL; DONE(jr_code(L->res), jr_why(L->res), 0, 0, 0); }
             L->arr[L->n + L->i] = jr_a(L->res);
             if (L->j2 == L->n) {
@@ -606,11 +602,11 @@ static void head_step(Cont *k, uint64_t v) {
                 FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
                 for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
                     L->z = rget(L->cl, &L->nc)[L->c];
-                    JRQ(L->res, J_CONVT, RQ(G, L->z, L->arr[L->n + L->i], L->arr[L->n + L->q], P));
+                    JRQ(L->res, J_CONVT, RQ(L->z, L->arr[L->n + L->i], L->arr[L->n + L->q], P));
                     if (jr_code(L->res) == J_OK) {
                         FR_AWAIT(k, L->a0, Jf_FIELD, t, 2 * L->i + 1);
                         FR_AWAIT(k, L->a1, Jf_FIELD, t, 2 * L->q + 1);
-                        JRQ(L->res, J_CONVt, RQ(G, L->z, L->a0, L->a1, L->arr[L->n + L->i], P));
+                        JRQ(L->res, J_CONVt, RQ(L->z, L->a0, L->a1, L->arr[L->n + L->i], P));
                     }
                     if (jr_code(L->res) == J_BAD) { frame_mem_free(L->arr); L->arr = NULL; BAD("system branches disagree on an overlap"); }
                     if (jr_code(L->res) == J_UNR) { frame_mem_free(L->arr); L->arr = NULL; UNR("unresolved: system overlap"); }
@@ -628,7 +624,7 @@ static void head_step(Cont *k, uint64_t v) {
         PASS(L->res);
         FR_AWAIT(k, L->y, J_JCOF, global_context_flat((SymbolId)L->x), 0);
         FR_AWAIT(k, L->m, Jf_GARGS, t, 0);
-        JAW(L->res, J_MAP, RQ(G, C, L->m, L->y, fc_true(), P));
+        JAW(L->res, J_MAP, RQ(0, C, L->m, L->y, fc_true(), P));
         PASS(L->res);
         FR_AWAIT(k, r, Jf_REINDEX, global_type((SymbolId)L->x), L->m);
         DONE(J_OK, NULL, r, 0, 0);
@@ -640,21 +636,21 @@ static void head_step(Cont *k, uint64_t v) {
 /* Glue data: A forms at l; α in scope; under each clause of C ∧ α the fibre T
  * forms at the same level and e : Equiv(T, A). [code, reason, l] */
 static void glueok_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, A, α, T, e, P */
+    JLOC;   /* q: C, A, α, T, e, P */
     FR_BEGIN(k);
-    JRQ(L->res, J_LEVEL, RQ(q[0], q[1], q[2], q[6]));
+    JRQ(L->res, J_LEVEL, RQ(q[0], q[1], q[5]));
     PASS(L->res);
     L->l1 = jr_a(L->res);
-    FR_AWAIT(k, L->x, Jf_FCMEET, q[1], q[3]);
+    FR_AWAIT(k, L->x, Jf_FCMEET, q[0], q[2]);
     if (fc_is_false(L->x)) DONE(J_OK, NULL, L->l1, 0, 0);
     FR_AWAIT(k, L->cl, J_CLAUSES, L->x, 0);
     for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
         L->y = rget(L->cl, &L->nc)[L->c];
-        JRQ(L->res, J_LEVEL, RQ(q[0], L->y, q[4], q[6]));
+        JRQ(L->res, J_LEVEL, RQ(L->y, q[3], q[5]));
         PASS(L->res);
         if (jr_a(L->res) != L->l1) BAD("Glue fibre type is not in the base's universe");
-        JAW(L->z, J_EQUIV, RQ(L->l1, L->l1, q[4], q[2]));
-        JRQ(L->res, J_CHECK, RQ(q[0], L->y, q[5], L->z, q[6]));
+        JAW(L->z, J_EQUIV, RQ(L->l1, L->l1, q[3], q[1]));
+        JRQ(L->res, J_CHECK, RQ(L->y, q[4], L->z, q[5]));
         PASS(L->res);
     }
     DONE(J_OK, NULL, L->l1, 0, 0);
@@ -663,10 +659,10 @@ static void glueok_step(Cont *k, uint64_t v) {
 
 /* ---------------- checking against an expected type ---------------- */
 static void check_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, t, A, P */
-    uint64_t G = q[0], C = q[1], P = q[4]; RefId t = q[2];
+    JLOC;   /* q: C, t, A, P */
+    uint64_t C = q[0], P = q[3]; RefId t = q[1];
     FR_BEGIN(k);
-    L->T = q[3];
+    L->T = q[2];
     if (!ref_is_var(t)) {
         FR_AWAIT(k, r, Jf_FCENT, C, ref_required(t));
         if (r != 2) BAD("occurrence outside its required face");
@@ -674,7 +670,7 @@ static void check_step(Cont *k, uint64_t v) {
     } else L->tag = 0;
     if (L->tag == T_LAM || L->tag == T_PAIR || L->tag == T_PLAM || L->tag == T_SYSTEM) {
         /* the checking forms; a template instance's boundary is not bypassed */
-        JAW(L->res, J_TBOUND, RQ(G, C, t, P));
+        JAW(L->res, J_TBOUND, RQ(C, t, P));
         PASS(L->res);
         FR_AWAIT(k, L->lv, Jf_HEAD, t, 1);
     }
@@ -685,17 +681,17 @@ static void check_step(Cont *k, uint64_t v) {
         L->PP = jr_a(L->res);
         FR_AWAIT(k, L->D, Jf_FIELD, L->PP, 0);
         FR_AWAIT(k, L->a0, Jf_FIELD, t, 0);
-        JRQ(L->res, J_CONVT, RQ(G, C, L->a0, L->D, P));
+        JRQ(L->res, J_CONVT, RQ(C, L->a0, L->D, P));
         if (jr_code(L->res) == J_BAD) BAD("lambda domain differs from the expected domain");
         if (jr_code(L->res) == J_UNR) UNR("unresolved: lambda domain conversion");
-        JRQ(L->res, J_LEVEL, RQ(G, C, L->a0, P));
+        JRQ(L->res, J_LEVEL, RQ(C, L->a0, P));
         PASS(L->res);
         if (!level_ok1(L->lv, jr_a(L->res))) BAD(level_why(L->lv, "lambda domain level annotation differs"));
         L->x = conv_var(t, L->PP, L->PP, 0, L->D);
         FR_AWAIT(k, L->y, Jf_REFVAR, L->x, 0);
         FR_AWAIT(k, L->a1, Jf_BINDER, t, brec(S_TERM, 0, 1, L->y));
         FR_AWAIT(k, L->a2, Jf_BINDER, L->PP, brec(S_TERM, 0, 1, L->y));
-        JRQ(r, J_CHECK, RQ(G, C, L->a1, L->a2, P));
+        JRQ(r, J_CHECK, RQ(C, L->a1, L->a2, P));
         FR_FINISH(k, r);
     }
     if (L->tag == T_PAIR) {
@@ -703,10 +699,10 @@ static void check_step(Cont *k, uint64_t v) {
             /* annotated (§59.2): the stored Σ forms at its stored level, converts
              * with the expected type and governs the components */
             FR_AWAIT(k, L->a2, Jf_FIELD, t, 2);
-            JRQ(L->res, J_LEVEL, RQ(G, C, L->a2, P));
+            JRQ(L->res, J_LEVEL, RQ(C, L->a2, P));
             PASS(L->res);
             if (!level_ok1(L->lv, jr_a(L->res))) BAD(level_why(L->lv, "pair annotation level differs"));
-            JRQ(L->res, J_CONVT, RQ(G, C, L->a2, L->T, P));
+            JRQ(L->res, J_CONVT, RQ(C, L->a2, L->T, P));
             if (jr_code(L->res) == J_BAD) BAD("pair annotation differs from the expected type");
             if (jr_code(L->res) == J_UNR) UNR("unresolved: pair annotation conversion");
             L->T = L->a2;
@@ -718,10 +714,10 @@ static void check_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->D, Jf_FIELD, L->PP, 0);
         FR_AWAIT(k, L->a0, Jf_FIELD, t, 0);
         FR_AWAIT(k, L->a1, Jf_FIELD, t, 1);
-        JRQ(L->res, J_CHECK, RQ(G, C, L->a0, L->D, P));
+        JRQ(L->res, J_CHECK, RQ(C, L->a0, L->D, P));
         PASS(L->res);
         FR_AWAIT(k, L->a3, Jf_BINDER, L->PP, brec(S_TERM, 0, 1, L->a0));
-        JRQ(r, J_CHECK, RQ(G, C, L->a1, L->a3, P));
+        JRQ(r, J_CHECK, RQ(C, L->a1, L->a3, P));
         FR_FINISH(k, r);
     }
     if (L->tag == T_PLAM) {
@@ -734,15 +730,15 @@ static void check_step(Cont *k, uint64_t v) {
         L->x = conv_dim(t, L->PP, 0);
         FR_AWAIT(k, L->a3, Jf_BINDER, t, brec(S_DIM, 0, 0, iv_var(L->x)));
         FR_AWAIT(k, L->a4, Jf_BINDER, L->PP, brec(S_DIM, 0, 0, iv_var(L->x)));
-        JRQ(L->res, J_CHECK, RQ(G, C, L->a3, L->a4, P));
+        JRQ(L->res, J_CHECK, RQ(C, L->a3, L->a4, P));
         PASS(L->res);
         FR_AWAIT(k, L->a3, Jf_BINDER, t, brec(S_DIM, 0, 0, iv_zero()));
         FR_AWAIT(k, L->a4, Jf_BINDER, L->PP, brec(S_DIM, 0, 0, iv_zero()));
-        JRQ(L->res, J_CONVt, RQ(G, C, L->a3, L->a1, L->a4, P));
+        JRQ(L->res, J_CONVt, RQ(C, L->a3, L->a1, L->a4, P));
         if (jr_code(L->res) == J_OK) {
             FR_AWAIT(k, L->a3, Jf_BINDER, t, brec(S_DIM, 0, 0, iv_one()));
             FR_AWAIT(k, L->a4, Jf_BINDER, L->PP, brec(S_DIM, 0, 0, iv_one()));
-            JRQ(L->res, J_CONVt, RQ(G, C, L->a3, L->a2, L->a4, P));
+            JRQ(L->res, J_CONVt, RQ(C, L->a3, L->a2, L->a4, P));
         }
         if (jr_code(L->res) == J_BAD) BAD("path lambda endpoints differ from the path type's endpoints");
         if (jr_code(L->res) == J_UNR) UNR("unresolved: path endpoint conversion");
@@ -766,7 +762,7 @@ static void check_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->z, Jf_FIELD, t, 2 * L->i + 1);
             FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
             for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-                JRQ(L->res, J_CHECK, RQ(G, rget(L->cl, &L->nc)[L->c], L->z, L->T, P));
+                JRQ(L->res, J_CHECK, RQ(rget(L->cl, &L->nc)[L->c], L->z, L->T, P));
                 if (jr_code(L->res) != J_OK) { frame_mem_free(L->arr); L->arr = NULL; DONE(jr_code(L->res), jr_why(L->res), 0, 0, 0); }
             }
         }
@@ -779,7 +775,7 @@ static void check_step(Cont *k, uint64_t v) {
                 FR_AWAIT(k, L->a1, Jf_FIELD, t, 2 * L->q + 1);
                 FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
                 for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-                    JRQ(L->res, J_CONVt, RQ(G, rget(L->cl, &L->nc)[L->c], L->a0, L->a1, L->T, P));
+                    JRQ(L->res, J_CONVt, RQ(rget(L->cl, &L->nc)[L->c], L->a0, L->a1, L->T, P));
                     if (jr_code(L->res) == J_BAD) { frame_mem_free(L->arr); L->arr = NULL; BAD("system branches disagree on an overlap"); }
                     if (jr_code(L->res) == J_UNR) { frame_mem_free(L->arr); L->arr = NULL; UNR("unresolved: system overlap"); }
                 }
@@ -788,9 +784,9 @@ static void check_step(Cont *k, uint64_t v) {
         frame_mem_free(L->arr); L->arr = NULL;
         OK0();
     }
-    JRQ(L->res, J_INFER, RQ(G, C, t, P));
+    JRQ(L->res, J_INFER, RQ(C, t, P));
     PASS(L->res);
-    JRQ(L->res, J_CONVT, RQ(G, C, jr_a(L->res), L->T, P));
+    JRQ(L->res, J_CONVT, RQ(C, jr_a(L->res), L->T, P));
     if (jr_code(L->res) == J_OK) OK0();
     if (jr_code(L->res) == J_BAD) BAD("inferred type is not convertible to the expected type");
     UNR("unresolved: type conversion");
@@ -807,17 +803,17 @@ static Join *obs_two(Cont *k, uint64_t C, RefId a, RefId b, uint64_t P) {
 }
 static bool obs_ok(const EvalResult *r) { return r->cls != R_INVALID && r->cls != R_NO_OBSERVATION; }
 /* the common level of a Glue's base and fibre: the annotation, else inferred */
-#define GLUE_LEVEL(dst, levels, Gx, Cx, A) do { \
+#define GLUE_LEVEL(dst, levels, Cx, A) do { \
         if (levels_first(levels) != LEVEL_NONE) dst = levels_first(levels); \
-        else { JRQ(L->res, J_LEVEL, RQ((Gx), (Cx), (A), P)); dst = jr_code(L->res) == J_OK ? jr_a(L->res) : LEVEL_NONE; } \
+        else { JRQ(L->res, J_LEVEL, RQ((Cx), (A), P)); dst = jr_code(L->res) == J_OK ? jr_a(L->res) : LEVEL_NONE; } \
     } while (0)
 
 static void convT_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, A, B, P */
-    uint64_t G = q[0], C = q[1], P = q[4];
+    JLOC;   /* q: C, A, B, P */
+    uint64_t C = q[0], P = q[3];
     FR_BEGIN(k);
-    if (q[2] == q[3]) FR_FINISH(k, judge_res(J_OK, NULL, 0, 0, 0));
-    L->J = obs_two(k, C, q[2], q[3], P);
+    if (q[1] == q[2]) FR_FINISH(k, judge_res(J_OK, NULL, 0, 0, 0));
+    L->J = obs_two(k, C, q[1], q[2], P);
     FR_JOIN(k, L->J);
     L->r1 = (EvalResult *)(uintptr_t)join_value(L->J, 0); L->r2 = (EvalResult *)(uintptr_t)join_value(L->J, 1);
     join_free(L->J); L->J = NULL;
@@ -825,7 +821,7 @@ static void convT_step(Cont *k, uint64_t v) {
     if (L->r1->ref == L->r2->ref) OK0();
     if (L->r1->cls == R_SYSTEM || L->r2->cls == R_SYSTEM) UNR(NULL);
     if (L->r1->cls != L->r2->cls) BAD(NULL);
-    if (L->r1->cls == R_NEUTRAL) { JAW(r, J_SPINE, RQ(G, C, L->r1->ref, L->r2->ref, P)); FR_FINISH(k, r); }
+    if (L->r1->cls == R_NEUTRAL) { JAW(r, J_SPINE, RQ(C, L->r1->ref, L->r2->ref, P)); FR_FINISH(k, r); }
     L->a0 = L->r1->ref; L->a1 = L->r2->ref;
     L->tag = ref_tag(L->a0);
     if (L->tag != ref_tag(L->a1)) BAD(NULL);
@@ -838,30 +834,30 @@ static void convT_step(Cont *k, uint64_t v) {
     if (L->tag == T_PI || L->tag == T_SIGMA) {
         FR_AWAIT(k, L->a2, Jf_FIELD, L->a0, 0);
         FR_AWAIT(k, L->a3, Jf_FIELD, L->a1, 0);
-        JRQ(L->res, J_CONVT, RQ(G, C, L->a2, L->a3, P));
+        JRQ(L->res, J_CONVT, RQ(C, L->a2, L->a3, P));
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         L->x = conv_var(L->a0, L->a1, L->a0, 0, L->a2);
         FR_AWAIT(k, L->y, Jf_REFVAR, L->x, 0);
         FR_AWAIT(k, L->a4, Jf_BINDER, L->a0, brec(S_TERM, 0, 1, L->y));
         FR_AWAIT(k, L->a5, Jf_BINDER, L->a1, brec(S_TERM, 0, 1, L->y));
-        JRQ(r, J_CONVT, RQ(G, C, L->a4, L->a5, P));
+        JRQ(r, J_CONVT, RQ(C, L->a4, L->a5, P));
         FR_FINISH(k, r);
     }
     if (L->tag == T_PATH) {
         L->x = conv_dim(L->a0, L->a1, 0);
         FR_AWAIT(k, L->a2, Jf_BINDER, L->a0, brec(S_DIM, 0, 0, iv_var(L->x)));
         FR_AWAIT(k, L->a3, Jf_BINDER, L->a1, brec(S_DIM, 0, 0, iv_var(L->x)));
-        JRQ(L->res, J_CONVT, RQ(G, C, L->a2, L->a3, P));
+        JRQ(L->res, J_CONVT, RQ(C, L->a2, L->a3, P));
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->y, Jf_FIELD, L->a0, 1);
         FR_AWAIT(k, L->z, Jf_FIELD, L->a1, 1);
         FR_AWAIT(k, L->a4, Jf_REINDEX, L->a2, dim_at(L->x, iv_zero()));
-        JRQ(L->res, J_CONVt, RQ(G, C, L->y, L->z, L->a4, P));
+        JRQ(L->res, J_CONVt, RQ(C, L->y, L->z, L->a4, P));
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->y, Jf_FIELD, L->a0, 2);
         FR_AWAIT(k, L->z, Jf_FIELD, L->a1, 2);
         FR_AWAIT(k, L->a4, Jf_REINDEX, L->a2, dim_at(L->x, iv_one()));
-        JRQ(r, J_CONVt, RQ(G, C, L->y, L->z, L->a4, P));
+        JRQ(r, J_CONVt, RQ(C, L->y, L->z, L->a4, P));
         FR_FINISH(k, r);
     }
     if (L->tag == T_GLUE_TYPE) {
@@ -872,7 +868,7 @@ static void convT_step(Cont *k, uint64_t v) {
         if (L->y != L->z) BAD(NULL);
         FR_AWAIT(k, L->a4, Jf_FIELD, L->a0, 0);
         FR_AWAIT(k, L->a5, Jf_FIELD, L->a1, 0);
-        JRQ(L->res, J_CONVT, RQ(G, C, L->a4, L->a5, P));
+        JRQ(L->res, J_CONVT, RQ(C, L->a4, L->a5, P));
         if (jr_code(L->res) != J_OK || fc_is_false(L->y)) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->lv, Jf_HEAD, L->a0, 1);
         FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
@@ -880,14 +876,14 @@ static void convT_step(Cont *k, uint64_t v) {
             L->u = rget(L->cl, &L->nc)[L->c];
             FR_AWAIT(k, L->y, Jf_FIELD, L->a0, 2);
             FR_AWAIT(k, L->z, Jf_FIELD, L->a1, 2);
-            JRQ(L->res, J_CONVT, RQ(G, L->u, L->y, L->z, P));
+            JRQ(L->res, J_CONVT, RQ(L->u, L->y, L->z, P));
             if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
-            GLUE_LEVEL(L->l1, L->lv, G, L->u, L->a4);
+            GLUE_LEVEL(L->l1, L->lv, L->u, L->a4);
             if (L->l1 == LEVEL_NONE) UNR(NULL);
             JAW(L->T, J_EQUIV, RQ(L->l1, L->l1, L->y, L->a4));
             FR_AWAIT(k, L->y, Jf_FIELD, L->a0, 3);
             FR_AWAIT(k, L->z, Jf_FIELD, L->a1, 3);
-            JRQ(L->res, J_CONVt, RQ(G, L->u, L->y, L->z, L->T, P));
+            JRQ(L->res, J_CONVt, RQ(L->u, L->y, L->z, L->T, P));
             if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         }
         OK0();
@@ -897,11 +893,11 @@ static void convT_step(Cont *k, uint64_t v) {
 }
 
 static void convt_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, t, u, A, P */
-    uint64_t G = q[0], C = q[1], P = q[5]; RefId t = q[2], u = q[3];
+    JLOC;   /* q: C, t, u, A, P */
+    uint64_t C = q[0], P = q[4]; RefId t = q[1], u = q[2];
     FR_BEGIN(k);
     if (t == u) OK0();
-    FR_CALL(k, r, observe_sub(k, q[4], C, P));
+    FR_CALL(k, r, observe_sub(k, q[3], C, P));
     L->r1 = (EvalResult *)(uintptr_t)r;
     if (!obs_ok(L->r1)) UNR(NULL);
     if (L->r1->cls == R_INTRODUCTION) {
@@ -913,19 +909,19 @@ static void convt_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->a1, Jf_BINDER, L->a0, brec(S_TERM, 0, 1, L->y));
             FR_CALL(k, L->a2, mk_app_sub(k, t, L->y));
             FR_CALL(k, L->a3, mk_app_sub(k, u, L->y));
-            JRQ(r, J_CONVt, RQ(G, C, L->a2, L->a3, L->a1, P));
+            JRQ(r, J_CONVt, RQ(C, L->a2, L->a3, L->a1, P));
             FR_FINISH(k, r);
         }
         if (L->tag == T_SIGMA) {
             FR_AWAIT(k, L->D, Jf_FIELD, L->a0, 0);
             FR_CALL(k, L->a2, mk_proj_sub(k, T_FST, t));
             FR_CALL(k, L->a3, mk_proj_sub(k, T_FST, u));
-            JRQ(L->res, J_CONVt, RQ(G, C, L->a2, L->a3, L->D, P));
+            JRQ(L->res, J_CONVt, RQ(C, L->a2, L->a3, L->D, P));
             if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
             FR_AWAIT(k, L->a1, Jf_BINDER, L->a0, brec(S_TERM, 0, 1, L->a2));
             FR_CALL(k, L->a2, mk_proj_sub(k, T_SND, t));
             FR_CALL(k, L->a3, mk_proj_sub(k, T_SND, u));
-            JRQ(r, J_CONVt, RQ(G, C, L->a2, L->a3, L->a1, P));
+            JRQ(r, J_CONVt, RQ(C, L->a2, L->a3, L->a1, P));
             FR_FINISH(k, r);
         }
         if (L->tag == T_PATH) {
@@ -938,7 +934,7 @@ static void convt_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->lv, Jf_HEAD, L->a0, 1);
             FR_CALL(k, L->a5, mk_papp_sub(k, levels_first(L->lv), (DimVarId)L->y, L->a1, L->a3, L->a4, t, iv_var(L->x)));
             FR_CALL(k, L->T, mk_papp_sub(k, levels_first(L->lv), (DimVarId)L->y, L->a1, L->a3, L->a4, u, iv_var(L->x)));
-            JRQ(r, J_CONVt, RQ(G, C, L->a5, L->T, L->a2, P));
+            JRQ(r, J_CONVt, RQ(C, L->a5, L->T, L->a2, P));
             FR_FINISH(k, r);
         }
         if (L->tag == T_GLUE_TYPE) {
@@ -950,18 +946,18 @@ static void convt_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->lv, Jf_HEAD, L->a0, 1);
             FR_CALL(k, L->y, mk_unglue_sub(k, levels_first(L->lv), L->a1, L->a2, L->a3, L->a4, t));
             FR_CALL(k, L->z, mk_unglue_sub(k, levels_first(L->lv), L->a1, L->a2, L->a3, L->a4, u));
-            JRQ(L->res, J_CONVt, RQ(G, C, L->y, L->z, L->a1, P));
+            JRQ(L->res, J_CONVt, RQ(C, L->y, L->z, L->a1, P));
             if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
             FR_AWAIT(k, L->x, Jf_FCMEET, C, L->a2);
             if (fc_is_false(L->x)) OK0();
             FR_AWAIT(k, L->cl, J_CLAUSES, L->x, 0);
             for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-                JRQ(L->res, J_CONVt, RQ(G, rget(L->cl, &L->nc)[L->c], t, u, L->a3, P));
+                JRQ(L->res, J_CONVt, RQ(rget(L->cl, &L->nc)[L->c], t, u, L->a3, P));
                 if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
             }
             OK0();
         }
-        if (L->tag == T_UNIVERSE) { JRQ(r, J_CONVT, RQ(G, C, t, u, P)); FR_FINISH(k, r); }
+        if (L->tag == T_UNIVERSE) { JRQ(r, J_CONVT, RQ(C, t, u, P)); FR_FINISH(k, r); }
         BAD(NULL);
     }
     if (L->r1->cls == R_NEUTRAL) {
@@ -972,7 +968,7 @@ static void convt_step(Cont *k, uint64_t v) {
         join_free(L->J); L->J = NULL;
         if (!obs_ok(L->r1) || !obs_ok(L->r2)) UNR(NULL);
         if (L->r1->ref == L->r2->ref) OK0();
-        if (L->r1->cls == R_NEUTRAL && L->r2->cls == R_NEUTRAL) { JAW(r, J_SPINE, RQ(G, C, L->r1->ref, L->r2->ref, P)); FR_FINISH(k, r); }
+        if (L->r1->cls == R_NEUTRAL && L->r2->cls == R_NEUTRAL) { JAW(r, J_SPINE, RQ(C, L->r1->ref, L->r2->ref, P)); FR_FINISH(k, r); }
         if (L->r1->cls == R_SYSTEM || L->r2->cls == R_SYSTEM) UNR(NULL);
         BAD(NULL);
     }
@@ -982,8 +978,8 @@ static void convt_step(Cont *k, uint64_t v) {
 
 /* structural comparison of neutral spines */
 static void spine_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, n1, n2, P */
-    uint64_t G = q[0], C = q[1], P = q[4]; RefId n1 = q[2], n2 = q[3];
+    JLOC;   /* q: C, n1, n2, P */
+    uint64_t C = q[0], P = q[3]; RefId n1 = q[1], n2 = q[2];
     FR_BEGIN(k);
     if (n1 == n2) OK0();
     if (ref_is_var(n1) || ref_is_var(n2)) { if (ref_is_var(n1) && ref_is_var(n2) && ref_var_id(n1) == ref_var_id(n2)) OK0(); BAD(NULL); }
@@ -1006,7 +1002,7 @@ static void spine_step(Cont *k, uint64_t v) {
             if (L->y != L->z) BAD(NULL);
             FR_AWAIT(k, L->a4, Jf_FIELD, n1, 0);
             FR_AWAIT(k, L->a5, Jf_FIELD, n2, 0);
-            JRQ(L->res, J_CONVT, RQ(G, C, L->a4, L->a5, P));
+            JRQ(L->res, J_CONVT, RQ(C, L->a4, L->a5, P));
             if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
             if (!fc_is_false(L->y)) {
                 FR_AWAIT(k, L->lv, Jf_HEAD, n1, 1);
@@ -1015,14 +1011,14 @@ static void spine_step(Cont *k, uint64_t v) {
                     L->u = rget(L->cl, &L->nc)[L->c];
                     FR_AWAIT(k, L->y, Jf_FIELD, n1, 2);
                     FR_AWAIT(k, L->z, Jf_FIELD, n2, 2);
-                    JRQ(L->res, J_CONVT, RQ(G, L->u, L->y, L->z, P));
+                    JRQ(L->res, J_CONVT, RQ(L->u, L->y, L->z, P));
                     if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
-                    GLUE_LEVEL(L->l1, L->lv, G, L->u, L->a4);
+                    GLUE_LEVEL(L->l1, L->lv, L->u, L->a4);
                     if (L->l1 == LEVEL_NONE) UNR(NULL);
                     JAW(L->T, J_EQUIV, RQ(L->l1, L->l1, L->y, L->a4));
                     FR_AWAIT(k, L->y, Jf_FIELD, n1, 3);
                     FR_AWAIT(k, L->z, Jf_FIELD, n2, 3);
-                    JRQ(L->res, J_CONVt, RQ(G, L->u, L->y, L->z, L->T, P));
+                    JRQ(L->res, J_CONVt, RQ(L->u, L->y, L->z, L->T, P));
                     if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
                 }
             }
@@ -1036,17 +1032,17 @@ static void spine_step(Cont *k, uint64_t v) {
         L->r1 = (EvalResult *)(uintptr_t)join_value(L->J, 0); L->r2 = (EvalResult *)(uintptr_t)join_value(L->J, 1);
         join_free(L->J); L->J = NULL;
         if (!obs_ok(L->r1) || !obs_ok(L->r2) || L->r1->cls != R_NEUTRAL || L->r2->cls != R_NEUTRAL) UNR(NULL);
-        JAW(L->res, J_SPINE, RQ(G, C, L->r1->ref, L->r2->ref, P));
+        JAW(L->res, J_SPINE, RQ(C, L->r1->ref, L->r2->ref, P));
         if (jr_code(L->res) != J_OK || L->tag != T_APP) FR_FINISH(k, L->res);
         /* an application: the arguments at the function's domain */
-        JRQ(L->res, J_INFER, RQ(G, C, L->a0, P));
+        JRQ(L->res, J_INFER, RQ(C, L->a0, P));
         if (jr_code(L->res) != J_OK) UNR(NULL);
         JAW(L->res, J_OBSHEAD, RQ(C, jr_a(L->res), T_PI, P));
         if (jr_code(L->res) != J_OK) UNR(NULL);
         FR_AWAIT(k, L->D, Jf_FIELD, jr_a(L->res), 0);
         FR_AWAIT(k, L->a2, Jf_FIELD, n1, 1);
         FR_AWAIT(k, L->a3, Jf_FIELD, n2, 1);
-        JRQ(r, J_CONVt, RQ(G, C, L->a2, L->a3, L->D, P));
+        JRQ(r, J_CONVt, RQ(C, L->a2, L->a3, L->D, P));
         FR_FINISH(k, r);
     }
     if (L->tag == T_COMP) {
@@ -1058,19 +1054,18 @@ static void spine_step(Cont *k, uint64_t v) {
         L->x = conv_dim(n1, n2, 0);
         FR_AWAIT(k, L->a0, Jf_BINDER, n1, brec(S_DIM, 0, 0, iv_var(L->x)));
         FR_AWAIT(k, L->a1, Jf_BINDER, n2, brec(S_DIM, 0, 0, iv_var(L->x)));
-        L->G2 = G;
-        JRQ(L->res, J_CONVT, RQ(L->G2, C, L->a0, L->a1, P));
+        JRQ(L->res, J_CONVT, RQ(C, L->a0, L->a1, P));
         if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->a4, Jf_FIELD, n1, 3);
         FR_AWAIT(k, L->a5, Jf_FIELD, n2, 3);
         FR_AWAIT(k, L->T, Jf_REINDEX, L->a0, dim_at(L->x, iv_zero()));
-        JRQ(L->res, J_CONVt, RQ(G, C, L->a4, L->a5, L->T, P));
+        JRQ(L->res, J_CONVt, RQ(C, L->a4, L->a5, L->T, P));
         if (jr_code(L->res) != J_OK || fc_is_false(L->y)) FR_FINISH(k, L->res);
         FR_AWAIT(k, L->a4, Jf_BINDER, n1, brec(S_DIM, 0, 2, iv_var(L->x)));
         FR_AWAIT(k, L->a5, Jf_BINDER, n2, brec(S_DIM, 0, 2, iv_var(L->x)));
         FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
         for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-            JRQ(L->res, J_CONVt, RQ(L->G2, rget(L->cl, &L->nc)[L->c], L->a4, L->a5, L->a0, P));
+            JRQ(L->res, J_CONVt, RQ(rget(L->cl, &L->nc)[L->c], L->a4, L->a5, L->a0, P));
             if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
         }
         OK0();
@@ -1096,7 +1091,7 @@ static void spine_step(Cont *k, uint64_t v) {
                 FR_AWAIT(k, L->a2, Jf_MAPT, L->a0, L->u);
                 FR_AWAIT(k, L->a3, Jf_MAPT, L->a1, L->u);
                 FR_AWAIT(k, L->a4, Jf_REINDEX, L->T, L->a0);
-                JRQ(L->res, J_CONVt, RQ(G, C, L->a2, L->a3, L->a4, P));
+                JRQ(L->res, J_CONVt, RQ(C, L->a2, L->a3, L->a4, P));
                 if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
             }
         }
@@ -1124,19 +1119,19 @@ static void cmap_step(Cont *k, uint64_t v) {
 
 /* ---------------- template instances ---------------- */
 static void tview_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, t, P */
-    RefId t = q[2];
+    JLOC;   /* q: C, t, P */
+    RefId t = q[1];
     FR_BEGIN(k);
-    JAW(L->res, J_TBOUND, RQ(q[0], q[1], t, q[3]));
+    JAW(L->res, J_TBOUND, RQ(q[0], t, q[2]));
     PASS(L->res);
-    JAW(L->res, J_HEAD, RQ(q[0], q[1], t, q[3]));
+    JAW(L->res, J_HEAD, RQ(q[0], t, q[2]));
     PASS(L->res);
     L->T = jr_a(L->res);
     {   ExprId te, le; if (!tnode_result_exprs(ref_tnode(t), &te, &le)) DONE(J_OK, NULL, L->T, 0, 0); L->x = te; }
     FR_AWAIT(k, L->y, Jf_ENVOF, ref_tnode(t), ref_tenv(t));
     FR_AWAIT(k, r, Jf_INTERP, L->x, L->y);
     { size_t n; L->D = rget(r, &n)[1]; }
-    JRQ(L->res, J_CONVT, RQ(q[0], q[1], L->T, L->D, q[3]));
+    JRQ(L->res, J_CONVT, RQ(q[0], L->T, L->D, q[2]));
     if (jr_code(L->res) == J_BAD) {
         char buf[256]; snprintf(buf, sizeof buf, "library instance type differs from its declared result type (%s)", tdef_name(tnode_def(ref_tnode(t))));
         BAD(judge_diag(buf));
@@ -1147,8 +1142,8 @@ static void tview_step(Cont *k, uint64_t v) {
 }
 /* the template boundary of an instance (§51.4, §59.1) */
 static void tbound_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, t, P */
-    uint64_t G = q[0], C = q[1], P = q[3]; RefId t = q[2];
+    JLOC;   /* q: C, t, P */
+    uint64_t C = q[0], P = q[2]; RefId t = q[1];
     FR_BEGIN(k);
     if (ref_is_var(t) || tview_is_construction(t)) OK0();
     FR_AWAIT(k, r, Jf_FCENT, C, ref_required(t));
@@ -1180,7 +1175,7 @@ static void tbound_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->y, Jf_FCMEET, C, L->y);
             FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
             for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-                JRQ(L->res, J_CHECK, RQ(G, rget(L->cl, &L->nc)[L->c], L->x, L->T, P));
+                JRQ(L->res, J_CHECK, RQ(rget(L->cl, &L->nc)[L->c], L->x, L->T, P));
                 if (jr_code(L->res) == J_BAD) {
                     char buf[256]; snprintf(buf, sizeof buf, "template parameter image is not of its declared type (%s slot %zu: %s)", tdef_name(tnode_def(ref_tnode(t))), L->j2, jr_why(L->res) ? jr_why(L->res) : "");
                     BAD(judge_diag(buf));
@@ -1188,7 +1183,7 @@ static void tbound_step(Cont *k, uint64_t v) {
                 PASS(L->res);
             }
         } else {
-            JAW(L->res, J_SCARG, RQ(G, C, L->x, L->T, P));
+            JAW(L->res, J_SCARG, RQ(C, L->x, L->T, P));
             if (jr_code(L->res) == J_BAD) {
                 char buf[256]; snprintf(buf, sizeof buf, "template scope argument does not meet its signature (%s slot %zu: %s)", tdef_name(tnode_def(ref_tnode(t))), L->j2, jr_why(L->res) ? jr_why(L->res) : "");
                 BAD(judge_diag(buf));
@@ -1251,15 +1246,14 @@ static void aprefix_step(Cont *k, uint64_t v) {
 
 /* §50.1–4: a supplied scope's own validity in its own ambient-plus-local context */
 static void scown_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, S, P */
-    uint64_t G = q[0], C = q[1], P = q[3]; ScopeId S = q[2];
+    JLOC;   /* q: C, S, P */
+    uint64_t C = q[0], P = q[2]; ScopeId S = q[1];
     FR_BEGIN(k);
     JAW(L->res, J_RV, RQ(1, S, 0));
     PASS(L->res);
     JAW(L->a5, J_SCOPEN, RQ(S, 0x52));
     { size_t n; const uint64_t *w = rget(L->a5, &n); L->a3 = w[0]; L->a4 = w[1]; }
-    L->n = scope_arity(S); L->G2 = G;
-    for (L->i = 0; L->i < L->n; L->i++) {
+    L->n = scope_arity(S); for (L->i = 0; L->i < L->n; L->i++) {
         {   LocalDecl d = scope_local(S, L->i); L->tag = d.sort; L->T = d.type; L->a0 = d.required; L->lv = d.level;
             size_t n; L->x = rget(L->a3, &n)[L->i]; }
         if (L->tag == S_DIM) { FR_YIELD(k); continue; }
@@ -1271,7 +1265,7 @@ static void scown_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->z, Jf_FCMEET, C, L->a0);
         FR_AWAIT(k, L->cl, J_CLAUSES, L->z, 0);
         for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-            JRQ(L->res, J_LEVEL, RQ(L->G2, rget(L->cl, &L->nc)[L->c], L->T, P));
+            JRQ(L->res, J_LEVEL, RQ(rget(L->cl, &L->nc)[L->c], L->T, P));
             if (jr_code(L->res) == J_BAD) BAD("scope local type is not a type");
             PASS(L->res);
             if (jr_a(L->res) != L->lv) BAD("scope local level annotation differs from its formation level");
@@ -1288,11 +1282,11 @@ static void scown_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, L->cl, J_CLAUSES, L->z, 0);
     for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
         L->u = rget(L->cl, &L->nc)[L->c];
-        JRQ(L->res, J_LEVEL, RQ(L->G2, L->u, L->T, P));
+        JRQ(L->res, J_LEVEL, RQ(L->u, L->T, P));
         if (jr_code(L->res) == J_BAD) BAD("scope result type is not a type");
         PASS(L->res);
         if (jr_a(L->res) != scope_level(S)) BAD("scope result level annotation differs from its formation level");
-        JRQ(L->res, J_CHECK, RQ(L->G2, L->u, L->a1, L->T, P));
+        JRQ(L->res, J_CHECK, RQ(L->u, L->a1, L->T, P));
         PASS(L->res);
     }
     OK0();
@@ -1301,24 +1295,23 @@ static void scown_step(Cont *k, uint64_t v) {
 /* §51.4: a valid scope argument S at the expected contextual signature Sig,
  * both opened at the signature's fresh telescope */
 static void scarg_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: G, C, S, Sig, P */
-    uint64_t G = q[0], C = q[1], P = q[4]; ScopeId S = q[2], Sig = q[3];
+    JLOC;   /* q: C, S, Sig, P */
+    uint64_t C = q[0], P = q[3]; ScopeId S = q[1], Sig = q[2];
     FR_BEGIN(k);
     L->n = scope_arity(S);
     if (L->n != scope_arity(Sig)) BAD("scope argument telescope length differs from the signature");
     for (L->i = 0; L->i < L->n; L->i++) { if (scope_local(S, L->i).sort != scope_local(Sig, L->i).sort) BAD("scope argument telescope sorts differ from the signature"); FR_YIELD(k); }
     if (scope_body(S).sort != scope_body(Sig).sort) BAD("scope argument body sort differs from the signature");
-    JAW(L->res, J_SCOWN, RQ(G, C, S, P));
+    JAW(L->res, J_SCOWN, RQ(C, S, P));
     PASS(L->res);
     JAW(L->a5, J_SCOPEN, RQ(Sig, 0x51));
     { size_t n; const uint64_t *w = rget(L->a5, &n); L->a3 = w[0]; L->a4 = w[1]; }
-    L->G2 = G;
     for (L->i = 0; L->i < L->n; L->i++) {
         {   size_t n; L->x = rget(L->a3, &n)[L->i]; L->tag = scope_local(Sig, L->i).sort; L->T = scope_local(S, L->i).type; }
         if (L->tag == S_DIM) { FR_YIELD(k); continue; }
         FR_AWAIT(k, L->y, J_APREFIX, L->a4, L->i);
         FR_AWAIT(k, L->T, Jf_TREF, L->T, L->y);
-        JRQ(L->res, J_CONVT, RQ(L->G2, C, L->T, term_var_type(L->x), P));
+        JRQ(L->res, J_CONVT, RQ(C, L->T, term_var_type(L->x), P));
         if (jr_code(L->res) == J_BAD) BAD("scope argument local type differs from the signature");
         if (jr_code(L->res) == J_UNR) UNR("unresolved: scope argument local type conversion");
     }
@@ -1333,7 +1326,7 @@ static void scarg_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, L->D, Jf_TREF, scope_body(Sig).id, L->y);
     FR_AWAIT(k, L->cl, J_CLAUSES, L->z, 0);
     for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-        JRQ(L->res, J_CONVT, RQ(L->G2, rget(L->cl, &L->nc)[L->c], L->T, L->D, P));
+        JRQ(L->res, J_CONVT, RQ(rget(L->cl, &L->nc)[L->c], L->T, L->D, P));
         if (jr_code(L->res) == J_BAD) BAD("scope argument result type differs from the signature");
         if (jr_code(L->res) == J_UNR) UNR("unresolved: scope argument result type conversion");
     }
@@ -1369,7 +1362,7 @@ static void map_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->z, Jf_FCMEET, psi, L->z);
         FR_AWAIT(k, L->cl, J_CLAUSES, L->z, 0);
         for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
-            JRQ(L->res, J_CHECK, RQ(0, rget(L->cl, &L->nc)[L->c], L->y, L->T, P));
+            JRQ(L->res, J_CHECK, RQ(rget(L->cl, &L->nc)[L->c], L->y, L->T, P));
             PASS(L->res);
         }
     }
@@ -1422,12 +1415,12 @@ static void declok_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, L->cl, J_CLAUSES, L->y, 0);
     for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) {
         L->u = rget(L->cl, &L->nc)[L->c];
-        JRQ(L->res, J_LEVEL, RQ(0, L->u, L->T, P));
+        JRQ(L->res, J_LEVEL, RQ(L->u, L->T, P));
         PASS(L->res);
         if (L->D != L->T) {
-            JRQ(L->res, J_LEVEL, RQ(0, L->u, L->D, P));
+            JRQ(L->res, J_LEVEL, RQ(L->u, L->D, P));
             PASS(L->res);
-            JRQ(L->res, J_CONVT, RQ(0, L->u, L->T, L->D, P));
+            JRQ(L->res, J_CONVT, RQ(L->u, L->T, L->D, P));
             if (jr_code(L->res) == J_BAD) BAD("declared type is not convertible to the variable's declaration");
             if (jr_code(L->res) == J_UNR) UNR("unresolved: declaration type compatibility");
         }
@@ -1449,7 +1442,7 @@ static void node_step(Cont *k, uint64_t v) {
     rget(L->cl, &L->nc);
     L->arr = frame_mem((L->nc + 1) * sizeof(uint64_t));
     for (L->c = 0; L->c < L->nc; L->c++) {
-        JAW(L->res, J_HEAD, RQ(0, rget(L->cl, &L->n)[L->c], L->a1, P));
+        JAW(L->res, J_HEAD, RQ(rget(L->cl, &L->n)[L->c], L->a1, P));
         if (jr_code(L->res) != J_OK) { frame_mem_free(L->arr); L->arr = NULL; DONE(jr_code(L->res), jr_why(L->res), 0, 0, 0); }
         L->arr[L->c] = jr_a(L->res);
     }
@@ -1477,7 +1470,7 @@ static void decl_step(Cont *k, uint64_t v) {
     PASS(L->res);
     JAW(L->res, J_SCOPE, RQ(L->G2, fc_true(), global_type((SymbolId)q[0])));
     PASS(L->res);
-    JRQ(L->res, J_LEVEL, RQ(0, fc_true(), global_type((SymbolId)q[0]), q[1]));
+    JRQ(L->res, J_LEVEL, RQ(fc_true(), global_type((SymbolId)q[0]), q[1]));
     PASS(L->res);
     OK0();
     FR_END(k);
@@ -1492,7 +1485,7 @@ static void body_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, L->G2, J_JCOF, global_context_flat((SymbolId)q[0]), 0);
     JAW(L->res, J_SCOPE, RQ(L->G2, fc_true(), L->x));
     PASS(L->res);
-    JRQ(r, J_CHECK, RQ(0, fc_true(), L->x, global_type((SymbolId)q[0]), q[1]));
+    JRQ(r, J_CHECK, RQ(fc_true(), L->x, global_type((SymbolId)q[0]), q[1]));
     FR_FINISH(k, r);
     FR_END(k);
 }
