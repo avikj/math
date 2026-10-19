@@ -209,8 +209,14 @@ int main(void) {
       CHECK(cs == CK_INVALID, "projecting a term of type A is rejected without evaluating it (%s)", why); }
 
     /* budget */
-    check_set_budget(5);
-    CHECK(check(G, fc_true(), mk_ua(0, A, A, mk_id_equiv(0, A)), mk_path_const(0, U0, A, A), &why) == CK_UNRESOLVED, "an exhausted budget is UNRESOLVED (%s)", why);
+    /* a judgment not yet computed (a fresh type variable: the content key is
+     * new; judgments already published are delivered regardless of budget) */
+    { TermVarId vF = tv(U0); RefId Fv = ref_var(vF);
+      ContextId GF = context_extend_term(G, vF, U0);
+      check_set_budget(5); why = "";
+      CHECK(check(GF, fc_true(), mk_ua(0, Fv, Fv, mk_id_equiv(0, Fv)), mk_path_const(0, U0, Fv, Fv), &why) == CK_UNRESOLVED, "an exhausted budget is UNRESOLVED (%s)", why);
+      check_set_budget(0);
+      CHECK(check(GF, fc_true(), mk_ua(0, Fv, Fv, mk_id_equiv(0, Fv)), mk_path_const(0, U0, Fv, Fv), &why) == CK_VALID, "the interrupted judgment completes when demanded again (%s)", why); }
     check_set_budget(0);
 
     /* signature: a declared symbol with a well-typed body, and one without */

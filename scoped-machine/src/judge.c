@@ -23,7 +23,6 @@
 #include "pins.h"
 #include "template.h"
 #include "scope.h"
-#include "compiler.h"
 #include "lib.h"
 
 /* ---------------- records ---------------- */
@@ -82,10 +81,22 @@ bool jc_of_flat(ContextId F, uint64_t *out) {
 /* ---------------- families used ---------------- */
 static Family Jf_FCMEET, Jf_FCJOIN, Jf_FCENT, Jf_FCPROJ, Jf_FCDIMS, Jf_IVDIMS, Jf_DSUNION, Jf_REINDEX, Jf_IVRE, Jf_FCRE,
               Jf_FIELD, Jf_BINDER, Jf_HEAD, Jf_REFVAR, Jf_CINST, Jf_OVERRIDE, Jf_ENVOF, Jf_INTERP, Jf_ENVLOOK, Jf_SCOPESIDE,
-              Jf_TREF, Jf_TIV, Jf_TFC, Jf_GARGS, Jf_MAPT, Jf_MAPD, Jf_DECODE;
+              Jf_TREF, Jf_TIV, Jf_TFC, Jf_GARGS, Jf_MAPT, Jf_MAPD, Jf_GLOBALS;
 static Family J_CLAUSES, J_JDIMS, J_JCOF, J_GENERIC, J_GMAP, J_OBSHEAD, J_LEVEL, J_INFER, J_HEAD, J_CHECK, J_CONVT, J_CONVt, J_SPINE,
               J_GLUEOK, J_TVIEW, J_TBOUND, J_SCOPEN, J_SCOWN, J_SCARG, J_MAP, J_CTX, J_CTXD, J_DECLOK, J_NODE, J_DECL, J_BODY,
               J_RV, J_RVD, J_EQUIV, J_DIMSIN, J_CMAP, J_APREFIX;
+
+
+/* ---------------- content keys (PLAN §6, HANDOFF §77) ----------------
+ * A request whose references are closed (no free variable, empty dimension
+ * support) depends on no declaration of its context and on its clause only
+ * through the projection onto the empty support (⊤); when they name no
+ * global symbol its pin set is irrelevant too. Such a request forwards once
+ * to its normalized key, so one closed judgment is executed once for every
+ * context, clause and pin set it occurs under. */
+static bool jn_closed(RefId t) { size_t n; varset_get(ref_freevars(t), &n); if (n) return false; dimset_get(ref_support(t), &n); return n == 0; }
+static bool jn_trivial(uint64_t G, uint64_t C, uint64_t P) { return jc_is_empty(G) && C == fc_true() && P == pins_empty(); }
+static bool vs_empty(uint64_t vs) { size_t n; varset_get(vs, &n); return n == 0; }
 
 /* one locals record for every judgment frame */
 typedef struct {
@@ -273,6 +284,11 @@ static void obshead_step(Cont *k, uint64_t v) {
 static void level_step(Cont *k, uint64_t v) {
     JLOC;   /* q: G, C, A, P */
     FR_BEGIN(k);
+    if (!jn_trivial(q[0], q[1], q[3]) && jn_closed(q[2])) {
+        FR_AWAIT(k, L->u, Jf_GLOBALS, q[2], 0);
+        L->w0 = vs_empty(L->u) ? pins_empty() : q[3];
+        if (!(jc_is_empty(q[0]) && q[1] == fc_true() && L->w0 == q[3])) { JAW(r, J_LEVEL, RQ(jc_empty(), fc_true(), q[2], L->w0)); FR_FINISH(k, r); }
+    }
     JAW(L->res, J_INFER, RQ(q[0], q[1], q[2], q[3]));
     PASS(L->res);
     JAW(L->res, J_OBSHEAD, RQ(q[1], jr_a(L->res), T_UNIVERSE, q[3]));
@@ -303,6 +319,11 @@ static void infer_step(Cont *k, uint64_t v) {
     JLOC;   /* q: G, C, t, P */
     RefId t = q[2];
     FR_BEGIN(k);
+    if (!jn_trivial(q[0], q[1], q[3]) && jn_closed(t)) {
+        FR_AWAIT(k, L->u, Jf_GLOBALS, t, 0);
+        L->w0 = vs_empty(L->u) ? pins_empty() : q[3];
+        if (!(jc_is_empty(q[0]) && q[1] == fc_true() && L->w0 == q[3])) { JAW(r, J_INFER, RQ(jc_empty(), fc_true(), t, L->w0)); FR_FINISH(k, r); }
+    }
     if (ref_is_var(t)) {
         {   RefId ty = 0; if (!jc_term(q[0], ref_var_id(t), &ty)) BAD("unbound variable"); L->T = ty; }
         FR_AWAIT(k, r, Jf_FCENT, q[1], term_var_required(ref_var_id(t)));
@@ -603,36 +624,6 @@ static void head_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, r, Jf_REINDEX, global_type((SymbolId)L->x), L->m);
         DONE(J_OK, NULL, r, 0, 0);
     }
-    if (L->tag == T_TCALL) {
-        /* §43 (until step 5 replaces this route by the Diagram action) */
-        FR_AWAIT(k, L->x, Jf_DECODE, t, 0);
-        {   size_t n; const uint64_t *dw = rget(L->x, &n); L->a0 = dw[0]; L->a1 = dw[1]; L->m = dw[2]; L->a2 = dw[3]; }
-        if (!transform_get(L->a0)) BAD("malformed TRANSFORM_CALL or unknown transform");
-        FR_AWAIT(k, L->y, J_JCOF, transform_get(L->a0)->parameters, 0);
-        JAW(L->res, J_MAP, RQ(G, C, L->m, L->y, transform_get(L->a0)->required_face, P));
-        PASS(L->res);
-        {   const CompiledTransform *tr = transform_get(L->a0); L->D = L->a1 ? tr->codomain : tr->domain; L->T = L->a1 ? tr->domain : tr->codomain; L->n = context_size(tr->parameters); }
-        FR_AWAIT(k, L->D, Jf_REINDEX, L->D, L->m);
-        FR_AWAIT(k, L->T, Jf_REINDEX, L->T, L->m);
-        FR_AWAIT(k, L->a3, Jf_FIELD, t, L->n + 1);
-        FR_AWAIT(k, L->a4, Jf_FIELD, t, L->n + 2);
-        JAW(L->res, J_CONVT, RQ(G, C, L->a3, L->D, P));
-        if (jr_code(L->res) == J_OK) JAW(L->res, J_CONVT, RQ(G, C, L->a4, L->T, P));
-        if (jr_code(L->res) == J_BAD) BAD("TRANSFORM_CALL annotations differ from the instantiated domain/codomain");
-        if (jr_code(L->res) == J_UNR) UNR("unresolved: TRANSFORM_CALL annotation conversion");
-        JAW(L->res, J_LEVEL, RQ(G, C, L->a3, P));
-        PASS(L->res);
-        L->l1 = jr_a(L->res);
-        JAW(L->res, J_LEVEL, RQ(G, C, L->a4, P));
-        PASS(L->res);
-        L->l2 = jr_a(L->res);
-        {   const CompiledTransform *tr = transform_get(L->a0);
-            uint64_t ed = L->a1 ? tr->codomain_level : tr->domain_level, ec = L->a1 ? tr->domain_level : tr->codomain_level;
-            if (L->l1 != ed || L->l2 != ec) BAD("TRANSFORM_CALL annotation levels differ from the record's stored levels"); }
-        JAW(L->res, J_CHECK, RQ(G, C, L->a2, L->D, P));
-        PASS(L->res);
-        DONE(J_OK, NULL, L->a4, 0, 0);
-    }
     BAD("no inference rule for this head");
     FR_END(k);
 }
@@ -669,6 +660,13 @@ static void check_step(Cont *k, uint64_t v) {
     JLOC;   /* q: G, C, t, A, P */
     uint64_t G = q[0], C = q[1], P = q[4]; RefId t = q[2];
     FR_BEGIN(k);
+    if (!jn_trivial(G, C, P) && jn_closed(t) && jn_closed(q[3])) {
+        FR_AWAIT(k, L->u, Jf_GLOBALS, t, 0);
+        L->w0 = vs_empty(L->u);
+        FR_AWAIT(k, L->u, Jf_GLOBALS, q[3], 0);
+        L->w0 = L->w0 && vs_empty(L->u) ? pins_empty() : P;
+        if (!(jc_is_empty(G) && C == fc_true() && L->w0 == P)) { JAW(r, J_CHECK, RQ(jc_empty(), fc_true(), t, q[3], L->w0)); FR_FINISH(k, r); }
+    }
     L->T = q[3];
     if (!ref_is_var(t)) {
         FR_AWAIT(k, r, Jf_FCENT, C, ref_required(t));
@@ -821,6 +819,13 @@ static void convT_step(Cont *k, uint64_t v) {
     uint64_t G = q[0], C = q[1], P = q[4];
     FR_BEGIN(k);
     if (q[2] == q[3]) FR_FINISH(k, judge_res(J_OK, NULL, 0, 0, 0));
+    if (!jn_trivial(G, C, P) && jn_closed(q[2]) && jn_closed(q[3])) {
+        FR_AWAIT(k, L->u, Jf_GLOBALS, q[2], 0);
+        L->w0 = vs_empty(L->u);
+        FR_AWAIT(k, L->u, Jf_GLOBALS, q[3], 0);
+        L->w0 = L->w0 && vs_empty(L->u) ? pins_empty() : P;
+        if (!(jc_is_empty(G) && C == fc_true() && L->w0 == P)) { JAW(r, J_CONVT, RQ(jc_empty(), fc_true(), q[2], q[3], L->w0)); FR_FINISH(k, r); }
+    }
     L->J = obs_two(k, C, q[2], q[3], P);
     FR_JOIN(k, L->J);
     L->r1 = (EvalResult *)(uintptr_t)join_value(L->J, 0); L->r2 = (EvalResult *)(uintptr_t)join_value(L->J, 1);
@@ -905,6 +910,15 @@ static void convt_step(Cont *k, uint64_t v) {
     uint64_t G = q[0], C = q[1], P = q[5]; RefId t = q[2], u = q[3];
     FR_BEGIN(k);
     if (t == u) OK0();
+    if (!jn_trivial(G, C, P) && jn_closed(t) && jn_closed(u) && jn_closed(q[4])) {
+        FR_AWAIT(k, L->u, Jf_GLOBALS, t, 0);
+        L->w0 = vs_empty(L->u);
+        FR_AWAIT(k, L->u, Jf_GLOBALS, u, 0);
+        L->w0 = L->w0 && vs_empty(L->u);
+        FR_AWAIT(k, L->u, Jf_GLOBALS, q[4], 0);
+        L->w0 = L->w0 && vs_empty(L->u) ? pins_empty() : P;
+        if (!(jc_is_empty(G) && C == fc_true() && L->w0 == P)) { JAW(r, J_CONVt, RQ(jc_empty(), fc_true(), t, u, q[4], L->w0)); FR_FINISH(k, r); }
+    }
     FR_CALL(k, r, observe_sub(k, q[4], C, P));
     L->r1 = (EvalResult *)(uintptr_t)r;
     if (!obs_ok(L->r1)) UNR(NULL);
@@ -1460,6 +1474,11 @@ static void node_step(Cont *k, uint64_t v) {
     JLOC;   /* q: Q, P */
     uint64_t P = q[1];
     FR_BEGIN(k);
+    if (P != pins_empty()) {
+        /* a node naming no global (fields and parameter types) is pin-independent */
+        FR_AWAIT(k, L->u, Jf_GLOBALS, q[0], 4);
+        if (vs_empty(L->u)) { JAW(r, J_NODE, RQ(q[0], pins_empty())); FR_FINISH(k, r); }
+    }
     FR_AWAIT(k, L->x, J_GENERIC, q[0], 0);
     { size_t n; const uint64_t *w = rget(L->x, &n); L->G2 = w[0]; L->a0 = w[1]; L->a1 = w[2]; }
     JAW(L->res, J_CTX, RQ(L->G2, L->a0, P));
@@ -1617,8 +1636,8 @@ void judge_families_init(void) {
     Jf_CINST = family_lookup("construction.instance"); Jf_OVERRIDE = family_lookup("map.override");
     Jf_ENVOF = family_lookup("template.envof"); Jf_INTERP = family_lookup("template.interp"); Jf_ENVLOOK = family_lookup("template.envlook");
     Jf_SCOPESIDE = family_lookup("scope.side"); Jf_TREF = family_lookup("trav.ref"); Jf_TIV = family_lookup("trav.interval"); Jf_TFC = family_lookup("trav.face");
-    Jf_GARGS = family_lookup("global.args"); Jf_MAPT = family_lookup("map.term_image"); Jf_MAPD = family_lookup("map.dim_image"); Jf_DECODE = family_lookup("tcall.decode");
-    require(Jf_FCMEET && Jf_SCOPESIDE && Jf_GARGS && Jf_DECODE && Jf_MAPD && Jf_ENVLOOK, "the judgment families' operand families are registered first");
+    Jf_GARGS = family_lookup("global.args"); Jf_MAPT = family_lookup("map.term_image"); Jf_MAPD = family_lookup("map.dim_image"); Jf_GLOBALS = family_lookup("globals.of");
+    require(Jf_FCMEET && Jf_SCOPESIDE && Jf_GARGS && Jf_MAPD && Jf_GLOBALS && Jf_ENVLOOK, "the judgment families' operand families are registered first");
     J_CLAUSES = family_define("judge.clauses", clauses_step, sizeof(JL), true);
     J_CMAP = family_define("judge.clause_map", cmap_step, sizeof(JL), true);
     J_DIMSIN = family_define("judge.dims_in", dimsin_step, sizeof(JL), true);

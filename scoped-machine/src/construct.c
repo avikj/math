@@ -14,7 +14,6 @@
  * awaited from its family. */
 #include "eval.h"
 #include "template.h"
-#include "compiler.h"
 
 static Family F_REFVAR, F_FCDIMS, F_FIELD, F_BINDER, F_CONSTRUCT;
 static Family F_ENVOF, F_INTERP, F_ENVSET;   /* template families (bound after their registration) */
@@ -290,51 +289,71 @@ static void unfold_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
-/* globals.of(x, kind): the global symbols a reference (kind 0) or a scope
- * (kind 1) names directly — through its field constants, its environment
- * values and, for a global reference, its own symbol; a transform call names
- * its registered bodies. Bodies are not entered (that is the closure of an
- * observation's premises, pins.c). A set of symbol ids (a varset). */
+/* globals.of(x, mode): the global symbols x names directly — a reference
+ * (mode 0) through its field constants, its environment values and, for a
+ * global reference, its own symbol; a scope (mode 1) through its local
+ * types, result type and reference body. Bodies of globals are not entered
+ * (that is the closure of an observation's premises, pins.c).
+ * Audit modes (2: reference, 3: scope) are the conservative stored-syntax
+ * walk of the proof-use boundary (HANDOFF §88.3): additionally the declared
+ * type of every free variable reached. Mode 4: a construction node — its
+ * field constants and the closed types of its parameters (audit).
+ * A set of symbol ids (a varset). */
 typedef struct { size_t n, q, nf, m; Join *J; uint64_t acc; } GlLoc;
 static Family F_GLOBALS;
 static void globals_step(Cont *k, uint64_t v) {
     GlLoc *L = FR_LOC(k, GlLoc);
-    uint64_t x = k->w[0];
+    uint64_t x = k->w[0], mode = k->w[1], audit = mode >= 2 ? 2 : 0;
     FR_BEGIN(k);
     L->acc = varset_make(NULL, 0);
-    if (k->w[1] == 1) {
+    if (mode == 1 || mode == 3) {
         /* a scope: the local types, the result type, a reference body */
         L->n = scope_arity(x); L->m = L->n + 2;
         L->J = join_new(k, L->m);
         for (L->q = 0; L->q < L->n + 2; L->q++) {
             {   RefId r = L->q < L->n ? scope_local(x, L->q).type : L->q == L->n ? scope_type(x) : (scope_body(x).sort == VS_REF ? scope_body(x).id : 0);
-                if (r) join_request(L->J, L->q, F_GLOBALS, r, 0); else join_fill(L->J, L->q, L->acc); }
+                if (r) join_request(L->J, L->q, F_GLOBALS, r, audit); else join_fill(L->J, L->q, L->acc); }
             FR_YIELD(k);
         }
+    } else if (mode == 4) {
+        /* a construction node: field constants, then parameter types */
+        L->nf = tnode_nfields(x); L->n = tnode_nparams(x); L->m = L->nf + L->n;
+        L->J = join_new(k, L->m ? L->m : 1);
+        if (!L->m) join_fill(L->J, 0, L->acc);
+        for (L->q = 0; L->q < L->m; L->q++) {
+            {   RefId r = 0;
+                if (L->q < L->nf) { if (tnode_field_kind(x, L->q) == F_REF) r = tnode_const_field(x, L->q); }
+                else { PSort so; RefId ty; FaceId g; tnode_param(x, L->q - L->nf, &so, &ty, &g); if (so == PS_REF) r = ty; }
+                if (r) join_request(L->J, L->q, F_GLOBALS, r, 2); else join_fill(L->J, L->q, L->acc); }
+            if (L->q + 1 < L->m) FR_YIELD(k);
+        }
+        if (!L->m) L->m = 1;
     } else {
-        if (ref_is_var(x)) FR_FINISH(k, L->acc);
+        if (ref_is_var(x)) {
+            TermVarId id = ref_var_id(x);
+            if (!audit || is_local_atom(id)) FR_FINISH(k, L->acc);
+            FR_AWAIT(k, L->acc, F_GLOBALS, term_var_type(id), 2);     /* audit: the declared type */
+            FR_FINISH(k, L->acc);
+        }
         {   TNodeId Q = ref_tnode(x);
             if (tnode_is_construction(Q)) {
                 Tag tag = tnode_tag(Q);
                 if (tag == T_GLOBAL) { uint64_t s = tnode_const_payload(Q); L->acc = varset_make(&s, 1); }
-                L->nf = tnode_nfields(Q); L->n = L->nf + tenv_size(ref_tenv(x)) + (tag == T_TCALL ? 2 : 0);
+                L->nf = tnode_nfields(Q); L->n = L->nf + tenv_size(ref_tenv(x));
             } else { L->nf = 0; L->n = tenv_size(ref_tenv(x)); }   /* a template program names no symbol: its environment's values */
         }
-        L->m = L->n;
+        L->m = L->n ? L->n : 1;
         L->J = join_new(k, L->m);
+        if (!L->n) join_fill(L->J, 0, varset_make(NULL, 0));
         for (L->q = 0; L->q < L->n; L->q++) {
             {   TNodeId Q = ref_tnode(x); uint64_t sort = PS_LEVEL, id = 0;
                 if (L->q < L->nf) {
                     if (tnode_field_kind(Q, L->q) == F_REF) { sort = PS_REF; id = tnode_const_field(Q, L->q); }
-                } else if (L->q - L->nf < tenv_size(ref_tenv(x))) {
-                    uint64_t slot; TVal val; tenv_entry(ref_tenv(x), L->q - L->nf, &slot, &val); sort = val.sort; id = val.id;
                 } else {
-                    /* a transform call: its forward and reverse bodies */
-                    RefId body; TermVarId slot; uint64_t p = tnode_const_payload(Q);
-                    if (compiler_template(p / 2, (int)(L->q - L->nf - tenv_size(ref_tenv(x))), &body, &slot)) { sort = PS_REF; id = body; }
+                    uint64_t slot; TVal val; tenv_entry(ref_tenv(x), L->q - L->nf, &slot, &val); sort = val.sort; id = val.id;
                 }
-                if (sort == PS_REF && id) join_request(L->J, L->q, F_GLOBALS, id, 0);
-                else if (sort == PS_SCOPE) join_request(L->J, L->q, F_GLOBALS, id, 1);
+                if (sort == PS_REF && id) join_request(L->J, L->q, F_GLOBALS, id, audit);
+                else if (sort == PS_SCOPE) join_request(L->J, L->q, F_GLOBALS, id, 1 + audit);
                 else join_fill(L->J, L->q, varset_make(NULL, 0)); }
             if (L->q + 1 < L->n) FR_YIELD(k);
         }
@@ -366,7 +385,7 @@ void construct_families_init(void) {
     F_HEAD = family_define("head.annotation", head_step, 0, true);
     F_GARGS = family_define("global.args", gargs_step, sizeof(UnfLoc), true);
     F_UNFOLD = family_define("global.unfold", unfold_step, 0, true);    /* keyed by (reference, body revision) */
-    F_GLOBALS = family_define("globals.of", globals_step, sizeof(GlLoc), true);      /* a registered transform's bodies are immutable */
+    F_GLOBALS = family_define("globals.of", globals_step, sizeof(GlLoc), true);
 }
 /* the template families register after the construction families; their ids are read lazily */
 void construct_bind_template_families(void) { F_ENVOF = family_lookup("template.envof"); F_INTERP = family_lookup("template.interp"); F_ENVSET = family_lookup("template.envset"); require(F_ENVOF && F_INTERP && F_ENVSET, "template families"); }

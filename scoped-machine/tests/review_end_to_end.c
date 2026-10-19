@@ -148,11 +148,11 @@ int main(int argc, char **argv) {
     } else if (!strcmp(mode,"positive")) {
         if(getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
         Assoc a; assoc_build(&a,&why);
-        require(a.T,"associativity identity compiles");
-        failed+=certificate_verify(a.T,&why)!=CK_VALID;
+        require(a.ok,"associativity identity compiles");
+        { ProofUse u=action_proof_use(&a.T); printf("proof use of the action: %s\n",proof_status_name(u.status)); failed+=u.status!=PU_CORE; proof_use_free(&u); }
         MapId s=assoc_sigma(&a,a.rhs);
         RefId left=assoc_left_arg(&a,s), right=assoc_right_arg(&a,s);
-        RefId calls[]={mk_transform_call(a.T,DIR_FORWARD,s,left),mk_transform_call(a.T,DIR_REVERSE,s,right)};
+        RefId calls[]={action_call(&a.T,DIR_FORWARD,s,left),action_call(&a.T,DIR_REVERSE,s,right)};
         for(size_t k=0;k<2;k++) {
             WhnfStatus st; EvalResult *r=observe_checked(a.G,calls[k],&st,&why);
             printf("checked identity orientation %zu: status=%d, class=%d, head=%s\n",k,st,r?(int)r->cls:-1,r?tag_name(ref_tag(r->ref)):"absent");
@@ -160,7 +160,7 @@ int main(int argc, char **argv) {
             EvalEvents before=eval_events(); EvalNetEvents n0=eval_net_events();
             EvalResult *again=observe_checked(a.G,calls[k],&st,&why);
             EvalEvents after=eval_events(); EvalNetEvents n1=eval_net_events();
-            failed+=again!=r || st!=W_OK || before.publish!=after.publish || n0.apply!=n1.apply;
+            failed+=again!=r || st!=W_OK || before.publish!=after.publish || n0.continue_ref!=n1.continue_ref;
         }
     } else if (!strcmp(mode,"universe") || !strcmp(mode,"packed-level")) {
         /* Overflow is a host failure. Isolate that permitted rejection from

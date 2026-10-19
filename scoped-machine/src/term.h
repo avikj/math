@@ -19,8 +19,7 @@
 typedef enum {
     T_UNIVERSE = 1, T_PI, T_SIGMA, T_LAM, T_APP, T_PAIR, T_FST, T_SND,
     T_PATH, T_PLAM, T_PAPP, T_GLUE_TYPE, T_GLUE_INTRO, T_UNGLUE, T_COMP,
-    T_SYSTEM, T_GLOBAL,
-    T_TCALL            /* §43 TRANSFORM_CALL: an internal instruction construction, not an object-language datatype */
+    T_SYSTEM, T_GLOBAL
 } Tag;
 
 typedef enum { F_REF = 1, F_INTERVAL, F_FACE } FieldKind;
@@ -277,13 +276,6 @@ RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefI
 RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v);
 RefId mk_pair_at_lv(uint64_t l, RefId S, RefId a, RefId b);
 RefId mk_system(size_t n, const FaceId *faces, const RefId *terms);
-/* TRANSFORM_CALL(id, dir, σ, a) with checked instantiated type annotations:
- * payload = 2·id + dir; fields = the images of the template's parameters in
- * parameter-context order (F_REF / F_INTERVAL), then a, then the input and
- * output type annotations; required face = required_face[σ]. Reindexing a
- * view of it composes σ with the map and reindexes a and the annotations. */
-RefId mk_tcall(uint64_t id, int dir, size_t nparams, const Field *params, RefId a, RefId in_type, RefId out_type, FaceId required);
-
 /* ---- printing (presentation only) ---- */
 void print_ref(RefId t, FILE *f);
 void print_ref_depth(RefId t, FILE *f, int depth);

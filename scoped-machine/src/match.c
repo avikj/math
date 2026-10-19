@@ -1,4 +1,5 @@
 #define _POSIX_C_SOURCE 200809L
+#include <pthread.h>
 #include "match.h"
 
 Graph *graph_new(void) { Graph *g = calloc(1, sizeof *g); require(g, "out of memory"); return g; }
@@ -164,6 +165,21 @@ static bool solve(Matcher *m, Agenda *ag) {
     return false;
 }
 
+/* the backtracking search recurses once per obligation: run it on a thread
+ * whose stack is sized for the graphs (a test-harness operation) */
+typedef struct { Matcher *m; Agenda *ag; bool ok; } SolveJob;
+static void *solve_thread(void *p) { SolveJob *j = p; j->ok = solve(j->m, j->ag); return NULL; }
+static bool solve_big_stack(Matcher *m, Agenda *ag) {
+    SolveJob job = { m, ag, false };
+    pthread_attr_t at; pthread_attr_init(&at);
+    size_t need = (size_t)1 << 30;
+    pthread_attr_setstacksize(&at, need);
+    pthread_t th;
+    if (pthread_create(&th, &at, solve_thread, &job) != 0) { pthread_attr_destroy(&at); return solve(m, ag); }
+    pthread_join(th, NULL); pthread_attr_destroy(&at);
+    return job.ok;
+}
+
 bool graph_match(const Graph *a, const Graph *b, MatchReport *rep) {
     memset(rep, 0, sizeof *rep);
     if (a->roots.len != b->roots.len || a->setroots.len != b->setroots.len) { snprintf(rep->reason, sizeof rep->reason, "different number of roots"); return false; }
@@ -176,7 +192,7 @@ bool graph_match(const Graph *a, const Graph *b, MatchReport *rep) {
     Agenda ag = {0};
     if (a->setroots.len) { Item it = { 1, 0, 0, a->setroots.data, b->setroots.data, a->setroots.len, new_used(&m, a->setroots.len), 0 }; vec_push(&ag, it); }
     for (size_t i = a->roots.len; i-- > 0;) { Item it = { 0, a->roots.data[i], b->roots.data[i], NULL, NULL, 0, NULL, 0 }; vec_push(&ag, it); }
-    bool ok = solve(&m, &ag);
+    bool ok = solve_big_stack(&m, &ag);
     rep->equal = ok;
     if (ok) rep->reason[0] = 0;
     for (size_t i = 0; i < m.pools.len; i++) free(m.pools.data[i]);

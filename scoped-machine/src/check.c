@@ -20,6 +20,7 @@ static uint64_t session_gen;
 void check_init(void) { session_gen++; __atomic_store_n(&budget, 0, __ATOMIC_RELEASE); }
 void check_free(void) {}
 void check_set_budget(size_t steps) { __atomic_store_n(&budget, steps, __ATOMIC_RELEASE); }
+size_t check_budget(void) { return __atomic_load_n(&budget, __ATOMIC_ACQUIRE); }
 void check_new_attempt(void) {}
 uint64_t check_session_id(void) { return session_gen; }
 const char *check_status_name(CheckStatus s) { return s == CK_VALID ? "VALID" : s == CK_INVALID ? "INVALID" : "UNRESOLVED"; }
@@ -73,6 +74,52 @@ static CheckStatus premises(PinSet P, const char **reason) {
     return st;
 }
 
+
+/* the root's dependency-closed context restriction (HANDOFF §77): the
+ * declarations the references' free variables and dimensions reach through
+ * declared types, in their order; the face and the context assumption
+ * projected onto the kept dimensions (exact by the projection theorem).
+ * Judgments of different contexts with the same closure share their keys. */
+static void need_ref(WordMap *t, WordMap *d, RefId r) {
+    if (!r) return;
+    size_t n; const uint64_t *xs = varset_get(ref_freevars(r), &n);
+    for (size_t k = 0; k < n; k++) wordmap_put(t, &xs[k], 1, 1);
+    const uint64_t *ds = dimset_get(ref_support(r), &n);
+    for (size_t k = 0; k < n; k++) wordmap_put(d, &ds[k], 1, 1);
+}
+static ContextId restrict_ctx(ContextId F, FaceId chi, FaceId *chi_out, size_t n, const RefId *refs) {
+    WordMap t, d; wordmap_init(&t); wordmap_init(&d);
+    for (size_t q = 0; q < n; q++) need_ref(&t, &d, refs[q]);
+    size_t m = context_size(F);
+    bool *keep = calloc(m ? m : 1, sizeof(bool)); require(keep, "out of memory");
+    size_t kept = 0;
+    for (size_t k = m; k-- > 0; ) {
+        CtxDecl c = context_decl(F, k); uint64_t have, id = c.id;
+        if (c.sort == S_TERM ? wordmap_get(&t, &id, 1, &have) : wordmap_get(&d, &id, 1, &have)) {
+            keep[k] = true; kept++;
+            if (c.sort == S_TERM) need_ref(&t, &d, c.type);
+        }
+    }
+    CtxDecl *ds = malloc((kept ? kept : 1) * sizeof(CtxDecl)); require(ds, "out of memory");
+    Words dims; words_init(&dims);
+    size_t j = 0;
+    for (size_t k = 0; k < m; k++) if (keep[k]) { ds[j++] = context_decl(F, k); if (ds[j - 1].sort == S_DIM) words_push(&dims, ds[j - 1].id); }
+    DimSetId S = dimset_make(dims.w, dims.n);
+    ContextId out = context_make(kept, ds, fc_project(context_assumption(F), S));
+    *chi_out = fc_project(chi, S);
+    free(ds); free(keep); words_free(&dims); wordmap_free(&t); wordmap_free(&d);
+    return out;
+}
+
+/* the face's dimensions are declared in the request's own context (before
+ * restriction: a face over an undeclared dimension is a scope error) */
+static CheckStatus face_ok(ContextId F, FaceId chi, const char **reason) {
+    Words w; words_init(&w); fc_dims(chi, &w);
+    for (size_t k = 0; k < w.n; k++) if (!context_declares_dim(F, w.w[k])) { words_free(&w); *reason = "face mentions an undeclared dimension"; return CK_INVALID; }
+    words_free(&w);
+    return CK_VALID;
+}
+
 /* a flat context as a judgment context */
 static CheckStatus jctx(ContextId F, uint64_t *G, const char **reason) {
     if (!jc_of_flat(F, G)) { *reason = "duplicate declaration"; return CK_INVALID; }
@@ -90,6 +137,14 @@ static CheckStatus scope_ok(uint64_t G, FaceId chi, RefId t, const char **reason
     const uint64_t *ds = dimset_get(ref_support(t), &n);
     for (size_t k = 0; k < n; k++) if (!jc_dim(G, ds[k])) { *reason = "unbound dimension"; return CK_INVALID; }
     return CK_VALID;
+}
+
+CheckStatus check_root_prepare(ContextId F, FaceId chi, size_t n, const RefId *refs, uint64_t *G, uint64_t *P, const char **reason) {
+    Roots R = { 0 }; pr_ctx(&R, F); for (size_t q = 0; q < n; q++) pr_ref(&R, refs[q]);
+    *P = pins_of(&R);
+    CheckStatus st = jctx(F, G, reason);
+    for (size_t q = 0; q < n && st == CK_VALID; q++) st = scope_ok(*G, chi, refs[q], reason);
+    return st;
 }
 
 CheckStatus check_context(ContextId F, const char **reason) {
@@ -154,16 +209,23 @@ static Inference infer_pinned(ContextId F, FaceId chi, RefId t, PinSet P) {
     free(types); free(faces);
     return out;
 }
-Inference infer(ContextId F, FaceId chi, RefId t) {
+Inference infer(ContextId F0, FaceId chi0, RefId t) {
+    uint64_t G0; const char *dup;
+    if (jctx(F0, &G0, &dup) != CK_VALID || face_ok(F0, chi0, &dup) != CK_VALID) { Inference bad = { CK_INVALID, 0, dup }; return bad; }
+    FaceId chi; ContextId F = restrict_ctx(F0, chi0, &chi, 1, &t);
     Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); PinSet P = pins_of(&R);
     Inference out = infer_pinned(F, chi, t, P);
     if (out.st == CK_VALID) { out.st = premises(P, &out.reason); if (out.st != CK_VALID) out.type = 0; }
     return out;
 }
 
-CheckStatus check_is_type(ContextId F, FaceId chi, RefId A, uint64_t *level, const char **reason) {
+CheckStatus check_is_type(ContextId F0, FaceId chi0, RefId A, uint64_t *level, const char **reason) {
+    uint64_t G; CheckStatus st = jctx(F0, &G, reason);
+    if (st == CK_VALID) st = face_ok(F0, chi0, reason);
+    if (st != CK_VALID) return st;
+    FaceId chi; ContextId F = restrict_ctx(F0, chi0, &chi, 1, &A);
     Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, A); PinSet P = pins_of(&R);
-    uint64_t G; CheckStatus st = jctx(F, &G, reason);
+    st = jctx(F, &G, reason);
     if (st == CK_VALID) st = scope_ok(G, chi, A, reason);
     uint64_t lvl = 0; bool have = false;
     if (st == CK_VALID) {
@@ -179,9 +241,13 @@ CheckStatus check_is_type(ContextId F, FaceId chi, RefId A, uint64_t *level, con
     return st;
 }
 
-CheckStatus check(ContextId F, FaceId chi, RefId t, RefId A, const char **reason) {
+CheckStatus check(ContextId F0, FaceId chi0, RefId t, RefId A, const char **reason) {
+    uint64_t G; CheckStatus st = jctx(F0, &G, reason);
+    if (st == CK_VALID) st = face_ok(F0, chi0, reason);
+    if (st != CK_VALID) return st;
+    RefId rs[2] = { t, A }; FaceId chi; ContextId F = restrict_ctx(F0, chi0, &chi, 2, rs);
     Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); pr_ref(&R, A); PinSet P = pins_of(&R);
-    uint64_t G; CheckStatus st = jctx(F, &G, reason);
+    st = jctx(F, &G, reason);
     if (st == CK_VALID) st = scope_ok(G, chi, t, reason);
     if (st == CK_VALID) st = scope_ok(G, chi, A, reason);
     if (st == CK_VALID) {
@@ -192,9 +258,11 @@ CheckStatus check(ContextId F, FaceId chi, RefId t, RefId A, const char **reason
     return st;
 }
 
-static ConvStatus convert(ContextId F, FaceId chi, RefId t, RefId u, RefId A, bool types) {
-    Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); pr_ref(&R, u); pr_ref(&R, A); PinSet P = pins_of(&R);
+static ConvStatus convert(ContextId F0, FaceId chi0, RefId t, RefId u, RefId A, bool types) {
     const char *why; uint64_t G;
+    if (jctx(F0, &G, &why) != CK_VALID || face_ok(F0, chi0, &why) != CK_VALID) return CV_UNRESOLVED;
+    RefId rs[3] = { t, u, A }; FaceId chi; ContextId F = restrict_ctx(F0, chi0, &chi, A ? 3 : 2, rs);
+    Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); pr_ref(&R, u); pr_ref(&R, A); PinSet P = pins_of(&R);
     if (jctx(F, &G, &why) != CK_VALID || scope_ok(G, chi, t, &why) != CK_VALID || scope_ok(G, chi, u, &why) != CK_VALID || (A && scope_ok(G, chi, A, &why) != CK_VALID)) return CV_UNRESOLVED;
     const uint64_t *cs; size_t nc = clauses(chi, &cs);
     ConvStatus out = CV_EQUAL;
@@ -213,10 +281,18 @@ ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A) { re
 /* checked observation: the context, the occurrence's inference and the
  * dependency closure validate the pinned revisions, and the observation
  * reads exactly those */
-EvalResult *observe_checked(ContextId F, RefId t, WhnfStatus *status, const char **reason) {
+EvalResult *observe_checked(ContextId F0, RefId t, WhnfStatus *status, const char **reason) {
+    /* the admission of the whole supplied context is its own judgment
+     * (HANDOFF §77.2); the observation's judgment is keyed by the restriction */
+    uint64_t G0; CheckStatus st = jctx(F0, &G0, reason);
+    if (st != CK_VALID) { if (status) *status = W_INVALID; return NULL; }
+    Roots R0 = { 0 }; pr_ctx(&R0, F0); PinSet P0 = pins_of(&R0);
+    { uint64_t w[3] = { G0, context_assumption(F0), P0 }; st = ck(run(JK_CTX, 3, w), reason); }
+    if (st == CK_VALID) st = premises(P0, reason);
+    FaceId a0; ContextId F = restrict_ctx(F0, context_assumption(F0), &a0, 1, &t);
     Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); PinSet P = pins_of(&R);
-    uint64_t G; CheckStatus st = jctx(F, &G, reason);
-    if (st == CK_VALID) { uint64_t w[3] = { G, context_assumption(F), P }; st = ck(run(JK_CTX, 3, w), reason); }
+    uint64_t G;
+    if (st == CK_VALID) st = jctx(F, &G, reason);
     if (st == CK_VALID) { Inference I = infer_pinned(F, context_assumption(F), t, P); st = I.st; if (st != CK_VALID) *reason = I.reason; }
     if (st == CK_VALID) st = premises(P, reason);
     if (st == CK_INVALID) { if (status) *status = W_INVALID; return NULL; }

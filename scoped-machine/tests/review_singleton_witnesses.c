@@ -44,7 +44,6 @@ int main(void) {
     RefId eps=mk_lam_lv(0,vz,Z,mk_plam(i,constantFill));
     RefId ET=mk_pi_lv(0,0,vz,Z,mk_path_const(0,Z,mk_app(down,mk_app(up,z)),z));
     valid(G,eps,ET,"generic dependent singleton down-up homotopy");
-    assert(transform_count()==0);
     compiler_free(); check_free(); eval_free(); machine_free();
     return 0;
 }

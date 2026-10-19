@@ -12,7 +12,7 @@ typedef struct {
     RefId X, m, a, b, c, alpha, mab, mbc, lhs, rhs;
     ContextId G;
     DiagramId L, R;
-    TransformId T;
+    Action T; bool ok;
 } Assoc;
 
 static inline RefId m2(RefId m, RefId x, RefId y) { return mk_app(mk_app(m, x), y); }
@@ -41,26 +41,21 @@ static inline void assoc_build(Assoc *A, const char **why) {
     DiagNode rn = { 2, A->vv, A->vt, A->X, 0, A->mbc };
     A->R = diagram_declare(A->G, 1, &rn, A->X, 0, m2(A->m, A->a, ref_var(A->vv)));
     IdentityDecl decl = { 1, A->G, fc_true(), A->X, 0, A->L, A->R, A->alpha };
-    A->T = compile_identity(&decl, why);
+    A->ok = compile_identity(&decl, &A->T, why) == CK_VALID;
 }
 
 /* σ for an invocation with y := rhs, and the realization argument
  * r_L = (m(a,b), refl, α) : R_L[σ] */
 static inline MapId assoc_sigma(const Assoc *A, RefId y) {
-    const CompiledTransform *t = transform_get(A->T);
-    TermVarId yv = 0;
-    for (size_t k = 0; k < context_size(t->parameters); k++) { CtxDecl d = context_decl(t->parameters, k); if (d.sort == S_TERM && !context_declares_term(A->G, d.id, NULL)) yv = d.id; }
-    return map_single_term(yv, y);
+    return map_single_term(A->T.y, y);
 }
 static inline RefId assoc_left_arg(const Assoc *A, MapId sigma) {
-    const CompiledTransform *t = transform_get(A->T);
-    RefId RL = reindex(t->domain, sigma);                       /* Σ(u:X).Σ(s:m(a,b)=u).(m(u,c)=y) */
+    RefId RL = reindex(A->T.domain, sigma);                       /* Σ(u:X).Σ(s:m(a,b)=u).(m(u,c)=y) */
     RefId inner = apply_term_binder(RL, 0, 1, A->mab);
     return mk_pair_at_lv(0, RL, A->mab, mk_pair_at_lv(0, inner, mk_refl(0, A->X, A->mab), A->alpha));
 }
 static inline RefId assoc_right_arg(const Assoc *A, MapId sigma) {
-    const CompiledTransform *t = transform_get(A->T);
-    RefId RR = reindex(t->codomain, sigma);                     /* Σ(v:X).Σ(t:m(b,c)=v).(m(a,v)=y) with y = rhs */
+    RefId RR = reindex(A->T.codomain, sigma);                     /* Σ(v:X).Σ(t:m(b,c)=v).(m(a,v)=y) with y = rhs */
     RefId inner = apply_term_binder(RR, 0, 1, A->mbc);
     return mk_pair_at_lv(0, RR, A->mbc, mk_pair_at_lv(0, inner, mk_refl(0, A->X, A->mbc), mk_refl(0, A->X, A->rhs)));
 }
