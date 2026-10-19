@@ -6,11 +6,12 @@
 
 typedef enum { JK_INFER, JK_CHECK, JK_LEVEL, JK_CONVT, JK_CONVt, JK_MAP, JK_CTX, JK_NODE, JK_DECL, JK_BODY, JK_STRUCT, JK_SCOPE, JK_CLAUSES } JudgeKind;
 /* request records (each family's key operand a):
- *   INFER [G, C, t, P]   CHECK [G, C, t, A, P]   LEVEL [G, C, A, P]
- *   CONVT [G, C, A, B, P]   CONVt [G, C, t, u, A, P]   MAP [D, ψ, σ, Γ, χ, P]
- *   CTX [G, a, P]   NODE [Q, P]   DECL / BODY [s, P]   STRUCT [kind, x, 0]
- * G, D, Γ judgment contexts; C a clause (or face); P a pin set.
- * CLAUSES takes the face itself as its operand. */
+ *   INFER [C, t, P]   CHECK [C, t, A, P]   LEVEL [C, A, P]
+ *   CONVT [C, A, B, P]   CONVt [C, t, u, A, P]   MAP [D, ψ, σ, Γ, χ, P]
+ *   CTX [G, a, P]   SCOPE [G, χ, t]   NODE [Q, P]   DECL / BODY [s, P]   STRUCT [kind, x, 0]
+ * G, D, Γ judgment contexts; C a clause (or face); P a pin set; a local
+ * judgment reads its variables' own types and is keyed with C projected
+ * onto its subjects' support. CLAUSES takes the face itself as its operand. */
 Family judge_family(JudgeKind kind);
 uint64_t judge_request(size_t n, const uint64_t *w);
 /* results [code, reason, a, b, c]: code 1 valid/equal, 2 invalid/unequal, 3 unresolved */

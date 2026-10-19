@@ -4,6 +4,7 @@
 #include "pins.h"
 #include "judge.h"
 #include "chain.h"
+#include "effect.h"
 #include "proof.h"
 #include <sched.h>
 
@@ -179,6 +180,7 @@ void eval_init(void) {
     judge_families_init();
     proof_families_init();
     chain_families_init();
+    effect_families_init();
     evaluator_bind();
 }
 
@@ -246,6 +248,7 @@ static void cont_dispose(Cont *k) {
 
 void eval_free(void) {
     stop_workers();
+    effect_free();
     for (Shard *s = E.shards, *n; s; s = n) {
         n = s->next;
         for (size_t r = 0; r < RD_STEPS; r++) count_free(&s->ev[r]);
