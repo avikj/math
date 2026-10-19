@@ -83,8 +83,6 @@ typedef struct {
     Cont *head;         /* NULL: U; ENTRY_READY: D; otherwise R with this waiter stack */
     uint64_t value;     /* published result (an EvalResult* for F_WHNF) */
     size_t runs;        /* evaluator tasks executed for this key (must be ≤ 1) */
-    size_t n_req, n_deliver, n_pub;   /* per-key event counts (for schedule comparison) */
-    EntryState state;   /* diagnostic mirror of head */
 } Entry;
 
 typedef void (*FamStart)(EntryId e, uint64_t a, uint64_t b);

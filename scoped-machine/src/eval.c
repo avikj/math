@@ -41,9 +41,9 @@ static void rootbox_release(RootBox *b) {
 #define ENTRY_READY ((Cont *)(uintptr_t)1)
 
 /* a job: EVALUATE(entry); RESUME(k, v) — whose k may head a delivery chain of
- * entry `src`, of which each job delivers exactly one */
+ * published entry, of which each job delivers exactly one */
 typedef enum { TK_EVAL = 0, TK_RESUME } TaskKind;
-typedef struct { TaskKind kind; EntryId entry; Cont *k; uint64_t v; EntryId src; } Task;
+typedef struct { TaskKind kind; EntryId entry; Cont *k; uint64_t v; } Task;
 
 /* the ready-job multiset: a linked list of fixed-size chunks; push, pop at
  * either end and a policy-chosen pop are each O(1) */
@@ -336,12 +336,11 @@ static void enqueue(Task t) {
 /* one delivery: the RESUME job of k. DELIVER is counted here, for ready hits
  * and for publication alike; the resumed frame step is counted when the
  * RESUME job executes. Delivery never happens inside an entry transition. */
-static void deliver(Cont *k, uint64_t v, EntryId src) {
+static void deliver(Cont *k, uint64_t v) {
     /* k heads a delivery chain only when it comes from a published waiter
      * stack; every other caller passes a continuation whose link is clear */
     add_count(&E.ev.deliver);
-    if (src) __atomic_add_fetch(&ENT(src)->n_deliver, 1, __ATOMIC_RELAXED);
-    Task t; memset(&t, 0, sizeof t); t.kind = TK_RESUME; t.k = k; t.v = v; t.src = src;
+    Task t; memset(&t, 0, sizeof t); t.kind = TK_RESUME; t.k = k; t.v = v;
     enqueue(t);
 }
 
@@ -380,12 +379,10 @@ size_t eval_entry_runs(EntryId e) { return __atomic_load_n(&ENT(e)->runs, __ATOM
 void family_publish(EntryId eid, uint64_t v) {
     Entry *e = ENT(eid);
     __atomic_store_n(&e->value, v, __ATOMIC_RELEASE);
-    __atomic_add_fetch(&e->n_pub, 1, __ATOMIC_RELAXED);
     Cont *w = __atomic_exchange_n(&e->head, ENTRY_READY, __ATOMIC_ACQ_REL);
     require(w != NULL && w != ENTRY_READY, "publish into an entry that is not running");
-    __atomic_store_n(&e->state, E_READY, __ATOMIC_RELEASE);
     add_count(&E.ev.publish);
-    deliver(w, v, eid);
+    deliver(w, v);
 }
 
 
@@ -398,14 +395,13 @@ void family_publish(EntryId eid, uint64_t v) {
 static void request_entry(EntryId eid, Cont *k) {
     Entry *e = ENT(eid);
     add_count(&E.ev.request);
-    __atomic_add_fetch(&e->n_req, 1, __ATOMIC_RELAXED);
     for (;;) {
         Cont *h = __atomic_load_n(&e->head, __ATOMIC_ACQUIRE);
         if (h == ENTRY_READY) {
             uint64_t v = __atomic_load_n(&e->value, __ATOMIC_ACQUIRE);
             add_count(&E.ev.ready_hit);
             k->next = NULL;             /* a failed push left a stale link: k is delivered alone */
-            deliver(k, v, eid);
+            deliver(k, v);
             return;
         }
         if (h == NULL) {
@@ -413,7 +409,6 @@ static void request_entry(EntryId eid, Cont *k) {
             reserve_job();
             k->next = NULL;
             if (__atomic_compare_exchange_n(&e->head, &h, k, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                __atomic_store_n(&e->state, E_RUNNING, __ATOMIC_RELEASE);
                 add_count(&E.ev.launch);
                 Task job; memset(&job, 0, sizeof job); job.kind = TK_EVAL; job.entry = eid;
                 enqueue_reserved(job);
@@ -549,7 +544,7 @@ static Family F_OBS_;
  * read once at the start of the request. */
 void eval_request_pinned(RefId t, FaceId chi, PinSet P, Cont *k) {
     k->next = NULL;
-    if (fc_is_false(chi)) { deliver(k, (uint64_t)(uintptr_t)result_new(R_NO_OBSERVATION, t), 0); return; }
+    if (fc_is_false(chi)) { deliver(k, (uint64_t)(uintptr_t)result_new(R_NO_OBSERVATION, t)); return; }
     Cont *f = frame_new(F_OBS_, 0);
     f->w[0] = t; f->w[1] = chi; f->w[2] = 0; f->w[3] = P;
     frame_launch(f, k);
@@ -1021,7 +1016,7 @@ static void execute_job(Task t) {
     add_count(&E.ev.eval_step);
     if (t.kind == TK_EVAL) { evaluate(t.entry); return; }
     Cont *k = t.k;
-    if (k->next) { Cont *rest = k->next; k->next = NULL; deliver(rest, t.v, t.src); }   /* hand the chain on: one delivery per job */
+    if (k->next) { Cont *rest = k->next; k->next = NULL; deliver(rest, t.v); }   /* hand the chain on: one delivery per job */
     if (k->kind == K_FRAME) __atomic_add_fetch(&FAM[k->fam].steps, 1, __ATOMIC_RELAXED);   /* a delivery to a root, join or external continuation belongs to no family (it is still a step of W) */
     Cont *sf = tl_step_frame; bool sk = tl_kept;
     tl_step_frame = k; tl_kept = false;
