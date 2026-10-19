@@ -167,7 +167,7 @@ static void test_substitution(void) {
     RefId W = ref_var(w);
     CHECK(varset_contains(ref_freevars(W), x), "boundary of VAR(w) includes x through w's declaration type");
     RefId Wsub = reindex1(mk_fst(mk_pair(W, W)), x, a);
-    { bool has_a = false; TEnvId E = tenv_of(Wsub); for (size_t q = 0; q < tenv_size(E); q++) { uint64_t sl; TVal v; tenv_entry(E, q, &sl, &v); if (v.sort == PS_REF && v.id == a) has_a = true; }
+    { bool has_a = false; TEnvId E = ref_tenv(Wsub); for (size_t q = 0; q < tenv_size(E); q++) { uint64_t sl; TVal v; tenv_entry(E, q, &sl, &v); if (v.sort == PS_REF && v.id == a) has_a = true; }
       CHECK(Wsub != mk_fst(mk_pair(W, W)) && has_a, "x is in the complete typed boundary through w's declaration type, so its image is retained"); }
     RefId Wsub2 = reindex1(mk_fst(mk_pair(ref_var(y), ref_var(y))), x, a);
     CHECK(Wsub2 == mk_fst(mk_pair(ref_var(y), ref_var(y))), "a variable whose type is independent of x drops the x entry");

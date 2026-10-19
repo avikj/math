@@ -171,7 +171,7 @@ int main(void) {
         ContextId Ge = context_extend_term(context_extend_term(context_extend_term(G, vcen), vkk), vvp);
         ContextId Gb = context_extend_term(context_extend_term(context_extend_term(G, vcen), vkk), vbad);
         RefId ext = mk_extend_contr(0, A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vvp));
-        CHECK(tnode_def(tnode_of(ext)) == TD_EXTENDCONTR, "ExtendContr's root is its own node");
+        CHECK(tnode_def(ref_tnode(ext)) == TD_EXTENDCONTR, "ExtendContr's root is its own node");
         CHECK(check(Ge, fc_true(), ext, A, &why) == CK_VALID, "ExtendContr with a partial v (available on its guard) checks (%s)", why);
         RefId extb = mk_extend_contr(0, A, ref_var(vcen), ref_var(vkk), fc_lit(k, 1), ref_var(vbad));
         CHECK(ext != extb && check(Gb, fc_true(), extb, A, &why) == CK_INVALID, "ExtendContr rejects v : B at the declared guarded parameter (%s)", why);
@@ -186,7 +186,7 @@ int main(void) {
         RefId dg = mk_down(0, 0, A, a, Dg, a, mk_refl(0, A, a), ref_var(vz));
         RefId dw = mk_down(0, 0, A, a, Dw, a, mk_refl(0, A, a), ref_var(vz));
         RefId du = mk_down(0, 0, A, a, Du, a, mk_refl(0, A, a), ref_var(vz));
-        CHECK(tnode_def(tnode_of(dg)) == TD_DOWN, "Down's root is its own node");
+        CHECK(tnode_def(ref_tnode(dg)) == TD_DOWN, "Down's root is its own node");
         CHECK(dg != dw && dg != du, "Down retains the supplied scope: differently annotated scopes are distinct references");
         CHECK(check(Gd, fc_true(), dg, mk_path_const(0, A, a, b), &why) == CK_VALID, "Down at a well-annotated scope checks (%s)", why);
         CHECK(check(Gd, fc_true(), dw, mk_path_const(0, A, a, b), &why) == CK_INVALID, "Down rejects a scope with a false result annotation (%s)", why);
