@@ -224,7 +224,7 @@ no subagents; work only from the shared specifications; no second engine/store/c
 
 ## 12. Step 8 design (EFFECT-AUTHORITY §§1–10, CUBICAL-STOKES-ADDENDUM §§1–11)
 
-Every record is an interned immutable record of the existing tables or a published value of the
+Every record is an interned immutable record of the one record table or a published value of the
 existing producer protocol; the one new mutable state is the authority cell, which the effect
 rules require (operational acceptance is a transition of the actual source, not a function of a key).
 
@@ -234,11 +234,13 @@ rules require (operational acceptance is a transition of the actual source, not 
     launched (pushed by that producer, readable while it runs). support(H) is the
     dependency closure of H's entries; W(H) = Σ work over support(H) — a union, so a producer shared
     by two consumers is counted once while their two deliveries remain two RD_DELIVER events.
-8b. Exact signed coefficients (interned limb records, sign) and chains: an interned sorted list of
-    (generator, coefficient), generator = (kind, id) for cube cells, product cells, ports, heads,
-    occurrences. Families: chain.add (merge), chain.scale, BOUNDARY (cursor over terms and
-    coordinates, one face per step), PAIR(a, c) (one generator value per step), COB(a) = c ↦
-    PAIR(a, BOUNDARY(c)), MAP_CHAIN(F, c). A cochain is a finitely supported table or COB of one.
+8b. Exact signed coefficients (interned limb records, sign; z.add, z.mul, z.neg one limb per
+    step) and chains: an interned sorted list of (generator, coefficient), generator = (kind, id)
+    for cube cells, product cells, ports, heads, occurrences, units. Families: chain.add (merge),
+    chain.scale, BOUNDARY (cursor over terms and coordinates, one face per step), PAIR(a, c) (one
+    generator value per step), COB(a) = c ↦ PAIR(a, BOUNDARY(c)), MAP_CHAIN(F, c). A cochain is a
+    finitely supported table or COB of one; its values are module elements, the 0-chains over unit
+    generators (summed and scaled by chain.add and chain.scale).
 8c. Cube cells. CubeView(root scope with n dimension locals, dimension map: root local ↦ D(J)
     element over canonical coordinates c_1..c_m, parameter map). FACE(C, i, ε) substitutes c_i ↦ ε
     and renumbers c_{k>i} ↦ c_{k−1} in the images: both deletion orders of a codimension-two face
