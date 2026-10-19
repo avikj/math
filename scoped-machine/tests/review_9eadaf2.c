@@ -23,7 +23,7 @@ static void *retained_client(void *unused) {
 int main(int argc,char **argv) {
     setvbuf(stdout,NULL,_IONBF,0);
     const char *mode=argc>1?argv[1]:"scope-depth";
-    machine_init(); eval_init(); check_init(); compiler_init();
+    machine_init(); eval_init(); check_init();
     RefId U=mk_universe(0); TermVarId va=declare_term(U,fc_true()); RefId A=ref_var(va);
     TermVarId vx=declare_term(A,fc_true()); RefId x=ref_var(vx);
     DimVarId i=declare_dim(); CtxDecl ds[]={{S_DIM,i,0},{S_TERM,va,U},{S_TERM,vx,A}};
@@ -53,14 +53,14 @@ int main(int argc,char **argv) {
     } else if (!strcmp(mode,"kappa-thread")) {
         pthread_t th; pthread_barrier_init(&restart_gate,NULL,2);
         pthread_create(&th,NULL,retained_client,NULL); pthread_barrier_wait(&restart_gate);
-        compiler_free(); check_free(); eval_free(); machine_free();
-        machine_init(); eval_init(); check_init(); compiler_init(); (void)fc_true(); (void)fc_false();
+        check_free(); eval_free(); machine_free();
+        machine_init(); eval_init(); check_init(); (void)fc_true(); (void)fc_false();
         pthread_barrier_wait(&restart_gate); pthread_join(th,NULL); pthread_barrier_destroy(&restart_gate);
         failed+=restart_failed;
     } else if (!strcmp(mode,"kappa-restart") || !strcmp(mode,"kappa-alias")) {
         template_set_kappa(fc_false());
-        compiler_free(); check_free(); eval_free(); machine_free();
-        machine_init(); eval_init(); check_init(); compiler_init();
+        check_free(); eval_free(); machine_free();
+        machine_init(); eval_init(); check_init();
         U=mk_universe(0); va=declare_term(U,fc_true()); A=ref_var(va);
         vx=declare_term(A,fc_true()); x=ref_var(vx);
         CtxDecl fresh[]={{S_TERM,va,U},{S_TERM,vx,A}};
@@ -75,5 +75,5 @@ int main(int argc,char **argv) {
         failed+=template_kappa()!=fc_true(); failed+=st!=CK_VALID;
     } else return 2;
     printf("%s: %d failed expectations\n",mode,failed);
-    compiler_free(); check_free(); eval_free(); machine_free(); return failed?1:0;
+    check_free(); eval_free(); machine_free(); return failed?1:0;
 }

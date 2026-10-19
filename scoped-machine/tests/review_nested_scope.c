@@ -2,7 +2,7 @@
 #include <stdio.h>
 int main(void) {
     setvbuf(stdout,NULL,_IONBF,0);
-    machine_init(); eval_init(); check_init(); compiler_init();
+    machine_init(); eval_init(); check_init();
     RefId U=mk_universe(0);
     TermVarId va=declare_term(U,fc_true()); RefId A=ref_var(va);
     TermVarId vx=declare_term(A,fc_true()); RefId x=ref_var(vx);
@@ -39,6 +39,6 @@ int main(void) {
     CheckStatus pc=check(G,fc_true(),projected,A,&why);
     printf("valid scope below raw pair/fst: valid=%d; check=%s\n",pv,check_status_name(pc));
     failed+=!pv || pc!=CK_VALID;
-    compiler_free(); check_free(); eval_free(); machine_free();
+    check_free(); eval_free(); machine_free();
     return failed;
 }

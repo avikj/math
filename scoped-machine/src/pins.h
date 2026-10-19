@@ -7,8 +7,9 @@
  * insertion and lookup are bounded (one small intern or read per level).
  *
  * The pin set of a request is the closure of the symbols its roots name
- * (globals.of) through the bodies of the revisions read: a checked
- * observation validates exactly those revisions and evaluates under them;
+ * (globals.of) through the declarations and the bodies of the revisions
+ * read: a checked observation validates exactly those revisions and
+ * evaluates under them;
  * an unchecked observation reads the current revisions once, at its start.
  * No environment-wide snapshot, no version in any key.
  */

@@ -34,7 +34,6 @@ uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx);
 RefId trav_ref(RefId t, uint64_t tk);
 IntervalId trav_iv(IntervalId r, uint64_t tk);
 FaceId trav_fc(FaceId f, uint64_t tk);
-ScopeId trav_scope(ScopeId S, uint64_t tk);          /* an occurrence at tk's depth: records one deeper */
 ScopeId scope_records_traverse(ScopeId S, uint64_t tk);   /* records at tk's depth */
 Val trav_val(Val v, uint64_t tk);
 ScopeId scope_with_side(ScopeId S);                  /* writes S's side data (once) and returns S */
@@ -53,12 +52,9 @@ FaceId scope_guard(ScopeId S);
 DimSetId scope_support(ScopeId S);        /* free dimensions (bound atoms excluded) */
 VarSetId scope_freevars(ScopeId S);
 TypedPartial apply_scope(ScopeId S, size_t n, const Val *args);
-void scope_local_at(ScopeId S, size_t k, const Val *args, RefId *type, FaceId *req, uint64_t *level);   /* local k's declaration at the prefix args[0..k) */
 ScopeId reindex_scope(ScopeId S, MapId sigma);
-FaceId forall_scope(ScopeId S);           /* unary dimension scope of total face syntax */
 /* open with fresh concrete locals minted from `key` (checking); ids receives
  * the minted identities in slot order */
-TypedPartial open_scope_fresh(ScopeId S, uint64_t key, uint64_t *ids);
 /* §50.1–2 structural validity, independent of any face: every bound
  * occurrence in the scope's records (and in scopes nested anywhere inside
  * them, through views and template environments) names an existing
@@ -72,7 +68,5 @@ bool scope_validate(ScopeId S, const char **reason);
 bool ref_validate(RefId t, const char **reason);
 
 /* free (unbound) part of a dimension set / variable set */
-DimSetId dimset_free(DimSetId s);
-VarSetId varset_free(VarSetId s);
 
 #endif

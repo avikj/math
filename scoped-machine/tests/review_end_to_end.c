@@ -8,26 +8,10 @@
 #include <signal.h>
 #undef W_OK /* unistd.h access() flag conflicts with eval.h's WhnfStatus */
 
-typedef struct { ContextId G; RefId A,x; DiagramId d; pthread_barrier_t gate; } Race;
-static void *diagram_reader(void *arg) {
-    Race *r=arg; pthread_barrier_wait(&r->gate);
-    for(size_t k=0;k<20000;k++) require(diagram_canonical(r->d)==r->x,"canonical diagram unchanged");
-    return NULL;
-}
-static void *diagram_writer(void *arg) {
-    Race *r=arg; pthread_barrier_wait(&r->gate);
-    for(size_t k=0;k<3000;k++) {
-        RefId fresh=ref_var(declare_term(r->A,fc_true()));
-        ContextId Gx=context_extend_term(r->G,ref_var_id(fresh),r->A);
-        diagram_declare(Gx,0,NULL,r->A,0,fresh);
-    }
-    return NULL;
-}
-
 int main(int argc, char **argv) {
     const char *mode = argc > 1 ? argv[1] : "guard";
     setvbuf(stdout, NULL, _IONBF, 0);
-    machine_init(); eval_init(); check_init(); compiler_init();
+    machine_init(); eval_init(); check_init();
     RefId U = mk_universe(0);
     TermVarId va = declare_term(U, fc_true()); RefId A = ref_var(va);
     TermVarId vx = declare_term(A, fc_true()); RefId x = ref_var(vx);
@@ -126,33 +110,12 @@ int main(int argc, char **argv) {
         printf("adjacent net pairs: rewrites=%zu, retries=%zu\n",n.rewrites,n.retries);
         failed+=n.rewrites!=4*COUNT;     /* DUP·HEAD, DUP·DUP-copy of the field, OP·REF to a pending endpoint, and the delivery of its result */
         free(roots); net_free(&n);
-    } else if (!strcmp(mode,"diagram-race")) {
-        Race r={.G=G,.A=A,.x=x};
-        r.d=diagram_declare(G,0,NULL,A,0,x); diagram_canonical(r.d);
-        pthread_barrier_init(&r.gate,NULL,2);
-        pthread_t a,b; pthread_create(&a,NULL,diagram_reader,&r); pthread_create(&b,NULL,diagram_writer,&r);
-        pthread_join(a,NULL); pthread_join(b,NULL); pthread_barrier_destroy(&r.gate);
-        printf("concurrent diagram registration and lookup complete\n");
-    } else if (!strcmp(mode,"diagram-session")) {
-        RefId path=mk_path_const(0,A,x,x);
-        RefId wrong=mk_refl(0,U,x);
-        DiagramId d=diagram_declare(G,0,NULL,path,0,wrong);
-        CheckStatus before=diagram_validate(d,fc_true(),&why);
-        printf("diagram before reset: %s (%s)\n",check_status_name(before),why?why:"");
-        char *expected=strdup(why?why:"");
-        check_open_environment(); why="";
-        CheckStatus after=diagram_validate(d,fc_true(),&why);
-        printf("diagram after reset: %s (%s)\n",check_status_name(after),why?why:"");
-        failed=(before!=CK_INVALID)+(after!=CK_INVALID)+(!why || strcmp(expected,why)!=0);
-        free(expected);
     } else if (!strcmp(mode,"positive")) {
         if(getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
-        Assoc a; assoc_build(&a,&why);
-        require(a.T,"associativity identity compiles");
-        failed+=certificate_verify(a.T,&why)!=CK_VALID;
+        Assoc a; assoc_build(&a);
         MapId s=assoc_sigma(&a,a.rhs);
         RefId left=assoc_left_arg(&a,s), right=assoc_right_arg(&a,s);
-        RefId calls[]={mk_transform_call(a.T,DIR_FORWARD,s,left),mk_transform_call(a.T,DIR_REVERSE,s,right)};
+        RefId calls[]={assoc_call(&a,DIR_FORWARD,s,left),assoc_call(&a,DIR_REVERSE,s,right)};
         for(size_t k=0;k<2;k++) {
             WhnfStatus st; EvalResult *r=observe_checked(a.G,calls[k],&st,&why);
             printf("checked identity orientation %zu: status=%d, class=%d, head=%s\n",k,st,r?(int)r->cls:-1,r?tag_name(ref_tag(r->ref)):"absent");
@@ -160,7 +123,7 @@ int main(int argc, char **argv) {
             EvalEvents before=eval_events(); EvalNetEvents n0=eval_net_events();
             EvalResult *again=observe_checked(a.G,calls[k],&st,&why);
             EvalEvents after=eval_events(); EvalNetEvents n1=eval_net_events();
-            failed+=again!=r || st!=W_OK || before.publish!=after.publish || n0.apply!=n1.apply;
+            failed+=again!=r || st!=W_OK || before.publish!=after.publish || n0.continue_ref!=n1.continue_ref;
         }
     } else if (!strcmp(mode,"universe") || !strcmp(mode,"packed-level")) {
         /* Overflow is a host failure. Isolate that permitted rejection from
@@ -186,6 +149,6 @@ int main(int argc, char **argv) {
         failed=!((WIFSIGNALED(status)&&WTERMSIG(status)==SIGABRT)||(WIFEXITED(status)&&WEXITSTATUS(status)==0));
     } else return 2;
     printf("%s: %d failed expectations\n",mode,failed);
-    compiler_free(); check_free(); eval_free(); machine_free();
+    check_free(); eval_free(); machine_free();
     return failed?1:0;
 }

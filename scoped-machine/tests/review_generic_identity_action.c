@@ -1,7 +1,7 @@
 #include "../src/compiler.h"
 #include <assert.h>
 
-static RefId maps(RefId X, RefId Y) {
+static RefId w_maps(RefId X, RefId Y) {
     RefId FT=mk_fun(0,0,X,Y), GT=mk_fun(0,0,Y,X);
     TermVarId f=declare_term(FT,fc_true()), g=declare_term(GT,fc_true());
     TermVarId x=declare_term(X,fc_true()), y=declare_term(Y,fc_true());
@@ -10,10 +10,10 @@ static RefId maps(RefId X, RefId Y) {
     TermVarId h=declare_term(HT,fc_true());
     return mk_sigma_lv(0,0,f,FT,mk_sigma_lv(0,0,g,GT,mk_sigma_lv(0,0,h,HT,KT)));
 }
-static RefId diagram_type(RefId B) {
+static RefId w_diagram_type(RefId B) {
     TermVarId c=declare_term(B,fc_true()), y=declare_term(B,fc_true());
     RefId RT=mk_pi_lv(0,1,y,B,mk_universe(0)); TermVarId R=declare_term(RT,fc_true());
-    RefId M=mk_pi_lv(0,0,y,B,maps(mk_app(ref_var(R),ref_var(y)),mk_path_const(0,B,ref_var(c),ref_var(y))));
+    RefId M=mk_pi_lv(0,0,y,B,w_maps(mk_app(ref_var(R),ref_var(y)),mk_path_const(0,B,ref_var(c),ref_var(y))));
     return mk_sigma_lv(0,1,c,B,mk_sigma_lv(1,0,R,RT,M));
 }
 static RefId value(RefId d) { return mk_fst(d); }
@@ -27,10 +27,10 @@ static void verify(ContextId G,RefId t,RefId T,const char *name) {
     printf("PASS %s\n",name);
 }
 int main(void) {
-    machine_init(); eval_init(); check_init(); compiler_init();
+    machine_init(); eval_init(); check_init();
     RefId U=mk_universe(0); TermVarId vB=declare_term(U,fc_true()); RefId B=ref_var(vB);
     CtxDecl decl={S_TERM,vB,U}; ContextId G=context_make(1,&decl,fc_true());
-    RefId DT=diagram_type(B); uint64_t level=99; const char *why="";
+    RefId DT=w_diagram_type(B); uint64_t level=99; const char *why="";
     assert(check_is_type(G,fc_true(),DT,&level,&why)==CK_VALID && level==1);
     TermVarId l=declare_term(DT,fc_true()), r=declare_term(DT,fc_true()); RefId L=ref_var(l),R=ref_var(r);
     RefId PT=mk_path_const(0,B,value(L),value(R)); TermVarId p=declare_term(PT,fc_true()),y=declare_term(B,fc_true());
@@ -49,6 +49,8 @@ int main(void) {
     }
     verify(G,F,FT,"fully parameterized forward identity action on diagram values");
     verify(G,H,HT,"fully parameterized reverse identity action on diagram values");
-    assert(transform_count()==0);
-    compiler_free(); check_free(); eval_free(); machine_free(); return 0;
+    { Inference I=infer(context_make(0,NULL,fc_true()),fc_true(),id_action(0,0,0));
+      if(I.st!=CK_VALID) { fprintf(stderr,"production id_action: %s %s\n",check_status_name(I.st),I.reason?I.reason:""); abort(); }
+      printf("PASS production id_action(0,0,0) with both inverse proofs is a closed typed term\n"); }
+    check_free(); eval_free(); machine_free(); return 0;
 }

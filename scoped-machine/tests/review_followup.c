@@ -8,7 +8,7 @@
 static int failures = 0;
 #define EXPECT(c, what) do { if (!(c)) { failures++; printf("  FAIL: %s\n", what); } } while (0)
 int main(int argc, char **argv) {
-    machine_init(); eval_init(); check_init(); compiler_init();
+    machine_init(); eval_init(); check_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)strtoul(getenv("CUBICAL_WORKERS"), NULL, 10));
     const char *why = "";
     RefId U = mk_universe(0);
@@ -23,8 +23,8 @@ int main(int argc, char **argv) {
     MapId s = mapb_finish(&mb);
     printf("typed substitution: %s\n", check_status_name(check_map(GB, fc_true(), s, GA, fc_true(), &why)));
     if (argc > 1 && !strcmp(argv[1], "formation")) {
-        DiagramId d = residual_declare(GA, 0, NULL, x, 0);
-        CheckStatus fs = diagram_validate(d, fc_true(), &why);
+        uint64_t lr; RefId d = residual_fold(0, NULL, x, 0, &lr);
+        CheckStatus fs = check(GA, fc_true(), d, res_type(0, lr), &why);
         printf("empty residual with terminal x:A (A:U0): %s\n", check_status_name(fs));
         EXPECT(fs == CK_INVALID, "a term-valued residual terminal must fail formation");
         printf("terminal x has inferred type A, not a universe: %d\n", infer(GA, fc_true(), x).type == A);
@@ -43,13 +43,10 @@ int main(int argc, char **argv) {
         WhnfStatus st; EvalResult *r = observe_checked(GA, global_ref(good), &st, &why);
         printf("local checked execution with unrelated invalid bodies: status=%d result=%s\n", (int)st, r ? "present" : "absent");
         EXPECT(st == W_OK && r && r->ref == x, "unrelated invalid definitions must not block a valid judgment");
-        TransformId id = compile_equivalence(GA, fc_true(), A, 0, A, 0, mk_id_equiv(0, A), &why);
-        EXPECT(id != 0, "unrelated invalid definitions must not block a checked transform");
-        if (id) {
-            EXPECT(certificate_verify(id, &why) == CK_VALID, "the local transform retains its checked certificate");
-            r = observe_checked(GA, mk_transform_call(id, DIR_FORWARD, map_identity(), x), &st, &why);
-            EXPECT(st == W_OK && r && r->ref == x, "the transform remains executable in the same environment");
-        }
+        RefId id = mk_app(mk_app(mk_app(equiv_maps(0, 0), A), A), mk_id_equiv(0, A));
+        EXPECT(check(GA, fc_true(), id, maps_type(0, 0, A, A), &why) == CK_VALID, "unrelated invalid definitions must not block a checked action");
+        r = observe_checked(GA, maps_apply(id, DIR_FORWARD, x), &st, &why);
+        EXPECT(st == W_OK && r && r->ref == x, "the action remains executable in the same environment");
         EXPECT(define_global("after-publication", varset_make(NULL, 0), dimset_make(NULL, 0), mk_universe(0)) != 0, "local judgment and transform publication leave the registry open");
         r = observe_checked(GA, global_ref(bad), &st, &why);
         EXPECT(st == W_INVALID && r == NULL, "an invalid definition must reject when actually used");
@@ -59,7 +56,7 @@ int main(int argc, char **argv) {
         ContextId invalid_context = context_extend_term(GA, z, global_ref(bad_type));
         r = observe_checked(invalid_context, x, &st, &why);
         EXPECT(st == W_INVALID && r == NULL, "definitions used by the judgment context must also validate");
-        EXPECT(compile_equivalence(GA, fc_true(), A, 0, A, 0, global_ref(bad_equiv), &why) == 0,
+        EXPECT(check(GA, fc_true(), mk_app(mk_app(mk_app(equiv_maps(0, 0), A), A), global_ref(bad_equiv)), maps_type(0, 0, A, A), &why) == CK_INVALID,
                "an invalid definition used as transform evidence must reject");
         CheckStatus ss = check_signature(&why);
         printf("whole signature: %s\n", check_status_name(ss));
@@ -69,22 +66,20 @@ int main(int argc, char **argv) {
     } else if (argc > 1 && !strcmp(argv[1], "call")) {
         CtxDecl d[] = {{S_TERM, va, U}};
         ContextId G = context_make(1, d, fc_true());
-        TransformId id = compile_equivalence(G, fc_true(), A, 0, A, 0, mk_id_equiv(0, A), &why);
-        if (!id) { printf("compile failed: %s\n", why); return 2; }
-        RefId p = reindex(mk_transform_call(id, DIR_FORWARD, map_identity(), x), s);
-        RefId q = mk_transform_call(id, DIR_FORWARD, s, y);
+        (void)G;
+        RefId id = mk_app(mk_app(mk_app(equiv_maps(0, 0), A), A), mk_id_equiv(0, A));
+        RefId p = reindex(maps_apply(id, DIR_FORWARD, x), s);
+        RefId q = maps_apply(reindex(id, s), DIR_FORWARD, y);
         printf("call reference equality: %d\n", p == q);
         EXPECT(p == q, "reindexed and direct transform calls must be one reference");
         CheckStatus c1 = check(GB, fc_true(), p, B, &why), c2 = check(GB, fc_true(), q, B, &why);
         printf("both check: %s / %s\n", check_status_name(c1), check_status_name(c2));
         EXPECT(c1 == CK_VALID && c2 == CK_VALID, "both calls check");
-        EvalNetEvents n0 = eval_net_events(); WhnfStatus st;
-        (void)whnf(p, fc_true(), &st); eval_run();
-        EvalNetEvents n1 = eval_net_events();
+        WhnfStatus st; (void)whnf(p, fc_true(), &st); eval_run();
+        EvalEvents n1 = eval_events();
         (void)whnf(q, fc_true(), &st); eval_run();
-        EvalNetEvents n2 = eval_net_events();
-        printf("application events first/second: %zu / %zu\n", n1.apply-n0.apply, n2.apply-n1.apply);
-        EXPECT(n1.apply - n0.apply == 1 && n2.apply - n1.apply == 0, "one application/receiver pair shared by both calls");
+        printf("extra producers for the second call: %zu\n", eval_events().launch - n1.launch);
+        EXPECT(eval_events().launch - n1.launch == 0, "one computation shared by both calls");
     } else {
         RefId p = reindex(mk_refl(0, A, x), s), q = mk_refl(0, B, y);
         printf("type-substituted Refl reference equality: %d\n", p == q);
@@ -98,6 +93,6 @@ int main(int argc, char **argv) {
         printf("extra producer on second Refl: %zu\n", eval_events().launch-n.launch);
         EXPECT(eval_events().launch - n.launch == 0, "one producer for both Refl terms");
     }
-    compiler_free(); check_free(); eval_free(); machine_free();
+    check_free(); eval_free(); machine_free();
     return failures ? 1 : 0;
 }

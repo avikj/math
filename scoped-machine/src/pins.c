@@ -78,9 +78,11 @@ static size_t list(uint64_t node, SymbolId *out, size_t max, size_t at) {
 }
 size_t pins_symbols(PinSet P, SymbolId *out, size_t max) { return list(P, out, max, 0); }
 
-/* ---- the closure: symbols named by the roots, then by the bodies of the
- * revisions read, each symbol pinned once at the revision read then ---- */
-typedef struct { WordBuf roots, queue; size_t rpos, rbase, qpos, qbase; const uint64_t *g; size_t ng, q; uint64_t P, x, kind; } ClLoc;
+/* ---- the closure: the symbols named by the roots, then by the declaration
+ * (type, parameter types) and the body revision of each symbol reached, each
+ * symbol pinned once at the revision read then. One work queue of items
+ * (0 reference | 1 scope, x) to walk and (2, s) to pin. ---- */
+typedef struct { WordBuf roots; size_t rpos, rbase; const uint64_t *g; size_t ng, q; uint64_t P, x, kind; } ClLoc;
 static Family F_CLOSURE, F_GLOBALSP;
 /* pop the next word of a buffer consumed from its head (pages released) */
 static bool buf_pop(WordBuf *b, size_t *pos, size_t *base, uint64_t *out) {
@@ -89,32 +91,30 @@ static bool buf_pop(WordBuf *b, size_t *pos, size_t *base, uint64_t *out) {
     *out = b->head->w[*pos - *base]; (*pos)++;
     return true;
 }
+static void push2(WordBuf *b, uint64_t k, uint64_t x) { wordbuf_push(b, k); wordbuf_push(b, x); }
 static void closure_step(Cont *k, uint64_t v) {
     ClLoc *L = FR_LOC(k, ClLoc);
     uint64_t r = 0;
     FR_BEGIN(k);
     L->P = pins_empty();
-    wordbuf_init(&L->queue);
     while (buf_pop(&L->roots, &L->rpos, &L->rbase, &L->kind)) {
         buf_pop(&L->roots, &L->rpos, &L->rbase, &L->x);
+        if (L->kind == 2) {
+            if (pins_lookup(L->P, (SymbolId)L->x, NULL)) { FR_YIELD(k); continue; }   /* already pinned: one step */
+            {   RefId b = global_body((SymbolId)L->x);              /* the revision read, once */
+                L->P = pins_insert(L->P, (SymbolId)L->x, b);
+                push2(&L->roots, 0, global_type((SymbolId)L->x));
+                if (b) push2(&L->roots, 0, b);
+                L->g = varset_get(global_params((SymbolId)L->x), &L->ng); }
+            for (L->q = 0; L->q < L->ng; L->q++) { push2(&L->roots, 0, term_var_type(L->g[L->q])); FR_YIELD(k); }
+            FR_YIELD(k);
+            continue;
+        }
         FR_AWAIT(k, r, F_GLOBALSP, L->x, L->kind);
         L->g = varset_get(r, &L->ng);
-        for (L->q = 0; L->q < L->ng; L->q++) { wordbuf_push(&L->queue, L->g[L->q]); FR_YIELD(k); }
+        for (L->q = 0; L->q < L->ng; L->q++) { push2(&L->roots, 2, L->g[L->q]); FR_YIELD(k); }
     }
     wordbuf_clear(&L->roots);
-    while (buf_pop(&L->queue, &L->qpos, &L->qbase, &L->x)) {
-        if (pins_lookup(L->P, (SymbolId)L->x, NULL)) { FR_YIELD(k); continue; }   /* already pinned: one step */
-        {   RefId b = global_body((SymbolId)L->x);              /* the revision read, once */
-            L->P = pins_insert(L->P, (SymbolId)L->x, b);
-            L->kind = b; }
-        if (L->kind) {
-            FR_AWAIT(k, r, F_GLOBALSP, L->kind, 0);
-            L->g = varset_get(r, &L->ng);
-            for (L->q = 0; L->q < L->ng; L->q++) { wordbuf_push(&L->queue, L->g[L->q]); FR_YIELD(k); }
-        }
-        FR_YIELD(k);
-    }
-    wordbuf_clear(&L->queue);
     FR_FINISH(k, L->P);
     FR_END(k);
 }

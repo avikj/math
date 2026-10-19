@@ -34,13 +34,11 @@ void template_set_kappa(FaceId kappa);
 FaceId template_kappa(void);
 
 /* ---- TVIEW references ---- */
-RefId make_template_view(TNodeId Q, size_t n, const TVal *slots, const uint64_t *slot_index);   /* values by slot */
 TNodeId tnode_of(RefId t);
 TEnvId tenv_of(RefId t);
 size_t tenv_size(TEnvId E);
 TEnvId tenv_make(size_t n, const uint64_t *slots, const TVal *vals);   /* intern an environment (slot order as given) */
 TEnvId tenv_reindex(TEnvId E, MapId sigma);                            /* componentwise (§55) */
-RefId tenv_instantiate(TNodeId Q, TEnvId E);                           /* INSTANTIATE_TEMPLATE(Q) with TEMPLATE_ENV(E) */
 void tenv_entry(TEnvId E, size_t k, uint64_t *slot, TVal *v);
 Tag tnode_tag(TNodeId Q);
 TDefId tnode_def(TNodeId Q); uint64_t tnode_index(TNodeId Q);
@@ -58,13 +56,11 @@ typedef struct { PSort sort; size_t slot; uint64_t level; RefId type; FaceId gua
  * types (reference parameters) or contextual signatures (scope parameters:
  * a scope whose locals are the expected telescope, whose body is the
  * expected result type, whose level and guard are the expected ones) */
-size_t tnode_signature(RefId t, ParamSig *out, size_t max);
 size_t tnode_sig_count(TNodeId Q);
 bool tnode_sig_exprs(TNodeId Q, size_t k, size_t *slot, PSort *sort, ExprId *type_e, ExprId *level_e, ExprId *sig_e, ExprId *guard_e);
 bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e);
 /* the program's declared result type instantiated by t's environment, when
  * t is the root node of its definition */
-bool tnode_result(RefId t, RefId *type, uint64_t *level);
 
 /* ---- constructions (the one construction representation) ----
  * Every non-variable reference is TVIEW(node, environment). A construction
@@ -78,7 +74,6 @@ bool tnode_result(RefId t, RefId *type, uint64_t *level);
  *          (sort, domain_field, s)*, required_e, declared_e, (sort, type_e, guard_e)*np] */
 ExprId expr_const(PSort sort, uint64_t id);
 ExprId expr_level(uint64_t n);
-TNodeId tnode_construction_intern(const uint64_t *words, size_t n);
 RefId tnode_construction_view(TNodeId Q, const TVal *vals);        /* vals: the np parameter images */
 bool tnode_is_construction(TNodeId Q);
 size_t tnode_nparams(TNodeId Q);
@@ -91,13 +86,11 @@ uint64_t tnode_const_levels(TNodeId Q);
 bool tview_is_construction(RefId t);
 MapId cons_envmap(TEnvId E);                                         /* a construction environment as a substitution of its atoms (subst.c) */
 MapId tview_env_map(RefId t);                                        /* atoms ↦ images */
-FaceId tview_declared_required(RefId t);                             /* 0 = no annotation */
 MapId tview_lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);
 /* generic instance of a construction node: parameters at fresh names keyed
  * by (node, slot), declared at the instantiated closed types; decls has
  * tnode_nparams(Q) entries. *req receives the node's required face there. */
 RefId tnode_generic(TNodeId Q, CtxDecl *decls, FaceId *req);
-MapId tview_generic_map(RefId t);                                    /* generic names ↦ t's images */
 void template_families_init(void);
 void template_call_env(TDefKind def, size_t nargs, const TVal *args, FaceId kappa, WordBuf *er, ExprId *root);   /* the environment record into er (to be interned by intern_sub) */
 ExprId tnode_head_expr(TNodeId Q, int levels);

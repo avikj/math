@@ -11,7 +11,7 @@ static void show(const char *label, Inference r) {
 static RefId field(RefId t, size_t n) { Head h; open_ref(t,&h); RefId out=HF(&h, n).id; head_free(&h); return out; }
 int main(int argc, char **argv) {
     const char *mode = argc > 1 ? argv[1] : "scope-level";
-    machine_init(); eval_init(); check_init(); compiler_init();
+    machine_init(); eval_init(); check_init();
     RefId U0=mk_universe(0);
     TermVarId va=declare_term(U0,fc_true()); RefId A=ref_var(va);
     TermVarId vx=declare_term(A,fc_true()); RefId x=ref_var(vx);
@@ -53,8 +53,8 @@ int main(int argc, char **argv) {
     } else if (!strcmp(mode,"machine-restart")) {
         const char *why="";
         EXPECT(check_admission(&why)==CK_VALID,"first empty environment admitted");
-        compiler_free(); check_free(); eval_free(); machine_free();
-        machine_init(); eval_init(); check_init(); compiler_init();
+        check_free(); eval_free(); machine_free();
+        machine_init(); eval_init(); check_init();
         SymbolId s=define_global("fresh",varset_make(NULL,0),dimset_make(NULL,0),mk_universe(0));
         printf("fresh machine accepts first declaration: %d\n",s!=0);
         EXPECT(s!=0,"machine_init starts a new open environment after machine_free");
@@ -103,6 +103,6 @@ int main(int argc, char **argv) {
         EXPECT(s==W_INVALID && !r,"required levels are rejected when absent");
     } else { printf("unknown mode: %s\n",mode); failures++; }
     printf("%s: %d expectation failures\n",mode,failures);
-    compiler_free(); check_free(); eval_free(); machine_free();
+    check_free(); eval_free(); machine_free();
     return failures?1:0;
 }

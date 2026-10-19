@@ -159,7 +159,6 @@ uint64_t join_value(const Join *j, size_t i);
 void join_fill(Join *j, size_t i, uint64_t v);   /* a box whose value needs no demand */
 void join_free(Join *j);
 void *frame_mem(size_t bytes);               /* frame-owned block: released by frame_mem_free, or at teardown if the frame is stuck */
-void *frame_mem_grow(void *p, size_t bytes);
 void frame_mem_free(void *p);
 void frame_await_join(Cont *k, Join *j);
 void frame_launch(Cont *f, Cont *parent);      /* run frame f; its value resumes parent (any continuation) */
@@ -220,16 +219,14 @@ void eval_set_policy(SchedPolicy p, uint64_t seed);
  * pairs as jobs of the same scheduler (one outstanding count); the pair queue
  * has its own selection policy */
 void eval_set_pair_policy(SchedPolicy p, uint64_t seed);
-typedef struct { size_t apply, continue_ref, op, eval_deliver, retries; } EvalNetEvents;
+typedef struct { size_t continue_ref, op, eval_deliver, retries; } EvalNetEvents;
 EvalNetEvents eval_net_events(void);
-struct Net *eval_net(void);
 void eval_forward_result(EntryId K, RefId v);        /* the receiver's request (net rule) */
 
 /* cache introspection (tests) */
 EntryId eval_entry_lookup(RefId t, FaceId chi);     /* 0 when absent */
 EntryState eval_entry_state(EntryId e);
 FaceId eval_entry_face(EntryId e);
-uint64_t eval_entry_pins(EntryId e);
 size_t eval_entry_count(void);                       /* entry ids reserved (some may be unused after a lost insertion race) */
 bool eval_entry_live(EntryId e);                    /* e names a key */
 bool eval_entry_is_observation(EntryId e);          /* a live F_WHNF key */

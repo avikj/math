@@ -37,6 +37,7 @@ void check_free(void);
 /* budget of checking/conversion steps per top-level request (0 = unlimited);
  * exceeding it yields UNRESOLVED("budget") */
 void check_set_budget(size_t steps);
+size_t check_budget(void);
 /* §59.4: begin a new admission attempt (unresolved outcomes of the previous
  * attempt are recomputed on demand) */
 void check_new_attempt(void);
@@ -46,7 +47,6 @@ CheckStatus check_context(ContextId G, const char **reason);
 CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma, FaceId chi, const char **reason);
 /* validate a construction node at its generic instance; returns that
  * instance's context, required face and checked type */
-CheckStatus check_node(uint64_t node, ContextId *ctx_out, FaceId *required_out, RefId *type_out, const char **reason);
 Inference infer(ContextId G, FaceId chi, RefId t);
 /* Γ;χ ⊢ A : U_level (formation in a universe; a term with some type is not a type) */
 CheckStatus check_is_type(ContextId G, FaceId chi, RefId A, uint64_t *level, const char **reason);
@@ -78,7 +78,6 @@ uint64_t check_session_id(void);   /* changes with every checker session; sessio
 /* the context of a boundary: its dimensions, then its term variables in
  * dependency order with their declared types; assumption = req */
 ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req);
-ContextId global_context(SymbolId s);
 
 const char *check_status_name(CheckStatus s);
 const char *conv_status_name(ConvStatus s);

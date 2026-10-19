@@ -20,11 +20,11 @@ static uint64_t session_gen;
 void check_init(void) { session_gen++; __atomic_store_n(&budget, 0, __ATOMIC_RELEASE); }
 void check_free(void) {}
 void check_set_budget(size_t steps) { __atomic_store_n(&budget, steps, __ATOMIC_RELEASE); }
+size_t check_budget(void) { return __atomic_load_n(&budget, __ATOMIC_ACQUIRE); }
 void check_new_attempt(void) {}
 uint64_t check_session_id(void) { return session_gen; }
 const char *check_status_name(CheckStatus s) { return s == CK_VALID ? "VALID" : s == CK_INVALID ? "INVALID" : "UNRESOLVED"; }
 const char *conv_status_name(ConvStatus s) { return s == CV_EQUAL ? "EQUAL" : s == CV_UNEQUAL ? "UNEQUAL" : "UNRESOLVED"; }
-ContextId global_context(SymbolId s) { return global_context_flat(s); }
 
 static const char *R_STUCK = "unresolved: the judgment did not complete (a cyclic or suspended dependency, or the budget)";
 
@@ -92,6 +92,10 @@ static CheckStatus scope_ok(uint64_t G, FaceId chi, RefId t, const char **reason
     return CK_VALID;
 }
 
+/* structural validity is the judgment family judge.structure */
+bool ref_validate(RefId t, const char **reason) { uint64_t q[3] = { 0, t, 0 }; return ck(run(JK_STRUCT, 3, q), reason) == CK_VALID; }
+bool scope_validate(ScopeId S, const char **reason) { uint64_t q[3] = { 1, S, 0 }; return ck(run(JK_STRUCT, 3, q), reason) == CK_VALID; }
+
 CheckStatus check_context(ContextId F, const char **reason) {
     Roots R = { 0 }; pr_ctx(&R, F); PinSet P = pins_of(&R);
     uint64_t G; CheckStatus st = jctx(F, &G, reason);
@@ -112,26 +116,7 @@ CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma,
 }
 
 /* a judgment context back as a flat context with assumption a */
-static ContextId flat_of(uint64_t G, FaceId a) {
-    size_t n = 0; for (uint64_t c = G; !jc_is_empty(c); c = jc_parent(c)) n++;
-    CtxDecl *ds = malloc((n ? n : 1) * sizeof(CtxDecl)); require(ds, "out of memory");
-    size_t k = n; for (uint64_t c = G; !jc_is_empty(c); c = jc_parent(c)) { Sort so; uint64_t id; RefId ty; jc_decl(c, &so, &id, &ty); k--; ds[k].sort = so; ds[k].id = id; ds[k].type = so == S_TERM ? ty : 0; }
-    ContextId F = context_make(n, ds, a);
-    free(ds);
-    return F;
-}
 
-CheckStatus check_node(uint64_t node, ContextId *ctx_out, FaceId *req_out, RefId *type_out, const char **reason) {
-    Roots R = { 0 };
-    if (tnode_is_construction(node)) { size_t nf = tnode_nfields(node); for (size_t k = 0; k < nf; k++) if (tnode_field_kind(node, k) == F_REF) pr_ref(&R, tnode_const_field(node, k)); }
-    PinSet P = pins_of(&R);
-    uint64_t w[2] = { node, P };
-    uint64_t res = run(JK_NODE, 2, w);
-    CheckStatus st = ck(res, reason);
-    if (st == CK_VALID) st = premises(P, reason);
-    if (st == CK_VALID) { if (ctx_out) *ctx_out = flat_of(jr_a(res), jr_b(res)); if (req_out) *req_out = jr_b(res); if (type_out) *type_out = jr_c(res); }
-    return st;
-}
 
 static Inference infer_pinned(ContextId F, FaceId chi, RefId t, PinSet P) {
     Inference out = { CK_VALID, 0, NULL };

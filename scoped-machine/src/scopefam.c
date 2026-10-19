@@ -23,7 +23,6 @@ static Family F_MAPT, F_MAPD, F_IVNEG, F_IVMEET, F_IVJOIN, F_FCEND, F_FCMEET, F_
 
 uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx) { uint64_t w[3] = { kind, depth, ctx }; return interner_intern(&M.keys, w, 3, NULL); }
 static void tk_get(uint64_t tk, unsigned *kind, unsigned *depth, uint64_t *ctx) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); *kind = (unsigned)w[0]; *depth = (unsigned)w[1]; *ctx = w[2]; }
-static uint64_t tk_deeper(uint64_t tk) { unsigned kd, d; uint64_t c; tk_get(tk, &kd, &d, &c); return trav_key(kd, d + 1, c); }
 
 /* APPLY / LOWER images of a bound atom (constant work); false = keep */
 static bool bound_image(unsigned kind, unsigned depth, uint64_t ctx, uint64_t x, bool dim, uint64_t *out) {
@@ -278,7 +277,6 @@ void scope_families_init(void) {
 RefId trav_ref(RefId t, uint64_t tk) { return family_call(F_TREF, t, tk); }
 IntervalId trav_iv(IntervalId r, uint64_t tk) { return family_call(F_TIV, r, tk); }
 FaceId trav_fc(FaceId f, uint64_t tk) { return family_call(F_TFC, f, tk); }
-ScopeId trav_scope(ScopeId S, uint64_t tk) { return family_call(F_TSCOPE, S, tk_deeper(tk)); }
 Val trav_val(Val v, uint64_t tk) {
     Val o = v;
     o.id = v.sort == VS_REF ? trav_ref(v.id, tk) : v.sort == VS_INTERVAL ? trav_iv(v.id, tk) : trav_fc(v.id, tk);

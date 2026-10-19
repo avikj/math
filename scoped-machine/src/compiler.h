@@ -1,15 +1,18 @@
-/* compiler.h — identity-to-agent compiler (§39–§48).
+/* compiler.h — identities as ordinary values (HANDOFF §§80, 83–84, 96).
  *
- * Checked diagram declarations, generated realization maps (singleton
- * contraction and expansion), identity / equivalence / residual / cut /
- * contractible-fibre transforms with structural certificates, the
- * TRANSFORM_CALL instruction and its exact application wiring.
- *
- * Everything the compiler emits is annotated core syntax built with the
- * existing constructors and the fixed library templates (§40); nothing here
- * evaluates. Generated formal identities are anchored in the owning
- * diagram / template identity, a compilation role and a slot, so a
- * recompilation produces identical references (the certificate check).
+ * The constructions are closed terms of the core, written once:
+ *   Maps(X,Y)     = Σ(c:X→Y).Σ(d:Y→X).(Π x. d(c x) = x) × (Π y. c(d y) = y)
+ *   Res_{z,r}     = Σ(T:U_z).Σ(X:U_r).Maps(X,T)            (a presentation of T)
+ *   Diagram_{b,r}(B) = Σ(C:B).Σ(R:B→U_r).Π y.Maps(R y, C = y)
+ * res_zero / res_node build presentations (the dependent singleton composed
+ * with the tail's maps, both inverse proofs retained); a diagram is the
+ * pointwise presentation of C = y, so dg_zero / dg_node are res_zero /
+ * res_node at each y. res_action(L, R, E) = M_R⁻¹ ∘ E ∘ M_L with E a Maps of
+ * the terminals; the identity action of p : C_L = C_R at y is res_action
+ * with E the middle maps p⁻¹·_ / p·_ (inverse paths from the groupoid laws,
+ * by path induction and the K(w) words). A source declaration is a right
+ * fold of node ending in zero; an invocation is application. Nothing here is
+ * registered: equal constructions are equal references by interning.
  */
 #ifndef CUBICAL_COMPILER_H
 #define CUBICAL_COMPILER_H
@@ -17,92 +20,34 @@
 #include "check.h"
 #include "lib.h"
 
-typedef uint64_t DiagramId;
-typedef uint64_t TransformId;
+/* types */
+RefId maps_type(uint64_t a, uint64_t b, RefId X, RefId Y);
+RefId res_type(uint64_t z, uint64_t r);
+RefId diagram_type(uint64_t b, uint64_t r, RefId B);
 
-/* one node of a finite construction diagram: value variable x : A (A : U_level),
- * witness variable e : Path_A(t, x), defining term t : A (§59.1: every type
- * position carries its universe level) */
-typedef struct { uint64_t node_id; TermVarId x, e; RefId A; uint64_t level; RefId t; } DiagNode;
+/* projections */
+RefId maps_c(RefId M); RefId maps_d(RefId M); RefId maps_h(RefId M); RefId maps_k(RefId M);
+RefId res_T(RefId P); RefId res_X(RefId P); RefId res_M(RefId P);
+RefId dg_C(RefId D); RefId dg_R(RefId D, RefId y); RefId dg_M(RefId D, RefId y);
 
-/* ---- diagrams (§39) ---- */
-/* an ordinary diagram with output type B : U_lB and output term o */
-DiagramId diagram_declare(ContextId params, size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o);
-/* a residual description (§44): the telescope ends in the terminal type Z : U_lZ */
-DiagramId residual_declare(ContextId params, size_t n, const DiagNode *nodes, RefId Z, uint64_t lZ);
-/* typed telescope check under the required face */
-CheckStatus diagram_validate(DiagramId d, FaceId required, const char **reason);
-TermVarId diagram_output_param(DiagramId d);       /* the diagram's own y : B (0 for a residual) */
-RefId diagram_realization(DiagramId d);            /* Real(C, Γ, y_d) = R_0 */
-MapId diagram_canonical_subst(DiagramId d);        /* ν */
-RefId diagram_canonical(DiagramId d);              /* C = o[ν] (a residual: Z[ν]) */
-/* the emitted maps (§41), cached per diagram and role:
- *   collapse: formal r : R_0            ↦ Path_B(C, y_d)  (residual: Z[ν])
- *   expand:   formal q : Path_B(C, y_d) ↦ R_0 */
-RefId diagram_collapse(DiagramId d, TermVarId *r_slot);
-RefId diagram_expand(DiagramId d, TermVarId *q_slot);
+/* the closed constructions (levels exact) */
+RefId res_zero(uint64_t z);                              /* λ T. (T, T, id) */
+RefId res_node(uint64_t a, uint64_t z, uint64_t r);      /* λ A t Q. presentation of T_{Q t refl} */
+RefId dg_zero(uint64_t b);                               /* λ B c. zero */
+RefId dg_node(uint64_t a, uint64_t b, uint64_t r);       /* λ B A t Q. node */
+RefId res_action(uint64_t zl, uint64_t rl, uint64_t zr, uint64_t rr);   /* λ TL TR L R E. Maps(X_L, X_R) */
+RefId id_action(uint64_t b, uint64_t rl, uint64_t rr);   /* λ B L R p y. Maps(R_L y, R_R y) */
+RefId equiv_maps(uint64_t l, uint64_t m);                /* λ X Y e. Maps(X, Y) */
+RefId cut_maps(uint64_t b);                              /* λ B C D. Maps(Σz.Σ(u:C=z).(D=z), C = D) */
+RefId fibre_maps(uint64_t b, uint64_t r);                /* λ B R k. Maps(Σb.R b, B) */
 
-/* ---- declarations and compiled records (§39, §42) ---- */
-typedef enum { EV_IDENTITY = 1, EV_EQUIVALENCE, EV_RESIDUAL_EQUIVALENCE, EV_CUT, EV_CONTRACTIBLE_FIBRE } EvidenceKind;
+/* a source diagram (§39): node x : A (A : U_level), e : t = x */
+typedef struct { TermVarId x, e; RefId A; uint64_t level; RefId t; } DiagNode;
+/* the right fold of node ending in zero(B, o) (residual: res_zero(Z)); *r the realization level */
+RefId diagram_fold(size_t n, const DiagNode *nodes, RefId B, uint64_t lB, RefId o, uint64_t *r);
+RefId residual_fold(size_t n, const DiagNode *nodes, RefId Z, uint64_t lZ, uint64_t *r);
 
-typedef struct {
-    uint64_t id;              /* stable source identity */
-    ContextId parameters;     /* Γ */
-    FaceId required_face;     /* φ */
-    RefId result_type;        /* B */
-    uint64_t result_level;    /* B : U_result_level */
-    DiagramId left, right;
-    RefId evidence;           /* p : Path_B(C_left, C_right) */
-} IdentityDecl;
-
-typedef struct {
-    TransformId id;
-    ContextId parameters;     /* identity: Γ, y */
-    FaceId required_face;
-    RefId domain, codomain;
-    uint64_t domain_level, codomain_level;   /* TypeAt levels (§59.1) */
-    RefId generic_call[2];    /* §59.3: the fixed call origin per orientation, over the parameters and the argument slot */
-    TermVarId forward_argument_slot, reverse_argument_slot;
-    RefId forward_body, reverse_body;
-    EvidenceKind evidence_kind;
-    uint64_t certificate;
-    uint64_t identity_template;   /* GraphPairTemplate id, identity declarations only */
-} CompiledTransform;
-
-/* the generic proof-parameterized template of an ordered diagram pair (§42, §45) */
-typedef struct {
-    uint64_t id; DiagramId left, right;
-    ContextId parameters;     /* Γ, y */
-    TermVarId y, P, r_left, r_right;
-    RefId domain, codomain, forward, reverse;   /* free in P */
-} GraphPairTemplate;
-
-/* each returns the published transform id, or 0 with *reason */
-TransformId compile_identity(const IdentityDecl *d, const char **reason);
-TransformId compile_equivalence(ContextId params, FaceId req, RefId X, uint64_t lX, RefId Y, uint64_t lY, RefId e, const char **reason);
-TransformId compile_residual_equivalence(ContextId params, FaceId req, DiagramId L, DiagramId R, RefId e, const char **reason);
-TransformId compile_cut(ContextId params, FaceId req, RefId B, uint64_t lB, RefId C, RefId D, const char **reason);
-TransformId compile_contractible_fibre(ContextId params, FaceId req, RefId B, uint64_t lB, RefId R, RefId k, const char **reason);
-
-const CompiledTransform *transform_get(TransformId id);      /* NULL when unknown */
-const GraphPairTemplate *graph_pair_get(uint64_t id);
-size_t transform_count(void);
-/* reconstruct the derivation the certificate records and compare it exactly
- * with the registered record (§39) */
-CheckStatus certificate_verify(TransformId id, const char **reason);
-
-/* ---- invocation (§43, §59.3) ---- */
-/* TRANSFORM_CALL(id, dir, σ, a) = reindex(generic_call[id,dir], σ + slot ↦ a):
- * one fixed call origin per transform and orientation */
-RefId mk_transform_call(TransformId id, int dir, MapId sigma, RefId a);
-void compiler_families_init(void);   /* tcall.decode (registered by eval_init) */
-bool compiler_decode_call(const Head *h, uint64_t *id, int *dir, MapId *sigma, RefId *a);
-/* the fixed template body and its argument slot for an orientation */
-bool compiler_template(uint64_t id, int dir, RefId *body, TermVarId *slot);
-/* an external application pair: APPLY_TRANSFORM(id,dir,σ) -- REF(a), result to b */
 enum { DIR_FORWARD = 0, DIR_REVERSE = 1 };
-
-void compiler_init(void);
-void compiler_free(void);
+RefId maps_apply(RefId M, int dir, RefId a);             /* app(c M, a) / app(d M, a) */
 
 #endif

@@ -21,7 +21,7 @@
 typedef struct {
     EvalEvents ev;
     size_t net_op, net_dup, net_erase, net_deliver, net_rewrites;
-    EvalNetEvents en;    /* the evaluator's net: APPLY_TRANSFORM / CONTINUE_REFERENCE events (§43, §45) */
+    EvalNetEvents en;    /* the evaluator's net events */
     unsigned net_root_kind[4];
     size_t running_after_ok;
     /* exported result graph (results = ordered roots, keys = set roots) */
@@ -49,7 +49,7 @@ static void observe(RefId t, FaceId chi, Run *R) {
 static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     memset(R, 0, sizeof *R);
     nroots = 0;
-    machine_init(); eval_init(); check_init(); compiler_init();
+    machine_init(); eval_init(); check_init();
     if (getenv("CUBICAL_WORKERS")) eval_set_workers((size_t)atoi(getenv("CUBICAL_WORKERS")));
     eval_set_policy(pol, seed);
     eval_set_pair_policy((SchedPolicy)(netpol == 0 ? POL_LIFO : netpol == 1 ? POL_FIFO : POL_RANDOM), seed ? seed * 7 + 3 : 5);
@@ -111,14 +111,13 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     observe(t0, fc_true(), R);
 
     /* §47 case 10: duplicate transformed-reference demands. The associativity
-     * transform is invoked in both orientations; the same call is demanded
+     * action is applied in both orientations; the same call is demanded
      * under three faces and after a dimension substitution, and its
      * components and output path are observed. */
-    { const char *why; Assoc As; assoc_build(&As, &why);
-      require(As.T, "associativity must compile in the schedule workload (%s)", why);
+    { Assoc As; assoc_build(&As);
       MapId sigma = assoc_sigma(&As, As.rhs);
       RefId r = assoc_left_arg(&As, sigma);
-      RefId call = mk_transform_call(As.T, DIR_FORWARD, sigma, r);
+      RefId call = assoc_call(&As, DIR_FORWARD, sigma, r);
       DimVarId j = declare_dim();
       observe(call, fc_true(), R);
       observe(call, fc_lit(j, 0), R);                     /* same key: j is not in the call's support */
@@ -127,7 +126,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
       observe(path, fc_true(), R);
       observe(mk_papp_const(0, As.X, As.rhs, As.rhs, path, iv_var(j)), fc_true(), R);
       observe(mk_papp_const(0, As.X, As.rhs, As.rhs, path, iv_var(j)), fc_lit(j, 1), R);
-      RefId rcall = mk_transform_call(As.T, DIR_REVERSE, sigma, assoc_right_arg(&As, sigma));
+      RefId rcall = assoc_call(&As, DIR_REVERSE, sigma, assoc_right_arg(&As, sigma));
       observe(rcall, fc_true(), R);
       observe(mk_fst(rcall), fc_true(), R);
       observe(mk_fst(mk_snd(rcall)), fc_true(), R);
@@ -137,9 +136,9 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
       MapId sk = assoc_sigma(&As, yk);
       DimVarId i2 = declare_dim();
       RefId w = mk_plam(i2, mk_papp_const(0, As.X, As.lhs, As.rhs, As.alpha, iv_meet(iv_var(i2), iv_var(kk))));
-      RefId RLk = reindex(transform_get(As.T)->domain, sk);
+      RefId RLk = reindex(As.domain, sk);
       RefId rk = mk_pair_at_lv(0, RLk, As.mab, mk_pair_at_lv(0, apply_term_binder(RLk, 0, 1, As.mab), mk_refl(0, As.X, As.mab), w));
-      RefId callk = mk_transform_call(As.T, DIR_FORWARD, sk, rk);
+      RefId callk = assoc_call(&As, DIR_FORWARD, sk, rk);
       observe(callk, fc_true(), R);
       observe(callk, fc_lit(kk, 0), R);
       observe(reindex_dim(callk, kk, iv_one()), fc_true(), R);
@@ -195,7 +194,7 @@ static void workload(Run *R, SchedPolicy pol, int netpol, uint64_t seed) {
     R->n_refs = interner_count(&M.refs); R->n_nodes = interner_count(&M.tnodes); R->n_maps = interner_count(&M.maps);
     R->n_faces = interner_count(&M.faces); R->n_intervals = interner_count(&M.intervals); R->n_nominal = interner_count(&M.nominal);
     R->n_terms = M.n_term_vars; R->n_dims = M.n_dim_vars;
-    compiler_free(); check_free(); eval_free(); machine_free();
+    check_free(); eval_free(); machine_free();
 }
 
 static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed) {
@@ -206,8 +205,8 @@ static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed)
     if (a->net_op != b->net_op || a->net_dup != b->net_dup || a->net_erase != b->net_erase || a->net_deliver != b->net_deliver) {
         printf("  FAIL [%s seed %llu]: net rule counts differ\n", name, (unsigned long long)seed); ok = false;
     }
-    if (a->en.apply != b->en.apply || a->en.continue_ref != b->en.continue_ref || a->en.op != b->en.op || a->en.eval_deliver != b->en.eval_deliver) {
-        printf("  FAIL [%s seed %llu]: evaluator-net rule counts differ (apply %zu/%zu continue %zu/%zu)\n", name, (unsigned long long)seed, a->en.apply, b->en.apply, a->en.continue_ref, b->en.continue_ref); ok = false;
+    if (a->en.continue_ref != b->en.continue_ref || a->en.op != b->en.op || a->en.eval_deliver != b->en.eval_deliver) {
+        printf("  FAIL [%s seed %llu]: evaluator-net rule counts differ (continue %zu/%zu)\n", name, (unsigned long long)seed, a->en.continue_ref, b->en.continue_ref); ok = false;
     }
     for (int q = 0; q < 4; q++) if (a->net_root_kind[q] != b->net_root_kind[q]) { printf("  FAIL [%s seed %llu]: net root %d differs\n", name, (unsigned long long)seed, q); ok = false; }
     MatchReport mr;
@@ -216,8 +215,8 @@ static bool compare(const Run *a, const Run *b, const char *name, uint64_t seed)
 }
 
 static void show(const char *name, const Run *r) {
-    printf("  %-14s W=(REQUEST %zu, EVAL_STEP %zu, PUB %zu, DELIVER %zu | op %zu, dup %zu, erase %zu, eval-deliver %zu | apply %zu, continue %zu)  hits ready/running %zu/%zu\n",
-           name, r->ev.request, r->ev.eval_step, r->ev.publish, r->ev.deliver, r->net_op, r->net_dup, r->net_erase, r->net_deliver, r->en.apply, r->en.continue_ref, r->ready_hit, r->running_hit);
+    printf("  %-14s W=(REQUEST %zu, EVAL_STEP %zu, PUB %zu, DELIVER %zu | op %zu, dup %zu, erase %zu, eval-deliver %zu | continue %zu)  hits ready/running %zu/%zu\n",
+           name, r->ev.request, r->ev.eval_step, r->ev.publish, r->ev.deliver, r->net_op, r->net_dup, r->net_erase, r->net_deliver, r->en.continue_ref, r->ready_hit, r->running_hit);
 }
 
 int main(void) {

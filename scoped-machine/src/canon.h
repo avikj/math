@@ -36,7 +36,5 @@ void canon_add_key(Canon *c, RefId ref, FaceId face, size_t req, size_t del, siz
 /* export the labelled graph (machine-independent; survives machine_free).
  * Results are ordered roots, keys are set roots. The caller owns it. */
 Graph *canon_export(Canon *c);
-/* diagnostic text dump (refinement-ordered DFS numbering); returns the text (owned by c) */
-const char *canon_finish(Canon *c, size_t *len);
 
 #endif

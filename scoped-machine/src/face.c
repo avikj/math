@@ -33,20 +33,6 @@ FaceId fc_lit(DimVarId i, int eps) {
 bool fc_is_false(FaceId a) { size_t n; (void)interner_get(&M.faces, a, &n); return n == 0; }
 bool fc_is_true(FaceId a) { size_t n; const uint64_t *w = interner_get(&M.faces, a, &n); return n == 1 && w[0] == DNF_SEP; }
 
-FaceId fc_substitute(FaceId phi, DimImageFn img, void *ctx) {
-    Dnf a; fc_to_dnf(phi, &a);
-    FaceId out = fc_false();
-    for (size_t i = 0; i < a.n; i++) {
-        FaceId cl = fc_true();
-        for (size_t k = 0; k < a.c[i].n; k++) {
-            uint64_t l = a.c[i].a[k];
-            cl = fc_meet(cl, fc_endpoint(img(FC_LIT_DIM(l), ctx), FC_LIT_EPS(l)));
-        }
-        out = fc_join(out, cl);
-    }
-    dnf_free(&a);
-    return out;
-}
 
 void fc_dims(FaceId phi, Words *out) {
     size_t n; const uint64_t *w = interner_get(&M.faces, phi, &n);

@@ -13,16 +13,11 @@
 #include "template.h"
 
 void lib_free(void);
-size_t lib_template_count(void);
 
 /* interval line (r∧¬j)∨(s∧j): canonical interval syntax, no reference */
-IntervalId iv_line(IntervalId r, IntervalId s, DimVarId j);
 
 /* ---- capture adapters (§54): abstract concrete identities into scopes ---- */
 ScopeId capture_dim1(DimVarId j, RefId body, RefId type, uint64_t level, FaceId guard);                 /* [j]. body */
-ScopeId capture_dim1_face(DimVarId j, FaceId body);                                                       /* [j]. face (total syntax) */
-ScopeId capture_dim2(DimVarId i, DimVarId j, RefId body, RefId type, uint64_t level, FaceId guard);     /* [i, j]. body */
-ScopeId capture_dim_term(DimVarId j, TermVarId x, RefId xtype, uint64_t xlevel, RefId body, RefId type, uint64_t level, FaceId guard);   /* [j, x:xtype]. body */
 ScopeId capture_term2(TermVarId x, RefId xtype, uint64_t xlevel, TermVarId e, RefId etype, uint64_t elevel, RefId body, RefId type, uint64_t level, FaceId guard);   /* [x, e]. body */
 
 /* ---- §52 programs; l, m are the exact universe levels of the type arguments ---- */

@@ -27,25 +27,6 @@ IntervalId iv_var(DimVarId i) {
 bool iv_is_zero(IntervalId r) { size_t n; (void)interner_get(&M.intervals, r, &n); return n == 0; }
 bool iv_is_one(IntervalId r) { size_t n; const uint64_t *w = interner_get(&M.intervals, r, &n); return n == 1 && w[0] == DNF_SEP; }
 
-IntervalId iv_substitute(IntervalId r, DimImageFn img, void *ctx) {
-    /* Insert the image of each original dimension once (positive atom →
-     * image, negative atom → negation of image), combine by the original
-     * meets and joins. No recursion into inserted images. */
-    Dnf a; iv_to_dnf(r, &a);
-    IntervalId out = iv_zero();
-    for (size_t i = 0; i < a.n; i++) {
-        IntervalId cl = iv_one();
-        for (size_t k = 0; k < a.c[i].n; k++) {
-            uint64_t at = a.c[i].a[k];
-            IntervalId im = img(IV_ATOM_DIM(at), ctx);
-            if (IV_ATOM_NEG(at)) im = iv_negate(im);
-            cl = iv_meet(cl, im);
-        }
-        out = iv_join(out, cl);
-    }
-    dnf_free(&a);
-    return out;
-}
 
 void iv_dims(IntervalId r, Words *out) {
     size_t n; const uint64_t *w = interner_get(&M.intervals, r, &n);

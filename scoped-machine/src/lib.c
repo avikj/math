@@ -2,12 +2,7 @@
 #include "eval.h"
 
 void lib_free(void) { templates_free(); }
-size_t lib_template_count(void) { return interner_count(&M.tnodes); }
 
-IntervalId iv_line(IntervalId r, IntervalId s, DimVarId j) {
-    IntervalId vj = iv_var(j);
-    return iv_join(iv_meet(r, iv_negate(vj)), iv_meet(s, vj));
-}
 
 /* ------------------------------------------------------------------ */
 /* capture adapters                                                      */
@@ -16,21 +11,6 @@ ScopeId capture_dim1(DimVarId j, RefId body, RefId type, uint64_t level, FaceId 
     CaptureDecl d[1] = { { S_DIM, j, 0, LEVEL_NONE, fc_true() } };
     Val b = { VS_REF, body };
     return capture_scope(1, d, b, type, level, guard);
-}
-ScopeId capture_dim1_face(DimVarId j, FaceId body) {
-    CaptureDecl d[1] = { { S_DIM, j, 0, LEVEL_NONE, fc_true() } };
-    Val b = { VS_FACE, body };
-    return capture_scope(1, d, b, 0, LEVEL_NONE, fc_true());
-}
-ScopeId capture_dim2(DimVarId i, DimVarId j, RefId body, RefId type, uint64_t level, FaceId guard) {
-    CaptureDecl d[2] = { { S_DIM, i, 0, LEVEL_NONE, fc_true() }, { S_DIM, j, 0, LEVEL_NONE, fc_true() } };
-    Val b = { VS_REF, body };
-    return capture_scope(2, d, b, type, level, guard);
-}
-ScopeId capture_dim_term(DimVarId j, TermVarId x, RefId xtype, uint64_t xlevel, RefId body, RefId type, uint64_t level, FaceId guard) {
-    CaptureDecl d[2] = { { S_DIM, j, 0, LEVEL_NONE, fc_true() }, { S_TERM, x, xtype, xlevel, term_var_required(x) } };
-    Val b = { VS_REF, body };
-    return capture_scope(2, d, b, type, level, guard);
 }
 ScopeId capture_term2(TermVarId x, RefId xtype, uint64_t xlevel, TermVarId e, RefId etype, uint64_t elevel, RefId body, RefId type, uint64_t level, FaceId guard) {
     CaptureDecl d[2] = { { S_TERM, x, xtype, xlevel, term_var_required(x) }, { S_TERM, e, etype, elevel, term_var_required(e) } };

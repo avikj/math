@@ -19,8 +19,7 @@
 typedef enum {
     T_UNIVERSE = 1, T_PI, T_SIGMA, T_LAM, T_APP, T_PAIR, T_FST, T_SND,
     T_PATH, T_PLAM, T_PAPP, T_GLUE_TYPE, T_GLUE_INTRO, T_UNGLUE, T_COMP,
-    T_SYSTEM, T_GLOBAL,
-    T_TCALL            /* §43 TRANSFORM_CALL: an internal instruction construction, not an object-language datatype */
+    T_SYSTEM, T_GLOBAL
 } Tag;
 
 typedef enum { F_REF = 1, F_INTERVAL, F_FACE } FieldKind;
@@ -161,7 +160,6 @@ const uint64_t *nominal_key(uint64_t nid, size_t *npairs);
 /* the lifted map of section 8 for a binder of a construction `owner`: its
  * environment map, then the binder's atom ↦ fresh. *fresh receives the
  * minted name. */
-MapId lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh);
 
 typedef struct TermOpen { TermVarId x; RefId type; RefId body; } TermOpen;
 typedef struct DimOpen { DimVarId j; RefId body; } DimOpen;
@@ -199,7 +197,6 @@ HField head_field(const Head *h, size_t k);
 #define HF(h, k) head_field((h), (k))
 void head_free(Head *h);
 /* TVIEW operations (template.c) */
-RefId tview_reindex(RefId t, MapId sigma);
 Tag tnode_tag(uint64_t Q);           /* template.c */
 void tview_open(RefId t, Head *h);
 HField tview_field(const Head *h, size_t k);
@@ -244,14 +241,12 @@ RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the defi
 MapId global_args(RefId t);            /* a global reference's images of the definition's parameters */
 uint64_t global_env_version(void);     /* changes with every declaration / body registration */
 void env_control_init(void);
-RefId unfold_global(RefId t);
 ContextId global_context_flat(SymbolId s);   /* the parameter context of a global (fixed at declaration) */
 ContextId boundary_context(VarSetId ft, DimSetId fd, FaceId req);          /* reindex(definition body, global_args) */
 
 /* ---- constructors (constructions at their own boundary) ---- */
 RefId mk_universe(uint64_t level);
 RefId mk_pi(TermVarId x, RefId A, RefId B);
-RefId mk_sigma(TermVarId x, RefId A, RefId B);
 RefId mk_lam(TermVarId x, RefId A, RefId body);
 RefId mk_pi_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B);     /* A : U_m, B : U_n */
 RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B);
@@ -270,20 +265,12 @@ RefId mk_unglue(RefId A, FaceId alpha, RefId T, RefId e, RefId v);
 RefId mk_comp(DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap);
 /* annotated forms (§59.1): n is the family's / type's universe level */
 RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId cap);
-RefId mk_path_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r);
 RefId mk_papp_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s);
 RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e);
 RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a);
 RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v);
 RefId mk_pair_at_lv(uint64_t l, RefId S, RefId a, RefId b);
 RefId mk_system(size_t n, const FaceId *faces, const RefId *terms);
-/* TRANSFORM_CALL(id, dir, σ, a) with checked instantiated type annotations:
- * payload = 2·id + dir; fields = the images of the template's parameters in
- * parameter-context order (F_REF / F_INTERVAL), then a, then the input and
- * output type annotations; required face = required_face[σ]. Reindexing a
- * view of it composes σ with the map and reindexes a and the annotations. */
-RefId mk_tcall(uint64_t id, int dir, size_t nparams, const Field *params, RefId a, RefId in_type, RefId out_type, FaceId required);
-
 /* ---- printing (presentation only) ---- */
 void print_ref(RefId t, FILE *f);
 void print_ref_depth(RefId t, FILE *f, int depth);

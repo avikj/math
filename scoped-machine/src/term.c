@@ -8,7 +8,7 @@ const char *tag_name(Tag t) {
     case T_FST: return "fst"; case T_SND: return "snd"; case T_PATH: return "PathP";
     case T_PLAM: return "plam"; case T_PAPP: return "papp"; case T_GLUE_TYPE: return "Glue";
     case T_GLUE_INTRO: return "glue"; case T_UNGLUE: return "unglue"; case T_COMP: return "comp";
-    case T_SYSTEM: return "system"; case T_GLOBAL: return "global"; case T_TCALL: return "tcall";
+    case T_SYSTEM: return "system"; case T_GLOBAL: return "global";
     }
     return "?";
 }
@@ -298,10 +298,6 @@ DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
     return r;
 }
 
-MapId lifted_map(RefId owner, BinderSlot slot, uint64_t *fresh) {
-    require(!ref_is_var(owner), "lifted map of a variable");
-    return tview_lifted_map(owner, slot, fresh);
-}
 
 TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     require(!ref_is_var(owner), "binder of a variable");
@@ -511,15 +507,6 @@ MapId global_args(RefId t) {
     return mapb_finish(&b);
 }
 
-RefId unfold_global(RefId t) {
-    require(!ref_is_var(t), "unfold of a variable");
-    require(ref_tag(t) == T_GLOBAL, "unfold of a non-global");
-    Head h; open_ref(t, &h);
-    SymbolId s = (SymbolId)h.payload;
-    RefId body = __atomic_load_n(&DEF(s)->body, __ATOMIC_ACQUIRE);
-    require(body != 0, "global %s has no body", DEF(s)->name);
-    return reindex(body, global_args(t));
-}
 
 /* ================= constructors ================= */
 
@@ -544,7 +531,6 @@ static RefId mk_term_binder_form(Tag tag, TermVarId x, RefId A, RefId body) {
     return view0(tag, 0, f, 2, b, 1);
 }
 RefId mk_pi(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, x, A, B); }
-RefId mk_sigma(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_SIGMA, x, A, B); }
 RefId mk_lam(TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, x, A, body); }
 typedef struct { Tag tag; TermVarId x; RefId A, B; } BinderArgs;
 static RefId build_binder(void *c) { BinderArgs *a = c; return mk_term_binder_form(a->tag, a->x, a->A, a->B); }
@@ -598,25 +584,11 @@ RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId
     term_levels_pop();
     return r;
 }
-RefId mk_path_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r) { term_levels_push(n, LEVEL_NONE); RefId o = mk_path(j, B_j, l, r); term_levels_pop(); return o; }
 RefId mk_papp_lv(uint64_t n, DimVarId j, RefId B_j, RefId l, RefId r, RefId p, IntervalId s) { term_levels_push(n, LEVEL_NONE); RefId o = mk_papp(j, B_j, l, r, p, s); term_levels_pop(); return o; }
 RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e) { term_levels_push(n, LEVEL_NONE); RefId o = mk_glue_type(A, alpha, T, e); term_levels_pop(); return o; }
 RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a) { term_levels_push(n, LEVEL_NONE); RefId o = mk_glue_intro(A, alpha, T, e, t, a); term_levels_pop(); return o; }
 RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v) { term_levels_push(n, LEVEL_NONE); RefId o = mk_unglue(A, alpha, T, e, v); term_levels_pop(); return o; }
 RefId mk_pair_at_lv(uint64_t l, RefId S, RefId a, RefId b) { term_levels_push(l, LEVEL_NONE); RefId o = mk_pair_at(S, a, b); term_levels_pop(); return o; }
-RefId mk_tcall(uint64_t id, int dir, size_t nparams, const Field *params, RefId a, RefId in_type, RefId out_type, FaceId required) {
-    Field *f = malloc((nparams + 3) * sizeof(Field)); require(f, "out of memory");
-    for (size_t k = 0; k < nparams; k++) { f[k] = params[k]; f[k].slot = NO_SLOT; }
-    f[nparams] = (Field){ F_REF, NO_SLOT, a };
-    f[nparams + 1] = (Field){ F_REF, NO_SLOT, in_type };
-    f[nparams + 2] = (Field){ F_REF, NO_SLOT, out_type };
-    term_require_push(required);
-    RefId out = view0(T_TCALL, 2 * id + (dir ? 1 : 0), f, nparams + 3, NULL, 0);
-    term_require_pop();
-    free(f);
-    return out;
-}
-
 RefId mk_system(size_t n, const FaceId *faces, const RefId *terms) {
     Field *f = malloc((n ? 2 * n : 1) * sizeof(Field));
     require(f, "out of memory");

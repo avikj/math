@@ -19,7 +19,7 @@ static void verdict(const char *label, CheckStatus s, const char *why) {
 }
 int main(int argc, char **argv) {
     const char *mode = argc > 1 ? argv[1] : "signature";
-    machine_init(); eval_init(); check_init(); compiler_init();
+    machine_init(); eval_init(); check_init();
     const char *why = "";
     RefId U0 = mk_universe(0), U1 = mk_universe(1);
     TermVarId vA = declare_term(U0, fc_true()), vB = declare_term(U0, fc_true());
@@ -111,28 +111,23 @@ int main(int argc, char **argv) {
         CheckStatus st=check_context(partial,&why);verdict("T:U0@phi, e:Equiv(T,A)@phi",st,why);
         EXPECT(st==CK_VALID,"a partial declaration's type forms under its own guard");
     } else if (!strcmp(mode,"publication")) {
-        CtxDecl d[]={{S_TERM,vA,U0}};ContextId GA=context_make(1,d,fc_true());
         RefId e=mk_id_equiv(0,A);
-        TransformId a=compile_equivalence(GA,fc_true(),A,0,A,0,e,&why);
-        TransformId b=compile_equivalence(GA,fc_true(),A,0,A,0,e,&why);
-        printf("identical compiled declarations: %llu / %llu\n",(unsigned long long)a,(unsigned long long)b);
-        EXPECT(a && a==b,"structurally identical compiled records must be interned");
-        if(a&&b){RefId p=mk_transform_call(a,DIR_FORWARD,map_identity(),x),q=mk_transform_call(b,DIR_FORWARD,map_identity(),x);printf("calls identical: %d\n",p==q);EXPECT(p==q,"duplicate compilation must preserve call sharing");}
+        RefId a=mk_app(mk_app(mk_app(equiv_maps(0,0),A),A),e), b=mk_app(mk_app(mk_app(equiv_maps(0,0),A),A),e);
+        printf("identical constructions: %llu / %llu\n",(unsigned long long)a,(unsigned long long)b);
+        EXPECT(a==b,"building a construction twice gives one reference");
+        RefId p=maps_apply(a,DIR_FORWARD,x),q=maps_apply(b,DIR_FORWARD,x);printf("calls identical: %d\n",p==q);EXPECT(p==q,"equal calls are one reference");
+        (void)why;
     } else if (!strcmp(mode,"publication-concurrent")) {
-        CtxDecl d[]={{S_TERM,vA,U0}};ContextId GA=context_make(1,d,fc_true());
-        static ContextId cG; static RefId cA, ce; static TransformId got[8]; static pthread_barrier_t gate;
-        cG=GA; cA=A; ce=mk_id_equiv(0,A);
+        static RefId cA, ce; static RefId got[8]; static pthread_barrier_t gate;
+        cA=A; ce=mk_id_equiv(0,A);
         pthread_barrier_init(&gate,NULL,8);
-        static const char *cw[8];
-        void *client(void *p) { size_t k=*(size_t *)p; cw[k]=""; pthread_barrier_wait(&gate); got[k]=compile_equivalence(cG,fc_true(),cA,0,cA,0,ce,&cw[k]); return NULL; }
+        void *client(void *p) { size_t k=*(size_t *)p; pthread_barrier_wait(&gate); got[k]=mk_app(mk_app(mk_app(equiv_maps(0,0),cA),cA),ce); return NULL; }
         pthread_t th[8]; size_t ids[8];
         for(size_t k=0;k<8;k++){ids[k]=k;pthread_create(&th[k],NULL,client,&ids[k]);}
         for(size_t k=0;k<8;k++)pthread_join(th[k],NULL);
         bool same=got[0]!=0; for(size_t k=1;k<8;k++) same=same&&got[k]==got[0];
-        for(size_t k=0;k<8;k++) if(!got[k]) printf("client %zu failed: %s\n",k,cw[k]);
-        printf("eight concurrent compilations: ids %llu..%llu same=%d count=%zu\n",(unsigned long long)got[0],(unsigned long long)got[7],same,transform_count());
-        EXPECT(same,"concurrent identical compilation requests obtain one record");
-        EXPECT(transform_count()==1,"exactly one record is published");
+        printf("eight concurrent constructions: %llu..%llu same=%d\n",(unsigned long long)got[0],(unsigned long long)got[7],same);
+        EXPECT(same,"concurrent identical constructions are one reference");
         pthread_barrier_destroy(&gate);
     } else if (!strcmp(mode,"diagnostics-concurrent")) {
         static ContextId cG; static RefId bad[8]; static CheckStatus st[8]; static const char *why8[8]; static pthread_barrier_t gate;
@@ -160,6 +155,6 @@ int main(int argc, char **argv) {
         graph_free(ga);graph_free(gb);canon_free(a);canon_free(b);
     } else {fprintf(stderr,"unknown mode\n");return 2;}
     printf("%s: %d expectation failures\n",mode,failures);
-    compiler_free();check_free();eval_free();machine_free();
+    check_free();eval_free();machine_free();
     return failures ? 1 : 0;
 }

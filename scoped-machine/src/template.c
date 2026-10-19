@@ -173,10 +173,6 @@ static uint64_t envrec_host(TDefId def, size_t n, const uint64_t *slots, const T
 
 ExprId expr_const(PSort sort, uint64_t id) { uint64_t w[3] = { X_CONST, sort, id }; return xi(3, w); }
 ExprId expr_level(uint64_t n) { return x1(X_LEVEL, n); }
-TNodeId tnode_construction_intern(const uint64_t *words, size_t n) {
-    require(n >= 2 && words[0] == 0, "malformed construction record");
-    return interner_intern(&M.tnodes, words, n, NULL);
-}
 static bool node_construction(TNodeId Q) { return tnode_def(Q) == 0; }
 bool tnode_is_construction(TNodeId Q) { return node_construction(Q); }
 static size_t node_param_count(TNodeId Q) { size_t n; return node_construction(Q) ? (size_t)nw(Q, &n)[1] : TPL.defs[tnode_def(Q)].nparams; }
@@ -202,17 +198,7 @@ uint64_t tnode_const_payload(TNodeId Q) { ExprId e = node_payload_e(Q); return e
 uint64_t tnode_const_levels(TNodeId Q) { ExprId e = node_levels_e(Q); return e ? xlevel(e) : LEVELS_NONE; }
 
 MapId tview_env_map(RefId t) { require(tview_is_construction(t), "environment map of a template instance"); return cons_envmap(ref_tenv(t)); }
-FaceId tview_declared_required(RefId t) {
-    TNodeId Q = ref_tnode(t);
-    if (!node_construction(Q)) return 0;
-    FaceId d = tnode_const_declared(Q);
-    return d ? fc_reindex(d, cons_envmap(ref_tenv(t))) : 0;
-}
 
-static void cons_vals(TEnvId E, size_t np, TVal *vals) {
-    require(tenv_size(E) == np, "construction environment arity");
-    for (size_t k = 0; k < np; k++) { uint64_t slot; tenv_entry(E, k, &slot, &vals[k]); require(slot == k, "construction environment order"); }
-}
 
 /* a construction's binder opened at its keyed fresh name: the domain field,
  * then the body constant with the binder's atom ↦ that name */
@@ -285,18 +271,6 @@ RefId tnode_generic(TNodeId Q, CtxDecl *decls, FaceId *req) {
     RefId t = tnode_construction_view(Q, vals);
     free(vals);
     return t;
-}
-MapId tview_generic_map(RefId t) {
-    TNodeId Q = ref_tnode(t);
-    size_t np = tnode_nparams(Q);
-    CtxDecl *d = malloc((np ? np : 1) * sizeof(CtxDecl)); TVal *vals = malloc((np ? np : 1) * sizeof(TVal));
-    require(d && vals, "out of memory");
-    (void)tnode_generic(Q, d, NULL);
-    cons_vals(ref_tenv(t), np, vals);
-    MapBuilder b; mapb_init(&b);
-    for (size_t k = 0; k < np; k++) { if (d[k].sort == S_DIM) mapb_dim(&b, d[k].id, vals[k].id); else mapb_term(&b, d[k].id, vals[k].id); }
-    free(d); free(vals);
-    return mapb_finish(&b);
 }
 
 /* ------------------------------------------------------------------ */
@@ -612,7 +586,6 @@ void template_families_init(void) {
 
 static uint64_t env_of(RefId t) { return family_call(F_ENVOF, ref_tnode(t), ref_tenv(t)); }
 static TVal interp_at(ExprId e, uint64_t er) { return tvget(family_call(F_INTERP, e, er)); }
-uint64_t tview_envrec(RefId t) { return env_of(t); }
 RefId tview_make(TNodeId Q, uint64_t er) { return family_call(F_TVMAKE, Q, er); }
 
 void tview_open(RefId t, Head *h) {
@@ -687,60 +660,6 @@ TEnvId tenv_reindex(TEnvId E, MapId sigma) {
     for (size_t k = 0; k < n; k++) { tenv_entry(E, k, &slots[k], &vals[k]); vals[k] = reindex_tval(vals[k], sigma); }
     TEnvId out = tenv_make(n, slots, vals); free(slots); free(vals); return out;
 }
-RefId make_template_view(TNodeId Q, size_t n, const TVal *slots_vals, const uint64_t *slot_index) {
-    /* slot order */
-    uint64_t *sl = malloc((n ? n : 1) * sizeof(uint64_t)); TVal *vl = malloc((n ? n : 1) * sizeof(TVal));
-    require(sl && vl, "out of memory");
-    for (size_t k = 0; k < n; k++) { sl[k] = slot_index[k]; vl[k] = slots_vals[k]; }
-    for (size_t a = 1; a < n; a++) for (size_t b = a; b > 0 && sl[b - 1] > sl[b]; b--) { uint64_t s = sl[b]; sl[b] = sl[b - 1]; sl[b - 1] = s; TVal t = vl[b]; vl[b] = vl[b - 1]; vl[b - 1] = t; }
-    uint64_t er = envrec_host(tnode_def(Q), n, sl, vl);
-    free(sl); free(vl);
-    return tview_make(Q, er);
-}
-RefId tenv_instantiate(TNodeId Q, TEnvId E) {
-    if (node_construction(Q)) {
-        size_t np = tnode_nparams(Q); TVal *vals = malloc((np ? np : 1) * sizeof(TVal)); require(vals, "out of memory");
-        cons_vals(E, np, vals); RefId out = tnode_construction_view(Q, vals); free(vals); return out;
-    }
-    return tview_make(Q, family_call(F_ENVOF, Q, E));
-}
-RefId tview_reindex(RefId t, MapId sigma) {
-    require(!tview_is_construction(t), "a construction is reindexed by the substitution family");
-    TEnvId E = tenv_reindex(ref_tenv(t), sigma);
-    return tview_make(ref_tnode(t), family_call(F_ENVOF, ref_tnode(t), E));
-}
-size_t tnode_signature(RefId t, ParamSig *out, size_t max) {
-    if (tview_is_construction(t)) return 0;          /* a construction has no template boundary */
-    TNodeId Q = ref_tnode(t); const TDef *def = &TPL.defs[tnode_def(Q)];
-    uint64_t er = env_of(t);
-    size_t nf; const uint64_t *fl; node_free_list(Q, &nf, &fl);
-    size_t n = 0;
-    size_t np = def->nparams;
-    for (size_t k = 0; k < nf && n < max; k++) {
-        size_t slot = (size_t)fl[k];
-        /* the node's environment is closed under the declarations (finish),
-         * so every declared type is interpretable here */
-        if (slot < np) {
-            out[n].slot = slot; out[n].sort = def->sorts[slot];
-            out[n].type = def->ptype[slot] ? interp_at(def->ptype[slot], er).id : 0;
-            out[n].level = def->plevel[slot] ? interp_at(def->plevel[slot], er).id : LEVEL_NONE;
-            out[n].sig = def->psig[slot] ? interp_at(def->psig[slot], er).id : 0;
-            out[n].guard = def->pguard[slot] ? interp_at(def->pguard[slot], er).id : fc_true();
-        } else {
-            /* a term local used freely by this node (bound by an enclosing
-             * constructor or scope): its image is checked against the
-             * declaration it was stored under */
-            size_t l = slot - np;
-            if (def->lsort[l] != PS_REF || !def->ltype[l]) continue;
-            out[n].slot = slot; out[n].sort = PS_REF; out[n].sig = 0;
-            out[n].type = interp_at(def->ltype[l], er).id;
-            out[n].level = def->llevel[l] ? interp_at(def->llevel[l], er).id : LEVEL_NONE;
-            out[n].guard = def->lreq[l] ? interp_at(def->lreq[l], er).id : fc_true();
-        }
-        n++;
-    }
-    return n;
-}
 /* the boundary signature of a template node as expressions (interpreted by
  * the caller in the view's environment, one awaited interpretation each):
  * entry k of the node's free slots; false when the slot carries no checked
@@ -762,15 +681,6 @@ bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e) {
     const TDef *def = &TPL.defs[tnode_def(Q)];
     if (!def->rtype || def->root_node != Q) return false;
     *type_e = def->rtype; *level_e = def->rlevel;
-    return true;
-}
-bool tnode_result(RefId t, RefId *type, uint64_t *level) {
-    if (tview_is_construction(t)) return false;
-    TNodeId Q = ref_tnode(t); const TDef *def = &TPL.defs[tnode_def(Q)];
-    if (!def->rtype || def->root_node != Q) return false;
-    uint64_t er = env_of(t);
-    *type = interp_at(def->rtype, er).id;
-    *level = def->rlevel ? interp_at(def->rlevel, er).id : LEVEL_NONE;
     return true;
 }
 

@@ -23,7 +23,6 @@
 #include "pins.h"
 #include "template.h"
 #include "scope.h"
-#include "compiler.h"
 #include "lib.h"
 
 /* ---------------- records ---------------- */
@@ -82,7 +81,7 @@ bool jc_of_flat(ContextId F, uint64_t *out) {
 /* ---------------- families used ---------------- */
 static Family Jf_FCMEET, Jf_FCJOIN, Jf_FCENT, Jf_FCPROJ, Jf_FCDIMS, Jf_IVDIMS, Jf_DSUNION, Jf_REINDEX, Jf_IVRE, Jf_FCRE,
               Jf_FIELD, Jf_BINDER, Jf_HEAD, Jf_REFVAR, Jf_CINST, Jf_OVERRIDE, Jf_ENVOF, Jf_INTERP, Jf_ENVLOOK, Jf_SCOPESIDE,
-              Jf_TREF, Jf_TIV, Jf_TFC, Jf_GARGS, Jf_MAPT, Jf_MAPD, Jf_DECODE;
+              Jf_TREF, Jf_TIV, Jf_TFC, Jf_GARGS, Jf_MAPT, Jf_MAPD;
 static Family J_CLAUSES, J_JDIMS, J_JCOF, J_GENERIC, J_GMAP, J_OBSHEAD, J_LEVEL, J_INFER, J_HEAD, J_CHECK, J_CONVT, J_CONVt, J_SPINE,
               J_GLUEOK, J_TVIEW, J_TBOUND, J_SCOPEN, J_SCOWN, J_SCARG, J_MAP, J_CTX, J_CTXD, J_DECLOK, J_NODE, J_DECL, J_BODY,
               J_RV, J_RVD, J_EQUIV, J_DIMSIN, J_CMAP, J_APREFIX;
@@ -602,36 +601,6 @@ static void head_step(Cont *k, uint64_t v) {
         PASS(L->res);
         FR_AWAIT(k, r, Jf_REINDEX, global_type((SymbolId)L->x), L->m);
         DONE(J_OK, NULL, r, 0, 0);
-    }
-    if (L->tag == T_TCALL) {
-        /* §43 (until step 5 replaces this route by the Diagram action) */
-        FR_AWAIT(k, L->x, Jf_DECODE, t, 0);
-        {   size_t n; const uint64_t *dw = rget(L->x, &n); L->a0 = dw[0]; L->a1 = dw[1]; L->m = dw[2]; L->a2 = dw[3]; }
-        if (!transform_get(L->a0)) BAD("malformed TRANSFORM_CALL or unknown transform");
-        FR_AWAIT(k, L->y, J_JCOF, transform_get(L->a0)->parameters, 0);
-        JAW(L->res, J_MAP, RQ(G, C, L->m, L->y, transform_get(L->a0)->required_face, P));
-        PASS(L->res);
-        {   const CompiledTransform *tr = transform_get(L->a0); L->D = L->a1 ? tr->codomain : tr->domain; L->T = L->a1 ? tr->domain : tr->codomain; L->n = context_size(tr->parameters); }
-        FR_AWAIT(k, L->D, Jf_REINDEX, L->D, L->m);
-        FR_AWAIT(k, L->T, Jf_REINDEX, L->T, L->m);
-        FR_AWAIT(k, L->a3, Jf_FIELD, t, L->n + 1);
-        FR_AWAIT(k, L->a4, Jf_FIELD, t, L->n + 2);
-        JAW(L->res, J_CONVT, RQ(G, C, L->a3, L->D, P));
-        if (jr_code(L->res) == J_OK) JAW(L->res, J_CONVT, RQ(G, C, L->a4, L->T, P));
-        if (jr_code(L->res) == J_BAD) BAD("TRANSFORM_CALL annotations differ from the instantiated domain/codomain");
-        if (jr_code(L->res) == J_UNR) UNR("unresolved: TRANSFORM_CALL annotation conversion");
-        JAW(L->res, J_LEVEL, RQ(G, C, L->a3, P));
-        PASS(L->res);
-        L->l1 = jr_a(L->res);
-        JAW(L->res, J_LEVEL, RQ(G, C, L->a4, P));
-        PASS(L->res);
-        L->l2 = jr_a(L->res);
-        {   const CompiledTransform *tr = transform_get(L->a0);
-            uint64_t ed = L->a1 ? tr->codomain_level : tr->domain_level, ec = L->a1 ? tr->domain_level : tr->codomain_level;
-            if (L->l1 != ed || L->l2 != ec) BAD("TRANSFORM_CALL annotation levels differ from the record's stored levels"); }
-        JAW(L->res, J_CHECK, RQ(G, C, L->a2, L->D, P));
-        PASS(L->res);
-        DONE(J_OK, NULL, L->a4, 0, 0);
     }
     BAD("no inference rule for this head");
     FR_END(k);
@@ -1617,8 +1586,8 @@ void judge_families_init(void) {
     Jf_CINST = family_lookup("construction.instance"); Jf_OVERRIDE = family_lookup("map.override");
     Jf_ENVOF = family_lookup("template.envof"); Jf_INTERP = family_lookup("template.interp"); Jf_ENVLOOK = family_lookup("template.envlook");
     Jf_SCOPESIDE = family_lookup("scope.side"); Jf_TREF = family_lookup("trav.ref"); Jf_TIV = family_lookup("trav.interval"); Jf_TFC = family_lookup("trav.face");
-    Jf_GARGS = family_lookup("global.args"); Jf_MAPT = family_lookup("map.term_image"); Jf_MAPD = family_lookup("map.dim_image"); Jf_DECODE = family_lookup("tcall.decode");
-    require(Jf_FCMEET && Jf_SCOPESIDE && Jf_GARGS && Jf_DECODE && Jf_MAPD && Jf_ENVLOOK, "the judgment families' operand families are registered first");
+    Jf_GARGS = family_lookup("global.args"); Jf_MAPT = family_lookup("map.term_image"); Jf_MAPD = family_lookup("map.dim_image");
+    require(Jf_FCMEET && Jf_SCOPESIDE && Jf_GARGS && Jf_MAPD && Jf_ENVLOOK, "the judgment families' operand families are registered first");
     J_CLAUSES = family_define("judge.clauses", clauses_step, sizeof(JL), true);
     J_CMAP = family_define("judge.clause_map", cmap_step, sizeof(JL), true);
     J_DIMSIN = family_define("judge.dims_in", dimsin_step, sizeof(JL), true);

@@ -27,7 +27,7 @@ static RefId dc(RefId Q) { return mk_fst(Q); }
 static RefId dr(RefId Q,RefId y) { return mk_app(mk_fst(mk_snd(Q)),y); }
 static RefId dm(RefId Q,RefId y) { return mk_app(mk_snd(mk_snd(Q)),y); }
 
-static RefId maps_type(Level a,Level b,RefId A,RefId B) {
+static RefId w_maps_type(Level a,Level b,RefId A,RefId B) {
     Level m=max2(a,b);
     RefId F=mk_fun(a,b,A,B),G=mk_fun(b,a,B,A);
     TermVarId f=var(F),g=var(G),x=var(A),y=var(B);
@@ -40,7 +40,7 @@ static RefId maps_type(Level a,Level b,RefId A,RefId B) {
 }
 static RefId maps_pack(Level a,Level b,RefId A,RefId B,
                        RefId f,RefId g,RefId h,RefId k) {
-    Level m=max2(a,b); RefId M=maps_type(a,b,A,B),M1=tail(M,f),M2=tail(M1,g);
+    Level m=max2(a,b); RefId M=w_maps_type(a,b,A,B),M1=tail(M,f),M2=tail(M1,g);
     return pair(m,M,f,pair(m,M1,g,pair(m,M2,h,k)));
 }
 static RefId maps_id(Level a,RefId A) {
@@ -95,16 +95,16 @@ static RefId singleton(Level a,Level r,RefId A,RefId t,
         mk_fill_at(r,q,Z,fc_false(),empty,zv,iv_negate(iv_var(i)))));
     return maps_pack(s,r,S,Z,down,up,h,k);
 }
-static RefId diagram_type(Level b,Level r,RefId B) {
+static RefId w_diagram_type(Level b,Level r,RefId B) {
     Level rl=max2(b,r+1),ml=max2(b,r);
     TermVarId c=var(B),y=var(B);
     RefId RT=mk_pi_lv(b,r+1,y,B,mk_universe(r)); TermVarId R=var(RT);
-    RefId M=mk_pi_lv(b,ml,y,B,maps_type(r,b,mk_app(ref_var(R),ref_var(y)),
+    RefId M=mk_pi_lv(b,ml,y,B,w_maps_type(r,b,mk_app(ref_var(R),ref_var(y)),
         mk_path_const(b,B,ref_var(c),ref_var(y))));
     return mk_sigma_lv(b,rl,c,B,mk_sigma_lv(rl,ml,R,RT,M));
 }
 static RefId diagram_pack(Level b,Level r,RefId B,RefId c,RefId R,RefId M) {
-    Level dl=max2(b,r+1);RefId D=diagram_type(b,r,B);
+    Level dl=max2(b,r+1);RefId D=w_diagram_type(b,r,B);
     return pair(dl,D,c,pair(dl,tail(D,c),R,M));
 }
 static RefId zero(Level b,RefId B,RefId c) {
@@ -119,7 +119,7 @@ static Typed node_program(Level a,Level b,Level r) {
     TermVarId vB=var(UB),vA=var(UA);RefId B=ref_var(vB),A=ref_var(vA);
     TermVarId vt=var(A);RefId t=ref_var(vt);TermVarId x=var(A);
     RefId Ex=mk_path_const(a,A,t,ref_var(x));TermVarId e=var(Ex);
-    RefId DT=diagram_type(b,r,B);
+    RefId DT=w_diagram_type(b,r,B);
     RefId QT=mk_pi_lv(a,max2(a,dl),x,A,mk_pi_lv(a,dl,e,Ex,DT));
     Level ql=max2(a,dl);TermVarId q=var(QT);RefId Q=ref_var(q);
     RefId Q0=app2(Q,t,mk_refl(a,A,t)),c=dc(Q0);TermVarId y=var(B);RefId yv=ref_var(y);
@@ -129,7 +129,7 @@ static Typed node_program(Level a,Level b,Level r) {
     RefId E=singleton(a,r,A,t,x,e,D),F=dm(Q0,yv);
     RefId R=mk_lam_lv(b,y,B,S);
     RefId M=mk_lam_lv(b,y,B,maps_comp(s,r,b,S,Z,P,E,F));
-    RefId body=diagram_pack(b,s,B,c,R,M),type=diagram_type(b,s,B);
+    RefId body=diagram_pack(b,s,B,c,R,M),type=w_diagram_type(b,s,B);
     body=mk_lam_lv(ql,q,QT,body);type=mk_pi_lv(ql,outl,q,QT,type);outl=max2(ql,outl);
     body=mk_lam_lv(a,vt,A,body);type=mk_pi_lv(a,outl,vt,A,type);outl=max2(a,outl);
     body=mk_lam_lv(a+1,vA,UA,body);type=mk_pi_lv(a+1,outl,vA,UA,type);outl=max2(a+1,outl);
@@ -148,7 +148,7 @@ static void equal(ContextId G,RefId a,RefId b,RefId T,const char *label) {
 }
 int main(int argc,char **argv) {
     int workers=argc>1?atoi(argv[1]):0;
-    machine_init();eval_init();check_init();compiler_init();eval_set_workers(workers);
+    machine_init();eval_init();check_init();eval_set_workers(workers);
     check_set_budget(0);assert(eval_workers()==(size_t)workers);
     printf("actual_workers=%zu\n",eval_workers());fflush(stdout);
     ContextId empty=context_make(0,NULL,fc_true());
@@ -160,14 +160,17 @@ int main(int argc,char **argv) {
                 (unsigned long long)levels[j][0],(unsigned long long)levels[j][1],(unsigned long long)levels[j][2]);
             valid(empty,n.value,n.type,label);
         }
-        assert(transform_count()==0);
-        compiler_free();check_free();eval_free();machine_free();return 0;
+        for(size_t j=0;j<3;++j) {
+            Typed n=node_program(levels[j][0],levels[j][1],levels[j][2]);
+            valid(empty,dg_node(levels[j][0],levels[j][1],levels[j][2]),n.type,"production node at the witnessed type");
+        }
+        check_free();eval_free();machine_free();return 0;
     }
     Typed N=node_program(0,0,0);
     valid(empty,N.value,N.type,"closed nonempty node, arbitrary dependent runtime tail, all four fields");
+    valid(empty,dg_node(0,0,0),N.type,"production node at the witnessed type");
     if(argc>2 && !strcmp(argv[2],"generic")) {
-        assert(transform_count()==0);printf("registered_transforms=0\n");
-        compiler_free();check_free();eval_free();machine_free();return 0;
+        check_free();eval_free();machine_free();return 0;
     }
     RefId U=mk_universe(0);TermVarId vA=var(U);RefId A=ref_var(vA);
     TermVarId vt=var(A),vy=var(A);RefId t=ref_var(vt),y=ref_var(vy),P=mk_path_const(0,A,t,y);
@@ -175,14 +178,14 @@ int main(int argc,char **argv) {
     CtxDecl ds[]={{S_TERM,vA,U},{S_TERM,vt,A},{S_TERM,vy,A},{S_TERM,vp,P}};
     ContextId G=context_make(4,ds,fc_true());
     TermVarId x=var(A);RefId Ex=mk_path_const(0,A,t,ref_var(x));TermVarId e=var(Ex);
-    RefId QT=mk_pi_lv(0,1,x,A,mk_pi_lv(0,1,e,Ex,diagram_type(0,0,A)));
+    RefId QT=mk_pi_lv(0,1,x,A,mk_pi_lv(0,1,e,Ex,w_diagram_type(0,0,A)));
     RefId Q=mk_lam_lv(0,x,A,mk_lam_lv(0,e,Ex,zero(0,A,ref_var(x))));
     RefId computedQ=mk_app(mk_id_fun(1,QT),Q);
-    RefId D=app4(N.value,A,A,t,computedQ),DT=diagram_type(0,0,A);
+    RefId D=app4(dg_node(0,0,0),A,A,t,computedQ),DT=w_diagram_type(0,0,A);
     valid(G,D,DT,"runtime nonempty node with tail centre depending on bound x");
     equal(G,dc(D),t,A,"computed node centre");
     RefId S=dr(D,y),E=dm(D,y),f=mf(E),g=mg(E),h=mh(E),k=mk(E);
-    valid(G,E,maps_type(0,0,S,P),"computed node collapse, expansion and both inverse proofs");
+    valid(G,E,w_maps_type(0,0,S,P),"computed node collapse, expansion and both inverse proofs");
     RefId w=mk_app(g,p),fw=mk_app(f,w),gw=mk_app(g,fw);
     valid(G,w,S,"expansion of an arbitrary output path");
     valid(G,fw,P,"collapse of the expanded realization");
@@ -193,6 +196,5 @@ int main(int argc,char **argv) {
     equal(G,mk_papp_const(0,P,fw,p,kp,iv_one()),p,P,"first proof target endpoint");
     equal(G,mk_papp_const(0,S,gw,w,hw,iv_zero()),gw,S,"second proof source endpoint");
     equal(G,mk_papp_const(0,S,gw,w,hw,iv_one()),w,S,"second proof target endpoint");
-    assert(transform_count()==0);printf("registered_transforms=0\n");
-    compiler_free();check_free();eval_free();machine_free();return 0;
+    check_free();eval_free();machine_free();return 0;
 }

@@ -386,6 +386,4 @@ FaceId fc_project(FaceId chi, DimSetId S) { return family_call(F_FCPROJ, chi, S)
 DimSetId dimset_union(DimSetId a, DimSetId b) { return family_call(F_DSUNION, a, b); }
 DimSetId dimset_remove(DimSetId a, uint64_t x) { return family_call(F_DSREMOVE, a, x); }
 bool dimset_contains(DimSetId a, uint64_t x) { return family_call(F_DSCONTAINS, a, x) == 2; }
-VarSetId varset_union(VarSetId a, VarSetId b) { return family_call(F_VSUNION, a, b); }
-VarSetId varset_remove(VarSetId a, uint64_t x) { return family_call(F_VSREMOVE, a, x); }
 bool varset_contains(VarSetId a, uint64_t x) { return family_call(F_VSCONTAINS, a, x) == 2; }

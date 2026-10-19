@@ -24,7 +24,6 @@ bool iv_is_zero(IntervalId r);
 bool iv_is_one(IntervalId r);
 /* image function used by substitution: dimension → interval */
 typedef IntervalId (*DimImageFn)(DimVarId i, void *ctx);
-IntervalId iv_substitute(IntervalId r, DimImageFn img, void *ctx);
 /* append the dimensions occurring in r to out (unsorted, may repeat) */
 void iv_dims(IntervalId r, Words *out);
 /* intern from a working DNF (normalizes) */

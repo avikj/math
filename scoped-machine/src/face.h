@@ -24,7 +24,6 @@ bool fc_is_false(FaceId a);
 bool fc_is_true(FaceId a);
 /* (r = eps) for an interval r */
 FaceId fc_endpoint(IntervalId r, int eps);
-FaceId fc_substitute(FaceId phi, DimImageFn img, void *ctx);
 /* chi ⇒ phi by clause containment; inputs canonical */
 bool fc_entails(FaceId chi, FaceId phi);
 /* ∀i.phi: retain the clauses with no literal on i */
@@ -44,8 +43,6 @@ DimSetId dimset_remove(DimSetId a, uint64_t x);
 bool dimset_contains(DimSetId a, uint64_t x);
 VarSetId varset_make(uint64_t *elems, size_t n);
 const uint64_t *varset_get(VarSetId s, size_t *n);
-VarSetId varset_union(VarSetId a, VarSetId b);
-VarSetId varset_remove(VarSetId a, uint64_t x);
 bool varset_contains(VarSetId a, uint64_t x);
 
 #endif
