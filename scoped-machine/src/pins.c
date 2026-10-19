@@ -103,7 +103,7 @@ static void closure_step(Cont *k, uint64_t v) {
     }
     wordbuf_clear(&L->roots);
     while (buf_pop(&L->queue, &L->qpos, &L->qbase, &L->x)) {
-        if (pins_lookup(L->P, (SymbolId)L->x, NULL)) continue;
+        if (pins_lookup(L->P, (SymbolId)L->x, NULL)) { FR_YIELD(k); continue; }   /* already pinned: one step */
         {   RefId b = global_body((SymbolId)L->x);              /* the revision read, once */
             L->P = pins_insert(L->P, (SymbolId)L->x, b);
             L->kind = b; }

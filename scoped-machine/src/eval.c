@@ -295,7 +295,7 @@ static EvalResult *result_new(ResultClass cls, RefId ref) {
     require(r, "out of memory");
     r->cls = cls; r->ref = ref;
     EvalResult *h = __atomic_load_n(&E.results, __ATOMIC_RELAXED);
-    do r->next_alloc = h; while (!__atomic_compare_exchange_n(&E.results, &h, r, true, __ATOMIC_RELEASE, __ATOMIC_RELAXED));
+    do r->next_alloc = h; while (!__atomic_compare_exchange_n(&E.results, &h, r, false, __ATOMIC_RELEASE, __ATOMIC_RELAXED));
     return r;
 }
 
@@ -450,6 +450,11 @@ void family_publish(EntryId eid, uint64_t v) {
 
 
 /* REQ(K,c): U → R({c}) + EVAL(K), R(W) → R(W ⊎ {c}), D(v) → D(v) + DELIVER(c,v) */
+/* A failed CAS here means another request launched, pushed onto or published
+ * this entry in between: each failure is charged to that success (at most
+ * one per concurrent worker per success), so the retries of all requests are
+ * within a constant factor of their number. Strong CAS only: a spurious
+ * failure would be charged to nothing. */
 static void request_entry(EntryId eid, Cont *k) {
     Entry *e = ENT(eid);
     add_count(&E.ev.request);
@@ -479,7 +484,7 @@ static void request_entry(EntryId eid, Cont *k) {
             continue;
         }
         k->next = h;
-        if (__atomic_compare_exchange_n(&e->head, &h, k, true, __ATOMIC_RELEASE, __ATOMIC_ACQUIRE)) {
+        if (__atomic_compare_exchange_n(&e->head, &h, k, false, __ATOMIC_RELEASE, __ATOMIC_ACQUIRE)) {
             add_count(&E.ev.running_hit);
             return;
         }

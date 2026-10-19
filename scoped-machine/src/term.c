@@ -61,6 +61,10 @@ static int cmp_pair(const void *a, const void *b) {
 
 MapId mapb_finish(MapBuilder *b) {
     size_t nt = b->t.n / 2, nd = b->d.n / 2;
+    /* a host builder: inside a counted step only a map of a fixed handful of
+     * entries (bounded sort and record); a variable map is built by the map
+     * families (override, compose) or as a stepped record */
+    require(!intern_in_step || nt + nd <= 4, "a map of %zu entries finished synchronously inside a counted step", nt + nd);
     if (nt > 1) qsort(b->t.w, nt, 2 * sizeof(uint64_t), cmp_pair);
     if (nd > 1) qsort(b->d.w, nd, 2 * sizeof(uint64_t), cmp_pair);
     Words w; words_init(&w);

@@ -311,7 +311,7 @@ static void cinst_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, L->req, F_FCRE, tnode_const_required(Q), L->m);
     for (L->q = 0; L->q < L->np; L->q++) {
         tenv_entry(E, L->q, &L->slot, &L->val);
-        if (L->val.sort != PS_REF) continue;
+        if (L->val.sort != PS_REF) { FR_YIELD(k); continue; }   /* a skipped entry is still one step */
         { PSort so; RefId ty; FaceId g; tnode_param(Q, L->q, &so, &ty, &g); L->guard = g; }
         if (L->guard) FR_AWAIT(k, L->guard, F_FCRE, L->guard, L->m);
         else L->guard = fc_true();

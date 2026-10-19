@@ -1,9 +1,9 @@
 /* pool.h — fixed-size object pools.
  *
- * Allocation and release are O(1): a free list under a mutex whose critical
- * section is a constant number of pointer writes. A refill carves one block
- * of POOL_BLOCK objects (one fixed-size host allocation per POOL_BLOCK
- * objects). Objects are never returned to the host before pool_destroy.
+ * Allocation and release are O(1): a free list and a bump cursor under a
+ * mutex whose critical section is a constant number of pointer writes. A
+ * block of POOL_BLOCK objects is one fixed-size host allocation, made outside
+ * the lock. Objects are never returned to the host before pool_destroy.
  */
 #ifndef CUBICAL_POOL_H
 #define CUBICAL_POOL_H
@@ -17,6 +17,7 @@ typedef struct {
     size_t size;              /* object size, at least one pointer */
     void *free;               /* singly linked through the first word */
     void *blocks;             /* linked through the first word of each block */
+    char *bump; size_t left;  /* the current block's uncarved objects */
     pthread_mutex_t mu;
 } Pool;
 

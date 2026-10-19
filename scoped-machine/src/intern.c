@@ -88,9 +88,10 @@ static bool rec_equal(const Rec *r, uint64_t h, const uint64_t *w, size_t n) {
     return r->hash == h && r->n == n && (n == 0 || memcmp(r->w, w, n * sizeof(uint64_t)) == 0);
 }
 
-/* word storage for one record (constant work under the storage mutex; a
- * full page is replaced by one fixed-size host allocation, an oversized
- * record gets its own block) */
+/* word storage for one record (constant work under the storage mutex: a
+ * full page is replaced by one fixed-size host allocation; an oversized
+ * record — only the flatten owner's — gets one host block, whose words are
+ * then written one leaf per step) */
 static uint64_t *storage_reserve(Interner *t, size_t n) {
     pthread_mutex_lock(&t->mu);
     uint64_t *dst;

@@ -12,22 +12,29 @@ void pool_destroy(Pool *p) {
     memset(p, 0, sizeof *p);
 }
 
+/* one object, O(1) under the lock: a freed object, or the next object carved
+ * from the current block by a bump. A new block is one fixed-size host
+ * allocation made outside the lock (the allocation model: one bounded unit
+ * per POOL_BLOCK objects); a thread that loses the race to install it keeps
+ * it linked for teardown and carves from the installed one. */
 void *pool_alloc(Pool *p) {
 #ifdef POOL_DEBUG
     { void *x = calloc(1, p->size); require(x, "oom"); return x; }
 #endif
-    pthread_mutex_lock(&p->mu);
-    if (!p->free) {
-        /* one fixed-size block: a header word, then POOL_BLOCK objects */
+    void *x = NULL;
+    for (;;) {
+        pthread_mutex_lock(&p->mu);
+        if (p->free) { x = p->free; p->free = *(void **)x; }
+        else if (p->left) { x = p->bump; p->bump += p->size; p->left--; }
+        pthread_mutex_unlock(&p->mu);
+        if (x) break;
         char *b = malloc(16 + POOL_BLOCK * p->size);
         require(b, "out of memory");
+        pthread_mutex_lock(&p->mu);
         *(void **)b = p->blocks; p->blocks = b;
-        char *o = b + 16;
-        for (size_t i = 0; i < POOL_BLOCK; i++) { *(void **)(o + i * p->size) = p->free; p->free = o + i * p->size; }
+        if (!p->left) { p->bump = b + 16; p->left = POOL_BLOCK; }
+        pthread_mutex_unlock(&p->mu);
     }
-    void *x = p->free;
-    p->free = *(void **)x;
-    pthread_mutex_unlock(&p->mu);
     memset(x, 0, p->size);
     return x;
 }

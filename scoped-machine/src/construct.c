@@ -154,8 +154,10 @@ static void construct_step(Cont *k, uint64_t v) {
             FR_AWAIT(k, L->fd, F_DSUNION, L->fd, L->ds);
         }
     }
-    for (L->q = 0; L->q < L->nb; L->q++)
+    for (L->q = 0; L->q < L->nb; L->q++) {
         if (con_binder_sort(L, L->q) == S_TERM) require(con_binder_domain(L, L->q) < L->nf, "term binder without domain field");
+        FR_YIELD(k);                                        /* one binder per step */
+    }
     /* the required face: a system requires the join of its guards; another
      * construction what its total reference fields require (a field under a
      * dimension binder along the whole line); partial positions are used
@@ -166,7 +168,10 @@ static void construct_step(Cont *k, uint64_t v) {
     } else {
         L->req = fc_true();
         for (L->q = 0; L->q < L->nf; L->q++) {
-            if (con_field_kind(L, L->q) != F_REF || partial_position(L->tag, L->q)) continue;
+            if (con_field_kind(L, L->q) != F_REF || partial_position(L->tag, L->q)) {
+                FR_YIELD(k);                                /* a skipped field is still one step */
+                continue;
+            }
             L->g = ref_required(con_field_id(L, L->q));
             if (con_field_slot(L, L->q) != NO_SLOT && con_binder_sort(L, con_field_slot(L, L->q)) == S_DIM)
                 FR_AWAIT(k, L->g, F_FCFORALL, L->g, con_binder_formal(L, con_field_slot(L, L->q)));
@@ -342,7 +347,8 @@ static void globals_step(Cont *k, uint64_t v) {
     }
     FR_JOIN(k, L->J);
     for (L->q = 0; L->q < L->m; L->q++) {
-        {   size_t m; (void)varset_get(join_value(L->J, L->q), &m); if (!m) continue; }
+        {   size_t m; (void)varset_get(join_value(L->J, L->q), &m); L->n = m; }
+        if (!L->n) { FR_YIELD(k); continue; }               /* an empty set is still one step */
         FR_AWAIT(k, L->acc, F_VSUNION, L->acc, join_value(L->J, L->q));
     }
     join_free(L->J); L->J = NULL;
