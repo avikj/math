@@ -77,7 +77,6 @@ static struct {
     VEC(Join *) joins; pthread_mutex_t join_mu;
     VEC(void *) mems;                  /* frame-owned heap blocks (under join_mu); a stuck frame's are released at teardown */
     /* counters */
-    size_t tasks_created;
     EvalEvents ev;
 } E;
 
@@ -367,12 +366,6 @@ static EntryId entry_intern(Family f, uint64_t a, uint64_t b) {
     return id;
 }
 
-EntryId eval_entry_lookup(RefId t, FaceId chi) {
-    /* the observation of t under the current revisions of its premises */
-    PinSet P = pins_current(1, &t);
-    uint64_t w[4] = { F_WHNF, t, obs_key(fc_project(chi, ref_support(t)), P), machine_generation() | (1ULL << 63) };
-    return interner_find(&E.keys, w, 4);
-}
 EntryState eval_entry_state(EntryId e) {
     Cont *h = __atomic_load_n(&ENT(e)->head, __ATOMIC_ACQUIRE);
     return h == NULL ? E_UNEVALUATED : h == ENTRY_READY ? E_READY : E_RUNNING;
@@ -380,7 +373,6 @@ EntryState eval_entry_state(EntryId e) {
 size_t eval_entry_count(void) { return interner_count(&E.keys); }
 bool eval_entry_live(EntryId e) { return interner_live(&E.keys, e); }
 size_t eval_entry_runs(EntryId e) { return __atomic_load_n(&ENT(e)->runs, __ATOMIC_ACQUIRE); }
-size_t eval_task_count(void) { return __atomic_load_n(&E.tasks_created, __ATOMIC_SEQ_CST); }
 
 /* PUB(K,v) + R(W) → D(v) + {DELIVER(c,v) : c ∈ W}: the value is stored, the
  * waiter stack is exchanged for READY in one atomic step, and the stack is
@@ -424,7 +416,6 @@ static void request_entry(EntryId eid, Cont *k) {
             if (__atomic_compare_exchange_n(&e->head, &h, k, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
                 __atomic_store_n(&e->state, E_RUNNING, __ATOMIC_RELEASE);
                 add_count(&E.ev.launch);
-                add_count(&E.tasks_created);
                 Task job; memset(&job, 0, sizeof job); job.kind = TK_EVAL; job.entry = eid;
                 enqueue_reserved(job);
                 return;

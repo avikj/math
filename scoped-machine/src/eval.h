@@ -210,12 +210,10 @@ EvalEvents eval_events(void);
 
 
 /* cache introspection (tests) */
-EntryId eval_entry_lookup(RefId t, FaceId chi);     /* 0 when absent */
 EntryState eval_entry_state(EntryId e);
 size_t eval_entry_count(void);                       /* entry ids reserved (some may be unused after a lost insertion race) */
 bool eval_entry_live(EntryId e);                    /* e names a key */
 size_t eval_entry_runs(EntryId e);
-size_t eval_task_count(void);                       /* EVALUATE tasks created so far */
 
 /* an external receiver of a root request */
 Cont *cont_external(ExternalDeliver fn, void *ctx, void (*free_ctx)(void *));   /* free_ctx releases ctx if never delivered */

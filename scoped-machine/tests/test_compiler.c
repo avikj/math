@@ -12,6 +12,8 @@ static TermVarId tv(RefId type) { return declare_term(type, fc_true()); }
 static Tag head_tag(const EvalResult *r) { if (!r || ref_is_var(r->ref)) return 0; return ref_tag(r->ref); }
 static RefId app3(RefId f, RefId a, RefId b, RefId c) { return mk_app(mk_app(mk_app(f, a), b), c); }
 
+/* the number of whnf keys formed so far */
+static size_t whnf_keys(void) { size_t c = 0, n = eval_entry_count(); for (EntryId e = 1; e <= n; e++) if (eval_entry_live(e) && eval_entry_family(e) == F_WHNF) c++; return c; }
 int main(void) {
     printf("== §39–48 identities as ordinary values\n");
     machine_init(); eval_init(); check_init();
@@ -66,10 +68,11 @@ int main(void) {
       RefId at0 = reindex_dim(callk, k, iv_zero());
       CHECK(dimset_contains(ref_support(callk), k) && !dimset_contains(ref_support(at0), k), "the call's support follows its boundary");
       DimVarId z = declare_dim();
-      (void)whnf(callk, fc_lit(z, 1), &st);
-      CHECK(eval_entry_lookup(callk, fc_true()) == eval_entry_lookup(callk, fc_lit(z, 1)) && eval_entry_lookup(callk, fc_true()) != 0, "a face on an unrelated dimension projects away");
-      (void)whnf(callk, fc_lit(k, 0), &st);
-      CHECK(st == W_OK && eval_entry_lookup(callk, fc_lit(k, 0)) != eval_entry_lookup(callk, fc_true()), "a face on the call's own dimension is a different key"); }
+      (void)whnf(callk, fc_true(), &st);
+      size_t n0 = whnf_keys(); (void)whnf(callk, fc_lit(z, 1), &st);
+      CHECK(whnf_keys() == n0, "a face on an unrelated dimension projects away (no new key)");
+      n0 = whnf_keys(); (void)whnf(callk, fc_lit(k, 0), &st);
+      CHECK(st == W_OK && whnf_keys() > n0, "a face on the call's own dimension is a different key"); }
 
     /* ---- a higher path in the evidence ---- */
     { RefId Pt = mk_path_const(0, A.X, A.lhs, A.rhs);
