@@ -4,7 +4,7 @@
 
 #include "eval.h"
 
-typedef enum { JK_INFER, JK_CHECK, JK_LEVEL, JK_CONVT, JK_CONVt, JK_MAP, JK_CTX, JK_NODE, JK_DECL, JK_BODY, JK_STRUCT, JK_CLAUSES } JudgeKind;
+typedef enum { JK_INFER, JK_CHECK, JK_LEVEL, JK_CONVT, JK_CONVt, JK_MAP, JK_CTX, JK_NODE, JK_DECL, JK_BODY, JK_STRUCT, JK_SCOPE, JK_CLAUSES } JudgeKind;
 /* request records (each family's key operand a):
  *   INFER [G, C, t, P]   CHECK [G, C, t, A, P]   LEVEL [G, C, A, P]
  *   CONVT [G, C, A, B, P]   CONVt [G, C, t, u, A, P]   MAP [D, ψ, σ, Γ, χ, P]

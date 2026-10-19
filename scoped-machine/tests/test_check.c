@@ -210,7 +210,7 @@ int main(void) {
 
     /* budget */
     check_set_budget(5);
-    CHECK(check(G, fc_true(), mk_ua(0, A, A, mk_id_equiv(0, A)), mk_path_const(0, U0, A, A), &why) == CK_UNRESOLVED, "an exhausted budget is UNRESOLVED (%s)", why);
+    CHECK(check(G, fc_true(), mk_ua(0, B, B, mk_id_equiv(0, B)), mk_path_const(0, U0, B, B), &why) == CK_UNRESOLVED, "an exhausted budget is UNRESOLVED (%s)", why);
     check_set_budget(0);
 
     /* signature: a declared symbol with a well-typed body, and one without */

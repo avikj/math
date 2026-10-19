@@ -80,17 +80,7 @@ static CheckStatus jctx(ContextId F, uint64_t *G, const char **reason) {
 }
 /* scope: the face's dimensions, the reference's finite structure, its free
  * identities in the context */
-static CheckStatus scope_ok(uint64_t G, FaceId chi, RefId t, const char **reason) {
-    Words w; words_init(&w); fc_dims(chi, &w);
-    for (size_t k = 0; k < w.n; k++) if (!jc_dim(G, w.w[k])) { words_free(&w); *reason = "face mentions an undeclared dimension"; return CK_INVALID; }
-    words_free(&w);
-    { uint64_t q[3] = { 0, t, 0 }; CheckStatus st = ck(run(JK_STRUCT, 3, q), reason); if (st != CK_VALID) return st; }
-    size_t n; const uint64_t *xs = varset_get(ref_freevars(t), &n);
-    for (size_t k = 0; k < n; k++) if (!jc_term(G, xs[k], NULL)) { *reason = "unbound variable"; return CK_INVALID; }
-    const uint64_t *ds = dimset_get(ref_support(t), &n);
-    for (size_t k = 0; k < n; k++) if (!jc_dim(G, ds[k])) { *reason = "unbound dimension"; return CK_INVALID; }
-    return CK_VALID;
-}
+static CheckStatus scope_ok(uint64_t G, FaceId chi, RefId t, const char **reason) { uint64_t q[3] = { G, chi, t }; return ck(run(JK_SCOPE, 3, q), reason); }
 
 /* structural validity is the judgment family judge.structure */
 bool ref_validate(RefId t, const char **reason) { uint64_t q[3] = { 0, t, 0 }; return ck(run(JK_STRUCT, 3, q), reason) == CK_VALID; }
@@ -128,7 +118,7 @@ static Inference infer_pinned(ContextId F, FaceId chi, RefId t, PinSet P) {
     RefId *types = malloc((nc ? nc : 1) * sizeof(RefId)); FaceId *faces = malloc((nc ? nc : 1) * sizeof(FaceId));
     for (size_t c = 0; c < nc && out.st == CK_VALID; c++) {
         faces[c] = cs[c];
-        uint64_t w[4] = { G, cs[c], t, P }; uint64_t res = run(JK_INFER, 4, w);
+        uint64_t w[4] = { 0, cs[c], t, P }; uint64_t res = run(JK_INFER, 4, w);
         out.st = ck(res, &out.reason);
         if (out.st == CK_VALID) types[c] = jr_a(res);
     }
@@ -154,7 +144,7 @@ CheckStatus check_is_type(ContextId F, FaceId chi, RefId A, uint64_t *level, con
     if (st == CK_VALID) {
         const uint64_t *cs; size_t nc = clauses(chi, &cs);
         for (size_t c = 0; c < nc && st == CK_VALID; c++) {
-            uint64_t w[4] = { G, cs[c], A, P }; uint64_t res = run(JK_LEVEL, 4, w);
+            uint64_t w[4] = { 0, cs[c], A, P }; uint64_t res = run(JK_LEVEL, 4, w);
             st = ck(res, reason);
             if (st == CK_VALID) { if (have && jr_a(res) != lvl) { *reason = "type lives in different universes under different clauses"; st = CK_INVALID; } lvl = jr_a(res); have = true; }
         }
@@ -171,7 +161,7 @@ CheckStatus check(ContextId F, FaceId chi, RefId t, RefId A, const char **reason
     if (st == CK_VALID) st = scope_ok(G, chi, A, reason);
     if (st == CK_VALID) {
         const uint64_t *cs; size_t nc = clauses(chi, &cs);
-        for (size_t c = 0; c < nc && st == CK_VALID; c++) { uint64_t w[5] = { G, cs[c], t, A, P }; st = ck(run(JK_CHECK, 5, w), reason); }
+        for (size_t c = 0; c < nc && st == CK_VALID; c++) { uint64_t w[5] = { 0, cs[c], t, A, P }; st = ck(run(JK_CHECK, 5, w), reason); }
     }
     if (st == CK_VALID) st = premises(P, reason);
     return st;
@@ -185,8 +175,8 @@ static ConvStatus convert(ContextId F, FaceId chi, RefId t, RefId u, RefId A, bo
     ConvStatus out = CV_EQUAL;
     for (size_t c = 0; c < nc && out != CV_UNEQUAL; c++) {
         uint64_t res;
-        if (types) { uint64_t w[5] = { G, cs[c], t, u, P }; res = run(JK_CONVT, 5, w); }
-        else { uint64_t w[6] = { G, cs[c], t, u, A, P }; res = run(JK_CONVt, 6, w); }
+        if (types) { uint64_t w[5] = { 0, cs[c], t, u, P }; res = run(JK_CONVT, 5, w); }
+        else { uint64_t w[6] = { 0, cs[c], t, u, A, P }; res = run(JK_CONVt, 6, w); }
         out = and3(out, cv(res));
     }
     if (out == CV_EQUAL && premises(P, &why) != CK_VALID) out = CV_UNRESOLVED;
