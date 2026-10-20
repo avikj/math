@@ -1346,8 +1346,6 @@ static void node_step(Cont *k, uint64_t v) {
 static void decl_step(Cont *k, uint64_t v) {
     JLOC;   /* q: s */
     FR_BEGIN(k);
-    FR_AWAIT(k, r, F_READ, q[0], k->view);
-    if (!r) BAD("a symbol not declared in the request's view");
     if (!global_type((SymbolId)q[0])) BAD("symbol without a declared type");
     FR_AWAIT(k, L->G2, J_GCTX, q[0], 0);
     JAW(L->res, J_CTX, RQ(L->G2, fc_true()));

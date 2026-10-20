@@ -138,15 +138,17 @@ item 2 realized by keyed sharing (two deliveries of one producer).
    requester that installed it. An occurrence (an effect) is one node. A read of s is the
    dependency read(s, V); its value is the revision; the unfold step requests
    unfold(reference, body) at exactly that revision, and the body judgment body(revision)
-   checks that same record. A use of s in a typing judgment (decl) reads s's revision too.
+   checks that same record. A use of s in a typing judgment (decl) reads s's declaration,
+   which never changes once s is declared; it reads no revision.
    The revisions a derivation read are reads(entry), from its recorded dependencies (a
    resolver contributes its chosen node). Within one view every key is fixed; across views,
    which view's request installed a node can depend on the schedule: the value cannot, the
    work (reuse or recomputation) can — the scope of the schedule claim (HANDOFF §78.5).
    The public checking API, proof use and effect preparation request one judgment,
-   judge.admit (check.c): its derivation by kind, and the body of every revision it read
-   (and, for proof use, every revision the conservative audit reached) validated, closed
-   under the reads of those body judgments; its result names the validated revisions.
+   judge.admit (check.c): its derivation by kind, and the body of every revision it read,
+   of the revision in its view of every symbol whose declaration it used, and (for proof use)
+   of every revision the conservative audit reached validated, closed under the reads and
+   uses of those body judgments; its result names the validated revisions.
    Raw observation reads only what its reduction unfolds; the conservative stored-syntax
    audit exists only inside proof use.
 7. Bounded steps (replaces the superseded charging of CAS retries to concurrent successes).

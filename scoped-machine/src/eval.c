@@ -493,21 +493,23 @@ static void read_step(Cont *k, uint64_t v) {
     FR_FINISH(k, r ? subst_value(k->w[1], r - 1) : 0);
     FR_END(k);
 }
-/* reads(x): the set of revisions read in the derivation of the published
- * entry x (its read entries' values; a resolver's chosen node; nothing for
- * a pure entry), one dependency per step */
+/* reads(x, 0): the set of revisions read in the derivation of the
+ * published entry x (its read entries' values); reads(x, 1): the set of
+ * symbols whose declarations it used (its decl entries' symbols). A
+ * resolver contributes its chosen node; a pure entry reads nothing. One
+ * dependency per step. */
 typedef struct { DepNode *d; uint64_t acc, r; } RdLoc;
 static void reads_step(Cont *k, uint64_t v) {
     RdLoc *L = FR_LOC(k, RdLoc);
     EntryId x = k->w[0]; uint64_t r = 0;
     Family f = eval_entry_family(x);
     FR_BEGIN(k);
-    if (f == F_READ) { uint64_t rev = ENT(x)->value; FR_FINISH(k, set_make(&rev, rev ? 1 : 0)); }
-    if (f == F_RESOLVE) { FR_AWAIT(k, r, F_READS, ENT(x)->via, 0); FR_FINISH(k, r); }
-    L->acc = set_make(NULL, 0);
+    if (f == F_READ) { uint64_t rev = ENT(x)->value; FR_FINISH(k, set_make(&rev, rev && !k->w[1] ? 1 : 0)); }
+    if (f == F_RESOLVE) { FR_AWAIT(k, r, F_READS, ENT(x)->via, k->w[1]); FR_FINISH(k, r); }
+    {   uint64_t s = f == J_DECL && k->w[1] ? rword(eval_entry_a(x), 0) : 0; L->acc = set_make(&s, s ? 1 : 0); }
     if (KIND[f] == FK_PURE) FR_FINISH(k, L->acc);
     for (L->d = __atomic_load_n(&ENT(x)->deps, __ATOMIC_ACQUIRE); L->d; L->d = L->d->next) {
-        FR_AWAIT(k, L->r, F_READS, L->d->e, 0);
+        FR_AWAIT(k, L->r, F_READS, L->d->e, k->w[1]);
         FR_AWAIT(k, L->acc, F_SUNION, L->acc, L->r);
     }
     FR_FINISH(k, L->acc);

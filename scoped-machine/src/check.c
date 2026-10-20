@@ -30,7 +30,7 @@ enum { J_OK = 1, J_BAD = 2, J_UNR = 3 };
 
 /* ---------------- judge.admit ---------------- */
 typedef struct {
-    uint64_t res, d, revs, done, fresh, x, r, aux, code, why, main[4];
+    uint64_t res, d, revs, syms, done, fresh, x, r, aux, code, why, main[4];
     size_t nm, i, n; bool grew, conv;
 } AdLoc;
 #define AJAW(var, fam, a, b) do { L->main[L->nm++] = frame_request_key(k, (fam), (a), (b)); } while (0); FR_AWAIT(k, var, fam, a, b)
@@ -66,12 +66,16 @@ static void admit_step(Cont *k, uint64_t v) {
     if (kind == AD_OBS) { AJAW(L->aux, F_OBS, x, observe_key(chi, 0)); }
     if (kind == AD_PROOF && !fc_is_false(chi)) { AJAW(L->aux, F_CLOSURE, RQ(G, x, y), 0); }   /* the conservative audit's revisions */
 premises:
-    /* the revisions the derivation read (and the audit reached), each
-     * body validated, closed under the reads of those body judgments */
-    L->revs = set_make(NULL, 0); L->done = set_make(NULL, 0);
+    /* the revisions the derivation read (and the audit reached), and the
+     * revision in this view of each symbol whose declaration it used; each
+     * body validated, closed under the reads and uses of those body
+     * judgments */
+    L->revs = set_make(NULL, 0); L->syms = set_make(NULL, 0); L->done = set_make(NULL, 0);
     for (L->i = 0; L->i < L->nm; L->i++) {
         FR_AWAIT(k, r, F_READS, L->main[L->i], 0);
         FR_AWAIT(k, L->revs, F_SUNION, L->revs, r);
+        FR_AWAIT(k, r, F_READS, L->main[L->i], 1);
+        FR_AWAIT(k, L->syms, F_SUNION, L->syms, r);
     }
     if (kind == AD_PROOF && L->aux) {
         for (L->i = 0; L->i < subst_size(L->aux); L->i++) {
@@ -82,6 +86,12 @@ premises:
     L->res = 0;
     do {
         L->grew = false; L->fresh = set_make(NULL, 0);
+        for (L->i = 0; L->i < (set_get(L->syms, &L->n), L->n); L->i++) {
+            {   size_t n; L->x = set_get(L->syms, &n)[L->i]; }
+            FR_AWAIT(k, r, F_READ, L->x, k->view);
+            FR_AWAIT(k, L->revs, F_SUNION, L->revs, set_make(&r, r ? 1 : 0));
+        }
+        L->syms = set_make(NULL, 0);
         for (L->i = 0; L->i < (set_get(L->revs, &L->n), L->n); L->i++) {
             {   size_t n; L->x = set_get(L->revs, &n)[L->i]; }
             FR_AWAIT(k, r, F_SCONTAINS, L->done, L->x);
@@ -91,9 +101,12 @@ premises:
             FR_AWAIT(k, L->done, F_SUNION, L->done, set_make(&L->x, 1));
             FR_AWAIT(k, r, F_READS, frame_request_key(k, J_BODY, RQ(L->x), 0), 0);
             FR_AWAIT(k, L->fresh, F_SUNION, L->fresh, r);
+            FR_AWAIT(k, r, F_READS, frame_request_key(k, J_BODY, RQ(L->x), 0), 1);
+            FR_AWAIT(k, L->syms, F_SUNION, L->syms, r);
         }
         FR_AWAIT(k, r, F_SUNION, L->revs, L->fresh);
         if (r != L->revs) { L->revs = r; L->grew = true; }
+        if ((set_get(L->syms, &L->n), L->n)) L->grew = true;
     } while (L->grew);
     L->code = jr_code(L->d); L->why = (uint64_t)(uintptr_t)jr_why(L->d);
     if (L->code == J_OK && L->res) { L->code = L->conv ? J_UNR : jr_code(L->res); L->why = (uint64_t)(uintptr_t)jr_why(L->res); }
