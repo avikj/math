@@ -70,6 +70,19 @@ static void effect_case(bool valid, bool pause) {
     proof_use_free(&u);
 }
 
+/* the completion handoff's probe: one relative family reading s; opaque →
+ * it awaits itself; a body → 42 */
+static Family rel;
+static void rel_step(Cont *k, uint64_t v) {
+    FR_BEGIN(k);
+    FR_AWAIT(k, k->w[2], F_READ, k->w[0], k->view);
+    if (!revision_body(k->w[2])) {
+        FR_AWAIT(k, k->w[3], rel, k->w[0], 0);
+    }
+    FR_FINISH(k, 42);
+    FR_END(k);
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("== the 550c018 acceptance cases\n");
@@ -116,7 +129,7 @@ int main(void) {
         EvalResult r1 = whnf(mk_fst(mk_pair(global_ref(t), global_ref(h))), fc_true(), &s1);
         size_t b1 = whnf_bodies(global_ref(t));
         CHECK(s0 == W_OK && r0.ref == x && s1 == W_OK && r1.ref == x, "both observations give x");
-        CHECK(b0 == 1 && b1 == 1, "one WHNF body for g across the unrelated declaration (%zu, %zu)", b0, b1); }
+        CHECK(b0 >= 1 && b1 == b0, "no WHNF node of g is added across the unrelated declaration (%zu, %zu)", b0, b1); }
 
     /* a definition reached through a declared type */
     {   fresh(); const char *why = "";
@@ -127,6 +140,24 @@ int main(void) {
         WhnfStatus ws; EvalResult r = observe_checked(empty, val, &ws, &why);
         CHECK(ws == W_OK && r.cls, "its checked observation succeeds (%s)", why);
         CHECK(check(empty, fc_true(), val, U1, &why) == CK_VALID, "it checks at the convertible type (%s)", why); }
+
+    /* a relevant revision branches at the read: the old view's request stays
+     * pending on itself; the new view completes without awaiting it; an
+     * unrelated declaration does not split the computation */
+    {   fresh();
+        if (!rel) { rel = family_new("review.pending-revision", rel_step, 0); family_kind(rel, FK_RELATIVE); }
+        SymbolId s = define_global("pending", none, none, U1);
+        WhnfStatus st;
+        family_run_in(rel, s, 0, view_current(), 0, &st);
+        CHECK(st == W_STUCK, "the request in the opaque view is pending (status %d)", st);
+        set_global_body(s, U);
+        uint64_t out = family_run_in(rel, s, 0, view_current(), 0, &st);
+        CHECK(st == W_OK && out == 42, "the request in the new view completes with 42 (status %d, value %llu)", st, (unsigned long long)out);
+        size_t e0 = eval_entry_count();
+        define_global("unrelated", none, none, U1);
+        uint64_t again = family_run_in(rel, s, 0, view_current(), 0, &st);
+        size_t grew = 0; for (EntryId e = e0 + 1; e <= eval_entry_count(); e++) if (eval_entry_live(e) && eval_entry_family(e) == rel) grew++;
+        CHECK(st == W_OK && again == 42 && grew == 0, "an unrelated declaration reuses every node (%zu new)", grew); }
 
     printf("  %d passed, %d failed\n", np, nf);
     machine_free();

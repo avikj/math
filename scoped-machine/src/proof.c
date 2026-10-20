@@ -9,29 +9,28 @@
  * parameter types) and the body of each symbol reached, each read once
  * through the request's binding view: the map symbol ↦ revision read. One
  * work item per step. */
-typedef struct { WordBuf todo; size_t pos, base, q; const uint64_t *g; size_t ng; uint64_t P, x, kind, G, rev; } AuLoc;
-/* pop the next word of a buffer consumed from its head (pages released) */
-static bool buf_pop(WordBuf *b, size_t *pos, size_t *base, uint64_t *out) {
-    if (*pos >= b->n) return false;
-    if (*pos - *base == WB_PAGE) { wordbuf_drain_one(b); *base += WB_PAGE; }
-    *out = b->head->w[*pos - *base]; (*pos)++;
+typedef struct { uint64_t todo; size_t q; const uint64_t *g; size_t ng; uint64_t P, x, kind, G, rev; } AuLoc;
+/* the work list: interned cons records [kind, x, rest] (0 is empty), so a
+ * suspended audit holds only immutable records */
+static void push2(uint64_t *s, uint64_t k, uint64_t x) { *s = RQ(k, x, *s); }
+static bool pop2(uint64_t *s, uint64_t *k, uint64_t *x) {
+    if (!*s) return false;
+    size_t n; const uint64_t *w = rget(*s, &n); *k = w[0]; *x = w[1]; *s = w[2];
     return true;
 }
-static void push2(WordBuf *b, uint64_t k, uint64_t x) { wordbuf_push(b, k); wordbuf_push(b, x); }
 static void audit_step(Cont *k, uint64_t v) {
     AuLoc *L = FR_LOC(k, AuLoc);
     size_t nq; const uint64_t *q = rget(k->w[0], &nq);
     uint64_t r = 0;
     FR_BEGIN(k);
-    wordbuf_init(&L->todo);
+    L->todo = 0;
     push2(&L->todo, 0, q[1]); push2(&L->todo, 0, q[2]);
     for (L->G = q[0]; !jc_is_empty(L->G); L->G = jc_parent(L->G)) {
         {   Sort s; uint64_t id; jc_decl(L->G, &s, &id); if (s == S_TERM) push2(&L->todo, 0, term_var_type(id)); }
         FR_YIELD(k);
     }
     L->P = env_empty(0);
-    while (buf_pop(&L->todo, &L->pos, &L->base, &L->kind)) {
-        buf_pop(&L->todo, &L->pos, &L->base, &L->x);
+    while (pop2(&L->todo, &L->kind, &L->x)) {
         if (L->kind == 2) {                                      /* a symbol */
             FR_AWAIT(k, r, F_LOOKUP, L->P, L->x);
             if (r) continue;                                     /* already read */
@@ -49,7 +48,6 @@ static void audit_step(Cont *k, uint64_t v) {
         L->g = set_get(r, &L->ng);
         for (L->q = 0; L->q < L->ng; L->q++) { push2(&L->todo, 2, L->g[L->q]); FR_YIELD(k); }
     }
-    wordbuf_clear(&L->todo);
     FR_FINISH(k, L->P);
     FR_END(k);
 }

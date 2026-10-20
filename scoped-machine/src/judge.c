@@ -146,17 +146,22 @@ static void every_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     FR_AWAIT(k, L->cl, J_CLAUSES, q[0], 0);
     for (L->c = 0; L->c < (rget(L->cl, &L->nc), L->nc); L->c++) { family_launch(J_REQ, every_req(q, nq_, rget(L->cl, &L->nc)[L->c]), q[1]); FR_YIELD(k); }
-    L->res = 0; L->y = 1; L->d = 0; wordbuf_init(&L->wb);
+    /* every clause awaited before the record is built: no buffer is live
+     * across a wait that can expose a revision read */
+    L->res = 0; L->y = 1; L->d = 0;
     for (L->c = 0; L->c < L->nc; L->c++) {
         FR_AWAIT(k, L->x, J_REQ, every_req(q, nq_, rget(L->cl, &L->nc)[L->c]), q[1]);
         if (jr_code(L->x) == J_BAD) { if (!L->res || jr_code(L->res) != J_BAD) L->res = L->x; }
         else if (jr_code(L->x) == J_UNR) { if (!L->res) L->res = L->x; }
-        else {
-            if (L->d++ == 0) L->T = jr_a(L->x); else if (jr_a(L->x) != L->T) L->y = 0;
-            wordbuf_push(&L->wb, rget(L->cl, &L->nc)[L->c]); wordbuf_push(&L->wb, jr_a(L->x));
-        }
+        else if (L->d++ == 0) L->T = jr_a(L->x);
+        else if (jr_a(L->x) != L->T) L->y = 0;
     }
-    if (L->res) { wordbuf_clear(&L->wb); FR_FINISH(k, L->res); }
+    if (L->res) FR_FINISH(k, L->res);
+    wordbuf_init(&L->wb);
+    for (L->c = 0; L->c < L->nc; L->c++) {
+        FR_AWAIT(k, L->x, J_REQ, every_req(q, nq_, rget(L->cl, &L->nc)[L->c]), q[1]);
+        wordbuf_push(&L->wb, rget(L->cl, &L->nc)[L->c]); wordbuf_push(&L->wb, jr_a(L->x));
+    }
     FR_CALL(k, L->z, intern_sub(k, &M.keys, &L->wb, &L->created));
     DONE(J_OK, NULL, L->d ? L->T : 0, L->y, L->z);
     FR_END(k);

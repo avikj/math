@@ -63,6 +63,8 @@ struct Cont {
     Cont *parent;       /* subroutine frame: the frame its value returns to */
     Cont *next;         /* link in an entry's waiter stack / a delivery chain */
     uint64_t view;      /* the binding view its reads go through (term.h; 0: a pure frame) */
+    EntryId aw;         /* the entry it awaits (0: none, a subroutine or a yield) */
+    uint64_t rf, ra, rb;    /* that request (family, a, b), re-issued by a continuation */
 };
 
 typedef struct DepNode { EntryId e; struct DepNode *next; } DepNode;
@@ -72,8 +74,11 @@ typedef struct {
     size_t runs;        /* evaluator tasks executed for this key (must be ≤ 1) */
     Count work;         /* steps of its producer's frame and subroutines (exact; single writer) */
     DepNode *deps;      /* the entries its producer requested or launched (pushed by its one producer) */
-    uint64_t view;      /* a node's or occurrence's installing view (written before its producer runs) */
+    uint64_t view;      /* a node's own partial view (from its key) or an occurrence's installing view */
     EntryId via;        /* a resolver's chosen node (written before it publishes) */
+    uint64_t need;      /* published Read(s): the symbol whose revision this entry's answer awaits (0: none) */
+    Cont *snap;         /* a node that published Read(s): its suspended frame chain, the continuation */
+    bool node;          /* a relative node (set before its producer runs) */
 } Entry;
 
 typedef void (*FamResume)(Cont *k, uint64_t v);
@@ -95,13 +100,25 @@ typedef void (*FamResume)(Cont *k, uint64_t v);
 void family_define(Family f, const char *name, FamResume step, size_t loc_size);   /* a fixed family (families.h) */
 /* Families are pure (keys of immutable operands), relative (they read
  * definition revisions, directly or through a child) or occurrences (a live
- * accepted event, one node per key). A relative request under the binding
- * view V is answered by the resolver (f, a, b, V): it requests the node
- * (f, a, b, ∅), and while the node's derivation read revisions that differ
- * from V's it requests the node whose path adds those symbols at V's
- * revisions; it publishes the agreeing node's value. A node's key holds no view; its frames
- * read through the view of the requester that installed it. An occurrence is
- * one node, installed with its first requester's view. */
+ * accepted event, one node per key).
+ *
+ * A relative computation exposes each revision it needs before awaiting
+ * it (completion handoff §6.2). A node is keyed by (f, a, b, path) and
+ * carries its own partial view: the revisions its derivation has read, and
+ * nothing else. The root node has path 0 and the empty view. When a frame
+ * of a node awaits an answer that is Read(s) — a read of s absent from the
+ * node's view, or a child's Read(s) — the node publishes Read(s) itself and
+ * keeps its suspended frames as the continuation. The resolver (f, a, b, V)
+ * walks the chain: it requests the root node; at Read(s) it reads V[s] and
+ * requests the continuation node (previous node, V[s], view + s ↦ V[s]),
+ * which resumes a copy of the continuation by re-issuing the awaited
+ * request under the extended view; at an answer it publishes it. Under a
+ * partial V (a resolver requested by a node) a symbol absent from V makes
+ * the resolver publish Read(s) in turn. So equal read revisions share every
+ * node, a different revision branches at the read without waiting on the
+ * other branch, and a view belongs to resolution, never to a node's
+ * identity. An occurrence is one node, installed with its first requester's
+ * view. */
 typedef enum { FK_PURE = 0, FK_RELATIVE, FK_OCCURRENCE } FamKind;
 void family_kind(Family f, FamKind kind);
 /* the entry a request (f, a, b) made by frame k reaches (for view.reads,

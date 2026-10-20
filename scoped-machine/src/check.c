@@ -33,7 +33,9 @@ typedef struct {
     uint64_t res, d, revs, syms, done, fresh, x, r, aux, code, why, main[4];
     size_t nm, i, n; bool grew, conv;
 } AdLoc;
-#define AJAW(var, fam, a, b) do { L->main[L->nm++] = frame_request_key(k, (fam), (a), (b)); } while (0); FR_AWAIT(k, var, fam, a, b)
+/* the request is named after it resumes, under the view the frame then has
+ * (a continuation re-issues it under its extended view) */
+#define AJAW(var, fam, a, b) FR_AWAIT(k, var, fam, a, b); L->main[L->nm++] = frame_request_key(k, (fam), (a), (b))
 static void admit_step(Cont *k, uint64_t v) {
     AdLoc *L = FR_LOC(k, AdLoc);
     size_t nq; const uint64_t *q = rget(k->w[0], &nq);

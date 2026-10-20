@@ -424,16 +424,18 @@ static void enqueue_resume(Cont *k, uint64_t v) {
 }
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b) {
     keep_frame(k);
-    request_entry(request_key(f, a, b, k->view), k, k->owner, k->view);
+    EntryId x = request_key(f, a, b, k->view);
+    k->aw = x; k->rf = f; k->ra = a; k->rb = b;
+    request_entry(x, k, k->owner, k->view);
 }
-static void frame_request_entry(Cont *k, EntryId eid) { keep_frame(k); request_entry(eid, k, k->owner, k->view); }
+static void frame_request_entry(Cont *k, EntryId eid) { keep_frame(k); k->aw = eid; k->rf = 0; request_entry(eid, k, k->owner, k->view); }
 void family_launch(Family f, uint64_t a, uint64_t b) {
     require(tl_step_frame, "a launch is made by a frame's step");
     request_entry(request_key(f, a, b, tl_step_frame->view), NULL, tl_step_frame->owner, tl_step_frame->view);
 }
 void frame_call(Cont *k, Cont *child) {
     require(child->dest == 0, "a subroutine frame of this caller");
-    child->parent = k; keep_frame(k);
+    child->parent = k; k->aw = 0; keep_frame(k);
     enqueue_resume(child, 0);
 }
 void frame_yield(Cont *k) {
@@ -498,13 +500,21 @@ static void flatten_step(Cont *k, uint64_t v) {
 static uint64_t flatten_root(Interner *t, uint64_t root) { return family_call(F_FLATTEN, t->index, root); }
 
 /* ---------------- binding views ----------------
- * read(s, V): the revision of s in the view V (0: s is not declared there).
- * A node's reads are its dependencies on read entries. */
+ * A full view is the machine's map symbol ↦ revision (term.h); a node's
+ * partial view is the record [PV_MARK, map] of the revisions it has read
+ * (length 2, never the length of a map record). read(s, V): the revision
+ * of s in V; 0 when a full view does not declare s; Read(s) (published
+ * need) when a partial view does not contain s. A node's reads are its
+ * dependencies on read entries. */
+#define PV_MARK 0x5056494557ULL
+static uint64_t view_partial(uint64_t map) { return RQ(PV_MARK, map); }
+static uint64_t view_map(uint64_t V) { size_t n; const uint64_t *w = rget(V, &n); return n == 2 && w[0] == PV_MARK ? w[1] : 0; }
 static void read_step(Cont *k, uint64_t v) {
-    uint64_t r = 0;
+    uint64_t r = 0, m = view_map(k->w[1]);
     FR_BEGIN(k);
-    FR_AWAIT(k, r, F_LOOKUP, k->w[1], k->w[0]);
-    FR_FINISH(k, r ? subst_value(k->w[1], r - 1) : 0);
+    FR_AWAIT(k, r, F_LOOKUP, m ? m : k->w[1], k->w[0]);
+    if (!r && m) { __atomic_store_n(&ENT(k->dest)->need, k->w[0], __ATOMIC_RELEASE); FR_FINISH(k, 0); }
+    FR_FINISH(k, r ? subst_value(m ? m : k->w[1], r - 1) : 0);
     FR_END(k);
 }
 /* reads(x, 0): the set of revisions read in the derivation of the
@@ -576,33 +586,31 @@ void eval_work(size_t n, const EntryId *roots, Exact *out, size_t *support) {
     for (size_t i = 1; i < m; i++) exact_add_word(out, i - 1, w[i]);
 }
 
-/* resolve(f, a, b, V): the node of (f, a, b) whose reads agree with V.
- * It requests the root node; while the node it reached read a revision that
- * differs from V's, it requests the node whose path adds every such symbol
- * at V's revision (a substitution record, so the path is a set). One read
- * comparison per step. */
+/* resolve(f, a, b, V): request the root node of (f, a, b); while the node
+ * reached published Read(s), read V[s] and request the continuation node
+ * (that node, V[s], its view + s ↦ V[s]); publish the first answer. Under a
+ * partial V lacking s the resolver publishes Read(s) itself. One node or one
+ * read per step. */
 #define FR_AWAIT_ENTRY(k, var, eid) do { (k)->pc = __LINE__; frame_request_entry((k), (eid)); return; case __LINE__:; (var) = v; } while (0)
-typedef struct { uint64_t path, ext, r, rs, cur; size_t i, n; EntryId node; } RsLoc;
+typedef struct { uint64_t r, s, rev, P; EntryId node, rd; } RsLoc;
 static void resolve_step(Cont *k, uint64_t v) {
     RsLoc *L = FR_LOC(k, RsLoc);
-    uint64_t V = k->w[3];
+    Family f = (Family)k->w[0]; uint64_t V = k->w[3];
     FR_BEGIN(k);
+    L->node = node_entry(f, k->w[1], k->w[2], 0);
     for (;;) {
-        L->node = node_entry((Family)k->w[0], k->w[1], k->w[2], L->path);
         FR_AWAIT_ENTRY(k, L->r, L->node);
-        if (ENT(L->node)->view == V) break;                 /* installed under V: its reads are V's */
-        FR_AWAIT(k, L->rs, F_READS, L->node, 0);
-        L->ext = L->path ? L->path : env_empty(0);
-        for (L->i = 0; L->i < (set_get(L->rs, &L->n), L->n); L->i++) {
-            {   size_t n; L->cur = set_get(L->rs, &n)[L->i]; }
-            FR_AWAIT(k, L->cur, F_READ, revision_symbol(L->cur), V);
-            {   size_t n; uint64_t was = set_get(L->rs, &n)[L->i];
-                if (L->cur == was) continue;
-                L->cur = subst_entry(revision_symbol(was), PS_REF, L->cur); }
-            FR_AWAIT(k, L->ext, F_SET, L->ext, L->cur);
+        L->s = __atomic_load_n(&ENT(L->node)->need, __ATOMIC_ACQUIRE);
+        if (!L->s) break;
+        L->rd = entry_intern(F_READ, L->s, V);
+        FR_AWAIT_ENTRY(k, L->rev, L->rd);
+        if (__atomic_load_n(&ENT(L->rd)->need, __ATOMIC_ACQUIRE)) {
+            __atomic_store_n(&ENT(k->dest)->need, L->s, __ATOMIC_RELEASE);
+            FR_FINISH(k, 0);
         }
-        if (L->ext == (L->path ? L->path : env_empty(0))) break;   /* every read agrees */
-        L->path = L->ext;
+        require(L->rev, "a symbol read outside the request's view");
+        FR_AWAIT(k, L->P, F_SET, view_map(ENT(L->node)->view), subst_entry(L->s, PS_REF, L->rev));
+        L->node = node_entry(f, k->w[1], k->w[2], RQ(L->node, L->rev, view_partial(L->P)));
     }
     __atomic_store_n(&ENT(k->dest)->via, L->node, __ATOMIC_RELEASE);
     FR_FINISH(k, L->r);
@@ -629,6 +637,41 @@ static void step_frame(Cont *k, uint64_t v) {
     tl_step_frame = sf; tl_kept = sk;
     if (!kept) cont_release(k);                    /* single consumer: released once resumed */
 }
+/* the continuation node (prev, rev, P): a copy of prev's suspended frame
+ * chain (bounded: subroutine nesting is static), owned by this node and
+ * reading through P; its innermost frame re-issues the request it awaited,
+ * now under P. prev's derivation is this node's prefix (a dependency). */
+#define CHAIN_MAX 16
+static void node_continue(EntryId eid, uint64_t path) {
+    Entry *e = ENT(eid);
+    EntryId prev = rword(path, 0); uint64_t P = rword(path, 2);
+    e->view = P;
+    record_dep(eid, prev);
+    Cont *inner = NULL, *child = NULL; size_t depth = 0;
+    for (Cont *s = __atomic_load_n(&ENT(prev)->snap, __ATOMIC_ACQUIRE); s; s = s->parent) {
+        require(++depth <= CHAIN_MAX, "a continuation chain deeper than the static subroutine nesting");
+        Cont *c = pool_alloc(&E.cont_pool);
+        *c = *s;
+        c->loc = NULL; if (FAM[s->fam].loc_size) { c->loc = pool_alloc(&E.loc_pool[s->fam]); memcpy(c->loc, s->loc, FAM[s->fam].loc_size); }
+        c->owner = eid; c->view = P; c->next = NULL; c->parent = NULL;
+        if (s->dest) c->dest = eid;
+        if (child) child->parent = c; else inner = c;
+        child = c;
+        if (s->dest) break;
+    }
+    require(inner && inner->rf, "a continuation without its awaited request");
+    EntryId x = request_key((Family)inner->rf, inner->ra, inner->rb, P);
+    inner->aw = x;
+    request_entry(x, inner, eid, P);
+}
+/* a frame of node o resumed with an answer that is Read(s): o publishes
+ * Read(s) and keeps the suspended chain from k as its continuation */
+static void node_fork(Cont *k, uint64_t s) {
+    Entry *o = ENT(k->owner);
+    __atomic_store_n(&o->snap, k, __ATOMIC_RELEASE);
+    __atomic_store_n(&o->need, s, __ATOMIC_RELEASE);
+    publish(k->owner, 0);
+}
 static void evaluate(EntryId eid) {
     Entry *e = ENT(eid);
     require(__atomic_fetch_add(&e->runs, 1, __ATOMIC_ACQ_REL) == 0, "a key is evaluated by exactly one task");
@@ -636,6 +679,11 @@ static void evaluate(EntryId eid) {
     Family f = (Family)key[0];
     count_bump(&shard()->steps[f]);
     record_work(eid);
+    if (n == 4 && KIND[f] == FK_RELATIVE) {
+        e->node = true;
+        if (key[3]) { node_continue(eid, key[3]); return; }
+        e->view = view_partial(env_empty(0));
+    }
     Cont *k = frame_new(f, eid);
     for (size_t i = 1; i < n; i++) k->w[i - 1] = key[i];
     k->view = f == F_RESOLVE ? key[4] : KIND[f] == FK_PURE ? 0 : e->view;
@@ -654,6 +702,9 @@ static void execute_job(Task t) {
     event(RD_STEP);
     count_bump(&shard()->steps[k->fam]);
     if (k->owner) record_work(k->owner);
+    {   EntryId aw = k->aw; k->aw = 0;
+        uint64_t s = aw && k->owner && ENT(k->owner)->node ? __atomic_load_n(&ENT(aw)->need, __ATOMIC_ACQUIRE) : 0;
+        if (s) { node_fork(k, s); return; } }
     step_frame(k, t.v);
 }
 static void execute(Task t) {
