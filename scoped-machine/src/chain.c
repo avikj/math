@@ -17,14 +17,6 @@ static uint64_t z_make(int neg, size_t k, const uint64_t *mag) {
 uint64_t z_from_limbs(int negative, size_t n, const uint64_t *limbs) { return z_make(negative, n, limbs); }
 uint64_t z_from_i64(int64_t v) { uint64_t m = v < 0 ? (uint64_t)0 - (uint64_t)v : (uint64_t)v; return z_make(v < 0, 1, &m); }
 bool z_is_zero(uint64_t a) { size_t n; rget(a, &n); return n == 1; }
-bool z_to_i64(uint64_t a, int64_t *out) {
-    size_t n; const uint64_t *w = rget(a, &n);
-    if (n == 1) { *out = 0; return true; }
-    if (n > 2) return false;
-    if (w[0]) { if (w[1] > (uint64_t)INT64_MAX + 1) return false; *out = (int64_t)((uint64_t)0 - w[1]); }
-    else { if (w[1] > (uint64_t)INT64_MAX) return false; *out = (int64_t)w[1]; }
-    return true;
-}
 typedef struct { const uint64_t *a, *b; size_t na, nb, i, j, top; uint64_t c, neg, raw, acc; int cmp; WordBuf out; bool created; } ZLoc;
 static uint64_t limb(const uint64_t *m, size_t n, size_t i) { return i < n ? m[i] : 0; }
 /* z.add(a, b) */
@@ -91,7 +83,6 @@ static void zneg_step(Cont *k, uint64_t v) {
     FR_FINISH(k, r);
     FR_END(k);
 }
-uint64_t z_add(uint64_t a, uint64_t b) { return family_call(Fz_ADD, a, b); }
 
 /* ---------------- universe levels: exact naturals (term.h) ---------------- */
 static uint64_t level_z(uint64_t l) { return l & LEVEL_BIG ? l & ~LEVEL_BIG : z_make(0, 1, &l); }
@@ -133,14 +124,12 @@ void level_print(uint64_t l, FILE *f) {
     fprintf(f, "0x%llx", (unsigned long long)w[n - 1]);
     for (size_t i = n - 1; i-- > 1; ) fprintf(f, "%016llx", (unsigned long long)w[i]);
 }
-uint64_t z_neg(uint64_t a) { return family_call(Fz_NEG, a, 0); }
 uint64_t z_mul(uint64_t a, uint64_t b) { return family_call(Fz_MUL, a, b); }
 
 /* ---------------- module elements: 0-chains over unit generators ---------------- */
 uint64_t m_zero(void) { return RQ(0); }
 uint64_t m_unit(uint64_t unit, uint64_t z) { return z_is_zero(z) ? m_zero() : RQ(0, G_UNIT, unit, z); }
 uint64_t m_add(uint64_t a, uint64_t b) { return chain_add(a, b); }
-uint64_t m_scale(uint64_t z, uint64_t m) { return chain_scale(m, z); }
 
 /* ---------------- cells ---------------- */
 DimVarId cube_coord(size_t k) { KeyWord key[2] = { { KW_CONST, 9500 }, { KW_CONST, k } }; return fresh_dim_keyed(key, 2); }
@@ -342,27 +331,6 @@ static void pair_step(Cont *k, uint64_t v) {
     FR_FINISH(k, L->acc);
     FR_END(k);
 }
-/* chain.map(F, c) = Σ z_x F(x); a generator without an image maps to 0 */
-typedef struct { const uint64_t *f, *c; size_t nf, nc, t, i; uint64_t acc, img; } MapLoc;
-static void map_step(Cont *k, uint64_t v) {
-    MapLoc *L = FR_LOC(k, MapLoc);
-    uint64_t r = 0;
-    FR_BEGIN(k);
-    L->f = rget(k->w[0], &L->nf); L->c = rget(k->w[1], &L->nc);
-    require(L->c[0] == L->f[0] || L->nc == 1, "a chain map applied at another degree");
-    L->acc = RQ(L->f[0]);
-    for (L->t = 1; L->t < L->nc; L->t += 3) {
-        for (L->img = 0, L->i = 1; L->i < L->nf && !L->img; L->i += 3) {
-            if (L->f[L->i] == L->c[L->t] && L->f[L->i + 1] == L->c[L->t + 1]) L->img = L->f[L->i + 2];
-            FR_YIELD(k);
-        }
-        if (!L->img) { FR_YIELD(k); continue; }
-        FR_AWAIT(k, r, Fc_SCALE, L->img, L->c[L->t + 2]);
-        FR_AWAIT(k, L->acc, Fc_ADD, L->acc, r);
-    }
-    FR_FINISH(k, L->acc);
-    FR_END(k);
-}
 
 /* ---------------- local coefficients ---------------- */
 uint64_t perm_of(size_t n, const uint64_t *from, const uint64_t *to) {
@@ -437,7 +405,6 @@ void chain_families_init(void) {
     family_define(Fc_BOUNDARY, "chain.boundary", boundary_step, sizeof(BdLoc));
     family_define(Fc_VALUE, "cochain.value", value_step, sizeof(ValLoc));
     family_define(Fc_PAIR, "chain.pair", pair_step, sizeof(PairLoc));
-    family_define(Fc_MAP, "chain.map", map_step, sizeof(MapLoc));
     family_define(Fc_TBOUNDARY, "chain.twisted_boundary", tboundary_step, sizeof(TbLoc));
     family_define(Fz_ADD, "z.add", zadd_step, sizeof(ZLoc));
     family_define(Fz_MUL, "z.mul", zmul_step, sizeof(ZLoc));
@@ -466,24 +433,15 @@ uint64_t chain_of(size_t degree, size_t n, const GenKind *kinds, const uint64_t 
 }
 uint64_t cochain_table(size_t degree, size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *ms) { uint64_t h[2] = { CO_TABLE, degree }; return terms(2, h, n, kinds, ids, ms); }
 uint64_t cochain_cob(uint64_t a) { return RQ(CO_COB, a); }
-uint64_t chain_map_table(size_t degree, size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *images) { uint64_t h[1] = { degree }; return terms(1, h, n, kinds, ids, images); }
 uint64_t cube_face(GenKind kind, uint64_t id, size_t i, int eps, GenKind *out_kind) {
     uint64_t e[2] = { i, (uint64_t)eps };
     uint64_t g = family_call(Fc_FACE, genrec(kind, id), rq(2, e));
     size_t n; const uint64_t *w = rget(g, &n); *out_kind = (GenKind)w[0]; return w[1];
 }
-uint64_t cube_reindex(uint64_t view, size_t m2, const IntervalId *images) {
-    size_t nv; const uint64_t *v = rget(view, &nv); size_t m = (size_t)v[1];
-    uint64_t *w = malloc((m + 1) * sizeof *w); require(w, "out of memory");
-    w[0] = m2; for (size_t k = 0; k < m; k++) w[1 + k] = images[k];
-    uint64_t s = rq(m + 1, w); free(w);
-    return family_call(Fc_REIDX, view, s);
-}
 uint64_t chain_add(uint64_t c1, uint64_t c2) { return family_call(Fc_ADD, c1, c2); }
 uint64_t chain_scale(uint64_t c, uint64_t z) { return family_call(Fc_SCALE, c, z); }
 uint64_t chain_boundary(uint64_t c) { return family_call(Fc_BOUNDARY, c, 0); }
 uint64_t chain_pair(uint64_t a, uint64_t c) { return family_call(Fc_PAIR, a, c); }
-uint64_t chain_map(uint64_t F, uint64_t c) { return family_call(Fc_MAP, F, c); }
 uint64_t chain_tboundary(uint64_t c, uint64_t sys) { require(sys, "a twisted boundary needs an admitted local system"); return family_call(Fc_TBOUNDARY, c, sys); }
 uint64_t cochain_cob_local(uint64_t a, uint64_t sys) { require(sys, "a twisted differential needs an admitted local system"); uint64_t w[3] = { CO_COB, a, sys }; return rq(3, w); }
 uint64_t chain_relative(uint64_t c, uint64_t I) {

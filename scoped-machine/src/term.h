@@ -218,7 +218,6 @@ ContextId context_restrict(ContextId ctx, FaceId phi);     /* strengthen the ass
 FaceId context_assumption(ContextId ctx);
 uint64_t context_judgment(ContextId ctx);                  /* its judgment context */
 size_t context_size(ContextId ctx);
-CtxDecl context_decl(ContextId ctx, size_t k);
 
 /* ---- globals ---- */
 /* a declared symbol: parameters (term variables with their declared types),
@@ -228,7 +227,6 @@ SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId t
 RefId global_type(SymbolId s);
 VarSetId global_params(SymbolId s);
 DimSetId global_dims(SymbolId s);
-size_t global_count(void);
 bool set_global_body(SymbolId s, RefId body);   /* once per symbol */
 /* Revisions and binding views. A revision is the immutable record (s, body),
  * body 0 for the opaque declaration. A binding view is an immutable total

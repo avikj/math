@@ -308,7 +308,6 @@ static void occb_step(Cont *k, uint64_t v) {
 uint64_t effect_head(uint64_t authority) { uint64_t w = cell_logical(CK_HEAD, authority); return W_TAG(w) == 1 ? W_VAL(w) : 0; }
 RefId head_state(uint64_t head) { return rword(head, 3); }
 uint64_t head_occurrence(uint64_t head) { return rword(head, 2); }
-uint64_t head_authority(uint64_t head) { return rword(head, 1); }
 uint64_t effect_port(uint64_t occurrence, size_t slot) {
     Desc *D = desc_of(occurrence); if (!D) return 0;
     Prop p = prop_of(D->prop);

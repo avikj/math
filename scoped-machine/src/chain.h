@@ -2,7 +2,7 @@
  * (CUBICAL-STOKES-ADDENDUM §§1–5, §10).
  *
  * Exact signed integers, finitely supported modules over named units, cube
- * cells, sparse chains, cochains and chain maps are interned immutable
+ * cells, sparse chains and cochains are interned immutable
  * records; every operation is a family over them, one term or one face per
  * step.
  *
@@ -15,7 +15,6 @@
  *   prod  [kind_x, id_x, kind_y, id_y, degree]
  *   chain [degree, (kind, id, z)*]             sorted by (kind, id), z ≠ 0
  *   cochain [CO_TABLE, degree, (kind, id, m)*]  |  [CO_COB, cochain]
- *   chain map [degree, (kind, id, chain)*]
  *
  * The coordinates c_k are canonical dimension atoms (keyed by k). A face
  * substitutes c_i ↦ ε and renumbers c_{k>i} ↦ c_{k−1} simultaneously in the
@@ -34,15 +33,11 @@ enum { CO_TABLE = 1, CO_COB };
  * (chains: their sum and scaling are chain.add / chain.scale) */
 uint64_t z_from_i64(int64_t v);
 uint64_t z_from_limbs(int negative, size_t n, const uint64_t *limbs);
-uint64_t z_add(uint64_t a, uint64_t b);
-uint64_t z_neg(uint64_t a);
 uint64_t z_mul(uint64_t a, uint64_t b);
 bool z_is_zero(uint64_t a);
-bool z_to_i64(uint64_t a, int64_t *out);
 uint64_t m_zero(void);
 uint64_t m_unit(uint64_t unit, uint64_t z);
 uint64_t m_add(uint64_t a, uint64_t b);
-uint64_t m_scale(uint64_t z, uint64_t m);
 
 /* cells */
 DimVarId cube_coord(size_t k);                      /* c_k, k ≥ 1 */
@@ -53,7 +48,6 @@ size_t gen_degree(GenKind kind, uint64_t id);
 
 /* the operations (families; synchronous drivers outside jobs) */
 uint64_t cube_face(GenKind kind, uint64_t id, size_t i, int eps, GenKind *out_kind);   /* 1 ≤ i ≤ degree */
-uint64_t cube_reindex(uint64_t view, size_t m2, const IntervalId *images);            /* c_k ↦ images[k-1] over c_1..c_m2 */
 uint64_t chain_of(size_t degree, size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *zs);
 uint64_t chain_add(uint64_t c1, uint64_t c2);
 uint64_t chain_scale(uint64_t c, uint64_t z);
@@ -61,8 +55,6 @@ uint64_t chain_boundary(uint64_t c);
 uint64_t cochain_table(size_t degree, size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *ms);
 uint64_t cochain_cob(uint64_t a);
 uint64_t chain_pair(uint64_t a, uint64_t c);       /* <a, c> ∈ the coefficient module */
-uint64_t chain_map(uint64_t F, uint64_t c);        /* Σ m_x F(x) */
-uint64_t chain_map_table(size_t degree, size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *images);
 
 /* local coefficients (ADDENDUM §6): a transport for each dimension local of
  * a root — a permutation of units, [(unit, image)*] — admitted as flat only

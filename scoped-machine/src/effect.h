@@ -50,7 +50,6 @@ const char *outcome_reason(uint64_t out);
 uint64_t effect_head(uint64_t authority);                     /* the authority's current head */
 RefId head_state(uint64_t head);
 uint64_t head_occurrence(uint64_t head);
-uint64_t head_authority(uint64_t head);
 uint64_t effect_port(uint64_t occurrence, size_t slot);      /* the port record of an accepted output */
 int port_status(uint64_t port, uint64_t *consumer);           /* 0 absent, 1 available, 2 consumed (consumer = occurrence) */
 RefId port_payload(uint64_t port);

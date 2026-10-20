@@ -200,7 +200,6 @@ bool set_global_body(SymbolId s, RefId body) {
 RefId global_type(SymbolId s) { return DEF(s)->type; }
 VarSetId global_params(SymbolId s) { return DEF(s)->params; }
 DimSetId global_dims(SymbolId s) { return DEF(s)->dims; }
-size_t global_count(void) { return __atomic_load_n(&M.n_defs, __ATOMIC_ACQUIRE); }
 
 RefId global_ref(SymbolId s) {
     require(s >= 1 && s <= __atomic_load_n(&M.n_defs, __ATOMIC_RELAXED), "unknown symbol");

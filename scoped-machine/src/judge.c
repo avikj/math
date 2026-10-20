@@ -87,14 +87,6 @@ ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption) {
     return ctx_pair(G, assumption);
 }
 size_t context_size(ContextId c) { size_t n = 0; for (uint64_t G = context_judgment(c); !jc_is_empty(G); G = jc_parent(G)) n++; return n; }
-CtxDecl context_decl(ContextId c, size_t k) {
-    size_t n = context_size(c);
-    require(k < n, "context declaration out of range");
-    uint64_t G = context_judgment(c);
-    for (size_t q = n - 1; q > k; q--) G = jc_parent(G);
-    CtxDecl d; jc_decl(G, &d.sort, &d.id);
-    return d;
-}
 ContextId context_extend_term(ContextId c, TermVarId x) { return ctx_pair(jc_host_ext(context_judgment(c), S_TERM, x), context_assumption(c)); }
 ContextId context_extend_dim(ContextId c, DimVarId i) { return ctx_pair(jc_host_ext(context_judgment(c), S_DIM, i), context_assumption(c)); }
 ContextId context_restrict(ContextId c, FaceId phi) { return ctx_pair(context_judgment(c), fc_meet(context_assumption(c), phi)); }

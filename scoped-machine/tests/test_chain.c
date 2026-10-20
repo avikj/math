@@ -105,16 +105,6 @@ int main(void) {
         CHECK(chain_pair(a, z) == chain_pair(cochain_cob(a), one(G_CUBE, S2, 1)), "with a filling: <a, ∂h> = <da, h>");
         free(k2); free(i2); free(m2); }
 
-    /* 9. READ_DEFECT: a zero-defect square and a nonzero-defect replacement */
-    {   uint64_t H = cube_view(cell_root(2, x, A), map_identity());
-        uint64_t bd = chain_boundary(one(G_CUBE, H, 1));
-        size_t nt; const uint64_t *w = interner_get(&M.keys, bd, &nt); size_t n = (nt - 1) / 3;
-        GenKind *k2 = malloc(n * sizeof *k2); uint64_t *i2 = malloc(n * sizeof *i2), *flat = malloc(n * sizeof *flat), *shift = malloc(n * sizeof *shift);
-        for (size_t t = 0; t < n; t++) { k2[t] = (GenKind)w[1 + 3 * t]; i2[t] = w[2 + 3 * t]; flat[t] = m_unit(0, z_from_i64(4)); shift[t] = m_unit(0, z_from_i64(t == 0 ? 9 : 4)); }
-        uint64_t W0 = cochain_table(1, n, k2, i2, flat), W1 = cochain_table(1, n, k2, i2, shift);
-        CHECK(chain_pair(W0, bd) == m_zero(), "equal work on the two sides of a scheduling square: zero defect");
-        CHECK(chain_pair(W1, bd) != m_zero() && chain_pair(W1, bd) == chain_pair(cochain_cob(W1), one(G_CUBE, H, 1)), "a replacement keeps its exact signed defect <ω, ∂α> = <dω, α>");
-        free(k2); free(i2); free(flat); free(shift); }
 
     /* 5. local coefficients: the upper-face transport and its square witness */
     {   ScopeId R2 = cell_root(2, x, A); uint64_t X = cube_view(R2, map_identity());

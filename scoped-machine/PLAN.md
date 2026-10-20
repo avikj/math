@@ -2,21 +2,8 @@
 
 This file is the working contract. Every step re-reads it. Nothing here is optional.
 
-## 1. Base
-
-24b2bfb implements HANDOFF §§1–59 with five review rounds; `make test` (ASan/UBSan, 75 s) and
-`make tsan` (0 reports, 84 s) pass; the §§83/96 runtime-construction witnesses and the §88
-proof-use module (11 cases) pass unchanged on it. It was correct for its specification, which
-permitted host algorithms inside rules (§19), checking as a separate phase (§34) and blocking
-claims (§59.4). Those permissions are what today's direction makes incorrect.
-
-## 2. Why the later history grew
-
-The step bound entered at §65 (15 Oct). 3a0d7c4 met it, and §§67–73, by adding `work.c` — a
-second record store and a second operation/frame engine — beside `eval.c`. Every later layer kept
-both and added bridges (reuse on the second engine; kcont/kstack; kframe in 95cd52a; my drop
-rewrite). Rule: the bound is met by converting the ONE existing system. Never add a second engine,
-store, continuation form or bridge.
+Standing rules: design each family completely before writing it; no defect-driven development;
+no subagents; work only from the shared specifications; no second engine/store/continuation form.
 
 ## 3. The requirement
 
@@ -38,25 +25,6 @@ Representation consequences:
   R→D swaps the stack); interning inserts by CAS; per-worker deques. No critical section holds
   unbounded work.
 
-## 4. Incorrect in 24b2bfb (to be converted)
-
-- term.c: open_ref (all n fields, each through reindex); mapb_finish (whole vector key); compose;
-  make_view (boundary walk + support/fv/required under term_mu); reindex (recursive, racy memo);
-  lifted_map; context_make O(n²).
-- dnf.c/face.c/interval.c: meet (clause product), normalize, entails, forall, project,
-  substitute, negate; set union/remove rebuild vectors.
-- intern.c: hash over variable key, unbounded probe loop, full rehash under mutex.
-- eval.c: evaluate→open_ref and face tests; eval_system_head loop; publish enqueues all waiters
-  (340–343); publish_branchwise/resume_branch/resume_comp_family loops; comp_clause synchronous;
-  mk_* through make_view.
-- scope.c/template.c/lib.c: recursive capture/reindex/apply; recursive interp; make_view_env,
-  environment restriction.
-- net.c: rule_op host calls; materialize n ports (uint8_t, line 319); rule_dup_shell copies.
-- check.c: recursive checking/conversion; claim_acquire blocks (pthread_cond_wait 188, 208, 318);
-  observe calls whnf synchronously; admission blocks (1561).
-- compiler.c: recursive synchronous validation/emission/certificate.
-(canon.c/match.c: test harness outside execution — unaffected.)
-
 ## 5. What stays / what changes
 
 Stays: all mathematics and laws (C[ρ][σ]=C[ρ;σ], single-lookup substitution, dependency-closed
@@ -65,10 +33,9 @@ laws, reindex(TVIEW(Q,E),σ)=TVIEW(Q,E[σ]), cubical clauses, template library p
 emission, certificate tags, checker and conversion rules); the REQ/EVAL/PUB/DELIVER protocol and
 §27 overlaps; the test suite as semantic regressions.
 
-Changes: execution form. Each function of §4 becomes a family: entry key = (family, operands),
-a frame with cursor/locals, a step function doing one bounded increment then requesting a child
-key, continuing, or publishing. A synchronous driver `run(family,args)` drives a key's jobs to
-publication so unconverted callers keep working; conversion goes family by family with tests green.
+Changes: execution form. Every computation over variable data is a family: entry key = (family,
+operands), a frame with cursor/locals, a step function doing one bounded increment then requesting a
+child key, continuing, or publishing.
 
 One representation: raw origin = constant-field instance of the constructor-program
 representation (reduction handoff §4.4), binders by (depth, slot) as in scopes. Gives alpha
@@ -105,49 +72,6 @@ key whose recipe depends on it the moment it is published, in the same run, and 
 every key is schedule-independent because its dependency set is fixed by its key. EFFECT-AUTHORITY §10
 item 2 realized by keyed sharing (two deliveries of one producer).
 
-## 7. Time (derived upper bound)
-
-| Component | Lines |
-|---|---:|
-| Protocol: family-keyed entries, CAS states, per-delivery steps, frame storage, worker deques | 900 |
-| Bounded records: interned sequence nodes, fixed-size allocator, sequences for all variable records | 600 |
-| One construction representation, (depth,slot) binders, field opening on demand | 700 |
-| Substitution families | 600 |
-| Interval/face families | 700 |
-| Scope families | 500 |
-| Template interpretation families | 500 |
-| Evaluator dispatch and composition clauses | 600 |
-| Net | 350 |
-| Checking/conversion/admission | 2,000 |
-| Compiler | 700 |
-| Proof use | 250 |
-| Runtime constructions as templates + compiler export | 500 |
-| Keys: content, projected contexts, revisions | 250 |
-| Receipts as keyed specialization/restriction dependencies | 500 |
-| Readings: exact counts, support, folds | 350 |
-| Effects | 650 |
-| Stokes interface | 550 |
-| Tests (11 white-box files adapted + acceptance) | 900 |
-| Total | 12,100 |
-
-≤ 33.6 h writing; machine ≈ 15 min (≈30 s build+focused tests per component; one full ASan+TSan
-gate at the end).
-
-## 8. Order (one commit per step, focused tests green)
-
-1. Protocol generalization + bounded records + synchronous driver.
-2. Substitution, interval/face, set families; single construction representation; field opening on demand.
-3. Scope and template families; evaluator dispatch and composition clauses; net (arity-252 and shell copy disappear).
-4. Checking, conversion, admission families (no blocking claims, no nested whnf).
-5. Compiler and proof-use families; runtime-construction templates; content/context keys; revisions.
-6. Receipts as keyed specialization/restriction dependencies (no frozen index; §10).
-7. Readings and exact counts.
-8. Effects and the Stokes interface; EFFECT-AUTHORITY §10 witness from one execution.
-9. Full gates.
-
-Standing rules: design each family completely before writing it; no defect-driven development;
-no subagents; work only from the shared specifications; no second engine/store/continuation form.
-
 ## 9. Corrections adopted from the 14:54 attachment (binding on all later steps)
 
 1. No representation may insert a dependency absent from the object. Variable records are NOT
@@ -177,9 +101,6 @@ no subagents; work only from the shared specifications; no second engine/store/c
    generic action wherever its type permits, as soon as it exists, with no "install" event between;
    one judgment is executed once — the checker and the evaluator request the same keys rather than
    re-deriving. Ability of an added mechanism to solve the problems it introduced is no defence of it.
-   Consequence for §8: step 6 is "receipts as keyed specialization/restriction dependencies"
-   (no frozen index); step 4 removes the global admission gate and shares judgment keys with
-   evaluation.
 
 ## 11. The protocol as corrected (review 5886af7) — binding
 
@@ -273,14 +194,14 @@ rules require (operational acceptance is a transition of the actual source, not 
     step) and chains: an interned sorted list of (generator, coefficient), generator = (kind, id)
     for cube cells, product cells, ports, heads, occurrences, units. Families: chain.add (merge),
     chain.scale, BOUNDARY (cursor over terms and coordinates, one face per step), PAIR(a, c) (one
-    generator value per step), COB(a) = c ↦ PAIR(a, BOUNDARY(c)), MAP_CHAIN(F, c). A cochain is a
+    generator value per step), COB(a) = c ↦ PAIR(a, BOUNDARY(c)). A cochain is a
     finitely supported table or COB of one; its values are module elements, the 0-chains over unit
     generators (summed and scaled by chain.add and chain.scale).
 8c. Cube cells. CubeView(root scope with n dimension locals, dimension map: root local ↦ D(J)
     element over canonical coordinates c_1..c_m, parameter map). FACE(C, i, ε) substitutes c_i ↦ ε
     and renumbers c_{k>i} ↦ c_{k−1} in the images: both deletion orders of a codimension-two face
     give the same interned map, hence the same generator, hence ∂² = 0 by cancellation of identical
-    generators. CUBE_REINDEX composes maps; PRODUCT(x, y) is a cell whose faces i ≤ p are x's and
+    generators. FACE is CUBE_REINDEX at that endpoint map; PRODUCT(x, y) is a cell whose faces i ≤ p are x's and
     i > p are y's, so the generic BOUNDARY gives Leibniz with sign (−1)^p.
 8d. Effects. (Preparation's mathematical premises are judge.admit requests — the state type at
     its level, each state, and the witness's proof use — the judgments the public API decodes;
@@ -306,4 +227,3 @@ rules require (operational acceptance is a transition of the actual source, not 
     suspension points are taken by driving the effect root one budgeted step at a time and
     checking every cut valuation and ownership invariant between steps.
 
-Order: 8a, 8b, 8c, 8d, 8e, each a commit with its checks.
