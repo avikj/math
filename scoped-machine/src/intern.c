@@ -3,34 +3,48 @@
 #include <sched.h>
 
 /* ---- chunked arrays ---- */
-void chunked_init(Chunked *c, size_t elem) { memset(c->dir, 0, sizeof c->dir); c->elem = elem; }
-void chunked_free(Chunked *c) { for (size_t k = 0; k < MAX_CHUNKS; k++) free(c->dir[k]); memset(c->dir, 0, sizeof c->dir); }
-void *chunked_at(Chunked *c, size_t i) {
-    size_t ch = i >> CHUNK_BITS;
-    require(ch < MAX_CHUNKS, "chunked array exhausted");
-    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
-    if (!p) {
-        void *fresh = calloc(CHUNK_SIZE, c->elem);
-        require(fresh, "out of memory");
-        void *expected = NULL;
-        if (__atomic_compare_exchange_n(&c->dir[ch], &expected, fresh, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) p = fresh;
-        else { free(fresh); p = expected; }
+void chunked_init(Chunked *c, size_t elem) { c->root = NULL; c->elem = elem; }
+static void rnode_free(RNode *n) {
+    for (size_t k = 0; k < ((size_t)1 << FAN_BITS); k++) if (n->slot[k]) { if (n->height > 1) rnode_free(n->slot[k]); else free(n->slot[k]); }
+    free(n);
+}
+void chunked_free(Chunked *c) { if (c->root) rnode_free(c->root); c->root = NULL; }
+static bool covers(unsigned h, size_t i) { unsigned b = CHUNK_BITS + FAN_BITS * h; return b >= 64 || (i >> b) == 0; }
+static void *publish(void **slot, void *fresh) {
+    void *expected = NULL;
+    if (__atomic_compare_exchange_n(slot, &expected, fresh, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return fresh;
+    free(fresh); return expected;
+}
+static RNode *rnode_new(unsigned h) { RNode *n = calloc(1, sizeof *n); require(n, "out of memory"); n->height = h; return n; }
+/* the leaf element of index i under the root, creating nodes and the chunk when create */
+static void *descend(const Chunked *c, size_t i, bool create) {
+    RNode *n = __atomic_load_n(&c->root, __ATOMIC_ACQUIRE);
+    if (!n || !covers(n->height, i)) return NULL;
+    for (;;) {
+        unsigned h = n->height;
+        void **slot = &n->slot[(i >> (CHUNK_BITS + FAN_BITS * (h - 1))) & (((size_t)1 << FAN_BITS) - 1)];
+        void *p = __atomic_load_n(slot, __ATOMIC_ACQUIRE);
+        if (!p) {
+            if (!create) return NULL;
+            void *fresh = h > 1 ? (void *)rnode_new(h - 1) : calloc(CHUNK_SIZE, c->elem);
+            require(fresh, "out of memory");
+            p = publish(slot, fresh);
+        }
+        if (h == 1) return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
+        n = p;
     }
-    return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
 }
-void *chunked_get(const Chunked *c, size_t i) {
-    size_t ch = i >> CHUNK_BITS;
-    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
-    require(p, "chunked read of a missing element");
-    return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
+void *chunked_at(Chunked *c, size_t i) {
+    for (;;) {                                        /* at most one new level per word-width step */
+        RNode *r = __atomic_load_n(&c->root, __ATOMIC_ACQUIRE);
+        if (r && covers(r->height, i)) return descend(c, i, true);
+        RNode *up = rnode_new(r ? r->height + 1 : 1);
+        up->slot[0] = r;
+        if (!__atomic_compare_exchange_n(&c->root, &r, up, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) free(up);
+    }
 }
-void *chunked_peek(const Chunked *c, size_t i) {
-    size_t ch = i >> CHUNK_BITS;
-    if (ch >= MAX_CHUNKS) return NULL;
-    void *p = __atomic_load_n(&c->dir[ch], __ATOMIC_ACQUIRE);
-    if (!p) return NULL;
-    return (char *)p + (i & (CHUNK_SIZE - 1)) * c->elem;
-}
+void *chunked_get(const Chunked *c, size_t i) { void *p = descend(c, i, false); require(p, "chunked read of a missing element"); return p; }
+void *chunked_peek(const Chunked *c, size_t i) { return descend(c, i, false); }
 
 /* ---- interner ---- */
 static uint64_t hash_words(const uint64_t *w, size_t n) {

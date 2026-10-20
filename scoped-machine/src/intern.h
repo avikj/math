@@ -23,15 +23,19 @@
 
 #define CHUNK_BITS 11
 #define CHUNK_SIZE ((size_t)1 << CHUNK_BITS)
-#define MAX_CHUNKS ((size_t)1 << 15)
+#define FAN_BITS 11
 
-/* Non-moving, lazily chunked array of fixed-size elements. Element i lives
- * at a stable address once created. Creation of a chunk is done under the
- * caller's lock; the chunk pointer is published with release semantics so a
- * reader that learned of index i through a synchronized channel can read it
- * without the lock. */
+/* Non-moving, lazily created array of fixed-size elements over every size_t
+ * index: a radix directory of fixed-size nodes (a node of height h holds
+ * 2^FAN_BITS children, height 1 holding chunks of CHUNK_SIZE elements) that
+ * gains a level when an index exceeds its span. Element i lives at a stable
+ * address once created; a lookup visits at most ⌈(64 − CHUNK_BITS)/FAN_BITS⌉
+ * nodes. Nodes and chunks are published by CAS with release semantics, so a
+ * reader that learned of index i through a synchronized channel reads it
+ * without a lock. */
+typedef struct RNode { unsigned height; void *slot[(size_t)1 << FAN_BITS]; } RNode;
 typedef struct {
-    void *dir[MAX_CHUNKS];
+    RNode *root;
     size_t elem;
 } Chunked;
 

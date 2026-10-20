@@ -142,6 +142,18 @@ int main(void) {
     }
     CHECK(ok, "every published record holds its words");
     interner_free(&T);
+    /* the stable store covers every size_t index: sparse indices past 2^26,
+     * across radix boundaries and at SIZE_MAX keep their addresses and values,
+     * and create nothing in between */
+    {   Chunked c; chunked_init(&c, sizeof(uint64_t));
+        size_t at[6] = { 0, 5, ((size_t)1 << 26) + 7, ((size_t)1 << 37) + 3, ((size_t)1 << 48) + 11, SIZE_MAX };
+        uint64_t *p0 = chunked_at(&c, 0); *p0 = 100;
+        bool keep = true;
+        for (size_t q = 1; q < 6; q++) { *(uint64_t *)chunked_at(&c, at[q]) = 100 + q; if (chunked_at(&c, 0) != p0) keep = false; }
+        for (size_t q = 0; q < 6; q++) if (*(uint64_t *)chunked_get(&c, at[q]) != 100 + q) keep = false;
+        CHECK(keep, "sparse indices up to SIZE_MAX keep their addresses and values");
+        CHECK(!chunked_peek(&c, (size_t)1 << 30) && !chunked_peek(&c, SIZE_MAX - CHUNK_SIZE), "no intervening element exists");
+        chunked_free(&c); }
     machine_free();
     printf("%d failures\n", failures);
     return failures != 0;
