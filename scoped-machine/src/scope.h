@@ -55,8 +55,6 @@ FaceId scope_guard(ScopeId S);
 DimSetId scope_support(ScopeId S);        /* free dimensions (bound atoms excluded) */
 VarSetId scope_freevars(ScopeId S);
 ScopeId reindex_scope(ScopeId S, MapId sigma);
-/* open with fresh concrete locals minted from `key` (checking); ids receives
- * the minted identities in slot order */
 /* §50.1–2 structural validity, independent of any face: every bound
  * occurrence in the scope's records (and in scopes nested anywhere inside
  * them, through views and template environments) names an existing
