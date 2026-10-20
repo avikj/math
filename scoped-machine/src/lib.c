@@ -79,7 +79,7 @@ static uint64_t cap2(uint64_t s1, uint64_t id1, RefId t1, uint64_t l1, FaceId r1
     return interner_intern(&M.keys, w, 16, NULL);
 }
 typedef struct {
-    uint64_t j, fam, phi, tube, cap, tag, levels, m, n, tg, a0, a1, a2, a3, x, xr, Um, Un, eq, er; ExprId root;
+    uint64_t j, fam, phi, tube, cap, tag, levels, m, n, sm, sn, mn, tg, a0, a1, a2, a3, x, xr, Um, Un, eq, er; ExprId root;
     Family kf[5]; uint64_t ka[5], kb[5], kv[5]; size_t nk, ki;   /* independent demands: launched, then awaited in order */
     WordBuf wb; bool created;
 } CcLoc;
@@ -99,6 +99,9 @@ static void compclause_step(Cont *k, uint64_t v) {
     L->tg = L->phi;                                                    /* the tube is defined on φ */
     if (L->tag == T_PI || L->tag == T_SIGMA) {
         L->m = levels_first(L->levels); L->n = levels_second(L->levels);
+        FR_LSUCC(k, L->sm, L->m);
+        FR_LSUCC(k, L->sn, L->n);
+        FR_LMAX(k, L->mn, L->m, L->n);
         FR_AWAIT(k, L->a0, F_FIELD, L->fam, 0);
         L->x = binder_term_var(L->fam, 0, L->a0);                       /* (x, D_j, codomain) */
         FR_AWAIT(k, L->xr, F_REFVAR, L->x, 0);
@@ -106,9 +109,9 @@ static void compclause_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->Um, F_CONSTRUCT, universe_request(L->m), 0);
         FR_AWAIT(k, L->Un, F_CONSTRUCT, universe_request(L->n), 0);
         L->nk = 0;
-        DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Um, level_succ(L->m), fc_true()), 0);
-        DEMAND(F_CAPTURE, cap2(S_DIM, L->j, 0, LEVEL_NONE, fc_true(), S_TERM, L->x, L->a0, L->m, term_var_required(L->x), L->a1, L->Un, level_succ(L->n), fc_true()), 0);
-        DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, level_max(L->m, L->n), L->tg), 0);
+        DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Um, L->sm, fc_true()), 0);
+        DEMAND(F_CAPTURE, cap2(S_DIM, L->j, 0, LEVEL_NONE, fc_true(), S_TERM, L->x, L->a0, L->m, term_var_required(L->x), L->a1, L->Un, L->sn, fc_true()), 0);
+        DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, L->mn, L->tg), 0);
         LAUNCH_AWAIT_ALL();
         {   TVal a[7] = { { PS_LEVEL, L->m }, { PS_LEVEL, L->n }, { PS_SCOPE, L->kv[0] }, { PS_SCOPE, L->kv[1] }, { PS_FACE, L->phi }, { PS_SCOPE, L->kv[2] }, { PS_REF, L->cap } };
             template_call_env(L->tag == T_PI ? TD_PICOMP : TD_SIGMACOMP, 7, a, &L->wb, &L->root); }
@@ -116,6 +119,7 @@ static void compclause_step(Cont *k, uint64_t v) {
     }
     if (L->tag == T_PATH) {
         L->n = levels_first(L->levels);
+        FR_LSUCC(k, L->sn, L->n);
         L->x = binder_dim_var(L->fam, 0);                                /* (k, B(j,k)) */
         FR_AWAIT(k, L->a0, F_BINDER, L->fam, binder_req(S_DIM, 0, 0, iv_var(L->x)));
         L->nk = 0;
@@ -127,7 +131,7 @@ static void compclause_step(Cont *k, uint64_t v) {
         LAUNCH_AWAIT_ALL();
         L->a1 = L->kv[0]; L->a2 = L->kv[1]; L->a3 = L->kv[2]; L->eq = L->kv[3]; L->Un = L->kv[4];
         L->nk = 0;
-        DEMAND(F_CAPTURE, cap2(S_DIM, L->j, 0, LEVEL_NONE, fc_true(), S_DIM, L->x, 0, LEVEL_NONE, fc_true(), L->a0, L->Un, level_succ(L->n), fc_true()), 0);
+        DEMAND(F_CAPTURE, cap2(S_DIM, L->j, 0, LEVEL_NONE, fc_true(), S_DIM, L->x, 0, LEVEL_NONE, fc_true(), L->a0, L->Un, L->sn, fc_true()), 0);
         DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a1, L->a3, L->n, fc_true()), 0);
         DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a2, L->eq, L->n, fc_true()), 0);
         DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, L->n, L->tg), 0);
@@ -138,6 +142,7 @@ static void compclause_step(Cont *k, uint64_t v) {
     }
     if (L->tag == T_GLUE_TYPE) {
         L->n = levels_first(L->levels);
+        FR_LSUCC(k, L->sn, L->n);
         L->nk = 0;
         DEMAND(F_FIELD, L->fam, 0);
         DEMAND(F_FIELD, L->fam, 1);
@@ -149,9 +154,9 @@ static void compclause_step(Cont *k, uint64_t v) {
         L->x = L->a1;                                                    /* T_j and e_j are defined on α_j */
         FR_AWAIT(k, L->eq, J_EQUIV, RQ(L->n, L->n, L->a2, L->a0), 0);   /* Equiv(T_j, A_j) */
         L->nk = 0;
-        DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Un, level_succ(L->n), fc_true()), 0);
+        DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Un, L->sn, fc_true()), 0);
         DEMAND(F_CAPTURE, cap1(L->j, VS_FACE, L->a1, 0, LEVEL_NONE, fc_true()), 0);
-        DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a2, L->Un, level_succ(L->n), L->x), 0);
+        DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a2, L->Un, L->sn, L->x), 0);
         DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a3, L->eq, L->n, L->x), 0);
         DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, L->n, L->tg), 0);
         LAUNCH_AWAIT_ALL();
@@ -161,7 +166,8 @@ static void compclause_step(Cont *k, uint64_t v) {
     }
     if (L->tag == T_UNIVERSE) {
         FR_AWAIT(k, L->n, F_HEAD, L->fam, 0);
-        FR_AWAIT(k, L->x, F_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, level_succ(L->n), L->tg), 0);
+        FR_LSUCC(k, L->sn, L->n);
+        FR_AWAIT(k, L->x, F_CAPTURE, cap1(L->j, VS_REF, L->tube, L->fam, L->sn, L->tg), 0);
         {   TVal a[4] = { { PS_LEVEL, L->n }, { PS_FACE, L->phi }, { PS_SCOPE, L->x }, { PS_REF, L->cap } };
             template_call_env(TD_UNIVERSECOMP, 4, a, &L->wb, &L->root); }
         goto interpret;

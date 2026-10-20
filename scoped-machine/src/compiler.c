@@ -17,7 +17,6 @@ static DimVarId dim(Tele *T) {
 static RefId P(Tele *T, RefId A, uint64_t l) { TermVarId x = var(T, A); T->x[T->m] = x; T->A[T->m] = A; T->l[T->m] = l; T->m++; return ref_var(x); }
 static RefId close(const Tele *T, RefId body) { for (size_t q = T->m; q-- > 0; ) body = mk_lam_lv(T->l[q], T->x[q], T->A[q], body); return body; }
 
-static uint64_t mx(uint64_t a, uint64_t b) { return a > b ? a : b; }
 static RefId U(uint64_t l) { return mk_universe(l); }
 static RefId app2(RefId f, RefId x, RefId y) { return mk_app(mk_app(f, x), y); }
 static RefId app3(RefId f, RefId x, RefId y, RefId z) { return mk_app(app2(f, x, y), z); }
@@ -50,7 +49,7 @@ static RefId appn(RefId f, size_t n, const RefId *a) { for (size_t q = 0; q < n;
 
 /* ---------------- Maps (§83.1) ---------------- */
 static RefId maps_sigma(Tele *T, uint64_t a, uint64_t b, RefId A, RefId B) {
-    uint64_t m = mx(a, b);
+    uint64_t m = level_max(a, b);
     RefId F = mk_fun(a, b, A, B), G = mk_fun(b, a, B, A);
     TermVarId f = var(T, F), g = var(T, G), x = var(T, A), y = var(T, B);
     RefId H = mk_pi_lv(a, a, x, A, path(a, A, mk_app(ref_var(g), mk_app(ref_var(f), ref_var(x))), ref_var(x)));
@@ -60,15 +59,15 @@ static RefId maps_sigma(Tele *T, uint64_t a, uint64_t b, RefId A, RefId B) {
 }
 static RefId Maps(uint64_t a, uint64_t b) {
     Tele T_ = { { 40, a, b, 0, 0 } }, *T = &T_;
-    RefId X = P(T, U(a), a + 1), Y = P(T, U(b), b + 1);
+    RefId X = P(T, U(a), level_succ(a)), Y = P(T, U(b), level_succ(b));
     RefId out = close(T, maps_sigma(T, a, b, X, Y));
     return out;
 }
 RefId maps_type(uint64_t a, uint64_t b, RefId X, RefId Y) { return app2(Maps(a, b), X, Y); }
 static RefId Pack(uint64_t a, uint64_t b) {
     Tele T_ = { { 41, a, b, 0, 0 } }, *T = &T_;
-    uint64_t m = mx(a, b);
-    RefId X = P(T, U(a), a + 1), Y = P(T, U(b), b + 1);
+    uint64_t m = level_max(a, b);
+    RefId X = P(T, U(a), level_succ(a)), Y = P(T, U(b), level_succ(b));
     RefId f = P(T, mk_fun(a, b, X, Y), m), g = P(T, mk_fun(b, a, Y, X), m);
     TermVarId x = var(T, X), y = var(T, Y);
     RefId h = P(T, mk_pi_lv(a, a, x, X, path(a, X, mk_app(g, mk_app(f, ref_var(x))), ref_var(x))), a);
@@ -84,7 +83,7 @@ static RefId ap(Tele *T, uint64_t a, RefId A, RefId x, RefId y, RefId f, RefId p
 }
 static RefId Id(uint64_t a) {
     Tele T_ = { { 42, a, 0, 0, 0 } }, *T = &T_;
-    RefId X = P(T, U(a), a + 1);
+    RefId X = P(T, U(a), level_succ(a));
     TermVarId x = var(T, X); RefId id = mk_id_fun(a, X), h = mk_lam_lv(a, x, X, refl(a, X, ref_var(x)));
     RefId out = close(T, maps_pack(a, a, X, X, id, id, h, h));
     return out;
@@ -93,8 +92,8 @@ static RefId maps_id(uint64_t a, RefId A) { return mk_app(Id(a), A); }
 /* E : A ↔ B, F : B ↔ C */
 static RefId Comp(uint64_t a, uint64_t b, uint64_t c) {
     Tele T_ = { { 43, a, b, c, 0 } }, *T = &T_;
-    RefId A = P(T, U(a), a + 1), B = P(T, U(b), b + 1), C = P(T, U(c), c + 1);
-    RefId E = P(T, maps_type(a, b, A, B), mx(a, b)), F = P(T, maps_type(b, c, B, C), mx(b, c));
+    RefId A = P(T, U(a), level_succ(a)), B = P(T, U(b), level_succ(b)), C = P(T, U(c), level_succ(c));
+    RefId E = P(T, maps_type(a, b, A, B), level_max(a, b)), F = P(T, maps_type(b, c, B, C), level_max(b, c));
     RefId f = maps_c(E), g = maps_d(E), h = maps_h(E), k = maps_k(E);
     RefId u = maps_c(F), v = maps_d(F), H = maps_h(F), K = maps_k(F);
     TermVarId x = var(T, A), z = var(T, C); RefId xv = ref_var(x), zv = ref_var(z);
@@ -111,7 +110,7 @@ static RefId Comp(uint64_t a, uint64_t b, uint64_t c) {
 static RefId maps_comp(uint64_t a, uint64_t b, uint64_t c, RefId A, RefId B, RefId C, RefId E, RefId F) { return APPN(Comp(a, b, c), A, B, C, E, F); }
 static RefId Inv(uint64_t a, uint64_t b) {
     Tele T_ = { { 44, a, b, 0, 0 } }, *T = &T_;
-    RefId A = P(T, U(a), a + 1), B = P(T, U(b), b + 1), E = P(T, maps_type(a, b, A, B), mx(a, b));
+    RefId A = P(T, U(a), level_succ(a)), B = P(T, U(b), level_succ(b)), E = P(T, maps_type(a, b, A, B), level_max(a, b));
     RefId out = close(T, maps_pack(b, a, B, A, maps_d(E), maps_c(E), maps_k(E), maps_h(E)));
     return out;
 }
@@ -121,14 +120,14 @@ static RefId maps_inv(uint64_t a, uint64_t b, RefId A, RefId B, RefId E) { retur
 /* λ A t D. Maps(Σ x. Σ (e : t = x). D x e, D t refl) */
 static RefId Sing(uint64_t a, uint64_t r) {
     Tele T_ = { { 45, a, r, 0, 0 } }, *T = &T_;
-    uint64_t s = mx(a, r);
-    RefId A = P(T, U(a), a + 1), t = P(T, A, a);
+    uint64_t s = level_max(a, r);
+    RefId A = P(T, U(a), level_succ(a)), t = P(T, A, a);
     TermVarId x0 = var(T, A); RefId Ex0 = path(a, A, t, ref_var(x0)); TermVarId e0 = var(T, Ex0);
-    RefId Df = P(T, mk_pi_lv(a, mx(a, r + 1), x0, A, mk_pi_lv(a, r + 1, e0, Ex0, U(r))), mx(a, r + 1));
+    RefId Df = P(T, mk_pi_lv(a, level_max(a, level_succ(r)), x0, A, mk_pi_lv(a, level_succ(r), e0, Ex0, U(r))), level_max(a, level_succ(r)));
     TermVarId x = var(T, A); RefId Ex = path(a, A, t, ref_var(x)); TermVarId e = var(T, Ex);
     RefId D = app2(Df, ref_var(x), ref_var(e));
     RefId S = mk_sigma_lv(a, s, x, A, mk_sigma_lv(a, r, e, Ex, D));
-    ScopeId DS = capture_term2(x, A, a, e, Ex, a, D, U(r), r + 1, fc_true());
+    ScopeId DS = capture_term2(x, A, a, e, Ex, a, D, U(r), level_succ(r), fc_true());
     RefId rf = refl(a, A, t), Z = app2(Df, t, rf);
     TermVarId w = var(T, S), z = var(T, Z); RefId wv = ref_var(w), zv = ref_var(z);
     RefId wx = mk_fst(wv), we = mk_fst(mk_snd(wv)), wz = mk_snd(mk_snd(wv));
@@ -151,36 +150,36 @@ static RefId Sing(uint64_t a, uint64_t r) {
 RefId res_type(uint64_t z, uint64_t r) {
     Tele T_ = { { 46, z, r, 0, 0 } }, *T = &T_;
     TermVarId vT = var(T, U(z)), X = var(T, U(r));
-    RefId out = mk_sigma_lv(z + 1, mx(r + 1, z), vT, U(z), mk_sigma_lv(r + 1, mx(r, z), X, U(r), maps_type(r, z, ref_var(X), ref_var(vT))));
+    RefId out = mk_sigma_lv(level_succ(z), level_max(level_succ(r), z), vT, U(z), mk_sigma_lv(level_succ(r), level_max(r, z), X, U(r), maps_type(r, z, ref_var(X), ref_var(vT))));
     return out;
 }
 static RefId RPack(uint64_t z, uint64_t r) {
     Tele T_ = { { 47, z, r, 0, 0 } }, *T = &T_;
-    RefId Tz = P(T, U(z), z + 1), X = P(T, U(r), r + 1), M = P(T, maps_type(r, z, X, Tz), mx(r, z));
+    RefId Tz = P(T, U(z), level_succ(z)), X = P(T, U(r), level_succ(r)), M = P(T, maps_type(r, z, X, Tz), level_max(r, z));
     RefId RT = res_type(z, r);
-    RefId out = close(T, pair(mx(z + 1, r + 1), RT, Tz, pair(mx(r + 1, z), tail(RT, Tz), X, M)));
+    RefId out = close(T, pair(level_max(level_succ(z), level_succ(r)), RT, Tz, pair(level_max(level_succ(r), z), tail(RT, Tz), X, M)));
     return out;
 }
 static RefId res_pack(uint64_t z, uint64_t r, RefId T, RefId X, RefId M) { return APPN(RPack(z, r), T, X, M); }
 static RefId diagram_sigma(Tele *T, uint64_t b, uint64_t r, RefId B) {
-    uint64_t rl = mx(b, r + 1), ml = mx(b, r);
+    uint64_t rl = level_max(b, level_succ(r)), ml = level_max(b, r);
     TermVarId c = var(T, B), y = var(T, B);
-    RefId RT = mk_pi_lv(b, r + 1, y, B, U(r)); TermVarId R = var(T, RT);
+    RefId RT = mk_pi_lv(b, level_succ(r), y, B, U(r)); TermVarId R = var(T, RT);
     RefId M = mk_pi_lv(b, ml, y, B, maps_type(r, b, mk_app(ref_var(R), ref_var(y)), path(b, B, ref_var(c), ref_var(y))));
     return mk_sigma_lv(b, rl, c, B, mk_sigma_lv(rl, ml, R, RT, M));
 }
 static RefId DT(uint64_t b, uint64_t r) {
     Tele T_ = { { 48, b, r, 0, 0 } }, *T = &T_;
-    RefId B = P(T, U(b), b + 1);
+    RefId B = P(T, U(b), level_succ(b));
     RefId out = close(T, diagram_sigma(T, b, r, B));
     return out;
 }
 RefId diagram_type(uint64_t b, uint64_t r, RefId B) { return mk_app(DT(b, r), B); }
 static RefId DPack(uint64_t b, uint64_t r) {
     Tele T_ = { { 49, b, r, 0, 0 } }, *T = &T_;
-    uint64_t dl = mx(b, r + 1), ml = mx(b, r);
-    RefId B = P(T, U(b), b + 1), c = P(T, B, b);
-    TermVarId y0 = var(T, B); RefId R = P(T, mk_pi_lv(b, r + 1, y0, B, U(r)), dl);
+    uint64_t dl = level_max(b, level_succ(r)), ml = level_max(b, r);
+    RefId B = P(T, U(b), level_succ(b)), c = P(T, B, b);
+    TermVarId y0 = var(T, B); RefId R = P(T, mk_pi_lv(b, level_succ(r), y0, B, U(r)), dl);
     TermVarId y1 = var(T, B);
     RefId M = P(T, mk_pi_lv(b, ml, y1, B, maps_type(r, b, mk_app(R, ref_var(y1)), path(b, B, c, ref_var(y1)))), ml);
     RefId D = diagram_sigma(T, b, r, B);
@@ -191,16 +190,16 @@ static RefId dg_pack(uint64_t b, uint64_t r, RefId B, RefId c, RefId R, RefId M)
 
 RefId res_zero(uint64_t z) {
     Tele T_ = { { 1, z, 0, 0, 0 } }, *T = &T_;
-    RefId Tz = P(T, U(z), z + 1);
+    RefId Tz = P(T, U(z), level_succ(z));
     RefId out = close(T, res_pack(z, z, Tz, Tz, maps_id(z, Tz)));
     return out;
 }
 RefId res_node(uint64_t a, uint64_t z, uint64_t r) {
     Tele T_ = { { 2, a, z, r, 0 } }, *T = &T_;
-    uint64_t s = mx(a, r), tl = mx(z + 1, r + 1);
-    RefId A = P(T, U(a), a + 1), t = P(T, A, a);
+    uint64_t s = level_max(a, r), tl = level_max(level_succ(z), level_succ(r));
+    RefId A = P(T, U(a), level_succ(a)), t = P(T, A, a);
     TermVarId qx = var(T, A); RefId qEx = path(a, A, t, ref_var(qx)); TermVarId qe = var(T, qEx);
-    RefId Q = P(T, mk_pi_lv(a, mx(a, tl), qx, A, mk_pi_lv(a, tl, qe, qEx, res_type(z, r))), mx(a, tl));
+    RefId Q = P(T, mk_pi_lv(a, level_max(a, tl), qx, A, mk_pi_lv(a, tl, qe, qEx, res_type(z, r))), level_max(a, tl));
     RefId Q0 = app2(Q, t, refl(a, A, t));
     TermVarId x = var(T, A); RefId Ex = path(a, A, t, ref_var(x)); TermVarId e = var(T, Ex);
     RefId D = res_X(app2(Q, ref_var(x), ref_var(e)));
@@ -213,7 +212,7 @@ RefId res_node(uint64_t a, uint64_t z, uint64_t r) {
 }
 RefId dg_zero(uint64_t b) {
     Tele T_ = { { 3, b, 0, 0, 0 } }, *T = &T_;
-    RefId B = P(T, U(b), b + 1), c = P(T, B, b);
+    RefId B = P(T, U(b), level_succ(b)), c = P(T, B, b);
     TermVarId y = var(T, B); RefId Py = path(b, B, c, ref_var(y));
     RefId out = close(T, dg_pack(b, b, B, c, mk_lam_lv(b, y, B, Py), mk_lam_lv(b, y, B, maps_id(b, Py))));
     return out;
@@ -221,10 +220,10 @@ RefId dg_zero(uint64_t b) {
 /* the diagram node is the presentation node at each y, its terminal C = y */
 RefId dg_node(uint64_t a, uint64_t b, uint64_t r) {
     Tele T_ = { { 4, a, b, r, 0 } }, *T = &T_;
-    uint64_t s = mx(a, r), dl = mx(b, r + 1);
-    RefId B = P(T, U(b), b + 1), A = P(T, U(a), a + 1), t = P(T, A, a);
+    uint64_t s = level_max(a, r), dl = level_max(b, level_succ(r));
+    RefId B = P(T, U(b), level_succ(b)), A = P(T, U(a), level_succ(a)), t = P(T, A, a);
     TermVarId qx = var(T, A); RefId qEx = path(a, A, t, ref_var(qx)); TermVarId qe = var(T, qEx);
-    RefId Q = P(T, mk_pi_lv(a, mx(a, dl), qx, A, mk_pi_lv(a, dl, qe, qEx, diagram_type(b, r, B))), mx(a, dl));
+    RefId Q = P(T, mk_pi_lv(a, level_max(a, dl), qx, A, mk_pi_lv(a, dl, qe, qEx, diagram_type(b, r, B))), level_max(a, dl));
     TermVarId y = var(T, B); RefId yv = ref_var(y);
     TermVarId x = var(T, A); RefId Ex = path(a, A, t, ref_var(x)); TermVarId e = var(T, Ex);
     RefId Qxe = app2(Q, ref_var(x), ref_var(e));
@@ -291,7 +290,7 @@ static RefId m_assoc1(Tele *T, uint64_t l, RefId A, RefId a, RefId x, RefId e, c
 /* a one-path law λ A a b p. J(T, motive, K(T, u)·K(T, v)⁻¹, b, p) */
 static RefId law1(uint64_t kind, uint64_t l, Motive m, const Word *u, const Word *v) {
     Tele T_ = { { kind, l, 0, 0, 0 } }, *T = &T_;
-    RefId A = P(T, U(l), l + 1), a = P(T, A, l), b = P(T, A, l), p = P(T, path(l, A, a, b), l);
+    RefId A = P(T, U(l), level_succ(l)), a = P(T, A, l), b = P(T, A, l), p = P(T, path(l, A, a, b), l);
     RefId out = close(T, J(T, l, A, a, motive(T, l, A, a, m, NULL), Keq(T, l, A, a, u, v), b, p));
     return out;
 }
@@ -303,7 +302,7 @@ static RefId runinv(uint64_t l) { return law1(13, l, m_runinv, &WRV, &WR); }
 /* induction on p, then q, then r; later data under Π */
 static RefId assoc(uint64_t l) {
     Tele T_ = { { 14, l, 0, 0, 0 } }, *T = &T_;
-    RefId A = P(T, U(l), l + 1), a = P(T, A, l), b = P(T, A, l), c = P(T, A, l), d = P(T, A, l);
+    RefId A = P(T, U(l), level_succ(l)), a = P(T, A, l), b = P(T, A, l), c = P(T, A, l), d = P(T, A, l);
     RefId p = P(T, path(l, A, a, b), l), q = P(T, path(l, A, b, c), l), r = P(T, path(l, A, c, d), l);
     static const Word u = { 'C', &WRR, &WR }, v = { 'C', &WR, &WRR };
     TermVarId d2 = var(T, A); RefId P2d = path(l, A, a, ref_var(d2)); TermVarId r2 = var(T, P2d);
@@ -319,7 +318,7 @@ static RefId assoc(uint64_t l) {
  * h q = assoc(p,p⁻¹,q)⁻¹ · ap(T, _·q)(rinv p) · lunit q and symmetrically k */
 static RefId mid(uint64_t l) {
     Tele T_ = { { 15, l, 0, 0, 0 } }, *T = &T_;
-    RefId B = P(T, U(l), l + 1), a = P(T, B, l), c = P(T, B, l), p = P(T, path(l, B, a, c), l), y = P(T, B, l);
+    RefId B = P(T, U(l), level_succ(l)), a = P(T, B, l), c = P(T, B, l), p = P(T, path(l, B, a, c), l), y = P(T, B, l);
     RefId As = assoc(l), Lu = lunit(l);
     RefId Pay = path(l, B, a, y), Pcy = path(l, B, c, y), pinv = rev(l, B, a, c, p);
     RefId side[2];
@@ -344,9 +343,9 @@ static RefId mid(uint64_t l) {
 /* comp(comp(M_L, E), M_R⁻¹) : Maps(X_L, X_R) for E : Maps(T_L, T_R) */
 RefId res_action(uint64_t zl, uint64_t rl, uint64_t zr, uint64_t rr) {
     Tele T_ = { { 20, zl, rl, zr, rr } }, *T = &T_;
-    RefId L = P(T, res_type(zl, rl), mx(zl + 1, rl + 1)), R = P(T, res_type(zr, rr), mx(zr + 1, rr + 1));
+    RefId L = P(T, res_type(zl, rl), level_max(level_succ(zl), level_succ(rl))), R = P(T, res_type(zr, rr), level_max(level_succ(zr), level_succ(rr)));
     RefId TL = res_T(L), TR = res_T(R), XL = res_X(L), XR = res_X(R);
-    RefId E = P(T, maps_type(zl, zr, TL, TR), mx(zl, zr));
+    RefId E = P(T, maps_type(zl, zr, TL, TR), level_max(zl, zr));
     RefId C1 = maps_comp(rl, zl, zr, XL, TL, TR, res_M(L), E);
     RefId out = close(T, maps_comp(rl, zr, rr, XL, TR, XR, C1, maps_inv(rr, zr, XR, TR, res_M(R))));
     return out;
@@ -354,8 +353,8 @@ RefId res_action(uint64_t zl, uint64_t rl, uint64_t zr, uint64_t rr) {
 /* F = d_R(p⁻¹·c_L r), G = d_L(p·c_R s): the action of p on the presentations of C_L = y, C_R = y */
 RefId id_action(uint64_t b, uint64_t rl, uint64_t rr) {
     Tele T_ = { { 21, b, rl, rr, 0 } }, *T = &T_;
-    RefId B = P(T, U(b), b + 1);
-    RefId L = P(T, diagram_type(b, rl, B), mx(b, rl + 1)), R = P(T, diagram_type(b, rr, B), mx(b, rr + 1));
+    RefId B = P(T, U(b), level_succ(b));
+    RefId L = P(T, diagram_type(b, rl, B), level_max(b, level_succ(rl))), R = P(T, diagram_type(b, rr, B), level_max(b, level_succ(rr)));
     RefId p = P(T, path(b, B, dg_C(L), dg_C(R)), b), y = P(T, B, b);
     RefId PL = res_pack(b, rl, path(b, B, dg_C(L), y), dg_R(L, y), dg_M(L, y));
     RefId PR = res_pack(b, rr, path(b, B, dg_C(R), y), dg_R(R, y), dg_M(R, y));
@@ -366,8 +365,8 @@ RefId id_action(uint64_t b, uint64_t rl, uint64_t rr) {
 /* ---------------- the other schemas (§83.5) ---------------- */
 RefId equiv_maps(uint64_t l, uint64_t m) {
     Tele T_ = { { 30, l, m, 0, 0 } }, *T = &T_;
-    uint64_t n = mx(l, m);
-    RefId X = P(T, U(l), l + 1), Y = P(T, U(m), m + 1), e = P(T, mk_equiv(l, m, X, Y), n);
+    uint64_t n = level_max(l, m);
+    RefId X = P(T, U(l), level_succ(l)), Y = P(T, U(m), level_succ(m)), e = P(T, mk_equiv(l, m, X, Y), n);
     RefId c = equiv_map(l, m, X, Y, e);
     TermVarId y1 = var(T, Y), y2 = var(T, Y), x = var(T, X);
     RefId d = mk_lam_lv(m, y1, Y, mk_fst(mk_fst(equiv_contr(l, m, X, Y, e, ref_var(y1)))));
@@ -388,7 +387,7 @@ static RefId m_cut(Tele *T, uint64_t l, RefId A, RefId a, RefId z, RefId v, cons
 }
 RefId cut_maps(uint64_t b) {
     Tele T_ = { { 31, b, 0, 0, 0 } }, *T = &T_;
-    RefId B = P(T, U(b), b + 1), C = P(T, B, b), D = P(T, B, b);
+    RefId B = P(T, U(b), level_succ(b)), C = P(T, B, b), D = P(T, B, b);
     TermVarId z = var(T, B); RefId Cz = path(b, B, C, ref_var(z)), Dz = path(b, B, D, ref_var(z)); TermVarId u = var(T, Cz);
     RefId Cut = mk_sigma_lv(b, b, z, B, mk_sigma_lv(b, b, u, Cz, Dz)), PCD = path(b, B, C, D);
     TermVarId w = var(T, Cut); RefId wv = ref_var(w), zw = mk_fst(wv), uw = mk_fst(mk_snd(wv)), vw = mk_snd(mk_snd(wv));
@@ -409,9 +408,9 @@ RefId cut_maps(uint64_t b) {
 }
 RefId fibre_maps(uint64_t b, uint64_t r) {
     Tele T_ = { { 32, b, r, 0, 0 } }, *T = &T_;
-    uint64_t s = mx(b, r);
-    RefId B = P(T, U(b), b + 1);
-    TermVarId x0 = var(T, B); RefId R = P(T, mk_pi_lv(b, r + 1, x0, B, U(r)), mx(b, r + 1));
+    uint64_t s = level_max(b, r);
+    RefId B = P(T, U(b), level_succ(b));
+    TermVarId x0 = var(T, B); RefId R = P(T, mk_pi_lv(b, level_succ(r), x0, B, U(r)), level_max(b, level_succ(r)));
     TermVarId x1 = var(T, B); RefId k = P(T, mk_pi_lv(b, r, x1, B, mk_contr(r, mk_app(R, ref_var(x1)))), s);
     TermVarId xs = var(T, B); RefId S = mk_sigma_lv(b, r, xs, B, mk_app(R, ref_var(xs)));
     TermVarId w = var(T, S), xb = var(T, B), w2 = var(T, S), xk = var(T, B);
@@ -432,7 +431,7 @@ static RefId fold(size_t n, const DiagNode *nd, RefId B, uint64_t lB, RefId o, u
         RefId Pk = path(nd[k].level, nd[k].A, nd[k].t, ref_var(nd[k].x));
         RefId Q = mk_lam_lv(nd[k].level, nd[k].x, nd[k].A, mk_lam_lv(nd[k].level, nd[k].e, Pk, D));
         D = B ? APPN(dg_node(nd[k].level, lB, lv), B, nd[k].A, nd[k].t, Q) : APPN(res_node(nd[k].level, lB, lv), nd[k].A, nd[k].t, Q);
-        lv = mx(nd[k].level, lv);
+        lv = level_max(nd[k].level, lv);
     }
     *r = lv;
     return D;

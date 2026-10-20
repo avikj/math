@@ -27,16 +27,30 @@ typedef enum { S_TERM = 1, S_DIM } Sort;
 
 
 /* ---- universe levels (§59.1): explicit formation annotations ----
- * A construction record carries a packed pair of levels; LEVEL_NONE marks an
- * annotation the source did not supply (the checker then infers it; the
- * fixed templates always supply theirs). */
-#define LEVEL_NONE  0xffffffffULL
-#define LEVELS_NONE 0xffffffffffffffffULL
+ * A level is an exact natural: a value below 2^63 is the word itself, a
+ * larger one LEVEL_BIG | z with z its canonical exact-integer record
+ * (chain.h), so equal levels are equal words. LEVEL_NONE marks an annotation
+ * the source did not supply (the checker then infers it; the fixed templates
+ * always supply theirs). A construction record carries the interned pair of
+ * its two optional levels; LEVELS_NONE is the pair of two absent levels. */
+#define LEVEL_NONE  UINT64_MAX
+#define LEVELS_NONE UINT64_MAX
+#define LEVEL_BIG   ((uint64_t)1 << 63)
 uint64_t levels_pack(uint64_t m, uint64_t n);
 uint64_t levels_first(uint64_t lv);
 uint64_t levels_second(uint64_t lv);
-uint64_t level_max(uint64_t a, uint64_t b);      /* LEVEL_NONE absorbs */
+uint64_t level_from_limbs(size_t n, const uint64_t *limbs);   /* little-endian limbs */
+void level_print(uint64_t l, FILE *f);
+/* successor and maximum (LEVEL_NONE absorbs): the _now forms answer in one
+ * bounded step unless the operands need limb arithmetic, which is the
+ * family level.succ / level.max, one limb per step; inside a step use
+ * FR_LSUCC / FR_LMAX, outside one the host forms drive the family */
+bool level_succ_now(uint64_t a, uint64_t *out);
+bool level_max_now(uint64_t a, uint64_t b, uint64_t *out);
 uint64_t level_succ(uint64_t a);
+uint64_t level_max(uint64_t a, uint64_t b);
+#define FR_LSUCC(k, dst, a) if (!level_succ_now((a), &(dst))) FR_AWAIT(k, dst, F_LSUCC, (a), 0)
+#define FR_LMAX(k, dst, a, b) if (!level_max_now((a), (b), &(dst))) FR_AWAIT(k, dst, F_LMAX, (a), (b))
 
 /* ---- bound local occurrences (§50) ----
  * A local of a scope telescope is a (depth, slot) atom encoded in the

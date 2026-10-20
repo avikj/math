@@ -286,13 +286,13 @@ static void interp_step(Cont *k, uint64_t v) {
     /* unary and binary operators on levels, intervals and faces */
     FR_AWAIT(k, r, F_INTERP, L->w[1], er);
     L->a = tvget(r).id;
-    if (L->w[0] == X_LSUCC) FR_FINISH(k, tvrec(PS_LEVEL, level_succ(L->a)));
+    if (L->w[0] == X_LSUCC) { FR_LSUCC(k, r, L->a); FR_FINISH(k, tvrec(PS_LEVEL, r)); }
     if (L->w[0] == X_LFIRST) FR_FINISH(k, tvrec(PS_LEVEL, levels_first(L->a)));
     if (L->w[0] == X_IVNOT) { FR_AWAIT(k, r, F_IVNEG, L->a, 0); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
     if (L->w[0] == X_FCEND) { FR_AWAIT(k, r, F_FCEND, L->a, L->w[2]); FR_FINISH(k, tvrec(PS_FACE, r)); }
     FR_AWAIT(k, r, F_INTERP, L->w[2], er);
     L->b = tvget(r).id;
-    if (L->w[0] == X_LMAX) FR_FINISH(k, tvrec(PS_LEVEL, level_max(L->a, L->b)));
+    if (L->w[0] == X_LMAX) { FR_LMAX(k, r, L->a, L->b); FR_FINISH(k, tvrec(PS_LEVEL, r)); }
     if (L->w[0] == X_LEVELS) FR_FINISH(k, tvrec(PS_LEVEL, levels_pack(L->a, L->b)));
     if (L->w[0] == X_IVAND) { FR_AWAIT(k, r, F_IVMEET, L->a, L->b); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
     if (L->w[0] == X_IVOR) { FR_AWAIT(k, r, F_JOIN, L->a, L->b); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }

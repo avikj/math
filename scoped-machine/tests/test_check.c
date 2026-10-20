@@ -60,6 +60,21 @@ int main(void) {
     CHECK(I.st == CK_VALID && I.type == U0, "A → B : U0");
     I = infer(G, fc_true(), mk_pi_lv(1, 1, tv(U0), U0, U0));
     CHECK(I.st == CK_VALID && I.type == U1, "Π(X:U0).U0 : U1 (max of levels)");
+    /* exact levels (BOUNDS §2): past 2^32, across a limb boundary, and the
+     * exact maximum of two levels above every word */
+    {   uint64_t big = ((uint64_t)1 << 32) + 1, top = UINT64_MAX, two[2] = { 0, 1 };
+        I = infer(G, fc_true(), mk_universe(big));
+        CHECK(I.st == CK_VALID && I.type == mk_universe(big + 1), "U_(2^32+1) : U_(2^32+2)");
+        uint64_t L = level_from_limbs(1, &top), L1 = level_from_limbs(2, two), L2 = level_succ(L1);
+        I = infer(G, fc_true(), mk_universe(L));
+        CHECK(I.st == CK_VALID && I.type == mk_universe(L1) && level_succ(L) == L1, "U_(2^64−1) : U_(2^64): the successor carries into a new limb");
+        I = infer(G, fc_true(), mk_pi_lv(L2, level_succ(L2), tv(mk_universe(L1)), mk_universe(L1), mk_universe(L2)));
+        CHECK(I.st == CK_VALID && I.type == mk_universe(level_succ(L2)), "Π(X:U_(2^64)).U_(2^64+1) : U_(2^64+2), the exact maximum");
+        CHECK(level_max(L1, L2) == L2 && level_max(L2, L1) == L2 && level_max(L1, big) == L1, "the maximum compares values, not handles");
+        char *buf = NULL; size_t len = 0; FILE *mf = open_memstream(&buf, &len);
+        print_ref(mk_universe(L1), mf); fclose(mf);
+        CHECK(!strcmp(buf, "U0x10000000000000000"), "U_(2^64) prints its exact level (%s)", buf);
+        free(buf); }
     I = infer(G, fc_true(), mk_app(f, a));
     CHECK(I.st == CK_VALID && I.type == A, "f a : A");
     I = infer(G, fc_true(), mk_app(f, bB));
@@ -250,6 +265,15 @@ int main(void) {
       r = whnf(tr, fc_true(), &st);
       CHECK(st == W_OK && check(Gc, fc_true(), r.ref, U0, &why) == CK_VALID, "transport along ua(id) : U0 (%s)", why);
       CHECK(check(Gc, fc_true(), tr, U0, &why) == CK_VALID, "the transport itself checks by the composition rule (%s)", why);
+      /* the same at universe level 2^64 − 1: templates, composition and checking on exact levels */
+      {   uint64_t top = UINT64_MAX, L = level_from_limbs(1, &top), L1 = level_succ(L), L2 = level_succ(L1);
+          RefId UL = mk_universe(L), UL1 = mk_universe(L1);
+          TermVarId vX = tv(UL); DimVarId ds[1] = { i };
+          ContextId Gb = ctx_of(1, ds, 1, &vX, fc_true());
+          RefId trb = mk_coe_at(L1, i, mk_papp_const(L2, UL1, UL, UL, mk_ua(L1, UL, UL, mk_id_equiv(L1, UL)), iv_var(i)), ref_var(vX));
+          r = whnf(trb, fc_true(), &st);
+          CHECK(st == W_OK && check(Gb, fc_true(), r.ref, UL, &why) == CK_VALID, "at level 2^64 − 1: transport along ua(id) : U_(2^64−1) (%s)", why);
+          CHECK(check(Gb, fc_true(), trb, UL, &why) == CK_VALID, "at level 2^64 − 1: the transport checks by the composition rule (%s)", why); }
     }
 
     /* audit cases */

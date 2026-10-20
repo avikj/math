@@ -425,7 +425,8 @@ static void head_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, L->lv, F_HEAD, t, 1);
     if (L->tag == T_UNIVERSE) {
         FR_AWAIT(k, L->x, F_HEAD, t, 0);
-        FR_CALL(k, r, mk_tag_sub(k, T_UNIVERSE, level_succ(L->x), LEVELS_NONE, 0, NULL, 0));
+        FR_LSUCC(k, L->x, L->x);
+        FR_CALL(k, r, mk_tag_sub(k, T_UNIVERSE, L->x, LEVELS_NONE, 0, NULL, 0));
         DONE(J_OK, NULL, r, 0, 0);
     }
     if (L->tag == T_PI || L->tag == T_SIGMA) {
@@ -440,7 +441,8 @@ static void head_step(Cont *k, uint64_t v) {
         PASS(L->res);
         L->l2 = jr_a(L->res);
         if (!level_ok2(L->lv, L->l1, L->l2)) BAD(level_why(L->lv, "universe annotation differs from the formation levels"));
-        FR_CALL(k, r, mk_tag_sub(k, T_UNIVERSE, L->l1 > L->l2 ? L->l1 : L->l2, LEVELS_NONE, 0, NULL, 0));
+        FR_LMAX(k, L->l1, L->l1, L->l2);
+        FR_CALL(k, r, mk_tag_sub(k, T_UNIVERSE, L->l1, LEVELS_NONE, 0, NULL, 0));
         DONE(J_OK, NULL, r, 0, 0);
     }
     if (L->tag == T_LAM) {

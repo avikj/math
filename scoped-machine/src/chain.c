@@ -92,6 +92,47 @@ static void zneg_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 uint64_t z_add(uint64_t a, uint64_t b) { return family_call(Fz_ADD, a, b); }
+
+/* ---------------- universe levels: exact naturals (term.h) ---------------- */
+static uint64_t level_z(uint64_t l) { return l & LEVEL_BIG ? l & ~LEVEL_BIG : z_make(0, 1, &l); }
+static uint64_t level_of_z(uint64_t z) { size_t n; const uint64_t *w = rget(z, &n); return n == 1 ? 0 : n == 2 && !(w[1] & LEVEL_BIG) ? w[1] : LEVEL_BIG | z; }
+uint64_t level_from_limbs(size_t n, const uint64_t *limbs) { return level_of_z(z_make(0, n, limbs)); }
+bool level_succ_now(uint64_t a, uint64_t *out) {
+    if (a == LEVEL_NONE || a + 1 < LEVEL_BIG) { *out = a == LEVEL_NONE ? a : a + 1; return true; }
+    return false;
+}
+bool level_max_now(uint64_t a, uint64_t b, uint64_t *out) {
+    if (a == LEVEL_NONE || b == LEVEL_NONE) { *out = LEVEL_NONE; return true; }
+    if (a == b || ((a ^ b) & LEVEL_BIG)) { *out = (a & LEVEL_BIG) || a == b ? a : b; return true; }   /* a big level exceeds every word */
+    if (!(a & LEVEL_BIG)) { *out = a > b ? a : b; return true; }
+    return false;
+}
+typedef struct { uint64_t nb; } LvLoc;
+static void lsucc_step(Cont *k, uint64_t v) {
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    FR_AWAIT(k, r, Fz_ADD, level_z(k->w[0]), z_from_i64(1));
+    FR_FINISH(k, level_of_z(r));
+    FR_END(k);
+}
+/* two big levels: the sign of a − b */
+static void lmax_step(Cont *k, uint64_t v) {
+    LvLoc *L = FR_LOC(k, LvLoc);
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    FR_AWAIT(k, L->nb, Fz_NEG, level_z(k->w[1]), 0);
+    FR_AWAIT(k, r, Fz_ADD, level_z(k->w[0]), L->nb);
+    FR_FINISH(k, rword(r, 0) ? k->w[1] : k->w[0]);
+    FR_END(k);
+}
+uint64_t level_succ(uint64_t a) { uint64_t r; return level_succ_now(a, &r) ? r : family_call(F_LSUCC, a, 0); }
+uint64_t level_max(uint64_t a, uint64_t b) { uint64_t r; return level_max_now(a, b, &r) ? r : family_call(F_LMAX, a, b); }
+void level_print(uint64_t l, FILE *f) {
+    if (!(l & LEVEL_BIG)) { fprintf(f, "%llu", (unsigned long long)l); return; }
+    size_t n; const uint64_t *w = rget(l & ~LEVEL_BIG, &n);
+    fprintf(f, "0x%llx", (unsigned long long)w[n - 1]);
+    for (size_t i = n - 1; i-- > 1; ) fprintf(f, "%016llx", (unsigned long long)w[i]);
+}
 uint64_t z_neg(uint64_t a) { return family_call(Fz_NEG, a, 0); }
 uint64_t z_mul(uint64_t a, uint64_t b) { return family_call(Fz_MUL, a, b); }
 
@@ -401,6 +442,8 @@ void chain_families_init(void) {
     family_define(Fz_ADD, "z.add", zadd_step, sizeof(ZLoc));
     family_define(Fz_MUL, "z.mul", zmul_step, sizeof(ZLoc));
     family_define(Fz_NEG, "z.neg", zneg_step, sizeof(ZLoc));
+    family_define(F_LSUCC, "level.succ", lsucc_step, 0);
+    family_define(F_LMAX, "level.max", lmax_step, sizeof(LvLoc));
 }
 
 /* ---------------- synchronous drivers ---------------- */

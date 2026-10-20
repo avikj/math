@@ -56,14 +56,10 @@ FaceId term_var_required(TermVarId x) { return term_decl(x)[1]; }
  * Alpha-equivalent constructions are one node; a construction and a
  * template view are one reference form. */
 
-/* §51.2 / §59.1: a level is a number below LEVEL_NONE or the sentinel itself;
- * anything else is a host failure, never a wrapped level */
-static void level_check(uint64_t l) { require(l <= LEVEL_NONE, "universe level out of the representable range"); }
-uint64_t levels_pack(uint64_t m, uint64_t n) { level_check(m); level_check(n); return m | (n << 32); }
-uint64_t levels_first(uint64_t lv) { return lv & 0xffffffffULL; }
-uint64_t levels_second(uint64_t lv) { return lv >> 32; }
-uint64_t level_max(uint64_t a, uint64_t b) { if (a == LEVEL_NONE || b == LEVEL_NONE) return LEVEL_NONE; return a > b ? a : b; }
-uint64_t level_succ(uint64_t a) { if (a == LEVEL_NONE) return LEVEL_NONE; require(a < LEVEL_NONE - 1, "universe level overflow"); return a + 1; }
+/* §59.1: the interned pair of two optional levels (a small record) */
+uint64_t levels_pack(uint64_t m, uint64_t n) { return m == LEVEL_NONE && n == LEVEL_NONE ? LEVELS_NONE : RQ(m, n); }
+uint64_t levels_first(uint64_t lv) { return lv == LEVELS_NONE ? LEVEL_NONE : rword(lv, 0); }
+uint64_t levels_second(uint64_t lv) { return lv == LEVELS_NONE ? LEVEL_NONE : rword(lv, 1); }
 
 
 /* ================= references ================= */
@@ -209,7 +205,7 @@ RefId global_ref(SymbolId s) {
 
 /* ================= constructors (by the schema, construct.c) ================= */
 
-RefId mk_universe(uint64_t level) { require(level < LEVEL_NONE, "universe level out of the representable range"); return mk_tag(T_UNIVERSE, level, LEVELS_NONE, 0, NULL, 0); }
+RefId mk_universe(uint64_t level) { require(level != LEVEL_NONE, "a universe needs a level"); return mk_tag(T_UNIVERSE, level, LEVELS_NONE, 0, NULL, 0); }
 static RefId mk_term_binder_form(Tag tag, uint64_t lv, TermVarId x, RefId A, RefId body) {
     require(term_var_type(x) == A, "binder formal declared at a different type");
     return MK(tag, 0, lv, x, A, body);
@@ -269,7 +265,7 @@ static void pr(RefId t, FILE *f, int depth) {
     if (ref_is_var(t)) { fprintf(f, "x%llu", (unsigned long long)ref_var_id(t)); return; }
     if (depth <= 0) { fprintf(f, "#%llu", (unsigned long long)t); return; }
     Head h; open_ref(t, &h);
-    if (h.tag == T_UNIVERSE) { fprintf(f, "U%llu", (unsigned long long)h.payload); head_free(&h); return; }
+    if (h.tag == T_UNIVERSE) { fprintf(f, "U"); level_print(h.payload, f); head_free(&h); return; }
     if (h.tag == T_GLOBAL) {
         fprintf(f, "%s", DEF(h.payload)->name);
         /* the arguments: the environment's values, dimensions then terms */
