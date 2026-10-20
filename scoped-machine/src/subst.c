@@ -112,7 +112,7 @@ static void dims_step(Cont *k, uint64_t v) {
  * scope value's records sit one level deeper */
 static uint64_t deeper_key(uint64_t tk) {
     size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n);
-    return w[0] == TR_RE || w[0] == TR_ENV ? tk : trav_key((unsigned)w[0], (unsigned)w[1] + 1, w[2]);
+    return w[0] == TR_RE ? tk : trav_key((unsigned)w[0], (unsigned)w[1] + 1, w[2]);
 }
 typedef struct { size_t n, q; uint64_t slot, f, b; TVal val; bool changed; WordBuf out; bool created; } ReLoc;
 static void re_item(uint64_t tk, TVal val, uint64_t *f, uint64_t *b) {

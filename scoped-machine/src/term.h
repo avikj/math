@@ -47,17 +47,9 @@ static inline uint64_t bound_id(uint32_t depth, uint32_t slot) { return BOUND_BI
 static inline bool is_bound_id(uint64_t id) { return (id & BOUND_BIT) != 0; }
 static inline uint32_t bound_depth(uint64_t id) { return (uint32_t)((id & ~BOUND_BIT) >> 32) & 0x1fffffffu; }
 static inline uint32_t bound_slot(uint64_t id) { return (uint32_t)(id & 0xffffffffULL); }
-
-/* ---- construction atoms ----
- * Inside a construction node's field constants, parameter k is the atom
- * obound_id(k) and the local of binder s is obound_id(np + s). The atoms of a
- * node are interpreted only against that node's environment (they never
- * occur in a construction's free boundary), so atoms of different nodes never
- * meet in one map. Like scope locals, an atom has no declaration. */
-#define OBOUND_BIT (1ULL << 60)
-static inline uint64_t obound_id(uint32_t slot) { return OBOUND_BIT | slot; }
-static inline bool is_obound_id(uint64_t id) { return (id & OBOUND_BIT) != 0 && (id & BOUND_BIT) == 0; }
-static inline bool is_local_atom(uint64_t id) { return is_bound_id(id) || is_obound_id(id); }
+/* A construction node is a binder like a scope: its field constants are
+ * closed over (depth, slot) atoms — parameter k is bound_id(0, k), the local
+ * of its binder bound_id(0, np) — and its environment applies them (APPLY). */
 
 const char *tag_name(Tag t);
 

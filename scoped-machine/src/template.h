@@ -54,10 +54,10 @@ bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e);
 /* ---- constructions (the one construction representation) ----
  * Every non-variable reference is TVIEW(node, environment). A construction
  * built by the term layer is a node whose field programs are constants
- * closed over positional atoms: parameter k (the construction's typed free
- * boundary, dimensions first, then term variables in dependency order) is
- * obound_id(k), and the local of binder s is obound_id(np + s). Its
- * environment gives every parameter's image. Alpha-equivalent constructions
+ * closed over (depth, slot) atoms: parameter k (the construction's typed free
+ * boundary, dimensions first, then term variables in id order) is
+ * bound_id(0, k), and the local of its binder bound_id(0, np). Its
+ * environment gives every parameter's image (APPLY). Alpha-equivalent constructions
  * are therefore one node, and a construction is a template view.
  * Record: [0, np, tag, payload_e, levels_e, nf, (kind, slot, CONST)*, nb,
  *          (sort, domain_field, s)*, required_e, declared_e, (sort, type_e, guard_e)*np] */

@@ -1,7 +1,5 @@
 #include "scope.h"
-#include "template.h"   /* the validator walks template environments */
-
-
+#include "template.h"
 
 /* ------------------------------------------------------------------ */
 /* scope records: [n, (sort, type, level, required)*, result_sort, type, level, guard, body, support, freevars]
@@ -47,20 +45,9 @@ ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result
     return S;
 }
 
-/* ------------------------------------------------------------------ */
-/* structural validation (§50.1–2)                                       */
-
-/* ------------------------------------------------------------------ */
-/* application and ambient reindexing                                    */
-
-
-
-/* the k-th local's declaration instantiated at the argument prefix args[0..k) */
-
+/* ambient reindexing: free identities only */
 ScopeId reindex_scope(ScopeId S, MapId sigma) {
     if (map_is_identity(sigma)) return S;
     return scope_records_traverse(S, trav_key(TR_RE, 0, sigma));
 }
-
-/* remove the single binder level after ∀ */
 

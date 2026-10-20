@@ -26,15 +26,18 @@ typedef struct { Sort sort; uint64_t id; RefId type; uint64_t level; FaceId requ
 typedef struct { Val body; RefId type; uint64_t level; FaceId guard; } TypedPartial;
 
 /* ---- scoped traversal (scopefam.c) ----
- * A traversal key [kind, depth, context]: CLOSE (context [sort, id]* of the
- * captured locals), APPLY (context [sort, value]* arguments), RE (context a
- * map), ENV (context an environment: a node's atom k reads its slot k), LOWER.
- * A scope's own records sit one level deeper than its occurrence; RE and ENV
- * touch free identities only and carry no depth. */
-enum { TR_CLOSE = 1, TR_APPLY, TR_RE, TR_ENV, TR_LOWER };
+ * A traversal key [kind, depth, context]. The binders are scopes and
+ * construction nodes; their locals are (depth, slot) atoms. CLOSE (context:
+ * the record identity ↦ slot) closes identities into atoms of the key's
+ * depth; APPLY (context: an environment slot ↦ value) replaces those atoms
+ * and lowers deeper ones; LOWER removes one empty level (∀); RE (context: a
+ * map) substitutes free identities and carries no depth. A scope's own
+ * records sit one level deeper than its occurrence. */
+enum { TR_CLOSE = 1, TR_APPLY, TR_RE, TR_LOWER };
 uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx);
-uint64_t re_key(uint64_t map);    /* the traversal substituting a map */
-uint64_t env_key(uint64_t env);   /* the traversal reading a node's atoms from an environment */
+uint64_t re_key(uint64_t map);      /* RE at a map */
+uint64_t close_key(uint64_t ctx);   /* CLOSE at depth 0 */
+uint64_t apply_key(uint64_t env);   /* APPLY at depth 0 */
 ScopeId scope_records_traverse(ScopeId S, uint64_t tk);   /* records at tk's depth */
 ScopeId scope_with_side(uint64_t pre);               /* the scope whose words (without side data) are the record pre */
 ScopeId capture_request(const uint64_t *req, size_t n);

@@ -4,9 +4,9 @@
  * CONSTRUCT(request) builds the construction node of a request record
  *   [tag, payload, levels, declared, ft, fd, nf, (kind, slot, id)*, nb, (sort, formal, domain)*]
  * (ft/fd = 0: the boundary is computed from the fields): its typed free
- * boundary, required face, the closing substitution Φ (parameter k ↦ atom k,
+ * boundary, required face, its CLOSE context Φ (parameter k ↦ slot k,
  * dimensions first), the field constants closed by Φ (a field under binder s
- * also closes the formal into atom np+s), the closed parameter declarations,
+ * also closes the formal into slot np+s), the closed parameter declarations,
  * the node record, the environment of the boundary itself and the instance.
  * FIELD(t, k) opens one field; BINDER(t, [sort, slot, field, image]) is a
  * binder field with its atom ↦ image; REFVAR(x) is VAR(x) with its typed
@@ -78,7 +78,7 @@ static void refvar_step(Cont *k, uint64_t v) {
     VarLoc *L = FR_LOC(k, VarLoc);
     TermVarId x = k->w[0];
     FR_BEGIN(k);
-    if (is_local_atom(x)) FR_FINISH(k, ref_var(x));          /* an atom: constant side data */
+    if (is_bound_id(x)) FR_FINISH(k, ref_var(x));          /* an atom: constant side data */
     {   RefId type = term_var_type(x);
         uint64_t xs[1] = { x }; L->fv = set_make(xs, 1); L->sup = ref_support(type); L->req = term_var_required(x); }
     FR_AWAIT(k, L->fv, F_SUNION, L->fv, ref_freevars(term_var_type(x)));
@@ -89,8 +89,8 @@ static void refvar_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
-/* Φ(ft, fd): the closing substitution of a boundary — dimension q ↦ atom q,
- * term variable q ↦ atom nd+q — one map, its keys merged in order */
+/* Φ(ft, fd): the CLOSE context of a boundary — dimension q ↦ slot q, term
+ * variable q ↦ slot nd+q — its keys merged in order */
 typedef struct { const uint64_t *xs, *ds; size_t nt, nd, i, j; WordBuf w; bool created; } PhiLoc;
 static void phi_step(Cont *k, uint64_t v) {
     PhiLoc *L = FR_LOC(k, PhiLoc);
@@ -100,14 +100,15 @@ static void phi_step(Cont *k, uint64_t v) {
     wordbuf_init(&L->w);
     for (L->i = 0, L->j = 0; L->i < L->nt || L->j < L->nd; ) {
         if (L->j == L->nd || (L->i < L->nt && L->xs[L->i] < L->ds[L->j])) {
-            require(!is_local_atom(L->xs[L->i]), "a construction's boundary contains a bound atom");
-            wordbuf_push(&L->w, L->xs[L->i]); wordbuf_push(&L->w, PS_REF); wordbuf_push(&L->w, ref_var(obound_id((uint32_t)(L->nd + L->i)))); L->i++;
+            require(!is_bound_id(L->xs[L->i]), "a construction's boundary contains a bound atom");
+            wordbuf_push(&L->w, L->xs[L->i]); wordbuf_push(&L->w, PS_REF); wordbuf_push(&L->w, L->nd + L->i); L->i++;
         } else {
-            require(!is_local_atom(L->ds[L->j]), "a construction's boundary contains a bound atom");
-            wordbuf_push(&L->w, L->ds[L->j]); wordbuf_push(&L->w, PS_INTERVAL); wordbuf_push(&L->w, iv_var(obound_id((uint32_t)L->j))); L->j++;
+            require(!is_bound_id(L->ds[L->j]), "a construction's boundary contains a bound atom");
+            wordbuf_push(&L->w, L->ds[L->j]); wordbuf_push(&L->w, PS_INTERVAL); wordbuf_push(&L->w, L->j); L->j++;
         }
         FR_YIELD(k);
     }
+    wordbuf_push(&L->w, 0);                                  /* total: no entry is dropped */
     FR_CALL(k, id, intern_sub(k, &M.keys, &L->w, &L->created));
     FR_FINISH(k, id);
     FR_END(k);
@@ -233,25 +234,24 @@ static void construct_step(Cont *k, uint64_t v) {
     wordbuf_push(&L->w, L->nf);
     for (L->q = 0; L->q < L->nf; L->q++) {
         L->mq = L->phi;
-        if (con_field_slot(L, L->q) != NO_SLOT) {
-            uint64_t s = con_field_slot(L, L->q), atom = obound_id((uint32_t)(L->np + s));
-            uint64_t img = con_binder_sort(L, s) == S_TERM ? ref_var(atom) : iv_var(atom);
-            FR_AWAIT(k, L->mq, F_SET, L->phi, subst_entry(con_binder_formal(L, s), con_binder_sort(L, s) == S_TERM ? PS_REF : PS_INTERVAL, img));
+        if (con_field_slot(L, L->q) != NO_SLOT) {                       /* the binder's formal ↦ slot np + s */
+            uint64_t s = con_field_slot(L, L->q);
+            FR_AWAIT(k, L->mq, F_SET, L->phi, subst_entry(con_binder_formal(L, s), con_binder_sort(L, s) == S_TERM ? PS_REF : PS_INTERVAL, L->np + s));
         }
-        FR_AWAIT(k, L->c, trav_family(con_field_kind(L, L->q)), con_field_id(L, L->q), re_key(L->mq));
+        FR_AWAIT(k, L->c, trav_family(con_field_kind(L, L->q)), con_field_id(L, L->q), close_key(L->mq));
         wordbuf_push(&L->w, con_field_kind(L, L->q)); wordbuf_push(&L->w, con_field_slot(L, L->q));
         wordbuf_push(&L->w, expr_const(psort_of(con_field_kind(L, L->q)), L->c));
     }
     wordbuf_push(&L->w, L->nb);
     for (L->q = 0; L->q < L->nb; L->q++) { wordbuf_push(&L->w, con_binder_sort(L, L->q)); wordbuf_push(&L->w, con_binder_domain(L, L->q)); wordbuf_push(&L->w, L->q); FR_YIELD(k); }
-    FR_AWAIT(k, L->c, F_TFC, L->req, re_key(L->phi));
+    FR_AWAIT(k, L->c, F_TFC, L->req, close_key(L->phi));
     wordbuf_push(&L->w, expr_const(PS_FACE, L->c));
-    if (L->declared) { FR_AWAIT(k, L->c, F_TFC, L->declared, re_key(L->phi)); wordbuf_push(&L->w, expr_const(PS_FACE, L->c)); }
+    if (L->declared) { FR_AWAIT(k, L->c, F_TFC, L->declared, close_key(L->phi)); wordbuf_push(&L->w, expr_const(PS_FACE, L->c)); }
     else wordbuf_push(&L->w, 0);
     for (L->q = 0; L->q < L->nd; L->q++) { wordbuf_push(&L->w, PS_INTERVAL); wordbuf_push(&L->w, 0); wordbuf_push(&L->w, 0); FR_YIELD(k); }
     for (L->q = 0; L->q < L->nt; L->q++) {
-        FR_AWAIT(k, L->ty, F_TREF, term_var_type(L->xs[L->q]), re_key(L->phi));
-        FR_AWAIT(k, L->g, F_TFC, term_var_required(L->xs[L->q]), re_key(L->phi));
+        FR_AWAIT(k, L->ty, F_TREF, term_var_type(L->xs[L->q]), close_key(L->phi));
+        FR_AWAIT(k, L->g, F_TFC, term_var_required(L->xs[L->q]), close_key(L->phi));
         wordbuf_push(&L->w, PS_REF); wordbuf_push(&L->w, expr_const(PS_REF, L->ty)); wordbuf_push(&L->w, expr_const(PS_FACE, L->g));
     }
     FR_CALL(k, L->Q, intern_sub(k, &M.keys, &L->w, &L->created));
@@ -285,8 +285,8 @@ static void head_step(Cont *k, uint64_t v) {
 }
 
 /* unfold(t, X): a record X of t's definition (its body or type, over the
- * definition's parameters) at t's arguments — closed by the parameters'
- * substitution Φ (once per definition), then read from t's environment */
+ * definition's parameters) at t's arguments — closed over the parameters
+ * (once per definition), then applied to t's environment */
 static void unfold_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
@@ -294,8 +294,8 @@ static void unfold_step(Cont *k, uint64_t v) {
     require(k->w[1] != 0, "unfold of a global at its opaque revision");   /* w[1]: the pinned body */
     require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL && tview_is_construction(t), "unfold of a non-global");
     {   SymbolId s = (SymbolId)tnode_const_payload(ref_tnode(t)); FR_AWAIT(k, r, F_PHI, global_params(s), global_dims(s)); }
-    FR_AWAIT(k, r, F_TREF, k->w[1], re_key(r));
-    FR_AWAIT(k, r, F_TREF, r, env_key(ref_tenv(t)));
+    FR_AWAIT(k, r, F_TREF, k->w[1], close_key(r));
+    FR_AWAIT(k, r, F_TREF, r, apply_key(ref_tenv(t)));
     FR_FINISH(k, r);
     FR_END(k);
 }

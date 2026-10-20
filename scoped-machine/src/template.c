@@ -231,7 +231,7 @@ typedef struct { const uint64_t *w; size_t n, q; uint64_t a, b, er, S, tk, r; TV
 static void interp_step(Cont *k, uint64_t v) {
     InLoc *L = FR_LOC(k, InLoc);
     ExprId e = k->w[0]; uint64_t er = k->w[1];
-    uint64_t r = 0, id = 0;
+    uint64_t r = 0;
     FR_BEGIN(k);
     L->w = xw(e, &L->n);
     if (L->w[0] == X_PARAM || L->w[0] == X_LOCAL) {
@@ -248,44 +248,34 @@ static void interp_step(Cont *k, uint64_t v) {
     if (L->w[0] == X_CONST) {
         /* a closed constant: its atoms read from the environment */
         L->t.sort = (PSort)L->w[1];
-        if (L->t.sort == PS_REF || L->t.sort == PS_INTERVAL || L->t.sort == PS_FACE) FR_AWAIT(k, r, trav_of(L->t.sort), L->w[2], env_key(er));
+        if (L->t.sort == PS_REF || L->t.sort == PS_INTERVAL || L->t.sort == PS_FACE) FR_AWAIT(k, r, trav_of(L->t.sort), L->w[2], apply_key(er));
         else r = L->w[2];
         FR_FINISH(k, tvrec(L->t.sort, r));
     }
     if (L->w[0] == X_NODE) { FR_AWAIT(k, r, F_TVMAKE, L->w[1], er); FR_FINISH(k, tvrec(PS_REF, r)); }
     if (L->w[0] == X_SCOPE) { FR_AWAIT(k, r, F_ISCOPE, e, er); FR_FINISH(k, tvrec(PS_SCOPE, r)); }
-    if (L->w[0] == X_CALL) {
-        /* the callee's environment: the arguments, independent demands in one join */
-        require(L->w[2] == TPL.defs[L->w[1]].nparams, "template call arity (%s)", TPL.defs[L->w[1]].name);
+    if (L->w[0] == X_CALL || L->w[0] == X_APPLY || L->w[0] == X_APPLY_TYPE || L->w[0] == X_APPLY_GUARD) {
+        /* the arguments' environment [(q, sort, value)*, def] — def the
+         * callee, 0 for a scope (whose atoms it applies); the arguments and
+         * the scope are independent demands, launched then awaited */
+        if (L->w[0] == X_CALL) require(L->w[2] == TPL.defs[L->w[1]].nparams, "template call arity (%s)", TPL.defs[L->w[1]].name);
+        else family_launch(F_INTERP, L->w[1], er);
         for (L->q = 0; L->q < L->w[2]; L->q++) { family_launch(F_INTERP, L->w[3 + L->q], er); FR_YIELD(k); }
         wordbuf_init(&L->out);
         for (L->q = 0; L->q < L->w[2]; L->q++) {
             FR_AWAIT(k, L->r, F_INTERP, L->w[3 + L->q], er);
             L->t = tvget(L->r);
-            require(L->t.sort == TPL.defs[L->w[1]].sorts[L->q], "template call sort (%s, %zu)", TPL.defs[L->w[1]].name, L->q);
+            if (L->w[0] == X_CALL) require(L->t.sort == TPL.defs[L->w[1]].sorts[L->q], "template call sort (%s, %zu)", TPL.defs[L->w[1]].name, L->q);
             wordbuf_push(&L->out, L->q); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
         }
-        wordbuf_push(&L->out, L->w[1]);
+        wordbuf_push(&L->out, L->w[0] == X_CALL ? L->w[1] : 0);
         FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->out, &L->created));
-        FR_AWAIT(k, r, F_INTERP, TPL.defs[L->w[1]].root, L->er);
-        FR_FINISH(k, r);
-    }
-    if (L->w[0] == X_APPLY || L->w[0] == X_APPLY_TYPE || L->w[0] == X_APPLY_GUARD) {
-        /* the scope and its arguments are independent demands: one join */
-        family_launch(F_INTERP, L->w[1], er);
-        for (L->q = 0; L->q < L->w[2]; L->q++) { FR_YIELD(k); family_launch(F_INTERP, L->w[3 + L->q], er); }
+        if (L->w[0] == X_CALL) { FR_AWAIT(k, r, F_INTERP, TPL.defs[L->w[1]].root, L->er); FR_FINISH(k, r); }
         FR_AWAIT(k, L->r, F_INTERP, L->w[1], er);
         L->t = tvget(L->r); require(L->t.sort == PS_SCOPE, "scope application of a non-scope");
         L->S = L->t.id;
         require(L->w[2] == scope_arity(L->S), "scope application arity");
-        wordbuf_init(&L->out);
-        for (L->q = 0; L->q < L->w[2]; L->q++) {
-            FR_AWAIT(k, L->r, F_INTERP, L->w[3 + L->q], er);
-            L->t = tvget(L->r);
-            wordbuf_push(&L->out, L->t.sort == PS_REF ? VS_REF : L->t.sort == PS_INTERVAL ? VS_INTERVAL : VS_FACE); wordbuf_push(&L->out, L->t.id);
-        }
-        FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
-        L->tk = trav_key(TR_APPLY, 0, id);
+        L->tk = apply_key(L->er);
         if (L->w[0] == X_APPLY_TYPE) { FR_AWAIT(k, r, F_TREF, scope_type(L->S), L->tk); FR_FINISH(k, tvrec(PS_REF, r)); }
         if (L->w[0] == X_APPLY_GUARD) { FR_AWAIT(k, r, F_TFC, scope_guard(L->S), L->tk); FR_FINISH(k, tvrec(PS_FACE, r)); }
         L->t.sort = psort_of_val(scope_body(L->S).sort);

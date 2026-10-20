@@ -265,37 +265,67 @@ static void gctx_step(Cont *k, uint64_t v) {
     FR_FINISH(k, L->x);
     FR_END(k);
 }
-/* generic(Q): a construction node at fresh parameters keyed by (node, slot),
- * declared at the closed types read from the environment of the earlier
- * ones: [context, required face, instance, list of the fresh identities] */
+/* tel(Q, b): a construction node's parameter telescope as a scope record —
+ * its parameters at their closed types and guards, and (b = 1) its binder's
+ * local — the binder its field constants are closed under */
+static void ntel_step(Cont *k, uint64_t v) {
+    JL *L = FR_LOC(k, JL);
+    TNodeId Q = k->w[0];
+    FR_BEGIN(k);
+    L->n = tnode_nparams(Q);
+    L->i = k->w[1] && tnode_nbinders(Q) ? 1 : 0;
+    wordbuf_init(&L->wb); wordbuf_push(&L->wb, L->n + L->i);
+    for (L->q = 0; L->q < L->n; L->q++) {
+        {   PSort so; RefId ty; FaceId g; tnode_param(Q, L->q, &so, &ty, &g);
+            wordbuf_push(&L->wb, so == PS_INTERVAL ? S_DIM : S_TERM); wordbuf_push(&L->wb, ty); wordbuf_push(&L->wb, LEVEL_NONE); wordbuf_push(&L->wb, g ? g : fc_true()); }
+        FR_YIELD(k);
+    }
+    if (L->i) { wordbuf_push(&L->wb, tnode_binder_sort(Q, 0)); wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, LEVEL_NONE); wordbuf_push(&L->wb, fc_true()); }
+    wordbuf_push(&L->wb, VS_FACE); wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, LEVEL_NONE); wordbuf_push(&L->wb, fc_true()); wordbuf_push(&L->wb, fc_true());
+    FR_CALL(k, L->x, intern_sub(k, &M.keys, &L->wb, &L->created));
+    FR_FINISH(k, L->x);
+    FR_END(k);
+}
+/* open(S, key): the telescope of scope record S at fresh locals keyed by
+ * (key, S, slot), each declared at its type applied to the environment of
+ * the earlier ones: [ids, environment, judgment context] */
+static void open_step(Cont *k, uint64_t v) {
+    JLOC;   /* q: S, key */
+    ScopeId S = q[0];
+    FR_BEGIN(k);
+    L->n = scope_arity(S); L->G2 = jc_empty(); L->m = env_empty(0);
+    wordbuf_init(&L->wc);
+    for (L->i = 0; L->i < L->n; L->i++) {
+        {   LocalDecl d = scope_local(S, L->i); L->tag = d.sort; L->T = d.type; L->a0 = d.required; }
+        if (L->tag == S_DIM) {
+            {   KeyWord kw[4] = { { KW_CONST, 9000 }, { KW_CONST, q[1] }, { KW_CONST, S }, { KW_CONST, L->i } };
+                L->x = fresh_dim_keyed(kw, 4); L->z = iv_var(L->x); }
+        } else {
+            FR_AWAIT(k, L->T, F_TREF, L->T, apply_key(L->m));
+            FR_AWAIT(k, L->a0, F_TFC, L->a0, apply_key(L->m));
+            {   KeyWord kw[4] = { { KW_CONST, 9000 }, { KW_CONST, q[1] }, { KW_CONST, S }, { KW_CONST, L->i } };
+                L->x = fresh_term_keyed_req(kw, 4, L->T, L->a0); }
+            FR_AWAIT(k, L->z, F_REFVAR, L->x, 0);
+        }
+        wordbuf_push(&L->wc, L->x);
+        FR_AWAIT(k, L->G2, J_EXT, L->G2, subst_entry(L->x, L->tag, 0));
+        FR_AWAIT(k, L->m, F_SET, L->m, subst_entry(L->i, L->tag == S_DIM ? PS_INTERVAL : PS_REF, L->z));
+    }
+    FR_CALL(k, L->a1, intern_sub(k, &M.keys, &L->wc, &L->created));
+    FR_FINISH(k, RQ(L->a1, L->m, L->G2));
+    FR_END(k);
+}
+/* generic(Q): a construction node at its opened parameter telescope:
+ * [context, required face, instance, list of the fresh identities] */
 static void generic_step(Cont *k, uint64_t v) {
     JL *L = FR_LOC(k, JL);
     TNodeId Q = k->w[0];
     FR_BEGIN(k);
-    L->n = tnode_nparams(Q); L->G2 = jc_empty(); L->m = env_empty(0);
-    wordbuf_init(&L->wc);
-    for (L->i = 0; L->i < L->n; L->i++) {
-        {   PSort so; RefId ty; FaceId g; tnode_param(Q, L->i, &so, &ty, &g); L->tag = so; L->T = ty; L->a0 = g; }
-        if (L->tag == PS_INTERVAL) {
-            {   KeyWord key[3] = { { KW_CONST, 9300 }, { KW_CONST, Q }, { KW_CONST, L->i } };
-                DimVarId j = fresh_dim_keyed(key, 3);
-                L->x = j; L->y = iv_var(j); }
-            FR_AWAIT(k, L->G2, J_EXT, L->G2, subst_entry(L->x, S_DIM, 0));
-        } else {
-            FR_AWAIT(k, L->T, F_TREF, L->T, env_key(L->m));
-            if (L->a0) FR_AWAIT(k, L->a0, F_TFC, L->a0, env_key(L->m));
-            else L->a0 = fc_true();
-            {   KeyWord key[3] = { { KW_CONST, 9300 }, { KW_CONST, Q }, { KW_CONST, L->i } };
-                L->x = fresh_term_keyed_req(key, 3, L->T, L->a0); }
-            FR_AWAIT(k, L->y, F_REFVAR, L->x, 0);
-            FR_AWAIT(k, L->G2, J_EXT, L->G2, subst_entry(L->x, S_TERM, 0));
-        }
-        wordbuf_push(&L->wc, L->x);
-        FR_AWAIT(k, L->m, F_SET, L->m, subst_entry(L->i, L->tag, L->y));
-    }
-    FR_AWAIT(k, L->a1, F_TFC, tnode_const_required(Q), env_key(L->m));
+    FR_AWAIT(k, L->T, J_NTEL, Q, 0);
+    FR_AWAIT(k, L->x, J_OPEN, RQ(L->T, 0x93), 0);
+    { size_t n; const uint64_t *w = rget(L->x, &n); L->a3 = w[0]; L->m = w[1]; L->G2 = w[2]; }
+    FR_AWAIT(k, L->a1, F_TFC, tnode_const_required(Q), apply_key(L->m));
     FR_AWAIT(k, L->a2, F_TVMAKE, Q, L->m);
-    FR_CALL(k, L->a3, intern_sub(k, &M.keys, &L->wc, &L->created));
     FR_FINISH(k, RQ(L->G2, L->a1, L->a2, L->a3));
     FR_END(k);
 }
@@ -505,7 +535,7 @@ static void head_step(Cont *k, uint64_t v) {
         if (L->tag == T_PATH) { FR_CALL(k, r, mk_tag_sub(k, T_UNIVERSE, L->l1, LEVELS_NONE, 0, NULL, 0)); DONE(J_OK, NULL, r, 0, 0); }
         FR_AWAIT(k, L->a4, F_FIELD, t, 4);
         FR_AWAIT(k, L->y, F_DIMS, L->a4, 0);
-        for (L->lw = set_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("path applied to an out-of-scope interval"); FR_YIELD(k); }
+        for (L->lw = set_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_bound_id(L->lw[L->d])) BAD("path applied to an out-of-scope interval"); FR_YIELD(k); }
         FR_AWAIT(k, L->a3, F_FIELD, t, 3);
         FR_CALL(k, L->T, MK_SUB(k, T_PATH, 0, levels_pack(L->l1, LEVEL_NONE), (DimVarId)L->x, L->a0, L->a1, L->a2));
         JRQ(L->res, J_CHECK, RQ(C, L->a3, L->T, P));
@@ -567,7 +597,7 @@ static void head_step(Cont *k, uint64_t v) {
         PASS(L->res);
         if (!level_ok1(L->lv, jr_a(L->res))) BAD(level_why(L->lv, "composition family level annotation differs"));
         FR_AWAIT(k, L->y, F_DIMS, L->a1, 0);
-        for (L->lw = set_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("composition face must be in scope and independent of the bound dimension"); FR_YIELD(k); }
+        for (L->lw = set_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_bound_id(L->lw[L->d])) BAD("composition face must be in scope and independent of the bound dimension"); FR_YIELD(k); }
         L->lw = set_get(L->y, &L->n);
         for (L->i = 0; L->i < L->n; L->i++) { if (L->lw[L->i] == L->x) BAD("composition face must be in scope and independent of the bound dimension"); FR_YIELD(k); }
         FR_AWAIT(k, L->a4, F_TREF, L->a0, dim_at(L->x, iv_zero()));          /* A(0) */
@@ -636,7 +666,7 @@ static void system_step(Cont *k, uint64_t v) {
     for (L->i = 0; L->i < L->n; L->i++) {
         FR_AWAIT(k, L->u, F_FIELD, t, 2 * L->i);
         FR_AWAIT(k, L->y, F_DIMS, L->u, 0);
-        for (L->lw = set_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_local_atom(L->lw[L->d])) BAD("system guard mentions an undeclared dimension"); FR_YIELD(k); }
+        for (L->lw = set_get(L->y, &L->dn), L->d = 0; L->d < L->dn; L->d++) { if (is_bound_id(L->lw[L->d])) BAD("system guard mentions an undeclared dimension"); FR_YIELD(k); }
         FR_AWAIT(k, L->y, F_FCMEET, C, L->u);
         if (fc_is_false(L->y)) continue;
         FR_AWAIT(k, L->z, F_FIELD, t, 2 * L->i + 1);
@@ -1038,7 +1068,7 @@ static void spine_step(Cont *k, uint64_t v) {
                 if (L->a2 != L->a3) BAD(NULL);
             } else {
                 {   PSort so; RefId ty; FaceId g; tnode_param(ref_tnode(n1), L->i, &so, &ty, &g); L->T = ty; }
-                FR_AWAIT(k, L->a4, F_TREF, L->T, env_key(ref_tenv(n1)));
+                FR_AWAIT(k, L->a4, F_TREF, L->T, apply_key(ref_tenv(n1)));
                 JRQ(L->res, J_CONVt, RQ(C, L->a2, L->a3, L->a4, P));
                 if (jr_code(L->res) != J_OK) FR_FINISH(k, L->res);
             }
@@ -1142,50 +1172,6 @@ static void tbound_step(Cont *k, uint64_t v) {
 }
 
 /* ---------------- scopes ---------------- */
-/* open(S, key): the telescope at fresh locals keyed by (key, S, slot), each
- * declared at its type over the earlier fresh locals: [ids, arguments] */
-static void scopen_step(Cont *k, uint64_t v) {
-    JLOC;   /* q: S, key */
-    ScopeId S = q[0];
-    FR_BEGIN(k);
-    L->n = scope_arity(S);
-    wordbuf_init(&L->wc);
-    L->a2 = interner_intern(&M.keys, NULL, 0, NULL);               /* the arguments so far: a record extended per local */
-    for (L->i = 0; L->i < L->n; L->i++) {
-        {   LocalDecl d = scope_local(S, L->i); L->tag = d.sort; L->T = d.type; L->a0 = d.required; }
-        if (L->tag == S_DIM) {
-            {   KeyWord kw[4] = { { KW_CONST, 9000 }, { KW_CONST, q[1] }, { KW_CONST, S }, { KW_CONST, L->i } };
-                DimVarId j = fresh_dim_keyed(kw, 4); L->x = j; L->u = VS_INTERVAL; L->z = iv_var(j); }
-        } else {
-            L->y = trav_key(TR_APPLY, 0, L->a2);
-            FR_AWAIT(k, L->T, F_TREF, L->T, L->y);
-            FR_AWAIT(k, L->a0, F_TFC, L->a0, L->y);
-            {   KeyWord kw[4] = { { KW_CONST, 9000 }, { KW_CONST, q[1] }, { KW_CONST, S }, { KW_CONST, L->i } };
-                L->x = fresh_term_keyed_req(kw, 4, L->T, L->a0); }
-            FR_AWAIT(k, L->z, F_REFVAR, L->x, 0);
-            L->u = VS_REF;
-        }
-        wordbuf_push(&L->wc, L->x);
-        wordbuf_init(&L->wb);
-        for (L->q = 0; L->q < 2 * L->i; L->q++) { { size_t n_; wordbuf_push(&L->wb, rget(L->a2, &n_)[L->q]); } FR_YIELD(k); }
-        wordbuf_push(&L->wb, L->u); wordbuf_push(&L->wb, L->z);
-        FR_CALL(k, L->a2, intern_sub(k, &M.keys, &L->wb, &L->created));
-    }
-    FR_CALL(k, L->a1, intern_sub(k, &M.keys, &L->wc, &L->created));
-    FR_FINISH(k, RQ(L->a1, L->a2));
-    FR_END(k);
-}
-/* the APPLY key of the first k arguments of a full argument record */
-static void aprefix_step(Cont *k, uint64_t v) {
-    JL *L = FR_LOC(k, JL); uint64_t r = 0;
-    FR_BEGIN(k);
-    wordbuf_init(&L->wb);
-    for (L->q = 0; L->q < 2 * k->w[1]; L->q++) { { size_t n; wordbuf_push(&L->wb, rget(k->w[0], &n)[L->q]); } FR_YIELD(k); }
-    FR_CALL(k, r, intern_sub(k, &M.keys, &L->wb, &L->created));
-    FR_FINISH(k, trav_key(TR_APPLY, 0, r));
-    FR_END(k);
-}
-
 /* §50.1–4: a supplied scope's own validity in its own ambient-plus-local context */
 static void scown_step(Cont *k, uint64_t v) {
     JLOC;   /* q: C, S, P */
@@ -1193,7 +1179,7 @@ static void scown_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     JAW(L->res, J_RV, RQ(1, S, 0));
     PASS(L->res);
-    JAW(L->a5, J_SCOPEN, RQ(S, 0x52));
+    JAW(L->a5, J_OPEN, RQ(S, 0x52));
     { size_t n; const uint64_t *w = rget(L->a5, &n); L->a3 = w[0]; L->a4 = w[1]; }
     L->n = scope_arity(S); for (L->i = 0; L->i < L->n; L->i++) {
         {   LocalDecl d = scope_local(S, L->i); L->tag = d.sort; L->T = d.type; L->a0 = d.required; L->lv = d.level;
@@ -1201,7 +1187,7 @@ static void scown_step(Cont *k, uint64_t v) {
         if (L->tag == S_DIM) { FR_YIELD(k); continue; }
         if (!L->T) BAD("scope local has no declared type");
         if (L->lv == LEVEL_NONE) BAD("missing universe annotation on a scope local (§59.1)");
-        FR_AWAIT(k, L->y, J_APREFIX, L->a4, L->i);
+        L->y = apply_key(L->a4);
         FR_AWAIT(k, L->T, F_TREF, L->T, L->y);
         FR_AWAIT(k, L->a0, F_TFC, L->a0, L->y);
         FR_AWAIT(k, L->z, F_FCMEET, C, L->a0);
@@ -1213,7 +1199,7 @@ static void scown_step(Cont *k, uint64_t v) {
     if (scope_body(S).sort != VS_REF) OK0();
     if (!scope_type(S)) BAD("scope has no declared result type");
     if (scope_level(S) == LEVEL_NONE) BAD("missing universe annotation on a scope result (§59.1)");
-    FR_AWAIT(k, L->y, J_APREFIX, L->a4, L->n);
+    L->y = apply_key(L->a4);
     FR_AWAIT(k, L->T, F_TREF, scope_type(S), L->y);
     FR_AWAIT(k, L->a0, F_TFC, scope_guard(S), L->y);
     FR_AWAIT(k, L->a1, F_TREF, scope_body(S).id, L->y);
@@ -1238,18 +1224,18 @@ static void scarg_step(Cont *k, uint64_t v) {
     if (scope_body(S).sort != scope_body(Sig).sort) BAD("scope argument body sort differs from the signature");
     JAW(L->res, J_SCOWN, RQ(C, S, P));
     PASS(L->res);
-    JAW(L->a5, J_SCOPEN, RQ(Sig, 0x51));
+    JAW(L->a5, J_OPEN, RQ(Sig, 0x51));
     { size_t n; const uint64_t *w = rget(L->a5, &n); L->a3 = w[0]; L->a4 = w[1]; }
     for (L->i = 0; L->i < L->n; L->i++) {
         {   size_t n; L->x = rget(L->a3, &n)[L->i]; L->tag = scope_local(Sig, L->i).sort; L->T = scope_local(S, L->i).type; }
         if (L->tag == S_DIM) { FR_YIELD(k); continue; }
-        FR_AWAIT(k, L->y, J_APREFIX, L->a4, L->i);
+        L->y = apply_key(L->a4);
         FR_AWAIT(k, L->T, F_TREF, L->T, L->y);
         JRQ(L->res, J_CONVT, RQ(C, L->T, term_var_type(L->x), P));
         if (jr_code(L->res) == J_BAD) BAD("scope argument local type differs from the signature");
         if (jr_code(L->res) == J_UNR) UNR("unresolved: scope argument local type conversion");
     }
-    FR_AWAIT(k, L->y, J_APREFIX, L->a4, L->n);
+    L->y = apply_key(L->a4);
     FR_AWAIT(k, L->a0, F_TFC, scope_guard(S), L->y);       /* supplied guard */
     FR_AWAIT(k, L->a1, F_TFC, scope_guard(Sig), L->y);     /* expected guard */
     FR_AWAIT(k, L->z, F_FCMEET, C, L->a1);
@@ -1441,14 +1427,16 @@ static void rv_step(Cont *k, uint64_t v) {
             PASS(L->res);
         }
         if (tnode_is_construction(ref_tnode(x))) {
+            FR_AWAIT(k, L->y, J_NTEL, ref_tnode(x), 1);
+            L->D = stk_push(stk, L->y);                     /* the constants are closed under the node's telescope */
             L->n = tnode_nfields(ref_tnode(x));
             for (L->i = 0; L->i < L->n; L->i++) {
                 {   TNodeId Q = ref_tnode(x); L->tag = tnode_field_kind(Q, L->i); L->y = tnode_const_field(Q, L->i); }
-                if (L->tag == F_REF) JAW(L->res, J_RV, RQ(0, L->y, stk));
-                else JAW(L->res, J_RVD, RQ(L->tag == F_FACE ? 1 : 0, L->y, stk));
+                if (L->tag == F_REF) JAW(L->res, J_RV, RQ(0, L->y, L->D));
+                else JAW(L->res, J_RVD, RQ(L->tag == F_FACE ? 1 : 0, L->y, L->D));
                 PASS(L->res);
             }
-            if (tnode_const_declared(ref_tnode(x))) { JAW(L->res, J_RVD, RQ(1, tnode_const_declared(ref_tnode(x)), stk)); PASS(L->res); }
+            if (tnode_const_declared(ref_tnode(x))) { JAW(L->res, J_RVD, RQ(1, tnode_const_declared(ref_tnode(x)), L->D)); PASS(L->res); }
         }
         OK0();
     }
@@ -1512,8 +1500,8 @@ void judge_families_init(void) {
     family_define(J_SPINE, "judge.spine", spine_step, sizeof(JL));
     family_define(J_TVIEW, "judge.instance", tview_step, sizeof(JL));
     family_define(J_TBOUND, "judge.boundary", tbound_step, sizeof(JL));
-    family_define(J_SCOPEN, "judge.scope_open", scopen_step, sizeof(JL));
-    family_define(J_APREFIX, "judge.args_prefix", aprefix_step, sizeof(JL));
+    family_define(J_OPEN, "judge.open", open_step, sizeof(JL));
+    family_define(J_NTEL, "judge.node_telescope", ntel_step, sizeof(JL));
     family_define(J_REQ, "judge.request", jreq_step, sizeof(ReqLoc));
     family_define(J_SCOWN, "judge.scope_own", scown_step, sizeof(JL));
     family_define(J_SCARG, "judge.scope_arg", scarg_step, sizeof(JL));

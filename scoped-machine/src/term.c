@@ -40,7 +40,7 @@ DimVarId declare_dim(void) {
     return var_record(key, 2, S_DIM, 0, 0);
 }
 static const uint64_t *term_decl(TermVarId x) {
-    require(x >= 1 && !is_local_atom(x) && x <= interner_count(&M.keys), "undeclared term variable");
+    require(x >= 1 && !is_bound_id(x) && x <= interner_count(&M.keys), "undeclared term variable");
     size_t n; const uint64_t *w = interner_get(&M.keys, x, &n);
     require(n >= 4 && w[n - 3] == S_TERM, "not a term variable");
     return w + n - 2;
@@ -50,9 +50,9 @@ FaceId term_var_required(TermVarId x) { return term_decl(x)[1]; }
 
 /* ================= constructions ================= */
 /* A construction is a node of the one constructor-program representation
- * (template.h): its fields are constants closed over positional atoms —
- * parameter k of its typed free boundary is obound_id(k), the local of
- * binder s is obound_id(np + s) — and its reference is TVIEW(node, images).
+ * (template.h): its fields are constants closed over (depth, slot) atoms —
+ * parameter k of its typed free boundary is bound_id(0, k), the local of
+ * its binder bound_id(0, np) — and its reference is TVIEW(node, images).
  * Alpha-equivalent constructions are one node; a construction and a
  * template view are one reference form. */
 
@@ -74,7 +74,7 @@ uint64_t level_succ(uint64_t a) { if (a == LEVEL_NONE) return LEVEL_NONE; requir
  * function of (x) or (node, environment), so the record with it is still
  * one record per reference, and interning publishes it whole. */
 RefId ref_var(TermVarId x) {
-    if (is_local_atom(x)) {
+    if (is_bound_id(x)) {
         /* a bound local occurrence (§50): no declaration record; its type and
          * guard live in the enclosing scope's or node's records */
         uint64_t xs[1] = { x };
