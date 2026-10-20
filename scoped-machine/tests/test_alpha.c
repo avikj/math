@@ -1,4 +1,4 @@
-/* test_alpha.c — constructions are nodes over positional atoms:
+/* test_alpha.c — constructions are nodes over (depth, slot) atoms:
  * alpha-equivalent constructions are one reference, at every depth;
  * distinct binding structure stays distinct; opening and application are
  * unchanged; a construction is a template view. */
