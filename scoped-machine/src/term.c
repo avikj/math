@@ -41,7 +41,7 @@ DimVarId declare_dim(void) {
 }
 static const uint64_t *term_decl(TermVarId x) {
     require(x >= 1 && !is_bound_id(x) && x <= interner_count(&M.keys), "undeclared term variable");
-    size_t n; const uint64_t *w = interner_get(&M.keys, x, &n);
+    size_t n; const uint64_t *w = rget(x, &n);
     require(n >= 4 && w[n - 3] == S_TERM, "not a term variable");
     return w + n - 2;
 }
@@ -89,19 +89,18 @@ RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv, FaceId req) {
     uint64_t w[5] = { 1, x, support, fv, req };
     return interner_intern(&M.keys, w, 5, NULL);
 }
-static const uint64_t *rrec(RefId t, size_t *n) { return interner_get(&M.keys, t, n); }
-bool ref_is_var(RefId t) { size_t n; return rrec(t, &n)[0] == 1; }
-uint64_t ref_tnode(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] == 3, "not a TVIEW"); return w[1]; }
-uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] == 3, "not a TVIEW"); return w[2]; }
+bool ref_is_var(RefId t) { return rword(t, 0) == 1; }
+uint64_t ref_tnode(RefId t) { size_t n; const uint64_t *w = rget(t, &n); require(w[0] == 3, "not a TVIEW"); return w[1]; }
+uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = rget(t, &n); require(w[0] == 3, "not a TVIEW"); return w[2]; }
 RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required) {
     uint64_t w[6] = { 3, node, env, support, fv, required };
     return interner_intern(&M.keys, w, 6, NULL);
 }
-TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
-Tag ref_tag(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); require(w[0] != 1, "ref_tag of a variable"); return tnode_tag(w[1]); }
-DimSetId ref_support(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); return w[n - 3]; }
-VarSetId ref_freevars(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); return w[n - 2]; }
-FaceId ref_required(RefId t) { size_t n; const uint64_t *w = rrec(t, &n); return w[n - 1]; }
+TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = rget(t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
+Tag ref_tag(RefId t) { size_t n; const uint64_t *w = rget(t, &n); require(w[0] != 1, "ref_tag of a variable"); return tnode_tag(w[1]); }
+DimSetId ref_support(RefId t) { size_t n; const uint64_t *w = rget(t, &n); return w[n - 3]; }
+VarSetId ref_freevars(RefId t) { size_t n; const uint64_t *w = rget(t, &n); return w[n - 2]; }
+FaceId ref_required(RefId t) { size_t n; const uint64_t *w = rget(t, &n); return w[n - 1]; }
 
 RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_term(x, a)); }
 RefId reindex_dim(RefId t, DimVarId i, IntervalId r) { return reindex(t, map_single_dim(i, r)); }

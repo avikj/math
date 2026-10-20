@@ -375,7 +375,7 @@ static void tboundary_step(Cont *k, uint64_t v) {
                     {   size_t n; const uint64_t *vw = rget(L->x, &n), *sys = rget(k->w[1], &n); require(sys[0] == vw[0], "a coordinate without its transport in this local system"); L->nr = vw[3]; }
                     for (L->q = 0; L->q < L->nr; L->q++) { size_t n; if (rget(L->x, &n)[4 + L->q] == iv_var(cube_coord(L->i))) break; FR_YIELD(k); }
                     require(L->q < L->nr, "a coordinate without its transport in this local system");
-                    {   size_t n; L->perm = rget(k->w[1], &n)[2 + L->q]; }
+                    {   L->perm = rword(k->w[1], 2 + L->q); }
                     for (L->q = 0; L->q < (rget(L->perm, &L->np), L->np); L->q += 2) { size_t n; const uint64_t *pw = rget(L->perm, &n); if (pw[L->q] == L->u) { L->unit = pw[L->q + 1]; break; } FR_YIELD(k); }
                 }
                 L->z = L->c[L->t + 2];

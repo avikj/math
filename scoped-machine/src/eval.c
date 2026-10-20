@@ -28,8 +28,8 @@ typedef struct { const char *name; FamResume resume; size_t loc_size; } FamilyDe
 static FamilyDef FAM[F_MAX];
 static size_t n_fam = F_FIXED;     /* families defined at run time (tests) follow the fixed ids */
 static uint64_t obs_key(FaceId eta, PinSet P) { return RQ(eta, P); }
-static FaceId key_face(uint64_t b) { size_t n; return interner_get(&M.keys, b, &n)[0]; }
-static PinSet key_pins(uint64_t b) { size_t n; return interner_get(&M.keys, b, &n)[1]; }
+static FaceId key_face(uint64_t b) { return rword(b, 0); }
+static PinSet key_pins(uint64_t b) { return rword(b, 1); }
 
 typedef struct Shard Shard;
 static struct {
@@ -299,6 +299,7 @@ static void deliver(Cont *k, uint64_t v) {
 /* ---------------- entries ---------------- */
 
 static EntryId entry_intern(Family f, uint64_t a, uint64_t b) {
+    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
     uint64_t w[3] = { f, a, b };
     EntryId id = interner_intern(&E.keys, w, 3, NULL);
     chunked_at(&E.entries, id - 1);
@@ -385,13 +386,11 @@ static void enqueue_resume(Cont *k, uint64_t v) {
     enqueue(t);
 }
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b) {
-    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
     keep_frame(k);
     request_entry(entry_intern(f, a, b), k, k->owner);
 }
 void family_launch(Family f, uint64_t a, uint64_t b) {
     require(tl_step_frame, "a launch is made by a frame's step");
-    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
     request_entry(entry_intern(f, a, b), NULL, tl_step_frame->owner);
 }
 void frame_call(Cont *k, Cont *child) {
@@ -581,11 +580,9 @@ static uint64_t drive(EntryId e, size_t budget, WhnfStatus *status) {
     return done ? __atomic_load_n(&ENT(e)->value, __ATOMIC_ACQUIRE) : 0;
 }
 uint64_t family_run(Family f, uint64_t a, uint64_t b, WhnfStatus *status) {
-    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
-    return drive(entry_intern(f, a, b), 0, status);
+    return family_run_budget(f, a, b, 0, status);
 }
 uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, WhnfStatus *status) {
-    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
     return drive(entry_intern(f, a, b), budget, status);
 }
 uint64_t family_call(Family f, uint64_t a, uint64_t b) {
@@ -599,7 +596,7 @@ uint64_t family_call(Family f, uint64_t a, uint64_t b) {
 /* ---------------- results ---------------- */
 static uint64_t res_rec(ResultClass c, RefId ref, const char *msg) { return RQ(c, ref, (uint64_t)(uintptr_t)msg); }
 EvalResult res_get(uint64_t v) {
-    size_t n; const uint64_t *w = interner_get(&M.keys, v, &n);
+    size_t n; const uint64_t *w = rget(v, &n);
     require(n >= 3 && (n - 3) % 2 == 0 && w[0] >= R_INTRODUCTION && w[0] <= R_INVALID, "not a result record");
     EvalResult r = { (ResultClass)w[0], w[n - 2], (n - 3) / 2, w + 1, (const char *)(uintptr_t)w[n - 1] };
     return r;
@@ -639,7 +636,7 @@ static void obs_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     RefId x = k->w[0];
     FR_BEGIN(k);
-    {   size_t n; const uint64_t *q = interner_get(&M.keys, k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; k->w[4] = q[2]; }
+    {   size_t n; const uint64_t *q = rget(k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; k->w[4] = q[2]; }
     if (k->w[3]) { FR_AWAIT(k, r, F_FCMEET, k->w[2], k->w[3]); k->w[2] = r; }
     if (fc_is_false(k->w[2])) FR_FINISH(k, res_rec(R_NO_OBSERVATION, x, NULL));
     FR_AWAIT(k, r, F_FCENT, k->w[2], ref_required(x));
@@ -684,7 +681,7 @@ static void cbranch_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
     FR_BEGIN(k);
-    {   size_t n; const uint64_t *q = interner_get(&M.keys, k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; k->w[4] = q[2]; }
+    {   size_t n; const uint64_t *q = rget(k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; k->w[4] = q[2]; }
     L->j = binder_dim_var(t, 0);
     FR_AWAIT(k, L->g, F_FCFORALL, k->w[2], L->j);
     FR_AWAIT(k, r, F_FCMEET, k->w[4], L->g);
@@ -704,8 +701,8 @@ typedef struct {
     size_t n, q, a, kept, nfs; WordBuf wb, wc; bool created;
 } WhLoc;
 #define RES(id) res_get(id)
-static uint64_t sys_face(uint64_t sys, size_t q) { size_t n; return interner_get(&M.keys, sys, &n)[2 * q]; }
-static uint64_t sys_term(uint64_t sys, size_t q) { size_t n; return interner_get(&M.keys, sys, &n)[2 * q + 1]; }
+static uint64_t sys_face(uint64_t sys, size_t q) { return rword(sys, 2 * q); }
+static uint64_t sys_term(uint64_t sys, size_t q) { return rword(sys, 2 * q + 1); }
 
 static void whnf_step(Cont *k, uint64_t v) {
     WhLoc *L = FR_LOC(k, WhLoc);
@@ -831,7 +828,7 @@ static void whnf_step(Cont *k, uint64_t v) {
             for (L->q = 0; L->q < L->n; L->q++) {
                 FR_AWAIT(k, r, F_CBRANCH, t, RQ(RES(L->res).br[2 * L->q], RES(L->res).br[2 * L->q + 1], chi));
                 if (!r) continue;                                   /* inconsistent along the line: dropped */
-                {   size_t m; const uint64_t *gw = interner_get(&M.keys, r, &m);
+                {   size_t m; const uint64_t *gw = rget(r, &m);
                     wordbuf_push(&L->wb, gw[0]); wordbuf_push(&L->wb, gw[1]); L->g = gw[0]; L->kept++; }
                 FR_AWAIT(k, L->uni, F_JOIN, L->uni, L->g);
             }

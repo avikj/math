@@ -22,12 +22,12 @@ uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx) { return RQ(kind,
 uint64_t re_key(uint64_t map) { return trav_key(TR_RE, 0, map); }
 uint64_t close_key(uint64_t ctx) { return trav_key(TR_CLOSE, 0, ctx); }
 uint64_t apply_key(uint64_t env) { return trav_key(TR_APPLY, 0, env); }
-static void tk_get(uint64_t tk, unsigned *kind, unsigned *depth, uint64_t *ctx) { size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n); *kind = (unsigned)w[0]; *depth = (unsigned)w[1]; *ctx = w[2]; }
+static void tk_get(uint64_t tk, unsigned *kind, unsigned *depth, uint64_t *ctx) { size_t n; const uint64_t *w = rget(tk, &n); *kind = (unsigned)w[0]; *depth = (unsigned)w[1]; *ctx = w[2]; }
 
 /* the substitution by the empty map moves nothing */
 static bool trav_identity(uint64_t tk) {
     unsigned kind, depth; uint64_t ctx; tk_get(tk, &kind, &depth, &ctx);
-    size_t n; return kind == TR_RE && (interner_get(&M.keys, ctx, &n), n == 0);
+    size_t n; return kind == TR_RE && (rget(ctx, &n), n == 0);
 }
 
 /* ---------------- identity images ----------------
@@ -68,7 +68,7 @@ static void tiv_step(Cont *k, uint64_t v) {
     uint64_t im = 0;
     FR_BEGIN(k);
     if (trav_identity(k->w[1])) FR_FINISH(k, k->w[0]);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    L->x = rget(k->w[0], &L->nx);
     L->acc = iv_zero();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         L->cl = iv_one();
@@ -87,7 +87,7 @@ static void tfc_step(Cont *k, uint64_t v) {
     uint64_t im = 0;
     FR_BEGIN(k);
     if (trav_identity(k->w[1])) FR_FINISH(k, k->w[0]);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    L->x = rget(k->w[0], &L->nx);
     L->acc = fc_false();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         L->cl = fc_true();
@@ -127,7 +127,7 @@ static void tscope_step(Cont *k, uint64_t v) {
     uint64_t r = 0, id = 0;
     FR_BEGIN(k);
     if (trav_identity(k->w[1])) FR_FINISH(k, k->w[0]);
-    L->s = interner_get(&M.keys, k->w[0], &L->ns); L->n = (size_t)L->s[0]; L->changed = false;
+    L->s = rget(k->w[0], &L->ns); L->n = (size_t)L->s[0]; L->changed = false;
     wordbuf_init(&L->out); wordbuf_push(&L->out, L->n);
     for (L->q = 0; L->q < L->n; L->q++) {
         r = 0;
@@ -164,7 +164,7 @@ static void tscope_step(Cont *k, uint64_t v) {
 static void scopeside_step(Cont *k, uint64_t v) {
     ScLoc *L = FR_LOC(k, ScLoc);
     FR_BEGIN(k);
-    L->s = interner_get(&M.keys, k->w[0], &L->ns); L->n = (size_t)L->s[0];
+    L->s = rget(k->w[0], &L->ns); L->n = (size_t)L->s[0];
     L->sup = set_make(NULL, 0); L->fv = set_make(NULL, 0);
     /* the reference records: local types, result type, body (when a reference) */
     for (L->q = 0; L->q < L->n + 2; L->q++) {
@@ -218,7 +218,7 @@ static void capture_step(Cont *k, uint64_t v) {
     CapLoc *L = FR_LOC(k, CapLoc);
     uint64_t r = 0;
     FR_BEGIN(k);
-    L->c = interner_get(&M.keys, k->w[0], &L->nc); L->n = (size_t)L->c[0];
+    L->c = rget(k->w[0], &L->nc); L->n = (size_t)L->c[0];
     for (L->ids = env_empty(0), L->q = 0; L->q < L->n; L->q++)             /* identity ↦ slot */
         FR_AWAIT(k, L->ids, F_SET, L->ids, subst_entry(L->c[2 + 5 * L->q], L->c[1 + 5 * L->q] == S_DIM ? PS_INTERVAL : PS_REF, L->q));
     wordbuf_init(&L->out); wordbuf_push(&L->out, L->n);

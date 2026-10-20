@@ -66,7 +66,7 @@ static RefId value_of(uint64_t rec) {             /* a head's state or a port's 
     size_t n; const uint64_t *w = rget(rec, &n);
     return w[0] == T_HEAD ? w[3] : w[3];
 }
-static uint64_t cell_kind_of(uint64_t rec) { size_t n; return rget(rec, &n)[0] == T_HEAD ? CK_HEAD : CK_PORT; }
+static uint64_t cell_kind_of(uint64_t rec) { return rword(rec, 0) == T_HEAD ? CK_HEAD : CK_PORT; }
 static uint64_t cell_id_of(uint64_t rec) { size_t n; const uint64_t *w = rget(rec, &n); return w[0] == T_HEAD ? w[1] : rec; }
 uint64_t effect_proposal(uint64_t schema, size_t nin, const uint64_t *inputs, size_t nout, const EffOut *outs, RefId witness, size_t ncap, const uint64_t *caps) {
     size_t ns; const uint64_t *sc = rget(schema, &ns);
@@ -101,7 +101,7 @@ static Prop prop_of(uint64_t p) {
     P.witness = t[0]; P.wtype = t[1]; P.ncap = (size_t)t[2]; P.cap = t + 3; P.ord = P.cap + P.ncap;
     return P;
 }
-Outcome outcome_kind(uint64_t out) { size_t n; return (Outcome)rget(out, &n)[1]; }
+Outcome outcome_kind(uint64_t out) { return (Outcome)rword(out, 1); }
 uint64_t outcome_occurrence(uint64_t out) { size_t n; const uint64_t *w = rget(out, &n); return w[1] == OUT_ACCEPTED ? w[2] : 0; }
 const char *outcome_reason(uint64_t out) { size_t n; const uint64_t *w = rget(out, &n); return w[1] == OUT_INVALID ? (const char *)(uintptr_t)w[2] : ""; }
 
@@ -135,7 +135,7 @@ static void prep_step(Cont *k, uint64_t v) {
         if (jr_code(r) != 1) FR_FINISH(k, prep_res(jr_code(r) == 3 ? 3 : 2, "a state is not of the state type"));
     }
     /* the witness type is R at the states, built here through the construction family */
-    {   size_t n; L->t = rget(L->p.schema, &n)[3]; }
+    {   L->t = rword(L->p.schema, 3); }
     for (L->i = 0; L->i < L->p.nin + L->p.nout; L->i++) {
         FR_CALL(k, L->t, MK_SUB(k, T_APP, 0, LEVELS_NONE, 0, L->t, state_at(&L->p, L->i)));
     }
@@ -304,9 +304,9 @@ static void occb_step(Cont *k, uint64_t v) {
 
 /* ---------------- readers ---------------- */
 uint64_t effect_head(uint64_t authority) { uint64_t w = cell_logical(CK_HEAD, authority); return W_TAG(w) == 1 ? W_VAL(w) : 0; }
-RefId head_state(uint64_t head) { size_t n; return rget(head, &n)[3]; }
-uint64_t head_occurrence(uint64_t head) { size_t n; return rget(head, &n)[2]; }
-uint64_t head_authority(uint64_t head) { size_t n; return rget(head, &n)[1]; }
+RefId head_state(uint64_t head) { return rword(head, 3); }
+uint64_t head_occurrence(uint64_t head) { return rword(head, 2); }
+uint64_t head_authority(uint64_t head) { return rword(head, 1); }
 uint64_t effect_port(uint64_t occurrence, size_t slot) {
     Desc *D = desc_of(occurrence); if (!D) return 0;
     Prop p = prop_of(D->prop);
@@ -319,7 +319,7 @@ int port_status(uint64_t port, uint64_t *consumer) {
     if (W_TAG(w) == 3) { if (consumer) *consumer = W_VAL(w); return 2; }
     return 0;
 }
-RefId port_payload(uint64_t port) { size_t n; return rget(port, &n)[3]; }
+RefId port_payload(uint64_t port) { return rword(port, 3); }
 size_t effect_open_ports(uint64_t *out, size_t max) {
     size_t nc = interner_count(&EF.cells.keys), k = 0;
     for (size_t c = 1; c <= nc; c++) {
@@ -333,7 +333,7 @@ size_t effect_open_ports(uint64_t *out, size_t max) {
     return k;
 }
 bool receipt_accepted(uint64_t occurrence) { Desc *D = desc_of(occurrence); return D && __atomic_load_n(&D->state, __ATOMIC_ACQUIRE) == D_COMMITTED; }
-uint64_t receipt_proposal(uint64_t occurrence) { size_t n; return rget(occurrence, &n)[2]; }
+uint64_t receipt_proposal(uint64_t occurrence) { return rword(occurrence, 2); }
 uint64_t receipt_view(uint64_t occurrence, MapId sigma) {
     if (!receipt_accepted(occurrence)) return 0;
     Prop p = prop_of(receipt_proposal(occurrence));

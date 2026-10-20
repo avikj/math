@@ -6,21 +6,20 @@
  * (support and free variables, bound atoms excluded, are a function of the
  * rest: scope.side forms the record from its words) */
 
-static const uint64_t *scope_words(ScopeId S, size_t *n) { return interner_get(&M.keys, S, n); }
-size_t scope_arity(ScopeId S) { size_t n; return (size_t)scope_words(S, &n)[0]; }
+size_t scope_arity(ScopeId S) { return (size_t)rword(S, 0); }
 LocalDecl scope_local(ScopeId S, size_t k) {
-    size_t n; const uint64_t *w = scope_words(S, &n);
+    size_t n; const uint64_t *w = rget(S, &n);
     require(k < w[0], "scope slot out of range");
     LocalDecl d = { (Sort)w[1 + 4 * k], w[2 + 4 * k], w[3 + 4 * k], w[4 + 4 * k] };
     return d;
 }
-static const uint64_t *scope_tail(ScopeId S) { size_t n; const uint64_t *w = scope_words(S, &n); return w + 1 + 4 * w[0]; }
+static const uint64_t *scope_tail(ScopeId S) { size_t n; const uint64_t *w = rget(S, &n); return w + 1 + 4 * w[0]; }
 Val scope_body(ScopeId S) { const uint64_t *t = scope_tail(S); Val v = { (ValSort)t[0], t[4] }; return v; }
 RefId scope_type(ScopeId S) { return scope_tail(S)[1]; }
 uint64_t scope_level(ScopeId S) { return scope_tail(S)[2]; }
 FaceId scope_guard(ScopeId S) { return scope_tail(S)[3]; }
-DimSetId scope_support(ScopeId S) { size_t n; const uint64_t *w = scope_words(S, &n); return w[n - 2]; }
-VarSetId scope_freevars(ScopeId S) { size_t n; const uint64_t *w = scope_words(S, &n); return w[n - 1]; }
+DimSetId scope_support(ScopeId S) { size_t n; const uint64_t *w = rget(S, &n); return w[n - 2]; }
+VarSetId scope_freevars(ScopeId S) { size_t n; const uint64_t *w = rget(S, &n); return w[n - 1]; }
 
 ScopeId scope_intern(size_t n, const LocalDecl *locals, Val body, RefId result_type, uint64_t result_level, FaceId guard) {
     Words w; words_init(&w);

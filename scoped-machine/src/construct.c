@@ -127,7 +127,7 @@ static void field_step(Cont *k, uint64_t v) {
     require(tnode_field_slot(ref_tnode(t), q) == NO_SLOT, "a binder field is opened through its binder");
     L->m = ref_tenv(t);
     FR_AWAIT(k, r, F_INTERP, tnode_field_expr(ref_tnode(t), q), L->m);
-    { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
+    FR_FINISH(k, rword(r, 1));
     FR_END(k);
 }
 
@@ -138,7 +138,7 @@ static void binder_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
     FR_BEGIN(k);
-    { size_t n; const uint64_t *e = interner_get(&M.keys, k->w[1], &n); L->sort = e[0]; L->slot = e[1]; L->field = e[2]; L->image = e[3]; }
+    { size_t n; const uint64_t *e = rget(k->w[1], &n); L->sort = e[0]; L->slot = e[1]; L->field = e[2]; L->image = e[3]; }
     /* the binder's local set to the image in the node's environment, the
      * body's expression interpreted (both node kinds) */
     require(tnode_binder_sort(ref_tnode(t), (BinderSlot)L->slot) == (Sort)L->sort, "binder sort");
@@ -147,7 +147,7 @@ static void binder_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->m, F_SET, L->m, subst_entry(es, L->sort == S_TERM ? PS_REF : PS_INTERVAL, L->image)); }
     {   uint64_t es; ExprId be; tnode_template_binder(ref_tnode(t), (BinderSlot)L->slot, (FieldIndex)L->field, &es, &be);
         FR_AWAIT(k, r, F_INTERP, be, L->m); }
-    { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
+    FR_FINISH(k, rword(r, 1));
     FR_END(k);
 }
 
@@ -173,7 +173,7 @@ static void construct_step(Cont *k, uint64_t v) {
     ConLoc *L = FR_LOC(k, ConLoc);
     uint64_t r = 0;
     FR_BEGIN(k);
-    L->rq = interner_get(&M.keys, k->w[0], &L->nrq);
+    L->rq = rget(k->w[0], &L->nrq);
     L->tag = L->rq[0]; L->payload = L->rq[1]; L->levels = L->rq[2]; L->declared = L->rq[3];
     L->ft = L->rq[4]; L->fd = L->rq[5]; L->nf = (size_t)L->rq[6]; L->fields = L->rq + 7;
     L->nb = (size_t)L->rq[7 + 3 * L->nf]; L->binders = L->rq + 8 + 3 * L->nf;
@@ -222,8 +222,8 @@ static void construct_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->ds, F_DIMS, L->declared, 0);
         FR_AWAIT(k, L->fd, F_SUNION, L->fd, L->ds);
     }
-    L->dset = interner_get(&M.keys, L->fd, &L->nd);
-    L->xs = interner_get(&M.keys, L->ft, &L->nt);
+    L->dset = rget(L->fd, &L->nd);
+    L->xs = rget(L->ft, &L->nt);
     L->np = L->nd + L->nt;
     FR_AWAIT(k, L->phi, F_PHI, L->ft, L->fd);
     /* the node record */
@@ -280,7 +280,7 @@ static void head_step(Cont *k, uint64_t v) {
         if (expr_is_level(e)) FR_FINISH(k, expr_level_value(e)); }     /* a closed expression needs no environment */
     r = ref_tenv(t);
     FR_AWAIT(k, r, F_INTERP, tnode_head_expr(ref_tnode(t), (int)k->w[1]), r);
-    { size_t n; const uint64_t *w = interner_get(&M.keys, r, &n); FR_FINISH(k, w[1]); }
+    FR_FINISH(k, rword(r, 1));
     FR_END(k);
 }
 

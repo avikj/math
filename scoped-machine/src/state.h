@@ -27,6 +27,7 @@ extern Machine M;
 /* a small record of the key store and its words */
 static inline uint64_t rq(size_t n, const uint64_t *w) { return interner_intern(&M.keys, w, n, NULL); }
 static inline const uint64_t *rget(uint64_t id, size_t *n) { return interner_get(&M.keys, id, n); }
+static inline uint64_t rword(uint64_t id, size_t i) { size_t n; return interner_get(&M.keys, id, &n)[i]; }
 #define RQ(...) rq(sizeof((uint64_t[]){ __VA_ARGS__ }) / sizeof(uint64_t), (uint64_t[]){ __VA_ARGS__ })
 
 void machine_init(void);

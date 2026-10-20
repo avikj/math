@@ -38,7 +38,6 @@ enum {
 };
 
 static ExprId xi(size_t n, const uint64_t *w) { return interner_intern(&M.keys, w, n, NULL); }
-static const uint64_t *xw(ExprId e, size_t *n) { return interner_get(&M.keys, e, n); }
 static ExprId x1(uint64_t k, uint64_t a) { uint64_t w[2] = { k, a }; return xi(2, w); }
 static ExprId x2(uint64_t k, uint64_t a, uint64_t b) { uint64_t w[3] = { k, a, b }; return xi(3, w); }
 static ExprId x0(uint64_t k) { uint64_t w[1] = { k }; return xi(1, w); }
@@ -46,20 +45,19 @@ static ExprId x0(uint64_t k) { uint64_t w[1] = { k }; return xi(1, w); }
 /* ------------------------------------------------------------------ */
 /* nodes: [def, index, tag, payload_e, levels_e, nf, (kind, bslot, e)*, nb, (sort, domfield, lslot)*, required_e] */
 
-static const uint64_t *nw(TNodeId Q, size_t *n) { return interner_get(&M.keys, Q, n); }
-TDefId tnode_def(TNodeId Q) { size_t n; return nw(Q, &n)[0]; }
-uint64_t tnode_index(TNodeId Q) { size_t n; return nw(Q, &n)[1]; }
-Tag tnode_tag(TNodeId Q) { size_t n; return (Tag)nw(Q, &n)[2]; }
-static ExprId node_payload_e(TNodeId Q) { size_t n; return nw(Q, &n)[3]; }
-static ExprId node_levels_e(TNodeId Q) { size_t n; return nw(Q, &n)[4]; }
-size_t tnode_nfields(TNodeId Q) { size_t n; return (size_t)nw(Q, &n)[5]; }
+TDefId tnode_def(TNodeId Q) { return rword(Q, 0); }
+uint64_t tnode_index(TNodeId Q) { return rword(Q, 1); }
+Tag tnode_tag(TNodeId Q) { return (Tag)rword(Q, 2); }
+static ExprId node_payload_e(TNodeId Q) { return rword(Q, 3); }
+static ExprId node_levels_e(TNodeId Q) { return rword(Q, 4); }
+size_t tnode_nfields(TNodeId Q) { return (size_t)rword(Q, 5); }
 static void node_field(TNodeId Q, size_t k, FieldKind *kind, BinderSlot *bslot, ExprId *e) {
-    size_t n; const uint64_t *w = nw(Q, &n);
+    size_t n; const uint64_t *w = rget(Q, &n);
     *kind = (FieldKind)w[6 + 3 * k]; *bslot = (BinderSlot)w[7 + 3 * k]; *e = w[8 + 3 * k];
 }
 FieldKind tnode_field_kind(TNodeId Q, size_t k) { FieldKind kd; BinderSlot s; ExprId e; node_field(Q, k, &kd, &s, &e); return kd; }
 BinderSlot tnode_field_slot(TNodeId Q, size_t k) { FieldKind kd; BinderSlot s; ExprId e; node_field(Q, k, &kd, &s, &e); return s; }
-static const uint64_t *node_btab(TNodeId Q) { size_t n; const uint64_t *w = nw(Q, &n); return w + 6 + 3 * w[5]; }
+static const uint64_t *node_btab(TNodeId Q) { size_t n; const uint64_t *w = rget(Q, &n); return w + 6 + 3 * w[5]; }
 size_t tnode_nbinders(TNodeId Q) { return (size_t)node_btab(Q)[0]; }
 static void node_binder(TNodeId Q, BinderSlot s, Sort *sort, FieldIndex *domfield, size_t *lslot) {
     const uint64_t *b = node_btab(Q);
@@ -97,7 +95,7 @@ static void ss_clear(SlotSet *s, size_t k) { s->bits[k / 64] &= ~(1ULL << (k % 6
 
 static void node_free(TNodeId Q, SlotSet *out);
 static void expr_free(ExprId e, size_t np, SlotSet *out) {
-    size_t n; const uint64_t *w = xw(e, &n);
+    size_t n; const uint64_t *w = rget(e, &n);
     switch (w[0]) {
     case X_PARAM: ss_set(out, w[1]); break;
     case X_LOCAL: ss_set(out, np + w[1]); break;
@@ -126,7 +124,7 @@ static void expr_free(ExprId e, size_t np, SlotSet *out) {
 static uint64_t node_free_list(TNodeId Q) { return TPL.defs[tnode_def(Q)].freel.w[tnode_index(Q)]; }
 static void node_free(TNodeId Q, SlotSet *out) {
     uint64_t list = node_free_list(Q);
-    size_t n; const uint64_t *w = interner_get(&M.keys, list, &n);
+    size_t n; const uint64_t *w = rget(list, &n);
     for (size_t k = 0; k < n; k++) ss_set(out, w[k]);
 }
 static size_t node_param_count(TNodeId Q);
@@ -135,11 +133,11 @@ static bool node_construction(TNodeId Q);
  * template node's were closed at registration */
 static size_t node_free_count(TNodeId Q) {
     if (node_construction(Q)) return node_param_count(Q);
-    size_t n; (void)interner_get(&M.keys, node_free_list(Q), &n); return n;
+    size_t n; (void)rget(node_free_list(Q), &n); return n;
 }
 static size_t node_free_slot(TNodeId Q, size_t q) {
     if (node_construction(Q)) return q;
-    size_t n; return (size_t)interner_get(&M.keys, node_free_list(Q), &n)[q];
+    size_t n; return (size_t)rget(node_free_list(Q), &n)[q];
 }
 
 /* ------------------------------------------------------------------ */
@@ -148,11 +146,11 @@ static size_t node_free_slot(TNodeId Q, size_t q) {
 
 /* a reference's environment is its interpretation record [(slot, sort, id)*,
  * def] (a substitution record, subst.c) restricted to the node's free slots */
-static uint64_t env_def(uint64_t er) { size_t n; const uint64_t *w = interner_get(&M.keys, er, &n); return w[n - 1]; }
+static uint64_t env_def(uint64_t er) { size_t n; const uint64_t *w = rget(er, &n); return w[n - 1]; }
 
 /* An interpreted value is the interned pair [sort, id]. */
 static uint64_t tvrec(PSort sort, uint64_t id) { return RQ(sort, id); }
-static TVal tvget(uint64_t rec) { size_t n; const uint64_t *w = interner_get(&M.keys, rec, &n); TVal v = { (PSort)w[0], w[1] }; return v; }
+static TVal tvget(uint64_t rec) { size_t n; const uint64_t *w = rget(rec, &n); TVal v = { (PSort)w[0], w[1] }; return v; }
 
 /* ------------------------------------------------------------------ */
 /* constructions: nodes with closed constant fields (template.h)          */
@@ -161,14 +159,14 @@ ExprId expr_const(PSort sort, uint64_t id) { uint64_t w[3] = { X_CONST, sort, id
 ExprId expr_level(uint64_t n) { return x1(X_LEVEL, n); }
 static bool node_construction(TNodeId Q) { return tnode_def(Q) == 0; }
 bool tnode_is_construction(TNodeId Q) { return node_construction(Q); }
-static size_t node_param_count(TNodeId Q) { size_t n; return node_construction(Q) ? (size_t)nw(Q, &n)[1] : TPL.defs[tnode_def(Q)].nparams; }
+static size_t node_param_count(TNodeId Q) { return node_construction(Q) ? (size_t)rword(Q, 1) : TPL.defs[tnode_def(Q)].nparams; }
 bool tview_is_construction(RefId t) { return node_construction(ref_tnode(t)); }
-size_t tnode_nparams(TNodeId Q) { require(node_construction(Q), "not a construction node"); size_t n; return (size_t)nw(Q, &n)[1]; }
+size_t tnode_nparams(TNodeId Q) { require(node_construction(Q), "not a construction node"); return (size_t)rword(Q, 1); }
 static const uint64_t *node_ptab(TNodeId Q) { const uint64_t *b = node_btab(Q); return b + 1 + 3 * b[0] + 2; }
 static ExprId node_declared_e(TNodeId Q) { const uint64_t *b = node_btab(Q); return b[2 + 3 * b[0]]; }
-static uint64_t xconst(ExprId e) { size_t n; const uint64_t *w = xw(e, &n); require(w[0] == X_CONST, "construction field is not a constant"); return w[2]; }
-static uint64_t xlevel(ExprId e) { size_t n; const uint64_t *w = xw(e, &n); require(w[0] == X_LEVEL, "construction annotation is not a constant"); return w[1]; }
-bool expr_is_level(ExprId e) { size_t n; return xw(e, &n)[0] == X_LEVEL; }
+static uint64_t xconst(ExprId e) { size_t n; const uint64_t *w = rget(e, &n); require(w[0] == X_CONST, "construction field is not a constant"); return w[2]; }
+static uint64_t xlevel(ExprId e) { size_t n; const uint64_t *w = rget(e, &n); require(w[0] == X_LEVEL, "construction annotation is not a constant"); return w[1]; }
+bool expr_is_level(ExprId e) { return rword(e, 0) == X_LEVEL; }
 uint64_t expr_level_value(ExprId e) { return xlevel(e); }
 void tnode_param(TNodeId Q, size_t k, PSort *sort, RefId *closed_type, FaceId *closed_guard) {
     require(k < tnode_nparams(Q), "construction parameter out of range");
@@ -228,7 +226,7 @@ static void interp_step(Cont *k, uint64_t v) {
     ExprId e = k->w[0]; uint64_t er = k->w[1];
     uint64_t r = 0;
     FR_BEGIN(k);
-    L->w = xw(e, &L->n);
+    L->w = rget(e, &L->n);
     if (L->w[0] == X_PARAM || L->w[0] == X_LOCAL) {
         FR_AWAIT(k, r, F_LOOKUP, er, L->w[0] == X_PARAM ? L->w[1] : TPL.defs[env_def(er)].nparams + L->w[1]);
         require(r, "template: slot %llu unset", (unsigned long long)L->w[1]);
@@ -367,7 +365,7 @@ static void iscope_step(Cont *k, uint64_t v) {
     ExprId e = k->w[0]; uint64_t er = k->w[1];
     uint64_t r = 0;
     FR_BEGIN(k);
-    L->w = xw(e, &L->n); L->nl = (size_t)L->w[1];
+    L->w = rget(e, &L->n); L->nl = (size_t)L->w[1];
     L->inner = er;
     wordbuf_init(&L->out); wordbuf_push(&L->out, L->nl);
     for (L->q = 0; L->q < L->nl; L->q++) {
@@ -704,7 +702,7 @@ static size_t inl_local(size_t l, Inl *in) {
 }
 static ExprId inl_expr(ExprId e, Inl *in) {
     if (!e) return 0;
-    size_t n; const uint64_t *w = xw(e, &n);
+    size_t n; const uint64_t *w = rget(e, &n);
     switch (w[0]) {
     case X_PARAM: return in->arg[w[1]];
     case X_LOCAL: return x1(X_LOCAL, inl_local((size_t)w[1], in));
@@ -738,7 +736,7 @@ static ExprId inl_expr(ExprId e, Inl *in) {
 }
 static ExprId inline_root(ExprId e) {
     for (;;) {
-        size_t n; const uint64_t *w = xw(e, &n);
+        size_t n; const uint64_t *w = rget(e, &n);
         if (w[0] != X_CALL) return e;
         Inl in; memset(&in, 0, sizeof in);
         in.callee = &TPL.defs[w[1]];
@@ -755,7 +753,7 @@ static void finish(ExprId root) {
      * type stay the retained, checkable boundary */
     root = inline_root(root);
     cd->root = root;
-    size_t n; const uint64_t *w = xw(root, &n);
+    size_t n; const uint64_t *w = rget(root, &n);
     require(w[0] == X_NODE, "template root is not a constructor node (%s)", cd->name);
     TNodeId Q = w[1]; cd->root_node = Q;
     /* the typed closure over the complete declaration table, children first,

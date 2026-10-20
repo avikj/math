@@ -32,7 +32,7 @@ static void join_step(Cont *k, uint64_t v) {
     uint64_t id = 0;
     FR_BEGIN(k);
     if (k->w[0] == k->w[1]) FR_FINISH(k, k->w[0]);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx); L->y = interner_get(&M.keys, k->w[1], &L->ny);
+    L->x = rget(k->w[0], &L->nx); L->y = rget(k->w[1], &L->ny);
     if (L->nx == 0 || rec_one(L->y, L->ny)) FR_FINISH(k, k->w[1]);
     if (L->ny == 0 || rec_one(L->x, L->nx)) FR_FINISH(k, k->w[0]);
     wordbuf_init(&L->out); L->px = L->py = 0;
@@ -111,7 +111,7 @@ static void meet_step(Cont *k, uint64_t v, DKind kind) {
     uint64_t id = 0;
     FR_BEGIN(k);
     if (k->w[0] == k->w[1]) FR_FINISH(k, k->w[0]);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx); L->y = interner_get(&M.keys, k->w[1], &L->ny);
+    L->x = rget(k->w[0], &L->nx); L->y = rget(k->w[1], &L->ny);
     if (L->nx == 0 || rec_one(L->y, L->ny)) FR_FINISH(k, k->w[0]);
     if (L->ny == 0 || rec_one(L->x, L->nx)) FR_FINISH(k, k->w[1]);
     L->acc = iv_zero();
@@ -158,7 +158,7 @@ static void ivneg_step(Cont *k, uint64_t v) {
     NegLoc *L = FR_LOC(k, NegLoc);
     uint64_t id = 0;
     FR_BEGIN(k);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    L->x = rget(k->w[0], &L->nx);
     if (L->nx == 0) FR_FINISH(k, iv_one());
     L->acc = iv_one();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
@@ -182,7 +182,7 @@ static void fcend_step(Cont *k, uint64_t v) {
     uint64_t id = 0;
     int eps = (int)k->w[1];
     FR_BEGIN(k);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    L->x = rget(k->w[0], &L->nx);
     L->acc = eps ? iv_zero() : iv_one();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         wordbuf_init(&L->u); L->contra = false;
@@ -215,7 +215,7 @@ static void fcent_step(Cont *k, uint64_t v) {
     EntLoc *L = FR_LOC(k, EntLoc);
     FR_BEGIN(k);
     if (k->w[0] == k->w[1]) FR_FINISH(k, 2);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx); L->y = interner_get(&M.keys, k->w[1], &L->ny);
+    L->x = rget(k->w[0], &L->nx); L->y = rget(k->w[1], &L->ny);
     if (L->nx == 0 || rec_one(L->y, L->ny)) FR_FINISH(k, 2);
     if (L->ny == 0) FR_FINISH(k, 1);
     for (L->px = 0; L->px < L->nx; ) {
@@ -246,7 +246,7 @@ static void fcforall_step(Cont *k, uint64_t v) {
     uint64_t id = 0;
     DimVarId dim = (DimVarId)k->w[1];
     FR_BEGIN(k);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    L->x = rget(k->w[0], &L->nx);
     wordbuf_init(&L->out);
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         L->mentions = false;
@@ -267,9 +267,9 @@ static void fcproj_step(Cont *k, uint64_t v) {
     ProjLoc *L = FR_LOC(k, ProjLoc);
     uint64_t id = 0;
     FR_BEGIN(k);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    L->x = rget(k->w[0], &L->nx);
     if (L->nx == 0 || rec_one(L->x, L->nx)) FR_FINISH(k, k->w[0]);
-    L->s = interner_get(&M.keys, k->w[1], &L->ns);
+    L->s = rget(k->w[1], &L->ns);
     L->acc = iv_zero();
     for (L->px = 0; L->px < L->nx; L->px = L->i + 1) {
         wordbuf_init(&L->u);

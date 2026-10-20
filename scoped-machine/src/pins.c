@@ -29,7 +29,7 @@ static void closure_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     require(k->w[1] == __atomic_load_n(&M.env_gen, __ATOMIC_ACQUIRE), "a closure of a snapshot that is no longer current");
-    L->w = interner_get(&M.keys, k->w[0], &L->n);
+    L->w = rget(k->w[0], &L->n);
     wordbuf_init(&L->roots);
     for (L->q = 0; L->q < L->n; L->q++) { wordbuf_push(&L->roots, L->w[L->q]); FR_YIELD(k); }
     L->P = pins_empty();

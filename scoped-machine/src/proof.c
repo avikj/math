@@ -5,7 +5,7 @@
 
 /* a word stack as interned cons records [x, rest] (0 is empty) */
 static void push(uint64_t *s, uint64_t x) { *s = RQ(x, *s); }
-static uint64_t pop(uint64_t *s) { size_t n; const uint64_t *w = interner_get(&M.keys, *s, &n); *s = w[1]; return w[0]; }
+static uint64_t pop(uint64_t *s) { size_t n; const uint64_t *w = rget(*s, &n); *s = w[1]; return w[0]; }
 
 /* proof.scc(P): Tarjan over the symbols of the pin set P. Vertex table: a
  * total substitution record s ↦ [index, low, on-stack, self-edge, edges];
@@ -19,7 +19,7 @@ typedef struct {
     size_t ri, np, si; const uint64_t *ps; uint64_t dfs, stk, comp; bool cyc;
 } SccLoc;
 /* the vertex record at lookup position r of V */
-static void vget(uint64_t V, uint64_t r, uint64_t *out) { size_t n; memcpy(out, interner_get(&M.keys, subst_value(V, r - 1), &n), 5 * sizeof *out); }
+static void vget(uint64_t V, uint64_t r, uint64_t *out) { size_t n; memcpy(out, rget(subst_value(V, r - 1), &n), 5 * sizeof *out); }
 static uint64_t vent(SymbolId s, uint64_t i, uint64_t lo, uint64_t on, uint64_t self, uint64_t e) { return subst_entry(s, PS_REF, RQ(i, lo, on, self, e)); }
 static void scc_step(Cont *k, uint64_t v) {
     SccLoc *L = FR_LOC(k, SccLoc);
@@ -124,7 +124,7 @@ ProofUse proof_use(ContextId G, FaceId chi, RefId e, RefId E) {
     free(roots);
     WhnfStatus ws; uint64_t res = family_run_budget(F_SCC, out.revisions, 0, check_budget(), &ws);
     if (ws != W_OK) { out.status = PU_UNRESOLVED; out.reason = "unresolved: the audit did not complete"; return out; }
-    size_t n; const uint64_t *w = interner_get(&M.keys, res, &n);
+    size_t n; const uint64_t *w = rget(res, &n);
     out.status = (ProofStatus)w[0];
     out.reason = w[0] == PU_PENDING ? "recursive dependencies need a logical witness" : w[0] == PU_ASSUMED ? "relative to explicit opaque assumptions" : "acyclic core proof relative to the occurrence context";
     out.n_assumptions = w[3]; out.n_recursive = w[4];

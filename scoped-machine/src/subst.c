@@ -20,7 +20,7 @@
 bool subst_identity(uint64_t sort, uint64_t key, uint64_t img) {
     return sort == PS_INTERVAL ? img == iv_var(key) : sort == PS_REF && ref_is_var(img) && ref_var_id(img) == key;
 }
-static const uint64_t *srec(uint64_t m, size_t *n) { return interner_get(&M.keys, m, n); }
+static const uint64_t *srec(uint64_t m, size_t *n) { return rget(m, n); }
 
 /* ---------------- lookup: the position of key w[1] in record w[0], plus one (0: absent) ---------------- */
 typedef struct { const uint64_t *w; size_t n, lo, hi, at; } LookLoc;
@@ -45,7 +45,7 @@ static void set_step(Cont *k, uint64_t v) {
     SetLoc *L = FR_LOC(k, SetLoc);
     uint64_t id = 0;
     FR_BEGIN(k);
-    L->x = srec(k->w[0], &L->nx); L->e = interner_get(&M.keys, k->w[1], &L->ne);
+    L->x = srec(k->w[0], &L->nx); L->e = rget(k->w[1], &L->ne);
     L->map = L->nx % 3 == 0; L->placed = false;
     wordbuf_init(&L->out);
     for (L->q = 0; L->q + 3 <= L->nx; L->q += 3) {
@@ -96,7 +96,7 @@ typedef struct { const uint64_t *x; size_t nx, i; uint64_t acc, d; } DimsLoc;
 static void dims_step(Cont *k, uint64_t v) {
     DimsLoc *L = FR_LOC(k, DimsLoc);
     FR_BEGIN(k);
-    L->x = interner_get(&M.keys, k->w[0], &L->nx);
+    L->x = rget(k->w[0], &L->nx);
     L->acc = set_make(NULL, 0);
     for (L->i = 0; L->i < L->nx; L->i++) {
         if (L->x[L->i] == DNF_SEP) { FR_YIELD(k); continue; }
@@ -111,7 +111,7 @@ static void dims_step(Cont *k, uint64_t v) {
  * the entries are independent demands: launched, then awaited in order; a
  * scope value's records sit one level deeper */
 static uint64_t deeper_key(uint64_t tk) {
-    size_t n; const uint64_t *w = interner_get(&M.keys, tk, &n);
+    size_t n; const uint64_t *w = rget(tk, &n);
     return w[0] == TR_RE ? tk : trav_key((unsigned)w[0], (unsigned)w[1] + 1, w[2]);
 }
 typedef struct { size_t n, q; uint64_t slot, f, b; TVal val; bool changed; WordBuf out; bool created; } ReLoc;

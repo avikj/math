@@ -27,11 +27,11 @@
 
 /* ---------------- records ---------------- */
 uint64_t judge_res(uint64_t code, const char *why, uint64_t a, uint64_t b, uint64_t c) { return RQ(code, (uint64_t)(uintptr_t)why, a, b, c); }
-uint64_t jr_code(uint64_t v) { size_t n; return rget(v, &n)[0]; }
-const char *jr_why(uint64_t v) { size_t n; return (const char *)(uintptr_t)rget(v, &n)[1]; }
-uint64_t jr_a(uint64_t v) { size_t n; return rget(v, &n)[2]; }
-uint64_t jr_b(uint64_t v) { size_t n; return rget(v, &n)[3]; }
-uint64_t jr_c(uint64_t v) { size_t n; return rget(v, &n)[4]; }
+uint64_t jr_code(uint64_t v) { return rword(v, 0); }
+const char *jr_why(uint64_t v) { return (const char *)(uintptr_t)rword(v, 1); }
+uint64_t jr_a(uint64_t v) { return rword(v, 2); }
+uint64_t jr_b(uint64_t v) { return rword(v, 3); }
+uint64_t jr_c(uint64_t v) { return rword(v, 4); }
 #define J_OK 1
 #define J_BAD 2
 #define J_UNR 3
@@ -50,7 +50,7 @@ static void diag_words(WordBuf *wb, const char *text) {
     wordbuf_init(wb);
     for (size_t i = 0; i < n; i += 8) { uint64_t w = 0; memcpy(&w, text + i, n - i < 8 ? n - i : 8); wordbuf_push(wb, w); }
 }
-static const char *diag_text(uint64_t rec) { size_t n; return (const char *)interner_get(&M.keys, rec, &n); }
+static const char *diag_text(uint64_t rec) { size_t n; return (const char *)rget(rec, &n); }
 
 /* ---------------- contexts ----------------
  * A judgment context is the record [tag, parent, sort, id, index]: one
@@ -72,15 +72,15 @@ static void jcext_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     FR_AWAIT(k, r, F_SET, jc_index(k->w[0]), k->w[1]);
-    { size_t n; const uint64_t *e = interner_get(&M.keys, k->w[1], &n); FR_FINISH(k, RQ(JC_TAG, k->w[0], e[1], e[0], r)); }
+    { size_t n; const uint64_t *e = rget(k->w[1], &n); FR_FINISH(k, RQ(JC_TAG, k->w[0], e[1], e[0], r)); }
     FR_END(k);
 }
 
 /* the occurrence contexts (host) */
 static uint64_t jc_host_ext(uint64_t G, Sort sort, uint64_t id) { return family_call(J_EXT, G, subst_entry(id, sort, 0)); }
 static ContextId ctx_pair(uint64_t G, FaceId a) { uint64_t w[2] = { G, a }; return interner_intern(&M.keys, w, 2, NULL); }
-uint64_t context_judgment(ContextId c) { size_t n; return interner_get(&M.keys, c, &n)[0]; }
-FaceId context_assumption(ContextId c) { size_t n; return interner_get(&M.keys, c, &n)[1]; }
+uint64_t context_judgment(ContextId c) { return rword(c, 0); }
+FaceId context_assumption(ContextId c) { return rword(c, 1); }
 ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption) {
     uint64_t G = jc_empty();
     for (size_t k = 0; k < n; k++) G = jc_host_ext(G, decls[k].sort, decls[k].id);
@@ -194,7 +194,7 @@ static void joint_step(Cont *k, uint64_t v) {
 static void clauses_step(Cont *k, uint64_t v) {
     JL *L = FR_LOC(k, JL); uint64_t r = 0;
     FR_BEGIN(k);
-    L->lw = interner_get(&M.keys, k->w[0], &L->n);
+    L->lw = rget(k->w[0], &L->n);
     wordbuf_init(&L->wb);
     L->i = 0;
     while (L->i < L->n) {
@@ -336,7 +336,7 @@ static void gmap_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     FR_BEGIN(k);
     FR_AWAIT(k, L->x, J_GENERIC, ref_tnode(t), 0);
-    { size_t n; L->a3 = rget(L->x, &n)[3]; }
+    { L->a3 = rword(L->x, 3); }
     L->m = map_identity(); L->n = tnode_nparams(ref_tnode(t));
     for (L->i = 0; L->i < L->n; L->i++) {
         {   size_t n; const uint64_t *ids = rget(L->a3, &n);
@@ -1083,7 +1083,7 @@ static void spine_step(Cont *k, uint64_t v) {
 static void cmap_step(Cont *k, uint64_t v) {
     JL *L = FR_LOC(k, JL); uint64_t r = 0;
     FR_BEGIN(k);
-    L->lw = interner_get(&M.keys, k->w[0], &L->n);
+    L->lw = rget(k->w[0], &L->n);
     wordbuf_init(&L->wb);
     for (L->i = 0; L->i < L->n && L->lw[L->i] != DNF_SEP; L->i++) {
         wordbuf_push(&L->wb, FC_LIT_DIM(L->lw[L->i])); wordbuf_push(&L->wb, PS_INTERVAL); wordbuf_push(&L->wb, FC_LIT_EPS(L->lw[L->i]) ? iv_one() : iv_zero());
@@ -1107,7 +1107,7 @@ static void tview_step(Cont *k, uint64_t v) {
     {   ExprId te, le; if (!tnode_result_exprs(ref_tnode(t), &te, &le)) DONE(J_OK, NULL, L->T, 0, 0); L->x = te; }
     L->y = ref_tenv(t);
     FR_AWAIT(k, r, F_INTERP, L->x, L->y);
-    { size_t n; L->D = rget(r, &n)[1]; }
+    { L->D = rword(r, 1); }
     JRQ(L->res, J_CONVT, RQ(q[0], L->T, L->D, q[2]));
     if (jr_code(L->res) == J_BAD) {
         { char buf[256]; snprintf(buf, sizeof buf, "library instance type differs from its declared result type (%s)", tdef_name(tnode_def(ref_tnode(t)))); diag_words(&L->wb, buf); }
@@ -1145,10 +1145,10 @@ static void tbound_step(Cont *k, uint64_t v) {
         require(r, "template boundary: a retained slot has no image");
         L->x = subst_value(L->D, r - 1);
         FR_AWAIT(k, r, F_INTERP, L->a0, L->D);
-        { size_t n; L->T = rget(r, &n)[1]; }
+        { L->T = rword(r, 1); }
         if (L->tag == PS_REF) {
             L->y = fc_true();
-            if (L->a1) { FR_AWAIT(k, r, F_INTERP, L->a1, L->D); size_t n; L->y = rget(r, &n)[1]; }
+            if (L->a1) { FR_AWAIT(k, r, F_INTERP, L->a1, L->D); L->y = rword(r, 1); }
             FR_AWAIT(k, L->y, F_FCMEET, C, L->y);
             EVERY(L->res, L->y, J_CHECK, L->x, L->T, P);
             if (jr_code(L->res) == J_BAD) {
@@ -1180,10 +1180,10 @@ static void scown_step(Cont *k, uint64_t v) {
     JAW(L->res, J_RV, RQ(1, S, 0));
     PASS(L->res);
     JAW(L->a5, J_OPEN, RQ(S, 0x52));
-    { size_t n; const uint64_t *w = rget(L->a5, &n); L->a3 = w[0]; L->a4 = w[1]; }
+    L->a3 = rword(L->a5, 0); L->a4 = rword(L->a5, 1);
     L->n = scope_arity(S); for (L->i = 0; L->i < L->n; L->i++) {
         {   LocalDecl d = scope_local(S, L->i); L->tag = d.sort; L->T = d.type; L->a0 = d.required; L->lv = d.level;
-            size_t n; L->x = rget(L->a3, &n)[L->i]; }
+            L->x = rword(L->a3, L->i); }
         if (L->tag == S_DIM) { FR_YIELD(k); continue; }
         if (!L->T) BAD("scope local has no declared type");
         if (L->lv == LEVEL_NONE) BAD("missing universe annotation on a scope local (§59.1)");
@@ -1225,9 +1225,9 @@ static void scarg_step(Cont *k, uint64_t v) {
     JAW(L->res, J_SCOWN, RQ(C, S, P));
     PASS(L->res);
     JAW(L->a5, J_OPEN, RQ(Sig, 0x51));
-    { size_t n; const uint64_t *w = rget(L->a5, &n); L->a3 = w[0]; L->a4 = w[1]; }
+    L->a3 = rword(L->a5, 0); L->a4 = rword(L->a5, 1);
     for (L->i = 0; L->i < L->n; L->i++) {
-        {   size_t n; L->x = rget(L->a3, &n)[L->i]; L->tag = scope_local(Sig, L->i).sort; L->T = scope_local(S, L->i).type; }
+        {   L->x = rword(L->a3, L->i); L->tag = scope_local(Sig, L->i).sort; L->T = scope_local(S, L->i).type; }
         if (L->tag == S_DIM) { FR_YIELD(k); continue; }
         L->y = apply_key(L->a4);
         FR_AWAIT(k, L->T, F_TREF, L->T, L->y);
