@@ -346,8 +346,10 @@ static void record_work(EntryId owner) { count_bump(&ENT(owner)->work); }
 /* REQ(K,c): U → R({c}) + EVAL(K), R(W) → R(W ⊎ {c}), D(v) → D(v) + DELIVER(c,v),
  * each a constant number of atomic operations (no retry):
  *  - a waiter joins by one exchange of the head; its link is written after
- *    the exchange (PENDING until then: a delivery reaching it waits for that
- *    one store);
+ *    the exchange (PENDING until then) by a second exchange; a delivery
+ *    that finds the link PENDING exchanges in TAKEN and stops, and the
+ *    joiner whose link exchange finds TAKEN hands the chain on and resumes
+ *    its frame itself (no side waits for the other);
  *  - the exchange that finds U launches the producer;
  *  - an exchange that finds READY (a publication between the load and the
  *    exchange) takes back what was pushed since with a second exchange
@@ -357,6 +359,8 @@ static void record_work(EntryId owner) { count_bump(&ENT(owner)->work); }
  * One job is reserved across the operation, so no observer sees a running
  * key while nothing is outstanding. */
 #define LINK_PENDING ((Cont *)(uintptr_t)3)
+#define LINK_TAKEN ((Cont *)(uintptr_t)5)
+static void enqueue_resume(Cont *k, uint64_t v);
 static void request_entry(EntryId eid, Cont *k, EntryId owner, uint64_t view) {
     Entry *e = ENT(eid);
     event(RD_REQUEST);
@@ -384,7 +388,17 @@ static void request_entry(EntryId eid, Cont *k, EntryId owner, uint64_t view) {
         finish_job();
         return;
     }
-    __atomic_store_n(&k->next, prev == ENTRY_LAUNCHED ? NULL : prev, __ATOMIC_RELEASE);
+    {   Cont *link = prev == ENTRY_LAUNCHED ? NULL : prev;
+        if (__atomic_exchange_n(&k->next, link, __ATOMIC_ACQ_REL) == LINK_TAKEN) {
+            /* a delivery reached k before its link: hand the chain on and
+             * resume k here (k's delivery was counted when it was made) */
+            uint64_t v = __atomic_load_n(&e->value, __ATOMIC_ACQUIRE);
+            k->next = NULL;
+            if (link) deliver(link, v);
+            enqueue_resume(k, v);
+            finish_job();
+            return;
+        } }
     if (prev == NULL) {
         e->view = view;
         event(RD_LAUNCH);
@@ -631,8 +645,12 @@ static void execute_job(Task t) {
     if (t.kind == TK_EVAL) { event(RD_STEP); evaluate(t.entry); return; }
     Cont *k = t.k;
     Cont *rest = __atomic_load_n(&k->next, __ATOMIC_ACQUIRE);
-    if (rest == LINK_PENDING) { enqueue(t); return; }          /* its joiner's link store is not visible yet */
+    if (rest == LINK_PENDING) {                                /* its joiner has not written the link: the joiner continues */
+        rest = __atomic_exchange_n(&k->next, LINK_TAKEN, __ATOMIC_ACQ_REL);
+        if (rest == LINK_PENDING) return;
+    }
     if (rest) { k->next = NULL; deliver(rest, t.v); }         /* hand the chain on: one delivery per job */
+    if (k->fam == F_HOST) { step_frame(k, t.v); return; }     /* the external caller receives its answer: no step of the source */
     event(RD_STEP);
     count_bump(&shard()->steps[k->fam]);
     if (k->owner) record_work(k->owner);
@@ -851,6 +869,7 @@ static void whnf_step(Cont *k, uint64_t v) {
     if (ref_is_var(t)) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
     L->tag = ref_tag(t);
     if (tag_schema(L->tag)->role == ROLE_INTRO) FR_FINISH(k, res_rec(R_INTRODUCTION, t, NULL));
+
 
     if (L->tag == T_GLOBAL) {
         /* the symbol's revision read through this frame's view: an opaque

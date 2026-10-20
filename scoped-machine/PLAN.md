@@ -162,13 +162,16 @@ item 2 realized by keyed sharing (two deliveries of one producer).
    once; a joiner whose exchange found READY returns everything pushed since to READY and
    delivers it; launch/request — the CAS from U succeeds for one launcher, a joiner that
    finds U is the launcher; publish/delivery — the chain is handed one delivery per job;
-   a delivery reaching a link still PENDING requeues itself until that one store is visible
-   (the joiner has committed and has one store left); handed-off frames — after enqueueing
+   the joiner writes its link by an exchange; a delivery reaching a link still PENDING
+   exchanges in TAKEN and ends, and the joiner whose link exchange returns TAKEN hands the
+   chain on and resumes its frame (exactly one side acts; neither waits); handed-off frames — after enqueueing
    or handing off a frame its former job never touches it (the kept flag is the executing
    thread's). The small-record interner's retries are bounded by its stream length (a slot
    changes only empty → leaf → inner node), so each unit is bounded by a constant
    (INTERNING.md). Host resource boundary: one fixed-size host block per pool refill or per
-   count carry (2^64 events), outside every counted transition. A budget is a host control
+   count carry (2^64 events), outside every counted transition. The host frame of a root
+   request is the external caller receiving its answer: its resumption is not a step of the
+   source; every counted step belongs to exactly one producer. A budget is a host control
    bound on the jobs executed during a root-driving call, never a reading or a verdict.
 8. One interpretation. A node in an environment is interpreted the same way for both node kinds:
    a construction's closed constant (X_CONST) is substituted by the environment's atoms; fields,
