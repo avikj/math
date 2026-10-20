@@ -1,4 +1,4 @@
-/* test_chain.c — CUBICAL-STOKES-ADDENDUM §11 checks 1–4, 6 and 9 on the
+/* test_chain.c — CUBICAL-STOKES-ADDENDUM §11 checks 1–6 and 9 on the
  * additive reading of presented cells (chain.h). */
 #include "../src/chain.h"
 #include "../src/check.h"

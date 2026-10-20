@@ -9,6 +9,7 @@
 #include "../src/chain.h"
 #include "../src/check.h"
 #include "../src/lib.h"
+#include "../src/pins.h"
 #include "reading.h"
 #include <pthread.h>
 
@@ -168,6 +169,12 @@ int main(void) {
     CHECK(bal(A_) == 5 && bal(B_) == 3, "the external balances are the initial ones");
     CHECK(effect_head(A_) != A0 && effect_head(B_) != B0 && head_occurrence(effect_head(A_)) == outcome_occurrence(o4), "the heads are new occurrences: the accepted history changed");
     CHECK(receipt_accepted(E1) && whnf(mk_app(lemma, add(num(3), num(2))), fc_true(), &st).ref == ev.ref, "the first receipt stays accepted and the computed identity is the same retained fact");
+    {   uint64_t hA = effect_head(A_), hB = effect_head(B_), op[8]; size_t nop = effect_open_ports(op, 8);
+        EvalResult l = whnf(add(add(num(1), num(2)), num(2)), fc_true(), &st), r = whnf(add(num(1), add(num(2), num(2))), fc_true(), &st);
+        uint64_t v = receipt_view(outcome_occurrence(o4), map_identity()), lv, rv;
+        CHECK(church_value(l.ref, &lv) && church_value(r.ref, &rv) && lv == rv && lv == bal(A_) && receipt_view_occurrence(v) == outcome_occurrence(o4)
+              && effect_head(A_) == hA && effect_head(B_) == hB && effect_open_ports(op, 8) == nop,
+              "reassociation of the balance and an identity transport of the receipt preserve the heads and ports"); }
 
     /* 8. a second incompatible acceptance from a consumed port, and equal payloads */
     uint64_t again = effect_request(2003, recv_proposal(m, B_, capB, 3, 2), &st);
@@ -226,7 +233,8 @@ int main(void) {
     {   uint64_t a = bal(A_), b0 = bal(B_), h = effect_head(A_);
         uint64_t P = effect_proposal(SEND, 1, &h, 2, (EffOut[2]){ { 0, A_, num(a - 1) }, { 1, B_, num(1) } },
                                      send_witness(num(a), num(a - 1), num(1), num(a - 1), mk_refl(1, N, num(a))), 1, &capA);
-        size_t steps = 0; bool ok = true; uint64_t out = 0;
+        size_t steps = 0, nw = eval_workers(); bool ok = true; uint64_t out = 0;
+        eval_set_workers(0);                                                    /* each slice is one job: no pool runs ahead */
         for (;;) {
             out = family_run_budget(effect_family(), 1500, P, 1, &st);
             uint64_t ha = effect_head(A_), va = 99, vb = 99;
@@ -237,15 +245,23 @@ int main(void) {
             EntryId ee = eval_entry_find(effect_family(), 1500, P);
             if (st == W_OK || (ee && eval_entry_state(ee) == E_READY)) break;   /* the effect published */
         }
+        eval_set_workers(nw);
         out = effect_request(1500, P, &st);
         printf("  suspension: a send observed after each of %zu single-job slices\n", steps);
         CHECK(ok && outcome_kind(out) == OUT_ACCEPTED, "a send driven over %zu budgeted slices: each cut holds 8, before or after, never half (outcome %d: %s)", steps, (int)outcome_kind(out), outcome_reason(out)); }
 
     /* 7. receipt views: copy and reindex observations; reject a view that moves the boundary */
-    {   uint64_t v1 = receipt_view(E1, map_identity());
+    {   EntryId e1 = eval_entry_find(effect_family(), 1001, receipt_proposal(E1));
+        Exact Wp = { 0, NULL }, Wq = { 0, NULL }; size_t sp, sq; uint64_t wp, wq, runs = eval_entry_runs(e1);
+        eval_work(1, &e1, &Wp, &sp);
+        uint64_t v1 = receipt_view(E1, map_identity());
         TermVarId vz = declare_term(N, fc_true());
         uint64_t v2 = receipt_view(E1, map_single_term(vz, num(9)));
         CHECK(v1 && v2 && receipt_view_occurrence(v1) == E1 && receipt_view_occurrence(v2) == E1, "views through valid maps keep the event identity");
+        eval_work(1, &e1, &Wq, &sq);
+        CHECK(runs == 1 && eval_entry_runs(e1) == 1 && exact_to_u64(&Wp, &wp) && exact_to_u64(&Wq, &wq) && wp == wq && sp == sq,
+              "specialization shares the event and leaves its past occurrence and work unchanged (%llu steps)", (unsigned long long)wp);
+        exact_free(&Wp); exact_free(&Wq);
         /* an open payload: C sends y to B; a view substituting y moves the resource */
         uint64_t capC; TermVarId vy = declare_term(N, fc_true()); RefId yv = ref_var(vy);
         C_ = effect_authority(SEND, add(num(1), yv), 3, &capC); C0 = effect_head(C_);
@@ -268,11 +284,16 @@ int main(void) {
         RefId S = mk_sigma_lv(1, 1, declare_term(N, fc_true()), N, N);
         RefId prod = mk_pair_at_lv(1, S, num(2), global_ref(loop));
         RefId pre = mk_fst(prod);
-        uint64_t d0 = rd(RD_DELIVER, 0);
-        EvalResult r1 = whnf(pre, fc_true(), &st);                               /* drives the producer */
+        uint64_t ob = observe_key(fc_true(), 0, pins_current(1, &pre)), d0 = rd(RD_DELIVER, 0);
+        size_t nw = eval_workers(); eval_set_workers(0);                        /* this interleaving is chosen: no pool runs ahead */
+        WhnfStatus s0; family_run_budget(F_OBS, pre, ob, 1, &s0);              /* the producer installed, one job run */
+        EntryId ep = eval_entry_find(F_OBS, pre, ob);
+        CHECK(s0 == W_STUCK && ep && eval_entry_state(ep) == E_RUNNING, "the prefix producer is running, unpublished");
+        EvalResult r1 = whnf(pre, fc_true(), &st);                               /* a consumer waiting on the running producer */
         EvalResult r2 = whnf(pre, fc_true(), &st);                               /* a consumer after publication */
+        eval_set_workers(nw);
         uint64_t q; CHECK(r1.cls && r1.ref == r2.ref && church_value(r1.ref, &q) && q == 2, "both consumers read the prefix 2");
-        CHECK(rd(RD_DELIVER, 0) - d0 >= 2, "two counted deliveries");
+        CHECK(eval_entry_runs(ep) == 1 && rd(RD_DELIVER, 0) - d0 >= 2, "one producing event, shared; the deliveries are counted");
         WhnfStatus ts; whnf(mk_snd(prod), fc_true(), &ts);
         CHECK(ts == W_STUCK, "the tail stays pending"); }
 
@@ -307,7 +328,19 @@ int main(void) {
         EntryId twice[2] = { ents[0], ents[0] };
         eval_work(1, ents, &W1, &sup1); eval_work(2, twice, &W2, &sup2);
         CHECK(exact_to_u64(&W1, &w1) && exact_to_u64(&W2, &w2) && w1 == w2 && sup1 == sup2, "a history listed twice is counted once");
-        exact_free(&W); exact_free(&W1); exact_free(&W2); }
+        exact_free(&W); exact_free(&W1); exact_free(&W2);
+        /* the returning cycle: the send and its reverse are two occurrences, neither cancelled */
+        size_t i1 = no, i3 = no;
+        for (size_t i = 0; i < no; i++) { if (occs[i] == E1) i1 = i; if (occs[i] == outcome_occurrence(o3)) i3 = i; }
+        CHECK(i1 < no && i3 < no, "both directions are accepted events of the DAG");
+        if (i1 < no && i3 < no) {
+            EntryId e13[2] = { ents[i1], ents[i3] }; Exact Wa = { 0, NULL }, Wb = { 0, NULL }, Wc = { 0, NULL }; size_t sa, sb, sc; uint64_t wa, wb, wc;
+            eval_work(1, &e13[0], &Wa, &sa); eval_work(1, &e13[1], &Wb, &sb); eval_work(2, e13, &Wc, &sc);
+            GenKind ko[2] = { G_OCC, G_OCC }; uint64_t io[2] = { E1, outcome_occurrence(o3) }, zo[2] = { z_from_i64(1), z_from_i64(1) }; size_t nc;
+            rget(chain_of(1, 2, ko, io, zo), &nc);
+            CHECK(exact_to_u64(&Wa, &wa) && exact_to_u64(&Wb, &wb) && exact_to_u64(&Wc, &wc) && wc > wa && wc > wb && nc == 7,
+                  "the reverse send does not cancel the send: two generators; work %llu and %llu, %llu together", (unsigned long long)wa, (unsigned long long)wb, (unsigned long long)wc);
+            exact_free(&Wa); exact_free(&Wb); exact_free(&Wc); } }
 
     printf("  %d passed, %d failed\n", np, nf);
     check_free(); machine_free();
