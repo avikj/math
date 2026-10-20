@@ -2,10 +2,15 @@
  * one producer per key, frames reused across children, delivery chains of
  * one delivery per job, launched independent demands, the root-driving
  * synchronous API (refused inside a counted step), a self-request as an
- * unresolved dependency, workers and concurrent clients. */
+ * unresolved dependency, workers and concurrent clients; independence of
+ * the native stack (a producer chain past 2^20 and a deep term checked and
+ * observed on a thread with a small stack); closed init/free cycles leave
+ * no native workers. */
 #include "reading.h"
 #include "../src/eval.h"
 #include "../src/lib.h"
+#include "../src/check.h"
+#include <dirent.h>
 #include <pthread.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -96,6 +101,17 @@ static void *client(void *p) {
     got[i] = family_run(F_SUM, 3000, 0, &st) - 1;
     return NULL;
 }
+
+/* run fn on a thread whose native stack is 256 KiB */
+static void on_small_stack(void *(*fn)(void *), void *arg) {
+    pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at, 256 * 1024);
+    pthread_t t; pthread_create(&t, &at, fn, arg); pthread_join(t, NULL); pthread_attr_destroy(&at);
+}
+static uint64_t deep_v; static WhnfStatus deep_st;
+static void *deep_chain(void *p) { deep_v = family_run(F_SUM, *(uint64_t *)p, 0, &deep_st) - 1; return NULL; }
+typedef struct { ContextId G; RefId t, A, a; CheckStatus ck; EvalResult r; WhnfStatus st; } DeepTerm;
+static void *deep_term(void *p) { DeepTerm *d = p; const char *why; d->ck = check(d->G, fc_true(), d->t, d->A, &why); d->r = whnf(d->t, fc_true(), &d->st); return NULL; }
+static size_t native_threads(void) { size_t n = 0; DIR *d = opendir("/proc/self/task"); struct dirent *e; while (d && (e = readdir(d))) if (e->d_name[0] != '.') n++; if (d) closedir(d); return n; }
 
 int main(void) {
     machine_init();
@@ -208,6 +224,30 @@ int main(void) {
         for (EntryId e = 1; e <= ne; e++) if (eval_entry_live(e) && (eval_entry_runs(e) != 1 || eval_entry_state(e) != E_READY)) once = false;
         CHECK(once, "every key claimed once and published");
     }
+    /* the native stack bounds no computation: a chain of 2^20 + 2 producers,
+     * and a term nested 20000 deep, checked and observed, on a 256 KiB stack */
+    fresh_machine(0);
+    {   uint64_t n = ((uint64_t)1 << 20) + 1;
+        on_small_stack(deep_chain, &n);
+        CHECK(deep_st == W_OK && deep_v == n * (n + 1) / 2, "sum(2^20 + 1) through 2^20 + 2 producers on a small native stack"); }
+    fresh_machine(0); check_init();
+    {   RefId U0 = mk_universe(0); TermVarId vA = declare_term(U0, fc_true()); RefId A = ref_var(vA);
+        TermVarId vf = declare_term(mk_fun(0, 0, A, A), fc_true()), va = declare_term(A, fc_true());
+        CtxDecl ds[3] = { { S_TERM, vA }, { S_TERM, vf }, { S_TERM, va } };
+        DeepTerm d = { context_make(3, ds, fc_true()), ref_var(va), A, ref_var(va), 0, { 0 }, 0 };
+        for (size_t i = 0; i < 20000; i++) d.t = mk_app(ref_var(vf), d.t);
+        on_small_stack(deep_term, &d);
+        CHECK(d.ck == CK_VALID && d.st == W_OK && d.r.cls == R_NEUTRAL && d.r.ref == d.t, "f^20000 a : A checked and observed on a small native stack"); }
+    /* closed init/free cycles with a pool: no native worker survives */
+    eval_set_workers(0);
+    {   size_t base = native_threads(); bool clean = true;
+        for (int c = 0; c < 3; c++) {
+            fresh_machine(4);
+            if (family_call(F_TRI, 500, 0) != 1 + 500 * 501 / 2) clean = false;
+            eval_set_workers(0); machine_free(); machine_init();
+            if (native_threads() != base) clean = false;
+        }
+        CHECK(clean, "three closed init/free cycles with four workers: the same value, no native worker left"); }
     eval_set_workers(0);
     machine_free();
     printf("%d failures\n", failures);
