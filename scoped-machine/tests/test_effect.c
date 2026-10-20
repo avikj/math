@@ -9,7 +9,6 @@
 #include "../src/chain.h"
 #include "../src/check.h"
 #include "../src/lib.h"
-#include "../src/pins.h"
 #include "reading.h"
 #include <pthread.h>
 
@@ -171,7 +170,7 @@ int main(void) {
     CHECK(receipt_accepted(E1) && whnf(mk_app(lemma, add(num(3), num(2))), fc_true(), &st).ref == ev.ref, "the first receipt stays accepted and the computed identity is the same retained fact");
     {   uint64_t hA = effect_head(A_), hB = effect_head(B_), op[8]; size_t nop = effect_open_ports(op, 8);
         EvalResult l = whnf(add(add(num(1), num(2)), num(2)), fc_true(), &st), r = whnf(add(num(1), add(num(2), num(2))), fc_true(), &st);
-        uint64_t v = receipt_view(outcome_occurrence(o4), map_identity()), lv, rv;
+        uint64_t v = receipt_view(outcome_occurrence(o4), map_identity(), 0), lv, rv;
         CHECK(church_value(l.ref, &lv) && church_value(r.ref, &rv) && lv == rv && lv == bal(A_) && receipt_view_occurrence(v) == outcome_occurrence(o4)
               && effect_head(A_) == hA && effect_head(B_) == hB && effect_open_ports(op, 8) == nop,
               "reassociation of the balance and an identity transport of the receipt preserve the heads and ports"); }
@@ -254,9 +253,9 @@ int main(void) {
     {   EntryId e1 = eval_entry_find(effect_family(), 1001, receipt_proposal(E1));
         Exact Wp = { 0, NULL }, Wq = { 0, NULL }; size_t sp, sq; uint64_t wp, wq, runs = eval_entry_runs(e1);
         eval_work(1, &e1, &Wp, &sp);
-        uint64_t v1 = receipt_view(E1, map_identity());
+        uint64_t v1 = receipt_view(E1, map_identity(), 0);
         TermVarId vz = declare_term(N, fc_true());
-        uint64_t v2 = receipt_view(E1, map_single_term(vz, num(9)));
+        uint64_t v2 = receipt_view(E1, map_single_term(vz, num(9)), 0);
         CHECK(v1 && v2 && receipt_view_occurrence(v1) == E1 && receipt_view_occurrence(v2) == E1, "views through valid maps keep the event identity");
         eval_work(1, &e1, &Wq, &sq);
         CHECK(runs == 1 && eval_entry_runs(e1) == 1 && exact_to_u64(&Wp, &wp) && exact_to_u64(&Wq, &wq) && wp == wq && sp == sq,
@@ -271,8 +270,20 @@ int main(void) {
         uint64_t oc = effect_request(1600, P, &st);
         CHECK(outcome_kind(oc) == OUT_ACCEPTED, "an open-quantity send is accepted (%s)", outcome_reason(oc));
         uint64_t Ec = outcome_occurrence(oc);
-        CHECK(receipt_view(Ec, map_single_term(vy, num(4))) == 0, "a view changing the transferred quantity without a boundary transport is rejected");
-        CHECK(receipt_view(Ec, map_single_term(vz, num(4))) != 0, "a view through a map that fixes its boundary is accepted");
+        CHECK(receipt_view(Ec, map_single_term(vy, num(4)), 0) == 0, "a view changing the transferred quantity without a boundary transport is rejected");
+        CHECK(receipt_view(Ec, map_single_term(vz, num(4)), 0) != 0, "a view through a map that fixes its boundary is accepted");
+        {   /* with a checked transport of the moved states the view is the same event */
+            RefId q4 = add(num(1), num(4));
+            TermVarId vp = declare_term(path(yv, num(4)), fc_true()), vq = declare_term(path(add(num(1), yv), q4), fc_true());
+            uint64_t eta = env_empty(0);
+            size_t n_in = 1;                                   /* state 0: C's head value 1 + y; outputs: C ↦ 1, B ↦ y */
+            eta = family_call(F_SET, eta, subst_entry(0, PS_REF, ref_var(vq)));
+            eta = family_call(F_SET, eta, subst_entry(n_in + 1, PS_REF, ref_var(vp)));
+            uint64_t vw = receipt_view(Ec, map_single_term(vy, num(4)), eta);
+            CHECK(vw && receipt_view_occurrence(vw) == Ec, "a view with checked transports of its moved states names the same occurrence");
+            uint64_t bad = env_empty(0); bad = family_call(F_SET, bad, subst_entry(0, PS_REF, ref_var(vq)));
+            bad = family_call(F_SET, bad, subst_entry(n_in + 1, PS_REF, ref_var(vq)));
+            CHECK(receipt_view(Ec, map_single_term(vy, num(4)), bad) == 0, "a transport of the wrong type is rejected"); }
         uint64_t P2 = effect_proposal(RECV, 2, (uint64_t[2]){ effect_port(Ec, 1), effect_head(B_) }, 1, (EffOut[1]){ { 0, B_, add(num(bal(B_)), num(4)) } }, mk_refl(1, N, add(num(bal(B_)), num(4))), 1, &capB);
         CHECK(P2 != 0, "a new proposal at the specialized boundary is constructed normally"); }
 
@@ -284,7 +295,7 @@ int main(void) {
         RefId S = mk_sigma_lv(1, 1, declare_term(N, fc_true()), N, N);
         RefId prod = mk_pair_at_lv(1, S, num(2), global_ref(loop));
         RefId pre = mk_fst(prod);
-        uint64_t ob = observe_key(fc_true(), 0, pins_current(1, &pre)), d0 = rd(RD_DELIVER, 0);
+        uint64_t ob = observe_key(fc_true(), 0), d0 = rd(RD_DELIVER, 0);
         size_t nw = eval_workers(); eval_set_workers(0);                        /* this interleaving is chosen: no pool runs ahead */
         WhnfStatus s0; family_run_budget(F_OBS, pre, ob, 1, &s0);              /* the producer installed, one job run */
         EntryId ep = eval_entry_find(F_OBS, pre, ob);

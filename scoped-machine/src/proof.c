@@ -1,15 +1,68 @@
 /* proof.c — the proof-use boundary (proof.h). */
 #include "proof.h"
+#include "judge.h"
 #include "face.h"
+
+/* proof.audit(G, e, E): the conservative stored-syntax audit, an explicitly
+ * requested judgment, never a prerequisite of observation — the symbols
+ * named by the context's types, E and e, then by the declaration (type,
+ * parameter types) and the body of each symbol reached, each read once
+ * through the request's binding view: the map symbol ↦ revision read. One
+ * work item per step. */
+typedef struct { WordBuf todo; size_t pos, base, q; const uint64_t *g; size_t ng; uint64_t P, x, kind, G, rev; } AuLoc;
+/* pop the next word of a buffer consumed from its head (pages released) */
+static bool buf_pop(WordBuf *b, size_t *pos, size_t *base, uint64_t *out) {
+    if (*pos >= b->n) return false;
+    if (*pos - *base == WB_PAGE) { wordbuf_drain_one(b); *base += WB_PAGE; }
+    *out = b->head->w[*pos - *base]; (*pos)++;
+    return true;
+}
+static void push2(WordBuf *b, uint64_t k, uint64_t x) { wordbuf_push(b, k); wordbuf_push(b, x); }
+static void audit_step(Cont *k, uint64_t v) {
+    AuLoc *L = FR_LOC(k, AuLoc);
+    size_t nq; const uint64_t *q = rget(k->w[0], &nq);
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    wordbuf_init(&L->todo);
+    push2(&L->todo, 0, q[1]); push2(&L->todo, 0, q[2]);
+    for (L->G = q[0]; !jc_is_empty(L->G); L->G = jc_parent(L->G)) {
+        {   Sort s; uint64_t id; jc_decl(L->G, &s, &id); if (s == S_TERM) push2(&L->todo, 0, term_var_type(id)); }
+        FR_YIELD(k);
+    }
+    L->P = env_empty(0);
+    while (buf_pop(&L->todo, &L->pos, &L->base, &L->kind)) {
+        buf_pop(&L->todo, &L->pos, &L->base, &L->x);
+        if (L->kind == 2) {                                      /* a symbol */
+            FR_AWAIT(k, r, F_LOOKUP, L->P, L->x);
+            if (r) continue;                                     /* already read */
+            FR_AWAIT(k, L->rev, F_READ, L->x, k->view);
+            require(L->rev, "an audited symbol outside the request's view");
+            FR_AWAIT(k, L->P, F_SET, L->P, subst_entry(L->x, PS_REF, L->rev));
+            push2(&L->todo, 0, global_type((SymbolId)L->x));
+            if (revision_body(L->rev)) push2(&L->todo, 0, revision_body(L->rev));
+            L->g = set_get(global_params((SymbolId)L->x), &L->ng);
+            for (L->q = 0; L->q < L->ng; L->q++) { push2(&L->todo, 0, term_var_type(L->g[L->q])); FR_YIELD(k); }
+            continue;
+        }
+        if (!L->x) { FR_YIELD(k); continue; }
+        FR_AWAIT(k, r, F_GLOBALS, L->x, L->kind);
+        L->g = set_get(r, &L->ng);
+        for (L->q = 0; L->q < L->ng; L->q++) { push2(&L->todo, 2, L->g[L->q]); FR_YIELD(k); }
+    }
+    wordbuf_clear(&L->todo);
+    FR_FINISH(k, L->P);
+    FR_END(k);
+}
 
 
 /* a word stack as interned cons records [x, rest] (0 is empty) */
 static void push(uint64_t *s, uint64_t x) { *s = RQ(x, *s); }
 static uint64_t pop(uint64_t *s) { size_t n; const uint64_t *w = rget(*s, &n); *s = w[1]; return w[0]; }
 
-/* proof.scc(P): Tarjan over the symbols of the pin set P. Vertex table: a
+/* proof.scc(P): Tarjan over the symbols of the audited map P (symbol ↦
+ * revision). Vertex table: a
  * total substitution record s ↦ [index, low, on-stack, self-edge, edges];
- * the edges of s are the symbols its type, parameter types and pinned body
+ * the edges of s are the symbols its type, parameter types and audited body
  * name. One edge, one discovery source, one pop or one member per step,
  * each table read or write one lookup or set.
  * Result [status, opaque set, recursive set, #opaque, #recursive]. */
@@ -31,10 +84,10 @@ static void scc_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, r, F_LOOKUP, L->V, L->d);
         if (r) continue;
     discover:
-        /* the edges of d: its type, parameter types and pinned body */
+        /* the edges of d: its type, parameter types and audited body */
         FR_AWAIT(k, r, F_LOOKUP, P, L->d);
-        require(r, "an audited symbol outside the pin set");
-        L->b = subst_value(P, r - 1);
+        require(r, "an audited symbol outside the audit");
+        L->b = revision_body(subst_value(P, r - 1));
         L->acc = set_make(NULL, 0);
         L->ps = set_get(global_params(L->d), &L->np);
         for (L->si = 0; L->si < L->np + 2; L->si++) {
@@ -96,6 +149,7 @@ static void scc_step(Cont *k, uint64_t v) {
 }
 void proof_families_init(void) {
     family_define(F_SCC, "proof.scc", scc_step, sizeof(SccLoc));
+    family_define(F_CLOSURE, "proof.audit", audit_step, sizeof(AuLoc));
 }
 
 const char *proof_status_name(ProofStatus s) {
@@ -110,21 +164,13 @@ static SymbolId *listing(uint64_t T, size_t n) {
 }
 ProofUse proof_use(ContextId G, FaceId chi, RefId e, RefId E) {
     ProofUse out; memset(&out, 0, sizeof out); out.reason = "";
-    uint64_t lv;
-    CheckStatus st = check_context(G, &out.reason);
-    if (st == CK_VALID) st = check_is_type(G, chi, E, &lv, &out.reason);
-    if (st == CK_VALID) st = check(G, chi, e, E, &out.reason);
-    if (st != CK_VALID) { out.status = st == CK_INVALID ? PU_INVALID : PU_UNRESOLVED; return out; }
+    uint64_t res = check_admit(AD_PROOF, context_judgment(G), chi, e, E, 0);
+    if (!res) { out.status = PU_UNRESOLVED; out.reason = "unresolved: the judgment did not complete"; return out; }
+    uint64_t code = rword(res, 0);
+    out.revisions = rword(res, 4);
+    if (code != 1) { out.status = code == 2 ? PU_INVALID : PU_UNRESOLVED; out.reason = (const char *)(uintptr_t)rword(res, 1); return out; }
     if (fc_is_false(chi)) { out.status = PU_CORE; out.reason = "a judgment local to the false face"; return out; }
-    size_t nd = context_size(G), nr = 0;
-    RefId *roots = malloc((nd + 2) * sizeof(RefId)); require(roots, "out of memory");
-    for (size_t q = 0; q < nd; q++) { CtxDecl d = context_decl(G, q); if (d.sort == S_TERM) roots[nr++] = term_var_type(d.id); }
-    roots[nr++] = E; roots[nr++] = e;
-    out.revisions = pins_current(nr, roots);
-    free(roots);
-    WhnfStatus ws; uint64_t res = family_run_budget(F_SCC, out.revisions, 0, check_budget(), &ws);
-    if (ws != W_OK) { out.status = PU_UNRESOLVED; out.reason = "unresolved: the audit did not complete"; return out; }
-    size_t n; const uint64_t *w = rget(res, &n);
+    size_t n; const uint64_t *w = rget(rword(res, 5), &n);
     out.status = (ProofStatus)w[0];
     out.reason = w[0] == PU_PENDING ? "recursive dependencies need a logical witness" : w[0] == PU_ASSUMED ? "relative to explicit opaque assumptions" : "acyclic core proof relative to the occurrence context";
     out.n_assumptions = w[3]; out.n_recursive = w[4];

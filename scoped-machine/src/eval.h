@@ -62,6 +62,7 @@ struct Cont {
     void *loc;          /* the family's locals record (loc_size bytes, zeroed), or NULL */
     Cont *parent;       /* subroutine frame: the frame its value returns to */
     Cont *next;         /* link in an entry's waiter stack / a delivery chain */
+    uint64_t view;      /* the binding view its reads go through (term.h; 0: a pure frame) */
 };
 
 typedef struct DepNode { EntryId e; struct DepNode *next; } DepNode;
@@ -71,6 +72,8 @@ typedef struct {
     size_t runs;        /* evaluator tasks executed for this key (must be ≤ 1) */
     Count work;         /* steps of its producer's frame and subroutines (exact; single writer) */
     DepNode *deps;      /* the entries its producer requested or launched (pushed by its one producer) */
+    uint64_t view;      /* a node's or occurrence's installing view (written before its producer runs) */
+    EntryId via;        /* a resolver's chosen node (written before it publishes) */
 } Entry;
 
 typedef void (*FamResume)(Cont *k, uint64_t v);
@@ -90,6 +93,21 @@ typedef void (*FamResume)(Cont *k, uint64_t v);
  * it launched has delivered). The producer key of a frame family is
  * (f, a, b) and its frame starts with w[0] = a, w[1] = b. */
 void family_define(Family f, const char *name, FamResume step, size_t loc_size);   /* a fixed family (families.h) */
+/* Families are pure (keys of immutable operands), relative (they read
+ * definition revisions, directly or through a child) or occurrences (a live
+ * accepted event, one node per key). A relative request under the binding
+ * view V is answered by the resolver (f, a, b, V): it requests the node
+ * (f, a, b, ∅), and while the node's derivation read revisions that differ
+ * from V's it requests the node whose path adds those symbols at V's
+ * revisions; it publishes the agreeing node's value. A node's key holds no view; its frames
+ * read through the view of the requester that installed it. An occurrence is
+ * one node, installed with its first requester's view. */
+typedef enum { FK_PURE = 0, FK_RELATIVE, FK_OCCURRENCE } FamKind;
+void family_kind(Family f, FamKind kind);
+/* the entry a request (f, a, b) made by frame k reaches (for view.reads,
+ * whose key (x, 0) is a published entry: the set of revisions its
+ * derivation read) */
+EntryId frame_request_key(const Cont *k, Family f, uint64_t a, uint64_t b);
 Family family_new(const char *name, FamResume step, size_t loc_size);         /* a family defined at run time */
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b);
 void frame_call(Cont *k, Cont *child);
@@ -130,10 +148,9 @@ void construct_families_init(void);
 #define FR_END(k) } die("frame program ended without finishing (pc %u)", (unsigned)(k)->pc)
 #define FR_LOC(k, T) ((T *)(k)->loc)
 
-/* the observation family: key (t, observe_key(χ, φ, P)) observes t under
- * χ ∧ φ (φ = 0: none) bound to the pin set P (pins.h); its value is a
- * result record */
-uint64_t observe_key(FaceId chi, FaceId phi, uint64_t pins);
+/* the observation family (relative): key (t, observe_key(χ, φ)) observes t
+ * under χ ∧ φ (φ = 0: none); its value is a result record */
+uint64_t observe_key(FaceId chi, FaceId phi);
 /* a construction request as a subroutine (value: RefId): a fixed-shape tag
  * at operands ids by the schema (term.h), or a written request record */
 Cont *mk_tag_sub(const Cont *caller, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);
@@ -144,11 +161,14 @@ Cont *construct_buf_sub(const Cont *caller, WordBuf *w);
 void eval_init(void);
 void eval_free(void);
 
-/* Root observation: W_STUCK when the root did not complete (a cyclic or
- * otherwise suspended demand); pins 0 reads the current revisions of t's
- * premises once. */
+/* Root observation under the machine's current binding view, or under a
+ * given (captured) view: W_STUCK when the root did not complete (a cyclic or
+ * otherwise suspended demand). */
 EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status);
-EvalResult whnf_pinned(RefId t, FaceId chi, uint64_t pins, WhnfStatus *status);
+EvalResult whnf_in(RefId t, FaceId chi, uint64_t view, WhnfStatus *status);
+/* a root of any family under a given binding view (relative families are
+ * resolved under it; an occurrence installed with it) */
+uint64_t family_run_in(Family f, uint64_t a, uint64_t b, uint64_t view, size_t budget, WhnfStatus *status);
 
 /* run queued jobs until none is left (with a pool: until quiescent) */
 void eval_run(void);
@@ -160,9 +180,11 @@ size_t eval_workers(void);
  * in one shard per executing thread and summed on demand (count.h). */
 typedef enum { RD_REQUEST, RD_DELIVER, RD_PUBLISH, RD_LAUNCH, RD_STEP, RD_STEPS } Reading;   /* RD_STEPS: of family f */
 void eval_reading(Reading r, Family f, Exact *out);   /* out += the reading */
-/* work of a set of producers (§60, EFFECT-AUTHORITY §8): the union of their
- * dependency supports, each producer's work counted once; *support is the
- * number of producers in the union */
+/* the historical work of a set of published producers (§60, EFFECT-AUTHORITY
+ * §8): the union of their published supports (history.support), each
+ * producer's frozen work counted once, summed exactly (history.work); a
+ * pending dependency is a live obligation and not in the support; *support
+ * is the number of producers in the union. The query is itself later work. */
 void eval_work(size_t n, const EntryId *roots, Exact *out, size_t *support);
 EntryId eval_entry_find(Family f, uint64_t a, uint64_t b);   /* the entry of a key, 0 if never requested */
 

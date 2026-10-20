@@ -9,7 +9,7 @@
 #include "common.h"
 #include "intern.h"
 
-typedef struct { RefId body; VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
+typedef struct { VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */ } Def;
 
 typedef struct {
     Interner keys;        /* every record: intervals, faces, sets, substitutions, references,
@@ -19,7 +19,7 @@ typedef struct {
      * published and never changes afterwards */
     Chunked defs;         /* Def per SymbolId-1 */
     size_t n_fresh, n_defs;   /* host declaration serials; symbol ids (atomic) */
-    uint64_t env_gen;     /* the definition environment's snapshot: bumped by each declaration and body (host only, never during a computation) */
+    uint64_t view;        /* the current binding view (term.h): replaced by each declaration and body */
 } Machine;
 
 extern Machine M;

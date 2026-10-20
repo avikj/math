@@ -5,13 +5,14 @@
 #include "eval.h"
 
 /* request records (each judgment family's key operand a, families.h):
- *   INFER [C, t, P]   CHECK [C, t, A, P]   LEVEL [C, A, P]
- *   CONVT [C, A, B, P]   CONVt [C, t, u, A, P]   MAP [D, ψ, σ, Γ, χ, P]
- *   CTX [G, a, P]   SCOPE [G, χ, t]   NODE [Q, P]   DECL / BODY [s, P]   STRUCT [kind, x, 0]
- * G, D, Γ judgment contexts; C a clause (or face); P a pin set; a local
- * judgment reads its variables' own types and is keyed with C projected
- * onto its subjects' support. EVERY [φ, f, args…] / JOINT [φ, f, args…]
- * judge f at [c, args…] for every clause c of the face φ. */
+ *   INFER [C, t]   CHECK [C, t, A]   LEVEL [C, A]   CONVT [C, A, B]
+ *   CONVt [C, t, u, A]   MAP [D, ψ, σ, Γ, χ]   CTX [G, a]   SCOPE [G, χ, t]
+ *   NODE [Q]   DECL [s]   BODY [revision]   STRUCT [kind, x, 0]
+ * G, D, Γ judgment contexts; C a clause (or face); a local judgment reads
+ * its variables' own types and is keyed with C projected onto its subjects'
+ * support. EVERY [φ, f, args…] / JOINT [φ, f, args…] judge f at
+ * [c, args…] for every clause c of the face φ. Judgments that observe are
+ * relative families (eval.h): no view in their keys. */
 uint64_t judge_request(size_t n, const uint64_t *w);
 /* results [code, reason, a, b, c]: code 1 valid/equal, 2 invalid/unequal, 3 unresolved */
 uint64_t judge_res(uint64_t code, const char *why, uint64_t a, uint64_t b, uint64_t c);

@@ -1,7 +1,7 @@
 #include "eval.h"
 #include "lib.h"
 #include "pool.h"
-#include "pins.h"
+#include "check.h"
 #include "judge.h"
 #include "chain.h"
 #include "effect.h"
@@ -26,10 +26,10 @@ typedef struct { pthread_mutex_t mu; QChunk *front, *back; size_t len; } Queue;
 
 typedef struct { const char *name; FamResume resume; size_t loc_size; } FamilyDef;
 static FamilyDef FAM[F_MAX];
+static uint8_t KIND[F_MAX];          /* FamKind of each family (pure unless declared) */
+void family_kind(Family f, FamKind kind) { require(f >= 1 && f < F_MAX, "family kind out of range"); KIND[f] = (uint8_t)kind; }
 static size_t n_fam = F_FIXED;     /* families defined at run time (tests) follow the fixed ids */
-static uint64_t obs_key(FaceId eta, PinSet P) { return RQ(eta, P); }
-static FaceId key_face(uint64_t b) { return rword(b, 0); }
-static PinSet key_pins(uint64_t b) { return rword(b, 1); }
+static FaceId key_face(uint64_t b) { return b; }
 
 typedef struct Shard Shard;
 static struct {
@@ -66,21 +66,10 @@ static Shard *shard(void) {
 }
 static void event(Reading r) { count_bump(&shard()->ev[r]); }
 static Entry *ENT(EntryId e) { return (Entry *)chunked_at(&E.entries, e - 1); }
-EntryId eval_entry_find(Family f, uint64_t a, uint64_t b) { uint64_t w[3] = { f, a, b }; return interner_find(&E.keys, w, 3); }
-void eval_work(size_t n, const EntryId *roots, Exact *out, size_t *support) {
-    size_t ne = interner_count(&E.keys), cnt = 0;
-    bool *seen = calloc(ne + 1, sizeof *seen);
-    EntryId *stk = malloc((ne + 1) * sizeof *stk); size_t sp = 0;
-    require(seen && stk, "out of memory: a work reading");
-    for (size_t q = 0; q < n; q++) if (roots[q] && !seen[roots[q]]) { seen[roots[q]] = true; stk[sp++] = roots[q]; }
-    while (sp) {
-        Entry *e = ENT(stk[--sp]); cnt++;
-        exact_add_count(out, &e->work);
-        for (DepNode *d = __atomic_load_n(&e->deps, __ATOMIC_ACQUIRE); d; d = d->next)
-            if (d->e <= ne && !seen[d->e]) { seen[d->e] = true; stk[sp++] = d->e; }
-    }
-    free(seen); free(stk);
-    if (support) *support = cnt;
+EntryId eval_entry_find(Family f, uint64_t a, uint64_t b) {
+    if (KIND[f] != FK_RELATIVE) { uint64_t w[3] = { f, a, b }; return interner_find(&E.keys, w, 3); }
+    uint64_t w[5] = { F_RESOLVE, f, a, b, view_current() };
+    return interner_find(&E.keys, w, 5);
 }
 void eval_reading(Reading r, Family f, Exact *out) {
     require(r <= RD_STEPS && (r != RD_STEPS || (f >= 1 && f < F_MAX)), "bad reading");
@@ -121,11 +110,16 @@ static void families_define(void) {
     template_families_init();
     evaluator_init();
     lib_families_init();
-    pins_families_init();
     judge_families_init();
+    check_families_init();
     proof_families_init();
     chain_families_init();
     effect_families_init();
+    static const Family relative[] = { F_WHNF, F_OBS, J_BODY, J_CHECK, J_CONVT, J_CONVt, J_CTX, J_CTXD, J_DECL, J_DECLOK,
+        J_EVERY, J_GLUEEQ, J_GLUEOK, J_HEAD, J_INFER, J_JOINT, J_LEVEL, J_NODE, J_OBSHEAD, J_REQ, J_SCARG, J_SCOWN,
+        J_SPINE, J_SYSTEM, J_TBOUND, J_TVIEW, J_MAP, J_ADMIT, F_PREP, F_CLOSURE, F_SCC };
+    for (size_t i = 0; i < sizeof relative / sizeof relative[0]; i++) family_kind(relative[i], FK_RELATIVE);
+    family_kind(F_EFFECT, FK_OCCURRENCE);
 }
 
 void eval_init(void) {
@@ -213,7 +207,7 @@ static void cont_release(Cont *k) {
 }
 Cont *frame_sub(Family f, const Cont *caller) {
     require(f > F_WHNF && f < F_MAX && FAM[f].resume, "a subroutine is a frame family");
-    Cont *k = frame_new(f, 0); k->owner = caller ? caller->owner : 0;
+    Cont *k = frame_new(f, 0); k->owner = caller ? caller->owner : 0; k->view = caller ? caller->view : 0;
     return k;
 }
 
@@ -298,12 +292,24 @@ static void deliver(Cont *k, uint64_t v) {
 
 /* ---------------- entries ---------------- */
 
-static EntryId entry_intern(Family f, uint64_t a, uint64_t b) {
-    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
-    uint64_t w[3] = { f, a, b };
-    EntryId id = interner_intern(&E.keys, w, 3, NULL);
+/* entry keys: [f, a, b] a pure or occurrence key; [f, a, b, path] a
+ * relative node; [F_RESOLVE, f, a, b, V] the resolver of a relative request
+ * under the view V */
+static EntryId entry_words(const uint64_t *w, size_t n) {
+    require(w[0] >= F_WHNF && w[0] < F_MAX && FAM[w[0]].resume, "unregistered family");
+    EntryId id = interner_intern(&E.keys, w, n, NULL);
     chunked_at(&E.entries, id - 1);
     return id;
+}
+static EntryId entry_intern(Family f, uint64_t a, uint64_t b) { uint64_t w[3] = { f, a, b }; return entry_words(w, 3); }
+static EntryId node_entry(Family f, uint64_t a, uint64_t b, uint64_t path) { uint64_t w[4] = { f, a, b, path }; return entry_words(w, 4); }
+/* the entry a request of (f, a, b) under view reaches */
+static EntryId request_key(Family f, uint64_t a, uint64_t b, uint64_t view) {
+    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
+    if (KIND[f] != FK_RELATIVE) return entry_intern(f, a, b);
+    require(view, "a request of %s outside a binding view", FAM[f].name);
+    uint64_t w[5] = { F_RESOLVE, f, a, b, view };
+    return entry_words(w, 5);
 }
 
 EntryState eval_entry_state(EntryId e) {
@@ -337,39 +343,56 @@ static void record_dep(EntryId owner, EntryId eid) {
 }
 static void record_work(EntryId owner) { count_bump(&ENT(owner)->work); }
 
-/* REQ(K,c): U → R({c}) + EVAL(K), R(W) → R(W ⊎ {c}), D(v) → D(v) + DELIVER(c,v);
- * c = NULL is a launch: U → R(∅) + EVAL(K), otherwise nothing. A failed CAS
- * means another request launched, pushed onto or published this entry in
- * between: each failure is charged to that success. Strong CAS only. */
-static void request_entry(EntryId eid, Cont *k, EntryId owner) {
+/* REQ(K,c): U → R({c}) + EVAL(K), R(W) → R(W ⊎ {c}), D(v) → D(v) + DELIVER(c,v),
+ * each a constant number of atomic operations (no retry):
+ *  - a waiter joins by one exchange of the head; its link is written after
+ *    the exchange (PENDING until then: a delivery reaching it waits for that
+ *    one store);
+ *  - the exchange that finds U launches the producer;
+ *  - an exchange that finds READY (a publication between the load and the
+ *    exchange) takes back what was pushed since with a second exchange
+ *    restoring READY, and delivers it;
+ *  - c = NULL is a launch: one CAS U → R(∅), never retried (its failure means
+ *    the key is already running or published).
+ * One job is reserved across the operation, so no observer sees a running
+ * key while nothing is outstanding. */
+#define LINK_PENDING ((Cont *)(uintptr_t)3)
+static void request_entry(EntryId eid, Cont *k, EntryId owner, uint64_t view) {
     Entry *e = ENT(eid);
     event(RD_REQUEST);
     if (owner) record_dep(owner, eid);
-    for (;;) {
-        Cont *h = __atomic_load_n(&e->head, __ATOMIC_ACQUIRE);
-        if (h == ENTRY_READY) {
-            if (!k) return;
-            k->next = NULL;
-            deliver(k, __atomic_load_n(&e->value, __ATOMIC_ACQUIRE));
-            return;
-        }
-        if (h == NULL) {
-            reserve_job();                  /* the launch is reserved before RUNNING can be observed */
-            Cont *mine = k ? k : ENTRY_LAUNCHED;
-            if (k) k->next = NULL;
-            if (__atomic_compare_exchange_n(&e->head, &h, mine, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-                event(RD_LAUNCH);
-                Task job; memset(&job, 0, sizeof job); job.kind = TK_EVAL; job.entry = eid;
-                push_job(job);
-                return;
-            }
-            finish_job();                   /* not the launcher: give the reservation back */
-            continue;
-        }
-        if (!k) return;                     /* running: a launch has nothing to add */
-        k->next = h == ENTRY_LAUNCHED ? NULL : h;
-        if (__atomic_compare_exchange_n(&e->head, &h, k, false, __ATOMIC_RELEASE, __ATOMIC_ACQUIRE)) return;
+    Cont *h = __atomic_load_n(&e->head, __ATOMIC_ACQUIRE);
+    if (h == ENTRY_READY) { if (k) { k->next = NULL; deliver(k, __atomic_load_n(&e->value, __ATOMIC_ACQUIRE)); } return; }
+    if (!k && h) return;                                    /* running: a launch has nothing to add */
+    reserve_job();
+    if (!k) {
+        Cont *u = NULL;
+        if (__atomic_compare_exchange_n(&e->head, &u, ENTRY_LAUNCHED, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+            e->view = view;                                 /* the installer's view, before its producer runs */
+            event(RD_LAUNCH);
+            Task job; memset(&job, 0, sizeof job); job.kind = TK_EVAL; job.entry = eid;
+            push_job(job);                                  /* the reservation is the job's */
+        } else finish_job();
+        return;
     }
+    __atomic_store_n(&k->next, LINK_PENDING, __ATOMIC_RELAXED);
+    Cont *prev = __atomic_exchange_n(&e->head, k, __ATOMIC_ACQ_REL);
+    if (prev == ENTRY_READY) {
+        __atomic_store_n(&k->next, NULL, __ATOMIC_RELEASE);
+        Cont *chain = __atomic_exchange_n(&e->head, ENTRY_READY, __ATOMIC_ACQ_REL);
+        deliver(chain, __atomic_load_n(&e->value, __ATOMIC_ACQUIRE));
+        finish_job();
+        return;
+    }
+    __atomic_store_n(&k->next, prev == ENTRY_LAUNCHED ? NULL : prev, __ATOMIC_RELEASE);
+    if (prev == NULL) {
+        e->view = view;
+        event(RD_LAUNCH);
+        Task job; memset(&job, 0, sizeof job); job.kind = TK_EVAL; job.entry = eid;
+        push_job(job);
+        return;
+    }
+    finish_job();
 }
 
 /* ---------------- frame programs ----------------
@@ -387,11 +410,12 @@ static void enqueue_resume(Cont *k, uint64_t v) {
 }
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b) {
     keep_frame(k);
-    request_entry(entry_intern(f, a, b), k, k->owner);
+    request_entry(request_key(f, a, b, k->view), k, k->owner, k->view);
 }
+static void frame_request_entry(Cont *k, EntryId eid) { keep_frame(k); request_entry(eid, k, k->owner, k->view); }
 void family_launch(Family f, uint64_t a, uint64_t b) {
     require(tl_step_frame, "a launch is made by a frame's step");
-    request_entry(entry_intern(f, a, b), NULL, tl_step_frame->owner);
+    request_entry(request_key(f, a, b, tl_step_frame->view), NULL, tl_step_frame->owner, tl_step_frame->view);
 }
 void frame_call(Cont *k, Cont *child) {
     require(child->dest == 0, "a subroutine frame of this caller");
@@ -458,10 +482,125 @@ static void flatten_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 static uint64_t flatten_root(Interner *t, uint64_t root) { return family_call(F_FLATTEN, t->index, root); }
+
+/* ---------------- binding views ----------------
+ * read(s, V): the revision of s in the view V (0: s is not declared there).
+ * A node's reads are its dependencies on read entries. */
+static void read_step(Cont *k, uint64_t v) {
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    FR_AWAIT(k, r, F_LOOKUP, k->w[1], k->w[0]);
+    FR_FINISH(k, r ? subst_value(k->w[1], r - 1) : 0);
+    FR_END(k);
+}
+/* reads(x): the set of revisions read in the derivation of the published
+ * entry x (its read entries' values; a resolver's chosen node; nothing for
+ * a pure entry), one dependency per step */
+typedef struct { DepNode *d; uint64_t acc, r; } RdLoc;
+static void reads_step(Cont *k, uint64_t v) {
+    RdLoc *L = FR_LOC(k, RdLoc);
+    EntryId x = k->w[0]; uint64_t r = 0;
+    Family f = eval_entry_family(x);
+    FR_BEGIN(k);
+    if (f == F_READ) { uint64_t rev = ENT(x)->value; FR_FINISH(k, set_make(&rev, rev ? 1 : 0)); }
+    if (f == F_RESOLVE) { FR_AWAIT(k, r, F_READS, ENT(x)->via, 0); FR_FINISH(k, r); }
+    L->acc = set_make(NULL, 0);
+    if (KIND[f] == FK_PURE) FR_FINISH(k, L->acc);
+    for (L->d = __atomic_load_n(&ENT(x)->deps, __ATOMIC_ACQUIRE); L->d; L->d = L->d->next) {
+        FR_AWAIT(k, L->r, F_READS, L->d->e, 0);
+        FR_AWAIT(k, L->acc, F_SUNION, L->acc, L->r);
+    }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
+}
+EntryId frame_request_key(const Cont *k, Family f, uint64_t a, uint64_t b) { return request_key(f, a, b, k->view); }
+
+/* ---------------- history readings ----------------
+ * support(x): the published entries of x's derivation — x and the support of
+ * each published dependency; a pending dependency is a live obligation, not
+ * history. work(set): the exact sum of the work of the entries of a support
+ * set, an exact integer (chain.h z), one entry or carry block per step; each
+ * entry's count is frozen once it published. Both are ordinary families:
+ * the query's own work is later history. */
+static bool ready(EntryId e) { return eval_entry_state(e) == E_READY; }
+typedef struct { DepNode *d; uint64_t acc, r; } SuLoc;
+static void support_step(Cont *k, uint64_t v) {
+    SuLoc *L = FR_LOC(k, SuLoc);
+    EntryId x = k->w[0];
+    FR_BEGIN(k);
+    L->acc = set_make(&x, 1);
+    for (L->d = __atomic_load_n(&ENT(x)->deps, __ATOMIC_ACQUIRE); L->d; L->d = L->d->next) {
+        if (!ready(L->d->e)) { FR_YIELD(k); continue; }
+        FR_AWAIT(k, L->r, F_SUPPORT, L->d->e, 0);
+        FR_AWAIT(k, L->acc, F_SUNION, L->acc, L->r);
+    }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
+}
+typedef struct { size_t i, n; uint64_t acc, r, nc; const Carry *c; } WkLoc;
+static void work_step(Cont *k, uint64_t v) {
+    WkLoc *L = FR_LOC(k, WkLoc);
+    FR_BEGIN(k);
+    L->acc = z_from_i64(0);
+    for (L->i = 0; L->i < (set_get(k->w[0], &L->n), L->n); L->i++) {
+        {   size_t n; Entry *e = ENT(set_get(k->w[0], &n)[L->i]); L->c = __atomic_load_n(&e->work.carry, __ATOMIC_ACQUIRE); L->nc = 0;
+            L->r = __atomic_load_n(&e->work.low, __ATOMIC_ACQUIRE); }
+        while (L->c) { L->c = L->c->next; L->nc++; FR_YIELD(k); }
+        {   uint64_t limbs[2] = { L->r, L->nc }; L->r = z_from_limbs(0, 2, limbs); }
+        FR_AWAIT(k, L->acc, Fz_ADD, L->acc, L->r);
+    }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
+}
+void eval_work(size_t n, const EntryId *roots, Exact *out, size_t *support) {
+    uint64_t S = set_make(NULL, 0);
+    for (size_t q = 0; q < n; q++) if (roots[q] && ready(roots[q])) S = set_union(S, family_call(F_SUPPORT, roots[q], 0));
+    if (support) set_get(S, support);
+    size_t m; const uint64_t *w = rget(family_call(F_WORK, S, 0), &m);
+    for (size_t i = 1; i < m; i++) exact_add_word(out, i - 1, w[i]);
+}
+
+/* resolve(f, a, b, V): the node of (f, a, b) whose reads agree with V.
+ * It requests the root node; while the node it reached read a revision that
+ * differs from V's, it requests the node whose path adds every such symbol
+ * at V's revision (a substitution record, so the path is a set). One read
+ * comparison per step. */
+#define FR_AWAIT_ENTRY(k, var, eid) do { (k)->pc = __LINE__; frame_request_entry((k), (eid)); return; case __LINE__:; (var) = v; } while (0)
+typedef struct { uint64_t path, ext, r, rs, cur; size_t i, n; EntryId node; } RsLoc;
+static void resolve_step(Cont *k, uint64_t v) {
+    RsLoc *L = FR_LOC(k, RsLoc);
+    uint64_t V = k->w[3];
+    FR_BEGIN(k);
+    for (;;) {
+        L->node = node_entry((Family)k->w[0], k->w[1], k->w[2], L->path);
+        FR_AWAIT_ENTRY(k, L->r, L->node);
+        if (ENT(L->node)->view == V) break;                 /* installed under V: its reads are V's */
+        FR_AWAIT(k, L->rs, F_READS, L->node, 0);
+        L->ext = L->path ? L->path : env_empty(0);
+        for (L->i = 0; L->i < (set_get(L->rs, &L->n), L->n); L->i++) {
+            {   size_t n; L->cur = set_get(L->rs, &n)[L->i]; }
+            FR_AWAIT(k, L->cur, F_READ, revision_symbol(L->cur), V);
+            {   size_t n; uint64_t was = set_get(L->rs, &n)[L->i];
+                if (L->cur == was) continue;
+                L->cur = subst_entry(revision_symbol(was), PS_REF, L->cur); }
+            FR_AWAIT(k, L->ext, F_SET, L->ext, L->cur);
+        }
+        if (L->ext == (L->path ? L->path : env_empty(0))) break;   /* every read agrees */
+        L->path = L->ext;
+    }
+    __atomic_store_n(&ENT(k->dest)->via, L->node, __ATOMIC_RELEASE);
+    FR_FINISH(k, L->r);
+    FR_END(k);
+}
 static void intern_families_init(void) {
     family_define(F_INTERN, "intern", intern_step, sizeof(InternState));
     family_define(F_FLATTEN, "intern.flatten", flatten_step, sizeof(FlatLoc));
     family_define(F_HOST, "host", host_step, 0);
+    family_define(F_READ, "view.read", read_step, 0);
+    family_define(F_RESOLVE, "view.resolve", resolve_step, sizeof(RsLoc));
+    family_define(F_READS, "view.reads", reads_step, sizeof(RdLoc));
+    family_define(F_SUPPORT, "history.support", support_step, sizeof(SuLoc));
+    family_define(F_WORK, "history.work", work_step, sizeof(WkLoc));
     interner_set_flatten_hook(flatten_root);
 }
 
@@ -477,17 +616,22 @@ static void step_frame(Cont *k, uint64_t v) {
 static void evaluate(EntryId eid) {
     Entry *e = ENT(eid);
     require(__atomic_fetch_add(&e->runs, 1, __ATOMIC_ACQ_REL) == 0, "a key is evaluated by exactly one task");
-    Family f = eval_entry_family(eid);
+    size_t n; const uint64_t *key = interner_get(&E.keys, eid, &n);
+    Family f = (Family)key[0];
     count_bump(&shard()->steps[f]);
     record_work(eid);
-    Cont *k = frame_new(f, eid); k->w[0] = eval_entry_a(eid); k->w[1] = eval_entry_b(eid);
+    Cont *k = frame_new(f, eid);
+    for (size_t i = 1; i < n; i++) k->w[i - 1] = key[i];
+    k->view = f == F_RESOLVE ? key[4] : KIND[f] == FK_PURE ? 0 : e->view;
     step_frame(k, 0);
 }
 static void execute_job(Task t) {
-    event(RD_STEP);
-    if (t.kind == TK_EVAL) { evaluate(t.entry); return; }
+    if (t.kind == TK_EVAL) { event(RD_STEP); evaluate(t.entry); return; }
     Cont *k = t.k;
-    if (k->next) { Cont *rest = k->next; k->next = NULL; deliver(rest, t.v); }   /* hand the chain on: one delivery per job */
+    Cont *rest = __atomic_load_n(&k->next, __ATOMIC_ACQUIRE);
+    if (rest == LINK_PENDING) { enqueue(t); return; }          /* its joiner's link store is not visible yet */
+    if (rest) { k->next = NULL; deliver(rest, t.v); }         /* hand the chain on: one delivery per job */
+    event(RD_STEP);
     count_bump(&shard()->steps[k->fam]);
     if (k->owner) record_work(k->owner);
     step_frame(k, t.v);
@@ -532,30 +676,21 @@ void eval_run(void) {
 /* ---------------- roots ----------------
  * A root is requested with a host frame as its waiter; the caller drives
  * (or, with a pool, waits) until the entry is READY or the machine is
- * quiescent (a stuck demand). With W > 0 the wait also ends when the work
- * of the root's dependency support exceeds the budget. */
-static uint64_t support_work(EntryId e) {
-    Exact x = { 0, NULL }; uint64_t w;
-    eval_work(1, &e, &x, NULL);
-    if (!exact_to_u64(&x, &w)) w = UINT64_MAX;
-    exact_free(&x);
-    return w;
-}
-static bool ready(EntryId e) { return eval_entry_state(e) == E_READY; }
-static uint64_t drive(EntryId e, size_t budget, WhnfStatus *status) {
+ * quiescent (a stuck demand). A budget B > 0 is a host control bound, not a
+ * reading: the call returns W_STUCK once B jobs have executed during it (the
+ * jobs this caller ran; with a pool, the machine's executed jobs, sampled
+ * while it waits). The work continues; it is never a mathematical verdict. */
+static uint64_t steps_now(void) { Exact x = { 0, NULL }; uint64_t w; eval_reading(RD_STEP, 0, &x); if (!exact_to_u64(&x, &w)) w = UINT64_MAX; exact_free(&x); return w; }
+static uint64_t drive(EntryId e, uint64_t view, size_t budget, WhnfStatus *status) {
     require(!tl_in_job, "root driving inside a counted step: the frame must await it");
-    request_entry(e, frame_new(F_HOST, 0), 0);
-    size_t next_check = budget;                    /* W grows by at most one per executed job */
+    request_entry(e, frame_new(F_HOST, 0), 0, view);
+    size_t ran = 0; uint64_t s0 = budget && E.nworkers ? steps_now() : 0;
     for (;;) {
         if (ready(e)) break;
-        if (budget && next_check == 0) {
-            uint64_t w = support_work(e);
-            if (w > budget) break;
-            next_check = budget - (size_t)w + 1;
-        }
+        if (budget && (E.nworkers ? steps_now() - s0 : ran) >= budget) break;
         if (!E.nworkers) {
             Task t;
-            if (take_job(&t)) { execute(t); finish_job(); if (next_check) next_check--; continue; }
+            if (take_job(&t)) { execute(t); finish_job(); ran++; continue; }
         }
         /* nothing to run here: wait for a host notification (a root's
          * publication, or quiescence); with a budget, wake periodically */
@@ -569,13 +704,12 @@ static uint64_t drive(EntryId e, size_t budget, WhnfStatus *status) {
                 struct timespec ts; clock_gettime(CLOCK_REALTIME, &ts);
                 ts.tv_nsec += 1000000; if (ts.tv_nsec >= 1000000000) { ts.tv_sec++; ts.tv_nsec -= 1000000000; }
                 pthread_cond_timedwait(&E.idle_cv, &E.idle_mu, &ts);
-                next_check = 0;
             } else pthread_cond_wait(&E.idle_cv, &E.idle_mu);
         }
         __atomic_sub_fetch(&E.hosts_waiting, 1, __ATOMIC_SEQ_CST);
         pthread_mutex_unlock(&E.idle_mu);
     }
-    bool done = ready(e) && (!budget || support_work(e) <= budget);
+    bool done = ready(e);
     if (status) *status = done ? W_OK : W_STUCK;
     return done ? __atomic_load_n(&ENT(e)->value, __ATOMIC_ACQUIRE) : 0;
 }
@@ -583,7 +717,10 @@ uint64_t family_run(Family f, uint64_t a, uint64_t b, WhnfStatus *status) {
     return family_run_budget(f, a, b, 0, status);
 }
 uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, WhnfStatus *status) {
-    return drive(entry_intern(f, a, b), budget, status);
+    return family_run_in(f, a, b, view_current(), budget, status);
+}
+uint64_t family_run_in(Family f, uint64_t a, uint64_t b, uint64_t view, size_t budget, WhnfStatus *status) {
+    return drive(request_key(f, a, b, view), view, budget, status);
 }
 uint64_t family_call(Family f, uint64_t a, uint64_t b) {
     require(!tl_in_job, "synchronous request of %s inside a counted step: the frame must await it", f < F_MAX ? FAM[f].name : "?");
@@ -603,13 +740,13 @@ EvalResult res_get(uint64_t v) {
 }
 
 /* ---------------- the evaluator ----------------
- * WHNF(t, [χ, P]) (χ projected to t's support) is a frame family like every
+ * WHNF(t, χ) (χ projected to t's support) is a frame family like every
  * other: each step does a constant amount of work and awaits its operands
  * from their families (fields, binder application, face tests, projections,
  * constructions) and its sub-observations from the observation family. A
  * branchwise result launches its independent children (one per step) and
  * then awaits each in branch order (§12, §26). */
-uint64_t observe_key(FaceId chi, FaceId phi, uint64_t pins) { require(pins, "an observation is bound to a pin set"); return RQ(chi, phi, pins); }
+uint64_t observe_key(FaceId chi, FaceId phi) { return RQ(chi, phi); }
 
 /* a construction request (construct.c) made by the evaluator: no declared
  * face. The request record is built into a word buffer and interned by the
@@ -630,19 +767,19 @@ Cont *mk_tag_sub(const Cont *k, Tag tag, uint64_t payload, uint64_t levels, size
     WordBuf w; creq_tag(&w, tag, payload, levels, n, ids, formal); return creq_buf(k, &w);
 }
 
-/* observe(x, [χ, φ, P]): no observation on the false face; an invalid
- * occurrence outside x's required face; otherwise WHNF(x, [π_S(x) χ, P]) */
+/* observe(x, [χ, φ]): no observation on the false face; an invalid
+ * occurrence outside x's required face; otherwise WHNF(x, π_S(x) χ) */
 static void obs_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     RefId x = k->w[0];
     FR_BEGIN(k);
-    {   size_t n; const uint64_t *q = rget(k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; k->w[4] = q[2]; }
+    {   size_t n; const uint64_t *q = rget(k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; }
     if (k->w[3]) { FR_AWAIT(k, r, F_FCMEET, k->w[2], k->w[3]); k->w[2] = r; }
     if (fc_is_false(k->w[2])) FR_FINISH(k, res_rec(R_NO_OBSERVATION, x, NULL));
     FR_AWAIT(k, r, F_FCENT, k->w[2], ref_required(x));
     if (r != 2) FR_FINISH(k, res_rec(R_INVALID, 0, "occurrence outside its required face"));
     FR_AWAIT(k, r, F_FCPROJ, k->w[2], ref_support(x));
-    FR_AWAIT(k, r, F_WHNF, x, obs_key(r, k->w[4]));
+    FR_AWAIT(k, r, F_WHNF, x, r);
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -706,7 +843,7 @@ static uint64_t sys_term(uint64_t sys, size_t q) { return rword(sys, 2 * q + 1);
 
 static void whnf_step(Cont *k, uint64_t v) {
     WhLoc *L = FR_LOC(k, WhLoc);
-    RefId t = k->w[0]; FaceId chi = key_face(k->w[1]); PinSet P = key_pins(k->w[1]);
+    RefId t = k->w[0]; FaceId chi = key_face(k->w[1]);
     uint64_t r = 0;
     FR_BEGIN(k);
     if (ref_is_var(t)) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
@@ -714,12 +851,13 @@ static void whnf_step(Cont *k, uint64_t v) {
     if (tag_schema(L->tag)->role == ROLE_INTRO) FR_FINISH(k, res_rec(R_INTRODUCTION, t, NULL));
 
     if (L->tag == T_GLOBAL) {
-        /* a declared symbol without a body is an opaque constant: neutral;
-         * the revision this observation is bound to */
+        /* the symbol's revision read through this frame's view: an opaque
+         * revision is a neutral constant, a body is unfolded at exactly the
+         * revision read */
         FR_AWAIT(k, L->payload, F_HEAD, t, 0);
-        FR_AWAIT(k, r, F_LOOKUP, P, L->payload);
-        if (!r) FR_FINISH(k, res_rec(R_INVALID, 0, "a symbol outside the observation's premises"));
-        L->a1 = subst_value(P, r - 1);
+        FR_AWAIT(k, r, F_READ, L->payload, k->view);
+        if (!r) FR_FINISH(k, res_rec(R_INVALID, 0, "a symbol not declared in the observation's view"));
+        L->a1 = revision_body(r);
         if (!L->a1) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
         FR_AWAIT(k, L->x, F_UNFOLD, t, L->a1);
         goto forward_x;
@@ -756,7 +894,7 @@ static void whnf_step(Cont *k, uint64_t v) {
         }
         /* the scrutinee */
         FR_AWAIT(k, L->x, F_FIELD, t, tag_schema(L->tag)->scrut);
-        FR_AWAIT(k, L->res, F_OBS, L->x, observe_key(chi, 0, P));
+        FR_AWAIT(k, L->res, F_OBS, L->x, observe_key(chi, 0));
         if (RES(L->res).cls == R_NO_OBSERVATION || RES(L->res).cls == R_INVALID) FR_FINISH(k, L->res);
         if (RES(L->res).cls == R_NEUTRAL) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
         if (RES(L->res).cls == R_SYSTEM) {
@@ -816,7 +954,7 @@ static void whnf_step(Cont *k, uint64_t v) {
         if (r == 2) { FR_AWAIT(k, L->x, F_BINDER, t, binder_req(S_DIM, 0, 2, iv_one())); goto forward_x; }   /* tube coverage first */
         L->j = binder_dim_var(t, 0);
         FR_AWAIT(k, L->fam, F_BINDER, t, binder_req(S_DIM, 0, 0, iv_var(L->j)));
-        FR_AWAIT(k, L->res, F_OBS, L->fam, observe_key(chi, 0, P));
+        FR_AWAIT(k, L->res, F_OBS, L->fam, observe_key(chi, 0));
         if (RES(L->res).cls == R_NO_OBSERVATION || RES(L->res).cls == R_INVALID) FR_FINISH(k, L->res);
         if (RES(L->res).cls == R_NEUTRAL) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
         if (RES(L->res).cls == R_SYSTEM) {
@@ -851,7 +989,7 @@ static void whnf_step(Cont *k, uint64_t v) {
     die("whnf: unhandled head tag %d", (int)L->tag);
 
 forward_x:
-    FR_AWAIT(k, r, F_OBS, L->x, observe_key(chi, 0, P));
+    FR_AWAIT(k, r, F_OBS, L->x, observe_key(chi, 0));
     FR_FINISH(k, r);
 
 branchwise:
@@ -864,10 +1002,10 @@ branchwise:
         FR_CALL(k, r, creq_buf(k, &L->wb));
         FR_FINISH(k, res_rec(R_SYSTEM, r, NULL));
     }
-    for (L->q = 0; L->q < L->kept; L->q++) { family_launch(F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q), P)); FR_YIELD(k); }
+    for (L->q = 0; L->q < L->kept; L->q++) { family_launch(F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q))); FR_YIELD(k); }
     L->nfs = 0; L->fail = 0;
     for (L->q = 0; L->q < L->kept; L->q++) {
-        FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q), P));
+        FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q)));
         if (!L->fail && RES(L->res).cls == R_INVALID) L->fail = L->res;
         if (!L->fail && RES(L->res).cls == R_NO_OBSERVATION) L->fail = res_rec(R_INVALID, 0, "branch under an inconsistent guard");
         L->nfs += RES(L->res).cls == R_SYSTEM ? RES(L->res).nbr : 1;
@@ -875,14 +1013,14 @@ branchwise:
     if (L->fail) FR_FINISH(k, L->fail);
     /* the conjoined guards of nested branches: launched, then awaited */
     for (L->q = 0; L->q < L->kept; L->q++) {
-        FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q), P));
+        FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q)));
         if (RES(L->res).cls != R_SYSTEM) continue;
         for (L->a = 0; L->a < RES(L->res).nbr; L->a++) { family_launch(F_FCMEET, sys_face(L->sys, L->q), RES(L->res).br[2 * L->a]); FR_YIELD(k); }
     }
     creq_system_begin(&L->wb, L->nfs);
     wordbuf_init(&L->wc); wordbuf_push(&L->wc, R_SYSTEM);
     for (L->q = 0; L->q < L->kept; L->q++) {
-        FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q), P));
+        FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q)));
         if (RES(L->res).cls != R_SYSTEM) {
             creq_system_branch(&L->wb, sys_face(L->sys, L->q), RES(L->res).ref);
             wordbuf_push(&L->wc, sys_face(L->sys, L->q)); wordbuf_push(&L->wc, RES(L->res).ref);
@@ -912,10 +1050,9 @@ static void evaluator_init(void) {
 }
 /* comp.clause is defined by the library after the evaluator */
 
-EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status) { return whnf_pinned(t, chi, 0, status); }
-EvalResult whnf_pinned(RefId t, FaceId chi, PinSet P, WhnfStatus *status) {
-    if (!P) P = pins_current(1, &t);
-    WhnfStatus st; uint64_t v = family_run(F_OBS, t, observe_key(chi, 0, P), &st);
+EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status) { return whnf_in(t, chi, view_current(), status); }
+EvalResult whnf_in(RefId t, FaceId chi, uint64_t view, WhnfStatus *status) {
+    WhnfStatus st; uint64_t v = family_run_in(F_OBS, t, observe_key(chi, 0), view, 0, &st);
     EvalResult out; memset(&out, 0, sizeof out);
     if (st != W_OK) { if (status) *status = W_STUCK; return out; }
     out = res_get(v);

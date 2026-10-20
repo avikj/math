@@ -291,7 +291,7 @@ static void unfold_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
     FR_BEGIN(k);
-    require(k->w[1] != 0, "unfold of a global at its opaque revision");   /* w[1]: the pinned body */
+    require(k->w[1] != 0, "unfold of a global at its opaque revision");   /* w[1]: the body of the revision read */
     require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL && tview_is_construction(t), "unfold of a non-global");
     {   SymbolId s = (SymbolId)tnode_const_payload(ref_tnode(t)); FR_AWAIT(k, r, F_PHI, global_params(s), global_dims(s)); }
     FR_AWAIT(k, r, F_TREF, k->w[1], close_key(r));
@@ -302,8 +302,8 @@ static void unfold_step(Cont *k, uint64_t v) {
 
 /* globals.of(x, kind): the global symbols a reference (kind 0) or a scope
  * (kind 1) names directly — through its field constants, its environment
- * values and, for a global reference, its own symbol. Bodies are not entered (that is the closure of an
- * observation's premises, pins.c). A set of symbol ids (a varset). */
+ * values and, for a global reference, its own symbol. Bodies are not entered
+ * (the proof-use audit does that). A set of symbol ids (a varset). */
 typedef struct { size_t n, q, nf; uint64_t acc, f, a, b, r; } GlLoc;
 /* the demand for item q of x (kind w[1]): a family key, or none (f = 0) */
 static void gl_item(const Cont *k, size_t q, size_t nf, uint64_t *f, uint64_t *a, uint64_t *b) {

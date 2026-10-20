@@ -226,11 +226,20 @@ CtxDecl context_decl(ContextId ctx, size_t k);
  * is an opaque constant of the signature */
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type);
 RefId global_type(SymbolId s);
-RefId global_body(SymbolId s);          /* 0 when opaque */
 VarSetId global_params(SymbolId s);
 DimSetId global_dims(SymbolId s);
 size_t global_count(void);
-bool set_global_body(SymbolId s, RefId body);   /* false: the environment is frozen (admitted); open a new one first */
+bool set_global_body(SymbolId s, RefId body);   /* once per symbol */
+/* Revisions and binding views. A revision is the immutable record (s, body),
+ * body 0 for the opaque declaration. A binding view is an immutable total
+ * map symbol ↦ revision (a substitution record); a declaration or a body
+ * replaces the machine's current view by one persistent set, so a view held
+ * by a pending computation stays readable. Every read of a revision in a
+ * computation goes through the family view.read (eval.c). */
+uint64_t revision(SymbolId s, RefId body);
+SymbolId revision_symbol(uint64_t rev);
+RefId revision_body(uint64_t rev);
+uint64_t view_current(void);
 RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the definition's own parameters */
 
 /* ---- constructors (constructions at their own boundary) ---- */

@@ -15,7 +15,7 @@
  *                witness, witness type, ncap, cap*]
  *               inputs are heads or ports (semantic order: R's argument order);
  *               the witness type is R applied to the input states, then the outputs
- *   occurrence  [OCCURRENCE, request id, proposal]
+ *   occurrence  [OCCURRENCE, request id, proposal, evidence]   evidence: the admitted proof-use judgment
  *
  * EFFECT(rid, P) is one producer per (rid, P): repeated identical requests
  * join it and receive one receipt; a request id claimed by another proposal
@@ -59,10 +59,18 @@ size_t effect_open_ports(uint64_t *out, size_t max);         /* unconsumed ports
 /* receipts */
 bool receipt_accepted(uint64_t occurrence);
 uint64_t receipt_proposal(uint64_t occurrence);
-uint64_t receipt_view(uint64_t occurrence, MapId sigma);     /* 0: rejected (σ moves its anchored boundary) */
+/* the admitted proof-use judgment the occurrence was accepted with
+ * (judge.admit AD_PROOF: its revisions, assumptions and classification) */
+uint64_t receipt_evidence(uint64_t occurrence);
+/* the receipt of an accepted occurrence described through σ: every boundary
+ * state σ moves needs its checked transport in eta (a total substitution
+ * record i ↦ η_i : Path S s_i s_i[σ], or 0 for none); 0: rejected. The view
+ * names the same occurrence. */
+uint64_t receipt_view(uint64_t occurrence, MapId sigma, uint64_t eta);
 uint64_t receipt_view_occurrence(uint64_t view);
 
-/* Church naturals read exactly (host natural of the normal form) */
+/* the word projection of a Church numeral's normal form: false when it is
+ * not a numeral or does not fit the word (never a wrapped value) */
 bool church_value(RefId n, uint64_t *out);
 
 void effect_families_init(void);

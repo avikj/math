@@ -18,9 +18,10 @@
  * identities are minted from an immutable comparison-request record in a
  * distinct owner namespace and applied to both sides.
  *
- * Every judgment is a family keyed by its request and pin set (the
- * revisions of the symbols its inputs reach); a host call drives one root,
- * and its weak-head observations are the ordinary observation producers.
+ * Every judgment is a family keyed by its request (judgments that observe
+ * are resolved under the caller's binding view, eval.h); a public call
+ * drives one root of judge.admit, and its weak-head observations are the
+ * ordinary observation producers.
  */
 #ifndef CUBICAL_CHECK_H
 #define CUBICAL_CHECK_H
@@ -55,6 +56,14 @@ EvalResult observe_checked(ContextId G, RefId t, WhnfStatus *status, const char 
 /* validate every declared symbol with a body against its declared type (an
  * explicit request; no other judgment waits for it) */
 CheckStatus check_signature(const char **reason);
+/* judge.admit kinds: (G, χ, x, y, z) — CTX (G, χ); MAP (Δ, ψ, σ, Γ, χ) as
+ * (G, χ, x, y, z); INFER x; ISTYPE x; CHECK x : y; CONVT x ≡ y; CONVt
+ * x ≡ y : z; OBS x observed after its inference; PROOF x : y with the audit;
+ * BODY the revision x. The root's result record [code, reason, a, b,
+ * revisions, aux] (0 when the root did not complete). */
+enum { AD_CTX = 1, AD_MAP, AD_INFER, AD_ISTYPE, AD_CHECK, AD_CONVT, AD_CONVt, AD_OBS, AD_PROOF, AD_BODY };
+uint64_t check_admit(uint64_t kind, uint64_t G, FaceId chi, uint64_t x, uint64_t y, uint64_t z);
+void check_families_init(void);
 const char *check_status_name(CheckStatus s);
 const char *conv_status_name(ConvStatus s);
 

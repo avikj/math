@@ -3,7 +3,9 @@
  * A count is a word-sized low digit and a persistent sequence of carry
  * blocks,  value(l, B) = l + 2^64 · length(B).  One writer updates it in
  * bounded work: an increment that does not overflow changes l; an overflow
- * installs one carry block and resets l. A reader takes a consistent
+ * installs one carry block and resets l. A carry block is one fixed-size host
+ * allocation per 2^64 events: the declared resource boundary of a count (a
+ * host action, like a pool block), not a counted transition. A reader takes a consistent
  * snapshot (the low digit with its carry prefix) and adds it exactly into a
  * natural number of 64-bit limbs; a word conversion reports out-of-range
  * rather than wrapping.

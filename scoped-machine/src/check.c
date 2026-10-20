@@ -1,16 +1,18 @@
-/* check.c — the public checking API over the judgment families (judge.c).
+/* check.c — the public checking API: one composite judgment, judge.admit.
  *
- * A top-level request is an outside client: it pins the closure of the
- * symbols its inputs name at the revisions current when it starts (pins.h),
- * drives one judgment root over the clauses of its face (judge.every), and
- * then the body judgments of the symbols in its pin set (its dependency
- * closure; never the whole environment). A root that does not complete — a
- * judgment depending on itself, or an exhausted budget — is UNRESOLVED; its
- * work stays with the machine and is shared by later requests.
+ * judge.admit(kind, G, χ, x, y, z) is the complete judgment a client asks
+ * for: its own derivation (context, scope, typing, conversion, map or
+ * checked observation, by kind) and, as premises, the validity of the body
+ * of every revision that derivation read (view.reads), closed under the
+ * reads of those body judgments themselves. Its result names the validated
+ * revisions. A public call decodes one root of it; every internal client
+ * (proof use, effect preparation) requests the same family. A root that does
+ * not complete (a cyclic or suspended dependency, or the budget) is
+ * UNRESOLVED; its work stays with the machine and is shared by later
+ * requests. Result record [code, reason, a, b, revisions, aux].
  */
 #include "check.h"
 #include "judge.h"
-#include "pins.h"
 #include "scope.h"
 #include "template.h"
 
@@ -24,139 +26,146 @@ const char *check_status_name(CheckStatus s) { return s == CK_VALID ? "VALID" : 
 const char *conv_status_name(ConvStatus s) { return s == CV_EQUAL ? "EQUAL" : s == CV_UNEQUAL ? "UNEQUAL" : "UNRESOLVED"; }
 
 static const char *R_STUCK = "unresolved: the judgment did not complete (a cyclic or suspended dependency, or the budget)";
+enum { J_OK = 1, J_BAD = 2, J_UNR = 3 };
 
-/* one root of a judgment family: its result record, or 0 when it did not complete */
-static uint64_t run(Family f, size_t n, const uint64_t *w) {
+/* ---------------- judge.admit ---------------- */
+typedef struct {
+    uint64_t res, d, revs, done, fresh, x, r, aux, code, why, main[4];
+    size_t nm, i, n; bool grew, conv;
+} AdLoc;
+#define AJAW(var, fam, a, b) do { L->main[L->nm++] = frame_request_key(k, (fam), (a), (b)); } while (0); FR_AWAIT(k, var, fam, a, b)
+static void admit_step(Cont *k, uint64_t v) {
+    AdLoc *L = FR_LOC(k, AdLoc);
+    size_t nq; const uint64_t *q = rget(k->w[0], &nq);
+    uint64_t kind = q[0], G = q[1], chi = q[2], x = q[3], y = q[4], z = q[5], r = 0;
+    FR_BEGIN(k);
+    L->conv = kind == AD_CONVT || kind == AD_CONVt;
+    /* the derivation */
+    if (kind == AD_CTX || kind == AD_OBS || kind == AD_PROOF) {
+        AJAW(L->d, J_CTX, RQ(G, chi), 0);
+        if (jr_code(L->d) != J_OK) goto premises;
+    }
+    if (kind == AD_MAP) { AJAW(L->d, J_MAP, RQ(G, chi, x, y, z), 0); goto premises; }
+    if (kind == AD_BODY) { AJAW(L->d, J_BODY, RQ(x), 0); goto premises; }
+    if (kind == AD_CTX) goto premises;
+    FR_AWAIT(k, L->d, J_SCOPE, RQ(G, chi, x), 0);
+    if (jr_code(L->d) != J_OK) goto premises;
+    if (y && kind != AD_OBS && kind != AD_INFER) { FR_AWAIT(k, L->d, J_SCOPE, RQ(G, chi, y), 0); if (jr_code(L->d) != J_OK) goto premises; }
+    if (z) { FR_AWAIT(k, L->d, J_SCOPE, RQ(G, chi, z), 0); if (jr_code(L->d) != J_OK) goto premises; }
+    if (kind == AD_INFER || kind == AD_OBS) { AJAW(L->d, J_JOINT, RQ(chi, J_INFER, x), 0); }
+    else if (kind == AD_ISTYPE) { AJAW(L->d, J_EVERY, RQ(chi, J_LEVEL, x), 0); }
+    else if (kind == AD_CHECK) { AJAW(L->d, J_EVERY, RQ(chi, J_CHECK, x, y), 0); }
+    else if (kind == AD_CONVT) { AJAW(L->d, J_EVERY, RQ(chi, J_CONVT, x, y), 0); }
+    else if (kind == AD_CONVt) { AJAW(L->d, J_EVERY, RQ(chi, J_CONVt, x, y, z), 0); }
+    else if (kind == AD_PROOF) {
+        AJAW(L->d, J_EVERY, RQ(chi, J_LEVEL, y), 0);
+        if (jr_code(L->d) != J_OK) goto premises;
+        AJAW(L->d, J_EVERY, RQ(chi, J_CHECK, x, y), 0);
+    }
+    if (jr_code(L->d) != J_OK) goto premises;
+    if (kind == AD_OBS) { AJAW(L->aux, F_OBS, x, observe_key(chi, 0)); }
+    if (kind == AD_PROOF && !fc_is_false(chi)) { AJAW(L->aux, F_CLOSURE, RQ(G, x, y), 0); }   /* the conservative audit's revisions */
+premises:
+    /* the revisions the derivation read (and the audit reached), each
+     * body validated, closed under the reads of those body judgments */
+    L->revs = set_make(NULL, 0); L->done = set_make(NULL, 0);
+    for (L->i = 0; L->i < L->nm; L->i++) {
+        FR_AWAIT(k, r, F_READS, L->main[L->i], 0);
+        FR_AWAIT(k, L->revs, F_SUNION, L->revs, r);
+    }
+    if (kind == AD_PROOF && L->aux) {
+        for (L->i = 0; L->i < subst_size(L->aux); L->i++) {
+            {   uint64_t s; TVal rv; subst_get(L->aux, L->i, &s, &rv); r = rv.id; }
+            FR_AWAIT(k, L->revs, F_SUNION, L->revs, set_make(&r, 1));
+        }
+    }
+    L->res = 0;
+    do {
+        L->grew = false; L->fresh = set_make(NULL, 0);
+        for (L->i = 0; L->i < (set_get(L->revs, &L->n), L->n); L->i++) {
+            {   size_t n; L->x = set_get(L->revs, &n)[L->i]; }
+            FR_AWAIT(k, r, F_SCONTAINS, L->done, L->x);
+            if (r == 2) continue;                                    /* set.contains: 2 member, 1 not */
+            FR_AWAIT(k, L->r, J_BODY, RQ(L->x), 0);
+            if (jr_code(L->r) != J_OK && !L->res) L->res = L->r;
+            FR_AWAIT(k, L->done, F_SUNION, L->done, set_make(&L->x, 1));
+            FR_AWAIT(k, r, F_READS, frame_request_key(k, J_BODY, RQ(L->x), 0), 0);
+            FR_AWAIT(k, L->fresh, F_SUNION, L->fresh, r);
+        }
+        FR_AWAIT(k, r, F_SUNION, L->revs, L->fresh);
+        if (r != L->revs) { L->revs = r; L->grew = true; }
+    } while (L->grew);
+    L->code = jr_code(L->d); L->why = (uint64_t)(uintptr_t)jr_why(L->d);
+    if (L->code == J_OK && L->res) { L->code = L->conv ? J_UNR : jr_code(L->res); L->why = (uint64_t)(uintptr_t)jr_why(L->res); }
+    if (kind == AD_PROOF && L->code == J_OK && L->aux) FR_AWAIT(k, L->aux, F_SCC, L->aux, 0);
+    FR_FINISH(k, RQ(L->code, L->why, jr_a(L->d), jr_b(L->d), L->revs, L->aux));
+    FR_END(k);
+}
+void check_families_init(void) { family_define(J_ADMIT, "judge.admit", admit_step, sizeof(AdLoc)); }
+
+/* one root of judge.admit: its result record, or 0 when it did not complete */
+static uint64_t admit(uint64_t kind, uint64_t G, FaceId chi, uint64_t x, uint64_t y, uint64_t z) {
     WhnfStatus st;
-    uint64_t v = family_run_budget(f, judge_request(n, w), 0, __atomic_load_n(&budget, __ATOMIC_ACQUIRE), &st);
+    uint64_t v = family_run_budget(J_ADMIT, RQ(kind, G, chi, x, y, z), 0, check_budget(), &st);
     return st == W_OK ? v : 0;
 }
+uint64_t check_admit(uint64_t kind, uint64_t G, FaceId chi, uint64_t x, uint64_t y, uint64_t z) { return admit(kind, G, chi, x, y, z); }
 static CheckStatus ck(uint64_t res, const char **reason) {
     if (!res) { *reason = R_STUCK; return CK_UNRESOLVED; }
-    uint64_t c = jr_code(res);
-    if (c == 1) return CK_VALID;
-    *reason = jr_why(res) ? jr_why(res) : (c == 2 ? "invalid" : "unresolved");
-    return c == 2 ? CK_INVALID : CK_UNRESOLVED;
+    uint64_t c = rword(res, 0); const char *why = (const char *)(uintptr_t)rword(res, 1);
+    if (c == J_OK) return CK_VALID;
+    *reason = why ? why : (c == J_BAD ? "invalid" : "unresolved");
+    return c == J_BAD ? CK_INVALID : CK_UNRESOLVED;
 }
-static ConvStatus cv(uint64_t res) { if (!res) return CV_UNRESOLVED; uint64_t c = jr_code(res); return c == 1 ? CV_EQUAL : c == 2 ? CV_UNEQUAL : CV_UNRESOLVED; }
-
-/* the request's pins: the closure of the symbols its inputs name */
-typedef struct { RefId *r; size_t n, cap; } Roots;
-static void pr_ref(Roots *R, RefId t) { if (!t) return; if (R->n == R->cap) { R->cap = R->cap ? 2 * R->cap : 16; R->r = realloc(R->r, R->cap * sizeof(RefId)); require(R->r, "out of memory"); } R->r[R->n++] = t; }
-static void pr_ctx(Roots *R, ContextId c) { size_t n = context_size(c); for (size_t k = 0; k < n; k++) { CtxDecl d = context_decl(c, k); if (d.sort == S_TERM) pr_ref(R, term_var_type(d.id)); } }
-static PinSet pins_of(Roots *R) { PinSet P = pins_current(R->n, R->r); free(R->r); R->r = NULL; return P; }
-
-/* the request's dependency closure: every symbol in P declares and checks */
-static CheckStatus premises(PinSet P, const char **reason) {
-    CheckStatus st = CK_VALID;
-    for (size_t q = 0; q < subst_size(P) && st == CK_VALID; q++) { uint64_t s; TVal b; subst_get(P, q, &s, &b); uint64_t w[2] = { s, P }; st = ck(run(J_BODY, 2, w), reason); }
-    return st;
-}
-
-/* scope: the face's dimensions, the reference's finite structure, its free
- * identities in the context */
-static CheckStatus scope_ok(uint64_t G, FaceId chi, RefId t, const char **reason) { uint64_t q[3] = { G, chi, t }; return ck(run(J_SCOPE, 3, q), reason); }
+static ConvStatus cv(uint64_t res) { if (!res) return CV_UNRESOLVED; uint64_t c = rword(res, 0); return c == J_OK ? CV_EQUAL : c == J_BAD ? CV_UNEQUAL : CV_UNRESOLVED; }
 
 /* structural validity is the judgment family judge.structure */
-bool scope_validate(ScopeId S, const char **reason) { uint64_t q[3] = { 1, S, 0 }; return ck(run(J_RV, 3, q), reason) == CK_VALID; }
-
-CheckStatus check_context(ContextId F, const char **reason) {
-    Roots R = { 0 }; pr_ctx(&R, F); PinSet P = pins_of(&R);
-    uint64_t G = context_judgment(F); CheckStatus st = CK_VALID;
-    if (st == CK_VALID) { uint64_t w[3] = { G, context_assumption(F), P }; st = ck(run(J_CTX, 3, w), reason); }
-    if (st == CK_VALID) st = premises(P, reason);
-    return st;
+bool scope_validate(ScopeId S, const char **reason) {
+    WhnfStatus st; uint64_t v = family_run_budget(J_RV, judge_request(3, (uint64_t[]){ 1, S, 0 }), 0, check_budget(), &st);
+    if (st != W_OK) { *reason = R_STUCK; return false; }
+    if (jr_code(v) != J_OK) { *reason = jr_why(v); return false; }
+    return true;
 }
 
+CheckStatus check_context(ContextId F, const char **reason) { return ck(admit(AD_CTX, context_judgment(F), context_assumption(F), 0, 0, 0), reason); }
 CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma, FaceId chi, const char **reason) {
-    Roots R = { 0 }; pr_ctx(&R, Delta); pr_ctx(&R, Gamma);
-    for (size_t q = 0; q < subst_size(sigma); q++) { uint64_t x; TVal im; subst_get(sigma, q, &x, &im); if (im.sort == PS_REF) pr_ref(&R, im.id); }
-    PinSet P = pins_of(&R);
-    uint64_t D = context_judgment(Delta), G = context_judgment(Gamma); CheckStatus st = CK_VALID;
-    if (st == CK_VALID) { uint64_t w[6] = { D, psi, sigma, G, chi, P }; st = ck(run(J_MAP, 6, w), reason); }
-    if (st == CK_VALID) st = premises(P, reason);
-    return st;
-}
-
-static Inference infer_pinned(ContextId F, FaceId chi, RefId t, PinSet P) {
-    Inference out = { CK_VALID, 0, NULL };
-    uint64_t G = context_judgment(F);
-    out.st = scope_ok(G, chi, t, &out.reason);
-    if (out.st != CK_VALID) return out;
-    uint64_t w[4] = { chi, J_INFER, t, P }; uint64_t res = run(J_JOINT, 4, w);
-    out.st = ck(res, &out.reason);
-    if (out.st == CK_VALID) out.type = jr_a(res);
-    return out;
+    return ck(admit(AD_MAP, context_judgment(Delta), psi, sigma, context_judgment(Gamma), chi), reason);
 }
 Inference infer(ContextId F, FaceId chi, RefId t) {
-    Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); PinSet P = pins_of(&R);
-    Inference out = infer_pinned(F, chi, t, P);
-    if (out.st == CK_VALID) { out.st = premises(P, &out.reason); if (out.st != CK_VALID) out.type = 0; }
+    Inference out = { CK_VALID, 0, NULL };
+    uint64_t res = admit(AD_INFER, context_judgment(F), chi, t, 0, 0);
+    out.st = ck(res, &out.reason);
+    if (out.st == CK_VALID) out.type = rword(res, 2);
     return out;
 }
-
 CheckStatus check_is_type(ContextId F, FaceId chi, RefId A, uint64_t *level, const char **reason) {
-    Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, A); PinSet P = pins_of(&R);
-    uint64_t G = context_judgment(F); CheckStatus st = CK_VALID;
-    if (st == CK_VALID) st = scope_ok(G, chi, A, reason);
-    uint64_t lvl = 0;
-    if (st == CK_VALID) {
-        uint64_t w[4] = { chi, J_LEVEL, A, P }; uint64_t res = run(J_EVERY, 4, w);
-        st = ck(res, reason);
-        if (st == CK_VALID && !jr_b(res)) { *reason = "type lives in different universes under different clauses"; st = CK_INVALID; }
-        if (st == CK_VALID) lvl = jr_a(res);
-    }
-    if (st == CK_VALID) st = premises(P, reason);
-    if (st == CK_VALID && level) *level = lvl;
+    uint64_t res = admit(AD_ISTYPE, context_judgment(F), chi, A, 0, 0);
+    CheckStatus st = ck(res, reason);
+    if (st == CK_VALID && !rword(res, 3)) { *reason = "type lives in different universes under different clauses"; st = CK_INVALID; }
+    if (st == CK_VALID && level) *level = rword(res, 2);
     return st;
 }
+CheckStatus check(ContextId F, FaceId chi, RefId t, RefId A, const char **reason) { return ck(admit(AD_CHECK, context_judgment(F), chi, t, A, 0), reason); }
+ConvStatus convert_type(ContextId F, FaceId chi, RefId A, RefId B) { return cv(admit(AD_CONVT, context_judgment(F), chi, A, B, 0)); }
+ConvStatus convert_term(ContextId F, FaceId chi, RefId t, RefId u, RefId A) { return cv(admit(AD_CONVt, context_judgment(F), chi, t, u, A)); }
 
-CheckStatus check(ContextId F, FaceId chi, RefId t, RefId A, const char **reason) {
-    Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); pr_ref(&R, A); PinSet P = pins_of(&R);
-    uint64_t G = context_judgment(F); CheckStatus st = CK_VALID;
-    if (st == CK_VALID) st = scope_ok(G, chi, t, reason);
-    if (st == CK_VALID) st = scope_ok(G, chi, A, reason);
-    if (st == CK_VALID) { uint64_t w[5] = { chi, J_CHECK, t, A, P }; st = ck(run(J_EVERY, 5, w), reason); }
-    if (st == CK_VALID) st = premises(P, reason);
-    return st;
-}
-
-static ConvStatus convert(ContextId F, FaceId chi, RefId t, RefId u, RefId A, bool types) {
-    Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); pr_ref(&R, u); pr_ref(&R, A); PinSet P = pins_of(&R);
-    const char *why; uint64_t G = context_judgment(F);
-    if (scope_ok(G, chi, t, &why) != CK_VALID || scope_ok(G, chi, u, &why) != CK_VALID || (A && scope_ok(G, chi, A, &why) != CK_VALID)) return CV_UNRESOLVED;
-    uint64_t res;
-    if (types) { uint64_t w[5] = { chi, J_CONVT, t, u, P }; res = run(J_EVERY, 5, w); }
-    else { uint64_t w[6] = { chi, J_CONVt, t, u, A, P }; res = run(J_EVERY, 6, w); }
-    ConvStatus out = cv(res);
-    if (out == CV_EQUAL && premises(P, &why) != CK_VALID) out = CV_UNRESOLVED;
-    return out;
-}
-ConvStatus convert_type(ContextId G, FaceId chi, RefId A, RefId B) { return convert(G, chi, A, B, 0, true); }
-ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A) { return convert(G, chi, t, u, A, false); }
-
-/* checked observation: the context, the occurrence's inference and the
- * dependency closure validate the pinned revisions, and the observation
- * reads exactly those */
+/* checked observation: the context, the occurrence's inference and its
+ * observation, with the bodies all three read validated */
 EvalResult observe_checked(ContextId F, RefId t, WhnfStatus *status, const char **reason) {
-    Roots R = { 0 }; pr_ctx(&R, F); pr_ref(&R, t); PinSet P = pins_of(&R);
-    uint64_t G = context_judgment(F); CheckStatus st = CK_VALID;
-    if (st == CK_VALID) { uint64_t w[3] = { G, context_assumption(F), P }; st = ck(run(J_CTX, 3, w), reason); }
-    if (st == CK_VALID) { Inference I = infer_pinned(F, context_assumption(F), t, P); st = I.st; if (st != CK_VALID) *reason = I.reason; }
-    if (st == CK_VALID) st = premises(P, reason);
+    uint64_t res = admit(AD_OBS, context_judgment(F), context_assumption(F), t, 0, 0);
+    CheckStatus st = ck(res, reason);
     EvalResult none; memset(&none, 0, sizeof none);
     if (st == CK_INVALID) { if (status) *status = W_INVALID; return none; }
     if (st == CK_UNRESOLVED) { if (status) *status = W_STUCK; return none; }
-    return whnf_pinned(t, context_assumption(F), P, status);
+    EvalResult out = res_get(rword(res, 5));
+    if (status) *status = out.cls == R_NO_OBSERVATION ? W_NO_OBSERVATION : out.cls == R_INVALID ? W_INVALID : W_OK;
+    return out;
 }
 
-/* an explicit request for every declared symbol (not a gate: no judgment
- * waits for it) */
+/* an explicit request for the body of every declared symbol at its current
+ * revision (not a gate: no judgment waits for it) */
 CheckStatus check_signature(const char **reason) {
-    size_t n = global_count();
-    Roots R = { 0 }; for (SymbolId s = 1; s <= n; s++) pr_ref(&R, global_ref(s));
-    PinSet P = pins_of(&R);
-    CheckStatus st = CK_VALID;
-    for (SymbolId s = 1; s <= n && st == CK_VALID; s++) { uint64_t w[2] = { s, P }; st = ck(run(J_BODY, 2, w), reason); }
+    uint64_t V = view_current(); CheckStatus st = CK_VALID;
+    for (size_t q = 0; q < subst_size(V) && st == CK_VALID; q++) { uint64_t s; TVal rv; subst_get(V, q, &s, &rv); st = ck(admit(AD_BODY, 0, 0, rv.id, 0, 0), reason); }
     return st;
 }

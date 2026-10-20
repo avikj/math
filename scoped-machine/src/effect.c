@@ -1,7 +1,7 @@
 /* effect.c — witnessed effects, authority and ports (effect.h). */
 #include "effect.h"
 #include "judge.h"
-#include "pins.h"
+#include "check.h"
 #include "proof.h"
 #include "chain.h"
 #include "lib.h"
@@ -106,50 +106,51 @@ uint64_t outcome_occurrence(uint64_t out) { size_t n; const uint64_t *w = rget(o
 const char *outcome_reason(uint64_t out) { size_t n; const uint64_t *w = rget(out, &n); return w[1] == OUT_INVALID ? (const char *)(uintptr_t)w[2] : ""; }
 
 
-/* ---------------- PREPARE(P) ---------------- */
-typedef struct { size_t i, j, c, cnt; uint64_t P, t, r, need, issuer, ok; Prop p, ip; const char *bad; WordBuf wb; bool created; } PrLoc;
-static uint64_t prep_res(int ok, const char *why) { return RQ(T_PREP, (uint64_t)ok, (uint64_t)(uintptr_t)why); }
+/* ---------------- PREPARE(P) ----------------
+ * The mathematical premises are judge.admit requests (check.c), the same
+ * judgments the public interface decodes: the state type at its declared
+ * level, every state at it, and the witness's proof use at the schema's edge
+ * type (typing, the bodies of the revisions read and audited validated, the
+ * proof-use classification). Its result retains that proof-use judgment. */
+typedef struct { size_t i, j, c, cnt, n; uint64_t t, r, need, issuer, ok, ev, G, fv; Prop p, ip; const char *bad; } PrLoc;
+static uint64_t prep_res(int ok, const char *why, uint64_t ev) { return RQ(T_PREP, (uint64_t)ok, (uint64_t)(uintptr_t)why, ev); }
 static uint64_t state_at(const Prop *p, size_t i) { return i < p->nin ? value_of(p->in[i]) : p->out[3 * (i - p->nin) + 2]; }
+static int admit_code(uint64_t r) { return rword(r, 0) == 1 ? 1 : rword(r, 0) == 3 ? 3 : 2; }
 static void prep_step(Cont *k, uint64_t v) {
     PrLoc *L = FR_LOC(k, PrLoc);
     uint64_t r = 0;
     FR_BEGIN(k);
     L->p = prop_of(k->w[0]);
-    /* the premises: the closure of the schema, the states and the witness at
-     * the snapshot this key names (w[1]) */
-    {   size_t n; const uint64_t *sc = rget(L->p.schema, &n); require(sc[0] == T_SCHEMA, "a proposal without a schema");
-        wordbuf_init(&L->wb);
-        wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, sc[1]); wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, sc[3]); }
-    for (L->i = 0; L->i < L->p.nin + L->p.nout; L->i++) { wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, state_at(&L->p, L->i)); FR_YIELD(k); }
-    wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, L->p.witness); wordbuf_push(&L->wb, 0); wordbuf_push(&L->wb, L->p.wtype);
-    FR_CALL(k, L->r, intern_sub(k, &M.keys, &L->wb, &L->created));
-    FR_AWAIT(k, L->P, F_CLOSURE, L->r, k->w[1]);
+    require(rword(L->p.schema, 0) == T_SCHEMA, "a proposal without a schema");
+    /* its typed boundary: the free variables of the schema, the states and
+     * the witness, a context in declaration order (one per step) */
+    L->fv = ref_freevars(rword(L->p.schema, 1));
+    FR_AWAIT(k, L->fv, F_SUNION, L->fv, ref_freevars(rword(L->p.schema, 3)));
+    for (L->i = 0; L->i < L->p.nin + L->p.nout; L->i++) FR_AWAIT(k, L->fv, F_SUNION, L->fv, ref_freevars(state_at(&L->p, L->i)));
+    FR_AWAIT(k, L->fv, F_SUNION, L->fv, ref_freevars(L->p.witness));
+    L->G = jc_empty();
+    for (L->i = 0; L->i < (set_get(L->fv, &L->n), L->n); L->i++) { size_t n; FR_AWAIT(k, L->G, J_EXT, L->G, subst_entry(set_get(L->fv, &n)[L->i], S_TERM, 0)); }
     /* the state type at its declared level, exactly */
     {   size_t n; const uint64_t *sc = rget(L->p.schema, &n); L->t = sc[1]; L->r = sc[2]; }
-    FR_AWAIT(k, r, J_LEVEL, RQ(fc_true(), L->t, L->P), 0);
-    if (jr_code(r) != 1) FR_FINISH(k, prep_res(jr_code(r) == 3 ? 3 : 2, "the state type is not a type"));
-    if (jr_a(r) != L->r) FR_FINISH(k, prep_res(2, "the state type is not at its declared level"));
+    FR_AWAIT(k, r, J_ADMIT, RQ(AD_ISTYPE, L->G, fc_true(), L->t, 0, 0), 0);
+    if (admit_code(r) != 1) FR_FINISH(k, prep_res(admit_code(r), "the state type is not a type", 0));
+    if (rword(r, 2) != L->r) FR_FINISH(k, prep_res(2, "the state type is not at its declared level", 0));
     /* every input and output state at the state type */
     for (L->i = 0; L->i < L->p.nin + L->p.nout; L->i++) {
-        FR_AWAIT(k, r, J_CHECK, RQ(fc_true(), state_at(&L->p, L->i), L->t, L->P), 0);
-        if (jr_code(r) != 1) FR_FINISH(k, prep_res(jr_code(r) == 3 ? 3 : 2, "a state is not of the state type"));
+        FR_AWAIT(k, r, J_ADMIT, RQ(AD_CHECK, L->G, fc_true(), state_at(&L->p, L->i), L->t, 0), 0);
+        if (admit_code(r) != 1) FR_FINISH(k, prep_res(admit_code(r), "a state is not of the state type", 0));
     }
     /* the witness type is R at the states, built here through the construction family */
     {   L->t = rword(L->p.schema, 3); }
     for (L->i = 0; L->i < L->p.nin + L->p.nout; L->i++) {
         FR_CALL(k, L->t, MK_SUB(k, T_APP, 0, LEVELS_NONE, 0, L->t, state_at(&L->p, L->i)));
     }
-    if (L->t != L->p.wtype) FR_FINISH(k, prep_res(2, "the witness type is not the schema's edge type at these states"));
-    FR_AWAIT(k, r, J_LEVEL, RQ(fc_true(), L->t, L->P), 0);
-    if (jr_code(r) != 1) FR_FINISH(k, prep_res(jr_code(r) == 3 ? 3 : 2, "the edge type is not a type"));
-    FR_AWAIT(k, r, J_CHECK, RQ(fc_true(), L->p.witness, L->t, L->P), 0);
-    if (jr_code(r) == 3) FR_FINISH(k, prep_res(3, "unresolved: the edge witness"));
-    if (jr_code(r) != 1) FR_FINISH(k, prep_res(2, jr_why(r) ? jr_why(r) : "the edge witness does not check"));
-    /* proof use: a recursively pending witness is not admitted */
-    if (subst_size(L->P)) {
-        FR_AWAIT(k, r, F_SCC, L->P, 0);
-        {   size_t n; if (rget(r, &n)[0] == PU_PENDING) FR_FINISH(k, prep_res(3, "the witness depends on a recursively pending proof")); }
-    }
+    if (L->t != L->p.wtype) FR_FINISH(k, prep_res(2, "the witness type is not the schema's edge type at these states", 0));
+    /* the witness's proof use: the one judgment proof_use decodes */
+    FR_AWAIT(k, L->ev, J_ADMIT, RQ(AD_PROOF, L->G, fc_true(), L->p.witness, L->t, 0), 0);
+    if (admit_code(L->ev) == 3) FR_FINISH(k, prep_res(3, "unresolved: the edge witness", L->ev));
+    if (admit_code(L->ev) != 1) FR_FINISH(k, prep_res(2, rword(L->ev, 1) ? (const char *)(uintptr_t)rword(L->ev, 1) : "the edge witness does not check", L->ev));
+    if (rword(rword(L->ev, 5), 0) == PU_PENDING) FR_FINISH(k, prep_res(3, "the witness depends on a recursively pending proof", L->ev));
     /* authorization: each consumed cell's authority issued a capability the
      * proposal supplies — a head: its authority; a port: its recipient, or the
      * authority whose head its issuing occurrence consumed (a refund). One
@@ -163,38 +164,38 @@ static void prep_step(Cont *k, uint64_t v) {
                 L->ok = cw[0] == T_CAP && (cw[1] == L->need || (L->issuer && cw[1] == L->issuer)) && interner_find(&EF.issued, &L->p.cap[L->c], 1) != 0; }
             FR_YIELD(k);
         }
-        if (!L->ok) FR_FINISH(k, prep_res(2, "a consumed cell's authority issued no supplied capability"));
+        if (!L->ok) FR_FINISH(k, prep_res(2, "a consumed cell's authority issued no supplied capability", L->ev));
     }
     /* one successor head for each consumed authority, and none for another; one comparison per step */
     for (L->i = 0; L->i < L->p.nout; L->i++) {
         if (L->p.out[3 * L->i]) { FR_YIELD(k); continue; }
         for (L->cnt = 0, L->j = 0; L->j < L->p.nin; L->j++) { size_t n; const uint64_t *in = rget(L->p.in[L->j], &n); if (in[0] == T_HEAD && in[1] == L->p.out[3 * L->i + 1]) L->cnt++; FR_YIELD(k); }
-        if (L->cnt != 1) FR_FINISH(k, prep_res(2, "a successor head of an authority the proposal does not consume"));
+        if (L->cnt != 1) FR_FINISH(k, prep_res(2, "a successor head of an authority the proposal does not consume", L->ev));
         for (L->j = 0; L->j < L->p.nout; L->j++) {
-            if (L->j != L->i && !L->p.out[3 * L->j] && L->p.out[3 * L->j + 1] == L->p.out[3 * L->i + 1]) FR_FINISH(k, prep_res(2, "two successors of one authority"));
+            if (L->j != L->i && !L->p.out[3 * L->j] && L->p.out[3 * L->j + 1] == L->p.out[3 * L->i + 1]) FR_FINISH(k, prep_res(2, "two successors of one authority", L->ev));
             FR_YIELD(k);
         }
     }
     for (L->i = 0; L->i < L->p.nin; L->i++) {
         {   size_t n; const uint64_t *in = rget(L->p.in[L->i], &n); L->ok = in[0] != T_HEAD; L->need = in[1]; }
         for (L->j = 0; L->j < L->p.nout && !L->ok; L->j++) { L->ok = !L->p.out[3 * L->j] && L->p.out[3 * L->j + 1] == L->need; FR_YIELD(k); }
-        if (!L->ok) FR_FINISH(k, prep_res(2, "a consumed authority without its successor head"));
+        if (!L->ok) FR_FINISH(k, prep_res(2, "a consumed authority without its successor head", L->ev));
         FR_YIELD(k);
     }
-    FR_FINISH(k, prep_res(1, NULL));
+    FR_FINISH(k, prep_res(1, NULL, L->ev));
     FR_END(k);
 }
 
 /* ---------------- EFFECT(rid, P) ---------------- */
-typedef struct { Desc *D; size_t k, j, nt; uint64_t w, r, in, s; Prop p; } EfLoc;
+typedef struct { Desc *D; size_t k, j, nt; uint64_t w, r, in, s, ev; Prop p; } EfLoc;
 static uint64_t out_rec(Outcome o, uint64_t a) { return RQ(T_OUT, (uint64_t)o, a); }
 static uint64_t *rid_slot(uint64_t rid) { return keyed_slot(&EF.rids, &rid, 1, NULL); }
 static void settle(uint64_t rid, uint64_t out) { __atomic_store_n(&rid_slot(rid)[1], out, __ATOMIC_RELEASE); }
 /* a commit descriptor of nt cells (one allocation) */
 /* a commit descriptor and its range of nt cells (one reservation of each counter) */
-static Desc *desc_alloc(uint64_t rid, uint64_t prop, size_t n, size_t nt) {
+static Desc *desc_alloc(uint64_t rid, uint64_t prop, uint64_t ev, size_t n, size_t nt) {
     Desc *D = chunked_at(&EF.descs, __atomic_fetch_add(&EF.ndescs, 1, __ATOMIC_RELAXED));
-    D->rid = rid; D->prop = prop; D->n = n; D->nt = nt; D->occ = RQ(T_OCC, rid, prop);
+    D->rid = rid; D->prop = prop; D->n = n; D->nt = nt; D->occ = RQ(T_OCC, rid, prop, ev);
     D->base = __atomic_fetch_add(&EF.ndcells, nt, __ATOMIC_RELAXED);
     return D;
 }
@@ -211,16 +212,17 @@ static void effect_step(Cont *k, uint64_t v) {
             FR_FINISH(k, out_rec(OUT_REQUEST_CONFLICT, 0));
         uint64_t settled = __atomic_load_n(&s[1], __ATOMIC_ACQUIRE);
         if (settled) FR_FINISH(k, settled); }
-    FR_AWAIT(k, r, F_PREP, k->w[1], env_snapshot());
+    FR_AWAIT(k, r, F_PREP, k->w[1], 0);
     {   size_t n; const uint64_t *w = rget(r, &n);
         if (w[1] == 3) FR_FINISH(k, out_rec(OUT_UNRESOLVED, 0));            /* pending, not settled */
-        if (w[1] != 1) { uint64_t o = out_rec(OUT_INVALID, w[2]); settle(k->w[0], o); FR_FINISH(k, o); } }
+        if (w[1] != 1) { uint64_t o = out_rec(OUT_INVALID, w[2]); settle(k->w[0], o); FR_FINISH(k, o); }
+        L->ev = w[3]; }                                                   /* the admitted proof-use judgment */
     L->p = prop_of(k->w[1]);
     /* the commit descriptor: its inputs in reservation order (a head's
      * preconstructed successor), then its output ports; one cell or one
      * output comparison per step */
     for (L->nt = L->p.nin, L->j = 0; L->j < L->p.nout; L->j++) { if (L->p.out[3 * L->j]) L->nt++; FR_YIELD(k); }
-    L->D = desc_alloc(k->w[0], k->w[1], L->p.nin, L->nt);
+    L->D = desc_alloc(k->w[0], k->w[1], L->ev, L->p.nin, L->nt);
     for (L->k = 0; L->k < L->D->n; L->k++) {
         L->in = L->p.in[L->p.ord[L->k]];
         {   size_t n; const uint64_t *w = rget(L->in, &n); L->w = w[0] == T_HEAD ? w[1] : 0; }
@@ -334,18 +336,38 @@ size_t effect_open_ports(uint64_t *out, size_t max) {
 }
 bool receipt_accepted(uint64_t occurrence) { Desc *D = desc_of(occurrence); return D && __atomic_load_n(&D->state, __ATOMIC_ACQUIRE) == D_COMMITTED; }
 uint64_t receipt_proposal(uint64_t occurrence) { return rword(occurrence, 2); }
-uint64_t receipt_view(uint64_t occurrence, MapId sigma) {
+uint64_t receipt_evidence(uint64_t occurrence) { return rword(occurrence, 3); }
+/* the context of the free variables of a few references, in declaration order */
+static ContextId fv_context(size_t n, const RefId *refs) {
+    VarSetId fv = set_make(NULL, 0);
+    for (size_t i = 0; i < n; i++) if (refs[i]) fv = set_union(fv, ref_freevars(refs[i]));
+    size_t m; const uint64_t *w = set_get(fv, &m);
+    CtxDecl *d = malloc((m ? m : 1) * sizeof *d); require(d, "out of memory");
+    for (size_t i = 0; i < m; i++) { d[i].sort = S_TERM; d[i].id = w[i]; }
+    ContextId G = context_make(m, d, fc_true()); free(d);
+    return G;
+}
+uint64_t receipt_view(uint64_t occurrence, MapId sigma, uint64_t eta) {
     if (!receipt_accepted(occurrence)) return 0;
     Prop p = prop_of(receipt_proposal(occurrence));
-    /* the anchored boundary — consumed states and payloads, produced values
-     * and the edge witness — is unmoved by σ, or the view is not of this event */
-    for (size_t i = 0; i < p.nin + p.nout; i++) { RefId s = state_at(&p, i); if (reindex(s, sigma) != s) return 0; }
-    if (reindex(p.witness, sigma) != p.witness) return 0;
-    return RQ(T_VIEW, occurrence, sigma);
+    RefId S = rword(p.schema, 1); uint64_t l = rword(p.schema, 2);
+    /* each boundary state σ moves needs its transport η_i : Path S s_i s_i[σ],
+     * checked; the event — its occurrence, authorities and port anchors — is
+     * unchanged; the identity transport is the stationary case */
+    for (size_t i = 0; i < p.nin + p.nout; i++) {
+        RefId s = state_at(&p, i), t = reindex(s, sigma);
+        if (t == s) continue;
+        uint64_t r = eta ? family_call(F_LOOKUP, eta, i) : 0;
+        if (!r) return 0;
+        RefId w = subst_value(eta, r - 1), refs[3] = { s, t, w }; const char *why;
+        if (check(fv_context(3, refs), fc_true(), w, mk_path_const(l, S, s, t), &why) != CK_VALID) return 0;
+    }
+    return RQ(T_VIEW, occurrence, sigma, eta);
 }
 uint64_t receipt_view_occurrence(uint64_t view) { size_t n; const uint64_t *w = rget(view, &n); return w[0] == T_VIEW ? w[1] : 0; }
 
-/* λX. λf. λx. f^n x  ↦  n */
+/* λX. λf. λx. f^n x  ↦  n: a checked word projection (false when n is not
+ * such a numeral or exceeds the word) */
 bool church_value(RefId n, uint64_t *out) {
     WhnfStatus st; RefId U = mk_universe(0);
     TermVarId vX = declare_term(U, fc_true()); RefId X = ref_var(vX);
@@ -366,6 +388,7 @@ bool church_value(RefId n, uint64_t *out) {
         Head h; open_ref(r.ref, &h);
         if (HF(&h, 0).id != f) { head_free(&h); return false; }
         t = HF(&h, 1).id; head_free(&h);
+        if (c == UINT64_MAX) return false;              /* beyond the word: out of range, never wrapped */
         c++;
     }
 }

@@ -88,9 +88,9 @@ Overlaps within one small intern (one unit, never split across steps):
 3. *Comparison* — equal content: the later contender compares with the published leaf. Different
    content, same separating slot: the later contender builds its split chain privately (≤ 288
    levels, bounded) and CASes; if the slot changed it continues below it. A slot changes only
-   empty → leaf → inner node, so retries are monotone in depth and bounded by the stream length;
-   every failed CAS is charged to the success that caused it (at most P per success for P
-   workers), so Instr ≤ c·P·W.
+   empty → leaf → inner node, so retries are monotone in depth and bounded by the stream length
+   (≤ 18 words): each unit's work is bounded by a constant independent of the number of
+   workers, so Instr ≤ c·W + d.
 4. *Copy* — private to the reserving contender until its CAS.
 5. *Publication* — one CAS per contender; the winner's leaf is complete (record words and hash
    stored before the CAS, released by it).

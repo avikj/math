@@ -9,6 +9,7 @@ void machine_init(void) {
     interner_init(&M.keys);
     chunked_init(&M.defs, sizeof(Def));
     eval_init();                       /* one lifetime: the evaluator's memo is over these tables */
+    M.view = env_empty(0);             /* the empty binding view */
     templates_init();                  /* the fixed library programs, as records of these tables */
 }
 

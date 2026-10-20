@@ -6,8 +6,10 @@
  * the native stack (a producer chain past 2^20 and a deep term checked and
  * observed on a thread with a small stack); closed init/free cycles leave
  * no native workers; one cubical workload (templates, Glue and universe
- * composition, checking, conversion) has the same results, events and
- * per-family steps sequentially and with four workers. */
+ * composition, checking, conversion) has, sequentially and with four
+ * workers, the same printed results up to a renaming of identities (a tree
+ * comparison, not an alias-preserving graph comparison), the same event
+ * totals and the same per-family steps. */
 #include "reading.h"
 #include "../src/eval.h"
 #include "../src/lib.h"
@@ -338,7 +340,7 @@ int main(void) {
             ne[w] = 0; for (EntryId e = 1; e <= eval_entry_count(); e++) ne[w] += eval_entry_live(e);
             canon(raw[w], cn[w]);
         }
-        CHECK(!strcmp(cn[0], cn[1]), "the workload's results agree sequentially and with four workers");
+        CHECK(!strcmp(cn[0], cn[1]), "the printed results agree up to a renaming of identities, sequentially and with four workers");
         CHECK(!memcmp(ev[0], ev[1], sizeof ev[0]) && ne[0] == ne[1], "the same keys, requests, deliveries, publications, launches and steps");
         CHECK(!memcmp(fs[0], fs[1], sizeof fs[0]), "every family's steps are schedule-independent"); }
     /* frame ownership under reuse */

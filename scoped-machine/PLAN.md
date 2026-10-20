@@ -203,17 +203,50 @@ no subagents; work only from the shared specifications; no second engine/store/c
    contiguous record is the value of the one owner keyed by (table, tree root). Inside a step only
    small records are interned synchronously. Published values are complete: a record found by
    content counts only when its side data is published.
-6. Revisions. A definition revision is (symbol, body), body 0 opaque. An observation is bound to a
-   pin set — the closure of the symbols its roots name through the bodies of the revisions read —
-   and its key is (t, [η, P]); unfolding is keyed by (reference, body). The closure itself is the
-   producer keyed by (roots, snapshot) (§79.2: dependency validation keyed by the immutable
-   snapshot); no other key carries the snapshot. A checker request pins the closure of its inputs
-   once, validates those revisions, keys its claims by them, and observes under them.
-7. Bounded steps. Every callback, including its synchronous helpers, does work bounded by a
-   constant: every loop iteration inside a step ends in a suspension; host builders (mapb_finish,
-   synchronous interning) are refused inside a step beyond a fixed handful; a CAS retry is charged
-   to the concurrent success that caused it (strong CAS only); pool and storage allocation are
-   O(1) under their locks, a fixed-size host block per refill.
+6. Revisions and binding views (replaces the superseded pin-set closure, deleted with pins.c).
+   A revision is the immutable record (s, body), body 0 opaque. A binding view V is an
+   immutable map symbol ↦ revision (a substitution record); a declaration or a body replaces
+   the machine's current view by one persistent set; a pending computation keeps its own
+   view, readable after later publications. Keys: a pure family is keyed by its operands; a
+   relative family (one that reads revisions, directly or through a child: observation,
+   the judgments that observe, body validity, the proof-use audit, effect preparation) is
+   requested through the resolver (f, a, b, V), which requests the node (f, a, b, ∅) and,
+   while the node's derivation read revisions differing from V's, the node whose path adds
+   those symbols at V's revisions (path: a substitution record), and publishes the agreeing
+   node's value. A node's key holds no view; its frames read through the view of the
+   requester that installed it. An occurrence (an effect) is one node. A read of s is the
+   dependency read(s, V); its value is the revision; the unfold step requests
+   unfold(reference, body) at exactly that revision, and the body judgment body(revision)
+   checks that same record. A use of s in a typing judgment (decl) reads s's revision too.
+   The revisions a derivation read are reads(entry), from its recorded dependencies (a
+   resolver contributes its chosen node). Within one view every key is fixed; across views,
+   which view's request installed a node can depend on the schedule: the value cannot, the
+   work (reuse or recomputation) can — the scope of the schedule claim (HANDOFF §78.5).
+   The public checking API, proof use and effect preparation request one judgment,
+   judge.admit (check.c): its derivation by kind, and the body of every revision it read
+   (and, for proof use, every revision the conservative audit reached) validated, closed
+   under the reads of those body judgments; its result names the validated revisions.
+   Raw observation reads only what its reduction unfolds; the conservative stored-syntax
+   audit exists only inside proof use.
+7. Bounded steps (replaces the superseded charging of CAS retries to concurrent successes).
+   Every callback, including its synchronous helpers, does work bounded by a constant.
+   Registration (request_entry): a waiter joins by one exchange of the entry head and writes
+   its link after it (PENDING until then); the exchange that finds U launches; an exchange
+   that finds READY restores READY by a second exchange and delivers what it took back; a
+   launch is one CAS from U, never retried; one job is reserved across the operation.
+   Overlaps: request/request — exchanges serialize, each joiner is linked below the
+   previous head, none retries; request/publish — publish exchanges the chain for READY
+   once; a joiner whose exchange found READY returns everything pushed since to READY and
+   delivers it; launch/request — the CAS from U succeeds for one launcher, a joiner that
+   finds U is the launcher; publish/delivery — the chain is handed one delivery per job;
+   a delivery reaching a link still PENDING requeues itself until that one store is visible
+   (the joiner has committed and has one store left); handed-off frames — after enqueueing
+   or handing off a frame its former job never touches it (the kept flag is the executing
+   thread's). The small-record interner's retries are bounded by its stream length (a slot
+   changes only empty → leaf → inner node), so each unit is bounded by a constant
+   (INTERNING.md). Host resource boundary: one fixed-size host block per pool refill or per
+   count carry (2^64 events), outside every counted transition. A budget is a host control
+   bound on the jobs executed during a root-driving call, never a reading or a verdict.
 8. One interpretation. A node in an environment is interpreted the same way for both node kinds:
    a construction's closed constant (X_CONST) is substituted by the environment's atoms; fields,
    binders and heads go through ENVSET/INTERP over the reference's environment, which is its
@@ -229,11 +262,13 @@ existing producer protocol; the one new mutable state is the authority cell, whi
 rules require (operational acceptance is a transition of the actual source, not a function of a key).
 
 8a. Per-producer readings. Entry.work: exact count (count.h) of the steps of the entry's frame and
-    its subroutines (each frame carries its owner entry; single writer: the entry's one producer,
-    whose frames never run concurrently). Entry.deps: the entries its producer requested or
-    launched (pushed by that producer, readable while it runs). support(H) is the
-    dependency closure of H's entries; W(H) = Σ work over support(H) — a union, so a producer shared
-    by two consumers is counted once while their two deliveries remain two RD_DELIVER events.
+    its subroutines (single writer: the entry's one producer), frozen once it publishes.
+    Entry.deps: the entries its producer requested or launched. support(H) is the family
+    history.support over the published dependency closure of H's entries (a pending
+    dependency is a live obligation, not history); W(H) = the family history.work summing the
+    frozen counts over the union, exactly — a producer shared by two consumers is counted
+    once while their two deliveries remain two RD_DELIVER events. The query is later work.
+    (Supersedes the host scan of live counters, deleted.)
 8b. Exact signed coefficients (interned limb records, sign; z.add, z.mul, z.neg one limb per
     step) and chains: an interned sorted list of (generator, coefficient), generator = (kind, id)
     for cube cells, product cells, ports, heads, occurrences, units. Families: chain.add (merge),
@@ -247,7 +282,9 @@ rules require (operational acceptance is a transition of the actual source, not 
     give the same interned map, hence the same generator, hence ∂² = 0 by cancellation of identical
     generators. CUBE_REINDEX composes maps; PRODUCT(x, y) is a cell whose faces i ≤ p are x's and
     i > p are y's, so the generic BOUNDARY gives Leibniz with sign (−1)^p.
-8d. Effects. Cell table (non-moving, one atomic word per cell): AVAILABLE(head|port) |
+8d. Effects. (Preparation's mathematical premises are judge.admit requests — the state type at
+    its level, each state, and the witness's proof use — the judgments the public API decodes;
+    the occurrence retains the admitted proof-use result. Supersedes the partial validator.) Cell table (non-moving, one atomic word per cell): AVAILABLE(head|port) |
     RESERVED(D, k) | CONSUMED(occurrence). Authority and capability records are interned; a
     capability is valid when its owning authority's registry issued it (genesis or an admitted
     delegation). PREPARE(P) is a pure keyed family (schema, states and witness checked by check()
