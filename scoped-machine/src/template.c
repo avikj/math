@@ -20,8 +20,7 @@ typedef struct {
     PSort lsort[MAXL];
     ExprId ltype[MAXL], llevel[MAXL], lreq[MAXL];   /* declarations of term locals (constructor binders and scope locals) */
     Words nodes;                   /* every constructor node of the definition, in construction order (its index) */
-    Words freel;                   /* while registering: each node's free-slot list, by node index */
-    uint64_t free;                 /* registered: the record of the nodes' free-slot lists, by node index */
+    Words freel;                   /* each node's free-slot list (an interned slot list), by node index */
     ExprId root;
     ExprId rtype, rlevel;          /* the declared result type of the program and its level */
     TNodeId root_node;             /* the root constructor node when the root is a node (0 when the root is a call) */
@@ -123,12 +122,8 @@ static void expr_free(ExprId e, size_t np, SlotSet *out) {
     default: die("bad expression kind");
     }
 }
-/* a node's free-slot list: by its index in its definition's record (in the
- * definition's table while it is registered) */
-static uint64_t node_free_list(TNodeId Q) {
-    const TDef *d = &TPL.defs[tnode_def(Q)]; size_t ix = (size_t)tnode_index(Q), n;
-    return d->free ? interner_get(&M.keys, d->free, &n)[ix] : d->freel.w[ix];
-}
+/* a node's free-slot list, by its index in its definition */
+static uint64_t node_free_list(TNodeId Q) { return TPL.defs[tnode_def(Q)].freel.w[tnode_index(Q)]; }
 static void node_free(TNodeId Q, SlotSet *out) {
     uint64_t list = node_free_list(Q);
     size_t n; const uint64_t *w = interner_get(&M.keys, list, &n);
@@ -776,7 +771,6 @@ static void finish(ExprId root) {
             if (set_free_slots(N, &fsl)) changed = true;
         }
     }
-    cd->free = interner_intern(&M.keys, cd->freel.w, cd->freel.n, NULL);
 }
 #define SORTS(...) ((const PSort[]){ __VA_ARGS__ })
 

@@ -18,9 +18,10 @@ struct Desc {
     uint64_t rid, prop, occ;
     size_t n;                           /* inputs, in reservation order */
     size_t nt;                          /* inputs, then output port cells (expect absent, after the port) */
-    uint64_t *cell, *ckey, *expect, *after;
-    Node *nodes;
+    size_t base;                        /* its cells: EF.dcells[base .. base + nt) */
 };
+/* a descriptor's cell k: the cell, what it expects, what it becomes, and the node a reservation names */
+typedef struct { uint64_t cell, ckey, expect, after; Node node; } DCell;
 /* a cell word: 0 absent | AVAILABLE(x) | RESERVED(node) | CONSUMED(occurrence) */
 #define W_AVAIL(x) (((uint64_t)(x) << 2) | 1)
 #define W_CONS(o) (((uint64_t)(o) << 2) | 3)
@@ -34,7 +35,10 @@ static struct {
     KeyedSlots rids;                    /* request id → [proposal, settled outcome] */
     Interner issued;                    /* capabilities an authority issued */
     KeyedSlots occs;                    /* occurrence → its descriptor */
+    Chunked descs, dcells;              /* descriptors and their cells, in fixed-size chunks */
+    size_t ndescs, ndcells;
 } EF;
+static DCell *DC(const Desc *D, size_t k) { return chunked_at(&EF.dcells, D->base + k); }
 
 static uint64_t *cell_word(uint64_t kind, uint64_t id) { uint64_t w[2] = { kind, id }; return keyed_slot(&EF.cells, w, 2, NULL); }
 /* the logical value of a cell: a reservation read through its descriptor */
@@ -42,7 +46,7 @@ static uint64_t logical(uint64_t w) {
     if (W_TAG(w) != 2) return w;
     Node *nd = W_NODE(w);
     int s = __atomic_load_n(&nd->D->state, __ATOMIC_ACQUIRE);
-    return s == D_COMMITTED ? nd->D->after[nd->k] : nd->D->expect[nd->k];
+    return s == D_COMMITTED ? DC(nd->D, nd->k)->after : DC(nd->D, nd->k)->expect;
 }
 static uint64_t cell_logical(uint64_t kind, uint64_t id) { return logical(__atomic_load_n(cell_word(kind, id), __ATOMIC_ACQUIRE)); }
 
@@ -163,7 +167,7 @@ static void prep_step(Cont *k, uint64_t v) {
     }
     /* one successor head for each consumed authority, and none for another; one comparison per step */
     for (L->i = 0; L->i < L->p.nout; L->i++) {
-        if (L->p.out[3 * L->i]) continue;
+        if (L->p.out[3 * L->i]) { FR_YIELD(k); continue; }
         for (L->cnt = 0, L->j = 0; L->j < L->p.nin; L->j++) { size_t n; const uint64_t *in = rget(L->p.in[L->j], &n); if (in[0] == T_HEAD && in[1] == L->p.out[3 * L->i + 1]) L->cnt++; FR_YIELD(k); }
         if (L->cnt != 1) FR_FINISH(k, prep_res(2, "a successor head of an authority the proposal does not consume"));
         for (L->j = 0; L->j < L->p.nout; L->j++) {
@@ -175,6 +179,7 @@ static void prep_step(Cont *k, uint64_t v) {
         {   size_t n; const uint64_t *in = rget(L->p.in[L->i], &n); L->ok = in[0] != T_HEAD; L->need = in[1]; }
         for (L->j = 0; L->j < L->p.nout && !L->ok; L->j++) { L->ok = !L->p.out[3 * L->j] && L->p.out[3 * L->j + 1] == L->need; FR_YIELD(k); }
         if (!L->ok) FR_FINISH(k, prep_res(2, "a consumed authority without its successor head"));
+        FR_YIELD(k);
     }
     FR_FINISH(k, prep_res(1, NULL));
     FR_END(k);
@@ -186,17 +191,15 @@ static uint64_t out_rec(Outcome o, uint64_t a) { return RQ(T_OUT, (uint64_t)o, a
 static uint64_t *rid_slot(uint64_t rid) { return keyed_slot(&EF.rids, &rid, 1, NULL); }
 static void settle(uint64_t rid, uint64_t out) { __atomic_store_n(&rid_slot(rid)[1], out, __ATOMIC_RELEASE); }
 /* a commit descriptor of nt cells (one allocation) */
+/* a commit descriptor and its range of nt cells (one reservation of each counter) */
 static Desc *desc_alloc(uint64_t rid, uint64_t prop, size_t n, size_t nt) {
-    Desc *D = calloc(1, sizeof *D); require(D, "out of memory: a commit descriptor");
+    Desc *D = chunked_at(&EF.descs, __atomic_fetch_add(&EF.ndescs, 1, __ATOMIC_RELAXED));
     D->rid = rid; D->prop = prop; D->n = n; D->nt = nt; D->occ = RQ(T_OCC, rid, prop);
-    D->cell = calloc(nt + 1, sizeof *D->cell); D->ckey = calloc(nt + 1, sizeof *D->ckey);
-    D->expect = calloc(nt + 1, sizeof *D->expect); D->after = calloc(nt + 1, sizeof *D->after);
-    D->nodes = calloc(nt + 1, sizeof *D->nodes);
-    require(D->cell && D->ckey && D->expect && D->after && D->nodes, "out of memory: a commit descriptor");
+    D->base = __atomic_fetch_add(&EF.ndcells, nt, __ATOMIC_RELAXED);
     return D;
 }
 static void desc_cell(Desc *D, size_t k, uint64_t cell, uint64_t key, uint64_t expect, uint64_t after) {
-    D->cell[k] = cell; D->ckey[k] = key; D->expect[k] = expect; D->after[k] = after; D->nodes[k].D = D; D->nodes[k].k = k;
+    DCell *c = DC(D, k); c->cell = cell; c->ckey = key; c->expect = expect; c->after = after; c->node.D = D; c->node.k = k;
 }
 static void effect_step(Cont *k, uint64_t v) {
     EfLoc *L = FR_LOC(k, EfLoc);
@@ -223,6 +226,7 @@ static void effect_step(Cont *k, uint64_t v) {
         {   size_t n; const uint64_t *w = rget(L->in, &n); L->w = w[0] == T_HEAD ? w[1] : 0; }
         for (L->s = 0, L->j = 0; L->w && L->j < L->p.nout; L->j++) { if (!L->p.out[3 * L->j] && L->p.out[3 * L->j + 1] == L->w) L->s = L->p.out[3 * L->j + 2]; FR_YIELD(k); }
         desc_cell(L->D, L->k, cell_kind_of(L->in), cell_id_of(L->in), W_AVAIL(L->in), L->w ? W_AVAIL(RQ(T_HEAD, L->w, L->D->occ, L->s, L->in)) : W_CONS(L->D->occ));
+        FR_YIELD(k);
     }
     for (L->k = L->D->n, L->j = 0; L->j < L->p.nout; L->j++) {
         if (L->p.out[3 * L->j]) { uint64_t port = RQ(T_PORT, L->D->occ, L->j, L->p.out[3 * L->j + 2], L->p.out[3 * L->j + 1]); desc_cell(L->D, L->k++, CK_PORT, port, 0, W_AVAIL(port)); }
@@ -233,43 +237,43 @@ static void effect_step(Cont *k, uint64_t v) {
         __atomic_store_n(slot, L->D, __ATOMIC_RELEASE); }
     /* reservations: one cell per step, in the fixed total order */
     for (L->k = 0; L->k < L->D->n; ) {
-        L->w = __atomic_load_n(cell_word(L->D->cell[L->k], L->D->ckey[L->k]), __ATOMIC_ACQUIRE);
+        L->w = __atomic_load_n(cell_word(DC(L->D, L->k)->cell, DC(L->D, L->k)->ckey), __ATOMIC_ACQUIRE);
         if (W_TAG(L->w) == 2) {
             {   Node *nd = W_NODE(L->w); int s = __atomic_load_n(&nd->D->state, __ATOMIC_ACQUIRE);
                 if (s != D_RESERVING) {                                      /* help finalize a terminal reservation, then retry */
                     uint64_t e = L->w;
-                    __atomic_compare_exchange_n(cell_word(L->D->cell[L->k], L->D->ckey[L->k]), &e, s == D_COMMITTED ? nd->D->after[nd->k] : nd->D->expect[nd->k], false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+                    __atomic_compare_exchange_n(cell_word(DC(L->D, L->k)->cell, DC(L->D, L->k)->ckey), &e, s == D_COMMITTED ? DC(nd->D, nd->k)->after : DC(nd->D, nd->k)->expect, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
                     L->r = 0;
                 } else L->r = (uint64_t)(uintptr_t)nd->D; }
             if (!L->r) { FR_YIELD(k); continue; }
             FR_AWAIT(k, r, F_EFFECT, ((Desc *)(uintptr_t)L->r)->rid, ((Desc *)(uintptr_t)L->r)->prop);   /* its own progress owner */
             continue;
         }
-        if (L->w != L->D->expect[L->k]) break;                               /* absent, stale or consumed: a conflict */
+        if (L->w != DC(L->D, L->k)->expect) break;                               /* absent, stale or consumed: a conflict */
         {   uint64_t e = L->w;
-            if (__atomic_compare_exchange_n(cell_word(L->D->cell[L->k], L->D->ckey[L->k]), &e, W_RES(&L->D->nodes[L->k]), false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) L->k++; }
+            if (__atomic_compare_exchange_n(cell_word(DC(L->D, L->k)->cell, DC(L->D, L->k)->ckey), &e, W_RES(&DC(L->D, L->k)->node), false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) L->k++; }
         FR_YIELD(k);
     }
     if (L->k == L->D->n)
         for (; L->k < L->D->nt; L->k++) {                                /* output ports: visible exactly at the commit */
             {   uint64_t e = 0;
-                if (!__atomic_compare_exchange_n(cell_word(L->D->cell[L->k], L->D->ckey[L->k]), &e, W_RES(&L->D->nodes[L->k]), false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) break; }
+                if (!__atomic_compare_exchange_n(cell_word(DC(L->D, L->k)->cell, DC(L->D, L->k)->ckey), &e, W_RES(&DC(L->D, L->k)->node), false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) break; }
             FR_YIELD(k);
         }
     if (L->k < L->D->nt) {
         __atomic_store_n(&L->D->state, D_ABORTED, __ATOMIC_RELEASE);
         for (L->j = 0; L->j < L->k; L->j++) {                                /* rollback, one cell per step */
-            {   uint64_t e = W_RES(&L->D->nodes[L->j]);
-                __atomic_compare_exchange_n(cell_word(L->D->cell[L->j], L->D->ckey[L->j]), &e, L->D->expect[L->j], false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE); }
+            {   uint64_t e = W_RES(&DC(L->D, L->j)->node);
+                __atomic_compare_exchange_n(cell_word(DC(L->D, L->j)->cell, DC(L->D, L->j)->ckey), &e, DC(L->D, L->j)->expect, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE); }
             FR_YIELD(k);
         }
-        {   uint64_t o = out_rec(OUT_CONFLICT, RQ(L->D->cell[L->k], L->D->ckey[L->k])); settle(k->w[0], o); FR_FINISH(k, o); }
+        {   uint64_t o = out_rec(OUT_CONFLICT, RQ(DC(L->D, L->k)->cell, DC(L->D, L->k)->ckey)); settle(k->w[0], o); FR_FINISH(k, o); }
     }
     /* the one acceptance event */
     __atomic_store_n(&L->D->state, D_COMMITTED, __ATOMIC_RELEASE);
     for (L->j = 0; L->j < L->D->nt; L->j++) {                                 /* finalization, one cell per step */
-        {   uint64_t e = W_RES(&L->D->nodes[L->j]);
-            __atomic_compare_exchange_n(cell_word(L->D->cell[L->j], L->D->ckey[L->j]), &e, L->D->after[L->j], false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE); }
+        {   uint64_t e = W_RES(&DC(L->D, L->j)->node);
+            __atomic_compare_exchange_n(cell_word(DC(L->D, L->j)->cell, DC(L->D, L->j)->ckey), &e, DC(L->D, L->j)->after, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE); }
         FR_YIELD(k);
     }
     {   uint64_t o = out_rec(OUT_ACCEPTED, L->D->occ); settle(k->w[0], o); FR_FINISH(k, o); }
@@ -288,12 +292,12 @@ static void occb_step(Cont *k, uint64_t v) {
     L->acc = RQ(0);
     /* one term per step: each consumed cell −1, a head's successor +1, each output port +1 */
     for (L->i = 0; L->i < L->D->n; L->i++) {
-        L->in = W_VAL(L->D->expect[L->i]);
+        L->in = W_VAL(DC(L->D, L->i)->expect);
         {   size_t m; L->k = rget(L->in, &m)[0] == T_HEAD; }
         FR_AWAIT(k, L->acc, Fc_ADD, L->acc, RQ(0, L->k ? G_HEAD : G_PORT, L->in, z_from_i64(-1)));
-        if (L->k) FR_AWAIT(k, L->acc, Fc_ADD, L->acc, RQ(0, G_HEAD, W_VAL(L->D->after[L->i]), z_from_i64(1)));
+        if (L->k) FR_AWAIT(k, L->acc, Fc_ADD, L->acc, RQ(0, G_HEAD, W_VAL(DC(L->D, L->i)->after), z_from_i64(1)));
     }
-    for (L->i = L->D->n; L->i < L->D->nt; L->i++) FR_AWAIT(k, L->acc, Fc_ADD, L->acc, RQ(0, G_PORT, L->D->ckey[L->i], z_from_i64(1)));
+    for (L->i = L->D->n; L->i < L->D->nt; L->i++) FR_AWAIT(k, L->acc, Fc_ADD, L->acc, RQ(0, G_PORT, DC(L->D, L->i)->ckey, z_from_i64(1)));
     FR_FINISH(k, L->acc);
     FR_END(k);
 }
@@ -374,6 +378,7 @@ void effect_state_init(void) {
     keyed_init(&EF.rids, 2 * sizeof(uint64_t));
     interner_init(&EF.issued);
     keyed_init(&EF.occs, sizeof(Desc *));
+    chunked_init(&EF.descs, sizeof(Desc)); chunked_init(&EF.dcells, sizeof(DCell)); EF.ndescs = EF.ndcells = 0;
 }
 void effect_families_init(void) {
     family_define(F_PREP, "effect.prepare", prep_step, sizeof(PrLoc));
@@ -381,9 +386,6 @@ void effect_families_init(void) {
     family_define(F_OCCB, "occurrence.boundary", occb_step, sizeof(ObLoc));
 }
 void effect_state_free(void) {
-    for (size_t c = 0, n = interner_count(&EF.occs.keys); c < n; c++) {     /* every descriptor is indexed by its occurrence */
-        Desc **p = chunked_peek(&EF.occs.slots, c), *D = p ? *p : NULL;
-        if (D) { free(D->cell); free(D->ckey); free(D->expect); free(D->after); free(D->nodes); free(D); }
-    }
     keyed_free(&EF.cells); keyed_free(&EF.rids); interner_free(&EF.issued); keyed_free(&EF.occs);
+    chunked_free(&EF.descs); chunked_free(&EF.dcells);
 }

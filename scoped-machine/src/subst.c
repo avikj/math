@@ -99,7 +99,7 @@ static void dims_step(Cont *k, uint64_t v) {
     L->x = interner_get(&M.keys, k->w[0], &L->nx);
     L->acc = set_make(NULL, 0);
     for (L->i = 0; L->i < L->nx; L->i++) {
-        if (L->x[L->i] == DNF_SEP) continue;
+        if (L->x[L->i] == DNF_SEP) { FR_YIELD(k); continue; }
         L->d = L->x[L->i] >> 1;
         FR_AWAIT(k, L->acc, F_SUNION, L->acc, set_make(&L->d, 1));
     }
@@ -137,8 +137,8 @@ static void envrebuild_step(Cont *k, uint64_t v) {
     for (L->q = 0; L->q < L->n; L->q++) {
         subst_get(ref_tenv(t), L->q, &L->slot, &L->val);
         re_item(k->w[1], L->val, &L->f, &L->b);
-        r = L->val.id;
         if (L->f) FR_AWAIT(k, r, (Family)L->f, L->val.id, L->b);
+        else { FR_YIELD(k); r = L->val.id; }                     /* a level: kept */
         if (r != L->val.id) L->changed = true;
         wordbuf_push(&L->out, L->slot); wordbuf_push(&L->out, L->val.sort); wordbuf_push(&L->out, r);
     }

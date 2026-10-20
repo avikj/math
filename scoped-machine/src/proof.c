@@ -39,7 +39,7 @@ static void scc_step(Cont *k, uint64_t v) {
         L->ps = set_get(global_params(L->d), &L->np);
         for (L->si = 0; L->si < L->np + 2; L->si++) {
             {   RefId src = L->si == 0 ? global_type(L->d) : L->si <= L->np ? term_var_type(L->ps[L->si - 1]) : L->b; L->s = src; }
-            if (!L->s) continue;
+            if (!L->s) { FR_YIELD(k); continue; }
             FR_AWAIT(k, r, F_GLOBALS, L->s, 0);
             FR_AWAIT(k, L->acc, F_SUNION, L->acc, r);
         }

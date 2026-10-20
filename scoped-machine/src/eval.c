@@ -445,7 +445,7 @@ static void flatten_step(Cont *k, uint64_t v) {
         require(m == 3 && rw[0] == TREE_ROOT, "intern.flatten of a non-root");
         L->n = rw[1]; L->stk[0] = rw[2]; L->pos[0] = 0; L->sp = 1; }
     L->dst = interner_flat_reserve(L->t, L->n); L->at = 0;
-    while (L->sp > 0) {
+    while (L->sp > 0) {                                  /* one leaf per step (its descent ≤ the tree height, bounded by the word size) */
         for (;;) {
             size_t m; const uint64_t *w = interner_tree_get(L->t, L->stk[L->sp - 1], &m);
             if (w[0] == TREE_LEAF) { memcpy(L->dst + L->at, w + 1, (m - 1) * sizeof(uint64_t)); L->at += m - 1; L->sp--; break; }

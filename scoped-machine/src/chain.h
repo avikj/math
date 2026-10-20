@@ -12,7 +12,7 @@
  *                                              G_PORT, G_HEAD, G_OCC
  *   view  [root scope, m, parameter map, n, image_1 .. image_n]
  *         image_r ∈ D(c_1..c_m) is the root's r-th dimension local
- *   prod  [kind_x, id_x, kind_y, id_y]
+ *   prod  [kind_x, id_x, kind_y, id_y, degree]
  *   chain [degree, (kind, id, z)*]             sorted by (kind, id), z ≠ 0
  *   cochain [CO_TABLE, degree, (kind, id, m)*]  |  [CO_COB, cochain]
  *   chain map [degree, (kind, id, chain)*]

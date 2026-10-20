@@ -117,12 +117,12 @@ uint64_t cube_subst(uint64_t view, MapId sigma) {
     memcpy(w, v, n * sizeof *w); w[2] = compose((MapId)v[2], sigma);
     uint64_t r = rq(n, w); free(w); return r;
 }
-uint64_t cube_product(GenKind kx, uint64_t x, GenKind ky, uint64_t y) { return RQ(kx, x, ky, y); }
+uint64_t cube_product(GenKind kx, uint64_t x, GenKind ky, uint64_t y) { return RQ(kx, x, ky, y, gen_degree(kx, x) + gen_degree(ky, y)); }
 size_t gen_degree(GenKind kind, uint64_t id) {
     size_t n; const uint64_t *w = rget(id, &n);
     switch (kind) {
     case G_CUBE: return (size_t)w[1];
-    case G_PROD: return gen_degree((GenKind)w[0], w[1]) + gen_degree((GenKind)w[2], w[3]);
+    case G_PROD: return (size_t)w[4];
     case G_OCC: return 1;
     case G_TWIST: return gen_degree(G_CUBE, w[0]);
     default: return 0;
@@ -315,7 +315,7 @@ static void map_step(Cont *k, uint64_t v) {
             if (L->f[L->i] == L->c[L->t] && L->f[L->i + 1] == L->c[L->t + 1]) L->img = L->f[L->i + 2];
             FR_YIELD(k);
         }
-        if (!L->img) continue;
+        if (!L->img) { FR_YIELD(k); continue; }
         FR_AWAIT(k, r, Fc_SCALE, L->img, L->c[L->t + 2]);
         FR_AWAIT(k, L->acc, Fc_ADD, L->acc, r);
     }

@@ -170,7 +170,7 @@ static void scopeside_step(Cont *k, uint64_t v) {
     for (L->q = 0; L->q < L->n + 2; L->q++) {
         {   const uint64_t *t = L->s + 1 + 4 * L->n;
             L->r = L->q < L->n ? L->s[2 + 4 * L->q] : L->q == L->n ? t[1] : (t[0] == VS_REF ? t[4] : 0); }
-        if (!L->r) continue;
+        if (!L->r) { FR_YIELD(k); continue; }
         FR_AWAIT(k, L->sup, F_SUNION, L->sup, ref_support(L->r));
         FR_AWAIT(k, L->fv, F_SUNION, L->fv, ref_freevars(L->r));
     }
@@ -178,7 +178,7 @@ static void scopeside_step(Cont *k, uint64_t v) {
     for (L->q = 0; L->q < L->n + 2; L->q++) {
         {   const uint64_t *t = L->s + 1 + 4 * L->n;
             L->r = L->q < L->n ? L->s[4 + 4 * L->q] : L->q == L->n ? t[3] : t[0] == VS_REF ? 0 : t[4]; }
-        if (!L->r) continue;
+        if (!L->r) { FR_YIELD(k); continue; }
         FR_AWAIT(k, L->ds, F_DIMS, L->r, 0);
         FR_AWAIT(k, L->sup, F_SUNION, L->sup, L->ds);
     }
