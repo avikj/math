@@ -62,10 +62,4 @@ ScopeId reindex_scope(ScopeId S, MapId sigma);
  * declaration uses only earlier slots of its own telescope; required
  * metadata is present. Must hold before the scope is opened. */
 bool scope_validate(ScopeId S, const char **reason);
-/* the same finite check for a whole reference used at the top level
- * (outside any telescope): every scope reachable through its template
- * environments is validated with its actual enclosing stack */
-
-/* free (unbound) part of a dimension set / variable set */
-
 #endif

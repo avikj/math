@@ -7,6 +7,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "../src/check.h"
 #include "../src/lib.h"
+#include "../src/pins.h"
 
 static int np = 0, nf = 0;
 #define CHECK(c, ...) do { if (c) np++; else { nf++; printf("  FAIL (%d): ", __LINE__); printf(__VA_ARGS__); printf("\n"); } } while (0)
@@ -308,6 +309,20 @@ int main(void) {
     { WhnfStatus st; EvalResult r = observe_checked(G, mk_app(id, a), &st, &why);
       CHECK(st == W_OK && r.cls && r.ref == a, "observe_checked remains local despite unrelated rejected declarations: %s", why);
       CHECK(check_signature(&why) == CK_INVALID, "explicit whole-signature checking reports the invalid definitions (%s)", why); }
+
+    /* an observation reads the revisions it pinned (5886af7 review §2): a body
+     * published after the opaque declaration was pinned does not unfold under
+     * that pin set; a request pinning the new revision validates it first */
+    {   uint64_t params[1] = { vA };
+        SymbolId sx = define_global("sx", set_make(params, 1), set_make(NULL, 0), A);
+        RefId t = global_ref(sx); WhnfStatus st;
+        CHECK(check(G, fc_true(), t, A, &why) == CK_VALID, "an opaque declaration checks (%s)", why);
+        PinSet P = pins_current(1, &t);
+        set_global_body(sx, mk_pair(a, a));                               /* (a, a) is not of type A */
+        EvalResult r = whnf_pinned(t, fc_true(), P, &st);
+        CHECK(st == W_OK && r.cls == R_NEUTRAL && r.ref == t, "under its pins the symbol stays opaque: the later body is not unfolded");
+        r = observe_checked(G, t, &st, &why);
+        CHECK(st == W_INVALID && r.cls == 0, "a checked observation pinning the new body validates it and refuses: %s", why); }
 
     printf("  %d passed, %d failed\n", np, nf);
     check_free(); machine_free();

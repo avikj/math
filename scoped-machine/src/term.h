@@ -163,13 +163,6 @@ typedef struct { KeyKind kind; uint64_t v; } KeyWord;
 TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type);
 TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required);   /* a partial formal */
 DimVarId fresh_dim_keyed(const KeyWord *key, size_t n);
-/* provenance of a generated name: nominal id (0 for an input name) */
-/* a nominal record: typed key words (kind,value pairs) */
-
-/* the lifted map of section 8 for a binder of a construction `owner`: its
- * environment map, then the binder's atom ↦ fresh. *fresh receives the
- * minted name. */
-
 typedef struct TermOpen { TermVarId x; RefId type; RefId body; } TermOpen;
 typedef struct DimOpen { DimVarId j; RefId body; } DimOpen;
 TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field);

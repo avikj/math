@@ -18,9 +18,9 @@
  * identities are minted from an immutable comparison-request record in a
  * distinct owner namespace and applied to both sides.
  *
- * Checking runs synchronously on the calling thread as an admission phase; its
- * weak-head observations use the ordinary evaluation cache and count as
- * ordinary evaluation events.
+ * Every judgment is a family keyed by its request and pin set (the
+ * revisions of the symbols its inputs reach); a host call drives one root,
+ * and its weak-head observations are the ordinary observation producers.
  */
 #ifndef CUBICAL_CHECK_H
 #define CUBICAL_CHECK_H
@@ -38,14 +38,9 @@ void check_free(void);
  * exceeding it yields UNRESOLVED("budget") */
 void check_set_budget(size_t steps);
 size_t check_budget(void);
-/* §59.4: begin a new admission attempt (unresolved outcomes of the previous
- * attempt are recomputed on demand) */
-
 CheckStatus check_context(ContextId G, const char **reason);
 /* sigma : (Delta;psi) -> (Gamma;chi) */
 CheckStatus check_map(ContextId Delta, FaceId psi, MapId sigma, ContextId Gamma, FaceId chi, const char **reason);
-/* validate a construction node at its generic instance; returns that
- * instance's context, required face and checked type */
 Inference infer(ContextId G, FaceId chi, RefId t);
 /* Γ;χ ⊢ A : U_level (formation in a universe; a term with some type is not a type) */
 CheckStatus check_is_type(ContextId G, FaceId chi, RefId A, uint64_t *level, const char **reason);
@@ -57,20 +52,9 @@ ConvStatus convert_term(ContextId G, FaceId chi, RefId t, RefId u, RefId A);
  * §33 item 3), then observes. An INVALID or UNRESOLVED check yields
  * W_INVALID / W_STUCK respectively with no observation. */
 EvalResult observe_checked(ContextId G, RefId t, WhnfStatus *status, const char **reason);
-/* validate every declared symbol with a body against its declared type
- * (the private driver of the admission transaction) */
+/* validate every declared symbol with a body against its declared type (an
+ * explicit request; no other judgment waits for it) */
 CheckStatus check_signature(const char **reason);
-/* Legacy explicit whole-environment admission operation. Freezes the registered
- * declarations and bodies (the environment version), validates all of them
- * once per version, and returns the environment's verdict. Checked observation
- * and compiler publication validate their own premises and do not call it. */
-/* open a new candidate environment after an admission: retires the checker
- * session (claims, verdicts, diagnostic text) and every evaluator observation
- * (EvalResult pointers and diagnostic pointers obtained before are dead);
- * registration is open again. A closed session boundary: no checker,
- * compiler or observation client may be in progress and evaluator work must
- * have drained (both enforced); stop admitting new clients while crossing. */
-
 const char *check_status_name(CheckStatus s);
 const char *conv_status_name(ConvStatus s);
 

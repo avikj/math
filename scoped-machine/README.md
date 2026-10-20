@@ -23,7 +23,10 @@ named in `families.h`.
 
 - One record table (`state.h`, `intern.c`): every record is interned in
   `M.keys` by the stepped interner; the evaluator's entry index is its own
-  table.
+  table. Stable stores are radix directories of fixed-size nodes over every
+  `size_t` index.
+- Universe levels are exact naturals (a word below 2^63, the canonical
+  exact-integer record above); successor and maximum are stepped families.
 - Intervals and faces are canonical antichain DNFs (`dnf.h`); their
   operations, and set union / removal / membership, are families (`dnfam.c`).
 - One substitution record (`subst.c`): `[(key, sort, value)*]` sorted by
@@ -61,6 +64,7 @@ per-producer work (`count.c`).
 ## Tests
 
 `tests/test_*.c` are semantic regressions and law checks (substitution,
-DNF laws, alpha identity, scopes, templates, checking, compiler, proof use,
-effects, chains, the protocol); `tests/review_*.c` are the §96 integration
-witnesses.
+DNF laws, alpha identity and scopes at every arity, templates, checking with
+exact levels, compiler, proof use, effects, chains, the protocol: schedule
+independence, native-stack independence, exact concurrent counts);
+`tests/review_*.c` are the §96 integration witnesses.

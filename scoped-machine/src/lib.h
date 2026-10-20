@@ -14,8 +14,6 @@
 
 void lib_free(void);
 
-/* interval line (r∧¬j)∨(s∧j): canonical interval syntax, no reference */
-
 /* ---- capture adapters (§54): abstract concrete identities into scopes ---- */
 ScopeId capture_dim1(DimVarId j, RefId body, RefId type, uint64_t level, FaceId guard);                 /* [j]. body */
 ScopeId capture_term2(TermVarId x, RefId xtype, uint64_t xlevel, TermVarId e, RefId etype, uint64_t elevel, RefId body, RefId type, uint64_t level, FaceId guard);   /* [x, e]. body */

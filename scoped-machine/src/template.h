@@ -48,8 +48,6 @@ typedef struct { PSort sort; size_t slot; uint64_t level; RefId type; FaceId gua
 size_t tnode_sig_count(TNodeId Q);
 bool tnode_sig_exprs(TNodeId Q, size_t k, size_t *slot, PSort *sort, ExprId *type_e, ExprId *level_e, ExprId *sig_e, ExprId *guard_e);
 bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e);
-/* the program's declared result type instantiated by t's environment, when
- * t is the root node of its definition */
 
 /* ---- constructions (the one construction representation) ----
  * Every non-variable reference is TVIEW(node, environment). A construction

@@ -5,12 +5,15 @@
  * unresolved dependency, workers and concurrent clients; independence of
  * the native stack (a producer chain past 2^20 and a deep term checked and
  * observed on a thread with a small stack); closed init/free cycles leave
- * no native workers. */
+ * no native workers; one cubical workload (templates, Glue and universe
+ * composition, checking, conversion) has the same results, events and
+ * per-family steps sequentially and with four workers. */
 #include "reading.h"
 #include "../src/eval.h"
 #include "../src/lib.h"
 #include "../src/check.h"
 #include <dirent.h>
+#include <ctype.h>
 #include <pthread.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -102,6 +105,80 @@ static void *client(void *p) {
     return NULL;
 }
 
+/* frame ownership (5886af7 review): a yielded frame is the queue's; its
+ * former job never touches it again. Each frame keeps its key in its locals
+ * across 64 yields while thousands of frames are released and reused by four
+ * workers: a released live frame would be handed out again and lose it. */
+static Family F_TOK, F_TOKS; static int tok_alias;
+typedef struct { uint64_t mine, i; } TokLoc;
+static void tok_step(Cont *k, uint64_t v) {
+    TokLoc *L = FR_LOC(k, TokLoc);
+    FR_BEGIN(k);
+    L->mine = k->w[0];
+    for (L->i = 0; L->i < 64; L->i++) { if (L->mine != k->w[0]) __atomic_store_n(&tok_alias, 1, __ATOMIC_RELAXED); FR_YIELD(k); }
+    FR_FINISH(k, L->mine);
+    FR_END(k);
+}
+static void toks_step(Cont *k, uint64_t v) {
+    FanLoc *L = FR_LOC(k, FanLoc);
+    FR_BEGIN(k);
+    for (L->i = 0; L->i < k->w[0]; L->i++) { family_launch(F_TOK, L->i + 1, 0); FR_YIELD(k); }
+    for (L->i = 0; L->i < k->w[0]; L->i++) { FR_AWAIT(k, L->r, F_TOK, L->i + 1, 0); L->acc += L->r; }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
+}
+
+/* four single-writer counts seeded below 2^64, bumped past it while a
+ * reader snapshots them: every snapshot is a value the writer passed
+ * through (monotone, never torn), the final reading is exact */
+#define SEED (UINT64_MAX - 1500)
+static Count cnt[4]; static volatile int writers_done;
+static void *bumper(void *p) { Count *c = p; for (int i = 0; i < 3000; i++) count_bump(c); return NULL; }
+static void exact_rel(const Exact *x, uint64_t *hi, uint64_t *lo) { *lo = x->n ? x->w[0] : 0; *hi = x->n > 1 ? x->w[1] : 0; }
+static void *snapshotter(void *p) {
+    bool *ok = p; uint64_t last_hi[4] = { 0 }, last_lo[4] = { SEED, SEED, SEED, SEED };
+    while (!__atomic_load_n(&writers_done, __ATOMIC_ACQUIRE))
+        for (int q = 0; q < 4; q++) {
+            Exact x = { 0, NULL }; uint64_t hi, lo; exact_add_count(&x, &cnt[q]); exact_rel(&x, &hi, &lo);
+            if (x.n > 2 || hi > 1 || hi < last_hi[q] || (hi == last_hi[q] && lo < last_lo[q]) || (hi == 1 && lo > 1499)) *ok = false;
+            last_hi[q] = hi; last_lo[q] = lo; exact_free(&x);
+        }
+    return NULL;
+}
+
+/* one cubical workload; its results printed in full */
+static void workload(FILE *f) {
+    RefId U0 = mk_universe(0), U1 = mk_universe(1);
+    TermVarId vA = declare_term(U0, fc_true()), vB = declare_term(U0, fc_true()); RefId A = ref_var(vA), B = ref_var(vB);
+    TermVarId va = declare_term(A, fc_true()), vb = declare_term(A, fc_true()); RefId a = ref_var(va), b = ref_var(vb);
+    DimVarId i = declare_dim(), j = declare_dim();
+    TermVarId vp = declare_term(mk_path_const(0, A, a, b), fc_true()), vf = declare_term(mk_fun(0, 0, A, B), fc_true());
+    RefId p = ref_var(vp), fn = ref_var(vf);
+    CtxDecl ds[8] = { { S_DIM, i }, { S_DIM, j }, { S_TERM, vA }, { S_TERM, vB }, { S_TERM, va }, { S_TERM, vb }, { S_TERM, vp }, { S_TERM, vf } };
+    ContextId G = context_make(8, ds, fc_true());
+    const char *why; WhnfStatus st;
+    RefId tr = mk_coe_at(1, i, mk_papp_const(2, U1, U0, U0, mk_ua(1, U0, U0, mk_id_equiv(1, U0)), iv_var(i)), A);
+    EvalResult r = whnf(tr, fc_true(), &st); print_ref_depth(r.ref, f, 1000); fprintf(f, " %d\n", st);
+    r = whnf(mk_coe_at(0, i, mk_fun(0, 0, A, B), fn), fc_true(), &st); print_ref_depth(r.ref, f, 1000); fprintf(f, " %d\n", st);
+    r = whnf(mk_papp_const(0, A, a, b, p, iv_meet(iv_var(i), iv_negate(iv_var(j)))), fc_lit(j, 1), &st); print_ref_depth(r.ref, f, 1000); fprintf(f, " %d\n", st);
+    fprintf(f, "%d %d %d", check(G, fc_true(), tr, U0, &why), check(G, fc_true(), mk_id_equiv(0, A), mk_equiv(0, 0, A, A), &why),
+            check(G, fc_true(), mk_ua(0, A, A, mk_id_equiv(0, A)), mk_path_const(0, U0, A, A), &why));
+    fprintf(f, " %d\n", convert_term(G, fc_true(), fn, mk_lam_lv(0, declare_term(A, fc_true()), A, mk_app(fn, a)), mk_fun(0, 0, A, B)));
+}
+/* identities renamed by first occurrence: record ids are allocation order */
+static void canon(const char *in, char *out) {
+    static char names[1 << 14][24]; size_t nn = 0, o = 0;
+    for (size_t k = 0; in[k]; ) {
+        if ((in[k] == 'x' || in[k] == 'd') && isdigit((unsigned char)in[k + 1]) && (k == 0 || !isalnum((unsigned char)in[k - 1]))) {
+            char tok[24]; size_t t = 0; tok[t++] = in[k++]; while (isdigit((unsigned char)in[k]) && t < 23) tok[t++] = in[k++]; tok[t] = 0;
+            size_t q = 0; while (q < nn && strcmp(names[q], tok)) q++;
+            if (q == nn) strcpy(names[nn++], tok);
+            o += (size_t)sprintf(out + o, "%c%zu", tok[0], q);
+        } else out[o++] = in[k++];
+    }
+    out[o] = 0;
+}
+
 /* run fn on a thread whose native stack is 256 KiB */
 static void on_small_stack(void *(*fn)(void *), void *arg) {
     pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at, 256 * 1024);
@@ -123,6 +200,16 @@ int main(void) {
         count_bump(&c); exact_free(&x); exact_add_count(&x, &c);
         CHECK(x.n == 2 && x.w[0] == 1 && x.w[1] == 1, "the next event adds one to the low digit");
         exact_free(&x); count_free(&c); }
+    {   bool ok = true; pthread_t w[4], r;
+        for (int q = 0; q < 4; q++) cnt[q] = (Count){ SEED, NULL, 0 };
+        pthread_create(&r, NULL, snapshotter, &ok);
+        for (int q = 0; q < 4; q++) pthread_create(&w[q], NULL, bumper, &cnt[q]);
+        for (int q = 0; q < 4; q++) pthread_join(w[q], NULL);
+        __atomic_store_n(&writers_done, 1, __ATOMIC_RELEASE); pthread_join(r, NULL);
+        Exact sum = { 0, NULL }; for (int q = 0; q < 4; q++) exact_add_count(&sum, &cnt[q]);
+        /* 4 · (2^64 − 1501 + 3000) = 4 · 2^64 + 5996 */
+        CHECK(ok && sum.n == 2 && sum.w[0] == 5996 && sum.w[1] == 4, "four writers past 2^64 under concurrent snapshots: monotone, untorn, exactly 4·2^64 + 5996");
+        exact_free(&sum); for (int q = 0; q < 4; q++) count_free(&cnt[q]); }
     F_SUM = family_new("test.sum", sum_step, 0);
     WhnfStatus st;
     uint64_t v = family_run(F_SUM, 1000, 0, &st) - 1;
@@ -238,6 +325,27 @@ int main(void) {
         for (size_t i = 0; i < 20000; i++) d.t = mk_app(ref_var(vf), d.t);
         on_small_stack(deep_term, &d);
         CHECK(d.ck == CK_VALID && d.st == W_OK && d.r.cls == R_NEUTRAL && d.r.ref == d.t, "f^20000 a : A checked and observed on a small native stack"); }
+    /* schedule independence: the same workload sequentially and with four
+     * workers — results equal up to identity renaming, every event total and
+     * every family's steps equal */
+    {   static char raw[2][1 << 18], cn[2][1 << 18]; static uint64_t ev[2][RD_STEPS], fs[2][F_MAX]; size_t ne[2];
+        for (int w = 0; w < 2; w++) {
+            fresh_machine(w ? 4 : 0); check_init();
+            FILE *f = fmemopen(raw[w], sizeof raw[w], "w"); workload(f); fclose(f);
+            eval_run();                                    /* deliveries a returning host left queued */
+            for (int q = 0; q < RD_STEPS; q++) ev[w][q] = rd((Reading)q, 0);
+            for (int q = 1; q < F_MAX; q++) fs[w][q] = rd(RD_STEPS, q);
+            ne[w] = 0; for (EntryId e = 1; e <= eval_entry_count(); e++) ne[w] += eval_entry_live(e);
+            canon(raw[w], cn[w]);
+        }
+        CHECK(!strcmp(cn[0], cn[1]), "the workload's results agree sequentially and with four workers");
+        CHECK(!memcmp(ev[0], ev[1], sizeof ev[0]) && ne[0] == ne[1], "the same keys, requests, deliveries, publications, launches and steps");
+        CHECK(!memcmp(fs[0], fs[1], sizeof fs[0]), "every family's steps are schedule-independent"); }
+    /* frame ownership under reuse */
+    fresh_machine(4);
+    F_TOK = family_new("test.tok", tok_step, sizeof(TokLoc)); F_TOKS = family_new("test.toks", toks_step, sizeof(FanLoc));
+    v = family_run(F_TOKS, 3000, 0, &st);
+    CHECK(st == W_OK && v == 3000 * 3001 / 2 && !tok_alias, "3000 frames yielding 64 times under four workers keep their own locals");
     /* closed init/free cycles with a pool: no native worker survives */
     eval_set_workers(0);
     {   size_t base = native_threads(); bool clean = true;
