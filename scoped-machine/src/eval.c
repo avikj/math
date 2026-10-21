@@ -615,7 +615,7 @@ static void creq_step(Cont *k, uint64_t v) {
     FR_FINISH(k, r);
     FR_END(k);
 }
-static Cont *creq_buf(const Cont *k, WordBuf *w) { Cont *c = frame_sub(F_CREQ, k); FR_LOC(c, CrLoc)->w = *w; wordbuf_init(w); return c; }
+Cont *creq_buf(const Cont *k, WordBuf *w) { Cont *c = frame_sub(F_CREQ, k); FR_LOC(c, CrLoc)->w = *w; wordbuf_init(w); return c; }
 Cont *mk_tag_sub(const Cont *k, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
     WordBuf w; creq_tag(&w, tag, payload, levels, n, ids, formal); return creq_buf(k, &w);
 }
@@ -837,7 +837,7 @@ static void whnf_step(Cont *k, uint64_t v) {
         if (!L->x) FR_FINISH(k, res_rec(R_INVALID, 0, "composition in a family whose head is not a type former or lacks its universe annotation"));
         goto forward_x;
     }
-    if (L->tag >= T_CMATCH && L->tag <= T_CUNFOLD) {
+    if (L->tag >= T_CMATCH && L->tag <= T_LAST && L->tag != T_QLV) {
         /* a code eliminator: its reduct (code.c) */
         FR_AWAIT(k, L->x, F_CODE, t, chi);
         {   size_t n; const uint64_t *q = rget(L->x, &n);

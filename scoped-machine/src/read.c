@@ -147,6 +147,32 @@ static RefId term_binder_form(Tag tag, const Sx *s, const Bind *env) {
     RefId body = term(s->kids[at + 1], &inner);
     return MK(tag, 0, levels_pack(m, tag == T_LAM ? LEVEL_NONE : n), x, A, body);
 }
+/* programs over codes: (Code), and a k-ary function on codes */
+static RefId code_type(size_t k) {
+    RefId c = mk_tag(T_CODE, 0, LEVELS_NONE, 0, NULL, 0);
+    if (!k) return c;
+    TermVarId x = declare_term(c, fc_true());
+    return MK(T_PI, 0, LEVELS_NONE, x, c, code_type(k - 1));
+}
+/* an argument of fn/defn: x (a code) or (x k) (a k-ary function on codes) */
+static RefId code_arg(const Sx *a, const Sx **name) {
+    if (!a->list) { *name = a; return code_type(0); }
+    if (a->n != 2 || a->kids[0]->list) fail(a, "an argument x or (x k)");
+    *name = a->kids[0];
+    return code_type(number(a->kids[1]));
+}
+static RefId code_fn(const Sx *args, size_t at, const Sx *body, const Bind *env) {
+    if (at == args->n) return term(body, env);
+    const Sx *name; RefId A = code_arg(args->kids[at], &name);
+    TermVarId x; Bind inner = bind_term(env, name, A, &x);
+    return MK(T_LAM, 0, LEVELS_NONE, x, A, code_fn(args, at + 1, body, &inner));
+}
+static RefId code_fn_type(const Sx *args, size_t at) {
+    if (at == args->n) return code_type(0);
+    const Sx *name; RefId A = code_arg(args->kids[at], &name);
+    TermVarId x = declare_term(A, fc_true());
+    return MK(T_PI, 0, LEVELS_NONE, x, A, code_fn_type(args, at + 1));
+}
 /* the former a cmatch tests: var, a term former's name, iv or face */
 static uint64_t former(const Sx *s) {
     static const struct { const char *name; uint64_t tag; } F[] = {
@@ -156,7 +182,8 @@ static uint64_t former(const Sx *s) {
         { "global", T_GLOBAL }, { "Code", T_CODE }, { "quote", T_QUOTE }, { "qiv", T_QIV }, { "qfc", T_QFC },
         { "cmatch", T_CMATCH }, { "cinst", T_CINST }, { "ceq", T_CEQ }, { "cent", T_CENT }, { "cfcend", T_CFCEND },
         { "cunfold", T_CUNFOLD },
-        { "iv", T_QIV }, { "face", T_QFC } };
+        { "cset", T_CSET }, { "clevels", T_CLEVELS }, { "csetlv", T_CSETLV }, { "qlv", T_QLV }, { "clsucc", T_CLSUCC },
+        { "clmax", T_CLMAX }, { "iv", T_QIV }, { "face", T_QFC }, { "lv", T_QLV }, { "sys0", FORMER_SYS0 } };
     if (s->list) fail(s, "a former name");
     for (size_t q = 0; q < sizeof F / sizeof F[0]; q++)
         if (strlen(F[q].name) == s->alen && !memcmp(F[q].name, s->atom, s->alen)) return F[q].tag;
@@ -175,19 +202,29 @@ static RefId term(const Sx *s, const Bind *env) {
     if (head(s, "Pi")) return term_binder_form(T_PI, s, env);
     if (head(s, "Sigma")) return term_binder_form(T_SIGMA, s, env);
     if (head(s, "lam")) return term_binder_form(T_LAM, s, env);
-    if (head(s, "pair")) { want(s, 3, "(pair a b)"); return mk_pair(term(s->kids[1], env), term(s->kids[2], env)); }
+    if (head(s, "pair")) {
+        /* (pair a b), annotated (pair a b S), with a level (pair l a b S) */
+        if (s->n == 3) return mk_pair(term(s->kids[1], env), term(s->kids[2], env));
+        if (s->n == 4) return MK(T_PAIR, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env));
+        want(s, 5, "(pair l a b S)");
+        return MK(T_PAIR, 0, levels_pack(number(s->kids[1]), LEVEL_NONE), 0, term(s->kids[2], env), term(s->kids[3], env), term(s->kids[4], env));
+    }
     if (head(s, "fst")) { want(s, 2, "(fst p)"); return mk_fst(term(s->kids[1], env)); }
     if (head(s, "snd")) { want(s, 2, "(snd p)"); return mk_snd(term(s->kids[1], env)); }
     if (head(s, "Path")) {
-        want(s, 5, "(Path (i) A a b)");
-        DimVarId i; Bind inner = bind_dim(env, s->kids[1], &i);
-        return mk_path(i, term(s->kids[2], &inner), term(s->kids[3], env), term(s->kids[4], env));
+        /* (Path (i) A a b), with a level (Path n (i) A a b) */
+        size_t o = s->n == 6; uint64_t lv = o ? levels_pack(number(s->kids[1]), LEVEL_NONE) : LEVELS_NONE;
+        want(s, 5 + o, "(Path (i) A a b)");
+        DimVarId i; Bind inner = bind_dim(env, s->kids[1 + o], &i);
+        return MK(T_PATH, 0, lv, i, term(s->kids[2 + o], &inner), term(s->kids[3 + o], env), term(s->kids[4 + o], env));
     }
     if (head(s, "plam")) { want(s, 3, "(plam (i) t)"); DimVarId i; Bind inner = bind_dim(env, s->kids[1], &i); return mk_plam(i, term(s->kids[2], &inner)); }
     if (head(s, "papp")) {
-        want(s, 7, "(papp (i) A a b p r)");
-        DimVarId i; Bind inner = bind_dim(env, s->kids[1], &i);
-        return mk_papp(i, term(s->kids[2], &inner), term(s->kids[3], env), term(s->kids[4], env), term(s->kids[5], env), interval(s->kids[6], env));
+        /* (papp (i) A a b p r), with a level (papp n (i) A a b p r) */
+        size_t o = s->n == 8; uint64_t lv = o ? levels_pack(number(s->kids[1]), LEVEL_NONE) : LEVELS_NONE;
+        want(s, 7 + o, "(papp (i) A a b p r)");
+        DimVarId i; Bind inner = bind_dim(env, s->kids[1 + o], &i);
+        return MK(T_PAPP, 0, lv, i, term(s->kids[2 + o], &inner), term(s->kids[3 + o], env), term(s->kids[4 + o], env), term(s->kids[5 + o], env), interval(s->kids[6 + o], env));
     }
     if (head(s, "comp")) {
         want(s, 7, "(comp n (i) A phi u a0)");
@@ -218,6 +255,21 @@ static RefId term(const Sx *s, const Bind *env) {
         RefId r = mk_system(n, fs, ts); free(fs); free(ts); return r;
     }
     /* codes (code.c) */
+    if (head(s, "fn")) {
+        want(s, 3, "(fn (args) body)");
+        if (!s->kids[1]->list) fail(s->kids[1], "an argument list");
+        return code_fn(s->kids[1], 0, s->kids[2], env);
+    }
+    if (head(s, "let")) {
+        /* (let (x e) body): ((fn (x) body) e) */
+        want(s, 3, "(let (x e) body)");
+        const Sx *b = s->kids[1];
+        if (!b->list || b->n != 2) fail(b, "a binding (x e)");
+        RefId e = term(b->kids[1], env);
+        const Sx *name; RefId A = code_arg(b->kids[0], &name);
+        TermVarId x; Bind inner = bind_term(env, name, A, &x);
+        return mk_app(MK(T_LAM, 0, LEVELS_NONE, x, A, term(s->kids[2], &inner)), e);
+    }
     if (head(s, "Code")) { want(s, 1, "(Code)"); return mk_tag(T_CODE, 0, LEVELS_NONE, 0, NULL, 0); }
     if (head(s, "quote")) { want(s, 2, "(quote t)"); return MK(T_QUOTE, 0, LEVELS_NONE, 0, term(s->kids[1], env)); }
     if (head(s, "qiv")) { want(s, 2, "(qiv r)"); return MK(T_QIV, 0, LEVELS_NONE, 0, interval(s->kids[1], env)); }
@@ -237,6 +289,22 @@ static RefId term(const Sx *s, const Bind *env) {
         return MK(T_CFCEND, eps, LEVELS_NONE, 0, term(s->kids[2], env));
     }
     if (head(s, "cunfold")) { want(s, 4, "(cunfold c h d)"); return MK(T_CUNFOLD, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env)); }
+    if (head(s, "qlv")) {
+        want(s, 2, "(qlv n)");
+        uint64_t l = !s->kids[1]->list && s->kids[1]->alen == 4 && !memcmp(s->kids[1]->atom, "none", 4) ? LEVEL_NONE : number(s->kids[1]);
+        return mk_tag(T_QLV, l, LEVELS_NONE, 0, NULL, 0);
+    }
+    if (head(s, "cset")) { want(s, 4, "(cset k c d)"); return MK(T_CSET, number(s->kids[1]), LEVELS_NONE, 0, term(s->kids[2], env), term(s->kids[3], env)); }
+    if (head(s, "clevels")) { want(s, 3, "(clevels c h)"); return MK(T_CLEVELS, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env)); }
+    if (head(s, "csetlv")) { want(s, 4, "(csetlv c l m)"); return MK(T_CSETLV, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env)); }
+    if (head(s, "civneg")) { want(s, 2, "(civneg r)"); RefId a = term(s->kids[1], env); return MK(T_COP, COP_IVNEG, LEVELS_NONE, 0, a, a); }
+    {   static const struct { const char *n; uint64_t op; } O[] = { { "civand", COP_IVAND }, { "civor", COP_IVOR }, { "cfcand", COP_FCAND }, { "cfcor", COP_FCOR }, { "cforall", COP_FORALL } };
+        for (size_t q = 0; q < 5; q++) if (head(s, O[q].n)) { want(s, 3, "(op a b)"); return MK(T_COP, O[q].op, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env)); } }
+    if (head(s, "csyscons")) { want(s, 4, "(csyscons phi t s)"); return MK(T_CSYSCONS, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env)); }
+    if (head(s, "csubst")) { want(s, 4, "(csubst c v a)"); return MK(T_CSUBST, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env)); }
+    if (head(s, "cvar")) { want(s, 2, "(cvar c)"); return MK(T_CVAR, 0, LEVELS_NONE, 0, term(s->kids[1], env)); }
+    if (head(s, "clsucc")) { want(s, 2, "(clsucc l)"); return MK(T_CLSUCC, 0, LEVELS_NONE, 0, term(s->kids[1], env)); }
+    if (head(s, "clmax")) { want(s, 3, "(clmax l m)"); return MK(T_CLMAX, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env)); }
     /* application, left to right */
     RefId f = term(s->kids[0], env);
     for (size_t q = 1; q < s->n; q++) f = mk_app(f, term(s->kids[q], env));
@@ -276,6 +344,15 @@ bool reader_program(Reader *r, const char *src) {
             SymbolId sym = define_global(nm, set_make(NULL, 0), set_make(NULL, 0), term(s->kids[2], NULL));
             add_global(r, nm, s->kids[1]->alen, sym);
             set_global_body(sym, term(s->kids[3], NULL));
+        } else if (head(s, "defn")) {
+            /* (defn name (args) body): a program over codes */
+            want(s, 4, "(defn name (args) body)");
+            if (s->kids[1]->list) fail(s->kids[1], "a definition name");
+            if (!s->kids[2]->list) fail(s->kids[2], "an argument list");
+            char *nm = dup_name(s->kids[1]);
+            SymbolId sym = define_global(nm, set_make(NULL, 0), set_make(NULL, 0), code_fn_type(s->kids[2], 0));
+            add_global(r, nm, s->kids[1]->alen, sym);
+            set_global_body(sym, code_fn(s->kids[2], 0, s->kids[3], NULL));
         } else if (head(s, "axiom")) {
             want(s, 3, "(axiom name A)");
             if (s->kids[1]->list) fail(s->kids[1], "an axiom name");

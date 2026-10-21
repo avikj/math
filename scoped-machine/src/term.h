@@ -22,9 +22,13 @@ typedef enum {
     T_SYSTEM, T_GLOBAL,
     /* code: the records the machine runs, as values of the language (code.c) */
     T_CODE, T_QUOTE, T_QIV, T_QFC,
-    T_CMATCH, T_CINST, T_CEQ, T_CENT, T_CFCEND, T_CUNFOLD
+    T_CMATCH, T_CINST, T_CEQ, T_CENT, T_CFCEND, T_CUNFOLD,
+    T_CSET, T_CLEVELS, T_CSETLV, T_QLV, T_CLSUCC, T_CLMAX, T_COP, T_CSYSCONS, T_CVAR, T_CSUBST
 } Tag;
-#define T_LAST T_CUNFOLD
+#define T_LAST T_CSUBST
+/* the operations of T_COP (its payload) on interval and face codes */
+enum { COP_IVNEG = 1, COP_IVAND, COP_IVOR, COP_FCAND, COP_FCOR, COP_FORALL };
+#define FORMER_SYS0 255   /* the former an empty system matches */
 
 typedef enum { F_REF = 1, F_INTERVAL, F_FACE } FieldKind;
 typedef enum { S_TERM = 1, S_DIM } Sort;

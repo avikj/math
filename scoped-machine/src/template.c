@@ -327,8 +327,10 @@ static void tvmake_step(Cont *k, uint64_t v) {
     FR_AWAIT(k, r, F_INTERP, node_required_e(Q), er);
     L->req = tvget(r).id;
     /* each reference image's requirement, except where the slot's declared
-     * guard entails it (a partial formal is used under its guard only) */
-    for (L->q = 0; L->q < L->nf; L->q++) {
+     * guard entails it (a partial formal is used under its guard only); a
+     * code holds its record as data and requires nothing */
+    if (tnode_tag(Q) == T_QUOTE) { L->req = fc_true(); L->q = L->nf; } else L->q = 0;
+    for (; L->q < L->nf; L->q++) {
         subst_get(L->E, L->q, &L->slot, &L->t);
         if (L->t.sort != PS_REF) { FR_YIELD(k); continue; }
         L->g = slot_guard_e(Q, L->slot);

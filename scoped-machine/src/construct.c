@@ -38,7 +38,7 @@ static const TagSchema SCHEMA[] = {
     [T_SYSTEM]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 }, { 0 } },
     [T_GLOBAL]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 }, { 0 } },
     [T_CODE]       = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 }, { 0 } },
-    [T_QUOTE]      = { 1, 0, ROLE_INTRO, 0, { R_ }, { 0 }, { 0 } },
+    [T_QUOTE]      = { 1, 0, ROLE_INTRO, 0, { R_ }, { 0 }, { 1 } },   /* a code is total: the record it holds is data */
     [T_QIV]        = { 1, 0, ROLE_INTRO, 0, { I_ }, { 0 }, { 0 } },
     [T_QFC]        = { 1, 0, ROLE_INTRO, 0, { F_ }, { 0 }, { 0 } },
     [T_CMATCH]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
@@ -47,6 +47,16 @@ static const TagSchema SCHEMA[] = {
     [T_CENT]       = { 4, 0, ROLE_OTHER, 0, { R_, R_, R_, R_ }, { 0 }, { 0 } },
     [T_CFCEND]     = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
     [T_CUNFOLD]    = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
+    [T_CSET]       = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
+    [T_CLEVELS]    = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
+    [T_CSETLV]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
+    [T_QLV]        = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 }, { 0 } },
+    [T_CLSUCC]     = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
+    [T_CLMAX]      = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
+    [T_COP]        = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
+    [T_CSYSCONS]   = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
+    [T_CVAR]       = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
+    [T_CSUBST]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
 };
 #undef R_
 #undef I_
