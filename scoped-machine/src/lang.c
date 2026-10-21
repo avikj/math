@@ -70,13 +70,23 @@ static bool node_eq(Node *a, Node *b) {
 }
 
 /* ---------------- desugaring to the core forms ---------------- */
-static const char *KW[] = { "lam", "thunk", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
+static const char *KW[] = { "lam", "thunk", "delay", "force", "case", "if", "the", "code", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
     "PathP", "@", "~", "/\\", "\\/", "=", "&", "|", "faceof", "sys", "sys0", "sys+", "sysmap", "comp", "Glue", "glue",
     "unglue", NULL };
 static bool keyword(const char *s) { for (int i = 0; KW[i]; i++) if (!strcmp(KW[i], s)) return true; return false; }
 static Node *param_name(Node *p) { return p->list ? p->it[0] : p; }
 
+/* data types (Scott encoding): a constructor C_i of a type with N
+ * constructors, applied to its fields, is λh1..hN. h_i fields. A case gives
+ * one handler per constructor; each branch is a thunk, forced only once
+ * selected, so an unselected branch computes nothing. */
+typedef struct { char *name; int type, index, arity; } Con;
+static Con *CONS; static size_t capcons; static int ncons;
+static int *TYPE_N; static size_t captypes; static int ntypes;
+static Con *con_lookup(const char *s) { for (int i = ncons - 1; i >= 0; i--) if (!strcmp(CONS[i].name, s)) return &CONS[i]; return NULL; }
+
 static Node *ds(Node *t);
+static Node *to_code(Node *t);
 static Node *ds_lam(Node **ps, int np, Node *body, const char *b) {
     if (np == 0) return ds(body);
     return nl3(b, param_name(ps[0]), ds_lam(ps + 1, np - 1, body, b));
@@ -88,6 +98,49 @@ static Node *ds(Node *t) {
     Node *h = t->it[0];
     if (!h->list && keyword(h->s)) {
         const char *k = h->s;
+        if (!strcmp(k, "delay")) { arity(t, 1); return nl2("thunk", ds(t->it[1])); }
+        if (!strcmp(k, "force")) { arity(t, 1); return nl2("force", ds(t->it[1])); }
+        if (!strcmp(k, "if")) {
+            arity(t, 3);
+            return nl2("force", nl3("app", nl3("app", ds(t->it[1]), nl2("thunk", ds(t->it[2]))), nl2("thunk", ds(t->it[3]))));
+        }
+        if (!strcmp(k, "case")) {
+            if (t->n < 3) die("(case e branch...)", NULL);
+            int type = -1; Node *dflt = NULL;
+            for (int i = 2; i < t->n; i++) {
+                Node *br = t->it[i];
+                if (!br->list || br->n != 2) die("malformed case branch", NULL);
+                if (!br->it[0]->list && is(br->it[0], "_")) { dflt = br->it[1]; continue; }
+                if (!br->it[0]->list || br->it[0]->n < 1) die("case branch pattern must be (C x...)", NULL);
+                Con *c = con_lookup(br->it[0]->it[0]->s);
+                if (!c) die("unknown constructor", br->it[0]->it[0]->s);
+                if (type >= 0 && c->type != type) die("constructors of different types in one case:", c->name);
+                type = c->type;
+                if (br->it[0]->n - 1 != c->arity) die("wrong number of fields for", c->name);
+            }
+            if (type < 0) die("case needs at least one constructor branch", NULL);
+            int N = TYPE_N[type];
+            Node *e = ds(t->it[1]);
+            for (int ci = 0; ci < N; ci++) {
+                Con *c = NULL;
+                for (int j = 0; j < ncons; j++) if (CONS[j].type == type && CONS[j].index == ci) c = &CONS[j];
+                Node *pat = NULL, *body = NULL;
+                for (int i = 2; i < t->n; i++) {
+                    Node *br = t->it[i];
+                    if (br->it[0]->list && !strcmp(br->it[0]->it[0]->s, c->name)) { pat = br->it[0]; body = br->it[1]; }
+                }
+                if (!body) { if (!dflt) die("case misses constructor", c->name); body = dflt; }
+                Node *hnd = nl2("thunk", ds(body));
+                for (int f = c->arity; f >= 1; f--) {
+                    Node *x = pat ? pat->it[f] : NULL;
+                    char nm[32];
+                    if (!x) { snprintf(nm, sizeof nm, "%%_%d", f); x = nsym(nm); }
+                    hnd = nl3("lam", x, hnd);
+                }
+                e = nl3("app", e, hnd);
+            }
+            return nl2("force", e);
+        }
         if (!strcmp(k, "lam") || !strcmp(k, "plam")) { if (t->n < 3) die("binder without body", NULL); return ds_lam(t->it + 1, t->n - 2, t->it[t->n - 1], k); }
         if (!strcmp(k, "forall")) { arity(t, 2); return nl3("forall", t->it[1], ds(t->it[2])); }
         if (!strcmp(k, "let")) { arity(t, 3); return nl4("let", t->it[1], ds(t->it[2]), ds(t->it[3])); }
@@ -108,7 +161,9 @@ static Node *ds(Node *t) {
             return r;
         }
         if (!strcmp(k, "sys+")) { arity(t, 3); return nl4("sys+", ds(t->it[1]), nl2("thunk", ds(t->it[2])), ds(t->it[3])); }
-        if (!strcmp(k, "U")) { Node *r = nlist(1); r->it[0] = nsym("U"); return r; }
+        if (!strcmp(k, "U")) { if (t->n > 2) die("(U [level])", NULL); return t; }   /* the level is kept for codes */
+        if (!strcmp(k, "the")) { arity(t, 2); return nl3("the", ds(t->it[1]), ds(t->it[2])); }
+        if (!strcmp(k, "code")) { arity(t, 1); return to_code(ds(t->it[1])); }
         if (!strcmp(k, "/\\") || !strcmp(k, "\\/") || !strcmp(k, "&") || !strcmp(k, "|")) {
             if (t->n < 3) die("too few operands for", k);
             Node *r = ds(t->it[1]);
@@ -127,6 +182,69 @@ static Node *ds(Node *t) {
     Node *f = ds(h);
     for (int i = 1; i < t->n; i++) f = nl3("app", f, ds(t->it[i]));
     return f;
+}
+
+/* ---------------- codes of source terms ----------------
+ * (code t) writes the code of a source term as data: constructor
+ * applications of lib/code.ctt, variables as de Bruijn indices over one
+ * context of term and dimension variables, checked definitions as signature
+ * indices. This is reading source text, not inspecting a value. */
+static const char **cscope; static size_t capcscope; static int ncscope;
+static char **CHECKED; static size_t capchecked; static int nchecked;
+static Node *numeral(int n) { Node *x = nsym("nz"); for (int i = 0; i < n; i++) x = nl3("app", nsym("ns"), x); return x; }
+static Node *capp1(const char *c, Node *a) { return nl3("app", nsym(c), a); }
+static Node *capp2(const char *c, Node *a, Node *b) { return nl3("app", nl3("app", nsym(c), a), b); }
+static Node *capp3(const char *c, Node *a, Node *b, Node *d) { return nl3("app", capp2(c, a, b), d); }
+static Node *code_bound(const char *x, Node *body) {
+    GROW(cscope, capcscope, (size_t)ncscope + 1);
+    cscope[ncscope++] = x;
+    Node *r = to_code(body);
+    ncscope--;
+    return r;
+}
+static Node *to_code(Node *t) {
+    if (!t->list) {
+        const char *s = t->s;
+        if (!strcmp(s, "0")) return nsym("ci0");
+        if (!strcmp(s, "1")) return nsym("ci1");
+        if (!strcmp(s, "tt")) return nsym("cftt");
+        if (!strcmp(s, "ff")) return nsym("cfff");
+        if (!strcmp(s, "U")) return capp1("cuniv", nsym("nz"));
+        for (int i = ncscope - 1; i >= 0; i--) if (!strcmp(cscope[i], s)) return capp1("cvar", numeral(ncscope - 1 - i));
+        for (int i = 0; i < nchecked; i++) if (!strcmp(CHECKED[i], s)) return capp1("cglob", numeral(i));
+        die("code: not a bound variable or checked definition:", s);
+    }
+    const char *h = t->it[0]->s;
+    if (!strcmp(h, "lam")) return capp1("clam", code_bound(t->it[1]->s, t->it[2]));
+    if (!strcmp(h, "plam")) return capp1("cplam", code_bound(t->it[1]->s, t->it[2]));
+    if (!strcmp(h, "forall")) return capp1("cforall", code_bound(t->it[1]->s, t->it[2]));
+    if (!strcmp(h, "let")) return capp2("clet", to_code(t->it[2]), code_bound(t->it[1]->s, t->it[3]));
+    if (!strcmp(h, "app")) return capp2("capp", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "pair")) return capp2("cpair", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "fst")) return capp1("cfst", to_code(t->it[1]));
+    if (!strcmp(h, "snd")) return capp1("csnd", to_code(t->it[1]));
+    if (!strcmp(h, "Pi") || !strcmp(h, "Sigma")) {
+        Node *B = t->it[2];   /* (lam x body) */
+        return capp2(!strcmp(h, "Pi") ? "cpi" : "csigma", to_code(t->it[1]), code_bound(B->it[1]->s, B->it[2]));
+    }
+    if (!strcmp(h, "U")) return capp1("cuniv", numeral(t->n == 2 ? atoi(t->it[1]->s) : 0));
+    if (!strcmp(h, "PathP")) return capp3("cpathp", to_code(t->it[1]), to_code(t->it[2]), to_code(t->it[3]));
+    if (!strcmp(h, "@")) return capp2("cpapp", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "~")) return capp1("cneg", to_code(t->it[1]));
+    if (!strcmp(h, "/\\")) return capp2("cmeet", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "\\/")) return capp2("cjoin", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "=")) return capp1(is(t->it[2], "0") ? "ceq0" : "ceq1", to_code(t->it[1]));
+    if (!strcmp(h, "&")) return capp2("cfand", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "|")) return capp2("cfor", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "sys0")) return nsym("csys0");
+    if (!strcmp(h, "sys+")) return capp3("csysc", to_code(t->it[1]), to_code(t->it[2]->it[1]), to_code(t->it[3]));
+    if (!strcmp(h, "comp")) return capp3("ccomp", to_code(t->it[1]), to_code(t->it[2]), to_code(t->it[3]));
+    if (!strcmp(h, "Glue")) return capp2("cgluet", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "glue")) return capp2("cglue", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "unglue")) return capp2("cunglue", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "the")) return capp2("cann", to_code(t->it[2]), to_code(t->it[1]));
+    die("code: no code for form", h);
+    return NULL;
 }
 
 /* ---------------- definitions ---------------- */
@@ -517,6 +635,8 @@ static Syn *compile(Node *t) {
     const char *h = t->it[0]->s;
     if (!strcmp(h, "lam")) return compile_record(t->it[1], t->it[2], false);
     if (!strcmp(h, "thunk")) return compile_record(NULL, t->it[1], true);
+    if (!strcmp(h, "force")) return compile_n(S_FORCE, t, 1, 1);
+    if (!strcmp(h, "the")) return compile(t->it[2]);
     if (!strcmp(h, "plam")) return compile_bound(S_PLAM, t->it[1], t->it[2]);
     if (!strcmp(h, "forall")) return compile_bound(S_FORALL, t->it[1], t->it[2]);
     if (!strcmp(h, "let")) {
@@ -760,17 +880,78 @@ static char *readback(Node *t, long *steps, long *erased) {
 
 /* ---------------- the driver ---------------- */
 static int failures, passes;
+static void toplevel(Node *f);
 static char **watch_name; static Cell **watch_root; static size_t capwn, capwr; static int nwatch;
 static void toplevel(Node *f) {
     if (!f->list || f->n == 0 || f->it[0]->list) die("top-level form expected", NULL);
     const char *h = f->it[0]->s;
     if (!strcmp(h, "def")) {
         if (f->n != 3) die("(def name term)", NULL);
-        long g = add_global(f->it[1]->s, G_DEF);
+        /* a name declared earlier (forward reference, mutual recursion) is filled */
+        long g = global_lookup(f->it[1]->s);
+        bool fill_decl = g >= 0 && G[g].kind == G_INPUT && !G[g].res->port[0];
+        if (fill_decl) G[g].kind = G_DEF; else g = add_global(f->it[1]->s, G_DEF);
         int ns; int *u;
         Syn *s = compile_top(f->it[2], &ns, &u);
         G[g].body = s; G[g].nslots = ns; G[g].uses = u;
         link(top_build(s, ns, u), P(G[g].res, 0));
+        if (fill_decl) { for (int i = 0; i < G[g].npark; i++) net_push(G[g].park_o[i], G[g].park_v[i]); G[g].npark = 0; }
+    } else if (!strcmp(h, "checked") || !strcmp(h, "check") || !strcmp(h, "check-fail")) {
+        /* the checker (lib/check.ctt), a term, run on the codes of T and t
+         * against the signature of the definitions checked so far */
+        bool define = !strcmp(h, "checked"), expect = strcmp(h, "check-fail") != 0;
+        int at = define ? 2 : 1;
+        if (f->n != at + 2) die(define ? "(checked name T t)" : "(check T t)", NULL);
+        Node *T = f->it[at], *t = f->it[at + 1];
+        char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nchecked);
+        Node *sign = nchecked ? nsym(sig) : nsym("lnil");
+        Node *cT = to_code(ds(T)), *ct = to_code(ds(t));
+        Node *q = nl4("chk-def", sign, cT, ct);
+        long steps;
+        char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+        bool ok = !strcmp(r, tr) == expect;
+        if (ok) passes++; else failures++;
+        printf("%s: %s ", ok ? "ok" : "FAIL", expect ? "checks" : "rejected");
+        if (define) printf("%s", f->it[1]->s); else print_node(stdout, t);
+        printf("   [%ld steps]\n", steps);
+        free(r); free(tr);
+        if (define && ok) {
+            Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = f->it[1]; d->it[2] = t;
+            toplevel(d);
+            char sig2[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nchecked + 1);
+            Node *sd = nlist(3); sd->it[0] = nsym("def"); sd->it[1] = nsym(sig2); sd->it[2] = nl4("sig-add", sign, cT, ct);
+            GROW(CHECKED, capchecked, (size_t)nchecked + 1);
+            CHECKED[nchecked++] = strdup(f->it[1]->s);
+            toplevel(sd);
+        }
+    } else if (!strcmp(h, "declare")) {
+        for (int i = 1; i < f->n; i++) add_global(f->it[i]->s, G_INPUT);
+    } else if (!strcmp(h, "data")) {
+        /* (data T (C f...) ...): constructors as definitions */
+        if (f->n < 3) die("(data T (C f...) ...)", NULL);
+        int type = ntypes++;
+        GROW(TYPE_N, captypes, (size_t)ntypes);
+        int N = f->n - 2;
+        TYPE_N[type] = N;
+        for (int i = 0; i < N; i++) {
+            Node *cd = f->it[i + 2];
+            if (!cd->list || cd->n < 1) die("constructor must be (C f...)", NULL);
+            GROW(CONS, capcons, (size_t)ncons + 1);
+            CONS[ncons++] = (Con){ strdup(cd->it[0]->s), type, i, cd->n - 1 };
+        }
+        for (int i = 0; i < N; i++) {
+            Node *cd = f->it[i + 2];
+            int ar = cd->n - 1;
+            Node *app = NULL;
+            char nm[32];
+            snprintf(nm, sizeof nm, "%%h%d", i); app = nsym(nm);
+            for (int k = 1; k <= ar; k++) app = nl3("app", app, cd->it[k]);
+            Node *body = app;
+            for (int j = N - 1; j >= 0; j--) { snprintf(nm, sizeof nm, "%%h%d", j); body = nl3("lam", nsym(nm), body); }
+            for (int k = ar; k >= 1; k--) body = nl3("lam", cd->it[k], body);
+            Node *def = nlist(3); def->it[0] = nsym("def"); def->it[1] = cd->it[0]; def->it[2] = body;
+            toplevel(def);
+        }
     } else if (!strcmp(h, "axiom")) {
         for (int i = 1; i < f->n; i++) add_global(f->it[i]->s, G_AXIOM);
     } else if (!strcmp(h, "input")) {

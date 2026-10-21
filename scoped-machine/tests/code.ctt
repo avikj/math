@@ -1,21 +1,24 @@
 ; tests/code.ctt — the evaluator is a term over codes; its value at the code of t is t's value.
 (axiom A B a b f junk)
+(def v0 (cvar nz)) (def v1 (cvar (ns nz))) (def v2 (cvar (ns (ns nz)))) (def v3 (cvar (ns (ns (ns nz)))))
 
-(same (eval (clam (cpair v0 v0)) junk) (lam x (pair x x)))
-(same (eval (capp (clam v0) v1) (pair junk (pair a junk))) a)
-(same (eval (cfst (cpair v0 v1)) (pair a (pair b junk))) a)
+(same (eval junk (clam (cpair v0 v0))) (lam x (pair x x)))
+(same (eval (pair junk (pair a junk)) (capp (clam v0) v1)) a)
+(same (eval (pair a (pair b junk)) (cfst (cpair v0 v1))) a)
+; codes written from source text: (code t)
+(same (eval junk (code (lam x (pair x x)))) (lam x (pair x x)))
+(same (eval junk (code (plam i (sys ((= i 0) i))))) (plam i (sys ((= i 0) i))))
 ; a line, a system under it, an endpoint
-(same (eval (cplam (csysc (ceq0 v0) v1 csys0)) (pair a junk)) (plam i (sys ((= i 0) a))))
-(same (eval (cpappe (cplam v1) ci1 v0 v0) (pair a junk)) a)
+(same (eval (pair a junk) (cplam (csysc (ceq0 v0) v1 csys0))) (plam i (sys ((= i 0) a))))
 ; composition and Glue through codes
-(same (eval (ccomp (cplam (cpi v1 v2)) csys0 v1) (pair A (pair f junk)))
+(same (eval (pair A (pair f junk)) (ccomp (cplam (cpi v1 v2)) (cplam csys0) v1))
       (transp (plam i (Pi x A A)) f))
-(same (eval (cunglue (csysc cftt (cpair v0 v1) csys0) v2) (pair A (pair (idequiv A) (pair a junk)))) a)
+(same (eval (pair A (pair (idequiv A) (pair a junk))) (cunglue (csysc cftt (cpair v0 v1) csys0) v2)) a)
 ; transport along ua, posed as a code
-(same (eval (ccomp (cplam (cpapp (capp (capp (capp v2 v3) v3) (cvar (suc (suc (suc (suc zero)))))) v0)) csys0 v0)
-            (pair a (pair ua (pair A (pair (idequiv A) junk)))))
+(same (eval (pair a (pair ua (pair A (pair (idequiv A) junk))))
+            (ccomp (cplam (cpapp (capp (capp (capp v2 v3) v3) (cvar (ns (ns (ns (ns nz)))))) v0)) (cplam csys0) v0))
       (transp (ua A A (idequiv A)) a))
 ; a statement about the evaluator is a term: the path from (eval code) to its value
-(same (@ (plam i (eval (cpair v0 v0) (pair a junk))) 0) (pair a a))
+(same (@ (plam i (eval (pair a junk) (cpair v0 v0))) 0) (pair a a))
 ; the evaluator evaluates codes of data
-(same (eval (capp (capp v0 v1) v1) (pair add (pair (suc (suc zero)) junk))) (lam s z (s (s (s (s z))))))
+(same (eval (pair add (pair (suc (suc zero)) junk)) (capp (capp v0 v1) v1)) (lam s z (s (s (s (s z))))))

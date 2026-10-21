@@ -782,6 +782,7 @@ static Port build(Syn *t, Frame *f) {
     case S_UNGLUE: c = cell(O_UNGLUE, 3); link(build(t->k[0], f), P(c, 0)); link(build(t->k[1], f), P(c, 1)); return P(c, 2);
     case S_GLOBAL: c = cell(V_GLOBAL, 1); c->a = (uint64_t)t->id; return P(c, 0);
     case S_AXIOM: c = cell(V_NVAR, 1); c->a = (uint64_t)t->id; return P(c, 0);
+    case S_FORCE: return op1(O_FORCE, t->k[0], f);
     case S_LET: {
         bind(f, t->slot, build(t->k[0], f));
         return build(t->k[1], f);

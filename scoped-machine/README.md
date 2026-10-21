@@ -57,9 +57,24 @@ make tsan        # the suites with 4 workers under ThreadSanitizer
 
 Reading a value reduces the net in arrival order only until the observed port holds a value; the rest of the net stands. A divergent part the answer does not use does not block it, and a definition referring to itself unfolds only when eliminated (`(def ones (pair a ones))`).
 
+## Data types
+
+`(data T (c1 x..) (c2 y..) ..)` defines a type by its constructors as terms (a constructor is a function of one handler per constructor, applied to its arguments); `(case t ((c1 x..) b1) ..)` is that application with each branch a thunk, so only the selected branch is built. `if`, `delay` and `force` are the same sugar. `(declare f)` names a definition used before it is given (mutual recursion); the later `def` supplies it. Nothing here adds a cell kind beyond the thunk force.
+
 ## Codes and the evaluator
 
-`lib/code.ctt` gives codes of terms as data (a Scott encoding: a code is a function of one handler per constructor; variables are de Bruijn indices into an environment of nested pairs) and `eval`, a term mapping a code and an environment to the value the machine gives that term. There is no `quote`: a primitive inspecting a term's syntax would distinguish path-equal functions and could not be a function respecting paths. Codes are built as data; statements about the evaluator are terms.
+`lib/code.ctt` gives codes of terms as a data type `Code` (variables are de Bruijn indices `Num` into one context of term and dimension variables; globals are indices into a signature) and `eval-g g e c`, a term mapping a code to the value the machine gives that term. `(code t)` writes the code of a source term. There is no `quote`: a primitive inspecting a term's syntax would distinguish path-equal functions and could not be a function respecting paths. Codes are built as data; statements about the evaluator are terms.
+
+## The checker as a term
+
+`lib/check.ctt` is the type checker of CCHM, written in the language and run by the net (5.26: no outer layer). It is normalization by evaluation over data:
+- **Intervals and faces are data**: DNFs of literals with meet, join, negation, the order and equality, substitution, and `forall`.
+- **Values and neutrals are data**, closures are functions taking a fresh-level counter. `act` substitutes dimensions and re-dispatches neutrals the substitution unblocks; neutrals carry their types.
+- **`veval`** evaluates a code; composition follows the same clauses as the machine (Π, Σ, path, U, Glue), with `fill`, `transp`, `hcomp`, `idequiv`, `lineequiv` defined in the checker.
+- **`conv`** decides conversion with η for functions, pairs and lines, and compares systems under each clause.
+- **`check` / `infer`** are the typing rules, including faces, systems (adjacent branches agree on their meet), composition (the tube agrees with the base) and Glue.
+
+`(checked n T t)` translates `T` and `t` to codes, runs `chk-def` on the current signature, compares the result with `true`, and on success defines `n` and extends the signature; `(check T t)` and `(check-fail T t)` check without defining. `tests/check.ctt` checks identity, refl, sym, funext, transport, path concatenation by hcomp, contractibility, fibres, equivalences, `idequiv` and `ua`, and rejects ill-typed terms, among them a tube disagreeing with its base.
 
 ## Parallel rewriting
 
@@ -95,7 +110,8 @@ Intervals, faces, clause lists and substitutions are immutable and reference cou
 
 - `src/dnf.c`: interval and face DNF, substitutions.
 - `src/net.c`: cells, wiring, the interaction rules, building a net from compiled syntax.
-- `src/lang.c`: reader, compilation to binder records with lifting, definitions, identities and sites, readback, driver (`def`, `axiom`, `input`, `supply`, `identity`, `show`, `same`, `the`, `watch`, `same-watch`, `witness`, `witness-watch`, `witnesses`, `defect`).
+- `src/lang.c`: reader, compilation to binder records with lifting, definitions, identities and sites, readback, driver (`def`, `declare`, `data`, `axiom`, `input`, `supply`, `identity`, `show`, `same`, `the`, `watch`, `same-watch`, `witness`, `witness-watch`, `witnesses`, `defect`, `checked`, `check`, `check-fail`).
 - `lib/prelude.ctt`: the library.
-- `tests/cubical.ctt`, `tests/code.ctt`, `tests/identity.ctt`: the checks.
+- `lib/code.ctt`: codes and the evaluator; `lib/check.ctt`: the checker.
+- `tests/cubical.ctt`, `tests/code.ctt`, `tests/identity.ctt`, `tests/check.ctt`: the checks.
 - `HANDOFF.md`: the specification.

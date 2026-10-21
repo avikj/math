@@ -1,0 +1,530 @@
+; check.ctt — the type checker as a term (paper 5.26): codes of terms as
+; data, a normalizer from codes to semantic values in which intervals and
+; faces are data, conversion, and the typing rules of the cubical core.
+;
+; Everything here is written in the language itself. Branches are thunks
+; (case/if), so a recursive definition computes only the branch selected.
+
+; ---------------------------------------------------------------- basics
+(data Lst (lnil) (lcons x xs))
+(data Opt (none) (some x))
+
+(def andb (lam a b (if a b false)))
+(def orb (lam a b (if a true b)))
+(def notb (lam a (if a false true)))
+(def beq (lam a b (if a b (notb b))))
+
+(def eqn (lam x y (case x
+  ((nz) (case y ((nz) true) (_ false)))
+  ((ns x1) (case y ((ns y1) (eqn x1 y1)) (_ false))))))
+(def maxn (lam x y (case x
+  ((nz) y)
+  ((ns x1) (case y ((nz) x) ((ns y1) (ns (maxn x1 y1))))))))
+
+(def isnil (lam l (case l ((lnil) true) (_ false))))
+(def lapp (lam l m (case l ((lnil) m) ((lcons x xs) (lcons x (lapp xs m))))))
+(def lmap (lam f l (case l ((lnil) lnil) ((lcons x xs) (lcons (f x) (lmap f xs))))))
+(def lany (lam p l (case l ((lnil) false) ((lcons x xs) (if (p x) true (lany p xs))))))
+(def lall (lam p l (case l ((lnil) true) ((lcons x xs) (if (p x) (lall p xs) false)))))
+(def lfilter (lam p l (case l ((lnil) lnil) ((lcons x xs) (if (p x) (lcons x (lfilter p xs)) (lfilter p xs))))))
+(def lconcatmap (lam f l (case l ((lnil) lnil) ((lcons x xs) (lapp (f x) (lconcatmap f xs))))))
+(def lnth (lam l n (case l
+  ((lnil) none)
+  ((lcons x xs) (case n ((nz) (some x)) ((ns m) (lnth xs m)))))))
+(def lsnoc (lam l x (lapp l (lcons x lnil))))
+(def llen (lam l (case l ((lnil) nz) ((lcons x xs) (ns (llen xs))))))
+; all pairs of distinct positions i < j
+(def lpairs (lam l (case l
+  ((lnil) lnil)
+  ((lcons x xs) (lapp (lmap (lam y (pair x y)) xs) (lpairs xs))))))
+(def fromopt (lam o d (case o ((none) d) ((some x) x))))
+
+; ---------------------------------------------------------------- intervals
+; An interval is a join of clauses; a clause a meet of literals (lit l neg).
+; i ∧ ~i is not 0: clauses are never dropped, so 0 is the empty join and 1
+; any join containing the empty clause. x ≤ y iff every clause of x contains
+; some clause of y (the free distributive lattice on the literals).
+(data Lit (lit l neg))
+(def i0 lnil)
+(def i1 (lcons lnil lnil))
+(def ivar (lam l (lcons (lcons (lit l false) lnil) lnil)))
+(def litneg (lam x (case x ((lit l b) (lit l (notb b))))))
+(def liteq (lam x y (case x ((lit l b) (case y ((lit m c) (andb (eqn l m) (beq b c))))))))
+(def ijoin lapp)
+(def imeet (lam x y (lconcatmap (lam c (lmap (lam d (lapp c d)) y)) x)))
+(def inegclause (lam c (case c
+  ((lnil) i0)
+  ((lcons l ls) (ijoin (lcons (lcons (litneg l) lnil) lnil) (inegclause ls))))))
+(def ineg (lam x (case x
+  ((lnil) i1)
+  ((lcons c cs) (imeet (inegclause c) (ineg cs))))))
+(def izero isnil)
+(def ione (lam x (lany isnil x)))
+(def csub (lam c d (lall (lam l (lany (liteq l) d)) c)))   ; clause c ⊆ clause d
+(def ile (lam x y (lall (lam c (lany (lam d (csub d c)) y)) x)))
+(def ieq (lam x y (andb (ile x y) (ile y x))))
+; a substitution: a list of (pair level interval)
+(def slookup (lam s l (case s
+  ((lnil) none)
+  ((lcons p ps) (if (eqn (fst p) l) (some (snd p)) (slookup ps l))))))
+(def isubst-lit (lam s x (case x ((lit l b)
+  (let v (fromopt (slookup s l) (ivar l)) (if b (ineg v) v))))))
+(def isubst-clause (lam s c (case c
+  ((lnil) i1)
+  ((lcons l ls) (imeet (isubst-lit s l) (isubst-clause s ls))))))
+(def isubst (lam s x (lconcatmap (isubst-clause s) x)))
+
+; ---------------------------------------------------------------- faces
+; A face is a join of consistent clauses of literals (flit l e), e = true for
+; (l = 1). ⊤ contains the empty clause, ⊥ is empty; entailment as for intervals.
+(data FLit (flit l e))
+(def ftrue (lcons lnil lnil))
+(def ffalse lnil)
+(def flitl (lam x (case x ((flit l e) l))))
+(def flite (lam x (case x ((flit l e) e))))
+(def flitq (lam x y (andb (eqn (flitl x) (flitl y)) (beq (flite x) (flite y)))))
+(def fconsistent (lam c (lall (lam x (lall (lam y (orb (notb (eqn (flitl x) (flitl y))) (beq (flite x) (flite y)))) c)) c)))
+(def fjoin lapp)
+(def fmeet (lam x y (lfilter fconsistent (lconcatmap (lam c (lmap (lam d (lapp c d)) y)) x))))
+(def fistrue (lam x (lany isnil x)))
+(def fisfalse isnil)
+(def fcsub (lam c d (lall (lam l (lany (flitq l) d)) c)))
+(def fle (lam x y (lall (lam c (lany (lam d (fcsub d c)) y)) x)))
+(def feqf (lam x y (andb (fle x y) (fle y x))))
+; (r = 0) is the meet over clauses of the join of (l = 0); (r = 1) the join
+; over clauses of the meet of (l = 1); (~i = e) is (i = 1-e)
+(def lit-at (lam x e (case x ((lit l neg) (lcons (lcons (flit l (if neg (notb e) e)) lnil) lnil)))))
+(def feq0-clause (lam c (case c ((lnil) ffalse) ((lcons x xs) (fjoin (lit-at x false) (feq0-clause xs))))))
+(def feq1-clause (lam c (case c ((lnil) ftrue) ((lcons x xs) (fmeet (lit-at x true) (feq1-clause xs))))))
+(def feq0 (lam r (case r ((lnil) ftrue) ((lcons c cs) (fmeet (feq0-clause c) (feq0 cs))))))
+(def feq1 (lam r (lconcatmap feq1-clause r)))
+(def feq (lam r e (if e (feq1 r) (feq0 r))))
+(def fsubst-lit (lam s x (case x ((flit l e) (feq (fromopt (slookup s l) (ivar l)) e)))))
+(def fsubst-clause (lam s c (case c
+  ((lnil) ftrue)
+  ((lcons x xs) (fmeet (fsubst-lit s x) (fsubst-clause s xs))))))
+(def fsubst (lam s p (lconcatmap (fsubst-clause s) p)))
+(def fmentions (lam l c (lany (lam x (eqn (flitl x) l)) c)))
+(def fforall (lam l p (lfilter (lam c (notb (fmentions l c))) p)))
+; a clause as the substitution of its endpoints
+(def clsub (lam c (lmap (lam x (pair (flitl x) (if (flite x) i1 i0))) c)))
+
+; ---------------------------------------------------------------- values
+(declare act act-branches act-neu vapp vfst vsnd papp mkglue mkgluev vunglue vcomp comp-head comp-pi comp-sigma comp-path comp-u comp-glue)
+; Binders are functions taking the fresh-level counter k (every level in
+; scope is below k) and their argument. Neutrals carry their types, so a
+; neutral path's endpoints are read from its type. A system is a list of
+; (pair clause value), each value restricted to its clause; a system with a
+; true clause is that value. Substituting dimensions (act) re-applies each
+; neutral's eliminator, so a substitution unblocks what it can.
+(data Val (vlam f) (vpair a b) (vpi A F) (vsigma A F) (vu l) (vpathp L a b) (vplam f)
+          (viv r) (vface p) (vsys bs) (vglue A S) (vgluev S a) (vneu n T) (verr))
+(data Neu (nvar l) (napp h a) (nfst h) (nsnd h) (npapp h r) (ncomp L u a0) (nunglue S h))
+
+(def iv-of (lam v (case v ((viv r) r) (_ i0))))
+(def face-of (lam v (case v ((vface p) p) (_ ffalse))))
+(def istotal (lam v (case v ((vsys bs) false) (_ true))))
+(def branches (lam v (case v ((vsys bs) bs) (_ (lcons (pair lnil v) lnil)))))
+(def bface (lam bs (lmap (lam b (fst b)) bs)))
+(def mksys (lam bs (case (lfilter (lam b (isnil (fst b))) bs)
+  ((lnil) (vsys bs))
+  ((lcons b rest) (snd b)))))
+(def single (lam x (lcons x lnil)))
+
+(def act (lam k s v (case v
+  ((vlam f) (vlam (lam k1 x (act k1 s (f k1 x)))))
+  ((vpair a b) (vpair (act k s a) (act k s b)))
+  ((vpi A F) (vpi (act k s A) (lam k1 x (act k1 s (F k1 x)))))
+  ((vsigma A F) (vsigma (act k s A) (lam k1 x (act k1 s (F k1 x)))))
+  ((vu l) v)
+  ((vpathp L a b) (vpathp (lam k1 r (act k1 s (L k1 r))) (act k s a) (act k s b)))
+  ((vplam f) (vplam (lam k1 r (act k1 s (f k1 r)))))
+  ((viv r) (viv (isubst s r)))
+  ((vface p) (vface (fsubst s p)))
+  ((vsys bs) (mksys (act-branches k s bs)))
+  ((vglue A S) (mkglue k (act k s A) (act-branches k s S)))
+  ((vgluev S a) (mkgluev k (act-branches k s S) (act k s a)))
+  ((vneu n T) (act-neu k s n T))
+  ((verr) v))))
+; a branch (c, w) under s: c becomes the face c[s]; w is restricted to each of its clauses
+(def act-branches (lam k s bs (lconcatmap (lam b
+  (lmap (lam d (pair d (act k (clsub d) (act k s (snd b))))) (fsubst s (single (fst b))))) bs)))
+(def act-neu (lam k s n T (case n
+  ((nvar l) (vneu n (act k s T)))
+  ((napp h a) (vapp k (act k s h) (act k s a)))
+  ((nfst h) (vfst k (act k s h)))
+  ((nsnd h) (vsnd k (act k s h)))
+  ((npapp h r) (papp k (act k s h) (isubst s r)))
+  ((ncomp L u a0) (vcomp k (lam k1 r (act k1 s (L k1 r))) (lam k1 r (act k1 s (u k1 r))) (act k s a0)))
+  ((nunglue S h) (vunglue k (act-branches k s S) (act k s h))))))
+(def restrict (lam k c v (act k (clsub c) v)))
+
+; eliminators; on a system they act branchwise, the other operand restricted
+(def vapp (lam k f x (case f
+  ((vlam g) (g k x))
+  ((vneu n T) (case T ((vpi A F) (vneu (napp f x) (F k x))) (_ verr)))
+  ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vapp k (snd b) (restrict k (fst b) x)))) bs)))
+  (_ verr))))
+(def vfst (lam k p (case p
+  ((vpair a b) a)
+  ((vneu n T) (case T ((vsigma A F) (vneu (nfst p) A)) (_ verr)))
+  ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vfst k (snd b)))) bs)))
+  (_ verr))))
+(def vsnd (lam k p (case p
+  ((vpair a b) b)
+  ((vneu n T) (case T ((vsigma A F) (vneu (nsnd p) (F k (vfst k p)))) (_ verr)))
+  ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vsnd k (snd b)))) bs)))
+  (_ verr))))
+(def papp (lam k p r (case p
+  ((vplam f) (f k r))
+  ((vneu n T) (case T
+     ((vpathp L a b) (if (izero r) a (if (ione r) b (vneu (npapp p r) (L k r)))))
+     (_ verr)))
+  ((vsys bs) (vsys (lmap (lam b (pair (fst b) (papp k (snd b) (isubst (clsub (fst b)) r)))) bs)))
+  (_ verr))))
+(def line-of (lam v (case v ((vplam f) f) (_ (lam k r (papp k v r))))))
+
+; Glue: on its face the fibre (resp. the element, the equivalence's map)
+(def total-branch (lam bs (case (lfilter (lam b (isnil (fst b))) bs) ((lnil) none) ((lcons b rest) (some (snd b))))))
+(def mkglue (lam k A S (case (total-branch S) ((some te) (vfst k te)) ((none) (vglue A S)))))
+(def mkgluev (lam k S a (case (total-branch S) ((some t) t) ((none) (vgluev S a)))))
+(def vunglue (lam k S b (case (total-branch S)
+  ((some te) (vapp k (vfst k (vsnd k te)) b))
+  ((none) (case b
+     ((vgluev S2 a) a)
+     ((vneu n T) (case T ((vglue A S2) (vneu (nunglue S b) A)) (_ verr)))
+     ((vsys bs) (vsys (lmap (lam bb (pair (fst bb) (vunglue k (act-branches k (clsub (fst bb)) S) (snd bb)))) bs)))
+     (_ verr))))))
+
+; systems built from faces
+(def sys-add (lam k p w s
+  (let new (lmap (lam d (pair d (restrict k d w))) p)
+    (case (total-branch new)
+      ((some v) v)
+      ((none) (if (istotal s) s (vsys (lapp new (branches s)))))))))
+(def sys-union (lam s t (if (istotal s) s (if (istotal t) t (vsys (lapp (branches s) (branches t)))))))
+(def sys-map (lam k f s (case s
+  ((vsys bs) (vsys (lmap (lam b (pair (fst b) (restrict k (fst b) (f k (snd b))))) bs)))
+  (_ (f k s)))))
+(def empty-tube (lam k r (vsys lnil)))
+
+; ---------------------------------------------------------------- composition
+; vcomp k L u a0: L a line of types, u a line of systems (or total), a0 at 0.
+; A total tube is its own end. Otherwise the family is opened at the fresh
+; level k; its head's components are re-abstracted from there by
+; substitution (never by re-evaluating the family at an endpoint).
+(def reabs (lam l X (lam k r (act k (single (pair l r)) X))))
+(def reabs-fam (lam l F (lam k r x (act k (single (pair l r)) (F k x)))))
+(def reabs-branches (lam l S (lam k r (act-branches k (single (pair l r)) S))))
+(def vcomp (lam k L u a0
+  (let k1 (ns k) (let g (ivar k)
+    (if (istotal (u k1 g)) (u k i1)
+      (comp-head k L u a0 k1 (L k1 g)))))))
+(def comp-head (lam k L u a0 k1 H (case H
+  ((vpi A F) (comp-pi k (reabs k A) (reabs-fam k F) u a0))
+  ((vsigma A F) (comp-sigma k (reabs k A) (reabs-fam k F) u a0))
+  ((vpathp P l r) (comp-path k (lam k2 i (lam k3 j (act k3 (single (pair k i)) (P k3 j)))) (reabs k l) (reabs k r) u a0))
+  ((vu l) (comp-u k u a0))
+  ((vglue A S) (comp-glue k (reabs k A) (reabs-branches k S) u a0))
+  ((vneu n T) (vneu (ncomp L u a0) (L k i1)))
+  ((vsys bs) (mksys (lmap (lam b (pair (fst b)
+       (vcomp k (reabs k (snd b)) (lam k2 r (restrict k2 (fst b) (u k2 r))) (restrict k (fst b) a0))))
+     (lfilter (lam b (notb (fmentions k (fst b)))) bs))))
+  (_ verr))))
+(def fill (lam k L u a0 r
+  (vcomp k (lam k2 j (L k2 (imeet r j)))
+          (lam k2 j (sys-add k2 (feq r false) a0 (u k2 (imeet r j))))
+          a0)))
+(def transp (lam k L a (vcomp k L empty-tube a)))
+(def hcomp (lam k X u a (vcomp k (lam k2 r X) u a)))
+
+(def comp-pi (lam k D E u f0
+  (vlam (lam k1 x1
+    (let v (lam k2 r (fill k2 (lam k3 j (D k3 (ineg j))) empty-tube x1 (ineg r)))
+      (vcomp k1 (lam k2 r (E k2 r (v k2 r)))
+               (lam k2 r (vapp k2 (u k2 r) (v k2 r)))
+               (vapp k1 f0 (v k1 i0))))))))
+(def comp-sigma (lam k D E u z0
+  (let al (lam k2 r (fill k2 D (lam k3 j (vfst k3 (u k3 j))) (vfst k z0) r))
+    (vpair (al k i1)
+           (vcomp k (lam k2 r (E k2 r (al k2 r))) (lam k2 r (vsnd k2 (u k2 r))) (vsnd k z0))))))
+(def comp-path (lam k P l r u p0
+  (vplam (lam k1 j
+    (vcomp k1 (lam k2 i ((P k2 i) k2 j))
+             (lam k2 i (sys-add k2 (feq j false) (l k2 i)
+                         (sys-add k2 (feq j true) (r k2 i) (papp k2 (u k2 i) j))))
+             (papp k1 p0 j))))))
+
+; equivalences (HANDOFF §15)
+(def contr-type (lam k X (vsigma X (lam k1 c (vpi X (lam k2 x (vpathp (lam k3 r X) c x)))))))
+(def fib-type (lam k X Y f y (vsigma X (lam k1 x (vpathp (lam k2 r Y) (vapp k1 f x) y)))))
+(def equiv-type (lam k X Y (vsigma (vpi X (lam k1 x Y)) (lam k1 f (vpi Y (lam k2 y (contr-type k2 (fib-type k2 X Y f y))))))))
+(def idequiv (lam k X (vpair (vlam (lam k1 x x))
+  (vlam (lam k1 y (vpair (vpair y (vplam (lam k2 r y)))
+    (vlam (lam k2 z (vplam (lam k3 i (vpair (papp k3 (vsnd k3 z) (ineg i))
+                                            (vplam (lam k4 j (papp k4 (vsnd k4 z) (ijoin (ineg i) j)))))))))))))))
+(def lineequiv (lam k X (transp k (lam k2 r (equiv-type k2 (X k2 i0) (X k2 r))) (idequiv k (X k i0)))))
+
+(def comp-u (lam k u A0
+  (let k1 (ns k) (let g (ivar k)
+    (mkglue k A0 (lmap (lam b (pair (fst b)
+        (let w (reabs k (snd b))
+          (vpair (w k i1) (lineequiv k (lam k2 r (w k2 (ineg r))))))))
+      (branches (u k1 g))))))))
+
+; Glue composition (HANDOFF §16)
+(def comp-glue (lam k A S u u0
+  (let k1 (ns k)
+  (let a0 (vunglue k (S k i0) u0)
+  (let al (lam k2 r (fill k2 A (lam k3 i (vunglue k3 (S k3 i) (u k3 i))) a0 r))
+  (let a1 (al k i1)
+  (let delta (fforall k (bface (S k1 (ivar k))))
+  (let S1 (mksys (S k i1))
+  (let alpha1 (bface (S k i1))
+  (let tl (lam k2 r (fill k2 (lam k3 i (vfst k3 (mksys (S k3 i)))) u u0 r))
+  (let ff (lam k2 i x (vapp k2 (vfst k2 (vsnd k2 (mksys (S k2 i)))) x))
+  (let omega (vplam (lam k2 q
+                (vcomp k2 A (lam k3 i (sys-add k3 (feq q false) (ff k3 i (tl k3 i))
+                                       (sys-add k3 (feq q true) (al k3 i)
+                                         (sys-map k3 (lam k4 w (al k4 i)) (u k3 i)))))
+                      a0)))
+  (let vpart (sys-add k delta (vpair (tl k i1) omega)
+               (sys-map k (lam k2 w (vpair w (vplam (lam k3 r a1)))) (u k i1)))
+  (let C (vapp k (vsnd k (vsnd k S1)) a1)
+  (let tp (sys-add k alpha1
+             (hcomp k (fib-type k (vfst k S1) (A k i1) (vfst k (vsnd k S1)) a1)
+                      (lam k2 j (sys-map k2 (lam k3 w (papp k3 (vapp k3 (vsnd k3 C) w) j)) vpart))
+                      (vfst k C))
+             (vsys lnil))
+  (let P (sys-map k (lam k2 e (vplam (lam k3 q (papp k3 (vsnd k3 e) (ineg q))))) tp)
+    (mkgluev k (branches (sys-map k (lam k2 e (vfst k2 e)) tp))
+      (hcomp k (A k i1)
+             (lam k2 q (sys-union (sys-map k2 (lam k3 p (papp k3 p q)) P)
+                                  (sys-map k2 (lam k3 w a1) (u k i1))))
+             a1))))))))))))))))))
+
+; ---------------------------------------------------------------- evaluation
+; veval k sig env c: the value of code c; env holds the values of the
+; context's variables (dimensions as interval values), sig the checked
+; definitions' (type, value) pairs. A system branch is evaluated under each
+; clause of its face, in the environment restricted to that clause.
+(declare veval conv convty convneu convn infer check infer-binder check-comp)
+(def act-env (lam k d env (lmap (lam v (restrict k d v)) env)))
+(def veval (lam k sig env c (case c
+  ((cvar n) (fromopt (lnth env n) verr))
+  ((cglob n) (case (lnth sig n) ((some p) (snd p)) ((none) verr)))
+  ((clam b) (vlam (lam k1 x (veval k1 sig (lcons x env) b))))
+  ((capp f a) (vapp k (veval k sig env f) (veval k sig env a)))
+  ((cpair a b) (vpair (veval k sig env a) (veval k sig env b)))
+  ((cfst p) (vfst k (veval k sig env p)))
+  ((csnd p) (vsnd k (veval k sig env p)))
+  ((cpi A B) (vpi (veval k sig env A) (lam k1 x (veval k1 sig (lcons x env) B))))
+  ((csigma A B) (vsigma (veval k sig env A) (lam k1 x (veval k1 sig (lcons x env) B))))
+  ((cuniv l) (vu l))
+  ((cpathp A a b) (vpathp (line-of (veval k sig env A)) (veval k sig env a) (veval k sig env b)))
+  ((cplam b) (vplam (lam k1 r (veval k1 sig (lcons (viv r) env) b))))
+  ((cpapp p r) (papp k (veval k sig env p) (iv-of (veval k sig env r))))
+  ((ci0) (viv i0))
+  ((ci1) (viv i1))
+  ((cneg r) (viv (ineg (iv-of (veval k sig env r)))))
+  ((cmeet r s) (viv (imeet (iv-of (veval k sig env r)) (iv-of (veval k sig env s)))))
+  ((cjoin r s) (viv (ijoin (iv-of (veval k sig env r)) (iv-of (veval k sig env s)))))
+  ((ceq0 r) (vface (feq (iv-of (veval k sig env r)) false)))
+  ((ceq1 r) (vface (feq (iv-of (veval k sig env r)) true)))
+  ((cfand a b) (vface (fmeet (face-of (veval k sig env a)) (face-of (veval k sig env b)))))
+  ((cfor a b) (vface (fjoin (face-of (veval k sig env a)) (face-of (veval k sig env b)))))
+  ((cftt) (vface ftrue))
+  ((cfff) (vface ffalse))
+  ((cforall b) (vface (fforall k (face-of (veval (ns k) sig (lcons (viv (ivar k)) env) b)))))
+  ((csys0) (vsys lnil))
+  ((csysc f t r) (let new (lmap (lam d (pair d (veval k sig (act-env k d env) t))) (face-of (veval k sig env f)))
+                    (case (total-branch new)
+                      ((some v) v)
+                      ((none) (let rest (veval k sig env r) (if (istotal rest) rest (vsys (lapp new (branches rest)))))))))
+  ((ccomp A u a) (vcomp k (line-of (veval k sig env A)) (line-of (veval k sig env u)) (veval k sig env a)))
+  ((cgluet A S) (mkglue k (veval k sig env A) (branches (veval k sig env S))))
+  ((cglue S a) (mkgluev k (branches (veval k sig env S)) (veval k sig env a)))
+  ((cunglue S b) (vunglue k (branches (veval k sig env S)) (veval k sig env b)))
+  ((clet t b) (veval k sig (lcons (veval k sig env t) env) b))
+  ((cann t T) (veval k sig env t)))))
+
+; ---------------------------------------------------------------- conversion
+; At a type: η for Π (apply to a fresh variable), Σ (componentwise), paths
+; (apply to a fresh dimension) and Glue (unglue, and on the face the fibre);
+; types are compared by former; neutrals structurally. A system is compared
+; branchwise against the other side restricted.
+(def conv-sys (lam k T u v (andb
+  (lall (lam b (conv k (restrict k (fst b) T) (snd b) (restrict k (fst b) v))) (branches u))
+  (lall (lam b (conv k (restrict k (fst b) T) (restrict k (fst b) u) (snd b))) (branches v)))))
+(def conv (lam k T u v (if (orb (notb (istotal u)) (notb (istotal v))) (conv-sys k T u v) (case T
+  ((vpi A F) (let x (vneu (nvar k) A) (conv (ns k) (F (ns k) x) (vapp (ns k) u x) (vapp (ns k) v x))))
+  ((vsigma A F) (andb (conv k A (vfst k u) (vfst k v)) (conv k (F k (vfst k u)) (vsnd k u) (vsnd k v))))
+  ((vpathp L a b) (let i (ivar k) (conv (ns k) (L (ns k) i) (papp (ns k) u i) (papp (ns k) v i))))
+  ((vu l) (convty k u v))
+  ((vglue A S) (andb (conv k A (vunglue k S u) (vunglue k S v))
+                     (lall (lam b (conv k (vfst k (snd b)) (restrict k (fst b) u) (restrict k (fst b) v))) S)))
+  ((vsys bs) (lall (lam b (conv k (snd b) (restrict k (fst b) u) (restrict k (fst b) v))) bs))
+  (_ (convneu k u v))))))
+(def convty-branches (lam k A S S2 (andb (feqf (bface S) (bface S2))
+  (lall (lam b (case (total-branch (act-branches k (clsub (fst b)) S2))
+     ((some te2) (let te (snd b)
+        (andb (convty k (vfst k te) (vfst k te2))
+              (conv k (equiv-type k (vfst k te) (restrict k (fst b) A)) (vsnd k te) (vsnd k te2)))))
+     ((none) false))) S))))
+(def convty (lam k X Y (case X
+  ((vpi A F) (case Y ((vpi B G) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) (_ false)))
+  ((vsigma A F) (case Y ((vsigma B G) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) (_ false)))
+  ((vu l) (case Y ((vu m) (eqn l m)) (_ false)))
+  ((vpathp L a b) (case Y ((vpathp M c d) (let i (ivar k)
+      (andb (convty (ns k) (L (ns k) i) (M (ns k) i)) (andb (conv k (L k i0) a c) (conv k (L k i1) b d))))) (_ false)))
+  ((vglue A S) (case Y ((vglue B S2) (andb (convty k A B) (convty-branches k A S S2))) (_ false)))
+  ((vsys bs) (lall (lam b (convty k (snd b) (restrict k (fst b) Y))) bs))
+  ((vneu n T) (convneu k X Y))
+  (_ false))))
+(def neu-of (lam v (case v ((vneu n T) (some n)) (_ none))))
+(def type-of (lam v (case v ((vneu n T) T) (_ verr))))
+(def convneu (lam k u v (case u
+  ((vneu n T) (case v ((vneu m T2) (convn k u v n m)) (_ false)))
+  ((viv r) (case v ((viv s) (ieq r s)) (_ false)))
+  ((vface p) (case v ((vface q) (feqf p q)) (_ false)))
+  (_ false))))
+(def convn (lam k u v n m (case n
+  ((nvar l) (case m ((nvar l2) (eqn l l2)) (_ false)))
+  ((napp h a) (case m ((napp h2 a2) (andb (convneu k h h2)
+       (case (type-of h) ((vpi A F) (conv k A a a2)) (_ false)))) (_ false)))
+  ((nfst h) (case m ((nfst h2) (convneu k h h2)) (_ false)))
+  ((nsnd h) (case m ((nsnd h2) (convneu k h h2)) (_ false)))
+  ((npapp h r) (case m ((npapp h2 r2) (andb (convneu k h h2) (ieq r r2))) (_ false)))
+  ((ncomp L w a0) (case m ((ncomp L2 w2 a02) (let k1 (ns k) (let i (ivar k)
+       (andb (convty k1 (L k1 i) (L2 k1 i))
+       (andb (conv k (L k i0) a0 a02)
+             (conv k1 (L k1 i) (w k1 i) (w2 k1 i))))))) (_ false)))
+  ((nunglue S h) (case m ((nunglue S2 h2) (convneu k h h2)) (_ false))))))
+
+; ---------------------------------------------------------------- typing
+; infer k sig env tys c: the type of c, or none; check k sig env tys c T.
+; tys holds each variable's type (none for a dimension). Being under a face
+; clause is substituting its endpoints into env and tys.
+(def act-tys (lam k d tys (lmap (lam o (case o ((some T) (some (restrict k d T))) ((none) none))) tys)))
+(def is-dim (lam tys n (case (lnth tys n) ((some o) (case o ((none) true) (_ false))) ((none) false))))
+(def check-iv (lam tys r (case r
+  ((cvar n) (is-dim tys n))
+  ((ci0) true) ((ci1) true)
+  ((cneg a) (check-iv tys a))
+  ((cmeet a b) (andb (check-iv tys a) (check-iv tys b)))
+  ((cjoin a b) (andb (check-iv tys a) (check-iv tys b)))
+  (_ false))))
+(def check-face (lam tys p (case p
+  ((ceq0 r) (check-iv tys r)) ((ceq1 r) (check-iv tys r))
+  ((cfand a b) (andb (check-face tys a) (check-face tys b)))
+  ((cfor a b) (andb (check-face tys a) (check-face tys b)))
+  ((cftt) true) ((cfff) true)
+  ((cforall b) (check-face (lcons none tys) b))
+  (_ false))))
+(def infer-level (lam k sig env tys A (case (infer k sig env tys A)
+  ((some T) (case T ((vu l) (some l)) (_ none)))
+  ((none) none))))
+(def under-dim (lam k env (lcons (viv (ivar k)) env)))
+; the branches of a system code: (pair face-code term-code)
+(def sys-codes (lam s (case s
+  ((csys0) lnil)
+  ((csysc f t r) (lcons (pair f t) (sys-codes r)))
+  (_ lnil))))
+(def is-sys-code (lam s (case s ((csys0) true) ((csysc f t r) true) (_ false))))
+; each branch checked under each clause of its face; overlapping branches agree
+(def check-sys (lam k sig env tys s T
+  (let bs (sys-codes s)
+  (andb (lall (lam b (andb (check-face tys (fst b))
+          (lall (lam d (check k sig (act-env k d env) (act-tys k d tys) (snd b) (restrict k d T)))
+                (face-of (veval k sig env (fst b)))))) bs)
+        (lall (lam bb (let b1 (fst bb) (let b2 (snd bb)
+          (lall (lam d (let e2 (act-env k d env)
+                   (conv k (restrict k d T) (veval k sig e2 (snd b1)) (veval k sig e2 (snd b2)))))
+                (fmeet (face-of (veval k sig env (fst b1))) (face-of (veval k sig env (fst b2))))))))
+              (lpairs bs))))))
+(def sys-face (lam k sig env s (lconcatmap (lam b (face-of (veval k sig env (fst b)))) (sys-codes s))))
+; comp A u a: A a line of types, u a line of systems (faces free of the line)
+; or a total line, a at 0 agreeing with u at 0; the result is at A 1
+(def check-comp (lam k sig env tys A u a (case A
+  ((cplam X) (case (infer-level (ns k) sig (under-dim k env) (lcons none tys) X)
+    ((some l) (let L (line-of (veval k sig env A)) (let k1 (ns k) (let ei (under-dim k env) (let ti (lcons none tys)
+      (case u
+        ((cplam W) (if (andb (check k sig env tys a (L k i0))
+          (if (is-sys-code W)
+            (andb (check-sys k1 sig ei ti W (L k1 (ivar k)))
+            (andb (let p (sys-face k1 sig ei W) (feqf p (fforall k p)))
+                  (lall (lam b (lall (lam d (let e0 (act-env k d (lcons (viv i0) env))
+                       (conv k (restrict k d (L k i0)) (veval k sig e0 (snd b)) (restrict k d (veval k sig env a)))))
+                     (face-of (veval k sig (lcons (viv i0) env) (fst b))))) (sys-codes W))))
+            (andb (check k1 sig ei ti W (L k1 (ivar k)))
+                  (conv k (L k i0) (veval k sig (lcons (viv i0) env) W) (veval k sig env a)))))
+          (some (L k i1)) none))
+        (_ none)))))))
+    ((none) none)))
+  (_ none))))
+(def infer (lam k sig env tys c (case c
+  ((cvar n) (case (lnth tys n) ((some o) o) ((none) none)))
+  ((cglob n) (case (lnth sig n) ((some p) (some (fst p))) ((none) none)))
+  ((capp f a) (case (infer k sig env tys f)
+     ((some T) (case T ((vpi A F) (if (check k sig env tys a A) (some (F k (veval k sig env a))) none)) (_ none)))
+     ((none) none)))
+  ((cfst p) (case (infer k sig env tys p) ((some T) (case T ((vsigma A F) (some A)) (_ none))) ((none) none)))
+  ((csnd p) (case (infer k sig env tys p)
+     ((some T) (case T ((vsigma A F) (some (F k (vfst k (veval k sig env p))))) (_ none)))
+     ((none) none)))
+  ((cpapp p r) (case (infer k sig env tys p)
+     ((some T) (case T ((vpathp L a b) (if (check-iv tys r) (some (L k (iv-of (veval k sig env r)))) none)) (_ none)))
+     ((none) none)))
+  ((cuniv l) (some (vu (ns l))))
+  ((cpi A B) (infer-binder k sig env tys A B))
+  ((csigma A B) (infer-binder k sig env tys A B))
+  ((cpathp A a b) (case A
+     ((cplam X) (case (infer-level (ns k) sig (under-dim k env) (lcons none tys) X)
+        ((some l) (let L (line-of (veval k sig env A))
+           (if (andb (check k sig env tys a (L k i0)) (check k sig env tys b (L k i1))) (some (vu l)) none)))
+        ((none) none)))
+     (_ none)))
+  ((cgluet A S) (case (infer-level k sig env tys A)
+     ((some l) (let Av (veval k sig env A)
+        (if (check-sys k sig env tys S (vsigma (vu l) (lam k1 T (equiv-type k1 T Av)))) (some (vu l)) none)))
+     ((none) none)))
+  ((cunglue S b) (case (infer k sig env tys b) ((some T) (case T ((vglue A S2) (some A)) (_ none))) ((none) none)))
+  ((ccomp A u a) (check-comp k sig env tys A u a))
+  ((clet t b) (case (infer k sig env tys t)
+     ((some T) (infer (ns k) sig (lcons (veval k sig env t) env) (lcons (some T) tys) b))
+     ((none) none)))
+  ((cann t T) (case (infer-level k sig env tys T)
+     ((some l) (let Tv (veval k sig env T) (if (check k sig env tys t Tv) (some Tv) none)))
+     ((none) none)))
+  (_ none))))
+(def infer-binder (lam k sig env tys A B (case (infer-level k sig env tys A)
+  ((some l1) (let Av (veval k sig env A)
+     (case (infer-level (ns k) sig (lcons (vneu (nvar k) Av) env) (lcons (some Av) tys) B)
+       ((some l2) (some (vu (maxn l1 l2))))
+       ((none) none))))
+  ((none) none))))
+(def check (lam k sig env tys c T (case c
+  ((clam b) (case T ((vpi A F) (let x (vneu (nvar k) A)
+       (check (ns k) sig (lcons x env) (lcons (some A) tys) b (F (ns k) x)))) (_ false)))
+  ((cpair a b) (case T ((vsigma A F) (andb (check k sig env tys a A) (check k sig env tys b (F k (veval k sig env a))))) (_ false)))
+  ((cplam b) (case T ((vpathp L a0 a1) (let i (ivar k)
+       (andb (check (ns k) sig (under-dim k env) (lcons none tys) b (L (ns k) i))
+       (andb (conv k (L k i0) (veval k sig (lcons (viv i0) env) b) a0)
+             (conv k (L k i1) (veval k sig (lcons (viv i1) env) b) a1))))) (_ false)))
+  ((cglue S a) (case T ((vglue A S2)
+       (andb (check k sig env tys a A)
+       (andb (feqf (sys-face k sig env S) (bface S2))
+       (andb (check-sys k sig env tys S T)
+             (lall (lam b (lall (lam d (let e2 (act-env k d env)
+                 (conv k (restrict k d A) (vunglue k (act-branches k (clsub d) S2) (veval k sig e2 (snd b))) (restrict k d (veval k sig env a)))))
+                (face-of (veval k sig env (fst b))))) (sys-codes S)))))) (_ false)))
+  ((clet t b) (case (infer k sig env tys t)
+     ((some U) (check (ns k) sig (lcons (veval k sig env t) env) (lcons (some U) tys) b T))
+     ((none) false)))
+  (_ (case (infer k sig env tys c) ((some T2) (convty k T2 T)) ((none) false))))))
+
+; a definition: its type is a type, its term has that type
+(def chk-def (lam sig cT ct (case (infer-level nz sig lnil lnil cT)
+  ((some l) (check nz sig lnil lnil ct (veval nz sig lnil cT)))
+  ((none) false))))
+(def sig-add (lam sig cT ct (lsnoc sig (pair (veval nz sig lnil cT) (veval nz sig lnil ct)))))
