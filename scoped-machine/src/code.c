@@ -27,6 +27,8 @@
  *                         codes; ∀a.ψ for the code a of a dimension variable
  *   csyscons(φ, t, s)     the system s with the branch φ ↦ t in front
  *   csubst(c, v, a)       c with the variable whose code is v replaced by a
+ *   ctype(c)              the declared type of the variable or defined
+ *                         symbol c
  *   cvar(c)               the code of the variable of c's binder (the name
  *                         the machine opens c's fields at)
  *   ceq(a, b, t, f)       t when a and b are one record, otherwise f
@@ -227,6 +229,17 @@ static void code_step(Cont *k, uint64_t v) {
 
     /* the remaining eliminators take the code of a term record */
     if (L->ct != T_QUOTE) FR_FINISH(k, RQ(3, 0));
+
+    if (L->tag == T_CTYPE) {
+        if (ref_is_var(L->x)) FR_CALL(k, r, MK_SUB(k, T_QUOTE, 0, LEVELS_NONE, 0, term_var_type(ref_var_id(L->x))));
+        else {
+            if (ref_tag(L->x) != T_GLOBAL) FR_FINISH(k, RQ(3, 0));
+            FR_AWAIT(k, r, F_HEAD, L->x, 0);
+            FR_AWAIT(k, r, F_UNFOLD, L->x, global_decl_type((SymbolId)r));
+            FR_CALL(k, r, MK_SUB(k, T_QUOTE, 0, LEVELS_NONE, 0, r));
+        }
+        FR_FINISH(k, RQ(0, r));
+    }
 
     if (L->tag == T_CUNFOLD) {
         L->b = 0;

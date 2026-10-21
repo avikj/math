@@ -57,6 +57,7 @@ static const TagSchema SCHEMA[] = {
     [T_CSYSCONS]   = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
     [T_CVAR]       = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
     [T_CSUBST]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
+    [T_CTYPE]      = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
 };
 #undef R_
 #undef I_

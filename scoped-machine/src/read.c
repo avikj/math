@@ -66,7 +66,7 @@ static bool head(const Sx *s, const char *a) { return s && s->list && s->n && is
 
 /* ---------------- scope ---------------- */
 typedef enum { B_TERM, B_DIM, B_GLOBAL } BKind;
-typedef struct Bind { const char *name; size_t len; BKind kind; uint64_t id; const struct Bind *next; } Bind;
+typedef struct Bind { const char *name; size_t len; BKind kind; uint64_t id; const struct Bind *next; bool pending; } Bind;   /* pending: declared, its body to come */
 struct Reader { Bind *globals; const char *err; char msg[256]; };
 
 static jmp_buf *tl_fail;
@@ -302,6 +302,7 @@ static RefId term(const Sx *s, const Bind *env) {
         for (size_t q = 0; q < 5; q++) if (head(s, O[q].n)) { want(s, 3, "(op a b)"); return MK(T_COP, O[q].op, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env)); } }
     if (head(s, "csyscons")) { want(s, 4, "(csyscons phi t s)"); return MK(T_CSYSCONS, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env)); }
     if (head(s, "csubst")) { want(s, 4, "(csubst c v a)"); return MK(T_CSUBST, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env)); }
+    if (head(s, "ctype")) { want(s, 2, "(ctype c)"); return MK(T_CTYPE, 0, LEVELS_NONE, 0, term(s->kids[1], env)); }
     if (head(s, "cvar")) { want(s, 2, "(cvar c)"); return MK(T_CVAR, 0, LEVELS_NONE, 0, term(s->kids[1], env)); }
     if (head(s, "clsucc")) { want(s, 2, "(clsucc l)"); return MK(T_CLSUCC, 0, LEVELS_NONE, 0, term(s->kids[1], env)); }
     if (head(s, "clmax")) { want(s, 3, "(clmax l m)"); return MK(T_CLMAX, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env)); }
@@ -344,15 +345,26 @@ bool reader_program(Reader *r, const char *src) {
             SymbolId sym = define_global(nm, set_make(NULL, 0), set_make(NULL, 0), term(s->kids[2], NULL));
             add_global(r, nm, s->kids[1]->alen, sym);
             set_global_body(sym, term(s->kids[3], NULL));
-        } else if (head(s, "defn")) {
-            /* (defn name (args) body): a program over codes */
-            want(s, 4, "(defn name (args) body)");
+        } else if (head(s, "defn") || head(s, "declare")) {
+            /* (defn name (args) body): a program over codes; (declare name
+             * (args)) names it before its body (mutual recursion), the
+             * later defn giving the body */
+            bool decl = head(s, "declare");
+            want(s, decl ? 3 : 4, decl ? "(declare name (args))" : "(defn name (args) body)");
             if (s->kids[1]->list) fail(s->kids[1], "a definition name");
             if (!s->kids[2]->list) fail(s->kids[2], "an argument list");
-            char *nm = dup_name(s->kids[1]);
-            SymbolId sym = define_global(nm, set_make(NULL, 0), set_make(NULL, 0), code_fn_type(s->kids[2], 0));
-            add_global(r, nm, s->kids[1]->alen, sym);
-            set_global_body(sym, code_fn(s->kids[2], 0, s->kids[3], NULL));
+            Bind *prior = NULL;
+            for (Bind *b = r->globals; b; b = (Bind *)b->next)
+                if (b->len == s->kids[1]->alen && !memcmp(b->name, s->kids[1]->atom, b->len)) { prior = b; break; }
+            SymbolId sym;
+            if (prior && prior->pending && !decl) { sym = prior->id; prior->pending = false; }
+            else {
+                char *nm = dup_name(s->kids[1]);
+                sym = define_global(nm, set_make(NULL, 0), set_make(NULL, 0), code_fn_type(s->kids[2], 0));
+                add_global(r, nm, s->kids[1]->alen, sym);
+                r->globals->pending = decl;
+            }
+            if (!decl) set_global_body(sym, code_fn(s->kids[2], 0, s->kids[3], NULL));
         } else if (head(s, "axiom")) {
             want(s, 3, "(axiom name A)");
             if (s->kids[1]->list) fail(s->kids[1], "an axiom name");

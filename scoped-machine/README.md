@@ -76,6 +76,16 @@ the face coded by `χ` — an introduction, a neutral, a system value, or
 library they build (Fill, HComp, Coe, Equiv, Fib, Contr, IdEquiv,
 LineEquiv, ExtendContr, ua), each a program building codes.
 
+## The checker (`prog/check.ctt`)
+
+`check χ c A` and `infer χ c`: bidirectional typing over codes, with
+conversion (η for functions, pairs and paths; systems branchwise; universe
+cumulativity). A variable's type is its declaration (`ctype`), so the
+context is the variables themselves: a binder is entered at its own
+variable (`cvar`). It checks the library's constructions (IdEquiv,
+LineEquiv, ua, Fill) and that the evaluator's composition reducts have the
+composition's type (`tests/test_check.c`).
+
 ## Tests
 
 `tests/test_*.c` check substitution, DNF laws, alpha identity, records,

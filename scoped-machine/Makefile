@@ -4,7 +4,7 @@ LDFLAGS ?= -fsanitize=address,undefined -pthread
 
 SRC := src/intern.c src/count.c src/pool.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/template.c src/eval.c src/level.c src/code.c src/read.c
 OBJ := $(SRC:.c=.o)
-TESTS := test_records test_dnf test_subst test_alpha test_main test_read test_code
+TESTS := test_records test_dnf test_subst test_alpha test_main test_read test_code test_check
 BINS := $(addprefix build/,$(TESTS))
 
 all: $(BINS)

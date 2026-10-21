@@ -23,9 +23,9 @@ typedef enum {
     /* code: the records the machine runs, as values of the language (code.c) */
     T_CODE, T_QUOTE, T_QIV, T_QFC,
     T_CMATCH, T_CINST, T_CEQ, T_CENT, T_CFCEND, T_CUNFOLD,
-    T_CSET, T_CLEVELS, T_CSETLV, T_QLV, T_CLSUCC, T_CLMAX, T_COP, T_CSYSCONS, T_CVAR, T_CSUBST
+    T_CSET, T_CLEVELS, T_CSETLV, T_QLV, T_CLSUCC, T_CLMAX, T_COP, T_CSYSCONS, T_CVAR, T_CSUBST, T_CTYPE
 } Tag;
-#define T_LAST T_CSUBST
+#define T_LAST T_CTYPE
 /* the operations of T_COP (its payload) on interval and face codes */
 enum { COP_IVNEG = 1, COP_IVAND, COP_IVOR, COP_FCAND, COP_FCOR, COP_FORALL };
 #define FORMER_SYS0 255   /* the former an empty system matches */
@@ -213,6 +213,7 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
  * A symbol sealed without a body is an opaque constant. */
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type);
 VarSetId global_params(SymbolId s);
+RefId global_decl_type(SymbolId s);   /* its declared type, over its parameters */
 DimSetId global_dims(SymbolId s);
 bool set_global_body(SymbolId s, RefId body);   /* once, before the first observation */
 RefId global_body_sealed(SymbolId s);            /* the body (0: none), sealing the symbol */
