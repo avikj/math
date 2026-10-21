@@ -38,28 +38,22 @@ uint64_t trav_key(unsigned kind, unsigned depth, uint64_t ctx);
 uint64_t re_key(uint64_t map);      /* RE at a map */
 uint64_t close_key(uint64_t ctx);   /* CLOSE at depth 0 */
 uint64_t apply_key(uint64_t env);   /* APPLY at depth 0 */
-ScopeId scope_records_traverse(ScopeId S, uint64_t tk);   /* records at tk's depth */
-ScopeId scope_with_side(uint64_t pre);               /* the scope whose words (without side data) are the record pre */
 ScopeId capture_request(const uint64_t *req, size_t n);
 void scope_families_init(void);
 
 /* ---- scopes ---- */
 ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result_type, uint64_t result_level, FaceId guard);
-ScopeId scope_intern(size_t n, const LocalDecl *locals, Val body, RefId result_type, uint64_t result_level, FaceId guard);   /* already closed */
 size_t scope_arity(ScopeId S);
 LocalDecl scope_local(ScopeId S, size_t k);
 Val scope_body(ScopeId S);
 RefId scope_type(ScopeId S);
-uint64_t scope_level(ScopeId S);
 FaceId scope_guard(ScopeId S);
 DimSetId scope_support(ScopeId S);        /* free dimensions (bound atoms excluded) */
 VarSetId scope_freevars(ScopeId S);
-ScopeId reindex_scope(ScopeId S, MapId sigma);
 /* §50.1–2 structural validity, independent of any face: every bound
  * occurrence in the scope's records (and in scopes nested anywhere inside
  * them, through views and template environments) names an existing
  * enclosing telescope, an in-range slot of the right sort; a local's
  * declaration uses only earlier slots of its own telescope; required
  * metadata is present. Must hold before the scope is opened. */
-bool scope_validate(ScopeId S, const char **reason);
 #endif

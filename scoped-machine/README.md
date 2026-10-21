@@ -3,7 +3,7 @@
 C11 implementation of the specification `HANDOFF.md`, scoped and ordered by
 the binding plan `PLAN.md`; `INTERNING.md` specifies stepped interning.
 
-    make test    # ASan/UBSan: every suite, then the compiler suite with a 4-worker pool
+    make test    # ASan/UBSan: every suite
     make tsan    # ThreadSanitizer: every suite with 4 workers
 
 ## The one protocol (`eval.c`, `eval.h`, `families.h`)
@@ -52,32 +52,9 @@ keyed by their operands. A relative family (one that reads revisions) is
 requested through a resolver keyed by the requester's view, which chooses the
 node whose actually read revisions agree with it; node keys hold no view. A
 read is the dependency `view.read(s, V)`; unfolding and body validity consume
-that revision. An effect is one occurrence node.
-
-## Judgments (`judge.c`, `check.c`, `proof.c`)
-
-Inference, checking, conversion, typed maps, contexts, declarations and
-bodies are families keyed by their request. `judge.every` judges a request
-under every clause of a face; `judge.joint` makes the face-wide value;
-`judge.system` is the one system rule; `judge.glue_eq` the one Glue
-comparison; `judge.open` opens a telescope. `judge.admit` (`check.c`) is the
-one composite judgment the public API, proof use and effect preparation
-request: its derivation and the bodies of every revision it read (for proof
-use also those the conservative audit reached) validated.
-`proof.c` classifies the audited graph (Tarjan, one edge per step).
-
-## Effects and the additive reading (`effect.c`, `chain.c`, `count.c`)
-
-Proposals, ordered reservations, one commit, finalization and receipts as
-families; exact signed integers (one limb per step), chains, cochains,
-pairing, boundaries and module values as 0-chains; exact per-producer
-counts (`count.c`) and the historical work of a published support as
-families (`history.support`, `history.work`).
+that revision.
 
 ## Tests
 
-`tests/test_*.c` are semantic regressions and law checks (substitution,
-DNF laws, alpha identity and scopes at every arity, templates, checking with
-exact levels, compiler, proof use, effects, chains, the protocol: schedule
-independence, native-stack independence, exact concurrent counts);
-`tests/review_*.c` are the §96 integration witnesses.
+`tests/test_*.c` check substitution, DNF laws, alpha identity, records and
+basic evaluation.

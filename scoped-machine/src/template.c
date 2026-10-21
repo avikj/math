@@ -82,7 +82,6 @@ void tnode_template_binder(TNodeId Q, BinderSlot slot, FieldIndex field, uint64_
     require(bs == slot, "field is not under this binder");
     *env_slot = node_param_count(Q) + lslot;
 }
-const char *tdef_name(TDefId d) { return d >= 1 && d < TD_COUNT ? TPL.defs[d].name : "?"; }
 
 /* ------------------------------------------------------------------ */
 /* free slots of expressions and nodes (syntactic closure)               */
@@ -161,23 +160,12 @@ static bool node_construction(TNodeId Q) { return tnode_def(Q) == 0; }
 bool tnode_is_construction(TNodeId Q) { return node_construction(Q); }
 static size_t node_param_count(TNodeId Q) { return node_construction(Q) ? (size_t)rword(Q, 1) : TPL.defs[tnode_def(Q)].nparams; }
 bool tview_is_construction(RefId t) { return node_construction(ref_tnode(t)); }
-size_t tnode_nparams(TNodeId Q) { require(node_construction(Q), "not a construction node"); return (size_t)rword(Q, 1); }
 static const uint64_t *node_ptab(TNodeId Q) { const uint64_t *b = node_btab(Q); return b + 1 + 3 * b[0] + 2; }
-static ExprId node_declared_e(TNodeId Q) { const uint64_t *b = node_btab(Q); return b[2 + 3 * b[0]]; }
 static uint64_t xconst(ExprId e) { size_t n; const uint64_t *w = rget(e, &n); require(w[0] == X_CONST, "construction field is not a constant"); return w[2]; }
 static uint64_t xlevel(ExprId e) { size_t n; const uint64_t *w = rget(e, &n); require(w[0] == X_LEVEL, "construction annotation is not a constant"); return w[1]; }
 bool expr_is_level(ExprId e) { return rword(e, 0) == X_LEVEL; }
 uint64_t expr_level_value(ExprId e) { return xlevel(e); }
-void tnode_param(TNodeId Q, size_t k, PSort *sort, RefId *closed_type, FaceId *closed_guard) {
-    require(k < tnode_nparams(Q), "construction parameter out of range");
-    const uint64_t *p = node_ptab(Q) + 3 * k;
-    *sort = (PSort)p[0];
-    *closed_type = p[1] ? xconst(p[1]) : 0;
-    *closed_guard = p[2] ? xconst(p[2]) : 0;
-}
 uint64_t tnode_const_field(TNodeId Q, size_t k) { FieldKind kd; BinderSlot bs; ExprId e; node_field(Q, k, &kd, &bs, &e); return xconst(e); }
-FaceId tnode_const_required(TNodeId Q) { return xconst(node_required_e(Q)); }
-FaceId tnode_const_declared(TNodeId Q) { ExprId e = node_declared_e(Q); return e ? xconst(e) : 0; }
 uint64_t tnode_const_payload(TNodeId Q) { ExprId e = node_payload_e(Q); return e ? xlevel(e) : 0; }
 
 
@@ -204,8 +192,6 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
     return o;
 }
 
-/* generic instance: parameter k at a fresh name keyed by (node, k), its type
- * the closed type instantiated by the earlier fresh names */
 
 /* ------------------------------------------------------------------ */
 /* interpretation families                                               */
@@ -430,31 +416,6 @@ void tview_open(RefId t, Head *h) {
  * the caller in the view's environment, one awaited interpretation each):
  * entry k of the node's free slots; false when the slot carries no checked
  * declaration */
-size_t tnode_sig_count(TNodeId Q) { return node_free_count(Q); }
-bool tnode_sig_exprs(TNodeId Q, size_t k, size_t *slot, PSort *sort, ExprId *type_e, ExprId *level_e, ExprId *sig_e, ExprId *guard_e) {
-    size_t s = node_free_slot(Q, k);
-    *slot = s;
-    if (node_construction(Q)) {
-        /* a construction parameter: its closed type and guard over the earlier atoms */
-        const uint64_t *p = node_ptab(Q) + 3 * s;
-        *sort = (PSort)p[0]; *type_e = p[1]; *level_e = 0; *sig_e = 0; *guard_e = p[2];
-        return *sort == PS_REF;
-    }
-    const TDef *def = &TPL.defs[tnode_def(Q)];
-    size_t np = def->nparams;
-    if (s < np) { *sort = def->sorts[s]; *type_e = def->ptype[s]; *level_e = def->plevel[s]; *sig_e = def->psig[s]; *guard_e = def->pguard[s]; return true; }
-    size_t l = s - np;
-    if (def->lsort[l] != PS_REF || !def->ltype[l]) return false;
-    *sort = PS_REF; *type_e = def->ltype[l]; *level_e = def->llevel[l]; *sig_e = 0; *guard_e = def->lreq[l];
-    return true;
-}
-bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e) {
-    if (node_construction(Q)) return false;
-    const TDef *def = &TPL.defs[tnode_def(Q)];
-    if (!def->rtype || def->root_node != Q) return false;
-    *type_e = def->rtype; *level_e = def->rlevel;
-    return true;
-}
 
 /* ------------------------------------------------------------------ */
 /* registration DSL                                                      */

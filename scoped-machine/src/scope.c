@@ -16,20 +16,10 @@ LocalDecl scope_local(ScopeId S, size_t k) {
 static const uint64_t *scope_tail(ScopeId S) { size_t n; const uint64_t *w = rget(S, &n); return w + 1 + 4 * w[0]; }
 Val scope_body(ScopeId S) { const uint64_t *t = scope_tail(S); Val v = { (ValSort)t[0], t[4] }; return v; }
 RefId scope_type(ScopeId S) { return scope_tail(S)[1]; }
-uint64_t scope_level(ScopeId S) { return scope_tail(S)[2]; }
 FaceId scope_guard(ScopeId S) { return scope_tail(S)[3]; }
 DimSetId scope_support(ScopeId S) { size_t n; const uint64_t *w = rget(S, &n); return w[n - 2]; }
 VarSetId scope_freevars(ScopeId S) { size_t n; const uint64_t *w = rget(S, &n); return w[n - 1]; }
 
-ScopeId scope_intern(size_t n, const LocalDecl *locals, Val body, RefId result_type, uint64_t result_level, FaceId guard) {
-    Words w; words_init(&w);
-    words_push(&w, n);
-    for (size_t k = 0; k < n; k++) { words_push(&w, locals[k].sort); words_push(&w, locals[k].type); words_push(&w, locals[k].level); words_push(&w, locals[k].required); }
-    words_push(&w, body.sort); words_push(&w, result_type); words_push(&w, result_level); words_push(&w, guard); words_push(&w, body.id);
-    uint64_t pre = interner_intern(&M.keys, w.w, w.n, NULL);
-    words_free(&w);
-    return scope_with_side(pre);
-}
 
 /* ------------------------------------------------------------------ */
 /* capture: close the concrete locals of Δ into (depth, slot) atoms         */
@@ -45,8 +35,4 @@ ScopeId capture_scope(size_t n, const CaptureDecl *delta, Val body, RefId result
 }
 
 /* ambient reindexing: free identities only */
-ScopeId reindex_scope(ScopeId S, MapId sigma) {
-    if (map_is_identity(sigma)) return S;
-    return scope_records_traverse(S, trav_key(TR_RE, 0, sigma));
-}
 

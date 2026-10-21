@@ -123,7 +123,6 @@ TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId 
     uint64_t w[INTERN_SMALL + 1]; size_t m = key_words(2, key, n, w);
     return var_record(w, m, S_TERM, type, required);
 }
-TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type) { return fresh_term_keyed_req(key, n, type, fc_true()); }
 DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
     uint64_t w[INTERN_SMALL + 1]; size_t m = key_words(3, key, n, w);
     return var_record(w, m, S_DIM, 0, 0);
@@ -197,7 +196,6 @@ bool set_global_body(SymbolId s, RefId body) {
     return true;
 }
 
-RefId global_type(SymbolId s) { return DEF(s)->type; }
 VarSetId global_params(SymbolId s) { return DEF(s)->params; }
 DimSetId global_dims(SymbolId s) { return DEF(s)->dims; }
 
@@ -217,14 +215,12 @@ static RefId mk_term_binder_form(Tag tag, uint64_t lv, TermVarId x, RefId A, Ref
 }
 RefId mk_pi(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, LEVELS_NONE, x, A, B); }
 RefId mk_lam(TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, LEVELS_NONE, x, A, body); }
-RefId mk_pi_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, levels_pack(m, n), x, A, B); }
 RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_SIGMA, levels_pack(m, n), x, A, B); }
 RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, levels_pack(m, LEVEL_NONE), x, A, body); }
 RefId mk_app(RefId fn, RefId a) { return MK(T_APP, 0, LEVELS_NONE, 0, fn, a); }
 RefId mk_pair(RefId a, RefId b) { return MK(T_PAIR, 0, LEVELS_NONE, 0, a, b); }
 /* a pair annotated with its Σ type (§33: a checking-only form synthesizes
  * from its stored annotation); the annotation is the third field */
-RefId mk_pair_at_lv(uint64_t n, RefId S, RefId a, RefId b) { return MK(T_PAIR, 0, levels_pack(n, LEVEL_NONE), 0, a, b, S); }
 RefId mk_fst(RefId p) { return MK(T_FST, 0, LEVELS_NONE, 0, p); }
 RefId mk_snd(RefId p) { return MK(T_SND, 0, LEVELS_NONE, 0, p); }
 RefId mk_path(DimVarId j, RefId B_j, RefId l, RefId r) { return MK(T_PATH, 0, LEVELS_NONE, j, B_j, l, r); }

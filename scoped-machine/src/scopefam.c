@@ -248,6 +248,4 @@ void scope_families_init(void) {
 }
 
 /* ---------------- the operations (synchronous driver) ---------------- */
-ScopeId scope_with_side(uint64_t pre) { return family_call(F_SCOPESIDE, pre, 0); }
 ScopeId capture_request(const uint64_t *req, size_t n) { return family_call(F_CAPTURE, interner_intern(&M.keys, req, n, NULL), 0); }
-ScopeId scope_records_traverse(ScopeId S, uint64_t tk) { return family_call(F_TSCOPE, S, tk); }

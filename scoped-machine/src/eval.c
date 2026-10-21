@@ -1,11 +1,6 @@
 #include "eval.h"
 #include "lib.h"
 #include "pool.h"
-#include "check.h"
-#include "judge.h"
-#include "chain.h"
-#include "effect.h"
-#include "proof.h"
 #include <sched.h>
 
 /* ---------------- jobs, families, the evaluator state ---------------- */
@@ -66,11 +61,6 @@ static Shard *shard(void) {
 }
 static void event(Reading r) { count_bump(&shard()->ev[r]); }
 static Entry *ENT(EntryId e) { return (Entry *)chunked_at(&E.entries, e - 1); }
-EntryId eval_entry_find(Family f, uint64_t a, uint64_t b) {
-    if (KIND[f] != FK_RELATIVE) { uint64_t w[3] = { f, a, b }; return interner_find(&E.keys, w, 3); }
-    uint64_t w[5] = { F_RESOLVE, f, a, b, view_current() };
-    return interner_find(&E.keys, w, 5);
-}
 void eval_reading(Reading r, Family f, Exact *out) {
     require(r <= RD_STEPS && (r != RD_STEPS || (f >= 1 && f < F_MAX)), "bad reading");
     for (Shard *s = __atomic_load_n(&E.shards, __ATOMIC_ACQUIRE); s; s = s->next) exact_add_count(out, r == RD_STEPS ? &s->steps[f] : &s->ev[r]);
@@ -110,16 +100,9 @@ static void families_define(void) {
     template_families_init();
     evaluator_init();
     lib_families_init();
-    judge_families_init();
-    check_families_init();
-    proof_families_init();
-    chain_families_init();
-    effect_families_init();
-    static const Family relative[] = { F_WHNF, F_OBS, J_BODY, J_CHECK, J_CONVT, J_CONVt, J_CTX, J_CTXD, J_DECL, J_DECLOK,
-        J_EVERY, J_GLUEEQ, J_GLUEOK, J_HEAD, J_INFER, J_JOINT, J_LEVEL, J_NODE, J_OBSHEAD, J_REQ, J_SCARG, J_SCOWN,
-        J_SPINE, J_SYSTEM, J_TBOUND, J_TVIEW, J_MAP, J_ADMIT, F_PREP, F_CLOSURE, F_SCC };
+    level_families_init();
+    static const Family relative[] = { F_WHNF, F_OBS };
     for (size_t i = 0; i < sizeof relative / sizeof relative[0]; i++) family_kind(relative[i], FK_RELATIVE);
-    family_kind(F_EFFECT, FK_OCCURRENCE);
 }
 
 void eval_init(void) {
@@ -136,7 +119,6 @@ void eval_init(void) {
     pthread_once(&families_once, families_define);
     for (size_t f = 1; f < F_MAX; f++) if (FAM[f].loc_size) pool_init(&E.loc_pool[f], FAM[f].loc_size);
     E.epoch = __atomic_add_fetch(&eval_epochs, 1, __ATOMIC_RELAXED);
-    effect_state_init();
 }
 
 static void stop_workers(void) {
@@ -161,12 +143,9 @@ void eval_set_workers(size_t n) {
     E.nworkers = n;
     for (size_t i = 0; i < n; i++) require(pthread_create(&E.workers[i], NULL, worker_main, (void *)(uintptr_t)(i + 1)) == 0, "cannot start worker");
 }
-size_t eval_workers(void) { return E.nworkers; }
 
 static const uint64_t *entry_key(EntryId e) { size_t n; return interner_get(&E.keys, e, &n); }
 Family eval_entry_family(EntryId e) { return (Family)entry_key(e)[0]; }
-uint64_t eval_entry_a(EntryId e) { return entry_key(e)[1]; }
-uint64_t eval_entry_b(EntryId e) { return entry_key(e)[2]; }
 
 /* Teardown: every frame, waiter, dependency node and queued job lives in a
  * pool of this lifetime and every value in the machine's tables, so the
@@ -174,7 +153,6 @@ uint64_t eval_entry_b(EntryId e) { return entry_key(e)[2]; }
  * buffers' pages belong to the process page pool). */
 void eval_free(void) {
     stop_workers();
-    effect_state_free();
     for (Shard *s = E.shards, *n; s; s = n) {
         n = s->next;
         for (size_t r = 0; r < RD_STEPS; r++) count_free(&s->ev[r]);
@@ -318,7 +296,6 @@ EntryState eval_entry_state(EntryId e) {
 }
 size_t eval_entry_count(void) { return interner_count(&E.keys); }
 bool eval_entry_live(EntryId e) { return interner_live(&E.keys, e); }
-size_t eval_entry_runs(EntryId e) { return __atomic_load_n(&ENT(e)->runs, __ATOMIC_ACQUIRE); }
 
 /* PUB(K,v) + R(W) → D(v) + {DELIVER(c,v) : c ∈ W}: the value is stored, the
  * waiter stack is exchanged for READY in one atomic step, and the stack is
@@ -520,7 +497,7 @@ static void reads_step(Cont *k, uint64_t v) {
     FR_BEGIN(k);
     if (f == F_READ) { uint64_t rev = ENT(x)->value; FR_FINISH(k, set_make(&rev, rev && !k->w[1] ? 1 : 0)); }
     if (f == F_RESOLVE) { FR_AWAIT(k, r, F_READS, ENT(x)->via, k->w[1]); FR_FINISH(k, r); }
-    {   uint64_t s = f == J_DECL && k->w[1] ? rword(eval_entry_a(x), 0) : 0; L->acc = set_make(&s, s ? 1 : 0); }
+    L->acc = set_make(NULL, 0);
     if (KIND[f] == FK_PURE) FR_FINISH(k, L->acc);
     for (L->d = __atomic_load_n(&ENT(x)->deps, __ATOMIC_ACQUIRE); L->d; L->d = L->d->next) {
         FR_AWAIT(k, L->r, F_READS, L->d->e, k->w[1]);
@@ -529,52 +506,8 @@ static void reads_step(Cont *k, uint64_t v) {
     FR_FINISH(k, L->acc);
     FR_END(k);
 }
-EntryId frame_request_key(const Cont *k, Family f, uint64_t a, uint64_t b) { return request_key(f, a, b, k->view); }
 
-/* ---------------- history readings ----------------
- * support(x): the published entries of x's derivation — x and the support of
- * each published dependency; a pending dependency is a live obligation, not
- * history. work(set): the exact sum of the work of the entries of a support
- * set, an exact integer (chain.h z), one entry or carry block per step; each
- * entry's count is frozen once it published. Both are ordinary families:
- * the query's own work is later history. */
 static bool ready(EntryId e) { return eval_entry_state(e) == E_READY; }
-typedef struct { DepNode *d; uint64_t acc, r; } SuLoc;
-static void support_step(Cont *k, uint64_t v) {
-    SuLoc *L = FR_LOC(k, SuLoc);
-    EntryId x = k->w[0];
-    FR_BEGIN(k);
-    L->acc = set_make(&x, 1);
-    for (L->d = __atomic_load_n(&ENT(x)->deps, __ATOMIC_ACQUIRE); L->d; L->d = L->d->next) {
-        if (!ready(L->d->e)) { FR_YIELD(k); continue; }
-        FR_AWAIT(k, L->r, F_SUPPORT, L->d->e, 0);
-        FR_AWAIT(k, L->acc, F_SUNION, L->acc, L->r);
-    }
-    FR_FINISH(k, L->acc);
-    FR_END(k);
-}
-typedef struct { size_t i, n; uint64_t acc, r, nc; const Carry *c; } WkLoc;
-static void work_step(Cont *k, uint64_t v) {
-    WkLoc *L = FR_LOC(k, WkLoc);
-    FR_BEGIN(k);
-    L->acc = z_from_i64(0);
-    for (L->i = 0; L->i < (set_get(k->w[0], &L->n), L->n); L->i++) {
-        {   size_t n; Entry *e = ENT(set_get(k->w[0], &n)[L->i]); L->c = __atomic_load_n(&e->work.carry, __ATOMIC_ACQUIRE); L->nc = 0;
-            L->r = __atomic_load_n(&e->work.low, __ATOMIC_ACQUIRE); }
-        while (L->c) { L->c = L->c->next; L->nc++; FR_YIELD(k); }
-        {   uint64_t limbs[2] = { L->r, L->nc }; L->r = z_from_limbs(0, 2, limbs); }
-        FR_AWAIT(k, L->acc, Fz_ADD, L->acc, L->r);
-    }
-    FR_FINISH(k, L->acc);
-    FR_END(k);
-}
-void eval_work(size_t n, const EntryId *roots, Exact *out, size_t *support) {
-    uint64_t S = set_make(NULL, 0);
-    for (size_t q = 0; q < n; q++) if (roots[q] && ready(roots[q])) S = set_union(S, family_call(F_SUPPORT, roots[q], 0));
-    if (support) set_get(S, support);
-    size_t m; const uint64_t *w = rget(family_call(F_WORK, S, 0), &m);
-    for (size_t i = 1; i < m; i++) exact_add_word(out, i - 1, w[i]);
-}
 
 /* resolve(f, a, b, V): the node of (f, a, b) whose reads agree with V.
  * It requests the root node; while the node it reached read a revision that
@@ -615,8 +548,6 @@ static void intern_families_init(void) {
     family_define(F_READ, "view.read", read_step, 0);
     family_define(F_RESOLVE, "view.resolve", resolve_step, sizeof(RsLoc));
     family_define(F_READS, "view.reads", reads_step, sizeof(RdLoc));
-    family_define(F_SUPPORT, "history.support", support_step, sizeof(SuLoc));
-    family_define(F_WORK, "history.work", work_step, sizeof(WkLoc));
     interner_set_flatten_hook(flatten_root);
 }
 
@@ -683,15 +614,6 @@ static void *worker_main(void *arg) {
     return NULL;
 }
 
-void eval_run(void) {
-    if (E.nworkers) {
-        pthread_mutex_lock(&E.idle_mu);
-        while (outstanding() > 0) pthread_cond_wait(&E.idle_cv, &E.idle_mu);
-        pthread_mutex_unlock(&E.idle_mu);
-        return;
-    }
-    for (;;) { Task t; if (!take_job(&t)) break; execute(t); finish_job(); }
-}
 
 /* ---------------- roots ----------------
  * A root is requested with a host frame as its waiter; the caller drives
@@ -782,7 +704,6 @@ static void creq_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 static Cont *creq_buf(const Cont *k, WordBuf *w) { Cont *c = frame_sub(F_CREQ, k); FR_LOC(c, CrLoc)->w = *w; wordbuf_init(w); return c; }
-Cont *construct_buf_sub(const Cont *caller, WordBuf *w) { return creq_buf(caller, w); }
 Cont *mk_tag_sub(const Cont *k, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
     WordBuf w; creq_tag(&w, tag, payload, levels, n, ids, formal); return creq_buf(k, &w);
 }

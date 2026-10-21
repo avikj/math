@@ -16,7 +16,6 @@
 
 typedef uint64_t TermVarId;
 typedef uint64_t DimVarId;
-typedef uint64_t ContextId;
 typedef uint64_t RefId;
 typedef uint64_t MapId;
 typedef uint64_t IntervalId;
@@ -39,7 +38,6 @@ typedef uint32_t FieldIndex;
 /* ---- limb arithmetic: one 64-bit digit with its carry / borrow bit ---- */
 static inline uint64_t add_limb(uint64_t x, uint64_t y, uint64_t *carry) { uint64_t s = x + y, t = s + *carry; *carry = (s < x) | (t < s); return t; }
 static inline uint64_t sub_limb(uint64_t x, uint64_t y, uint64_t *borrow) { uint64_t d = x - y, t = d - *borrow; *borrow = (x < y) | (d < *borrow); return t; }
-static inline uint64_t mul_limb(uint64_t x, uint64_t y, uint64_t *carry) { unsigned __int128 t = (unsigned __int128)x * y + *carry; *carry = (uint64_t)(t >> 64); return (uint64_t)t; }
 
 /* ---- growable word buffer ---- */
 typedef struct {

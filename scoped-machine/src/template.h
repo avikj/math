@@ -31,7 +31,6 @@ TVal template_call(TDefKind def, size_t nargs, const TVal *args);
 /* ---- TVIEW references ---- */
 Tag tnode_tag(TNodeId Q);
 TDefId tnode_def(TNodeId Q); uint64_t tnode_index(TNodeId Q);
-const char *tdef_name(TDefId d);
 size_t tnode_nfields(TNodeId Q); size_t tnode_nbinders(TNodeId Q);
 /* the field kind / binder slot of a template node's field */
 FieldKind tnode_field_kind(TNodeId Q, size_t k); BinderSlot tnode_field_slot(TNodeId Q, size_t k); Sort tnode_binder_sort(TNodeId Q, BinderSlot s);
@@ -45,9 +44,6 @@ typedef struct { PSort sort; size_t slot; uint64_t level; RefId type; FaceId gua
  * types (reference parameters) or contextual signatures (scope parameters:
  * a scope whose locals are the expected telescope, whose body is the
  * expected result type, whose level and guard are the expected ones) */
-size_t tnode_sig_count(TNodeId Q);
-bool tnode_sig_exprs(TNodeId Q, size_t k, size_t *slot, PSort *sort, ExprId *type_e, ExprId *level_e, ExprId *sig_e, ExprId *guard_e);
-bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e);
 
 /* ---- constructions (the one construction representation) ----
  * Every non-variable reference is TVIEW(node, environment). A construction
@@ -62,16 +58,9 @@ bool tnode_result_exprs(TNodeId Q, ExprId *type_e, ExprId *level_e);
 ExprId expr_const(PSort sort, uint64_t id);
 ExprId expr_level(uint64_t n);
 bool tnode_is_construction(TNodeId Q);
-size_t tnode_nparams(TNodeId Q);
-void tnode_param(TNodeId Q, size_t k, PSort *sort, RefId *closed_type, FaceId *closed_guard);
-uint64_t tnode_const_field(TNodeId Q, size_t k);                    /* closed constant of field k */
-FaceId tnode_const_required(TNodeId Q);
-FaceId tnode_const_declared(TNodeId Q);                              /* 0 = no annotation */
 uint64_t tnode_const_payload(TNodeId Q);
+uint64_t tnode_const_field(TNodeId Q, size_t k);                    /* closed constant of field k */
 bool tview_is_construction(RefId t);
-/* generic instance of a construction node: parameters at fresh names keyed
- * by (node, slot), declared at the instantiated closed types; decls has
- * tnode_nparams(Q) entries. *req receives the node's required face there. */
 void template_families_init(void);
 void template_call_env(TDefKind def, size_t nargs, const TVal *args, WordBuf *er, ExprId *root);   /* the environment record into er (to be interned by intern_sub) */
 ExprId tnode_head_expr(TNodeId Q, int levels);

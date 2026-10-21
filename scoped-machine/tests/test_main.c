@@ -485,30 +485,6 @@ static void test_comp_clauses(void) {
     (void)b; (void)k;
 }
 
-static void test_contexts(void) {
-    SECTION("§2 occurrence contexts");
-    WhnfStatus st;
-    RefId A = var(U0);
-    TermVarId x = tv(A); RefId a = var(A);
-    DimVarId i = declare_dim();
-    RefId p = var(mk_path_const(0, A, a, a));
-    RefId t = mk_papp_const(0, A, a, a, p, iv_var(i));
-    CtxDecl ds[4] = { { S_TERM, ref_var_id(A)}, { S_TERM, ref_var_id(a)}, { S_TERM, ref_var_id(p)}, { S_DIM, i} };
-    ContextId full = context_make(4, ds, fc_true());
-    /* weakening changes only the context */
-    ContextId weak = context_extend_term(full, x);
-    CHECK(context_size(weak) == 5, "weakening");
-    FaceId fs[2] = { fc_lit(i, 0), fc_lit(i, 1) }; RefId ts[2] = { a, a };
-    RefId sys = mk_system(2, fs, ts);
-    ContextId restricted = context_restrict(full, fc_lit(i, 0));
-    CHECK(context_assumption(restricted) == fc_lit(i, 0), "restriction strengthens the assumption");
-    EvalResult r = whnf(sys, context_assumption(restricted), &st);
-    CHECK(st == W_OK && r.ref == a, "a system observes under the assumption");
-    r = whnf(t, fc_lit(i, 1), &st);
-    CHECK(st == W_OK && r.ref == a, "endpoint under the context assumption");
-    CHECK(context_make(4, ds, fc_true()) == full, "contexts are interned by structure");
-}
-
 /* ---------------------------------------------------------------- */
 int main(void) {
     machine_init();
@@ -519,7 +495,6 @@ int main(void) {
     test_face_laws();
     test_substitution();
     test_binders();
-    test_contexts();
     test_eval_basic();
     test_eval_glue_system();
     test_comp_clauses();

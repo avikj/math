@@ -39,16 +39,15 @@ typedef enum { S_TERM = 1, S_DIM } Sort;
 uint64_t levels_pack(uint64_t m, uint64_t n);
 uint64_t levels_first(uint64_t lv);
 uint64_t levels_second(uint64_t lv);
-uint64_t level_from_limbs(size_t n, const uint64_t *limbs);   /* little-endian limbs */
-void level_print(uint64_t l, FILE *f);
 /* successor and maximum (LEVEL_NONE absorbs): the _now forms answer in one
  * bounded step unless the operands need limb arithmetic, which is the
  * family level.succ / level.max, one limb per step; inside a step use
  * FR_LSUCC / FR_LMAX, outside one the host forms drive the family */
 bool level_succ_now(uint64_t a, uint64_t *out);
 bool level_max_now(uint64_t a, uint64_t b, uint64_t *out);
+void level_print(uint64_t l, FILE *f);
 uint64_t level_succ(uint64_t a);
-uint64_t level_max(uint64_t a, uint64_t b);
+void level_families_init(void);   /* level.c */
 #define FR_LSUCC(k, dst, a) if (!level_succ_now((a), &(dst))) FR_AWAIT(k, dst, F_LSUCC, (a), 0)
 #define FR_LMAX(k, dst, a, b) if (!level_max_now((a), (b), &(dst))) FR_AWAIT(k, dst, F_LMAX, (a), (b))
 
@@ -160,7 +159,6 @@ DimVarId binder_dim_var(RefId owner, BinderSlot slot);
  * a typed tuple so that provenance can be compared up to renaming. */
 typedef enum { KW_CONST = 0, KW_REF, KW_FACE, KW_INTERVAL, KW_DIM, KW_VAR } KeyKind;
 typedef struct { KeyKind kind; uint64_t v; } KeyWord;
-TermVarId fresh_term_keyed(const KeyWord *key, size_t n, RefId type);
 TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required);   /* a partial formal */
 DimVarId fresh_dim_keyed(const KeyWord *key, size_t n);
 typedef struct TermOpen { TermVarId x; RefId type; RefId body; } TermOpen;
@@ -204,27 +202,12 @@ void tview_open(RefId t, Head *h);
 TermOpen tview_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 
-/* ---- occurrence contexts (§2, judge.c) ----
- * A context is an ordered list of declarations DIM(i) or TERM(x, type) — a
- * judgment context, each declaration over its prefix — with a face
- * assumption, interned by structure; it is not part of RefId. Its validity
- * and the scope of an occurrence in it are judgments (judge.ctx,
- * judge.scope). */
-typedef struct { Sort sort; uint64_t id; } CtxDecl;
-ContextId context_make(size_t n, const CtxDecl *decls, FaceId assumption);
-ContextId context_extend_term(ContextId ctx, TermVarId x);
-ContextId context_extend_dim(ContextId ctx, DimVarId i);
-ContextId context_restrict(ContextId ctx, FaceId phi);     /* strengthen the assumption */
-FaceId context_assumption(ContextId ctx);
-uint64_t context_judgment(ContextId ctx);                  /* its judgment context */
-size_t context_size(ContextId ctx);
 
 /* ---- globals ---- */
 /* a declared symbol: parameters (term variables with their declared types),
  * free dimensions, and its declared type over them; a symbol without a body
  * is an opaque constant of the signature */
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type);
-RefId global_type(SymbolId s);
 VarSetId global_params(SymbolId s);
 DimSetId global_dims(SymbolId s);
 bool set_global_body(SymbolId s, RefId body);   /* once per symbol */
@@ -243,9 +226,8 @@ RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the defi
 /* ---- constructors (constructions at their own boundary) ---- */
 RefId mk_universe(uint64_t level);
 RefId mk_pi(TermVarId x, RefId A, RefId B);
-RefId mk_lam(TermVarId x, RefId A, RefId body);
-RefId mk_pi_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B);     /* A : U_m, B : U_n */
 RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B);
+RefId mk_lam(TermVarId x, RefId A, RefId body);
 RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body);
 RefId mk_app(RefId f, RefId a);
 RefId mk_pair(RefId a, RefId b);
@@ -259,7 +241,6 @@ RefId mk_comp_lv(uint64_t n, DimVarId j, RefId A_j, FaceId phi, RefId u_j, RefId
 RefId mk_glue_type_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e);
 RefId mk_glue_intro_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId t, RefId a);
 RefId mk_unglue_lv(uint64_t n, RefId A, FaceId alpha, RefId T, RefId e, RefId v);
-RefId mk_pair_at_lv(uint64_t l, RefId S, RefId a, RefId b);
 RefId mk_system(size_t n, const FaceId *faces, const RefId *terms);
 /* ---- printing (presentation only) ---- */
 void print_ref(RefId t, FILE *f);

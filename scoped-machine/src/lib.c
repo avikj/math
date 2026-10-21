@@ -12,11 +12,6 @@ ScopeId capture_dim1(DimVarId j, RefId body, RefId type, uint64_t level, FaceId 
     Val b = { VS_REF, body };
     return capture_scope(1, d, b, type, level, guard);
 }
-ScopeId capture_term2(TermVarId x, RefId xtype, uint64_t xlevel, TermVarId e, RefId etype, uint64_t elevel, RefId body, RefId type, uint64_t level, FaceId guard) {
-    CaptureDecl d[2] = { { S_TERM, x, xtype, xlevel, term_var_required(x) }, { S_TERM, e, etype, elevel, term_var_required(e) } };
-    Val b = { VS_REF, body };
-    return capture_scope(2, d, b, type, level, guard);
-}
 
 /* ------------------------------------------------------------------ */
 /* §52 programs                                                          */
@@ -24,36 +19,19 @@ ScopeId capture_term2(TermVarId x, RefId xtype, uint64_t xlevel, TermVarId e, Re
 static TVal VL(uint64_t n) { TVal v = { PS_LEVEL, n }; return v; }
 static TVal VR(RefId r) { TVal v = { PS_REF, r }; return v; }
 static TVal VI(IntervalId r) { TVal v = { PS_INTERVAL, r }; return v; }
-static TVal VF(FaceId f) { TVal v = { PS_FACE, f }; return v; }
 static TVal VS(ScopeId s) { TVal v = { PS_SCOPE, s }; return v; }
 #define CALLT(def, ...) ({ TVal _a[] = { __VA_ARGS__ }; template_call(def, sizeof _a / sizeof _a[0], _a).id; })
 
 RefId mk_path_const(uint64_t l, RefId A, RefId lft, RefId r) { return CALLT(TD_PATHCONST, VL(l), VR(A), VR(lft), VR(r)); }
-RefId mk_refl(uint64_t l, RefId A, RefId a) { return CALLT(TD_REFL, VL(l), VR(A), VR(a)); }
 RefId mk_papp_const(uint64_t l, RefId A, RefId lft, RefId r, RefId p, IntervalId s) { return CALLT(TD_PAPPCONST, VL(l), VR(A), VR(lft), VR(r), VR(p), VI(s)); }
-RefId mk_path_rev(uint64_t l, RefId A, RefId lft, RefId r, RefId p) { return CALLT(TD_REVERSE, VL(l), VR(A), VR(lft), VR(r), VR(p)); }
-RefId mk_path_concat(uint64_t l, RefId A, RefId x, RefId y, RefId z, RefId p, RefId q) { return CALLT(TD_CONCAT, VL(l), VR(A), VR(x), VR(y), VR(z), VR(p), VR(q)); }
 RefId mk_fun(uint64_t l, uint64_t m, RefId X, RefId Y) { return CALLT(TD_FUN, VL(l), VL(m), VR(X), VR(Y)); }
-RefId mk_contr(uint64_t l, RefId X) { return CALLT(TD_CONTR, VL(l), VR(X)); }
-RefId mk_fib(uint64_t l, uint64_t m, RefId X, RefId Y, RefId f, RefId y) { return CALLT(TD_FIB, VL(l), VL(m), VR(X), VR(Y), VR(f), VR(y)); }
 RefId mk_equiv(uint64_t l, uint64_t m, RefId X, RefId Y) { return CALLT(TD_EQUIV, VL(l), VL(m), VR(X), VR(Y)); }
-RefId mk_id_fun(uint64_t l, RefId X) { return CALLT(TD_IDFUN, VL(l), VR(X)); }
 RefId mk_id_equiv(uint64_t l, RefId X) { return CALLT(TD_IDEQUIV, VL(l), VR(X)); }
-RefId equiv_map(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e) { return CALLT(TD_EQUIVMAP, VL(l), VL(m), VR(X), VR(Y), VR(e)); }
-RefId equiv_contr(uint64_t l, uint64_t m, RefId X, RefId Y, RefId e, RefId y) { return CALLT(TD_EQUIVCONTR, VL(l), VL(m), VR(X), VR(Y), VR(e), VR(y)); }
-RefId mk_fill(uint64_t l, ScopeId A, FaceId phi, ScopeId u, RefId cap, IntervalId r) { return CALLT(TD_FILL, VL(l), VS(A), VF(phi), VS(u), VR(cap), VI(r)); }
 RefId mk_coe(uint64_t l, ScopeId A, RefId cap) { return CALLT(TD_COE, VL(l), VS(A), VR(cap)); }
-RefId mk_extend_contr(uint64_t l, RefId X, RefId c, RefId k, FaceId theta, RefId v) { return CALLT(TD_EXTENDCONTR, VL(l), VR(X), VR(c), VR(k), VF(theta), VR(v)); }
 RefId mk_ua(uint64_t l, RefId X, RefId Y, RefId e) { return CALLT(TD_UA, VL(l), VR(X), VR(Y), VR(e)); }
-RefId mk_down(uint64_t l, uint64_t lA, RefId A, RefId t, ScopeId D, RefId x, RefId e, RefId z) { return CALLT(TD_DOWN, VL(l), VL(lA), VR(A), VR(t), VS(D), VR(x), VR(e), VR(z)); }
 
 RefId mk_coe_at(uint64_t l, DimVarId i, RefId A_i, RefId cap) {
     return mk_coe(l, capture_dim1(i, A_i, mk_universe(l), level_succ(l), fc_true()), cap);
-}
-RefId mk_fill_at(uint64_t l, DimVarId i, RefId A_i, FaceId phi, RefId u_i, RefId cap, IntervalId r) {
-    ScopeId A = capture_dim1(i, A_i, mk_universe(l), level_succ(l), fc_true());
-    ScopeId u = capture_dim1(i, u_i, A_i, l, fc_meet(fc_true(), phi));
-    return mk_fill(l, A, phi, u, cap, r);
 }
 
 /* ------------------------------------------------------------------ */
@@ -152,7 +130,7 @@ static void compclause_step(Cont *k, uint64_t v) {
         LAUNCH_AWAIT_ALL();
         L->a0 = L->kv[0]; L->a1 = L->kv[1]; L->a2 = L->kv[2]; L->a3 = L->kv[3]; L->Un = L->kv[4];
         L->x = L->a1;                                                    /* T_j and e_j are defined on α_j */
-        FR_AWAIT(k, L->eq, J_EQUIV, RQ(L->n, L->n, L->a2, L->a0), 0);   /* Equiv(T_j, A_j) */
+        FR_AWAIT(k, L->eq, F_EQUIV, RQ(L->n, L->n, L->a2, L->a0), 0);   /* Equiv(T_j, A_j) */
         L->nk = 0;
         DEMAND(F_CAPTURE, cap1(L->j, VS_REF, L->a0, L->Un, L->sn, fc_true()), 0);
         DEMAND(F_CAPTURE, cap1(L->j, VS_FACE, L->a1, 0, LEVEL_NONE, fc_true()), 0);
@@ -179,9 +157,22 @@ interpret:
     FR_FINISH(k, rword(r, 1));
     FR_END(k);
 }
-void lib_families_init(void) {
-    family_define(F_COMPCLAUSE, "comp.clause", compclause_step, sizeof(CcLoc));
+/* Equiv(l, m, X, Y): the library program, one interpretation (its value is
+ * the type) */
+typedef struct { uint64_t x, y; WordBuf wb; bool created; } EqLoc;
+static void equiv_step(Cont *k, uint64_t v) {
+    EqLoc *L = FR_LOC(k, EqLoc);
+    size_t nq; const uint64_t *q = rget(k->w[0], &nq);
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    {   TVal a[4] = { { PS_LEVEL, q[0] }, { PS_LEVEL, q[1] }, { PS_REF, q[2] }, { PS_REF, q[3] } };
+        ExprId root; template_call_env(TD_EQUIV, 4, a, &L->wb, &root); L->x = root; }
+    FR_CALL(k, L->y, intern_sub(k, &M.keys, &L->wb, &L->created));
+    FR_AWAIT(k, r, F_INTERP, L->x, L->y);
+    { size_t n; FR_FINISH(k, rget(r, &n)[1]); }
+    FR_END(k);
 }
-RefId comp_clause(DimVarId j, RefId fam, FaceId phi, RefId tube_j, RefId cap) {
-    return family_call(F_COMPCLAUSE, RQ(j, fam, phi, tube_j, cap), 0);
+void lib_families_init(void) {
+    family_define(F_EQUIV, "lib.equiv", equiv_step, sizeof(EqLoc));
+    family_define(F_COMPCLAUSE, "comp.clause", compclause_step, sizeof(CcLoc));
 }

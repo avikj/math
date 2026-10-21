@@ -104,10 +104,6 @@ void family_define(Family f, const char *name, FamResume step, size_t loc_size);
  * one node, installed with its first requester's view. */
 typedef enum { FK_PURE = 0, FK_RELATIVE, FK_OCCURRENCE } FamKind;
 void family_kind(Family f, FamKind kind);
-/* the entry a request (f, a, b) made by frame k reaches (for view.reads,
- * whose key (x, 0) is a published entry: the set of revisions its
- * derivation read) */
-EntryId frame_request_key(const Cont *k, Family f, uint64_t a, uint64_t b);
 Family family_new(const char *name, FamResume step, size_t loc_size);         /* a family defined at run time */
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b);
 void frame_call(Cont *k, Cont *child);
@@ -121,13 +117,11 @@ Cont *frame_sub(Family f, const Cont *caller);    /* a subroutine frame of famil
  * drives the ordinary scheduler until the key is published. */
 uint64_t family_run(Family f, uint64_t a, uint64_t b, WhnfStatus *status);
 uint64_t family_call(Family f, uint64_t a, uint64_t b);   /* family_run that must complete */
-/* a root bounded by the work of its own dependency support: the value when
- * the root completes with W(support) ≤ budget, otherwise W_STUCK (its work
- * stays with the machine); budget 0 is unlimited */
+/* a root driven for at most `budget` jobs (a host control bound; 0 is
+ * unlimited): W_STUCK when it did not complete, its work staying with the
+ * machine */
 uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, WhnfStatus *status);
 Family eval_entry_family(EntryId e);
-uint64_t eval_entry_a(EntryId e);
-uint64_t eval_entry_b(EntryId e);
 
 /* the interning subroutine: inserts the record held by *buf into t (the
  * buffer's pages are released), returning its id; *created (when non-NULL,
@@ -155,7 +149,6 @@ uint64_t observe_key(FaceId chi, FaceId phi);
  * at operands ids by the schema (term.h), or a written request record */
 Cont *mk_tag_sub(const Cont *caller, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);
 #define MK_SUB(k, tag, payload, levels, formal, ...) mk_tag_sub((k), (tag), (payload), (levels), sizeof((uint64_t[]){ __VA_ARGS__ }) / sizeof(uint64_t), (uint64_t[]){ __VA_ARGS__ }, (formal))
-Cont *construct_buf_sub(const Cont *caller, WordBuf *w);
 
 /* one lifetime: the evaluator lives and dies with the machine */
 void eval_init(void);
@@ -170,29 +163,16 @@ EvalResult whnf_in(RefId t, FaceId chi, uint64_t view, WhnfStatus *status);
  * resolved under it; an occurrence installed with it) */
 uint64_t family_run_in(Family f, uint64_t a, uint64_t b, uint64_t view, size_t budget, WhnfStatus *status);
 
-/* run queued jobs until none is left (with a pool: until quiescent) */
-void eval_run(void);
 /* start n worker threads (0 = sequential, the default); replaces any pool */
 void eval_set_workers(size_t n);
-size_t eval_workers(void);
 
 /* Readings (§60): protocol events and steps per family, exact counts kept
  * in one shard per executing thread and summed on demand (count.h). */
 typedef enum { RD_REQUEST, RD_DELIVER, RD_PUBLISH, RD_LAUNCH, RD_STEP, RD_STEPS } Reading;   /* RD_STEPS: of family f */
 void eval_reading(Reading r, Family f, Exact *out);   /* out += the reading */
-/* the historical work of a set of published producers (§60, EFFECT-AUTHORITY
- * §8): the union of their published supports (history.support), each
- * producer's frozen work counted once, summed exactly (history.work); a
- * pending dependency is a live obligation and not in the support; *support
- * is the number of producers in the union. The query is itself later work. */
-void eval_work(size_t n, const EntryId *roots, Exact *out, size_t *support);
-EntryId eval_entry_find(Family f, uint64_t a, uint64_t b);   /* the entry of a key, 0 if never requested */
-
-/* cache introspection */
 EntryState eval_entry_state(EntryId e);
 size_t eval_entry_count(void);
 bool eval_entry_live(EntryId e);
-size_t eval_entry_runs(EntryId e);
 
 void print_result(EvalResult r, FILE *f);
 
