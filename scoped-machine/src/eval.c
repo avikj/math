@@ -1,5 +1,4 @@
 #include "eval.h"
-#include "lib.h"
 #include "pool.h"
 #include <sched.h>
 
@@ -97,7 +96,6 @@ static void families_define(void) {
     scope_families_init();
     template_families_init();
     evaluator_init();
-    lib_families_init();
     level_families_init();
     code_families_init();
 }
@@ -588,8 +586,8 @@ uint64_t family_call(Family f, uint64_t a, uint64_t b) {
 static uint64_t res_rec(ResultClass c, RefId ref, const char *msg) { return RQ(c, ref, (uint64_t)(uintptr_t)msg); }
 EvalResult res_get(uint64_t v) {
     size_t n; const uint64_t *w = rget(v, &n);
-    require(n >= 3 && (n - 3) % 2 == 0 && w[0] >= R_INTRODUCTION && w[0] <= R_INVALID, "not a result record");
-    EvalResult r = { (ResultClass)w[0], w[n - 2], (n - 3) / 2, w + 1, (const char *)(uintptr_t)w[n - 1] };
+    require(n == 3 && w[0] >= R_INTRODUCTION && w[0] <= R_INVALID, "not a result record");
+    EvalResult r = { (ResultClass)w[0], w[1], (const char *)(uintptr_t)w[2] };
     return r;
 }
 
@@ -597,9 +595,7 @@ EvalResult res_get(uint64_t v) {
  * WHNF(t, χ) (χ projected to t's support) is a frame family like every
  * other: each step does a constant amount of work and awaits its operands
  * from their families (fields, binder application, face tests, projections,
- * constructions) and its sub-observations from the observation family. A
- * branchwise result launches its independent children (one per step) and
- * then awaits each in branch order (§12, §26). */
+ * constructions) and its sub-observations from the observation family. */
 uint64_t observe_key(FaceId chi, FaceId phi) { return RQ(chi, phi); }
 
 /* a construction request (construct.c) made by the evaluator: no declared
@@ -638,62 +634,12 @@ static void obs_step(Cont *k, uint64_t v) {
 }
 
 
-/* whnf.distribute(t, b): the eliminator t with its scrutinee replaced by b,
- * a branch of the scrutinee's system — its other operands t's fields (keyed
- * values), a field under the binder opened at the binder's own name */
-typedef struct { uint64_t ids[6], levels, j; size_t q, nf; } DiLoc;
-static void dist_step(Cont *k, uint64_t v) {
-    DiLoc *L = FR_LOC(k, DiLoc);
-    RefId t = k->w[0];
-    Tag tag = ref_tag(t);
-    uint64_t r = 0;
-    FR_BEGIN(k);
-    require(tag_schema(tag)->role == ROLE_ELIM && tag_schema(tag)->bsort != S_TERM, "whnf.distribute of a non-eliminator");
-    L->nf = tnode_nfields(ref_tnode(t));
-    L->j = tag_schema(tag)->bsort ? binder_dim_var(t, 0) : 0;
-    for (L->q = 0; L->q < L->nf; L->q++) {
-        if (L->q == tag_schema(tag)->scrut) L->ids[L->q] = k->w[1];
-        else if (schema_slot(tag, L->q) != NO_SLOT) FR_AWAIT(k, L->ids[L->q], F_BINDER, t, binder_req(S_DIM, 0, L->q, iv_var(L->j)));
-        else FR_AWAIT(k, L->ids[L->q], F_FIELD, t, L->q);
-    }
-    FR_AWAIT(k, L->levels, F_HEAD, t, 1);
-    FR_CALL(k, r, mk_tag_sub(k, tag, 0, L->levels, L->nf, L->ids, L->j));
-    FR_FINISH(k, r);
-    FR_END(k);
-}
-
-/* whnf.comp_branch(t, [g, b, χ]): one branch g ↦ b of the type-family system
- * of the composition t — its guard along the whole line ∀j.g, dropped (0)
- * when inconsistent with χ, otherwise [∀j.g, comp^j over the branch] */
-typedef struct { uint64_t j, g, phi, tube, cap, levels; } CbLoc;
-static void cbranch_step(Cont *k, uint64_t v) {
-    CbLoc *L = FR_LOC(k, CbLoc);
-    RefId t = k->w[0];
-    uint64_t r = 0;
-    FR_BEGIN(k);
-    {   size_t n; const uint64_t *q = rget(k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; k->w[4] = q[2]; }
-    L->j = binder_dim_var(t, 0);
-    FR_AWAIT(k, L->g, F_FCFORALL, k->w[2], L->j);
-    FR_AWAIT(k, r, F_FCMEET, k->w[4], L->g);
-    if (fc_is_false(r)) FR_FINISH(k, 0);
-    FR_AWAIT(k, L->phi, F_FIELD, t, 1);
-    FR_AWAIT(k, L->tube, F_BINDER, t, binder_req(S_DIM, 0, 2, iv_var(L->j)));
-    FR_AWAIT(k, L->cap, F_FIELD, t, 3);
-    FR_AWAIT(k, L->levels, F_HEAD, t, 1);
-    L->levels = levels_pack(L->levels == LEVELS_NONE ? LEVEL_NONE : levels_first(L->levels), LEVEL_NONE);
-    FR_CALL(k, r, MK_SUB(k, T_COMP, 0, L->levels, L->j, k->w[3], L->phi, L->tube, L->cap));
-    FR_FINISH(k, RQ(L->g, r));
-    FR_END(k);
-}
-
-typedef struct {
-    Tag tag; uint64_t levels, payload, a1, a4, x, res, sys, uni, g, j, fam, tube, cap, phi, fail, mf;
-    size_t n, q, a, kept, nfs; WordBuf wb, wc; bool created;
-} WhLoc;
+typedef struct { Tag tag; uint64_t x, res, a1; } WhLoc;
 #define RES(id) res_get(id)
-static uint64_t sys_face(uint64_t sys, size_t q) { return rword(sys, 2 * q); }
-static uint64_t sys_term(uint64_t sys, size_t q) { return rword(sys, 2 * q + 1); }
 
+/* the machine's own steps: β, projections, unfolding a definition, and the
+ * code eliminators. Every other former is a value of the machine (its
+ * computation is the evaluator program, prog/core.ctt). */
 static void whnf_step(Cont *k, uint64_t v) {
     WhLoc *L = FR_LOC(k, WhLoc);
     RefId t = k->w[0]; FaceId chi = key_face(k->w[1]);
@@ -703,140 +649,32 @@ static void whnf_step(Cont *k, uint64_t v) {
     L->tag = ref_tag(t);
     if (tag_schema(L->tag)->role == ROLE_INTRO) FR_FINISH(k, res_rec(R_INTRODUCTION, t, NULL));
 
-
     if (L->tag == T_GLOBAL) {
         /* a definition's body is fixed before its first observation (the
          * read seals it): a symbol without one is a neutral constant */
-        FR_AWAIT(k, L->payload, F_HEAD, t, 0);
-        L->a1 = global_body_sealed((SymbolId)L->payload);
+        FR_AWAIT(k, r, F_HEAD, t, 0);
+        L->a1 = global_body_sealed((SymbolId)r);
         if (!L->a1) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
         FR_AWAIT(k, L->x, F_UNFOLD, t, L->a1);
         goto forward_x;
     }
 
-    if (L->tag == T_GLUE_TYPE || L->tag == T_GLUE_INTRO) {
-        FR_AWAIT(k, L->a1, F_FIELD, t, 1);
-        FR_AWAIT(k, r, F_FCENT, chi, L->a1);
-        if (r != 2) FR_FINISH(k, res_rec(R_INTRODUCTION, t, NULL));
-        FR_AWAIT(k, L->x, F_FIELD, t, L->tag == T_GLUE_TYPE ? 2 : 4);
-        goto forward_x;
-    }
-
-    if (tag_schema(L->tag)->role == ROLE_ELIM) {
-        if (L->tag == T_PAPP) {
-            FR_AWAIT(k, L->a4, F_FIELD, t, 4);
-            FR_AWAIT(k, r, F_FCEND, L->a4, 0);
-            FR_AWAIT(k, r, F_FCENT, chi, r);
-            if (r == 2) { FR_AWAIT(k, L->x, F_FIELD, t, 1); goto forward_x; }
-            FR_AWAIT(k, r, F_FCEND, L->a4, 1);
-            FR_AWAIT(k, r, F_FCENT, chi, r);
-            if (r == 2) { FR_AWAIT(k, L->x, F_FIELD, t, 2); goto forward_x; }
-        } else if (L->tag == T_UNGLUE) {
-            FR_AWAIT(k, L->a1, F_FIELD, t, 1);
-            FR_AWAIT(k, r, F_FCENT, chi, L->a1);
-            if (r == 2) {
-                /* on the Glue face: (fst e) v */
-                FR_AWAIT(k, L->x, F_FIELD, t, 3);
-                FR_AWAIT(k, L->a4, F_FIELD, t, 4);
-                FR_CALL(k, L->x, MK_SUB(k, T_FST, 0, LEVELS_NONE, 0, L->x));
-                FR_CALL(k, L->x, MK_SUB(k, T_APP, 0, LEVELS_NONE, 0, L->x, L->a4));
-                goto forward_x;
-            }
-        }
-        /* the scrutinee */
-        FR_AWAIT(k, L->x, F_FIELD, t, tag_schema(L->tag)->scrut);
+    if (L->tag == T_APP || L->tag == T_FST || L->tag == T_SND) {
+        FR_AWAIT(k, L->x, F_FIELD, t, 0);
         FR_AWAIT(k, L->res, F_OBS, L->x, observe_key(chi, 0));
         if (RES(L->res).cls == R_NO_OBSERVATION || RES(L->res).cls == R_INVALID) FR_FINISH(k, L->res);
-        if (RES(L->res).cls == R_NEUTRAL) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
-        if (RES(L->res).cls == R_SYSTEM) {
-            /* distribute: the eliminator rebuilt around each branch, launched
-             * one per step, then awaited in branch order */
-            L->n = RES(L->res).nbr;
-            for (L->q = 0; L->q < L->n; L->q++) { family_launch(F_DIST, t, RES(L->res).br[2 * L->q + 1]); FR_YIELD(k); }
-            wordbuf_init(&L->wb);
-            for (L->q = 0; L->q < L->n; L->q++) {
-                wordbuf_push(&L->wb, RES(L->res).br[2 * L->q]);
-                FR_AWAIT(k, r, F_DIST, t, RES(L->res).br[2 * L->q + 1]);
-                wordbuf_push(&L->wb, r);
-            }
-            FR_CALL(k, L->sys, intern_sub(k, &M.keys, &L->wb, &L->created));
-            L->kept = L->n;
-            goto branchwise;
-        }
-        /* an introduction under the eliminator */
-        {   Tag ht = ref_tag(RES(L->res).ref);
-            if (L->tag == T_APP && ht != T_LAM) FR_FINISH(k, res_rec(R_INVALID, 0, "application of a non-function introduction"));
-            if ((L->tag == T_FST || L->tag == T_SND) && ht != T_PAIR) FR_FINISH(k, res_rec(R_INVALID, 0, "projection of a non-pair introduction"));
-            if (L->tag == T_PAPP && ht != T_PLAM) FR_FINISH(k, res_rec(R_INVALID, 0, "path application of a non-path introduction"));
-            if (L->tag == T_UNGLUE && ht != T_GLUE_INTRO) FR_FINISH(k, res_rec(R_INVALID, 0, "unglue of a non-glue introduction")); }
+        if (RES(L->res).cls != R_INTRODUCTION) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
         if (L->tag == T_APP) {
+            if (ref_tag(RES(L->res).ref) != T_LAM) FR_FINISH(k, res_rec(R_INVALID, 0, "application of a non-function introduction"));
             FR_AWAIT(k, L->a1, F_FIELD, t, 1);
             FR_AWAIT(k, L->x, F_BINDER, RES(L->res).ref, binder_req(S_TERM, 0, 1, L->a1));
-        } else if (L->tag == T_PAPP) FR_AWAIT(k, L->x, F_BINDER, RES(L->res).ref, binder_req(S_DIM, 0, 0, L->a4));
-        else FR_AWAIT(k, L->x, F_FIELD, RES(L->res).ref, L->tag == T_FST ? 0 : L->tag == T_SND ? 1 : 5);
+        } else {
+            if (ref_tag(RES(L->res).ref) != T_PAIR) FR_FINISH(k, res_rec(R_INVALID, 0, "projection of a non-pair introduction"));
+            FR_AWAIT(k, L->x, F_FIELD, RES(L->res).ref, L->tag == T_FST ? 0 : 1);
+        }
         goto forward_x;
     }
 
-    if (L->tag == T_SYSTEM) {
-        /* the covered, consistent branches; a branch entailed by χ is the value */
-        L->n = tnode_nfields(ref_tnode(t)) / 2;
-        wordbuf_init(&L->wb); wordbuf_push(&L->wb, R_SYSTEM);
-        L->uni = fc_false();
-        for (L->q = 0; L->q < L->n; L->q++) {
-            FR_AWAIT(k, L->phi, F_FIELD, t, 2 * L->q);
-            FR_AWAIT(k, r, F_FCMEET, chi, L->phi);
-            if (fc_is_false(r)) continue;                       /* inconsistent branch dropped */
-            FR_AWAIT(k, L->x, F_FIELD, t, 2 * L->q + 1);
-            FR_AWAIT(k, r, F_FCENT, chi, L->phi);
-            if (r == 2) { wordbuf_clear(&L->wb); goto forward_x; }
-            wordbuf_push(&L->wb, L->phi); wordbuf_push(&L->wb, L->x);
-            FR_AWAIT(k, L->uni, F_JOIN, L->uni, L->phi);
-        }
-        FR_AWAIT(k, r, F_FCENT, chi, L->uni);
-        if (r != 2) { wordbuf_clear(&L->wb); FR_FINISH(k, res_rec(R_INVALID, 0, "system does not cover the ambient face")); }
-        wordbuf_push(&L->wb, t); wordbuf_push(&L->wb, 0);
-        FR_CALL(k, r, intern_sub(k, &M.keys, &L->wb, &L->created));
-        FR_FINISH(k, r);
-    }
-
-    if (L->tag == T_COMP) {
-        FR_AWAIT(k, L->phi, F_FIELD, t, 1);
-        FR_AWAIT(k, r, F_FCENT, chi, L->phi);
-        if (r == 2) { FR_AWAIT(k, L->x, F_BINDER, t, binder_req(S_DIM, 0, 2, iv_one())); goto forward_x; }   /* tube coverage first */
-        L->j = binder_dim_var(t, 0);
-        FR_AWAIT(k, L->fam, F_BINDER, t, binder_req(S_DIM, 0, 0, iv_var(L->j)));
-        FR_AWAIT(k, L->res, F_OBS, L->fam, observe_key(chi, 0));
-        if (RES(L->res).cls == R_NO_OBSERVATION || RES(L->res).cls == R_INVALID) FR_FINISH(k, L->res);
-        if (RES(L->res).cls == R_NEUTRAL) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
-        if (RES(L->res).cls == R_SYSTEM) {
-            /* a branch available along the whole j line: outer guard ∀j.g;
-             * the branches are independent: launched, then awaited in order */
-            L->n = RES(L->res).nbr;
-            for (L->q = 0; L->q < L->n; L->q++) { family_launch(F_CBRANCH, t, RQ(RES(L->res).br[2 * L->q], RES(L->res).br[2 * L->q + 1], chi)); FR_YIELD(k); }
-            wordbuf_init(&L->wb); L->kept = 0; L->uni = fc_false();
-            for (L->q = 0; L->q < L->n; L->q++) {
-                FR_AWAIT(k, r, F_CBRANCH, t, RQ(RES(L->res).br[2 * L->q], RES(L->res).br[2 * L->q + 1], chi));
-                if (!r) continue;                                   /* inconsistent along the line: dropped */
-                {   size_t m; const uint64_t *gw = rget(r, &m);
-                    wordbuf_push(&L->wb, gw[0]); wordbuf_push(&L->wb, gw[1]); L->g = gw[0]; L->kept++; }
-                FR_AWAIT(k, L->uni, F_JOIN, L->uni, L->g);
-            }
-            FR_CALL(k, L->sys, intern_sub(k, &M.keys, &L->wb, &L->created));
-            FR_AWAIT(k, r, F_FCENT, chi, L->uni);
-            if (r != 2) FR_FINISH(k, res_rec(R_INVALID, 0, "type-family system has no branch along the whole composition line"));
-            for (L->q = 0; L->q < L->kept; L->q++) {
-                FR_AWAIT(k, r, F_FCENT, chi, sys_face(L->sys, L->q));
-                if (r == 2) { L->x = sys_term(L->sys, L->q); goto forward_x; }
-            }
-            goto branchwise;
-        }
-        /* an introduction: the one fixed clause (§53–§54) */
-        FR_AWAIT(k, L->tube, F_BINDER, t, binder_req(S_DIM, 0, 2, iv_var(L->j)));
-        FR_AWAIT(k, L->cap, F_FIELD, t, 3);
-        FR_AWAIT(k, L->x, F_COMPCLAUSE, RQ(L->j, RES(L->res).ref, L->phi, L->tube, L->cap), 0);
-        if (!L->x) FR_FINISH(k, res_rec(R_INVALID, 0, "composition in a family whose head is not a type former or lacks its universe annotation"));
-        goto forward_x;
-    }
     if (L->tag >= T_CMATCH && L->tag <= T_LAST && L->tag != T_QLV) {
         /* a code eliminator: its reduct (code.c) */
         FR_AWAIT(k, L->x, F_CODE, t, chi);
@@ -847,56 +685,10 @@ static void whnf_step(Cont *k, uint64_t v) {
             L->x = q[1]; }
         goto forward_x;
     }
-    die("whnf: unhandled head tag %d", (int)L->tag);
+    FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
 
 forward_x:
     FR_AWAIT(k, r, F_OBS, L->x, observe_key(chi, 0));
-    FR_FINISH(k, r);
-
-branchwise:
-    /* the guarded terms of L->sys under χ ∧ φ_k: launched one per step, then
-     * awaited in branch order (a failure is the first in branch order); the
-     * result is reconstructed in the original branch order, nested systems
-     * flattened under conjoined guards */
-    if (L->kept == 0) {
-        creq_system_begin(&L->wb, 0); wordbuf_push(&L->wb, 0);
-        FR_CALL(k, r, creq_buf(k, &L->wb));
-        FR_FINISH(k, res_rec(R_SYSTEM, r, NULL));
-    }
-    for (L->q = 0; L->q < L->kept; L->q++) { family_launch(F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q))); FR_YIELD(k); }
-    L->nfs = 0; L->fail = 0;
-    for (L->q = 0; L->q < L->kept; L->q++) {
-        FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q)));
-        if (!L->fail && RES(L->res).cls == R_INVALID) L->fail = L->res;
-        if (!L->fail && RES(L->res).cls == R_NO_OBSERVATION) L->fail = res_rec(R_INVALID, 0, "branch under an inconsistent guard");
-        L->nfs += RES(L->res).cls == R_SYSTEM ? RES(L->res).nbr : 1;
-    }
-    if (L->fail) FR_FINISH(k, L->fail);
-    /* the conjoined guards of nested branches: launched, then awaited */
-    for (L->q = 0; L->q < L->kept; L->q++) {
-        FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q)));
-        if (RES(L->res).cls != R_SYSTEM) continue;
-        for (L->a = 0; L->a < RES(L->res).nbr; L->a++) { family_launch(F_FCMEET, sys_face(L->sys, L->q), RES(L->res).br[2 * L->a]); FR_YIELD(k); }
-    }
-    creq_system_begin(&L->wb, L->nfs);
-    wordbuf_init(&L->wc); wordbuf_push(&L->wc, R_SYSTEM);
-    for (L->q = 0; L->q < L->kept; L->q++) {
-        FR_AWAIT(k, L->res, F_OBS, sys_term(L->sys, L->q), observe_key(chi, sys_face(L->sys, L->q)));
-        if (RES(L->res).cls != R_SYSTEM) {
-            creq_system_branch(&L->wb, sys_face(L->sys, L->q), RES(L->res).ref);
-            wordbuf_push(&L->wc, sys_face(L->sys, L->q)); wordbuf_push(&L->wc, RES(L->res).ref);
-            continue;
-        }
-        for (L->a = 0; L->a < RES(L->res).nbr; L->a++) {
-            FR_AWAIT(k, L->mf, F_FCMEET, sys_face(L->sys, L->q), RES(L->res).br[2 * L->a]);
-            creq_system_branch(&L->wb, L->mf, RES(L->res).br[2 * L->a + 1]);
-            wordbuf_push(&L->wc, L->mf); wordbuf_push(&L->wc, RES(L->res).br[2 * L->a + 1]);
-        }
-    }
-    wordbuf_push(&L->wb, 0);
-    FR_CALL(k, r, creq_buf(k, &L->wb));
-    wordbuf_push(&L->wc, r); wordbuf_push(&L->wc, 0);
-    FR_CALL(k, r, intern_sub(k, &M.keys, &L->wc, &L->created));
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -906,10 +698,7 @@ static void evaluator_init(void) {
     FAM[F_WHNF].name = "whnf"; FAM[F_WHNF].resume = whnf_step; FAM[F_WHNF].loc_size = sizeof(WhLoc);
     family_define(F_OBS, "whnf.observe", obs_step, 0);
     family_define(F_CREQ, "construct.request", creq_step, sizeof(CrLoc));
-    family_define(F_CBRANCH, "whnf.comp_branch", cbranch_step, sizeof(CbLoc));
-    family_define(F_DIST, "whnf.distribute", dist_step, sizeof(DiLoc));
 }
-/* comp.clause is defined by the library after the evaluator */
 
 EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status) {
     WhnfStatus st; uint64_t v = family_run(F_OBS, t, observe_key(chi, 0), &st);
@@ -924,11 +713,6 @@ void print_result(EvalResult r, FILE *f) {
     switch (r.cls) {
     case R_INTRODUCTION: fprintf(f, "INTRO "); print_ref(r.ref, f); break;
     case R_NEUTRAL: fprintf(f, "NEUTRAL "); print_ref(r.ref, f); break;
-    case R_SYSTEM:
-        fprintf(f, "SYSTEM [");
-        for (size_t i = 0; i < r.nbr; i++) { if (i) fprintf(f, ", "); fc_print(r.br[2 * i], f); fprintf(f, " ↦ "); print_ref(r.br[2 * i + 1], f); }
-        fprintf(f, "]");
-        break;
     case R_NO_OBSERVATION: fprintf(f, "NO_OBSERVATION"); break;
     case R_INVALID: fprintf(f, "INVALID(%s)", r.message ? r.message : ""); break;
     default: fprintf(f, "<pending>"); break;

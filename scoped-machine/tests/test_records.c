@@ -4,7 +4,7 @@
  * same records by stepped and synchronous inserters yields one id each. */
 #include "reading.h"
 #include "../src/eval.h"
-#include "../src/lib.h"
+#include "../src/eval.h"
 #include <pthread.h>
 
 static int failures;

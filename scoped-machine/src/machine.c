@@ -1,5 +1,5 @@
 #include "state.h"
-#include "lib.h"
+#include "template.h"
 #include "eval.h"
 
 Machine M;
@@ -14,7 +14,7 @@ void machine_init(void) {
 
 void machine_free(void) {
     eval_free();
-    lib_free();
+    templates_free();
     interner_free(&M.keys);
     chunked_free(&M.defs);
     memset(&M, 0, sizeof M);

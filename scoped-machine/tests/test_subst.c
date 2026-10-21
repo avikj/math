@@ -2,7 +2,7 @@
  * constructions, intervals and faces; override; lookups; scheduled and
  * inline substitution agree; a construction's environment map and instance. */
 #include "../src/eval.h"
-#include "../src/lib.h"
+#include "../src/eval.h"
 
 static int failures;
 #define CHECK(c, m) do { if (!(c)) { failures++; printf("FAIL: %s\n", m); } else printf("ok: %s\n", m); } while (0)

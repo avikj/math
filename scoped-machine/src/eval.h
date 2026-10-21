@@ -21,21 +21,16 @@
 typedef enum {
     R_INTRODUCTION = 1,
     R_NEUTRAL,
-    R_SYSTEM,
     R_NO_OBSERVATION,   /* host control status: ambient face is false */
     R_INVALID           /* host control status: invalid occurrence / ill-typed demand */
 } ResultClass;
 
-/* An observation's value is the interned record
- *   [class, (face, term)*, ref, message]
- * (the branches of a SYSTEM result; ref the head reference, or the owner
- * system of a SYSTEM; message the diagnostic of INVALID). EvalResult is
- * its decoded view; br points into the record. */
+/* An observation's value is the interned record [class, ref, message]
+ * (ref the head reference; message the diagnostic of INVALID). EvalResult
+ * is its decoded view. */
 typedef struct {
     ResultClass cls;
     RefId ref;
-    size_t nbr;
-    const uint64_t *br;     /* face of branch q: br[2q]; term: br[2q+1] */
     const char *message;
 } EvalResult;
 EvalResult res_get(uint64_t v);

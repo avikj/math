@@ -5,7 +5,7 @@
  * lattice maps exchanged by negation, negation is a De Morgan involution, and
  * ∀ / π are the adjoints test_main checks exhaustively on two dimensions. */
 #include "../src/eval.h"
-#include "../src/lib.h"
+#include "../src/eval.h"
 
 static int failures;
 #define CHECK(c, m) do { if (!(c)) { failures++; printf("FAIL: %s\n", m); } else printf("ok: %s\n", m); } while (0)

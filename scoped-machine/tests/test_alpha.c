@@ -6,7 +6,7 @@
  * into the same atoms under renaming, open back to their bodies and commute
  * with reindexing of their free identities. */
 #include "../src/eval.h"
-#include "../src/lib.h"
+#include "../src/eval.h"
 
 static int failures;
 #define CHECK(c, m) do { if (!(c)) { failures++; printf("FAIL: %s\n", m); } else printf("ok: %s\n", m); } while (0)

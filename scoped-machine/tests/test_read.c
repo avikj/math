@@ -23,9 +23,8 @@ int main(void) {
     CHECK(whnf_ref(reader_term(r, "(K a b)"), fc_true(), &st) == a && st == W_OK, "(K a b) evaluates to a");
     CHECK(whnf_ref(reader_term(r, "(fst (pair a b))"), fc_true(), &st) == a, "fst of a pair");
     CHECK(whnf_ref(reader_term(r, "((lam (x A) x) b)"), fc_true(), &st) == b, "beta");
-    CHECK(whnf_ref(reader_term(r, "(papp (i) A a b p 0)"), fc_true(), &st) == a, "a path at 0 is its left endpoint");
-    CHECK(whnf_ref(reader_term(r, "(papp (i) A a b p 1)"), fc_true(), &st) == b, "a path at 1 is its right endpoint");
-    CHECK(whnf_ref(reader_term(r, "(sys (true a))"), fc_true(), &st) == a, "a covering branch is selected");
+    CHECK(ref_tag(reader_term(r, "(papp (i) A a b p 0)")) == T_PAPP && construction_field(reader_term(r, "(papp (i) A a b p 0)"), 3) == reader_global(r, "p"), "a path application reads to its record");
+    CHECK(ref_tag(reader_term(r, "(sys (true a))")) == T_SYSTEM && construction_field(reader_term(r, "(sys (true a))"), 1) == a, "a system reads to its record");
     CHECK(reader_term(r, "(lam (x A) x)") == reader_term(r, "(lam (y A) y)"), "alpha-equivalent text reads to one record");
     (void)whnf(reader_term(r, "loop"), fc_true(), &st);
     CHECK(st == W_STUCK, "a definition that demands itself is pending");
