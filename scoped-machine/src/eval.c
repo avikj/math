@@ -21,8 +21,6 @@ typedef struct { pthread_mutex_t mu; QChunk *front, *back; size_t len; } Queue;
 
 typedef struct { const char *name; FamResume resume; size_t loc_size; } FamilyDef;
 static FamilyDef FAM[F_MAX];
-static uint8_t KIND[F_MAX];          /* FamKind of each family (pure unless declared) */
-void family_kind(Family f, FamKind kind) { require(f >= 1 && f < F_MAX, "family kind out of range"); KIND[f] = (uint8_t)kind; }
 static size_t n_fam = F_FIXED;     /* families defined at run time (tests) follow the fixed ids */
 static FaceId key_face(uint64_t b) { return b; }
 
@@ -101,8 +99,6 @@ static void families_define(void) {
     evaluator_init();
     lib_families_init();
     level_families_init();
-    static const Family relative[] = { F_WHNF, F_OBS };
-    for (size_t i = 0; i < sizeof relative / sizeof relative[0]; i++) family_kind(relative[i], FK_RELATIVE);
 }
 
 void eval_init(void) {
@@ -185,7 +181,7 @@ static void cont_release(Cont *k) {
 }
 Cont *frame_sub(Family f, const Cont *caller) {
     require(f > F_WHNF && f < F_MAX && FAM[f].resume, "a subroutine is a frame family");
-    Cont *k = frame_new(f, 0); k->owner = caller ? caller->owner : 0; k->view = caller ? caller->view : 0;
+    Cont *k = frame_new(f, 0); k->owner = caller ? caller->owner : 0;
     return k;
 }
 
@@ -270,9 +266,7 @@ static void deliver(Cont *k, uint64_t v) {
 
 /* ---------------- entries ---------------- */
 
-/* entry keys: [f, a, b] a pure or occurrence key; [f, a, b, path] a
- * relative node; [F_RESOLVE, f, a, b, V] the resolver of a relative request
- * under the view V */
+/* entry keys: [f, a, b] */
 static EntryId entry_words(const uint64_t *w, size_t n) {
     require(w[0] >= F_WHNF && w[0] < F_MAX && FAM[w[0]].resume, "unregistered family");
     EntryId id = interner_intern(&E.keys, w, n, NULL);
@@ -280,15 +274,7 @@ static EntryId entry_words(const uint64_t *w, size_t n) {
     return id;
 }
 static EntryId entry_intern(Family f, uint64_t a, uint64_t b) { uint64_t w[3] = { f, a, b }; return entry_words(w, 3); }
-static EntryId node_entry(Family f, uint64_t a, uint64_t b, uint64_t path) { uint64_t w[4] = { f, a, b, path }; return entry_words(w, 4); }
-/* the entry a request of (f, a, b) under view reaches */
-static EntryId request_key(Family f, uint64_t a, uint64_t b, uint64_t view) {
-    require(f >= F_WHNF && f < F_MAX && FAM[f].resume, "unregistered family");
-    if (KIND[f] != FK_RELATIVE) return entry_intern(f, a, b);
-    require(view, "a request of %s outside a binding view", FAM[f].name);
-    uint64_t w[5] = { F_RESOLVE, f, a, b, view };
-    return entry_words(w, 5);
-}
+
 
 EntryState eval_entry_state(EntryId e) {
     Cont *h = __atomic_load_n(&ENT(e)->head, __ATOMIC_ACQUIRE);
@@ -338,7 +324,7 @@ static void record_work(EntryId owner) { count_bump(&ENT(owner)->work); }
 #define LINK_PENDING ((Cont *)(uintptr_t)3)
 #define LINK_TAKEN ((Cont *)(uintptr_t)5)
 static void enqueue_resume(Cont *k, uint64_t v);
-static void request_entry(EntryId eid, Cont *k, EntryId owner, uint64_t view) {
+static void request_entry(EntryId eid, Cont *k, EntryId owner) {
     Entry *e = ENT(eid);
     event(RD_REQUEST);
     if (owner) record_dep(owner, eid);
@@ -349,7 +335,6 @@ static void request_entry(EntryId eid, Cont *k, EntryId owner, uint64_t view) {
     if (!k) {
         Cont *u = NULL;
         if (__atomic_compare_exchange_n(&e->head, &u, ENTRY_LAUNCHED, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
-            e->view = view;                                 /* the installer's view, before its producer runs */
             event(RD_LAUNCH);
             Task job; memset(&job, 0, sizeof job); job.kind = TK_EVAL; job.entry = eid;
             push_job(job);                                  /* the reservation is the job's */
@@ -377,7 +362,6 @@ static void request_entry(EntryId eid, Cont *k, EntryId owner, uint64_t view) {
             return;
         } }
     if (prev == NULL) {
-        e->view = view;
         event(RD_LAUNCH);
         Task job; memset(&job, 0, sizeof job); job.kind = TK_EVAL; job.entry = eid;
         push_job(job);
@@ -401,12 +385,11 @@ static void enqueue_resume(Cont *k, uint64_t v) {
 }
 void frame_request(Cont *k, Family f, uint64_t a, uint64_t b) {
     keep_frame(k);
-    request_entry(request_key(f, a, b, k->view), k, k->owner, k->view);
+    request_entry(entry_intern(f, a, b), k, k->owner);
 }
-static void frame_request_entry(Cont *k, EntryId eid) { keep_frame(k); request_entry(eid, k, k->owner, k->view); }
 void family_launch(Family f, uint64_t a, uint64_t b) {
     require(tl_step_frame, "a launch is made by a frame's step");
-    request_entry(request_key(f, a, b, tl_step_frame->view), NULL, tl_step_frame->owner, tl_step_frame->view);
+    request_entry(entry_intern(f, a, b), NULL, tl_step_frame->owner);
 }
 void frame_call(Cont *k, Cont *child) {
     require(child->dest == 0, "a subroutine frame of this caller");
@@ -474,80 +457,12 @@ static void flatten_step(Cont *k, uint64_t v) {
 }
 static uint64_t flatten_root(Interner *t, uint64_t root) { return family_call(F_FLATTEN, t->index, root); }
 
-/* ---------------- binding views ----------------
- * read(s, V): the revision of s in the view V (0: s is not declared there).
- * A node's reads are its dependencies on read entries. */
-static void read_step(Cont *k, uint64_t v) {
-    uint64_t r = 0;
-    FR_BEGIN(k);
-    FR_AWAIT(k, r, F_LOOKUP, k->w[1], k->w[0]);
-    FR_FINISH(k, r ? subst_value(k->w[1], r - 1) : 0);
-    FR_END(k);
-}
-/* reads(x, 0): the set of revisions read in the derivation of the
- * published entry x (its read entries' values); reads(x, 1): the set of
- * symbols whose declarations it used (its decl entries' symbols). A
- * resolver contributes its chosen node; a pure entry reads nothing. One
- * dependency per step. */
-typedef struct { DepNode *d; uint64_t acc, r; } RdLoc;
-static void reads_step(Cont *k, uint64_t v) {
-    RdLoc *L = FR_LOC(k, RdLoc);
-    EntryId x = k->w[0]; uint64_t r = 0;
-    Family f = eval_entry_family(x);
-    FR_BEGIN(k);
-    if (f == F_READ) { uint64_t rev = ENT(x)->value; FR_FINISH(k, set_make(&rev, rev && !k->w[1] ? 1 : 0)); }
-    if (f == F_RESOLVE) { FR_AWAIT(k, r, F_READS, ENT(x)->via, k->w[1]); FR_FINISH(k, r); }
-    L->acc = set_make(NULL, 0);
-    if (KIND[f] == FK_PURE) FR_FINISH(k, L->acc);
-    for (L->d = __atomic_load_n(&ENT(x)->deps, __ATOMIC_ACQUIRE); L->d; L->d = L->d->next) {
-        FR_AWAIT(k, L->r, F_READS, L->d->e, k->w[1]);
-        FR_AWAIT(k, L->acc, F_SUNION, L->acc, L->r);
-    }
-    FR_FINISH(k, L->acc);
-    FR_END(k);
-}
-
 static bool ready(EntryId e) { return eval_entry_state(e) == E_READY; }
 
-/* resolve(f, a, b, V): the node of (f, a, b) whose reads agree with V.
- * It requests the root node; while the node it reached read a revision that
- * differs from V's, it requests the node whose path adds every such symbol
- * at V's revision (a substitution record, so the path is a set). One read
- * comparison per step. */
-#define FR_AWAIT_ENTRY(k, var, eid) do { (k)->pc = __LINE__; frame_request_entry((k), (eid)); return; case __LINE__:; (var) = v; } while (0)
-typedef struct { uint64_t path, ext, r, rs, cur; size_t i, n; EntryId node; } RsLoc;
-static void resolve_step(Cont *k, uint64_t v) {
-    RsLoc *L = FR_LOC(k, RsLoc);
-    uint64_t V = k->w[3];
-    FR_BEGIN(k);
-    for (;;) {
-        L->node = node_entry((Family)k->w[0], k->w[1], k->w[2], L->path);
-        FR_AWAIT_ENTRY(k, L->r, L->node);
-        if (ENT(L->node)->view == V) break;                 /* installed under V: its reads are V's */
-        FR_AWAIT(k, L->rs, F_READS, L->node, 0);
-        L->ext = L->path ? L->path : env_empty(0);
-        for (L->i = 0; L->i < (set_get(L->rs, &L->n), L->n); L->i++) {
-            {   size_t n; L->cur = set_get(L->rs, &n)[L->i]; }
-            FR_AWAIT(k, L->cur, F_READ, revision_symbol(L->cur), V);
-            {   size_t n; uint64_t was = set_get(L->rs, &n)[L->i];
-                if (L->cur == was) continue;
-                L->cur = subst_entry(revision_symbol(was), PS_REF, L->cur); }
-            FR_AWAIT(k, L->ext, F_SET, L->ext, L->cur);
-        }
-        if (L->ext == (L->path ? L->path : env_empty(0))) break;   /* every read agrees */
-        L->path = L->ext;
-    }
-    __atomic_store_n(&ENT(k->dest)->via, L->node, __ATOMIC_RELEASE);
-    FR_FINISH(k, L->r);
-    FR_END(k);
-}
 static void intern_families_init(void) {
     family_define(F_INTERN, "intern", intern_step, sizeof(InternState));
     family_define(F_FLATTEN, "intern.flatten", flatten_step, sizeof(FlatLoc));
     family_define(F_HOST, "host", host_step, 0);
-    family_define(F_READ, "view.read", read_step, 0);
-    family_define(F_RESOLVE, "view.resolve", resolve_step, sizeof(RsLoc));
-    family_define(F_READS, "view.reads", reads_step, sizeof(RdLoc));
     interner_set_flatten_hook(flatten_root);
 }
 
@@ -569,7 +484,6 @@ static void evaluate(EntryId eid) {
     record_work(eid);
     Cont *k = frame_new(f, eid);
     for (size_t i = 1; i < n; i++) k->w[i - 1] = key[i];
-    k->view = f == F_RESOLVE ? key[4] : KIND[f] == FK_PURE ? 0 : e->view;
     step_frame(k, 0);
 }
 static void execute_job(Task t) {
@@ -623,9 +537,9 @@ static void *worker_main(void *arg) {
  * jobs this caller ran; with a pool, the machine's executed jobs, sampled
  * while it waits). The work continues; it is never a mathematical verdict. */
 static uint64_t steps_now(void) { Exact x = { 0, NULL }; uint64_t w; eval_reading(RD_STEP, 0, &x); if (!exact_to_u64(&x, &w)) w = UINT64_MAX; exact_free(&x); return w; }
-static uint64_t drive(EntryId e, uint64_t view, size_t budget, WhnfStatus *status) {
+static uint64_t drive(EntryId e, size_t budget, WhnfStatus *status) {
     require(!tl_in_job, "root driving inside a counted step: the frame must await it");
-    request_entry(e, frame_new(F_HOST, 0), 0, view);
+    request_entry(e, frame_new(F_HOST, 0), 0);
     size_t ran = 0; uint64_t s0 = budget && E.nworkers ? steps_now() : 0;
     for (;;) {
         if (ready(e)) break;
@@ -659,10 +573,7 @@ uint64_t family_run(Family f, uint64_t a, uint64_t b, WhnfStatus *status) {
     return family_run_budget(f, a, b, 0, status);
 }
 uint64_t family_run_budget(Family f, uint64_t a, uint64_t b, size_t budget, WhnfStatus *status) {
-    return family_run_in(f, a, b, view_current(), budget, status);
-}
-uint64_t family_run_in(Family f, uint64_t a, uint64_t b, uint64_t view, size_t budget, WhnfStatus *status) {
-    return drive(request_key(f, a, b, view), view, budget, status);
+    return drive(entry_intern(f, a, b), budget, status);
 }
 uint64_t family_call(Family f, uint64_t a, uint64_t b) {
     require(!tl_in_job, "synchronous request of %s inside a counted step: the frame must await it", f < F_MAX ? FAM[f].name : "?");
@@ -793,13 +704,10 @@ static void whnf_step(Cont *k, uint64_t v) {
 
 
     if (L->tag == T_GLOBAL) {
-        /* the symbol's revision read through this frame's view: an opaque
-         * revision is a neutral constant, a body is unfolded at exactly the
-         * revision read */
+        /* a definition's body is fixed before its first observation (the
+         * read seals it): a symbol without one is a neutral constant */
         FR_AWAIT(k, L->payload, F_HEAD, t, 0);
-        FR_AWAIT(k, r, F_READ, L->payload, k->view);
-        if (!r) FR_FINISH(k, res_rec(R_INVALID, 0, "a symbol not declared in the observation's view"));
-        L->a1 = revision_body(r);
+        L->a1 = global_body_sealed((SymbolId)L->payload);
         if (!L->a1) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
         FR_AWAIT(k, L->x, F_UNFOLD, t, L->a1);
         goto forward_x;
@@ -992,9 +900,8 @@ static void evaluator_init(void) {
 }
 /* comp.clause is defined by the library after the evaluator */
 
-EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status) { return whnf_in(t, chi, view_current(), status); }
-EvalResult whnf_in(RefId t, FaceId chi, uint64_t view, WhnfStatus *status) {
-    WhnfStatus st; uint64_t v = family_run_in(F_OBS, t, observe_key(chi, 0), view, 0, &st);
+EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status) {
+    WhnfStatus st; uint64_t v = family_run(F_OBS, t, observe_key(chi, 0), &st);
     EvalResult out; memset(&out, 0, sizeof out);
     if (st != W_OK) { if (status) *status = W_STUCK; return out; }
     out = res_get(v);

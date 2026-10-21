@@ -205,22 +205,15 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 
 /* ---- globals ---- */
 /* a declared symbol: parameters (term variables with their declared types),
- * free dimensions, and its declared type over them; a symbol without a body
- * is an opaque constant of the signature */
+ * free dimensions, and its declared type over them. Its body, which may
+ * mention the symbol itself, is set once and before the symbol's first
+ * observation: that observation seals it, so every evaluation sees one body.
+ * A symbol sealed without a body is an opaque constant. */
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type);
 VarSetId global_params(SymbolId s);
 DimSetId global_dims(SymbolId s);
-bool set_global_body(SymbolId s, RefId body);   /* once per symbol */
-/* Revisions and binding views. A revision is the immutable record (s, body),
- * body 0 for the opaque declaration. A binding view is an immutable total
- * map symbol ↦ revision (a substitution record); a declaration or a body
- * replaces the machine's current view by one persistent set, so a view held
- * by a pending computation stays readable. Every read of a revision in a
- * computation goes through the family view.read (eval.c). */
-uint64_t revision(SymbolId s, RefId body);
-SymbolId revision_symbol(uint64_t rev);
-RefId revision_body(uint64_t rev);
-uint64_t view_current(void);
+bool set_global_body(SymbolId s, RefId body);   /* once, before the first observation */
+RefId global_body_sealed(SymbolId s);            /* the body (0: none), sealing the symbol */
 RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the definition's own parameters */
 
 /* ---- constructors (constructions at their own boundary) ---- */

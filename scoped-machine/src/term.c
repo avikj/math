@@ -173,27 +173,28 @@ void head_free(Head *h) { h->n = 0; }
 /* ================= globals ================= */
 
 
-#define REV_TAG 0x52455649ULL
-uint64_t revision(SymbolId s, RefId body) { return RQ(REV_TAG, s, body); }
-SymbolId revision_symbol(uint64_t rev) { return (SymbolId)rword(rev, 1); }
-RefId revision_body(uint64_t rev) { return rword(rev, 2); }
-uint64_t view_current(void) { return __atomic_load_n(&M.view, __ATOMIC_ACQUIRE); }
-static void view_set(SymbolId s, RefId body) { __atomic_store_n(&M.view, family_call(F_SET, view_current(), subst_entry(s, PS_REF, revision(s, body))), __ATOMIC_RELEASE); }
-
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type) {
     SymbolId s = (SymbolId)__atomic_add_fetch(&M.n_defs, 1, __ATOMIC_RELAXED);
     Def *d = DEF(s);
     d->params = params; d->dims = dims; d->name = name; d->type = type;
-    view_set(s, 0);
     return s;
 }
 
+/* One word decides a symbol's body: 0 while open; a body set by one CAS from
+ * 0; DEF_OPAQUE set by the first observation of an open symbol. Either way
+ * the word never changes again, so every evaluation sees the same body. */
 bool set_global_body(SymbolId s, RefId body) {
     require(s >= 1 && s <= __atomic_load_n(&M.n_defs, __ATOMIC_RELAXED), "unknown symbol");
-    uint64_t r = family_call(F_LOOKUP, view_current(), s);
-    require(r && !revision_body(subst_value(view_current(), r - 1)), "%s already has a body", DEF(s)->name);
-    view_set(s, body);
+    require(body && !(body & DEF_OPAQUE), "a body is a reference");
+    uint64_t open = 0;
+    require(__atomic_compare_exchange_n(&DEF(s)->body, &open, body, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE),
+            "%s already has a body or was observed without one", DEF(s)->name);
     return true;
+}
+RefId global_body_sealed(SymbolId s) {
+    uint64_t v = 0;
+    if (__atomic_compare_exchange_n(&DEF(s)->body, &v, DEF_OPAQUE, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return 0;
+    return v == DEF_OPAQUE ? 0 : v;
 }
 
 VarSetId global_params(SymbolId s) { return DEF(s)->params; }

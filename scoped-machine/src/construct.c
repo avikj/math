@@ -291,7 +291,7 @@ static void unfold_step(Cont *k, uint64_t v) {
     RefId t = k->w[0];
     uint64_t r = 0;
     FR_BEGIN(k);
-    require(k->w[1] != 0, "unfold of a global at its opaque revision");   /* w[1]: the body of the revision read */
+    require(k->w[1] != 0, "unfold of a global without a body");   /* w[1]: its body */
     require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL && tview_is_construction(t), "unfold of a non-global");
     {   SymbolId s = (SymbolId)tnode_const_payload(ref_tnode(t)); FR_AWAIT(k, r, F_PHI, global_params(s), global_dims(s)); }
     FR_AWAIT(k, r, F_TREF, k->w[1], close_key(r));
@@ -359,7 +359,7 @@ void construct_families_init(void) {
     family_define(F_CONSTRUCT, "construct", construct_step, sizeof(ConLoc));
     family_define(F_HEAD, "head.annotation", head_step, 0);
     family_define(F_PHI, "boundary.close", phi_step, sizeof(PhiLoc));
-    family_define(F_UNFOLD, "global.unfold", unfold_step, 0);    /* keyed by (reference, body revision) */
+    family_define(F_UNFOLD, "global.unfold", unfold_step, 0);    /* keyed by (reference, body) */
     family_define(F_GLOBALS, "globals.of", globals_step, sizeof(GlLoc));
 }
 /* the template families register after the construction families; their ids are read lazily */

@@ -31,7 +31,7 @@ named in `families.h`.
 - Intervals and faces are canonical antichain DNFs (`dnf.h`); their
   operations, and set union / removal / membership, are families (`dnfam.c`).
 - One substitution record (`subst.c`): `[(key, sort, value)*]` sorted by
-  key, an environment (and every total record: binding views, context indexes,
+  key, an environment (and every total record: context indexes,
   CLOSE contexts) followed by a trailing word. One stepped lookup, one set,
   composition of maps.
 - Constructions (`construct.c`): one constructor schema per tag (field kinds,
@@ -44,15 +44,12 @@ named in `families.h`.
 - Templates (`template.c`, `lib.c`): fixed library programs interpreted by
   families; a call and a scope application build one argument environment.
 
-## Revisions and binding views (`term.c`, `eval.c`)
+## Definitions (`term.c`)
 
-A revision is the record (symbol, body); a binding view maps symbols to
-revisions, and each declaration or body makes a new view. Pure families are
-keyed by their operands. A relative family (one that reads revisions) is
-requested through a resolver keyed by the requester's view, which chooses the
-node whose actually read revisions agree with it; node keys hold no view. A
-read is the dependency `view.read(s, V)`; unfolding and body validity consume
-that revision.
+A definition's body is set once, before the symbol's first observation; that
+observation seals it (one compare-and-swap decides the body word), so every
+evaluation sees the same body and an evaluation key determines its
+computation. A symbol observed without a body is an opaque constant.
 
 ## Tests
 
