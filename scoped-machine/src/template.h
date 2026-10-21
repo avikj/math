@@ -2,9 +2,7 @@
  *
  * TVIEW(node, environment) is the reference form of every construction:
  * opening it applies the environment to the node's closed fields;
- * reindexing it reindexes the environment. A view's required face is its
- * node's strengthened by its images' requirements (a quote requires
- * nothing). */
+ * reindexing it reindexes the environment. */
 #ifndef CUBICAL_TEMPLATE_H
 #define CUBICAL_TEMPLATE_H
 
@@ -28,7 +26,7 @@ FieldKind tnode_field_kind(TNodeId Q, size_t k); BinderSlot tnode_field_slot(TNo
  * environment gives every parameter's image (APPLY). Alpha-equivalent constructions
  * are therefore one node, and a construction is a template view.
  * Record: [0, np, tag, payload_e, levels_e, nf, (kind, slot, CONST)*, nb,
- *          (sort, domain_field, s)*, required_e, declared_e, (sort, type_e, guard_e)*np] */
+ *          (sort, domain_field, s)*, (sort, type_e)*np] */
 ExprId expr_const(PSort sort, uint64_t id);
 ExprId expr_level(uint64_t n);
 void template_families_init(void);

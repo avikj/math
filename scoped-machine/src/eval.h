@@ -1,7 +1,6 @@
 /* eval.h — the one execution protocol and the weak-head evaluator (§10–13, §26).
  *
- *   observation = whnf(reference, ambient_face)
- *   EvalKey(t, chi) = (t, π_{S(t)}(chi))
+ *   observation = whnf(reference): the term it reaches
  *
  * Every computation is a producer keyed by (family, a, b). Its entry moves
  * U → R → D by compare-and-swap on `head`: NULL is U; the first requester
@@ -18,24 +17,13 @@
 #include "count.h"
 #include "families.h"
 
-typedef enum {
-    R_INTRODUCTION = 1,
-    R_NEUTRAL,
-    R_NO_OBSERVATION,   /* host control status: ambient face is false */
-    R_INVALID           /* host control status: invalid occurrence / ill-typed demand */
-} ResultClass;
+typedef enum { R_INTRODUCTION = 1, R_NEUTRAL } ResultClass;
 
-/* An observation's value is the interned record [class, ref, message]
- * (ref the head reference; message the diagnostic of INVALID). EvalResult
- * is its decoded view. */
-typedef struct {
-    ResultClass cls;
-    RefId ref;
-    const char *message;
-} EvalResult;
-EvalResult res_get(uint64_t v);
+/* an observation: the term reached (an introduction, or a neutral: a
+ * variable, an opaque constant, a residual) */
+typedef struct { ResultClass cls; RefId ref; } EvalResult;
 
-typedef enum { W_OK = 0, W_NO_OBSERVATION, W_INVALID, W_STUCK } WhnfStatus;
+typedef enum { W_OK = 0, W_STUCK } WhnfStatus;
 typedef uint64_t EntryId;
 typedef enum { E_UNEVALUATED = 0, E_RUNNING, E_READY } EntryState;
 
@@ -65,6 +53,7 @@ typedef struct {
     uint64_t value;     /* published result */
     size_t runs;        /* evaluator tasks executed for this key (must be ≤ 1) */
     Count work;         /* steps of its producer's frame and subroutines (exact; single writer) */
+    uint64_t at;        /* WHNF: the term its computation has moved to (0: at its key) */
     DepNode *deps;      /* the entries its producer requested or launched (pushed by its one producer) */
 } Entry;
 
@@ -123,9 +112,6 @@ void construct_families_init(void);
 #define FR_END(k) } die("frame program ended without finishing (pc %u)", (unsigned)(k)->pc)
 #define FR_LOC(k, T) ((T *)(k)->loc)
 
-/* the observation family: key (t, observe_key(χ, φ)) observes t
- * under χ ∧ φ (φ = 0: none); its value is a result record */
-uint64_t observe_key(FaceId chi, FaceId phi);
 /* a construction request as a subroutine (value: RefId): a fixed-shape tag
  * at operands ids by the schema (term.h), or a written request record */
 Cont *mk_tag_sub(const Cont *caller, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);
@@ -137,9 +123,13 @@ Cont *creq_buf(const Cont *caller, WordBuf *w);
 void eval_init(void);
 void eval_free(void);
 
-/* Root observation: W_STUCK when the root did not complete (a cyclic or
- * otherwise suspended demand). */
-EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status);
+/* Root observation: W_STUCK when the root did not complete (a cyclic
+ * demand, or one awaiting an input). */
+EvalResult whnf(RefId t, WhnfStatus *status);
+/* the computation of t so far (a pending one included): a term */
+RefId whnf_residual(RefId t);
+/* an input supplied: the entry (f, a, b) published with v */
+void eval_supply(Family f, uint64_t a, uint64_t b, uint64_t v);
 
 /* start n worker threads (0 = sequential, the default); replaces any pool */
 void eval_set_workers(size_t n);
@@ -151,6 +141,7 @@ void eval_reading(Reading r, Family f, Exact *out);   /* out += the reading */
 EntryState eval_entry_state(EntryId e);
 size_t eval_entry_count(void);
 bool eval_entry_live(EntryId e);
+bool eval_entry_exists(Family f, uint64_t a, uint64_t b);   /* the key (f, a, b) was ever requested */
 
 
 #endif

@@ -13,7 +13,7 @@ static ExprId xi(size_t n, const uint64_t *w) { return interner_intern(&M.keys, 
 static ExprId x1(uint64_t k, uint64_t a) { uint64_t w[2] = { k, a }; return xi(2, w); }
 
 /* ------------------------------------------------------------------ */
-/* nodes: [def, index, tag, payload_e, levels_e, nf, (kind, bslot, e)*, nb, (sort, domfield, lslot)*, required_e] */
+/* nodes: [def, np, tag, payload_e, levels_e, nf, (kind, bslot, e)*, nb, (sort, domfield, lslot)*, (sort, type_e)*np] */
 
 TDefId tnode_def(TNodeId Q) { return rword(Q, 0); }
 Tag tnode_tag(TNodeId Q) { return (Tag)rword(Q, 2); }
@@ -33,7 +33,6 @@ static void node_binder(TNodeId Q, BinderSlot s, Sort *sort, FieldIndex *domfiel
     *sort = (Sort)b[1 + 3 * s]; *domfield = (FieldIndex)b[2 + 3 * s]; *lslot = (size_t)b[3 + 3 * s];
 }
 Sort tnode_binder_sort(TNodeId Q, BinderSlot s) { Sort so; FieldIndex f; size_t l; node_binder(Q, s, &so, &f, &l); return so; }
-static ExprId node_required_e(TNodeId Q) { const uint64_t *b = node_btab(Q); return b[1 + 3 * b[0]]; }
 ExprId tnode_head_expr(TNodeId Q, int levels) { return levels ? node_levels_e(Q) : node_payload_e(Q); }
 static void node_field(TNodeId Q, size_t k, FieldKind *kind, BinderSlot *bslot, ExprId *e);
 ExprId tnode_field_expr(TNodeId Q, size_t k) { FieldKind kd; BinderSlot bs; ExprId e; node_field(Q, k, &kd, &bs, &e); return e; }
@@ -73,7 +72,6 @@ static TVal tvget(uint64_t rec) { size_t n; const uint64_t *w = rget(rec, &n); T
 ExprId expr_const(PSort sort, uint64_t id) { uint64_t w[3] = { X_CONST, sort, id }; return xi(3, w); }
 ExprId expr_level(uint64_t n) { return x1(X_LEVEL, n); }
 static size_t node_param_count(TNodeId Q) { return (size_t)rword(Q, 1); }
-static const uint64_t *node_ptab(TNodeId Q) { const uint64_t *b = node_btab(Q); return b + 1 + 3 * b[0] + 2; }
 static uint64_t xlevel(ExprId e) { size_t n; const uint64_t *w = rget(e, &n); require(w[0] == X_LEVEL, "construction annotation is not a constant"); return w[1]; }
 bool expr_is_level(ExprId e) { return rword(e, 0) == X_LEVEL; }
 uint64_t expr_level_value(ExprId e) { return xlevel(e); }
@@ -106,11 +104,9 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
 /* ------------------------------------------------------------------ */
 /* interpretation families                                               */
 /* INTERP(e, env) interprets one expression; TVMAKE(Q, env) is the view of a
- * node (§51.1: restricted to the node's free slots, its required face the
- * instantiated recipe strengthened by its images'); ISCOPE(e, env) a scope
- * literal (fresh keyed locals, then capture). An environment is read and set
- * by the substitution record's lookup and set (subst.c). Each step does a
- * constant amount of work. */
+ * node in an environment (its support and free variables those of its
+ * images). An environment is read and set by the substitution record's
+ * lookup and set (subst.c). Each step does a constant amount of work. */
 
 
 static Family trav_of(PSort s) { return s == PS_REF ? F_TREF : s == PS_INTERVAL ? F_TIV : F_TFC; }
@@ -132,9 +128,7 @@ static void interp_step(Cont *k, uint64_t v) {
 }
 
 /* the template view of node w[0] in environment w[1] */
-typedef struct { size_t nf, q; uint64_t sup, fv, ds, E, req, slot, g; TVal t; WordBuf out; bool created; } MkLoc;
-/* the declared guard of a construction parameter (closed) */
-static ExprId slot_guard_e(TNodeId Q, size_t s) { return node_ptab(Q)[3 * s + 2]; }
+typedef struct { size_t nf, q; uint64_t sup, fv, ds, E; TVal t; WordBuf out; bool created; } MkLoc;
 static void tvmake_step(Cont *k, uint64_t v) {
     MkLoc *L = FR_LOC(k, MkLoc);
     TNodeId Q = k->w[0]; uint64_t er = k->w[1];
@@ -158,23 +152,9 @@ static void tvmake_step(Cont *k, uint64_t v) {
     }
     wordbuf_push(&L->out, tnode_def(Q));
     FR_CALL(k, L->E, intern_sub(k, &M.keys, &L->out, &L->created));
-    FR_AWAIT(k, r, F_INTERP, node_required_e(Q), er);
-    L->req = tvget(r).id;
-    /* each reference image's requirement, except where the slot's declared
-     * guard entails it (a partial formal is used under its guard only); a
-     * code holds its record as data and requires nothing */
-    if (tnode_tag(Q) == T_QUOTE) { L->req = fc_true(); L->q = L->nf; } else L->q = 0;
-    for (; L->q < L->nf; L->q++) {
-        subst_get(L->E, L->q, &L->slot, &L->t);
-        if (L->t.sort != PS_REF) { FR_YIELD(k); continue; }
-        L->g = slot_guard_e(Q, L->slot);
-        if (L->g) { FR_AWAIT(k, r, F_INTERP, L->g, er); L->g = tvget(r).id; } else L->g = fc_true();
-        FR_AWAIT(k, r, F_FCENT, L->g, ref_required(L->t.id));
-        if (r != 2) FR_AWAIT(k, L->req, F_FCMEET, L->req, ref_required(L->t.id));
-    }
     FR_AWAIT(k, L->sup, F_SETFREE, L->sup, 0);
     FR_AWAIT(k, L->fv, F_SETFREE, L->fv, 0);
-    FR_FINISH(k, ref_intern_tview(Q, L->E, L->sup, L->fv, L->req));
+    FR_FINISH(k, ref_intern_tview(Q, L->E, L->sup, L->fv));
     FR_END(k);
 }
 

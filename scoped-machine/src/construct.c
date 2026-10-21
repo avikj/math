@@ -2,9 +2,9 @@
  * variable references as pure producer families.
  *
  * CONSTRUCT(request) builds the construction node of a request record
- *   [tag, payload, levels, declared, ft, fd, nf, (kind, slot, id)*, nb, (sort, formal, domain)*]
+ *   [tag, payload, levels, ft, fd, nf, (kind, slot, id)*, nb, (sort, formal, domain)*]
  * (ft/fd = 0: the boundary is computed from the fields): its typed free
- * boundary, required face, its CLOSE context Φ (parameter k ↦ slot k,
+ * boundary, its CLOSE context Φ (parameter k ↦ slot k,
  * dimensions first), the field constants closed by Φ (a field under binder s
  * also closes the formal into slot np+s), the closed parameter declarations,
  * the node record, the environment of the boundary itself and the instance.
@@ -20,46 +20,54 @@
 #define I_ F_INTERVAL
 #define F_ F_FACE
 static const TagSchema SCHEMA[] = {
-    [T_UNIVERSE]   = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 }, { 0 } },
-    [T_PI]         = { 2, S_TERM, ROLE_INTRO, 0, { R_, R_ }, { 0, 1 }, { 0 } },
-    [T_SIGMA]      = { 2, S_TERM, ROLE_INTRO, 0, { R_, R_ }, { 0, 1 }, { 0 } },
-    [T_LAM]        = { 2, S_TERM, ROLE_INTRO, 0, { R_, R_ }, { 0, 1 }, { 0 } },
-    [T_APP]        = { 2, 0, ROLE_ELIM, 0, { R_, R_ }, { 0 }, { 0 } },
-    [T_PAIR]       = { 3, 0, ROLE_INTRO, 0, { R_, R_, R_ }, { 0 }, { 0 } },
-    [T_FST]        = { 1, 0, ROLE_ELIM, 0, { R_ }, { 0 }, { 0 } },
-    [T_SND]        = { 1, 0, ROLE_ELIM, 0, { R_ }, { 0 }, { 0 } },
-    [T_PATH]       = { 3, S_DIM, ROLE_INTRO, 0, { R_, R_, R_ }, { 1, 0, 0 }, { 0 } },
-    [T_PLAM]       = { 1, S_DIM, ROLE_INTRO, 0, { R_ }, { 1 }, { 0 } },
-    [T_PAPP]       = { 5, S_DIM, ROLE_ELIM, 3, { R_, R_, R_, R_, I_ }, { 1, 0, 0, 0, 0 }, { 0 } },
-    [T_GLUE_TYPE]  = { 4, 0, ROLE_OTHER, 0, { R_, F_, R_, R_ }, { 0 }, { 0, 0, 1, 1 } },
-    [T_GLUE_INTRO] = { 6, 0, ROLE_OTHER, 0, { R_, F_, R_, R_, R_, R_ }, { 0 }, { 0, 0, 1, 1, 1 } },
-    [T_UNGLUE]     = { 5, 0, ROLE_ELIM, 4, { R_, F_, R_, R_, R_ }, { 0 }, { 0, 0, 1, 1 } },
-    [T_COMP]       = { 4, S_DIM, ROLE_OTHER, 0, { R_, F_, R_, R_ }, { 1, 0, 1, 0 }, { 0, 0, 1 } },
-    [T_SYSTEM]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 }, { 0 } },
-    [T_GLOBAL]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 }, { 0 } },
-    [T_CODE]       = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 }, { 0 } },
-    [T_QUOTE]      = { 1, 0, ROLE_INTRO, 0, { R_ }, { 0 }, { 1 } },   /* a code is total: the record it holds is data */
-    [T_QIV]        = { 1, 0, ROLE_INTRO, 0, { I_ }, { 0 }, { 0 } },
-    [T_QFC]        = { 1, 0, ROLE_INTRO, 0, { F_ }, { 0 }, { 0 } },
-    [T_CMATCH]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
-    [T_CINST]      = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
-    [T_CEQ]        = { 4, 0, ROLE_OTHER, 0, { R_, R_, R_, R_ }, { 0 }, { 0 } },
-    [T_CENT]       = { 4, 0, ROLE_OTHER, 0, { R_, R_, R_, R_ }, { 0 }, { 0 } },
-    [T_CFCEND]     = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
-    [T_CUNFOLD]    = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
-    [T_CSET]       = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
-    [T_CLEVELS]    = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
-    [T_CSETLV]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
-    [T_QLV]        = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 }, { 0 } },
-    [T_CLSUCC]     = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
-    [T_CLMAX]      = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
-    [T_COP]        = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
-    [T_CSYSCONS]   = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
-    [T_CVAR]       = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
-    [T_CSUBST]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
-    [T_CTYPE]      = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
-    [T_CSETB]      = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
-    [T_CMTYPE]     = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
+    [T_UNIVERSE]   = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 } },
+    [T_PI]         = { 2, S_TERM, ROLE_INTRO, 0, { R_, R_ }, { 0, 1 } },
+    [T_SIGMA]      = { 2, S_TERM, ROLE_INTRO, 0, { R_, R_ }, { 0, 1 } },
+    [T_LAM]        = { 2, S_TERM, ROLE_INTRO, 0, { R_, R_ }, { 0, 1 } },
+    [T_APP]        = { 2, 0, ROLE_ELIM, 0, { R_, R_ }, { 0 } },
+    [T_PAIR]       = { 3, 0, ROLE_INTRO, 0, { R_, R_, R_ }, { 0 } },
+    [T_FST]        = { 1, 0, ROLE_ELIM, 0, { R_ }, { 0 } },
+    [T_SND]        = { 1, 0, ROLE_ELIM, 0, { R_ }, { 0 } },
+    [T_PATH]       = { 3, S_DIM, ROLE_INTRO, 0, { R_, R_, R_ }, { 1, 0, 0 } },
+    [T_PLAM]       = { 1, S_DIM, ROLE_INTRO, 0, { R_ }, { 1 } },
+    [T_PAPP]       = { 5, S_DIM, ROLE_ELIM, 3, { R_, R_, R_, R_, I_ }, { 1, 0, 0, 0, 0 } },
+    [T_GLUE_TYPE]  = { 4, 0, ROLE_OTHER, 0, { R_, F_, R_, R_ }, { 0 } },
+    [T_GLUE_INTRO] = { 6, 0, ROLE_OTHER, 0, { R_, F_, R_, R_, R_, R_ }, { 0 } },
+    [T_UNGLUE]     = { 5, 0, ROLE_ELIM, 4, { R_, F_, R_, R_, R_ }, { 0 } },
+    [T_COMP]       = { 4, S_DIM, ROLE_OTHER, 0, { R_, F_, R_, R_ }, { 1, 0, 1, 0 } },
+    [T_SYSTEM]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 } },
+    [T_GLOBAL]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 } },
+    [T_CODE]       = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 } },
+    [T_QUOTE]      = { 1, 0, ROLE_INTRO, 0, { R_ }, { 0 } },
+    [T_QIV]        = { 1, 0, ROLE_INTRO, 0, { I_ }, { 0 } },
+    [T_QFC]        = { 1, 0, ROLE_INTRO, 0, { F_ }, { 0 } },
+    [T_QLV]        = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 } },
+    [T_CNONE]      = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 } },
+    [T_PARTIAL]    = { 2, 0, ROLE_INTRO, 0, { F_, R_ }, { 0 } },
+    [T_CMATCH]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, 1 },
+    [T_CINST]      = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, 3 },
+    [T_CINSTI]     = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, 3 },
+    [T_CSET]       = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, 3 },
+    [T_CSETB]      = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, 1 },
+    [T_CSETBI]     = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, 1 },
+    [T_CEQ]        = { 4, 0, ROLE_OTHER, 0, { R_, R_, R_, R_ }, { 0 }, 3 },
+    [T_CENT]       = { 4, 0, ROLE_OTHER, 0, { R_, R_, R_, R_ }, { 0 }, 3 },
+    [T_CFCEND]     = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, 1 },
+    [T_CUNFOLD]    = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, 1 },
+    [T_CLEVELS]    = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, 1 },
+    [T_CSETLV]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, 7 },
+    [T_CLSUCC]     = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, 1 },
+    [T_CLMAX]      = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, 3 },
+    [T_COP]        = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, 3 },
+    [T_CSYSCONS]   = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, 7 },
+    [T_CVAR]       = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, 1 },
+    [T_CVARI]      = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, 1 },
+    [T_CSUBST]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, 7 },
+    [T_CTYPE]      = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, 1 },
+    [T_CPAYLOAD]   = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, 1 },
+    [T_CFIELD]     = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, 3 },
+    [T_CQUOTE]     = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, 1 },
+    [T_CSTEP]      = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, 1 },
 };
 #undef R_
 #undef I_
@@ -68,7 +76,7 @@ const TagSchema *tag_schema(Tag tag) { require(tag >= T_UNIVERSE && tag <= T_LAS
 FieldKind schema_kind(Tag tag, size_t k) { return tag == T_SYSTEM ? (k % 2 ? F_REF : F_FACE) : (FieldKind)tag_schema(tag)->kind[k]; }
 BinderSlot schema_slot(Tag tag, size_t k) { return tag != T_SYSTEM && tag_schema(tag)->under[k] ? 0 : NO_SLOT; }
 static size_t creq_head(uint64_t *w, Tag tag, uint64_t payload, uint64_t levels, VarSetId ft, DimSetId fd, size_t nf) {
-    w[0] = tag; w[1] = payload; w[2] = levels; w[3] = 0; w[4] = ft; w[5] = fd; w[6] = nf; return 7;
+    w[0] = tag; w[1] = payload; w[2] = levels; w[3] = ft; w[4] = fd; w[5] = nf; return 6;
 }
 static void wb_words(WordBuf *b, const uint64_t *w, size_t n) { for (size_t q = 0; q < n; q++) wordbuf_push(b, w[q]); }
 size_t creq_fixed(uint64_t *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
@@ -81,7 +89,7 @@ size_t creq_fixed(uint64_t *w, Tag tag, uint64_t payload, uint64_t levels, size_
     return m;
 }
 void creq_begin(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, VarSetId ft, DimSetId fd, size_t nf) {
-    uint64_t h[7]; wordbuf_init(w); wb_words(w, h, creq_head(h, tag, payload, levels, ft, fd, nf));
+    uint64_t h[6]; wordbuf_init(w); wb_words(w, h, creq_head(h, tag, payload, levels, ft, fd, nf));
 }
 void creq_entry(WordBuf *w, uint64_t a, uint64_t b, uint64_t c) { wordbuf_push(w, a); wordbuf_push(w, b); wordbuf_push(w, c); }
 void creq_tag(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal) {
@@ -96,19 +104,16 @@ RefId mk_tag(Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_
 
 
 /* ---------------- VAR(x) ---------------- */
-typedef struct { uint64_t fv, sup, req, ds; } VarLoc;
+typedef struct { uint64_t fv, sup; } VarLoc;
 static void refvar_step(Cont *k, uint64_t v) {
     VarLoc *L = FR_LOC(k, VarLoc);
     TermVarId x = k->w[0];
     FR_BEGIN(k);
     if (is_bound_id(x)) FR_FINISH(k, ref_var(x));          /* an atom: constant side data */
     {   RefId type = term_var_type(x);
-        uint64_t xs[1] = { x }; L->fv = set_make(xs, 1); L->sup = ref_support(type); L->req = term_var_required(x); }
+        uint64_t xs[1] = { x }; L->fv = set_make(xs, 1); L->sup = ref_support(type); }
     FR_AWAIT(k, L->fv, F_SUNION, L->fv, ref_freevars(term_var_type(x)));
-    FR_AWAIT(k, L->req, F_FCMEET, L->req, ref_required(term_var_type(x)));
-    FR_AWAIT(k, L->ds, F_DIMS, L->req, 0);
-    FR_AWAIT(k, L->sup, F_SUNION, L->sup, L->ds);
-    FR_FINISH(k, ref_var_publish(x, L->sup, L->fv, L->req));
+    FR_FINISH(k, ref_var_publish(x, L->sup, L->fv));
     FR_END(k);
 }
 
@@ -177,9 +182,9 @@ static void binder_step(Cont *k, uint64_t v) {
 /* ---------------- constructions ---------------- */
 typedef struct {
     const uint64_t *rq; size_t nrq;
-    uint64_t tag, payload, levels, declared; size_t nf, nb;
+    uint64_t tag, payload, levels; size_t nf, nb;
     const uint64_t *fields, *binders;
-    uint64_t ft, fd, req, phi, mq, fv, ds, c, ty, g, E, Q;
+    uint64_t ft, fd, phi, mq, fv, ds, c, ty, E, Q;
     const uint64_t *xs, *dset; size_t nt, nd, np, q;
     WordBuf w; bool created;
 } ConLoc;
@@ -197,9 +202,9 @@ static void construct_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     L->rq = rget(k->w[0], &L->nrq);
-    L->tag = L->rq[0]; L->payload = L->rq[1]; L->levels = L->rq[2]; L->declared = L->rq[3];
-    L->ft = L->rq[4]; L->fd = L->rq[5]; L->nf = (size_t)L->rq[6]; L->fields = L->rq + 7;
-    L->nb = (size_t)L->rq[7 + 3 * L->nf]; L->binders = L->rq + 8 + 3 * L->nf;
+    L->tag = L->rq[0]; L->payload = L->rq[1]; L->levels = L->rq[2];
+    L->ft = L->rq[3]; L->fd = L->rq[4]; L->nf = (size_t)L->rq[5]; L->fields = L->rq + 6;
+    L->nb = (size_t)L->rq[6 + 3 * L->nf]; L->binders = L->rq + 7 + 3 * L->nf;
     /* the typed free boundary: field boundaries (closed through declaration
      * types) minus the formal bound at the field's binder */
     if (!L->ft) {
@@ -219,31 +224,6 @@ static void construct_step(Cont *k, uint64_t v) {
     for (L->q = 0; L->q < L->nb; L->q++) {
         if (con_binder_sort(L, L->q) == S_TERM) require(con_binder_domain(L, L->q) < L->nf, "term binder without domain field");
         FR_YIELD(k);                                        /* one binder per step */
-    }
-    /* the required face: a system requires the join of its guards; another
-     * construction what its total reference fields require (a field under a
-     * dimension binder along the whole line); partial positions are used
-     * under their guards only */
-    if (L->tag == T_SYSTEM) {
-        L->req = fc_false();
-        for (L->q = 0; L->q < L->nf; L->q += 2) FR_AWAIT(k, L->req, F_JOIN, L->req, con_field_id(L, L->q));
-    } else {
-        L->req = fc_true();
-        for (L->q = 0; L->q < L->nf; L->q++) {
-            if (con_field_kind(L, L->q) != F_REF || tag_schema((Tag)L->tag)->partial[L->q]) {
-                FR_YIELD(k);                                /* a skipped field is still one step */
-                continue;
-            }
-            L->g = ref_required(con_field_id(L, L->q));
-            if (con_field_slot(L, L->q) != NO_SLOT && con_binder_sort(L, con_field_slot(L, L->q)) == S_DIM)
-                FR_AWAIT(k, L->g, F_FCFORALL, L->g, con_binder_formal(L, con_field_slot(L, L->q)));
-            FR_AWAIT(k, L->req, F_FCMEET, L->req, L->g);
-        }
-    }
-    if (L->declared) {
-        FR_AWAIT(k, L->req, F_FCMEET, L->req, L->declared);
-        FR_AWAIT(k, L->ds, F_DIMS, L->declared, 0);
-        FR_AWAIT(k, L->fd, F_SUNION, L->fd, L->ds);
     }
     L->dset = rget(L->fd, &L->nd);
     L->xs = rget(L->ft, &L->nt);
@@ -267,15 +247,10 @@ static void construct_step(Cont *k, uint64_t v) {
     }
     wordbuf_push(&L->w, L->nb);
     for (L->q = 0; L->q < L->nb; L->q++) { wordbuf_push(&L->w, con_binder_sort(L, L->q)); wordbuf_push(&L->w, con_binder_domain(L, L->q)); wordbuf_push(&L->w, L->q); FR_YIELD(k); }
-    FR_AWAIT(k, L->c, F_TFC, L->req, close_key(L->phi));
-    wordbuf_push(&L->w, expr_const(PS_FACE, L->c));
-    if (L->declared) { FR_AWAIT(k, L->c, F_TFC, L->declared, close_key(L->phi)); wordbuf_push(&L->w, expr_const(PS_FACE, L->c)); }
-    else wordbuf_push(&L->w, 0);
-    for (L->q = 0; L->q < L->nd; L->q++) { wordbuf_push(&L->w, PS_INTERVAL); wordbuf_push(&L->w, 0); wordbuf_push(&L->w, 0); FR_YIELD(k); }
+    for (L->q = 0; L->q < L->nd; L->q++) { wordbuf_push(&L->w, PS_INTERVAL); wordbuf_push(&L->w, 0); FR_YIELD(k); }
     for (L->q = 0; L->q < L->nt; L->q++) {
         FR_AWAIT(k, L->ty, F_TREF, term_var_type(L->xs[L->q]), close_key(L->phi));
-        FR_AWAIT(k, L->g, F_TFC, term_var_required(L->xs[L->q]), close_key(L->phi));
-        wordbuf_push(&L->w, PS_REF); wordbuf_push(&L->w, expr_const(PS_REF, L->ty)); wordbuf_push(&L->w, expr_const(PS_FACE, L->g));
+        wordbuf_push(&L->w, PS_REF); wordbuf_push(&L->w, expr_const(PS_REF, L->ty));
     }
     FR_CALL(k, L->Q, intern_sub(k, &M.keys, &L->w, &L->created));
     /* the environment of the boundary itself (its interpretation record) */

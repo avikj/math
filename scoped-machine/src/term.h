@@ -21,11 +21,16 @@ typedef enum {
     T_PATH, T_PLAM, T_PAPP, T_GLUE_TYPE, T_GLUE_INTRO, T_UNGLUE, T_COMP,
     T_SYSTEM, T_GLOBAL,
     /* code: the records the machine runs, as values of the language (code.c) */
-    T_CODE, T_QUOTE, T_QIV, T_QFC,
-    T_CMATCH, T_CINST, T_CEQ, T_CENT, T_CFCEND, T_CUNFOLD,
-    T_CSET, T_CLEVELS, T_CSETLV, T_QLV, T_CLSUCC, T_CLMAX, T_COP, T_CSYSCONS, T_CVAR, T_CSUBST, T_CTYPE, T_CSETB, T_CMTYPE
+    T_CODE, T_QUOTE, T_QIV, T_QFC, T_QLV, T_CNONE, T_PARTIAL,
+    T_CMATCH, T_CINST, T_CINSTI, T_CSET, T_CSETB, T_CSETBI, T_CEQ, T_CENT, T_CFCEND, T_CUNFOLD,
+    T_CLEVELS, T_CSETLV, T_CLSUCC, T_CLMAX, T_COP, T_CSYSCONS, T_CVAR, T_CVARI, T_CSUBST, T_CTYPE,
+    T_CPAYLOAD, T_CFIELD, T_CQUOTE, T_CSTEP
 } Tag;
-#define T_LAST T_CMTYPE
+#define T_LAST T_CSTEP
+#define T_FIRST_CODE_ELIM T_CMATCH
+/* the kinds of code (the payload of T_CODE): a term record, an interval,
+ * a face, a level */
+enum { CK_TERM = 0, CK_IV, CK_FC, CK_LV };
 /* the operations of T_COP (its payload) on interval and face codes */
 enum { COP_IVNEG = 1, COP_IVAND, COP_IVOR, COP_FCAND, COP_FCOR, COP_FORALL };
 #define FORMER_SYS0 255   /* the former an empty system matches */
@@ -80,10 +85,9 @@ static inline uint32_t bound_slot(uint64_t id) { return (uint32_t)(id & 0xffffff
 const char *tag_name(Tag t);
 
 /* ---- declarations ---- */
-TermVarId declare_term(RefId type, FaceId required);
+TermVarId declare_term(RefId type);
 DimVarId declare_dim(void);
 RefId term_var_type(TermVarId x);
-FaceId term_var_required(TermVarId x);
 
 /* ---- substitution records (subst.c) ----
  * [(key, sort, value)*] sorted by key, an environment followed by its
@@ -114,22 +118,22 @@ FaceId fc_reindex(FaceId phi, MapId m);
 
 /* ---- constructions (construct.c) ----
  * The constructor schema: per tag, its fields' kinds, the binder each sits
- * under, its binder's sort (a term binder's domain is field 0), its partial
- * (guarded) positions, its role and, for an eliminator, its scrutinee field.
+ * under, its binder's sort (a term binder's domain is field 0), its role
+ * and, for an eliminator, its scrutinee field.
  * A system's fields alternate face and reference. Every builder of a
  * construction — host, stepped, template — reads it. */
 typedef enum { ROLE_OTHER = 0, ROLE_INTRO, ROLE_ELIM } TagRole;
-typedef struct { uint8_t nf, bsort, role, scrut; uint8_t kind[6], under[6], partial[6]; } TagSchema;
+typedef struct { uint8_t nf, bsort, role, scrut; uint8_t kind[6], under[6]; uint8_t opnd; } TagSchema;   /* opnd: a code eliminator's operand fields (bit k), evaluated before its rule */
 const TagSchema *tag_schema(Tag tag);
 FieldKind schema_kind(Tag tag, size_t k);
 BinderSlot schema_slot(Tag tag, size_t k);
-/* the request record [tag, payload, levels, declared, ft, fd, nf, (kind,
+/* the request record [tag, payload, levels, ft, fd, nf, (kind,
  * slot, id)*, nb, (sort, formal, domain)*] (ft = fd = 0: the boundary is
  * the fields'), written into a word buffer: its header, then one entry (a
  * field or binder triple) per write; the whole record of a fixed-shape tag
  * at operands ids[0..n) with binder formal `formal`; a system's header and
  * branches. construct_buf constructs a written record (host). */
-enum { CREQ_MAX = 7 + 3 * 6 + 1 + 3 };
+enum { CREQ_MAX = 6 + 3 * 6 + 1 + 3 };
 size_t creq_fixed(uint64_t *w, Tag tag, uint64_t payload, uint64_t levels, size_t n, const uint64_t *ids, uint64_t formal);   /* into w[CREQ_MAX] */
 void creq_begin(WordBuf *w, Tag tag, uint64_t payload, uint64_t levels, VarSetId ft, DimSetId fd, size_t nf);
 void creq_entry(WordBuf *w, uint64_t a, uint64_t b, uint64_t c);
@@ -143,7 +147,7 @@ uint64_t construction_field(RefId t, size_t k);
 RefId construction_binder(RefId t, Sort sort, BinderSlot slot, FieldIndex field, uint64_t image);
 uint64_t binder_req(Sort sort, BinderSlot slot, FieldIndex field, uint64_t image);   /* the binder family's operand */
 RefId ref_var_family(TermVarId x);
-RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv, FaceId req);
+RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv);
 
 /* ---- references ---- */
 RefId ref_var(TermVarId x);
@@ -153,12 +157,11 @@ bool ref_is_var(RefId t);
 Tag ref_tag(RefId t);                 /* the head tag of a non-variable reference */
 uint64_t ref_tnode(RefId t);
 uint64_t ref_tenv(RefId t);
-RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required);
+RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv);
 
 TermVarId ref_var_id(RefId t);
 DimSetId ref_support(RefId t);
 VarSetId ref_freevars(RefId t);
-FaceId ref_required(RefId t);
 RefId reindex(RefId t, MapId sigma);
 RefId reindex1(RefId t, TermVarId x, RefId a);
 
@@ -212,16 +215,17 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
 
 /* ---- globals ---- */
 /* a declared symbol: parameters (term variables with their declared types),
- * free dimensions, and its declared type over them. Its body, which may
- * mention the symbol itself, is set once and before the symbol's first
- * observation: that observation seals it, so every evaluation sees one body.
- * A symbol sealed without a body is an opaque constant. */
+ * free dimensions, and its declared type over them. It is opaque by
+ * declaration (a constant), or a definition whose body (which may mention
+ * the symbol itself) is an input supplied once: an observation before the
+ * supply is pending, and continues when it is supplied. */
 SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId type);
 VarSetId global_params(SymbolId s);
 RefId global_decl_type(SymbolId s);   /* its declared type, over its parameters */
 DimSetId global_dims(SymbolId s);
-bool set_global_body(SymbolId s, RefId body);   /* once, before the first observation */
-RefId global_body_sealed(SymbolId s);            /* the body (0: none), sealing the symbol */
+void set_global_body(SymbolId s, RefId body);   /* the body supplied (once) */
+void declare_opaque(SymbolId s);
+bool global_opaque(SymbolId s);
 RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the definition's own parameters */
 
 /* ---- constructors (constructions at their own boundary) ---- */

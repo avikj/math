@@ -11,11 +11,13 @@ const char *tag_name(Tag t) {
     case T_GLUE_INTRO: return "glue"; case T_UNGLUE: return "unglue"; case T_COMP: return "comp";
     case T_SYSTEM: return "system"; case T_GLOBAL: return "global";
     case T_CODE: return "Code"; case T_QUOTE: return "quote"; case T_QIV: return "qiv"; case T_QFC: return "qfc";
-    case T_CMATCH: return "cmatch"; case T_CINST: return "cinst"; case T_CEQ: return "ceq";
-    case T_CENT: return "cent"; case T_CFCEND: return "cfcend"; case T_CUNFOLD: return "cunfold";
-    case T_CSET: return "cset"; case T_CLEVELS: return "clevels"; case T_CSETLV: return "csetlv"; case T_QLV: return "qlv";
+    case T_QLV: return "qlv"; case T_CNONE: return "cnone"; case T_PARTIAL: return "Partial";
+    case T_CMATCH: return "cmatch"; case T_CINST: return "cinst"; case T_CINSTI: return "cinsti"; case T_CSET: return "cset";
+    case T_CSETB: return "csetb"; case T_CSETBI: return "csetbi"; case T_CEQ: return "ceq"; case T_CENT: return "cent";
+    case T_CFCEND: return "cfcend"; case T_CUNFOLD: return "cunfold"; case T_CLEVELS: return "clevels"; case T_CSETLV: return "csetlv";
     case T_CLSUCC: return "clsucc"; case T_CLMAX: return "clmax"; case T_COP: return "cop"; case T_CSYSCONS: return "csyscons";
-    case T_CVAR: return "cvar"; case T_CSUBST: return "csubst"; case T_CTYPE: return "ctype"; case T_CSETB: return "csetb"; case T_CMTYPE: return "cmtype";
+    case T_CVAR: return "cvar"; case T_CVARI: return "cvari"; case T_CSUBST: return "csubst"; case T_CTYPE: return "ctype";
+    case T_CPAYLOAD: return "cpayload"; case T_CFIELD: return "cfield"; case T_CQUOTE: return "cquote"; case T_CSTEP: return "cstep";
     }
     return "?";
 }
@@ -24,36 +26,35 @@ const char *tag_name(Tag t) {
 
 /* ================= declarations =================
  * A variable is its nominal record: the words of its key, then its sort and,
- * for a term variable, its type and required face —
- *   [tag, (kind, v)*, S_TERM, type, required]   |   [tag, (kind, v)*, S_DIM]
+ * for a term variable, its type —
+ *   [tag, (kind, v)*, S_TERM, type]   |   [tag, (kind, v)*, S_DIM]
  * tag 1 a binder's name (owner, slot), 2 a keyed fresh term name, 3 a keyed
  * fresh dimension, 4 a host declaration (a serial number: each is fresh).
  * Its identity is the record id; ids grow with creation, so a variable's id
  * exceeds those of the variables its type mentions. */
-static uint64_t var_record(const uint64_t *key, size_t nk, Sort sort, RefId type, FaceId required) {
+static uint64_t var_record(const uint64_t *key, size_t nk, Sort sort, RefId type) {
     uint64_t w[INTERN_SMALL + 4]; size_t n = 0;
     require(nk + 3 <= sizeof w / sizeof w[0], "a nominal key of %zu words", nk);
     for (size_t q = 0; q < nk; q++) w[n++] = key[q];
     w[n++] = sort;
-    if (sort == S_TERM) { require(type, "a term declaration has a type"); w[n++] = type; w[n++] = required; }
+    if (sort == S_TERM) { require(type, "a term declaration has a type"); w[n++] = type; }
     return interner_intern(&M.keys, w, n, NULL);
 }
-TermVarId declare_term(RefId type, FaceId required) {
+TermVarId declare_term(RefId type) {
     uint64_t key[2] = { 4, __atomic_add_fetch(&M.n_fresh, 1, __ATOMIC_RELAXED) };
-    return var_record(key, 2, S_TERM, type, required);
+    return var_record(key, 2, S_TERM, type);
 }
 DimVarId declare_dim(void) {
     uint64_t key[2] = { 4, __atomic_add_fetch(&M.n_fresh, 1, __ATOMIC_RELAXED) };
-    return var_record(key, 2, S_DIM, 0, 0);
+    return var_record(key, 2, S_DIM, 0);
 }
 static const uint64_t *term_decl(TermVarId x) {
     require(x >= 1 && !is_bound_id(x) && x <= interner_count(&M.keys), "undeclared term variable");
     size_t n; const uint64_t *w = rget(x, &n);
-    require(n >= 4 && w[n - 3] == S_TERM, "not a term variable");
-    return w + n - 2;
+    require(n >= 3 && w[n - 2] == S_TERM, "not a term variable");
+    return w + n - 1;
 }
 RefId term_var_type(TermVarId x) { return term_decl(x)[0]; }
-FaceId term_var_required(TermVarId x) { return term_decl(x)[1]; }
 
 /* ================= constructions ================= */
 /* A construction is a node of the one constructor-program representation
@@ -81,29 +82,28 @@ RefId ref_var(TermVarId x) {
         /* a bound local occurrence (§50): no declaration record; its type and
          * guard live in the enclosing scope's or node's records */
         uint64_t xs[1] = { x };
-        uint64_t w[5] = { 1, x, set_make(NULL, 0), set_make(xs, 1), fc_true() };
-        return interner_intern(&M.keys, w, 5, NULL);
+        uint64_t w[4] = { 1, x, set_make(NULL, 0), set_make(xs, 1) };
+        return interner_intern(&M.keys, w, 4, NULL);
     }
     (void)term_decl(x);
     return ref_var_family(x);              /* the ref.var producer computes its typed boundary */
 }
 /* VAR(x) with its typed boundary (computed by the ref.var family) */
-RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv, FaceId req) {
-    uint64_t w[5] = { 1, x, support, fv, req };
-    return interner_intern(&M.keys, w, 5, NULL);
+RefId ref_var_publish(TermVarId x, DimSetId support, VarSetId fv) {
+    uint64_t w[4] = { 1, x, support, fv };
+    return interner_intern(&M.keys, w, 4, NULL);
 }
 bool ref_is_var(RefId t) { return rword(t, 0) == 1; }
 uint64_t ref_tnode(RefId t) { size_t n; const uint64_t *w = rget(t, &n); require(w[0] == 3, "not a TVIEW"); return w[1]; }
 uint64_t ref_tenv(RefId t) { size_t n; const uint64_t *w = rget(t, &n); require(w[0] == 3, "not a TVIEW"); return w[2]; }
-RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv, FaceId required) {
-    uint64_t w[6] = { 3, node, env, support, fv, required };
-    return interner_intern(&M.keys, w, 6, NULL);
+RefId ref_intern_tview(uint64_t node, uint64_t env, DimSetId support, VarSetId fv) {
+    uint64_t w[5] = { 3, node, env, support, fv };
+    return interner_intern(&M.keys, w, 5, NULL);
 }
 TermVarId ref_var_id(RefId t) { size_t n; const uint64_t *w = rget(t, &n); require(w[0] == 1, "not a VAR"); return w[1]; }
 Tag ref_tag(RefId t) { size_t n; const uint64_t *w = rget(t, &n); require(w[0] != 1, "ref_tag of a variable"); return tnode_tag(w[1]); }
-DimSetId ref_support(RefId t) { size_t n; const uint64_t *w = rget(t, &n); return w[n - 3]; }
-VarSetId ref_freevars(RefId t) { size_t n; const uint64_t *w = rget(t, &n); return w[n - 2]; }
-FaceId ref_required(RefId t) { size_t n; const uint64_t *w = rget(t, &n); return w[n - 1]; }
+DimSetId ref_support(RefId t) { size_t n; const uint64_t *w = rget(t, &n); return w[n - 2]; }
+VarSetId ref_freevars(RefId t) { size_t n; const uint64_t *w = rget(t, &n); return w[n - 1]; }
 
 RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_term(x, a)); }
 
@@ -111,11 +111,11 @@ RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_ter
 
 TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type) {
     uint64_t w[5] = { 1, KW_REF, owner, KW_CONST, slot };
-    return var_record(w, 5, S_TERM, type, fc_true());
+    return var_record(w, 5, S_TERM, type);
 }
 DimVarId binder_dim_var(RefId owner, BinderSlot slot) {
     uint64_t w[5] = { 1, KW_REF, owner, KW_CONST, slot };
-    return var_record(w, 5, S_DIM, 0, 0);
+    return var_record(w, 5, S_DIM, 0);
 }
 
 TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
@@ -170,21 +170,21 @@ SymbolId define_global(const char *name, VarSetId params, DimSetId dims, RefId t
     return s;
 }
 
-/* One word decides a symbol's body: 0 while open; a body set by one CAS from
- * 0; DEF_OPAQUE set by the first observation of an open symbol. Either way
- * the word never changes again, so every evaluation sees the same body. */
-bool set_global_body(SymbolId s, RefId body) {
+/* A symbol is opaque by its declaration (an axiom), or a definition whose
+ * body is an input: an observation awaits it, the supply publishes it to
+ * every waiter, and it is supplied once. */
+void declare_opaque(SymbolId s) {
     require(s >= 1 && s <= __atomic_load_n(&M.n_defs, __ATOMIC_RELAXED), "unknown symbol");
-    require(body && !(body & DEF_OPAQUE), "a body is a reference");
-    uint64_t open = 0;
-    require(__atomic_compare_exchange_n(&DEF(s)->body, &open, body, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE),
-            "%s already has a body or was observed without one", DEF(s)->name);
-    return true;
+    require(!DEF(s)->body, "%s has a body: it is not opaque", DEF(s)->name);
+    DEF(s)->opaque = true;
 }
-RefId global_body_sealed(SymbolId s) {
-    uint64_t v = 0;
-    if (__atomic_compare_exchange_n(&DEF(s)->body, &v, DEF_OPAQUE, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return 0;
-    return v == DEF_OPAQUE ? 0 : v;
+bool global_opaque(SymbolId s) { return DEF(s)->opaque; }
+void set_global_body(SymbolId s, RefId body) {
+    require(s >= 1 && s <= __atomic_load_n(&M.n_defs, __ATOMIC_RELAXED), "unknown symbol");
+    require(body && !DEF(s)->opaque, "%s is opaque", DEF(s)->name);
+    uint64_t open = 0;
+    require(__atomic_compare_exchange_n(&DEF(s)->body, &open, body, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE), "%s already has a body", DEF(s)->name);
+    eval_supply(F_INPUT, s, 0, body);
 }
 
 VarSetId global_params(SymbolId s) { return DEF(s)->params; }

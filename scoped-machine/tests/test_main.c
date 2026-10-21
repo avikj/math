@@ -9,7 +9,7 @@ static int n_pass = 0, n_fail = 0;
 #define SECTION(name) printf("== %s\n", name)
 
 static RefId U0;
-static TermVarId tv(RefId type) { return declare_term(type, fc_true()); }
+static TermVarId tv(RefId type) { return declare_term(type); }
 static RefId var(RefId type) { return ref_var(tv(type)); }
 static RefId fun(RefId X, RefId Y) { return mk_pi(tv(X), X, Y); }
 static RefId path_const(RefId A, RefId a, RefId b) { return mk_path(declare_dim(), A, a, b); }
@@ -21,7 +21,6 @@ static Tag head_tag(EvalResult r) {
 
 /* ---------------------------------------------------------------- */
 /* the number of whnf keys formed so far */
-static size_t whnf_keys(void) { size_t c = 0, n = eval_entry_count(); for (EntryId e = 1; e <= n; e++) if (eval_entry_live(e) && eval_entry_family(e) == F_WHNF) c++; return c; }
 static void test_intervals_faces(void) {
     SECTION("§3–4 canonical intervals and faces");
     DimVarId i = declare_dim(), j = declare_dim();
@@ -227,7 +226,7 @@ static void test_binders(void) {
 
 /* ---------------------------------------------------------------- */
 static RefId two_t; static RefId two_got[2];
-static void *two_client(void *p) { WhnfStatus st; two_got[(size_t)p] = whnf(two_t, fc_true(), &st).ref; return NULL; }
+static void *two_client(void *p) { WhnfStatus st; two_got[(size_t)p] = whnf(two_t, &st).ref; return NULL; }
 
 static void test_eval_basic(void) {
     SECTION("§10–12 evaluation and face-sensitive cache");
@@ -236,42 +235,57 @@ static void test_eval_basic(void) {
     TermVarId x = tv(A);
     RefId a = var(A), bb = var(A);
     RefId id = mk_lam_lv(0, x, A, ref_var(x));
-    EvalResult r = whnf(mk_app(id, a), fc_true(), &st);
+    EvalResult r = whnf(mk_app(id, a), &st);
     CHECK(st == W_OK && r.cls == R_NEUTRAL && r.ref == a, "(λx.x) a ⇝ a (neutral variable)");
-    r = whnf(mk_fst(mk_pair(a, bb)), fc_true(), &st);
+    r = whnf(mk_fst(mk_pair(a, bb)), &st);
     CHECK(st == W_OK && r.ref == a, "fst (a,b) ⇝ a");
-    r = whnf(mk_snd(mk_pair(a, bb)), fc_true(), &st);
+    r = whnf(mk_snd(mk_pair(a, bb)), &st);
     CHECK(st == W_OK && r.ref == bb, "snd (a,b) ⇝ b");
-    r = whnf(mk_app(a, bb), fc_true(), &st);
+    r = whnf(mk_app(a, bb), &st);
     CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_APP, "neutral application retains operands");
-    /* NO_OBSERVATION on the false face */
-    r = whnf(a, fc_false(), &st);
-    CHECK(st == W_NO_OBSERVATION, "no observation on the empty face");
+    /* a stuck elimination's value is its residual: the operands' values in place */
+    {   RefId S = mk_pi(tv(A), A, A);                  /* any type for z */
+        RefId z = var(S);
+        RefId t = mk_fst(mk_app(id, z));
+        r = whnf(t, &st);
+        CHECK(st == W_OK && r.cls == R_NEUTRAL && r.ref == mk_fst(z), "fst ((λx.x) z) ⇝ the residual fst z, not the original term");
+        /* the residual is where computation continues: supplying z continues
+         * from fst z, the β step already established is not redone */
+        RefId zz = mk_pair(a, bb);
+        RefId again = mk_app(id, zz);
+        r = whnf(reindex1(r.ref, ref_var_id(z), zz), &st);
+        CHECK(st == W_OK && r.ref == a, "the residual with z supplied continues to a");
+        CHECK(!eval_entry_exists(F_WHNF, again, 0), "…without evaluating (λx.x) (a, b): the established prefix is reused");
+    }
+    /* a definition's body is an input: an observation before it is supplied
+     * is pending (not sealed), and continues when it is supplied */
+    {   SymbolId D = define_global("D", set_make(NULL, 0), set_make(NULL, 0), A);
+        RefId t = mk_fst(mk_pair(global_ref(D), bb));
+        r = whnf(t, &st);
+        CHECK(st == W_STUCK, "observing a definition whose body is not supplied is pending");
+        CHECK(whnf_residual(t) == global_ref(D), "its residual is the definition reached (fst (D, b) already stepped to D)");
+        set_global_body(D, a);
+        r = whnf(t, &st);
+        CHECK(st == W_OK && r.ref == a, "supplying the body continues the pending computation to a");
+        SymbolId O = define_global("O", set_make(NULL, 0), set_make(NULL, 0), A);
+        declare_opaque(O);
+        r = whnf(global_ref(O), &st);
+        CHECK(st == W_OK && r.ref == global_ref(O), "an opaque constant (declared so) is its own value");
+    }
 
-    /* neutral path p@i under true / i=0 / i=1 */
-    DimVarId i = declare_dim(), k = declare_dim();
+    /* neutral path p@i */
+    DimVarId i = declare_dim();
     RefId p = var(path_const(A, a, bb));
     RefId pi = papp_const(A, a, bb, p, iv_var(i));
-    r = whnf(pi, fc_true(), &st);
+    r = whnf(pi, &st);
     CHECK(st == W_OK && r.cls == R_NEUTRAL && head_tag(r) == T_PAPP, "p@i is a value of the machine (its endpoints are the evaluator program's)");
-    size_t n0;
-    /* projection: an unrelated literal does not create a new entry */
-    n0 = whnf_keys();
-    r = whnf(pi, fc_lit(k, 1), &st);
-    CHECK(whnf_keys() == n0, "ambient (k=1) projects to the true entry for p@i");
-    /* closed reference under two consistent faces → one entry */
-    RefId closed = mk_app(id, mk_universe(0));
-    whnf(closed, fc_lit(i, 0), &st);
-    n0 = whnf_keys();
-    whnf(closed, fc_lit(k, 1), &st);
-    CHECK(whnf_keys() == n0, "closed reference under two consistent faces uses one entry");
 
     /* two concurrent requests for one key: one task, both waiters served */
     RefId fresh = mk_app(id, mk_pair(a, bb));
     two_t = fresh;
     {   pthread_t th[2]; for (size_t c = 0; c < 2; c++) pthread_create(&th[c], NULL, two_client, (void *)c);
         for (size_t c = 0; c < 2; c++) pthread_join(th[c], NULL); }
-    r = whnf(fresh, fc_true(), &st);
+    r = whnf(fresh, &st);
     CHECK(two_got[0] == two_got[1] && two_got[0] == r.ref, "two concurrent roots of one key receive the same result");
 
     /* globals: unfold through a fixed body */
@@ -279,13 +293,13 @@ static void test_eval_basic(void) {
     SymbolId K = define_global("K", set_make(Aparam, 1), set_make(NULL, 0), fun(A, fun(A, A)));
     TermVarId y = tv(A);
     set_global_body(K, mk_lam_lv(0, x, A, mk_lam_lv(0, y, A, ref_var(x))));
-    r = whnf(mk_app(mk_app(global_ref(K), a), bb), fc_true(), &st);
+    r = whnf(mk_app(mk_app(global_ref(K), a), bb), &st);
     CHECK(st == W_OK && r.ref == a, "K a b ⇝ a through global unfolding");
 
     /* running self-demand: loop := loop */
     SymbolId L = define_global("loop", set_make(NULL, 0), set_make(NULL, 0), U0);
     set_global_body(L, global_ref(L));
-    r = whnf(global_ref(L), fc_true(), &st);
+    r = whnf(global_ref(L), &st);
     CHECK(st == W_STUCK && r.cls == 0, "loop is reported stuck, never neutral or ready");
 }
 

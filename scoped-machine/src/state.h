@@ -10,8 +10,7 @@
 #include "intern.h"
 
 typedef struct { VarSetId params; DimSetId dims; const char *name; RefId type; /* declared type over the parameters (0 = undeclared) */
-                 uint64_t body; /* 0 open; a RefId: its body; DEF_OPAQUE: observed without one (one CAS decides) */ } Def;
-#define DEF_OPAQUE ((uint64_t)1 << 63)
+                 uint64_t body; /* 0 until supplied; then its body */ bool opaque; } Def;
 
 typedef struct {
     Interner keys;        /* every record: intervals, faces, sets, substitutions, references,

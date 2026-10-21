@@ -19,7 +19,7 @@ static RefId OK;
 static RefId run(const char *src) {
     RefId t = reader_term(R, src);
     if (!t) { printf("  read error: %s\n", reader_error(R)); return 0; }
-    WhnfStatus st; EvalResult e = whnf(t, fc_true(), &st);
+    WhnfStatus st; EvalResult e = whnf(t, &st);
     return st == W_OK && e.cls == R_INTRODUCTION && ref_tag(e.ref) == T_QUOTE ? construction_field(e.ref, 0) : 0;
 }
 static void accept(const char *judgement) { char m[300]; snprintf(m, sizeof m, "accepts %s", judgement); CHECK(run(judgement) == OK, m); }
@@ -65,6 +65,18 @@ int main(void) {
     accept("(check (qfc true) (eval (qfc true) (mk-comp (qlv 0) (fn (i) (mk-papp (qlv 1) (fn (k) (quote (U 0))) (quote A) (quote A) (ua (qlv 0) (quote A) (quote A) (id-equiv (qlv 0) (quote A))) i)) (qfc false) (fn (i) (quote (sys))) (quote a))) (quote A))");
     /* rejections */
     reject("(check (qfc true) (quote (f b)) (quote A))");
+    reject("(check (qfc true) (quote (lam (x a) x)) (quote (Pi (x a) a)))");
+    /* partial elements: a variable of type (Partial φ A) is used only under φ */
+    accept("(check (qfc true) (quote (lam (v (Partial true A)) v)) (quote (Pi (v (Partial true A)) A)))");
+    reject("(check (qfc true) (quote (lam (v (Partial false A)) v)) (quote (Pi (v (Partial false A)) A)))");
+    accept("(check (qfc false) (quote b) (quote A))");
+    accept("(check (qfc true) (quote b) (quote (Partial false A)))");
+    reject("(check (qfc true) (quote b) (quote (Partial true A)))");
+    /* the code operations' kinds */
+    reject("(check (qfc true) (quote (clsucc (quote a))) (quote (LCode)))");
+    accept("(check (qfc true) (quote (clsucc (qlv 2))) (quote (LCode)))");
+    accept("(check (qfc true) (quote (cfcend 0 (qiv 1))) (quote (FCode)))");
+    reject("(check (qfc true) (quote (cfcend 0 (qfc true))) (quote (FCode)))");
     reject("(check (qfc true) (quote (plam (i) a)) (quote (Path (i) A a a2)))");
     reject("(check (qfc true) (quote (pair a b)) (quote (Pi (x A) A)))");
     reject("(check (qfc true) (quote (U 1)) (quote (U 1)))");

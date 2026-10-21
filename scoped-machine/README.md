@@ -36,7 +36,8 @@ named in `families.h`.
   key, an environment (and every total record: context indexes,
   CLOSE contexts) followed by a trailing word. One stepped lookup, one set.
 - Constructions (`construct.c`): one constructor schema per tag (field kinds,
-  binder slots, binder sort, partial positions, role, scrutinee) read by
+  binder slots, binder sort, role, scrutinee, a code eliminator's operand
+  fields) read by
   every builder. A construction is a node whose field constants are closed by
   CLOSE over (depth, slot) atoms; its reference is TVIEW(node, environment).
 - Traversal (`scopefam.c`, `template.c`): CLOSE (identity ↦ slot), APPLY
@@ -45,36 +46,52 @@ named in `families.h`.
 
 ## Definitions (`term.c`)
 
-A definition's body is set once, before the symbol's first observation; that
-observation seals it (one compare-and-swap decides the body word), so every
-evaluation sees the same body and an evaluation key determines its
-computation. A symbol observed without a body is an opaque constant.
+A symbol is opaque by its declaration (an axiom: a constant), or a
+definition whose body is an input, supplied once. An observation before the
+body is supplied is pending, not sealed: the supply publishes the input entry
+and every pending computation continues from where it stopped. An external
+answer that can differ between consumers is an explicit argument (a
+variable) at the boundary where it matters: each answer is a substitution
+into the residual.
 
 ## The machine's steps (`eval.c`)
 
-β, pair projections, unfolding a definition, and the code eliminators. Every
-other former (paths, Glue, systems, composition) is a value of the machine;
-its computation is the evaluator program.
+β, pair projections, unfolding a definition, and the code eliminators;
+native evaluation is keyed by the term alone (the ambient face is an
+argument of the evaluator program). Every other former (paths, Glue,
+systems, composition) is a value of the machine; its computation is the
+evaluator program. The value of a stuck elimination is its residual: the
+eliminator with its operands replaced by their values, where computation
+continues when an open input is supplied (by substitution: the prefix
+already established is not redone). While a computation runs, its entry
+records the term it has moved to; `whnf_residual(t)` reads the computation
+so far. The machine judges nothing: records carry no required faces, and a
+code operation outside its domain gives the code `(cnone)`.
 
 ## Codes (`code.c`, `read.c`)
 
 The language's own term records are values of the type `(Code)`: `(quote t)`
-holds the record of `t`, `(qiv r)` an interval, `(qfc φ)` a face. There is no
-second representation of syntax: the record a quote holds is the record the
-machine evaluates. Each eliminator is one native rule over those records:
-`cmatch` (dispatch on the former), `cinst` (open a binder), `cset` /
-`csetlv` (rebuild with a field or annotation replaced), `clevels`, `cvar`,
-`csubst`, `csyscons`, `ceq`, `cent`, `cfcend`, interval and face operations,
-level successor and maximum, `cunfold`. A quote requires nothing (a code is
-data).
+holds the record of `t`; `(qiv r)`, `(qfc φ)`, `(qlv l)` are codes of the
+types `(ICode)`, `(FCode)`, `(LCode)`. There is no second representation of
+syntax: the record a quote holds is the record the machine evaluates. Each
+code eliminator is one native rule over those records, its operands
+evaluated together first: `cmatch` (dispatch on the former; its argument
+kinds are `code_arg_kind`, exposed to programs as `cfield`), `cinst` /
+`cinsti` (open a term / dimension binder), `cset` / `csetb` / `csetbi` /
+`csetlv` (rebuild with a field, a binder field or the annotation replaced),
+`clevels`, `cvar` / `cvari`, `csubst`, `csyscons`, `ceq`, `cent`, `cfcend`,
+interval and face operations, level successor and maximum, `cunfold`,
+`ctype`, `cpayload`, `cquote`, `cstep` (the code of one rule step).
 
 ## The evaluator (`prog/core.ctt`)
 
-`eval χ c`: the code of the weak-head value of the term coded by `c` under
-the face coded by `χ` — an introduction, a neutral, a system value, or
-`invalid`. It contains the composition clauses (Π, Σ, Path, Glue, U) and the
-library they build (Fill, HComp, Coe, Equiv, Fib, Contr, IdEquiv,
-LineEquiv, ExtendContr, ua), each a program building codes.
+`eval χ c`: the code of the term the term coded by `c` reaches under the
+face coded by `χ` — an introduction, a system value, or a residual. It has a
+clause for every executable former, the code operations included (operands
+evaluated, then the operation's rule as one represented step, `cstep`). It
+contains the composition clauses (Π, Σ, Path, Glue, U) and the library they
+build (Fill, HComp, Coe, Equiv, Fib, Contr, IdEquiv, LineEquiv,
+ExtendContr, ua), each a program building codes.
 
 ## The checker (`prog/check.ctt`)
 
@@ -82,9 +99,12 @@ LineEquiv, ExtendContr, ua), each a program building codes.
 conversion (η for functions, pairs and paths; systems branchwise; universe
 cumulativity). A variable's type is its declaration (`ctype`), so the
 context is the variables themselves: a binder is entered at its own
-variable (`cvar`). Programs over codes are typed too: `(Code)` is a type,
-a code is data of type Code, a code eliminator's branches share one type
-(a `cmatch` handler has the type its former gives, `cmtype`). The checker
+variable (`cvar`, `cvari`). A partial element has the type `(Partial φ A)`:
+a variable of that type is used only under faces entailing φ, and checking
+against it checks under φ. Programs over codes are typed: the code types
+are types, a code operation takes codes of the kinds it acts on, its
+branches share one type, a `cmatch` handler has the type its former's
+arguments give (computed in the program from `cfield`). The checker
 checks every definition of the evaluator, the library and itself against
 its declared type, the library's constructions (IdEquiv : Equiv A A,
 LineEquiv, ua : Path U A A, Fill), and that the evaluator's composition

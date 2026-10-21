@@ -22,7 +22,6 @@ typedef struct { pthread_mutex_t mu; QChunk *front, *back; size_t len; } Queue;
 typedef struct { const char *name; FamResume resume; size_t loc_size; } FamilyDef;
 static FamilyDef FAM[F_MAX];
 static size_t n_fam = F_FIXED;     /* families defined at run time (tests) follow the fixed ids */
-static FaceId key_face(uint64_t b) { return b; }
 
 typedef struct Shard Shard;
 static struct {
@@ -282,6 +281,7 @@ EntryState eval_entry_state(EntryId e) {
 }
 size_t eval_entry_count(void) { return interner_count(&E.keys); }
 bool eval_entry_live(EntryId e) { return interner_live(&E.keys, e); }
+bool eval_entry_exists(Family f, uint64_t a, uint64_t b) { uint64_t w[3] = { f, a, b }; return interner_find(&E.keys, w, 3) != 0; }
 
 /* PUB(K,v) + R(W) → D(v) + {DELIVER(c,v) : c ∈ W}: the value is stored, the
  * waiter stack is exchanged for READY in one atomic step, and the stack is
@@ -583,22 +583,13 @@ uint64_t family_call(Family f, uint64_t a, uint64_t b) {
     return v;
 }
 
-/* ---------------- results ---------------- */
-static uint64_t res_rec(ResultClass c, RefId ref, const char *msg) { return RQ(c, ref, (uint64_t)(uintptr_t)msg); }
-EvalResult res_get(uint64_t v) {
-    size_t n; const uint64_t *w = rget(v, &n);
-    require(n == 3 && w[0] >= R_INTRODUCTION && w[0] <= R_INVALID, "not a result record");
-    EvalResult r = { (ResultClass)w[0], w[1], (const char *)(uintptr_t)w[2] };
-    return r;
-}
-
 /* ---------------- the evaluator ----------------
- * WHNF(t, χ) (χ projected to t's support) is a frame family like every
- * other: each step does a constant amount of work and awaits its operands
- * from their families (fields, binder application, face tests, projections,
- * constructions) and its sub-observations from the observation family. */
-uint64_t observe_key(FaceId chi, FaceId phi) { return RQ(chi, phi); }
-
+ * WHNF(t) is a frame family like every other: each step does a constant
+ * amount of work and awaits its operands from their families. Its value is
+ * the term t reaches: a value of the machine, or the residual of a stuck
+ * elimination (its operands replaced by their values). While it runs, its
+ * entry's `at` is the term it has moved to (0: still at t, awaiting its
+ * operands): whnf_residual reads the computation so far. */
 /* a construction request (construct.c) made by the evaluator: no declared
  * face. The request record is built into a word buffer and interned by the
  * stepped subroutine; the subroutine then awaits the construction. */
@@ -617,79 +608,63 @@ Cont *mk_tag_sub(const Cont *k, Tag tag, uint64_t payload, uint64_t levels, size
     WordBuf w; creq_tag(&w, tag, payload, levels, n, ids, formal); return creq_buf(k, &w);
 }
 
-/* observe(x, [χ, φ]): no observation on the false face; an invalid
- * occurrence outside x's required face; otherwise WHNF(x, π_S(x) χ) */
-static void obs_step(Cont *k, uint64_t v) {
-    uint64_t r = 0;
-    RefId x = k->w[0];
-    FR_BEGIN(k);
-    {   size_t n; const uint64_t *q = rget(k->w[1], &n); k->w[2] = q[0]; k->w[3] = q[1]; }
-    if (k->w[3]) { FR_AWAIT(k, r, F_FCMEET, k->w[2], k->w[3]); k->w[2] = r; }
-    if (fc_is_false(k->w[2])) FR_FINISH(k, res_rec(R_NO_OBSERVATION, x, NULL));
-    FR_AWAIT(k, r, F_FCENT, k->w[2], ref_required(x));
-    if (r != 2) FR_FINISH(k, res_rec(R_INVALID, 0, "occurrence outside its required face"));
-    FR_AWAIT(k, r, F_FCPROJ, k->w[2], ref_support(x));
-    FR_AWAIT(k, r, F_WHNF, x, r);
-    FR_FINISH(k, r);
-    FR_END(k);
-}
-
-
-typedef struct { Tag tag; uint64_t x, res, a1; } WhLoc;
-#define RES(id) res_get(id)
+typedef struct { Tag tag; uint64_t x, s, a1; } WhLoc;
+static void at_term(Cont *k, RefId x) { __atomic_store_n(&ENT(k->dest)->at, x, __ATOMIC_RELEASE); }
 
 /* the machine's own steps: β, projections, unfolding a definition, and the
  * code eliminators. Every other former is a value of the machine (its
  * computation is the evaluator program, prog/core.ctt). */
 static void whnf_step(Cont *k, uint64_t v) {
     WhLoc *L = FR_LOC(k, WhLoc);
-    RefId t = k->w[0]; FaceId chi = key_face(k->w[1]);
+    RefId t = k->w[0];
     uint64_t r = 0;
     FR_BEGIN(k);
-    if (ref_is_var(t)) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
+    if (ref_is_var(t)) FR_FINISH(k, t);
     L->tag = ref_tag(t);
-    if (tag_schema(L->tag)->role == ROLE_INTRO) FR_FINISH(k, res_rec(R_INTRODUCTION, t, NULL));
+    if (tag_schema(L->tag)->role == ROLE_INTRO) FR_FINISH(k, t);
 
     if (L->tag == T_GLOBAL) {
-        /* a definition's body is fixed before its first observation (the
-         * read seals it): a symbol without one is a neutral constant */
+        /* an opaque symbol is a constant; a definition's body is an input,
+         * pending until it is supplied */
         FR_AWAIT(k, r, F_HEAD, t, 0);
-        L->a1 = global_body_sealed((SymbolId)r);
-        if (!L->a1) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
+        if (global_opaque((SymbolId)r)) FR_FINISH(k, t);
+        FR_AWAIT(k, L->a1, F_INPUT, r, 0);
         FR_AWAIT(k, L->x, F_UNFOLD, t, L->a1);
         goto forward_x;
     }
 
     if (L->tag == T_APP || L->tag == T_FST || L->tag == T_SND) {
         FR_AWAIT(k, L->x, F_FIELD, t, 0);
-        FR_AWAIT(k, L->res, F_OBS, L->x, observe_key(chi, 0));
-        if (RES(L->res).cls == R_NO_OBSERVATION || RES(L->res).cls == R_INVALID) FR_FINISH(k, L->res);
-        if (RES(L->res).cls != R_INTRODUCTION) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
-        if (L->tag == T_APP) {
-            if (ref_tag(RES(L->res).ref) != T_LAM) FR_FINISH(k, res_rec(R_INVALID, 0, "application of a non-function introduction"));
-            FR_AWAIT(k, L->a1, F_FIELD, t, 1);
-            FR_AWAIT(k, L->x, F_BINDER, RES(L->res).ref, binder_req(S_TERM, 0, 1, L->a1));
-        } else {
-            if (ref_tag(RES(L->res).ref) != T_PAIR) FR_FINISH(k, res_rec(R_INVALID, 0, "projection of a non-pair introduction"));
-            FR_AWAIT(k, L->x, F_FIELD, RES(L->res).ref, L->tag == T_FST ? 0 : 1);
+        FR_AWAIT(k, L->s, F_WHNF, L->x, 0);
+        if (!ref_is_var(L->s) && ref_tag(L->s) == (L->tag == T_APP ? T_LAM : T_PAIR)) {
+            if (L->tag == T_APP) {
+                FR_AWAIT(k, L->a1, F_FIELD, t, 1);
+                FR_AWAIT(k, L->x, F_BINDER, L->s, binder_req(S_TERM, 0, 1, L->a1));
+            } else FR_AWAIT(k, L->x, F_FIELD, L->s, L->tag == T_FST ? 0 : 1);
+            goto forward_x;
         }
-        goto forward_x;
+        /* stuck: the residual */
+        if (L->s == L->x) FR_FINISH(k, t);
+        if (L->tag == T_APP) {
+            FR_AWAIT(k, L->a1, F_FIELD, t, 1);
+            FR_CALL(k, r, MK_SUB(k, T_APP, 0, LEVELS_NONE, 0, L->s, L->a1));
+        } else FR_CALL(k, r, MK_SUB(k, L->tag, 0, LEVELS_NONE, 0, L->s));
+        FR_FINISH(k, r);
     }
 
-    if (L->tag >= T_CMATCH && L->tag <= T_LAST && L->tag != T_QLV) {
-        /* a code eliminator: its reduct (code.c) */
-        FR_AWAIT(k, L->x, F_CODE, t, chi);
+    if (L->tag >= T_FIRST_CODE_ELIM) {
+        /* a code eliminator: its reduct, or its residual (code.c) */
+        FR_AWAIT(k, L->x, F_CODE, t, 0);
         {   size_t n; const uint64_t *q = rget(L->x, &n);
-            if (q[0] == 1) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
-            if (q[0] == 2) FR_FINISH(k, q[1]);
-            if (q[0] == 3) FR_FINISH(k, res_rec(R_INVALID, 0, "code eliminator on a code of the wrong kind"));
-            L->x = q[1]; }
+            L->x = q[1];
+            if (q[0] == 1) FR_FINISH(k, L->x); }
         goto forward_x;
     }
-    FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
+    FR_FINISH(k, t);
 
 forward_x:
-    FR_AWAIT(k, r, F_OBS, L->x, observe_key(chi, 0));
+    at_term(k, L->x);
+    FR_AWAIT(k, r, F_WHNF, L->x, 0);
     FR_FINISH(k, r);
     FR_END(k);
 }
@@ -697,16 +672,47 @@ forward_x:
 /* the evaluator family and its operand families */
 static void evaluator_init(void) {
     FAM[F_WHNF].name = "whnf"; FAM[F_WHNF].resume = whnf_step; FAM[F_WHNF].loc_size = sizeof(WhLoc);
-    family_define(F_OBS, "whnf.observe", obs_step, 0);
     family_define(F_CREQ, "construct.request", creq_step, sizeof(CrLoc));
 }
 
-EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status) {
-    WhnfStatus st; uint64_t v = family_run(F_OBS, t, observe_key(chi, 0), &st);
+EvalResult whnf(RefId t, WhnfStatus *status) {
+    WhnfStatus st; uint64_t v = family_run(F_WHNF, t, 0, &st);
     EvalResult out; memset(&out, 0, sizeof out);
     if (st != W_OK) { if (status) *status = W_STUCK; return out; }
-    out = res_get(v);
-    if (status) *status = out.cls == R_NO_OBSERVATION ? W_NO_OBSERVATION : out.cls == R_INVALID ? W_INVALID : W_OK;
+    out.ref = v;
+    out.cls = !ref_is_var(v) && tag_schema(ref_tag(v))->role == ROLE_INTRO ? R_INTRODUCTION : R_NEUTRAL;
+    if (status) *status = W_OK;
     return out;
+}
+
+/* the computation of t so far: its value when published; while it runs,
+ * the term it has moved to (followed), or t with its awaited operands
+ * replaced by theirs */
+RefId whnf_residual(RefId t) {
+    EntryId e = entry_intern(F_WHNF, t, 0);
+    if (eval_entry_state(e) == E_READY) return __atomic_load_n(&ENT(e)->value, __ATOMIC_ACQUIRE);
+    if (eval_entry_state(e) == E_UNEVALUATED || ref_is_var(t)) return t;
+    RefId at = __atomic_load_n(&ENT(e)->at, __ATOMIC_ACQUIRE);
+    if (at) return whnf_residual(at);
+    Tag tag = ref_tag(t);
+    if (tag != T_APP && tag != T_FST && tag != T_SND && tag < T_FIRST_CODE_ELIM) return t;
+    size_t nf = tnode_nfields(ref_tnode(t)); uint64_t ids[6]; bool changed = false;
+    for (size_t q = 0; q < nf; q++) {
+        ids[q] = construction_field(t, q);
+        bool operand = tag >= T_FIRST_CODE_ELIM ? (tag_schema(tag)->opnd >> q & 1) : q == 0;
+        if (operand) { RefId r = whnf_residual(ids[q]); if (r != ids[q]) { ids[q] = r; changed = true; } }
+    }
+    return changed ? mk_tag(tag, family_call(F_HEAD, t, 0), LEVELS_NONE, nf, ids, 0) : t;
+}
+
+/* an input supplied: the entry (f, a, b) published with v — its waiters
+ * resume; a later request finds it published */
+void eval_supply(Family f, uint64_t a, uint64_t b, uint64_t v) {
+    EntryId eid = entry_intern(f, a, b);
+    Entry *e = ENT(eid);
+    __atomic_store_n(&e->value, v, __ATOMIC_RELEASE);
+    Cont *u = NULL;
+    if (__atomic_compare_exchange_n(&e->head, &u, ENTRY_READY, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) return;
+    publish(eid, v);
 }
 

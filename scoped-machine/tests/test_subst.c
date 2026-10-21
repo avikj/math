@@ -8,9 +8,9 @@ static int failures;
 int main(void) {
     machine_init();
     RefId U0 = mk_universe(0);
-    TermVarId vA = declare_term(U0, fc_true()); RefId A = ref_var(vA);
-    TermVarId x = declare_term(A, fc_true()), y = declare_term(A, fc_true()), z = declare_term(A, fc_true());
-    TermVarId f = declare_term(mk_pi(declare_term(A, fc_true()), A, A), fc_true());
+    TermVarId vA = declare_term(U0); RefId A = ref_var(vA);
+    TermVarId x = declare_term(A), y = declare_term(A), z = declare_term(A);
+    TermVarId f = declare_term(mk_pi(declare_term(A), A, A));
     DimVarId i = declare_dim(), j = declare_dim(), l = declare_dim();
     RefId X = ref_var(x), Y = ref_var(y), Z = ref_var(z), F = ref_var(f);
     RefId t = mk_pair(mk_app(F, X), mk_lam(z, A, mk_app(F, mk_app(F, Y))));

@@ -1,9 +1,12 @@
-/* test_code.c — the evaluator as a program of the language. `eval` below is
- * written in the language over codes; the machine runs it like any other
- * program, and its value at the code of a term is the code of the term the
- * machine's own weak-head evaluation reaches. */
+/* test_code.c — the evaluator as a program of the language (prog/core.ctt).
+ * The machine runs it like any other program. On the machine's own steps
+ * (β, projections, definitions, the code operations, their residuals) its
+ * value at the code of a term is the code of the term the machine reaches;
+ * the cubical computation is the program's alone, and is checked by its
+ * values. */
 #include "../src/read.h"
 #include "../src/eval.h"
+#include "../src/template.h"
 
 static int failures;
 #define CHECK(c, m) do { if (!(c)) { failures++; printf("FAIL: %s\n", m); } else printf("ok: %s\n", m); } while (0)
@@ -16,30 +19,29 @@ static char *slurp(const char *path) {
     size_t got = fread(b, 1, (size_t)n, f); b[got] = 0; fclose(f); return b;
 }
 
-static RefId EV, INVALID;
+static RefId EV;
 /* the program's value of t under χ (the record its code holds; 0 when the
  * evaluation did not complete) */
 static RefId val(RefId t, FaceId chi) {
     WhnfStatus st;
-    EvalResult e = whnf(mk_app(mk_app(EV, MK(T_QFC, 0, LEVELS_NONE, 0, chi)), MK(T_QUOTE, 0, LEVELS_NONE, 0, t)), fc_true(), &st);
+    EvalResult e = whnf(mk_app(mk_app(EV, MK(T_QFC, 0, LEVELS_NONE, 0, chi)), MK(T_QUOTE, 0, LEVELS_NONE, 0, t)), &st);
     return st == W_OK && e.cls == R_INTRODUCTION && ref_tag(e.ref) == T_QUOTE ? construction_field(e.ref, 0) : 0;
 }
 static Tag tag_of(RefId t) { return t && !ref_is_var(t) ? ref_tag(t) : 0; }
-/* the machine's whnf of t under χ, and the program eval at the codes of χ
- * and t: the same value (the code of the machine's record; invalid; or both
- * pending) */
-static void agree(RefId t, FaceId chi, const char *label) {
+/* the machine's whnf of t, and the program eval at the codes of true and
+ * t: the same term (or both pending) */
+static void agree(RefId t, const char *label) {
     WhnfStatus s1, s2;
-    EvalResult native = whnf(t, chi, &s1);
-    RefId run = mk_app(mk_app(EV, MK(T_QFC, 0, LEVELS_NONE, 0, chi)), MK(T_QUOTE, 0, LEVELS_NONE, 0, t));
-    EvalResult prog = whnf(run, fc_true(), &s2);
+    EvalResult native = whnf(t, &s1);
+    RefId run = mk_app(mk_app(EV, MK(T_QFC, 0, LEVELS_NONE, 0, fc_true())), MK(T_QUOTE, 0, LEVELS_NONE, 0, t));
+    EvalResult prog = whnf(run, &s2);
     RefId pv = s2 == W_OK && prog.cls == R_INTRODUCTION && ref_tag(prog.ref) == T_QUOTE ? construction_field(prog.ref, 0) : 0;
-    bool exact = (s1 == W_INVALID && pv == INVALID) || (s1 == W_STUCK && s2 == W_STUCK) || (s1 == W_OK && pv && pv == native.ref);
+    bool exact = (s1 == W_STUCK && s2 == W_STUCK) || (s1 == W_OK && pv && pv == native.ref);
     char m[200]; snprintf(m, sizeof m, "eval agrees with the machine: %s", label);
     CHECK(exact, m);
     if (!exact) {
         printf("  native: status %d class %d ", (int)s1, (int)native.cls); if (native.ref) print_ref_depth(native.ref, stdout, 6);
-        printf("\n  program: status %d class %d %s ", (int)s2, (int)prog.cls, prog.message ? prog.message : ""); if (pv) print_ref_depth(pv, stdout, 6);
+        printf("\n  program: status %d class %d ", (int)s2, (int)prog.cls); if (pv) print_ref_depth(pv, stdout, 6);
         printf("\n");
     }
 }
@@ -71,10 +73,28 @@ int main(void) {
         "((lam (x A) x) b)", "(fst (KP a b))", "(snd (KP a b))", "(fst q)", "(K (fst (KP b a)) a)",
         "(fst ((lam (x (Sigma (z A) A)) x) (pair b a)))", "(Pi (x A) A)", "(U 0)",
         "(plam (j) (papp (i) A a b p j))",
+        /* residuals: the stuck operand's value in place */
+        "(fst (K q a))", "(snd ((lam (x (Sigma (z A) A)) x) q))", "((K f a) b)",
+        /* the code operations: the evaluator's clauses and the machine's rules */
+        "(ceq (quote a) (quote a) (quote a) (quote b))", "(ceq (quote a) (quote b) (quote a) (quote b))",
+        "(ceq (quote (lam (x A) x)) (quote (lam (y A) y)) (qfc true) (qfc false))",
+        "(cinst 1 (quote (lam (x A) (pair x x))) (quote a))", "(cinsti 0 (quote (plam (i) (papp (j) A a b p i))) (qiv 1))",
+        "(cmatch pair (quote (pair a b)) (fn (x y s) y) (quote q))", "(cmatch app (quote (pair a b)) (fn (x y) y) (quote q))",
+        "(cset 0 (quote (pair a b)) (quote q))", "(csetb 1 (quote (lam (x A) x)) (fn (v) (cset 1 (quote (pair a a)) v)))",
+        "(cent (qfc true) (qfc false) (quote a) (quote b))", "(cfcend 1 (qiv 1))", "(clsucc (qlv 3))", "(clmax (qlv 2) (qlv 5))",
+        "(civand (qiv 1) (qiv 0))", "(cunfold (quote K) (fn (u) u) (quote q))", "(cunfold (quote a) (fn (u) u) (quote q))",
+        "(clevels (quote (U 4)) (fn ((l L) (m L)) (csetlv (quote (U 0)) (clsucc l) m)))",
+        "(ctype (quote a))", "(cpayload (quote (U 7)))", "(cfield (qlv 5) (qlv 0))", "(cquote (quote a))",
+        "(cstep (quote (ceq (quote a) (quote a) a b)))", "(cvar (quote (lam (x A) x)))", "(cvar (quote (plam (i) a)))",
+        "(clsucc (quote a))", "(cinst 0 (quote (pair a b)) (quote a))", "(cnone)",
+        "(csubst (quote (pair a b)) (quote a) (quote q))",
+        "(cmatch qiv (qiv 0) (quote a) (quote b))", "(cmatch iv (qiv 0) (quote a) (quote b))",
+        /* a code operation whose operand is stuck: its residual */
+        "(ceq (fst q) (quote a) (quote a) (quote b))",
     };
-    EV = reader_term(r, "eval"); INVALID = reader_term(r, "invalid");
+    EV = reader_term(r, "eval");
     RefId ev = EV, chi = reader_term(r, "(qfc true)");
-    for (size_t n = 0; n < sizeof T / sizeof T[0]; n++) agree(reader_term(r, T[n]), fc_true(), T[n]);
+    for (size_t n = 0; n < sizeof T / sizeof T[0]; n++) agree(reader_term(r, T[n]), T[n]);
 
     /* the cubical computation is the program's alone: its values */
     {
@@ -110,15 +130,15 @@ int main(void) {
         RefId sys = mk_system(2, fs, ts);
         CHECK(val(sys, j0) == a, "a system selects its covering branch");
         CHECK(val(sys, fc_join(j0, j1)) == sys, "a covered, unselected system is a system value");
-        CHECK(val(sys, fc_true()) == INVALID, "a system outside the face it covers is invalid");
+        CHECK(val(sys, fc_true()) == sys, "a system outside the face it covers is unchanged (its coverage is the checker's judgement)");
         RefId ts2[2] = { reader_term(r, "(lam (x A) a)"), f };
         RefId d = val(mk_app(mk_system(2, fs, ts2), b), fc_join(j0, j1));
         CHECK(tag_of(d) == T_SYSTEM && construction_field(d, 0) == j0 && construction_field(d, 1) == a
               && construction_field(d, 2) == j1 && construction_field(d, 3) == mk_app(f, b), "application distributes over a system, each branch evaluated under its guard");
         RefId X = B;
         FaceId gs[2] = { fc_lit(m, 0), fc_lit(m, 1) }; RefId Ys[2] = { X, A };
-        CHECK(val(mk_comp_lv(0, m, mk_system(2, gs, Ys), fc_false(), mk_system(0, NULL, NULL), a), fc_true()) == INVALID,
-              "endpoint-only family branches do not cover the line");
+        {   RefId e0 = val(mk_comp_lv(0, m, mk_system(2, gs, Ys), fc_false(), mk_system(0, NULL, NULL), a), fc_true());
+            CHECK(tag_of(e0) == T_SYSTEM && tnode_nfields(ref_tnode(e0)) == 0, "endpoint-only family branches give no composition along the line (the empty system)"); }
         FaceId gs2[2] = { fc_lit(n, 0), fc_lit(n, 1) }; RefId Ys2[2] = { X, reader_term(r, "(Pi 0 0 (x A) A)") };
         RefId cmp4 = mk_comp_lv(0, m, mk_system(2, gs2, Ys2), fc_false(), mk_system(0, NULL, NULL), f);
         RefId s4 = val(cmp4, fc_join(gs2[0], gs2[1]));
@@ -136,25 +156,25 @@ int main(void) {
 
         /* transport along ua(idEquiv A) */
         WhnfStatus ust;
-        RefId P = whnf(reader_term(r, "(ua (qlv 0) (quote A) (quote A) (id-equiv (qlv 0) (quote A)))"), fc_true(), &ust).ref;
+        RefId P = whnf(reader_term(r, "(ua (qlv 0) (quote A) (quote A) (id-equiv (qlv 0) (quote A)))"), &ust).ref;
         CHECK(tag_of(P) == T_QUOTE, "ua builds the code of a path of types");
         DimVarId kk = declare_dim();
         RefId fam = MK(T_PAPP, 0, levels_pack(1, LEVEL_NONE), kk, reader_term(r, "(U 0)"), A, A, construction_field(P, 0), iv_var(i));
         RefId tr = MK(T_COMP, 0, levels_pack(0, LEVEL_NONE), i, fam, fc_false(), mk_system(0, NULL, NULL), a);
         RefId tv = val(tr, fc_true());
-        CHECK(tv && tv != INVALID && tag_of(tv) == T_COMP && tv != tr, "transport along ua evaluates through the Glue clause to a composition in A (neutral)");
-        if (tv && tv != INVALID) { printf("  transport along ua(idEquiv A) of a: "); print_ref_depth(tv, stdout, 3); printf("\n"); }
+        CHECK(tv && tag_of(tv) == T_COMP && tv != tr, "transport along ua evaluates through the Glue clause to a composition in A (neutral)");
+        if (tv) { printf("  transport along ua(idEquiv A) of a: "); print_ref_depth(tv, stdout, 3); printf("\n"); }
 #undef V
     }
     {   /* ceq: one record or not */
         WhnfStatus st;
-        CHECK(whnf(reader_term(r, "(ceq (quote (lam (x A) x)) (quote (lam (y A) y)) a b)"), fc_true(), &st).ref == reader_term(r, "a"), "ceq: alpha-equal codes are one record");
-        CHECK(whnf(reader_term(r, "(ceq (quote a) (quote b) a b)"), fc_true(), &st).ref == reader_term(r, "b"), "ceq: distinct codes");
+        CHECK(whnf(reader_term(r, "(ceq (quote (lam (x A) x)) (quote (lam (y A) y)) a b)"), &st).ref == reader_term(r, "a"), "ceq: alpha-equal codes are one record");
+        CHECK(whnf(reader_term(r, "(ceq (quote a) (quote b) a b)"), &st).ref == reader_term(r, "b"), "ceq: distinct codes");
     }
     {   /* a computation that does not end is pending under both, not an error */
         WhnfStatus s1, s2;
-        (void)whnf(reader_term(r, "loop"), fc_true(), &s1);
-        (void)whnf(mk_app(mk_app(ev, chi), MK(T_QUOTE, 0, LEVELS_NONE, 0, reader_term(r, "loop"))), fc_true(), &s2);
+        (void)whnf(reader_term(r, "loop"), &s1);
+        (void)whnf(mk_app(mk_app(ev, chi), MK(T_QUOTE, 0, LEVELS_NONE, 0, reader_term(r, "loop"))), &s2);
         CHECK(s1 == W_STUCK && s2 == W_STUCK, "the program and the machine are both pending on a definition that demands itself");
     }
     reader_free(r);
