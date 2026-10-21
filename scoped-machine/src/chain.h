@@ -15,6 +15,7 @@
  *   prod  [kind_x, id_x, kind_y, id_y, degree]
  *   chain [degree, (kind, id, z)*]             sorted by (kind, id), z ≠ 0
  *   cochain [CO_TABLE, degree, (kind, id, m)*]  |  [CO_COB, cochain]
+ *   chain map [(kind, id, image chain)*]       generators of any degrees, sorted
  *
  * The coordinates c_k are canonical dimension atoms (keyed by k). A face
  * substitutes c_i ↦ ε and renumbers c_{k>i} ↦ c_{k−1} simultaneously in the
@@ -55,6 +56,13 @@ uint64_t chain_boundary(uint64_t c);
 uint64_t cochain_table(size_t degree, size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *ms);
 uint64_t cochain_cob(uint64_t a);
 uint64_t chain_pair(uint64_t a, uint64_t c);       /* <a, c> ∈ the coefficient module */
+/* a supplied chain map (ADDENDUM §10 MAP_CHAIN): generator images, extended
+ * linearly (a generator without an image maps to 0). It is admitted only
+ * with its boundary-compatibility witness: each image has its generator's
+ * degree and ∂F(x) = F(∂x) for every generator x of the table. */
+uint64_t chain_map_table(size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *images);
+bool chain_map_admit(uint64_t F);
+uint64_t chain_map(uint64_t F, uint64_t c);        /* Σ m_x F(x), F admitted */
 
 /* local coefficients (ADDENDUM §6): a transport for each dimension local of
  * a root — a permutation of units, [(unit, image)*] — admitted as flat only

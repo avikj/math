@@ -53,6 +53,23 @@ int main(void) {
         CHECK(empty(chain_boundary(d1)), "n=%zu: ∂²x = 0 by cancellation of identical faces", n);
     }
 
+    /* MAP_CHAIN (ADDENDUM §10): the map a parameter substitution induces on a
+     * 1-cube and its faces is admitted and commutes with ∂; a table that
+     * moves the cube but not its faces fails its boundary witness */
+    {   uint64_t X = cube_view(cell_root(1, x, A), map_identity());
+        TermVarId vy = declare_term(A, fc_true());
+        uint64_t Xs = cube_subst(X, map_single_term(vx, ref_var(vy)));
+        GenKind k0, k1, j0, j1;
+        uint64_t f0 = cube_face(G_CUBE, X, 1, 0, &k0), f1 = cube_face(G_CUBE, X, 1, 1, &k1);
+        uint64_t g0 = cube_face(G_CUBE, Xs, 1, 0, &j0), g1 = cube_face(G_CUBE, Xs, 1, 1, &j1);
+        GenKind ks[3] = { G_CUBE, k0, k1 }; uint64_t ids[3] = { X, f0, f1 };
+        uint64_t im[3] = { one(G_CUBE, Xs, 1), one(j0, g0, 1), one(j1, g1, 1) };
+        uint64_t F = chain_map_table(3, ks, ids, im);
+        CHECK(chain_map_admit(F), "the substitution-induced map is admitted with its boundary witness");
+        CHECK(chain_map(F, chain_boundary(one(G_CUBE, X, 1))) == chain_boundary(chain_map(F, one(G_CUBE, X, 1))), "F∂ = ∂F on the cube");
+        uint64_t bad_im[3] = { one(G_CUBE, Xs, 1), one(k0, f0, 1), one(k1, f1, 1) };
+        CHECK(!chain_map_admit(chain_map_table(3, ks, ids, bad_im)), "a table moving the cube but not its faces is rejected"); }
+
     /* 3. a 1×1 product: four signed edges, Leibniz with sign (−1)^p */
     {   uint64_t I1 = cube_view(cell_root(1, x, A), map_identity());
         TermVarId vz = declare_term(A, fc_true());

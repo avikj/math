@@ -332,6 +332,47 @@ static void pair_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
+/* chain.map(F, c) = Σ z_x F(x); a generator without an image maps to 0 (one
+ * table entry compared, or one image scaled and added, per step) */
+typedef struct { const uint64_t *f, *c; size_t nf, nc, t, i; uint64_t acc, img, b, fb; } MapLoc;
+static void map_step(Cont *k, uint64_t v) {
+    MapLoc *L = FR_LOC(k, MapLoc);
+    uint64_t r = 0;
+    FR_BEGIN(k);
+    L->f = rget(k->w[0], &L->nf); L->c = rget(k->w[1], &L->nc);
+    L->acc = RQ(L->c[0]);
+    for (L->t = 1; L->t < L->nc; L->t += 3) {
+        for (L->img = 0, L->i = 0; L->i < L->nf && !L->img; L->i += 3) {
+            if (L->f[L->i] == L->c[L->t] && L->f[L->i + 1] == L->c[L->t + 1]) L->img = L->f[L->i + 2];
+            FR_YIELD(k);
+        }
+        if (!L->img) { FR_YIELD(k); continue; }
+        FR_AWAIT(k, r, Fc_SCALE, L->img, L->c[L->t + 2]);
+        FR_AWAIT(k, L->acc, Fc_ADD, L->acc, r);
+    }
+    FR_FINISH(k, L->acc);
+    FR_END(k);
+}
+/* chain.map_admit(F): 1 when every image has its generator's degree and
+ * ∂F(x) = F(∂x) for every generator x of the table (interned chains: the
+ * comparison is identity), else 2 */
+static void mapok_step(Cont *k, uint64_t v) {
+    MapLoc *L = FR_LOC(k, MapLoc);
+    FR_BEGIN(k);
+    L->f = rget(k->w[0], &L->nf);
+    for (L->t = 0; L->t < L->nf; L->t += 3) {
+        {   size_t n; const uint64_t *im = rget(L->f[L->t + 2], &n); L->i = gen_degree((GenKind)L->f[L->t], L->f[L->t + 1]);
+            if (im[0] != L->i) FR_FINISH(k, 2); }
+        if (!L->i) { FR_YIELD(k); continue; }
+        FR_AWAIT(k, L->b, Fc_BOUNDARY, RQ(L->i, L->f[L->t], L->f[L->t + 1], z_from_i64(1)), 0);
+        FR_AWAIT(k, L->fb, Fc_MAP, k->w[0], L->b);
+        FR_AWAIT(k, L->b, Fc_BOUNDARY, L->f[L->t + 2], 0);
+        if (L->b != L->fb) FR_FINISH(k, 2);
+    }
+    FR_FINISH(k, 1);
+    FR_END(k);
+}
+
 /* ---------------- local coefficients ---------------- */
 uint64_t perm_of(size_t n, const uint64_t *from, const uint64_t *to) {
     uint64_t *w = malloc((2 * n + 1) * sizeof *w); require(w, "out of memory");
@@ -405,6 +446,8 @@ void chain_families_init(void) {
     family_define(Fc_BOUNDARY, "chain.boundary", boundary_step, sizeof(BdLoc));
     family_define(Fc_VALUE, "cochain.value", value_step, sizeof(ValLoc));
     family_define(Fc_PAIR, "chain.pair", pair_step, sizeof(PairLoc));
+    family_define(Fc_MAP, "chain.map", map_step, sizeof(MapLoc));
+    family_define(Fc_MAPOK, "chain.map_admit", mapok_step, sizeof(MapLoc));
     family_define(Fc_TBOUNDARY, "chain.twisted_boundary", tboundary_step, sizeof(TbLoc));
     family_define(Fz_ADD, "z.add", zadd_step, sizeof(ZLoc));
     family_define(Fz_MUL, "z.mul", zmul_step, sizeof(ZLoc));
@@ -442,6 +485,9 @@ uint64_t chain_add(uint64_t c1, uint64_t c2) { return family_call(Fc_ADD, c1, c2
 uint64_t chain_scale(uint64_t c, uint64_t z) { return family_call(Fc_SCALE, c, z); }
 uint64_t chain_boundary(uint64_t c) { return family_call(Fc_BOUNDARY, c, 0); }
 uint64_t chain_pair(uint64_t a, uint64_t c) { return family_call(Fc_PAIR, a, c); }
+uint64_t chain_map_table(size_t n, const GenKind *kinds, const uint64_t *ids, const uint64_t *images) { return terms(0, NULL, n, kinds, ids, images); }
+bool chain_map_admit(uint64_t F) { return family_call(Fc_MAPOK, F, 0) == 1; }
+uint64_t chain_map(uint64_t F, uint64_t c) { require(chain_map_admit(F), "a chain map without its boundary-compatibility witness"); return family_call(Fc_MAP, F, c); }
 uint64_t chain_tboundary(uint64_t c, uint64_t sys) { require(sys, "a twisted boundary needs an admitted local system"); return family_call(Fc_TBOUNDARY, c, sys); }
 uint64_t cochain_cob_local(uint64_t a, uint64_t sys) { require(sys, "a twisted differential needs an admitted local system"); uint64_t w[3] = { CO_COB, a, sys }; return rq(3, w); }
 uint64_t chain_relative(uint64_t c, uint64_t I) {

@@ -58,19 +58,10 @@ instance) as job families; CUBICAL-STOKES-ADDENDUM §10 interface (cube maps and
 from substitution, ∂, ∂²=0, cochains/pairing, relative cuts, resource map B, defects of supplied
 comparison cells; production cells only from actual rules or checked supplied witnesses).
 
-Excluded: §§61–64, 66–73 (plan comparison/selection — the detour); §86 posing and §§87/91
-reflection (not meaningful as stated / no rule supplied; neither implemented nor claimed).
+Excluded: §§61–64, 66–73 (plan comparison/selection — the detour).
 
-The one contradiction: mid-run adoption (PREFIX-CONTRACT, LIVE-CUT-ADOPTION, prefixes of running
-computations) breaks the diamond (§85: lengths 2 and 3 from one state) when a key's recipe consults
-whether some other result happens to exist yet. Resolution (superseding the earlier "index frozen per
-workload", which was a phase barrier — see §9.5): no recipe ever consults existence of a result.
-Reuse is a dependency named by the recipe itself: a specialization key (SPECIALIZE, d, σ) requests
-d and transports; a restriction to a stronger face is the same key by the projection theorem
-(t, π_S χ); a receipt is the published value of its producer's key. Each result is usable by every
-key whose recipe depends on it the moment it is published, in the same run, and the step count of
-every key is schedule-independent because its dependency set is fixed by its key. EFFECT-AUTHORITY §10
-item 2 realized by keyed sharing (two deliveries of one producer).
+Adoption of a pending prefix (completion handoff §10) is a represented transition, never a recipe
+consulting whether a result exists; its races are comparison cells whose actual-work defect is computed.
 
 ## 9. Corrections adopted from the 14:54 attachment (binding on all later steps)
 
