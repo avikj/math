@@ -36,7 +36,6 @@ int main(void) {
         "(axiom p (Path (i) A a a2))\n");
     char *core = slurp("prog/core.ctt"), *chk = slurp("prog/check.ctt");
     ok = ok && core && chk && reader_program(R, core) && reader_program(R, chk);
-    free(core); free(chk);
     CHECK(ok, reader_error(R) ? reader_error(R) : "the checker program reads");
     if (!ok) return 1;
     OK = reader_global(R, "ok");
@@ -70,6 +69,21 @@ int main(void) {
     reject("(check (qfc true) (quote (pair a b)) (quote (Pi (x A) A)))");
     reject("(check (qfc true) (quote (U 1)) (quote (U 1)))");
     reject("(check (qfc true) (quote (comp 0 (i) A true (papp (k) A a a2 p i) a2)) (quote A))");
+    /* the programs themselves: every definition of the evaluator, the
+     * library and the checker has its declared type, by the checker */
+    {   const char *files[2] = { core, chk }; size_t n = 0, good = 0;
+        for (int f = 0; f < 2; f++)
+            for (const char *q = files[f]; (q = strstr(q, "(defn ")); q += 6) {
+                char name[64]; size_t len = strcspn(q + 6, " \n()"); if (len >= sizeof name) continue;
+                memcpy(name, q + 6, len); name[len] = 0;
+                char j[256]; snprintf(j, sizeof j, "(check (qfc true) (cunfold (quote %s) (fn (b) b) (quote invalid)) (ctype (quote %s)))", name, name);
+                n++;
+                if (run(j) == OK) good++; else printf("  not checked: %s\n", name);
+            }
+        char m[120]; snprintf(m, sizeof m, "the checker checks %zu/%zu program definitions (evaluator, library, checker)", good, n);
+        CHECK(good == n && n > 0, m);
+    }
+    free(core); free(chk);
     reader_free(R);
     machine_free();
     printf("%d failures\n", failures);

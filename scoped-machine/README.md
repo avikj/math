@@ -82,9 +82,13 @@ LineEquiv, ExtendContr, ua), each a program building codes.
 conversion (η for functions, pairs and paths; systems branchwise; universe
 cumulativity). A variable's type is its declaration (`ctype`), so the
 context is the variables themselves: a binder is entered at its own
-variable (`cvar`). It checks the library's constructions (IdEquiv,
-LineEquiv, ua, Fill) and that the evaluator's composition reducts have the
-composition's type (`tests/test_check.c`).
+variable (`cvar`). Programs over codes are typed too: `(Code)` is a type,
+a code is data of type Code, a code eliminator's branches share one type
+(a `cmatch` handler has the type its former gives, `cmtype`). The checker
+checks every definition of the evaluator, the library and itself against
+its declared type, the library's constructions (IdEquiv : Equiv A A,
+LineEquiv, ua : Path U A A, Fill), and that the evaluator's composition
+reducts have the composition's type (`tests/test_check.c`).
 
 ## Tests
 

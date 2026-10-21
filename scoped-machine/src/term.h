@@ -23,12 +23,17 @@ typedef enum {
     /* code: the records the machine runs, as values of the language (code.c) */
     T_CODE, T_QUOTE, T_QIV, T_QFC,
     T_CMATCH, T_CINST, T_CEQ, T_CENT, T_CFCEND, T_CUNFOLD,
-    T_CSET, T_CLEVELS, T_CSETLV, T_QLV, T_CLSUCC, T_CLMAX, T_COP, T_CSYSCONS, T_CVAR, T_CSUBST, T_CTYPE
+    T_CSET, T_CLEVELS, T_CSETLV, T_QLV, T_CLSUCC, T_CLMAX, T_COP, T_CSYSCONS, T_CVAR, T_CSUBST, T_CTYPE, T_CSETB, T_CMTYPE
 } Tag;
-#define T_LAST T_CTYPE
+#define T_LAST T_CMTYPE
 /* the operations of T_COP (its payload) on interval and face codes */
 enum { COP_IVNEG = 1, COP_IVAND, COP_IVOR, COP_FCAND, COP_FCOR, COP_FORALL };
 #define FORMER_SYS0 255   /* the former an empty system matches */
+/* the formers of the codes that hold no term record: an interval, face or
+ * level code (a quote of a (qiv r) term is matched by T_QIV, its tag) */
+#define FORMER_IVCODE 254
+#define FORMER_FCCODE 253
+#define FORMER_LVCODE 252
 
 typedef enum { F_REF = 1, F_INTERVAL, F_FACE } FieldKind;
 typedef enum { S_TERM = 1, S_DIM } Sort;

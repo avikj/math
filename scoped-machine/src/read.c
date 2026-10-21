@@ -183,7 +183,8 @@ static uint64_t former(const Sx *s) {
         { "cmatch", T_CMATCH }, { "cinst", T_CINST }, { "ceq", T_CEQ }, { "cent", T_CENT }, { "cfcend", T_CFCEND },
         { "cunfold", T_CUNFOLD },
         { "cset", T_CSET }, { "clevels", T_CLEVELS }, { "csetlv", T_CSETLV }, { "qlv", T_QLV }, { "clsucc", T_CLSUCC },
-        { "clmax", T_CLMAX }, { "iv", T_QIV }, { "face", T_QFC }, { "lv", T_QLV }, { "sys0", FORMER_SYS0 } };
+        { "clmax", T_CLMAX }, { "cop", T_COP }, { "csyscons", T_CSYSCONS }, { "cvar", T_CVAR }, { "csubst", T_CSUBST },
+        { "ctype", T_CTYPE }, { "csetb", T_CSETB }, { "cmtype", T_CMTYPE }, { "iv", FORMER_IVCODE }, { "face", FORMER_FCCODE }, { "lv", FORMER_LVCODE }, { "sys0", FORMER_SYS0 } };
     if (s->list) fail(s, "a former name");
     for (size_t q = 0; q < sizeof F / sizeof F[0]; q++)
         if (strlen(F[q].name) == s->alen && !memcmp(F[q].name, s->atom, s->alen)) return F[q].tag;
@@ -294,7 +295,8 @@ static RefId term(const Sx *s, const Bind *env) {
         uint64_t l = !s->kids[1]->list && s->kids[1]->alen == 4 && !memcmp(s->kids[1]->atom, "none", 4) ? LEVEL_NONE : number(s->kids[1]);
         return mk_tag(T_QLV, l, LEVELS_NONE, 0, NULL, 0);
     }
-    if (head(s, "cset")) { want(s, 4, "(cset k c d)"); return MK(T_CSET, number(s->kids[1]), LEVELS_NONE, 0, term(s->kids[2], env), term(s->kids[3], env)); }
+    if (head(s, "cset") || head(s, "csetb")) { want(s, 4, "(cset k c d)"); return MK(head(s, "cset") ? T_CSET : T_CSETB, number(s->kids[1]), LEVELS_NONE, 0, term(s->kids[2], env), term(s->kids[3], env)); }
+    if (head(s, "cmtype")) { want(s, 3, "(cmtype m X)"); return MK(T_CMTYPE, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env)); }
     if (head(s, "clevels")) { want(s, 3, "(clevels c h)"); return MK(T_CLEVELS, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env)); }
     if (head(s, "csetlv")) { want(s, 4, "(csetlv c l m)"); return MK(T_CSETLV, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env)); }
     if (head(s, "civneg")) { want(s, 2, "(civneg r)"); RefId a = term(s->kids[1], env); return MK(T_COP, COP_IVNEG, LEVELS_NONE, 0, a, a); }

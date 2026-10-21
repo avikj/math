@@ -15,7 +15,7 @@ const char *tag_name(Tag t) {
     case T_CENT: return "cent"; case T_CFCEND: return "cfcend"; case T_CUNFOLD: return "cunfold";
     case T_CSET: return "cset"; case T_CLEVELS: return "clevels"; case T_CSETLV: return "csetlv"; case T_QLV: return "qlv";
     case T_CLSUCC: return "clsucc"; case T_CLMAX: return "clmax"; case T_COP: return "cop"; case T_CSYSCONS: return "csyscons";
-    case T_CVAR: return "cvar"; case T_CSUBST: return "csubst"; case T_CTYPE: return "ctype";
+    case T_CVAR: return "cvar"; case T_CSUBST: return "csubst"; case T_CTYPE: return "ctype"; case T_CSETB: return "csetb"; case T_CMTYPE: return "cmtype";
     }
     return "?";
 }

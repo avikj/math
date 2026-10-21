@@ -7,8 +7,9 @@
  * native rule over those records; its value is a reduct term the evaluator
  * then observes.
  *
- *   cmatch[f](c, h, d)    the former of c is f (0: a variable; T_QIV, T_QFC,
- *                         T_QLV: an interval, face or level code): h applied
+ *   cmatch[f](c, h, d)    the former of c is f (0: a variable;
+ *                         FORMER_IVCODE/FCCODE/LVCODE: an interval, face or
+ *                         level code): h applied
  *                         to c's fields as codes, a field under a binder as
  *                         the function λ(a:Code). cinst[k](c, a); otherwise
  *                         d. A system with branches (φ, t)·rest is matched
@@ -16,9 +17,12 @@
  *                         rest); the empty system by FORMER_SYS0. An
  *                         absent optional field is given as (qlv none)
  *   cinst[k](c, a)        the field k of c opened at the term or interval a
- *   cset[k](c, d)         c with its field k replaced by the code d; for a
- *                         field under a binder d is a function on codes,
- *                         applied to the code of the binder's variable
+ *   cset[k](c, d)         c with its field k replaced by the code d
+ *   csetb[k](c, d)        c with its field k, under a binder, replaced by
+ *                         d applied to the code of the binder's variable
+ *   cmtype(m, X)          for the code m of a cmatch: the type of its
+ *                         handler — the former's fields as codes (a field
+ *                         under a binder as Code → Code), then X
  *   clevels(c, h)         h applied to the level codes of c's annotation (a
  *                         universe: its level, then none)
  *   csetlv(c, l, m)       c with the annotation l, m
@@ -181,7 +185,7 @@ static void code_step(Cont *k, uint64_t v) {
     }
 
     if (L->tag == T_CMATCH) {
-        L->xt = L->ct != T_QUOTE ? L->ct : ref_is_var(L->x) ? 0 : ref_tag(L->x);
+        L->xt = L->ct == T_QIV ? FORMER_IVCODE : L->ct == T_QFC ? FORMER_FCCODE : L->ct == T_QLV ? FORMER_LVCODE : ref_is_var(L->x) ? 0 : ref_tag(L->x);
         L->nf = L->ct == T_QUOTE && L->xt ? tnode_nfields(ref_tnode(L->x)) : 0;
         if (L->xt == T_SYSTEM && !L->nf) L->xt = FORMER_SYS0;
         if (L->xt != L->payload) { FR_AWAIT(k, r, F_FIELD, t, 2); FR_FINISH(k, RQ(0, r)); }
@@ -229,6 +233,31 @@ static void code_step(Cont *k, uint64_t v) {
 
     /* the remaining eliminators take the code of a term record */
     if (L->ct != T_QUOTE) FR_FINISH(k, RQ(3, 0));
+
+    if (L->tag == T_CMTYPE) {
+        /* m: the code of a cmatch; the handler type of its former */
+        if (ref_is_var(L->x) || ref_tag(L->x) != T_CMATCH) FR_FINISH(k, RQ(3, 0));
+        FR_AWAIT(k, L->npay, F_HEAD, L->x, 0);
+        FR_AWAIT(k, L->h, F_FIELD, t, 1);                  /* X */
+        OBS_CODE(L->b, L->bt, L->h);
+        if (L->bt != T_QUOTE) FR_FINISH(k, RQ(3, 0));
+        FR_AWAIT(k, L->h, F_FIELD, L->b, 0);
+        FR_CALL(k, L->code, mk_tag_sub(k, T_CODE, 0, LEVELS_NONE, 0, NULL, 0));
+        L->xt = (Tag)L->npay;
+        L->nf = L->npay == T_SYSTEM ? 3 : (L->npay == 0 || L->npay >= FORMER_LVCODE) ? 0 : tag_schema(L->xt)->nf;
+        for (L->q = L->nf; L->q-- > 0; ) {
+            /* the field's argument type: Code, or Code → Code under a binder */
+            L->fv = L->code;
+            if (L->npay != T_SYSTEM && schema_slot(L->xt, L->q) != NO_SLOT) {
+                L->var = binder_term_var(t, (BinderSlot)(100 + L->q), L->code);
+                FR_CALL(k, L->fv, MK_SUB(k, T_PI, 0, LEVELS_NONE, L->var, L->code, L->code));
+            }
+            L->var = binder_term_var(t, (BinderSlot)L->q, L->fv);
+            FR_CALL(k, L->h, MK_SUB(k, T_PI, 0, LEVELS_NONE, L->var, L->fv, L->h));
+        }
+        FR_CALL(k, r, MK_SUB(k, T_QUOTE, 0, LEVELS_NONE, 0, L->h));
+        FR_FINISH(k, RQ(0, r));
+    }
 
     if (L->tag == T_CTYPE) {
         if (ref_is_var(L->x)) FR_CALL(k, r, MK_SUB(k, T_QUOTE, 0, LEVELS_NONE, 0, term_var_type(ref_var_id(L->x))));
@@ -310,8 +339,9 @@ static void code_step(Cont *k, uint64_t v) {
         if (L->xt == T_UNIVERSE) { if (L->l1 == LEVEL_NONE) FR_FINISH(k, RQ(3, 0)); L->npay = L->l1; }
         else L->nlev = levels_pack(L->l1, L->l2);
     } else {
-        if (L->tag != T_CSET) die("code: %s is no code eliminator", tag_name(L->tag));
+        if (L->tag != T_CSET && L->tag != T_CSETB) die("code: %s is no code eliminator", tag_name(L->tag));
         if (L->payload >= L->nf) FR_FINISH(k, RQ(3, 0));
+        if ((L->tag == T_CSETB) != (L->xt != T_SYSTEM && schema_slot(L->xt, L->payload) != NO_SLOT)) FR_FINISH(k, RQ(3, 0));
         L->rk = L->payload;
         FR_AWAIT(k, L->fv, F_FIELD, t, 1);              /* the replacement */
     }
