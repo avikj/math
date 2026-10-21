@@ -1,32 +1,25 @@
-; tests/identity.ctt — identities applied to applications in the net.
-(axiom a b pth)
+; tests/identity.ctt — identities act on running applications.
+(axiom A a b c pth pth2 pth3)
 (input w pp)
 (def L (lam x (fst x)))
 (def R (lam x a))
-(identity L R pp)          ; evidence pp : (x) -> L x = R x, not yet supplied
+(identity L R pp)          ; pp : (x) -> L x = R x, not yet supplied
 
-; a site whose argument waits on an input: L's subnet is blocked
-(watch before (L w))
-; without the identity, a site forwards L's value
+; a live site: L's application waits on an input
+(watch before (pair (L w) c))
+; with the identity pending, a site forwards L's value
 (same (L (pair b b)) b)
-; the evidence arrives: the live site switches to R on the same output wire
+; the evidence arrives: the site switches; its output carries the line pp x @ i
 (supply pp (lam x pth))
-(same-watch before a)
-; the identity is now available: an application of L applies it at once
+(same-watch before (pair a c))
+(witness-watch before)
+; available now: an application of L follows the identity at once
 (same (L (pair b b)) a)
-(witnesses)
-; L's old subnet still completes when its input arrives, and is erased
+(witness (L (pair b b)))
+; L's old run completes when its input arrives: it is the line's 0-end
 (supply w (pair b b))
-(same-watch before a)
-
-; a genuine identity: associativity of addition on numerals (here definitional, so refl)
-(def three (suc (suc (suc zero))))
-(def addl (lam t (add (add (fst t) (fst (snd t))) (snd (snd t)))))
-(def addr (lam t (add (fst t) (add (fst (snd t)) (snd (snd t))))))
-(def assoc (lam t (plam i (addr t))))
-(identity addl addr assoc)
-(same (addl (pair three (pair three three))) (lam s z (s (s (s (s (s (s (s (s (s z)))))))))))
-(witnesses)
+(same-watch before (pair a c))
+(same-watch before (pair b c) 0)
 
 ; a divergent application: the identity's arrival gives the observed port its value
 (input pq)
@@ -35,3 +28,44 @@
 (watch d (slow b))
 (supply pq (lam x pth))
 (same-watch d a)
+
+; curried: the site collects both arguments before it switches
+(input w2 pp2)
+(def g2 (lam x y (fst x)))
+(def h2 (lam x y y))
+(identity g2 h2 pp2)
+(watch cur (g2 w2 b))
+(supply pp2 (lam x y pth2))
+(same-watch cur b)
+
+; associativity on numerals, both orientations declared: followed once, not around the cycle
+(def three (suc (suc (suc zero))))
+(def addl3 (lam x y z (add (add x y) z)))
+(def addr3 (lam x y z (add x (add y z))))
+(def assoc3 (lam x y z (plam i (addr3 x y z))))
+(def unassoc3 (lam x y z (plam i (addl3 x y z))))
+(identity addl3 addr3 assoc3)
+(identity addr3 addl3 unassoc3)
+(same (addl3 three three three) (lam s z (s (s (s (s (s (s (s (s (s z)))))))))))
+(defect (addl3 three three three))
+
+; a chain of identities: f1 -> f2 -> f3
+(def f1 (lam x (pair x b)))
+(def f2 (lam x (pair x c)))
+(def f3 (lam x (pair x a)))
+(def q12 (lam x pth2))
+(def q23 (lam x pth3))
+(identity f1 f2 q12)
+(identity f2 f3 q23)
+(same (f1 b) (pair b a))
+(witness (f1 b))
+
+; a typed observation: the declared type moves along the identity's line, and
+; the answer is transported back to it
+(input pp3)
+(def L3 (lam x (fst x)))
+(def R3 (lam x a))
+(identity L3 R3 pp3)
+(supply pp3 (lam x pth))
+(show (the (PathP (plam i A) (L3 (pair b b)) (L3 (pair b b))) (plam i (L3 (pair b b)))))
+(same (the A (L3 (pair b b))) a)

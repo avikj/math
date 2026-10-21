@@ -316,11 +316,13 @@ static void interact(Cell *o, Cell *v) {
         cell_free(v);
         return;
     }
+    if (v->kind == V_DEFER) { defer_force(o, v); return; }
     int vk = v->kind;
     switch (o->kind) {
     case O_APP:
+        if (vk == V_SITEF) { site_apply(o, v); return; }
         if (vk == V_LAM && ((Record *)v->p)->nparam == 1) {
-            Port r = record_build(v->p, o->port[1], &v->port[1]);
+            Port r = record_build(v->p, o->port[1], &v->port[1], o->x & 0x7fffffffu);
             link(r, o->port[2]);
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
@@ -328,7 +330,7 @@ static void interact(Cell *o, Cell *v) {
         return;
     case O_FORCE:
         if (vk == V_LAM && ((Record *)v->p)->nparam == 0) {
-            link(record_build(v->p, 0, &v->port[1]), o->port[1]);
+            link(record_build(v->p, 0, &v->port[1], 0), o->port[1]);
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else { link(P(v, 0), o->port[1]); cell_free(o); }
@@ -672,7 +674,7 @@ bool net_observe(Cell *root, long limit) {
 
 /* ---------------- building a net from syntax ---------------- */
 typedef struct { Port *sup; int cur, n; } Supply;
-typedef struct { Supply *s; int nslots; const int *uses; } Frame;
+typedef struct { Supply *s; int nslots; const int *uses; uint32_t hx; } Frame;  /* hx: identities already followed */
 
 static void bind(Frame *f, int slot, Port prov) {
     int u = f->uses[slot];
@@ -701,7 +703,7 @@ static Port build(Syn *t, Frame *f) {
         c = cell(V_LAM, t->n + 1); c->p = t->rec;
         for (int k = 0; k < t->n; k++) link(build(t->k[k], f), P(c, k + 1));
         return P(c, 0);
-    case S_APP: c = cell(O_APP, 3); link(build(t->k[0], f), P(c, 0)); link(build(t->k[1], f), P(c, 1)); return P(c, 2);
+    case S_APP: c = cell(O_APP, 3); c->x = f->hx; link(build(t->k[0], f), P(c, 0)); link(build(t->k[1], f), P(c, 1)); return P(c, 2);
     case S_PAIR: c = cell(V_PAIR, 3); goto fields;
     case S_PI: c = cell(V_PI, 3); goto fields;
     case S_SIGMA: c = cell(V_SIGMA, 3); goto fields;
@@ -762,8 +764,8 @@ static Port build(Syn *t, Frame *f) {
     fprintf(stderr, "build: tag %d\n", t->tag); exit(2);
 }
 
-static Port run_frame(Syn *body, int nslots, const int *uses, int nparam, Port param, int nenv, const int *env_slot, const Port *env) {
-    Frame f = { calloc((size_t)nslots + 1, sizeof(Supply)), nslots, uses };
+static Port run_frame(Syn *body, int nslots, const int *uses, int nparam, Port param, int nenv, const int *env_slot, const Port *env, uint32_t hx) {
+    Frame f = { calloc((size_t)nslots + 1, sizeof(Supply)), nslots, uses, hx };
     if (nparam) bind(&f, 0, param);
     for (int k = 0; k < nenv; k++) bind(&f, env_slot[k], env[k]);
     Port r = build(body, &f);
@@ -774,9 +776,9 @@ static Port run_frame(Syn *body, int nslots, const int *uses, int nparam, Port p
     free(f.s);
     return r;
 }
-Port record_build(const Record *r, Port param, const Port *env) {
-    return run_frame(r->body, r->nslots, r->uses, r->nparam, param, r->nenv, r->env_slot, env);
+Port record_build(const Record *r, Port param, const Port *env, uint32_t hx) {
+    return run_frame(r->body, r->nslots, r->uses, r->nparam, param, r->nenv, r->env_slot, env, hx);
 }
 Port top_build(Syn *body, int nslots, const int *uses) {
-    return run_frame(body, nslots, uses, 0, 0, 0, NULL, NULL);
+    return run_frame(body, nslots, uses, 0, 0, 0, NULL, NULL, 0);
 }

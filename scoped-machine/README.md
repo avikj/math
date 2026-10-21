@@ -73,11 +73,15 @@ By 5.11–5.13 the number of steps is independent of the schedule; the suite wit
 
 ## Identities on running computations
 
-A subnet computing `L γ` between its input wires and its output wire is, at every cut, a run of `L` (HANDOFF §21, §41): its internal wires hold the residuals and every witness is refl, since reduction is definitional. An identity `p : L γ = R γ` acts on that run by `F_p = d_R ∘ (p⁻¹·) ∘ c_L`, which on a refl-witnessed run is the rewiring: `R`'s net on the same inputs and the same output wire, with the output's witness `p γ`.
+A subnet computing `L g` between its input wires and its output wire is, at every cut, a run of `L` (HANDOFF §21, §41): its internal wires hold the residuals and every witness is refl, since reduction is definitional. An identity `p : L g = R g` acts on that run by `F_p = d_R ∘ (p⁻¹·) ∘ c_L`, which on a refl-witnessed run is a rewiring: the output wire carries the line `p g @ i` at the identity's own dimension `i`, from the run of `L` (its 0-end) to `R g` (its 1-end). Everything downstream computes along that line, so the observed value is the witness (`ap` of the rest of the computation), and the answer is that value at `i = 1`.
 
-`(identity L R p)` declares that `p` gives `L g = R g` for every argument `g`; `p` may be an input not yet supplied. An application of `L` whose identity is available applies it: `R` is applied instead, and the argument is kept to read the witness. While the identity is pending, the application is wrapped in a site that holds the argument and the output wire and forwards `L`'s value if it arrives. When `p` is supplied, every live site switches: `R` is applied to the kept argument on the same output wire, and `L`'s running subnet goes to an eraser (a strict net cannot cancel running work; its value is erased when it arrives). `(witnesses)` reads `p g` for every switched application.
-
-Supplying an identity is an external event, like supplying an input: equal length (5.13) holds within each run, and the steps added and saved by the switch are the defect of the square comparing the two routes.
+- `(identity L R p [n])` declares that `p g1..gn` is a path `L g1..gn = R g1..gn` (`n` defaults to `L`'s leading λs); `p` may be an input not yet supplied.
+- An application of `L` collects its `n` arguments (a curried application is a value until saturated). With the identity available, it is followed at once; the 0-end, `L g`, is deferred and built only if something eliminates it.
+- With the identity pending, the application runs inside a site holding its arguments and output wire; the site forwards `L`'s value if it arrives. Supplying `p` gives the identity its dimension and switches every live site: `L`'s running subnet becomes the line's 0-end, nothing is erased.
+- Applications built while following an identity (its evidence, its result, and everything they instantiate) carry the identities already followed, so an identity leading back is not followed again: `L → R` and `R → L` declared together are followed once.
+- Readback gives the answer (every identity's dimension at 1). `(witness t)` and `(witness-watch w)` read the value itself, the line or cube from what was posed to the answer; `(same-watch w u 0)` reads a watch at the 0-end.
+- `(the T t)` observes `t` at its declared type: when `T` itself moved along identities' lines, the answer is transported back along `T` to `T` at the 0-end, so it inhabits the declaration.
+- `(defect t)` runs `t` from the same warm state without and with its identities and reports the difference in length and in erasures — the defect of the square comparing the two routes (5.13 holds within each).
 
 ## Inputs
 
@@ -87,7 +91,7 @@ Supplying an identity is an external event, like supplying an input: equal lengt
 
 - `src/dnf.c`: interval and face DNF, substitutions.
 - `src/net.c`: cells, wiring, the interaction rules, building a net from compiled syntax.
-- `src/lang.c`: reader, compilation to binder records with lifting, definitions, identities and sites, readback, driver (`def`, `axiom`, `input`, `supply`, `identity`, `show`, `same`, `watch`, `same-watch`, `witnesses`).
+- `src/lang.c`: reader, compilation to binder records with lifting, definitions, identities and sites, readback, driver (`def`, `axiom`, `input`, `supply`, `identity`, `show`, `same`, `the`, `watch`, `same-watch`, `witness`, `witness-watch`, `witnesses`, `defect`).
 - `lib/prelude.ctt`: the library.
 - `tests/cubical.ctt`, `tests/code.ctt`, `tests/identity.ctt`: the checks.
 - `HANDOFF.md`: the specification.

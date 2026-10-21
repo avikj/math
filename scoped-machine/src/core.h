@@ -75,6 +75,8 @@ enum {
     V_NCOMP,    /* 1=A 2=u 3=a0 */
     V_NUNGLUE,  /* 1=S 2=b */
     V_GLOBAL,   /* a=global id */
+    V_SITEF,    /* a=L, x=arguments so far, p=history+1; 1=L applied to them 2..=the arguments */
+    V_DEFER,    /* a=L; 1..n=arguments: L applied to them, built when eliminated */
     V_END,
     /* operations: negative principal port; the last port is the result */
     O_APP,      /* 0=f 1=arg 2=out */
@@ -135,6 +137,8 @@ Cell *global_res(long g);          /* the cell holding a definition's value */
  * wrapped in a site and the definition unfolds as usual */
 bool site_open(Cell *app, Cell *glob);
 void site_forward(Cell *site, Cell *v);
+void site_apply(Cell *app, Cell *sitef);
+void defer_force(Cell *op, Cell *deferred);
 
 /* readings */
 extern long stat_steps, stat_kind[K_END];
@@ -165,7 +169,7 @@ typedef struct Record {
 } Record;
 
 /* build the body of r: param (or 0), env providers; returns the provider */
-Port record_build(const Record *r, Port param, const Port *env);
+Port record_build(const Record *r, Port param, const Port *env, uint32_t hx); /* hx: history inherited by the body's applications */
 /* build a top-level body with its own slots */
 Port top_build(Syn *body, int nslots, const int *uses);
 
