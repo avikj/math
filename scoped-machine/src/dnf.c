@@ -10,7 +10,7 @@
 #include <string.h>
 
 static Dim next_dim = 1;
-Dim fresh_dim(void) { return next_dim++; }
+Dim fresh_dim(void) { return __atomic_fetch_add(&next_dim, 1, __ATOMIC_RELAXED); }
 
 static Clause *cl_new(uint32_t n) { Clause *c = malloc(sizeof(Clause) + n * sizeof(uint32_t)); c->n = n; return c; }
 static Dnf *dnf_new(uint32_t n) { Dnf *d = malloc(sizeof(Dnf) + n * sizeof(Clause *)); d->n = n; return d; }

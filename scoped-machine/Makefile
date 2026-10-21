@@ -8,15 +8,27 @@ all: build/cubical
 
 build/cubical: $(SRC) src/core.h
 	@mkdir -p build
-	$(CC) $(CFLAGS) -o $@ $(SRC)
+	$(CC) $(CFLAGS) -o $@ $(SRC) -lpthread
 
 build/cubical-asan: $(SRC) src/core.h
 	@mkdir -p build
-	$(CC) $(CFLAGS) $(SAN) -o $@ $(SRC)
+	$(CC) $(CFLAGS) $(SAN) -o $@ $(SRC) -lpthread
 
 test: build/cubical build/cubical-asan
 	./build/cubical lib/prelude.ctt tests/cubical.ctt
+	./build/cubical lib/prelude.ctt lib/code.ctt tests/code.ctt
+	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/cubical.ctt > /dev/null
+	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt lib/code.ctt tests/code.ctt > /dev/null
 	ASAN_OPTIONS=detect_leaks=0 ./build/cubical-asan lib/prelude.ctt tests/cubical.ctt > /dev/null
+	ASAN_OPTIONS=detect_leaks=0 ./build/cubical-asan lib/prelude.ctt lib/code.ctt tests/code.ctt > /dev/null
+
+build/cubical-tsan: $(SRC) src/core.h
+	@mkdir -p build
+	$(CC) -std=gnu11 -O1 -g -fsanitize=thread -o $@ $(SRC) -lpthread
+
+tsan: build/cubical-tsan
+	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/cubical-tsan lib/prelude.ctt tests/cubical.ctt > /dev/null
+	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/cubical-tsan lib/prelude.ctt lib/code.ctt tests/code.ctt > /dev/null
 
 clean:
 	rm -rf build

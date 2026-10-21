@@ -3,6 +3,7 @@
 #include "core.h"
 #include <string.h>
 #include <ctype.h>
+#include <pthread.h>
 
 static void die(const char *m, const char *x) { fprintf(stderr, "error: %s%s%s\n", m, x ? " " : "", x ? x : ""); exit(1); }
 
@@ -156,7 +157,10 @@ Port global_copy(long g) {
     link(P(d, 1), P(r, 0));
     return P(d, 2);
 }
+Cell *global_res(long g) { return G[g].res; }
+static pthread_mutex_t park_mu = PTHREAD_MUTEX_INITIALIZER;
 void global_park(long g, Cell *op, Cell *glob) {
+    pthread_mutex_lock(&park_mu);
     Global *x = &G[g];
     if (x->npark == x->parkcap) {
         x->parkcap = x->parkcap ? x->parkcap * 2 : 8;
@@ -164,6 +168,7 @@ void global_park(long g, Cell *op, Cell *glob) {
         x->park_v = realloc(x->park_v, (size_t)x->parkcap * sizeof(Cell *));
     }
     x->park_o[x->npark] = op; x->park_v[x->npark] = glob; x->npark++;
+    pthread_mutex_unlock(&park_mu);
 }
 
 /* ---------------- compiling: binder levels and lifting ---------------- */
@@ -429,14 +434,15 @@ static void rb(FILE *o, Port prov) {
     }
     fputs("<?>", o);
 }
-static char *readback(Node *t, long *steps) {
+static char *readback(Node *t, long *steps, long *erased) {
     char *buf; size_t len;
     FILE *o = open_memstream(&buf, &len);
     ndshow = 0; dcount = 0; vcount = 0;
-    long s0 = stat_steps;
+    long s0 = stat_steps, e0 = stat_kind[O_ERA];
     rb(o, build_top(t));
     fclose(o);
     if (steps) *steps = stat_steps - s0;
+    if (erased) *erased = stat_kind[O_ERA] - e0;
     return buf;
 }
 
@@ -464,13 +470,14 @@ static void toplevel(Node *f) {
         for (int i = 0; i < G[g].npark; i++) net_push(G[g].park_o[i], G[g].park_v[i]);
         G[g].npark = 0;
     } else if (!strcmp(h, "show")) {
-        long steps;
-        char *r = readback(f->it[1], &steps);
-        print_node(stdout, f->it[1]); printf("\n  = %s   [%ld steps]\n", r, steps);
+        long steps, erased;
+        char *r = readback(f->it[1], &steps, &erased);
+        /* length: every interaction; effect: the interactions that forget (erasures) */
+        print_node(stdout, f->it[1]); printf("\n  = %s   [%ld steps, %ld erasures]\n", r, steps, erased);
         free(r);
     } else if (!strcmp(h, "same")) {
         if (f->n != 3) die("(same t u)", NULL);
-        char *a = readback(f->it[1], NULL), *b = readback(f->it[2], NULL);
+        char *a = readback(f->it[1], NULL, NULL), *b = readback(f->it[2], NULL, NULL);
         if (strcmp(a, b)) {
             failures++;
             printf("FAIL: "); print_node(stdout, f->it[1]); printf("\n  left:  %s\n  right: %s\n", a, b);
@@ -485,6 +492,8 @@ static char *slurp(const char *path) {
     return b;
 }
 int main(int argc, char **argv) {
+    const char *w = getenv("CUBICAL_WORKERS");
+    net_start(w ? atoi(w) : 0);
     for (int i = 1; i < argc; i++) {
         char *text = slurp(argv[i]);
         src = text;

@@ -2,37 +2,111 @@
  * compiled syntax. */
 #include "core.h"
 #include <string.h>
+#include <pthread.h>
+#include <sched.h>
 
 long stat_steps, stat_kind[K_END], stat_cells;
+#define ADD(x, v) __atomic_fetch_add(&(x), (v), __ATOMIC_RELAXED)
+
+/* ---------------- type-stable cells ----------------
+ * A cell's memory is never returned: a thread holding a stale pointer can
+ * still take the lock word, and revalidation then finds the wire changed.
+ * Freed cells go to the freeing thread's list after its locks are released. */
+#define MAXFREE 4096
+typedef struct { Cell *op, *v; } Redex;
+typedef struct { Cell *free[MAXFREE + 1]; Cell *defer; Redex *made; size_t nmade, capmade; } Local;
+static __thread Local *L;
+static Local *local(void) { if (!L) L = calloc(1, sizeof(Local)); return L; }
 
 Cell *cell(int kind, int n) {
-    Cell *c = calloc(1, sizeof(Cell) + (size_t)n * sizeof(Port));
-    if (!c) { fputs("out of memory\n", stderr); exit(2); }
-    c->kind = (uint16_t)kind; c->n = (uint16_t)n;
-    stat_cells++;
+    Local *l = local();
+    Cell *c;
+    if (n <= MAXFREE && l->free[n]) { c = l->free[n]; l->free[n] = (Cell *)(uintptr_t)c->a; }
+    else {
+        c = malloc(sizeof(Cell) + (size_t)n * sizeof(Port));
+        if (!c) { fputs("out of memory\n", stderr); exit(2); }
+        __atomic_store_n(&c->lk, 0, __ATOMIC_RELAXED);
+    }
+    memset(c->port, 0, (size_t)n * sizeof(Port));
+    c->kind = (uint16_t)kind; c->n = (uint16_t)n; c->x = 0; c->a = 0; c->p = NULL;
+    ADD(stat_cells, 1);
     return c;
 }
-void cell_free(Cell *c) { stat_cells--; free(c); }
+void cell_free(Cell *c) { Local *l = local(); c->a = (uint64_t)(uintptr_t)l->defer; l->defer = c; ADD(stat_cells, -1); }
+static void flush_frees(void) {
+    Local *l = local();
+    while (l->defer) {
+        Cell *c = l->defer; l->defer = (Cell *)(uintptr_t)c->a;
+        if (c->n <= MAXFREE) { c->a = (uint64_t)(uintptr_t)l->free[c->n]; l->free[c->n] = c; }
+    }
+}
 static Cell *clone(const Cell *v) { Cell *c = cell(v->kind, v->n); c->x = v->x; c->a = v->a; c->p = v->p; return c; }
 
-/* ---------------- active pairs ---------------- */
-typedef struct { Cell *op, *v; } Redex;
-static Redex *rq; static size_t rq_head, rq_len, rq_cap;
-void net_push(Cell *op, Cell *v) {
-    if (rq_len == rq_cap) {
-        if (rq_head > 0) { memmove(rq, rq + rq_head, (rq_len - rq_head) * sizeof(Redex)); rq_len -= rq_head; rq_head = 0; }
-        if (rq_len == rq_cap) { rq_cap = rq_cap ? rq_cap * 2 : 1024; rq = realloc(rq, rq_cap * sizeof(Redex)); }
-    }
-    rq[rq_len++] = (Redex){ op, v };
+/* a wire is published with release and read with acquire, so a cell is
+ * initialized before any thread reaching it through a wire touches it */
+static inline Port rd(Cell *c, int k) { return __atomic_load_n(&c->port[k], __ATOMIC_ACQUIRE); }
+static void lock(Cell *c) {
+    while (__atomic_exchange_n(&c->lk, 1, __ATOMIC_ACQUIRE))
+        while (__atomic_load_n(&c->lk, __ATOMIC_RELAXED)) __builtin_ia32_pause();
 }
+static void unlock(Cell *c) { __atomic_store_n(&c->lk, 0, __ATOMIC_RELEASE); }
+
+/* ---------------- active pairs: per-worker queues ---------------- */
+typedef struct { pthread_mutex_t mu; Redex *q; size_t head, len, cap; } Queue;
+static Queue *Q; static int NQ;
+static __thread int myq;
+static long pending;                       /* queued or being rewritten */
+static void queues_init(int n) {
+    NQ = n; Q = calloc((size_t)n, sizeof(Queue));
+    for (int i = 0; i < n; i++) pthread_mutex_init(&Q[i].mu, NULL);
+}
+void net_push(Cell *op, Cell *v) {
+    if (!Q) queues_init(1);
+    Queue *q = &Q[myq];
+    pthread_mutex_lock(&q->mu);
+    if (q->len == q->cap) {
+        if (q->head > 0) { memmove(q->q, q->q + q->head, (q->len - q->head) * sizeof(Redex)); q->len -= q->head; q->head = 0; }
+        if (q->len == q->cap) { q->cap = q->cap ? q->cap * 2 : 1024; q->q = realloc(q->q, q->cap * sizeof(Redex)); }
+    }
+    q->q[q->len++] = (Redex){ op, v };
+    ADD(pending, 1);
+    pthread_mutex_unlock(&q->mu);
+}
+static bool pop_from(Queue *q, Redex *r) {
+    bool got = false;
+    pthread_mutex_lock(&q->mu);
+    if (q->head < q->len) { *r = q->q[q->head++]; if (q->head == q->len) q->head = q->len = 0; got = true; }
+    pthread_mutex_unlock(&q->mu);
+    return got;
+}
+static bool pop(Redex *r) {
+    if (!Q) queues_init(1);
+    if (pop_from(&Q[myq], r)) return true;
+    for (int k = 1; k < NQ; k++) if (pop_from(&Q[(myq + k) % NQ], r)) return true;
+    return false;
+}
+
 void link(Port a, Port b) {
-    if (a) PC(a)->port[PI(a)] = b;
-    if (b) PC(b)->port[PI(b)] = a;
+    if (a) __atomic_store_n(&PC(a)->port[PI(a)], b, __ATOMIC_RELEASE);
+    if (b) __atomic_store_n(&PC(b)->port[PI(b)], a, __ATOMIC_RELEASE);
     if (a && b && PI(a) == 0 && PI(b) == 0) {
         Cell *x = PC(a), *y = PC(b);
-        if (is_value(x->kind) && !is_value(y->kind)) { if (y->kind != O_ROOT) net_push(y, x); }
-        else if (is_value(y->kind) && !is_value(x->kind)) { if (x->kind != O_ROOT) net_push(x, y); }
+        Cell *op = NULL, *val = NULL;
+        if (is_value(x->kind) && !is_value(y->kind)) { op = y; val = x; }
+        else if (is_value(y->kind) && !is_value(x->kind)) { op = x; val = y; }
+        if (op && op->kind != O_ROOT) {
+            /* held until the replacement creating it is complete */
+            Local *l = local();
+            if (l->nmade == l->capmade) { l->capmade = l->capmade ? l->capmade * 2 : 64; l->made = realloc(l->made, l->capmade * sizeof(Redex)); }
+            l->made[l->nmade++] = (Redex){ op, val };
+        }
     }
+}
+/* publish the active pairs this thread has made */
+static void publish(void) {
+    Local *l = local();
+    for (size_t i = 0; i < l->nmade; i++) net_push(l->made[i].op, l->made[i].v);
+    l->nmade = 0;
 }
 /* move whatever is wired to c's port k onto port `to` */
 static void mv(Cell *c, int k, Port to) { link(c->port[k], to); }
@@ -224,7 +298,7 @@ static void neutral1(Cell *o, Cell *v, int kind) {
 
 /* ---------------- the rules ---------------- */
 static void interact(Cell *o, Cell *v) {
-    stat_steps++; stat_kind[o->kind]++;
+    ADD(stat_steps, 1); ADD(stat_kind[o->kind], 1);
     switch (o->kind) {
     case O_ERA: rule_era(o, v); return;
     case O_DUP: rule_dup(o, v); return;
@@ -491,29 +565,107 @@ static void interact(Cell *o, Cell *v) {
     }
 }
 
-long net_run(long limit) {
-    long n = 0;
-    while (rq_head < rq_len && (limit < 0 || n < limit)) {
-        Redex r = rq[rq_head++];
-        if (rq_head == rq_len) rq_head = rq_len = 0;
-        interact(r.op, r.v);
-        n++;
-    }
-    return n;
+/* ---------------- rewriting one active pair (HANDOFF §20) ----------------
+ * Lock the pair and every cell whose port the rule may rewrite (the pair's
+ * neighbours; for a definition, the cell holding its value and that value's
+ * cell), in address order; revalidate that the neighbours are unchanged;
+ * rewrite; release; then retire the consumed cells. */
+static int cell_cmp(const void *x, const void *y) {
+    uintptr_t a = (uintptr_t)*(Cell *const *)x, b = (uintptr_t)*(Cell *const *)y;
+    return a < b ? -1 : a > b;
 }
-/* an observation: reduce (fairly, in arrival order) until the observed port
- * holds a value; the rest of the net is left as it stands */
-bool net_observe(Cell *root, long limit) {
-    long n = 0;
+static int lockset(Cell *o, Cell *v, Cell **S) {
+    int n = 0;
+    S[n++] = o; S[n++] = v;
+    for (int k = 1; k < o->n; k++) { Port p = rd(o, k); if (p) S[n++] = PC(p); }
+    for (int k = 1; k < v->n; k++) { Port p = rd(v, k); if (p) S[n++] = PC(p); }
+    if (v->kind == V_GLOBAL) { Cell *r = global_res((long)v->a); S[n++] = r; Port p = rd(r, 0); if (p) S[n++] = PC(p); }
+    qsort(S, (size_t)n, sizeof(Cell *), cell_cmp);
+    int m = 0;
+    for (int i = 0; i < n; i++) if (m == 0 || S[m - 1] != S[i]) S[m++] = S[i];
+    return m;
+}
+static void rewrite(Redex r) {
+    Cell *o = r.op, *v = r.v;
+    int cap = o->n + v->n + 4;
+    Cell *buf1[64], *buf2[64];
+    Cell **S = cap <= 64 ? buf1 : malloc((size_t)cap * sizeof(Cell *));
+    Cell **T = cap <= 64 ? buf2 : malloc((size_t)cap * sizeof(Cell *));
+    int n;
     for (;;) {
-        Port q = root->port[0];
-        if (q && PI(q) == 0 && is_value(PC(q)->kind)) return true;
-        if (rq_head >= rq_len || (limit >= 0 && n >= limit)) return false;
-        Redex r = rq[rq_head++];
-        if (rq_head == rq_len) rq_head = rq_len = 0;
-        interact(r.op, r.v);
-        n++;
+        n = lockset(o, v, S);
+        for (int i = 0; i < n; i++) lock(S[i]);
+        int m = lockset(o, v, T), j = 0;
+        bool ok = true;
+        for (int i = 0; i < m && ok; i++) { while (j < n && S[j] < T[i]) j++; if (j == n || S[j] != T[i]) ok = false; }
+        if (ok) break;
+        for (int i = n - 1; i >= 0; i--) unlock(S[i]);
     }
+    interact(o, v);
+    for (int i = n - 1; i >= 0; i--) unlock(S[i]);
+    flush_frees();
+    publish();
+    if (cap > 64) { free(S); free(T); }
+    ADD(pending, -1);
+}
+
+/* ---------------- workers ---------------- */
+static int nworkers;
+static pthread_t *workers;
+static pthread_mutex_t wmu = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t wcv = PTHREAD_COND_INITIALIZER, pcv = PTHREAD_COND_INITIALIZER;
+static int running, parked;
+static void *worker(void *arg) {
+    myq = (int)(intptr_t)arg;
+    for (;;) {
+        if (!__atomic_load_n(&running, __ATOMIC_ACQUIRE)) {
+            pthread_mutex_lock(&wmu);
+            parked++; pthread_cond_broadcast(&pcv);
+            while (!__atomic_load_n(&running, __ATOMIC_ACQUIRE)) pthread_cond_wait(&wcv, &wmu);
+            parked--;
+            pthread_mutex_unlock(&wmu);
+        }
+        Redex r;
+        if (pop(&r)) rewrite(r); else sched_yield();
+    }
+    return NULL;
+}
+void net_start(int n) {
+    queues_init(n + 1);
+    nworkers = n;
+    workers = calloc((size_t)n + 1, sizeof(pthread_t));
+    for (int i = 0; i < n; i++) pthread_create(&workers[i], NULL, worker, (void *)(intptr_t)(i + 1));
+    pthread_mutex_lock(&wmu);
+    while (parked < nworkers) pthread_cond_wait(&pcv, &wmu);
+    pthread_mutex_unlock(&wmu);
+}
+static bool observed(Cell *root) {
+    lock(root);
+    Port q = root->port[0];
+    bool ok = q && PI(q) == 0 && is_value(PC(q)->kind);
+    unlock(root);
+    return ok;
+}
+/* an observation: reduce, every worker taking pairs in arrival order, until
+ * the observed port holds a value; the rest of the net stands */
+bool net_observe(Cell *root, long limit) {
+    publish();
+    if (nworkers) { pthread_mutex_lock(&wmu); __atomic_store_n(&running, 1, __ATOMIC_RELEASE); pthread_cond_broadcast(&wcv); pthread_mutex_unlock(&wmu); }
+    long n = 0;
+    bool ok;
+    for (;;) {
+        if ((ok = observed(root))) break;
+        if (__atomic_load_n(&pending, __ATOMIC_ACQUIRE) == 0 || (limit >= 0 && n >= limit)) break;
+        Redex r;
+        if (pop(&r)) { rewrite(r); n++; } else sched_yield();
+    }
+    if (nworkers) {
+        pthread_mutex_lock(&wmu);
+        __atomic_store_n(&running, 0, __ATOMIC_RELEASE);
+        while (parked < nworkers) pthread_cond_wait(&pcv, &wmu);
+        pthread_mutex_unlock(&wmu);
+    }
+    return ok || observed(root);
 }
 
 /* ---------------- building a net from syntax ---------------- */

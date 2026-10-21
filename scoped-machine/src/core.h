@@ -111,6 +111,7 @@ typedef uint64_t Port;            /* cell pointer << 16 | port index; 0 = none *
 typedef struct Cell {
     uint16_t kind, n;             /* n = number of ports */
     uint32_t x;
+    uint32_t lk, pad;             /* the cell's lock (HANDOFF §20); never reset */
     uint64_t a;
     void *p;
     Port port[];
@@ -124,9 +125,10 @@ static inline bool is_value(int k) { return k > 0 && k < V_END; }
 Cell *cell(int kind, int n);
 void cell_free(Cell *c);
 void link(Port a, Port b);
-long net_run(long limit);
-void net_push(Cell *op, Cell *v);
-bool net_observe(Cell *root, long limit); /* until root's port holds a value */  /* re-enqueue an active pair */          /* reduce until no active pair (or limit); returns steps */
+void net_start(int workers);       /* worker threads besides the caller */
+void net_push(Cell *op, Cell *v);  /* enqueue an active pair */
+bool net_observe(Cell *root, long limit); /* reduce until root's port holds a value; workers then pause */
+Cell *global_res(long g);          /* the cell holding a definition's value */
 
 /* readings */
 extern long stat_steps, stat_kind[K_END];

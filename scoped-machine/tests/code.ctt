@@ -1,0 +1,21 @@
+; tests/code.ctt — the evaluator is a term over codes; its value at the code of t is t's value.
+(axiom A B a b f junk)
+
+(same (eval (clam (cpair v0 v0)) junk) (lam x (pair x x)))
+(same (eval (capp (clam v0) v1) (pair junk (pair a junk))) a)
+(same (eval (cfst (cpair v0 v1)) (pair a (pair b junk))) a)
+; a line, a system under it, an endpoint
+(same (eval (cplam (csysc (ceq0 v0) v1 csys0)) (pair a junk)) (plam i (sys ((= i 0) a))))
+(same (eval (cpappe (cplam v1) ci1 v0 v0) (pair a junk)) a)
+; composition and Glue through codes
+(same (eval (ccomp (cplam (cpi v1 v2)) csys0 v1) (pair A (pair f junk)))
+      (transp (plam i (Pi x A A)) f))
+(same (eval (cunglue (csysc cftt (cpair v0 v1) csys0) v2) (pair A (pair (idequiv A) (pair a junk)))) a)
+; transport along ua, posed as a code
+(same (eval (ccomp (cplam (cpapp (capp (capp (capp v2 v3) v3) (cvar (suc (suc (suc (suc zero)))))) v0)) csys0 v0)
+            (pair a (pair ua (pair A (pair (idequiv A) junk)))))
+      (transp (ua A A (idequiv A)) a))
+; a statement about the evaluator is a term: the path from (eval code) to its value
+(same (@ (plam i (eval (cpair v0 v0) (pair a junk))) 0) (pair a a))
+; the evaluator evaluates codes of data
+(same (eval (capp (capp v0 v1) v1) (pair add (pair (suc (suc zero)) junk))) (lam s z (s (s (s (s z))))))

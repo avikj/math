@@ -3,7 +3,8 @@
 A term is a net of cells. A declaration together with the identities it uses is posed as a net, and normalizing that net is the computation. Every cell has one principal port, so distinct active pairs share no cell and any two steps close up in one step each. Sharing is the duplicator cell. Information moves one wire per step.
 
 ```
-make test        # build/cubical lib/prelude.ctt tests/cubical.ctt, then the same under ASan/UBSan
+make test        # the suites, with 0 and 4 workers, and under ASan/UBSan
+make tsan        # the suites with 4 workers under ThreadSanitizer
 ```
 
 ## Cells (`src/core.h`)
@@ -55,6 +56,20 @@ make test        # build/cubical lib/prelude.ctt tests/cubical.ctt, then the sam
 ## Observation
 
 Reading a value reduces the net in arrival order only until the observed port holds a value; the rest of the net stands. A divergent part the answer does not use does not block it, and a definition referring to itself unfolds only when eliminated (`(def ones (pair a ones))`).
+
+## Codes and the evaluator
+
+`lib/code.ctt` gives codes of terms as data (a Scott encoding: a code is a function of one handler per constructor; variables are de Bruijn indices into an environment of nested pairs) and `eval`, a term mapping a code and an environment to the value the machine gives that term. There is no `quote`: a primitive inspecting a term's syntax would distinguish path-equal functions and could not be a function respecting paths. Codes are built as data; statements about the evaluator are terms.
+
+## Parallel rewriting
+
+`CUBICAL_WORKERS=n` runs n threads besides the caller. One rewrite follows HANDOFF §20: it locks the active pair and every cell whose port it may rewrite (the pair's neighbours; for a definition, the cell holding its value and that value's cell) in address order, revalidates that those neighbours are unchanged, installs the replacement, releases, and only then publishes the active pairs it made, so no worker meets a cell still being built. Cells are type-stable: their memory is never returned, so a stale pointer reaches a valid lock word and revalidation fails. Wires are published with release and read with acquire.
+
+By 5.11–5.13 the number of steps is independent of the schedule; the suite without its divergent check takes the same number of interactions with 0, 2, 8 and 16 workers.
+
+## Readings
+
+`show` reports the length (interactions) and the effect (erasures: every forgetting goes through an eraser cell) of reading a value.
 
 ## Inputs
 
