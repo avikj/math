@@ -1,33 +1,22 @@
 CC      ?= gcc
-CFLAGS  ?= -std=c11 -O1 -g -Wall -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -fsanitize=address,undefined -fno-omit-frame-pointer -pthread
-LDFLAGS ?= -fsanitize=address,undefined -pthread
+CFLAGS  ?= -std=gnu11 -O2 -g -Wall -Wextra -Wno-unused-parameter
+SAN     := -fsanitize=address,undefined -fno-omit-frame-pointer
 
-SRC := src/intern.c src/count.c src/pool.c src/dnfam.c src/subst.c src/construct.c src/scopefam.c src/machine.c src/interval.c src/face.c src/term.c src/template.c src/eval.c src/level.c src/code.c src/read.c
-OBJ := $(SRC:.c=.o)
-TESTS := test_records test_dnf test_subst test_alpha test_main test_read test_code test_check
-BINS := $(addprefix build/,$(TESTS))
+SRC := src/dnf.c src/net.c src/lang.c
 
-all: $(BINS)
+all: build/cubical
 
-$(BINS): build/%: tests/%.o $(OBJ)
+build/cubical: $(SRC) src/core.h
 	@mkdir -p build
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $(SRC)
 
-%.o: %.c src/*.h
-	$(CC) $(CFLAGS) -c -o $@ $<
+build/cubical-asan: $(SRC) src/core.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) $(SAN) -o $@ $(SRC)
 
-test: all
-	for t in $(BINS); do ./$$t || exit 1; done
-
-TSAN_CORE := $(patsubst src/%.c,build/tsan/%.o,$(SRC))
-tsan:
-	@mkdir -p build/tsan
-	for f in $(SRC) $(patsubst %,tests/%.c,$(TESTS)); do $(CC) -std=c11 -O1 -g -pthread -fsanitize=thread -c -o build/tsan/$$(basename $$f .c).o $$f || exit 1; done
-	for t in $(TESTS); do $(CC) -pthread -fsanitize=thread -o build/tsan/$$t $(TSAN_CORE) build/tsan/$$t.o || exit 1; done
-	for t in $(TESTS); do CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/tsan/$$t || exit 1; done
+test: build/cubical build/cubical-asan
+	./build/cubical lib/prelude.ctt tests/cubical.ctt
+	ASAN_OPTIONS=detect_leaks=0 ./build/cubical-asan lib/prelude.ctt tests/cubical.ctt > /dev/null
 
 clean:
-	rm -f src/*.o tests/*.o
 	rm -rf build
-
-.PHONY: all test tsan clean

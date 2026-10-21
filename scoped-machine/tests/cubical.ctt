@@ -1,0 +1,72 @@
+; tests/cubical.ctt — each (same t u) reads back t and u and compares.
+(axiom A B X a b f p q pa z e x0 y0 junk)
+
+; β and projections
+(same ((lam x x) a) a)
+(same ((lam x y x) a b) a)
+(same (fst (pair a b)) a)
+(same (snd (pair a b)) b)
+(same ((lam x (pair x x)) (fst q)) (pair (fst q) (fst q)))
+
+; the interval: De Morgan, i ∧ ~i is not 0
+(same (@ (plam i (pair i (~ i))) 0) (pair 0 1))
+(same (@ (plam i (/\ i (~ i))) 1) 0)
+(show (plam i (/\ i (~ i))))
+(same (@ (plam i (\/ i (~ i))) 0) 1)
+
+; path endpoints, also for a neutral path
+(same (@ p 0 a b) a)
+(same (@ p 1 a b) b)
+(show (plam j (@ p j a b)))
+(same (@ (plam j (@ p j a b)) 0) a)
+
+; faces and systems
+(same (sys ((= 0 0) a)) a)
+(same (sys ((= 0 1) a) (tt b)) b)
+(same (@ (plam i (sys ((= i 0) a) ((= i 1) b))) 1) b)
+(show (plam i (sys ((= i 0) a) ((= i 1) b))))
+(same (@ (plam i (faceof (sys ((= i 0) a)))) 0) tt)
+
+; Glue on its face
+(same (Glue A (sys (tt (pair B e)))) B)
+(same (glue (sys (tt b)) a) b)
+(same (unglue (sys (tt (pair A (idequiv A)))) a) a)
+(same (plam i (unglue (sys ((= i 0) (pair A (idequiv A)))) (glue (sys ((= i 0) a)) a))) (plam i a))
+
+; composition
+(same (comp (plam i (Pi x A A)) (plam i f) f) f)
+(show (transp (plam i (Pi x A A)) f))
+(same ((transp (plam i (Pi x A A)) f) a) (comp (plam i A) (sys) (f (comp (plam j A) (sys) a))))
+(same (fst (transp (plam i (Sigma x A A)) z)) (comp (plam i A) (sys) (fst z)))
+(same (@ (transp (plam i (PathP (plam j A) a a)) pa) 0) a)
+(same (transp (plam i U) A) (Glue A (sys)))
+
+; univalence
+(same (@ (ua A B e) 0) A)
+(same (@ (ua A B e) 1) B)
+(same (transp (ua A B e) a) (comp (plam i B) (sys) (comp (plam i B) (sys) ((fst e) a))))
+; transport along ua of a swap is the swap (followed by transport in the constant family)
+(def swap (lam s (pair (snd s) (fst s))))
+(same (transp (ua (Sigma x X X) (Sigma x X X) (pair swap junk)) (pair x0 y0))
+      (pair (comp (plam i X) (sys) (comp (plam i X) (sys) y0)) (comp (plam i X) (sys) (comp (plam i X) (sys) x0))))
+; composition in a Glue family over a face independent of the line agrees, on that face, with composition in the fibre
+(same (@ (plam j (transp (plam i (Glue B (sys ((= j 0) (pair B (idequiv B)))))) (glue (sys ((= j 0) b)) b))) 0)
+      (transp (plam i B) b))
+; composition in the universe with a partial tube is a Glue type
+(same (@ (plam j (comp (plam i U) (sys ((= j 0) (plam i A))) A)) 1) (Glue A (sys)))
+
+; paths
+(def concat (lam p q (plam i (hcomp A (sys ((= i 0) (plam j a)) ((= i 1) (plam j (@ q j)))) (@ p i)))))
+(same (@ (concat p q) 0) a)
+(same (@ (concat p q) 1) (@ q 1))
+
+; sharing: a let-bound computation is done once and its value duplicated
+(def big (transp (plam i (Pi x A A)) f))
+(show (let y (big a) (pair y y)))
+(show (pair (big a) (big a)))
+
+; a partial input: the computation waits on it
+(input w)
+(show (fst w))
+(supply w (pair a b))
+(same (fst w) a)

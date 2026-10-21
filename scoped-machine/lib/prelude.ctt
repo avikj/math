@@ -1,0 +1,81 @@
+; prelude.ctt — the library over the core forms (HANDOFF §§14–18).
+; The machine's composition rule opens a family at a fresh dimension and,
+; by its head, applies one of the %comp-* clauses below to the family's
+; components as lines. A tube is a system of lines; transformations of a
+; tube act branchwise with sysmap.
+
+(def refl (lam x (plam i x)))
+
+; fill^i A [φ ↦ u] a0 (r) = comp^j A(r∧j) [φ ↦ u(r∧j), (r=0) ↦ a0] a0
+(def fill (lam A u a0 r
+  (comp (plam j (@ A (/\ r j)))
+        (sys+ (= r 0) (plam j a0) (sysmap (lam w (plam j (@ w (/\ r j)))) u))
+        a0)))
+(def transp (lam A a0 (comp A (sys) a0)))
+(def hcomp (lam A u a0 (comp (plam i A) u a0)))
+
+; equivalences (§15)
+(def Contr (lam X (Sigma c X (Pi x X (PathP (plam i X) c x)))))
+(def fib (lam X Y f y (Sigma x X (PathP (plam i Y) (f x) y))))
+(def Equiv (lam X Y (Sigma f (Pi x X Y) (Pi y Y (Contr (fib X Y f y))))))
+(def idequiv (lam X
+  (pair (lam x x)
+        (lam y (pair (pair y (plam i y))
+                     (lam z (plam i (pair (@ (snd z) (~ i) (fst z) y)
+                                          (plam j (@ (snd z) (\/ (~ i) j) (fst z) y))))))))))
+(def lineequiv (lam X (transp (plam j (Equiv (@ X 0) (@ X j))) (idequiv (@ X 0)))))
+
+; univalence (§17)
+(def ua (lam A B e (plam i (Glue B (sys ((= i 0) (pair A e)) ((= i 1) (pair B (idequiv B))))))))
+
+; composition clauses (§14, §16, §17)
+(def %comp-pi (lam D E u f0
+  (lam x1
+    (let vl (plam k (fill (plam j (@ D (~ j))) (sys) x1 (~ k)))
+      (comp (plam i ((@ E i) (@ vl i)))
+            (sysmap (lam w (plam i ((@ w i) (@ vl i)))) u)
+            (f0 (@ vl 0)))))))
+
+(def %comp-sigma (lam D E u z0
+  (let al (plam k (fill D (sysmap (lam w (plam i (fst (@ w i)))) u) (fst z0) k))
+    (pair (@ al 1)
+          (comp (plam i ((@ E i) (@ al i)))
+                (sysmap (lam w (plam i (snd (@ w i)))) u)
+                (snd z0))))))
+
+(def %comp-path (lam P l r u p0
+  (plam j (comp (plam i (@ (@ P i) j))
+                (sys+ (= j 0) (plam i (@ l i))
+                  (sys+ (= j 1) (plam i (@ r i))
+                    (sysmap (lam w (plam i (@ (@ w i) j (@ l i) (@ r i)))) u)))
+                (@ p0 j (@ l 0) (@ r 0))))))
+
+(def %comp-u (lam u A0
+  (Glue A0 (sysmap (lam w (pair (@ w 1) (lineequiv (plam j (@ w (~ j)))))) u))))
+
+(def %comp-glue (lam A S u u0
+  (let a0 (unglue (@ S 0) u0)
+  (let al (plam k (fill A (sysmap (lam w (plam i (unglue (@ S i) (@ w i)))) u) a0 k))
+  (let a1 (@ al 1)
+  (let delta (forall i (faceof (@ S i)))
+  (let S1 (@ S 1)
+  (let alpha1 (faceof S1)
+  ; the partial fibre element over delta ∨ psi
+  (let vpart (sys+ delta
+                (let tl (plam k (fill (plam i (fst (@ S i))) u u0 k))
+                  (pair (@ tl 1)
+                        (plam q (comp A
+                                      (sys+ (= q 0) (plam i ((fst (snd (@ S i))) (@ tl i)))
+                                        (sys+ (= q 1) al (sysmap (lam w al) u)))
+                                      a0))))
+                (sysmap (lam w (pair (@ w 1) (plam q a1))) u))
+  ; extended under alpha1 by the contraction of e1's fibre
+  (let tp (sys+ alpha1
+             (let C ((snd (snd S1)) a1)
+               (hcomp (fib (fst S1) (@ A 1) (fst (snd S1)) a1)
+                      (sysmap (lam w (plam j (@ ((snd C) w) j (fst C) w))) vpart)
+                      (fst C)))
+             (sys))
+  (let P (sysmap (lam e (plam q (@ (snd e) (~ q) ((fst (snd S1)) (fst e)) a1))) tp)
+  (glue (sysmap (lam e (fst e)) tp)
+        (hcomp (@ A 1) (sys+ (faceof P) P (sysmap (lam w (plam q a1)) u)) a1)))))))))))))

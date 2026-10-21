@@ -1,117 +1,66 @@
-# Scoped cubical machine
+# Cubical interaction net
 
-C11 machine for the specification `HANDOFF.md`; `INTERNING.md` specifies
-stepped interning. The evaluator and the composition library are programs
-of the language (`prog/core.ctt`); the machine performs the steps those
-programs are made of.
+A term is a net of cells. A declaration together with the identities it uses is posed as a net, and normalizing that net is the computation. Every cell has one principal port, so distinct active pairs share no cell and any two steps close up in one step each. Sharing is the duplicator cell. Information moves one wire per step.
 
-    make test    # ASan/UBSan: every suite
-    make tsan    # ThreadSanitizer: every suite with 4 workers
+```
+make test        # build/cubical lib/prelude.ctt tests/cubical.ctt, then the same under ASan/UBSan
+```
 
-## The one protocol (`eval.c`, `eval.h`, `families.h`)
+## Cells (`src/core.h`)
 
-Every computation over variable data is a producer keyed by (family, a, b).
-Its entry moves U → R → D by a constant number of atomic operations: a
-requester joins by one exchange (the one that finds U launches the producer;
-a launch alone is one CAS, never retried), publication exchanges the waiter
-chain for READY, and each delivery is its own job. A
-producer is a frame: a step function that does a bounded amount of work and
-ends in request, call (a subroutine frame), yield or finish. Independent
-demands are launched and then awaited in order. Host callers drive a root
-key with a host frame (`family_run`, `family_call`, `family_run_budget`); a
-budget is a host control bound on the jobs executed during the call. Every family id is
-named in `families.h`.
+**Values** have a positive principal port:
+- λ: an immutable binder record, plus one port for each maximal subterm of its body that is free of the bound variable;
+- pair, Π, Σ, U, PathP;
+- a line `PLAM(i, body)`;
+- an interval or face (an immutable DNF payload);
+- a system: branches, each a face clause with the value restricted to it;
+- Glue type and glue element;
+- neutrals, which keep every operand: variables and stuck application, projection, path application, composition and unglue;
+- a definition `GLOBAL`.
 
-## Records
+**Operations** have a negative principal port facing the value their rule inspects:
+- application: on the function;
+- projections: on the pair;
+- path application: on the interval first, since an annotated endpoint answers without the path, then on the path;
+- composition: on the tube first (coverage), then on the family, then on the family's head at its own fresh dimension;
+- Glue, glue and unglue;
+- the interval and face connectives, and `forall`;
+- the face of a system;
+- system construction;
+- mapping over a system;
+- the structural cells: duplicate, erase, and substitute dimensions.
 
-- One record table (`state.h`, `intern.c`): every record is interned in
-  `M.keys` by the stepped interner; the evaluator's entry index is its own
-  table. Stable stores are radix directories of fixed-size nodes over every
-  `size_t` index.
-- Universe levels are exact naturals (a word below 2^63, the canonical
-  exact-integer record above); successor and maximum are stepped families.
-- Intervals and faces are canonical antichain DNFs (`dnf.h`); their
-  operations, and set union / removal / membership, are families (`dnfam.c`).
-- One substitution record (`subst.c`): `[(key, sort, value)*]` sorted by
-  key, an environment (and every total record: context indexes,
-  CLOSE contexts) followed by a trailing word. One stepped lookup, one set.
-- Constructions (`construct.c`): one constructor schema per tag (field kinds,
-  binder slots, binder sort, role, scrutinee, a code eliminator's operand
-  fields) read by
-  every builder. A construction is a node whose field constants are closed by
-  CLOSE over (depth, slot) atoms; its reference is TVIEW(node, environment).
-- Traversal (`scopefam.c`, `template.c`): CLOSE (identity ↦ slot), APPLY
-  (environment slot ↦ value, lowering deeper atoms), RE (a map on free
-  identities), LOWER (∀); TVIEW views of construction nodes.
+## What makes it local
 
-## Definitions (`term.c`)
+- **A face clause is a substitution of endpoints.** Being under a face is reindexing.
+- **A system branch is built only after its clause is known.** It is a thunk forced under the clause's substitution. A system whose clause becomes true is that branch.
+- **A face is ⊤ exactly when its DNF has the empty clause.** An interval is 0 or 1 exactly when its DNF is. So no rule consults an ambient context.
+- **Every eliminator acts branchwise on a system.** Its other operands are restricted to each branch's clause.
+- **A dimension binder is a name and a value.** Applying it puts a substitution cell on the value, which re-activates every neutral the substitution unblocks (`p@i` under `i:=0` is the left endpoint).
 
-A symbol is opaque by its declaration (an axiom: a constant), or a
-definition whose body is an input, supplied once. An observation before the
-body is supplied is pending, not sealed: the supply publishes the input entry
-and every pending computation continues from where it stopped. An external
-answer that can differ between consumers is an explicit argument (a
-variable) at the boundary where it matters: each answer is a substitution
-into the residual.
+## Binders and sharing
 
-## The machine's steps (`eval.c`)
+`lam` compiles to a record. Its body's maximal subterms that are free of the bound variable are compiled in the enclosing level and wired to the cell's ports, so they are computed once however often the λ is applied. Duplicating a λ copies the record handle and duplicates the ports. A definition's net is built once, and each use copies its value through a duplicator.
 
-β, pair projections, unfolding a definition, and the code eliminators;
-native evaluation is keyed by the term alone (the ambient face is an
-argument of the evaluator program). Every other former (paths, Glue,
-systems, composition) is a value of the machine; its computation is the
-evaluator program. The value of a stuck elimination is its residual: the
-eliminator with its operands replaced by their values, where computation
-continues when an open input is supplied (by substitution: the prefix
-already established is not redone). While a computation runs, its entry
-records the term it has moved to; `whnf_residual(t)` reads the computation
-so far. The machine judges nothing: records carry no required faces, and a
-code operation outside its domain gives the code `(cnone)`.
+## Composition
 
-## Codes (`code.c`, `read.c`)
+`comp A u a0` takes a line of types, a tube (a system of lines, or a total line) and a base.
+- **A total tube is its own end.** The result is `u@1`.
+- **Otherwise the family is opened at its own dimension.** Its head selects a library clause in `lib/prelude.ctt`, applied to the head's components re-abstracted as lines: `%comp-pi`, `%comp-sigma`, `%comp-path`, `%comp-u` or `%comp-glue` (HANDOFF §§14–17).
+- **A system of families** composes branchwise under ∀i of each branch's clause.
+- **A neutral family** gives a neutral composition.
 
-The language's own term records are values of the type `(Code)`: `(quote t)`
-holds the record of `t`; `(qiv r)`, `(qfc φ)`, `(qlv l)` are codes of the
-types `(ICode)`, `(FCode)`, `(LCode)`. There is no second representation of
-syntax: the record a quote holds is the record the machine evaluates. Each
-code eliminator is one native rule over those records, its operands
-evaluated together first: `cmatch` (dispatch on the former; its argument
-kinds are `code_arg_kind`, exposed to programs as `cfield`), `cinst` /
-`cinsti` (open a term / dimension binder), `cset` / `csetb` / `csetbi` /
-`csetlv` (rebuild with a field, a binder field or the annotation replaced),
-`clevels`, `cvar` / `cvari`, `csubst`, `csyscons`, `ceq`, `cent`, `cfcend`,
-interval and face operations, level successor and maximum, `cunfold`,
-`ctype`, `cpayload`, `cquote`, `cstep` (the code of one rule step).
+`fill`, `transp`, `hcomp`, `Equiv`, `idequiv`, `lineequiv` and `ua` are definitions in the prelude.
 
-## The evaluator (`prog/core.ctt`)
+## Inputs
 
-`eval χ c`: the code of the term the term coded by `c` reaches under the
-face coded by `χ` — an introduction, a system value, or a residual. It has a
-clause for every executable former, the code operations included (operands
-evaluated, then the operation's rule as one represented step, `cstep`). It
-contains the composition clauses (Π, Σ, Path, Glue, U) and the library they
-build (Fill, HComp, Coe, Equiv, Fib, Contr, IdEquiv, LineEquiv,
-ExtendContr, ua), each a program building codes.
+`(input x)` declares a definition whose value is not yet supplied. Any eliminator meeting it waits. `(supply x t)` connects the value, and the waiting pairs proceed.
 
-## The checker (`prog/check.ctt`)
+## Files
 
-`check χ c A` and `infer χ c`: bidirectional typing over codes, with
-conversion (η for functions, pairs and paths; systems branchwise; universe
-cumulativity). A variable's type is its declaration (`ctype`), so the
-context is the variables themselves: a binder is entered at its own
-variable (`cvar`, `cvari`). A partial element has the type `(Partial φ A)`:
-a variable of that type is used only under faces entailing φ, and checking
-against it checks under φ. Programs over codes are typed: the code types
-are types, a code operation takes codes of the kinds it acts on, its
-branches share one type, a `cmatch` handler has the type its former's
-arguments give (computed in the program from `cfield`). The checker
-checks every definition of the evaluator, the library and itself against
-its declared type, the library's constructions (IdEquiv : Equiv A A,
-LineEquiv, ua : Path U A A, Fill), and that the evaluator's composition
-reducts have the composition's type (`tests/test_check.c`).
-
-## Tests
-
-`tests/test_*.c` check substitution, DNF laws, alpha identity, records,
-the machine's steps, reading, and the evaluator program (`test_code`: its
-values, and agreement with the machine on the machine's own steps).
+- `src/dnf.c`: interval and face DNF, substitutions.
+- `src/net.c`: cells, wiring, the interaction rules, building a net from compiled syntax.
+- `src/lang.c`: reader, compilation to binder records with lifting, definitions, readback, driver (`def`, `axiom`, `input`, `supply`, `show`, `same`).
+- `lib/prelude.ctt`: the library.
+- `tests/cubical.ctt`: the checks.
+- `HANDOFF.md`: the specification.
