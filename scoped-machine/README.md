@@ -1,7 +1,9 @@
 # Scoped cubical machine
 
-C11 implementation of the specification `HANDOFF.md`, scoped and ordered by
-the binding plan `PLAN.md`; `INTERNING.md` specifies stepped interning.
+C11 machine for the specification `HANDOFF.md`; `INTERNING.md` specifies
+stepped interning. The evaluator and the composition library are programs
+of the language (`prog/core.ctt`); the machine performs the steps those
+programs are made of.
 
     make test    # ASan/UBSan: every suite
     make tsan    # ThreadSanitizer: every suite with 4 workers
@@ -32,17 +34,14 @@ named in `families.h`.
   operations, and set union / removal / membership, are families (`dnfam.c`).
 - One substitution record (`subst.c`): `[(key, sort, value)*]` sorted by
   key, an environment (and every total record: context indexes,
-  CLOSE contexts) followed by a trailing word. One stepped lookup, one set,
-  composition of maps.
+  CLOSE contexts) followed by a trailing word. One stepped lookup, one set.
 - Constructions (`construct.c`): one constructor schema per tag (field kinds,
   binder slots, binder sort, partial positions, role, scrutinee) read by
   every builder. A construction is a node whose field constants are closed by
   CLOSE over (depth, slot) atoms; its reference is TVIEW(node, environment).
-- Scopes (`scope.c`, `scopefam.c`): the same binder discipline. One traversal
-  engine: CLOSE (identity ↦ slot), APPLY (environment slot ↦ value, lowering
-  deeper atoms), RE (a map on free identities), LOWER (∀).
-- Templates (`template.c`, `lib.c`): fixed library programs interpreted by
-  families; a call and a scope application build one argument environment.
+- Traversal (`scopefam.c`, `template.c`): CLOSE (identity ↦ slot), APPLY
+  (environment slot ↦ value, lowering deeper atoms), RE (a map on free
+  identities), LOWER (∀); TVIEW views of construction nodes.
 
 ## Definitions (`term.c`)
 
@@ -51,19 +50,34 @@ observation seals it (one compare-and-swap decides the body word), so every
 evaluation sees the same body and an evaluation key determines its
 computation. A symbol observed without a body is an opaque constant.
 
+## The machine's steps (`eval.c`)
+
+β, pair projections, unfolding a definition, and the code eliminators. Every
+other former (paths, Glue, systems, composition) is a value of the machine;
+its computation is the evaluator program.
+
 ## Codes (`code.c`, `read.c`)
 
 The language's own term records are values of the type `(Code)`: `(quote t)`
 holds the record of `t`, `(qiv r)` an interval, `(qfc φ)` a face. There is no
 second representation of syntax: the record a quote holds is the record the
 machine evaluates. Each eliminator is one native rule over those records:
-`cmatch` (dispatch on the former, fields given as codes, a field under a
-binder as a function on codes), `cinst` (open a binder), `ceq` (one record or
-not), `cent` (face entailment), `cfcend` (endpoint face), `cunfold` (a
-symbol's body). `tests/test_code.c` writes the weak-head evaluator as a
-program over codes and checks it reaches the machine's own value.
+`cmatch` (dispatch on the former), `cinst` (open a binder), `cset` /
+`csetlv` (rebuild with a field or annotation replaced), `clevels`, `cvar`,
+`csubst`, `csyscons`, `ceq`, `cent`, `cfcend`, interval and face operations,
+level successor and maximum, `cunfold`. A quote requires nothing (a code is
+data).
+
+## The evaluator (`prog/core.ctt`)
+
+`eval χ c`: the code of the weak-head value of the term coded by `c` under
+the face coded by `χ` — an introduction, a neutral, a system value, or
+`invalid`. It contains the composition clauses (Π, Σ, Path, Glue, U) and the
+library they build (Fill, HComp, Coe, Equiv, Fib, Contr, IdEquiv,
+LineEquiv, ExtendContr, ua), each a program building codes.
 
 ## Tests
 
-`tests/test_*.c` check substitution, DNF laws, alpha identity, records and
-basic evaluation.
+`tests/test_*.c` check substitution, DNF laws, alpha identity, records,
+the machine's steps, reading, and the evaluator program (`test_code`: its
+values, and agreement with the machine on the machine's own steps).

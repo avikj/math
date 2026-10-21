@@ -147,8 +147,6 @@ static void test_substitution(void) {
     MapId m = mapb_finish(&b);
     CHECK(reindex(ref_var(x), m) == ref_var(y), "x[x→y, y→z] = y");
     CHECK(reindex(reindex(ref_var(x), map_single_term(x, ref_var(y))), map_single_term(y, ref_var(z))) == ref_var(z), "(x[x→y])[y→z] = z");
-    MapId c = compose(map_single_term(x, ref_var(y)), map_single_term(y, ref_var(z)));
-    CHECK(reindex(ref_var(x), c) == ref_var(z) && reindex(ref_var(y), c) == ref_var(z), "compose(σ,τ) = σ;τ, including keys only in τ");
     CHECK(map_is_identity(map_identity()) && reindex(ref_var(x), map_identity()) == ref_var(x), "identity map");
 
     /* R = (y, y); x absent from its typed boundary */

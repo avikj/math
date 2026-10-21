@@ -152,6 +152,5 @@ EntryState eval_entry_state(EntryId e);
 size_t eval_entry_count(void);
 bool eval_entry_live(EntryId e);
 
-void print_result(EvalResult r, FILE *f);
 
 #endif

@@ -2,51 +2,20 @@
 #include "eval.h"
 
 /* ------------------------------------------------------------------ */
-/* definitions                                                           */
-
-#define MAXP 16
-#define MAXL 48
-#define MAXSLOT (MAXP + MAXL)
-
-typedef struct {
-    const char *name;
-    size_t nparams;
-    PSort sorts[MAXP];
-    ExprId ptype[MAXP];            /* reference parameters: declared type expression (0 = none) */
-    ExprId plevel[MAXP];           /* its level expression */
-    ExprId psig[MAXP];             /* scope parameters: the expected contextual signature (a scope expression whose body is the result type) */
-    ExprId pguard[MAXP];           /* a partial reference parameter's declared availability (0 = none) */
-    size_t nlocals;
-    PSort lsort[MAXL];
-    ExprId ltype[MAXL], llevel[MAXL], lreq[MAXL];   /* declarations of term locals (constructor binders and scope locals) */
-    Words nodes;                   /* every constructor node of the definition, in construction order (its index) */
-    Words freel;                   /* each node's free-slot list (an interned slot list), by node index */
-    ExprId root;
-    ExprId rtype, rlevel;          /* the declared result type of the program and its level */
-    TNodeId root_node;             /* the root constructor node when the root is a node (0 when the root is a call) */
-} TDef;
-
-static struct { TDef defs[TD_COUNT]; uint64_t index_counter[TD_COUNT]; bool init; } TPL;
-
-/* ------------------------------------------------------------------ */
 /* expressions: interned records [kind, words...]                        */
 
 enum {
-    X_PARAM = 1, X_LOCAL, X_LEVEL, X_LSUCC, X_LMAX, X_LEVELS, X_LFIRST, X_NODE, X_CALL, X_SCOPE, X_APPLY, X_APPLY_TYPE, X_APPLY_GUARD,
-    X_IV0, X_IV1, X_IVNOT, X_IVAND, X_IVOR, X_FCF, X_FCT, X_FCAND, X_FCOR, X_FCEND, X_FORALL,
-    X_CONST            /* [X_CONST, sort, id]: a construction's closed field constant */
+    X_LEVEL = 3,       /* [X_LEVEL, n]: a closed payload or annotation */
+    X_CONST = 25       /* [X_CONST, sort, id]: a construction's closed field constant */
 };
 
 static ExprId xi(size_t n, const uint64_t *w) { return interner_intern(&M.keys, w, n, NULL); }
 static ExprId x1(uint64_t k, uint64_t a) { uint64_t w[2] = { k, a }; return xi(2, w); }
-static ExprId x2(uint64_t k, uint64_t a, uint64_t b) { uint64_t w[3] = { k, a, b }; return xi(3, w); }
-static ExprId x0(uint64_t k) { uint64_t w[1] = { k }; return xi(1, w); }
 
 /* ------------------------------------------------------------------ */
 /* nodes: [def, index, tag, payload_e, levels_e, nf, (kind, bslot, e)*, nb, (sort, domfield, lslot)*, required_e] */
 
 TDefId tnode_def(TNodeId Q) { return rword(Q, 0); }
-uint64_t tnode_index(TNodeId Q) { return rword(Q, 1); }
 Tag tnode_tag(TNodeId Q) { return (Tag)rword(Q, 2); }
 static ExprId node_payload_e(TNodeId Q) { return rword(Q, 3); }
 static ExprId node_levels_e(TNodeId Q) { return rword(Q, 4); }
@@ -58,7 +27,6 @@ static void node_field(TNodeId Q, size_t k, FieldKind *kind, BinderSlot *bslot, 
 FieldKind tnode_field_kind(TNodeId Q, size_t k) { FieldKind kd; BinderSlot s; ExprId e; node_field(Q, k, &kd, &s, &e); return kd; }
 BinderSlot tnode_field_slot(TNodeId Q, size_t k) { FieldKind kd; BinderSlot s; ExprId e; node_field(Q, k, &kd, &s, &e); return s; }
 static const uint64_t *node_btab(TNodeId Q) { size_t n; const uint64_t *w = rget(Q, &n); return w + 6 + 3 * w[5]; }
-size_t tnode_nbinders(TNodeId Q) { return (size_t)node_btab(Q)[0]; }
 static void node_binder(TNodeId Q, BinderSlot s, Sort *sort, FieldIndex *domfield, size_t *lslot) {
     const uint64_t *b = node_btab(Q);
     require(s < b[0], "template binder slot");
@@ -83,61 +51,10 @@ void tnode_template_binder(TNodeId Q, BinderSlot slot, FieldIndex field, uint64_
     *env_slot = node_param_count(Q) + lslot;
 }
 
-/* ------------------------------------------------------------------ */
-/* free slots of expressions and nodes (syntactic closure)               */
-
-typedef struct { uint64_t bits[(MAXSLOT + 63) / 64]; } SlotSet;
-static void ss_set(SlotSet *s, size_t k) { s->bits[k / 64] |= 1ULL << (k % 64); }
-static bool ss_has(const SlotSet *s, size_t k) { return (s->bits[k / 64] >> (k % 64)) & 1; }
-static void ss_or(SlotSet *a, const SlotSet *b) { for (size_t k = 0; k < (MAXSLOT + 63) / 64; k++) a->bits[k] |= b->bits[k]; }
-static void ss_clear(SlotSet *s, size_t k) { s->bits[k / 64] &= ~(1ULL << (k % 64)); }
-
-static void node_free(TNodeId Q, SlotSet *out);
-static void expr_free(ExprId e, size_t np, SlotSet *out) {
-    size_t n; const uint64_t *w = rget(e, &n);
-    switch (w[0]) {
-    case X_PARAM: ss_set(out, w[1]); break;
-    case X_LOCAL: ss_set(out, np + w[1]); break;
-    case X_LEVEL: case X_IV0: case X_IV1: case X_FCF: case X_FCT: case X_CONST: break;
-    case X_LSUCC: case X_LFIRST: case X_IVNOT: case X_FORALL: case X_APPLY_TYPE: case X_APPLY_GUARD: expr_free(w[1], np, out); break;
-    case X_LMAX: case X_LEVELS: case X_IVAND: case X_IVOR: case X_FCAND: case X_FCOR: expr_free(w[1], np, out); expr_free(w[2], np, out); break;
-    case X_FCEND: expr_free(w[1], np, out); break;
-    case X_NODE: node_free(w[1], out); break;
-    case X_CALL: for (size_t k = 0; k < w[2]; k++) expr_free(w[3 + k], np, out); break;
-    case X_APPLY: expr_free(w[1], np, out); for (size_t k = 0; k < w[2]; k++) expr_free(w[3 + k], np, out); break;
-    case X_SCOPE: {
-        /* [X_SCOPE, nloc, (sort, lslot, type_e, level_e, req_e)*, body, type, level, guard] */
-        size_t nl = w[1]; const uint64_t *l = w + 2;
-        SlotSet inner; memset(&inner, 0, sizeof inner);
-        for (size_t k = 0; k < nl; k++) { if (l[5 * k + 2]) expr_free(l[5 * k + 2], np, &inner); if (l[5 * k + 3]) expr_free(l[5 * k + 3], np, &inner); if (l[5 * k + 4]) expr_free(l[5 * k + 4], np, &inner); }
-        const uint64_t *t = l + 5 * nl;
-        expr_free(t[0], np, &inner); if (t[1]) expr_free(t[1], np, &inner); if (t[2]) expr_free(t[2], np, &inner); expr_free(t[3], np, &inner);
-        for (size_t k = 0; k < nl; k++) ss_clear(&inner, np + l[5 * k + 1]);
-        ss_or(out, &inner);
-        break;
-    }
-    default: die("bad expression kind");
-    }
-}
-/* a node's free-slot list, by its index in its definition */
-static uint64_t node_free_list(TNodeId Q) { return TPL.defs[tnode_def(Q)].freel.w[tnode_index(Q)]; }
-static void node_free(TNodeId Q, SlotSet *out) {
-    uint64_t list = node_free_list(Q);
-    size_t n; const uint64_t *w = rget(list, &n);
-    for (size_t k = 0; k < n; k++) ss_set(out, w[k]);
-}
+/* a construction's free slots are its parameters 0..np-1 */
 static size_t node_param_count(TNodeId Q);
-static bool node_construction(TNodeId Q);
-/* the free slots of a node: a construction's are its parameters 0..np-1; a
- * template node's were closed at registration */
-static size_t node_free_count(TNodeId Q) {
-    if (node_construction(Q)) return node_param_count(Q);
-    size_t n; (void)rget(node_free_list(Q), &n); return n;
-}
-static size_t node_free_slot(TNodeId Q, size_t q) {
-    if (node_construction(Q)) return q;
-    size_t n; return (size_t)rget(node_free_list(Q), &n)[q];
-}
+static size_t node_free_count(TNodeId Q) { return node_param_count(Q); }
+static size_t node_free_slot(TNodeId Q, size_t q) { (void)Q; return q; }
 
 /* ------------------------------------------------------------------ */
 /* environments and interpretation (as families, below)                 */
@@ -145,7 +62,6 @@ static size_t node_free_slot(TNodeId Q, size_t q) {
 
 /* a reference's environment is its interpretation record [(slot, sort, id)*,
  * def] (a substitution record, subst.c) restricted to the node's free slots */
-static uint64_t env_def(uint64_t er) { size_t n; const uint64_t *w = rget(er, &n); return w[n - 1]; }
 
 /* An interpreted value is the interned pair [sort, id]. */
 static uint64_t tvrec(PSort sort, uint64_t id) { return RQ(sort, id); }
@@ -156,17 +72,11 @@ static TVal tvget(uint64_t rec) { size_t n; const uint64_t *w = rget(rec, &n); T
 
 ExprId expr_const(PSort sort, uint64_t id) { uint64_t w[3] = { X_CONST, sort, id }; return xi(3, w); }
 ExprId expr_level(uint64_t n) { return x1(X_LEVEL, n); }
-static bool node_construction(TNodeId Q) { return tnode_def(Q) == 0; }
-bool tnode_is_construction(TNodeId Q) { return node_construction(Q); }
-static size_t node_param_count(TNodeId Q) { return node_construction(Q) ? (size_t)rword(Q, 1) : TPL.defs[tnode_def(Q)].nparams; }
-bool tview_is_construction(RefId t) { return node_construction(ref_tnode(t)); }
+static size_t node_param_count(TNodeId Q) { return (size_t)rword(Q, 1); }
 static const uint64_t *node_ptab(TNodeId Q) { const uint64_t *b = node_btab(Q); return b + 1 + 3 * b[0] + 2; }
-static uint64_t xconst(ExprId e) { size_t n; const uint64_t *w = rget(e, &n); require(w[0] == X_CONST, "construction field is not a constant"); return w[2]; }
 static uint64_t xlevel(ExprId e) { size_t n; const uint64_t *w = rget(e, &n); require(w[0] == X_LEVEL, "construction annotation is not a constant"); return w[1]; }
 bool expr_is_level(ExprId e) { return rword(e, 0) == X_LEVEL; }
 uint64_t expr_level_value(ExprId e) { return xlevel(e); }
-uint64_t tnode_const_field(TNodeId Q, size_t k) { FieldKind kd; BinderSlot bs; ExprId e; node_field(Q, k, &kd, &bs, &e); return xconst(e); }
-uint64_t tnode_const_payload(TNodeId Q) { ExprId e = node_payload_e(Q); return e ? xlevel(e) : 0; }
 
 
 
@@ -204,100 +114,27 @@ DimOpen tview_dim_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
 
 
 static Family trav_of(PSort s) { return s == PS_REF ? F_TREF : s == PS_INTERVAL ? F_TIV : F_TFC; }
-static PSort psort_of_val(ValSort s) { return s == VS_REF ? PS_REF : s == VS_INTERVAL ? PS_INTERVAL : PS_FACE; }
 
-typedef struct { const uint64_t *w; size_t n, q; uint64_t a, b, er, S, tk, r; TVal t; WordBuf out; bool created; } InLoc;
+/* INTERP(e, env): a closed constant with its atoms read from the
+ * environment (APPLY), or a closed level */
 static void interp_step(Cont *k, uint64_t v) {
-    InLoc *L = FR_LOC(k, InLoc);
     ExprId e = k->w[0]; uint64_t er = k->w[1];
     uint64_t r = 0;
     FR_BEGIN(k);
-    L->w = rget(e, &L->n);
-    if (L->w[0] == X_PARAM || L->w[0] == X_LOCAL) {
-        FR_AWAIT(k, r, F_LOOKUP, er, L->w[0] == X_PARAM ? L->w[1] : TPL.defs[env_def(er)].nparams + L->w[1]);
-        require(r, "template: slot %llu unset", (unsigned long long)L->w[1]);
-        { uint64_t sl; subst_get(er, r - 1, &sl, &L->t); }
-        FR_FINISH(k, tvrec(L->t.sort, L->t.id));
-    }
-    if (L->w[0] == X_LEVEL) FR_FINISH(k, tvrec(PS_LEVEL, L->w[1]));
-    if (L->w[0] == X_IV0) FR_FINISH(k, tvrec(PS_INTERVAL, iv_zero()));
-    if (L->w[0] == X_IV1) FR_FINISH(k, tvrec(PS_INTERVAL, iv_one()));
-    if (L->w[0] == X_FCF) FR_FINISH(k, tvrec(PS_FACE, fc_false()));
-    if (L->w[0] == X_FCT) FR_FINISH(k, tvrec(PS_FACE, fc_true()));
-    if (L->w[0] == X_CONST) {
-        /* a closed constant: its atoms read from the environment */
-        L->t.sort = (PSort)L->w[1];
-        if (L->t.sort == PS_REF || L->t.sort == PS_INTERVAL || L->t.sort == PS_FACE) FR_AWAIT(k, r, trav_of(L->t.sort), L->w[2], apply_key(er));
-        else r = L->w[2];
-        FR_FINISH(k, tvrec(L->t.sort, r));
-    }
-    if (L->w[0] == X_NODE) { FR_AWAIT(k, r, F_TVMAKE, L->w[1], er); FR_FINISH(k, tvrec(PS_REF, r)); }
-    if (L->w[0] == X_SCOPE) { FR_AWAIT(k, r, F_ISCOPE, e, er); FR_FINISH(k, tvrec(PS_SCOPE, r)); }
-    if (L->w[0] == X_CALL || L->w[0] == X_APPLY || L->w[0] == X_APPLY_TYPE || L->w[0] == X_APPLY_GUARD) {
-        /* the arguments' environment [(q, sort, value)*, def] — def the
-         * callee, 0 for a scope (whose atoms it applies); the arguments and
-         * the scope are independent demands, launched then awaited */
-        if (L->w[0] == X_CALL) require(L->w[2] == TPL.defs[L->w[1]].nparams, "template call arity (%s)", TPL.defs[L->w[1]].name);
-        else family_launch(F_INTERP, L->w[1], er);
-        for (L->q = 0; L->q < L->w[2]; L->q++) { family_launch(F_INTERP, L->w[3 + L->q], er); FR_YIELD(k); }
-        wordbuf_init(&L->out);
-        for (L->q = 0; L->q < L->w[2]; L->q++) {
-            FR_AWAIT(k, L->r, F_INTERP, L->w[3 + L->q], er);
-            L->t = tvget(L->r);
-            if (L->w[0] == X_CALL) require(L->t.sort == TPL.defs[L->w[1]].sorts[L->q], "template call sort (%s, %zu)", TPL.defs[L->w[1]].name, L->q);
-            wordbuf_push(&L->out, L->q); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
-        }
-        wordbuf_push(&L->out, L->w[0] == X_CALL ? L->w[1] : 0);
-        FR_CALL(k, L->er, intern_sub(k, &M.keys, &L->out, &L->created));
-        if (L->w[0] == X_CALL) { FR_AWAIT(k, r, F_INTERP, TPL.defs[L->w[1]].root, L->er); FR_FINISH(k, r); }
-        FR_AWAIT(k, L->r, F_INTERP, L->w[1], er);
-        L->t = tvget(L->r); require(L->t.sort == PS_SCOPE, "scope application of a non-scope");
-        L->S = L->t.id;
-        require(L->w[2] == scope_arity(L->S), "scope application arity");
-        L->tk = apply_key(L->er);
-        if (L->w[0] == X_APPLY_TYPE) { FR_AWAIT(k, r, F_TREF, scope_type(L->S), L->tk); FR_FINISH(k, tvrec(PS_REF, r)); }
-        if (L->w[0] == X_APPLY_GUARD) { FR_AWAIT(k, r, F_TFC, scope_guard(L->S), L->tk); FR_FINISH(k, tvrec(PS_FACE, r)); }
-        L->t.sort = psort_of_val(scope_body(L->S).sort);
-        FR_AWAIT(k, r, trav_of(L->t.sort), scope_body(L->S).id, L->tk);
-        FR_FINISH(k, tvrec(L->t.sort, r));
-    }
-    if (L->w[0] == X_FORALL) {
-        FR_AWAIT(k, r, F_INTERP, L->w[1], er);
-        L->t = tvget(r); require(L->t.sort == PS_SCOPE, "forall of a non-scope");
-        require(scope_arity(L->t.id) == 1 && scope_local(L->t.id, 0).sort == S_DIM && scope_body(L->t.id).sort == VS_FACE, "forall of a non-unary face scope");
-        FR_AWAIT(k, r, F_FCFORALL, scope_body(L->t.id).id, bound_id(0, 0));
-        FR_AWAIT(k, r, F_TFC, r, trav_key(TR_LOWER, 0, 0));
-        FR_FINISH(k, tvrec(PS_FACE, r));
-    }
-    /* unary and binary operators on levels, intervals and faces */
-    FR_AWAIT(k, r, F_INTERP, L->w[1], er);
-    L->a = tvget(r).id;
-    if (L->w[0] == X_LSUCC) { FR_LSUCC(k, r, L->a); FR_FINISH(k, tvrec(PS_LEVEL, r)); }
-    if (L->w[0] == X_LFIRST) FR_FINISH(k, tvrec(PS_LEVEL, levels_first(L->a)));
-    if (L->w[0] == X_IVNOT) { FR_AWAIT(k, r, F_IVNEG, L->a, 0); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
-    if (L->w[0] == X_FCEND) { FR_AWAIT(k, r, F_FCEND, L->a, L->w[2]); FR_FINISH(k, tvrec(PS_FACE, r)); }
-    FR_AWAIT(k, r, F_INTERP, L->w[2], er);
-    L->b = tvget(r).id;
-    if (L->w[0] == X_LMAX) { FR_LMAX(k, r, L->a, L->b); FR_FINISH(k, tvrec(PS_LEVEL, r)); }
-    if (L->w[0] == X_LEVELS) FR_FINISH(k, tvrec(PS_LEVEL, levels_pack(L->a, L->b)));
-    if (L->w[0] == X_IVAND) { FR_AWAIT(k, r, F_IVMEET, L->a, L->b); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
-    if (L->w[0] == X_IVOR) { FR_AWAIT(k, r, F_JOIN, L->a, L->b); FR_FINISH(k, tvrec(PS_INTERVAL, r)); }
-    if (L->w[0] == X_FCAND) { FR_AWAIT(k, r, F_FCMEET, L->a, L->b); FR_FINISH(k, tvrec(PS_FACE, r)); }
-    if (L->w[0] == X_FCOR) { FR_AWAIT(k, r, F_JOIN, L->a, L->b); FR_FINISH(k, tvrec(PS_FACE, r)); }
-    die("bad expression kind %llu", (unsigned long long)L->w[0]);
+    {   size_t n; const uint64_t *w = rget(e, &n);
+        if (w[0] == X_LEVEL) FR_FINISH(k, tvrec(PS_LEVEL, w[1]));
+        require(w[0] == X_CONST, "bad expression kind %llu", (unsigned long long)w[0]);
+        k->w[2] = w[1]; k->w[3] = w[2]; }
+    if (k->w[2] == PS_REF || k->w[2] == PS_INTERVAL || k->w[2] == PS_FACE) FR_AWAIT(k, r, trav_of((PSort)k->w[2]), k->w[3], apply_key(er));
+    else r = k->w[3];
+    FR_FINISH(k, tvrec((PSort)k->w[2], r));
     FR_END(k);
 }
 
 /* the template view of node w[0] in environment w[1] */
 typedef struct { size_t nf, q; uint64_t sup, fv, ds, E, req, slot, g; TVal t; WordBuf out; bool created; } MkLoc;
-/* the declared guard of a node's slot: a construction parameter's closed
- * guard; a template parameter's or term local's declared availability */
-static const uint64_t *node_ptab(TNodeId Q);
-static ExprId slot_guard_e(TNodeId Q, size_t s) {
-    if (node_construction(Q)) return node_ptab(Q)[3 * s + 2];
-    const TDef *d = &TPL.defs[tnode_def(Q)];
-    return s < d->nparams ? d->pguard[s] : d->lreq[s - d->nparams];
-}
+/* the declared guard of a construction parameter (closed) */
+static ExprId slot_guard_e(TNodeId Q, size_t s) { return node_ptab(Q)[3 * s + 2]; }
 static void tvmake_step(Cont *k, uint64_t v) {
     MkLoc *L = FR_LOC(k, MkLoc);
     TNodeId Q = k->w[0]; uint64_t er = k->w[1];
@@ -308,15 +145,12 @@ static void tvmake_step(Cont *k, uint64_t v) {
     wordbuf_init(&L->out);
     for (L->q = 0; L->q < L->nf; L->q++) {
         FR_AWAIT(k, r, F_LOOKUP, er, node_free_slot(Q, L->q));
-        require(r, "template view: a required slot has no value (%s slot %zu)", TPL.defs[tnode_def(Q)].name, node_free_slot(Q, L->q));
+        require(r, "construction view: parameter %zu has no value", node_free_slot(Q, L->q));
         { uint64_t sl; subst_get(er, r - 1, &sl, &L->t); }
         wordbuf_push(&L->out, node_free_slot(Q, L->q)); wordbuf_push(&L->out, L->t.sort); wordbuf_push(&L->out, L->t.id);
         if (L->t.sort == PS_REF) {
             FR_AWAIT(k, L->sup, F_SUNION, L->sup, ref_support(L->t.id));
             FR_AWAIT(k, L->fv, F_SUNION, L->fv, ref_freevars(L->t.id));
-        } else if (L->t.sort == PS_SCOPE) {
-            FR_AWAIT(k, L->sup, F_SUNION, L->sup, scope_support(L->t.id));
-            FR_AWAIT(k, L->fv, F_SUNION, L->fv, scope_freevars(L->t.id));
         } else if (L->t.sort == PS_INTERVAL || L->t.sort == PS_FACE) {
             FR_AWAIT(k, L->ds, F_DIMS, L->t.id, 0);
             FR_AWAIT(k, L->sup, F_SUNION, L->sup, L->ds);
@@ -344,65 +178,14 @@ static void tvmake_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
-/* a scope literal: [X_SCOPE, nloc, (sort, lslot, type_e, level_e, req_e)*, body, type, level, guard];
- * its locals are fresh names keyed by (expression, environment, slot), the
- * records interpreted over them, then captured */
-typedef struct { const uint64_t *w; size_t n, nl, q; uint64_t inner, ty, lv, rq, id, bsort, body, rtype, rlevel; WordBuf out; bool created; } ScLoc;
-static void iscope_step(Cont *k, uint64_t v) {
-    ScLoc *L = FR_LOC(k, ScLoc);
-    ExprId e = k->w[0]; uint64_t er = k->w[1];
-    uint64_t r = 0;
-    FR_BEGIN(k);
-    L->w = rget(e, &L->n); L->nl = (size_t)L->w[1];
-    L->inner = er;
-    wordbuf_init(&L->out); wordbuf_push(&L->out, L->nl);
-    for (L->q = 0; L->q < L->nl; L->q++) {
-        {   const uint64_t *l = L->w + 2 + 5 * L->q;
-            KeyWord bk[5] = { { KW_CONST, 9100 }, { KW_CONST, e }, { KW_CONST, er }, { KW_CONST, L->q }, { KW_CONST, l[0] } };
-            if (l[0] == S_DIM) {
-                DimVarId j = fresh_dim_keyed(bk, 5);
-                wordbuf_push(&L->out, S_DIM); wordbuf_push(&L->out, j); wordbuf_push(&L->out, 0); wordbuf_push(&L->out, LEVEL_NONE); wordbuf_push(&L->out, fc_true());
-                L->id = j; L->ty = 0;
-            } else L->id = 0; }
-        if (L->id) {
-            FR_AWAIT(k, L->inner, F_SET, L->inner, subst_entry(TPL.defs[env_def(er)].nparams + L->w[2 + 5 * L->q + 1], PS_INTERVAL, iv_var(L->id)));
-            continue;
-        }
-        FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->q + 2], L->inner);
-        L->ty = tvget(r).id; L->lv = LEVEL_NONE; L->rq = fc_true();
-        if (L->w[2 + 5 * L->q + 3]) { FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->q + 3], L->inner); L->lv = tvget(r).id; }
-        if (L->w[2 + 5 * L->q + 4]) { FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->q + 4], L->inner); L->rq = tvget(r).id; }
-        {   KeyWord bk[5] = { { KW_CONST, 9100 }, { KW_CONST, e }, { KW_CONST, er }, { KW_CONST, L->q }, { KW_CONST, S_TERM } };
-            L->id = fresh_term_keyed_req(bk, 5, L->ty, L->rq); }
-        wordbuf_push(&L->out, S_TERM); wordbuf_push(&L->out, L->id); wordbuf_push(&L->out, L->ty); wordbuf_push(&L->out, L->lv); wordbuf_push(&L->out, L->rq);
-        FR_AWAIT(k, r, F_REFVAR, L->id, 0);
-        FR_AWAIT(k, L->inner, F_SET, L->inner, subst_entry(TPL.defs[env_def(er)].nparams + L->w[2 + 5 * L->q + 1], PS_REF, r));
-    }
-    {   const uint64_t *t = L->w + 2 + 5 * L->nl;          /* body, type, level, guard */
-        FR_AWAIT(k, r, F_INTERP, t[0], L->inner); }
-    {   TVal b = tvget(r); L->bsort = b.sort == PS_REF ? VS_REF : b.sort == PS_INTERVAL ? VS_INTERVAL : VS_FACE; L->body = b.id; }
-    L->rtype = 0; L->rlevel = LEVEL_NONE;
-    if (L->w[2 + 5 * L->nl + 1]) { FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->nl + 1], L->inner); L->rtype = tvget(r).id; }
-    if (L->w[2 + 5 * L->nl + 2]) { FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->nl + 2], L->inner); L->rlevel = tvget(r).id; }
-    FR_AWAIT(k, r, F_INTERP, L->w[2 + 5 * L->nl + 3], L->inner);
-    wordbuf_push(&L->out, L->bsort); wordbuf_push(&L->out, L->body); wordbuf_push(&L->out, L->rtype); wordbuf_push(&L->out, L->rlevel); wordbuf_push(&L->out, tvget(r).id);
-    FR_CALL(k, L->id, intern_sub(k, &M.keys, &L->out, &L->created));
-    FR_AWAIT(k, r, F_CAPTURE, L->id, 0);
-    FR_FINISH(k, r);
-    FR_END(k);
-}
-
 void template_families_init(void) {
-    family_define(F_INTERP, "template.interp", interp_step, sizeof(InLoc));
+    family_define(F_INTERP, "node.interp", interp_step, 0);
     family_define(F_TVMAKE, "template.view", tvmake_step, sizeof(MkLoc));
-    family_define(F_ISCOPE, "template.scope", iscope_step, sizeof(ScLoc));
 }
 
 /* ------------------------------------------------------------------ */
 /* TVIEW operations (synchronous driver over the families)               */
 
-static TVal interp_at(ExprId e, uint64_t er) { return tvget(family_call(F_INTERP, e, er)); }
-RefId tview_make(TNodeId Q, uint64_t er) { return family_call(F_TVMAKE, Q, er); }
 
 void tview_open(RefId t, Head *h) {
     TNodeId Q = ref_tnode(t);
@@ -414,665 +197,3 @@ void tview_open(RefId t, Head *h) {
 }
 
 
-/* the boundary signature of a template node as expressions (interpreted by
- * the caller in the view's environment, one awaited interpretation each):
- * entry k of the node's free slots; false when the slot carries no checked
- * declaration */
-
-/* ------------------------------------------------------------------ */
-/* registration DSL                                                      */
-
-static TDefId cur; static TDef *cd;
-static ExprId under_face;         /* the `under` faces in force (0 = none) */
-
-static ExprId P(size_t k) { return x1(X_PARAM, k); }
-static ExprId L(size_t l) { return x1(X_LOCAL, l); }
-static ExprId LV(uint64_t n) { return x1(X_LEVEL, n); }
-static ExprId LSUCC(ExprId a) { return x1(X_LSUCC, a); }
-static ExprId LMAX(ExprId a, ExprId b) { return x2(X_LMAX, a, b); }
-static ExprId LEVELS(ExprId m, ExprId n) { return x2(X_LEVELS, m, n); }
-static ExprId IV0(void) { return x0(X_IV0); }
-static ExprId IV1(void) { return x0(X_IV1); }
-static ExprId IVNOT(ExprId a) { return x1(X_IVNOT, a); }
-static ExprId IVAND(ExprId a, ExprId b) { return x2(X_IVAND, a, b); }
-static ExprId IVOR(ExprId a, ExprId b) { return x2(X_IVOR, a, b); }
-static ExprId FCF(void) { return x0(X_FCF); }
-static ExprId FCT(void) { return x0(X_FCT); }
-static ExprId FCOR(ExprId a, ExprId b) { return x2(X_FCOR, a, b); }
-static ExprId FCEND(ExprId a, int eps) { return x2(X_FCEND, a, (uint64_t)eps); }
-static ExprId FORALL(ExprId s) { return x1(X_FORALL, s); }
-static ExprId AP1(ExprId s, ExprId a) { uint64_t w[4] = { X_APPLY, s, 1, a }; return xi(4, w); }
-static ExprId AP2(ExprId s, ExprId a, ExprId b) { uint64_t w[5] = { X_APPLY, s, 2, a, b }; return xi(5, w); }
-static ExprId CALLn(TDefKind f, size_t n, const ExprId *args) { uint64_t w[3 + MAXP]; w[0] = X_CALL; w[1] = f; w[2] = n; memcpy(w + 3, args, n * sizeof(ExprId)); return xi(3 + n, w); }
-#define CALL(f, ...) ({ ExprId _a[] = { __VA_ARGS__ }; CALLn(f, sizeof _a / sizeof _a[0], _a); })
-
-static size_t newlocal(PSort s) { require(cd->nlocals < MAXL, "too many template locals"); cd->lsort[cd->nlocals] = s; return cd->nlocals++; }
-
-/* close a slot set under the declarations of the current definition: the
- * declared types / levels / guards / signatures of retained parameters and
- * the declarations of retained term locals (constructor binders and scope
- * locals). A retained slot keeps its typed dependency closure (§51.1). */
-static void decl_closure(SlotSet *fsl) {
-    size_t np = cd->nparams;
-    for (bool changed = true; changed; ) {
-        changed = false;
-        SlotSet add; memset(&add, 0, sizeof add);
-        for (size_t k = 0; k < np; k++) if (ss_has(fsl, k)) {
-            if (cd->ptype[k]) expr_free(cd->ptype[k], np, &add);
-            if (cd->plevel[k]) expr_free(cd->plevel[k], np, &add);
-            if (cd->psig[k]) expr_free(cd->psig[k], np, &add);
-            if (cd->pguard[k]) expr_free(cd->pguard[k], np, &add);
-        }
-        for (size_t l = 0; l < cd->nlocals; l++) if (ss_has(fsl, np + l)) {
-            if (cd->ltype[l]) expr_free(cd->ltype[l], np, &add);
-            if (cd->llevel[l]) expr_free(cd->llevel[l], np, &add);
-            if (cd->lreq[l]) expr_free(cd->lreq[l], np, &add);
-        }
-        for (size_t k = 0; k < MAXSLOT; k++) if (ss_has(&add, k) && !ss_has(fsl, k)) { ss_set(fsl, k); changed = true; }
-    }
-}
-/* the syntactic free slots of a node: fields, payload, levels, required
- * face, minus its own binder locals (child nodes contribute their current
- * free sets) */
-static void node_syntactic_free(TNodeId Q, SlotSet *fsl) {
-    size_t np = cd->nparams;
-    size_t nf = tnode_nfields(Q);
-    for (size_t k = 0; k < nf; k++) { FieldKind kd; BinderSlot bs; ExprId e; node_field(Q, k, &kd, &bs, &e); expr_free(e, np, fsl); }
-    if (node_payload_e(Q)) expr_free(node_payload_e(Q), np, fsl);
-    if (node_levels_e(Q)) expr_free(node_levels_e(Q), np, fsl);
-    expr_free(node_required_e(Q), np, fsl);
-    size_t nb = tnode_nbinders(Q);
-    for (size_t b = 0; b < nb; b++) { Sort so; FieldIndex df; size_t ls; node_binder(Q, (BinderSlot)b, &so, &df, &ls); ss_clear(fsl, np + ls); }
-}
-/* the free-slot list of the current definition's node Q; whether it changed */
-static bool set_free_slots(TNodeId Q, const SlotSet *fsl) {
-    Words fl; words_init(&fl);
-    for (size_t k = 0; k < MAXSLOT; k++) if (ss_has(fsl, k)) words_push(&fl, k);
-    uint64_t list = interner_intern(&M.keys, fl.w, fl.n, NULL);
-    words_free(&fl);
-    size_t ix = (size_t)tnode_index(Q);
-    while (cd->freel.n <= ix) words_push(&cd->freel, 0);
-    bool changed = cd->freel.w[ix] != list;
-    cd->freel.w[ix] = list;
-    return changed;
-}
-
-typedef struct { FieldKind kind; BinderSlot bslot; ExprId e; } FS;
-typedef struct { Sort sort; FieldIndex domfield; size_t lslot; } BS;
-static ExprId NODE_req(Tag tag, ExprId payload, ExprId levels, size_t nf, const FS *fs, size_t nb, const BS *bs, ExprId req);
-static ExprId NODE(Tag tag, ExprId payload, ExprId levels, size_t nf, const FS *fs, size_t nb, const BS *bs) {
-    return NODE_req(tag, payload, levels, nf, fs, nb, bs, under_face ? under_face : FCT());
-}
-static ExprId NODE_req(Tag tag, ExprId payload, ExprId levels, size_t nf, const FS *fs, size_t nb, const BS *bs, ExprId req) {
-    Words w; words_init(&w);
-    words_push(&w, cur); words_push(&w, TPL.index_counter[cur]++); words_push(&w, tag); words_push(&w, payload); words_push(&w, levels); words_push(&w, nf);
-    for (size_t k = 0; k < nf; k++) { words_push(&w, fs[k].kind); words_push(&w, fs[k].bslot); words_push(&w, fs[k].e); }
-    words_push(&w, nb);
-    for (size_t k = 0; k < nb; k++) { words_push(&w, bs[k].sort); words_push(&w, bs[k].domfield); words_push(&w, bs[k].lslot); }
-    words_push(&w, req);
-    /* a term binder declares its local: the domain field, the first level, the node's required face */
-    for (size_t k = 0; k < nb; k++) if (bs[k].sort == S_TERM && bs[k].domfield != NO_FIELD) {
-        cd->ltype[bs[k].lslot] = fs[bs[k].domfield].e;
-        cd->llevel[bs[k].lslot] = levels ? x1(X_LFIRST, levels) : 0;
-        cd->lreq[bs[k].lslot] = req;
-    }
-    bool created;
-    TNodeId Q = interner_intern(&M.keys, w.w, w.n, &created);
-    words_free(&w);
-    require(created, "duplicate template node");
-    /* free slots: fields, payload, levels, required, minus own binder
-     * locals, closed under the declared types / levels / signatures of the
-     * retained parameters (§51.1, §59.1): a retained parameter keeps its
-     * typed dependency closure */
-    SlotSet fsl; memset(&fsl, 0, sizeof fsl);
-    node_syntactic_free(Q, &fsl);
-    set_free_slots(Q, &fsl);             /* provisional: finish() recomputes the typed closure over the complete declaration table */
-    words_push(&cd->nodes, Q);
-    return x1(X_NODE, Q);
-}
-
-/* constructor nodes by the schema (term.h): operand recipes es in field
- * order; a binder takes the local slot it binds */
-static ExprId nT_(Tag tag, ExprId payload, ExprId levels, size_t lslot, size_t n, const ExprId *es) {
-    FS f[8]; BS b[1]; require(n <= 8, "node arity");
-    for (size_t k = 0; k < n; k++) f[k] = (FS){ schema_kind(tag, k), schema_slot(tag, k), es[k] };
-    Sort bs = tag == T_SYSTEM ? 0 : (Sort)tag_schema(tag)->bsort;
-    if (bs) b[0] = (BS){ bs, bs == S_TERM ? 0 : NO_FIELD, lslot };
-    return NODE(tag, payload, levels, n, f, bs ? 1 : 0, b);
-}
-#define nT(tag, payload, levels, lslot, ...) nT_((tag), (payload), (levels), (lslot), sizeof((ExprId[]){ __VA_ARGS__ }) / sizeof(ExprId), (ExprId[]){ __VA_ARGS__ })
-#define LV1(n) LEVELS((n), LV(LEVEL_NONE))
-#define nPI(m, n, xl, A, B) nT(T_PI, 0, LEVELS(m, n), xl, A, B)
-#define nSIGMA(m, n, xl, A, B) nT(T_SIGMA, 0, LEVELS(m, n), xl, A, B)
-#define nLAM(m, xl, A, body) nT(T_LAM, 0, LV1(m), xl, A, body)
-#define nAPP(fn, a) nT(T_APP, 0, 0, 0, fn, a)
-#define nPAIR_AT(l, S, a, b) nT(T_PAIR, 0, LV1(l), 0, a, b, S)
-#define nFST(p) nT(T_FST, 0, 0, 0, p)
-#define nSND(p) nT(T_SND, 0, 0, 0, p)
-#define nPATH(n, jl, B, l, r) nT(T_PATH, 0, LV1(n), jl, B, l, r)
-#define nPLAM(jl, body) nT(T_PLAM, 0, 0, jl, body)
-#define nPAPP(n, jl, B, l, r, p, s) nT(T_PAPP, 0, LV1(n), jl, B, l, r, p, s)
-#define nGLUE(n, A, alpha, T, e) nT(T_GLUE_TYPE, 0, LV1(n), 0, A, alpha, T, e)
-#define nGLUEINTRO(n, A, alpha, T, e, t, a) nT(T_GLUE_INTRO, 0, LV1(n), 0, A, alpha, T, e, t, a)
-#define nUNGLUE(n, A, alpha, T, e, v) nT(T_UNGLUE, 0, LV1(n), 0, A, alpha, T, e, v)
-#define nCOMP(n, jl, A, phi, u, cap) nT(T_COMP, 0, LV1(n), jl, A, phi, u, cap)
-static ExprId nSYSTEM(size_t nb, const ExprId *faces, const ExprId *terms) {
-    ExprId e[8]; require(nb <= 4, "system arity");
-    for (size_t k = 0; k < nb; k++) { e[2 * k] = faces[k]; e[2 * k + 1] = terms[k]; }
-    return nT_(T_SYSTEM, LV(nb), 0, 0, 2 * nb, e);
-}
-static ExprId nUNIV(ExprId l) { return NODE(T_UNIVERSE, l, 0, 0, NULL, 0, NULL); }
-
-/* scope literals: locals are allocated here; the body is built by a
- * callback that receives the local slots */
-static ExprId guard_now(void) { return under_face ? under_face : FCT(); }
-typedef struct { Sort sort; ExprId type, level, req; } LS;
-static ExprId SCOPE(size_t nl, const LS *ls, size_t *slots, ExprId body, ExprId type, ExprId level, ExprId guard) {
-    for (size_t k = 0; k < nl; k++) if (ls[k].sort == S_TERM) { cd->ltype[slots[k]] = ls[k].type; cd->llevel[slots[k]] = ls[k].level; cd->lreq[slots[k]] = ls[k].req; }
-    uint64_t w[8 + 5 * 8]; size_t n = 0;
-    w[n++] = X_SCOPE; w[n++] = nl;
-    for (size_t k = 0; k < nl; k++) { w[n++] = ls[k].sort; w[n++] = slots[k]; w[n++] = ls[k].type; w[n++] = ls[k].level; w[n++] = ls[k].req; }
-    w[n++] = body; w[n++] = type; w[n++] = level; w[n++] = guard;
-    return xi(n, w);
-}
-/* unary dimension scope [j]. body, with its result type as a function of j */
-typedef ExprId (*JFn)(ExprId j, void *ctx);
-static ExprId DSCOPE1(JFn body, JFn type, void *ctx, ExprId level, ExprId guard) {
-    size_t s = newlocal(PS_INTERVAL);
-    LS ls[1] = { { S_DIM, 0, 0, 0 } };
-    size_t slots[1] = { s };
-    ExprId b = body(L(s), ctx);
-    ExprId t = type ? type(L(s), ctx) : 0;
-    return SCOPE(1, ls, slots, b, t, level, guard);
-}
-
-
-/* ---- contextual signatures of scope parameters (§51.4): a scope whose
- * locals are the expected telescope, whose body is the expected result type,
- * with the expected level and guard ---- */
-typedef struct { ExprId a, b, c, d, e, f, t; } Cx;
-static ExprId t_univ(ExprId j, void *c); static ExprId t_fam_at(ExprId j, void *c); static ExprId t_const(ExprId j, void *c);
-typedef ExprId (*J2Fn)(ExprId a, ExprId b, void *ctx);
-static ExprId SIG_DIM1(JFn result, void *ctx, ExprId level, ExprId guard) { return DSCOPE1(result, NULL, ctx, level, guard); }
-static ExprId SIG_FACE1(ExprId guard) {
-    size_t s = newlocal(PS_INTERVAL); LS ls[1] = { { S_DIM, 0, 0, 0 } }; size_t sl[1] = { s };
-    return SCOPE(1, ls, sl, FCT(), 0, 0, guard);
-}
-static ExprId SIG_DIM2(J2Fn result, void *ctx, ExprId level, ExprId guard) {
-    size_t i = newlocal(PS_INTERVAL), j = newlocal(PS_INTERVAL);
-    LS ls[2] = { { S_DIM, 0, 0, 0 }, { S_DIM, 0, 0, 0 } }; size_t sl[2] = { i, j };
-    return SCOPE(2, ls, sl, result(L(i), L(j), ctx), 0, level, guard);
-}
-/* [i, x : dom(i)]. result(i, x) */
-static ExprId SIG_DIM_TERM(JFn dom, ExprId domlevel, J2Fn result, void *ctx, ExprId level, ExprId guard) {
-    size_t i = newlocal(PS_INTERVAL), x = newlocal(PS_REF);
-    LS ls[2] = { { S_DIM, 0, 0, 0 }, { S_TERM, dom(L(i), ctx), domlevel, 0 } }; size_t sl[2] = { i, x };
-    return SCOPE(2, ls, sl, result(L(i), L(x), ctx), 0, level, guard);
-}
-/* [x : A, e : etype(x)]. result(x, e) */
-static ExprId SIG_TERM2(ExprId A, ExprId lA, JFn etype, ExprId elevel, J2Fn result, void *ctx, ExprId level, ExprId guard) {
-    size_t x = newlocal(PS_REF), e = newlocal(PS_REF);
-    LS ls[2] = { { S_TERM, A, lA, 0 }, { S_TERM, etype(L(x), ctx), elevel, 0 } }; size_t sl[2] = { x, e };
-    return SCOPE(2, ls, sl, result(L(x), L(e), ctx), 0, level, guard);
-}
-/* result-type recipes used by the signatures */
-static ExprId r_pi_at(ExprId i, void *c) { Cx *x = c; /* a=m b=n c=D d=E */ size_t xl = newlocal(PS_REF); return nPI(x->a, x->b, xl, AP1(x->c, i), AP2(x->d, i, L(xl))); }
-static ExprId r_sigma_at(ExprId i, void *c) { Cx *x = c; size_t xl = newlocal(PS_REF); return nSIGMA(x->a, x->b, xl, AP1(x->c, i), AP2(x->d, i, L(xl))); }
-static ExprId r_E_dom(ExprId i, void *c) { Cx *x = c; return AP1(x->c, i); }
-static ExprId r_univ2(ExprId i, ExprId x, void *c) { (void)i; (void)x; return nUNIV(((Cx *)c)->t); }
-static ExprId r_path_at(ExprId i, void *c) { Cx *x = c; /* a=n b=B c=left d=right */ size_t k = newlocal(PS_INTERVAL); return nPATH(x->a, k, AP2(x->b, i, L(k)), AP1(x->c, i), AP1(x->d, i)); }
-static ExprId r_B_at0(ExprId i, void *c) { return AP2(((Cx *)c)->b, i, IV0()); }
-static ExprId r_B_at1(ExprId i, void *c) { return AP2(((Cx *)c)->b, i, IV1()); }
-static ExprId r_glue_at(ExprId i, void *c) { Cx *x = c; /* a=n b=A c=alpha d=T e=e */ return nGLUE(x->a, AP1(x->b, i), AP1(x->c, i), AP1(x->d, i), AP1(x->e, i)); }
-static ExprId r_equiv_TA(ExprId i, void *c) { Cx *x = c; return CALL(TD_EQUIV, x->a, x->a, AP1(x->d, i), AP1(x->b, i)); }
-static ExprId r_guard_alpha(ExprId i, void *c) { return AP1(((Cx *)c)->c, i); }
-static ExprId r_down_etype(ExprId xl, void *c) { Cx *x = c; /* a=lA b=A c=t */ return CALL(TD_PATHCONST, x->a, x->b, x->c, xl); }
-static ExprId r_down_res(ExprId xl, ExprId el, void *c) { (void)xl; (void)el; return nUNIV(((Cx *)c)->t); }
-/* a unary dimension scope signature whose guard depends on the local */
-static ExprId SIG_DIM1_G(JFn result, JFn guard, void *ctx, ExprId level) {
-    size_t s = newlocal(PS_INTERVAL); LS ls[1] = { { S_DIM, 0, 0, 0 } }; size_t sl[1] = { s };
-    return SCOPE(1, ls, sl, result(L(s), ctx), 0, level, guard(L(s), ctx));
-}
-
-static void begin(TDefKind k, const char *name, size_t n, const PSort *sorts) {
-    cur = k; cd = &TPL.defs[k]; memset(cd, 0, sizeof *cd); words_init(&cd->nodes); words_init(&cd->freel);
-    cd->name = name; cd->nparams = n;
-    for (size_t i = 0; i < n; i++) cd->sorts[i] = sorts[i];
-    under_face = 0;
-}
-static void ptype(size_t k, ExprId type, ExprId level) { cd->ptype[k] = type; cd->plevel[k] = level; }
-static void ptype_on(size_t k, ExprId type, ExprId level, ExprId guard) { ptype(k, type, level); cd->pguard[k] = guard; }
-static void psig(size_t k, ExprId sig) { cd->psig[k] = sig; }
-static void rtype(ExprId type, ExprId level) { cd->rtype = type; cd->rlevel = level; }
-/* ---- integration of a call-root (§51.1, review F2) ----
- * The callee's root recipe is remapped into caller-owned nodes: callee
- * parameters become the call's argument recipes,
- * callee locals become fresh caller locals with their declarations, callee
- * nodes become caller nodes with the substituted field, payload, level and
- * required-face recipes. Done once at registration. */
-typedef struct { const TDef *callee; ExprId arg[MAXP]; size_t lmap[MAXL]; bool lmapped[MAXL]; } Inl;
-static ExprId inl_expr(ExprId e, Inl *in);
-static size_t inl_local(size_t l, Inl *in) {
-    if (!in->lmapped[l]) {
-        size_t nl = newlocal(in->callee->lsort[l]);
-        in->lmap[l] = nl; in->lmapped[l] = true;
-        /* the local's declaration follows it (its recipes mention earlier locals: mapped on demand) */
-        if (in->callee->ltype[l]) cd->ltype[nl] = inl_expr(in->callee->ltype[l], in);
-        if (in->callee->llevel[l]) cd->llevel[nl] = inl_expr(in->callee->llevel[l], in);
-        if (in->callee->lreq[l]) cd->lreq[nl] = inl_expr(in->callee->lreq[l], in);
-    }
-    return in->lmap[l];
-}
-static ExprId inl_expr(ExprId e, Inl *in) {
-    if (!e) return 0;
-    size_t n; const uint64_t *w = rget(e, &n);
-    switch (w[0]) {
-    case X_PARAM: return in->arg[w[1]];
-    case X_LOCAL: return x1(X_LOCAL, inl_local((size_t)w[1], in));
-    case X_LEVEL: case X_IV0: case X_IV1: case X_FCF: case X_FCT: return e;
-    case X_LSUCC: case X_LFIRST: case X_IVNOT: case X_FORALL: case X_APPLY_TYPE: case X_APPLY_GUARD: return x1(w[0], inl_expr(w[1], in));
-    case X_LMAX: case X_LEVELS: case X_IVAND: case X_IVOR: case X_FCAND: case X_FCOR: return x2(w[0], inl_expr(w[1], in), inl_expr(w[2], in));
-    case X_FCEND: return x2(X_FCEND, inl_expr(w[1], in), w[2]);
-    case X_CALL: { uint64_t o[3 + MAXP]; o[0] = X_CALL; o[1] = w[1]; o[2] = w[2]; for (size_t k = 0; k < w[2]; k++) o[3 + k] = inl_expr(w[3 + k], in); return xi(3 + w[2], o); }
-    case X_APPLY: { uint64_t o[3 + MAXP]; o[0] = X_APPLY; o[1] = inl_expr(w[1], in); o[2] = w[2]; for (size_t k = 0; k < w[2]; k++) o[3 + k] = inl_expr(w[3 + k], in); return xi(3 + w[2], o); }
-    case X_SCOPE: {
-        size_t nl = w[1]; const uint64_t *l = w + 2; const uint64_t *t = l + 5 * nl;
-        uint64_t o[8 + 5 * 8]; size_t m = 0; o[m++] = X_SCOPE; o[m++] = nl;
-        for (size_t k = 0; k < nl; k++) {
-            size_t ns = inl_local((size_t)l[5 * k + 1], in);
-            o[m++] = l[5 * k]; o[m++] = ns; o[m++] = inl_expr(l[5 * k + 2], in); o[m++] = inl_expr(l[5 * k + 3], in); o[m++] = inl_expr(l[5 * k + 4], in);
-            if (l[5 * k] == S_TERM) { cd->ltype[ns] = o[m - 3]; cd->llevel[ns] = o[m - 2]; cd->lreq[ns] = o[m - 1]; }
-        }
-        o[m++] = inl_expr(t[0], in); o[m++] = inl_expr(t[1], in); o[m++] = inl_expr(t[2], in); o[m++] = inl_expr(t[3], in);
-        return xi(m, o);
-    }
-    case X_NODE: {
-        TNodeId Q = w[1];
-        size_t nf = tnode_nfields(Q), nb = tnode_nbinders(Q);
-        FS fs[12]; BS bs[4]; require(nf <= 12 && nb <= 4, "inline: node arity");
-        for (size_t k = 0; k < nf; k++) { ExprId fe; node_field(Q, k, &fs[k].kind, &fs[k].bslot, &fe); fs[k].e = inl_expr(fe, in); }
-        for (size_t b = 0; b < nb; b++) { size_t ls; node_binder(Q, (BinderSlot)b, &bs[b].sort, &bs[b].domfield, &ls); bs[b].lslot = inl_local(ls, in); }
-        return NODE_req(tnode_tag(Q), inl_expr(node_payload_e(Q), in), inl_expr(node_levels_e(Q), in), nf, fs, nb, bs, inl_expr(node_required_e(Q), in));
-    }
-    default: die("inline: bad expression kind");
-    }
-}
-static ExprId inline_root(ExprId e) {
-    for (;;) {
-        size_t n; const uint64_t *w = rget(e, &n);
-        if (w[0] != X_CALL) return e;
-        Inl in; memset(&in, 0, sizeof in);
-        in.callee = &TPL.defs[w[1]];
-        require(in.callee->root, "inline: callee not registered (%s)", in.callee->name);
-        require(w[2] == in.callee->nparams, "inline: call arity");
-        for (size_t k = 0; k < w[2]; k++) in.arg[k] = w[3 + k];
-        e = inl_expr(in.callee->root, &in);
-    }
-}
-
-static void finish(ExprId root) {
-    /* a root that calls another program is integrated into a caller-owned
-     * constructor node (§51.1): the caller's parameter signature and result
-     * type stay the retained, checkable boundary */
-    root = inline_root(root);
-    cd->root = root;
-    size_t n; const uint64_t *w = rget(root, &n);
-    require(w[0] == X_NODE, "template root is not a constructor node (%s)", cd->name);
-    TNodeId Q = w[1]; cd->root_node = Q;
-    /* the typed closure over the complete declaration table, children first,
-     * to a fixpoint; the root node also retains the declared result type */
-    for (bool changed = true; changed; ) {
-        changed = false;
-        for (size_t k = 0; k < cd->nodes.n; k++) {
-            TNodeId N = (TNodeId)cd->nodes.w[k];
-            SlotSet fsl; memset(&fsl, 0, sizeof fsl);
-            node_syntactic_free(N, &fsl);
-            if (N == Q) { if (cd->rtype) expr_free(cd->rtype, cd->nparams, &fsl); if (cd->rlevel) expr_free(cd->rlevel, cd->nparams, &fsl); }
-            decl_closure(&fsl);
-            if (set_free_slots(N, &fsl)) changed = true;
-        }
-    }
-}
-#define SORTS(...) ((const PSort[]){ __VA_ARGS__ })
-
-/* ---- §52 programs ---- */
-
-static ExprId b_pappnot(ExprId i, void *c) { Cx *x = c; return CALL(TD_PAPPCONST, x->a, x->b, x->c, x->d, x->e, IVNOT(i)); }
-static ExprId b_concat(ExprId i, void *c) {
-    Cx *x = c;   /* a=l b=A c=x d=y e=z (p, q in f? use two) */
-    ExprId l = x->a, A = x->b, xx = x->c, y = x->d, z = x->e;
-    ExprId p = P(5), q = P(6);
-    size_t jl = newlocal(PS_INTERVAL);
-    ExprId faces[2] = { FCEND(i, 0), FCEND(i, 1) };
-    ExprId terms[2] = { xx, CALL(TD_PAPPCONST, l, A, y, z, q, L(jl)) };
-    return nCOMP(l, jl, A, FCOR(faces[0], faces[1]), nSYSTEM(2, faces, terms), CALL(TD_PAPPCONST, l, A, xx, y, p, i));
-}
-
-static ExprId b_ideq_inner(ExprId i, void *c) {
-    Cx *x = c; /* a=l b=X c=fx d=y e=p f=fib */
-    size_t jl = newlocal(PS_INTERVAL);
-    ExprId first = CALL(TD_PAPPCONST, x->a, x->b, x->c, x->d, x->e, IVNOT(i));
-    ExprId second = nPLAM(jl, CALL(TD_PAPPCONST, x->a, x->b, x->c, x->d, x->e, IVOR(IVNOT(i), L(jl))));
-    return nPAIR_AT(x->a, x->f, first, second);
-}
-static ExprId b_ext_tube(ExprId j, void *c) { Cx *x = c; return CALL(TD_PAPPCONST, x->a, x->b, x->c, x->d, nAPP(x->e, x->d), j); }
-static ExprId b_lineeq_fam(ExprId i, void *c) { Cx *x = c; return CALL(TD_EQUIV, x->a, x->a, x->b, AP1(x->c, i)); }
-static ExprId b_ua(ExprId i, void *c) {
-    Cx *x = c; /* a=l b=X c=Y d=e */
-    ExprId faces[2] = { FCEND(i, 0), FCEND(i, 1) };
-    ExprId Ts[2] = { x->b, x->c }, es[2] = { x->d, CALL(TD_IDEQUIV, x->a, x->c) };
-    return nGLUE(x->a, x->c, FCOR(faces[0], faces[1]), nSYSTEM(2, faces, Ts), nSYSTEM(2, faces, es));
-}
-/* composition clause helpers */
-static ExprId b_pi_Dneg(ExprId j, void *c) { Cx *x = c; return AP1(x->a, IVNOT(j)); }
-static ExprId t_univ(ExprId j, void *c) { (void)j; return nUNIV(((Cx *)c)->t); }
-static ExprId b_empty(ExprId j, void *c) { (void)j; (void)c; return nSYSTEM(0, NULL, NULL); }
-static ExprId t_fam_at(ExprId j, void *c) { return AP1(((Cx *)c)->t, j); }
-static ExprId t_const(ExprId j, void *c) { (void)j; return ((Cx *)c)->t; }
-static ExprId t_fam_neg(ExprId j, void *c) { return AP1(((Cx *)c)->t, IVNOT(j)); }
-static ExprId b_pi_V(ExprId r, void *c) {
-    Cx *x = c; /* a=m b=D c=x1 */
-    Cx d = { x->b, 0, 0, 0, 0, 0, x->a };
-    ExprId Dneg = DSCOPE1(b_pi_Dneg, t_univ, &d, LSUCC(x->a), guard_now());
-    Cx e0 = { Dneg, 0, 0, 0, 0, 0, Dneg };
-    ExprId empty = DSCOPE1(b_empty, t_fam_at, &e0, x->a, FCF());          /* the empty tube: family D<¬j> under false */
-    return CALL(TD_FILL, x->a, Dneg, FCF(), empty, x->c, IVNOT(r));
-}
-static ExprId b_sig_fstu(ExprId i, void *c) { Cx *x = c; return nFST(AP1(x->a, i)); }
-static ExprId b_sig_Afill(ExprId r, void *c) {
-    Cx *x = c; /* a=m b=D c=phi d=u e=cap */
-    Cx both = { x->d, 0, 0, 0, 0, 0, x->b };
-    ExprId fstu = DSCOPE1(b_sig_fstu, t_fam_at, &both, x->a, x->c);
-    return CALL(TD_FILL, x->a, x->b, x->c, fstu, nFST(x->e), r);
-}
-static ExprId b_glue_base(ExprId i, void *c) { Cx *x = c; /* a=n b=A c=alpha d=T e=e f=u */ return nUNGLUE(x->a, AP1(x->b, i), AP1(x->c, i), AP1(x->d, i), AP1(x->e, i), AP1(x->f, i)); }
-static ExprId b_glue_Afill(ExprId r, void *c) { Cx *x = c; /* a=n b=A c=psi d=baseTube e=a0 */ return CALL(TD_FILL, x->a, x->b, x->c, x->d, x->e, r); }
-static ExprId b_glue_Tfill(ExprId r, void *c) { Cx *x = c; /* a=n b=T c=psi d=u e=cap */ return CALL(TD_FILL, x->a, x->b, x->c, x->d, x->e, r); }
-static ExprId b_glue_omega(ExprId q, void *c) {
-    Cx *x = c; /* a=n b=A c=psi d=Afill e=e f=Tfill ; a0 via P? pass through extra: use P(6) cap? we need a0: stored in x->... */
-    size_t il = newlocal(PS_INTERVAL);
-    ExprId i = L(il);
-    ExprId faces[3] = { x->c, FCEND(q, 0), FCEND(q, 1) };
-    ExprId terms[3] = { AP1(x->d, i), nAPP(CALL(TD_EQUIVMAP, x->a, x->a, AP1(x->t, i), AP1(x->b, i), AP1(x->e, i)), AP1(x->f, i)), AP1(x->d, i) };
-    extern ExprId glue_a0_expr;
-    return nCOMP(x->a, il, AP1(x->b, i), FCOR(x->c, FCOR(faces[1], faces[2])), nSYSTEM(3, faces, terms), glue_a0_expr);
-}
-ExprId glue_a0_expr;
-static ExprId b_glue_repair(ExprId q, void *c) {
-    Cx *x = c; /* a=n b=A1 c=alpha1 d=psi e=f1t1 (App(EquivMap(e1),t1)) f=a1 ; p via global */
-    extern ExprId glue_p_expr;
-    ExprId faces[2] = { x->c, x->d };
-    ExprId terms[2] = { CALL(TD_PAPPCONST, x->a, x->b, x->e, x->f, glue_p_expr, IVNOT(q)), x->f };
-    return nSYSTEM(2, faces, terms);
-}
-ExprId glue_p_expr;
-static ExprId b_univ_rev(ExprId j, void *c) { Cx *x = c; return AP1(x->a, IVNOT(j)); }
-static ExprId b_down_fam(ExprId i, void *c) {
-    Cx *x = c; /* a=lA b=A c=t d=D e=x f=e ; z separately */
-    size_t jl = newlocal(PS_INTERVAL);
-    ExprId xi_ = CALL(TD_PAPPCONST, x->a, x->b, x->c, x->e, x->f, IVNOT(i));
-    ExprId ei = nPLAM(jl, CALL(TD_PAPPCONST, x->a, x->b, x->c, x->e, x->f, IVAND(IVNOT(i), L(jl))));
-    return AP2(x->d, xi_, ei);
-}
-
-static void register_library(void) {
-    /* PathConst(l, A, lft, r) = PathP(j. A, lft, r) */
-    begin(TD_PATHCONST, "PathConst", 4, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(3, P(1), P(0));
-    rtype(nUNIV(P(0)), LSUCC(P(0)));
-    { size_t j = newlocal(PS_INTERVAL); finish(nPATH(P(0), j, P(1), P(2), P(3))); }
-    /* Refl(l, A, a) = PLam(j. a) */
-    begin(TD_REFL, "Refl", 3, SORTS(PS_LEVEL, PS_REF, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0));
-    rtype(CALL(TD_PATHCONST, P(0), P(1), P(2), P(2)), P(0));
-    { size_t j = newlocal(PS_INTERVAL); finish(nPLAM(j, P(2))); }
-    /* PAppConst(l, A, lft, r, p, s) */
-    begin(TD_PAPPCONST, "PAppConst", 6, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF, PS_INTERVAL));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(3, P(1), P(0)); ptype(4, CALL(TD_PATHCONST, P(0), P(1), P(2), P(3)), P(0));
-    rtype(P(1), P(0));
-    { size_t j = newlocal(PS_INTERVAL); finish(nPAPP(P(0), j, P(1), P(2), P(3), P(4), P(5))); }
-    /* Reverse(l, A, lft, r, p) = PLam(i. PAppConst(A,l,r,p,not i)) */
-    begin(TD_REVERSE, "Reverse", 5, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(3, P(1), P(0)); ptype(4, CALL(TD_PATHCONST, P(0), P(1), P(2), P(3)), P(0));
-    rtype(CALL(TD_PATHCONST, P(0), P(1), P(3), P(2)), P(0));
-    { size_t i = newlocal(PS_INTERVAL); Cx c = { P(0), P(1), P(2), P(3), P(4), 0 }; finish(nPLAM(i, b_pappnot(L(i), &c))); }
-    /* Concat(l, A, x, y, z, p, q) */
-    begin(TD_CONCAT, "Concat", 7, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF, PS_REF, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype(3, P(1), P(0)); ptype(4, P(1), P(0));
-    ptype(5, CALL(TD_PATHCONST, P(0), P(1), P(2), P(3)), P(0)); ptype(6, CALL(TD_PATHCONST, P(0), P(1), P(3), P(4)), P(0));
-    rtype(CALL(TD_PATHCONST, P(0), P(1), P(2), P(4)), P(0));
-    { size_t i = newlocal(PS_INTERVAL); Cx c = { P(0), P(1), P(2), P(3), P(4), 0 }; finish(nPLAM(i, b_concat(L(i), &c))); }
-    /* Fun(l, m, X, Y) = Pi(x:X. Y) */
-    begin(TD_FUN, "Fun", 4, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF));
-    ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1)));
-    rtype(nUNIV(LMAX(P(0), P(1))), LSUCC(LMAX(P(0), P(1))));
-    { size_t x = newlocal(PS_REF); finish(nPI(P(0), P(1), x, P(2), P(3))); }
-    /* Contr(l, X) = Sigma(c:X. Pi(x:X. PathConst(X,c,x))) */
-    begin(TD_CONTR, "Contr", 2, SORTS(PS_LEVEL, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0)));
-    rtype(nUNIV(P(0)), LSUCC(P(0)));
-    { size_t c = newlocal(PS_REF), x = newlocal(PS_REF); finish(nSIGMA(P(0), P(0), c, P(1), nPI(P(0), P(0), x, P(1), CALL(TD_PATHCONST, P(0), P(1), L(c), L(x))))); }
-    /* Fib(l, m, X, Y, f, y) = Sigma(x:X. PathConst(Y, App(f,x), y)) */
-    begin(TD_FIB, "Fib", 6, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF));
-    ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1))); ptype(4, CALL(TD_FUN, P(0), P(1), P(2), P(3)), LMAX(P(0), P(1))); ptype(5, P(3), P(1));
-    rtype(nUNIV(LMAX(P(0), P(1))), LSUCC(LMAX(P(0), P(1))));
-    { size_t x = newlocal(PS_REF); finish(nSIGMA(P(0), P(1), x, P(2), CALL(TD_PATHCONST, P(1), P(3), nAPP(P(4), L(x)), P(5)))); }
-    /* Equiv(l, m, X, Y) = Sigma(f:Fun(X,Y). Pi(y:Y. Contr(Fib(X,Y,f,y)))) */
-    begin(TD_EQUIV, "Equiv", 4, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF));
-    ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1)));
-    rtype(nUNIV(LMAX(P(0), P(1))), LSUCC(LMAX(P(0), P(1))));
-    { size_t f = newlocal(PS_REF), y = newlocal(PS_REF); ExprId mx = LMAX(P(0), P(1));
-      finish(nSIGMA(mx, mx, f, CALL(TD_FUN, P(0), P(1), P(2), P(3)), nPI(P(1), mx, y, P(3), CALL(TD_CONTR, mx, CALL(TD_FIB, P(0), P(1), P(2), P(3), L(f), L(y)))))); }
-    /* IdFun(l, X) = Lam(x:X. x) */
-    begin(TD_IDFUN, "IdFun", 2, SORTS(PS_LEVEL, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0)));
-    rtype(CALL(TD_FUN, P(0), P(0), P(1), P(1)), P(0));
-    { size_t x = newlocal(PS_REF); finish(nLAM(P(0), x, P(1), L(x))); }
-    /* EquivMap(l, m, X, Y, e) = Fst(e) ; EquivContr(l, m, X, Y, e, y) = App(Snd(e), y) */
-    begin(TD_EQUIVMAP, "EquivMap", 5, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF, PS_REF));
-    ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1))); ptype(4, CALL(TD_EQUIV, P(0), P(1), P(2), P(3)), LMAX(P(0), P(1)));
-    rtype(CALL(TD_FUN, P(0), P(1), P(2), P(3)), LMAX(P(0), P(1)));
-    finish(nFST(P(4)));
-    begin(TD_EQUIVCONTR, "EquivContr", 6, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_REF));
-    ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, nUNIV(P(1)), LSUCC(P(1))); ptype(4, CALL(TD_EQUIV, P(0), P(1), P(2), P(3)), LMAX(P(0), P(1))); ptype(5, P(3), P(1));
-    rtype(CALL(TD_CONTR, LMAX(P(0), P(1)), CALL(TD_FIB, P(0), P(1), P(2), P(3), CALL(TD_EQUIVMAP, P(0), P(1), P(2), P(3), P(4)), P(5))), LMAX(P(0), P(1)));
-    finish(nAPP(nSND(P(4)), P(5)));
-    /* IdEquiv(l, X) */
-    begin(TD_IDEQUIV, "IdEquiv", 2, SORTS(PS_LEVEL, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0)));
-    rtype(CALL(TD_EQUIV, P(0), P(0), P(1), P(1)), P(0));
-    { ExprId l = P(0), X = P(1);
-      ExprId f = CALL(TD_IDFUN, l, X);
-      size_t y = newlocal(PS_REF), w = newlocal(PS_REF), i = newlocal(PS_INTERVAL);
-      ExprId fib = CALL(TD_FIB, l, l, X, X, f, L(y));
-      ExprId p = nSND(L(w)), fx = nAPP(f, nFST(L(w)));
-      Cx c = { l, X, fx, L(y), p, fib };
-      ExprId contraction = nLAM(l, w, fib, nPLAM(i, b_ideq_inner(L(i), &c)));
-      ExprId centre = nPAIR_AT(l, fib, L(y), CALL(TD_REFL, l, X, L(y)));
-      finish(nPAIR_AT(l, CALL(TD_EQUIV, l, l, X, X), f, nLAM(l, y, X, nPAIR_AT(l, CALL(TD_CONTR, l, fib), centre, contraction)))); }
-    /* Fill(l, A:[i]U_l, phi, u:[i]A<i> on phi, cap:A<0>, r) */
-    begin(TD_FILL, "Fill", 6, SORTS(PS_LEVEL, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF, PS_INTERVAL));
-    ptype(4, AP1(P(1), IV0()), P(0));
-    { Cx cu = { 0, 0, 0, 0, 0, 0, P(0) }, ca = { 0, 0, 0, 0, 0, 0, P(1) };
-      psig(1, SIG_DIM1(t_univ, &cu, LSUCC(P(0)), FCT())); psig(3, SIG_DIM1(t_fam_at, &ca, P(0), P(2)));
-      rtype(AP1(P(1), P(5)), P(0)); }
-    { size_t j = newlocal(PS_INTERVAL); ExprId rj = IVAND(P(5), L(j)); ExprId r0 = FCEND(P(5), 0);
-      ExprId faces[2] = { P(2), r0 }, terms[2] = { AP1(P(3), rj), P(4) };
-      finish(nCOMP(P(0), j, AP1(P(1), rj), FCOR(P(2), r0), nSYSTEM(2, faces, terms), P(4))); }
-    /* HComp(l, X, phi, u:[j]X on phi, cap) */
-    begin(TD_HCOMP, "HComp", 5, SORTS(PS_LEVEL, PS_REF, PS_FACE, PS_SCOPE, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(4, P(1), P(0));
-    { Cx cx = { 0, 0, 0, 0, 0, 0, P(1) }; psig(3, SIG_DIM1(t_const, &cx, P(0), P(2))); rtype(P(1), P(0)); }
-    { size_t j = newlocal(PS_INTERVAL); finish(nCOMP(P(0), j, P(1), P(2), AP1(P(3), L(j)), P(4))); }
-    /* Coe(l, A:[i]U_l, cap:A<0>) */
-    begin(TD_COE, "Coe", 3, SORTS(PS_LEVEL, PS_SCOPE, PS_REF));
-    ptype(2, AP1(P(1), IV0()), P(0));
-    { Cx cu = { 0, 0, 0, 0, 0, 0, P(0) }; psig(1, SIG_DIM1(t_univ, &cu, LSUCC(P(0)), FCT())); rtype(AP1(P(1), IV1()), P(0)); }
-    { size_t i = newlocal(PS_INTERVAL); finish(nCOMP(P(0), i, AP1(P(1), L(i)), FCF(), nSYSTEM(0, NULL, NULL), P(2))); }
-    /* ExtendContr(l, X, c, k, theta, v on theta) */
-    begin(TD_EXTENDCONTR, "ExtendContr", 6, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF, PS_FACE, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, P(1), P(0)); ptype_on(5, P(1), P(0), P(4));
-    { size_t xk = newlocal(PS_REF); ptype(3, nPI(P(0), P(0), xk, P(1), CALL(TD_PATHCONST, P(0), P(1), P(2), L(xk))), P(0)); }
-    rtype(P(1), P(0));
-    { Cx c = { P(0), P(1), P(2), P(5), P(3), 0, P(1) };
-      ExprId tube = DSCOPE1(b_ext_tube, t_const, &c, P(0), P(4));
-      finish(CALL(TD_HCOMP, P(0), P(1), P(4), tube, P(2))); }
-    /* LineEquiv(l, X:[i]U_l) = Coe([i]. Equiv(X<0>, X<i>), IdEquiv(X<0>)) */
-    begin(TD_LINEEQUIV, "LineEquiv", 2, SORTS(PS_LEVEL, PS_SCOPE));
-    { Cx cu = { 0, 0, 0, 0, 0, 0, P(0) }; psig(1, SIG_DIM1(t_univ, &cu, LSUCC(P(0)), FCT())); rtype(CALL(TD_EQUIV, P(0), P(0), AP1(P(1), IV0()), AP1(P(1), IV1())), P(0)); }
-    { ExprId X0 = AP1(P(1), IV0()); Cx c = { P(0), X0, P(1), 0, 0, 0, 0 };
-      c.t = P(0);
-      ExprId fam = DSCOPE1(b_lineeq_fam, t_univ, &c, LSUCC(P(0)), guard_now());
-      finish(CALL(TD_COE, P(0), fam, CALL(TD_IDEQUIV, P(0), X0))); }
-    /* Ua(l, X, Y, e) */
-    begin(TD_UA, "Ua", 4, SORTS(PS_LEVEL, PS_REF, PS_REF, PS_REF));
-    ptype(1, nUNIV(P(0)), LSUCC(P(0))); ptype(2, nUNIV(P(0)), LSUCC(P(0))); ptype(3, CALL(TD_EQUIV, P(0), P(0), P(1), P(2)), P(0));
-    rtype(CALL(TD_PATHCONST, LSUCC(P(0)), nUNIV(P(0)), P(1), P(2)), LSUCC(P(0)));
-    { size_t i = newlocal(PS_INTERVAL); Cx c = { P(0), P(1), P(2), P(3), 0, 0 }; finish(nPLAM(i, b_ua(L(i), &c))); }
-
-    /* ---- §53 composition clauses ---- */
-    /* PiComp(m, n, D:[i]U_m, E:[i,x:D<i>]U_n, phi, u:[i]Pi on phi, cap) */
-    begin(TD_PICOMP, "PiComp", 7, SORTS(PS_LEVEL, PS_LEVEL, PS_SCOPE, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF));
-    { Cx sg = { P(0), P(1), P(2), P(3), 0, 0, P(0) }, sn = { 0, 0, P(2), 0, 0, 0, P(1) };
-      psig(2, SIG_DIM1(t_univ, &sg, LSUCC(P(0)), FCT()));
-      psig(3, SIG_DIM_TERM(r_E_dom, P(0), r_univ2, &sn, LSUCC(P(1)), FCT()));
-      psig(5, SIG_DIM1(r_pi_at, &sg, LMAX(P(0), P(1)), P(4)));
-      ptype(6, r_pi_at(IV0(), &sg), LMAX(P(0), P(1)));
-      rtype(r_pi_at(IV1(), &sg), LMAX(P(0), P(1))); }
-    { ExprId m = P(0), n = P(1), D = P(2), E = P(3), phi = P(4), u = P(5), cap = P(6);
-      size_t x1 = newlocal(PS_REF), i = newlocal(PS_INTERVAL);
-      Cx c = { m, D, L(x1), 0, 0, 0, D };
-      ExprId V = DSCOPE1(b_pi_V, t_fam_neg, &c, m, guard_now());
-      ExprId Vi = AP1(V, L(i)), V0 = AP1(V, IV0());
-      finish(nLAM(m, x1, AP1(D, IV1()), nCOMP(n, i, AP2(E, L(i), Vi), phi, nAPP(AP1(u, L(i)), Vi), nAPP(cap, V0)))); }
-    /* SigmaComp(m, n, D, E, phi, u, cap) */
-    begin(TD_SIGMACOMP, "SigmaComp", 7, SORTS(PS_LEVEL, PS_LEVEL, PS_SCOPE, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF));
-    { Cx sg = { P(0), P(1), P(2), P(3), 0, 0, P(0) }, sn = { 0, 0, P(2), 0, 0, 0, P(1) };
-      psig(2, SIG_DIM1(t_univ, &sg, LSUCC(P(0)), FCT()));
-      psig(3, SIG_DIM_TERM(r_E_dom, P(0), r_univ2, &sn, LSUCC(P(1)), FCT()));
-      psig(5, SIG_DIM1(r_sigma_at, &sg, LMAX(P(0), P(1)), P(4)));
-      ptype(6, r_sigma_at(IV0(), &sg), LMAX(P(0), P(1)));
-      rtype(r_sigma_at(IV1(), &sg), LMAX(P(0), P(1))); }
-    { ExprId m = P(0), n = P(1), D = P(2), E = P(3), phi = P(4), u = P(5), cap = P(6);
-      size_t i = newlocal(PS_INTERVAL), x1 = newlocal(PS_REF);
-      Cx c = { m, D, phi, u, cap, 0, D };
-      ExprId Afill = DSCOPE1(b_sig_Afill, t_fam_at, &c, m, guard_now());
-      ExprId second = nCOMP(n, i, AP2(E, L(i), AP1(Afill, L(i))), phi, nSND(AP1(u, L(i))), nSND(cap));
-      ExprId Sg1 = nSIGMA(m, n, x1, AP1(D, IV1()), AP2(E, IV1(), L(x1)));
-      finish(nPAIR_AT(LMAX(m, n), Sg1, AP1(Afill, IV1()), second)); }
-    /* PathComp(n, B:[i,j]U_n, left:[i]B<i,0>, right:[i]B<i,1>, phi, u, cap) */
-    begin(TD_PATHCOMP, "PathComp", 7, SORTS(PS_LEVEL, PS_SCOPE, PS_SCOPE, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF));
-    { Cx sg = { P(0), P(1), P(2), P(3), 0, 0, P(0) };
-      psig(1, SIG_DIM2(r_univ2, &sg, LSUCC(P(0)), FCT()));
-      psig(2, SIG_DIM1(r_B_at0, &sg, P(0), FCT()));
-      psig(3, SIG_DIM1(r_B_at1, &sg, P(0), FCT()));
-      psig(5, SIG_DIM1(r_path_at, &sg, P(0), P(4)));
-      ptype(6, r_path_at(IV0(), &sg), P(0));
-      rtype(r_path_at(IV1(), &sg), P(0)); }
-    { ExprId n = P(0), B = P(1), left = P(2), right = P(3), phi = P(4), u = P(5), cap = P(6);
-      size_t j = newlocal(PS_INTERVAL), i = newlocal(PS_INTERVAL), k1 = newlocal(PS_INTERVAL), k2 = newlocal(PS_INTERVAL);
-      ExprId faces[3] = { phi, FCEND(L(j), 0), FCEND(L(j), 1) };
-      ExprId terms[3] = { nPAPP(n, k1, AP2(B, L(i), L(k1)), AP1(left, L(i)), AP1(right, L(i)), AP1(u, L(i)), L(j)), AP1(left, L(i)), AP1(right, L(i)) };
-      ExprId capj = nPAPP(n, k2, AP2(B, IV0(), L(k2)), AP1(left, IV0()), AP1(right, IV0()), cap, L(j));
-      finish(nPLAM(j, nCOMP(n, i, AP2(B, L(i), L(j)), FCOR(phi, FCOR(faces[1], faces[2])), nSYSTEM(3, faces, terms), capj))); }
-    /* GlueComp(n, A:[i]U_n, alpha:[i]Face, T:[i]U_n on alpha, e:[i]Equiv(T,A) on alpha, psi, u, cap) */
-    begin(TD_GLUECOMP, "GlueComp", 8, SORTS(PS_LEVEL, PS_SCOPE, PS_SCOPE, PS_SCOPE, PS_SCOPE, PS_FACE, PS_SCOPE, PS_REF));
-    { Cx sg = { P(0), P(1), P(2), P(3), P(4), 0, P(0) };
-      psig(1, SIG_DIM1(t_univ, &sg, LSUCC(P(0)), FCT()));
-      psig(2, SIG_FACE1(FCT()));
-      psig(3, SIG_DIM1_G(t_univ, r_guard_alpha, &sg, LSUCC(P(0))));
-      psig(4, SIG_DIM1_G(r_equiv_TA, r_guard_alpha, &sg, P(0)));
-      psig(6, SIG_DIM1(r_glue_at, &sg, P(0), P(5)));
-      ptype(7, r_glue_at(IV0(), &sg), P(0));
-      rtype(r_glue_at(IV1(), &sg), P(0)); }
-    { ExprId n = P(0), A = P(1), alpha = P(2), T = P(3), e = P(4), psi = P(5), u = P(6), cap = P(7);
-      ExprId A0 = AP1(A, IV0()), A1 = AP1(A, IV1()), T0 = AP1(T, IV0()), T1 = AP1(T, IV1()), e0 = AP1(e, IV0()), e1 = AP1(e, IV1());
-      ExprId alpha0 = AP1(alpha, IV0()), alpha1 = AP1(alpha, IV1()), u1 = AP1(u, IV1());
-      ExprId a0 = nUNGLUE(n, A0, alpha0, T0, e0, cap);
-      glue_a0_expr = a0;
-      Cx bt = { n, A, alpha, T, e, u, A };
-      ExprId baseTube = DSCOPE1(b_glue_base, t_fam_at, &bt, n, psi);
-      Cx af = { n, A, psi, baseTube, a0, 0, A };
-      ExprId Afill = DSCOPE1(b_glue_Afill, t_fam_at, &af, n, guard_now());
-      ExprId a1 = AP1(Afill, IV1());
-      ExprId delta = FORALL(alpha);
-      /* under delta */
-      ExprId saved = under_face; under_face = delta;
-      Cx tf = { n, T, psi, u, cap, 0, T };
-      ExprId Tfill = DSCOPE1(b_glue_Tfill, t_fam_at, &tf, n, guard_now());
-      ExprId t1prime = AP1(Tfill, IV1());
-      size_t q = newlocal(PS_INTERVAL);
-      Cx om = { n, A, psi, Afill, e, Tfill, T };
-      ExprId omega = nPLAM(q, b_glue_omega(L(q), &om));
-      under_face = saved;
-      /* under alpha1 */
-      saved = under_face; under_face = alpha1;
-      ExprId f1 = CALL(TD_EQUIVMAP, n, n, T1, A1, e1);
-      ExprId fibre = CALL(TD_FIB, n, n, T1, A1, f1, a1);
-      ExprId pf[2] = { delta, psi };
-      ExprId pt[2] = { nPAIR_AT(n, fibre, t1prime, omega), nPAIR_AT(n, fibre, u1, CALL(TD_REFL, n, A1, a1)) };
-      ExprId partial = nSYSTEM(2, pf, pt);
-      ExprId contraction = CALL(TD_EQUIVCONTR, n, n, T1, A1, e1, a1);
-      ExprId extension = CALL(TD_EXTENDCONTR, n, fibre, nFST(contraction), nSND(contraction), FCOR(delta, psi), partial);
-      ExprId t1 = nFST(extension), p = nSND(extension);
-      under_face = saved;
-      glue_p_expr = p;
-      Cx rp = { n, A1, alpha1, psi, nAPP(f1, t1), a1, A1 };
-      ExprId repairTube = DSCOPE1(b_glue_repair, t_const, &rp, n, FCOR(alpha1, psi));
-      ExprId repaired = CALL(TD_HCOMP, n, A1, FCOR(alpha1, psi), repairTube, a1);
-      finish(nGLUEINTRO(n, A1, alpha1, T1, e1, t1, repaired)); }
-    /* UniverseComp(l, phi, types:[i]U_l on phi, cap:U_l) */
-    begin(TD_UNIVERSECOMP, "UniverseComp", 4, SORTS(PS_LEVEL, PS_FACE, PS_SCOPE, PS_REF));
-    ptype(3, nUNIV(P(0)), LSUCC(P(0)));
-    { Cx cu = { 0, 0, 0, 0, 0, 0, P(0) }; psig(2, SIG_DIM1(t_univ, &cu, LSUCC(P(0)), P(1))); rtype(nUNIV(P(0)), LSUCC(P(0))); }
-    { ExprId l = P(0), phi = P(1), types = P(2), cap = P(3);
-      ExprId saved = under_face; under_face = phi;
-      Cx c = { types, 0, 0, 0, 0, 0, l };
-      ExprId reversed = DSCOPE1(b_univ_rev, t_univ, &c, LSUCC(l), guard_now());
-      ExprId equivalence = CALL(TD_LINEEQUIV, l, reversed);
-      under_face = saved;
-      finish(nGLUE(l, cap, phi, AP1(types, IV1()), equivalence)); }
-    /* Down(l, lA, A, t, D:[x:A, e:Path(A,t,x)]U_l, x, e, z) = Coe([i]. D<e@¬i, ⟨j⟩e@(¬i∧j)>, z) */
-    begin(TD_DOWN, "Down", 8, SORTS(PS_LEVEL, PS_LEVEL, PS_REF, PS_REF, PS_SCOPE, PS_REF, PS_REF, PS_REF));
-    ptype(2, nUNIV(P(1)), LSUCC(P(1))); ptype(3, P(2), P(1)); ptype(5, P(2), P(1)); ptype(6, CALL(TD_PATHCONST, P(1), P(2), P(3), P(5)), P(1));
-    ptype(7, AP2(P(4), P(5), P(6)), P(0));
-    { Cx sd = { P(1), P(2), P(3), 0, 0, 0, P(0) };
-      psig(4, SIG_TERM2(P(2), P(1), r_down_etype, P(1), r_down_res, &sd, LSUCC(P(0)), FCT()));
-      rtype(AP2(P(4), P(3), CALL(TD_REFL, P(1), P(2), P(3))), P(0)); }
-    { ExprId l = P(0), lA = P(1), A = P(2), t = P(3), D = P(4), x = P(5), e = P(6), z = P(7);
-      Cx c = { lA, A, t, D, x, e, l };
-      ExprId fam = DSCOPE1(b_down_fam, t_univ, &c, LSUCC(l), guard_now());
-      finish(CALL(TD_COE, l, fam, z)); }
-}
-
-void templates_init(void) {
-    if (!TPL.init) { memset(&TPL, 0, sizeof TPL); register_library(); TPL.init = true; }
-}
-void templates_free(void) {
-    if (!TPL.init) return;
-    for (size_t k = 0; k < TD_COUNT; k++) { words_free(&TPL.defs[k].nodes); words_free(&TPL.defs[k].freel); }
-    memset(&TPL, 0, sizeof TPL);
-}
-
-/* the environment and root of a definition's program at arguments args (for
- * a frame that awaits its interpretation) */
-void template_call_env(TDefKind def, size_t nargs, const TVal *args, WordBuf *er, ExprId *root) {
-    /* the environment record [(k, sort, arg)*, def] into a buffer (a fixed
-     * library arity: bounded), interned by the caller's stepped
-     * subroutine */
-    const TDef *d = &TPL.defs[def];
-    require(nargs == d->nparams && nargs < 16, "template call arity (%s)", d->name);
-    wordbuf_init(er);
-    for (size_t k = 0; k < nargs; k++) {
-        require(args[k].sort == d->sorts[k], "template call sort (%s, %zu)", d->name, k);
-        wordbuf_push(er, k); wordbuf_push(er, args[k].sort); wordbuf_push(er, args[k].id);
-    }
-    wordbuf_push(er, def);
-    *root = d->root;
-}
-
-TVal template_call(TDefKind def, size_t nargs, const TVal *args) {
-    WordBuf er; ExprId root;
-    template_call_env(def, nargs, args, &er, &root);
-    return interp_at(root, wordbuf_intern(&M.keys, &er));
-}

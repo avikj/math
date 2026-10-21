@@ -1,4 +1,5 @@
 #include "eval.h"
+#include "template.h"
 #include "pool.h"
 #include <sched.h>
 
@@ -709,12 +710,3 @@ EvalResult whnf(RefId t, FaceId chi, WhnfStatus *status) {
     return out;
 }
 
-void print_result(EvalResult r, FILE *f) {
-    switch (r.cls) {
-    case R_INTRODUCTION: fprintf(f, "INTRO "); print_ref(r.ref, f); break;
-    case R_NEUTRAL: fprintf(f, "NEUTRAL "); print_ref(r.ref, f); break;
-    case R_NO_OBSERVATION: fprintf(f, "NO_OBSERVATION"); break;
-    case R_INVALID: fprintf(f, "INVALID(%s)", r.message ? r.message : ""); break;
-    default: fprintf(f, "<pending>"); break;
-    }
-}

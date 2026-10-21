@@ -106,17 +106,9 @@ VarSetId ref_freevars(RefId t) { size_t n; const uint64_t *w = rget(t, &n); retu
 FaceId ref_required(RefId t) { size_t n; const uint64_t *w = rget(t, &n); return w[n - 1]; }
 
 RefId reindex1(RefId t, TermVarId x, RefId a) { return reindex(t, map_single_term(x, a)); }
-RefId reindex_dim(RefId t, DimVarId i, IntervalId r) { return reindex(t, map_single_dim(i, r)); }
 
 /* ================= binders ================= */
 
-/* a nominal key as words: [tag, (kind, v)*] */
-static size_t key_words(uint64_t tag, const KeyWord *key, size_t n, uint64_t *out) {
-    require(1 + 2 * n <= INTERN_SMALL + 1, "a nominal key of %zu words", n);
-    size_t m = 0; out[m++] = tag;
-    for (size_t k = 0; k < n; k++) { out[m++] = key[k].kind; out[m++] = key[k].v; }
-    return m;
-}
 TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type) {
     uint64_t w[5] = { 1, KW_REF, owner, KW_CONST, slot };
     return var_record(w, 5, S_TERM, type, fc_true());
@@ -124,14 +116,6 @@ TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type) {
 DimVarId binder_dim_var(RefId owner, BinderSlot slot) {
     uint64_t w[5] = { 1, KW_REF, owner, KW_CONST, slot };
     return var_record(w, 5, S_DIM, 0, 0);
-}
-TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required) {
-    uint64_t w[INTERN_SMALL + 1]; size_t m = key_words(2, key, n, w);
-    return var_record(w, m, S_TERM, type, required);
-}
-DimVarId fresh_dim_keyed(const KeyWord *key, size_t n) {
-    uint64_t w[INTERN_SMALL + 1]; size_t m = key_words(3, key, n, w);
-    return var_record(w, m, S_DIM, 0, 0);
 }
 
 TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field) {
@@ -222,7 +206,6 @@ static RefId mk_term_binder_form(Tag tag, uint64_t lv, TermVarId x, RefId A, Ref
 }
 RefId mk_pi(TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_PI, LEVELS_NONE, x, A, B); }
 RefId mk_lam(TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, LEVELS_NONE, x, A, body); }
-RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B) { return mk_term_binder_form(T_SIGMA, levels_pack(m, n), x, A, B); }
 RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body) { return mk_term_binder_form(T_LAM, levels_pack(m, LEVEL_NONE), x, A, body); }
 RefId mk_app(RefId fn, RefId a) { return MK(T_APP, 0, LEVELS_NONE, 0, fn, a); }
 RefId mk_pair(RefId a, RefId b) { return MK(T_PAIR, 0, LEVELS_NONE, 0, a, b); }

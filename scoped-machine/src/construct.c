@@ -312,65 +312,14 @@ static void unfold_step(Cont *k, uint64_t v) {
     uint64_t r = 0;
     FR_BEGIN(k);
     require(k->w[1] != 0, "unfold of a global without a body");   /* w[1]: its body */
-    require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL && tview_is_construction(t), "unfold of a non-global");
-    {   SymbolId s = (SymbolId)tnode_const_payload(ref_tnode(t)); FR_AWAIT(k, r, F_PHI, global_params(s), global_dims(s)); }
+    require(!ref_is_var(t) && ref_tag(t) == T_GLOBAL, "unfold of a non-global");
+    {   SymbolId s = (SymbolId)expr_level_value(tnode_head_expr(ref_tnode(t), 0)); FR_AWAIT(k, r, F_PHI, global_params(s), global_dims(s)); }
     FR_AWAIT(k, r, F_TREF, k->w[1], close_key(r));
     FR_AWAIT(k, r, F_TREF, r, apply_key(ref_tenv(t)));
     FR_FINISH(k, r);
     FR_END(k);
 }
 
-/* globals.of(x, kind): the global symbols a reference (kind 0) or a scope
- * (kind 1) names directly — through its field constants, its environment
- * values and, for a global reference, its own symbol. Bodies are not entered
- * (the proof-use audit does that). A set of symbol ids (a varset). */
-typedef struct { size_t n, q, nf; uint64_t acc, f, a, b, r; } GlLoc;
-/* the demand for item q of x (kind w[1]): a family key, or none (f = 0) */
-static void gl_item(const Cont *k, size_t q, size_t nf, uint64_t *f, uint64_t *a, uint64_t *b) {
-    uint64_t x = k->w[0]; *f = 0; *a = *b = 0;
-    if (k->w[1] == 1) {
-        size_t n = scope_arity(x);
-        RefId r = q < n ? scope_local(x, q).type : q == n ? scope_type(x) : (scope_body(x).sort == VS_REF ? scope_body(x).id : 0);
-        if (r) { *f = F_GLOBALS; *a = r; }
-        return;
-    }
-    TNodeId Q = ref_tnode(x); uint64_t sort = PS_LEVEL, id = 0;
-    if (q < nf) { if (tnode_field_kind(Q, q) == F_REF) { sort = PS_REF; id = tnode_const_field(Q, q); } }
-    else { uint64_t slot; TVal val; subst_get(ref_tenv(x), q - nf, &slot, &val); sort = val.sort; id = val.id; }
-    if (sort == PS_REF && id) { *f = F_GLOBALS; *a = id; }
-    else if (sort == PS_SCOPE) { *f = F_GLOBALS; *a = id; *b = 1; }
-}
-static void globals_step(Cont *k, uint64_t v) {
-    GlLoc *L = FR_LOC(k, GlLoc);
-    uint64_t x = k->w[0];
-    FR_BEGIN(k);
-    L->acc = set_make(NULL, 0);
-    if (k->w[1] == 1) { L->nf = 0; L->n = scope_arity(x) + 2; }
-    else {
-        if (ref_is_var(x)) FR_FINISH(k, L->acc);
-        {   TNodeId Q = ref_tnode(x);
-            if (tnode_is_construction(Q)) {
-                if (tnode_tag(Q) == T_GLOBAL) { uint64_t s = tnode_const_payload(Q); L->acc = set_make(&s, 1); }
-                L->nf = tnode_nfields(Q);
-            } else L->nf = 0;                                  /* a template program names no symbol: its environment's values */
-            L->n = L->nf + subst_size(ref_tenv(x)); }
-    }
-    /* the items' symbol sets are independent demands: launched, then awaited in order */
-    for (L->q = 0; L->q < L->n; L->q++) {
-        gl_item(k, L->q, L->nf, &L->f, &L->a, &L->b);
-        if (L->f) family_launch((Family)L->f, L->a, L->b);
-        FR_YIELD(k);
-    }
-    for (L->q = 0; L->q < L->n; L->q++) {
-        gl_item(k, L->q, L->nf, &L->f, &L->a, &L->b);
-        if (!L->f) { FR_YIELD(k); continue; }
-        FR_AWAIT(k, L->r, (Family)L->f, L->a, L->b);
-        {   size_t m; (void)set_get(L->r, &m); if (!m) { FR_YIELD(k); continue; } }
-        FR_AWAIT(k, L->acc, F_SUNION, L->acc, L->r);
-    }
-    FR_FINISH(k, L->acc);
-    FR_END(k);
-}
 
 void construct_families_init(void) {
     family_define(F_REFVAR, "ref.var", refvar_step, sizeof(VarLoc));
@@ -380,7 +329,6 @@ void construct_families_init(void) {
     family_define(F_HEAD, "head.annotation", head_step, 0);
     family_define(F_PHI, "boundary.close", phi_step, sizeof(PhiLoc));
     family_define(F_UNFOLD, "global.unfold", unfold_step, 0);    /* keyed by (reference, body) */
-    family_define(F_GLOBALS, "globals.of", globals_step, sizeof(GlLoc));
 }
 /* the template families register after the construction families; their ids are read lazily */
 

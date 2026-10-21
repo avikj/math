@@ -63,32 +63,6 @@ static void set_step(Cont *k, uint64_t v) {
     FR_END(k);
 }
 
-/* ---------------- composition σ;τ of maps (σ then τ) ----------------
- * a key of σ maps to σ(x)[τ], a key only of τ to τ(x); identities dropped */
-typedef struct { const uint64_t *x, *y; size_t nx, ny, i, j; uint64_t key, sort, img; WordBuf out; bool created; } CompLoc;
-static void compose_step(Cont *k, uint64_t v) {
-    CompLoc *L = FR_LOC(k, CompLoc);
-    uint64_t id = 0, r = 0;
-    FR_BEGIN(k);
-    L->x = srec(k->w[0], &L->nx); L->y = srec(k->w[1], &L->ny);
-    if (L->ny == 0) FR_FINISH(k, k->w[0]);
-    if (L->nx == 0) FR_FINISH(k, k->w[1]);
-    wordbuf_init(&L->out);
-    for (L->i = 0, L->j = 0; L->i < L->nx || L->j < L->ny; ) {
-        if (L->j == L->ny || (L->i < L->nx && L->x[L->i] <= L->y[L->j])) {
-            L->key = L->x[L->i]; L->sort = L->x[L->i + 1]; L->img = L->x[L->i + 2];
-            if (L->j < L->ny && L->y[L->j] == L->key) L->j += 3;          /* σ's entry governs the key */
-            L->i += 3;
-            if (L->sort == PS_REF) { FR_AWAIT(k, r, F_TREF, L->img, re_key(k->w[1])); L->img = r; }
-            else if (L->sort == PS_INTERVAL) { FR_AWAIT(k, r, F_TIV, L->img, re_key(k->w[1])); L->img = r; }
-        } else { L->key = L->y[L->j]; L->sort = L->y[L->j + 1]; L->img = L->y[L->j + 2]; L->j += 3; }
-        if (!subst_identity(L->sort, L->key, L->img)) { wordbuf_push(&L->out, L->key); wordbuf_push(&L->out, L->sort); wordbuf_push(&L->out, L->img); }
-        FR_YIELD(k);
-    }
-    FR_CALL(k, id, intern_sub(k, &M.keys, &L->out, &L->created));
-    FR_FINISH(k, id);
-    FR_END(k);
-}
 
 /* ---------------- the dimensions of an interval or face as a set ----------------
  * atoms and literals both carry the dimension in their high bits */
@@ -108,17 +82,11 @@ static void dims_step(Cont *k, uint64_t v) {
 }
 
 /* ---------------- a reference's environment rebuilt under traversal w[1] ----------------
- * the entries are independent demands: launched, then awaited in order; a
- * scope value's records sit one level deeper */
-static uint64_t deeper_key(uint64_t tk) {
-    size_t n; const uint64_t *w = rget(tk, &n);
-    return w[0] == TR_RE ? tk : trav_key((unsigned)w[0], (unsigned)w[1] + 1, w[2]);
-}
+ * the entries are independent demands: launched, then awaited in order */
 typedef struct { size_t n, q; uint64_t slot, f, b; TVal val; bool changed; WordBuf out; bool created; } ReLoc;
 static void re_item(uint64_t tk, TVal val, uint64_t *f, uint64_t *b) {
     *b = tk;
-    *f = val.sort == PS_LEVEL ? 0 : val.sort == PS_REF ? F_TREF : val.sort == PS_INTERVAL ? F_TIV : val.sort == PS_FACE ? F_TFC : F_TSCOPE;
-    if (val.sort == PS_SCOPE) *b = deeper_key(tk);
+    *f = val.sort == PS_LEVEL ? 0 : val.sort == PS_REF ? F_TREF : val.sort == PS_INTERVAL ? F_TIV : F_TFC;
 }
 static void envrebuild_step(Cont *k, uint64_t v) {
     ReLoc *L = FR_LOC(k, ReLoc);
@@ -153,7 +121,6 @@ static void envrebuild_step(Cont *k, uint64_t v) {
 void subst_families_init(void) {
     family_define(F_LOOKUP, "subst.lookup", look_step, sizeof(LookLoc));
     family_define(F_SET, "subst.set", set_step, sizeof(SetLoc));
-    family_define(F_COMPOSE, "map.compose", compose_step, sizeof(CompLoc));
     family_define(F_ENVREBUILD, "env.rebuild", envrebuild_step, sizeof(ReLoc));
     family_define(F_DIMS, "dnf.dims", dims_step, sizeof(DimsLoc));
 }
@@ -201,10 +168,6 @@ static uint64_t lookup_value(uint64_t rec, uint64_t key, uint64_t absent) {
 }
 RefId map_term_image(MapId m, TermVarId x) { uint64_t v = lookup_value(m, x, 0); return v ? v : ref_var(x); }
 IntervalId map_dim_image(MapId m, DimVarId i) { return lookup_value(m, i, iv_var(i)); }
-MapId compose(MapId sigma, MapId tau) { return family_call(F_COMPOSE, sigma, tau); }
-MapId map_override(MapId sigma, Sort sort, uint64_t key, uint64_t image) {
-    return family_call(F_SET, sigma, subst_entry(key, sort == S_DIM ? PS_INTERVAL : PS_REF, image));
-}
 RefId reindex(RefId t, MapId sigma) { return family_call(F_TREF, t, re_key(sigma)); }
 IntervalId iv_reindex(IntervalId r, MapId m) { return family_call(F_TIV, r, re_key(m)); }
 FaceId fc_reindex(FaceId phi, MapId m) { return family_call(F_TFC, phi, re_key(m)); }

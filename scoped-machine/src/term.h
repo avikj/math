@@ -54,7 +54,6 @@ uint64_t levels_second(uint64_t lv);
 bool level_succ_now(uint64_t a, uint64_t *out);
 bool level_max_now(uint64_t a, uint64_t b, uint64_t *out);
 void level_print(uint64_t l, FILE *f);
-uint64_t level_succ(uint64_t a);
 void level_families_init(void);   /* level.c */
 void code_families_init(void);    /* code.c */
 #define FR_LSUCC(k, dst, a) if (!level_succ_now((a), &(dst))) FR_AWAIT(k, dst, F_LSUCC, (a), 0)
@@ -86,8 +85,8 @@ FaceId term_var_required(TermVarId x);
  * definition word. A map's keys are variables, dimensions and atoms, its
  * absent keys their own images (identity entries are never stored); an
  * environment's keys are a node's slots. */
-typedef enum { PS_REF = 1, PS_INTERVAL, PS_FACE, PS_SCOPE, PS_LEVEL } PSort;
-typedef struct { PSort sort; uint64_t id; } TVal;   /* RefId / IntervalId / FaceId / ScopeId / level */
+typedef enum { PS_REF = 1, PS_INTERVAL, PS_FACE, PS_LEVEL = 5 } PSort;
+typedef struct { PSort sort; uint64_t id; } TVal;   /* RefId / IntervalId / FaceId / level */
 size_t subst_size(uint64_t rec);
 void subst_get(uint64_t rec, size_t k, uint64_t *key, TVal *v);
 uint64_t subst_value(uint64_t rec, size_t k);   /* the value of entry k */
@@ -107,8 +106,6 @@ RefId map_term_image(MapId m, TermVarId x);          /* VAR(x) when absent */
 IntervalId map_dim_image(MapId m, DimVarId i);       /* i when absent */
 IntervalId iv_reindex(IntervalId r, MapId m);
 FaceId fc_reindex(FaceId phi, MapId m);
-MapId compose(MapId sigma, MapId tau);   /* apply sigma then tau */
-MapId map_override(MapId sigma, Sort sort, uint64_t key, uint64_t image);   /* sigma with key ↦ image */
 
 /* ---- constructions (construct.c) ----
  * The constructor schema: per tag, its fields' kinds, the binder each sits
@@ -159,7 +156,6 @@ VarSetId ref_freevars(RefId t);
 FaceId ref_required(RefId t);
 RefId reindex(RefId t, MapId sigma);
 RefId reindex1(RefId t, TermVarId x, RefId a);
-RefId reindex_dim(RefId t, DimVarId i, IntervalId r);
 
 /* ---- binders ---- */
 TermVarId binder_term_var(RefId owner, BinderSlot slot, RefId type);
@@ -167,9 +163,6 @@ DimVarId binder_dim_var(RefId owner, BinderSlot slot);
 /* Keyed fresh names for library definitions: deterministic per key. A key is
  * a typed tuple so that provenance can be compared up to renaming. */
 typedef enum { KW_CONST = 0, KW_REF, KW_FACE, KW_INTERVAL, KW_DIM, KW_VAR } KeyKind;
-typedef struct { KeyKind kind; uint64_t v; } KeyWord;
-TermVarId fresh_term_keyed_req(const KeyWord *key, size_t n, RefId type, FaceId required);   /* a partial formal */
-DimVarId fresh_dim_keyed(const KeyWord *key, size_t n);
 typedef struct TermOpen { TermVarId x; RefId type; RefId body; } TermOpen;
 typedef struct DimOpen { DimVarId j; RefId body; } DimOpen;
 TermOpen resolve_term_binder(RefId owner, BinderSlot slot, FieldIndex body_field);
@@ -228,7 +221,6 @@ RefId global_ref(SymbolId s);          /* the GLOBAL(s) construction at the defi
 /* ---- constructors (constructions at their own boundary) ---- */
 RefId mk_universe(uint64_t level);
 RefId mk_pi(TermVarId x, RefId A, RefId B);
-RefId mk_sigma_lv(uint64_t m, uint64_t n, TermVarId x, RefId A, RefId B);
 RefId mk_lam(TermVarId x, RefId A, RefId body);
 RefId mk_lam_lv(uint64_t m, TermVarId x, RefId A, RefId body);
 RefId mk_app(RefId f, RefId a);

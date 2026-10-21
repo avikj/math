@@ -16,7 +16,6 @@ static uint64_t z_make(int neg, size_t k, const uint64_t *mag) {
     uint64_t z = rq(k + 1, w); free(w); return z;
 }
 static uint64_t z_from_i64(int64_t v) { uint64_t m = v < 0 ? (uint64_t)0 - (uint64_t)v : (uint64_t)v; return z_make(v < 0, 1, &m); }
-bool z_is_zero(uint64_t a) { size_t n; rget(a, &n); return n == 1; }
 typedef struct { const uint64_t *a, *b; size_t na, nb, i, j, top; uint64_t c, neg, raw, acc; int cmp; WordBuf out; bool created; } ZLoc;
 static uint64_t limb(const uint64_t *m, size_t n, size_t i) { return i < n ? m[i] : 0; }
 /* z.add(a, b) */
@@ -94,7 +93,6 @@ static void lmax_step(Cont *k, uint64_t v) {
     FR_FINISH(k, rword(r, 0) ? k->w[1] : k->w[0]);
     FR_END(k);
 }
-uint64_t level_succ(uint64_t a) { uint64_t r; return level_succ_now(a, &r) ? r : family_call(F_LSUCC, a, 0); }
 void level_print(uint64_t l, FILE *f) {
     if (!(l & LEVEL_BIG)) { fprintf(f, "%llu", (unsigned long long)l); return; }
     size_t n; const uint64_t *w = rget(l & ~LEVEL_BIG, &n);
