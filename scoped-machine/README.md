@@ -51,6 +51,18 @@ observation seals it (one compare-and-swap decides the body word), so every
 evaluation sees the same body and an evaluation key determines its
 computation. A symbol observed without a body is an opaque constant.
 
+## Codes (`code.c`, `read.c`)
+
+The language's own term records are values of the type `(Code)`: `(quote t)`
+holds the record of `t`, `(qiv r)` an interval, `(qfc φ)` a face. There is no
+second representation of syntax: the record a quote holds is the record the
+machine evaluates. Each eliminator is one native rule over those records:
+`cmatch` (dispatch on the former, fields given as codes, a field under a
+binder as a function on codes), `cinst` (open a binder), `ceq` (one record or
+not), `cent` (face entailment), `cfcend` (endpoint face), `cunfold` (a
+symbol's body). `tests/test_code.c` writes the weak-head evaluator as a
+program over codes and checks it reaches the machine's own value.
+
 ## Tests
 
 `tests/test_*.c` check substitution, DNF laws, alpha identity, records and

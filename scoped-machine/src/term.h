@@ -19,8 +19,12 @@
 typedef enum {
     T_UNIVERSE = 1, T_PI, T_SIGMA, T_LAM, T_APP, T_PAIR, T_FST, T_SND,
     T_PATH, T_PLAM, T_PAPP, T_GLUE_TYPE, T_GLUE_INTRO, T_UNGLUE, T_COMP,
-    T_SYSTEM, T_GLOBAL
+    T_SYSTEM, T_GLOBAL,
+    /* code: the records the machine runs, as values of the language (code.c) */
+    T_CODE, T_QUOTE, T_QIV, T_QFC,
+    T_CMATCH, T_CINST, T_CEQ, T_CENT, T_CFCEND, T_CUNFOLD
 } Tag;
+#define T_LAST T_CUNFOLD
 
 typedef enum { F_REF = 1, F_INTERVAL, F_FACE } FieldKind;
 typedef enum { S_TERM = 1, S_DIM } Sort;
@@ -48,6 +52,7 @@ bool level_max_now(uint64_t a, uint64_t b, uint64_t *out);
 void level_print(uint64_t l, FILE *f);
 uint64_t level_succ(uint64_t a);
 void level_families_init(void);   /* level.c */
+void code_families_init(void);    /* code.c */
 #define FR_LSUCC(k, dst, a) if (!level_succ_now((a), &(dst))) FR_AWAIT(k, dst, F_LSUCC, (a), 0)
 #define FR_LMAX(k, dst, a, b) if (!level_max_now((a), (b), &(dst))) FR_AWAIT(k, dst, F_LMAX, (a), (b))
 

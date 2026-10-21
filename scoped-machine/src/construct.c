@@ -37,11 +37,21 @@ static const TagSchema SCHEMA[] = {
     [T_COMP]       = { 4, S_DIM, ROLE_OTHER, 0, { R_, F_, R_, R_ }, { 1, 0, 1, 0 }, { 0, 0, 1 } },
     [T_SYSTEM]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 }, { 0 } },
     [T_GLOBAL]     = { 0, 0, ROLE_OTHER, 0, { 0 }, { 0 }, { 0 } },
+    [T_CODE]       = { 0, 0, ROLE_INTRO, 0, { 0 }, { 0 }, { 0 } },
+    [T_QUOTE]      = { 1, 0, ROLE_INTRO, 0, { R_ }, { 0 }, { 0 } },
+    [T_QIV]        = { 1, 0, ROLE_INTRO, 0, { I_ }, { 0 }, { 0 } },
+    [T_QFC]        = { 1, 0, ROLE_INTRO, 0, { F_ }, { 0 }, { 0 } },
+    [T_CMATCH]     = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
+    [T_CINST]      = { 2, 0, ROLE_OTHER, 0, { R_, R_ }, { 0 }, { 0 } },
+    [T_CEQ]        = { 4, 0, ROLE_OTHER, 0, { R_, R_, R_, R_ }, { 0 }, { 0 } },
+    [T_CENT]       = { 4, 0, ROLE_OTHER, 0, { R_, R_, R_, R_ }, { 0 }, { 0 } },
+    [T_CFCEND]     = { 1, 0, ROLE_OTHER, 0, { R_ }, { 0 }, { 0 } },
+    [T_CUNFOLD]    = { 3, 0, ROLE_OTHER, 0, { R_, R_, R_ }, { 0 }, { 0 } },
 };
 #undef R_
 #undef I_
 #undef F_
-const TagSchema *tag_schema(Tag tag) { require(tag >= T_UNIVERSE && tag <= T_GLOBAL, "unknown tag %u", (unsigned)tag); return &SCHEMA[tag]; }
+const TagSchema *tag_schema(Tag tag) { require(tag >= T_UNIVERSE && tag <= T_LAST, "unknown tag %u", (unsigned)tag); return &SCHEMA[tag]; }
 FieldKind schema_kind(Tag tag, size_t k) { return tag == T_SYSTEM ? (k % 2 ? F_REF : F_FACE) : (FieldKind)tag_schema(tag)->kind[k]; }
 BinderSlot schema_slot(Tag tag, size_t k) { return tag != T_SYSTEM && tag_schema(tag)->under[k] ? 0 : NO_SLOT; }
 static size_t creq_head(uint64_t *w, Tag tag, uint64_t payload, uint64_t levels, VarSetId ft, DimSetId fd, size_t nf) {

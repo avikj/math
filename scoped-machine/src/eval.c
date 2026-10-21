@@ -99,6 +99,7 @@ static void families_define(void) {
     evaluator_init();
     lib_families_init();
     level_families_init();
+    code_families_init();
 }
 
 void eval_init(void) {
@@ -834,6 +835,16 @@ static void whnf_step(Cont *k, uint64_t v) {
         FR_AWAIT(k, L->cap, F_FIELD, t, 3);
         FR_AWAIT(k, L->x, F_COMPCLAUSE, RQ(L->j, RES(L->res).ref, L->phi, L->tube, L->cap), 0);
         if (!L->x) FR_FINISH(k, res_rec(R_INVALID, 0, "composition in a family whose head is not a type former or lacks its universe annotation"));
+        goto forward_x;
+    }
+    if (L->tag >= T_CMATCH && L->tag <= T_CUNFOLD) {
+        /* a code eliminator: its reduct (code.c) */
+        FR_AWAIT(k, L->x, F_CODE, t, chi);
+        {   size_t n; const uint64_t *q = rget(L->x, &n);
+            if (q[0] == 1) FR_FINISH(k, res_rec(R_NEUTRAL, t, NULL));
+            if (q[0] == 2) FR_FINISH(k, q[1]);
+            if (q[0] == 3) FR_FINISH(k, res_rec(R_INVALID, 0, "code eliminator on a code of the wrong kind"));
+            L->x = q[1]; }
         goto forward_x;
     }
     die("whnf: unhandled head tag %d", (int)L->tag);

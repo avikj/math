@@ -71,7 +71,7 @@ struct Reader { Bind *globals; const char *err; char msg[256]; };
 
 static jmp_buf *tl_fail;
 static Reader *tl_rd;
-static void fail(const Sx *at, const char *what) {
+static _Noreturn void fail(const Sx *at, const char *what) {
     if (at && !at->list) snprintf(tl_rd->msg, sizeof tl_rd->msg, "%s at '%.*s'", what, (int)at->alen, at->atom);
     else snprintf(tl_rd->msg, sizeof tl_rd->msg, "%s", what);
     longjmp(*tl_fail, 1);
@@ -147,6 +147,21 @@ static RefId term_binder_form(Tag tag, const Sx *s, const Bind *env) {
     RefId body = term(s->kids[at + 1], &inner);
     return MK(tag, 0, levels_pack(m, tag == T_LAM ? LEVEL_NONE : n), x, A, body);
 }
+/* the former a cmatch tests: var, a term former's name, iv or face */
+static uint64_t former(const Sx *s) {
+    static const struct { const char *name; uint64_t tag; } F[] = {
+        { "var", 0 }, { "U", T_UNIVERSE }, { "Pi", T_PI }, { "Sigma", T_SIGMA }, { "lam", T_LAM }, { "app", T_APP },
+        { "pair", T_PAIR }, { "fst", T_FST }, { "snd", T_SND }, { "Path", T_PATH }, { "plam", T_PLAM }, { "papp", T_PAPP },
+        { "Glue", T_GLUE_TYPE }, { "glue", T_GLUE_INTRO }, { "unglue", T_UNGLUE }, { "comp", T_COMP }, { "sys", T_SYSTEM },
+        { "global", T_GLOBAL }, { "Code", T_CODE }, { "quote", T_QUOTE }, { "qiv", T_QIV }, { "qfc", T_QFC },
+        { "cmatch", T_CMATCH }, { "cinst", T_CINST }, { "ceq", T_CEQ }, { "cent", T_CENT }, { "cfcend", T_CFCEND },
+        { "cunfold", T_CUNFOLD },
+        { "iv", T_QIV }, { "face", T_QFC } };
+    if (s->list) fail(s, "a former name");
+    for (size_t q = 0; q < sizeof F / sizeof F[0]; q++)
+        if (strlen(F[q].name) == s->alen && !memcmp(F[q].name, s->atom, s->alen)) return F[q].tag;
+    fail(s, "a former name");
+}
 static RefId term(const Sx *s, const Bind *env) {
     if (!s->list) {
         const Bind *b = lookup(env, s);
@@ -202,6 +217,26 @@ static RefId term(const Sx *s, const Bind *env) {
         }
         RefId r = mk_system(n, fs, ts); free(fs); free(ts); return r;
     }
+    /* codes (code.c) */
+    if (head(s, "Code")) { want(s, 1, "(Code)"); return mk_tag(T_CODE, 0, LEVELS_NONE, 0, NULL, 0); }
+    if (head(s, "quote")) { want(s, 2, "(quote t)"); return MK(T_QUOTE, 0, LEVELS_NONE, 0, term(s->kids[1], env)); }
+    if (head(s, "qiv")) { want(s, 2, "(qiv r)"); return MK(T_QIV, 0, LEVELS_NONE, 0, interval(s->kids[1], env)); }
+    if (head(s, "qfc")) { want(s, 2, "(qfc phi)"); return MK(T_QFC, 0, LEVELS_NONE, 0, face(s->kids[1], env)); }
+    if (head(s, "cmatch")) {
+        want(s, 5, "(cmatch former c h d)");
+        return MK(T_CMATCH, former(s->kids[1]), LEVELS_NONE, 0, term(s->kids[2], env), term(s->kids[3], env), term(s->kids[4], env));
+    }
+    if (head(s, "cinst")) { want(s, 4, "(cinst k c a)"); return MK(T_CINST, number(s->kids[1]), LEVELS_NONE, 0, term(s->kids[2], env), term(s->kids[3], env)); }
+    if (head(s, "ceq") || head(s, "cent")) {
+        want(s, 5, "(ceq a b t f)");
+        return MK(head(s, "ceq") ? T_CEQ : T_CENT, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env), term(s->kids[4], env));
+    }
+    if (head(s, "cfcend")) {
+        want(s, 3, "(cfcend eps r)");
+        uint64_t eps = number(s->kids[1]); if (eps > 1) fail(s->kids[1], "an endpoint 0 or 1");
+        return MK(T_CFCEND, eps, LEVELS_NONE, 0, term(s->kids[2], env));
+    }
+    if (head(s, "cunfold")) { want(s, 4, "(cunfold c h d)"); return MK(T_CUNFOLD, 0, LEVELS_NONE, 0, term(s->kids[1], env), term(s->kids[2], env), term(s->kids[3], env)); }
     /* application, left to right */
     RefId f = term(s->kids[0], env);
     for (size_t q = 1; q < s->n; q++) f = mk_app(f, term(s->kids[q], env));

@@ -10,6 +10,9 @@ const char *tag_name(Tag t) {
     case T_PLAM: return "plam"; case T_PAPP: return "papp"; case T_GLUE_TYPE: return "Glue";
     case T_GLUE_INTRO: return "glue"; case T_UNGLUE: return "unglue"; case T_COMP: return "comp";
     case T_SYSTEM: return "system"; case T_GLOBAL: return "global";
+    case T_CODE: return "Code"; case T_QUOTE: return "quote"; case T_QIV: return "qiv"; case T_QFC: return "qfc";
+    case T_CMATCH: return "cmatch"; case T_CINST: return "cinst"; case T_CEQ: return "ceq";
+    case T_CENT: return "cent"; case T_CFCEND: return "cfcend"; case T_CUNFOLD: return "cunfold";
     }
     return "?";
 }
