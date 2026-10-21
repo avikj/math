@@ -50,7 +50,11 @@ make test        # build/cubical lib/prelude.ctt tests/cubical.ctt, then the sam
 - **A system of families** composes branchwise under ∀i of each branch's clause.
 - **A neutral family** gives a neutral composition.
 
-`fill`, `transp`, `hcomp`, `Equiv`, `idequiv`, `lineequiv` and `ua` are definitions in the prelude.
+`fill`, `transp`, `hcomp`, `Equiv`, `idequiv`, `lineequiv` and `ua` are definitions in the prelude, as are the data types: `Bool`, `Nat` and `List` are Π-types over `U` with their constructors and operations as terms. No data type is a primitive.
+
+## Observation
+
+Reading a value reduces the net in arrival order only until the observed port holds a value; the rest of the net stands. A divergent part the answer does not use does not block it, and a definition referring to itself unfolds only when eliminated (`(def ones (pair a ones))`).
 
 ## Inputs
 

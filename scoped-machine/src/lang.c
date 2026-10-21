@@ -357,11 +357,10 @@ static const char *dim_name(Dim d) {
 static Cell *observe(Port prov) {
     Cell *r = cell(O_ROOT, 1);
     link(prov, P(r, 0));
-    net_run(RUN_LIMIT);
-    Port q = r->port[0];
-    if (!q || PI(q) != 0 || !is_value(PC(q)->kind)) return NULL;
-    return PC(q);
+    if (!net_observe(r, RUN_LIMIT)) return NULL;
+    return PC(r->port[0]);
 }
+static long unfolding[256]; static int nunfold;
 static void rb(FILE *o, Port prov);
 static Port apply_fresh(Port f, long *name) {
     *name = fresh_var("x", vcount++);
@@ -416,7 +415,17 @@ static void rb(FILE *o, Port prov) {
     case V_NPAPP: fputs("(@ ", o); rb(o, c->port[1]); fputc(' ', o); dnf_print(o, c->p, false, dim_name); fputc(')', o); return;
     case V_NCOMP: rb_fields(o, "comp", c, 1); return;
     case V_NUNGLUE: rb_fields(o, "unglue", c, 1); return;
-    case V_GLOBAL: fputs(name_of((long)c->a), o); return;
+    case V_GLOBAL: {
+        /* a definition reads back as its value; within its own value it is its name */
+        long g = (long)c->a;
+        for (int i = 0; i < nunfold; i++) if (unfolding[i] == g) { fputs(name_of(g), o); return; }
+        Port v = global_copy(g);
+        if (!v || nunfold == 256) { fputs(name_of(g), o); return; }
+        unfolding[nunfold++] = g;
+        rb(o, v);
+        nunfold--;
+        return;
+    }
     }
     fputs("<?>", o);
 }

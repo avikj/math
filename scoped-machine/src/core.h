@@ -125,7 +125,8 @@ Cell *cell(int kind, int n);
 void cell_free(Cell *c);
 void link(Port a, Port b);
 long net_run(long limit);
-void net_push(Cell *op, Cell *v);  /* re-enqueue an active pair */          /* reduce until no active pair (or limit); returns steps */
+void net_push(Cell *op, Cell *v);
+bool net_observe(Cell *root, long limit); /* until root's port holds a value */  /* re-enqueue an active pair */          /* reduce until no active pair (or limit); returns steps */
 
 /* readings */
 extern long stat_steps, stat_kind[K_END];

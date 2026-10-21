@@ -70,3 +70,21 @@
 (show (fst w))
 (supply w (pair a b))
 (same (fst w) a)
+
+; observation at a port: an unobserved divergent part does not block the answer
+(same (fst (pair a ((lam x (x x)) (lam x (x x))))) a)
+; a stream: a definition unfolds only when eliminated
+(def ones (pair a ones))
+(same (fst (snd (snd ones))) a)
+
+; data as terms
+(def two (suc (suc zero)))
+(same (add two two) (lam s z (s (s (s (s z))))))
+(same (mul two (add two (suc zero))) (lam s z (s (s (s (s (s (s z))))))))
+(same (iszero zero) true)
+(same (iszero two) false)
+(same (not (and true false)) true)
+(same (length (append (cons a nil) (map f (cons a (cons b nil))))) (lam s z (s (s (s z)))))
+(same (map f (cons a (cons b nil))) (lam c n (c (f a) (c (f b) n))))
+; transport in a family of Church-encoded types
+(same ((transp (plam i (Pi x A A)) (lam x x)) a) (comp (plam i A) (sys) (comp (plam j A) (sys) a)))

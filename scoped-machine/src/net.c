@@ -501,6 +501,20 @@ long net_run(long limit) {
     }
     return n;
 }
+/* an observation: reduce (fairly, in arrival order) until the observed port
+ * holds a value; the rest of the net is left as it stands */
+bool net_observe(Cell *root, long limit) {
+    long n = 0;
+    for (;;) {
+        Port q = root->port[0];
+        if (q && PI(q) == 0 && is_value(PC(q)->kind)) return true;
+        if (rq_head >= rq_len || (limit >= 0 && n >= limit)) return false;
+        Redex r = rq[rq_head++];
+        if (rq_head == rq_len) rq_head = rq_len = 0;
+        interact(r.op, r.v);
+        n++;
+    }
+}
 
 /* ---------------- building a net from syntax ---------------- */
 typedef struct { Port *sup; int cur, n; } Supply;
