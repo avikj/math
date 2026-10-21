@@ -5,6 +5,9 @@
  * A face literal is (i = 0) or (i = 1); (i=0) ∧ (i=1) is false.
  * The free bounded distributive lattice on the literals has the antichain
  * of clauses as canonical form, so 0, 1 and equality are read off directly.
+ *
+ * Payloads are immutable and reference counted. Every function borrows its
+ * arguments and returns a reference its caller owns.
  */
 #include "core.h"
 #include <string.h>
@@ -12,8 +15,25 @@
 static Dim next_dim = 1;
 Dim fresh_dim(void) { return __atomic_fetch_add(&next_dim, 1, __ATOMIC_RELAXED); }
 
-static Clause *cl_new(uint32_t n) { Clause *c = malloc(sizeof(Clause) + n * sizeof(uint32_t)); c->n = n; return c; }
-static Dnf *dnf_new(uint32_t n) { Dnf *d = malloc(sizeof(Dnf) + n * sizeof(Clause *)); d->n = n; return d; }
+long stat_payloads;
+#define LIVE(d) __atomic_fetch_add(&stat_payloads, (d), __ATOMIC_RELAXED)
+static Clause *cl_new(uint32_t n) { Clause *c = malloc(sizeof(Clause) + n * sizeof(uint32_t)); c->rc = 1; c->n = n; LIVE(1); return c; }
+static Dnf *dnf_new(uint32_t n) { Dnf *d = malloc(sizeof(Dnf) + n * sizeof(Clause *)); d->rc = 1; d->n = n; LIVE(1); return d; }
+Clause *clause_retain(Clause *c) { __atomic_fetch_add(&c->rc, 1, __ATOMIC_RELAXED); return c; }
+void clause_release(Clause *c) { if (c && __atomic_sub_fetch(&c->rc, 1, __ATOMIC_ACQ_REL) == 0) { free(c); LIVE(-1); } }
+Dnf *dnf_retain(Dnf *d) { if (d) __atomic_fetch_add(&d->rc, 1, __ATOMIC_RELAXED); return d; }
+void dnf_release(Dnf *d) {
+    if (d && __atomic_sub_fetch(&d->rc, 1, __ATOMIC_ACQ_REL) == 0) {
+        for (uint32_t i = 0; i < d->n; i++) clause_release(d->c[i]);
+        free(d); LIVE(-1);
+    }
+}
+/* a list of clauses taken as given (a system's branches): retains each */
+Dnf *clause_list(Clause *const *c, uint32_t n) {
+    Dnf *d = dnf_new(n);
+    for (uint32_t i = 0; i < n; i++) d->c[i] = clause_retain(c[i]);
+    return d;
+}
 
 static int cl_cmp(const Clause *a, const Clause *b) {
     if (a->n != b->n) return a->n < b->n ? -1 : 1;
@@ -39,13 +59,13 @@ static Clause *cl_union(const Clause *a, const Clause *b, bool face) {
         if (j >= b->n || (i < a->n && a->l[i] < b->l[j])) x = a->l[i++];
         else if (i >= a->n || b->l[j] < a->l[i]) x = b->l[j++];
         else { x = a->l[i]; i++; j++; }
-        if (face && k > 0 && (c->l[k - 1] >> 1) == (x >> 1)) { free(c); return NULL; }
+        if (face && k > 0 && (c->l[k - 1] >> 1) == (x >> 1)) { clause_release(c); return NULL; }
         c->l[k++] = x;
     }
     c->n = k;
     return c;
 }
-/* normalize: drop NULLs, sort, dedup, absorb (drop a clause containing another) */
+/* normalize, consuming the references in a: drop NULLs, sort, dedup, absorb */
 static Dnf *normalize(Clause **a, uint32_t n) {
     uint32_t m = 0;
     for (uint32_t i = 0; i < n; i++) if (a[i]) a[m++] = a[i];
@@ -55,7 +75,7 @@ static Dnf *normalize(Clause **a, uint32_t n) {
     for (uint32_t i = 0; i < m; i++) {
         bool absorbed = false;
         for (uint32_t j = 0; j < k && !absorbed; j++) if (cl_subset(d->c[j], a[i])) absorbed = true;
-        if (!absorbed) d->c[k++] = a[i];
+        if (absorbed) clause_release(a[i]); else d->c[k++] = a[i];
     }
     d->n = k;
     return d;
@@ -79,14 +99,14 @@ Dnf *dnf_join(const Dnf *x, const Dnf *y, bool face) {
     (void)face;
     Clause **a = malloc((x->n + y->n + 1) * sizeof(Clause *));
     uint32_t n = 0;
-    for (uint32_t i = 0; i < x->n; i++) a[n++] = x->c[i];
-    for (uint32_t i = 0; i < y->n; i++) a[n++] = y->c[i];
+    for (uint32_t i = 0; i < x->n; i++) a[n++] = clause_retain(x->c[i]);
+    for (uint32_t i = 0; i < y->n; i++) a[n++] = clause_retain(y->c[i]);
     Dnf *d = normalize(a, n);
     free(a);
     return d;
 }
 Dnf *dnf_meet(const Dnf *x, const Dnf *y, bool face) {
-    Clause **a = malloc((x->n * y->n + 1) * sizeof(Clause *));
+    Clause **a = malloc(((size_t)x->n * y->n + 1) * sizeof(Clause *));
     uint32_t n = 0;
     for (uint32_t i = 0; i < x->n; i++)
         for (uint32_t j = 0; j < y->n; j++) a[n++] = cl_union(x->c[i], y->c[j], face);
@@ -94,13 +114,17 @@ Dnf *dnf_meet(const Dnf *x, const Dnf *y, bool face) {
     free(a);
     return d;
 }
+/* acc := acc ∧ d / acc ∨ d, releasing both */
+static Dnf *meet_into(Dnf *acc, Dnf *d, bool face) { Dnf *r = dnf_meet(acc, d, face); dnf_release(acc); dnf_release(d); return r; }
+static Dnf *join_into(Dnf *acc, Dnf *d, bool face) { Dnf *r = dnf_join(acc, d, face); dnf_release(acc); dnf_release(d); return r; }
+
 /* ~(∨_c ∧_l l) = ∧_c ∨_l ~l */
 Dnf *iv_neg(const Dnf *x) {
     Dnf *acc = dnf_one();
     for (uint32_t i = 0; i < x->n; i++) {
         Dnf *d = dnf_zero();
-        for (uint32_t k = 0; k < x->c[i]->n; k++) d = dnf_join(d, dnf_lit(x->c[i]->l[k] ^ 1), false);
-        acc = dnf_meet(acc, d, false);
+        for (uint32_t k = 0; k < x->c[i]->n; k++) d = join_into(d, dnf_lit(x->c[i]->l[k] ^ 1), false);
+        acc = meet_into(acc, d, false);
     }
     return acc;
 }
@@ -115,11 +139,11 @@ Dnf *iv_subst(const Dnf *x, const Subst *s) {
         for (uint32_t k = 0; k < x->c[i]->n; k++) {
             uint32_t lit = x->c[i]->l[k];
             const Dnf *v = subst_get(s, lit >> 1);
-            Dnf *w = v ? (Dnf *)v : iv_atom(lit >> 1);
-            if (lit & 1) w = iv_neg(w);
-            m = dnf_meet(m, w, false);
+            Dnf *w = v ? dnf_retain((Dnf *)v) : iv_atom(lit >> 1);
+            if (lit & 1) { Dnf *nw = iv_neg(w); dnf_release(w); w = nw; }
+            m = meet_into(m, w, false);
         }
-        acc = dnf_join(acc, m, false);
+        acc = join_into(acc, m, false);
     }
     return acc;
 }
@@ -131,22 +155,16 @@ Dnf *face_eq(const Dnf *r, int eps) {
         Dnf *acc = dnf_one();
         for (uint32_t i = 0; i < r->n; i++) {
             Dnf *d = dnf_zero();
-            for (uint32_t k = 0; k < r->c[i]->n; k++) {
-                uint32_t lit = r->c[i]->l[k];
-                d = dnf_join(d, dnf_lit(((lit >> 1) << 1) | (lit & 1)), true);
-            }
-            acc = dnf_meet(acc, d, true);
+            for (uint32_t k = 0; k < r->c[i]->n; k++) d = join_into(d, dnf_lit(r->c[i]->l[k]), true);
+            acc = meet_into(acc, d, true);
         }
         return acc;
     }
     Dnf *acc = dnf_zero();
     for (uint32_t i = 0; i < r->n; i++) {
         Dnf *m = dnf_one();
-        for (uint32_t k = 0; k < r->c[i]->n; k++) {
-            uint32_t lit = r->c[i]->l[k];
-            m = dnf_meet(m, dnf_lit(((lit >> 1) << 1) | ((lit & 1) ^ 1)), true);
-        }
-        acc = dnf_join(acc, m, true);
+        for (uint32_t k = 0; k < r->c[i]->n; k++) m = meet_into(m, dnf_lit(r->c[i]->l[k] ^ 1), true);
+        acc = join_into(acc, m, true);
     }
     return acc;
 }
@@ -157,16 +175,17 @@ Dnf *face_subst(const Dnf *f, const Subst *s) {
         for (uint32_t k = 0; k < f->c[i]->n; k++) {
             uint32_t lit = f->c[i]->l[k];
             const Dnf *v = subst_get(s, lit >> 1);
-            m = dnf_meet(m, v ? face_eq(v, (int)(lit & 1)) : dnf_lit(lit), true);
+            m = meet_into(m, v ? face_eq(v, (int)(lit & 1)) : dnf_lit(lit), true);
         }
-        acc = dnf_join(acc, m, true);
+        acc = join_into(acc, m, true);
     }
     return acc;
 }
-Dnf *face_of_clause(const Clause *c) { Dnf *d = dnf_new(1); d->c[0] = (Clause *)c; return d; }
-Dnf *face_of_clauses(Clause *const *c, uint32_t n) {
+Dnf *face_of_clause(const Clause *c) { Dnf *d = dnf_new(1); d->c[0] = clause_retain((Clause *)c); return d; }
+Dnf *face_of_clauses(const Dnf *list) {
+    uint32_t n = list ? list->n : 0;
     Clause **a = malloc((n + 1) * sizeof(Clause *));
-    if (n) memcpy(a, c, n * sizeof(Clause *));
+    for (uint32_t i = 0; i < n; i++) a[i] = clause_retain(list->c[i]);
     Dnf *d = normalize(a, n);
     free(a);
     return d;
@@ -174,7 +193,7 @@ Dnf *face_of_clauses(Clause *const *c, uint32_t n) {
 Dnf *face_forall(const Dnf *f, Dim i) {
     Clause **a = malloc((f->n + 1) * sizeof(Clause *));
     uint32_t n = 0;
-    for (uint32_t k = 0; k < f->n; k++) if (!clause_mentions(f->c[k], i)) a[n++] = f->c[k];
+    for (uint32_t k = 0; k < f->n; k++) if (!clause_mentions(f->c[k], i)) a[n++] = clause_retain(f->c[k]);
     Dnf *d = normalize(a, n);
     free(a);
     return d;
@@ -182,10 +201,18 @@ Dnf *face_forall(const Dnf *f, Dim i) {
 
 static Subst *subst_new(uint32_t n) {
     Subst *s = malloc(sizeof(Subst));
-    s->n = n; s->d = malloc((n + 1) * sizeof(Dim)); s->v = malloc((n + 1) * sizeof(Dnf *));
+    s->rc = 1; s->n = n; s->d = malloc((n + 1) * sizeof(Dim)); s->v = malloc((n + 1) * sizeof(Dnf *));
+    LIVE(1);
     return s;
 }
-Subst *subst_single(Dim i, Dnf *r) { Subst *s = subst_new(1); s->d[0] = i; s->v[0] = r; return s; }
+Subst *subst_retain(Subst *s) { if (s) __atomic_fetch_add(&s->rc, 1, __ATOMIC_RELAXED); return s; }
+void subst_release(Subst *s) {
+    if (s && __atomic_sub_fetch(&s->rc, 1, __ATOMIC_ACQ_REL) == 0) {
+        for (uint32_t i = 0; i < s->n; i++) dnf_release(s->v[i]);
+        free(s->d); free(s->v); free(s); LIVE(-1);
+    }
+}
+Subst *subst_single(Dim i, const Dnf *r) { Subst *s = subst_new(1); s->d[0] = i; s->v[0] = dnf_retain((Dnf *)r); return s; }
 Subst *subst_of_clause(const Clause *c) {
     Subst *s = subst_new(c->n);
     for (uint32_t k = 0; k < c->n; k++) { s->d[k] = c->l[k] >> 1; s->v[k] = (c->l[k] & 1) ? dnf_one() : dnf_zero(); }
@@ -197,8 +224,9 @@ Subst *subst_then_clause(const Subst *s, const Clause *d) {
     uint32_t n = 0;
     for (uint32_t i = 0; i < s->n; i++) { t->d[n] = s->d[i]; t->v[n] = iv_subst(s->v[i], ds); n++; }
     for (uint32_t k = 0; k < ds->n; k++)
-        if (!subst_get(s, ds->d[k])) { t->d[n] = ds->d[k]; t->v[n] = ds->v[k]; n++; }
+        if (!subst_get(s, ds->d[k])) { t->d[n] = ds->d[k]; t->v[n] = dnf_retain(ds->v[k]); n++; }
     t->n = n;
+    subst_release(ds);
     return t;
 }
 bool subst_range_mentions(const Subst *s, Dim j) {
@@ -208,13 +236,16 @@ bool subst_range_mentions(const Subst *s, Dim j) {
 Subst *subst_without(const Subst *s, Dim j) {
     Subst *t = subst_new(s->n);
     uint32_t n = 0;
-    for (uint32_t i = 0; i < s->n; i++) if (s->d[i] != j) { t->d[n] = s->d[i]; t->v[n] = s->v[i]; n++; }
+    for (uint32_t i = 0; i < s->n; i++) if (s->d[i] != j) { t->d[n] = s->d[i]; t->v[n] = dnf_retain(s->v[i]); n++; }
     t->n = n;
     return t;
 }
-Subst *subst_with(const Subst *s, Dim j, Dnf *r) {
-    Subst *t = subst_without(s, j);
-    t->d[t->n] = j; t->v[t->n] = r; t->n++;
+Subst *subst_with(const Subst *s, Dim j, const Dnf *r) {
+    Subst *t = subst_new(s->n + 1);
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < s->n; i++) if (s->d[i] != j) { t->d[n] = s->d[i]; t->v[n] = dnf_retain(s->v[i]); n++; }
+    t->d[n] = j; t->v[n] = dnf_retain((Dnf *)r); n++;
+    t->n = n;
     return t;
 }
 

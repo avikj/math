@@ -32,7 +32,14 @@ Cell *cell(int kind, int n) {
     ADD(stat_cells, 1);
     return c;
 }
-void cell_free(Cell *c) { Local *l = local(); c->a = (uint64_t)(uintptr_t)l->defer; l->defer = c; ADD(stat_cells, -1); }
+/* the payload a cell owns */
+static bool owns_dnf(int k) { return k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2; }
+static void payload_retain(Cell *c) { if (owns_dnf(c->kind)) dnf_retain(c->p); else if (c->kind == O_SUBST) subst_retain(c->p); }
+static void payload_release(Cell *c) {
+    if (owns_dnf(c->kind)) dnf_release(c->p); else if (c->kind == O_SUBST) subst_release(c->p);
+    c->p = NULL;
+}
+void cell_free(Cell *c) { payload_release(c); Local *l = local(); c->a = (uint64_t)(uintptr_t)l->defer; l->defer = c; ADD(stat_cells, -1); }
 static void flush_frees(void) {
     Local *l = local();
     while (l->defer) {
@@ -40,7 +47,7 @@ static void flush_frees(void) {
         if (c->n <= MAXFREE) { c->a = (uint64_t)(uintptr_t)l->free[c->n]; l->free[c->n] = c; }
     }
 }
-static Cell *clone(const Cell *v) { Cell *c = cell(v->kind, v->n); c->x = v->x; c->a = v->a; c->p = v->p; return c; }
+static Cell *clone(const Cell *v) { Cell *c = cell(v->kind, v->n); c->x = v->x; c->a = v->a; c->p = v->p; payload_retain(c); return c; }
 
 /* a wire is published with release and read with acquire, so a cell is
  * initialized before any thread reaching it through a wire touches it */
@@ -114,18 +121,18 @@ static Port out_of(Cell *o) { return o->port[o->n - 1]; }
 
 /* ---------------- small constructors ---------------- */
 static void era(Port prov) { Cell *e = cell(O_ERA, 1); link(prov, P(e, 0)); }
-static Port sub(Port prov, Subst *s) { Cell *c = cell(O_SUBST, 2); c->p = s; link(prov, P(c, 0)); return P(c, 1); }
+static Port sub(Port prov, Subst *s) { Cell *c = cell(O_SUBST, 2); c->p = subst_retain(s); link(prov, P(c, 0)); return P(c, 1); }  /* borrows s */
 static Port mkplam_of(Port prov, Dim i) { Cell *m = cell(O_MKPLAM, 2); m->a = i; link(prov, P(m, 0)); return P(m, 1); }
-static Port iv_cell(Dnf *r) { Cell *c = cell(V_IV, 1); c->p = r; return P(c, 0); }
+static Port iv_cell(Dnf *r) { Cell *c = cell(V_IV, 1); c->p = r; return P(c, 0); }  /* takes r */
 /* m providers sharing one value (a chain of duplicators) */
 static void split(Port prov, int m, Port *out) {
     if (m == 0) { era(prov); return; }
     for (int k = 0; k < m - 1; k++) { Cell *d = cell(O_DUP, 3); link(prov, P(d, 0)); out[k] = P(d, 1); prov = P(d, 2); }
     out[m - 1] = prov;
 }
-static void split_restrict(Port prov, Clause **cl, int m, Port *out) {
+static void split_restrict(Port prov, const Dnf *cl, int m, Port *out) {
     split(prov, m, out);
-    for (int k = 0; k < m; k++) out[k] = sub(out[k], subst_of_clause(cl[k]));
+    for (int k = 0; k < m; k++) { Subst *t = subst_of_clause(cl->c[k]); out[k] = sub(out[k], t); subst_release(t); }
 }
 static Port apply_global(const char *name, Port *args, int n) {
     long g = global_lookup(name);
@@ -159,30 +166,35 @@ static void rule_subst(Cell *o, Cell *v) {
     switch (v->kind) {
     case V_NVAR: case V_GLOBAL: case V_U:
         link(P(v, 0), out); cell_free(o); return;
-    case V_IV: v->p = iv_subst(v->p, s); link(P(v, 0), out); cell_free(o); return;
-    case V_FACE: v->p = face_subst(v->p, s); link(P(v, 0), out); cell_free(o); return;
+    case V_IV: { Dnf *n2 = iv_subst(v->p, s); dnf_release(v->p); v->p = n2; link(P(v, 0), out); cell_free(o); return; }
+    case V_FACE: { Dnf *n2 = face_subst(v->p, s); dnf_release(v->p); v->p = n2; link(P(v, 0), out); cell_free(o); return; }
     case V_PLAM: {
         Dim j = (Dim)v->a, j2 = j;
         Subst *t = subst_without(s, j);
-        if (subst_range_mentions(t, j)) { j2 = fresh_dim(); t = subst_with(t, j, iv_atom(j2)); }
+        if (subst_range_mentions(t, j)) {
+            j2 = fresh_dim();
+            Dnf *at = iv_atom(j2); Subst *t2 = subst_with(t, j, at);
+            dnf_release(at); subst_release(t); t = t2;
+        }
         link(mkplam_of(sub(v->port[1], t), j2), out);
+        subst_release(t);
         cell_free(o); cell_free(v); return;
     }
     case V_SYS: {
         int nb = v->n - 1;
-        Clause **cl = v->p;
+        Dnf *cl = v->p;
         Dnf **f = malloc((size_t)(nb + 1) * sizeof(Dnf *));
         int total = 0;
-        for (int k = 0; k < nb; k++) { f[k] = face_subst(face_of_clause(cl[k]), s); total += (int)f[k]->n; }
+        for (int k = 0; k < nb; k++) { Dnf *fc = face_of_clause(cl->c[k]); f[k] = face_subst(fc, s); dnf_release(fc); total += (int)f[k]->n; }
         for (int k = 0; k < nb; k++) if (dnf_is_one(f[k])) {
             /* the substitution entails this branch's clause: the system is that value */
             link(sub(v->port[k + 1], s), out);
             for (int m = 0; m < nb; m++) if (m != k) era(v->port[m + 1]);
+            for (int m = 0; m < nb; m++) dnf_release(f[m]);
             free(f); cell_free(o); cell_free(v); return;
         }
         Cell *ns = cell(V_SYS, total + 1);
         Clause **ncl = malloc((size_t)(total + 1) * sizeof(Clause *));
-        ns->p = ncl;
         int idx = 0;
         for (int k = 0; k < nb; k++) {
             int m = (int)f[k]->n;
@@ -190,12 +202,17 @@ static void rule_subst(Cell *o, Cell *v) {
             split(v->port[k + 1], m, cp);
             for (int q = 0; q < m; q++) {
                 ncl[idx] = f[k]->c[q];
-                link(sub(cp[q], subst_then_clause(s, f[k]->c[q])), P(ns, idx + 1));
+                Subst *t = subst_then_clause(s, f[k]->c[q]);
+                link(sub(cp[q], t), P(ns, idx + 1));
+                subst_release(t);
                 idx++;
             }
             free(cp);
         }
+        ns->p = clause_list(ncl, (uint32_t)total);
+        free(ncl);
         link(P(ns, 0), out);
+        for (int m = 0; m < nb; m++) dnf_release(f[m]);
         free(f); cell_free(o); cell_free(v); return;
     }
     /* neutrals and reducible constructors become their operations again */
@@ -230,12 +247,12 @@ static void rule_mkplam(Cell *o, Cell *v) {
     Dim i = (Dim)o->a;
     Port out = o->port[1];
     if (v->kind == V_SYS) {
-        Clause **cl = v->p;
+        Dnf *cl = v->p;
         int nb = v->n - 1;
         bool avoid = true;
-        for (int k = 0; k < nb; k++) if (clause_mentions(cl[k], i)) avoid = false;
+        for (int k = 0; k < nb; k++) if (clause_mentions(cl->c[k], i)) avoid = false;
         if (avoid) {
-            Cell *ns = cell(V_SYS, nb + 1); ns->p = cl;
+            Cell *ns = cell(V_SYS, nb + 1); ns->p = dnf_retain(cl);
             for (int k = 0; k < nb; k++) link(mkplam_of(v->port[k + 1], i), P(ns, k + 1));
             link(P(ns, 0), out);
             cell_free(o); cell_free(v); return;
@@ -251,8 +268,8 @@ static void rule_mkplam(Cell *o, Cell *v) {
  * restricted to the branch's clause */
 static void distribute(Cell *o, Cell *v) {
     int nb = v->n - 1;
-    Clause **cl = v->p;
-    Cell *ns = cell(V_SYS, nb + 1); ns->p = cl;
+    Dnf *cl = v->p;
+    Cell *ns = cell(V_SYS, nb + 1); ns->p = dnf_retain(cl);
     Port ex[2] = { 0, 0 }; int ne = 0;
     switch (o->kind) {
     case O_APP: case O_UNGLUE2: case O_SYSMAP: ex[ne++] = o->port[1]; break;
@@ -273,7 +290,7 @@ static void distribute(Cell *o, Cell *v) {
         case O_FACEOF: c = cell(O_FACEOF, 2); link(val, P(c, 0)); link(P(c, 1), res); break;
         case O_PAPPP:
             c = cell(O_PAPPR, o->x ? 5 : 3); c->x = o->x;
-            link(iv_cell(iv_subst(o->p, subst_of_clause(cl[b]))), P(c, 0));
+            { Subst *t = subst_of_clause(cl->c[b]); link(iv_cell(iv_subst(o->p, t)), P(c, 0)); subst_release(t); }
             link(val, P(c, 1));
             if (o->x) { link(cp[0][b], P(c, 2)); link(cp[1][b], P(c, 3)); }
             link(P(c, c->n - 1), res);
@@ -352,7 +369,7 @@ static void interact(Cell *o, Cell *v) {
             link(o->port[z ? 2 : 3], o->port[4]);
             era(o->port[1]); era(o->port[z ? 3 : 2]);
         } else {
-            Cell *pp = cell(O_PAPPP, o->x ? 4 : 2); pp->x = o->x; pp->p = r;
+            Cell *pp = cell(O_PAPPP, o->x ? 4 : 2); pp->x = o->x; pp->p = dnf_retain(r);
             mv(o, 1, P(pp, 0));
             if (o->x) { mv(o, 2, P(pp, 1)); mv(o, 3, P(pp, 2)); }
             link(P(pp, pp->n - 1), out_of(o));
@@ -362,12 +379,14 @@ static void interact(Cell *o, Cell *v) {
     }
     case O_PAPPP:
         if (vk == V_PLAM) {
-            link(sub(v->port[1], subst_single((Dim)v->a, o->p)), out_of(o));
+            Subst *t = subst_single((Dim)v->a, o->p);
+            link(sub(v->port[1], t), out_of(o));
+            subst_release(t);
             if (o->x) { era(o->port[1]); era(o->port[2]); }
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else {
-            Cell *n = cell(V_NPAPP, o->x ? 4 : 2); n->x = o->x; n->p = o->p;
+            Cell *n = cell(V_NPAPP, o->x ? 4 : 2); n->x = o->x; n->p = dnf_retain(o->p);
             link(P(v, 0), P(n, 1));
             if (o->x) { mv(o, 1, P(n, 2)); mv(o, 2, P(n, 3)); }
             link(P(n, 0), out_of(o));
@@ -419,18 +438,20 @@ static void interact(Cell *o, Cell *v) {
         case V_SYS: {
             /* a system of families: each branch whose clause holds along the
              * whole line, ∀i, composes in its own family */
-            int nb = v->n - 1; Clause **cl = v->p;
+            int nb = v->n - 1; Dnf *cl = v->p;
             int keep = 0;
-            for (int k = 0; k < nb; k++) if (!clause_mentions(cl[k], i)) keep++;
+            for (int k = 0; k < nb; k++) if (!clause_mentions(cl->c[k], i)) keep++;
             Cell *ns = cell(V_SYS, keep + 1);
-            Clause **ncl = malloc((size_t)(keep + 1) * sizeof(Clause *)); ns->p = ncl;
+            Clause **kc = malloc((size_t)(keep + 1) * sizeof(Clause *));
             Port *uc = malloc((size_t)(keep + 1) * sizeof(Port)), *ac = malloc((size_t)(keep + 1) * sizeof(Port));
             int q = 0;
-            for (int k = 0; k < nb; k++) if (!clause_mentions(cl[k], i)) ncl[q++] = cl[k];
-            split_restrict(u, ncl, keep, uc); split_restrict(a0, ncl, keep, ac);
+            for (int k = 0; k < nb; k++) if (!clause_mentions(cl->c[k], i)) kc[q++] = cl->c[k];
+            Dnf *kl = clause_list(kc, (uint32_t)keep); free(kc);
+            ns->p = kl;
+            split_restrict(u, kl, keep, uc); split_restrict(a0, kl, keep, ac);
             q = 0;
             for (int k = 0; k < nb; k++) {
-                if (clause_mentions(cl[k], i)) { era(v->port[k + 1]); continue; }
+                if (clause_mentions(cl->c[k], i)) { era(v->port[k + 1]); continue; }
                 Cell *c = cell(O_COMP, 4);
                 link(uc[q], P(c, 0)); link(mkplam_of(v->port[k + 1], i), P(c, 1)); link(ac[q], P(c, 2)); link(P(c, 3), P(ns, q + 1));
                 q++;
@@ -486,7 +507,7 @@ static void interact(Cell *o, Cell *v) {
     case O_FACEOF: {
         Cell *f = cell(V_FACE, 1);
         if (vk == V_SYS) {
-            f->p = face_of_clauses((Clause **)v->p, (uint32_t)(v->n - 1));
+            f->p = face_of_clauses(v->p);
             for (int k = 1; k < v->n; k++) era(v->port[k]);
             cell_free(v);
         } else { f->p = dnf_one(); era(P(v, 0)); }
@@ -496,11 +517,12 @@ static void interact(Cell *o, Cell *v) {
     }
     case O_NEG:
         if (vk != V_IV) { fprintf(stderr, "~ of a non-interval\n"); exit(2); }
-        v->p = iv_neg(v->p); link(P(v, 0), o->port[1]); cell_free(o);
+        { Dnf *n2 = iv_neg(v->p); dnf_release(v->p); v->p = n2; }
+        link(P(v, 0), o->port[1]); cell_free(o);
         return;
     case O_BIN: {
         if (vk != V_IV && vk != V_FACE) { fprintf(stderr, "lattice operation on a non-interval\n"); exit(2); }
-        Cell *b = cell(O_BIN2, 2); b->x = o->x; b->p = v->p;
+        Cell *b = cell(O_BIN2, 2); b->x = o->x; b->p = dnf_retain(v->p);
         mv(o, 1, P(b, 0)); link(P(b, 1), o->port[2]);
         cell_free(o); cell_free(v);
         return;
@@ -508,7 +530,8 @@ static void interact(Cell *o, Cell *v) {
     case O_BIN2: {
         bool face = o->x == B_FAND || o->x == B_FOR;
         if (vk != (face ? V_FACE : V_IV)) { fprintf(stderr, "lattice operation on mismatched operands\n"); exit(2); }
-        v->p = (o->x == B_MEET || o->x == B_FAND) ? dnf_meet(o->p, v->p, face) : dnf_join(o->p, v->p, face);
+        Dnf *n2 = (o->x == B_MEET || o->x == B_FAND) ? dnf_meet(o->p, v->p, face) : dnf_join(o->p, v->p, face);
+        dnf_release(v->p); v->p = n2;
         link(P(v, 0), o->port[1]); cell_free(o);
         return;
     }
@@ -520,7 +543,8 @@ static void interact(Cell *o, Cell *v) {
     }
     case O_FORALL:
         if (vk != V_FACE) { fprintf(stderr, "forall of a non-face\n"); exit(2); }
-        v->p = face_forall(v->p, (Dim)o->a); link(P(v, 0), o->port[1]); cell_free(o);
+        { Dnf *n2 = face_forall(v->p, (Dim)o->a); dnf_release(v->p); v->p = n2; }
+        link(P(v, 0), o->port[1]); cell_free(o);
         return;
     case O_SYSCONS: {
         if (vk != V_FACE) { fprintf(stderr, "system branch guarded by a non-face\n"); exit(2); }
@@ -530,7 +554,7 @@ static void interact(Cell *o, Cell *v) {
         } else if (dnf_is_zero(f)) {
             link(o->port[2], o->port[3]); era(o->port[1]);
         } else {
-            Cell *s2 = cell(O_SYSCONS2, 3); s2->p = f;
+            Cell *s2 = cell(O_SYSCONS2, 3); s2->p = dnf_retain(f);
             mv(o, 2, P(s2, 0)); mv(o, 1, P(s2, 1)); link(P(s2, 2), o->port[3]);
         }
         cell_free(o); cell_free(v);
@@ -542,15 +566,17 @@ static void interact(Cell *o, Cell *v) {
             Dnf *f = o->p;
             int nb = v->n - 1, m = (int)f->n;
             Cell *ns = cell(V_SYS, nb + m + 1);
-            Clause **ncl = malloc((size_t)(nb + m + 1) * sizeof(Clause *)); ns->p = ncl;
-            Clause **cl = v->p;
-            for (int k = 0; k < nb; k++) { ncl[k] = cl[k]; mv(v, k + 1, P(ns, k + 1)); }
+            Clause **ncl = malloc((size_t)(nb + m + 1) * sizeof(Clause *));
+            Dnf *cl = v->p;
+            for (int k = 0; k < nb; k++) { ncl[k] = cl->c[k]; mv(v, k + 1, P(ns, k + 1)); }
             Port *cp = malloc((size_t)(m + 1) * sizeof(Port));
-            split_restrict(o->port[1], f->c, m, cp);
+            split_restrict(o->port[1], f, m, cp);
             for (int q = 0; q < m; q++) {
                 ncl[nb + q] = f->c[q];
                 Cell *fo = cell(O_FORCE, 2); link(cp[q], P(fo, 0)); link(P(fo, 1), P(ns, nb + q + 1));
             }
+            ns->p = clause_list(ncl, (uint32_t)(nb + m));
+            free(ncl);
             free(cp);
             link(P(ns, 0), o->port[2]);
             cell_free(o); cell_free(v);

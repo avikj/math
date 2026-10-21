@@ -21,9 +21,19 @@
 typedef uint32_t Dim;
 /* a clause: sorted literals. Interval literal = dim<<1 | negated;
  * face literal = dim<<1 | endpoint. */
-typedef struct { uint32_t n; uint32_t l[]; } Clause;
-typedef struct { uint32_t n; Clause *c[]; } Dnf;     /* join of clauses */
-typedef struct { uint32_t n; Dim *d; Dnf **v; } Subst; /* sorted by dim */
+/* Payloads are immutable and reference counted; functions borrow their
+ * arguments and return references their callers own; a cell owns its payload. */
+typedef struct { uint32_t rc, n; uint32_t l[]; } Clause;
+typedef struct { uint32_t rc, n; Clause *c[]; } Dnf;     /* join of clauses (or a system's clause list) */
+typedef struct { uint32_t rc, n; Dim *d; Dnf **v; } Subst;
+extern long stat_payloads;
+Clause *clause_retain(Clause *c);
+void clause_release(Clause *c);
+Dnf *dnf_retain(Dnf *d);
+void dnf_release(Dnf *d);
+Subst *subst_retain(Subst *s);
+void subst_release(Subst *s);
+Dnf *clause_list(Clause *const *c, uint32_t n);
 
 Dim  fresh_dim(void);
 Dnf *dnf_zero(void);
@@ -41,13 +51,13 @@ Dnf *face_eq(const Dnf *r, int eps);           /* the face (r = eps) */
 Dnf *face_subst(const Dnf *f, const Subst *s);
 Dnf *face_of_clause(const Clause *c);
 Dnf *face_forall(const Dnf *f, Dim i);
-Dnf *face_of_clauses(Clause *const *c, uint32_t n);
-Subst *subst_single(Dim i, Dnf *r);
+Dnf *face_of_clauses(const Dnf *list);
+Subst *subst_single(Dim i, const Dnf *r);
 Subst *subst_of_clause(const Clause *c);
 Subst *subst_then_clause(const Subst *s, const Clause *d); /* x ↦ s(x)[d], then d */
 bool  subst_range_mentions(const Subst *s, Dim j);
 Subst *subst_without(const Subst *s, Dim j);
-Subst *subst_with(const Subst *s, Dim j, Dnf *r);
+Subst *subst_with(const Subst *s, Dim j, const Dnf *r);
 const Dnf *subst_get(const Subst *s, Dim j);
 typedef const char *(*DimName)(Dim);
 void dnf_print(FILE *o, const Dnf *x, bool face, DimName nm);
@@ -65,7 +75,7 @@ enum {
     V_PLAM,     /* a=dim; 1=body */
     V_IV,       /* p=Dnf (interval) */
     V_FACE,     /* p=Dnf (face) */
-    V_SYS,      /* p=Clause*[]; ports 1.. = branch values, each under its clause */
+    V_SYS,      /* p=Dnf (the branches' clauses, in order; NULL when none); ports 1.. = branch values */
     V_GLUE,     /* 1=A 2=S (a SYS of (T,e)) */
     V_GLUEV,    /* 1=S (a SYS) 2=a */
     V_NVAR,     /* a=name */

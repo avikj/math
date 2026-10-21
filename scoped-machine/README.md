@@ -83,6 +83,10 @@ A subnet computing `L g` between its input wires and its output wire is, at ever
 - `(the T t)` observes `t` at its declared type: when `T` itself moved along identities' lines, the answer is transported back along `T` to `T` at the 0-end, so it inhabits the declaration.
 - `(defect t)` runs `t` from the same warm state without and with its identities and reports the difference in length and in erasures — the defect of the square comparing the two routes (5.13 holds within each).
 
+## Memory
+
+Intervals, faces, clause lists and substitutions are immutable and reference counted; a cell owns its payload and releases it when the cell is retired, so payloads live are bounded by the cells holding them (100 nested transports, 390k interactions: 100 payloads live, those of the result). Reading a value back runs on an explicit stack: a value a million deep reads back on the default native stack. No fixed caps remain in the reader, compiler or readback.
+
 ## Inputs
 
 `(input x)` declares a definition whose value is not yet supplied. Any eliminator meeting it waits. `(supply x t)` connects the value, and the waiting pairs proceed.

@@ -5,6 +5,9 @@
 #include <ctype.h>
 #include <pthread.h>
 
+/* grow an array to hold at least n elements */
+#define GROW(arr, cap, n) do { if ((size_t)(n) > (size_t)(cap)) { size_t nc_ = (cap) ? (size_t)(cap) * 2 : 16; while (nc_ < (size_t)(n)) nc_ *= 2; (arr) = realloc((arr), nc_ * sizeof *(arr)); (cap) = nc_; } } while (0)
+
 static void die(const char *m, const char *x) { fprintf(stderr, "error: %s%s%s\n", m, x ? " " : "", x ? x : ""); exit(1); }
 
 /* ---------------- s-expressions ---------------- */
@@ -29,23 +32,27 @@ static Node *read_node(void) {
     if (*src == ')') die("unexpected )", NULL);
     if (*src == '(') {
         src++;
-        Node *items[256]; int n = 0;
+        Node **items = NULL; size_t cap = 0; int n = 0;
         for (;;) {
             skip();
             if (!*src) die("unclosed (", NULL);
             if (*src == ')') { src++; break; }
-            if (n == 256) die("list too long", NULL);
+            GROW(items, cap, (size_t)n + 1);
             items[n++] = read_node();
         }
         Node *x = nlist(n);
-        memcpy(x->it, items, (size_t)n * sizeof(Node *));
+        if (n) memcpy(x->it, items, (size_t)n * sizeof(Node *));
+        free(items);
         return x;
     }
     const char *b = src;
     while (*src && !isspace((unsigned char)*src) && *src != '(' && *src != ')' && *src != ';') src++;
-    char buf[256]; size_t len = (size_t)(src - b); if (len > 255) len = 255;
+    size_t len = (size_t)(src - b);
+    char *buf = malloc(len + 1);
     memcpy(buf, b, len); buf[len] = 0;
-    return nsym(buf);
+    Node *x = nsym(buf);
+    free(buf);
+    return x;
 }
 static bool is(Node *x, const char *s) { return x && !x->list && strcmp(x->s, s) == 0; }
 static void print_node(FILE *o, Node *x) {
@@ -363,16 +370,16 @@ static Port held_copy(Cell *r) {
     return P(d, 2);
 }
 /* the answer: every identity followed taken to its 1-end */
-static Subst *answer_subst(void) {
-    int m = 0;
-    for (int i = 0; i < nID; i++) if (ID[i].dim) m++;
-    if (!m) return NULL;
+/* every identity's dimension sent to r (owned result; NULL when none) */
+static Subst *identity_subst(const Dnf *r) {
     Subst *s = NULL;
     for (int i = 0; i < nID; i++) if (ID[i].dim) {
-        if (!s) s = subst_single(ID[i].dim, dnf_one()); else s = subst_with(s, ID[i].dim, dnf_one());
+        Subst *t = s ? subst_with(s, ID[i].dim, r) : subst_single(ID[i].dim, r);
+        subst_release(s); s = t;
     }
     return s;
 }
+static Subst *answer_subst(void) { Dnf *one = dnf_one(); Subst *s = identity_subst(one); dnf_release(one); return s; }
 static Port as_answer(Port prov) {
     Subst *s = answer_subst();
     if (!s || !prov) return prov;
@@ -389,15 +396,13 @@ typedef struct {
     int nenv, ecap;
     Node **env_nodes; int *env_slots; Syn **env_syns;
 } Level;
-#define MAXB 8192
-#define MAXL 1024
-static Bind binds[MAXB]; static int nbinds;
-static Level levels[MAXL]; static int nlevels;
-static const char *shadow[MAXB]; static int nshadow;
+static Bind *binds; static size_t capbinds; static int nbinds;
+static Level *levels; static size_t caplevels; static int nlevels;
+static const char **shadow; static size_t capshadow; static int nshadow;
 
 static Syn *syn(int tag, int n) { Syn *s = calloc(1, sizeof(Syn)); s->tag = tag; s->n = n; s->k = calloc((size_t)n + 1, sizeof(Syn *)); return s; }
 static Bind *lookup(const char *name) { for (int i = nbinds - 1; i >= 0; i--) if (!strcmp(binds[i].name, name)) return &binds[i]; return NULL; }
-static void push_bind(const char *name, int level, int slot) { if (nbinds == MAXB) die("too many binders", NULL); binds[nbinds++] = (Bind){ name, level, slot }; }
+static void push_bind(const char *name, int level, int slot) { GROW(binds, capbinds, (size_t)nbinds + 1); binds[nbinds++] = (Bind){ name, level, slot }; }
 static int new_slot(void) {
     Level *L = &levels[nlevels - 1];
     if (L->nslots == L->ucap) { L->ucap = L->ucap ? L->ucap * 2 : 8; L->uses = realloc(L->uses, (size_t)L->ucap * sizeof(int)); }
@@ -418,10 +423,12 @@ static int maxlev(Node *t) {
     const char *h = t->it[0]->s;
     int r = -1;
     if (!strcmp(h, "lam") || !strcmp(h, "plam") || !strcmp(h, "forall")) {
+        GROW(shadow, capshadow, (size_t)nshadow + 1);
         shadow[nshadow++] = t->it[1]->s; r = maxlev(t->it[2]); nshadow--; return r;
     }
     if (!strcmp(h, "let")) {
         r = maxlev(t->it[2]);
+        GROW(shadow, capshadow, (size_t)nshadow + 1);
         shadow[nshadow++] = t->it[1]->s; int r2 = maxlev(t->it[3]); nshadow--;
         return r > r2 ? r : r2;
     }
@@ -457,7 +464,7 @@ static int lift(Node *t) {
     return slot;
 }
 static Syn *compile_record(Node *param, Node *body, bool thunk) {
-    if (nlevels == MAXL) die("binders nested too deeply", NULL);
+    GROW(levels, caplevels, (size_t)nlevels + 1);
     int li = nlevels++;
     levels[li] = (Level){ .is_thunk = thunk, .scope_start = nbinds };
     if (!thunk) push_bind(param->s, li, new_slot());
@@ -551,6 +558,7 @@ static Syn *compile(Node *t) {
 /* compile a closed top-level term into a frame of its own */
 static Syn *compile_top(Node *t, int *nslots, int **uses) {
     nbinds = 0; nlevels = 1;
+    GROW(levels, caplevels, 1);
     levels[0] = (Level){ 0 };
     Syn *s = compile(ds(t));
     *nslots = levels[0].nslots; *uses = levels[0].uses;
@@ -563,7 +571,7 @@ static Port build_top(Node *t) { int ns; int *u; Syn *s = compile_top(t, &ns, &u
 /* ---------------- reading back ---------------- */
 #define RUN_LIMIT 50000000L
 typedef struct { Dim d; char name[16]; } DimShow;
-static DimShow dshow[4096]; static int ndshow, dcount; static long vcount;
+static DimShow *dshow; static size_t capdshow; static int ndshow, dcount; static long vcount;
 static char dimbuf[8][24]; static int dimbuf_i;
 static const char *dim_name(Dim d) {
     for (int i = ndshow - 1; i >= 0; i--) if (dshow[i].d == d) return dshow[i].name;
@@ -576,7 +584,7 @@ static Cell *observe(Port prov) {
     if (!net_observe(r, RUN_LIMIT)) return NULL;
     return PC(r->port[0]);
 }
-static long unfolding[256]; static int nunfold;
+static long *unfolding; static size_t capunfold; static int nunfold;
 static void rb(FILE *o, Port prov);
 static Port apply_fresh(Port f, long *name) {
     *name = fresh_var("x", vcount++);
@@ -585,73 +593,121 @@ static Port apply_fresh(Port f, long *name) {
     link(f, P(a, 0)); link(P(v, 0), P(a, 1));
     return P(a, 2);
 }
-static void rb_fields(FILE *o, const char *h, Cell *c, int from) {
+/* Reading a value back runs on an explicit stack of tasks, so the depth of a
+ * value is bounded by memory, not by the native stack. */
+/* a field is read from its cell when its turn comes: until then its wire may
+ * still be rewritten by the reduction of the fields before it */
+enum { TK_PORT, TK_FIELD, TK_STR, TK_BINDER, TK_POPDIM, TK_POPUNFOLD };
+typedef struct { int kind; Port p; char *s; } Task;
+static Task *tasks; static size_t captasks; static long ntasks;
+static void push_task(int kind, Port p, char *s) { GROW(tasks, captasks, (size_t)ntasks + 1); tasks[ntasks++] = (Task){ kind, p, s }; }
+static void push_str(const char *s) { push_task(TK_STR, 0, strdup(s)); }
+static void push_port(Port p) { push_task(TK_PORT, p, NULL); }
+static void push_field(Cell *c, int k) { push_task(TK_FIELD, P(c, k), NULL); }
+static void push_binder(Cell *c, int k) { push_task(TK_BINDER, P(c, k), NULL); }
+/* "(h f1 f2 ... )" over ports from..n-1 */
+static void push_fields(FILE *o, const char *h, Cell *c, int from) {
     fprintf(o, "(%s", h);
-    for (int k = from; k < c->n; k++) { fputc(' ', o); rb(o, c->port[k]); }
-    fputc(')', o);
+    push_str(")");
+    for (int k = c->n - 1; k >= from; k--) { push_field(c, k); push_str(" "); }
 }
-static void rb(FILE *o, Port prov) {
+static char *dnf_string(const Dnf *d, bool face) {
+    char *buf; size_t len; FILE *m = open_memstream(&buf, &len);
+    dnf_print(m, d, face, dim_name); fclose(m);
+    return buf;
+}
+static void rb_one(FILE *o, Port prov) {
     Cell *c = observe(prov);
     if (!c) { fputs("<pending>", o); return; }
     long nm;
     switch (c->kind) {
-    case V_LAM: {
+    case V_LAM: case V_SITEF: {
         Port b = apply_fresh(P(c, 0), &nm);
-        fprintf(o, "(lam %s ", name_of(nm)); rb(o, b); fputc(')', o); return;
+        fprintf(o, "(lam %s ", name_of(nm));
+        push_str(")"); push_port(b);
+        return;
     }
-    case V_PI: case V_SIGMA: {
-        Port B = c->port[2];
+    case V_PI: case V_SIGMA:
         fprintf(o, "(%s ", c->kind == V_PI ? "Pi" : "Sigma");
-        rb(o, c->port[1]);
-        Port b = apply_fresh(B, &nm);
-        fprintf(o, " %s ", name_of(nm)); rb(o, b); fputc(')', o); return;
-    }
-    case V_PAIR: rb_fields(o, "pair", c, 1); return;
+        push_binder(c, 2); push_field(c, 1);
+        return;
+    case V_PAIR: push_fields(o, "pair", c, 1); return;
     case V_U: fputs("U", o); return;
-    case V_PATHP: rb_fields(o, "PathP", c, 1); return;
+    case V_PATHP: push_fields(o, "PathP", c, 1); return;
     case V_PLAM: {
+        GROW(dshow, capdshow, (size_t)ndshow + 1);
         DimShow *d = &dshow[ndshow++]; d->d = (Dim)c->a; snprintf(d->name, sizeof d->name, "i%d", dcount++);
-        fprintf(o, "(plam %s ", d->name); rb(o, c->port[1]); fputc(')', o);
-        ndshow--; return;
+        fprintf(o, "(plam %s ", d->name);
+        push_task(TK_POPDIM, 0, NULL); push_str(")"); push_field(c, 1);
+        return;
     }
     case V_IV: dnf_print(o, c->p, false, dim_name); return;
     case V_FACE: dnf_print(o, c->p, true, dim_name); return;
     case V_SYS: {
-        Clause **cl = c->p;
+        Dnf *cl = c->p;
         fputs("(sys", o);
-        for (int k = 1; k < c->n; k++) { fputs(" (", o); clause_print(o, cl[k - 1], dim_name); fputc(' ', o); rb(o, c->port[k]); fputc(')', o); }
-        fputc(')', o); return;
+        push_str(")");
+        for (int k = c->n - 1; k >= 1; k--) {
+            char *buf; size_t len; FILE *m = open_memstream(&buf, &len);
+            fputs(" (", m); clause_print(m, cl->c[k - 1], dim_name); fputc(' ', m); fclose(m);
+            push_str(")"); push_field(c, k); push_task(TK_STR, 0, buf);
+        }
+        return;
     }
-    case V_GLUE: rb_fields(o, "Glue", c, 1); return;
-    case V_GLUEV: rb_fields(o, "glue", c, 1); return;
+    case V_GLUE: push_fields(o, "Glue", c, 1); return;
+    case V_GLUEV: push_fields(o, "glue", c, 1); return;
     case V_NVAR: fputs(name_of((long)c->a), o); return;
-    case V_NAPP: fputc('(', o); rb(o, c->port[1]); fputc(' ', o); rb(o, c->port[2]); fputc(')', o); return;
-    case V_NFST: rb_fields(o, "fst", c, 1); return;
-    case V_NSND: rb_fields(o, "snd", c, 1); return;
-    case V_NPAPP:
-        fputs("(@ ", o); rb(o, c->port[1]); fputc(' ', o); dnf_print(o, c->p, false, dim_name);
-        if (c->x) { fputc(' ', o); rb(o, c->port[2]); fputc(' ', o); rb(o, c->port[3]); }
-        fputc(')', o); return;
-    case V_NCOMP: rb_fields(o, "comp", c, 1); return;
-    case V_NUNGLUE: rb_fields(o, "unglue", c, 1); return;
-    case V_SITEF: {
-        Port b = apply_fresh(P(c, 0), &nm);
-        fprintf(o, "(lam %s ", name_of(nm)); rb(o, b); fputc(')', o); return;
+    case V_NAPP:
+        fputc('(', o);
+        push_str(")"); push_field(c, 2); push_str(" "); push_field(c, 1);
+        return;
+    case V_NFST: push_fields(o, "fst", c, 1); return;
+    case V_NSND: push_fields(o, "snd", c, 1); return;
+    case V_NPAPP: {
+        fputs("(@ ", o);
+        push_str(")");
+        if (c->x) { push_field(c, 3); push_str(" "); push_field(c, 2); push_str(" "); }
+        char *r = dnf_string(c->p, false);
+        push_task(TK_STR, 0, r); push_str(" "); push_field(c, 1);
+        return;
     }
-    case V_DEFER: rb(o, app_chain(global_cell((long)c->a), &c->port[1], c->n - 1, SITED)); return;
+    case V_NCOMP: push_fields(o, "comp", c, 1); return;
+    case V_NUNGLUE: push_fields(o, "unglue", c, 1); return;
+    case V_DEFER: push_port(app_chain(global_cell((long)c->a), &c->port[1], c->n - 1, SITED)); return;
     case V_GLOBAL: {
         /* a definition reads back as its value; within its own value it is its name */
         long g = (long)c->a;
         for (int i = 0; i < nunfold; i++) if (unfolding[i] == g) { fputs(name_of(g), o); return; }
         Port v = global_copy(g);
-        if (!v || nunfold == 256) { fputs(name_of(g), o); return; }
+        if (!v) { fputs(name_of(g), o); return; }
+        GROW(unfolding, capunfold, (size_t)nunfold + 1);
         unfolding[nunfold++] = g;
-        rb(o, v);
-        nunfold--;
+        push_task(TK_POPUNFOLD, 0, NULL); push_port(v);
         return;
     }
     }
     fputs("<?>", o);
+}
+static void rb(FILE *o, Port prov) {
+    long base = ntasks;
+    push_port(prov);
+    while (ntasks > base) {
+        Task t = tasks[--ntasks];
+        switch (t.kind) {
+        case TK_STR: fputs(t.s, o); free(t.s); break;
+        case TK_POPDIM: ndshow--; break;
+        case TK_POPUNFOLD: nunfold--; break;
+        case TK_FIELD: rb_one(o, PC(t.p)->port[PI(t.p)]); break;
+        case TK_BINDER: {
+            long nm;
+            Port b = apply_fresh(PC(t.p)->port[PI(t.p)], &nm);
+            fprintf(o, " %s ", name_of(nm));
+            push_str(")"); push_port(b);
+            break;
+        }
+        case TK_PORT: rb_one(o, t.p); break;
+        }
+    }
 }
 static char *read_port(Port prov) {
     char *buf; size_t len;
@@ -677,12 +733,15 @@ static Port typed_answer(Node *T, Node *t) {
     /* held at once: an unattached output port is rewritten by the rules */
     Cell *ht = cell(O_ROOT, 1);
     link(build_top(t), P(ht, 0));
-    if (!answer_subst() || !mentions_identity(hT)) return as_answer(held_copy(ht));
+    Subst *as = answer_subst();
+    bool moved = as && mentions_identity(hT);
+    subst_release(as);
+    if (!moved) return as_answer(held_copy(ht));
     Port v = held_copy(ht);
     Dim j = fresh_dim();
-    Dnf *nj = iv_neg(iv_atom(j));
-    Subst *back = NULL;
-    for (int i = 0; i < nID; i++) if (ID[i].dim) back = back ? subst_with(back, ID[i].dim, nj) : subst_single(ID[i].dim, nj);
+    Dnf *aj = iv_atom(j), *nj = iv_neg(aj);
+    Subst *back = identity_subst(nj);
+    dnf_release(aj); dnf_release(nj);
     Cell *sb = cell(O_SUBST, 2); sb->p = back; link(held_copy(hT), P(sb, 0));
     Cell *mk = cell(O_MKPLAM, 2); mk->a = j; link(P(sb, 1), P(mk, 0));
     Cell *cp = cell(O_COMP, 4);
@@ -701,7 +760,7 @@ static char *readback(Node *t, long *steps, long *erased) {
 
 /* ---------------- the driver ---------------- */
 static int failures, passes;
-static char *watch_name[64]; static Cell *watch_root[64]; static int nwatch;
+static char **watch_name; static Cell **watch_root; static size_t capwn, capwr; static int nwatch;
 static void toplevel(Node *f) {
     if (!f->list || f->n == 0 || f->it[0]->list) die("top-level form expected", NULL);
     const char *h = f->it[0]->s;
@@ -744,7 +803,7 @@ static void toplevel(Node *f) {
         nID++;
     } else if (!strcmp(h, "watch")) {
         if (f->n != 3) die("(watch name term)", NULL);
-        if (nwatch == 64) die("too many watches", NULL);
+        GROW(watch_name, capwn, (size_t)nwatch + 1); GROW(watch_root, capwr, (size_t)nwatch + 1);
         watch_name[nwatch] = strdup(f->it[1]->s);
         watch_root[nwatch] = cell(O_ROOT, 1);
         link(build_top(f->it[2]), P(watch_root[nwatch], 0));
@@ -762,8 +821,9 @@ static void toplevel(Node *f) {
          * or their 0-end (what was posed) */
         Port hv = held_copy(watch_root[w]);
         if (at0) {
-            Subst *z = NULL;
-            for (int i = 0; i < nID; i++) if (ID[i].dim) z = z ? subst_with(z, ID[i].dim, dnf_zero()) : subst_single(ID[i].dim, dnf_zero());
+            Dnf *zero = dnf_zero();
+            Subst *z = identity_subst(zero);
+            dnf_release(zero);
             if (z) { Cell *c = cell(O_SUBST, 2); c->p = z; link(hv, P(c, 0)); hv = P(c, 1); }
         } else hv = as_answer(hv);
         rb(o, hv);
@@ -833,6 +893,6 @@ int main(int argc, char **argv) {
         Node *f;
         while ((f = read_node())) toplevel(f);
     }
-    printf("%d passed, %d failed; %ld interaction steps; %ld cells live\n", passes, failures, stat_steps, stat_cells);
+    printf("%d passed, %d failed; %ld interaction steps; %ld cells live; %ld payloads live\n", passes, failures, stat_steps, stat_cells, stat_payloads);
     return failures ? 1 : 0;
 }
