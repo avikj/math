@@ -102,6 +102,7 @@ enum {
     O_SYSCONS,  /* 0=φ 1=t (thunk) 2=rest 3=out */
     O_SYSCONS2, /* p=Dnf φ; 0=rest 1=t 2=out */
     O_SYSMAP,   /* 0=s 1=f 2=out */
+    O_SITE,     /* a=site; 0=the subnet's output 1=retained argument 2=out */
     O_ROOT,     /* 0: an observation; never interacts */
     K_END
 };
@@ -129,6 +130,11 @@ void net_start(int workers);       /* worker threads besides the caller */
 void net_push(Cell *op, Cell *v);  /* enqueue an active pair */
 bool net_observe(Cell *root, long limit); /* reduce until root's port holds a value; workers then pause */
 Cell *global_res(long g);          /* the cell holding a definition's value */
+/* an application of a definition with declared identities: true when the
+ * application was rewired (an identity applied); otherwise it may have been
+ * wrapped in a site and the definition unfolds as usual */
+bool site_open(Cell *app, Cell *glob);
+void site_forward(Cell *site, Cell *v);
 
 /* readings */
 extern long stat_steps, stat_kind[K_END];

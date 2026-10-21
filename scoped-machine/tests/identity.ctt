@@ -1,0 +1,37 @@
+; tests/identity.ctt — identities applied to applications in the net.
+(axiom a b pth)
+(input w pp)
+(def L (lam x (fst x)))
+(def R (lam x a))
+(identity L R pp)          ; evidence pp : (x) -> L x = R x, not yet supplied
+
+; a site whose argument waits on an input: L's subnet is blocked
+(watch before (L w))
+; without the identity, a site forwards L's value
+(same (L (pair b b)) b)
+; the evidence arrives: the live site switches to R on the same output wire
+(supply pp (lam x pth))
+(same-watch before a)
+; the identity is now available: an application of L applies it at once
+(same (L (pair b b)) a)
+(witnesses)
+; L's old subnet still completes when its input arrives, and is erased
+(supply w (pair b b))
+(same-watch before a)
+
+; a genuine identity: associativity of addition on numerals (here definitional, so refl)
+(def three (suc (suc (suc zero))))
+(def addl (lam t (add (add (fst t) (fst (snd t))) (snd (snd t)))))
+(def addr (lam t (add (fst t) (add (fst (snd t)) (snd (snd t))))))
+(def assoc (lam t (plam i (addr t))))
+(identity addl addr assoc)
+(same (addl (pair three (pair three three))) (lam s z (s (s (s (s (s (s (s (s (s z)))))))))))
+(witnesses)
+
+; a divergent application: the identity's arrival gives the observed port its value
+(input pq)
+(def slow (lam x ((lam y (y y)) (lam y (y y)))))
+(identity slow R pq)
+(watch d (slow b))
+(supply pq (lam x pth))
+(same-watch d a)

@@ -304,9 +304,11 @@ static void interact(Cell *o, Cell *v) {
     case O_DUP: rule_dup(o, v); return;
     case O_SUBST: rule_subst(o, v); return;
     case O_MKPLAM: rule_mkplam(o, v); return;
+    case O_SITE: site_forward(o, v); return;
     default: break;
     }
     if (v->kind == V_GLOBAL) {
+        if (o->kind == O_APP && site_open(o, v)) return;
         /* a definition is used: its value is copied in */
         Port r = global_copy((long)v->a);
         if (!r) { global_park((long)v->a, o, v); return; }

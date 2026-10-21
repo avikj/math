@@ -171,6 +171,90 @@ void global_park(long g, Cell *op, Cell *glob) {
     pthread_mutex_unlock(&park_mu);
 }
 
+/* ---------------- identities and sites ----------------
+ * (identity L R p): p gives, for every argument g, a path L g = R g.
+ * An application of L whose identity is available applies it: R is applied
+ * instead, and the argument is kept to read the witness p g. While the
+ * identity is pending (p an unsupplied input), the application is wrapped in
+ * a site holding the argument and the output wire; the site forwards L's
+ * value if it arrives. When p is supplied, every live site switches: R is
+ * applied to the kept argument on the same output wire, and L's running
+ * subnet goes to an eraser. */
+typedef struct { long L, R, p; long *sites; int nsites, cap; } Ident;
+typedef struct { Cell *cell; int live, switched; long L, ident; Cell *gamma; } Site;
+static Ident *ID; static int nID, capID;
+static Site *SI; static long nSI, capSI;
+static pthread_mutex_t site_mu = PTHREAD_MUTEX_INITIALIZER;
+static bool ident_ready(const Ident *d) { return __atomic_load_n(&G[d->p].res->port[0], __ATOMIC_ACQUIRE) != 0; }
+static long new_site(long L) {
+    if (nSI == capSI) { capSI = capSI ? capSI * 2 : 16; SI = realloc(SI, (size_t)capSI * sizeof(Site)); }
+    memset(&SI[nSI], 0, sizeof(Site)); SI[nSI].L = L; SI[nSI].ident = -1;
+    return nSI++;
+}
+bool site_open(Cell *o, Cell *v) {
+    if (o->x) return false;                       /* already a site, or an identity's result */
+    long g = (long)v->a;
+    pthread_mutex_lock(&site_mu);
+    int ready = -1, pending = 0;
+    for (int i = 0; i < nID; i++) if (ID[i].L == g) { if (ident_ready(&ID[i])) { ready = i; break; } pending++; }
+    if (ready < 0 && !pending) { pthread_mutex_unlock(&site_mu); return false; }
+    o->x = 1;
+    Cell *d = cell(O_DUP, 3);
+    link(o->port[1], P(d, 0)); link(P(d, 1), P(o, 1));
+    long si = new_site(g);
+    if (ready >= 0) {
+        Cell *gr = cell(O_ROOT, 1); link(P(d, 2), P(gr, 0));
+        SI[si].gamma = gr; SI[si].switched = 1; SI[si].ident = ready;
+        Cell *rc = cell(V_GLOBAL, 1); rc->a = (uint64_t)ID[ready].R;
+        link(P(rc, 0), P(o, 0));
+        cell_free(v);
+        pthread_mutex_unlock(&site_mu);
+        return true;
+    }
+    Cell *st = cell(O_SITE, 3); st->a = (uint64_t)si;
+    link(P(d, 2), P(st, 1));
+    link(o->port[2], P(st, 2)); link(P(o, 2), P(st, 0));
+    SI[si].cell = st; SI[si].live = 1;
+    for (int i = 0; i < nID; i++) if (ID[i].L == g) {
+        Ident *x = &ID[i];
+        if (x->nsites == x->cap) { x->cap = x->cap ? x->cap * 2 : 8; x->sites = realloc(x->sites, (size_t)x->cap * sizeof(long)); }
+        x->sites[x->nsites++] = si;
+    }
+    pthread_mutex_unlock(&site_mu);
+    return false;
+}
+void site_forward(Cell *s, Cell *v) {
+    link(P(v, 0), s->port[2]);
+    Cell *e = cell(O_ERA, 1); link(s->port[1], P(e, 0));
+    pthread_mutex_lock(&site_mu);
+    SI[s->a].live = 0; SI[s->a].cell = NULL;
+    pthread_mutex_unlock(&site_mu);
+    cell_free(s);
+}
+/* with the workers paused */
+static void site_switch(long si, int id) {
+    Site *st = &SI[si];
+    if (!st->live) return;
+    Cell *s = st->cell;
+    Port old = s->port[0];
+    if (old && PI(old) == 0 && is_value(PC(old)->kind)) return;   /* L's value is already arriving */
+    Cell *d = cell(O_DUP, 3); link(s->port[1], P(d, 0));
+    Cell *gr = cell(O_ROOT, 1); link(P(d, 2), P(gr, 0));
+    Cell *rc = cell(V_GLOBAL, 1); rc->a = (uint64_t)ID[id].R;
+    Cell *a = cell(O_APP, 3); a->x = 1;
+    link(P(rc, 0), P(a, 0)); link(P(d, 1), P(a, 1)); link(P(a, 2), s->port[2]);
+    if (old) { Cell *e = cell(O_ERA, 1); link(old, P(e, 0)); }
+    st->live = 0; st->cell = NULL; st->switched = 1; st->ident = id; st->gamma = gr;
+    cell_free(s);
+}
+/* a copy of the value held by an observation cell */
+static Port held_copy(Cell *r) {
+    if (!r->port[0]) return 0;
+    Cell *d = cell(O_DUP, 3);
+    link(r->port[0], P(d, 0)); link(P(d, 1), P(r, 0));
+    return P(d, 2);
+}
+
 /* ---------------- compiling: binder levels and lifting ---------------- */
 typedef struct { const char *name; int level, slot; } Bind;
 typedef struct {
@@ -448,6 +532,7 @@ static char *readback(Node *t, long *steps, long *erased) {
 
 /* ---------------- the driver ---------------- */
 static int failures, passes;
+static char *watch_name[64]; static Cell *watch_root[64]; static int nwatch;
 static void toplevel(Node *f) {
     if (!f->list || f->n == 0 || f->it[0]->list) die("top-level form expected", NULL);
     const char *h = f->it[0]->s;
@@ -469,6 +554,51 @@ static void toplevel(Node *f) {
         link(build_top(f->it[2]), P(G[g].res, 0));
         for (int i = 0; i < G[g].npark; i++) net_push(G[g].park_o[i], G[g].park_v[i]);
         G[g].npark = 0;
+        /* identities whose evidence this is: every live site switches */
+        for (int i = 0; i < nID; i++) if (ID[i].p == g)
+            for (int k = 0; k < ID[i].nsites; k++) site_switch(ID[i].sites[k], i);
+    } else if (!strcmp(h, "identity")) {
+        if (f->n != 4) die("(identity L R p)", NULL);
+        long L = global_lookup(f->it[1]->s), R = global_lookup(f->it[2]->s), pp = global_lookup(f->it[3]->s);
+        if (L < 0 || R < 0 || pp < 0) die("identity names must be definitions or inputs", NULL);
+        if (nID == capID) { capID = capID ? capID * 2 : 8; ID = realloc(ID, (size_t)capID * sizeof(Ident)); }
+        ID[nID++] = (Ident){ L, R, pp, NULL, 0, 0 };
+    } else if (!strcmp(h, "watch")) {
+        if (f->n != 3) die("(watch name term)", NULL);
+        if (nwatch == 64) die("too many watches", NULL);
+        watch_name[nwatch] = strdup(f->it[1]->s);
+        watch_root[nwatch] = cell(O_ROOT, 1);
+        link(build_top(f->it[2]), P(watch_root[nwatch], 0));
+        nwatch++;
+    } else if (!strcmp(h, "same-watch")) {
+        if (f->n != 3) die("(same-watch name term)", NULL);
+        int w = -1;
+        for (int i = 0; i < nwatch; i++) if (!strcmp(watch_name[i], f->it[1]->s)) w = i;
+        if (w < 0) die("no such watch", f->it[1]->s);
+        char *buf; size_t len;
+        FILE *o = open_memstream(&buf, &len);
+        ndshow = 0; dcount = 0; vcount = 0;
+        rb(o, held_copy(watch_root[w]));   /* the watch keeps its value */
+        fclose(o);
+        char *b = readback(f->it[2], NULL, NULL);
+        if (strcmp(buf, b)) { failures++; printf("FAIL: watch %s\n  left:  %s\n  right: %s\n", f->it[1]->s, buf, b); }
+        else { passes++; printf("ok: watch %s\n", f->it[1]->s); }
+        free(buf); free(b);
+    } else if (!strcmp(h, "witnesses")) {
+        /* each switched application: L, R and the path p g */
+        for (long i = 0; i < nSI; i++) if (SI[i].switched) {
+            Ident *x = &ID[SI[i].ident];
+            Cell *pc = cell(V_GLOBAL, 1); pc->a = (uint64_t)x->p;
+            Cell *a = cell(O_APP, 3);
+            link(P(pc, 0), P(a, 0)); link(held_copy(SI[i].gamma), P(a, 1));
+            char *buf; size_t len;
+            FILE *o = open_memstream(&buf, &len);
+            ndshow = 0; dcount = 0; vcount = 0;
+            rb(o, P(a, 2));
+            fclose(o);
+            printf("site %ld: %s -> %s by %s\n", i, name_of(x->L), name_of(x->R), buf);
+            free(buf);
+        }
     } else if (!strcmp(h, "show")) {
         long steps, erased;
         char *r = readback(f->it[1], &steps, &erased);

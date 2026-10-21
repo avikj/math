@@ -71,6 +71,14 @@ By 5.11–5.13 the number of steps is independent of the schedule; the suite wit
 
 `show` reports the length (interactions) and the effect (erasures: every forgetting goes through an eraser cell) of reading a value.
 
+## Identities on running computations
+
+A subnet computing `L γ` between its input wires and its output wire is, at every cut, a run of `L` (HANDOFF §21, §41): its internal wires hold the residuals and every witness is refl, since reduction is definitional. An identity `p : L γ = R γ` acts on that run by `F_p = d_R ∘ (p⁻¹·) ∘ c_L`, which on a refl-witnessed run is the rewiring: `R`'s net on the same inputs and the same output wire, with the output's witness `p γ`.
+
+`(identity L R p)` declares that `p` gives `L g = R g` for every argument `g`; `p` may be an input not yet supplied. An application of `L` whose identity is available applies it: `R` is applied instead, and the argument is kept to read the witness. While the identity is pending, the application is wrapped in a site that holds the argument and the output wire and forwards `L`'s value if it arrives. When `p` is supplied, every live site switches: `R` is applied to the kept argument on the same output wire, and `L`'s running subnet goes to an eraser (a strict net cannot cancel running work; its value is erased when it arrives). `(witnesses)` reads `p g` for every switched application.
+
+Supplying an identity is an external event, like supplying an input: equal length (5.13) holds within each run, and the steps added and saved by the switch are the defect of the square comparing the two routes.
+
 ## Inputs
 
 `(input x)` declares a definition whose value is not yet supplied. Any eliminator meeting it waits. `(supply x t)` connects the value, and the waiting pairs proceed.
@@ -79,7 +87,7 @@ By 5.11–5.13 the number of steps is independent of the schedule; the suite wit
 
 - `src/dnf.c`: interval and face DNF, substitutions.
 - `src/net.c`: cells, wiring, the interaction rules, building a net from compiled syntax.
-- `src/lang.c`: reader, compilation to binder records with lifting, definitions, readback, driver (`def`, `axiom`, `input`, `supply`, `show`, `same`).
+- `src/lang.c`: reader, compilation to binder records with lifting, definitions, identities and sites, readback, driver (`def`, `axiom`, `input`, `supply`, `identity`, `show`, `same`, `watch`, `same-watch`, `witnesses`).
 - `lib/prelude.ctt`: the library.
-- `tests/cubical.ctt`: the checks.
+- `tests/cubical.ctt`, `tests/code.ctt`, `tests/identity.ctt`: the checks.
 - `HANDOFF.md`: the specification.
