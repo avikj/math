@@ -75,6 +75,19 @@ C. [x] Neutral types in the NET computed from the spine (O_NTYPE), only a variab
    std+sort 106/106, 77M, 41 s (400M, 307 s); lemIso 20.7M (276M); tests/check.ctt 1.12M (9.2M).
    msort readings: balanced 20985 interactions (6556 erasures), chained 26429 (9622).
 
+D. [x] Copies a hand reduction does not make, removed by principle (located with CUBICAL_PROFILE's
+   dup/era origins): a case branch mentioning its scrutinee rebuilds it from its fields; V_REF holds
+   a value once (a variable's type, the checker's context types via %box); closed constant
+   definitions (λ, constructor, data type) unfold in one interaction.
+   State: tests/check.ctt 0.53M; boxes 154/154 17.3M interactions 10 s; sort 106/106 44.7M 23 s
+   (lemIso 5.7M, msort-at 30M).
+E. [ ] OPEN, for the user: what remains is mostly copying definitions' stored values on use (a
+   checked definition's type via %gty, data declarations, interned codes) and eval-g's environment.
+   With duplicator cells (5.24) copying a normal form of size n is n steps; a hand reduction reads a
+   definition without copying it. Reading immutable normal forms through references, copied one level
+   per step on demand, removes it but changes what a step reads (non-local, like unfolding a global
+   already is): a decision about 5.24/5.16, not engineering.
+
 ## The spec, as it bears on the code (paper references)
 
 - 5.1–5.3: connectives are type formers; a proof is a term; checking is normalizing. Proving, deciding,
