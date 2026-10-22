@@ -1,0 +1,5 @@
+; tests/mod/main.ctt — imports a module (relative to this file), twice: loaded once
+(import "lib.ctt")
+(import "lib.ctt")
+(checked quad (Pi n Nat Nat) (lam n (double (double n))))
+(same (quad (suc zero)) (suc (suc (suc (suc zero)))))

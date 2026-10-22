@@ -1,0 +1,2 @@
+; tests/mod/lib.ctt — a module: imported once, its checks cached by content
+(checked double (Pi n Nat Nat) (lam n (case n ((zero) zero) ((suc k) (suc (suc (rec k)))))))

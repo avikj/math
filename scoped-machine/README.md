@@ -112,6 +112,10 @@ Data types are higher inductive types, following Coquand–Huber–Mörtberg (*H
 
 `tests/sort.ctt` is 9.15: the declaration `Σ[B] (B has A's multiplicities) × Sorted B` over the free commutative monoid on `Nat` (∪ with unit, associativity and commutativity as path constructors), posed and normalized. The declaration is a proposition (a sorted list is fixed by its multiplicities), so its path branches are that propositionality; the ∪ branch is `merge`. A balanced and a chained sum of the same eight elements sort to the same list. `make library` runs both.
 
+## Modules and the check cache
+
+`(import "file")` loads a file once, relative to the importing file; a file's imports are loaded before its own forms, and every file named on the command line is a module too. A running key hashes the machine's build and every file loaded so far, in order. When a file passes all its forms, a marker under its key is written to `$CUBICAL_CACHE` (default `.cubical-cache`); a later run reaching the same key makes the file's definitions — checked definitions, data types and their tables, identities — without rerunning its judgments and tests, and prints `cached: file`. The library with the paper's terms then loads in 0.7 s instead of 2.3 s. `CUBICAL_NOCACHE=1` turns the cache off (the test targets do).
+
 ## Parallel rewriting
 
 `CUBICAL_WORKERS=n` runs n threads besides the caller. One rewrite follows HANDOFF §20: it locks the active pair and every cell whose port it may rewrite (the pair's neighbours; for a definition, the cell holding its value and that value's cell) in address order, revalidates that those neighbours are unchanged, installs the replacement, releases, and only then publishes the active pairs it made, so no worker meets a cell still being built. Cells are type-stable: their memory is never returned, so a stale pointer reaches a valid lock word and revalidation fails. Wires are published with release and read with acquire.

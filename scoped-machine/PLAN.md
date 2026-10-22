@@ -40,7 +40,13 @@ E3. [x] Failure reasons. A judgment's normal form is ok / (yes T) / (no v why A 
     Cost: checking takes ~14% more interactions (error thunks dropped on success): boxes 1.58M,
     sort 1.01M, check 0.17M.
 E4. [ ] Implicit arguments solved by unification (holes `_` in checked terms; levels/types inferred).
-E5. [ ] Files as modules: (import "f"), loaded once; checked results cached by content.
+E5. [x] Modules: (import "f") loads f once (relative to the importing file; imports run before the
+    file's own forms). A running key hashes the machine's build stamp and every file loaded so far,
+    in order; a file passing all its forms writes a marker under that key in $CUBICAL_CACHE
+    (default .cubical-cache). A later load with a marker makes the file's definitions (checked
+    definitions, data tables, identities) without running its judgments or tests ("cached: f").
+    boxes: 2.34 s → 0.69 s cached (0 interactions). make test/library set CUBICAL_NOCACHE=1 except
+    the cache test (tests/mod).
 E6. [ ] Embedding API: the machine as a C library (load program, supply inputs, read values, check).
 
 ## CURRENT DIRECTION (2026-10-22, supersedes the item list below)

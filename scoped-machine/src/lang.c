@@ -5,6 +5,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <pthread.h>
+#include <sys/stat.h>
+#include <limits.h>
 
 /* grow an array to hold at least n elements */
 #define GROW(arr, cap, n) do { if ((size_t)(n) > (size_t)(cap)) { size_t nc_ = (cap) ? (size_t)(cap) * 2 : 16; while (nc_ < (size_t)(n)) nc_ *= 2; (arr) = realloc((arr), nc_ * sizeof *(arr)); (cap) = nc_; } } while (0)
@@ -1878,6 +1880,11 @@ static char *readback(Node *t, long *steps, long *erased) {
     return buf;
 }
 
+/* modules: a file is loaded once; a running key hashes the machine's build and every file loaded so
+ * far, in order; a file whose key has a marker in the cache directory passed all its checks
+ * before, and its checks are not rerun */
+static bool trusted;
+static const char *cur_dir;
 /* why a judgment failed: its normal form (no v why A B), lib/check.ctt Res */
 static void explain(const char *r) {
     /* reason, then what its two values are */
@@ -1938,9 +1945,26 @@ static void emit(const char *text) {
     src = saved;
 }
 static char **watch_name; static Cell **watch_root; static size_t capwn, capwr; static int nwatch;
+static void load_file(const char *path, bool must);
 static void toplevel(Node *f) {
     if (!f->list || f->n == 0 || f->it[0]->list) die("top-level form expected", NULL);
     const char *h = f->it[0]->s;
+    if (!strcmp(h, "import")) {
+        /* (import "file"): loaded once, relative to the importing file */
+        if (f->n != 2 || f->it[1]->list) die("(import \"file\")", NULL);
+        const char *nm = f->it[1]->s;
+        char *q = strdup(nm[0] == '"' ? nm + 1 : nm);
+        size_t ln = strlen(q); if (ln && q[ln - 1] == '"') q[ln - 1] = 0;
+        char *full = q;
+        if (q[0] != '/' && cur_dir) { full = malloc(strlen(cur_dir) + strlen(q) + 2); sprintf(full, "%s/%s", cur_dir, q); }
+        load_file(full, true);
+        return;
+    }
+    /* a module whose checks are cached: its definitions are made, its judgments and tests not rerun */
+    if (trusted && (!strcmp(h, "check") || !strcmp(h, "check-fail") || !strcmp(h, "checked-identity-fail")
+        || !strcmp(h, "checked-data-fail") || !strcmp(h, "checked-identity-from-fail") || !strcmp(h, "supply-fail")
+        || !strcmp(h, "same") || !strcmp(h, "show") || !strcmp(h, "same-watch") || !strcmp(h, "witness")
+        || !strcmp(h, "witness-watch") || !strcmp(h, "defect"))) return;
     if (!strcmp(h, "def")) {
         if (f->n != 3) die("(def name term)", NULL);
         /* a name declared earlier (forward reference, mutual recursion) is filled */
@@ -1992,15 +2016,16 @@ static void toplevel(Node *f) {
         int at = define ? 2 : 1;
         if (f->n != at + 2) die(define ? "(checked name T t)" : "(check T t)", NULL);
         Node *T = f->it[at], *t = f->it[at + 1];
-        Node *cT = nl2("%raw", aclosed(ds(T))), *ct = nl2("%raw", aclosed(ds(t)));
-        Node *q = nl3("%%chk-def", cT, ct);
-        long steps;
-        char *r = readback(q, &steps, NULL), *tr = strdup("ok");
+        Node *cT = nl2("%raw", aclosed(ds(T))), *ct = trusted ? NULL : nl2("%raw", aclosed(ds(t)));
+        long steps = 0;
+        char *r = trusted ? strdup("ok") : readback(nl3("%%chk-def", cT, ct), &steps, NULL), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
-        printf("%s: %s ", ok ? "ok" : "FAIL", expect ? "checks" : "rejected");
-        if (define) printf("%s", f->it[1]->s); else print_node(stdout, t);
-        printf("   [%ld steps]\n", steps);
+        if (!trusted) {
+            printf("%s: %s ", ok ? "ok" : "FAIL", expect ? "checks" : "rejected");
+            if (define) printf("%s", f->it[1]->s); else print_node(stdout, t);
+            printf("   [%ld steps]\n", steps);
+        }
         if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
         if (define && ok) {
@@ -2035,10 +2060,10 @@ static void toplevel(Node *f) {
         q->it[1] = word(iL); q->it[2] = word(iR); q->it[3] = word(n);
         if (!input) q->it[4] = word(ip);
         long steps;
-        char *r = readback(q, &steps, NULL), *tr = strdup("ok");
+        char *r = trusted ? strdup("ok") : readback(q, &steps, NULL), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
-        printf("%s: %s identity %s = %s by %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, f->it[3]->s, steps);
+        if (!trusted) printf("%s: %s identity %s = %s by %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, f->it[3]->s, steps);
         if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
         if (accepted && expect) {
@@ -2064,10 +2089,10 @@ static void toplevel(Node *f) {
             if (iL < 0 || ie < 0) die("checked-identity-from: L and e must be checked definitions", NULL);
             Node *q = nlist(4); q->it[0] = nsym("%%chk-optimizer"); q->it[1] = word(iL); q->it[2] = word(n); q->it[3] = word(ie);
             long steps;
-            char *r = readback(q, &steps, NULL), *tr = strdup("ok");
+            char *r = trusted ? strdup("ok") : readback(q, &steps, NULL), *tr = strdup("ok");
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
             if (ok) passes++; else failures++;
-            printf("%s: %s identity of %s from %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, steps);
+            if (!trusted) printf("%s: %s identity of %s from %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, steps);
             if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
             if (!accepted || !expect) return;
@@ -2118,10 +2143,10 @@ static void toplevel(Node *f) {
         table_set(TB_DENT, di, global_lookup(den));
         table_set(TB_DTAB, di, global_lookup(dtn));
         long steps;
-        char *r = readback(nl3("%%chk-data", word(di), ent), &steps, NULL), *tr = strdup("ok");
+        char *r = trusted ? strdup("ok") : readback(nl3("%%chk-data", word(di), ent), &steps, NULL), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
-        printf("%s: %s data %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", DATA[d].name, steps);
+        if (!trusted) printf("%s: %s data %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", DATA[d].name, steps);
         if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
         if (!accepted) { nchkdata--; return; }
@@ -2366,10 +2391,10 @@ static void toplevel(Node *f) {
             Node *q = nlist(5); q->it[0] = nsym("%%chk-identity");
             q->it[1] = word(CHKID[i].iL); q->it[2] = word(CHKID[i].iR); q->it[3] = word(CHKID[i].n); q->it[4] = nl2("%raw", aclosed(ds(f->it[2])));
             long steps;
-            char *r = readback(q, &steps, NULL), *tr = strdup("ok");
+            char *r = trusted ? strdup("ok") : readback(q, &steps, NULL), *tr = strdup("ok");
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
             if (ok) passes++; else failures++;
-            printf("%s: %s evidence %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, steps);
+            if (!trusted) printf("%s: %s evidence %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, steps);
             if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
             if (!accepted) return;
@@ -2472,6 +2497,56 @@ static char *slurp(const char *path) {
     char *b = malloc((size_t)n + 1); size_t got = fread(b, 1, (size_t)n, f); b[got] = 0; fclose(f);
     return b;
 }
+static uint64_t run_key[2] = { 0xcbf29ce484222325ull, 0x84222325cbf29ce4ull };
+static char **loaded; static size_t caploaded; static int nloaded;
+static void key_mix(const char *b, size_t n) {
+    for (size_t i = 0; i < n; i++) {
+        run_key[0] = (run_key[0] ^ (unsigned char)b[i]) * 0x100000001b3ull;
+        run_key[1] = (run_key[1] ^ (unsigned char)b[i]) * 0x1000193ull + (run_key[1] >> 29);
+    }
+}
+static const char *cache_dir(void) { const char *d = getenv("CUBICAL_CACHE"); return d ? d : ".cubical-cache"; }
+static void load_text(const char *text) {
+    const char *saved = src;
+    src = text;
+    Node *f;
+    while ((f = read_node())) toplevel(f);
+    src = saved;
+}
+static void load_file(const char *path, bool must) {
+    char *rp = realpath(path, NULL);
+    if (!rp) die("cannot open", path);
+    for (int i = 0; i < nloaded; i++) if (!strcmp(loaded[i], rp)) { free(rp); return; }
+    GROW(loaded, caploaded, (size_t)nloaded + 1); loaded[nloaded++] = rp;
+    char *text = slurp(rp);
+    /* its imports first (they extend the running key before this file does) */
+    {
+        const char *saved = src; src = text;
+        Node *f; Node **fs = NULL; size_t capfs = 0; int nf = 0;
+        while ((f = read_node())) { GROW(fs, capfs, (size_t)nf + 1); fs[nf++] = f; }
+        src = saved;
+        const char *saved_dir = cur_dir;
+        char *dir = strdup(rp); char *sl = strrchr(dir, '/'); if (sl) *sl = 0;
+        cur_dir = dir;
+        for (int i = 0; i < nf; i++) if (fs[i]->list && fs[i]->n >= 1 && is(fs[i]->it[0], "import")) toplevel(fs[i]);
+        key_mix(text, strlen(text));
+        char key[40]; snprintf(key, sizeof key, "%016llx%016llx", (unsigned long long)run_key[0], (unsigned long long)run_key[1]);
+        char *marker = malloc(strlen(cache_dir()) + 48); sprintf(marker, "%s/%s", cache_dir(), key);
+        bool saved_trusted = trusted;
+        { FILE *mf = getenv("CUBICAL_NOCACHE") ? NULL : fopen(marker, "r"); trusted = mf != NULL; if (mf) fclose(mf); }
+        int f0 = failures;
+        for (int i = 0; i < nf; i++) if (!(fs[i]->list && fs[i]->n >= 1 && is(fs[i]->it[0], "import"))) toplevel(fs[i]);
+        if (trusted) printf("cached: %s\n", path);
+        else if (failures == f0 && !getenv("CUBICAL_NOCACHE")) {
+            mkdir(cache_dir(), 0777);
+            FILE *mk = fopen(marker, "w"); if (mk) { fputs(rp, mk); fputc('\n', mk); fclose(mk); }
+        }
+        trusted = saved_trusted;
+        cur_dir = saved_dir;
+        free(marker); free(fs);
+    }
+    (void)must;
+}
 static void prof_print(void);
 static void prof_signal(int sig) { (void)sig; fflush(stdout); prof_print(); _Exit(3); }
 int main(int argc, char **argv) {
@@ -2480,12 +2555,9 @@ int main(int argc, char **argv) {
     if (prof_on) signal(SIGTERM, prof_signal);
     prof_enter("(top level)");
     net_start(w ? atoi(w) : 0);
-    for (int i = 1; i < argc; i++) {
-        char *text = slurp(argv[i]);
-        src = text;
-        Node *f;
-        while ((f = read_node())) toplevel(f);
-    }
+    /* the machine's build is part of every module's key */
+    { const char *b = __DATE__ " " __TIME__; key_mix(b, strlen(b)); }
+    for (int i = 1; i < argc; i++) load_file(argv[i], true);
     /* steps performed so far: a reading only when the workload has normalized (show, defect) */
     printf("%d passed, %d failed; %ld interaction steps performed; %ld cells live; %ld payloads live\n", passes, failures, stat_steps, stat_cells, stat_payloads);
     prof_print();

@@ -14,6 +14,8 @@ build/cubical-asan: $(SRC) src/core.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) $(SAN) -o $@ $(SRC) -lpthread
 
+# tests check: the module cache is off, except in the cache test (a fresh directory, run twice)
+test: export CUBICAL_NOCACHE = 1
 test: build/cubical build/cubical-asan
 	./build/cubical lib/prelude.ctt tests/cubical.ctt
 	./build/cubical lib/prelude.ctt lib/code.ctt tests/code.ctt
@@ -21,6 +23,9 @@ test: build/cubical build/cubical-asan
 	./build/cubical lib/prelude.ctt tests/hit.ctt
 	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt
 	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/reject.ctt
+	rm -rf build/cache-test
+	env -u CUBICAL_NOCACHE CUBICAL_CACHE=build/cache-test ./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/mod/main.ctt | tail -1
+	env -u CUBICAL_NOCACHE CUBICAL_CACHE=build/cache-test ./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/mod/main.ctt | grep -c "^cached: " | grep -qx 6
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/identity.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/hit.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt > /dev/null
@@ -33,6 +38,7 @@ test: build/cubical build/cubical-asan
 	ASAN_OPTIONS=detect_leaks=0 ./build/cubical-asan lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt > /dev/null
 
 # the checked library and the acceptance tests (the paper's terms, 9.15's sorting): long, run once
+library: export CUBICAL_NOCACHE = 1
 library: build/cubical
 	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/boxes.ctt
 	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/sort.ctt
