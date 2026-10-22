@@ -1441,7 +1441,7 @@ static Syn *compile(Node *t) {
             Syn *r = syn(S_CALL, na); r->id = g;
             Node *a = t;
             for (int q = na - 1; q >= 0; q--) {
-                bool strict = !getenv("CUBICAL_NOSTRICT") && q < G[g].nparams && q < 64 && (G[g].strict >> q & 1);
+                bool strict = q < G[g].nparams && q < 64 && (G[g].strict >> q & 1);
                 r->k[q] = strict ? compile(a->it[2]) : compile_lazy(a->it[2]);
                 a = a->it[1];
             }
