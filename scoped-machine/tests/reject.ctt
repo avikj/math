@@ -114,3 +114,9 @@
 (check-fail U (Pi x U Nat))
 (check-fail (Pi l Level (U l)) (lam l (U l)))
 (check (Pi l Level (U (lsuc l))) (lam l (U l)))
+; a program's names do not reach the checker: its constructors and entry points stay its own
+(data Mine (tlam) (bx (a Bool)) (lcons) (tx) (ok))
+(def chk-def (lam x y false))
+(checked idb (Pi b Bool Bool) (lam b (case b ((true) false) ((false) true))))
+(checked-data (data Pt (pt)))
+(check-fail (Pi b Bool Bool) (lam b zero))

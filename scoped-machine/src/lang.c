@@ -82,7 +82,13 @@ static Node *param_name(Node *p) { return p->list ? p->it[0] : p; }
 ConInfo *CON; static size_t capcon; static int ncon;
 DataInfo *DATA; static size_t capdata; static int ndata;
 long case_hcomp_global = -1;
-static int con_lookup(const char *s) { for (int i = ncon - 1; i >= 0; i--) if (!strcmp(CON[i].name, s)) return i; return -1; }
+/* "%%c" names the first constructor declared c: the checker's own (lib/check.ctt), referred to by
+ * the code the checker is given, whatever the program declares later under the same name */
+static int con_lookup(const char *s) {
+    if (s[0] == '%' && s[1] == '%') { for (int i = 0; i < ncon; i++) if (!strcmp(CON[i].name, s + 2)) return i; return -1; }
+    for (int i = ncon - 1; i >= 0; i--) if (!strcmp(CON[i].name, s)) return i;
+    return -1;
+}
 int con_index(const char *name) { return con_lookup(name); }
 static int data_lookup(const char *s) { for (int i = ndata - 1; i >= 0; i--) if (!strcmp(DATA[i].name, s)) return i; return -1; }
 
@@ -566,7 +572,19 @@ static Node *to_code(Node *t) {
  * type. Each node's value is built from its parts' values (let-bound, so each is computed
  * once); a binder's value is the compiled binder itself. A system's branches are thunks, so a
  * branch is computed under its face. Checked definitions are (tg n (%gval n)); indices are words. */
+/* source names of binders, by index: a fresh variable or dimension the checker makes for a binder
+ * carries its source name, so a failure reads in the source's names */
+static char **SRCNAME; static size_t capsrcname; static int nsrcname;
+static int srcname(const char *s) {
+    for (int i = 0; i < nsrcname; i++) if (!strcmp(SRCNAME[i], s)) return i;
+    GROW(SRCNAME, capsrcname, (size_t)nsrcname + 1);
+    SRCNAME[nsrcname] = strdup(s);
+    return nsrcname++;
+}
+const char *srcname_of(int i) { return i >= 0 && i < nsrcname ? SRCNAME[i] : "?"; }
 typedef struct { Node **x, **e; int n, cap; } Chain;
+static Node *K(const char *c) { char b[64]; snprintf(b, sizeof b, "%%%%%s", c); return nsym(b); }
+static Node *kapp(const char *c, Node *a, Node *b) { Node *x = nl3("app", K(c), a); return b ? nl3("app", x, b) : x; }
 typedef struct { const char *name; Node *ty; } AScope;   /* ty NULL: a dimension */
 static AScope *asc; static size_t capasc; static int nasc;
 static long nann;
@@ -619,12 +637,12 @@ static NV ann(Node *t, Chain *C);
 /* a node: its constructor applied to its parts' nodes, then its value */
 static NV anode(Chain *C, const char *con, Node **parts, int n, Node *val) {
     NV r; r.val = bind_in(C, "av", val);
-    Node *x = nsym(con);
+    Node *x = K(con);
     for (int i = 0; i < n; i++) x = nl3("app", x, parts[i]);
     r.node = bind_in(C, "an", nl3("app", x, r.val));
     return r;
 }
-static Node *alist(Node **xs, int n) { Node *l = nsym("lnil"); for (int i = n - 1; i >= 0; i--) l = capp2("lcons", xs[i], l); return l; }
+static Node *alist(Node **xs, int n) { Node *l = K("lnil"); for (int i = n - 1; i >= 0; i--) l = kapp("lcons", xs[i], l); return l; }
 /* the code of t in a scope of its own (a binder's body) */
 static Node *aclosed(Node *t) { Chain c = { 0 }; NV r = ann(t, &c); return chain_close(&c, r.node); }
 static Node *abinder(Node *x, Node *body, bool dim) {
@@ -638,7 +656,7 @@ static Node *abranch(Node *b, ConInfo *c, bool ih, int i) {
     int nf = c->nfields, nr = c->nrec, ar = nf + nr + c->ndims;
     if (i == ar) {
         if (!b->list || b->n != 2 || !is(b->it[0], "thunk")) die("code: malformed branch", NULL);
-        return nl3("app", nsym("be"), aclosed(b->it[1]));
+        return kapp("be", aclosed(b->it[1]), NULL);
     }
     bool hyp = i >= nf && i < nf + nr, dim = i >= nf + nr;
     Node *x, *body;
@@ -651,19 +669,19 @@ static Node *abranch(Node *b, ConInfo *c, bool ih, int i) {
     apush(x->s, ty);
     Node *r = abranch(body, c, ih, i + 1);
     nasc--;
-    return nl3("app", nsym(dim ? "bi" : "bx"), dim ? nl3("lam", x, r) : nl3("lam", x, nl3("lam", ty, r)));
+    return kapp(dim ? "bi" : "bx", word(srcname(x->s)), dim ? nl3("lam", x, r) : nl3("lam", x, nl3("lam", ty, r)));
 }
-static NV aconst(const char *node, const char *val) { NV r = { nsym(node), nsym(val) }; return r; }
+static NV aconst(const char *node, const char *val) { NV r = { K(node), !strcmp(val, "Level") || !strcmp(val, "lzero") ? K(val) : nsym(val) }; return r; }
 static NV ann(Node *t, Chain *C) {
     Node *p[8];
     if (is(t, "Level") && !ascope("Level")) return aconst("tlevel", "Level");
     if (is(t, "lzero") && !ascope("lzero")) return aconst("tlzero", "lzero");
     if (t->list && t->n == 3 && is(t->it[0], "app")) {
         Node *f = t->it[1];
-        if (is(f, "lsuc") && !ascope("lsuc")) { NV a = ann(t->it[2], C); p[0] = a.node; return anode(C, "tlsuc", p, 1, nl3("app", nsym("lsuc"), a.val)); }
+        if (is(f, "lsuc") && !ascope("lsuc")) { NV a = ann(t->it[2], C); p[0] = a.node; return anode(C, "tlsuc", p, 1, nl3("app", K("lsuc"), a.val)); }
         if (f->list && f->n == 3 && is(f->it[0], "app") && is(f->it[1], "lmax") && !ascope("lmax")) {
             NV a = ann(f->it[2], C), b = ann(t->it[2], C); p[0] = a.node; p[1] = b.node;
-            return anode(C, "tlmax", p, 2, nl3("app", nl3("app", nsym("lmax"), a.val), b.val));
+            return anode(C, "tlmax", p, 2, nl3("app", nl3("app", K("lmax"), a.val), b.val));
         }
     }
     {
@@ -702,38 +720,39 @@ static NV ann(Node *t, Chain *C) {
         if (!strcmp(s, "1")) return aconst("tc1", "1");
         if (!strcmp(s, "tt")) return aconst("ttt", "tt");
         if (!strcmp(s, "ff")) return aconst("tff", "ff");
-        if (!strcmp(s, "U")) { p[0] = nsym("tlzero"); return anode(C, "tuniv", p, 1, nsym("U")); }
+        if (!strcmp(s, "U")) { p[0] = K("tlzero"); return anode(C, "tuniv", p, 1, nsym("U")); }
         if (!strcmp(s, "Word")) return aconst("tword", "Word");
-        if (s[0] == '#' && s[1] >= '0' && s[1] <= '9') { NV r; r.val = t; r.node = nl3("app", nsym("tlit"), t); return r; }
+        if (s[0] == '#' && s[1] >= '0' && s[1] <= '9') { NV r; r.val = t; r.node = kapp("tlit", t, NULL); return r; }
         AScope *a = ascope(s);
-        if (a) { NV r; r.val = t; r.node = a->ty ? nl3("app", nl3("app", nsym("tv"), t), a->ty) : nl3("app", nsym("ti"), t); return r; }
+        if (a) { NV r; r.val = t; r.node = a->ty ? kapp("tv", t, a->ty) : kapp("ti", t, NULL); return r; }
         int i = checked_index(s);
         if (i >= 0) { p[0] = word(i); return anode(C, "tg", p, 1, nl2("%gval", word(i))); }
         die("code: not a bound variable or checked definition:", s);
     }
     const char *h = t->it[0]->s;
     if (!strcmp(h, "lam") || !strcmp(h, "plam") || !strcmp(h, "forall")) {
-        p[0] = abinder(t->it[1], t->it[2], strcmp(h, "lam") != 0);
-        return anode(C, !strcmp(h, "lam") ? "tlam" : !strcmp(h, "plam") ? "tplam" : "tforall", p, 1, vsrc0(t));
+        p[0] = word(srcname(t->it[1]->s));
+        p[1] = abinder(t->it[1], t->it[2], strcmp(h, "lam") != 0);
+        return anode(C, !strcmp(h, "lam") ? "tlam" : !strcmp(h, "plam") ? "tplam" : "tforall", p, 2, vsrc0(t));
     }
     if (!strcmp(h, "let")) {
         NV a = ann(t->it[2], C);
-        p[0] = a.node; p[1] = abinder(t->it[1], t->it[3], false);
+        p[0] = a.node; p[1] = word(srcname(t->it[1]->s)); p[2] = abinder(t->it[1], t->it[3], false);
         Names b = { 0 }; names_add(&b, t->it[1]->s);
         Node *val = nl4("let", t->it[1], a.val, vsrc(t->it[3], &b)); free(b.v);
-        return anode(C, "tlet", p, 2, val);
+        return anode(C, "tlet", p, 3, val);
     }
     if (!strcmp(h, "Pi") || !strcmp(h, "Sigma")) {
         Node *B = t->it[2];
         NV a = ann(t->it[1], C);
-        p[0] = a.node; p[1] = abinder(B->it[1], B->it[2], false);
-        return anode(C, !strcmp(h, "Pi") ? "tpi" : "tsigma", p, 2, nl3(h, a.val, vsrc0(B)));
+        p[0] = a.node; p[1] = word(srcname(B->it[1]->s)); p[2] = abinder(B->it[1], B->it[2], false);
+        return anode(C, !strcmp(h, "Pi") ? "tpi" : "tsigma", p, 3, nl3(h, a.val, vsrc0(B)));
     }
     if (!strcmp(h, "U")) {
         NV l;
         if (t->n == 2 && !t->it[1]->list && t->it[1]->s[0] >= '0' && t->it[1]->s[0] <= '9') {
             l = aconst("tlzero", "lzero");
-            for (int q = atoi(t->it[1]->s); q > 0; q--) { p[0] = l.node; l = anode(C, "tlsuc", p, 1, nl3("app", nsym("lsuc"), l.val)); }
+            for (int q = atoi(t->it[1]->s); q > 0; q--) { p[0] = l.node; l = anode(C, "tlsuc", p, 1, nl3("app", K("lsuc"), l.val)); }
         } else if (t->n == 2) l = ann(t->it[1], C);
         else l = aconst("tlzero", "lzero");
         p[0] = l.node;
@@ -825,17 +844,17 @@ static Node *atel_ctor(Node *cd, ConInfo *c, int i, int k) {
         apush(fl->it[0]->s, ty);
         Node *rest = atel_ctor(cd, c, i + 1, k + 1);
         nasc--;
-        return chain_close(&C, capp2("tx", A.node, nl3("lam", fl->it[0], nl3("lam", ty, rest))));
+        return chain_close(&C, nl3("app", kapp("tx", A.node, word(srcname(fl->it[0]->s))), nl3("lam", fl->it[0], nl3("lam", ty, rest))));
     }
-    if (!c->ndims) { Node *s0 = nlist(1); s0->it[0] = nsym("sys"); return capp1("tz", aclosed(ds(s0))); }
+    if (!c->ndims) { Node *s0 = nlist(1); s0->it[0] = nsym("sys"); return kapp("tz", aclosed(ds(s0)), NULL); }
     Node *dl = cd->it[i++];
     int base = nasc;
     for (int q = 1; q < dl->n; q++) apush(dl->it[q]->s, NULL);
     Node *sy = nlist(cd->n - i + 1); sy->it[0] = nsym("sys");
     for (int q = i; q < cd->n; q++) sy->it[q - i + 1] = cd->it[q];
-    Node *r = capp1("tz", aclosed(ds(sy)));
+    Node *r = kapp("tz", aclosed(ds(sy)), NULL);
     nasc = base;
-    for (int q = dl->n - 1; q >= 1; q--) r = capp1("ty", nl3("lam", dl->it[q], r));
+    for (int q = dl->n - 1; q >= 1; q--) r = kapp("ty", word(srcname(dl->it[q]->s)), nl3("lam", dl->it[q], r));
     return r;
 }
 static Node *atel_params(Node *dd, int d, int k) {
@@ -848,11 +867,11 @@ static Node *atel_params(Node *dd, int d, int k) {
         apush(p->it[0]->s, ty);
         Node *rest = atel_params(dd, d, k + 1);
         nasc--;
-        return chain_close(&C, capp2("tx", A.node, nl3("lam", p->it[0], nl3("lam", ty, rest))));
+        return chain_close(&C, nl3("app", kapp("tx", A.node, word(srcname(p->it[0]->s))), nl3("lam", p->it[0], nl3("lam", ty, rest))));
     }
     Node **cs = calloc((size_t)DATA[d].ncons + 1, sizeof(Node *));
     for (int ci = 0; ci < DATA[d].ncons; ci++) cs[ci] = atel_ctor(dd->it[ci + 2], &CON[DATA[d].cons[ci]], 1, 0);
-    Node *r = capp1("tz", alist(cs, DATA[d].ncons));
+    Node *r = kapp("tz", alist(cs, DATA[d].ncons), NULL);
     free(cs);
     return r;
 }
@@ -894,6 +913,7 @@ static void gh_put(const char *name, long g) {
     GH[j] = g;
 }
 long global_lookup(const char *name) {
+    if (name[0] == '%' && name[1] == '%') { for (long g = 0; g < nG; g++) if (!strcmp(G[g].name, name + 2)) return g; return -1; }
     if (!capGH) return -1;
     size_t j = name_hash(name) & (capGH - 1);
     while (GH[j] >= 0) { if (!strcmp(G[GH[j]].name, name)) return GH[j]; j = (j + 1) & (capGH - 1); }
@@ -1471,13 +1491,14 @@ static Syn *compile(Node *t) {
             Syn *s = compile_n(S_PRIM, t, 2, 3); s->x = O_WELIM; return s;
         }
         if (!strcmp(h, "%var") || !strcmp(h, "%dim")) {
-            /* (%var T), (%dim): a fresh variable of type T, a fresh dimension; the first port
-             * only triggers the cell */
+            /* (%var [n] T), (%dim [n]): a fresh variable of type T, a fresh dimension, named by the
+             * word n (a source name) or unnamed; the first port triggers the cell */
             bool v = !strcmp(h, "%var");
-            if (t->n != (v ? 2 : 1)) die(v ? "(%var T)" : "(%dim)", NULL);
+            int named = t->n - (v ? 2 : 1);
+            if (named != 0 && named != 1) die(v ? "(%var [n] T)" : "(%dim [n])", NULL);
             Syn *s = syn(S_PRIM, v ? 2 : 1); s->x = v ? O_MKVAR : O_MKDIM;
-            s->k[0] = syn(S_FTT, 0);
-            if (v) s->k[1] = compile(t->it[1]);
+            s->k[0] = named ? compile(t->it[1]) : syn(S_FTT, 0);
+            if (v) s->k[1] = compile(t->it[1 + named]);
             return s;
         }
         for (int q = 0; PR[q].name; q++) if (!strcmp(h, PR[q].name)) {
@@ -1553,8 +1574,34 @@ typedef struct { Dim d; char name[16]; } DimShow;
 static bool saw_identity;         /* readback named an identity's dimension */
 static DimShow *dshow; static size_t capdshow; static int ndshow, dcount; static long vcount;
 static char dimbuf[8][24]; static int dimbuf_i;
+/* the source names of dimensions the checker made for binders (a map from dimension to name) */
+typedef struct { Dim d; int nm; } DimNm;
+static DimNm *DNM; static size_t capdnm, ndnm;
+static pthread_mutex_t dnm_mu = PTHREAD_MUTEX_INITIALIZER;
+static size_t dnm_slot(Dim d, size_t cap) { return (size_t)((d * 0x9E3779B97F4A7C15ull) >> 20) & (cap - 1); }
+void dim_named(Dim d, int nm) {
+    pthread_mutex_lock(&dnm_mu);
+    if (2 * (ndnm + 1) > capdnm) {
+        size_t nc = capdnm ? capdnm * 2 : 1024;
+        DimNm *nt = calloc(nc, sizeof(DimNm));
+        for (size_t i = 0; i < capdnm; i++) if (DNM[i].d) { size_t j = dnm_slot(DNM[i].d, nc); while (nt[j].d) j = (j + 1) & (nc - 1); nt[j] = DNM[i]; }
+        free(DNM); DNM = nt; capdnm = nc;
+    }
+    size_t j = dnm_slot(d, capdnm);
+    while (DNM[j].d && DNM[j].d != d) j = (j + 1) & (capdnm - 1);
+    if (!DNM[j].d) ndnm++;
+    DNM[j] = (DimNm){ d, nm };
+    pthread_mutex_unlock(&dnm_mu);
+}
+static int dim_name_index(Dim d) {
+    if (!capdnm) return -1;
+    size_t j = dnm_slot(d, capdnm);
+    while (DNM[j].d) { if (DNM[j].d == d) return DNM[j].nm; j = (j + 1) & (capdnm - 1); }
+    return -1;
+}
 static const char *dim_name(Dim d) {
     for (int i = ndshow - 1; i >= 0; i--) if (dshow[i].d == d) return dshow[i].name;
+    { int k = dim_name_index(d); if (k >= 0) return srcname_of(k); }
     for (int i = 0; i < nID; i++) if (ID[i].dim == d) { saw_identity = true; char *b = dimbuf[dimbuf_i++ & 7]; snprintf(b, 24, "i:%s", name_of(ID[i].p)); return b; }
     char *b = dimbuf[dimbuf_i++ & 7]; snprintf(b, 24, "#%llu", (unsigned long long)d); return b;
 }
@@ -1651,7 +1698,7 @@ static void rb_one(FILE *o, Port prov) {
     }
     case V_GLUE: push_fields(o, "Glue", c, 1); return;
     case V_GLUEV: push_fields(o, "glue", c, 1); return;
-    case V_NVAR: fputs(name_of((long)c->a), o); return;
+    case V_NVAR: if (c->x) fputs(srcname_of((int)c->x - 1), o); else fputs(name_of((long)c->a), o); return;
     case V_NAPP:
         fputc('(', o);
         push_str(")"); push_field(c, 2); push_str(" "); push_field(c, 1);
@@ -1831,6 +1878,53 @@ static char *readback(Node *t, long *steps, long *erased) {
     return buf;
 }
 
+/* why a judgment failed: its normal form (no v why A B), lib/check.ctt Res */
+static void explain(const char *r) {
+    /* reason, then what its two values are */
+    static const char *M[][3] = {
+        /* 0 */ { "type mismatch", "expected", "actual" },
+        { "applied, but not a function", "its type", NULL },
+        { "projected, but not a pair", "its type", NULL },
+        { "applied to an interval, but not a path", "its type", NULL },
+        { "not a type", "its type", NULL },
+        { "no inferable type here: annotate it with (the T t)", NULL, NULL },
+        { "not an interval (a dimension, 0, 1, ~, /\\, \\/)", NULL, NULL },
+        { "wrong endpoint at 0", "expected", "actual" },
+        { "wrong endpoint at 1", "expected", "actual" },
+        { "system branches disagree where both faces hold", "one", "other" },
+        /* 10 */ { "the tube disagrees with the base at 0", "base", "tube" },
+        { "a face of the tube depends on the composition's dimension", NULL, NULL },
+        { "not a face: (= r 0), (= r 1), &, |, tt, ff, forall", NULL, NULL },
+        { "a system (sys ...) was expected", NULL, NULL },
+        { "the parameters do not match the data type's telescope", NULL, NULL },
+        { "the fields and dimensions do not match the constructor's", NULL, NULL },
+        { "the elimination has the wrong number of branches", NULL, NULL },
+        { "the branch disagrees with the elimination of the constructor's boundary", "expected", "branch" },
+        { "the glue system's face differs from the Glue type's", NULL, NULL },
+        { "glue's system disagrees with its base under a branch's face", "base", "branch" },
+        /* 20 */ { "eliminated, but not of that data type", "its type", NULL },
+        { "the motive is not a family of types over the data type", "motive's type", "data type" },
+        { "a line (plam i ...) was expected", NULL, NULL },
+        { "a type over levels (in U omega) has no type and no level", "its type", NULL },
+        { "the field type is not strictly positive (the type itself at its own parameters, or not mentioning it)", NULL, NULL },
+        { "the boundary uses a constructor not declared before this one", NULL, NULL },
+        { "the data type's universe level depends on a parameter", NULL, NULL },
+        { "an identity relates definitions of different types", "left", "right" },
+        { "ungluded, but not of a Glue type", "its type", NULL } };
+    const char *saved = src; src = r;
+    Node *n = read_node();
+    src = saved;
+    if (!n || !n->list || n->n != 5 || !is(n->it[0], "no")) { printf("   reason: %s\n", r); return; }
+    int why = n->it[2]->list ? -1 : atoi(n->it[2]->s + 1);
+    bool known = why >= 0 && why < (int)(sizeof M / sizeof *M);
+    printf("   at: "); print_node(stdout, n->it[1]); printf("\n   reason: %s\n", known ? M[why][0] : "rejected");
+    for (int k = 0; k < 2; k++) {
+        Node *v = n->it[3 + k];
+        if (is(v, "opq")) continue;
+        printf("   %s: ", known && M[why][1 + k] ? M[why][1 + k] : (k ? "B" : "A")); print_node(stdout, v); printf("\n");
+    }
+}
+
 /* ---------------- the driver ---------------- */
 static int failures, passes;
 static void toplevel(Node *f);
@@ -1899,14 +1993,15 @@ static void toplevel(Node *f) {
         if (f->n != at + 2) die(define ? "(checked name T t)" : "(check T t)", NULL);
         Node *T = f->it[at], *t = f->it[at + 1];
         Node *cT = nl2("%raw", aclosed(ds(T))), *ct = nl2("%raw", aclosed(ds(t)));
-        Node *q = nl3("chk-def", cT, ct);
+        Node *q = nl3("%%chk-def", cT, ct);
         long steps;
-        char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
-        bool ok = !strcmp(r, tr) == expect;
+        char *r = readback(q, &steps, NULL), *tr = strdup("ok");
+        bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
         printf("%s: %s ", ok ? "ok" : "FAIL", expect ? "checks" : "rejected");
         if (define) printf("%s", f->it[1]->s); else print_node(stdout, t);
         printf("   [%ld steps]\n", steps);
+        if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
         if (define && ok) {
             Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = f->it[1]; d->it[2] = t;
@@ -1914,7 +2009,7 @@ static void toplevel(Node *f) {
             /* the checker's tables: the definition and its type, each a global, so a lookup
              * is a reference */
             char ty[32]; snprintf(ty, sizeof ty, "%%sty%d", nchecked);
-            Node *td = nlist(3); td->it[0] = nsym("def"); td->it[1] = nsym(ty); td->it[2] = nl2("sig-type", cT);
+            Node *td = nlist(3); td->it[0] = nsym("def"); td->it[1] = nsym(ty); td->it[2] = nl2("%%sig-type", cT);
             toplevel(td);
             table_set(TB_VAL, nchecked, global_lookup(f->it[1]->s));
             table_set(TB_TY, nchecked, global_lookup(ty));
@@ -1936,14 +2031,15 @@ static void toplevel(Node *f) {
         bool input = ip < 0 && gp >= 0 && G[gp].kind == G_INPUT && !G[gp].res->port[0];
         if (ip < 0 && !input) die("checked-identity: the evidence must be a checked definition or an unsupplied input:", f->it[3]->s);
         Node *q = nlist(input ? 4 : 5);
-        q->it[0] = nsym(input ? "id-type-ok" : "chk-identity-def");
+        q->it[0] = nsym(input ? "%%id-type-ok" : "%%chk-identity-def");
         q->it[1] = word(iL); q->it[2] = word(iR); q->it[3] = word(n);
         if (!input) q->it[4] = word(ip);
         long steps;
-        char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+        char *r = readback(q, &steps, NULL), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
         printf("%s: %s identity %s = %s by %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, f->it[3]->s, steps);
+        if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
         if (accepted && expect) {
             if (input) { GROW(CHKID, capchkid, (size_t)nchkid + 1); CHKID[nchkid++] = (ChkId){ gp, iL, iR, n }; }
@@ -1966,13 +2062,14 @@ static void toplevel(Node *f) {
         if (chk) {
             int iL = checked_index(f->it[1]->s), ie = checked_index(f->it[2]->s);
             if (iL < 0 || ie < 0) die("checked-identity-from: L and e must be checked definitions", NULL);
-            Node *q = nlist(4); q->it[0] = nsym("chk-optimizer"); q->it[1] = word(iL); q->it[2] = word(n); q->it[3] = word(ie);
+            Node *q = nlist(4); q->it[0] = nsym("%%chk-optimizer"); q->it[1] = word(iL); q->it[2] = word(n); q->it[3] = word(ie);
             long steps;
-            char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+            char *r = readback(q, &steps, NULL), *tr = strdup("ok");
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
             if (ok) passes++; else failures++;
             printf("%s: %s identity of %s from %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, steps);
-            free(r); free(tr);
+            if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
+        free(r); free(tr);
             if (!accepted || !expect) return;
         }
         static int nopt;
@@ -2004,7 +2101,7 @@ static void toplevel(Node *f) {
         }
         GROW(CHKDATA, capchkdata, (size_t)nchkdata + 1);
         CHKDATA[nchkdata++] = d;
-        Node *ent = nl2("%raw", capp2("dent", atel_params(dd, d, 0), nsym("lzero")));
+        Node *ent = nl2("%raw", kapp("dent", atel_params(dd, d, 0), K("lzero")));
         int di = nchkdata - 1;
         /* the tables while it is checked: its declaration at level lzero, and the machine's data
          * type, constructors, elimination and case for the evaluator */
@@ -2015,20 +2112,21 @@ static void toplevel(Node *f) {
         for (int ci = 0; ci < DATA[d].ncons; ci++) cs[ci] = nsym(CON[DATA[d].cons[ci]].name);
         char en[256], cn[256]; snprintf(en, sizeof en, "%%elim-%s", DATA[d].name); snprintf(cn, sizeof cn, "%%case-%s", DATA[d].name);
         Node *td = nlist(3); td->it[0] = nsym("def"); td->it[1] = nsym(dtn);
-        td->it[2] = capp4("dtab", nsym(DATA[d].name), code_list(cs, DATA[d].ncons), nsym(en), nsym(cn));
+        { Node *l = K("lnil"); for (int i = DATA[d].ncons - 1; i >= 0; i--) l = kapp("lcons", cs[i], l); td->it[2] = nl3("app", nl3("app", kapp("dtab", nsym(DATA[d].name), l), nsym(en)), nsym(cn)); }
         free(cs);
         toplevel(td);
         table_set(TB_DENT, di, global_lookup(den));
         table_set(TB_DTAB, di, global_lookup(dtn));
         long steps;
-        char *r = readback(nl3("chk-data", word(di), ent), &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+        char *r = readback(nl3("%%chk-data", word(di), ent), &steps, NULL), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
         printf("%s: %s data %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", DATA[d].name, steps);
+        if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
         if (!accepted) { nchkdata--; return; }
         char dent[32]; snprintf(dent, sizeof dent, "%%dent%d", di);
-        Node *ed = nlist(3); ed->it[0] = nsym("def"); ed->it[1] = nsym(dent); ed->it[2] = nl3("data-entry", word(di), ent);
+        Node *ed = nlist(3); ed->it[0] = nsym("def"); ed->it[1] = nsym(dent); ed->it[2] = nl3("%%data-entry", word(di), ent);
         toplevel(ed);
         table_set(TB_DENT, di, global_lookup(dent));
     } else if (!strcmp(h, "declare")) {
@@ -2265,14 +2363,15 @@ static void toplevel(Node *f) {
         bool expect = !strcmp(h, "supply");
         for (int i = 0; i < nchkid; i++) if (CHKID[i].g == g) {
             /* the evidence of a checked identity: checked at the identity's type first */
-            Node *q = nlist(5); q->it[0] = nsym("chk-identity");
+            Node *q = nlist(5); q->it[0] = nsym("%%chk-identity");
             q->it[1] = word(CHKID[i].iL); q->it[2] = word(CHKID[i].iR); q->it[3] = word(CHKID[i].n); q->it[4] = nl2("%raw", aclosed(ds(f->it[2])));
             long steps;
-            char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+            char *r = readback(q, &steps, NULL), *tr = strdup("ok");
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
             if (ok) passes++; else failures++;
             printf("%s: %s evidence %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, steps);
-            free(r); free(tr);
+            if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
+        free(r); free(tr);
             if (!accepted) return;
             break;
         }

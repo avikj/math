@@ -30,7 +30,15 @@ E2. [x] Rejection suite tests/reject.ctt (in make test): an ill-typed term per t
     Found: a case without a motive could not be inferred (so `if` in a type family failed); now
     inferred from a branch without hypotheses and every branch checked at it. No acceptance of an
     ill-typed term found. (`lomega` cannot be written in checked code, so no U ω : U ω.)
-E3. [ ] Failure reasons: the failing subterm, its source position, expected and actual type.
+E3. [x] Failure reasons. A judgment's normal form is ok / (yes T) / (no v why A B) (check.ctt Res):
+    the failing subterm's value, a numbered reason (texts in lang.c explain), and the two values it
+    concerns (expected/actual, base/tube, ...). Fresh variables and dimensions made for binders carry
+    the binder's source name (binder nodes carry a name word; (%var n T), (%dim n)), so messages read
+    in the source's names. An operation with no rule for its operand (an ill-typed term) yields ? (V_UNK)
+    instead of stopping the machine. The emitter and driver refer to the checker's constructors and
+    entry points as %%name (the first declared), so a program's names cannot capture them.
+    Cost: checking takes ~14% more interactions (error thunks dropped on success): boxes 1.58M,
+    sort 1.01M, check 0.17M.
 E4. [ ] Implicit arguments solved by unification (holes `_` in checked terms; levels/types inferred).
 E5. [ ] Files as modules: (import "f"), loaded once; checked results cached by content.
 E6. [ ] Embedding API: the machine as a C library (load program, supply inputs, read values, check).

@@ -716,6 +716,16 @@ static Port wstuck(int op, Port a, Port b) {
     return P(n, 0);
 }
 
+/* an operation on a value it has no rule for (an ill-typed term, run unchecked): the result is
+ * unknown, the operands erased — the machine does not stop, and a checker reading the value of a
+ * term it rejected reads ? there */
+static void stuck(Cell *o, Cell *v) {
+    for (int k = 1; k < v->n; k++) era(v->port[k]);
+    for (int k = 1; k < o->n - 1; k++) era(o->port[k]);
+    link(unk(), o->port[o->n - 1]);
+    cell_free(o); cell_free(v);
+}
+
 /* ---------------- the rules ---------------- */
 static void interact(Cell *o, Cell *v) {
     ADD(stat_steps, 1); ADD(stat_kind[o->kind], 1);
@@ -824,7 +834,7 @@ static void interact(Cell *o, Cell *v) {
         else neutral_proj(o, v);
         return;
     case O_PAPPR: {
-        if (vk != V_IV) { fprintf(stderr, "path applied to a non-interval\n"); exit(2); }
+        if (vk != V_IV) { stuck(o, v); return; }
         Dnf *r = v->p;
         if (o->x && (dnf_is_zero(r) || dnf_is_one(r))) {
             /* an endpoint: answered without the path */
@@ -1008,12 +1018,12 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     case O_NEG:
-        if (vk != V_IV) { fprintf(stderr, "~ of a non-interval\n"); exit(2); }
+        if (vk != V_IV) { stuck(o, v); return; }
         { Dnf *n2 = iv_neg(v->p); dnf_release(v->p); v->p = n2; }
         link(P(v, 0), o->port[1]); cell_free(o);
         return;
     case O_BIN: {
-        if (vk != V_IV && vk != V_FACE) { fprintf(stderr, "lattice operation on a non-interval\n"); exit(2); }
+        if (vk != V_IV && vk != V_FACE) { stuck(o, v); return; }
         Cell *b = cell(O_BIN2, 2); b->x = o->x; b->p = dnf_retain(v->p);
         mv(o, 1, P(b, 0)); link(P(b, 1), o->port[2]);
         cell_free(o); cell_free(v);
@@ -1021,25 +1031,25 @@ static void interact(Cell *o, Cell *v) {
     }
     case O_BIN2: {
         bool face = o->x == B_FAND || o->x == B_FOR;
-        if (vk != (face ? V_FACE : V_IV)) { fprintf(stderr, "lattice operation on mismatched operands\n"); exit(2); }
+        if (vk != (face ? V_FACE : V_IV)) { stuck(o, v); return; }
         Dnf *n2 = (o->x == B_MEET || o->x == B_FAND) ? dnf_meet(o->p, v->p, face) : dnf_join(o->p, v->p, face);
         dnf_release(v->p); v->p = n2;
         link(P(v, 0), o->port[1]); cell_free(o);
         return;
     }
     case O_FEQ: {
-        if (vk != V_IV) { fprintf(stderr, "(= r e) of a non-interval\n"); exit(2); }
+        if (vk != V_IV) { stuck(o, v); return; }
         Cell *f = cell(V_FACE, 1); f->p = face_eq(v->p, (int)o->a);
         link(P(f, 0), o->port[1]); cell_free(o); cell_free(v);
         return;
     }
     case O_FORALL:
-        if (vk != V_FACE) { fprintf(stderr, "forall of a non-face\n"); exit(2); }
+        if (vk != V_FACE) { stuck(o, v); return; }
         { Dnf *n2 = face_forall(v->p, (Dim)o->a); dnf_release(v->p); v->p = n2; }
         link(P(v, 0), o->port[1]); cell_free(o);
         return;
     case O_SYSCONS: {
-        if (vk != V_FACE) { fprintf(stderr, "system branch guarded by a non-face\n"); exit(2); }
+        if (vk != V_FACE) { stuck(o, v); return; }
         Dnf *f = v->p;
         if (dnf_is_one(f)) {
             Cell *fo = cell(O_FORCE, 2); mv(o, 1, P(fo, 0)); link(P(fo, 1), o->port[3]); era(o->port[2]);
@@ -1117,7 +1127,7 @@ static void interact(Cell *o, Cell *v) {
         return;
     case O_TRANSD1: {
         int np = o->n - 3;
-        if (vk != V_FACE) { fprintf(stderr, "transport face is not a face\n"); exit(2); }
+        if (vk != V_FACE) { stuck(o, v); return; }
         if (dnf_is_one(v->p)) {
             /* on ψ the family is constant: transport is the identity */
             link(o->port[np + 1], o->port[np + 2]);
@@ -1314,15 +1324,19 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     case O_MKVAR: case O_MKDIM: {
-        /* a fresh variable (of the type at port 1) or dimension, each time: 0 is only the trigger */
+        /* a fresh variable (of the type at port 1) or dimension, each time; 0 is its source name (a
+         * word) or only the trigger */
+        uint32_t nm = vk == V_WORD && !v->p ? (uint32_t)v->a + 1 : 0;
         for (int k = 1; k < v->n; k++) era(v->port[k]);
         if (o->kind == O_MKVAR) {
             static uint64_t next_var;
             /* its type is held once: every copy of the variable refers to it */
-            Cell *n = cell(V_NVAR, 2); n->a = LVL_TAG | __atomic_fetch_add(&next_var, 1, __ATOMIC_RELAXED); n->ty = 1;
+            Cell *n = cell(V_NVAR, 2); n->a = LVL_TAG | __atomic_fetch_add(&next_var, 1, __ATOMIC_RELAXED); n->ty = 1; n->x = nm;
             link(ref_of(o->port[1]), P(n, 1)); link(P(n, 0), o->port[2]);
         } else {
-            Cell *iv = cell(V_IV, 1); iv->p = iv_atom(fresh_dim()); link(P(iv, 0), o->port[1]);
+            Dim d = fresh_dim();
+            if (nm) dim_named(d, nm - 1);
+            Cell *iv = cell(V_IV, 1); iv->p = iv_atom(d); link(P(iv, 0), o->port[1]);
         }
         cell_free(o); cell_free(v);
         return;
@@ -1530,7 +1544,7 @@ static void interact(Cell *o, Cell *v) {
         else { Cell *a = cell(O_APP, 3); mv(o, 1, P(a, 0)); link(P(v, 0), P(a, 1)); link(P(a, 2), o->port[2]); cell_free(o); }
         return;
     default:
-        fprintf(stderr, "no rule for operation %d\n", o->kind); exit(2);
+        stuck(o, v); return;
     }
 }
 

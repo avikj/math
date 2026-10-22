@@ -51,6 +51,7 @@ void subst_release(Subst *s);
 Dnf *clause_list(Clause *const *c, uint32_t n);
 
 Dim  fresh_dim(void);
+void dim_named(Dim d, int name);   /* a dimension made for a binder: its source name (src/lang.c) */
 Dnf *dnf_zero(void);
 Dnf *dnf_one(void);
 Dnf *iv_atom(Dim i);
