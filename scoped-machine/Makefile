@@ -20,7 +20,7 @@ test: build/cubical build/cubical-asan
 	./build/cubical lib/prelude.ctt tests/identity.ctt
 	./build/cubical lib/prelude.ctt tests/hit.ctt
 	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt
-	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt
+	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/reject.ctt
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/identity.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/hit.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt > /dev/null

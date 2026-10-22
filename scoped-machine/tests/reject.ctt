@@ -1,0 +1,116 @@
+; tests/reject.ctt — the checker rejects: one ill-typed term per typing rule, each next to the
+; nearest term it accepts. Loaded after lib/std.ctt.
+(checked-data (data Two (t0) (t1)))
+(checked-data (data (Box (A U)) (box (a A))))
+
+; application: a function, and an argument of its domain
+(check (Pi ((A U) (f (Pi x A A)) (x A)) A) (lam A f x (f x)))
+(check-fail (Pi ((A U) (x A)) A) (lam A x (x x)))
+(check-fail (Pi ((A U) (B U) (f (Pi x A A)) (y B)) A) (lam A B f y (f y)))
+; projections: of a Σ
+(check (Pi ((A U) (p (Sigma x A A))) A) (lam A p (fst p)))
+(check-fail (Pi ((A U) (p A)) A) (lam A p (fst p)))
+(check-fail (Pi ((A U) (B U) (p (Sigma x A B))) A) (lam A B p (snd p)))
+; the dependent second component is checked at the first's value
+(check (Sigma b Bool (if b Unit Empty)) (pair true unit))
+(check-fail (Sigma b Bool (if b Unit Empty)) (pair false unit))
+; path application: to an interval, not a term
+(check (Pi ((A U) (x A) (p (PathP (plam i A) x x))) A) (lam A x p (@ p 0)))
+(check-fail (Pi ((A U) (x A) (p (PathP (plam i A) x x))) A) (lam A x p (@ p x)))
+; interval terms and faces are made of dimensions
+(check-fail (Pi ((A U) (x A) (p (PathP (plam i A) x x))) A) (lam A x p (@ p (~ x))))
+(check-fail (Pi ((A U) (x A)) (PathP (plam i A) x x)) (lam A x (plam i (comp (plam j A) (plam j (sys ((= x 0) x))) x))))
+; λ and pairs only at Π and Σ
+(check-fail (Pi A U A) (lam A (lam x x)))
+(check-fail (Pi A U (Pi x A A)) (lam A (pair A A)))
+(check-fail (Pi A U U) (lam A (plam i A)))
+; the universe: (U l) at (U (lsuc l)), not at itself; a level is a Level
+(check (U 1) U)
+(check-fail U U)
+(check-fail (U 1) (U 1))
+(check-fail (Pi A U U) (lam A (U A)))
+(check-fail (Pi A U Level) (lam A (lsuc A)))
+; Π and Σ: the domain is a type; a family over U lives one level up
+(check (U 1) (Pi x U x))
+(check-fail U (Pi x U x))
+(check-fail (Pi ((A U) (a A)) U) (lam A a (Pi x a A)))
+(check-fail (Pi ((A U) (a A)) U) (lam A a (Sigma x A a)))
+; PathP: the endpoints at the line's ends
+(check (Pi ((A U) (x A)) U) (lam A x (PathP (plam i A) x x)))
+(check-fail (Pi ((A U) (B U) (x A) (y B)) U) (lam A B x y (PathP (plam i A) x y)))
+(check-fail (Pi ((A U) (x A)) U) (lam A x (PathP (plam i x) x x)))
+; a line: its endpoints are the declared ones
+(check-fail (Pi ((A U) (x A) (y A)) (PathP (plam i A) x y)) (lam A x y (plam i x)))
+; systems: overlapping branches agree; branches at the type
+(check (Pi ((A U) (x A)) (PathP (plam i A) x x)) (lam A x (plam i (comp (plam j A) (plam j (sys ((= i 0) x) ((= i 0) x) ((= i 1) x))) x))))
+(check-fail (Pi ((A U) (x A) (y A)) (PathP (plam i A) x x)) (lam A x y (plam i (comp (plam j A) (plam j (sys ((= i 0) x) ((= i 0) y) ((= i 1) x))) x))))
+(check-fail (Pi ((A U) (B U) (x A) (b B)) (PathP (plam i A) x x)) (lam A B x b (plam i (comp (plam j A) (plam j (sys ((= i 0) b) ((= i 1) x))) x))))
+; there is no regularity: a composition along a constant line is not its base
+(check-fail (Pi ((A U) (x A)) (PathP (plam i A) x x)) (lam A x (plam i (comp (plam j A) (plam j (sys ((= i 0) x))) x))))
+; comp: the line is a line of types; the tube's faces do not depend on it
+(check-fail (Pi ((A U) (x A)) A) (lam A x (comp (plam i x) (plam i (sys)) x)))
+(check-fail (Pi ((A U) (x A)) A) (lam A x (comp (plam i A) (plam i (sys ((= i 0) x))) x)))
+; Glue: the system gives types with equivalences into the base
+(check (Pi A U U) (lam A (Glue A (sys (tt (pair A (idEquiv lzero A)))))))
+(check-fail (Pi ((A U) (B U)) U) (lam A B (Glue A (sys (tt (pair B (idEquiv lzero A)))))))
+(check-fail (Pi ((A U) (a A)) U) (lam A a (Glue A (sys (tt (pair A a))))))
+; unglue of a Glue element only
+(check-fail (Pi ((A U) (a A)) A) (lam A a (unglue (sys (tt (pair A (idEquiv lzero A)))) a)))
+; annotation: the term at its declared type
+(check (Pi ((A U) (a A)) A) (lam A a (the A a)))
+(check-fail (Pi ((A U) (B U) (a A)) A) (lam A B a (the B a)))
+; let: the body at the let's value
+(check (Pi ((A U) (a A)) A) (lam A a (let y a y)))
+(check-fail (Pi ((A U) (B U) (a A) (b B)) A) (lam A B a b (let y b y)))
+; data types: parameters at their types, constructors' fields at theirs, of the right type
+(check U (List Nat))
+(check-fail U (List zero))
+(check (Box Nat) (box zero))
+(check-fail (Box Nat) (box true))
+(check-fail (Box Nat) t0)
+(check-fail Nat (box zero))
+; elimination: the motive over the data type, each branch at its constructor
+(check (Pi b Bool Nat) (lam b (elim (lam y Nat) b ((true) zero) ((false) (suc zero)))))
+(check-fail (Pi b Bool Nat) (lam b (elim (lam y Nat) b ((true) zero) ((false) true))))
+(check-fail (Pi b Bool Nat) (lam b (elim (lam y Two) b ((true) t0) ((false) t1))))
+(check-fail (Pi b Two Nat) (lam b (elim (lam y Bool) b ((true) zero) ((false) zero))))
+(check-fail (Pi b Bool Nat) (lam b (elim (lam y U) b ((true) Nat) ((false) Nat))))
+; the induction hypothesis has the motive's type at the field
+(check (Pi n Nat Nat) (lam n (case n ((zero) zero) ((suc k) (suc (rec k))))))
+(check-fail (Pi n Nat Nat) (lam n (case n ((zero) zero) ((suc k) (pair (rec k) k)))))
+; a case without a motive in a type: inferred from its branches
+(check (Pi ((b Bool) (u (if b Unit Empty))) (if b Unit Empty)) (lam b u u))
+(check-fail U (Sigma b Bool (case b ((true) Unit) ((false) zero))))
+; case: every branch at the type
+(check-fail (Pi n Nat Bool) (lam n (case n ((zero) true) ((suc k) k))))
+; a path constructor's branch agrees with the elimination of its boundary
+(checked-data (data Circ (base) (loop (dims i) ((= i 0) base) ((= i 1) base))))
+(check (Pi c Circ Bool) (lam c (case c ((base) true) ((loop i) true))))
+(check-fail (Pi c Circ Bool) (lam c (case c ((base) true) ((loop i) false))))
+; data declarations: strictly positive, parameters uniform, boundaries of earlier constructors,
+; levels closed
+(checked-data-fail (data Neg2 (mk (f (Pi x (Pi y Neg2 Bool) Bool)))))
+(checked-data-fail (data (Nu (A U)) (nu (a A) (r (Nu Bool)))))
+(checked-data-fail (data Late (l1 (dims i) ((= i 0) l2) ((= i 1) l2)) (l2)))
+(checked-data (data (Lv (A U)) (lv (a (U 1)))))
+(checked-data-fail (data (Lw (l Level)) (lw (a (U l)))))
+; words
+(check Word (%wadd #2 #3))
+(check-fail Word (%wadd #2 true))
+(check-fail Bool (%wadd #2 #3))
+(check-fail Word (%weq #2 #3))
+(check-fail Word (%wsucc zero))
+(check (Pi w Word Nat) (lam w (%welimP (lam v Nat) w zero (lam n h (suc h)))))
+(check-fail (Pi w Word Nat) (lam w (%welimP (lam v Nat) w true (lam n h (suc h)))))
+(check-fail (Pi w Word Nat) (lam w (%welimP (lam v Nat) w zero (lam n h h n))))
+(check-fail (Pi w Word Bool) (lam w (%welimP (lam v Nat) w zero (lam n h (suc h)))))
+; equality: η holds for functions and pairs, nothing more
+(check (Pi ((A U) (f (Pi x A A))) (PathP (plam i (Pi x A A)) f (lam x (f x)))) (lam A f (plam i f)))
+(check (Pi ((A U) (p (Sigma x A A))) (PathP (plam i (Sigma x A A)) p (pair (fst p) (snd p)))) (lam A p (plam i p)))
+(check-fail (Pi ((A U) (p (Sigma x A A))) (PathP (plam i (Sigma x A A)) p (pair (snd p) (fst p)))) (lam A p (plam i p)))
+(check-fail (Pi ((A U) (x A) (y A)) (PathP (plam i A) x y)) (lam A x y (plam i x)))
+(check-fail (Pi ((f (Pi b Bool Bool))) (PathP (plam i (Pi b Bool Bool)) f (lam b (not (f b))))) (lam f (plam i f)))
+; universes are not cumulative and do not contain themselves at any level
+(check-fail U (Pi x U Nat))
+(check-fail (Pi l Level (U l)) (lam l (U l)))
+(check (Pi l Level (U (lsuc l))) (lam l (U l)))

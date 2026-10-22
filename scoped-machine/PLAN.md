@@ -24,7 +24,12 @@ theorem), more paper material, surface syntax, further interaction-count cuts (n
 E1. [x] Identity answers inside bodies the reading builds (a λ applied to a fresh variable, a neutral
     case's branch, a definition's value): the reading's substitution (identity dims at 1, or 0) is
     applied there (lang.c rb_sub / rb_under). Before: (lam y (L y)) read as an unresolved path.
-E2. [ ] Rejection suite: one adversarial term per typing rule (tests/reject.ctt); fix what it finds.
+E2. [x] Rejection suite tests/reject.ctt (in make test): an ill-typed term per typing rule next to
+    an accepted one (application, projections, dependent pairs, intervals, faces, systems, comp,
+    Glue, universes and levels, data, elimination, HIT boundaries, positivity, uniformity, words, η).
+    Found: a case without a motive could not be inferred (so `if` in a type family failed); now
+    inferred from a branch without hypotheses and every branch checked at it. No acceptance of an
+    ill-typed term found. (`lomega` cannot be written in checked code, so no U ω : U ω.)
 E3. [ ] Failure reasons: the failing subterm, its source position, expected and actual type.
 E4. [ ] Implicit arguments solved by unification (holes `_` in checked terms; levels/types inferred).
 E5. [ ] Files as modules: (import "f"), loaded once; checked results cached by content.

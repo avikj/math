@@ -289,7 +289,7 @@
 
 ; ---------------------------------------------------------------- typing
 ; infer c: the type of c, or none; check c T.
-(declare infer check check-sys check-tele motive-level check-branches check-hcomp infer-binder)
+(declare infer check check-sys check-tele motive-level check-branches check-hcomp infer-binder case-type)
 (def infer-level (lam A (case (infer A)
   ((some T) (case (%view T) ((wu l) (if (is-w l) none (some l))) (_ none)))
   ((none) none))))
@@ -394,6 +394,14 @@
   ((thcomp u a V) (case (infer a)
      ((some T) (case (%view T) ((wdata d ps) (let Tv (mkdata d ps) (if (check-hcomp Tv u a) (some Tv) none))) (_ none)))
      ((none) none)))
+  ; a case without a motive: the type of a branch without hypotheses, every branch checked at it
+  ((tcase d B x F V) (case (infer x)
+     ((some X) (case (%view X) ((wdata d2 ps) (if (%weq d d2)
+         (case (case-type d (ctors-at d ps) B)
+           ((some R) (if (check-branches d ps (lam y R) F B) (some R) none))
+           ((none) none))
+         none)) (_ none)))
+     ((none) none)))
   ((tforce t V) (infer t))
   ((tword) (some U))
   ((tlit V) (some Word))
@@ -411,6 +419,16 @@
      ((some Ti) (some (PathP (%abs i Ti) (@ V 0) (@ V 1))))
      ((none) none))))
   (_ none))))
+; the type of a branch's body at fresh fields and dimensions (no hypotheses)
+(def br-infer (lam tel b (case tel
+  ((tx A r) (case b ((bx b1) (let Av (tval A) (let x (%var Av) (br-infer (r x Av) (b1 x Av))))) (_ none)))
+  ((ty r) (case b ((bi b1) (let i (%dim) (br-infer (r i) (b1 i)))) (_ none)))
+  ((tz bdy) (case b ((be t) (infer t)) (_ none))))))
+(def tel-rec (lam d tel (case tel ((tx A r) (orb (is-data-d d A) (tel-rec d (r (%var Uw) Uw)))) (_ false))))
+(def case-type (lam d cs Bs (case cs
+  ((lnil) none)
+  ((lcons tel rest) (case Bs ((lnil) none) ((lcons b br)
+     (if (tel-rec d tel) (case-type d rest br) (br-infer tel b))))))))
 ; parameters against their telescope
 (def check-tele (lam tel ps (case tel
   ((tx A r) (case ps ((lnil) false) ((lcons p pr)
