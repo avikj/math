@@ -42,7 +42,9 @@ make tsan        # the suites with 4 workers under ThreadSanitizer
 
 ## Binders and sharing
 
-`lam` compiles to a record. Its body's maximal subterms that are free of the bound variable are compiled in the enclosing level and wired to the cell's ports, so they are computed once however often the λ is applied. Duplicating a λ copies the record handle and duplicates the ports. A definition's net is built once, and each use copies its value through a duplicator. The constants `0`, `1`, `tt`, `ff` and `U` cannot be bound: a binder named by one is an error, not a variable.
+`lam` compiles to a record. Its body's maximal subterms that are free of the bound variable are compiled in the enclosing level and wired to the cell's ports, so they are computed once however often the λ is applied (and, being held unbuilt, only if one application reads them). Duplicating a λ copies the record handle and duplicates the ports. A definition's value is built on its first use, once; each use reads it through a reference.
+
+**Demand.** Work is done only where an operation reads it. A subterm in a position whose value may not be read (an argument, a constructor's field, a pair's component, a let's value, a motive, a lifted subterm, a definition's body) is held unbuilt: its syntax with its environment (`V_THUNK`), and an operation meeting it builds it in one interaction. Erasing it erases its environment only, so `(fst (pair a b))` never computes `b`, even when `b` has no normal form. Duplicating it holds it once: its first reader builds it in place and later readers wait for the value, so it is built at most once. A substitution reaching it waits for its value. Induction hypotheses and a word's hypothesis are such subterms. A subterm whose building does no work (a variable, a constant, a λ, a value former) is built as it is, and an argument a definition always reads (a strictness analysis of its body: the scrutinee of its head case, the head of its head application, an operand of a strict operation, or read in every branch) is built where it is passed, since its suspension would be a step no hand reduction takes. A closure is a value with one principal port, so active pairs stay disjoint and every schedule takes the same number of steps. The constants `0`, `1`, `tt`, `ff` and `U` cannot be bound: a binder named by one is an error, not a variable.
 
 ## Composition
 
@@ -122,7 +124,7 @@ By 5.11–5.13 the number of steps is independent of the schedule; the suite wit
 
 ## Readings
 
-`show` reports the length (interactions) and the effect (erasures: every forgetting goes through an eraser cell) of reading a value. A reading is taken over the complete normalization of what was posed: pending pairs are reduced before and after, so the counts do not depend on the schedule (identical with 0, 4 and 8 workers). This requires the workload to normalize; a divergent part left pending makes a reading wait forever.
+`show` reports the length (interactions) and the effect (erasures: every forgetting goes through an eraser cell) of reading a value. A reading is taken over the complete normalization of what was posed: pending pairs are reduced before and after, so the counts do not depend on the schedule (identical with 0, 4 and 8 workers). Parts nobody reads are never built, so a divergent part that is not read does not delay a reading; a divergent part that is read makes it wait forever. Reading the sorted list of 9.15's eight elements takes 1.5k interactions (11.9k when the machine built every component, its proofs included).
 
 ## Identities on running computations
 

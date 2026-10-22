@@ -97,3 +97,9 @@
 (same (map f (cons a (cons b nil))) (cons (f a) (cons (f b) nil)))
 ; transport in a family of function types
 (same ((transp (plam i (Pi x A A)) (lam x x)) a) (comp (plam i A) (sys) (comp (plam j A) (sys) a)))
+
+; demand: a component nobody reads is never computed, even one with no normal form
+(declare loop)
+(def loop (lam n (loop (suc n))))
+(same (fst (pair zero (loop zero))) zero)
+(same (case (cons zero (loop zero)) ((nil) (suc zero)) ((cons x r) x)) zero)

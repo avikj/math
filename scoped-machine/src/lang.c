@@ -865,6 +865,7 @@ typedef struct {
     char *name; int kind;
     Syn *body; int nslots; int *uses;
     Record *nary;                    /* the body taking all its parameters at once, or NULL */
+    int nparams; uint64_t strict;    /* its λ-chain's parameters, and those it always reads */
     Cell *res;                       /* holds the definition's value; a use copies it */
     long tyg;                        /* an axiom's type: the global holding it, or -1 */
     Cell **park_o, **park_v; int npark, parkcap;
@@ -1120,6 +1121,7 @@ static int maxlev(Node *t) {
 }
 
 static Syn *compile(Node *t);
+static Syn *compile_lazy(Node *t);
 /* a maximal subterm free of the current level becomes a port of its cell,
  * computed once in the enclosing level */
 static int lift(Node *t) {
@@ -1131,7 +1133,7 @@ static int lift(Node *t) {
     memcpy(saved, binds + sb, (size_t)nsaved * sizeof(Bind));
     Level savedL = *L;
     nbinds = sb; nlevels = li;
-    Syn *s = compile(t);
+    Syn *s = compile_lazy(t);
     levels[li] = savedL; nlevels = li + 1;
     memcpy(binds + sb, saved, (size_t)nsaved * sizeof(Bind)); nbinds = nb;
     free(saved);
@@ -1167,6 +1169,107 @@ static Syn *compile_record(Node *param, Node *body, bool thunk) {
     Syn *s = syn(S_LAM, L.nenv);
     s->rec = r;
     for (int k = 0; k < L.nenv; k++) s->k[k] = L.env_syns[k];
+    return s;
+}
+/* Strictness: whether evaluating t to its head always reads the variable x. Such an argument is
+ * built where it is passed, not suspended: it would be built on the first read anyway, and the
+ * suspension would be a step hand reduction does not take. Conservative: a definition not yet
+ * analysed (itself, a later one) reads none of its arguments. */
+static bool reads(Node *t, const char *x);
+static Names rd_bound;   /* the local names in scope (they shadow definitions) */
+static bool reads_branch(Node *b, int m, const char *x) {
+    /* λ shared(m)... λ fields... (thunk body): the shared variables are the outer ones */
+    for (int q = 0; q < m; q++) { if (!b->list || b->n != 3 || !is(b->it[0], "lam")) return false; b = b->it[2]; }
+    int save = rd_bound.n; bool r = false;
+    while (b->list && b->n == 3 && is(b->it[0], "lam")) {
+        if (!strcmp(b->it[1]->s, x)) { rd_bound.n = save; return false; }
+        names_add(&rd_bound, b->it[1]->s); b = b->it[2];
+    }
+    if (b->list && b->n == 2 && is(b->it[0], "thunk")) r = reads(b->it[1], x);
+    rd_bound.n = save;
+    return r;
+}
+static bool reads(Node *t, const char *x) {
+    if (!t->list) return !strcmp(t->s, x);
+    if (t->n == 0 || t->it[0]->list) return false;
+    const char *h = t->it[0]->s;
+    if (!strcmp(h, "app")) {
+        Node *hd = t; int na = 0;
+        while (hd->list && hd->n == 3 && is(hd->it[0], "app")) { hd = hd->it[1]; na++; }
+        if (!hd->list) {
+            if (!strcmp(hd->s, x)) return true;
+            if (names_has(&rd_bound, hd->s) || con_lookup(hd->s) >= 0) return false;
+            long g = global_lookup(hd->s);
+            if (g < 0 || G[g].kind != G_DEF || na < G[g].nparams) return false;
+            Node *a = t; Node *args[64]; int k = na;
+            while (a->list && a->n == 3 && is(a->it[0], "app")) { if (--k < 64) args[k] = a->it[2]; a = a->it[1]; }
+            for (int q = 0; q < G[g].nparams && q < 64; q++) if ((G[g].strict >> q & 1) && reads(args[q], x)) return true;
+            return false;
+        }
+        return reads(hd, x);
+    }
+    if (!strcmp(h, "%case")) {
+        bool el = t->n == 5;
+        if (reads(t->it[el ? 4 : 3], x)) return true;
+        Node *B = t->it[1];
+        if (!B->list || B->n < 5) return false;
+        int m = atoi(B->it[3]->s);
+        for (int i = 4; i < B->n; i++) if (!reads_branch(B->it[i], m, x)) return false;
+        return true;
+    }
+    if (!strcmp(h, "let")) {
+        if (!strcmp(t->it[1]->s, x)) return reads(t->it[2], x) && reads(t->it[3], x);
+        int save = rd_bound.n; names_add(&rd_bound, t->it[1]->s);
+        /* the body reads x, or reads the let's variable whose value reads x */
+        bool r = reads(t->it[3], x) || (reads(t->it[2], x) && reads(t->it[3], t->it[1]->s));
+        rd_bound.n = save; return r;
+    }
+    if (!strcmp(h, "the")) return reads(t->it[2], x);
+    if (!strcmp(h, "fst") || !strcmp(h, "snd") || !strcmp(h, "force") || !strcmp(h, "@") || !strcmp(h, "%view")
+        || !strcmp(h, "%wsucc") || !strcmp(h, "%welim") || !strcmp(h, "%clauses") || !strcmp(h, "faceof"))
+        return reads(t->it[1], x);
+    if (!strcmp(h, "%weq") || !strcmp(h, "%wlt") || !strcmp(h, "%wadd") || !strcmp(h, "%wmax") || !strcmp(h, "%wsub")
+        || !strcmp(h, "%ieq") || !strcmp(h, "%feq") || !strcmp(h, "%clos"))
+        return reads(t->it[1], x) || reads(t->it[2], x);
+    return false;
+}
+/* Demand. A subterm in a position whose value may not be read (an argument, a field, a let's value,
+ * a motive, a lifted subterm) is held as its syntax with its environment (V_THUNK), built when an
+ * operation meets it: work nobody reads is never done, and erasing it erases its environment. A
+ * subterm whose building does no work (a variable, a constant, a λ, a value former over such
+ * positions) is built as it is. */
+static bool lazy_trivial(Node *t) {
+    if (!t->list) return true;
+    if (t->n == 0 || t->it[0]->list) return false;
+    const char *h = t->it[0]->s;
+    if (!strcmp(h, "lam") || !strcmp(h, "thunk") || !strcmp(h, "pair") || !strcmp(h, "Pi") || !strcmp(h, "Sigma")
+        || !strcmp(h, "PathP") || !strcmp(h, "U")) return true;
+    if (!strcmp(h, "the")) return lazy_trivial(t->it[2]);
+    if (!strcmp(h, "app")) {
+        Node *hd = t; int na = 0;
+        while (hd->list && hd->n == 3 && is(hd->it[0], "app")) { hd = hd->it[1]; na++; }
+        int c = !hd->list && !lookup(hd->s) ? con_lookup(hd->s) : -1;
+        return c >= 0 && na == CON[c].nfields + CON[c].ndims;
+    }
+    return false;
+}
+static Syn *compile_lazy(Node *t) {
+    if (lazy_trivial(t)) return compile(t);
+    int li = nlevels - 1;
+    if (li >= 1) {
+        /* free of this level: lifted (lazily) to the level it belongs to */
+        ml_cut = li;
+        int m = maxlev(t);
+        ml_cut = 1 << 30;
+        if (m >= 0 && m < li && !levels[li].is_thunk) return var_syn(lift(t));
+    }
+    Syn *s = compile_record(NULL, t, true);
+    s->tag = S_THUNK;
+    return s;
+}
+static Syn *compile_lazy_n(int tag, Node *t, int from, int n) {
+    Syn *s = syn(tag, n);
+    for (int i = 0; i < n; i++) s->k[i] = compile_lazy(t->it[from + i]);
     return s;
 }
 static Syn *compile_bound(int tag, Node *name, Node *body) {
@@ -1270,7 +1373,7 @@ static Syn *compile_case(Node *t) {
     Syn *s = syn(S_CASE, 2 + env.n);
     s->tab = tb; s->x = el;
     s->k[0] = compile(t->it[el ? 4 : 3]);
-    s->k[1] = el ? compile(t->it[2]) : NULL;
+    s->k[1] = el ? compile_lazy(t->it[2]) : NULL;
     for (int e = 0; e < env.n; e++) s->k[2 + e] = compile(nsym(env.v[e]));
     free(body); free(np);
     return s;
@@ -1315,7 +1418,7 @@ static Syn *compile(Node *t) {
     if (!strcmp(h, "plam")) return compile_bound(S_PLAM, t->it[1], t->it[2]);
     if (!strcmp(h, "forall")) return compile_bound(S_FORALL, t->it[1], t->it[2]);
     if (!strcmp(h, "let")) {
-        Syn *v = compile(t->it[2]);
+        Syn *v = compile_lazy(t->it[2]);
         Syn *s = compile_bound(S_LET, t->it[1], t->it[3]);
         s->k[1] = s->k[0]; s->k[0] = v; s->n = 2;
         return s;
@@ -1328,7 +1431,7 @@ static Syn *compile(Node *t) {
         if (c >= 0 && na == CON[c].nfields + CON[c].ndims) {
             Syn *r = syn(S_CON, na); r->id = c;
             Node *a = t;
-            for (int q = na - 1; q >= 0; q--) { r->k[q] = compile(a->it[2]); a = a->it[1]; }
+            for (int q = na - 1; q >= 0; q--) { r->k[q] = q < CON[c].nfields ? compile_lazy(a->it[2]) : compile(a->it[2]); a = a->it[1]; }
             return r;
         }
         /* a definition applied to arguments: one call cell (its body built at once when the
@@ -1337,16 +1440,20 @@ static Syn *compile(Node *t) {
         if (g >= 0 && G[g].kind != G_AXIOM && na >= 1) {
             Syn *r = syn(S_CALL, na); r->id = g;
             Node *a = t;
-            for (int q = na - 1; q >= 0; q--) { r->k[q] = compile(a->it[2]); a = a->it[1]; }
+            for (int q = na - 1; q >= 0; q--) {
+                bool strict = !getenv("CUBICAL_NOSTRICT") && q < G[g].nparams && q < 64 && (G[g].strict >> q & 1);
+                r->k[q] = strict ? compile(a->it[2]) : compile_lazy(a->it[2]);
+                a = a->it[1];
+            }
             return r;
         }
-        return compile_n(S_APP, t, 1, 2);
+        { Syn *s = syn(S_APP, 2); s->k[0] = compile(t->it[1]); s->k[1] = compile_lazy(t->it[2]); return s; }
     }
-    if (!strcmp(h, "pair")) return compile_n(S_PAIR, t, 1, 2);
+    if (!strcmp(h, "pair")) return compile_lazy_n(S_PAIR, t, 1, 2);
     if (!strcmp(h, "fst")) return compile_n(S_FST, t, 1, 1);
     if (!strcmp(h, "snd")) return compile_n(S_SND, t, 1, 1);
-    if (!strcmp(h, "Pi")) return compile_n(S_PI, t, 1, 2);
-    if (!strcmp(h, "Sigma")) return compile_n(S_SIGMA, t, 1, 2);
+    if (!strcmp(h, "Pi")) return compile_lazy_n(S_PI, t, 1, 2);
+    if (!strcmp(h, "Sigma")) return compile_lazy_n(S_SIGMA, t, 1, 2);
     if (!strcmp(h, "U")) {
         if (t->n == 1) return syn(S_U, 0);
         Node *l = t->it[1];
@@ -1384,7 +1491,7 @@ static Syn *compile(Node *t) {
             Syn *s = syn(S_GLOBTAB, 1); s->x = (uint32_t)q; s->k[0] = compile(t->it[1]); return s;
         }
     }
-    if (!strcmp(h, "PathP")) return compile_n(S_PATHP, t, 1, 3);
+    if (!strcmp(h, "PathP")) return compile_lazy_n(S_PATHP, t, 1, 3);
     if (!strcmp(h, "@")) { Syn *s = compile_n(S_PAPP, t, 1, t->n - 1); s->x = t->n == 5; return s; }
     if (!strcmp(h, "~")) return compile_n(S_NEG, t, 1, 1);
     if (!strcmp(h, "/\\")) { Syn *s = compile_n(S_BIN, t, 1, 2); s->x = B_MEET; return s; }
@@ -1428,11 +1535,12 @@ static Syn *compile(Node *t) {
     return NULL;
 }
 /* compile a closed top-level term into a frame of its own */
+static bool top_lazy;    /* a definition's body: built when first used */
 static Syn *compile_top(Node *t, int *nslots, int **uses) {
     nbinds = 0; nlevels = 1;
     GROW(levels, caplevels, 1);
     levels[0] = (Level){ 0 };
-    Syn *s = compile(ds(t));
+    Syn *s = top_lazy ? compile_lazy(ds(t)) : compile(ds(t));
     *nslots = levels[0].nslots; *uses = levels[0].uses;
     if (!*uses) *uses = calloc(1, sizeof(int));
     nlevels = 0;
@@ -1552,6 +1660,7 @@ static void rb_one(FILE *o, Port prov) {
     case V_NCOMP: push_fields_to(o, "comp", c, 1, 4); return;
     case V_NUNGLUE: push_fields_to(o, "unglue", c, 1, 3); return;
     case V_DEFER: push_port(defer_build(c)); return;
+    case V_THUNK: { extern Port thunk_build(Cell *c); push_port(thunk_build(c)); return; }
     case V_UNK: fputs("?", o); return;
     case V_DATA: if (c->n == 1) fputs(DATA[c->a].name, o); else push_fields(o, DATA[c->a].name, c, 1); return;
     case V_CON: if (c->n == 1) fputs(CON[c->a].name, o); else push_fields(o, CON[c->a].name, c, 1); return;
@@ -1735,7 +1844,25 @@ static void toplevel(Node *f) {
         if (fill_decl) G[g].kind = G_DEF; else g = add_global(f->it[1]->s, G_DEF);
         int ns; int *u;
         prof_enter(f->it[1]->s);
+        {
+            /* the parameters its body always reads */
+            Node *b = ds(f->it[2]); int np = 0; const char *pn[64];
+            G[g].nparams = 0; G[g].strict = 0;
+            while (b->list && b->n == 3 && is(b->it[0], "lam") && np < 64) { pn[np++] = param_name(b->it[1])->s; b = b->it[2]; }
+            uint64_t m = 0;
+            rd_bound.n = 0;
+            for (int q = 0; q < np; q++) names_add(&rd_bound, pn[q]);
+            for (int q = 0; q < np; q++) {
+                bool shadowed = false;
+                for (int r = q + 1; r < np; r++) if (!strcmp(pn[r], pn[q])) shadowed = true;
+                if (!shadowed && reads(b, pn[q])) m |= 1ull << q;
+            }
+            rd_bound.n = 0;
+            G[g].nparams = np; G[g].strict = m;
+        }
+        top_lazy = true;
         Syn *s = compile_top(f->it[2], &ns, &u);
+        top_lazy = false;
         G[g].body = s; G[g].nslots = ns; G[g].uses = u;
         {
             /* the body with all its parameters at once */

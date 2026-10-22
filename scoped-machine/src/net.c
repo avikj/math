@@ -40,11 +40,13 @@ static void payload_retain(Cell *c) {
     if (owns_dnf(c->kind)) dnf_retain(c->p); else if (owns_subst(c->kind)) subst_retain(c->p);
     else if (c->kind == V_REF) { __atomic_add_fetch(&((Box *)c->p)->rc, 1, __ATOMIC_RELAXED); if (c->a) subst_retain((Subst *)(uintptr_t)c->a); }
     else if (c->kind == V_WORD || c->kind == V_WPLUS) big_retain(c->p);
+    else if (c->kind == V_THUNK && c->a) subst_retain((Subst *)(uintptr_t)c->a);
 }
 static void payload_release(Cell *c) {
     if (owns_dnf(c->kind)) dnf_release(c->p); else if (owns_subst(c->kind)) subst_release(c->p);
     else if (c->kind == V_REF && c->p) { box_release(c->p); if (c->a) subst_release((Subst *)(uintptr_t)c->a); c->a = 0; }
     else if (c->kind == V_WORD || c->kind == V_WPLUS) big_release(c->p);
+    else if (c->kind == V_THUNK && c->a) { subst_release((Subst *)(uintptr_t)c->a); c->a = 0; }
     c->p = NULL;
 }
 void cell_free(Cell *c) { payload_release(c); Local *l = local(); c->a = (uint64_t)(uintptr_t)l->defer; l->defer = c; ADD(stat_cells, -1); }
@@ -143,9 +145,18 @@ static Box *box_new(Port val) {
  * reads it, one level per interaction. A value not yet there is copied by a duplicator when it
  * arrives. The rewrite holds the stored value and its neighbours (lockset). */
 static void box_hold(Box *b) { __atomic_add_fetch(&b->rc, 1, __ATOMIC_RELAXED); }
+Port thunk_build(Cell *v);
+Port unbuilt_build(Cell *v);
+static bool unbuilt(int k);
+static Port sub(Port prov, Subst *s);
 Port lazy_copy(Cell *root) {
     Port p = root->port[0];
     Cell *v = p ? PC(p) : NULL;
+    if (v && PI(p) == 0 && unbuilt(v->kind)) {
+        /* held unbuilt: built in place, once; this and later readers wait for its value */
+        link(unbuilt_build(v), P(root, 0));
+        p = root->port[0]; v = PC(p);
+    }
     if (!v || PI(p) != 0 || !is_value(v->kind)) {
         Cell *d = cell(O_DUP, 3);
         link(root->port[0], P(d, 0)); link(P(d, 1), P(root, 0));
@@ -155,7 +166,7 @@ Port lazy_copy(Cell *root) {
     for (int k = 1; k < v->n; k++) {
         Port q = v->port[k];
         Cell *qc = q ? PC(q) : NULL;
-        if (qc && PI(q) == 0 && is_value(qc->kind) && qc->n == 1) {
+        if (qc && PI(q) == 0 && is_value(qc->kind) && qc->n == 1 && !unbuilt(qc->kind)) {
             /* a part with no parts of its own (a reference, a word, a constant): itself */
             Cell *q2 = clone(qc);
             link(P(q2, 0), P(c, k));
@@ -170,7 +181,25 @@ Port lazy_copy(Cell *root) {
     return P(c, 0);
 }
 static Port box_copy(Box *b) { return lazy_copy(b->root); }
-static Port sub(Port prov, Subst *s);
+/* a subterm held unbuilt, built (its environment moved into the body) */
+/* an unbuilt subterm (a thunk, an induction hypothesis, a word's hypothesis), built */
+static bool unbuilt(int k) { return k == V_THUNK || k == V_SUSP || k == V_WSUSP; }
+static Port case_of_susp(Cell *v);
+static Port welim_of_wsusp(Cell *v);
+Port unbuilt_build(Cell *v) {
+    if (v->kind == V_SUSP) return case_of_susp(v);
+    if (v->kind == V_WSUSP) return welim_of_wsusp(v);
+    return thunk_build(v);
+}
+Port thunk_build(Cell *v) {
+    if (prof_on) ADD(prof_count[((Record *)v->p)->where], 1);
+    Port r = record_build(v->p, 0, &v->port[1]);
+    /* a substitution that reached it waits for its value (an identity's site inside the body
+     * names a dimension no environment holds) */
+    if (v->a) r = sub(r, (Subst *)(uintptr_t)v->a);
+    cell_free(v);
+    return r;
+}
 static Port word_of(uint64_t n) { Cell *c = cell(V_WORD, 1); c->a = n; return P(c, 0); }
 /* the number a word cell holds (a copy), and a word cell holding a number (taking it) */
 static WN cell_wn(const Cell *c) { WN r = { c->a, c->p }; return wn_copy(&r); }
@@ -271,8 +300,9 @@ static void rule_dup(Cell *o, Cell *v) {
         if (v->kind == V_CON && v->a < 4096) ADD(prof_con[v->a], 1);
         if (v->kind == V_GLOBAL && v->a < 65536) ADD(prof_glob[v->a], 1);
     }
-    if (v->n > 1) {
-        /* a value with parts is held once: each side a reference, read one level at a time */
+    if (v->n > 1 || unbuilt(v->kind)) {
+        /* a value with parts is held once: each side a reference, read one level at a time (a
+         * subterm held unbuilt is built once, by its first reader) */
         Box *bx = box_new(P(v, 0));
         Cell *r1 = cell(V_REF, 1), *r2 = cell(V_REF, 1);
         r1->p = bx; r2->p = bx; box_hold(bx);
@@ -302,8 +332,8 @@ static void rule_subst(Cell *o, Cell *v) {
     switch (v->kind) {
     case V_GLOBAL: case V_UNK:
         link(P(v, 0), out); cell_free(o); return;
-    case V_REF: {
-        /* the reference carries the substitution: nothing is copied */
+    case V_THUNK: case V_REF: {
+        /* the reference (the unbuilt subterm) carries the substitution: nothing is copied */
         Subst *t = v->a ? subst_compose((Subst *)(uintptr_t)v->a, s) : subst_retain(s);
         if (v->a) subst_release((Subst *)(uintptr_t)v->a);
         v->a = (uint64_t)(uintptr_t)t;
@@ -430,6 +460,11 @@ static void rule_subst(Cell *o, Cell *v) {
 static void rule_mkplam(Cell *o, Cell *v) {
     Dim i = (Dim)o->a;
     if (v->kind == V_REF) { link(ref_read(v), P(o, 0)); cell_free(v); return; }
+    if (unbuilt(v->kind)) {
+        if (o->kind == O_FORCE) { link(unbuilt_build(v), o->port[1]); cell_free(o); }
+        else link(unbuilt_build(v), P(o, 0));
+        return;
+    }
     Port out = o->port[1];
     if (v->kind == V_SYS) {
         Dnf *cl = v->p;
@@ -567,12 +602,6 @@ static void rule_view(Cell *o, Cell *v) {
     case V_PLAM: r = mk(WC[W_PLAM], P(v, 0), 0, 0, 0); keep = true; break;
     case V_IV: r = mk(WC[W_IV], P(v, 0), 0, 0, 0); keep = true; break;
     case V_FACE: r = mk(WC[W_FACE], P(v, 0), 0, 0, 0); keep = true; break;
-    case V_SUSP: {
-        /* an induction hypothesis is its elimination */
-        Cell *fo = cell(O_FORCE, 2), *w = cell(O_VIEW, 2);
-        link(P(fo, 1), P(w, 0)); link(P(w, 1), out); link(P(v, 0), P(fo, 0));
-        cell_free(o); return;
-    }
     case V_PAIR: r = mk(WC[W_PAIR], v->port[1], v->port[2], 0, 0); break;
     case V_WTY: r = con_build(WC[W_WORD], NULL, NULL); break;
     case V_WORD: r = mk(WC[W_WLIT], P(v, 0), 0, 0, 0); keep = true; break;
@@ -653,6 +682,20 @@ static void rule_view(Cell *o, Cell *v) {
     if (!keep) cell_free(v);
 }
 
+/* an induction hypothesis: the elimination of its field (1=field [2=motive] environment) */
+static Port case_of_susp(Cell *v) {
+    Cell *c = cell(O_CASE, v->n); c->x = v->x; c->p = v->p;
+    for (int k = 1; k < v->n; k++) link(v->port[k], P(c, k - 1));
+    cell_free(v);
+    return P(c, c->n - 1);
+}
+/* a word's hypothesis: the elimination of its word (1=z 2=s 3=w) */
+static Port welim_of_wsusp(Cell *v) {
+    Cell *e = cell(O_WELIM, 4);
+    link(v->port[3], P(e, 0)); link(v->port[1], P(e, 1)); link(v->port[2], P(e, 2));
+    cell_free(v);
+    return P(e, 3);
+}
 /* words: a literal #k, k successors of a neutral (V_WPLUS), or a neutral. wsplit reads a word as
  * (k, base), base 0 for a literal; it returns the cell to free (the literal or V_WPLUS) */
 static Cell *wsplit(Cell *c, WN *k, Port *base) {
@@ -721,14 +764,8 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     if (v->kind == V_DEFER) { defer_force(o, v); return; }
-    if (v->kind == V_WSUSP) {
-        /* a word's suspended elimination, used: computed */
-        Cell *e = cell(O_WELIM, 4);
-        link(v->port[3], P(e, 0)); link(v->port[1], P(e, 1)); link(v->port[2], P(e, 2));
-        link(P(e, 3), P(o, 0));
-        cell_free(v);
-        return;
-    }
+    /* an unbuilt subterm meeting an operation is built (an explicit force of a hypothesis too) */
+    if (unbuilt(v->kind)) { link(unbuilt_build(v), P(o, 0)); return; }
     if (v->kind == V_REF) {
         /* the value is copied out of its box */
         link(ref_read(v), P(o, 0));
@@ -774,13 +811,6 @@ static void interact(Cell *o, Cell *v) {
         if (vk == V_LAM && ((Record *)v->p)->nparam == 0) {
             if (prof_on) ADD(prof_count[((Record *)v->p)->where], 1);
             link(record_build(v->p, 0, &v->port[1]), o->port[1]);
-            cell_free(o); cell_free(v);
-        } else if (vk == V_SUSP) {
-            /* an induction hypothesis forced: the elimination of its field */
-            /* 1=field [2=motive] environment → 0=field [1=motive] environment out */
-            Cell *c = cell(O_CASE, v->n); c->x = v->x; c->p = v->p;
-            for (int k = 1; k < v->n; k++) link(v->port[k], P(c, k - 1));
-            link(P(c, c->n - 1), o->port[1]);
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else { link(P(v, 0), o->port[1]); cell_free(o); }
@@ -1660,8 +1690,8 @@ static Port build(Syn *t, Frame *f) {
         if (s->cur >= s->n) { fprintf(stderr, "internal: slot %d used beyond its count\n", t->slot); exit(2); }
         return s->sup[s->cur++];
     }
-    case S_LAM:
-        c = cell(V_LAM, t->n + 1); c->p = t->rec;
+    case S_LAM: case S_THUNK:
+        c = cell(t->tag == S_LAM ? V_LAM : V_THUNK, t->n + 1); c->p = t->rec;
         for (int k = 0; k < t->n; k++) link(build(t->k[k], f), P(c, k + 1));
         return P(c, 0);
     case S_APP: c = cell(O_APP, 3); link(build(t->k[0], f), P(c, 0)); link(build(t->k[1], f), P(c, 1)); return P(c, 2);

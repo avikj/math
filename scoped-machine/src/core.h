@@ -120,6 +120,8 @@ enum {
     V_WORD,     /* a natural number in one cell: a=it, or p=Big when it does not fit in 64 bits */
     V_WSUSP,    /* 1=z 2=s 3=a word: the elimination of that word, computed when used (a hypothesis) */
     V_WTY,      /* the type of words */
+    V_THUNK,    /* p=Record (no parameter); 1..=environment: a subterm not yet built; an operation meeting
+                 * it builds it, a duplicator holds it once (built in place on first read) */
     V_WPLUS,    /* a=k ≥ 1 (or p=Big); 1=a neutral word x: k successors of x */
     V_NWOP,     /* x=the operation (O_WEQ..O_WSUB); 1=a 2=b: a word operation stuck on a neutral */
     V_NWELIM,   /* 1=w 2=z 3=s: the elimination of a neutral word */
@@ -265,6 +267,7 @@ enum {
     S_BOX,      /* k[0]: the value, held once and referred to */
     S_WORD,     /* id: a word literal #n */
     S_WORDTY,   /* the type Word */
+    S_THUNK,    /* rec: a subterm held unbuilt (V_THUNK), its environment k[0..n-1] */
     S_CALL      /* id: the definition; k: its arguments */
 };
 struct Record;

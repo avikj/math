@@ -119,6 +119,18 @@ I. [x] A reference carries a substitution: substituting a dimension in a V_REF c
    references carrying the substitution on. Before, a restriction copied the whole stored value
    (a variable's type at every occurrence). lemIso 309k → 46k. State: boxes 1.38M; sort 0.90M;
    tests/check.ctt 0.14M; tests/cubical.ctt 10k → 5k.
+J. [x] Dimension names 64-bit (were 32-bit counters, aliasing after 2^31).
+K. [x] Words exact (src/big.c: inline when < 2^64, else a refcounted limb payload; literals parsed
+   exactly). Before, %wadd wrapped mod 2^64, contradicting Word ≃ Nat (2^64 + 0 == 0 gave true).
+L. [x] Demand. A subterm in a position whose value may not be read is V_THUNK (syntax + env),
+   built when an operation meets it; erased by erasing its env; a duplicator boxes it and the first
+   reader builds it in place (built once); a substitution composes onto it and is applied to the
+   built value (an identity site inside names a dimension no env holds). V_SUSP/V_WSUSP are the
+   same kind of subterm (one generic rule). Trivial subterms (variables, constants, λ, value
+   formers) are built directly; arguments a definition always reads (strictness analysis `reads`
+   in lang.c, conservative for unanalysed definitions) are built where passed. Lifted subterms and
+   definition bodies are lazy. (fst (pair zero (loop zero))) = zero (it never answered before).
+   State: sort reading 11.9k → 1.5k; tests/check.ctt 0.14M; std 0.37M; boxes 1.39M; sort 0.88M.
 
 ## The spec, as it bears on the code (paper references)
 
