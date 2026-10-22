@@ -218,8 +218,8 @@
 ; (%welimP P w z s): z : P #0, s : Π n. P n → P (n+1). Word ≃ Nat is proved here, and each of the
 ; machine's operations on words (%wadd %weq %wlt %wmax %wsub) is the 1-end of a checked identity
 ; whose 0-end is its definition by induction (paper 5.26): the machine computing one cell at a
-; time is a theorem of the theory, not an outside convention. (A word is bounded by the machine's
-; word size as a term is by its memory.)
+; time is a theorem of the theory, not an outside convention. Words are exact: a number that does
+; not fit in 64 bits is held as its limbs.
 (checked toNat (Pi w Word Nat) (lam w (%welimP (lam v Nat) w zero (lam n h (suc h)))))
 (checked fromNat (Pi n Nat Word) (lam n (case n ((zero) #0) ((suc k) (%wsucc (rec k))))))
 (checked toNat-fromNat (Pi n Nat (PathP (plam i Nat) (toNat (fromNat n)) n))
