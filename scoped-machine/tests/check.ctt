@@ -112,8 +112,8 @@
 (checked-data-fail (data Neg (mk (f (Pi x Neg B)))))
 (checked-data-fail (data Ov (o1) (o2) (ov (dims i) ((= i 0) o1) ((= i 0) o2))))
 ; the evaluator over codes of data
-(same (eval-g (pair no-globals %dtab4) t0 (code (s2 (s2 z2)))) (s2 (s2 z2)))
-(same (eval-g (pair no-globals %dtab4) t0 (code (elim (lam y C1) (cl 1) ((cb) cb) ((cl i) (cl (~ i)))))) cb)
+(same (eval-g t0 (code (s2 (s2 z2)))) (s2 (s2 z2)))
+(same (eval-g t0 (code (elim (lam y C1) (cl 1) ((cb) cb) ((cl i) (cl (~ i)))))) cb)
 ; universe levels: one definition at every level
 (checked pidf (Pi l Level (Pi A (U l) (Pi x A A))) (lam l A x x))
 (check (Pi A U (Pi x A A)) (lam A x (pidf lzero A x)))
@@ -135,7 +135,7 @@
 (checked-data-fail (data (Bx (l Level) (A (U l))) (bx (a A))))
 ; a level-polymorphic definition runs on the machine, which carries levels and ignores them
 (same (pidf lzero T0 t0) t0)
-(same (eval-g (pair no-globals lnil) t0 (code (U (lsuc lzero)))) U)
+(same (eval-g t0 (code (U (lsuc lzero)))) (U 1))
 ; checked identities: L and R checked, the evidence checked at Π n. L n = R n
 (checked addz (Pi n N2 N2) (lam n (add2 n z2)))
 (checked idn (Pi n N2 N2) (lam n n))

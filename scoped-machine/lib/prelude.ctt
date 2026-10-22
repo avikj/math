@@ -4,6 +4,9 @@
 ; components as lines. A tube is a system of lines; transformations of a
 ; tube act branchwise with sysmap.
 
+; universe levels: U carries its level; lomega is the level of types quantifying over levels
+(data Level (lzero) (lsuc (l Level)) (lmax (a Level) (b Level)) (lomega))
+
 (def refl (lam x (plam i x)))
 
 ; fill^i A [φ ↦ u] a0 (r) = comp^j A(r∧j) [φ ↦ u(r∧j), (r=0) ↦ a0] a0
@@ -87,8 +90,6 @@
         (sysmap (lam %w (plam %i (f (@ %w %i)))) u)
         (f u0))))
 
-; universe levels: values the machine carries but never eliminates; U ignores its level
-(data Level (lzero) (lsuc (l Level)) (lmax (a Level) (b Level)))
 
 ; data types
 (data Bool (true) (false))

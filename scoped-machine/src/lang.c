@@ -73,7 +73,7 @@ static bool node_eq(Node *a, Node *b) {
 /* ---------------- desugaring to the core forms ---------------- */
 static const char *KW[] = { "lam", "thunk", "delay", "force", "case", "elim", "if", "rec", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
     "PathP", "@", "~", "/\\", "\\/", "=", "&", "|", "faceof", "sys", "sys0", "sys+", "sysmap", "comp", "Glue", "glue",
-    "unglue", NULL };
+    "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", NULL };
 static bool keyword(const char *s) { for (int i = 0; KW[i]; i++) if (!strcmp(KW[i], s)) return true; return false; }
 static Node *param_name(Node *p) { return p->list ? p->it[0] : p; }
 
@@ -83,6 +83,7 @@ ConInfo *CON; static size_t capcon; static int ncon;
 DataInfo *DATA; static size_t capdata; static int ndata;
 long case_hcomp_global = -1;
 static int con_lookup(const char *s) { for (int i = ncon - 1; i >= 0; i--) if (!strcmp(CON[i].name, s)) return i; return -1; }
+int con_index(const char *name) { return con_lookup(name); }
 static int data_lookup(const char *s) { for (int i = ndata - 1; i >= 0; i--) if (!strcmp(DATA[i].name, s)) return i; return -1; }
 
 static Node *ds(Node *t);
@@ -173,7 +174,7 @@ static Node *ds(Node *t) {
             bool el = !strcmp(k, "elim");
             int first = el ? 3 : 2;
             if (t->n < first + 1) die(el ? "(elim P e branch...)" : "(case e branch...)", NULL);
-            int d = -1; Node *dflt = NULL;
+            int d = -1; Node *dflt = NULL; Node *dname = NULL;
             if (t->n == first + 1 && !t->it[first]->list && data_lookup(t->it[first]->s) >= 0 && DATA[data_lookup(t->it[first]->s)].ncons == 0) {
                 /* a type with no constructors: (case e D), (elim P e D), no branches */
                 int d0 = data_lookup(t->it[first]->s);
@@ -185,7 +186,12 @@ static Node *ds(Node *t) {
             for (int i = first; i < t->n; i++) {
                 Node *br = t->it[i];
                 if (!br->list || br->n != 2) die("malformed case branch", NULL);
-                if (!br->it[0]->list && is(br->it[0], "_")) { dflt = br->it[1]; continue; }
+                if (!br->it[0]->list) {
+                    /* a default branch: (_ body), or (x body) with x the scrutinee, rebuilt from the
+                     * fields of whichever constructor it is */
+                    dflt = br->it[1]; dname = is(br->it[0], "_") ? NULL : br->it[0];
+                    continue;
+                }
                 if (!br->it[0]->list || br->it[0]->n < 1) die("case branch pattern must be (C x...)", NULL);
                 int c = con_lookup(br->it[0]->it[0]->s);
                 if (c < 0) die("unknown constructor", br->it[0]->it[0]->s);
@@ -206,7 +212,18 @@ static Node *ds(Node *t) {
                     Node *br = t->it[i];
                     if (br->it[0]->list && !strcmp(br->it[0]->it[0]->s, c->name)) { pat = br->it[0]; body = br->it[1]; }
                 }
-                if (!body) { if (!dflt) die("case misses constructor", c->name); body = dflt; }
+                if (!body) {
+                    if (!dflt) die("case misses constructor", c->name);
+                    body = dflt;
+                    if (dname) {
+                        static int ndf;
+                        int na = c->nfields + c->ndims;
+                        pat = nlist(na + 1); pat->it[0] = nsym(c->name);
+                        Node *rebuilt = nsym(c->name);
+                        for (int q = 0; q < na; q++) { char nm[32]; snprintf(nm, sizeof nm, "%%df%d", ndf++); pat->it[q + 1] = nsym(nm); rebuilt = nl3("app", rebuilt, nsym(nm)); }
+                        body = nlist(4); body->it[0] = nsym("let"); body->it[1] = dname; body->it[2] = rebuilt; body->it[3] = dflt;
+                    }
+                }
                 /* a branch takes the induction hypotheses of its recursive fields when its body
                  * uses one: λ fields, hypotheses, dimensions, of a thunk of the body, so nothing
                  * in an unselected branch, and no recursive call lifted out of it, is computed */
@@ -326,12 +343,19 @@ static Node *ds(Node *t) {
 static const char **cscope; static size_t capcscope; static int ncscope;
 static char **CHECKED; static size_t capchecked; static int nchecked;
 static int *CHKDATA; static size_t capchkdata; static int nchkdata;   /* checked data types, in signature order */
-static int nsig;                                                     /* versions of the checker's signature */
 static int checked_index(const char *s) { for (int i = nchecked - 1; i >= 0; i--) if (!strcmp(CHECKED[i], s)) return i; return -1; }
 /* inputs that are the evidence of a checked identity: their supply is checked */
 typedef struct { long g; int iL, iR, n; } ChkId;
 static ChkId *CHKID; static size_t capchkid; static int nchkid;
 static int chk_index(int d) { for (int i = 0; i < nchkdata; i++) if (CHKDATA[i] == d) return i; return -1; }
+int data_checked_index(int d) { return chk_index(d); }
+/* the checker's tables: entry i of each is a global, so a lookup is a reference */
+static long *TABLE[TB_N]; static size_t TABCAP[TB_N]; static long TABN[TB_N];
+static void table_set(int t, long i, long g) {
+    if ((size_t)i >= TABCAP[t]) { size_t nc = TABCAP[t] ? TABCAP[t] * 2 : 64; while (nc <= (size_t)i) nc *= 2; TABLE[t] = realloc(TABLE[t], nc * sizeof(long)); TABCAP[t] = nc; }
+    TABLE[t][i] = g; if (i >= TABN[t]) TABN[t] = i + 1;
+}
+long table_global(int t, long i) { return t >= 0 && t < TB_N && i >= 0 && i < TABN[t] ? TABLE[t][i] : -1; }
 static Node *numeral(int n) { Node *x = nsym("nz"); for (int i = 0; i < n; i++) x = nl3("app", nsym("ns"), x); return x; }
 static Node *capp1(const char *c, Node *a) { return nl3("app", nsym(c), a); }
 static Node *capp2(const char *c, Node *a, Node *b) { return nl3("app", nl3("app", nsym(c), a), b); }
@@ -580,7 +604,10 @@ long global_lookup(const char *name) {
     while (GH[j] >= 0) { if (!strcmp(G[GH[j]].name, name)) return GH[j]; j = (j + 1) & (capGH - 1); }
     return -1;
 }
-const char *name_of(long id) { return id >= FRESH_BASE ? fresh_names[id - FRESH_BASE] : G[id].name; }
+const char *name_of(long id) {
+    if ((uint64_t)id & LVL_TAG) { static __thread char b[8][32]; static __thread int bi; char *r = b[bi++ & 7]; snprintf(r, 32, "v%llu", (unsigned long long)((uint64_t)id & ~LVL_TAG)); return r; }
+    return id >= FRESH_BASE ? fresh_names[id - FRESH_BASE] : G[id].name;
+}
 static long fresh_var(const char *pfx, long k) {
     if (nfresh == capfresh) { capfresh = capfresh ? capfresh * 2 : 64; fresh_names = realloc(fresh_names, (size_t)capfresh * sizeof(char *)); }
     char b[32]; snprintf(b, sizeof b, "%s%ld", pfx, k);
@@ -1002,7 +1029,26 @@ static Syn *compile(Node *t) {
     if (!strcmp(h, "snd")) return compile_n(S_SND, t, 1, 1);
     if (!strcmp(h, "Pi")) return compile_n(S_PI, t, 1, 2);
     if (!strcmp(h, "Sigma")) return compile_n(S_SIGMA, t, 1, 2);
-    if (!strcmp(h, "U")) return syn(S_U, 0);
+    if (!strcmp(h, "U")) {
+        if (t->n == 1) return syn(S_U, 0);
+        Node *l = t->it[1];
+        if (!l->list && l->s[0] >= '0' && l->s[0] <= '9') { Node *z = nsym("lzero"); for (int q = atoi(l->s); q > 0; q--) z = nl3("app", nsym("lsuc"), z); l = z; }
+        Syn *s = syn(S_U, 1); s->k[0] = compile(l); return s;
+    }
+    {
+        static const struct { const char *name; int kind, n; } PR[] = { { "%view", O_VIEW, 1 }, { "%var", O_MKVAR, 2 },
+            { "%dim", O_MKDIM, 1 }, { "%ieq", O_IEQ, 2 }, { "%feq", O_FEQL, 2 }, { "%clauses", O_CLAUSES, 1 },
+            { "%restrict", O_RESTRICT, 2 }, { "%abs", O_ABS, 2 }, { "%branch", O_BRANCH, 3 }, { NULL, 0, 0 } };
+        for (int q = 0; PR[q].name; q++) if (!strcmp(h, PR[q].name)) {
+            if (t->n != PR[q].n + 1) die("wrong number of operands in", h);
+            Syn *s = compile_n(S_PRIM, t, 1, PR[q].n); s->x = (uint32_t)PR[q].kind; return s;
+        }
+        static const char *TBN[TB_N] = { "%gval", "%gty", "%dtab", "%dent" };
+        for (int q = 0; q < TB_N; q++) if (!strcmp(h, TBN[q])) {
+            if (t->n != 2) die("wrong number of operands in", h);
+            Syn *s = syn(S_GLOBTAB, 1); s->x = (uint32_t)q; s->k[0] = compile(t->it[1]); return s;
+        }
+    }
     if (!strcmp(h, "PathP")) return compile_n(S_PATHP, t, 1, 3);
     if (!strcmp(h, "@")) { Syn *s = compile_n(S_PAPP, t, 1, t->n - 1); s->x = t->n == 5; return s; }
     if (!strcmp(h, "~")) return compile_n(S_NEG, t, 1, 1);
@@ -1125,7 +1171,11 @@ static void rb_one(FILE *o, Port prov) {
         push_binder(c, 2); push_field(c, 1);
         return;
     case V_PAIR: push_fields(o, "pair", c, 1); return;
-    case V_U: fputs("U", o); return;
+    case V_U: {
+        Cell *lc = PC(c->port[1]);
+        if (lc && lc->kind == V_CON && !strcmp(CON[lc->a].name, "lzero")) { fputs("U", o); return; }
+        fputs("(U ", o); push_str(")"); push_field(c, 1); return;
+    }
     case V_PATHP: push_fields(o, "PathP", c, 1); return;
     case V_PLAM: {
         GROW(dshow, capdshow, (size_t)ndshow + 1);
@@ -1345,10 +1395,8 @@ static void toplevel(Node *f) {
         int at = define ? 2 : 1;
         if (f->n != at + 2) die(define ? "(checked name T t)" : "(check T t)", NULL);
         Node *T = f->it[at], *t = f->it[at + 1];
-        char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
-        Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
         Node *cT = intern_code(to_code(ds(T))), *ct = intern_code(to_code(ds(t)));
-        Node *q = nl4("chk-def", sign, cT, ct);
+        Node *q = nl3("chk-def", cT, ct);
         long steps;
         char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
         bool ok = !strcmp(r, tr) == expect;
@@ -1360,16 +1408,15 @@ static void toplevel(Node *f) {
         if (define && ok) {
             Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = f->it[1]; d->it[2] = t;
             toplevel(d);
-            /* the signature holds each entry as a definition of its own, so a lookup
-             * copies references, not the entries */
-            char sig2[32], ent[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nsig + 1); snprintf(ent, sizeof ent, "%%sent%d", nsig);
-            Node *ed = nlist(3); ed->it[0] = nsym("def"); ed->it[1] = nsym(ent); ed->it[2] = nl4("sig-entry", sign, cT, ct);
-            toplevel(ed);
-            Node *sd = nlist(3); sd->it[0] = nsym("def"); sd->it[1] = nsym(sig2); sd->it[2] = nl3("sig-push", sign, nsym(ent));
+            /* the checker's tables: the definition and its type, each a global, so a lookup
+             * is a reference */
+            char ty[32]; snprintf(ty, sizeof ty, "%%sty%d", nchecked);
+            Node *td = nlist(3); td->it[0] = nsym("def"); td->it[1] = nsym(ty); td->it[2] = nl2("sig-type", cT);
+            toplevel(td);
+            table_set(TB_VAL, nchecked, global_lookup(f->it[1]->s));
+            table_set(TB_TY, nchecked, global_lookup(ty));
             GROW(CHECKED, capchecked, (size_t)nchecked + 1);
             CHECKED[nchecked++] = strdup(f->it[1]->s);
-            toplevel(sd);
-            nsig++;
         }
     } else if (!strcmp(h, "checked-identity") || !strcmp(h, "checked-identity-fail")) {
         /* (checked-identity L R p [n]): L and R checked definitions of one type, p a checked
@@ -1385,12 +1432,10 @@ static void toplevel(Node *f) {
         if (n < 1) n = 1;
         bool input = ip < 0 && gp >= 0 && G[gp].kind == G_INPUT && !G[gp].res->port[0];
         if (ip < 0 && !input) die("checked-identity: the evidence must be a checked definition or an unsupplied input:", f->it[3]->s);
-        char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
-        Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
-        Node *q = nlist(input ? 5 : 6);
-        q->it[0] = nsym(input ? "id-type-ok" : "chk-identity-def"); q->it[1] = sign;
-        q->it[2] = numeral(iL); q->it[3] = numeral(iR); q->it[4] = numeral(n);
-        if (!input) q->it[5] = numeral(ip);
+        Node *q = nlist(input ? 4 : 5);
+        q->it[0] = nsym(input ? "id-type-ok" : "chk-identity-def");
+        q->it[1] = numeral(iL); q->it[2] = numeral(iR); q->it[3] = numeral(n);
+        if (!input) q->it[4] = numeral(ip);
         long steps;
         char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
@@ -1418,9 +1463,7 @@ static void toplevel(Node *f) {
         if (chk) {
             int iL = checked_index(f->it[1]->s), ie = checked_index(f->it[2]->s);
             if (iL < 0 || ie < 0) die("checked-identity-from: L and e must be checked definitions", NULL);
-            char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
-            Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
-            Node *q = nlist(5); q->it[0] = nsym("chk-optimizer"); q->it[1] = sign; q->it[2] = numeral(iL); q->it[3] = numeral(n); q->it[4] = numeral(ie);
+            Node *q = nlist(4); q->it[0] = nsym("chk-optimizer"); q->it[1] = numeral(iL); q->it[2] = numeral(n); q->it[3] = numeral(ie);
             long steps;
             char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
@@ -1494,33 +1537,34 @@ static void toplevel(Node *f) {
             free(ft);
         }
         ncscope = base;
-        Node *ent = intern_code(capp3("dent", code_list(pt, np), code_list(ce, DATA[d].ncons), nsym("nz")));
+        Node *ent = intern_code(capp3("dent", code_list(pt, np), code_list(ce, DATA[d].ncons), nsym("lzero")));
         free(pt); free(ce);
-        char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
-        Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
+        int di = nchkdata - 1;
+        /* the tables while it is checked: its declaration at level lzero, and the machine's data
+         * type, constructors, elimination and case for the evaluator */
+        char den[32], dtn[32]; snprintf(den, sizeof den, "%%dentp%d", di); snprintf(dtn, sizeof dtn, "%%dtab%d", di);
+        Node *pd = nlist(3); pd->it[0] = nsym("def"); pd->it[1] = nsym(den); pd->it[2] = ent;
+        toplevel(pd);
+        Node **cs = calloc((size_t)DATA[d].ncons + 1, sizeof(Node *));
+        for (int ci = 0; ci < DATA[d].ncons; ci++) cs[ci] = nsym(CON[DATA[d].cons[ci]].name);
+        char en[256], cn[256]; snprintf(en, sizeof en, "%%elim-%s", DATA[d].name); snprintf(cn, sizeof cn, "%%case-%s", DATA[d].name);
+        Node *td = nlist(3); td->it[0] = nsym("def"); td->it[1] = nsym(dtn);
+        td->it[2] = capp4("dtab", nsym(DATA[d].name), code_list(cs, DATA[d].ncons), nsym(en), nsym(cn));
+        free(cs);
+        toplevel(td);
+        table_set(TB_DENT, di, global_lookup(den));
+        table_set(TB_DTAB, di, global_lookup(dtn));
         long steps;
-        char *r = readback(nl3("chk-data", sign, ent), &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+        char *r = readback(nl3("chk-data", numeral(di), ent), &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
         printf("%s: %s data %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", DATA[d].name, steps);
         free(r); free(tr);
         if (!accepted) { nchkdata--; return; }
-        char sig2[32], den[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nsig + 1); snprintf(den, sizeof den, "%%dent%d", nsig);
-        Node *ed = nlist(3); ed->it[0] = nsym("def"); ed->it[1] = nsym(den); ed->it[2] = nl3("data-entry", sign, ent);
+        char dent[32]; snprintf(dent, sizeof dent, "%%dent%d", di);
+        Node *ed = nlist(3); ed->it[0] = nsym("def"); ed->it[1] = nsym(dent); ed->it[2] = nl3("data-entry", numeral(di), ent);
         toplevel(ed);
-        Node *sd = nlist(3); sd->it[0] = nsym("def"); sd->it[1] = nsym(sig2); sd->it[2] = nl3("sig-push-data", sign, nsym(den));
-        toplevel(sd);
-        /* the evaluator's table of the machine's data types */
-        char dt[32], dt2[32]; snprintf(dt, sizeof dt, "%%dtab%d", nchkdata - 1); snprintf(dt2, sizeof dt2, "%%dtab%d", nchkdata);
-        Node **cs = calloc((size_t)DATA[d].ncons + 1, sizeof(Node *));
-        for (int ci = 0; ci < DATA[d].ncons; ci++) cs[ci] = nsym(CON[DATA[d].cons[ci]].name);
-        char en[256], cn[256]; snprintf(en, sizeof en, "%%elim-%s", DATA[d].name); snprintf(cn, sizeof cn, "%%case-%s", DATA[d].name);
-        Node *row = capp4("dtab", nsym(DATA[d].name), code_list(cs, DATA[d].ncons), nsym(en), nsym(cn));
-        free(cs);
-        Node *td = nlist(3); td->it[0] = nsym("def"); td->it[1] = nsym(dt2);
-        td->it[2] = nl3("cl-app", nchkdata > 1 ? nsym(dt) : nsym("lnil"), capp2("lcons", row, nsym("lnil")));
-        toplevel(td);
-        nsig++;
+        table_set(TB_DENT, di, global_lookup(dent));
     } else if (!strcmp(h, "declare")) {
         /* a name already declared and not yet given is declared once */
         for (int i = 1; i < f->n; i++) {
@@ -1755,10 +1799,8 @@ static void toplevel(Node *f) {
         bool expect = !strcmp(h, "supply");
         for (int i = 0; i < nchkid; i++) if (CHKID[i].g == g) {
             /* the evidence of a checked identity: checked at the identity's type first */
-            char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
-            Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
-            Node *q = nlist(6); q->it[0] = nsym("chk-identity"); q->it[1] = sign;
-            q->it[2] = numeral(CHKID[i].iL); q->it[3] = numeral(CHKID[i].iR); q->it[4] = numeral(CHKID[i].n); q->it[5] = intern_code(to_code(ds(f->it[2])));
+            Node *q = nlist(5); q->it[0] = nsym("chk-identity");
+            q->it[1] = numeral(CHKID[i].iL); q->it[2] = numeral(CHKID[i].iR); q->it[3] = numeral(CHKID[i].n); q->it[4] = intern_code(to_code(ds(f->it[2])));
             long steps;
             char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
             bool accepted = !strcmp(r, tr), ok = accepted == expect;

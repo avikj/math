@@ -289,3 +289,24 @@ void dnf_print(FILE *o, const Dnf *x, bool face, DimName nm) {
     }
     if (x->n > 1) fputs(")", o);
 }
+
+/* equality of canonical forms: the same antichain of clauses, each the same set of literals */
+static bool clause_equal(const Clause *a, const Clause *b) {
+    if (a->n != b->n) return false;
+    for (uint32_t i = 0; i < a->n; i++) {
+        bool found = false;
+        for (uint32_t j = 0; j < b->n && !found; j++) found = a->l[i] == b->l[j];
+        if (!found) return false;
+    }
+    return true;
+}
+bool dnf_equal(const Dnf *x, const Dnf *y) {
+    uint32_t nx = x ? x->n : 0, ny = y ? y->n : 0;
+    if (nx != ny) return false;
+    for (uint32_t i = 0; i < nx; i++) {
+        bool found = false;
+        for (uint32_t j = 0; j < ny && !found; j++) found = clause_equal(x->c[i], y->c[j]);
+        if (!found) return false;
+    }
+    return true;
+}

@@ -3,22 +3,22 @@
 (def v0 (cvar nz)) (def v1 (cvar (ns nz))) (def v2 (cvar (ns (ns nz)))) (def v3 (cvar (ns (ns (ns nz)))))
 
 (same (eval junk (clam (cpair v0 v0))) (lam x (pair x x)))
-(same (eval (pair junk (pair a junk)) (capp (clam v0) v1)) a)
-(same (eval (pair a (pair b junk)) (cfst (cpair v0 v1))) a)
+(same (eval (lcons junk (lcons a junk)) (capp (clam v0) v1)) a)
+(same (eval (lcons a (lcons b junk)) (cfst (cpair v0 v1))) a)
 ; codes written from source text: (code t)
 (same (eval junk (code (lam x (pair x x)))) (lam x (pair x x)))
 (same (eval junk (code (plam i (sys ((= i 0) i))))) (plam i (sys ((= i 0) i))))
 ; a line, a system under it, an endpoint
-(same (eval (pair a junk) (cplam (csysc (ceq0 v0) v1 csys0))) (plam i (sys ((= i 0) a))))
+(same (eval (lcons a junk) (cplam (csysc (ceq0 v0) v1 csys0))) (plam i (sys ((= i 0) a))))
 ; composition and Glue through codes
-(same (eval (pair A (pair f junk)) (ccomp (cplam (cpi v1 v2)) (cplam csys0) v1))
+(same (eval (lcons A (lcons f junk)) (ccomp (cplam (cpi v1 v2)) (cplam csys0) v1))
       (transp (plam i (Pi x A A)) f))
-(same (eval (pair A (pair (idequiv A) (pair a junk))) (cunglue (csysc cftt (cpair v0 v1) csys0) v2)) a)
+(same (eval (lcons A (lcons (idequiv A) (lcons a junk))) (cunglue (csysc cftt (cpair v0 v1) csys0) v2)) a)
 ; transport along ua, posed as a code
-(same (eval (pair a (pair ua (pair A (pair (idequiv A) junk))))
+(same (eval (lcons a (lcons ua (lcons A (lcons (idequiv A) junk))))
             (ccomp (cplam (cpapp (capp (capp (capp v2 v3) v3) (cvar (ns (ns (ns (ns nz)))))) v0)) (cplam csys0) v0))
       (transp (ua A A (idequiv A)) a))
 ; a statement about the evaluator is a term: the path from (eval code) to its value
-(same (@ (plam i (eval (pair a junk) (cpair v0 v0))) 0) (pair a a))
+(same (@ (plam i (eval (lcons a junk) (cpair v0 v0))) 0) (pair a a))
 ; the evaluator evaluates codes of data
-(same (eval (pair add (pair (suc (suc zero)) junk)) (capp (capp v0 v1) v1)) (suc (suc (suc (suc zero)))))
+(same (eval (lcons add (lcons (suc (suc zero)) junk)) (capp (capp v0 v1) v1)) (suc (suc (suc (suc zero)))))

@@ -33,7 +33,7 @@ Cell *cell(int kind, int n) {
     return c;
 }
 /* the payload a cell owns */
-static bool owns_dnf(int k) { return k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2 || k == V_NTRANS || k == O_TRANSD2; }
+static bool owns_dnf(int k) { return k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2 || k == V_NTRANS || k == O_TRANSD2 || k == O_IEQB || k == O_FEQLB; }
 static bool owns_subst(int k) { return k == O_SUBST || k == V_DEFER; }
 static void payload_retain(Cell *c) { if (owns_dnf(c->kind)) dnf_retain(c->p); else if (owns_subst(c->kind)) subst_retain(c->p); }
 static void payload_release(Cell *c) {
@@ -223,7 +223,7 @@ static void rule_subst(Cell *o, Cell *v) {
     Subst *s = o->p;
     Port out = o->port[1];
     switch (v->kind) {
-    case V_GLOBAL: case V_U: case V_UNK:
+    case V_GLOBAL: case V_UNK:
         link(P(v, 0), out); cell_free(o); return;
     case V_NVAR:
         link(sub(v->port[1], s), P(v, 1));
@@ -436,6 +436,130 @@ static void neutral_proj(Cell *o, Cell *v) {
     cell_free(o);
 }
 
+/* ---------------- values as data ----------------
+ * %view gives a value's head as a constructor of View (lib/code.ctt) whose fields are the
+ * value's own ports: nothing is copied, and a part is read further only by viewing it. */
+enum { W_LAM, W_PAIR, W_PI, W_SIGMA, W_U, W_PATH, W_PLAM, W_IV, W_FACE, W_SYS, W_GLUE, W_GLUEV, W_DATA, W_CON,
+       W_HCOMP, W_VAR, W_APP, W_FST, W_SND, W_PAPP, W_COMP, W_UNGLUE, W_ELIM, W_TRANS, W_LEVEL, W_OTHER, W_N };
+static const char *WNAME[W_N] = { "wlam", "wpair", "wpi", "wsigma", "wu", "wpath", "wplam", "wiv", "wface", "wsys", "wglue",
+    "wgluev", "wdata", "wcon", "whcomp", "wvar", "wapp", "wfst", "wsnd", "wpapp", "wcomp", "wunglue", "welim", "wtrans",
+    "wlevel", "wother" };
+static int WC[W_N], C_NZ = -1, C_NS, C_LNIL, C_LCONS, C_TRUE, C_FALSE;
+static void need_cons(void) {
+    if (C_NZ >= 0) return;
+    for (int w = 0; w < W_N; w++) if ((WC[w] = con_index(WNAME[w])) < 0) { fprintf(stderr, "%%view needs the data type View (lib/code.ctt)\n"); exit(2); }
+    C_NS = con_index("ns"); C_LNIL = con_index("lnil"); C_LCONS = con_index("lcons");
+    C_TRUE = con_index("true"); C_FALSE = con_index("false");
+    if (C_NS < 0 || C_LNIL < 0 || C_LCONS < 0 || C_TRUE < 0 || C_FALSE < 0) { fprintf(stderr, "the checker's data types are missing\n"); exit(2); }
+    __atomic_store_n(&C_NZ, con_index("nz"), __ATOMIC_RELEASE);
+}
+static Port mk(int c, Port a, Port b, Port d, Port e) {
+    Port f[4] = { a, b, d, e };
+    return con_build(c, f, NULL);
+}
+static Port numeral_of(uint64_t n) {
+    Port p = con_build(C_NZ, NULL, NULL);
+    for (uint64_t k = 0; k < n; k++) { Port f[1] = { p }; p = con_build(C_NS, f, NULL); }
+    return p;
+}
+static Port list_of(const Port *xs, int n) {
+    Port l = con_build(C_LNIL, NULL, NULL);
+    for (int k = n - 1; k >= 0; k--) l = mk(C_LCONS, xs[k], l, 0, 0);
+    return l;
+}
+static Port pair_of(Port a, Port b) { Cell *c = cell(V_PAIR, 3); link(a, P(c, 1)); link(b, P(c, 2)); return P(c, 0); }
+static Port face_cell(Dnf *f);
+static void rule_view(Cell *o, Cell *v) {
+    need_cons();
+    Port out = o->port[1], r = 0;
+    int vk = v->kind;
+    bool keep = false;   /* the value itself is the field */
+    switch (vk) {
+    case V_LAM: case V_SITEF: case V_CASEF: r = mk(WC[W_LAM], P(v, 0), 0, 0, 0); keep = true; break;
+    case V_PLAM: r = mk(WC[W_PLAM], P(v, 0), 0, 0, 0); keep = true; break;
+    case V_IV: r = mk(WC[W_IV], P(v, 0), 0, 0, 0); keep = true; break;
+    case V_FACE: r = mk(WC[W_FACE], P(v, 0), 0, 0, 0); keep = true; break;
+    case V_SUSP: {
+        /* an induction hypothesis is its elimination */
+        Cell *fo = cell(O_FORCE, 2), *w = cell(O_VIEW, 2);
+        link(P(fo, 1), P(w, 0)); link(P(w, 1), out); link(P(v, 0), P(fo, 0));
+        cell_free(o); return;
+    }
+    case V_PAIR: r = mk(WC[W_PAIR], v->port[1], v->port[2], 0, 0); break;
+    case V_PI: r = mk(WC[W_PI], v->port[1], v->port[2], 0, 0); break;
+    case V_SIGMA: r = mk(WC[W_SIGMA], v->port[1], v->port[2], 0, 0); break;
+    case V_U: r = mk(WC[W_U], v->port[1], 0, 0, 0); break;
+    case V_PATHP: r = mk(WC[W_PATH], v->port[1], v->port[2], v->port[3], 0); break;
+    case V_GLUE: r = mk(WC[W_GLUE], v->port[1], v->port[2], 0, 0); break;
+    case V_GLUEV: r = mk(WC[W_GLUEV], v->port[1], v->port[2], 0, 0); break;
+    case V_HCOMP: r = mk(WC[W_HCOMP], v->port[1], v->port[2], 0, 0); break;
+    case V_SYS: {
+        int nb = v->n - 1; Dnf *cl = v->p;
+        Port *bs = malloc((size_t)(nb + 1) * sizeof(Port));
+        for (int k = 0; k < nb; k++) bs[k] = pair_of(face_cell(face_of_clause(cl->c[k])), v->port[k + 1]);
+        r = mk(WC[W_SYS], list_of(bs, nb), 0, 0, 0);
+        free(bs);
+        break;
+    }
+    case V_DATA: {
+        int d = data_checked_index((int)v->a);
+        if (!strcmp(DATA[v->a].name, "Level")) { r = con_build(WC[W_LEVEL], NULL, NULL); break; }
+        if (d < 0) { for (int k = 1; k < v->n; k++) era(v->port[k]); r = con_build(WC[W_OTHER], NULL, NULL); break; }
+        r = mk(WC[W_DATA], numeral_of((uint64_t)d), list_of(&v->port[1], v->n - 1), 0, 0);
+        break;
+    }
+    case V_CON: {
+        /* a constructor of a checked data type, or of Level (as data type 0: levels are read by
+         * their constructors only); of any other, nothing the checker reads */
+        ConInfo *k = &CON[v->a];
+        int d = data_checked_index(k->data);
+        if (d < 0 && strcmp(DATA[k->data].name, "Level")) { for (int q = 1; q < v->n; q++) era(v->port[q]); r = con_build(WC[W_OTHER], NULL, NULL); break; }
+        r = mk(WC[W_CON], numeral_of((uint64_t)(d < 0 ? 0 : d)), numeral_of((uint64_t)k->index), list_of(&v->port[1], k->nfields), list_of(&v->port[1 + k->nfields], k->ndims));
+        break;
+    }
+    case V_NVAR:
+        if (v->a & LVL_TAG) r = mk(WC[W_VAR], numeral_of(v->a & ~LVL_TAG), v->port[1], 0, 0);
+        else { era(v->port[1]); r = con_build(WC[W_OTHER], NULL, NULL); }
+        break;
+    case V_NAPP: r = mk(WC[W_APP], v->port[1], v->port[2], v->port[3], 0); break;
+    case V_NFST: r = mk(WC[W_FST], v->port[1], v->port[2], 0, 0); break;
+    case V_NSND: r = mk(WC[W_SND], v->port[1], v->port[2], 0, 0); break;
+    case V_NPAPP: {
+        Cell *iv = cell(V_IV, 1); iv->p = dnf_retain(v->p);
+        if (v->x) { era(v->port[2]); era(v->port[3]); }
+        r = mk(WC[W_PAPP], v->port[1], P(iv, 0), v->port[v->n - 1], 0);
+        break;
+    }
+    case V_NCOMP: r = mk(WC[W_COMP], v->port[1], v->port[2], v->port[3], v->port[4]); break;
+    case V_NUNGLUE: r = mk(WC[W_UNGLUE], v->port[1], v->port[2], v->port[3], 0); break;
+    case V_NCASE: {
+        /* the elimination as a function of its scrutinee: its table, motive and environment */
+        CaseTab *tb = v->p;
+        if (data_checked_index(tb->d) < 0) { for (int q = 1; q < v->n; q++) era(v->port[q]); r = con_build(WC[W_OTHER], NULL, NULL); break; }
+        Cell *f = cell(V_CASEF, v->n - 2); f->x = v->x; f->p = tb;
+        for (int k = 2; k < v->n - 1; k++) link(v->port[k], P(f, k - 1));
+        r = mk(WC[W_ELIM], numeral_of((uint64_t)data_checked_index(tb->d)), v->port[1], P(f, 0), v->port[v->n - 1]);
+        break;
+    }
+    case V_NTRANS: {
+        int np = v->n - 3;
+        if (data_checked_index((int)v->a) < 0) { for (int q = 1; q < v->n; q++) era(v->port[q]); r = con_build(WC[W_OTHER], NULL, NULL); break; }
+        Cell *fc = cell(V_FACE, 1); fc->p = dnf_retain(v->p);
+        Port l = list_of(&v->port[2], np);
+        Port f[5] = { numeral_of((uint64_t)data_checked_index((int)v->a)), P(fc, 0), l, v->port[1], v->port[v->n - 1] };
+        r = con_build(WC[W_TRANS], f, NULL);
+        break;
+    }
+    default:
+        for (int k = 1; k < v->n; k++) era(v->port[k]);
+        r = con_build(WC[W_OTHER], NULL, NULL);
+        break;
+    }
+    link(r, out);
+    cell_free(o);
+    if (!keep) cell_free(v);
+}
+
 /* ---------------- the rules ---------------- */
 static void interact(Cell *o, Cell *v) {
     ADD(stat_steps, 1); ADD(stat_kind[o->kind], 1);
@@ -457,7 +581,7 @@ static void interact(Cell *o, Cell *v) {
     }
     if (v->kind == V_DEFER) { defer_force(o, v); return; }
     int vk = v->kind;
-    if (vk == V_UNK) {
+    if (vk == V_UNK && o->kind != O_VIEW) {
         /* an eliminator of an unknown type gives an unknown type */
         for (int k = 1; k < o->n - 1; k++) era(o->port[k]);
         link(P(v, 0), out_of(o));
@@ -604,7 +728,7 @@ static void interact(Cell *o, Cell *v) {
         case V_PATHP:
             args[0] = mkplam_of(v->port[1], i); args[1] = mkplam_of(v->port[2], i); args[2] = mkplam_of(v->port[3], i);
             args[3] = u; args[4] = a0; n = 5; clause = "%comp-path"; break;
-        case V_U: args[0] = u; args[1] = a0; n = 2; clause = "%comp-u"; break;
+        case V_U: era(v->port[1]); args[0] = u; args[1] = a0; n = 2; clause = "%comp-u"; break;
         case V_DATA: {
             /* CHM: comp = hcomp after transport; %comp-D is generated by the declaration */
             int np = v->n - 1;
@@ -924,6 +1048,144 @@ static void interact(Cell *o, Cell *v) {
         }
         return;
     }
+    case O_VIEW: rule_view(o, v); return;
+    case O_MKVAR: case O_MKDIM: case O_ABS: {
+        /* 0=level as a numeral: counted one successor per interaction */
+        need_cons();
+        if (vk != V_CON) { fprintf(stderr, "%%var/%%dim: a level is a numeral\n"); exit(2); }
+        if ((int)v->a == C_NS) {
+            Cell *c = cell(o->kind, o->n); c->a = o->a + 1;
+            for (int k = 1; k < o->n; k++) mv(o, k, P(c, k));
+            link(v->port[1], P(c, 0));
+            cell_free(o); cell_free(v);
+            return;
+        }
+        if (o->kind == O_MKVAR) {
+            Cell *n = cell(V_NVAR, 2); n->a = LVL_TAG | o->a; n->ty = 1;
+            mv(o, 1, P(n, 1)); link(P(n, 0), o->port[2]);
+        } else if (o->kind == O_ABS) {
+            Cell *m = cell(O_MKPLAM, 2); m->a = DIM_LVL + (Dim)o->a;
+            mv(o, 1, P(m, 0)); link(P(m, 1), o->port[2]);
+        } else {
+            Cell *iv = cell(V_IV, 1); iv->p = iv_atom(DIM_LVL + (Dim)o->a); link(P(iv, 0), o->port[1]);
+        }
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_GLOB: {
+        need_cons();
+        if (vk != V_CON) { fprintf(stderr, "%%gval/%%gty/%%dtab/%%dent: an index is a numeral\n"); exit(2); }
+        if ((int)v->a == C_NS) {
+            Cell *c = cell(O_GLOB, 2); c->x = o->x; c->a = o->a + 1;
+            mv(o, 1, P(c, 1)); link(v->port[1], P(c, 0));
+            cell_free(o); cell_free(v);
+            return;
+        }
+        long g = table_global((int)o->x, (long)o->a);
+        if (g < 0) { fprintf(stderr, "checker table %u has no entry %llu\n", o->x, (unsigned long long)o->a); exit(2); }
+        if (o->x == TB_VAL) {
+            /* a checked definition's own value: the checker does not follow the identities
+             * declared on it (they are what it checks) */
+            Port val = global_copy(g);
+            if (!val) { fprintf(stderr, "a checked definition without a value\n"); exit(2); }
+            link(val, o->port[1]);
+        } else { Cell *r = cell(V_GLOBAL, 1); r->a = (uint64_t)g; link(P(r, 0), o->port[1]); }
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_BRANCH: {
+        /* the branch of an elimination at given fields, hypotheses and dimensions */
+        if (vk != V_CASEF) { fprintf(stderr, "%%branch: not an elimination\n"); exit(2); }
+        CaseTab *tb = v->p;
+        int mb = v->x ? 1 : 0, ne = tb->nenv;
+        Cell *c = cell(O_BRANCHC, ne + 3); c->p = tb; c->a = 0;
+        mv(o, 1, P(c, 0)); mv(o, 2, P(c, 1));
+        if (mb) era(v->port[1]);
+        for (int e = 0; e < ne; e++) link(v->port[1 + mb + e], P(c, 2 + e));
+        link(P(c, ne + 2), o->port[3]);
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_BRANCHC: {
+        need_cons();
+        if (vk != V_CON) { fprintf(stderr, "%%branch: a constructor index is a numeral\n"); exit(2); }
+        Cell *c;
+        if ((int)v->a == C_NS) {
+            c = cell(O_BRANCHC, o->n); c->p = o->p; c->a = o->a + 1;
+            for (int k = 1; k < o->n; k++) mv(o, k, P(c, k));
+            link(v->port[1], P(c, 0));
+        } else {
+            /* 0=rest of the list, environment, out */
+            c = cell(O_BRANCHL, o->n - 1); c->p = o->p; c->a = o->a; c->x = 0;
+            for (int k = 2; k < o->n; k++) mv(o, k, P(c, k - 1));
+            mv(o, 1, P(c, 0));
+        }
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_BRANCHL: {
+        need_cons();
+        CaseTab *tb = o->p;
+        int ne = tb->nenv, np = (int)o->x;
+        if (vk != V_CON) { fprintf(stderr, "%%branch: parameters are a list\n"); exit(2); }
+        if ((int)v->a == C_LCONS) {
+            Cell *c = cell(O_BRANCHL, o->n + 1); c->p = tb; c->a = o->a; c->x = (uint32_t)np + 1;
+            for (int k = 1; k <= ne + np; k++) mv(o, k, P(c, k));
+            link(v->port[1], P(c, ne + np + 1));
+            mv(o, o->n - 1, P(c, c->n - 1));
+            link(v->port[2], P(c, 0));
+            cell_free(o); cell_free(v);
+            return;
+        }
+        /* the parameters are fields, a hypothesis per recursive field, dimensions; a branch not
+         * taking hypotheses is given the others */
+        ConInfo *ci = &CON[DATA[tb->d].cons[o->a]];
+        bool ih = ci->nrec && (tb->mask >> o->a & 1);
+        Port env[ne + 1], prm[np + 1];
+        int m = 0;
+        for (int e = 0; e < ne; e++) env[e] = o->port[1 + e];
+        for (int q = 0; q < np; q++) {
+            Port x = o->port[1 + ne + q];
+            if (!ih && q >= ci->nfields && q < ci->nfields + ci->nrec) era(x); else prm[m++] = x;
+        }
+        if (m != tb->br[o->a]->nparam) { fprintf(stderr, "%%branch: %d parameters for a branch of %d\n", m, tb->br[o->a]->nparam); exit(2); }
+        link(record_build_n(tb->br[o->a], prm, env), o->port[o->n - 1]);
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_IEQ: case O_FEQL: {
+        if (vk != (o->kind == O_IEQ ? V_IV : V_FACE)) { fprintf(stderr, "%%ieq/%%feq: not an interval or face\n"); exit(2); }
+        Cell *c = cell(o->kind == O_IEQ ? O_IEQB : O_FEQLB, 2); c->p = dnf_retain(v->p);
+        mv(o, 1, P(c, 0)); mv(o, 2, P(c, 1));
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_IEQB: case O_FEQLB: {
+        need_cons();
+        if (vk != (o->kind == O_IEQB ? V_IV : V_FACE)) { fprintf(stderr, "%%ieq/%%feq: not an interval or face\n"); exit(2); }
+        link(con_build(dnf_equal(o->p, v->p) ? C_TRUE : C_FALSE, NULL, NULL), o->port[1]);
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_CLAUSES: {
+        need_cons();
+        if (vk != V_FACE) { fprintf(stderr, "%%clauses: not a face\n"); exit(2); }
+        Dnf *d = v->p; int n = d ? (int)d->n : 0;
+        Port *cs = malloc((size_t)(n + 1) * sizeof(Port));
+        for (int k = 0; k < n; k++) cs[k] = face_cell(face_of_clause(d->c[k]));
+        link(list_of(cs, n), o->port[1]);
+        free(cs);
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_RESTRICT: {
+        if (vk != V_FACE || !v->p || ((Dnf *)v->p)->n != 1) { fprintf(stderr, "%%restrict: not a clause\n"); exit(2); }
+        Subst *t = subst_of_clause(((Dnf *)v->p)->c[0]);
+        link(sub(o->port[1], t), o->port[2]);
+        subst_release(t);
+        cell_free(o); cell_free(v);
+        return;
+    }
     case O_SYSMAP:
         if (vk == V_SYS) distribute(o, v);
         else { Cell *a = cell(O_APP, 3); mv(o, 1, P(a, 0)); link(P(v, 0), P(a, 1)); link(P(a, 2), o->port[2]); cell_free(o); }
@@ -1080,7 +1342,21 @@ static Port build(Syn *t, Frame *f) {
         return P(c, 0);
     case S_FST: return op1(O_FST, t->k[0], f);
     case S_SND: return op1(O_SND, t->k[0], f);
-    case S_U: return P(cell(V_U, 1), 0);
+    case S_U: {
+        /* U at its level: lzero when none is written */
+        c = cell(V_U, 2);
+        if (t->n) link(build(t->k[0], f), P(c, 1));
+        else { int z = con_index("lzero"); if (z < 0) { fprintf(stderr, "U needs Level (lib/prelude.ctt)\n"); exit(2); } link(con_build(z, NULL, NULL), P(c, 1)); }
+        return P(c, 0);
+    }
+    case S_GLOBTAB:
+        c = cell(O_GLOB, 2); c->x = t->x;
+        link(build(t->k[0], f), P(c, 0));
+        return P(c, 1);
+    case S_PRIM:
+        c = cell((int)t->x, t->n + 1);
+        for (int k = 0; k < t->n; k++) link(build(t->k[k], f), P(c, k));
+        return P(c, t->n);
     case S_PLAM: {
         Dim i = fresh_dim();
         bind_dim(f, t->slot, i);

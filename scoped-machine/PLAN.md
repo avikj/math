@@ -51,11 +51,20 @@ A. [x] `case` = one interaction (landed; one level of lebc: 22 → 5 interaction
    Hypotheses: V_SUSP holding the table, motive, field, environment copies; forcing it is a CASE.
    hcomp: %case-hcomp takes the case as a function value. Neutral case reads back with its branches
    built on fresh variables.
-B. [ ] The return path: an operation cell QUOTE that meets a normal value and emits its Code
-   constructor (λ: apply to a fresh neutral, quote the body; neutral: variable/elimination with
-   quoted operands; Π/Σ/PathP/pair/constructor: emit, quote parts) — `rb_one` in lang.c is the same
-   walk producing text. Then check.ctt normalizes by eval-g + net + QUOTE and compares quoted normal
-   forms; delete its duplicate normalizer (lines ~48–610).
+B. [~] The return path (landed in tests; library run pending). Not a deep QUOTE but %view: one
+   interaction turning a value's head into a View constructor whose fields are the value's own parts
+   (lib/code.ctt `View`; neutrals carry their type). The checker's values ARE the net's values:
+   eval-g builds them (lists for environments), application/projection/comp/Glue/endpoints are the
+   net's own steps; conversion walks views, typed at Π/Σ/path/Glue/data so variables carry types.
+   Primitives (src/net.c, one interaction each, numerals counted one per interaction): %view,
+   %var k T / %dim k (variables and dimensions at de Bruijn levels: LVL_TAG, DIM_LVL), %abs k v (the
+   line binding level-dim k), %ieq/%feq (canonical DNF equality → Bool), %clauses φ, %restrict c v,
+   %branch f c params (branch c of an elimination at given fields/hypotheses/dimensions: eliminations
+   compare by branches with hypotheses as variables), %gval/%gty/%dtab/%dent n (the checker's tables
+   in lang.c: references to globals; %gval gives the definition's own value, not following its
+   identities). U carries its level (prelude Level gains lomega = the level of types over levels).
+   No signature value is threaded anywhere. check.ctt: 1066 → ~550 lines; the duplicate normalizer is
+   gone. tests/check.ctt: 3.5M → 1.53M interactions (9.2M this morning).
 
 ## The spec, as it bears on the code (paper references)
 
