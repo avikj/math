@@ -121,14 +121,17 @@ static void mv(Cell *c, int k, Port to) { link(c->port[k], to); }
 static Port out_of(Cell *o) { return o->port[o->n - 1]; }
 
 /* ---------------- small constructors ---------------- */
-static void era(Port prov) { Cell *e = cell(O_ERA, 1); link(prov, P(e, 0)); }
+/* profile: where each duplicator and eraser comes from (a record's definition, or a rule) */
+static __thread long dup_origin;
+long prof_odup[65536], prof_oera[65536], prof_rdup[256], prof_rera[256];
+static void era(Port prov) { Cell *e = cell(O_ERA, 1); e->a = (uint64_t)dup_origin; link(prov, P(e, 0)); }
 static Port sub(Port prov, Subst *s) { Cell *c = cell(O_SUBST, 2); c->p = subst_retain(s); link(prov, P(c, 0)); return P(c, 1); }  /* borrows s */
 static Port mkplam_of(Port prov, Dim i) { Cell *m = cell(O_MKPLAM, 2); m->a = i; link(prov, P(m, 0)); return P(m, 1); }
 static Port iv_cell(Dnf *r) { Cell *c = cell(V_IV, 1); c->p = r; return P(c, 0); }  /* takes r */
 /* m providers sharing one value (a chain of duplicators) */
 static void split(Port prov, int m, Port *out) {
     if (m == 0) { era(prov); return; }
-    for (int k = 0; k < m - 1; k++) { Cell *d = cell(O_DUP, 3); link(prov, P(d, 0)); out[k] = P(d, 1); prov = P(d, 2); }
+    for (int k = 0; k < m - 1; k++) { Cell *d = cell(O_DUP, 3); d->a = (uint64_t)dup_origin; link(prov, P(d, 0)); out[k] = P(d, 1); prov = P(d, 2); }
     out[m - 1] = prov;
 }
 void port_split(Port prov, int m, Port *out) { split(prov, m, out); }
@@ -149,7 +152,7 @@ static Port tpart(Port T, int k) { Cell *c = cell(O_TPART, 2); c->a = (uint64_t)
 static Port app2(Port f, Port x) { Cell *a = cell(O_APP, 3); link(f, P(a, 0)); link(x, P(a, 1)); return P(a, 2); }
 static Port ntype_of(Port neu) { Cell *c = cell(O_NTYPE, 2); link(neu, P(c, 0)); return P(c, 1); }
 static Port papp_at(Port line, Dnf *r) { Cell *a = cell(O_PAPPR, 3); link(iv_cell(r), P(a, 0)); link(line, P(a, 1)); return P(a, 2); }  /* takes r */
-static void split2(Port prov, Port *a, Port *b) { Cell *d = cell(O_DUP, 3); link(prov, P(d, 0)); *a = P(d, 1); *b = P(d, 2); }
+static void split2(Port prov, Port *a, Port *b) { Cell *d = cell(O_DUP, 3); d->a = (uint64_t)dup_origin; link(prov, P(d, 0)); *a = P(d, 1); *b = P(d, 2); }
 
 Port apply_gid(long g, const Port *args, int n) {
     Cell *gc = cell(V_GLOBAL, 1); gc->a = (uint64_t)g;
@@ -199,7 +202,7 @@ static void rule_dup(Cell *o, Cell *v) {
     }
     Cell *c1 = clone(v), *c2 = clone(v);
     for (int k = 1; k < v->n; k++) {
-        Cell *d = cell(O_DUP, 3);
+        Cell *d = cell(O_DUP, 3); d->a = o->a;
         link(v->port[k], P(d, 0)); link(P(d, 1), P(c1, k)); link(P(d, 2), P(c2, k));
     }
     link(P(c1, 0), o1); link(P(c2, 0), o2);
@@ -207,6 +210,7 @@ static void rule_dup(Cell *o, Cell *v) {
 }
 static void rule_era(Cell *o, Cell *v) {
     if (prof_on) ADD(prof_erak[v->kind & 63], 1);
+    dup_origin = (long)o->a;
     for (int k = 1; k < v->n; k++) era(v->port[k]);
     cell_free(o); cell_free(v);
 }
@@ -551,6 +555,14 @@ static void rule_view(Cell *o, Cell *v) {
 /* ---------------- the rules ---------------- */
 static void interact(Cell *o, Cell *v) {
     ADD(stat_steps, 1); ADD(stat_kind[o->kind], 1);
+    if (prof_on) {
+        long a = (long)o->a;
+        if (o->kind == O_DUP || o->kind == O_ERA) {
+            long *rec = o->kind == O_DUP ? prof_odup : prof_oera, *rul = o->kind == O_DUP ? prof_rdup : prof_rera;
+            if (a > 0 && a < 65536) ADD(rec[a], 1); else if (a < 0 && -a < 256) ADD(rul[-a], 1); else ADD(rec[0], 1);
+        }
+        dup_origin = -(long)o->kind;
+    }
     switch (o->kind) {
     case O_ERA: rule_era(o, v); return;
     case O_DUP: rule_dup(o, v); return;
@@ -1500,8 +1512,10 @@ static Port build(Syn *t, Frame *f) {
     fprintf(stderr, "build: tag %d\n", t->tag); exit(2);
 }
 
-static Port run_frame(Syn *body, int nslots, const int *uses, int nparam, const Port *params, int nenv, const int *env_slot, const Port *env) {
+static Port run_frame(Syn *body, int nslots, const int *uses, int nparam, const Port *params, int nenv, const int *env_slot, const Port *env, int where) {
     Frame f = { calloc((size_t)nslots + 1, sizeof(Supply)), nslots, uses };
+    long saved = dup_origin;
+    if (prof_on) dup_origin = where + 1;
     for (int k = 0; k < nparam; k++) bind(&f, k, params[k]);
     for (int k = 0; k < nenv; k++) bind(&f, env_slot[k], env[k]);
     Port r = build(body, &f);
@@ -1510,14 +1524,15 @@ static Port run_frame(Syn *body, int nslots, const int *uses, int nparam, const 
         free(f.s[k].sup);
     }
     free(f.s);
+    dup_origin = saved;
     return r;
 }
 Port record_build(const Record *r, Port param, const Port *env) {
-    return run_frame(r->body, r->nslots, r->uses, r->nparam, &param, r->nenv, r->env_slot, env);
+    return run_frame(r->body, r->nslots, r->uses, r->nparam, &param, r->nenv, r->env_slot, env, r->where);
 }
 Port record_build_n(const Record *r, const Port *params, const Port *env) {
-    return run_frame(r->body, r->nslots, r->uses, r->nparam, params, r->nenv, r->env_slot, env);
+    return run_frame(r->body, r->nslots, r->uses, r->nparam, params, r->nenv, r->env_slot, env, r->where);
 }
 Port top_build(Syn *body, int nslots, const int *uses) {
-    return run_frame(body, nslots, uses, 0, NULL, 0, NULL, NULL);
+    return run_frame(body, nslots, uses, 0, NULL, 0, NULL, NULL, -1);
 }

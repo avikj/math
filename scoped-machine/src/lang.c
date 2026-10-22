@@ -134,6 +134,21 @@ static void free_vars(Node *t, Names *bound, Names *out) {
     }
     for (int i = 0; i < t->n; i++) free_vars(t->it[i], bound, out);
 }
+/* does t refer to the free name x (not rebound inside)? */
+static bool mentions_name(Node *t, const char *x) {
+    if (!t->list) return !strcmp(t->s, x);
+    if (t->n == 0) return false;
+    if (!t->it[0]->list) {
+        const char *k = t->it[0]->s;
+        if ((!strcmp(k, "lam") || !strcmp(k, "plam") || !strcmp(k, "forall")) && t->n >= 3) {
+            for (int i = 1; i < t->n - 1; i++) if (!strcmp(param_name(t->it[i])->s, x)) return false;
+            return mentions_name(t->it[t->n - 1], x);
+        }
+        if (!strcmp(k, "let") && t->n == 4) return mentions_name(t->it[2], x) || (strcmp(t->it[1]->s, x) && mentions_name(t->it[3], x));
+    }
+    for (int i = 0; i < t->n; i++) if (mentions_name(t->it[i], x)) return true;
+    return false;
+}
 static bool mentions_rec(Node *t, Node **names, int n) {
     if (!t->list) return false;
     if (t->n == 2 && is(t->it[0], "rec") && !t->it[1]->list)
@@ -211,6 +226,29 @@ static Node *ds(Node *t) {
                 for (int i = first; i < t->n; i++) {
                     Node *br = t->it[i];
                     if (br->it[0]->list && !strcmp(br->it[0]->it[0]->s, c->name)) { pat = br->it[0]; body = br->it[1]; }
+                }
+                /* within branch (C x...) the scrutinee is (C x...): a branch mentioning the
+                 * scrutinee's name rebuilds it from its fields instead of a copy of it */
+                Node *scr = t->it[first - 1];
+                if (body && !scr->list && !dname && mentions_name(body, scr->s)) {
+                    bool shadow = false;
+                    for (int q = 1; pat && q < pat->n; q++) if (!pat->it[q]->list && !strcmp(pat->it[q]->s, scr->s)) shadow = true;
+                    if (!shadow) {
+                        static int nsc;
+                        int na = c->nfields + c->ndims;
+                        if (!pat) { pat = nlist(na + 1); pat->it[0] = nsym(c->name); for (int q = 0; q < na; q++) { char nm[32]; snprintf(nm, sizeof nm, "%%sc%d", nsc++); pat->it[q + 1] = nsym(nm); } }
+                        Node *rebuilt = nsym(c->name);
+                        Node *np2 = nlist(na + 1); np2->it[0] = pat->it[0];
+                        Node *pre = NULL;
+                        for (int q = 0; q < na; q++) {
+                            Node *x = pat->it[q + 1];
+                            if (!x->list && !strcmp(x->s, "_")) { char nm[32]; snprintf(nm, sizeof nm, "%%sc%d", nsc++); x = nsym(nm); }
+                            np2->it[q + 1] = x; rebuilt = nl3("app", rebuilt, x);
+                        }
+                        (void)pre;
+                        pat = np2;
+                        Node *lb = nlist(4); lb->it[0] = nsym("let"); lb->it[1] = scr; lb->it[2] = rebuilt; lb->it[3] = body; body = lb;
+                    }
                 }
                 if (!body) {
                     if (!dflt) die("case misses constructor", c->name);
@@ -1938,6 +1976,18 @@ static void prof_print(void) {
         for (int i = 0; i < prof_n; i++) for (int j = i + 1; j < prof_n; j++) if (prof_dup[ix2[j]] > prof_dup[ix2[i]]) { int t = ix2[i]; ix2[i] = ix2[j]; ix2[j] = t; }
         for (int i = 0; i < prof_n && i < 25; i++) fprintf(stderr, "dup %12ld  %s\n", prof_dup[ix2[i]], prof_name[ix2[i]]);
         free(ix2);
+        {
+            extern long prof_odup[65536], prof_oera[65536], prof_rdup[256], prof_rera[256];
+            for (int w = 0; w < 2; w++) {
+                long *rec = w ? prof_oera : prof_odup, *rul = w ? prof_rera : prof_rdup;
+                int *o = malloc(65536 * sizeof(int)); int no = 0;
+                for (int i = 0; i < 65536; i++) if (rec[i]) o[no++] = i;
+                for (int i = 0; i < no; i++) for (int j = i + 1; j < no; j++) if (rec[o[j]] > rec[o[i]]) { int t = o[i]; o[i] = o[j]; o[j] = t; }
+                for (int i = 0; i < no && i < 25; i++) fprintf(stderr, "%s from %10ld  %s\n", w ? "era" : "dup", rec[o[i]], o[i] == 0 ? "(top or unknown)" : (o[i] - 1 < prof_n ? prof_name[o[i] - 1] : "?"));
+                for (int k = 0; k < 256; k++) if (rul[k] > 100000) fprintf(stderr, "%s from %10ld  rule kind %d\n", w ? "era" : "dup", rul[k], k);
+                free(o);
+            }
+        }
         for (int c = 0; c < ncon && c < 4096; c++) if (prof_con[c] > 50000) fprintf(stderr, "con dup %10ld %s\n", prof_con[c], CON[c].name);
         for (long g = 0; g < 65536; g++) if (prof_glob[g] > 50000) fprintf(stderr, "glob dup %10ld %s\n", prof_glob[g], name_of(g));
         free(ix);
