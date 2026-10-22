@@ -70,6 +70,7 @@
 (def ile (lam x y (lall (lam c (lany (lam d (csub d c)) y)) x)))
 (def ieq (lam x y (andb (ile x y) (ile y x))))
 ; a substitution: a list of (pair level interval)
+(def leq-n (lam a b (case a ((nz) true) ((ns a1) (case b ((nz) false) ((ns b1) (leq-n a1 b1)))))))
 (def slookup (lam s l (case s
   ((lnil) none)
   ((lcons p ps) (if (eqn (fst p) l) (some (snd p)) (slookup ps l))))))
@@ -124,7 +125,10 @@
 ; (pair clause value), each value restricted to its clause; a system with a
 ; true clause is that value. Substituting dimensions (act) re-applies each
 ; neutral's eliminator, so a substitution unblocks what it can.
+; closures made by evaluating code also carry the code and its environment (vlamc, vpic, vsigmac,
+; vplamc): two of them with the same code over convertible environments are equal unapplied
 (data Val (vlam f) (vpair a b) (vpi A F) (vsigma A F) (vu l) (vpathp L a b) (vplam f)
+          (vlamc f c e) (vpic A F c e) (vsigmac A F c e) (vplamc f c e)
           (viv r) (vface p) (vsys bs) (vglue A S) (vgluev S a) (vneu n T) (verr)
           (vdata d ps sg) (vcon d c fs ds sg) (vhcomp u a)
           ; universe levels: the type Level, a level max(c, a1+o1, ...) over level atoms
@@ -134,11 +138,15 @@
           (nelim P B x) (ntrans d ls psi x sg))
 ; an elimination's branches: the data type, its signature, one function per constructor
 ; (of the level, the fields, the hypotheses, the dimensions)
-(data Brs (brs d sg bs))
-(def brs-d (lam B (case B ((brs d sg bs) d))))
-(def brs-sg (lam B (case B ((brs d sg bs) sg))))
-(def brs-l (lam B (case B ((brs d sg bs) bs))))
-(def brs-map (lam f B (case B ((brs d sg bs) (brs d sg (lmap f bs))))))
+; with their codes and the environment they were evaluated in: two eliminations with the
+; same codes over convertible environments are equal without evaluating their branches
+; (the branches are not closures: only the selected one is evaluated, from its code)
+(data Brs (brs d sg cs env))
+(def brs-d (lam B (case B ((brs d sg cs env) d))))
+(def brs-sg (lam B (case B ((brs d sg cs env) sg))))
+(def brs-cs (lam B (case B ((brs d sg cs env) cs))))
+(def brs-env (lam B (case B ((brs d sg cs env) env))))
+(def brs-map (lam g B (case B ((brs d sg cs env) (brs d sg cs (lmap g env))))))
 
 (def iv-of (lam v (case v ((viv r) r) (_ i0))))
 (def face-of (lam v (case v ((vface p) p) (_ ffalse))))
@@ -151,13 +159,13 @@
 (def single (lam x (lcons x lnil)))
 
 (def act (lam k s v (case v
-  ((vlam f) (vlam (lam k1 x (act k1 s (f k1 x)))))
+  ((vlam f) (vlam (lam k1 x (act k1 s (f k1 x))))) ((vlamc f c_ e_) (vlamc (lam k1 x (act k1 s (f k1 x))) c_ (lmap (act k s) e_)))
   ((vpair a b) (vpair (act k s a) (act k s b)))
-  ((vpi A F) (vpi (act k s A) (lam k1 x (act k1 s (F k1 x)))))
-  ((vsigma A F) (vsigma (act k s A) (lam k1 x (act k1 s (F k1 x)))))
+  ((vpi A F) (vpi (act k s A) (lam k1 x (act k1 s (F k1 x))))) ((vpic A F c_ e_) (vpic (act k s A) (lam k1 x (act k1 s (F k1 x))) c_ (lmap (act k s) e_)))
+  ((vsigma A F) (vsigma (act k s A) (lam k1 x (act k1 s (F k1 x))))) ((vsigmac A F c_ e_) (vsigmac (act k s A) (lam k1 x (act k1 s (F k1 x))) c_ (lmap (act k s) e_)))
   ((vu l) v)
   ((vpathp L a b) (vpathp (lam k1 r (act k1 s (L k1 r))) (act k s a) (act k s b)))
-  ((vplam f) (vplam (lam k1 r (act k1 s (f k1 r)))))
+  ((vplam f) (vplam (lam k1 r (act k1 s (f k1 r))))) ((vplamc f c_ e_) (vplamc (lam k1 r (act k1 s (f k1 r))) c_ (lmap (act k s) e_)))
   ((viv r) (viv (isubst s r)))
   ((vface p) (vface (fsubst s p)))
   ((vsys bs) (mksys (act-branches k s bs)))
@@ -173,41 +181,43 @@
 (def act-branches (lam k s bs (lconcatmap (lam b
   (lmap (lam d (pair d (act k (clsub d) (act k s (snd b))))) (fsubst s (single (fst b))))) bs)))
 (def act-neu (lam k s n T (case n
-  ((nvar l) (vneu n (act k s T)))
+  ; a variable and its type mention only levels below its own: a substitution of
+  ; dimensions all at or above it leaves both as they are
+  ((nvar l) (if (lall (lam p (leq-n l (fst p))) s) (vneu n T) (vneu n (act k s T))))
   ((napp h a) (vapp k (act k s h) (act k s a)))
   ((nfst h) (vfst k (act k s h)))
   ((nsnd h) (vsnd k (act k s h)))
   ((npapp h r) (papp k (act k s h) (isubst s r)))
   ((ncomp L u a0) (vcomp k (lam k1 r (act k1 s (L k1 r))) (lam k1 r (act k1 s (u k1 r))) (act k s a0)))
   ((nunglue S h) (vunglue k (act-branches k s S) (act k s h)))
-  ((nelim P B x) (velim k (opt-map (act k s) P) (brs-map (lam b (lam k1 fs hs ds (act k1 s (b k1 fs hs ds)))) B) (act k s x)))
+  ((nelim P B x) (velim k (opt-map (act k s) P) (brs-map (act k s) B) (act k s x)))
   ((ntrans d ls psi x sg) (vtrans k sg d (lmap (lam l (lam k1 r (act k1 s (l k1 r)))) ls) (fsubst s psi) (act k s x))))))
 (def restrict (lam k c v (act k (clsub c) v)))
 
 ; eliminators; on a system they act branchwise, the other operand restricted
 (def vapp (lam k f x (case f
-  ((vlam g) (g k x))
-  ((vneu n T) (case T ((vpi A F) (vneu (napp f x) (F k x))) (_ (vneu (napp f x) verr))))
+  ((vlam g) (g k x)) ((vlamc g c_ e_) (g k x))
+  ((vneu n T) (case T ((vpi A F) (vneu (napp f x) (F k x))) ((vpic A F c_ e_) (vneu (napp f x) (F k x))) (_ (vneu (napp f x) verr))))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vapp k (snd b) (restrict k (fst b) x)))) bs)))
   (_ verr))))
 (def vfst (lam k p (case p
   ((vpair a b) a)
-  ((vneu n T) (case T ((vsigma A F) (vneu (nfst p) A)) (_ (vneu (nfst p) verr))))
+  ((vneu n T) (case T ((vsigma A F) (vneu (nfst p) A)) ((vsigmac A F c_ e_) (vneu (nfst p) A)) (_ (vneu (nfst p) verr))))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vfst k (snd b)))) bs)))
   (_ verr))))
 (def vsnd (lam k p (case p
   ((vpair a b) b)
-  ((vneu n T) (case T ((vsigma A F) (vneu (nsnd p) (F k (vfst k p)))) (_ (vneu (nsnd p) verr))))
+  ((vneu n T) (case T ((vsigma A F) (vneu (nsnd p) (F k (vfst k p)))) ((vsigmac A F c_ e_) (vneu (nsnd p) (F k (vfst k p)))) (_ (vneu (nsnd p) verr))))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vsnd k (snd b)))) bs)))
   (_ verr))))
 (def papp (lam k p r (case p
-  ((vplam f) (f k r))
+  ((vplam f) (f k r)) ((vplamc f c_ e_) (f k r))
   ((vneu n T) (case T
      ((vpathp L a b) (if (izero r) a (if (ione r) b (vneu (npapp p r) (L k r)))))
      (_ (vneu (npapp p r) verr))))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (papp k (snd b) (isubst (clsub (fst b)) r)))) bs)))
   (_ verr))))
-(def line-of (lam v (case v ((vplam f) f) (_ (lam k r (papp k v r))))))
+(def line-of (lam v (case v ((vplam f) f) ((vplamc f c_ e_) f) (_ (lam k r (papp k v r))))))
 
 ; Glue: on its face the fibre (resp. the element, the equivalence's map)
 (def total-branch (lam bs (case (lfilter (lam b (isnil (fst b))) bs) ((lnil) none) ((lcons b rest) (some (snd b))))))
@@ -246,8 +256,8 @@
     (if (istotal (u k1 g)) (u k i1)
       (comp-head k L u a0 k1 (L k1 g)))))))
 (def comp-head (lam k L u a0 k1 H (case H
-  ((vpi A F) (comp-pi k (reabs k A) (reabs-fam k F) u a0))
-  ((vsigma A F) (comp-sigma k (reabs k A) (reabs-fam k F) u a0))
+  ((vpi A F) (comp-pi k (reabs k A) (reabs-fam k F) u a0)) ((vpic A F c_ e_) (comp-pi k (reabs k A) (reabs-fam k F) u a0))
+  ((vsigma A F) (comp-sigma k (reabs k A) (reabs-fam k F) u a0)) ((vsigmac A F c_ e_) (comp-sigma k (reabs k A) (reabs-fam k F) u a0))
   ((vpathp P l r) (comp-path k (lam k2 i (lam k3 j (act k3 (single (pair k i)) (P k3 j)))) (reabs k l) (reabs k r) u a0))
   ((vu l) (comp-u k u a0))
   ((vglue A S) (comp-glue k (reabs k A) (reabs-branches k S) u a0))
@@ -354,6 +364,90 @@
   ((lcons A rest) (case fs
     ((lnil) lnil)
     ((lcons f fr) (if (is-data-d d A) (lcons f (rec-of d rest fr)) (rec-of d rest fr))))))))
+; the free variables of a code (de Bruijn indices, with repetitions). A closure keeps
+; only the entries of its environment its body uses: capturing the whole environment,
+; whose entries are themselves closures over environments, makes every copy of a
+; value grow with the depth of binding
+(declare cfv)
+; a set of indices as a mask: a list of Bool, true at each index in the set
+(def mor (lam a b (case a ((lnil) b) ((lcons x r) (case b ((lnil) a) ((lcons y q) (lcons (orb x y) (mor r q))))))))
+(def mat (lam n (case n ((nz) (single true)) ((ns m) (lcons false (mat m))))))
+(def mtail (lam a (case a ((lnil) lnil) ((lcons x r) r))))
+(def mors (lam xs (case xs ((lnil) lnil) ((lcons x r) (mor (cfv x) (mors r))))))
+(def cfv-under (lam b (mtail (cfv b))))
+(def cfv2 (lam a b (mor (cfv a) (cfv b))))
+(def cfv3 (lam a b c (mor (cfv a) (mor (cfv b) (cfv c)))))
+(def cfv (lam c (case c
+  ((cvar n) (mat n))
+  ((clam b) (cfv-under b)) ((cplam b) (cfv-under b)) ((cdlam b) (cfv-under b)) ((cforall b) (cfv-under b))
+  ((cpi A B) (mor (cfv A) (cfv-under B))) ((csigma A B) (mor (cfv A) (cfv-under B)))
+  ((clet t b) (mor (cfv t) (cfv-under b)))
+  ((capp a b) (cfv2 a b)) ((cpair a b) (cfv2 a b)) ((cpapp a b) (cfv2 a b)) ((cmeet a b) (cfv2 a b))
+  ((cjoin a b) (cfv2 a b)) ((cfand a b) (cfv2 a b)) ((cfor a b) (cfv2 a b)) ((cgluet a b) (cfv2 a b))
+  ((cglue a b) (cfv2 a b)) ((cunglue a b) (cfv2 a b)) ((cann a b) (cfv2 a b)) ((chcomp a b) (cfv2 a b))
+  ((clmax a b) (cfv2 a b))
+  ((cfst a) (cfv a)) ((csnd a) (cfv a)) ((cneg a) (cfv a)) ((ceq0 a) (cfv a)) ((ceq1 a) (cfv a))
+  ((cforce a) (cfv a)) ((cuniv a) (cfv a)) ((clsuc a) (cfv a))
+  ((cpathp a b x) (cfv3 a b x)) ((csysc a b x) (cfv3 a b x)) ((ccomp a b x) (cfv3 a b x))
+  ((cdata d ps) (mors ps))
+  ((ccon d c fs ds) (mor (mors fs) (mors ds)))
+  ((celim d P B x) (mor (cfv P) (mor (mors B) (cfv x))))
+  ((ccase d B x) (mor (mors B) (cfv x)))
+  (_ lnil))))
+; the environment with only the entries a mask keeps
+(def trim (lam env m (case env
+  ((lnil) lnil)
+  ((lcons v r) (case m
+    ((lnil) (lmap (lam w verr) env))
+    ((lcons b q) (lcons (if b v verr) (trim r q))))))))
+; syntactic equality of codes
+(declare code-eq)
+(def code-eq (lam c1 c2 (case c1
+  ((cvar a0) (case c2 ((cvar b0) (eqn a0 b0)) (_ false)))
+  ((cglob a0) (case c2 ((cglob b0) (eqn a0 b0)) (_ false)))
+  ((clam a0) (case c2 ((clam b0) (code-eq a0 b0)) (_ false)))
+  ((capp a0 a1) (case c2 ((capp b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cpair a0 a1) (case c2 ((cpair b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cfst a0) (case c2 ((cfst b0) (code-eq a0 b0)) (_ false)))
+  ((csnd a0) (case c2 ((csnd b0) (code-eq a0 b0)) (_ false)))
+  ((cpi a0 a1) (case c2 ((cpi b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((csigma a0 a1) (case c2 ((csigma b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cuniv a0) (case c2 ((cuniv b0) (code-eq a0 b0)) (_ false)))
+  ((cpathp a0 a1 a2) (case c2 ((cpathp b0 b1 b2) (andb (code-eq a0 b0) (andb (code-eq a1 b1) (code-eq a2 b2)))) (_ false)))
+  ((cplam a0) (case c2 ((cplam b0) (code-eq a0 b0)) (_ false)))
+  ((cpapp a0 a1) (case c2 ((cpapp b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((ci0) (case c2 ((ci0) true) (_ false)))
+  ((ci1) (case c2 ((ci1) true) (_ false)))
+  ((cneg a0) (case c2 ((cneg b0) (code-eq a0 b0)) (_ false)))
+  ((cmeet a0 a1) (case c2 ((cmeet b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cjoin a0 a1) (case c2 ((cjoin b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((ceq0 a0) (case c2 ((ceq0 b0) (code-eq a0 b0)) (_ false)))
+  ((ceq1 a0) (case c2 ((ceq1 b0) (code-eq a0 b0)) (_ false)))
+  ((cfand a0 a1) (case c2 ((cfand b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cfor a0 a1) (case c2 ((cfor b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cftt) (case c2 ((cftt) true) (_ false)))
+  ((cfff) (case c2 ((cfff) true) (_ false)))
+  ((cforall a0) (case c2 ((cforall b0) (code-eq a0 b0)) (_ false)))
+  ((csys0) (case c2 ((csys0) true) (_ false)))
+  ((csysc a0 a1 a2) (case c2 ((csysc b0 b1 b2) (andb (code-eq a0 b0) (andb (code-eq a1 b1) (code-eq a2 b2)))) (_ false)))
+  ((ccomp a0 a1 a2) (case c2 ((ccomp b0 b1 b2) (andb (code-eq a0 b0) (andb (code-eq a1 b1) (code-eq a2 b2)))) (_ false)))
+  ((cgluet a0 a1) (case c2 ((cgluet b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cglue a0 a1) (case c2 ((cglue b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cunglue a0 a1) (case c2 ((cunglue b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((clet a0 a1) (case c2 ((clet b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cann a0 a1) (case c2 ((cann b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cdata a0 a1) (case c2 ((cdata b0 b1) (andb (eqn a0 b0) (lall2 code-eq a1 b1))) (_ false)))
+  ((ccon a0 a1 a2 a3) (case c2 ((ccon b0 b1 b2 b3) (andb (eqn a0 b0) (andb (eqn a1 b1) (andb (lall2 code-eq a2 b2) (lall2 code-eq a3 b3))))) (_ false)))
+  ((celim a0 a1 a2 a3) (case c2 ((celim b0 b1 b2 b3) (andb (eqn a0 b0) (andb (code-eq a1 b1) (andb (lall2 code-eq a2 b2) (code-eq a3 b3))))) (_ false)))
+  ((ccase a0 a1 a2) (case c2 ((ccase b0 b1 b2) (andb (eqn a0 b0) (andb (lall2 code-eq a1 b1) (code-eq a2 b2)))) (_ false)))
+  ((chcomp a0 a1) (case c2 ((chcomp b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  ((cdlam a0) (case c2 ((cdlam b0) (code-eq a0 b0)) (_ false)))
+  ((cforce a0) (case c2 ((cforce b0) (code-eq a0 b0)) (_ false)))
+  ((clevel) (case c2 ((clevel) true) (_ false)))
+  ((clzero) (case c2 ((clzero) true) (_ false)))
+  ((clsuc a0) (case c2 ((clsuc b0) (code-eq a0 b0)) (_ false)))
+  ((clmax a0 a1) (case c2 ((clmax b0 b1) (andb (code-eq a0 b0) (code-eq a1 b1))) (_ false)))
+  (_ false))))
 (def strip-n (lam n c (case n ((nz) c) ((ns m) (case c ((clam b) (strip-n m b)) ((cdlam b) (strip-n m b)) (_ c))))))
 
 ; the boundary of constructor c at fields fs and dimensions ds (a system)
@@ -367,12 +461,19 @@
 (def mkhcomp (lam k u a (if (istotal (u (ns k) (ivar k))) (u k i1) (vhcomp u a))))
 ; hfill^i [φ ↦ u] u0 at i = hcomp^j [φ ↦ u(i∧j), (i=0) ↦ u0] u0
 (def hfill-d (lam k u a i (mkhcomp k (lam k2 j (sys-add k2 (feq i false) a (u k2 (imeet i j)))) a)))
-(def restrict-B (lam k cl B (brs-map (lam b (lam k1 fs hs ds (restrict k1 cl (b k1 fs hs ds)))) B)))
+(def restrict-B (lam k cl B (brs-map (restrict k cl) B)))
+; branch c of an elimination at fields, hypotheses and dimensions
+(def brs-apply (lam k B c fs hs ds (case B ((brs d sg cs env)
+  (let ce (centry sg d c)
+    (case (lnth cs c)
+      ((some b) (veval k sg (push-all (lmap viv ds) (push-all hs (push-all fs env)))
+                        (strip-n (addn (llen (cftys ce)) (addn (nrec d (cftys ce)) (cnd ce))) b)))
+      ((none) verr)))))))
 ; elimination; a branch receives its fields, the eliminations of its recursive
 ; fields (induction hypotheses) and its dimensions; on hcomp, composition in
 ; the motive along hfill
 (def velim (lam k P B x (case x
-  ((vcon d c fs ds sg) ((fromopt (lnth (brs-l B) c) (lam k1 f1 h1 d1 verr)) k fs
+  ((vcon d c fs ds sg) (brs-apply k B c fs
                           (lmap (velim k P B) (rec-of d (cftys (centry sg d c)) fs)) ds))
   ((vhcomp u a) (case P
      ((some p) (vcomp k (lam k2 i (vapp k2 p (hfill-d k2 u a i)))
@@ -420,21 +521,12 @@
 (def comp-data (lam k sg d ls u a0
   (mkhcomp k (lam k2 i (sys-map k2 (lam k3 w (vtrans k3 sg d (lmap (lam l (lam k4 j (l k4 (ijoin i j)))) ls) (feq i true) w)) (u k2 i)))
              (vtrans k sg d ls ffalse a0))))
-; the branches of an elimination code, as functions of fields and dimensions
-(def eval-branches-at (lam sig env d B c (case B
-  ((lnil) lnil)
-  ((lcons b rest)
-    (let ce (centry sig d c)
-      (lcons (lam k1 fs hs ds (veval k1 sig (push-all (lmap viv ds) (push-all hs (push-all fs env)))
-                                     (strip-n (addn (llen (cftys ce)) (addn (nrec d (cftys ce)) (cnd ce))) b)))
-             (eval-branches-at sig env d rest (ns c))))))))
-
 ; ---------------------------------------------------------------- evaluation
 ; veval k sig env c: the value of code c; env holds the values of the
 ; context's variables (dimensions as interval values), sig the checked
 ; definitions' (type, value) pairs. A system branch is evaluated under each
 ; clause of its face, in the environment restricted to that clause.
-(declare veval conv convty convneu convn uconv infer infer-sort check infer-binder check-comp conv-data
+(declare veval conv convty convneu convn uconv uconv-l infer infer-sort check infer-binder check-comp conv-data
          check-tele motive-level check-branches check-hcomp check-fields)
 (def act-env (lam k d env (lmap (lam v (restrict k d v)) env)))
 ; levels: max(c, a1+o1, ...); max(c, ts) ≤ max(d, us) for every value of the atoms iff
@@ -453,20 +545,20 @@
 (def veval (lam k sig env c (case c
   ((cvar n) (fromopt (lnth env n) verr))
   ((cglob n) (case (lnth (fst sig) n) ((some p) (snd p)) ((none) verr)))
-  ((clam b) (vlam (lam k1 x (veval k1 sig (lcons x env) b))))
+  ((clam b) (let e2 (trim env (cfv-under b)) (vlamc (lam k1 x (veval k1 sig (lcons x e2) b)) b e2)))
   ((capp f a) (vapp k (veval k sig env f) (veval k sig env a)))
   ((cpair a b) (vpair (veval k sig env a) (veval k sig env b)))
   ((cfst p) (vfst k (veval k sig env p)))
   ((csnd p) (vsnd k (veval k sig env p)))
-  ((cpi A B) (vpi (veval k sig env A) (lam k1 x (veval k1 sig (lcons x env) B))))
-  ((csigma A B) (vsigma (veval k sig env A) (lam k1 x (veval k1 sig (lcons x env) B))))
+  ((cpi A B) (let e2 (trim env (cfv-under B)) (vpic (veval k sig env A) (lam k1 x (veval k1 sig (lcons x e2) B)) B e2)))
+  ((csigma A B) (let e2 (trim env (cfv-under B)) (vsigmac (veval k sig env A) (lam k1 x (veval k1 sig (lcons x e2) B)) B e2)))
   ((cuniv l) (vu (lvl-of (veval k sig env l))))
   ((clevel) vlevel)
   ((clzero) lv0)
   ((clsuc l) (lvl-suc (lvl-of (veval k sig env l))))
   ((clmax a b) (lvl-max (lvl-of (veval k sig env a)) (lvl-of (veval k sig env b))))
   ((cpathp A a b) (vpathp (line-of (veval k sig env A)) (veval k sig env a) (veval k sig env b)))
-  ((cplam b) (vplam (lam k1 r (veval k1 sig (lcons (viv r) env) b))))
+  ((cplam b) (let e2 (trim env (cfv-under b)) (vplamc (lam k1 r (veval k1 sig (lcons (viv r) e2) b)) b e2)))
   ((cpapp p r) (papp k (veval k sig env p) (iv-of (veval k sig env r))))
   ((ci0) (viv i0))
   ((ci1) (viv i1))
@@ -493,13 +585,19 @@
   ((cann t T) (veval k sig env t))
   ((cdata d ps) (vdata d (lmap (veval k sig env) ps) sig))
   ((ccon d c fs ds) (mkcon k sig d c (lmap (veval k sig env) fs) (lmap (lam r (iv-of (veval k sig env r))) ds)))
-  ((celim d P B x) (velim k (some (veval k sig env P)) (brs d sig (eval-branches-at sig env d B nz)) (veval k sig env x)))
-  ((ccase d B x) (velim k none (brs d sig (eval-branches-at sig env d B nz)) (veval k sig env x)))
+  ((celim d P B x) (velim k (some (veval k sig env P)) (brs d sig B (trim env (mors B))) (veval k sig env x)))
+  ((ccase d B x) (velim k none (brs d sig B (trim env (mors B))) (veval k sig env x)))
   ((chcomp u a) (mkhcomp k (line-of (veval k sig env u)) (veval k sig env a)))
   ((cdlam b) verr)
   ((cforce t) (veval k sig env t)))))
 
 ; ---------------------------------------------------------------- conversion
+; closures from the same code over convertible environments
+(def clo-eq (lam k c e c2 e2 (if (code-eq c c2) (uconv-l k e e2) false)))
+(def clo-fast (lam k u v (case u
+  ((vlamc f c e) (case v ((vlamc g c2 e2) (clo-eq k c e c2 e2)) (_ false)))
+  ((vplamc f c e) (case v ((vplamc g c2 e2) (clo-eq k c e c2 e2)) (_ false)))
+  (_ false))))
 ; At a type: η for Π (apply to a fresh variable), Σ (componentwise), paths
 ; (apply to a fresh dimension) and Glue (unglue, and on the face the fibre);
 ; types are compared by former; neutrals structurally. A system is compared
@@ -508,9 +606,9 @@
   (lall (lam b (conv k (restrict k (fst b) T) (snd b) (restrict k (fst b) v))) (branches u))
   (lall (lam b (conv k (restrict k (fst b) T) (restrict k (fst b) u) (snd b))) (branches v)))))
 (def conv (lam k T u v (if (orb (notb (istotal u)) (notb (istotal v))) (conv-sys k T u v) (case T
-  ((vpi A F) (let x (vneu (nvar k) A) (conv (ns k) (F (ns k) x) (vapp (ns k) u x) (vapp (ns k) v x))))
-  ((vsigma A F) (andb (conv k A (vfst k u) (vfst k v)) (conv k (F k (vfst k u)) (vsnd k u) (vsnd k v))))
-  ((vpathp L a b) (let i (ivar k) (conv (ns k) (L (ns k) i) (papp (ns k) u i) (papp (ns k) v i))))
+  ((vpi A F) (if (clo-fast k u v) true (let x (vneu (nvar k) A) (conv (ns k) (F (ns k) x) (vapp (ns k) u x) (vapp (ns k) v x))))) ((vpic A F c_ e_) (if (clo-fast k u v) true (let x (vneu (nvar k) A) (conv (ns k) (F (ns k) x) (vapp (ns k) u x) (vapp (ns k) v x)))))
+  ((vsigma A F) (andb (conv k A (vfst k u) (vfst k v)) (conv k (F k (vfst k u)) (vsnd k u) (vsnd k v)))) ((vsigmac A F c_ e_) (andb (conv k A (vfst k u) (vfst k v)) (conv k (F k (vfst k u)) (vsnd k u) (vsnd k v))))
+  ((vpathp L a b) (if (clo-fast k u v) true (let i (ivar k) (conv (ns k) (L (ns k) i) (papp (ns k) u i) (papp (ns k) v i)))))
   ((vu l) (convty k u v))
   ((vglue A S) (andb (conv k A (vunglue k S u) (vunglue k S v))
                      (lall (lam b (conv k (vfst k (snd b)) (restrict k (fst b) u) (restrict k (fst b) v))) S)))
@@ -542,17 +640,15 @@
 (def fresh-untyped (lam k n acc (case n ((nz) (pair acc k)) ((ns m) (fresh-untyped (ns k) m (lsnoc acc (vneu (nvar k) verr)))))))
 (def fresh-dims (lam k n acc (case n ((nz) (pair acc k)) ((ns m) (fresh-dims (ns k) m (lsnoc acc (ivar k)))))))
 ; two eliminations' branches, compared at the motive on fresh fields and dimensions
-(def conv-branches-at (lam k P B B2 d ps sg c (case B
-  ((lnil) (isnil B2))
-  ((lcons b rest) (case B2 ((lnil) false) ((lcons b2 rest2)
-    (let ce (centry sg d c)
-    (let fl (case ps ((some qs) (fresh-fields k sg (cftys ce) (push-all qs lnil) lnil)) ((none) (fresh-untyped k (llen (cftys ce)) lnil)))
-    (let fh (fresh-hyps (snd fl) P (rec-of d (cftys ce) (fst fl)) lnil)
-    (let fd (fresh-dims (snd fh) (cnd ce) lnil)
-    (let k2 (snd fd)
-      (andb (let u (b k2 (fst fl) (fst fh) (fst fd)) (let v (b2 k2 (fst fl) (fst fh) (fst fd))
-              (case P ((some p) (conv k2 (vapp k2 p (mkcon k2 sg d c (fst fl) (fst fd))) u v)) ((none) (uconv k2 u v)))))
-            (conv-branches-at k P rest rest2 d ps sg (ns c))))))))))))))
+(def conv-branches-at (lam k P B B2 d ps sg c n (if (eqn c n) true
+  (let ce (centry sg d c)
+  (let fl (case ps ((some qs) (fresh-fields k sg (cftys ce) (push-all qs lnil) lnil)) ((none) (fresh-untyped k (llen (cftys ce)) lnil)))
+  (let fh (fresh-hyps (snd fl) P (rec-of d (cftys ce) (fst fl)) lnil)
+  (let fd (fresh-dims (snd fh) (cnd ce) lnil)
+  (let k2 (snd fd)
+    (andb (let u (brs-apply k2 B c (fst fl) (fst fh) (fst fd)) (let v (brs-apply k2 B2 c (fst fl) (fst fh) (fst fd))
+            (case P ((some p) (conv k2 (vapp k2 p (mkcon k2 sg d c (fst fl) (fst fd))) u v)) ((none) (uconv k2 u v)))))
+          (conv-branches-at k P B B2 d ps sg (ns c) n))))))))))
 (def convty-branches (lam k A S S2 (andb (feqf (bface S) (bface S2))
   (lall (lam b (case (total-branch (act-branches k (clsub (fst b)) S2))
      ((some te2) (let te (snd b)
@@ -560,8 +656,8 @@
               (conv k (equiv-type k (vfst k te) (restrict k (fst b) A)) (vsnd k te) (vsnd k te2)))))
      ((none) false))) S))))
 (def convty (lam k X Y (case X
-  ((vpi A F) (case Y ((vpi B G) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) (_ false)))
-  ((vsigma A F) (case Y ((vsigma B G) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) (_ false)))
+  ((vpi A F) (case Y ((vpi B G) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) ((vpic B G c2_ e2_) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) (_ false))) ((vpic A F c_ e_) (case Y ((vpi B G) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) ((vpic B G c2_ e2_) (andb (convty k A B) (if (clo-eq k c_ e_ c2_ e2_) true (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x)))))) (_ false)))
+  ((vsigma A F) (case Y ((vsigma B G) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) ((vsigmac B G c2_ e2_) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) (_ false))) ((vsigmac A F c_ e_) (case Y ((vsigma B G) (andb (convty k A B) (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x))))) ((vsigmac B G c2_ e2_) (andb (convty k A B) (if (clo-eq k c_ e_ c2_ e2_) true (let x (vneu (nvar k) A) (convty (ns k) (F (ns k) x) (G (ns k) x)))))) (_ false)))
   ((vu l) (case Y ((vu m) (lvl-eq k l m)) (_ false)))
   ((vlevel) (case Y ((vlevel) true) (_ false)))
   ((vuw) (case Y ((vuw) true) (_ false)))
@@ -580,17 +676,18 @@
   (andb (lall (lam b (uconv k (snd b) (restrict k (fst b) v))) (branches u))
         (lall (lam b (uconv k (restrict k (fst b) u) (snd b))) (branches v)))
   (let x (vneu (nvar k) verr) (let i (ivar k) (case u
-  ((vlam f) (uconv (ns k) (vapp (ns k) u x) (vapp (ns k) v x)))
-  ((vplam f) (uconv (ns k) (papp (ns k) u i) (papp (ns k) v i)))
+  ((vlam f) (uconv (ns k) (vapp (ns k) u x) (vapp (ns k) v x))) ((vlamc f c_ e_) (if (clo-fast k u v) true (uconv (ns k) (vapp (ns k) u x) (vapp (ns k) v x))))
+  ((vplam f) (uconv (ns k) (papp (ns k) u i) (papp (ns k) v i))) ((vplamc f c_ e_) (if (clo-fast k u v) true (uconv (ns k) (papp (ns k) u i) (papp (ns k) v i))))
   ((vpair a b) (andb (uconv k (vfst k u) (vfst k v)) (uconv k (vsnd k u) (vsnd k v))))
   ((vcon d c fs ds sg) (case v ((vcon d2 c2 fs2 ds2 sg2) (andb (eqn d d2) (andb (eqn c c2) (andb (lall2 ieq ds ds2) (uconv-l k fs fs2))))) (_ false)))
   ((vhcomp w a) (case v ((vhcomp w2 a2) (andb (uconv k a a2) (uconv (ns k) (w (ns k) i) (w2 (ns k) i)))) (_ false)))
-  ((vpi A F) (convty k u v)) ((vsigma A F) (convty k u v)) ((vu l) (convty k u v)) ((vpathp L a b) (convty k u v))
+  ((vpi A F) (convty k u v)) ((vpic A F c_ e_) (convty k u v)) ((vsigma A F) (convty k u v)) ((vsigmac A F c_ e_) (convty k u v)) ((vu l) (convty k u v)) ((vpathp L a b) (convty k u v))
   ((vglue A S) (convty k u v)) ((vdata d ps sg) (convty k u v))
   ((vlevel) (convty k u v)) ((vuw) (convty k u v)) ((vlvl c ts) (lvl-eq k u (lvl-of v)))
+  ((verr) (case v ((verr) true) (_ false)))
   (_ (case v
-    ((vlam f) (uconv (ns k) (vapp (ns k) u x) (vapp (ns k) v x)))
-    ((vplam f) (uconv (ns k) (papp (ns k) u i) (papp (ns k) v i)))
+    ((vlam f) (uconv (ns k) (vapp (ns k) u x) (vapp (ns k) v x))) ((vlamc f c_ e_) (uconv (ns k) (vapp (ns k) u x) (vapp (ns k) v x)))
+    ((vplam f) (uconv (ns k) (papp (ns k) u i) (papp (ns k) v i))) ((vplamc f c_ e_) (uconv (ns k) (papp (ns k) u i) (papp (ns k) v i)))
     ((vpair a b) (andb (uconv k (vfst k u) (vfst k v)) (uconv k (vsnd k u) (vsnd k v))))
     (_ (convneu k u v))))))))))
 (def neu-of (lam v (case v ((vneu n T) (some n)) (_ none))))
@@ -603,7 +700,7 @@
 (def convn (lam k u v n m (case n
   ((nvar l) (case m ((nvar l2) (eqn l l2)) (_ false)))
   ((napp h a) (case m ((napp h2 a2) (andb (convneu k h h2)
-       (case (type-of h) ((vpi A F) (conv k A a a2)) (_ (uconv k a a2))))) (_ false)))
+       (case (type-of h) ((vpi A F) (conv k A a a2)) ((vpic A F c_ e_) (conv k A a a2)) (_ (uconv k a a2))))) (_ false)))
   ((nfst h) (case m ((nfst h2) (convneu k h h2)) (_ false)))
   ((nsnd h) (case m ((nsnd h2) (convneu k h h2)) (_ false)))
   ((npapp h r) (case m ((npapp h2 r2) (andb (convneu k h h2) (ieq r r2))) (_ false)))
@@ -613,8 +710,10 @@
              (conv k1 (L k1 i) (w k1 i) (w2 k1 i))))))) (_ false)))
   ((nunglue S h) (case m ((nunglue S2 h2) (convneu k h h2)) (_ false)))
   ((nelim P B x) (case m ((nelim P2 B2 x2) (andb (convneu k x x2) (andb (eqn (brs-d B) (brs-d B2))
-       (conv-branches-at k P (brs-l B) (brs-l B2) (brs-d B)
-         (case (type-of x) ((vdata d ps sg) (some ps)) (_ none)) (brs-sg B) nz)))) (_ false)))
+       (if (if (lall2 code-eq (brs-cs B) (brs-cs B2)) (uconv-l k (brs-env B) (brs-env B2)) false) true
+            (conv-branches-at k P B B2 (brs-d B)
+              (case (type-of x) ((vdata d ps sg) (some ps)) (_ none)) (brs-sg B) nz
+              (llen (dctors (dentry (brs-sg B) (brs-d B))))))))) (_ false)))
   ((ntrans d ls psi x sg) (case m ((ntrans d2 ls2 psi2 x2 sg2) (andb (eqn d d2) (andb (feqf psi psi2)
        (andb (conv-tele (ns k) sg (dptys (dentry sg d)) (lmap (lam l (l (ns k) (ivar k))) ls) (lmap (lam l (l (ns k) (ivar k))) ls2) lnil)
              (convneu k x x2))))) (_ false))))))
@@ -688,11 +787,11 @@
   ((cvar n) (case (lnth tys n) ((some o) o) ((none) none)))
   ((cglob n) (case (lnth (fst sig) n) ((some p) (some (fst p))) ((none) none)))
   ((capp f a) (case (infer k sig env tys f)
-     ((some T) (case T ((vpi A F) (if (check k sig env tys a A) (some (F k (veval k sig env a))) none)) (_ none)))
+     ((some T) (case T ((vpi A F) (if (check k sig env tys a A) (some (F k (veval k sig env a))) none)) ((vpic A F c_ e_) (if (check k sig env tys a A) (some (F k (veval k sig env a))) none)) (_ none)))
      ((none) none)))
-  ((cfst p) (case (infer k sig env tys p) ((some T) (case T ((vsigma A F) (some A)) (_ none))) ((none) none)))
+  ((cfst p) (case (infer k sig env tys p) ((some T) (case T ((vsigma A F) (some A)) ((vsigmac A F c_ e_) (some A)) (_ none))) ((none) none)))
   ((csnd p) (case (infer k sig env tys p)
-     ((some T) (case T ((vsigma A F) (some (F k (vfst k (veval k sig env p))))) (_ none)))
+     ((some T) (case T ((vsigma A F) (some (F k (vfst k (veval k sig env p))))) ((vsigmac A F c_ e_) (some (F k (vfst k (veval k sig env p))))) (_ none)))
      ((none) none)))
   ((cpapp p r) (case (infer k sig env tys p)
      ((some T) (case T ((vpathp L a b) (if (check-iv tys r) (some (L k (iv-of (veval k sig env r)))) none)) (_ none)))
@@ -709,7 +808,15 @@
         ((some l) (let L (line-of (veval k sig env A))
            (if (andb (check k sig env tys a (L k i0)) (check k sig env tys b (L k i1))) (some (vu l)) none)))
         ((none) none)))
-     (_ none)))
+     ; a line of types given as a term: a path in a universe
+     (_ (case (infer k sig env tys A)
+          ((some TA) (case TA
+             ((vpathp L T0 T1) (case (L (ns k) (ivar k))
+                ((vu l) (let Lv (line-of (veval k sig env A))
+                   (if (andb (check k sig env tys a (Lv k i0)) (check k sig env tys b (Lv k i1))) (some (vu l)) none)))
+                (_ none)))
+             (_ none)))
+          ((none) none)))))
   ((cgluet A S) (case (infer-level k sig env tys A)
      ((some l) (let Av (veval k sig env A)
         (if (check-sys k sig env tys S (vsigma (vu l) (lam k1 T (equiv-type k1 T Av)))) (some (vu l)) none)))
@@ -727,7 +834,7 @@
      ((some T) (case T ((vdata d2 ps sg) (if (eqn d d2)
          (case (motive-level k sig env tys T P)
            ((some l) (let Pv (veval k sig env P)
-              (if (check-branches k sig env tys d ps Pv (brs d sig (eval-branches-at sig env d B nz)) B nz) (some (vapp k Pv (veval k sig env x))) none)))
+              (if (check-branches k sig env tys d ps Pv (brs d sig B (trim env (mors B))) B nz) (some (vapp k Pv (veval k sig env x))) none)))
            ((none) none))
          none)) (_ none)))
      ((none) none)))
@@ -735,6 +842,10 @@
      ((some T) (case T ((vdata d ps sg) (if (check-hcomp k sig env tys T u a) (some T) none)) (_ none)))
      ((none) none)))
   ((cforce t) (infer k sig env tys t))
+  ; a line: its type is the path of its body's types between its ends
+  ((cplam b) (case (infer (ns k) sig (under-dim k env) (lcons none tys) b)
+     ((some Tk) (some (vpathp (reabs k Tk) (veval k sig (lcons (viv i0) env) b) (veval k sig (lcons (viv i1) env) b))))
+     ((none) none)))
   (_ none))))
 ; parameters against their telescope
 (def check-tele (lam k sig env tys ptys ps penv (case ptys
@@ -744,7 +855,13 @@
           (check-tele k sig env tys rest pr (lcons (veval k sig env p) penv)))))))))
 (def motive-level (lam k sig env tys T P (case P
   ((clam b) (infer-sort (ns k) sig (lcons (vneu (nvar k) T) env) (lcons (some T) tys) b))
-  (_ none))))
+  (_ (case (infer k sig env tys P)
+       ((some Pt) (case Pt
+          ((vpi A F) (if (convty k A T)
+             (case (F (ns k) (vneu (nvar k) A)) ((vu l) (some (vu l))) ((vuw) (some vuw)) (_ none)) none)) ((vpic A F c_ e_) (if (convty k A T)
+             (case (F (ns k) (vneu (nvar k) A)) ((vu l) (some (vu l))) ((vuw) (some vuw)) (_ none)) none))
+          (_ none)))
+       ((none) none))))))
 ; each branch: λ fields, dimensions, of type P (c fields dims), and on the
 ; boundary's faces equal to the elimination of the boundary
 (declare check-branch)
@@ -795,8 +912,9 @@
   ((none) none))))
 (def check (lam k sig env tys c T (case c
   ((clam b) (case T ((vpi A F) (let x (vneu (nvar k) A)
+       (check (ns k) sig (lcons x env) (lcons (some A) tys) b (F (ns k) x)))) ((vpic A F c_ e_) (let x (vneu (nvar k) A)
        (check (ns k) sig (lcons x env) (lcons (some A) tys) b (F (ns k) x)))) (_ false)))
-  ((cpair a b) (case T ((vsigma A F) (andb (check k sig env tys a A) (check k sig env tys b (F k (veval k sig env a))))) (_ false)))
+  ((cpair a b) (case T ((vsigma A F) (andb (check k sig env tys a A) (check k sig env tys b (F k (veval k sig env a))))) ((vsigmac A F c_ e_) (andb (check k sig env tys a A) (check k sig env tys b (F k (veval k sig env a))))) (_ false)))
   ((cplam b) (case T ((vpathp L a0 a1) (let i (ivar k)
        (andb (check (ns k) sig (under-dim k env) (lcons none tys) b (L (ns k) i))
        (andb (conv k (L k i0) (veval k sig (lcons (viv i0) env) b) a0)
@@ -818,7 +936,7 @@
   ((chcomp u a) (case T ((vdata d ps sg) (andb (check k sig env tys a T) (check-hcomp k sig env tys T u a))) (_ false)))
   ((ccase d B x) (case (infer k sig env tys x)
      ((some X) (case X ((vdata d2 ps sg) (andb (eqn d d2)
-          (check-branches k sig env tys d ps (vlam (lam k1 y T)) (brs d sig (eval-branches-at sig env d B nz)) B nz))) (_ false)))
+          (check-branches k sig env tys d ps (vlam (lam k1 y T)) (brs d sig B (trim env (mors B))) B nz))) (_ false)))
      ((none) false)))
   (_ (case (infer k sig env tys c) ((some T2) (convty k T2 T)) ((none) false))))))
 
@@ -907,7 +1025,7 @@
 ; p : Π g1..gn. PathP (λ_. B) (L g) (R g), n the arguments the identity takes
 (def id-tele (lam k T VL VR n (case n
   ((nz) (vpathp (lam k1 r T) VL VR))
-  ((ns m) (case T ((vpi A F) (vpi A (lam k1 x (id-tele k1 (F k1 x) (vapp k1 VL x) (vapp k1 VR x) m)))) (_ verr))))))
+  ((ns m) (case T ((vpi A F) (vpi A (lam k1 x (id-tele k1 (F k1 x) (vapp k1 VL x) (vapp k1 VR x) m)))) ((vpic A F c_ e_) (vpi A (lam k1 x (id-tele k1 (F k1 x) (vapp k1 VL x) (vapp k1 VR x) m)))) (_ verr))))))
 (def id-type (lam sig gL gR n (case (lnth (fst sig) gL)
   ((some eL) (case (lnth (fst sig) gR)
      ((some eR) (if (convty nz (fst eL) (fst eR)) (some (id-tele nz (fst eL) (snd eL) (snd eR) n)) none))

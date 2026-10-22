@@ -30,7 +30,7 @@
 (def cl-app (lam l m (case l ((lnil) m) ((lcons x xs) (lcons x (cl-app xs m))))))
 (def app-all (lam f xs (case xs ((lnil) f) ((lcons x r) (app-all (f x) r)))))
 ; the machine's data types, for the evaluator: (dtab former constructors elim case)
-(data DTab (dtab former cons elim cs))
+(data DTab (dtab former cons el cs))
 (def dt-former (lam t (case t ((dtab f c e s) f))))
 (def dt-cons (lam t (case t ((dtab f c e s) c))))
 (def dt-elim (lam t (case t ((dtab f c e s) e))))

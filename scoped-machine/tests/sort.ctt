@@ -1,0 +1,290 @@
+; tests/sort.ctt — 9.15: the declaration Σ[B] (B a rearrangement of A) × Sorted B, posed with the
+; identities a finite multiset has, and normalized: the elimination of A, whose ∪ branch is merge.
+; A multiset is the free commutative monoid on Nat (∪ with units, associativity, commutativity as
+; path constructors); a rearrangement is equality of multiplicities; Sorted is 9.6's.
+
+; ---------------------------------------------------------------- order and equality on Nat
+(checked eqb (Pi ((m Nat) (n Nat)) Bool)
+  (lam m (elim (lam y (Pi n Nat Bool)) m
+    ((zero) (lam n (case n ((zero) true) ((suc k) false))))
+    ((suc m1) (lam n (case n ((zero) false) ((suc n1) ((rec m1) n1))))))))
+(checked leb (Pi ((m Nat) (n Nat)) Bool)
+  (lam m (elim (lam y (Pi n Nat Bool)) m
+    ((zero) (lam n true))
+    ((suc m1) (lam n (case n ((zero) false) ((suc n1) ((rec m1) n1))))))))
+(checked isProp-isTrue (Pi b Bool (isProp lzero (isTrue b)))
+  (lam b (elim (lam y (isProp lzero (isTrue y))) b
+    ((true) (lam u v (elim (lam w (PathP (plam i Unit) w v)) u ((unit) (elim (lam w (PathP (plam i Unit) unit w)) v ((unit) (plam i unit)))))))
+    ((false) (lam u v (Empty-rec lzero (PathP (plam i Empty) u v) u))))))
+(checked eqb-sound (Pi ((m Nat) (n Nat) (e (isTrue (eqb m n)))) (PathP (plam i Nat) m n))
+  (lam m (elim (lam y (Pi ((n Nat) (e (isTrue (eqb y n)))) (PathP (plam i Nat) y n))) m
+    ((zero) (lam n (elim (lam z (Pi e (isTrue (eqb zero z)) (PathP (plam i Nat) zero z))) n
+       ((zero) (lam e (plam i zero)))
+       ((suc k) (lam e (Empty-rec lzero (PathP (plam i Nat) zero (suc k)) e))))))
+    ((suc m1) (lam n (elim (lam z (Pi e (isTrue (eqb (suc m1) z)) (PathP (plam i Nat) (suc m1) z))) n
+       ((zero) (lam e (Empty-rec lzero (PathP (plam i Nat) (suc m1) zero) e)))
+       ((suc n1) (lam e (plam i (suc (@ ((rec m1) n1 e) i)))))))))))
+(checked eqb-refl (Pi n Nat (isTrue (eqb n n)))
+  (lam n (elim (lam y (isTrue (eqb y y))) n ((zero) unit) ((suc k) (rec k)))))
+(checked eqb-complete (Pi ((m Nat) (n Nat) (p (PathP (plam i Nat) m n))) (isTrue (eqb m n)))
+  (lam m n p (subst lzero lzero Nat (lam z (isTrue (eqb m z))) m n p (eqb-refl m))))
+(checked leb-refl (Pi n Nat (isTrue (leb n n)))
+  (lam n (elim (lam y (isTrue (leb y y))) n ((zero) unit) ((suc k) (rec k)))))
+; not m ≤ n gives n ≤ m
+(checked leb-flip (Pi ((m Nat) (n Nat) (e (PathP (plam i Bool) (leb m n) false))) (isTrue (leb n m)))
+  (lam m (elim (lam y (Pi ((n Nat) (e (PathP (plam i Bool) (leb y n) false))) (isTrue (leb n y)))) m
+    ((zero) (lam n e (Empty-rec lzero (isTrue (leb n zero)) (true≢false e))))
+    ((suc m1) (lam n (elim (lam z (Pi e (PathP (plam i Bool) (leb (suc m1) z) false) (isTrue (leb z (suc m1))))) n
+       ((zero) (lam e unit))
+       ((suc n1) (lam e ((rec m1) n1 e)))))))))
+(checked leb-antisym (Pi ((m Nat) (n Nat) (a (isTrue (leb m n))) (b (isTrue (leb n m)))) (PathP (plam i Nat) m n))
+  (lam m (elim (lam y (Pi ((n Nat) (a (isTrue (leb y n))) (b (isTrue (leb n y)))) (PathP (plam i Nat) y n))) m
+    ((zero) (lam n (elim (lam z (Pi ((a (isTrue (leb zero z))) (b (isTrue (leb z zero)))) (PathP (plam i Nat) zero z))) n
+       ((zero) (lam a b (plam i zero)))
+       ((suc k) (lam a b (Empty-rec lzero (PathP (plam i Nat) zero (suc k)) b))))))
+    ((suc m1) (lam n (elim (lam z (Pi ((a (isTrue (leb (suc m1) z))) (b (isTrue (leb z (suc m1))))) (PathP (plam i Nat) (suc m1) z))) n
+       ((zero) (lam a b (Empty-rec lzero (PathP (plam i Nat) (suc m1) zero) a)))
+       ((suc n1) (lam a b (plam i (suc (@ ((rec m1) n1 a b) i)))))))))))
+(checked leb-trans (Pi ((a Nat) (b Nat) (c Nat) (p (isTrue (leb a b))) (q (isTrue (leb b c)))) (isTrue (leb a c)))
+  (lam a (elim (lam y (Pi ((b Nat) (c Nat) (p (isTrue (leb y b))) (q (isTrue (leb b c)))) (isTrue (leb y c)))) a
+    ((zero) (lam b c p q unit))
+    ((suc a1) (lam b (elim (lam z (Pi ((c Nat) (p (isTrue (leb (suc a1) z))) (q (isTrue (leb z c)))) (isTrue (leb (suc a1) c)))) b
+       ((zero) (lam c p q (Empty-rec lzero (isTrue (leb (suc a1) c)) p)))
+       ((suc b1) (lam c (elim (lam w (Pi ((p (isTrue (leb (suc a1) (suc b1)))) (q (isTrue (leb (suc b1) w)))) (isTrue (leb (suc a1) w)))) c
+          ((zero) (lam p q (Empty-rec lzero (isTrue (leb (suc a1) zero)) q)))
+          ((suc c1) (lam p q ((rec a1) b1 c1 p q))))))))))))
+
+; ---------------------------------------------------------------- lists: multiplicity, order, merge
+(checked one-if (Pi b Bool Nat) (lam b (if b (suc zero) zero)))
+(checked count (Pi ((a Nat) (l (List Nat))) Nat)
+  (lam a l (case l ((nil) zero) ((cons x r) (plus (one-if (eqb a x)) (rec r))))))
+(checked AllLe (Pi ((y Nat) (l (List Nat))) U)
+  (lam y l (case l ((nil) Unit) ((cons x r) (Sigma h (isTrue (leb y x)) (rec r))))))
+; 9.6: sortedness is the head below every element of the tail, and the tail sorted
+(checked Sorted (Pi l (List Nat) U)
+  (lam l (case l ((nil) Unit) ((cons x r) (Sigma h (AllLe x r) (rec r))))))
+; merge is sortedness unfolded
+(checked merge (Pi ((xs (List Nat)) (ys (List Nat))) (List Nat))
+  (lam xs (elim (lam w (Pi ys (List Nat) (List Nat))) xs
+    ((nil) (lam ys ys))
+    ((cons x xs1) (lam ys (elim (lam w (List Nat)) ys
+        ((nil) (cons x xs1))
+        ((cons y ys1) (if (leb x y) (cons x ((rec xs1) (cons y ys1))) (cons y (rec ys1))))))))))
+(checked plusN-comm-mid (Pi ((e Nat) (X Nat) (c Nat)) (PathP (plam i Nat) (plus e (plus X c)) (plus X (plus e c))))
+  (lam e X c (transN (plus e (plus X c)) (plus (plus e X) c) (plus X (plus e c))
+    (symN (plus (plus e X) c) (plus e (plus X c)) (plus-assoc e X c))
+    (transN (plus (plus e X) c) (plus (plus X e) c) (plus X (plus e c))
+      (congN (lam z (plus z c)) (plus e X) (plus X e) (plus-comm e X))
+      (plus-assoc X e c)))))
+(checked merge-count (Pi ((a Nat) (xs (List Nat)) (ys (List Nat)))
+    (PathP (plam i Nat) (count a (merge xs ys)) (plus (count a xs) (count a ys))))
+  (lam a xs (elim (lam w (Pi ys (List Nat) (PathP (plam i Nat) (count a (merge w ys)) (plus (count a w) (count a ys))))) xs
+    ((nil) (lam ys (plam i (count a ys))))
+    ((cons x xs1) (lam ys (elim (lam w (PathP (plam i Nat) (count a (merge (cons x xs1) w)) (plus (count a (cons x xs1)) (count a w)))) ys
+       ((nil) (symN (plus (count a (cons x xs1)) zero) (count a (cons x xs1)) (plus-zero (count a (cons x xs1)))))
+       ((cons y ys1)
+         (elim (lam bb (PathP (plam i Nat) (count a (if bb (cons x (merge xs1 (cons y ys1))) (cons y (merge (cons x xs1) ys1))))
+                                            (plus (count a (cons x xs1)) (count a (cons y ys1)))))
+               (leb x y)
+           ((true) (transN (plus (one-if (eqb a x)) (count a (merge xs1 (cons y ys1))))
+                           (plus (one-if (eqb a x)) (plus (count a xs1) (count a (cons y ys1))))
+                           (plus (plus (one-if (eqb a x)) (count a xs1)) (count a (cons y ys1)))
+                     (congN (plus (one-if (eqb a x))) (count a (merge xs1 (cons y ys1))) (plus (count a xs1) (count a (cons y ys1)))
+                            ((rec xs1) (cons y ys1)))
+                     (symN (plus (plus (one-if (eqb a x)) (count a xs1)) (count a (cons y ys1)))
+                           (plus (one-if (eqb a x)) (plus (count a xs1) (count a (cons y ys1))))
+                           (plus-assoc (one-if (eqb a x)) (count a xs1) (count a (cons y ys1))))))
+           ((false) (transN (plus (one-if (eqb a y)) (count a (merge (cons x xs1) ys1)))
+                            (plus (one-if (eqb a y)) (plus (count a (cons x xs1)) (count a ys1)))
+                            (plus (count a (cons x xs1)) (plus (one-if (eqb a y)) (count a ys1)))
+                      (congN (plus (one-if (eqb a y))) (count a (merge (cons x xs1) ys1)) (plus (count a (cons x xs1)) (count a ys1))
+                             (rec ys1))
+                      (plusN-comm-mid (one-if (eqb a y)) (count a (cons x xs1)) (count a ys1))))))))))))
+(checked allle-trans (Pi ((x Nat) (y Nat) (h (isTrue (leb x y))) (l (List Nat)) (a (AllLe y l))) (AllLe x l))
+  (lam x y h l (elim (lam w (Pi a (AllLe y w) (AllLe x w))) l
+    ((nil) (lam a unit))
+    ((cons z r) (lam a (pair (leb-trans x y z h (fst a)) ((rec r) (snd a))))))))
+(checked merge-allle (Pi ((z Nat) (xs (List Nat)) (ys (List Nat)) (a (AllLe z xs)) (b (AllLe z ys))) (AllLe z (merge xs ys)))
+  (lam z xs (elim (lam w (Pi ((ys (List Nat)) (a (AllLe z w)) (b (AllLe z ys))) (AllLe z (merge w ys)))) xs
+    ((nil) (lam ys a b b))
+    ((cons x xs1) (lam ys (elim (lam w (Pi ((a (AllLe z (cons x xs1))) (b (AllLe z w))) (AllLe z (merge (cons x xs1) w)))) ys
+       ((nil) (lam a b a))
+       ((cons y ys1) (lam a b
+         (elim (lam bb (AllLe z (if bb (cons x (merge xs1 (cons y ys1))) (cons y (merge (cons x xs1) ys1))))) (leb x y)
+           ((true) (pair (fst a) ((rec xs1) (cons y ys1) (snd a) b)))
+           ((false) (pair (fst b) ((rec ys1) a (snd b)))))))))))))
+(checked merge-sorted (Pi ((xs (List Nat)) (ys (List Nat)) (sx (Sorted xs)) (sy (Sorted ys))) (Sorted (merge xs ys)))
+  (lam xs (elim (lam w (Pi ((ys (List Nat)) (sx (Sorted w)) (sy (Sorted ys))) (Sorted (merge w ys)))) xs
+    ((nil) (lam ys sx sy sy))
+    ((cons x xs1) (lam ys (elim (lam w (Pi ((sx (Sorted (cons x xs1))) (sy (Sorted w))) (Sorted (merge (cons x xs1) w)))) ys
+       ((nil) (lam sx sy sx))
+       ((cons y ys1) (lam sx sy
+         ((elim (lam bb (Pi e (PathP (plam i Bool) (leb x y) bb)
+                          (Sorted (if bb (cons x (merge xs1 (cons y ys1))) (cons y (merge (cons x xs1) ys1))))))
+                (leb x y)
+            ((true) (lam e
+              (let hxy (subst lzero lzero Bool (lam bb (isTrue bb)) true (leb x y) (plam i (@ e (~ i))) unit)
+                (pair (merge-allle x xs1 (cons y ys1) (fst sx) (pair hxy (allle-trans x y hxy ys1 (fst sy))))
+                      ((rec xs1) (cons y ys1) (snd sx) sy)))))
+            ((false) (lam e
+              (let hyx (leb-flip x y e)
+                (pair (merge-allle y (cons x xs1) ys1 (pair hyx (allle-trans y x hyx xs1 (fst sx))) (fst sy))
+                      ((rec ys1) sx (snd sy)))))))
+          (plam i (leb x y)))))))))))
+
+; ---------------------------------------------------------------- a sorted list is fixed by its multiplicities
+(checked count-head (Pi ((x Nat) (l (List Nat))) (PathP (plam i Nat) (count x (cons x l)) (suc (count x l))))
+  (lam x l ((elim (lam bb (Pi e (isTrue bb) (PathP (plam i Nat) (plus (one-if bb) (count x l)) (suc (count x l))))) (eqb x x)
+              ((true) (lam e (plam i (suc (count x l)))))
+              ((false) (lam e (Empty-rec lzero (PathP (plam i Nat) (plus zero (count x l)) (suc (count x l))) e))))
+            (eqb-refl x))))
+; an element counted in a list bounded below by y is at least y
+(checked allle-count (Pi ((y Nat) (l (List Nat)) (a (AllLe y l)) (x Nat) (k Nat) (c (PathP (plam i Nat) (count x l) (suc k))))
+    (isTrue (leb y x)))
+  (lam y l (elim (lam w (Pi ((a (AllLe y w)) (x Nat) (k Nat) (c (PathP (plam i Nat) (count x w) (suc k)))) (isTrue (leb y x)))) l
+    ((nil) (lam a x k c (Empty-rec lzero (isTrue (leb y x)) (snotz k (plam i (@ c (~ i)))))))
+    ((cons z r) (lam a x k c
+      ((elim (lam bb (Pi ((e (PathP (plam i Bool) (eqb x z) bb)) (c2 (PathP (plam i Nat) (plus (one-if bb) (count x r)) (suc k)))) (isTrue (leb y x))))
+             (eqb x z)
+         ((true) (lam e c2 (subst lzero lzero Nat (lam v (isTrue (leb y v))) z x
+                              (symN x z (eqb-sound x z (subst lzero lzero Bool (lam bb (isTrue bb)) true (eqb x z) (plam i (@ e (~ i))) unit)))
+                              (fst a))))
+         ((false) (lam e c2 ((rec r) (snd a) x k c2))))
+       (plam i (eqb x z)) c))))))
+(checked suc-inj (Pi ((m Nat) (n Nat) (p (PathP (plam i Nat) (suc m) (suc n)))) (PathP (plam i Nat) m n))
+  (lam m n p (congN predN (suc m) (suc n) p)))
+(checked plus-cancel (Pi ((k Nat) (m Nat) (n Nat) (p (PathP (plam i Nat) (plus k m) (plus k n)))) (PathP (plam i Nat) m n))
+  (lam k (elim (lam w (Pi ((m Nat) (n Nat) (p (PathP (plam i Nat) (plus w m) (plus w n)))) (PathP (plam i Nat) m n))) k
+    ((zero) (lam m n p p))
+    ((suc k1) (lam m n p ((rec k1) m n (suc-inj (plus k1 m) (plus k1 n) p)))))))
+(checked sorted-unique (Pi ((xs (List Nat)) (ys (List Nat)) (sx (Sorted xs)) (sy (Sorted ys))
+                            (c (Pi a Nat (isTrue (eqb (count a xs) (count a ys))))))
+    (PathP (plam i (List Nat)) xs ys))
+  (lam xs (elim (lam w (Pi ((ys (List Nat)) (sx (Sorted w)) (sy (Sorted ys)) (c (Pi a Nat (isTrue (eqb (count a w) (count a ys))))))
+                         (PathP (plam i (List Nat)) w ys))) xs
+    ((nil) (lam ys (elim (lam v (Pi ((sx (Sorted nil)) (sy (Sorted v)) (c (Pi a Nat (isTrue (eqb (count a nil) (count a v))))))
+                                  (PathP (plam i (List Nat)) nil v))) ys
+       ((nil) (lam sx sy c (plam i nil)))
+       ((cons y q) (lam sx sy c (Empty-rec lzero (PathP (plam i (List Nat)) nil (cons y q))
+          (snotz (count y q) (transN (suc (count y q)) (count y (cons y q)) zero
+                                (symN (count y (cons y q)) (suc (count y q)) (count-head y q))
+                                (symN zero (count y (cons y q)) (eqb-sound zero (count y (cons y q)) (c y)))))))))))
+    ((cons x r) (lam ys (elim (lam v (Pi ((sx (Sorted (cons x r))) (sy (Sorted v)) (c (Pi a Nat (isTrue (eqb (count a (cons x r)) (count a v))))))
+                                       (PathP (plam i (List Nat)) (cons x r) v))) ys
+       ((nil) (lam sx sy c (Empty-rec lzero (PathP (plam i (List Nat)) (cons x r) nil)
+          (snotz (count x r) (transN (suc (count x r)) (count x (cons x r)) zero
+                                (symN (count x (cons x r)) (suc (count x r)) (count-head x r))
+                                (eqb-sound (count x (cons x r)) zero (c x)))))))
+       ((cons y q) (lam sx sy c
+         (let hx (transN (count x (cons y q)) (count x (cons x r)) (suc (count x r))
+                    (symN (count x (cons x r)) (count x (cons y q)) (eqb-sound (count x (cons x r)) (count x (cons y q)) (c x)))
+                    (count-head x r))
+         (let hy (transN (count y (cons x r)) (count y (cons y q)) (suc (count y q))
+                    (eqb-sound (count y (cons x r)) (count y (cons y q)) (c y))
+                    (count-head y q))
+         (let yx (allle-count y (cons y q) (pair (leb-refl y) (fst sy)) x (count x r) hx)
+         (let xy (allle-count x (cons x r) (pair (leb-refl x) (fst sx)) y (count y q) hy)
+         (let pxy (leb-antisym x y xy yx)
+         (let crq (the (Pi a Nat (isTrue (eqb (count a r) (count a q)))) (lam a (eqb-complete (count a r) (count a q)
+                    (plus-cancel (one-if (eqb a x)) (count a r) (count a q)
+                      (transN (plus (one-if (eqb a x)) (count a r)) (plus (one-if (eqb a y)) (count a q)) (plus (one-if (eqb a x)) (count a q))
+                        (eqb-sound (count a (cons x r)) (count a (cons y q)) (c a))
+                        (congN (lam v (plus (one-if (eqb a v)) (count a q))) y x (symN x y pxy)))))))
+           (plam i (cons (@ pxy i) (@ ((rec r) q (snd sx) (snd sy) crq) i)))))))))))))))))
+
+; ---------------------------------------------------------------- propositions
+(checked isPropPair (Pi ((A U) (B U) (pa (isProp lzero A)) (pb (isProp lzero B))) (isProp lzero (Sigma a A B)))
+  (lam A B pa pb u v (plam i (pair (@ (pa (fst u) (fst v)) i) (@ (pb (snd u) (snd v)) i)))))
+(checked isProp-AllLe (Pi ((y Nat) (l (List Nat))) (isProp lzero (AllLe y l)))
+  (lam y l (elim (lam w (isProp lzero (AllLe y w))) l
+    ((nil) (isProp-isTrue true))
+    ((cons x r) (isPropPair (isTrue (leb y x)) (AllLe y r) (isProp-isTrue (leb y x)) (rec r))))))
+(checked isProp-Sorted (Pi l (List Nat) (isProp lzero (Sorted l)))
+  (lam l (elim (lam w (isProp lzero (Sorted w))) l
+    ((nil) (isProp-isTrue true))
+    ((cons x r) (isPropPair (AllLe x r) (Sorted r) (isProp-AllLe x r) (rec r))))))
+
+; ---------------------------------------------------------------- finite multisets
+; the free commutative monoid on Nat: ∪ with its identities as path constructors
+(checked-data (data Ms (emp) (sng (a Nat)) (un (x Ms) (y Ms))
+  (unitl (x Ms) (dims i) ((= i 0) (un emp x)) ((= i 1) x))
+  (unitr (x Ms) (dims i) ((= i 0) (un x emp)) ((= i 1) x))
+  (assoc (x Ms) (y Ms) (z Ms) (dims i) ((= i 0) (un (un x y) z)) ((= i 1) (un x (un y z))))
+  (comm (x Ms) (y Ms) (dims i) ((= i 0) (un x y)) ((= i 1) (un y x)))))
+; multiplicity in a multiset respects its identities: the laws of +
+(checked countM (Pi ((a Nat) (A Ms)) Nat)
+  (lam a A (elim (lam w Nat) A
+    ((emp) zero)
+    ((sng b) (one-if (eqb a b)))
+    ((un x y) (plus (rec x) (rec y)))
+    ((unitl x i) (rec x))
+    ((unitr x i) (@ (plus-zero (rec x)) i))
+    ((assoc x y z i) (@ (plus-assoc (rec x) (rec y) (rec z)) i))
+    ((comm x y i) (@ (plus-comm (rec x) (rec y)) i)))))
+; the declaration: a list with A's multiplicities, sorted
+(checked Gs (Pi ((A Ms) (B (List Nat))) U)
+  (lam A B (Sigma c (Pi a Nat (isTrue (eqb (count a B) (countM a A)))) (Sorted B))))
+(checked Fs (Pi A Ms U) (lam A (Sigma B (List Nat) (Gs A B))))
+(checked isPropGs (Pi ((A Ms) (B (List Nat))) (isProp lzero (Gs A B)))
+  (lam A B (isPropPair (Pi a Nat (isTrue (eqb (count a B) (countM a A)))) (Sorted B)
+    (lam f g (plam i (lam a (@ (isProp-isTrue (eqb (count a B) (countM a A)) (f a) (g a)) i))))
+    (isProp-Sorted B))))
+; the completion is forced (9.2): the declaration is a proposition
+(checked Fs-prop (Pi A Ms (isProp lzero (Fs A)))
+  (lam A u v
+    (let pB (sorted-unique (fst u) (fst v) (snd (snd u)) (snd (snd v))
+              (the (Pi a Nat (isTrue (eqb (count a (fst u)) (count a (fst v)))))
+                (lam a (eqb-complete (count a (fst u)) (count a (fst v))
+                  (transN (count a (fst u)) (countM a A) (count a (fst v))
+                    (eqb-sound (count a (fst u)) (countM a A) ((fst (snd u)) a))
+                    (symN (count a (fst v)) (countM a A) (eqb-sound (count a (fst v)) (countM a A) ((fst (snd v)) a))))))))
+      (plam i (pair (@ pB i)
+        (@ (isProp→PathP lzero (Gs A (fst u)) (Gs A (fst v)) (plam j (Gs A (@ pB j))) (isPropGs A (fst v)) (snd u) (snd v)) i))))))
+(checked mempty (Fs emp) (pair nil (pair (lam a unit) unit)))
+(checked msng (Pi b Nat (Fs (sng b)))
+  (lam b (pair (cons b nil) (pair (the (Pi a Nat (isTrue (eqb (count a (cons b nil)) (countM a (sng b)))))
+                                     (lam a (eqb-complete (plus (one-if (eqb a b)) zero) (one-if (eqb a b)) (plus-zero (one-if (eqb a b))))))
+                                   (pair unit unit)))))
+; ∪ is merge
+(checked munion (Pi ((x Ms) (y Ms) (hx (Fs x)) (hy (Fs y))) (Fs (un x y)))
+  (lam x y hx hy
+    (pair (merge (fst hx) (fst hy))
+      (pair (the (Pi a Nat (isTrue (eqb (count a (merge (fst hx) (fst hy))) (countM a (un x y)))))
+              (lam a (eqb-complete (count a (merge (fst hx) (fst hy))) (plus (countM a x) (countM a y))
+                (transN (count a (merge (fst hx) (fst hy))) (plus (count a (fst hx)) (count a (fst hy))) (plus (countM a x) (countM a y))
+                  (merge-count a (fst hx) (fst hy))
+                  (cong2N plus (count a (fst hx)) (countM a x) (count a (fst hy)) (countM a y)
+                    (eqb-sound (count a (fst hx)) (countM a x) ((fst (snd hx)) a))
+                    (eqb-sound (count a (fst hy)) (countM a y) ((fst (snd hy)) a)))))))
+            (merge-sorted (fst hx) (fst hy) (snd (snd hx)) (snd (snd hy)))))))
+; posed with the multiset's identities: the elimination of A. The path branches are the declaration's
+; propositionality (an argument here, so checking them reads the propositionality's type only)
+(checked msort-at (Pi ((hp (Pi m Ms (isProp lzero (Fs m)))) (A Ms)) (Fs A))
+  (lam hp A (elim Fs A
+    ((emp) mempty)
+    ((sng b) (msng b))
+    ((un x y) (munion x y (rec x) (rec y)))
+    ((unitl x i) (@ (isProp→PathP lzero (Fs (un emp x)) (Fs x) (plam j (Fs (unitl x j))) (hp x)
+                                  (munion emp x mempty (rec x)) (rec x)) i))
+    ((unitr x i) (@ (isProp→PathP lzero (Fs (un x emp)) (Fs x) (plam j (Fs (unitr x j))) (hp x)
+                                  (munion x emp (rec x) mempty) (rec x)) i))
+    ((assoc x y z i) (@ (isProp→PathP lzero (Fs (un (un x y) z)) (Fs (un x (un y z))) (plam j (Fs (assoc x y z j)))
+                                      (hp (un x (un y z)))
+                                      (munion (un x y) z (munion x y (rec x) (rec y)) (rec z))
+                                      (munion x (un y z) (rec x) (munion y z (rec y) (rec z)))) i))
+    ((comm x y i) (@ (isProp→PathP lzero (Fs (un x y)) (Fs (un y x)) (plam j (Fs (comm x y j))) (hp (un y x))
+                                   (munion x y (rec x) (rec y)) (munion y x (rec y) (rec x))) i)))))
+(checked msort (Pi A Ms (Fs A)) (msort-at Fs-prop))
+
+; ---------------------------------------------------------------- the sorting, run
+; eight elements, the sum written balanced ((1+1)+(1+1))+((1+1)+(1+1)) and chained 1+(1+(…))
+(def n0 zero) (def n1 (suc n0)) (def n2 (suc n1)) (def n3 (suc n2)) (def n4 (suc n3)) (def n5 (suc n4)) (def n6 (suc n5)) (def n7 (suc n6))
+(def balanced (un (un (un (sng n5) (sng n2)) (un (sng n7) (sng n0))) (un (un (sng n3) (sng n6)) (un (sng n1) (sng n4)))))
+(def chained (un (sng n5) (un (sng n2) (un (sng n7) (un (sng n0) (un (sng n3) (un (sng n6) (un (sng n1) (sng n4)))))))))
+(def sorted8 (cons n0 (cons n1 (cons n2 (cons n3 (cons n4 (cons n5 (cons n6 (cons n7 nil)))))))))
+(same (fst (msort balanced)) sorted8)
+(same (fst (msort chained)) sorted8)
+; the same multiset: the sorting is fixed by the declaration, not by how the sum was written
+(same (fst (msort (un balanced emp))) sorted8)
+(show (fst (msort balanced)))
+(show (fst (msort chained)))

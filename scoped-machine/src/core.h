@@ -175,7 +175,7 @@ void defer_force(Cell *op, Cell *deferred);
  * (data ...); the net's rules are generic over these tables */
 typedef struct { char *name; int data, index, nfields, ndims; long bdy, trans; int nrec; uint64_t recmask; } ConInfo;
 /* bdy, trans: globals or -1; recmask: the fields of type the data type itself (recursive), nrec of them */
-typedef struct { char *name; int nparams, ncons; int *cons; long comp, transh; } DataInfo;
+typedef struct { char *name; int nparams, ncons; int *cons; long comp, transh; void *decl; } DataInfo;   /* decl: the (data ...) form */
 extern ConInfo *CON;
 extern DataInfo *DATA;
 extern long case_hcomp_global;

@@ -1,3 +1,4 @@
+#include <signal.h>
 /* lang.c — reading terms, compiling them to binder records, definitions,
  * reading values back, and the driver. */
 #include "core.h"
@@ -173,6 +174,14 @@ static Node *ds(Node *t) {
             int first = el ? 3 : 2;
             if (t->n < first + 1) die(el ? "(elim P e branch...)" : "(case e branch...)", NULL);
             int d = -1; Node *dflt = NULL;
+            if (t->n == first + 1 && !t->it[first]->list && data_lookup(t->it[first]->s) >= 0 && DATA[data_lookup(t->it[first]->s)].ncons == 0) {
+                /* a type with no constructors: (case e D), (elim P e D), no branches */
+                int d0 = data_lookup(t->it[first]->s);
+                Node *B = nlist(4); B->it[0] = nsym("%branches"); B->it[1] = nsym(DATA[d0].name); B->it[2] = nsym("0"); B->it[3] = nsym("0");
+                Node *env = nl3("lam", nsym("%g"), nsym("%g"));
+                if (el) { Node *r = nlist(5); r->it[0] = nsym("%case"); r->it[1] = B; r->it[2] = ds(t->it[1]); r->it[3] = env; r->it[4] = ds(t->it[2]); return r; }
+                return nl4("%case", B, env, ds(t->it[1]));
+            }
             for (int i = first; i < t->n; i++) {
                 Node *br = t->it[i];
                 if (!br->list || br->n != 2) die("malformed case branch", NULL);
@@ -254,6 +263,16 @@ static Node *ds(Node *t) {
         if (!strcmp(k, "lam") || !strcmp(k, "plam")) { if (t->n < 3) die("binder without body", NULL); return ds_lam(t->it + 1, t->n - 2, t->it[t->n - 1], k); }
         if (!strcmp(k, "forall")) { arity(t, 2); return nl3("forall", t->it[1], ds(t->it[2])); }
         if (!strcmp(k, "let")) { arity(t, 3); return nl4("let", t->it[1], ds(t->it[2]), ds(t->it[3])); }
+        if ((!strcmp(k, "Pi") || !strcmp(k, "Sigma")) && t->n == 3 && t->it[1]->list && t->it[1]->n >= 1 && t->it[1]->it[0]->list) {
+            /* a telescope: (Pi ((x A) (y B) ...) C) */
+            Node *tel = t->it[1], *r = t->it[2];
+            for (int q = tel->n - 1; q >= 0; q--) {
+                Node *b = tel->it[q];
+                if (!b->list || b->n != 2 || b->it[0]->list) die("malformed telescope in", k);
+                Node *n = nlist(4); n->it[0] = nsym(k); n->it[1] = b->it[0]; n->it[2] = b->it[1]; n->it[3] = r; r = n;
+            }
+            return ds(r);
+        }
         if (!strcmp(k, "Pi") || !strcmp(k, "Sigma")) {
             Node *x, *A, *B;
             if (t->n == 4) { x = t->it[1]; A = t->it[2]; B = t->it[3]; }
@@ -475,6 +494,54 @@ static Node *to_code(Node *t) {
     return NULL;
 }
 
+/* ---------------- shared codes ----------------
+ * A code is data the checker copies wherever a value, a closure or a neutral keeps
+ * it. Each constructor application in a code becomes a definition of its own, whose
+ * value is one cell with references to its parts: copying a code is copying a
+ * reference, and eliminating one copies one cell. Identical subcodes are one
+ * definition. */
+static void toplevel(Node *f);
+static size_t name_hash(const char *s);
+typedef struct { char *key; char *name; } Intern;
+static Intern *ITAB; static size_t capitab; static size_t nitab;
+static long nintern;
+static char *node_string(Node *t) { char *b; size_t n; FILE *m = open_memstream(&b, &n); print_node(m, t); fclose(m); return b; }
+static const char *itab_find(const char *key) {
+    if (!capitab) return NULL;
+    size_t j = name_hash(key) & (capitab - 1);
+    while (ITAB[j].key) { if (!strcmp(ITAB[j].key, key)) return ITAB[j].name; j = (j + 1) & (capitab - 1); }
+    return NULL;
+}
+static void itab_put(char *key, char *name) {
+    if (nitab * 2 >= capitab) {
+        size_t nc = capitab ? capitab * 2 : 4096;
+        Intern *nt = calloc(nc, sizeof(Intern));
+        for (size_t i = 0; i < capitab; i++) if (ITAB[i].key) {
+            size_t j = name_hash(ITAB[i].key) & (nc - 1);
+            while (nt[j].key) j = (j + 1) & (nc - 1);
+            nt[j] = ITAB[i];
+        }
+        free(ITAB); ITAB = nt; capitab = nc;
+    }
+    size_t j = name_hash(key) & (capitab - 1);
+    while (ITAB[j].key) j = (j + 1) & (capitab - 1);
+    ITAB[j] = (Intern){ key, name }; nitab++;
+}
+static Node *intern_code(Node *t) {
+    if (!t->list) return t;
+    if (!(t->n == 3 && is(t->it[0], "app"))) return t;
+    Node *r = nl3("app", intern_code(t->it[1]), intern_code(t->it[2]));
+    /* only whole constructor applications are shared: the head of the chain is a symbol */
+    char *key = node_string(r);
+    const char *nm = itab_find(key);
+    if (nm) { free(key); return nsym(nm); }
+    char buf[32]; snprintf(buf, sizeof buf, "%%c%ld", nintern++);
+    Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = nsym(buf); d->it[2] = r;
+    toplevel(d);
+    itab_put(key, strdup(buf));
+    return nsym(buf);
+}
+
 /* ---------------- definitions ---------------- */
 enum { G_DEF, G_AXIOM, G_INPUT };
 typedef struct {
@@ -488,7 +555,31 @@ static Global *G; static long nG, capG;
 static char **fresh_names; static long nfresh, capfresh;
 #define FRESH_BASE (1L << 40)
 
-long global_lookup(const char *name) { for (long i = nG - 1; i >= 0; i--) if (!strcmp(G[i].name, name)) return i; return -1; }
+/* names to the latest global of that name: open addressing, doubled when half full */
+static long *GH; static size_t capGH;
+static size_t name_hash(const char *s) { size_t h = 1469598103934665603ull; for (; *s; s++) h = (h ^ (unsigned char)*s) * 1099511628211ull; return h; }
+static void gh_put(const char *name, long g) {
+    if ((size_t)nG * 2 >= capGH) {
+        size_t nc = capGH ? capGH * 2 : 1024;
+        long *nh = malloc(nc * sizeof(long));
+        for (size_t i = 0; i < nc; i++) nh[i] = -1;
+        for (size_t i = 0; i < capGH; i++) if (GH[i] >= 0) {
+            size_t j = name_hash(G[GH[i]].name) & (nc - 1);
+            while (nh[j] >= 0) j = (j + 1) & (nc - 1);
+            nh[j] = GH[i];
+        }
+        free(GH); GH = nh; capGH = nc;
+    }
+    size_t j = name_hash(name) & (capGH - 1);
+    while (GH[j] >= 0 && strcmp(G[GH[j]].name, name)) j = (j + 1) & (capGH - 1);
+    GH[j] = g;
+}
+long global_lookup(const char *name) {
+    if (!capGH) return -1;
+    size_t j = name_hash(name) & (capGH - 1);
+    while (GH[j] >= 0) { if (!strcmp(G[GH[j]].name, name)) return GH[j]; j = (j + 1) & (capGH - 1); }
+    return -1;
+}
 const char *name_of(long id) { return id >= FRESH_BASE ? fresh_names[id - FRESH_BASE] : G[id].name; }
 static long fresh_var(const char *pfx, long k) {
     if (nfresh == capfresh) { capfresh = capfresh ? capfresh * 2 : 64; fresh_names = realloc(fresh_names, (size_t)capfresh * sizeof(char *)); }
@@ -501,7 +592,9 @@ static long add_global(const char *name, int kind) {
     memset(&G[nG], 0, sizeof(Global));
     G[nG].name = strdup(name); G[nG].kind = kind; G[nG].tyg = -1;
     G[nG].res = cell(O_ROOT, 1);
-    return nG++;
+    nG++;
+    gh_put(name, nG - 1);
+    return nG - 1;
 }
 Port global_copy(long g) {
     Cell *r = G[g].res;
@@ -658,6 +751,7 @@ static Bind *lookup(const char *name) { for (int i = nbinds - 1; i >= 0; i--) if
 static bool constant_sym(const char *s);
 static void push_bind(const char *name, int level, int slot) {
     if (constant_sym(name)) die("a constant cannot be bound:", name);
+    if (keyword(name)) die("a keyword cannot be bound:", name);
     GROW(binds, capbinds, (size_t)nbinds + 1); binds[nbinds++] = (Bind){ name, level, slot }; }
 static int new_slot(void) {
     Level *L = &levels[nlevels - 1];
@@ -1122,7 +1216,7 @@ static void toplevel(Node *f) {
         Node *T = f->it[at], *t = f->it[at + 1];
         char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
         Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
-        Node *cT = to_code(ds(T)), *ct = to_code(ds(t));
+        Node *cT = intern_code(to_code(ds(T))), *ct = intern_code(to_code(ds(t)));
         Node *q = nl4("chk-def", sign, cT, ct);
         long steps;
         char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
@@ -1212,15 +1306,25 @@ static void toplevel(Node *f) {
         d = nlist(3); d->it[0] = nsym("def"); d->it[1] = nsym(pn); d->it[2] = nl2("snd", f->it[2]); toplevel(d);
         Node *id = nlist(5); id->it[0] = nsym("identity"); id->it[1] = f->it[1]; id->it[2] = nsym(rn); id->it[3] = nsym(pn); id->it[4] = nsym(nb);
         toplevel(id);
-    } else if (!strcmp(h, "checked-data") || !strcmp(h, "checked-data-fail")) {
-        bool expect = !strcmp(h, "checked-data");
+    } else if (!strcmp(h, "checked-data") || !strcmp(h, "checked-data-fail") || !strcmp(h, "check-data")) {
+        bool expect = strcmp(h, "checked-data-fail") != 0;
         /* (checked-data (data ...)): declare the data type and check it with the
          * checker: parameter and field types are types, fields strictly positive,
-         * boundaries elements of the type made of earlier constructors */
-        if (f->n != 2 || !f->it[1]->list || !is(f->it[1]->it[0], "data")) die("(checked-data[-fail] (data ...))", NULL);
-        Node *dd = f->it[1];
-        toplevel(dd);
-        int d = ndata - 1;
+         * boundaries elements of the type made of earlier constructors.
+         * (check-data D): check a data type already declared (the prelude's) */
+        Node *dd; int d;
+        if (!strcmp(h, "check-data")) {
+            if (f->n != 2 || f->it[1]->list) die("(check-data D)", NULL);
+            d = data_lookup(f->it[1]->s);
+            if (d < 0) die("check-data: no such data type:", f->it[1]->s);
+            if (chk_index(d) >= 0) die("check-data: already checked:", f->it[1]->s);
+            dd = DATA[d].decl;
+        } else {
+            if (f->n != 2 || !f->it[1]->list || !is(f->it[1]->it[0], "data")) die("(checked-data[-fail] (data ...))", NULL);
+            dd = f->it[1];
+            toplevel(dd);
+            d = ndata - 1;
+        }
         GROW(CHKDATA, capchkdata, (size_t)nchkdata + 1);
         CHKDATA[nchkdata++] = d;
         Node *hd = dd->it[1];
@@ -1259,7 +1363,7 @@ static void toplevel(Node *f) {
             free(ft);
         }
         ncscope = base;
-        Node *ent = capp3("dent", code_list(pt, np), code_list(ce, DATA[d].ncons), nsym("nz"));
+        Node *ent = intern_code(capp3("dent", code_list(pt, np), code_list(ce, DATA[d].ncons), nsym("nz")));
         free(pt); free(ce);
         char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
         Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
@@ -1308,7 +1412,7 @@ static void toplevel(Node *f) {
         for (int k = 0; k < np; k++) pn[k] = param_name(hd->it[k + 1])->s;
         GROW(DATA, capdata, (size_t)ndata + 1);
         int d = ndata++;
-        DATA[d] = (DataInfo){ strdup(D), np, nc, calloc((size_t)nc + 1, sizeof(int)), -1, -1 };
+        DATA[d] = (DataInfo){ strdup(D), np, nc, calloc((size_t)nc + 1, sizeof(int)), -1, -1, f };
         typedef struct { Node *cd; int nf, nd, nb; Node **fn, **ft, **dn, **bf, **be; } CD;
         CD *cs = calloc((size_t)nc + 1, sizeof(CD));
         for (int ci = 0; ci < nc; ci++) {
@@ -1523,7 +1627,7 @@ static void toplevel(Node *f) {
             char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
             Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
             Node *q = nlist(6); q->it[0] = nsym("chk-identity"); q->it[1] = sign;
-            q->it[2] = numeral(CHKID[i].iL); q->it[3] = numeral(CHKID[i].iR); q->it[4] = numeral(CHKID[i].n); q->it[5] = to_code(ds(f->it[2]));
+            q->it[2] = numeral(CHKID[i].iL); q->it[3] = numeral(CHKID[i].iR); q->it[4] = numeral(CHKID[i].n); q->it[5] = intern_code(to_code(ds(f->it[2])));
             long steps;
             char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
@@ -1629,9 +1733,12 @@ static char *slurp(const char *path) {
     char *b = malloc((size_t)n + 1); size_t got = fread(b, 1, (size_t)n, f); b[got] = 0; fclose(f);
     return b;
 }
+static void prof_print(void);
+static void prof_signal(int sig) { (void)sig; fflush(stdout); prof_print(); _Exit(3); }
 int main(int argc, char **argv) {
     const char *w = getenv("CUBICAL_WORKERS");
     prof_on = getenv("CUBICAL_PROFILE") != NULL;
+    if (prof_on) signal(SIGTERM, prof_signal);
     prof_enter("(top level)");
     net_start(w ? atoi(w) : 0);
     for (int i = 1; i < argc; i++) {
@@ -1642,6 +1749,10 @@ int main(int argc, char **argv) {
     }
     /* steps performed so far: a reading only when the workload has normalized (show, defect) */
     printf("%d passed, %d failed; %ld interaction steps performed; %ld cells live; %ld payloads live\n", passes, failures, stat_steps, stat_cells, stat_payloads);
+    prof_print();
+    return failures ? 1 : 0;
+}
+static void prof_print(void) {
     if (prof_on) {
         /* the definitions whose λs and thunks were entered most */
         int *ix = malloc((size_t)prof_n * sizeof(int)), *ix2 = malloc((size_t)prof_n * sizeof(int));
@@ -1658,5 +1769,4 @@ int main(int argc, char **argv) {
         for (long g = 0; g < 65536; g++) if (prof_glob[g] > 50000) fprintf(stderr, "glob dup %10ld %s\n", prof_glob[g], name_of(g));
         free(ix);
     }
-    return failures ? 1 : 0;
 }

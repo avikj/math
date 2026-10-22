@@ -100,7 +100,7 @@
 (def mul (lam m n (case m ((zero) zero) ((suc k) (add n (mul k n))))))
 (def iszero (lam n (case n ((zero) true) ((suc k) false))))
 
-(data (List A) (nil) (cons (x A) (xs (List A))))
+(data (List (A U)) (nil) (cons (x A) (xs (List A))))
 (def map (lam f xs (case xs ((nil) nil) ((cons x r) (cons (f x) (map f r))))))
 (def length (lam xs (case xs ((nil) zero) ((cons x r) (suc (length r))))))
 (def append (lam xs ys (case xs ((nil) ys) ((cons x r) (cons x (append r ys))))))
