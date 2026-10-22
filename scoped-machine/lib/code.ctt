@@ -1,23 +1,39 @@
 ; code.ctt — codes of terms as data, and the evaluator as a term (paper 5.26).
 ; Variables are de Bruijn indices (numerals) over one context of term and
-; dimension variables; globals are indices into a signature. (code t) writes
-; the code of a source term. eval maps a code to the value the machine gives
-; the term; a question about the evaluator is a term.
+; dimension variables; globals are indices into a signature, data types and
+; their constructors indices into its data part. (code t) writes the code of
+; a source term. eval maps a code to the value the machine gives the term; a
+; question about the evaluator is a term.
 (data Num (nz) (ns n))
+(data Lst (lnil) (lcons x xs))
+(data Opt (none) (some x))
 (data Code
   (cvar n) (cglob n) (clam b) (capp f a) (cpair a b) (cfst p) (csnd p)
   (cpi A B) (csigma A B) (cuniv l) (cpathp A a b) (cplam b) (cpapp p r)
   (ci0) (ci1) (cneg r) (cmeet r s) (cjoin r s)
   (ceq0 r) (ceq1 r) (cfand a b) (cfor a b) (cftt) (cfff) (cforall b)
   (csys0) (csysc f t r) (ccomp A u a) (cgluet A S) (cglue S a) (cunglue S b)
-  (clet t b) (cann t T))
+  (clet t b) (cann t T)
+  ; data types: the type at its parameters; a constructor at its fields and
+  ; dimensions; elimination with a motive, and without; formal hcomp; a
+  ; branch's dimension binder
+  (cdata d ps) (ccon d c fs ds) (celim d P B x) (ccase d B x) (chcomp u a) (cdlam b))
 
 (def env-at (lam e n (case n ((nz) (fst e)) ((ns m) (env-at (snd e) m)))))
-(def glob-at (lam g n (case n ((nz) (fst g)) ((ns m) (glob-at (snd g) m)))))
-; eval g e c: g the globals' values, e the environment (nested pairs)
+(def cl-at (lam l n (case l ((lnil) l) ((lcons x xs) (case n ((nz) x) ((ns m) (cl-at xs m)))))))
+(def cl-map (lam f l (case l ((lnil) lnil) ((lcons x xs) (lcons (f x) (cl-map f xs))))))
+(def cl-app (lam l m (case l ((lnil) m) ((lcons x xs) (lcons x (cl-app xs m))))))
+(def app-all (lam f xs (case xs ((lnil) f) ((lcons x r) (app-all (f x) r)))))
+; the machine's data types, for the evaluator: (dtab former constructors elim case)
+(data DTab (dtab former cons elim cs))
+(def dt-former (lam t (case t ((dtab f c e s) f))))
+(def dt-cons (lam t (case t ((dtab f c e s) c))))
+(def dt-elim (lam t (case t ((dtab f c e s) e))))
+(def dt-case (lam t (case t ((dtab f c e s) s))))
+; eval g e c: g = (pair globals data-tables), e the environment (nested pairs)
 (def eval-g (lam g e c (case c
   ((cvar n) (env-at e n))
-  ((cglob n) (glob-at g n))
+  ((cglob n) (env-at (fst g) n))
   ((clam b) (lam x (eval-g g (pair x e) b)))
   ((capp f a) ((eval-g g e f) (eval-g g e a)))
   ((cpair a b) (pair (eval-g g e a) (eval-g g e b)))
@@ -48,6 +64,12 @@
   ((cglue S a) (glue (eval-g g e S) (eval-g g e a)))
   ((cunglue S b) (unglue (eval-g g e S) (eval-g g e b)))
   ((clet t b) (let x (eval-g g e t) (eval-g g (pair x e) b)))
-  ((cann t T) (eval-g g e t)))))
+  ((cann t T) (eval-g g e t))
+  ((cdata d ps) (app-all (dt-former (cl-at (snd g) d)) (cl-map (eval-g g e) ps)))
+  ((ccon d k fs ds) (app-all (cl-at (dt-cons (cl-at (snd g) d)) k) (cl-app (cl-map (eval-g g e) fs) (cl-map (eval-g g e) ds))))
+  ((celim d P B x) (app-all ((dt-elim (cl-at (snd g) d)) (eval-g g e P)) (cl-app (cl-map (eval-g g e) B) (lcons (eval-g g e x) lnil))))
+  ((ccase d B x) (app-all (dt-case (cl-at (snd g) d)) (cl-app (cl-map (eval-g g e) B) (lcons (eval-g g e x) lnil))))
+  ((chcomp u a) (hcompD (eval-g g e u) (eval-g g e a)))
+  ((cdlam b) (lam i (eval-g g (pair i e) b))))))
 (axiom no-globals)
-(def eval (lam e c (eval-g no-globals e c)))
+(def eval (lam e c (eval-g (pair no-globals lnil) e c)))

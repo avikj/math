@@ -6,8 +6,7 @@
 ; (case/if), so a recursive definition computes only the branch selected.
 
 ; ---------------------------------------------------------------- basics
-(data Lst (lnil) (lcons x xs))
-(data Opt (none) (some x))
+; Lst, Opt, Num and Code are declared in code.ctt
 
 (def andb (lam a b (if a b false)))
 (def orb (lam a b (if a true b)))
@@ -38,6 +37,13 @@
   ((lnil) lnil)
   ((lcons x xs) (lapp (lmap (lam y (pair x y)) xs) (lpairs xs))))))
 (def fromopt (lam o d (case o ((none) d) ((some x) x))))
+(def push-all (lam xs env (case xs ((lnil) env) ((lcons x r) (push-all r (lcons x env))))))
+(def lrep (lam n x (case n ((nz) lnil) ((ns m) (lcons x (lrep m x))))))
+(def opt-map (lam f o (case o ((none) none) ((some x) (some (f x))))))
+(def addn (lam a b (case a ((nz) b) ((ns m) (ns (addn m b))))))
+(def ltn (lam a b (case b ((nz) false) ((ns b1) (case a ((nz) true) ((ns a1) (ltn a1 b1)))))))
+(def lall2 (lam p xs ys (case xs ((lnil) (isnil ys)) ((lcons x r) (case ys ((lnil) false) ((lcons y q) (andb (p x y) (lall2 p r q))))))))
+(def lfoldmax (lam xs (case xs ((lnil) nz) ((lcons x r) (maxn x (lfoldmax r))))))
 
 ; ---------------------------------------------------------------- intervals
 ; An interval is a join of clauses; a clause a meet of literals (lit l neg).
@@ -110,7 +116,8 @@
 (def clsub (lam c (lmap (lam x (pair (flitl x) (if (flite x) i1 i0))) c)))
 
 ; ---------------------------------------------------------------- values
-(declare act act-branches act-neu vapp vfst vsnd papp mkglue mkgluev vunglue vcomp comp-head comp-pi comp-sigma comp-path comp-u comp-glue)
+(declare act act-branches act-neu vapp vfst vsnd papp mkglue mkgluev vunglue vcomp comp-head comp-pi comp-sigma comp-path comp-u comp-glue
+         mkcon mkhcomp velim vtrans comp-data)
 ; Binders are functions taking the fresh-level counter k (every level in
 ; scope is below k) and their argument. Neutrals carry their types, so a
 ; neutral path's endpoints are read from its type. A system is a list of
@@ -118,8 +125,10 @@
 ; true clause is that value. Substituting dimensions (act) re-applies each
 ; neutral's eliminator, so a substitution unblocks what it can.
 (data Val (vlam f) (vpair a b) (vpi A F) (vsigma A F) (vu l) (vpathp L a b) (vplam f)
-          (viv r) (vface p) (vsys bs) (vglue A S) (vgluev S a) (vneu n T) (verr))
-(data Neu (nvar l) (napp h a) (nfst h) (nsnd h) (npapp h r) (ncomp L u a0) (nunglue S h))
+          (viv r) (vface p) (vsys bs) (vglue A S) (vgluev S a) (vneu n T) (verr)
+          (vdata d ps sg) (vcon d c fs ds sg) (vhcomp u a))
+(data Neu (nvar l) (napp h a) (nfst h) (nsnd h) (npapp h r) (ncomp L u a0) (nunglue S h)
+          (nelim P B x) (ntrans d ls psi x sg))
 
 (def iv-of (lam v (case v ((viv r) r) (_ i0))))
 (def face-of (lam v (case v ((vface p) p) (_ ffalse))))
@@ -145,7 +154,10 @@
   ((vglue A S) (mkglue k (act k s A) (act-branches k s S)))
   ((vgluev S a) (mkgluev k (act-branches k s S) (act k s a)))
   ((vneu n T) (act-neu k s n T))
-  ((verr) v))))
+  ((verr) v)
+  ((vdata d ps sg) (vdata d (lmap (act k s) ps) sg))
+  ((vcon d c fs ds sg) (mkcon k sg d c (lmap (act k s) fs) (lmap (isubst s) ds)))
+  ((vhcomp u a) (mkhcomp k (lam k1 r (act k1 s (u k1 r))) (act k s a))))))
 ; a branch (c, w) under s: c becomes the face c[s]; w is restricted to each of its clauses
 (def act-branches (lam k s bs (lconcatmap (lam b
   (lmap (lam d (pair d (act k (clsub d) (act k s (snd b))))) (fsubst s (single (fst b))))) bs)))
@@ -156,7 +168,9 @@
   ((nsnd h) (vsnd k (act k s h)))
   ((npapp h r) (papp k (act k s h) (isubst s r)))
   ((ncomp L u a0) (vcomp k (lam k1 r (act k1 s (L k1 r))) (lam k1 r (act k1 s (u k1 r))) (act k s a0)))
-  ((nunglue S h) (vunglue k (act-branches k s S) (act k s h))))))
+  ((nunglue S h) (vunglue k (act-branches k s S) (act k s h)))
+  ((nelim P B x) (velim k (opt-map (act k s) P) (lmap (lam b (lam k1 fs ds (act k1 s (b k1 fs ds)))) B) (act k s x)))
+  ((ntrans d ls psi x sg) (vtrans k sg d (lmap (lam l (lam k1 r (act k1 s (l k1 r)))) ls) (fsubst s psi) (act k s x))))))
 (def restrict (lam k c v (act k (clsub c) v)))
 
 ; eliminators; on a system they act branchwise, the other operand restricted
@@ -227,6 +241,7 @@
   ((vu l) (comp-u k u a0))
   ((vglue A S) (comp-glue k (reabs k A) (reabs-branches k S) u a0))
   ((vneu n T) (vneu (ncomp L u a0) (L k i1)))
+  ((vdata d ps sg) (comp-data k sg d (lmap (reabs k) ps) u a0))
   ((vsys bs) (mksys (lmap (lam b (pair (fst b)
        (vcomp k (reabs k (snd b)) (lam k2 r (restrict k2 (fst b) (u k2 r))) (restrict k (fst b) a0))))
      (lfilter (lam b (notb (fmentions k (fst b)))) bs))))
@@ -303,16 +318,105 @@
                                   (sys-map k2 (lam k3 w a1) (u k i1))))
              a1))))))))))))))))))
 
+; ---------------------------------------------------------------- data types
+; Higher inductive types (Coquand–Huber–Mörtberg). A signature's data part
+; holds (dent parameter-types constructors level); a constructor is
+; (cent field-types dimensions boundary), codes over the parameters, the
+; earlier fields and the dimensions. A constructor value is its boundary
+; where the boundary's face holds; hcomp is a formal value; composition in a
+; data family is hcomp after transport; transport is defined per constructor.
+(data DEnt (dent ptys ctors lvl))
+(data CEnt (cent ftys nd bdy))
+(def dentry (lam sg d (fromopt (lnth (snd sg) d) (dent lnil lnil nz))))
+(def dctors (lam de (case de ((dent p c l) c))))
+(def dptys (lam de (case de ((dent p c l) p))))
+(def dlvl (lam de (case de ((dent p c l) l))))
+(def centry (lam sg d c (fromopt (lnth (dctors (dentry sg d)) c) (cent lnil nz csys0))))
+(def cftys (lam ce (case ce ((cent f n b) f))))
+(def cnd (lam ce (case ce ((cent f n b) n))))
+(def cbdy (lam ce (case ce ((cent f n b) b))))
+(def strip-n (lam n c (case n ((nz) c) ((ns m) (case c ((clam b) (strip-n m b)) ((cdlam b) (strip-n m b)) (_ c))))))
+
+; the boundary of constructor c at fields fs and dimensions ds (a system)
+(declare veval)
+(def bdy-sys (lam k sg d c fs ds
+  (veval k sg (push-all (lmap viv ds) (push-all fs (lrep (llen (dptys (dentry sg d))) verr))) (cbdy (centry sg d c)))))
+(def bdy-face (lam k sg d c fs ds (let S (bdy-sys k sg d c fs ds) (if (istotal S) ftrue (bface (branches S))))))
+(def mkcon (lam k sg d c fs ds
+  (if (eqn (cnd (centry sg d c)) nz) (vcon d c fs ds sg)
+    (let S (bdy-sys k sg d c fs ds) (if (istotal S) S (vcon d c fs ds sg))))))
+(def mkhcomp (lam k u a (if (istotal (u (ns k) (ivar k))) (u k i1) (vhcomp u a))))
+; hfill^i [φ ↦ u] u0 at i = hcomp^j [φ ↦ u(i∧j), (i=0) ↦ u0] u0
+(def hfill-d (lam k u a i (mkhcomp k (lam k2 j (sys-add k2 (feq i false) a (u k2 (imeet i j)))) a)))
+(def restrict-B (lam k cl B (lmap (lam b (lam k1 fs ds (restrict k1 cl (b k1 fs ds)))) B)))
+; elimination; on hcomp, composition in the motive along hfill
+(def velim (lam k P B x (case x
+  ((vcon d c fs ds sg) ((fromopt (lnth B c) (lam k1 f1 d1 verr)) k fs ds))
+  ((vhcomp u a) (case P
+     ((some p) (vcomp k (lam k2 i (vapp k2 p (hfill-d k2 u a i)))
+                        (lam k2 i (sys-map k2 (lam k3 w (velim k3 P B w)) (u k2 i)))
+                        (velim k P B a)))
+     ((none) (vneu (nelim P B x) verr))))
+  ((vsys bs) (vsys (lmap (lam b (pair (fst b) (velim k (opt-map (restrict k (fst b)) P) (restrict-B k (fst b) B) (snd b)))) bs)))
+  ((vneu n T) (vneu (nelim P B x) (case P ((some p) (vapp k p x)) ((none) verr))))
+  (_ verr))))
+; transport in a data family along its parameter lines ls, constant on psi
+(declare trans-con)
+(def vtrans (lam k sg d ls psi x (if (fistrue psi) x (case x
+  ((vcon d2 c fs ds sg2) (trans-con k sg d ls psi c fs ds x))
+  ((vhcomp u a) (mkhcomp k (lam k2 j (sys-map k2 (lam k3 w (vtrans k3 sg d ls psi w)) (u k2 j))) (vtrans k sg d ls psi a)))
+  ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vtrans k sg d (lmap (lam l (lam k1 r (restrict k1 (fst b) (l k1 r)))) ls) (fsubst (clsub (fst b)) psi) (snd b)))) bs)))
+  ((vneu n T) (vneu (ntrans d ls psi x sg) (vdata d (lmap (lam l (l k i1)) ls) sg)))
+  (_ verr)))))
+; θ_m = transFill^i of field m along its type at the parameters and earlier fields at i ∧ j
+(def field-fill (lam k sg d ls psi A prev x i
+  (let T (lam k3 j (veval k3 sg (push-all (lmap (lam t (t k3 (imeet i j))) prev) (push-all (lmap (lam l (l k3 (imeet i j))) ls) lnil)) A))
+  (let face (fjoin psi (feq i false))
+    (case (T (ns k) (ivar k))
+      ((vdata d2 ps sg2) (if (eqn d2 d) (vtrans k sg d (lmap (lam l (lam k3 j (l k3 (imeet i j)))) ls) face x)
+                             (vcomp k T (lam k3 j (sys-add k3 face x (vsys lnil))) x)))
+      (_ (vcomp k T (lam k3 j (sys-add k3 face x (vsys lnil))) x)))))))
+(def trans-fields (lam k sg d ls psi ftys fs prev (case ftys
+  ((lnil) lnil)
+  ((lcons A rest) (case fs
+    ((lnil) lnil)
+    ((lcons x xs) (let th (lam k2 i (field-fill k2 sg d ls psi A prev x i))
+                    (lcons th (trans-fields k sg d ls psi rest xs (lsnoc prev th))))))))))
+; a closed type transports as the identity; a path constructor is corrected at
+; its boundary: hcomp^i [φ(r) ↦ α(1-i), ψ ↦ c v r] (c (trans v) r)
+(def trans-con (lam k sg d ls psi c fs ds x (if (isnil ls) x
+  (let th (trans-fields k sg d ls psi (cftys (centry sg d c)) fs lnil)
+  (let cap (mkcon k sg d c (lmap (lam t (t k i1)) th) ds)
+    (if (eqn (cnd (centry sg d c)) nz) cap
+      (mkhcomp k (lam k2 i
+          (sys-add k2 (bdy-face k2 sg d c fs ds)
+             (vtrans k2 sg d (lmap (lam l (lam k3 j (l k3 (ijoin (ineg i) j)))) ls) (fjoin psi (feq (ineg i) true))
+                     (bdy-sys k2 sg d c (lmap (lam t (t k2 (ineg i))) th) ds))
+             (sys-add k2 psi (mkcon k2 sg d c fs ds) (vsys lnil))))
+        cap)))))))
+; composition = hcomp^i [φ ↦ squeeze u] (trans^i 0 u0)
+(def comp-data (lam k sg d ls u a0
+  (mkhcomp k (lam k2 i (sys-map k2 (lam k3 w (vtrans k3 sg d (lmap (lam l (lam k4 j (l k4 (ijoin i j)))) ls) (feq i true) w)) (u k2 i)))
+             (vtrans k sg d ls ffalse a0))))
+; the branches of an elimination code, as functions of fields and dimensions
+(def eval-branches-at (lam sig env d B c (case B
+  ((lnil) lnil)
+  ((lcons b rest)
+    (let ce (centry sig d c)
+      (lcons (lam k1 fs ds (veval k1 sig (push-all (lmap viv ds) (push-all fs env)) (strip-n (addn (llen (cftys ce)) (cnd ce)) b)))
+             (eval-branches-at sig env d rest (ns c))))))))
+
 ; ---------------------------------------------------------------- evaluation
 ; veval k sig env c: the value of code c; env holds the values of the
 ; context's variables (dimensions as interval values), sig the checked
 ; definitions' (type, value) pairs. A system branch is evaluated under each
 ; clause of its face, in the environment restricted to that clause.
-(declare veval conv convty convneu convn infer check infer-binder check-comp)
+(declare veval conv convty convneu convn infer check infer-binder check-comp conv-data
+         check-tele motive-level check-branches check-hcomp check-fields)
 (def act-env (lam k d env (lmap (lam v (restrict k d v)) env)))
 (def veval (lam k sig env c (case c
   ((cvar n) (fromopt (lnth env n) verr))
-  ((cglob n) (case (lnth sig n) ((some p) (snd p)) ((none) verr)))
+  ((cglob n) (case (lnth (fst sig) n) ((some p) (snd p)) ((none) verr)))
   ((clam b) (vlam (lam k1 x (veval k1 sig (lcons x env) b))))
   ((capp f a) (vapp k (veval k sig env f) (veval k sig env a)))
   ((cpair a b) (vpair (veval k sig env a) (veval k sig env b)))
@@ -346,7 +450,13 @@
   ((cglue S a) (mkgluev k (branches (veval k sig env S)) (veval k sig env a)))
   ((cunglue S b) (vunglue k (branches (veval k sig env S)) (veval k sig env b)))
   ((clet t b) (veval k sig (lcons (veval k sig env t) env) b))
-  ((cann t T) (veval k sig env t)))))
+  ((cann t T) (veval k sig env t))
+  ((cdata d ps) (vdata d (lmap (veval k sig env) ps) sig))
+  ((ccon d c fs ds) (mkcon k sig d c (lmap (veval k sig env) fs) (lmap (lam r (iv-of (veval k sig env r))) ds)))
+  ((celim d P B x) (velim k (some (veval k sig env P)) (eval-branches-at sig env d B nz) (veval k sig env x)))
+  ((ccase d B x) (velim k none (eval-branches-at sig env d B nz) (veval k sig env x)))
+  ((chcomp u a) (mkhcomp k (line-of (veval k sig env u)) (veval k sig env a)))
+  ((cdlam b) verr))))
 
 ; ---------------------------------------------------------------- conversion
 ; At a type: η for Π (apply to a fresh variable), Σ (componentwise), paths
@@ -364,7 +474,33 @@
   ((vglue A S) (andb (conv k A (vunglue k S u) (vunglue k S v))
                      (lall (lam b (conv k (vfst k (snd b)) (restrict k (fst b) u) (restrict k (fst b) v))) S)))
   ((vsys bs) (lall (lam b (conv k (snd b) (restrict k (fst b) u) (restrict k (fst b) v))) bs))
+  ((vdata d ps sg) (conv-data k d ps sg u v))
   (_ (convneu k u v))))))
+; parameters along their telescope; fields along theirs, after the parameters
+(def conv-tele (lam k sg ptys ps qs env (case ptys
+  ((lnil) true)
+  ((lcons A rest) (case ps ((lnil) true) ((lcons p pr) (case qs ((lnil) false) ((lcons q qr)
+     (andb (conv k (veval k sg env A) p q) (conv-tele k sg rest pr qr (lcons p env)))))))))))
+(def conv-data (lam k d ps sg u v (case u
+  ((vcon d1 c fs ds sg1) (case v ((vcon d2 c2 fs2 ds2 sg2) (andb (eqn c c2)
+       (andb (lall2 ieq ds ds2) (conv-tele k sg (cftys (centry sg d c)) fs fs2 (push-all ps lnil))))) (_ false)))
+  ((vhcomp w a) (case v ((vhcomp w2 a2) (let k1 (ns k) (let i (ivar k)
+       (andb (conv k (vdata d ps sg) a a2) (conv k1 (vdata d ps sg) (w k1 i) (w2 k1 i)))))) (_ false)))
+  (_ (convneu k u v)))))
+(def fresh-fields (lam k sg ftys env acc (case ftys
+  ((lnil) (pair acc k))
+  ((lcons A rest) (let x (vneu (nvar k) (veval k sg env A)) (fresh-fields (ns k) sg rest (lcons x env) (lsnoc acc x)))))))
+(def fresh-dims (lam k n acc (case n ((nz) (pair acc k)) ((ns m) (fresh-dims (ns k) m (lsnoc acc (ivar k)))))))
+; two eliminations' branches, compared at the motive on fresh fields and dimensions
+(def conv-branches-at (lam k P B B2 d ps sg c (case B
+  ((lnil) (isnil B2))
+  ((lcons b rest) (case B2 ((lnil) false) ((lcons b2 rest2)
+    (let ce (centry sg d c)
+    (let ff (fresh-fields k sg (cftys ce) (push-all ps lnil) lnil)
+    (let fd (fresh-dims (snd ff) (cnd ce) lnil)
+    (let k2 (snd fd)
+      (andb (conv k2 (case P ((some p) (vapp k2 p (mkcon k2 sg d c (fst ff) (fst fd)))) ((none) verr)) (b k2 (fst ff) (fst fd)) (b2 k2 (fst ff) (fst fd)))
+            (conv-branches-at k P rest rest2 d ps sg (ns c)))))))))))))
 (def convty-branches (lam k A S S2 (andb (feqf (bface S) (bface S2))
   (lall (lam b (case (total-branch (act-branches k (clsub (fst b)) S2))
      ((some te2) (let te (snd b)
@@ -378,6 +514,7 @@
   ((vpathp L a b) (case Y ((vpathp M c d) (let i (ivar k)
       (andb (convty (ns k) (L (ns k) i) (M (ns k) i)) (andb (conv k (L k i0) a c) (conv k (L k i1) b d))))) (_ false)))
   ((vglue A S) (case Y ((vglue B S2) (andb (convty k A B) (convty-branches k A S S2))) (_ false)))
+  ((vdata d ps sg) (case Y ((vdata d2 ps2 sg2) (andb (eqn d d2) (conv-tele k sg (dptys (dentry sg d)) ps ps2 lnil))) (_ false)))
   ((vsys bs) (lall (lam b (convty k (snd b) (restrict k (fst b) Y))) bs))
   ((vneu n T) (convneu k X Y))
   (_ false))))
@@ -399,7 +536,12 @@
        (andb (convty k1 (L k1 i) (L2 k1 i))
        (andb (conv k (L k i0) a0 a02)
              (conv k1 (L k1 i) (w k1 i) (w2 k1 i))))))) (_ false)))
-  ((nunglue S h) (case m ((nunglue S2 h2) (convneu k h h2)) (_ false))))))
+  ((nunglue S h) (case m ((nunglue S2 h2) (convneu k h h2)) (_ false)))
+  ((nelim P B x) (case m ((nelim P2 B2 x2) (andb (convneu k x x2)
+       (case (type-of x) ((vdata d ps sg) (conv-branches-at k P B B2 d ps sg nz)) (_ false)))) (_ false)))
+  ((ntrans d ls psi x sg) (case m ((ntrans d2 ls2 psi2 x2 sg2) (andb (eqn d d2) (andb (feqf psi psi2)
+       (andb (conv-tele (ns k) sg (dptys (dentry sg d)) (lmap (lam l (l (ns k) (ivar k))) ls) (lmap (lam l (l (ns k) (ivar k))) ls2) lnil)
+             (convneu k x x2))))) (_ false))))))
 
 ; ---------------------------------------------------------------- typing
 ; infer k sig env tys c: the type of c, or none; check k sig env tys c T.
@@ -464,7 +606,7 @@
   (_ none))))
 (def infer (lam k sig env tys c (case c
   ((cvar n) (case (lnth tys n) ((some o) o) ((none) none)))
-  ((cglob n) (case (lnth sig n) ((some p) (some (fst p))) ((none) none)))
+  ((cglob n) (case (lnth (fst sig) n) ((some p) (some (fst p))) ((none) none)))
   ((capp f a) (case (infer k sig env tys f)
      ((some T) (case T ((vpi A F) (if (check k sig env tys a A) (some (F k (veval k sig env a))) none)) (_ none)))
      ((none) none)))
@@ -496,7 +638,65 @@
   ((cann t T) (case (infer-level k sig env tys T)
      ((some l) (let Tv (veval k sig env T) (if (check k sig env tys t Tv) (some Tv) none)))
      ((none) none)))
+  ((cdata d ps) (let de (dentry sig d) (if (check-tele k sig env tys (dptys de) ps lnil) (some (vu (dlvl de))) none)))
+  ((celim d P B x) (case (infer k sig env tys x)
+     ((some T) (case T ((vdata d2 ps sg) (if (eqn d d2)
+         (case (motive-level k sig env tys T P)
+           ((some l) (let Pv (veval k sig env P)
+              (if (check-branches k sig env tys d ps Pv (eval-branches-at sig env d B nz) B nz) (some (vapp k Pv (veval k sig env x))) none)))
+           ((none) none))
+         none)) (_ none)))
+     ((none) none)))
+  ((chcomp u a) (case (infer k sig env tys a)
+     ((some T) (case T ((vdata d ps sg) (if (check-hcomp k sig env tys T u a) (some T) none)) (_ none)))
+     ((none) none)))
   (_ none))))
+; parameters against their telescope
+(def check-tele (lam k sig env tys ptys ps penv (case ptys
+  ((lnil) (isnil ps))
+  ((lcons A rest) (case ps ((lnil) false) ((lcons p pr)
+    (andb (check k sig env tys p (veval k sig penv A))
+          (check-tele k sig env tys rest pr (lcons (veval k sig env p) penv)))))))))
+(def motive-level (lam k sig env tys T P (case P
+  ((clam b) (infer-level (ns k) sig (lcons (vneu (nvar k) T) env) (lcons (some T) tys) b))
+  (_ none))))
+; each branch: λ fields, dimensions, of type P (c fields dims), and on the
+; boundary's faces equal to the elimination of the boundary
+(declare check-branch)
+(def check-branches (lam k sig env tys d ps Pv Bv Bc c (case Bc
+  ((lnil) (eqn c (llen (dctors (dentry sig d)))))
+  ((lcons b rest) (andb (check-branch k sig env tys d ps Pv Bv c b) (check-branches k sig env tys d ps Pv Bv rest (ns c)))))))
+(def branch-boundary (lam k sig env d c Pv Bv b fs ds
+  (let S (bdy-sys k sig d c fs ds)
+  (let bodyv (veval k sig env b)
+    (lall (lam br (let cl (fst br)
+             (conv k (restrict k cl (vapp k Pv (snd br))) (restrict k cl bodyv) (restrict k cl (velim k (some Pv) Bv (snd br))))))
+          (case S ((vsys bs) bs) (_ lnil)))))))
+(def branch-dims (lam k sig env tys d ps Pv Bv c ce n b fs ds (case n
+  ((ns m) (case b ((cdlam b1) (branch-dims (ns k) sig (lcons (viv (ivar k)) env) (lcons none tys) d ps Pv Bv c ce m b1 fs (lsnoc ds (ivar k)))) (_ false)))
+  ((nz) (andb (check k sig env tys b (vapp k Pv (mkcon k sig d c fs ds)))
+              (branch-boundary k sig env d c Pv Bv b fs ds))))))
+(def branch-fields (lam k sig env tys d ps Pv Bv c ce ftys b fenv fs (case ftys
+  ((lcons A rest) (case b ((clam b1) (let Av (veval k sig fenv A) (let x (vneu (nvar k) Av)
+       (branch-fields (ns k) sig (lcons x env) (lcons (some Av) tys) d ps Pv Bv c ce rest b1 (lcons x fenv) (lsnoc fs x))))) (_ false)))
+  ((lnil) (branch-dims k sig env tys d ps Pv Bv c ce (cnd ce) b fs lnil)))))
+(def check-branch (lam k sig env tys d ps Pv Bv c b
+  (let ce (centry sig d c) (branch-fields k sig env tys d ps Pv Bv c ce (cftys ce) b (push-all ps lnil) lnil))))
+; a formal hcomp: a tube of lines in the type, agreeing with the cap at 0
+(def check-hcomp (lam k sig env tys T u a (case u
+  ((cplam W) (let k1 (ns k) (let ei (under-dim k env) (let ti (lcons none tys)
+     (if (is-sys-code W)
+       (andb (check-sys k1 sig ei ti W T)
+       (andb (let p (sys-face k1 sig ei W) (feqf p (fforall k p)))
+             (lall (lam b (lall (lam d (let e0 (act-env k d (lcons (viv i0) env))
+                  (conv k (restrict k d T) (veval k sig e0 (snd b)) (restrict k d (veval k sig env a)))))
+                (face-of (veval k sig (lcons (viv i0) env) (fst b))))) (sys-codes W))))
+       (andb (check k1 sig ei ti W T) (conv k T (veval k sig (lcons (viv i0) env) W) (veval k sig env a))))))))
+  (_ false))))
+(def check-fields (lam k sig env tys ftys fs fenv (case ftys
+  ((lnil) (isnil fs))
+  ((lcons A rest) (case fs ((lnil) false) ((lcons f fr)
+     (andb (check k sig env tys f (veval k sig fenv A)) (check-fields k sig env tys rest fr (lcons (veval k sig env f) fenv)))))))))
 (def infer-binder (lam k sig env tys A B (case (infer-level k sig env tys A)
   ((some l1) (let Av (veval k sig env A)
      (case (infer-level (ns k) sig (lcons (vneu (nvar k) Av) env) (lcons (some Av) tys) B)
@@ -521,10 +721,87 @@
   ((clet t b) (case (infer k sig env tys t)
      ((some U) (check (ns k) sig (lcons (veval k sig env t) env) (lcons (some U) tys) b T))
      ((none) false)))
+  ((ccon d c fs ds) (case T ((vdata d2 ps sg) (andb (eqn d d2)
+       (andb (eqn (llen ds) (cnd (centry sig d c)))
+       (andb (lall (check-iv tys) ds)
+             (check-fields k sig env tys (cftys (centry sig d c)) fs (push-all ps lnil)))))) (_ false)))
+  ((chcomp u a) (case T ((vdata d ps sg) (andb (check k sig env tys a T) (check-hcomp k sig env tys T u a))) (_ false)))
+  ((ccase d B x) (case (infer k sig env tys x)
+     ((some X) (case X ((vdata d2 ps sg) (andb (eqn d d2)
+          (check-branches k sig env tys d ps (vlam (lam k1 y T)) (eval-branches-at sig env d B nz) B nz))) (_ false)))
+     ((none) false)))
   (_ (case (infer k sig env tys c) ((some T2) (convty k T2 T)) ((none) false))))))
 
 ; a definition: its type is a type, its term has that type
 (def chk-def (lam sig cT ct (case (infer-level nz sig lnil lnil cT)
   ((some l) (check nz sig lnil lnil ct (veval nz sig lnil cT)))
   ((none) false))))
-(def sig-add (lam sig cT ct (lsnoc sig (pair (veval nz sig lnil cT) (veval nz sig lnil ct)))))
+(def sig-add (lam sig cT ct (pair (lsnoc (fst sig) (pair (veval nz sig lnil cT) (veval nz sig lnil ct))) (snd sig))))
+
+; a data declaration: parameter types are types; each field type a type,
+; strictly positive (D itself, at its own parameters, or not mentioning D);
+; each boundary an element of D made of earlier constructors, its branches
+; agreeing on overlaps
+(def cany (lam p c (orb (p c) (case c
+  ((clam b) (cany p b)) ((cplam b) (cany p b)) ((cdlam b) (cany p b)) ((cforall b) (cany p b))
+  ((cfst a) (cany p a)) ((csnd a) (cany p a)) ((cneg a) (cany p a)) ((ceq0 a) (cany p a)) ((ceq1 a) (cany p a))
+  ((capp a b) (orb (cany p a) (cany p b))) ((cpair a b) (orb (cany p a) (cany p b)))
+  ((cpi a b) (orb (cany p a) (cany p b))) ((csigma a b) (orb (cany p a) (cany p b)))
+  ((cpapp a b) (orb (cany p a) (cany p b))) ((cmeet a b) (orb (cany p a) (cany p b))) ((cjoin a b) (orb (cany p a) (cany p b)))
+  ((cfand a b) (orb (cany p a) (cany p b))) ((cfor a b) (orb (cany p a) (cany p b)))
+  ((cgluet a b) (orb (cany p a) (cany p b))) ((cglue a b) (orb (cany p a) (cany p b))) ((cunglue a b) (orb (cany p a) (cany p b)))
+  ((clet a b) (orb (cany p a) (cany p b))) ((cann a b) (orb (cany p a) (cany p b))) ((chcomp a b) (orb (cany p a) (cany p b)))
+  ((cpathp a b x) (orb (cany p a) (orb (cany p b) (cany p x))))
+  ((csysc a b x) (orb (cany p a) (orb (cany p b) (cany p x))))
+  ((ccomp a b x) (orb (cany p a) (orb (cany p b) (cany p x))))
+  ((cdata d ps) (lany (cany p) ps))
+  ((ccon d c fs ds) (orb (lany (cany p) fs) (lany (cany p) ds)))
+  ((celim d P B x) (orb (cany p P) (orb (lany (cany p) B) (cany p x))))
+  ((ccase d B x) (orb (lany (cany p) B) (cany p x)))
+  (_ false)))))
+(def is-data-d (lam d c (case c ((cdata d2 ps) (eqn d d2)) (_ false))))
+; D at its own parameters: with m earlier fields, parameter q is variable m + np - 1 - q
+(def uniform-at (lam ps n (case ps ((lnil) true) ((lcons p rest) (case n ((nz) false) ((ns n1) (case p ((cvar j) (andb (eqn j n1) (uniform-at rest n1))) (_ false))))))))
+(def positive (lam d np m A (orb (notb (cany (is-data-d d) A))
+  (case A ((cdata d2 ps) (andb (eqn d2 d) (andb (eqn (llen ps) np) (andb (lall (lam q (notb (cany (is-data-d d) q))) ps) (uniform-at ps (addn m np)))))) (_ false)))))
+(def earlier-only (lam d c bdy (notb (cany (lam x (case x ((ccon d2 c2 fs ds) (andb (eqn d2 d) (notb (ltn c2 c)))) (_ false))) bdy))))
+(def ctx-params (lam k sg env tys ptys vals (case ptys
+  ((lnil) (pair (pair env tys) (pair k vals)))
+  ((lcons A rest) (let Av (veval k sg env A) (let x (vneu (nvar k) Av)
+     (ctx-params (ns k) sg (lcons x env) (lcons (some Av) tys) rest (lsnoc vals x))))))))
+(def check-ptys (lam k sg env tys ptys (case ptys
+  ((lnil) true)
+  ((lcons A rest) (case (infer-level k sg env tys A)
+     ((some l) (let Av (veval k sg env A) (check-ptys (ns k) sg (lcons (vneu (nvar k) Av) env) (lcons (some Av) tys) rest)))
+     ((none) false))))))
+(def check-ctor-dims (lam k sg d c env tys pv n bdy (case n
+  ((ns m) (check-ctor-dims (ns k) sg d c (lcons (viv (ivar k)) env) (lcons none tys) pv m bdy))
+  ((nz) (andb (earlier-only d c bdy) (check-sys k sg env tys bdy (vdata d pv sg)))))))
+(def check-ctor-fields (lam k sg d np c env tys pv ftys m nd bdy (case ftys
+  ((lcons A rest) (andb (positive d np m A)
+     (case (infer-level k sg env tys A)
+       ((some l) (let Av (veval k sg env A)
+          (check-ctor-fields (ns k) sg d np c (lcons (vneu (nvar k) Av) env) (lcons (some Av) tys) pv rest (ns m) nd bdy)))
+       ((none) false))))
+  ((lnil) (check-ctor-dims k sg d c env tys pv nd bdy)))))
+(def check-ctor (lam sg d np ptys c ce
+  (let pc (ctx-params nz sg lnil lnil ptys lnil)
+    (check-ctor-fields (fst (snd pc)) sg d np c (fst (fst pc)) (snd (fst pc)) (snd (snd pc)) (cftys ce) nz (cnd ce) (cbdy ce)))))
+(def check-ctors (lam sg d np ptys cs c (case cs
+  ((lnil) true)
+  ((lcons ce rest) (andb (check-ctor sg d np ptys c ce) (check-ctors sg d np ptys rest (ns c)))))))
+; the level of a data type: the largest of its fields' (D itself counted at 0)
+(def field-levels (lam k sg env tys ftys (case ftys
+  ((lnil) lnil)
+  ((lcons A rest) (let Av (veval k sg env A)
+     (lcons (fromopt (infer-level k sg env tys A) nz) (field-levels (ns k) sg (lcons (vneu (nvar k) Av) env) (lcons (some Av) tys) rest)))))))
+(def data-level (lam sig ent (case ent ((dent ptys ctors l)
+  (let sg2 (pair (fst sig) (lsnoc (snd sig) (dent ptys ctors nz)))
+  (let pc (ctx-params nz sg2 lnil lnil ptys lnil)
+    (lfoldmax (lconcatmap (lam ce (field-levels (fst (snd pc)) sg2 (fst (fst pc)) (snd (fst pc)) (cftys ce))) ctors))))))))
+(def sig-add-data (lam sig ent (case ent ((dent ptys ctors l)
+  (pair (fst sig) (lsnoc (snd sig) (dent ptys ctors (data-level sig ent))))))))
+(def chk-data (lam sig ent (case ent ((dent ptys ctors l)
+  (let sg2 (sig-add-data sig ent)
+    (andb (check-ptys nz sg2 lnil lnil ptys)
+          (check-ctors sg2 (llen (snd sig)) (llen ptys) ptys ctors nz)))))))

@@ -128,7 +128,7 @@ static Node *ds(Node *t) {
             }
             if (d < 0) die("case needs at least one constructor branch", NULL);
             int N = DATA[d].ncons;
-            Node *B = nlist(N + 1); B->it[0] = nsym("%branches");
+            Node *B = nlist(N + 2); B->it[0] = nsym("%branches"); B->it[1] = nsym(DATA[d].name);
             for (int ci = 0; ci < N; ci++) {
                 ConInfo *c = &CON[DATA[d].cons[ci]];
                 Node *pat = NULL, *body = NULL;
@@ -147,7 +147,7 @@ static Node *ds(Node *t) {
                     if (!x) { snprintf(nm, sizeof nm, "%%_%d", f); x = nsym(nm); }
                     hnd = nl3("lam", x, hnd);
                 }
-                B->it[ci + 1] = hnd;
+                B->it[ci + 2] = hnd;
             }
             if (el) return nl4("%case", B, ds(t->it[1]), ds(t->it[2]));
             return nl3("%case", B, ds(t->it[1]));
@@ -202,10 +202,35 @@ static Node *ds(Node *t) {
  * indices. This is reading source text, not inspecting a value. */
 static const char **cscope; static size_t capcscope; static int ncscope;
 static char **CHECKED; static size_t capchecked; static int nchecked;
+static int *CHKDATA; static size_t capchkdata; static int nchkdata;   /* checked data types, in signature order */
+static int nsig;                                                     /* versions of the checker's signature */
+static int chk_index(int d) { for (int i = 0; i < nchkdata; i++) if (CHKDATA[i] == d) return i; return -1; }
 static Node *numeral(int n) { Node *x = nsym("nz"); for (int i = 0; i < n; i++) x = nl3("app", nsym("ns"), x); return x; }
 static Node *capp1(const char *c, Node *a) { return nl3("app", nsym(c), a); }
 static Node *capp2(const char *c, Node *a, Node *b) { return nl3("app", nl3("app", nsym(c), a), b); }
 static Node *capp3(const char *c, Node *a, Node *b, Node *d) { return nl3("app", capp2(c, a, b), d); }
+static Node *capp4(const char *c, Node *a, Node *b, Node *d, Node *e) { return nl3("app", capp3(c, a, b, d), e); }
+/* a list of codes as data */
+static Node *code_list(Node **xs, int n) { Node *l = nsym("lnil"); for (int i = n - 1; i >= 0; i--) l = capp2("lcons", xs[i], l); return l; }
+static bool bound_name(const char *s) { for (int i = ncscope - 1; i >= 0; i--) if (!strcmp(cscope[i], s)) return true; return false; }
+static int checked_data_of(const char *s, const char *what) {
+    int d = data_lookup(s), di = d < 0 ? -1 : chk_index(d);
+    if (di < 0) die(what, s);
+    return di;
+}
+/* a branch of an elimination: λ fields, then dimensions, of a thunk of the body */
+static Node *code_branch(Node *b, int i, int nf, int ar) {
+    if (i == ar) {
+        if (!b->list || b->n != 2 || !is(b->it[0], "thunk")) die("code: malformed branch", NULL);
+        return to_code(b->it[1]);
+    }
+    if (!b->list || b->n != 3 || !is(b->it[0], "lam")) die("code: malformed branch", NULL);
+    GROW(cscope, capcscope, (size_t)ncscope + 1);
+    cscope[ncscope++] = b->it[1]->s;
+    Node *r = code_branch(b->it[2], i + 1, nf, ar);
+    ncscope--;
+    return capp1(i < nf ? "clam" : "cdlam", r);
+}
 static Node *code_bound(const char *x, Node *body) {
     GROW(cscope, capcscope, (size_t)ncscope + 1);
     cscope[ncscope++] = x;
@@ -214,6 +239,32 @@ static Node *code_bound(const char *x, Node *body) {
     return r;
 }
 static Node *to_code(Node *t) {
+    /* a data type at its parameters, a constructor at its fields and dimensions */
+    {
+        Node *h = t; int na = 0;
+        while (h->list && h->n == 3 && is(h->it[0], "app")) { h = h->it[1]; na++; }
+        if (!h->list && !bound_name(h->s)) {
+            int c = con_lookup(h->s), d = data_lookup(h->s);
+            if (c >= 0 && CON[c].nfields + CON[c].ndims == na) {
+                int di = checked_data_of(DATA[CON[c].data].name, "code: data type not checked:");
+                Node **a = calloc((size_t)na + 1, sizeof(Node *));
+                Node *x = t;
+                for (int k = na - 1; k >= 0; k--) { a[k] = to_code(x->it[2]); x = x->it[1]; }
+                Node *r = capp4("ccon", numeral(di), numeral(CON[c].index), code_list(a, CON[c].nfields), code_list(a + CON[c].nfields, CON[c].ndims));
+                free(a);
+                return r;
+            }
+            if (d >= 0 && DATA[d].nparams == na && global_lookup(h->s) >= 0) {
+                int di = checked_data_of(h->s, "code: data type not checked:");
+                Node **a = calloc((size_t)na + 1, sizeof(Node *));
+                Node *x = t;
+                for (int k = na - 1; k >= 0; k--) { a[k] = to_code(x->it[2]); x = x->it[1]; }
+                Node *r = capp2("cdata", numeral(di), code_list(a, na));
+                free(a);
+                return r;
+            }
+        }
+    }
     if (!t->list) {
         const char *s = t->s;
         if (!strcmp(s, "0")) return nsym("ci0");
@@ -254,6 +305,20 @@ static Node *to_code(Node *t) {
     if (!strcmp(h, "glue")) return capp2("cglue", to_code(t->it[1]), to_code(t->it[2]));
     if (!strcmp(h, "unglue")) return capp2("cunglue", to_code(t->it[1]), to_code(t->it[2]));
     if (!strcmp(h, "the")) return capp2("cann", to_code(t->it[2]), to_code(t->it[1]));
+    if (!strcmp(h, "hcompD")) return capp2("chcomp", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "%case")) {
+        /* (%case (%branches D b...) [P] x) */
+        Node *B = t->it[1];
+        if (!B->list || B->n < 2 || !is(B->it[0], "%branches")) die("code: elimination without its branches", NULL);
+        int d = data_lookup(B->it[1]->s), di = checked_data_of(B->it[1]->s, "code: data type not checked:");
+        int N = B->n - 2;
+        Node **bs = calloc((size_t)N + 1, sizeof(Node *));
+        for (int i = 0; i < N; i++) { ConInfo *c = &CON[DATA[d].cons[i]]; bs[i] = code_branch(B->it[i + 2], 0, c->nfields, c->nfields + c->ndims); }
+        Node *bl = code_list(bs, N);
+        free(bs);
+        if (t->n == 4) return capp4("celim", numeral(di), to_code(t->it[2]), bl, to_code(t->it[3]));
+        return capp3("ccase", numeral(di), bl, to_code(t->it[2]));
+    }
     die("code: no code for form", h);
     return NULL;
 }
@@ -610,7 +675,7 @@ static Syn *compile(Node *t) {
         if (t->n != 3 && t->n != 4) die("bad %case", NULL);
         Syn *s = compile_n(S_CASE, t, 1, t->n - 1); s->x = t->n == 4; return s;
     }
-    if (!strcmp(h, "%branches")) return compile_n(S_BRANCHES, t, 1, t->n - 1);
+    if (!strcmp(h, "%branches")) return compile_n(S_BRANCHES, t, 2, t->n - 2);
     die("unknown form", h);
     return NULL;
 }
@@ -878,8 +943,8 @@ static void toplevel(Node *f) {
         int at = define ? 2 : 1;
         if (f->n != at + 2) die(define ? "(checked name T t)" : "(check T t)", NULL);
         Node *T = f->it[at], *t = f->it[at + 1];
-        char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nchecked);
-        Node *sign = nchecked ? nsym(sig) : nsym("lnil");
+        char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
+        Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
         Node *cT = to_code(ds(T)), *ct = to_code(ds(t));
         Node *q = nl4("chk-def", sign, cT, ct);
         long steps;
@@ -893,14 +958,92 @@ static void toplevel(Node *f) {
         if (define && ok) {
             Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = f->it[1]; d->it[2] = t;
             toplevel(d);
-            char sig2[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nchecked + 1);
+            char sig2[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nsig + 1);
             Node *sd = nlist(3); sd->it[0] = nsym("def"); sd->it[1] = nsym(sig2); sd->it[2] = nl4("sig-add", sign, cT, ct);
             GROW(CHECKED, capchecked, (size_t)nchecked + 1);
             CHECKED[nchecked++] = strdup(f->it[1]->s);
             toplevel(sd);
+            nsig++;
         }
+    } else if (!strcmp(h, "checked-data") || !strcmp(h, "checked-data-fail")) {
+        bool expect = !strcmp(h, "checked-data");
+        /* (checked-data (data ...)): declare the data type and check it with the
+         * checker: parameter and field types are types, fields strictly positive,
+         * boundaries elements of the type made of earlier constructors */
+        if (f->n != 2 || !f->it[1]->list || !is(f->it[1]->it[0], "data")) die("(checked-data[-fail] (data ...))", NULL);
+        Node *dd = f->it[1];
+        toplevel(dd);
+        int d = ndata - 1;
+        GROW(CHKDATA, capchkdata, (size_t)nchkdata + 1);
+        CHKDATA[nchkdata++] = d;
+        Node *hd = dd->it[1];
+        int np = DATA[d].nparams;
+        int base = ncscope;
+        Node **pt = calloc((size_t)np + 1, sizeof(Node *));
+        for (int k = 0; k < np; k++) {
+            Node *p = hd->it[k + 1];
+            if (!p->list || p->n != 2) die("a checked data type needs its parameters' types:", DATA[d].name);
+            pt[k] = to_code(ds(p->it[1]));
+            GROW(cscope, capcscope, (size_t)ncscope + 1); cscope[ncscope++] = p->it[0]->s;
+        }
+        Node **ce = calloc((size_t)DATA[d].ncons + 1, sizeof(Node *));
+        for (int ci = 0; ci < DATA[d].ncons; ci++) {
+            Node *cd = dd->it[ci + 2];
+            ConInfo *c = &CON[DATA[d].cons[ci]];
+            int at = ncscope;
+            Node **ft = calloc((size_t)c->nfields + 1, sizeof(Node *));
+            int i = 1, k = 0;
+            for (; k < c->nfields; i++, k++) {
+                Node *fl = cd->it[i];
+                if (!fl->list) die("a checked data type needs its fields' types:", c->name);
+                ft[k] = to_code(ds(fl->it[1]));
+                GROW(cscope, capcscope, (size_t)ncscope + 1); cscope[ncscope++] = fl->it[0]->s;
+            }
+            Node *bdy = nsym("csys0");
+            if (c->ndims) {
+                Node *dl = cd->it[i++];
+                for (int q = 1; q < dl->n; q++) { GROW(cscope, capcscope, (size_t)ncscope + 1); cscope[ncscope++] = dl->it[q]->s; }
+                Node *sy = nlist(cd->n - i + 1); sy->it[0] = nsym("sys");
+                for (int q = i; q < cd->n; q++) sy->it[q - i + 1] = cd->it[q];
+                bdy = to_code(ds(sy));
+            }
+            ncscope = at;
+            ce[ci] = capp3("cent", code_list(ft, c->nfields), numeral(c->ndims), bdy);
+            free(ft);
+        }
+        ncscope = base;
+        Node *ent = capp3("dent", code_list(pt, np), code_list(ce, DATA[d].ncons), nsym("nz"));
+        free(pt); free(ce);
+        char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
+        Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
+        long steps;
+        char *r = readback(nl3("chk-data", sign, ent), &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+        bool accepted = !strcmp(r, tr), ok = accepted == expect;
+        if (ok) passes++; else failures++;
+        printf("%s: %s data %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", DATA[d].name, steps);
+        free(r); free(tr);
+        if (!accepted) { nchkdata--; return; }
+        char sig2[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nsig + 1);
+        Node *sd = nlist(3); sd->it[0] = nsym("def"); sd->it[1] = nsym(sig2); sd->it[2] = nl3("sig-add-data", sign, ent);
+        toplevel(sd);
+        /* the evaluator's table of the machine's data types */
+        char dt[32], dt2[32]; snprintf(dt, sizeof dt, "%%dtab%d", nchkdata - 1); snprintf(dt2, sizeof dt2, "%%dtab%d", nchkdata);
+        Node **cs = calloc((size_t)DATA[d].ncons + 1, sizeof(Node *));
+        for (int ci = 0; ci < DATA[d].ncons; ci++) cs[ci] = nsym(CON[DATA[d].cons[ci]].name);
+        char en[256], cn[256]; snprintf(en, sizeof en, "%%elim-%s", DATA[d].name); snprintf(cn, sizeof cn, "%%case-%s", DATA[d].name);
+        Node *row = capp4("dtab", nsym(DATA[d].name), code_list(cs, DATA[d].ncons), nsym(en), nsym(cn));
+        free(cs);
+        Node *td = nlist(3); td->it[0] = nsym("def"); td->it[1] = nsym(dt2);
+        td->it[2] = nl3("cl-app", nchkdata > 1 ? nsym(dt) : nsym("lnil"), capp2("lcons", row, nsym("lnil")));
+        toplevel(td);
+        nsig++;
     } else if (!strcmp(h, "declare")) {
-        for (int i = 1; i < f->n; i++) add_global(f->it[i]->s, G_INPUT);
+        /* a name already declared and not yet given is declared once */
+        for (int i = 1; i < f->n; i++) {
+            long g = global_lookup(f->it[i]->s);
+            if (g >= 0 && G[g].kind == G_INPUT && !G[g].res->port[0]) continue;
+            add_global(f->it[i]->s, G_INPUT);
+        }
     } else if (!strcmp(h, "data")) {
         /* (data D ctor...) or (data (D z...) ctor...); ctor = (c field... [(dims i...) (φ e)...]),
          * field = x or (x A). Generates the type former D, the constructors, each path
@@ -975,6 +1118,21 @@ static void toplevel(Node *f) {
             EMIT();
             free(args);
         }
+        /* the eliminators as functions (used by the evaluator over codes) */
+        OPEN();
+        fprintf(m, "(def %%elim-%s (lam %%P", D);
+        for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
+        fprintf(m, " %%x (%%case (%%branches %s", D);
+        for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
+        fprintf(m, ") %%P %%x)))");
+        EMIT();
+        OPEN();
+        fprintf(m, "(def %%case-%s (lam", D);
+        for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
+        fprintf(m, " %%x (%%case (%%branches %s", D);
+        for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
+        fprintf(m, ") %%x)))");
+        EMIT();
         /* composition: hcomp after transport (CHM); a closed type transports as the identity */
         OPEN();
         if (!np) fprintf(m, "(def %%comp-%s (lam %%u %%a0 (hcompD %%u %%a0)))", D);

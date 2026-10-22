@@ -37,3 +37,37 @@
 ; a checked definition also runs on the machine
 (axiom T0 t0)
 (same (idf T0 t0) t0)
+
+; data types, checked: declarations, constructors, elimination, hcomp
+(checked-data (data B (bt) (bf)))
+(checked bnot (Pi x B B) (lam x (case x ((bt) bf) ((bf) bt))))
+(checked bnot2 (Pi x B B) (lam x (elim (lam y B) x ((bt) bf) ((bf) bt))))
+(check-fail (Pi x B B) (lam x (case x ((bt) bf) ((bf) (lam y y)))))
+(checked-data (data N2 (z2) (s2 (n N2))))
+(checked one N2 (s2 z2))
+(check-fail N2 (s2 bt))
+; dependent elimination: the motive varies with the scrutinee
+(checked bdep (Pi x B (elim (lam y U) x ((bt) B) ((bf) N2))) (lam x (elim (lam y (elim (lam z U) y ((bt) B) ((bf) N2))) x ((bt) bf) ((bf) z2))))
+; the circle: a path constructor, elimination with its loop branch
+(checked-data (data C1 (cb) (cl (dims i) ((= i 0) cb) ((= i 1) cb))))
+(checked cloop (PathP (plam i C1) cb cb) (plam i (cl i)))
+(checked cflip (Pi x C1 C1) (lam x (elim (lam y C1) x ((cb) cb) ((cl i) (cl (~ i))))))
+; a loop branch must agree with the eliminated boundary
+(check (Pi x C1 B) (lam x (case x ((cb) bt) ((cl i) bt))))
+(check-fail (Pi x C1 B) (lam x (case x ((cb) bt) ((cl i) bf))))
+(check (Pi x C1 C1) (lam x (elim (lam y C1) x ((cb) cb) ((cl i) (cl (/\ i (~ i)))))))
+(check-fail (Pi x C1 C1) (lam x (elim (lam y C1) x ((cb) (hcompD (plam j (sys)) cb)) ((cl i) (cl i)))))
+; formal hcomp in a data type, and elimination on it
+(check C1 (hcompD (plam j (sys)) cb))
+(check (PathP (plam i C1) (cflip (hcompD (plam j (sys)) cb)) (hcompD (plam j (sys)) cb)) (plam i (hcompD (plam j (sys)) cb)))
+(check-fail C1 (hcompD (plam j (sys ((= j 0) cb))) cb))
+; a parameterized higher inductive type
+(checked-data (data (Su (T U)) (sn) (ss) (sm (t T) (dims i) ((= i 0) sn) ((= i 1) ss))))
+(checked meridian (Pi T U (Pi t T (PathP (plam i (Su T)) sn ss))) (lam T t (plam i (sm t i))))
+(check (Pi T U (Pi t T (Su T))) (lam T t (comp (plam i (Su T)) (plam i (sys)) (sm t 0))))
+; strict positivity, and boundaries made of earlier constructors
+(checked-data-fail (data Neg (mk (f (Pi x Neg B)))))
+(checked-data-fail (data Ov (o1) (o2) (ov (dims i) ((= i 0) o1) ((= i 0) o2))))
+; the evaluator over codes of data
+(same (eval-g (pair no-globals %dtab4) t0 (code (s2 (s2 z2)))) (s2 (s2 z2)))
+(same (eval-g (pair no-globals %dtab4) t0 (code (elim (lam y C1) (cl 1) ((cb) cb) ((cl i) (cl (~ i)))))) cb)
