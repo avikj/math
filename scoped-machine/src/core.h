@@ -18,12 +18,12 @@
 #include <stdlib.h>
 
 /* ---------------- dimensions, intervals, faces, substitutions ---------------- */
-typedef uint32_t Dim;
+typedef uint64_t Dim;   /* dimension names: never reused (a 64-bit count is never reached) */
 /* a clause: sorted literals. Interval literal = dim<<1 | negated;
  * face literal = dim<<1 | endpoint. */
 /* Payloads are immutable and reference counted; functions borrow their
  * arguments and return references their callers own; a cell owns its payload. */
-typedef struct { uint32_t rc, n; uint32_t l[]; } Clause;
+typedef struct { uint32_t rc, n; uint64_t l[]; } Clause;   /* literals: dimension << 1 | polarity */
 typedef struct { uint32_t rc, n; Clause *c[]; } Dnf;     /* join of clauses (or a system's clause list) */
 typedef struct { uint32_t rc, n; Dim *d; Dnf **v; } Subst;
 extern long stat_payloads;
@@ -222,7 +222,6 @@ extern long case_hcomp_global;
  * variables the branches share, supplied once by the case cell's ports */
 /* variables and dimensions at de Bruijn levels, made by %var and %dim and read by %view */
 #define LVL_TAG (1ull << 62)
-#define DIM_LVL 0x40000000u
 int data_checked_index(int d);     /* a data type's index in the checker's signature, or -1 */
 int con_index(const char *name);   /* a constructor by name, or -1 */
 enum { TB_VAL, TB_TY, TB_DTAB, TB_DENT, TB_N };

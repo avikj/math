@@ -17,7 +17,7 @@ Dim fresh_dim(void) { return __atomic_fetch_add(&next_dim, 1, __ATOMIC_RELAXED);
 
 long stat_payloads;
 #define LIVE(d) __atomic_fetch_add(&stat_payloads, (d), __ATOMIC_RELAXED)
-static Clause *cl_new(uint32_t n) { Clause *c = malloc(sizeof(Clause) + n * sizeof(uint32_t)); c->rc = 1; c->n = n; LIVE(1); return c; }
+static Clause *cl_new(uint32_t n) { Clause *c = malloc(sizeof(Clause) + n * sizeof(uint64_t)); c->rc = 1; c->n = n; LIVE(1); return c; }
 static Dnf *dnf_new(uint32_t n) { Dnf *d = malloc(sizeof(Dnf) + n * sizeof(Clause *)); d->rc = 1; d->n = n; LIVE(1); return d; }
 Clause *clause_retain(Clause *c) { __atomic_fetch_add(&c->rc, 1, __ATOMIC_RELAXED); return c; }
 void clause_release(Clause *c) { if (c && __atomic_sub_fetch(&c->rc, 1, __ATOMIC_ACQ_REL) == 0) { free(c); LIVE(-1); } }
@@ -55,7 +55,7 @@ static Clause *cl_union(const Clause *a, const Clause *b, bool face) {
     Clause *c = cl_new(a->n + b->n);
     uint32_t i = 0, j = 0, k = 0;
     while (i < a->n || j < b->n) {
-        uint32_t x;
+        uint64_t x;
         if (j >= b->n || (i < a->n && a->l[i] < b->l[j])) x = a->l[i++];
         else if (i >= a->n || b->l[j] < a->l[i]) x = b->l[j++];
         else { x = a->l[i]; i++; j++; }
@@ -83,7 +83,7 @@ static Dnf *normalize(Clause **a, uint32_t n) {
 
 Dnf *dnf_zero(void) { return dnf_new(0); }
 Dnf *dnf_one(void) { Dnf *d = dnf_new(1); d->c[0] = cl_new(0); return d; }
-static Dnf *dnf_lit(uint32_t lit) { Dnf *d = dnf_new(1); d->c[0] = cl_new(1); d->c[0]->l[0] = lit; return d; }
+static Dnf *dnf_lit(uint64_t lit) { Dnf *d = dnf_new(1); d->c[0] = cl_new(1); d->c[0]->l[0] = lit; return d; }
 Dnf *iv_atom(Dim i) { return dnf_lit(i << 1); }
 bool dnf_is_zero(const Dnf *x) { return x->n == 0; }
 bool dnf_is_one(const Dnf *x) { return x->n == 1 && x->c[0]->n == 0; }
@@ -137,7 +137,7 @@ Dnf *iv_subst(const Dnf *x, const Subst *s) {
     for (uint32_t i = 0; i < x->n; i++) {
         Dnf *m = dnf_one();
         for (uint32_t k = 0; k < x->c[i]->n; k++) {
-            uint32_t lit = x->c[i]->l[k];
+            uint64_t lit = x->c[i]->l[k];
             const Dnf *v = subst_get(s, lit >> 1);
             Dnf *w = v ? dnf_retain((Dnf *)v) : iv_atom(lit >> 1);
             if (lit & 1) { Dnf *nw = iv_neg(w); dnf_release(w); w = nw; }
@@ -173,7 +173,7 @@ Dnf *face_subst(const Dnf *f, const Subst *s) {
     for (uint32_t i = 0; i < f->n; i++) {
         Dnf *m = dnf_one();
         for (uint32_t k = 0; k < f->c[i]->n; k++) {
-            uint32_t lit = f->c[i]->l[k];
+            uint64_t lit = f->c[i]->l[k];
             const Dnf *v = subst_get(s, lit >> 1);
             m = meet_into(m, v ? face_eq(v, (int)(lit & 1)) : dnf_lit(lit), true);
         }
@@ -263,7 +263,7 @@ Subst *subst_id(void) { return subst_new(0); }
 void clause_print(FILE *o, const Clause *c, DimName nm) {
     if (c->n == 0) { fputs("tt", o); return; }
     if (c->n > 1) fputs("(&", o);
-    for (uint32_t k = 0; k < c->n; k++) fprintf(o, "%s(= %s %u)", c->n > 1 ? " " : "", nm(c->l[k] >> 1), c->l[k] & 1);
+    for (uint32_t k = 0; k < c->n; k++) fprintf(o, "%s(= %s %u)", c->n > 1 ? " " : "", nm(c->l[k] >> 1), (unsigned)(c->l[k] & 1));
     if (c->n > 1) fputs(")", o);
 }
 void dnf_print(FILE *o, const Dnf *x, bool face, DimName nm) {

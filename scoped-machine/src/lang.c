@@ -1444,7 +1444,7 @@ static char dimbuf[8][24]; static int dimbuf_i;
 static const char *dim_name(Dim d) {
     for (int i = ndshow - 1; i >= 0; i--) if (dshow[i].d == d) return dshow[i].name;
     for (int i = 0; i < nID; i++) if (ID[i].dim == d) { saw_identity = true; char *b = dimbuf[dimbuf_i++ & 7]; snprintf(b, 24, "i:%s", name_of(ID[i].p)); return b; }
-    char *b = dimbuf[dimbuf_i++ & 7]; snprintf(b, 24, "#%u", d); return b;
+    char *b = dimbuf[dimbuf_i++ & 7]; snprintf(b, 24, "#%llu", (unsigned long long)d); return b;
 }
 static Cell *observe(Port prov) {
     Cell *r = cell(O_ROOT, 1);
