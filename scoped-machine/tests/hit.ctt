@@ -19,6 +19,10 @@
 (same (transp (plam i S1) base) (hcompD (sys) base))
 ; elimination on a formal hcomp composes in the motive
 (same (flip (hcompD (sys) base)) (hcompD (sys) base))
+; the branches share the free variable c: elimination on hcomp keeps it
+(def gc (lam c x (elim (lam y S1) x ((base) c) ((loop i) c))))
+(same (gc base (hcompD (sys) base)) (hcompD (sys) base))
+(same (gc (loop 0) base) base)
 (show (plam j (flip (hcompD (sys ((= j 0) (plam k (loop k)))) base))))
 ; composition with a tube: the formal hcomp keeps it
 (show (plam j (comp (plam i S1) (sys ((= j 0) (plam i (loop i)))) base)))

@@ -197,6 +197,12 @@ Port con_build(int c, const Port *f, const Port *d) {
 /* ---------------- structural rules ---------------- */
 static void rule_dup(Cell *o, Cell *v) {
     Port o1 = o->port[1], o2 = o->port[2];
+    if (prof_on) {
+        ADD(prof_dupk[v->kind & 63], 1);
+        if (v->kind == V_LAM) ADD(prof_dup[((Record *)v->p)->where], 1);
+        if (v->kind == V_CON && v->a < 4096) ADD(prof_con[v->a], 1);
+        if (v->kind == V_GLOBAL && v->a < 65536) ADD(prof_glob[v->a], 1);
+    }
     Cell *c1 = clone(v), *c2 = clone(v);
     for (int k = 1; k < v->n; k++) {
         Cell *d = cell(O_DUP, 3);
@@ -206,6 +212,7 @@ static void rule_dup(Cell *o, Cell *v) {
     cell_free(o); cell_free(v);
 }
 static void rule_era(Cell *o, Cell *v) {
+    if (prof_on) ADD(prof_erak[v->kind & 63], 1);
     for (int k = 1; k < v->n; k++) era(v->port[k]);
     cell_free(o); cell_free(v);
 }
@@ -300,9 +307,10 @@ static void rule_subst(Cell *o, Cell *v) {
     }
     case V_HCOMP: { Cell *a = cell(O_HCOMP, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); break; }
     case V_NCASE: {
-        Cell *a = cell(O_CASE, 4); a->x = v->x;
-        link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(sub(v->port[3], s), P(a, 2)); link(P(a, 3), out);
-        era(v->port[4]);
+        Cell *a = cell(O_CASE, 5); a->x = v->x;
+        link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(sub(v->port[3], s), P(a, 2));
+        link(sub(v->port[4], s), P(a, 3)); link(P(a, 4), out);
+        era(v->port[5]);
         break;
     }
     case V_NTRANS: {
@@ -361,7 +369,8 @@ static void distribute(Cell *o, Cell *v) {
     switch (o->kind) {
     case O_APP: case O_UNGLUE2: case O_SYSMAP: ex[ne++] = o->port[1]; break;
     case O_PAPPP: if (o->x) { ex[ne++] = o->port[1]; ex[ne++] = o->port[2]; } break;
-    case O_COMPA: case O_CASE: ex[ne++] = o->port[1]; ex[ne++] = o->port[2]; break;
+    case O_COMPA: ex[ne++] = o->port[1]; ex[ne++] = o->port[2]; break;
+    case O_CASE: ex[ne++] = o->port[1]; ex[ne++] = o->port[2]; ex[ne++] = o->port[3]; break;
     case O_TRANSD2: for (int k = 1; k < o->n - 1; k++) ex[ne++] = o->port[k]; break;
     default: break;
     }
@@ -385,7 +394,7 @@ static void distribute(Cell *o, Cell *v) {
             break;
         case O_UNGLUE2: c = cell(O_UNGLUE, 3); link(cp[0][b], P(c, 0)); link(val, P(c, 1)); link(P(c, 2), res); break;
         case O_COMPA: c = cell(O_COMP, 4); link(cp[0][b], P(c, 0)); link(val, P(c, 1)); link(cp[1][b], P(c, 2)); link(P(c, 3), res); break;
-        case O_CASE: c = cell(O_CASE, 4); c->x = o->x; link(val, P(c, 0)); link(cp[0][b], P(c, 1)); link(cp[1][b], P(c, 2)); link(P(c, 3), res); break;
+        case O_CASE: c = cell(O_CASE, 5); c->x = o->x; link(val, P(c, 0)); link(cp[0][b], P(c, 1)); link(cp[1][b], P(c, 2)); link(cp[2][b], P(c, 3)); link(P(c, 4), res); break;
         case O_TRANSD2:
             c = cell(O_TRANSD2, o->n); c->a = o->a;
             { Subst *t = subst_of_clause(cl->c[b]); c->p = face_subst(o->p, t); subst_release(t); }
@@ -452,6 +461,7 @@ static void interact(Cell *o, Cell *v) {
     case O_APP:
         if (vk == V_SITEF) { site_apply(o, v); return; }
         if (vk == V_LAM && ((Record *)v->p)->nparam == 1) {
+            if (prof_on) ADD(prof_count[((Record *)v->p)->where], 1);
             Port r = record_build(v->p, o->port[1], &v->port[1]);
             link(r, o->port[2]);
             cell_free(o); cell_free(v);
@@ -471,12 +481,13 @@ static void interact(Cell *o, Cell *v) {
         return;
     case O_FORCE:
         if (vk == V_LAM && ((Record *)v->p)->nparam == 0) {
+            if (prof_on) ADD(prof_count[((Record *)v->p)->where], 1);
             link(record_build(v->p, 0, &v->port[1]), o->port[1]);
             cell_free(o); cell_free(v);
         } else if (vk == V_SUSP) {
             /* an induction hypothesis forced: the elimination of its field */
-            Cell *c = cell(O_CASE, 4); c->x = v->x;
-            mv(v, 1, P(c, 1)); mv(v, 2, P(c, 2)); link(P(c, 3), o->port[1]);
+            Cell *c = cell(O_CASE, 5); c->x = v->x;
+            mv(v, 1, P(c, 1)); mv(v, 2, P(c, 2)); mv(v, 4, P(c, 3)); link(P(c, 4), o->port[1]);
             mv(v, 3, P(c, 0));
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
@@ -833,77 +844,82 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     case O_CASE:
+        /* 0=scrutinee 1=branches 2=motive 3=environment 4=out. The branches are closed; the
+         * environment, applied to the selected branch, supplies the variables they share */
         if (vk == V_CON) {
-            /* select the constructor's branch, applied to its fields and dimensions */
             ConInfo *k = &CON[v->a];
             int n = k->nfields + k->ndims;
-            Cell *sel = cell(O_SELECT, n + 3); sel->a = v->a; sel->x = o->x ? 1 : 0;
+            Cell *sel = cell(O_SELECT, n + 4); sel->a = v->a; sel->x = o->x ? 1 : 0;
             mv(o, 1, P(sel, 0));
             for (int j = 0; j < n; j++) link(v->port[1 + j], P(sel, 1 + j));
-            mv(o, 2, P(sel, n + 1));
-            link(P(sel, n + 2), o->port[3]);
+            mv(o, 2, P(sel, n + 1)); mv(o, 3, P(sel, n + 2));
+            link(P(sel, n + 3), o->port[4]);
             cell_free(o); cell_free(v);
         } else if (vk == V_HCOMP && o->x) {
             /* f (hcomp^i [φ ↦ u] u0) = comp^i P(hfill) [φ ↦ f u] (f u0) */
-            Port a[4] = { o->port[2], o->port[1], v->port[1], v->port[2] };
-            link(apply_gid(case_hcomp_global, a, 4), o->port[3]);
+            Port a[5] = { o->port[2], o->port[1], o->port[3], v->port[1], v->port[2] };
+            link(apply_gid(case_hcomp_global, a, 5), o->port[4]);
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else {
             /* stuck: a neutral elimination, of type the motive at the scrutinee */
-            Cell *n = cell(V_NCASE, 5); n->x = o->x;
+            Cell *n = cell(V_NCASE, 6); n->x = o->x;
             if (o->x) {
                 Port p1, p2, x1, x2;
                 split2(o->port[2], &p1, &p2); split2(P(v, 0), &x1, &x2);
-                link(x1, P(n, 1)); link(p1, P(n, 3)); link(app2(p2, x2), P(n, 4)); n->ty = 1;
-            } else { link(P(v, 0), P(n, 1)); mv(o, 2, P(n, 3)); link(unk(), P(n, 4)); }
-            mv(o, 1, P(n, 2));
-            link(P(n, 0), o->port[3]);
+                link(x1, P(n, 1)); link(p1, P(n, 3)); link(app2(p2, x2), P(n, 5)); n->ty = 1;
+            } else { link(P(v, 0), P(n, 1)); mv(o, 2, P(n, 3)); link(unk(), P(n, 5)); }
+            mv(o, 1, P(n, 2)); mv(o, 3, P(n, 4));
+            link(P(n, 0), o->port[4]);
             cell_free(o);
         }
         return;
     case O_SELECT: {
-        int n = o->n - 3;
+        /* a=constructor; 0=branches 1..n=fields, [hypotheses,] dims n+1=motive n+2=environment out */
+        int n = o->n - 4;
         ConInfo *ci = &CON[o->a];
         int k = ci->index;
         if (vk != V_BRANCHES || k + 1 >= v->n) { fprintf(stderr, "elimination without its branch\n"); exit(2); }
         if (!(o->x & 2) && ci->nrec && (v->a >> k & 1)) {
             /* the branch takes induction hypotheses: each recursive field's elimination by
-             * the same branches and motive, suspended until the branch forces it */
+             * the same branches, motive and environment, suspended until the branch forces it */
             int nf = ci->nfields, nd = ci->ndims, r = ci->nrec;
             Cell *d = cell(O_DUP, 3);
             Port bsel = P(d, 1), brest = P(d, 2);
-            Port *bc = malloc((size_t)(r + 1) * sizeof(Port)), *pc = malloc((size_t)(r + 1) * sizeof(Port));
+            Port *bc = malloc((size_t)(r + 1) * sizeof(Port)), *pc = malloc((size_t)(r + 1) * sizeof(Port)), *ec = malloc((size_t)(r + 2) * sizeof(Port));
             split(brest, r, bc);
             split(o->port[n + 1], r, pc);
-            Cell *s2 = cell(O_SELECT, nf + r + nd + 3); s2->a = o->a; s2->x = o->x | 2;
+            split(o->port[n + 2], r + 1, ec);
+            Cell *s2 = cell(O_SELECT, nf + r + nd + 4); s2->a = o->a; s2->x = o->x | 2;
             int q = 0;
             for (int j = 0; j < nf; j++) {
                 if (ci->recmask >> j & 1) {
                     Port fa, fb; split2(o->port[1 + j], &fa, &fb);
                     link(fa, P(s2, 1 + j));
-                    Cell *h = cell(V_SUSP, 4); h->x = o->x & 1;
-                    link(bc[q], P(h, 1)); link(pc[q], P(h, 2)); link(fb, P(h, 3));
+                    Cell *h = cell(V_SUSP, 5); h->x = o->x & 1;
+                    link(bc[q], P(h, 1)); link(pc[q], P(h, 2)); link(fb, P(h, 3)); link(ec[q], P(h, 4));
                     link(P(h, 0), P(s2, 1 + nf + q));
                     q++;
                 } else mv(o, 1 + j, P(s2, 1 + j));
             }
             for (int j = 0; j < nd; j++) mv(o, 1 + nf + j, P(s2, 1 + nf + r + j));
             link(unk(), P(s2, nf + r + nd + 1));
-            link(P(s2, nf + r + nd + 2), o->port[n + 2]);
+            link(ec[r], P(s2, nf + r + nd + 2));
+            link(P(s2, nf + r + nd + 3), o->port[n + 3]);
             link(bsel, P(s2, 0));
-            free(bc); free(pc);
+            free(bc); free(pc); free(ec);
             link(P(v, 0), P(d, 0));
             cell_free(o);
             return;
         }
         Port br = v->port[k + 1];
         for (int m = 1; m < v->n; m++) if (m != k + 1) era(v->port[m]);
-        /* the branch applied to the fields, hypotheses and dimensions is a thunk of its body */
-        Port f = br;
+        /* the environment applied to the branch, then the fields, hypotheses and dimensions:
+         * a thunk of the body */
+        Port f = app2(o->port[n + 2], br);
         for (int j = 0; j < n; j++) f = app2(f, o->port[1 + j]);
         era(o->port[n + 1]);
-        Cell *fo = cell(O_FORCE, 2); link(f, P(fo, 0)); link(P(fo, 1), o->port[n + 2]);
+        Cell *fo = cell(O_FORCE, 2); link(f, P(fo, 0)); link(P(fo, 1), o->port[n + 3]);
         cell_free(o); cell_free(v);
         return;
     }
@@ -1126,11 +1142,12 @@ static Port build(Syn *t, Frame *f) {
         for (int k = 0; k < t->n; k++) link(build(t->k[k], f), P(c, k));
         return P(c, t->n);
     case S_CASE:
-        c = cell(O_CASE, 4); c->x = t->x;
+        /* (%case B [P] E x) */
+        c = cell(O_CASE, 5); c->x = t->x;
         link(build(t->k[0], f), P(c, 1));
-        if (t->x) { link(build(t->k[1], f), P(c, 2)); link(build(t->k[2], f), P(c, 0)); }
-        else { link(unk(), P(c, 2)); link(build(t->k[1], f), P(c, 0)); }
-        return P(c, 3);
+        if (t->x) { link(build(t->k[1], f), P(c, 2)); link(build(t->k[2], f), P(c, 3)); link(build(t->k[3], f), P(c, 0)); }
+        else { link(unk(), P(c, 2)); link(build(t->k[1], f), P(c, 3)); link(build(t->k[2], f), P(c, 0)); }
+        return P(c, 4);
     case S_LET: {
         bind(f, t->slot, build(t->k[0], f));
         return build(t->k[1], f);

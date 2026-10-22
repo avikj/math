@@ -89,6 +89,50 @@ static Node *to_code(Node *t);
 /* induction hypotheses: within a branch, (rec x) is the elimination of the
  * recursive field x by the same branches and motive; innermost branch first */
 static const char **rs_field, **rs_ih; static size_t caprsf, caprsi; static int nrs, nih;
+long global_lookup(const char *name);
+static bool constant_sym(const char *s);
+/* the local variables free in a desugared term, in order of first occurrence: symbols not
+ * bound within it, not global, not constants, not keywords */
+typedef struct { const char **v; int n, cap; } Names;
+static bool names_has(const Names *s, const char *x) { for (int i = 0; i < s->n; i++) if (!strcmp(s->v[i], x)) return true; return false; }
+static void names_add(Names *s, const char *x) { if (names_has(s, x)) return; if (s->n == s->cap) { s->cap = s->cap ? s->cap * 2 : 8; s->v = realloc(s->v, (size_t)s->cap * sizeof(char *)); } s->v[s->n++] = x; }
+static void free_vars(Node *t, Names *bound, Names *out) {
+    if (!t->list) {
+        const char *x = t->s;
+        if (names_has(bound, x) || constant_sym(x) || keyword(x) || global_lookup(x) >= 0) return;
+        if ((x[0] >= '0' && x[0] <= '9') || x[0] == '-') return;
+        names_add(out, x);
+        return;
+    }
+    if (t->n == 0) return;
+    Node *h = t->it[0];
+    if (!h->list) {
+        const char *k = h->s;
+        if ((!strcmp(k, "lam") || !strcmp(k, "plam") || !strcmp(k, "forall")) && t->n == 3) {
+            int save = bound->n; names_add(bound, param_name(t->it[1])->s);
+            bool added = bound->n > save;
+            free_vars(t->it[2], bound, out);
+            if (added) bound->n = save;
+            return;
+        }
+        if (!strcmp(k, "let") && t->n == 4) {
+            free_vars(t->it[2], bound, out);
+            int save = bound->n; names_add(bound, t->it[1]->s);
+            bool added = bound->n > save;
+            free_vars(t->it[3], bound, out);
+            if (added) bound->n = save;
+            return;
+        }
+        int from = 1;
+        if (!strcmp(k, "%con") || !strcmp(k, "%data") || !strcmp(k, "%transD")) from = 2;
+        if (!strcmp(k, "%branches")) from = 4;
+        if (!strcmp(k, "U")) return;
+        if (!strcmp(k, "=")) { free_vars(t->it[1], bound, out); return; }
+        for (int i = from; i < t->n; i++) free_vars(t->it[i], bound, out);
+        return;
+    }
+    for (int i = 0; i < t->n; i++) free_vars(t->it[i], bound, out);
+}
 static bool mentions_rec(Node *t, Node **names, int n) {
     if (!t->list) return false;
     if (t->n == 2 && is(t->it[0], "rec") && !t->it[1]->list)
@@ -143,8 +187,10 @@ static Node *ds(Node *t) {
             }
             if (d < 0) die("case needs at least one constructor branch", NULL);
             int N = DATA[d].ncons;
-            Node *B = nlist(N + 3); B->it[0] = nsym("%branches"); B->it[1] = nsym(DATA[d].name);
+            Node *B = nlist(N + 4); B->it[0] = nsym("%branches"); B->it[1] = nsym(DATA[d].name);
             uint64_t mask = 0;
+            Node **hb = calloc((size_t)N + 1, sizeof(Node *));
+            Names fv = { 0 };
             for (int ci = 0; ci < N; ci++) {
                 ConInfo *c = &CON[DATA[d].cons[ci]];
                 Node *pat = NULL, *body = NULL;
@@ -184,11 +230,27 @@ static Node *ds(Node *t) {
                     if (!x) { snprintf(nm, sizeof nm, "%%_%d", f); x = nsym(nm); }
                     hnd = nl3("lam", x, hnd);
                 }
-                B->it[ci + 3] = hnd;
+                Names bound = { 0 };
+                free_vars(hnd, &bound, &fv);
+                free(bound.v);
+                hb[ci] = hnd;
             }
-            { char mb[24]; snprintf(mb, sizeof mb, "%llu", (unsigned long long)mask); B->it[2] = nsym(mb); }
-            if (el) return nl4("%case", B, ds(t->it[1]), ds(t->it[2]));
-            return nl3("%case", B, ds(t->it[1]));
+            /* the variables the branches share are not captured by each branch (copied into
+             * every one, all but one then erased) but supplied once to the selected one: each
+             * branch is λ shared..., and the environment λ g. g shared... applies it */
+            for (int ci = 0; ci < N; ci++) {
+                Node *hnd = hb[ci];
+                for (int q = fv.n - 1; q >= 0; q--) hnd = nl3("lam", nsym(fv.v[q]), hnd);
+                B->it[ci + 4] = hnd;
+            }
+            { char mb[24]; snprintf(mb, sizeof mb, "%llu", (unsigned long long)mask); B->it[2] = nsym(mb);
+              snprintf(mb, sizeof mb, "%d", fv.n); B->it[3] = nsym(mb); }
+            Node *env = nsym("%g");
+            for (int q = 0; q < fv.n; q++) env = nl3("app", env, nsym(fv.v[q]));
+            env = nl3("lam", nsym("%g"), env);
+            free(hb); free(fv.v);
+            if (el) { Node *r = nlist(5); r->it[0] = nsym("%case"); r->it[1] = B; r->it[2] = ds(t->it[1]); r->it[3] = env; r->it[4] = ds(t->it[2]); return r; }
+            return nl4("%case", B, env, ds(t->it[1]));
         }
         if (!strcmp(k, "lam") || !strcmp(k, "plam")) { if (t->n < 3) die("binder without body", NULL); return ds_lam(t->it + 1, t->n - 2, t->it[t->n - 1], k); }
         if (!strcmp(k, "forall")) { arity(t, 2); return nl3("forall", t->it[1], ds(t->it[2])); }
@@ -358,16 +420,22 @@ static Node *to_code(Node *t) {
     if (!strcmp(h, "%case")) {
         /* (%case (%branches D b...) [P] x) */
         Node *B = t->it[1];
-        if (!B->list || B->n < 3 || !is(B->it[0], "%branches")) die("code: elimination without its branches", NULL);
+        if (!B->list || B->n < 4 || !is(B->it[0], "%branches")) die("code: elimination without its branches", NULL);
         int d = data_lookup(B->it[1]->s), di = checked_data_of(B->it[1]->s, "code: data type not checked:");
-        int N = B->n - 3;
+        int N = B->n - 4, m = atoi(B->it[3]->s);
         uint64_t mask = strtoull(B->it[2]->s, NULL, 10);
         Node **bs = calloc((size_t)N + 1, sizeof(Node *));
-        for (int i = 0; i < N; i++) bs[i] = code_branch(B->it[i + 3], &CON[DATA[d].cons[i]], mask >> i & 1, 0);
+        for (int i = 0; i < N; i++) {
+            /* the shared variables a branch binds first are the variables of the same names
+             * where the elimination stands */
+            Node *b = B->it[i + 4];
+            for (int q = 0; q < m; q++) { if (!b->list || b->n != 3 || !is(b->it[0], "lam")) die("code: malformed branch", NULL); b = b->it[2]; }
+            bs[i] = code_branch(b, &CON[DATA[d].cons[i]], mask >> i & 1, 0);
+        }
         Node *bl = code_list(bs, N);
         free(bs);
-        if (t->n == 4) return capp4("celim", numeral(di), to_code(t->it[2]), bl, to_code(t->it[3]));
-        return capp3("ccase", numeral(di), bl, to_code(t->it[2]));
+        if (t->n == 5) return capp4("celim", numeral(di), to_code(t->it[2]), bl, to_code(t->it[4]));
+        return capp3("ccase", numeral(di), bl, to_code(t->it[3]));
     }
     die("code: no code for form", h);
     return NULL;
@@ -617,6 +685,12 @@ static int lift(Node *t) {
     L->env_nodes[L->nenv] = t; L->env_slots[L->nenv] = slot; L->env_syns[L->nenv] = s; L->nenv++;
     return slot;
 }
+long *prof_count, *prof_dup; const char **prof_name; int prof_n, prof_on; static int prof_cur; long prof_dupk[64], prof_erak[64], prof_con[4096], prof_glob[65536];
+static size_t capprofc, capprofn, capprofd;
+static void prof_enter(const char *name) {
+    GROW(prof_count, capprofc, (size_t)prof_n + 1); GROW(prof_name, capprofn, (size_t)prof_n + 1); GROW(prof_dup, capprofd, (size_t)prof_n + 1);
+    prof_count[prof_n] = 0; prof_dup[prof_n] = 0; prof_name[prof_n] = strdup(name); prof_cur = prof_n++;
+}
 static Syn *compile_record(Node *param, Node *body, bool thunk) {
     GROW(levels, caplevels, (size_t)nlevels + 1);
     int li = nlevels++;
@@ -628,6 +702,7 @@ static Syn *compile_record(Node *param, Node *body, bool thunk) {
     nlevels--;
     Record *r = calloc(1, sizeof(Record));
     r->nparam = thunk ? 0 : 1; r->nslots = L.nslots; r->nenv = L.nenv; r->env_slot = L.env_slots; r->uses = L.uses; r->body = b;
+    r->where = prof_cur;
     Syn *s = syn(S_LAM, L.nenv);
     s->rec = r;
     for (int k = 0; k < L.nenv; k++) s->k[k] = L.env_syns[k];
@@ -725,13 +800,15 @@ static Syn *compile(Node *t) {
         Syn *s = compile_n(S_TRANSD, t, 2, t->n - 2); s->id = d; return s;
     }
     if (!strcmp(h, "%case")) {
-        if (t->n != 3 && t->n != 4) die("bad %case", NULL);
-        Syn *s = compile_n(S_CASE, t, 1, t->n - 1); s->x = t->n == 4; return s;
+        /* (%case B [P] E x) */
+        if (t->n != 4 && t->n != 5) die("bad %case", NULL);
+        Syn *s = compile_n(S_CASE, t, 1, t->n - 1); s->x = t->n == 5; return s;
     }
     if (!strcmp(h, "%branches")) {
-        /* (%branches D mask b...): mask, the branches taking induction hypotheses */
-        if (t->n < 3 || t->it[2]->list) die("bad %branches", NULL);
-        Syn *s = compile_n(S_BRANCHES, t, 3, t->n - 3); s->id = (long)strtoull(t->it[2]->s, NULL, 10); return s;
+        /* (%branches D mask m b...): mask, the branches taking induction hypotheses; m, the
+         * shared variables each branch binds first */
+        if (t->n < 4 || t->it[2]->list || t->it[3]->list) die("bad %branches", NULL);
+        Syn *s = compile_n(S_BRANCHES, t, 4, t->n - 4); s->id = (long)strtoull(t->it[2]->s, NULL, 10); return s;
     }
     die("unknown form", h);
     return NULL;
@@ -863,16 +940,16 @@ static void rb_one(FILE *o, Port prov) {
     case V_HCOMP: push_fields(o, "hcompD", c, 1); return;
     case V_BRANCHES: push_fields(o, "%branches", c, 1); return;
     case V_SUSP:
-        /* an unforced induction hypothesis: (delay (%case B [P] x)) */
+        /* an unforced induction hypothesis: (delay (%case B [P] E x)) */
         fputs("(delay (%case", o);
-        push_str("))"); push_field(c, 3); push_str(" ");
+        push_str("))"); push_field(c, 3); push_str(" "); push_field(c, 4); push_str(" ");
         if (c->x) { push_field(c, 2); push_str(" "); }
         push_field(c, 1); push_str(" ");
         return;
     case V_NCASE:
-        /* (%case B [P] x) */
+        /* (%case B [P] E x) */
         fputs("(%case", o);
-        push_str(")"); push_field(c, 1); push_str(" ");
+        push_str(")"); push_field(c, 1); push_str(" "); push_field(c, 4); push_str(" ");
         if (c->x) { push_field(c, 3); push_str(" "); }
         push_field(c, 2); push_str(" ");
         return;
@@ -995,7 +1072,9 @@ static void toplevel(Node *f) {
         bool fill_decl = g >= 0 && G[g].kind == G_INPUT && !G[g].res->port[0];
         if (fill_decl) G[g].kind = G_DEF; else g = add_global(f->it[1]->s, G_DEF);
         int ns; int *u;
+        prof_enter(f->it[1]->s);
         Syn *s = compile_top(f->it[2], &ns, &u);
+        prof_cur = 0;
         G[g].body = s; G[g].nslots = ns; G[g].uses = u;
         link(top_build(s, ns, u), P(G[g].res, 0));
         if (!strcmp(G[g].name, "%case-hcomp")) case_hcomp_global = g;
@@ -1022,8 +1101,12 @@ static void toplevel(Node *f) {
         if (define && ok) {
             Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = f->it[1]; d->it[2] = t;
             toplevel(d);
-            char sig2[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nsig + 1);
-            Node *sd = nlist(3); sd->it[0] = nsym("def"); sd->it[1] = nsym(sig2); sd->it[2] = nl4("sig-add", sign, cT, ct);
+            /* the signature holds each entry as a definition of its own, so a lookup
+             * copies references, not the entries */
+            char sig2[32], ent[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nsig + 1); snprintf(ent, sizeof ent, "%%sent%d", nsig);
+            Node *ed = nlist(3); ed->it[0] = nsym("def"); ed->it[1] = nsym(ent); ed->it[2] = nl4("sig-entry", sign, cT, ct);
+            toplevel(ed);
+            Node *sd = nlist(3); sd->it[0] = nsym("def"); sd->it[1] = nsym(sig2); sd->it[2] = nl3("sig-push", sign, nsym(ent));
             GROW(CHECKED, capchecked, (size_t)nchecked + 1);
             CHECKED[nchecked++] = strdup(f->it[1]->s);
             toplevel(sd);
@@ -1087,8 +1170,10 @@ static void toplevel(Node *f) {
         printf("%s: %s data %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", DATA[d].name, steps);
         free(r); free(tr);
         if (!accepted) { nchkdata--; return; }
-        char sig2[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nsig + 1);
-        Node *sd = nlist(3); sd->it[0] = nsym("def"); sd->it[1] = nsym(sig2); sd->it[2] = nl3("sig-add-data", sign, ent);
+        char sig2[32], den[32]; snprintf(sig2, sizeof sig2, "%%sig%d", nsig + 1); snprintf(den, sizeof den, "%%dent%d", nsig);
+        Node *ed = nlist(3); ed->it[0] = nsym("def"); ed->it[1] = nsym(den); ed->it[2] = nl3("data-entry", sign, ent);
+        toplevel(ed);
+        Node *sd = nlist(3); sd->it[0] = nsym("def"); sd->it[1] = nsym(sig2); sd->it[2] = nl3("sig-push-data", sign, nsym(den));
         toplevel(sd);
         /* the evaluator's table of the machine's data types */
         char dt[32], dt2[32]; snprintf(dt, sizeof dt, "%%dtab%d", nchkdata - 1); snprintf(dt2, sizeof dt2, "%%dtab%d", nchkdata);
@@ -1197,16 +1282,16 @@ static void toplevel(Node *f) {
         OPEN();
         fprintf(m, "(def %%elim-%s (lam %%P", D);
         for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
-        fprintf(m, " %%x (%%case (%%branches %s %llu", D, (unsigned long long)allih);
+        fprintf(m, " %%x (%%case (%%branches %s %llu 0", D, (unsigned long long)allih);
         for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
-        fprintf(m, ") %%P %%x)))");
+        fprintf(m, ") %%P (lam %%g %%g) %%x)))");
         EMIT();
         OPEN();
         fprintf(m, "(def %%case-%s (lam", D);
         for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
-        fprintf(m, " %%x (%%case (%%branches %s %llu", D, (unsigned long long)allih);
+        fprintf(m, " %%x (%%case (%%branches %s %llu 0", D, (unsigned long long)allih);
         for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
-        fprintf(m, ") %%x)))");
+        fprintf(m, ") (lam %%g %%g) %%x)))");
         EMIT();
         /* composition: hcomp after transport (CHM); a closed type transports as the identity */
         OPEN();
@@ -1429,6 +1514,8 @@ static char *slurp(const char *path) {
 }
 int main(int argc, char **argv) {
     const char *w = getenv("CUBICAL_WORKERS");
+    prof_on = getenv("CUBICAL_PROFILE") != NULL;
+    prof_enter("(top level)");
     net_start(w ? atoi(w) : 0);
     for (int i = 1; i < argc; i++) {
         char *text = slurp(argv[i]);
@@ -1438,5 +1525,21 @@ int main(int argc, char **argv) {
     }
     /* steps performed so far: a reading only when the workload has normalized (show, defect) */
     printf("%d passed, %d failed; %ld interaction steps performed; %ld cells live; %ld payloads live\n", passes, failures, stat_steps, stat_cells, stat_payloads);
+    if (prof_on) {
+        /* the definitions whose λs and thunks were entered most */
+        int *ix = malloc((size_t)prof_n * sizeof(int)), *ix2 = malloc((size_t)prof_n * sizeof(int));
+        for (int i = 0; i < prof_n; i++) ix[i] = i;
+        for (int i = 0; i < prof_n; i++) for (int j = i + 1; j < prof_n; j++) if (prof_count[ix[j]] > prof_count[ix[i]]) { int t = ix[i]; ix[i] = ix[j]; ix[j] = t; }
+        for (int i = 0; i < prof_n && i < 40; i++) fprintf(stderr, "%12ld  %s\n", prof_count[ix[i]], prof_name[ix[i]]);
+        for (int k = 0; k < K_END; k++) if (stat_kind[k]) fprintf(stderr, "kind %3d: %ld\n", k, stat_kind[k]);
+        for (int k = 0; k < 64; k++) if (prof_dupk[k] || prof_erak[k]) fprintf(stderr, "value kind %3d: dup %ld era %ld\n", k, prof_dupk[k], prof_erak[k]);
+        for (int i = 0; i < prof_n; i++) ix2[i] = i;
+        for (int i = 0; i < prof_n; i++) for (int j = i + 1; j < prof_n; j++) if (prof_dup[ix2[j]] > prof_dup[ix2[i]]) { int t = ix2[i]; ix2[i] = ix2[j]; ix2[j] = t; }
+        for (int i = 0; i < prof_n && i < 25; i++) fprintf(stderr, "dup %12ld  %s\n", prof_dup[ix2[i]], prof_name[ix2[i]]);
+        free(ix2);
+        for (int c = 0; c < ncon && c < 4096; c++) if (prof_con[c] > 50000) fprintf(stderr, "con dup %10ld %s\n", prof_con[c], CON[c].name);
+        for (long g = 0; g < 65536; g++) if (prof_glob[g] > 50000) fprintf(stderr, "glob dup %10ld %s\n", prof_glob[g], name_of(g));
+        free(ix);
+    }
     return failures ? 1 : 0;
 }

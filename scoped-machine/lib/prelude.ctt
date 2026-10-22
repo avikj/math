@@ -82,10 +82,10 @@
 
 ; elimination of a higher inductive type on a formal hcomp (CHM):
 ; f (hcomp^i [φ ↦ u] u0) = comp^i P(hfill^i [φ ↦ u] u0) [φ ↦ f u] (f u0)
-(def %case-hcomp (lam P B u u0
+(def %case-hcomp (lam P B E u u0
   (comp (plam %i (P (hcompD (sys+ (= %i 0) (plam %j u0) (sysmap (lam %w (plam %j (@ %w (/\ %i %j)))) u)) u0)))
-        (sysmap (lam %w (plam %i (%case B P (@ %w %i)))) u)
-        (%case B P u0))))
+        (sysmap (lam %w (plam %i (%case B P E (@ %w %i)))) u)
+        (%case B P E u0))))
 
 ; data types
 (data Bool (true) (false))

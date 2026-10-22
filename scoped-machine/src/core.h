@@ -88,7 +88,7 @@ enum {
     V_NPAPP,    /* p=Dnf r, x=annotated; 1=p [2=a 3=b] type */
     V_NCOMP,    /* 1=A 2=u 3=a0 4=type */
     V_NUNGLUE,  /* 1=S 2=b 3=type */
-    V_NCASE,    /* x=has motive; 1=scrutinee 2=branches 3=motive 4=type */
+    V_NCASE,    /* x=has motive; 1=scrutinee 2=branches 3=motive 4=environment 5=type */
     V_NTRANS,   /* a=data type, p=Dnf ψ; 1=x 2..k+1=parameter lines, type */
     V_GLOBAL,   /* a=global id */
     V_SITEF,    /* a=L, x=arguments so far; 1..x=the arguments */
@@ -99,7 +99,7 @@ enum {
     V_CON,      /* a=constructor; 1..f=fields, then the dimensions (interval values) */
     V_HCOMP,    /* formal homogeneous composition in a data type: 1=tube 2=cap */
     V_BRANCHES, /* a=mask of the branches taking induction hypotheses; 1..=the branches, one per constructor */
-    V_SUSP,     /* x=has motive; 1=branches 2=motive 3=field: an induction hypothesis, the elimination
+    V_SUSP,     /* x=has motive; 1=branches 2=motive 3=field 4=environment: an induction hypothesis, the elimination
                  * of a recursive field, computed when forced */
     V_END,
     /* operations: negative principal port; the last port is the result */
@@ -133,9 +133,9 @@ enum {
     O_HCOMP,    /* 0=tube 1=cap 2=out: a formal hcomp unless the tube is total */
     O_TRANSD1,  /* a=data type; 0=ψ 1..k=parameter lines k+1=x out */
     O_TRANSD2,  /* a=data type, p=Dnf ψ; 0=x 1..k=parameter lines out */
-    O_CASE,     /* x=has motive; 0=scrutinee 1=branches 2=motive 3=out */
+    O_CASE,     /* x=has motive; 0=scrutinee 1=branches 2=motive 3=environment 4=out */
     O_SELECT,   /* a=constructor, x=1 has motive | 2 hypotheses built; 0=branches 1..n=fields, [hypotheses,]
-                 * dims n+1=motive out */
+                 * dims n+1=motive n+2=environment out */
     O_ROOT,     /* 0: an observation; never interacts */
     K_END
 };
@@ -209,7 +209,10 @@ typedef struct Record {
     int *env_slot;
     int *uses;          /* occurrences of each slot in the body */
     Syn *body;
+    int where;          /* the definition it was compiled in (CUBICAL_PROFILE) */
 } Record;
+/* profile: applications of λs and forcings of thunks, by the definition they were compiled in */
+extern long *prof_count, *prof_dup; extern const char **prof_name; extern int prof_n, prof_on; extern long prof_dupk[64], prof_erak[64], prof_con[4096], prof_glob[65536];
 
 /* build the body of r: param (or 0), env providers; returns the provider */
 Port record_build(const Record *r, Port param, const Port *env);

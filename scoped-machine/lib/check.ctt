@@ -783,6 +783,9 @@
   ((some l) (check nz sig lnil lnil ct (veval nz sig lnil cT)))
   ((none) false))))
 (def sig-add (lam sig cT ct (pair (lsnoc (fst sig) (pair (veval nz sig lnil cT) (veval nz sig lnil ct))) (snd sig))))
+; the signature as the driver extends it: each entry a definition of its own
+(def sig-entry (lam sig cT ct (pair (veval nz sig lnil cT) (veval nz sig lnil ct))))
+(def sig-push (lam sig e (pair (lsnoc (fst sig) e) (snd sig))))
 
 ; a data declaration: parameter types are types; each field type a type,
 ; strictly positive (D itself, at its own parameters, or not mentioning D);
@@ -846,6 +849,8 @@
     (lfoldmax (lconcatmap (lam ce (field-levels (fst (snd pc)) sg2 (fst (fst pc)) (snd (fst pc)) (cftys ce))) ctors))))))))
 (def sig-add-data (lam sig ent (case ent ((dent ptys ctors l)
   (pair (fst sig) (lsnoc (snd sig) (dent ptys ctors (data-level sig ent))))))))
+(def data-entry (lam sig ent (case ent ((dent ptys ctors l) (dent ptys ctors (data-level sig ent))))))
+(def sig-push-data (lam sig e (pair (fst sig) (lsnoc (snd sig) e))))
 (def chk-data (lam sig ent (case ent ((dent ptys ctors l)
   (let sg2 (sig-add-data sig ent)
     (andb (check-ptys nz sg2 lnil lnil ptys)
