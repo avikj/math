@@ -73,7 +73,7 @@ static bool node_eq(Node *a, Node *b) {
 /* ---------------- desugaring to the core forms ---------------- */
 static const char *KW[] = { "lam", "thunk", "delay", "force", "case", "elim", "if", "rec", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
     "PathP", "@", "~", "/\\", "\\/", "=", "&", "|", "faceof", "sys", "sys0", "sys+", "sysmap", "comp", "Glue", "glue",
-    "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", "%clos", "%box", NULL };
+    "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", "%clos", "%box", "%wsucc", "%weq", "%wlt", "%wadd", "%wmax", "%wsub", "%welim", NULL };
 static bool keyword(const char *s) { for (int i = 0; KW[i]; i++) if (!strcmp(KW[i], s)) return true; return false; }
 static Node *param_name(Node *p) { return p->list ? p->it[0] : p; }
 
@@ -609,6 +609,7 @@ enum { G_DEF, G_AXIOM, G_INPUT };
 typedef struct {
     char *name; int kind;
     Syn *body; int nslots; int *uses;
+    Record *nary;                    /* the body taking all its parameters at once, or NULL */
     Cell *res;                       /* holds the definition's value; a use copies it */
     long tyg;                        /* an axiom's type: the global holding it, or -1 */
     Cell **park_o, **park_v; int npark, parkcap;
@@ -709,6 +710,8 @@ static int identities_on = 1;    /* off only while a defect reading runs the dec
 
 static int arity_of(long L) { for (int i = 0; i < nID; i++) if (ID[i].L == L) return ID[i].n; return 0; }
 static int pick(long L) { for (int i = 0; i < nID; i++) if (ID[i].L == L && ID[i].R != L) return i; return -1; }
+bool global_sited(long g) { return identities_on && pick(g) >= 0; }
+Record *global_nary(long g) { return g >= 0 && g < nG && G[g].kind == G_DEF ? G[g].nary : NULL; }
 static Port global_cell(long g) { Cell *c = cell(V_GLOBAL, 1); c->a = (uint64_t)g; return P(c, 0); }
 static Port app_chain(Port f, const Port *args, int n, uint32_t x) {
     for (int k = 0; k < n; k++) { Cell *a = cell(O_APP, 3); a->x = x; link(f, P(a, 0)); link(args[k], P(a, 1)); f = P(a, 2); }
@@ -1032,6 +1035,7 @@ static Syn *compile(Node *t) {
             return var_syn(b->slot);
         }
         { int c = con_lookup(s); if (c >= 0 && CON[c].nfields + CON[c].ndims == 0) { Syn *r = syn(S_CON, 0); r->id = c; return r; } }
+        if (s[0] == '#' && s[1] >= '0' && s[1] <= '9') { Syn *r = syn(S_WORD, 0); r->id = atol(s + 1); return r; }
         long g = global_lookup(s);
         if (g < 0) die("unbound name", s);
         Syn *r = syn(G[g].kind == G_AXIOM ? S_AXIOM : S_GLOBAL, 0); r->id = g; r->slot = (int)G[g].tyg;
@@ -1061,6 +1065,15 @@ static Syn *compile(Node *t) {
             for (int q = na - 1; q >= 0; q--) { r->k[q] = compile(a->it[2]); a = a->it[1]; }
             return r;
         }
+        /* a definition applied to arguments: one call cell (its body built at once when the
+         * arguments cover its parameters) */
+        long g = !hd->list && !lookup(hd->s) && c < 0 && !constant_sym(hd->s) ? global_lookup(hd->s) : -1;
+        if (g >= 0 && G[g].kind != G_AXIOM && na >= 1) {
+            Syn *r = syn(S_CALL, na); r->id = g;
+            Node *a = t;
+            for (int q = na - 1; q >= 0; q--) { r->k[q] = compile(a->it[2]); a = a->it[1]; }
+            return r;
+        }
         return compile_n(S_APP, t, 1, 2);
     }
     if (!strcmp(h, "pair")) return compile_n(S_PAIR, t, 1, 2);
@@ -1077,7 +1090,8 @@ static Syn *compile(Node *t) {
     {
         static const struct { const char *name; int kind, n; } PR[] = { { "%view", O_VIEW, 1 }, { "%var", O_MKVAR, 2 },
             { "%dim", O_MKDIM, 1 }, { "%ieq", O_IEQ, 2 }, { "%feq", O_FEQL, 2 }, { "%clauses", O_CLAUSES, 1 },
-            { "%restrict", O_RESTRICT, 2 }, { "%abs", O_ABS, 2 }, { "%branch", O_BRANCH, 3 }, { "%clos", O_CLOS, 2 }, { NULL, 0, 0 } };
+            { "%restrict", O_RESTRICT, 2 }, { "%abs", O_ABS, 2 }, { "%branch", O_BRANCH, 3 }, { "%clos", O_CLOS, 2 }, { "%wsucc", O_WSUCC, 1 }, { "%weq", O_WEQ, 2 }, { "%wlt", O_WLT, 2 },
+            { "%wadd", O_WADD, 2 }, { "%wmax", O_WMAX, 2 }, { "%wsub", O_WSUB, 2 }, { "%welim", O_WELIM, 3 }, { NULL, 0, 0 } };
         for (int q = 0; PR[q].name; q++) if (!strcmp(h, PR[q].name)) {
             if (t->n != PR[q].n + 1) die("wrong number of operands in", h);
             Syn *s = compile_n(S_PRIM, t, 1, PR[q].n); s->x = (uint32_t)PR[q].kind; return s;
@@ -1262,6 +1276,8 @@ static void rb_one(FILE *o, Port prov) {
     case V_CON: if (c->n == 1) fputs(CON[c->a].name, o); else push_fields(o, CON[c->a].name, c, 1); return;
     case V_HCOMP: push_fields(o, "hcompD", c, 1); return;
     case V_CASEF: fputs("%casef", o); return;
+    case V_WORD: fprintf(o, "#%llu", (unsigned long long)c->a); return;
+    case V_WSUSP: { extern Port wsusp_force(Cell *c); push_port(wsusp_force(c)); return; }
     case V_REF: { extern Port ref_copy(Cell *c); push_port(ref_copy(c)); return; }
     case V_SUSP:
         /* an unforced induction hypothesis */
@@ -1424,8 +1440,20 @@ static void toplevel(Node *f) {
         int ns; int *u;
         prof_enter(f->it[1]->s);
         Syn *s = compile_top(f->it[2], &ns, &u);
-        prof_cur = 0;
         G[g].body = s; G[g].nslots = ns; G[g].uses = u;
+        {
+            /* the body with all its parameters at once */
+            Node *b = ds(f->it[2]); int np = 0;
+            Node *pn[256];
+            while (b->list && b->n == 3 && is(b->it[0], "lam") && np < 256) { pn[np++] = param_name(b->it[1]); b = b->it[2]; }
+            if (np >= 1) {
+                nbinds = 0; nlevels = 1; GROW(levels, caplevels, 1); levels[0] = (Level){ 0 };
+                Names none = { 0 };
+                G[g].nary = compile_branch(&none, pn, np, b);
+                nlevels = 0;
+            }
+        }
+        prof_cur = 0;
         link(top_build(s, ns, u), P(G[g].res, 0));
         if (!strcmp(G[g].name, "%case-hcomp")) case_hcomp_global = g;
         if (fill_decl) { for (int i = 0; i < G[g].npark; i++) net_push(G[g].park_o[i], G[g].park_v[i]); G[g].npark = 0; }

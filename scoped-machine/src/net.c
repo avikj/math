@@ -141,6 +141,12 @@ static Port box_copy(Box *b) {
     return P(d, 2);
 }
 Port ref_copy(Cell *c) { return box_copy(c->p); }
+/* a word's suspended elimination, computed (for readback) */
+Port wsusp_force(Cell *c) {
+    Cell *e = cell(O_WELIM, 4);
+    link(c->port[3], P(e, 0)); link(c->port[1], P(e, 1)); link(c->port[2], P(e, 2));
+    return P(e, 3);
+}
 static Port ref_of(Port val) { Cell *c = cell(V_REF, 1); c->p = box_new(val); return P(c, 0); }
 static void era(Port prov);
 static void box_release(Box *b) {
@@ -465,6 +471,14 @@ static const char *WNAME[W_N] = { "wlam", "wpair", "wpi", "wsigma", "wu", "wpath
     "wgluev", "wdata", "wcon", "whcomp", "wvar", "wapp", "wfst", "wsnd", "wpapp", "wcomp", "wunglue", "welim", "wtrans",
     "wlevel", "wother" };
 static int WC[W_N], C_NZ = -1, C_NS, C_LNIL, C_LCONS, C_TRUE, C_FALSE;
+static int B_TRUE = -1, B_FALSE;
+static void need_bool(void) {
+    if (B_TRUE >= 0) return;
+    B_FALSE = con_index("false");
+    int t = con_index("true");
+    if (t < 0 || B_FALSE < 0) { fprintf(stderr, "Bool is missing (lib/prelude.ctt)\n"); exit(2); }
+    __atomic_store_n(&B_TRUE, t, __ATOMIC_RELEASE);
+}
 static void need_cons(void) {
     if (C_NZ >= 0) return;
     for (int w = 0; w < W_N; w++) if ((WC[w] = con_index(WNAME[w])) < 0) { fprintf(stderr, "%%view needs the data type View (lib/code.ctt)\n"); exit(2); }
@@ -598,6 +612,26 @@ static void interact(Cell *o, Cell *v) {
     case O_MKPLAM: rule_mkplam(o, v); return;
     default: break;
     }
+    if (v->kind == V_GLOBAL && o->kind == O_CALL) {
+        long g = (long)v->a;
+        Record *r = global_nary(g);
+        int na = o->n - 2;
+        if (r && !global_sited(g) && r->nparam <= na) {
+            /* all the parameters: the body at once; any further arguments applied to it */
+            if (prof_on) ADD(prof_count[r->where], 1);
+            Port res = record_build_n(r, &o->port[1], NULL);
+            for (int k = r->nparam; k < na; k++) res = app2(res, o->port[1 + k]);
+            link(res, o->port[o->n - 1]);
+            cell_free(o); cell_free(v);
+            return;
+        }
+        /* otherwise applications, one argument at a time (an identity sees them) */
+        Port f = P(v, 0);
+        for (int k = 0; k < na; k++) f = app2(f, o->port[1 + k]);
+        link(f, o->port[o->n - 1]);
+        cell_free(o);
+        return;
+    }
     if (v->kind == V_GLOBAL) {
         if (o->kind == O_APP && site_open(o, v)) return;
         /* a definition is used: its value is copied in */
@@ -608,6 +642,14 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     if (v->kind == V_DEFER) { defer_force(o, v); return; }
+    if (v->kind == V_WSUSP) {
+        /* a word's suspended elimination, used: computed */
+        Cell *e = cell(O_WELIM, 4);
+        link(v->port[3], P(e, 0)); link(v->port[1], P(e, 1)); link(v->port[2], P(e, 2));
+        link(P(e, 3), P(o, 0));
+        cell_free(v);
+        return;
+    }
     if (v->kind == V_REF) {
         /* the value is copied out of its box */
         link(box_copy(v->p), P(o, 0));
@@ -1073,6 +1115,42 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     case O_VIEW: rule_view(o, v); return;
+    case O_WSUCC: case O_WEQ: case O_WLT: case O_WADD: case O_WMAX: case O_WSUB: case O_WOP2: case O_WELIM: {
+        need_bool();
+        if (vk != V_WORD) { fprintf(stderr, "a word operation on a value that is not a word (kind %d)\n", vk); exit(2); }
+        uint64_t n = v->a;
+        if (o->kind == O_WSUCC) {
+            Cell *w = cell(V_WORD, 1); w->a = n + 1; link(P(w, 0), o->port[1]);
+        } else if (o->kind == O_WELIM) {
+            if (n == 0) { link(o->port[1], o->port[3]); era(o->port[2]); }
+            else {
+                /* s #(n-1) h, h the elimination of #(n-1), computed when used */
+                Port s1, s2; split2(o->port[2], &s1, &s2);
+                Cell *p1 = cell(V_WORD, 1); p1->a = n - 1;
+                Cell *p2 = cell(V_WORD, 1); p2->a = n - 1;
+                Cell *h = cell(V_WSUSP, 4);
+                link(o->port[1], P(h, 1)); link(s2, P(h, 2)); link(P(p2, 0), P(h, 3));
+                link(app2(app2(s1, P(p1, 0)), P(h, 0)), o->port[3]);
+            }
+        } else if (o->kind == O_WOP2) {
+            uint64_t a = o->a; Port r;
+            switch (o->x) {
+            case O_WEQ: r = con_build(a == n ? B_TRUE : B_FALSE, NULL, NULL); break;
+            case O_WLT: r = con_build(a < n ? B_TRUE : B_FALSE, NULL, NULL); break;
+            default: {
+                Cell *w = cell(V_WORD, 1);
+                w->a = o->x == O_WADD ? a + n : o->x == O_WMAX ? (a > n ? a : n) : (a > n ? a - n : 0);
+                r = P(w, 0);
+            }
+            }
+            link(r, o->port[1]);
+        } else {
+            Cell *c = cell(O_WOP2, 2); c->x = o->kind; c->a = n;
+            mv(o, 1, P(c, 0)); mv(o, 2, P(c, 1));
+        }
+        cell_free(o); cell_free(v);
+        return;
+    }
     case O_MKVAR: case O_MKDIM: case O_ABS: {
         /* 0=level as a numeral: counted one successor per interaction */
         need_cons();
@@ -1464,6 +1542,14 @@ static Port build(Syn *t, Frame *f) {
         return P(c, 0);
     }
     case S_BOX: return ref_of(build(t->k[0], f));
+    case S_WORD: c = cell(V_WORD, 1); c->a = (uint64_t)t->id; return P(c, 0);
+    case S_CALL: {
+        c = cell(O_CALL, t->n + 2);
+        for (int k = 0; k < t->n; k++) link(build(t->k[k], f), P(c, 1 + k));
+        Cell *gv = cell(V_GLOBAL, 1); gv->a = (uint64_t)t->id;
+        link(P(gv, 0), P(c, 0));
+        return P(c, t->n + 1);
+    }
     case S_GLOBTAB:
         c = cell(O_GLOB, 2); c->x = t->x;
         link(build(t->k[0], f), P(c, 0));

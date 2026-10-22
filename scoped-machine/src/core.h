@@ -102,6 +102,8 @@ enum {
     V_CASEF,    /* p=CaseTab, x=has motive; [1=motive] environment: the elimination as a function */
     V_REF,      /* p=Box: a reference to a value held once; copying it copies the reference, an operation
                  * meeting it copies the value out (as a definition is unfolded) */
+    V_WORD,     /* a=the number: a machine word, one cell */
+    V_WSUSP,    /* 1=z 2=s 3=a word: the elimination of that word, computed when used (a hypothesis) */
     V_SUSP,     /* p=CaseTab, x=has motive; 1=field [2=motive] environment: an induction hypothesis, the
                  * elimination of a recursive field, computed when forced */
     V_END,
@@ -152,6 +154,12 @@ enum {
     O_GLOB,     /* x=table, a=count; 0=index (Num) 1=out: an entry of the checker's tables, a reference */
     O_ABS,      /* a=count; 0=level (Num) 1=value 2=out: the line binding the dimension at that level */
     O_NTYPE,    /* 0=a neutral 1=out: its type, computed from its spine (only a variable stores one) */
+    O_CALL,     /* 0=a definition 1..n=arguments out: a definition applied to its arguments; with all
+                 * its parameters, its body is built in one interaction */
+    O_WSUCC,    /* 0=w 1=out: w + 1 */
+    O_WEQ, O_WLT, O_WADD, O_WMAX, O_WSUB,  /* 0=a 1=b 2=out: on words; first a, then b */
+    O_WOP2,     /* x=the operation, a=a; 0=b 1=out */
+    O_WELIM,    /* (%welim w z s): 0=w 1=z 2=s 3=out: #0 ↦ z, #(n+1) ↦ s #n (the elimination of #n) */
     O_PEND,     /* p=Dnf r (0 or 1); 0=the type of p 1=p 2=out: p r, an endpoint when the type is a path type */
     O_CLOS,     /* 0=f 1=g 2=out */
     O_CLOS2,    /* 0=g 1=f 2=out: (csame pairs) when f, g are λs of one record, the pairs of their
@@ -213,6 +221,10 @@ int data_checked_index(int d);     /* a data type's index in the checker's signa
 int con_index(const char *name);   /* a constructor by name, or -1 */
 enum { TB_VAL, TB_TY, TB_DTAB, TB_DENT, TB_N };
 long table_global(int table, long i);  /* the global holding entry i of a checker table, or -1 */
+/* a definition's body as one record taking all its parameters (NULL when it is not a λ), and
+ * whether applications of it follow declared identities */
+struct Record *global_nary(long g);
+bool global_sited(long g);
 typedef struct Box { struct Cell *root; long rc; } Box;
 typedef struct CaseTab { int d, nenv; uint64_t mask; struct Record **br; } CaseTab;
 Port con_build(int c, const Port *fields, const Port *dims);
@@ -230,7 +242,9 @@ enum {
     S_DATA, S_CON, S_HCOMPD, S_TRANSD, S_CASE,  /* id: the data type or constructor; S_CASE: tab */
     S_PRIM,     /* x=the operation cell, n operands */
     S_GLOBTAB,  /* x=the table; k[0]=the index */
-    S_BOX       /* k[0]: the value, held once and referred to */
+    S_BOX,      /* k[0]: the value, held once and referred to */
+    S_WORD,     /* id: a word literal #n */
+    S_CALL      /* id: the definition; k: its arguments */
 };
 struct Record;
 typedef struct Syn {
