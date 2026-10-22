@@ -15,6 +15,45 @@ Every commit must pass `make test`. Push after every landed step. Commit trailer
     Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
     Claude-Session: https://claude.ai/code/session_019CdfGcL8YbfbiCH37R9UoY
 
+## CURRENT DIRECTION (2026-10-22, supersedes the item list below)
+
+Findings, established by reading the code and the history (git log 10-14..10-22):
+
+1. There is one operation: normalizing (5.1–5.3). Checking, evaluating, judging are names for it.
+   "t : A" internally is a type over codes, HasType ⌜t⌝ ⌜A⌝; its normal form is a derivation or
+   it is established empty. A Bool-valued checker is the lossy decide-projection of that (8.4–8.6).
+   The theory expresses its own normalization as an internal object (5.26), like a C++ compiler
+   written in C++; that internal object must run on the same reduction, at zero added cost.
+2. What went wrong: the net normalizes CCHM natively (cells for λ, Π, Σ, PathP, Glue, comp, systems,
+   data/con/hcomp/case, typed neutrals). `lib/code.ctt` has `eval-g`: Code → the net's own value. The
+   RETURN (net normal value → Code) was never written. So `lib/check.ctt` carries a second, complete
+   CCHM normalizer over data (lines ~48–610: intervals, faces, Val/Neu, act, comp-*, data transport,
+   veval), and every "ok: checks" is that copy's verdict at interpretive cost (lemIso 276M steps).
+   History: 10-20 on the C machine a code WAS the machine's own term record (`c82a17e` quote), so
+   the return was the identity; the 10-21 from-scratch net (`77f566e`) made Code separate data with
+   only the one-way eval-g; `8b27dfd` then wrote the duplicate normalizer. All later checker perf work
+   (masks, interning, defunctionalized branches, on-demand neutral types) and proof reshaping
+   (η-expanded transportIsEquiv, hp/pp arguments in equivEq/msort-at) existed only because of it.
+3. Rule: nothing may take more interactions than hand reduction. `case` costs 22 interactions per
+   level of a two-way case (hand: ~3: select, substitute, call) because `ds()` compiles it to closed
+   branch λs + an environment λg. g shared..., thunks, %branches records, O_CASE→O_SELECT→apps→force.
+   Measured: (lebc 1 2) − (lebc 0 2) = 11 O_APP, 2 O_FORCE, 2 O_CASE, 2 O_SELECT, 2 O_DUP, 3 O_ERA.
+
+Work, in order:
+
+A. [~] `case` = one interaction. The case cell carries a static table of branch records (one
+   multi-parameter Record per constructor: parameters = fields, hypotheses, dimensions; environment =
+   the shared variables), and the shared variables once as ports. CASE meets CON: build the selected
+   branch's record with the constructor's fields and the case's environment ports (unused ones erased).
+   Hypotheses: V_SUSP holding the table, motive, field, environment copies; forcing it is a CASE.
+   hcomp: %case-hcomp takes the case as a function value. Neutral case reads back with its branches
+   built on fresh variables.
+B. [ ] The return path: an operation cell QUOTE that meets a normal value and emits its Code
+   constructor (λ: apply to a fresh neutral, quote the body; neutral: variable/elimination with
+   quoted operands; Π/Σ/PathP/pair/constructor: emit, quote parts) — `rb_one` in lang.c is the same
+   walk producing text. Then check.ctt normalizes by eval-g + net + QUOTE and compares quoted normal
+   forms; delete its duplicate normalizer (lines ~48–610).
+
 ## The spec, as it bears on the code (paper references)
 
 - 5.1–5.3: connectives are type formers; a proof is a term; checking is normalizing. Proving, deciding,
