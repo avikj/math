@@ -79,7 +79,7 @@ Library and acceptance tests:
    Sum/Empty/Unit/Bool, funext operations.
 7. Acceptance tests:
    (a) [x] the paper's boxes ported to the machine's language and checked (~500);
-   (b) [not deliverable as specified; see the log, "7b re-derived"] the machine as an instance of the §4 theorems (~500): `Theory` on its own codes,
+   (b) [ ] the machine as an instance of the §4 theorems (~500): `Theory` on its own codes,
        `Pf s = Σ d. chk s d ≡ true`, `HasDiagonal` by substitution on codes; halting via
        `lawvere-one-row`; Con/HBL1/¬OmegaBad remain hypotheses as in the box;
    (c) [x] 9.15 (~400): Multiset = free commutative monoid HIT; declaration over A:
@@ -144,11 +144,19 @@ a QIIT, inductive-inductive families, Delay/M-types.
   convertible environments convert without evaluating branches; codes are interned as shared global
   definitions (%cN) so copying a code is copying a reference; global lookup by hash. lemIso: 1.1G → 161M
   interactions; equivEq: failed after 2.2G → 9.6M (with the propositionality abstracted).
-- 7b re-derived: Pf s = Σ d. chk s d ≡ true cannot be formed, since chk would have to be a checked total
-  function, and a total checker for the system inside itself would prove its own consistency. The
-  Gödel instance needs the system's typing derivations (with conversion) as an inductive family over
-  codes, and the halting instance needs an internal quotation and evaluator compositionality; both are
-  formalizations, not engineering on the current base. Report to the user; do not fake an instance.
+- 7b (corrected; the earlier entry claiming it impossible was wrong): Pf is Gödel's provability
+  predicate, Pf s = Σ t. Σ n. checkN n t s ≡ true: a term t and a step bound n with which the checker
+  accepts t at s. checkN is check.ctt's checker with a fuel argument, structural on the fuel, so it is
+  a checked total function; no normalization or consistency of the system is needed, the witness
+  carries the bound (Proof(d, s) is decidable, Prov(s) = ∃d. Proof(d, s)). The work: check.ctt as a
+  typed fuelled function over Code; quote : Code → Code; Theory with Sent = Code, neg s = code of
+  s → Empty, prov s = code of Pf ⌜s⌝; HasDiagonal with imp = Π-code, Form = codes with a free
+  variable, apF = substitution, negProv by computation on codes, and two lemmas about the checker:
+  mp (application rule plus fuel monotonicity) and fix (G = D ⌜D⌝ converts to f ⌜G⌝ because the
+  diagonal computes in the checker's conversion, so λx.x is accepted at G → f G and back). Halting:
+  lawvere-one-row with A = Code, B = Bool, phi a b = h (app a ⌜b⌝) for a decider h given with its
+  code; the row is the program λb. not (h (b ⌜b⌝)), its equation a lemma relating the fuelled
+  evaluator on that program to h.
 - 7c re-derived: needs merge correctness on sorted lists (commutativity, associativity, units, up to the
   free commutative monoid's paths) to give the path branches; feasible, larger than first estimated.
 - Correction to item 1's stated driver: elimination with hypotheses lets the checker accept recursive
@@ -174,5 +182,5 @@ a QIIT, inductive-inductive families, Delay/M-types.
   Fs-prop (isProp→PathP lzero). As a definition, isProp→PathP at a boundary is a transport in Fs
   computed back to the point; that check did not finish in over an hour. As an argument, its type
   gives the endpoints.
-- State: every item is landed except 7b, which is not deliverable as specified (log above). Nothing
+- State: every item is landed except 7b, designed above, not started. Nothing
   else is in scope. A fresh agent: run `make test` (fast) and `make library` (~13 min) to confirm.
