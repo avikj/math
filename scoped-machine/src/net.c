@@ -508,7 +508,7 @@ enum { W_LAM, W_PAIR, W_PI, W_SIGMA, W_U, W_PATH, W_PLAM, W_IV, W_FACE, W_SYS, W
 static const char *WNAME[W_N] = { "wlam", "wpair", "wpi", "wsigma", "wu", "wpath", "wplam", "wiv", "wface", "wsys", "wglue",
     "wgluev", "wdata", "wcon", "whcomp", "wvar", "wapp", "wfst", "wsnd", "wpapp", "wcomp", "wunglue", "welim", "wtrans",
     "wlevel", "wother" };
-static int WC[W_N], C_NZ = -1, C_NS, C_LNIL, C_LCONS, C_TRUE, C_FALSE;
+static int WC[W_N], C_LNIL = -1, C_LCONS, C_TRUE, C_FALSE;
 static int B_TRUE = -1, B_FALSE;
 static void need_bool(void) {
     if (B_TRUE >= 0) return;
@@ -518,22 +518,19 @@ static void need_bool(void) {
     __atomic_store_n(&B_TRUE, t, __ATOMIC_RELEASE);
 }
 static void need_cons(void) {
-    if (C_NZ >= 0) return;
+    if (C_LNIL >= 0) return;
     for (int w = 0; w < W_N; w++) if ((WC[w] = con_index(WNAME[w])) < 0) { fprintf(stderr, "%%view needs the data type View (lib/code.ctt)\n"); exit(2); }
-    C_NS = con_index("ns"); C_LNIL = con_index("lnil"); C_LCONS = con_index("lcons");
+    C_LCONS = con_index("lcons");
     C_TRUE = con_index("true"); C_FALSE = con_index("false");
-    if (C_NS < 0 || C_LNIL < 0 || C_LCONS < 0 || C_TRUE < 0 || C_FALSE < 0) { fprintf(stderr, "the checker's data types are missing\n"); exit(2); }
-    __atomic_store_n(&C_NZ, con_index("nz"), __ATOMIC_RELEASE);
+    int nil = con_index("lnil");
+    if (nil < 0 || C_LCONS < 0 || C_TRUE < 0 || C_FALSE < 0) { fprintf(stderr, "the checker's data types are missing\n"); exit(2); }
+    __atomic_store_n(&C_LNIL, nil, __ATOMIC_RELEASE);
 }
 static Port mk(int c, Port a, Port b, Port d, Port e) {
     Port f[4] = { a, b, d, e };
     return con_build(c, f, NULL);
 }
-static Port numeral_of(uint64_t n) {
-    Port p = con_build(C_NZ, NULL, NULL);
-    for (uint64_t k = 0; k < n; k++) { Port f[1] = { p }; p = con_build(C_NS, f, NULL); }
-    return p;
-}
+static Port word_of(uint64_t n) { Cell *c = cell(V_WORD, 1); c->a = n; return P(c, 0); }
 static Port list_of(const Port *xs, int n) {
     Port l = con_build(C_LNIL, NULL, NULL);
     for (int k = n - 1; k >= 0; k--) l = mk(C_LCONS, xs[k], l, 0, 0);
@@ -577,7 +574,7 @@ static void rule_view(Cell *o, Cell *v) {
         int d = data_checked_index((int)v->a);
         if (!strcmp(DATA[v->a].name, "Level")) { r = con_build(WC[W_LEVEL], NULL, NULL); break; }
         if (d < 0) { for (int k = 1; k < v->n; k++) era(v->port[k]); r = con_build(WC[W_OTHER], NULL, NULL); break; }
-        r = mk(WC[W_DATA], numeral_of((uint64_t)d), list_of(&v->port[1], v->n - 1), 0, 0);
+        r = mk(WC[W_DATA], word_of((uint64_t)d), list_of(&v->port[1], v->n - 1), 0, 0);
         break;
     }
     case V_CON: {
@@ -586,11 +583,11 @@ static void rule_view(Cell *o, Cell *v) {
         ConInfo *k = &CON[v->a];
         int d = data_checked_index(k->data);
         if (d < 0 && strcmp(DATA[k->data].name, "Level")) { for (int q = 1; q < v->n; q++) era(v->port[q]); r = con_build(WC[W_OTHER], NULL, NULL); break; }
-        r = mk(WC[W_CON], numeral_of((uint64_t)(d < 0 ? 0 : d)), numeral_of((uint64_t)k->index), list_of(&v->port[1], k->nfields), list_of(&v->port[1 + k->nfields], k->ndims));
+        r = mk(WC[W_CON], word_of((uint64_t)(d < 0 ? 0 : d)), word_of((uint64_t)k->index), list_of(&v->port[1], k->nfields), list_of(&v->port[1 + k->nfields], k->ndims));
         break;
     }
     case V_NVAR:
-        if (v->a & LVL_TAG) r = mk(WC[W_VAR], numeral_of(v->a & ~LVL_TAG), v->port[1], 0, 0);
+        if (v->a & LVL_TAG) r = mk(WC[W_VAR], word_of(v->a & ~LVL_TAG), v->port[1], 0, 0);
         else { era(v->port[1]); r = con_build(WC[W_OTHER], NULL, NULL); }
         break;
     case V_NAPP: r = mk(WC[W_APP], v->port[1], v->port[2], v->port[3], 0); break;
@@ -610,7 +607,7 @@ static void rule_view(Cell *o, Cell *v) {
         if (data_checked_index(tb->d) < 0) { for (int q = 1; q < v->n; q++) era(v->port[q]); r = con_build(WC[W_OTHER], NULL, NULL); break; }
         Cell *f = cell(V_CASEF, v->n - 2); f->x = v->x; f->p = tb;
         for (int k = 2; k < v->n - 1; k++) link(v->port[k], P(f, k - 1));
-        r = mk(WC[W_ELIM], numeral_of((uint64_t)data_checked_index(tb->d)), v->port[1], P(f, 0), v->port[v->n - 1]);
+        r = mk(WC[W_ELIM], word_of((uint64_t)data_checked_index(tb->d)), v->port[1], P(f, 0), v->port[v->n - 1]);
         break;
     }
     case V_NTRANS: {
@@ -618,7 +615,7 @@ static void rule_view(Cell *o, Cell *v) {
         if (data_checked_index((int)v->a) < 0) { for (int q = 1; q < v->n; q++) era(v->port[q]); r = con_build(WC[W_OTHER], NULL, NULL); break; }
         Cell *fc = cell(V_FACE, 1); fc->p = dnf_retain(v->p);
         Port l = list_of(&v->port[2], np);
-        Port f[5] = { numeral_of((uint64_t)data_checked_index((int)v->a)), P(fc, 0), l, v->port[1], v->port[v->n - 1] };
+        Port f[5] = { word_of((uint64_t)data_checked_index((int)v->a)), P(fc, 0), l, v->port[1], v->port[v->n - 1] };
         r = con_build(WC[W_TRANS], f, NULL);
         break;
     }
@@ -1189,39 +1186,32 @@ static void interact(Cell *o, Cell *v) {
         cell_free(o); cell_free(v);
         return;
     }
-    case O_MKVAR: case O_MKDIM: case O_ABS: {
-        /* 0=level as a numeral: counted one successor per interaction */
-        need_cons();
-        if (vk != V_CON) { fprintf(stderr, "%%var/%%dim: a level is a numeral\n"); exit(2); }
-        if ((int)v->a == C_NS) {
-            Cell *c = cell(o->kind, o->n); c->a = o->a + 1;
-            for (int k = 1; k < o->n; k++) mv(o, k, P(c, k));
-            link(v->port[1], P(c, 0));
-            cell_free(o); cell_free(v);
-            return;
-        }
+    case O_MKVAR: case O_MKDIM: {
+        /* a fresh variable (of the type at port 1) or dimension, each time: 0 is only the trigger */
+        for (int k = 1; k < v->n; k++) era(v->port[k]);
         if (o->kind == O_MKVAR) {
+            static uint64_t next_var;
             /* its type is held once: every copy of the variable refers to it */
-            Cell *n = cell(V_NVAR, 2); n->a = LVL_TAG | o->a; n->ty = 1;
+            Cell *n = cell(V_NVAR, 2); n->a = LVL_TAG | __atomic_fetch_add(&next_var, 1, __ATOMIC_RELAXED); n->ty = 1;
             link(ref_of(o->port[1]), P(n, 1)); link(P(n, 0), o->port[2]);
-        } else if (o->kind == O_ABS) {
-            Cell *m = cell(O_MKPLAM, 2); m->a = DIM_LVL + (Dim)o->a;
-            mv(o, 1, P(m, 0)); link(P(m, 1), o->port[2]);
         } else {
-            Cell *iv = cell(V_IV, 1); iv->p = iv_atom(DIM_LVL + (Dim)o->a); link(P(iv, 0), o->port[1]);
+            Cell *iv = cell(V_IV, 1); iv->p = iv_atom(fresh_dim()); link(P(iv, 0), o->port[1]);
         }
         cell_free(o); cell_free(v);
         return;
     }
+    case O_ABS: {
+        /* (%abs i v): the line binding the dimension i */
+        Dnf *d = v->p;
+        if (vk != V_IV || !d || d->n != 1 || d->c[0]->n != 1 || (d->c[0]->l[0] & 1)) { fprintf(stderr, "%%abs: not a dimension\n"); exit(2); }
+        Cell *m = cell(O_MKPLAM, 2); m->a = d->c[0]->l[0] >> 1;
+        mv(o, 1, P(m, 0)); link(P(m, 1), o->port[2]);
+        cell_free(o); cell_free(v);
+        return;
+    }
     case O_GLOB: {
-        need_cons();
-        if (vk != V_CON) { fprintf(stderr, "%%gval/%%gty/%%dtab/%%dent: an index is a numeral\n"); exit(2); }
-        if ((int)v->a == C_NS) {
-            Cell *c = cell(O_GLOB, 2); c->x = o->x; c->a = o->a + 1;
-            mv(o, 1, P(c, 1)); link(v->port[1], P(c, 0));
-            cell_free(o); cell_free(v);
-            return;
-        }
+        if (vk != V_WORD) { fprintf(stderr, "%%gval/%%gty/%%dtab/%%dent: an index is a word\n"); exit(2); }
+        o->a = v->a;
         long g = table_global((int)o->x, (long)o->a);
         if (g < 0) { fprintf(stderr, "checker table %u has no entry %llu\n", o->x, (unsigned long long)o->a); exit(2); }
         if (o->x == TB_VAL) {
@@ -1336,19 +1326,11 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     case O_BRANCHC: {
-        need_cons();
-        if (vk != V_CON) { fprintf(stderr, "%%branch: a constructor index is a numeral\n"); exit(2); }
-        Cell *c;
-        if ((int)v->a == C_NS) {
-            c = cell(O_BRANCHC, o->n); c->p = o->p; c->a = o->a + 1;
-            for (int k = 1; k < o->n; k++) mv(o, k, P(c, k));
-            link(v->port[1], P(c, 0));
-        } else {
-            /* 0=rest of the list, environment, out */
-            c = cell(O_BRANCHL, o->n - 1); c->p = o->p; c->a = o->a; c->x = 0;
-            for (int k = 2; k < o->n; k++) mv(o, k, P(c, k - 1));
-            mv(o, 1, P(c, 0));
-        }
+        if (vk != V_WORD) { fprintf(stderr, "%%branch: a constructor index is a word\n"); exit(2); }
+        /* 0=rest of the list, environment, out */
+        Cell *c = cell(O_BRANCHL, o->n - 1); c->p = o->p; c->a = v->a; c->x = 0;
+        for (int k = 2; k < o->n; k++) mv(o, k, P(c, k - 1));
+        mv(o, 1, P(c, 0));
         cell_free(o); cell_free(v);
         return;
     }

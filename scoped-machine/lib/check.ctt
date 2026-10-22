@@ -1,572 +1,559 @@
-; check.ctt — the type checker as a term (paper 5.26). A term to check is a code (lib/code.ctt).
-; Its values are the machine's own: eval-g builds them and the net normalizes them. The checker
-; reads a value through %view, which gives the value's head as data whose fields are the value's
-; parts, themselves values: application, projection, composition, Glue, transport and the
-; endpoints of a path variable are the machine's own steps, at the machine's cost. Checked
-; definitions, their types and the data types are reached through the tables %gval, %gty, %dtab
-; and %dent: references to definitions, not copies.
+; check.ctt — the type checker as a term (paper 5.26). Its input is the code of a term in which
+; every node carries the term's value: the machine computed it from the compiled subterm, once,
+; with each node's value built from its parts' values. A binder's code is a function: a term
+; binder takes a variable's value and type, a dimension binder a dimension, and gives the code
+; of the body; instantiating a binder is applying it. A variable's node carries its value and
+; type, so there is no context: a fresh variable is (%var T), a fresh dimension (%dim), each
+; made once where it is introduced. A system's branches are thunks of their codes; under a
+; clause the checker restricts the thunk and forces it, so a branch is computed under its face.
+; The checker reads values through %view, which gives a value's head as data whose fields are
+; the value's parts: application, projection, composition, Glue, transport and the endpoints of
+; a path variable are the machine's own steps. Checked definitions, their types and the data
+; types are reached through the tables %gval, %gty, %dtab and %dent (words index them).
+
+; ---------------------------------------------------------------- codes
+(data Tm
+  (tv x T) (ti i) (tg n V)
+  (tlam b V) (tapp f a V) (tpair a b V) (tfst p V) (tsnd p V)
+  (tpi A b V) (tsigma A b V) (tuniv l V) (tpathp A a b V) (tplam b V) (tpapp p r V)
+  (tc0) (tc1) (tneg r V) (tmeet r s V) (tjoin r s V)
+  (teq0 r V) (teq1 r V) (tfand a b V) (tfor a b V) (ttt) (tff) (tforall b V)
+  (tsys bs V) (tcomp A u a V) (tgluet A S V) (tglue S a V) (tunglue S b V)
+  (tlet t b V) (tann t T V)
+  ; a data type at its parameters; a constructor at its fields and dimensions; elimination
+  ; with a motive, and without (F: the elimination as a function); formal hcomp
+  (tdata d ps V) (tcon d c fs ds V) (telim d P B x F V) (tcase d B x F V) (thcomp u a V) (tforce t V)
+  (tlevel) (tlzero) (tlsuc l V) (tlmax a b V))
+; a branch of an elimination: binders for its fields, hypotheses, dimensions, then the body
+(data Br (bx b) (bi b) (be t))
+; a telescope: a term binder over a type, a dimension binder, the end
+(data Tel (tx A r) (ty r) (tz e))
+(def tval (lam c (case c
+  ((tv x T) x) ((ti i) i) ((tg n V) V)
+  ((tlam b V) V) ((tapp f a V) V) ((tpair a b V) V) ((tfst p V) V) ((tsnd p V) V)
+  ((tpi A b V) V) ((tsigma A b V) V) ((tuniv l V) V) ((tpathp A a b V) V) ((tplam b V) V) ((tpapp p r V) V)
+  ((tc0) 0) ((tc1) 1) ((tneg r V) V) ((tmeet r s V) V) ((tjoin r s V) V)
+  ((teq0 r V) V) ((teq1 r V) V) ((tfand a b V) V) ((tfor a b V) V) ((ttt) tt) ((tff) ff) ((tforall b V) V)
+  ((tsys bs V) V) ((tcomp A u a V) V) ((tgluet A S V) V) ((tglue S a V) V) ((tunglue S b V) V)
+  ((tlet t b V) V) ((tann t T V) V)
+  ((tdata d ps V) V) ((tcon d c fs ds V) V) ((telim d P B x F V) V) ((tcase d B x F V) V) ((thcomp u a V) V) ((tforce t V) V)
+  ((tlevel) Level) ((tlzero) lzero) ((tlsuc l V) V) ((tlmax a b V) V))))
 
 ; ---------------------------------------------------------------- basics
-; Lst, Opt, Num, Code and View are declared in code.ctt
+; Lst, Opt, View, CloCmp and DTab are declared in code.ctt
 (def andb (lam a b (if a b false)))
 (def orb (lam a b (if a true b)))
 (def notb (lam a (if a false true)))
-(def beq (lam a b (if a b (notb b))))
-
-(def eqn (lam x y (case x
-  ((nz) (case y ((nz) true) (_ false)))
-  ((ns x1) (case y ((ns y1) (eqn x1 y1)) (_ false))))))
-(def maxn (lam x y (case x
-  ((nz) y)
-  ((ns x1) (case y ((nz) x) ((ns y1) (ns (maxn x1 y1))))))))
-
+(def wle (lam a b (notb (%wlt b a))))
 (def isnil (lam l (case l ((lnil) true) (_ false))))
 (def lapp (lam l m (case l ((lnil) m) ((lcons x xs) (lcons x (lapp xs m))))))
 (def lmap (lam f l (case l ((lnil) lnil) ((lcons x xs) (lcons (f x) (lmap f xs))))))
 (def lany (lam p l (case l ((lnil) false) ((lcons x xs) (if (p x) true (lany p xs))))))
 (def lall (lam p l (case l ((lnil) true) ((lcons x xs) (if (p x) (lall p xs) false)))))
-(def lfilter (lam p l (case l ((lnil) lnil) ((lcons x xs) (if (p x) (lcons x (lfilter p xs)) (lfilter p xs))))))
 (def lconcatmap (lam f l (case l ((lnil) lnil) ((lcons x xs) (lapp (f x) (lconcatmap f xs))))))
 (def lnth (lam l n (case l
   ((lnil) none)
-  ((lcons x xs) (case n ((nz) (some x)) ((ns m) (lnth xs m)))))))
+  ((lcons x xs) (if (%weq n #0) (some x) (lnth xs (%wsub n #1)))))))
 (def lsnoc (lam l x (lapp l (lcons x lnil))))
-(def llen (lam l (case l ((lnil) nz) ((lcons x xs) (ns (llen xs))))))
 ; all pairs of distinct positions i < j
 (def lpairs (lam l (case l
   ((lnil) lnil)
   ((lcons x xs) (lapp (lmap (lam y (pair x y)) xs) (lpairs xs))))))
 (def fromopt (lam o d (case o ((none) d) ((some x) x))))
-(def push-all (lam xs env (case xs ((lnil) env) ((lcons x r) (push-all r (lcons x env))))))
-(def lrep (lam n x (case n ((nz) lnil) ((ns m) (lcons x (lrep m x))))))
-(def opt-map (lam f o (case o ((none) none) ((some x) (some (f x))))))
-(def addn (lam a b (case a ((nz) b) ((ns m) (ns (addn m b))))))
-(def ltn (lam a b (case b ((nz) false) ((ns b1) (case a ((nz) true) ((ns a1) (ltn a1 b1)))))))
 (def lall2 (lam p xs ys (case xs ((lnil) (isnil ys)) ((lcons x r) (case ys ((lnil) false) ((lcons y q) (andb (p x y) (lall2 p r q))))))))
-(def lfoldmax (lam xs (case xs ((lnil) nz) ((lcons x r) (maxn x (lfoldmax r))))))
 (def single (lam x (lcons x lnil)))
 (def lhead (lam l (case l ((lcons x r) x) ((lnil) lzero))))
 (def ltail (lam l (case l ((lcons x r) r) ((lnil) lnil))))
-; a value that equals nothing: what an unreadable view stands for
+; a value that equals nothing
 (data Opq (opq))
 
-; ---------------------------------------------------------------- the context
-; k: the number of entries; env: their values (a list, for eval-g); tys: their types, (some T),
-; or none for a dimension. A variable is (%var k T), the neutral at level k carrying its type;
-; a dimension is (%dim k). Being under a face clause d is restricting env and tys by d.
-(def ev eval-g)
-(def under-dim (lam k env (lcons (%dim k) env)))
-(def act-env (lam d env (lmap (lam v (%restrict d v)) env)))
-(def act-tys (lam d tys (lmap (lam o (case o ((some T) (some (%restrict d T))) ((none) none))) tys)))
-(def is-dim (lam tys n (case (lnth tys n) ((some o) (case o ((none) true) (_ false))) ((none) false))))
-(def check-iv (lam tys r (case r
-  ((cvar n) (is-dim tys n))
-  ((ci0) true) ((ci1) true)
-  ((cneg a) (check-iv tys a))
-  ((cmeet a b) (andb (check-iv tys a) (check-iv tys b)))
-  ((cjoin a b) (andb (check-iv tys a) (check-iv tys b)))
+; ---------------------------------------------------------------- intervals and faces
+(def check-iv (lam r (case r
+  ((ti i) true) ((tc0) true) ((tc1) true)
+  ((tneg a V) (check-iv a))
+  ((tmeet a b V) (andb (check-iv a) (check-iv b)))
+  ((tjoin a b V) (andb (check-iv a) (check-iv b)))
   (_ false))))
-(def check-face (lam tys p (case p
-  ((ceq0 r) (check-iv tys r)) ((ceq1 r) (check-iv tys r))
-  ((cfand a b) (andb (check-face tys a) (check-face tys b)))
-  ((cfor a b) (andb (check-face tys a) (check-face tys b)))
-  ((cftt) true) ((cfff) true)
-  ((cforall b) (check-face (lcons none tys) b))
+(def check-face (lam p (case p
+  ((teq0 r V) (check-iv r)) ((teq1 r V) (check-iv r))
+  ((tfand a b V) (andb (check-face a) (check-face b)))
+  ((tfor a b V) (andb (check-face a) (check-face b)))
+  ((ttt) true) ((tff) true)
+  ((tforall b V) (check-face (b (%dim))))
   (_ false))))
 
 ; ---------------------------------------------------------------- data types
-; (dent parameter-types constructors level): codes over the parameters; level a Level value.
-; (cent field-types dimensions boundary), codes over the parameters, the earlier fields and the
-; dimensions.
-(data DEnt (dent ptys ctors lvl))
-(data CEnt (cent ftys nd bdy))
-(def dctors (lam de (case de ((dent p c l) c))))
-(def dptys (lam de (case de ((dent p c l) p))))
-(def dlvl (lam de (case de ((dent p c l) l))))
-(def centry (lam d c (fromopt (lnth (dctors (%dent d)) c) (cent lnil nz csys0))))
-(def cftys (lam ce (case ce ((cent f n b) f))))
-(def cnd (lam ce (case ce ((cent f n b) n))))
-(def cbdy (lam ce (case ce ((cent f n b) b))))
-(def is-data-d (lam d c (case c ((cdata d2 ps) (eqn d d2)) (_ false))))
-(def rec-of (lam d ftys fs (case ftys
-  ((lnil) lnil)
-  ((lcons A rest) (case fs
-    ((lnil) lnil)
-    ((lcons f fr) (if (is-data-d d A) (lcons f (rec-of d rest fr)) (rec-of d rest fr))))))))
-; the machine's data type, constructor, elimination and case, from the table
+; (dent telescope level): the parameters' telescope ending in the constructors' telescopes, each
+; its fields, its dimensions, ending in its boundary (the code of a system)
+(data DEnt (dent tel lvl))
+(def dtel (lam de (case de ((dent t l) t))))
+(def dlvl (lam de (case de ((dent t l) l))))
+; a telescope instantiated at values (a term binder's type is its type's value)
+(def tel-inst (lam tel xs (case xs
+  ((lnil) tel)
+  ((lcons x rest) (case tel
+    ((tx A r) (tel-inst (r x (tval A)) rest))
+    ((ty r) (tel-inst (r x) rest))
+    ((tz e) tel))))))
+(def tel-end (lam tel d (case tel ((tz e) e) (_ d))))
+; the constructors' telescopes at the parameters
+(def ctors-at (lam d ps (tel-end (tel-inst (dtel (%dent d)) ps) lnil)))
+(def centry (lam d c ps (fromopt (lnth (ctors-at d ps) c) (tz (tsys lnil (sys))))))
+; the parameters as fresh variables: (pair variables constructors)
+(def params-fresh (lam tel pvs (case tel
+  ((tx A r) (let Av (tval A) (let x (%var Av) (params-fresh (r x Av) (lsnoc pvs x)))))
+  ((tz e) (pair pvs e))
+  (_ (pair pvs lnil)))))
+(def is-data-d (lam d c (case c ((tdata d2 ps V) (%weq d d2)) (_ false))))
+; the machine's data type and constructor, from the table
 (def mkdata (lam d ps (app-all (dt-former (%dtab d)) ps)))
 (def mkcon (lam d c fs ds (app-all (cl-at (dt-cons (%dtab d)) c) (lapp fs ds))))
-(def elim-fn (lam env d P B (app-all ((dt-elim (%dtab d)) (ev env P)) (lmap (ev env) B))))
-(def case-fn (lam env d B (app-all (dt-case (%dtab d)) (lmap (ev env) B))))
-; the boundary of constructor c at parameters, fields and dimensions: a system
-(def bdy-sys (lam d c ps fs ds (ev (push-all ds (push-all fs (push-all ps lnil))) (cbdy (centry d c)))))
 
 ; ---------------------------------------------------------------- levels
-; max(c, a1+o1, ...) over level variables a (their levels); lvw: the level of types over levels
+; max(c, a1+o1, ...) over level variables a (their names); lvw: the level of types over levels
 (data Lvl (lvl c ts) (lvw))
-(def lv0 (lvl nz lnil))
+(def lv0 (lvl #0 lnil))
 (def Uw (U lomega))
-(def lvl-suc (lam l (case l ((lvl c ts) (lvl (ns c) (lmap (lam p (pair (fst p) (ns (snd p)))) ts))) ((lvw) lvw))))
-(def lvl-max (lam l m (case l ((lvl c ts) (case m ((lvl d us) (lvl (maxn c d) (lapp ts us))) ((lvw) lvw))) ((lvw) lvw))))
+(def lvl-suc (lam l (case l ((lvl c ts) (lvl (%wsucc c) (lmap (lam p (pair (fst p) (%wsucc (snd p)))) ts))) ((lvw) lvw))))
+(def lvl-max (lam l m (case l ((lvl c ts) (case m ((lvl d us) (lvl (%wmax c d) (lapp ts us))) ((lvw) lvw))) ((lvw) lvw))))
 (declare lvl-of)
+; Level's constructors: lzero lsuc lmax lomega
 (def lvl-of (lam v (case (%view v)
-  ((wcon d c fs ds) (case c
-     ((nz) lv0)
-     ((ns c1) (case c1
-        ((nz) (lvl-suc (lvl-of (lhead fs))))
-        ((ns c2) (case c2
-           ((nz) (lvl-max (lvl-of (lhead fs)) (lvl-of (lhead (ltail fs)))))
-           ((ns c3) lvw)))))))
-  ((wvar l T) (lvl nz (single (pair l nz))))
+  ((wcon d c fs ds) (if (%weq c #0) lv0
+     (if (%weq c #1) (lvl-suc (lvl-of (lhead fs)))
+     (if (%weq c #2) (lvl-max (lvl-of (lhead fs)) (lvl-of (lhead (ltail fs)))) lvw))))
+  ((wvar l T) (lvl #0 (single (pair l #0))))
   (_ lv0))))
-(def leqn (lam a b (orb (eqn a b) (ltn a b))))
 ; max(c, ts) ≤ max(d, us) for every value of the variables iff c ≤ d or c ≤ some offset of us,
 ; and each a+o of ts has a+o' in us with o ≤ o'
 (def lvl-le (lam l m (case l
   ((lvw) (case m ((lvw) true) (_ false)))
   ((lvl c ts) (case m
     ((lvw) true)
-    ((lvl d us) (if (orb (leqn c d) (lany (lam q (leqn c (snd q))) us))
-                    (lall (lam p (lany (lam q (andb (eqn (fst p) (fst q)) (leqn (snd p) (snd q)))) us)) ts)
+    ((lvl d us) (if (orb (wle c d) (lany (lam q (wle c (snd q))) us))
+                    (lall (lam p (lany (lam q (andb (%weq (fst p) (fst q)) (wle (snd p) (snd q)))) us)) ts)
                     false)))))))
 (def lvl-eq (lam l m (if (lvl-le l m) (lvl-le m l) false)))
 (def lvl-closed (lam l (case l ((lvl c ts) (isnil ts)) ((lvw) false))))
 (def is-w (lam l (case (lvl-of l) ((lvw) true) (_ false))))
 
-; ---------------------------------------------------------------- reading values back
-(def mksys (lam bs (case bs ((lnil) (sys)) ((lcons b r) (sys+ (fst b) (snd b) (mksys r))))))
-; the value a view was read from
-(def unview (lam w (case w
-  ((wlam f) f) ((wplam p) p) ((wiv r) r) ((wface a) a)
-  ((wpair a b) (pair a b))
-  ((wpi A B) (Pi x A (B x))) ((wsigma A B) (Sigma x A (B x)))
-  ((wu l) (U l)) ((wpath A a b) (PathP A a b))
-  ((wsys bs) (mksys bs))
-  ((wglue A S) (Glue A S)) ((wgluev S a) (glue S a))
-  ((wdata d ps) (mkdata d ps)) ((wcon d c fs ds) (mkcon d c fs ds))
-  ((whcomp u a) (hcompD u a))
-  ((wvar l T) (%var l T))
-  ((wapp f a T) (f a)) ((wfst p T) (fst p)) ((wsnd p T) (snd p)) ((wpapp p r T) (@ p r))
-  ((wcomp A u a0 T) (comp A u a0)) ((wunglue S b T) (unglue S b))
-  ((welim d x f T) (f x))
-  ((wlevel) Level)
-  (_ opq))))
-
 ; ---------------------------------------------------------------- conversion
-; conv k T u v: u = v at type T. At Π, Σ and path types by eliminating both (η), the variable at
+; conv T u v: u = v at type T. At Π, Σ and path types by eliminating both (η), the variable at
 ; its type; at a universe as types; at Glue by unglue and on the face the fibre; at a data type
 ; by constructors; otherwise without the type. uconv: without a type, types by their former,
 ; neutrals by their spine, each argument at its type.
 (declare conv uconv convneu conv-data)
 ; two λs of one record are equal when their environments are: neither is applied
-(def env-pairs (lam k ps (lall (lam p (uconv k (fst p) (snd p))) ps)))
-(def conv-ty (lam k X Y (uconv k X Y)))
-(def conv (lam k T u v (case (%view T)
+(def env-pairs (lam ps (lall (lam p (uconv (fst p) (snd p))) ps)))
+(def conv-ty (lam X Y (uconv X Y)))
+(def conv (lam T u v (case (%view T)
   ((wpi A B) (case (%clos u v)
-     ((csame ps u2 v2) (if (env-pairs k ps) true (let x (%var k A) (conv (ns k) (B x) (u2 x) (v2 x)))))
-     ((cdiff u2 v2) (let x (%var k A) (conv (ns k) (B x) (u2 x) (v2 x))))))
-  ((wsigma A B) (if (conv k A (fst u) (fst v)) (conv k (B (fst u)) (snd u) (snd v)) false))
-  ((wpath L a b) (let i (%dim k) (conv (ns k) (@ L i) (@ u i) (@ v i))))
-  ((wu l) (conv-ty k u v))
+     ((csame ps u2 v2) (if (env-pairs ps) true (let x (%var A) (conv (B x) (u2 x) (v2 x)))))
+     ((cdiff u2 v2) (let x (%var A) (conv (B x) (u2 x) (v2 x))))))
+  ((wsigma A B) (if (conv A (fst u) (fst v)) (conv (B (fst u)) (snd u) (snd v)) false))
+  ((wpath L a b) (let i (%dim) (conv (@ L i) (@ u i) (@ v i))))
+  ((wu l) (conv-ty u v))
   ((wlevel) (lvl-eq (lvl-of u) (lvl-of v)))
-  ((wglue A S) (if (conv k A (unglue S u) (unglue S v))
-                  (lall (lam d (conv k (%restrict d (Glue A S)) (%restrict d u) (%restrict d v))) (%clauses (faceof S)))
+  ((wglue A S) (if (conv A (unglue S u) (unglue S v))
+                  (lall (lam d (conv (%restrict d (Glue A S)) (%restrict d u) (%restrict d v))) (%clauses (faceof S)))
                   false))
-  ((wsys bs) (lall (lam b (let d (fst b) (conv k (snd b) (%restrict d u) (%restrict d v)))) bs))
-  ((wdata d ps) (conv-data k d ps u v))
-  (_ (uconv k u v)))))
+  ((wsys bs) (lall (lam b (let d (fst b) (conv (snd b) (%restrict d u) (%restrict d v)))) bs))
+  ((wdata d ps) (conv-data d ps u v))
+  (_ (uconv u v)))))
 ; a system against a value: each branch against the value under its clause
-(def sys-vs (lam k T bs v (lall (lam b (let d (fst b) (conv k (%restrict d T) (snd b) (%restrict d v)))) bs)))
-(def conv-fields (lam k ftys fs gs fenv (case ftys
-  ((lnil) true)
-  ((lcons A rest) (case fs ((lnil) true) ((lcons f fr) (case gs ((lnil) false) ((lcons g gr)
-     (if (conv k (ev fenv A) f g) (conv-fields k rest fr gr (lcons f fenv)) false)))))))))
-(def conv-data-ww (lam k d ps wu wv (case wv
-  ((wsys bs) (sys-vs k (mkdata d ps) bs (unview wu)))
+(def sys-vs (lam T bs v (lall (lam b (let d (fst b) (conv (%restrict d T) (snd b) (%restrict d v)))) bs)))
+; fields along a constructor's telescope
+(def conv-fields (lam tel fs gs (case tel
+  ((tx A r) (case fs ((lnil) true) ((lcons f fr) (case gs ((lnil) false) ((lcons g gr)
+     (let Av (tval A) (if (conv Av f g) (conv-fields (r f Av) fr gr) false)))))))
+  (_ true))))
+(def conv-data-ww (lam d ps u wu wv (case wv
+  ((wsys bs) (sys-vs (mkdata d ps) bs u))
   (_ (case wu
     ((wcon d1 c fs ds) (case wv
-       ((wcon d2 c2 fs2 ds2) (if (eqn c c2) (if (lall2 (lam r s (%ieq r s)) ds ds2)
-          (conv-fields k (cftys (centry d c)) fs fs2 (push-all ps lnil)) false) false))
+       ((wcon d2 c2 fs2 ds2) (if (%weq c c2) (if (lall2 (lam r s (%ieq r s)) ds ds2)
+          (conv-fields (centry d c ps) fs fs2) false) false))
        (_ false)))
     ((whcomp w a) (case wv
-       ((whcomp w2 a2) (let T (mkdata d ps) (if (conv k T a a2) (let i (%dim k) (conv (ns k) T (@ w i) (@ w2 i))) false)))
+       ((whcomp w2 a2) (let T (mkdata d ps) (if (conv T a a2) (let i (%dim) (conv T (@ w i) (@ w2 i))) false)))
        (_ false)))
-    (_ (case (convneu k wu wv) ((some X) true) ((none) false))))))))
-(def conv-data (lam k d ps u v (case (%view u)
-  ((wsys bs) (sys-vs k (mkdata d ps) bs v))
-  (wu (conv-data-ww k d ps wu (%view v))))))
+    (_ (case (convneu wu wv) ((some X) true) ((none) false))))))))
+(def conv-data (lam d ps u v (case (%view u)
+  ((wsys bs) (sys-vs (mkdata d ps) bs v))
+  (wu (conv-data-ww d ps u wu (%view v))))))
 ; Glue types: the same face, and on it the same types and equivalences
-(def conv-glue-sys (lam k A S S2 (if (%feq (faceof S) (faceof S2))
+(def conv-glue-sys (lam A S S2 (if (%feq (faceof S) (faceof S2))
   (lall (lam d (let te (%restrict d S) (let te2 (%restrict d S2)
-     (if (conv-ty k (fst te) (fst te2)) (conv k (Equiv (fst te) (%restrict d A)) (snd te) (snd te2)) false))))
+     (if (conv-ty (fst te) (fst te2)) (conv (Equiv (fst te) (%restrict d A)) (snd te) (snd te2)) false))))
     (%clauses (faceof S)))
   false)))
 ; two families of types over A
-(def conv-fam (lam k A B B2 (case (%clos B B2)
-  ((csame ps B3 B4) (if (env-pairs k ps) true (let x (%var k A) (conv-ty (ns k) (B3 x) (B4 x)))))
-  ((cdiff B3 B4) (let x (%var k A) (conv-ty (ns k) (B3 x) (B4 x)))))))
-(def uconv-head (lam k wu wv (case wu
-  ((wpi A B) (case wv ((wpi A2 B2) (if (conv-ty k A A2) (conv-fam k A B B2) false)) (_ false)))
-  ((wsigma A B) (case wv ((wsigma A2 B2) (if (conv-ty k A A2) (conv-fam k A B B2) false)) (_ false)))
+(def conv-fam (lam A B B2 (case (%clos B B2)
+  ((csame ps B3 B4) (if (env-pairs ps) true (let x (%var A) (conv-ty (B3 x) (B4 x)))))
+  ((cdiff B3 B4) (let x (%var A) (conv-ty (B3 x) (B4 x)))))))
+(def uconv-head (lam wu v wv (case wu
+  ((wpi A B) (case wv ((wpi A2 B2) (if (conv-ty A A2) (conv-fam A B B2) false)) (_ false)))
+  ((wsigma A B) (case wv ((wsigma A2 B2) (if (conv-ty A A2) (conv-fam A B B2) false)) (_ false)))
   ((wu l) (case wv ((wu m) (lvl-eq (lvl-of l) (lvl-of m))) (_ false)))
   ((wlevel) (case wv ((wlevel) true) (_ false)))
-  ((wpath L a b) (case wv ((wpath M c d) (let i (%dim k)
-      (if (conv-ty (ns k) (@ L i) (@ M i)) (if (conv k (@ L 0) a c) (conv k (@ L 1) b d) false) false))) (_ false)))
-  ((wglue A S) (case wv ((wglue B S2) (if (conv-ty k A B) (conv-glue-sys k A S S2) false)) (_ false)))
-  ((wgluev S a) (let v (unview wv)
-     (if (uconv k a (unglue S v)) (lall (lam d (uconv k (%restrict d (glue S a)) (%restrict d v))) (%clauses (faceof S))) false)))
-  ((wdata d ps) (case wv ((wdata d2 ps2) (if (eqn d d2) (lall2 (uconv k) ps ps2) false)) (_ false)))
+  ((wpath L a b) (case wv ((wpath M c d) (let i (%dim)
+      (if (conv-ty (@ L i) (@ M i)) (if (conv (@ L 0) a c) (conv (@ L 1) b d) false) false))) (_ false)))
+  ((wglue A S) (case wv ((wglue B S2) (if (conv-ty A B) (conv-glue-sys A S S2) false)) (_ false)))
+  ((wgluev S a)
+     (if (uconv a (unglue S v)) (lall (lam d (uconv (%restrict d (glue S a)) (%restrict d v))) (%clauses (faceof S))) false))
+  ((wdata d ps) (case wv ((wdata d2 ps2) (if (%weq d d2) (lall2 uconv ps ps2) false)) (_ false)))
   ((wcon d c fs ds) (case wv ((wcon d2 c2 fs2 ds2)
-      (if (eqn d d2) (if (eqn c c2) (if (lall2 (lam r s (%ieq r s)) ds ds2) (lall2 (uconv k) fs fs2) false) false) false)) (_ false)))
-  ((whcomp w a) (case wv ((whcomp w2 a2) (if (uconv k a a2) (let i (%dim k) (uconv (ns k) (@ w i) (@ w2 i))) false)) (_ false)))
+      (if (%weq d d2) (if (%weq c c2) (if (lall2 (lam r s (%ieq r s)) ds ds2) (lall2 uconv fs fs2) false) false) false)) (_ false)))
+  ((whcomp w a) (case wv ((whcomp w2 a2) (if (uconv a a2) (let i (%dim) (uconv (@ w i) (@ w2 i))) false)) (_ false)))
   ((wiv r) (case wv ((wiv s) (%ieq r s)) (_ false)))
   ((wface a) (case wv ((wface b) (%feq a b)) (_ false)))
   ((wother) false)
-  (_ (case (convneu k wu wv) ((some X) true) ((none) false))))))
-(def uconv-ww (lam k wu wv (case wv
-  ((wsys bs) (let u (unview wu) (lall (lam b (let d (fst b) (uconv k (%restrict d u) (snd b)))) bs)))
-  ((wlam g) (let x (%var k Uw) (uconv (ns k) ((unview wu) x) (g x))))
-  ((wplam q) (let i (%dim k) (uconv (ns k) (@ (unview wu) i) (@ q i))))
-  ((wpair a b) (let u (unview wu) (if (uconv k (fst u) a) (uconv k (snd u) b) false)))
-  (_ (uconv-head k wu wv)))))
-(def uconv (lam k u v (case (%view u)
-  ((wsys bs) (lall (lam b (let d (fst b) (uconv k (snd b) (%restrict d v)))) bs))
+  (_ (case (convneu wu wv) ((some X) true) ((none) false))))))
+(def uconv-ww (lam u wu v wv (case wv
+  ((wsys bs) (lall (lam b (let d (fst b) (uconv (%restrict d u) (snd b)))) bs))
+  ((wlam g) (let x (%var Uw) (uconv (u x) (g x))))
+  ((wplam q) (let i (%dim) (uconv (@ u i) (@ q i))))
+  ((wpair a b) (if (uconv (fst u) a) (uconv (snd u) b) false))
+  (_ (uconv-head wu v wv)))))
+(def uconv (lam u v (case (%view u)
+  ((wsys bs) (lall (lam b (let d (fst b) (uconv (snd b) (%restrict d v)))) bs))
   ((wlam f) (case (%clos f v)
-     ((csame ps f2 v2) (if (env-pairs k ps) true (let x (%var k Uw) (uconv (ns k) (f2 x) (v2 x)))))
-     ((cdiff f2 v2) (let x (%var k Uw) (uconv (ns k) (f2 x) (v2 x))))))
-  ((wplam p) (let i (%dim k) (uconv (ns k) (@ p i) (@ v i))))
-  ((wpair a b) (if (uconv k a (fst v)) (uconv k b (snd v)) false))
-  (wu (uconv-ww k wu (%view v))))))
+     ((csame ps f2 v2) (if (env-pairs ps) true (let x (%var Uw) (uconv (f2 x) (v2 x)))))
+     ((cdiff f2 v2) (let x (%var Uw) (uconv (f2 x) (v2 x))))))
+  ((wplam p) (let i (%dim) (uconv (@ p i) (@ v i))))
+  ((wpair a b) (if (uconv a (fst v)) (uconv b (snd v)) false))
+  (wu (uconv-ww u wu v (%view v))))))
 ; two eliminations are equal when their branches are: each at fresh fields, hypotheses and
 ; dimensions (the hypotheses as variables: comparing them compares the eliminations)
-(def elim-dims (lam k f g c n prm (case n
-  ((ns m) (let i (%dim k) (elim-dims (ns k) f g c m (lsnoc prm i))))
-  ((nz) (uconv k (%branch f c prm) (%branch g c prm))))))
-(def elim-hyps (lam k f g c r nd prm (case r
-  ((ns m) (let h (%var k Uw) (elim-hyps (ns k) f g c m nd (lsnoc prm h))))
-  ((nz) (elim-dims k f g c nd prm)))))
-; the fields at their types when the parameters are known (some ps), else untyped
-(def elim-fields (lam k d f g c ftys nr nd fenv prm (case ftys
-  ((lcons A rest) (let x (%var k (case fenv ((some e) (ev e A)) ((none) Uw)))
-     (elim-fields (ns k) d f g c rest (if (is-data-d d A) (ns nr) nr) nd (opt-map (lcons x) fenv) (lsnoc prm x))))
-  ((lnil) (elim-hyps k f g c nr nd prm)))))
-(def conv-elims (lam k d ps f g cs c (case cs
+(def elim-dims (lam f g c tel prm (case tel
+  ((ty r) (let i (%dim) (elim-dims f g c (r i) (lsnoc prm i))))
+  (_ (uconv (%branch f c prm) (%branch g c prm))))))
+(def elim-hyps (lam f g c nr tel prm (if (%weq nr #0) (elim-dims f g c tel prm)
+  (let h (%var Uw) (elim-hyps f g c (%wsub nr #1) tel (lsnoc prm h))))))
+(def elim-fields (lam d f g c tel nr prm (case tel
+  ((tx A r) (let Av (tval A) (let x (%var Av)
+     (elim-fields d f g c (r x Av) (if (is-data-d d A) (%wsucc nr) nr) (lsnoc prm x)))))
+  (_ (elim-hyps f g c nr tel prm)))))
+(def conv-elims (lam d f g cs c (case cs
   ((lnil) true)
-  ((lcons ce rest) (if (elim-fields k d f g c (cftys ce) nz (cnd ce) (opt-map (lam q (push-all q lnil)) ps) lnil)
-                       (conv-elims k d ps f g rest (ns c)) false)))))
+  ((lcons tel rest) (if (elim-fields d f g c tel #0 lnil) (conv-elims d f g rest (%wsucc c)) false)))))
+; the constructors at the parameters of the scrutinee's type, else at fresh parameters
+(def ctors-of (lam d X (case (%view X)
+  ((wdata d3 ps) (ctors-at d ps))
+  (_ (snd (params-fresh (dtel (%dent d)) lnil))))))
 ; neutrals: equal spines; the result is their type, computed along the spine from the head
 ; variable's (only a variable stores one); opq when it is not known
-(def same-neu (lam k p q (case (convneu k (%view p) (%view q)) ((some X) (some opq)) ((none) none))))
-(def convneu (lam k wu wv (case wu
-  ((wvar l T) (case wv ((wvar m T2) (if (eqn l m) (some T) none)) (_ none)))
-  ((wapp f a T) (case wv ((wapp g b T2) (case (convneu k (%view f) (%view g))
+(def same-neu (lam p q (case (convneu (%view p) (%view q)) ((some X) (some opq)) ((none) none))))
+(def convneu (lam wu wv (case wu
+  ((wvar l T) (case wv ((wvar m T2) (if (%weq l m) (some T) none)) (_ none)))
+  ((wapp f a T) (case wv ((wapp g b T2) (case (convneu (%view f) (%view g))
        ((some Tf) (case (%view Tf)
-           ((wpi A B) (if (conv k A a b) (some (B a)) none))
-           (_ (if (uconv k a b) (some opq) none))))
+           ((wpi A B) (if (conv A a b) (some (B a)) none))
+           (_ (if (uconv a b) (some opq) none))))
        ((none) none))) (_ none)))
-  ((wfst p T) (case wv ((wfst q T2) (case (convneu k (%view p) (%view q))
+  ((wfst p T) (case wv ((wfst q T2) (case (convneu (%view p) (%view q))
        ((some Tp) (case (%view Tp) ((wsigma A B) (some A)) (_ (some opq))))
        ((none) none))) (_ none)))
-  ((wsnd p T) (case wv ((wsnd q T2) (case (convneu k (%view p) (%view q))
+  ((wsnd p T) (case wv ((wsnd q T2) (case (convneu (%view p) (%view q))
        ((some Tp) (case (%view Tp) ((wsigma A B) (some (B (fst p)))) (_ (some opq))))
        ((none) none))) (_ none)))
-  ((wpapp p r T) (case wv ((wpapp q s T2) (if (%ieq r s) (case (convneu k (%view p) (%view q))
+  ((wpapp p r T) (case wv ((wpapp q s T2) (if (%ieq r s) (case (convneu (%view p) (%view q))
        ((some Tp) (case (%view Tp) ((wpath L a b) (some (@ L r))) (_ (some opq))))
        ((none) none)) none)) (_ none)))
-  ((wcomp A u a0 T) (case wv ((wcomp B w b0 T2) (let i (%dim k)
-       (if (conv-ty (ns k) (@ A i) (@ B i))
-         (if (conv k (@ A 0) a0 b0) (if (conv (ns k) (@ A i) (@ u i) (@ w i)) (some (@ A 1)) none) none) none))) (_ none)))
-  ((wunglue S b T) (case wv ((wunglue S2 c T2) (case (convneu k (%view b) (%view c))
+  ((wcomp A u a0 T) (case wv ((wcomp B w b0 T2) (let i (%dim)
+       (if (conv-ty (@ A i) (@ B i))
+         (if (conv (@ A 0) a0 b0) (if (conv (@ A i) (@ u i) (@ w i)) (some (@ A 1)) none) none) none))) (_ none)))
+  ((wunglue S b T) (case wv ((wunglue S2 c T2) (case (convneu (%view b) (%view c))
        ((some Tb) (case (%view Tb) ((wglue A S3) (some A)) (_ (some opq))))
        ((none) none))) (_ none)))
-  ((welim d x f T) (case wv ((welim d2 y g T2) (if (eqn d d2)
-       (case (convneu k (%view x) (%view y))
-         ((some X) (if (conv-elims k d (case (%view X) ((wdata d3 ps) (some ps)) (_ none)) f g (dctors (%dent d)) nz) (some opq) none))
+  ((welim d x f T) (case wv ((welim d2 y g T2) (if (%weq d d2)
+       (case (convneu (%view x) (%view y))
+         ((some X) (if (conv-elims d f g (ctors-of d X) #0) (some opq) none))
          ((none) none)) none)) (_ none)))
-  ((wtrans d psi ls x T) (case wv ((wtrans d2 psi2 ls2 y T2) (if (eqn d d2) (if (%feq psi psi2)
-       (if (lall2 (lam l1 l2 (let i (%dim k) (uconv (ns k) (@ l1 i) (@ l2 i)))) ls ls2)
-         (case (same-neu k x y) ((some X) (some (mkdata d (lmap (lam l (@ l 1)) ls)))) ((none) none)) none) none) none)) (_ none)))
+  ((wtrans d psi ls x T) (case wv ((wtrans d2 psi2 ls2 y T2) (if (%weq d d2) (if (%feq psi psi2)
+       (if (lall2 (lam l1 l2 (let i (%dim) (uconv (@ l1 i) (@ l2 i)))) ls ls2)
+         (case (same-neu x y) ((some X) (some (mkdata d (lmap (lam l (@ l 1)) ls)))) ((none) none)) none) none) none)) (_ none)))
   (_ none))))
 
 ; ---------------------------------------------------------------- typing
-; infer k env tys c: the type of c, or none; check k env tys c T.
-(declare infer check check-sys check-tele motive-level check-branches check-hcomp check-fields infer-binder)
-(def infer-level (lam k env tys A (case (infer k env tys A)
+; infer c: the type of c, or none; check c T.
+(declare infer check check-sys check-tele motive-level check-branches check-hcomp infer-binder)
+(def infer-level (lam A (case (infer A)
   ((some T) (case (%view T) ((wu l) (if (is-w l) none (some l))) (_ none)))
   ((none) none))))
 ; a type's sort: a universe at a level (lomega for types over levels)
-(def infer-sort (lam k env tys A (case (infer k env tys A)
+(def infer-sort (lam A (case (infer A)
   ((some T) (case (%view T) ((wu l) (some (U l))) (_ none)))
   ((none) none))))
 (def sort-max (lam s1 s2 (case (%view s1) ((wu l1) (case (%view s2) ((wu l2) (U (lmax l1 l2))) (_ Uw))) (_ Uw))))
-; the branches of a system code: (pair face-code term-code)
-(def sys-codes (lam s (case s
-  ((csys0) lnil)
-  ((csysc f t r) (lcons (pair f t) (sys-codes r)))
-  (_ lnil))))
-(def is-sys-code (lam s (case s ((csys0) true) ((csysc f t r) true) (_ false))))
-(def faces-join (lam env bs (case bs ((lnil) ff) ((lcons b r) (| (ev env (fst b)) (faces-join env r))))))
-(def sys-face (lam env s (faces-join env (sys-codes s))))
+; a system's branches: (pair face-code thunk-of-term-code)
+(def sys-bs (lam s (case s ((tsys bs V) bs) (_ lnil))))
+(def is-sys (lam s (case s ((tsys bs V) true) (_ false))))
+(def lfold-or (lam bs (case bs ((lnil) ff) ((lcons b r) (| (tval (fst b)) (lfold-or r))))))
+(def sys-face (lam s (lfold-or (sys-bs s))))
+; a branch's code under a clause
+(def br-at (lam d b (force (%restrict d (snd b)))))
 ; a face that does not depend on the dimension i
 (def face-indep (lam p i (if (%feq p (%restrict (= i 0) p)) (%feq p (%restrict (= i 1) p)) false)))
 ; each branch checked under each clause of its face; overlapping branches agree
-(def check-sys (lam k env tys s T
-  (let bs (sys-codes s)
-  (if (lall (lam b (if (check-face tys (fst b))
-          (lall (lam d (check k (act-env d env) (act-tys d tys) (snd b) (%restrict d T))) (%clauses (ev env (fst b))))
-          false)) bs)
-      (lall (lam bb (let b1 (fst bb) (let b2 (snd bb)
-          (lall (lam d (let e2 (act-env d env) (conv k (%restrict d T) (ev e2 (snd b1)) (ev e2 (snd b2)))))
-                (%clauses (& (ev env (fst b1)) (ev env (fst b2))))))))
-            (lpairs bs))
-      false))))
-; a tube over a line of types: its branches at 0 agree with the cap
-(def tube-ok (lam k k1 env tys ei ti W L0 Li a
-  (if (is-sys-code W)
-    (if (check-sys k1 ei ti W Li)
-      (if (face-indep (sys-face ei W) (%dim k))
-        (lall (lam b (lall (lam d (conv k (%restrict d L0) (ev (act-env d (lcons 0 env)) (snd b)) (%restrict d (ev env a))))
-                           (%clauses (ev (lcons 0 env) (fst b)))))
-              (sys-codes W))
+(def check-sys (lam s T (case s
+  ((tsys bs V)
+    (if (lall (lam b (if (check-face (fst b))
+            (lall (lam d (check (br-at d b) (%restrict d T))) (%clauses (tval (fst b))))
+            false)) bs)
+        (lall (lam bb (let b1 (fst bb) (let b2 (snd bb)
+            (lall (lam d (conv (%restrict d T) (tval (br-at d b1)) (tval (br-at d b2))))
+                  (%clauses (& (tval (fst b1)) (tval (fst b2))))))))
+              (lpairs bs))
+        false))
+  (_ false))))
+; a tube over a line of types: Wi its code at the fresh dimension i, Li the line there; at 0 it
+; agrees with the cap av
+(def tube-ok (lam i Wi L0 Li av (let z (= i 0)
+  (if (is-sys Wi)
+    (if (check-sys Wi Li)
+      (if (face-indep (sys-face Wi) i)
+        (lall (lam b (lall (lam d (conv (%restrict d L0) (tval (br-at d (pair (fst b) (%restrict z (snd b))))) (%restrict d av)))
+                           (%clauses (%restrict z (tval (fst b))))))
+              (sys-bs Wi))
         false)
       false)
-    (if (check k1 ei ti W Li) (conv k L0 (ev (lcons 0 env) W) (ev env a)) false))))
+    (if (check Wi Li) (conv L0 (%restrict z (tval Wi)) av) false)))))
 ; comp A u a: A a line of types, u a line of systems (faces free of the line) or a total line,
 ; a at 0 agreeing with u at 0; the result is at A 1
-(def check-comp (lam k env tys A u a (case A
-  ((cplam X) (case (infer-level (ns k) (under-dim k env) (lcons none tys) X)
-    ((some l) (let L (ev env A) (let i (%dim k)
-      (case u
-        ((cplam W) (if (check k env tys a (@ L 0))
-          (if (tube-ok k (ns k) env tys (lcons i env) (lcons none tys) W (@ L 0) (@ L i) a) (some (@ L 1)) none)
-          none))
-        (_ none)))))
-    ((none) none)))
+(def check-comp (lam A u a (case A
+  ((tplam X LV) (let i (%dim) (case (infer-level (X i))
+    ((some l) (case u
+       ((tplam W UV) (let L0 (@ LV 0) (if (check a L0)
+          (if (tube-ok i (W i) L0 (@ LV i) (tval a)) (some (@ LV 1)) none)
+          none)))
+       (_ none)))
+    ((none) none))))
   (_ none))))
-(def infer (lam k env tys c (case c
-  ((cvar n) (case (lnth tys n) ((some o) o) ((none) none)))
-  ((cglob n) (some (%gty n)))
-  ((capp f a) (case (infer k env tys f)
-     ((some T) (case (%view T) ((wpi A B) (if (check k env tys a A) (some (B (ev env a))) none)) (_ none)))
+(def infer (lam c (case c
+  ((tv x T) (some T))
+  ((tg n V) (some (%gty n)))
+  ((tapp f a V) (case (infer f)
+     ((some T) (case (%view T) ((wpi A B) (if (check a A) (some (B (tval a))) none)) (_ none)))
      ((none) none)))
-  ((cfst p) (case (infer k env tys p) ((some T) (case (%view T) ((wsigma A B) (some A)) (_ none))) ((none) none)))
-  ((csnd p) (case (infer k env tys p)
-     ((some T) (case (%view T) ((wsigma A B) (some (B (fst (ev env p))))) (_ none)))
+  ((tfst p V) (case (infer p) ((some T) (case (%view T) ((wsigma A B) (some A)) (_ none))) ((none) none)))
+  ((tsnd p V) (case (infer p)
+     ((some T) (case (%view T) ((wsigma A B) (some (B (fst (tval p))))) (_ none)))
      ((none) none)))
-  ((cpapp p r) (case (infer k env tys p)
-     ((some T) (case (%view T) ((wpath L a b) (if (check-iv tys r) (some (@ L (ev env r))) none)) (_ none)))
+  ((tpapp p r V) (case (infer p)
+     ((some T) (case (%view T) ((wpath L a b) (if (check-iv r) (some (@ L (tval r))) none)) (_ none)))
      ((none) none)))
-  ((cuniv l) (if (check k env tys l Level) (some (U (lsuc (ev env l)))) none))
-  ((clevel) (some Uw))
-  ((clzero) (some Level))
-  ((clsuc l) (if (check k env tys l Level) (some Level) none))
-  ((clmax a b) (if (check k env tys a Level) (if (check k env tys b Level) (some Level) none) none))
-  ((cpi A B) (infer-binder k env tys A B))
-  ((csigma A B) (infer-binder k env tys A B))
-  ((cpathp A a b) (case A
-     ((cplam X) (case (infer-level (ns k) (under-dim k env) (lcons none tys) X)
-        ((some l) (let L (ev env A) (if (check k env tys a (@ L 0)) (if (check k env tys b (@ L 1)) (some (U l)) none) none)))
-        ((none) none)))
+  ((tuniv l V) (if (check l Level) (some (U (lsuc (tval l)))) none))
+  ((tlevel) (some Uw))
+  ((tlzero) (some Level))
+  ((tlsuc l V) (if (check l Level) (some Level) none))
+  ((tlmax a b V) (if (check a Level) (if (check b Level) (some Level) none) none))
+  ((tpi A b V) (infer-binder A b))
+  ((tsigma A b V) (infer-binder A b))
+  ((tpathp A a b V) (case A
+     ((tplam X LV) (let i (%dim) (case (infer-level (X i))
+        ((some l) (if (check a (@ LV 0)) (if (check b (@ LV 1)) (some (U l)) none) none))
+        ((none) none))))
      ; a line of types given as a term: a path in a universe
-     (_ (case (infer k env tys A)
+     (_ (case (infer A)
           ((some TA) (case (%view TA)
-             ((wpath L T0 T1) (case (%view (@ L (%dim k)))
-                ((wu l) (let Lv (ev env A) (if (check k env tys a (@ Lv 0)) (if (check k env tys b (@ Lv 1)) (some (U l)) none) none)))
+             ((wpath L T0 T1) (case (%view (@ L (%dim)))
+                ((wu l) (let Lv (tval A) (if (check a (@ Lv 0)) (if (check b (@ Lv 1)) (some (U l)) none) none)))
                 (_ none)))
              (_ none)))
           ((none) none)))))
-  ((cgluet A S) (case (infer-level k env tys A)
-     ((some l) (let Av (ev env A) (if (check-sys k env tys S (Sigma T (U l) (Equiv T Av))) (some (U l)) none)))
+  ((tgluet A S V) (case (infer-level A)
+     ((some l) (let Av (tval A) (if (check-sys S (Sigma T (U l) (Equiv T Av))) (some (U l)) none)))
      ((none) none)))
-  ((cunglue S b) (case (infer k env tys b) ((some T) (case (%view T) ((wglue A S2) (some A)) (_ none))) ((none) none)))
-  ((ccomp A u a) (check-comp k env tys A u a))
-  ((clet t b) (case (infer k env tys t)
-     ((some T) (infer (ns k) (lcons (ev env t) env) (lcons (some (%box T)) tys) b))
+  ((tunglue S b V) (case (infer b) ((some T) (case (%view T) ((wglue A S2) (some A)) (_ none))) ((none) none)))
+  ((tcomp A u a V) (check-comp A u a))
+  ((tlet t b V) (case (infer t) ((some T) (infer (b (tval t) T))) ((none) none)))
+  ((tann t T V) (case (infer-sort T)
+     ((some s) (let Tv (tval T) (if (check t Tv) (some Tv) none)))
      ((none) none)))
-  ((cann t T) (case (infer-sort k env tys T)
-     ((some s) (let Tv (ev env T) (if (check k env tys t Tv) (some Tv) none)))
-     ((none) none)))
-  ((cdata d ps) (let de (%dent d) (if (check-tele k env tys (dptys de) ps lnil) (some (U (dlvl de))) none)))
-  ((celim d P B x) (case (infer k env tys x)
-     ((some T) (case (%view T) ((wdata d2 ps) (if (eqn d d2)
-         (case (motive-level k env tys (mkdata d ps) P)
-           ((some s) (let Pv (ev env P)
-              (if (check-branches k env tys d ps Pv (elim-fn env d P B) B nz) (some (Pv (ev env x))) none)))
+  ((tdata d ps V) (let de (%dent d) (if (check-tele (dtel de) ps) (some (U (dlvl de))) none)))
+  ((telim d P B x F V) (case (infer x)
+     ((some T) (case (%view T) ((wdata d2 ps) (if (%weq d d2)
+         (case (motive-level (mkdata d ps) P)
+           ((some s) (let Pv (tval P) (if (check-branches d ps Pv F B) (some (Pv (tval x))) none)))
            ((none) none))
          none)) (_ none)))
      ((none) none)))
-  ((chcomp u a) (case (infer k env tys a)
-     ((some T) (case (%view T) ((wdata d ps) (let Tv (mkdata d ps) (if (check-hcomp k env tys Tv u a) (some Tv) none))) (_ none)))
+  ((thcomp u a V) (case (infer a)
+     ((some T) (case (%view T) ((wdata d ps) (let Tv (mkdata d ps) (if (check-hcomp Tv u a) (some Tv) none))) (_ none)))
      ((none) none)))
-  ((cforce t) (infer k env tys t))
+  ((tforce t V) (infer t))
   ; a line: its type is the path of its body's types between its ends
-  ((cplam b) (case (infer (ns k) (under-dim k env) (lcons none tys) b)
-     ((some Tk) (some (PathP (%abs k Tk) (ev (lcons 0 env) b) (ev (lcons 1 env) b))))
-     ((none) none)))
+  ((tplam b V) (let i (%dim) (case (infer (b i))
+     ((some Ti) (some (PathP (%abs i Ti) (@ V 0) (@ V 1))))
+     ((none) none))))
   (_ none))))
 ; parameters against their telescope
-(def check-tele (lam k env tys ptys ps penv (case ptys
-  ((lnil) (isnil ps))
-  ((lcons A rest) (case ps ((lnil) false) ((lcons p pr)
-    (if (check k env tys p (ev penv A)) (check-tele k env tys rest pr (lcons (ev env p) penv)) false)))))))
-(def motive-level (lam k env tys T P (case P
-  ((clam b) (infer-sort (ns k) (lcons (%var k T) env) (lcons (some (%box T)) tys) b))
-  (_ (case (infer k env tys P)
+(def check-tele (lam tel ps (case tel
+  ((tx A r) (case ps ((lnil) false) ((lcons p pr)
+    (let Av (tval A) (if (check p Av) (check-tele (r (tval p) Av) pr) false)))))
+  ((tz e) (isnil ps))
+  (_ false))))
+(def motive-level (lam T P (case P
+  ((tlam b V) (infer-sort (b (%var T) T)))
+  (_ (case (infer P)
        ((some Pt) (case (%view Pt)
-          ((wpi A B) (if (conv-ty k A T) (case (%view (B (%var k A))) ((wu l) (some (U l))) (_ none)) none))
+          ((wpi A B) (if (conv-ty A T) (case (%view (B (%var A))) ((wu l) (some (U l))) (_ none)) none))
           (_ none)))
        ((none) none))))))
-; each branch: λ fields, hypotheses, dimensions, of type P (c fields dims), and on the
-; boundary's faces equal to the elimination of the boundary
+; each branch: binders for its fields, hypotheses (the eliminations of the recursive fields),
+; dimensions, then a body of type P (c fields dims), on the boundary's faces equal to the
+; elimination of the boundary
 (declare check-branch)
-(def check-branches (lam k env tys d ps Pv F Bc c (case Bc
-  ((lnil) (eqn c (llen (dctors (%dent d)))))
-  ((lcons b rest) (if (check-branch k env tys d ps Pv F c b) (check-branches k env tys d ps Pv F rest (ns c)) false)))))
-(def branch-boundary (lam k env d ps c Pv F b fs ds
-  (case (%view (bdy-sys d c ps fs ds))
-    ((wsys bs) (let bodyv (ev env b)
-       (lall (lam br (let cl (fst br) (let w (snd br)
-          (conv k (%restrict cl (Pv w)) (%restrict cl bodyv) (%restrict cl (F w)))))) bs)))
-    (_ true))))
-(def branch-dims (lam k env tys d ps Pv F c ce n b fs ds (case n
-  ((ns m) (case b ((cdlam b1) (let i (%dim k) (branch-dims (ns k) (lcons i env) (lcons none tys) d ps Pv F c ce m b1 fs (lsnoc ds i)))) (_ false)))
-  ((nz) (if (check k env tys b (Pv (mkcon d c fs ds))) (branch-boundary k env d ps c Pv F b fs ds) false)))))
-; the hypothesis of recursive field f is its elimination, of type P f
-(def branch-hyps (lam k env tys d ps Pv F c ce rs b fs (case rs
-  ((lcons f rest) (case b ((clam b1)
-       (branch-hyps (ns k) (lcons (F f) env) (lcons (some (%box (Pv f))) tys) d ps Pv F c ce rest b1 fs)) (_ false)))
-  ((lnil) (branch-dims k env tys d ps Pv F c ce (cnd ce) b fs lnil)))))
-(def branch-fields (lam k env tys d ps Pv F c ce ftys b fenv fs (case ftys
-  ((lcons A rest) (case b ((clam b1) (let Av (ev fenv A) (let x (%var k Av)
-       (branch-fields (ns k) (lcons x env) (lcons (some (%box Av)) tys) d ps Pv F c ce rest b1 (lcons x fenv) (lsnoc fs x))))) (_ false)))
-  ((lnil) (branch-hyps k env tys d ps Pv F c ce (rec-of d (cftys ce) fs) b fs)))))
-(def check-branch (lam k env tys d ps Pv F c b
-  (let ce (centry d c) (branch-fields k env tys d ps Pv F c ce (cftys ce) b (push-all ps lnil) lnil))))
-; a formal hcomp: a tube of lines in the type, agreeing with the cap at 0
-(def check-hcomp (lam k env tys T u a (case u
-  ((cplam W) (tube-ok k (ns k) env tys (lcons (%dim k) env) (lcons none tys) W T T a))
+(def check-brs (lam d Pv F cs Bs c (case cs
+  ((lnil) (isnil Bs))
+  ((lcons tel rest) (case Bs ((lnil) false) ((lcons b br)
+     (if (check-branch d Pv F c tel b) (check-brs d Pv F rest br (%wsucc c)) false)))))))
+(def check-branches (lam d ps Pv F Bs (check-brs d Pv F (ctors-at d ps) Bs #0)))
+(def branch-boundary (lam Pv F t bs (case (%view bs)
+  ((wsys bl) (let bodyv (tval t)
+     (lall (lam br (let cl (fst br) (let w (snd br)
+        (conv (%restrict cl (Pv w)) (%restrict cl bodyv) (%restrict cl (F w)))))) bl)))
+  (_ true))))
+(def branch-dims (lam d Pv F c tel b fs ds (case tel
+  ((ty r) (case b ((bi b1) (let i (%dim) (branch-dims d Pv F c (r i) (b1 i) fs (lsnoc ds i)))) (_ false)))
+  ((tz bdy) (case b
+     ((be t) (if (check t (Pv (mkcon d c fs ds))) (branch-boundary Pv F t (tval bdy)) false))
+     (_ false)))
   (_ false))))
-(def check-fields (lam k env tys ftys fs fenv (case ftys
-  ((lnil) (isnil fs))
-  ((lcons A rest) (case fs ((lnil) false) ((lcons f fr)
-     (if (check k env tys f (ev fenv A)) (check-fields k env tys rest fr (lcons (ev env f) fenv)) false)))))))
-(def infer-binder (lam k env tys A B (case (infer-sort k env tys A)
-  ((some s1) (let Av (ev env A)
-     (case (infer-sort (ns k) (lcons (%var k Av) env) (lcons (some (%box Av)) tys) B)
+(def branch-hyps (lam d Pv F c tel b fs rs (case rs
+  ((lcons f rest) (case b ((bx b1) (branch-hyps d Pv F c tel (b1 (F f) (Pv f)) fs rest)) (_ false)))
+  ((lnil) (branch-dims d Pv F c tel b fs lnil)))))
+(def branch-fields (lam d Pv F c tel b fs rs (case tel
+  ((tx A r) (case b ((bx b1) (let Av (tval A) (let x (%var Av)
+       (branch-fields d Pv F c (r x Av) (b1 x Av) (lsnoc fs x) (if (is-data-d d A) (lsnoc rs x) rs))))) (_ false)))
+  (_ (branch-hyps d Pv F c tel b fs rs)))))
+(def check-branch (lam d Pv F c tel b (branch-fields d Pv F c tel b lnil lnil)))
+; a formal hcomp: a tube of lines in the type, agreeing with the cap at 0
+(def check-hcomp (lam T u a (case u
+  ((tplam W UV) (let i (%dim) (tube-ok i (W i) T T (tval a))))
+  (_ false))))
+; a constructor's fields and dimensions along its telescope
+(def check-con (lam tel fs ds (case tel
+  ((tx A r) (case fs ((lnil) false) ((lcons f fr)
+     (let Av (tval A) (if (check f Av) (check-con (r (tval f) Av) fr ds) false)))))
+  ((ty r) (case fs
+     ((lcons f fr) false)
+     ((lnil) (case ds ((lnil) false) ((lcons e er) (if (check-iv e) (check-con (r (tval e)) lnil er) false))))))
+  ((tz b) (andb (isnil fs) (isnil ds))))))
+(def infer-binder (lam A b (case (infer-sort A)
+  ((some s1) (let Av (tval A)
+     (case (infer-sort (b (%var Av) Av))
        ((some s2) (some (sort-max s1 s2)))
        ((none) none))))
   ((none) none))))
-(def check (lam k env tys c T (case c
-  ((clam b) (case (%view T) ((wpi A B) (let x (%var k A) (check (ns k) (lcons x env) (lcons (some (%box A)) tys) b (B x)))) (_ false)))
-  ((cpair a b) (case (%view T) ((wsigma A B) (if (check k env tys a A) (check k env tys b (B (ev env a))) false)) (_ false)))
-  ((cplam b) (case (%view T) ((wpath L a0 a1) (let i (%dim k)
-       (if (check (ns k) (lcons i env) (lcons none tys) b (@ L i))
-         (if (conv k (@ L 0) (ev (lcons 0 env) b) a0) (conv k (@ L 1) (ev (lcons 1 env) b) a1) false) false))) (_ false)))
-  ((cglue S a) (case (%view T) ((wglue A S2)
-       (if (check k env tys a A)
-       (if (%feq (sys-face env S) (faceof S2))
-       (if (check-sys k env tys S (Glue A S2))
-           (lall (lam b (lall (lam d (conv k (%restrict d A) (unglue (%restrict d S2) (ev (act-env d env) (snd b))) (%restrict d (ev env a))))
-                (%clauses (ev env (fst b))))) (sys-codes S))
+(def check (lam c T (case c
+  ((tlam b V) (case (%view T) ((wpi A B) (let x (%var A) (check (b x A) (B x)))) (_ false)))
+  ((tpair a b V) (case (%view T) ((wsigma A B) (if (check a A) (check b (B (tval a))) false)) (_ false)))
+  ((tplam b V) (case (%view T) ((wpath L a0 a1) (let i (%dim)
+       (if (check (b i) (@ L i))
+         (if (conv (@ L 0) (@ V 0) a0) (conv (@ L 1) (@ V 1) a1) false) false))) (_ false)))
+  ((tglue S a V) (case (%view T) ((wglue A S2)
+       (if (check a A)
+       (if (%feq (sys-face S) (faceof S2))
+       (if (check-sys S (Glue A S2))
+           (let av (tval a) (lall (lam b (lall (lam d (conv (%restrict d A) (unglue (%restrict d S2) (tval (br-at d b))) (%restrict d av)))
+                (%clauses (tval (fst b))))) (sys-bs S)))
            false) false) false)) (_ false)))
-  ((clet t b) (case (infer k env tys t)
-     ((some Ty) (check (ns k) (lcons (ev env t) env) (lcons (some (%box Ty)) tys) b T))
+  ((tlet t b V) (case (infer t)
+     ((some Ty) (check (b (tval t) Ty) T))
      ((none) false)))
-  ((ccon d c fs ds) (case (%view T) ((wdata d2 ps) (if (eqn d d2)
-       (if (eqn (llen ds) (cnd (centry d c)))
-       (if (lall (check-iv tys) ds)
-           (check-fields k env tys (cftys (centry d c)) fs (push-all ps lnil)) false) false) false)) (_ false)))
-  ((chcomp u a) (case (%view T) ((wdata d ps) (let Tv (mkdata d ps) (if (check k env tys a Tv) (check-hcomp k env tys Tv u a) false))) (_ false)))
-  ((ccase d B x) (case (infer k env tys x)
-     ((some X) (case (%view X) ((wdata d2 ps) (if (eqn d d2) (check-branches k env tys d ps (lam y T) (case-fn env d B) B nz) false)) (_ false)))
+  ((tcon d c fs ds V) (case (%view T) ((wdata d2 ps) (if (%weq d d2) (check-con (centry d c ps) fs ds) false)) (_ false)))
+  ((thcomp u a V) (case (%view T) ((wdata d ps) (let Tv (mkdata d ps) (if (check a Tv) (check-hcomp Tv u a) false))) (_ false)))
+  ((tcase d B x F V) (case (infer x)
+     ((some X) (case (%view X) ((wdata d2 ps) (if (%weq d d2) (check-branches d ps (lam y T) F B) false)) (_ false)))
      ((none) false)))
-  (_ (case (infer k env tys c) ((some T2) (conv-ty k T2 T)) ((none) false))))))
+  (_ (case (infer c) ((some T2) (conv-ty T2 T)) ((none) false))))))
 
 ; a definition: its type is a type, its term has that type
-(def chk-def (lam cT ct (case (infer-sort nz lnil lnil cT)
-  ((some s) (check nz lnil lnil ct (ev lnil cT)))
+(def chk-def (lam cT ct (case (infer-sort cT)
+  ((some s) (check ct (tval cT)))
   ((none) false))))
 ; the type of a checked definition, as the table holds it
-(def sig-type (lam cT (ev lnil cT)))
+(def sig-type (lam cT (tval cT)))
 
 ; a data declaration: parameter types are types; each field type a type, strictly positive (D
 ; itself, at its own parameters, or not mentioning D); each boundary an element of D made of
 ; earlier constructors, its branches agreeing on overlaps. The table holds the declaration with
-; level lzero while it is checked.
+; level lzero while it is checked. Walking a code under a binder instantiates the binder.
+(declare cany)
+(def cany-b (lam p b (cany p (b (%var Uw) Uw))))
+(def cany-br (lam p b (case b
+  ((bx f) (cany-br p (f (%var Uw) Uw)))
+  ((bi f) (cany-br p (f (%dim))))
+  ((be t) (cany p t)))))
 (def cany (lam p c (orb (p c) (case c
-  ((clam b) (cany p b)) ((cplam b) (cany p b)) ((cdlam b) (cany p b)) ((cforall b) (cany p b))
-  ((cfst a) (cany p a)) ((csnd a) (cany p a)) ((cforce a) (cany p a)) ((cneg a) (cany p a)) ((ceq0 a) (cany p a)) ((ceq1 a) (cany p a))
-  ((capp a b) (orb (cany p a) (cany p b))) ((cpair a b) (orb (cany p a) (cany p b)))
-  ((cpi a b) (orb (cany p a) (cany p b))) ((csigma a b) (orb (cany p a) (cany p b)))
-  ((cpapp a b) (orb (cany p a) (cany p b))) ((cmeet a b) (orb (cany p a) (cany p b))) ((cjoin a b) (orb (cany p a) (cany p b)))
-  ((cfand a b) (orb (cany p a) (cany p b))) ((cfor a b) (orb (cany p a) (cany p b)))
-  ((cgluet a b) (orb (cany p a) (cany p b))) ((cglue a b) (orb (cany p a) (cany p b))) ((cunglue a b) (orb (cany p a) (cany p b)))
-  ((clet a b) (orb (cany p a) (cany p b))) ((cann a b) (orb (cany p a) (cany p b))) ((chcomp a b) (orb (cany p a) (cany p b)))
-  ((cpathp a b x) (orb (cany p a) (orb (cany p b) (cany p x))))
-  ((csysc a b x) (orb (cany p a) (orb (cany p b) (cany p x))))
-  ((ccomp a b x) (orb (cany p a) (orb (cany p b) (cany p x))))
-  ((cdata d ps) (lany (cany p) ps))
-  ((ccon d c fs ds) (orb (lany (cany p) fs) (lany (cany p) ds)))
-  ((celim d P B x) (orb (cany p P) (orb (lany (cany p) B) (cany p x))))
-  ((ccase d B x) (orb (lany (cany p) B) (cany p x)))
+  ((tlam b V) (cany-b p b)) ((tplam b V) (cany p (b (%dim)))) ((tforall b V) (cany p (b (%dim))))
+  ((tfst a V) (cany p a)) ((tsnd a V) (cany p a)) ((tforce a V) (cany p a)) ((tneg a V) (cany p a))
+  ((teq0 a V) (cany p a)) ((teq1 a V) (cany p a)) ((tlsuc a V) (cany p a)) ((tuniv a V) (cany p a))
+  ((tapp a b V) (orb (cany p a) (cany p b))) ((tpair a b V) (orb (cany p a) (cany p b)))
+  ((tpi a b V) (orb (cany p a) (cany-b p b))) ((tsigma a b V) (orb (cany p a) (cany-b p b)))
+  ((tlet a b V) (orb (cany p a) (cany-b p b)))
+  ((tpapp a b V) (orb (cany p a) (cany p b))) ((tmeet a b V) (orb (cany p a) (cany p b))) ((tjoin a b V) (orb (cany p a) (cany p b)))
+  ((tfand a b V) (orb (cany p a) (cany p b))) ((tfor a b V) (orb (cany p a) (cany p b))) ((tlmax a b V) (orb (cany p a) (cany p b)))
+  ((tgluet a b V) (orb (cany p a) (cany p b))) ((tglue a b V) (orb (cany p a) (cany p b))) ((tunglue a b V) (orb (cany p a) (cany p b)))
+  ((tann a b V) (orb (cany p a) (cany p b))) ((thcomp a b V) (orb (cany p a) (cany p b)))
+  ((tpathp a b x V) (orb (cany p a) (orb (cany p b) (cany p x))))
+  ((tcomp a b x V) (orb (cany p a) (orb (cany p b) (cany p x))))
+  ((tsys bs V) (lany (lam b (orb (cany p (fst b)) (cany p (force (snd b))))) bs))
+  ((tdata d ps V) (lany (cany p) ps))
+  ((tcon d c fs ds V) (orb (lany (cany p) fs) (lany (cany p) ds)))
+  ((telim d P B x F V) (orb (cany p P) (orb (lany (cany-br p) B) (cany p x))))
+  ((tcase d B x F V) (orb (lany (cany-br p) B) (cany p x)))
   (_ false)))))
-; D at its own parameters: with m earlier fields, parameter q is variable m + np - 1 - q
-(def uniform-at (lam ps n (case ps ((lnil) true) ((lcons p rest) (case n ((nz) false) ((ns n1) (case p ((cvar j) (andb (eqn j n1) (uniform-at rest n1))) (_ false))))))))
-(def positive (lam d np m A (orb (notb (cany (is-data-d d) A))
-  (case A ((cdata d2 ps) (andb (eqn d2 d) (andb (eqn (llen ps) np) (andb (lall (lam q (notb (cany (is-data-d d) q))) ps) (uniform-at ps (addn m np)))))) (_ false)))))
-(def earlier-only (lam d c bdy (notb (cany (lam x (case x ((ccon d2 c2 fs ds) (andb (eqn d2 d) (notb (ltn c2 c)))) (_ false))) bdy))))
-(def ctx-params (lam k env tys ptys vals (case ptys
-  ((lnil) (pair (pair env tys) (pair k vals)))
-  ((lcons A rest) (let Av (ev env A) (let x (%var k Av)
-     (ctx-params (ns k) (lcons x env) (lcons (some (%box Av)) tys) rest (lsnoc vals x))))))))
-(def check-ptys (lam k env tys ptys (case ptys
-  ((lnil) true)
-  ((lcons A rest) (case (infer-sort k env tys A)
-     ((some s) (let Av (ev env A) (check-ptys (ns k) (lcons (%var k Av) env) (lcons (some (%box Av)) tys) rest)))
-     ((none) false))))))
-(def check-ctor-dims (lam k d c env tys pv n bdy (case n
-  ((ns m) (let i (%dim k) (check-ctor-dims (ns k) d c (lcons i env) (lcons none tys) pv m bdy)))
-  ((nz) (if (earlier-only d c bdy) (check-sys k env tys bdy (mkdata d pv)) false)))))
-(def check-ctor-fields (lam k d np c env tys pv ftys m nd bdy (case ftys
-  ((lcons A rest) (if (positive d np m A)
-     (case (infer-level k env tys A)
-       ((some l) (let Av (ev env A)
-          (check-ctor-fields (ns k) d np c (lcons (%var k Av) env) (lcons (some (%box Av)) tys) pv rest (ns m) nd bdy)))
+; D at its own parameters: each parameter the parameter variable, in order
+(def var-name (lam v (case (%view v) ((wvar l T) (some l)) (_ none))))
+(def same-var (lam a b (case (var-name a) ((some l) (case (var-name b) ((some m) (%weq l m)) ((none) false))) ((none) false))))
+(def uniform-at (lam ps pvs (lall2 (lam p x (case p ((tv y T) (same-var y x)) (_ false))) ps pvs)))
+(def positive (lam d pvs A (orb (notb (cany (is-data-d d) A))
+  (case A ((tdata d2 ps V) (andb (%weq d2 d) (andb (lall (lam q (notb (cany (is-data-d d) q))) ps) (uniform-at ps pvs)))) (_ false)))))
+(def earlier-only (lam d c bdy (notb (cany (lam x (case x ((tcon d2 c2 fs ds V) (andb (%weq d2 d) (notb (%wlt c2 c)))) (_ false))) bdy))))
+(def check-ptys (lam tel (case tel
+  ((tx A r) (case (infer-sort A)
+     ((some s) (let Av (tval A) (check-ptys (r (%var Av) Av))))
+     ((none) false)))
+  (_ true))))
+(def check-ctor-dims (lam d pvs c tel (case tel
+  ((ty r) (check-ctor-dims d pvs c (r (%dim))))
+  ((tz bdy) (if (earlier-only d c bdy) (check-sys bdy (mkdata d pvs)) false))
+  (_ false))))
+(def check-ctor-fields (lam d pvs c tel (case tel
+  ((tx A r) (if (positive d pvs A)
+     (case (infer-level A)
+       ((some l) (let Av (tval A) (check-ctor-fields d pvs c (r (%var Av) Av))))
        ((none) false)) false))
-  ((lnil) (check-ctor-dims k d c env tys pv nd bdy)))))
-(def check-ctor (lam d np ptys c ce
-  (let pc (ctx-params nz lnil lnil ptys lnil)
-    (check-ctor-fields (fst (snd pc)) d np c (fst (fst pc)) (snd (fst pc)) (snd (snd pc)) (cftys ce) nz (cnd ce) (cbdy ce)))))
-(def check-ctors (lam d np ptys cs c (case cs
+  (_ (check-ctor-dims d pvs c tel)))))
+(def check-ctors (lam d pvs cs c (case cs
   ((lnil) true)
-  ((lcons ce rest) (if (check-ctor d np ptys c ce) (check-ctors d np ptys rest (ns c)) false)))))
+  ((lcons tel rest) (if (check-ctor-fields d pvs c tel) (check-ctors d pvs rest (%wsucc c)) false)))))
 ; the level of a data type: the largest of its fields' (a field of type D itself counted at lzero)
-(def field-levels (lam d k env tys ftys (case ftys
-  ((lnil) lnil)
-  ((lcons A rest) (let Av (ev env A)
-     (lcons (if (is-data-d d A) lzero (fromopt (infer-level k env tys A) lzero))
-            (field-levels d (ns k) (lcons (%var k Av) env) (lcons (some (%box Av)) tys) rest)))))))
+(def field-levels (lam d tel (case tel
+  ((tx A r) (let Av (tval A)
+     (lcons (if (is-data-d d A) lzero (fromopt (infer-level A) lzero)) (field-levels d (r (%var Av) Av)))))
+  (_ lnil))))
 (def lfold-lmax (lam xs (case xs ((lnil) lzero) ((lcons x r) (lmax x (lfold-lmax r))))))
-(def data-level (lam d ptys ctors
-  (let pc (ctx-params nz lnil lnil ptys lnil)
-    (lfold-lmax (lconcatmap (lam ce (field-levels d (fst (snd pc)) (fst (fst pc)) (snd (fst pc)) (cftys ce))) ctors)))))
-(def data-entry (lam d ent (case ent ((dent ptys ctors l) (dent ptys ctors (data-level d ptys ctors))))))
+(def data-level (lam d tel (lfold-lmax (lconcatmap (field-levels d) (snd (params-fresh tel lnil))))))
+(def data-entry (lam d ent (case ent ((dent tel l) (dent tel (data-level d tel))))))
 ; a data type's level is closed: no field's universe depends on a parameter
-(def chk-data (lam d ent (case ent ((dent ptys ctors l)
-  (if (lvl-closed (lvl-of (data-level d ptys ctors)))
-  (if (check-ptys nz lnil lnil ptys)
-      (check-ctors d (llen ptys) ptys ctors nz) false) false)))))
+(def chk-data (lam d ent (case ent ((dent tel l)
+  (if (lvl-closed (lvl-of (data-level d tel)))
+  (if (check-ptys tel)
+      (let pc (params-fresh tel lnil) (check-ctors d (fst pc) (snd pc) #0)) false) false)))))
 
 ; an identity L = R with evidence p (paper 5.27): L and R checked definitions of one type,
 ; p : Π g1..gn. PathP (λ_. B) (L g) (R g), n the arguments the identity takes
-(def id-tele (lam T VL VR n (case n
-  ((nz) (PathP (plam i T) VL VR))
-  ((ns m) (case (%view T) ((wpi A B) (Pi x A (id-tele (B x) (VL x) (VR x) m))) (_ opq))))))
-(def id-type (lam gL gR n (if (conv-ty nz (%gty gL) (%gty gR)) (some (id-tele (%gty gL) (%gval gL) (%gval gR) n)) none)))
+(def id-tele (lam T VL VR n (if (%weq n #0) (PathP (plam i T) VL VR)
+  (case (%view T) ((wpi A B) (Pi x A (id-tele (B x) (VL x) (VR x) (%wsub n #1)))) (_ opq)))))
+(def id-type (lam gL gR n (if (conv-ty (%gty gL) (%gty gR)) (some (id-tele (%gty gL) (%gval gL) (%gval gR) n)) none)))
 (def id-type-ok (lam gL gR n (case (id-type gL gR n) ((some T) true) ((none) false))))
 ; evidence a checked definition: its type is the identity's
-(def chk-identity-def (lam gL gR n gp (case (id-type gL gR n) ((some T) (conv-ty nz (%gty gp) T)) ((none) false))))
+(def chk-identity-def (lam gL gR n gp (case (id-type gL gR n) ((some T) (conv-ty (%gty gp) T)) ((none) false))))
 ; evidence supplied later: its code checked at the identity's type
-(def chk-identity (lam gL gR n ct (case (id-type gL gR n) ((some T) (check nz lnil lnil ct T)) ((none) false))))
+(def chk-identity (lam gL gR n ct (case (id-type gL gR n) ((some T) (check ct T)) ((none) false))))
 ; an optimizer (5.26) is a term producing an identity: e : Σ (R : T_L). Π g. L g = R g
-(def chk-optimizer (lam gL n ge (conv-ty nz (%gty ge) (Sigma R (%gty gL) (id-tele (%gty gL) (%gval gL) R n)))))
+(def chk-optimizer (lam gL n ge (conv-ty (%gty ge) (Sigma R (%gty gL) (id-tele (%gty gL) (%gval gL) R n)))))

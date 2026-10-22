@@ -1,6 +1,6 @@
 ; tests/code.ctt — the evaluator is a term over codes; its value at the code of t is t's value.
 (axiom A B a b f junk)
-(def v0 (cvar nz)) (def v1 (cvar (ns nz))) (def v2 (cvar (ns (ns nz)))) (def v3 (cvar (ns (ns (ns nz)))))
+(def v0 (cvar #0)) (def v1 (cvar #1)) (def v2 (cvar #2)) (def v3 (cvar #3))
 
 (same (eval junk (clam (cpair v0 v0))) (lam x (pair x x)))
 (same (eval (lcons junk (lcons a junk)) (capp (clam v0) v1)) a)
@@ -16,7 +16,7 @@
 (same (eval (lcons A (lcons (idequiv A) (lcons a junk))) (cunglue (csysc cftt (cpair v0 v1) csys0) v2)) a)
 ; transport along ua, posed as a code
 (same (eval (lcons a (lcons ua (lcons A (lcons (idequiv A) junk))))
-            (ccomp (cplam (cpapp (capp (capp (capp v2 v3) v3) (cvar (ns (ns (ns (ns nz)))))) v0)) (cplam csys0) v0))
+            (ccomp (cplam (cpapp (capp (capp (capp v2 v3) v3) (cvar #4)) v0)) (cplam csys0) v0))
       (transp (ua A A (idequiv A)) a))
 ; a statement about the evaluator is a term: the path from (eval code) to its value
 (same (@ (plam i (eval (lcons a junk) (cpair v0 v0))) 0) (pair a a))

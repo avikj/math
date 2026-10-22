@@ -81,12 +81,33 @@ D. [x] Copies a hand reduction does not make, removed by principle (located with
    definitions (λ, constructor, data type) unfold in one interaction.
    State: tests/check.ctt 0.53M; boxes 154/154 17.3M interactions 10 s; sort 106/106 44.7M 23 s
    (lemIso 5.7M, msort-at 30M).
-E. [ ] OPEN, for the user: what remains is mostly copying definitions' stored values on use (a
-   checked definition's type via %gty, data declarations, interned codes) and eval-g's environment.
-   With duplicator cells (5.24) copying a normal form of size n is n steps; a hand reduction reads a
-   definition without copying it. Reading immutable normal forms through references, copied one level
-   per step on demand, removes it but changes what a step reads (non-local, like unfolding a global
-   already is): a decision about 5.24/5.16, not engineering.
+E. [x] (user approved) Stored values are read one level at a time: V_REF holds a value once
+   (refcounted Box); an operation meeting a reference copies its top cell, parts become references
+   (lazy_copy). A duplicator meeting a value with parts boxes it and gives each side a reference.
+   Words: V_WORD holds a machine word (`#n`), %wsucc %weq %wlt %wadd %wmax %wsub, %welim w z s (the
+   dependent eliminator; the hypothesis is a V_WSUSP forced on use). Saturated calls of λ-chain
+   definitions (S_CALL/O_CALL) are one interaction building the n-ary record.
+   State: boxes 154/154 6.2M interactions; sort 106/106 18.7M; tests/check.ctt 0.26M.
+F. [x] Codes carry their compiled terms (landed). lang.c `ann` emits, for `checked` forms, data
+   declarations and identity evidence, a `Tm` (lib/check.ctt): every node carries its value, the
+   machine's value of that subterm (let-bound, so each value is computed once from its parts'
+   values; a binder's value is the compiled binder; checked definitions are (%gval #n)). A binder
+   node holds a function: λ x xT. code-of-body for a term binder (a variable's node is (tv x xT)),
+   λ i. code-of-body for a dimension. A system's branches are thunks, restricted then forced, so a
+   branch is computed under its face. A data declaration is a `Tel` (parameters, then each
+   constructor's fields, dimensions, boundary). check.ctt has no context, no eval-g, no counter:
+   (%var T) and (%dim) make fresh names (never lifted out of their level, lang.c maxlev).
+   Indices, levels' constants, constructor and data indices are words; `Num` is gone (code.ctt's
+   plain Code for tests/code.ctt also uses words). `(%raw t)` passes an already desugared term.
+   Also: the lifting test walks only until it meets a variable of the current level (was
+   quadratic in let chains: 29 s → 2.3 s for boxes).
+   State: tests/check.ctt 0.16M; boxes 154/154 2.85M, 2.3 s; sort 106/106 9.1M, 5.9 s
+   (msort-at 7.1M, lemIso 0.31M).
+G. [ ] Word typed in the checker (a type Word, #n : Word, %wsucc, %welim's dependent rule);
+   Word ≃ Nat proved in the language (toNat/fromNat, round trips by induction, ua), and %weq %wlt
+   %wadd %wmax declared as identities with inductive evidence, so the machine's operations stay
+   representable inside the theory (5.26).
+H. [ ] msort-at: 7.1M interactions — find what it does that hand checking does not.
 
 ## The spec, as it bears on the code (paper references)
 

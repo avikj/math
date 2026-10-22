@@ -1,10 +1,9 @@
 ; code.ctt — codes of terms as data, and the evaluator as a term (paper 5.26).
-; Variables are de Bruijn indices (numerals) over one context of term and
-; dimension variables; globals are indices into a signature, data types and
-; their constructors indices into its data part. (code t) writes the code of
+; Variables are de Bruijn indices (words) over one context of term and
+; dimension variables; globals are indices (words) into a signature, data types
+; and their constructors indices into its data part. (code t) writes the code of
 ; a source term. eval maps a code to the value the machine gives the term; a
 ; question about the evaluator is a term.
-(data Num (nz) (ns n))
 (data Lst (lnil) (lcons x xs))
 (data Opt (none) (some x))
 (data Code
@@ -23,7 +22,8 @@
   (cforce t)
   ; universe levels: the type Level, zero, successor, max; (cuniv l) takes a level
   (clevel) (clzero) (clsuc l) (clmax a b))
-; a value's head as data (%view, src/net.c): its parts are the value's own parts, values
+; a value's head as data (%view, src/net.c): its parts are the value's own parts, values;
+; data types, constructors and variables by words
 (data View
   (wlam f) (wpair a b) (wpi A B) (wsigma A B) (wu l) (wpath A a b) (wplam p) (wiv r) (wface a)
   (wsys bs) (wglue A S) (wgluev S a) (wdata d ps) (wcon d c fs ds) (whcomp u a)
@@ -35,7 +35,7 @@
 ; both, untouched
 (data CloCmp (csame ps f g) (cdiff f g))
 
-(def cl-at (lam l n (case l ((lnil) l) ((lcons x xs) (case n ((nz) x) ((ns m) (cl-at xs m)))))))
+(def cl-at (lam l n (case l ((lnil) l) ((lcons x xs) (if (%weq n #0) x (cl-at xs (%wsub n #1)))))))
 (def cl-map (lam f l (case l ((lnil) lnil) ((lcons x xs) (lcons (f x) (cl-map f xs))))))
 (def cl-app (lam l m (case l ((lnil) m) ((lcons x xs) (lcons x (cl-app xs m))))))
 (def app-all (lam f xs (case xs ((lnil) f) ((lcons x r) (app-all (f x) r)))))
