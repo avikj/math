@@ -100,6 +100,8 @@ enum {
     V_CON,      /* a=constructor; 1..f=fields, then the dimensions (interval values) */
     V_HCOMP,    /* formal homogeneous composition in a data type: 1=tube 2=cap */
     V_CASEF,    /* p=CaseTab, x=has motive; [1=motive] environment: the elimination as a function */
+    V_REF,      /* p=Box: a reference to a value held once; copying it copies the reference, an operation
+                 * meeting it copies the value out (as a definition is unfolded) */
     V_SUSP,     /* p=CaseTab, x=has motive; 1=field [2=motive] environment: an induction hypothesis, the
                  * elimination of a recursive field, computed when forced */
     V_END,
@@ -211,6 +213,7 @@ int data_checked_index(int d);     /* a data type's index in the checker's signa
 int con_index(const char *name);   /* a constructor by name, or -1 */
 enum { TB_VAL, TB_TY, TB_DTAB, TB_DENT, TB_N };
 long table_global(int table, long i);  /* the global holding entry i of a checker table, or -1 */
+typedef struct Box { struct Cell *root; long rc; } Box;
 typedef struct CaseTab { int d, nenv; uint64_t mask; struct Record **br; } CaseTab;
 Port con_build(int c, const Port *fields, const Port *dims);
 Port apply_gid(long g, const Port *args, int n);
@@ -226,7 +229,8 @@ enum {
     S_SYSMAP, S_COMP, S_GLUE, S_GLUEV, S_UNGLUE, S_GLOBAL, S_AXIOM, S_LET, S_FORCE,
     S_DATA, S_CON, S_HCOMPD, S_TRANSD, S_CASE,  /* id: the data type or constructor; S_CASE: tab */
     S_PRIM,     /* x=the operation cell, n operands */
-    S_GLOBTAB   /* x=the table; k[0]=the index */
+    S_GLOBTAB,  /* x=the table; k[0]=the index */
+    S_BOX       /* k[0]: the value, held once and referred to */
 };
 struct Record;
 typedef struct Syn {

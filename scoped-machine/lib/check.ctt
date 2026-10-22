@@ -381,7 +381,7 @@
   ((cunglue S b) (case (infer k env tys b) ((some T) (case (%view T) ((wglue A S2) (some A)) (_ none))) ((none) none)))
   ((ccomp A u a) (check-comp k env tys A u a))
   ((clet t b) (case (infer k env tys t)
-     ((some T) (infer (ns k) (lcons (ev env t) env) (lcons (some T) tys) b))
+     ((some T) (infer (ns k) (lcons (ev env t) env) (lcons (some (%box T)) tys) b))
      ((none) none)))
   ((cann t T) (case (infer-sort k env tys T)
      ((some s) (let Tv (ev env T) (if (check k env tys t Tv) (some Tv) none)))
@@ -410,7 +410,7 @@
   ((lcons A rest) (case ps ((lnil) false) ((lcons p pr)
     (if (check k env tys p (ev penv A)) (check-tele k env tys rest pr (lcons (ev env p) penv)) false)))))))
 (def motive-level (lam k env tys T P (case P
-  ((clam b) (infer-sort (ns k) (lcons (%var k T) env) (lcons (some T) tys) b))
+  ((clam b) (infer-sort (ns k) (lcons (%var k T) env) (lcons (some (%box T)) tys) b))
   (_ (case (infer k env tys P)
        ((some Pt) (case (%view Pt)
           ((wpi A B) (if (conv-ty k A T) (case (%view (B (%var k A))) ((wu l) (some (U l))) (_ none)) none))
@@ -434,11 +434,11 @@
 ; the hypothesis of recursive field f is its elimination, of type P f
 (def branch-hyps (lam k env tys d ps Pv F c ce rs b fs (case rs
   ((lcons f rest) (case b ((clam b1)
-       (branch-hyps (ns k) (lcons (F f) env) (lcons (some (Pv f)) tys) d ps Pv F c ce rest b1 fs)) (_ false)))
+       (branch-hyps (ns k) (lcons (F f) env) (lcons (some (%box (Pv f))) tys) d ps Pv F c ce rest b1 fs)) (_ false)))
   ((lnil) (branch-dims k env tys d ps Pv F c ce (cnd ce) b fs lnil)))))
 (def branch-fields (lam k env tys d ps Pv F c ce ftys b fenv fs (case ftys
   ((lcons A rest) (case b ((clam b1) (let Av (ev fenv A) (let x (%var k Av)
-       (branch-fields (ns k) (lcons x env) (lcons (some Av) tys) d ps Pv F c ce rest b1 (lcons x fenv) (lsnoc fs x))))) (_ false)))
+       (branch-fields (ns k) (lcons x env) (lcons (some (%box Av)) tys) d ps Pv F c ce rest b1 (lcons x fenv) (lsnoc fs x))))) (_ false)))
   ((lnil) (branch-hyps k env tys d ps Pv F c ce (rec-of d (cftys ce) fs) b fs)))))
 (def check-branch (lam k env tys d ps Pv F c b
   (let ce (centry d c) (branch-fields k env tys d ps Pv F c ce (cftys ce) b (push-all ps lnil) lnil))))
@@ -452,12 +452,12 @@
      (if (check k env tys f (ev fenv A)) (check-fields k env tys rest fr (lcons (ev env f) fenv)) false)))))))
 (def infer-binder (lam k env tys A B (case (infer-sort k env tys A)
   ((some s1) (let Av (ev env A)
-     (case (infer-sort (ns k) (lcons (%var k Av) env) (lcons (some Av) tys) B)
+     (case (infer-sort (ns k) (lcons (%var k Av) env) (lcons (some (%box Av)) tys) B)
        ((some s2) (some (sort-max s1 s2)))
        ((none) none))))
   ((none) none))))
 (def check (lam k env tys c T (case c
-  ((clam b) (case (%view T) ((wpi A B) (let x (%var k A) (check (ns k) (lcons x env) (lcons (some A) tys) b (B x)))) (_ false)))
+  ((clam b) (case (%view T) ((wpi A B) (let x (%var k A) (check (ns k) (lcons x env) (lcons (some (%box A)) tys) b (B x)))) (_ false)))
   ((cpair a b) (case (%view T) ((wsigma A B) (if (check k env tys a A) (check k env tys b (B (ev env a))) false)) (_ false)))
   ((cplam b) (case (%view T) ((wpath L a0 a1) (let i (%dim k)
        (if (check (ns k) (lcons i env) (lcons none tys) b (@ L i))
@@ -470,7 +470,7 @@
                 (%clauses (ev env (fst b))))) (sys-codes S))
            false) false) false)) (_ false)))
   ((clet t b) (case (infer k env tys t)
-     ((some Ty) (check (ns k) (lcons (ev env t) env) (lcons (some Ty) tys) b T))
+     ((some Ty) (check (ns k) (lcons (ev env t) env) (lcons (some (%box Ty)) tys) b T))
      ((none) false)))
   ((ccon d c fs ds) (case (%view T) ((wdata d2 ps) (if (eqn d d2)
        (if (eqn (llen ds) (cnd (centry d c)))
@@ -518,11 +518,11 @@
 (def ctx-params (lam k env tys ptys vals (case ptys
   ((lnil) (pair (pair env tys) (pair k vals)))
   ((lcons A rest) (let Av (ev env A) (let x (%var k Av)
-     (ctx-params (ns k) (lcons x env) (lcons (some Av) tys) rest (lsnoc vals x))))))))
+     (ctx-params (ns k) (lcons x env) (lcons (some (%box Av)) tys) rest (lsnoc vals x))))))))
 (def check-ptys (lam k env tys ptys (case ptys
   ((lnil) true)
   ((lcons A rest) (case (infer-sort k env tys A)
-     ((some s) (let Av (ev env A) (check-ptys (ns k) (lcons (%var k Av) env) (lcons (some Av) tys) rest)))
+     ((some s) (let Av (ev env A) (check-ptys (ns k) (lcons (%var k Av) env) (lcons (some (%box Av)) tys) rest)))
      ((none) false))))))
 (def check-ctor-dims (lam k d c env tys pv n bdy (case n
   ((ns m) (let i (%dim k) (check-ctor-dims (ns k) d c (lcons i env) (lcons none tys) pv m bdy)))
@@ -531,7 +531,7 @@
   ((lcons A rest) (if (positive d np m A)
      (case (infer-level k env tys A)
        ((some l) (let Av (ev env A)
-          (check-ctor-fields (ns k) d np c (lcons (%var k Av) env) (lcons (some Av) tys) pv rest (ns m) nd bdy)))
+          (check-ctor-fields (ns k) d np c (lcons (%var k Av) env) (lcons (some (%box Av)) tys) pv rest (ns m) nd bdy)))
        ((none) false)) false))
   ((lnil) (check-ctor-dims k d c env tys pv nd bdy)))))
 (def check-ctor (lam d np ptys c ce
@@ -545,7 +545,7 @@
   ((lnil) lnil)
   ((lcons A rest) (let Av (ev env A)
      (lcons (if (is-data-d d A) lzero (fromopt (infer-level k env tys A) lzero))
-            (field-levels d (ns k) (lcons (%var k Av) env) (lcons (some Av) tys) rest)))))))
+            (field-levels d (ns k) (lcons (%var k Av) env) (lcons (some (%box Av)) tys) rest)))))))
 (def lfold-lmax (lam xs (case xs ((lnil) lzero) ((lcons x r) (lmax x (lfold-lmax r))))))
 (def data-level (lam d ptys ctors
   (let pc (ctx-params nz lnil lnil ptys lnil)

@@ -35,9 +35,14 @@ Cell *cell(int kind, int n) {
 /* the payload a cell owns */
 static bool owns_dnf(int k) { return k == O_PEND || k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2 || k == V_NTRANS || k == O_TRANSD2 || k == O_IEQB || k == O_FEQLB; }
 static bool owns_subst(int k) { return k == O_SUBST || k == V_DEFER; }
-static void payload_retain(Cell *c) { if (owns_dnf(c->kind)) dnf_retain(c->p); else if (owns_subst(c->kind)) subst_retain(c->p); }
+static void box_release(Box *b);
+static void payload_retain(Cell *c) {
+    if (owns_dnf(c->kind)) dnf_retain(c->p); else if (owns_subst(c->kind)) subst_retain(c->p);
+    else if (c->kind == V_REF) __atomic_add_fetch(&((Box *)c->p)->rc, 1, __ATOMIC_RELAXED);
+}
 static void payload_release(Cell *c) {
     if (owns_dnf(c->kind)) dnf_release(c->p); else if (owns_subst(c->kind)) subst_release(c->p);
+    else if (c->kind == V_REF && c->p) box_release(c->p);
     c->p = NULL;
 }
 void cell_free(Cell *c) { payload_release(c); Local *l = local(); c->a = (uint64_t)(uintptr_t)l->defer; l->defer = c; ADD(stat_cells, -1); }
@@ -124,6 +129,27 @@ static Port out_of(Cell *o) { return o->port[o->n - 1]; }
 /* profile: where each duplicator and eraser comes from (a record's definition, or a rule) */
 static __thread long dup_origin;
 long prof_odup[65536], prof_oera[65536], prof_rdup[256], prof_rera[256];
+/* a value held once: references copy the box; the last one erases the value */
+static Box *box_new(Port val) {
+    Box *b = malloc(sizeof(Box)); b->rc = 1; b->root = cell(O_ROOT, 1);
+    link(val, P(b->root, 0));
+    return b;
+}
+static Port box_copy(Box *b) {
+    Cell *r = b->root, *d = cell(O_DUP, 3);
+    link(r->port[0], P(d, 0)); link(P(d, 1), P(r, 0));
+    return P(d, 2);
+}
+Port ref_copy(Cell *c) { return box_copy(c->p); }
+static Port ref_of(Port val) { Cell *c = cell(V_REF, 1); c->p = box_new(val); return P(c, 0); }
+static void era(Port prov);
+static void box_release(Box *b) {
+    if (__atomic_sub_fetch(&b->rc, 1, __ATOMIC_ACQ_REL)) return;
+    Port p = b->root->port[0];
+    if (p) era(p);
+    cell_free(b->root);
+    free(b);
+}
 static void era(Port prov) { Cell *e = cell(O_ERA, 1); e->a = (uint64_t)dup_origin; link(prov, P(e, 0)); }
 static Port sub(Port prov, Subst *s) { Cell *c = cell(O_SUBST, 2); c->p = subst_retain(s); link(prov, P(c, 0)); return P(c, 1); }  /* borrows s */
 static Port mkplam_of(Port prov, Dim i) { Cell *m = cell(O_MKPLAM, 2); m->a = i; link(prov, P(m, 0)); return P(m, 1); }
@@ -222,6 +248,8 @@ static void rule_subst(Cell *o, Cell *v) {
     switch (v->kind) {
     case V_GLOBAL: case V_UNK:
         link(P(v, 0), out); cell_free(o); return;
+    case V_REF:
+        link(sub(box_copy(v->p), s), out); cell_free(o); cell_free(v); return;
     case V_NVAR:
         link(sub(v->port[1], s), P(v, 1));
         link(P(v, 0), out); cell_free(o); return;
@@ -580,6 +608,12 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     if (v->kind == V_DEFER) { defer_force(o, v); return; }
+    if (v->kind == V_REF) {
+        /* the value is copied out of its box */
+        link(box_copy(v->p), P(o, 0));
+        cell_free(v);
+        return;
+    }
     int vk = v->kind;
     if (vk == V_UNK && o->kind != O_VIEW && o->kind != O_CLOS && o->kind != O_CLOS2 && o->kind != O_PEND) {
         /* an eliminator of an unknown type gives an unknown type */
@@ -1051,8 +1085,9 @@ static void interact(Cell *o, Cell *v) {
             return;
         }
         if (o->kind == O_MKVAR) {
+            /* its type is held once: every copy of the variable refers to it */
             Cell *n = cell(V_NVAR, 2); n->a = LVL_TAG | o->a; n->ty = 1;
-            mv(o, 1, P(n, 1)); link(P(n, 0), o->port[2]);
+            link(ref_of(o->port[1]), P(n, 1)); link(P(n, 0), o->port[2]);
         } else if (o->kind == O_ABS) {
             Cell *m = cell(O_MKPLAM, 2); m->a = DIM_LVL + (Dim)o->a;
             mv(o, 1, P(m, 0)); link(P(m, 1), o->port[2]);
@@ -1288,6 +1323,7 @@ static int lockset(Cell *o, Cell *v, Cell **S) {
     for (int k = 1; k < o->n; k++) { Port p = rd(o, k); if (p) S[n++] = PC(p); }
     for (int k = 1; k < v->n; k++) { Port p = rd(v, k); if (p) S[n++] = PC(p); }
     if (v->kind == V_GLOBAL) { Cell *r = global_res((long)v->a); S[n++] = r; Port p = rd(r, 0); if (p) S[n++] = PC(p); }
+    if (v->kind == V_REF) { Cell *r = ((Box *)v->p)->root; S[n++] = r; Port p = rd(r, 0); if (p) S[n++] = PC(p); }
     qsort(S, (size_t)n, sizeof(Cell *), cell_cmp);
     int m = 0;
     for (int i = 0; i < n; i++) if (m == 0 || S[m - 1] != S[i]) S[m++] = S[i];
@@ -1427,6 +1463,7 @@ static Port build(Syn *t, Frame *f) {
         else { int z = con_index("lzero"); if (z < 0) { fprintf(stderr, "U needs Level (lib/prelude.ctt)\n"); exit(2); } link(con_build(z, NULL, NULL), P(c, 1)); }
         return P(c, 0);
     }
+    case S_BOX: return ref_of(build(t->k[0], f));
     case S_GLOBTAB:
         c = cell(O_GLOB, 2); c->x = t->x;
         link(build(t->k[0], f), P(c, 0));
