@@ -99,6 +99,12 @@ Data types are higher inductive types, following Coquand–Huber–Mörtberg (*H
 
 `(checked n T t)` translates `T` and `t` to annotated codes, normalizes `chk-def`, compares the result with `true`, and on success defines `n` and enters it and its type in the tables; `(check T t)` and `(check-fail T t)` check without defining. `tests/check.ctt` checks identity, refl, sym, funext, transport, path concatenation by hcomp, contractibility, fibres, equivalences, `idequiv` and `ua`, and rejects ill-typed terms, among them a tube disagreeing with its base.
 
+## Implicit arguments and holes
+
+In a checked form, `_` is a hole, and `{x A}` in a checked definition's leading telescope makes that parameter implicit: its uses in checked forms leave it out (a hole is put there) or give it as `{a}`. `(checked sym' (Pi ({l Level} {A (U l)} {x A} {y A} (p (PathP (plam i A) x y))) (PathP (plam i A) y x)) ...)` is used as `(sym' p)`. Unchecked forms (`def`, `same`, `show`) apply a definition to all its parameters in order.
+
+A hole is a metavariable applied to the term variables and dimensions in scope. Where conversion fails to match two values by structure and one side is such an application, it is solved: the arguments distinct variables, the other side mentioning no other variable or dimension of the definition and not the metavariable, the solution that value abstracted over the arguments (`%abstract`, `%abs`). Each solution is checked by the checker at the hole's type, as the code of the value (`qt`): the kernel's judgment covers every solution, and an implicit universe level is found there. A form with a hole left unsolved is rejected. The definition is made from the elaborated term. A metavariable applied to anything other than distinct variables is not solved, and no new metavariable is made inside the checker (a λ checked against a type that is a hole fails). `tests/implicit.ctt` has the cases.
+
 ## The checked library and the paper's terms
 
 `lib/std.ctt` is a library of checked definitions, every one accepted by the checker before it is defined:

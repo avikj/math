@@ -39,7 +39,34 @@ E3. [x] Failure reasons. A judgment's normal form is ok / (yes T) / (no v why A 
     entry points as %%name (the first declared), so a program's names cannot capture them.
     Cost: checking takes ~14% more interactions (error thunks dropped on success): boxes 1.58M,
     sort 1.01M, check 0.17M.
-E4. [ ] Implicit arguments solved by unification (holes `_` in checked terms; levels/types inferred).
+E4. [x] Implicit arguments and holes, solved by unification and checked by the kernel.
+    Surface: `{x A}` in a checked definition's leading telescope (reader: `{...}` reads as
+    `(%imp ...)`; lang.c strip_imp records Global.imp/nimp); its uses in checked forms get a hole at
+    each implicit position up to the last explicit argument given, plus the implicit ones right
+    after it (ds_implicit); `{a}` gives one. `_` is a hole in any checked form. Unchecked forms
+    (def, same, show) apply positionally, implicit parameters included.
+    Holes: while a checked form is desugared (elab_on) ds keeps a scope of local names; a hole is
+    `(%metaref #k)` applied to the term variables (λ, Π, Σ, case fields) and, by `@`, dimensions
+    (lines, path-constructor dims) in scope; lets, hypotheses, forall dims are not given. ann makes
+    `(thole #k V)`. Machine: V_META (neutral until solved, then its solution; views of neutrals on a
+    solved meta re-view), %meta-set, %abstract (a value as a function of a term variable: Subst has
+    term entries), %abs (dims), %meta-type(-set)/%meta-typed/%meta-solved, %dims-sub, %dim-atom.
+    Checker (check.ctt "metavariables"): conversion, where comparing by structure fails (the leaf
+    `false`s of uconv-head, conv-data-ww, convneu's none), calls unify: a side whose view is a meta
+    spine (wmeta under wapp/wpapp) is solved if the arguments are distinct variables/dimensions and
+    the other side is `scoped` (only those variables and dimensions, walked through every View
+    form including eliminations' branches, and not mentioning k); solution = abstract-all. Levels:
+    lvl-of gives lvm (equal to nothing) for a meta, so lvl-eq fails and unify runs. Kernel check:
+    `check (thole k V) T` records (V, T) or, if k is solved, checks `(qt V)` at T; solving checks
+    the recorded one. qt is the code of a value (each node carrying the value; intervals as `ti`,
+    faces as `tfv`; an elimination without its motive as tcase; word eliminations and transports
+    have no code and are rejected). lang.c rejects a form with an unsolved hole and defines from
+    the elaborated tree (%raw); cached modules rerun checked forms that have holes.
+    Constructor of a parameterless data type is now inferable (so `(cong' suc p)` solves B).
+    Limits: no new metas from inside the checker (a λ checked against an unknown type fails);
+    a meta applied to non-variables is not solved (pattern fragment only). Cost without holes:
+    std+reject 489.7k → 496.5k interactions (+1.4%: the values are carried to conversion's
+    failure points). tests/implicit.ctt; tests/mod/lib.ctt exercises the cache path.
 E5. [x] Modules: (import "f") loads f once (relative to the importing file; imports run before the
     file's own forms). A running key hashes the machine's build stamp and every file loaded so far,
     in order; a file passing all its forms writes a marker under that key in $CUBICAL_CACHE
