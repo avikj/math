@@ -88,7 +88,7 @@ enum {
     V_NPAPP,    /* p=Dnf r, x=annotated; 1=p [2=a 3=b] type */
     V_NCOMP,    /* 1=A 2=u 3=a0 4=type */
     V_NUNGLUE,  /* 1=S 2=b 3=type */
-    V_NCASE,    /* x=has motive; 1=scrutinee 2=branches 3=motive 4=environment 5=type */
+    V_NCASE,    /* p=CaseTab, x=has motive; 1=scrutinee [2=motive] environment, type */
     V_NTRANS,   /* a=data type, p=Dnf ψ; 1=x 2..k+1=parameter lines, type */
     V_GLOBAL,   /* a=global id */
     V_SITEF,    /* a=L, x=arguments so far; 1..x=the arguments */
@@ -98,9 +98,9 @@ enum {
     V_DATA,     /* a=data type; 1..k=parameters */
     V_CON,      /* a=constructor; 1..f=fields, then the dimensions (interval values) */
     V_HCOMP,    /* formal homogeneous composition in a data type: 1=tube 2=cap */
-    V_BRANCHES, /* a=mask of the branches taking induction hypotheses; 1..=the branches, one per constructor */
-    V_SUSP,     /* x=has motive; 1=branches 2=motive 3=field 4=environment: an induction hypothesis, the elimination
-                 * of a recursive field, computed when forced */
+    V_CASEF,    /* p=CaseTab, x=has motive; [1=motive] environment: the elimination as a function */
+    V_SUSP,     /* p=CaseTab, x=has motive; 1=field [2=motive] environment: an induction hypothesis, the
+                 * elimination of a recursive field, computed when forced */
     V_END,
     /* operations: negative principal port; the last port is the result */
     O_APP,      /* 0=f 1=arg 2=out */
@@ -133,9 +133,8 @@ enum {
     O_HCOMP,    /* 0=tube 1=cap 2=out: a formal hcomp unless the tube is total */
     O_TRANSD1,  /* a=data type; 0=ψ 1..k=parameter lines k+1=x out */
     O_TRANSD2,  /* a=data type, p=Dnf ψ; 0=x 1..k=parameter lines out */
-    O_CASE,     /* x=has motive; 0=scrutinee 1=branches 2=motive 3=environment 4=out */
-    O_SELECT,   /* a=constructor, x=1 has motive | 2 hypotheses built; 0=branches 1..n=fields, [hypotheses,]
-                 * dims n+1=motive n+2=environment out */
+    O_CASE,     /* p=CaseTab, x=has motive; 0=scrutinee [1=motive] environment, out. Meeting a
+                 * constructor it builds the selected branch's body: one interaction */
     O_ROOT,     /* 0: an observation; never interacts */
     K_END
 };
@@ -179,6 +178,10 @@ typedef struct { char *name; int nparams, ncons; int *cons; long comp, transh; v
 extern ConInfo *CON;
 extern DataInfo *DATA;
 extern long case_hcomp_global;
+/* an elimination's branches: one record per constructor, parameters its fields, [the induction
+ * hypotheses of its recursive fields when mask has the branch,] its dimensions; environment the
+ * variables the branches share, supplied once by the case cell's ports */
+typedef struct CaseTab { int d, nenv; uint64_t mask; struct Record **br; } CaseTab;
 Port con_build(int c, const Port *fields, const Port *dims);
 Port apply_gid(long g, const Port *args, int n);
 
@@ -191,7 +194,7 @@ enum {
     S_VAR, S_LAM, S_APP, S_PAIR, S_FST, S_SND, S_PI, S_SIGMA, S_U, S_PATHP, S_PLAM, S_PAPP,
     S_IV0, S_IV1, S_NEG, S_BIN, S_FEQ, S_FTT, S_FFF, S_FORALL, S_FACEOF, S_SYS0, S_SYSCONS,
     S_SYSMAP, S_COMP, S_GLUE, S_GLUEV, S_UNGLUE, S_GLOBAL, S_AXIOM, S_LET, S_FORCE,
-    S_DATA, S_CON, S_HCOMPD, S_TRANSD, S_CASE, S_BRANCHES   /* id: the data type or constructor */
+    S_DATA, S_CON, S_HCOMPD, S_TRANSD, S_CASE   /* id: the data type or constructor; S_CASE: tab */
 };
 struct Record;
 typedef struct Syn {
@@ -199,10 +202,11 @@ typedef struct Syn {
     uint32_t x;
     long id;
     struct Record *rec;
+    struct CaseTab *tab;
     struct Syn **k;
 } Syn;   /* S_AXIOM: slot = the global holding its type, or -1 */
-/* a binder level: λ (one parameter) or thunk (none). Its frame has slots:
- * the parameter, the environment (maximal subterms free of this level,
+/* a binder level: λ (one parameter), thunk (none), or a case branch (its fields, hypotheses and
+ * dimensions, in slots 0..nparam-1). Its frame has slots: the parameters, the environment (maximal subterms free of this level,
  * lifted to the enclosing level and wired to the cell's ports), and locals. */
 typedef struct Record {
     int nparam, nslots, nenv;
@@ -216,6 +220,8 @@ extern long *prof_count, *prof_dup; extern const char **prof_name; extern int pr
 
 /* build the body of r: param (or 0), env providers; returns the provider */
 Port record_build(const Record *r, Port param, const Port *env);
+Port record_build_n(const Record *r, const Port *params, const Port *env);
+void port_split(Port prov, int m, Port *out);
 /* build a top-level body with its own slots */
 Port top_build(Syn *body, int nslots, const int *uses);
 

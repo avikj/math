@@ -599,6 +599,11 @@ static long add_global(const char *name, int kind) {
 Port global_copy(long g) {
     Cell *r = G[g].res;
     if (!r->port[0]) return 0;
+    /* a definition whose value is a closed λ or a constant constructor is built from its
+     * syntax: unfolding it is the one interaction that meets it */
+    Syn *b = G[g].kind == G_DEF ? G[g].body : NULL;
+    if (b && b->tag == S_LAM && b->n == 0) { Cell *c = cell(V_LAM, 1); c->p = b->rec; return P(c, 0); }
+    if (b && b->tag == S_CON && b->n == 0) return con_build((int)b->id, NULL, NULL);
     Cell *d = cell(O_DUP, 3);
     link(r->port[0], P(d, 0));
     link(P(d, 1), P(r, 0));
@@ -848,6 +853,100 @@ static Syn *compile_n(int tag, Node *t, int from, int n) {
     for (int i = 0; i < n; i++) s->k[i] = compile(t->it[from + i]);
     return s;
 }
+/* the variables of the enclosing scopes a term refers to, in order of first occurrence */
+static void local_free(Node *t, Names *bound, Names *out) {
+    if (!t->list) {
+        if (!names_has(bound, t->s) && lookup(t->s)) names_add(out, t->s);
+        return;
+    }
+    if (t->n == 0) return;
+    if (t->it[0]->list) { for (int i = 0; i < t->n; i++) local_free(t->it[i], bound, out); return; }
+    const char *h = t->it[0]->s;
+    if ((!strcmp(h, "lam") || !strcmp(h, "plam") || !strcmp(h, "forall")) && t->n == 3) {
+        int save = bound->n; names_add(bound, param_name(t->it[1])->s);
+        local_free(t->it[2], bound, out); bound->n = save; return;
+    }
+    if (!strcmp(h, "let") && t->n == 4) {
+        local_free(t->it[2], bound, out);
+        int save = bound->n; names_add(bound, t->it[1]->s);
+        local_free(t->it[3], bound, out); bound->n = save; return;
+    }
+    if (!strcmp(h, "the") && t->n == 3) { local_free(t->it[2], bound, out); return; }
+    int from = 1;
+    if (!strcmp(h, "%branches")) from = 4;
+    else if (!strcmp(h, "%con") || !strcmp(h, "%data") || !strcmp(h, "%transD")) from = 2;
+    for (int i = from; i < t->n; i++) local_free(t->it[i], bound, out);
+}
+/* a branch: a record whose parameters (slots 0..np-1) are the constructor's fields, hypotheses
+ * and dimensions and whose environment is the case's shared variables. Nothing is lifted out of
+ * it: it is built only when selected */
+static Record *compile_branch(const Names *env, Node **pn, int np, Node *body) {
+    GROW(levels, caplevels, (size_t)nlevels + 1);
+    int li = nlevels++;
+    levels[li] = (Level){ .is_thunk = 1, .scope_start = nbinds };
+    int *es = calloc((size_t)env->n + 1, sizeof(int));
+    for (int q = 0; q < np; q++) new_slot();
+    for (int e = 0; e < env->n; e++) { es[e] = new_slot(); push_bind(env->v[e], li, es[e]); }
+    for (int q = 0; q < np; q++) push_bind(pn[q]->s, li, q);
+    Syn *b = compile(body);
+    nbinds = levels[li].scope_start;
+    Level L = levels[li];
+    nlevels--;
+    if (L.nenv) die("internal: a case branch lifted a term", NULL);
+    Record *r = calloc(1, sizeof(Record));
+    r->nparam = np; r->nslots = L.nslots; r->nenv = env->n; r->env_slot = es;
+    r->uses = L.uses ? L.uses : calloc(1, sizeof(int)); r->body = b; r->where = prof_cur;
+    return r;
+}
+/* (%case (%branches D mask m b...) [P] E x): one cell. Its table holds one record per
+ * constructor; its ports the scrutinee, the motive and the variables the branches share, each
+ * once. A constructor meeting it builds the selected branch: one interaction. A handler is
+ * λ shared(m)... λ fields, hypotheses, dimensions. (thunk body), or any term, then applied */
+static Syn *compile_case(Node *t) {
+    bool el = t->n == 5;
+    Node *B = t->it[1];
+    if (!B->list || B->n < 4 || !is(B->it[0], "%branches")) die("%case without its branches", NULL);
+    int d = data_lookup(B->it[1]->s);
+    if (d < 0) die("%branches: unknown data type", B->it[1]->s);
+    uint64_t mask = strtoull(B->it[2]->s, NULL, 10);
+    int m = atoi(B->it[3]->s), N = DATA[d].ncons;
+    if (B->n - 4 != N) die("%branches: one branch per constructor of", DATA[d].name);
+    Node **body = calloc((size_t)N + 1, sizeof(Node *)), ***pn = calloc((size_t)N + 1, sizeof(Node **));
+    int *np = calloc((size_t)N + 1, sizeof(int));
+    Names env = { 0 };
+    for (int c = 0; c < N; c++) {
+        ConInfo *ci = &CON[DATA[d].cons[c]];
+        Node *h = B->it[4 + c];
+        for (int q = 0; q < m; q++) {
+            if (!h->list || h->n != 3 || !is(h->it[0], "lam")) die("%branches: a branch binds the shared variables first", NULL);
+            h = h->it[2];
+        }
+        int n = ci->nfields + ((mask >> c & 1) && ci->nrec ? ci->nrec : 0) + ci->ndims;
+        np[c] = n; pn[c] = calloc((size_t)n + 1, sizeof(Node *));
+        int got = 0;
+        while (got < n && h->list && h->n == 3 && is(h->it[0], "lam")) { pn[c][got++] = param_name(h->it[1]); h = h->it[2]; }
+        if (got < n) {
+            for (int q = got; q < n; q++) { char nm[32]; snprintf(nm, sizeof nm, "%%p%d", q); pn[c][q] = nsym(nm); h = nl3("app", h, nsym(nm)); }
+            h = nl2("force", h);
+        } else if (h->list && h->n == 2 && is(h->it[0], "thunk")) h = h->it[1];
+        else h = nl2("force", h);
+        body[c] = h;
+        Names bound = { 0 };
+        for (int q = 0; q < n; q++) names_add(&bound, pn[c][q]->s);
+        local_free(h, &bound, &env);
+        free(bound.v);
+    }
+    CaseTab *tb = calloc(1, sizeof(CaseTab));
+    tb->d = d; tb->nenv = env.n; tb->mask = mask; tb->br = calloc((size_t)N + 1, sizeof(Record *));
+    for (int c = 0; c < N; c++) tb->br[c] = compile_branch(&env, pn[c], np[c], body[c]);
+    Syn *s = syn(S_CASE, 2 + env.n);
+    s->tab = tb; s->x = el;
+    s->k[0] = compile(t->it[el ? 4 : 3]);
+    s->k[1] = el ? compile(t->it[2]) : NULL;
+    for (int e = 0; e < env.n; e++) s->k[2 + e] = compile(nsym(env.v[e]));
+    free(body); free(np);
+    return s;
+}
 static Syn *compile(Node *t) {
     int li = nlevels - 1;
     if (li >= 1) {
@@ -866,6 +965,7 @@ static Syn *compile(Node *t) {
             if (b->level != li) die("internal: unlifted outer variable", s);
             return var_syn(b->slot);
         }
+        { int c = con_lookup(s); if (c >= 0 && CON[c].nfields + CON[c].ndims == 0) { Syn *r = syn(S_CON, 0); r->id = c; return r; } }
         long g = global_lookup(s);
         if (g < 0) die("unbound name", s);
         Syn *r = syn(G[g].kind == G_AXIOM ? S_AXIOM : S_GLOBAL, 0); r->id = g; r->slot = (int)G[g].tyg;
@@ -884,7 +984,19 @@ static Syn *compile(Node *t) {
         s->k[1] = s->k[0]; s->k[0] = v; s->n = 2;
         return s;
     }
-    if (!strcmp(h, "app")) return compile_n(S_APP, t, 1, 2);
+    if (!strcmp(h, "app")) {
+        /* a constructor applied to all its fields and dimensions is the constructor */
+        Node *hd = t; int na = 0;
+        while (hd->list && hd->n == 3 && is(hd->it[0], "app")) { hd = hd->it[1]; na++; }
+        int c = !hd->list && !lookup(hd->s) ? con_lookup(hd->s) : -1;
+        if (c >= 0 && na == CON[c].nfields + CON[c].ndims) {
+            Syn *r = syn(S_CON, na); r->id = c;
+            Node *a = t;
+            for (int q = na - 1; q >= 0; q--) { r->k[q] = compile(a->it[2]); a = a->it[1]; }
+            return r;
+        }
+        return compile_n(S_APP, t, 1, 2);
+    }
     if (!strcmp(h, "pair")) return compile_n(S_PAIR, t, 1, 2);
     if (!strcmp(h, "fst")) return compile_n(S_FST, t, 1, 1);
     if (!strcmp(h, "snd")) return compile_n(S_SND, t, 1, 1);
@@ -928,15 +1040,8 @@ static Syn *compile(Node *t) {
         Syn *s = compile_n(S_TRANSD, t, 2, t->n - 2); s->id = d; return s;
     }
     if (!strcmp(h, "%case")) {
-        /* (%case B [P] E x) */
         if (t->n != 4 && t->n != 5) die("bad %case", NULL);
-        Syn *s = compile_n(S_CASE, t, 1, t->n - 1); s->x = t->n == 5; return s;
-    }
-    if (!strcmp(h, "%branches")) {
-        /* (%branches D mask m b...): mask, the branches taking induction hypotheses; m, the
-         * shared variables each branch binds first */
-        if (t->n < 4 || t->it[2]->list || t->it[3]->list) die("bad %branches", NULL);
-        Syn *s = compile_n(S_BRANCHES, t, 4, t->n - 4); s->id = (long)strtoull(t->it[2]->s, NULL, 10); return s;
+        return compile_case(t);
     }
     die("unknown form", h);
     return NULL;
@@ -1066,21 +1171,47 @@ static void rb_one(FILE *o, Port prov) {
     case V_DATA: if (c->n == 1) fputs(DATA[c->a].name, o); else push_fields(o, DATA[c->a].name, c, 1); return;
     case V_CON: if (c->n == 1) fputs(CON[c->a].name, o); else push_fields(o, CON[c->a].name, c, 1); return;
     case V_HCOMP: push_fields(o, "hcompD", c, 1); return;
-    case V_BRANCHES: push_fields(o, "%branches", c, 1); return;
+    case V_CASEF: fputs("%casef", o); return;
     case V_SUSP:
-        /* an unforced induction hypothesis: (delay (%case B [P] E x)) */
-        fputs("(delay (%case", o);
-        push_str("))"); push_field(c, 3); push_str(" "); push_field(c, 4); push_str(" ");
-        if (c->x) { push_field(c, 2); push_str(" "); }
-        push_field(c, 1); push_str(" ");
+        /* an unforced induction hypothesis */
+        fputs("(rec ", o);
+        push_str(")"); push_field(c, 1);
         return;
-    case V_NCASE:
-        /* (%case B [P] E x) */
-        fputs("(%case", o);
-        push_str(")"); push_field(c, 1); push_str(" "); push_field(c, 4); push_str(" ");
-        if (c->x) { push_field(c, 3); push_str(" "); }
-        push_field(c, 2); push_str(" ");
+    case V_NCASE: {
+        /* (case x ((C v...) body)...), or (elim P x ...): each branch built on fresh variables */
+        CaseTab *tb = c->p;
+        int ne = tb->nenv, N = DATA[tb->d].ncons;
+        Port ec[ne + 1][N + 1];
+        for (int e = 0; e < ne; e++) port_split(c->port[2 + (c->x ? 1 : 0) + e], N, ec[e]);
+        fputs(c->x ? "(elim " : "(case ", o);
+        push_str(")");
+        for (int k = N - 1; k >= 0; k--) {
+            ConInfo *ci = &CON[DATA[tb->d].cons[k]];
+            int nf = ci->nfields, nd = ci->ndims, nr = (tb->mask >> k & 1) ? ci->nrec : 0, np = nf + nr + nd;
+            Port prm[np + 1], env[ne + 1];
+            char pat[1024]; int at = snprintf(pat, sizeof pat, " ((%s", ci->name);
+            for (int j = 0; j < np; j++) {
+                if (j >= nf + nr) {
+                    Dim dd = fresh_dim();
+                    Cell *iv = cell(V_IV, 1); iv->p = iv_atom(dd); prm[j] = P(iv, 0);
+                    at += snprintf(pat + at, sizeof pat - (size_t)at, " %s", dim_name(dd));
+                } else {
+                    long nm = fresh_var(j < nf ? "x" : "ih", vcount++);
+                    Cell *v = cell(V_NVAR, 2); v->a = (uint64_t)nm;
+                    Cell *u = cell(V_UNK, 1); link(P(u, 0), P(v, 1));
+                    prm[j] = P(v, 0);
+                    if (j < nf) at += snprintf(pat + at, sizeof pat - (size_t)at, " %s", name_of(nm));
+                }
+                if (at >= (int)sizeof pat) at = (int)sizeof pat - 1;
+            }
+            snprintf(pat + at, sizeof pat - (size_t)at, ") ");
+            for (int e = 0; e < ne; e++) env[e] = ec[e][k];
+            push_str(")"); push_port(record_build_n(tb->br[k], prm, env)); push_str(pat);
+        }
+        push_field(c, 1);
+        if (c->x) { push_str(" "); push_field(c, 2); }
         return;
+    }
     case V_NTRANS:
         /* (%transD D ψ lines... x) */
         fprintf(o, "(%%transD %s", DATA[c->a].name);

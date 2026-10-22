@@ -41,7 +41,10 @@ Findings, established by reading the code and the history (git log 10-14..10-22)
 
 Work, in order:
 
-A. [~] `case` = one interaction. The case cell carries a static table of branch records (one
+A. [x] `case` = one interaction (landed; one level of lebc: 22 → 5 interactions = hand count;
+   8-element merges 3492 → 1346; tests/check.ctt 6.6M → 3.5M). Also: closed-λ/constant definitions unfold in
+   one interaction (built from syntax), saturated constructor applications compile to the constructor,
+   a case without a motive has no motive port. The case cell carries a static table of branch records (one
    multi-parameter Record per constructor: parameters = fields, hypotheses, dimensions; environment =
    the shared variables), and the shared variables once as ports. CASE meets CON: build the selected
    branch's record with the constructor's fields and the case's environment ports (unused ones erased).
