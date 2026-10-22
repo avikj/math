@@ -77,3 +77,9 @@
 (supply pp3 (lam x pth))
 (show (the (PathP (plam i A) (L3 (pair b b)) (L3 (pair b b))) (plam i (L3 (pair b b)))))
 (same (the A (L3 (pair b b))) a)
+
+; inside a function: the reading takes a use of L in a body it builds to the same end
+(watch fw (lam y (L y)))
+(same-watch fw (lam y a))
+(same-watch fw (lam y (fst y)) 0)
+(same (lam y (pair (L y) c)) (lam y (pair a c)))

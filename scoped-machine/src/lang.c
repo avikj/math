@@ -1566,13 +1566,22 @@ static Cell *observe(Port prov) {
 }
 static long *unfolding; static size_t capunfold; static int nunfold;
 static void rb(FILE *o, Port prov);
+/* the substitution a reading is taken under (every identity's dimension at the answer's end, or
+ * at the posed end): a body the reading builds (a λ applied to a fresh variable, a neutral case's
+ * branch, a definition's value) is built after that substitution passed, so it is applied there */
+static Subst *rb_sub;
+static Port rb_under(Port p) {
+    if (!rb_sub) return p;
+    Cell *c = cell(O_SUBST, 2); c->p = subst_retain(rb_sub); link(p, P(c, 0));
+    return P(c, 1);
+}
 static Port apply_fresh(Port f, long *name) {
     *name = fresh_var("x", vcount++);
     Cell *v = cell(V_NVAR, 2); v->a = (uint64_t)*name;
     Cell *u = cell(V_UNK, 1); link(P(u, 0), P(v, 1));
     Cell *a = cell(O_APP, 3);
     link(f, P(a, 0)); link(P(v, 0), P(a, 1));
-    return P(a, 2);
+    return rb_under(P(a, 2));
 }
 /* Reading a value back runs on an explicit stack of tasks, so the depth of a
  * value is bounded by memory, not by the native stack. */
@@ -1718,7 +1727,7 @@ static void rb_one(FILE *o, Port prov) {
             }
             snprintf(pat + at, sizeof pat - (size_t)at, ") ");
             for (int e = 0; e < ne; e++) env[e] = ec[e][k];
-            push_str(")"); push_port(record_build_n(tb->br[k], prm, env)); push_str(pat);
+            push_str(")"); push_port(rb_under(record_build_n(tb->br[k], prm, env))); push_str(pat);
         }
         push_field(c, 1);
         if (c->x) { push_str(" "); push_field(c, 2); }
@@ -1739,7 +1748,7 @@ static void rb_one(FILE *o, Port prov) {
         if (!v) { fputs(name_of(g), o); return; }
         GROW(unfolding, capunfold, (size_t)nunfold + 1);
         unfolding[nunfold++] = g;
-        push_task(TK_POPUNFOLD, 0, NULL); push_port(v);
+        push_task(TK_POPUNFOLD, 0, NULL); push_port(rb_under(v));
         return;
     }
     }
@@ -1813,7 +1822,9 @@ static char *readback(Node *t, long *steps, long *erased) {
     if (reading) net_drain();
     long s0 = stat_steps, e0 = stat_kind[O_ERA];
     Port v = (t->list && t->n == 3 && is(t->it[0], "the")) ? typed_answer(t->it[1], t->it[2]) : as_answer(build_top(t));
+    rb_sub = answer_subst();
     char *buf = read_port(v);
+    subst_release(rb_sub); rb_sub = NULL;
     if (reading) net_drain();
     if (steps) *steps = stat_steps - s0;
     if (erased) *erased = stat_kind[O_ERA] - e0;
@@ -2304,9 +2315,10 @@ static void toplevel(Node *f) {
             Dnf *zero = dnf_zero();
             Subst *z = identity_subst(zero);
             dnf_release(zero);
-            if (z) { Cell *c = cell(O_SUBST, 2); c->p = z; link(hv, P(c, 0)); hv = P(c, 1); }
-        } else hv = as_answer(hv);
+            if (z) { Cell *c = cell(O_SUBST, 2); c->p = z; link(hv, P(c, 0)); hv = P(c, 1); rb_sub = subst_retain(z); }
+        } else { hv = as_answer(hv); rb_sub = answer_subst(); }
         rb(o, hv);
+        subst_release(rb_sub); rb_sub = NULL;
         fclose(o);
         char *b = readback(f->it[2], NULL, NULL);
         if (strcmp(buf, b)) { failures++; printf("FAIL: watch %s\n  left:  %s\n  right: %s\n", f->it[1]->s, buf, b); }

@@ -15,6 +15,21 @@ Every commit must pass `make test`. Push after every landed step. Commit trailer
     Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
     Claude-Session: https://claude.ai/code/session_019CdfGcL8YbfbiCH37R9UoY
 
+## ESSENTIAL REMAINING WORK (2026-10-22, user-approved criterion: material value as technology)
+
+Essential = what makes the runtime usable to build things: correct answers, actionable checks, and an
+interface other programs use. Not essential (cut): 7b (Gödel at the system itself: re-proves a known
+theorem), more paper material, surface syntax, further interaction-count cuts (not limiting).
+
+E1. [x] Identity answers inside bodies the reading builds (a λ applied to a fresh variable, a neutral
+    case's branch, a definition's value): the reading's substitution (identity dims at 1, or 0) is
+    applied there (lang.c rb_sub / rb_under). Before: (lam y (L y)) read as an unresolved path.
+E2. [ ] Rejection suite: one adversarial term per typing rule (tests/reject.ctt); fix what it finds.
+E3. [ ] Failure reasons: the failing subterm, its source position, expected and actual type.
+E4. [ ] Implicit arguments solved by unification (holes `_` in checked terms; levels/types inferred).
+E5. [ ] Files as modules: (import "f"), loaded once; checked results cached by content.
+E6. [ ] Embedding API: the machine as a C library (load program, supply inputs, read values, check).
+
 ## CURRENT DIRECTION (2026-10-22, supersedes the item list below)
 
 Findings, established by reading the code and the history (git log 10-14..10-22):
@@ -196,7 +211,7 @@ Library and acceptance tests:
    Sum/Empty/Unit/Bool, funext operations.
 7. Acceptance tests:
    (a) [x] the paper's boxes ported to the machine's language and checked (~500);
-   (b) [ ] the machine as an instance of the §4 theorems (~500): `Theory` on its own codes,
+   (b) [cut: not required, see ESSENTIAL] the machine as an instance of the §4 theorems (~500): `Theory` on its own codes,
        `Pf s = Σ d. chk s d ≡ true`, `HasDiagonal` by substitution on codes; halting via
        `lawvere-one-row`; Con/HBL1/¬OmegaBad remain hypotheses as in the box;
    (c) [x] 9.15 (~400): Multiset = free commutative monoid HIT; declaration over A:
