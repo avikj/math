@@ -117,7 +117,7 @@
 (def clsub (lam c (lmap (lam x (pair (flitl x) (if (flite x) i1 i0))) c)))
 
 ; ---------------------------------------------------------------- values
-(declare act act-branches act-neu vapp vfst vsnd papp mkglue mkgluev vunglue vcomp comp-head comp-pi comp-sigma comp-path comp-u comp-glue
+(declare act act-branches act-neu vapp vfst vsnd papp ntype mkglue mkgluev vunglue vcomp comp-head comp-pi comp-sigma comp-path comp-u comp-glue
          mkcon mkhcomp velim vtrans comp-data)
 ; Binders are functions taking the fresh-level counter k (every level in
 ; scope is below k) and their argument. Neutrals carry their types, so a
@@ -197,25 +197,42 @@
 ; eliminators; on a system they act branchwise, the other operand restricted
 (def vapp (lam k f x (case f
   ((vlam g) (g k x)) ((vlamc g c_ e_) (g k x))
-  ((vneu n T) (case T ((vpi A F) (vneu (napp f x) (F k x))) ((vpic A F c_ e_) (vneu (napp f x) (F k x))) (_ (vneu (napp f x) verr))))
+  ((vneu n T) (vneu (napp f x) verr))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vapp k (snd b) (restrict k (fst b) x)))) bs)))
   (_ verr))))
 (def vfst (lam k p (case p
   ((vpair a b) a)
-  ((vneu n T) (case T ((vsigma A F) (vneu (nfst p) A)) ((vsigmac A F c_ e_) (vneu (nfst p) A)) (_ (vneu (nfst p) verr))))
+  ((vneu n T) (vneu (nfst p) verr))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vfst k (snd b)))) bs)))
   (_ verr))))
 (def vsnd (lam k p (case p
   ((vpair a b) b)
-  ((vneu n T) (case T ((vsigma A F) (vneu (nsnd p) (F k (vfst k p)))) ((vsigmac A F c_ e_) (vneu (nsnd p) (F k (vfst k p)))) (_ (vneu (nsnd p) verr))))
+  ((vneu n T) (vneu (nsnd p) verr))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vsnd k (snd b)))) bs)))
   (_ verr))))
 (def papp (lam k p r (case p
   ((vplam f) (f k r)) ((vplamc f c_ e_) (f k r))
-  ((vneu n T) (case T
-     ((vpathp L a b) (if (izero r) a (if (ione r) b (vneu (npapp p r) (L k r)))))
-     (_ (vneu (npapp p r) verr))))
+  ((vneu n T) (if (orb (izero r) (ione r))
+     (case (ntype k p) ((vpathp L a b) (if (izero r) a b)) (_ (vneu (npapp p r) verr)))
+     (vneu (npapp p r) verr)))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (papp k (snd b) (isubst (clsub (fst b)) r)))) bs)))
+  (_ verr))))
+; The type of a neutral. Only a variable stores its type; a neutral built from
+; one (application, projection, ...) computes its type from its head's when
+; asked. Storing it would make each projection's type contain the earlier
+; projections with their types, a value exponential in the telescope's depth,
+; and values are copied whole.
+(def ntype (lam k v (case v
+  ((vneu n T) (case n
+     ((nvar l) T)
+     ((napp h a) (case (ntype k h) ((vpi A F) (F k a)) ((vpic A F c_ e_) (F k a)) (_ verr)))
+     ((nfst h) (case (ntype k h) ((vsigma A F) A) ((vsigmac A F c_ e_) A) (_ verr)))
+     ((nsnd h) (case (ntype k h) ((vsigma A F) (F k (vfst k h))) ((vsigmac A F c_ e_) (F k (vfst k h))) (_ verr)))
+     ((npapp h r) (case (ntype k h) ((vpathp L a b) (L k r)) (_ verr)))
+     ((ncomp L u a0) (L k i1))
+     ((nunglue S h) (case (ntype k h) ((vglue A S2) A) (_ verr)))
+     ((nelim P B x) (case P ((some p) (vapp k p x)) ((none) verr)))
+     ((ntrans d ls psi x sg) (vdata d (lmap (lam l (l k i1)) ls) sg))))
   (_ verr))))
 (def line-of (lam v (case v ((vplam f) f) ((vplamc f c_ e_) f) (_ (lam k r (papp k v r))))))
 
@@ -227,7 +244,7 @@
   ((some te) (vapp k (vfst k (vsnd k te)) b))
   ((none) (case b
      ((vgluev S2 a) a)
-     ((vneu n T) (case T ((vglue A S2) (vneu (nunglue S b) A)) (_ verr)))
+     ((vneu n T) (case (ntype k b) ((vglue A S2) (vneu (nunglue S b) verr)) (_ verr)))
      ((vsys bs) (vsys (lmap (lam bb (pair (fst bb) (vunglue k (act-branches k (clsub (fst bb)) S) (snd bb)))) bs)))
      (_ verr))))))
 
@@ -261,7 +278,7 @@
   ((vpathp P l r) (comp-path k (lam k2 i (lam k3 j (act k3 (single (pair k i)) (P k3 j)))) (reabs k l) (reabs k r) u a0))
   ((vu l) (comp-u k u a0))
   ((vglue A S) (comp-glue k (reabs k A) (reabs-branches k S) u a0))
-  ((vneu n T) (vneu (ncomp L u a0) (L k i1)))
+  ((vneu n T) (vneu (ncomp L u a0) verr))
   ((vdata d ps sg) (comp-data k sg d (lmap (reabs k) ps) u a0))
   ((vsys bs) (mksys (lmap (lam b (pair (fst b)
        (vcomp k (reabs k (snd b)) (lam k2 r (restrict k2 (fst b) (u k2 r))) (restrict k (fst b) a0))))
@@ -481,7 +498,7 @@
                         (velim k P B a)))
      ((none) (vneu (nelim P B x) verr))))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (velim k (opt-map (restrict k (fst b)) P) (restrict-B k (fst b) B) (snd b)))) bs)))
-  ((vneu n T) (vneu (nelim P B x) (case P ((some p) (vapp k p x)) ((none) verr))))
+  ((vneu n T) (vneu (nelim P B x) verr))
   (_ verr))))
 ; transport in a data family along its parameter lines ls, constant on psi
 (declare trans-con)
@@ -489,7 +506,7 @@
   ((vcon d2 c fs ds sg2) (trans-con k sg d ls psi c fs ds x))
   ((vhcomp u a) (mkhcomp k (lam k2 j (sys-map k2 (lam k3 w (vtrans k3 sg d ls psi w)) (u k2 j))) (vtrans k sg d ls psi a)))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vtrans k sg d (lmap (lam l (lam k1 r (restrict k1 (fst b) (l k1 r)))) ls) (fsubst (clsub (fst b)) psi) (snd b)))) bs)))
-  ((vneu n T) (vneu (ntrans d ls psi x sg) (vdata d (lmap (lam l (l k i1)) ls) sg)))
+  ((vneu n T) (vneu (ntrans d ls psi x sg) verr))
   (_ verr)))))
 ; θ_m = transFill^i of field m along its type at the parameters and earlier fields at i ∧ j
 (def field-fill (lam k sg d ls psi A prev x i
@@ -700,7 +717,7 @@
 (def convn (lam k u v n m (case n
   ((nvar l) (case m ((nvar l2) (eqn l l2)) (_ false)))
   ((napp h a) (case m ((napp h2 a2) (andb (convneu k h h2)
-       (case (type-of h) ((vpi A F) (conv k A a a2)) ((vpic A F c_ e_) (conv k A a a2)) (_ (uconv k a a2))))) (_ false)))
+       (case (ntype k h) ((vpi A F) (conv k A a a2)) ((vpic A F c_ e_) (conv k A a a2)) (_ (uconv k a a2))))) (_ false)))
   ((nfst h) (case m ((nfst h2) (convneu k h h2)) (_ false)))
   ((nsnd h) (case m ((nsnd h2) (convneu k h h2)) (_ false)))
   ((npapp h r) (case m ((npapp h2 r2) (andb (convneu k h h2) (ieq r r2))) (_ false)))
@@ -712,7 +729,7 @@
   ((nelim P B x) (case m ((nelim P2 B2 x2) (andb (convneu k x x2) (andb (eqn (brs-d B) (brs-d B2))
        (if (if (lall2 code-eq (brs-cs B) (brs-cs B2)) (uconv-l k (brs-env B) (brs-env B2)) false) true
             (conv-branches-at k P B B2 (brs-d B)
-              (case (type-of x) ((vdata d ps sg) (some ps)) (_ none)) (brs-sg B) nz
+              (case (ntype k x) ((vdata d ps sg) (some ps)) (_ none)) (brs-sg B) nz
               (llen (dctors (dentry (brs-sg B) (brs-d B))))))))) (_ false)))
   ((ntrans d ls psi x sg) (case m ((ntrans d2 ls2 psi2 x2 sg2) (andb (eqn d d2) (andb (feqf psi psi2)
        (andb (conv-tele (ns k) sg (dptys (dentry sg d)) (lmap (lam l (l (ns k) (ivar k))) ls) (lmap (lam l (l (ns k) (ivar k))) ls2) lnil)

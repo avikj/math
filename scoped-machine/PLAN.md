@@ -158,4 +158,11 @@ a QIIT, inductive-inductive families, Delay/M-types.
 - pathToEquiv-ua: checked in 12M interactions once transportIsEquiv is η-expanded (its value becomes a
   closure over its code, which conversion compares unapplied). Before, comparing the two identical
   transported isEquiv proofs computed CCHM Glue composition on both sides and ran for hours.
+- Neutral types computed on demand (`ntype` in check.ctt). Before, every neutral stored its type, so
+  the type of `snd^k D` held `fst (snd^j D)` for j<k each with its own stored type; values are copied
+  whole by the net, so a telescope of depth k cost ~8^k (measured, a Σ chain each component a path
+  between the previous one and itself: p2..p6 = 54K, 366K, 2.6M, 19.6M, 159M steps; after: 36K, 122K,
+  335K, 784K, 1.6M). Box 7's `diagonalGivesGoedelFix` ran for over an hour; its core `snd (dfix ..)`
+  now checks in 4M. Only a variable stores its type; papp at an endpoint, unglue, argument comparison
+  and elimination fields ask `ntype`. tests/check.ctt: 9.2M → 6.6M steps.
 - Running: `make library` = std + boxes, std + sort. Status of each run is recorded below when known.
