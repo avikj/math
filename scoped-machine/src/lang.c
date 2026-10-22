@@ -44,23 +44,28 @@ static Node *read_node(void) {
     skip();
     if (!*src) return NULL;
     if (*src == ')') die("unexpected )", NULL);
-    if (*src == '(') {
+    if (*src == '}') die("unexpected }", NULL);
+    if (*src == '(' || *src == '{') {
+        /* {x A}: an implicit binder, {a}: an implicit argument given; both read as (%imp ...) */
+        char close = *src == '(' ? ')' : '}';
+        bool imp = *src == '{';
         src++;
         Node **items = NULL; size_t cap = 0; int n = 0;
         for (;;) {
             skip();
-            if (!*src) die("unclosed (", NULL);
-            if (*src == ')') { src++; break; }
+            if (!*src) die(imp ? "unclosed {" : "unclosed (", NULL);
+            if (*src == ')' || *src == '}') { if (*src != close) die("mismatched bracket", NULL); src++; break; }
             GROW(items, cap, (size_t)n + 1);
             items[n++] = read_node();
         }
-        Node *x = nlist(n);
-        if (n) memcpy(x->it, items, (size_t)n * sizeof(Node *));
+        Node *x = nlist(n + imp);
+        if (imp) x->it[0] = nsym("%imp");
+        if (n) memcpy(x->it + imp, items, (size_t)n * sizeof(Node *));
         free(items);
         return x;
     }
     const char *b = src;
-    while (*src && !isspace((unsigned char)*src) && *src != '(' && *src != ')' && *src != ';') src++;
+    while (*src && !isspace((unsigned char)*src) && *src != '(' && *src != ')' && *src != '{' && *src != '}' && *src != ';') src++;
     size_t len = (size_t)(src - b);
     char *buf = malloc(len + 1);
     memcpy(buf, b, len); buf[len] = 0;
@@ -86,7 +91,7 @@ static bool node_eq(Node *a, Node *b) {
 /* ---------------- desugaring to the core forms ---------------- */
 static const char *KW[] = { "%raw", "%welimP", "lam", "thunk", "delay", "force", "case", "elim", "if", "rec", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
     "PathP", "@", "~", "/\\", "\\/", "=", "&", "|", "faceof", "sys", "sys0", "sys+", "sysmap", "comp", "Glue", "glue",
-    "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", "%clos", "%box", "%wsucc", "%weq", "%wlt", "%wadd", "%wmax", "%wsub", "%welim", "%metaref", "%meta-set", "%abstract", "%meta-type", "%meta-type-set", NULL };
+    "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", "%clos", "%box", "%wsucc", "%weq", "%wlt", "%wadd", "%wmax", "%wsub", "%welim", "%metaref", "%meta-set", "%abstract", "%meta-type", "%meta-type-set", "%dims-sub", "%dim-atom", "%meta-solved", "%meta-typed", NULL };
 static bool keyword(const char *s) { for (int i = 0; KW[i]; i++) if (!strcmp(KW[i], s)) return true; return false; }
 static Node *param_name(Node *p) { return p->list ? p->it[0] : p; }
 
@@ -175,13 +180,76 @@ static bool mentions_rec(Node *t, Node **names, int n) {
     for (int i = 0; i < t->n; i++) if (mentions_rec(t->it[i], names, n)) return true;
     return false;
 }
+/* Elaboration (on while a checked form is desugared): `_` is a hole, a metavariable applied to the
+ * term variables in scope; a checked definition's implicit parameters are filled with holes at
+ * its uses. The local names in scope, each marked when it is a term variable a hole may depend on
+ * (a λ's or Π's or Σ's variable, a constructor's field) or dimension (a line's, a path
+ * constructor's); lets are not: a hole's solution may mention only what the hole is applied to. */
+static bool elab_on;
+static const char **dsc_name; static char *dsc_term; static size_t capdscn, capdsct; static int ndsc;
+static void dsc_push(const char *x, int term) { GROW(dsc_name, capdscn, (size_t)ndsc + 1); GROW(dsc_term, capdsct, (size_t)ndsc + 1); dsc_name[ndsc] = x; dsc_term[ndsc] = term; ndsc++; }
+static bool dsc_local(const char *x) { for (int i = ndsc - 1; i >= 0; i--) if (!strcmp(dsc_name[i], x)) return true; return false; }
+long meta_new(void);
+long meta_count(void);
+struct Cell *meta_root(long k);
+static Node *word(long n);
+static Node *ds_hole(void) {
+    long k = meta_new();
+    Node *h = nl2("%metaref", word(k));
+    for (int i = 0; i < ndsc; i++) {
+        if (!dsc_term[i] || dsc_name[i][0] == '%' || !strcmp(dsc_name[i], "_")) continue;
+        bool later = false;
+        for (int j = i + 1; j < ndsc; j++) if (!strcmp(dsc_name[j], dsc_name[i])) later = true;
+        if (!later) h = dsc_term[i] == 2 ? nl3("@", h, nsym(dsc_name[i])) : nl3("app", h, nsym(dsc_name[i]));
+    }
+    return h;
+}
+static bool imp_flags(const char *name, uint64_t *fl, int *n);
+/* a use of a checked definition with implicit parameters: a hole for each implicit parameter
+ * before the next explicit argument, or the argument given as {a} */
+static Node *ds_implicit(Node *h, Node **args, int na) {
+    uint64_t fl; int n;
+    if (!elab_on || h->list || dsc_local(h->s) || !imp_flags(h->s, &fl, &n)) {
+        Node *f = (h->list || (elab_on && !strcmp(h->s, "_"))) ? ds(h) : h;
+        for (int i = 0; i < na; i++) {
+            if (args[i]->list && args[i]->n >= 1 && is(args[i]->it[0], "%imp")) die("an implicit argument {a} to a function without implicit parameters:", h->list ? "(...)" : h->s);
+            f = nl3("app", f, ds(args[i]));
+        }
+        return f;
+    }
+    Node *f = h; int ai = 0;
+    for (int pos = 0; pos < n; pos++) {
+        bool imp = fl >> pos & 1;
+        bool given = ai < na && args[ai]->list && args[ai]->n >= 1 && is(args[ai]->it[0], "%imp");
+        if (imp) {
+            if (given) { if (args[ai]->n != 2) die("{a}: one argument", NULL); f = nl3("app", f, ds(args[ai]->it[1])); ai++; }
+            else f = nl3("app", f, ds_hole());
+        } else {
+            if (ai == na) break;
+            if (given) die("an implicit argument {a} where an explicit one is expected, in a use of", h->s);
+            f = nl3("app", f, ds(args[ai++]));
+        }
+    }
+    for (; ai < na; ai++) {
+        if (args[ai]->list && args[ai]->n >= 1 && is(args[ai]->it[0], "%imp")) die("an implicit argument {a} past the implicit parameters of", h->s);
+        f = nl3("app", f, ds(args[ai]));
+    }
+    return f;
+}
 static Node *ds_lam(Node **ps, int np, Node *body, const char *b) {
     if (np == 0) return ds(body);
-    return nl3(b, param_name(ps[0]), ds_lam(ps + 1, np - 1, body, b));
+    dsc_push(param_name(ps[0])->s, !strcmp(b, "lam") ? 1 : 2);
+    Node *r = nl3(b, param_name(ps[0]), ds_lam(ps + 1, np - 1, body, b));
+    ndsc--;
+    return r;
 }
 static void arity(Node *t, int n) { if (t->n != n + 1) { print_node(stderr, t); die("wrong number of operands in", t->it[0]->s); } }
 static Node *ds(Node *t) {
-    if (!t->list) return t;
+    if (!t->list) {
+        if (elab_on && !strcmp(t->s, "_")) return ds_hole();
+        if (elab_on) return ds_implicit(t, NULL, 0);
+        return t;
+    }
     if (t->n == 0) die("empty list", NULL);
     Node *h = t->it[0];
     if (!h->list && keyword(h->s)) {
@@ -299,7 +367,10 @@ static Node *ds(Node *t) {
                         rs_field[nrs] = rn[q]->s; rs_ih[nrs] = ihn[q]; nrs++;
                     }
                 }
+                int dsave = ndsc;
+                if (pat) for (int f = 1; f < pat->n; f++) if (!pat->it[f]->list) dsc_push(pat->it[f]->s, f <= c->nfields ? 1 : 2);
                 Node *hnd = nl2("thunk", ds(body));
+                ndsc = dsave;
                 nrs = save;
                 for (int f = c->nfields + c->ndims; f > c->nfields; f--) {
                     Node *x = pat ? pat->it[f] : NULL;
@@ -337,8 +408,8 @@ static Node *ds(Node *t) {
             return nl4("%case", B, env, ds(t->it[1]));
         }
         if (!strcmp(k, "lam") || !strcmp(k, "plam")) { if (t->n < 3) die("binder without body", NULL); return ds_lam(t->it + 1, t->n - 2, t->it[t->n - 1], k); }
-        if (!strcmp(k, "forall")) { arity(t, 2); return nl3("forall", t->it[1], ds(t->it[2])); }
-        if (!strcmp(k, "let")) { arity(t, 3); return nl4("let", t->it[1], ds(t->it[2]), ds(t->it[3])); }
+        if (!strcmp(k, "forall")) { arity(t, 2); dsc_push(t->it[1]->s, 0); Node *b = ds(t->it[2]); ndsc--; return nl3("forall", t->it[1], b); }
+        if (!strcmp(k, "let")) { arity(t, 3); Node *a = ds(t->it[2]); dsc_push(t->it[1]->s, 0); Node *b = ds(t->it[3]); ndsc--; return nl4("let", t->it[1], a, b); }
         if ((!strcmp(k, "Pi") || !strcmp(k, "Sigma")) && t->n == 3 && t->it[1]->list && t->it[1]->n >= 1 && t->it[1]->it[0]->list) {
             /* a telescope: (Pi ((x A) (y B) ...) C) */
             Node *tel = t->it[1], *r = t->it[2];
@@ -354,7 +425,10 @@ static Node *ds(Node *t) {
             if (t->n == 4) { x = t->it[1]; A = t->it[2]; B = t->it[3]; }
             else if (t->n == 3 && t->it[1]->list && t->it[1]->n == 2) { x = t->it[1]->it[0]; A = t->it[1]->it[1]; B = t->it[2]; }
             else die("malformed", k);
-            return nl3(k, ds(A), nl3("lam", x, ds(B)));
+            if (x->list) die("malformed binder in", k);
+            Node *dA = ds(A);
+            dsc_push(x->s, 1); Node *dB = ds(B); ndsc--;
+            return nl3(k, dA, nl3("lam", x, dB));
         }
         if (!strcmp(k, "sys")) {
             Node *r = nlist(1); r->it[0] = nsym("sys0");
@@ -389,9 +463,7 @@ static Node *ds(Node *t) {
         for (int i = 1; i < t->n; i++) r->it[i] = (!strcmp(k, "=") && i == 2) ? t->it[i] : ds(t->it[i]);
         return r;
     }
-    Node *f = ds(h);
-    for (int i = 1; i < t->n; i++) f = nl3("app", f, ds(t->it[i]));
-    return f;
+    return ds_implicit(h, t->it + 1, t->n - 1);
 }
 
 /* ---------------- codes of source terms ----------------
@@ -700,6 +772,14 @@ static NV ann(Node *t, Chain *C) {
     {
         Node *h = t; int na = 0;
         while (h->list && h->n == 3 && is(h->it[0], "app")) { h = h->it[1]; na++; }
+        Node *hh = h;
+        while (hh->list && hh->n == 3 && (is(hh->it[0], "app") || is(hh->it[0], "@"))) hh = hh->it[1];
+        if (hh->list && hh->n == 2 && is(hh->it[0], "%metaref")) {
+            h = hh;
+            /* a hole: its metavariable applied to the term variables in scope */
+            p[0] = h->it[1];
+            return anode(C, "thole", p, 1, vsrc0(t));
+        }
         if (!h->list && !ascope(h->s)) {
             int c = con_lookup(h->s), d = data_lookup(h->s);
             if (c >= 0 && na < CON[c].nfields && !CON[c].ndims) {
@@ -901,6 +981,7 @@ typedef struct {
     Cell *res;                       /* holds the definition's value; a use copies it */
     long tyg;                        /* an axiom's type: the global holding it, or -1 */
     Cell **park_o, **park_v; int npark, parkcap;
+    uint64_t imp; int nimp;          /* a checked definition's leading parameters, and which are implicit */
 } Global;
 static Global *G; static long nG, capG;
 static char **fresh_names; static long nfresh, capfresh;
@@ -924,6 +1005,39 @@ static void gh_put(const char *name, long g) {
     size_t j = name_hash(name) & (capGH - 1);
     while (GH[j] >= 0 && strcmp(G[GH[j]].name, name)) j = (j + 1) & (capGH - 1);
     GH[j] = g;
+}
+static bool imp_flags(const char *name, uint64_t *fl, int *n) {
+    long g = global_lookup(name);
+    if (g < 0 || !G[g].imp) return false;
+    *fl = G[g].imp; *n = G[g].nimp;
+    return true;
+}
+/* the leading telescope of a declared type, its implicit binders {x A} made ordinary: which are
+ * implicit, by position */
+static Node *strip_imp(Node *T, uint64_t *fl, int *n) {
+    if (!T->list || T->n < 3 || !is(T->it[0], "Pi")) return T;
+    Node *r = nlist(T->n); for (int i = 0; i < T->n; i++) r->it[i] = T->it[i];
+    if (T->n == 3 && T->it[1]->list && T->it[1]->n >= 1 && T->it[1]->it[0]->list) {
+        /* (Pi ((x A) {y B} ...) C) */
+        Node *tel = nlist(T->it[1]->n);
+        for (int q = 0; q < tel->n; q++) {
+            Node *b = T->it[1]->it[q];
+            if (b->list && b->n == 3 && is(b->it[0], "%imp")) { Node *nb = nlist(2); nb->it[0] = b->it[1]; nb->it[1] = b->it[2]; b = nb; if (*n < 64) *fl |= 1ull << *n; }
+            tel->it[q] = b; (*n)++;
+        }
+        r->it[1] = tel; r->it[2] = strip_imp(T->it[2], fl, n);
+        return r;
+    }
+    if (T->n == 3 && T->it[1]->list && T->it[1]->n == 3 && is(T->it[1]->it[0], "%imp")) {
+        /* (Pi {x A} B) */
+        Node *b = nlist(2); b->it[0] = T->it[1]->it[1]; b->it[1] = T->it[1]->it[2];
+        if (*n < 64) *fl |= 1ull << *n;
+        (*n)++; r->it[1] = b; r->it[2] = strip_imp(T->it[2], fl, n);
+        return r;
+    }
+    (*n)++;
+    r->it[r->n - 1] = strip_imp(T->it[T->n - 1], fl, n);
+    return r;
 }
 long global_lookup(const char *name) {
     if (name[0] == '%' && name[1] == '%') { for (long g = 0; g < nG; g++) if (!strcmp(G[g].name, name + 2)) return g; return -1; }
@@ -1498,7 +1612,8 @@ static Syn *compile(Node *t) {
             { "%restrict", O_RESTRICT, 2 }, { "%abs", O_ABS, 2 }, { "%branch", O_BRANCH, 3 }, { "%clos", O_CLOS, 2 }, { "%wsucc", O_WSUCC, 1 }, { "%weq", O_WEQ, 2 }, { "%wlt", O_WLT, 2 },
             { "%wadd", O_WADD, 2 }, { "%wmax", O_WMAX, 2 }, { "%wsub", O_WSUB, 2 }, { "%welim", O_WELIM, 3 },
             { "%metaref", O_METAREF, 1 }, { "%meta-set", O_METASET, 2 }, { "%abstract", O_ABSTRACT, 2 },
-            { "%meta-type", O_METATY, 1 }, { "%meta-type-set", O_METATY, 2 }, { NULL, 0, 0 } };
+            { "%meta-type", O_METATY, 1 }, { "%meta-type-set", O_METATY, 2 }, { "%dims-sub", O_DSUB, 2 }, { "%dim-atom", O_DATOM, 1 },
+            { "%meta-solved", O_METASOLVED, 1 }, { "%meta-typed", O_METATYPED, 1 }, { NULL, 0, 0 } };
         if (!strcmp(h, "%welimP")) {
             /* (%welimP P w z s): the elimination of a word with its motive, which is for the
              * checker: the machine runs (%welim w z s) */
@@ -1598,6 +1713,7 @@ long meta_new(void) {
     return nmetas++;
 }
 Cell *meta_root(long k) { return k >= 0 && k < nmetas ? METAS[k] : NULL; }
+long meta_count(void) { return nmetas; }
 Cell *meta_type_root(long k) { return k >= 0 && k < nmetas ? METATY[k] : NULL; }
 /* the source names of dimensions the checker made for binders (a map from dimension to name) */
 typedef struct { Dim d; int nm; } DimNm;
@@ -1745,7 +1861,7 @@ static void rb_one(FILE *o, Port prov) {
         Cell *root = meta_root((long)c->a);
         extern Port lazy_copy(Cell *root);
         if (root && root->port[0]) { push_port(lazy_copy(root)); return; }
-        oprintf("?%llu", (unsigned long long)c->a); return;
+        fprintf(o, "?%llu", (unsigned long long)c->a); return;
     }
     case V_THUNK: { extern Port thunk_build(Cell *c); push_port(thunk_build(c)); return; }
     case V_UNK: fputs("?", o); return;
@@ -2047,22 +2163,40 @@ static void toplevel(Node *f) {
         bool define = !strcmp(h, "checked"), expect = strcmp(h, "check-fail") != 0;
         int at = define ? 2 : 1;
         if (f->n != at + 2) die(define ? "(checked name T t)" : "(check T t)", NULL);
-        Node *T = f->it[at], *t = f->it[at + 1];
-        Node *cT = nl2("%raw", aclosed(ds(T))), *ct = trusted ? NULL : nl2("%raw", aclosed(ds(t)));
+        /* elaborated: holes and implicit arguments become metavariables, which the checker solves */
+        uint64_t fl = 0; int nfl = 0;
+        Node *T = strip_imp(f->it[at], &fl, &nfl), *t = f->it[at + 1];
+        long m0 = meta_count();
+        elab_on = true; ndsc = 0;
+        Node *dT = ds(T), *dt = ds(t);
+        elab_on = false; ndsc = 0;
+        long m1 = meta_count();
+        /* a module's cached checks are not rerun, except where they solve metavariables */
+        bool run = !trusted || m1 > m0;
+        Node *cT = nl2("%raw", aclosed(dT)), *ct = run ? nl2("%raw", aclosed(dt)) : NULL;
         long steps = 0;
-        char *r = trusted ? strdup("ok") : readback(nl3("%%chk-def", cT, ct), &steps, NULL), *tr = strdup("ok");
-        bool accepted = !strcmp(r, tr), ok = accepted == expect;
+        char *r = run ? readback(nl3("%%chk-def", cT, ct), &steps, NULL) : strdup("ok"), *tr = strdup("ok");
+        bool accepted = !strcmp(r, tr);
+        long unsolved = -1;
+        if (accepted) for (long k = m0; k < m1 && unsolved < 0; k++) if (!meta_root(k)->port[0]) unsolved = k;
+        if (unsolved >= 0) { accepted = false; free(r); r = strdup("unsolved"); }
+        bool ok = accepted == expect;
         if (ok) passes++; else failures++;
         if (!trusted) {
             oprintf("%s: %s ", ok ? "ok" : "FAIL", expect ? "checks" : "rejected");
             if (define) oprintf("%s", f->it[1]->s); else print_node(OUT, t);
             oprintf("   [%ld steps]\n", steps);
         }
-        if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
+        if (!accepted && (expect || getenv("CUBICAL_WHY"))) {
+            if (unsolved >= 0) oprintf("   reason: a hole or implicit argument is not determined by the types (give it: {a}, or a term for _)\n");
+            else explain(r);
+        }
         free(r); free(tr);
         if (define && ok) {
-            Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = f->it[1]; d->it[2] = t;
+            Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = f->it[1]; d->it[2] = nl2("%raw", dt);
             toplevel(d);
+            long g = global_lookup(f->it[1]->s);
+            G[g].imp = fl; G[g].nimp = nfl;
             /* the checker's tables: the definition and its type, each a global, so a lookup
              * is a reference */
             char ty[32]; snprintf(ty, sizeof ty, "%%sty%d", nchecked);

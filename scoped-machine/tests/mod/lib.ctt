@@ -1,2 +1,7 @@
 ; tests/mod/lib.ctt — a module: imported once, its checks cached by content
 (checked double (Pi n Nat Nat) (lam n (case n ((zero) zero) ((suc k) (suc (suc (rec k)))))))
+; implicit parameters, and a use solved by unification: run again when cached, to solve it
+(checked ap (Pi ({A U} {B U} (f (Pi a A B)) {x A} {y A} (p (PathP (plam i A) x y))) (PathP (plam i B) (f x) (f y)))
+  (lam A B f x y p (plam i (f (@ p i)))))
+(checked apdouble (Pi ((n Nat) (m Nat) (p (PathP (plam i Nat) n m))) (PathP (plam i Nat) (double n) (double m)))
+  (lam n m p (ap double p)))

@@ -32,12 +32,13 @@ test: build/cubical build/cubical-asan build/embed
 	./build/cubical lib/prelude.ctt tests/identity.ctt
 	./build/cubical lib/prelude.ctt tests/hit.ctt
 	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt
-	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/reject.ctt
+	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/reject.ctt tests/implicit.ctt
 	./build/embed | diff - examples/embed.out
 	rm -rf build/cache-test
 	env -u CUBICAL_NOCACHE CUBICAL_CACHE=build/cache-test ./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/mod/main.ctt | tail -1
 	env -u CUBICAL_NOCACHE CUBICAL_CACHE=build/cache-test ./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/mod/main.ctt | grep -c "^cached: " | grep -qx 6
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/identity.ctt > /dev/null
+	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/implicit.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/hit.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/cubical.ctt > /dev/null

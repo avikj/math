@@ -203,6 +203,11 @@ enum {
     O_METASET,  /* 0=k 1=solution 2=out: true when it solves k, false when k was solved */
     O_ABSTRACT, /* 0=a variable 1=value 2=out: the value as a function of the variable */
     O_METATY,   /* 0=k [1=type] out: set metavariable k's type (true when first), or read it (? when none) */
+    O_METASOLVED, /* 0=k 1=out: whether metavariable k is solved, a Bool */
+    O_METATYPED,  /* 0=k 1=out: whether its type is recorded, a Bool */
+    O_DSUB,     /* 0=r 1=s 2=out: every dimension of r occurs in s (intervals or faces), a Bool */
+    O_DSUBB,    /* p=Dnf r; 0=s 1=out */
+    O_DATOM,    /* 0=r 1=out: r is one dimension (not 0, 1, ~i, or a meet or join), a Bool */
     O_CLOS,     /* 0=f 1=g 2=out */
     O_CLOS2,    /* 0=g 1=f 2=out: (csame pairs) when f, g are λs of one record, the pairs of their
                  * environments; else (cdiff f g), both untouched */

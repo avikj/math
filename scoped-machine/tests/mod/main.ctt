@@ -3,3 +3,6 @@
 (import "lib.ctt")
 (checked quad (Pi n Nat Nat) (lam n (double (double n))))
 (same (quad (suc zero)) (suc (suc (suc (suc zero)))))
+(same (@ (apdouble zero zero (plam i zero)) 1) zero)
+; unchecked forms apply a definition to all its parameters, implicit ones included
+(same (@ (ap Nat Nat quad zero zero (apdouble zero zero (plam i zero))) 0) zero)

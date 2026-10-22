@@ -1,0 +1,35 @@
+; tests/implicit.ctt — holes and implicit arguments, solved by unification. Loaded after lib/std.ctt.
+(checked sym' (Pi ({l Level} {A (U l)} {x A} {y A} (p (PathP (plam i A) x y))) (PathP (plam i A) y x))
+  (lam l A x y p (plam i (@ p (~ i)))))
+(checked cong' (Pi ({l Level} {m Level} {A (U l)} {B (U m)} (f (Pi a A B)) {x A} {y A} (p (PathP (plam i A) x y)))
+    (PathP (plam i B) (f x) (f y)))
+  (lam l m A B f x y p (plam i (f (@ p i)))))
+(checked transport' (Pi ({l Level} {A (U l)} {B (U l)} (p (PathP (plam i (U l)) A B)) (a A)) B)
+  (lam l A B p a (comp (plam i (@ p i)) (plam i (sys)) a)))
+; uses: every implicit argument found from the explicit ones' types
+(checked symsym (Pi ((A U) (x A) (y A) (p (PathP (plam i A) x y))) (PathP (plam i A) x y))
+  (lam A x y p (sym' (sym' p))))
+(checked congsuc (Pi ((n Nat) (m Nat) (p (PathP (plam i Nat) n m))) (PathP (plam i Nat) (suc n) (suc m)))
+  (lam n m p (cong' suc p)))
+(checked tr (Pi ((A U) (B U) (p (PathP (plam i U) A B)) (a A)) B) (lam A B p a (transport' p a)))
+; a hole for any argument
+(checked tr2 (Pi ((A U) (a A)) A) (lam A a (transport lzero _ _ (plam i A) a)))
+; an implicit argument given
+(checked symA (Pi ((A U) (x A)) (PathP (plam i A) x x)) (lam A x (sym' {lzero} {A} (plam i x))))
+; a hole under a binder: its solution depends on the binder's variable
+(checked congf (Pi ((f (Pi n Nat Nat)) (n Nat) (m Nat) (p (PathP (plam i Nat) n m))) (PathP (plam i Nat) (f n) (f m)))
+  (lam f n m p (cong' (lam k (f k)) p)))
+; the results compute
+(same (symsym Nat zero zero (plam i zero)) (plam i zero))
+(same (@ (congsuc zero zero (plam i zero)) 0) (suc zero))
+; not determined by the types: rejected
+(check-fail (Pi (A U) U) (lam A _))
+(check-fail Nat (sym' _))
+; a hole under a line: its solution depends on the line's dimension
+(checked refl' (Pi ({l Level} {A (U l)} {x A}) (PathP (plam i A) x x)) (lam l A x (plam i x)))
+(checked sq (Pi ((A U) (x A) (y A) (p (PathP (plam i A) x y)))
+    (PathP (plam j (PathP (plam i A) (@ p j) (@ p j))) (plam i x) (plam i y)))
+  (lam A x y p (plam j refl')))
+(same (@ (sq Nat zero zero (plam i zero)) 0) (plam i zero))
+; an implicit argument given wrongly is a type error
+(check-fail (Pi ((A U) (x A)) (PathP (plam i A) x x)) (lam A x (sym' {lzero} {Nat} (plam i x))))

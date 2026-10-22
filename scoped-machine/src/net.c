@@ -33,7 +33,7 @@ Cell *cell(int kind, int n) {
     return c;
 }
 /* the payload a cell owns */
-static bool owns_dnf(int k) { return k == O_PEND || k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2 || k == V_NTRANS || k == O_TRANSD2 || k == O_IEQB || k == O_FEQLB; }
+static bool owns_dnf(int k) { return k == O_PEND || k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2 || k == V_NTRANS || k == O_TRANSD2 || k == O_IEQB || k == O_FEQLB || k == O_DSUBB; }
 static bool owns_subst(int k) { return k == O_SUBST || k == V_DEFER; }
 static void box_release(Box *b);
 static void box_hold(Box *b);
@@ -1430,6 +1430,14 @@ static void interact(Cell *o, Cell *v) {
         cell_free(o); cell_free(v);
         return;
     }
+    case O_METASOLVED: case O_METATYPED: {
+        if (vk != V_WORD || v->p || !meta_root((long)v->a)) { stuck(o, v); return; }
+        need_bool();
+        Cell *root = o->kind == O_METATYPED ? meta_type_root((long)v->a) : meta_root((long)v->a);
+        link(con_build(root->port[0] ? B_TRUE : B_FALSE, NULL, NULL), o->port[1]);
+        cell_free(o); cell_free(v);
+        return;
+    }
     case O_METATY: {
         if (vk != V_WORD || v->p || !meta_type_root((long)v->a)) { stuck(o, v); return; }
         Cell *root = meta_type_root((long)v->a);
@@ -1625,6 +1633,37 @@ static void interact(Cell *o, Cell *v) {
         cell_free(o); cell_free(v);
         return;
     }
+    case O_DSUB: {
+        if (vk != V_IV && vk != V_FACE) { stuck(o, v); return; }
+        Cell *c = cell(O_DSUBB, 2); c->p = dnf_retain(v->p);
+        mv(o, 1, P(c, 0)); mv(o, 2, P(c, 1));
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_DATOM: {
+        need_cons();
+        const Dnf *r = vk == V_IV ? v->p : NULL;
+        bool atom = r && r->n == 1 && r->c[0]->n == 1 && !(r->c[0]->l[0] & 1);
+        link(con_build(atom ? C_TRUE : C_FALSE, NULL, NULL), o->port[1]);
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_DSUBB: {
+        need_cons();
+        if (vk != V_IV && vk != V_FACE) { stuck(o, v); return; }
+        const Dnf *r = o->p, *t = v->p;
+        bool sub = true;
+        for (uint32_t a = 0; sub && r && a < r->n; a++)
+            for (uint32_t b = 0; sub && b < r->c[a]->n; b++) {
+                uint64_t d = r->c[a]->l[b] >> 1; bool found = false;
+                for (uint32_t x = 0; !found && t && x < t->n; x++)
+                    for (uint32_t y = 0; !found && y < t->c[x]->n; y++) if (t->c[x]->l[y] >> 1 == d) found = true;
+                sub = found;
+            }
+        link(con_build(sub ? C_TRUE : C_FALSE, NULL, NULL), o->port[1]);
+        cell_free(o); cell_free(v);
+        return;
+    }
     case O_IEQB: case O_FEQLB: {
         need_cons();
         if (vk != (o->kind == O_IEQB ? V_IV : V_FACE)) { fprintf(stderr, "%%ieq/%%feq: not an interval or face\n"); exit(2); }
@@ -1675,9 +1714,9 @@ static int lockset(Cell *o, Cell *v, Cell **S, int cap) {
     for (int k = 1; k < o->n; k++) { Port p = rd(o, k); if (p) S[n++] = PC(p); }
     for (int k = 1; k < v->n; k++) { Port p = rd(v, k); if (p) S[n++] = PC(p); }
     if (v->kind == V_GLOBAL) { Cell *r = global_res((long)v->a); S[n++] = r; Port p = rd(r, 0); if (p) S[n++] = PC(p); }
-    if (v->kind == V_META || ((o->kind == O_METAREF || o->kind == O_METASET || o->kind == O_METATY) && v->kind == V_WORD && !v->p)) {
+    if (v->kind == V_META || ((o->kind == O_METAREF || o->kind == O_METASET || o->kind == O_METATY || o->kind == O_METASOLVED || o->kind == O_METATYPED) && v->kind == V_WORD && !v->p)) {
         /* a metavariable's solution (or type) is read or set */
-        Cell *r = o->kind == O_METATY ? meta_type_root((long)v->a) : meta_root((long)v->a);
+        Cell *r = (o->kind == O_METATY || o->kind == O_METATYPED) ? meta_type_root((long)v->a) : meta_root((long)v->a);
         if (r) { S[n++] = r; Port p = rd(r, 0); if (p) { Cell *w = PC(p); S[n++] = w; for (int k = 1; k < w->n && n < cap - 1; k++) { Port q = rd(w, k); if (q) S[n++] = PC(q); } } }
     }
     if (o->kind == O_WOP2 || o->kind == O_CLOS2) {
@@ -1705,8 +1744,8 @@ static void rewrite(Redex r) {
     Cell *o = r.op, *v = r.v;
     int cap = o->n + v->n + 8;
     if (o->kind == O_WOP2 || o->kind == O_CLOS2) { Port p = rd(o, 1); if (p) cap += PC(p)->n; }
-    if (v->kind == V_META || ((o->kind == O_METAREF || o->kind == O_METASET || o->kind == O_METATY) && v->kind == V_WORD && !v->p)) {
-        Cell *r = o->kind == O_METATY ? meta_type_root((long)v->a) : meta_root((long)v->a);
+    if (v->kind == V_META || ((o->kind == O_METAREF || o->kind == O_METASET || o->kind == O_METATY || o->kind == O_METASOLVED || o->kind == O_METATYPED) && v->kind == V_WORD && !v->p)) {
+        Cell *r = (o->kind == O_METATY || o->kind == O_METATYPED) ? meta_type_root((long)v->a) : meta_root((long)v->a);
         if (r) { Port p = rd(r, 0); cap += 2 + (p ? PC(p)->n : 0); }
     }
     if (v->kind == V_REF || v->kind == V_GLOBAL) {

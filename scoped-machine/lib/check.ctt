@@ -27,7 +27,11 @@
   (tlevel) (tlzero) (tlsuc l V) (tlmax a b V)
   ; words: the type, a literal, the successor, an operation (0 = 1 < 2 + 3 max 4 -), the
   ; elimination with its motive
-  (tword) (tlit V) (twsucc a V) (twop k a b V) (twelim P w z s V))
+  (tword) (tlit V) (twsucc a V) (twop k a b V) (twelim P w z s V)
+  ; a hole: metavariable k (a word) applied to the term variables in scope, V its value
+  (thole k V)
+  ; a face given by its value (a quoted solution's system clause)
+  (tfv V))
 ; a branch of an elimination: binders for its fields, hypotheses, dimensions, then the body
 (data Br (bx nm b) (bi nm b) (be t))
 ; a telescope: a term binder over a type, a dimension binder, the end
@@ -42,7 +46,7 @@
   ((tlet t nm b V) V) ((tann t T V) V)
   ((tdata d ps V) V) ((tcon d c fs ds V) V) ((telim d P B x F V) V) ((tcase d B x F V) V) ((thcomp u a V) V) ((tforce t V) V)
   ((tlevel) Level) ((tlzero) lzero) ((tlsuc l V) V) ((tlmax a b V) V)
-  ((tword) Word) ((tlit V) V) ((twsucc a V) V) ((twop k a b V) V) ((twelim P w z s V) V))))
+  ((tword) Word) ((tlit V) V) ((twsucc a V) V) ((twop k a b V) V) ((twelim P w z s V) V) ((thole k V) V) ((tfv V) V))))
 
 ; ---------------------------------------------------------------- basics
 ; Lst, Opt, View, CloCmp and DTab are declared in code.ctt
@@ -85,6 +89,7 @@
   ((tfor a b V) (andb (check-face a) (check-face b)))
   ((ttt) true) ((tff) true)
   ((tforall nm b V) (check-face (b (%dim nm))))
+  ((tfv V) true)
   (_ false))))
 
 ; ---------------------------------------------------------------- data types
@@ -115,31 +120,37 @@
 (def mkcon (lam d c fs ds (app-all (cl-at (dt-cons (%dtab d)) c) (lapp fs ds))))
 
 ; ---------------------------------------------------------------- levels
-; max(c, a1+o1, ...) over level variables a (their names); lvw: the level of types over levels
-(data Lvl (lvl c ts) (lvw))
+; max(c, a1+o1, ...) over level variables a (their names); lvw: the level of types over levels;
+; lvm: a level not yet known (a metavariable's), equal to none
+(data Lvl (lvl c ts) (lvw) (lvm))
 (def lv0 (lvl #0 lnil))
 (def Uw (U lomega))
-(def lvl-suc (lam l (case l ((lvl c ts) (lvl (%wsucc c) (lmap (lam p (pair (fst p) (%wsucc (snd p)))) ts))) ((lvw) lvw))))
-(def lvl-max (lam l m (case l ((lvl c ts) (case m ((lvl d us) (lvl (%wmax c d) (lapp ts us))) ((lvw) lvw))) ((lvw) lvw))))
-(declare lvl-of)
+(def lvl-suc (lam l (case l ((lvl c ts) (lvl (%wsucc c) (lmap (lam p (pair (fst p) (%wsucc (snd p)))) ts))) ((lvw) lvw) ((lvm) lvm))))
+(def lvl-max (lam l m (case l
+  ((lvl c ts) (case m ((lvl d us) (lvl (%wmax c d) (lapp ts us))) ((lvw) lvw) ((lvm) lvm)))
+  ((lvw) (case m ((lvm) lvm) (_ lvw)))
+  ((lvm) lvm))))
+(declare lvl-of meta-spine)
 ; Level's constructors: lzero lsuc lmax lomega
 (def lvl-of (lam v (case (%view v)
   ((wcon d c fs ds) (if (%weq c #0) lv0
      (if (%weq c #1) (lvl-suc (lvl-of (lhead fs)))
      (if (%weq c #2) (lvl-max (lvl-of (lhead fs)) (lvl-of (lhead (ltail fs)))) lvw))))
   ((wvar l T) (lvl #0 (single (pair l #0))))
-  (_ lv0))))
+  (wl (case (meta-spine wl lnil) ((some m) lvm) ((none) lv0))))))
 ; max(c, ts) ≤ max(d, us) for every value of the variables iff c ≤ d or c ≤ some offset of us,
 ; and each a+o of ts has a+o' in us with o ≤ o'
 (def lvl-le (lam l m (case l
+  ((lvm) false)
   ((lvw) (case m ((lvw) true) (_ false)))
   ((lvl c ts) (case m
     ((lvw) true)
+    ((lvm) false)
     ((lvl d us) (if (orb (wle c d) (lany (lam q (wle c (snd q))) us))
                     (lall (lam p (lany (lam q (andb (%weq (fst p) (fst q)) (wle (snd p) (snd q)))) us)) ts)
                     false)))))))
 (def lvl-eq (lam l m (if (lvl-le l m) (lvl-le m l) false)))
-(def lvl-closed (lam l (case l ((lvl c ts) (isnil ts)) ((lvw) false))))
+(def lvl-closed (lam l (case l ((lvl c ts) (isnil ts)) (_ false))))
 (def is-w (lam l (case (lvl-of l) ((lvw) true) (_ false))))
 
 ; ---------------------------------------------------------------- conversion
@@ -147,7 +158,10 @@
 ; its type; at a universe as types; at Glue by unglue and on the face the fibre; at a data type
 ; by constructors; otherwise without the type. uconv: without a type, types by their former,
 ; neutrals by their spine, each argument at its type.
-(declare conv uconv convneu conv-data)
+(declare conv uconv convneu conv-data unify-w meta-spine)
+(def unify (lam u v (unify-w u (%view u) v (%view v))))
+; tried where comparing by structure failed: a metavariable application on either side
+(def unify-b (lam u v (case (unify u v) ((some r) r) ((none) false))))
 ; two λs of one record are equal when their environments are: neither is applied
 (def env-pairs (lam ps (lall (lam p (uconv (fst p) (snd p))) ps)))
 (def conv-ty (lam X Y (uconv X Y)))
@@ -155,13 +169,13 @@
   ((wpi A B) (case (%clos u v)
      ((csame ps u2 v2) (if (env-pairs ps) true (let x (%var A) (conv (B x) (u2 x) (v2 x)))))
      ((cdiff u2 v2) (let x (%var A) (conv (B x) (u2 x) (v2 x))))))
-  ((wsigma A B) (if (conv A (fst u) (fst v)) (conv (B (fst u)) (snd u) (snd v)) false))
+  ((wsigma A B) (case (unify u v) ((some r) r) ((none) (if (conv A (fst u) (fst v)) (conv (B (fst u)) (snd u) (snd v)) false))))
   ((wpath L a b) (let i (%dim) (conv (@ L i) (@ u i) (@ v i))))
   ((wu l) (conv-ty u v))
-  ((wlevel) (lvl-eq (lvl-of u) (lvl-of v)))
-  ((wglue A S) (if (conv A (unglue S u) (unglue S v))
+  ((wlevel) (if (lvl-eq (lvl-of u) (lvl-of v)) true (unify-b u v)))
+  ((wglue A S) (case (unify u v) ((some r) r) ((none) (if (conv A (unglue S u) (unglue S v))
                   (lall (lam d (conv (%restrict d (Glue A S)) (%restrict d u) (%restrict d v))) (%clauses (faceof S)))
-                  false))
+                  false))))
   ((wsys bs) (lall (lam b (let d (fst b) (conv (snd b) (%restrict d u) (%restrict d v)))) bs))
   ((wdata d ps) (conv-data d ps u v))
   (_ (uconv u v)))))
@@ -172,20 +186,20 @@
   ((tx A nm r) (case fs ((lnil) true) ((lcons f fr) (case gs ((lnil) false) ((lcons g gr)
      (let Av (tval A) (if (conv Av f g) (conv-fields (r f Av) fr gr) false)))))))
   (_ true))))
-(def conv-data-ww (lam d ps u wu wv (case wv
+(def conv-data-ww (lam d ps u wu v wv (case wv
   ((wsys bs) (sys-vs (mkdata d ps) bs u))
   (_ (case wu
     ((wcon d1 c fs ds) (case wv
        ((wcon d2 c2 fs2 ds2) (if (%weq c c2) (if (lall2 (lam r s (%ieq r s)) ds ds2)
           (conv-fields (centry d c ps) fs fs2) false) false))
-       (_ false)))
+       (_ (unify-b u v))))
     ((whcomp w a) (case wv
        ((whcomp w2 a2) (let T (mkdata d ps) (if (conv T a a2) (let i (%dim) (conv T (@ w i) (@ w2 i))) false)))
-       (_ false)))
-    (_ (case (convneu wu wv) ((some X) true) ((none) false))))))))
+       (_ (unify-b u v))))
+    (_ (case (convneu wu wv) ((some X) true) ((none) (unify-b u v)))))))))
 (def conv-data (lam d ps u v (case (%view u)
   ((wsys bs) (sys-vs (mkdata d ps) bs v))
-  (wu (conv-data-ww d ps u wu (%view v))))))
+  (wu (conv-data-ww d ps u wu v (%view v))))))
 ; Glue types: the same face, and on it the same types and equivalences
 (def conv-glue-sys (lam A S S2 (if (%feq (faceof S) (faceof S2))
   (lall (lam d (let te (%restrict d S) (let te2 (%restrict d S2)
@@ -196,40 +210,40 @@
 (def conv-fam (lam A B B2 (case (%clos B B2)
   ((csame ps B3 B4) (if (env-pairs ps) true (let x (%var A) (conv-ty (B3 x) (B4 x)))))
   ((cdiff B3 B4) (let x (%var A) (conv-ty (B3 x) (B4 x)))))))
-(def uconv-head (lam wu v wv (case wu
-  ((wpi A B) (case wv ((wpi A2 B2) (if (conv-ty A A2) (conv-fam A B B2) false)) (_ false)))
-  ((wsigma A B) (case wv ((wsigma A2 B2) (if (conv-ty A A2) (conv-fam A B B2) false)) (_ false)))
-  ((wu l) (case wv ((wu m) (lvl-eq (lvl-of l) (lvl-of m))) (_ false)))
-  ((wlevel) (case wv ((wlevel) true) (_ false)))
+(def uconv-head (lam u wu v wv (case wu
+  ((wpi A B) (case wv ((wpi A2 B2) (if (conv-ty A A2) (conv-fam A B B2) false)) (_ (unify-b u v))))
+  ((wsigma A B) (case wv ((wsigma A2 B2) (if (conv-ty A A2) (conv-fam A B B2) false)) (_ (unify-b u v))))
+  ((wu l) (case wv ((wu m) (if (lvl-eq (lvl-of l) (lvl-of m)) true (unify-b l m))) (_ (unify-b u v))))
+  ((wlevel) (case wv ((wlevel) true) (_ (unify-b u v))))
   ((wpath L a b) (case wv ((wpath M c d) (let i (%dim)
-      (if (conv-ty (@ L i) (@ M i)) (if (conv (@ L 0) a c) (conv (@ L 1) b d) false) false))) (_ false)))
-  ((wglue A S) (case wv ((wglue B S2) (if (conv-ty A B) (conv-glue-sys A S S2) false)) (_ false)))
+      (if (conv-ty (@ L i) (@ M i)) (if (conv (@ L 0) a c) (conv (@ L 1) b d) false) false))) (_ (unify-b u v))))
+  ((wglue A S) (case wv ((wglue B S2) (if (conv-ty A B) (conv-glue-sys A S S2) false)) (_ (unify-b u v))))
   ((wgluev S a)
      (if (uconv a (unglue S v)) (lall (lam d (uconv (%restrict d (glue S a)) (%restrict d v))) (%clauses (faceof S))) false))
-  ((wdata d ps) (case wv ((wdata d2 ps2) (if (%weq d d2) (lall2 uconv ps ps2) false)) (_ false)))
+  ((wdata d ps) (case wv ((wdata d2 ps2) (if (%weq d d2) (lall2 uconv ps ps2) false)) (_ (unify-b u v))))
   ((wcon d c fs ds) (case wv ((wcon d2 c2 fs2 ds2)
-      (if (%weq d d2) (if (%weq c c2) (if (lall2 (lam r s (%ieq r s)) ds ds2) (lall2 uconv fs fs2) false) false) false)) (_ false)))
-  ((whcomp w a) (case wv ((whcomp w2 a2) (if (uconv a a2) (let i (%dim) (uconv (@ w i) (@ w2 i))) false)) (_ false)))
-  ((wiv r) (case wv ((wiv s) (%ieq r s)) (_ false)))
-  ((wface a) (case wv ((wface b) (%feq a b)) (_ false)))
-  ((wword) (case wv ((wword) true) (_ false)))
-  ((wwlit n) (case wv ((wwlit m) (%weq n m)) (_ false)))
-  ((wwplus k x) (case wv ((wwplus j y) (if (%weq k j) (uconv x y) false)) (_ false)))
+      (if (%weq d d2) (if (%weq c c2) (if (lall2 (lam r s (%ieq r s)) ds ds2) (lall2 uconv fs fs2) false) false) false)) (_ (unify-b u v))))
+  ((whcomp w a) (case wv ((whcomp w2 a2) (if (uconv a a2) (let i (%dim) (uconv (@ w i) (@ w2 i))) false)) (_ (unify-b u v))))
+  ((wiv r) (case wv ((wiv s) (%ieq r s)) (_ (unify-b u v))))
+  ((wface a) (case wv ((wface b) (%feq a b)) (_ (unify-b u v))))
+  ((wword) (case wv ((wword) true) (_ (unify-b u v))))
+  ((wwlit n) (case wv ((wwlit m) (%weq n m)) (_ (unify-b u v))))
+  ((wwplus k x) (case wv ((wwplus j y) (if (%weq k j) (uconv x y) false)) (_ (unify-b u v))))
   ((wother) false)
-  (_ (case (convneu wu wv) ((some X) true) ((none) false))))))
+  (_ (case (convneu wu wv) ((some X) true) ((none) (unify-b u v)))))))
 (def uconv-ww (lam u wu v wv (case wv
   ((wsys bs) (lall (lam b (let d (fst b) (uconv (%restrict d u) (snd b)))) bs))
   ((wlam g) (let x (%var Uw) (uconv (u x) (g x))))
   ((wplam q) (let i (%dim) (uconv (@ u i) (@ q i))))
-  ((wpair a b) (if (uconv (fst u) a) (uconv (snd u) b) false))
-  (_ (uconv-head wu v wv)))))
+  ((wpair a b) (case (meta-spine wu lnil) ((some m) (unify-b u v)) ((none) (if (uconv (fst u) a) (uconv (snd u) b) false))))
+  (_ (uconv-head u wu v wv)))))
 (def uconv (lam u v (case (%view u)
   ((wsys bs) (lall (lam b (let d (fst b) (uconv (snd b) (%restrict d v)))) bs))
   ((wlam f) (case (%clos f v)
      ((csame ps f2 v2) (if (env-pairs ps) true (let x (%var Uw) (uconv (f2 x) (v2 x)))))
      ((cdiff f2 v2) (let x (%var Uw) (uconv (f2 x) (v2 x))))))
   ((wplam p) (let i (%dim) (uconv (@ p i) (@ v i))))
-  ((wpair a b) (if (uconv a (fst v)) (uconv b (snd v)) false))
+  ((wpair a b) (case (meta-spine (%view v) lnil) ((some m) (unify-b u v)) ((none) (if (uconv a (fst v)) (uconv b (snd v)) false))))
   (wu (uconv-ww u wu v (%view v))))))
 ; two eliminations are equal when their branches are: each at fresh fields, hypotheses and
 ; dimensions (the hypotheses as variables: comparing them compares the eliminations)
@@ -288,6 +302,140 @@
          (case (same-neu x y) ((some X) (some (mkdata d (lmap (lam l (@ l 1)) ls)))) ((none) none)) none) none) none)) (_ none)))
   (_ none))))
 
+; ---------------------------------------------------------------- metavariables
+; A hole is a metavariable applied to the term variables in scope. Comparing such an application
+; with a value v solves it (pattern unification): the arguments distinct variables, v mentioning
+; no other variable bound in the definition (scoped) and not the metavariable itself; the solution
+; is v abstracted over the arguments. (some b): one side was a metavariable application, b whether
+; the two are now equal; none: neither was.
+(declare scoped var-name)
+(def meta-spine (lam w acc (case w
+  ((wmeta k a) (some (pair k acc)))
+  ((wapp f a T) (meta-spine (%view f) (lcons a acc)))
+  ((wpapp p r T) (meta-spine (%view p) (lcons r acc)))
+  (_ none))))
+; the arguments: distinct term variables and dimensions; (pair variable-names dimensions-joined)
+(def spine-vars (lam xs ls ds (case xs
+  ((lnil) (some (pair ls ds)))
+  ((lcons x r) (case (%view x)
+     ((wiv i) (if (%dim-atom x) (if (%dims-sub x ds) none (spine-vars r ls (\/ ds x))) none))
+     ((wvar l T) (if (lany (lam m (%weq l m)) ls) none (spine-vars r (lcons l ls) ds)))
+     (_ none))))))
+(def abstract-all (lam xs v (case xs
+  ((lnil) v)
+  ((lcons x r) (case (%view x) ((wiv i) (%abs x (abstract-all r v))) (_ (%abstract x (abstract-all r v))))))))
+(declare check qt sol-typed)
+(def solve (lam k xs v (case (spine-vars xs lnil 0)
+  ((some p) (if (scoped k (fst p) (snd p) v) (if (%meta-set k (abstract-all xs v)) (sol-typed k) false) false))
+  ((none) false))))
+(def unify-w (lam u wu v wv (case (meta-spine wu lnil)
+  ((some m) (some (case (meta-spine wv lnil)
+     ((some n) (if (%weq (fst m) (fst n)) (lall2 uconv (snd m) (snd n)) (solve (fst m) (snd m) v)))
+     ((none) (solve (fst m) (snd m) v)))))
+  ((none) (case (meta-spine wv lnil)
+     ((some n) (some (solve (fst n) (snd n) u)))
+     ((none) none))))))
+; v's variables are among ls (words) and its dimensions among ds (an interval), and it does not
+; mention metavariable k; binders are walked at fresh variables, which are allowed
+(def addv (lam x ls (case (var-name x) ((some l) (lcons l ls)) ((none) ls))))
+(def sc-all (lam k ls ds vs (lall (lam v (scoped k ls ds v)) vs)))
+(def sc-x (lam k ls ds A f (let x (%var A) (scoped k (addv x ls) ds (f x)))))
+(def sc-i (lam k ls ds f (let i (%dim) (scoped k ls (\/ ds i) (f i)))))
+(def sc-dims (lam k ls ds f c tel prm (case tel
+  ((ty nm r) (let i (%dim nm) (sc-dims k ls (\/ ds i) f c (r i) (lsnoc prm i))))
+  (_ (scoped k ls ds (%branch f c prm))))))
+(def sc-hyps (lam k ls ds f c nr tel prm (if (%weq nr #0) (sc-dims k ls ds f c tel prm)
+  (let h (%var Uw) (sc-hyps k (addv h ls) ds f c (%wsub nr #1) tel (lsnoc prm h))))))
+(def sc-fields (lam k ls ds d f c tel nr prm (case tel
+  ((tx A nm r) (let Av (tval A) (let x (%var nm Av)
+     (sc-fields k (addv x ls) ds d f c (r x Av) (if (is-data-d d A) (%wsucc nr) nr) (lsnoc prm x)))))
+  (_ (sc-hyps k ls ds f c nr tel prm)))))
+(def sc-elim (lam k ls ds d f cs c (case cs
+  ((lnil) true)
+  ((lcons tel rest) (andb (sc-fields k ls ds d f c tel #0 lnil) (sc-elim k ls ds d f rest (%wsucc c)))))))
+(def scoped (lam k ls ds v (case (%view v)
+  ((wlam f) (sc-x k ls ds Uw f))
+  ((wpair a b) (andb (scoped k ls ds a) (scoped k ls ds b)))
+  ((wpi A B) (andb (scoped k ls ds A) (sc-x k ls ds A B)))
+  ((wsigma A B) (andb (scoped k ls ds A) (sc-x k ls ds A B)))
+  ((wu l) (scoped k ls ds l))
+  ((wpath A a b) (andb (scoped k ls ds A) (andb (scoped k ls ds a) (scoped k ls ds b))))
+  ((wplam p) (sc-i k ls ds (lam i (@ p i))))
+  ((wiv r) (%dims-sub r ds))
+  ((wface a) (%dims-sub a ds))
+  ((wsys bs) (lall (lam b (andb (%dims-sub (fst b) ds) (scoped k ls ds (snd b)))) bs))
+  ((wglue A S) (andb (scoped k ls ds A) (scoped k ls ds S)))
+  ((wgluev S a) (andb (scoped k ls ds S) (scoped k ls ds a)))
+  ((wdata d ps) (sc-all k ls ds ps))
+  ((wcon d c fs ds2) (andb (sc-all k ls ds fs) (lall (lam r (%dims-sub r ds)) ds2)))
+  ((whcomp u a) (andb (scoped k ls ds u) (scoped k ls ds a)))
+  ((wvar l T) (lany (lam m (%weq l m)) ls))
+  ((wapp f a T) (andb (scoped k ls ds f) (scoped k ls ds a)))
+  ((wfst p T) (scoped k ls ds p))
+  ((wsnd p T) (scoped k ls ds p))
+  ((wpapp p r T) (andb (scoped k ls ds p) (%dims-sub r ds)))
+  ((wcomp A u a0 T) (andb (scoped k ls ds A) (andb (scoped k ls ds u) (scoped k ls ds a0))))
+  ((wunglue S b T) (andb (scoped k ls ds S) (scoped k ls ds b)))
+  ((welim d x f T) (andb (scoped k ls ds x) (sc-elim k ls ds d f (ctors-of d Uw) #0)))
+  ((wtrans d psi lns x T) (andb (%dims-sub psi ds) (andb (sc-all k ls ds lns) (scoped k ls ds x))))
+  ((wlevel) true) ((wword) true) ((wwlit n) true)
+  ((wwplus j x) (scoped k ls ds x))
+  ((wwop j a b) (andb (scoped k ls ds a) (scoped k ls ds b)))
+  ((wwelim x z s) (andb (scoped k ls ds x) (andb (scoped k ls ds z) (scoped k ls ds s))))
+  ((wmeta j a) (notb (%weq j k)))
+  (_ false))))
+
+; the code of a value, each node carrying (the parts of) the value: a binder's body at the
+; variable the checker gives it; an interval, a face as its value; an elimination of a data type
+; without its motive (its branches at a constant motive); a word's elimination and a transport
+; have no code here (a node the checker rejects)
+(def lvl-d (case (%view lzero) ((wcon d c fs ds) d) (_ #4294967295)))
+(def qt-b (lam f x T (qt (f x))))
+(def qt-dims (lam f c tel prm (case tel
+  ((ty nm r) (bi nm (lam i (qt-dims f c (r i) (lsnoc prm i)))))
+  (_ (be (qt (%branch f c prm)))))))
+(def qt-hyps (lam f c nr tel prm (if (%weq nr #0) (qt-dims f c tel prm)
+  (bx #0 (lam h T (qt-hyps f c (%wsub nr #1) tel (lsnoc prm h)))))))
+(def qt-fields (lam d f c tel nr prm (case tel
+  ((tx A nm r) (bx nm (lam x T (qt-fields d f c (r x (tval A)) (if (is-data-d d A) (%wsucc nr) nr) (lsnoc prm x)))))
+  (_ (qt-hyps f c nr tel prm)))))
+(def qt-brs (lam d f cs c (case cs
+  ((lnil) lnil)
+  ((lcons tel rest) (lcons (qt-fields d f c tel #0 lnil) (qt-brs d f rest (%wsucc c)))))))
+(def qt-lvl (lam v c fs (if (%weq c #0) tlzero
+  (if (%weq c #1) (tlsuc (qt (lhead fs)) v) (tlmax (qt (lhead fs)) (qt (lhead (ltail fs))) v)))))
+(def qt (lam v (case (%view v)
+  ((wlam f) (tlam #0 (qt-b f) v))
+  ((wpair a b) (tpair (qt a) (qt b) v))
+  ((wpi A B) (tpi (qt A) #0 (qt-b B) v))
+  ((wsigma A B) (tsigma (qt A) #0 (qt-b B) v))
+  ((wu l) (tuniv (qt l) v))
+  ((wpath L a b) (tpathp (qt L) (qt a) (qt b) v))
+  ((wplam p) (tplam #0 (lam i (qt (@ p i))) v))
+  ((wiv r) (ti v))
+  ((wface a) (tfv v))
+  ((wsys bs) (tsys (lmap (lam b (pair (tfv (fst b)) (delay (qt (snd b))))) bs) v))
+  ((wglue A S) (tgluet (qt A) (qt S) v))
+  ((wgluev S a) (tglue (qt S) (qt a) v))
+  ((wdata d ps) (tdata d (lmap qt ps) v))
+  ((wcon d c fs ds) (if (%weq d lvl-d) (qt-lvl v c fs) (tcon d c (lmap qt fs) (lmap ti ds) v)))
+  ((whcomp u a) (thcomp (qt u) (qt a) v))
+  ((wvar l T) (tv v T))
+  ((wapp f a T) (tapp (qt f) (qt a) v))
+  ((wfst p T) (tfst (qt p) v))
+  ((wsnd p T) (tsnd (qt p) v))
+  ((wpapp p r T) (tpapp (qt p) (ti r) v))
+  ((wcomp A u a0 T) (tcomp (qt A) (qt u) (qt a0) v))
+  ((wunglue S b T) (tunglue (qt S) (qt b) v))
+  ((welim d x f T) (tcase d (qt-brs d f (ctors-of d Uw) #0) (qt x) f v))
+  ((wlevel) tlevel)
+  ((wword) tword)
+  ((wwlit n) (tlit v))
+  ((wwplus j x) (twop #2 (qt x) (tlit j) v))
+  ((wwop j a b) (twop j (qt a) (qt b) v))
+  ((wmeta j a) (thole j v))
+  (_ (tfv v)))))
+
 ; ---------------------------------------------------------------- typing
 ; A judgment's normal form is ok (check), (yes T) (infer), or (no v why A B): the subterm whose
 ; value is v fails for the reason numbered why (named in src/lang.c), A and B the values it
@@ -298,6 +446,9 @@
 (def chk (lam b r (if b ok r)))
 (def rall (lam f l (case l ((lnil) ok) ((lcons x xs) (then (f x) (rall f xs))))))
 (def is-ok (lam r (case r ((ok) true) ((yes T) true) (_ false))))
+; a solution is checked at its hole's type, by the checker, as the code of a value (qt); the hole
+; records its value and type when it is checked first (else this is done there)
+(def sol-typed (lam k (if (%meta-typed k) (let o (%meta-type k) (is-ok (check (qt (fst o)) (snd o)))) true)))
 ; reasons
 (def E-mismatch #0) (def E-notfun #1) (def E-notpair #2) (def E-notpath #3) (def E-nottype #4)
 (def E-noinfer #5) (def E-notiv #6) (def E-end0 #7) (def E-end1 #8) (def E-sysdis #9) (def E-tube #10)
@@ -306,7 +457,7 @@
 (def E-motive #21) (def E-notline #22) (def E-omega #23) (def E-positive #24) (def E-later #25)
 (def E-openlevel #26) (def E-identity #27) (def E-notglue #28)
 
-(declare infer check check-sys check-tele motive-level check-branches check-hcomp infer-binder case-type)
+(declare infer check-con check-sys check-tele motive-level check-branches check-hcomp infer-binder case-type)
 ; a type's universe level (not ω), and a type's sort (a universe, U ω for types over levels)
 (def infer-level (lam A (case (infer A)
   ((yes T) (case (%view T) ((wu l) (if (is-w l) (err A E-omega T opq) (yes l))) (_ (err A E-nottype T opq))))
@@ -359,6 +510,9 @@
   (_ (err A E-notline opq opq)))))
 (def infer (lam c (case c
   ((tv x T) (yes T))
+  ; a constructor of a data type without parameters
+  ((tcon d c2 fs ds V) (let pc (params-fresh (dtel (%dent d)) lnil)
+     (if (isnil (fst pc)) (then (check-con c (centry d c2 lnil) fs ds) (yes (mkdata d lnil))) (err c E-noinfer opq opq))))
   ((tg n V) (yes (%gty n)))
   ((tapp f a V) (case (infer f)
      ((yes T) (case (%view T) ((wpi A B) (then (check a A) (yes (B (tval a))))) (_ (err f E-notfun T opq))))
@@ -505,6 +659,8 @@
        (r r))))
   (r r))))
 (def check (lam c T (case c
+  ; a hole: its solution is checked at T once all are solved (src/lang.c); recorded here
+  ((thole k V) (if (%meta-type-set k (pair V T)) (if (%meta-solved k) (check (qt V) T) ok) (if (%meta-solved k) (check (qt V) T) ok)))
   ((tlam nm b V) (case (%view T) ((wpi A B) (let x (%var nm A) (check (b x A) (B x)))) (_ (err c E-mismatch T opq))))
   ((tpair a b V) (case (%view T) ((wsigma A B) (then (check a A) (check b (B (tval a))))) (_ (err c E-mismatch T opq))))
   ((tplam nm b V) (case (%view T) ((wpath L a0 a1) (let i (%dim nm)
@@ -523,7 +679,9 @@
   ((tlet t nm b V) (case (infer t)
      ((yes Ty) (check (b (tval t) Ty) T))
      (r r)))
-  ((tcon d c2 fs ds V) (case (%view T) ((wdata d2 ps) (if (%weq d d2) (check-con c (centry d c2 ps) fs ds) (err c E-mismatch T opq))) (_ (err c E-mismatch T opq))))
+  ((tcon d c2 fs ds V) (case (%view T)
+     ((wdata d2 ps) (if (%weq d d2) (check-con c (centry d c2 ps) fs ds) (err c E-mismatch T opq)))
+     (_ (case (infer c) ((yes T2) (chk (conv-ty T2 T) (err c E-mismatch T T2))) (r (err c E-mismatch T opq))))))
   ((thcomp u a V) (case (%view T) ((wdata d ps) (let Tv (mkdata d ps) (then (check a Tv) (check-hcomp Tv u a)))) (_ (err c E-mismatch T opq))))
   ((tcase d B x F V) (case (infer x)
      ((yes X) (case (%view X) ((wdata d2 ps) (if (%weq d d2) (check-branches c d ps (lam y T) F B) (err x E-notdata X opq))) (_ (err x E-notdata X opq))))
