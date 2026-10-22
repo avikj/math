@@ -65,7 +65,7 @@ Features — each justified by the system's own design:
    item 1: such a family is Σ (t : T) (valid t indices), T a uniform data type of derivation trees and
    `valid` by recursion on t into U. Needs item 1 and large elimination only. Deliver: Trace (the equal-length
    box's family) declared this way, eliminated, and checked, in tests/check.ctt.
-3. [ ] Universe level polymorphism (~200). A generic definition must be one term at every level; copies
+3. [x] Universe level polymorphism (~200). A generic definition must be one term at every level; copies
    per level are distinct terms that identities and proofs do not transfer between. check.ctt levels are
    constants today.
 4. [ ] Checked identities (~80). The identity mechanism answers `R g` without evidence; that is sound
@@ -110,3 +110,9 @@ a QIIT, inductive-inductive families, Delay/M-types.
   Σ (t : T) (valid t indices) with T a uniform data type of derivation trees and `valid` defined by
   recursion on t into U (item 1 + large elimination). No non-uniform parameters needed. Item 2 is done by
   a test showing such a family (Trace) declared, eliminated and checked.
+- Item 3 (landed): codes clevel/clzero/clsuc/clmax, cuniv takes a level code; checker values vlevel,
+  vlvl c ts (max over neutral atoms, compared as joins), vuw (sort of level-quantifying types, no type);
+  infer-sort for Π/Σ/annotations/definitions/parameters, infer-level (a U_l) where a universe at a level
+  is needed (paths, Glue, data fields). Data levels must be closed. Machine: `(data Level ...)` in the
+  prelude; U ignores its level. Paths in Level are not formed (Level : Uω); level equality shows as
+  conversion of universes.

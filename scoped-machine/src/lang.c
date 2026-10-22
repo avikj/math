@@ -126,7 +126,6 @@ static void free_vars(Node *t, Names *bound, Names *out) {
         int from = 1;
         if (!strcmp(k, "%con") || !strcmp(k, "%data") || !strcmp(k, "%transD")) from = 2;
         if (!strcmp(k, "%branches")) from = 4;
-        if (!strcmp(k, "U")) return;
         if (!strcmp(k, "=")) { free_vars(t->it[1], bound, out); return; }
         for (int i = from; i < t->n; i++) free_vars(t->it[i], bound, out);
         return;
@@ -272,7 +271,12 @@ static Node *ds(Node *t) {
             return r;
         }
         if (!strcmp(k, "sys+")) { arity(t, 3); return nl4("sys+", ds(t->it[1]), nl2("thunk", ds(t->it[2])), ds(t->it[3])); }
-        if (!strcmp(k, "U")) { if (t->n > 2) die("(U [level])", NULL); return t; }   /* the level is kept for codes */
+        if (!strcmp(k, "U")) {
+            /* the level is kept for codes: a numeral, or a level expression */
+            if (t->n > 2) die("(U [level])", NULL);
+            if (t->n == 2 && !(t->it[1]->s && t->it[1]->s[0] >= '0' && t->it[1]->s[0] <= '9')) return nl2("U", ds(t->it[1]));
+            return t;
+        }
         if (!strcmp(k, "the")) { arity(t, 2); return nl3("the", ds(t->it[1]), ds(t->it[2])); }
         if (!strcmp(k, "code")) { arity(t, 1); return to_code(ds(t->it[1])); }
         if (!strcmp(k, "/\\") || !strcmp(k, "\\/") || !strcmp(k, "&") || !strcmp(k, "|")) {
@@ -349,6 +353,15 @@ static Node *code_bound(const char *x, Node *body) {
     return r;
 }
 static Node *to_code(Node *t) {
+    /* universe levels: Level, lzero, (lsuc l), (lmax a b) */
+    if (is(t, "Level") && !bound_name("Level")) return nsym("clevel");
+    if (is(t, "lzero") && !bound_name("lzero")) return nsym("clzero");
+    if (t->list && t->n == 3 && is(t->it[0], "app")) {
+        Node *f = t->it[1];
+        if (is(f, "lsuc") && !bound_name("lsuc")) return capp1("clsuc", to_code(t->it[2]));
+        if (f->list && f->n == 3 && is(f->it[0], "app") && is(f->it[1], "lmax") && !bound_name("lmax"))
+            return capp2("clmax", to_code(f->it[2]), to_code(t->it[2]));
+    }
     /* a data type at its parameters, a constructor at its fields and dimensions */
     {
         Node *h = t; int na = 0;
@@ -381,7 +394,7 @@ static Node *to_code(Node *t) {
         if (!strcmp(s, "1")) return nsym("ci1");
         if (!strcmp(s, "tt")) return nsym("cftt");
         if (!strcmp(s, "ff")) return nsym("cfff");
-        if (!strcmp(s, "U")) return capp1("cuniv", nsym("nz"));
+        if (!strcmp(s, "U")) return capp1("cuniv", nsym("clzero"));
         for (int i = ncscope - 1; i >= 0; i--) if (!strcmp(cscope[i], s)) return capp1("cvar", numeral(ncscope - 1 - i));
         for (int i = 0; i < nchecked; i++) if (!strcmp(CHECKED[i], s)) return capp1("cglob", numeral(i));
         die("code: not a bound variable or checked definition:", s);
@@ -399,7 +412,14 @@ static Node *to_code(Node *t) {
         Node *B = t->it[2];   /* (lam x body) */
         return capp2(!strcmp(h, "Pi") ? "cpi" : "csigma", to_code(t->it[1]), code_bound(B->it[1]->s, B->it[2]));
     }
-    if (!strcmp(h, "U")) return capp1("cuniv", numeral(t->n == 2 ? atoi(t->it[1]->s) : 0));
+    if (!strcmp(h, "U")) {
+        if (t->n == 2 && !t->it[1]->list && t->it[1]->s[0] >= '0' && t->it[1]->s[0] <= '9') {
+            Node *l = nsym("clzero");
+            for (int q = atoi(t->it[1]->s); q > 0; q--) l = capp1("clsuc", l);
+            return capp1("cuniv", l);
+        }
+        return capp1("cuniv", t->n == 2 ? to_code(t->it[1]) : nsym("clzero"));
+    }
     if (!strcmp(h, "PathP")) return capp3("cpathp", to_code(t->it[1]), to_code(t->it[2]), to_code(t->it[3]));
     if (!strcmp(h, "@")) return capp2("cpapp", to_code(t->it[1]), to_code(t->it[2]));
     if (!strcmp(h, "~")) return capp1("cneg", to_code(t->it[1]));

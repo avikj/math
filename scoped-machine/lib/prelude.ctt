@@ -87,6 +87,9 @@
         (sysmap (lam %w (plam %i (%case B P E (@ %w %i)))) u)
         (%case B P E u0))))
 
+; universe levels: values the machine carries but never eliminates; U ignores its level
+(data Level (lzero) (lsuc (l Level)) (lmax (a Level) (b Level)))
+
 ; data types
 (data Bool (true) (false))
 (def not (lam b (if b false true)))
