@@ -130,6 +130,7 @@ static Port out_of(Cell *o) { return o->port[o->n - 1]; }
 static __thread long dup_origin;
 long prof_odup[65536], prof_oera[65536], prof_rdup[256], prof_rera[256];
 /* a value held once: references copy the box; the last one erases the value */
+static void box_hold(Box *b);
 static Box *box_new(Port val) {
     Box *b = malloc(sizeof(Box)); b->rc = 1; b->root = cell(O_ROOT, 1);
     link(val, P(b->root, 0));
@@ -258,6 +259,15 @@ static void rule_dup(Cell *o, Cell *v) {
         if (v->kind == V_LAM) ADD(prof_dup[((Record *)v->p)->where], 1);
         if (v->kind == V_CON && v->a < 4096) ADD(prof_con[v->a], 1);
         if (v->kind == V_GLOBAL && v->a < 65536) ADD(prof_glob[v->a], 1);
+    }
+    if (v->n > 1) {
+        /* a value with parts is held once: each side a reference, read one level at a time */
+        Box *bx = box_new(P(v, 0));
+        Cell *r1 = cell(V_REF, 1), *r2 = cell(V_REF, 1);
+        r1->p = bx; r2->p = bx; box_hold(bx);
+        link(P(r1, 0), o1); link(P(r2, 0), o2);
+        cell_free(o);
+        return;
     }
     Cell *c1 = clone(v), *c2 = clone(v);
     for (int k = 1; k < v->n; k++) {
@@ -400,6 +410,7 @@ static void rule_subst(Cell *o, Cell *v) {
  * dimension is a system of lines */
 static void rule_mkplam(Cell *o, Cell *v) {
     Dim i = (Dim)o->a;
+    if (v->kind == V_REF) { link(box_copy(v->p), P(o, 0)); cell_free(v); return; }
     Port out = o->port[1];
     if (v->kind == V_SYS) {
         Dnf *cl = v->p;
