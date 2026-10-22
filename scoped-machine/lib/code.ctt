@@ -30,7 +30,10 @@
   ; neutrals, each with its type
   (wvar l T) (wapp f a T) (wfst p T) (wsnd p T) (wpapp p r T) (wcomp A u a0 T) (wunglue S b T)
   (welim d x f T) (wtrans d psi ls x T)
-  (wlevel) (wother))
+  (wlevel) (wother)
+  ; words: the type, a literal, k successors of a neutral, an operation (0 = 1 < 2 + 3 max 4 -)
+  ; stuck on a neutral, the elimination of a neutral
+  (wword) (wwlit n) (wwplus k x) (wwop k a b) (wwelim x z s))
 ; two λs of one record (%clos): the pairs of (copies of) their environments, and the λs; else
 ; both, untouched
 (data CloCmp (csame ps f g) (cdiff f g))

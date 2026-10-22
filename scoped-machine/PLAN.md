@@ -103,10 +103,13 @@ F. [x] Codes carry their compiled terms (landed). lang.c `ann` emits, for `check
    quadratic in let chains: 29 s → 2.3 s for boxes).
    State: tests/check.ctt 0.16M; boxes 154/154 2.85M, 2.3 s; sort 106/106 9.1M, 5.9 s
    (msort-at 7.1M, lemIso 0.31M).
-G. [ ] Word typed in the checker (a type Word, #n : Word, %wsucc, %welim's dependent rule);
-   Word ≃ Nat proved in the language (toNat/fromNat, round trips by induction, ua), and %weq %wlt
-   %wadd %wmax declared as identities with inductive evidence, so the machine's operations stay
-   representable inside the theory (5.26).
+G. [x] Words in the theory. `Word` is a type (V_WTY); a word is #n, k successors of a neutral
+   (V_WPLUS), or neutral; %wadd recurses on b, %weq %wlt %wmax %wsub on both (successors
+   cancel), an operation meeting a neutral part is stuck (V_NWOP), %welim of a neutral is V_NWELIM.
+   The checker types #n, %wsucc, the operations, and (%welimP P w z s). lib/std.ctt proves
+   Word ≃ Nat (toNat/fromNat, both round trips, isoToEquiv) and Word ≡ Nat (ua), and declares
+   plusw/eqw/ltw/maxw/subw (by induction) = wadd/weq/wlt/wmax/wsub (the primitives) as checked
+   identities, n = 2. std.ctt now runs in `make test` (0.37M, 0.8 s).
 H. [x] msort-at 7.1M → 78k: two eliminations of one table (the same `rec x` computed twice) were
    compared branch by branch; now, like two λs of one record, by their motives and shared
    variables first (%clos on V_CASEF). State: tests/check.ctt 0.15M; boxes 1.96M; sort 1.36M

@@ -169,6 +169,7 @@ Port lazy_copy(Cell *root) {
 }
 static Port box_copy(Box *b) { return lazy_copy(b->root); }
 static Port sub(Port prov, Subst *s);
+static Port word_of(uint64_t n) { Cell *c = cell(V_WORD, 1); c->a = n; return P(c, 0); }
 /* a reference reads its value under the substitution it carries (a=Subst or 0): the top cell
  * copied and substituted, each part a reference carrying the substitution on */
 static Port ref_read(Cell *r) { Port p = box_copy(r->p); return r->a ? sub(p, (Subst *)(uintptr_t)r->a) : p; }
@@ -383,6 +384,9 @@ static void rule_subst(Cell *o, Cell *v) {
         free(a);
         break;
     }
+    case V_WPLUS: { Cell *a = cell(O_WADD, 3); link(sub(v->port[1], s), P(a, 0)); link(word_of(v->a), P(a, 1)); link(P(a, 2), out); break; }
+    case V_NWOP: { Cell *a = cell((int)v->x, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); break; }
+    case V_NWELIM: { Cell *a = cell(O_WELIM, 4); for (int k = 1; k <= 3; k++) link(sub(v->port[k], s), P(a, k - 1)); link(P(a, 3), out); break; }
     case V_HCOMP: { Cell *a = cell(O_HCOMP, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); break; }
     case V_NCASE: {
         /* 1=scrutinee 2=motive 3..=environment, type → 0=scrutinee 1=motive 2..=environment out */
@@ -513,10 +517,11 @@ static void neutral_proj(Cell *o, Cell *v) {
  * %view gives a value's head as a constructor of View (lib/code.ctt) whose fields are the
  * value's own ports: nothing is copied, and a part is read further only by viewing it. */
 enum { W_LAM, W_PAIR, W_PI, W_SIGMA, W_U, W_PATH, W_PLAM, W_IV, W_FACE, W_SYS, W_GLUE, W_GLUEV, W_DATA, W_CON,
-       W_HCOMP, W_VAR, W_APP, W_FST, W_SND, W_PAPP, W_COMP, W_UNGLUE, W_ELIM, W_TRANS, W_LEVEL, W_OTHER, W_N };
+       W_HCOMP, W_VAR, W_APP, W_FST, W_SND, W_PAPP, W_COMP, W_UNGLUE, W_ELIM, W_TRANS, W_LEVEL, W_OTHER,
+       W_WORD, W_WLIT, W_WPLUS, W_WOP, W_WELIM, W_N };
 static const char *WNAME[W_N] = { "wlam", "wpair", "wpi", "wsigma", "wu", "wpath", "wplam", "wiv", "wface", "wsys", "wglue",
     "wgluev", "wdata", "wcon", "whcomp", "wvar", "wapp", "wfst", "wsnd", "wpapp", "wcomp", "wunglue", "welim", "wtrans",
-    "wlevel", "wother" };
+    "wlevel", "wother", "wword", "wwlit", "wwplus", "wwop", "wwelim" };
 static int WC[W_N], C_LNIL = -1, C_LCONS, C_TRUE, C_FALSE;
 static int B_TRUE = -1, B_FALSE;
 static void need_bool(void) {
@@ -539,7 +544,6 @@ static Port mk(int c, Port a, Port b, Port d, Port e) {
     Port f[4] = { a, b, d, e };
     return con_build(c, f, NULL);
 }
-static Port word_of(uint64_t n) { Cell *c = cell(V_WORD, 1); c->a = n; return P(c, 0); }
 static Port list_of(const Port *xs, int n) {
     Port l = con_build(C_LNIL, NULL, NULL);
     for (int k = n - 1; k >= 0; k--) l = mk(C_LCONS, xs[k], l, 0, 0);
@@ -564,6 +568,11 @@ static void rule_view(Cell *o, Cell *v) {
         cell_free(o); return;
     }
     case V_PAIR: r = mk(WC[W_PAIR], v->port[1], v->port[2], 0, 0); break;
+    case V_WTY: r = con_build(WC[W_WORD], NULL, NULL); break;
+    case V_WORD: r = mk(WC[W_WLIT], P(v, 0), 0, 0, 0); keep = true; break;
+    case V_WPLUS: r = mk(WC[W_WPLUS], word_of(v->a), v->port[1], 0, 0); break;
+    case V_NWOP: r = mk(WC[W_WOP], word_of((uint64_t)(v->x - O_WEQ)), v->port[1], v->port[2], 0); break;
+    case V_NWELIM: r = mk(WC[W_WELIM], v->port[1], v->port[2], v->port[3], 0); break;
     case V_PI: r = mk(WC[W_PI], v->port[1], v->port[2], 0, 0); break;
     case V_SIGMA: r = mk(WC[W_SIGMA], v->port[1], v->port[2], 0, 0); break;
     case V_U: r = mk(WC[W_U], v->port[1], 0, 0, 0); break;
@@ -636,6 +645,25 @@ static void rule_view(Cell *o, Cell *v) {
     link(r, out);
     cell_free(o);
     if (!keep) cell_free(v);
+}
+
+/* words: a literal #k, k successors of a neutral (V_WPLUS), or a neutral. wsplit reads a word as
+ * (k, base), base 0 for a literal; it returns the cell to free (the literal or V_WPLUS) */
+static Cell *wsplit(Cell *c, uint64_t *k, Port *base) {
+    if (c->kind == V_WORD) { *k = c->a; *base = 0; return c; }
+    if (c->kind == V_WPLUS) { *k = c->a; *base = c->port[1]; return c; }
+    *k = 0; *base = P(c, 0); return NULL;
+}
+static Port wplus(uint64_t k, Port base) {
+    if (!base) return word_of(k);
+    if (k == 0) return base;
+    Cell *w = cell(V_WPLUS, 2); w->a = k; link(base, P(w, 1));
+    return P(w, 0);
+}
+static Port wstuck(int op, Port a, Port b) {
+    Cell *n = cell(V_NWOP, 3); n->x = (uint32_t)op;
+    link(a, P(n, 1)); link(b, P(n, 2));
+    return P(n, 0);
 }
 
 /* ---------------- the rules ---------------- */
@@ -1159,40 +1187,87 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     case O_VIEW: rule_view(o, v); return;
-    case O_WSUCC: case O_WEQ: case O_WLT: case O_WADD: case O_WMAX: case O_WSUB: case O_WOP2: case O_WELIM: {
-        need_bool();
-        if (vk != V_WORD) { fprintf(stderr, "a word operation on a value that is not a word (kind %d)\n", vk); exit(2); }
-        uint64_t n = v->a;
-        if (o->kind == O_WSUCC) {
-            Cell *w = cell(V_WORD, 1); w->a = n + 1; link(P(w, 0), o->port[1]);
-        } else if (o->kind == O_WELIM) {
-            if (n == 0) { link(o->port[1], o->port[3]); era(o->port[2]); }
-            else {
-                /* s #(n-1) h, h the elimination of #(n-1), computed when used */
-                Port s1, s2; split2(o->port[2], &s1, &s2);
-                Cell *p1 = cell(V_WORD, 1); p1->a = n - 1;
-                Cell *p2 = cell(V_WORD, 1); p2->a = n - 1;
-                Cell *h = cell(V_WSUSP, 4);
-                link(o->port[1], P(h, 1)); link(s2, P(h, 2)); link(P(p2, 0), P(h, 3));
-                link(app2(app2(s1, P(p1, 0)), P(h, 0)), o->port[3]);
-            }
-        } else if (o->kind == O_WOP2) {
-            uint64_t a = o->a; Port r;
-            switch (o->x) {
-            case O_WEQ: r = con_build(a == n ? B_TRUE : B_FALSE, NULL, NULL); break;
-            case O_WLT: r = con_build(a < n ? B_TRUE : B_FALSE, NULL, NULL); break;
-            default: {
-                Cell *w = cell(V_WORD, 1);
-                w->a = o->x == O_WADD ? a + n : o->x == O_WMAX ? (a > n ? a : n) : (a > n ? a - n : 0);
-                r = P(w, 0);
-            }
-            }
-            link(r, o->port[1]);
+    case O_WEQ: case O_WLT: case O_WADD: case O_WMAX: case O_WSUB: {
+        /* a is read: wait for b */
+        Cell *c = cell(O_WOP2, 3); c->x = o->kind;
+        mv(o, 1, P(c, 0)); link(P(v, 0), P(c, 1)); mv(o, 2, P(c, 2));
+        cell_free(o);
+        return;
+    }
+    case O_WSUCC: {
+        uint64_t k; Port b; Cell *fr = wsplit(v, &k, &b);
+        link(wplus(k + 1, b), o->port[1]);
+        if (fr) cell_free(fr);
+        cell_free(o);
+        return;
+    }
+    case O_WELIM: {
+        uint64_t k; Port b; Cell *fr = wsplit(v, &k, &b);
+        if (fr) cell_free(fr);
+        if (k == 0 && !b) { link(o->port[1], o->port[3]); era(o->port[2]); }
+        else if (k == 0) {
+            /* a neutral word: the elimination is stuck */
+            Cell *e = cell(V_NWELIM, 4);
+            link(b, P(e, 1)); mv(o, 1, P(e, 2)); mv(o, 2, P(e, 3)); link(P(e, 0), o->port[3]);
         } else {
-            Cell *c = cell(O_WOP2, 2); c->x = o->kind; c->a = n;
-            mv(o, 1, P(c, 0)); mv(o, 2, P(c, 1));
+            /* s (k-1 ⊕ b) h, h the elimination of k-1 ⊕ b, computed when used */
+            Port s1, s2, p1, p2;
+            split2(o->port[2], &s1, &s2);
+            split2(wplus(k - 1, b), &p1, &p2);
+            Cell *h = cell(V_WSUSP, 4);
+            link(o->port[1], P(h, 1)); link(s2, P(h, 2)); link(p2, P(h, 3));
+            link(app2(app2(s1, p1), P(h, 0)), o->port[3]);
         }
-        cell_free(o); cell_free(v);
+        cell_free(o);
+        return;
+    }
+    case O_WOP2: {
+        need_bool();
+        Cell *ac = PC(o->port[1]);
+        uint64_t ka, kb; Port ba, bb;
+        Cell *fa = wsplit(ac, &ka, &ba), *fb = wsplit(v, &kb, &bb);
+        if (fa) cell_free(fa);
+        if (fb) cell_free(fb);
+        int op = (int)o->x;
+        Port r = 0;
+        if (!ba && !bb) {
+            switch (op) {
+            case O_WEQ: r = con_build(ka == kb ? B_TRUE : B_FALSE, NULL, NULL); break;
+            case O_WLT: r = con_build(ka < kb ? B_TRUE : B_FALSE, NULL, NULL); break;
+            case O_WADD: r = word_of(ka + kb); break;
+            case O_WMAX: r = word_of(ka > kb ? ka : kb); break;
+            default: r = word_of(ka > kb ? ka - kb : 0); break;
+            }
+        } else if (op == O_WADD) {
+            /* by recursion on b */
+            if (!bb) r = wplus(ka + kb, ba);
+            else r = wplus(kb, wstuck(O_WADD, wplus(ka, ba), bb));
+        } else {
+            /* by recursion on both: successors cancel */
+            uint64_t c = ka < kb ? ka : kb; ka -= c; kb -= c;
+            bool za = ka == 0 && !ba, zb = kb == 0 && !bb;   /* literally zero */
+            switch (op) {
+            case O_WEQ:
+                if ((za && kb) || (zb && ka)) { r = con_build(B_FALSE, NULL, NULL); break; }
+                r = wstuck(op, wplus(ka, ba), wplus(kb, bb)); break;
+            case O_WLT:
+                if (zb) { r = con_build(B_FALSE, NULL, NULL); if (ba) era(ba); break; }
+                if (za && kb) { r = con_build(B_TRUE, NULL, NULL); if (bb) era(bb); break; }
+                r = wstuck(op, wplus(ka, ba), wplus(kb, bb)); break;
+            case O_WMAX:
+                if (za) { r = wplus(c + kb, bb); break; }
+                if (zb) { r = wplus(c + ka, ba); break; }
+                r = wplus(c, wstuck(op, wplus(ka, ba), wplus(kb, bb))); break;
+            default:
+                if (zb) { r = wplus(ka, ba); break; }
+                if (za) { r = word_of(0); if (bb) era(bb); break; }
+                r = wstuck(op, wplus(ka, ba), wplus(kb, bb)); break;
+            }
+            /* a neutral part not in the result is erased (equality with a literal zero) */
+            if (op == O_WEQ && ((za && kb) || (zb && ka))) { if (ba) era(ba); if (bb) era(bb); }
+        }
+        link(r, o->port[2]);
+        cell_free(o);
         return;
     }
     case O_MKVAR: case O_MKDIM: {
@@ -1431,6 +1506,11 @@ static int lockset(Cell *o, Cell *v, Cell **S, int cap) {
     for (int k = 1; k < o->n; k++) { Port p = rd(o, k); if (p) S[n++] = PC(p); }
     for (int k = 1; k < v->n; k++) { Port p = rd(v, k); if (p) S[n++] = PC(p); }
     if (v->kind == V_GLOBAL) { Cell *r = global_res((long)v->a); S[n++] = r; Port p = rd(r, 0); if (p) S[n++] = PC(p); }
+    if (o->kind == O_WOP2 || o->kind == O_CLOS2) {
+        /* the first operand's value, held at port 1: its parts are moved */
+        Port p = rd(o, 1);
+        if (p) { Cell *w = PC(p); for (int k = 1; k < w->n && n < cap - 1; k++) { Port q = rd(w, k); if (q) S[n++] = PC(q); } }
+    }
     if (v->kind == V_REF || v->kind == V_GLOBAL) {
         /* the stored value and its parts' neighbours: reading it may wrap a part in a box */
         Cell *r = v->kind == V_REF ? ((Box *)v->p)->root : global_res((long)v->a);
@@ -1450,6 +1530,7 @@ static int lockset(Cell *o, Cell *v, Cell **S, int cap) {
 static void rewrite(Redex r) {
     Cell *o = r.op, *v = r.v;
     int cap = o->n + v->n + 8;
+    if (o->kind == O_WOP2 || o->kind == O_CLOS2) { Port p = rd(o, 1); if (p) cap += PC(p)->n; }
     if (v->kind == V_REF || v->kind == V_GLOBAL) {
         /* room for the stored value's parts (read again under the locks) */
         Cell *rt = v->kind == V_REF ? ((Box *)v->p)->root : global_res((long)v->a);
@@ -1589,6 +1670,7 @@ static Port build(Syn *t, Frame *f) {
     }
     case S_BOX: return ref_of(build(t->k[0], f));
     case S_WORD: c = cell(V_WORD, 1); c->a = (uint64_t)t->id; return P(c, 0);
+    case S_WORDTY: c = cell(V_WTY, 1); return P(c, 0);
     case S_CALL: {
         c = cell(O_CALL, t->n + 2);
         for (int k = 0; k < t->n; k++) link(build(t->k[k], f), P(c, 1 + k));

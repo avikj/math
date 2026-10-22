@@ -104,6 +104,10 @@ enum {
                  * meeting it copies the value out (as a definition is unfolded) */
     V_WORD,     /* a=the number: a machine word, one cell */
     V_WSUSP,    /* 1=z 2=s 3=a word: the elimination of that word, computed when used (a hypothesis) */
+    V_WTY,      /* the type of words */
+    V_WPLUS,    /* a=k ≥ 1; 1=a neutral word x: k successors of x */
+    V_NWOP,     /* x=the operation (O_WEQ..O_WSUB); 1=a 2=b: a word operation stuck on a neutral */
+    V_NWELIM,   /* 1=w 2=z 3=s: the elimination of a neutral word */
     V_SUSP,     /* p=CaseTab, x=has motive; 1=field [2=motive] environment: an induction hypothesis, the
                  * elimination of a recursive field, computed when forced */
     V_END,
@@ -152,13 +156,15 @@ enum {
     O_CLAUSES,  /* 0=face 1=out: its clauses, each a face, as a list */
     O_RESTRICT, /* 0=a clause (a face) 1=value 2=out: the value under the clause */
     O_GLOB,     /* x=table, a=count; 0=index (Num) 1=out: an entry of the checker's tables, a reference */
-    O_ABS,      /* a=count; 0=level (Num) 1=value 2=out: the line binding the dimension at that level */
+    O_ABS,      /* 0=a dimension 1=value 2=out: the line binding that dimension */
     O_NTYPE,    /* 0=a neutral 1=out: its type, computed from its spine (only a variable stores one) */
     O_CALL,     /* 0=a definition 1..n=arguments out: a definition applied to its arguments; with all
                  * its parameters, its body is built in one interaction */
     O_WSUCC,    /* 0=w 1=out: w + 1 */
-    O_WEQ, O_WLT, O_WADD, O_WMAX, O_WSUB,  /* 0=a 1=b 2=out: on words; first a, then b */
-    O_WOP2,     /* x=the operation, a=a; 0=b 1=out */
+    O_WEQ, O_WLT, O_WADD, O_WMAX, O_WSUB,  /* 0=a 1=b 2=out: on words; first a, then b. Equality,
+                 * order, max and truncated subtraction recurse on both (cancelling successors), addition
+                 * on b; a word with a neutral part leaves the operation stuck (V_NWOP) */
+    O_WOP2,     /* x=the operation; 0=b 1=a (its value) 2=out */
     O_WELIM,    /* (%welim w z s): 0=w 1=z 2=s 3=out: #0 ↦ z, #(n+1) ↦ s #n (the elimination of #n) */
     O_PEND,     /* p=Dnf r (0 or 1); 0=the type of p 1=p 2=out: p r, an endpoint when the type is a path type */
     O_CLOS,     /* 0=f 1=g 2=out */
@@ -244,6 +250,7 @@ enum {
     S_GLOBTAB,  /* x=the table; k[0]=the index */
     S_BOX,      /* k[0]: the value, held once and referred to */
     S_WORD,     /* id: a word literal #n */
+    S_WORDTY,   /* the type Word */
     S_CALL      /* id: the definition; k: its arguments */
 };
 struct Record;

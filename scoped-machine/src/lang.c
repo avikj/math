@@ -71,7 +71,7 @@ static bool node_eq(Node *a, Node *b) {
 }
 
 /* ---------------- desugaring to the core forms ---------------- */
-static const char *KW[] = { "%raw", "lam", "thunk", "delay", "force", "case", "elim", "if", "rec", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
+static const char *KW[] = { "%raw", "%welimP", "lam", "thunk", "delay", "force", "case", "elim", "if", "rec", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
     "PathP", "@", "~", "/\\", "\\/", "=", "&", "|", "faceof", "sys", "sys0", "sys+", "sysmap", "comp", "Glue", "glue",
     "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", "%clos", "%box", "%wsucc", "%weq", "%wlt", "%wadd", "%wmax", "%wsub", "%welim", NULL };
 static bool keyword(const char *s) { for (int i = 0; KW[i]; i++) if (!strcmp(KW[i], s)) return true; return false; }
@@ -703,6 +703,8 @@ static NV ann(Node *t, Chain *C) {
         if (!strcmp(s, "tt")) return aconst("ttt", "tt");
         if (!strcmp(s, "ff")) return aconst("tff", "ff");
         if (!strcmp(s, "U")) { p[0] = nsym("tlzero"); return anode(C, "tuniv", p, 1, nsym("U")); }
+        if (!strcmp(s, "Word")) return aconst("tword", "Word");
+        if (s[0] == '#' && s[1] >= '0' && s[1] <= '9') { NV r; r.val = t; r.node = nl3("app", nsym("tlit"), t); return r; }
         AScope *a = ascope(s);
         if (a) { NV r; r.val = t; r.node = a->ty ? nl3("app", nl3("app", nsym("tv"), t), a->ty) : nl3("app", nsym("ti"), t); return r; }
         int i = checked_index(s);
@@ -781,6 +783,21 @@ static NV ann(Node *t, Chain *C) {
         { "PathP", "tpathp", 3 }, { "@", "tpapp", 2 }, { "~", "tneg", 1 }, { "/\\", "tmeet", 2 }, { "\\/", "tjoin", 2 },
         { "&", "tfand", 2 }, { "|", "tfor", 2 }, { "comp", "tcomp", 3 }, { "Glue", "tgluet", 2 }, { "glue", "tglue", 2 },
         { "unglue", "tunglue", 2 }, { "hcompD", "thcomp", 2 }, { "force", "tforce", 1 }, { NULL, NULL, 0 } };
+    {
+        static const char *WO[] = { "%weq", "%wlt", "%wadd", "%wmax", "%wsub", NULL };
+        for (int q = 0; WO[q]; q++) if (!strcmp(h, WO[q])) {
+            NV a = ann(t->it[1], C), b = ann(t->it[2], C);
+            p[0] = word(q); p[1] = a.node; p[2] = b.node;
+            Node *v = nl3(h, a.val, b.val);
+            return anode(C, "twop", p, 3, v);
+        }
+        if (!strcmp(h, "%wsucc")) { NV a = ann(t->it[1], C); p[0] = a.node; return anode(C, "twsucc", p, 1, nl2(h, a.val)); }
+        if (!strcmp(h, "%welimP")) {
+            Node *v = nlist(5); v->it[0] = t->it[0];
+            for (int i = 0; i < 4; i++) { NV r = ann(t->it[i + 1], C); p[i] = r.node; v->it[i + 1] = r.val; }
+            return anode(C, "twelim", p, 4, v);
+        }
+    }
     if (!strcmp(h, "=")) {
         NV r = ann(t->it[1], C); p[0] = r.node;
         return anode(C, is(t->it[2], "0") ? "teq0" : "teq1", p, 1, nl3("=", r.val, t->it[2]));
@@ -1070,7 +1087,7 @@ static int new_slot(void) {
     return L->nslots++;
 }
 static Syn *var_syn(int slot) { levels[nlevels - 1].uses[slot]++; Syn *s = syn(S_VAR, 0); s->slot = slot; return s; }
-static bool constant_sym(const char *s) { return !strcmp(s, "0") || !strcmp(s, "1") || !strcmp(s, "tt") || !strcmp(s, "ff") || !strcmp(s, "U"); }
+static bool constant_sym(const char *s) { return !strcmp(s, "0") || !strcmp(s, "1") || !strcmp(s, "tt") || !strcmp(s, "ff") || !strcmp(s, "U") || !strcmp(s, "Word"); }
 
 /* the outermost binder level a term refers to (-1: none) */
 /* (only whether it is below the current level matters: the walk stops at the first variable of
@@ -1273,6 +1290,7 @@ static Syn *compile(Node *t) {
         if (!strcmp(s, "tt")) return syn(S_FTT, 0);
         if (!strcmp(s, "ff")) return syn(S_FFF, 0);
         if (!strcmp(s, "U")) return syn(S_U, 0);
+        if (!strcmp(s, "Word")) return syn(S_WORDTY, 0);
         Bind *b = lookup(s);
         if (b) {
             if (b->level != li) die("internal: unlifted outer variable", s);
@@ -1335,6 +1353,12 @@ static Syn *compile(Node *t) {
         static const struct { const char *name; int kind, n; } PR[] = { { "%view", O_VIEW, 1 }, { "%ieq", O_IEQ, 2 }, { "%feq", O_FEQL, 2 }, { "%clauses", O_CLAUSES, 1 },
             { "%restrict", O_RESTRICT, 2 }, { "%abs", O_ABS, 2 }, { "%branch", O_BRANCH, 3 }, { "%clos", O_CLOS, 2 }, { "%wsucc", O_WSUCC, 1 }, { "%weq", O_WEQ, 2 }, { "%wlt", O_WLT, 2 },
             { "%wadd", O_WADD, 2 }, { "%wmax", O_WMAX, 2 }, { "%wsub", O_WSUB, 2 }, { "%welim", O_WELIM, 3 }, { NULL, 0, 0 } };
+        if (!strcmp(h, "%welimP")) {
+            /* (%welimP P w z s): the elimination of a word with its motive, which is for the
+             * checker: the machine runs (%welim w z s) */
+            if (t->n != 5) die("(%welimP P w z s)", NULL);
+            Syn *s = compile_n(S_PRIM, t, 2, 3); s->x = O_WELIM; return s;
+        }
         if (!strcmp(h, "%var") || !strcmp(h, "%dim")) {
             /* (%var T), (%dim): a fresh variable of type T, a fresh dimension; the first port
              * only triggers the cell */
@@ -1530,6 +1554,18 @@ static void rb_one(FILE *o, Port prov) {
     case V_HCOMP: push_fields(o, "hcompD", c, 1); return;
     case V_CASEF: fputs("%casef", o); return;
     case V_WORD: fprintf(o, "#%llu", (unsigned long long)c->a); return;
+    case V_WTY: fputs("Word", o); return;
+    case V_WPLUS: {
+        for (uint64_t k = 0; k < c->a; k++) { fputs("(%wsucc ", o); push_str(")"); }
+        push_field(c, 1);
+        return;
+    }
+    case V_NWOP: {
+        static const char *nm[] = { "%weq", "%wlt", "%wadd", "%wmax", "%wsub" };
+        push_fields_to(o, nm[c->x - O_WEQ], c, 1, 3);
+        return;
+    }
+    case V_NWELIM: push_fields_to(o, "%welim", c, 1, 4); return;
     case V_WSUSP: { extern Port wsusp_force(Cell *c); push_port(wsusp_force(c)); return; }
     case V_REF: { extern Port ref_copy(Cell *c); push_port(ref_copy(c)); return; }
     case V_SUSP:

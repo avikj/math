@@ -23,7 +23,10 @@
   ; a data type at its parameters; a constructor at its fields and dimensions; elimination
   ; with a motive, and without (F: the elimination as a function); formal hcomp
   (tdata d ps V) (tcon d c fs ds V) (telim d P B x F V) (tcase d B x F V) (thcomp u a V) (tforce t V)
-  (tlevel) (tlzero) (tlsuc l V) (tlmax a b V))
+  (tlevel) (tlzero) (tlsuc l V) (tlmax a b V)
+  ; words: the type, a literal, the successor, an operation (0 = 1 < 2 + 3 max 4 -), the
+  ; elimination with its motive
+  (tword) (tlit V) (twsucc a V) (twop k a b V) (twelim P w z s V))
 ; a branch of an elimination: binders for its fields, hypotheses, dimensions, then the body
 (data Br (bx b) (bi b) (be t))
 ; a telescope: a term binder over a type, a dimension binder, the end
@@ -37,7 +40,8 @@
   ((tsys bs V) V) ((tcomp A u a V) V) ((tgluet A S V) V) ((tglue S a V) V) ((tunglue S b V) V)
   ((tlet t b V) V) ((tann t T V) V)
   ((tdata d ps V) V) ((tcon d c fs ds V) V) ((telim d P B x F V) V) ((tcase d B x F V) V) ((thcomp u a V) V) ((tforce t V) V)
-  ((tlevel) Level) ((tlzero) lzero) ((tlsuc l V) V) ((tlmax a b V) V))))
+  ((tlevel) Level) ((tlzero) lzero) ((tlsuc l V) V) ((tlmax a b V) V)
+  ((tword) Word) ((tlit V) V) ((twsucc a V) V) ((twop k a b V) V) ((twelim P w z s V) V))))
 
 ; ---------------------------------------------------------------- basics
 ; Lst, Opt, View, CloCmp and DTab are declared in code.ctt
@@ -207,6 +211,9 @@
   ((whcomp w a) (case wv ((whcomp w2 a2) (if (uconv a a2) (let i (%dim) (uconv (@ w i) (@ w2 i))) false)) (_ false)))
   ((wiv r) (case wv ((wiv s) (%ieq r s)) (_ false)))
   ((wface a) (case wv ((wface b) (%feq a b)) (_ false)))
+  ((wword) (case wv ((wword) true) (_ false)))
+  ((wwlit n) (case wv ((wwlit m) (%weq n m)) (_ false)))
+  ((wwplus k x) (case wv ((wwplus j y) (if (%weq k j) (uconv x y) false)) (_ false)))
   ((wother) false)
   (_ (case (convneu wu wv) ((some X) true) ((none) false))))))
 (def uconv-ww (lam u wu v wv (case wv
@@ -273,6 +280,8 @@
             ((csame ps f2 g2) (if (env-pairs ps) (some T) (if (conv-elims d f2 g2 (ctors-of d X) #0) (some T) none)))
             ((cdiff f2 g2) (if (conv-elims d f2 g2 (ctors-of d X) #0) (some T) none))))
          ((none) none)) none)) (_ none)))
+  ((wwop k a b) (case wv ((wwop j c e) (if (%weq k j) (if (uconv a c) (if (uconv b e) (some opq) none) none) none)) (_ none)))
+  ((wwelim x z s) (case wv ((wwelim y z2 s2) (if (uconv x y) (if (uconv z z2) (if (uconv s s2) (some opq) none) none) none)) (_ none)))
   ((wtrans d psi ls x T) (case wv ((wtrans d2 psi2 ls2 y T2) (if (%weq d d2) (if (%feq psi psi2)
        (if (lall2 (lam l1 l2 (let i (%dim) (uconv (@ l1 i) (@ l2 i)))) ls ls2)
          (case (same-neu x y) ((some X) (some (mkdata d (lmap (lam l (@ l 1)) ls)))) ((none) none)) none) none) none)) (_ none)))
@@ -386,6 +395,17 @@
      ((some T) (case (%view T) ((wdata d ps) (let Tv (mkdata d ps) (if (check-hcomp Tv u a) (some Tv) none))) (_ none)))
      ((none) none)))
   ((tforce t V) (infer t))
+  ((tword) (some U))
+  ((tlit V) (some Word))
+  ((twsucc a V) (if (check a Word) (some Word) none))
+  ((twop k a b V) (if (check a Word) (if (check b Word) (some (if (%wlt k #2) Bool Word)) none) none))
+  ; the elimination of a word: P #0 at zero, P n → P (n+1) at a successor
+  ((twelim P w z s V) (if (check w Word)
+     (case (motive-level Word P)
+       ((some l) (let Pv (tval P)
+          (if (check z (Pv #0)) (if (check s (Pi n Word (Pi h (Pv n) (Pv (%wsucc n))))) (some (Pv (tval w))) none) none)))
+       ((none) none))
+     none))
   ; a line: its type is the path of its body's types between its ends
   ((tplam b V) (let i (%dim) (case (infer (b i))
      ((some Ti) (some (PathP (%abs i Ti) (@ V 0) (@ V 1))))
@@ -508,6 +528,9 @@
   ((tcon d c fs ds V) (orb (lany (cany p) fs) (lany (cany p) ds)))
   ((telim d P B x F V) (orb (cany p P) (orb (lany (cany-br p) B) (cany p x))))
   ((tcase d B x F V) (orb (lany (cany-br p) B) (cany p x)))
+  ((twsucc a V) (cany p a))
+  ((twop k a b V) (orb (cany p a) (cany p b)))
+  ((twelim P w z s V) (orb (cany p P) (orb (cany p w) (orb (cany p z) (cany p s)))))
   (_ false)))))
 ; D at its own parameters: each parameter the parameter variable, in order
 (def var-name (lam v (case (%view v) ((wvar l T) (some l)) (_ none))))

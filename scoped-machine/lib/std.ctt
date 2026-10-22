@@ -212,3 +212,82 @@
 (checked true≢false (Pi p (PathP (plam i Bool) true false) Empty)
   (lam p (comp (plam i (isTrue (@ p i))) (plam i (sys)) unit)))
 (checked negZ (Pi z Int Int) (lam z (case z ((pos n) (case n ((zero) (pos zero)) ((suc k) (negsuc k)))) ((negsuc n) (pos (suc n))))))
+
+; ---------------------------------------------------------------- words
+; A word is a natural number held in one cell: #n, the successor (%wsucc w), and the elimination
+; (%welimP P w z s): z : P #0, s : Π n. P n → P (n+1). Word ≃ Nat is proved here, and each of the
+; machine's operations on words (%wadd %weq %wlt %wmax %wsub) is the 1-end of a checked identity
+; whose 0-end is its definition by induction (paper 5.26): the machine computing one cell at a
+; time is a theorem of the theory, not an outside convention. (A word is bounded by the machine's
+; word size as a term is by its memory.)
+(checked toNat (Pi w Word Nat) (lam w (%welimP (lam v Nat) w zero (lam n h (suc h)))))
+(checked fromNat (Pi n Nat Word) (lam n (case n ((zero) #0) ((suc k) (%wsucc (rec k))))))
+(checked toNat-fromNat (Pi n Nat (PathP (plam i Nat) (toNat (fromNat n)) n))
+  (lam n (elim (lam y (PathP (plam i Nat) (toNat (fromNat y)) y)) n
+    ((zero) (plam i zero)) ((suc k) (plam i (suc (@ (rec k) i)))))))
+(checked fromNat-toNat (Pi w Word (PathP (plam i Word) (fromNat (toNat w)) w))
+  (lam w (%welimP (lam v (PathP (plam i Word) (fromNat (toNat v)) v)) w
+    (plam i #0) (lam n h (plam i (%wsucc (@ h i)))))))
+(checked Word≃Nat (Equiv lzero lzero Word Nat) (isoToEquiv lzero Word Nat toNat fromNat toNat-fromNat fromNat-toNat))
+(checked Word≡Nat (PathP (plam i U) Word Nat) (ua lzero Word Nat Word≃Nat))
+; addition, by recursion on the second argument
+(checked plusw (Pi ((a Word) (b Word)) Word) (lam a b (%welimP (lam v Word) b a (lam n h (%wsucc h)))))
+(checked wadd (Pi ((a Word) (b Word)) Word) (lam a b (%wadd a b)))
+(checked plusw≡wadd (Pi ((a Word) (b Word)) (PathP (plam i Word) (plusw a b) (wadd a b)))
+  (lam a b (%welimP (lam v (PathP (plam i Word) (plusw a v) (wadd a v))) b
+    (plam i a) (lam n h (plam i (%wsucc (@ h i)))))))
+(checked-identity plusw wadd plusw≡wadd 2)
+(same (plusw #3 #4) #7)
+; equality, order, max and truncated subtraction, by recursion on both arguments
+(checked eqw (Pi ((a Word) (b Word)) Bool)
+  (lam a (%welimP (lam v (Pi b Word Bool)) a
+    (lam b (%welimP (lam v Bool) b true (lam m g false)))
+    (lam n h b (%welimP (lam v Bool) b false (lam m g (h m)))))))
+(checked weq (Pi ((a Word) (b Word)) Bool) (lam a b (%weq a b)))
+(checked eqw≡weq (Pi ((a Word) (b Word)) (PathP (plam i Bool) (eqw a b) (weq a b)))
+  (lam a (%welimP (lam v (Pi b Word (PathP (plam i Bool) (eqw v b) (weq v b)))) a
+    (lam b (%welimP (lam v (PathP (plam i Bool) (eqw #0 v) (weq #0 v))) b (plam i true) (lam m g (plam i false))))
+    (lam n h b (%welimP (lam v (PathP (plam i Bool) (eqw (%wsucc n) v) (weq (%wsucc n) v))) b
+      (plam i false) (lam m g (h m)))))))
+(checked-identity eqw weq eqw≡weq 2)
+(checked ltw (Pi ((a Word) (b Word)) Bool)
+  (lam a (%welimP (lam v (Pi b Word Bool)) a
+    (lam b (%welimP (lam v Bool) b false (lam m g true)))
+    (lam n h b (%welimP (lam v Bool) b false (lam m g (h m)))))))
+(checked wlt (Pi ((a Word) (b Word)) Bool) (lam a b (%wlt a b)))
+(checked ltw≡wlt (Pi ((a Word) (b Word)) (PathP (plam i Bool) (ltw a b) (wlt a b)))
+  (lam a (%welimP (lam v (Pi b Word (PathP (plam i Bool) (ltw v b) (wlt v b)))) a
+    (lam b (%welimP (lam v (PathP (plam i Bool) (ltw #0 v) (wlt #0 v))) b (plam i false) (lam m g (plam i true))))
+    (lam n h b (%welimP (lam v (PathP (plam i Bool) (ltw (%wsucc n) v) (wlt (%wsucc n) v))) b
+      (plam i false) (lam m g (h m)))))))
+(checked-identity ltw wlt ltw≡wlt 2)
+(checked maxw (Pi ((a Word) (b Word)) Word)
+  (lam a (%welimP (lam v (Pi b Word Word)) a
+    (lam b b)
+    (lam n h b (%welimP (lam v Word) b (%wsucc n) (lam m g (%wsucc (h m))))))))
+(checked wmax (Pi ((a Word) (b Word)) Word) (lam a b (%wmax a b)))
+(checked maxw≡wmax (Pi ((a Word) (b Word)) (PathP (plam i Word) (maxw a b) (wmax a b)))
+  (lam a (%welimP (lam v (Pi b Word (PathP (plam i Word) (maxw v b) (wmax v b)))) a
+    (lam b (plam i b))
+    (lam n h b (%welimP (lam v (PathP (plam i Word) (maxw (%wsucc n) v) (wmax (%wsucc n) v))) b
+      (plam i (%wsucc n)) (lam m g (plam i (%wsucc (@ (h m) i)))))))))
+(checked-identity maxw wmax maxw≡wmax 2)
+(checked subw (Pi ((a Word) (b Word)) Word)
+  (lam a (%welimP (lam v (Pi b Word Word)) a
+    (lam b #0)
+    (lam n h b (%welimP (lam v Word) b (%wsucc n) (lam m g (h m)))))))
+(checked wsub (Pi ((a Word) (b Word)) Word) (lam a b (%wsub a b)))
+(checked subw≡wsub (Pi ((a Word) (b Word)) (PathP (plam i Word) (subw a b) (wsub a b)))
+  (lam a (%welimP (lam v (Pi b Word (PathP (plam i Word) (subw v b) (wsub v b)))) a
+    (lam b (plam i #0))
+    (lam n h b (%welimP (lam v (PathP (plam i Word) (subw (%wsucc n) v) (wsub (%wsucc n) v))) b
+      (plam i (%wsucc n)) (lam m g (h m)))))))
+(checked-identity subw wsub subw≡wsub 2)
+(same (eqw #5 #5) true)
+(same (ltw #2 #9) true)
+(same (maxw #4 #9) #9)
+(same (subw #4 #9) #0)
+; a wrong identity is rejected: its evidence does not have the identity's type
+(checked-identity-fail eqw wlt eqw≡weq 2)
+(check-fail (Pi ((a Word) (b Word)) (PathP (plam i Bool) (eqw a b) (wlt a b)))
+  (lam a b (plam i (eqw a b))))
