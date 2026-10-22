@@ -25,7 +25,15 @@ typedef uint64_t Dim;   /* dimension names: never reused (a 64-bit count is neve
  * arguments and return references their callers own; a cell owns its payload. */
 typedef struct { uint32_t rc, n; uint64_t l[]; } Clause;   /* literals: dimension << 1 | polarity */
 typedef struct { uint32_t rc, n; Clause *c[]; } Dnf;     /* join of clauses (or a system's clause list) */
-typedef struct { uint32_t rc, n; Dim *d; Dnf **v; } Subst;
+/* a substitution: dimensions to intervals (d, v), and term variables (named by their cells' a) to
+ * values held once (tx, tv: opaque boxes, managed by net.c through the hooks below) */
+typedef struct { uint32_t rc, n; Dim *d; Dnf **v; uint32_t nt; uint64_t *tx; void **tv; } Subst;
+extern void (*subst_hook_retain)(void *box);
+extern void (*subst_hook_release)(void *box);
+extern void *(*subst_hook_then)(void *box, const Subst *t);   /* a new box: the value, then t */
+Subst *subst_term(uint64_t x, void *box);                     /* takes the box */
+void *subst_term_get(const Subst *s, uint64_t x);
+Subst *subst_minus_term(const Subst *s, uint64_t x);
 /* a natural number: s when b is NULL, else b's limbs (src/big.c) */
 typedef struct { uint32_t rc, n; uint64_t l[]; } Big;
 typedef struct { uint64_t s; Big *b; } WN;
@@ -51,7 +59,11 @@ void subst_release(Subst *s);
 Dnf *clause_list(Clause *const *c, uint32_t n);
 
 Dim  fresh_dim(void);
-void dim_named(Dim d, int name);   /* a dimension made for a binder: its source name (src/lang.c) */
+void dim_named(Dim d, int name);
+/* metavariables (src/lang.c): a new one, its solution (a copy, or 0), solving it */
+long meta_new(void);
+struct Cell *meta_root(long k);
+struct Cell *meta_type_root(long k);   /* a dimension made for a binder: its source name (src/lang.c) */
 Dnf *dnf_zero(void);
 Dnf *dnf_one(void);
 Dnf *iv_atom(Dim i);
@@ -100,6 +112,7 @@ enum {
     /* neutrals: the last port is the neutral's type (V_UNK when unknown);
      * ty=1 when it is known */
     V_NVAR,     /* a=name; 1=type */
+    V_META,     /* a=metavariable: a hole the checker solves; until then a neutral, then its solution */
     V_NAPP,     /* 1=f 2=arg 3=type */
     V_NFST, V_NSND, /* 1=p 2=type */
     V_NPAPP,    /* p=Dnf r, x=annotated; 1=p [2=a 3=b] type */
@@ -121,6 +134,7 @@ enum {
     V_WORD,     /* a natural number in one cell: a=it, or p=Big when it does not fit in 64 bits */
     V_WSUSP,    /* 1=z 2=s 3=a word: the elimination of that word, computed when used (a hypothesis) */
     V_WTY,      /* the type of words */
+    V_TABS,     /* a=a variable's name; 1=a value: the function x ↦ the value with x substituted */
     V_THUNK,    /* p=Record (no parameter); 1..=environment: a subterm not yet built; an operation meeting
                  * it builds it, a duplicator holds it once (built in place on first read) */
     V_WPLUS,    /* a=k ≥ 1 (or p=Big); 1=a neutral word x: k successors of x */
@@ -185,6 +199,10 @@ enum {
     O_WOP2,     /* x=the operation; 0=b 1=a (its value) 2=out */
     O_WELIM,    /* (%welim w z s): 0=w 1=z 2=s 3=out: #0 ↦ z, #(n+1) ↦ s #n (the elimination of #n) */
     O_PEND,     /* p=Dnf r (0 or 1); 0=the type of p 1=p 2=out: p r, an endpoint when the type is a path type */
+    O_METAREF,  /* 0=k 1=out: metavariable k (its solution once solved) */
+    O_METASET,  /* 0=k 1=solution 2=out: true when it solves k, false when k was solved */
+    O_ABSTRACT, /* 0=a variable 1=value 2=out: the value as a function of the variable */
+    O_METATY,   /* 0=k [1=type] out: set metavariable k's type (true when first), or read it (? when none) */
     O_CLOS,     /* 0=f 1=g 2=out */
     O_CLOS2,    /* 0=g 1=f 2=out: (csame pairs) when f, g are λs of one record, the pairs of their
                  * environments; else (cdiff f g), both untouched */

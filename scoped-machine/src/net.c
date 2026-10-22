@@ -36,6 +36,10 @@ Cell *cell(int kind, int n) {
 static bool owns_dnf(int k) { return k == O_PEND || k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2 || k == V_NTRANS || k == O_TRANSD2 || k == O_IEQB || k == O_FEQLB; }
 static bool owns_subst(int k) { return k == O_SUBST || k == V_DEFER; }
 static void box_release(Box *b);
+static void box_hold(Box *b);
+static void hook_retain(void *b) { box_hold(b); }
+static void hook_release(void *b) { box_release(b); }
+static void *hook_then(void *b, const Subst *t);
 static void payload_retain(Cell *c) {
     if (owns_dnf(c->kind)) dnf_retain(c->p); else if (owns_subst(c->kind)) subst_retain(c->p);
     else if (c->kind == V_REF) { __atomic_add_fetch(&((Box *)c->p)->rc, 1, __ATOMIC_RELAXED); if (c->a) subst_retain((Subst *)(uintptr_t)c->a); }
@@ -200,6 +204,12 @@ Port thunk_build(Cell *v) {
     cell_free(v);
     return r;
 }
+/* a box holding a value then t (the value is read through a reference carrying t) */
+static void *hook_then(void *b, const Subst *t) {
+    Cell *r = cell(V_REF, 1); r->p = b; box_hold(b);
+    Cell *c = cell(O_SUBST, 2); c->p = subst_retain((Subst *)t); link(P(r, 0), P(c, 0));
+    return box_new(P(c, 1));
+}
 static Port word_of(uint64_t n) { Cell *c = cell(V_WORD, 1); c->a = n; return P(c, 0); }
 /* the number a word cell holds (a copy), and a word cell holding a number (taking it) */
 static WN cell_wn(const Cell *c) { WN r = { c->a, c->p }; return wn_copy(&r); }
@@ -339,9 +349,28 @@ static void rule_subst(Cell *o, Cell *v) {
         v->a = (uint64_t)(uintptr_t)t;
         link(P(v, 0), out); cell_free(o); return;
     }
-    case V_NVAR:
+    case V_NVAR: {
+        Box *b = s->nt ? subst_term_get(s, v->a) : NULL;
+        if (b) {
+            /* the variable substituted: the value it stands for */
+            Cell *r = cell(V_REF, 1); r->p = b; box_hold(b);
+            era(v->port[1]); link(P(r, 0), out); cell_free(o); cell_free(v); return;
+        }
         link(sub(v->port[1], s), P(v, 1));
         link(P(v, 0), out); cell_free(o); return;
+    }
+    case V_META: {
+        Cell *root = meta_root((long)v->a);
+        if (root && root->port[0]) { link(sub(lazy_copy(root), s), out); cell_free(o); cell_free(v); return; }
+        link(P(v, 0), out); cell_free(o); return;
+    }
+    case V_TABS: {
+        /* the bound variable is not substituted inside */
+        Subst *t = s;
+        if (subst_term_get(s, v->a)) t = subst_minus_term(s, v->a); else subst_retain(t);
+        link(sub(v->port[1], t), P(v, 1)); subst_release(t);
+        link(P(v, 0), out); cell_free(o); return;
+    }
     case V_DEFER: {
         /* (g args)[p][s] = (g args)[p;s]: the substitution waits for the value */
         Subst *t = v->p ? subst_compose(v->p, s) : subst_retain(s);
@@ -559,10 +588,10 @@ static void neutral_proj(Cell *o, Cell *v) {
  * value's own ports: nothing is copied, and a part is read further only by viewing it. */
 enum { W_LAM, W_PAIR, W_PI, W_SIGMA, W_U, W_PATH, W_PLAM, W_IV, W_FACE, W_SYS, W_GLUE, W_GLUEV, W_DATA, W_CON,
        W_HCOMP, W_VAR, W_APP, W_FST, W_SND, W_PAPP, W_COMP, W_UNGLUE, W_ELIM, W_TRANS, W_LEVEL, W_OTHER,
-       W_WORD, W_WLIT, W_WPLUS, W_WOP, W_WELIM, W_N };
+       W_WORD, W_WLIT, W_WPLUS, W_WOP, W_WELIM, W_META, W_N };
 static const char *WNAME[W_N] = { "wlam", "wpair", "wpi", "wsigma", "wu", "wpath", "wplam", "wiv", "wface", "wsys", "wglue",
     "wgluev", "wdata", "wcon", "whcomp", "wvar", "wapp", "wfst", "wsnd", "wpapp", "wcomp", "wunglue", "welim", "wtrans",
-    "wlevel", "wother", "wword", "wwlit", "wwplus", "wwop", "wwelim" };
+    "wlevel", "wother", "wword", "wwlit", "wwplus", "wwop", "wwelim", "wmeta" };
 static int WC[W_N], C_LNIL = -1, C_LCONS, C_TRUE, C_FALSE;
 static int B_TRUE = -1, B_FALSE;
 static void need_bool(void) {
@@ -592,13 +621,43 @@ static Port list_of(const Port *xs, int n) {
 }
 static Port pair_of(Port a, Port b) { Cell *c = cell(V_PAIR, 3); link(a, P(c, 1)); link(b, P(c, 2)); return P(c, 0); }
 static Port face_cell(Dnf *f);
+/* the head of a neutral's spine, when it is a metavariable */
+static Cell *meta_head(Cell *v) {
+    for (int depth = 0; v && depth < 1 << 20; depth++) {
+        if (v->kind == V_META) return v;
+        if (v->kind == V_REF) {
+            /* through a reference: the value it holds */
+            Port q = ((Box *)v->p)->root->port[0];
+            if (!q || PI(q) != 0) return NULL;
+            v = PC(q); continue;
+        }
+        if (v->kind != V_NAPP && v->kind != V_NFST && v->kind != V_NSND && v->kind != V_NPAPP && v->kind != V_NUNGLUE && v->kind != V_NCASE) return NULL;
+        Port p = v->port[1];
+        if (!p || PI(p) != 0) return NULL;
+        v = PC(p);
+    }
+    return NULL;
+}
+static Port reactivate_port(Port p) { Cell *c = cell(O_SUBST, 2); c->p = subst_id(); link(p, P(c, 0)); return P(c, 1); }
 static void rule_view(Cell *o, Cell *v) {
     need_cons();
     Port out = o->port[1], r = 0;
     int vk = v->kind;
+    if (vk != V_META && is_neutral(vk)) {
+        Cell *h = meta_head(v);
+        if (h) {
+            Cell *root = meta_root((long)h->a);
+            if (root && root->port[0]) {
+                /* a neutral on a solved metavariable: computed again with its solution */
+                Cell *w = cell(O_VIEW, 2); link(reactivate_port(P(v, 0)), P(w, 0)); link(P(w, 1), out);
+                cell_free(o); return;
+            }
+        }
+    }
     bool keep = false;   /* the value itself is the field */
     switch (vk) {
-    case V_LAM: case V_SITEF: case V_CASEF: r = mk(WC[W_LAM], P(v, 0), 0, 0, 0); keep = true; break;
+    case V_LAM: case V_SITEF: case V_CASEF: case V_TABS: r = mk(WC[W_LAM], P(v, 0), 0, 0, 0); keep = true; break;
+    case V_META: r = mk(WC[W_META], word_of(v->a), list_of(NULL, 0), 0, 0); break;
     case V_PLAM: r = mk(WC[W_PLAM], P(v, 0), 0, 0, 0); keep = true; break;
     case V_IV: r = mk(WC[W_IV], P(v, 0), 0, 0, 0); keep = true; break;
     case V_FACE: r = mk(WC[W_FACE], P(v, 0), 0, 0, 0); keep = true; break;
@@ -774,6 +833,11 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     if (v->kind == V_DEFER) { defer_force(o, v); return; }
+    if (v->kind == V_META && o->kind != O_VIEW) {
+        /* a solved metavariable is its solution */
+        Cell *root = meta_root((long)v->a);
+        if (root && root->port[0]) { link(lazy_copy(root), P(o, 0)); cell_free(v); return; }
+    }
     /* an unbuilt subterm meeting an operation is built (an explicit force of a hypothesis too) */
     if (unbuilt(v->kind)) { link(unbuilt_build(v), P(o, 0)); return; }
     if (v->kind == V_REF) {
@@ -799,6 +863,14 @@ static void interact(Cell *o, Cell *v) {
             mv(o, 1, P(c, 0));
             for (int k = 1; k < v->n; k++) link(v->port[k], P(c, k));
             link(P(c, c->n - 1), o->port[2]);
+            cell_free(o); cell_free(v);
+            return;
+        }
+        if (vk == V_TABS) {
+            /* x ↦ e applied to a: e with x substituted by a */
+            Subst *t = subst_term(v->a, box_new(o->port[1]));
+            link(sub(v->port[1], t), o->port[2]);
+            subst_release(t);
             cell_free(o); cell_free(v);
             return;
         }
@@ -1341,6 +1413,46 @@ static void interact(Cell *o, Cell *v) {
         cell_free(o); cell_free(v);
         return;
     }
+    case O_METAREF: case O_METASET: {
+        if (vk != V_WORD || v->p) { stuck(o, v); return; }
+        long k = (long)v->a;
+        Cell *root = meta_root(k);
+        if (!root) { stuck(o, v); return; }
+        bool solved = root->port[0] != 0;
+        if (o->kind == O_METAREF) {
+            if (solved) link(lazy_copy(root), o->port[1]);
+            else { Cell *m = cell(V_META, 1); m->a = (uint64_t)k; link(P(m, 0), o->port[1]); }
+        } else {
+            need_bool();
+            if (!solved) mv(o, 1, P(root, 0)); else era(o->port[1]);
+            link(con_build(solved ? B_FALSE : B_TRUE, NULL, NULL), o->port[2]);
+        }
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_METATY: {
+        if (vk != V_WORD || v->p || !meta_type_root((long)v->a)) { stuck(o, v); return; }
+        Cell *root = meta_type_root((long)v->a);
+        bool has = root->port[0] != 0;
+        if (o->n == 2) {
+            /* read: the type, or ? */
+            if (has) link(lazy_copy(root), o->port[1]); else link(unk(), o->port[1]);
+        } else {
+            need_bool();
+            if (!has) mv(o, 1, P(root, 0)); else era(o->port[1]);
+            link(con_build(has ? B_FALSE : B_TRUE, NULL, NULL), o->port[2]);
+        }
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_ABSTRACT: {
+        if (vk != V_NVAR) { stuck(o, v); return; }
+        Cell *t = cell(V_TABS, 2); t->a = v->a;
+        mv(o, 1, P(t, 1)); link(P(t, 0), o->port[2]);
+        era(v->port[1]);
+        cell_free(o); cell_free(v);
+        return;
+    }
     case O_ABS: {
         /* (%abs i v): the line binding the dimension i */
         Dnf *d = v->p;
@@ -1563,6 +1675,11 @@ static int lockset(Cell *o, Cell *v, Cell **S, int cap) {
     for (int k = 1; k < o->n; k++) { Port p = rd(o, k); if (p) S[n++] = PC(p); }
     for (int k = 1; k < v->n; k++) { Port p = rd(v, k); if (p) S[n++] = PC(p); }
     if (v->kind == V_GLOBAL) { Cell *r = global_res((long)v->a); S[n++] = r; Port p = rd(r, 0); if (p) S[n++] = PC(p); }
+    if (v->kind == V_META || ((o->kind == O_METAREF || o->kind == O_METASET || o->kind == O_METATY) && v->kind == V_WORD && !v->p)) {
+        /* a metavariable's solution (or type) is read or set */
+        Cell *r = o->kind == O_METATY ? meta_type_root((long)v->a) : meta_root((long)v->a);
+        if (r) { S[n++] = r; Port p = rd(r, 0); if (p) { Cell *w = PC(p); S[n++] = w; for (int k = 1; k < w->n && n < cap - 1; k++) { Port q = rd(w, k); if (q) S[n++] = PC(q); } } }
+    }
     if (o->kind == O_WOP2 || o->kind == O_CLOS2) {
         /* the first operand's value, held at port 1: its parts are moved */
         Port p = rd(o, 1);
@@ -1588,6 +1705,10 @@ static void rewrite(Redex r) {
     Cell *o = r.op, *v = r.v;
     int cap = o->n + v->n + 8;
     if (o->kind == O_WOP2 || o->kind == O_CLOS2) { Port p = rd(o, 1); if (p) cap += PC(p)->n; }
+    if (v->kind == V_META || ((o->kind == O_METAREF || o->kind == O_METASET || o->kind == O_METATY) && v->kind == V_WORD && !v->p)) {
+        Cell *r = o->kind == O_METATY ? meta_type_root((long)v->a) : meta_root((long)v->a);
+        if (r) { Port p = rd(r, 0); cap += 2 + (p ? PC(p)->n : 0); }
+    }
     if (v->kind == V_REF || v->kind == V_GLOBAL) {
         /* room for the stored value's parts (read again under the locks) */
         Cell *rt = v->kind == V_REF ? ((Box *)v->p)->root : global_res((long)v->a);
@@ -1637,6 +1758,7 @@ static void *worker(void *arg) {
     return NULL;
 }
 void net_start(int n) {
+    subst_hook_retain = hook_retain; subst_hook_release = hook_release; subst_hook_then = hook_then;
     queues_init(n + 1);
     nworkers = n;
     workers = calloc((size_t)n + 1, sizeof(pthread_t));

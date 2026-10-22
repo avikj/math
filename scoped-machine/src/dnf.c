@@ -199,17 +199,30 @@ Dnf *face_forall(const Dnf *f, Dim i) {
     return d;
 }
 
+void (*subst_hook_retain)(void *box);
+void (*subst_hook_release)(void *box);
+void *(*subst_hook_then)(void *box, const Subst *t);
 static Subst *subst_new(uint32_t n) {
     Subst *s = malloc(sizeof(Subst));
     s->rc = 1; s->n = n; s->d = malloc((n + 1) * sizeof(Dim)); s->v = malloc((n + 1) * sizeof(Dnf *));
+    s->nt = 0; s->tx = NULL; s->tv = NULL;
     LIVE(1);
     return s;
+}
+static void terms_alloc(Subst *s, uint32_t n) { s->tx = malloc((n + 1) * sizeof(uint64_t)); s->tv = malloc((n + 1) * sizeof(void *)); s->nt = 0; }
+static void term_add(Subst *s, uint64_t x, void *box) { s->tx[s->nt] = x; s->tv[s->nt] = box; s->nt++; }
+void *subst_term_get(const Subst *s, uint64_t x) { for (uint32_t i = 0; i < s->nt; i++) if (s->tx[i] == x) return s->tv[i]; return NULL; }
+Subst *subst_term(uint64_t x, void *box) { Subst *s = subst_new(0); terms_alloc(s, 1); term_add(s, x, box); return s; }
+/* t's term entries copied into u (retained), unless u already maps the variable */
+static void terms_copy(Subst *u, const Subst *s) {
+    for (uint32_t i = 0; i < s->nt; i++) if (!subst_term_get(u, s->tx[i])) { subst_hook_retain(s->tv[i]); term_add(u, s->tx[i], s->tv[i]); }
 }
 Subst *subst_retain(Subst *s) { if (s) __atomic_fetch_add(&s->rc, 1, __ATOMIC_RELAXED); return s; }
 void subst_release(Subst *s) {
     if (s && __atomic_sub_fetch(&s->rc, 1, __ATOMIC_ACQ_REL) == 0) {
         for (uint32_t i = 0; i < s->n; i++) dnf_release(s->v[i]);
-        free(s->d); free(s->v); free(s); LIVE(-1);
+        for (uint32_t i = 0; i < s->nt; i++) subst_hook_release(s->tv[i]);
+        free(s->d); free(s->v); free(s->tx); free(s->tv); free(s); LIVE(-1);
     }
 }
 Subst *subst_single(Dim i, const Dnf *r) { Subst *s = subst_new(1); s->d[0] = i; s->v[0] = dnf_retain((Dnf *)r); return s; }
@@ -226,6 +239,7 @@ Subst *subst_then_clause(const Subst *s, const Clause *d) {
     for (uint32_t k = 0; k < ds->n; k++)
         if (!subst_get(s, ds->d[k])) { t->d[n] = ds->d[k]; t->v[n] = dnf_retain(ds->v[k]); n++; }
     t->n = n;
+    if (s->nt) { terms_alloc(t, s->nt); for (uint32_t i = 0; i < s->nt; i++) term_add(t, s->tx[i], subst_hook_then(s->tv[i], ds)); }
     subst_release(ds);
     return t;
 }
@@ -238,6 +252,7 @@ Subst *subst_without(const Subst *s, Dim j) {
     uint32_t n = 0;
     for (uint32_t i = 0; i < s->n; i++) if (s->d[i] != j) { t->d[n] = s->d[i]; t->v[n] = dnf_retain(s->v[i]); n++; }
     t->n = n;
+    if (s->nt) { terms_alloc(t, s->nt); terms_copy(t, s); }
     return t;
 }
 Subst *subst_with(const Subst *s, Dim j, const Dnf *r) {
@@ -246,6 +261,7 @@ Subst *subst_with(const Subst *s, Dim j, const Dnf *r) {
     for (uint32_t i = 0; i < s->n; i++) if (s->d[i] != j) { t->d[n] = s->d[i]; t->v[n] = dnf_retain(s->v[i]); n++; }
     t->d[n] = j; t->v[n] = dnf_retain((Dnf *)r); n++;
     t->n = n;
+    if (s->nt) { terms_alloc(t, s->nt); terms_copy(t, s); }
     return t;
 }
 /* s, then t: x ↦ s(x)[t], and t's entries for the dimensions s leaves alone */
@@ -256,6 +272,19 @@ Subst *subst_compose(const Subst *s, const Subst *t) {
     for (uint32_t k = 0; k < t->n; k++)
         if (!subst_get(s, t->d[k])) { u->d[n] = t->d[k]; u->v[n] = dnf_retain(t->v[k]); n++; }
     u->n = n;
+    if (s->nt || t->nt) {
+        terms_alloc(u, s->nt + t->nt);
+        /* x ↦ s(x) then t; t's own variables s leaves alone */
+        for (uint32_t i = 0; i < s->nt; i++) term_add(u, s->tx[i], subst_hook_then(s->tv[i], t));
+        terms_copy(u, t);
+    }
+    return u;
+}
+/* s without its entry for the term variable x */
+Subst *subst_minus_term(const Subst *s, uint64_t x) {
+    Subst *u = subst_new(s->n);
+    for (uint32_t i = 0; i < s->n; i++) { u->d[i] = s->d[i]; u->v[i] = dnf_retain(s->v[i]); }
+    if (s->nt) { terms_alloc(u, s->nt); for (uint32_t i = 0; i < s->nt; i++) if (s->tx[i] != x) { subst_hook_retain(s->tv[i]); term_add(u, s->tx[i], s->tv[i]); } }
     return u;
 }
 Subst *subst_id(void) { return subst_new(0); }

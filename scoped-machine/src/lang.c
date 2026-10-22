@@ -86,7 +86,7 @@ static bool node_eq(Node *a, Node *b) {
 /* ---------------- desugaring to the core forms ---------------- */
 static const char *KW[] = { "%raw", "%welimP", "lam", "thunk", "delay", "force", "case", "elim", "if", "rec", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
     "PathP", "@", "~", "/\\", "\\/", "=", "&", "|", "faceof", "sys", "sys0", "sys+", "sysmap", "comp", "Glue", "glue",
-    "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", "%clos", "%box", "%wsucc", "%weq", "%wlt", "%wadd", "%wmax", "%wsub", "%welim", NULL };
+    "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", "%clos", "%box", "%wsucc", "%weq", "%wlt", "%wadd", "%wmax", "%wsub", "%welim", "%metaref", "%meta-set", "%abstract", "%meta-type", "%meta-type-set", NULL };
 static bool keyword(const char *s) { for (int i = 0; KW[i]; i++) if (!strcmp(KW[i], s)) return true; return false; }
 static Node *param_name(Node *p) { return p->list ? p->it[0] : p; }
 
@@ -1496,7 +1496,9 @@ static Syn *compile(Node *t) {
     {
         static const struct { const char *name; int kind, n; } PR[] = { { "%view", O_VIEW, 1 }, { "%ieq", O_IEQ, 2 }, { "%feq", O_FEQL, 2 }, { "%clauses", O_CLAUSES, 1 },
             { "%restrict", O_RESTRICT, 2 }, { "%abs", O_ABS, 2 }, { "%branch", O_BRANCH, 3 }, { "%clos", O_CLOS, 2 }, { "%wsucc", O_WSUCC, 1 }, { "%weq", O_WEQ, 2 }, { "%wlt", O_WLT, 2 },
-            { "%wadd", O_WADD, 2 }, { "%wmax", O_WMAX, 2 }, { "%wsub", O_WSUB, 2 }, { "%welim", O_WELIM, 3 }, { NULL, 0, 0 } };
+            { "%wadd", O_WADD, 2 }, { "%wmax", O_WMAX, 2 }, { "%wsub", O_WSUB, 2 }, { "%welim", O_WELIM, 3 },
+            { "%metaref", O_METAREF, 1 }, { "%meta-set", O_METASET, 2 }, { "%abstract", O_ABSTRACT, 2 },
+            { "%meta-type", O_METATY, 1 }, { "%meta-type-set", O_METATY, 2 }, { NULL, 0, 0 } };
         if (!strcmp(h, "%welimP")) {
             /* (%welimP P w z s): the elimination of a word with its motive, which is for the
              * checker: the machine runs (%welim w z s) */
@@ -1587,6 +1589,16 @@ typedef struct { Dim d; char name[16]; } DimShow;
 static bool saw_identity;         /* readback named an identity's dimension */
 static DimShow *dshow; static size_t capdshow; static int ndshow, dcount; static long vcount;
 static char dimbuf[8][24]; static int dimbuf_i;
+/* metavariables: a hole in a checked term, solved by the checker's unification; the solution is held
+ * at the root (unsolved: no value there) */
+static Cell **METAS, **METATY; static size_t capmetas, capmetaty; static long nmetas;
+long meta_new(void) {
+    GROW(METAS, capmetas, (size_t)nmetas + 1); GROW(METATY, capmetaty, (size_t)nmetas + 1);
+    METAS[nmetas] = cell(O_ROOT, 1); METATY[nmetas] = cell(O_ROOT, 1);
+    return nmetas++;
+}
+Cell *meta_root(long k) { return k >= 0 && k < nmetas ? METAS[k] : NULL; }
+Cell *meta_type_root(long k) { return k >= 0 && k < nmetas ? METATY[k] : NULL; }
 /* the source names of dimensions the checker made for binders (a map from dimension to name) */
 typedef struct { Dim d; int nm; } DimNm;
 static DimNm *DNM; static size_t capdnm, ndnm;
@@ -1672,7 +1684,7 @@ static void rb_one(FILE *o, Port prov) {
     if (!c) { fputs("<pending>", o); return; }
     long nm;
     switch (c->kind) {
-    case V_LAM: case V_SITEF: {
+    case V_LAM: case V_SITEF: case V_TABS: {
         Port b = apply_fresh(P(c, 0), &nm);
         fprintf(o, "(lam %s ", name_of(nm));
         push_str(")"); push_port(b);
@@ -1729,6 +1741,12 @@ static void rb_one(FILE *o, Port prov) {
     case V_NCOMP: push_fields_to(o, "comp", c, 1, 4); return;
     case V_NUNGLUE: push_fields_to(o, "unglue", c, 1, 3); return;
     case V_DEFER: push_port(defer_build(c)); return;
+    case V_META: {
+        Cell *root = meta_root((long)c->a);
+        extern Port lazy_copy(Cell *root);
+        if (root && root->port[0]) { push_port(lazy_copy(root)); return; }
+        oprintf("?%llu", (unsigned long long)c->a); return;
+    }
     case V_THUNK: { extern Port thunk_build(Cell *c); push_port(thunk_build(c)); return; }
     case V_UNK: fputs("?", o); return;
     case V_DATA: if (c->n == 1) fputs(DATA[c->a].name, o); else push_fields(o, DATA[c->a].name, c, 1); return;
