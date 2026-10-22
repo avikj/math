@@ -51,7 +51,7 @@ A. [x] `case` = one interaction (landed; one level of lebc: 22 → 5 interaction
    Hypotheses: V_SUSP holding the table, motive, field, environment copies; forcing it is a CASE.
    hcomp: %case-hcomp takes the case as a function value. Neutral case reads back with its branches
    built on fresh variables.
-B. [~] The return path (landed in tests; library run pending). Not a deep QUOTE but %view: one
+B. [x] The return path (landed). Not a deep QUOTE but %view: one
    interaction turning a value's head into a View constructor whose fields are the value's own parts
    (lib/code.ctt `View`; neutrals carry their type). The checker's values ARE the net's values:
    eval-g builds them (lists for environments), application/projection/comp/Glue/endpoints are the
@@ -65,6 +65,15 @@ B. [~] The return path (landed in tests; library run pending). Not a deep QUOTE 
    identities). U carries its level (prelude Level gains lomega = the level of types over levels).
    No signature value is threaded anywhere. check.ctt: 1066 → ~550 lines; the duplicate normalizer is
    gone. tests/check.ctt: 3.5M → 1.53M interactions (9.2M this morning).
+
+C. [x] Neutral types in the NET computed from the spine (O_NTYPE), only a variable stores one; the
+   endpoint rule p@0 copies the spine, computes the type, answers the endpoint (O_PEND). Same
+   exponential as 2026-10-22 morning's check.ctt fix, now at the machine (diagonalGivesGoedelFix
+   stalled > 10 min; now 3.2M). %clos: two λs of one record compare by (copies of) their environments,
+   falling back to applying both (pathToEquiv-ua: 741M → 0.7M).
+   Results (`make library`): std+boxes 154/154, 62M interactions, 37 s (morning: 605M, 468 s);
+   std+sort 106/106, 77M, 41 s (400M, 307 s); lemIso 20.7M (276M); tests/check.ctt 1.12M (9.2M).
+   msort readings: balanced 20985 interactions (6556 erasures), chained 26429 (9622).
 
 ## The spec, as it bears on the code (paper references)
 

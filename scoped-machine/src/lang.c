@@ -73,7 +73,7 @@ static bool node_eq(Node *a, Node *b) {
 /* ---------------- desugaring to the core forms ---------------- */
 static const char *KW[] = { "lam", "thunk", "delay", "force", "case", "elim", "if", "rec", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
     "PathP", "@", "~", "/\\", "\\/", "=", "&", "|", "faceof", "sys", "sys0", "sys+", "sysmap", "comp", "Glue", "glue",
-    "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", NULL };
+    "unglue", "%view", "%var", "%dim", "%ieq", "%feq", "%clauses", "%restrict", "%gval", "%gty", "%dtab", "%dent", "%abs", "%branch", "%clos", NULL };
 static bool keyword(const char *s) { for (int i = 0; KW[i]; i++) if (!strcmp(KW[i], s)) return true; return false; }
 static Node *param_name(Node *p) { return p->list ? p->it[0] : p; }
 
@@ -1038,7 +1038,7 @@ static Syn *compile(Node *t) {
     {
         static const struct { const char *name; int kind, n; } PR[] = { { "%view", O_VIEW, 1 }, { "%var", O_MKVAR, 2 },
             { "%dim", O_MKDIM, 1 }, { "%ieq", O_IEQ, 2 }, { "%feq", O_FEQL, 2 }, { "%clauses", O_CLAUSES, 1 },
-            { "%restrict", O_RESTRICT, 2 }, { "%abs", O_ABS, 2 }, { "%branch", O_BRANCH, 3 }, { NULL, 0, 0 } };
+            { "%restrict", O_RESTRICT, 2 }, { "%abs", O_ABS, 2 }, { "%branch", O_BRANCH, 3 }, { "%clos", O_CLOS, 2 }, { NULL, 0, 0 } };
         for (int q = 0; PR[q].name; q++) if (!strcmp(h, PR[q].name)) {
             if (t->n != PR[q].n + 1) die("wrong number of operands in", h);
             Syn *s = compile_n(S_PRIM, t, 1, PR[q].n); s->x = (uint32_t)PR[q].kind; return s;

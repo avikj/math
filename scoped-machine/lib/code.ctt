@@ -31,6 +31,9 @@
   (wvar l T) (wapp f a T) (wfst p T) (wsnd p T) (wpapp p r T) (wcomp A u a0 T) (wunglue S b T)
   (welim d x f T) (wtrans d psi ls x T)
   (wlevel) (wother))
+; two λs of one record (%clos): the pairs of (copies of) their environments, and the λs; else
+; both, untouched
+(data CloCmp (csame ps f g) (cdiff f g))
 
 (def cl-at (lam l n (case l ((lnil) l) ((lcons x xs) (case n ((nz) x) ((ns m) (cl-at xs m)))))))
 (def cl-map (lam f l (case l ((lnil) lnil) ((lcons x xs) (lcons (f x) (cl-map f xs))))))

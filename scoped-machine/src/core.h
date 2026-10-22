@@ -149,6 +149,11 @@ enum {
     O_RESTRICT, /* 0=a clause (a face) 1=value 2=out: the value under the clause */
     O_GLOB,     /* x=table, a=count; 0=index (Num) 1=out: an entry of the checker's tables, a reference */
     O_ABS,      /* a=count; 0=level (Num) 1=value 2=out: the line binding the dimension at that level */
+    O_NTYPE,    /* 0=a neutral 1=out: its type, computed from its spine (only a variable stores one) */
+    O_PEND,     /* p=Dnf r (0 or 1); 0=the type of p 1=p 2=out: p r, an endpoint when the type is a path type */
+    O_CLOS,     /* 0=f 1=g 2=out */
+    O_CLOS2,    /* 0=g 1=f 2=out: (csame pairs) when f, g are λs of one record, the pairs of their
+                 * environments; else (cdiff f g), both untouched */
     O_BRANCH,   /* 0=an elimination (V_CASEF) 1=constructor (Num) 2=parameters (a list) 3=out */
     O_BRANCHC,  /* p=CaseTab, a=count; 0=constructor (Num) 1=parameters, then the environment, out */
     O_BRANCHL,  /* p=CaseTab, a=constructor, x=parameters read; 0=the rest of the list, then the
