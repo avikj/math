@@ -107,7 +107,10 @@ G. [ ] Word typed in the checker (a type Word, #n : Word, %wsucc, %welim's depen
    Word ≃ Nat proved in the language (toNat/fromNat, round trips by induction, ua), and %weq %wlt
    %wadd %wmax declared as identities with inductive evidence, so the machine's operations stay
    representable inside the theory (5.26).
-H. [ ] msort-at: 7.1M interactions — find what it does that hand checking does not.
+H. [x] msort-at 7.1M → 78k: two eliminations of one table (the same `rec x` computed twice) were
+   compared branch by branch; now, like two λs of one record, by their motives and shared
+   variables first (%clos on V_CASEF). State: tests/check.ctt 0.15M; boxes 1.96M; sort 1.36M
+   (largest single: lemIso 0.31M).
 
 ## The spec, as it bears on the code (paper references)
 

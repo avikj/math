@@ -1289,8 +1289,9 @@ static void interact(Cell *o, Cell *v) {
         if (C_SAME < 0) { C_DIFF = con_index("cdiff"); __atomic_store_n(&C_SAME, con_index("csame"), __ATOMIC_RELEASE); }
         if (C_SAME < 0 || C_DIFF < 0) { fprintf(stderr, "%%clos needs CloCmp (lib/code.ctt)\n"); exit(2); }
         Cell *f = PC(o->port[1]);
-        bool fl = PI(o->port[1]) == 0 && f->kind == V_LAM;
-        if (fl && vk == V_LAM && f->p == v->p && f->n == v->n) {
+        /* two λs of one record, or two eliminations of one table */
+        bool fl = PI(o->port[1]) == 0 && (f->kind == V_LAM || f->kind == V_CASEF);
+        if (fl && vk == f->kind && f->p == v->p && f->n == v->n && (vk == V_LAM || f->x == v->x)) {
             /* copies of the two environments, paired; the λs themselves are kept for applying
              * when the environments differ */
             int ne = v->n - 1;

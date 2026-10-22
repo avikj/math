@@ -268,7 +268,10 @@
        ((none) none))) (_ none)))
   ((welim d x f T) (case wv ((welim d2 y g T2) (if (%weq d d2)
        (case (convneu (%view x) (%view y))
-         ((some X) (if (conv-elims d f g (ctors-of d X) #0) (some opq) none))
+         ; one table: equal when their motives and shared variables are, else by branches
+         ((some X) (case (%clos f g)
+            ((csame ps f2 g2) (if (env-pairs ps) (some T) (if (conv-elims d f2 g2 (ctors-of d X) #0) (some T) none)))
+            ((cdiff f2 g2) (if (conv-elims d f2 g2 (ctors-of d X) #0) (some T) none))))
          ((none) none)) none)) (_ none)))
   ((wtrans d psi ls x T) (case wv ((wtrans d2 psi2 ls2 y T2) (if (%weq d d2) (if (%feq psi psi2)
        (if (lall2 (lam l1 l2 (let i (%dim) (uconv (@ l1 i) (@ l2 i)))) ls ls2)
