@@ -18,14 +18,17 @@ test: build/cubical build/cubical-asan
 	./build/cubical lib/prelude.ctt tests/cubical.ctt
 	./build/cubical lib/prelude.ctt lib/code.ctt tests/code.ctt
 	./build/cubical lib/prelude.ctt tests/identity.ctt
+	./build/cubical lib/prelude.ctt tests/hit.ctt
 	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/identity.ctt > /dev/null
+	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/hit.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt tests/cubical.ctt > /dev/null
 	CUBICAL_WORKERS=4 ./build/cubical lib/prelude.ctt lib/code.ctt tests/code.ctt > /dev/null
 	ASAN_OPTIONS=detect_leaks=0 ./build/cubical-asan lib/prelude.ctt tests/cubical.ctt > /dev/null
 	ASAN_OPTIONS=detect_leaks=0 ./build/cubical-asan lib/prelude.ctt lib/code.ctt tests/code.ctt > /dev/null
 	ASAN_OPTIONS=detect_leaks=0 ./build/cubical-asan lib/prelude.ctt tests/identity.ctt > /dev/null
+	ASAN_OPTIONS=detect_leaks=0 ./build/cubical-asan lib/prelude.ctt tests/hit.ctt > /dev/null
 	ASAN_OPTIONS=detect_leaks=0 ./build/cubical-asan lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt > /dev/null
 
 build/cubical-tsan: $(SRC) src/core.h
@@ -36,6 +39,7 @@ tsan: build/cubical-tsan
 	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/cubical-tsan lib/prelude.ctt tests/cubical.ctt > /dev/null
 	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/cubical-tsan lib/prelude.ctt lib/code.ctt tests/code.ctt > /dev/null
 	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/cubical-tsan lib/prelude.ctt tests/identity.ctt > /dev/null
+	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/cubical-tsan lib/prelude.ctt tests/hit.ctt > /dev/null
 	CUBICAL_WORKERS=4 TSAN_OPTIONS=halt_on_error=1 ./build/cubical-tsan lib/prelude.ctt lib/code.ctt lib/check.ctt tests/check.ctt > /dev/null
 
 clean:

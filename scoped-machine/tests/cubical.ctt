@@ -86,14 +86,14 @@
 (def ones (pair a ones))
 (same (fst (snd (snd ones))) a)
 
-; data as terms
+; data types
 (def two (suc (suc zero)))
-(same (add two two) (lam s z (s (s (s (s z))))))
-(same (mul two (add two (suc zero))) (lam s z (s (s (s (s (s (s z))))))))
+(same (add two two) (suc (suc (suc (suc zero)))))
+(same (mul two (add two (suc zero))) (suc (suc (suc (suc (suc (suc zero)))))))
 (same (iszero zero) true)
 (same (iszero two) false)
 (same (not (and true false)) true)
-(same (length (append (cons a nil) (map f (cons a (cons b nil))))) (lam s z (s (s (s z)))))
-(same (map f (cons a (cons b nil))) (lam c n (c (f a) (c (f b) n))))
-; transport in a family of Church-encoded types
+(same (length (append (cons a nil) (map f (cons a (cons b nil))))) (suc (suc (suc zero))))
+(same (map f (cons a (cons b nil))) (cons (f a) (cons (f b) nil)))
+; transport in a family of function types
 (same ((transp (plam i (Pi x A A)) (lam x x)) a) (comp (plam i A) (sys) (comp (plam j A) (sys) a)))

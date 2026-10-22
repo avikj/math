@@ -21,4 +21,4 @@
 ; a statement about the evaluator is a term: the path from (eval code) to its value
 (same (@ (plam i (eval (pair a junk) (cpair v0 v0))) 0) (pair a a))
 ; the evaluator evaluates codes of data
-(same (eval (pair add (pair (suc (suc zero)) junk)) (capp (capp v0 v1) v1)) (lam s z (s (s (s (s z))))))
+(same (eval (pair add (pair (suc (suc zero)) junk)) (capp (capp v0 v1) v1)) (suc (suc (suc (suc zero)))))

@@ -80,23 +80,24 @@
   (glue (sysmap (lam e (fst e)) tp)
         (hcomp (@ A 1) (sys+ (faceof P) P (sysmap (lam w (plam q a1)) u)) a1)))))))))))))
 
-; data as CCHM terms: Π over U (Church encodings; case analysis is application)
-(def Bool (Pi X U (Pi t X (Pi f X X))))
-(def true (lam t f t))
-(def false (lam t f f))
-(def not (lam b (lam t f (b f t))))
-(def and (lam a b (lam t f (a (b t f) f))))
+; elimination of a higher inductive type on a formal hcomp (CHM):
+; f (hcomp^i [φ ↦ u] u0) = comp^i P(hfill^i [φ ↦ u] u0) [φ ↦ f u] (f u0)
+(def %case-hcomp (lam P B u u0
+  (comp (plam %i (P (hcompD (sys+ (= %i 0) (plam %j u0) (sysmap (lam %w (plam %j (@ %w (/\ %i %j)))) u)) u0)))
+        (sysmap (lam %w (plam %i (%case B P (@ %w %i)))) u)
+        (%case B P u0))))
 
-(def Nat (Pi X U (Pi s (Pi x X X) (Pi z X X))))
-(def zero (lam s z z))
-(def suc (lam n (lam s z (s (n s z)))))
-(def add (lam m n (lam s z (m s (n s z)))))
-(def mul (lam m n (lam s (m (n s)))))
-(def iszero (lam n (n (lam x false) true)))
+; data types
+(data Bool (true) (false))
+(def not (lam b (if b false true)))
+(def and (lam a b (if a b false)))
 
-(def List (lam A (Pi X U (Pi c (Pi x A (Pi r X X)) (Pi n X X)))))
-(def nil (lam c n n))
-(def cons (lam x xs (lam c n (c x (xs c n)))))
-(def map (lam f xs (lam c n (xs (lam x r (c (f x) r)) n))))
-(def length (lam xs (lam s z (xs (lam x r (s r)) z))))
-(def append (lam xs ys (lam c n (xs c (ys c n)))))
+(data Nat (zero) (suc (n Nat)))
+(def add (lam m n (case m ((zero) n) ((suc k) (suc (add k n))))))
+(def mul (lam m n (case m ((zero) zero) ((suc k) (add n (mul k n))))))
+(def iszero (lam n (case n ((zero) true) ((suc k) false))))
+
+(data (List A) (nil) (cons (x A) (xs (List A))))
+(def map (lam f xs (case xs ((nil) nil) ((cons x r) (cons (f x) (map f r))))))
+(def length (lam xs (case xs ((nil) zero) ((cons x r) (suc (length r))))))
+(def append (lam xs ys (case xs ((nil) ys) ((cons x r) (cons x (append r ys))))))

@@ -33,7 +33,7 @@ Cell *cell(int kind, int n) {
     return c;
 }
 /* the payload a cell owns */
-static bool owns_dnf(int k) { return k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2; }
+static bool owns_dnf(int k) { return k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2 || k == V_NTRANS || k == O_TRANSD2; }
 static bool owns_subst(int k) { return k == O_SUBST || k == V_DEFER; }
 static void payload_retain(Cell *c) { if (owns_dnf(c->kind)) dnf_retain(c->p); else if (owns_subst(c->kind)) subst_retain(c->p); }
 static void payload_release(Cell *c) {
@@ -143,7 +143,7 @@ static void split_restrict(Port prov, const Dnf *cl, int m, Port *out) {
  * is neutral). The type is known when the neutral's head was declared with
  * one (ty = 1); otherwise it is V_UNK. */
 static Port unk(void) { return P(cell(V_UNK, 1), 0); }
-static bool is_neutral(int k) { return k >= V_NVAR && k <= V_NUNGLUE; }
+static bool is_neutral(int k) { return k >= V_NVAR && k <= V_NTRANS; }
 static bool typed(const Cell *v) { return is_neutral(v->kind) && v->ty; }
 /* a copy of a typed neutral's type; the neutral keeps its own */
 static Port type_copy(Cell *v) {
@@ -157,13 +157,41 @@ static Port app2(Port f, Port x) { Cell *a = cell(O_APP, 3); link(f, P(a, 0)); l
 static Port papp_at(Port line, Dnf *r) { Cell *a = cell(O_PAPPR, 3); link(iv_cell(r), P(a, 0)); link(line, P(a, 1)); return P(a, 2); }  /* takes r */
 static void split2(Port prov, Port *a, Port *b) { Cell *d = cell(O_DUP, 3); link(prov, P(d, 0)); *a = P(d, 1); *b = P(d, 2); }
 
-static Port apply_global(const char *name, Port *args, int n) {
-    long g = global_lookup(name);
-    if (g < 0) { fprintf(stderr, "missing library definition %s\n", name); exit(2); }
+Port apply_gid(long g, const Port *args, int n) {
     Cell *gc = cell(V_GLOBAL, 1); gc->a = (uint64_t)g;
     Port f = P(gc, 0);
     for (int k = 0; k < n; k++) { Cell *a = cell(O_APP, 3); link(f, P(a, 0)); link(args[k], P(a, 1)); f = P(a, 2); }
     return f;
+}
+static Port apply_global(const char *name, Port *args, int n) {
+    long g = global_lookup(name);
+    if (g < 0) { fprintf(stderr, "missing library definition %s\n", name); exit(2); }
+    return apply_gid(g, args, n);
+}
+static Port face_cell(Dnf *f) { Cell *c = cell(V_FACE, 1); c->p = f; return P(c, 0); }  /* takes f */
+
+/* a constructor applied to its fields and dimensions: c v r is its boundary
+ * e(v, r) where the boundary's face holds at r (judgmentally), and otherwise
+ * a constructor value. Built again after every substitution. */
+Port con_build(int c, const Port *f, const Port *d) {
+    ConInfo *k = &CON[c];
+    int nf = k->nfields, nd = k->ndims, n = nf + nd;
+    if (k->bdy < 0) {
+        Cell *v = cell(V_CON, n + 1); v->a = (uint64_t)c;
+        for (int j = 0; j < nf; j++) link(f[j], P(v, 1 + j));
+        for (int j = 0; j < nd; j++) link(d[j], P(v, 1 + nf + j));
+        return P(v, 0);
+    }
+    Port *a = malloc((size_t)(2 * n + 1) * sizeof(Port));
+    for (int j = 0; j < n; j++) split2(j < nf ? f[j] : d[j - nf], &a[j], &a[n + j]);
+    Port S = apply_gid(k->bdy, a, n), s1, s2;
+    split2(S, &s1, &s2);
+    Cell *fo = cell(O_FACEOF, 2); link(s1, P(fo, 0));
+    Cell *ck = cell(O_CONCHK, n + 3); ck->a = (uint64_t)c;
+    link(P(fo, 1), P(ck, 0)); link(s2, P(ck, 1));
+    for (int j = 0; j < n; j++) link(a[n + j], P(ck, 2 + j));
+    free(a);
+    return P(ck, n + 2);
 }
 
 /* ---------------- structural rules ---------------- */
@@ -261,6 +289,32 @@ static void rule_subst(Cell *o, Cell *v) {
     }
     case V_NCOMP: { Cell *a = cell(O_COMP, 4); link(sub(v->port[2], s), P(a, 0)); link(sub(v->port[1], s), P(a, 1)); link(sub(v->port[3], s), P(a, 2)); link(P(a, 3), out); era(v->port[4]); break; }
     case V_NUNGLUE: { Cell *a = cell(O_UNGLUE, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); era(v->port[3]); break; }
+    case V_CON: {
+        ConInfo *k = &CON[v->a];
+        int n = k->nfields + k->ndims;
+        Port *a = malloc((size_t)(n + 1) * sizeof(Port));
+        for (int j = 0; j < n; j++) a[j] = sub(v->port[1 + j], s);
+        link(con_build((int)v->a, a, a + k->nfields), out);
+        free(a);
+        break;
+    }
+    case V_HCOMP: { Cell *a = cell(O_HCOMP, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); break; }
+    case V_NCASE: {
+        Cell *a = cell(O_CASE, 4); a->x = v->x;
+        link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(sub(v->port[3], s), P(a, 2)); link(P(a, 3), out);
+        era(v->port[4]);
+        break;
+    }
+    case V_NTRANS: {
+        int np = v->n - 3;
+        Cell *a = cell(O_TRANSD1, np + 3); a->a = v->a;
+        link(face_cell(face_subst(v->p, s)), P(a, 0));
+        for (int j = 0; j < np; j++) link(sub(v->port[2 + j], s), P(a, 1 + j));
+        link(sub(v->port[1], s), P(a, np + 1));
+        link(P(a, np + 2), out);
+        era(v->port[v->n - 1]);
+        break;
+    }
     case V_GLUE: { Cell *a = cell(O_MKGLUE, 3); link(sub(v->port[2], s), P(a, 0)); link(sub(v->port[1], s), P(a, 1)); link(P(a, 2), out); break; }
     case V_GLUEV: { Cell *a = cell(O_MKGLUEV, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); break; }
     default: {
@@ -303,15 +357,16 @@ static void distribute(Cell *o, Cell *v) {
     int nb = v->n - 1;
     Dnf *cl = v->p;
     Cell *ns = cell(V_SYS, nb + 1); ns->p = dnf_retain(cl);
-    Port ex[2] = { 0, 0 }; int ne = 0;
+    Port ex[o->n]; int ne = 0;
     switch (o->kind) {
     case O_APP: case O_UNGLUE2: case O_SYSMAP: ex[ne++] = o->port[1]; break;
     case O_PAPPP: if (o->x) { ex[ne++] = o->port[1]; ex[ne++] = o->port[2]; } break;
-    case O_COMPA: ex[ne++] = o->port[1]; ex[ne++] = o->port[2]; break;
+    case O_COMPA: case O_CASE: ex[ne++] = o->port[1]; ex[ne++] = o->port[2]; break;
+    case O_TRANSD2: for (int k = 1; k < o->n - 1; k++) ex[ne++] = o->port[k]; break;
     default: break;
     }
     Port out = out_of(o);
-    Port *cp[2];
+    Port *cp[o->n];
     for (int e = 0; e < ne; e++) { cp[e] = malloc((size_t)(nb + 1) * sizeof(Port)); split_restrict(ex[e], cl, nb, cp[e]); }
     for (int b = 0; b < nb; b++) {
         Port val = v->port[b + 1], res = P(ns, b + 1);
@@ -330,6 +385,14 @@ static void distribute(Cell *o, Cell *v) {
             break;
         case O_UNGLUE2: c = cell(O_UNGLUE, 3); link(cp[0][b], P(c, 0)); link(val, P(c, 1)); link(P(c, 2), res); break;
         case O_COMPA: c = cell(O_COMP, 4); link(cp[0][b], P(c, 0)); link(val, P(c, 1)); link(cp[1][b], P(c, 2)); link(P(c, 3), res); break;
+        case O_CASE: c = cell(O_CASE, 4); c->x = o->x; link(val, P(c, 0)); link(cp[0][b], P(c, 1)); link(cp[1][b], P(c, 2)); link(P(c, 3), res); break;
+        case O_TRANSD2:
+            c = cell(O_TRANSD2, o->n); c->a = o->a;
+            { Subst *t = subst_of_clause(cl->c[b]); c->p = face_subst(o->p, t); subst_release(t); }
+            link(val, P(c, 0));
+            for (int e = 0; e < ne; e++) link(cp[e][b], P(c, 1 + e));
+            link(P(c, o->n - 1), res);
+            break;
         default: fprintf(stderr, "distribute: kind %d\n", o->kind); exit(2);
         }
     }
@@ -508,6 +571,17 @@ static void interact(Cell *o, Cell *v) {
             args[0] = mkplam_of(v->port[1], i); args[1] = mkplam_of(v->port[2], i); args[2] = mkplam_of(v->port[3], i);
             args[3] = u; args[4] = a0; n = 5; clause = "%comp-path"; break;
         case V_U: args[0] = u; args[1] = a0; n = 2; clause = "%comp-u"; break;
+        case V_DATA: {
+            /* CHM: comp = hcomp after transport; %comp-D is generated by the declaration */
+            int np = v->n - 1;
+            Port *da = malloc((size_t)(np + 3) * sizeof(Port));
+            for (int k = 0; k < np; k++) da[k] = mkplam_of(v->port[k + 1], i);
+            da[np] = u; da[np + 1] = a0;
+            link(apply_gid(DATA[v->a].comp, da, np + 2), out);
+            free(da);
+            cell_free(o); cell_free(v);
+            return;
+        }
         case V_GLUE:
             args[0] = mkplam_of(v->port[1], i); args[1] = mkplam_of(v->port[2], i); args[2] = u; args[3] = a0; n = 4;
             clause = "%comp-glue"; break;
@@ -676,6 +750,122 @@ static void interact(Cell *o, Cell *v) {
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else { link(unk(), o->port[1]); era(P(v, 0)); cell_free(o); }
+        return;
+    }
+    case O_CONCHK: {
+        int n = o->n - 3;
+        if (vk == V_FACE && dnf_is_one(v->p)) {
+            /* the boundary's face holds: the constructor is its boundary */
+            link(o->port[1], o->port[n + 2]);
+            for (int j = 0; j < n; j++) era(o->port[2 + j]);
+        } else {
+            Cell *c = cell(V_CON, n + 1); c->a = o->a;
+            for (int j = 0; j < n; j++) mv(o, 2 + j, P(c, 1 + j));
+            era(o->port[1]);
+            link(P(c, 0), o->port[n + 2]);
+        }
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_HCOMP:
+        if (vk == V_SYS) {
+            /* a partial tube: a formal hcomp, a value of the data type */
+            Cell *h = cell(V_HCOMP, 3);
+            link(P(v, 0), P(h, 1)); mv(o, 1, P(h, 2)); link(P(h, 0), o->port[2]);
+        } else {
+            Cell *pr = cell(O_PAPPR, 3);
+            link(iv_cell(dnf_one()), P(pr, 0)); link(P(v, 0), P(pr, 1)); link(P(pr, 2), o->port[2]);
+            era(o->port[1]);
+        }
+        cell_free(o);
+        return;
+    case O_TRANSD1: {
+        int np = o->n - 3;
+        if (vk != V_FACE) { fprintf(stderr, "transport face is not a face\n"); exit(2); }
+        if (dnf_is_one(v->p)) {
+            /* on ψ the family is constant: transport is the identity */
+            link(o->port[np + 1], o->port[np + 2]);
+            for (int k = 1; k <= np; k++) era(o->port[k]);
+        } else {
+            Cell *t = cell(O_TRANSD2, np + 2); t->a = o->a; t->p = dnf_retain(v->p);
+            mv(o, np + 1, P(t, 0));
+            for (int k = 1; k <= np; k++) mv(o, k, P(t, k));
+            link(P(t, np + 1), o->port[np + 2]);
+        }
+        cell_free(o); cell_free(v);
+        return;
+    }
+    case O_TRANSD2: {
+        int np = o->n - 2;
+        Port out = o->port[np + 1];
+        if (vk == V_CON) {
+            ConInfo *k = &CON[v->a];
+            int n = k->nfields + k->ndims;
+            Port *a = malloc((size_t)(np + n + 2) * sizeof(Port));
+            for (int j = 0; j < np; j++) a[j] = o->port[1 + j];
+            a[np] = face_cell(dnf_retain(o->p));
+            for (int j = 0; j < n; j++) a[np + 1 + j] = v->port[1 + j];
+            link(apply_gid(k->trans, a, np + 1 + n), out);
+            free(a);
+            cell_free(o); cell_free(v);
+        } else if (vk == V_HCOMP) {
+            Port *a = malloc((size_t)(np + 4) * sizeof(Port));
+            for (int j = 0; j < np; j++) a[j] = o->port[1 + j];
+            a[np] = face_cell(dnf_retain(o->p)); a[np + 1] = v->port[1]; a[np + 2] = v->port[2];
+            link(apply_gid(DATA[o->a].transh, a, np + 3), out);
+            free(a);
+            cell_free(o); cell_free(v);
+        } else if (vk == V_SYS) distribute(o, v);
+        else {
+            Cell *n = cell(V_NTRANS, np + 3); n->a = o->a; n->p = dnf_retain(o->p);
+            link(P(v, 0), P(n, 1));
+            for (int j = 0; j < np; j++) mv(o, 1 + j, P(n, 2 + j));
+            link(unk(), P(n, np + 2));
+            link(P(n, 0), out);
+            cell_free(o);
+        }
+        return;
+    }
+    case O_CASE:
+        if (vk == V_CON) {
+            /* select the constructor's branch, applied to its fields and dimensions */
+            ConInfo *k = &CON[v->a];
+            int n = k->nfields + k->ndims;
+            Cell *sel = cell(O_SELECT, n + 2); sel->a = (uint64_t)k->index;
+            mv(o, 1, P(sel, 0));
+            for (int j = 0; j < n; j++) link(v->port[1 + j], P(sel, 1 + j));
+            link(P(sel, n + 1), o->port[3]);
+            era(o->port[2]);
+            cell_free(o); cell_free(v);
+        } else if (vk == V_HCOMP && o->x) {
+            /* f (hcomp^i [φ ↦ u] u0) = comp^i P(hfill) [φ ↦ f u] (f u0) */
+            Port a[4] = { o->port[2], o->port[1], v->port[1], v->port[2] };
+            link(apply_gid(case_hcomp_global, a, 4), o->port[3]);
+            cell_free(o); cell_free(v);
+        } else if (vk == V_SYS) distribute(o, v);
+        else {
+            /* stuck: a neutral elimination, of type the motive at the scrutinee */
+            Cell *n = cell(V_NCASE, 5); n->x = o->x;
+            if (o->x) {
+                Port p1, p2, x1, x2;
+                split2(o->port[2], &p1, &p2); split2(P(v, 0), &x1, &x2);
+                link(x1, P(n, 1)); link(p1, P(n, 3)); link(app2(p2, x2), P(n, 4)); n->ty = 1;
+            } else { link(P(v, 0), P(n, 1)); mv(o, 2, P(n, 3)); link(unk(), P(n, 4)); }
+            mv(o, 1, P(n, 2));
+            link(P(n, 0), o->port[3]);
+            cell_free(o);
+        }
+        return;
+    case O_SELECT: {
+        int n = o->n - 2, k = (int)o->a;
+        if (vk != V_BRANCHES || k + 1 >= v->n) { fprintf(stderr, "elimination without its branch\n"); exit(2); }
+        Port br = v->port[k + 1];
+        for (int m = 1; m < v->n; m++) if (m != k + 1) era(v->port[m]);
+        /* the branch applied to the fields and dimensions is a thunk of its body */
+        Port f = br;
+        for (int j = 0; j < n; j++) f = app2(f, o->port[1 + j]);
+        Cell *fo = cell(O_FORCE, 2); link(f, P(fo, 0)); link(P(fo, 1), o->port[n + 1]);
+        cell_free(o); cell_free(v);
         return;
     }
     case O_SYSMAP:
@@ -882,6 +1072,26 @@ static Port build(Syn *t, Frame *f) {
         else link(unk(), P(c, 1));
         return P(c, 0);
     case S_FORCE: return op1(O_FORCE, t->k[0], f);
+    case S_DATA: c = cell(V_DATA, t->n + 1); c->a = (uint64_t)t->id; goto fields;
+    case S_BRANCHES: c = cell(V_BRANCHES, t->n + 1); goto fields;
+    case S_CON: {
+        Port *a = malloc((size_t)(t->n + 1) * sizeof(Port));
+        for (int k = 0; k < t->n; k++) a[k] = build(t->k[k], f);
+        Port r = con_build((int)t->id, a, a + CON[t->id].nfields);
+        free(a);
+        return r;
+    }
+    case S_HCOMPD: c = cell(O_HCOMP, 3); link(build(t->k[0], f), P(c, 0)); link(build(t->k[1], f), P(c, 1)); return P(c, 2);
+    case S_TRANSD:
+        c = cell(O_TRANSD1, t->n + 1); c->a = (uint64_t)t->id;
+        for (int k = 0; k < t->n; k++) link(build(t->k[k], f), P(c, k));
+        return P(c, t->n);
+    case S_CASE:
+        c = cell(O_CASE, 4); c->x = t->x;
+        link(build(t->k[0], f), P(c, 1));
+        if (t->x) { link(build(t->k[1], f), P(c, 2)); link(build(t->k[2], f), P(c, 0)); }
+        else { link(unk(), P(c, 2)); link(build(t->k[1], f), P(c, 0)); }
+        return P(c, 3);
     case S_LET: {
         bind(f, t->slot, build(t->k[0], f));
         return build(t->k[1], f);

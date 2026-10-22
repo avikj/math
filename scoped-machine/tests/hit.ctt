@@ -1,0 +1,56 @@
+; tests/hit.ctt — higher inductive types (Coquand–Huber–Mörtberg).
+(axiom A B X a b e x0)
+
+; the circle: a point and a loop whose boundary is the point
+(data S1 (base) (loop (dims i) ((= i 0) base) ((= i 1) base)))
+(same (loop 0) base)
+(same (loop 1) base)
+(show (plam i (loop i)))
+; the boundary holds after substitution: (plam i (loop i)) at 0 is base
+(same (@ (plam i (loop i)) 0) base)
+(same (@ (plam i (loop (/\ i (~ i)))) 1) base)
+; elimination, dependent, with its value on the loop
+(def flip (lam x (elim (lam y S1) x ((base) base) ((loop i) (loop (~ i))))))
+(same (flip base) base)
+(show (plam i (flip (loop i))))
+(same (@ (plam i (flip (loop i))) 1) base)
+; transport in the constant family of a closed HIT is a formal hcomp (no regularity)
+(show (transp (plam i S1) base))
+(same (transp (plam i S1) base) (hcompD (sys) base))
+; elimination on a formal hcomp composes in the motive
+(same (flip (hcompD (sys) base)) (hcompD (sys) base))
+(show (plam j (flip (hcompD (sys ((= j 0) (plam k (loop k)))) base))))
+; composition with a tube: the formal hcomp keeps it
+(show (plam j (comp (plam i S1) (sys ((= j 0) (plam i (loop i)))) base)))
+; a covered tube is its end
+(same (comp (plam i S1) (plam i (loop i)) base) base)
+
+; natural numbers: recursion by elimination
+(def two (suc (suc zero)))
+(same (add two two) (suc (suc (suc (suc zero)))))
+(same (mul two (add two (suc zero))) (suc (suc (suc (suc (suc (suc zero)))))))
+(def ind (lam n (elim (lam m Nat) n ((zero) zero) ((suc k) (suc k)))))
+(same (ind two) two)
+
+; suspension: parameterized, with a meridian per point
+(data (Susp T) (N) (S) (merid (t T) (dims i) ((= i 0) N) ((= i 1) S)))
+(same (merid a 0) N)
+(same (merid a 1) S)
+(show (plam i (merid a i)))
+; transport along a line of parameter types acts on the meridian's field
+(show (transp (plam i (Susp (@ (ua A B e) i))) N))
+(show (plam j (transp (plam i (Susp (@ (ua A B e) i))) (merid a j))))
+; the transported meridian restricts at its ends to the transported poles
+(same (@ (plam j (transp (plam i (Susp A)) (merid a j))) 0) (transp (plam i (Susp A)) N))
+(same (@ (plam j (transp (plam i (Susp (@ (ua A B e) i))) (merid a j))) 1) (transp (plam i (Susp (@ (ua A B e) i))) S))
+
+; propositional truncation: recursive path constructor
+(data (Trunc T) (inc (t T)) (sq (v (Trunc T)) (w (Trunc T)) (dims i) ((= i 0) v) ((= i 1) w)))
+(same (sq (inc a) (inc b) 0) (inc a))
+(same (sq (inc a) (inc b) 1) (inc b))
+(show (plam i (sq (inc a) (inc b) i)))
+(show (transp (plam i (Trunc (@ (ua A B e) i))) (inc a)))
+
+; lists, parameterized and recursive
+(same (length (append (cons a nil) (map (lam x x) (cons a (cons b nil))))) (suc (suc (suc zero))))
+(show (transp (plam i (List (@ (ua A B e) i))) (cons a nil)))

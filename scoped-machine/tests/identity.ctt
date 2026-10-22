@@ -44,7 +44,7 @@
 (def addr3 (lam x y z (add x (add y z))))
 (def assoc3 (lam x y z (plam i (addr3 x y z))))
 (identity addl3 addr3 assoc3)
-(same (addl3 three three three) (lam s z (s (s (s (s (s (s (s (s (s z)))))))))))
+(same (addl3 three three three) (suc (suc (suc (suc (suc (suc (suc (suc (suc zero))))))))))
 (defect (addl3 three three three))
 
 ; a chain of identities: f1 -> f2 -> f3

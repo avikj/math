@@ -70,20 +70,19 @@ static bool node_eq(Node *a, Node *b) {
 }
 
 /* ---------------- desugaring to the core forms ---------------- */
-static const char *KW[] = { "lam", "thunk", "delay", "force", "case", "if", "the", "code", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
+static const char *KW[] = { "lam", "thunk", "delay", "force", "case", "elim", "if", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
     "PathP", "@", "~", "/\\", "\\/", "=", "&", "|", "faceof", "sys", "sys0", "sys+", "sysmap", "comp", "Glue", "glue",
     "unglue", NULL };
 static bool keyword(const char *s) { for (int i = 0; KW[i]; i++) if (!strcmp(KW[i], s)) return true; return false; }
 static Node *param_name(Node *p) { return p->list ? p->it[0] : p; }
 
-/* data types (Scott encoding): a constructor C_i of a type with N
- * constructors, applied to its fields, is λh1..hN. h_i fields. A case gives
- * one handler per constructor; each branch is a thunk, forced only once
- * selected, so an unselected branch computes nothing. */
-typedef struct { char *name; int type, index, arity; } Con;
-static Con *CONS; static size_t capcons; static int ncons;
-static int *TYPE_N; static size_t captypes; static int ntypes;
-static Con *con_lookup(const char *s) { for (int i = ncons - 1; i >= 0; i--) if (!strcmp(CONS[i].name, s)) return &CONS[i]; return NULL; }
+/* data types: higher inductive types (Coquand–Huber–Mörtberg), declared by
+ * (data ...) below; constructors are values, eliminated by %case */
+ConInfo *CON; static size_t capcon; static int ncon;
+DataInfo *DATA; static size_t capdata; static int ndata;
+long case_hcomp_global = -1;
+static int con_lookup(const char *s) { for (int i = ncon - 1; i >= 0; i--) if (!strcmp(CON[i].name, s)) return i; return -1; }
+static int data_lookup(const char *s) { for (int i = ndata - 1; i >= 0; i--) if (!strcmp(DATA[i].name, s)) return i; return -1; }
 
 static Node *ds(Node *t);
 static Node *to_code(Node *t);
@@ -101,45 +100,57 @@ static Node *ds(Node *t) {
         if (!strcmp(k, "delay")) { arity(t, 1); return nl2("thunk", ds(t->it[1])); }
         if (!strcmp(k, "force")) { arity(t, 1); return nl2("force", ds(t->it[1])); }
         if (!strcmp(k, "if")) {
+            /* elimination of Bool */
             arity(t, 3);
-            return nl2("force", nl3("app", nl3("app", ds(t->it[1]), nl2("thunk", ds(t->it[2]))), nl2("thunk", ds(t->it[3]))));
+            Node *c = nlist(4); c->it[0] = nsym("case"); c->it[1] = t->it[1];
+            Node *bt = nlist(2); bt->it[0] = nlist(1); bt->it[0]->it[0] = nsym("true"); bt->it[1] = t->it[2];
+            Node *bf = nlist(2); bf->it[0] = nlist(1); bf->it[0]->it[0] = nsym("false"); bf->it[1] = t->it[3];
+            c->it[2] = bt; c->it[3] = bf;
+            return ds(c);
         }
-        if (!strcmp(k, "case")) {
-            if (t->n < 3) die("(case e branch...)", NULL);
-            int type = -1; Node *dflt = NULL;
-            for (int i = 2; i < t->n; i++) {
+        if (!strcmp(k, "case") || !strcmp(k, "elim")) {
+            /* (case e branch...) and (elim P e branch...): one branch per constructor,
+             * a λ over its fields and dimensions returning a thunk of the body */
+            bool el = !strcmp(k, "elim");
+            int first = el ? 3 : 2;
+            if (t->n < first + 1) die(el ? "(elim P e branch...)" : "(case e branch...)", NULL);
+            int d = -1; Node *dflt = NULL;
+            for (int i = first; i < t->n; i++) {
                 Node *br = t->it[i];
                 if (!br->list || br->n != 2) die("malformed case branch", NULL);
                 if (!br->it[0]->list && is(br->it[0], "_")) { dflt = br->it[1]; continue; }
                 if (!br->it[0]->list || br->it[0]->n < 1) die("case branch pattern must be (C x...)", NULL);
-                Con *c = con_lookup(br->it[0]->it[0]->s);
-                if (!c) die("unknown constructor", br->it[0]->it[0]->s);
-                if (type >= 0 && c->type != type) die("constructors of different types in one case:", c->name);
-                type = c->type;
-                if (br->it[0]->n - 1 != c->arity) die("wrong number of fields for", c->name);
+                int c = con_lookup(br->it[0]->it[0]->s);
+                if (c < 0) die("unknown constructor", br->it[0]->it[0]->s);
+                if (d >= 0 && CON[c].data != d) die("constructors of different types in one case:", CON[c].name);
+                d = CON[c].data;
+                if (br->it[0]->n - 1 != CON[c].nfields + CON[c].ndims) die("wrong number of fields and dimensions for", CON[c].name);
             }
-            if (type < 0) die("case needs at least one constructor branch", NULL);
-            int N = TYPE_N[type];
-            Node *e = ds(t->it[1]);
+            if (d < 0) die("case needs at least one constructor branch", NULL);
+            int N = DATA[d].ncons;
+            Node *B = nlist(N + 1); B->it[0] = nsym("%branches");
             for (int ci = 0; ci < N; ci++) {
-                Con *c = NULL;
-                for (int j = 0; j < ncons; j++) if (CONS[j].type == type && CONS[j].index == ci) c = &CONS[j];
+                ConInfo *c = &CON[DATA[d].cons[ci]];
                 Node *pat = NULL, *body = NULL;
-                for (int i = 2; i < t->n; i++) {
+                for (int i = first; i < t->n; i++) {
                     Node *br = t->it[i];
                     if (br->it[0]->list && !strcmp(br->it[0]->it[0]->s, c->name)) { pat = br->it[0]; body = br->it[1]; }
                 }
                 if (!body) { if (!dflt) die("case misses constructor", c->name); body = dflt; }
+                /* the body is a thunk: nothing in an unselected branch, and no recursive
+                 * call lifted out of it, is computed */
+                int ar = c->nfields + c->ndims;
                 Node *hnd = nl2("thunk", ds(body));
-                for (int f = c->arity; f >= 1; f--) {
+                for (int f = ar; f >= 1; f--) {
                     Node *x = pat ? pat->it[f] : NULL;
                     char nm[32];
                     if (!x) { snprintf(nm, sizeof nm, "%%_%d", f); x = nsym(nm); }
                     hnd = nl3("lam", x, hnd);
                 }
-                e = nl3("app", e, hnd);
+                B->it[ci + 1] = hnd;
             }
-            return nl2("force", e);
+            if (el) return nl4("%case", B, ds(t->it[1]), ds(t->it[2]));
+            return nl3("%case", B, ds(t->it[1]));
         }
         if (!strcmp(k, "lam") || !strcmp(k, "plam")) { if (t->n < 3) die("binder without body", NULL); return ds_lam(t->it + 1, t->n - 2, t->it[t->n - 1], k); }
         if (!strcmp(k, "forall")) { arity(t, 2); return nl3("forall", t->it[1], ds(t->it[2])); }
@@ -172,7 +183,7 @@ static Node *ds(Node *t) {
         }
         static const struct { const char *k; int n; } AR[] = { { "pair", 2 }, { "fst", 1 }, { "snd", 1 }, { "PathP", 3 },
             { "~", 1 }, { "=", 2 }, { "faceof", 1 }, { "sysmap", 2 }, { "comp", 3 }, { "Glue", 2 }, { "glue", 2 },
-            { "unglue", 2 }, { "app", 2 }, { NULL, 0 } };
+            { "unglue", 2 }, { "app", 2 }, { "hcompD", 2 }, { NULL, 0 } };
         if (!strcmp(k, "@")) { if (t->n != 3 && t->n != 5) die("@ takes a path, an interval and optionally both endpoints", NULL); }
         else for (int i = 0; AR[i].k; i++) if (!strcmp(AR[i].k, k)) arity(t, AR[i].n);
         Node *r = nlist(t->n); r->it[0] = h;
@@ -579,6 +590,27 @@ static Syn *compile(Node *t) {
     if (!strcmp(h, "Glue")) return compile_n(S_GLUE, t, 1, 2);
     if (!strcmp(h, "glue")) return compile_n(S_GLUEV, t, 1, 2);
     if (!strcmp(h, "unglue")) return compile_n(S_UNGLUE, t, 1, 2);
+    if (!strcmp(h, "%data")) {
+        int d = data_lookup(t->it[1]->s);
+        if (d < 0 || t->n - 2 != DATA[d].nparams) die("bad %data", t->it[1]->s);
+        Syn *s = compile_n(S_DATA, t, 2, t->n - 2); s->id = d; return s;
+    }
+    if (!strcmp(h, "%con")) {
+        int c = con_lookup(t->it[1]->s);
+        if (c < 0 || t->n - 2 != CON[c].nfields + CON[c].ndims) die("bad %con", t->it[1]->s);
+        Syn *s = compile_n(S_CON, t, 2, t->n - 2); s->id = c; return s;
+    }
+    if (!strcmp(h, "hcompD")) return compile_n(S_HCOMPD, t, 1, 2);
+    if (!strcmp(h, "%transD")) {
+        int d = data_lookup(t->it[1]->s);
+        if (d < 0 || t->n - 2 != DATA[d].nparams + 2) die("bad %transD", t->it[1]->s);
+        Syn *s = compile_n(S_TRANSD, t, 2, t->n - 2); s->id = d; return s;
+    }
+    if (!strcmp(h, "%case")) {
+        if (t->n != 3 && t->n != 4) die("bad %case", NULL);
+        Syn *s = compile_n(S_CASE, t, 1, t->n - 1); s->x = t->n == 4; return s;
+    }
+    if (!strcmp(h, "%branches")) return compile_n(S_BRANCHES, t, 1, t->n - 1);
     die("unknown form", h);
     return NULL;
 }
@@ -704,6 +736,24 @@ static void rb_one(FILE *o, Port prov) {
     case V_NUNGLUE: push_fields_to(o, "unglue", c, 1, 3); return;
     case V_DEFER: push_port(defer_build(c)); return;
     case V_UNK: fputs("?", o); return;
+    case V_DATA: if (c->n == 1) fputs(DATA[c->a].name, o); else push_fields(o, DATA[c->a].name, c, 1); return;
+    case V_CON: if (c->n == 1) fputs(CON[c->a].name, o); else push_fields(o, CON[c->a].name, c, 1); return;
+    case V_HCOMP: push_fields(o, "hcompD", c, 1); return;
+    case V_BRANCHES: push_fields(o, "%branches", c, 1); return;
+    case V_NCASE:
+        /* (%case B [P] x) */
+        fputs("(%case", o);
+        push_str(")"); push_field(c, 1); push_str(" ");
+        if (c->x) { push_field(c, 3); push_str(" "); }
+        push_field(c, 2); push_str(" ");
+        return;
+    case V_NTRANS:
+        /* (%transD D ψ lines... x) */
+        fprintf(o, "(%%transD %s", DATA[c->a].name);
+        push_str(")"); push_field(c, 1); push_str(" ");
+        for (int k = c->n - 2; k >= 2; k--) { push_field(c, k); push_str(" "); }
+        push_task(TK_STR, 0, dnf_string(c->p, true)); push_str(" ");
+        return;
     case V_GLOBAL: {
         /* a definition reads back as its value; within its own value it is its name */
         long g = (long)c->a;
@@ -796,6 +846,15 @@ static char *readback(Node *t, long *steps, long *erased) {
 /* ---------------- the driver ---------------- */
 static int failures, passes;
 static void toplevel(Node *f);
+/* top-level forms written by the system (a data declaration's definitions) */
+static void emit(const char *text) {
+    if (getenv("CUBICAL_SHOW_EMIT")) fprintf(stderr, "%s\n", text);
+    const char *saved = src;
+    src = text;
+    Node *f;
+    while ((f = read_node())) toplevel(f);
+    src = saved;
+}
 static char **watch_name; static Cell **watch_root; static size_t capwn, capwr; static int nwatch;
 static void toplevel(Node *f) {
     if (!f->list || f->n == 0 || f->it[0]->list) die("top-level form expected", NULL);
@@ -810,6 +869,7 @@ static void toplevel(Node *f) {
         Syn *s = compile_top(f->it[2], &ns, &u);
         G[g].body = s; G[g].nslots = ns; G[g].uses = u;
         link(top_build(s, ns, u), P(G[g].res, 0));
+        if (!strcmp(G[g].name, "%case-hcomp")) case_hcomp_global = g;
         if (fill_decl) { for (int i = 0; i < G[g].npark; i++) net_push(G[g].park_o[i], G[g].park_v[i]); G[g].npark = 0; }
     } else if (!strcmp(h, "checked") || !strcmp(h, "check") || !strcmp(h, "check-fail")) {
         /* the checker (lib/check.ctt), a term, run on the codes of T and t
@@ -842,31 +902,183 @@ static void toplevel(Node *f) {
     } else if (!strcmp(h, "declare")) {
         for (int i = 1; i < f->n; i++) add_global(f->it[i]->s, G_INPUT);
     } else if (!strcmp(h, "data")) {
-        /* (data T (C f...) ...): constructors as definitions */
-        if (f->n < 3) die("(data T (C f...) ...)", NULL);
-        int type = ntypes++;
-        GROW(TYPE_N, captypes, (size_t)ntypes);
-        int N = f->n - 2;
-        TYPE_N[type] = N;
-        for (int i = 0; i < N; i++) {
-            Node *cd = f->it[i + 2];
-            if (!cd->list || cd->n < 1) die("constructor must be (C f...)", NULL);
-            GROW(CONS, capcons, (size_t)ncons + 1);
-            CONS[ncons++] = (Con){ strdup(cd->it[0]->s), type, i, cd->n - 1 };
+        /* (data D ctor...) or (data (D z...) ctor...); ctor = (c field... [(dims i...) (φ e)...]),
+         * field = x or (x A). Generates the type former D, the constructors, each path
+         * constructor's boundary %bdy-c, and from CHM's equations the composition
+         * %comp-D = hcomp after transport, transport on each constructor %trans-c
+         * and on hcomp %trans-hcomp-D. */
+        if (f->n < 2) die("(data D ctor...)", NULL);
+        Node *hd = f->it[1];
+        const char *D = hd->list ? hd->it[0]->s : hd->s;
+        int np = hd->list ? hd->n - 1 : 0, nc = f->n - 2;
+        const char **pn = calloc((size_t)np + 1, sizeof(char *));
+        for (int k = 0; k < np; k++) pn[k] = param_name(hd->it[k + 1])->s;
+        GROW(DATA, capdata, (size_t)ndata + 1);
+        int d = ndata++;
+        DATA[d] = (DataInfo){ strdup(D), np, nc, calloc((size_t)nc + 1, sizeof(int)), -1, -1 };
+        typedef struct { Node *cd; int nf, nd, nb; Node **fn, **ft, **dn, **bf, **be; } CD;
+        CD *cs = calloc((size_t)nc + 1, sizeof(CD));
+        for (int ci = 0; ci < nc; ci++) {
+            Node *cd = f->it[ci + 2];
+            if (!cd->list || cd->n < 1 || cd->it[0]->list) die("constructor must be (C field...)", NULL);
+            CD *x = &cs[ci]; x->cd = cd;
+            x->fn = calloc((size_t)cd->n, sizeof(Node *)); x->ft = calloc((size_t)cd->n, sizeof(Node *));
+            x->dn = calloc((size_t)cd->n, sizeof(Node *)); x->bf = calloc((size_t)cd->n, sizeof(Node *)); x->be = calloc((size_t)cd->n, sizeof(Node *));
+            int i = 1;
+            for (; i < cd->n; i++) {
+                Node *it = cd->it[i];
+                if (it->list && it->n >= 1 && is(it->it[0], "dims")) break;
+                if (it->list) { if (it->n != 2 || it->it[0]->list) die("field must be x or (x A) in", cd->it[0]->s); x->fn[x->nf] = it->it[0]; x->ft[x->nf] = it->it[1]; }
+                else x->fn[x->nf] = it;
+                x->nf++;
+            }
+            if (i < cd->n) {
+                Node *dl = cd->it[i++];
+                for (int k = 1; k < dl->n; k++) x->dn[x->nd++] = dl->it[k];
+                for (; i < cd->n; i++) {
+                    Node *br = cd->it[i];
+                    if (!br->list || br->n != 2) die("boundary must be (φ e) in", cd->it[0]->s);
+                    x->bf[x->nb] = br->it[0]; x->be[x->nb] = br->it[1]; x->nb++;
+                }
+            }
+            if (x->nb && !x->nd) die("a boundary needs dimensions in", cd->it[0]->s);
+            GROW(CON, capcon, (size_t)ncon + 1);
+            DATA[d].cons[ci] = ncon;
+            CON[ncon++] = (ConInfo){ strdup(cd->it[0]->s), d, ci, x->nf, x->nd, -1, -1 };
         }
-        for (int i = 0; i < N; i++) {
-            Node *cd = f->it[i + 2];
-            int ar = cd->n - 1;
-            Node *app = NULL;
-            char nm[32];
-            snprintf(nm, sizeof nm, "%%h%d", i); app = nsym(nm);
-            for (int k = 1; k <= ar; k++) app = nl3("app", app, cd->it[k]);
-            Node *body = app;
-            for (int j = N - 1; j >= 0; j--) { snprintf(nm, sizeof nm, "%%h%d", j); body = nl3("lam", nsym(nm), body); }
-            for (int k = ar; k >= 1; k--) body = nl3("lam", cd->it[k], body);
-            Node *def = nlist(3); def->it[0] = nsym("def"); def->it[1] = cd->it[0]; def->it[2] = body;
-            toplevel(def);
+        char *buf; size_t len; FILE *m;
+#define OPEN() (m = open_memstream(&buf, &len))
+#define EMIT() do { fclose(m); emit(buf); free(buf); } while (0)
+#define PN(x) print_node(m, (x))
+        /* the type former */
+        OPEN();
+        if (np) { fprintf(m, "(def %s (lam", D); for (int k = 0; k < np; k++) fprintf(m, " %s", pn[k]); fprintf(m, " (%%data %s", D); for (int k = 0; k < np; k++) fprintf(m, " %s", pn[k]); fprintf(m, ")))"); }
+        else fprintf(m, "(def %s (%%data %s))", D, D);
+        EMIT();
+        for (int ci = 0; ci < nc; ci++) {
+            CD *x = &cs[ci]; int c = DATA[d].cons[ci]; const char *cn = CON[c].name;
+            /* fields then dimensions, as written */
+            char *args; size_t alen; FILE *am = open_memstream(&args, &alen);
+            for (int k = 0; k < x->nf; k++) { fputc(' ', am); print_node(am, x->fn[k]); }
+            for (int k = 0; k < x->nd; k++) { fputc(' ', am); print_node(am, x->dn[k]); }
+            fclose(am);
+            if (x->nb) {
+                OPEN(); fprintf(m, "(def %%bdy-%s (lam%s (sys", cn, args);
+                for (int k = 0; k < x->nb; k++) { fputs(" (", m); PN(x->bf[k]); fputc(' ', m); PN(x->be[k]); fputc(')', m); }
+                fprintf(m, ")))"); EMIT();
+                char nm[256]; snprintf(nm, sizeof nm, "%%bdy-%s", cn);
+                CON[c].bdy = global_lookup(nm);
+            }
+            OPEN();
+            if (x->nf + x->nd) fprintf(m, "(def %s (lam%s (%%con %s%s)))", cn, args, cn, args);
+            else fprintf(m, "(def %s (%%con %s))", cn, cn);
+            EMIT();
+            free(args);
         }
+        /* composition: hcomp after transport (CHM); a closed type transports as the identity */
+        OPEN();
+        if (!np) fprintf(m, "(def %%comp-%s (lam %%u %%a0 (hcompD %%u %%a0)))", D);
+        else {
+            fprintf(m, "(def %%comp-%s (lam", D);
+            for (int k = 0; k < np; k++) fprintf(m, " %%z%d", k);
+            fprintf(m, " %%u %%a0 (hcompD (sysmap (lam %%w (plam %%i (%%transD %s (= %%i 1)", D);
+            for (int k = 0; k < np; k++) fprintf(m, " (plam %%j (@ %%z%d (\\/ %%i %%j)))", k);
+            fprintf(m, " (@ %%w %%i)))) %%u) (%%transD %s ff", D);
+            for (int k = 0; k < np; k++) fprintf(m, " %%z%d", k);
+            fprintf(m, " %%a0))))");
+        }
+        EMIT();
+        { char nm[256]; snprintf(nm, sizeof nm, "%%comp-%s", D); DATA[d].comp = global_lookup(nm); }
+        /* transport on hcomp: into its tube and cap */
+        OPEN();
+        fprintf(m, "(def %%trans-hcomp-%s (lam", D);
+        for (int k = 0; k < np; k++) fprintf(m, " %%z%d", k);
+        if (!np) fprintf(m, " %%psi %%u %%u0 (hcompD %%u %%u0)))");
+        else {
+            fprintf(m, " %%psi %%u %%u0 (hcompD (sysmap (lam %%w (plam %%j (%%transD %s %%psi", D);
+            for (int k = 0; k < np; k++) fprintf(m, " %%z%d", k);
+            fprintf(m, " (@ %%w %%j)))) %%u) (%%transD %s %%psi", D);
+            for (int k = 0; k < np; k++) fprintf(m, " %%z%d", k);
+            fprintf(m, " %%u0))))");
+        }
+        EMIT();
+        { char nm[256]; snprintf(nm, sizeof nm, "%%trans-hcomp-%s", D); DATA[d].transh = global_lookup(nm); }
+        /* transport on each constructor */
+        for (int ci = 0; ci < nc; ci++) {
+            CD *x = &cs[ci]; int c = DATA[d].cons[ci]; const char *cn = CON[c].name;
+            OPEN();
+            fprintf(m, "(def %%trans-%s (lam", cn);
+            for (int k = 0; k < np; k++) fprintf(m, " %%z%d", k);
+            fprintf(m, " %%psi");
+            for (int k = 0; k < x->nf; k++) { fputc(' ', m); PN(x->fn[k]); }
+            for (int k = 0; k < x->nd; k++) { fputc(' ', m); PN(x->dn[k]); }
+            fputc(' ', m);
+            if (!np) {
+                /* a closed type: the identity */
+                if (x->nf + x->nd) { fprintf(m, "(%s", cn); for (int k = 0; k < x->nf; k++) { fputc(' ', m); PN(x->fn[k]); } for (int k = 0; k < x->nd; k++) { fputc(' ', m); PN(x->dn[k]); } fputc(')', m); }
+                else fputs(cn, m);
+                fputs("))", m);
+            } else {
+                /* θ_m = transFill^i of field m along its type, with the parameters and the earlier
+                 * fields at i ∧ j; a field of type D itself is transported by D's transport */
+                for (int k = 0; k < x->nf; k++) {
+                    if (!x->ft[k]) die("a parameterized data type needs its fields' types:", cn);
+                    Node *A = x->ft[k];
+                    bool rec = (!A->list && !strcmp(A->s, D)) || (A->list && A->n >= 1 && !A->it[0]->list && !strcmp(A->it[0]->s, D));
+                    fprintf(m, "(let %%t%d (plam %%i ", k);
+                    if (rec) {
+                        fprintf(m, "(%%transD %s (| %%psi (= %%i 0))", D);
+                        for (int q = 0; q < np; q++) fprintf(m, " (plam %%j (@ %%z%d (/\\ %%i %%j)))", q);
+                        fputc(' ', m); PN(x->fn[k]); fputc(')', m);
+                    } else {
+                        fprintf(m, "(comp (plam %%j");
+                        for (int q = 0; q < np; q++) fprintf(m, " (let %s (@ %%z%d (/\\ %%i %%j))", pn[q], q);
+                        for (int q = 0; q < k; q++) { fputs(" (let ", m); PN(x->fn[q]); fprintf(m, " (@ %%t%d (/\\ %%i %%j))", q); }
+                        fputc(' ', m); PN(A);
+                        for (int q = 0; q < np + k; q++) fputc(')', m);
+                        fprintf(m, ") (sys ((| %%psi (= %%i 0)) (plam %%j "); PN(x->fn[k]); fputs("))) ", m); PN(x->fn[k]); fputc(')', m);
+                    }
+                    fputs(") ", m);
+                }
+                /* the constructor on the transported fields */
+                char *head; size_t hlen; FILE *hm = open_memstream(&head, &hlen);
+                if (x->nf + x->nd) { fprintf(hm, "(%s", cn); for (int k = 0; k < x->nf; k++) fprintf(hm, " (@ %%t%d 1)", k); for (int k = 0; k < x->nd; k++) { fputc(' ', hm); print_node(hm, x->dn[k]); } fputc(')', hm); }
+                else fputs(cn, hm);
+                fclose(hm);
+                if (!x->nb) fputs(head, m);
+                else {
+                    /* a path constructor: corrected at its boundary by the squeezed boundary,
+                     * hcomp^i [φ(r) ↦ α(1-i), ψ ↦ c v r] (c (trans v) r) */
+                    fputs("(hcompD (sys+ ", m);
+                    if (x->nb > 1) fputs("(|", m);
+                    for (int k = 0; k < x->nb; k++) { fputc(' ', m); PN(x->bf[k]); }
+                    if (x->nb > 1) fputc(')', m);
+                    fprintf(m, " (plam %%i (%%transD %s (| %%psi (= (~ %%i) 1))", D);
+                    for (int q = 0; q < np; q++) fprintf(m, " (plam %%j (@ %%z%d (\\/ (~ %%i) %%j)))", q);
+                    fputc(' ', m);
+                    for (int k = 0; k < x->nf; k++) { fputs("(let ", m); PN(x->fn[k]); fprintf(m, " (@ %%t%d (~ %%i)) ", k); }
+                    fputs("(sys", m);
+                    for (int k = 0; k < x->nb; k++) { fputs(" (", m); PN(x->bf[k]); fputc(' ', m); PN(x->be[k]); fputc(')', m); }
+                    fputc(')', m);
+                    for (int k = 0; k < x->nf; k++) fputc(')', m);
+                    fprintf(m, ")) (sys (%%psi (plam %%i (%s", cn);
+                    for (int k = 0; k < x->nf; k++) { fputc(' ', m); PN(x->fn[k]); }
+                    for (int k = 0; k < x->nd; k++) { fputc(' ', m); PN(x->dn[k]); }
+                    fprintf(m, "))))) %s)", head);
+                }
+                free(head);
+                for (int k = 0; k < x->nf; k++) fputc(')', m);
+                fputs("))", m);
+            }
+            EMIT();
+            char nm[256]; snprintf(nm, sizeof nm, "%%trans-%s", cn);
+            CON[c].trans = global_lookup(nm);
+        }
+#undef OPEN
+#undef EMIT
+#undef PN
+        for (int ci = 0; ci < nc; ci++) { free(cs[ci].fn); free(cs[ci].ft); free(cs[ci].dn); free(cs[ci].bf); free(cs[ci].be); }
+        free(cs); free(pn);
     } else if (!strcmp(h, "axiom")) {
         /* name, or (name T): a constant of type T; its neutral carries T */
         for (int i = 1; i < f->n; i++) {
