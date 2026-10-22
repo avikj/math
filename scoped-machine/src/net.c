@@ -135,11 +135,38 @@ static Box *box_new(Port val) {
     link(val, P(b->root, 0));
     return b;
 }
-static Port box_copy(Box *b) {
-    Cell *r = b->root, *d = cell(O_DUP, 3);
-    link(r->port[0], P(d, 0)); link(P(d, 1), P(r, 0));
-    return P(d, 2);
+/* reading a stored value (held by root): its top cell is copied, each part a reference to the
+ * stored part (wrapped in a box when first read), so a part is copied only when an operation
+ * reads it, one level per interaction. A value not yet there is copied by a duplicator when it
+ * arrives. The rewrite holds the stored value and its neighbours (lockset). */
+static void box_hold(Box *b) { __atomic_add_fetch(&b->rc, 1, __ATOMIC_RELAXED); }
+Port lazy_copy(Cell *root) {
+    Port p = root->port[0];
+    Cell *v = p ? PC(p) : NULL;
+    if (!v || PI(p) != 0 || !is_value(v->kind)) {
+        Cell *d = cell(O_DUP, 3);
+        link(root->port[0], P(d, 0)); link(P(d, 1), P(root, 0));
+        return P(d, 2);
+    }
+    Cell *c = clone(v);
+    for (int k = 1; k < v->n; k++) {
+        Port q = v->port[k];
+        Cell *qc = q ? PC(q) : NULL;
+        if (qc && PI(q) == 0 && is_value(qc->kind) && qc->n == 1) {
+            /* a part with no parts of its own (a reference, a word, a constant): itself */
+            Cell *q2 = clone(qc);
+            link(P(q2, 0), P(c, k));
+            continue;
+        }
+        Box *b = box_new(q);
+        Cell *r1 = cell(V_REF, 1); r1->p = b;
+        Cell *r2 = cell(V_REF, 1); r2->p = b; box_hold(b);
+        link(P(r1, 0), P(v, k));
+        link(P(r2, 0), P(c, k));
+    }
+    return P(c, 0);
 }
+static Port box_copy(Box *b) { return lazy_copy(b->root); }
 Port ref_copy(Cell *c) { return box_copy(c->p); }
 /* a word's suspended elimination, computed (for readback) */
 Port wsusp_force(Cell *c) {
@@ -1395,13 +1422,23 @@ static int cell_cmp(const void *x, const void *y) {
     uintptr_t a = (uintptr_t)*(Cell *const *)x, b = (uintptr_t)*(Cell *const *)y;
     return a < b ? -1 : a > b;
 }
-static int lockset(Cell *o, Cell *v, Cell **S) {
+static int lockset(Cell *o, Cell *v, Cell **S, int cap) {
     int n = 0;
     S[n++] = o; S[n++] = v;
     for (int k = 1; k < o->n; k++) { Port p = rd(o, k); if (p) S[n++] = PC(p); }
     for (int k = 1; k < v->n; k++) { Port p = rd(v, k); if (p) S[n++] = PC(p); }
     if (v->kind == V_GLOBAL) { Cell *r = global_res((long)v->a); S[n++] = r; Port p = rd(r, 0); if (p) S[n++] = PC(p); }
-    if (v->kind == V_REF) { Cell *r = ((Box *)v->p)->root; S[n++] = r; Port p = rd(r, 0); if (p) S[n++] = PC(p); }
+    if (v->kind == V_REF || v->kind == V_GLOBAL) {
+        /* the stored value and its parts' neighbours: reading it may wrap a part in a box */
+        Cell *r = v->kind == V_REF ? ((Box *)v->p)->root : global_res((long)v->a);
+        if (v->kind == V_REF) S[n++] = r;
+        Port p = rd(r, 0);
+        if (p) {
+            Cell *w = PC(p);
+            if (v->kind == V_REF) S[n++] = w;
+            for (int k = 1; k < w->n && n < cap - 1; k++) { Port q = rd(w, k); if (q) S[n++] = PC(q); }
+        }
+    }
     qsort(S, (size_t)n, sizeof(Cell *), cell_cmp);
     int m = 0;
     for (int i = 0; i < n; i++) if (m == 0 || S[m - 1] != S[i]) S[m++] = S[i];
@@ -1409,15 +1446,21 @@ static int lockset(Cell *o, Cell *v, Cell **S) {
 }
 static void rewrite(Redex r) {
     Cell *o = r.op, *v = r.v;
-    int cap = o->n + v->n + 4;
+    int cap = o->n + v->n + 8;
+    if (v->kind == V_REF || v->kind == V_GLOBAL) {
+        /* room for the stored value's parts (read again under the locks) */
+        Cell *rt = v->kind == V_REF ? ((Box *)v->p)->root : global_res((long)v->a);
+        Port p = rd(rt, 0);
+        if (p) cap += PC(p)->n + 2;
+    }
     Cell *buf1[64], *buf2[64];
     Cell **S = cap <= 64 ? buf1 : malloc((size_t)cap * sizeof(Cell *));
     Cell **T = cap <= 64 ? buf2 : malloc((size_t)cap * sizeof(Cell *));
     int n;
     for (;;) {
-        n = lockset(o, v, S);
+        n = lockset(o, v, S, cap);
         for (int i = 0; i < n; i++) lock(S[i]);
-        int m = lockset(o, v, T), j = 0;
+        int m = lockset(o, v, T, cap), j = 0;
         bool ok = true;
         for (int i = 0; i < m && ok; i++) { while (j < n && S[j] < T[i]) j++; if (j == n || S[j] != T[i]) ok = false; }
         if (ok) break;

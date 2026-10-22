@@ -671,10 +671,8 @@ Port global_copy(long g) {
     if (b && b->tag == S_LAM && b->n == 0) { Cell *c = cell(V_LAM, 1); c->p = b->rec; return P(c, 0); }
     if (b && b->tag == S_CON && b->n == 0) return con_build((int)b->id, NULL, NULL);
     if (b && b->tag == S_DATA && b->n == 0) { Cell *c = cell(V_DATA, 1); c->a = (uint64_t)b->id; return P(c, 0); }
-    Cell *d = cell(O_DUP, 3);
-    link(r->port[0], P(d, 0));
-    link(P(d, 1), P(r, 0));
-    return P(d, 2);
+    extern Port lazy_copy(Cell *root);
+    return lazy_copy(r);
 }
 Cell *global_res(long g) { return G[g].res; }
 static pthread_mutex_t park_mu = PTHREAD_MUTEX_INITIALIZER;
