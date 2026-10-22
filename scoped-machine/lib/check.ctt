@@ -169,31 +169,31 @@
   ((npapp h r) (papp k (act k s h) (isubst s r)))
   ((ncomp L u a0) (vcomp k (lam k1 r (act k1 s (L k1 r))) (lam k1 r (act k1 s (u k1 r))) (act k s a0)))
   ((nunglue S h) (vunglue k (act-branches k s S) (act k s h)))
-  ((nelim P B x) (velim k (opt-map (act k s) P) (lmap (lam b (lam k1 fs ds (act k1 s (b k1 fs ds)))) B) (act k s x)))
+  ((nelim P B x) (velim k (opt-map (act k s) P) (lmap (lam b (lam k1 fs hs ds (act k1 s (b k1 fs hs ds)))) B) (act k s x)))
   ((ntrans d ls psi x sg) (vtrans k sg d (lmap (lam l (lam k1 r (act k1 s (l k1 r)))) ls) (fsubst s psi) (act k s x))))))
 (def restrict (lam k c v (act k (clsub c) v)))
 
 ; eliminators; on a system they act branchwise, the other operand restricted
 (def vapp (lam k f x (case f
   ((vlam g) (g k x))
-  ((vneu n T) (case T ((vpi A F) (vneu (napp f x) (F k x))) (_ verr)))
+  ((vneu n T) (case T ((vpi A F) (vneu (napp f x) (F k x))) (_ (vneu (napp f x) verr))))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vapp k (snd b) (restrict k (fst b) x)))) bs)))
   (_ verr))))
 (def vfst (lam k p (case p
   ((vpair a b) a)
-  ((vneu n T) (case T ((vsigma A F) (vneu (nfst p) A)) (_ verr)))
+  ((vneu n T) (case T ((vsigma A F) (vneu (nfst p) A)) (_ (vneu (nfst p) verr))))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vfst k (snd b)))) bs)))
   (_ verr))))
 (def vsnd (lam k p (case p
   ((vpair a b) b)
-  ((vneu n T) (case T ((vsigma A F) (vneu (nsnd p) (F k (vfst k p)))) (_ verr)))
+  ((vneu n T) (case T ((vsigma A F) (vneu (nsnd p) (F k (vfst k p)))) (_ (vneu (nsnd p) verr))))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (vsnd k (snd b)))) bs)))
   (_ verr))))
 (def papp (lam k p r (case p
   ((vplam f) (f k r))
   ((vneu n T) (case T
      ((vpathp L a b) (if (izero r) a (if (ione r) b (vneu (npapp p r) (L k r)))))
-     (_ verr)))
+     (_ (vneu (npapp p r) verr))))
   ((vsys bs) (vsys (lmap (lam b (pair (fst b) (papp k (snd b) (isubst (clsub (fst b)) r)))) bs)))
   (_ verr))))
 (def line-of (lam v (case v ((vplam f) f) (_ (lam k r (papp k v r))))))
@@ -297,9 +297,9 @@
   (let S1 (mksys (S k i1))
   (let alpha1 (bface (S k i1))
   (let tl (lam k2 r (fill k2 (lam k3 i (vfst k3 (mksys (S k3 i)))) u u0 r))
-  (let ff (lam k2 i x (vapp k2 (vfst k2 (vsnd k2 (mksys (S k2 i)))) x))
+  (let fe (lam k2 i x (vapp k2 (vfst k2 (vsnd k2 (mksys (S k2 i)))) x))
   (let omega (vplam (lam k2 q
-                (vcomp k2 A (lam k3 i (sys-add k3 (feq q false) (ff k3 i (tl k3 i))
+                (vcomp k2 A (lam k3 i (sys-add k3 (feq q false) (fe k3 i (tl k3 i))
                                        (sys-add k3 (feq q true) (al k3 i)
                                          (sys-map k3 (lam k4 w (al k4 i)) (u k3 i)))))
                       a0)))
@@ -335,6 +335,14 @@
 (def cftys (lam ce (case ce ((cent f n b) f))))
 (def cnd (lam ce (case ce ((cent f n b) n))))
 (def cbdy (lam ce (case ce ((cent f n b) b))))
+; a field of type D itself is recursive; its branch binds its induction hypothesis
+(def is-data-d (lam d c (case c ((cdata d2 ps) (eqn d d2)) (_ false))))
+(def nrec (lam d ftys (llen (lfilter (is-data-d d) ftys))))
+(def rec-of (lam d ftys fs (case ftys
+  ((lnil) lnil)
+  ((lcons A rest) (case fs
+    ((lnil) lnil)
+    ((lcons f fr) (if (is-data-d d A) (lcons f (rec-of d rest fr)) (rec-of d rest fr))))))))
 (def strip-n (lam n c (case n ((nz) c) ((ns m) (case c ((clam b) (strip-n m b)) ((cdlam b) (strip-n m b)) (_ c))))))
 
 ; the boundary of constructor c at fields fs and dimensions ds (a system)
@@ -348,10 +356,13 @@
 (def mkhcomp (lam k u a (if (istotal (u (ns k) (ivar k))) (u k i1) (vhcomp u a))))
 ; hfill^i [φ ↦ u] u0 at i = hcomp^j [φ ↦ u(i∧j), (i=0) ↦ u0] u0
 (def hfill-d (lam k u a i (mkhcomp k (lam k2 j (sys-add k2 (feq i false) a (u k2 (imeet i j)))) a)))
-(def restrict-B (lam k cl B (lmap (lam b (lam k1 fs ds (restrict k1 cl (b k1 fs ds)))) B)))
-; elimination; on hcomp, composition in the motive along hfill
+(def restrict-B (lam k cl B (lmap (lam b (lam k1 fs hs ds (restrict k1 cl (b k1 fs hs ds)))) B)))
+; elimination; a branch receives its fields, the eliminations of its recursive
+; fields (induction hypotheses) and its dimensions; on hcomp, composition in
+; the motive along hfill
 (def velim (lam k P B x (case x
-  ((vcon d c fs ds sg) ((fromopt (lnth B c) (lam k1 f1 d1 verr)) k fs ds))
+  ((vcon d c fs ds sg) ((fromopt (lnth B c) (lam k1 f1 h1 d1 verr)) k fs
+                          (lmap (velim k P B) (rec-of d (cftys (centry sg d c)) fs)) ds))
   ((vhcomp u a) (case P
      ((some p) (vcomp k (lam k2 i (vapp k2 p (hfill-d k2 u a i)))
                         (lam k2 i (sys-map k2 (lam k3 w (velim k3 P B w)) (u k2 i)))
@@ -403,7 +414,8 @@
   ((lnil) lnil)
   ((lcons b rest)
     (let ce (centry sig d c)
-      (lcons (lam k1 fs ds (veval k1 sig (push-all (lmap viv ds) (push-all fs env)) (strip-n (addn (llen (cftys ce)) (cnd ce)) b)))
+      (lcons (lam k1 fs hs ds (veval k1 sig (push-all (lmap viv ds) (push-all hs (push-all fs env)))
+                                     (strip-n (addn (llen (cftys ce)) (addn (nrec d (cftys ce)) (cnd ce))) b)))
              (eval-branches-at sig env d rest (ns c))))))))
 
 ; ---------------------------------------------------------------- evaluation
@@ -411,7 +423,7 @@
 ; context's variables (dimensions as interval values), sig the checked
 ; definitions' (type, value) pairs. A system branch is evaluated under each
 ; clause of its face, in the environment restricted to that clause.
-(declare veval conv convty convneu convn infer check infer-binder check-comp conv-data
+(declare veval conv convty convneu convn uconv infer check infer-binder check-comp conv-data
          check-tele motive-level check-branches check-hcomp check-fields)
 (def act-env (lam k d env (lmap (lam v (restrict k d v)) env)))
 (def veval (lam k sig env c (case c
@@ -456,7 +468,8 @@
   ((celim d P B x) (velim k (some (veval k sig env P)) (eval-branches-at sig env d B nz) (veval k sig env x)))
   ((ccase d B x) (velim k none (eval-branches-at sig env d B nz) (veval k sig env x)))
   ((chcomp u a) (mkhcomp k (line-of (veval k sig env u)) (veval k sig env a)))
-  ((cdlam b) verr))))
+  ((cdlam b) verr)
+  ((cforce t) (veval k sig env t)))))
 
 ; ---------------------------------------------------------------- conversion
 ; At a type: η for Π (apply to a fresh variable), Σ (componentwise), paths
@@ -490,17 +503,24 @@
 (def fresh-fields (lam k sg ftys env acc (case ftys
   ((lnil) (pair acc k))
   ((lcons A rest) (let x (vneu (nvar k) (veval k sg env A)) (fresh-fields (ns k) sg rest (lcons x env) (lsnoc acc x)))))))
+; fresh induction hypotheses: comparing two eliminations' branches with the
+; hypotheses as variables compares the eliminations
+(def fresh-hyps (lam k P rs acc (case rs
+  ((lnil) (pair acc k))
+  ((lcons f rest) (fresh-hyps (ns k) P rest (lsnoc acc (vneu (nvar k) (case P ((some p) (vapp k p f)) ((none) verr)))))))))
 (def fresh-dims (lam k n acc (case n ((nz) (pair acc k)) ((ns m) (fresh-dims (ns k) m (lsnoc acc (ivar k)))))))
 ; two eliminations' branches, compared at the motive on fresh fields and dimensions
 (def conv-branches-at (lam k P B B2 d ps sg c (case B
   ((lnil) (isnil B2))
   ((lcons b rest) (case B2 ((lnil) false) ((lcons b2 rest2)
     (let ce (centry sg d c)
-    (let ff (fresh-fields k sg (cftys ce) (push-all ps lnil) lnil)
-    (let fd (fresh-dims (snd ff) (cnd ce) lnil)
+    (let fl (fresh-fields k sg (cftys ce) (push-all ps lnil) lnil)
+    (let fh (fresh-hyps (snd fl) P (rec-of d (cftys ce) (fst fl)) lnil)
+    (let fd (fresh-dims (snd fh) (cnd ce) lnil)
     (let k2 (snd fd)
-      (andb (conv k2 (case P ((some p) (vapp k2 p (mkcon k2 sg d c (fst ff) (fst fd)))) ((none) verr)) (b k2 (fst ff) (fst fd)) (b2 k2 (fst ff) (fst fd)))
-            (conv-branches-at k P rest rest2 d ps sg (ns c)))))))))))))
+      (andb (let u (b k2 (fst fl) (fst fh) (fst fd)) (let v (b2 k2 (fst fl) (fst fh) (fst fd))
+              (case P ((some p) (conv k2 (vapp k2 p (mkcon k2 sg d c (fst fl) (fst fd))) u v)) ((none) (uconv k2 u v)))))
+            (conv-branches-at k P rest rest2 d ps sg (ns c))))))))))))))
 (def convty-branches (lam k A S S2 (andb (feqf (bface S) (bface S2))
   (lall (lam b (case (total-branch (act-branches k (clsub (fst b)) S2))
      ((some te2) (let te (snd b)
@@ -518,6 +538,26 @@
   ((vsys bs) (lall (lam b (convty k (snd b) (restrict k (fst b) Y))) bs))
   ((vneu n T) (convneu k X Y))
   (_ false))))
+; conversion without a type, for the branches of an elimination without a
+; motive (well-typed both sides): η for functions, pairs and lines by applying
+; both sides; data values by constructor and fields; types as types
+(def uconv-l (lam k us vs (lall2 (lam u v (uconv k u v)) us vs)))
+(def uconv (lam k u v (if (orb (notb (istotal u)) (notb (istotal v)))
+  (andb (lall (lam b (uconv k (snd b) (restrict k (fst b) v))) (branches u))
+        (lall (lam b (uconv k (restrict k (fst b) u) (snd b))) (branches v)))
+  (let x (vneu (nvar k) verr) (let i (ivar k) (case u
+  ((vlam f) (uconv (ns k) (vapp (ns k) u x) (vapp (ns k) v x)))
+  ((vplam f) (uconv (ns k) (papp (ns k) u i) (papp (ns k) v i)))
+  ((vpair a b) (andb (uconv k (vfst k u) (vfst k v)) (uconv k (vsnd k u) (vsnd k v))))
+  ((vcon d c fs ds sg) (case v ((vcon d2 c2 fs2 ds2 sg2) (andb (eqn d d2) (andb (eqn c c2) (andb (lall2 ieq ds ds2) (uconv-l k fs fs2))))) (_ false)))
+  ((vhcomp w a) (case v ((vhcomp w2 a2) (andb (uconv k a a2) (uconv (ns k) (w (ns k) i) (w2 (ns k) i)))) (_ false)))
+  ((vpi A F) (convty k u v)) ((vsigma A F) (convty k u v)) ((vu l) (convty k u v)) ((vpathp L a b) (convty k u v))
+  ((vglue A S) (convty k u v)) ((vdata d ps sg) (convty k u v))
+  (_ (case v
+    ((vlam f) (uconv (ns k) (vapp (ns k) u x) (vapp (ns k) v x)))
+    ((vplam f) (uconv (ns k) (papp (ns k) u i) (papp (ns k) v i)))
+    ((vpair a b) (andb (uconv k (vfst k u) (vfst k v)) (uconv k (vsnd k u) (vsnd k v))))
+    (_ (convneu k u v))))))))))
 (def neu-of (lam v (case v ((vneu n T) (some n)) (_ none))))
 (def type-of (lam v (case v ((vneu n T) T) (_ verr))))
 (def convneu (lam k u v (case u
@@ -528,7 +568,7 @@
 (def convn (lam k u v n m (case n
   ((nvar l) (case m ((nvar l2) (eqn l l2)) (_ false)))
   ((napp h a) (case m ((napp h2 a2) (andb (convneu k h h2)
-       (case (type-of h) ((vpi A F) (conv k A a a2)) (_ false)))) (_ false)))
+       (case (type-of h) ((vpi A F) (conv k A a a2)) (_ (uconv k a a2))))) (_ false)))
   ((nfst h) (case m ((nfst h2) (convneu k h h2)) (_ false)))
   ((nsnd h) (case m ((nsnd h2) (convneu k h h2)) (_ false)))
   ((npapp h r) (case m ((npapp h2 r2) (andb (convneu k h h2) (ieq r r2))) (_ false)))
@@ -650,6 +690,7 @@
   ((chcomp u a) (case (infer k sig env tys a)
      ((some T) (case T ((vdata d ps sg) (if (check-hcomp k sig env tys T u a) (some T) none)) (_ none)))
      ((none) none)))
+  ((cforce t) (infer k sig env tys t))
   (_ none))))
 ; parameters against their telescope
 (def check-tele (lam k sig env tys ptys ps penv (case ptys
@@ -676,10 +717,15 @@
   ((ns m) (case b ((cdlam b1) (branch-dims (ns k) sig (lcons (viv (ivar k)) env) (lcons none tys) d ps Pv Bv c ce m b1 fs (lsnoc ds (ivar k)))) (_ false)))
   ((nz) (andb (check k sig env tys b (vapp k Pv (mkcon k sig d c fs ds)))
               (branch-boundary k sig env d c Pv Bv b fs ds))))))
+; the hypothesis of recursive field f is its elimination, of type P f
+(def branch-hyps (lam k sig env tys d ps Pv Bv c ce rs b fs (case rs
+  ((lcons f rest) (case b ((clam b1)
+       (branch-hyps (ns k) sig (lcons (velim k (some Pv) Bv f) env) (lcons (some (vapp k Pv f)) tys) d ps Pv Bv c ce rest b1 fs)) (_ false)))
+  ((lnil) (branch-dims k sig env tys d ps Pv Bv c ce (cnd ce) b fs lnil)))))
 (def branch-fields (lam k sig env tys d ps Pv Bv c ce ftys b fenv fs (case ftys
   ((lcons A rest) (case b ((clam b1) (let Av (veval k sig fenv A) (let x (vneu (nvar k) Av)
        (branch-fields (ns k) sig (lcons x env) (lcons (some Av) tys) d ps Pv Bv c ce rest b1 (lcons x fenv) (lsnoc fs x))))) (_ false)))
-  ((lnil) (branch-dims k sig env tys d ps Pv Bv c ce (cnd ce) b fs lnil)))))
+  ((lnil) (branch-hyps k sig env tys d ps Pv Bv c ce (rec-of d (cftys ce) fs) b fs)))))
 (def check-branch (lam k sig env tys d ps Pv Bv c b
   (let ce (centry sig d c) (branch-fields k sig env tys d ps Pv Bv c ce (cftys ce) b (push-all ps lnil) lnil))))
 ; a formal hcomp: a tube of lines in the type, agreeing with the cap at 0
@@ -719,7 +765,7 @@
                  (conv k (restrict k d A) (vunglue k (act-branches k (clsub d) S2) (veval k sig e2 (snd b))) (restrict k d (veval k sig env a)))))
                 (face-of (veval k sig env (fst b))))) (sys-codes S)))))) (_ false)))
   ((clet t b) (case (infer k sig env tys t)
-     ((some U) (check (ns k) sig (lcons (veval k sig env t) env) (lcons (some U) tys) b T))
+     ((some Ty) (check (ns k) sig (lcons (veval k sig env t) env) (lcons (some Ty) tys) b T))
      ((none) false)))
   ((ccon d c fs ds) (case T ((vdata d2 ps sg) (andb (eqn d d2)
        (andb (eqn (llen ds) (cnd (centry sig d c)))
@@ -744,7 +790,7 @@
 ; agreeing on overlaps
 (def cany (lam p c (orb (p c) (case c
   ((clam b) (cany p b)) ((cplam b) (cany p b)) ((cdlam b) (cany p b)) ((cforall b) (cany p b))
-  ((cfst a) (cany p a)) ((csnd a) (cany p a)) ((cneg a) (cany p a)) ((ceq0 a) (cany p a)) ((ceq1 a) (cany p a))
+  ((cfst a) (cany p a)) ((csnd a) (cany p a)) ((cforce a) (cany p a)) ((cneg a) (cany p a)) ((ceq0 a) (cany p a)) ((ceq1 a) (cany p a))
   ((capp a b) (orb (cany p a) (cany p b))) ((cpair a b) (orb (cany p a) (cany p b)))
   ((cpi a b) (orb (cany p a) (cany p b))) ((csigma a b) (orb (cany p a) (cany p b)))
   ((cpapp a b) (orb (cany p a) (cany p b))) ((cmeet a b) (orb (cany p a) (cany p b))) ((cjoin a b) (orb (cany p a) (cany p b)))
@@ -759,7 +805,6 @@
   ((celim d P B x) (orb (cany p P) (orb (lany (cany p) B) (cany p x))))
   ((ccase d B x) (orb (lany (cany p) B) (cany p x)))
   (_ false)))))
-(def is-data-d (lam d c (case c ((cdata d2 ps) (eqn d d2)) (_ false))))
 ; D at its own parameters: with m earlier fields, parameter q is variable m + np - 1 - q
 (def uniform-at (lam ps n (case ps ((lnil) true) ((lcons p rest) (case n ((nz) false) ((ns n1) (case p ((cvar j) (andb (eqn j n1) (uniform-at rest n1))) (_ false))))))))
 (def positive (lam d np m A (orb (notb (cany (is-data-d d) A))

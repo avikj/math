@@ -70,7 +70,7 @@ static bool node_eq(Node *a, Node *b) {
 }
 
 /* ---------------- desugaring to the core forms ---------------- */
-static const char *KW[] = { "lam", "thunk", "delay", "force", "case", "elim", "if", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
+static const char *KW[] = { "lam", "thunk", "delay", "force", "case", "elim", "if", "rec", "the", "code", "%data", "%con", "hcompD", "%transD", "%case", "%branches", "plam", "forall", "let", "app", "pair", "fst", "snd", "Pi", "Sigma", "U",
     "PathP", "@", "~", "/\\", "\\/", "=", "&", "|", "faceof", "sys", "sys0", "sys+", "sysmap", "comp", "Glue", "glue",
     "unglue", NULL };
 static bool keyword(const char *s) { for (int i = 0; KW[i]; i++) if (!strcmp(KW[i], s)) return true; return false; }
@@ -86,6 +86,16 @@ static int data_lookup(const char *s) { for (int i = ndata - 1; i >= 0; i--) if 
 
 static Node *ds(Node *t);
 static Node *to_code(Node *t);
+/* induction hypotheses: within a branch, (rec x) is the elimination of the
+ * recursive field x by the same branches and motive; innermost branch first */
+static const char **rs_field, **rs_ih; static size_t caprsf, caprsi; static int nrs, nih;
+static bool mentions_rec(Node *t, Node **names, int n) {
+    if (!t->list) return false;
+    if (t->n == 2 && is(t->it[0], "rec") && !t->it[1]->list)
+        for (int i = 0; i < n; i++) if (names[i] && !strcmp(names[i]->s, t->it[1]->s)) return true;
+    for (int i = 0; i < t->n; i++) if (mentions_rec(t->it[i], names, n)) return true;
+    return false;
+}
 static Node *ds_lam(Node **ps, int np, Node *body, const char *b) {
     if (np == 0) return ds(body);
     return nl3(b, param_name(ps[0]), ds_lam(ps + 1, np - 1, body, b));
@@ -99,6 +109,11 @@ static Node *ds(Node *t) {
         const char *k = h->s;
         if (!strcmp(k, "delay")) { arity(t, 1); return nl2("thunk", ds(t->it[1])); }
         if (!strcmp(k, "force")) { arity(t, 1); return nl2("force", ds(t->it[1])); }
+        if (!strcmp(k, "rec")) {
+            arity(t, 1);
+            if (!t->it[1]->list) for (int i = nrs - 1; i >= 0; i--) if (!strcmp(rs_field[i], t->it[1]->s)) return nl2("force", nsym(rs_ih[i]));
+            die("rec of a name that is not a recursive field of its branch:", t->it[1]->list ? "(...)" : t->it[1]->s);
+        }
         if (!strcmp(k, "if")) {
             /* elimination of Bool */
             arity(t, 3);
@@ -128,7 +143,8 @@ static Node *ds(Node *t) {
             }
             if (d < 0) die("case needs at least one constructor branch", NULL);
             int N = DATA[d].ncons;
-            Node *B = nlist(N + 2); B->it[0] = nsym("%branches"); B->it[1] = nsym(DATA[d].name);
+            Node *B = nlist(N + 3); B->it[0] = nsym("%branches"); B->it[1] = nsym(DATA[d].name);
+            uint64_t mask = 0;
             for (int ci = 0; ci < N; ci++) {
                 ConInfo *c = &CON[DATA[d].cons[ci]];
                 Node *pat = NULL, *body = NULL;
@@ -137,18 +153,40 @@ static Node *ds(Node *t) {
                     if (br->it[0]->list && !strcmp(br->it[0]->it[0]->s, c->name)) { pat = br->it[0]; body = br->it[1]; }
                 }
                 if (!body) { if (!dflt) die("case misses constructor", c->name); body = dflt; }
-                /* the body is a thunk: nothing in an unselected branch, and no recursive
-                 * call lifted out of it, is computed */
-                int ar = c->nfields + c->ndims;
+                /* a branch takes the induction hypotheses of its recursive fields when its body
+                 * uses one: λ fields, hypotheses, dimensions, of a thunk of the body, so nothing
+                 * in an unselected branch, and no recursive call lifted out of it, is computed */
+                Node *rn[64]; int nr = 0;
+                if (pat) for (int f = 0; f < c->nfields; f++) if (c->recmask >> f & 1) rn[nr++] = pat->it[f + 1];
+                bool ih = nr && mentions_rec(body, rn, nr);
+                char ihn[64][24];
+                int save = nrs;
+                if (ih) {
+                    mask |= 1ull << ci;
+                    for (int q = 0; q < nr; q++) {
+                        snprintf(ihn[q], sizeof ihn[q], "%%ih%d", nih++);
+                        GROW(rs_field, caprsf, (size_t)nrs + 1); GROW(rs_ih, caprsi, (size_t)nrs + 1);
+                        rs_field[nrs] = rn[q]->s; rs_ih[nrs] = ihn[q]; nrs++;
+                    }
+                }
                 Node *hnd = nl2("thunk", ds(body));
-                for (int f = ar; f >= 1; f--) {
+                nrs = save;
+                for (int f = c->nfields + c->ndims; f > c->nfields; f--) {
                     Node *x = pat ? pat->it[f] : NULL;
                     char nm[32];
                     if (!x) { snprintf(nm, sizeof nm, "%%_%d", f); x = nsym(nm); }
                     hnd = nl3("lam", x, hnd);
                 }
-                B->it[ci + 2] = hnd;
+                if (ih) for (int q = nr - 1; q >= 0; q--) hnd = nl3("lam", nsym(ihn[q]), hnd);
+                for (int f = c->nfields; f >= 1; f--) {
+                    Node *x = pat ? pat->it[f] : NULL;
+                    char nm[32];
+                    if (!x) { snprintf(nm, sizeof nm, "%%_%d", f); x = nsym(nm); }
+                    hnd = nl3("lam", x, hnd);
+                }
+                B->it[ci + 3] = hnd;
             }
+            { char mb[24]; snprintf(mb, sizeof mb, "%llu", (unsigned long long)mask); B->it[2] = nsym(mb); }
             if (el) return nl4("%case", B, ds(t->it[1]), ds(t->it[2]));
             return nl3("%case", B, ds(t->it[1]));
         }
@@ -218,18 +256,28 @@ static int checked_data_of(const char *s, const char *what) {
     if (di < 0) die(what, s);
     return di;
 }
-/* a branch of an elimination: λ fields, then dimensions, of a thunk of the body */
-static Node *code_branch(Node *b, int i, int nf, int ar) {
+/* a branch of an elimination: λ fields, hypotheses (one per recursive field), dimensions,
+ * of a thunk of the body. A branch not using its hypotheses has no binders for them in
+ * the machine; its code binds them anyway, unused. */
+static Node *code_branch(Node *b, ConInfo *c, bool ih, int i) {
+    int nf = c->nfields, nr = c->nrec, ar = nf + nr + c->ndims;
     if (i == ar) {
         if (!b->list || b->n != 2 || !is(b->it[0], "thunk")) die("code: malformed branch", NULL);
         return to_code(b->it[1]);
     }
-    if (!b->list || b->n != 3 || !is(b->it[0], "lam")) die("code: malformed branch", NULL);
+    bool hyp = i >= nf && i < nf + nr;
     GROW(cscope, capcscope, (size_t)ncscope + 1);
-    cscope[ncscope++] = b->it[1]->s;
-    Node *r = code_branch(b->it[2], i + 1, nf, ar);
+    Node *r;
+    if (hyp && !ih) {
+        cscope[ncscope++] = "%unused-ih";
+        r = code_branch(b, c, ih, i + 1);
+    } else {
+        if (!b->list || b->n != 3 || !is(b->it[0], "lam")) die("code: malformed branch", NULL);
+        cscope[ncscope++] = b->it[1]->s;
+        r = code_branch(b->it[2], c, ih, i + 1);
+    }
     ncscope--;
-    return capp1(i < nf ? "clam" : "cdlam", r);
+    return capp1(i < nf + nr ? "clam" : "cdlam", r);
 }
 static Node *code_bound(const char *x, Node *body) {
     GROW(cscope, capcscope, (size_t)ncscope + 1);
@@ -306,14 +354,16 @@ static Node *to_code(Node *t) {
     if (!strcmp(h, "unglue")) return capp2("cunglue", to_code(t->it[1]), to_code(t->it[2]));
     if (!strcmp(h, "the")) return capp2("cann", to_code(t->it[2]), to_code(t->it[1]));
     if (!strcmp(h, "hcompD")) return capp2("chcomp", to_code(t->it[1]), to_code(t->it[2]));
+    if (!strcmp(h, "force")) return capp1("cforce", to_code(t->it[1]));
     if (!strcmp(h, "%case")) {
         /* (%case (%branches D b...) [P] x) */
         Node *B = t->it[1];
-        if (!B->list || B->n < 2 || !is(B->it[0], "%branches")) die("code: elimination without its branches", NULL);
+        if (!B->list || B->n < 3 || !is(B->it[0], "%branches")) die("code: elimination without its branches", NULL);
         int d = data_lookup(B->it[1]->s), di = checked_data_of(B->it[1]->s, "code: data type not checked:");
-        int N = B->n - 2;
+        int N = B->n - 3;
+        uint64_t mask = strtoull(B->it[2]->s, NULL, 10);
         Node **bs = calloc((size_t)N + 1, sizeof(Node *));
-        for (int i = 0; i < N; i++) { ConInfo *c = &CON[DATA[d].cons[i]]; bs[i] = code_branch(B->it[i + 2], 0, c->nfields, c->nfields + c->ndims); }
+        for (int i = 0; i < N; i++) bs[i] = code_branch(B->it[i + 3], &CON[DATA[d].cons[i]], mask >> i & 1, 0);
         Node *bl = code_list(bs, N);
         free(bs);
         if (t->n == 4) return capp4("celim", numeral(di), to_code(t->it[2]), bl, to_code(t->it[3]));
@@ -503,7 +553,10 @@ static const char **shadow; static size_t capshadow; static int nshadow;
 
 static Syn *syn(int tag, int n) { Syn *s = calloc(1, sizeof(Syn)); s->tag = tag; s->n = n; s->k = calloc((size_t)n + 1, sizeof(Syn *)); return s; }
 static Bind *lookup(const char *name) { for (int i = nbinds - 1; i >= 0; i--) if (!strcmp(binds[i].name, name)) return &binds[i]; return NULL; }
-static void push_bind(const char *name, int level, int slot) { GROW(binds, capbinds, (size_t)nbinds + 1); binds[nbinds++] = (Bind){ name, level, slot }; }
+static bool constant_sym(const char *s);
+static void push_bind(const char *name, int level, int slot) {
+    if (constant_sym(name)) die("a constant cannot be bound:", name);
+    GROW(binds, capbinds, (size_t)nbinds + 1); binds[nbinds++] = (Bind){ name, level, slot }; }
 static int new_slot(void) {
     Level *L = &levels[nlevels - 1];
     if (L->nslots == L->ucap) { L->ucap = L->ucap ? L->ucap * 2 : 8; L->uses = realloc(L->uses, (size_t)L->ucap * sizeof(int)); }
@@ -675,7 +728,11 @@ static Syn *compile(Node *t) {
         if (t->n != 3 && t->n != 4) die("bad %case", NULL);
         Syn *s = compile_n(S_CASE, t, 1, t->n - 1); s->x = t->n == 4; return s;
     }
-    if (!strcmp(h, "%branches")) return compile_n(S_BRANCHES, t, 2, t->n - 2);
+    if (!strcmp(h, "%branches")) {
+        /* (%branches D mask b...): mask, the branches taking induction hypotheses */
+        if (t->n < 3 || t->it[2]->list) die("bad %branches", NULL);
+        Syn *s = compile_n(S_BRANCHES, t, 3, t->n - 3); s->id = (long)strtoull(t->it[2]->s, NULL, 10); return s;
+    }
     die("unknown form", h);
     return NULL;
 }
@@ -805,6 +862,13 @@ static void rb_one(FILE *o, Port prov) {
     case V_CON: if (c->n == 1) fputs(CON[c->a].name, o); else push_fields(o, CON[c->a].name, c, 1); return;
     case V_HCOMP: push_fields(o, "hcompD", c, 1); return;
     case V_BRANCHES: push_fields(o, "%branches", c, 1); return;
+    case V_SUSP:
+        /* an unforced induction hypothesis: (delay (%case B [P] x)) */
+        fputs("(delay (%case", o);
+        push_str("))"); push_field(c, 3); push_str(" ");
+        if (c->x) { push_field(c, 2); push_str(" "); }
+        push_field(c, 1); push_str(" ");
+        return;
     case V_NCASE:
         /* (%case B [P] x) */
         fputs("(%case", o);
@@ -1051,6 +1115,7 @@ static void toplevel(Node *f) {
          * %comp-D = hcomp after transport, transport on each constructor %trans-c
          * and on hcomp %trans-hcomp-D. */
         if (f->n < 2) die("(data D ctor...)", NULL);
+        if (f->n - 2 > 64) die("more than 64 constructors in", f->it[1]->list ? f->it[1]->it[0]->s : f->it[1]->s);
         Node *hd = f->it[1];
         const char *D = hd->list ? hd->it[0]->s : hd->s;
         int np = hd->list ? hd->n - 1 : 0, nc = f->n - 2;
@@ -1087,7 +1152,14 @@ static void toplevel(Node *f) {
             if (x->nb && !x->nd) die("a boundary needs dimensions in", cd->it[0]->s);
             GROW(CON, capcon, (size_t)ncon + 1);
             DATA[d].cons[ci] = ncon;
-            CON[ncon++] = (ConInfo){ strdup(cd->it[0]->s), d, ci, x->nf, x->nd, -1, -1 };
+            /* a field of type D itself is recursive: its branch may take its induction hypothesis */
+            uint64_t rm = 0; int nr = 0;
+            for (int k = 0; k < x->nf; k++) {
+                Node *A = x->ft[k];
+                if (A && ((!A->list && !strcmp(A->s, D)) || (A->list && A->n >= 1 && !A->it[0]->list && !strcmp(A->it[0]->s, D)))) { rm |= 1ull << k; nr++; }
+            }
+            if (x->nf > 64) die("more than 64 fields in", cd->it[0]->s);
+            CON[ncon++] = (ConInfo){ strdup(cd->it[0]->s), d, ci, x->nf, x->nd, -1, -1, nr, rm };
         }
         char *buf; size_t len; FILE *m;
 #define OPEN() (m = open_memstream(&buf, &len))
@@ -1118,18 +1190,21 @@ static void toplevel(Node *f) {
             EMIT();
             free(args);
         }
-        /* the eliminators as functions (used by the evaluator over codes) */
+        /* the eliminators as functions (used by the evaluator over codes, whose branches
+         * take every recursive field's hypothesis) */
+        uint64_t allih = 0;
+        for (int ci = 0; ci < nc; ci++) if (CON[DATA[d].cons[ci]].nrec) allih |= 1ull << ci;
         OPEN();
         fprintf(m, "(def %%elim-%s (lam %%P", D);
         for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
-        fprintf(m, " %%x (%%case (%%branches %s", D);
+        fprintf(m, " %%x (%%case (%%branches %s %llu", D, (unsigned long long)allih);
         for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
         fprintf(m, ") %%P %%x)))");
         EMIT();
         OPEN();
         fprintf(m, "(def %%case-%s (lam", D);
         for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
-        fprintf(m, " %%x (%%case (%%branches %s", D);
+        fprintf(m, " %%x (%%case (%%branches %s %llu", D, (unsigned long long)allih);
         for (int k = 0; k < nc; k++) fprintf(m, " %%b%d", k);
         fprintf(m, ") %%x)))");
         EMIT();

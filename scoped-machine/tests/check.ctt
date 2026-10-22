@@ -46,6 +46,14 @@
 (checked-data (data N2 (z2) (s2 (n N2))))
 (checked one N2 (s2 z2))
 (check-fail N2 (s2 bt))
+; recursion is elimination with induction hypotheses: (rec k) has type P k
+(checked add2 (Pi m N2 (Pi n N2 N2)) (lam m n (case m ((z2) n) ((s2 k) (s2 (rec k))))))
+(same (add2 (s2 z2) (s2 z2)) (s2 (s2 z2)))
+(checked add2-zero (Pi n N2 (PathP (plam i N2) (add2 n z2) n))
+  (lam n (elim (lam y (PathP (plam i N2) (add2 y z2) y)) n ((z2) (plam i z2)) ((s2 k) (plam i (s2 (@ (rec k) i)))))))
+(check-fail (Pi n N2 (PathP (plam i N2) (add2 n z2) n))
+  (lam n (elim (lam y (PathP (plam i N2) (add2 y z2) y)) n ((z2) (plam i z2)) ((s2 k) (rec k)))))
+(check-fail (Pi m N2 B) (lam m (case m ((z2) bt) ((s2 k) (s2 (rec k))))))
 ; dependent elimination: the motive varies with the scrutinee
 (checked bdep (Pi x B (elim (lam y U) x ((bt) B) ((bf) N2))) (lam x (elim (lam y (elim (lam z U) y ((bt) B) ((bf) N2))) x ((bt) bf) ((bf) z2))))
 ; the circle: a path constructor, elimination with its loop branch
@@ -61,6 +69,12 @@
 (check C1 (hcompD (plam j (sys)) cb))
 (check (PathP (plam i C1) (cflip (hcompD (plam j (sys)) cb)) (hcompD (plam j (sys)) cb)) (plam i (hcompD (plam j (sys)) cb)))
 (check-fail C1 (hcompD (plam j (sys ((= j 0) cb))) cb))
+; a recursive path constructor: its branch agrees on the boundary with the hypotheses
+(checked-data (data (Tr (T U)) (tin (t T)) (tsq (x (Tr T)) (y (Tr T)) (dims i) ((= i 0) x) ((= i 1) y))))
+(checked trmap (Pi A U (Pi C U (Pi f (Pi a A C) (Pi t (Tr A) (Tr C)))))
+  (lam A C f t (case t ((tin a) (tin (f a))) ((tsq x y i) (tsq (rec x) (rec y) i)))))
+(check-fail (Pi A U (Pi C U (Pi f (Pi a A C) (Pi t (Tr A) (Tr C)))))
+  (lam A C f t (case t ((tin a) (tin (f a))) ((tsq x y i) (tsq (rec y) (rec x) i)))))
 ; a parameterized higher inductive type
 (checked-data (data (Su (T U)) (sn) (ss) (sm (t T) (dims i) ((= i 0) sn) ((= i 1) ss))))
 (checked meridian (Pi T U (Pi t T (PathP (plam i (Su T)) sn ss))) (lam T t (plam i (sm t i))))

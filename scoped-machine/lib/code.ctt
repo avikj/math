@@ -16,8 +16,11 @@
   (clet t b) (cann t T)
   ; data types: the type at its parameters; a constructor at its fields and
   ; dimensions; elimination with a motive, and without; formal hcomp; a
-  ; branch's dimension binder
-  (cdata d ps) (ccon d c fs ds) (celim d P B x) (ccase d B x) (chcomp u a) (cdlam b))
+  ; branch's dimension binder (a branch binds its fields, then one induction
+  ; hypothesis per recursive field, then its dimensions)
+  (cdata d ps) (ccon d c fs ds) (celim d P B x) (ccase d B x) (chcomp u a) (cdlam b)
+  ; a forced term: an induction hypothesis is a suspended elimination, forced where used
+  (cforce t))
 
 (def env-at (lam e n (case n ((nz) (fst e)) ((ns m) (env-at (snd e) m)))))
 (def cl-at (lam l n (case l ((lnil) l) ((lcons x xs) (case n ((nz) x) ((ns m) (cl-at xs m)))))))
@@ -70,6 +73,7 @@
   ((celim d P B x) (app-all ((dt-elim (cl-at (snd g) d)) (eval-g g e P)) (cl-app (cl-map (eval-g g e) B) (lcons (eval-g g e x) lnil))))
   ((ccase d B x) (app-all (dt-case (cl-at (snd g) d)) (cl-app (cl-map (eval-g g e) B) (lcons (eval-g g e x) lnil))))
   ((chcomp u a) (hcompD (eval-g g e u) (eval-g g e a)))
-  ((cdlam b) (lam i (eval-g g (pair i e) b))))))
+  ((cdlam b) (lam i (eval-g g (pair i e) b)))
+  ((cforce t) (force (eval-g g e t))))))
 (axiom no-globals)
 (def eval (lam e c (eval-g (pair no-globals lnil) e c)))

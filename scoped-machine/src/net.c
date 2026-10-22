@@ -473,6 +473,12 @@ static void interact(Cell *o, Cell *v) {
         if (vk == V_LAM && ((Record *)v->p)->nparam == 0) {
             link(record_build(v->p, 0, &v->port[1]), o->port[1]);
             cell_free(o); cell_free(v);
+        } else if (vk == V_SUSP) {
+            /* an induction hypothesis forced: the elimination of its field */
+            Cell *c = cell(O_CASE, 4); c->x = v->x;
+            mv(v, 1, P(c, 1)); mv(v, 2, P(c, 2)); link(P(c, 3), o->port[1]);
+            mv(v, 3, P(c, 0));
+            cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else { link(P(v, 0), o->port[1]); cell_free(o); }
         return;
@@ -831,11 +837,11 @@ static void interact(Cell *o, Cell *v) {
             /* select the constructor's branch, applied to its fields and dimensions */
             ConInfo *k = &CON[v->a];
             int n = k->nfields + k->ndims;
-            Cell *sel = cell(O_SELECT, n + 2); sel->a = (uint64_t)k->index;
+            Cell *sel = cell(O_SELECT, n + 3); sel->a = v->a; sel->x = o->x ? 1 : 0;
             mv(o, 1, P(sel, 0));
             for (int j = 0; j < n; j++) link(v->port[1 + j], P(sel, 1 + j));
-            link(P(sel, n + 1), o->port[3]);
-            era(o->port[2]);
+            mv(o, 2, P(sel, n + 1));
+            link(P(sel, n + 2), o->port[3]);
             cell_free(o); cell_free(v);
         } else if (vk == V_HCOMP && o->x) {
             /* f (hcomp^i [φ ↦ u] u0) = comp^i P(hfill) [φ ↦ f u] (f u0) */
@@ -857,14 +863,47 @@ static void interact(Cell *o, Cell *v) {
         }
         return;
     case O_SELECT: {
-        int n = o->n - 2, k = (int)o->a;
+        int n = o->n - 3;
+        ConInfo *ci = &CON[o->a];
+        int k = ci->index;
         if (vk != V_BRANCHES || k + 1 >= v->n) { fprintf(stderr, "elimination without its branch\n"); exit(2); }
+        if (!(o->x & 2) && ci->nrec && (v->a >> k & 1)) {
+            /* the branch takes induction hypotheses: each recursive field's elimination by
+             * the same branches and motive, suspended until the branch forces it */
+            int nf = ci->nfields, nd = ci->ndims, r = ci->nrec;
+            Cell *d = cell(O_DUP, 3);
+            Port bsel = P(d, 1), brest = P(d, 2);
+            Port *bc = malloc((size_t)(r + 1) * sizeof(Port)), *pc = malloc((size_t)(r + 1) * sizeof(Port));
+            split(brest, r, bc);
+            split(o->port[n + 1], r, pc);
+            Cell *s2 = cell(O_SELECT, nf + r + nd + 3); s2->a = o->a; s2->x = o->x | 2;
+            int q = 0;
+            for (int j = 0; j < nf; j++) {
+                if (ci->recmask >> j & 1) {
+                    Port fa, fb; split2(o->port[1 + j], &fa, &fb);
+                    link(fa, P(s2, 1 + j));
+                    Cell *h = cell(V_SUSP, 4); h->x = o->x & 1;
+                    link(bc[q], P(h, 1)); link(pc[q], P(h, 2)); link(fb, P(h, 3));
+                    link(P(h, 0), P(s2, 1 + nf + q));
+                    q++;
+                } else mv(o, 1 + j, P(s2, 1 + j));
+            }
+            for (int j = 0; j < nd; j++) mv(o, 1 + nf + j, P(s2, 1 + nf + r + j));
+            link(unk(), P(s2, nf + r + nd + 1));
+            link(P(s2, nf + r + nd + 2), o->port[n + 2]);
+            link(bsel, P(s2, 0));
+            free(bc); free(pc);
+            link(P(v, 0), P(d, 0));
+            cell_free(o);
+            return;
+        }
         Port br = v->port[k + 1];
         for (int m = 1; m < v->n; m++) if (m != k + 1) era(v->port[m]);
-        /* the branch applied to the fields and dimensions is a thunk of its body */
+        /* the branch applied to the fields, hypotheses and dimensions is a thunk of its body */
         Port f = br;
         for (int j = 0; j < n; j++) f = app2(f, o->port[1 + j]);
-        Cell *fo = cell(O_FORCE, 2); link(f, P(fo, 0)); link(P(fo, 1), o->port[n + 1]);
+        era(o->port[n + 1]);
+        Cell *fo = cell(O_FORCE, 2); link(f, P(fo, 0)); link(P(fo, 1), o->port[n + 2]);
         cell_free(o); cell_free(v);
         return;
     }
@@ -1073,7 +1112,7 @@ static Port build(Syn *t, Frame *f) {
         return P(c, 0);
     case S_FORCE: return op1(O_FORCE, t->k[0], f);
     case S_DATA: c = cell(V_DATA, t->n + 1); c->a = (uint64_t)t->id; goto fields;
-    case S_BRANCHES: c = cell(V_BRANCHES, t->n + 1); goto fields;
+    case S_BRANCHES: c = cell(V_BRANCHES, t->n + 1); c->a = (uint64_t)t->id; goto fields;
     case S_CON: {
         Port *a = malloc((size_t)(t->n + 1) * sizeof(Port));
         for (int k = 0; k < t->n; k++) a[k] = build(t->k[k], f);

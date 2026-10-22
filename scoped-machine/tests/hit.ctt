@@ -31,6 +31,13 @@
 (same (mul two (add two (suc zero))) (suc (suc (suc (suc (suc (suc zero)))))))
 (def ind (lam n (elim (lam m Nat) n ((zero) zero) ((suc k) (suc k)))))
 (same (ind two) two)
+(def plus (lam m n (case m ((zero) n) ((suc k) (suc (rec k))))))
+(same (plus two (suc two)) (add two (suc two)))
+(def double (lam n (elim (lam m Nat) n ((zero) zero) ((suc k) (suc (suc (rec k)))))))
+(same (double (suc two)) (add (suc two) (suc two)))
+; a branch not using its hypotheses builds none: the same steps as before
+(def len2 (lam xs (case xs ((nil) zero) ((cons x r) (suc (rec r))))))
+(same (len2 (cons a (cons b nil))) two)
 
 ; suspension: parameterized, with a meridian per point
 (data (Susp T) (N) (S) (merid (t T) (dims i) ((= i 0) N) ((= i 1) S)))
@@ -50,6 +57,11 @@
 (same (sq (inc a) (inc b) 1) (inc b))
 (show (plam i (sq (inc a) (inc b) i)))
 (show (transp (plam i (Trunc (@ (ua A B e) i))) (inc a)))
+; elimination with induction hypotheses: (rec x) is the elimination of the recursive field x
+(def tmap (lam f t (case t ((inc x) (inc (f x))) ((sq v w i) (sq (rec v) (rec w) i)))))
+(same (tmap (lam x b) (sq (inc a) (inc a) 0)) (inc b))
+(same (@ (plam i (tmap (lam x b) (sq (inc a) (sq (inc a) (inc a) 1) i))) 1) (inc b))
+(show (plam i (tmap (lam x b) (sq (inc a) (inc a) i))))
 
 ; lists, parameterized and recursive
 (same (length (append (cons a nil) (map (lam x x) (cons a (cons b nil))))) (suc (suc (suc zero))))

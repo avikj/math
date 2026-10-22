@@ -98,7 +98,9 @@ enum {
     V_DATA,     /* a=data type; 1..k=parameters */
     V_CON,      /* a=constructor; 1..f=fields, then the dimensions (interval values) */
     V_HCOMP,    /* formal homogeneous composition in a data type: 1=tube 2=cap */
-    V_BRANCHES, /* the branches of an elimination, one per constructor */
+    V_BRANCHES, /* a=mask of the branches taking induction hypotheses; 1..=the branches, one per constructor */
+    V_SUSP,     /* x=has motive; 1=branches 2=motive 3=field: an induction hypothesis, the elimination
+                 * of a recursive field, computed when forced */
     V_END,
     /* operations: negative principal port; the last port is the result */
     O_APP,      /* 0=f 1=arg 2=out */
@@ -132,7 +134,8 @@ enum {
     O_TRANSD1,  /* a=data type; 0=ψ 1..k=parameter lines k+1=x out */
     O_TRANSD2,  /* a=data type, p=Dnf ψ; 0=x 1..k=parameter lines out */
     O_CASE,     /* x=has motive; 0=scrutinee 1=branches 2=motive 3=out */
-    O_SELECT,   /* a=branch index; 0=branches 1..n=fields, dims; out */
+    O_SELECT,   /* a=constructor, x=1 has motive | 2 hypotheses built; 0=branches 1..n=fields, [hypotheses,]
+                 * dims n+1=motive out */
     O_ROOT,     /* 0: an observation; never interacts */
     K_END
 };
@@ -170,7 +173,8 @@ void defer_force(Cell *op, Cell *deferred);
 
 /* data types (higher inductive types, Coquand–Huber–Mörtberg): declared by
  * (data ...); the net's rules are generic over these tables */
-typedef struct { char *name; int data, index, nfields, ndims; long bdy, trans; } ConInfo;   /* bdy, trans: globals or -1 */
+typedef struct { char *name; int data, index, nfields, ndims; long bdy, trans; int nrec; uint64_t recmask; } ConInfo;
+/* bdy, trans: globals or -1; recmask: the fields of type the data type itself (recursive), nrec of them */
 typedef struct { char *name; int nparams, ncons; int *cons; long comp, transh; } DataInfo;
 extern ConInfo *CON;
 extern DataInfo *DATA;
