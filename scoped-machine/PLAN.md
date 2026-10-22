@@ -75,14 +75,14 @@ Features — each justified by the system's own design:
 
 Library and acceptance tests:
 
-6. [~] Checked library (~600): equivalence/iso, contractibility, fibres, Nat/Int arithmetic,
+6. [x] Checked library (~600): equivalence/iso, contractibility, fibres, Nat/Int arithmetic,
    Sum/Empty/Unit/Bool, funext operations.
-7. [~] Acceptance tests:
-   (a) the paper's boxes ported to the machine's language and checked (~500);
-   (b) the machine as an instance of the §4 theorems (~500): `Theory` on its own codes,
+7. Acceptance tests:
+   (a) [x] the paper's boxes ported to the machine's language and checked (~500);
+   (b) [not deliverable as specified; see the log, "7b re-derived"] the machine as an instance of the §4 theorems (~500): `Theory` on its own codes,
        `Pf s = Σ d. chk s d ≡ true`, `HasDiagonal` by substitution on codes; halting via
        `lawvere-one-row`; Con/HBL1/¬OmegaBad remain hypotheses as in the box;
-   (c) 9.15 (~400): Multiset = free commutative monoid HIT; declaration over A:
+   (c) [x] 9.15 (~400): Multiset = free commutative monoid HIT; declaration over A:
        `Σ[B ∈ List] ([B] ≡ A) × Sorted B` (contractible by 9.2/1.4); inhabitant = elimination of A, the ∪
        branch merges, path branches from contractibility; 8 elements balanced vs chained: merge costs 24
        vs 35.
@@ -165,4 +165,14 @@ a QIIT, inductive-inductive families, Delay/M-types.
   335K, 784K, 1.6M). Box 7's `diagonalGivesGoedelFix` ran for over an hour; its core `snd (dfix ..)`
   now checks in 4M. Only a variable stores its type; papp at an endpoint, unglue, argument comparison
   and elimination fields ask `ntype`. tests/check.ctt: 9.2M → 6.6M steps.
-- Running: `make library` = std + boxes, std + sort. Status of each run is recorded below when known.
+- `make library` = std + boxes, std + sort; both pass. std + boxes: 154 checks, 605M interactions,
+  468 s (lemIso alone 276M). std + sort: 106 checks, 400M interactions, 307 s. Selected costs: uaβ 6.5M,
+  isPropIsEquiv 2.5M, equivEq 3.7M, pathToEquiv-ua 7.8M, diagonalGivesGoedelFix 9.8M, sorted-unique 28M,
+  msort-at 18.6M. Readings: msort of the balanced 8-element sum 43449 interactions (11573 erasures),
+  of the chained one 47433 (14466 erasures), same sorted list.
+- msort-at takes isProp→PathP as an argument (pp) like the propositionality (hp); msort = msort-at
+  Fs-prop (isProp→PathP lzero). As a definition, isProp→PathP at a boundary is a transport in Fs
+  computed back to the point; that check did not finish in over an hour. As an argument, its type
+  gives the endpoints.
+- State: every item is landed except 7b, which is not deliverable as specified (log above). Nothing
+  else is in scope. A fresh agent: run `make test` (fast) and `make library` (~13 min) to confirm.

@@ -258,23 +258,27 @@
                     (eqb-sound (count a (fst hy)) (countM a y) ((fst (snd hy)) a)))))))
             (merge-sorted (fst hx) (fst hy) (snd (snd hx)) (snd (snd hy)))))))
 ; posed with the multiset's identities: the elimination of A. The path branches are the declaration's
-; propositionality (an argument here, so checking them reads the propositionality's type only)
-(checked msort-at (Pi ((hp (Pi m Ms (isProp lzero (Fs m)))) (A Ms)) (Fs A))
-  (lam hp A (elim Fs A
+; propositionality, and the path over it between any two inhabitants (isProp→PathP). Both are
+; arguments here, so checking a branch's boundary reads their types only: as a definition,
+; isProp→PathP at an endpoint is a transport in Fs computed back to the point
+(checked msort-at (Pi ((hp (Pi m Ms (isProp lzero (Fs m))))
+                       (pp (Pi ((B0 U) (B1 U) (B (PathP (plam i U) B0 B1)) (h (isProp lzero B1)) (b0 B0) (b1 B1)) (PathP B b0 b1)))
+                       (A Ms)) (Fs A))
+  (lam hp pp A (elim Fs A
     ((emp) mempty)
     ((sng b) (msng b))
     ((un x y) (munion x y (rec x) (rec y)))
-    ((unitl x i) (@ (isProp→PathP lzero (Fs (un emp x)) (Fs x) (plam j (Fs (unitl x j))) (hp x)
+    ((unitl x i) (@ (pp (Fs (un emp x)) (Fs x) (plam j (Fs (unitl x j))) (hp x)
                                   (munion emp x mempty (rec x)) (rec x)) i))
-    ((unitr x i) (@ (isProp→PathP lzero (Fs (un x emp)) (Fs x) (plam j (Fs (unitr x j))) (hp x)
+    ((unitr x i) (@ (pp (Fs (un x emp)) (Fs x) (plam j (Fs (unitr x j))) (hp x)
                                   (munion x emp (rec x) mempty) (rec x)) i))
-    ((assoc x y z i) (@ (isProp→PathP lzero (Fs (un (un x y) z)) (Fs (un x (un y z))) (plam j (Fs (assoc x y z j)))
+    ((assoc x y z i) (@ (pp (Fs (un (un x y) z)) (Fs (un x (un y z))) (plam j (Fs (assoc x y z j)))
                                       (hp (un x (un y z)))
                                       (munion (un x y) z (munion x y (rec x) (rec y)) (rec z))
                                       (munion x (un y z) (rec x) (munion y z (rec y) (rec z)))) i))
-    ((comm x y i) (@ (isProp→PathP lzero (Fs (un x y)) (Fs (un y x)) (plam j (Fs (comm x y j))) (hp (un y x))
+    ((comm x y i) (@ (pp (Fs (un x y)) (Fs (un y x)) (plam j (Fs (comm x y j))) (hp (un y x))
                                    (munion x y (rec x) (rec y)) (munion y x (rec y) (rec x))) i)))))
-(checked msort (Pi A Ms (Fs A)) (msort-at Fs-prop))
+(checked msort (Pi A Ms (Fs A)) (msort-at Fs-prop (isProp→PathP lzero)))
 
 ; ---------------------------------------------------------------- the sorting, run
 ; eight elements, the sum written balanced ((1+1)+(1+1))+((1+1)+(1+1)) and chained 1+(1+(…))
