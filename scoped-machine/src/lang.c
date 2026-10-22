@@ -11,7 +11,18 @@
 /* grow an array to hold at least n elements */
 #define GROW(arr, cap, n) do { if ((size_t)(n) > (size_t)(cap)) { size_t nc_ = (cap) ? (size_t)(cap) * 2 : 16; while (nc_ < (size_t)(n)) nc_ *= 2; (arr) = realloc((arr), nc_ * sizeof *(arr)); (cap) = nc_; } } while (0)
 
-static void die(const char *m, const char *x) { fprintf(stderr, "error: %s%s%s\n", m, x ? " " : "", x ? x : ""); exit(1); }
+/* where readings and verdicts are written (the embedding API may redirect it) */
+static FILE *out_f;
+#define OUT (out_f ? out_f : stdout)
+#define oprintf(...) fprintf(OUT, __VA_ARGS__)
+/* an error in a program: the command line stops; an embedding call returns it */
+#include <setjmp.h>
+static jmp_buf *die_jmp; static char die_msg[512];
+static void die(const char *m, const char *x) {
+    snprintf(die_msg, sizeof die_msg, "%s%s%s", m, x ? " " : "", x ? x : "");
+    if (die_jmp) longjmp(*die_jmp, 1);
+    fprintf(stderr, "error: %s\n", die_msg); exit(1);
+}
 
 /* ---------------- s-expressions ---------------- */
 typedef struct Node { int list; char *s; int n; struct Node **it; } Node;
@@ -1776,7 +1787,10 @@ static void rb_one(FILE *o, Port prov) {
             }
             snprintf(pat + at, sizeof pat - (size_t)at, ") ");
             for (int e = 0; e < ne; e++) env[e] = ec[e][k];
-            push_str(")"); push_port(rb_under(record_build_n(tb->br[k], prm, env))); push_str(pat);
+            /* held until its turn: earlier readings run the net, and an operation's result must have
+             * a wire to arrive on */
+            Cell *hold = cell(O_ROOT, 1); link(rb_under(record_build_n(tb->br[k], prm, env)), P(hold, 0));
+            push_str(")"); push_field(hold, 0); push_str(pat);
         }
         push_field(c, 1);
         if (c->x) { push_str(" "); push_field(c, 2); }
@@ -1921,14 +1935,14 @@ static void explain(const char *r) {
     const char *saved = src; src = r;
     Node *n = read_node();
     src = saved;
-    if (!n || !n->list || n->n != 5 || !is(n->it[0], "no")) { printf("   reason: %s\n", r); return; }
+    if (!n || !n->list || n->n != 5 || !is(n->it[0], "no")) { oprintf("   reason: %s\n", r); return; }
     int why = n->it[2]->list ? -1 : atoi(n->it[2]->s + 1);
     bool known = why >= 0 && why < (int)(sizeof M / sizeof *M);
-    printf("   at: "); print_node(stdout, n->it[1]); printf("\n   reason: %s\n", known ? M[why][0] : "rejected");
+    oprintf("   at: "); print_node(OUT, n->it[1]); oprintf("\n   reason: %s\n", known ? M[why][0] : "rejected");
     for (int k = 0; k < 2; k++) {
         Node *v = n->it[3 + k];
         if (is(v, "opq")) continue;
-        printf("   %s: ", known && M[why][1 + k] ? M[why][1 + k] : (k ? "B" : "A")); print_node(stdout, v); printf("\n");
+        oprintf("   %s: ", known && M[why][1 + k] ? M[why][1 + k] : (k ? "B" : "A")); print_node(OUT, v); oprintf("\n");
     }
 }
 
@@ -2022,9 +2036,9 @@ static void toplevel(Node *f) {
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
         if (!trusted) {
-            printf("%s: %s ", ok ? "ok" : "FAIL", expect ? "checks" : "rejected");
-            if (define) printf("%s", f->it[1]->s); else print_node(stdout, t);
-            printf("   [%ld steps]\n", steps);
+            oprintf("%s: %s ", ok ? "ok" : "FAIL", expect ? "checks" : "rejected");
+            if (define) oprintf("%s", f->it[1]->s); else print_node(OUT, t);
+            oprintf("   [%ld steps]\n", steps);
         }
         if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
@@ -2063,7 +2077,7 @@ static void toplevel(Node *f) {
         char *r = trusted ? strdup("ok") : readback(q, &steps, NULL), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
-        if (!trusted) printf("%s: %s identity %s = %s by %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, f->it[3]->s, steps);
+        if (!trusted) oprintf("%s: %s identity %s = %s by %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, f->it[3]->s, steps);
         if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
         if (accepted && expect) {
@@ -2092,7 +2106,7 @@ static void toplevel(Node *f) {
             char *r = trusted ? strdup("ok") : readback(q, &steps, NULL), *tr = strdup("ok");
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
             if (ok) passes++; else failures++;
-            if (!trusted) printf("%s: %s identity of %s from %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, steps);
+            if (!trusted) oprintf("%s: %s identity of %s from %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, steps);
             if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
             if (!accepted || !expect) return;
@@ -2146,7 +2160,7 @@ static void toplevel(Node *f) {
         char *r = trusted ? strdup("ok") : readback(nl3("%%chk-data", word(di), ent), &steps, NULL), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
-        if (!trusted) printf("%s: %s data %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", DATA[d].name, steps);
+        if (!trusted) oprintf("%s: %s data %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", DATA[d].name, steps);
         if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
         if (!accepted) { nchkdata--; return; }
@@ -2394,7 +2408,7 @@ static void toplevel(Node *f) {
             char *r = trusted ? strdup("ok") : readback(q, &steps, NULL), *tr = strdup("ok");
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
             if (ok) passes++; else failures++;
-            if (!trusted) printf("%s: %s evidence %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, steps);
+            if (!trusted) oprintf("%s: %s evidence %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, steps);
             if (!accepted && (expect || getenv("CUBICAL_WHY"))) explain(r);
         free(r); free(tr);
             if (!accepted) return;
@@ -2445,8 +2459,8 @@ static void toplevel(Node *f) {
         subst_release(rb_sub); rb_sub = NULL;
         fclose(o);
         char *b = readback(f->it[2], NULL, NULL);
-        if (strcmp(buf, b)) { failures++; printf("FAIL: watch %s\n  left:  %s\n  right: %s\n", f->it[1]->s, buf, b); }
-        else { passes++; printf("ok: watch %s\n", f->it[1]->s); }
+        if (strcmp(buf, b)) { failures++; oprintf("FAIL: watch %s\n  left:  %s\n  right: %s\n", f->it[1]->s, buf, b); }
+        else { passes++; oprintf("ok: watch %s\n", f->it[1]->s); }
         free(buf); free(b);
     } else if (!strcmp(h, "witness") || !strcmp(h, "witness-watch")) {
         /* the value itself: a line (or cube) in the identities' dimensions,
@@ -2460,7 +2474,7 @@ static void toplevel(Node *f) {
             v = held_copy(watch_root[w]);
         }
         char *r = read_port(reactivate(v));
-        print_node(stdout, f->it[1]); printf("\n  witness: %s\n", r);
+        print_node(OUT, f->it[1]); oprintf("\n  witness: %s\n", r);
         free(r);
     } else if (!strcmp(h, "defect")) {
         /* the same declaration from the same (warm) state without and with its
@@ -2471,23 +2485,23 @@ static void toplevel(Node *f) {
         char *a0 = readback(f->it[1], &s0, &e0);
         identities_on = 1;
         char *a1 = readback(f->it[1], &s1, &e1);
-        print_node(stdout, f->it[1]);
-        printf("\n  without identities: %s   [%ld steps, %ld erasures]\n  with identities:    %s   [%ld steps, %ld erasures]\n  defect: %+ld steps, %+ld erasures\n",
+        print_node(OUT, f->it[1]);
+        oprintf("\n  without identities: %s   [%ld steps, %ld erasures]\n  with identities:    %s   [%ld steps, %ld erasures]\n  defect: %+ld steps, %+ld erasures\n",
                a0, s0, e0, a1, s1, e1, s1 - s0, e1 - e0);
         free(a0); free(a1);
     } else if (!strcmp(h, "show")) {
         long steps, erased;
         char *r = readback(f->it[1], &steps, &erased);
         /* length: every interaction; effect: the interactions that forget (erasures) */
-        print_node(stdout, f->it[1]); printf("\n  = %s   [%ld steps, %ld erasures]\n", r, steps, erased);
+        print_node(OUT, f->it[1]); oprintf("\n  = %s   [%ld steps, %ld erasures]\n", r, steps, erased);
         free(r);
     } else if (!strcmp(h, "same")) {
         if (f->n != 3) die("(same t u)", NULL);
         char *a = readback(f->it[1], NULL, NULL), *b = readback(f->it[2], NULL, NULL);
         if (strcmp(a, b)) {
             failures++;
-            printf("FAIL: "); print_node(stdout, f->it[1]); printf("\n  left:  %s\n  right: %s\n", a, b);
-        } else { passes++; printf("ok: "); print_node(stdout, f->it[1]); printf("\n"); }
+            oprintf("FAIL: "); print_node(OUT, f->it[1]); oprintf("\n  left:  %s\n  right: %s\n", a, b);
+        } else { passes++; oprintf("ok: "); print_node(OUT, f->it[1]); oprintf("\n"); }
         free(a); free(b);
     } else die("unknown top-level form", h);
 }
@@ -2536,7 +2550,7 @@ static void load_file(const char *path, bool must) {
         { FILE *mf = getenv("CUBICAL_NOCACHE") ? NULL : fopen(marker, "r"); trusted = mf != NULL; if (mf) fclose(mf); }
         int f0 = failures;
         for (int i = 0; i < nf; i++) if (!(fs[i]->list && fs[i]->n >= 1 && is(fs[i]->it[0], "import"))) toplevel(fs[i]);
-        if (trusted) printf("cached: %s\n", path);
+        if (trusted) oprintf("cached: %s\n", path);
         else if (failures == f0 && !getenv("CUBICAL_NOCACHE")) {
             mkdir(cache_dir(), 0777);
             FILE *mk = fopen(marker, "w"); if (mk) { fputs(rp, mk); fputc('\n', mk); fclose(mk); }
@@ -2548,8 +2562,8 @@ static void load_file(const char *path, bool must) {
     (void)must;
 }
 static void prof_print(void);
-static void prof_signal(int sig) { (void)sig; fflush(stdout); prof_print(); _Exit(3); }
-int main(int argc, char **argv) {
+static void prof_signal(int sig) { (void)sig; fflush(OUT); prof_print(); _Exit(3); }
+int cub_cli(int argc, char **argv) {
     const char *w = getenv("CUBICAL_WORKERS");
     prof_on = getenv("CUBICAL_PROFILE") != NULL;
     if (prof_on) signal(SIGTERM, prof_signal);
@@ -2559,7 +2573,7 @@ int main(int argc, char **argv) {
     { const char *b = __DATE__ " " __TIME__; key_mix(b, strlen(b)); }
     for (int i = 1; i < argc; i++) load_file(argv[i], true);
     /* steps performed so far: a reading only when the workload has normalized (show, defect) */
-    printf("%d passed, %d failed; %ld interaction steps performed; %ld cells live; %ld payloads live\n", passes, failures, stat_steps, stat_cells, stat_payloads);
+    oprintf("%d passed, %d failed; %ld interaction steps performed; %ld cells live; %ld payloads live\n", passes, failures, stat_steps, stat_cells, stat_payloads);
     prof_print();
     return failures ? 1 : 0;
 }
@@ -2592,4 +2606,87 @@ static void prof_print(void) {
         for (long g = 0; g < 65536; g++) if (prof_glob[g] > 50000) fprintf(stderr, "glob dup %10ld %s\n", prof_glob[g], name_of(g));
         free(ix);
     }
+}
+
+/* ---------------- the embedding API (include/cubical.h) ---------------- */
+#include "../include/cubical.h"
+static bool cub_started;
+int cub_init(int workers) {
+    if (cub_started) return 0;
+    cub_started = true;
+    prof_enter("(top level)");
+    net_start(workers);
+    { const char *b = __DATE__ " " __TIME__; key_mix(b, strlen(b)); }
+    return 0;
+}
+void cub_output(void *file) { out_f = file; }
+const char *cub_error(void) { return die_msg; }
+void cub_free(void *p) { free(p); }
+long cub_steps(void) { return stat_steps; }
+/* run f under a recovery point: an error in the program returns here */
+#define CUB_TRY(fail) jmp_buf jb, *saved_jmp = die_jmp; die_jmp = &jb; \
+    if (setjmp(jb)) { die_jmp = saved_jmp; src = NULL; trusted = false; return fail; }
+#define CUB_DONE() (die_jmp = saved_jmp)
+int cub_load_file(const char *path) {
+    if (!cub_started) cub_init(0);
+    int f0 = failures;
+    CUB_TRY(-1);
+    load_file(path, true);
+    CUB_DONE();
+    return failures - f0;
+}
+int cub_load_string(const char *text) {
+    if (!cub_started) cub_init(0);
+    int f0 = failures;
+    CUB_TRY(-1);
+    load_text(text);
+    CUB_DONE();
+    return failures - f0;
+}
+static Node *cub_parse(const char *text) {
+    const char *saved = src; src = text;
+    Node *n = read_node();
+    src = saved;
+    if (!n) die("no term in", text);
+    return n;
+}
+char *cub_eval(const char *term) {
+    if (!cub_started) cub_init(0);
+    CUB_TRY(NULL);
+    char *r = readback(cub_parse(term), NULL, NULL);
+    CUB_DONE();
+    return r;
+}
+static cub_verdict cub_judge(const char *name, const char *type, const char *term) {
+    cub_verdict v = { -1, NULL, 0 };
+    if (!cub_started) cub_init(0);
+    CUB_TRY(v);
+    Node *T = cub_parse(type), *t = cub_parse(term);
+    Node *cT = nl2("%raw", aclosed(ds(T))), *ct = nl2("%raw", aclosed(ds(t)));
+    char *r = readback(nl3("%%chk-def", cT, ct), &v.steps, NULL);
+    v.ok = !strcmp(r, "ok");
+    if (!v.ok) {
+        char *buf; size_t len; FILE *m = open_memstream(&buf, &len);
+        FILE *so = out_f; out_f = m; explain(r); out_f = so;
+        fclose(m); v.reason = buf;
+    } else if (name) {
+        /* defined as (checked name T t) defines it */
+        Node *d = nlist(4); d->it[0] = nsym("checked"); d->it[1] = nsym(name); d->it[2] = T; d->it[3] = t;
+        FILE *so = out_f, *nul = fopen("/dev/null", "w"); out_f = nul;
+        bool st = trusted; trusted = true; toplevel(d); trusted = st;
+        out_f = so; if (nul) fclose(nul);
+    }
+    free(r);
+    CUB_DONE();
+    return v;
+}
+cub_verdict cub_check(const char *type, const char *term) { return cub_judge(NULL, type, term); }
+cub_verdict cub_define(const char *name, const char *type, const char *term) { return cub_judge(name, type, term); }
+int cub_supply(const char *input, const char *term) {
+    if (!cub_started) cub_init(0);
+    CUB_TRY(-1);
+    Node *f = nlist(3); f->it[0] = nsym("supply"); f->it[1] = nsym(input); f->it[2] = cub_parse(term);
+    toplevel(f);
+    CUB_DONE();
+    return 0;
 }

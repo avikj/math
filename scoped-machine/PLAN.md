@@ -47,7 +47,13 @@ E5. [x] Modules: (import "f") loads f once (relative to the importing file; impo
     definitions, data tables, identities) without running its judgments or tests ("cached: f").
     boxes: 2.34 s → 0.69 s cached (0 interactions). make test/library set CUBICAL_NOCACHE=1 except
     the cache test (tests/mod).
-E6. [ ] Embedding API: the machine as a C library (load program, supply inputs, read values, check).
+E6. [x] Embedding API: build/libcubical.a with include/cubical.h — cub_init, cub_output (where
+    verdicts go), cub_load_file / cub_load_string (failures, or -1 with cub_error), cub_eval (normal
+    form as text), cub_check / cub_define (verdict + reason text), cub_supply, cub_steps. Errors in a
+    program return to the caller (die longjmps under an API call). The command line is src/main.c
+    over the same library. examples/embed.c runs in make test against examples/embed.out.
+    Found on the way: a neutral case's branches were read back without a holding wire, so a
+    branch whose body was still reducing read as <pending> (now held in a root until read).
 
 ## CURRENT DIRECTION (2026-10-22, supersedes the item list below)
 

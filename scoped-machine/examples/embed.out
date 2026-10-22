@@ -1,0 +1,9 @@
+define twice: ok
+check: rejected
+   at: (case n ((zero) n) ((suc x0) (suc ih1)))
+   reason: type mismatch
+   expected: Bool
+   actual: Nat
+(twice 2) = (suc (suc (suc (suc zero))))
+error: unbound name undefined-name
+thrice: 0 failed, (thrice 1) = (suc (suc (suc zero)))

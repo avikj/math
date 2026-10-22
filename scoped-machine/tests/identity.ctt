@@ -83,3 +83,5 @@
 (same-watch fw (lam y a))
 (same-watch fw (lam y (fst y)) 0)
 (same (lam y (pair (L y) c)) (lam y (pair a c)))
+; a neutral case's branches read back whole while identities are declared
+(same (lam n (case n ((zero) n) ((suc k) (pair k k)))) (lam n (case n ((zero) zero) ((suc k) (pair k k)))))
