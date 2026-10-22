@@ -28,15 +28,16 @@ Cell *cell(int kind, int n) {
         __atomic_store_n(&c->lk, 0, __ATOMIC_RELAXED);
     }
     memset(c->port, 0, (size_t)n * sizeof(Port));
-    c->kind = (uint16_t)kind; c->n = (uint16_t)n; c->x = 0; c->a = 0; c->p = NULL;
+    c->kind = (uint16_t)kind; c->n = (uint16_t)n; c->x = 0; c->ty = 0; c->a = 0; c->p = NULL;
     ADD(stat_cells, 1);
     return c;
 }
 /* the payload a cell owns */
 static bool owns_dnf(int k) { return k == V_IV || k == V_FACE || k == V_SYS || k == V_NPAPP || k == O_PAPPP || k == O_BIN2 || k == O_SYSCONS2; }
-static void payload_retain(Cell *c) { if (owns_dnf(c->kind)) dnf_retain(c->p); else if (c->kind == O_SUBST) subst_retain(c->p); }
+static bool owns_subst(int k) { return k == O_SUBST || k == V_DEFER; }
+static void payload_retain(Cell *c) { if (owns_dnf(c->kind)) dnf_retain(c->p); else if (owns_subst(c->kind)) subst_retain(c->p); }
 static void payload_release(Cell *c) {
-    if (owns_dnf(c->kind)) dnf_release(c->p); else if (c->kind == O_SUBST) subst_release(c->p);
+    if (owns_dnf(c->kind)) dnf_release(c->p); else if (owns_subst(c->kind)) subst_release(c->p);
     c->p = NULL;
 }
 void cell_free(Cell *c) { payload_release(c); Local *l = local(); c->a = (uint64_t)(uintptr_t)l->defer; l->defer = c; ADD(stat_cells, -1); }
@@ -47,7 +48,7 @@ static void flush_frees(void) {
         if (c->n <= MAXFREE) { c->a = (uint64_t)(uintptr_t)l->free[c->n]; l->free[c->n] = c; }
     }
 }
-static Cell *clone(const Cell *v) { Cell *c = cell(v->kind, v->n); c->x = v->x; c->a = v->a; c->p = v->p; payload_retain(c); return c; }
+static Cell *clone(const Cell *v) { Cell *c = cell(v->kind, v->n); c->x = v->x; c->ty = v->ty; c->a = v->a; c->p = v->p; payload_retain(c); return c; }
 
 /* a wire is published with release and read with acquire, so a cell is
  * initialized before any thread reaching it through a wire touches it */
@@ -134,6 +135,28 @@ static void split_restrict(Port prov, const Dnf *cl, int m, Port *out) {
     split(prov, m, out);
     for (int k = 0; k < m; k++) { Subst *t = subst_of_clause(cl->c[k]); out[k] = sub(out[k], t); subst_release(t); }
 }
+
+/* ---------------- types of neutrals ----------------
+ * A neutral carries its type on its last port. Eliminating a neutral of
+ * known type computes the result's type from it (CCHM: the endpoints of a
+ * path are part of its type, so t 0 = u0 for t : Path A u0 u1 even when t
+ * is neutral). The type is known when the neutral's head was declared with
+ * one (ty = 1); otherwise it is V_UNK. */
+static Port unk(void) { return P(cell(V_UNK, 1), 0); }
+static bool is_neutral(int k) { return k >= V_NVAR && k <= V_NUNGLUE; }
+static bool typed(const Cell *v) { return is_neutral(v->kind) && v->ty; }
+/* a copy of a typed neutral's type; the neutral keeps its own */
+static Port type_copy(Cell *v) {
+    int t = v->n - 1;
+    Cell *d = cell(O_DUP, 3);
+    link(v->port[t], P(d, 0)); link(P(d, 1), P(v, t));
+    return P(d, 2);
+}
+static Port tpart(Port T, int k) { Cell *c = cell(O_TPART, 2); c->a = (uint64_t)k; link(T, P(c, 0)); return P(c, 1); }
+static Port app2(Port f, Port x) { Cell *a = cell(O_APP, 3); link(f, P(a, 0)); link(x, P(a, 1)); return P(a, 2); }
+static Port papp_at(Port line, Dnf *r) { Cell *a = cell(O_PAPPR, 3); link(iv_cell(r), P(a, 0)); link(line, P(a, 1)); return P(a, 2); }  /* takes r */
+static void split2(Port prov, Port *a, Port *b) { Cell *d = cell(O_DUP, 3); link(prov, P(d, 0)); *a = P(d, 1); *b = P(d, 2); }
+
 static Port apply_global(const char *name, Port *args, int n) {
     long g = global_lookup(name);
     if (g < 0) { fprintf(stderr, "missing library definition %s\n", name); exit(2); }
@@ -164,8 +187,17 @@ static void rule_subst(Cell *o, Cell *v) {
     Subst *s = o->p;
     Port out = o->port[1];
     switch (v->kind) {
-    case V_NVAR: case V_GLOBAL: case V_U:
+    case V_GLOBAL: case V_U: case V_UNK:
         link(P(v, 0), out); cell_free(o); return;
+    case V_NVAR:
+        link(sub(v->port[1], s), P(v, 1));
+        link(P(v, 0), out); cell_free(o); return;
+    case V_DEFER: {
+        /* (g args)[p][s] = (g args)[p;s]: the substitution waits for the value */
+        Subst *t = v->p ? subst_compose(v->p, s) : subst_retain(s);
+        subst_release(v->p); v->p = t;
+        link(P(v, 0), out); cell_free(o); return;
+    }
     case V_IV: { Dnf *n2 = iv_subst(v->p, s); dnf_release(v->p); v->p = n2; link(P(v, 0), out); cell_free(o); return; }
     case V_FACE: { Dnf *n2 = face_subst(v->p, s); dnf_release(v->p); v->p = n2; link(P(v, 0), out); cell_free(o); return; }
     case V_PLAM: {
@@ -216,18 +248,19 @@ static void rule_subst(Cell *o, Cell *v) {
         free(f); cell_free(o); cell_free(v); return;
     }
     /* neutrals and reducible constructors become their operations again */
-    case V_NAPP: { Cell *a = cell(O_APP, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); break; }
-    case V_NFST: case V_NSND: { Cell *a = cell(v->kind == V_NFST ? O_FST : O_SND, 2); link(sub(v->port[1], s), P(a, 0)); link(P(a, 1), out); break; }
+    case V_NAPP: { Cell *a = cell(O_APP, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); era(v->port[3]); break; }
+    case V_NFST: case V_NSND: { Cell *a = cell(v->kind == V_NFST ? O_FST : O_SND, 2); link(sub(v->port[1], s), P(a, 0)); link(P(a, 1), out); era(v->port[2]); break; }
     case V_NPAPP: {
         Cell *a = cell(O_PAPPR, v->x ? 5 : 3); a->x = v->x;
         link(iv_cell(iv_subst(v->p, s)), P(a, 0));
         link(sub(v->port[1], s), P(a, 1));
         if (v->x) { link(sub(v->port[2], s), P(a, 2)); link(sub(v->port[3], s), P(a, 3)); }
         link(P(a, a->n - 1), out);
+        era(v->port[v->n - 1]);
         break;
     }
-    case V_NCOMP: { Cell *a = cell(O_COMP, 4); link(sub(v->port[2], s), P(a, 0)); link(sub(v->port[1], s), P(a, 1)); link(sub(v->port[3], s), P(a, 2)); link(P(a, 3), out); break; }
-    case V_NUNGLUE: { Cell *a = cell(O_UNGLUE, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); break; }
+    case V_NCOMP: { Cell *a = cell(O_COMP, 4); link(sub(v->port[2], s), P(a, 0)); link(sub(v->port[1], s), P(a, 1)); link(sub(v->port[3], s), P(a, 2)); link(P(a, 3), out); era(v->port[4]); break; }
+    case V_NUNGLUE: { Cell *a = cell(O_UNGLUE, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); era(v->port[3]); break; }
     case V_GLUE: { Cell *a = cell(O_MKGLUE, 3); link(sub(v->port[2], s), P(a, 0)); link(sub(v->port[1], s), P(a, 1)); link(P(a, 2), out); break; }
     case V_GLUEV: { Cell *a = cell(O_MKGLUEV, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); break; }
     default: {
@@ -286,7 +319,7 @@ static void distribute(Cell *o, Cell *v) {
         switch (o->kind) {
         case O_APP: c = cell(O_APP, 3); link(val, P(c, 0)); link(cp[0][b], P(c, 1)); link(P(c, 2), res); break;
         case O_SYSMAP: c = cell(O_APP, 3); link(cp[0][b], P(c, 0)); link(val, P(c, 1)); link(P(c, 2), res); break;
-        case O_FST: case O_SND: case O_FORCE: c = cell(o->kind, 2); link(val, P(c, 0)); link(P(c, 1), res); break;
+        case O_FST: case O_SND: case O_FORCE: case O_TPART: c = cell(o->kind, 2); c->a = o->a; link(val, P(c, 0)); link(P(c, 1), res); break;
         case O_FACEOF: c = cell(O_FACEOF, 2); link(val, P(c, 0)); link(P(c, 1), res); break;
         case O_PAPPP:
             c = cell(O_PAPPR, o->x ? 5 : 3); c->x = o->x;
@@ -305,11 +338,22 @@ static void distribute(Cell *o, Cell *v) {
     cell_free(o); cell_free(v);
 }
 
-/* a stuck elimination is a neutral value retaining every operand */
-static void neutral1(Cell *o, Cell *v, int kind) {
-    Cell *n = cell(kind, 2);
-    link(P(v, 0), P(n, 1));
-    link(P(n, 0), out_of(o));
+/* a stuck projection is a neutral retaining its operand; its type is the
+ * Σ's first component, or its second at the first projection */
+static void neutral_proj(Cell *o, Cell *v) {
+    bool first = o->kind == O_FST;
+    Cell *n = cell(first ? V_NFST : V_NSND, 3);
+    Port out = o->port[1];
+    if (!typed(v)) { link(P(v, 0), P(n, 1)); link(unk(), P(n, 2)); }
+    else if (first) { Port T = type_copy(v); link(P(v, 0), P(n, 1)); link(tpart(T, 1), P(n, 2)); n->ty = 1; }
+    else {
+        Port T = type_copy(v), a, b;
+        split2(P(v, 0), &a, &b);
+        link(a, P(n, 1));
+        Cell *f = cell(O_FST, 2); link(b, P(f, 0));
+        link(app2(tpart(T, 2), P(f, 1)), P(n, 2)); n->ty = 1;
+    }
+    link(P(n, 0), out);
     cell_free(o);
 }
 
@@ -321,7 +365,6 @@ static void interact(Cell *o, Cell *v) {
     case O_DUP: rule_dup(o, v); return;
     case O_SUBST: rule_subst(o, v); return;
     case O_MKPLAM: rule_mkplam(o, v); return;
-    case O_SITE: site_forward(o, v); return;
     default: break;
     }
     if (v->kind == V_GLOBAL) {
@@ -335,19 +378,37 @@ static void interact(Cell *o, Cell *v) {
     }
     if (v->kind == V_DEFER) { defer_force(o, v); return; }
     int vk = v->kind;
+    if (vk == V_UNK) {
+        /* an eliminator of an unknown type gives an unknown type */
+        for (int k = 1; k < o->n - 1; k++) era(o->port[k]);
+        link(P(v, 0), out_of(o));
+        cell_free(o);
+        return;
+    }
     switch (o->kind) {
     case O_APP:
         if (vk == V_SITEF) { site_apply(o, v); return; }
         if (vk == V_LAM && ((Record *)v->p)->nparam == 1) {
-            Port r = record_build(v->p, o->port[1], &v->port[1], o->x & 0x7fffffffu);
+            Port r = record_build(v->p, o->port[1], &v->port[1]);
             link(r, o->port[2]);
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
-        else { Cell *n = cell(V_NAPP, 3); link(P(v, 0), P(n, 1)); mv(o, 1, P(n, 2)); link(P(n, 0), o->port[2]); cell_free(o); }
+        else {
+            /* stuck: a neutral application; its type is the codomain at the argument */
+            Cell *n = cell(V_NAPP, 4);
+            if (typed(v)) {
+                Port T = type_copy(v), x1, x2;
+                split2(o->port[1], &x1, &x2);
+                link(x1, P(n, 2)); link(app2(tpart(T, 2), x2), P(n, 3)); n->ty = 1;
+            } else { mv(o, 1, P(n, 2)); link(unk(), P(n, 3)); }
+            link(P(v, 0), P(n, 1));
+            link(P(n, 0), o->port[2]);
+            cell_free(o);
+        }
         return;
     case O_FORCE:
         if (vk == V_LAM && ((Record *)v->p)->nparam == 0) {
-            link(record_build(v->p, 0, &v->port[1], 0), o->port[1]);
+            link(record_build(v->p, 0, &v->port[1]), o->port[1]);
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else { link(P(v, 0), o->port[1]); cell_free(o); }
@@ -358,7 +419,7 @@ static void interact(Cell *o, Cell *v) {
             link(v->port[keep], o->port[1]); era(v->port[3 - keep]);
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
-        else neutral1(o, v, o->kind == O_FST ? V_NFST : V_NSND);
+        else neutral_proj(o, v);
         return;
     case O_PAPPR: {
         if (vk != V_IV) { fprintf(stderr, "path applied to a non-interval\n"); exit(2); }
@@ -386,7 +447,19 @@ static void interact(Cell *o, Cell *v) {
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else {
-            Cell *n = cell(V_NPAPP, o->x ? 4 : 2); n->x = o->x; n->p = dnf_retain(o->p);
+            Dnf *r = o->p;
+            if (!o->x && typed(v) && (dnf_is_zero(r) || dnf_is_one(r))) {
+                /* an endpoint of a neutral path, read from its type */
+                Port T = type_copy(v);
+                link(tpart(T, dnf_is_zero(r) ? 2 : 3), out_of(o));
+                era(P(v, 0));
+                cell_free(o);
+                return;
+            }
+            /* stuck: a neutral path application; its type is the line at r */
+            Cell *n = cell(V_NPAPP, o->x ? 5 : 3); n->x = o->x; n->p = dnf_retain(r);
+            if (typed(v)) { link(papp_at(tpart(type_copy(v), 1), dnf_retain(r)), P(n, n->n - 1)); n->ty = 1; }
+            else link(unk(), P(n, n->n - 1));
             link(P(v, 0), P(n, 1));
             if (o->x) { mv(o, 1, P(n, 2)); mv(o, 2, P(n, 3)); }
             link(P(n, 0), out_of(o));
@@ -414,8 +487,11 @@ static void interact(Cell *o, Cell *v) {
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else {
-            Cell *n = cell(V_NCOMP, 4);
-            link(P(v, 0), P(n, 1)); mv(o, 1, P(n, 2)); mv(o, 2, P(n, 3)); link(P(n, 0), o->port[3]);
+            /* a neutral family: a neutral composition, of type the family at 1 */
+            Cell *n = cell(V_NCOMP, 5); n->ty = 1;
+            Port fa, fb; split2(P(v, 0), &fa, &fb);
+            link(fa, P(n, 1)); mv(o, 1, P(n, 2)); mv(o, 2, P(n, 3)); link(papp_at(fb, dnf_one()), P(n, 4));
+            link(P(n, 0), o->port[3]);
             cell_free(o);
         }
         return;
@@ -462,8 +538,12 @@ static void interact(Cell *o, Cell *v) {
             return;
         }
         default: {
-            Cell *nc = cell(V_NCOMP, 4);
-            link(mkplam_of(P(v, 0), i), P(nc, 1)); link(u, P(nc, 2)); link(a0, P(nc, 3)); link(P(nc, 0), out);
+            /* a neutral head: a neutral composition, of type the head at i = 1 */
+            Cell *nc = cell(V_NCOMP, 5); nc->ty = 1;
+            Port h1, h2; split2(P(v, 0), &h1, &h2);
+            Dnf *one = dnf_one(); Subst *t = subst_single(i, one); dnf_release(one);
+            link(mkplam_of(h1, i), P(nc, 1)); link(u, P(nc, 2)); link(a0, P(nc, 3)); link(sub(h2, t), P(nc, 4)); link(P(nc, 0), out);
+            subst_release(t);
             cell_free(o);
             return;
         }
@@ -499,7 +579,9 @@ static void interact(Cell *o, Cell *v) {
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else {
-            Cell *n = cell(V_NUNGLUE, 3);
+            /* stuck: a neutral unglue, of type the Glue type's base */
+            Cell *n = cell(V_NUNGLUE, 4);
+            if (typed(v)) { link(tpart(type_copy(v), 1), P(n, 3)); n->ty = 1; } else link(unk(), P(n, 3));
             mv(o, 1, P(n, 1)); link(P(v, 0), P(n, 2)); link(P(n, 0), o->port[2]);
             cell_free(o);
         }
@@ -586,6 +668,16 @@ static void interact(Cell *o, Cell *v) {
             cell_free(o);
         }
         return;
+    case O_TPART: {
+        int k = (int)o->a;
+        if ((vk == V_PI || vk == V_SIGMA || vk == V_PATHP || vk == V_GLUE) && k < v->n) {
+            link(v->port[k], o->port[1]);
+            for (int m = 1; m < v->n; m++) if (m != k) era(v->port[m]);
+            cell_free(o); cell_free(v);
+        } else if (vk == V_SYS) distribute(o, v);
+        else { link(unk(), o->port[1]); era(P(v, 0)); cell_free(o); }
+        return;
+    }
     case O_SYSMAP:
         if (vk == V_SYS) distribute(o, v);
         else { Cell *a = cell(O_APP, 3); mv(o, 1, P(a, 0)); link(P(v, 0), P(a, 1)); link(P(a, 2), o->port[2]); cell_free(o); }
@@ -670,6 +762,7 @@ void net_start(int n) {
     pthread_mutex_unlock(&wmu);
 }
 static bool observed(Cell *root) {
+    if (!root) return false;
     lock(root);
     Port q = root->port[0];
     bool ok = q && PI(q) == 0 && is_value(PC(q)->kind);
@@ -697,10 +790,12 @@ bool net_observe(Cell *root, long limit) {
     }
     return ok || observed(root);
 }
+/* reduce every pending pair: the workload's normal form, or what waits on an input */
+void net_drain(void) { net_observe(NULL, -1); }
 
 /* ---------------- building a net from syntax ---------------- */
 typedef struct { Port *sup; int cur, n; } Supply;
-typedef struct { Supply *s; int nslots; const int *uses; uint32_t hx; } Frame;  /* hx: identities already followed */
+typedef struct { Supply *s; int nslots; const int *uses; } Frame;
 
 static void bind(Frame *f, int slot, Port prov) {
     int u = f->uses[slot];
@@ -729,7 +824,7 @@ static Port build(Syn *t, Frame *f) {
         c = cell(V_LAM, t->n + 1); c->p = t->rec;
         for (int k = 0; k < t->n; k++) link(build(t->k[k], f), P(c, k + 1));
         return P(c, 0);
-    case S_APP: c = cell(O_APP, 3); c->x = f->hx; link(build(t->k[0], f), P(c, 0)); link(build(t->k[1], f), P(c, 1)); return P(c, 2);
+    case S_APP: c = cell(O_APP, 3); link(build(t->k[0], f), P(c, 0)); link(build(t->k[1], f), P(c, 1)); return P(c, 2);
     case S_PAIR: c = cell(V_PAIR, 3); goto fields;
     case S_PI: c = cell(V_PI, 3); goto fields;
     case S_SIGMA: c = cell(V_SIGMA, 3); goto fields;
@@ -781,7 +876,11 @@ static Port build(Syn *t, Frame *f) {
     case S_GLUEV: c = cell(O_MKGLUEV, 3); link(build(t->k[0], f), P(c, 0)); link(build(t->k[1], f), P(c, 1)); return P(c, 2);
     case S_UNGLUE: c = cell(O_UNGLUE, 3); link(build(t->k[0], f), P(c, 0)); link(build(t->k[1], f), P(c, 1)); return P(c, 2);
     case S_GLOBAL: c = cell(V_GLOBAL, 1); c->a = (uint64_t)t->id; return P(c, 0);
-    case S_AXIOM: c = cell(V_NVAR, 1); c->a = (uint64_t)t->id; return P(c, 0);
+    case S_AXIOM:
+        c = cell(V_NVAR, 2); c->a = (uint64_t)t->id;
+        if (t->slot >= 0) { Cell *g = cell(V_GLOBAL, 1); g->a = (uint64_t)t->slot; link(P(g, 0), P(c, 1)); c->ty = 1; }
+        else link(unk(), P(c, 1));
+        return P(c, 0);
     case S_FORCE: return op1(O_FORCE, t->k[0], f);
     case S_LET: {
         bind(f, t->slot, build(t->k[0], f));
@@ -791,8 +890,8 @@ static Port build(Syn *t, Frame *f) {
     fprintf(stderr, "build: tag %d\n", t->tag); exit(2);
 }
 
-static Port run_frame(Syn *body, int nslots, const int *uses, int nparam, Port param, int nenv, const int *env_slot, const Port *env, uint32_t hx) {
-    Frame f = { calloc((size_t)nslots + 1, sizeof(Supply)), nslots, uses, hx };
+static Port run_frame(Syn *body, int nslots, const int *uses, int nparam, Port param, int nenv, const int *env_slot, const Port *env) {
+    Frame f = { calloc((size_t)nslots + 1, sizeof(Supply)), nslots, uses };
     if (nparam) bind(&f, 0, param);
     for (int k = 0; k < nenv; k++) bind(&f, env_slot[k], env[k]);
     Port r = build(body, &f);
@@ -803,9 +902,9 @@ static Port run_frame(Syn *body, int nslots, const int *uses, int nparam, Port p
     free(f.s);
     return r;
 }
-Port record_build(const Record *r, Port param, const Port *env, uint32_t hx) {
-    return run_frame(r->body, r->nslots, r->uses, r->nparam, param, r->nenv, r->env_slot, env, hx);
+Port record_build(const Record *r, Port param, const Port *env) {
+    return run_frame(r->body, r->nslots, r->uses, r->nparam, param, r->nenv, r->env_slot, env);
 }
 Port top_build(Syn *body, int nslots, const int *uses) {
-    return run_frame(body, nslots, uses, 0, 0, 0, NULL, NULL, 0);
+    return run_frame(body, nslots, uses, 0, 0, 0, NULL, NULL);
 }

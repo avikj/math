@@ -248,6 +248,17 @@ Subst *subst_with(const Subst *s, Dim j, const Dnf *r) {
     t->n = n;
     return t;
 }
+/* s, then t: x ↦ s(x)[t], and t's entries for the dimensions s leaves alone */
+Subst *subst_compose(const Subst *s, const Subst *t) {
+    Subst *u = subst_new(s->n + t->n);
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < s->n; i++) { u->d[n] = s->d[i]; u->v[n] = iv_subst(s->v[i], t); n++; }
+    for (uint32_t k = 0; k < t->n; k++)
+        if (!subst_get(s, t->d[k])) { u->d[n] = t->d[k]; u->v[n] = dnf_retain(t->v[k]); n++; }
+    u->n = n;
+    return u;
+}
+Subst *subst_id(void) { return subst_new(0); }
 
 void clause_print(FILE *o, const Clause *c, DimName nm) {
     if (c->n == 0) { fputs("tt", o); return; }

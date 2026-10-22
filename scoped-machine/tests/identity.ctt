@@ -1,51 +1,49 @@
 ; tests/identity.ctt — identities act on running applications.
+; Following p : L g = R g puts the line (p g @ i) on L g's output wire,
+; endpoints annotated: the answer (i = 1) is R g and needs no evidence; the
+; 0-end is L's run; the witness is the line itself.
 (axiom A a b c pth pth2 pth3)
 (input w pp)
 (def L (lam x (fst x)))
 (def R (lam x a))
 (identity L R pp)          ; pp : (x) -> L x = R x, not yet supplied
 
-; a live site: L's application waits on an input
+; the answer is the 1-end: neither the evidence nor L's input is needed
 (watch before (pair (L w) c))
-; with the identity pending, a site forwards L's value
-(same (L (pair b b)) b)
-; the evidence arrives: the site switches; its output carries the line pp x @ i
-(supply pp (lam x pth))
 (same-watch before (pair a c))
-(witness-watch before)
-; available now: an application of L follows the identity at once
 (same (L (pair b b)) a)
+; the witness waits on the evidence; once supplied it is read in normal form
+(witness-watch before)
+(supply pp (lam x pth))
+(witness-watch before)
 (witness (L (pair b b)))
-; L's old run completes when its input arrives: it is the line's 0-end
+; the 0-end is L's run, which waits on its input
 (supply w (pair b b))
 (same-watch before (pair a c))
 (same-watch before (pair b c) 0)
 
-; a divergent application: the identity's arrival gives the observed port its value
+; a divergent application: the answer does not run it
 (input pq)
 (def slow (lam x ((lam y (y y)) (lam y (y y)))))
 (identity slow R pq)
 (watch d (slow b))
-(supply pq (lam x pth))
 (same-watch d a)
 
-; curried: the site collects both arguments before it switches
+; curried: the application collects both arguments
 (input w2 pp2)
 (def g2 (lam x y (fst x)))
 (def h2 (lam x y y))
 (identity g2 h2 pp2)
 (watch cur (g2 w2 b))
-(supply pp2 (lam x y pth2))
 (same-watch cur b)
 
-; associativity on numerals, both orientations declared: followed once, not around the cycle
+; associativity on numerals, one orientation (both would pose a cycle,
+; which has no normal form)
 (def three (suc (suc (suc zero))))
 (def addl3 (lam x y z (add (add x y) z)))
 (def addr3 (lam x y z (add x (add y z))))
 (def assoc3 (lam x y z (plam i (addr3 x y z))))
-(def unassoc3 (lam x y z (plam i (addl3 x y z))))
 (identity addl3 addr3 assoc3)
-(identity addr3 addl3 unassoc3)
 (same (addl3 three three three) (lam s z (s (s (s (s (s (s (s (s (s z)))))))))))
 (defect (addl3 three three three))
 
@@ -59,6 +57,16 @@
 (identity f2 f3 q23)
 (same (f1 b) (pair b a))
 (witness (f1 b))
+
+; the answer does not depend on how far the run got before the evidence came
+(input pps)
+(def Ls (lam x (fst x)))
+(def Rs (lam x a))
+(identity Ls Rs pps)
+(watch sw (pair (Ls (pair (add three (add three three)) b)) c))
+(show (fst (pair c c)))
+(supply pps (lam x pth))
+(same-watch sw (pair a c))
 
 ; a typed observation: the declared type moves along the identity's line, and
 ; the answer is transported back to it

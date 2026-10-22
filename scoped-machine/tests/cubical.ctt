@@ -20,6 +20,15 @@
 (show (plam j (@ p j a b)))
 (same (@ (plam j (@ p j a b)) 0) a)
 
+; the endpoints of a neutral path are read from its type (t 0 = u0 for t : Path A u0 u1)
+(axiom (p0 (PathP (plam i A) a b)) (h0 (Pi x A (PathP (plam i A) x x))) (s0 (Sigma x A (PathP (plam i A) x x))))
+(same (@ p0 0) a)
+(same (@ p0 1) b)
+(same (@ (plam j (@ p0 j)) 0) a)
+(same (@ (h0 b) 1) b)
+(same (@ (snd s0) 0) (fst s0))
+(show (plam j (@ p0 j)))
+
 ; faces and systems
 (same (sys ((= 0 0) a)) a)
 (same (sys ((= 0 1) a) (tt b)) b)

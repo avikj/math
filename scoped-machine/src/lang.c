@@ -253,6 +253,7 @@ typedef struct {
     char *name; int kind;
     Syn *body; int nslots; int *uses;
     Cell *res;                       /* holds the definition's value; a use copies it */
+    long tyg;                        /* an axiom's type: the global holding it, or -1 */
     Cell **park_o, **park_v; int npark, parkcap;
 } Global;
 static Global *G; static long nG, capG;
@@ -270,7 +271,7 @@ static long fresh_var(const char *pfx, long k) {
 static long add_global(const char *name, int kind) {
     if (nG == capG) { capG = capG ? capG * 2 : 64; G = realloc(G, (size_t)capG * sizeof(Global)); }
     memset(&G[nG], 0, sizeof(Global));
-    G[nG].name = strdup(name); G[nG].kind = kind;
+    G[nG].name = strdup(name); G[nG].kind = kind; G[nG].tyg = -1;
     G[nG].res = cell(O_ROOT, 1);
     return nG++;
 }
@@ -297,49 +298,25 @@ void global_park(long g, Cell *op, Cell *glob) {
 }
 
 /* ---------------- identities on running computations ----------------
- * (identity L R p [n]): p g1..gn is a path L g1..gn = R g1..gn.
- * A subnet computing L g is, at every cut, a run of L with refl witnesses;
- * p acts on it by F_p, which on such a run is the rewiring: the output wire
- * carries the line (p g @ i) from the run of L (its 0-end) to R g (its
- * 1-end), at the identity's own dimension i. Downstream then computes along
- * that line, so the observed value is the witness, and the answer is the
- * value at i = 1.
+ * (identity L R p [n]): p g1..gn is a path L g1..gn = R g1..gn, at the
+ * identity's own dimension i (fixed when declared). Following it is
+ * transport along that path: an application of L to its n arguments
+ * becomes the line (p g @ i) with its endpoints annotated, L g at 0 and
+ * R g at 1. The line is a neutral path application, so nothing waits on
+ * the evidence p: by the endpoint rule the 1-end is R g, the answer, and the
+ * 0-end is L g, what was posed; only the witness (the interior) needs p.
+ * All three are deferred: each is built when it is eliminated. The 0-end is
+ * L's own run and does not follow L's identities again; the 1-end does, so
+ * identities chain (and a declared cycle has no normal form).
  *
- * Applications of L collect their n arguments (curried applications are
- * values V_SITEF until saturated). At saturation, an available identity is
- * applied at once, its 0-end deferred (V_DEFER: L g, built only if
- * eliminated). A pending identity (p an unsupplied input) leaves a live site
- * (O_SITE) around L's running application; supplying p switches every live
- * site, L's subnet becoming the 0-end. Applications produced by an identity
- * carry the identities already followed, so an identity leading back is not
- * followed again. */
-typedef struct { long L, R, p; int n; Dim dim; long *sites; int nsites, cap; } Ident;
-typedef struct { Cell *cell; int live, n, switched; long L, hist, ident; } Site;
-typedef struct { long g, parent; } Hist;
+ * Applications of L collect their n arguments first (a curried application
+ * is a value V_SITEF until saturated). */
+typedef struct { long L, R, p; int n; Dim dim; } Ident;
 static Ident *ID; static int nID, capID;
-static Site *SI; static long nSI, capSI;
-static Hist *HS; static long nHS, capHS;
-static int identities_on = 1;
-static pthread_mutex_t site_mu = PTHREAD_MUTEX_INITIALIZER;
-#define SITED 0x80000000u
+static int identities_on = 1;    /* off only while a defect reading runs the declaration without them */
 
-static long hist_push(long g, long parent) {
-    if (nHS == capHS) { capHS = capHS ? capHS * 2 : 32; HS = realloc(HS, (size_t)capHS * sizeof(Hist)); }
-    HS[nHS] = (Hist){ g, parent };
-    return nHS++;
-}
-static bool hist_has(long h, long g) { for (; h >= 0; h = HS[h].parent) if (HS[h].g == g) return true; return false; }
 static int arity_of(long L) { for (int i = 0; i < nID; i++) if (ID[i].L == L) return ID[i].n; return 0; }
-/* an identity of L to follow at history h: available first, else note a pending one */
-static int pick(long L, long h, bool *pending) {
-    *pending = false;
-    for (int i = 0; i < nID; i++) {
-        if (ID[i].L != L || ID[i].R == L || hist_has(h, ID[i].R)) continue;
-        if (ID[i].dim) return i;
-        *pending = true;
-    }
-    return -1;
-}
+static int pick(long L) { for (int i = 0; i < nID; i++) if (ID[i].L == L && ID[i].R != L) return i; return -1; }
 static Port global_cell(long g) { Cell *c = cell(V_GLOBAL, 1); c->a = (uint64_t)g; return P(c, 0); }
 static Port app_chain(Port f, const Port *args, int n, uint32_t x) {
     for (int k = 0; k < n; k++) { Cell *a = cell(O_APP, 3); a->x = x; link(f, P(a, 0)); link(args[k], P(a, 1)); f = P(a, 2); }
@@ -349,136 +326,63 @@ static void split_n(Port prov, int m, Port *out) {
     for (int k = 0; k < m - 1; k++) { Cell *d = cell(O_DUP, 3); link(prov, P(d, 0)); out[k] = P(d, 1); prov = P(d, 2); }
     out[m - 1] = prov;
 }
-static void erase_port(Port prov) { Cell *e = cell(O_ERA, 1); link(prov, P(e, 0)); }
-static long new_site(long L, long hist, int n) {
-    if (nSI == capSI) { capSI = capSI ? capSI * 2 : 16; SI = realloc(SI, (size_t)capSI * sizeof(Site)); }
-    memset(&SI[nSI], 0, sizeof(Site)); SI[nSI].L = L; SI[nSI].hist = hist; SI[nSI].n = n; SI[nSI].ident = -1;
-    return nSI++;
+static Port defer_cell(long g, const Port *args, int n, uint32_t x) {
+    Cell *d = cell(V_DEFER, n + 1); d->a = (uint64_t)g; d->x = x;
+    for (int k = 0; k < n; k++) link(args[k], P(d, k + 1));
+    return P(d, 0);
 }
-/* the output of identity id applied to args: the line p args @ i from e0 to R args */
-static Port identity_line(int id, const Port *args, int n, Port e0, long hist) {
-    Port *c1 = malloc((size_t)n * sizeof(Port)), *c2 = malloc((size_t)n * sizeof(Port));
-    for (int k = 0; k < n; k++) { Port two[2]; split_n(args[k], 2, two); c1[k] = two[0]; c2[k] = two[1]; }
-    long h2 = hist_push(ID[id].L, hist);
-    Port pp = app_chain(global_cell(ID[id].p), c1, n, SITED | (uint32_t)(h2 + 1));
-    Port rr = app_chain(global_cell(ID[id].R), c2, n, (uint32_t)(h2 + 1));
-    Cell *pr = cell(O_PAPPR, 5); pr->x = 1;
-    Cell *iv = cell(V_IV, 1); iv->p = iv_atom(ID[id].dim);
-    link(P(iv, 0), P(pr, 0)); link(pp, P(pr, 1)); link(e0, P(pr, 2)); link(rr, P(pr, 3));
-    free(c1); free(c2);
-    return P(pr, 4);
+/* the application a deferred cell stands for, under its substitution */
+static Port defer_build(Cell *v) {
+    Port r = app_chain(global_cell((long)v->a), &v->port[1], v->n - 1, v->x);
+    if (v->p) { Cell *c = cell(O_SUBST, 2); c->p = subst_retain(v->p); link(r, P(c, 0)); r = P(c, 1); }
+    return r;
 }
-/* an application of L to all n arguments; inner: L applied to the first n-1
- * (0 when L is not yet applied); args: providers of all n arguments */
-static void saturate(long L, long hist, Port inner, Port *args, int n, Port consumer) {
-    bool pending;
-    int id = pick(L, hist, &pending);
-    if (id >= 0) {
-        long si = new_site(L, hist, n); SI[si].switched = 1; SI[si].ident = id;
-        Cell *df = cell(V_DEFER, n + 1); df->a = (uint64_t)L; df->x = (uint32_t)(hist + 1);
-        Port *c = malloc((size_t)n * sizeof(Port));
-        for (int k = 0; k < n; k++) { Port two[2]; split_n(args[k], 2, two); c[k] = two[0]; link(two[1], P(df, k + 1)); }
-        if (inner) erase_port(inner);
-        link(identity_line(id, c, n, P(df, 0), hist), consumer);
-        free(c);
-        return;
-    }
-    long si = new_site(L, hist, n);
-    Cell *st = cell(O_SITE, n + 2); st->a = (uint64_t)si;
-    Port last[2]; split_n(args[n - 1], 2, last);
-    Port lout;
-    if (inner) {
-        lout = app_chain(inner, &last[0], 1, SITED);
-        for (int k = 0; k < n - 1; k++) link(args[k], P(st, k + 1));
-    } else {
-        Port *c = malloc((size_t)n * sizeof(Port));
-        for (int k = 0; k < n - 1; k++) { Port two[2]; split_n(args[k], 2, two); c[k] = two[0]; link(two[1], P(st, k + 1)); }
-        c[n - 1] = last[0];
-        lout = app_chain(global_cell(L), c, n, SITED);
-        free(c);
-    }
-    link(last[1], P(st, n));
-    link(lout, P(st, 0));
-    link(P(st, n + 1), consumer);
-    SI[si].cell = st; SI[si].live = 1;
-    for (int i = 0; i < nID; i++) if (ID[i].L == L && !ID[i].dim) {
-        Ident *x = &ID[i];
-        if (x->nsites == x->cap) { x->cap = x->cap ? x->cap * 2 : 8; x->sites = realloc(x->sites, (size_t)x->cap * sizeof(long)); }
-        x->sites[x->nsites++] = si;
-    }
+void defer_force(Cell *o, Cell *v) { link(defer_build(v), P(o, 0)); cell_free(v); }
+/* identity id applied to all n arguments, at consumer */
+static void follow(int id, const Port *args, int n, Port consumer) {
+    Port *c = malloc((size_t)3 * n * sizeof(Port));
+    for (int k = 0; k < n; k++) { Port three[3]; split_n(args[k], 3, three); c[k] = three[0]; c[n + k] = three[1]; c[2 * n + k] = three[2]; }
+    Cell *l = cell(V_NPAPP, 5); l->x = 1; l->p = iv_atom(ID[id].dim);
+    link(defer_cell(ID[id].p, c, n, X_SITED), P(l, 1));
+    link(defer_cell(ID[id].L, c + n, n, X_SITED), P(l, 2));
+    link(defer_cell(ID[id].R, c + 2 * n, n, 0), P(l, 3));
+    Cell *u = cell(V_UNK, 1); link(P(u, 0), P(l, 4));
+    link(P(l, 0), consumer);
+    free(c);
 }
 bool site_open(Cell *o, Cell *v) {
-    if (!identities_on || (o->x & SITED)) return false;
-    long L = (long)v->a, hist = (long)(o->x & ~SITED) - 1;
-    pthread_mutex_lock(&site_mu);
-    bool pending;
-    int id = pick(L, hist, &pending);
-    if (id < 0 && !pending) { pthread_mutex_unlock(&site_mu); return false; }
+    if (!identities_on || (o->x & X_SITED)) return false;
+    long L = (long)v->a;
+    int id = pick(L);
+    if (id < 0) return false;
     int n = arity_of(L);
-    if (n <= 1) {
-        Port a = o->port[1];
-        saturate(L, hist, 0, &a, 1, o->port[2]);
-    } else {
+    if (n <= 1) { Port a = o->port[1]; follow(id, &a, 1, o->port[2]); }
+    else {
         /* the first argument of a curried application: collect */
-        Cell *sf = cell(V_SITEF, 3); sf->a = (uint64_t)L; sf->x = 1; sf->p = (void *)(intptr_t)(hist + 1);
-        Port two[2]; split_n(o->port[1], 2, two);
-        link(app_chain(global_cell(L), &two[0], 1, SITED), P(sf, 1));
-        link(two[1], P(sf, 2));
+        Cell *sf = cell(V_SITEF, 2); sf->a = (uint64_t)L; sf->x = 1;
+        link(o->port[1], P(sf, 1));
         link(P(sf, 0), o->port[2]);
     }
     cell_free(o); cell_free(v);
-    pthread_mutex_unlock(&site_mu);
     return true;
 }
 void site_apply(Cell *o, Cell *v) {
-    long L = (long)v->a, hist = (long)(intptr_t)v->p - 1;
-    int k = (int)v->x;
-    pthread_mutex_lock(&site_mu);
-    int n = arity_of(L);
+    long L = (long)v->a;
+    int k = (int)v->x, n = arity_of(L);
     Port arg = o->port[1], consumer = o->port[2];
     if (k + 1 < n) {
-        Cell *sf = cell(V_SITEF, k + 3); sf->a = v->a; sf->x = (uint32_t)(k + 1); sf->p = v->p;
-        Port two[2]; split_n(arg, 2, two);
-        link(app_chain(v->port[1], &two[0], 1, SITED), P(sf, 1));
-        for (int j = 0; j < k; j++) link(v->port[2 + j], P(sf, 2 + j));
-        link(two[1], P(sf, 2 + k));
+        Cell *sf = cell(V_SITEF, k + 2); sf->a = v->a; sf->x = (uint32_t)(k + 1);
+        for (int j = 0; j < k; j++) link(v->port[1 + j], P(sf, 1 + j));
+        link(arg, P(sf, 1 + k));
         link(P(sf, 0), consumer);
     } else {
         Port *args = malloc((size_t)n * sizeof(Port));
-        for (int j = 0; j < k; j++) args[j] = v->port[2 + j];
+        for (int j = 0; j < k; j++) args[j] = v->port[1 + j];
         args[k] = arg;
-        saturate(L, hist, v->port[1], args, n, consumer);
+        follow(pick(L), args, n, consumer);
         free(args);
     }
     cell_free(o); cell_free(v);
-    pthread_mutex_unlock(&site_mu);
-}
-void site_forward(Cell *s, Cell *v) {
-    int n = s->n - 2;
-    link(P(v, 0), s->port[n + 1]);
-    for (int k = 1; k <= n; k++) erase_port(s->port[k]);
-    pthread_mutex_lock(&site_mu);
-    SI[s->a].live = 0; SI[s->a].cell = NULL;
-    pthread_mutex_unlock(&site_mu);
-    cell_free(s);
-}
-/* the 0-end of an identity applied before L ran: L g, built when eliminated */
-void defer_force(Cell *o, Cell *v) {
-    int n = v->n - 1;
-    link(app_chain(global_cell((long)v->a), &v->port[1], n, SITED | v->x), P(o, 0));
-    cell_free(v);
-}
-/* with the workers paused: p was supplied, every live site of identity id switches */
-static void site_switch(long si, int id) {
-    Site *st = &SI[si];
-    if (!st->live) return;
-    Cell *s = st->cell;
-    int n = st->n;
-    Port old = s->port[0];
-    if (old && PI(old) == 0 && is_value(PC(old)->kind)) return;   /* L's value is already arriving */
-    link(identity_line(id, &s->port[1], n, old, st->hist), s->port[n + 1]);
-    st->live = 0; st->cell = NULL; st->switched = 1; st->ident = id;
-    cell_free(s);
 }
 /* a copy of the value held by an observation cell */
 static Port held_copy(Cell *r) {
@@ -498,6 +402,9 @@ static Subst *identity_subst(const Dnf *r) {
     return s;
 }
 static Subst *answer_subst(void) { Dnf *one = dnf_one(); Subst *s = identity_subst(one); dnf_release(one); return s; }
+/* the empty substitution re-dispatches every neutral: a witness read after
+ * its evidence arrived is read in normal form */
+static Port reactivate(Port prov) { Cell *c = cell(O_SUBST, 2); c->p = subst_id(); link(prov, P(c, 0)); return P(c, 1); }
 static Port as_answer(Port prov) {
     Subst *s = answer_subst();
     if (!s || !prov) return prov;
@@ -629,7 +536,7 @@ static Syn *compile(Node *t) {
         }
         long g = global_lookup(s);
         if (g < 0) die("unbound name", s);
-        Syn *r = syn(G[g].kind == G_AXIOM ? S_AXIOM : S_GLOBAL, 0); r->id = g;
+        Syn *r = syn(G[g].kind == G_AXIOM ? S_AXIOM : S_GLOBAL, 0); r->id = g; r->slot = (int)G[g].tyg;
         return r;
     }
     const char *h = t->it[0]->s;
@@ -689,26 +596,27 @@ static Syn *compile_top(Node *t, int *nslots, int **uses) {
 static Port build_top(Node *t) { int ns; int *u; Syn *s = compile_top(t, &ns, &u); return top_build(s, ns, u); }
 
 /* ---------------- reading back ---------------- */
-#define RUN_LIMIT 50000000L
 typedef struct { Dim d; char name[16]; } DimShow;
+static bool saw_identity;         /* readback named an identity's dimension */
 static DimShow *dshow; static size_t capdshow; static int ndshow, dcount; static long vcount;
 static char dimbuf[8][24]; static int dimbuf_i;
 static const char *dim_name(Dim d) {
     for (int i = ndshow - 1; i >= 0; i--) if (dshow[i].d == d) return dshow[i].name;
-    for (int i = 0; i < nID; i++) if (ID[i].dim == d) { char *b = dimbuf[dimbuf_i++ & 7]; snprintf(b, 24, "i:%s", name_of(ID[i].p)); return b; }
+    for (int i = 0; i < nID; i++) if (ID[i].dim == d) { saw_identity = true; char *b = dimbuf[dimbuf_i++ & 7]; snprintf(b, 24, "i:%s", name_of(ID[i].p)); return b; }
     char *b = dimbuf[dimbuf_i++ & 7]; snprintf(b, 24, "#%u", d); return b;
 }
 static Cell *observe(Port prov) {
     Cell *r = cell(O_ROOT, 1);
     link(prov, P(r, 0));
-    if (!net_observe(r, RUN_LIMIT)) return NULL;
+    if (!net_observe(r, -1)) return NULL;
     return PC(r->port[0]);
 }
 static long *unfolding; static size_t capunfold; static int nunfold;
 static void rb(FILE *o, Port prov);
 static Port apply_fresh(Port f, long *name) {
     *name = fresh_var("x", vcount++);
-    Cell *v = cell(V_NVAR, 1); v->a = (uint64_t)*name;
+    Cell *v = cell(V_NVAR, 2); v->a = (uint64_t)*name;
+    Cell *u = cell(V_UNK, 1); link(P(u, 0), P(v, 1));
     Cell *a = cell(O_APP, 3);
     link(f, P(a, 0)); link(P(v, 0), P(a, 1));
     return P(a, 2);
@@ -725,12 +633,13 @@ static void push_str(const char *s) { push_task(TK_STR, 0, strdup(s)); }
 static void push_port(Port p) { push_task(TK_PORT, p, NULL); }
 static void push_field(Cell *c, int k) { push_task(TK_FIELD, P(c, k), NULL); }
 static void push_binder(Cell *c, int k) { push_task(TK_BINDER, P(c, k), NULL); }
-/* "(h f1 f2 ... )" over ports from..n-1 */
-static void push_fields(FILE *o, const char *h, Cell *c, int from) {
+/* "(h f1 f2 ... )" over ports from..to-1 */
+static void push_fields_to(FILE *o, const char *h, Cell *c, int from, int to) {
     fprintf(o, "(%s", h);
     push_str(")");
-    for (int k = c->n - 1; k >= from; k--) { push_field(c, k); push_str(" "); }
+    for (int k = to - 1; k >= from; k--) { push_field(c, k); push_str(" "); }
 }
+static void push_fields(FILE *o, const char *h, Cell *c, int from) { push_fields_to(o, h, c, from, c->n); }
 static char *dnf_string(const Dnf *d, bool face) {
     char *buf; size_t len; FILE *m = open_memstream(&buf, &len);
     dnf_print(m, d, face, dim_name); fclose(m);
@@ -781,8 +690,8 @@ static void rb_one(FILE *o, Port prov) {
         fputc('(', o);
         push_str(")"); push_field(c, 2); push_str(" "); push_field(c, 1);
         return;
-    case V_NFST: push_fields(o, "fst", c, 1); return;
-    case V_NSND: push_fields(o, "snd", c, 1); return;
+    case V_NFST: push_fields_to(o, "fst", c, 1, 2); return;
+    case V_NSND: push_fields_to(o, "snd", c, 1, 2); return;
     case V_NPAPP: {
         fputs("(@ ", o);
         push_str(")");
@@ -791,9 +700,10 @@ static void rb_one(FILE *o, Port prov) {
         push_task(TK_STR, 0, r); push_str(" "); push_field(c, 1);
         return;
     }
-    case V_NCOMP: push_fields(o, "comp", c, 1); return;
-    case V_NUNGLUE: push_fields(o, "unglue", c, 1); return;
-    case V_DEFER: push_port(app_chain(global_cell((long)c->a), &c->port[1], c->n - 1, SITED)); return;
+    case V_NCOMP: push_fields_to(o, "comp", c, 1, 4); return;
+    case V_NUNGLUE: push_fields_to(o, "unglue", c, 1, 3); return;
+    case V_DEFER: push_port(defer_build(c)); return;
+    case V_UNK: fputs("?", o); return;
     case V_GLOBAL: {
         /* a definition reads back as its value; within its own value it is its name */
         long g = (long)c->a;
@@ -839,10 +749,9 @@ static char *read_port(Port prov) {
 }
 /* does a value mention an identity's dimension? (read back a copy) */
 static bool mentions_identity(Cell *holder) {
-    char *b = read_port(held_copy(holder));
-    bool m = strstr(b, "i:") != NULL;
-    free(b);
-    return m;
+    saw_identity = false;
+    free(read_port(held_copy(holder)));
+    return saw_identity;
 }
 /* (the T t): t observed at its declared type T. When T itself moved along
  * identities' lines, the answer (at the lines' 1-end) is transported back
@@ -869,10 +778,16 @@ static Port typed_answer(Node *T, Node *t) {
     link(P(s0, 0), P(cp, 0)); link(P(mk, 1), P(cp, 1)); link(as_answer(v), P(cp, 2));
     return P(cp, 3);
 }
+/* A reading is taken over the complete normalization of what was posed
+ * (5.13 concerns a normal form): pending pairs are reduced before and after,
+ * so the counts do not depend on the schedule. */
 static char *readback(Node *t, long *steps, long *erased) {
+    bool reading = steps || erased;
+    if (reading) net_drain();
     long s0 = stat_steps, e0 = stat_kind[O_ERA];
     Port v = (t->list && t->n == 3 && is(t->it[0], "the")) ? typed_answer(t->it[1], t->it[2]) : as_answer(build_top(t));
     char *buf = read_port(v);
+    if (reading) net_drain();
     if (steps) *steps = stat_steps - s0;
     if (erased) *erased = stat_kind[O_ERA] - e0;
     return buf;
@@ -953,7 +868,19 @@ static void toplevel(Node *f) {
             toplevel(def);
         }
     } else if (!strcmp(h, "axiom")) {
-        for (int i = 1; i < f->n; i++) add_global(f->it[i]->s, G_AXIOM);
+        /* name, or (name T): a constant of type T; its neutral carries T */
+        for (int i = 1; i < f->n; i++) {
+            Node *e = f->it[i];
+            if (!e->list) { add_global(e->s, G_AXIOM); continue; }
+            if (e->n != 2 || e->it[0]->list) die("(axiom name... (name T)...)", NULL);
+            char *tn = malloc(strlen(e->it[0]->s) + 8); sprintf(tn, "%%type-%s", e->it[0]->s);
+            Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = nsym(tn); d->it[2] = e->it[1];
+            toplevel(d);
+            long tg = global_lookup(tn);
+            long g = add_global(e->it[0]->s, G_AXIOM);
+            G[g].tyg = tg;
+            free(tn);
+        }
     } else if (!strcmp(h, "input")) {
         for (int i = 1; i < f->n; i++) add_global(f->it[i]->s, G_INPUT);
     } else if (!strcmp(h, "supply")) {
@@ -963,12 +890,6 @@ static void toplevel(Node *f) {
         link(build_top(f->it[2]), P(G[g].res, 0));
         for (int i = 0; i < G[g].npark; i++) net_push(G[g].park_o[i], G[g].park_v[i]);
         G[g].npark = 0;
-        /* identities whose evidence this is become available, each at its own
-         * dimension; every live site switches */
-        for (int i = 0; i < nID; i++) if (ID[i].p == g && !ID[i].dim) {
-            ID[i].dim = fresh_dim();
-            for (int k = 0; k < ID[i].nsites; k++) site_switch(ID[i].sites[k], i);
-        }
     } else if (!strcmp(h, "identity")) {
         if (f->n != 4 && f->n != 5) die("(identity L R p [n])", NULL);
         long L = global_lookup(f->it[1]->s), R = global_lookup(f->it[2]->s), pp = global_lookup(f->it[3]->s);
@@ -979,8 +900,7 @@ static void toplevel(Node *f) {
         if (n < 1) n = 1;
         for (int i = 0; i < nID; i++) if (ID[i].L == L && ID[i].n != n) die("identities of one definition take the same number of arguments:", f->it[1]->s);
         if (nID == capID) { capID = capID ? capID * 2 : 8; ID = realloc(ID, (size_t)capID * sizeof(Ident)); }
-        ID[nID] = (Ident){ L, R, pp, n, 0, NULL, 0, 0 };
-        if (G[pp].res->port[0]) ID[nID].dim = fresh_dim();
+        ID[nID] = (Ident){ L, R, pp, n, fresh_dim() };
         nID++;
     } else if (!strcmp(h, "watch")) {
         if (f->n != 3) die("(watch name term)", NULL);
@@ -1013,9 +933,6 @@ static void toplevel(Node *f) {
         if (strcmp(buf, b)) { failures++; printf("FAIL: watch %s\n  left:  %s\n  right: %s\n", f->it[1]->s, buf, b); }
         else { passes++; printf("ok: watch %s\n", f->it[1]->s); }
         free(buf); free(b);
-    } else if (!strcmp(h, "witnesses")) {
-        for (long i = 0; i < nSI; i++) if (SI[i].switched)
-            printf("site %ld: %s -> %s along i:%s\n", i, name_of(ID[SI[i].ident].L), name_of(ID[SI[i].ident].R), name_of(ID[SI[i].ident].p));
     } else if (!strcmp(h, "witness") || !strcmp(h, "witness-watch")) {
         /* the value itself: a line (or cube) in the identities' dimensions,
          * from what was posed (0) to the answer (1) */
@@ -1027,7 +944,7 @@ static void toplevel(Node *f) {
             if (w < 0) die("no such watch", f->it[1]->s);
             v = held_copy(watch_root[w]);
         }
-        char *r = read_port(v);
+        char *r = read_port(reactivate(v));
         print_node(stdout, f->it[1]); printf("\n  witness: %s\n", r);
         free(r);
     } else if (!strcmp(h, "defect")) {
@@ -1074,6 +991,7 @@ int main(int argc, char **argv) {
         Node *f;
         while ((f = read_node())) toplevel(f);
     }
-    printf("%d passed, %d failed; %ld interaction steps; %ld cells live; %ld payloads live\n", passes, failures, stat_steps, stat_cells, stat_payloads);
+    /* steps performed so far: a reading only when the workload has normalized (show, defect) */
+    printf("%d passed, %d failed; %ld interaction steps performed; %ld cells live; %ld payloads live\n", passes, failures, stat_steps, stat_cells, stat_payloads);
     return failures ? 1 : 0;
 }

@@ -58,6 +58,8 @@ Subst *subst_then_clause(const Subst *s, const Clause *d); /* x ↦ s(x)[d], the
 bool  subst_range_mentions(const Subst *s, Dim j);
 Subst *subst_without(const Subst *s, Dim j);
 Subst *subst_with(const Subst *s, Dim j, const Dnf *r);
+Subst *subst_compose(const Subst *s, const Subst *t); /* s, then t */
+Subst *subst_id(void);
 const Dnf *subst_get(const Subst *s, Dim j);
 typedef const char *(*DimName)(Dim);
 void dnf_print(FILE *o, const Dnf *x, bool face, DimName nm);
@@ -78,15 +80,19 @@ enum {
     V_SYS,      /* p=Dnf (the branches' clauses, in order; NULL when none); ports 1.. = branch values */
     V_GLUE,     /* 1=A 2=S (a SYS of (T,e)) */
     V_GLUEV,    /* 1=S (a SYS) 2=a */
-    V_NVAR,     /* a=name */
-    V_NAPP,     /* 1=f 2=arg */
-    V_NFST, V_NSND, /* 1=p */
-    V_NPAPP,    /* p=Dnf r, x=annotated; 1=p [2=a 3=b] */
-    V_NCOMP,    /* 1=A 2=u 3=a0 */
-    V_NUNGLUE,  /* 1=S 2=b */
+    /* neutrals: the last port is the neutral's type (V_UNK when unknown);
+     * ty=1 when it is known */
+    V_NVAR,     /* a=name; 1=type */
+    V_NAPP,     /* 1=f 2=arg 3=type */
+    V_NFST, V_NSND, /* 1=p 2=type */
+    V_NPAPP,    /* p=Dnf r, x=annotated; 1=p [2=a 3=b] type */
+    V_NCOMP,    /* 1=A 2=u 3=a0 4=type */
+    V_NUNGLUE,  /* 1=S 2=b 3=type */
     V_GLOBAL,   /* a=global id */
-    V_SITEF,    /* a=L, x=arguments so far, p=history+1; 1=L applied to them 2..=the arguments */
-    V_DEFER,    /* a=L; 1..n=arguments: L applied to them, built when eliminated */
+    V_SITEF,    /* a=L, x=arguments so far; 1..x=the arguments */
+    V_DEFER,    /* a=g, x=flags, p=Subst or NULL; 1..n=arguments: g applied to them
+                 * (then substituted by p), built when eliminated */
+    V_UNK,      /* an unknown type */
     V_END,
     /* operations: negative principal port; the last port is the result */
     O_APP,      /* 0=f 1=arg 2=out */
@@ -114,7 +120,7 @@ enum {
     O_SYSCONS,  /* 0=φ 1=t (thunk) 2=rest 3=out */
     O_SYSCONS2, /* p=Dnf φ; 0=rest 1=t 2=out */
     O_SYSMAP,   /* 0=s 1=f 2=out */
-    O_SITE,     /* a=site; 0=the subnet's output 1=retained argument 2=out */
+    O_TPART,    /* a=k; 0=a type 1=out: the type's k-th component */
     O_ROOT,     /* 0: an observation; never interacts */
     K_END
 };
@@ -124,7 +130,7 @@ typedef uint64_t Port;            /* cell pointer << 16 | port index; 0 = none *
 typedef struct Cell {
     uint16_t kind, n;             /* n = number of ports */
     uint32_t x;
-    uint32_t lk, pad;             /* the cell's lock (HANDOFF §20); never reset */
+    uint32_t lk, ty;              /* lk: the cell's lock (HANDOFF §20), never reset; ty: a neutral's type is known */
     uint64_t a;
     void *p;
     Port port[];
@@ -140,15 +146,15 @@ void cell_free(Cell *c);
 void link(Port a, Port b);
 void net_start(int workers);       /* worker threads besides the caller */
 void net_push(Cell *op, Cell *v);  /* enqueue an active pair */
-bool net_observe(Cell *root, long limit); /* reduce until root's port holds a value; workers then pause */
+bool net_observe(Cell *root, long limit); /* reduce until root's port holds a value (root NULL: until no pair is pending); workers then pause */
+void net_drain(void);
 Cell *global_res(long g);          /* the cell holding a definition's value */
 /* an application of a definition with declared identities: true when the
- * application was rewired (an identity applied); otherwise it may have been
- * wrapped in a site and the definition unfolds as usual */
+ * application was rewired (it follows an identity, or collects arguments) */
 bool site_open(Cell *app, Cell *glob);
-void site_forward(Cell *site, Cell *v);
 void site_apply(Cell *app, Cell *sitef);
 void defer_force(Cell *op, Cell *deferred);
+#define X_SITED 0x80000000u       /* an application that does not follow identities */
 
 /* readings */
 extern long stat_steps, stat_kind[K_END];
@@ -167,7 +173,7 @@ typedef struct Syn {
     long id;
     struct Record *rec;
     struct Syn **k;
-} Syn;
+} Syn;   /* S_AXIOM: slot = the global holding its type, or -1 */
 /* a binder level: λ (one parameter) or thunk (none). Its frame has slots:
  * the parameter, the environment (maximal subterms free of this level,
  * lifted to the enclosing level and wired to the cell's ports), and locals. */
@@ -179,7 +185,7 @@ typedef struct Record {
 } Record;
 
 /* build the body of r: param (or 0), env providers; returns the provider */
-Port record_build(const Record *r, Port param, const Port *env, uint32_t hx); /* hx: history inherited by the body's applications */
+Port record_build(const Record *r, Port param, const Port *env);
 /* build a top-level body with its own slots */
 Port top_build(Syn *body, int nslots, const int *uses);
 
