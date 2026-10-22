@@ -38,11 +38,11 @@ static bool owns_subst(int k) { return k == O_SUBST || k == V_DEFER; }
 static void box_release(Box *b);
 static void payload_retain(Cell *c) {
     if (owns_dnf(c->kind)) dnf_retain(c->p); else if (owns_subst(c->kind)) subst_retain(c->p);
-    else if (c->kind == V_REF) __atomic_add_fetch(&((Box *)c->p)->rc, 1, __ATOMIC_RELAXED);
+    else if (c->kind == V_REF) { __atomic_add_fetch(&((Box *)c->p)->rc, 1, __ATOMIC_RELAXED); if (c->a) subst_retain((Subst *)(uintptr_t)c->a); }
 }
 static void payload_release(Cell *c) {
     if (owns_dnf(c->kind)) dnf_release(c->p); else if (owns_subst(c->kind)) subst_release(c->p);
-    else if (c->kind == V_REF && c->p) box_release(c->p);
+    else if (c->kind == V_REF && c->p) { box_release(c->p); if (c->a) subst_release((Subst *)(uintptr_t)c->a); c->a = 0; }
     c->p = NULL;
 }
 void cell_free(Cell *c) { payload_release(c); Local *l = local(); c->a = (uint64_t)(uintptr_t)l->defer; l->defer = c; ADD(stat_cells, -1); }
@@ -168,7 +168,11 @@ Port lazy_copy(Cell *root) {
     return P(c, 0);
 }
 static Port box_copy(Box *b) { return lazy_copy(b->root); }
-Port ref_copy(Cell *c) { return box_copy(c->p); }
+static Port sub(Port prov, Subst *s);
+/* a reference reads its value under the substitution it carries (a=Subst or 0): the top cell
+ * copied and substituted, each part a reference carrying the substitution on */
+static Port ref_read(Cell *r) { Port p = box_copy(r->p); return r->a ? sub(p, (Subst *)(uintptr_t)r->a) : p; }
+Port ref_copy(Cell *c) { return ref_read(c); }
 /* a word's suspended elimination, computed (for readback) */
 Port wsusp_force(Cell *c) {
     Cell *e = cell(O_WELIM, 4);
@@ -291,8 +295,13 @@ static void rule_subst(Cell *o, Cell *v) {
     switch (v->kind) {
     case V_GLOBAL: case V_UNK:
         link(P(v, 0), out); cell_free(o); return;
-    case V_REF:
-        link(sub(box_copy(v->p), s), out); cell_free(o); cell_free(v); return;
+    case V_REF: {
+        /* the reference carries the substitution: nothing is copied */
+        Subst *t = v->a ? subst_compose((Subst *)(uintptr_t)v->a, s) : subst_retain(s);
+        if (v->a) subst_release((Subst *)(uintptr_t)v->a);
+        v->a = (uint64_t)(uintptr_t)t;
+        link(P(v, 0), out); cell_free(o); return;
+    }
     case V_NVAR:
         link(sub(v->port[1], s), P(v, 1));
         link(P(v, 0), out); cell_free(o); return;
@@ -410,7 +419,7 @@ static void rule_subst(Cell *o, Cell *v) {
  * dimension is a system of lines */
 static void rule_mkplam(Cell *o, Cell *v) {
     Dim i = (Dim)o->a;
-    if (v->kind == V_REF) { link(box_copy(v->p), P(o, 0)); cell_free(v); return; }
+    if (v->kind == V_REF) { link(ref_read(v), P(o, 0)); cell_free(v); return; }
     Port out = o->port[1];
     if (v->kind == V_SYS) {
         Dnf *cl = v->p;
@@ -687,7 +696,7 @@ static void interact(Cell *o, Cell *v) {
     }
     if (v->kind == V_REF) {
         /* the value is copied out of its box */
-        link(box_copy(v->p), P(o, 0));
+        link(ref_read(v), P(o, 0));
         cell_free(v);
         return;
     }

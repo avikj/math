@@ -111,6 +111,11 @@ H. [x] msort-at 7.1M → 78k: two eliminations of one table (the same `rec x` co
    compared branch by branch; now, like two λs of one record, by their motives and shared
    variables first (%clos on V_CASEF). State: tests/check.ctt 0.15M; boxes 1.96M; sort 1.36M
    (largest single: lemIso 0.31M).
+I. [x] A reference carries a substitution: substituting a dimension in a V_REF composes onto the
+   reference (one interaction); reading it copies the top cell and substitutes that, its parts
+   references carrying the substitution on. Before, a restriction copied the whole stored value
+   (a variable's type at every occurrence). lemIso 309k → 46k. State: boxes 1.38M; sort 0.90M;
+   tests/check.ctt 0.14M; tests/cubical.ctt 10k → 5k.
 
 ## The spec, as it bears on the code (paper references)
 
