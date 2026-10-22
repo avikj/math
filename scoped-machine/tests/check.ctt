@@ -136,3 +136,19 @@
 ; a level-polymorphic definition runs on the machine, which carries levels and ignores them
 (same (pidf lzero T0 t0) t0)
 (same (eval-g (pair no-globals lnil) t0 (code (U (lsuc lzero)))) U)
+; checked identities: L and R checked, the evidence checked at Π n. L n = R n
+(checked addz (Pi n N2 N2) (lam n (add2 n z2)))
+(checked idn (Pi n N2 N2) (lam n n))
+(checked-identity addz idn add2-zero)
+; the answer is R's: the identity's 1-end
+(same (addz (s2 (s2 z2))) (s2 (s2 z2)))
+(checked rfl2 (Pi n N2 (PathP (plam i N2) n n)) (lam n (plam i n)))
+(checked-identity-fail addz idn rfl2)
+; evidence not yet supplied: its supply is checked
+(checked twice (Pi n N2 N2) (lam n (add2 n n)))
+(checked twice2 (Pi n N2 N2) (lam n (add2 n n)))
+(input tw)
+(checked-identity twice twice2 tw)
+(supply-fail tw (lam n (plam i z2)))
+(supply tw (lam n (plam i (add2 n n))))
+(same (twice (s2 z2)) (s2 (s2 z2)))

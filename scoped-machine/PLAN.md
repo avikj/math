@@ -68,7 +68,7 @@ Features — each justified by the system's own design:
 3. [x] Universe level polymorphism (~200). A generic definition must be one term at every level; copies
    per level are distinct terms that identities and proofs do not transfer between. check.ctt levels are
    constants today.
-4. [ ] Checked identities (~80). The identity mechanism answers `R g` without evidence; that is sound
+4. [x] Checked identities (~80). The identity mechanism answers `R g` without evidence; that is sound
    only if `p : Π g. L g = R g`. Today `p` is unchecked.
 5. [ ] Identities produced by terms (~60). Declare an identity from a value of type
    `Σ R. Π g. L g = R g`: the optimizer as a term (5.26); today identities are chosen outside the language.
@@ -116,3 +116,6 @@ a QIIT, inductive-inductive families, Delay/M-types.
   is needed (paths, Glue, data fields). Data levels must be closed. Machine: `(data Level ...)` in the
   prelude; U ignores its level. Paths in Level are not formed (Level : Uω); level equality shows as
   conversion of universes.
+- Item 4 (landed): `(checked-identity L R p [n])`, `checked-identity-fail`, `supply-fail`; checker
+  functions id-tele, id-type, chk-identity-def, chk-identity at the end of check.ctt. Plain `identity`
+  stays the unchecked machine form, parallel to `def` vs `checked`.

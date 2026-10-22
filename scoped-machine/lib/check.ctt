@@ -891,3 +891,23 @@
     (andb (lvl-closed (data-level sig ent))
     (andb (check-ptys nz sg2 lnil lnil ptys)
           (check-ctors sg2 (llen (snd sig)) (llen ptys) ptys ctors nz))))))))
+
+; an identity L = R with evidence p (paper 5.27): L and R checked definitions of one type,
+; p : Π g1..gn. PathP (λ_. B) (L g) (R g), n the arguments the identity takes
+(def id-tele (lam k T VL VR n (case n
+  ((nz) (vpathp (lam k1 r T) VL VR))
+  ((ns m) (case T ((vpi A F) (vpi A (lam k1 x (id-tele k1 (F k1 x) (vapp k1 VL x) (vapp k1 VR x) m)))) (_ verr))))))
+(def id-type (lam sig gL gR n (case (lnth (fst sig) gL)
+  ((some eL) (case (lnth (fst sig) gR)
+     ((some eR) (if (convty nz (fst eL) (fst eR)) (some (id-tele nz (fst eL) (snd eL) (snd eR) n)) none))
+     ((none) none)))
+  ((none) none))))
+(def id-type-ok (lam sig gL gR n (case (id-type sig gL gR n) ((some T) (case T ((verr) false) (_ true))) ((none) false))))
+; evidence a checked definition: its type is the identity's
+(def chk-identity-def (lam sig gL gR n gp (case (id-type sig gL gR n)
+  ((some T) (case (lnth (fst sig) gp) ((some ep) (convty nz (fst ep) T)) ((none) false)))
+  ((none) false))))
+; evidence supplied later: its code checked at the identity's type
+(def chk-identity (lam sig gL gR n ct (case (id-type sig gL gR n)
+  ((some T) (check nz sig lnil lnil ct T))
+  ((none) false))))

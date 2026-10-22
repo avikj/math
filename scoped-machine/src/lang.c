@@ -308,6 +308,10 @@ static const char **cscope; static size_t capcscope; static int ncscope;
 static char **CHECKED; static size_t capchecked; static int nchecked;
 static int *CHKDATA; static size_t capchkdata; static int nchkdata;   /* checked data types, in signature order */
 static int nsig;                                                     /* versions of the checker's signature */
+static int checked_index(const char *s) { for (int i = nchecked - 1; i >= 0; i--) if (!strcmp(CHECKED[i], s)) return i; return -1; }
+/* inputs that are the evidence of a checked identity: their supply is checked */
+typedef struct { long g; int iL, iR, n; } ChkId;
+static ChkId *CHKID; static size_t capchkid; static int nchkid;
 static int chk_index(int d) { for (int i = 0; i < nchkdata; i++) if (CHKDATA[i] == d) return i; return -1; }
 static Node *numeral(int n) { Node *x = nsym("nz"); for (int i = 0; i < n; i++) x = nl3("app", nsym("ns"), x); return x; }
 static Node *capp1(const char *c, Node *a) { return nl3("app", nsym(c), a); }
@@ -1132,6 +1136,38 @@ static void toplevel(Node *f) {
             toplevel(sd);
             nsig++;
         }
+    } else if (!strcmp(h, "checked-identity") || !strcmp(h, "checked-identity-fail")) {
+        /* (checked-identity L R p [n]): L and R checked definitions of one type, p a checked
+         * definition of type Π g. L g = R g, or an input whose supply is checked at that type */
+        bool expect = !strcmp(h, "checked-identity");
+        if (f->n != 4 && f->n != 5) die("(checked-identity L R p [n])", NULL);
+        int iL = checked_index(f->it[1]->s), iR = checked_index(f->it[2]->s), ip = checked_index(f->it[3]->s);
+        if (iL < 0 || iR < 0) die("checked-identity: L and R must be checked definitions", NULL);
+        long gL = global_lookup(f->it[1]->s), gp = global_lookup(f->it[3]->s);
+        int n = 0;
+        if (f->n == 5) n = atoi(f->it[4]->s);
+        else for (Syn *b = G[gL].body; b && b->tag == S_LAM && b->rec->nparam == 1; b = b->rec->body) n++;
+        if (n < 1) n = 1;
+        bool input = ip < 0 && gp >= 0 && G[gp].kind == G_INPUT && !G[gp].res->port[0];
+        if (ip < 0 && !input) die("checked-identity: the evidence must be a checked definition or an unsupplied input:", f->it[3]->s);
+        char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
+        Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
+        Node *q = nlist(input ? 5 : 6);
+        q->it[0] = nsym(input ? "id-type-ok" : "chk-identity-def"); q->it[1] = sign;
+        q->it[2] = numeral(iL); q->it[3] = numeral(iR); q->it[4] = numeral(n);
+        if (!input) q->it[5] = numeral(ip);
+        long steps;
+        char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+        bool accepted = !strcmp(r, tr), ok = accepted == expect;
+        if (ok) passes++; else failures++;
+        printf("%s: %s identity %s = %s by %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, f->it[3]->s, steps);
+        free(r); free(tr);
+        if (accepted && expect) {
+            if (input) { GROW(CHKID, capchkid, (size_t)nchkid + 1); CHKID[nchkid++] = (ChkId){ gp, iL, iR, n }; }
+            char nb[16]; snprintf(nb, sizeof nb, "%d", n);
+            Node *d = nlist(5); d->it[0] = nsym("identity"); d->it[1] = f->it[1]; d->it[2] = f->it[2]; d->it[3] = f->it[3]; d->it[4] = nsym(nb);
+            toplevel(d);
+        }
     } else if (!strcmp(h, "checked-data") || !strcmp(h, "checked-data-fail")) {
         bool expect = !strcmp(h, "checked-data");
         /* (checked-data (data ...)): declare the data type and check it with the
@@ -1433,10 +1469,27 @@ static void toplevel(Node *f) {
         }
     } else if (!strcmp(h, "input")) {
         for (int i = 1; i < f->n; i++) add_global(f->it[i]->s, G_INPUT);
-    } else if (!strcmp(h, "supply")) {
+    } else if (!strcmp(h, "supply") || !strcmp(h, "supply-fail")) {
         if (f->n != 3) die("(supply name term)", NULL);
         long g = global_lookup(f->it[1]->s);
         if (g < 0 || G[g].kind != G_INPUT || G[g].res->port[0]) die("not an unsupplied input:", f->it[1]->s);
+        bool expect = !strcmp(h, "supply");
+        for (int i = 0; i < nchkid; i++) if (CHKID[i].g == g) {
+            /* the evidence of a checked identity: checked at the identity's type first */
+            char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
+            Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
+            Node *q = nlist(6); q->it[0] = nsym("chk-identity"); q->it[1] = sign;
+            q->it[2] = numeral(CHKID[i].iL); q->it[3] = numeral(CHKID[i].iR); q->it[4] = numeral(CHKID[i].n); q->it[5] = to_code(ds(f->it[2]));
+            long steps;
+            char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+            bool accepted = !strcmp(r, tr), ok = accepted == expect;
+            if (ok) passes++; else failures++;
+            printf("%s: %s evidence %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, steps);
+            free(r); free(tr);
+            if (!accepted) return;
+            break;
+        }
+        if (!expect) die("supply-fail of an input that is not a checked identity's evidence:", f->it[1]->s);
         link(build_top(f->it[2]), P(G[g].res, 0));
         for (int i = 0; i < G[g].npark; i++) net_push(G[g].park_o[i], G[g].park_v[i]);
         G[g].npark = 0;
