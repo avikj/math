@@ -70,7 +70,7 @@ Features — each justified by the system's own design:
    constants today.
 4. [x] Checked identities (~80). The identity mechanism answers `R g` without evidence; that is sound
    only if `p : Π g. L g = R g`. Today `p` is unchecked.
-5. [ ] Identities produced by terms (~60). Declare an identity from a value of type
+5. [x] Identities produced by terms (~60). Declare an identity from a value of type
    `Σ R. Π g. L g = R g`: the optimizer as a term (5.26); today identities are chosen outside the language.
 
 Library and acceptance tests:
@@ -119,3 +119,8 @@ a QIIT, inductive-inductive families, Delay/M-types.
 - Item 4 (landed): `(checked-identity L R p [n])`, `checked-identity-fail`, `supply-fail`; checker
   functions id-tele, id-type, chk-identity-def, chk-identity at the end of check.ctt. Plain `identity`
   stays the unchecked machine form, parallel to `def` vs `checked`.
+- Item 5 (landed): `(identity-from L e [n])`, `checked-identity-from[-fail]`; checker opt-type,
+  chk-optimizer. Test: map fusion `fuse` proved by induction, applied to `twomaps`.
+  Found and fixed: eliminations of an elimination without a motive could not be compared (the inner
+  neutral had no type); branches now carry (brs d sg bs) and fields of untyped scrutinees are fresh
+  untyped variables. Codes of a constructor short of fields are eta-expanded.

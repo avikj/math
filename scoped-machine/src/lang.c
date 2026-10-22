@@ -372,6 +372,16 @@ static Node *to_code(Node *t) {
         while (h->list && h->n == 3 && is(h->it[0], "app")) { h = h->it[1]; na++; }
         if (!h->list && !bound_name(h->s)) {
             int c = con_lookup(h->s), d = data_lookup(h->s);
+            if (c >= 0 && na < CON[c].nfields && !CON[c].ndims) {
+                /* a constructor short of fields, as a function of the rest */
+                static int neta;
+                int rest = CON[c].nfields - na;
+                Node *body = t; Node **xs = calloc((size_t)rest + 1, sizeof(Node *));
+                for (int q = 0; q < rest; q++) { char nm[32]; snprintf(nm, sizeof nm, "%%eta%d", neta++); xs[q] = nsym(nm); body = nl3("app", body, xs[q]); }
+                for (int q = rest - 1; q >= 0; q--) body = nl3("lam", xs[q], body);
+                free(xs);
+                return to_code(body);
+            }
             if (c >= 0 && CON[c].nfields + CON[c].ndims == na) {
                 int di = checked_data_of(DATA[CON[c].data].name, "code: data type not checked:");
                 Node **a = calloc((size_t)na + 1, sizeof(Node *));
@@ -1168,6 +1178,40 @@ static void toplevel(Node *f) {
             Node *d = nlist(5); d->it[0] = nsym("identity"); d->it[1] = f->it[1]; d->it[2] = f->it[2]; d->it[3] = f->it[3]; d->it[4] = nsym(nb);
             toplevel(d);
         }
+    } else if (!strcmp(h, "identity-from") || !strcmp(h, "checked-identity-from") || !strcmp(h, "checked-identity-from-fail")) {
+        /* (identity-from L e [n]): the identity a term produces, e = (R, p) with
+         * p : Π g. L g = R g; the optimizer as a term (5.26). The checked forms check e's
+         * type against Σ (R : T_L). Π g. PathP (λ_. B) (L g) (R g) first. */
+        bool chk = strcmp(h, "identity-from") != 0, expect = strcmp(h, "checked-identity-from-fail") != 0;
+        if (f->n != 3 && f->n != 4) die("(identity-from L e [n])", NULL);
+        long gL = global_lookup(f->it[1]->s), ge = global_lookup(f->it[2]->s);
+        if (gL < 0 || ge < 0) die("identity-from: L and e must be definitions", NULL);
+        int n = 0;
+        if (f->n == 4) n = atoi(f->it[3]->s);
+        else for (Syn *b = G[gL].body; b && b->tag == S_LAM && b->rec->nparam == 1; b = b->rec->body) n++;
+        if (n < 1) n = 1;
+        if (chk) {
+            int iL = checked_index(f->it[1]->s), ie = checked_index(f->it[2]->s);
+            if (iL < 0 || ie < 0) die("checked-identity-from: L and e must be checked definitions", NULL);
+            char sig[32]; snprintf(sig, sizeof sig, "%%sig%d", nsig);
+            Node *sign = nsig ? nsym(sig) : nl3("pair", nsym("lnil"), nsym("lnil"));
+            Node *q = nlist(5); q->it[0] = nsym("chk-optimizer"); q->it[1] = sign; q->it[2] = numeral(iL); q->it[3] = numeral(n); q->it[4] = numeral(ie);
+            long steps;
+            char *r = readback(q, &steps, NULL), *tr = readback(nsym("true"), NULL, NULL);
+            bool accepted = !strcmp(r, tr), ok = accepted == expect;
+            if (ok) passes++; else failures++;
+            printf("%s: %s identity of %s from %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, steps);
+            free(r); free(tr);
+            if (!accepted || !expect) return;
+        }
+        static int nopt;
+        char rn[48], pn[48], nb[16];
+        snprintf(rn, sizeof rn, "%%opt-R%d", nopt); snprintf(pn, sizeof pn, "%%opt-p%d", nopt); snprintf(nb, sizeof nb, "%d", n);
+        nopt++;
+        Node *d = nlist(3); d->it[0] = nsym("def"); d->it[1] = nsym(rn); d->it[2] = nl2("fst", f->it[2]); toplevel(d);
+        d = nlist(3); d->it[0] = nsym("def"); d->it[1] = nsym(pn); d->it[2] = nl2("snd", f->it[2]); toplevel(d);
+        Node *id = nlist(5); id->it[0] = nsym("identity"); id->it[1] = f->it[1]; id->it[2] = nsym(rn); id->it[3] = nsym(pn); id->it[4] = nsym(nb);
+        toplevel(id);
     } else if (!strcmp(h, "checked-data") || !strcmp(h, "checked-data-fail")) {
         bool expect = !strcmp(h, "checked-data");
         /* (checked-data (data ...)): declare the data type and check it with the

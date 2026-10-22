@@ -132,6 +132,13 @@
           (vlevel) (vlvl c ts) (vuw))
 (data Neu (nvar l) (napp h a) (nfst h) (nsnd h) (npapp h r) (ncomp L u a0) (nunglue S h)
           (nelim P B x) (ntrans d ls psi x sg))
+; an elimination's branches: the data type, its signature, one function per constructor
+; (of the level, the fields, the hypotheses, the dimensions)
+(data Brs (brs d sg bs))
+(def brs-d (lam B (case B ((brs d sg bs) d))))
+(def brs-sg (lam B (case B ((brs d sg bs) sg))))
+(def brs-l (lam B (case B ((brs d sg bs) bs))))
+(def brs-map (lam f B (case B ((brs d sg bs) (brs d sg (lmap f bs))))))
 
 (def iv-of (lam v (case v ((viv r) r) (_ i0))))
 (def face-of (lam v (case v ((vface p) p) (_ ffalse))))
@@ -173,7 +180,7 @@
   ((npapp h r) (papp k (act k s h) (isubst s r)))
   ((ncomp L u a0) (vcomp k (lam k1 r (act k1 s (L k1 r))) (lam k1 r (act k1 s (u k1 r))) (act k s a0)))
   ((nunglue S h) (vunglue k (act-branches k s S) (act k s h)))
-  ((nelim P B x) (velim k (opt-map (act k s) P) (lmap (lam b (lam k1 fs hs ds (act k1 s (b k1 fs hs ds)))) B) (act k s x)))
+  ((nelim P B x) (velim k (opt-map (act k s) P) (brs-map (lam b (lam k1 fs hs ds (act k1 s (b k1 fs hs ds)))) B) (act k s x)))
   ((ntrans d ls psi x sg) (vtrans k sg d (lmap (lam l (lam k1 r (act k1 s (l k1 r)))) ls) (fsubst s psi) (act k s x))))))
 (def restrict (lam k c v (act k (clsub c) v)))
 
@@ -360,12 +367,12 @@
 (def mkhcomp (lam k u a (if (istotal (u (ns k) (ivar k))) (u k i1) (vhcomp u a))))
 ; hfill^i [φ ↦ u] u0 at i = hcomp^j [φ ↦ u(i∧j), (i=0) ↦ u0] u0
 (def hfill-d (lam k u a i (mkhcomp k (lam k2 j (sys-add k2 (feq i false) a (u k2 (imeet i j)))) a)))
-(def restrict-B (lam k cl B (lmap (lam b (lam k1 fs hs ds (restrict k1 cl (b k1 fs hs ds)))) B)))
+(def restrict-B (lam k cl B (brs-map (lam b (lam k1 fs hs ds (restrict k1 cl (b k1 fs hs ds)))) B)))
 ; elimination; a branch receives its fields, the eliminations of its recursive
 ; fields (induction hypotheses) and its dimensions; on hcomp, composition in
 ; the motive along hfill
 (def velim (lam k P B x (case x
-  ((vcon d c fs ds sg) ((fromopt (lnth B c) (lam k1 f1 h1 d1 verr)) k fs
+  ((vcon d c fs ds sg) ((fromopt (lnth (brs-l B) c) (lam k1 f1 h1 d1 verr)) k fs
                           (lmap (velim k P B) (rec-of d (cftys (centry sg d c)) fs)) ds))
   ((vhcomp u a) (case P
      ((some p) (vcomp k (lam k2 i (vapp k2 p (hfill-d k2 u a i)))
@@ -486,8 +493,8 @@
   ((cann t T) (veval k sig env t))
   ((cdata d ps) (vdata d (lmap (veval k sig env) ps) sig))
   ((ccon d c fs ds) (mkcon k sig d c (lmap (veval k sig env) fs) (lmap (lam r (iv-of (veval k sig env r))) ds)))
-  ((celim d P B x) (velim k (some (veval k sig env P)) (eval-branches-at sig env d B nz) (veval k sig env x)))
-  ((ccase d B x) (velim k none (eval-branches-at sig env d B nz) (veval k sig env x)))
+  ((celim d P B x) (velim k (some (veval k sig env P)) (brs d sig (eval-branches-at sig env d B nz)) (veval k sig env x)))
+  ((ccase d B x) (velim k none (brs d sig (eval-branches-at sig env d B nz)) (veval k sig env x)))
   ((chcomp u a) (mkhcomp k (line-of (veval k sig env u)) (veval k sig env a)))
   ((cdlam b) verr)
   ((cforce t) (veval k sig env t)))))
@@ -530,13 +537,16 @@
 (def fresh-hyps (lam k P rs acc (case rs
   ((lnil) (pair acc k))
   ((lcons f rest) (fresh-hyps (ns k) P rest (lsnoc acc (vneu (nvar k) (case P ((some p) (vapp k p f)) ((none) verr)))))))))
+; fresh variables of unknown type: the fields of an elimination whose scrutinee's type is
+; not known (itself an elimination without a motive); compared without a type
+(def fresh-untyped (lam k n acc (case n ((nz) (pair acc k)) ((ns m) (fresh-untyped (ns k) m (lsnoc acc (vneu (nvar k) verr)))))))
 (def fresh-dims (lam k n acc (case n ((nz) (pair acc k)) ((ns m) (fresh-dims (ns k) m (lsnoc acc (ivar k)))))))
 ; two eliminations' branches, compared at the motive on fresh fields and dimensions
 (def conv-branches-at (lam k P B B2 d ps sg c (case B
   ((lnil) (isnil B2))
   ((lcons b rest) (case B2 ((lnil) false) ((lcons b2 rest2)
     (let ce (centry sg d c)
-    (let fl (fresh-fields k sg (cftys ce) (push-all ps lnil) lnil)
+    (let fl (case ps ((some qs) (fresh-fields k sg (cftys ce) (push-all qs lnil) lnil)) ((none) (fresh-untyped k (llen (cftys ce)) lnil)))
     (let fh (fresh-hyps (snd fl) P (rec-of d (cftys ce) (fst fl)) lnil)
     (let fd (fresh-dims (snd fh) (cnd ce) lnil)
     (let k2 (snd fd)
@@ -602,8 +612,9 @@
        (andb (conv k (L k i0) a0 a02)
              (conv k1 (L k1 i) (w k1 i) (w2 k1 i))))))) (_ false)))
   ((nunglue S h) (case m ((nunglue S2 h2) (convneu k h h2)) (_ false)))
-  ((nelim P B x) (case m ((nelim P2 B2 x2) (andb (convneu k x x2)
-       (case (type-of x) ((vdata d ps sg) (conv-branches-at k P B B2 d ps sg nz)) (_ false)))) (_ false)))
+  ((nelim P B x) (case m ((nelim P2 B2 x2) (andb (convneu k x x2) (andb (eqn (brs-d B) (brs-d B2))
+       (conv-branches-at k P (brs-l B) (brs-l B2) (brs-d B)
+         (case (type-of x) ((vdata d ps sg) (some ps)) (_ none)) (brs-sg B) nz)))) (_ false)))
   ((ntrans d ls psi x sg) (case m ((ntrans d2 ls2 psi2 x2 sg2) (andb (eqn d d2) (andb (feqf psi psi2)
        (andb (conv-tele (ns k) sg (dptys (dentry sg d)) (lmap (lam l (l (ns k) (ivar k))) ls) (lmap (lam l (l (ns k) (ivar k))) ls2) lnil)
              (convneu k x x2))))) (_ false))))))
@@ -716,7 +727,7 @@
      ((some T) (case T ((vdata d2 ps sg) (if (eqn d d2)
          (case (motive-level k sig env tys T P)
            ((some l) (let Pv (veval k sig env P)
-              (if (check-branches k sig env tys d ps Pv (eval-branches-at sig env d B nz) B nz) (some (vapp k Pv (veval k sig env x))) none)))
+              (if (check-branches k sig env tys d ps Pv (brs d sig (eval-branches-at sig env d B nz)) B nz) (some (vapp k Pv (veval k sig env x))) none)))
            ((none) none))
          none)) (_ none)))
      ((none) none)))
@@ -807,7 +818,7 @@
   ((chcomp u a) (case T ((vdata d ps sg) (andb (check k sig env tys a T) (check-hcomp k sig env tys T u a))) (_ false)))
   ((ccase d B x) (case (infer k sig env tys x)
      ((some X) (case X ((vdata d2 ps sg) (andb (eqn d d2)
-          (check-branches k sig env tys d ps (vlam (lam k1 y T)) (eval-branches-at sig env d B nz) B nz))) (_ false)))
+          (check-branches k sig env tys d ps (vlam (lam k1 y T)) (brs d sig (eval-branches-at sig env d B nz)) B nz))) (_ false)))
      ((none) false)))
   (_ (case (infer k sig env tys c) ((some T2) (convty k T2 T)) ((none) false))))))
 
@@ -910,4 +921,11 @@
 ; evidence supplied later: its code checked at the identity's type
 (def chk-identity (lam sig gL gR n ct (case (id-type sig gL gR n)
   ((some T) (check nz sig lnil lnil ct T))
+  ((none) false))))
+; an optimizer (5.26) is a term producing an identity: e : Σ (R : T_L). Π g. L g = R g
+(def opt-type (lam sig gL n (case (lnth (fst sig) gL)
+  ((some eL) (some (vsigma (fst eL) (lam k R (id-tele k (fst eL) (snd eL) R n)))))
+  ((none) none))))
+(def chk-optimizer (lam sig gL n ge (case (opt-type sig gL n)
+  ((some T) (case (lnth (fst sig) ge) ((some ee) (convty nz (fst ee) T)) ((none) false)))
   ((none) false))))
