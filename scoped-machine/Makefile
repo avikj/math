@@ -2,7 +2,7 @@ CC      ?= gcc
 CFLAGS  ?= -std=gnu11 -O2 -g -Wall -Wextra -Wno-unused-parameter
 SAN     := -fsanitize=address,undefined -fno-omit-frame-pointer
 
-SRC := src/dnf.c src/net.c src/lang.c
+SRC := src/dnf.c src/big.c src/net.c src/lang.c
 
 all: build/cubical
 

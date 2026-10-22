@@ -26,6 +26,21 @@ typedef uint64_t Dim;   /* dimension names: never reused (a 64-bit count is neve
 typedef struct { uint32_t rc, n; uint64_t l[]; } Clause;   /* literals: dimension << 1 | polarity */
 typedef struct { uint32_t rc, n; Clause *c[]; } Dnf;     /* join of clauses (or a system's clause list) */
 typedef struct { uint32_t rc, n; Dim *d; Dnf **v; } Subst;
+/* a natural number: s when b is NULL, else b's limbs (src/big.c) */
+typedef struct { uint32_t rc, n; uint64_t l[]; } Big;
+typedef struct { uint64_t s; Big *b; } WN;
+Big *big_retain(Big *b);
+void big_release(Big *b);
+WN wn_small(uint64_t s);
+WN wn_copy(const WN *x);
+void wn_drop(WN *x);
+bool wn_zero(const WN *x);
+int wn_cmp(const WN *x, const WN *y);
+WN wn_add(const WN *x, const WN *y);
+WN wn_sub(const WN *x, const WN *y);
+WN wn_succ(const WN *x);
+WN wn_parse(const char *s);
+void wn_print(FILE *o, const WN *x);
 extern long stat_payloads;
 Clause *clause_retain(Clause *c);
 void clause_release(Clause *c);
@@ -102,10 +117,10 @@ enum {
     V_CASEF,    /* p=CaseTab, x=has motive; [1=motive] environment: the elimination as a function */
     V_REF,      /* p=Box: a reference to a value held once; copying it copies the reference, an operation
                  * meeting it copies the value out (as a definition is unfolded) */
-    V_WORD,     /* a=the number: a machine word, one cell */
+    V_WORD,     /* a natural number in one cell: a=it, or p=Big when it does not fit in 64 bits */
     V_WSUSP,    /* 1=z 2=s 3=a word: the elimination of that word, computed when used (a hypothesis) */
     V_WTY,      /* the type of words */
-    V_WPLUS,    /* a=k ≥ 1; 1=a neutral word x: k successors of x */
+    V_WPLUS,    /* a=k ≥ 1 (or p=Big); 1=a neutral word x: k successors of x */
     V_NWOP,     /* x=the operation (O_WEQ..O_WSUB); 1=a 2=b: a word operation stuck on a neutral */
     V_NWELIM,   /* 1=w 2=z 3=s: the elimination of a neutral word */
     V_SUSP,     /* p=CaseTab, x=has motive; 1=field [2=motive] environment: an induction hypothesis, the
@@ -259,6 +274,7 @@ typedef struct Syn {
     long id;
     struct Record *rec;
     struct CaseTab *tab;
+    Big *big;                       /* S_WORD: the number when it does not fit in id */
     struct Syn **k;
 } Syn;   /* S_AXIOM: slot = the global holding its type, or -1 */
 /* a binder level: λ (one parameter), thunk (none), or a case branch (its fields, hypotheses and

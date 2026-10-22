@@ -1297,7 +1297,11 @@ static Syn *compile(Node *t) {
             return var_syn(b->slot);
         }
         { int c = con_lookup(s); if (c >= 0 && CON[c].nfields + CON[c].ndims == 0) { Syn *r = syn(S_CON, 0); r->id = c; return r; } }
-        if (s[0] == '#' && s[1] >= '0' && s[1] <= '9') { Syn *r = syn(S_WORD, 0); r->id = atol(s + 1); return r; }
+        if (s[0] == '#' && s[1] >= '0' && s[1] <= '9') {
+            Syn *r = syn(S_WORD, 0); WN w = wn_parse(s + 1);
+            r->id = (long)w.s; r->big = w.b;
+            return r;
+        }
         long g = global_lookup(s);
         if (g < 0) die("unbound name", s);
         Syn *r = syn(G[g].kind == G_AXIOM ? S_AXIOM : S_GLOBAL, 0); r->id = g; r->slot = (int)G[g].tyg;
@@ -1553,11 +1557,14 @@ static void rb_one(FILE *o, Port prov) {
     case V_CON: if (c->n == 1) fputs(CON[c->a].name, o); else push_fields(o, CON[c->a].name, c, 1); return;
     case V_HCOMP: push_fields(o, "hcompD", c, 1); return;
     case V_CASEF: fputs("%casef", o); return;
-    case V_WORD: fprintf(o, "#%llu", (unsigned long long)c->a); return;
+    case V_WORD: { WN w = { c->a, c->p }; fputc('#', o); wn_print(o, &w); return; }
     case V_WTY: fputs("Word", o); return;
     case V_WPLUS: {
-        for (uint64_t k = 0; k < c->a; k++) { fputs("(%wsucc ", o); push_str(")"); }
-        push_field(c, 1);
+        /* k successors of x: (%wsucc x), or (%wadd x #k) */
+        WN w = { c->a, c->p };
+        if (!c->p && c->a == 1) { fputs("(%wsucc ", o); push_str(")"); push_field(c, 1); return; }
+        char *buf; size_t len; FILE *m = open_memstream(&buf, &len); fputs(" #", m); wn_print(m, &w); fputc(')', m); fclose(m);
+        fputs("(%wadd ", o); push_task(TK_STR, 0, buf); push_field(c, 1);
         return;
     }
     case V_NWOP: {

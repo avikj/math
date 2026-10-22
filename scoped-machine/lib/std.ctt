@@ -291,3 +291,7 @@
 (checked-identity-fail eqw wlt eqw≡weq 2)
 (check-fail (Pi ((a Word) (b Word)) (PathP (plam i Bool) (eqw a b) (wlt a b)))
   (lam a b (plam i (eqw a b))))
+; words are exact: past 2^64 a word cell holds its digits
+(same (plusw (plusw #9223372036854775807 #9223372036854775807) #2) #18446744073709551616)
+(same (eqw (plusw #18446744073709551615 #1) #0) false)
+(same (subw #340282366920938463463374607431768211456 #1) #340282366920938463463374607431768211455)
