@@ -1,0 +1,425 @@
+; playground/sort-ordered.ctt — 9.15 over any type with a total order, and three instances.
+;
+; Not part of the runtime or its library: something written on top of it to look at.
+;
+; The declaration is tests/sort.ctt's, Σ[B] (B a rearrangement of X) × Sorted B, posed by the
+; elimination of a finite bag X, with Nat replaced by any type A and leb by any comparator
+; le : A → A → Bool that is a total order (reflexive, total, transitive, antisymmetric). The elements
+; are only ever arguments of le: nothing reads a magnitude. Multiplicity counts with the equality the
+; order decides, x = y exactly when x ≤ y and y ≤ x.
+;
+; Instances: Words, compared by one machine comparison (%wlt); Words again at large values (the same
+; steps: a comparison does not look at the size); and a three-colour type with no numeric content.
+
+; ---------------------------------------------------------------- multiplicities are natural numbers
+(checked eqb (Pi ((m Nat) (n Nat)) Bool)
+  (lam m (elim (lam y (Pi n Nat Bool)) m
+    ((zero) (lam n (case n ((zero) true) ((suc k) false))))
+    ((suc m1) (lam n (case n ((zero) false) ((suc n1) ((rec m1) n1))))))))
+(checked isProp-isTrue (Pi b Bool (isProp lzero (isTrue b)))
+  (lam b (elim (lam y (isProp lzero (isTrue y))) b
+    ((true) (lam u v (elim (lam w (PathP (plam i Unit) w v)) u ((unit) (elim (lam w (PathP (plam i Unit) unit w)) v ((unit) (plam i unit)))))))
+    ((false) (lam u v (Empty-rec lzero (PathP (plam i Empty) u v) u))))))
+(checked eqb-sound (Pi ((m Nat) (n Nat) (e (isTrue (eqb m n)))) (PathP (plam i Nat) m n))
+  (lam m (elim (lam y (Pi ((n Nat) (e (isTrue (eqb y n)))) (PathP (plam i Nat) y n))) m
+    ((zero) (lam n (elim (lam z (Pi e (isTrue (eqb zero z)) (PathP (plam i Nat) zero z))) n
+       ((zero) (lam e (plam i zero)))
+       ((suc k) (lam e (Empty-rec lzero (PathP (plam i Nat) zero (suc k)) e))))))
+    ((suc m1) (lam n (elim (lam z (Pi e (isTrue (eqb (suc m1) z)) (PathP (plam i Nat) (suc m1) z))) n
+       ((zero) (lam e (Empty-rec lzero (PathP (plam i Nat) (suc m1) zero) e)))
+       ((suc n1) (lam e (plam i (suc (@ ((rec m1) n1 e) i)))))))))))
+(checked eqb-refl (Pi n Nat (isTrue (eqb n n)))
+  (lam n (elim (lam y (isTrue (eqb y y))) n ((zero) unit) ((suc k) (rec k)))))
+(checked eqb-complete (Pi ((m Nat) (n Nat) (p (PathP (plam i Nat) m n))) (isTrue (eqb m n)))
+  (lam m n p (subst lzero lzero Nat (lam z (isTrue (eqb m z))) m n p (eqb-refl m))))
+(checked one-if (Pi b Bool Nat) (lam b (if b (suc zero) zero)))
+(checked plusN-comm-mid (Pi ((e Nat) (X Nat) (c Nat)) (PathP (plam i Nat) (plus e (plus X c)) (plus X (plus e c))))
+  (lam e X c (transN (plus e (plus X c)) (plus (plus e X) c) (plus X (plus e c))
+    (symN (plus (plus e X) c) (plus e (plus X c)) (plus-assoc e X c))
+    (transN (plus (plus e X) c) (plus (plus X e) c) (plus X (plus e c))
+      (congN (lam z (plus z c)) (plus e X) (plus X e) (plus-comm e X))
+      (plus-assoc X e c)))))
+(checked suc-inj (Pi ((m Nat) (n Nat) (p (PathP (plam i Nat) (suc m) (suc n)))) (PathP (plam i Nat) m n))
+  (lam m n p (congN predN (suc m) (suc n) p)))
+(checked plus-cancel (Pi ((k Nat) (m Nat) (n Nat) (p (PathP (plam i Nat) (plus k m) (plus k n)))) (PathP (plam i Nat) m n))
+  (lam k (elim (lam w (Pi ((m Nat) (n Nat) (p (PathP (plam i Nat) (plus w m) (plus w n)))) (PathP (plam i Nat) m n))) k
+    ((zero) (lam m n p p))
+    ((suc k1) (lam m n p ((rec k1) m n (suc-inj (plus k1 m) (plus k1 n) p)))))))
+(checked isPropPair (Pi ((A U) (B U) (pa (isProp lzero A)) (pb (isProp lzero B))) (isProp lzero (Sigma a A B)))
+  (lam A B pa pb u v (plam i (pair (@ (pa (fst u) (fst v)) i) (@ (pb (snd u) (snd v)) i)))))
+
+; ---------------------------------------------------------------- booleans
+(checked andB (Pi ((a Bool) (b Bool)) Bool) (lam a b (if a b false)))
+(checked and-fst (Pi ((a Bool) (b Bool) (h (isTrue (andB a b)))) (isTrue a))
+  (lam a b (elim (lam y (Pi h (isTrue (andB y b)) (isTrue y))) a
+    ((true) (lam h unit))
+    ((false) (lam h (Empty-rec lzero (isTrue false) h))))))
+(checked and-snd (Pi ((a Bool) (b Bool) (h (isTrue (andB a b)))) (isTrue b))
+  (lam a b (elim (lam y (Pi h (isTrue (andB y b)) (isTrue b))) a
+    ((true) (lam h h))
+    ((false) (lam h (Empty-rec lzero (isTrue b) h))))))
+(checked and-intro (Pi ((a Bool) (b Bool) (p (isTrue a)) (q (isTrue b))) (isTrue (andB a b)))
+  (lam a b (elim (lam y (Pi ((p (isTrue y)) (q (isTrue b))) (isTrue (andB y b)))) a
+    ((true) (lam p q q))
+    ((false) (lam p q (Empty-rec lzero (isTrue (andB false b)) p))))))
+
+; ---------------------------------------------------------------- a total order on a type
+(checked TotalOrder (Pi ((A U) (le (Pi ((x A) (y A)) Bool))) U)
+  (lam A le
+    (Sigma r (Pi x A (isTrue (le x x)))
+    (Sigma t (Pi ((x A) (y A) (e (PathP (plam i Bool) (le x y) false))) (isTrue (le y x)))
+    (Sigma c (Pi ((x A) (y A) (z A) (p (isTrue (le x y))) (q (isTrue (le y z)))) (isTrue (le x z)))
+      (Pi ((x A) (y A) (p (isTrue (le x y))) (q (isTrue (le y x)))) (PathP (plam i A) x y)))))))
+(checked ord-refl (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le)) (x A)) (isTrue (le x x)))
+  (lam A le o x ((fst o) x)))
+(checked ord-total (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                        (x A) (y A) (e (PathP (plam i Bool) (le x y) false))) (isTrue (le y x)))
+  (lam A le o x y e ((fst (snd o)) x y e)))
+(checked ord-trans (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                        (x A) (y A) (z A) (p (isTrue (le x y))) (q (isTrue (le y z)))) (isTrue (le x z)))
+  (lam A le o x y z p q ((fst (snd (snd o))) x y z p q)))
+(checked ord-antisym (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                          (x A) (y A) (p (isTrue (le x y))) (q (isTrue (le y x)))) (PathP (plam i A) x y))
+  (lam A le o x y p q ((snd (snd (snd o))) x y p q)))
+; the equality the order decides
+(checked eqo (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (x A) (y A)) Bool) (lam A le x y (andB (le x y) (le y x))))
+(checked eqo-sound (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                        (x A) (y A) (h (isTrue (eqo A le x y)))) (PathP (plam i A) x y))
+  (lam A le o x y h (ord-antisym A le o x y (and-fst (le x y) (le y x) h) (and-snd (le x y) (le y x) h))))
+(checked eqo-refl (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le)) (x A)) (isTrue (eqo A le x x)))
+  (lam A le o x (and-intro (le x x) (le x x) (ord-refl A le o x) (ord-refl A le o x))))
+
+; ---------------------------------------------------------------- lists: multiplicity, order, merge
+(checked count (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (a A) (l (List A))) Nat)
+  (lam A le a l (case l ((nil) zero) ((cons x r) (plus (one-if (eqo A le a x)) (rec r))))))
+(checked AllLe (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (y A) (l (List A))) U)
+  (lam A le y l (case l ((nil) Unit) ((cons x r) (Sigma h (isTrue (le y x)) (rec r))))))
+; 9.6: sortedness is the head below every element of the tail, and the tail sorted
+(checked Sorted (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (l (List A))) U)
+  (lam A le l (case l ((nil) Unit) ((cons x r) (Sigma h (AllLe A le x r) (rec r))))))
+; merge is sortedness unfolded
+(checked merge (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (xs (List A)) (ys (List A))) (List A))
+  (lam A le xs (elim (lam w (Pi ys (List A) (List A))) xs
+    ((nil) (lam ys ys))
+    ((cons x xs1) (lam ys (elim (lam w (List A)) ys
+        ((nil) (cons x xs1))
+        ((cons y ys1) (if (le x y) (cons x ((rec xs1) (cons y ys1))) (cons y (rec ys1))))))))))
+(checked merge-count (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (a A) (xs (List A)) (ys (List A)))
+    (PathP (plam i Nat) (count A le a (merge A le xs ys)) (plus (count A le a xs) (count A le a ys))))
+  (lam A le a xs (elim (lam w (Pi ys (List A) (PathP (plam i Nat) (count A le a (merge A le w ys)) (plus (count A le a w) (count A le a ys))))) xs
+    ((nil) (lam ys (plam i (count A le a ys))))
+    ((cons x xs1) (lam ys (elim (lam w (PathP (plam i Nat) (count A le a (merge A le (cons x xs1) w)) (plus (count A le a (cons x xs1)) (count A le a w)))) ys
+       ((nil) (symN (plus (count A le a (cons x xs1)) zero) (count A le a (cons x xs1)) (plus-zero (count A le a (cons x xs1)))))
+       ((cons y ys1)
+         (elim (lam bb (PathP (plam i Nat) (count A le a (if bb (cons x (merge A le xs1 (cons y ys1))) (cons y (merge A le (cons x xs1) ys1))))
+                                            (plus (count A le a (cons x xs1)) (count A le a (cons y ys1)))))
+               (le x y)
+           ((true) (transN (plus (one-if (eqo A le a x)) (count A le a (merge A le xs1 (cons y ys1))))
+                           (plus (one-if (eqo A le a x)) (plus (count A le a xs1) (count A le a (cons y ys1))))
+                           (plus (plus (one-if (eqo A le a x)) (count A le a xs1)) (count A le a (cons y ys1)))
+                     (congN (plus (one-if (eqo A le a x))) (count A le a (merge A le xs1 (cons y ys1))) (plus (count A le a xs1) (count A le a (cons y ys1)))
+                            ((rec xs1) (cons y ys1)))
+                     (symN (plus (plus (one-if (eqo A le a x)) (count A le a xs1)) (count A le a (cons y ys1)))
+                           (plus (one-if (eqo A le a x)) (plus (count A le a xs1) (count A le a (cons y ys1))))
+                           (plus-assoc (one-if (eqo A le a x)) (count A le a xs1) (count A le a (cons y ys1))))))
+           ((false) (transN (plus (one-if (eqo A le a y)) (count A le a (merge A le (cons x xs1) ys1)))
+                            (plus (one-if (eqo A le a y)) (plus (count A le a (cons x xs1)) (count A le a ys1)))
+                            (plus (count A le a (cons x xs1)) (plus (one-if (eqo A le a y)) (count A le a ys1)))
+                      (congN (plus (one-if (eqo A le a y))) (count A le a (merge A le (cons x xs1) ys1)) (plus (count A le a (cons x xs1)) (count A le a ys1))
+                             (rec ys1))
+                      (plusN-comm-mid (one-if (eqo A le a y)) (count A le a (cons x xs1)) (count A le a ys1))))))))))))
+(checked allle-trans (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                          (x A) (y A) (h (isTrue (le x y))) (l (List A)) (a (AllLe A le y l))) (AllLe A le x l))
+  (lam A le o x y h l (elim (lam w (Pi a (AllLe A le y w) (AllLe A le x w))) l
+    ((nil) (lam a unit))
+    ((cons z r) (lam a (pair (ord-trans A le o x y z h (fst a)) ((rec r) (snd a))))))))
+(checked merge-allle (Pi ((A U) (le (Pi ((x A) (y A)) Bool))
+                          (z A) (xs (List A)) (ys (List A)) (a (AllLe A le z xs)) (b (AllLe A le z ys))) (AllLe A le z (merge A le xs ys)))
+  (lam A le z xs (elim (lam w (Pi ((ys (List A)) (a (AllLe A le z w)) (b (AllLe A le z ys))) (AllLe A le z (merge A le w ys)))) xs
+    ((nil) (lam ys a b b))
+    ((cons x xs1) (lam ys (elim (lam w (Pi ((a (AllLe A le z (cons x xs1))) (b (AllLe A le z w))) (AllLe A le z (merge A le (cons x xs1) w)))) ys
+       ((nil) (lam a b a))
+       ((cons y ys1) (lam a b
+         (elim (lam bb (AllLe A le z (if bb (cons x (merge A le xs1 (cons y ys1))) (cons y (merge A le (cons x xs1) ys1))))) (le x y)
+           ((true) (pair (fst a) ((rec xs1) (cons y ys1) (snd a) b)))
+           ((false) (pair (fst b) ((rec ys1) a (snd b)))))))))))))
+(checked merge-sorted (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                           (xs (List A)) (ys (List A)) (sx (Sorted A le xs)) (sy (Sorted A le ys))) (Sorted A le (merge A le xs ys)))
+  (lam A le o xs (elim (lam w (Pi ((ys (List A)) (sx (Sorted A le w)) (sy (Sorted A le ys))) (Sorted A le (merge A le w ys)))) xs
+    ((nil) (lam ys sx sy sy))
+    ((cons x xs1) (lam ys (elim (lam w (Pi ((sx (Sorted A le (cons x xs1))) (sy (Sorted A le w))) (Sorted A le (merge A le (cons x xs1) w)))) ys
+       ((nil) (lam sx sy sx))
+       ((cons y ys1) (lam sx sy
+         ((elim (lam bb (Pi e (PathP (plam i Bool) (le x y) bb)
+                          (Sorted A le (if bb (cons x (merge A le xs1 (cons y ys1))) (cons y (merge A le (cons x xs1) ys1))))))
+                (le x y)
+            ((true) (lam e
+              (let hxy (subst lzero lzero Bool (lam bb (isTrue bb)) true (le x y) (plam i (@ e (~ i))) unit)
+                (pair (merge-allle A le x xs1 (cons y ys1) (fst sx) (pair hxy (allle-trans A le o x y hxy ys1 (fst sy))))
+                      ((rec xs1) (cons y ys1) (snd sx) sy)))))
+            ((false) (lam e
+              (let hyx (ord-total A le o x y e)
+                (pair (merge-allle A le y (cons x xs1) ys1 (pair hyx (allle-trans A le o y x hyx xs1 (fst sx))) (fst sy))
+                      ((rec ys1) sx (snd sy)))))))
+          (plam i (le x y)))))))))))
+
+; ---------------------------------------------------------------- a sorted list is fixed by its multiplicities
+(checked count-head (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le)) (x A) (l (List A)))
+    (PathP (plam i Nat) (count A le x (cons x l)) (suc (count A le x l))))
+  (lam A le o x l ((elim (lam bb (Pi e (isTrue bb) (PathP (plam i Nat) (plus (one-if bb) (count A le x l)) (suc (count A le x l))))) (eqo A le x x)
+              ((true) (lam e (plam i (suc (count A le x l)))))
+              ((false) (lam e (Empty-rec lzero (PathP (plam i Nat) (plus zero (count A le x l)) (suc (count A le x l))) e))))
+            (eqo-refl A le o x))))
+; an element counted in a list bounded below by y is at least y
+(checked allle-count (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                          (y A) (l (List A)) (a (AllLe A le y l)) (x A) (k Nat) (c (PathP (plam i Nat) (count A le x l) (suc k))))
+    (isTrue (le y x)))
+  (lam A le o y l (elim (lam w (Pi ((a (AllLe A le y w)) (x A) (k Nat) (c (PathP (plam i Nat) (count A le x w) (suc k)))) (isTrue (le y x)))) l
+    ((nil) (lam a x k c (Empty-rec lzero (isTrue (le y x)) (snotz k (plam i (@ c (~ i)))))))
+    ((cons z r) (lam a x k c
+      ((elim (lam bb (Pi ((e (PathP (plam i Bool) (eqo A le x z) bb)) (c2 (PathP (plam i Nat) (plus (one-if bb) (count A le x r)) (suc k)))) (isTrue (le y x))))
+             (eqo A le x z)
+         ((true) (lam e c2 (subst lzero lzero A (lam v (isTrue (le y v))) z x
+                              (plam j (@ (eqo-sound A le o x z (subst lzero lzero Bool (lam bb (isTrue bb)) true (eqo A le x z) (plam i (@ e (~ i))) unit)) (~ j)))
+                              (fst a))))
+         ((false) (lam e c2 ((rec r) (snd a) x k c2))))
+       (plam i (eqo A le x z)) c))))))
+(checked sorted-unique (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                            (xs (List A)) (ys (List A)) (sx (Sorted A le xs)) (sy (Sorted A le ys))
+                            (c (Pi a A (isTrue (eqb (count A le a xs) (count A le a ys))))))
+    (PathP (plam i (List A)) xs ys))
+  (lam A le o xs (elim (lam w (Pi ((ys (List A)) (sx (Sorted A le w)) (sy (Sorted A le ys)) (c (Pi a A (isTrue (eqb (count A le a w) (count A le a ys))))))
+                         (PathP (plam i (List A)) w ys))) xs
+    ((nil) (lam ys (elim (lam v (Pi ((sx (Sorted A le nil)) (sy (Sorted A le v)) (c (Pi a A (isTrue (eqb (count A le a nil) (count A le a v))))))
+                                  (PathP (plam i (List A)) nil v))) ys
+       ((nil) (lam sx sy c (plam i nil)))
+       ((cons y q) (lam sx sy c (Empty-rec lzero (PathP (plam i (List A)) nil (cons y q))
+          (snotz (count A le y q) (transN (suc (count A le y q)) (count A le y (cons y q)) zero
+                                (symN (count A le y (cons y q)) (suc (count A le y q)) (count-head A le o y q))
+                                (symN zero (count A le y (cons y q)) (eqb-sound zero (count A le y (cons y q)) (c y)))))))))))
+    ((cons x r) (lam ys (elim (lam v (Pi ((sx (Sorted A le (cons x r))) (sy (Sorted A le v)) (c (Pi a A (isTrue (eqb (count A le a (cons x r)) (count A le a v))))))
+                                       (PathP (plam i (List A)) (cons x r) v))) ys
+       ((nil) (lam sx sy c (Empty-rec lzero (PathP (plam i (List A)) (cons x r) nil)
+          (snotz (count A le x r) (transN (suc (count A le x r)) (count A le x (cons x r)) zero
+                                (symN (count A le x (cons x r)) (suc (count A le x r)) (count-head A le o x r))
+                                (eqb-sound (count A le x (cons x r)) zero (c x)))))))
+       ((cons y q) (lam sx sy c
+         (let hx (transN (count A le x (cons y q)) (count A le x (cons x r)) (suc (count A le x r))
+                    (symN (count A le x (cons x r)) (count A le x (cons y q)) (eqb-sound (count A le x (cons x r)) (count A le x (cons y q)) (c x)))
+                    (count-head A le o x r))
+         (let hy (transN (count A le y (cons x r)) (count A le y (cons y q)) (suc (count A le y q))
+                    (eqb-sound (count A le y (cons x r)) (count A le y (cons y q)) (c y))
+                    (count-head A le o y q))
+         (let yx (allle-count A le o y (cons y q) (pair (ord-refl A le o y) (fst sy)) x (count A le x r) hx)
+         (let xy (allle-count A le o x (cons x r) (pair (ord-refl A le o x) (fst sx)) y (count A le y q) hy)
+         (let pxy (ord-antisym A le o x y xy yx)
+         (let crq (the (Pi a A (isTrue (eqb (count A le a r) (count A le a q)))) (lam a (eqb-complete (count A le a r) (count A le a q)
+                    (plus-cancel (one-if (eqo A le a x)) (count A le a r) (count A le a q)
+                      (transN (plus (one-if (eqo A le a x)) (count A le a r)) (plus (one-if (eqo A le a y)) (count A le a q)) (plus (one-if (eqo A le a x)) (count A le a q))
+                        (eqb-sound (count A le a (cons x r)) (count A le a (cons y q)) (c a))
+                        (plam i (plus (one-if (eqo A le a (@ pxy (~ i)))) (count A le a q))))))))
+           (plam i (cons (@ pxy i) (@ ((rec r) q (snd sx) (snd sy) crq) i)))))))))))))))))
+
+; ---------------------------------------------------------------- propositions
+(checked isProp-AllLe (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (y A) (l (List A))) (isProp lzero (AllLe A le y l)))
+  (lam A le y l (elim (lam w (isProp lzero (AllLe A le y w))) l
+    ((nil) (isProp-isTrue true))
+    ((cons x r) (isPropPair (isTrue (le y x)) (AllLe A le y r) (isProp-isTrue (le y x)) (rec r))))))
+(checked isProp-Sorted (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (l (List A))) (isProp lzero (Sorted A le l)))
+  (lam A le l (elim (lam w (isProp lzero (Sorted A le w))) l
+    ((nil) (isProp-isTrue true))
+    ((cons x r) (isPropPair (AllLe A le x r) (Sorted A le r) (isProp-AllLe A le x r) (rec r))))))
+
+; ---------------------------------------------------------------- finite bags over A
+; the free commutative monoid on A: ∪ with its identities as path constructors
+(checked-data (data (Bag (A U)) (emp) (sng (a A)) (un (x (Bag A)) (y (Bag A)))
+  (unitl (x (Bag A)) (dims i) ((= i 0) (un emp x)) ((= i 1) x))
+  (unitr (x (Bag A)) (dims i) ((= i 0) (un x emp)) ((= i 1) x))
+  (assoc (x (Bag A)) (y (Bag A)) (z (Bag A)) (dims i) ((= i 0) (un (un x y) z)) ((= i 1) (un x (un y z))))
+  (comm (x (Bag A)) (y (Bag A)) (dims i) ((= i 0) (un x y)) ((= i 1) (un y x)))))
+; multiplicity in a bag respects its identities: the laws of +
+(checked countB (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (a A) (X (Bag A))) Nat)
+  (lam A le a X (elim (lam w Nat) X
+    ((emp) zero)
+    ((sng b) (one-if (eqo A le a b)))
+    ((un x y) (plus (rec x) (rec y)))
+    ((unitl x i) (rec x))
+    ((unitr x i) (@ (plus-zero (rec x)) i))
+    ((assoc x y z i) (@ (plus-assoc (rec x) (rec y) (rec z)) i))
+    ((comm x y i) (@ (plus-comm (rec x) (rec y)) i)))))
+; the declaration: a list with X's multiplicities, sorted
+(checked Gs (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (X (Bag A)) (B (List A))) U)
+  (lam A le X B (Sigma c (Pi a A (isTrue (eqb (count A le a B) (countB A le a X)))) (Sorted A le B))))
+(checked Fs (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (X (Bag A))) U) (lam A le X (Sigma B (List A) (Gs A le X B))))
+(checked isPropGs (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (X (Bag A)) (B (List A))) (isProp lzero (Gs A le X B)))
+  (lam A le X B (isPropPair (Pi a A (isTrue (eqb (count A le a B) (countB A le a X)))) (Sorted A le B)
+    (lam f g (plam i (lam a (@ (isProp-isTrue (eqb (count A le a B) (countB A le a X)) (f a) (g a)) i))))
+    (isProp-Sorted A le B))))
+; the completion is forced (9.2): the declaration is a proposition
+(checked Fs-prop (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le)) (X (Bag A))) (isProp lzero (Fs A le X)))
+  (lam A le o X u v
+    (let pB (sorted-unique A le o (fst u) (fst v) (snd (snd u)) (snd (snd v))
+              (the (Pi a A (isTrue (eqb (count A le a (fst u)) (count A le a (fst v)))))
+                (lam a (eqb-complete (count A le a (fst u)) (count A le a (fst v))
+                  (transN (count A le a (fst u)) (countB A le a X) (count A le a (fst v))
+                    (eqb-sound (count A le a (fst u)) (countB A le a X) ((fst (snd u)) a))
+                    (symN (count A le a (fst v)) (countB A le a X) (eqb-sound (count A le a (fst v)) (countB A le a X) ((fst (snd v)) a))))))))
+      (plam i (pair (@ pB i)
+        (@ (isProp→PathP lzero (Gs A le X (fst u)) (Gs A le X (fst v)) (plam j (Gs A le X (@ pB j))) (isPropGs A le X (fst v)) (snd u) (snd v)) i))))))
+(checked mempty (Pi ((A U) (le (Pi ((x A) (y A)) Bool))) (Fs A le emp)) (lam A le (pair nil (pair (lam a unit) unit))))
+(checked msng (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (b A)) (Fs A le (sng b)))
+  (lam A le b (pair (cons b nil) (pair (the (Pi a A (isTrue (eqb (count A le a (cons b nil)) (countB A le a (sng b)))))
+                                     (lam a (eqb-complete (plus (one-if (eqo A le a b)) zero) (one-if (eqo A le a b)) (plus-zero (one-if (eqo A le a b))))))
+                                   (pair unit unit)))))
+; ∪ is merge
+(checked munion (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                     (x (Bag A)) (y (Bag A)) (hx (Fs A le x)) (hy (Fs A le y))) (Fs A le (un x y)))
+  (lam A le o x y hx hy
+    (pair (merge A le (fst hx) (fst hy))
+      (pair (the (Pi a A (isTrue (eqb (count A le a (merge A le (fst hx) (fst hy))) (countB A le a (un x y)))))
+              (lam a (eqb-complete (count A le a (merge A le (fst hx) (fst hy))) (plus (countB A le a x) (countB A le a y))
+                (transN (count A le a (merge A le (fst hx) (fst hy))) (plus (count A le a (fst hx)) (count A le a (fst hy))) (plus (countB A le a x) (countB A le a y))
+                  (merge-count A le a (fst hx) (fst hy))
+                  (cong2N plus (count A le a (fst hx)) (countB A le a x) (count A le a (fst hy)) (countB A le a y)
+                    (eqb-sound (count A le a (fst hx)) (countB A le a x) ((fst (snd hx)) a))
+                    (eqb-sound (count A le a (fst hy)) (countB A le a y) ((fst (snd hy)) a)))))))
+            (merge-sorted A le o (fst hx) (fst hy) (snd (snd hx)) (snd (snd hy)))))))
+; posed with the bag's identities: the elimination of X (as in tests/sort.ctt)
+(checked msort-at (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le))
+                       (hp (Pi m (Bag A) (isProp lzero (Fs A le m))))
+                       (pp (Pi ((B0 U) (B1 U) (B (PathP (plam i U) B0 B1)) (h (isProp lzero B1)) (b0 B0) (b1 B1)) (PathP B b0 b1)))
+                       (X (Bag A))) (Fs A le X))
+  (lam A le o hp pp X (elim (lam w (Fs A le w)) X
+    ((emp) (mempty A le))
+    ((sng b) (msng A le b))
+    ((un x y) (munion A le o x y (rec x) (rec y)))
+    ((unitl x i) (@ (pp (Fs A le (un emp x)) (Fs A le x) (plam j (Fs A le (unitl x j))) (hp x)
+                                  (munion A le o emp x (mempty A le) (rec x)) (rec x)) i))
+    ((unitr x i) (@ (pp (Fs A le (un x emp)) (Fs A le x) (plam j (Fs A le (unitr x j))) (hp x)
+                                  (munion A le o x emp (rec x) (mempty A le)) (rec x)) i))
+    ((assoc x y z i) (@ (pp (Fs A le (un (un x y) z)) (Fs A le (un x (un y z))) (plam j (Fs A le (assoc x y z j)))
+                                      (hp (un x (un y z)))
+                                      (munion A le o (un x y) z (munion A le o x y (rec x) (rec y)) (rec z))
+                                      (munion A le o x (un y z) (rec x) (munion A le o y z (rec y) (rec z)))) i))
+    ((comm x y i) (@ (pp (Fs A le (un x y)) (Fs A le (un y x)) (plam j (Fs A le (comm x y j))) (hp (un y x))
+                                   (munion A le o x y (rec x) (rec y)) (munion A le o y x (rec y) (rec x))) i)))))
+(checked msort (Pi ((A U) (le (Pi ((x A) (y A)) Bool)) (o (TotalOrder A le)) (X (Bag A))) (Fs A le X))
+  (lam A le o X (msort-at A le o (Fs-prop A le o) (isProp→PathP lzero) X)))
+
+; ---------------------------------------------------------------- instance: words
+; the order, by elimination (to prove its laws) ...
+(checked lew (Pi ((a Word) (b Word)) Bool)
+  (lam a (%welimP (lam v (Pi b Word Bool)) a
+    (lam b true)
+    (lam n h b (%welimP (lam v Bool) b false (lam m g (h m)))))))
+(checked lew-refl (Pi a Word (isTrue (lew a a)))
+  (lam a (%welimP (lam v (isTrue (lew v v))) a unit (lam n h h))))
+(checked lew-total (Pi ((x Word) (y Word) (e (PathP (plam i Bool) (lew x y) false))) (isTrue (lew y x)))
+  (lam x (%welimP (lam v (Pi ((y Word) (e (PathP (plam i Bool) (lew v y) false))) (isTrue (lew y v)))) x
+    (lam y e (Empty-rec lzero (isTrue (lew y #0)) (true≢false e)))
+    (lam n h y (%welimP (lam z (Pi e (PathP (plam i Bool) (lew (%wsucc n) z) false) (isTrue (lew z (%wsucc n))))) y
+       (lam e unit)
+       (lam m g e (h m e)))))))
+(checked lew-trans (Pi ((a Word) (b Word) (c Word) (p (isTrue (lew a b))) (q (isTrue (lew b c)))) (isTrue (lew a c)))
+  (lam a (%welimP (lam v (Pi ((b Word) (c Word) (p (isTrue (lew v b))) (q (isTrue (lew b c)))) (isTrue (lew v c)))) a
+    (lam b c p q unit)
+    (lam a1 h b (%welimP (lam z (Pi ((c Word) (p (isTrue (lew (%wsucc a1) z))) (q (isTrue (lew z c)))) (isTrue (lew (%wsucc a1) c)))) b
+       (lam c p q (Empty-rec lzero (isTrue (lew (%wsucc a1) c)) p))
+       (lam b1 g c (%welimP (lam w (Pi ((p (isTrue (lew (%wsucc a1) (%wsucc b1)))) (q (isTrue (lew (%wsucc b1) w)))) (isTrue (lew (%wsucc a1) w)))) c
+          (lam p q (Empty-rec lzero (isTrue (lew (%wsucc a1) #0)) q))
+          (lam c1 k p q (h b1 c1 p q)))))))))
+(checked lew-antisym (Pi ((m Word) (n Word) (a (isTrue (lew m n))) (b (isTrue (lew n m)))) (PathP (plam i Word) m n))
+  (lam m (%welimP (lam v (Pi ((n Word) (a (isTrue (lew v n))) (b (isTrue (lew n v)))) (PathP (plam i Word) v n))) m
+    (lam n (%welimP (lam z (Pi ((a (isTrue (lew #0 z))) (b (isTrue (lew z #0)))) (PathP (plam i Word) #0 z))) n
+       (lam a b (plam i #0))
+       (lam k g a b (Empty-rec lzero (PathP (plam i Word) #0 (%wsucc k)) b))))
+    (lam m1 h n (%welimP (lam z (Pi ((a (isTrue (lew (%wsucc m1) z))) (b (isTrue (lew z (%wsucc m1))))) (PathP (plam i Word) (%wsucc m1) z))) n
+       (lam a b (Empty-rec lzero (PathP (plam i Word) (%wsucc m1) #0) a))
+       (lam n1 g a b (plam i (%wsucc (@ (h n1 a b) i)))))))))
+(checked lew-order (TotalOrder Word lew) (pair lew-refl (pair lew-total (pair lew-trans lew-antisym))))
+; ... and the comparator that runs: one machine comparison, whatever the size of the words
+(checked lewf (Pi ((a Word) (b Word)) Bool) (lam a b (not (%wlt b a))))
+(checked lew≡lewf (Pi ((a Word) (b Word)) (PathP (plam i Bool) (lew a b) (lewf a b)))
+  (lam a (%welimP (lam v (Pi b Word (PathP (plam i Bool) (lew v b) (lewf v b)))) a
+    (lam b (%welimP (lam z (PathP (plam i Bool) (lew #0 z) (lewf #0 z))) b (plam i true) (lam m g (plam i true))))
+    (lam n h b (%welimP (lam z (PathP (plam i Bool) (lew (%wsucc n) z) (lewf (%wsucc n) z))) b
+      (plam i false) (lam m g (h m)))))))
+; its laws are lew's, carried along the path between the two comparators, at each pair of words
+(checked toLew (Pi ((a Word) (b Word) (p (isTrue (lewf a b)))) (isTrue (lew a b)))
+  (lam a b p (subst lzero lzero Bool (lam v (isTrue v)) (lewf a b) (lew a b) (sym lzero Bool (lew a b) (lewf a b) (lew≡lewf a b)) p)))
+(checked fromLew (Pi ((a Word) (b Word) (p (isTrue (lew a b)))) (isTrue (lewf a b)))
+  (lam a b p (subst lzero lzero Bool (lam v (isTrue v)) (lew a b) (lewf a b) (lew≡lewf a b) p)))
+(checked lewf-order (TotalOrder Word lewf)
+  (pair (lam a (fromLew a a (lew-refl a)))
+  (pair (lam x y e (fromLew y x (lew-total x y (concat lzero Bool (lew x y) (lewf x y) false (lew≡lewf x y) e))))
+  (pair (lam a b c p q (fromLew a c (lew-trans a b c (toLew a b p) (toLew b c q))))
+        (lam m n a b (lew-antisym m n (toLew m n a) (toLew n m b)))))))
+
+; ---------------------------------------------------------------- instance: three colours, no magnitude
+(checked-data (data Colour (red) (green) (blue)))
+(checked lec (Pi ((a Colour) (b Colour)) Bool)
+  (lam a b (case a ((red) true)
+                   ((green) (case b ((red) false) ((green) true) ((blue) true)))
+                   ((blue) (case b ((red) false) ((green) false) ((blue) true))))))
+(checked lec-refl (Pi a Colour (isTrue (lec a a)))
+  (lam a (elim (lam v (isTrue (lec v v))) a ((red) unit) ((green) unit) ((blue) unit))))
+(checked lec-total (Pi ((x Colour) (y Colour) (e (PathP (plam i Bool) (lec x y) false))) (isTrue (lec y x)))
+  (lam x (elim (lam v (Pi ((y Colour) (e (PathP (plam i Bool) (lec v y) false))) (isTrue (lec y v)))) x
+    ((red) (lam y e (Empty-rec lzero (isTrue (lec y red)) (true≢false e))))
+    ((green) (lam y (elim (lam w (Pi e (PathP (plam i Bool) (lec green w) false) (isTrue (lec w green)))) y
+       ((red) (lam e unit))
+       ((green) (lam e (Empty-rec lzero (isTrue (lec green green)) (true≢false e))))
+       ((blue) (lam e (Empty-rec lzero (isTrue (lec blue green)) (true≢false e)))))))
+    ((blue) (lam y (elim (lam w (Pi e (PathP (plam i Bool) (lec blue w) false) (isTrue (lec w blue)))) y
+       ((red) (lam e unit))
+       ((green) (lam e unit))
+       ((blue) (lam e (Empty-rec lzero (isTrue (lec blue blue)) (true≢false e))))))))))
+(checked lec-trans (Pi ((x Colour) (y Colour) (z Colour) (p (isTrue (lec x y))) (q (isTrue (lec y z)))) (isTrue (lec x z)))
+  (lam x (elim (lam v (Pi ((y Colour) (z Colour) (p (isTrue (lec v y))) (q (isTrue (lec y z)))) (isTrue (lec v z)))) x
+    ((red) (lam y z p q unit))
+    ((green) (lam y (elim (lam w (Pi ((z Colour) (p (isTrue (lec green w))) (q (isTrue (lec w z)))) (isTrue (lec green z)))) y
+       ((red) (lam z p q (Empty-rec lzero (isTrue (lec green z)) p)))
+       ((green) (lam z p q q))
+       ((blue) (lam z (elim (lam u (Pi ((p (isTrue (lec green blue))) (q (isTrue (lec blue u)))) (isTrue (lec green u)))) z
+          ((red) (lam p q (Empty-rec lzero (isTrue (lec green red)) q)))
+          ((green) (lam p q (Empty-rec lzero (isTrue (lec green green)) q)))
+          ((blue) (lam p q unit))))))))
+    ((blue) (lam y (elim (lam w (Pi ((z Colour) (p (isTrue (lec blue w))) (q (isTrue (lec w z)))) (isTrue (lec blue z)))) y
+       ((red) (lam z p q (Empty-rec lzero (isTrue (lec blue z)) p)))
+       ((green) (lam z p q (Empty-rec lzero (isTrue (lec blue z)) p)))
+       ((blue) (lam z p q q))))))))
+(checked lec-antisym (Pi ((x Colour) (y Colour) (p (isTrue (lec x y))) (q (isTrue (lec y x)))) (PathP (plam i Colour) x y))
+  (lam x (elim (lam v (Pi ((y Colour) (p (isTrue (lec v y))) (q (isTrue (lec y v)))) (PathP (plam i Colour) v y))) x
+    ((red) (lam y (elim (lam w (Pi ((p (isTrue (lec red w))) (q (isTrue (lec w red)))) (PathP (plam i Colour) red w))) y
+       ((red) (lam p q (plam i red)))
+       ((green) (lam p q (Empty-rec lzero (PathP (plam i Colour) red green) q)))
+       ((blue) (lam p q (Empty-rec lzero (PathP (plam i Colour) red blue) q))))))
+    ((green) (lam y (elim (lam w (Pi ((p (isTrue (lec green w))) (q (isTrue (lec w green)))) (PathP (plam i Colour) green w))) y
+       ((red) (lam p q (Empty-rec lzero (PathP (plam i Colour) green red) p)))
+       ((green) (lam p q (plam i green)))
+       ((blue) (lam p q (Empty-rec lzero (PathP (plam i Colour) green blue) q))))))
+    ((blue) (lam y (elim (lam w (Pi ((p (isTrue (lec blue w))) (q (isTrue (lec w blue)))) (PathP (plam i Colour) blue w))) y
+       ((red) (lam p q (Empty-rec lzero (PathP (plam i Colour) blue red) p)))
+       ((green) (lam p q (Empty-rec lzero (PathP (plam i Colour) blue green) p)))
+       ((blue) (lam p q (plam i blue)))))))))
+(checked lec-order (TotalOrder Colour lec) (pair lec-refl (pair lec-total (pair lec-trans lec-antisym))))
+
+; ---------------------------------------------------------------- the sortings, run
+; eight words, the sum written balanced and chained, as in tests/sort.ctt
+(def wbalanced (un (un (un (sng #5) (sng #2)) (un (sng #7) (sng #0))) (un (un (sng #3) (sng #6)) (un (sng #1) (sng #4)))))
+(def wchained (un (sng #5) (un (sng #2) (un (sng #7) (un (sng #0) (un (sng #3) (un (sng #6) (un (sng #1) (sng #4)))))))))
+(def wsorted (cons #0 (cons #1 (cons #2 (cons #3 (cons #4 (cons #5 (cons #6 (cons #7 nil)))))))))
+(same (fst (msort Word lewf lewf-order wbalanced)) wsorted)
+(same (fst (msort Word lewf lewf-order wchained)) wsorted)
+(show (fst (msort Word lewf lewf-order wbalanced)))
+(show (fst (msort Word lewf lewf-order wchained)))
+; the same eight in the same order, at sizes past 64 bits: the same steps
+(def wlarge (un (un (un (sng #500000000000000000000005) (sng #200000000000000000000002))
+                    (un (sng #700000000000000000000007) (sng #7)))
+                (un (un (sng #300000000000000000000003) (sng #600000000000000000000006))
+                    (un (sng #100000000000000000000001) (sng #400000000000000000000004)))))
+(show (fst (msort Word lewf lewf-order wlarge)))
+; colours: compared by lec alone
+(def colours (un (un (sng blue) (sng red)) (un (sng green) (un (sng red) (sng blue)))))
+(same (fst (msort Colour lec lec-order colours)) (cons red (cons red (cons green (cons blue (cons blue nil))))))
+(show (fst (msort Colour lec lec-order colours)))

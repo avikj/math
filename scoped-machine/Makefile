@@ -44,6 +44,11 @@ library: build/cubical
 	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/boxes.ctt
 	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt tests/sort.ctt
 
+# programs written on top of the machine (playground/): not part of the runtime or its tests
+playground: export CUBICAL_NOCACHE = 1
+playground: build/cubical
+	./build/cubical lib/prelude.ctt lib/code.ctt lib/check.ctt lib/std.ctt playground/sort-ordered.ctt
+
 build/cubical-tsan: $(SRC) src/core.h
 	@mkdir -p build
 	$(CC) -std=gnu11 -O1 -g -fsanitize=thread -o $@ $(SRC) -lpthread
