@@ -59,7 +59,15 @@ depends on what kind of type `A(i)` is; each case is a term in `lib/prelude.ctt`
   analysis meeting such a value applies itself to the pieces and composes the results in the
   result type.
 
-## 3. Proved equations change what runs
+## 3. Identities: implemented behavior is a misinterpretation (undesired)
+
+What is implemented: after `(checked-identity L R p)` with `p` checked, every saturated call of `L`
+evaluates `R` instead, globally, in the direction the declaration was written. That is a
+proof-guarded rewrite rule `L ↦ R` (like Agda's REWRITE or GHC's RULES). It is not the intended
+meaning of proven equality. Intended: a proven equality between functions is a value in the system
+that can be used to prove behavioral consistency and mathematical identities, which then bear on
+what behavior is valid. It is not a silent global redirection of one function to another. The
+description below records the current mechanism only.
 
 `(checked-identity L R p)`: `L` and `R` are definitions of one type, and `p g : L g = R g` is
 checked. An application of `L` to all its arguments then answers `R g`. Its result is the path
