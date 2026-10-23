@@ -1,0 +1,168 @@
+# Cubical interaction net
+
+A term is a net of cells. A declaration together with the identities it uses is posed as a net, and normalizing that net is the computation. Every cell has one principal port, so distinct active pairs share no cell and any two steps close up in one step each. Sharing is the duplicator cell. Information moves one wire per step.
+
+```
+make test        # the suites, with 0 and 4 workers, and under ASan/UBSan
+make tsan        # the suites with 4 workers under ThreadSanitizer
+```
+
+## Cells (`src/core.h`)
+
+**Values** have a positive principal port:
+- λ: an immutable binder record, plus one port for each maximal subterm of its body that is free of the bound variable;
+- pair, Π, Σ, U, PathP;
+- a line `PLAM(i, body)`;
+- an interval or face (an immutable DNF payload);
+- a system: branches, each a face clause with the value restricted to it;
+- Glue type and glue element;
+- neutrals, which keep every operand: variables (each carrying its type) and stuck application, projection, path application, composition, unglue, elimination and transport;
+- a definition `GLOBAL`.
+
+**Operations** have a negative principal port facing the value their rule inspects:
+- application: on the function;
+- projections: on the pair;
+- path application: on the interval first, since an annotated endpoint answers without the path, then on the path;
+- composition: on the tube first (coverage), then on the family, then on the family's head at its own fresh dimension;
+- Glue, glue and unglue;
+- the interval and face connectives, and `forall`;
+- the face of a system;
+- system construction;
+- mapping over a system;
+- the structural cells: duplicate, erase, and substitute dimensions.
+
+## What makes it local
+
+- **A face clause is a substitution of endpoints.** Being under a face is reindexing.
+- **A system branch is built only after its clause is known.** It is a thunk forced under the clause's substitution. A system whose clause becomes true is that branch.
+- **A face is ⊤ exactly when its DNF has the empty clause.** An interval is 0 or 1 exactly when its DNF is. So no rule consults an ambient context.
+- **Every eliminator acts branchwise on a system.** Its other operands are restricted to each branch's clause.
+- **A dimension binder is a name and a value.** Applying it puts a substitution cell on the value, which re-activates every neutral the substitution unblocks (`p@i` under `i:=0` is the left endpoint).
+- **A variable carries its type**; `(axiom (p T))` declares a constant of type T. A neutral built from it (an application, a projection, a path application, an elimination...) does not store one: its type is computed from its spine when a rule needs it (`O_NTYPE`: the codomain at the argument, a Σ's components, the line at r, the motive at the scrutinee). A stored type would hold the earlier parts of the spine each with its own type, a value exponential in the depth of a telescope, and values are copied whole. The endpoints of a neutral path are read from its type, computed from a copy of the spine: `t 0 = u0` for `t : Path A u0 u1`, as in CCHM. A constant declared without a type, or a variable introduced by readback, has an unknown type.
+
+## Binders and sharing
+
+`lam` compiles to a record. Its body's maximal subterms that are free of the bound variable are compiled in the enclosing level and wired to the cell's ports, so they are computed once however often the λ is applied (and, being held unbuilt, only if one application reads them). Duplicating a λ copies the record handle and duplicates the ports. A definition's value is built on its first use, once; each use reads it through a reference.
+
+**Demand.** Work is done only where an operation reads it. A subterm in a position whose value may not be read (an argument, a constructor's field, a pair's component, a let's value, a motive, a lifted subterm, a definition's body) is held unbuilt: its syntax with its environment (`V_THUNK`), and an operation meeting it builds it in one interaction. Erasing it erases its environment only, so `(fst (pair a b))` never computes `b`, even when `b` has no normal form. Duplicating it holds it once: its first reader builds it in place and later readers wait for the value, so it is built at most once. A substitution reaching it waits for its value. Induction hypotheses and a word's hypothesis are such subterms. A subterm whose building does no work (a variable, a constant, a λ, a value former) is built as it is, and an argument a definition always reads (a strictness analysis of its body: the scrutinee of its head case, the head of its head application, an operand of a strict operation, or read in every branch) is built where it is passed, since its suspension would be a step no hand reduction takes. A closure is a value with one principal port, so active pairs stay disjoint and every schedule takes the same number of steps. The constants `0`, `1`, `tt`, `ff` and `U` cannot be bound: a binder named by one is an error, not a variable.
+
+## Composition
+
+`comp A u a0` takes a line of types, a tube (a system of lines, or a total line) and a base.
+- **A total tube is its own end.** The result is `u@1`.
+- **Otherwise the family is opened at its own dimension.** Its head selects a library clause in `lib/prelude.ctt`, applied to the head's components re-abstracted as lines: `%comp-pi`, `%comp-sigma`, `%comp-path`, `%comp-u` or `%comp-glue` (HANDOFF §§14–17).
+- **A system of families** composes branchwise under ∀i of each branch's clause.
+- **A neutral family** gives a neutral composition.
+
+`fill`, `transp`, `hcomp`, `Equiv`, `idequiv`, `lineequiv` and `ua` are definitions in the prelude. A family of data types composes by `%comp-D`, generated by its declaration (below).
+
+## Observation
+
+Reading a value reduces the net in arrival order only until the observed port holds a value; the rest of the net stands. A divergent part the answer does not use does not block it, and a definition referring to itself unfolds only when eliminated (`(def ones (pair a ones))`).
+
+## Data types: higher inductive types
+
+Data types are higher inductive types, following Coquand–Huber–Mörtberg (*Higher inductive types in cubical type theory*, LICS 2018). One generic mechanism serves every type; no type has a rule of its own.
+
+```
+(data (D z...) (c field... [(dims i...) (φ e)...]) ...)      field = x or (x A)
+(data S1 (base) (loop (dims i) ((= i 0) base) ((= i 1) base)))
+(data (Susp T) (N) (S) (merid (t T) (dims i) ((= i 0) N) ((= i 1) S)))
+(data (Trunc T) (inc (t T)) (sq (v (Trunc T)) (w (Trunc T)) (dims i) ((= i 0) v) ((= i 1) w)))
+```
+
+- **Constructors.** `c v r` is a value; where its boundary's face holds at `r` it is the boundary `e(v, r)`, judgmentally, and this is decided again after every substitution of `r` (`loop 0` is `base`; `(plam i (loop i))` at 0 is `base`).
+- **Formal hcomp.** `hcomp^i_D [φ ↦ u] u0` is a constructor of every data type: a value (`hcompD`) unless its tube is total, in which case it is the tube's end. There is no regularity: transport in a constant family of a closed type is `(hcompD (sys) u0)`.
+- **Composition** in a family `D(u(i))` is `hcomp^i_{D(u1)} [φ ↦ squeeze u] (trans^i D 0 u0)`, so only transport is given per constructor, generated from the declaration: on ψ (where the family is constant) the identity; a closed type transports as the identity; a point constructor transports its fields along their telescope (a field of type `D` by `D`'s transport, others by `comp [ψ ↦ v] v`); a path constructor is corrected at its boundary, `hcomp^i [φ(r) ↦ α(1-i), ψ ↦ c v r] (c (trans v) r)` with `α` the squeezed boundary; on an hcomp, transport goes into its tube and cap. A parameterized type needs its fields' types.
+- **Elimination.** `(elim P e ((c x... i...) body)...)` is dependent elimination, one branch per constructor receiving its fields and dimensions; on `hcomp^i [φ ↦ u] u0` it is `comp^i P(hfill^i [φ ↦ u] u0) [φ ↦ f u] (f u0)` (`%case-hcomp` in the prelude, given the elimination as a function). `(case e branch...)` is the same without a motive, and stays neutral on an hcomp. `if` eliminates `Bool`. A case is one cell: its table holds one record per constructor (parameters the fields, hypotheses and dimensions; environment the variables the branches share) and its ports the scrutinee, the motive and the shared variables, each once. A constructor meeting it builds the selected branch's body directly: one interaction, as by hand. Nothing in an unselected branch is built. A definition whose value is a closed λ or a constant constructor unfolds in one interaction, and a constructor applied to all its fields is the constructor, so one level of a two-way recursive case costs the hand count: two selections, one unfolding, two β-steps.
+- **Induction hypotheses.** A field whose declared type is `D` itself is recursive. Within a branch, `(rec x)` is the induction hypothesis of the recursive field `x`: its elimination by the same branches and motive, of type `P x`. A branch using `(rec ...)` binds, after its fields, one hypothesis per recursive field, each a suspended elimination (`V_SUSP`) forced where used, so an unused hypothesis costs nothing more than its suspension and a branch not using them builds none. `(def plus (lam m n (case m ((zero) n) ((suc k) (suc (rec k))))))`; on a path constructor, `((sq v w i) (sq (rec v) (rec w) i))`. This is the elimination rule the checker accepts: recursion is elimination, not self-reference.
+- `Bool`, `Nat` and `List` are declared in the prelude; the checker's lists, options and codes are data types too.
+- **Words.** `Word` is the type of natural numbers held in one cell: `#n`, `(%wsucc w)`, `(%weq a b)`, `(%wlt a b)` (to `Bool`), `(%wadd a b)`, `(%wmax a b)`, `(%wsub a b)` (truncated), each one interaction and exact (a number that does not fit in 64 bits is held as a reference-counted payload of limbs, `src/big.c`; the operation's internal work is linear in the limbs, as hand arithmetic is in the digits), and the eliminator `(%welim w z s)`: `#0 ↦ z`, `n+1 ↦ s n h` with `h` the elimination of `n`, suspended until used; `(%welimP P w z s)` is the same with its motive, for the checker. A word may be `k` successors of a neutral; addition recurses on its second argument, the others on both (successors cancel), and an operation that meets a neutral part is stuck, as its inductive definition is. `lib/std.ctt` proves `Word ≃ Nat` (and `Word ≡ Nat` by `ua`) and declares each operation the 1-end of a checked identity whose 0-end is its definition by induction, so the machine's word arithmetic is a theorem of the theory (5.26). `(declare f)` names a definition used before it is given (mutual recursion); the later `def` supplies it.
+
+## Codes and the evaluator
+
+`lib/code.ctt` gives plain codes of terms as a data type `Code` (variables are de Bruijn indices, words, into one context of term and dimension variables; checked definitions and data types are indices into the checker's tables) and `eval-g e c`, a term mapping a code to the value the machine gives that term, `e` the values of its variables. `(code t)` writes the code of a source term. The checker does not use them: its input is the annotated code below. There is no `quote` of a term's syntax: it would distinguish path-equal functions. What reads a value back is `%view` (below), which reads the value the machine computed, not the syntax that produced it.
+
+## The checker as a term
+
+`lib/check.ctt` is the type checker of CCHM, written in the language and run by the net (5.26: no outer layer). Checking is normalizing: `(checked n T t)` normalizes the term `chk-def ⌜T⌝ ⌜t⌝`, whose normal form is `true` or `false`. The checker's values are the machine's own:
+
+- **Annotated codes.** `⌜t⌝` is a `Tm` (lib/check.ctt) in which every node carries the machine's value of that subterm, computed once from its parts' values (the compiler let-binds them); a binder's value is the compiled binder. A binder node holds a function: a term binder takes a variable's value and type, a dimension binder a dimension, and gives the body's code, so instantiating a binder is one application. A variable's node is `(tv x T)`, its value and type: there is no context. A system's branches are thunks of their codes, restricted and then forced, so a branch is computed under its face. A data declaration is a telescope `Tel`: parameters, then each constructor's fields, dimensions and boundary. Indices are words.
+- **Values.** Application, projection, path application, composition, Glue, unglue, transport and elimination are the net's own steps. `(%var T)` is a fresh variable of type `T`, `(%dim)` a fresh dimension, each made where it is introduced (the compiler never lifts them out of their λ); `(%abs i v)` is the line binding the dimension `i`.
+- **Reading a value.** `(%view v)` gives the value's head as a constructor of `View` (`lib/code.ctt`) whose fields are the value's own parts, in one interaction and without copying: `wpi A B`, `wpair a b`, `wcon d c fs ds`, `wvar l T`, `wapp f a`, `welim d x f` (the elimination as a function), ... A part is read further only by viewing it. `(%ieq r s)` and `(%feq a b)` compare intervals and faces in canonical form; `(%clauses φ)` lists a face's clauses; `(%restrict c v)` is `v` under a clause.
+- **Conversion** walks views: at Π, Σ and path types by eliminating both sides (η), the variable at its type; at a universe as types by their former; at Glue by unglue and, on the face, the fibre; at a data type by constructors and fields along the telescope; neutrals by their spines, the type computed along the spine. Two λs of one compiled record are equal when their environments are (`%clos`), else both are applied. Two eliminations of one case table are equal when their motives and shared variables are (`%clos`); otherwise, and in general, two eliminations are equal when their branches are, at fresh fields, fresh hypotheses and fresh dimensions (`%branch f c params` builds a branch), so comparing recursive eliminations terminates.
+- **Tables.** `%gval n`, `%gty n`, `%dtab d`, `%dent d` give the n-th checked definition (its own value, not following the identities declared on it), its type, the machine's data type d (former, constructors, elimination, case), and its declaration: each a reference to a definition, so no signature value is copied.
+- **Cost.** `tests/check.ctt` takes 0.14M interactions; `lib/std.ctt` 0.37M; the library with the paper's terms 1.4M (2 s), with 9.15's sorting 0.94M. A value held by reference carries substitutions and is copied one level at a time when read.
+- **Universe levels.** `Level` with `lzero`, `(lsuc l)`, `(lmax a b)`; `(U l)` is the universe at a level expression, `(U n)` at a numeral, `U` at `lzero`. A level value is `max(c, a1+o1, ...)` over level atoms (neutrals), compared as joins: `max(c, ts) ≤ max(d, us)` for every value of the atoms iff `c ≤ d` or `c` is at most an offset of `us`, and each `a+o` of `ts` has `a+o'` in `us` with `o ≤ o'`. `(U l) : (U (lsuc l))`, Π and Σ take the max of their parts' levels, `Level` and any type quantifying over levels live in the sort `Uω`, which has no type. A level-polymorphic definition is one term at every level. A data type's level must be closed (no field's universe depending on a parameter). The machine carries levels: `Level` is a data type in the prelude (with `lomega`, the level of types over levels) and `U` holds its level.
+- **`check` / `infer`** are the typing rules, including faces, systems (adjacent branches agree on their meet), composition (the tube agrees with the base) and Glue.
+- **Data types.** `(checked-data (data ...))` declares a data type and checks it: parameter and field types are types, fields are strictly positive (the type itself at its own parameters, or not mentioning it), each boundary is an element of the type made of earlier constructors, its branches agreeing on overlaps; `(checked-data-fail ...)` expects rejection. The values are the machine's: a constructor value is its boundary where the boundary's face holds, hcomp is a formal value, composition in a data family is hcomp after transport, transport per constructor, elimination on hcomp composes in the motive along hfill. A constructor is checked against its fields' types; `(elim P e ...)` infers `P e`, each branch checked at `P (c fields dims)` with each induction hypothesis bound to the elimination of its field (of type `P field`) and, for a path constructor, equal on each clause of its boundary to the elimination of the boundary; two eliminations are compared branchwise with fresh fields and fresh hypotheses (when the scrutinee is itself an elimination without a motive, of unknown type, the fields are compared without a type); `(case e ...)` is checked against a constant motive; hcomp is checked like a homogeneous composition in the type.
+
+`(checked n T t)` translates `T` and `t` to annotated codes, normalizes `chk-def`, compares the result with `true`, and on success defines `n` and enters it and its type in the tables; `(check T t)` and `(check-fail T t)` check without defining. `tests/check.ctt` checks identity, refl, sym, funext, transport, path concatenation by hcomp, contractibility, fibres, equivalences, `idequiv` and `ua`, and rejects ill-typed terms, among them a tube disagreeing with its base.
+
+## Implicit arguments and holes
+
+In a checked form, `_` is a hole, and `{x A}` in a checked definition's leading telescope makes that parameter implicit: its uses in checked forms leave it out (a hole is put there) or give it as `{a}`. `(checked sym' (Pi ({l Level} {A (U l)} {x A} {y A} (p (PathP (plam i A) x y))) (PathP (plam i A) y x)) ...)` is used as `(sym' p)`. Unchecked forms (`def`, `same`, `show`) apply a definition to all its parameters in order.
+
+A hole is a metavariable applied to the term variables and dimensions in scope. Where conversion fails to match two values by structure and one side is such an application, it is solved: the arguments distinct variables, the other side mentioning no other variable or dimension of the definition and not the metavariable, the solution that value abstracted over the arguments (`%abstract`, `%abs`). Each solution is checked by the checker at the hole's type, as the code of the value (`qt`): the kernel's judgment covers every solution, and an implicit universe level is found there. A form with a hole left unsolved is rejected. The definition is made from the elaborated term. A metavariable applied to anything other than distinct variables is not solved, and no new metavariable is made inside the checker (a λ checked against a type that is a hole fails). `tests/implicit.ctt` has the cases.
+
+## The checked library and the paper's terms
+
+`lib/std.ctt` is a library of checked definitions, every one accepted by the checker before it is defined:
+- data types: the prelude's `Bool`, `Nat`, `List` checked in place (`(check-data D)`), `Empty`, `Unit`, `Sum`, `Int`;
+- paths: `refl`, `sym`, `cong`, `funExt`, `happly`, `concat` (by hcomp), `transport`, `transportRefl`, `subst`, `toPathP`;
+- equivalences: `isContr`, `isProp`, `fiber`, `isEquiv`, `Equiv`, `idEquiv`, `lemIso` and `isoToEquiv` (an isomorphism is an equivalence, by the fibre's contraction), `ua`, `uaβ` (transport along `ua e` is `e`, by ungluing the transport filler), `pathToEquiv`, `isPropIsContr`, `isPropIsEquiv`, `isProp→PathP`, `equivEq` (Σ≡Prop at `isEquiv`, the propositionality an argument), `pathToEquiv-ua`;
+- arithmetic: `plus`, `times`, `pow`, `fact`, the semiring laws by induction, `snotz`, the order `le`, `not`, `true≢false`, `negZ`;
+- words: `toNat`, `fromNat` and both round trips, `Word≃Nat`, `Word≡Nat`; `plusw`, `eqw`, `ltw`, `maxw`, `subw` by induction, each with a checked identity to the machine's operation.
+
+`tests/boxes.ctt` states and proves the paper's checked Agda terms in the machine's language: the singleton (0.8), the partition (1.2), every reversible operation is a transport (3.2), the vanishing grading (3.5), Lawvere and Cantor (4.2), Gödel from consistency, D1 and the fixed point with the four-sentence countermodel and the diagonal lemma from representability (4.6–4.9), equal length (5.13: `peel`, `same-normalization-length`, `normalization-is-geodesic`, with `Trace` by recursion on its length), the quarter-turn squares to negation (7.2), decide = verify (8.6), every + is a merge and the information fixed by the endpoints (9.7–9.8, the solver's steps as explicit chains). Module parameters are leading Π-binders, records Σ-types with projections.
+
+`tests/sort.ctt` is 9.15: the declaration `Σ[B] (B has A's multiplicities) × Sorted B` over the free commutative monoid on `Nat` (∪ with unit, associativity and commutativity as path constructors), posed and normalized. The declaration is a proposition (a sorted list is fixed by its multiplicities), so its path branches are that propositionality; the ∪ branch is `merge`. A balanced and a chained sum of the same eight elements sort to the same list. `make library` runs both.
+
+## Modules and the check cache
+
+`(import "file")` loads a file once, relative to the importing file; a file's imports are loaded before its own forms, and every file named on the command line is a module too. A running key hashes the machine's build and every file loaded so far, in order. When a file passes all its forms, a marker under its key is written to `$CUBICAL_CACHE` (default `.cubical-cache`); a later run reaching the same key makes the file's definitions — checked definitions, data types and their tables, identities — without rerunning its judgments and tests, and prints `cached: file`. The library with the paper's terms then loads in 0.7 s instead of 2.3 s. `CUBICAL_NOCACHE=1` turns the cache off (the test targets do).
+
+## Parallel rewriting
+
+`CUBICAL_WORKERS=n` runs n threads besides the caller. One rewrite follows HANDOFF §20: it locks the active pair and every cell whose port it may rewrite (the pair's neighbours; for a definition, the cell holding its value and that value's cell) in address order, revalidates that those neighbours are unchanged, installs the replacement, releases, and only then publishes the active pairs it made, so no worker meets a cell still being built. Cells are type-stable: their memory is never returned, so a stale pointer reaches a valid lock word and revalidation fails. Wires are published with release and read with acquire.
+
+By 5.11–5.13 the number of steps is independent of the schedule; the suite without its divergent check takes the same number of interactions with 0, 2, 8 and 16 workers.
+
+## Profile
+
+`CUBICAL_PROFILE=1` prints, at exit, the definitions whose λs and thunks were entered most, the interactions by kind, the duplications and erasures by value kind, and the constructors, globals and definitions most duplicated: where a workload's length goes.
+
+## Readings
+
+`show` reports the length (interactions) and the effect (erasures: every forgetting goes through an eraser cell) of reading a value. A reading is taken over the complete normalization of what was posed: pending pairs are reduced before and after, so the counts do not depend on the schedule (identical with 0, 4 and 8 workers). Parts nobody reads are never built, so a divergent part that is not read does not delay a reading; a divergent part that is read makes it wait forever. Reading the sorted list of 9.15's eight elements takes 1.5k interactions (11.9k when the machine built every component, its proofs included).
+
+## Identities on running computations
+
+An identity `p : L g = R g` acts on an application of `L` by transport along it: the application's output wire carries the line `p g @ i`, at the identity's own dimension `i` (fixed when the identity is declared), with its endpoints annotated: `L g` at 0 and `R g` at 1. The line is a neutral path application, so by the endpoint rule nothing waits on the evidence: the answer (every identity's dimension at 1) is `R g`, the 0-end is `L g`, what was posed, and only the witness, the line's interior, needs `p`. Everything downstream computes along the line, so the observed value is `ap` of the rest of the computation applied to `p g`. All three parts are deferred and built when eliminated; `L`'s run is the 0-end and is not followed again, nothing is erased.
+
+- `(identity L R p [n])` declares that `p g1..gn` is a path `L g1..gn = R g1..gn` (`n` defaults to `L`'s leading λs); `p` may be an input not yet supplied, an ordinary input. This form is not checked, like `def`.
+- `(checked-identity L R p [n])` is the checked form: `L` and `R` are checked definitions of one type `Π g1..gn. B`, and `p` is a checked definition whose type is `Π g. PathP (λ_. B) (L g) (R g)`, or an unsupplied input, in which case `(supply p t)` checks `t` at that type before connecting it (`supply-fail` expects rejection). Answers along a checked identity inhabit the declaration: the answer `R g` is taken without evidence only because the evidence is a path.
+- `(identity-from L e [n])` declares the identity a term produces: `e` is a pair `(R, p)` with `p : Π g. L g = R g`; `R` and `p` become definitions and the identity is declared. `(checked-identity-from L e [n])` first checks `e`'s type against `Σ (R : T_L). Π g. PathP (λ_. B) (L g) (R g)`. An optimizer is such a term (5.26): `tests/check.ctt` proves map fusion by induction, `fuse S f g : Σ R. Π l. map f (map g l) = R l` with `R = map (f ∘ g)`, and the machine then computes `map s2 (map s2 l)` as one map.
+- An application of `L` collects its `n` arguments (a curried application is a value until saturated), then follows the identity.
+- `R g` follows `R`'s own identities, so identities chain. Declaring both `L → R` and `R → L` poses a cycle, which has no normal form; the reverse direction is `p⁻¹` and is not declared.
+- Readback gives the answer. `(witness t)` and `(witness-watch w)` read the value itself, the line or cube from what was posed to the answer, re-dispatching its neutrals so a witness read after its evidence arrived is in normal form; `(same-watch w u 0)` reads a watch at the 0-end.
+- `(the T t)` observes `t` at its declared type: when `T` itself moved along identities' lines, the answer (at the 1-end) is transported back along `T` to `T` at the 0-end, so it inhabits the declaration.
+- `(defect t)` runs `t` from the same warm state without and with its identities and reports the difference in length and in erasures, the work reading's value across the identity.
+
+## Memory
+
+Intervals, faces, clause lists and substitutions are immutable and reference counted; a cell owns its payload and releases it when the cell is retired, so payloads live are bounded by the cells holding them (100 nested transports, 390k interactions: 100 payloads live, those of the result). Reading a value back runs on an explicit stack: a value a million deep reads back on the default native stack. No fixed caps remain in the reader, compiler, readback or observation.
+
+## Inputs
+
+`(input x)` declares a definition whose value is not yet supplied. Any eliminator meeting it waits. `(supply x t)` connects the value, and the waiting pairs proceed.
+
+## Files
+
+- `src/dnf.c`: interval and face DNF, substitutions.
+- `src/net.c`: cells, wiring, the interaction rules, building a net from compiled syntax.
+- `src/lang.c`: reader, compilation to binder records with lifting, definitions, identities and sites, readback, driver (`def`, `declare`, `data`, `axiom`, `input`, `supply`, `identity`, `show`, `same`, `the`, `watch`, `same-watch`, `witness`, `witness-watch`, `defect`, `checked`, `check`, `check-fail`).
+- `lib/prelude.ctt`: the library: composition clauses, equivalences, univalence, elimination on hcomp, Bool, Nat, List.
+- `lib/code.ctt`: codes and the evaluator; `lib/check.ctt`: the checker.
+- `tests/cubical.ctt`, `tests/code.ctt`, `tests/identity.ctt`, `tests/hit.ctt`, `tests/check.ctt`: the checks. `CUBICAL_SHOW_EMIT=1` prints the definitions a data declaration generates.
+- `HANDOFF.md`: the specification.
