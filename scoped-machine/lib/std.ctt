@@ -236,6 +236,7 @@
 (checked plusw≡wadd (Pi ((a Word) (b Word)) (PathP (plam i Word) (plusw a b) (wadd a b)))
   (lam a b (%welimP (lam v (PathP (plam i Word) (plusw a v) (wadd a v))) b
     (plam i a) (lam n h (plam i (%wsucc (@ h i)))))))
+; IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design.
 (checked-identity plusw wadd plusw≡wadd 2)
 (same (plusw #3 #4) #7)
 ; equality, order, max and truncated subtraction, by recursion on both arguments

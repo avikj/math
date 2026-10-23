@@ -1080,6 +1080,7 @@ void global_park(long g, Cell *op, Cell *glob) {
     pthread_mutex_unlock(&park_mu);
 }
 
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
 /* ---------------- identities on running computations ----------------
  * (identity L R p [n]): p g1..gn is a path L g1..gn = R g1..gn, at the
  * identity's own dimension i (fixed when declared). Following it is
@@ -1176,6 +1177,7 @@ static Port held_copy(Cell *r) {
     link(r->port[0], P(d, 0)); link(P(d, 1), P(r, 0));
     return P(d, 2);
 }
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
 /* the answer: every identity followed taken to its 1-end */
 /* every identity's dimension sent to r (owned result; NULL when none) */
 static Subst *identity_subst(const Dnf *r) {
@@ -1969,6 +1971,7 @@ static char *read_port(Port prov) {
     fclose(o);
     return buf;
 }
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
 /* does a value mention an identity's dimension? (read back a copy) */
 static bool mentions_identity(Cell *holder) {
     saw_identity = false;
@@ -2196,6 +2199,7 @@ static void toplevel(Node *f) {
             GROW(CHECKED, capchecked, (size_t)nchecked + 1);
             CHECKED[nchecked++] = strdup(f->it[1]->s);
         }
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
     } else if (!strcmp(h, "checked-identity") || !strcmp(h, "checked-identity-fail")) {
         /* (checked-identity L R p [n]): L and R checked definitions of one type, p a checked
          * definition of type Π g. L g = R g, or an input whose supply is checked at that type */
@@ -2227,6 +2231,7 @@ static void toplevel(Node *f) {
             Node *d = nlist(5); d->it[0] = nsym("identity"); d->it[1] = f->it[1]; d->it[2] = f->it[2]; d->it[3] = f->it[3]; d->it[4] = nsym(nb);
             toplevel(d);
         }
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
     } else if (!strcmp(h, "identity-from") || !strcmp(h, "checked-identity-from") || !strcmp(h, "checked-identity-from-fail")) {
         /* (identity-from L e [n]): the identity a term produces, e = (R, p) with
          * p : Π g. L g = R g; the optimizer as a term (5.26). The checked forms check e's
@@ -2559,6 +2564,7 @@ static void toplevel(Node *f) {
         link(build_top(f->it[2]), P(G[g].res, 0));
         for (int i = 0; i < G[g].npark; i++) net_push(G[g].park_o[i], G[g].park_v[i]);
         G[g].npark = 0;
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
     } else if (!strcmp(h, "identity")) {
         if (f->n != 4 && f->n != 5) die("(identity L R p [n])", NULL);
         long L = global_lookup(f->it[1]->s), R = global_lookup(f->it[2]->s), pp = global_lookup(f->it[3]->s);
@@ -2603,6 +2609,7 @@ static void toplevel(Node *f) {
         if (strcmp(buf, b)) { failures++; printf("FAIL: watch %s\n  left:  %s\n  right: %s\n", f->it[1]->s, buf, b); }
         else { passes++; printf("ok: watch %s\n", f->it[1]->s); }
         free(buf); free(b);
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
     } else if (!strcmp(h, "witness") || !strcmp(h, "witness-watch")) {
         /* the value itself: a line (or cube) in the identities' dimensions,
          * from what was posed (0) to the answer (1) */
@@ -2617,6 +2624,7 @@ static void toplevel(Node *f) {
         char *r = read_port(reactivate(v));
         print_node(stdout, f->it[1]); printf("\n  witness: %s\n", r);
         free(r);
+    /* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
     } else if (!strcmp(h, "defect")) {
         /* the same declaration from the same (warm) state without and with its
          * identities: the difference in length and in effect */

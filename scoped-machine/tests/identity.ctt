@@ -1,3 +1,4 @@
+; IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design.
 ; tests/identity.ctt — identities act on running applications.
 ; Following p : L g = R g puts the line (p g @ i) on L g's output wire,
 ; endpoints annotated: the answer (i = 1) is R g and needs no evidence; the

@@ -139,6 +139,7 @@
 ; checked identities: L and R checked, the evidence checked at Π n. L n = R n
 (checked addz (Pi n N2 N2) (lam n (add2 n z2)))
 (checked idn (Pi n N2 N2) (lam n n))
+; IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design.
 (checked-identity addz idn add2-zero)
 ; the answer is R's: the identity's 1-end
 (same (addz (s2 (s2 z2))) (s2 (s2 z2)))

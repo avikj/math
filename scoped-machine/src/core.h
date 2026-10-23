@@ -121,6 +121,7 @@ enum {
     V_NCASE,    /* p=CaseTab, x=has motive; 1=scrutinee [2=motive] environment, type */
     V_NTRANS,   /* a=data type, p=Dnf ψ; 1=x 2..k+1=parameter lines, type */
     V_GLOBAL,   /* a=global id */
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
     V_SITEF,    /* a=L, x=arguments so far; 1..x=the arguments */
     V_DEFER,    /* a=g, x=flags, p=Subst or NULL; 1..n=arguments: g applied to them
                  * (then substituted by p), built when eliminated */
@@ -245,9 +246,11 @@ void net_drain(void);
 Cell *global_res(long g);          /* the cell holding a definition's value */
 /* an application of a definition with declared identities: true when the
  * application was rewired (it follows an identity, or collects arguments) */
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
 bool site_open(Cell *app, Cell *glob);
 void site_apply(Cell *app, Cell *sitef);
 void defer_force(Cell *op, Cell *deferred);
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
 #define X_SITED 0x80000000u       /* an application that does not follow identities */
 
 /* data types (higher inductive types, Coquand–Huber–Mörtberg): declared by

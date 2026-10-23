@@ -371,6 +371,7 @@ static void rule_subst(Cell *o, Cell *v) {
         link(sub(v->port[1], t), P(v, 1)); subst_release(t);
         link(P(v, 0), out); cell_free(o); return;
     }
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
     case V_DEFER: {
         /* (g args)[p][s] = (g args)[p;s]: the substitution waits for the value */
         Subst *t = v->p ? subst_compose(v->p, s) : subst_retain(s);
@@ -824,6 +825,7 @@ static void interact(Cell *o, Cell *v) {
         return;
     }
     if (v->kind == V_GLOBAL) {
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
         if (o->kind == O_APP && site_open(o, v)) return;
         /* a definition is used: its value is copied in */
         Port r = global_copy((long)v->a);
@@ -832,6 +834,7 @@ static void interact(Cell *o, Cell *v) {
         cell_free(v);
         return;
     }
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
     if (v->kind == V_DEFER) { defer_force(o, v); return; }
     if (v->kind == V_META && o->kind != O_VIEW) {
         /* a solved metavariable is its solution */
@@ -856,6 +859,7 @@ static void interact(Cell *o, Cell *v) {
     }
     switch (o->kind) {
     case O_APP:
+/* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
         if (vk == V_SITEF) { site_apply(o, v); return; }
         if (vk == V_CASEF) {
             /* the elimination as a function, applied: the case on the argument */
