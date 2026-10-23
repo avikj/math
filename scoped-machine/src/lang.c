@@ -2640,7 +2640,10 @@ static void toplevel(Node *f) {
         free(a0); free(a1);
     } else if (!strcmp(h, "show")) {
         long steps, erased;
+        const char *tp = getenv("CUBICAL_TRACE");
+        if (tp) { net_drain(); trace_out = fopen(tp, "a"); }
         char *r = readback(f->it[1], &steps, &erased);
+        if (trace_out) { fprintf(trace_out, "-- %ld steps\n", steps); fclose(trace_out); trace_out = NULL; }
         /* length: every interaction; effect: the interactions that forget (erasures) */
         print_node(stdout, f->it[1]); printf("\n  = %s   [%ld steps, %ld erasures]\n", r, steps, erased);
         free(r);

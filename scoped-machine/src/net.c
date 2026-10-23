@@ -786,9 +786,144 @@ static void stuck(Cell *o, Cell *v) {
     cell_free(o); cell_free(v);
 }
 
+
+/* CUBICAL_TRACE: one line per interaction during a (show ...) reading — the operation, the value
+ * it met, and what each names (the definition a λ or thunk was compiled in, a constructor, a global,
+ * a word, the data type an elimination is over) */
+FILE *trace_out;
+static const char *const KIND_NAME[K_END] = {
+    [V_LAM] = "LAM",
+    [V_PAIR] = "PAIR",
+    [V_PI] = "PI",
+    [V_SIGMA] = "SIGMA",
+    [V_U] = "U",
+    [V_PATHP] = "PATHP",
+    [V_PLAM] = "PLAM",
+    [V_IV] = "IV",
+    [V_FACE] = "FACE",
+    [V_SYS] = "SYS",
+    [V_GLUE] = "GLUE",
+    [V_GLUEV] = "GLUEV",
+    [V_NVAR] = "NVAR",
+    [V_META] = "META",
+    [V_NAPP] = "NAPP",
+    [V_NFST] = "NFST",
+    [V_NSND] = "NSND",
+    [V_NPAPP] = "NPAPP",
+    [V_NCOMP] = "NCOMP",
+    [V_NUNGLUE] = "NUNGLUE",
+    [V_NCASE] = "NCASE",
+    [V_NTRANS] = "NTRANS",
+    [V_GLOBAL] = "GLOBAL",
+    [V_SITEF] = "SITEF",
+    [V_DEFER] = "DEFER",
+    [V_UNK] = "UNK",
+    [V_DATA] = "DATA",
+    [V_CON] = "CON",
+    [V_HCOMP] = "HCOMP",
+    [V_CASEF] = "CASEF",
+    [V_REF] = "REF",
+    [V_WORD] = "WORD",
+    [V_WSUSP] = "WSUSP",
+    [V_WTY] = "WTY",
+    [V_TABS] = "TABS",
+    [V_THUNK] = "THUNK",
+    [V_WPLUS] = "WPLUS",
+    [V_NWOP] = "NWOP",
+    [V_NWELIM] = "NWELIM",
+    [V_SUSP] = "SUSP",
+    [O_APP] = "APP",
+    [O_FORCE] = "FORCE",
+    [O_FST] = "FST",
+    [O_SND] = "SND",
+    [O_PAPPR] = "PAPPR",
+    [O_PAPPP] = "PAPPP",
+    [O_SUBST] = "SUBST",
+    [O_DUP] = "DUP",
+    [O_ERA] = "ERA",
+    [O_COMP] = "COMP",
+    [O_COMPA] = "COMPA",
+    [O_COMPH] = "COMPH",
+    [O_MKPLAM] = "MKPLAM",
+    [O_MKGLUE] = "MKGLUE",
+    [O_MKGLUEV] = "MKGLUEV",
+    [O_UNGLUE] = "UNGLUE",
+    [O_UNGLUE2] = "UNGLUE2",
+    [O_FACEOF] = "FACEOF",
+    [O_NEG] = "NEG",
+    [O_BIN] = "BIN",
+    [O_BIN2] = "BIN2",
+    [O_FEQ] = "FEQ",
+    [O_FORALL] = "FORALL",
+    [O_SYSCONS] = "SYSCONS",
+    [O_SYSCONS2] = "SYSCONS2",
+    [O_SYSMAP] = "SYSMAP",
+    [O_TPART] = "TPART",
+    [O_CONCHK] = "CONCHK",
+    [O_HCOMP] = "HCOMP",
+    [O_TRANSD1] = "TRANSD1",
+    [O_TRANSD2] = "TRANSD2",
+    [O_CASE] = "CASE",
+    [O_VIEW] = "VIEW",
+    [O_MKVAR] = "MKVAR",
+    [O_MKDIM] = "MKDIM",
+    [O_IEQ] = "IEQ",
+    [O_IEQB] = "IEQB",
+    [O_FEQL] = "FEQL",
+    [O_FEQLB] = "FEQLB",
+    [O_CLAUSES] = "CLAUSES",
+    [O_RESTRICT] = "RESTRICT",
+    [O_GLOB] = "GLOB",
+    [O_ABS] = "ABS",
+    [O_NTYPE] = "NTYPE",
+    [O_CALL] = "CALL",
+    [O_WSUCC] = "WSUCC",
+    [O_WEQ] = "WEQ",
+    [O_WLT] = "WLT",
+    [O_WADD] = "WADD",
+    [O_WMAX] = "WMAX",
+    [O_WSUB] = "WSUB",
+    [O_WOP2] = "WOP2",
+    [O_WELIM] = "WELIM",
+    [O_PEND] = "PEND",
+    [O_METAREF] = "METAREF",
+    [O_METASET] = "METASET",
+    [O_ABSTRACT] = "ABSTRACT",
+    [O_METATY] = "METATY",
+    [O_METASOLVED] = "METASOLVED",
+    [O_METATYPED] = "METATYPED",
+    [O_DSUB] = "DSUB",
+    [O_DSUBB] = "DSUBB",
+    [O_DATOM] = "DATOM",
+    [O_CLOS] = "CLOS",
+    [O_CLOS2] = "CLOS2",
+    [O_BRANCH] = "BRANCH",
+    [O_BRANCHC] = "BRANCHC",
+    [O_BRANCHL] = "BRANCHL",
+    [O_ROOT] = "ROOT",
+};
+
+static void trace_side(Cell *c) {
+    switch (c->kind) {
+    case V_LAM: case V_THUNK: { Record *r = c->p; if (r && r->where >= 0 && r->where < prof_n) fprintf(trace_out, "<%s>", prof_name[r->where]); break; }
+    case V_SUSP: case V_CASEF: case V_NCASE: case O_CASE: { CaseTab *t = c->p; if (t) fprintf(trace_out, "<%s>", DATA[t->d].name); break; }
+    case V_GLOBAL: fprintf(trace_out, "<%s>", name_of((long)c->a)); break;
+    case V_CON: fprintf(trace_out, "<%s>", CON[c->a].name); break;
+    case V_WORD: if (!c->p) fprintf(trace_out, "<#%llu>", (unsigned long long)c->a); break;
+    default: break;
+    }
+}
+static void trace_step(Cell *o, Cell *v) {
+    fprintf(trace_out, "%ld %s", stat_steps, KIND_NAME[o->kind] ? KIND_NAME[o->kind] : "?");
+    trace_side(o);
+    fprintf(trace_out, " · %s", KIND_NAME[v->kind] ? KIND_NAME[v->kind] : "?");
+    trace_side(v);
+    fputc('\n', trace_out);
+}
 /* ---------------- the rules ---------------- */
 static void interact(Cell *o, Cell *v) {
     ADD(stat_steps, 1); ADD(stat_kind[o->kind], 1);
+    if (trace_out) trace_step(o, v);
     if (prof_on) {
         long a = (long)o->a;
         if (o->kind == O_DUP || o->kind == O_ERA) {
