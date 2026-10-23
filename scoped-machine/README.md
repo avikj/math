@@ -122,10 +122,6 @@ A hole is a metavariable applied to the term variables and dimensions in scope. 
 
 `(import "file")` loads a file once, relative to the importing file; a file's imports are loaded before its own forms, and every file named on the command line is a module too. A running key hashes the machine's build and every file loaded so far, in order. When a file passes all its forms, a marker under its key is written to `$CUBICAL_CACHE` (default `.cubical-cache`); a later run reaching the same key makes the file's definitions — checked definitions, data types and their tables, identities — without rerunning its judgments and tests, and prints `cached: file`. The library with the paper's terms then loads in 0.7 s instead of 2.3 s. `CUBICAL_NOCACHE=1` turns the cache off (the test targets do).
 
-## Embedding
-
-`make build/libcubical.a` builds the machine as a library; `include/cubical.h` is its interface: `cub_init(workers)`, `cub_load_file` / `cub_load_string` (a program's forms; the number that failed, or -1 with `cub_error()`), `cub_eval` (a term's normal form as text), `cub_check` / `cub_define` (a verdict, and on rejection the failing subterm, the reason and the values it concerns), `cub_supply` (an input), `cub_output` (where verdicts and readings go). An error in a program returns to the caller. One machine per process, called from one thread. `examples/embed.c` loads the library, defines and checks from the host, and runs terms; the command line (`src/main.c`) uses the same library.
-
 ## Parallel rewriting
 
 `CUBICAL_WORKERS=n` runs n threads besides the caller. One rewrite follows HANDOFF §20: it locks the active pair and every cell whose port it may rewrite (the pair's neighbours; for a definition, the cell holding its value and that value's cell) in address order, revalidates that those neighbours are unchanged, installs the replacement, releases, and only then publishes the active pairs it made, so no worker meets a cell still being built. Cells are type-stable: their memory is never returned, so a stale pointer reaches a valid lock word and revalidation fails. Wires are published with release and read with acquire.
