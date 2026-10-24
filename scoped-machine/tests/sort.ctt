@@ -2,6 +2,21 @@
 ; identities a finite multiset has, and normalized: the elimination of A, whose ∪ branch is merge.
 ; A multiset is the free commutative monoid on Nat (∪ with units, associativity, commutativity as
 ; path constructors); a rearrangement is equality of multiplicities; Sorted is 9.6's.
+;
+; RETARDED IMPLEMENTATION, as a sort to run. Nothing in the declaration requires its cost; the
+; declaration's normal form is the sorted list, at the cost 9.7 fixes (24 emissions, at most 17
+; comparisons, for eight elements). The excess is how this term is written:
+;   1. elements are unary Nat and leb peels one suc per level, by a function-valued elimination:
+;      comparing x with y costs about 10 interactions per unit of the smaller.
+;   2. merge recurses on its first list alone, so every step builds a function ("merge with this
+;      list") and then calls it, instead of following both lists.
+;   3. every node returns a pair (list, the part only the type checker reads) that is built, split,
+;      and its unused half erased, 15 times for eight elements.
+;   4. (the machine, not the term) every elimination carries its motive and the free variables of
+;      all its branches through every step and erases them at each constructor; an argument used k
+;      times is duplicated k-1 times and an unused one erased. Structure never read still costs steps.
+; Measured: 1,582 steps to sort eight elements (about 600 of them comparisons), where a direct merge sort
+;   needs about 250.
 
 ; ---------------------------------------------------------------- order and equality on Nat
 (checked eqb (Pi ((m Nat) (n Nat)) Bool)

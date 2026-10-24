@@ -10,6 +10,21 @@
 ;
 ; Instances: Words, compared by one machine comparison (%wlt); Words again at large values (the same
 ; steps: a comparison does not look at the size); and a three-colour type with no numeric content.
+;
+; RETARDED IMPLEMENTATION, as a sort to run. Nothing in the declaration requires its cost; the
+; declaration's normal form is the sorted list, at the cost 9.7 fixes (24 emissions, at most 17
+; comparisons, for eight elements). The excess is how this term is written:
+;   1. the element type, the comparator and the order laws are passed into every call; only the
+;      comparator is ever used while running, so the rest is duplicated and erased (251 steps).
+;   2. merge recurses on its first list alone, so every step builds a function ("merge with this
+;      list") and then calls it, instead of following both lists.
+;   3. every node returns a pair (list, the part only the type checker reads) that is built, split,
+;      and its unused half erased, 15 times for eight elements.
+;   4. (the machine, not the term) every elimination carries its motive and the free variables of
+;      all its branches through every step and erases them at each constructor; an argument used k
+;      times is duplicated k-1 times and an unused one erased. Structure never read still costs steps.
+; Measured: 1,414 steps for eight Words (about 120 of them comparisons), where a direct merge sort needs
+;   about 250.
 
 ; ---------------------------------------------------------------- multiplicities are natural numbers
 (checked eqb (Pi ((m Nat) (n Nat)) Bool)
