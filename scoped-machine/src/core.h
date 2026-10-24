@@ -275,7 +275,10 @@ long table_global(int table, long i);  /* the global holding entry i of a checke
 struct Record *global_nary(long g);
 bool global_sited(long g);
 typedef struct Box { struct Cell *root; long rc; } Box;
-typedef struct CaseTab { int d, nenv; uint64_t mask; struct Record **br; } CaseTab;
+/* motive: the elimination's motive as a record over the same environment, or NULL. It is not a port:
+ * only the two rules that read it (a formal hcomp met, and a stuck elimination typing its neutral)
+ * build it, from the environment */
+typedef struct CaseTab { int d, nenv; uint64_t mask; struct Record **br; struct Record *motive; } CaseTab;
 Port con_build(int c, const Port *fields, const Port *dims);
 Port apply_gid(long g, const Port *args, int n);
 

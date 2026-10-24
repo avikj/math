@@ -455,10 +455,14 @@ static void rule_subst(Cell *o, Cell *v) {
     case V_NWELIM: { Cell *a = cell(O_WELIM, 4); for (int k = 1; k <= 3; k++) link(sub(v->port[k], s), P(a, k - 1)); link(P(a, 3), out); break; }
     case V_HCOMP: { Cell *a = cell(O_HCOMP, 3); link(sub(v->port[1], s), P(a, 0)); link(sub(v->port[2], s), P(a, 1)); link(P(a, 2), out); break; }
     case V_NCASE: {
-        /* 1=scrutinee 2=motive 3..=environment, type → 0=scrutinee 1=motive 2..=environment out */
-        Cell *a = cell(O_CASE, v->n - 1); a->x = v->x; a->p = v->p;
-        for (int k = 1; k < v->n - 1; k++) link(sub(v->port[k], s), P(a, k - 1));
+        /* 1=scrutinee [2=motive] then the environment, type → 0=scrutinee then the environment, out:
+         * the motive is the table's, rebuilt where it is read */
+        int mb = v->x ? 1 : 0, ne = v->n - 3 - mb;
+        Cell *a = cell(O_CASE, ne + 2); a->x = 0; a->p = v->p;
+        link(sub(v->port[1], s), P(a, 0));
+        for (int e = 0; e < ne; e++) link(sub(v->port[2 + mb + e], s), P(a, 1 + e));
         link(P(a, a->n - 1), out);
+        if (mb) era(v->port[2]);
         era(v->port[v->n - 1]);
         break;
     }
@@ -718,8 +722,10 @@ static void rule_view(Cell *o, Cell *v) {
         /* the elimination as a function of its scrutinee: its table, motive and environment */
         CaseTab *tb = v->p;
         if (data_checked_index(tb->d) < 0) { for (int q = 1; q < v->n; q++) era(v->port[q]); r = con_build(WC[W_OTHER], NULL, NULL); break; }
-        Cell *f = cell(V_CASEF, v->n - 2); f->x = v->x; f->p = tb;
-        for (int k = 2; k < v->n - 1; k++) link(v->port[k], P(f, k - 1));
+        int mb = v->x ? 1 : 0, ne = v->n - 3 - mb;
+        Cell *f = cell(V_CASEF, ne + 1); f->x = 0; f->p = tb;
+        if (mb) era(v->port[2]);
+        for (int e = 0; e < ne; e++) link(v->port[2 + mb + e], P(f, 1 + e));
         r = mk(WC[W_ELIM], word_of((uint64_t)data_checked_index(tb->d)), v->port[1], P(f, 0), v->port[v->n - 1]);
         break;
     }
@@ -1422,23 +1428,28 @@ static void interact(Cell *o, Cell *v) {
             }
             link(record_build_n(tb->br[k], prm, env), o->port[o->n - 1]);
             cell_free(o); cell_free(v);
-        } else if (vk == V_HCOMP && o->x) {
-            /* f (hcomp^i [φ ↦ u] u0) = comp^i P(hfill) [φ ↦ f u] (f u0), f this elimination */
-            Port m1, m2; split2(o->port[1], &m1, &m2);
-            Cell *f = cell(V_CASEF, ne + 2); f->x = 1; f->p = tb;
-            link(m2, P(f, 1));
-            for (int e = 0; e < ne; e++) link(o->port[e0 + e], P(f, 2 + e));
-            Port a[4] = { m1, P(f, 0), v->port[1], v->port[2] };
+        } else if (vk == V_HCOMP && tb->motive) {
+            /* f (hcomp^i [φ ↦ u] u0) = comp^i P(hfill) [φ ↦ f u] (f u0), f this elimination; the
+             * motive P is built here, from the environment, since this rule reads it */
+            Port me[ne + 1];
+            Cell *f = cell(V_CASEF, ne + 1); f->x = 0; f->p = tb;
+            for (int e = 0; e < ne; e++) { Port a1, a2; split2(o->port[e0 + e], &a1, &a2); me[e] = a1; link(a2, P(f, 1 + e)); }
+            Port a[4] = { record_build_n(tb->motive, NULL, me), P(f, 0), v->port[1], v->port[2] };
             link(apply_gid(case_hcomp_global, a, 4), o->port[o->n - 1]);
             cell_free(o); cell_free(v);
         } else if (vk == V_SYS) distribute(o, v);
         else {
             /* stuck: a neutral elimination, of type the motive at the scrutinee */
             /* 1=scrutinee [2=motive] then the environment, type */
-            Cell *n = cell(V_NCASE, ne + 3 + mb); n->x = o->x; n->p = tb;
+            /* its motive, which types it, is built here from the environment */
+            int nm = tb->motive ? 1 : 0;
+            Cell *n = cell(V_NCASE, ne + 3 + nm); n->x = (uint32_t)nm; n->p = tb;
             link(P(v, 0), P(n, 1)); link(unk(), P(n, n->n - 1));
-            if (mb) mv(o, 1, P(n, 2));
-            for (int e = 0; e < ne; e++) mv(o, e0 + e, P(n, 2 + mb + e));
+            if (nm) {
+                Port me[ne + 1];
+                for (int e = 0; e < ne; e++) { Port a1, a2; split2(o->port[e0 + e], &a1, &a2); me[e] = a1; link(a2, P(n, 3 + e)); }
+                link(record_build_n(tb->motive, NULL, me), P(n, 2));
+            } else for (int e = 0; e < ne; e++) mv(o, e0 + e, P(n, 2 + e));
             link(P(n, 0), o->port[o->n - 1]);
             cell_free(o);
         }
@@ -2105,11 +2116,10 @@ static Port build(Syn *t, Frame *f) {
         return P(c, t->n);
     case S_CASE: {
         /* k[0]=scrutinee k[1]=motive (or none) k[2..]=the shared variables */
-        int ne = t->tab->nenv, mb = t->x ? 1 : 0;
-        c = cell(O_CASE, ne + 2 + mb); c->x = t->x; c->p = t->tab;
+        int ne = t->tab->nenv;
+        c = cell(O_CASE, ne + 2); c->x = 0; c->p = t->tab;
         link(build(t->k[0], f), P(c, 0));
-        if (mb) link(build(t->k[1], f), P(c, 1));
-        for (int e = 0; e < ne; e++) link(build(t->k[2 + e], f), P(c, 1 + mb + e));
+        for (int e = 0; e < ne; e++) link(build(t->k[2 + e], f), P(c, 1 + e));
         return P(c, c->n - 1);
     }
     case S_LET: {

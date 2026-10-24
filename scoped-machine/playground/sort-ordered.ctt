@@ -23,7 +23,7 @@
 ;   4. (the machine, not the term) every elimination carries its motive and the free variables of
 ;      all its branches through every step and erases them at each constructor; an argument used k
 ;      times is duplicated k-1 times and an unused one erased. Structure never read still costs steps.
-; Measured: 1,414 steps for eight Words (about 120 of them comparisons), where a direct merge sort needs
+; Measured: 1,336 steps for eight Words (about 120 of them comparisons), where a direct merge sort needs
 ;   about 250.
 
 ; ---------------------------------------------------------------- multiplicities are natural numbers

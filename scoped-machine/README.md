@@ -121,5 +121,4 @@ answers flow at once and the evidence arrives later.
 
 ## Measurements
 
-Every reading reports the steps taken and the erasures (what was discarded). The sorted list of
-9.15 reads in 1.5k steps. The library plus the paper's terms check in 1.6M steps.
+Every reading reports the steps taken. The sorted list of 9.15 reads in 1.5k steps. The library plus the paper's terms check in 1.6M steps.

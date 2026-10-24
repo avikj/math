@@ -1468,8 +1468,8 @@ static Record *compile_branch(const Names *env, Node **pn, int np, Node *body) {
     return r;
 }
 /* (%case (%branches D mask m b...) [P] E x): one cell. Its table holds one record per
- * constructor; its ports the scrutinee, the motive and the variables the branches share, each
- * once. A constructor meeting it builds the selected branch: one interaction. A handler is
+ * constructor, and the motive as a record; its ports the scrutinee and the variables the branches
+ * and the motive share, each once. A constructor meeting it builds the selected branch: one interaction. A handler is
  * λ shared(m)... λ fields, hypotheses, dimensions. (thunk body), or any term, then applied */
 static Syn *compile_case(Node *t) {
     bool el = t->n == 5;
@@ -1505,13 +1505,16 @@ static Syn *compile_case(Node *t) {
         local_free(h, &bound, &env);
         free(bound.v);
     }
+    /* the motive's variables join the shared ones: it is built from them, only where it is read */
+    if (el) { Names none = { 0 }; local_free(t->it[2], &none, &env); free(none.v); }
     CaseTab *tb = calloc(1, sizeof(CaseTab));
     tb->d = d; tb->nenv = env.n; tb->mask = mask; tb->br = calloc((size_t)N + 1, sizeof(Record *));
     for (int c = 0; c < N; c++) tb->br[c] = compile_branch(&env, pn[c], np[c], body[c]);
+    tb->motive = el ? compile_branch(&env, NULL, 0, t->it[2]) : NULL;
     Syn *s = syn(S_CASE, 2 + env.n);
-    s->tab = tb; s->x = el;
+    s->tab = tb; s->x = 0;
     s->k[0] = compile(t->it[el ? 4 : 3]);
-    s->k[1] = el ? compile_lazy(t->it[2]) : NULL;
+    s->k[1] = NULL;
     for (int e = 0; e < env.n; e++) s->k[2 + e] = compile(nsym(env.v[e]));
     free(body); free(np);
     return s;
@@ -2006,17 +2009,16 @@ static Port typed_answer(Node *T, Node *t) {
 /* A reading is taken over the complete normalization of what was posed
  * (5.13 concerns a normal form): pending pairs are reduced before and after,
  * so the counts do not depend on the schedule. */
-static char *readback(Node *t, long *steps, long *erased) {
-    bool reading = steps || erased;
+static char *readback(Node *t, long *steps) {
+    bool reading = steps != NULL;
     if (reading) net_drain();
-    long s0 = stat_steps, e0 = stat_kind[O_ERA];
+    long s0 = stat_steps;
     Port v = (t->list && t->n == 3 && is(t->it[0], "the")) ? typed_answer(t->it[1], t->it[2]) : as_answer(build_top(t));
     rb_sub = answer_subst();
     char *buf = read_port(v);
     subst_release(rb_sub); rb_sub = NULL;
     if (reading) net_drain();
     if (steps) *steps = stat_steps - s0;
-    if (erased) *erased = stat_kind[O_ERA] - e0;
     return buf;
 }
 
@@ -2167,7 +2169,7 @@ static void toplevel(Node *f) {
         bool run = !trusted || m1 > m0;
         Node *cT = nl2("%raw", aclosed(dT)), *ct = run ? nl2("%raw", aclosed(dt)) : NULL;
         long steps = 0;
-        char *r = run ? readback(nl3("%%chk-def", cT, ct), &steps, NULL) : strdup("ok"), *tr = strdup("ok");
+        char *r = run ? readback(nl3("%%chk-def", cT, ct), &steps) : strdup("ok"), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr);
         long unsolved = -1;
         if (accepted) for (long k = m0; k < m1 && unsolved < 0; k++) if (!meta_root(k)->port[0]) unsolved = k;
@@ -2219,7 +2221,7 @@ static void toplevel(Node *f) {
         q->it[1] = word(iL); q->it[2] = word(iR); q->it[3] = word(n);
         if (!input) q->it[4] = word(ip);
         long steps;
-        char *r = trusted ? strdup("ok") : readback(q, &steps, NULL), *tr = strdup("ok");
+        char *r = trusted ? strdup("ok") : readback(q, &steps), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
         if (!trusted) printf("%s: %s identity %s = %s by %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, f->it[3]->s, steps);
@@ -2249,7 +2251,7 @@ static void toplevel(Node *f) {
             if (iL < 0 || ie < 0) die("checked-identity-from: L and e must be checked definitions", NULL);
             Node *q = nlist(4); q->it[0] = nsym("%%chk-optimizer"); q->it[1] = word(iL); q->it[2] = word(n); q->it[3] = word(ie);
             long steps;
-            char *r = trusted ? strdup("ok") : readback(q, &steps, NULL), *tr = strdup("ok");
+            char *r = trusted ? strdup("ok") : readback(q, &steps), *tr = strdup("ok");
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
             if (ok) passes++; else failures++;
             if (!trusted) printf("%s: %s identity of %s from %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, f->it[2]->s, steps);
@@ -2303,7 +2305,7 @@ static void toplevel(Node *f) {
         table_set(TB_DENT, di, global_lookup(den));
         table_set(TB_DTAB, di, global_lookup(dtn));
         long steps;
-        char *r = trusted ? strdup("ok") : readback(nl3("%%chk-data", word(di), ent), &steps, NULL), *tr = strdup("ok");
+        char *r = trusted ? strdup("ok") : readback(nl3("%%chk-data", word(di), ent), &steps), *tr = strdup("ok");
         bool accepted = !strcmp(r, tr), ok = accepted == expect;
         if (ok) passes++; else failures++;
         if (!trusted) printf("%s: %s data %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", DATA[d].name, steps);
@@ -2551,7 +2553,7 @@ static void toplevel(Node *f) {
             Node *q = nlist(5); q->it[0] = nsym("%%chk-identity");
             q->it[1] = word(CHKID[i].iL); q->it[2] = word(CHKID[i].iR); q->it[3] = word(CHKID[i].n); q->it[4] = nl2("%raw", aclosed(ds(f->it[2])));
             long steps;
-            char *r = trusted ? strdup("ok") : readback(q, &steps, NULL), *tr = strdup("ok");
+            char *r = trusted ? strdup("ok") : readback(q, &steps), *tr = strdup("ok");
             bool accepted = !strcmp(r, tr), ok = accepted == expect;
             if (ok) passes++; else failures++;
             if (!trusted) printf("%s: %s evidence %s   [%ld steps]\n", ok ? "ok" : "FAIL", expect ? "checks" : "rejected", f->it[1]->s, steps);
@@ -2605,7 +2607,7 @@ static void toplevel(Node *f) {
         rb(o, hv);
         subst_release(rb_sub); rb_sub = NULL;
         fclose(o);
-        char *b = readback(f->it[2], NULL, NULL);
+        char *b = readback(f->it[2], NULL);
         if (strcmp(buf, b)) { failures++; printf("FAIL: watch %s\n  left:  %s\n  right: %s\n", f->it[1]->s, buf, b); }
         else { passes++; printf("ok: watch %s\n", f->it[1]->s); }
         free(buf); free(b);
@@ -2627,29 +2629,29 @@ static void toplevel(Node *f) {
     /* IDENTITIES (declared L = R makes every call of L run R): retarded non-core feature with no bearing on intended design. */
     } else if (!strcmp(h, "defect")) {
         /* the same declaration from the same (warm) state without and with its
-         * identities: the difference in length and in effect */
+         * identities: the difference in length */
         identities_on = 0;
-        free(readback(f->it[1], NULL, NULL));
-        long s0, e0, s1, e1;
-        char *a0 = readback(f->it[1], &s0, &e0);
+        free(readback(f->it[1], NULL));
+        long s0, s1;
+        char *a0 = readback(f->it[1], &s0);
         identities_on = 1;
-        char *a1 = readback(f->it[1], &s1, &e1);
+        char *a1 = readback(f->it[1], &s1);
         print_node(stdout, f->it[1]);
-        printf("\n  without identities: %s   [%ld steps, %ld erasures]\n  with identities:    %s   [%ld steps, %ld erasures]\n  defect: %+ld steps, %+ld erasures\n",
-               a0, s0, e0, a1, s1, e1, s1 - s0, e1 - e0);
+        printf("\n  without identities: %s   [%ld steps]\n  with identities:    %s   [%ld steps]\n  defect: %+ld steps\n",
+               a0, s0, a1, s1, s1 - s0);
         free(a0); free(a1);
     } else if (!strcmp(h, "show")) {
-        long steps, erased;
+        long steps;
         const char *tp = getenv("CUBICAL_TRACE");
         if (tp) { net_drain(); trace_out = fopen(tp, "a"); }
-        char *r = readback(f->it[1], &steps, &erased);
+        char *r = readback(f->it[1], &steps);
         if (trace_out) { fprintf(trace_out, "-- %ld steps\n", steps); fclose(trace_out); trace_out = NULL; }
-        /* length: every interaction; effect: the interactions that forget (erasures) */
-        print_node(stdout, f->it[1]); printf("\n  = %s   [%ld steps, %ld erasures]\n", r, steps, erased);
+        /* length: every interaction */
+        print_node(stdout, f->it[1]); printf("\n  = %s   [%ld steps]\n", r, steps);
         free(r);
     } else if (!strcmp(h, "same")) {
         if (f->n != 3) die("(same t u)", NULL);
-        char *a = readback(f->it[1], NULL, NULL), *b = readback(f->it[2], NULL, NULL);
+        char *a = readback(f->it[1], NULL), *b = readback(f->it[2], NULL);
         if (strcmp(a, b)) {
             failures++;
             printf("FAIL: "); print_node(stdout, f->it[1]); printf("\n  left:  %s\n  right: %s\n", a, b);
